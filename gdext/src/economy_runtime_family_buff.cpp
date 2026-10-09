@@ -421,7 +421,7 @@ void NativeEconomyRuntime::apply_family_split_policy_flags(int32_t family_index,
     if (mode == FAMILY_FLAG_SPLIT_BONUS_WEIGHT)
         flags |= static_cast<uint16_t>(weight_q8) << FAMILY_FLAG_SPLIT_WEIGHT_SHIFT;
     flags |= gifts;
-    families_store().flags[static_cast<size_t>(family_index)] = flags;
+    families_store().flags.write_scalar(static_cast<size_t>(family_index), flags, market_mutation_sink());
 }
 
 bool NativeEconomyRuntime::apply_family_set_split_policy(const Command &cmd,

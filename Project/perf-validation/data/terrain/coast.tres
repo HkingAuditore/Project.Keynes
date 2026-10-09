@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="TerrainProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/terrain_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+terrain_type = 1
+display_name = "COAST"
+display_name_cn = "海岸"
+passable_land = false
+passable_sea = true
+move_cost = 0
+base_color = Color(0.227451, 0.533333, 0.596078, 1)

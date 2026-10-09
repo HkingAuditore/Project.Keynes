@@ -68,3 +68,14 @@ Economy 仅为实际使用的 `(country_handle, policy_id)` 编译缓存；相�
 `(country, tax_kind, base_rate)` 共享连续行，细项保持短有序切片。worker 查询只执行
 逐格 bitmask、整数索引、短切片和全国连续率回退。冻结周期继续使用旧快照，下一周期才看到
 新政策或领土所有者。
+# Request identity after restore (2026-10-09)
+
+Before starting the worker, the Host raises its monotonic command request-ID
+allocator above the maximum terminal peer request ID in the restored Economy
+journal, as well as the existing Country receipt and pending-command floors.
+A quiescent save can have empty Host transport queues while PKEC retains old
+terminal identities; an empty queue is not evidence that low IDs are reusable.
+The floor is derived from validated authoritative records, never by deleting
+old transactions or relaxing duplicate-request identity checks. Reserving a
+lower floor cannot rewind the allocator. This startup scan is not a daily hot
+loop and does not change transaction order or balances.

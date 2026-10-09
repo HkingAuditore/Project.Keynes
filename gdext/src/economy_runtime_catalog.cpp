@@ -13,6 +13,74 @@
 #include <godot_cpp/variant/variant.hpp>
 
 namespace pk {
+EconomyFamilyCellInfluenceStore::EconomyFamilyCellInfluenceStore()
+    : active(changes, {{7, 1}, "influence.active", EconomyFieldEncoding::U8, 1}),
+      generation(changes, {{7, 2}, "influence.generation", EconomyFieldEncoding::U32, 4}),
+      family_handle(changes, {{7, 3}, "influence.family_handle", EconomyFieldEncoding::U64, 8}),
+      cell(changes, {{7, 4}, "influence.cell", EconomyFieldEncoding::I32, 4}),
+      stable_id(changes, {{7, 5}, "influence.stable_id", EconomyFieldEncoding::I64, 8}),
+      population(changes, {{7, 6}, "influence.population", EconomyFieldEncoding::I64, 8}),
+      cash(changes, {{7, 7}, "influence.cash", EconomyFieldEncoding::I64, 8}),
+      building_asset(changes, {{7, 8}, "influence.building_asset", EconomyFieldEncoding::I64, 8}),
+      population_share_q16(changes, {{7, 9}, "influence.population_share_q16", EconomyFieldEncoding::I32, 4}),
+      cash_share_q16(changes, {{7, 10}, "influence.cash_share_q16", EconomyFieldEncoding::I32, 4}),
+      building_share_q16(changes, {{7, 11}, "influence.building_share_q16", EconomyFieldEncoding::I32, 4}),
+      score_q16(changes, {{7, 12}, "influence.score_q16", EconomyFieldEncoding::I32, 4}),
+      satisfaction_q16(changes, {{7, 13}, "influence.satisfaction_q16", EconomyFieldEncoding::I32, 4}),
+      prestige_level(changes, {{7, 14}, "influence.prestige_level", EconomyFieldEncoding::U8, 1}),
+      pending_target_level(changes, {{7, 15}, "influence.pending_target_level", EconomyFieldEncoding::U8, 1}),
+      review_streak(changes, {{7, 16}, "influence.review_streak", EconomyFieldEncoding::U8, 1}),
+      last_review_day(changes, {{7, 17}, "influence.last_review_day", EconomyFieldEncoding::I64, 8}),
+      free_indices(changes, {{7, 18}, "influence.free_indices", EconomyFieldEncoding::U32, 4}) {}
+EconomyFamilyCellInfluenceStore::EconomyFamilyCellInfluenceStore(const EconomyFamilyCellInfluenceStore &other)
+    : EconomyFamilyCellInfluenceStore() { *this = other; }
+EconomyFamilyCellInfluenceStore &EconomyFamilyCellInfluenceStore::operator=(const EconomyFamilyCellInfluenceStore &other) {
+    if (this == &other) return *this;
+    active.assign(other.active.values());
+    generation.assign(other.generation.values());
+    family_handle.assign(other.family_handle.values());
+    cell.assign(other.cell.values());
+    stable_id.assign(other.stable_id.values());
+    population.assign(other.population.values());
+    cash.assign(other.cash.values());
+    building_asset.assign(other.building_asset.values());
+    population_share_q16.assign(other.population_share_q16.values());
+    cash_share_q16.assign(other.cash_share_q16.values());
+    building_share_q16.assign(other.building_share_q16.values());
+    score_q16.assign(other.score_q16.values());
+    satisfaction_q16.assign(other.satisfaction_q16.values());
+    prestige_level.assign(other.prestige_level.values());
+    pending_target_level.assign(other.pending_target_level.values());
+    review_streak.assign(other.review_streak.values());
+    last_review_day.assign(other.last_review_day.values());
+    free_indices.assign(other.free_indices.values());
+    return *this;
+}
+EconomyFamilyCellInfluenceStore::EconomyFamilyCellInfluenceStore(EconomyFamilyCellInfluenceStore &&other)
+    : EconomyFamilyCellInfluenceStore() { *this = std::move(other); }
+EconomyFamilyCellInfluenceStore &EconomyFamilyCellInfluenceStore::operator=(EconomyFamilyCellInfluenceStore &&other) {
+    if (this == &other) return *this;
+    active.move_from(other.active);
+    generation.move_from(other.generation);
+    family_handle.move_from(other.family_handle);
+    cell.move_from(other.cell);
+    stable_id.move_from(other.stable_id);
+    population.move_from(other.population);
+    cash.move_from(other.cash);
+    building_asset.move_from(other.building_asset);
+    population_share_q16.move_from(other.population_share_q16);
+    cash_share_q16.move_from(other.cash_share_q16);
+    building_share_q16.move_from(other.building_share_q16);
+    score_q16.move_from(other.score_q16);
+    satisfaction_q16.move_from(other.satisfaction_q16);
+    prestige_level.move_from(other.prestige_level);
+    pending_target_level.move_from(other.pending_target_level);
+    review_streak.move_from(other.review_streak);
+    last_review_day.move_from(other.last_review_day);
+    free_indices.move_from(other.free_indices);
+    return *this;
+}
+
 
 using namespace godot;
 using namespace variant_helpers;
@@ -501,21 +569,21 @@ int32_t EconomyFamilyCellInfluenceStore::allocate() {
         prestige_level.push_back(0); pending_target_level.push_back(0);
         review_streak.push_back(0); last_review_day.push_back(-1);
     }
-    active[index] = 1; family_handle[index] = 0; cell[index] = -1;
-    stable_id[index] = 0; population[index] = 0; cash[index] = 0;
-    building_asset[index] = 0; population_share_q16[index] = 0;
-    cash_share_q16[index] = 0; building_share_q16[index] = 0;
-    score_q16[index] = 0; satisfaction_q16[index] = 0; prestige_level[index] = 0;
-    pending_target_level[index] = 0; review_streak[index] = 0;
-    last_review_day[index] = -1;
+    active.write_scalar(index, 1); family_handle.write_scalar(index, 0); cell.write_scalar(index, -1);
+    stable_id.write_scalar(index, 0); population.write_scalar(index, 0); cash.write_scalar(index, 0);
+    building_asset.write_scalar(index, 0); population_share_q16.write_scalar(index, 0);
+    cash_share_q16.write_scalar(index, 0); building_share_q16.write_scalar(index, 0);
+    score_q16.write_scalar(index, 0); satisfaction_q16.write_scalar(index, 0); prestige_level.write_scalar(index, 0);
+    pending_target_level.write_scalar(index, 0); review_streak.write_scalar(index, 0);
+    last_review_day.write_scalar(index, -1);
     return index;
 }
 
 void EconomyFamilyCellInfluenceStore::release(int32_t index) {
     if (index < 0 || index >= static_cast<int32_t>(active.size()) ||
         active[index] == 0) return;
-    active[index] = 0;
-    generation[index] = generation[index] == UINT32_MAX ? 1 : generation[index] + 1;
+    active.write_scalar(index, 0);
+    generation.write_scalar(index, generation[index] == UINT32_MAX ? 1 : generation[index] + 1);
     free_indices.push_back(index);
 }
 

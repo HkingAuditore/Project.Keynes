@@ -1,0 +1,20 @@
+{
+  "version": 3,
+  "artifactType": {
+    "type": "LINKED_RESOURCES_BINARY_FORMAT",
+    "kind": "Directory"
+  },
+  "applicationId": "com.ToyEmpires.projectkeynes",
+  "variantName": "standardDebug",
+  "elements": [
+    {
+      "type": "SINGLE",
+      "filters": [],
+      "attributes": [],
+      "versionCode": 1,
+      "versionName": "0.1",
+      "outputFile": "linked-resources-binary-format-standardDebug.ap_"
+    }
+  ],
+  "elementType": "File"
+}

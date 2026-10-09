@@ -139,6 +139,14 @@ void DCWorldExt::invalidate_economy_input_capture_cache(bool force_full) {
     _economy_capture_cached_report.clear();
 }
 
+Dictionary DCWorldExt::get_economy_checkpoint_format() const {
+    Dictionary out;
+    out["abi_version"] = RUNTIME_ECONOMY_ECP2_ABI_VERSION;
+    out["schema_version"] = RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION;
+    out["hash_version"] = runtime_chunk_hash_enabled() ? 2 : 1;
+    return out;
+}
+
 Dictionary DCWorldExt::configure_economy(const Dictionary &catalog,
                                          const Dictionary &profile,
                                          int cell_count,
@@ -973,6 +981,15 @@ bool DCWorldExt::economy_deadline_critical(int64_t day_index) const {
 PackedInt32Array DCWorldExt::get_economy_live_cells() {
     if (_economy_runtime == nullptr) return PackedInt32Array();
     return runtime_from(_economy_runtime)->economy_live_cells_query();
+}
+
+Dictionary DCWorldExt::get_economy_committed_audit_report() const {
+    if (_economy_runtime == nullptr) {
+        Dictionary out;
+        out["available"] = false;
+        return out;
+    }
+    return runtime_from(_economy_runtime)->committed_audit_report();
 }
 
 Dictionary DCWorldExt::get_economy_report() const {

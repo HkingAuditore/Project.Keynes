@@ -1,0 +1,214 @@
+gdext/src\economy_csv_recorder.cpp:1451:                row.stock = runtime.market_store().stock[mi]; row.price = runtime.market_store().price[mi];
+gdext/src\economy_runtime_building_construction.cpp:35:            local_stock[static_cast<size_t>(good)] = std::max<int64_t>(0,
+gdext/src\economy_runtime_building_construction.cpp:41:                local_stock[good] = std::max<int64_t>(0, saturating_add(
+gdext/src\economy_runtime_building_construction.cpp:286:        country_stock[good] = std::max<int64_t>(0,
+gdext/src\economy_runtime_building_construction.cpp:499:        population_store().funds[owner_slot] = saturating_add(
+gdext/src\economy_runtime_building_construction.cpp:589:        audit_touch_market_lane(static_cast<size_t>(stock_index));
+gdext/src\economy_runtime_building_construction.cpp:590:        market_store().stock[stock_index] -= qty;
+gdext/src\economy_runtime_building_construction.cpp:600:    population_store().funds[owner_slot] -= total_cost;
+gdext/src\economy_runtime_building_construction.cpp:638:            if (merchant_trace_funds[i] != population_store().funds[merchant_slot]) {
+gdext/src\economy_runtime_building_investment.cpp:1155:                        population_store().population[slot] <= 0) return;
+gdext/src\economy_runtime_building_investment.cpp:1469:                market_store().stock[market_store().index(market, material)] >= physical)
+gdext/src\economy_runtime_building_investment.cpp:1856:                    cell_profession_population[profession] = saturating_add(
+gdext/src\economy_runtime_building_investment.cpp:4243:            commit_virtual_stock[static_cast<size_t>(good)] =
+gdext/src\economy_runtime_building_investment.cpp:4439:                population_store().funds[candidate.plan.sponsor] = saturating_sub(
+gdext/src\economy_runtime_building_investment.cpp:4442:                population_store().funds[owner_slot] = saturating_add(
+gdext/src\economy_runtime_building_investment.cpp:4445:                if (population_store().funds[candidate.plan.sponsor] !=
+gdext/src\economy_runtime_building_investment.cpp:4489:                population_store().funds[owner_slot] = saturating_add(
+gdext/src\economy_runtime_building_employment.cpp:156:            sig_population[signature] = 0;
+gdext/src\economy_runtime_building_employment.cpp:175:                sig_population[sig] = saturating_add(sig_population[sig],
+gdext/src\economy_runtime_building_employment.cpp:273:            if (sig_population[sig] <= 0) continue;
+gdext/src\economy_runtime_building_employment.cpp:309:            if (sig_population[sig] <= 0) continue;
+gdext/src\economy_runtime_building_employment.cpp:321:            if (sig_population[sig] <= 0) continue;
+gdext/src\economy_runtime_building_employment.cpp:1756:                sig_owner_population[sig] = 0;
+gdext/src\economy_runtime_building_employment.cpp:1760:            if (sig_owner_population[sig] == 0) owner_active_signatures.push_back(sig);
+gdext/src\economy_runtime_building_employment.cpp:1763:            sig_owner_population[sig] = saturating_add(sig_owner_population[sig],
+gdext/src\economy_runtime_building_employment.cpp:2199:            if (population_store().population[pool] <= 0)
+gdext/src\economy_runtime_building_production.cpp:502:            trace_market_stock[good] = market_store().stock[market_store().index(market, good)];
+gdext/src\economy_runtime_building_production.cpp:1860:                population_store().funds[owner_slot] = saturating_add(
+gdext/src\economy_runtime_building_production.cpp:1887:                audit_touch_market_lane(static_cast<size_t>(stock_index));
+gdext/src\economy_runtime_building_production.cpp:1888:                market_store().stock[stock_index] -= qty;
+gdext/src\economy_runtime_building_production.cpp:1914:            population_store().funds[owner_slot] = saturating_add(
+gdext/src\economy_runtime_building_production.cpp:2578:            population_store().funds[offer.owner_slot] = saturating_add(
+gdext/src\economy_runtime_building_production.cpp:2597:            audit_touch_market_lane(
+gdext/src\economy_runtime_building_production.cpp:2599:            market_store().stock[offer_stock_index] = saturating_add(
+gdext/src\economy_runtime_building_production.cpp:2612:                market_store().stock[offer_stock_index] = saturating_sub(
+gdext/src\economy_runtime_building_production.cpp:2636:                market_store().stock[offer_stock_index] = saturating_add(
+gdext/src\economy_runtime_building_production.cpp:2921:            audit_touch_market_lane(static_cast<size_t>(stock_index));
+gdext/src\economy_runtime_building_production.cpp:2922:            market_store().stock[stock_index] -= bought;
+gdext/src\economy_runtime_building_production.cpp:2923:            population_store().funds[owner_slot] -= cost;
+gdext/src\economy_runtime_building_production.cpp:2995:            population_store().funds[owner_slot] = saturating_add(
+gdext/src\economy_runtime_building_production.cpp:3057:        population_store().funds[owner_slot] = saturating_sub(
+gdext/src\economy_runtime_building_production.cpp:3474:        audit_touch_population_lane(static_cast<int32_t>(lane));
+gdext/src\economy_runtime_building_production.cpp:3476:        audit_touch_market_lane(lane);
+gdext/src\economy_runtime_cadence.cpp:308:            _cell_tier_seen_population[idx] = population;
+gdext/src\economy_runtime.cpp:218:        _audit_shadow_population[slot] =
+gdext/src\economy_runtime.cpp:220:        _audit_shadow_funds[slot] =
+gdext/src\economy_runtime.cpp:251:void NativeEconomyRuntime::audit_touch_population_lane(int32_t slot) {
+gdext/src\economy_runtime.cpp:276:void NativeEconomyRuntime::audit_touch_market_lane(size_t index) {
+gdext/src\economy_runtime.cpp:415:        _audit_shadow_population[slot] =
+gdext/src\economy_runtime.cpp:417:        _audit_shadow_funds[slot] = active ? population_store().funds[slot] : 0;
+gdext/src\economy_runtime.cpp:422:            _audit_shadow_market_stock[index] = market_store().stock[index];
+gdext/src\economy_runtime.cpp:473:                market_store().stock[index] != _audit_shadow_market_stock[index] &&
+gdext/src\economy_runtime.cpp:559:    audit_touch_population_lane(slot);
+gdext/src\economy_runtime.cpp:583:            if (population_store().population[slot] > 0) has_living_merchant = true;
+gdext/src\economy_runtime.cpp:589:            (population_store().population[slot] == source_population && slot < source)) {
+gdext/src\economy_runtime.cpp:646:    population_store().population[source] -= 1;
+gdext/src\economy_runtime.cpp:647:    population_store().funds[source] -= funds_share;
+gdext/src\economy_runtime.cpp:648:    population_store().population[destination] = saturating_add(
+gdext/src\economy_runtime.cpp:650:    population_store().funds[destination] = saturating_add(
+gdext/src\economy_runtime.cpp:808:                population_store().population[merchant] <= 0) {
+gdext/src\economy_runtime.cpp:1043:            audit_touch_market_lane(market_index);
+gdext/src\economy_runtime.cpp:1044:            market_store().stock[market_index] -= continuation.quantity;
+gdext/src\economy_runtime.cpp:1083:            audit_touch_population_lane(merchant);
+gdext/src\economy_runtime.cpp:1085:            population_store().funds[merchant] = saturating_add(
+gdext/src\economy_runtime.cpp:1662:        audit_touch_population_lane(slot);
+gdext/src\economy_runtime.cpp:1670:            population_store().funds[slot] += amount;
+gdext/src\economy_runtime.cpp:1678:            population_store().funds[slot] -= amount;
+gdext/src\economy_runtime.cpp:1705:            audit_touch_market_lane(index);
+gdext/src\economy_runtime.cpp:1706:            market_store().stock[index] += amount;
+gdext/src\economy_runtime.cpp:1712:            audit_touch_market_lane(index);
+gdext/src\economy_runtime.cpp:1713:            market_store().stock[index] -= amount;
+gdext/src\economy_runtime.cpp:2162:                population_store().funds[slot] =
+gdext/src\economy_runtime.cpp:2167:                population_store().funds[slot] = saturating_add(
+gdext/src\economy_runtime.cpp:3205:        population_store().funds[cohort_slot] = saturating_add(
+gdext/src\economy_runtime.cpp:3210:        population_store().funds[cohort_slot] -= actual;
+gdext/src\economy_runtime.cpp:3325:    audit_touch_market_lane(market_index);
+gdext/src\economy_runtime.cpp:3327:        market_store().stock[market_index] = saturating_add(
+gdext/src\economy_runtime.cpp:3330:        market_store().stock[market_index] -= actual;
+gdext/src\economy_runtime.cpp:3485:        audit_touch_market_lane(lane);
+gdext/src\economy_runtime.cpp:3486:        market_store().stock[lane] -= market_quantities[i];
+gdext/src\economy_runtime.cpp:3497:        population_store().funds[slot] = saturating_add(
+gdext/src\economy_runtime.cpp:4584:                _epoch_country_merchant_population[static_cast<size_t>(country)] =
+gdext/src\economy_runtime.cpp:5382:        cell_population[static_cast<size_t>(cell)] = population;
+gdext/src\economy_runtime.cpp:5387:            country_population[static_cast<size_t>(country)] = saturating_add(
+gdext/src\economy_runtime.cpp:7434:                    if (market_store().stock[market_store().index(market, comp.good_id)] <= 0) {
+gdext/src\economy_runtime.cpp:7775:                if (owner_slot < 0 || population_store().population[owner_slot] <= 0) continue;
+gdext/src\economy_runtime.cpp:8604:                    if (market_store().stock[market_store().index(market, candidate.good_id)] >= physical) {
+gdext/src\economy_runtime.cpp:9437:        population_store().funds[slot] = saturating_add(population_store().funds[slot], share, _saturation_count);
+gdext/src\economy_runtime.cpp:9473:        population_store().funds[slot] -= share;
+gdext/src\economy_runtime.cpp:9519:    population_store().funds[owner_slot] -= paid;
+gdext/src\economy_runtime.cpp:9561:        population_store().funds[slot] = saturating_add(population_store().funds[slot], net_share,
+gdext/src\economy_runtime.cpp:9587:            if (trace_funds[i] != population_store().funds[worker_slot]) {
+gdext/src\economy_runtime.cpp:11010:    population_store().funds[owner_slot] -= paid;
+gdext/src\economy_runtime.cpp:11478:                idle = market_store().stock[index] <= 0 && market_store().demand_ema[index] <= 0 &&
+gdext/src\economy_runtime.cpp:11957:    audit_touch_population_lane(target_slot);
+gdext/src\economy_runtime.cpp:11960:    population_store().population[target_slot] = saturating_add(
+gdext/src\economy_runtime.cpp:12115:    audit_touch_population_lane(target_slot);
+gdext/src\economy_runtime.cpp:12118:    population_store().population[target_slot] = saturating_add(
+gdext/src\economy_runtime.cpp:12217:            population_store().funds[slot] = saturating_add(population_store().funds[slot], cmd.i64_0, _saturation_count);
+gdext/src\economy_runtime.cpp:12241:            population_store().funds[slot] -= amount;
+gdext/src\economy_runtime.cpp:12259:            audit_touch_market_lane(static_cast<size_t>(idx));
+gdext/src\economy_runtime.cpp:12260:            market_store().stock[idx] = saturating_add(market_store().stock[idx], cmd.i64_0, _saturation_count);
+gdext/src\economy_runtime.cpp:12272:            audit_touch_market_lane(static_cast<size_t>(idx));
+gdext/src\economy_runtime.cpp:12273:            market_store().stock[idx] -= amount;
+gdext/src\economy_runtime.cpp:12342:            population_store().population[slot] = after;
+gdext/src\economy_runtime.cpp:12481:        population_store().population[destination] = saturating_add(
+gdext/src\economy_runtime.cpp:12549:        audit_touch_population_lane(source);
+gdext/src\economy_runtime.cpp:12550:        population_store().funds[source] = 0;
+gdext/src\economy_runtime.cpp:12651:    audit_touch_population_lane(destination);
+gdext/src\economy_runtime.cpp:12654:    population_store().population[destination] = saturating_add(destination_pop_before, move_pop,
+gdext/src\economy_runtime.cpp:12656:    population_store().funds[destination] = saturating_add(population_store().funds[destination], move_funds,
+gdext/src\economy_runtime.cpp:12708:    audit_touch_population_lane(source);
+gdext/src\economy_runtime.cpp:12709:    population_store().population[source] -= move_pop;
+gdext/src\economy_runtime.cpp:12710:    population_store().funds[source] -= move_funds;
+gdext/src\economy_runtime.cpp:12722:    if (population_store().population[source] == 0) {
+gdext/src\economy_runtime.cpp:12750:        population_store().funds[source] = 0;
+gdext/src\economy_runtime.cpp:12822:            if (market_store().stock[index] <= 0) continue;
+gdext/src\economy_runtime.cpp:16954:            cell_population[row.cell] += std::max<int64_t>(0,
+gdext/src\economy_runtime.cpp:17432:            branch_population[cell] += edge.people;
+gdext/src\economy_runtime.cpp:17759:        total_population[cell] = std::max<int64_t>(
+gdext/src\economy_runtime.cpp:17813:        family_influences().population[branch] = item.second.population;
+gdext/src\economy_runtime.cpp:18933:            audit_touch_population_lane(static_cast<int32_t>(lane));
+gdext/src\economy_runtime.cpp:18935:            audit_touch_market_lane(lane);
+gdext/src\economy_runtime_catalog.cpp:505:    stable_id[index] = 0; population[index] = 0; cash[index] = 0;
+gdext/src\economy_runtime_configuration.cpp:649:        population_store().population[slot] = saturating_add(population_store().population[slot], populations[i], _saturation_count);
+gdext/src\economy_runtime_configuration.cpp:650:        population_store().funds[slot] = saturating_add(population_store().funds[slot], funds[i], _saturation_count);
+gdext/src\economy_runtime_configuration.cpp:721:            audit_touch_market_lane(static_cast<size_t>(idx));
+gdext/src\economy_runtime_configuration.cpp:722:            market_store().stock[idx] = 0;
+gdext/src\economy_runtime_events.cpp:507:                class_snapshot.population[class_row] = saturating_add(
+gdext/src\economy_runtime_events.cpp:510:                class_snapshot.funds[class_row] = saturating_add(
+gdext/src\economy_runtime_events.cpp:534:            satisfaction_population[static_cast<size_t>(country)] =
+gdext/src\economy_runtime_colonization_kit.cpp:622:            stock[static_cast<size_t>(good)] = spare_source_stock(market, good);
+gdext/src\economy_runtime_colonization_kit.cpp:811:    audit_touch_market_lane(static_cast<size_t>(index));
+gdext/src\economy_runtime_colonization_kit.cpp:812:    market_store().stock[index] = next;
+gdext/src\economy_runtime_colonization_kit.cpp:1201:            audit_touch_market_lane(lane);
+gdext/src\economy_runtime_colonization_kit.cpp:1202:            market_store().stock[lane] -= c.quantity;
+gdext/src\economy_runtime_colonization_kit.cpp:1216:            audit_touch_population_lane(slot);
+gdext/src\economy_runtime_colonization_kit.cpp:1218:            population_store().funds[slot] = saturating_add(
+gdext/src\economy_runtime_colonization_kit.cpp:1675:            if (population_store().population[slot] <= 0) return;
+gdext/src\economy_runtime_fiscal.cpp:558:                    if (population_store().population[slot] <= 0) return;
+gdext/src\economy_runtime_fiscal.cpp:829:            population_store().population[slot] <= 0) return;
+gdext/src\economy_runtime_fiscal.cpp:878:        population_store().funds[slot] = saturating_add(
+gdext/src\economy_runtime_fiscal.cpp:902:                population_store().population[slot] <= 0) return;
+gdext/src\economy_runtime_fiscal.cpp:936:                population_store().funds[slot] -= collected;
+gdext/src\economy_runtime_fiscal.cpp:961:            population_store().funds[slot] = saturating_add(
+gdext/src\economy_runtime_fiscal.cpp:1001:                    population_store().funds[owner_slot] -= collected;
+gdext/src\economy_runtime_fiscal.cpp:1032:                population_store().funds[owner_slot] = saturating_add(
+gdext/src\economy_runtime_persistence.cpp:965:                population_store().generation[slot] == 0 || population_store().population[slot] <= 0 ||
+gdext/src\economy_runtime_colonization.cpp:113:    population[index] = 0; effect_transaction_id[index] = 0;
+gdext/src\economy_runtime_colonization.cpp:1328:    family_expeditions_store().population[expedition] = cmd.i64_0;
+gdext/src\economy_runtime_colonization.cpp:1435:            audit_touch_population_lane(slot);
+gdext/src\economy_runtime_colonization.cpp:1437:            population_store().population[slot] += payload.people;
+gdext/src\economy_runtime_colonization.cpp:1444:            population_store().funds[slot] += payload.funds;
+gdext/src\economy_runtime_colonization.cpp:1488:    family_expeditions_store().population[expedition] = 0;
+gdext/src\economy_runtime_colonization.cpp:1738:        audit_touch_population_lane(slot);
+gdext/src\economy_runtime_colonization.cpp:1739:        population_store().population[slot] -= payload.people;
+gdext/src\economy_runtime_colonization.cpp:1746:        population_store().funds[slot] -= payload.funds;
+gdext/src\economy_runtime_colonization.cpp:1806:    family_expeditions_store().population[expedition] =
+gdext/src\economy_runtime_colonization.cpp:1868:        audit_touch_population_lane(slot); touch_accounting_slot(slot);
+gdext/src\economy_runtime_colonization.cpp:1869:        population_store().population[slot] = merged_population;
+gdext/src\economy_runtime_colonization.cpp:1883:        population_store().funds[slot] += payload.funds;
+gdext/src\economy_runtime_persistence_read.cpp:2758:            _cell_tier_seen_population[index] = seen_population;
+gdext/src\economy_runtime_market.cpp:606:        opening_stock[good] = market_store().stock[market_store().index(market, good)];
+gdext/src\economy_runtime_market.cpp:1483:                audit_touch_market_lane(static_cast<size_t>(idx));
+gdext/src\economy_runtime_market.cpp:1484:                market_store().stock[idx] -= pass_demand[good];
+gdext/src\economy_runtime_market.cpp:1558:            audit_touch_market_lane(static_cast<size_t>(idx));
+gdext/src\economy_runtime_market.cpp:1559:            market_store().stock[idx] -= used;
+gdext/src\economy_runtime_market.cpp:1678:                            audit_touch_market_lane(static_cast<size_t>(stock_index));
+gdext/src\economy_runtime_market.cpp:1679:                            market_store().stock[stock_index] = saturating_add(
+gdext/src\economy_runtime_market.cpp:1682:                            population_store().funds[entry->owner_slot] = saturating_add(
+gdext/src\economy_runtime_market.cpp:1718:                                market_store().stock[stock_index] = saturating_sub(
+gdext/src\economy_runtime_market.cpp:1786:        population_store().funds[slot] = saturating_add(
+gdext/src\economy_runtime_market.cpp:1866:        population_store().funds[slot] = saturating_add(
+gdext/src\economy_runtime_market.cpp:2262:            population_store().population[slot] -= deaths;
+gdext/src\economy_runtime_market.cpp:2271:            if (population_store().population[slot] == 0) {
+gdext/src\economy_runtime_market.cpp:2445:            (market_store().stock[idx] > 0 || ema > 0 || shortage > 0 || signal_index >= 0 ||
+gdext/src\economy_runtime_queries_market_building.cpp:1731:        country_stock[good] = std::max<int64_t>(0,
+gdext/src\economy_runtime_trade.cpp:1496:        population_store().funds[slot] = saturating_add(
+gdext/src\economy_runtime_trade.cpp:1553:        population_store().funds[slot] -= share;
+gdext/src\economy_runtime_trade.cpp:1697:                audit_touch_market_lane(static_cast<size_t>(index));
+gdext/src\economy_runtime_trade.cpp:1698:                market_store().stock[index] = saturating_add(
+gdext/src\economy_runtime_trade.cpp:2648:        audit_touch_market_lane(static_cast<size_t>(market_index));
+gdext/src\economy_runtime_trade.cpp:2649:        market_store().stock[market_index] -= clipped.quantity;
+gdext/src\runtime_economy_pod.cpp:697:        population.funds[static_cast<size_t>(slot)] = sat_add(
+gdext/src\runtime_economy_pod.cpp:716:        population.funds[static_cast<size_t>(slot)] = sat_add(
+gdext/src\runtime_economy_pod.cpp:740:        population.funds[static_cast<size_t>(slot)] = funds - amount;
+gdext/src\runtime_economy_pod.cpp:761:        market.stock[static_cast<size_t>(idx)] =
+gdext/src\runtime_economy_pod.cpp:783:        market.stock[static_cast<size_t>(idx)] = stock - amount;
+gdext/src\runtime_economy_pod.cpp:809:        population.population[static_cast<size_t>(slot)] = after;
+gdext/src\runtime_economy_pod.cpp:886:        population.funds[static_cast<size_t>(slot)] = funds - amount;
+gdext/src\runtime_economy_pod.cpp:937:        market.stock[static_cast<size_t>(idx)] =
+gdext/src\runtime_economy_pod.cpp:959:        market.stock[static_cast<size_t>(idx)] = stock - amount;
+gdext/src\runtime_economy_pod.cpp:2348:        pop.funds[static_cast<size_t>(slot)] = 10;
+gdext/src\runtime_economy_pod.cpp:2358:            pop.funds[static_cast<size_t>(slot)] != 15 ||
+gdext/src\runtime_economy_pod.cpp:2369:            pop.funds[static_cast<size_t>(slot)] != 0) {
+gdext/src\runtime_economy_pod.cpp:2373:        owned.state().market.stock[0] = 8;
+gdext/src\runtime_economy_pod.cpp:2380:            settled != 4 || owned.state().market.stock[0] != 12) {
+gdext/src\runtime_economy_pod.cpp:2384:        pop.population[static_cast<size_t>(slot)] = 100;
+gdext/src\runtime_economy_pod.cpp:2391:            pop.population[static_cast<size_t>(slot)] != 125 ||
+gdext/src\runtime_economy_pod.cpp:2426:    fixture_population.population[pod_slot] = 17;
+gdext/src\runtime_economy_pod.cpp:2427:    fixture_population.funds[pod_slot] = 2300;
+gdext/src\runtime_economy_pod.cpp:2437:    fixture_population.population[pod_slot_two] = 29;
+gdext/src\runtime_economy_pod.cpp:2438:    fixture_population.funds[pod_slot_two] = 4100;
+gdext/src\runtime_economy_pod.cpp:2448:    authority.state().market.stock[4] = 77;
+gdext/src\runtime_economy_state.cpp:83:        stock[i] = value;
+gdext/src\runtime_economy_state.cpp:258:            if (cohort_population[i] >= 0 &&
+gdext/src\runtime_economy_population_store.cpp:173:            population[slot] = 0;
+gdext/src\runtime_economy_population_store.cpp:174:            funds[slot] = 0;
+gdext/src\runtime_economy_population_store.cpp:192:    population[slot] = 0;
+gdext/src\runtime_economy_population_store.cpp:193:    funds[slot] = 0;
+gdext/src\runtime_economy_population_store.cpp:272:    population[slot] = 0;
+gdext/src\runtime_economy_population_store.cpp:273:    funds[slot] = 0;
+gdext/src\runtime_economy_population_store.cpp:314:    population[slot] = 0;
+gdext/src\runtime_economy_population_store.cpp:315:    funds[slot] = 0;

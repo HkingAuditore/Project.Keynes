@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"lumber"
+display_name = "木材"
+semantic_tags = PackedStringArray()
+category_id = &"lumber"
+substitution_category_ids = PackedStringArray("lumber", "classical_construction")
+technology_tags = PackedStringArray("industry.forestry", "tech.timber_sawing", "tech.forest_management", "tech.steam_sawmilling")
+default_price = 18000
+reference_max_price = 900000
+price_adjust_q16 = 1536
+demand_price_elasticity_q16 = 49152

@@ -1,0 +1,431 @@
+{
+  "rows": 2390,
+  "elapsed_seconds": 233.221,
+  "committed_days": 4520,
+  "end_to_end_days_per_second": 19.380759022558003,
+  "worker_counter_delta_seconds": {
+    "execute": 164.049954,
+    "input_wait": 5.673317,
+    "clock_wait": 0.0,
+    "boundary_wait": 4.7e-05,
+    "overhead": 0.189179,
+    "total": 233.212035
+  },
+  "unrecorded_phase_seconds": 63.299537999999984,
+  "execute_ms_per_day": 36.294237610619476,
+  "execute_only_days_per_second": 27.552583160126943,
+  "regular_intervals_days_per_second": 26.79388859164141,
+  "gaps_over_1_second": [
+    {
+      "row": 101,
+      "seconds": 1.706,
+      "days": 1
+    },
+    {
+      "row": 309,
+      "seconds": 1.676,
+      "days": 1
+    },
+    {
+      "row": 494,
+      "seconds": 1.577,
+      "days": 1
+    },
+    {
+      "row": 680,
+      "seconds": 1.636,
+      "days": 1
+    },
+    {
+      "row": 866,
+      "seconds": 1.636,
+      "days": 1
+    },
+    {
+      "row": 1057,
+      "seconds": 1.619,
+      "days": 1
+    },
+    {
+      "row": 1236,
+      "seconds": 1.671,
+      "days": 1
+    },
+    {
+      "row": 1422,
+      "seconds": 1.662,
+      "days": 1
+    },
+    {
+      "row": 1608,
+      "seconds": 1.695,
+      "days": 1
+    },
+    {
+      "row": 1813,
+      "seconds": 1.705,
+      "days": 1
+    },
+    {
+      "row": 2011,
+      "seconds": 1.716,
+      "days": 1
+    },
+    {
+      "row": 2210,
+      "seconds": 1.64,
+      "days": 1
+    },
+    {
+      "row": 2376,
+      "seconds": 45.072,
+      "days": 1
+    }
+  ],
+  "timing_ms_excluding_first_row": {
+    "sched_day_capture_ms": {
+      "count": 2389,
+      "avg": 3.657881121808288,
+      "p95": 3.928,
+      "max": 4.422
+    },
+    "sched_day_total_ms": {
+      "count": 2389,
+      "avg": 4.603326496442026,
+      "p95": 5.004,
+      "max": 5.78
+    },
+    "frame_wall_ms": {
+      "count": 2389,
+      "avg": 20.107839334868146,
+      "p95": 38.2302,
+      "max": 205.633
+    },
+    "clock_full_ms": {
+      "count": 2389,
+      "avg": 7.09501213897028,
+      "p95": 9.04,
+      "max": 190.243
+    },
+    "t_render_ms": {
+      "count": 2389,
+      "avg": 2.761652992884052,
+      "p95": 2.866,
+      "max": 3.604
+    }
+  },
+  "new_game_cost_ms_per_day": {
+    "epoch_vectors": {
+      "count": 100,
+      "avg": 1.334395,
+      "p95": 2.3003,
+      "max": 2.4436
+    },
+    "opening_audit_full": {
+      "count": 96,
+      "avg": 1.4024083333333333,
+      "p95": 2.0401,
+      "max": 2.1959
+    },
+    "building_plan": {
+      "count": 100,
+      "avg": 0.139666,
+      "p95": 0.3778,
+      "max": 0.5851
+    },
+    "trade_settle": {
+      "count": 100,
+      "avg": 0.000268,
+      "p95": 0.0005,
+      "max": 0.0009
+    },
+    "ledger_apply": {
+      "count": 100,
+      "avg": 0.000381,
+      "p95": 0.0006,
+      "max": 0.0009
+    },
+    "employment": {
+      "count": 100,
+      "avg": 0.403583,
+      "p95": 0.8903,
+      "max": 1.3845
+    },
+    "production.compute": {
+      "count": 100,
+      "avg": 0.278722,
+      "p95": 0.45320000000000005,
+      "max": 0.5722999999999999
+    },
+    "production.merge_summary": {
+      "count": 100,
+      "avg": 0.00557,
+      "p95": 0.0103,
+      "max": 0.0157
+    },
+    "production": {
+      "count": 100,
+      "avg": 0.295337,
+      "p95": 0.4755,
+      "max": 0.6016
+    },
+    "household.prepare": {
+      "count": 100,
+      "avg": 0.001211,
+      "p95": 0.0019,
+      "max": 0.0024
+    },
+    "household.worker": {
+      "count": 100,
+      "avg": 0.256982,
+      "p95": 0.4353,
+      "max": 0.4933
+    },
+    "household.merge": {
+      "count": 100,
+      "avg": 0.022989,
+      "p95": 0.0357,
+      "max": 0.0508
+    },
+    "household.merge_trade": {
+      "count": 100,
+      "avg": 0.007139,
+      "p95": 0.0103,
+      "max": 0.0123
+    },
+    "household.merge_aggregate": {
+      "count": 100,
+      "avg": 0.015136,
+      "p95": 0.0247,
+      "max": 0.0405
+    },
+    "household": {
+      "count": 100,
+      "avg": 0.416805,
+      "p95": 0.6025,
+      "max": 0.6439
+    },
+    "research": {
+      "count": 100,
+      "avg": 0.0065580000000000005,
+      "p95": 0.0199,
+      "max": 0.0233
+    },
+    "trade_dispatch": {
+      "count": 100,
+      "avg": 0.006198,
+      "p95": 0.0088,
+      "max": 0.0122
+    },
+    "structural": {
+      "count": 100,
+      "avg": 0.314745,
+      "p95": 0.7109,
+      "max": 0.8532
+    },
+    "building_commit": {
+      "count": 100,
+      "avg": 0.11456,
+      "p95": 0.4028,
+      "max": 0.4966
+    },
+    "family.normalize": {
+      "count": 100,
+      "avg": 0.032225000000000004,
+      "p95": 0.0483,
+      "max": 0.0665
+    },
+    "family.attribution": {
+      "count": 100,
+      "avg": 0.002054,
+      "p95": 0.0026,
+      "max": 0.0096
+    },
+    "family.form": {
+      "count": 100,
+      "avg": 0.046068,
+      "p95": 0.062,
+      "max": 0.1599
+    },
+    "family.index": {
+      "count": 100,
+      "avg": 0.000143,
+      "p95": 0.0002,
+      "max": 0.0077
+    },
+    "family.lifecycle": {
+      "count": 100,
+      "avg": 0.001818,
+      "p95": 0.0024,
+      "max": 0.0037
+    },
+    "family.influence": {
+      "count": 100,
+      "avg": 0.018831,
+      "p95": 0.0816,
+      "max": 0.1013
+    },
+    "family": {
+      "count": 100,
+      "avg": 0.212706,
+      "p95": 0.2892,
+      "max": 0.4921
+    },
+    "person.retire": {
+      "count": 100,
+      "avg": 0.002464,
+      "p95": 0.0035,
+      "max": 0.004
+    },
+    "person.index": {
+      "count": 100,
+      "avg": 0.028381,
+      "p95": 0.0507,
+      "max": 0.0763
+    },
+    "person.bind_jobs": {
+      "count": 100,
+      "avg": 0.002535,
+      "p95": 0.0036,
+      "max": 0.0051
+    },
+    "person.claims": {
+      "count": 100,
+      "avg": 0.001089,
+      "p95": 0.0018,
+      "max": 0.0021
+    },
+    "person.equity": {
+      "count": 100,
+      "avg": 0.000276,
+      "p95": 0.0004,
+      "max": 0.0007
+    },
+    "person.promote": {
+      "count": 100,
+      "avg": 0.00071,
+      "p95": 0.0056,
+      "max": 0.0114
+    },
+    "person": {
+      "count": 100,
+      "avg": 0.041208,
+      "p95": 0.0721,
+      "max": 0.095
+    },
+    "prepare": {
+      "count": 100,
+      "avg": 0.005577,
+      "p95": 0.0078,
+      "max": 0.0105
+    },
+    "verify": {
+      "count": 100,
+      "avg": 0.001043,
+      "p95": 0.0016,
+      "max": 0.0019
+    },
+    "watermark": {
+      "count": 100,
+      "avg": 0.012934,
+      "p95": 0.017599999999999998,
+      "max": 0.0258
+    },
+    "trade_flow": {
+      "count": 100,
+      "avg": 0.000161,
+      "p95": 0.0003,
+      "max": 0.0005
+    },
+    "trade_diagnostics": {
+      "count": 100,
+      "avg": 0.000694,
+      "p95": 0.0011,
+      "max": 0.0014
+    },
+    "trade_init": {
+      "count": 100,
+      "avg": 0.008771000000000001,
+      "p95": 0.0228,
+      "max": 0.0296
+    },
+    "commit": {
+      "count": 100,
+      "avg": 1.743638,
+      "p95": 2.8802,
+      "max": 3.0997
+    },
+    "native_hash": {
+      "count": 100,
+      "avg": 3.230137,
+      "p95": 3.5819,
+      "max": 4.0824
+    },
+    "aggregate": {
+      "count": 100,
+      "avg": 5.213152,
+      "p95": 6.7309,
+      "max": 10.7556
+    },
+    "ledger_hash": {
+      "count": 100,
+      "avg": 3.417764,
+      "p95": 3.8357,
+      "max": 4.5029
+    },
+    "ledger_validate": {
+      "count": 100,
+      "avg": 2.219272,
+      "p95": 2.5868,
+      "max": 2.9134
+    },
+    "pod_hash": {
+      "count": 100,
+      "avg": 4.032478,
+      "p95": 4.2514,
+      "max": 5.0993
+    },
+    "research_scratch_clear": {
+      "count": 99,
+      "avg": 0.00013535353535353535,
+      "p95": 0.0002,
+      "max": 0.0005
+    },
+    "audit_population": {
+      "count": 4,
+      "avg": 0.000825,
+      "p95": 0.0008,
+      "max": 0.0013
+    },
+    "audit_market": {
+      "count": 4,
+      "avg": 4.831275000000001,
+      "p95": 5.223400000000001,
+      "max": 5.3706000000000005
+    },
+    "audit_transit": {
+      "count": 4,
+      "avg": 0.00025,
+      "p95": 0.0003,
+      "max": 0.0003
+    },
+    "audit_escrow": {
+      "count": 4,
+      "avg": 0.000375,
+      "p95": 0.0004,
+      "max": 0.0005
+    },
+    "audit_country": {
+      "count": 4,
+      "avg": 0.003325,
+      "p95": 0.0037,
+      "max": 0.0052
+    }
+  },
+  "limitations": [
+    "Long intervals do not identify their cause.",
+    "New-game probes are a different state.",
+    "Nested probes overlap.",
+    "Headless benchmark failed row-count and throughput acceptance."
+  ]
+}

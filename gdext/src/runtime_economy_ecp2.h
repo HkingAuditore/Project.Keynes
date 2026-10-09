@@ -12,8 +12,8 @@ namespace pk {
 class NativeEconomyRuntime;
 
 constexpr uint32_t RUNTIME_ECONOMY_ECP2_MARKER = 0x32504345u; // "ECP2"
-constexpr uint32_t RUNTIME_ECONOMY_ECP2_ABI_VERSION = 2u;
-constexpr int32_t RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION = 53;
+constexpr uint32_t RUNTIME_ECONOMY_ECP2_ABI_VERSION = 3u;
+constexpr int32_t RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION = 54;
 
 enum EconomyEcp2Domain : uint32_t {
     ECP2_DOMAIN_ENVELOPE = 1u << 0,
@@ -54,6 +54,7 @@ constexpr uint32_t ECP2_CAPTURE_INCLUDE_RESUME = 2u;
 constexpr uint32_t ECP2_CAPTURE_ROLLBACK_BACKUP = 4u;
 
 struct RuntimeEconomyEcp2Envelope {
+    uint32_t hash_version = runtime_chunk_hash_enabled() ? 2u : 1u;
     int32_t schema_version = RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION;
     uint32_t abi_version = RUNTIME_ECONOMY_ECP2_ABI_VERSION;
     int32_t cell_count = 0;

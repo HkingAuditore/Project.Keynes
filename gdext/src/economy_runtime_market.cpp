@@ -1,4 +1,5 @@
 #include "economy_runtime.h"
+#include "economy_cost_probe.h"
 #include "country_runtime.h"
 
 #include <algorithm>
@@ -54,7 +55,7 @@ int64_t household_threshold_activation_q16(
 
 int64_t NativeEconomyRuntime::variant_unit_price(int32_t market, int32_t variant_id,
                                                   int64_t &sat) const {
-    if (market < 0 || market >= market_store().market_count || variant_id < 0 ||
+    if (market < 0 || market >= market_store().market_count.get() || variant_id < 0 ||
         variant_id >= static_cast<int32_t>(_variants.size())) return 1;
     const VariantChoice &variant = _variants[variant_id];
     GoodsBill bill;
@@ -207,19 +208,42 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
         int32_t slot, int32_t market, const EnvironmentSample &sample,
         const std::vector<int32_t> *price_override, int64_t funds_override,
         std::vector<int64_t> &good_per_capita_daily, int64_t &sat) const {
-    good_per_capita_daily.assign(market_store().good_count, 0);
+    EconomyCostProbe cost("cohort_demand_preview", _current_day, 1);
+    const int64_t preview_saturation_before = sat;
+    good_per_capita_daily.assign(market_store().good_count.get(), 0);
     if (slot < 0 || slot >= static_cast<int32_t>(population_store().active.size()) ||
-        population_store().active[slot] == 0 || market < 0 || market >= market_store().market_count)
+        population_store().active[slot] == 0 || market < 0 || market >= market_store().market_count.get())
         return;
     const uint32_t signature_id = population_store().signature_id[slot];
     if (signature_id >= _signatures.size()) return;
-    std::vector<int64_t> variant_scores(_variants.size(), 0);
-    std::vector<int64_t> need_score_sums(_needs.size(), 0);
-    std::vector<int64_t> need_composites(_needs.size(), 0);
-    std::vector<int64_t> need_environment(_needs.size(), Q16_ONE);
+    LivingCostMemoState::PreviewBasis local_basis;
+    const LivingCostMemoState::PreviewBasis *basis = nullptr;
     const int32_t country = _epoch_active && market >= 0 &&
             market < static_cast<int32_t>(_epoch_cell_country.size())
         ? _epoch_cell_country[market] : -1;
+    auto &memo = living_cost_memo_state();
+    const bool memo_active = memo.depth > 0 && memo.owner == this && price_override == nullptr;
+    const std::array<int32_t, 9> memo_key{market, country,
+        sample.temperature_q16, sample.temperature_30d_q16, sample.moisture_q16,
+        sample.plant_available_water_q16, sample.snow_q16, sample.weather_q16,
+        sample.ready ? 1 : 0};
+    const auto cached = memo.previews.find(memo_key);
+    const bool preview_cache_hit = memo_active && cached != memo.previews.end();
+    if (preview_cache_hit) {
+        basis = &cached->second;
+        sat += cached->second.saturations;
+        EconomyCostProbe::record("demand_preview.memo_hit", _current_day, 0.0, 1);
+    } else {
+    EconomyCostProbe::record("demand_preview.memo_miss", _current_day, 0.0, 1);
+    auto &variant_scores = local_basis.scores;
+    auto &need_score_sums = local_basis.sums;
+    auto &need_composites = local_basis.composites;
+    auto &need_environment = local_basis.environment;
+    variant_scores.assign(_variants.size(), 0);
+    need_score_sums.assign(_needs.size(), 0);
+    need_composites.assign(_needs.size(), 0);
+    need_environment.assign(_needs.size(), Q16_ONE);
+    const int64_t saturation_before = sat;
     for (int32_t need_index = 0; need_index < static_cast<int32_t>(_needs.size()); ++need_index) {
         const Need &need = _needs[need_index];
         int64_t score_sum = 0;
@@ -277,6 +301,15 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
                 need.price_quantity_elasticity_q16, sat),
                 need.price_quantity_floor_q16, Q16_ONE * 2) : 0;
     }
+    if (memo_active) {
+        local_basis.saturations = sat - saturation_before;
+        basis = &memo.previews.emplace(memo_key, std::move(local_basis)).first->second;
+    } else basis = &local_basis;
+    }
+    const auto &variant_scores = basis->scores;
+    const auto &need_score_sums = basis->sums;
+    const auto &need_composites = basis->composites;
+    const auto &need_environment = basis->environment;
     const Plan &plan = _plans[_signatures[signature_id].plan_id];
     const int64_t population = std::max<int64_t>(1, population_store().population[slot]);
     const int64_t wealth_pc = std::max<int64_t>(0, funds_override) / population;
@@ -291,7 +324,7 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
     const int64_t savings_months_q16 = basic_living_cost > 0
         ? mul_div_sat(wealth_pc, Q16_ONE,
             saturating_mul(basic_living_cost, 30, sat), sat) : 0;
-    std::vector<int64_t> totals(market_store().good_count, 0);
+    std::vector<int64_t> totals(market_store().good_count.get(), 0);
     for (int32_t n = 0; n < plan.need_count; ++n) {
         const int32_t need_index = plan.need_begin + n;
         const Need &need = _needs[need_index];
@@ -341,8 +374,25 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
             }
         }
     }
-    for (int32_t good = 0; good < market_store().good_count; ++good)
+    for (int32_t good = 0; good < market_store().good_count.get(); ++good)
         good_per_capita_daily[good] = totals[good] / population;
+    // Validate the complete actor-specific result, including saturation events,
+    // against a fresh basis. This diagnostic does not change production cadence.
+    const char *verify = std::getenv("PK_ECONOMY_MEMO_VERIFY");
+    if (preview_cache_hit && verify && std::strcmp(verify, "1") == 0) {
+        const auto *previous_owner = memo.owner;
+        memo.owner = nullptr;
+        std::vector<int64_t> reference;
+        int64_t reference_sat = preview_saturation_before;
+        compute_cohort_demand_preview(slot, market, sample, price_override,
+            funds_override, reference, reference_sat);
+        memo.owner = previous_owner;
+        if (reference != good_per_capita_daily || reference_sat != sat) {
+            std::fprintf(stderr, "economy_preview_memo_mismatch day=%lld slot=%d market=%d\n",
+                static_cast<long long>(_current_day), slot, market);
+            std::abort();
+        }
+    }
 }
 
 int64_t NativeEconomyRuntime::survival_required_units(
@@ -463,11 +513,11 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     thread_local uint32_t local_lookup_generation = 0;
     int64_t &sat = result.saturation_count;
     bool population_changed = false;
-    if (market < 0 || market >= market_store().market_count) {
+    if (market < 0 || market >= market_store().market_count.get()) {
         error = "household_market_out_of_range";
         return false;
     }
-    if (_market_cell_offsets.size() != static_cast<size_t>(market_store().market_count + 1)) {
+    if (_market_cell_offsets.size() != static_cast<size_t>(market_store().market_count.get() + 1)) {
         error = "market_cell_range_missing";
         return false;
     }
@@ -535,7 +585,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     cohort_rescale_sat_q16.assign(cohort_count, Q16_ONE);
     food_family_filled.fill(0);
     food_family_desired.fill(0);
-    result.retained_consumed_by_good.assign(market_store().good_count, 0);
+    result.retained_consumed_by_good.assign(market_store().good_count.get(), 0);
     auto food_equivalent = [&](int32_t good, int64_t quantity) -> int64_t {
         if (good < 0 || good >= static_cast<int32_t>(
                 _good_food_equivalent_q16.size()) || quantity <= 0) return 0;
@@ -555,13 +605,13 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     cohort_working_capital_reserve.assign(cohort_count, 0);
     cohort_wealth_ratio_q16.assign(cohort_count, 0);
     cohort_savings_months_q16.assign(cohort_count, 0);
-    production_input_floor.assign(market_store().good_count, 0);
-    good_demand.assign(market_store().good_count, 0);
-    good_desired_demand.assign(market_store().good_count, 0);
-    good_sales.assign(market_store().good_count, 0);
-    good_stock_shortfall.assign(market_store().good_count, 0);
-    opening_stock.resize(market_store().good_count);
-    for (int32_t good = 0; good < market_store().good_count; ++good) {
+    production_input_floor.assign(market_store().good_count.get(), 0);
+    good_demand.assign(market_store().good_count.get(), 0);
+    good_desired_demand.assign(market_store().good_count.get(), 0);
+    good_sales.assign(market_store().good_count.get(), 0);
+    good_stock_shortfall.assign(market_store().good_count.get(), 0);
+    opening_stock.resize(market_store().good_count.get());
+    for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
         opening_stock[good] = market_store().stock[market_store().index(market, good)];
     }
     for (int32_t k = _market_cell_offsets[market];
@@ -594,10 +644,10 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             trace_satisfaction_before[local] = population_store().needs_satisfaction[slot];
             trace_worst_need_before[local] = population_store().worst_need_id[slot];
         }
-        trace_price_before.resize(market_store().good_count);
-        trace_demand_ema_before.resize(market_store().good_count);
-        trace_shortage_before.resize(market_store().good_count);
-        for (int32_t good = 0; good < market_store().good_count; ++good) {
+        trace_price_before.resize(market_store().good_count.get());
+        trace_demand_ema_before.resize(market_store().good_count.get());
+        trace_shortage_before.resize(market_store().good_count.get());
+        for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
             const int64_t idx = market_store().index(market, good);
             trace_price_before[good] = market_store().price[idx];
             trace_demand_ema_before[good] = market_store().demand_ema[idx];
@@ -1114,7 +1164,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     auto record_in_kind_value = [&](int32_t owner_slot, int32_t good_id,
                                     int32_t building_group, int64_t quantity) {
         if (quantity <= 0 || owner_slot < 0 || good_id < 0 ||
-            good_id >= market_store().good_count ||
+            good_id >= market_store().good_count.get() ||
             owner_slot >= static_cast<int32_t>(population_store().active.size()) ||
             population_store().active[owner_slot] == 0) return;
         const int32_t page = owner_slot / COHORT_PAGE_SIZE;
@@ -1122,11 +1172,11 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         const int32_t cell = population_store().page_cell[page];
         if (cell < 0 || cell >= static_cast<int32_t>(market_store().cell_to_market.size())) return;
         const int32_t market = market_store().cell_to_market[cell];
-        if (market < 0 || market >= market_store().market_count) return;
+        if (market < 0 || market >= market_store().market_count.get()) return;
         const int64_t price = market_store().price[market_store().index(market, good_id)];
         const int64_t value = mul_div_sat(quantity, price, GOODS_SCALE, sat);
-        population_store().epoch_in_kind_income[owner_slot] = saturating_add(
-            population_store().epoch_in_kind_income[owner_slot], value, sat);
+        population_store().epoch_in_kind_income.write_scalar(owner_slot, saturating_add(
+            population_store().epoch_in_kind_income[owner_slot], value, sat), market_mutation_sink());
         if (building_group >= 0) {
             result.building_in_kind_credits.push_back({building_group, value});
         }
@@ -1389,8 +1439,8 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                             bool count_physical_shortage) -> bool {
         billing_local = -1;
         settlement_bill_count = 0;
-        good_counts.assign(market_store().good_count, 0);
-        pass_demand.assign(market_store().good_count, 0);
+        good_counts.assign(market_store().good_count.get(), 0);
+        pass_demand.assign(market_store().good_count.get(), 0);
         for (const BundleOrder &order : orders) {
             const VariantChoice &variant = _variants[order.variant_index];
             for (int32_t c = 0; c < variant.component_count; ++c) {
@@ -1414,7 +1464,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             }
         }
         if (count_physical_shortage) {
-            for (int32_t good = 0; good < market_store().good_count; ++good) {
+            for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
                 const int64_t idx = market_store().index(market, good);
                 const int64_t available = std::max<int64_t>(0,
                     market_store().stock[idx] - production_input_floor[good]);
@@ -1424,7 +1474,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             }
         }
         bool abundant = true;
-        for (int32_t good = 0; good < market_store().good_count; ++good) {
+        for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
             abundant &= std::max<int64_t>(0,
                 market_store().stock[market_store().index(market, good)] -
                     production_input_floor[good]) >= pass_demand[good];
@@ -1437,10 +1487,10 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 need_states[order.need_index].filled_units = saturating_add(
                     need_states[order.need_index].filled_units, order.filled_units, sat);
             }
-            for (int32_t good = 0; good < market_store().good_count; ++good) {
+            for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
                 const int64_t idx = market_store().index(market, good);
                 audit_touch_market_lane(static_cast<size_t>(idx));
-                market_store().stock[idx] -= pass_demand[good];
+                market_store().stock.write_scalar(idx, market_store().stock[idx] - (pass_demand[good]), market_mutation_sink());
                 good_sales[good] = saturating_add(good_sales[good], pass_demand[good], sat);
                 result.consumed_goods = saturating_add(result.consumed_goods,
                                                        pass_demand[good], sat);
@@ -1451,9 +1501,9 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             }
             return true;
         }
-        good_offsets.assign(market_store().good_count + 1, 0);
-        good_cursor.assign(market_store().good_count, 0);
-        for (int32_t good = 0; good < market_store().good_count; ++good) {
+        good_offsets.assign(market_store().good_count.get() + 1, 0);
+        good_cursor.assign(market_store().good_count.get(), 0);
+        for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
             good_offsets[good + 1] = good_offsets[good] + good_counts[good];
             good_cursor[good] = good_offsets[good];
         }
@@ -1473,7 +1523,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                     {o, required, adjusted_qty_per_need};
             }
         }
-        for (int32_t good = 0; good < market_store().good_count; ++good) {
+        for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
             int64_t total = 0;
             for (int32_t k = good_offsets[good]; k < good_offsets[good + 1]; ++k) {
                 total = saturating_add(total, component_refs[k].required_qty, sat);
@@ -1496,7 +1546,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                     orders[ref.order].filled_units, bundle_capacity);
             }
         }
-        pass_sales.assign(market_store().good_count, 0);
+        pass_sales.assign(market_store().good_count.get(), 0);
         for (BundleOrder &order : orders) {
             if (order.filled_units <= 0) continue;
             const VariantChoice &variant = _variants[order.variant_index];
@@ -1511,11 +1561,11 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             need_states[order.need_index].filled_units = saturating_add(
                 need_states[order.need_index].filled_units, order.filled_units, sat);
         }
-        for (int32_t good = 0; good < market_store().good_count; ++good) {
+        for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
             const int64_t idx = market_store().index(market, good);
             const int64_t used = std::min(pass_sales[good], market_store().stock[idx]);
             audit_touch_market_lane(static_cast<size_t>(idx));
-            market_store().stock[idx] -= used;
+            market_store().stock.write_scalar(idx, market_store().stock[idx] - (used), market_mutation_sink());
             good_sales[good] = saturating_add(good_sales[good], used, sat);
             result.consumed_goods = saturating_add(result.consumed_goods, used, sat);
             if (good < static_cast<int32_t>(_good_storage_modes.size()) &&
@@ -1618,8 +1668,8 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                     const int32_t cell = population_store().page_cell[page];
                     if (cell >= 0 && cell < static_cast<int32_t>(market_store().cell_to_market.size())) {
                         const int32_t market = market_store().cell_to_market[cell];
-                        if (market >= 0 && market < market_store().market_count &&
-                            entry->good_id >= 0 && entry->good_id < market_store().good_count) {
+                        if (market >= 0 && market < market_store().market_count.get() &&
+                            entry->good_id >= 0 && entry->good_id < market_store().good_count.get()) {
                             const int64_t issue_value =
                                 _good_monetary_issue_values[entry->good_id];
                             const int64_t market_price = market_store().price[
@@ -1635,29 +1685,29 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                             const int64_t stock_index = market_store().index(
                                 market, entry->good_id);
                             audit_touch_market_lane(static_cast<size_t>(stock_index));
-                            market_store().stock[stock_index] = saturating_add(
-                                market_store().stock[stock_index], entry->quantity, sat);
+                            market_store().stock.write_scalar(stock_index, saturating_add(
+                                market_store().stock[stock_index], entry->quantity, sat), market_mutation_sink());
                             touch_accounting_slot(entry->owner_slot);
-                            population_store().funds[entry->owner_slot] = saturating_add(
+                            population_store().funds.write_scalar(entry->owner_slot, saturating_add(
                                 population_store().funds[entry->owner_slot],
-                                support_paid, sat);
-                            population_store().epoch_income[entry->owner_slot] = saturating_add(
+                                support_paid, sat), market_mutation_sink());
+                            population_store().epoch_income.write_scalar(entry->owner_slot, saturating_add(
                                 population_store().epoch_income[entry->owner_slot],
-                                support_paid, sat);
+                                support_paid, sat), market_mutation_sink());
                             trace_record_cashflow(cell,
                                 population_store().handle_for_slot(entry->owner_slot),
                                 CASHFLOW_PRODUCER_SUPPORT, support_paid, 0);
                             if (entry->building_group >= 0 &&
                                 entry->building_group < static_cast<int32_t>(building_count())) {
-                                buildings_store().last_producer_support_receipt[
-                                    entry->building_group] = saturating_add(
+                                buildings_store().last_producer_support_receipt.write_scalar(
+                                    entry->building_group, saturating_add(
                                     buildings_store().last_producer_support_receipt[
-                                        entry->building_group], support_paid, sat);
+                                        entry->building_group], support_paid, sat));
                                 if (issue_value > 0)
-                                    buildings_store().last_bullion_mint_receipt[
-                                        entry->building_group] = saturating_add(
+                                    buildings_store().last_bullion_mint_receipt.write_scalar(
+                                        entry->building_group, saturating_add(
                                         buildings_store().last_bullion_mint_receipt[
-                                            entry->building_group], support_paid, sat);
+                                            entry->building_group], support_paid, sat));
                             }
                             _production_output_supported = saturating_add(
                                 _production_output_supported, entry->quantity, sat);
@@ -1674,8 +1724,8 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                                     _bullion_money_issued, support_paid, sat);
                                 _bullion_stock_consumed = saturating_add(
                                     _bullion_stock_consumed, entry->quantity, sat);
-                                market_store().stock[stock_index] = saturating_sub(
-                                    market_store().stock[stock_index], entry->quantity, sat);
+                                market_store().stock.write_scalar(stock_index, saturating_sub(
+                                    market_store().stock[stock_index], entry->quantity, sat), market_mutation_sink());
                                 if (_good_ids[entry->good_id] == "gold") {
                                     _gold_accepted = saturating_add(
                                         _gold_accepted, entry->quantity, sat);
@@ -1700,9 +1750,9 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                     result.retained_output_discarded, entry->quantity, sat);
                 if (entry->quantity > 0 && entry->building_group >= 0 &&
                     entry->building_group < static_cast<int32_t>(building_count())) {
-                    buildings_store().last_discarded[entry->building_group] = saturating_add(
+                    buildings_store().last_discarded.write_scalar(entry->building_group, saturating_add(
                         buildings_store().last_discarded[entry->building_group],
-                        entry->quantity, sat);
+                        entry->quantity, sat));
                 }
             }
             entry->quantity = 0;
@@ -1742,12 +1792,12 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             : quoted_spend;
         const int64_t cash_outlay = std::max<int64_t>(0, spend);
         const int64_t cash_income = std::max<int64_t>(0, -spend);
-        population_store().funds[slot] = saturating_add(
-            population_store().funds[slot] - cash_outlay, cash_income, sat);
-        population_store().epoch_expense[slot] = saturating_add(
-            population_store().epoch_expense[slot], cash_outlay, sat);
-        population_store().epoch_income[slot] = saturating_add(
-            population_store().epoch_income[slot], cash_income, sat);
+        population_store().funds.write_scalar(slot, saturating_add(
+            population_store().funds[slot] - cash_outlay, cash_income, sat), market_mutation_sink());
+        population_store().epoch_expense.write_scalar(slot, saturating_add(
+            population_store().epoch_expense[slot], cash_outlay, sat), market_mutation_sink());
+        population_store().epoch_income.write_scalar(slot, saturating_add(
+            population_store().epoch_income[slot], cash_income, sat), market_mutation_sink());
         const int64_t subsidy = cohort_consumption_subsidy[local];
         record_cohort_fiscal(slot, cohort_consumption_tax[local]);
         record_cohort_fiscal(slot, -subsidy);
@@ -1822,10 +1872,10 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             }
         }
         const int64_t net_share = saturating_sub(share, income_tax, sat);
-        population_store().funds[slot] = saturating_add(
-            population_store().funds[slot], net_share, sat);
-        population_store().epoch_income[slot] = saturating_add(
-            population_store().epoch_income[slot], share, sat);
+        population_store().funds.write_scalar(slot, saturating_add(
+            population_store().funds[slot], net_share, sat), market_mutation_sink());
+        population_store().epoch_income.write_scalar(slot, saturating_add(
+            population_store().epoch_income[slot], share, sat), market_mutation_sink());
         if (trace_detail && share > 0) {
             result.cashflows.push_back({population_store().handle_for_slot(slot),
                 CASHFLOW_MERCHANT_HOUSEHOLD, share, 0});
@@ -2037,24 +2087,24 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         const int64_t cold_clothing_ceiling_q16 = Q16_ONE - mul_div_sat(
             cold_exposure_q16, clothing_deficit_q16, Q16_ONE, sat);
         const int64_t survival_q16 = std::min(food_q16, cold_clothing_ceiling_q16);
-        population_store().needs_satisfaction[slot] = static_cast<uint16_t>(survival_q16);
-        population_store().worst_need_id[slot] = cohort_worst_need[local];
+        population_store().needs_satisfaction.write_scalar(slot, static_cast<uint16_t>(survival_q16), market_mutation_sink());
+        population_store().worst_need_id.write_scalar(slot, cohort_worst_need[local], market_mutation_sink());
         const int64_t net_income = saturating_sub(population_store().epoch_income[slot],
                                                   population_store().epoch_expense[slot], sat);
         const int64_t daily_net_income = net_income / std::max(1, _epoch_days);
         const int64_t income_alpha_q16 = std::min<int64_t>(
             Q16_ONE, static_cast<int64_t>(_epoch_days) * (Q16_ONE / 8));
-        population_store().income_ema[slot] = saturating_add(
+        population_store().income_ema.write_scalar(slot, saturating_add(
             mul_div_sat(population_store().income_ema[slot], Q16_ONE - income_alpha_q16,
                         Q16_ONE, sat),
-            mul_div_sat(daily_net_income, income_alpha_q16, Q16_ONE, sat), sat);
+            mul_div_sat(daily_net_income, income_alpha_q16, Q16_ONE, sat), sat), market_mutation_sink());
         const int64_t baseline_alpha_q16 = std::min<int64_t>(
             Q16_ONE, static_cast<int64_t>(_epoch_days) *
                 _satisfaction_income_baseline_alpha_q16);
-        population_store().income_baseline_ema[slot] = saturating_add(
+        population_store().income_baseline_ema.write_scalar(slot, saturating_add(
             mul_div_sat(population_store().income_baseline_ema[slot],
                         Q16_ONE - baseline_alpha_q16, Q16_ONE, sat),
-            mul_div_sat(daily_net_income, baseline_alpha_q16, Q16_ONE, sat), sat);
+            mul_div_sat(daily_net_income, baseline_alpha_q16, Q16_ONE, sat), sat), market_mutation_sink());
 
         const uint32_t signature_id = population_store().signature_id[slot];
         const Signature &signature = _signatures[signature_id];
@@ -2210,15 +2260,15 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         const int64_t market_survivor_floor = remaining_market_population <= population_before ? 1 : 0;
         deaths = std::clamp<int64_t>(deaths, 0,
             std::max<int64_t>(0, population_before - market_survivor_floor));
-        population_store().demography_residual[slot] = deaths >= population_before
-            ? 0 : death_numerator_q32 % Q32_ONE;
+        population_store().demography_residual.write_scalar(slot, deaths >= population_before
+            ? 0 : death_numerator_q32 % Q32_ONE, market_mutation_sink());
         if (deaths > 0) {
             if (_person_runtime_mode == 2 &&
                 _person_cohort_offsets.size() == population_store().active.size() + 1 &&
                 _person_cohort_offsets[slot] < _person_cohort_offsets[slot + 1])
                 result.person_demography.push_back({
                     population_store().handle_for_slot(slot), population_before, deaths});
-            population_store().population[slot] -= deaths;
+            population_store().population.write_scalar(slot, population_store().population[slot] - (deaths), market_mutation_sink());
             population_changed = true;
             remaining_market_population -= deaths;
             result.deaths = saturating_add(result.deaths, deaths, sat);
@@ -2265,15 +2315,15 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     // Sparse ceiling attribution is exceptional-path work near the numeric
     // guard only; ordinary prices skip it (no authored economic cap).
     bool observe_ceiling = !market_store().price_ceilings[market].empty();
-    for (int32_t good = 0; good < market_store().good_count && !observe_ceiling; ++good)
+    for (int32_t good = 0; good < market_store().good_count.get() && !observe_ceiling; ++good)
         observe_ceiling = int64_t(market_store().price[market_store().index(market, good)]) * 5 >=
                           int64_t(PRICE_NUMERIC_GUARD_MAX) * 4;
     thread_local std::vector<int64_t> ceiling_requested, ceiling_unfilled, primary_unfilled;
     if (observe_ceiling) {
-        ceiling_requested.assign(market_store().good_count, 0);
-        ceiling_unfilled.assign(market_store().good_count, 0);
+        ceiling_requested.assign(market_store().good_count.get(), 0);
+        ceiling_unfilled.assign(market_store().good_count.get(), 0);
         primary_unfilled.assign(need_states.size(), 0);
-        result.price_ceiling_observations.reserve(market_store().good_count);
+        result.price_ceiling_observations.reserve(market_store().good_count.get());
         for (const auto &order : primary_orders)
             primary_unfilled[order.need_index] = saturating_add(primary_unfilled[order.need_index],
                 std::max<int64_t>(0, order.funded_units - order.filled_units), sat);
@@ -2308,7 +2358,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     }
     size_t ceiling_cursor = 0;
     const auto price_start = Clock::now();
-    for (int32_t good = 0; good < market_store().good_count; ++good) {
+    for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
         const int64_t idx = market_store().index(market, good);
         const int64_t old_ema = market_store().demand_ema[idx];
         const int32_t signal_index = market_signal_index(market, good);
@@ -2329,7 +2379,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         const int64_t ema = saturating_add(
             mul_div_sat(old_ema, Q16_ONE - alpha, Q16_ONE, sat),
             mul_div_sat(daily_demand, alpha, Q16_ONE, sat), sat);
-        market_store().demand_ema[idx] = ema;
+        market_store().demand_ema.write_scalar(idx, ema, market_mutation_sink());
         if (signal_index >= 0) {
             const int64_t nonhousehold = signal_index < static_cast<int32_t>(
                     _epoch_nonhousehold_withdrawals.size())
@@ -2351,8 +2401,8 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         const int64_t shortage = shortage_demand <= 0 ? 0 : std::clamp<int64_t>(
             mul_div_sat(good_stock_shortfall[good], Q16_ONE, shortage_demand, sat),
             0, Q16_ONE);
-        market_store().last_shortage_q16[idx] = static_cast<uint16_t>(
-            std::min<int64_t>(Q16_ONE - 1, shortage));
+        market_store().last_shortage_q16.write_scalar(idx, static_cast<uint16_t>(
+            std::min<int64_t>(Q16_ONE - 1, shortage)), market_mutation_sink());
         const PricePressure pressure = price_pressure(
             market, good, ema, market_store().stock[idx], shortage, signal_index, sat);
         if (pressure.glut_cost_damped) ++result.price_glut_cost_damp_hits;
@@ -2398,7 +2448,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             ++result.price_cap_hits;
         }
         if (market_store().price[idx] != bounded) ++result.changed_prices;
-        market_store().price[idx] = static_cast<int32_t>(bounded);
+        market_store().price.write_scalar(idx, static_cast<int32_t>(bounded), market_mutation_sink());
         const int32_t flow_index = trade_flow_index(market, good, false);
         if (_good_trade_enabled[good] != 0 && _good_storage_modes[good] == 0 &&
             (market_store().stock[idx] > 0 || ema > 0 || shortage > 0 || signal_index >= 0 ||
@@ -2432,9 +2482,9 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             compute_cohort_demand_preview(slot, market, attribution_environment,
                 nullptr, population_store().funds[slot], current, sat);
             entry.previous_demand_per_capita_daily = previous;
-            entry.wealth_demand_delta_per_capita_daily.resize(market_store().good_count, 0);
-            entry.price_demand_delta_per_capita_daily.resize(market_store().good_count, 0);
-            for (int32_t good = 0; good < market_store().good_count; ++good) {
+            entry.wealth_demand_delta_per_capita_daily.resize(market_store().good_count.get(), 0);
+            entry.price_demand_delta_per_capita_daily.resize(market_store().good_count.get(), 0);
+            for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
                 entry.wealth_demand_delta_per_capita_daily[good] =
                     wealth_only[good] - previous[good];
                 entry.price_demand_delta_per_capita_daily[good] =
@@ -2462,7 +2512,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             add_leg(FIELD_COHORT_WORST_NEED, SUBJECT_COHORT, handle, -1,
                     trace_worst_need_before[local], population_store().worst_need_id[slot]);
         }
-        for (int32_t good = 0; good < market_store().good_count; ++good) {
+        for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
             const int64_t idx = market_store().index(market, good);
             add_leg(FIELD_MARKET_STOCK, SUBJECT_MARKET, market, good,
                     opening_stock[good], market_store().stock[idx]);
@@ -2491,7 +2541,7 @@ void NativeEconomyRuntime::finalize_market_result(int32_t market, MarketResult &
         result.closing_cohort_funds = saturating_add(result.closing_cohort_funds, summary.funds,
                                                      result.saturation_count);
     }
-    for (int32_t good = 0; good < market_store().good_count; ++good) {
+    for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
         result.closing_goods_stock = saturating_add(
             result.closing_goods_stock, market_store().stock[market_store().index(market, good)],
             result.saturation_count);

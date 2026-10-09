@@ -1,0 +1,19 @@
+[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/ui/components/gauge_bar.gd" id="1_script"]
+[node name="GaugeBar" type="Control"]
+custom_minimum_size = Vector2(160, 54)
+script = ExtResource("1_script")
+[node name="Top" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 22.0
+grow_horizontal = 2
+[node name="TitleLabel" type="Label" parent="Top"]
+layout_mode = 2
+theme_type_variation = &"PKMutedLabel"
+[node name="Spacer" type="Control" parent="Top"]
+layout_mode = 2
+size_flags_horizontal = 3
+[node name="ValueLabel" type="Label" parent="Top"]
+layout_mode = 2

@@ -1,0 +1,443 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/tools/technology_authoring/technology_authoring_editor.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/tools/technology_authoring/technology_authoring_canvas.gd" id="2"]
+
+[node name="TechnologyAuthoringEditor" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1")
+
+[node name="Root" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Toolbar" type="PanelContainer" parent="Root"]
+layout_mode = 2
+
+[node name="ToolbarScroll" type="ScrollContainer" parent="Root/Toolbar"]
+layout_mode = 2
+horizontal_scroll_mode = 1
+vertical_scroll_mode = 0
+
+[node name="ToolbarRow" type="HBoxContainer" parent="Root/Toolbar/ToolbarScroll"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="SaveButton" type="Button" parent="Root/Toolbar/ToolbarScroll/ToolbarRow"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Ctrl+S。存在错误级问题时禁用。"
+text = "保存"
+
+[node name="DraftSaveButton" type="Button" parent="Root/Toolbar/ToolbarScroll/ToolbarRow"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Ctrl+Shift+S。错误尚未修完时保留进度；写出的文件无法通过 CLI 闸门。"
+text = "保存草稿"
+
+[node name="ValidateButton" type="Button" parent="Root/Toolbar/ToolbarScroll/ToolbarRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "校验"
+
+[node name="ReloadButton" type="Button" parent="Root/Toolbar/ToolbarScroll/ToolbarRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "重新载入"
+
+[node name="GateButton" type="Button" parent="Root/Toolbar/ToolbarScroll/ToolbarRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "跑 CLI 闸门"
+
+[node name="ReportButton" type="Button" parent="Root/Toolbar/ToolbarScroll/ToolbarRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "导出报告"
+
+[node name="Separator1" type="VSeparator" parent="Root/Toolbar/ToolbarScroll/ToolbarRow"]
+layout_mode = 2
+
+[node name="UndoButton" type="Button" parent="Root/Toolbar/ToolbarScroll/ToolbarRow"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+tooltip_text = "Ctrl+Z"
+text = "撤销"
+
+[node name="RedoButton" type="Button" parent="Root/Toolbar/ToolbarScroll/ToolbarRow"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+tooltip_text = "Ctrl+Shift+Z 或 Ctrl+Y"
+text = "重做"
+
+[node name="Separator2" type="VSeparator" parent="Root/Toolbar/ToolbarScroll/ToolbarRow"]
+layout_mode = 2
+
+[node name="GraphViewButton" type="Button" parent="Root/Toolbar/ToolbarScroll/ToolbarRow"]
+unique_name_in_owner = true
+layout_mode = 2
+toggle_mode = true
+button_pressed = true
+text = "图视图"
+
+[node name="TableViewButton" type="Button" parent="Root/Toolbar/ToolbarScroll/ToolbarRow"]
+unique_name_in_owner = true
+layout_mode = 2
+toggle_mode = true
+text = "表视图"
+
+[node name="Separator3" type="VSeparator" parent="Root/Toolbar/ToolbarScroll/ToolbarRow"]
+layout_mode = 2
+
+[node name="NewNodeButton" type="Button" parent="Root/Toolbar/ToolbarScroll/ToolbarRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "新建科技"
+
+[node name="RenameNodeButton" type="Button" parent="Root/Toolbar/ToolbarScroll/ToolbarRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "改 ID"
+
+[node name="DeleteNodeButton" type="Button" parent="Root/Toolbar/ToolbarScroll/ToolbarRow"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Delete。会先列出全部引用点；F 聚焦当前选中节点。"
+text = "删除科技"
+
+[node name="Separator4" type="VSeparator" parent="Root/Toolbar/ToolbarScroll/ToolbarRow"]
+layout_mode = 2
+
+[node name="EraEditorButton" type="Button" parent="Root/Toolbar/ToolbarScroll/ToolbarRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "时代与里程碑"
+
+[node name="MetaEditorButton" type="Button" parent="Root/Toolbar/ToolbarScroll/ToolbarRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "分支族与应用交汇"
+
+[node name="StatusLabel" type="Label" parent="Root/Toolbar/ToolbarScroll/ToolbarRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "尚未载入"
+clip_text = true
+
+[node name="Body" type="HSplitContainer" parent="Root"]
+layout_mode = 2
+size_flags_vertical = 3
+split_offset = 240
+
+[node name="LeftDock" type="VBoxContainer" parent="Root/Body"]
+custom_minimum_size = Vector2(180, 0)
+layout_mode = 2
+
+[node name="SearchField" type="LineEdit" parent="Root/Body/LeftDock"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "搜索 ID / 名称 / 效果 / stat / 解锁内容"
+clear_button_enabled = true
+
+[node name="EraFilter" type="OptionButton" parent="Root/Body/LeftDock"]
+unique_name_in_owner = true
+layout_mode = 2
+clip_text = true
+fit_to_longest_item = false
+
+[node name="DomainFilter" type="OptionButton" parent="Root/Body/LeftDock"]
+unique_name_in_owner = true
+layout_mode = 2
+clip_text = true
+fit_to_longest_item = false
+
+[node name="FamilyFilter" type="OptionButton" parent="Root/Body/LeftDock"]
+unique_name_in_owner = true
+layout_mode = 2
+clip_text = true
+fit_to_longest_item = false
+
+[node name="RoleFilter" type="OptionButton" parent="Root/Body/LeftDock"]
+unique_name_in_owner = true
+layout_mode = 2
+clip_text = true
+fit_to_longest_item = false
+
+[node name="ProblemOnlyToggle" type="CheckBox" parent="Root/Body/LeftDock"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "只看有问题的节点"
+
+[node name="EdgeKindLabel" type="Label" parent="Root/Body/LeftDock"]
+layout_mode = 2
+text = "连线类型"
+
+[node name="EdgeKindBox" type="VBoxContainer" parent="Root/Body/LeftDock"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="SelectionOnlyEdges" type="CheckBox" parent="Root/Body/LeftDock"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "只画与当前选中节点相连的边。节点很密时最快看清一条链路。"
+text = "只看选中节点的连线"
+
+[node name="OutlineLabel" type="Label" parent="Root/Body/LeftDock"]
+layout_mode = 2
+text = "大纲"
+
+[node name="OutlineTree" type="Tree" parent="Root/Body/LeftDock"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+allow_search = false
+hide_root = true
+
+[node name="WorkArea" type="HSplitContainer" parent="Root/Body"]
+layout_mode = 2
+size_flags_horizontal = 3
+split_offset = -360
+
+[node name="CenterSplit" type="VSplitContainer" parent="Root/Body/WorkArea"]
+custom_minimum_size = Vector2(260, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+split_offset = -160
+
+[node name="ViewHost" type="PanelContainer" parent="Root/Body/WorkArea/CenterSplit"]
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+size_flags_vertical = 3
+clip_contents = true
+
+[node name="GraphCanvas" type="Control" parent="Root/Body/WorkArea/CenterSplit/ViewHost"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 2
+script = ExtResource("2")
+
+[node name="TableTree" type="Tree" parent="Root/Body/WorkArea/CenterSplit/ViewHost"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+allow_search = false
+hide_root = true
+
+[node name="ProblemsPanel" type="VBoxContainer" parent="Root/Body/WorkArea/CenterSplit"]
+custom_minimum_size = Vector2(0, 120)
+layout_mode = 2
+
+[node name="ProblemsHeader" type="HBoxContainer" parent="Root/Body/WorkArea/CenterSplit/ProblemsPanel"]
+layout_mode = 2
+
+[node name="ProblemsLabel" type="Label" parent="Root/Body/WorkArea/CenterSplit/ProblemsPanel/ProblemsHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "问题"
+clip_text = true
+
+[node name="ProblemsCopyButton" type="Button" parent="Root/Body/WorkArea/CenterSplit/ProblemsPanel/ProblemsHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "复制全部"
+
+[node name="ProblemsTree" type="Tree" parent="Root/Body/WorkArea/CenterSplit/ProblemsPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+allow_search = false
+hide_root = true
+
+[node name="InspectorScroll" type="ScrollContainer" parent="Root/Body/WorkArea"]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+
+[node name="InspectorBox" type="VBoxContainer" parent="Root/Body/WorkArea/InspectorScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="MessageDialog" type="AcceptDialog" parent="."]
+unique_name_in_owner = true
+title = "信息"
+size = Vector2i(780, 540)
+
+[node name="MessageText" type="RichTextLabel" parent="MessageDialog"]
+unique_name_in_owner = true
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 772.0
+offset_bottom = 488.0
+bbcode_enabled = true
+selection_enabled = true
+
+[node name="ConfirmDialog" type="ConfirmationDialog" parent="."]
+unique_name_in_owner = true
+title = "确认"
+size = Vector2i(660, 480)
+ok_button_text = "确认"
+
+[node name="ConfirmText" type="RichTextLabel" parent="ConfirmDialog"]
+unique_name_in_owner = true
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 652.0
+offset_bottom = 420.0
+bbcode_enabled = true
+selection_enabled = true
+
+[node name="TextInputDialog" type="ConfirmationDialog" parent="."]
+unique_name_in_owner = true
+title = "输入"
+size = Vector2i(600, 260)
+ok_button_text = "确认"
+
+[node name="TextInputBox" type="VBoxContainer" parent="TextInputDialog"]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 592.0
+offset_bottom = 200.0
+
+[node name="PrimaryLabel" type="Label" parent="TextInputDialog/TextInputBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "值"
+
+[node name="PrimaryEdit" type="LineEdit" parent="TextInputDialog/TextInputBox"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="SecondaryLabel" type="Label" parent="TextInputDialog/TextInputBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "理由"
+
+[node name="SecondaryEdit" type="LineEdit" parent="TextInputDialog/TextInputBox"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="HintLabel" type="Label" parent="TextInputDialog/TextInputBox"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 2
+
+[node name="NewNodeDialog" type="ConfirmationDialog" parent="."]
+unique_name_in_owner = true
+title = "新建科技"
+size = Vector2i(600, 380)
+ok_button_text = "创建"
+
+[node name="NewNodeBox" type="VBoxContainer" parent="NewNodeDialog"]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 592.0
+offset_bottom = 320.0
+
+[node name="IdLabel" type="Label" parent="NewNodeDialog/NewNodeBox"]
+layout_mode = 2
+text = "稳定 ID（必须以 tech. 开头）"
+
+[node name="IdEdit" type="LineEdit" parent="NewNodeDialog/NewNodeBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "tech."
+
+[node name="NameLabel" type="Label" parent="NewNodeDialog/NewNodeBox"]
+layout_mode = 2
+text = "显示名称"
+
+[node name="NameEdit" type="LineEdit" parent="NewNodeDialog/NewNodeBox"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="EraLabel" type="Label" parent="NewNodeDialog/NewNodeBox"]
+layout_mode = 2
+text = "时代"
+
+[node name="EraOption" type="OptionButton" parent="NewNodeDialog/NewNodeBox"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="DomainLabel" type="Label" parent="NewNodeDialog/NewNodeBox"]
+layout_mode = 2
+text = "领域"
+
+[node name="DomainOption" type="OptionButton" parent="NewNodeDialog/NewNodeBox"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="FamilyLabel" type="Label" parent="NewNodeDialog/NewNodeBox"]
+layout_mode = 2
+text = "分支族"
+
+[node name="FamilyOption" type="OptionButton" parent="NewNodeDialog/NewNodeBox"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="NewNodeHint" type="Label" parent="NewNodeDialog/NewNodeBox"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 2
+text = "新节点会插入到当前选中节点之后，并预填全部校验必需字段。"
+
+[node name="MetaDialog" type="AcceptDialog" parent="."]
+unique_name_in_owner = true
+title = "元数据"
+size = Vector2i(960, 640)
+
+[node name="MetaBox" type="VBoxContainer" parent="MetaDialog"]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 952.0
+offset_bottom = 588.0
+
+[node name="MetaHint" type="Label" parent="MetaDialog/MetaBox"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 2
+
+[node name="MetaTree" type="Tree" parent="MetaDialog/MetaBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+allow_search = false
+hide_root = true
+
+[node name="PickerPopup" type="PopupPanel" parent="."]
+unique_name_in_owner = true
+size = Vector2i(560, 460)
+
+[node name="PickerBox" type="VBoxContainer" parent="PickerPopup"]
+layout_mode = 2
+
+[node name="PickerTitle" type="Label" parent="PickerPopup/PickerBox"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 2
+text = "选择"
+
+[node name="PickerQuery" type="LineEdit" parent="PickerPopup/PickerBox"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "输入以过滤"
+clear_button_enabled = true
+
+[node name="PickerList" type="ItemList" parent="PickerPopup/PickerBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3

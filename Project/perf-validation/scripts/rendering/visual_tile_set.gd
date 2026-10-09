@@ -1,0 +1,193 @@
+class_name VisualTileSet
+extends RefCounted
+
+const VisualTileLayoutScript = preload("res://scripts/rendering/visual_tile_layout.gd")
+
+# [terrain-gi 2026-07-31 / height-flow-pack 2026-08-06]
+# height 为 RGBA8（RG=16-bit visual elev，B=天然河流 SDF，A=运河 SDF）。
+# 合计 23 bytes/texel——visual_tile_layout.BYTES_PER_PHYSICAL_TEXEL 必须同步。
+const FIELD_FORMATS := {
+	"height": Image.FORMAT_RGBA8,
+	"terrain_normal": Image.FORMAT_RG8,
+	"map_index": Image.FORMAT_RGBA8,
+	# 这里是 **载荷** 格式（C++ bake 产出的 stride），不一定等于最终纹理格式：
+	# Compatibility 下单通道纹理要加宽，见 _texture_format()。
+	"water_depth": Image.FORMAT_R8,
+	"terrain_detail": Image.FORMAT_R8,
+	"edge_neighbor": Image.FORMAT_RG8,
+	"edge_distance": Image.FORMAT_R8,
+	"horizon": Image.FORMAT_RGBA8,
+	"gi_occluder": Image.FORMAT_RGBA8,
+}
+
+# 由异步 compute 而非静态 bundle 填充的字段。upload_layer_bundle 必须跳过它们，
+# 否则未就绪的中性层会被静态 bundle 覆盖成垃圾。
+const COMPUTE_FIELDS := ["horizon", "gi_occluder"]
+
+var layout
+var ready: bool = false
+var static_ready: bool = false
+var horizon_ready: bool = false
+var gi_occluder_ready: bool = false
+var fallback_reason: String = ""
+var bake_report: Dictionary = {}
+
+var height: Texture2DArray
+var terrain_normal: Texture2DArray
+var map_index: Texture2DArray
+var water_depth: Texture2DArray
+var terrain_detail: Texture2DArray
+var edge_neighbor: Texture2DArray
+var edge_distance: Texture2DArray
+var horizon: Texture2DArray
+var gi_occluder: Texture2DArray
+
+
+func initialize_empty(resolved_layout) -> bool:
+	layout = resolved_layout
+	if layout == null or layout.mode == VisualTileLayoutScript.MODE_LEGACY or layout.layer_count <= 0:
+		fallback_reason = "invalid_layout"
+		return false
+	for field_name in FIELD_FORMATS:
+		var texture := _create_empty_array(_texture_format(int(FIELD_FORMATS[field_name])))
+		if texture == null:
+			fallback_reason = "array_create_failed:%s" % field_name
+			clear()
+			return false
+		set(field_name, texture)
+	return true
+
+
+# [height-flow-pack] 兼容旧 DLL：若仍返回 height=N*2 + flow=N，在此拼成 RGBA8。
+# 新 DLL 直接产出 height=N*4，无 flow key。
+static func normalize_height_flow_bundle(bundle: Dictionary, layer_size: Vector2i) -> Dictionary:
+	if bundle == null or bundle.is_empty():
+		return bundle
+	var n: int = layer_size.x * layer_size.y
+	if n <= 0:
+		return bundle
+	var height: PackedByteArray = bundle.get("height", PackedByteArray())
+	var flow: PackedByteArray = bundle.get("flow", PackedByteArray())
+	if height.size() == n * 4:
+		bundle.erase("flow")
+		return bundle
+	if height.size() == n * 2 and flow.size() == n:
+		var rgba := PackedByteArray()
+		rgba.resize(n * 4)
+		for i in range(n):
+			var o: int = i * 4
+			rgba[o] = height[i * 2]
+			rgba[o + 1] = height[i * 2 + 1]
+			rgba[o + 2] = flow[i]
+			rgba[o + 3] = 0
+		bundle["height"] = rgba
+		bundle.erase("flow")
+	return bundle
+
+
+func upload_layer_bundle(layer_id: int, bundle: Dictionary) -> bool:
+	if layout == null or layer_id < 0 or layer_id >= layout.layer_count:
+		fallback_reason = "invalid_layer"
+		return false
+	bundle = normalize_height_flow_bundle(bundle, layout.layer_size)
+	for field_name in FIELD_FORMATS:
+		if field_name in COMPUTE_FIELDS or not bundle.has(field_name):
+			continue
+		var data: PackedByteArray = bundle[field_name]
+		var format: int = int(FIELD_FORMATS[field_name])
+		var expected: int = layout.layer_size.x * layout.layer_size.y * _format_stride(format)
+		if data.size() != expected:
+			fallback_reason = "invalid_payload:%s:%d/%d" % [field_name, data.size(), expected]
+			return false
+		var tex_format: int = _texture_format(format)
+		var image: Image
+		# Compatibility 单通道加宽禁止 Image.convert（与 atlas_encoders._upload_r8 同因：
+		# wasm 下 convert 产物可能 CPU 侧报对、GPU 仍落 4×4 白纹理）。改字节展开到 RG8。
+		if tex_format != format and (format == Image.FORMAT_R8 or format == Image.FORMAT_L8) \
+				and tex_format == Image.FORMAT_RG8:
+			var n: int = layout.layer_size.x * layout.layer_size.y
+			var expanded := PackedByteArray()
+			expanded.resize(n * 2)
+			for i in range(n):
+				var v: int = data[i] if data.size() > i else 0
+				expanded[i * 2] = v
+				expanded[i * 2 + 1] = v
+			image = Image.create_from_data(
+				layout.layer_size.x, layout.layer_size.y, false, tex_format, expanded)
+		else:
+			image = Image.create_from_data(
+				layout.layer_size.x, layout.layer_size.y, false, format, data
+			)
+			if tex_format != format:
+				image.convert(tex_format)
+		var texture: Texture2DArray = get(field_name)
+		texture.update_layer(image, layer_id)
+	return true
+
+
+func upload_horizon_layer(layer_id: int, data: PackedByteArray) -> bool:
+	return _upload_compute_layer("horizon", layer_id, data)
+
+
+# [terrain-gi 2026-07-31] 遮挡源 cell id 层。与 horizon 同一次 compute 产出、同一 generation
+# 校验；调用方只有在全部层上传成功后才置 gi_occluder_ready。
+func upload_gi_occluder_layer(layer_id: int, data: PackedByteArray) -> bool:
+	return _upload_compute_layer("gi_occluder", layer_id, data)
+
+
+func _upload_compute_layer(field_name: String, layer_id: int, data: PackedByteArray) -> bool:
+	var texture: Texture2DArray = get(field_name)
+	if layout == null or texture == null or layer_id < 0 or layer_id >= layout.layer_count:
+		return false
+	var expected: int = layout.layer_size.x * layout.layer_size.y * 4
+	if data.size() != expected:
+		return false
+	var image := Image.create_from_data(
+		layout.layer_size.x, layout.layer_size.y, false, Image.FORMAT_RGBA8, data
+	)
+	texture.update_layer(image, layer_id)
+	return true
+
+
+func clear() -> void:
+	ready = false
+	static_ready = false
+	horizon_ready = false
+	gi_occluder_ready = false
+	for field_name in FIELD_FORMATS:
+		set(field_name, null)
+
+
+func _create_empty_array(format: int) -> Texture2DArray:
+	var images: Array[Image] = []
+	images.resize(layout.layer_count)
+	for layer_id in range(layout.layer_count):
+		var image := Image.create_empty(
+			layout.layer_size.x, layout.layer_size.y, false, format
+		)
+		image.fill(Color(0.0, 0.0, 0.0, 0.0))
+		images[layer_id] = image
+	var texture := Texture2DArray.new()
+	if texture.create_from_images(images) != OK:
+		return null
+	return texture
+
+
+# 载荷格式 → 实际纹理格式。Compatibility(GLES3) 下单通道纹理建不起来，引擎会把
+# sampler 换成 4×4 默认白纹理，所以要加宽；见 DCAtlasEncoders.single_channel_format()。
+static func _texture_format(payload_format: int) -> int:
+	if payload_format == Image.FORMAT_R8 or payload_format == Image.FORMAT_L8:
+		return DCAtlasEncoders.single_channel_format()
+	return payload_format
+
+
+static func _format_stride(format: int) -> int:
+	match format:
+		Image.FORMAT_R8, Image.FORMAT_L8:
+			return 1
+		Image.FORMAT_RG8:
+			return 2
+		Image.FORMAT_RGBA8:
+			return 4
+		_:
+			return 0

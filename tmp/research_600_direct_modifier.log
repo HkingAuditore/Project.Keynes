@@ -1,0 +1,137 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[research-soak] building ids gathering=103 hunting=359 flint=94 knapping=134
+[research-soak] day=0 queued=tech.seasonal_foraging
+[research-soak] day=0 activated=tech.seasonal_foraging
+[research-soak] day=1 activated=tech.clay_identification
+[research-soak] day=1 queued=tech.animal_husbandry
+[economy-open-finish] day=0 country=0.090 workset=0.006 fiscal=0.008 csr=0.000 recovery=0.000 vectors=0.319 audit=0.003 commands=0.001
+[research-soak] day=2 activated=tech.animal_husbandry
+[research-soak] day=2 queued=tech.food_storage
+[research-soak] day=3 activated=tech.food_storage
+[research-soak] day=3 queued=tech.earth_building
+[research-soak] day=4 activated=tech.earth_building
+[research-soak] day=4 queued=tech.spice_identification
+[research-procure-diag] day=4 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=6900000 budget=1000000000 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-soak] day=5 activated=tech.spice_identification
+[research-soak] day=5 queued=tech.rubber_identification
+[research-procure-diag] day=5 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=6900000 budget=1000000000 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-soak] day=6 activated=tech.rubber_identification
+[research-soak] day=6 queued=tech.gold_placer_identification
+[research-procure-diag] day=6 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=6900000 budget=1000000000 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-soak] day=7 activated=tech.gold_placer_identification
+[research-soak] day=7 queued=tech.silver_vein_identification
+[research-procure-diag] day=7 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=6900000 budget=1000000000 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-soak] day=8 activated=tech.silver_vein_identification
+[research-soak] day=8 queued=tech.fire_control
+[research-procure-diag] day=8 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=6900000 budget=1000000000 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-soak] day=9 activated=tech.fire_control
+[research-soak] day=9 queued=tech.natural_observation
+[research-procure-diag] day=9 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=6900000 budget=1000000000 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-soak] day=10 activated=tech.natural_observation
+[research-soak] day=10 queued=tech.oral_tradition
+[research-procure-diag] day=10 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=6900000 budget=1000000000 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=10 phase=0 done=0 cands=1 cursor=1 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=1 rej=0 procured=6900000 last_err=
+[research-soak] day=11 activated=tech.oral_tradition
+[research-soak] day=11 queued=tech.crop_domestication
+[research-soak] day=12 activated=tech.crop_domestication
+[research-soak] day=12 queued=tech.seasonal_calendar
+[research-soak] day=13 activated=tech.seasonal_calendar
+[research-soak] day=13 queued=tech.maize_identification
+[research-soak] day=14 activated=tech.maize_identification
+[research-soak] day=14 queued=tech.wheat_identification
+[research-soak] day=15 activated=tech.wheat_identification
+[research-soak] day=15 queued=tech.rice_identification
+[research-soak] day=16 activated=tech.rice_identification
+[research-soak] day=16 queued=tech.potato_identification
+[research-soak] day=17 activated=tech.potato_identification
+[research-soak] day=17 queued=tech.cotton_identification
+[research-soak] day=18 activated=tech.cotton_identification
+[research-soak] day=18 queued=tech.flax_identification
+[research-soak] day=19 activated=tech.flax_identification
+[research-soak] day=19 queued=tech.medicinal_herb_identification
+[research-soak] day=20 activated=tech.medicinal_herb_identification
+[research-soak] day=20 queued=tech.reed_identification
+[research-soak] day=21 activated=tech.reed_identification
+[research-soak] day=21 queued=tech.hide_scraping
+[research-soak] day=22 activated=tech.hide_scraping
+[research-soak] day=22 queued=tech.phenology_observation
+[research-soak] day=23 activated=tech.phenology_observation
+[research-soak] day=23 queued=tech.flood_calendar_practice
+[research-soak] day=24 activated=tech.flood_calendar_practice
+[research-soak] day=24 queued=tech.pastoral_route_memory
+[research-soak] day=25 activated=tech.pastoral_route_memory
+[research-soak] day=25 queued=tech.tide_observation
+[research-soak] day=26 activated=tech.tide_observation
+[research-soak] day=26 queued=tech.brine_collection
+[research-soak] day=27 activated=tech.brine_collection
+[research-soak] day=27 queued=tech.flint_identification
+[research-soak] day=28 activated=tech.flint_identification
+[research-soak] day=28 queued=tech.clay_preparation
+[research-soak] day=29 activated=tech.clay_preparation
+[research-soak] day=29 queued=tech.hand_pottery
+[research-soak] day=30 activated=tech.hand_pottery
+[research-soak] day=30 queued=tech.settled_knowledge
+[research-soak] day=31 activated=tech.settled_knowledge
+[research-soak] day=31 queued=tech.fishing_boats
+[research-soak] day=32 activated=tech.fishing_boats
+[research-soak] day=32 queued=tech.natural_copper_identification
+[research-soak] day=33 activated=tech.natural_copper_identification
+[research-soak] day=33 queued=tech.celestial_calendars
+[research-soak] day=34 activated=tech.celestial_calendars
+[research-soak] day=34 queued=tech.adobe_making
+[research-soak] day=35 activated=tech.adobe_making
+[research-soak] day=35 queued=tech.agrarian_society
+[research-soak] day=36 activated=tech.agrarian_society
+[research-soak] day=36 queued=tech.writing
+[research-soak] day=37 activated=tech.writing
+[research-soak] day=37 queued=tech.market_institutions
+[research-soak] day=38 activated=tech.market_institutions
+[research-soak] day=38 queued=tech.natural_philosophy
+[research-soak] day=39 activated=tech.natural_philosophy
+[research-soak] day=39 queued=tech.iron_ore_identification
+[research-soak] day=40 activated=tech.iron_ore_identification
+[research-soak] day=40 queued=tech.coal_outcrop_identification
+[research-soak] day=41 activated=tech.coal_outcrop_identification
+[research-soak] day=41 queued=tech.kingdom_administration
+[research-soak] day=42 activated=tech.kingdom_administration
+[research-soak] day=42 queued=tech.imperial_integration
+[research-soak] day=43 activated=tech.imperial_integration
+[research-soak] day=43 queued=tech.global_exchange
+[research-soak] day=44 activated=tech.global_exchange
+[research-soak] day=44 queued=tech.enlightenment_institutions
+[research-soak] day=45 activated=tech.enlightenment_institutions
+[research-soak] day=45 queued=tech.industrialization
+[research-soak] day=46 activated=tech.industrialization
+[research-soak] day=46 queued=tech.electrical_society
+[research-soak] day=47 activated=tech.electrical_society
+[research-soak] day=47 queued=tech.atomic_modernity
+[research-soak] day=48 activated=tech.atomic_modernity
+[research-soak] day=48 queued=tech.information_society
+[research-soak] day=49 activated=tech.information_society
+[research-procure-diag] day=53 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=64 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=75 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=86 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=97 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=108 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=119 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=131 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=142 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=153 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=164 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=175 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=186 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=197 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=208 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=219 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-soak] day=500
+[tech-ui-diag/research] handle=4294967296 gen=30 day=600 owned=20 pending=0 queued=0 progress_nonzero=0 stock=6900000 deferred=6900000 consumed=0 cash=931807300 budget=1000000000 auto=1
+research technologies: queued=49 completed=20 completed_total=0 progress_total=0
+research 20y soak: day=600 rows=600 fatal=false
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

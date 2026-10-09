@@ -313,7 +313,7 @@ bool NativeEconomyRuntime::plan_canal_route(
     }
     quote.material_quantities = {{material_total, material_total}};
     const int32_t market = market_store().cell_to_market[start_cell];
-    if (market < 0 || market >= market_store().market_count) {
+    if (market < 0 || market >= market_store().market_count.get()) {
         error = "canal_market_unavailable";
         return false;
     }

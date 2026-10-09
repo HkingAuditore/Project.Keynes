@@ -3344,6 +3344,17 @@ Climate 的日内 stage 顺序现在只有一处定义：
 `tests/runtime_climate_stage_order_contract_test.gd` 失败，而不是等到数值对拍里
 出现"某个字段不同"。
 
+经济只读准备计算在 2026-10-08 增加作用域缓存：employment、building plan
+和 structural commit 使用线程私有、runtime 身份绑定的 living-cost memo；
+允许的 employment / plan 作用域还缓存完整 owner opportunity quote。
+derived business demand 在单个冻结 cell 的作用域内复用需求基础分数。
+缓存随作用域退出清空，不跨日保留；资金、人口、职业角色及关键建筑容量
+进入报价键，家族迁移会清空报价缓存。交易、库存竞争和落账顺序不变。
+需求基础分数键包括 market、country 和完整 EnvironmentSample（含 ready）。
+`PK_ECONOMY_MEMO_VERIFY=1` 对缓存命中的 living cost、完整报价和最终需求
+重新执行原始计算，并比较数值与饱和事件数；差异立即终止诊断进程。
+`PK_ECONOMY_MEMO_DISABLE=1` 是性能及正确性参照入口。
+
 canonical 顺序：
 
 ```

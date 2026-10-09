@@ -1,0 +1,28 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[runtime-day-wait] day=1 env_day=-1 missing=0x0 stall=0x0 economy_input=-1 ring=0 country=
+[runtime-day-wait] day=1 env_day=-1 missing=0x0 stall=0x0 economy_input=-1
+[country receipt self-test] country_receipt_self_test_terminal_missing:1:0
+ERROR: [FAIL] Country Host terminal self-test is exported and passes
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _fail (res://tests/runtime_country_host_protocol_test.gd:252)
+       [1] _expect (res://tests/runtime_country_host_protocol_test.gd:247)
+       [2] _run (res://tests/runtime_country_host_protocol_test.gd:113)
+       [3] _init (res://tests/runtime_country_host_protocol_test.gd:18)
+[country][active] peer-wait preview day=0 commands=0
+[country][active] peer-wait preview day=0 commands=0 dirty=0x2
+[country][parity] worker_day=0 uncompared reference_range=-1..-1 depth=0
+[country][active] peer-wait preview day=1 commands=0 dirty=0x2
+[country][active] peer-wait preview day=1 commands=0
+[country][parity] worker_day=1 uncompared reference_range=-1..-1 depth=0
+[tech-ui-diag/query] apply ok gen=1 day=-1 view_gen=1 progress_total=0 pending_words=6
+[tech-ui-diag/query] apply ok gen=1 day=-1 view_gen=1 progress_total=0 pending_words=6
+[tech-ui-diag/query] apply ok gen=1 day=0 view_gen=1 progress_total=0 pending_words=6
+runtime country host protocol: 42 checks, 1 failures
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

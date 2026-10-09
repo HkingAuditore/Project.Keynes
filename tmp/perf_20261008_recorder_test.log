@@ -1,0 +1,94 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== perf_recorder test (plan: perf-recording-csv-export) ===
+  [PASS] plain string passthrough
+  [PASS] empty string
+  [PASS] null → empty
+  [PASS] comma → quoted
+  [PASS] double quote → doubled + wrapped
+  [PASS] newline → quoted
+  [PASS] path with comma → quoted
+  [PASS] int
+  [PASS] bool true
+  [PASS] bool false
+  [PASS] float trim trailing zeros: got=1.5
+  [PASS] float 0.0 → '0': got=0
+  [PASS] NaN → empty
+  [PASS] INF → empty
+  [PASS] fixed col 0 = row_idx
+  [PASS] fixed col 1 = tick_idx
+  [PASS] size = fixed + job suffix cols, got=317
+  [PASS] continuation perf columns present
+  [PASS] continuation perf columns retain fixed order
+  [PASS] country active index diagnostic column present
+  [PASS] climate POD diagnostic column present: runtime_graph_climate_pod_ready
+  [PASS] climate POD diagnostic column present: runtime_graph_climate_pod_plan_ms
+  [PASS] climate POD diagnostic column present: runtime_graph_climate_pod_replay_ms
+  [PASS] climate POD diagnostic column present: runtime_graph_climate_pod_work_units
+  [PASS] climate POD diagnostic column present: runtime_graph_climate_pod_changed_cells
+  [PASS] climate POD diagnostic column present: runtime_graph_climate_pod_state_hash
+  [PASS] climate POD diagnostic column present: runtime_graph_climate_pod_fallback_reason
+  [PASS] continuation stage counts column present
+  [PASS] continuation stage total wall column present
+  [PASS] continuation last substage column present
+  [PASS] continuation next-stage column present
+  [PASS] continuation substage counts column present
+  [PASS] continuation substage total wall column present
+  [PASS] continuation substage max column present
+  [PASS] continuation substage work column present
+  [PASS] speed multiplier column present
+  [PASS] vegetation planning probe column present
+  [PASS] all three job cols emitted
+  [PASS] job triplet order: ms < slices < skip
+  [PASS] both jobs present
+  [PASS] climate first-seen → before weather: ic=296 iw=317
+  [PASS] bd_climate_pass_a_ms present
+  [PASS] bd_climate_pass_b_ms present
+  [PASS] bd_weather_total_ms present
+  [PASS] bd cols come after job cols: j=296 bd=317
+  [PASS] economy telemetry fixed column: prepare_reuse_count
+  [PASS] economy telemetry fixed column: workset_cells_planned
+  [PASS] economy telemetry fixed column: workset_cells_executed
+  [PASS] economy telemetry fixed column: duplicate_range_count
+  [PASS] economy telemetry fixed column: household_market_prepare_ms
+  [PASS] economy telemetry fixed column: household_market_worker_ms
+  [PASS] economy telemetry fixed column: household_market_merge_ms
+  [PASS] economy telemetry prefers completed epoch value
+  [PASS] economy worker timing prefers completed epoch value
+  [PASS] header starts with fixed cols: row_idx,tick_idx,timestamp_ms,
+  [PASS] row body starts with row_idx,tick_idx values: 0,100,,,,,5.5,,,,,,,,,,,,,,,,,
+  [PASS] weather cols emitted globally
+  [PASS] missing j_weather_ms in row 0 → blank, got=''
+[perf-record] start (start_tick=0 mode=CORE detail_period=30)
+[perf-record] exported rows=1 cols=296 → F:/Developent/Godot/Project.Keynes/tmp/perf_record_20261008_182656.csv
+  [PASS] default CORE export returns non-empty path
+  [PASS] default CORE export readable
+  [PASS] default CORE omits per-tick job detail
+[perf-record] start (start_tick=0 mode=DETAIL detail_period=1)
+  [PASS] 2 rows captured
+[perf-record] exported rows=2 cols=317 → F:/Developent/Godot/Project.Keynes/tmp/perf_record_20261008_182656.csv
+  [PASS] export returns non-empty path
+  [PASS] exported file readable
+  [PASS] j_climate_ms column emitted (because non-skip row populated it)
+  [PASS] skipped_day row has blank j_climate_ms, got=''
+  [PASS] normal row has non-empty j_climate_ms, got='2.5'
+  [PASS] initial: not recording
+  [PASS] initial: 0 rows
+[perf-record] start (start_tick=0 mode=CORE detail_period=30)
+  [PASS] after start: recording=true
+[perf-record] stop: no rows captured, skip export
+  [PASS] stop with empty rows → empty path
+  [PASS] after stop: recording=false
+  [PASS] fixed columns are unique
+[perf-record] start (start_tick=0 mode=CORE detail_period=30)
+[perf-record] exported rows=1 cols=296 → C:/Users/HkingAuditore/AppData/Roaming/Godot/app_userdata/ProjectKeynes/stage_c_tests/perf/stage_c_perf.csv
+  [PASS] schema version accessor
+  [PASS] custom export path is stable
+  [PASS] custom export exists
+=== perf_recorder test summary: 76 checks, 0 failures ===
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 111 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

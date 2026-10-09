@@ -1,0 +1,390 @@
+gdext/src\economy_csv_recorder.cpp:1149:                                runtime.market_store().last_shortage_q16[
+gdext/src\economy_csv_recorder.cpp:1401:                    std::max<int64_t>(0, runtime.market_store().stock[mi]),
+gdext/src\economy_csv_recorder.cpp:1402:                    std::max<int64_t>(0, runtime.market_store().price[mi]),
+gdext/src\economy_csv_recorder.cpp:1451:                row.stock = runtime.market_store().stock[mi]; row.price = runtime.market_store().price[mi];
+gdext/src\economy_csv_recorder.cpp:1452:                row.demand_ema = runtime.market_store().demand_ema[mi];
+gdext/src\economy_csv_recorder.cpp:1453:                row.shortage_q16 = runtime.market_store().last_shortage_q16[mi];
+gdext/src\economy_runtime_building_employment.cpp:628:                            std::max<int64_t>(0, market_store().demand_ema[market_lane]);
+gdext/src\economy_runtime_building_employment.cpp:658:                            0, output_target - market_store().stock[market_lane]);
+gdext/src\economy_runtime_building_employment.cpp:664:                            market_store().stock[market_lane],
+gdext/src\economy_runtime_building_employment.cpp:667:                            market_store().price[market_lane],
+gdext/src\economy_runtime_building_employment.cpp:1494:                        if (lane >= 0 && lane < static_cast<int32_t>(market_store().stock.size()) &&
+gdext/src\economy_runtime_building_employment.cpp:1495:                            market_store().stock[lane] > 0) {
+gdext/src\economy_runtime_building_construction.cpp:36:                market_store().stock[market_store().index(market, good)]);
+gdext/src\economy_runtime_building_construction.cpp:119:                        const int64_t price = market_store().price[market_store().index(
+gdext/src\economy_runtime_building_construction.cpp:158:                const int64_t price = market_store().price[market_store().index(
+gdext/src\economy_runtime_building_construction.cpp:183:                    market_store().price[market_store().index(market, selected_good)], sat), sat);
+gdext/src\economy_runtime_building_construction.cpp:311:        if (market_store().stock[lane] < market_used[i])
+gdext/src\economy_runtime_building_construction.cpp:313:        total_cash = saturating_add(total_cash, treasury_bill.add(market_used[i], market_store().price[lane], _saturation_count), _saturation_count);
+gdext/src\economy_runtime_building_construction.cpp:555:            market_store().stock[market_store().index(market, good_id)] <
+gdext/src\economy_runtime_building_construction.cpp:581:                                  market_store().stock[idx], market_store().stock[idx] - qty});
+gdext/src\economy_runtime_building_construction.cpp:590:        market_store().stock[stock_index] -= qty;
+gdext/src\economy_runtime_building_investment.cpp:236:            market_store().stock[market_store().index(market, input_good)]);
+gdext/src\economy_runtime_building_investment.cpp:294:            market_store().stock[market_store().index(market, candidate.good_id)]);
+gdext/src\economy_runtime_building_investment.cpp:312:            market_store().price[market_store().index(market, candidate.good_id)], Q16_ONE,
+gdext/src\economy_runtime_building_investment.cpp:357:            market_store().stock[market_store().index(market, candidate.good_id)]);
+gdext/src\economy_runtime_building_investment.cpp:362:            market_store().price[market_store().index(market, candidate.good_id)], Q16_ONE,
+gdext/src\economy_runtime_building_investment.cpp:443:                market_store().price[market_store().index(market, input_good)], sat);
+gdext/src\economy_runtime_building_investment.cpp:480:                market_store().price[market_store().index(market, material)], sat);
+gdext/src\economy_runtime_building_investment.cpp:488:            mul_div_sat(market_store().price[market_store().index(market, good_id)],
+gdext/src\economy_runtime_building_investment.cpp:843:            std::max<int64_t>(0, market_store().demand_ema[index]), business,
+gdext/src\economy_runtime_building_investment.cpp:858:            0, target - std::max<int64_t>(0, market_store().stock[index]));
+gdext/src\economy_runtime_building_investment.cpp:900:            market_store().stock[market_store().index(market, good)]);
+gdext/src\economy_runtime_building_investment.cpp:1051:    int64_t demand = std::max<int64_t>(0, market_store().demand_ema[index]);
+gdext/src\economy_runtime_building_investment.cpp:1082:        0, target - std::max<int64_t>(0, market_store().stock[index]));
+gdext/src\economy_runtime_building_investment.cpp:1177:                    static_cast<int64_t>(market_store().demand_ema.size())
+gdext/src\economy_runtime_building_investment.cpp:1178:                ? std::max<int64_t>(0, market_store().demand_ema[index]) : 0;
+gdext/src\economy_runtime_building_investment.cpp:1262:                        const int64_t candidate_price = market_store().price[
+gdext/src\economy_runtime_building_investment.cpp:1443:                market_store().stock[market_store().index(market, input_good)]);
+gdext/src\economy_runtime_building_investment.cpp:1469:                market_store().stock[market_store().index(market, material)] >= physical)
+gdext/src\economy_runtime_building_investment.cpp:2382:                        market_store().demand_ema[index],
+gdext/src\economy_runtime_building_investment.cpp:2411:                    0, inventory_target - market_store().stock[index]);
+gdext/src\economy_runtime_building_investment.cpp:2420:                    market_store().last_shortage_q16[index];
+gdext/src\economy_runtime_building_investment.cpp:2572:                    market_store().price[market_store().index(market, output.good_id)]);
+gdext/src\economy_runtime_building_investment.cpp:2641:                            market_store().demand_ema.size())
+gdext/src\economy_runtime_building_investment.cpp:2642:                    ? std::max<int64_t>(0, market_store().demand_ema[output_index]) : 0;
+gdext/src\economy_runtime_building_investment.cpp:2813:                    market_store().price[market_store().index(
+gdext/src\economy_runtime_building_investment.cpp:2846:                        0, market_store().stock[input_index] - reserved);
+gdext/src\economy_runtime_building_investment.cpp:2864:                        market_store().price[market_store().index(market, candidate.good_id)], Q16_ONE,
+gdext/src\economy_runtime_building_investment.cpp:3175:                    const int64_t retail_price = market_store().price[
+gdext/src\economy_runtime_building_investment.cpp:4244:                std::max<int64_t>(0, market_store().stock[market_store().index(market, good)]);
+gdext/src\economy_runtime_building_production.cpp:502:            trace_market_stock[good] = market_store().stock[market_store().index(market, good)];
+gdext/src\economy_runtime_building_production.cpp:904:            const int64_t stock = market_store().stock[
+gdext/src\economy_runtime_building_production.cpp:921:            const int64_t effective_price = goods_cost(market_store().price[market_store().index(market, candidate.good_id)], unit_physical, _saturation_count);
+gdext/src\economy_runtime_building_production.cpp:980:            market_store().price[market_store().index(market, candidate.good_id)],
+gdext/src\economy_runtime_building_production.cpp:1001:                market_store().price[output_market_index]);
+gdext/src\economy_runtime_building_production.cpp:1062:                    market_store().stock[output_market_index], _saturation_count);
+gdext/src\economy_runtime_building_production.cpp:1133:    bool observe_price_ceiling = !market_store().price_ceilings[market].empty();
+gdext/src\economy_runtime_building_production.cpp:1135:        observe_price_ceiling = int64_t(market_store().price[market_store().index(market, good)]) * 5 >=
+gdext/src\economy_runtime_building_production.cpp:1191:                const int64_t stock = market_store().stock[
+gdext/src\economy_runtime_building_production.cpp:1230:                market_store().price[market_store().index(market, candidate.good_id)], _saturation_count);
+gdext/src\economy_runtime_building_production.cpp:1294:                    market_store().last_shortage_q16[idx], 0, Q16_ONE);
+gdext/src\economy_runtime_building_production.cpp:1318:                        market_store().stock[idx], realized, exports, _saturation_count);
+gdext/src\economy_runtime_building_production.cpp:1334:                    const int64_t stock = market_store().stock[idx];
+gdext/src\economy_runtime_building_production.cpp:1592:                        market_store().stock[market_store().index(market, candidate.good_id)], Q16_ONE,
+gdext/src\economy_runtime_building_production.cpp:1669:                    const int64_t stock = market_store().stock[
+gdext/src\economy_runtime_building_production.cpp:1780:                                mul_div_sat(market_store().stock[market_store().index(market, candidate.good_id)],
+gdext/src\economy_runtime_building_production.cpp:1888:                market_store().stock[stock_index] -= qty;
+gdext/src\economy_runtime_building_production.cpp:2114:                    market_store().stock[market_store().index(market, good)], realized,
+gdext/src\economy_runtime_building_production.cpp:2119:                market_store().stock[market_store().index(market, good)], _saturation_count);
+gdext/src\economy_runtime_building_production.cpp:2121:                market_store().price[market_store().index(market, good)],
+gdext/src\economy_runtime_building_production.cpp:2137:                    market_store().stock[market_store().index(market, good)];
+gdext/src\economy_runtime_building_production.cpp:2155:                std::clamp<int64_t>(market_store().last_shortage_q16[market_index],
+gdext/src\economy_runtime_building_production.cpp:2162:                    0, market_store().stock[market_index]);
+gdext/src\economy_runtime_building_production.cpp:2186:                    market_store().stock[market_store().index(market, good)]) return 1;
+gdext/src\economy_runtime_building_production.cpp:2274:                market_store().price[market_store().index(market, good)],
+gdext/src\economy_runtime_building_production.cpp:2343:                : mul_div_sat(market_store().price[market_store().index(market, good)],
+gdext/src\economy_runtime_building_production.cpp:2438:                market_store().price[market_store().index(market, offer.good)],
+gdext/src\economy_runtime_building_production.cpp:2492:                    sold, market_store().price[market_store().index(market, offer.good)],
+gdext/src\economy_runtime_building_production.cpp:2599:            market_store().stock[offer_stock_index] = saturating_add(
+gdext/src\economy_runtime_building_production.cpp:2600:                market_store().stock[offer_stock_index], accepted,
+gdext/src\economy_runtime_building_production.cpp:2612:                market_store().stock[offer_stock_index] = saturating_sub(
+gdext/src\economy_runtime_building_production.cpp:2613:                    market_store().stock[offer_stock_index], supported,
+gdext/src\economy_runtime_building_production.cpp:2636:                market_store().stock[offer_stock_index] = saturating_add(
+gdext/src\economy_runtime_building_production.cpp:2637:                    market_store().stock[offer_stock_index], unsold,
+gdext/src\economy_runtime_building_production.cpp:2882:            const int64_t stock = std::max<int64_t>(0, market_store().stock[stock_index]);
+gdext/src\economy_runtime_building_production.cpp:2922:            market_store().stock[stock_index] -= bought;
+gdext/src\economy_runtime_building_production.cpp:3155:                    market_store().stock[market_store().index(
+gdext/src\economy_runtime_building_production.cpp:3232:            market_store().stock[market_store().index(market, sale.good)],
+gdext/src\economy_runtime_building_production.cpp:3292:                market_store().stock[market_store().index(market, item.good_id)],
+gdext/src\economy_runtime_building_production.cpp:3433:                trace_market_stock[good], market_store().stock[market_store().index(market, good)]);
+gdext/src\economy_runtime_canal.cpp:329:        if (market_store().stock[lane] < market_needed) {
+gdext/src\economy_runtime_canal.cpp:333:        quote.cash_required += (market_needed * market_store().price[lane]) / GOODS_SCALE;
+gdext/src\economy_runtime_canal.cpp:334:        quote.price_hash = canal_mix(quote.price_hash, static_cast<uint64_t>(market_store().price[lane]));
+gdext/src\economy_runtime_canal.cpp:335:        quote.price_hash = canal_mix(quote.price_hash, static_cast<uint64_t>(market_store().stock[lane]));
+gdext/src\economy_runtime_canal.cpp:405:        price_hash = canal_mix(price_hash, static_cast<uint64_t>(market_store().price[lane]));
+gdext/src\economy_runtime_canal.cpp:406:        price_hash = canal_mix(price_hash, static_cast<uint64_t>(market_store().stock[lane]));
+gdext/src\economy_runtime_canal.cpp:498:        if (market_store().stock[lane] < market_used[i]) {
+gdext/src\economy_runtime_canal.cpp:502:        cash += (market_used[i] * market_store().price[lane]) / GOODS_SCALE;
+gdext/src\economy_runtime_carrying.cpp:127:            if (idx < 0 || idx >= static_cast<int64_t>(market_store().stock.size())) continue;
+gdext/src\economy_runtime_carrying.cpp:139:                market_store().stock[static_cast<size_t>(idx)] - reserve);
+gdext/src\economy_runtime_carrying.cpp:601:        if (idx < 0 || idx >= static_cast<int64_t>(market_store().demand_ema.size())) continue;
+gdext/src\economy_runtime_carrying.cpp:602:        const int64_t demand_ema = std::max<int64_t>(0, market_store().demand_ema[
+gdext/src\economy_runtime_carrying.cpp:612:        } else if (idx < static_cast<int64_t>(market_store().last_shortage_q16.size())) {
+gdext/src\economy_runtime_carrying.cpp:613:            shortage = std::clamp<int64_t>(market_store().last_shortage_q16[
+gdext/src\economy_runtime_carrying.cpp:617:        if (idx < static_cast<int64_t>(market_store().stock.size()) &&
+gdext/src\economy_runtime_carrying.cpp:623:                std::max<int64_t>(0, market_store().stock[static_cast<size_t>(idx)]),
+gdext/src\economy_runtime_carrying.cpp:666:            if (idx < 0 || idx >= static_cast<int64_t>(market_store().stock.size())) continue;
+gdext/src\economy_runtime_carrying.cpp:678:                market_store().stock[static_cast<size_t>(idx)] - reserve);
+gdext/src\economy_runtime_colonization_kit.cpp:194:            market_store().stock[market_store().index(market, good)]);
+gdext/src\economy_runtime_colonization_kit.cpp:591:            market_store().stock[market_store().index(market, good)]);
+gdext/src\economy_runtime_colonization_kit.cpp:806:    const int64_t next = market_store().stock[index] + delta;
+gdext/src\economy_runtime_colonization_kit.cpp:812:    market_store().stock[index] = next;
+gdext/src\economy_runtime_colonization_kit.cpp:908:                ? std::max<int64_t>(0, market_store().price[
+gdext/src\economy_runtime_colonization_kit.cpp:1195:            if (lane >= market_store().stock.size() ||
+gdext/src\economy_runtime_colonization_kit.cpp:1196:                market_store().stock[lane] < c.quantity) {
+gdext/src\economy_runtime_colonization_kit.cpp:1202:            market_store().stock[lane] -= c.quantity;
+gdext/src\economy_runtime.cpp:223:    _audit_shadow_market_stock = market_store().stock;
+gdext/src\economy_runtime.cpp:225:    _audit_market_lane_stamp.assign(market_store().stock.size(), 0);
+gdext/src\economy_runtime.cpp:240:        _audit_shadow_market_stock.size() == market_store().stock.size();
+gdext/src\economy_runtime.cpp:247:            population_store().active.size() + market_store().stock.size());
+gdext/src\economy_runtime.cpp:252:    if (_audit_market_lane_stamp.size() != market_store().stock.size())
+gdext/src\economy_runtime.cpp:253:        _audit_market_lane_stamp.resize(market_store().stock.size(), 0);
+gdext/src\economy_runtime.cpp:293:        _closing_audit_runtime_disabled || index >= market_store().stock.size())
+gdext/src\economy_runtime.cpp:303:    if (_audit_market_lane_stamp.size() < market_store().stock.size()) {
+gdext/src\economy_runtime.cpp:304:        _audit_market_lane_stamp.resize(market_store().stock.size(), 0);
+gdext/src\economy_runtime.cpp:305:        _audit_shadow_market_stock.resize(market_store().stock.size(), 0);
+gdext/src\economy_runtime.cpp:384:            index >= market_store().stock.size())
+gdext/src\economy_runtime.cpp:387:            market_store().stock[index] - _audit_shadow_market_stock[index];
+gdext/src\economy_runtime.cpp:441:            index < market_store().stock.size())
+gdext/src\economy_runtime.cpp:442:            _audit_shadow_market_stock[index] = market_store().stock[index];
+gdext/src\economy_runtime.cpp:491:        for (size_t index = 0; index < market_store().stock.size(); ++index) {
+gdext/src\economy_runtime.cpp:493:                market_store().stock[index] != _audit_shadow_market_stock[index] &&
+gdext/src\economy_runtime.cpp:506:    if (_audit_shadow_market_stock.size() != market_store().stock.size() ||
+gdext/src\economy_runtime.cpp:512:    for (size_t lane = 0; lane < market_store().stock.size(); ++lane) {
+gdext/src\economy_runtime.cpp:514:        const int64_t closing = market_store().stock[lane];
+gdext/src\economy_runtime.cpp:815:        if (market_index >= market_store().stock.size() ||
+gdext/src\economy_runtime.cpp:816:            market_store().stock[market_index] < continuation.quantity) {
+gdext/src\economy_runtime.cpp:1060:            if (market_index >= market_store().stock.size() ||
+gdext/src\economy_runtime.cpp:1061:                market_store().stock[market_index] < continuation.quantity)
+gdext/src\economy_runtime.cpp:1064:            market_store().stock[market_index] -= continuation.quantity;
+gdext/src\economy_runtime.cpp:1722:        if (index >= market_store().stock.size()) {
+gdext/src\economy_runtime.cpp:1727:            if (market_store().stock[index] >
+gdext/src\economy_runtime.cpp:1733:            market_store().stock[index] += amount;
+gdext/src\economy_runtime.cpp:1735:            if (market_store().stock[index] < amount) {
+gdext/src\economy_runtime.cpp:1740:            market_store().stock[index] -= amount;
+gdext/src\economy_runtime.cpp:2036:            owned.market.stock.size() != market_store().stock.size()) {
+gdext/src\economy_runtime.cpp:2049:        market_store().stock = owned.market.stock;
+gdext/src\economy_runtime.cpp:2055:               owned.market.stock.size() != market_store().stock.size()) {
+gdext/src\economy_runtime.cpp:2114:        if (owned.market.stock.size() == market_store().stock.size())
+gdext/src\economy_runtime.cpp:2115:            owned.market.stock = market_store().stock;
+gdext/src\economy_runtime.cpp:2216:        if (index < 0 || static_cast<size_t>(index) >= market_store().stock.size()) {
+gdext/src\economy_runtime.cpp:2866:    out.market_stock = market_store().stock;
+gdext/src\economy_runtime.cpp:2867:    out.market_price = market_store().price;
+gdext/src\economy_runtime.cpp:2868:    out.market_demand_ema = market_store().demand_ema;
+gdext/src\economy_runtime.cpp:2869:    out.market_last_shortage_q16 = market_store().last_shortage_q16;
+gdext/src\economy_runtime.cpp:3282:    if (market_index >= market_store().stock.size()) {
+gdext/src\economy_runtime.cpp:3314:    const int64_t market_before = std::max<int64_t>(0, market_store().stock[market_index]);
+gdext/src\economy_runtime.cpp:3354:        market_store().stock[market_index] = saturating_add(
+gdext/src\economy_runtime.cpp:3355:            market_store().stock[market_index], actual, _saturation_count);
+gdext/src\economy_runtime.cpp:3357:        market_store().stock[market_index] -= actual;
+gdext/src\economy_runtime.cpp:3401:        if (lane >= market_store().stock.size() ||
+gdext/src\economy_runtime.cpp:3402:            market_store().stock[lane] < market_quantities[i]) {
+gdext/src\economy_runtime.cpp:3513:        market_store().stock[lane] -= market_quantities[i];
+gdext/src\economy_runtime.cpp:3565:                country, market, good, market_store().price[index]});
+gdext/src\economy_runtime.cpp:3779:                market_store().stock[index],
+gdext/src\economy_runtime.cpp:4283:        market_store().stock[market_store().index(market, good_id)]);
+gdext/src\economy_runtime.cpp:5291:            if (index >= 0 && index < static_cast<int64_t>(market_store().price.size()))
+gdext/src\economy_runtime.cpp:5292:                price = std::max<int64_t>(1, market_store().price[static_cast<size_t>(index)]);
+gdext/src\economy_runtime.cpp:6812:                    market_store().stock[market_store().index(market, candidate.good_id)] -
+gdext/src\economy_runtime.cpp:6826:                    market_store().price[market_store().index(market, candidate.good_id)],
+gdext/src\economy_runtime.cpp:6890:                market_store().stock[market_store().index(market, good)] -
+gdext/src\economy_runtime.cpp:6965:            retail = std::max<int64_t>(0, market_store().price[market_store().index(market, good)]);
+gdext/src\economy_runtime.cpp:7396:    const auto price_begin = market_store().price.begin() +
+gdext/src\economy_runtime.cpp:7398:    const auto stock_begin = market_store().stock.begin() +
+gdext/src\economy_runtime.cpp:7461:                    if (market_store().stock[market_store().index(market, comp.good_id)] <= 0) {
+gdext/src\economy_runtime.cpp:7958:                            market_store().last_shortage_q16[market_index]);
+gdext/src\economy_runtime.cpp:8207:                    market_store().price[market_store().index(market, candidate.good_id)],
+gdext/src\economy_runtime.cpp:8256:                        market_store().stock[market_store().index(market, good)]);
+gdext/src\economy_runtime.cpp:8263:                        market_store().last_shortage_q16[market_store().index(market, good)],
+gdext/src\economy_runtime.cpp:8366:                    market_store().stock[market_store().index(market, item.good_id)],
+gdext/src\economy_runtime.cpp:8369:                    market_store().price[market_store().index(market, item.good_id)],
+gdext/src\economy_runtime.cpp:8629:                        market_store().price[market_store().index(market, candidate.good_id)],
+gdext/src\economy_runtime.cpp:8631:                    if (market_store().stock[market_store().index(market, candidate.good_id)] >= physical) {
+gdext/src\economy_runtime.cpp:8890:                        market_store().stock[market_store().index(market, candidate.good_id)] - reserved);
+gdext/src\economy_runtime.cpp:8899:                        market_store().price[market_store().index(market, candidate.good_id)],
+gdext/src\economy_runtime.cpp:9207:    const int64_t price = std::max<int64_t>(1, market_store().price[market_store().index(market, good)]);
+gdext/src\economy_runtime.cpp:9265:    const auto &rows = market_store().price_ceilings[market];
+gdext/src\economy_runtime.cpp:9274:    for (const auto &row : market_store().price_ceilings) count += row.size();
+gdext/src\economy_runtime.cpp:9289:        auto &old = market_store().price_ceilings[market];
+gdext/src\economy_runtime.cpp:10222:                    market_store().price[market_store().index(market, good)],
+gdext/src\economy_runtime.cpp:10412:                        static_cast<int32_t>(market_store().demand_ema.size())
+gdext/src\economy_runtime.cpp:10413:                    ? market_store().demand_ema[lane] : 0;
+gdext/src\economy_runtime.cpp:10424:            if (lane >= 0 && lane < static_cast<int32_t>(market_store().stock.size()) &&
+gdext/src\economy_runtime.cpp:10425:                market_store().stock[lane] > 0)
+gdext/src\economy_runtime.cpp:10613:            const int64_t stock = std::max<int64_t>(0, market_store().stock[idx]);
+gdext/src\economy_runtime.cpp:10617:            const int64_t cost = mul_div_sat(physical, market_store().price[idx],
+gdext/src\economy_runtime.cpp:10675:                market_store().price[market_store().index(market, candidate.good_id)],
+gdext/src\economy_runtime.cpp:10823:                    market_store().stock[market_store().index(market, output.good_id)], sat);
+gdext/src\economy_runtime.cpp:10825:                    market_store().price[market_store().index(market,
+gdext/src\economy_runtime.cpp:10853:                    std::max<int64_t>(0, market_store().price[market_store().index(market,
+gdext/src\economy_runtime.cpp:10891:                group.cell < _cell_count && market_store().last_shortage_q16.size() > 0 &&
+gdext/src\economy_runtime.cpp:10892:                market_store().last_shortage_q16[market_store().index(market, good)] >=
+gdext/src\economy_runtime.cpp:11507:                idle = market_store().stock[index] <= 0 && market_store().demand_ema[index] <= 0 &&
+gdext/src\economy_runtime.cpp:11508:                    market_store().last_shortage_q16[index] == 0 && !building_signal &&
+gdext/src\economy_runtime.cpp:11526:                    _trade_active_key_present.size() == market_store().stock.size()) {
+gdext/src\economy_runtime.cpp:11755:    int64_t feasible_daily = std::max<int64_t>(0, market_store().demand_ema[index]);
+gdext/src\economy_runtime.cpp:12287:            const int64_t stock_before = market_store().stock[idx];
+gdext/src\economy_runtime.cpp:12289:            market_store().stock[idx] = saturating_add(market_store().stock[idx], cmd.i64_0, _saturation_count);
+gdext/src\economy_runtime.cpp:12291:            settled_value = market_store().stock[idx] - stock_before;
+gdext/src\economy_runtime.cpp:12293:                    stock_before, market_store().stock[idx]);
+gdext/src\economy_runtime.cpp:12299:            const int64_t stock_before = market_store().stock[idx];
+gdext/src\economy_runtime.cpp:12300:            const int64_t amount = std::min(cmd.i64_0, std::max<int64_t>(0, market_store().stock[idx]));
+gdext/src\economy_runtime.cpp:12302:            market_store().stock[idx] -= amount;
+gdext/src\economy_runtime.cpp:12306:                    stock_before, market_store().stock[idx]);
+gdext/src\economy_runtime.cpp:12317:            const int64_t before = market_store().stock[index];
+gdext/src\economy_runtime.cpp:12331:                    before, market_store().stock[index]);
+gdext/src\economy_runtime.cpp:12342:            const int64_t before = market_store().stock[index];
+gdext/src\economy_runtime.cpp:12343:            const int64_t offered = std::min(cmd.i64_0, std::max<int64_t>(0, market_store().stock[index]));
+gdext/src\economy_runtime.cpp:12357:                    before, market_store().stock[index]);
+gdext/src\economy_runtime.cpp:12849:            totals.goods_stock += market_store().stock[index];
+gdext/src\economy_runtime.cpp:12851:            if (market_store().stock[index] <= 0) continue;
+gdext/src\economy_runtime.cpp:12853:                std::max<int64_t>(0, market_store().stock[index]),
+gdext/src\economy_runtime.cpp:12854:                std::max<int64_t>(0, market_store().price[index]),
+gdext/src\economy_runtime.cpp:13138:                    market_store().stock[market_store().index(market, good)]),
+gdext/src\economy_runtime.cpp:15721:            item.quantity, market_store().price[market_store().index(market, item.good_id)],
+gdext/src\economy_runtime.cpp:19151:            const int64_t stock = market_store().stock[market_store().index(market, good)];
+gdext/src\economy_runtime.cpp:21250:    EconomyCostProbe probe("native_hash", _current_day, market_store().stock.size());
+gdext/src\economy_runtime.cpp:21268:    for (size_t market = 0; market < market_store().price_ceilings.size(); ++market) {
+gdext/src\economy_runtime.cpp:21269:        for (const auto &state : market_store().price_ceilings[market]) {
+gdext/src\economy_runtime.cpp:21595:        mix_u64(pages[0].update(market_store().stock, 1, 1));
+gdext/src\economy_runtime.cpp:21596:        mix_u64(pages[1].update(market_store().price, 1, 2));
+gdext/src\economy_runtime.cpp:21597:        mix_u64(pages[2].update(market_store().demand_ema, 1, 3));
+gdext/src\economy_runtime.cpp:21598:        mix_u64(pages[3].update(market_store().last_shortage_q16, 1, 4));
+gdext/src\economy_runtime.cpp:21600:        hash = economy_hash_lanes<true>(hash, market_store().stock);
+gdext/src\economy_runtime.cpp:21601:        for (int32_t value : market_store().price) mix_u64(static_cast<uint32_t>(value));
+gdext/src\economy_runtime.cpp:21602:        hash = economy_hash_lanes<true>(hash, market_store().demand_ema);
+gdext/src\economy_runtime.cpp:21603:        hash = economy_hash_lanes<true>(hash, market_store().last_shortage_q16);
+gdext/src\economy_runtime_fiscal.cpp:289:                    market_store().price[market_store().index(market, candidate.good_id)],
+gdext/src\economy_runtime_fiscal.cpp:306:                    market_store().price[market_store().index(market, good)], GOODS_SCALE,
+gdext/src\economy_runtime_fiscal.cpp:1150:    if (lane < 0 || lane >= static_cast<int32_t>(market_store().price.size()))
+gdext/src\economy_runtime_fiscal.cpp:1153:        mul_div_sat(market_store().price[lane],
+gdext/src\economy_runtime_colonization.cpp:1012:    return std::max<int64_t>(0, market_store().stock[market_store().index(market, good_id)]);
+gdext/src\economy_runtime_market.cpp:66:                 market_store().price[market_store().index(market, component.good_id)], sat);
+gdext/src\economy_runtime_market.cpp:274:                    : market_store().price[market_store().index(market, component.good_id)];
+gdext/src\economy_runtime_market.cpp:615:        opening_stock[good] = market_store().stock[market_store().index(market, good)];
+gdext/src\economy_runtime_market.cpp:652:            trace_price_before[good] = market_store().price[idx];
+gdext/src\economy_runtime_market.cpp:653:            trace_demand_ema_before[good] = market_store().demand_ema[idx];
+gdext/src\economy_runtime_market.cpp:654:            trace_shortage_before[good] = market_store().last_shortage_q16[idx];
+gdext/src\economy_runtime_market.cpp:968:                market_store().price[market_store().index(market, component.good_id)], sat);
+gdext/src\economy_runtime_market.cpp:993:                market_store().price[market_store().index(market, component.good_id)],
+gdext/src\economy_runtime_market.cpp:1176:        const int64_t price = market_store().price[market_store().index(market, good_id)];
+gdext/src\economy_runtime_market.cpp:1394:                market_store().price[market_store().index(market, component.good_id)], sat);
+gdext/src\economy_runtime_market.cpp:1396:            const int64_t price = market_store().price[market_store().index(market, component.good_id)];
+gdext/src\economy_runtime_market.cpp:1470:                    market_store().stock[idx] - production_input_floor[good]);
+gdext/src\economy_runtime_market.cpp:1479:                market_store().stock[market_store().index(market, good)] -
+gdext/src\economy_runtime_market.cpp:1493:                market_store().stock[idx] -= pass_demand[good];
+gdext/src\economy_runtime_market.cpp:1532:                std::max<int64_t>(0, market_store().stock[market_store().index(market, good)] -
+gdext/src\economy_runtime_market.cpp:1566:            const int64_t used = std::min(pass_sales[good], market_store().stock[idx]);
+gdext/src\economy_runtime_market.cpp:1568:            market_store().stock[idx] -= used;
+gdext/src\economy_runtime_market.cpp:1603:                available &= market_store().stock[market_store().index(market, component.good_id)] >
+gdext/src\economy_runtime_market.cpp:1625:                available &= market_store().stock[market_store().index(market, component.good_id)] >
+gdext/src\economy_runtime_market.cpp:1675:                            const int64_t market_price = market_store().price[
+gdext/src\economy_runtime_market.cpp:1688:                            market_store().stock[stock_index] = saturating_add(
+gdext/src\economy_runtime_market.cpp:1689:                                market_store().stock[stock_index], entry->quantity, sat);
+gdext/src\economy_runtime_market.cpp:1727:                                market_store().stock[stock_index] = saturating_sub(
+gdext/src\economy_runtime_market.cpp:1728:                                    market_store().stock[stock_index], entry->quantity, sat);
+gdext/src\economy_runtime_market.cpp:2317:    bool observe_ceiling = !market_store().price_ceilings[market].empty();
+gdext/src\economy_runtime_market.cpp:2319:        observe_ceiling = int64_t(market_store().price[market_store().index(market, good)]) * 5 >=
+gdext/src\economy_runtime_market.cpp:2363:        const int64_t old_ema = market_store().demand_ema[idx];
+gdext/src\economy_runtime_market.cpp:2382:        market_store().demand_ema[idx] = ema;
+gdext/src\economy_runtime_market.cpp:2404:        market_store().last_shortage_q16[idx] = static_cast<uint16_t>(
+gdext/src\economy_runtime_market.cpp:2407:            market, good, ema, market_store().stock[idx], shortage, signal_index, sat);
+gdext/src\economy_runtime_market.cpp:2414:        const int64_t current_price = market_store().price[idx];
+gdext/src\economy_runtime_market.cpp:2421:        const auto &ceiling_rows = market_store().price_ceilings[market];
+gdext/src\economy_runtime_market.cpp:2450:        if (market_store().price[idx] != bounded) ++result.changed_prices;
+gdext/src\economy_runtime_market.cpp:2451:        market_store().price[idx] = static_cast<int32_t>(bounded);
+gdext/src\economy_runtime_market.cpp:2454:            (market_store().stock[idx] > 0 || ema > 0 || shortage > 0 || signal_index >= 0 ||
+gdext/src\economy_runtime_market.cpp:2518:                    opening_stock[good], market_store().stock[idx]);
+gdext/src\economy_runtime_market.cpp:2520:                    trace_price_before[good], market_store().price[idx]);
+gdext/src\economy_runtime_market.cpp:2522:                    trace_demand_ema_before[good], market_store().demand_ema[idx]);
+gdext/src\economy_runtime_market.cpp:2524:                    trace_shortage_before[good], market_store().last_shortage_q16[idx]);
+gdext/src\economy_runtime_market.cpp:2546:            result.closing_goods_stock, market_store().stock[market_store().index(market, good)],
+gdext/src\economy_runtime_diagnostics.cpp:165:    cap(market_store().price_ceilings);
+gdext/src\economy_runtime_diagnostics.cpp:166:    for (const auto &row : market_store().price_ceilings) cap(row);
+gdext/src\economy_runtime_diagnostics.cpp:279:    cap(market_store().stock); cap(market_store().price); cap(market_store().demand_ema);
+gdext/src\economy_runtime_diagnostics.cpp:280:    cap(market_store().last_shortage_q16); cap(market_store().cell_to_market);
+gdext/src\economy_runtime_diagnostics.cpp:2746:    for (const auto &row : market_store().price_ceilings)
+gdext/src\economy_runtime_persistence.cpp:1030:            if (market_store().stock[idx] < 0 || market_store().demand_ema[idx] < 0 ||
+gdext/src\economy_runtime_persistence.cpp:1031:                market_store().price[idx] < PRICE_NUMERIC_GUARD_MIN ||
+gdext/src\economy_runtime_persistence.cpp:1032:                market_store().price[idx] > PRICE_NUMERIC_GUARD_MAX) {
+gdext/src\economy_runtime_persistence_read.cpp:649:        market_store().price_ceilings.resize(markets);
+gdext/src\economy_runtime_persistence_read.cpp:651:        market_store().stock.assign(static_cast<size_t>(markets) * goods, 0);
+gdext/src\economy_runtime_persistence_read.cpp:652:        market_store().price.assign(static_cast<size_t>(markets) * goods, 0);
+gdext/src\economy_runtime_persistence_read.cpp:653:        market_store().demand_ema.assign(static_cast<size_t>(markets) * goods, 0);
+gdext/src\economy_runtime_persistence_read.cpp:654:        market_store().last_shortage_q16.assign(static_cast<size_t>(markets) * goods, 0);
+gdext/src\economy_runtime_persistence_read.cpp:931:                if (!read_le(bytes, cursor, market_store().stock[idx]) ||
+gdext/src\economy_runtime_persistence_read.cpp:932:                    !read_le(bytes, cursor, market_store().price[idx]) ||
+gdext/src\economy_runtime_persistence_read.cpp:933:                    !read_le(bytes, cursor, market_store().demand_ema[idx]) ||
+gdext/src\economy_runtime_persistence_read.cpp:934:                    !read_le(bytes, cursor, market_store().last_shortage_q16[idx])) {
+gdext/src\economy_runtime_persistence_read.cpp:2557:            market_store().price_ceilings[market].push_back(state);
+gdext/src\economy_runtime_configuration.cpp:695:    market_store().price_ceilings.resize(market_count);
+gdext/src\economy_runtime_configuration.cpp:703:    market_store().stock.resize(static_cast<size_t>(matrix_size));
+gdext/src\economy_runtime_configuration.cpp:704:    market_store().price.resize(static_cast<size_t>(matrix_size));
+gdext/src\economy_runtime_configuration.cpp:705:    market_store().demand_ema.assign(static_cast<size_t>(matrix_size), 0);
+gdext/src\economy_runtime_configuration.cpp:706:    market_store().last_shortage_q16.assign(static_cast<size_t>(matrix_size), 0);
+gdext/src\economy_runtime_configuration.cpp:722:            market_store().stock[idx] = 0;
+gdext/src\economy_runtime_configuration.cpp:723:            market_store().price[idx] = _good_default_price[g];
+gdext/src\economy_runtime_configuration.cpp:757:        market_store().stock.swap(stock);
+gdext/src\economy_runtime_configuration.cpp:776:        market_store().price.swap(price);
+gdext/src\economy_runtime_epoch.cpp:741:        market_store().stock.size() != static_cast<size_t>(market_store().market_count) * market_store().good_count ||
+gdext/src\economy_runtime_epoch.cpp:1109:        EconomyCostProbe probe("opening_audit_full", day_index, market_store().stock.size());
+gdext/src\economy_runtime_persistence_write.cpp:236:                append_le<int64_t>(payload, market_store().stock[idx]);
+gdext/src\economy_runtime_persistence_write.cpp:237:                append_le<int32_t>(payload, market_store().price[idx]);
+gdext/src\economy_runtime_persistence_write.cpp:238:                append_le<int64_t>(payload, market_store().demand_ema[idx]);
+gdext/src\economy_runtime_persistence_write.cpp:239:                append_le<uint16_t>(payload, market_store().last_shortage_q16[idx]);
+gdext/src\economy_runtime_persistence_write.cpp:1215:            const auto &row = market_store().price_ceilings[_save.ceiling_market_cursor];
+gdext/src\economy_runtime_publish.cpp:76:                if (market_store().stock[market_store().index(market, good)] > 0) {
+gdext/src\economy_runtime_publish.cpp:184:                        local.goods_stock += market_store().stock[index];
+gdext/src\economy_runtime_publish.cpp:186:                            std::max<int64_t>(0, market_store().stock[index]),
+gdext/src\economy_runtime_publish.cpp:187:                            std::max<int64_t>(0, market_store().price[index]),
+gdext/src\economy_runtime_publish.cpp:232:                _closing_totals.goods_stock += market_store().stock[index];
+gdext/src\economy_runtime_publish.cpp:234:                    std::max<int64_t>(0, market_store().stock[index]),
+gdext/src\economy_runtime_publish.cpp:235:                    std::max<int64_t>(0, market_store().price[index]),
+gdext/src\economy_runtime_publish.cpp:618:                                market_store().last_shortage_q16.size())) continue;
+gdext/src\economy_runtime_publish.cpp:619:                        const int32_t lane_shortage = market_store().last_shortage_q16[
+gdext/src\economy_runtime_queries_market_building.cpp:124:            std::max<int64_t>(0, market_store().stock[market_index]),
+gdext/src\economy_runtime_queries_market_building.cpp:125:            std::max<int64_t>(0, market_store().price[market_index]),
+gdext/src\economy_runtime_queries_market_building.cpp:137:        stock.push_back(market_store().stock[market_store().index(market, g)]);
+gdext/src\economy_runtime_queries_market_building.cpp:138:        price.push_back(market_store().price[market_store().index(market, g)]);
+gdext/src\economy_runtime_queries_market_building.cpp:139:        demand_ema.push_back(market_store().demand_ema[market_store().index(market, g)]);
+gdext/src\economy_runtime_queries_market_building.cpp:140:        shortage_q16.push_back(market_store().last_shortage_q16[market_store().index(market, g)]);
+gdext/src\economy_runtime_queries_market_building.cpp:183:            market_store().stock[market_store().index(market, g)] -
+gdext/src\economy_runtime_queries_market_building.cpp:194:            0, inventory_target - market_store().stock[market_store().index(market, g)]));
+gdext/src\economy_runtime_queries_market_building.cpp:228:            market, g, market_store().demand_ema[market_store().index(market, g)],
+gdext/src\economy_runtime_queries_market_building.cpp:229:            market_store().stock[market_store().index(market, g)],
+gdext/src\economy_runtime_queries_market_building.cpp:230:            market_store().last_shortage_q16[market_store().index(market, g)], signal,
+gdext/src\economy_runtime_queries_market_building.cpp:238:        effective_ceiling.push_back(std::max(target_limit, market_store().price[market_store().index(market, g)]));
+gdext/src\economy_runtime_queries_market_building.cpp:239:        const auto &ceiling_rows = market_store().price_ceilings[market];
+gdext/src\economy_runtime_queries_market_building.cpp:1104:                    market_store().last_shortage_q16[market_store().index(group_market, good)]);
+gdext/src\economy_runtime_queries_market_building.cpp:1815:                    ? std::max<int64_t>(0, market_store().stock[
+gdext/src\economy_runtime_queries_market_building.cpp:1818:                    ? market_store().price[market_store().index(market, good_id)] : 0;
+gdext/src\economy_runtime_trade.cpp:346:        market, good, market_store().demand_ema[index], std::max<int64_t>(0, stock_after),
+gdext/src\economy_runtime_trade.cpp:347:        market_store().last_shortage_q16[index], signal, sat);
+gdext/src\economy_runtime_trade.cpp:350:    const int64_t current_price = market_store().price[index];
+gdext/src\economy_runtime_trade.cpp:373:            std::clamp<int64_t>(market_store().last_shortage_q16[index], 0, Q16_ONE));
+gdext/src\economy_runtime_trade.cpp:394:        const int64_t stock = std::max<int64_t>(0, market_store().stock[index]);
+gdext/src\economy_runtime_trade.cpp:409:    int64_t demand = market_store().demand_ema[index];
+gdext/src\economy_runtime_trade.cpp:440:    const int64_t stock = market_store().stock[market_store().index(market, good)];
+gdext/src\economy_runtime_trade.cpp:461:    const int64_t source_stock = market_store().stock[market_store().index(source, good)];
+gdext/src\economy_runtime_trade.cpp:462:    const int64_t destination_stock = market_store().stock[market_store().index(destination, good)];
+gdext/src\economy_runtime_trade.cpp:598:    int64_t feasible_daily = market_store().demand_ema[index];
+gdext/src\economy_runtime_trade.cpp:1049:            const int64_t stock = market_store().stock[index];
+gdext/src\economy_runtime_trade.cpp:1056:                    {market, good, country, market_store().price[index], quantity, 0});
+gdext/src\economy_runtime_trade.cpp:1092:                    {market, good, country, market_store().price[index],
+gdext/src\economy_runtime_trade.cpp:1698:                market_store().stock[index] = saturating_add(
+gdext/src\economy_runtime_trade.cpp:1699:                    market_store().stock[index], quantity, _saturation_count);
+gdext/src\economy_runtime_trade.cpp:2119:                0, market_store().stock[market_index] - local_stock_target)).first;
+gdext/src\economy_runtime_trade.cpp:2142:            const int64_t destination_stock = market_store().stock[market_store().index(
+gdext/src\economy_runtime_trade.cpp:2170:            market_store().stock[market_index] - clipped.quantity, sat);
+gdext/src\economy_runtime_trade.cpp:2173:            market_store().stock[destination_index] + clipped.quantity, sat);
+gdext/src\economy_runtime_trade.cpp:2238:                market_store().stock[market_index] - quantity, sat);
+gdext/src\economy_runtime_trade.cpp:2241:                market_store().stock[destination_index] + quantity, sat);
+gdext/src\economy_runtime_trade.cpp:2505:        if (market_store().stock[market_index] - local_stock_target - reserved_stock <
+gdext/src\economy_runtime_trade.cpp:2649:        market_store().stock[market_index] -= clipped.quantity;
+gdext/src\runtime_economy_pod.cpp:286:    candidate.market.stock = ledger.market_stock;
+gdext/src\runtime_economy_pod.cpp:287:    candidate.market.price = ledger.market_price;
+gdext/src\runtime_economy_pod.cpp:288:    candidate.market.demand_ema = ledger.market_demand_ema;
+gdext/src\runtime_economy_pod.cpp:290:        candidate.market.last_shortage_q16 = ledger.market_last_shortage_q16;
+gdext/src\runtime_economy_pod.cpp:393:    EconomyCostProbe probe("pod_hash", _state.committed_day, _state.market.stock.size());
+gdext/src\runtime_economy_pod.cpp:412:        mix(_state.market_hash_pages[0].update(_state.market.stock, 1, 1));
+gdext/src\runtime_economy_pod.cpp:413:        mix(_state.market_hash_pages[1].update(_state.market.price, 1, 2));
+gdext/src\runtime_economy_pod.cpp:414:        mix(_state.market_hash_pages[2].update(_state.market.demand_ema, 1, 3));
+gdext/src\runtime_economy_pod.cpp:415:        mix(_state.market_hash_pages[3].update(_state.market.last_shortage_q16, 1, 4));
+gdext/src\runtime_economy_pod.cpp:417:        for (size_t i = 0; i < _state.market.stock.size(); ++i) {
+gdext/src\runtime_economy_pod.cpp:418:            mix(static_cast<uint64_t>(_state.market.stock[i]));
+gdext/src\runtime_economy_pod.cpp:419:            mix(static_cast<uint64_t>(_state.market.price[i]));
+gdext/src\runtime_economy_pod.cpp:420:            mix(static_cast<uint64_t>(_state.market.demand_ema[i]));
+gdext/src\runtime_economy_pod.cpp:421:            mix(_state.market.last_shortage_q16[i]);
+gdext/src\runtime_economy_pod.cpp:456:    EconomyCostProbe probe("ledger_export", committed_day, _state.market.stock.size());
+gdext/src\runtime_economy_pod.cpp:504:    ledger.market_stock = _state.market.stock;
+gdext/src\runtime_economy_pod.cpp:505:    ledger.market_price = _state.market.price;
+gdext/src\runtime_economy_pod.cpp:506:    ledger.market_demand_ema = _state.market.demand_ema;
+gdext/src\runtime_economy_pod.cpp:507:    ledger.market_last_shortage_q16 = _state.market.last_shortage_q16;
+gdext/src\runtime_economy_pod.cpp:2373:        owned.state().market.stock[0] = 8;
+gdext/src\runtime_economy_pod.cpp:2380:            settled != 4 || owned.state().market.stock[0] != 12) {
+gdext/src\runtime_economy_pod.cpp:2448:    authority.state().market.stock[4] = 77;
+gdext/src\runtime_economy_pod.cpp:2449:    authority.state().market.price[4] = 19;
+gdext/src\runtime_economy_pod.cpp:2450:    authority.state().market.demand_ema[4] = 31;
+gdext/src\runtime_economy_pod.cpp:2451:    authority.state().market.last_shortage_q16[4] = 1024;
+gdext/src\runtime_economy_pod.cpp:2660:        restored.state().market.last_shortage_q16[4] != 1024 ||

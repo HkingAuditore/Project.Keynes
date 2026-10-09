@@ -13,7 +13,8 @@ The console variant is preferred because headless runs must write to stdout.
 Dot-source this file to get Resolve-GodotBin, or run it to print the path.
 #>
 param(
-    [string]$GodotExe = ''
+    [Alias('GodotExe')]
+    [string]$ResolvedGodotOverride = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -52,5 +53,5 @@ Tried: $($candidates -join '; ')
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
-    Resolve-GodotBin -GodotExe $GodotExe
+    Resolve-GodotBin -GodotExe $ResolvedGodotOverride
 }

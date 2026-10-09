@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="VegetationProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/vegetation_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+veg_type = 21
+display_name_cn = "草本湿地"
+transpiration = 0.8
+albedo = 0.18
+eco_score = 0.8
+ideal_temp = 0.5
+ideal_moist = 0.92
+temp_tolerance = 0.28
+moist_tolerance = 0.19
+next_richer = 20
+next_harsher = 9

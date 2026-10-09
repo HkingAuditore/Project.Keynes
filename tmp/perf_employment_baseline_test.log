@@ -1,0 +1,22 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== native building runtime test ===
+  [PASS] building catalog compiles
+  [PASS] coal mine type exists
+  [PASS] owner-to-employee mobility country bootstraps
+  [PASS] owner-to-employee mobility runtime configures
+  [PASS] owner-to-employee mobility fixture bootstraps
+[economy-open-finish] day=0 country=0.043 workset=0.004 fiscal=0.004 csr=0.000 recovery=0.000 vectors=0.150 audit=0.003 commands=0.001
+[research-procure-diag] day=0 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  owner-to-employee debug={ "groups": [103, 299], "filled_owner": [1, 1], "employee_filled": [0], "employee_roles": [28], "employee_wages": [1], "populations": [1, 1], "owner_employed": [1, 1], "employee_employed": [0, 0], "unemployed": [0, 0], "gold_group": 1, "gathering_group": 0, "report_reallocations": 0, "report_profession_changes": 0, "gold_money_issued": 800000 }
+  [FAIL] high-margin employee vacancy is filled by an owner
+  [FAIL] vacancy bid raises the cold-start miner wage
+  [PASS] filled gold mine issues money
+  [PASS] owner-to-employee mobility conserves every ledger
+employment failures=2
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

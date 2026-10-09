@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="EnvironmentDemandCurveProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/environment_demand_curve_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"warm_cloth_preference"
+signal_id = "temperature"
+values_q16 = PackedInt32Array(49152, 51200, 53248, 55296, 57344, 59392, 61440, 63488, 65536, 67584, 69632, 71680, 73728, 75776, 77824, 79872, 81920)

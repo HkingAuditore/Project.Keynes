@@ -431,3 +431,20 @@ Save flow requires `PKTR v6` after journal/domain state. Missing/older PKTR, old
 every non-v41 PKEC, and incompatible catalog hashes reject restore; no empty-trigger or technology
 ID migration is provided.
 
+### Explicit economy hash migration (2026-10-08)
+
+`tools/runtime/Invoke-SaveMigration.ps1 -SavePath <old.pksv> -OutputPath <new.pksv>`
+loads a staged copy through the production restore path, pauses the restored
+clock, and saves ECP2 ABI 3 / schema 54 with hash version 2. An existing output
+path is rejected. The tool checks that the source SHA256 and simulation day
+remain unchanged and retains its diagnostic log. Other domain schemas and
+catalog checks remain strict: this is not a generic migration of arbitrary
+incompatible saves. Normal restore rejects the old ECP2 envelope without the
+explicit migration flag. Migration suppresses automatic saves only inside its
+test coordinator instance; it does not modify the player's persistent setting.
+
+Fiscal TREASURY_SPEND records with requested_cash=0 encode their authorized
+cash amount in requested_quantity. Their terminal committed cash and quantity
+must match and must fit that amount. This valid operation-specific encoding is
+checked without relaxing the nonnegative, quantity, identity or terminal rules.
+

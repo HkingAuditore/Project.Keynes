@@ -89,6 +89,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_runtime_perf_snapshot, DEFVAL(0));
     ClassDB::bind_method(D_METHOD("get_runtime_graph_last_economy_report"),
                          &DCWorldExt::get_runtime_graph_last_economy_report);
+    ClassDB::bind_method(D_METHOD("get_economy_checkpoint_format"),
+                         &DCWorldExt::get_economy_checkpoint_format);
     ClassDB::bind_method(D_METHOD("start_runtime_worker", "config"),
                          &DCWorldExt::start_runtime_worker);
     ClassDB::bind_method(D_METHOD("set_runtime_clock", "paused", "speed_days_per_second"),
@@ -644,6 +646,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_economy_live_cells);
     ClassDB::bind_method(D_METHOD("get_economy_report"),
                          &DCWorldExt::get_economy_report);
+    ClassDB::bind_method(D_METHOD("get_economy_committed_audit_report"),
+                         &DCWorldExt::get_economy_committed_audit_report);
     ClassDB::bind_method(D_METHOD("get_country_class_opinion_snapshot"),
                          &DCWorldExt::get_country_class_opinion_snapshot);
     ClassDB::bind_method(D_METHOD("get_population_cell_summary", "cell_idx"),

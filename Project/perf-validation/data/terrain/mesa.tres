@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="TerrainProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/terrain_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+terrain_type = 30
+display_name = "MESA"
+display_name_cn = "方山"
+passable_land = true
+passable_sea = false
+move_cost = 3
+trade_passable = true
+trade_move_cost = 3
+base_color = Color(0.701961, 0.450980, 0.298039, 1)

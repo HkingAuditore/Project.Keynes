@@ -1,0 +1,5289 @@
+{
+  "inventory_version": 1,
+  "coverage_proven": false,
+  "columns": [
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "cell_first_page",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 14
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "page_next",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 15
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "page_cell",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 16
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "free_pages",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 17
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "active",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 19
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "reserved",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 20
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "reservation_owner",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 21
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "signature_id",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 22
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "generation",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 23
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "population",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 24
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "funds",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 25
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "epoch_income",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 26
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "epoch_expense",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 27
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "epoch_in_kind_income",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 30
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "income_ema",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 31
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "epoch_tax_paid",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 36
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "epoch_subsidy_received",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 37
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "income_baseline_ema",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 40
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "needs_satisfaction",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 43
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "worst_need_id",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 44
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "composite_satisfaction",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 47
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "satisfaction_dims",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 48
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "worst_dimension_id",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 49
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "flags",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 50
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "demography_residual",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 51
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "owner_employed",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 52
+    },
+    {
+      "owner": "RuntimeEconomyPopulationStore",
+      "field": "employee_employed",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_population_store.h",
+      "line": 53
+    },
+    {
+      "owner": "RuntimeEconomyMarketStore",
+      "field": "stock",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 30
+    },
+    {
+      "owner": "RuntimeEconomyMarketStore",
+      "field": "price",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 31
+    },
+    {
+      "owner": "RuntimeEconomyMarketStore",
+      "field": "demand_ema",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 32
+    },
+    {
+      "owner": "RuntimeEconomyMarketStore",
+      "field": "last_shortage_q16",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 33
+    },
+    {
+      "owner": "RuntimeEconomyMarketStore",
+      "field": "cell_to_market",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 34
+    },
+    {
+      "owner": "RuntimeEconomyMarketStore",
+      "field": "price_ceilings",
+      "type": "std::vector<RuntimeEconomyPriceCeilingState>",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 35
+    },
+    {
+      "owner": "RuntimeEconomyResourceStore",
+      "field": "stock",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 55
+    },
+    {
+      "owner": "RuntimeEconomyResourceStore",
+      "field": "cell_generation",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 56
+    },
+    {
+      "owner": "RuntimeEconomyResourceStore",
+      "field": "remaining",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 62
+    },
+    {
+      "owner": "RuntimeEconomyResourceStore",
+      "field": "harvest_remaining",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 63
+    },
+    {
+      "owner": "RuntimeEconomyResourceStore",
+      "field": "deltas",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 64
+    },
+    {
+      "owner": "RuntimeEconomyResourceStore",
+      "field": "lane_generation",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 65
+    },
+    {
+      "owner": "RuntimeEconomyLedgerState",
+      "field": "cohort_active",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 345
+    },
+    {
+      "owner": "RuntimeEconomyLedgerState",
+      "field": "cohort_cell",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 346
+    },
+    {
+      "owner": "RuntimeEconomyLedgerState",
+      "field": "cohort_slot",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 347
+    },
+    {
+      "owner": "RuntimeEconomyLedgerState",
+      "field": "cohort_signature_id",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 348
+    },
+    {
+      "owner": "RuntimeEconomyLedgerState",
+      "field": "cohort_generation",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 349
+    },
+    {
+      "owner": "RuntimeEconomyLedgerState",
+      "field": "cohort_reserved",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 350
+    },
+    {
+      "owner": "RuntimeEconomyLedgerState",
+      "field": "cohort_reservation_owner",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 351
+    },
+    {
+      "owner": "RuntimeEconomyLedgerState",
+      "field": "cohort_population",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 352
+    },
+    {
+      "owner": "RuntimeEconomyLedgerState",
+      "field": "cohort_funds",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 353
+    },
+    {
+      "owner": "RuntimeEconomyLedgerState",
+      "field": "cohort_epoch_income",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 354
+    },
+    {
+      "owner": "RuntimeEconomyLedgerState",
+      "field": "cohort_epoch_expense",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 355
+    },
+    {
+      "owner": "RuntimeEconomyLedgerState",
+      "field": "cohort_needs_satisfaction",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 356
+    },
+    {
+      "owner": "RuntimeEconomyLedgerState",
+      "field": "cohort_composite_satisfaction",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 357
+    },
+    {
+      "owner": "RuntimeEconomyLedgerState",
+      "field": "cohort_owner_employed",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 358
+    },
+    {
+      "owner": "RuntimeEconomyLedgerState",
+      "field": "cohort_employee_employed",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 359
+    },
+    {
+      "owner": "RuntimeEconomyLedgerState",
+      "field": "market_stock",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 360
+    },
+    {
+      "owner": "RuntimeEconomyLedgerState",
+      "field": "market_price",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 361
+    },
+    {
+      "owner": "RuntimeEconomyLedgerState",
+      "field": "market_demand_ema",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 362
+    },
+    {
+      "owner": "RuntimeEconomyLedgerState",
+      "field": "market_last_shortage_q16",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 363
+    },
+    {
+      "owner": "RuntimeEconomyLedgerState",
+      "field": "market_cell_to_market",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 364
+    },
+    {
+      "owner": "RuntimeEconomyOwnedState",
+      "field": "live_memberships",
+      "type": "EconomyFamilyMembershipEdge",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 433
+    },
+    {
+      "owner": "RuntimeEconomyOwnedState",
+      "field": "live_ownerships",
+      "type": "EconomyFamilyBuildingOwnership",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 434
+    },
+    {
+      "owner": "RuntimeEconomyOwnedState",
+      "field": "live_expedition_route_cells",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 436
+    },
+    {
+      "owner": "RuntimeEconomyOwnedState",
+      "field": "live_expedition_route_costs",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 437
+    },
+    {
+      "owner": "RuntimeEconomyOwnedState",
+      "field": "live_expedition_payloads",
+      "type": "EconomyFamilyExpeditionPayload",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 438
+    },
+    {
+      "owner": "RuntimeEconomyOwnedState",
+      "field": "live_expedition_person_handles",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 439
+    },
+    {
+      "owner": "RuntimeEconomyOwnedState",
+      "field": "live_expedition_cargo",
+      "type": "EconomyFamilyExpeditionCargoLine",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 440
+    },
+    {
+      "owner": "RuntimeEconomyOwnedState",
+      "field": "live_expedition_kit_buildings",
+      "type": "EconomyFamilyExpeditionKitBuilding",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 441
+    },
+    {
+      "owner": "RuntimeEconomyOwnedState",
+      "field": "live_expedition_missing_good_ids",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 442
+    },
+    {
+      "owner": "RuntimeEconomyOwnedState",
+      "field": "live_expedition_missing_good_quantities",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 443
+    },
+    {
+      "owner": "RuntimeEconomyOwnedState",
+      "field": "live_traits",
+      "type": "EconomyFamilyTraitRoll",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 445
+    },
+    {
+      "owner": "RuntimeEconomyOwnedState",
+      "field": "live_person_needs",
+      "type": "EconomyPersonNeedState",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 446
+    },
+    {
+      "owner": "RuntimeEconomyOwnedState",
+      "field": "structural_commands",
+      "type": "RuntimeEconomyOwnedStructuralCommand",
+      "file": "gdext/src/runtime_economy_state.h",
+      "line": 458
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "cell",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 13
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "type_id",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 14
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "owner_signature_id",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 15
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "employee_fill_begin",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 19
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_input_selection_begin",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 20
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "group_units",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 21
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "filled_owner",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 22
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_capacity_q16",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 23
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_temperature_fit_q16",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 24
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_water_fit_q16",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 25
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_climate_capacity_q16",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 26
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_climate_lost_output",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 27
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_input",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 28
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_output",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 29
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_sold",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 30
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_discarded",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 31
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_resource",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 32
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_resource_generated",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 33
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_revenue",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 34
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_input_cost",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 35
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_wages_paid",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 36
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_wages_due",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 37
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_expected_revenue",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 38
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_operating_cost",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 39
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_maintenance_cost",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 40
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_margin_gap_q16",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 41
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "planned_utilization_q16",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 42
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "sample_unit_input_cost",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 43
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "sample_unit_maintenance_cost",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 44
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_base_wages_paid",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 45
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_base_wages_due",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 46
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_bonus_paid",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 47
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_bonus_due",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 48
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "wage_suspended",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 49
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "purchase_intent_capacity_q16",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 50
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "realized_profit_margin_q16",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 51
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "severe_loss_cycles",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 52
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "recovery_cycles",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 53
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "operating_state",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 54
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "pending_operating_state",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 55
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "recovery_cooldown_cycles",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 56
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "recovery_failed_reviews",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 57
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "merchant_debt_term_cycles_left",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 58
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "merchant_debt_delinquent_cycles",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 59
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "merchant_debt_principal",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 60
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "merchant_debt_premium",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 61
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_in_kind_livelihood_value",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 62
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_market_receipt",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 63
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_bullion_mint_receipt",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 64
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_producer_support_receipt",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 65
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_business_tax_paid",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 66
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_business_subsidy_received",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 67
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_maintenance_due",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 68
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_observed_capacity_days_q16",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 69
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_quoted_market_receipt",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 70
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "last_quoted_operating_cost",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 71
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "modifier_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 72
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "output_factor_q16",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 73
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "role_count",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 74
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "role_begin",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 75
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "role_filled",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 78
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "role_contract_wage",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 79
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "role_base_living_cost",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 80
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "role_living_cost",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 81
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "role_local_average_wage",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 82
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "role_base_wage_due",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 83
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "role_base_wage_paid",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 84
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "role_bonus_due",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 85
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "role_bonus_paid",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 86
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "pending_cell",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 89
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "pending_type_id",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 90
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "pending_owner_signature_id",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 91
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "pending_count",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 92
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "pending_ready_day",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 93
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "pending_sequence",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 94
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "pending_merchant_debt_principal",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 95
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "pending_merchant_debt_premium",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 96
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "pending_merchant_debt_term_cycles_left",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 97
+    },
+    {
+      "owner": "RuntimeEconomyBuildingStore",
+      "field": "pending_sponsor_family_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_building_store.h",
+      "line": 98
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "ids",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 22
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "sources",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 23
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "destinations",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 24
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "countries",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 25
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "source_country_handles",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 26
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "destination_country_handles",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 27
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "source_country_slots",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 28
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "destination_country_slots",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 29
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "departure_days",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 30
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "arrival_days",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 31
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "cash_escrow",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 32
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "capacity_work",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 33
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "states",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 34
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "cargo_delivered",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 35
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "line_offsets",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 36
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "line_goods",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 37
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "line_quantities",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 38
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "line_unit_prices",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 39
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "line_destination_prices",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 40
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "line_base_values",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 41
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "line_retail_values",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 42
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "line_import_transfers",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 43
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "line_export_transfers",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 44
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "line_transaction_transfers",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 45
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "line_flags",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 46
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "seller_offsets",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 47
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "seller_handles",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 48
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "seller_weights",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 49
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "arrival_bucket_days",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 54
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "arrival_bucket_offsets",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 55
+    },
+    {
+      "owner": "EconomyTradeOrderStore",
+      "field": "arrival_bucket_orders",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 56
+    },
+    {
+      "owner": "EconomyFamilyStore",
+      "field": "active",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 82
+    },
+    {
+      "owner": "EconomyFamilyStore",
+      "field": "generation",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 83
+    },
+    {
+      "owner": "EconomyFamilyStore",
+      "field": "stable_id",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 84
+    },
+    {
+      "owner": "EconomyFamilyStore",
+      "field": "surname_id",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 85
+    },
+    {
+      "owner": "EconomyFamilyStore",
+      "field": "surname_disambiguator",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 86
+    },
+    {
+      "owner": "EconomyFamilyStore",
+      "field": "founded_day",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 87
+    },
+    {
+      "owner": "EconomyFamilyStore",
+      "field": "home_cell",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 88
+    },
+    {
+      "owner": "EconomyFamilyStore",
+      "field": "origin_cell",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 89
+    },
+    {
+      "owner": "EconomyFamilyStore",
+      "field": "origin_ethnicity",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 90
+    },
+    {
+      "owner": "EconomyFamilyStore",
+      "field": "culture_group_id",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 91
+    },
+    {
+      "owner": "EconomyFamilyStore",
+      "field": "split_sequence",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 92
+    },
+    {
+      "owner": "EconomyFamilyStore",
+      "field": "decline_reviews",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 93
+    },
+    {
+      "owner": "EconomyFamilyStore",
+      "field": "flags",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 94
+    },
+    {
+      "owner": "EconomyFamilyStore",
+      "field": "free_indices",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_live_tables.h",
+      "line": 95
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "active",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 29
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "generation",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 30
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "stable_id",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 31
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "family_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 32
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "cohort_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 33
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "given_name_id",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 34
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "name_disambiguator",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 35
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "notable_since_day",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 36
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "flags",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 37
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "cash_claim",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 38
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "family_equity_share_q32",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 39
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "epoch_job_income",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 40
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "epoch_business_result",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 41
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "epoch_consumption_expense",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 42
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "epoch_tax",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 43
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "income_ema",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 44
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "needs_satisfaction",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 45
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "worst_need_id",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 46
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "building_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 47
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "job_kind",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 48
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "employee_role_index",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 49
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "job_since_day",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 50
+    },
+    {
+      "owner": "EconomyNotablePersonStore",
+      "field": "free_indices",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 51
+    },
+    {
+      "owner": "EconomyFamilyCellInfluenceStore",
+      "field": "active",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 98
+    },
+    {
+      "owner": "EconomyFamilyCellInfluenceStore",
+      "field": "generation",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 99
+    },
+    {
+      "owner": "EconomyFamilyCellInfluenceStore",
+      "field": "family_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 100
+    },
+    {
+      "owner": "EconomyFamilyCellInfluenceStore",
+      "field": "cell",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 101
+    },
+    {
+      "owner": "EconomyFamilyCellInfluenceStore",
+      "field": "stable_id",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 102
+    },
+    {
+      "owner": "EconomyFamilyCellInfluenceStore",
+      "field": "population",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 103
+    },
+    {
+      "owner": "EconomyFamilyCellInfluenceStore",
+      "field": "cash",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 104
+    },
+    {
+      "owner": "EconomyFamilyCellInfluenceStore",
+      "field": "building_asset",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 105
+    },
+    {
+      "owner": "EconomyFamilyCellInfluenceStore",
+      "field": "population_share_q16",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 106
+    },
+    {
+      "owner": "EconomyFamilyCellInfluenceStore",
+      "field": "cash_share_q16",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 107
+    },
+    {
+      "owner": "EconomyFamilyCellInfluenceStore",
+      "field": "building_share_q16",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 108
+    },
+    {
+      "owner": "EconomyFamilyCellInfluenceStore",
+      "field": "score_q16",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 109
+    },
+    {
+      "owner": "EconomyFamilyCellInfluenceStore",
+      "field": "satisfaction_q16",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 113
+    },
+    {
+      "owner": "EconomyFamilyCellInfluenceStore",
+      "field": "prestige_level",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 114
+    },
+    {
+      "owner": "EconomyFamilyCellInfluenceStore",
+      "field": "pending_target_level",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 115
+    },
+    {
+      "owner": "EconomyFamilyCellInfluenceStore",
+      "field": "review_streak",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 116
+    },
+    {
+      "owner": "EconomyFamilyCellInfluenceStore",
+      "field": "last_review_day",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 117
+    },
+    {
+      "owner": "EconomyFamilyCellInfluenceStore",
+      "field": "free_indices",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 118
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "active",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 177
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "generation",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 178
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "stable_id",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 179
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "country_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 180
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "family_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 181
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "source_cell",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 182
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "target_cell",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 183
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "departure_day",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 184
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "due_day",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 185
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "route_cost",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 186
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "speed",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 187
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "state",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 188
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "population",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 189
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "route_begin",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 190
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "route_count",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 191
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "payload_begin",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 192
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "payload_count",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 193
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "cargo_begin",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 194
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "cargo_count",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 195
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "kit_building_begin",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 196
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "kit_building_count",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 197
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "kit_bridge_required_units",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 200
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "kit_material_required_units",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 201
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "kit_missing_stock_identity",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 202
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "missing_good_begin",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 203
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "missing_good_count",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 204
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "effect_transaction_id",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 205
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "idempotency_key",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 206
+    },
+    {
+      "owner": "EconomyFamilyExpeditionStore",
+      "field": "free_indices",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_side_tables.h",
+      "line": 207
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "family_slot",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 14
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "family_active",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 15
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "family_generation",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 16
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "family_stable_id",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 17
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "family_surname_id",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 18
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "family_surname_disambiguator",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 19
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "family_founded_day",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 20
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "family_home_cell",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 21
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "family_origin_cell",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 22
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "family_origin_ethnicity",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 23
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "family_culture_group_id",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 24
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "family_split_sequence",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 25
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "family_decline_reviews",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 26
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "family_flags",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 27
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "purchase_factor_q16",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 29
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "membership_family_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 32
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "membership_cohort_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 33
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "membership_people",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 34
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "membership_cash_claim",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 35
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "membership_population_basis",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 36
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "membership_funds_basis",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 37
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "membership_owner_employed",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 38
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "membership_employee_employed",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 39
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "ownership_family_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 42
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "ownership_building_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 43
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "ownership_owned_count",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 44
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "ownership_filled_owner",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 45
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_slot",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 48
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_active",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 49
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_generation",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 50
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_stable_id",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 51
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_family_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 52
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_cohort_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 53
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_given_name_id",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 54
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_name_disambiguator",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 55
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_notable_since_day",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 56
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_flags",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 57
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_cash_claim",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 58
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_family_equity_share_q32",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 59
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_epoch_job_income",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 60
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_epoch_business_result",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 61
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_epoch_consumption_expense",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 62
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_epoch_tax",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 63
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_income_ema",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 64
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_needs_satisfaction",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 65
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_worst_need_id",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 66
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_building_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 67
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_job_kind",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 68
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_employee_role_index",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 69
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "person_job_since_day",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 70
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "need_person_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 73
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "need_stable_need_id",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 74
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "need_desired_period_units",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 75
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "need_satisfaction_q16",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 76
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "need_attributed_spend",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 77
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "trait_family_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 80
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "trait_trait_id",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 81
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "trait_strength_q16",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 82
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "trait_core",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 83
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "influence_slot",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 86
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "influence_active",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 87
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "influence_generation",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 88
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "influence_family_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 89
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "influence_cell",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 90
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "influence_stable_id",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 91
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "influence_population",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 92
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "influence_cash",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 93
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "influence_building_asset",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 94
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "influence_population_share_q16",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 95
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "influence_cash_share_q16",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 96
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "influence_building_share_q16",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 97
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "influence_score_q16",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 98
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "influence_satisfaction_q16",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 99
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "influence_prestige_level",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 100
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "influence_pending_target_level",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 101
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "influence_review_streak",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 102
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "influence_last_review_day",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 103
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "command_operation",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 106
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "command_family_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 107
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "command_trait_id",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 108
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "command_strength_q16",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 109
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "command_effective_day",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 110
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "command_priority",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 111
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "command_sequence",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 112
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "command_submit_order",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 113
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_slot",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 116
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_active",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 117
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_generation",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 118
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_stable_id",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 119
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_country_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 120
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_family_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 121
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_source_cell",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 122
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_target_cell",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 123
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_departure_day",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 124
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_due_day",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 125
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_route_cost",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 126
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_speed",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 127
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_state",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 128
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_population",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 129
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_effect_transaction_id",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 130
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_idempotency_key",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 131
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_route_count",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 132
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_route_begin",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 133
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_payload_count",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 134
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_payload_begin",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 135
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_cargo_count",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 136
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_cargo_begin",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 137
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_kit_count",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 138
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_kit_begin",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 139
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_missing_identity",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 140
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_missing_count",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 141
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "expedition_missing_begin",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 142
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "route_cell",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 145
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "route_cost",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 146
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_source_cohort_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 149
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_signature",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 150
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_people",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 151
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_funds",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 152
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_epoch_income",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 153
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_epoch_expense",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 154
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_epoch_in_kind_income",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 155
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_income_ema",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 156
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_epoch_tax_paid",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 157
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_epoch_subsidy_received",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 158
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_income_baseline_ema",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 159
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_demography_residual",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 160
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_cash_claim",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 161
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_owner_employed",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 162
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_employee_employed",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 163
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_needs_satisfaction",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 164
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_worst_need_id",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 165
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_composite_satisfaction",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 166
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_worst_dimension_id",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 167
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_satisfaction_dims",
+      "type": "uint16_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 168
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_person_count",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 169
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_person_begin",
+      "type": "uint32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 170
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "payload_person_handle",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 173
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "cargo_good_id",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 176
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "cargo_quantity",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 177
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "cargo_flags",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 178
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "kit_type_id",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 181
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "kit_count",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 182
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "missing_good_id",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 185
+    },
+    {
+      "owner": "RuntimeEconomyFamilyStore",
+      "field": "missing_quantity",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_family_store.h",
+      "line": 186
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "ids",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 16
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "sources",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 17
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "destinations",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 18
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "countries",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 19
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "source_country_handles",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 20
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "destination_country_handles",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 21
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "source_country_slots",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 22
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "destination_country_slots",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 23
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "departure_days",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 24
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "arrival_days",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 25
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "cash_escrow",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 26
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "capacity_work",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 27
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "states",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 28
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "cargo_delivered",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 29
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "line_count",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 30
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "line_begin",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 31
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "seller_count",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 32
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "seller_begin",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 33
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "line_goods",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 36
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "line_quantities",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 37
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "line_unit_prices",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 38
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "line_destination_prices",
+      "type": "int32_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 39
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "line_base_values",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 40
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "line_retail_values",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 41
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "line_import_transfers",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 42
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "line_export_transfers",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 43
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "line_transaction_transfers",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 44
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "line_flags",
+      "type": "uint8_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 45
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "seller_handles",
+      "type": "uint64_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 48
+    },
+    {
+      "owner": "RuntimeEconomyTradeEscrowStore",
+      "field": "seller_weights",
+      "type": "int64_t",
+      "file": "gdext/src/runtime_economy_trade_escrow_store.h",
+      "line": 49
+    }
+  ],
+  "legacy_hash_member_dependencies": [
+    "_asset_peer_journal",
+    "_birth_residual_q32",
+    "_building_catalog_hash",
+    "_building_employee_filled",
+    "_building_role_base_living_cost",
+    "_building_role_base_wage_due",
+    "_building_role_base_wage_paid",
+    "_building_role_bonus_due",
+    "_building_role_bonus_paid",
+    "_building_role_contract_wage",
+    "_building_role_living_cost",
+    "_building_role_local_average_wage",
+    "_building_types",
+    "_canal_projects",
+    "_catalog_compat_hash_v10",
+    "_catalog_hash",
+    "_cell_building_structure_gen",
+    "_cell_count",
+    "_cell_food_access_eq_previous",
+    "_cell_food_export_eq_previous",
+    "_cell_food_flow_valid",
+    "_cell_food_import_eq_previous",
+    "_cell_food_input_eq_previous",
+    "_cell_food_output_eq_previous",
+    "_cell_last_settlement_day",
+    "_cell_owner_cash_gen",
+    "_cell_population_gen",
+    "_cell_price_stock_gen",
+    "_cell_resource_gen",
+    "_cell_settlement_generation",
+    "_cell_social_pressure_level",
+    "_cell_support_ema_q16",
+    "_cell_technology_gen",
+    "_cell_trade_gen",
+    "_country_good_trade",
+    "_country_partner_trade",
+    "_country_runtime",
+    "_country_trade_revision",
+    "_current_day",
+    "_employment_choice_temperature_q16",
+    "_employment_mobility_daily_q16",
+    "_employment_understaffed_reallocation_hurdle_mult_q16",
+    "_environment_day",
+    "_environment_hash",
+    "_epoch_country_handles",
+    "_epoch_days",
+    "_epoch_id",
+    "_family_trait_catalog_hash",
+    "_family_trait_catalog_version",
+    "_family_trait_commands",
+    "_fiscal_cumulative_bases",
+    "_fiscal_cumulative_collected",
+    "_fiscal_cumulative_paid",
+    "_fiscal_cumulative_requests",
+    "_fiscal_digest_rebuild",
+    "_fiscal_escrow_by_country",
+    "_fiscal_hash_pages",
+    "_fiscal_hash_words",
+    "_fiscal_last_events",
+    "_fiscal_previous_country_handles",
+    "_fiscal_previous_requests",
+    "_fiscal_record_digests",
+    "_fiscal_words_dirty",
+    "_food_flow_previous_period_days",
+    "_formula_owned",
+    "_investment_cycle_start_day",
+    "_labor_signals",
+    "_last_committed_day",
+    "_locked_investment_cycle_days",
+    "_locked_market_cycle_days",
+    "_locked_slow_cycle_days",
+    "_market_cycle_start_day",
+    "_market_hash_pages",
+    "_market_signals",
+    "_modifier_runtime",
+    "_next_canal_project_id",
+    "_pending_commands",
+    "_price_ceiling_confirm_days",
+    "_price_ceiling_expand_bp",
+    "_price_ceiling_recover_bp",
+    "_prosperity_profile_hash",
+    "_settlement_full_name_ids",
+    "_settlement_name_pack_id",
+    "_settlement_prefix_ids",
+    "_settlement_root_ids",
+    "_settlement_suffix_ids",
+    "_settlements",
+    "_slow_cycle_start_day",
+    "_startup_demand_runtime_mode",
+    "_tariff_history",
+    "_trade_flows",
+    "_trade_runtime_mode"
+  ],
+  "legacy_hash_store_dependencies": [
+    "families_store().active",
+    "families_store().culture_group_id",
+    "families_store().decline_reviews",
+    "families_store().flags",
+    "families_store().founded_day",
+    "families_store().generation",
+    "families_store().home_cell",
+    "families_store().origin_cell",
+    "families_store().origin_ethnicity",
+    "families_store().split_sequence",
+    "families_store().stable_id",
+    "families_store().surname_disambiguator",
+    "families_store().surname_id",
+    "family_expeditions_store().active",
+    "family_expeditions_store().cargo_begin",
+    "family_expeditions_store().cargo_count",
+    "family_expeditions_store().country_handle",
+    "family_expeditions_store().departure_day",
+    "family_expeditions_store().due_day",
+    "family_expeditions_store().effect_transaction_id",
+    "family_expeditions_store().family_handle",
+    "family_expeditions_store().generation",
+    "family_expeditions_store().idempotency_key",
+    "family_expeditions_store().kit_bridge_required_units",
+    "family_expeditions_store().kit_building_begin",
+    "family_expeditions_store().kit_building_count",
+    "family_expeditions_store().kit_material_required_units",
+    "family_expeditions_store().kit_missing_stock_identity",
+    "family_expeditions_store().missing_good_begin",
+    "family_expeditions_store().missing_good_count",
+    "family_expeditions_store().payload_begin",
+    "family_expeditions_store().payload_count",
+    "family_expeditions_store().population",
+    "family_expeditions_store().route_begin",
+    "family_expeditions_store().route_cost",
+    "family_expeditions_store().route_count",
+    "family_expeditions_store().source_cell",
+    "family_expeditions_store().speed",
+    "family_expeditions_store().stable_id",
+    "family_expeditions_store().state",
+    "family_expeditions_store().target_cell",
+    "market_store().cell_to_market",
+    "market_store().demand_ema",
+    "market_store().last_shortage_q16",
+    "market_store().price",
+    "market_store().price_ceilings",
+    "market_store().stock",
+    "persons_store().active",
+    "persons_store().building_handle",
+    "persons_store().cash_claim",
+    "persons_store().cohort_handle",
+    "persons_store().employee_role_index",
+    "persons_store().epoch_business_result",
+    "persons_store().epoch_consumption_expense",
+    "persons_store().epoch_job_income",
+    "persons_store().epoch_tax",
+    "persons_store().family_equity_share_q32",
+    "persons_store().family_handle",
+    "persons_store().flags",
+    "persons_store().generation",
+    "persons_store().given_name_id",
+    "persons_store().income_ema",
+    "persons_store().job_kind",
+    "persons_store().job_since_day",
+    "persons_store().name_disambiguator",
+    "persons_store().needs_satisfaction",
+    "persons_store().notable_since_day",
+    "persons_store().stable_id",
+    "persons_store().worst_need_id",
+    "population_store().active",
+    "population_store().composite_satisfaction",
+    "population_store().demography_residual",
+    "population_store().employee_employed",
+    "population_store().epoch_expense",
+    "population_store().epoch_income",
+    "population_store().epoch_subsidy_received",
+    "population_store().epoch_tax_paid",
+    "population_store().flags",
+    "population_store().funds",
+    "population_store().generation",
+    "population_store().income_baseline_ema",
+    "population_store().income_ema",
+    "population_store().needs_satisfaction",
+    "population_store().owner_employed",
+    "population_store().population",
+    "population_store().satisfaction_dims",
+    "population_store().signature_id",
+    "population_store().worst_dimension_id",
+    "population_store().worst_need_id",
+    "trade_orders_store().arrival_days",
+    "trade_orders_store().capacity_work",
+    "trade_orders_store().cargo_delivered",
+    "trade_orders_store().cash_escrow",
+    "trade_orders_store().countries",
+    "trade_orders_store().departure_days",
+    "trade_orders_store().destination_country_handles",
+    "trade_orders_store().destination_country_slots",
+    "trade_orders_store().destinations",
+    "trade_orders_store().ids",
+    "trade_orders_store().line_base_values",
+    "trade_orders_store().line_destination_prices",
+    "trade_orders_store().line_export_transfers",
+    "trade_orders_store().line_flags",
+    "trade_orders_store().line_goods",
+    "trade_orders_store().line_import_transfers",
+    "trade_orders_store().line_offsets",
+    "trade_orders_store().line_quantities",
+    "trade_orders_store().line_retail_values",
+    "trade_orders_store().line_transaction_transfers",
+    "trade_orders_store().line_unit_prices",
+    "trade_orders_store().next_id",
+    "trade_orders_store().seller_handles",
+    "trade_orders_store().seller_offsets",
+    "trade_orders_store().seller_weights",
+    "trade_orders_store().size",
+    "trade_orders_store().source_country_handles",
+    "trade_orders_store().source_country_slots",
+    "trade_orders_store().sources",
+    "trade_orders_store().states"
+  ],
+  "writer_candidates": [
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 1907,
+      "code": "owned.resources.cell_generation.assign(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 1912,
+      "code": "owned.resources.cell_generation[static_cast<size_t>(cell)] =",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 2086,
+      "code": "buildings_store().group_units[i] = owned.buildings.group_units[i];",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 14357,
+      "code": "_building_handle_index[buildings_store().modifier_handle[i]] = i;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17289,
+      "code": "families_store().stable_id[family_index] = stable_id;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17338,
+      "code": "families_store().surname_id[family_index] = surname;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17339,
+      "code": "families_store().surname_disambiguator[family_index] = disambiguator;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17340,
+      "code": "families_store().founded_day[family_index] = identity_day;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17341,
+      "code": "families_store().home_cell[family_index] = cell;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17342,
+      "code": "families_store().origin_cell[family_index] = cell;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17343,
+      "code": "families_store().origin_ethnicity[family_index] = founder_ethnicity;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17344,
+      "code": "families_store().culture_group_id[family_index] = culture_group;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17345,
+      "code": "families_store().split_sequence[family_index] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17347,
+      "code": "families_store().flags[family_index] |= FAMILY_FLAG_STARTER;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17471,
+      "code": "const uint32_t sequence = families_store().split_sequence[parent]++;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17485,
+      "code": "families_store().stable_id[child] = child_stable;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17487,
+      "code": "families_store().surname_id[child] = families_store().surname_id[parent];",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17488,
+      "code": "families_store().surname_disambiguator[child] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17496,
+      "code": "families_store().surname_disambiguator[child] = std::max(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17502,
+      "code": "families_store().founded_day[child] = std::max<int64_t>(0, _current_day);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17503,
+      "code": "families_store().home_cell[child] = candidate.cell;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17504,
+      "code": "families_store().origin_cell[child] = candidate.cell;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17505,
+      "code": "families_store().origin_ethnicity[child] = families_store().origin_ethnicity[parent];",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17506,
+      "code": "families_store().culture_group_id[child] = families_store().culture_group_id[parent];",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17509,
+      "code": "families_store().flags[child] = static_cast<uint16_t>(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17511,
+      "code": "families_store().split_sequence[child] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 17538,
+      "code": "if (move) persons_store().family_handle[person] = child_handle;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 18052,
+      "code": "branch_pop[population_store().page_cell[slot / COHORT_PAGE_SIZE]] += edge.people;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 18061,
+      "code": "families_store().home_cell[i] = best_cell;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 18071,
+      "code": "families_store().decline_reviews[i] = static_cast<uint16_t>(std::min(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 18076,
+      "code": "families_store().decline_reviews[i] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 19007,
+      "code": "persons_store().epoch_consumption_expense[person] = saturating_add(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 19010,
+      "code": "persons_store().epoch_tax[person] = saturating_add(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 19013,
+      "code": "persons_store().needs_satisfaction[person] =",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 19015,
+      "code": "persons_store().worst_need_id[person] = attribution.worst_need_id;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20470,
+      "code": "persons_store().stable_id[index] = stable_id;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20472,
+      "code": "persons_store().family_handle[index] = family_handle;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20474,
+      "code": "persons_store().cohort_handle[index] = edge.cohort_handle;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20476,
+      "code": "persons_store().given_name_id[index] = given;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20477,
+      "code": "persons_store().name_disambiguator[index] = disambiguator;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20478,
+      "code": "persons_store().notable_since_day[index] = identity_day;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20479,
+      "code": "persons_store().flags[index] = existing == 0 ? 1U : 0U;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20480,
+      "code": "persons_store().cash_claim[index] = std::min(one_share,",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20482,
+      "code": "persons_store().needs_satisfaction[index] = population_store().needs_satisfaction[slot];",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20483,
+      "code": "persons_store().worst_need_id[index] = population_store().worst_need_id[slot];",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20512,
+      "code": "persons_store().building_handle[i] = 0; persons_store().job_kind[i] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20513,
+      "code": "persons_store().employee_role_index[i] = -1;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20540,
+      "code": "persons_store().building_handle[person] = ownership.building_handle;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20541,
+      "code": "persons_store().job_kind[person] = 1;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20545,
+      "code": "persons_store().job_since_day[person] = std::max<int64_t>(0,",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20549,
+      "code": "persons_store().epoch_business_result[person] = ownership.filled_owner > 0",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20577,
+      "code": "persons_store().building_handle[i] = group.modifier_handle;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20578,
+      "code": "persons_store().job_kind[i] = 2;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20579,
+      "code": "persons_store().employee_role_index[i] = r;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20583,
+      "code": "persons_store().job_since_day[i] = std::max<int64_t>(0,",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20585,
+      "code": "persons_store().epoch_job_income[i] = _building_employee_filled[role_lane] > 0",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20596,
+      "code": "persons_store().job_since_day[i] = -1;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20619,
+      "code": "persons_store().cash_claim[person] = raw;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20629,
+      "code": "persons_store().cash_claim[person] = std::max<int64_t>(0,",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20637,
+      "code": "persons_store().income_ema[person] = (persons_store().income_ema[person] * 7 +",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 20659,
+      "code": "persons_store().family_equity_share_q32[person] =",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 21020,
+      "code": "persons_store().cohort_handle[person] = destination_cohort_handle;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 21022,
+      "code": "persons_store().building_handle[person] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 21023,
+      "code": "persons_store().job_kind[person] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime.cpp",
+      "line": 21024,
+      "code": "persons_store().employee_role_index[person] = -1;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_building_commit.cpp",
+      "line": 96,
+      "code": "buildings_store().group_units[existing] = saturating_add(buildings_store().group_units[existing],",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_building_commit.cpp",
+      "line": 99,
+      "code": "buildings_store().merchant_debt_principal[existing] = saturating_add(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_building_commit.cpp",
+      "line": 102,
+      "code": "buildings_store().merchant_debt_premium[existing] = saturating_add(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_building_commit.cpp",
+      "line": 107,
+      "code": "buildings_store().merchant_debt_term_cycles_left[existing] =",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_building_commit.cpp",
+      "line": 149,
+      "code": "buildings_store().filled_owner[group_index] = seated;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_building_construction.cpp",
+      "line": 677,
+      "code": "buildings_store().group_units[group_id] -= count;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1037,
+      "code": "family_expeditions_store().missing_good_begin[expedition] =",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1045,
+      "code": "family_expeditions_store().missing_good_count[expedition] =",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1062,
+      "code": "family_expeditions_store().kit_missing_stock_identity[expedition] =",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1073,
+      "code": "family_expeditions_store().kit_missing_stock_identity[expedition] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1114,
+      "code": "family_expeditions_store().kit_building_begin[expedition] = static_cast<uint32_t>(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1120,
+      "code": "family_expeditions_store().kit_building_count[expedition] =",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1123,
+      "code": "family_expeditions_store().kit_building_count[expedition] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1149,
+      "code": "family_expeditions_store().kit_building_count[expedition] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1151,
+      "code": "family_expeditions_store().due_day[expedition] = day + 1;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1159,
+      "code": "family_expeditions_store().state[expedition] = EXPEDITION_OUTBOUND;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1160,
+      "code": "family_expeditions_store().departure_day[expedition] = day;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1161,
+      "code": "family_expeditions_store().due_day[expedition] = day + travel;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1162,
+      "code": "family_expeditions_store().missing_good_count[expedition] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1163,
+      "code": "family_expeditions_store().kit_missing_stock_identity[expedition] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1192,
+      "code": "family_expeditions_store().due_day[expedition] = day + 1;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1203,
+      "code": "family_expeditions_store().due_day[expedition] = day + 1;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1240,
+      "code": "family_expeditions_store().cargo_begin[expedition] =",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1244,
+      "code": "family_expeditions_store().cargo_count[expedition] =",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1284,
+      "code": "family_expeditions_store().due_day[expedition] = day + 1;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1291,
+      "code": "family_expeditions_store().due_day[expedition] = day + 1;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1316,
+      "code": "family_expeditions_store().stable_id[expedition] =",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1318,
+      "code": "family_expeditions_store().country_handle[expedition] = quote.country_handle;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1319,
+      "code": "family_expeditions_store().family_handle[expedition] = quote.family_handle;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1320,
+      "code": "family_expeditions_store().source_cell[expedition] = quote.source_cell;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1321,
+      "code": "family_expeditions_store().target_cell[expedition] = quote.target_cell;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1322,
+      "code": "family_expeditions_store().departure_day[expedition] = cmd.effective_day;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1323,
+      "code": "family_expeditions_store().route_cost[expedition] = quote.route_cost;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1324,
+      "code": "family_expeditions_store().speed[expedition] = COLONIZATION_SPEED;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1325,
+      "code": "family_expeditions_store().due_day[expedition] = cmd.effective_day +",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1327,
+      "code": "family_expeditions_store().state[expedition] = EXPEDITION_OUTBOUND;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1328,
+      "code": "family_expeditions_store().population[expedition] = cmd.i64_0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1332,
+      "code": "family_expeditions_store().kit_bridge_required_units[expedition] =",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1334,
+      "code": "family_expeditions_store().kit_material_required_units[expedition] =",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1336,
+      "code": "family_expeditions_store().route_begin[expedition] = static_cast<uint32_t>(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1338,
+      "code": "family_expeditions_store().route_count[expedition] = quote.route_count;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1350,
+      "code": "family_expeditions_store().idempotency_key[expedition] =",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1356,
+      "code": "family_expeditions_store().payload_count[expedition] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1357,
+      "code": "family_expeditions_store().kit_building_count[expedition] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1359,
+      "code": "family_expeditions_store().state[expedition] = EXPEDITION_PREPARING;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1360,
+      "code": "family_expeditions_store().due_day[expedition] = cmd.effective_day;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1479,
+      "code": "persons_store().cohort_handle[person] = payload.source_cohort_handle;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1486,
+      "code": "family_expeditions_store().payload_count[expedition] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1487,
+      "code": "family_expeditions_store().population[expedition] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1610,
+      "code": "family_expeditions_store().payload_begin[expedition] = static_cast<uint32_t>(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1612,
+      "code": "family_expeditions_store().payload_count[expedition] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1727,
+      "code": "persons_store().cohort_handle[person] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1728,
+      "code": "persons_store().building_handle[person] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1729,
+      "code": "persons_store().job_kind[person] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1730,
+      "code": "persons_store().employee_role_index[person] = -1;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1764,
+      "code": "family_expeditions_store().payload_count[expedition] =",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1781,
+      "code": "family_expeditions_store().payload_count[expedition] = static_cast<uint32_t>(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1805,
+      "code": "family_expeditions_store().population[expedition] =",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 1920,
+      "code": "persons_store().cohort_handle[person] = cohort_handle;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 2001,
+      "code": "family_expeditions_store().state[expedition] = EXPEDITION_RETURNING;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 2004,
+      "code": "family_expeditions_store().due_day[expedition] = cmd.effective_day + return_days;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 2038,
+      "code": "family_expeditions_store().state[expedition] = EXPEDITION_RETURNING;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 2041,
+      "code": "family_expeditions_store().due_day[expedition] = _current_day +",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 2170,
+      "code": "family_expeditions_store().effect_transaction_id[expedition] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 2171,
+      "code": "family_expeditions_store().state[expedition] = EXPEDITION_RETURNING;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 2173,
+      "code": "family_expeditions_store().due_day[expedition] = day +",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 2189,
+      "code": "family_expeditions_store().due_day[expedition] = day + 1;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 2220,
+      "code": "family_expeditions_store().state[expedition] = EXPEDITION_RETURNING;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 2222,
+      "code": "family_expeditions_store().due_day[expedition] = day +",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 2252,
+      "code": "family_expeditions_store().effect_transaction_id[expedition] = transaction_id;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 2253,
+      "code": "family_expeditions_store().state[expedition] = EXPEDITION_SETTLING;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 2254,
+      "code": "family_expeditions_store().due_day[expedition] = day + 1;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization.cpp",
+      "line": 2272,
+      "code": "family_expeditions_store().target_cell[i])] = i;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization_kit.cpp",
+      "line": 1085,
+      "code": "family_expeditions_store().kit_building_begin[expedition] = static_cast<uint32_t>(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization_kit.cpp",
+      "line": 1091,
+      "code": "family_expeditions_store().kit_building_count[expedition] =",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization_kit.cpp",
+      "line": 1094,
+      "code": "family_expeditions_store().kit_building_count[expedition] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization_kit.cpp",
+      "line": 1122,
+      "code": "family_expeditions_store().cargo_count[expedition] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization_kit.cpp",
+      "line": 1518,
+      "code": "buildings_store().group_units[existing] = saturating_add(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization_kit.cpp",
+      "line": 1523,
+      "code": "buildings_store().modifier_handle[existing] =",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization_kit.cpp",
+      "line": 1609,
+      "code": "buildings_store().group_units[existing] = saturating_add(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization_kit.cpp",
+      "line": 1615,
+      "code": "buildings_store().modifier_handle[existing] =",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_colonization_kit.cpp",
+      "line": 1723,
+      "code": "buildings_store().filled_owner[group_index] = filled;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_configuration.cpp",
+      "line": 695,
+      "code": "market_store().price_ceilings.resize(market_count);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_configuration.cpp",
+      "line": 703,
+      "code": "market_store().stock.resize(static_cast<size_t>(matrix_size));",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_configuration.cpp",
+      "line": 704,
+      "code": "market_store().price.resize(static_cast<size_t>(matrix_size));",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_configuration.cpp",
+      "line": 705,
+      "code": "market_store().demand_ema.assign(static_cast<size_t>(matrix_size), 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_configuration.cpp",
+      "line": 706,
+      "code": "market_store().last_shortage_q16.assign(static_cast<size_t>(matrix_size), 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_configuration.cpp",
+      "line": 716,
+      "code": "market_store().cell_to_market.resize(_cell_count);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_configuration.cpp",
+      "line": 717,
+      "code": "for (int32_t c = 0; c < _cell_count; ++c) market_store().cell_to_market[c] = c % market_count;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_configuration.cpp",
+      "line": 741,
+      "code": "market_store().cell_to_market.swap(cell_to_market);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_configuration.cpp",
+      "line": 757,
+      "code": "market_store().stock.swap(stock);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_configuration.cpp",
+      "line": 776,
+      "code": "market_store().price.swap(price);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_configuration.cpp",
+      "line": 853,
+      "code": "buildings_store().group_units[existing] = saturating_add(buildings_store().group_units[existing],",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_configuration.cpp",
+      "line": 912,
+      "code": "buildings_store().filled_owner[group_index] = std::max(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_epoch.cpp",
+      "line": 52,
+      "code": "persons_store().epoch_job_income[i] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_epoch.cpp",
+      "line": 53,
+      "code": "persons_store().epoch_business_result[i] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_epoch.cpp",
+      "line": 54,
+      "code": "persons_store().epoch_consumption_expense[i] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_epoch.cpp",
+      "line": 55,
+      "code": "persons_store().epoch_tax[i] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_family_buff.cpp",
+      "line": 424,
+      "code": "families_store().flags[static_cast<size_t>(family_index)] = flags;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_market.cpp",
+      "line": 1753,
+      "code": "buildings_store().last_discarded[entry->building_group] = saturating_add(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence.cpp",
+      "line": 959,
+      "code": "if (cell < 0) population_store().free_pages.push_back(page);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence.cpp",
+      "line": 974,
+      "code": "population_store().cell_first_page.assign(_cell_count, -1);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 612,
+      "code": "population_store().page_next.assign(pages, -1);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 613,
+      "code": "population_store().page_cell.assign(pages, -1);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 615,
+      "code": "population_store().active.assign(slots, 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 620,
+      "code": "population_store().reserved.assign(slots, 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 621,
+      "code": "population_store().reservation_owner.assign(slots, 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 622,
+      "code": "population_store().signature_id.assign(slots, 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 623,
+      "code": "population_store().generation.assign(slots, 1);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 624,
+      "code": "population_store().population.assign(slots, 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 625,
+      "code": "population_store().funds.assign(slots, 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 626,
+      "code": "population_store().epoch_income.assign(slots, 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 627,
+      "code": "population_store().epoch_expense.assign(slots, 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 628,
+      "code": "population_store().epoch_in_kind_income.assign(slots, 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 629,
+      "code": "population_store().income_ema.assign(slots, 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 630,
+      "code": "population_store().epoch_tax_paid.assign(slots, 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 631,
+      "code": "population_store().epoch_subsidy_received.assign(slots, 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 632,
+      "code": "population_store().income_baseline_ema.assign(slots, 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 633,
+      "code": "population_store().needs_satisfaction.assign(slots, static_cast<uint16_t>(Q16_ONE - 1));",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 634,
+      "code": "population_store().worst_need_id.assign(slots, std::numeric_limits<uint16_t>::max());",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 635,
+      "code": "population_store().composite_satisfaction.assign(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 637,
+      "code": "population_store().satisfaction_dims.assign(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 640,
+      "code": "population_store().worst_dimension_id.assign(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 642,
+      "code": "population_store().flags.assign(slots, 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 643,
+      "code": "population_store().demography_residual.assign(slots, 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 644,
+      "code": "population_store().owner_employed.assign(slots, 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 645,
+      "code": "population_store().employee_employed.assign(slots, 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 649,
+      "code": "market_store().price_ceilings.resize(markets);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 651,
+      "code": "market_store().stock.assign(static_cast<size_t>(markets) * goods, 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 652,
+      "code": "market_store().price.assign(static_cast<size_t>(markets) * goods, 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 653,
+      "code": "market_store().demand_ema.assign(static_cast<size_t>(markets) * goods, 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 654,
+      "code": "market_store().last_shortage_q16.assign(static_cast<size_t>(markets) * goods, 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 666,
+      "code": "market_store().cell_to_market.assign(_cell_count, -1);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1070,
+      "code": "market_store().cell_to_market[cell] = market;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1413,
+      "code": "trade_orders_store().ids.push_back(id);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1414,
+      "code": "trade_orders_store().sources.push_back(source);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1415,
+      "code": "trade_orders_store().destinations.push_back(destination);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1416,
+      "code": "trade_orders_store().countries.push_back(country);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1417,
+      "code": "trade_orders_store().source_country_handles.push_back(source_country_handle);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1418,
+      "code": "trade_orders_store().destination_country_handles.push_back(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1420,
+      "code": "trade_orders_store().source_country_slots.push_back(source_country_slot);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1421,
+      "code": "trade_orders_store().destination_country_slots.push_back(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1423,
+      "code": "trade_orders_store().departure_days.push_back(departure);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1424,
+      "code": "trade_orders_store().arrival_days.push_back(arrival);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1425,
+      "code": "trade_orders_store().cash_escrow.push_back(cash);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1426,
+      "code": "trade_orders_store().capacity_work.push_back(capacity);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1427,
+      "code": "trade_orders_store().states.push_back(state);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1428,
+      "code": "trade_orders_store().cargo_delivered.push_back(delivered);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1453,
+      "code": "trade_orders_store().line_goods.push_back(good);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1454,
+      "code": "trade_orders_store().line_quantities.push_back(quantity);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1455,
+      "code": "trade_orders_store().line_unit_prices.push_back(price);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1456,
+      "code": "trade_orders_store().line_destination_prices.push_back(destination_price);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1457,
+      "code": "trade_orders_store().line_base_values.push_back(base_value);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1458,
+      "code": "trade_orders_store().line_retail_values.push_back(retail_value);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1459,
+      "code": "trade_orders_store().line_import_transfers.push_back(import_transfer);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1460,
+      "code": "trade_orders_store().line_export_transfers.push_back(export_transfer);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1461,
+      "code": "trade_orders_store().line_transaction_transfers.push_back(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1463,
+      "code": "trade_orders_store().line_flags.push_back(line_flags);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1465,
+      "code": "trade_orders_store().line_offsets.push_back(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1475,
+      "code": "trade_orders_store().seller_handles.push_back(handle);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1476,
+      "code": "trade_orders_store().seller_weights.push_back(weight);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1478,
+      "code": "trade_orders_store().seller_offsets.push_back(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1704,
+      "code": "families_store().active.push_back(active);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1705,
+      "code": "families_store().generation.push_back(generation);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1706,
+      "code": "families_store().stable_id.push_back(stable_id);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1707,
+      "code": "families_store().surname_id.push_back(surname);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1708,
+      "code": "families_store().surname_disambiguator.push_back(disambiguator);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1709,
+      "code": "families_store().founded_day.push_back(founded_day);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1710,
+      "code": "families_store().home_cell.push_back(home_cell);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1711,
+      "code": "families_store().origin_cell.push_back(schema >= 40 ? origin_cell : home_cell);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1712,
+      "code": "families_store().origin_ethnicity.push_back(ethnicity);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1713,
+      "code": "families_store().culture_group_id.push_back(schema >= 40 ? culture_group :",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1717,
+      "code": "families_store().split_sequence.push_back(schema >= 40 ? split_sequence : 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1718,
+      "code": "families_store().decline_reviews.push_back(decline);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1719,
+      "code": "families_store().flags.push_back(flags);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1730,
+      "code": "families_store().free_indices.push_back(index);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1842,
+      "code": "persons_store().active.push_back(active);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1843,
+      "code": "persons_store().generation.push_back(generation);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1844,
+      "code": "persons_store().stable_id.push_back(stable_id);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1846,
+      "code": "persons_store().family_handle.push_back(family_handle);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1847,
+      "code": "persons_store().cohort_handle.push_back(cohort_handle);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1848,
+      "code": "persons_store().given_name_id.push_back(given_name);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1849,
+      "code": "persons_store().name_disambiguator.push_back(disambiguator);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1850,
+      "code": "persons_store().notable_since_day.push_back(notable_since_day);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1851,
+      "code": "persons_store().flags.push_back(flags);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1852,
+      "code": "persons_store().cash_claim.push_back(cash_claim);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1853,
+      "code": "persons_store().family_equity_share_q32.push_back(equity_share);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1854,
+      "code": "persons_store().epoch_job_income.push_back(epoch_job_income);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1855,
+      "code": "persons_store().epoch_business_result.push_back(epoch_business_result);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1856,
+      "code": "persons_store().epoch_consumption_expense.push_back(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1858,
+      "code": "persons_store().epoch_tax.push_back(epoch_tax);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1859,
+      "code": "persons_store().income_ema.push_back(income_ema);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1860,
+      "code": "persons_store().needs_satisfaction.push_back(satisfaction);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1861,
+      "code": "persons_store().worst_need_id.push_back(worst_need);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1862,
+      "code": "persons_store().building_handle.push_back(building_handle);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1863,
+      "code": "persons_store().job_kind.push_back(job_kind);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1864,
+      "code": "persons_store().employee_role_index.push_back(employee_role);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1865,
+      "code": "persons_store().job_since_day.push_back(job_since_day);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 1867,
+      "code": "else persons_store().free_indices.push_back(index);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2084,
+      "code": "family_expeditions_store().active.push_back(active);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2085,
+      "code": "family_expeditions_store().generation.push_back(generation);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2086,
+      "code": "family_expeditions_store().stable_id.push_back(stable_id);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2087,
+      "code": "family_expeditions_store().country_handle.push_back(country_handle);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2088,
+      "code": "family_expeditions_store().family_handle.push_back(family_handle);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2089,
+      "code": "family_expeditions_store().source_cell.push_back(source_cell);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2090,
+      "code": "family_expeditions_store().target_cell.push_back(target_cell);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2091,
+      "code": "family_expeditions_store().departure_day.push_back(departure_day);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2092,
+      "code": "family_expeditions_store().due_day.push_back(due_day);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2093,
+      "code": "family_expeditions_store().route_cost.push_back(route_cost);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2094,
+      "code": "family_expeditions_store().speed.push_back(speed);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2095,
+      "code": "family_expeditions_store().state.push_back(state);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2096,
+      "code": "family_expeditions_store().population.push_back(population);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2097,
+      "code": "family_expeditions_store().kit_bridge_required_units.push_back(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2099,
+      "code": "family_expeditions_store().kit_material_required_units.push_back(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2101,
+      "code": "family_expeditions_store().effect_transaction_id.push_back(transaction_id);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2102,
+      "code": "family_expeditions_store().idempotency_key.push_back(idempotency_key);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2103,
+      "code": "family_expeditions_store().route_begin.push_back(static_cast<uint32_t>(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2105,
+      "code": "family_expeditions_store().route_count.push_back(route_count);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2122,
+      "code": "family_expeditions_store().payload_begin.push_back(static_cast<uint32_t>(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2124,
+      "code": "family_expeditions_store().payload_count.push_back(payload_count);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2188,
+      "code": "family_expeditions_store().cargo_begin.push_back(static_cast<uint32_t>(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2190,
+      "code": "family_expeditions_store().kit_building_begin.push_back(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2231,
+      "code": "family_expeditions_store().cargo_count.push_back(cargo_count);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2232,
+      "code": "family_expeditions_store().kit_building_count.push_back(kit_count);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2235,
+      "code": "family_expeditions_store().missing_good_begin.push_back(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2265,
+      "code": "family_expeditions_store().kit_missing_stock_identity.push_back(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2267,
+      "code": "family_expeditions_store().missing_good_count.push_back(missing_count);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_persistence_read.cpp",
+      "line": 2272,
+      "code": "family_expeditions_store().free_indices.push_back(index);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 1574,
+      "code": "trade_orders_store().arrival_bucket_days.clear();",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 1575,
+      "code": "trade_orders_store().arrival_bucket_offsets.assign(1, 0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 1576,
+      "code": "trade_orders_store().arrival_bucket_orders.clear();",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 1589,
+      "code": "trade_orders_store().arrival_bucket_offsets.push_back(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 1591,
+      "code": "trade_orders_store().arrival_bucket_days.push_back(day);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 1594,
+      "code": "trade_orders_store().arrival_bucket_orders.push_back(order);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 1597,
+      "code": "trade_orders_store().arrival_bucket_offsets.push_back(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 1777,
+      "code": "trade_orders_store().cargo_delivered[order] = 1;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 1838,
+      "code": "trade_orders_store().cash_escrow[order] = 0;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 1841,
+      "code": "trade_orders_store().states[order] = TradeOrderStore::WAITING_RECEIVER;",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2887,
+      "code": "trade_orders_store().ids.push_back(trade_orders_store().next_id++);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2888,
+      "code": "trade_orders_store().sources.push_back(first.source);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2889,
+      "code": "trade_orders_store().destinations.push_back(first.destination);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2890,
+      "code": "trade_orders_store().countries.push_back(first.country);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2891,
+      "code": "trade_orders_store().source_country_handles.push_back(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2893,
+      "code": "trade_orders_store().destination_country_handles.push_back(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2895,
+      "code": "trade_orders_store().source_country_slots.push_back(first.source_country);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2896,
+      "code": "trade_orders_store().destination_country_slots.push_back(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2898,
+      "code": "trade_orders_store().departure_days.push_back(_sample_day);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2899,
+      "code": "trade_orders_store().arrival_days.push_back(arrival);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2900,
+      "code": "trade_orders_store().states.push_back(TradeOrderStore::IN_TRANSIT);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2901,
+      "code": "trade_orders_store().cargo_delivered.push_back(0);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2914,
+      "code": "trade_orders_store().line_goods.push_back(candidate.good);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2915,
+      "code": "trade_orders_store().line_quantities.push_back(candidate.quantity);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2916,
+      "code": "trade_orders_store().line_unit_prices.push_back(candidate.source_price);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2917,
+      "code": "trade_orders_store().line_destination_prices.push_back(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2919,
+      "code": "trade_orders_store().line_base_values.push_back(candidate.base_value);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2920,
+      "code": "trade_orders_store().line_retail_values.push_back(candidate.retail_value);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2921,
+      "code": "trade_orders_store().line_import_transfers.push_back(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2923,
+      "code": "trade_orders_store().line_export_transfers.push_back(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2925,
+      "code": "trade_orders_store().line_transaction_transfers.push_back(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2927,
+      "code": "trade_orders_store().line_flags.push_back(candidate.flags);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2949,
+      "code": "trade_orders_store().cash_escrow.push_back(cash);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2950,
+      "code": "trade_orders_store().capacity_work.push_back(capacity);",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2951,
+      "code": "trade_orders_store().line_offsets.push_back(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2956,
+      "code": "trade_orders_store().seller_handles.push_back(population_store().handle_for_slot(slot));",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2957,
+      "code": "trade_orders_store().seller_weights.push_back(",
+      "registration": "requires_review"
+    },
+    {
+      "file": "gdext/src/economy_runtime_trade.cpp",
+      "line": 2960,
+      "code": "trade_orders_store().seller_offsets.push_back(",
+      "registration": "requires_review"
+    }
+  ]
+}

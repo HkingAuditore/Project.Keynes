@@ -2,56 +2,66 @@
 
 #include <cstdint>
 #include <vector>
+#include "economy_tracked_column.h"
+#include "economy_tracked_scalar.h"
 
 namespace pk {
 
 struct RuntimeEconomyPopulationStore {
+    ChangeRegistry changes;
     static constexpr int32_t COHORT_PAGE_SIZE = 64;
     static constexpr int32_t Q16_ONE = 65536;
     static constexpr int32_t SAT_DIM_COUNT = 8;
-    std::vector<int32_t> cell_first_page;
-    std::vector<int32_t> page_next;
-    std::vector<int32_t> page_cell;
-    std::vector<int32_t> free_pages;
+    EconomyTrackedColumn<int32_t> cell_first_page;
+    EconomyTrackedColumn<int32_t> page_next;
+    EconomyTrackedColumn<int32_t> page_cell;
+    EconomyTrackedColumn<int32_t> free_pages;
 
-    std::vector<uint8_t> active;
-    std::vector<uint8_t> reserved;
-    std::vector<uint64_t> reservation_owner;
-    std::vector<uint32_t> signature_id;
-    std::vector<uint32_t> generation;
-    std::vector<int64_t> population;
-    std::vector<int64_t> funds;
-    std::vector<int64_t> epoch_income;
-    std::vector<int64_t> epoch_expense;
+    EconomyTrackedColumn<uint8_t> active;
+    EconomyTrackedColumn<uint8_t> reserved;
+    EconomyTrackedColumn<uint64_t> reservation_owner;
+    EconomyTrackedColumn<uint32_t> signature_id;
+    EconomyTrackedColumn<uint32_t> generation;
+    EconomyTrackedColumn<int64_t> population;
+    EconomyTrackedColumn<int64_t> funds;
+    EconomyTrackedColumn<int64_t> epoch_income;
+    EconomyTrackedColumn<int64_t> epoch_expense;
     // Derived diagnostic: retail value of goods consumed from producer-retained output.
     // It is reset with the epoch and intentionally excluded from save/hash authority.
-    std::vector<int64_t> epoch_in_kind_income;
-    std::vector<int64_t> income_ema;
+    EconomyTrackedColumn<int64_t> epoch_in_kind_income;
+    EconomyTrackedColumn<int64_t> income_ema;
     // Gross fiscal flows realized this epoch. They are pure attribution of
     // transfers that already happened, so they never participate in money
     // conservation; they exist so the tax-burden dimension can be computed
     // without re-deriving rates.
-    std::vector<int64_t> epoch_tax_paid;
-    std::vector<int64_t> epoch_subsidy_received;
+    EconomyTrackedColumn<int64_t> epoch_tax_paid;
+    EconomyTrackedColumn<int64_t> epoch_subsidy_received;
     // Slow per-capita income EMA. `income_ema` tracks the current level;
     // this baseline trails it so their ratio is a growth signal.
-    std::vector<int64_t> income_baseline_ema;
+    EconomyTrackedColumn<int64_t> income_baseline_ema;
     // Subsistence satisfaction. Retains its historical name because it is
     // still the sole input to starvation mortality.
-    std::vector<uint16_t> needs_satisfaction;
-    std::vector<uint16_t> worst_need_id;
+    EconomyTrackedColumn<uint16_t> needs_satisfaction;
+    EconomyTrackedColumn<uint16_t> worst_need_id;
     // Composite satisfaction plus its SAT_DIM_COUNT-strided breakdown and
     // the dimension responsible for the largest weighted shortfall.
-    std::vector<uint16_t> composite_satisfaction;
-    std::vector<uint16_t> satisfaction_dims;
-    std::vector<uint8_t> worst_dimension_id;
-    std::vector<uint16_t> flags;
-    std::vector<int64_t> demography_residual;
-    std::vector<int64_t> owner_employed;
-    std::vector<int64_t> employee_employed;
+    EconomyTrackedColumn<uint16_t> composite_satisfaction;
+    EconomyTrackedColumn<uint16_t> satisfaction_dims;
+    EconomyTrackedColumn<uint8_t> worst_dimension_id;
+    EconomyTrackedColumn<uint16_t> flags;
+    EconomyTrackedColumn<int64_t> demography_residual;
+    EconomyTrackedColumn<int64_t> owner_employed;
+    EconomyTrackedColumn<int64_t> employee_employed;
 
-    int64_t active_count = 0;
-    int64_t high_water_slots = 0;
+    EconomyTrackedScalar<int64_t> active_count;
+    EconomyTrackedScalar<int64_t> high_water_slots;
+
+
+    RuntimeEconomyPopulationStore();
+    RuntimeEconomyPopulationStore(const RuntimeEconomyPopulationStore &other);
+    RuntimeEconomyPopulationStore(RuntimeEconomyPopulationStore &&other);
+    RuntimeEconomyPopulationStore &operator=(const RuntimeEconomyPopulationStore &other);
+    RuntimeEconomyPopulationStore &operator=(RuntimeEconomyPopulationStore &&other);
 
     void clear(int32_t cells);
     void reset_satisfaction_slot(int32_t slot);
@@ -80,6 +90,39 @@ struct RuntimeEconomyPopulationStore {
             }
         }
     }
+    // Canonical field traversal uses the same bindings as the writers.
+    template<class Visitor> void visit_registered_columns(Visitor &&visit) const {
+        visit(cell_first_page);
+        visit(page_next);
+        visit(page_cell);
+        visit(free_pages);
+        visit(active);
+        visit(reserved);
+        visit(reservation_owner);
+        visit(signature_id);
+        visit(generation);
+        visit(population);
+        visit(funds);
+        visit(epoch_income);
+        visit(epoch_expense);
+        visit(epoch_in_kind_income);
+        visit(income_ema);
+        visit(epoch_tax_paid);
+        visit(epoch_subsidy_received);
+        visit(income_baseline_ema);
+        visit(needs_satisfaction);
+        visit(worst_need_id);
+        visit(composite_satisfaction);
+        visit(satisfaction_dims);
+        visit(worst_dimension_id);
+        visit(flags);
+        visit(demography_residual);
+        visit(owner_employed);
+        visit(employee_employed);
+        visit(active_count.column());
+        visit(high_water_slots.column());
+    }
+
 };
 
 } // namespace pk

@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"sulfur"
+display_name = "硫磺"
+semantic_tags = PackedStringArray()
+category_id = &"sulfur"
+substitution_category_ids = PackedStringArray("sulfur")
+technology_tags = PackedStringArray("industry.primary", "tech.gunpowder_formulation", "tech.state_enterprises", "tech.scientific_agents")
+reference_max_price = 500000
+price_adjust_q16 = 922
+demand_price_elasticity_q16 = 29491

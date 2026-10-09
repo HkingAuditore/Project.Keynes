@@ -1,0 +1,6 @@
+[gd_scene format=3]
+[node name="MetricGrid" type="GridContainer"]
+size_flags_horizontal = 3
+columns = 2
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 8

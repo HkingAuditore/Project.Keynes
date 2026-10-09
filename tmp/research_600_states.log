@@ -1,0 +1,70 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[research-soak] building ids gathering=103 hunting=359 flint=94 knapping=134
+[tech-ui-diag/research] handle=4294967296 gen=1 day=-1 owned=6 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=10000000 auto=1
+[research-soak] day=0 queued=tech.seasonal_foraging
+[tech-ui-diag/research] handle=4294967296 gen=1 day=-1 owned=6 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=10000000 auto=1
+[research-soak] day=0 activated=tech.seasonal_foraging
+[tech-ui-diag/research] handle=4294967296 gen=3 day=0 owned=7 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=1000000000 auto=1
+[research-soak] day=1 activated=tech.natural_observation
+[tech-ui-diag/research] handle=4294967296 gen=5 day=1 owned=8 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=1000000000 auto=1
+[research-soak] day=1 queued=tech.oral_tradition
+[economy-open-finish] day=0 country=0.073 workset=0.005 fiscal=0.007 csr=0.000 recovery=0.000 vectors=0.399 audit=0.004 commands=0.002
+[tech-ui-diag/research] handle=4294967296 gen=5 day=1 owned=8 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=1000000000 auto=1
+[research-soak] day=2 activated=tech.oral_tradition
+[tech-ui-diag/research] handle=4294967296 gen=7 day=2 owned=9 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=1000000000 auto=1
+[research-soak] day=2 queued=tech.seasonal_calendar
+[tech-ui-diag/research] handle=4294967296 gen=7 day=2 owned=9 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=1000000000 auto=1
+[research-soak] day=3 activated=tech.seasonal_calendar
+[tech-ui-diag/research] handle=4294967296 gen=9 day=3 owned=10 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=1000000000 auto=1
+[research-soak] day=3 queued=tech.phenology_observation
+[tech-ui-diag/research] handle=4294967296 gen=9 day=3 owned=10 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=1000000000 auto=1
+[research-soak] day=4 activated=tech.phenology_observation
+[tech-ui-diag/research] handle=4294967296 gen=11 day=4 owned=11 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=1000000000 auto=1
+[research-soak] day=4 queued=tech.flood_calendar_practice
+[research-procure-diag] day=4 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=14700000 budget=1000000000 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[tech-ui-diag/research] handle=4294967296 gen=11 day=4 owned=11 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=1000000000 auto=1
+[research-soak] day=5 activated=tech.flood_calendar_practice
+[tech-ui-diag/research] handle=4294967296 gen=13 day=5 owned=12 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=1000000000 auto=1
+[research-soak] day=5 queued=tech.pastoral_route_memory
+[research-procure-diag] day=5 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=14700000 budget=1000000000 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[tech-ui-diag/research] handle=4294967296 gen=13 day=5 owned=12 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=1000000000 auto=1
+[research-soak] day=6 activated=tech.pastoral_route_memory
+[tech-ui-diag/research] handle=4294967296 gen=15 day=6 owned=13 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=1000000000 auto=1
+[research-soak] day=6 queued=tech.tide_observation
+[research-procure-diag] day=6 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=14700000 budget=1000000000 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[tech-ui-diag/research] handle=4294967296 gen=15 day=6 owned=13 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=1000000000 auto=1
+[research-soak] day=7 activated=tech.tide_observation
+[tech-ui-diag/research] handle=4294967296 gen=17 day=7 owned=14 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=1000000000 auto=1
+[research-soak] day=7 queued=tech.celestial_calendars
+[research-procure-diag] day=7 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=14700000 budget=1000000000 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-soak] day=8 activated=tech.celestial_calendars
+[research-procure-diag] day=8 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=14700000 budget=1000000000 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=9 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=14700000 budget=1000000000 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=10 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=14700000 budget=1000000000 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=10 phase=0 done=0 cands=1 cursor=1 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=1 rej=0 procured=14700000 last_err=
+[research-procure-diag] day=22 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=33 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=44 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=56 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=67 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=78 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=89 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=100 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=111 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=122 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=133 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=144 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=156 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=167 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=178 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=189 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-soak] day=500
+research technologies: queued=8 completed=15 completed_total=0 progress_total=0
+research 20y soak: day=600 rows=600 fatal=false
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

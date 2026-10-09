@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"cotton_fiber"
+display_name = "棉纤维"
+semantic_tags = PackedStringArray()
+category_id = &"spinnable_fiber"
+substitution_category_ids = PackedStringArray("spinnable_fiber", "natural_spinnable_fiber", "rag_paper_fiber")
+technology_tags = PackedStringArray("industry.primary", "tech.cotton_ginning", "tech.textile_machinery")
+reference_max_price = 500000
+price_adjust_q16 = 922
+demand_price_elasticity_q16 = 29491

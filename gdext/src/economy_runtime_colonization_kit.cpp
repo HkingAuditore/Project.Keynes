@@ -178,7 +178,7 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
     if (population <= 0 || source_cell < 0 || source_cell >= _cell_count)
         return;
     const int32_t market = market_store().cell_to_market[source_cell];
-    if (market < 0 || market >= market_store().market_count) return;
+    if (market < 0 || market >= market_store().market_count.get()) return;
     auto extra_stock = [&](const std::vector<int64_t> *lane,
                            int32_t good) -> int64_t {
         if (lane == nullptr || good < 0 ||
@@ -189,7 +189,7 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
     // committed to another line of this kit. Household survival remains part
     // of ordinary market settlement rather than a colonization-only floor.
     auto spare_stock = [&](int32_t good) -> int64_t {
-        if (good < 0 || good >= market_store().good_count) return 0;
+        if (good < 0 || good >= market_store().good_count.get()) return 0;
         const int64_t stock = std::max<int64_t>(0,
             market_store().stock[market_store().index(market, good)]);
         const int64_t held = reserve == nullptr ? 0
@@ -197,7 +197,7 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
         return stock + held;
     };
     kit.source_stock_identity = 1469598103934665603ULL;
-    for (int32_t good = 0; good < market_store().good_count; ++good) {
+    for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
         kit.source_stock_identity = trace_hash_mix(
             kit.source_stock_identity,
             static_cast<uint64_t>(spare_stock(good)));
@@ -208,7 +208,7 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
         : std::max(1, travel_days) + COLONIZATION_KIT_BRIDGE_EXTRA_DAYS;
     int64_t sat = 0;
     auto source_stock = [&](int32_t good) -> int64_t {
-        if (good < 0 || good >= market_store().good_count) return 0;
+        if (good < 0 || good >= market_store().good_count.get()) return 0;
         // Construction materials and previously selected bridge goods already
         // reserve the source market stock.  Every subsequent line must draw
         // from the remaining balance, otherwise a good shared by the build
@@ -234,7 +234,7 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
         // earlier production epoch or domestic trade.  Goods with no stock
         // still need a source production capability, so future-era variants
         // from the consumption catalog do not become phantom requirements.
-        const bool has_stock = good >= 0 && good < market_store().good_count &&
+        const bool has_stock = good >= 0 && good < market_store().good_count.get() &&
             spare_stock(good) > 0;
         if (good < 0 || numerator <= 0 || denominator <= 0 ||
             (!has_stock && !good_production_available(source_cell, good, false)))
@@ -617,8 +617,8 @@ bool NativeEconomyRuntime::plan_colonization_kit(
     auto materials_fit = [&](std::vector<int32_t> *missing) -> bool {
         std::vector<int64_t> stock(_good_ids.size(), 0);
         const int32_t market = market_store().cell_to_market[source_cell];
-        if (market < 0 || market >= market_store().market_count) return false;
-        for (int32_t good = 0; good < market_store().good_count; ++good)
+        if (market < 0 || market >= market_store().market_count.get()) return false;
+        for (int32_t good = 0; good < market_store().good_count.get(); ++good)
             stock[static_cast<size_t>(good)] = spare_source_stock(market, good);
         kit.cargo.erase(std::remove_if(kit.cargo.begin(), kit.cargo.end(),
             [](const FamilyExpeditionCargoLine &line) {
@@ -751,7 +751,7 @@ bool NativeEconomyRuntime::plan_colonization_kit(
         travel_days, kit, reserve);
 
     const int32_t market = market_store().cell_to_market[source_cell];
-    if (market >= 0 && market < market_store().market_count) {
+    if (market >= 0 && market < market_store().market_count.get()) {
         int64_t sat = 0;
         std::vector<int64_t> billed(_good_ids.size(), 0);
         for (const FamilyExpeditionCargoLine &line : kit.cargo) {
@@ -773,7 +773,7 @@ bool NativeEconomyRuntime::plan_colonization_kit(
         for (int32_t good = 0; good < static_cast<int32_t>(billed.size());
              ++good) {
             if (billed[static_cast<size_t>(good)] <= 0) continue;
-            const int64_t stock = good < market_store().good_count
+            const int64_t stock = good < market_store().good_count.get()
                 ? spare_source_stock(market, good) : 0;
             const int64_t leftover = std::max<int64_t>(0,
                 stock - reserved[static_cast<size_t>(good)]);
@@ -793,12 +793,12 @@ bool NativeEconomyRuntime::plan_colonization_kit(
 bool NativeEconomyRuntime::adjust_market_stock(
         int32_t cell, int32_t good_id, int64_t delta, std::string &error) {
     if (cell < 0 || cell >= _cell_count || good_id < 0 ||
-        good_id >= market_store().good_count) {
+        good_id >= market_store().good_count.get()) {
         error = "colonization_kit_market_invalid";
         return false;
     }
     const int32_t market = market_store().cell_to_market[cell];
-    if (market < 0 || market >= market_store().market_count) {
+    if (market < 0 || market >= market_store().market_count.get()) {
         error = "colonization_kit_market_invalid";
         return false;
     }
@@ -809,7 +809,7 @@ bool NativeEconomyRuntime::adjust_market_stock(
         return false;
     }
     audit_touch_market_lane(static_cast<size_t>(index));
-    market_store().stock[index] = next;
+    market_store().stock.write_scalar(index, next, market_mutation_sink());
     return true;
 }
 
@@ -879,15 +879,15 @@ bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
     for (uint32_t i = 0; i < count; ++i)
         old_cargo.push_back(family_expedition_cargo()[begin + i]);
     auto store_cargo = [&](const std::vector<FamilyExpeditionCargoLine> &rows) {
-        uint32_t &stored_begin =
+        uint32_t stored_begin =
             family_expeditions_store().cargo_begin[expedition];
-        uint32_t &stored_count =
+        uint32_t stored_count =
             family_expeditions_store().cargo_count[expedition];
         if (rows.size() <= stored_count &&
             static_cast<size_t>(stored_begin) + stored_count <=
                 family_expedition_cargo().size()) {
             for (size_t i = 0; i < rows.size(); ++i)
-                family_expedition_cargo()[stored_begin + i] = rows[i];
+                family_expedition_cargo().write_record(stored_begin + i, rows[i], market_mutation_sink());
         } else {
             stored_begin = static_cast<uint32_t>(
                 family_expedition_cargo().size());
@@ -895,6 +895,8 @@ bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
                 rows.begin(), rows.end());
         }
         stored_count = static_cast<uint32_t>(rows.size());
+        family_expeditions_store().cargo_begin.write_scalar(expedition, stored_begin, market_mutation_sink());
+        family_expeditions_store().cargo_count.write_scalar(expedition, stored_count, market_mutation_sink());
         note_family_expedition_audit_invalidation();
     };
     std::vector<std::pair<int32_t, int64_t>> applied;
@@ -904,7 +906,7 @@ bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
         if (delta < 0) {
             const int64_t quantity = -delta;
             const int32_t market = market_store().cell_to_market[source_cell];
-            const int64_t price = market >= 0 && market < market_store().market_count
+            const int64_t price = market >= 0 && market < market_store().market_count.get()
                 ? std::max<int64_t>(0, market_store().price[
                     market_store().index(market, good)]) : 0;
             const int64_t cash = goods_cost(quantity, price, _saturation_count);
@@ -1082,16 +1084,15 @@ bool NativeEconomyRuntime::extract_family_expedition_cargo(
         error = "colonization_cargo_range_invalid";
         return false;
     }
-    family_expeditions_store().kit_building_begin[expedition] = static_cast<uint32_t>(
-        family_expedition_kit_buildings().size());
+    family_expeditions_store().kit_building_begin.write_scalar(expedition, static_cast<uint32_t>(
+        family_expedition_kit_buildings().size()), market_mutation_sink());
     if (kit.place_buildings != 0) {
         family_expedition_kit_buildings().insert(
             family_expedition_kit_buildings().end(),
             kit.buildings.begin(), kit.buildings.end());
-        family_expeditions_store().kit_building_count[expedition] =
-            static_cast<uint32_t>(kit.buildings.size());
+        family_expeditions_store().kit_building_count.write_scalar(expedition, static_cast<uint32_t>(kit.buildings.size()), market_mutation_sink());
     } else {
-        family_expeditions_store().kit_building_count[expedition] = 0;
+        family_expeditions_store().kit_building_count.write_scalar(expedition, 0, market_mutation_sink());
     }
     return true;
 }
@@ -1119,7 +1120,7 @@ bool NativeEconomyRuntime::restore_family_expedition_cargo(
                 error))
             return false;
     }
-    family_expeditions_store().cargo_count[expedition] = 0;
+    family_expeditions_store().cargo_count.write_scalar(expedition, 0, market_mutation_sink());
     // Idle/opening-prelude settlements belong to the next opening baseline.
     if (construction_consumed > 0 && _epoch_active)
         _construction_goods_consumed = saturating_add(
@@ -1199,7 +1200,7 @@ bool NativeEconomyRuntime::advance_family_expedition_procurement(
                 return false;
             }
             audit_touch_market_lane(lane);
-            market_store().stock[lane] -= c.quantity;
+            market_store().stock.write_scalar(lane, market_store().stock[lane] - (c.quantity), market_mutation_sink());
             c.market_applied = true;
         }
         while (c.merchant_cursor < c.living_merchants.size()) {
@@ -1215,10 +1216,10 @@ bool NativeEconomyRuntime::advance_family_expedition_procurement(
             c.merchant_distributed = next;
             audit_touch_population_lane(slot);
             touch_accounting_slot(slot);
-            population_store().funds[slot] = saturating_add(
-                population_store().funds[slot], share, _saturation_count);
-            population_store().epoch_income[slot] = saturating_add(
-                population_store().epoch_income[slot], share, _saturation_count);
+            population_store().funds.write_scalar(slot, saturating_add(
+                population_store().funds[slot], share, _saturation_count), market_mutation_sink());
+            population_store().epoch_income.write_scalar(slot, saturating_add(
+                population_store().epoch_income[slot], share, _saturation_count), market_mutation_sink());
             trace_record_cashflow(c.source_cell,
                 population_store().handle_for_slot(slot),
                 CASHFLOW_MERCHANT_BUSINESS, share, 0);
@@ -1515,14 +1516,13 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
         const int32_t existing = find_building_group(
             destination_cell, row.type_id, owner_signature);
         if (existing >= 0) {
-            buildings_store().group_units[existing] = saturating_add(
-                buildings_store().group_units[existing], row.count, _saturation_count);
+            buildings_store().group_units.write_scalar(existing, saturating_add(
+                buildings_store().group_units[existing], row.count, _saturation_count));
             _building_handle_index_clean = false;
             if (_modifier_runtime != nullptr &&
                 buildings_store().modifier_handle[existing] == 0) {
-                buildings_store().modifier_handle[existing] =
-                    _modifier_runtime->ensure_building_identity(
-                        destination_cell, row.type_id, owner_signature);
+                buildings_store().modifier_handle.write_scalar(existing, _modifier_runtime->ensure_building_identity(
+                        destination_cell, row.type_id, owner_signature));
             }
         } else {
             BuildingGroup group;
@@ -1606,15 +1606,14 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
                 const int32_t existing = find_building_group(
                     destination_cell, row.type_id, owner_signature);
                 if (existing >= 0) {
-                    buildings_store().group_units[existing] = saturating_add(
+                    buildings_store().group_units.write_scalar(existing, saturating_add(
                         buildings_store().group_units[existing], row.count,
-                        _saturation_count);
+                        _saturation_count));
                     _building_handle_index_clean = false;
                     if (_modifier_runtime != nullptr &&
                         buildings_store().modifier_handle[existing] == 0) {
-                        buildings_store().modifier_handle[existing] =
-                            _modifier_runtime->ensure_building_identity(
-                                destination_cell, row.type_id, owner_signature);
+                        buildings_store().modifier_handle.write_scalar(existing, _modifier_runtime->ensure_building_identity(
+                                destination_cell, row.type_id, owner_signature));
                     }
                 } else {
                     BuildingGroup group;
@@ -1720,13 +1719,15 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
         if (group_index >= 0) {
             const int64_t filled = owner_slot >= 0
                 ? std::min(needed, population_store().population[owner_slot]) : 0;
-            buildings_store().filled_owner[group_index] = filled;
+            buildings_store().filled_owner.write_scalar(group_index, filled);
             if (owner_slot >= 0)
-                population_store().owner_employed[owner_slot] = std::max(
-                    population_store().owner_employed[owner_slot], filled);
+                population_store().owner_employed.write_scalar(owner_slot, std::max(
+                    population_store().owner_employed[owner_slot], filled), market_mutation_sink());
             if (buildings_store().modifier_handle[group_index] != 0) {
                 bool found = false;
-                for (FamilyBuildingOwnership &edge : family_ownerships()) {
+                for (size_t edge_row = 0; edge_row < family_ownerships().size(); ++edge_row) {
+        auto edge_write = family_ownerships().edit_row(edge_row, market_mutation_sink());
+        FamilyBuildingOwnership &edge = edge_write[0];
                     if (edge.family_handle == family_handle &&
                         edge.building_handle ==
                             buildings_store().modifier_handle[group_index]) {

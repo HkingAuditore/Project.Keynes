@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="VegetationProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/vegetation_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+veg_type = 24
+display_name_cn = "云雾林"
+transpiration = 0.9
+albedo = 0.11
+eco_score = 1.2
+ideal_temp = 0.6
+ideal_moist = 0.9
+temp_tolerance = 0.16
+moist_tolerance = 0.16
+next_richer = -1
+next_harsher = 12

@@ -494,7 +494,7 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
             }
         }
         welfare_need_offsets.push_back(welfare_need_ids.size());
-        for (int32_t good = 0; good < market_store().good_count; ++good) {
+        for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
             wealth_demand_deltas.push_back(welfare != nullptr &&
                     good < static_cast<int32_t>(welfare->wealth_demand_delta_per_capita_daily.size())
                 ? welfare->wealth_demand_delta_per_capita_daily[good] : 0);
@@ -516,7 +516,7 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
         out["welfare_need_satisfaction_q16"] = welfare_need_satisfaction;
         out["welfare_need_weight_q16"] = welfare_need_weights;
         out["welfare_need_tiers"] = welfare_need_tiers;
-        out["demand_attribution_good_count"] = market_store().good_count;
+        out["demand_attribution_good_count"] = market_store().good_count.get();
         out["demand_wealth_delta_per_capita_daily"] = wealth_demand_deltas;
         out["demand_price_delta_per_capita_daily"] = price_demand_deltas;
     } else {
@@ -567,7 +567,7 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     std::vector<int64_t> need_score_sums;
     std::vector<int64_t> need_composites;
     std::vector<int64_t> need_environment;
-    std::vector<int64_t> good_quantities(market_store().good_count, 0);
+    std::vector<int64_t> good_quantities(market_store().good_count.get(), 0);
     int64_t preview_saturation_count = 0;
     build_demand_basis(market, sample, variant_scores, variant_prices,
                        need_score_sums, need_composites, need_environment,
@@ -621,7 +621,7 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
             }
         }
         demand_need_offsets.push_back(demand_need_indices.size());
-        for (int32_t good = 0; good < market_store().good_count; ++good) {
+        for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
             const int64_t per_capita = good_quantities[good] / population;
             if (per_capita <= 0) continue;
             demand_good_indices.push_back(good);

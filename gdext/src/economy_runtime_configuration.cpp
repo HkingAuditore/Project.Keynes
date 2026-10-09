@@ -646,8 +646,8 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
             population_store().clear(_cell_count);
             return out;
         }
-        population_store().population[slot] = saturating_add(population_store().population[slot], populations[i], _saturation_count);
-        population_store().funds[slot] = saturating_add(population_store().funds[slot], funds[i], _saturation_count);
+        population_store().population.write_scalar(slot, saturating_add(population_store().population[slot], populations[i], _saturation_count), market_mutation_sink());
+        population_store().funds.write_scalar(slot, saturating_add(population_store().funds[slot], funds[i], _saturation_count), market_mutation_sink());
     }
     std::sort(forced_named_cells.begin(), forced_named_cells.end());
     forced_named_cells.erase(std::unique(
@@ -694,7 +694,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     market_store().market_count = market_count;
     market_store().price_ceilings.resize(market_count);
     market_store().good_count = static_cast<int32_t>(_good_ids.size());
-    const int64_t matrix_size = static_cast<int64_t>(market_count) * market_store().good_count;
+    const int64_t matrix_size = static_cast<int64_t>(market_count) * market_store().good_count.get();
     if (matrix_size <= 0 || matrix_size > 25000000LL) {
         out["ok"] = false;
         out["reason"] = "market_matrix_capacity_exceeded";
@@ -706,7 +706,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     market_store().last_shortage_q16.assign(static_cast<size_t>(matrix_size), 0);
     _trade_active_key_present.assign(static_cast<size_t>(matrix_size), 0);
     const size_t investment_good_words =
-        (static_cast<size_t>(market_store().good_count) + 63U) / 64U;
+        (static_cast<size_t>(market_store().good_count.get()) + 63U) / 64U;
     _investment_active_good_words.assign(investment_good_words, 0);
     _investment_active_goods_scratch.clear();
     _startup_demand_values.assign(static_cast<size_t>(matrix_size), 0);
@@ -714,13 +714,13 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     _startup_demand_generation = 0;
     _startup_demand_touched_keys.clear();
     market_store().cell_to_market.resize(_cell_count);
-    for (int32_t c = 0; c < _cell_count; ++c) market_store().cell_to_market[c] = c % market_count;
+    for (int32_t c = 0; c < _cell_count; ++c) market_store().cell_to_market.write_scalar(c, c % market_count, market_mutation_sink());
     for (int32_t m = 0; m < market_count; ++m) {
-        for (int32_t g = 0; g < market_store().good_count; ++g) {
+        for (int32_t g = 0; g < market_store().good_count.get(); ++g) {
             const int64_t idx = market_store().index(m, g);
             audit_touch_market_lane(static_cast<size_t>(idx));
-            market_store().stock[idx] = 0;
-            market_store().price[idx] = _good_default_price[g];
+            market_store().stock.write_scalar(idx, 0, market_mutation_sink());
+            market_store().price.write_scalar(idx, _good_default_price[g], market_mutation_sink());
         }
     }
 
@@ -763,7 +763,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
             return out;
         }
         for (int32_t m = 0; m < market_count; ++m) {
-            for (int32_t g = 0; g < market_store().good_count; ++g) {
+            for (int32_t g = 0; g < market_store().good_count.get(); ++g) {
                 const int64_t idx = market_store().index(m, g);
                 if (price[idx] < PRICE_NUMERIC_GUARD_MIN ||
                     price[idx] > PRICE_NUMERIC_GUARD_MAX) {
@@ -850,8 +850,8 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         const int32_t existing = find_building_group(building_cells[i], building_types[i],
                                                      building_owners[i]);
         if (existing >= 0) {
-            buildings_store().group_units[existing] = saturating_add(buildings_store().group_units[existing],
-                                                        building_counts[i], _saturation_count);
+            buildings_store().group_units.write_scalar(existing, saturating_add(buildings_store().group_units[existing],
+                                                        building_counts[i], _saturation_count));
             _building_handle_index_clean = false;
         } else {
             BuildingGroup group;
@@ -909,10 +909,10 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
                 out["reason"] = "founder_family_bootstrap_target_invalid";
                 return out;
             }
-            buildings_store().filled_owner[group_index] = std::max(
-                buildings_store().filled_owner[group_index], owner_slots);
-            population_store().owner_employed[owner_slot] = std::max(
-                population_store().owner_employed[owner_slot], owner_slots);
+            buildings_store().filled_owner.write_scalar(group_index, std::max(
+                buildings_store().filled_owner[group_index], owner_slots));
+            population_store().owner_employed.write_scalar(owner_slot, std::max(
+                population_store().owner_employed[owner_slot], owner_slots), market_mutation_sink());
             const int64_t founders = family_household_people_for_slot(
                 owner_slot, owner_slots);
             const int32_t family_index = create_family_for_building(
@@ -981,9 +981,9 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         group.filled_owner = saturating_add(
             group.filled_owner, fill, _saturation_count);
         available -= fill;
-        population_store().owner_employed[owner_slot] = saturating_add(
+        population_store().owner_employed.write_scalar(owner_slot, saturating_add(
             population_store().owner_employed[owner_slot], fill,
-            _saturation_count);
+            _saturation_count), market_mutation_sink());
     }
 
     if (_configured_target_cohorts_per_slice == 0) {
@@ -991,7 +991,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
             : (population_store().active_count <= 2000000 ? 12000 : 30000);
     }
     if (_auto_slice_by_scale) {
-        _cells_per_slice = std::clamp(market_store().market_count, 1, 128);
+        _cells_per_slice = std::clamp(market_store().market_count.get(), 1, 128);
     }
     if (_auto_building_slice_by_scale)
         _building_cells_per_slice = AUTO_BUILDING_CELLS_PER_SLICE;
@@ -1052,9 +1052,9 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         parallel_for_range("pk_economy_warmup", 1024, warm_tasks, 1, warm_worker);
     }
     out["ok"] = true;
-    out["cohort_count"] = population_store().active_count;
-    out["market_count"] = market_store().market_count;
-    out["good_count"] = market_store().good_count;
+    out["cohort_count"] = population_store().active_count.get();
+    out["market_count"] = market_store().market_count.get();
+    out["good_count"] = market_store().good_count.get();
     write_cadence_report(out);
     out["markets_per_slice"] = _cells_per_slice;
     out["building_cells_per_slice"] = _building_cells_per_slice;
@@ -1105,7 +1105,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     out["building_group_count"] = static_cast<int64_t>(building_count());
     out["family_runtime_mode"] = _family_runtime_mode == 0 ? "OFF" :
         (_family_runtime_mode == 1 ? "PROBE" : "ACTIVE");
-    out["family_count"] = families_store().active_count;
+    out["family_count"] = families_store().active_count.get();
     out["family_membership_edge_count"] = static_cast<int64_t>(
         family_memberships().size());
     out["family_ownership_edge_count"] = static_cast<int64_t>(
@@ -1140,7 +1140,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     out["family_owner_jobs_vacant"] = _family_owner_jobs_vacant;
     out["notable_person_runtime_mode"] = _person_runtime_mode == 0 ? "OFF" :
         (_person_runtime_mode == 1 ? "PROBE" : "ACTIVE");
-    out["notable_person_count"] = persons_store().active_count;
+    out["notable_person_count"] = persons_store().active_count.get();
     out["person_need_edge_count"] = static_cast<int64_t>(person_needs().size());
     out["persons_promoted"] = _persons_promoted;
     out["persons_died"] = _persons_died;
@@ -1225,8 +1225,8 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
         if ((opcodes[i] == COMMAND_ADD_STOCK || opcodes[i] == COMMAND_REMOVE_STOCK ||
              opcodes[i] == COMMAND_COUNTRY_GOOD_TO_MARKET ||
              opcodes[i] == COMMAND_MARKET_GOOD_TO_COUNTRY) &&
-            (i32_0[i] < 0 || i32_0[i] >= market_store().market_count || i32_1[i] < 0 ||
-             i32_1[i] >= market_store().good_count)) {
+            (i32_0[i] < 0 || i32_0[i] >= market_store().market_count.get() || i32_1[i] < 0 ||
+             i32_1[i] >= market_store().good_count.get())) {
             out["ok"] = false;
             out["reason"] = "command_market_target_invalid";
             out["index"] = static_cast<int64_t>(i);
@@ -1389,8 +1389,8 @@ bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
     if ((cmd.opcode == COMMAND_ADD_STOCK || cmd.opcode == COMMAND_REMOVE_STOCK ||
          cmd.opcode == COMMAND_COUNTRY_GOOD_TO_MARKET ||
          cmd.opcode == COMMAND_MARKET_GOOD_TO_COUNTRY) &&
-        (cmd.i32_0 < 0 || cmd.i32_0 >= market_store().market_count ||
-         cmd.i32_1 < 0 || cmd.i32_1 >= market_store().good_count)) {
+        (cmd.i32_0 < 0 || cmd.i32_0 >= market_store().market_count.get() ||
+         cmd.i32_1 < 0 || cmd.i32_1 >= market_store().good_count.get())) {
         error = "command_market_target_invalid";
         return false;
     }

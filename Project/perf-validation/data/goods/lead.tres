@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"lead"
+display_name = "铅"
+semantic_tags = PackedStringArray()
+category_id = &"lead"
+substitution_category_ids = PackedStringArray("lead")
+technology_tags = PackedStringArray("industry.metals", "tech.electrochemistry", "tech.digital_control")
+default_price = 36000
+reference_max_price = 1800000
+price_adjust_q16 = 1434
+demand_price_elasticity_q16 = 45875

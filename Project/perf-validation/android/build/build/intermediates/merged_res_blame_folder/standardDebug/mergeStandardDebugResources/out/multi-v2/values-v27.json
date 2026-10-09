@@ -1,0 +1,20 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.godot.game-mergeStandardDebugResources-18:/values-v27/values-v27.xml",
+            "map": [
+                {
+                    "source": "C:\\Users\\HkingAuditore\\.gradle\\caches\\8.11.1\\transforms\\e3f2e5f90e156afd5520765218a09fe3\\transformed\\jetified-core-splashscreen-1.0.1\\res\\values-v27\\values-v27.xml",
+                    "from": {
+                        "startLines": "2,3,4,7",
+                        "startColumns": "4,4,4,4",
+                        "startOffsets": "55,136,229,405",
+                        "endLines": "2,3,6,9",
+                        "endColumns": "80,92,12,12",
+                        "endOffsets": "131,224,400,588"
+                    }
+                }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,98 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== Price V6 numeric-guard regression ===
+  [PASS] V6 catalog compiles
+  [PASS] obsolete resource floor is detected
+  [PASS] native catalog rejects obsolete price floor explicitly
+  [PASS] obsolete maximum column explicitly rejected
+  [PASS] obsolete resource maximum detected
+  [PASS] guard country configured
+  [PASS] guard economy configured
+  [PASS] guard population bootstraps
+[economy-open-finish] day=0 country=0.041 workset=0.006 fiscal=0.003 csr=0.000 recovery=0.000 vectors=0.004 audit=0.004 commands=0.001
+[research-procure-diag] day=0 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=3 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=4 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=5 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=6 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=7 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=8 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=9 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=10 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=11 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=12 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=13 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=14 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=15 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=16 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=17 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=18 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=19 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=20 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=21 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=22 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=23 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] base ceiling is numeric guard only N=1 cash=1000000000000
+  [PASS] settlement conserves ledgers N=1 cash=1000000000000
+  [PASS] no sparse economic ceiling expansion N=1 cash=1000000000000
+  [PASS] funded shortage can price above authored reference_max N=1
+  [PASS] numeric-guard country save starts
+  [PASS] ECP2 capture API is bound
+  [PASS] ECP2 save captures OwnedState
+  [PASS] ECP2 payload is non-empty
+  [PASS] restore country configures first
+  [PASS] PKCN restore begins
+  [PASS] PKCN chunk accepted
+  [PASS] PKCN chunk accepted
+  [PASS] PKCN chunk accepted
+  [PASS] PKCN chunk accepted
+  [PASS] PKCN chunk accepted
+  [PASS] PKCN chunk accepted
+  [PASS] PKCN chunk accepted
+  [PASS] PKCN chunk accepted
+  [PASS] PKCN chunk accepted
+  [PASS] PKCN chunk accepted
+  [PASS] PKCN restore completes
+  [PASS] restore economy configures
+  [PASS] ECP2 restore completes
+  [PASS] state hash roundtrips exactly
+  [PASS] ceiling rows roundtrip
+  [PASS] bare PKEC payload is rejected
+  [PASS] guard country configured
+  [PASS] guard economy configured
+  [PASS] guard population bootstraps
+[economy-open-finish] day=0 country=0.055 workset=0.004 fiscal=0.003 csr=0.000 recovery=0.000 vectors=0.001 audit=0.002 commands=0.001
+  [PASS] base ceiling is numeric guard only N=1 cash=0
+  [PASS] settlement conserves ledgers N=1 cash=0
+  [PASS] no sparse economic ceiling expansion N=1 cash=0
+  [PASS] unfunded wishes do not invent ceiling state N=1
+  [PASS] guard country configured
+  [PASS] guard economy configured
+  [PASS] guard population bootstraps
+[economy-open-finish] day=0 country=0.037 workset=0.002 fiscal=0.002 csr=0.000 recovery=0.000 vectors=0.001 audit=0.001 commands=0.001
+  [PASS] base ceiling is numeric guard only N=3 cash=1000000000000
+  [PASS] settlement conserves ledgers N=3 cash=1000000000000
+  [PASS] no sparse economic ceiling expansion N=3 cash=1000000000000
+  [PASS] funded shortage can price above authored reference_max N=3
+  [PASS] guard country configured
+  [PASS] guard economy configured
+  [PASS] guard population bootstraps
+[economy-open-finish] day=0 country=0.055 workset=0.003 fiscal=0.004 csr=0.000 recovery=0.000 vectors=0.002 audit=0.002 commands=0.000
+  [PASS] base ceiling is numeric guard only N=3 cash=0
+  [PASS] settlement conserves ledgers N=3 cash=0
+  [PASS] no sparse economic ceiling expansion N=3 cash=0
+  [PASS] unfunded wishes do not invent ceiling state N=3
+  [PASS] guard country configured
+  [PASS] guard economy configured
+  [PASS] guard population bootstraps
+[economy-open-finish] day=0 country=0.038 workset=0.002 fiscal=0.003 csr=0.000 recovery=0.000 vectors=0.002 audit=0.001 commands=0.000
+  [PASS] base ceiling is numeric guard only N=5 cash=1000000000000
+  [PASS] settlement conserves ledgers N=5 cash=1000000000000
+  [PASS] no sparse economic ceiling expansion N=5 cash=1000000000000
+  [PASS] funded shortage can price above authored reference_max N=5
+  [PASS] guard country configured
+  [PASS] guard economy configured
+  [PASS] guard population bootstraps
+[economy-open-finish] day=0 country=0.039 workset=0.003 fiscal=0.002 csr=0.000 recovery=0.000 vectors=0.001 audit=0.001 commands=0.000

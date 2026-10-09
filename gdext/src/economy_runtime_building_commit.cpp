@@ -93,19 +93,18 @@ bool NativeEconomyRuntime::commit_ready_construction(
         int32_t group_index = existing;
         if (existing >= 0) {
             ++_building_structure_count_only_updates;
-            buildings_store().group_units[existing] = saturating_add(buildings_store().group_units[existing],
-                                                        pending.count, _saturation_count);
+            buildings_store().group_units.write_scalar(existing, saturating_add(buildings_store().group_units[existing],
+                                                        pending.count, _saturation_count));
             _building_handle_index_clean = false;
-            buildings_store().merchant_debt_principal[existing] = saturating_add(
+            buildings_store().merchant_debt_principal.write_scalar(existing, saturating_add(
                 buildings_store().merchant_debt_principal[existing],
-                pending.merchant_debt_principal, _saturation_count);
-            buildings_store().merchant_debt_premium[existing] = saturating_add(
+                pending.merchant_debt_principal, _saturation_count));
+            buildings_store().merchant_debt_premium.write_scalar(existing, saturating_add(
                 buildings_store().merchant_debt_premium[existing],
-                pending.merchant_debt_premium, _saturation_count);
+                pending.merchant_debt_premium, _saturation_count));
             if (pending.merchant_debt_principal > 0 ||
                 pending.merchant_debt_premium > 0) {
-                buildings_store().merchant_debt_term_cycles_left[existing] =
-                    static_cast<uint16_t>(_merchant_credit_term_cycles);
+                buildings_store().merchant_debt_term_cycles_left.write_scalar(existing, static_cast<uint16_t>(_merchant_credit_term_cycles));
             }
         } else {
             BuildingGroup group;
@@ -146,7 +145,7 @@ bool NativeEconomyRuntime::commit_ready_construction(
                 std::max<int64_t>(0, buildings_store().filled_owner[group_index]),
                 add_owners, _saturation_count);
             seated = std::min(seated, owner_required);
-            buildings_store().filled_owner[group_index] = seated;
+            buildings_store().filled_owner.write_scalar(group_index, seated);
         }
         const int64_t after_count = existing >= 0 ? buildings_store().group_units[existing]
                                                    : buildings_store().group_units.back();

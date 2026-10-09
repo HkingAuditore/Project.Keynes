@@ -128,6 +128,9 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
         : (closing_audit_mode == "INCREMENTAL" ? 2 : 1);
     _closing_audit_runtime_disabled = false;
     _closing_audit_force_full = true;
+    // FULL mode and profile changes may have bypassed lane registration.
+    _audit_mutation_generation = 0;
+    _opening_audit_force_full = true;
     const std::string accuracy_preset = dict_string(
         profile, "economy_accuracy_preset", "BALANCED");
     _accuracy_preset = accuracy_preset == "EXACT" ? 0

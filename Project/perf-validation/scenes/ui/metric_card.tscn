@@ -1,0 +1,56 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/metric_card.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
+
+[node name="MetricCard" type="PanelContainer"]
+clip_contents = true
+theme_type_variation = &"PKPaperCard"
+script = ExtResource("1_script")
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 5
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 5
+
+[node name="Row" type="HBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="IconBadge" parent="Margin/Row" instance=ExtResource("2_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(24, 26)
+
+[node name="Text" type="VBoxContainer" parent="Margin/Row"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 1
+
+[node name="Header" type="HBoxContainer" parent="Margin/Row/Text"]
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="Margin/Row/Text/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKMutedLabel"
+
+[node name="Spacer" type="Control" parent="Margin/Row/Text/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TrendLabel" type="Label" parent="Margin/Row/Text/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="ValueLabel" type="Label" parent="Margin/Row/Text"]
+unique_name_in_owner = true
+layout_mode = 2
+text_overrun_behavior = 3
+
+[node name="SubtitleLabel" type="Label" parent="Margin/Row/Text"]
+unique_name_in_owner = true
+layout_mode = 2
+text_overrun_behavior = 3
+theme_type_variation = &"PKMutedLabel"

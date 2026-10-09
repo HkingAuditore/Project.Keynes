@@ -1,0 +1,89 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="1_icon"]
+[ext_resource type="Script" path="res://scripts/ui/components/construction_option_row.gd" id="2_script"]
+
+[node name="ConstructionOption" type="Button"]
+custom_minimum_size = Vector2(0, 124)
+size_flags_horizontal = 3
+focus_mode = 0
+mouse_default_cursor_shape = 2
+theme_type_variation = &"PKTabButton"
+script = ExtResource("2_script")
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 10.0
+offset_top = 8.0
+offset_right = -10.0
+offset_bottom = -8.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Line" type="HBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Icon" parent="Margin/Line" instance=ExtResource("1_icon")]
+custom_minimum_size = Vector2(30, 30)
+layout_mode = 2
+size_flags_vertical = 0
+mouse_filter = 2
+
+[node name="Info" type="VBoxContainer" parent="Margin/Line"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 1
+
+[node name="Name" type="Label" parent="Margin/Line/Info"]
+layout_mode = 2
+theme_type_variation = &"PKSectionTitle"
+text_overrun_behavior = 3
+
+[node name="MaterialsRow" type="HBoxContainer" parent="Margin/Line/Info"]
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="Icon" parent="Margin/Line/Info/MaterialsRow" instance=ExtResource("1_icon")]
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="Materials" type="Label" parent="Margin/Line/Info/MaterialsRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+autowrap_mode = 2
+theme_type_variation = &"PKMutedLabel"
+
+[node name="RecipeRow" type="HBoxContainer" parent="Margin/Line/Info"]
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="Icon" parent="Margin/Line/Info/RecipeRow" instance=ExtResource("1_icon")]
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="Recipe" type="Label" parent="Margin/Line/Info/RecipeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+autowrap_mode = 2
+theme_type_variation = &"PKMutedLabel"
+
+[node name="JobsRow" type="HBoxContainer" parent="Margin/Line/Info"]
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="Icon" parent="Margin/Line/Info/JobsRow" instance=ExtResource("1_icon")]
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="Jobs" type="Label" parent="Margin/Line/Info/JobsRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+autowrap_mode = 2
+theme_type_variation = &"PKMutedLabel"

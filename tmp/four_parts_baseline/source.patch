@@ -1,0 +1,2005 @@
+diff --git a/Project/project-keynes/scripts/game/game_save_coordinator.gd b/Project/project-keynes/scripts/game/game_save_coordinator.gd
+index fd3b5592..93866d00 100644
+--- a/Project/project-keynes/scripts/game/game_save_coordinator.gd
++++ b/Project/project-keynes/scripts/game/game_save_coordinator.gd
+@@ -25,6 +25,7 @@ var _last_autosave_year := -1
+ var _autosave_enabled := true
+ var _busy := false
+ var _providers: Array = []
++var _economy_format: Dictionary = {}
+ var _next_runtime_save_request_id: int = 1
+ 
+ 
+@@ -374,6 +375,17 @@ func _collect_sections(saved_paused: bool, saved_speed: float,
+ 		"provider_manifest": provider_manifest}
+ 
+ 
++func _economy_checkpoint_format() -> Dictionary:
++	if not _economy_format.is_empty():
++		return _economy_format
++	_economy_format = {"schema_version": 53, "abi_version": 2, "hash_version": 1}
++	if ClassDB.class_exists("DCWorldExt"):
++		var probe = ClassDB.instantiate("DCWorldExt")
++		if probe != null and probe.has_method("get_economy_checkpoint_format"):
++			_economy_format = probe.get_economy_checkpoint_format()
++	return _economy_format
++
++
+ func _register_providers() -> void:
+ 	_providers = [
+ 		_make_provider(&"dynamic_world", 1,
+@@ -397,9 +409,9 @@ func _register_providers() -> void:
+ 		_make_provider(&"pkef", 11, PackedStringArray(["pkef"]),
+ 			"_can_effect_provider", "_write_effect_provider",
+ 			"_restore_effect_provider"),
+-		# ECP2-only production economy section (ABI2 / schema 53). Bare PKEC
+-		# is rejected by the facade/host; use an explicit migrate helper.
+-		_make_provider(&"ecp2", 53, PackedStringArray(["ecp2"]),
++		# Negotiate with the loaded DLL: an old editor must never stamp a new
++		# manifest on bytes produced by its still-loaded ABI2 extension.
++		_make_provider(&"ecp2", int(_economy_checkpoint_format().schema_version), PackedStringArray(["ecp2"]),
+ 			"_can_economy_provider", "_write_economy_provider", "_restore_economy_provider"),
+ 		_make_provider(&"pkgp", 3, PackedStringArray(["pkgp"]),
+ 			"_can_modifier_provider", "_write_gameplay_modifier_provider",
+@@ -474,9 +486,9 @@ func _manifest_compatible(raw_manifest) -> bool:
+ 			# until after partial session restore.
+ 			schema_compatible = saved_schema == 11
+ 		elif provider_id == "ecp2":
+-			# ECP2 is exact ABI2/schema53 only. Reject bare PKEC/ECP1 before
+-			# any provider mutates live state.
+-			schema_compatible = saved_schema == 53
++			schema_compatible = saved_schema == int(_economy_checkpoint_format().schema_version)
++			if OS.get_environment("PK_SAVE_MIGRATE") == "1" and saved_schema == 53:
++				schema_compatible = true
+ 		elif provider_id == "pkec":
+ 			# Legacy provider id is no longer loadable through the coordinator.
+ 			schema_compatible = false
+@@ -940,7 +952,11 @@ func _restore_environment_provider(sections: Dictionary, context: Dictionary) ->
+ 
+ 
+ func _restore_clock_provider(sections: Dictionary, _context: Dictionary) -> Dictionary:
+-	return _world_clock.restore_state(sections.world_clock)
++	var state: Dictionary = sections.world_clock.duplicate(true)
++	if OS.get_environment("PK_SAVE_MIGRATE") == "1":
++		# Offline migration may not advance business state while loading.
++		state["paused"] = true
++	return _world_clock.restore_state(state)
+ 
+ 
+ func _restore_country_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
+diff --git a/Project/project-keynes/scripts/ui/perf_recorder.gd b/Project/project-keynes/scripts/ui/perf_recorder.gd
+index 0e06b118..563f088d 100644
+--- a/Project/project-keynes/scripts/ui/perf_recorder.gd
++++ b/Project/project-keynes/scripts/ui/perf_recorder.gd
+@@ -322,6 +322,9 @@ const FIXED_COLUMNS: Array = [
+ 	"runtime_graph_worker_time_execute_us",
+ 	"runtime_graph_worker_time_input_wait_us",
+ 	"runtime_graph_worker_time_clock_wait_us",
++	"runtime_graph_worker_time_save_build_us",
++	"runtime_graph_worker_time_save_pause_us",
++	"runtime_graph_worker_time_paused_us",
+ 	"runtime_graph_worker_time_boundary_wait_us",
+ 	"runtime_graph_worker_time_overhead_us",
+ 	"runtime_graph_worker_time_total_us",
+@@ -404,6 +407,13 @@ const MOBILE_EXPORT_DIR: String = "user://perf"
+ var _main = null  # 鸭子类型（运行时只 has_method/call 调用）；
+                   # 留 untyped 是为了单测可注入 RefCounted Mock 而不必 extends Node。
+ var _recording: bool = false
++var _authoritative_after_day: int = -1
++
++
++## Optional headless gate: driver ticks and continuation callbacks cannot
++## duplicate a committed day. Player recording keeps its normal tick contract.
++func configure_authoritative_sampling(after_day: int) -> void:
++	_authoritative_after_day = after_day
+ var _rows: Array = []
+ var _start_tick: int = 0
+ var _hit_limit: bool = false
+@@ -526,6 +536,12 @@ func on_fast_tick(sample: Dictionary) -> void:
+ 		return
+ 	if _hit_limit:
+ 		return
++	if _authoritative_after_day >= 0:
++		var graph: Dictionary = sample.get("runtime_graph", {})
++		var committed := int(graph.get("simulation_committed_day", -1))
++		if committed <= _authoritative_after_day:
++			return
++		_authoritative_after_day = committed
+ 	var row: Dictionary = sample.duplicate()
+ 
+ 	# 计算 row_idx（录制内序号，从 0 开始；区别于 tick_idx 的全局序号）
+@@ -586,6 +602,8 @@ func on_fast_tick(sample: Dictionary) -> void:
+ 				"country_pod_blocker",
+ 				"worker_time_execute_us", "worker_time_input_wait_us",
+ 				"worker_time_clock_wait_us", "worker_time_boundary_wait_us",
++				"worker_time_save_build_us", "worker_time_save_pause_us",
++				"worker_time_paused_us",
+ 				"worker_time_overhead_us", "worker_time_total_us",
+ 				"input_capture_count", "input_capture_reused",
+ 				"economy_input_requested_day",
+diff --git a/Project/project-keynes/tests/headless_perf_record.gd b/Project/project-keynes/tests/headless_perf_record.gd
+index 408ffee5..20cc686b 100644
+--- a/Project/project-keynes/tests/headless_perf_record.gd
++++ b/Project/project-keynes/tests/headless_perf_record.gd
+@@ -45,6 +45,10 @@ func _run() -> int:
+ 		args.get("synthetic_test_economy", "false"))
+ 	var trade_scenario := _argument_enabled(args.get("trade_scenario", "false"))
+ 	var label := str(args.get("label", "headless"))
++	var detail_mode := str(args.get("detail_mode", "CORE")).to_upper()
++	if detail_mode not in ["CORE", "DETAIL"]:
++		push_error("[headless-perf] detail_mode must be CORE or DETAIL")
++		return 2
+ 	var output_dir := str(args.get("output_dir", "")).strip_edges()
+ 	if not output_dir.is_empty():
+ 		output_dir = ProjectSettings.globalize_path(output_dir).simplify_path()
+@@ -295,11 +299,15 @@ func _run() -> int:
+ 	if not output_dir.is_empty():
+ 		recorder.call("configure_export", output_dir, "perf.csv")
+ 	host.set_perf_recorder(recorder)
+-	# The benchmark deliberately requests per-tick DETAIL so performance CSV
+-	# diagnosis retains every job and breakdown. Player recording defaults CORE.
+-	recorder.call("start", "DETAIL", 1)
++	# Production throughput uses compact snapshots. Full diagnostics are an
++	# explicit separate measurement, not hidden inside every measured day.
++	recorder.call("start", detail_mode, 1)
+ 
+ 	var runtime_report_start := _runtime_report_snapshot(generator)
++	if host.runtime_climate_authority_enabled:
++		# The first input is day zero. Gate by observed commits below rather
++		# than assuming a particular bootstrap watermark.
++		recorder.configure_authoritative_sampling(0)
+ 	var climate_diag_start: Dictionary = host.climate_authority_diagnostics() \
+ 		if host.has_method("climate_authority_diagnostics") else {}
+ 	var run_started := Time.get_ticks_usec()
+@@ -316,7 +324,8 @@ func _run() -> int:
+ 	var authoritative_measured := 0
+ 	var auth_measure_start_us := 0
+ 	var auth_measure_end_us := 0
+-	var total_driver_days := warmup_days + days
++	# sus_tick_daily captures driver_day - 1. Include the final input day.
++	var total_driver_days := warmup_days + days + 1
+ 	for day in range(1, total_driver_days + 1):
+ 		if country_daily_workload:
+ 			if country == null or country_handles.is_empty():
+@@ -373,17 +382,21 @@ func _run() -> int:
+ 		host.run_daily_tick(day, phase)
+ 		host.finish_daily_tick(0.0, {})
+ 		if host.runtime_climate_authority_enabled:
+-			if generator != null and generator.has_method("capture_runtime_inputs_for_worker"):
+-				generator.capture_runtime_inputs_for_worker(day, phase)
+-			# Drain write-back without OS.delay_msec harness pollution. Use a
+-			# short process_frame poll so the SceneTree can service the host.
++			# run_daily_tick already froze driver_day - 1. A second capture with
++			# driver_day skips the production input-day convention.
++			# Stop polling as soon as that actual input day commits; a fixed 40ms
++			# wait imposed an artificial throughput ceiling below 50 days/s.
+ 			var writeback_window_started := Time.get_ticks_usec()
+-			var writeback_deadline := writeback_window_started + 40000
++			var writeback_deadline := writeback_window_started + 60000000
+ 			while Time.get_ticks_usec() < writeback_deadline:
+ 				var consume_started := Time.get_ticks_usec()
+ 				host._consume_runtime_commit_if_ready()
+ 				harness_writeback_consume_us += Time.get_ticks_usec() - consume_started
+ 				harness_writeback_poll_count += 1
++				var progress := _runtime_report_snapshot(generator)
++				if int(progress.get("simulation_committed_day",
++						progress.get("committed_day", -1))) >= day - 1:
++					break
+ 				if Time.get_ticks_usec() >= writeback_deadline:
+ 					break
+ 				await process_frame
+@@ -460,11 +473,18 @@ func _run() -> int:
+ 			last_authoritative_committed_day = committed_day
+ 			authoritative_observed += 1
+ 			if authoritative_observed <= warmup_days:
++				recorder.configure_authoritative_sampling(committed_day)
++				if authoritative_observed == warmup_days:
++					# Clear warmup rows; the next commit starts the measured window.
++					recorder.start(detail_mode, 1)
++					auth_measure_start_us = produced_us if produced_us > 0 else Time.get_ticks_usec()
+ 				continue
+ 			authoritative_measured += 1
+ 			if auth_measure_start_us == 0:
+ 				auth_measure_start_us = produced_us if produced_us > 0 else Time.get_ticks_usec()
+ 			auth_measure_end_us = produced_us if produced_us > 0 else Time.get_ticks_usec()
++			# Commit consumption can precede its recorder callback by one frame.
++			host._consume_runtime_commit_if_ready()
+ 			if authoritative_measured >= days:
+ 				break
+ 
+@@ -487,7 +507,7 @@ func _run() -> int:
+ 	var expected_rows := authoritative_measured if authoritative_measured > 0 else host.get_fast_tick_count()
+ 	if fatal:
+ 		expected_rows = host.get_fast_tick_count()
+-	var rows_ok := rows == expected_rows or authoritative_measured >= days
++	var rows_ok := rows == expected_rows
+ 	var effective_days := float(maxi(authoritative_measured, 0))
+ 	var auth_elapsed_ms := 0.0
+ 	if auth_measure_end_us > auth_measure_start_us and auth_measure_start_us > 0:
+@@ -685,7 +705,7 @@ func _runtime_report_snapshot(generator) -> Dictionary:
+ 	var report: Dictionary = generator.get_runtime_thread_report() \
+ 		if generator != null and generator.has_method("get_runtime_thread_report") else {}
+ 	if generator != null and generator.has_method("get_runtime_perf_snapshot"):
+-		var graph: Dictionary = generator.get_runtime_perf_snapshot(1)
++		var graph: Dictionary = generator.get_runtime_perf_snapshot(0)
+ 		for key in graph:
+ 			report[key] = graph[key]
+ 	return report
+diff --git a/Project/project-keynes/tests/headless_save_replay.gd b/Project/project-keynes/tests/headless_save_replay.gd
+index a08cb480..a9297357 100644
+--- a/Project/project-keynes/tests/headless_save_replay.gd
++++ b/Project/project-keynes/tests/headless_save_replay.gd
+@@ -34,6 +34,7 @@ const RUNTIME_READY_FRAMES := 4800
+ var _game_flow: Node
+ var _failures := PackedStringArray()
+ var _result := {}
++var _finished := false
+ 
+ 
+ func _ready() -> void:
+@@ -83,6 +84,25 @@ func _run() -> void:
+ 		_fail(restore_error)
+ 		return
+ 	var start_day := clock.day_index()
++	if OS.get_environment("PK_SAVE_MIGRATE") == "1" and not OS.get_environment("PK_SAVE_MIGRATE_OUTPUT_SLOT").is_empty():
++		var format: Dictionary = generator.get_data_core_world_ext().get_economy_checkpoint_format()
++		if int(format.get("hash_version", 0)) != 2 or int(format.get("schema_version", 0)) != 54:
++			_fail("save_migration_requires_hash_v2_extension")
++			return
++		clock.pause(true)
++		var save = get_tree().root.get_node("GameSave")
++		# Tool-local suppression; do not change the player's persisted settings.
++		save.set("_autosave_enabled", false)
++		var migrated: Dictionary = await save.request_manual_save(OS.get_environment("PK_SAVE_MIGRATE_OUTPUT_SLOT"))
++		_result["migration"] = migrated
++		_result["checkpoint_format"] = format
++		_result["start_day"] = start_day
++		_result["end_day"] = clock.day_index()
++		if not bool(migrated.get("ok", false)) or clock.day_index() != start_day:
++			_fail("save_migration_failed_or_advanced_day")
++			return
++		_finish()
++		return
+ 	_result["start_day"] = start_day
+ 	_result["target_day"] = start_day + days
+ 	print("[save-replay] loaded day=%d country=%s economy=%s" % [
+@@ -104,22 +124,51 @@ func _advance(host: WorldRuntimeHost, clock: WorldClock, generator,
+ 	# 时钟前进不等于模拟前进。经济结算水位不动的话，这轮回放什么也没验证。
+ 	var start_newest_day := int(
+ 		generator.get_economy_report().get("newest_state_day", -1))
+-	var last_day := clock.day_index()
+ 	var last_day_msec := Time.get_ticks_msec()
+ 	var started_msec := last_day_msec
+-	while clock.day_index() < target_day:
++	var thread_start: Dictionary = generator.get_runtime_perf_snapshot(0)
++	var worker_start := int(thread_start.get("simulation_committed_day", -1))
++	var worker_target := worker_start + int(_result["requested_days"])
++	var worker_end := worker_start
++	var last_day := worker_start if worker_start >= 0 else clock.day_index()
++	var warmup_days := maxi(0, int(_env("PK_SAVE_REPLAY_WARMUP_DAYS", "0")))
++	var warmup_target := worker_start + warmup_days
++	var measuring := warmup_days == 0
++	_result["warmup_days"] = warmup_days
++	_result["warmup_start_authoritative_day"] = worker_start
++	_result["target_authoritative_day"] = worker_target
++	while true:
+ 		await get_tree().process_frame
+-		var economy: Dictionary = generator.get_economy_report()
+-		if bool(economy.get("fatal", false)):
++		var progress: Dictionary = generator.get_runtime_perf_snapshot(0)
++		worker_end = int(progress.get("simulation_committed_day", -1))
++		if not measuring and worker_start >= 0 and worker_end >= warmup_target:
++			# Anchor to the actual observed commit, including any frame coalescing.
++			worker_start = worker_end
++			worker_target = worker_start + int(_result["requested_days"])
++			_result["target_authoritative_day"] = worker_target
++			_result["warmup_actual_days"] = worker_start - int(_result["warmup_start_authoritative_day"])
++			thread_start = progress
++			started_msec = Time.get_ticks_msec()
++			measuring = true
++		if measuring and worker_start >= 0 and worker_end >= worker_target:
++			break
++		if worker_start < 0 and clock.day_index() >= target_day:
++			break
++		var economy: Dictionary = generator.get_economy_perf_report()
++		var worker_fault := int(progress.get("worker_fault_count", 0)) > 0 \
++			or bool(progress.get("economy_authority_fault_paused", false)) \
++			or not String(progress.get("economy_capture_fatal_reason", "")).is_empty()
++		if worker_fault or bool(economy.get("fatal", false)):
+ 			clock.set_speed(0.0)
+ 			_result["fatal_day"] = clock.day_index()
+ 			_result["forensics"] = RuntimeForensics.capture_and_dump(
+ 				String(economy.get("fatal_reason", "unknown")),
+ 				generator, clock, "save_replay_fatal",
+ 				{"slot": _result["slot"], "start_day": _result["start_day"]})
+-			_fail("economy_fatal:%s" % String(economy.get("fatal_reason", "unknown")))
++			_fail("economy_fatal:%s" % String(economy.get("fatal_reason",
++				progress.get("fault_code", "unknown"))))
+ 			return
+-		var day := clock.day_index()
++		var day := worker_end if worker_start >= 0 else clock.day_index()
+ 		var now := Time.get_ticks_msec()
+ 		if day != last_day:
+ 			last_day = day
+@@ -141,8 +190,25 @@ func _advance(host: WorldRuntimeHost, clock: WorldClock, generator,
+ 	_result["end_day"] = clock.day_index()
+ 	_result["elapsed_msec"] = elapsed
+ 	_result["days_per_sec"] = (
+-		float(clock.day_index() - _result["start_day"]) / max(0.001, elapsed / 1000.0))
++		float(worker_end - worker_start if worker_start >= 0 else
++			clock.day_index() - _result["start_day"]) / max(0.001, elapsed / 1000.0))
++	_result["start_authoritative_day"] = worker_start
++	_result["end_authoritative_day"] = worker_end
++	var final_progress: Dictionary = generator.get_runtime_perf_snapshot(0)
++	var timing_deltas := {}
++	for category in ["execute", "input_wait", "clock_wait", "save_build",
++			"save_pause", "paused", "overhead", "boundary_wait"]:
++		var key := "worker_time_%s_us" % category
++		timing_deltas[category] = int(final_progress.get(key, 0)) - int(thread_start.get(key, 0))
++	_result["measurement_worker_time_us"] = timing_deltas
+ 	var final_economy: Dictionary = generator.get_economy_report()
++	var final_audit := final_economy
++	var audit_ext = generator.get_data_core_world_ext()
++	if audit_ext != null and audit_ext.has_method("get_economy_committed_audit_report"):
++		final_audit = audit_ext.get_economy_committed_audit_report()
++		if not bool(final_audit.get("available", false)):
++			_failures.append("committed_audit_missing")
++		_result["committed_audit"] = final_audit
+ 	_result["start_newest_state_day"] = start_newest_day
+ 	_result["end_newest_state_day"] = int(
+ 		final_economy.get("newest_state_day", -1))
+@@ -151,14 +217,13 @@ func _advance(host: WorldRuntimeHost, clock: WorldClock, generator,
+ 	var worker_error := _worker_defect(generator)
+ 	if not worker_error.is_empty():
+ 		_failures.append(worker_error)
+-	if not _failures.is_empty():
+-		# 取证只挑了关键键；判断 worker 为什么一天都提交不了需要整份报告。
+-		_dump_full_thread_report(generator)
+-	_result["audit_incomplete"] = bool(final_economy.get("audit_incomplete", false))
++	# One cold report at the end also supplies reproducible workload counters.
++	_dump_full_thread_report(generator)
++	_result["audit_incomplete"] = bool(final_audit.get("audit_incomplete", true))
+ 	for key in ["population_error", "money_error", "goods_error"]:
+-		_result[key] = int(final_economy.get(key, 0))
+-		if int(final_economy.get(key, 0)) != 0:
+-			_failures.append("%s=%d" % [key, int(final_economy.get(key, 0))])
++		_result[key] = int(final_audit.get(key, 0))
++		if int(final_audit.get(key, 0)) != 0:
++			_failures.append("%s=%d" % [key, int(final_audit.get(key, 0))])
+ 	# 走到这里意味着复现没有重现故障。这同样是结论，而且要留下现场以便和失败
+ 	# 的那一次逐字段比对。
+ 	_result["forensics"] = RuntimeForensics.capture_and_dump(
+@@ -249,6 +314,9 @@ func _fail(reason: String) -> void:
+ 
+ 
+ func _finish() -> void:
++	if _finished:
++		return
++	_finished = true
+ 	_result["failures"] = _failures
+ 	_result["ok"] = _failures.is_empty()
+ 	# 单行机器可读结果。包装脚本按这个前缀解析，不要改前缀。
+diff --git a/Project/project-keynes/tests/perf_recorder_test.gd b/Project/project-keynes/tests/perf_recorder_test.gd
+index a48f5e7e..70d05436 100644
+--- a/Project/project-keynes/tests/perf_recorder_test.gd
++++ b/Project/project-keynes/tests/perf_recorder_test.gd
+@@ -48,11 +48,23 @@ func _run() -> void:
+ 	_test_recorder_skipped_day_no_job_columns()
+ 	_test_recorder_state_machine()
+ 	_test_schema_and_custom_export()
++	_test_authoritative_sampling()
+ 	print("=== perf_recorder test summary: %d checks, %d failures ===" % [_checks, _failures])
+ 
+ 
+ # ─── CSV 转义 ─────────────────────────────────────────────────────
+ 
++func _test_authoritative_sampling() -> void:
++	var rec := PerfRecorder.new()
++	rec.configure_authoritative_sampling(5)
++	rec.start()
++	for day in [4, 5, 6, 6, 6, 7]:
++		rec.on_fast_tick({"tick_idx": day,
++			"runtime_graph": {"simulation_committed_day": day}})
++	_expect(rec.get("_rows").size() == 2, "warmup and repeated callbacks do not duplicate authority rows")
++	_expect(rec.get("_rows")[0]["runtime_graph_simulation_committed_day"] == 6,
++		"first measured row is a real committed day")
++
+ func _test_csv_escape_basic() -> void:
+ 	_expect(PerfRecorder._csv_escape("hello") == "hello", "plain string passthrough")
+ 	_expect(PerfRecorder._csv_escape("") == "", "empty string")
+diff --git a/docs/cpp-dots-runtime/computation-pipelines.md b/docs/cpp-dots-runtime/computation-pipelines.md
+index 1c3357b3..cef9a914 100644
+--- a/docs/cpp-dots-runtime/computation-pipelines.md
++++ b/docs/cpp-dots-runtime/computation-pipelines.md
+@@ -3344,6 +3344,17 @@ Climate 的日内 stage 顺序现在只有一处定义：
+ `tests/runtime_climate_stage_order_contract_test.gd` 失败，而不是等到数值对拍里
+ 出现"某个字段不同"。
+ 
++经济只读准备计算在 2026-10-08 增加作用域缓存：employment、building plan
++和 structural commit 使用线程私有、runtime 身份绑定的 living-cost memo；
++允许的 employment / plan 作用域还缓存完整 owner opportunity quote。
++derived business demand 在单个冻结 cell 的作用域内复用需求基础分数。
++缓存随作用域退出清空，不跨日保留；资金、人口、职业角色及关键建筑容量
++进入报价键，家族迁移会清空报价缓存。交易、库存竞争和落账顺序不变。
++需求基础分数键包括 market、country 和完整 EnvironmentSample（含 ready）。
++`PK_ECONOMY_MEMO_VERIFY=1` 对缓存命中的 living cost、完整报价和最终需求
++重新执行原始计算，并比较数值与饱和事件数；差异立即终止诊断进程。
++`PK_ECONOMY_MEMO_DISABLE=1` 是性能及正确性参照入口。
++
+ canonical 顺序：
+ 
+ ```
+diff --git a/docs/cpp-dots-runtime/country-economy-bridge.md b/docs/cpp-dots-runtime/country-economy-bridge.md
+index 6f9f0696..d1b8599e 100644
+--- a/docs/cpp-dots-runtime/country-economy-bridge.md
++++ b/docs/cpp-dots-runtime/country-economy-bridge.md
+@@ -68,3 +68,14 @@ Economy 仅为实际使用的 `(country_handle, policy_id)` 编译缓存；相
+ `(country, tax_kind, base_rate)` 共享连续行，细项保持短有序切片。worker 查询只执行
+ 逐格 bitmask、整数索引、短切片和全国连续率回退。冻结周期继续使用旧快照，下一周期才看到
+ 新政策或领土所有者。
++# Request identity after restore (2026-10-09)
++
++Before starting the worker, the Host raises its monotonic command request-ID
++allocator above the maximum terminal peer request ID in the restored Economy
++journal, as well as the existing Country receipt and pending-command floors.
++A quiescent save can have empty Host transport queues while PKEC retains old
++terminal identities; an empty queue is not evidence that low IDs are reusable.
++The floor is derived from validated authoritative records, never by deleting
++old transactions or relaxing duplicate-request identity checks. Reserving a
++lower floor cannot rewind the allocator. This startup scan is not a daily hot
++loop and does not change transaction order or balances.
+diff --git a/docs/cpp-dots-runtime/game-flow-start-save.md b/docs/cpp-dots-runtime/game-flow-start-save.md
+index 63d2702e..78284624 100644
+--- a/docs/cpp-dots-runtime/game-flow-start-save.md
++++ b/docs/cpp-dots-runtime/game-flow-start-save.md
+@@ -431,3 +431,20 @@ Save flow requires `PKTR v6` after journal/domain state. Missing/older PKTR, old
+ every non-v41 PKEC, and incompatible catalog hashes reject restore; no empty-trigger or technology
+ ID migration is provided.
+ 
++### Explicit economy hash migration (2026-10-08)
++
++`tools/runtime/Invoke-SaveMigration.ps1 -SavePath <old.pksv> -OutputPath <new.pksv>`
++loads a staged copy through the production restore path, pauses the restored
++clock, and saves ECP2 ABI 3 / schema 54 with hash version 2. An existing output
++path is rejected. The tool checks that the source SHA256 and simulation day
++remain unchanged and retains its diagnostic log. Other domain schemas and
++catalog checks remain strict: this is not a generic migration of arbitrary
++incompatible saves. Normal restore rejects the old ECP2 envelope without the
++explicit migration flag. Migration suppresses automatic saves only inside its
++test coordinator instance; it does not modify the player's persistent setting.
++
++Fiscal TREASURY_SPEND records with requested_cash=0 encode their authorized
++cash amount in requested_quantity. Their terminal committed cash and quantity
++must match and must fit that amount. This valid operation-specific encoding is
++checked without relaxing the nonnegative, quantity, identity or terminal rules.
++
+diff --git a/docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md b/docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md
+index 4ff68542..17385b08 100644
+--- a/docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md
++++ b/docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md
+@@ -1483,6 +1483,49 @@ facade 同时校验末尾 little-endian FNV-1a checksum。bundle 当前还携带
+ `runtime_bundle_version_incompatible`，不再按早期最小长度猜测解析。
+ # Country snapshot bridge
+ 
++## Economy hash protocol and checkpoint format (2026-10-08)
++
++`DCWorldExt.get_economy_checkpoint_format()` exposes the loaded extension's
++`abi_version`, `schema_version` and `hash_version`. The save coordinator uses
++this descriptor when registering ECP2, rather than assuming the source tree's
++schema matches a running editor's DLL. Current ECP2 uses ABI 3 / schema 54 and
++stores `hash_version` after `seed`; the business PKEC layout remains schema 55.
++ABI 2 / schema 53 is accepted only through explicit `PK_SAVE_MIGRATE=1` migration.
++The migration tool writes a new path and preserves the source file.
++
++Hash version 2 replaces the four dense market column traversals with ordered
++4 KiB canonical integral page roots (domain 1, stable columns 1..4: stock,
++price, demand EMA, shortage). Leaf metadata includes protocol, domain, column,
++block and valid length; root metadata also includes field width and lane count.
++All other native state fields retain their existing traversal, except fiscal
++journal records, whose stable request-ID digests also cover K3 transaction
++identity and terminal fields. Native and bound POD share market hash pages in
++OwnedState. These caches are transient and rebuilt after restore.
++
++Unchanged hash pages are immutable and shared. This is **not** yet an immutable
++economy commit view: the daily linear ledger export and its copies still exist.
++Page updates conservatively compare every source page; complete writer-driven
++dirty registration is pending. `PK_ECONOMY_HASH_VERIFY=1` rebuilds each page root
++and the fiscal digest map from its source for diagnostic comparison. It is not
++a performance measurement mode. `PK_ECONOMY_HASH_V2=0` selects the legacy
++diagnostic protocol; v1 and v2 digest values must not be compared for equality.
++
++Ledger validation separates `validate_shape_and_values()` from
++`verify_external_digest()`. External digest verification rejects a missing
++digest; the compatibility `valid()` call still permits an internal unfinished
++ledger with hash zero. Export validates shape before constructing a new digest,
++instead of verifying a stale prior digest and then recomputing it again.
++
++`get_economy_committed_audit_report()` reads an atomically published immutable
++native audit view. It includes audited day, Economy generation, full/incremental
++verification and differences derived from actual/expected totals. VERIFY fills
++the private view; successful COMMIT publishes it. Reset/restore invalidate it.
++Its `revision_phase=before_effect_command_drain` is explicit: this is the
++verified epoch result, not an audit of later commands or worker-owned live
++arrays. Headless replay uses this view for final conservation checks because
++sampling a live report while the next epoch opens can combine different
++revisions. Complete post-command EconomyCommitView publication remains pending.
++
+ After Country bootstrap, the facade may call `capture_country_runtime_snapshot()`.
+ The return value contains only `ok`, error `code`, generation, state hash, day,
+ and array sizes. Array contents stay in the native immutable snapshot and are not
+diff --git a/docs/cpp-dots-runtime/index.md b/docs/cpp-dots-runtime/index.md
+index 98b8bffe..96b939ba 100644
+--- a/docs/cpp-dots-runtime/index.md
++++ b/docs/cpp-dots-runtime/index.md
+@@ -32,6 +32,9 @@
+ 当前性能缓存、认证近似、closing audit 与 native daily 紧凑边界见
+ [运行时性能优化契约（2026-07）](runtime-performance-optimization-2026-07.md)。
+ 
++[50× 性能优化实施状态（2026-10）](runtime-performance-optimization-2026-10.md)
++区分已实现机制、诊断实验路径和仍未完成的验收。
++
+ 显赫家族的原生 SoA、特性、地块威望、成员/建筑稀疏边、守恒财产归属、FamilyEffect 与 PKEC v41
+ 契约见[显赫家族原生运行时](./notable-family-runtime.md)。
+ 
+diff --git a/docs/cpp-dots-runtime/performance-diagnostics-playbook.md b/docs/cpp-dots-runtime/performance-diagnostics-playbook.md
+index 2a67bb8e..42f74e88 100644
+--- a/docs/cpp-dots-runtime/performance-diagnostics-playbook.md
++++ b/docs/cpp-dots-runtime/performance-diagnostics-playbook.md
+@@ -101,6 +101,14 @@ Worker 侧税收（epoch 累加，epoch 清空后回到 0，不要把一行的
+ - `runtime_graph_economy_attempt_slices`：这一次 Economy 访问跑了多少 compact slice
+ 
+ `runtime_graph_worker_time_*_us` 与 `input_capture_count` 是进程累计，比较两行必须取差。
++CORE CSV 同时记录 `worker_time_save_build_us`、`worker_time_save_pause_us` 与
++`worker_time_paused_us`，使八个 worker phase 的差分之和与 `worker_time_total_us`
++一致。旧 CSV 缺少这三列时，total 减 execute/input_wait/clock_wait/boundary_wait/overhead
++的差分只能称为未记录 phase 时间，不能全部算作计算或 peer 等待。
++端到端天/秒使用 committed_day 与 timestamp 的差分；纯执行预算使用 execute 的差分
++除以提交天数，两者不可混用。`sched_proc_*` 是相邻发布点之间的累计，首行可能包含
++开始录制前的运行历史；不能将首行累计量解释为单帧耗时。仅剔除长 timestamp 间隔也
++不能证明这些间隔全部属于暂停或自动存档。
+ `country_worker_waiting_for_peer` 与 `country_worker_last_reason` 说明国家阶段有没有被
+ peer 挡住。这些列不改变权威状态。
+ 
+@@ -2436,3 +2444,42 @@ counts at days 1000 and 1900. The run committed 1916 days in 45 seconds
+ it does not establish that the user's default running binary contains the fix.
+ The full building suite remains failing, including the newer owner-livelihood-only
+ suspension assertions which conflict with the restored operating-cost semantics.
++# 2026-10-08 economy performance validation
++
++Headless recording deduplicates samples by authoritative committed day after
++warmup. Driver-day callbacks and calendar advancement are not committed-day
++evidence. Save replay also waits for worker committed-day progress and uses
++compact reports in its frame loop; a progressing calendar cannot hide a stalled
++worker. DETAIL is opt-in for the performance recorder.
++
++The worker timing partition includes `execute`, `input_wait`, `clock_wait`,
++`save_build`, `save_pause`, `paused`, `overhead` and `boundary_wait`. Save and
++paused categories must be retained when explaining wall-time gaps.
++
++CORE and DETAIL economy reports expose `hash_version` and
++`hash_cumulative_compared_bytes`, `hash_cumulative_copied_bytes`,
++`hash_cumulative_rebuilt_pages`, `hash_cumulative_reused_pages`. Compare deltas
++within the same configured session; cache clear/restore resets their counters.
++The existing `hash_compared_bytes` / copied / rebuilt / reused fields describe
++the last cache update, **not** the entire committed day. Shared native/POD calls
++both count their actual comparison work. Diagnostic reference rebuilds are
++excluded from the production cache counters.
++
++`PK_ECONOMY_MEMO_VERIFY=1` and `PK_ECONOMY_HASH_VERIFY=1` deliberately add
++reference calculations. Their throughput is correctness evidence only.
++The migrated late save is 60x40 at day 26280; it must not be presented as a
++100x64 late-world acceptance run. The 50 authoritative days/s goal remains
++unverified until the specified 200-day warmup, 3000-day repeated measurement
++and graphical/autosave acceptance runs pass.
++
++Continuous audit rollout is currently diagnostic-only:
++`PK_ECONOMY_AUDIT_SHADOW_REUSE=1` retains touched lane preimages across commits,
++registers idle writes, and derives opening totals from the last close plus
++boundary changes. Worker sinks keep their prior shadow values until merge;
++they must not capture an already-mutated value as the first preimage.
++Bootstrap, restore, profile change, shape change and FULL mode rebuild the
++shadow. Periodic full audits remain enabled at the configured 25-day interval.
++`PK_ECONOMY_AUDIT_VERIFY_EVERY_DAY=1` additionally compares every opening and
++closing against a full scan. Neither flag changes economic settlement cadence.
++An audit mismatch disables the incremental path and fails before publishing
++the generation; it must not silently publish a corrected partial commit.
+diff --git a/gdext/src/economy_runtime.cpp b/gdext/src/economy_runtime.cpp
+index 6c263523..e09a1157 100644
+--- a/gdext/src/economy_runtime.cpp
++++ b/gdext/src/economy_runtime.cpp
+@@ -229,9 +229,24 @@ void NativeEconomyRuntime::rebuild_incremental_audit_shadow() {
+ }
+ 
+ void NativeEconomyRuntime::begin_incremental_audit_epoch() {
+-    // Snapshot live lanes at epoch open. A stale shadow from a prior close
+-    // mis-attributes in-epoch SETTLE/reward deltas against idle mutations.
+-    rebuild_incremental_audit_shadow();
++    // Diagnostic rollout: retain preimages for worker sinks, which register
++    // lanes after their writes. Idle writes join the same generation and are
++    // installed before starting the next epoch. Full mode never trusts this.
++    const char *reuse = std::getenv("PK_ECONOMY_AUDIT_SHADOW_REUSE");
++    const bool retain = reuse && std::strcmp(reuse, "1") == 0 &&
++        _closing_audit_mode == 2 && !_closing_audit_runtime_disabled &&
++        _audit_mutation_generation != 0 &&
++        _audit_shadow_population.size() == population_store().active.size() &&
++        _audit_shadow_market_stock.size() == market_store().stock.size();
++    if (retain) {
++        EconomyCostProbe probe("audit_shadow_touched", _current_day,
++            _audit_population_touched_lanes.size() + _audit_market_touched_lanes.size());
++        commit_incremental_audit_shadow();
++    } else {
++        EconomyCostProbe probe("audit_shadow_rebuild", _current_day,
++            population_store().active.size() + market_store().stock.size());
++        rebuild_incremental_audit_shadow();
++    }
+     if (_audit_population_lane_stamp.size() != population_store().active.size())
+         _audit_population_lane_stamp.resize(population_store().active.size(), 0);
+     if (_audit_market_lane_stamp.size() != market_store().stock.size())
+@@ -249,7 +264,7 @@ void NativeEconomyRuntime::begin_incremental_audit_epoch() {
+ }
+ 
+ void NativeEconomyRuntime::audit_touch_population_lane(int32_t slot) {
+-    if (!_epoch_active || _closing_audit_mode == 0 ||
++    if (_audit_mutation_generation == 0 || _closing_audit_mode == 0 ||
+         _closing_audit_runtime_disabled || slot < 0 ||
+         slot >= static_cast<int32_t>(population_store().active.size()))
+         return;
+@@ -274,7 +289,7 @@ void NativeEconomyRuntime::audit_touch_population_lane(int32_t slot) {
+ }
+ 
+ void NativeEconomyRuntime::audit_touch_market_lane(size_t index) {
+-    if (!_epoch_active || _closing_audit_mode == 0 ||
++    if (_audit_mutation_generation == 0 || _closing_audit_mode == 0 ||
+         _closing_audit_runtime_disabled || index >= market_store().stock.size())
+         return;
+     if (_production_result_sink != nullptr) {
+@@ -346,7 +361,12 @@ void NativeEconomyRuntime::note_family_expedition_audit_invalidation() {
+ 
+ NativeEconomyRuntime::AuditTotals
+ NativeEconomyRuntime::incremental_audit_totals() const {
+-    AuditTotals totals = _opening_totals;
++    return audit_totals_from_shadow(_opening_totals);
++}
++
++NativeEconomyRuntime::AuditTotals
++NativeEconomyRuntime::audit_totals_from_shadow(const AuditTotals &baseline) const {
++    AuditTotals totals = baseline;
+     for (const size_t slot : _audit_population_touched_lanes) {
+         if (slot >= _audit_shadow_population.size() ||
+             slot >= _audit_shadow_funds.size())
+@@ -1214,6 +1234,13 @@ NativeEconomyRuntime::block_or_enqueue_country_worker_asset(
+     return CountryWorkerAssetRoute::ENQUEUED_PENDING;
+ }
+ 
++uint64_t NativeEconomyRuntime::asset_peer_request_high_watermark() const noexcept {
++    uint64_t maximum = 0;
++    for (const auto &entry : _asset_peer_journal)
++        maximum = std::max(maximum, entry.first);
++    return maximum;
++}
++
+ bool NativeEconomyRuntime::fiscal_peer_journal_matches(
+         const RuntimeEconomyAssetRequest &request,
+         const FiscalPeerJournalRecord &record, std::string &error) const {
+@@ -1315,6 +1342,29 @@ void NativeEconomyRuntime::record_fiscal_peer_terminal(
+         }
+     }
+     _asset_peer_journal[request.request_id] = record;
++    if (runtime_chunk_hash_enabled()) {
++        _fiscal_record_digests[request.request_id] = fiscal_record_digest(record);
++        _fiscal_words_dirty = true;
++    }
++}
++
++uint64_t NativeEconomyRuntime::fiscal_record_digest(const FiscalPeerJournalRecord &record) {
++    uint64_t hash = 1469598103934665603ULL;
++    auto mix = [&](uint64_t value) { hash = economy_hash_u64(hash, value); };
++    mix(record.request_id); mix(record.transaction_id); mix(record.country_handle);
++    mix(record.country_generation); mix(record.peer_generation); mix(record.committed_peer_generation);
++    mix(static_cast<uint64_t>(record.day)); mix(record.operation_sequence); mix(record.continuation_index);
++    mix(static_cast<uint64_t>(record.country_slot)); mix(static_cast<uint16_t>(record.operation));
++    mix(static_cast<uint8_t>(record.result_code)); mix(static_cast<uint8_t>(record.state)); mix(record.accepted);
++    mix(static_cast<uint64_t>(record.requested_quantity)); mix(static_cast<uint64_t>(record.requested_cash));
++    mix(static_cast<uint64_t>(record.committed_quantity)); mix(static_cast<uint64_t>(record.committed_cash));
++    for (char byte : record.reason) mix(static_cast<uint8_t>(byte));
++    mix(record.session_epoch); mix(record.source_domain); mix(record.target_domain);
++    mix(static_cast<uint64_t>(record.effective_day)); mix(record.sequence);
++    mix(static_cast<uint8_t>(record.reservation_state)); mix(static_cast<uint8_t>(record.terminal_result));
++    mix(record.retry_identity); mix(record.state_hash_before); mix(record.state_hash_after);
++    for (char byte : record.late_ack_rejection_reason) mix(static_cast<uint8_t>(byte));
++    return hash;
+ }
+ 
+ bool NativeEconomyRuntime::service_country_economy_asset_peer(
+@@ -7226,6 +7276,20 @@ int32_t NativeEconomyRuntime::labor_signal_index(int32_t cell, int32_t professio
+         ? static_cast<int32_t>(it - _labor_signals.profession_ids.begin()) : -1;
+ }
+ 
++NativeEconomyRuntime::LivingCostMemoScope::~LivingCostMemoScope() {
++    if (!active) return;
++    auto &state = living_cost_memo_state();
++    state.quote_enabled = previous_quotes;
++    if (--state.depth == 0) {
++        EconomyCostProbe::record("living_cost.memo_hit", runtime._current_day, 0.0, state.hits);
++        EconomyCostProbe::record("living_cost.memo_miss", runtime._current_day, 0.0, state.misses);
++        state.values.clear();
++        state.previews.clear();
++        state.quotes.clear();
++        state.owner = nullptr;
++    }
++}
++
+ int64_t NativeEconomyRuntime::living_cost_for_signature(
+         int32_t cell, int32_t signature_id, int32_t plan_override, int64_t &sat) const {
+     if (cell < 0 || cell >= _cell_count || signature_id < 0 ||
+@@ -7233,6 +7297,32 @@ int64_t NativeEconomyRuntime::living_cost_for_signature(
+     const Signature &signature = _signatures[signature_id];
+     const int32_t plan_id = plan_override >= 0 ? plan_override : signature.plan_id;
+     if (plan_id < 0 || plan_id >= static_cast<int32_t>(_plans.size())) return 0;
++    // A memo scope spans only a stage whose prices, environment and frozen
++    // quantity modifiers cannot change. Cohort funds/ownership are not inputs.
++    const std::array<int32_t, 3> memo_key{cell, plan_id, signature.ethnicity_id};
++    auto &memo = living_cost_memo_state();
++    const bool memo_active = memo.depth > 0 && memo.owner == this;
++    if (memo_active) {
++        const auto found = memo.values.find(memo_key);
++        if (found != memo.values.end()) {
++            const char *verify = std::getenv("PK_ECONOMY_MEMO_VERIFY");
++            if (verify && std::strcmp(verify, "1") == 0) {
++                const auto *previous_owner = memo.owner;
++                memo.owner = nullptr;
++                int64_t reference_sat = sat;
++                const int64_t reference = living_cost_for_signature(cell, signature_id, plan_override, reference_sat);
++                memo.owner = previous_owner;
++                if (reference != found->second.first || reference_sat - sat != found->second.second) {
++                    std::fprintf(stderr, "[living-cost-memo-mismatch] day=%lld cell=%d\n", static_cast<long long>(_current_day), cell);
++                    std::abort();
++                }
++            }
++            sat += found->second.second;
++            ++memo.hits;
++            return found->second.first;
++        }
++    }
++    const int64_t saturation_before = sat;
+     const int32_t market = market_store().cell_to_market[cell];
+     const Plan &plan = _plans[plan_id];
+     int64_t total = 0;
+@@ -7273,7 +7363,12 @@ int64_t NativeEconomyRuntime::living_cost_for_signature(
+         total = saturating_add(total, mul_div_sat(
+             quantity, weighted_price, GOODS_SCALE, sat), sat);
+     }
+-    return std::max<int64_t>(0, total);
++    const int64_t result = std::max<int64_t>(0, total);
++    if (memo_active) {
++        memo.values[memo_key] = {result, sat - saturation_before};
++        ++memo.misses;
++    }
++    return result;
+ }
+ 
+ void NativeEconomyRuntime::compute_cell_living_costs_from_basis(
+@@ -10207,6 +10302,66 @@ NativeEconomyRuntime::OwnerOpportunityQuote
+ NativeEconomyRuntime::owner_opportunity_quote(
+         BuildingGroupConstRef group, int64_t owner_fillability_q16,
+         int64_t employee_fillability_q16, int64_t &sat) const {
++    auto &memo = living_cost_memo_state();
++    if (memo.owner != this || !memo.quote_enabled || group.cell < 0 ||
++        group.cell >= _cell_count || group.type_id < 0 ||
++        group.type_id >= static_cast<int32_t>(_building_types.size()))
++        return owner_opportunity_quote_uncached(group, owner_fillability_q16, employee_fillability_q16, sat);
++    const auto &type = _building_types[group.type_id];
++    const int32_t owner = find_cohort_slot(group.cell, group.owner_signature_id);
++    std::vector<int64_t> key{group.cell, group.type_id, group.owner_signature_id,
++        group.count, group.filled_owner, group.operating_state,
++        group.last_climate_capacity_q16, group.last_observed_capacity_days_q16,
++        group.output_factor_q16, owner_fillability_q16, employee_fillability_q16,
++        owner, owner >= 0 ? population_store().funds[owner] : 0,
++        owner >= 0 ? population_store().population[owner] : 0};
++    for (int32_t role = 0; role < type.employee_count; ++role) {
++        const int32_t index = group.employee_fill_begin + role;
++        key.push_back(index);
++        key.push_back(index >= 0 && index < static_cast<int32_t>(_building_employee_filled.size())
++            ? _building_employee_filled[index] : 0);
++        key.push_back(index >= 0 && index < static_cast<int32_t>(_building_role_contract_wage.size())
++            ? _building_role_contract_wage[index] : 0);
++    }
++    const int32_t market = market_store().cell_to_market[group.cell];
++    if (market >= 0 && market + 1 < static_cast<int32_t>(_merchant_offsets.size())) {
++        for (int32_t i = _merchant_offsets[market]; i < _merchant_offsets[market + 1]; ++i) {
++            const int32_t slot = _merchant_slots[i];
++            if (slot < 0 || slot >= static_cast<int32_t>(population_store().active.size())) continue;
++            key.push_back(slot); key.push_back(population_store().active[slot]);
++            key.push_back(population_store().funds[slot]); key.push_back(population_store().population[slot]);
++        }
++    }
++    const auto found = memo.quotes.find(key);
++    if (found != memo.quotes.end()) {
++        EconomyCostProbe::record("owner_quote.memo_hit", _current_day, 0.0, 1);
++        const char *verify = std::getenv("PK_ECONOMY_MEMO_VERIFY");
++        if (verify && std::strcmp(verify, "1") == 0) {
++            const auto *previous_owner = memo.owner;
++            memo.owner = nullptr;
++            int64_t reference_sat = sat;
++            const auto reference = owner_opportunity_quote_uncached(group, owner_fillability_q16, employee_fillability_q16, reference_sat);
++            memo.owner = previous_owner;
++            if (!(reference == *found->second.first) || reference_sat - sat != found->second.second) {
++                std::fprintf(stderr, "[owner-quote-memo-mismatch] day=%lld cell=%d type=%d\n", static_cast<long long>(_current_day), group.cell, group.type_id);
++                std::abort();
++            }
++        }
++        sat += found->second.second;
++        return *found->second.first;
++    }
++    const int64_t before = sat;
++    EconomyCostProbe::record("owner_quote.memo_miss", _current_day, 0.0, 1);
++    auto result = owner_opportunity_quote_uncached(group, owner_fillability_q16, employee_fillability_q16, sat);
++    memo.quotes.emplace(std::move(key), std::make_pair(std::make_shared<const OwnerOpportunityQuote>(result), sat - before));
++    return result;
++}
++
++NativeEconomyRuntime::OwnerOpportunityQuote
++NativeEconomyRuntime::owner_opportunity_quote_uncached(
++        BuildingGroupConstRef group, int64_t owner_fillability_q16,
++        int64_t employee_fillability_q16, int64_t &sat) const {
++    EconomyCostProbe cost("owner_opportunity_quote", _current_day, 1);
+     OwnerOpportunityQuote quote;
+     if (group.type_id < 0 || group.type_id >=
+             static_cast<int32_t>(_building_types.size()) || group.count <= 0 ||
+@@ -19301,6 +19456,7 @@ bool NativeEconomyRuntime::run_family_commit_slice(int64_t &work_done,
+ 
+ bool NativeEconomyRuntime::run_building_plan_drain(int64_t &work_done,
+                                                     std::string &error) {
++    LivingCostMemoScope memo(*this, true);
+     error.clear();
+     if (!_bootstrapped || _fatal) {
+         return true;
+@@ -19618,6 +19774,7 @@ bool NativeEconomyRuntime::run_government_research_drain(int64_t &work_done,
+ 
+ bool NativeEconomyRuntime::run_structural_commit_drain(int64_t &work_done,
+                                                         std::string &error) {
++    LivingCostMemoScope memo(*this);
+     error.clear();
+     if (!_bootstrapped || _fatal) {
+         return true;
+@@ -20728,6 +20885,8 @@ void NativeEconomyRuntime::move_family_membership(
+         int64_t source_population_before, int64_t moved_population,
+         int64_t source_funds_before, int64_t moved_funds,
+         uint64_t preferred_family_handle) {
++    auto &memo = living_cost_memo_state();
++    if (memo.owner == this) memo.quotes.clear();
+     if (source_handle == 0 || destination_handle == 0 ||
+         source_population_before <= 0 || moved_population <= 0) return;
+     const size_t original_size = family_memberships().size();
+@@ -21080,6 +21239,14 @@ Dictionary NativeEconomyRuntime::production_climate_math_probe(
+ }
+ 
+ int64_t NativeEconomyRuntime::state_hash() const {
++    return state_hash_internal(runtime_chunk_hash_enabled());
++}
++
++int64_t NativeEconomyRuntime::state_hash_legacy() const {
++    return state_hash_internal(false);
++}
++
++int64_t NativeEconomyRuntime::state_hash_internal(bool paged) const {
+     EconomyCostProbe probe("native_hash", _current_day, market_store().stock.size());
+     uint64_t hash = 1469598103934665603ULL;
+     auto mix_u64 = [&](uint64_t value) {
+@@ -21422,10 +21589,19 @@ int64_t NativeEconomyRuntime::state_hash() const {
+         mix_u64(static_cast<uint64_t>(state.attributed_spend));
+     }
+     for (int32_t mapping : market_store().cell_to_market) mix_u64(static_cast<uint32_t>(mapping));
+-    hash = economy_hash_lanes<true>(hash, market_store().stock);
+-    for (int32_t value : market_store().price) mix_u64(static_cast<uint32_t>(value));
+-    hash = economy_hash_lanes<true>(hash, market_store().demand_ema);
+-    hash = economy_hash_lanes<true>(hash, market_store().last_shortage_q16);
++    if (paged) {
++        auto &pages = _formula_owned != nullptr ? _formula_owned->market_hash_pages : _market_hash_pages;
++        mix_u64(RuntimeChunkHash::VERSION);
++        mix_u64(pages[0].update(market_store().stock, 1, 1));
++        mix_u64(pages[1].update(market_store().price, 1, 2));
++        mix_u64(pages[2].update(market_store().demand_ema, 1, 3));
++        mix_u64(pages[3].update(market_store().last_shortage_q16, 1, 4));
++    } else {
++        hash = economy_hash_lanes<true>(hash, market_store().stock);
++        for (int32_t value : market_store().price) mix_u64(static_cast<uint32_t>(value));
++        hash = economy_hash_lanes<true>(hash, market_store().demand_ema);
++        hash = economy_hash_lanes<true>(hash, market_store().last_shortage_q16);
++    }
+     for (const Command &cmd : _pending_commands) {
+         mix_u64(static_cast<uint32_t>(cmd.opcode));
+         mix_u64(static_cast<uint64_t>(cmd.effective_day));
+@@ -21661,6 +21837,36 @@ int64_t NativeEconomyRuntime::state_hash() const {
+                 ? _fiscal_escrow_by_country[country] : 0));
+     }
+     mix_u64(0x46495343414c504aULL); // "FISCALPJ"
++    if (paged) {
++        if (_fiscal_digest_rebuild) {
++            _fiscal_record_digests.clear();
++            for (const auto &entry : _asset_peer_journal)
++                _fiscal_record_digests.emplace(entry.first, fiscal_record_digest(entry.second));
++            _fiscal_digest_rebuild = false;
++            _fiscal_words_dirty = true;
++        }
++        if (_fiscal_words_dirty) {
++            _fiscal_hash_words.clear();
++            _fiscal_hash_words.reserve(_fiscal_record_digests.size() * 2);
++            for (const auto &entry : _fiscal_record_digests) {
++                _fiscal_hash_words.push_back(entry.first);
++                _fiscal_hash_words.push_back(entry.second);
++            }
++            _fiscal_words_dirty = false;
++        }
++        const char *verify = std::getenv("PK_ECONOMY_HASH_VERIFY");
++        if (verify && std::strcmp(verify, "1") == 0) {
++            std::map<uint64_t, uint64_t> reference;
++            for (const auto &entry : _asset_peer_journal)
++                reference.emplace(entry.first, fiscal_record_digest(entry.second));
++            if (reference != _fiscal_record_digests) {
++                std::fprintf(stderr, "economy_fiscal_digest_mismatch day=%lld\n",
++                    static_cast<long long>(_current_day));
++                std::abort();
++            }
++        }
++        mix_u64(_fiscal_hash_pages.update(_fiscal_hash_words, 3, 1));
++    } else {
+     std::vector<uint64_t> fiscal_peer_ids;
+     fiscal_peer_ids.reserve(_asset_peer_journal.size());
+     for (const auto &entry : _asset_peer_journal)
+@@ -21690,6 +21896,7 @@ int64_t NativeEconomyRuntime::state_hash() const {
+         for (const char value : record.reason)
+             mix_u64(static_cast<uint8_t>(value));
+     }
++    }
+     // Canal quotes are read-side preview state and deliberately do not alter
+     // the authoritative simulation hash.  Started projects do: they own paid
+     // construction resources and the route that an Effect transaction will
+@@ -22028,6 +22235,9 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
+     _market_results_scratch.clear();
+     _production_results_scratch.clear();
+     _last_completed_perf = {};
++    _verified_epoch_audit = {};
++    std::atomic_store_explicit(&_committed_audit_view,
++        std::shared_ptr<const CommittedAuditView>{}, std::memory_order_release);
+     _staging_events = {};
+     _committed_event_batches.clear();
+     _staging_construction_receipts.clear();
+@@ -22145,6 +22355,11 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
+     _fiscal_epoch_paid.clear();
+     _fiscal_escrow_by_country.clear();
+     _asset_peer_journal.clear();
++    _fiscal_digest_rebuild = true;
++    _fiscal_words_dirty = true;
++    _fiscal_record_digests.clear();
++    _fiscal_hash_words.clear();
++    _fiscal_hash_pages.clear();
+     _fiscal_last_bases.clear();
+     _fiscal_last_assessed.clear();
+     _fiscal_last_collected.clear();
+diff --git a/gdext/src/economy_runtime.h b/gdext/src/economy_runtime.h
+index 776357d8..11ac7b99 100644
+--- a/gdext/src/economy_runtime.h
++++ b/gdext/src/economy_runtime.h
+@@ -2,17 +2,20 @@
+ 
+ #include <algorithm>
+ #include <array>
++#include <atomic>
+ #include <chrono>
+ #include <cstdint>
+ #include <deque>
+ #include <limits>
+ #include <memory>
++#include <map>
+ #include <numeric>
+ #include <string>
+ #include <type_traits>
+ #include <unordered_map>
+ #include <unordered_set>
+ #include <vector>
++#include "runtime_chunk_hash.h"
+ 
+ #include <godot_cpp/variant/dictionary.hpp>
+ #include <godot_cpp/variant/packed_byte_array.hpp>
+@@ -344,6 +347,7 @@ public:
+     ~NativeEconomyRuntime();
+     void attach_country_runtime(NativeCountryRuntime *runtime) { _country_runtime = runtime; }
+     void attach_simulation_host(NativeSimulationHost *host) { _simulation_host = host; }
++    uint64_t asset_peer_request_high_watermark() const noexcept;
+     void attach_csv_recorder(EconomyCsvRecorder *recorder) { _csv_recorder = recorder; }
+     void set_sync_writes_forbidden(bool forbidden) {
+         _sync_writes_forbidden = forbidden;
+@@ -599,6 +603,7 @@ public:
+                               godot::PackedInt32Array &bits);
+     godot::PackedInt32Array economy_live_cells_query();
+     godot::Dictionary report() const;
++    godot::Dictionary committed_audit_report() const;
+     // Test-only previous-cycle wall time. Negative values clear the override.
+     // Injected milliseconds participate in N/P/I selection only; they never enter
+     // the authoritative state hash or PKEC. The third argument is optional; a
+@@ -706,6 +711,7 @@ public:
+     godot::Dictionary production_climate_math_probe(
+         const godot::Dictionary &vectors) const;
+     int64_t state_hash() const;
++    int64_t state_hash_legacy() const;
+     godot::Dictionary reset(const godot::String &reason);
+ 
+     godot::Dictionary begin_save(int32_t chunk_bytes);
+@@ -1111,6 +1117,54 @@ private:
+         std::array<char, RUNTIME_ECONOMY_ASSET_REASON_CAPACITY> late_ack_rejection_reason{};
+     };
+     using AssetPeerJournalRecord = FiscalPeerJournalRecord;
++    static uint64_t fiscal_record_digest(const FiscalPeerJournalRecord &record);
++    mutable std::map<uint64_t, uint64_t> _fiscal_record_digests;
++    mutable std::vector<uint64_t> _fiscal_hash_words;
++    mutable RuntimeChunkHash _fiscal_hash_pages;
++    mutable bool _fiscal_digest_rebuild = true;
++    mutable bool _fiscal_words_dirty = true;
++    struct OwnerOpportunityQuote;
++    struct LivingCostMemoState {
++        const NativeEconomyRuntime *owner = nullptr;
++        int32_t depth = 0;
++        uint64_t hits = 0, misses = 0;
++        std::map<std::array<int32_t, 3>, std::pair<int64_t, int64_t>> values;
++        struct PreviewBasis {
++            std::vector<int64_t> scores, sums, composites, environment;
++            int64_t saturations = 0;
++        };
++        std::map<std::array<int32_t, 9>, PreviewBasis> previews;
++        bool quote_enabled = false;
++        std::map<std::vector<int64_t>, std::pair<std::shared_ptr<const OwnerOpportunityQuote>, int64_t>> quotes;
++    };
++    static LivingCostMemoState &living_cost_memo_state() {
++        thread_local LivingCostMemoState state;
++        return state;
++    }
++    struct LivingCostMemoScope {
++        NativeEconomyRuntime &runtime;
++        bool active = false;
++        bool previous_quotes = false;
++        explicit LivingCostMemoScope(NativeEconomyRuntime &owner, bool allow_quotes = false) : runtime(owner) {
++            auto &state = living_cost_memo_state();
++            const char *disabled = std::getenv("PK_ECONOMY_MEMO_DISABLE");
++            if (disabled && std::strcmp(disabled, "1") == 0) return;
++            if (state.depth != 0 && state.owner != &owner) return;
++            if (state.depth++ == 0) {
++                state.owner = &owner;
++                state.values.clear();
++                state.previews.clear();
++                state.quotes.clear();
++                state.hits = state.misses = 0;
++            }
++            previous_quotes = state.quote_enabled;
++            state.quote_enabled = state.quote_enabled || allow_quotes;
++            active = true;
++        }
++        ~LivingCostMemoScope();
++        LivingCostMemoScope(const LivingCostMemoScope &) = delete;
++        LivingCostMemoScope &operator=(const LivingCostMemoScope &) = delete;
++    };
+ 
+     // Epoch-open fiscal reservation is a peer transaction boundary as well.
+     // Keep the request plan immutable while countries are reserved one at a
+@@ -1628,6 +1682,29 @@ private:
+         int64_t employee_slots = 0;
+         int64_t owner_jobs_filled = 0;
+         int64_t employee_jobs_filled = 0;
++        bool operator==(const OwnerOpportunityQuote &b) const noexcept {
++            return prospective_scale_q16 == b.prospective_scale_q16 && owner_run_q16 == b.owner_run_q16 &&
++                climate_factor_q16 == b.climate_factor_q16 && resource_factor_q16 == b.resource_factor_q16 &&
++                natural_capacity_q16 == b.natural_capacity_q16 && soft_productivity_q16 == b.soft_productivity_q16 &&
++                natural_max_output == b.natural_max_output && optimal_output == b.optimal_output &&
++                fundable_output == b.fundable_output && actual_output == b.actual_output && fixed_cost == b.fixed_cost &&
++                variable_cost == b.variable_cost && optimal_revenue == b.optimal_revenue && optimal_profit == b.optimal_profit &&
++                cash_receipt == b.cash_receipt && in_kind_retail_value == b.in_kind_retail_value && input_cost == b.input_cost &&
++                wages == b.wages && maintenance == b.maintenance && owner_living_cost == b.owner_living_cost &&
++                business_transfer == b.business_transfer && income_transfer == b.income_transfer &&
++                owner_income_per_day == b.owner_income_per_day && disposable_survival_power_per_day == b.disposable_survival_power_per_day &&
++                executable_capacity_q16 == b.executable_capacity_q16 && monetary_quota_absorption_q16 == b.monetary_quota_absorption_q16 &&
++                survival_priority == b.survival_priority && monetary_quote_capped == b.monetary_quote_capped && feasible == b.feasible &&
++                cell == b.cell && type_id == b.type_id && owner_signature_id == b.owner_signature_id &&
++                utilization_q16 == b.utilization_q16 && owner_use_value_per_day == b.owner_use_value_per_day &&
++                merchant_revenue_per_day == b.merchant_revenue_per_day && producer_support_revenue_per_day == b.producer_support_revenue_per_day &&
++                cash_revenue_per_day == b.cash_revenue_per_day && economic_revenue_per_day == b.economic_revenue_per_day &&
++                input_cost_per_day == b.input_cost_per_day && wage_cost_per_day == b.wage_cost_per_day &&
++                maintenance_cost_per_day == b.maintenance_cost_per_day && owner_living_cost_per_day == b.owner_living_cost_per_day &&
++                after_tax_revenue_per_day == b.after_tax_revenue_per_day && profit_per_day == b.profit_per_day &&
++                affordable_wage_per_day == b.affordable_wage_per_day && owner_slots == b.owner_slots && employee_slots == b.employee_slots &&
++                owner_jobs_filled == b.owner_jobs_filled && employee_jobs_filled == b.employee_jobs_filled;
++        }
+     };
+ 
+     struct PendingConstruction {
+@@ -2882,6 +2959,18 @@ private:
+         int64_t merchant_inventory_retail_value = 0;
+         int64_t merchant_inventory_liquidation_value = 0;
+     };
++    // The audited epoch precedes Effect command drain; never interpret this
++    // revision as an audit of arbitrary live post-command lanes.
++    struct CommittedAuditView {
++        uint64_t generation = 0;
++        int64_t day = -1;
++        int64_t population_actual = 0, population_expected = 0;
++        int64_t money_actual = 0, money_expected = 0;
++        int64_t goods_actual = 0, goods_expected = 0;
++        bool full_verification = false;
++    };
++    CommittedAuditView _verified_epoch_audit;
++    std::shared_ptr<const CommittedAuditView> _committed_audit_view;
+ 
+     struct GoodsAuditLaneDiagnostic {
+         int32_t market = -1;
+@@ -4414,6 +4503,8 @@ private:
+     std::vector<int64_t> _audit_shadow_population;
+     std::vector<int64_t> _audit_shadow_funds;
+     std::vector<int64_t> _audit_shadow_market_stock;
++    mutable std::array<RuntimeChunkHash, 4> _market_hash_pages;
++    int64_t state_hash_internal(bool paged) const;
+     std::vector<uint32_t> _audit_population_lane_stamp;
+     std::vector<uint32_t> _audit_market_lane_stamp;
+     std::vector<size_t> _audit_population_touched_lanes;
+@@ -6441,6 +6532,9 @@ private:
+     OwnerOpportunityQuote owner_opportunity_quote(
+         BuildingGroupConstRef group, int64_t owner_fillability_q16,
+         int64_t employee_fillability_q16, int64_t &sat) const;
++    OwnerOpportunityQuote owner_opportunity_quote_uncached(
++        BuildingGroupConstRef group, int64_t owner_fillability_q16,
++        int64_t employee_fillability_q16, int64_t &sat) const;
+     int64_t projected_employee_tax_retention_q16(
+         BuildingGroupConstRef group, int64_t &sat) const;
+     int64_t effective_building_output_quantity(
+@@ -6980,6 +7074,7 @@ private:
+     int64_t family_expedition_payload_people(int32_t expedition) const;
+     void note_family_expedition_audit_invalidation();
+     AuditTotals incremental_audit_totals() const;
++    AuditTotals audit_totals_from_shadow(const AuditTotals &baseline) const;
+     void commit_incremental_audit_shadow();
+     void diagnose_incremental_audit_mismatch(const AuditTotals &full);
+     void capture_goods_audit_candidates();
+@@ -6988,6 +7083,7 @@ private:
+     int64_t memory_bytes() const;
+     int32_t choose_epoch_days(int64_t cohort_count);
+     void write_cadence_report(godot::Dictionary &out) const;
++    void write_hash_work_report(godot::Dictionary &out) const;
+     void write_fiscal_continuation_report(godot::Dictionary &out) const;
+     godot::Dictionary fatal_context_report() const;
+     int32_t locked_market_cycle_days() const;
+diff --git a/gdext/src/economy_runtime_building_employment.cpp b/gdext/src/economy_runtime_building_employment.cpp
+index 075fba6d..ba43b10e 100644
+--- a/gdext/src/economy_runtime_building_employment.cpp
++++ b/gdext/src/economy_runtime_building_employment.cpp
+@@ -1,5 +1,6 @@
+ #include "economy_runtime.h"
+ #include "country_runtime.h"
++#include "economy_cost_probe.h"
+ 
+ #include <algorithm>
+ #include <chrono>
+@@ -439,6 +440,8 @@ double elapsed_ms(const Clock::time_point &start) {
+ } // namespace
+ 
+ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) {
++    EconomyCostProbe cost("employment.wage_prepare", _current_day);
++    uint64_t quoted_pairs = 0;
+     const auto started = Clock::now();
+     if (cell < 0 || cell >= _cell_count ||
+         _building_cell_offsets.size() != static_cast<size_t>(_cell_count + 1) ||
+@@ -485,6 +488,19 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error)
+             auto group = building_at(static_cast<size_t>(g));
+             if (!building_available(cell, group.type_id, true)) continue;
+             const BuildingType &type = _building_types[group.type_id];
++            // Only this profession's employee roles consume the quote below.
++            // Previously every labor signal evaluated every producer's inputs,
++            // outputs and workforce, even when the final role loop was empty.
++            bool has_profession = false;
++            for (int32_t role = 0; role < type.employee_count; ++role) {
++                if (_building_employee_roles[type.employee_begin + role].profession_id == profession) {
++                    has_profession = true;
++                    break;
++                }
++            }
++            if (!has_profession) continue;
++            ++quoted_pairs;
++            cost.set_work(quoted_pairs);
+             // Affordability damping is a daily-flow calculation. Historical
+             // last_expected_revenue is an epoch total, so comparing it directly
+             // with a per-day wage lets contract wages grow by roughly epoch_days.
+@@ -876,6 +892,9 @@ void NativeEconomyRuntime::update_cell_labor_signals(int32_t cell) {
+ 
+ bool NativeEconomyRuntime::run_building_employment_cell(
+         int32_t cell, bool allow_owner_job_reallocation, std::string &error) {
++    // This scope mutates cohorts and role fills, which are explicit quote keys;
++    // market prices, stock, environment and frozen modifiers stay unchanged.
++    LivingCostMemoScope memo(*this, true);
+     if (!prepare_cell_wages(cell, error)) return false;
+     // demand[p] = profession p 鏈懆鏈?employee 鐩爣涔嬪拰锛沠ill[p] = 澶圭揣鍚庡湪宀?
+     // employee 涔嬪拰銆備簩鑰呭湪 A1 涓ゆ閫昏緫涓 std::fill 閲嶇疆澶嶇敤锛堣涓嬶級銆?
+diff --git a/gdext/src/economy_runtime_building_investment.cpp b/gdext/src/economy_runtime_building_investment.cpp
+index 048f4bec..c3f7449c 100644
+--- a/gdext/src/economy_runtime_building_investment.cpp
++++ b/gdext/src/economy_runtime_building_investment.cpp
+@@ -1,4 +1,5 @@
+ #include "economy_runtime.h"
++#include "economy_cost_probe.h"
+ #include "country_runtime.h"
+ 
+ #include <algorithm>
+@@ -380,6 +381,7 @@ int32_t NativeEconomyRuntime::select_startup_producer(
+ int32_t NativeEconomyRuntime::select_startup_producer(
+         int32_t cell, int32_t good_id,
+         InvestmentCandidatePlan *selected_plan) const {
++    EconomyCostProbe cost("startup_producer_select", _current_day, 1);
+     if (cell < 0 || cell >= _cell_count || good_id < 0 ||
+         good_id + 1 >= static_cast<int32_t>(_investment_good_type_offsets.size()))
+         return -1;
+@@ -1124,6 +1126,7 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
+     thread_local std::vector<QueueEntry> queue;
+     for (const int32_t cell : _economy_live_cells) {
+         if (cell < 0 || cell >= _cell_count) continue;
++        LivingCostMemoScope memo(*this);
+         ++_investment_review_stamp_generation;
+         if (_investment_review_stamp_generation == 0) {
+             std::fill(_investment_good_stamp.begin(),
+diff --git a/gdext/src/economy_runtime_diagnostics.cpp b/gdext/src/economy_runtime_diagnostics.cpp
+index 445ecb13..73aaaec2 100644
+--- a/gdext/src/economy_runtime_diagnostics.cpp
++++ b/gdext/src/economy_runtime_diagnostics.cpp
+@@ -156,6 +156,11 @@ int32_t NativeEconomyRuntime::stage_progress_q16() const {
+ 
+ int64_t NativeEconomyRuntime::memory_bytes() const {
+     int64_t bytes = 0;
++    const auto &market_pages = _formula_owned != nullptr ? _formula_owned->market_hash_pages : _market_hash_pages;
++    for (const auto &column : market_pages) bytes += static_cast<int64_t>(column.memory_bytes());
++    bytes += static_cast<int64_t>(_fiscal_hash_pages.memory_bytes());
++    bytes += static_cast<int64_t>(_fiscal_hash_words.capacity() * sizeof(uint64_t));
++    bytes += static_cast<int64_t>(_fiscal_record_digests.size() * (sizeof(std::pair<const uint64_t, uint64_t>) + 3 * sizeof(void *)));
+     auto cap = [&](const auto &v) { bytes += static_cast<int64_t>(v.capacity() * sizeof(typename std::decay_t<decltype(v)>::value_type)); };
+     cap(market_store().price_ceilings);
+     for (const auto &row : market_store().price_ceilings) cap(row);
+@@ -663,6 +668,7 @@ Dictionary NativeEconomyRuntime::household_slice_breakdown_work() const {
+ 
+ Dictionary NativeEconomyRuntime::compact_report() const {
+     Dictionary out;
++    write_hash_work_report(out);
+     const int64_t age_days = _epoch_active
+         ? std::max<int64_t>(0, _current_day - _sample_day)
+         : _settlement_max_age_days;
+@@ -1148,8 +1154,63 @@ Dictionary NativeEconomyRuntime::compact_report() const {
+     return out;
+ }
+ 
++Dictionary NativeEconomyRuntime::committed_audit_report() const {
++    Dictionary out;
++    const auto view = std::atomic_load_explicit(&_committed_audit_view,
++        std::memory_order_acquire);
++    out["available"] = view != nullptr;
++    if (!view) return out;
++    out["generation"] = static_cast<int64_t>(view->generation);
++    out["day"] = view->day;
++    out["revision_phase"] = "before_effect_command_drain";
++    out["full_verification"] = view->full_verification;
++    out["population_error"] = view->population_actual - view->population_expected;
++    out["money_error"] = view->money_actual - view->money_expected;
++    out["goods_error"] = view->goods_actual - view->goods_expected;
++    out["audit_incomplete"] = false;
++    return out;
++}
++
++void NativeEconomyRuntime::write_hash_work_report(Dictionary &out) const {
++    out["hash_version"] = runtime_chunk_hash_enabled() ? 2 : 1;
++    RuntimeChunkHash::Metrics hash_metrics{};
++    RuntimeChunkHash::Metrics cumulative_hash_metrics{};
++    const auto &market_pages = _formula_owned != nullptr ? _formula_owned->market_hash_pages : _market_hash_pages;
++    for (const auto &column : market_pages) {
++        const auto metrics = column.metrics();
++        hash_metrics.compared_bytes += metrics.compared_bytes;
++        hash_metrics.copied_bytes += metrics.copied_bytes;
++        hash_metrics.rebuilt_pages += metrics.rebuilt_pages;
++        hash_metrics.reused_pages += metrics.reused_pages;
++        const auto cumulative = column.cumulative_metrics();
++        cumulative_hash_metrics.compared_bytes += cumulative.compared_bytes;
++        cumulative_hash_metrics.copied_bytes += cumulative.copied_bytes;
++        cumulative_hash_metrics.rebuilt_pages += cumulative.rebuilt_pages;
++        cumulative_hash_metrics.reused_pages += cumulative.reused_pages;
++    }
++    const auto fiscal_metrics = _fiscal_hash_pages.metrics();
++    hash_metrics.compared_bytes += fiscal_metrics.compared_bytes;
++    hash_metrics.copied_bytes += fiscal_metrics.copied_bytes;
++    hash_metrics.rebuilt_pages += fiscal_metrics.rebuilt_pages;
++    hash_metrics.reused_pages += fiscal_metrics.reused_pages;
++    const auto fiscal_cumulative = _fiscal_hash_pages.cumulative_metrics();
++    cumulative_hash_metrics.compared_bytes += fiscal_cumulative.compared_bytes;
++    cumulative_hash_metrics.copied_bytes += fiscal_cumulative.copied_bytes;
++    cumulative_hash_metrics.rebuilt_pages += fiscal_cumulative.rebuilt_pages;
++    cumulative_hash_metrics.reused_pages += fiscal_cumulative.reused_pages;
++    out["hash_compared_bytes"] = static_cast<int64_t>(hash_metrics.compared_bytes);
++    out["hash_copied_bytes"] = static_cast<int64_t>(hash_metrics.copied_bytes);
++    out["hash_rebuilt_pages"] = static_cast<int64_t>(hash_metrics.rebuilt_pages);
++    out["hash_reused_pages"] = static_cast<int64_t>(hash_metrics.reused_pages);
++    out["hash_cumulative_compared_bytes"] = static_cast<int64_t>(cumulative_hash_metrics.compared_bytes);
++    out["hash_cumulative_copied_bytes"] = static_cast<int64_t>(cumulative_hash_metrics.copied_bytes);
++    out["hash_cumulative_rebuilt_pages"] = static_cast<int64_t>(cumulative_hash_metrics.rebuilt_pages);
++    out["hash_cumulative_reused_pages"] = static_cast<int64_t>(cumulative_hash_metrics.reused_pages);
++}
++
+ Dictionary NativeEconomyRuntime::report() const {
+     Dictionary out;
++    write_hash_work_report(out);
+     const int64_t age_days = _epoch_active
+         ? std::max<int64_t>(0, _current_day - _sample_day)
+         : _settlement_max_age_days;
+diff --git a/gdext/src/economy_runtime_epoch.cpp b/gdext/src/economy_runtime_epoch.cpp
+index 596737e0..2b712782 100644
+--- a/gdext/src/economy_runtime_epoch.cpp
++++ b/gdext/src/economy_runtime_epoch.cpp
+@@ -1093,8 +1093,12 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
+         live_expedition_population != _closing_totals.transit_population ||
+         live_expedition_funds != _closing_totals.expedition_funds ||
+         live_expedition_goods != _closing_totals.expedition_goods;
++    const char *reuse_shadow = std::getenv("PK_ECONOMY_AUDIT_SHADOW_REUSE");
++    const bool continuous_audit = reuse_shadow && std::strcmp(reuse_shadow, "1") == 0 &&
++        _closing_audit_mode == 2 && !_closing_audit_runtime_disabled &&
++        _audit_mutation_generation != 0;
+     const bool full_audit_verify = _opening_audit_force_full ||
+-        _last_closing_audit_was_incremental ||
++        (_last_closing_audit_was_incremental && !continuous_audit) ||
+         expedition_holdings_changed ||
+         day_index % _full_audit_verify_interval_days == 0;
+     // The new epoch invalidates last epoch's close until AGGREGATE_PUBLISH
+@@ -1106,7 +1110,8 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
+         _opening_totals = audit_totals();
+         ++_opening_audit_full_verifications;
+     } else {
+-        _opening_totals = _closing_totals;
++        _opening_totals = continuous_audit
++            ? audit_totals_from_shadow(_closing_totals) : _closing_totals;
+         int64_t opening_escrow_saturation = 0;
+         _opening_totals.expedition_funds = live_expedition_funds;
+         _opening_totals.expedition_goods = live_expedition_goods;
+@@ -1118,6 +1123,19 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
+         _saturation_count += opening_escrow_saturation;
+         ++_opening_audit_fast_paths;
+     }
++    const char *verify_opening = std::getenv("PK_ECONOMY_AUDIT_VERIFY_EVERY_DAY");
++    if (continuous_audit && verify_opening && std::strcmp(verify_opening, "1") == 0) {
++        const AuditTotals reference = audit_totals();
++        if (_opening_totals.population != reference.population ||
++            _opening_totals.cohort_funds != reference.cohort_funds ||
++            _opening_totals.goods_stock != reference.goods_stock ||
++            _opening_totals.escrow_cash != reference.escrow_cash) {
++            _closing_audit_runtime_disabled = true;
++            _opening_audit_force_full = true;
++            error = "opening_incremental_audit_mismatch";
++            return false;
++        }
++    }
+     // Pin country treasury goods/cash with research_consumed from one snapshot.
+     // Peer-wait preview / late-fold catch_up must not split these across the
+     // long epoch-begin window or VERIFY reports goods_error == spent TP.
+diff --git a/gdext/src/economy_runtime_market.cpp b/gdext/src/economy_runtime_market.cpp
+index d15de555..da202488 100644
+--- a/gdext/src/economy_runtime_market.cpp
++++ b/gdext/src/economy_runtime_market.cpp
+@@ -1,4 +1,5 @@
+ #include "economy_runtime.h"
++#include "economy_cost_probe.h"
+ #include "country_runtime.h"
+ 
+ #include <algorithm>
+@@ -207,19 +208,42 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
+         int32_t slot, int32_t market, const EnvironmentSample &sample,
+         const std::vector<int32_t> *price_override, int64_t funds_override,
+         std::vector<int64_t> &good_per_capita_daily, int64_t &sat) const {
++    EconomyCostProbe cost("cohort_demand_preview", _current_day, 1);
++    const int64_t preview_saturation_before = sat;
+     good_per_capita_daily.assign(market_store().good_count, 0);
+     if (slot < 0 || slot >= static_cast<int32_t>(population_store().active.size()) ||
+         population_store().active[slot] == 0 || market < 0 || market >= market_store().market_count)
+         return;
+     const uint32_t signature_id = population_store().signature_id[slot];
+     if (signature_id >= _signatures.size()) return;
+-    std::vector<int64_t> variant_scores(_variants.size(), 0);
+-    std::vector<int64_t> need_score_sums(_needs.size(), 0);
+-    std::vector<int64_t> need_composites(_needs.size(), 0);
+-    std::vector<int64_t> need_environment(_needs.size(), Q16_ONE);
++    LivingCostMemoState::PreviewBasis local_basis;
++    const LivingCostMemoState::PreviewBasis *basis = nullptr;
+     const int32_t country = _epoch_active && market >= 0 &&
+             market < static_cast<int32_t>(_epoch_cell_country.size())
+         ? _epoch_cell_country[market] : -1;
++    auto &memo = living_cost_memo_state();
++    const bool memo_active = memo.depth > 0 && memo.owner == this && price_override == nullptr;
++    const std::array<int32_t, 9> memo_key{market, country,
++        sample.temperature_q16, sample.temperature_30d_q16, sample.moisture_q16,
++        sample.plant_available_water_q16, sample.snow_q16, sample.weather_q16,
++        sample.ready ? 1 : 0};
++    const auto cached = memo.previews.find(memo_key);
++    const bool preview_cache_hit = memo_active && cached != memo.previews.end();
++    if (preview_cache_hit) {
++        basis = &cached->second;
++        sat += cached->second.saturations;
++        EconomyCostProbe::record("demand_preview.memo_hit", _current_day, 0.0, 1);
++    } else {
++    EconomyCostProbe::record("demand_preview.memo_miss", _current_day, 0.0, 1);
++    auto &variant_scores = local_basis.scores;
++    auto &need_score_sums = local_basis.sums;
++    auto &need_composites = local_basis.composites;
++    auto &need_environment = local_basis.environment;
++    variant_scores.assign(_variants.size(), 0);
++    need_score_sums.assign(_needs.size(), 0);
++    need_composites.assign(_needs.size(), 0);
++    need_environment.assign(_needs.size(), Q16_ONE);
++    const int64_t saturation_before = sat;
+     for (int32_t need_index = 0; need_index < static_cast<int32_t>(_needs.size()); ++need_index) {
+         const Need &need = _needs[need_index];
+         int64_t score_sum = 0;
+@@ -277,6 +301,15 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
+                 need.price_quantity_elasticity_q16, sat),
+                 need.price_quantity_floor_q16, Q16_ONE * 2) : 0;
+     }
++    if (memo_active) {
++        local_basis.saturations = sat - saturation_before;
++        basis = &memo.previews.emplace(memo_key, std::move(local_basis)).first->second;
++    } else basis = &local_basis;
++    }
++    const auto &variant_scores = basis->scores;
++    const auto &need_score_sums = basis->sums;
++    const auto &need_composites = basis->composites;
++    const auto &need_environment = basis->environment;
+     const Plan &plan = _plans[_signatures[signature_id].plan_id];
+     const int64_t population = std::max<int64_t>(1, population_store().population[slot]);
+     const int64_t wealth_pc = std::max<int64_t>(0, funds_override) / population;
+@@ -343,6 +376,23 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
+     }
+     for (int32_t good = 0; good < market_store().good_count; ++good)
+         good_per_capita_daily[good] = totals[good] / population;
++    // Validate the complete actor-specific result, including saturation events,
++    // against a fresh basis. This diagnostic does not change production cadence.
++    const char *verify = std::getenv("PK_ECONOMY_MEMO_VERIFY");
++    if (preview_cache_hit && verify && std::strcmp(verify, "1") == 0) {
++        const auto *previous_owner = memo.owner;
++        memo.owner = nullptr;
++        std::vector<int64_t> reference;
++        int64_t reference_sat = preview_saturation_before;
++        compute_cohort_demand_preview(slot, market, sample, price_override,
++            funds_override, reference, reference_sat);
++        memo.owner = previous_owner;
++        if (reference != good_per_capita_daily || reference_sat != sat) {
++            std::fprintf(stderr, "economy_preview_memo_mismatch day=%lld slot=%d market=%d\n",
++                static_cast<long long>(_current_day), slot, market);
++            std::abort();
++        }
++    }
+ }
+ 
+ int64_t NativeEconomyRuntime::survival_required_units(
+diff --git a/gdext/src/economy_runtime_persistence.cpp b/gdext/src/economy_runtime_persistence.cpp
+index a0b6c6c5..9b309021 100644
+--- a/gdext/src/economy_runtime_persistence.cpp
++++ b/gdext/src/economy_runtime_persistence.cpp
+@@ -619,6 +619,11 @@ void NativeEconomyRuntime::prepare_restore_candidate_scratch() {
+     _fiscal_reservation_continuation = {};
+     _fiscal_settlement_continuation = {};
+     _asset_peer_journal.clear();
++    _fiscal_digest_rebuild = true;
++    _fiscal_words_dirty = true;
++    _fiscal_record_digests.clear();
++    _fiscal_hash_words.clear();
++    _fiscal_hash_pages.clear();
+     _epoch_begin_post_fiscal_pending = false;
+     _epoch_begin_pending_day = -1;
+     _fiscal_last_events.clear();
+@@ -1636,6 +1641,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
+         _settlements.revision = 1;
+     }
+     _closing_totals = audit_totals();
++    std::atomic_store_explicit(&_committed_audit_view,
++        std::shared_ptr<const CommittedAuditView>{}, std::memory_order_release);
+     _opening_totals = _closing_totals;
+     rebuild_incremental_audit_shadow();
+     _closing_audit_force_full = true;
+@@ -1719,14 +1726,20 @@ bool NativeEconomyRuntime::end_restore_internal(std::string &error) {
+ bool NativeEconomyRuntime::validate_ecp2_candidate(
+         const RuntimeEconomyEcp2State &in, std::string &error) const {
+     error.clear();
+-    if (in.abi_version != RUNTIME_ECONOMY_ECP2_ABI_VERSION) {
++    const bool migrating = runtime_hash_migration_enabled() && in.abi_version == 2u && in.schema_version == 53;
++    if (in.abi_version != RUNTIME_ECONOMY_ECP2_ABI_VERSION && !migrating) {
+         error = "ecp2_abi_version_incompatible";
+         return false;
+     }
+-    if (in.schema_version != RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION) {
++    if (in.schema_version != RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION && !migrating) {
+         error = "ecp2_schema_version_incompatible";
+         return false;
+     }
++    if (in.envelope.hash_version != (runtime_chunk_hash_enabled() ? 2u : 1u) &&
++        !runtime_hash_migration_enabled()) {
++        error = "ecp2_hash_version_requires_explicit_migration";
++        return false;
++    }
+     if ((in.authority_domain_mask & ECP2_DOMAIN_ENVELOPE) == 0) {
+         error = "ecp2_envelope_missing";
+         return false;
+diff --git a/gdext/src/economy_runtime_persistence_read.cpp b/gdext/src/economy_runtime_persistence_read.cpp
+index e74a1c9f..22fa6836 100644
+--- a/gdext/src/economy_runtime_persistence_read.cpp
++++ b/gdext/src/economy_runtime_persistence_read.cpp
+@@ -2617,6 +2617,15 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
+                 record.late_ack_rejection_reason = record.reason;
+             }
+             const char *record_defect = nullptr;
++            // Treasury spend uses quantity as its amount on the Country peer
++            // route (cash=0), and journals that same amount in both terminal
++            // lanes. Validate that wire convention, rather than rejecting a
++            // legitimately committed spend against the unused cash lane.
++            const bool quantity_cash_spend =
++                record.operation == RuntimeEconomyAssetOperation::TREASURY_SPEND &&
++                record.requested_cash == 0;
++            const int64_t requested_cash_limit = quantity_cash_spend
++                ? record.requested_quantity : record.requested_cash;
+             if (record.request_id == 0 || record.transaction_id == 0)
+                 record_defect = "identity";
+             else if (record.country_handle == 0) record_defect = "country_handle";
+@@ -2643,7 +2652,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
+                      record.requested_cash < 0 || record.committed_quantity < 0 ||
+                      record.committed_cash < 0 ||
+                      record.committed_quantity > record.requested_quantity ||
+-                     record.committed_cash > record.requested_cash)
++                     record.committed_cash > requested_cash_limit ||
++                     (quantity_cash_spend &&
++                      record.committed_cash != record.committed_quantity))
+                 record_defect = "amounts";
+             else if (reserved0 != 0 || reserved1 != 0) record_defect = "reserved";
+             if (record_defect != nullptr) {
+@@ -2669,6 +2680,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
+                 error = "save_fiscal_peer_duplicate";
+                 return false;
+             }
++            _fiscal_digest_rebuild = true;
+             ++_restore.restored_fiscal_peer;
+         }
+         _restore.fiscal_peer_seen = true;
+@@ -2834,6 +2846,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
+             journal->second.late_ack_rejection_reason = late_reason;
+             journal->second.state_hash_before = state_hash_before;
+             journal->second.state_hash_after = state_hash_after;
++            _fiscal_digest_rebuild = true;
+             ++_restore.restored_d7_peer_ext;
+         }
+         _restore.d7_peer_ext_seen = true;
+diff --git a/gdext/src/economy_runtime_profile.cpp b/gdext/src/economy_runtime_profile.cpp
+index 16328c39..f8c6e2f3 100644
+--- a/gdext/src/economy_runtime_profile.cpp
++++ b/gdext/src/economy_runtime_profile.cpp
+@@ -128,6 +128,9 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
+         : (closing_audit_mode == "INCREMENTAL" ? 2 : 1);
+     _closing_audit_runtime_disabled = false;
+     _closing_audit_force_full = true;
++    // FULL mode and profile changes may have bypassed lane registration.
++    _audit_mutation_generation = 0;
++    _opening_audit_force_full = true;
+     const std::string accuracy_preset = dict_string(
+         profile, "economy_accuracy_preset", "BALANCED");
+     _accuracy_preset = accuracy_preset == "EXACT" ? 0
+diff --git a/gdext/src/economy_runtime_publish.cpp b/gdext/src/economy_runtime_publish.cpp
+index 49929f81..845938b9 100644
+--- a/gdext/src/economy_runtime_publish.cpp
++++ b/gdext/src/economy_runtime_publish.cpp
+@@ -89,9 +89,12 @@ bool NativeEconomyRuntime::publish_epoch_slice(
+             const bool periodic_full =
+                 _full_audit_verify_interval_days > 0 &&
+                 _current_day % _full_audit_verify_interval_days == 0;
++            const char *verify_every_day = std::getenv("PK_ECONOMY_AUDIT_VERIFY_EVERY_DAY");
++            const bool diagnostic_full = verify_every_day &&
++                std::strcmp(verify_every_day, "1") == 0;
+             const bool full_required = _closing_audit_mode != 2 ||
+                 _closing_audit_runtime_disabled ||
+-                _closing_audit_force_full || periodic_full;
++                _closing_audit_force_full || periodic_full || diagnostic_full;
+             _closing_audit_incremental_this_epoch = !full_required;
+             _closing_totals_valid = false;
+             if (full_required) {
+@@ -392,6 +395,8 @@ bool NativeEconomyRuntime::publish_epoch_slice(
+                 error = "money_conservation_failed";
+             else if (_closing_totals.goods_stock != full_goods_expected)
+                 error = "goods_conservation_failed";
++            if (!full_audit_matches_incremental && error.empty())
++                error = "incremental_audit_mismatch";
+         }
+         if (!_closing_audit_incremental_this_epoch &&
+             !incremental_conservation_mismatch &&
+@@ -413,6 +418,8 @@ bool NativeEconomyRuntime::publish_epoch_slice(
+                 ++_closing_audit_mismatches;
+                 diagnose_incremental_audit_mismatch(_closing_totals);
+                 _closing_audit_runtime_disabled = true;
++                _closing_audit_force_full = true;
++                error = "incremental_audit_mismatch";
+             }
+         }
+         if (!error.empty()) return false;
+@@ -424,6 +431,14 @@ bool NativeEconomyRuntime::publish_epoch_slice(
+             error = "goods_conservation_failed";
+         if (!error.empty()) return false;
+         _closing_audit_force_full = false;
++        _verified_epoch_audit.day = _sample_day;
++        _verified_epoch_audit.population_actual = _closing_totals.population;
++        _verified_epoch_audit.population_expected = population_expected;
++        _verified_epoch_audit.money_actual = money_close;
++        _verified_epoch_audit.money_expected = money_expected;
++        _verified_epoch_audit.goods_actual = _closing_totals.goods_stock;
++        _verified_epoch_audit.goods_expected = goods_expected;
++        _verified_epoch_audit.full_verification = !_closing_audit_incremental_this_epoch;
+         _last_closing_audit_was_incremental =
+             _closing_audit_incremental_this_epoch;
+         _settlement_watermark = _sample_day;
+@@ -709,6 +724,10 @@ bool NativeEconomyRuntime::publish_epoch_slice(
+     if (executed_phase == PublishPhase::WATERMARK)
+         _watermark_ms += slice_ms;
+     if (executed_phase == PublishPhase::COMMIT && !_epoch_active && !_fatal) {
++        _verified_epoch_audit.generation = _committed_generation;
++        std::atomic_store_explicit(&_committed_audit_view,
++            std::make_shared<const CommittedAuditView>(_verified_epoch_audit),
++            std::memory_order_release);
+         capture_completed_perf_snapshot();
+         note_completed_epoch_cadence_ms();
+         if (_csv_recorder && _simulation_host &&
+diff --git a/gdext/src/native_simulation_host.cpp b/gdext/src/native_simulation_host.cpp
+index 3c8655e2..af219479 100644
+--- a/gdext/src/native_simulation_host.cpp
++++ b/gdext/src/native_simulation_host.cpp
+@@ -1290,6 +1290,13 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
+         _command_request_id.store(restored_request_id,
+                                   std::memory_order_release);
+     }
++    // Economy persists terminal peer identities independently of the Host's
++    // live transport queues. A quiescent save may have no Host request states
++    // while its PKEC journal still owns thousands of request IDs. Seed from
++    // both authorities before any new worker or facade request is allocated.
++    if (_economy_production_runtime != nullptr)
++        reserve_command_request_ids_through(
++            _economy_production_runtime->asset_peer_request_high_watermark());
+     // Country is initialized from the immutable main-thread capture exactly
+     // once per worker lifetime. The worker never calls NativeCountryRuntime;
+     // it owns this POD authority and its continuation state after bootstrap.
+@@ -4315,6 +4322,16 @@ bool NativeSimulationHost::country_economy_asset_protocol_self_test(
+     error.clear();
+     NativeSimulationHost probe;
+     probe._country_worker_session_epoch = 41;
++    probe.reserve_command_request_ids_through(9000);
++    if (probe.allocate_command_request_id() != 9001) {
++        error = "country_economy_asset_restored_request_floor_failed";
++        return false;
++    }
++    probe.reserve_command_request_ids_through(7000);
++    if (probe.allocate_command_request_id() != 9002) {
++        error = "country_economy_asset_request_floor_rewound";
++        return false;
++    }
+ 
+     RuntimeEconomyAssetRequest off_thread_cash;
+     off_thread_cash.operation = RuntimeEconomyAssetOperation::CASH_FROM_COHORT;
+@@ -6617,6 +6634,14 @@ bool NativeSimulationHost::enqueue_batch(
+     return true;
+ }
+ 
++void NativeSimulationHost::reserve_command_request_ids_through(uint64_t maximum) noexcept {
++    uint64_t observed = _command_request_id.load(std::memory_order_acquire);
++    while (observed < maximum &&
++           !_command_request_id.compare_exchange_weak(
++               observed, maximum, std::memory_order_acq_rel,
++               std::memory_order_acquire)) {}
++}
++
+ uint64_t NativeSimulationHost::allocate_command_request_id() {
+     uint64_t value = _command_request_id.fetch_add(
+         1u, std::memory_order_relaxed) + 1u;
+diff --git a/gdext/src/native_simulation_host.h b/gdext/src/native_simulation_host.h
+index 498aa87f..909db552 100644
+--- a/gdext/src/native_simulation_host.h
++++ b/gdext/src/native_simulation_host.h
+@@ -568,6 +568,7 @@ public:
+     bool enqueue_batch(std::vector<RuntimeCommandPacket> packets);
+     bool enqueue_modifier_shadow(RuntimeCommandPacket packet);
+     uint64_t allocate_command_request_id();
++    void reserve_command_request_ids_through(uint64_t maximum) noexcept;
+     uint64_t allocate_producer_sequence(uint32_t producer_id);
+     bool next_command(RuntimeCommandPacket &out) const;
+     bool poll_commit(uint64_t after_generation, RuntimeCommit &out);
+diff --git a/gdext/src/runtime_economy_ecp2.cpp b/gdext/src/runtime_economy_ecp2.cpp
+index c52e1956..e046495d 100644
+--- a/gdext/src/runtime_economy_ecp2.cpp
++++ b/gdext/src/runtime_economy_ecp2.cpp
+@@ -149,6 +149,7 @@ void append_envelope(std::vector<uint8_t> &out,
+     append_i32(out, envelope.epoch_days);
+     append_u64(out, envelope.committed_generation);
+     append_i64(out, envelope.seed);
++    append_u32(out, envelope.hash_version);
+ }
+ 
+ bool read_envelope(const uint8_t *&p, const uint8_t *end,
+@@ -175,6 +176,12 @@ bool read_envelope(const uint8_t *&p, const uint8_t *end,
+         !read_i64(p, end, envelope.seed)) {
+         return false;
+     }
++    if (envelope.abi_version >= 3u) {
++        if (!read_u32(p, end, envelope.hash_version) ||
++            (envelope.hash_version != 1u && envelope.hash_version != 2u)) return false;
++    } else {
++        envelope.hash_version = 1u;
++    }
+     return p <= end;
+ }
+ 
+@@ -474,11 +481,12 @@ bool decode_ecp2(const uint8_t *data, size_t size,
+     out.authority_domain_mask = mask;
+     out.content_hash = content_hash;
+ 
+-    if (abi != RUNTIME_ECONOMY_ECP2_ABI_VERSION) {
++    const bool migrating = runtime_hash_migration_enabled() && abi == 2u && schema == 53u;
++    if (abi != RUNTIME_ECONOMY_ECP2_ABI_VERSION && !migrating) {
+         error = "ecp2_abi_version_incompatible";
+         return false;
+     }
+-    if (schema != static_cast<uint32_t>(RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION)) {
++    if (schema != static_cast<uint32_t>(RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION) && !migrating) {
+         error = "ecp2_schema_version_incompatible";
+         return false;
+     }
+@@ -499,7 +507,9 @@ bool decode_ecp2(const uint8_t *data, size_t size,
+         }
+         const uint8_t *ep = p;
+         const uint8_t *eend = p + envelope_size;
+-        if (!read_envelope(ep, eend, out.envelope)) {
++        if (!read_envelope(ep, eend, out.envelope) ||
++            out.envelope.abi_version != abi ||
++            out.envelope.schema_version != static_cast<int32_t>(schema)) {
+             error = "ecp2_envelope_invalid";
+             return false;
+         }
+diff --git a/gdext/src/runtime_economy_ecp2.h b/gdext/src/runtime_economy_ecp2.h
+index aab7d5a6..a34a48ed 100644
+--- a/gdext/src/runtime_economy_ecp2.h
++++ b/gdext/src/runtime_economy_ecp2.h
+@@ -12,8 +12,8 @@ namespace pk {
+ class NativeEconomyRuntime;
+ 
+ constexpr uint32_t RUNTIME_ECONOMY_ECP2_MARKER = 0x32504345u; // "ECP2"
+-constexpr uint32_t RUNTIME_ECONOMY_ECP2_ABI_VERSION = 2u;
+-constexpr int32_t RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION = 53;
++constexpr uint32_t RUNTIME_ECONOMY_ECP2_ABI_VERSION = 3u;
++constexpr int32_t RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION = 54;
+ 
+ enum EconomyEcp2Domain : uint32_t {
+     ECP2_DOMAIN_ENVELOPE = 1u << 0,
+@@ -54,6 +54,7 @@ constexpr uint32_t ECP2_CAPTURE_INCLUDE_RESUME = 2u;
+ constexpr uint32_t ECP2_CAPTURE_ROLLBACK_BACKUP = 4u;
+ 
+ struct RuntimeEconomyEcp2Envelope {
++    uint32_t hash_version = runtime_chunk_hash_enabled() ? 2u : 1u;
+     int32_t schema_version = RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION;
+     uint32_t abi_version = RUNTIME_ECONOMY_ECP2_ABI_VERSION;
+     int32_t cell_count = 0;
+diff --git a/gdext/src/runtime_economy_pod.cpp b/gdext/src/runtime_economy_pod.cpp
+index 00b253a7..d910373c 100644
+--- a/gdext/src/runtime_economy_pod.cpp
++++ b/gdext/src/runtime_economy_pod.cpp
+@@ -407,11 +407,19 @@ uint64_t RuntimeEconomyPodAuthority::state_hash() const noexcept {
+         mix(static_cast<uint64_t>(_state.population.population[i]));
+         mix(static_cast<uint64_t>(_state.population.funds[i]));
+     }
+-    for (size_t i = 0; i < _state.market.stock.size(); ++i) {
+-        mix(static_cast<uint64_t>(_state.market.stock[i]));
+-        mix(static_cast<uint64_t>(_state.market.price[i]));
+-        mix(static_cast<uint64_t>(_state.market.demand_ema[i]));
+-        mix(_state.market.last_shortage_q16[i]);
++    if (runtime_chunk_hash_enabled()) {
++        mix(RuntimeChunkHash::VERSION);
++        mix(_state.market_hash_pages[0].update(_state.market.stock, 1, 1));
++        mix(_state.market_hash_pages[1].update(_state.market.price, 1, 2));
++        mix(_state.market_hash_pages[2].update(_state.market.demand_ema, 1, 3));
++        mix(_state.market_hash_pages[3].update(_state.market.last_shortage_q16, 1, 4));
++    } else {
++        for (size_t i = 0; i < _state.market.stock.size(); ++i) {
++            mix(static_cast<uint64_t>(_state.market.stock[i]));
++            mix(static_cast<uint64_t>(_state.market.price[i]));
++            mix(static_cast<uint64_t>(_state.market.demand_ema[i]));
++            mix(_state.market.last_shortage_q16[i]);
++        }
+     }
+     return hash;
+ }
+@@ -517,7 +525,7 @@ bool RuntimeEconomyPodAuthority::export_committed_ledger(
+     const auto blocks_finished = std::chrono::steady_clock::now();
+     const auto validation_started = std::chrono::steady_clock::now();
+     const char *validation_reason = nullptr;
+-    if (!ledger.valid(&validation_reason)) {
++    if (!ledger.validate_shape_and_values(&validation_reason)) {
+         error = std::string("economy_pod_ledger_export_invalid:") +
+             (validation_reason != nullptr ? validation_reason : "unknown");
+         return false;
+diff --git a/gdext/src/runtime_economy_pod.h b/gdext/src/runtime_economy_pod.h
+index 43f09337..b9730b38 100644
+--- a/gdext/src/runtime_economy_pod.h
++++ b/gdext/src/runtime_economy_pod.h
+@@ -5,6 +5,7 @@
+ #include "runtime_domain_pod.h"
+ #include "runtime_economy_ecp2.h"
+ #include "runtime_pod_protocol.h"
++#include "runtime_chunk_hash.h"
+ 
+ #include <array>
+ #include <atomic>
+diff --git a/gdext/src/runtime_economy_state.cpp b/gdext/src/runtime_economy_state.cpp
+index 29d6781d..4e5ed490 100644
+--- a/gdext/src/runtime_economy_state.cpp
++++ b/gdext/src/runtime_economy_state.cpp
+@@ -182,6 +182,19 @@ bool RuntimeEconomyLedgerState::has_diagnostics_columns() const noexcept {
+ }
+ 
+ bool RuntimeEconomyLedgerState::valid(const char **reason) const noexcept {
++    if (!validate_shape_and_values(reason)) return false;
++    if (ledger_hash != 0 && !verify_external_digest()) {
++        if (reason != nullptr) *reason = "ledger_hash_mismatch";
++        return false;
++    }
++    return true;
++}
++
++bool RuntimeEconomyLedgerState::verify_external_digest() const noexcept {
++    return ledger_hash != 0 && ledger_hash == computed_hash();
++}
++
++bool RuntimeEconomyLedgerState::validate_shape_and_values(const char **reason) const noexcept {
+     EconomyCostProbe probe("ledger_validate", committed_day, market_stock.size());
+     // Every rejection names its check. A save that fails here faults the
+     // worker, and a single generic reason left no way to tell which of ~30
+@@ -385,7 +398,6 @@ bool RuntimeEconomyLedgerState::valid(const char **reason) const noexcept {
+         return reject("ledger_day_before_epoch_cursor_commit");
+     }
+ 
+-    if (ledger_hash != 0 && ledger_hash != computed_hash()) return reject("ledger_hash_mismatch");
+     if (reason != nullptr) *reason = nullptr;
+     return true;
+ }
+diff --git a/gdext/src/runtime_economy_state.h b/gdext/src/runtime_economy_state.h
+index 62912fd9..52650497 100644
+--- a/gdext/src/runtime_economy_state.h
++++ b/gdext/src/runtime_economy_state.h
+@@ -1,8 +1,10 @@
+ #pragma once
+ 
+ #include <cstdint>
++#include <array>
+ #include <algorithm>
+ #include <vector>
++#include "runtime_chunk_hash.h"
+ #include "runtime_economy_population_store.h"
+ #include "runtime_economy_building_store.h"
+ #include "runtime_economy_trade_escrow_store.h"
+@@ -375,6 +377,8 @@ struct RuntimeEconomyLedgerState {
+     uint64_t computed_hash() const noexcept;
+     uint64_t recompute_hash() noexcept;
+     bool valid(const char **reason = nullptr) const noexcept;
++    bool validate_shape_and_values(const char **reason = nullptr) const noexcept;
++    bool verify_external_digest() const noexcept;
+ };
+ 
+ // Mirrors NativeEconomyRuntime::StructuralCommand for OwnedState queues.
+@@ -393,6 +397,9 @@ struct RuntimeEconomyOwnedStructuralCommand {
+ // container explicit prevents a copied summary from being mistaken for an
+ // ownership transfer and gives the worker a stable home for future stores.
+ struct RuntimeEconomyOwnedState {
++    // Transient shared cache for the single OwnedState formula owner and its
++    // POD reader. Never encoded in ECP2 or included as business state.
++    mutable std::array<RuntimeChunkHash, 4> market_hash_pages;
+     RuntimeEconomyPopulationStore population;
+     RuntimeEconomyMarketStore market;
+     RuntimeEconomyLedgerState committed;
+@@ -443,6 +450,7 @@ struct RuntimeEconomyOwnedState {
+     std::vector<RuntimeEconomyOwnedStructuralCommand> structural_commands;
+ 
+     void clear(int32_t cells, int32_t goods) {
++        for (auto &column : market_hash_pages) column.clear();
+         population.clear(cells);
+         market.clear();
+         market.market_count = std::max(0, cells);
+diff --git a/gdext/src/world_ext.h b/gdext/src/world_ext.h
+index d2841958..71bd4191 100644
+--- a/gdext/src/world_ext.h
++++ b/gdext/src/world_ext.h
+@@ -222,6 +222,7 @@ public:
+     godot::Dictionary get_runtime_thread_report() const;
+     godot::Dictionary get_runtime_perf_snapshot(int detail_level = 0) const;
+     godot::Dictionary get_runtime_graph_last_economy_report() const;
++    godot::Dictionary get_economy_checkpoint_format() const;
+     godot::Dictionary record_runtime_visual_timings(double ui_input_to_feedback_ms,
+                                                     double visual_apply_ms,
+                                                     double gpu_upload_ms);
+@@ -681,6 +682,7 @@ public:
+     bool economy_deadline_critical(int64_t day_index) const;
+     godot::PackedInt32Array get_economy_live_cells();
+     godot::Dictionary get_economy_report() const;
++    godot::Dictionary get_economy_committed_audit_report() const;
+     godot::Dictionary get_country_class_opinion_snapshot() const;
+     godot::Dictionary get_population_cell_summary(int cell_idx) const;
+     godot::Dictionary get_named_settlement_snapshot() const;
+diff --git a/gdext/src/world_ext_bind_methods.cpp b/gdext/src/world_ext_bind_methods.cpp
+index e16f08ad..acca8b8e 100644
+--- a/gdext/src/world_ext_bind_methods.cpp
++++ b/gdext/src/world_ext_bind_methods.cpp
+@@ -89,6 +89,8 @@ void DCWorldExt::_bind_methods() {
+                          &DCWorldExt::get_runtime_perf_snapshot, DEFVAL(0));
+     ClassDB::bind_method(D_METHOD("get_runtime_graph_last_economy_report"),
+                          &DCWorldExt::get_runtime_graph_last_economy_report);
++    ClassDB::bind_method(D_METHOD("get_economy_checkpoint_format"),
++                         &DCWorldExt::get_economy_checkpoint_format);
+     ClassDB::bind_method(D_METHOD("start_runtime_worker", "config"),
+                          &DCWorldExt::start_runtime_worker);
+     ClassDB::bind_method(D_METHOD("set_runtime_clock", "paused", "speed_days_per_second"),
+@@ -644,6 +646,8 @@ void DCWorldExt::_bind_methods() {
+                          &DCWorldExt::get_economy_live_cells);
+     ClassDB::bind_method(D_METHOD("get_economy_report"),
+                          &DCWorldExt::get_economy_report);
++    ClassDB::bind_method(D_METHOD("get_economy_committed_audit_report"),
++                         &DCWorldExt::get_economy_committed_audit_report);
+     ClassDB::bind_method(D_METHOD("get_country_class_opinion_snapshot"),
+                          &DCWorldExt::get_country_class_opinion_snapshot);
+     ClassDB::bind_method(D_METHOD("get_population_cell_summary", "cell_idx"),
+diff --git a/gdext/src/world_ext_economy.cpp b/gdext/src/world_ext_economy.cpp
+index 08910dd1..82ad0808 100644
+--- a/gdext/src/world_ext_economy.cpp
++++ b/gdext/src/world_ext_economy.cpp
+@@ -139,6 +139,14 @@ void DCWorldExt::invalidate_economy_input_capture_cache(bool force_full) {
+     _economy_capture_cached_report.clear();
+ }
+ 
++Dictionary DCWorldExt::get_economy_checkpoint_format() const {
++    Dictionary out;
++    out["abi_version"] = RUNTIME_ECONOMY_ECP2_ABI_VERSION;
++    out["schema_version"] = RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION;
++    out["hash_version"] = runtime_chunk_hash_enabled() ? 2 : 1;
++    return out;
++}
++
+ Dictionary DCWorldExt::configure_economy(const Dictionary &catalog,
+                                          const Dictionary &profile,
+                                          int cell_count,
+@@ -975,6 +983,15 @@ PackedInt32Array DCWorldExt::get_economy_live_cells() {
+     return runtime_from(_economy_runtime)->economy_live_cells_query();
+ }
+ 
++Dictionary DCWorldExt::get_economy_committed_audit_report() const {
++    if (_economy_runtime == nullptr) {
++        Dictionary out;
++        out["available"] = false;
++        return out;
++    }
++    return runtime_from(_economy_runtime)->committed_audit_report();
++}
++
+ Dictionary DCWorldExt::get_economy_report() const {
+     if (_economy_runtime == nullptr) {
+         Dictionary out;
+diff --git a/tools/runtime/Resolve-GodotBin.ps1 b/tools/runtime/Resolve-GodotBin.ps1
+index 617d3a3e..5bf4739a 100644
+--- a/tools/runtime/Resolve-GodotBin.ps1
++++ b/tools/runtime/Resolve-GodotBin.ps1
+@@ -13,7 +13,8 @@ The console variant is preferred because headless runs must write to stdout.
+ Dot-source this file to get Resolve-GodotBin, or run it to print the path.
+ #>
+ param(
+-    [string]$GodotExe = ''
++    [Alias('GodotExe')]
++    [string]$ResolvedGodotOverride = ''
+ )
+ 
+ $ErrorActionPreference = 'Stop'
+@@ -52,5 +53,5 @@ Tried: $($candidates -join '; ')
+ }
+ 
+ if ($MyInvocation.InvocationName -ne '.') {
+-    Resolve-GodotBin -GodotExe $GodotExe
++    Resolve-GodotBin -GodotExe $ResolvedGodotOverride
+ }

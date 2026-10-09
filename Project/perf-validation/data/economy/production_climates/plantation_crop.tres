@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="ProductionClimateProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/production_climate_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"plantation_crop"
+temperature_opt = 0.72
+temperature_tolerance = 0.30
+water_opt = 0.70
+water_tolerance = 0.30
+floor_q16 = 9830
+exposure_q16 = 65536

@@ -1,0 +1,11 @@
+[gd_scene format=3]
+
+[node name="Card" type="PanelContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"FamilyCard"
+
+[node name="Body" type="VBoxContainer" parent="."]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4

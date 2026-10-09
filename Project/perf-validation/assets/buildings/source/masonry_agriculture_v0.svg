@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
+  <!-- Flat top-down authored tile. No baked shadow: the analytic
+       building_shadow pass owns false shadows. -->
+  <polygon data-role="yard" fill="#858057" points="16.00,115.20 144.00,115.20 144.00,137.60 16.00,137.60"/>
+  <polygon data-role="facility" fill="#7a7061" points="17.60,115.20 142.40,115.20 142.40,117.98 17.60,117.98"/>
+  <polygon data-role="facility" fill="#7a7061" points="17.60,124.16 142.40,124.16 142.40,126.94 17.60,126.94"/>
+  <polygon data-role="facility" fill="#7a7061" points="17.60,133.12 142.40,133.12 142.40,135.90 17.60,135.90"/>
+  <polygon data-role="roof_back" fill="#704233" points="27.20,25.60 113.60,25.60 113.60,51.71 27.20,51.71"/>
+  <polygon data-role="roof_front" fill="#945740" points="27.20,51.71 113.60,51.71 113.60,80.00 27.20,80.00"/>
+  <polygon data-role="ridge" fill="#a8694c" points="27.20,49.95 113.60,49.95 113.60,53.47 27.20,53.47"/>
+  <polygon data-role="wall" fill="#c2b8a1" points="29.44,80.00 111.36,80.00 111.36,108.80 29.44,108.80"/>
+  <polygon data-role="foundation" fill="#47423b" points="22.88,108.80 117.92,108.80 117.92,115.52 22.88,115.52"/>
+  <polygon data-role="window" fill="#52575c" points="53.82,88.00 64.58,88.00 64.58,99.20 53.82,99.20"/>
+  <polygon data-role="window" fill="#52575c" points="76.22,88.00 86.98,88.00 86.98,99.20 76.22,99.20"/>
+  <polygon data-role="door" fill="#423024" points="37.60,84.80 52.00,84.80 52.00,108.80 37.60,108.80"/>
+  <polygon data-role="facility" fill="#7a7061" points="110.40,20.80 120.00,20.80 120.00,54.40 110.40,54.40"/>
+  <polygon data-role="metal" fill="#807d75" points="107.71,16.00 122.69,16.00 122.69,20.80 107.71,20.80"/>
+  <polygon data-role="roof_back" fill="#704233" points="115.20,60.80 147.20,60.80 147.20,77.44 115.20,77.44"/>
+  <polygon data-role="roof_front" fill="#945740" points="115.20,77.44 147.20,77.44 147.20,92.80 115.20,92.80"/>
+  <polygon data-role="ridge" fill="#a8694c" points="115.20,75.68 147.20,75.68 147.20,79.20 115.20,79.20"/>
+  <polygon data-role="wall" fill="#c2b8a1" points="117.44,92.80 144.96,92.80 144.96,108.80 117.44,108.80"/>
+  <polygon data-role="foundation" fill="#47423b" points="113.60,108.80 148.80,108.80 148.80,115.52 113.60,115.52"/>
+</svg>

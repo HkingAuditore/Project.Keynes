@@ -1,0 +1,112 @@
+[gd_scene load_steps=3 format=3 uid="uid://bkv62smwksj4y"]
+
+[ext_resource type="Script" path="res://scripts/ui/world_setup.gd" id="1_setup"]
+[ext_resource type="Theme" path="res://assets/themes/player_ui_theme.tres" id="2_theme"]
+
+[node name="WorldSetup" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_setup")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.018, 0.022, 0.021, 1)
+
+[node name="Margin" type="MarginContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 18
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 18
+
+[node name="Root" type="VBoxContainer" parent="Margin"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Header" type="BoxContainer" parent="Margin/Root"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="Margin/Root/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "World Setup"
+
+[node name="HeaderSpacer" type="Control" parent="Margin/Root/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Actions" type="HBoxContainer" parent="Margin/Root/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="ResetButton" type="Button" parent="Margin/Root/Header/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(96, 34)
+layout_mode = 2
+text = "恢复默认"
+
+[node name="StartButton" type="Button" parent="Margin/Root/Header/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 34)
+layout_mode = 2
+text = "生成世界"
+
+[node name="DebugButton" type="Button" parent="Margin/Root/Header/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 34)
+layout_mode = 2
+text = "调试场景"
+
+[node name="ResponsiveBody" type="BoxContainer" parent="Margin/Root"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 12
+
+[node name="BaseSettingsScroll" type="ScrollContainer" parent="Margin/Root/ResponsiveBody"]
+custom_minimum_size = Vector2(380, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="BaseSettings" type="VBoxContainer" parent="Margin/Root/ResponsiveBody/BaseSettingsScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="ClimateSettingsScroll" type="ScrollContainer" parent="Margin/Root/ResponsiveBody"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="ClimateSettings" type="VBoxContainer" parent="Margin/Root/ResponsiveBody/ClimateSettingsScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8

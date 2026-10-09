@@ -49,10 +49,10 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _person_opening_cash_claim = persons_store().cash_claim;
     for (int32_t i = 0; i < static_cast<int32_t>(persons_store().active.size()); ++i) {
         if (persons_store().active[i] == 0) continue;
-        persons_store().epoch_job_income[i] = 0;
-        persons_store().epoch_business_result[i] = 0;
-        persons_store().epoch_consumption_expense[i] = 0;
-        persons_store().epoch_tax[i] = 0;
+        persons_store().epoch_job_income.write_scalar(i, 0, market_mutation_sink());
+        persons_store().epoch_business_result.write_scalar(i, 0, market_mutation_sink());
+        persons_store().epoch_consumption_expense.write_scalar(i, 0, market_mutation_sink());
+        persons_store().epoch_tax.write_scalar(i, 0, market_mutation_sink());
     }
     _epoch_business_demand_ema.clear();
     _epoch_derived_business_demand.clear();
@@ -736,10 +736,10 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     }
     if (day_index <= _last_committed_day) return true;
     // All failure-prone checks happen here, before any state mutation.
-    if (market_store().good_count != static_cast<int32_t>(_good_ids.size()) ||
+    if (market_store().good_count.get() != static_cast<int32_t>(_good_ids.size()) ||
         market_store().cell_to_market.size() != static_cast<size_t>(_cell_count) ||
-        market_store().stock.size() != static_cast<size_t>(market_store().market_count) * market_store().good_count ||
-        _market_cell_offsets.size() != static_cast<size_t>(market_store().market_count + 1)) {
+        market_store().stock.size() != static_cast<size_t>(market_store().market_count.get()) * market_store().good_count.get() ||
+        _market_cell_offsets.size() != static_cast<size_t>(market_store().market_count.get() + 1)) {
         error = "market_shape_invariant_broken";
         return false;
     }
@@ -826,7 +826,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     _epoch_settlement_cells.clear();
     _epoch_building_cells.clear();
     _epoch_plan_cells.clear();
-    const int32_t market_count = std::max(0, market_store().market_count);
+    const int32_t market_count = std::max(0, market_store().market_count.get());
     const bool have_market_map =
         market_store().cell_to_market.size() == static_cast<size_t>(_cell_count);
     std::vector<uint8_t> market_added(static_cast<size_t>(market_count), 0);
@@ -1057,8 +1057,8 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     _epoch_price_ceiling_observations.clear();
     _epoch_ceiling_business_requested.assign(_market_signals.good_ids.size(), 0);
     _epoch_ceiling_business_unfilled.assign(_market_signals.good_ids.size(), 0);
-    _epoch_ceiling_research_requested.resize(market_store().market_count, 0);
-    _epoch_ceiling_research_delivered.resize(market_store().market_count, 0);
+    _epoch_ceiling_research_requested.resize(market_store().market_count.get(), 0);
+    _epoch_ceiling_research_delivered.resize(market_store().market_count.get(), 0);
     _epoch_offered_supply_ema = _market_signals.offered_supply_ema;
     _epoch_producer_sellable_current.assign(_market_signals.good_ids.size(), 0);
     _epoch_producer_merchant_sold_current.assign(
@@ -1093,8 +1093,12 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         live_expedition_population != _closing_totals.transit_population ||
         live_expedition_funds != _closing_totals.expedition_funds ||
         live_expedition_goods != _closing_totals.expedition_goods;
+    const char *reuse_shadow = std::getenv("PK_ECONOMY_AUDIT_SHADOW_REUSE");
+    const bool continuous_audit = reuse_shadow && std::strcmp(reuse_shadow, "1") == 0 &&
+        _closing_audit_mode == 2 && !_closing_audit_runtime_disabled &&
+        _audit_mutation_generation != 0;
     const bool full_audit_verify = _opening_audit_force_full ||
-        _last_closing_audit_was_incremental ||
+        (_last_closing_audit_was_incremental && !continuous_audit) ||
         expedition_holdings_changed ||
         day_index % _full_audit_verify_interval_days == 0;
     // The new epoch invalidates last epoch's close until AGGREGATE_PUBLISH
@@ -1106,7 +1110,8 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         _opening_totals = audit_totals();
         ++_opening_audit_full_verifications;
     } else {
-        _opening_totals = _closing_totals;
+        _opening_totals = continuous_audit
+            ? audit_totals_from_shadow(_closing_totals) : _closing_totals;
         int64_t opening_escrow_saturation = 0;
         _opening_totals.expedition_funds = live_expedition_funds;
         _opening_totals.expedition_goods = live_expedition_goods;
@@ -1117,6 +1122,19 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
             live_expedition_funds, opening_escrow_saturation);
         _saturation_count += opening_escrow_saturation;
         ++_opening_audit_fast_paths;
+    }
+    const char *verify_opening = std::getenv("PK_ECONOMY_AUDIT_VERIFY_EVERY_DAY");
+    if (continuous_audit && verify_opening && std::strcmp(verify_opening, "1") == 0) {
+        const AuditTotals reference = audit_totals();
+        if (_opening_totals.population != reference.population ||
+            _opening_totals.cohort_funds != reference.cohort_funds ||
+            _opening_totals.goods_stock != reference.goods_stock ||
+            _opening_totals.escrow_cash != reference.escrow_cash) {
+            _closing_audit_runtime_disabled = true;
+            _opening_audit_force_full = true;
+            error = "opening_incremental_audit_mismatch";
+            return false;
+        }
     }
     // Pin country treasury goods/cash with research_consumed from one snapshot.
     // Peer-wait preview / late-fold catch_up must not split these across the
@@ -1203,8 +1221,8 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         if ((cmd.opcode == COMMAND_ADD_STOCK || cmd.opcode == COMMAND_REMOVE_STOCK ||
              cmd.opcode == COMMAND_COUNTRY_GOOD_TO_MARKET ||
              cmd.opcode == COMMAND_MARKET_GOOD_TO_COUNTRY) &&
-            (cmd.i32_0 < 0 || cmd.i32_0 >= market_store().market_count || cmd.i32_1 < 0 ||
-             cmd.i32_1 >= market_store().good_count)) {
+            (cmd.i32_0 < 0 || cmd.i32_0 >= market_store().market_count.get() || cmd.i32_1 < 0 ||
+             cmd.i32_1 >= market_store().good_count.get())) {
             return reject_epoch_command(cmd);
         }
         if ((cmd.opcode == COMMAND_ADD_STOCK || cmd.opcode == COMMAND_COUNTRY_GOOD_TO_MARKET) &&

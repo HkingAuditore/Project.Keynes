@@ -1,0 +1,206 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[research-soak] building ids gathering=103 hunting=359 flint=94 knapping=134
+[tech-ui-diag/research] handle=4294967296 gen=1 day=-1 owned=7 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=10000000 auto=1
+[research-soak] day=0 queued=tech.stone_knapping
+[tech-ui-diag/research] handle=4294967296 gen=2 day=1 owned=7 pending=0 queued=1 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=1000000000 auto=1
+[research-soak] day=1 queued=tech.seasonal_foraging
+[economy-open-finish] day=0 country=0.067 workset=0.006 fiscal=0.003 csr=0.000 recovery=0.000 vectors=0.283 audit=0.003 commands=0.001
+[tech-ui-diag/research] handle=4294967296 gen=3 day=2 owned=7 pending=0 queued=2 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=1000000000 auto=1
+[research-soak] day=2 queued=tech.clay_identification
+[tech-ui-diag/research] handle=4294967296 gen=4 day=3 owned=7 pending=0 queued=3 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=1000000000 auto=1
+[research-soak] day=3 queued=tech.animal_husbandry
+[tech-ui-diag/research] handle=4294967296 gen=5 day=4 owned=7 pending=0 queued=4 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=1000000000 auto=1
+[research-soak] day=4 queued=tech.spice_identification
+[research-procure-diag] day=4 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=14700000 budget=1000000000 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[tech-ui-diag/research] handle=4294967296 gen=6 day=5 owned=7 pending=0 queued=5 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=1000000000 auto=1
+[research-soak] day=5 queued=tech.rubber_identification
+[research-procure-diag] day=5 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=14700000 budget=1000000000 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[tech-ui-diag/research] handle=4294967296 gen=7 day=6 owned=7 pending=0 queued=6 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=1000000000 auto=1
+[research-soak] day=6 queued=tech.gold_placer_identification
+[research-procure-diag] day=6 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=14700000 budget=1000000000 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[tech-ui-diag/research] handle=4294967296 gen=8 day=7 owned=7 pending=0 queued=7 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=1000000000 budget=1000000000 auto=1
+[research-soak] day=7 queued=tech.silver_vein_identification
+[research-procure-diag] day=7 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=14700000 budget=1000000000 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[tech-ack-diag/entry] tech=2 instance=281474976710659 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ui-diag/research] handle=4294967296 gen=11 day=8 owned=7 pending=3 queued=5 progress_nonzero=5 stock=1900000 deferred=1900000 consumed=12800000 cash=854719900 budget=1000000000 auto=1
+[research-soak] day=8 queued=tech.fire_control
+[research-procure-diag] day=8 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=14700000 budget=1000000000 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[tech-ui-diag/research] handle=4294967296 gen=13 day=9 owned=10 pending=0 queued=6 progress_nonzero=5 stock=0 deferred=0 consumed=14700000 cash=854719900 budget=1000000000 auto=1
+[research-soak] day=9 queued=tech.ground_stone_tools
+[research-procure-diag] day=9 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=14700000 budget=1000000000 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[tech-ui-diag/research] handle=4294967296 gen=14 day=10 owned=10 pending=0 queued=7 progress_nonzero=5 stock=0 deferred=0 consumed=14700000 cash=854719900 budget=1000000000 auto=1
+[research-soak] day=10 queued=tech.food_storage
+[research-procure-diag] day=10 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=14700000 budget=1000000000 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=10 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=22500000 budget=854719900 gate_mask=0x1c research_gate=0 orders=1 rej=0 procured=14700000 last_err=
+[tech-ui-diag/research] handle=4294967296 gen=15 day=11 owned=10 pending=0 queued=8 progress_nonzero=5 stock=0 deferred=0 consumed=14700000 cash=854719900 budget=1000000000 auto=1
+[research-soak] day=11 queued=tech.earth_building
+[research-procure-diag] day=11 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=22500000 budget=854719900 gate_mask=0x1c research_gate=0 orders=1 rej=0 procured=14700000 last_err=
+[tech-ui-diag/research] handle=4294967296 gen=16 day=12 owned=10 pending=0 queued=9 progress_nonzero=5 stock=0 deferred=0 consumed=14700000 cash=854719900 budget=1000000000 auto=1
+[research-soak] day=12 queued=tech.natural_observation
+[research-procure-diag] day=12 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=22500000 budget=854719900 gate_mask=0x1c research_gate=0 orders=1 rej=0 procured=14700000 last_err=
+[tech-ui-diag/research] handle=4294967296 gen=17 day=13 owned=10 pending=0 queued=10 progress_nonzero=5 stock=0 deferred=0 consumed=14700000 cash=854719900 budget=1000000000 auto=1
+[research-soak] day=13 queued=tech.reed_identification
+[research-procure-diag] day=13 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=22500000 budget=854719900 gate_mask=0x1c research_gate=0 orders=1 rej=0 procured=14700000 last_err=
+[tech-ack-diag/entry] tech=4 instance=281474976710661 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ack-diag/entry] tech=66 instance=281474976710723 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ack-diag/entry] tech=5 instance=281474976710662 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ack-diag/entry] tech=11 instance=281474976710668 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ack-diag/entry] tech=13 instance=281474976710670 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ui-diag/research] handle=4294967296 gen=20 day=14 owned=10 pending=5 queued=6 progress_nonzero=10 stock=5550000 deferred=5550000 consumed=31650000 cash=632352400 budget=1000000000 auto=1
+[research-soak] day=14 queued=tech.hide_scraping
+[research-procure-diag] day=14 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=22500000 budget=854719900 gate_mask=0x1c research_gate=0 orders=1 rej=0 procured=14700000 last_err=
+[tech-ack-diag/entry] tech=15 instance=281474976710672 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ui-diag/research] handle=4294967296 gen=22 day=15 owned=15 pending=3 queued=4 progress_nonzero=12 stock=374999 deferred=374999 consumed=36825001 cash=632352400 budget=1000000000 auto=1
+[research-soak] day=15 queued=tech.animal_tracking
+[research-procure-diag] day=15 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=22500000 budget=854719900 gate_mask=0x1c research_gate=0 orders=1 rej=0 procured=14700000 last_err=
+[research-soak] day=16 queued=tech.hearth_preservation
+[research-procure-diag] day=16 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=22500000 budget=854719900 gate_mask=0x1c research_gate=0 orders=1 rej=0 procured=14700000 last_err=
+[research-procure-diag] day=16 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=16300001 budget=632352400 gate_mask=0x1c research_gate=0 orders=2 rej=0 procured=37200000 last_err=
+[research-soak] day=17 queued=tech.herd_management
+[research-procure-diag] day=17 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=16300001 budget=632352400 gate_mask=0x1c research_gate=0 orders=2 rej=0 procured=37200000 last_err=
+[research-soak] day=18 queued=tech.wild_spice_collection
+[research-procure-diag] day=18 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=16300001 budget=632352400 gate_mask=0x1c research_gate=0 orders=2 rej=0 procured=37200000 last_err=
+[research-soak] day=19 queued=tech.wild_latex_tapping
+[research-procure-diag] day=19 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=16300001 budget=632352400 gate_mask=0x1c research_gate=0 orders=2 rej=0 procured=37200000 last_err=
+[tech-ack-diag/entry] tech=10 instance=281474976710667 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ack-diag/entry] tech=9 instance=281474976710666 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ack-diag/entry] tech=17 instance=281474976710674 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ack-diag/entry] tech=7 instance=281474976710664 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[research-soak] day=20 queued=tech.gold_panning
+[research-procure-diag] day=20 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=16300001 budget=632352400 gate_mask=0x1c research_gate=0 orders=2 rej=0 procured=37200000 last_err=
+[research-soak] day=21 queued=tech.surface_silver_collection
+[research-procure-diag] day=21 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=16300001 budget=632352400 gate_mask=0x1c research_gate=0 orders=2 rej=0 procured=37200000 last_err=
+[research-soak] day=22 queued=tech.fur_sewing
+[research-procure-diag] day=22 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=16300001 budget=632352400 gate_mask=0x1c research_gate=0 orders=2 rej=0 procured=37200000 last_err=
+[research-procure-diag] day=22 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=14100002 budget=471259490 gate_mask=0x1c research_gate=0 orders=3 rej=0 procured=53500001 last_err=
+[research-soak] day=23 queued=tech.felt_making
+[research-procure-diag] day=23 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=14100002 budget=471259490 gate_mask=0x1c research_gate=0 orders=3 rej=0 procured=53500001 last_err=
+[research-soak] day=24 queued=tech.phenology_observation
+[research-procure-diag] day=24 phase=0 done=0 cands=1 cursor=0 enabled=1 remain=14100002 budget=471259490 gate_mask=0x1c research_gate=0 orders=3 rej=0 procured=53500001 last_err=
+[research-soak] day=25 queued=tech.flood_calendar_practice
+[tech-ack-diag/entry] tech=12 instance=281474976710669 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ack-diag/entry] tech=14 instance=281474976710671 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[research-soak] day=26 queued=tech.pastoral_route_memory
+[tech-ack-diag/entry] tech=22 instance=281474976710679 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[research-soak] day=27 queued=tech.controlled_burning
+[research-soak] day=28 queued=tech.oral_tradition
+[research-soak] day=29 queued=tech.crop_domestication
+[research-soak] day=30 queued=tech.maize_identification
+[research-soak] day=31 queued=tech.wheat_identification
+[tech-ack-diag/entry] tech=24 instance=281474976710681 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ack-diag/entry] tech=54 instance=281474976710711 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ack-diag/entry] tech=55 instance=281474976710712 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ack-diag/entry] tech=59 instance=281474976710716 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[research-soak] day=32 queued=tech.rice_identification
+[research-soak] day=33 queued=tech.potato_identification
+[research-soak] day=34 queued=tech.cotton_identification
+[research-soak] day=35 queued=tech.flax_identification
+[research-soak] day=36 queued=tech.medicinal_herb_identification
+[research-soak] day=37 queued=tech.reed_harvesting
+[tech-ack-diag/entry] tech=25 instance=281474976710682 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ack-diag/entry] tech=57 instance=281474976710714 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ack-diag/entry] tech=23 instance=281474976710680 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[research-soak] day=38 queued=tech.tide_observation
+[tech-ack-diag/entry] tech=58 instance=281474976710715 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ack-diag/entry] tech=27 instance=281474976710684 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[research-soak] day=39 queued=tech.seasonal_calendar
+[research-soak] day=40 queued=tech.wild_maize_collection
+[research-soak] day=41 queued=tech.brine_collection
+[research-soak] day=42 queued=tech.composite_tools
+[research-soak] day=43 queued=tech.turf_cutting
+[research-soak] day=44 queued=tech.charcoal_burning
+[research-soak] day=45 queued=tech.clay_preparation
+[research-soak] day=46 queued=tech.natural_copper_identification
+[research-soak] day=47 queued=tech.seed_selection
+[research-soak] day=48 queued=tech.horse_domestication
+[research-soak] day=49 queued=tech.celestial_calendars
+[research-soak] day=50 queued=tech.adobe_making
+[research-soak] day=51 queued=tech.dairy_processing
+[research-soak] day=52 queued=tech.hide_tanning
+[research-soak] day=53 queued=tech.wool_husbandry
+[research-soak] day=54 queued=tech.meat_processing
+[research-soak] day=500
+[research-soak] day=1000
+[research-soak] day=1500
+[research-soak] day=2000
+[research-soak] day=2500
+[research-soak] day=3000
+[research-soak] day=3500
+[tech-ack-diag/entry] tech=28 instance=281474976710685 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ack-diag/entry] tech=79 instance=281474976710736 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ack-diag/entry] tech=83 instance=281474976710740 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ack-diag/entry] tech=128 instance=281474976710785 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ack-diag/entry] tech=130 instance=281474976710787 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ack-diag/entry] tech=61 instance=281474976710718 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[tech-ack-diag/entry] tech=64 instance=281474976710721 eff_gen=1 host=1 effect_worker_auth=0 effect_enabled=0 effect_runtime=0 branch=sync
+[research-soak] day=3586 queued=tech.maize_seed_saving
+[research-soak] day=3587 queued=tech.wild_wheat_collection
+[research-soak] day=3588 queued=tech.maize_propagation
+[research-soak] day=3589 queued=tech.wild_tuber_collection
+[research-soak] day=3590 queued=tech.tuber_storage
+[research-soak] day=3591 queued=tech.wild_cotton_collection
+[research-soak] day=3592 queued=tech.wild_flax_collection
+[research-soak] day=3593 queued=tech.wild_rice_collection
+[research-soak] day=3594 queued=tech.communal_specialization
+[research-soak] day=3595 queued=tech.hand_pottery
+[research-soak] day=3596 queued=tech.settled_knowledge
+[research-soak] day=3597 queued=tech.natural_copper_working
+[research-soak] day=3598 queued=tech.plough_agriculture
+[research-soak] day=3599 queued=tech.rainfed_field_system
+[research-soak] day=3600 queued=tech.flax_retting
+[research-soak] day=3601 queued=tech.timber_sawing
+[research-soak] day=3602 queued=tech.salt_preservation
+[research-soak] day=3603 queued=tech.copper_mine_engineering
+[research-soak] day=3613 queued=tech.wheat_seed_saving
+[research-soak] day=3614 queued=tech.potato_propagation
+[research-soak] day=3615 queued=tech.wheat_propagation
+[research-soak] day=3616 queued=tech.fiber_twisting
+[research-soak] day=3617 queued=tech.rice_seed_saving
+[research-soak] day=3618 queued=tech.household_production
+[research-soak] day=3619 queued=tech.copper_annealing
+[research-soak] day=3620 queued=tech.permanent_settlements
+[research-soak] day=3621 queued=tech.dryland_farming
+[research-soak] day=3622 queued=tech.paddy_bunding
+[research-soak] day=3623 queued=tech.animal_traction
+[research-soak] day=3624 queued=tech.public_storehouses
+[research-soak] day=3625 queued=tech.rainfed_wheat_cultivation
+[research-soak] day=3626 queued=tech.rice_paddy_cultivation
+[research-soak] day=3627 queued=tech.ridge_tuber_cultivation
+[research-soak] day=3628 queued=tech.cotton_ginning
+[research-soak] day=3629 queued=tech.cotton_gardening
+[research-soak] day=3630 queued=tech.fermentation
+[research-soak] day=3631 queued=tech.solar_evaporation
+[research-soak] day=3632 queued=tech.method.pastoral_council_tent
+[research-soak] day=3642 queued=tech.tin_identification
+[research-soak] day=3643 queued=tech.copper_ore_roasting
+[research-soak] day=3644 queued=tech.record_keeping
+[research-soak] day=3645 queued=tech.dryland_water_retention
+[research-soak] day=3646 queued=tech.loom_weaving
+[research-soak] day=3647 queued=tech.household_landholding
+[research-soak] day=3648 queued=tech.maize_garden_horticulture
+[research-soak] day=3649 queued=tech.upland_rice_propagation
+[research-soak] day=3650 queued=tech.frost_protected_storage
+[research-soak] day=3651 queued=tech.hand_spinning
+[research-soak] day=3652 queued=tech.spice_shade_gardening
+[research-soak] day=3653 queued=tech.agrarian_society
+[research-soak] day=3663 queued=tech.communal_field_coordination
+[research-soak] day=3664 queued=tech.swidden_maize_cultivation
+[economy-open-finish] day=3700 country=0.081 workset=0.003 fiscal=0.001 csr=0.000 recovery=0.000 vectors=0.583 audit=0.002 commands=0.000
+[research-soak] day=4000
+[research-soak] day=4500
+[research-soak] day=5000
+[research-soak] day=5500
+[research-soak] day=6000
+[economy-open-finish] day=6300 country=0.094 workset=0.004 fiscal=0.001 csr=0.000 recovery=0.001 vectors=0.514 audit=0.002 commands=0.000
+[research-soak] day=6500
+[research-soak] day=7000
+research technologies: queued=107 completed=112 completed_total=105 progress_total=554720003
+research completed ids=["tech.hunting", "tech.gathering", "tech.seasonal_foraging", "tech.clay_identification", "tech.animal_husbandry", "tech.food_storage", "tech.early_trade", "tech.animal_tracking", "tech.earth_building", "tech.hearth_preservation", "tech.herd_management", "tech.spice_identification", "tech.wild_spice_collection", "tech.rubber_identification", "tech.wild_latex_tapping", "tech.gold_placer_identification", "tech.gold_panning", "tech.silver_vein_identification", "tech.surface_silver_collection", "tech.deadwood_collection", "tech.early_knowledge_institution", "tech.fire_control", "tech.natural_observation", "tech.oral_tradition", "tech.controlled_burning", "tech.crop_domestication", "tech.seasonal_calendar", "tech.maize_identification", "tech.wild_maize_collection", "tech.maize_seed_saving", "tech.maize_propagation", "tech.wheat_identification", "tech.wild_wheat_collection", "tech.wheat_seed_saving", "tech.wheat_propagation", "tech.rice_identification", "tech.potato_identification", "tech.wild_tuber_collection", "tech.tuber_storage", "tech.potato_propagation", "tech.cotton_identification", "tech.wild_cotton_collection", "tech.flax_identification", "tech.wild_flax_collection", "tech.fiber_twisting", "tech.reed_identification", "tech.reed_harvesting", "tech.wild_rice_collection", "tech.rice_seed_saving", "tech.hide_scraping", "tech.fur_sewing", "tech.felt_making", "tech.oral_memory_practice", "tech.phenology_observation", "tech.flood_calendar_practice", "tech.pastoral_route_memory", "tech.tide_observation", "tech.brine_collection", "tech.flint_identification", "tech.stone_knapping", "tech.composite_tools", "tech.communal_specialization", "tech.ground_stone_tools", "tech.household_production", "tech.turf_cutting", "tech.charcoal_burning", "tech.clay_preparation", "tech.hand_pottery", "tech.settled_knowledge", "tech.natural_copper_identification", "tech.natural_copper_working", "tech.copper_annealing", "tech.tin_identification", "tech.copper_ore_roasting", "tech.seed_selection", "tech.permanent_settlements", "tech.horse_domestication", "tech.plough_agriculture", "tech.dryland_farming", "tech.record_keeping", "tech.rainfed_field_system", "tech.paddy_bunding", "tech.dryland_water_retention", "tech.loom_weaving", "tech.animal_traction", "tech.household_landholding", "tech.communal_field_coordination", "tech.public_storehouses", "tech.adobe_making", "tech.maize_garden_horticulture", "tech.swidden_maize_cultivation", "tech.rainfed_wheat_cultivation", "tech.upland_rice_propagation", "tech.rice_paddy_cultivation", "tech.ridge_tuber_cultivation", "tech.frost_protected_storage", "tech.flax_retting", "tech.hand_spinning", "tech.cotton_ginning", "tech.cotton_gardening", "tech.spice_shade_gardening", "tech.timber_sawing", "tech.dairy_processing", "tech.hide_tanning", "tech.wool_husbandry", "tech.meat_processing", "tech.fermentation", "tech.salt_preservation", "tech.agrarian_society", "tech.copper_mine_engineering", "tech.solar_evaporation", "tech.method.pastoral_council_tent"]
+research 20y soak: day=7300 rows=7300 fatal=false
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

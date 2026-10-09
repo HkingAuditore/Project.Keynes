@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+[ext_resource type="PackedScene" path="res://scenes/ui/insight_list.tscn" id="1_list"]
+[node name="InsightShell" type="PanelContainer"]
+theme_type_variation = &"PKInsetPanel"
+[node name="InsightList" parent="." instance=ExtResource("1_list")]
+layout_mode = 2

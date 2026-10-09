@@ -855,7 +855,7 @@ void NativeEconomyRuntime::trace_begin_epoch() {
     _staging_events.stream_hash = trace_hash_mix(
         _staging_events.stream_hash, static_cast<uint64_t>(_staging_events.sample_day));
     if (_trace_mode != TRACE_OFF) {
-        const int64_t estimated_events = static_cast<int64_t>(market_store().market_count) +
+        const int64_t estimated_events = static_cast<int64_t>(market_store().market_count.get()) +
             static_cast<int64_t>(building_count()) * 3 +
             static_cast<int64_t>(_pending_commands.size()) + 64;
         _staging_events.events.reserve(static_cast<size_t>(std::clamp<int64_t>(

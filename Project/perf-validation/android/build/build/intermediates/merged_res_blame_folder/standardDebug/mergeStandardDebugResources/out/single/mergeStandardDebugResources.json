@@ -1,0 +1,54 @@
+[
+    {
+        "merged": "com.godot.game-standardDebug-20:/mipmap-xhdpi-v4_icon.webp.flat",
+        "source": "com.godot.game-build-21:/mipmap-xhdpi-v4/icon.webp"
+    },
+    {
+        "merged": "com.godot.game-standardDebug-20:/mipmap_icon.webp.flat",
+        "source": "com.godot.game-build-21:/mipmap/icon.webp"
+    },
+    {
+        "merged": "com.godot.game-standardDebug-20:/mipmap_icon_foreground.webp.flat",
+        "source": "com.godot.game-build-21:/mipmap/icon_foreground.webp"
+    },
+    {
+        "merged": "com.godot.game-standardDebug-20:/mipmap-hdpi-v4_icon.webp.flat",
+        "source": "com.godot.game-build-21:/mipmap-hdpi-v4/icon.webp"
+    },
+    {
+        "merged": "com.godot.game-standardDebug-20:/mipmap-xxxhdpi-v4_icon.webp.flat",
+        "source": "com.godot.game-build-21:/mipmap-xxxhdpi-v4/icon.webp"
+    },
+    {
+        "merged": "com.godot.game-standardDebug-20:/mipmap-xxhdpi-v4_icon.webp.flat",
+        "source": "com.godot.game-build-21:/mipmap-xxhdpi-v4/icon.webp"
+    },
+    {
+        "merged": "com.godot.game-standardDebug-20:/mipmap-xhdpi-v4_icon_foreground.webp.flat",
+        "source": "com.godot.game-build-21:/mipmap-xhdpi-v4/icon_foreground.webp"
+    },
+    {
+        "merged": "com.godot.game-standardDebug-20:/mipmap-mdpi-v4_icon.webp.flat",
+        "source": "com.godot.game-build-21:/mipmap-mdpi-v4/icon.webp"
+    },
+    {
+        "merged": "com.godot.game-standardDebug-20:/mipmap-xxhdpi-v4_icon_foreground.webp.flat",
+        "source": "com.godot.game-build-21:/mipmap-xxhdpi-v4/icon_foreground.webp"
+    },
+    {
+        "merged": "com.godot.game-standardDebug-20:/mipmap-hdpi-v4_icon_foreground.webp.flat",
+        "source": "com.godot.game-build-21:/mipmap-hdpi-v4/icon_foreground.webp"
+    },
+    {
+        "merged": "com.godot.game-standardDebug-20:/mipmap-mdpi-v4_icon_foreground.webp.flat",
+        "source": "com.godot.game-build-21:/mipmap-mdpi-v4/icon_foreground.webp"
+    },
+    {
+        "merged": "com.godot.game-standardDebug-20:/mipmap-xxxhdpi-v4_icon_foreground.webp.flat",
+        "source": "com.godot.game-build-21:/mipmap-xxxhdpi-v4/icon_foreground.webp"
+    },
+    {
+        "merged": "com.godot.game-standardDebug-20:/mipmap-anydpi-v26_icon.xml.flat",
+        "source": "com.godot.game-build-21:/mipmap-anydpi-v26/icon.xml"
+    }
+]

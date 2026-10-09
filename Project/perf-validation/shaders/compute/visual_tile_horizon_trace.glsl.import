@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bb05tttqnqa86"
+path="res://.godot/imported/visual_tile_horizon_trace.glsl-842e430ff182820682341d2fe7431be6.res"
+
+[deps]
+
+source_file="res://shaders/compute/visual_tile_horizon_trace.glsl"
+dest_files=["res://.godot/imported/visual_tile_horizon_trace.glsl-842e430ff182820682341d2fe7431be6.res"]
+
+[params]
+

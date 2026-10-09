@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
+  <!-- Flat top-down authored tile. No baked shadow: the analytic
+       building_shadow pass owns false shadows. -->
+  <polygon data-role="roof_back" fill="#4f4a4c" points="24.00,38.40 50.40,38.40 50.40,64.19 24.00,64.19"/>
+  <polygon data-role="glass" fill="#8ca3a3" points="26.64,64.19 47.76,64.19 47.76,80.00 26.64,80.00"/>
+  <polygon data-role="roof_back" fill="#4f4a4c" points="50.40,38.40 76.80,38.40 76.80,64.19 50.40,64.19"/>
+  <polygon data-role="glass" fill="#8ca3a3" points="53.04,64.19 74.16,64.19 74.16,80.00 53.04,80.00"/>
+  <polygon data-role="roof_back" fill="#4f4a4c" points="76.80,38.40 103.20,38.40 103.20,64.19 76.80,64.19"/>
+  <polygon data-role="glass" fill="#8ca3a3" points="79.44,64.19 100.56,64.19 100.56,80.00 79.44,80.00"/>
+  <polygon data-role="roof_back" fill="#4f4a4c" points="103.20,38.40 129.60,38.40 129.60,64.19 103.20,64.19"/>
+  <polygon data-role="glass" fill="#8ca3a3" points="105.84,64.19 126.96,64.19 126.96,80.00 105.84,80.00"/>
+  <polygon data-role="roof_back" fill="#4f4a4c" points="24.00,80.00 129.60,80.00 129.60,92.80 24.00,92.80"/>
+  <polygon data-role="ridge" fill="#878080" points="24.00,91.04 129.60,91.04 129.60,92.80 24.00,92.80"/>
+  <polygon data-role="wall" fill="#8f5947" points="25.92,92.80 127.68,92.80 127.68,121.60 25.92,121.60"/>
+  <polygon data-role="foundation" fill="#333030" points="20.83,121.60 132.77,121.60 132.77,128.00 20.83,128.00"/>
+  <polygon data-role="door" fill="#2e2926" points="67.20,102.40 86.40,102.40 86.40,121.60 67.20,121.60"/>
+  <polygon data-role="facility" fill="#615c59" points="128.80,30.40 140.00,30.40 140.00,83.20 128.80,83.20"/>
+  <polygon data-role="metal" fill="#69696e" points="125.66,25.60 143.14,25.60 143.14,30.40 125.66,30.40"/>
+</svg>

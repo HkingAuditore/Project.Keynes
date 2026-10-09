@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="VegetationProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/vegetation_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+veg_type = 25
+display_name_cn = "季风林"
+transpiration = 0.78
+albedo = 0.14
+eco_score = 1.05
+ideal_temp = 0.74
+ideal_moist = 0.62
+temp_tolerance = 0.16
+moist_tolerance = 0.2
+next_richer = 14
+next_harsher = 15
+research_habitat_tags = PackedStringArray("habitat.seasonal_wet", "habitat.warm_crop")

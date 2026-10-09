@@ -1,0 +1,10 @@
+#Mon Jun 15 01:12:01 HKT 2026
+base.0=F\:\\Developent\\Godot\\Project.Keynes\\Project\\project-keynes\\android\\build\\build\\intermediates\\dex\\standardDebug\\mergeExtDexStandardDebug\\classes.dex
+base.1=F\:\\Developent\\Godot\\Project.Keynes\\Project\\project-keynes\\android\\build\\build\\intermediates\\dex\\standardDebug\\mergeProjectDexStandardDebug\\0\\classes.dex
+base.2=F\:\\Developent\\Godot\\Project.Keynes\\Project\\project-keynes\\android\\build\\build\\intermediates\\dex\\standardDebug\\mergeProjectDexStandardDebug\\6\\classes.dex
+path.0=classes.dex
+path.1=0/classes.dex
+path.2=6/classes.dex
+renamed.0=classes.dex
+renamed.1=classes2.dex
+renamed.2=classes3.dex

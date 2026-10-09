@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[node name="Texture" type="TextureRect"]
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5

@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/technology_overview_view.gd" id="1_script"]
+
+[node name="TechnologyOverviewView" type="Control"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+clip_contents = true
+mouse_filter = 0
+script = ExtResource("1_script")

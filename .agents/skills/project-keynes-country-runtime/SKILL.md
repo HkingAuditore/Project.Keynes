@@ -45,6 +45,10 @@ reservation, tax policy snapshots, Modifier-effective rates, subsidy history, or
 - Do not let mid-cycle country changes enter an already frozen economy cycle.
 - Do not let economy start a new frozen cycle while due country commands remain uncommitted.
 - Restore PKCN before PKEC and reject legacy countryless PKEC schemas precisely.
+- Before worker start, raise the shared request-ID allocator above restored
+  Economy terminal peer identities as well as Country receipts and pending
+  Host commands. Empty transport queues do not make historical IDs reusable;
+  never resolve a collision by clearing journals or relaxing identity checks.
 - Restore PKFG after PKCN, and never store exploration progress inside PKCN.
   Vision and country borders only consume `cell.country_slot`; they are not
   country authority. See `docs/cpp-dots-runtime/vision-fog-and-borders.md`.

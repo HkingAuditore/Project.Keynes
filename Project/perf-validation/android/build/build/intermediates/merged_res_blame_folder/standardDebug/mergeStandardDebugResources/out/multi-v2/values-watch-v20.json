@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.godot.game-mergeStandardDebugResources-18:/values-watch-v20/values-watch-v20.xml",
+            "map": [
+                {
+                    "source": "C:\\Users\\HkingAuditore\\.gradle\\caches\\8.11.1\\transforms\\e3f2e5f90e156afd5520765218a09fe3\\transformed\\jetified-core-splashscreen-1.0.1\\res\\values-watch-v20\\values-watch-v20.xml",
+                    "from": {
+                        "startLines": "2,3,4,5,6,7,8,9",
+                        "startColumns": "4,4,4,4,4,4,4,4",
+                        "startOffsets": "55,129,205,280,357,428,496,566",
+                        "endColumns": "73,75,74,76,70,67,69,67",
+                        "endOffsets": "124,200,275,352,423,491,561,629"
+                    }
+                }
+            ]
+        }
+    ]
+}

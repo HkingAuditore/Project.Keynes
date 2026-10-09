@@ -1,0 +1,3313 @@
+{
+  "environment_perf_summary": {
+    "fast_ms": 5,
+    "last_tick": {
+      "economy_reserved_budget_ms": 8.66600036621094,
+      "jobs_ran": 6,
+      "jobs_skipped": 8,
+      "largest_slice_cursor_end": -1,
+      "largest_slice_cursor_start": -1,
+      "largest_slice_fallback_path": "",
+      "largest_slice_job": "dynamic_visual_atlas_upload",
+      "largest_slice_ms": 1.89100003242493,
+      "largest_slice_path": "cell_indirection_lut",
+      "largest_slice_processed_cells": 2400,
+      "largest_slice_processed_indices": 0,
+      "largest_slice_processed_per_ms": 1269.16972969184,
+      "largest_slice_processed_pixels": 0,
+      "largest_slice_stage": "",
+      "largest_slice_substage": "",
+      "largest_slice_work_done": 2400,
+      "over_1ms_count_300": 2,
+      "sim_budget_warn_ms": 2.0,
+      "sim_frame_budget_ms": 8.0,
+      "sim_slice_budget_ms": 3.0,
+      "sim_strict_budget_enabled": false,
+      "sim_upload_slice_budget_ms": 1.5,
+      "slices_total": 6,
+      "source": "day_changed",
+      "sus_sim_avg_300": 2.8730001449585,
+      "sus_sim_max_300": 2.92700004577637,
+      "sus_sim_p95_300": 2.92700004577637,
+      "tick_index": 2,
+      "total_ms": 3.42000007629395
+    },
+    "map_cells": 2400,
+    "recorders": {
+
+    },
+    "tick_idx": 1464,
+    "timing": {
+      "fast_ms": 4.94,
+      "fast_ms_before_recorders": 4.923,
+      "t_render_ms": 1.97,
+      "t_sus_ms": 0.0,
+      "t_ui_ms": 0.0,
+      "tick_idx": 1464,
+      "was_skipped_day": false
+    },
+    "window": {
+      "economy_reserved_budget_ms": 8.66600036621094,
+      "largest_slice_cursor_end": -1,
+      "largest_slice_cursor_start": -1,
+      "largest_slice_fallback_path": "",
+      "largest_slice_job": "dynamic_visual_atlas_upload",
+      "largest_slice_ms": 1.89100003242493,
+      "largest_slice_path": "cell_indirection_lut",
+      "largest_slice_processed_cells": 2400,
+      "largest_slice_processed_indices": 0,
+      "largest_slice_processed_per_ms": 1269.16972969184,
+      "largest_slice_processed_pixels": 0,
+      "largest_slice_stage": "",
+      "largest_slice_substage": "",
+      "largest_slice_work_done": 2400,
+      "over_1ms_count_300": 2,
+      "sample_count": 2,
+      "sim_budget_warn_ms": 2.0,
+      "sim_frame_budget_ms": 8.0,
+      "sim_slice_budget_ms": 3.0,
+      "sim_strict_budget_enabled": false,
+      "sim_upload_slice_budget_ms": 1.5,
+      "sus_sim_avg_300": 2.8730001449585,
+      "sus_sim_max_300": 2.92700004577637,
+      "sus_sim_p95_300": 2.92700004577637
+    }
+  },
+  "fast_tick_count": 1464,
+  "fast_tick_last_ms": 5,
+  "fps": 23.0,
+  "frame": 129468,
+  "sim_breakdowns": {
+    "climate": {
+      "_tick_idx": 1,
+      "active_default_blockers": [
+        "wind_air",
+        "wind_surface",
+        "runtime_hydrology",
+        "sea_ice",
+        "climate_round",
+        "season_refresh"
+      ],
+      "apply_ms": 0.132,
+      "authority_blockers": [
+        "wind_air",
+        "wind_surface",
+        "runtime_hydrology",
+        "sea_ice",
+        "climate_round",
+        "season_refresh"
+      ],
+      "authority_report": {
+        "climate_round": {
+          "owner": "native_daily",
+          "phase": "gdscript_state_machine",
+          "remaining_gdscript_authority": [],
+          "simulation_authority": false,
+          "state": {
+            "finalize_pending": false,
+            "native_state_status": "native_daily_owner",
+            "owner": "native_daily",
+            "pass_count": 1,
+            "pass_cursor": 1,
+            "pass_generation": 0,
+            "round_active": false
+          }
+        },
+        "fallback": {
+          "blockers": [],
+          "owner": "explicit_failure_only",
+          "phase": "fallback_test_only"
+        },
+        "native_daily_graph": {
+          "owner": "native_active",
+          "phase": "native_continuation",
+          "simulation_authority": true,
+          "state_owner": "DCWorldExt"
+        },
+        "ocean_physical": {
+          "blockers": [],
+          "native_owned_output_slots": [
+            "cell_wind_x",
+            "cell_wind_y",
+            "cell_ocean_current_x",
+            "cell_ocean_current_y",
+            "cell_upwelling"
+          ],
+          "owner": "native_active",
+          "phase": "native_active_lifecycle",
+          "retained_boundaries": [
+            "visual_raster_boundary_execution",
+            "texture_commit_boundary_execution"
+          ],
+          "simulation_authority": true,
+          "state": {
+            "active_owner_requested": true,
+            "compact_state_capsule": true,
+            "last_daily_wind_report": {
+
+            },
+            "last_phys_diag": {
+
+            },
+            "last_physical_complete_tick": -2147483648,
+            "native_lifecycle_state": {
+              "authority": "native_ready_capsule",
+              "boundary_intent_mask": 0,
+              "compact_state_capsule": true,
+              "dirty": false,
+              "generation": 0,
+              "owner": "DCWorldExt.NativeOceanPhysicalLifecycle",
+              "phase_locked": 0.0,
+              "phys_solve_done": false,
+              "physical_round_active": false,
+              "physical_round_id": 0,
+              "ready": false,
+              "simulation_authority": false,
+              "stage": 0,
+              "stage_name": "uninitialized"
+            },
+            "native_owned_lifecycle_authority": [
+              "physical_round_active",
+              "physical_round_id",
+              "phase_locked",
+              "physical_stage",
+              "physical_stage_cursor"
+            ],
+            "native_owned_output_slots": [
+              "cell_wind_x",
+              "cell_wind_y",
+              "cell_ocean_current_x",
+              "cell_ocean_current_y",
+              "cell_upwelling"
+            ],
+            "native_state_status": "native_lifecycle_facade",
+            "ocean_period_ticks": 60,
+            "owner": "native_active",
+            "phase_int_seen": -9999,
+            "phys_solve_done": false,
+            "physical_need_visual": false,
+            "physical_phase_locked": 0.0,
+            "physical_round_active": false,
+            "physical_round_id": 0,
+            "physical_run_ocean": true,
+            "remaining_gdscript_authority": [
+              "visual_raster_boundary_execution",
+              "texture_commit_boundary_execution"
+            ],
+            "simulation_authority": true,
+            "slice_count": 16,
+            "visual_next_pixel_idx": 0,
+            "visual_pending_commit": false,
+            "visual_phase_locked": 0.0,
+            "visual_round_active": false,
+            "visual_round_id": 0,
+            "visual_total_pixels": 0,
+            "wind_period_ticks": 6
+          }
+        },
+        "runtime_hydrology": {
+          "blockers": [
+            "runtime_hydrology_knobs_missing"
+          ],
+          "owner": "gdscript_retained",
+          "phase": "legacy_weather_chain",
+          "published_slots_expected": [],
+          "simulation_authority": false
+        },
+        "sea_ice": {
+          "blockers": [],
+          "owner": "gdscript_retained",
+          "phase": "native_active_verified",
+          "published_slots_expected": [],
+          "retained_boundaries": [],
+          "simulation_authority": true,
+          "verified_publish": true
+        },
+        "season_refresh": {
+          "blockers": [
+            "season_refresh_owner_not_active"
+          ],
+          "cadence_policy": {
+            "owner": "native_graph_policy",
+            "policy_state": "native_ready",
+            "remaining_godot_boundary_authority": [
+              "atlas_queue_execution",
+              "detail_scatter_execution"
+            ],
+            "season_period_counter": 0,
+            "season_period_ticks": 30,
+            "season_should_advance": true,
+            "season_vegetation_rewrite": false,
+            "simulation_slot_dirty_intents": [
+              "cell_terrain",
+              "cell_landform",
+              "cell_vegetation",
+              "cell_cover",
+              "cell_moisture",
+              "cell_base_moisture",
+              "cell_weather_dirty"
+            ],
+            "stage_b_any": true,
+            "stage_b_call_index": 0,
+            "stage_b_should_run": {
+              "albedo": true,
+              "feedback": true,
+              "vegetation_dynamics": true
+            },
+            "stage_b_strides": {
+              "albedo": 20,
+              "feedback": 20,
+              "vegetation_dynamics": 10
+            },
+            "vegetation_owner": "vegetation_dynamics",
+            "visual_dirty_intents": [
+              "enum_atlas",
+              "detail_scatter"
+            ]
+          },
+          "owner": "gdscript_retained",
+          "phase": "gdscript_cadence",
+          "retained_boundaries": [
+            "enum_atlas",
+            "detail_scatter"
+          ],
+          "simulation_authority": false,
+          "simulation_slot_dirty_intents": [
+            "cell_terrain",
+            "cell_landform",
+            "cell_vegetation",
+            "cell_cover",
+            "cell_moisture",
+            "cell_base_moisture",
+            "cell_weather_dirty"
+          ],
+          "state": {
+            "active_owner_requested": true,
+            "b_plus_active": false,
+            "native_state_status": "cadence_probe",
+            "owner": "gdscript_retained",
+            "period_ticks": 30,
+            "remaining_gdscript_authority": [
+              "period_policy_counter",
+              "atlas_queue_execution"
+            ],
+            "round_active": false,
+            "season_idx": 0,
+            "simulation_authority": false,
+            "simulation_slot_dirty_intents": [
+              "cell_terrain",
+              "cell_landform",
+              "cell_vegetation",
+              "cell_cover",
+              "cell_moisture",
+              "cell_base_moisture",
+              "cell_weather_dirty"
+            ],
+            "stage": 0,
+            "stage_cursor": 0,
+            "stage_name": "stage_0_moisture",
+            "ticks_since_last_round": 1,
+            "visual_dirty_intents": [
+              "enum_atlas",
+              "detail_scatter"
+            ]
+          },
+          "visual_dirty_intents": [
+            "enum_atlas",
+            "detail_scatter"
+          ]
+        },
+        "visual_upload": {
+          "blockers": [],
+          "owner": "godot_retained",
+          "phase": "godot_upload_boundary",
+          "retained_boundaries": [
+            "image_texture_upload_godot"
+          ]
+        },
+        "weather_transaction": {
+          "active_owner_requested": true,
+          "blockers": [],
+          "front_snapshot_ready": true,
+          "owner": "native_active",
+          "phase": "native_active_visible_publish",
+          "readiness": {
+            "active_bootstrap_requested": true,
+            "field_commit_init_count": 0,
+            "field_commit_path": "",
+            "field_commit_publish_reason": "",
+            "field_commit_publish_repaired": false,
+            "field_commit_publish_verified": false,
+            "has_combined_method": true,
+            "has_commit_method": true,
+            "has_ext": true,
+            "has_knobs_builder": true,
+            "has_result_apply": true,
+            "has_weather_lut_publish": true,
+            "has_weather_system": true,
+            "n_cells": 2400,
+            "ready": true,
+            "reason": "active_bootstrap_unified_publish"
+          },
+          "retained_boundaries": [
+            "front_objects_gdscript",
+            "weather_lut_upload_godot_boundary"
+          ],
+          "simulation_authority": true,
+          "visible_publish_ready": true,
+          "weather_lut_intent_ready": true
+        }
+      },
+      "boundary_contract": {
+        "bootstrap_config_keys": [
+          "climate_round_active_owner_requested",
+          "weather_transaction_active_owner_requested",
+          "climate_round_state_snapshot",
+          "ocean_physical_state_snapshot",
+          "season_refresh_state_snapshot",
+          "weather_native_daily_readiness",
+          "season_cadence_policy"
+        ],
+        "bundle_key_count": 24,
+        "commit_side_effects": true,
+        "flush_policy": "tick_boundary_or_visible_debug",
+        "flush_slots_to_map": false,
+        "refresh_policy": "tick_boundary",
+        "refresh_slots_from_map": true,
+        "remaining_high_frequency_boundary": true,
+        "schema_version": 1,
+        "tick_delta_keys": [
+          "climate_pass_a_struct"
+        ]
+      },
+      "bundle_cache_hit": true,
+      "bundle_cache_rebuild_reason": "static_shell_hit",
+      "bundle_dynamic_ms": 0.136,
+      "bundle_key_count": 24,
+      "bundle_ms": 0.0,
+      "bundle_pass_keys": [
+        "climate_pass_a_struct",
+        "climate_pass_b_knobs",
+        "ocean_land_knobs",
+        "ocean_water_knobs",
+        "sea_ice_knobs",
+        "transpiration_knobs",
+        "wind_air_knobs",
+        "wind_surface_knobs"
+      ],
+      "bundle_static_ms": 0.028,
+      "cells": 2400,
+      "climate_authority_suppressed": false,
+      "climate_modes": {
+        "cyclone_active_count": 0,
+        "cyclone_enabled": true,
+        "cyclone_total_decay": 0,
+        "cyclone_total_genesis": 0,
+        "cyclone_touched_cells": 0,
+        "enso_basin_count": 1,
+        "enso_basins": [
+          {
+            "member_count": 494,
+            "recharge_index": -0.00983954779803753,
+            "signature": -4844543117951762410,
+            "temp_index": -0.0181328020989895,
+            "wind_anomaly": -0.00484119448810816
+          }
+        ],
+        "enso_cache_build_ms": 0.0813,
+        "enso_cache_hit": true,
+        "enso_enabled": true,
+        "monsoon_coast_cache_build_ms": 0.0804,
+        "monsoon_coast_cache_hit": false,
+        "monsoon_contrast_abs_max": 0.0,
+        "monsoon_eligible_cells": 0,
+        "monsoon_offshore_cells": 0,
+        "monsoon_onshore_cells": 0,
+        "thermal_monsoon_enabled": true
+      },
+      "climate_ms": 0.3918,
+      "complete_apply_finalizer_merge_ms": 0.023,
+      "complete_apply_finalizer_ms": 0.085,
+      "complete_apply_observed_ms": 0.112,
+      "complete_apply_other_ms": 0.02,
+      "complete_apply_publish_tta_ms": 0.003,
+      "complete_apply_result_patch_ms": 0.001,
+      "complete_apply_total_ms": 0.132,
+      "compute_ms": 0.5426,
+      "contract_catchup_active": true,
+      "contract_catchup_reason": "fit_contract_budget",
+      "contract_estimated_slices": 28,
+      "contract_range_base_cells": 768,
+      "contract_range_effective_cells": 2400,
+      "current_pass": "done",
+      "cursor_end": 8,
+      "cursor_start": 7,
+      "deferred_node_count": 5,
+      "deferred_wait_key": "",
+      "deferred_wait_node": "",
+      "dirty_cells": 0,
+      "done": true,
+      "fallback_mode": "legacy_sus_retained_until_active_default_validation",
+      "fallback_reason": "",
+      "finalizer_cell_ms": 0.057,
+      "finalizer_cells_seen": 2400,
+      "finalizer_dense_components": [],
+      "finalizer_dirty_collect_ms": 0.0,
+      "finalizer_dirty_collect_skip_components": [
+        "temp",
+        "tta",
+        "thermal"
+      ],
+      "finalizer_dirty_collect_skipped": true,
+      "finalizer_dirty_count_temp": 0,
+      "finalizer_dirty_count_thermal": 0,
+      "finalizer_dirty_count_tta": 0,
+      "finalizer_dirty_ratio": 0.0,
+      "finalizer_native_dirty_mark_ms": 0.007,
+      "finalizer_native_publish_fail_reason": "",
+      "finalizer_native_publish_requested": true,
+      "finalizer_native_published": true,
+      "finalizer_native_published_slots": [
+        "cell_temp"
+      ],
+      "finalizer_native_write_ms": 0.0045,
+      "finalizer_path": "native",
+      "finalizer_precip_ms": 0.0,
+      "finalizer_sea_ice_ms": 0.0,
+      "finalizer_sort_ms": 0.0,
+      "finalizer_sparse_components": [],
+      "finalizer_sparse_write_ms": 0.0,
+      "finalizer_temp_ms": 0.0,
+      "finalizer_temperature_cell_mirror": false,
+      "finalizer_thermal_init_count": 0,
+      "finalizer_thermal_ms": 0.0,
+      "finalizer_total_ms": 0.083,
+      "finalizer_tta_cell_mirror": false,
+      "finalizer_tta_cell_mirror_count": 0,
+      "finalizer_tta_clamped_count": 0,
+      "finalizer_tta_ms": 0.0,
+      "finalizer_write_dense_ms": 0.0,
+      "finalizer_write_mode": "native_publish",
+      "flush_ms": 0.0181,
+      "graph_coverage_complete": false,
+      "graph_coverage_state": "partial",
+      "hydrology_ms": 0.0,
+      "jit_patch_build_ms": 0.0,
+      "jit_patch_key_count": 7,
+      "jit_patch_keys": [],
+      "job_shell_report_build_ms": 0.034,
+      "job_shell_wall_ms": 0.239,
+      "job_shell_wrapper_gap_ms": 0.107,
+      "last_completed_node": "transpiration",
+      "max_temp_delta": 0.15,
+      "max_transport_anomaly": 0.139483064413071,
+      "moisture_commit_flush_ms": 0.004,
+      "moisture_commit_path": "slot_snapshot_to_round_map",
+      "moisture_commit_slot_size": 2400,
+      "moisture_committed": true,
+      "native_call_ms": 0.0,
+      "native_context_ms": 0.0126,
+      "native_daily_active_default_ready": false,
+      "native_daily_age_days": 0,
+      "native_daily_age_ticks": 0,
+      "native_daily_commit_day": 1,
+      "native_daily_commit_lag_budget_days": 10,
+      "native_daily_commit_over_budget": false,
+      "native_daily_commit_tick": 1,
+      "native_daily_contract_state": "complete",
+      "native_daily_contract_version": 1,
+      "native_daily_current_day": 1,
+      "native_daily_current_tick": 1,
+      "native_daily_finalizer_pending": false,
+      "native_daily_round_seq": 1,
+      "native_daily_sample_day": 1,
+      "native_daily_sample_tick": 1,
+      "native_daily_stride_days": 10,
+      "native_daily_tta_published": true,
+      "native_ms": 0.0691,
+      "native_state_snapshot": {
+        "authority_blockers": [
+          "wind_air",
+          "wind_surface",
+          "runtime_hydrology",
+          "sea_ice",
+          "climate_round",
+          "season_refresh"
+        ],
+        "authority_report": {
+          "climate_round": {
+            "owner": "native_daily",
+            "phase": "gdscript_state_machine",
+            "remaining_gdscript_authority": [],
+            "simulation_authority": false,
+            "state": {
+              "finalize_pending": false,
+              "native_state_status": "native_daily_owner",
+              "owner": "native_daily",
+              "pass_count": 1,
+              "pass_cursor": 1,
+              "pass_generation": 0,
+              "round_active": false
+            }
+          },
+          "fallback": {
+            "blockers": [],
+            "owner": "explicit_failure_only",
+            "phase": "fallback_test_only"
+          },
+          "native_daily_graph": {
+            "owner": "native_active",
+            "phase": "native_continuation",
+            "simulation_authority": true,
+            "state_owner": "DCWorldExt"
+          },
+          "ocean_physical": {
+            "blockers": [],
+            "native_owned_output_slots": [
+              "cell_wind_x",
+              "cell_wind_y",
+              "cell_ocean_current_x",
+              "cell_ocean_current_y",
+              "cell_upwelling"
+            ],
+            "owner": "native_active",
+            "phase": "native_active_lifecycle",
+            "retained_boundaries": [
+              "visual_raster_boundary_execution",
+              "texture_commit_boundary_execution"
+            ],
+            "simulation_authority": true,
+            "state": {
+              "active_owner_requested": true,
+              "compact_state_capsule": true,
+              "last_daily_wind_report": {
+
+              },
+              "last_phys_diag": {
+
+              },
+              "last_physical_complete_tick": -2147483648,
+              "native_lifecycle_state": {
+                "authority": "native_ready_capsule",
+                "boundary_intent_mask": 0,
+                "compact_state_capsule": true,
+                "dirty": false,
+                "generation": 0,
+                "owner": "DCWorldExt.NativeOceanPhysicalLifecycle",
+                "phase_locked": 0.0,
+                "phys_solve_done": false,
+                "physical_round_active": false,
+                "physical_round_id": 0,
+                "ready": false,
+                "simulation_authority": false,
+                "stage": 0,
+                "stage_name": "uninitialized"
+              },
+              "native_owned_lifecycle_authority": [
+                "physical_round_active",
+                "physical_round_id",
+                "phase_locked",
+                "physical_stage",
+                "physical_stage_cursor"
+              ],
+              "native_owned_output_slots": [
+                "cell_wind_x",
+                "cell_wind_y",
+                "cell_ocean_current_x",
+                "cell_ocean_current_y",
+                "cell_upwelling"
+              ],
+              "native_state_status": "native_lifecycle_facade",
+              "ocean_period_ticks": 60,
+              "owner": "native_active",
+              "phase_int_seen": -9999,
+              "phys_solve_done": false,
+              "physical_need_visual": false,
+              "physical_phase_locked": 0.0,
+              "physical_round_active": false,
+              "physical_round_id": 0,
+              "physical_run_ocean": true,
+              "remaining_gdscript_authority": [
+                "visual_raster_boundary_execution",
+                "texture_commit_boundary_execution"
+              ],
+              "simulation_authority": true,
+              "slice_count": 16,
+              "visual_next_pixel_idx": 0,
+              "visual_pending_commit": false,
+              "visual_phase_locked": 0.0,
+              "visual_round_active": false,
+              "visual_round_id": 0,
+              "visual_total_pixels": 0,
+              "wind_period_ticks": 6
+            }
+          },
+          "runtime_hydrology": {
+            "blockers": [
+              "runtime_hydrology_knobs_missing"
+            ],
+            "owner": "gdscript_retained",
+            "phase": "legacy_weather_chain",
+            "published_slots_expected": [],
+            "simulation_authority": false
+          },
+          "sea_ice": {
+            "blockers": [],
+            "owner": "gdscript_retained",
+            "phase": "native_active_verified",
+            "published_slots_expected": [],
+            "retained_boundaries": [],
+            "simulation_authority": true,
+            "verified_publish": true
+          },
+          "season_refresh": {
+            "blockers": [
+              "season_refresh_owner_not_active"
+            ],
+            "cadence_policy": {
+              "owner": "native_graph_policy",
+              "policy_state": "native_ready",
+              "remaining_godot_boundary_authority": [
+                "atlas_queue_execution",
+                "detail_scatter_execution"
+              ],
+              "season_period_counter": 0,
+              "season_period_ticks": 30,
+              "season_should_advance": true,
+              "season_vegetation_rewrite": false,
+              "simulation_slot_dirty_intents": [
+                "cell_terrain",
+                "cell_landform",
+                "cell_vegetation",
+                "cell_cover",
+                "cell_moisture",
+                "cell_base_moisture",
+                "cell_weather_dirty"
+              ],
+              "stage_b_any": true,
+              "stage_b_call_index": 0,
+              "stage_b_should_run": {
+                "albedo": true,
+                "feedback": true,
+                "vegetation_dynamics": true
+              },
+              "stage_b_strides": {
+                "albedo": 20,
+                "feedback": 20,
+                "vegetation_dynamics": 10
+              },
+              "vegetation_owner": "vegetation_dynamics",
+              "visual_dirty_intents": [
+                "enum_atlas",
+                "detail_scatter"
+              ]
+            },
+            "owner": "gdscript_retained",
+            "phase": "gdscript_cadence",
+            "retained_boundaries": [
+              "enum_atlas",
+              "detail_scatter"
+            ],
+            "simulation_authority": false,
+            "simulation_slot_dirty_intents": [
+              "cell_terrain",
+              "cell_landform",
+              "cell_vegetation",
+              "cell_cover",
+              "cell_moisture",
+              "cell_base_moisture",
+              "cell_weather_dirty"
+            ],
+            "state": {
+              "active_owner_requested": true,
+              "b_plus_active": false,
+              "native_state_status": "cadence_probe",
+              "owner": "gdscript_retained",
+              "period_ticks": 30,
+              "remaining_gdscript_authority": [
+                "period_policy_counter",
+                "atlas_queue_execution"
+              ],
+              "round_active": false,
+              "season_idx": 0,
+              "simulation_authority": false,
+              "simulation_slot_dirty_intents": [
+                "cell_terrain",
+                "cell_landform",
+                "cell_vegetation",
+                "cell_cover",
+                "cell_moisture",
+                "cell_base_moisture",
+                "cell_weather_dirty"
+              ],
+              "stage": 0,
+              "stage_cursor": 0,
+              "stage_name": "stage_0_moisture",
+              "ticks_since_last_round": 1,
+              "visual_dirty_intents": [
+                "enum_atlas",
+                "detail_scatter"
+              ]
+            },
+            "visual_dirty_intents": [
+              "enum_atlas",
+              "detail_scatter"
+            ]
+          },
+          "visual_upload": {
+            "blockers": [],
+            "owner": "godot_retained",
+            "phase": "godot_upload_boundary",
+            "retained_boundaries": [
+              "image_texture_upload_godot"
+            ]
+          },
+          "weather_transaction": {
+            "active_owner_requested": true,
+            "blockers": [],
+            "front_snapshot_ready": true,
+            "owner": "native_active",
+            "phase": "native_active_visible_publish",
+            "readiness": {
+              "active_bootstrap_requested": true,
+              "field_commit_init_count": 0,
+              "field_commit_path": "",
+              "field_commit_publish_reason": "",
+              "field_commit_publish_repaired": false,
+              "field_commit_publish_verified": false,
+              "has_combined_method": true,
+              "has_commit_method": true,
+              "has_ext": true,
+              "has_knobs_builder": true,
+              "has_result_apply": true,
+              "has_weather_lut_publish": true,
+              "has_weather_system": true,
+              "n_cells": 2400,
+              "ready": true,
+              "reason": "active_bootstrap_unified_publish"
+            },
+            "retained_boundaries": [
+              "front_objects_gdscript",
+              "weather_lut_upload_godot_boundary"
+            ],
+            "simulation_authority": true,
+            "visible_publish_ready": true,
+            "weather_lut_intent_ready": true
+          }
+        },
+        "climate_round_state": {
+          "finalize_pending": false,
+          "native_state_status": "native_daily_owner",
+          "owner": "native_daily",
+          "pass_count": 1,
+          "pass_cursor": 1,
+          "pass_generation": 0,
+          "round_active": false
+        },
+        "climate_round_state_owner": "native_daily",
+        "continuation_owner": "DCWorldExt.native_daily_slice",
+        "fallback_owner": "explicit_failure_only",
+        "graph_coverage_state": "partial",
+        "ocean_physical_state": {
+          "active_owner_requested": true,
+          "compact_state_capsule": true,
+          "last_daily_wind_report": {
+
+          },
+          "last_phys_diag": {
+
+          },
+          "last_physical_complete_tick": -2147483648,
+          "native_lifecycle_state": {
+            "authority": "native_ready_capsule",
+            "boundary_intent_mask": 0,
+            "compact_state_capsule": true,
+            "dirty": false,
+            "generation": 0,
+            "owner": "DCWorldExt.NativeOceanPhysicalLifecycle",
+            "phase_locked": 0.0,
+            "phys_solve_done": false,
+            "physical_round_active": false,
+            "physical_round_id": 0,
+            "ready": false,
+            "simulation_authority": false,
+            "stage": 0,
+            "stage_name": "uninitialized"
+          },
+          "native_owned_lifecycle_authority": [
+            "physical_round_active",
+            "physical_round_id",
+            "phase_locked",
+            "physical_stage",
+            "physical_stage_cursor"
+          ],
+          "native_owned_output_slots": [
+            "cell_wind_x",
+            "cell_wind_y",
+            "cell_ocean_current_x",
+            "cell_ocean_current_y",
+            "cell_upwelling"
+          ],
+          "native_state_status": "native_lifecycle_facade",
+          "ocean_period_ticks": 60,
+          "owner": "native_active",
+          "phase_int_seen": -9999,
+          "phys_solve_done": false,
+          "physical_need_visual": false,
+          "physical_phase_locked": 0.0,
+          "physical_round_active": false,
+          "physical_round_id": 0,
+          "physical_run_ocean": true,
+          "remaining_gdscript_authority": [
+            "visual_raster_boundary_execution",
+            "texture_commit_boundary_execution"
+          ],
+          "simulation_authority": true,
+          "slice_count": 16,
+          "visual_next_pixel_idx": 0,
+          "visual_pending_commit": false,
+          "visual_phase_locked": 0.0,
+          "visual_round_active": false,
+          "visual_round_id": 0,
+          "visual_total_pixels": 0,
+          "wind_period_ticks": 6
+        },
+        "ocean_physical_state_owner": "native_active",
+        "retained_boundaries": [
+          "visual_uploads",
+          "csv_debug_sampling",
+          "ocean_visual_raster_godot",
+          "ocean_texture_commit_godot",
+          "season_atlas_queue_godot",
+          "detail_scatter_godot"
+        ],
+        "retained_boundary_policy": "explicit_godot_presentation_boundary",
+        "retained_godot_boundaries": [
+          "visual_uploads",
+          "csv_debug_sampling",
+          "ocean_visual_raster_godot",
+          "ocean_texture_commit_godot",
+          "season_atlas_queue_godot",
+          "detail_scatter_godot"
+        ],
+        "round_state_owner": "native_active",
+        "season_cadence_policy": {
+          "owner": "native_graph_policy",
+          "policy_state": "native_ready",
+          "remaining_godot_boundary_authority": [
+            "atlas_queue_execution",
+            "detail_scatter_execution"
+          ],
+          "season_period_counter": 0,
+          "season_period_ticks": 30,
+          "season_should_advance": true,
+          "season_vegetation_rewrite": false,
+          "simulation_slot_dirty_intents": [
+            "cell_terrain",
+            "cell_landform",
+            "cell_vegetation",
+            "cell_cover",
+            "cell_moisture",
+            "cell_base_moisture",
+            "cell_weather_dirty"
+          ],
+          "stage_b_any": true,
+          "stage_b_call_index": 0,
+          "stage_b_should_run": {
+            "albedo": true,
+            "feedback": true,
+            "vegetation_dynamics": true
+          },
+          "stage_b_strides": {
+            "albedo": 20,
+            "feedback": 20,
+            "vegetation_dynamics": 10
+          },
+          "vegetation_owner": "vegetation_dynamics",
+          "visual_dirty_intents": [
+            "enum_atlas",
+            "detail_scatter"
+          ]
+        },
+        "season_refresh_state": {
+          "active_owner_requested": true,
+          "b_plus_active": false,
+          "native_state_status": "cadence_probe",
+          "owner": "gdscript_retained",
+          "period_ticks": 30,
+          "remaining_gdscript_authority": [
+            "period_policy_counter",
+            "atlas_queue_execution"
+          ],
+          "round_active": false,
+          "season_idx": 0,
+          "simulation_authority": false,
+          "simulation_slot_dirty_intents": [
+            "cell_terrain",
+            "cell_landform",
+            "cell_vegetation",
+            "cell_cover",
+            "cell_moisture",
+            "cell_base_moisture",
+            "cell_weather_dirty"
+          ],
+          "stage": 0,
+          "stage_cursor": 0,
+          "stage_name": "stage_0_moisture",
+          "ticks_since_last_round": 1,
+          "visual_dirty_intents": [
+            "enum_atlas",
+            "detail_scatter"
+          ]
+        },
+        "season_refresh_state_owner": "gdscript_retained",
+        "tick_owner": "DCWorldExt.native_daily_graph",
+        "visual_upload_state_owner": "godot_retained",
+        "weather_transaction_state_owner": "native_active"
+      },
+      "next_node_index": -1,
+      "node_cell_count": 0,
+      "node_cell_cursor_end": -1,
+      "node_cell_cursor_start": -1,
+      "node_cell_processed": 0,
+      "node_index": 8,
+      "node_range_active": false,
+      "node_range_budget": 2400,
+      "node_range_done": true,
+      "node_range_enabled": false,
+      "node_range_node": "",
+      "node_report": {
+        "bundle_key": "transpiration_knobs",
+        "name": "transpiration",
+        "read_mask": 33,
+        "write_mask": 1
+      },
+      "ocean_land_ms": 0.0168,
+      "ocean_land_thread_tasks": 0,
+      "ocean_land_variant": "thread",
+      "ocean_ms": 0.1508,
+      "ocean_water_ms": 0.134,
+      "ocean_water_thread_tasks": 0,
+      "ocean_water_variant": "thread",
+      "p95_temp_delta": 0.0,
+      "p99_temp_delta": 0.0,
+      "partial": false,
+      "pass_a_deferred_publish_ms": 0.0181,
+      "pass_a_deferred_publish_slots": 12,
+      "pass_a_ms": 0.0,
+      "pass_b_ms": 0.0679,
+      "pass_diag": {
+        "path": "gdext_native_daily_slice",
+        "stage": "done",
+        "substage": "round_complete"
+      },
+      "pass_status": "done",
+      "path": "gdext_native_daily_slice",
+      "precip_p95": 0.0,
+      "preclamp_max_temp_delta": 0.160326182842255,
+      "preclamp_p99_temp_delta": 0.0,
+      "processed_cells": 0,
+      "processed_nodes": 8,
+      "progress_ratio": 1.0,
+      "published_slots": [
+        "cell_temp",
+        "cell_moisture",
+        "cell_snow_cover",
+        "cell_sea_ice_frac",
+        "cell_air_mass_temp_anomaly",
+        "cell_ocean_thermal_anomaly",
+        "cell_local_thermal_anomaly",
+        "cell_temp_baseline",
+        "cell_temp_season_offset",
+        "cell_ema_initialized",
+        "cell_temp_30d",
+        "cell_temp_365d",
+        "cell_temp_anomaly",
+        "cell_insolation_now",
+        "cell_insolation_dev",
+        "cell_day_length",
+        "cell_heat_input",
+        "cell_thermal_energy",
+        "cell_snowpack"
+      ],
+      "refresh_ms": 0.0126,
+      "render_prepare_ms": 0.0181,
+      "retained_boundaries": [
+        "visual_uploads",
+        "csv_debug_sampling",
+        "ocean_visual_raster_godot",
+        "ocean_texture_commit_godot",
+        "season_atlas_queue_godot",
+        "detail_scatter_godot"
+      ],
+      "retained_boundary_policy": "explicit_godot_presentation_boundary",
+      "retained_gdscript_authority": [
+        "wind_air",
+        "wind_surface",
+        "runtime_hydrology",
+        "sea_ice"
+      ],
+      "retained_godot_boundaries": [
+        "visual_uploads",
+        "csv_debug_sampling",
+        "ocean_visual_raster_godot",
+        "ocean_texture_commit_godot",
+        "season_atlas_queue_godot",
+        "detail_scatter_godot"
+      ],
+      "round_apply_ms": 1.44,
+      "round_bundle_ms": 0.806,
+      "round_id": 1,
+      "round_native_call_ms": 1.662,
+      "round_native_ms": 1.3278,
+      "round_slice_count": 7,
+      "runtime_config_report": {
+        "cell_count": 2400,
+        "configured_at_tick": 0,
+        "enso_basin_modes_enabled": true,
+        "enso_integration_substep_days": 10.0,
+        "enso_max_basins": 3,
+        "enso_period_days": 1460.0,
+        "enso_temp_anomaly_cap": 0.06,
+        "enso_tropical_lat_limit": 0.33,
+        "enso_wind_coupling": 0.0008,
+        "has_config": true,
+        "has_world_data": true,
+        "hex_size": 22.0,
+        "map_width": 60,
+        "native_climate_round_active_owner_enabled": true,
+        "native_daily_perf_target_ms": 3.0,
+        "native_daily_sim_mode": 2,
+        "native_generation_mode": 2,
+        "native_ocean_physical_active_owner_enabled": true,
+        "native_render_prepare_mode": 0,
+        "native_season_refresh_active_owner_enabled": true,
+        "native_tropical_cyclone_enabled": true,
+        "native_weather_transaction_active_owner_enabled": true,
+        "ocean_currents_period_ticks": 60,
+        "ocean_currents_slice_count": 16,
+        "ocean_daily_wind_period_ticks": 6,
+        "resident_config_key_count": 45,
+        "resident_config_keys": [
+          "cell_count",
+          "hex_size",
+          "map_width",
+          "wrap_period_x",
+          "native_generation_mode",
+          "native_daily_sim_mode",
+          "native_render_prepare_mode",
+          "native_daily_perf_target_ms",
+          "shadow_diff_enabled",
+          "weather_albedo_stride",
+          "weather_vegetation_dynamics_stride",
+          "weather_feedback_stride",
+          "season_refresh_period_ticks",
+          "ocean_daily_wind_period_ticks",
+          "ocean_currents_period_ticks",
+          "ocean_currents_slice_count",
+          "native_climate_round_active_owner_enabled",
+          "native_weather_transaction_active_owner_enabled",
+          "native_ocean_physical_active_owner_enabled",
+          "native_season_refresh_active_owner_enabled",
+          "world_seed",
+          "thermal_monsoon_enabled",
+          "thermal_monsoon_lat_limit",
+          "thermal_monsoon_deadband",
+          "thermal_monsoon_full_contrast",
+          "thermal_monsoon_gain",
+          "thermal_monsoon_breeze_floor",
+          "native_tropical_cyclone_enabled",
+          "tropical_cyclone_capacity",
+          "tropical_cyclone_births_per_commit",
+          "tropical_cyclone_min_temp",
+          "tropical_cyclone_min_instability",
+          "tropical_cyclone_max_shear",
+          "tropical_cyclone_min_lat",
+          "tropical_cyclone_max_lat",
+          "tropical_cyclone_max_radius_cells",
+          "enso_basin_modes_enabled",
+          "enso_max_basins",
+          "enso_tropical_lat_limit",
+          "enso_period_days",
+          "enso_temp_anomaly_cap",
+          "enso_wind_coupling",
+          "enso_integration_substep_days",
+          "has_world_data",
+          "has_config"
+        ],
+        "season_refresh_period_ticks": 30,
+        "shadow_diff_enabled": true,
+        "thermal_monsoon_breeze_floor": 0.2,
+        "thermal_monsoon_deadband": 0.015,
+        "thermal_monsoon_enabled": true,
+        "thermal_monsoon_full_contrast": 0.08,
+        "thermal_monsoon_gain": 0.85,
+        "thermal_monsoon_lat_limit": 0.45,
+        "tropical_cyclone_births_per_commit": 2,
+        "tropical_cyclone_capacity": 24,
+        "tropical_cyclone_max_lat": 0.4,
+        "tropical_cyclone_max_radius_cells": 5,
+        "tropical_cyclone_max_shear": 0.42,
+        "tropical_cyclone_min_instability": 0.4,
+        "tropical_cyclone_min_lat": 0.06,
+        "tropical_cyclone_min_temp": 0.58,
+        "weather_albedo_stride": 20,
+        "weather_feedback_stride": 20,
+        "weather_vegetation_dynamics_stride": 10,
+        "world_seed": 1910233770,
+        "wrap_period_x": 103.923048454133
+      },
+      "sea_ice_delta_max": 0.0,
+      "sea_ice_dt_days": 0.869567555555556,
+      "sea_ice_ms": 0.0596,
+      "season_ms": 0.0,
+      "stage_b_ms": 0.0,
+      "stage_name": "native_daily_complete",
+      "substage": "round_complete",
+      "temp_delta_clamped_count": 4,
+      "temp_delta_gt_005_count": 2026,
+      "temp_delta_gt_010_count": 1746,
+      "temp_delta_gt_020_count": 1337,
+      "thermal_finalizer_applied": true,
+      "tick_delta_key_count": 1,
+      "total_ms": 0.0691,
+      "transp_ms": 0.0281,
+      "visual_dirty_intents": [],
+      "weather_knobs_prebuilt": false,
+      "weather_ms": 0.0,
+      "wind_air_ms": 0.1335,
+      "wind_ms": 0.2362,
+      "wind_surface_ms": 0.1027,
+      "wrapper_wall_ms": 0.132
+    },
+    "dynamic_visual_atlas": {
+      "_tick_idx": 2,
+      "active_transition_count": 0,
+      "bounce_lut_ms": 1.631,
+      "bounce_lut_published": true,
+      "dirty_cells": 2400,
+      "done": true,
+      "dyn_lut_changed": true,
+      "dyn_lut_upload_ms": 0.005,
+      "dynamic_changed_cells": 2341,
+      "eco_lut_changed": true,
+      "eco_lut_upload_ms": 0.003,
+      "ecology_changed_cells": 655,
+      "elapsed_ms": 1.879,
+      "enum_changed_cells": 2334,
+      "enum_lut_changed": true,
+      "enum_lut_upload_ms": 0.019,
+      "fallback": false,
+      "full_encode": true,
+      "lut_catchup": true,
+      "lut_dense_dirty_fallback": true,
+      "lut_dense_dirty_threshold": 600,
+      "lut_dense_fallback_count": 1,
+      "lut_encode_path": "gdext",
+      "lut_h": 2,
+      "lut_last_due_tick": 0,
+      "lut_last_refresh_tick": 2,
+      "lut_path": "gdext",
+      "lut_phase": 2,
+      "lut_refresh_due": false,
+      "lut_refresh_ms": 1.879,
+      "lut_refresh_pending_after": false,
+      "lut_refresh_pending_before": true,
+      "lut_skip_no_dirty": false,
+      "lut_snow_source": "map_snow_cover_arr",
+      "lut_stride": 8,
+      "lut_total_ms": 1.756,
+      "lut_w": 2048,
+      "mask_dirty_count": 2400,
+      "n_cells": 2400,
+      "path": "cell_indirection_lut",
+      "processed_cells": 2400,
+      "progress_ratio": 1.0,
+      "published_to_slot": false,
+      "reason": "",
+      "requested_dirty_cells": 0,
+      "snow_override_used": true,
+      "snow_slot_diff_count": 0,
+      "snow_slot_diff_max": 0.0,
+      "snow_slot_diff_mean": 0.0,
+      "snow_source": "map_snow_cover_arr",
+      "texture_upload_ms": 0.031,
+      "weather_changed_cells": 0,
+      "work_done": 2400
+    },
+    "effect": {
+      "_tick_idx": 1464,
+      "acked_transactions": 0,
+      "behavior_failures": 0,
+      "candidate_count": 5,
+      "candidate_cursor": 5,
+      "catalog_hash": 2759509658278556004,
+      "commands_emitted": 106,
+      "committed_generation": 154,
+      "committed_transactions": 0,
+      "configured": true,
+      "current_day": 2,
+      "definitions": 1164,
+      "dirty_queue_count": 109,
+      "dormant_instances_scanned": 0,
+      "due_queue_count": 207,
+      "era_reward_last_expanded_commands": 0,
+      "era_reward_last_plan_ms": 0.0,
+      "era_reward_offers_planned": 0,
+      "era_reward_storage_bytes": 38871,
+      "external_bindings": 0,
+      "family_effect_group_bytes": 180,
+      "family_effect_group_members": 5,
+      "family_effect_stack_groups": 5,
+      "free_instance_slots": 0,
+      "instance_storage_bytes": 29328,
+      "instance_storage_slots": 109,
+      "instances": 109,
+      "instances_submitted": 109,
+      "last_completed_day": 2,
+      "last_error": "",
+      "last_evaluate_ms": 0.007,
+      "last_native_modifier_ack_ms": 0.0012,
+      "last_native_modifier_dispatch_ms": 0.002,
+      "last_parallel_fallback_reason": "behavior_callback_requires_serial",
+      "last_parallel_merge_ms": 0.0,
+      "last_parallel_path": "serial",
+      "last_parallel_planning_ms": 0.0,
+      "last_parallel_worker_count": 1,
+      "legacy_fallback_transactions": 0,
+      "max_work_per_slice": 1024,
+      "metric_slab_bytes": 38160,
+      "metrics": 37,
+      "native_claimed_transactions_skipped": 35,
+      "native_country_ack_pending": 0,
+      "native_country_acks": 0,
+      "native_country_commands": 0,
+      "native_country_transactions": 0,
+      "native_economy_ack_pending": 0,
+      "native_economy_acks": 0,
+      "native_economy_commands": 0,
+      "native_economy_transactions": 0,
+      "native_gameplay_ack_pending": 0,
+      "native_gameplay_acks": 0,
+      "native_gameplay_commands": 0,
+      "native_gameplay_transactions": 0,
+      "native_modifier_ack_pending": 0,
+      "native_modifier_acks": 8,
+      "native_modifier_commands": 8,
+      "native_modifier_transactions": 8,
+      "overflow_count": 0,
+      "parallel_dispatches": 0,
+      "pending_command_idempotency_count": 98,
+      "pending_transactions": 98,
+      "planned_transactions": 98,
+      "preflight_rejects": 0,
+      "preflighted_transactions": 0,
+      "programs_evaluated": 16,
+      "protocol_version": 1,
+      "rejected_transactions": 0,
+      "resync_required_transactions": 0,
+      "run_cursor": 0,
+      "save_schema_version": 11,
+      "serial_fallback_dispatches": 8,
+      "transactions": 98,
+      "transactions_acked": 8
+    },
+    "enum_atlas": {
+
+    },
+    "ideology": {
+      "_tick_idx": 1464,
+      "active_country_cursor": 0,
+      "active_item_cursor": 0,
+      "active_progress_day": -1,
+      "active_progress_ms": 0.0003,
+      "active_visits": 0,
+      "catalog_hash": -6754374394588826080,
+      "class_snapshot_reads": 0,
+      "command_apply_ms": 0.0001,
+      "command_queue_merge_steps": 0,
+      "command_queue_resorts": 0,
+      "command_queue_shift_steps": 0,
+      "commands_applied": 0,
+      "commands_rejected": 0,
+      "configured": true,
+      "countries_allocated": 0,
+      "derived_rebuild_visits": 0,
+      "dormant_scan_count": 0,
+      "ideology_count": 4,
+      "last_error": "",
+      "last_slice_ms": 0.0006,
+      "levels_advanced": 0,
+      "max_slice_ms": 0.0006,
+      "offers_opened": 0,
+      "pending_commands": 0,
+      "pending_transition_visits": 0,
+      "pending_transitions": 0,
+      "sparse_idea_scan_count": 0,
+      "support_evaluations": 0,
+      "synergy_candidates_visited": 0,
+      "transition_poll_ms": 0.0001
+    },
+    "ocean": {
+      "_tick_idx": 2,
+      "daily_wind_commit_ok": false,
+      "daily_wind_delta_p95": 0.0,
+      "daily_wind_dir_delta_p95": 0.0,
+      "daily_wind_dir_flip_count": 0,
+      "daily_wind_div_damp_alpha_eff": 0.0,
+      "daily_wind_elapsed_ms": -1.0,
+      "daily_wind_fallback_reason": "",
+      "daily_wind_momentum_advect_diffuse_delta_p95": 0.0,
+      "daily_wind_path": "",
+      "daily_wind_ran": false,
+      "daily_wind_refresh_ms": -1.0,
+      "daily_wind_slp_commit_ok": false,
+      "daily_wind_slp_delta_p95": 0.0,
+      "daily_wind_slp_marshall_ms": -1.0,
+      "daily_wind_slp_ms": -1.0,
+      "daily_wind_slp_norm_ms": -1.0,
+      "daily_wind_slp_passA_ms": -1.0,
+      "daily_wind_slp_passB_ms": -1.0,
+      "daily_wind_slp_ran": false,
+      "daily_wind_stage_requested": "both",
+      "daily_wind_traj_gen": 0,
+      "daily_wind_traj_stale_count": 0,
+      "daily_wind_wind_commit_ok": false,
+      "daily_wind_wind_ms": -1.0,
+      "daily_wind_wind_ran": false,
+      "ocean_current_clamp_count": 0,
+      "ocean_current_clamp_ratio": 0.0,
+      "ocean_current_max_magnitude": 0.0,
+      "ocean_current_preclamp_max": 0.0,
+      "ocean_current_preclamp_p95": 0.0,
+      "ocean_delta_p95": 0.0,
+      "ocean_depth_curl_damp_eff": 0.0,
+      "ocean_topo_steer_w_eff": 0.0,
+      "phys_cell_slice_divisor": 8,
+      "phys_cell_slice_enabled": false,
+      "phys_stage": 0,
+      "phys_stage_name": "phys_none",
+      "psi_early_exit": false,
+      "psi_iters_run": 0,
+      "psi_mode": "off",
+      "psi_native_ms": -1.0,
+      "psi_path": "gdscript",
+      "psi_residual_final": 0.0,
+      "season_phase": null,
+      "sim_day": -1,
+      "slp_commit_ok": false,
+      "slp_delta_p95": 0.0,
+      "slp_native_ms": -1.0,
+      "slp_out_size": -1,
+      "slp_path": "gdscript",
+      "slp_published_to_slot": false,
+      "slp_rc_ms": -1.0,
+      "slp_thermal_p95": 0.0,
+      "thermal_current_p95": 0.0,
+      "wind_commit_ok": false,
+      "wind_cpp_done": false,
+      "wind_delta_p95": 0.0,
+      "wind_dir_delta_p95": 0.0,
+      "wind_dir_flip_count": 0,
+      "wind_div_damp_alpha_eff": 0.0,
+      "wind_map_speed_size": -1,
+      "wind_momentum_advect_diffuse_delta_p95": 0.0,
+      "wind_momentum_advect_w_eff": 0.0,
+      "wind_momentum_diffuse_w_eff": 0.0,
+      "wind_rc_ms": -1.0,
+      "wind_speed_out_size": -1,
+      "wind_traj_gen": 0,
+      "wind_traj_stale_count": 0,
+      "wind_wx_size": -1,
+      "wind_wy_size": -1
+    },
+    "runtime_graph": {
+      "_tick_idx": 1464,
+      "abi_calls": 1,
+      "active_evidence_mask": 1281,
+      "active_gate_blocked": false,
+      "authoritative_domain_mask": 4095,
+      "budget_yields": 0,
+      "climate_pod_changed_cells": 2280,
+      "climate_pod_fallback_reason": "",
+      "climate_pod_plan_ms": 2.7956,
+      "climate_pod_ready": true,
+      "climate_pod_replay_ms": 0.0015,
+      "climate_pod_state_hash": 0,
+      "climate_pod_work_units": 21600,
+      "climate_stage_ms": [
+        0.152,
+        0.056,
+        0.081,
+        0.016,
+        0.097,
+        0.083,
+        0.055,
+        0.014,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "climate_stage_names": [
+        "PASS_A",
+        "PASS_B",
+        "OCEAN_WATER",
+        "OCEAN_LAND",
+        "WIND_AIR",
+        "WIND_SURFACE",
+        "SEA_ICE",
+        "TRANSPIRATION",
+        "ALBEDO",
+        "VEGETATION_DYNAMICS",
+        "CLIMATE_FEEDBACK",
+        "WEATHER",
+        "RUNTIME_HYDROLOGY",
+        "STAGE_B_AFTER_HYDROLOGY"
+      ],
+      "climate_stage_work": [
+        2400,
+        2400,
+        2400,
+        2400,
+        2400,
+        2400,
+        2400,
+        2400,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "climate_trace_consumed": 0,
+      "climate_trace_depth": 1,
+      "climate_trace_front_day": 0,
+      "climate_trace_lag_days": 1578,
+      "climate_trace_latest_hash": 0,
+      "climate_trace_missing": 0,
+      "climate_worker_authoritative": true,
+      "command_queue_capacity_exceeded": 0,
+      "completion_gate_missing_domain_mask": 0,
+      "configured": true,
+      "country_parity_compared": false,
+      "country_parity_compared_count": 0,
+      "country_parity_field": "",
+      "country_parity_first_mismatch_day": -1,
+      "country_parity_index": -1,
+      "country_parity_matched": false,
+      "country_parity_matched_count": 0,
+      "country_parity_reference_hash": 0,
+      "country_parity_status": "uncompared",
+      "country_parity_worker_hash": -253252835654915501,
+      "country_peer_adapter_enabled": true,
+      "country_peer_completed": 0,
+      "country_peer_fault_reason": "",
+      "country_peer_faults": 0,
+      "country_peer_intents": 0,
+      "country_peer_pending_results": 0,
+      "country_peer_rejected": 0,
+      "country_peer_service_calls": 2,
+      "country_pod_ack_pending": false,
+      "country_pod_active_country_count": 0,
+      "country_pod_active_index_count": 0,
+      "country_pod_blocker": "",
+      "country_pod_pending_checks": 0,
+      "country_pod_snapshot_generation": 0,
+      "country_pod_state_hash": 0,
+      "country_pod_work_units": 0,
+      "country_territory_sync_ms": 0.022,
+      "country_worker_authoritative": true,
+      "country_worker_boundary_id": 1578,
+      "country_worker_catalog_hash": 0,
+      "country_worker_configured": true,
+      "country_worker_continuation_index": 0,
+      "country_worker_country_generation": 626,
+      "country_worker_day": 1578,
+      "country_worker_expected_base_generation": 0,
+      "country_worker_last_admitted_submit_order": 0,
+      "country_worker_last_reason": "",
+      "country_worker_pending_intents": 0,
+      "country_worker_plan_active": false,
+      "country_worker_queued_intents": 0,
+      "country_worker_rejected_results": 0,
+      "country_worker_result_count": 0,
+      "country_worker_session_epoch": 2,
+      "country_worker_waiting_for_peer": false,
+      "coverage_blocker": "",
+      "day": 2,
+      "day_completed_stage_count": 12,
+      "day_stage_count": 12,
+      "day_work_units": 21624,
+      "dirty_mask": 0,
+      "domain_authority_ack_count": 0,
+      "domain_authority_committed_mask": 0,
+      "domain_authority_fallback_reason": "",
+      "domain_authority_input_hash": 0,
+      "domain_authority_plan_ms": 0.0,
+      "domain_authority_planned_mask": 0,
+      "domain_authority_replay_ms": 0.0,
+      "domain_authority_state_hash": 0,
+      "economy_authority_fault_paused": false,
+      "economy_authority_last_committed_generation": 3,
+      "economy_authority_last_committed_hash": 5089187549484045261,
+      "economy_authority_switch_after_generation": 3,
+      "economy_authority_switch_after_hash": 5089187549484045261,
+      "economy_authority_switch_audit_after": "mode=2 generation=3 hash=5089187549484045261",
+      "economy_authority_switch_audit_before": "mode=0 generation=3 hash=5089187549484045261",
+      "economy_authority_switch_audit_hash": -6760735747133738544,
+      "economy_authority_switch_audit_sequence": 1,
+      "economy_authority_switch_before_generation": 3,
+      "economy_authority_switch_before_hash": 5089187549484045261,
+      "economy_authority_switch_blocker": "",
+      "economy_authority_switch_command_latency_max_us": 0,
+      "economy_authority_switch_command_latency_p95_us": 0,
+      "economy_authority_switch_command_latency_us": 0,
+      "economy_authority_switch_count": 1,
+      "economy_authority_switch_latency_max_us": 2263,
+      "economy_authority_switch_latency_p95_us": 2263,
+      "economy_authority_switch_latency_sample_count": 1,
+      "economy_authority_switch_latency_us": 2263,
+      "economy_authority_switch_reason": "epoch_boundary_authority_switch",
+      "economy_authority_switch_rejected": 0,
+      "economy_capture_fatal_reason": "",
+      "economy_commits": 0,
+      "economy_input_requested_day": -1,
+      "economy_slices": 0,
+      "effect_worker_authoritative": true,
+      "enabled": true,
+      "event_dispatch_ms": 22.128,
+      "events_worker_authoritative": true,
+      "fault_code": "",
+      "flush_slot_count": 7,
+      "full_flush_count": 0,
+      "gdscript_callbacks": 0,
+      "generation": 0,
+      "gpu_upload_ms": 0.0,
+      "graph_coverage_state": "complete",
+      "ideology_worker_authoritative": true,
+      "implemented_domain_mask": 4095,
+      "input_capture_count": 1578,
+      "input_capture_reused": 0,
+      "last_commit_produced_at_us": 938664267973,
+      "last_elapsed_us": 20,
+      "last_status": 2,
+      "last_visual_publish_at_us": 938664267973,
+      "main_wait_on_sim_us": 0,
+      "missing_domain_mask": 0,
+      "modifier_worker_authoritative": true,
+      "native_executor_fault_count": 0,
+      "native_executor_interactive": false,
+      "native_executor_workers": 16,
+      "pod_completed_domain_mask": 0,
+      "pod_completed_stage_count": 0,
+      "pod_domain_abi_version": 3,
+      "pod_fallback_count": 0,
+      "pod_intent_count": 0,
+      "pod_work_units": 0,
+      "post_pulse_flush_ms": 0.0,
+      "pulse_count": 1,
+      "receipt_queue_capacity_exceeded": 0,
+      "requested_simulation_thread_mode": "ACTIVE",
+      "required_domain_mask": 4095,
+      "simulation_committed_day": 1578,
+      "simulation_environment_cell_count": 2400,
+      "simulation_environment_day": 1578,
+      "simulation_environment_generation": 1579,
+      "simulation_environment_topology_validated": true,
+      "simulation_generation": 1578,
+      "simulation_host_state": 3,
+      "simulation_state_hash": 198294977032390363,
+      "simulation_thread_mode": "ACTIVE",
+      "simulation_time_debt_days": 0.0,
+      "simulation_worker_ready": true,
+      "snapshot_publish_drop_count": 0,
+      "snapshot_publish_throttled_count": 0,
+      "snapshot_staleness_ms": 70.562,
+      "stale_environment_rejected": 0,
+      "time_debt_days": 0.0,
+      "trigger_acked_effect_id": 0,
+      "trigger_blocked_pulses": 0,
+      "trigger_blocked_reason": "",
+      "trigger_blocker": "trigger_reference_pending",
+      "trigger_committed_day": 1578,
+      "trigger_first_divergence_index": -1,
+      "trigger_first_divergence_kind": "",
+      "trigger_generation": 1578,
+      "trigger_input_hash": 1579,
+      "trigger_parity_compared": false,
+      "trigger_parity_day": 1578,
+      "trigger_parity_matched": false,
+      "trigger_pending_ack_count": 0,
+      "trigger_pending_command_count": 0,
+      "trigger_pod_ack_count": 0,
+      "trigger_pod_fallback_reason": "",
+      "trigger_pod_intent_count": 0,
+      "trigger_pod_plan_ms": 0.0153,
+      "trigger_pod_ready": true,
+      "trigger_pod_replay_ms": 0.0035,
+      "trigger_pod_snapshot_generation": 1578,
+      "trigger_pod_state_hash": -7403415962603793638,
+      "trigger_received_ack_count": 0,
+      "trigger_reference_day": 2,
+      "trigger_reference_effect_hash": 5187598658539770339,
+      "trigger_reference_input_hash": 3,
+      "trigger_reference_state_hash": -2758034321508848138,
+      "trigger_required_ack_count": 0,
+      "trigger_worker_authoritative": true,
+      "trigger_worker_effect_hash": 5187598658539770339,
+      "trigger_worker_state_hash": 1569006509259444022,
+      "ui_input_to_feedback_ms": 0.0,
+      "visual_apply_ms": 0.034,
+      "visual_diff_cell_count": 16800,
+      "work_done": 0,
+      "worker_fault_count": 0,
+      "worker_time_boundary_wait_us": 0,
+      "worker_time_clock_wait_us": 0,
+      "worker_time_execute_us": 29979653,
+      "worker_time_input_wait_us": 206598957,
+      "worker_time_overhead_us": 60882,
+      "worker_time_paused_us": 9378067,
+      "worker_time_save_build_us": 0,
+      "worker_time_save_pause_us": 0,
+      "worker_time_total_us": 246017559
+    },
+    "sea_ice_atlas": {
+      "done": true,
+      "elapsed_ms": 0.0,
+      "phase": "disabled",
+      "reason": "shader_temperature_derived",
+      "stage_name": "sea_ice_atlas_upload"
+    },
+    "ui": {
+      "_tick_idx": 1464
+    },
+    "weather": {
+      "_tick_idx": 1,
+      "active_default_blockers": [
+        "wind_air",
+        "wind_surface",
+        "runtime_hydrology",
+        "sea_ice",
+        "climate_round",
+        "season_refresh"
+      ],
+      "apply_ms": 0.217,
+      "authority_blockers": [
+        "wind_air",
+        "wind_surface",
+        "runtime_hydrology",
+        "sea_ice",
+        "climate_round",
+        "season_refresh"
+      ],
+      "authority_report": {
+        "climate_round": {
+          "owner": "native_daily",
+          "phase": "gdscript_state_machine",
+          "remaining_gdscript_authority": [],
+          "simulation_authority": false,
+          "state": {
+            "finalize_pending": false,
+            "native_state_status": "native_daily_owner",
+            "owner": "native_daily",
+            "pass_count": 1,
+            "pass_cursor": 1,
+            "pass_generation": 0,
+            "round_active": false
+          }
+        },
+        "fallback": {
+          "blockers": [],
+          "owner": "explicit_failure_only",
+          "phase": "fallback_test_only"
+        },
+        "native_daily_graph": {
+          "owner": "native_active",
+          "phase": "native_continuation",
+          "simulation_authority": true,
+          "state_owner": "DCWorldExt"
+        },
+        "ocean_physical": {
+          "blockers": [],
+          "native_owned_output_slots": [
+            "cell_wind_x",
+            "cell_wind_y",
+            "cell_ocean_current_x",
+            "cell_ocean_current_y",
+            "cell_upwelling"
+          ],
+          "owner": "native_active",
+          "phase": "native_active_lifecycle",
+          "retained_boundaries": [
+            "visual_raster_boundary_execution",
+            "texture_commit_boundary_execution"
+          ],
+          "simulation_authority": true,
+          "state": {
+            "active_owner_requested": true,
+            "compact_state_capsule": true,
+            "last_daily_wind_report": {
+
+            },
+            "last_phys_diag": {
+
+            },
+            "last_physical_complete_tick": -2147483648,
+            "native_lifecycle_state": {
+              "authority": "native_ready_capsule",
+              "boundary_intent_mask": 0,
+              "compact_state_capsule": true,
+              "dirty": false,
+              "generation": 0,
+              "owner": "DCWorldExt.NativeOceanPhysicalLifecycle",
+              "phase_locked": 0.0,
+              "phys_solve_done": false,
+              "physical_round_active": false,
+              "physical_round_id": 0,
+              "ready": false,
+              "simulation_authority": false,
+              "stage": 0,
+              "stage_name": "uninitialized"
+            },
+            "native_owned_lifecycle_authority": [
+              "physical_round_active",
+              "physical_round_id",
+              "phase_locked",
+              "physical_stage",
+              "physical_stage_cursor"
+            ],
+            "native_owned_output_slots": [
+              "cell_wind_x",
+              "cell_wind_y",
+              "cell_ocean_current_x",
+              "cell_ocean_current_y",
+              "cell_upwelling"
+            ],
+            "native_state_status": "native_lifecycle_facade",
+            "ocean_period_ticks": 60,
+            "owner": "native_active",
+            "phase_int_seen": -9999,
+            "phys_solve_done": false,
+            "physical_need_visual": false,
+            "physical_phase_locked": 0.0,
+            "physical_round_active": false,
+            "physical_round_id": 0,
+            "physical_run_ocean": true,
+            "remaining_gdscript_authority": [
+              "visual_raster_boundary_execution",
+              "texture_commit_boundary_execution"
+            ],
+            "simulation_authority": true,
+            "slice_count": 16,
+            "visual_next_pixel_idx": 0,
+            "visual_pending_commit": false,
+            "visual_phase_locked": 0.0,
+            "visual_round_active": false,
+            "visual_round_id": 0,
+            "visual_total_pixels": 0,
+            "wind_period_ticks": 6
+          }
+        },
+        "runtime_hydrology": {
+          "blockers": [
+            "runtime_hydrology_knobs_missing"
+          ],
+          "owner": "gdscript_retained",
+          "phase": "legacy_weather_chain",
+          "published_slots_expected": [],
+          "simulation_authority": false
+        },
+        "sea_ice": {
+          "blockers": [],
+          "owner": "gdscript_retained",
+          "phase": "native_active_verified",
+          "published_slots_expected": [],
+          "retained_boundaries": [],
+          "simulation_authority": true,
+          "verified_publish": true
+        },
+        "season_refresh": {
+          "blockers": [
+            "season_refresh_owner_not_active"
+          ],
+          "cadence_policy": {
+            "owner": "native_graph_policy",
+            "policy_state": "native_ready",
+            "remaining_godot_boundary_authority": [
+              "atlas_queue_execution",
+              "detail_scatter_execution"
+            ],
+            "season_period_counter": 0,
+            "season_period_ticks": 30,
+            "season_should_advance": true,
+            "season_vegetation_rewrite": false,
+            "simulation_slot_dirty_intents": [
+              "cell_terrain",
+              "cell_landform",
+              "cell_vegetation",
+              "cell_cover",
+              "cell_moisture",
+              "cell_base_moisture",
+              "cell_weather_dirty"
+            ],
+            "stage_b_any": true,
+            "stage_b_call_index": 0,
+            "stage_b_should_run": {
+              "albedo": true,
+              "feedback": true,
+              "vegetation_dynamics": true
+            },
+            "stage_b_strides": {
+              "albedo": 20,
+              "feedback": 20,
+              "vegetation_dynamics": 10
+            },
+            "vegetation_owner": "vegetation_dynamics",
+            "visual_dirty_intents": [
+              "enum_atlas",
+              "detail_scatter"
+            ]
+          },
+          "owner": "gdscript_retained",
+          "phase": "gdscript_cadence",
+          "retained_boundaries": [
+            "enum_atlas",
+            "detail_scatter"
+          ],
+          "simulation_authority": false,
+          "simulation_slot_dirty_intents": [
+            "cell_terrain",
+            "cell_landform",
+            "cell_vegetation",
+            "cell_cover",
+            "cell_moisture",
+            "cell_base_moisture",
+            "cell_weather_dirty"
+          ],
+          "state": {
+            "active_owner_requested": true,
+            "b_plus_active": false,
+            "native_state_status": "cadence_probe",
+            "owner": "gdscript_retained",
+            "period_ticks": 30,
+            "remaining_gdscript_authority": [
+              "period_policy_counter",
+              "atlas_queue_execution"
+            ],
+            "round_active": false,
+            "season_idx": 0,
+            "simulation_authority": false,
+            "simulation_slot_dirty_intents": [
+              "cell_terrain",
+              "cell_landform",
+              "cell_vegetation",
+              "cell_cover",
+              "cell_moisture",
+              "cell_base_moisture",
+              "cell_weather_dirty"
+            ],
+            "stage": 0,
+            "stage_cursor": 0,
+            "stage_name": "stage_0_moisture",
+            "ticks_since_last_round": 1,
+            "visual_dirty_intents": [
+              "enum_atlas",
+              "detail_scatter"
+            ]
+          },
+          "visual_dirty_intents": [
+            "enum_atlas",
+            "detail_scatter"
+          ]
+        },
+        "visual_upload": {
+          "blockers": [],
+          "owner": "godot_retained",
+          "phase": "godot_upload_boundary",
+          "retained_boundaries": [
+            "image_texture_upload_godot"
+          ]
+        },
+        "weather_transaction": {
+          "active_owner_requested": true,
+          "blockers": [],
+          "front_snapshot_ready": true,
+          "owner": "native_active",
+          "phase": "native_active_visible_publish",
+          "readiness": {
+            "active_bootstrap_requested": true,
+            "field_commit_init_count": 0,
+            "field_commit_path": "",
+            "field_commit_publish_reason": "",
+            "field_commit_publish_repaired": false,
+            "field_commit_publish_verified": false,
+            "has_combined_method": true,
+            "has_commit_method": true,
+            "has_ext": true,
+            "has_knobs_builder": true,
+            "has_result_apply": true,
+            "has_weather_lut_publish": true,
+            "has_weather_system": true,
+            "n_cells": 2400,
+            "ready": true,
+            "reason": "active_bootstrap_unified_publish"
+          },
+          "retained_boundaries": [
+            "front_objects_gdscript",
+            "weather_lut_upload_godot_boundary"
+          ],
+          "simulation_authority": true,
+          "visible_publish_ready": true,
+          "weather_lut_intent_ready": true
+        }
+      },
+      "boundary_contract": {
+        "bootstrap_config_keys": [
+          "climate_round_active_owner_requested",
+          "weather_transaction_active_owner_requested",
+          "climate_round_state_snapshot",
+          "ocean_physical_state_snapshot",
+          "season_refresh_state_snapshot",
+          "weather_native_daily_readiness",
+          "season_cadence_policy"
+        ],
+        "bundle_key_count": 24,
+        "commit_side_effects": true,
+        "flush_policy": "tick_boundary_or_visible_debug",
+        "flush_slots_to_map": false,
+        "refresh_policy": "tick_boundary",
+        "refresh_slots_from_map": true,
+        "remaining_high_frequency_boundary": true,
+        "schema_version": 1,
+        "tick_delta_keys": [
+          "climate_pass_a_struct"
+        ]
+      },
+      "bundle_cache_hit": true,
+      "bundle_cache_rebuild_reason": "static_shell_hit",
+      "bundle_dynamic_ms": 0.136,
+      "bundle_key_count": 24,
+      "bundle_ms": 0.037,
+      "bundle_pass_keys": [
+        "climate_pass_a_struct",
+        "climate_pass_b_knobs",
+        "ocean_land_knobs",
+        "ocean_water_knobs",
+        "sea_ice_knobs",
+        "transpiration_knobs",
+        "wind_air_knobs",
+        "wind_surface_knobs"
+      ],
+      "bundle_static_ms": 0.028,
+      "climate_authority_suppressed": false,
+      "climate_modes": {
+        "cyclone_active_count": 0,
+        "cyclone_enabled": true,
+        "cyclone_total_decay": 0,
+        "cyclone_total_genesis": 0,
+        "cyclone_touched_cells": 0,
+        "enso_basin_count": 1,
+        "enso_basins": [
+          {
+            "member_count": 494,
+            "recharge_index": -0.00983954779803753,
+            "signature": -4844543117951762410,
+            "temp_index": -0.0181328020989895,
+            "wind_anomaly": -0.00484119448810816
+          }
+        ],
+        "enso_cache_build_ms": 0.0813,
+        "enso_cache_hit": true,
+        "enso_enabled": true,
+        "monsoon_coast_cache_build_ms": 0.0804,
+        "monsoon_coast_cache_hit": false,
+        "monsoon_contrast_abs_max": 0.0,
+        "monsoon_eligible_cells": 0,
+        "monsoon_offshore_cells": 0,
+        "monsoon_onshore_cells": 0,
+        "thermal_monsoon_enabled": true
+      },
+      "climate_ms": 0.3918,
+      "compute_ms": 0.5426,
+      "contract_catchup_active": true,
+      "contract_catchup_reason": "fit_contract_budget",
+      "contract_estimated_slices": 28,
+      "contract_range_base_cells": 768,
+      "contract_range_effective_cells": 2400,
+      "cursor_end": 8,
+      "cursor_start": 7,
+      "deferred_node_count": 5,
+      "dirty_cells": 0,
+      "done": true,
+      "fallback_mode": "legacy_sus_retained_until_active_default_validation",
+      "fallback_reason": "",
+      "flush_ms": 0.0181,
+      "fronts": 0,
+      "fronts_count": 0,
+      "graph_coverage_complete": false,
+      "graph_coverage_state": "partial",
+      "hydrology_ms": 0.0,
+      "jit_patch_build_ms": 0.037,
+      "jit_patch_key_count": 7,
+      "jit_patch_keys": [
+        "sea_ice_knobs"
+      ],
+      "last_completed_node": "transpiration",
+      "native_call_ms": 0.138,
+      "native_context_ms": 0.0126,
+      "native_daily_active_default_ready": false,
+      "native_daily_age_days": 0,
+      "native_daily_age_ticks": 0,
+      "native_daily_commit_day": -1,
+      "native_daily_commit_lag_budget_days": 10,
+      "native_daily_commit_over_budget": false,
+      "native_daily_commit_tick": -1,
+      "native_daily_contract_state": "active",
+      "native_daily_contract_version": 1,
+      "native_daily_current_day": 1,
+      "native_daily_current_tick": 1,
+      "native_daily_finalizer_pending": false,
+      "native_daily_round_seq": 1,
+      "native_daily_sample_day": 1,
+      "native_daily_sample_tick": 1,
+      "native_daily_stride_days": 10,
+      "native_daily_tta_published": true,
+      "native_ms": 0.0691,
+      "native_state_snapshot": {
+        "authority_blockers": [
+          "wind_air",
+          "wind_surface",
+          "runtime_hydrology",
+          "sea_ice",
+          "climate_round",
+          "season_refresh"
+        ],
+        "authority_report": {
+          "climate_round": {
+            "owner": "native_daily",
+            "phase": "gdscript_state_machine",
+            "remaining_gdscript_authority": [],
+            "simulation_authority": false,
+            "state": {
+              "finalize_pending": false,
+              "native_state_status": "native_daily_owner",
+              "owner": "native_daily",
+              "pass_count": 1,
+              "pass_cursor": 1,
+              "pass_generation": 0,
+              "round_active": false
+            }
+          },
+          "fallback": {
+            "blockers": [],
+            "owner": "explicit_failure_only",
+            "phase": "fallback_test_only"
+          },
+          "native_daily_graph": {
+            "owner": "native_active",
+            "phase": "native_continuation",
+            "simulation_authority": true,
+            "state_owner": "DCWorldExt"
+          },
+          "ocean_physical": {
+            "blockers": [],
+            "native_owned_output_slots": [
+              "cell_wind_x",
+              "cell_wind_y",
+              "cell_ocean_current_x",
+              "cell_ocean_current_y",
+              "cell_upwelling"
+            ],
+            "owner": "native_active",
+            "phase": "native_active_lifecycle",
+            "retained_boundaries": [
+              "visual_raster_boundary_execution",
+              "texture_commit_boundary_execution"
+            ],
+            "simulation_authority": true,
+            "state": {
+              "active_owner_requested": true,
+              "compact_state_capsule": true,
+              "last_daily_wind_report": {
+
+              },
+              "last_phys_diag": {
+
+              },
+              "last_physical_complete_tick": -2147483648,
+              "native_lifecycle_state": {
+                "authority": "native_ready_capsule",
+                "boundary_intent_mask": 0,
+                "compact_state_capsule": true,
+                "dirty": false,
+                "generation": 0,
+                "owner": "DCWorldExt.NativeOceanPhysicalLifecycle",
+                "phase_locked": 0.0,
+                "phys_solve_done": false,
+                "physical_round_active": false,
+                "physical_round_id": 0,
+                "ready": false,
+                "simulation_authority": false,
+                "stage": 0,
+                "stage_name": "uninitialized"
+              },
+              "native_owned_lifecycle_authority": [
+                "physical_round_active",
+                "physical_round_id",
+                "phase_locked",
+                "physical_stage",
+                "physical_stage_cursor"
+              ],
+              "native_owned_output_slots": [
+                "cell_wind_x",
+                "cell_wind_y",
+                "cell_ocean_current_x",
+                "cell_ocean_current_y",
+                "cell_upwelling"
+              ],
+              "native_state_status": "native_lifecycle_facade",
+              "ocean_period_ticks": 60,
+              "owner": "native_active",
+              "phase_int_seen": -9999,
+              "phys_solve_done": false,
+              "physical_need_visual": false,
+              "physical_phase_locked": 0.0,
+              "physical_round_active": false,
+              "physical_round_id": 0,
+              "physical_run_ocean": true,
+              "remaining_gdscript_authority": [
+                "visual_raster_boundary_execution",
+                "texture_commit_boundary_execution"
+              ],
+              "simulation_authority": true,
+              "slice_count": 16,
+              "visual_next_pixel_idx": 0,
+              "visual_pending_commit": false,
+              "visual_phase_locked": 0.0,
+              "visual_round_active": false,
+              "visual_round_id": 0,
+              "visual_total_pixels": 0,
+              "wind_period_ticks": 6
+            }
+          },
+          "runtime_hydrology": {
+            "blockers": [
+              "runtime_hydrology_knobs_missing"
+            ],
+            "owner": "gdscript_retained",
+            "phase": "legacy_weather_chain",
+            "published_slots_expected": [],
+            "simulation_authority": false
+          },
+          "sea_ice": {
+            "blockers": [],
+            "owner": "gdscript_retained",
+            "phase": "native_active_verified",
+            "published_slots_expected": [],
+            "retained_boundaries": [],
+            "simulation_authority": true,
+            "verified_publish": true
+          },
+          "season_refresh": {
+            "blockers": [
+              "season_refresh_owner_not_active"
+            ],
+            "cadence_policy": {
+              "owner": "native_graph_policy",
+              "policy_state": "native_ready",
+              "remaining_godot_boundary_authority": [
+                "atlas_queue_execution",
+                "detail_scatter_execution"
+              ],
+              "season_period_counter": 0,
+              "season_period_ticks": 30,
+              "season_should_advance": true,
+              "season_vegetation_rewrite": false,
+              "simulation_slot_dirty_intents": [
+                "cell_terrain",
+                "cell_landform",
+                "cell_vegetation",
+                "cell_cover",
+                "cell_moisture",
+                "cell_base_moisture",
+                "cell_weather_dirty"
+              ],
+              "stage_b_any": true,
+              "stage_b_call_index": 0,
+              "stage_b_should_run": {
+                "albedo": true,
+                "feedback": true,
+                "vegetation_dynamics": true
+              },
+              "stage_b_strides": {
+                "albedo": 20,
+                "feedback": 20,
+                "vegetation_dynamics": 10
+              },
+              "vegetation_owner": "vegetation_dynamics",
+              "visual_dirty_intents": [
+                "enum_atlas",
+                "detail_scatter"
+              ]
+            },
+            "owner": "gdscript_retained",
+            "phase": "gdscript_cadence",
+            "retained_boundaries": [
+              "enum_atlas",
+              "detail_scatter"
+            ],
+            "simulation_authority": false,
+            "simulation_slot_dirty_intents": [
+              "cell_terrain",
+              "cell_landform",
+              "cell_vegetation",
+              "cell_cover",
+              "cell_moisture",
+              "cell_base_moisture",
+              "cell_weather_dirty"
+            ],
+            "state": {
+              "active_owner_requested": true,
+              "b_plus_active": false,
+              "native_state_status": "cadence_probe",
+              "owner": "gdscript_retained",
+              "period_ticks": 30,
+              "remaining_gdscript_authority": [
+                "period_policy_counter",
+                "atlas_queue_execution"
+              ],
+              "round_active": false,
+              "season_idx": 0,
+              "simulation_authority": false,
+              "simulation_slot_dirty_intents": [
+                "cell_terrain",
+                "cell_landform",
+                "cell_vegetation",
+                "cell_cover",
+                "cell_moisture",
+                "cell_base_moisture",
+                "cell_weather_dirty"
+              ],
+              "stage": 0,
+              "stage_cursor": 0,
+              "stage_name": "stage_0_moisture",
+              "ticks_since_last_round": 1,
+              "visual_dirty_intents": [
+                "enum_atlas",
+                "detail_scatter"
+              ]
+            },
+            "visual_dirty_intents": [
+              "enum_atlas",
+              "detail_scatter"
+            ]
+          },
+          "visual_upload": {
+            "blockers": [],
+            "owner": "godot_retained",
+            "phase": "godot_upload_boundary",
+            "retained_boundaries": [
+              "image_texture_upload_godot"
+            ]
+          },
+          "weather_transaction": {
+            "active_owner_requested": true,
+            "blockers": [],
+            "front_snapshot_ready": true,
+            "owner": "native_active",
+            "phase": "native_active_visible_publish",
+            "readiness": {
+              "active_bootstrap_requested": true,
+              "field_commit_init_count": 0,
+              "field_commit_path": "",
+              "field_commit_publish_reason": "",
+              "field_commit_publish_repaired": false,
+              "field_commit_publish_verified": false,
+              "has_combined_method": true,
+              "has_commit_method": true,
+              "has_ext": true,
+              "has_knobs_builder": true,
+              "has_result_apply": true,
+              "has_weather_lut_publish": true,
+              "has_weather_system": true,
+              "n_cells": 2400,
+              "ready": true,
+              "reason": "active_bootstrap_unified_publish"
+            },
+            "retained_boundaries": [
+              "front_objects_gdscript",
+              "weather_lut_upload_godot_boundary"
+            ],
+            "simulation_authority": true,
+            "visible_publish_ready": true,
+            "weather_lut_intent_ready": true
+          }
+        },
+        "climate_round_state": {
+          "finalize_pending": false,
+          "native_state_status": "native_daily_owner",
+          "owner": "native_daily",
+          "pass_count": 1,
+          "pass_cursor": 1,
+          "pass_generation": 0,
+          "round_active": false
+        },
+        "climate_round_state_owner": "native_daily",
+        "continuation_owner": "DCWorldExt.native_daily_slice",
+        "fallback_owner": "explicit_failure_only",
+        "graph_coverage_state": "partial",
+        "ocean_physical_state": {
+          "active_owner_requested": true,
+          "compact_state_capsule": true,
+          "last_daily_wind_report": {
+
+          },
+          "last_phys_diag": {
+
+          },
+          "last_physical_complete_tick": -2147483648,
+          "native_lifecycle_state": {
+            "authority": "native_ready_capsule",
+            "boundary_intent_mask": 0,
+            "compact_state_capsule": true,
+            "dirty": false,
+            "generation": 0,
+            "owner": "DCWorldExt.NativeOceanPhysicalLifecycle",
+            "phase_locked": 0.0,
+            "phys_solve_done": false,
+            "physical_round_active": false,
+            "physical_round_id": 0,
+            "ready": false,
+            "simulation_authority": false,
+            "stage": 0,
+            "stage_name": "uninitialized"
+          },
+          "native_owned_lifecycle_authority": [
+            "physical_round_active",
+            "physical_round_id",
+            "phase_locked",
+            "physical_stage",
+            "physical_stage_cursor"
+          ],
+          "native_owned_output_slots": [
+            "cell_wind_x",
+            "cell_wind_y",
+            "cell_ocean_current_x",
+            "cell_ocean_current_y",
+            "cell_upwelling"
+          ],
+          "native_state_status": "native_lifecycle_facade",
+          "ocean_period_ticks": 60,
+          "owner": "native_active",
+          "phase_int_seen": -9999,
+          "phys_solve_done": false,
+          "physical_need_visual": false,
+          "physical_phase_locked": 0.0,
+          "physical_round_active": false,
+          "physical_round_id": 0,
+          "physical_run_ocean": true,
+          "remaining_gdscript_authority": [
+            "visual_raster_boundary_execution",
+            "texture_commit_boundary_execution"
+          ],
+          "simulation_authority": true,
+          "slice_count": 16,
+          "visual_next_pixel_idx": 0,
+          "visual_pending_commit": false,
+          "visual_phase_locked": 0.0,
+          "visual_round_active": false,
+          "visual_round_id": 0,
+          "visual_total_pixels": 0,
+          "wind_period_ticks": 6
+        },
+        "ocean_physical_state_owner": "native_active",
+        "retained_boundaries": [
+          "visual_uploads",
+          "csv_debug_sampling",
+          "ocean_visual_raster_godot",
+          "ocean_texture_commit_godot",
+          "season_atlas_queue_godot",
+          "detail_scatter_godot"
+        ],
+        "retained_boundary_policy": "explicit_godot_presentation_boundary",
+        "retained_godot_boundaries": [
+          "visual_uploads",
+          "csv_debug_sampling",
+          "ocean_visual_raster_godot",
+          "ocean_texture_commit_godot",
+          "season_atlas_queue_godot",
+          "detail_scatter_godot"
+        ],
+        "round_state_owner": "native_active",
+        "season_cadence_policy": {
+          "owner": "native_graph_policy",
+          "policy_state": "native_ready",
+          "remaining_godot_boundary_authority": [
+            "atlas_queue_execution",
+            "detail_scatter_execution"
+          ],
+          "season_period_counter": 0,
+          "season_period_ticks": 30,
+          "season_should_advance": true,
+          "season_vegetation_rewrite": false,
+          "simulation_slot_dirty_intents": [
+            "cell_terrain",
+            "cell_landform",
+            "cell_vegetation",
+            "cell_cover",
+            "cell_moisture",
+            "cell_base_moisture",
+            "cell_weather_dirty"
+          ],
+          "stage_b_any": true,
+          "stage_b_call_index": 0,
+          "stage_b_should_run": {
+            "albedo": true,
+            "feedback": true,
+            "vegetation_dynamics": true
+          },
+          "stage_b_strides": {
+            "albedo": 20,
+            "feedback": 20,
+            "vegetation_dynamics": 10
+          },
+          "vegetation_owner": "vegetation_dynamics",
+          "visual_dirty_intents": [
+            "enum_atlas",
+            "detail_scatter"
+          ]
+        },
+        "season_refresh_state": {
+          "active_owner_requested": true,
+          "b_plus_active": false,
+          "native_state_status": "cadence_probe",
+          "owner": "gdscript_retained",
+          "period_ticks": 30,
+          "remaining_gdscript_authority": [
+            "period_policy_counter",
+            "atlas_queue_execution"
+          ],
+          "round_active": false,
+          "season_idx": 0,
+          "simulation_authority": false,
+          "simulation_slot_dirty_intents": [
+            "cell_terrain",
+            "cell_landform",
+            "cell_vegetation",
+            "cell_cover",
+            "cell_moisture",
+            "cell_base_moisture",
+            "cell_weather_dirty"
+          ],
+          "stage": 0,
+          "stage_cursor": 0,
+          "stage_name": "stage_0_moisture",
+          "ticks_since_last_round": 1,
+          "visual_dirty_intents": [
+            "enum_atlas",
+            "detail_scatter"
+          ]
+        },
+        "season_refresh_state_owner": "gdscript_retained",
+        "tick_owner": "DCWorldExt.native_daily_graph",
+        "visual_upload_state_owner": "godot_retained",
+        "weather_transaction_state_owner": "native_active"
+      },
+      "node_cell_count": 0,
+      "node_cell_cursor_end": -1,
+      "node_cell_cursor_start": -1,
+      "node_cell_processed": 0,
+      "node_range_active": false,
+      "node_range_budget": 2400,
+      "node_range_done": true,
+      "node_range_enabled": false,
+      "node_range_node": "",
+      "node_report": {
+        "bundle_key": "transpiration_knobs",
+        "name": "transpiration",
+        "read_mask": 33,
+        "write_mask": 1
+      },
+      "ocean_land_ms": 0.0168,
+      "ocean_land_thread_tasks": 0,
+      "ocean_land_variant": "thread",
+      "ocean_ms": 0.1508,
+      "ocean_water_ms": 0.134,
+      "ocean_water_thread_tasks": 0,
+      "ocean_water_variant": "thread",
+      "pass_a_deferred_publish_ms": 0.0181,
+      "pass_a_deferred_publish_slots": 12,
+      "pass_a_ms": 0.0,
+      "pass_b_ms": 0.0679,
+      "path": "gdext_native_daily_slice",
+      "processed_nodes": 8,
+      "progress_ratio": 1.0,
+      "published_slots": [
+        "cell_temp",
+        "cell_moisture",
+        "cell_snow_cover",
+        "cell_sea_ice_frac",
+        "cell_air_mass_temp_anomaly",
+        "cell_ocean_thermal_anomaly",
+        "cell_local_thermal_anomaly",
+        "cell_temp_baseline",
+        "cell_temp_season_offset",
+        "cell_ema_initialized",
+        "cell_temp_30d",
+        "cell_temp_365d",
+        "cell_temp_anomaly",
+        "cell_insolation_now",
+        "cell_insolation_dev",
+        "cell_day_length",
+        "cell_heat_input",
+        "cell_thermal_energy",
+        "cell_snowpack"
+      ],
+      "refresh_ms": 0.0126,
+      "render_prepare_ms": 0.0181,
+      "retained_boundaries": [
+        "visual_uploads",
+        "csv_debug_sampling",
+        "ocean_visual_raster_godot",
+        "ocean_texture_commit_godot",
+        "season_atlas_queue_godot",
+        "detail_scatter_godot"
+      ],
+      "retained_boundary_policy": "explicit_godot_presentation_boundary",
+      "retained_gdscript_authority": [
+        "wind_air",
+        "wind_surface",
+        "runtime_hydrology",
+        "sea_ice"
+      ],
+      "retained_godot_boundaries": [
+        "visual_uploads",
+        "csv_debug_sampling",
+        "ocean_visual_raster_godot",
+        "ocean_texture_commit_godot",
+        "season_atlas_queue_godot",
+        "detail_scatter_godot"
+      ],
+      "round_id": 1,
+      "round_native_ms": 1.3278,
+      "runtime_config_report": {
+        "cell_count": 2400,
+        "configured_at_tick": 0,
+        "enso_basin_modes_enabled": true,
+        "enso_integration_substep_days": 10.0,
+        "enso_max_basins": 3,
+        "enso_period_days": 1460.0,
+        "enso_temp_anomaly_cap": 0.06,
+        "enso_tropical_lat_limit": 0.33,
+        "enso_wind_coupling": 0.0008,
+        "has_config": true,
+        "has_world_data": true,
+        "hex_size": 22.0,
+        "map_width": 60,
+        "native_climate_round_active_owner_enabled": true,
+        "native_daily_perf_target_ms": 3.0,
+        "native_daily_sim_mode": 2,
+        "native_generation_mode": 2,
+        "native_ocean_physical_active_owner_enabled": true,
+        "native_render_prepare_mode": 0,
+        "native_season_refresh_active_owner_enabled": true,
+        "native_tropical_cyclone_enabled": true,
+        "native_weather_transaction_active_owner_enabled": true,
+        "ocean_currents_period_ticks": 60,
+        "ocean_currents_slice_count": 16,
+        "ocean_daily_wind_period_ticks": 6,
+        "resident_config_key_count": 45,
+        "resident_config_keys": [
+          "cell_count",
+          "hex_size",
+          "map_width",
+          "wrap_period_x",
+          "native_generation_mode",
+          "native_daily_sim_mode",
+          "native_render_prepare_mode",
+          "native_daily_perf_target_ms",
+          "shadow_diff_enabled",
+          "weather_albedo_stride",
+          "weather_vegetation_dynamics_stride",
+          "weather_feedback_stride",
+          "season_refresh_period_ticks",
+          "ocean_daily_wind_period_ticks",
+          "ocean_currents_period_ticks",
+          "ocean_currents_slice_count",
+          "native_climate_round_active_owner_enabled",
+          "native_weather_transaction_active_owner_enabled",
+          "native_ocean_physical_active_owner_enabled",
+          "native_season_refresh_active_owner_enabled",
+          "world_seed",
+          "thermal_monsoon_enabled",
+          "thermal_monsoon_lat_limit",
+          "thermal_monsoon_deadband",
+          "thermal_monsoon_full_contrast",
+          "thermal_monsoon_gain",
+          "thermal_monsoon_breeze_floor",
+          "native_tropical_cyclone_enabled",
+          "tropical_cyclone_capacity",
+          "tropical_cyclone_births_per_commit",
+          "tropical_cyclone_min_temp",
+          "tropical_cyclone_min_instability",
+          "tropical_cyclone_max_shear",
+          "tropical_cyclone_min_lat",
+          "tropical_cyclone_max_lat",
+          "tropical_cyclone_max_radius_cells",
+          "enso_basin_modes_enabled",
+          "enso_max_basins",
+          "enso_tropical_lat_limit",
+          "enso_period_days",
+          "enso_temp_anomaly_cap",
+          "enso_wind_coupling",
+          "enso_integration_substep_days",
+          "has_world_data",
+          "has_config"
+        ],
+        "season_refresh_period_ticks": 30,
+        "shadow_diff_enabled": true,
+        "thermal_monsoon_breeze_floor": 0.2,
+        "thermal_monsoon_deadband": 0.015,
+        "thermal_monsoon_enabled": true,
+        "thermal_monsoon_full_contrast": 0.08,
+        "thermal_monsoon_gain": 0.85,
+        "thermal_monsoon_lat_limit": 0.45,
+        "tropical_cyclone_births_per_commit": 2,
+        "tropical_cyclone_capacity": 24,
+        "tropical_cyclone_max_lat": 0.4,
+        "tropical_cyclone_max_radius_cells": 5,
+        "tropical_cyclone_max_shear": 0.42,
+        "tropical_cyclone_min_instability": 0.4,
+        "tropical_cyclone_min_lat": 0.06,
+        "tropical_cyclone_min_temp": 0.58,
+        "weather_albedo_stride": 20,
+        "weather_feedback_stride": 20,
+        "weather_vegetation_dynamics_stride": 10,
+        "world_seed": 1910233770,
+        "wrap_period_x": 103.923048454133
+      },
+      "sea_ice_dt_days": 0.869567555555556,
+      "sea_ice_ms": 0.0596,
+      "season_ms": 0.0,
+      "stage_b_ms": 0.0,
+      "stage_name": "native_daily_complete",
+      "substage": "round_complete",
+      "tick_delta_key_count": 1,
+      "total_ms": 0.0691,
+      "transp_ms": 0.0281,
+      "visual_dirty_intents": [],
+      "weather_knobs_prebuilt": false,
+      "weather_ms": 0.0,
+      "wind_air_ms": 0.1335,
+      "wind_ms": 0.2362,
+      "wind_surface_ms": 0.1027,
+      "wrapper_wall_ms": 0.392
+    }
+  },
+  "sus_job_stats_window": {
+    "bio_occupancy_daily": {
+      "max_ms": 0.284999996423721,
+      "samples": [
+        0.284999996423721,
+        0.10700000077486
+      ],
+      "skipped": {
+
+      },
+      "slices_total": 2
+    },
+    "country_daily": {
+      "max_ms": 0.0,
+      "samples": [],
+      "skipped": {
+        "policy_gated": 2
+      },
+      "slices_total": 0
+    },
+    "dynamic_visual_atlas_upload": {
+      "max_ms": 1.89900004863739,
+      "samples": [
+        0.028999999165535,
+        1.89900004863739
+      ],
+      "skipped": {
+
+      },
+      "slices_total": 2
+    },
+    "economy_daily": {
+      "max_ms": 0.0,
+      "samples": [],
+      "skipped": {
+        "policy_gated": 2
+      },
+      "slices_total": 0
+    },
+    "effect_runtime": {
+      "max_ms": 0.811999976634979,
+      "samples": [
+        0.811999976634979,
+        0.150000005960464
+      ],
+      "skipped": {
+
+      },
+      "slices_total": 8
+    },
+    "enum_atlas_upload": {
+      "max_ms": 0.0,
+      "samples": [],
+      "skipped": {
+        "policy_gated": 2
+      },
+      "slices_total": 0
+    },
+    "gameplay_effect": {
+      "max_ms": 0.0,
+      "samples": [],
+      "skipped": {
+        "policy_gated": 2
+      },
+      "slices_total": 0
+    },
+    "ideology_runtime": {
+      "max_ms": 0.194999992847443,
+      "samples": [
+        0.156000003218651,
+        0.194999992847443
+      ],
+      "skipped": {
+
+      },
+      "slices_total": 2
+    },
+    "modifier_daily": {
+      "max_ms": 0.19200000166893,
+      "samples": [
+        0.19200000166893,
+        0.125
+      ],
+      "skipped": {
+
+      },
+      "slices_total": 2
+    },
+    "native_daily_sim": {
+      "max_ms": 1.12899994850159,
+      "samples": [
+        1.12899994850159
+      ],
+      "skipped": {
+        "policy_gated": 1
+      },
+      "slices_total": 1
+    },
+    "natural_resource_daily": {
+      "max_ms": 0.0,
+      "samples": [],
+      "skipped": {
+        "policy_gated": 2
+      },
+      "slices_total": 0
+    },
+    "ocean_currents": {
+      "max_ms": 0.0,
+      "samples": [],
+      "skipped": {
+        "policy_gated": 2
+      },
+      "slices_total": 0
+    },
+    "season_refresh": {
+      "max_ms": 0.0,
+      "samples": [],
+      "skipped": {
+        "policy_gated": 2
+      },
+      "slices_total": 0
+    },
+    "trigger_runtime": {
+      "max_ms": 0.342999994754791,
+      "samples": [
+        0.324000000953674,
+        0.342999994754791
+      ],
+      "skipped": {
+
+      },
+      "slices_total": 2
+    }
+  },
+  "sus_last_tick_jobs": {
+    "bio_occupancy_daily": {
+      "bio_knob_cache_build_ms": 0.0,
+      "bio_knob_cache_hit": true,
+      "bio_slice_fallback_reason": "",
+      "bio_slice_native_ms": 0.0141000002622604,
+      "bio_slice_publish_ms": 0.00260000000707805,
+      "deadline_budget_bypass": false,
+      "deadline_critical": false,
+      "elapsed_ms": 0.10700000077486,
+      "factor_lookup_ms": 0.0,
+      "fallback_ms": 0.0,
+      "id": "bio_occupancy_daily",
+      "job_wrapper_gap_ms": 0.10700000077486,
+      "knob_update_ms": 0.0,
+      "last_slice_actual_ms": 0.0989999994635582,
+      "last_slice_cursor_end": -1,
+      "last_slice_cursor_start": -1,
+      "last_slice_fallback_path": "",
+      "last_slice_job_shell_wall_ms": 0.0,
+      "last_slice_job_shell_wrapper_gap_ms": 0.0,
+      "last_slice_processed_cells": 2400,
+      "last_slice_processed_indices": 0,
+      "last_slice_processed_pixels": 0,
+      "last_slice_reported_gap_ms": 0.0109999999403954,
+      "last_slice_reported_ms": 0.0879999995231628,
+      "last_slice_work_done": 2400,
+      "last_slice_wrapper_wall_ms": 0.0,
+      "native_call_ms": 0.0,
+      "path": "gdext",
+      "progress_ratio": 1.0,
+      "skipped_reason": "",
+      "slices_run": 1,
+      "slot_refresh_ms": 0.0,
+      "source": "day_changed",
+      "stage": "bio_occupancy_daily",
+      "substage": "",
+      "tick_index": 2,
+      "work_done": 2400
+    },
+    "country_daily": {
+      "deadline_budget_bypass": false,
+      "deadline_critical": false,
+      "elapsed_ms": 0.0,
+      "id": "country_daily",
+      "progress_ratio": 0.0,
+      "skipped_reason": "policy_gated",
+      "slices_run": 0,
+      "source": "day_changed",
+      "tick_index": 2
+    },
+    "dynamic_visual_atlas_upload": {
+      "bio_knob_cache_build_ms": 0.0,
+      "bio_knob_cache_hit": false,
+      "bio_slice_fallback_reason": "",
+      "bio_slice_native_ms": 0.0,
+      "bio_slice_publish_ms": 0.0,
+      "deadline_budget_bypass": false,
+      "deadline_critical": false,
+      "elapsed_ms": 1.89900004863739,
+      "factor_lookup_ms": 0.0,
+      "fallback_ms": 0.0,
+      "id": "dynamic_visual_atlas_upload",
+      "job_wrapper_gap_ms": 1.89900004863739,
+      "knob_update_ms": 0.0,
+      "last_slice_actual_ms": 1.89100003242493,
+      "last_slice_cursor_end": -1,
+      "last_slice_cursor_start": -1,
+      "last_slice_fallback_path": "",
+      "last_slice_job_shell_wall_ms": 0.0,
+      "last_slice_job_shell_wrapper_gap_ms": 0.0,
+      "last_slice_processed_cells": 2400,
+      "last_slice_processed_indices": 0,
+      "last_slice_processed_pixels": 0,
+      "last_slice_reported_gap_ms": 0.0120000839233398,
+      "last_slice_reported_ms": 1.87899994850159,
+      "last_slice_work_done": 2400,
+      "last_slice_wrapper_wall_ms": 0.0,
+      "native_call_ms": 0.0,
+      "path": "cell_indirection_lut",
+      "progress_ratio": 1.0,
+      "skipped_reason": "",
+      "slices_run": 1,
+      "slot_refresh_ms": 0.0,
+      "source": "day_changed",
+      "stage": "",
+      "substage": "",
+      "tick_index": 2,
+      "work_done": 2400
+    },
+    "economy_daily": {
+      "deadline_budget_bypass": false,
+      "deadline_critical": true,
+      "elapsed_ms": 0.0,
+      "id": "economy_daily",
+      "progress_ratio": 0.0,
+      "skipped_reason": "policy_gated",
+      "slices_run": 0,
+      "source": "day_changed",
+      "tick_index": 2
+    },
+    "effect_runtime": {
+      "bio_knob_cache_build_ms": 0.0,
+      "bio_knob_cache_hit": false,
+      "bio_slice_fallback_reason": "",
+      "bio_slice_native_ms": 0.0,
+      "bio_slice_publish_ms": 0.0,
+      "deadline_budget_bypass": false,
+      "deadline_critical": true,
+      "elapsed_ms": 0.150000005960464,
+      "factor_lookup_ms": 0.0,
+      "fallback_ms": 0.0,
+      "id": "effect_runtime",
+      "job_wrapper_gap_ms": 0.150000005960464,
+      "knob_update_ms": 0.0,
+      "last_slice_actual_ms": 0.142000004649162,
+      "last_slice_cursor_end": -1,
+      "last_slice_cursor_start": -1,
+      "last_slice_fallback_path": "",
+      "last_slice_job_shell_wall_ms": 0.0,
+      "last_slice_job_shell_wrapper_gap_ms": 0.0,
+      "last_slice_processed_cells": 0,
+      "last_slice_processed_indices": 640,
+      "last_slice_processed_pixels": 0,
+      "last_slice_reported_gap_ms": 0.011000007390976,
+      "last_slice_reported_ms": 0.130999997258186,
+      "last_slice_work_done": 640,
+      "last_slice_wrapper_wall_ms": 0.0,
+      "native_call_ms": 0.0,
+      "path": "EFFECT_GRAPH",
+      "progress_ratio": 1.0,
+      "skipped_reason": "",
+      "slices_run": 1,
+      "slot_refresh_ms": 0.0,
+      "source": "day_changed",
+      "stage": "effect_evaluate",
+      "substage": "",
+      "tick_index": 2,
+      "work_done": 640
+    },
+    "enum_atlas_upload": {
+      "deadline_budget_bypass": false,
+      "deadline_critical": false,
+      "elapsed_ms": 0.0,
+      "id": "enum_atlas_upload",
+      "progress_ratio": 0.0,
+      "skipped_reason": "policy_gated",
+      "slices_run": 0,
+      "source": "day_changed",
+      "tick_index": 2
+    },
+    "gameplay_effect": {
+      "deadline_budget_bypass": false,
+      "deadline_critical": false,
+      "elapsed_ms": 0.0,
+      "id": "gameplay_effect",
+      "progress_ratio": 0.0,
+      "skipped_reason": "policy_gated",
+      "slices_run": 0,
+      "source": "day_changed",
+      "tick_index": 2
+    },
+    "ideology_runtime": {
+      "bio_knob_cache_build_ms": 0.0,
+      "bio_knob_cache_hit": false,
+      "bio_slice_fallback_reason": "",
+      "bio_slice_native_ms": 0.0,
+      "bio_slice_publish_ms": 0.0,
+      "deadline_budget_bypass": false,
+      "deadline_critical": true,
+      "elapsed_ms": 0.194999992847443,
+      "factor_lookup_ms": 0.0,
+      "fallback_ms": 0.0,
+      "id": "ideology_runtime",
+      "job_wrapper_gap_ms": 0.194999992847443,
+      "knob_update_ms": 0.0,
+      "last_slice_actual_ms": 0.187000006437302,
+      "last_slice_cursor_end": 0,
+      "last_slice_cursor_start": 0,
+      "last_slice_fallback_path": "",
+      "last_slice_job_shell_wall_ms": 0.0,
+      "last_slice_job_shell_wrapper_gap_ms": 0.0,
+      "last_slice_processed_cells": 0,
+      "last_slice_processed_indices": 0,
+      "last_slice_processed_pixels": 0,
+      "last_slice_reported_gap_ms": 0.0140000134706497,
+      "last_slice_reported_ms": 0.172999992966652,
+      "last_slice_work_done": 0,
+      "last_slice_wrapper_wall_ms": 0.0,
+      "native_call_ms": 0.0,
+      "path": "IDEOLOGY_GRAPH",
+      "progress_ratio": 1.0,
+      "skipped_reason": "",
+      "slices_run": 1,
+      "slot_refresh_ms": 0.0,
+      "source": "day_changed",
+      "stage": "ideology_active_progress",
+      "substage": "",
+      "tick_index": 2,
+      "work_done": 0
+    },
+    "modifier_daily": {
+      "bio_knob_cache_build_ms": 0.0,
+      "bio_knob_cache_hit": false,
+      "bio_slice_fallback_reason": "",
+      "bio_slice_native_ms": 0.0,
+      "bio_slice_publish_ms": 0.0,
+      "deadline_budget_bypass": false,
+      "deadline_critical": true,
+      "elapsed_ms": 0.125,
+      "factor_lookup_ms": 0.0,
+      "fallback_ms": 0.0,
+      "id": "modifier_daily",
+      "job_wrapper_gap_ms": 0.125,
+      "knob_update_ms": 0.0,
+      "last_slice_actual_ms": 0.119000002741814,
+      "last_slice_cursor_end": -1,
+      "last_slice_cursor_start": -1,
+      "last_slice_fallback_path": "",
+      "last_slice_job_shell_wall_ms": 0.0,
+      "last_slice_job_shell_wrapper_gap_ms": 0.0,
+      "last_slice_processed_cells": 0,
+      "last_slice_processed_indices": 0,
+      "last_slice_processed_pixels": 0,
+      "last_slice_reported_gap_ms": 0.00600000470876694,
+      "last_slice_reported_ms": 0.112999998033047,
+      "last_slice_work_done": 0,
+      "last_slice_wrapper_wall_ms": 0.0,
+      "native_call_ms": 0.0,
+      "path": "MODIFIER_GRAPH",
+      "progress_ratio": 1.0,
+      "skipped_reason": "",
+      "slices_run": 1,
+      "slot_refresh_ms": 0.0,
+      "source": "day_changed",
+      "stage": "modifier_publish",
+      "substage": "",
+      "tick_index": 2,
+      "work_done": 0
+    },
+    "native_daily_sim": {
+      "deadline_budget_bypass": false,
+      "deadline_critical": false,
+      "elapsed_ms": 0.0,
+      "id": "native_daily_sim",
+      "progress_ratio": 0.0,
+      "skipped_reason": "policy_gated",
+      "slices_run": 0,
+      "source": "day_changed",
+      "tick_index": 2
+    },
+    "natural_resource_daily": {
+      "deadline_budget_bypass": false,
+      "deadline_critical": false,
+      "elapsed_ms": 0.0,
+      "id": "natural_resource_daily",
+      "progress_ratio": 0.0,
+      "skipped_reason": "policy_gated",
+      "slices_run": 0,
+      "source": "day_changed",
+      "tick_index": 2
+    },
+    "ocean_currents": {
+      "deadline_budget_bypass": false,
+      "deadline_critical": false,
+      "elapsed_ms": 0.0,
+      "id": "ocean_currents",
+      "progress_ratio": 0.0,
+      "skipped_reason": "policy_gated",
+      "slices_run": 0,
+      "source": "day_changed",
+      "tick_index": 2
+    },
+    "season_refresh": {
+      "deadline_budget_bypass": false,
+      "deadline_critical": false,
+      "elapsed_ms": 0.0,
+      "id": "season_refresh",
+      "progress_ratio": 0.0,
+      "skipped_reason": "policy_gated",
+      "slices_run": 0,
+      "source": "day_changed",
+      "tick_index": 2
+    },
+    "trigger_runtime": {
+      "bio_knob_cache_build_ms": 0.0,
+      "bio_knob_cache_hit": false,
+      "bio_slice_fallback_reason": "",
+      "bio_slice_native_ms": 0.0,
+      "bio_slice_publish_ms": 0.0,
+      "deadline_budget_bypass": false,
+      "deadline_critical": true,
+      "elapsed_ms": 0.342999994754791,
+      "factor_lookup_ms": 0.0,
+      "fallback_ms": 0.0,
+      "id": "trigger_runtime",
+      "job_wrapper_gap_ms": 0.342999994754791,
+      "knob_update_ms": 0.0,
+      "last_slice_actual_ms": 0.331999987363815,
+      "last_slice_cursor_end": -1,
+      "last_slice_cursor_start": -1,
+      "last_slice_fallback_path": "",
+      "last_slice_job_shell_wall_ms": 0.0,
+      "last_slice_job_shell_wrapper_gap_ms": 0.0,
+      "last_slice_processed_cells": 0,
+      "last_slice_processed_indices": 0,
+      "last_slice_processed_pixels": 0,
+      "last_slice_reported_gap_ms": 0.0139999985694885,
+      "last_slice_reported_ms": 0.317999988794327,
+      "last_slice_work_done": 0,
+      "last_slice_wrapper_wall_ms": 0.0,
+      "native_call_ms": 0.0,
+      "path": "TRIGGER_GRAPH",
+      "progress_ratio": 1.0,
+      "skipped_reason": "",
+      "slices_run": 1,
+      "slot_refresh_ms": 0.0,
+      "source": "day_changed",
+      "stage": "trigger_evaluate",
+      "substage": "",
+      "tick_index": 2,
+      "work_done": 0
+    }
+  },
+  "sus_last_tick_summary": {
+    "economy_reserved_budget_ms": 8.66600036621094,
+    "jobs_ran": 6,
+    "jobs_skipped": 8,
+    "largest_slice_cursor_end": -1,
+    "largest_slice_cursor_start": -1,
+    "largest_slice_fallback_path": "",
+    "largest_slice_job": "dynamic_visual_atlas_upload",
+    "largest_slice_ms": 1.89100003242493,
+    "largest_slice_path": "cell_indirection_lut",
+    "largest_slice_processed_cells": 2400,
+    "largest_slice_processed_indices": 0,
+    "largest_slice_processed_per_ms": 1269.16972969184,
+    "largest_slice_processed_pixels": 0,
+    "largest_slice_stage": "",
+    "largest_slice_substage": "",
+    "largest_slice_work_done": 2400,
+    "over_1ms_count_300": 2,
+    "sim_budget_warn_ms": 2.0,
+    "sim_frame_budget_ms": 8.0,
+    "sim_slice_budget_ms": 3.0,
+    "sim_strict_budget_enabled": false,
+    "sim_upload_slice_budget_ms": 1.5,
+    "slices_total": 6,
+    "source": "day_changed",
+    "sus_sim_avg_300": 2.8730001449585,
+    "sus_sim_max_300": 2.92700004577637,
+    "sus_sim_p95_300": 2.92700004577637,
+    "tick_index": 2,
+    "total_ms": 3.42000007629395
+  },
+  "sus_sim_budget_window": {
+    "economy_reserved_budget_ms": 8.66600036621094,
+    "largest_slice_cursor_end": -1,
+    "largest_slice_cursor_start": -1,
+    "largest_slice_fallback_path": "",
+    "largest_slice_job": "dynamic_visual_atlas_upload",
+    "largest_slice_ms": 1.89100003242493,
+    "largest_slice_path": "cell_indirection_lut",
+    "largest_slice_processed_cells": 2400,
+    "largest_slice_processed_indices": 0,
+    "largest_slice_processed_per_ms": 1269.16972969184,
+    "largest_slice_processed_pixels": 0,
+    "largest_slice_stage": "",
+    "largest_slice_substage": "",
+    "largest_slice_work_done": 2400,
+    "over_1ms_count_300": 2,
+    "sample_count": 2,
+    "sim_budget_warn_ms": 2.0,
+    "sim_frame_budget_ms": 8.0,
+    "sim_slice_budget_ms": 3.0,
+    "sim_strict_budget_enabled": false,
+    "sim_upload_slice_budget_ms": 1.5,
+    "sus_sim_avg_300": 2.8730001449585,
+    "sus_sim_max_300": 2.92700004577637,
+    "sus_sim_p95_300": 2.92700004577637
+  },
+  "sus_skipped_summary": {
+    "bio_occupancy_daily": {
+      "max_ms": 0.284999996423721,
+      "skipped": {
+
+      }
+    },
+    "country_daily": {
+      "max_ms": 0.0,
+      "skipped": {
+        "policy_gated": 2
+      }
+    },
+    "dynamic_visual_atlas_upload": {
+      "max_ms": 1.89900004863739,
+      "skipped": {
+
+      }
+    },
+    "economy_daily": {
+      "max_ms": 0.0,
+      "skipped": {
+        "policy_gated": 2
+      }
+    },
+    "effect_runtime": {
+      "max_ms": 0.811999976634979,
+      "skipped": {
+
+      }
+    },
+    "enum_atlas_upload": {
+      "max_ms": 0.0,
+      "skipped": {
+        "policy_gated": 2
+      }
+    },
+    "gameplay_effect": {
+      "max_ms": 0.0,
+      "skipped": {
+        "policy_gated": 2
+      }
+    },
+    "ideology_runtime": {
+      "max_ms": 0.194999992847443,
+      "skipped": {
+
+      }
+    },
+    "modifier_daily": {
+      "max_ms": 0.19200000166893,
+      "skipped": {
+
+      }
+    },
+    "native_daily_sim": {
+      "max_ms": 1.12899994850159,
+      "skipped": {
+        "policy_gated": 1
+      }
+    },
+    "natural_resource_daily": {
+      "max_ms": 0.0,
+      "skipped": {
+        "policy_gated": 2
+      }
+    },
+    "ocean_currents": {
+      "max_ms": 0.0,
+      "skipped": {
+        "policy_gated": 2
+      }
+    },
+    "season_refresh": {
+      "max_ms": 0.0,
+      "skipped": {
+        "policy_gated": 2
+      }
+    },
+    "trigger_runtime": {
+      "max_ms": 0.342999994754791,
+      "skipped": {
+
+      }
+    }
+  },
+  "timestamp": "2026-09-21T19:35:54"
+}

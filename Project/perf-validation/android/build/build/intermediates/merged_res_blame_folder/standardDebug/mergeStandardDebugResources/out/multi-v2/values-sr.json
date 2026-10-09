@@ -1,0 +1,43 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.godot.game-mergeStandardDebugResources-18:/values-sr/values-sr.xml",
+            "map": [
+                {
+                    "source": "F:\\Developent\\Godot\\Project.Keynes\\Project\\project-keynes\\android\\build\\res\\values-sr\\godot_project_name_string.xml",
+                    "from": {
+                        "startLines": "3",
+                        "startColumns": "1",
+                        "startOffsets": "112",
+                        "endColumns": "64",
+                        "endOffsets": "175"
+                    },
+                    "to": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "67",
+                        "endOffsets": "118"
+                    }
+                },
+                {
+                    "source": "C:\\Users\\HkingAuditore\\.gradle\\caches\\8.11.1\\transforms\\1f78652368fcaf22ddb356e4bfe9a15a\\transformed\\core-1.8.0\\res\\values-sr\\values-sr.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "100",
+                        "endOffsets": "151"
+                    },
+                    "to": {
+                        "startLines": "3",
+                        "startColumns": "4",
+                        "startOffsets": "123",
+                        "endColumns": "100",
+                        "endOffsets": "219"
+                    }
+                }
+            ]
+        }
+    ]
+}

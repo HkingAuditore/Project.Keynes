@@ -1,0 +1,156 @@
+scons: Entering directory `F:\Developent\Godot\Project.Keynes\gdext'
+scons: Reading SConscript files ...
+Building for architecture x86_64 on platform windows
+scons: done reading SConscript files.
+scons: Building targets ...
+scons: `godot-cpp\bin\libgodot-cpp.windows.template_debug.x86_64.lib' is up to date.
+Compiling shared src\country_runtime.cpp ...
+Compiling shared src\economy_csv_recorder.cpp ...
+Compiling shared src\economy_graph_building_plan.cpp ...
+Compiling shared src\economy_graph_live_ops.cpp ...
+Compiling shared src\economy_graph_stage_dispatch.cpp ...
+Compiling shared src\economy_runtime.cpp ...
+Compiling shared src\economy_runtime_building_commit.cpp ...
+Compiling shared src\economy_runtime_building_construction.cpp ...
+Compiling shared src\economy_runtime_building_employment.cpp ...
+Compiling shared src\economy_runtime_building_investment.cpp ...
+Compiling shared src\economy_runtime_building_production.cpp ...
+Compiling shared src\economy_runtime_building_resources.cpp ...
+Compiling shared src\economy_runtime_building_storage.cpp ...
+src\economy_runtime.cpp(12003): error C3892: “membership�\ufffd: 不能给常量赋�\ufffd
+src\economy_runtime.cpp(12005): error C3892: “membership�\ufffd: 不能给常量赋�\ufffd
+src\economy_runtime.cpp(12006): error C3892: “membership�\ufffd: 不能给常量赋�\ufffd
+src\economy_runtime.cpp(12159): error C3892: “membership�\ufffd: 不能给常量赋�\ufffd
+src\economy_runtime.cpp(12161): error C3892: “membership�\ufffd: 不能给常量赋�\ufffd
+src\economy_runtime.cpp(12162): error C3892: “membership�\ufffd: 不能给常量赋�\ufffd
+src\economy_runtime.cpp(16798): error C2440: “初始化�\ufffd: 无法从�\ufffd�const T”转�\ufffd为�\ufffd�pk::NativeEconomyRuntime::FamilyMembershipEdge &�\ufffd
+        with
+        [
+            T=pk::EconomyFamilyMembershipEdge
+        ]
+src\economy_runtime.cpp(16798): note: �\ufffd�\ufffd丢失限定�\ufffd
+src\economy_runtime.cpp(16913): error C2440: “初始化�\ufffd: 无法从�\ufffd�const T”转�\ufffd为�\ufffd�pk::NativeEconomyRuntime::FamilyMembershipEdge &�\ufffd
+        with
+        [
+            T=pk::EconomyFamilyMembershipEdge
+        ]
+src\economy_runtime.cpp(16913): note: �\ufffd�\ufffd丢失限定�\ufffd
+src\economy_runtime.cpp(17078): error C3892: “this�\ufffd: 不能给常量赋�\ufffd
+src\economy_runtime.cpp(17101): error C2440: “初始化�\ufffd: 无法从�\ufffd�const T”转�\ufffd为�\ufffd�pk::NativeEconomyRuntime::FamilyBuildingOwnership &�\ufffd
+        with
+        [
+            T=pk::EconomyFamilyBuildingOwnership
+        ]
+src\economy_runtime.cpp(17101): note: �\ufffd�\ufffd丢失限定�\ufffd
+src\economy_runtime.cpp(17162): error C2440: “初始化�\ufffd: 无法从�\ufffd�const pk::EconomyFamilyBuildingOwnership”转�\ufffd为�\ufffd�pk::NativeEconomyRuntime::FamilyBuildingOwnership &�\ufffd
+src\economy_runtime.cpp(17162): note: �\ufffd�\ufffd丢失限定�\ufffd
+src\economy_runtime.cpp(17191): error C2440: “初始化�\ufffd: 无法从�\ufffd�const pk::EconomyFamilyMembershipEdge”转�\ufffd为�\ufffd�pk::NativeEconomyRuntime::FamilyMembershipEdge &�\ufffd
+src\economy_runtime.cpp(17191): note: �\ufffd�\ufffd丢失限定�\ufffd
+src\economy_runtime.cpp(17211): error C2440: “初始化�\ufffd: 无法从�\ufffd�const T”转�\ufffd为�\ufffd�pk::NativeEconomyRuntime::FamilyMembershipEdge &�\ufffd
+        with
+        [
+            T=pk::EconomyFamilyMembershipEdge
+        ]
+src\economy_runtime.cpp(17211): note: �\ufffd�\ufffd丢失限定�\ufffd
+src\economy_runtime.cpp(17238): error C2440: “初始化�\ufffd: 无法从�\ufffd�const T”转�\ufffd为�\ufffd�pk::NativeEconomyRuntime::FamilyMembershipEdge &�\ufffd
+        with
+        [
+            T=pk::EconomyFamilyMembershipEdge
+        ]
+src\economy_runtime.cpp(17238): note: �\ufffd�\ufffd丢失限定�\ufffd
+src\economy_runtime.cpp(17252): error C2664: “void pk::NativeEconomyRuntime::sanitize_family_membership_edge(pk::NativeEconomyRuntime::FamilyMembershipEdge &)�\ufffd: 无法将参�\ufffd 1 从�\ufffd�const T”转�\ufffd为�\ufffd�pk::NativeEconomyRuntime::FamilyMembershipEdge &�\ufffd
+        with
+        [
+            T=pk::EconomyFamilyMembershipEdge
+        ]
+src\economy_runtime.cpp(17252): note: �\ufffd�\ufffd丢失限定�\ufffd
+src\economy_runtime.cpp(17141): note: 参�\ufffd��\ufffd�pk::NativeEconomyRuntime::sanitize_family_membership_edge”的声明
+src\economy_runtime.cpp(17252): note: 尝试匹配参数列表�\ufffd(const T)”时
+        with
+        [
+            T=pk::EconomyFamilyMembershipEdge
+        ]
+src\economy_runtime.cpp(17515): error C2440: “初始化�\ufffd: 无法从�\ufffd�const T”转�\ufffd为�\ufffd�pk::NativeEconomyRuntime::FamilyMembershipEdge &�\ufffd
+        with
+        [
+            T=pk::EconomyFamilyMembershipEdge
+        ]
+src\economy_runtime.cpp(17515): note: �\ufffd�\ufffd丢失限定�\ufffd
+src\economy_runtime.cpp(17524): error C2440: “初始化�\ufffd: 无法从�\ufffd�const pk::EconomyFamilyBuildingOwnership”转�\ufffd为�\ufffd�pk::NativeEconomyRuntime::FamilyBuildingOwnership &�\ufffd
+src\economy_runtime.cpp(17524): note: �\ufffd�\ufffd丢失限定�\ufffd
+src\economy_runtime.cpp(17970): error C3892: “found�\ufffd: 不能给常量赋�\ufffd
+src\economy_runtime.cpp(17978): error C3892: “found�\ufffd: 不能给常量赋�\ufffd
+src\economy_runtime.cpp(20233): error C2678: 二进制�\ufffd\ufffd=�\ufffd: 没有找到接受“const T”类型的左操作数的运算�\ufffd\ufffd(或没有可接受的转�\ufffd)
+        with
+        [
+            T=pk::EconomyPersonNeedState
+        ]
+F:\Developent\Godot\Project.Keynes\gdext\src\runtime_economy_family_side_tables.h(106): note: �\ufffd能是“pk::EconomyPersonNeedState &pk::EconomyPersonNeedState::operator =(pk::EconomyPersonNeedState &&)�\ufffd
+src\economy_runtime.cpp(20233): note: “pk::EconomyPersonNeedState &pk::EconomyPersonNeedState::operator =(pk::EconomyPersonNeedState &&)�\ufffd: 不能将�\ufffd�this”指针从“const T”转�\ufffd为�\ufffd�pk::EconomyPersonNeedState &�\ufffd
+        with
+        [
+            T=pk::EconomyPersonNeedState
+        ]
+src\economy_runtime.cpp(20233): note: �\ufffd�\ufffd丢失限定�\ufffd
+F:\Developent\Godot\Project.Keynes\gdext\src\runtime_economy_family_side_tables.h(106): note: �\ufffd    “pk::EconomyPersonNeedState &pk::EconomyPersonNeedState::operator =(const pk::EconomyPersonNeedState &)�\ufffd
+src\economy_runtime.cpp(20233): note: “pk::EconomyPersonNeedState &pk::EconomyPersonNeedState::operator =(const pk::EconomyPersonNeedState &)�\ufffd: 不能将�\ufffd�this”指针从“const T”转�\ufffd为�\ufffd�pk::EconomyPersonNeedState &�\ufffd
+        with
+        [
+            T=pk::EconomyPersonNeedState
+        ]
+src\economy_runtime.cpp(20233): note: �\ufffd�\ufffd丢失限定�\ufffd
+src\economy_runtime.cpp(20233): note: 尝试匹配参数列表�\ufffd(const T, const pk::NativeEconomyRuntime::PersonNeedState)”时
+        with
+        [
+            T=pk::EconomyPersonNeedState
+        ]
+src\economy_runtime.cpp(20270): error C2678: 二进制�\ufffd\ufffd=�\ufffd: 没有找到接受“const T”类型的左操作数的运算�\ufffd\ufffd(或没有可接受的转�\ufffd)
+        with
+        [
+            T=pk::EconomyPersonNeedState
+        ]
+F:\Developent\Godot\Project.Keynes\gdext\src\runtime_economy_family_side_tables.h(106): note: �\ufffd能是“pk::EconomyPersonNeedState &pk::EconomyPersonNeedState::operator =(pk::EconomyPersonNeedState &&)�\ufffd
+src\economy_runtime.cpp(20270): note: “pk::EconomyPersonNeedState &pk::EconomyPersonNeedState::operator =(pk::EconomyPersonNeedState &&)�\ufffd: 不能将�\ufffd�this”指针从“const T”转�\ufffd为�\ufffd�pk::EconomyPersonNeedState &�\ufffd
+        with
+        [
+            T=pk::EconomyPersonNeedState
+        ]
+src\economy_runtime.cpp(20270): note: �\ufffd�\ufffd丢失限定�\ufffd
+F:\Developent\Godot\Project.Keynes\gdext\src\runtime_economy_family_side_tables.h(106): note: �\ufffd    “pk::EconomyPersonNeedState &pk::EconomyPersonNeedState::operator =(const pk::EconomyPersonNeedState &)�\ufffd
+src\economy_runtime.cpp(20270): note: “pk::EconomyPersonNeedState &pk::EconomyPersonNeedState::operator =(const pk::EconomyPersonNeedState &)�\ufffd: 不能将�\ufffd�this”指针从“const T”转�\ufffd为�\ufffd�pk::EconomyPersonNeedState &�\ufffd
+        with
+        [
+            T=pk::EconomyPersonNeedState
+        ]
+src\economy_runtime.cpp(20270): note: �\ufffd�\ufffd丢失限定�\ufffd
+src\economy_runtime.cpp(20270): note: 尝试匹配参数列表�\ufffd(const T, const T)”时
+        with
+        [
+            T=pk::EconomyPersonNeedState
+        ]
+src\economy_runtime.cpp(20938): error C2664: “void pk::NativeEconomyRuntime::move_family_membership::<lambda_9139125b75a6e503db0a8a0a6a8a37db>::operator ()(pk::NativeEconomyRuntime::FamilyMembershipEdge &,bool) const�\ufffd: 无法将参�\ufffd 1 从�\ufffd�const T”转�\ufffd为�\ufffd�pk::NativeEconomyRuntime::FamilyMembershipEdge &�\ufffd
+        with
+        [
+            T=pk::EconomyFamilyMembershipEdge
+        ]
+src\economy_runtime.cpp(20938): note: �\ufffd�\ufffd丢失限定�\ufffd
+src\economy_runtime.cpp(20931): note: 参�\ufffd��\ufffd�pk::NativeEconomyRuntime::move_family_membership::<lambda_9139125b75a6e503db0a8a0a6a8a37db>::operator ()”的声明
+src\economy_runtime.cpp(20938): note: 尝试匹配参数列表�\ufffd(const T, bool)”时
+        with
+        [
+            T=pk::EconomyFamilyMembershipEdge
+        ]
+src\economy_runtime.cpp(20941): error C2664: “void pk::NativeEconomyRuntime::move_family_membership::<lambda_9139125b75a6e503db0a8a0a6a8a37db>::operator ()(pk::NativeEconomyRuntime::FamilyMembershipEdge &,bool) const�\ufffd: 无法将参�\ufffd 1 从�\ufffd�const T”转�\ufffd为�\ufffd�pk::NativeEconomyRuntime::FamilyMembershipEdge &�\ufffd
+        with
+        [
+            T=pk::EconomyFamilyMembershipEdge
+        ]
+src\economy_runtime.cpp(20941): note: �\ufffd�\ufffd丢失限定�\ufffd
+src\economy_runtime.cpp(20931): note: 参�\ufffd��\ufffd�pk::NativeEconomyRuntime::move_family_membership::<lambda_9139125b75a6e503db0a8a0a6a8a37db>::operator ()”的声明
+src\economy_runtime.cpp(20941): note: 尝试匹配参数列表�\ufffd(const T, bool)”时
+        with
+        [
+            T=pk::EconomyFamilyMembershipEdge
+        ]
+scons: *** [src\economy_runtime.windows.template_debug.x86_64.obj] Error 2
+scons: building terminated because of errors.

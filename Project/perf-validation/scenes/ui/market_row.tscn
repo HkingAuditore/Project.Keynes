@@ -1,0 +1,56 @@
+[gd_scene load_steps=2 format=3]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="1_icon"]
+[node name="MarketRow" type="PanelContainer"]
+size_flags_horizontal = 3
+theme_type_variation = &"PKInsetPanel"
+[node name="Body" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 4
+[node name="Button" type="Button" parent="Body"]
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+mouse_default_cursor_shape = 2
+theme_type_variation = &"PKTabButton"
+[node name="Header" type="HBoxContainer" parent="Body/Button"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 7.0
+offset_top = 7.0
+offset_right = -7.0
+offset_bottom = -7.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 8
+[node name="Icon" parent="Body/Button/Header" instance=ExtResource("1_icon")]
+custom_minimum_size = Vector2(26, 26)
+layout_mode = 2
+[node name="Identity" type="VBoxContainer" parent="Body/Button/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+[node name="Name" type="Label" parent="Body/Button/Header/Identity"]
+layout_mode = 2
+text_overrun_behavior = 3
+[node name="Stock" type="Label" parent="Body/Button/Header/Identity"]
+layout_mode = 2
+text_overrun_behavior = 3
+theme_type_variation = &"PKMutedLabel"
+[node name="PriceBox" type="VBoxContainer" parent="Body/Button/Header"]
+custom_minimum_size = Vector2(92, 0)
+layout_mode = 2
+[node name="Price" type="Label" parent="Body/Button/Header/PriceBox"]
+layout_mode = 2
+horizontal_alignment = 2
+[node name="Delta" type="Label" parent="Body/Button/Header/PriceBox"]
+layout_mode = 2
+horizontal_alignment = 2
+theme_type_variation = &"PKMutedLabel"
+[node name="Risk" type="Label" parent="Body/Button/Header"]
+custom_minimum_size = Vector2(46, 0)
+layout_mode = 2
+horizontal_alignment = 1
+theme_type_variation = &"PKDangerText"

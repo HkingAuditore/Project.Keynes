@@ -1,0 +1,62 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] catalog compiles
+  [PASS] country bootstraps
+  [PASS] configure_economy ok
+  [PASS] bootstrap_economy ok
+  [PASS] country bootstraps
+  [PASS] configure_economy ok
+  [PASS] bootstrap_economy ok
+[economy-open-finish] day=0 country=0.037 workset=0.019 fiscal=0.011 csr=0.000 recovery=0.000 vectors=0.032 audit=0.006 commands=0.001
+[research-procure-diag] day=0 phase=0 done=0 cands=9 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] compact day 0 done
+[economy-open-finish] day=0 country=0.055 workset=0.012 fiscal=0.009 csr=0.000 recovery=0.000 vectors=0.045 audit=0.007 commands=0.000
+[research-procure-diag] day=0 phase=0 done=0 cands=9 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] stage_ops day 0 done
+  [PASS] day 0 state_hash matches
+  [PASS] compact day 0 population_error==0
+  [PASS] compact day 0 money_error==0
+  [PASS] compact day 0 goods_error==0
+[research-procure-diag] day=1 phase=0 done=0 cands=9 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] compact day 1 done
+[research-procure-diag] day=1 phase=0 done=0 cands=9 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] stage_ops day 1 done
+  [PASS] day 1 state_hash matches
+  [PASS] compact day 1 population_error==0
+  [PASS] compact day 1 money_error==0
+  [PASS] compact day 1 goods_error==0
+[research-procure-diag] day=2 phase=0 done=0 cands=9 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] compact day 2 done
+[research-procure-diag] day=2 phase=0 done=0 cands=9 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] stage_ops day 2 done
+  [PASS] day 2 state_hash matches
+  [PASS] compact day 2 population_error==0
+  [PASS] compact day 2 money_error==0
+  [PASS] compact day 2 goods_error==0
+[research-procure-diag] day=3 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] compact day 3 done
+[research-procure-diag] day=3 phase=0 done=0 cands=9 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] stage_ops day 3 done
+  [info] hash mismatch day=3 compact=5643873773828005435 stage_ops=1493800405095166505
+  [FAIL] day 3 state_hash matches
+  [PASS] compact day 3 population_error==0
+  [PASS] compact day 3 money_error==0
+  [PASS] compact day 3 goods_error==0
+[research-procure-diag] day=4 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] compact day 4 done
+[research-procure-diag] day=4 phase=0 done=0 cands=9 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] stage_ops day 4 done
+  [FAIL] day 4 state_hash matches
+  [PASS] compact day 4 population_error==0
+  [PASS] compact day 4 money_error==0
+  [PASS] compact day 4 goods_error==0
+  [PASS] soak_parity_ok cleared on mismatch
+  [PASS] stage_ops worker starts for ingress check
+  [PASS] legacy submit refused under stage_ops writer
+runtime_economy_stage_ops_soak_parity_test checks=40 failures=2
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

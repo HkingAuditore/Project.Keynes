@@ -1,0 +1,50 @@
+[gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/resource_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"silver_ore"
+discovery_technology_tags = PackedStringArray("tech.surface_silver_collection")
+display_name = "银矿"
+reserve_component = &"cell.res_silver_ore_reserve"
+init_reserve_scale = 8.0
+init_min_coverage = 0.15
+init_min_reserve = 80000.0
+init_target_coverage = 0.15
+init_target_reserve_density = 60000.0
+init_richness_exponent = 1.8
+init_micro_coverage = 0.05
+init_micro_reserve_share = 0.05
+init_micro_min_reserve = 10000.0
+land_only = true
+temp_lo = 0.0
+temp_hi = 1.0
+gen_base = 0.0
+gen_temp = 0.0
+gen_moisture = 0.0
+gen_self = 0.0
+decay_base = 0.0
+decay_temp = 0.0
+decay_moisture = 0.0
+decay_self = 0.0
+init_base = -46400.0
+init_temp = 0.0
+init_moisture = 0.0
+init_elevation = 19200.0
+init_volcano = 14400.0
+init_noise = 62400.0
+init_noise_scale = 0.09
+init_landform_weights = {
+6: 14400.0,
+7: 36000.0,
+8: 36000.0,
+10: 19200.0,
+12: 30400.0,
+13: 14400.0,
+14: 33600.0,
+15: 25600.0
+}
+geology_family_id = &"hydrothermal"
+init_province = 17000.0
+init_belt = 24000.0
