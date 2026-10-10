@@ -4484,7 +4484,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             if (profession_transition && !move_cohort_population(
                     candidate.plan.sponsor, cell, candidate.plan.owner_signature_id,
                     owner_population, error, &source_drained,
-                    candidate.plan.sponsor_family_handle)) return false;
+                    candidate.plan.sponsor_family_handle, true)) return false;
             if (source_drained) {
                 error = "building_investment_source_unexpectedly_drained";
                 return false;
@@ -4523,6 +4523,10 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 population_store().funds.write_scalar(owner_slot, saturating_add(
                     population_store().funds[owner_slot], correction,
                     _saturation_count), market_mutation_sink());
+                attribute_family_funds_delta(candidate.plan.sponsor,
+                    candidate.plan.sponsor_family_handle, -correction);
+                attribute_family_funds_delta(owner_slot,
+                    candidate.plan.sponsor_family_handle, correction);
                 if (population_store().funds[candidate.plan.sponsor] !=
                         source_funds_before - required_capital) {
                     error = "building_investment_capital_transfer_drift";
@@ -4570,6 +4574,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 population_store().funds.write_scalar(owner_slot, saturating_add(
                     population_store().funds[owner_slot], merchant_credit,
                     _saturation_count), market_mutation_sink());
+                attribute_family_funds_delta(owner_slot,
+                    candidate.plan.sponsor_family_handle, merchant_credit);
                 trace_record_cashflow(cell, population_store().handle_for_slot(owner_slot),
                                       CASHFLOW_OTHER, merchant_credit, 0);
                 _investment_outstanding_credit_by_cell[cell] = saturating_add(
@@ -4618,9 +4624,13 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     static_cast<int32_t>(mul_div_sat(
                         type.construction_days, commit_time_factor,
                         Q16_ONE, _saturation_count)));
-            if (!commit_preflighted_build_command(
-                    command, owner_slot, commit_material_plans[i],
-                    effective_construction_days, 0, 0, 0, error)) return false;
+            _construction_sponsor_override = candidate.plan.sponsor_family_handle;
+            _construction_sponsor_override_set = true;
+            const bool built = commit_preflighted_build_command(
+                command, owner_slot, commit_material_plans[i],
+                effective_construction_days, 0, 0, 0, error);
+            _construction_sponsor_override_set = false;
+            if (!built) return false;
             if (candidate.plan.merchant_credit > 0) {
                 auto pending =
                     pending_construction_at(pending_construction_count() - 1);

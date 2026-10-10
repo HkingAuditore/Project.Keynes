@@ -663,6 +663,8 @@ bool NativeEconomyRuntime::ensure_merchant_invariant(int32_t cell, int64_t &repa
         error = "merchant_slot_allocation_failed";
         return false;
     }
+    const bool family_split = !family_memberships().empty();
+    if (family_split) plan_family_membership_move(source, cell, 1, 0, false);
     const int64_t destination_pop_before = population_store().population[destination];
     const int64_t destination_funds_before = population_store().funds[destination];
     touch_accounting_slot(source);
@@ -673,6 +675,7 @@ bool NativeEconomyRuntime::ensure_merchant_invariant(int32_t cell, int64_t &repa
         population_store().population[destination], 1, _saturation_count), market_mutation_sink());
     population_store().funds.write_scalar(destination, saturating_add(
         population_store().funds[destination], funds_share, _saturation_count), market_mutation_sink());
+    if (family_split) move_family_membership(source, destination, funds_share);
     if (_epoch_active) {
         std::vector<EventLeg> split_legs;
         if (trace_detail_for_cell(cell)) {
@@ -11199,7 +11202,9 @@ int32_t NativeEconomyRuntime::find_entrepreneur_source(
                 best_family = family_handle;
             }
         };
-        bool considered_family = false;
+        // Families and the anonymous remainder compete as separate sponsors,
+        // each paying from its own claim net of a month of living cost.
+        int64_t family_people = 0, family_claim = 0;
         if (_family_runtime_mode.get() == 2 && _family_cohort_offsets.size() ==
                 population_store().active.size() + 1) {
             for (int32_t p = _family_cohort_offsets[slot];
@@ -11208,11 +11213,21 @@ int32_t NativeEconomyRuntime::find_entrepreneur_source(
                     _family_cohort_edge_indices[p]];
                 int32_t family = -1;
                 if (!families_store().valid_handle(edge.family_handle, family)) continue;
-                considered_family = true;
-                consider(edge.family_handle, edge.people, edge.cash_claim);
+                const int64_t people = std::max<int64_t>(0, edge.people);
+                const int64_t claim = std::max<int64_t>(0, edge.cash_claim);
+                family_people = saturating_add(family_people, people, sat);
+                family_claim = saturating_add(family_claim, claim, sat);
+                consider(edge.family_handle, people, saturating_sub(claim,
+                    saturating_mul(saturating_mul(source_living_cost, people, sat),
+                                   30, sat), sat));
             }
         }
-        if (!considered_family) consider(0, available_population, transferable);
+        const int64_t anonymous_people = std::max<int64_t>(0,
+            std::min(available_population, population - family_people));
+        consider(0, anonymous_people, saturating_sub(saturating_sub(
+            population_store().funds[slot], family_claim, sat),
+            saturating_mul(saturating_mul(source_living_cost, anonymous_people, sat),
+                           30, sat), sat));
     });
     if (best_slot >= 0) {
         willing_population = best_willing;
@@ -12022,14 +12037,13 @@ bool NativeEconomyRuntime::apply_family_population_reward(
         if (membership == family_memberships().end()) {
             family_memberships().push_back({family_handle, cohort_handle,
                 actual, 0, population_store().population[target_slot],
-                population_store().funds[target_slot], 0, 0});
+                family_ledger_basis_for_slot(target_slot), 0, 0});
         } else {
             auto membership_write = family_memberships().edit_row(membership - family_memberships().begin(), market_mutation_sink());
             auto *membership_row = &membership_write[0];
             membership_row->people = saturating_add(
                 membership->people, actual, _saturation_count);
             membership_row->population_basis = population_store().population[target_slot];
-            membership_row->funds_basis = population_store().funds[target_slot];
         }
         _family_indices_dirty = true;
     }
@@ -12180,14 +12194,13 @@ void NativeEconomyRuntime::apply_family_colonization_population_reward(
     if (membership == family_memberships().end()) {
         family_memberships().push_back({family_handle, cohort_handle,
             actual, 0, population_store().population[target_slot],
-            population_store().funds[target_slot], 0, 0});
+            family_ledger_basis_for_slot(target_slot), 0, 0});
     } else {
         auto membership_write = family_memberships().edit_row(membership - family_memberships().begin(), market_mutation_sink());
         auto *membership_row = &membership_write[0];
         membership_row->people = saturating_add(
             membership->people, actual, _saturation_count);
         membership_row->population_basis = population_store().population[target_slot];
-        membership_row->funds_basis = population_store().funds[target_slot];
     }
     _family_indices_dirty = true;
     std::vector<EventLeg> legs;
@@ -12532,6 +12545,7 @@ bool NativeEconomyRuntime::commit_structural(const StructuralCommand &cmd,
         const int64_t population_before = population_store().population[destination];
         population_store().population.write_scalar(destination, saturating_add(
             population_before, cmd.population, _saturation_count), market_mutation_sink());
+        apply_family_birth_attribution(destination, cmd.population);
         _structural_touched_cells.push_back(cmd.cell);
         std::vector<EventLeg> legs;
         if (trace_detail_for_cell(cmd.cell)) {
@@ -12630,7 +12644,8 @@ bool NativeEconomyRuntime::move_cohort_population(int32_t source, int32_t dest_c
                                                    int64_t requested_pop,
                                                    std::string &error,
                                                    bool *source_drained_out,
-                                                   uint64_t preferred_family_handle) {
+                                                   uint64_t preferred_family_handle,
+                                                   bool preferred_family_strict) {
     if (source_drained_out != nullptr) *source_drained_out = false;
     const int32_t source_cell = population_store().page_cell[source / COHORT_PAGE_SIZE];
     const int64_t source_handle = static_cast<int64_t>(population_store().handle_for_slot(source));
@@ -12641,10 +12656,33 @@ bool NativeEconomyRuntime::move_cohort_population(int32_t source, int32_t dest_c
     if (move_pop == 0) return true;
     _structural_touched_cells.push_back(source_cell);
     _structural_touched_cells.push_back(cmd_cell);
-    const int64_t move_funds = move_pop == source_pop
-                                   ? population_store().funds[source]
-                                   : mul_div_sat(population_store().funds[source], move_pop, source_pop,
-                                                 _saturation_count);
+    // Money follows people: family members carry their per-capita claim,
+    // anonymous movers the per-capita anonymous remainder.
+    int64_t move_funds = move_pop == source_pop
+                             ? population_store().funds[source]
+                             : mul_div_sat(population_store().funds[source], move_pop, source_pop,
+                                           _saturation_count);
+    if (!family_memberships().empty()) {
+        const int64_t anonymous_moved = plan_family_membership_move(source, cmd_cell,
+            move_pop, preferred_family_handle, preferred_family_strict);
+        if (move_pop < source_pop && !_family_edge_scratch.empty()) {
+            int64_t family_people = 0, family_claim = 0, moved_claim = 0;
+            for (int32_t edge : _family_edge_scratch) {
+                family_people += std::max<int64_t>(0, family_memberships()[edge].people);
+                family_claim += std::max<int64_t>(0, family_memberships()[edge].cash_claim);
+            }
+            for (const FamilyMovePlanRow &row : _family_move_plan)
+                moved_claim = saturating_add(moved_claim, row.claim, _saturation_count);
+            const int64_t source_funds = std::max<int64_t>(0, population_store().funds[source]);
+            const int64_t anonymous = std::max<int64_t>(0, source_pop - family_people);
+            const int64_t anonymous_funds = std::max<int64_t>(0, source_funds - family_claim);
+            const int64_t anonymous_move_funds = anonymous > 0
+                ? mul_div_sat(anonymous_funds, std::min(anonymous_moved, anonymous),
+                              anonymous, _saturation_count) : 0;
+            move_funds = std::clamp<int64_t>(saturating_add(moved_claim,
+                anonymous_move_funds, _saturation_count), 0, source_funds);
+        }
+    }
     const int64_t move_income = move_pop == source_pop
                                     ? population_store().epoch_income[source]
                                     : mul_div_sat(population_store().epoch_income[source], move_pop, source_pop,
@@ -12690,6 +12728,7 @@ bool NativeEconomyRuntime::move_cohort_population(int32_t source, int32_t dest_c
 
     const int32_t destination = population_store().allocate_slot(cmd_cell, static_cast<uint32_t>(cmd_signature));
     if (destination < 0) {
+        _family_move_plan.clear();
         error = "structural_destination_allocation_failed";
         return false;
     }
@@ -12767,9 +12806,8 @@ bool NativeEconomyRuntime::move_cohort_population(int32_t source, int32_t dest_c
     population_store().epoch_subsidy_received.write_scalar(source, population_store().epoch_subsidy_received[source] - (move_subsidy), market_mutation_sink());
     population_store().income_baseline_ema.write_scalar(source, population_store().income_baseline_ema[source] - (move_baseline_ema), market_mutation_sink());
     population_store().demography_residual.write_scalar(source, population_store().demography_residual[source] - (move_residual), market_mutation_sink());
-    move_family_membership(static_cast<uint64_t>(source_handle),
-        static_cast<uint64_t>(destination_handle), source_pop, move_pop,
-        source_funds_before, move_funds, preferred_family_handle);
+    if (!family_memberships().empty())
+        move_family_membership(source, destination, move_funds);
     if (population_store().population[source] == 0) {
         // Any rounding residue is money, not an implicit burn.
         const int64_t residue_funds = population_store().funds[source];
@@ -16781,15 +16819,24 @@ void NativeEconomyRuntime::rebuild_family_indices(bool rebuild_derived) {
         rebuild_family_industry_metrics();
         rebuild_family_owned_output_csr();
     }
+    _family_csr_edge_count = family_memberships().size();
     _family_indices_dirty = false;
 }
 
-void NativeEconomyRuntime::normalize_family_memberships(bool rebuild_derived) {
+void NativeEconomyRuntime::normalize_family_memberships(bool rebuild_derived,
+                                                        bool commit_ledger) {
     // This is the one mandatory rebuild per commit. It runs after all
     // population and building changes for the epoch, so it is what prunes
     // edges orphaned by cohort release or building demolition. The later
     // rebuilds in the commit are gated on the dirty flag and rely on it.
     rebuild_family_indices(rebuild_derived);
+    // Membership counts are attributed event by event (births, deaths,
+    // moves), so this pass only enforces the down-caps. The claim ledger
+    // settles once per commit: business profit by staffed owner posts, the
+    // remaining cohort cash delta per capita.
+    if (commit_ledger) settle_family_claim_ledger();
+    const bool has_business = commit_ledger &&
+        _family_ledger_business_by_edge.size() == family_memberships().size();
     bool rescale_emptied_edge = false;
     size_t begin = 0;
     while (begin < family_memberships().size()) {
@@ -16807,53 +16854,73 @@ void NativeEconomyRuntime::normalize_family_memberships(bool rebuild_derived) {
             population_store().population[slot]);
         const int64_t current_funds = std::max<int64_t>(0,
             population_store().funds[slot]);
-        int64_t old_people = 0, old_claim = 0;
-        int64_t pop_basis = 0, funds_basis = 0;
+        int64_t old_people = 0, funds_basis = 0;
         for (size_t i = begin; i < end; ++i) {
             old_people += std::max<int64_t>(0, family_memberships()[i].people);
-            old_claim += std::max<int64_t>(0, family_memberships()[i].cash_claim);
-            pop_basis = std::max(pop_basis,
-                family_memberships()[i].population_basis);
-            funds_basis = std::max(funds_basis,
-                family_memberships()[i].funds_basis);
+            funds_basis = std::max(funds_basis, family_memberships()[i].funds_basis);
         }
-        pop_basis = std::max(pop_basis, old_people);
-        funds_basis = std::max(funds_basis, old_claim);
-        const int64_t target_people = pop_basis > 0
-            ? std::min(current_pop,
-                mul_div_sat(current_pop, std::min(old_people, pop_basis),
-                            pop_basis, _saturation_count)) : 0;
-        const int64_t target_claim = funds_basis > 0
-            ? std::min(current_funds,
-                mul_div_sat(current_funds, std::min(old_claim, funds_basis),
-                            funds_basis, _saturation_count)) : 0;
-        int64_t people_prefix = 0, people_done = 0;
-        int64_t claim_prefix = 0, claim_done = 0;
+        const bool cap_people = old_people > current_pop;
+        if (cap_people) ++_family_reconcile_corrections;
+        int64_t remainder = 0;
+        if (commit_ledger) {
+            const int64_t business = static_cast<size_t>(slot) <
+                    _family_ledger_business_by_slot.size()
+                ? _family_ledger_business_by_slot[slot] : 0;
+            remainder = saturating_sub(saturating_sub(current_funds, funds_basis,
+                _saturation_count), business, _saturation_count);
+        }
+        int64_t people_prefix = 0, people_done = 0, claim_total = 0;
         for (size_t i = begin; i < end; ++i) {
             auto edge_write = family_memberships().edit_row(i, market_mutation_sink());
             FamilyMembershipEdge &edge = edge_write[0];
-            const int64_t people_before = edge.people;
-            people_prefix += std::max<int64_t>(0, edge.people);
-            claim_prefix += std::max<int64_t>(0, edge.cash_claim);
-            const int64_t next_people = old_people > 0
-                ? mul_div_sat(target_people, people_prefix, old_people,
-                              _saturation_count) : 0;
-            const int64_t next_claim = old_claim > 0
-                ? mul_div_sat(target_claim, claim_prefix, old_claim,
-                              _saturation_count) : 0;
-            edge.people = std::max<int64_t>(0, next_people - people_done);
-            edge.cash_claim = std::max<int64_t>(0, next_claim - claim_done);
-            edge.population_basis = current_pop;
-            edge.funds_basis = current_funds;
+            const int64_t people_before = std::max<int64_t>(0, edge.people);
+            if (cap_people) {
+                people_prefix += people_before;
+                const int64_t next_people = mul_div_sat(current_pop, people_prefix,
+                    old_people, _saturation_count);
+                edge.people = std::max<int64_t>(0, next_people - people_done);
+                people_done = next_people;
+            }
+            if (commit_ledger) {
+                int64_t claim = std::max<int64_t>(0, edge.cash_claim);
+                if (has_business)
+                    claim = saturating_add(claim, _family_ledger_business_by_edge[i],
+                                           _saturation_count);
+                if (current_pop > 0 && remainder != 0)
+                    claim = saturating_add(claim, mul_div_sat(remainder,
+                        people_before, current_pop, _saturation_count),
+                        _saturation_count);
+                edge.cash_claim = claim;
+                edge.funds_basis = current_funds;
+                edge.population_basis = current_pop;
+            }
+            edge.cash_claim = edge.people > 0
+                ? std::max<int64_t>(0, edge.cash_claim) : 0;
+            claim_total = saturating_add(claim_total, edge.cash_claim, _saturation_count);
             edge.owner_employed = 0;
             edge.employee_employed = 0;
             if (people_before > 0 && edge.people <= 0) rescale_emptied_edge = true;
-            people_done = next_people;
-            claim_done = next_claim;
+        }
+        if (claim_total > current_funds) {
+            ++_family_ledger_clamps;
+            int64_t claim_prefix = 0, claim_done = 0;
+            for (size_t i = begin; i < end; ++i) {
+                auto edge_write = family_memberships().edit_row(i, market_mutation_sink());
+                FamilyMembershipEdge &edge = edge_write[0];
+                claim_prefix += edge.cash_claim;
+                const int64_t next_claim = mul_div_sat(current_funds, claim_prefix,
+                    claim_total, _saturation_count);
+                edge.cash_claim = std::max<int64_t>(0, next_claim - claim_done);
+                claim_done = next_claim;
+            }
         }
         begin = end;
     }
-    // Rescaling never adds, removes or reorders edges, so the CSR built above
+    for (int32_t slot : _family_ledger_touched_slots)
+        if (static_cast<size_t>(slot) < _family_ledger_business_by_slot.size())
+            _family_ledger_business_by_slot[slot] = 0;
+    _family_ledger_touched_slots.clear();
+    // Capping never adds, removes or reorders edges, so the CSR built above
     // stays exact unless an edge was emptied and now has to be pruned.
     if (rescale_emptied_edge) {
         _family_indices_dirty = true;
@@ -16930,13 +16997,14 @@ void NativeEconomyRuntime::add_family_household_people(
     const uint64_t cohort = population_store().handle_for_slot(slot);
     const int64_t current_pop = std::max<int64_t>(0, population_store().population[slot]);
     const int64_t current_funds = std::max<int64_t>(0, population_store().funds[slot]);
-    int64_t family_people = 0, family_claim = 0;
+    collect_family_edges_for_cohort(slot, _family_edge_scratch);
+    int64_t family_people = 0, family_claim = 0, basis = 0;
     int32_t found = -1;
-    for (int32_t i = 0; i < static_cast<int32_t>(family_memberships().size()); ++i) {
+    for (int32_t i : _family_edge_scratch) {
         const FamilyMembershipEdge &edge = family_memberships()[i];
-        if (edge.cohort_handle != cohort) continue;
         family_people += std::max<int64_t>(0, edge.people);
         family_claim += std::max<int64_t>(0, edge.cash_claim);
+        basis = std::max(basis, edge.funds_basis);
         if (edge.family_handle == family_handle) found = i;
     }
     const int64_t anonymous = std::max<int64_t>(0, current_pop - family_people);
@@ -16951,8 +17019,6 @@ void NativeEconomyRuntime::add_family_household_people(
         edge.people = saturating_add(edge.people, take, _saturation_count);
         edge.cash_claim = saturating_add(edge.cash_claim, added_claim,
             _saturation_count);
-        edge.population_basis = current_pop;
-        edge.funds_basis = current_funds;
         return;
     }
     FamilyMembershipEdge membership;
@@ -16961,7 +17027,7 @@ void NativeEconomyRuntime::add_family_household_people(
     membership.people = take;
     membership.cash_claim = added_claim;
     membership.population_basis = current_pop;
-    membership.funds_basis = current_funds;
+    membership.funds_basis = _family_edge_scratch.empty() ? current_funds : basis;
     family_memberships().push_back(membership);
     _family_indices_dirty = true;
 }
@@ -16975,10 +17041,14 @@ void NativeEconomyRuntime::absorb_family_households() {
         int64_t slots = 0;
         int64_t people = 0;
     };
+    // Only same-day founders draw a household here; established branches
+    // grow through births and recruit_family_dependents.
+    const int64_t today = std::max<int64_t>(0, _current_day.get());
     std::vector<CellFamily> rows;
     for (int32_t family = 0; family < static_cast<int32_t>(families_store().active.size());
          ++family) {
-        if (families_store().active[family] == 0) continue;
+        if (families_store().active[family] == 0 ||
+            families_store().founded_day[family] != today) continue;
         const uint64_t handle = families_store().handle_for_index(family);
         for (const FamilyBuildingOwnership &edge : family_ownerships()) {
             if (edge.family_handle != handle || edge.owned_count <= 0) continue;
@@ -17038,17 +17108,10 @@ void NativeEconomyRuntime::absorb_family_households() {
         if (row.slots <= 0) continue;
         int64_t need = std::max<int64_t>(0,
             family_household_target_people(row.slots) - row.people);
-        if (row.family >= 0 && row.family < static_cast<int32_t>(
-                _family_absorb_bonus_q16.size())) {
-            const int32_t bonus = _family_absorb_bonus_q16[
-                static_cast<size_t>(row.family)];
-            if (bonus > 0)
-                need = saturating_add(need, mul_div_sat(row.people, bonus,
-                    Q16_ONE, _saturation_count), _saturation_count);
-        }
         if (row.cell >= 0 && row.cell < _cell_count.get()) {
-            const int64_t room = std::max<int64_t>(0,
-                cell_population[row.cell] / 2 - cell_family_people[row.cell]);
+            const int64_t room = std::max<int64_t>(0, mul_div_sat(
+                cell_population[row.cell], FAMILY_TARGET_SHARE_TOTAL_Q16, Q16_ONE,
+                _saturation_count) - cell_family_people[row.cell]);
             need = std::min(need, room);
         }
         if (need <= 0) continue;
@@ -17100,6 +17163,8 @@ void NativeEconomyRuntime::attribute_family_owner_employment_for_cell(
     const int32_t last = _building_cell_offsets[cell + 1];
     const bool trace_attribution = cell == _inspector_trace_cell;
     if (trace_attribution) _family_clamp_traces.clear();
+    thread_local std::vector<std::pair<int32_t, int64_t>> member_seats;
+    member_seats.clear();
     for (int32_t g = first; g < last; ++g) {
         auto group = building_at(static_cast<size_t>(g));
         if (group.count <= 0 || group.owner_signature_id < 0) continue;
@@ -17126,15 +17191,16 @@ void NativeEconomyRuntime::attribute_family_owner_employment_for_cell(
         // overlay on that result, never an admission rule -- gating seats by
         // membership made surplus members unemployable and left them shed and
         // rehired every epoch, burning the whole cell mobility budget.
+        // A family staffs its own posts with its own members first; members
+        // already seated in another group of the same cohort are not reused.
         const int64_t filled = std::max<int64_t>(0, group.filled_owner);
-        const int32_t cb = _family_cohort_offsets[owner_slot];
-        const int32_t ce = _family_cohort_offsets[owner_slot + 1];
+        const int32_t cb = static_cast<size_t>(owner_slot) + 1 <
+                _family_cohort_offsets.size() ? _family_cohort_offsets[owner_slot] : 0;
+        const int32_t ce = static_cast<size_t>(owner_slot) + 1 <
+                _family_cohort_offsets.size() ? _family_cohort_offsets[owner_slot + 1] : 0;
         int64_t family_people = 0;
         int64_t family_owned = 0;
-        // Prefix-sum split in stable edge order: exact, allocation free and
-        // reproducible, unlike sampling which would churn the state hash.
-        int64_t member_prefix = 0;
-        int64_t distributed = 0;
+        int64_t remaining_filled = filled;
         for (int32_t p = ob; p < oe; ++p) {
             auto ownership_write = family_ownerships().edit_row(_family_building_edge_indices[p], market_mutation_sink());
             FamilyBuildingOwnership &ownership = ownership_write[0];
@@ -17142,28 +17208,38 @@ void NativeEconomyRuntime::attribute_family_owner_employment_for_cell(
                 ownership.owned_count), std::max<int64_t>(0,
                     group.count - family_owned));
             family_owned += ownership.owned_count;
+            int32_t member_edge = -1;
             int64_t members = 0;
             for (int32_t q = cb; q < ce; ++q) {
                 const int32_t candidate = _family_cohort_edge_indices[q];
                 if (family_memberships()[candidate].family_handle ==
                         ownership.family_handle) {
+                    member_edge = candidate;
                     members = std::max<int64_t>(0,
                         family_memberships()[candidate].people);
                     break;
                 }
             }
-            member_prefix = saturating_add(member_prefix, members,
-                                           _saturation_count);
-            family_people = member_prefix;
-            const int64_t next = cohort_population > 0
-                ? mul_div_sat(filled, std::min(member_prefix, cohort_population),
-                              cohort_population, _saturation_count)
-                : 0;
-            ownership.filled_owner = std::max<int64_t>(0, next - distributed);
-            distributed = next;
+            family_people = saturating_add(family_people, members, _saturation_count);
+            int64_t *used = nullptr;
+            if (member_edge >= 0) {
+                for (auto &item : member_seats)
+                    if (item.first == member_edge) used = &item.second;
+                if (used == nullptr) {
+                    member_seats.emplace_back(member_edge, 0);
+                    used = &member_seats.back().second;
+                }
+            }
+            const int64_t posts = saturating_mul(ownership.owned_count,
+                std::max<int64_t>(0, _building_types[group.type_id].owner_slots_per_building),
+                _saturation_count);
+            const int64_t seat = used == nullptr ? 0 : std::min({posts,
+                std::max<int64_t>(0, members - *used), remaining_filled});
+            ownership.filled_owner = std::max<int64_t>(0, seat);
+            if (used != nullptr) *used += ownership.filled_owner;
+            remaining_filled -= ownership.filled_owner;
             _family_owner_jobs_filled += ownership.filled_owner;
-            const int64_t target = ownership.owned_count *
-                _building_types[group.type_id].owner_slots_per_building;
+            const int64_t target = posts;
             _family_owner_jobs_vacant += std::max<int64_t>(0,
                 target - ownership.filled_owner);
         }
@@ -17182,8 +17258,7 @@ void NativeEconomyRuntime::sanitize_family_membership_edge(
     if (edge.cash_claim < 0) edge.cash_claim = 0;
     if (edge.population_basis < edge.people)
         edge.population_basis = edge.people;
-    if (edge.funds_basis < edge.cash_claim)
-        edge.funds_basis = edge.cash_claim;
+    if (edge.funds_basis < 0) edge.funds_basis = 0;
     if (edge.owner_employed < 0) edge.owner_employed = 0;
     if (edge.employee_employed < 0) edge.employee_employed = 0;
     if (edge.owner_employed > edge.people)
@@ -17270,6 +17345,30 @@ void NativeEconomyRuntime::update_family_employment_attribution() {
         int32_t slot = -1;
         if (population_store().valid_handle(
                 family_memberships()[begin].cohort_handle, slot)) {
+            // Owner seats on anonymous posts are shared by everyone not
+            // already seated on a family post, in proportion.
+            int64_t family_seated = 0;
+            for (size_t i = begin; i < end; ++i)
+                family_seated += family_memberships()[i].owner_employed;
+            const int64_t anonymous_seats = std::max<int64_t>(0,
+                population_store().owner_employed[slot] - family_seated);
+            const int64_t free_population = std::max<int64_t>(1,
+                population_store().population[slot] - family_seated);
+            if (anonymous_seats > 0) {
+                int64_t free_prefix = 0, seated = 0;
+                for (size_t i = begin; i < end; ++i) {
+                    auto edge_write = family_memberships().edit_row(i, market_mutation_sink());
+                    FamilyMembershipEdge &edge = edge_write[0];
+                    free_prefix += std::max<int64_t>(0, edge.people - edge.owner_employed);
+                    const int64_t next = mul_div_sat(anonymous_seats,
+                        std::min(free_prefix, free_population), free_population,
+                        _saturation_count);
+                    edge.owner_employed = std::min(edge.people, saturating_add(
+                        edge.owner_employed, std::max<int64_t>(0, next - seated),
+                        _saturation_count));
+                    seated = next;
+                }
+            }
             const int64_t cohort_employee = std::max<int64_t>(0,
                 population_store().employee_employed[slot]);
             const int64_t cohort_capacity = std::max<int64_t>(1,
@@ -17398,7 +17497,7 @@ int32_t NativeEconomyRuntime::create_family_for_building(
         ? mul_div_sat(population_store().funds[slot], founders,
             population_store().population[slot], _saturation_count) : 0;
     membership.population_basis = population_store().population[slot];
-    membership.funds_basis = population_store().funds[slot];
+    membership.funds_basis = family_ledger_basis_for_slot(slot);
     membership.owner_employed = std::clamp<int64_t>(filled_owner, 0, founders);
     family_memberships().push_back(membership);
     const int64_t founder_owner_capacity = group.type_id >= 0 &&
@@ -17740,6 +17839,7 @@ void NativeEconomyRuntime::dissolve_family(uint64_t family_handle) {
     family_memberships().erase_if( [&](const FamilyMembershipEdge &edge) {
             return edge.family_handle == family_handle;
         });
+    _family_csr_edge_count = SIZE_MAX;
     family_ownerships().erase_if( [&](const FamilyBuildingOwnership &edge) {
             return edge.family_handle == family_handle;
         });
@@ -18112,6 +18212,7 @@ void NativeEconomyRuntime::review_family_lifecycle() {
             _family_review_days.get()) % _family_review_days.get();
         if ((_current_day.get() % _family_review_days.get() + _family_review_days.get()) %
                 _family_review_days.get() != phase) continue;
+        release_unstaffable_family_ownership(i);
         const bool starter = (families_store().flags[i] & FAMILY_FLAG_STARTER) != 0;
         if (!starter && assets <= 0 && pop < FAMILY_MIN_ACTIVE_PEOPLE) {
             families_store().decline_reviews.write_scalar(i, static_cast<uint16_t>(std::min(
@@ -19068,6 +19169,13 @@ NativeEconomyRuntime::advance_household_market_chunk(
                 record_person_demography(cohort_slot,
                     event.population_before, event.deaths);
         }
+        for (const PersonDemographyEvent &event :
+                market_result.family_demography) {
+            int32_t cohort_slot = -1;
+            if (population_store().valid_handle(event.cohort_handle, cohort_slot))
+                apply_family_death_attribution(cohort_slot,
+                    event.population_before, event.deaths);
+        }
         _population_changed_cells.insert(_population_changed_cells.end(),
             market_result.population_changed_cells.begin(),
             market_result.population_changed_cells.end());
@@ -19406,8 +19514,12 @@ bool NativeEconomyRuntime::run_family_commit_slice(int64_t &work_done,
                 FAMILY_BEHAVIOR_DIRTY_CONDITION_METRICS);
         apply_due_family_trait_commands();
         apply_due_family_founding_choices();
-        normalize_family_memberships(false);
+        normalize_family_memberships(false, true);
+        recruit_family_dependents();
         absorb_family_households();
+        // Attribution walks cohort-contiguous edges; only edges created by
+        // recruitment or same-day founding break that order.
+        if (_family_indices_dirty) rebuild_family_indices(false);
         _family_commit_normalize_ms += elapsed_ms(normalize_started);
         const auto attribution_started = Clock::now();
         update_family_employment_attribution();
@@ -20923,79 +21035,6 @@ uint64_t NativeEconomyRuntime::sponsor_family_for_cohort(
     return best;
 }
 
-void NativeEconomyRuntime::move_family_membership(
-        uint64_t source_handle, uint64_t destination_handle,
-        int64_t source_population_before, int64_t moved_population,
-        int64_t source_funds_before, int64_t moved_funds,
-        uint64_t preferred_family_handle) {
-    auto &memo = living_cost_memo_state();
-    if (memo.owner == this) memo.quotes.clear();
-    if (source_handle == 0 || destination_handle == 0 ||
-        source_population_before <= 0 || moved_population <= 0) return;
-    const size_t original_size = family_memberships().size();
-    int64_t remaining_people_to_move = moved_population;
-    int64_t remaining_funds_to_move = std::max<int64_t>(0, moved_funds);
-    int32_t destination_slot = -1;
-    const int32_t dest_cell = population_store().valid_handle(destination_handle,
-            destination_slot)
-        ? population_store().page_cell[destination_slot / COHORT_PAGE_SIZE] : -1;
-    auto move_edge = [&](size_t source_index, bool preferred) {
-        FamilyMembershipEdge source = family_memberships()[source_index];
-        if (remaining_people_to_move <= 0 || source.cohort_handle != source_handle ||
-            source.people <= 0 || (preferred && source.family_handle !=
-            preferred_family_handle) || (!preferred && preferred_family_handle != 0 &&
-            source.family_handle == preferred_family_handle)) return;
-        int64_t cap = source.people;
-        const int32_t mobility = family_behavior_score_term_q16(
-            source.family_handle, dest_cell, FAMILY_SCORE_CAREER_MOBILITY);
-        if (mobility < Q16_ONE) {
-            int64_t sat = 0;
-            cap = mul_div_sat(source.people, mobility, Q16_ONE, sat);
-        }
-        const int64_t moved_people = std::min(cap,
-            std::min(source.people, remaining_people_to_move));
-        const int64_t moved_claim = preferred_family_handle != 0
-            ? std::min(source.cash_claim, remaining_funds_to_move)
-            : std::min(source.cash_claim, remaining_funds_to_move);
-        if (moved_people <= 0) return;
-        move_notable_people(source_handle, destination_handle,
-            source.family_handle, source.people, moved_people);
-        FamilyMembershipEdge moved = source;
-        moved.cohort_handle = destination_handle;
-        moved.people = moved_people;
-        moved.cash_claim = std::min(source.cash_claim,
-                                    std::max<int64_t>(0, moved_claim));
-        source.people -= moved.people;
-        source.cash_claim -= moved.cash_claim;
-        source.population_basis = std::max<int64_t>(0,
-            source.population_basis - moved_people);
-        source.funds_basis = std::max<int64_t>(0,
-            source.funds_basis - moved_claim);
-        int32_t destination_slot = -1;
-        if (population_store().valid_handle(destination_handle, destination_slot)) {
-            moved.population_basis = population_store().population[destination_slot];
-            moved.funds_basis = population_store().funds[destination_slot];
-        }
-        family_memberships().write_record(source_index, source, market_mutation_sink());
-        family_memberships().push_back(moved);
-        remaining_people_to_move = std::max<int64_t>(0,
-            remaining_people_to_move - moved_people);
-        remaining_funds_to_move = std::max<int64_t>(0,
-            remaining_funds_to_move - moved_claim);
-    };
-    // Prefer the family with the matching career preference, then distribute
-    // any remainder proportionally across other local family edges. This keeps
-    // the migration preference from breaking membership/cash conservation when
-    // a preferred branch is smaller than the requested job move.
-    if (preferred_family_handle != 0) {
-        for (size_t i = 0; i < original_size && remaining_people_to_move > 0; ++i)
-            move_edge(i, true);
-    }
-    for (size_t i = 0; i < original_size && remaining_people_to_move > 0; ++i)
-        move_edge(i, false);
-    _family_indices_dirty = true;
-}
-
 void NativeEconomyRuntime::move_notable_people(
         uint64_t source_cohort_handle, uint64_t destination_cohort_handle,
         uint64_t family_handle, int64_t family_people_before,
@@ -22122,6 +22161,8 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     family_influences().clear();
     persons_store().clear();
     family_memberships().clear();
+    _family_csr_edge_count = SIZE_MAX;
+    _family_demography_rows.clear();
     family_ownerships().clear();
     family_trait_rolls().clear();
     _family_behavior_factor_offsets.clear();

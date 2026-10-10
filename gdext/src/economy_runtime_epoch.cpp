@@ -33,6 +33,13 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _family_ownership_edges_processed = 0;
     _family_owner_jobs_filled = 0;
     _family_owner_jobs_vacant = 0;
+    _family_births_attributed = 0;
+    _family_deaths_attributed = 0;
+    _family_reconcile_corrections = 0;
+    _family_ledger_clamps = 0;
+    _family_people_recruited = 0;
+    _family_units_released = 0;
+    _family_demography_weights_ms = 0.0;
     _persons_promoted = 0;
     _persons_died = 0;
     _persons_migrated = 0;
@@ -806,6 +813,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     const double preflight_ms = elapsed_ms(epoch_started);
     const auto prepare_started = Clock::now();
     clear_epoch_metrics();
+    rebuild_family_demography_weights();
     _epoch_preflight_ms = preflight_ms;
     // Do not pin research_consumed here. capture_country_epoch / workset rebuild
     // can race peer-wait preview + late-fold catch_up, which spends TP and bumps

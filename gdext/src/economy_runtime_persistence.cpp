@@ -1612,6 +1612,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
     rebuild_family_policy_scalars();
     rebuild_family_behavior_cache();
     rebuild_person_indices();
+    rebuild_family_demography_weights();
     _bootstrapped = true;
     if (_restore.committed_generation_seen) {
         _committed_generation = _restore.restored_committed_generation;

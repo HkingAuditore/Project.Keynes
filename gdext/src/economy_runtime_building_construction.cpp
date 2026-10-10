@@ -615,13 +615,17 @@ bool NativeEconomyRuntime::commit_preflighted_build_command(
             _investment_merchant_cash_by_cell[cell],
             total_cost - funding_gap, _saturation_count);
     }
+    const uint64_t sponsor_family = _construction_sponsor_override_set
+        ? _construction_sponsor_override
+        : sponsor_family_for_cohort(population_store().handle_for_slot(owner_slot), cell);
+    attribute_family_funds_delta(owner_slot, sponsor_family,
+        saturating_sub(funding_gap, total_cost, _saturation_count));
     append_pending_construction({cell, type_id, owner_signature, count,
         _sample_day + effective_construction_days, cmd.sequence,
         construction_debt_principal, construction_debt_premium,
         static_cast<uint16_t>(construction_debt_principal > 0
             ? _merchant_credit_term_cycles.get() : 0),
-        sponsor_family_for_cohort(population_store().handle_for_slot(owner_slot),
-                                  cell)});
+        sponsor_family});
     if (trace_detail && owner_funds_before != population_store().funds[owner_slot]) {
         event_legs.push_back({FIELD_COHORT_FUNDS, SUBJECT_COHORT, owner_handle, -1,
                               owner_funds_before, population_store().funds[owner_slot]});

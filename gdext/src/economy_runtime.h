@@ -256,6 +256,31 @@ public:
     // Lifecycle floor for an existing non-starter family. New families use
     // the profile-driven _family_min_founder_people instead.
     static constexpr int64_t FAMILY_MIN_ACTIVE_PEOPLE = 20;
+    // Branch demography (docs/cpp-dots-runtime/family-demography-ledger-design.md).
+    // Shares are of the cell population with the family's origin ethnicity.
+    static constexpr int32_t FAMILY_TARGET_SHARE_MIN_Q16 = 13107;   // 20%
+    static constexpr int32_t FAMILY_TARGET_SHARE_MAX_Q16 = 45875;   // 70%
+    static constexpr int32_t FAMILY_TARGET_SHARE_TOTAL_Q16 = 45875; // 70%
+    static constexpr int32_t FAMILY_TARGET_SHARE_EPSILON_Q16 = 655; // 1%
+    static constexpr int32_t FAMILY_HEALTH_BUILDING_WEIGHT_Q16 = 98304; // 1.5
+    static constexpr int32_t FAMILY_HEALTH_WEALTH_WEIGHT_Q16 = 65536;   // 1.0
+    static constexpr int32_t FAMILY_HEALTH_EMPLOYMENT_WEIGHT_Q16 = 32768; // 0.5
+    static constexpr int32_t FAMILY_HEALTH_BUILDING_REF_Q16 = 16384;    // 25%
+    // Per-capita claim below this fraction of the local per-capita funds is
+    // cash distress; it reaches 1 at zero claim.
+    static constexpr int32_t FAMILY_CASH_DISTRESS_RATIO_Q16 = 16384;    // 25%
+    static constexpr int32_t FAMILY_CASH_DISTRESS_WEIGHT_Q16 = 32768;   // 0.5
+    static constexpr int32_t FAMILY_BIRTH_SLOPE_Q16 = 65536;            // k_b
+    static constexpr int32_t FAMILY_DEATH_SLOPE_Q16 = 32768;            // k_d
+    static constexpr int32_t FAMILY_BIRTH_DISTRESS_SLOPE_Q16 = 32768;   // mu
+    static constexpr int32_t FAMILY_DEATH_DISTRESS_SLOPE_Q16 = 65536;   // lambda
+    static constexpr int32_t FAMILY_WEIGHT_MIN_Q16 = 16384;             // 0.25
+    static constexpr int32_t FAMILY_WEIGHT_MAX_Q16 = 196608;            // 3.0
+    static constexpr int32_t FAMILY_RECRUIT_RATE_Q16 = 1311;            // 2% of gap per review
+    // A SET absorb bonus of 1.0 raises the target share by this much.
+    static constexpr int32_t FAMILY_ABSORB_TARGET_BONUS_Q16 = 3277;     // 5%
+    // Career-move tilt toward the preferred family's members.
+    static constexpr int32_t FAMILY_PREFERRED_MOVE_WEIGHT_Q16 = 131072; // 2.0
     static constexpr uint16_t FAMILY_FLAG_SPLIT_MODE_MASK =
         FAMILY_FLAG_SPLIT_RETAIN_ONLY | FAMILY_FLAG_SPLIT_BONUS_WEIGHT |
         FAMILY_FLAG_SPLIT_REPLACE;
@@ -3273,6 +3298,9 @@ private:
         std::vector<PersonNeedState> person_needs;
         std::vector<PersonMarketAttribution> person_attributions;
         std::vector<PersonDemographyEvent> person_demography;
+        // Deaths in cohorts with family members; split across membership
+        // edges on the main thread when the result is merged.
+        std::vector<PersonDemographyEvent> family_demography;
         int64_t closing_population = 0;
         int64_t closing_cohort_funds = 0;
         int64_t closing_goods_stock = 0;
@@ -5082,6 +5110,38 @@ private:
     std::vector<FamilyIndustryStats> _family_industry_stats;
     std::vector<FamilyOwnedOutputRow> _family_owned_output_rows;
     bool _family_indices_dirty = true;
+    // Membership rows covered by the cohort CSR. Rows are only appended
+    // between rebuilds, so [count, size) is the unindexed tail; SIZE_MAX
+    // after an erase forces a full scan until the next rebuild.
+    size_t _family_csr_edge_count = std::numeric_limits<size_t>::max();
+    // Derived branch demography frozen at epoch begin from persisted state;
+    // sorted by (cell, family_handle). Never persisted or hashed.
+    struct FamilyDemographyRow {
+        int32_t cell = -1;
+        uint64_t family_handle = 0;
+        int32_t family_index = -1;
+        int32_t ethnicity = -1;
+        int64_t people = 0;
+        int64_t ethnic_population = 0;
+        int32_t share_q16 = 0;
+        int32_t target_share_q16 = 0;
+        int32_t distress_q16 = 0;
+        int32_t health_q16 = 0;
+        int32_t birth_weight_q16 = 0;
+        int32_t death_weight_q16 = 0;
+    };
+    std::vector<FamilyDemographyRow> _family_demography_rows;
+    std::vector<int32_t> _family_edge_scratch;
+    std::vector<int64_t> _family_ledger_business_by_slot;
+    std::vector<int32_t> _family_ledger_touched_slots;
+    std::vector<int64_t> _family_ledger_business_by_edge;
+    int64_t _family_births_attributed = 0;
+    int64_t _family_deaths_attributed = 0;
+    int64_t _family_reconcile_corrections = 0;
+    int64_t _family_ledger_clamps = 0;
+    int64_t _family_people_recruited = 0;
+    int64_t _family_units_released = 0;
+    double _family_demography_weights_ms = 0.0;
     // Derived notable-person CSR; rebuilt at PERSON_COMMIT and restore.
     std::vector<int32_t> _person_family_offsets;
     std::vector<int32_t> _person_family_indices;
@@ -6330,7 +6390,8 @@ private:
                                 int32_t dest_signature, int64_t requested_pop,
                                 std::string &error,
                                 bool *source_drained_out = nullptr,
-                                uint64_t preferred_family_handle = 0);
+                                uint64_t preferred_family_handle = 0,
+                                bool preferred_family_strict = false);
     bool apply_start_family_expedition(const Command &cmd,
                                        std::string &error);
     bool apply_cancel_family_expedition(const Command &cmd,
@@ -7088,7 +7149,34 @@ private:
     void apply_family_split_policy_flags(int32_t family_index, uint16_t policy,
                                          uint8_t weight_q8);
     void split_family_branches();
-    void normalize_family_memberships(bool rebuild_derived = true);
+    // commit_ledger is set only at FAMILY_COMMIT: it settles the claim ledger
+    // against each cohort's opening basis. Mid-epoch callers only enforce
+    // the subset caps.
+    void normalize_family_memberships(bool rebuild_derived = true,
+                                      bool commit_ledger = false);
+    void collect_family_edges_for_cohort(int32_t slot,
+                                         std::vector<int32_t> &out) const;
+    int64_t family_ledger_basis_for_slot(int32_t slot) const;
+    // Structural funds moves (migration, colonization, capital transfers)
+    // shift the cohort's ledger opening so they are not read as flows.
+    void shift_family_ledger_basis(int32_t slot, int64_t delta);
+    // A funds change in `slot` that belongs to one family (0 = anonymous):
+    // the claim moves with it and the basis shifts so it is not re-split.
+    void attribute_family_funds_delta(int32_t slot, uint64_t family_handle,
+                                      int64_t delta);
+    void rebuild_family_demography_weights();
+    const FamilyDemographyRow *family_demography_row(uint64_t family_handle,
+                                                     int32_t cell) const;
+    void apply_family_death_attribution(int32_t slot, int64_t population_before,
+                                        int64_t deaths);
+    void apply_family_birth_attribution(int32_t slot, int64_t births);
+    void settle_family_claim_ledger();
+    void recruit_family_dependents();
+    void release_unstaffable_family_ownership(int32_t family_index);
+    void record_person_deaths_for_family(int32_t cohort_slot,
+                                         uint64_t family_handle,
+                                         int64_t people_before,
+                                         int64_t deaths);
     // Clamp derived employment/basis fields so membership edges always satisfy
     // the PKEC restore invariants even if attribution briefly overshoots.
     static void sanitize_family_membership_edge(FamilyMembershipEdge &edge);
@@ -7221,13 +7309,28 @@ private:
     bool family_free_building_resources_legal(int32_t cell, int32_t type_id,
                                               int64_t count) const;
     void dissolve_family(uint64_t family_handle);
-    void move_family_membership(uint64_t source_handle,
-                                uint64_t destination_handle,
-                                int64_t source_population_before,
-                                int64_t moved_population,
-                                int64_t source_funds_before,
-                                int64_t moved_funds,
-                                uint64_t preferred_family_handle = 0);
+    // Applies _family_move_plan after the cohort lanes have moved.
+    void move_family_membership(int32_t source_slot, int32_t destination_slot,
+                                int64_t moved_funds);
+    // Splits a move of `moved_population` from a cohort across anonymous
+    // people and family edges; returns the anonymous share and fills
+    // _family_move_plan with (edge index, people, claim).
+    int64_t plan_family_membership_move(int32_t source_slot,
+                                        int32_t destination_cell,
+                                        int64_t moved_population,
+                                        uint64_t preferred_family_handle,
+                                        bool preferred_family_strict);
+    struct FamilyMovePlanRow {
+        int32_t edge = -1;
+        int64_t people = 0;
+        int64_t claim = 0;
+    };
+    std::vector<FamilyMovePlanRow> _family_move_plan;
+    std::vector<int32_t> _family_destination_edge_scratch;
+    // Sponsor of the build command being committed; 0 picks the cohort's
+    // largest-claim family as before.
+    uint64_t _construction_sponsor_override = 0;
+    bool _construction_sponsor_override_set = false;
     uint64_t sponsor_family_for_cohort(uint64_t cohort_handle,
                                        int32_t cell) const;
     int32_t building_index_for_handle(uint64_t building_handle) const;

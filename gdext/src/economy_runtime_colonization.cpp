@@ -1585,6 +1585,7 @@ void NativeEconomyRuntime::unwind_family_expedition_payload_extract(
             population_store().epoch_subsidy_received.write_scalar(slot, population_store().epoch_subsidy_received[slot] + (payload.epoch_subsidy_received), market_mutation_sink());
             population_store().income_baseline_ema.write_scalar(slot, population_store().income_baseline_ema[slot] + (payload.income_baseline_ema), market_mutation_sink());
             population_store().demography_residual.write_scalar(slot, population_store().demography_residual[slot] + (payload.demography_residual), market_mutation_sink());
+            shift_family_ledger_basis(slot, payload.funds);
         }
         auto membership = std::find_if(family_memberships().begin(),
             family_memberships().end(), [&](const FamilyMembershipEdge &edge) {
@@ -1594,7 +1595,8 @@ void NativeEconomyRuntime::unwind_family_expedition_payload_extract(
         if (membership == family_memberships().end()) {
             family_memberships().push_back({family_handle,
                 payload.source_cohort_handle, payload.people, payload.cash_claim,
-                payload.people, payload.funds, payload.owner_employed,
+                payload.people, slot >= 0 ? family_ledger_basis_for_slot(slot)
+                    : payload.funds, payload.owner_employed,
                 payload.employee_employed});
         } else {
             auto membership_write = family_memberships().edit_row(membership - family_memberships().begin(), market_mutation_sink());
@@ -1604,7 +1606,6 @@ void NativeEconomyRuntime::unwind_family_expedition_payload_extract(
             membership_row.owner_employed += payload.owner_employed;
             membership_row.employee_employed += payload.employee_employed;
             membership_row.population_basis += payload.people;
-            membership_row.funds_basis += payload.cash_claim;
         }
         const uint32_t person_end = std::min<uint32_t>(
             payload.person_begin + payload.person_count,
@@ -1747,6 +1748,7 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
     family_expeditions_store().payload_begin.write_scalar(expedition, static_cast<uint32_t>(
         family_expedition_payloads().size()), market_mutation_sink());
     family_expeditions_store().payload_count.write_scalar(expedition, 0, market_mutation_sink());
+    std::vector<std::pair<int32_t, int64_t>> basis_shifts;
     for (Candidate &candidate : candidates) {
         if (candidate.selected <= 0) continue;
         auto edge_write = family_memberships().edit_row(candidate.edge, market_mutation_sink());
@@ -1756,6 +1758,8 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
         if (candidate.selected > edge.people || candidate.selected >=
                 family_population_in_cell(family_handle, source_cell)) {
             error = "colonization_population_guard_failed";
+            for (const auto &shift : basis_shifts)
+                shift_family_ledger_basis(shift.first, -shift.second);
             unwind_family_expedition_payload_extract(expedition);
             return false;
         }
@@ -1896,12 +1900,14 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
             edge_employee - payload.employee_employed);
         edge.population_basis = std::max<int64_t>(0,
             edge.population_basis - payload.people);
-        edge.funds_basis = std::max<int64_t>(0,
-            edge.funds_basis - payload.cash_claim);
+        basis_shifts.emplace_back(slot, payload.funds);
         family_expedition_payloads().push_back(payload);
         family_expeditions_store().payload_count.write_scalar(expedition, static_cast<uint32_t>(family_expedition_payloads().size()) -
             family_expeditions_store().payload_begin[expedition], market_mutation_sink());
     }
+    // The departing payload is a structural outflow, not a ledger delta.
+    for (const auto &shift : basis_shifts)
+        shift_family_ledger_basis(shift.first, -shift.second);
     // Population extraction is a structural mutation.  Keep the authoritative
     // cohort employment lanes clipped to the remaining population before any
     // POD mirror/export can observe the command, including rounding across
@@ -2042,9 +2048,10 @@ bool NativeEconomyRuntime::restore_family_expedition_payload(
             population_store().worst_dimension_id.write_scalar(slot, payload.worst_dimension_id, market_mutation_sink());
         }
         const uint64_t cohort_handle = population_store().handle_for_slot(slot);
+        shift_family_ledger_basis(slot, payload.funds);
         family_memberships().push_back({family_handle, cohort_handle,
             payload.people, payload.cash_claim, merged_population,
-            population_store().funds[slot], incoming_owner_employed,
+            family_ledger_basis_for_slot(slot), incoming_owner_employed,
             incoming_employee_employed});
         if (static_cast<size_t>(payload.person_begin) + payload.person_count >
                 family_expedition_person_handles().size()) {

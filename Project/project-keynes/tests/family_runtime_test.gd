@@ -206,7 +206,7 @@ func _run() -> void:
 	_expect("family exposes surname, conserved wealth claim and population",
 		bool(family.get("ok", false)) and String(family.get("surname", "")) != ""
 		and int(family.get("population", 0)) >= 20
-		and int(family.get("population", 0)) <= cell_population / 2
+		and int(family.get("population", 0)) * 100 <= cell_population * 70
 		and int(family.get("cash_claim", -1)) >= 0)
 	_expect("family profession statistics include owner employment",
 		owner_row >= 0
@@ -583,6 +583,47 @@ func _test_opening_capital_keeps_anonymous_majority(catalog: Dictionary) -> void
 	var cell_pop := int(ext.get_population_cell_snapshot(0).population)
 	_expect("opening family stays the two gathering operators, not the whole town",
 		cell_pop == 20 and family_pop == 2)
+	var ledgers_ok := true
+	var reconcile_ok := true
+	var diagnostics_ok := true
+	var bounds_ok := true
+	var demography_rows := 0
+	for day in range(1, 41):
+		var report := _run_day(ext, day)
+		if not bool(report.get("done", false)) or bool(report.get("fatal", false)) \
+				or int(report.get("population_error", 1)) != 0 \
+				or int(report.get("money_error", 1)) != 0 \
+				or int(report.get("goods_error", 1)) != 0:
+			ledgers_ok = false
+		if not report.has("family_reconcile_corrections") \
+				or not report.has("family_demography_weights_ms"):
+			diagnostics_ok = false
+		if int(report.get("family_reconcile_corrections", 0)) != 0:
+			reconcile_ok = false
+		demography_rows = maxi(demography_rows, int(report.get("family_demography_rows", 0)))
+		var family: Dictionary = ext.get_family_snapshot(family_handle)
+		if not bool(family.get("ok", false)):
+			break
+		var cell: Dictionary = ext.get_population_cell_snapshot(0)
+		var people := int(family.get("population", 0))
+		var claim := int(family.get("cash_claim", -1))
+		if people < 0 or people * 100 > int(cell.population) * 70 + 100 \
+				or claim < 0 or claim > int(cell.funds):
+			bounds_ok = false
+	_expect("family demography days conserve all ledgers", ledgers_ok)
+	_expect("family demography diagnostics are published", diagnostics_ok)
+	_expect("event-driven membership needs no downward reconciliation", reconcile_ok)
+	_expect("derived demography rows track the founder branch", demography_rows >= 1)
+	_expect("family people and claim stay inside the cell subset bounds", bounds_ok)
+	var branches: Dictionary = ext.get_family_branches(family_handle, 0, 64)
+	var targets: PackedInt32Array = branches.get("target_shares_q16", PackedInt32Array())
+	var shares: PackedInt32Array = branches.get("demography_shares_q16", PackedInt32Array())
+	var targets_ok := not targets.is_empty() and targets.size() == shares.size()
+	for target in targets:
+		if target < 0 or target > 45875:
+			targets_ok = false
+	_expect("branch target share stays inside [0, S_total]",
+		not bool(branches.get("ok", false)) or targets_ok)
 
 
 func _test_ordinary_family_minimum(catalog: Dictionary) -> void:

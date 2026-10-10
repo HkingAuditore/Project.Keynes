@@ -137,8 +137,9 @@ int64_t NativeEconomyRuntime::family_founding_founders_for_group(
     const int64_t available = std::max<int64_t>(0,
         population_store().population[slot] - people_on_slot(slot));
     if (available < owner_slots) return 0;
-    const int64_t room = std::max<int64_t>(0,
-        cell_population / 2 - cell_family_people);
+    int64_t room_sat = 0;
+    const int64_t room = std::max<int64_t>(0, mul_div_sat(cell_population,
+        FAMILY_TARGET_SHARE_TOTAL_Q16, Q16_ONE, room_sat) - cell_family_people);
     const int64_t cap = std::max(_family_min_founder_people.get(), room);
     const int64_t founders = std::min({family_household_target_people(owner_slots),
         available, cap});

@@ -38,6 +38,7 @@ void NativeEconomyRuntime::MarketResult::reset() {
     person_needs.clear();
     person_attributions.clear();
     person_demography.clear();
+    family_demography.clear();
     closing_population = 0;
     closing_cohort_funds = 0;
     closing_goods_stock = 0;

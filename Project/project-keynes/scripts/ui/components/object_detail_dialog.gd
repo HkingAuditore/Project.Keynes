@@ -267,7 +267,7 @@ func _facts_for_row(kind: String, row: Dictionary) -> Array:
 				{"label": "重要人物", "value": "%d 位" % int(row.get("notable_people", 0)), "accent": UITokens.ACCENT},
 				{"label": "家族产业", "value": "%s 栋" % String(row.get("owned_buildings", "0")), "accent": UITokens.CLIMATE},
 				{"label": "现金财产", "value": String(row.get("cash_claim", "—")), "accent": UITokens.RESOURCE},
-				{"label": "生产资产", "value": String(row.get("productive_asset_value", "—")), "accent": UITokens.RESOURCE},
+				{"label": "产业资产", "value": String(row.get("productive_asset_value", "—")), "accent": UITokens.RESOURCE},
 				{"label": "净资产", "value": String(row.get("net_worth", "—")), "accent": UITokens.GOOD},
 				{"label": "创立日", "value": "第 %d 日" % int(row.get("founded_day", 0)), "accent": UITokens.ARCHIVE_INK},
 				{"label": "衰退复核", "value": "%d 次" % int(row.get("decline_reviews", 0)), "accent": UITokens.ARCHIVE_INK_MUTED},

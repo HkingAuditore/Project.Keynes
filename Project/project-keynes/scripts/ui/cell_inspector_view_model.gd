@@ -1503,7 +1503,8 @@ func _family_detail_fields(snapshot: Dictionary) -> Dictionary:
 	return {
 		"population": UITokens.format_compact_number_cn(float(snapshot.get("population", 0)), 1),
 		"cash_claim": _money_text(int(snapshot.get("cash_claim", 0))),
-		"productive_asset_value": _money_text(int(snapshot.get("productive_asset_value", 0))),
+		"productive_asset_value": _money_text(int(snapshot.get("building_asset_value",
+			snapshot.get("productive_asset_value", 0)))),
 		"net_worth": _money_text(int(snapshot.get("net_worth", 0))),
 		"owned_buildings": UITokens.format_compact_number_cn(float(snapshot.get("owned_buildings", 0)), 1),
 		"notable_people": int(snapshot.get("notable_person_count", 0)),
