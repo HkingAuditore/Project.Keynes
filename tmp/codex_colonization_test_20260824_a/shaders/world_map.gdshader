@@ -334,7 +334,7 @@ void fragment() {
 	} else {
 		if (!is_water) {
 			col = render_land_pipeline(
-				visual_land_biome, visual_land_veg, visual_land_cover, landform,
+				visual_land_biome, biome, visual_land_veg, visual_land_cover, landform,
 				elev, moist, wp, uv, scals, lat_signed, current_temp,
 				wind_v, dyn_snow, dyn_valid, dyn_vitality, pixel_noise);
 		} else {

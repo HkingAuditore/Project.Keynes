@@ -4544,9 +4544,11 @@ func publish_worker_climate_visuals() -> Dictionary:
 	# Reuse the production cell LUT encoders; no simulation or full map rebake.
 	if _baker == null or _sus_map == null or _last_world == null:
 		return {}
-	var report: Dictionary = _baker.refresh_cell_luts_daily(_sus_map, _last_world)
-	_baker.refresh_weather_lut_from_weather(_sus_map, _last_world)
-	return report
+	# Weather LUT is fully re-encoded here: the worker writes weather fields back
+	# but never weather_dirty_mask, so refresh_weather_lut_from_weather's dirty
+	# subset stays empty and the LUT would freeze at its world-gen contents.
+	return _baker.refresh_cell_luts_daily(
+		_sus_map, _last_world, PackedInt32Array(), true, true)
 
 
 func _build_runtime_climate_stage_knobs(map: MapData, day: int,

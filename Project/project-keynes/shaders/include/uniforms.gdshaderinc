@@ -499,12 +499,11 @@ uniform bool  hillshade_detail_enabled = true;                          // 细�
 // [normal-soften 2026-07-31] 细节法线改走更宽差分 + zoom 门控，全局强度再降到 0.16。
 // 高画质不再等于"更碎"：见 hillshade_tod.compute_terrain_normal。
 uniform float hillshade_detail_strength : hint_range(0.0, 1.0)  = 0.16;
-// [terrain-erosion 2026-10-09] 沿宏观坡向延伸的多尺度沟谷 / 山脊细节（DEM 晕渲观感）。
-//   strength = 细节坡度幅度（0 关）；world_size = 最粗一层的沟距（世界单位），每层减半。
-//   每层按屏幕像素波长淡出，远景不产生闪烁；平地以更宽、更弱的缓波纹呈现，
-//   丘陵/高原/山地再逐级增强为浅冲刷、台地风化和顺坡沟脊。
-//   格子尺度以上的谷地已由烘焙期汇流刻谷写进高度图，这里只补近景细纹。
-uniform float terrain_erosion_strength   : hint_range(0.0, 2.0) = 0.35;
+// [terrain-erosion 2026-10-10] 分地形细节法线（沟谷 / 台坎 / 沙丘 / 起伏 / 丘状凹凸），
+//   各地形的形态与强度见 hillshade_tod.terrain_detail_profile。
+//   strength = 全局倍率（0 关）；world_size = 全部细节尺度的参照（72 = 表内原值）。
+//   每层按屏幕像素波长淡出，远景不产生闪烁。格子尺度以上的谷地由烘焙期汇流刻谷负责。
+uniform float terrain_erosion_strength   : hint_range(0.0, 2.0) = 1.0;
 uniform float terrain_erosion_world_size : hint_range(8.0, 256.0) = 72.0;
 // [shore-normal 2026-06-25] 近岸滩坡法线：近海陆地(elev 略高于 sea_level 的窄带)单独解开细节门控，
 //   让海岸读出滩坡/切岸起伏（B_COAST 是水体不调本函数；近岸陆地多为 B_PLAIN，biome 因子≈0.12 被压平）。

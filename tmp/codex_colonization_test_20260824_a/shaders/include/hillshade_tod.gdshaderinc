@@ -281,12 +281,16 @@ vec2 terrain_erosion_cell_coord(vec2 wp, float cell_size, out float period_cells
 	return wp / cell_size;
 }
 
-// p 为格坐标；dir 为垂直于坡度的单位向量；period_cells > 0 时格的 x 下标按周期取模，
-// 保证沿经线环绕无缝。返回 (h, ∂h/∂p)，h ∈ [-1, 1]，导数省略了 2π 因子。
-vec3 terrain_gully_noise(vec2 p, vec2 dir, float period_cells) {
+// p 为格坐标；dir 为相位变化方向（条纹沿其垂直方向延伸）；period_cells > 0 时格的 x 下标
+// 按周期取模，沿经线环绕无缝。harm2 > 0 叠二次谐波，剖面由对称余弦变成不对称锯齿
+// （0.5 ≈ 锯齿波，沙丘迎风缓坡 + 背风陡坡）。返回 (h, ∂h/∂p)，导数省略了 2π 因子。
+// 各核的 (cos, sin) 先求和再归一化（Phacelle 式相量）：直接累加余弦会相互干涉，
+// 条纹断成大理石状涡纹，对比度忽强忽弱；归一化后条纹连续、对比恒定，只在相位奇点
+// 附近（|和| < 1 - TERRAIN_DETAIL_PHASOR_NORM）按比例淡出。
+vec3 terrain_phasor_noise(vec2 p, vec2 dir, float period_cells, float harm2) {
 	vec2 ip = floor(p);
 	vec2 fp = fract(p);
-	vec3 acc = vec3(0.0);
+	vec2 acc = vec2(0.0);
 	float wsum = 0.0;
 	for (int j = -1; j <= 1; j++) {
 		for (int i = -1; i <= 1; i++) {
@@ -295,20 +299,203 @@ vec3 terrain_gully_noise(vec2 p, vec2 dir, float period_cells) {
 			if (period_cells > 0.5) {
 				cell.x = mod(cell.x, period_cells);
 			}
-			vec2 d = fp - o - 0.5 - (terrain_erosion_hash22(cell) - 0.5) * 0.9;
-			float w = exp(-dot(d, d) * 2.0);
+			// 特征点限制在格中央 [0.25, 0.75]，3×3 窗口外的点距当前像素至少 1.25 格；
+			// 权重在 1.25 处截到 0，跨格线时核集合的增减不产生跳变。
+			vec2 d = fp - o - 0.5 - (terrain_erosion_hash22(cell) - 0.5) * 0.5;
+			float w = max(0.0, exp(-dot(d, d) * 2.0) - 0.0439);
 			float ph = dot(d, dir) * 6.2831853;
-			acc += vec3(cos(ph), -sin(ph) * dir) * w;
+			acc += vec2(cos(ph), sin(ph)) * w;
 			wsum += w;
 		}
 	}
-	return acc / max(wsum, 1e-4);
+	vec2 v = acc / max(wsum, 1e-4);
+	v /= max(length(v), 1.0 - TERRAIN_DETAIL_PHASOR_NORM);
+	float c = v.x;
+	float s = v.y;
+	float s2 = 2.0 * s * c;
+	float c2 = c * c - s * s;
+	return vec3(c - harm2 * s2, (-s - 2.0 * harm2 * c2) * dir);
 }
 
-// N = 要叠加侵蚀的法线；N_coarse = 只含宏观起伏的粗法线，决定沟谷走向与强度。
+// 带解析导数的 value noise：返回 (v ∈ [-1, 1], ∂v/∂p)。x 方向按 period_cells 环绕。
+vec3 terrain_value_noise_d(vec2 p, float period_cells) {
+	vec2 i = floor(p);
+	vec2 f = p - i;
+	vec2 u = f * f * (3.0 - 2.0 * f);
+	vec2 du = 6.0 * f * (1.0 - f);
+	float x0 = i.x;
+	float x1 = i.x + 1.0;
+	if (period_cells > 0.5) {
+		x0 = mod(x0, period_cells);
+		x1 = mod(x1, period_cells);
+	}
+	float a = hash21(vec2(x0, i.y));
+	float b = hash21(vec2(x1, i.y));
+	float c = hash21(vec2(x0, i.y + 1.0));
+	float d = hash21(vec2(x1, i.y + 1.0));
+	float k = a - b - c + d;
+	float v = a + (b - a) * u.x + (c - a) * u.y + k * u.x * u.y;
+	vec2 g = du * vec2((b - a) + k * u.y, (c - a) + k * u.x);
+	return vec3(v * 2.0 - 1.0, g * 2.0);
+}
+
+// ─── 分地形细节法线 ───────────────────────────────────────────────────
+// 宏观起伏由烘焙高度图（汇流刻谷）负责；这里只补格内细节，每种地形用不同的形态组合：
+//   gully   顺坡沟谷，sharp 控制剖面（0 圆缓冲沟 → 1 尖脊 V 谷）
+//   strata  沿等高线的层状台坎（岩层出露），只在有坡处出现
+//   dune    随风向的不对称沙丘 + 细波纹
+//   rolling 宽缓的圆形起伏
+//   hummock 小尺度丘状凹凸（树冠、冻融丘、草丘）
+// 强度单位都是"坡度"：对法线 xy 的最大偏转量级，与波长无关。
+struct TerrainDetailProfile {
+	float gully;
+	float gully_wl;
+	float sharp;
+	float strata;
+	float dune;
+	float rolling;
+	float hummock;
+};
+
+TerrainDetailProfile terrain_detail_profile(int biome) {
+	//                                   gully  wl     sharp  strata dune   rolling hummock
+	if (biome == B_MOUNTAIN)   return TerrainDetailProfile(0.42, 64.0, 0.70, 0.00, 0.0, 0.00, 0.05);
+	if (biome == B_MESA)       return TerrainDetailProfile(0.20, 56.0, 0.35, 0.60, 0.0, 0.03, 0.03);
+	if (biome == B_BADLANDS)   return TerrainDetailProfile(0.52, 30.0, 0.85, 0.28, 0.0, 0.00, 0.02);
+	if (biome == B_HILL)       return TerrainDetailProfile(0.22, 84.0, 0.10, 0.00, 0.0, 0.26, 0.06);
+	if (biome == B_DESERT)     return TerrainDetailProfile(0.00, 64.0, 0.00, 0.00, 0.30, 0.03, 0.00);
+	if (biome == B_COLD_DESERT) return TerrainDetailProfile(0.12, 56.0, 0.50, 0.10, 0.12, 0.04, 0.05);
+	if (biome == B_SALT_FLAT)  return TerrainDetailProfile(0.00, 64.0, 0.00, 0.00, 0.00, 0.01, 0.02);
+	if (biome == B_TUNDRA)     return TerrainDetailProfile(0.06, 72.0, 0.20, 0.00, 0.00, 0.05, 0.09);
+	if (biome == B_SNOW || biome == B_GLACIER)
+		return TerrainDetailProfile(0.10, 96.0, 0.00, 0.00, 0.06, 0.05, 0.00);
+	if (biome == B_SHRUBLAND || biome == B_CHAPARRAL)
+		return TerrainDetailProfile(0.10, 64.0, 0.40, 0.04, 0.00, 0.09, 0.06);
+	if (biome == B_GRASSLAND || biome == B_STEPPE || biome == B_SAVANNA)
+		return TerrainDetailProfile(0.05, 96.0, 0.00, 0.00, 0.00, 0.09, 0.03);
+	if (biome == B_FOREST || biome == B_TAIGA || biome == B_JUNGLE || biome == B_MANGROVE)
+		return TerrainDetailProfile(0.06, 80.0, 0.00, 0.00, 0.00, 0.05, 0.11);
+	if (biome == B_SWAMP || biome == B_MOOR)
+		return TerrainDetailProfile(0.00, 64.0, 0.00, 0.00, 0.00, 0.02, 0.05);
+	if (biome == B_PLAIN)      return TerrainDetailProfile(0.02, 110.0, 0.0, 0.00, 0.00, 0.07, 0.02);
+	if (biome == B_DELTA || biome == B_FLOODPLAIN || biome == B_OASIS)
+		return TerrainDetailProfile(0.00, 64.0, 0.00, 0.00, 0.00, 0.03, 0.01);
+	return TerrainDetailProfile(0.04, 80.0, 0.00, 0.00, 0.00, 0.06, 0.03);
+}
+
+TerrainDetailProfile terrain_detail_profile_mix(
+		TerrainDetailProfile a, TerrainDetailProfile b, float t) {
+	return TerrainDetailProfile(
+			mix(a.gully, b.gully, t), mix(a.gully_wl, b.gully_wl, t), mix(a.sharp, b.sharp, t),
+			mix(a.strata, b.strata, t), mix(a.dune, b.dune, t),
+			mix(a.rolling, b.rolling, t), mix(a.hummock, b.hummock, t));
+}
+
+// 地貌与 biome 正交：林地也可以长在山上。山地 / 丘陵的沟谷直接由宏观坡度连续驱动
+// （坡越陡沟越深、脊越尖），不读地貌 id。
+TerrainDetailProfile terrain_detail_slope_boost(TerrainDetailProfile p, float slope) {
+	p.gully = max(p.gully, 0.40 * smoothstep(0.05, 0.35, slope));
+	p.sharp = max(p.sharp, 0.70 * smoothstep(0.12, 0.45, slope));
+	p.rolling = max(p.rolling, 0.12 * smoothstep(0.02, 0.10, slope) * (1.0 - smoothstep(0.15, 0.35, slope)));
+	return p;
+}
+
+float terrain_detail_landform_is_layered(int lf) {
+	return (lf == LF_PLATEAU || lf == LF_CANYON || lf == LF_RIFT_VALLEY) ? 1.0 : 0.0;
+}
+
+// 逐像素的 biome / 地貌 id 来自 warp 后 cube_round 的硬归属：格界参差，界外还散落
+// texel 大小的飞地，直接按它选配置时起伏强度逐 texel 跳变，过渡带碎成噪点。
+// 这里改在不扭曲的 hex 对偶三角网上插值：像素落在三个相邻格心围成的三角形里，
+// 只在三个格心取 biome / 地貌（格心必在本格内，不受 warp 影响），按重心坐标混合。
+// 权重取三次方再归一化，格内部基本保持本格配置，过渡集中在格界附近。
+// 水格与地图外按像素自身的配置补位。返回配置，lf_w = (层状地貌权重, 荒地权重)。
+TerrainDetailProfile terrain_detail_profile_field(
+		vec2 wp, int own_biome, int own_landform, out vec2 lf_w) {
+	float s = max(hex_size, 1e-4);
+	vec2 a = vec2(0.57735027 * wp.x - 0.33333333 * wp.y, 0.66666667 * wp.y) / s;
+	vec2 b = floor(a);
+	vec2 f = a - b;
+	float upper = step(1.0, f.x + f.y);
+	vec2 v0 = b + vec2(upper);
+	vec2 v1 = b + vec2(1.0, 0.0);
+	vec2 v2 = b + vec2(0.0, 1.0);
+	vec3 w = mix(vec3(1.0 - f.x - f.y, f.x, f.y), vec3(f.x + f.y - 1.0, 1.0 - f.y, 1.0 - f.x), upper);
+	w = w * w * w;
+	w /= max(w.x + w.y + w.z, 1e-6);
+
+	TerrainDetailProfile own = terrain_detail_profile(own_biome);
+	float own_layered = terrain_detail_landform_is_layered(own_landform);
+	float own_bad = (own_landform == LF_BADLANDS) ? 1.0 : 0.0;
+	TerrainDetailProfile acc = TerrainDetailProfile(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+	lf_w = vec2(0.0);
+	for (int i = 0; i < 3; i++) {
+		vec2 ax = (i == 0) ? v0 : ((i == 1) ? v1 : v2);
+		float wi = (i == 0) ? w.x : ((i == 1) ? w.y : w.z);
+		vec2 c = vec2(s * 1.7320508 * (ax.x + ax.y * 0.5), s * 1.5 * ax.y);
+		vec4 mi = visual_sample_map_index(wrap_map_uv((c - world_origin) / world_size));
+		int cid = int(mi.g * 255.0 + 0.5) + int(mi.b * 255.0 + 0.5) * 256;
+		TerrainDetailProfile pi = own;
+		vec2 li = vec2(own_layered, own_bad);
+		if (cid < 65535) {
+			int bi = int(texture(enum_lut, cell_lut_uv(cid)).r * 255.0 + 0.5);
+			if (!(bi == B_OCEAN || bi == B_COAST || bi == B_LAKE || bi == B_REEF
+					|| bi == B_KELP || bi == B_SEA_ICE)) {
+				int lf = int(mi.a * 255.0 + 0.5);
+				pi = terrain_detail_profile(bi);
+				li = vec2(terrain_detail_landform_is_layered(lf), (lf == LF_BADLANDS) ? 1.0 : 0.0);
+			}
+		}
+		acc.gully += pi.gully * wi;
+		acc.gully_wl += pi.gully_wl * wi;
+		acc.sharp += pi.sharp * wi;
+		acc.strata += pi.strata * wi;
+		acc.dune += pi.dune * wi;
+		acc.rolling += pi.rolling * wi;
+		acc.hummock += pi.hummock * wi;
+		lf_w += li * wi;
+	}
+	return acc;
+}
+
+TerrainDetailProfile terrain_detail_landform_boost(
+		TerrainDetailProfile p, vec2 lf_w, float slope_gate) {
+	float layered = lf_w.x * slope_gate;
+	float bad = lf_w.y * slope_gate;
+	p.strata = max(p.strata, 0.55 * layered);
+	p.gully = max(p.gully, 0.46 * bad);
+	p.sharp = max(p.sharp, 0.80 * bad);
+	p.strata = max(p.strata, 0.22 * bad);
+	return p;
+}
+
+// 沟谷走向 / 台坎用的平滑高程场：约 1 格半径的中心差分 + 4 点均值，返回 (梯度, 均值)。
+// 粗法线只有 0.35 格半径，会在每条刻谷的谷底和脊线两侧翻转方向，用它定向时条纹相位
+// 逐像素乱跳；逐像素高程含格内残差，用它切台坎时层线弯成细碎的等高线。
+vec3 terrain_detail_flow_field(vec2 uv) {
+	vec2 world_texel = world_size / max(hm_resolution, vec2(1.0));
+	vec2 r = max(vec2(1.0), floor(vec2(max(hex_size, 1e-4)) / max(world_texel, vec2(1e-4)) + 0.5));
+	vec2 texel = 1.0 / max(hm_resolution, vec2(1.0));
+	float l = decode_height_rg8(uv - vec2(texel.x * r.x, 0.0));
+	float rr = decode_height_rg8(uv + vec2(texel.x * r.x, 0.0));
+	float u = decode_height_rg8(uv - vec2(0.0, texel.y * r.y));
+	float d = decode_height_rg8(uv + vec2(0.0, texel.y * r.y));
+	return vec3(vec2(rr - l, d - u) / max(2.0 * r * world_texel, vec2(1e-4)),
+			(l + rr + u + d) * 0.25);
+}
+
+// camera_zoom = 每世界单位的屏幕像素数；波长不足 ~3px 的层会闪烁，提前淡出。
+float terrain_detail_lod(float wl) {
+	return smoothstep(3.0, 7.0, wl * camera_zoom);
+}
+
+// N = 要叠加细节的法线；N_coarse = 只含宏观起伏的粗法线，决定沟谷走向与台坎强度。
 // 走向不能取 N：近距的高度细节 / 近岸细节是逐 texel 残差，方向乱跳会把条纹扭成水泡纹。
-// 返回 (叠加侵蚀后的法线, 沟谷深度 0..1)。沟谷深度给调用方做凹处遮蔽。
-vec4 terrain_apply_erosion_detail(vec3 N, vec3 N_coarse, vec2 wp, float elev, int quality) {
+// biome / landform 是像素自身的归属，只在相邻格为水或地图外时补位用。
+// 返回 (叠加细节后的法线, 沟谷深度 0..1)。沟谷深度给调用方做凹处遮蔽。
+vec4 terrain_apply_landform_detail(
+		vec3 N, vec3 N_coarse, vec2 uv, vec2 wp, float elev, int quality,
+		int biome, int landform) {
 #if defined(PK_MOBILE_ANY) || defined(PK_QUALITY_LOW)
 	return vec4(N, 0.0);
 #else
@@ -319,58 +506,185 @@ vec4 terrain_apply_erosion_detail(vec3 N, vec3 N_coarse, vec2 wp, float elev, in
 	vec2 grad = -Nc.xy / max(Nc.z, 0.2);
 	float slope = length(grad);
 	float land_h = clamp((elev - sea_level) / max(1.0 - sea_level, 0.001), 0.0, 1.0);
-	// 海拔给主权重（高地沟谷密）；烘焙法线差分半径约 1.35 hex，山地宏观坡度也只有
-	// 0.02~0.1，坡度只在这一段区分"有起伏"和"高原顶"，高原顶保留三成细节。
-	float relief_w = smoothstep(0.02, 0.40, land_h)
-			* mix(0.35, 1.0, smoothstep(0.01, 0.06, slope));
-	if (relief_w <= 0.001) {
-		return vec4(N, 0.0);
-	}
-	// 走向兜底场：烘焙法线是 RG8，xy 量化步长约 0.013，缓坡处方向几乎全是量化噪声。
-	// 叠一个低频随机向量场（幅度与缓坡同量级），平坦处由它给出连续走向，陡坡仍由真实坡度主导。
-	float flow_period;
-	vec2 flow_p = terrain_erosion_cell_coord(wp, max(terrain_erosion_world_size, 1.0) * 4.0, flow_period);
-	vec2 flow_field = vec2(
-			terrain_erosion_value_noise(flow_p, flow_period),
-			terrain_erosion_value_noise(flow_p + vec2(0.0, 57.0), flow_period)) * 2.0 - 1.0;
-	vec2 grad_dir = grad + flow_field * 0.03;
-	float amp_scale = terrain_erosion_strength * relief_w;
-	int octaves = (quality >= 2) ? 4 : 3;
-	float wl = max(terrain_erosion_world_size, 1.0);
-	float amp = 1.0;
-	float h_sum = 0.0;
-	float h_norm = 0.0;
+	float slope_gate = smoothstep(0.015, 0.10, slope);
+
+	vec2 lf_w;
+	TerrainDetailProfile P = terrain_detail_profile_field(wp, biome, landform, lf_w);
+	P = terrain_detail_slope_boost(P, slope);
+	P = terrain_detail_landform_boost(P, lf_w, slope_gate);
+
+	float k = terrain_erosion_strength;
+	float scale = max(terrain_erosion_world_size, 1.0) / 72.0;
 	vec2 detail_grad = vec2(0.0);
-	for (int k = 0; k < 4; k++) {
-		// camera_zoom = 每世界单位的屏幕像素数；波长不足 ~3px 的层会闪烁，提前淡出。
-		float lod = smoothstep(3.0, 7.0, wl * camera_zoom);
-		if (k >= octaves || lod <= 0.0) {
-			break;
+	float crease = 0.0;
+	// 约 1 格半径的平滑高程梯度（高程 / 世界单位），乘 flow_to_slope 换成与粗法线同单位的坡度。
+	vec3 flow = terrain_detail_flow_field(uv);
+	vec2 flow_grad = flow.xy;
+	float flow_to_slope = terrain_normal_height_scale_hex * max(hex_size, 1e-4);
+
+	// ① 顺坡沟谷：细层沿粗层的沟脊偏转，形成树枝状分叉；sharp 把余弦剖面折成尖脊。
+	// 沟谷坡度随宏观坡度增长：缓坡上细节坡度远大于宏观坡度时，走向由细节自己主导，
+	// 整片读成揉皱的锡纸而不是顺坡的冲沟。
+	float gully_amp = P.gully * k
+			* clamp(slope / TERRAIN_GULLY_FULL_SLOPE, 0.25, 1.0)
+			* mix(0.6, 1.0, smoothstep(0.0, 0.12, land_h));
+	if (gully_amp > 0.002) {
+		// 走向兜底场：烘焙法线是 RG8，缓坡处方向几乎全是量化噪声，叠低频随机向量场给出连续走向。
+		float flow_period;
+		vec2 flow_p = terrain_erosion_cell_coord(wp, 288.0 * scale, flow_period);
+		vec2 flow_field = vec2(
+				terrain_erosion_value_noise(flow_p, flow_period),
+				terrain_erosion_value_noise(flow_p + vec2(0.0, 57.0), flow_period)) * 2.0 - 1.0;
+		// 平滑坡度直接以向量参与（不先归一化成方向）：沟底和脊顶处它连续地趋于 0，
+		// 走向自然交给兜底场；归一化后在那里会整片翻转 180°，相位逐像素乱跳成碎点。
+		vec2 grad_dir = flow_grad * flow_to_slope + flow_field * 0.03;
+		// 各地形共用一组固定波长的倍频层，gully_wl 只决定能量落在哪几层：波长若随配置
+		// 在空间上插值，相位坐标 wp / wl 在过渡带被拉扯，条纹卷成同心圆环。
+		int octaves = (quality >= 2) ? 5 : 4;
+		float band_c = log2(TERRAIN_GULLY_BASE_WL / max(P.gully_wl, 1.0));
+		float wl = TERRAIN_GULLY_BASE_WL * scale;
+		float h_sum = 0.0;
+		float h_norm = 0.0;
+		vec2 g_acc = vec2(0.0);
+		vec2 steer_acc = vec2(0.0);
+		for (int o = 0; o < 5; o++) {
+			float lod = terrain_detail_lod(wl);
+			if (o >= octaves || lod <= 0.0) {
+				break;
+			}
+			float of = float(o);
+			// 峰值层 = 配置波长；更细的层按 1/2 衰减（与常规 fBm 一致），更粗的层衰减更快。
+			float amp = (of <= band_c) ? exp2(-(band_c - of) * 1.5) : exp2(-(of - band_c));
+			if (amp < 0.03) {
+				wl *= 0.5;
+				continue;
+			}
+			// 偏转量封顶在走向向量的 35%：细节坡度常是宏观的数倍，不封顶时条纹会扭成水波纹。
+			// 偏转只累积未锐化的导数：尖脊剖面的导数在脊线上不连续，用它偏转会让相位跳变。
+			float dir_len = length(grad_dir);
+			vec2 steer = steer_acc * gully_amp;
+			float steer_len = length(steer);
+			if (steer_len > dir_len) {
+				steer *= dir_len / steer_len;
+			}
+			vec2 gd = grad_dir + steer * 0.35;
+			float gl = length(gd);
+			vec2 dir = (gl > 1e-4) ? vec2(gd.y, -gd.x) / gl : vec2(1.0, 0.0);
+			float cells_x;
+			vec2 p = terrain_erosion_cell_coord(wp, wl, cells_x);
+			p += vec2(float(o * 17), float(o * 29));
+			vec3 n = terrain_phasor_noise(p, dir, cells_x, 0.0);
+			// 平滑绝对值折出尖脊：干涉相消处 h 长时间贴近 0，硬 abs/sign 会在那里逐像素翻转。
+			float ha = sqrt(n.x * n.x + TERRAIN_DETAIL_CREST_ROUND * TERRAIN_DETAIL_CREST_ROUND);
+			float hs = mix(n.x, 1.0 - 2.0 * ha, P.sharp);
+			vec2 gs = mix(n.yz, -2.0 * (n.x / ha) * n.yz, P.sharp);
+			g_acc += gs * amp * lod;
+			steer_acc += n.yz * amp * lod;
+			h_sum += hs * amp * lod;
+			h_norm += amp * lod;
+			wl *= 0.5;
 		}
-		// 细层沿粗层的沟脊偏转，但偏转量封顶在走向向量的 60%：山地细节坡度常是宏观的
-		// 数倍，不封顶时方向被细节主导，条纹会扭成水波纹而不是顺坡的沟谷。
-		float dir_len = length(grad_dir);
-		vec2 steer = detail_grad;
-		float steer_len = length(steer);
-		if (steer_len > dir_len) {
-			steer *= dir_len / steer_len;
-		}
-		vec2 g = grad_dir + steer * 0.6;
-		float gl = length(g);
-		vec2 dir = (gl > 1e-4) ? vec2(g.y, -g.x) / gl : vec2(1.0, 0.0);
-		float cells_x;
-		vec2 p = terrain_erosion_cell_coord(wp, wl, cells_x);
-		p += vec2(float(k * 17), float(k * 29));
-		vec3 n = terrain_gully_noise(p, dir, cells_x);
-		detail_grad += n.yz * amp * amp_scale * lod;
-		h_sum += n.x * amp * lod;
-		h_norm += amp * lod;
-		amp *= 0.5;
-		wl *= 0.5;
+		detail_grad += g_acc * gully_amp;
+		crease = (h_norm > 0.0) ? clamp(-h_sum / h_norm, 0.0, 1.0) * min(1.0, gully_amp * 2.5) : 0.0;
 	}
+
+	// ② 层状台坎：把高程按层厚 TERRAIN_STRATA_THICKNESS 量化成"平台 + 陡坎"，
+	//    detail = (t'(s) - 1) · 宏观坡度，平台变缓、坎壁变陡，均值不变。层线随低频噪声起伏。
+	float strata_amp = P.strata * k;
+	float elev_grad = length(flow_grad);
+	if (strata_amp > 0.002 && slope > 0.004 && elev_grad > 1e-6) {
+		float wob_period;
+		vec2 wob_p = terrain_erosion_cell_coord(wp, 160.0 * scale, wob_period);
+		float wob = terrain_erosion_value_noise(wob_p, wob_period) * 2.0 - 1.0;
+		// 层距 = 层厚 / 平滑梯度。层距须不小于约 3 个高度 texel（否则双线性插值把层线切成
+		// texel 网格上的碎点）、约 4 屏幕像素（否则闪烁）和约 1/4 格（否则读成细密等高线
+		// 而非岩层台坎）；不够时层厚按 2 倍逐级合并。2T 的层线是 T 层线的子集，相邻两级按
+		// 对数插值，陡坡上自然只剩主层。层线切在平滑高程上，不随格内残差弯折。
+		float texel_world = world_size.x / max(hm_resolution.x, 1.0);
+		float min_spacing = max(max(3.0 * texel_world, 4.0 / max(camera_zoom, 1e-3)),
+				TERRAIN_STRATA_MIN_SPACING_HEX * max(hex_size, 1e-4));
+		float spacing = TERRAIN_STRATA_THICKNESS / elev_grad;
+		float level = max(0.0, log2(min_spacing / spacing));
+		float l0 = floor(level);
+		float lt = level - l0;
+		float base = flow.z / TERRAIN_STRATA_THICKNESS + wob * 0.35;
+		float tp_mix = 0.0;
+		for (int li = 0; li < 2; li++) {
+			float lv = l0 + float(li);
+			float s = base / exp2(lv);
+			float x = clamp((fract(s) - (1.0 - TERRAIN_STRATA_RISER)) / TERRAIN_STRATA_RISER, 0.0, 1.0);
+			float tp = 6.0 * x * (1.0 - x) / TERRAIN_STRATA_RISER;
+			tp_mix += (tp - 1.0) * ((li == 0) ? (1.0 - lt) : lt);
+		}
+		// 超过 4 级合并（层距被迫放大 16 倍以上）时已不像岩层，整体淡出。
+		float lod = 1.0 - smoothstep(3.0, 4.0, level);
+		detail_grad += tp_mix * flow_grad * flow_to_slope * strata_amp * lod;
+	}
+
+	// ③ 沙丘：风向随超大尺度噪声缓慢转动；主沙丘锯齿剖面 + 细波纹。
+	float dune_amp = P.dune * k;
+	if (dune_amp > 0.002) {
+		float wind_period;
+		vec2 wind_p = terrain_erosion_cell_coord(wp, 900.0 * scale, wind_period);
+		float wa = 0.65 + (terrain_erosion_value_noise(wind_p, wind_period) - 0.5) * 2.2;
+		vec2 wind = vec2(cos(wa), sin(wa));
+		float wl = 44.0 * scale;
+		float amp = 1.0;
+		for (int o = 0; o < 2; o++) {
+			float lod = terrain_detail_lod(wl);
+			if (lod <= 0.0) {
+				break;
+			}
+			float cells_x;
+			vec2 p = terrain_erosion_cell_coord(wp, wl, cells_x);
+			p += vec2(float(o * 23), float(o * 11));
+			vec3 n = terrain_phasor_noise(p, wind, cells_x, (o == 0) ? 0.45 : 0.30);
+			detail_grad += n.yz * amp * lod * dune_amp;
+			amp *= 0.35;
+			wl *= 0.28;
+		}
+	}
+
+	// ④ 宽缓起伏 / ⑤ 丘状凹凸：各向同性 value noise，两层。
+	float rolling_amp = P.rolling * k;
+	if (rolling_amp > 0.002) {
+		float wl = 150.0 * scale;
+		float amp = 1.0;
+		for (int o = 0; o < 2; o++) {
+			float lod = terrain_detail_lod(wl);
+			if (lod <= 0.0) {
+				break;
+			}
+			float cells_x;
+			vec2 p = terrain_erosion_cell_coord(wp, wl, cells_x);
+			p += vec2(float(o * 31 + 5), float(o * 13 + 7));
+			detail_grad += terrain_value_noise_d(p, cells_x).yz * amp * lod * rolling_amp;
+			amp *= 0.5;
+			wl *= 0.5;
+		}
+	}
+	float hummock_amp = P.hummock * k;
+	if (hummock_amp > 0.002) {
+		float wl = 16.0 * scale;
+		float amp = 1.0;
+		for (int o = 0; o < 2; o++) {
+			float lod = terrain_detail_lod(wl);
+			if (lod <= 0.0) {
+				break;
+			}
+			float cells_x;
+			vec2 p = terrain_erosion_cell_coord(wp, wl, cells_x);
+			p += vec2(float(o * 19 + 3), float(o * 37 + 1));
+			vec3 n = terrain_value_noise_d(p, cells_x);
+			// 平方把起伏收成圆顶小丘，丘间是宽缓的低地。
+			detail_grad += 2.0 * max(n.x, 0.0) * n.yz * amp * lod * hummock_amp;
+			amp *= 0.5;
+			wl *= 0.5;
+		}
+	}
+
 	vec3 Nn = normalize(N);
 	vec3 out_n = normalize(vec3(Nn.xy / max(Nn.z, 0.2) - detail_grad, 1.0));
-	float crease = (h_norm > 0.0) ? clamp(-h_sum / h_norm, 0.0, 1.0) * relief_w : 0.0;
 	return vec4(out_n, crease);
 #endif
 }

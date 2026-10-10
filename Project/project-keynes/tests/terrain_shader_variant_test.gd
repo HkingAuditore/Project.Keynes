@@ -59,9 +59,11 @@ func _init() -> void:
 	_expect(land_source.contains("float facing = dot(Nh, Ln) * tod_terrain_relief_slope_gain")
 		and not land_source.contains("slope_face = Nh / slope"),
 		"tod relief scales with slope instead of a normalized binary aspect")
-	_expect(land_source.contains("terrain_apply_erosion_detail(")
-		and hillshade_source.contains("vec4 terrain_apply_erosion_detail("),
-		"macro normal carries slope-aligned erosion gullies")
+	_expect(land_source.contains("terrain_apply_landform_detail(")
+		and hillshade_source.contains("vec4 terrain_apply_landform_detail(")
+		and hillshade_source.contains("TerrainDetailProfile terrain_detail_profile(int biome)")
+		and hillshade_source.contains("terrain_detail_landform_boost("),
+		"macro normal carries per-terrain landform detail")
 	_expect(hillshade_source.contains("terrain_erosion_cell_coord")
 		and hillshade_source.contains("wrap_period_x"),
 		"erosion noise stays periodic across the world X wrap")
@@ -139,8 +141,8 @@ func _init() -> void:
 		_expect(names.has("terrain_material_tex"), "%s tiled exposes terrain material array" % label)
 	_expect(uniforms_source.contains("sampler2DArray terrain_material_tex"),
 		"terrain material path uses sampler2DArray")
-	_expect(surface_source.contains("terrain_materials_active() || !has_terrain_micro_tex"),
-		"HIGH tiled material path skips terrain_micro_tex")
+	_expect(surface_source.contains("float material_path_scale = terrain_materials_active() ? 0.72 : 1.0;"),
+		"HIGH tiled material path keeps a restrained terrain_micro_tex layer")
 	_expect(surface_source.contains("terrain_material_layer")
 		and surface_source.contains("terrain_material_sample"),
 		"biome-to-layer material sampling is present")
