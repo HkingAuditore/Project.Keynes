@@ -1114,6 +1114,14 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     out["families_dissolved"] = _families_dissolved;
     out["family_owner_jobs_filled"] = _family_owner_jobs_filled;
     out["family_owner_jobs_vacant"] = _family_owner_jobs_vacant;
+    out["family_births_attributed"] = _family_births_attributed;
+    out["family_deaths_attributed"] = _family_deaths_attributed;
+    out["family_reconcile_corrections"] = _family_reconcile_corrections;
+    out["family_ledger_clamps"] = _family_ledger_clamps;
+    out["family_people_recruited"] = _family_people_recruited;
+    out["family_units_released"] = _family_units_released;
+    out["family_demography_rows"] = static_cast<int64_t>(_family_demography_rows.size());
+    out["family_demography_weights_ms"] = _family_demography_weights_ms;
     out["notable_person_runtime_mode"] = _person_runtime_mode.get() == 0 ? "OFF" :
         (_person_runtime_mode.get() == 1 ? "PROBE" : "ACTIVE");
     out["notable_person_count"] = persons_store().active_count.get();
@@ -2103,6 +2111,14 @@ Dictionary NativeEconomyRuntime::report() const {
     out["families_dissolved"] = _families_dissolved;
     out["family_owner_jobs_filled"] = _family_owner_jobs_filled;
     out["family_owner_jobs_vacant"] = _family_owner_jobs_vacant;
+    out["family_births_attributed"] = _family_births_attributed;
+    out["family_deaths_attributed"] = _family_deaths_attributed;
+    out["family_reconcile_corrections"] = _family_reconcile_corrections;
+    out["family_ledger_clamps"] = _family_ledger_clamps;
+    out["family_people_recruited"] = _family_people_recruited;
+    out["family_units_released"] = _family_units_released;
+    out["family_demography_rows"] = static_cast<int64_t>(_family_demography_rows.size());
+    out["family_demography_weights_ms"] = _family_demography_weights_ms;
     out["notable_person_runtime_mode"] = _person_runtime_mode.get() == 0 ? "OFF" :
         (_person_runtime_mode.get() == 1 ? "PROBE" : "ACTIVE");
     out["notable_person_count"] = persons_store().active_count.get();

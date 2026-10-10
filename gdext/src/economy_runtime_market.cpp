@@ -2263,7 +2263,17 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         population_store().demography_residual.write_scalar(slot, deaths >= population_before
             ? 0 : death_numerator_q32 % Q32_ONE, market_mutation_sink());
         if (deaths > 0) {
-            if (_person_runtime_mode.get() == 2 &&
+            // Cohorts that may hold family members are attributed on the
+            // main thread at merge; the worker only reads the frozen CSR.
+            const bool family_slot = _family_runtime_mode.get() == 2 &&
+                !family_memberships().empty() &&
+                (_family_csr_edge_count != family_memberships().size() ||
+                 static_cast<size_t>(slot) + 1 >= _family_cohort_offsets.size() ||
+                 _family_cohort_offsets[slot] < _family_cohort_offsets[slot + 1]);
+            if (family_slot)
+                result.family_demography.push_back({
+                    population_store().handle_for_slot(slot), population_before, deaths});
+            else if (_person_runtime_mode.get() == 2 &&
                 _person_cohort_offsets.size() == population_store().active.size() + 1 &&
                 _person_cohort_offsets[slot] < _person_cohort_offsets[slot + 1])
                 result.person_demography.push_back({

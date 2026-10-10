@@ -546,6 +546,12 @@ ACTIVE/SHADOW 切换或旧迁移实验开关。
   条件缓存另看 `family_behavior_metric_contexts_built` 与
   `family_behavior_condition_edges_evaluated`：前者应接近活跃 family-cell 数，后者可远大于前者；若两者
   同阶于 behavior row 数，说明条件边又开始重复构造完整指标 slab。
+  家族人口学另看 `family_demography_weights_ms` 与 `family_demography_rows`（EPOCH_BEGIN 派生，行数应
+  ≈ 活跃 family-cell 数，耗时只随成员边数近线性）；`family_births_attributed` /
+  `family_deaths_attributed` / `family_people_recruited` 是归属事件计数，`family_reconcile_corrections`
+  正常为 0，非 0 说明有路径改了 cohort 人口却没走 `move_cohort_population` 或死亡归属；
+  `family_ledger_clamps` 持续偏高说明某个结构性资金移动漏了 basis 平移。manual_1（24 家族、81 边）
+  回放参考：weights ≈ 0.015 ms、normalize（含归属账结算）≈ 0.08 ms。
 
 - `aggregate_publish` 的 continuation 子阶段除 native publish phase 外，还包含
   `native_unattributed`、`world_resource_flush`、`world_csv_capture`、`world_gameplay_publish`、

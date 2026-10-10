@@ -88,9 +88,24 @@ contract from roadmap text or a previous chat.
 - Enforce `sum(family cash_claim for cohort) <= cohort.funds`.
 - Treat `cash_claim` as attribution inside cohort funds, not a second wallet. Production, wages,
   consumption, subsidies, tax, and migration must continue to mutate existing conserved ledgers.
-- Treat building asset value as a read-only estimate. Do not add it to money conservation.
-- Fill a family-owned building's owner jobs only from local members with the exact owner signature.
-  Fill anonymous buildings only from anonymous cohort capacity. Leave unqualified owner jobs vacant.
+  `FAMILY_COMMIT` settles the claim ledger once per cohort: `funds_basis` is the shared opening
+  balance; owned-group business net goes to the owning edges, the remainder is split per capita,
+  then `basis = funds`. Any new structural money move (transfer, split, departure, capital grant)
+  must shift basis (`shift_family_ledger_basis`) or attribute to the sponsor
+  (`attribute_family_funds_delta`); otherwise it is booked as income/loss. Never raise basis from
+  claim and never rescale people/claim by `population_basis`.
+- Change family people only through events: births (`apply_family_birth_attribution`, weighted
+  `share × w_b`), deaths (worker `MarketResult.family_demography` → `apply_family_death_attribution`,
+  weighted `w_d`), proportional outflow (`plan_family_membership_move` + `move_family_membership`),
+  founding/same-day household absorption, and review-phased `recruit_family_dependents`. Targets
+  `s*` live in derived `_family_demography_rows` rebuilt at EPOCH_BEGIN and restore; same-cell
+  same-ethnicity targets are capped by `S_total` (70%). Formulas: `family-demography-ledger-design.md`.
+- Treat building asset value as a read-only estimate. Do not add it to money conservation. Net worth
+  is `Σ claim + building_reset_capital_value()` in both snapshot and branches.
+- Owner-job totals still come from profession clamps (membership is attribution, not admission). A
+  family-owned unit's filled owner posts are attributed first to local members with the exact owner
+  signature; remaining filled posts split between families and anonymous by free people. Review
+  releases owned groups whose owner cohort has no family members (`family_units_released`).
 - Do not add manager/proxy ownership without a new explicit design and migration.
 - Derive per-profession people, owner-employed, and employee-employed counts from membership and
   committed building employment. Do not create an independent family labor ledger.
@@ -103,8 +118,13 @@ contract from roadmap text or a previous chat.
 - Compute one-person desired needs through the same native actor-demand helper, allocate only a stable
   prefix share of actual cohort spend, and leave anonymous residual unassigned. Never let attribution
   feed back into price formation or ledger totals.
-- Move membership people and cash claim proportionally when cohort population changes cell or
-  signature. Allow branches to emerge from actual migration, not duplicated records.
+- Move membership people proportionally between anonymous and family edges when cohort population
+  changes cell or signature (mobility caps, ×2 preferred tilt; strict sponsor-first for investment
+  conversion and colonization). Money follows people: planned claims plus anonymous per-capita funds.
+  Allow branches to emerge from actual migration, not duplicated records.
+- Investment sponsor search inside a family cohort considers each family (`claim − 30d reserve`) and
+  the anonymous party (`funds − Σclaim − reserve`); the chosen party owns the completed unit.
+
 
 ## Change formation and lifecycle safely
 
@@ -119,12 +139,12 @@ Keep formation deterministic and based on realized economy state:
    owner-signature dependents (`owner_slots in the cell * family_household_people_per_owner_slot`,
    capped by `family_household_max_people`; defaults 256 per slot, 1024 cap, 8 families per
    cell) into the new family without changing total people, money, goods, or building count.
-   Founders come from the owner signature only. Each FAMILY_COMMIT absorbs undersized
-   branches after normalize (phase 0) and again after formation (phase 2) from remaining
-   anonymous owner-signature people, leaving at least one anonymous person per cohort.
-   All families in a cell together may not exceed half the local population; other
-   professions stay anonymous so they can form their own families. Opening 20-person
-   capitals therefore keep the two gathering-ground operators as the founder household.
+   Founders come from the owner signature only. Only families founded today absorb
+   household people (phase 0 and phase 2) from remaining anonymous owner-signature people,
+   leaving at least one anonymous person per cohort; existing families grow through births
+   and recruitment. All families in a cell together stay within `S_total` (70%) of the local
+   population; other professions stay anonymous so they can form their own families. Opening 20-person
+      capitals therefore keep the two gathering-ground operators as the founder household.
 
 The formal `StarterSettlementBootstrap v3` path is the only opening exception: it may declare one
 founder building per capital so native bootstrap immediately creates one conserved founder family

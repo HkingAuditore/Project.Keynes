@@ -820,6 +820,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         family_influences().clear();
         persons_store().clear();
         family_memberships().clear();
+        _family_csr_edge_count = SIZE_MAX;
+        _family_demography_rows.clear();
         family_ownerships().clear();
         family_trait_rolls().clear();
         _family_trait_commands.clear();

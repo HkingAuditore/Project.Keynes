@@ -1714,7 +1714,7 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
                 take = std::min(take, std::max<int64_t>(0, remaining_merchants - 1));
             if (take <= 0) continue;
             if (!move_cohort_population(candidate.slot, destination_cell,
-                    owner_signature, take, error, nullptr, family_handle))
+                    owner_signature, take, error, nullptr, family_handle, true))
                 return false;
             missing -= take;
             if (from_merchant)

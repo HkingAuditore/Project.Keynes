@@ -1,7 +1,7 @@
 # 显赫家族原生运行时
 
-> 人口归属、归属账与决策器正在按[家族人口、归属账与决策器重构设计](./family-demography-ledger-design.md)
-> 重构；该文档列出的现状缺陷与本页「家庭规模吸收」「每日比例重算」等描述冲突时，以设计文档为准。
+> 人口归属、成员归属账与产业分配的公式、参数与实现取舍见
+> [家族人口、归属账与决策器](./family-demography-ledger-design.md)。本页只保留运行时契约摘要。
 
 ## 目标与边界
 
@@ -47,8 +47,13 @@ sum(family.cash_claim) <= cohort.funds
 ```
 
 `cash_claim` 是 cohort 资金中的守恒归属，不是第二个钱包。生产收入、工资、税、消费、补贴和迁移
-仍只改原有 cohort/merchant/country 账本；家族提交阶段按人口与资金基数重新归一化 claim。因此
-家族财产查询不会重复计入 money audit，也不会绕过税务。
+仍只改原有 cohort/merchant/country 账本；`FAMILY_COMMIT` 对每个 cohort 做一次归属账结算：
+`Δ = funds − funds_basis`，其中自家建筑的业主净收入按家族实际占用的业主岗归给该家族，其余
+`Δ` 按人数分摊，然后把 `funds_basis` 设为当前资金。结构性移动（迁移、开拓、商人拆分、投资
+资本划拨、施工支出）显式平移 `funds_basis` 或直接记到 sponsor 家族的 claim，不会被误记为收支。
+`Σ claim > funds` 时按比例压缩并记 `family_ledger_clamps`。因此家族财产查询不会重复计入
+money audit，也不会绕过税务。成员人数只经由出生/死亡归属、按比例外流、立族吸收与依附招募
+事件变化，提交阶段只做向下兜底（`family_reconcile_corrections`）。
 
 建筑组仍按 `(cell, building_type, owner_signature)` 聚合。家族所有权是附着于稳定
 `BuildingIdentityStore` handle 的 `owned_count`，不会把 `family_id` 放入建筑组 key，从而避免
@@ -174,7 +179,8 @@ binding。分支/特性/等级无变化时不更新；降级、特性移除或�
 Modifier stat，也禁止家族第二钱包：
 
 - `family.absorb_anonymous`（opcode 21）：把匿名人口吸收进本家族 membership，总量不变；或 SET
-  家庭规模吸收加成。
+  吸收加成，后者现在把分支目标占比 `s*` 上调 `加成 × 5%`（不超过 `S_max`），通过出生权重与依附
+  招募慢慢兑现，不再每日直接吸人。「开枝散叶」出生因子同时放大 cohort 出生率并乘进家族出生权重。
 - `family.purchase_discount`（opcode 22）：只对该家族在 cohort 内的需求份额套买方折扣，价差走
   现有消费补贴/财政 escrow（国库封顶）。无预算则折扣为 0。
 - `SETTLE_FAMILY_EXPEDITION.i32_1>0`：开拓 ACK 后打一条可选 `population_reward`。内置开拓事务把
@@ -199,8 +205,8 @@ PKEC family policy header，改动会使旧存档 `save_family_policy_profile_mi
 2. 至少一栋尚属匿名所有，且一栋所需业主岗位已实际填满；
 3. 业主 signature 的匿名人口足以提供 `family_min_founder_people` 名创始人。
 
-创始人数 = `min(家庭规模目标, 业主 signature 剩余匿名人口, max(创始下限, 半城余量))`，
-半城余量 = 地块人口/2 − 地块所有家族人口。利润率、收入、类型、signature 只用于确定性排序，
+创始人数 = `min(家庭规模目标, 业主 signature 剩余匿名人口, max(创始下限, 家族余量))`，
+家族余量 = 地块人口 × `S_total`(70%) − 地块所有家族人口。利润率、收入、类型、signature 只用于确定性排序，
 不再是硬门槛。排序后按 `(建筑类型, 业主 signature)` 去重取至多 3 个产业，生成 3 张卡；产业
 不足 3 个时循环复用，但每张卡的 stable_id、姓氏（同文化组内去重）、核心特性
 （`roll_core_family_traits`）与随机池效果（`roll_random_pool_family_effect`，卡间去重）都
@@ -240,12 +246,11 @@ PlayerController 把玩家 OPEN 卡组当作强制模态：锁定其他玩家命
 **全部业主槽**乘以 `family_household_people_per_owner_slot`（默认 256，上限
 `family_household_max_people` 默认 1024）计算，因此一槽作坊约 256 人、两槽营地约 512 人，
 四槽起碰到 1024 封顶。创始人口只从业主 signature 的剩余匿名人口吸收，并把 `filled_owner`
-记为业主槽位数。当日 `FAMILY_COMMIT` 在形成之后再吸收一次：只继续吸收业主职业的匿名人口，
-每个 cohort 至少留 1 名匿名者，并且同一地块所有家族合计不超过当地人口一半，其余保持匿名。
-不把待业或其他职业整城吞进第一家。开局 20 人首都因此仍是两名采集业主加匿名多数。
-初始 cash claim 按其在 cohort 中的人口比例取得；
-首栋建筑的 `owned_count=1`。每一轮 `FAMILY_COMMIT` 在归一化后（phase 0）以及形成后
-（phase 2、重建 CSR 前）按当前拥有的业主槽位把偏小的既有家族吸收到同一家庭规模，
+记为业主槽位数。当日 `FAMILY_COMMIT` 只对**当日新立**的家族再吸收一次：只吸收业主职业的
+匿名人口，每个 cohort 至少留 1 名匿名者，并且同一地块所有家族合计不超过 `S_total`(70%)，其余
+保持匿名。开局 20 人首都因此仍是两名采集业主加匿名多数。初始 cash claim 按匿名人均资金取得；
+首栋建筑的 `owned_count=1`。既有家族不再每日吸收：它们的规模由出生/死亡归属和分支评审时的
+依附招募（`recruit_family_dependents`，目标占比 `s*` 高于当前占比时每次评审补 2% 差距）决定，
 不新增人口、不改账本总量。`family_max_per_cell` 写进 PKEC family policy header，
 改这个值会使旧存档在 restore 时返回 `save_family_policy_profile_mismatch`；
 `family_household_*` 不在该 header 里。
@@ -270,15 +275,18 @@ bootstrap 不触发。若旧会话已在无家族状态下运行，日常 `FAMIL
 
 ## 业主岗位与职业统计
 
-家族拥有某建筑不等于自动填满业主岗。每轮 `building_employment` 在原有岗位分配后执行约束：
+家族拥有某建筑不等于自动填满业主岗。岗位总数仍由职业钳制决定（家族成员身份只是归因，不是
+准入门槛）；每轮 `building_employment` 之后 `attribute_family_owner_employment_for_cell` 确定由谁
+占用这些已填岗位：
 
-- 家族所属建筑的业主岗，只能由同一地块、同一 owner signature 的该家族成员填充；
-- 匿名建筑只能使用该 cohort 中未归属任何家族的人口；
-- 任一成员不能同时填多个业主岗；缺少合格成员的岗位保持空缺并自然降低产能/收益；
-- 第一版没有经理或代理经营的替代通道。
+- 家族持有单元的业主岗优先由同格同 owner signature 的本家族成员占用，上限为持有单元的岗位数；
+- 同一 cohort 中已在其他组占岗的成员不重复计入；
+- 余下的已填岗位视为匿名单元的业主岗，在 `FAMILY_COMMIT` 按“未占自家岗位的人数”比例分给
+  家族成员与匿名人口；
+- 分支评审时，若家族在某持有组的业主 cohort 中已无成员，该组的所有权释放给匿名
+  （`family_units_released`），避免“有产无人”的所有权。
 
-`FAMILY_COMMIT` 将建筑 `filled_owner` 回写到成员边，并按剩余成员容量确定性分摊 employee
-employment。业主归因会钳到 `people`，避免 `owner_employed + employee_employed > people`。
+`FAMILY_COMMIT` 将上述归因回写到成员边，并按剩余成员容量确定性分摊 employee employment。业主归因会钳到 `people`，避免 `owner_employed + employee_employed > people`。
 PKEC 恢复对已写出的越界就业/滞后 `population_basis`/`funds_basis` 做同样钳位修复，而不是
 一律 `save_family_membership_invalid`。建筑 ownership 同理：清算与拆除会在份额授予之后缩小
 `count`，因此 CSR 重建与 PKEC 恢复都按当前 `count` 与业主槽容量钳 `owned_count` /
@@ -287,9 +295,13 @@ PKEC 恢复对已写出的越界就业/滞后 `population_basis`/`funds_basis` �
 
 ## 迁移、投资与经济结算
 
-人口换职业、换 signature 或迁移时，`move_cohort_population()` 同步按实际移动人口和资金比例移动
-成员边；由此自然形成家族分支。家族成员作为内生投资 sponsor 完工时，新增建筑所有权归给该
-家族。非家族 sponsor 仍生成匿名建筑。
+人口换职业、换 signature 或迁移时，`move_cohort_population()` 先用
+`plan_family_membership_move()` 把移出的 `m` 人按人数比例分摊到匿名与各家族边（职业偏好家族
+权重 ×2，`career_mobility` 作上限；投资转业与开拓包用 strict 模式先移 sponsor 方），再按
+“家族边人均 claim + 匿名人均余额”计算随人移动的资金；由此自然形成家族分支。投资 sponsor
+在同一 cohort 内同时考虑各家族（claim − 30 日生活储备）与匿名方（funds − Σclaim − 储备）；家族
+sponsor 完工时新增建筑所有权归该家族，资本划拨、商人启动信贷与施工支出记到该家族的 claim。
+匿名 sponsor 生成匿名建筑。
 
 所有生产、销售、工资、消费和税务事件继续走原经济流水：
 
@@ -298,20 +310,29 @@ building/market transaction
   -> cohort or merchant funds
   -> source-local tax withholding / fiscal escrow
   -> country treasury commit
-  -> FAMILY_COMMIT normalizes cash_claim and employment attribution
+  -> FAMILY_COMMIT settles the membership claim ledger and employment attribution
 ```
 
-家族总财产为成员 `cash_claim` 加其拥有建筑的只读资产估值；资产估值不参与守恒账本。不存在
-家族钱包向 cohort 注资、跨境汇回或二次征税。
+家族净资产 = 成员 `cash_claim` + 持有建筑的 `building_reset_capital_value()`；`get_family_snapshot`
+（`building_asset_value` / `net_worth`）与 `get_family_branches`（`building_asset_values`）使用同一
+口径，`productive_asset_value` 只作流水参考。资产估值不参与守恒账本。不存在家族钱包向 cohort
+注资、跨境汇回或二次征税。
 
 ## 调度与性能
 
 经济图在 `BUILDING_COMMIT` 后依次执行 `FAMILY_COMMIT=16`、`PERSON_COMMIT=17`，再进入
 `AGGREGATE_PUBLISH`。家族阶段：
 
-1. 归一化成员人口/现金 claim，并按业主槽把偏小家族吸收到家庭规模目标，再更新职业就业归因；
+1. 重建 CSR，结算成员归属账并做人数向下兜底，对评审到期的分支执行依附招募，给当日新立家族
+   吸收家庭人口，再更新职业就业归因；
 2. 按确定 cell work budget 评审人口里程碑、出卡或按已选/自动选择立族；
-3. 对当日新家族再吸收一次依附人口，复核衰退/消亡，压缩边表并重建索引。
+3. 对当日新家族再吸收一次依附人口，复核衰退/消亡（到期时释放无人经营的所有权），压缩边表并
+   重建索引。
+
+出生与死亡不在本阶段：`EPOCH_BEGIN` 从持久化状态派生分支人口学行（占比、目标占比、困难度、
+出生/死亡权重，`family_demography_weights_ms`）；市场 worker 对可能含家族成员的 cohort 只发出
+`MarketResult.family_demography` 死亡事件，主线程合并时按死亡权重分摊到成员边与匿名；
+`STRUCTURAL_COMMIT` 的出生命令按出生权重把新生儿记入家族在无业 cohort 的成员边。
 
 热循环只遍历当前建筑格和稀疏关系边。提交后重建以下 transient CSR：family→cohort、
 cohort→membership、family→building、building→ownership、cell→family，以及冻结的
@@ -325,7 +346,8 @@ family→`(cell, score_term, axis, id)` 行为因子表。CSR 不进入存档或
 - `get_family_cell_snapshot(cell, offset, limit)`：地块家族分页摘要。`EconomyFacade` 再按当前 `origin_cell` 聚落显示名、文化组格式和姓氏文本附加 `family_names` / `origin_settlement_names`；格子详情与开拓面板只展示这组显示名，不把裸姓氏当成家族名。
 - `get_family_snapshot(handle)`：身份、人口、财产和职业统计；`EconomyFacade` 同样组合 `family_name`。当前默认文化组是 `CITY_SURNAME_SUFFIX`（如「长安李氏」）；出生地未达聚落命名门槛时只显示「李氏」。姓氏目录目前只有 `default_zh` / 民族 `default`，所以全图都抽中文姓。
 - `get_family_traits(handle)`：核心/附加特性、强度和已编译行为偏好；`EconomyFacade` 再附加中文 `descriptions`（把设计表 X/Y 占位符按已抽取强度填成数字）。格子详情只显示「核心特性 / 附加特性」，不把内部强度 Q16 百分比展示给玩家。绑定效果 `bound_effect_display_names`/`bound_effect_descriptions` 与 `effect_display_names` 不进入 native catalog hash 或 PKEC。格子详情「行为偏好」只列出当前地块已解锁或已存在建筑能雇佣的职业，以及该地块现有人口职业；未解锁建筑对应的职业（例如石器时代的 AI 研究员）不出现。职业科技位 `profession_technology_available` 若存在会再交叉过滤。
-- `get_family_branches(handle, offset, limit)`：地理分支；
+- `get_family_branches(handle, offset, limit)`：地理分支；附 `demography_shares_q16`（成员占同格同民族人口）、`target_shares_q16`（`s*`）与 `distress_q16`，`get_family_branch_effects` 另附单分支的出生/死亡权重；
+- 诊断：`family_births_attributed`、`family_deaths_attributed`、`family_reconcile_corrections`、`family_ledger_clamps`、`family_people_recruited`、`family_units_released`、`family_demography_rows`、`family_demography_weights_ms`（每 epoch 清零）；
 - `get_family_branch_effects(handle, cell)`：威望拆分、已绑定 FamilyEffect、Modifier 贡献和 Trigger 进度；`EconomyFacade` 再附加效果/modifier/trigger 的中文 `display_names` 与 `descriptions`。格子详情「家族效果」只显示当前威望档的完整表述；偏好把设计表里的 X/Y 占位符按已抽取强度填成具体数字，不把取值范围符号展示给玩家。显示文案不进入 native catalog hash 或 PKEC。
 - `get_family_industries(handle, offset, limit)`：产业与业主占岗；
 - `get_building_cell_snapshot(cell)`：附带所有权 CSR。

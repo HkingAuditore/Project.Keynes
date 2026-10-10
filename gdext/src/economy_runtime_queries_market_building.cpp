@@ -2121,6 +2121,7 @@ Dictionary NativeEconomyRuntime::family_snapshot(int64_t family_handle_value) co
         employees.push_back(profession_employee[p]);
     }
     int64_t asset_value = 0;
+    int64_t capital_value = 0;
     int64_t asset_sat = 0;
     const bool owned_csr_ready = _family_owned_offsets.size() ==
         families_store().active.size() + 1;
@@ -2139,6 +2140,9 @@ Dictionary NativeEconomyRuntime::family_snapshot(int64_t family_handle_value) co
             buildings_store().last_expected_revenue[group],
             buildings_store().last_operating_cost[group]), ownership.owned_count,
             buildings_store().group_units[group], asset_sat);
+        capital_value = saturating_add(capital_value, saturating_mul(
+            building_reset_capital_value(building_at(static_cast<size_t>(group))),
+            std::max<int64_t>(0, ownership.owned_count), asset_sat), asset_sat);
     }
     const int64_t cash = family_cash_claim(handle);
     const int32_t surname = families_store().surname_id[index];
@@ -2182,8 +2186,11 @@ Dictionary NativeEconomyRuntime::family_snapshot(int64_t family_handle_value) co
     out["population"] = family_population(handle);
     out["transit_population"] = transit_population;
     out["cash_claim"] = cash;
+    // Net worth uses the same reset-capital valuation as the branch rows, so
+    // the dossier total equals the sum of its branches.
     out["productive_asset_value"] = asset_value;
-    out["net_worth"] = cash + asset_value;
+    out["building_asset_value"] = capital_value;
+    out["net_worth"] = saturating_add(cash, capital_value, asset_sat);
     out["owned_buildings"] = family_owned_buildings(handle);
     out["profession_ids"] = professions;
     out["profession_people"] = people;
@@ -2320,6 +2327,12 @@ Dictionary NativeEconomyRuntime::family_branch_effects(
         family_influences().pending_target_level[branch];
     out["review_streak"] = family_influences().review_streak[branch];
     out["last_review_day"] = family_influences().last_review_day[branch];
+    const FamilyDemographyRow *demography = family_demography_row(family_handle, cell);
+    out["demography_share_q16"] = demography != nullptr ? demography->share_q16 : 0;
+    out["target_share_q16"] = demography != nullptr ? demography->target_share_q16 : 0;
+    out["distress_q16"] = demography != nullptr ? demography->distress_q16 : 0;
+    out["birth_weight_q16"] = demography != nullptr ? demography->birth_weight_q16 : 0;
+    out["death_weight_q16"] = demography != nullptr ? demography->death_weight_q16 : 0;
     out["modifier_definition_keys"] = definition_keys;
     out["modifier_magnitude_q16"] = magnitudes;
     PackedStringArray effect_keys;
@@ -2411,7 +2424,8 @@ Dictionary NativeEconomyRuntime::family_branches(
     offset = std::max(0, offset); limit = std::clamp(limit, 1, 256);
     const int32_t end = std::min<int32_t>(rows.size(), offset + limit);
     PackedInt32Array cells, prestige_levels, population_shares, cash_shares,
-        building_shares, scores, satisfactions, pending_targets, review_streaks;
+        building_shares, scores, satisfactions, pending_targets, review_streaks,
+        demography_shares, target_shares, distresses;
     PackedInt64Array branch_handles, branch_stable_ids, populations, cash_claims,
         building_assets, last_review_days;
     for (int32_t i = offset; i < end; ++i) {
@@ -2451,6 +2465,10 @@ Dictionary NativeEconomyRuntime::family_branches(
             ? family_influences().review_streak[influence] : 0);
         last_review_days.push_back(influence >= 0
             ? family_influences().last_review_day[influence] : -1);
+        const FamilyDemographyRow *demography = family_demography_row(handle, rows[i].cell);
+        demography_shares.push_back(demography != nullptr ? demography->share_q16 : 0);
+        target_shares.push_back(demography != nullptr ? demography->target_share_q16 : 0);
+        distresses.push_back(demography != nullptr ? demography->distress_q16 : 0);
     }
     out["ok"] = true; out["total"] = static_cast<int32_t>(rows.size());
     out["offset"] = offset; out["limit"] = limit;
@@ -2470,6 +2488,9 @@ Dictionary NativeEconomyRuntime::family_branches(
     out["pending_target_levels"] = pending_targets;
     out["review_streaks"] = review_streaks;
     out["last_review_days"] = last_review_days;
+    out["demography_shares_q16"] = demography_shares;
+    out["target_shares_q16"] = target_shares;
+    out["distress_q16"] = distresses;
     return out;
 }
 

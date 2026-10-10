@@ -44,7 +44,8 @@ func _run() -> void:
 		"flags", "decline_reviews", "population", "cash_claim",
 		"snapshot_asset_value", "net_worth", "branch_building_asset",
 		"owned_buildings", "notable_person_count", "branch_count",
-		"home_prestige_level", "professions",
+		"home_prestige_level", "home_share_q16", "home_target_share_q16",
+		"home_distress_q16", "professions",
 	]))
 	_holdings_file.store_line(",".join([
 		"day", "family_handle", "cell", "building_type", "owner_signature",
@@ -110,13 +111,22 @@ func _sample(day: int, economy, ext, cell_count: int) -> void:
 		var branch_cash: PackedInt64Array = branches.get("cash_claims", PackedInt64Array())
 		var branch_assets: PackedInt64Array = branches.get("building_asset_values", PackedInt64Array())
 		var branch_levels: PackedInt32Array = branches.get("prestige_levels", PackedInt32Array())
+		var branch_shares: PackedInt32Array = branches.get("demography_shares_q16", PackedInt32Array())
+		var branch_targets: PackedInt32Array = branches.get("target_shares_q16", PackedInt32Array())
+		var branch_distress: PackedInt32Array = branches.get("distress_q16", PackedInt32Array())
 		var branch_asset_total := 0
 		var home_level := 0
+		var home_share := 0
+		var home_target := 0
+		var home_distress := 0
 		var home_cell := int(snapshot.get("home_cell", -1))
 		for i in branch_cells.size():
 			branch_asset_total += int(branch_assets[i]) if i < branch_assets.size() else 0
 			if int(branch_cells[i]) == home_cell and i < branch_levels.size():
 				home_level = int(branch_levels[i])
+				home_share = int(_at(branch_shares, i)) if i < branch_shares.size() else 0
+				home_target = int(_at(branch_targets, i)) if i < branch_targets.size() else 0
+				home_distress = int(_at(branch_distress, i)) if i < branch_distress.size() else 0
 		var professions := PackedStringArray()
 		var prof_ids: PackedStringArray = snapshot.get("profession_stable_ids", PackedStringArray())
 		var prof_people: PackedInt64Array = snapshot.get("profession_people", PackedInt64Array())
@@ -144,7 +154,8 @@ func _sample(day: int, economy, ext, cell_count: int) -> void:
 			str(int(snapshot.get("productive_asset_value", 0))),
 			str(int(snapshot.get("net_worth", 0))), str(branch_asset_total),
 			str(row.owned_buildings), str(int(snapshot.get("notable_person_count", 0))),
-			str(branch_cells.size()), str(home_level), _csv(";".join(professions)),
+			str(branch_cells.size()), str(home_level), str(home_share),
+			str(home_target), str(home_distress), _csv(";".join(professions)),
 		])))
 		var industries: Dictionary = economy.family_industries(int(handle), 0, 64)
 		var ind_cells: PackedInt32Array = industries.get("cell_indices", PackedInt32Array())
