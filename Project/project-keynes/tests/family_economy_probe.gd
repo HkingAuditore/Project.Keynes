@@ -8,8 +8,12 @@ extends Node
 ##   $env:PK_FAMILY_PROBE_SCAN_EVERY = "10"  # 全图发现新家族的间隔
 ##
 ## 产物写到 <repo>/tmp/family_probe_<stamp>/：families.csv、holdings.csv、events.csv。
+##
+## worker 拥有经济时，采样前暂停时钟，等到可在权威边界上直接读取（不走提交视图）
+## 再采样，保证一行数据对应一个确定的提交日；全图扫描也不会挤爆视图需求表。
 
 const RUNTIME_READY_FRAMES := 4800
+const BOUNDARY_WAIT_FRAMES := 1200
 
 var _out_dir := ""
 var _families_file: FileAccess
@@ -72,6 +76,7 @@ func _run() -> void:
 	var economy = generator.get_economy_facade()
 	var ext = generator.get_data_core_world_ext()
 	var cell_count := host.current_map().cell_count()
+	var clock := get_tree().current_scene.get_node_or_null("WorldClock") as WorldClock
 	_building_type_ids = economy.building_type_ids()
 	_profession_ids = economy.profession_ids()
 	while is_inside_tree():
@@ -82,8 +87,19 @@ func _run() -> void:
 			continue
 		if _last_sample_day >= 0 and day - _last_sample_day < _every:
 			continue
-		_sample(day, economy, ext, cell_count)
-		_last_sample_day = day
+		var paused_here := false
+		if clock != null and not clock.paused:
+			clock.pause(true)
+			paused_here = true
+		var readable := await _await_live_boundary(ext)
+		day = int(generator.get_runtime_perf_snapshot(0).get("simulation_committed_day", day))
+		if readable:
+			_sample(day, economy, ext, cell_count)
+			_last_sample_day = day
+		else:
+			push_warning("[family-probe] economy boundary never became readable day=%d" % day)
+		if paused_here:
+			clock.pause(false)
 
 
 func _sample(day: int, economy, ext, cell_count: int) -> void:
@@ -252,6 +268,16 @@ func _csv(text: String) -> String:
 	if text.contains(",") or text.contains("\"") or text.contains("\n"):
 		return "\"%s\"" % text.replace("\"", "\"\"")
 	return text
+
+
+func _await_live_boundary(ext) -> bool:
+	if not ext.has_method("get_economy_read_view_status"):
+		return true
+	for _frame in range(BOUNDARY_WAIT_FRAMES):
+		if bool(ext.get_economy_read_view_status().get("live_readable", false)):
+			return true
+		await get_tree().process_frame
+	return false
 
 
 func _wait_for_runtime() -> WorldRuntimeHost:

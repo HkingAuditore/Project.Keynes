@@ -349,6 +349,12 @@ const FIXED_COLUMNS: Array = [
 	"runtime_graph_economy_negative_tax_mask",
 	"runtime_graph_economy_active_tax_mask",
 	"runtime_graph_economy_attempt_slices",
+	"runtime_graph_economy_read_view_subscriptions",
+	"runtime_graph_economy_read_view_serve_count",
+	"runtime_graph_economy_read_view_eval_count",
+	"runtime_graph_economy_read_view_serve_us_total",
+	"runtime_graph_economy_read_view_serve_us_max",
+	"runtime_graph_economy_read_view_evicted_count",
 ]
 
 # 软上限：避免误开后台跑爆内存。约 60000 帧 ≈ 30 分钟 30FPS。
@@ -618,7 +624,10 @@ func on_fast_tick(sample: Dictionary) -> void:
 				"economy_epoch_fiscal_ms", "economy_fiscal_settlement_ms",
 				"economy_income_subsidy_ms",
 				"economy_negative_tax_mask", "economy_active_tax_mask",
-				"economy_attempt_slices"]:
+				"economy_attempt_slices",
+				"economy_read_view_subscriptions", "economy_read_view_serve_count",
+				"economy_read_view_eval_count", "economy_read_view_serve_us_total",
+				"economy_read_view_serve_us_max", "economy_read_view_evicted_count"]:
 			row["runtime_graph_%s" % key] = runtime_graph.get(key, 0)
 
 	# CORE 只保留固定帧/预算/守恒字段。完整 job/breakdown 展开属于 DETAIL，

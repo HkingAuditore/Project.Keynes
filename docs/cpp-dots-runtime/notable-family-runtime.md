@@ -326,13 +326,16 @@ building/market transaction
 1. 重建 CSR，结算成员归属账并做人数向下兜底，对评审到期的分支执行依附招募，给当日新立家族
    吸收家庭人口，再更新职业就业归因；
 2. 按确定 cell work budget 评审人口里程碑、出卡或按已选/自动选择立族；
-3. 对当日新家族再吸收一次依附人口，复核衰退/消亡（到期时释放无人经营的所有权），压缩边表并
+3. 对当日新家族再吸收一次依附人口，复核衰退/消亡（到期时处理无人经营的所有权：有空业主岗且
+   同格同民族失业池有本家族成员则延后，否则每次至多释放 `ceil(owned/4)`），压缩边表并
    重建索引。
 
 出生与死亡不在本阶段：`EPOCH_BEGIN` 从持久化状态派生分支人口学行（占比、目标占比、困难度、
 出生/死亡权重，`family_demography_weights_ms`）；市场 worker 对可能含家族成员的 cohort 只发出
 `MarketResult.family_demography` 死亡事件，主线程合并时按死亡权重分摊到成员边与匿名；
 `STRUCTURAL_COMMIT` 的出生命令按出生权重把新生儿记入家族在无业 cohort 的成员边。
+同一重建还派生业主岗表 `_family_owner_seat_rows`：外流抽样先保留本家族业主岗，就业阶段为
+家族持有组招业主时先取本家族失业成员。细节见 `family-demography-ledger-design.md`。
 
 热循环只遍历当前建筑格和稀疏关系边。提交后重建以下 transient CSR：family→cohort、
 cohort→membership、family→building、building→ownership、cell→family，以及冻结的
@@ -347,7 +350,7 @@ family→`(cell, score_term, axis, id)` 行为因子表。CSR 不进入存档或
 - `get_family_snapshot(handle)`：身份、人口、财产和职业统计；`EconomyFacade` 同样组合 `family_name`。当前默认文化组是 `CITY_SURNAME_SUFFIX`（如「长安李氏」）；出生地未达聚落命名门槛时只显示「李氏」。姓氏目录目前只有 `default_zh` / 民族 `default`，所以全图都抽中文姓。
 - `get_family_traits(handle)`：核心/附加特性、强度和已编译行为偏好；`EconomyFacade` 再附加中文 `descriptions`（把设计表 X/Y 占位符按已抽取强度填成数字）。格子详情只显示「核心特性 / 附加特性」，不把内部强度 Q16 百分比展示给玩家。绑定效果 `bound_effect_display_names`/`bound_effect_descriptions` 与 `effect_display_names` 不进入 native catalog hash 或 PKEC。格子详情「行为偏好」只列出当前地块已解锁或已存在建筑能雇佣的职业，以及该地块现有人口职业；未解锁建筑对应的职业（例如石器时代的 AI 研究员）不出现。职业科技位 `profession_technology_available` 若存在会再交叉过滤。
 - `get_family_branches(handle, offset, limit)`：地理分支；附 `demography_shares_q16`（成员占同格同民族人口）、`target_shares_q16`（`s*`）与 `distress_q16`，`get_family_branch_effects` 另附单分支的出生/死亡权重；
-- 诊断：`family_births_attributed`、`family_deaths_attributed`、`family_reconcile_corrections`、`family_ledger_clamps`、`family_people_recruited`、`family_units_released`、`family_demography_rows`、`family_demography_weights_ms`（每 epoch 清零）；
+- 诊断：`family_births_attributed`、`family_deaths_attributed`、`family_reconcile_corrections`、`family_ledger_clamps`、`family_people_recruited`、`family_units_released`、`family_release_deferred`、`family_owner_seats_guarded`、`family_demography_rows`、`family_demography_weights_ms`（每 epoch 清零）；
 - `get_family_branch_effects(handle, cell)`：威望拆分、已绑定 FamilyEffect、Modifier 贡献和 Trigger 进度；`EconomyFacade` 再附加效果/modifier/trigger 的中文 `display_names` 与 `descriptions`。格子详情「家族效果」只显示当前威望档的完整表述；偏好把设计表里的 X/Y 占位符按已抽取强度填成具体数字，不把取值范围符号展示给玩家。显示文案不进入 native catalog hash 或 PKEC。
 - `get_family_industries(handle, offset, limit)`：产业与业主占岗；
 - `get_building_cell_snapshot(cell)`：附带所有权 CSR。

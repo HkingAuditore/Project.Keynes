@@ -9,8 +9,50 @@ with `report_boundary_pending=true`. `report_available` distinguishes a valid
 cached report from an empty cache. Configure clears the cache; bootstrap and
 successful restore seed it. Callers cannot mutate the private cached Dictionary.
 This closes a concurrent live-vector read; it is still a compatibility DETAIL
-report, not the requested immutable post-command `EconomyCommitView`. The
-committed audit summary remains separately bound to `before_effect_command_drain`.
+report. Cold per-cell/per-entity queries go through `EconomyCommitView` below.
+The committed audit summary remains separately bound to `before_effect_command_drain`.
+
+## Economy commit view (2026-10-10)
+
+When the background worker owns ECONOMY, main-thread cold queries on
+`DCWorldExt` no longer read live runtime vectors. Each query builds a
+`ReadKey` (query enum, 8 int64 args, `text`, `ints`, `bytes`; the hash
+excludes `bytes`) and resolves in this order:
+
+1. sync mode (worker does not own ECONOMY): live call, unchanged;
+2. `try_lock` of the economy authority boundary succeeds and no epoch is
+   open: live call, `read_view_source="live_boundary"`;
+3. otherwise the key is subscribed and looked up in the last published
+   immutable `ReadView`; a hit returns a deep copy with
+   `read_view_source="committed_view"`, `read_view_day`, `read_view_serial`;
+4. miss: `ok=false`, `code="economy_busy_retry"`,
+   `reason="economy_read_view_pending"`, `busy=true`,
+   `read_view_pending=true`. Callers must treat this as transient (not as
+   "entity missing") and retry next frame.
+
+The worker serves demand in `NativeSimulationHost` right after `publish_day`
+while it still holds the boundary (`NativeEconomyRuntime::serve_read_view`):
+expire subscriptions idle for 5 s, evaluate new keys at once, re-evaluate
+stale keys only when `_committed_generation` moved and ≥100 ms passed, then
+`atomic_store` a sorted `shared_ptr<const ReadView>`. Max 128 subscriptions,
+oldest evicted first. A view value is therefore exact to the committed day in
+`read_view_day`, never a partial epoch.
+
+Building visuals use a separate immutable `BuildingVisualView` (CSR copy,
+republished only when the building generation or cell count changes) plus a
+mutex-protected dirty-cell outbox; `consume_building_visual_dirty_cells` in
+worker mode drains the outbox. Pending visual cells are retried main-side.
+
+Configure, bootstrap, reset, ECP2 restore and `end_economy_restore` call
+`invalidate_economy_read_view()`. `get_economy_read_view_status()` reports
+`serve_count`, `eval_count`, `serve_us_total/max`, `subscriptions`,
+`evicted_count`, `worker_owned` and `live_readable`.
+
+Not covered (stream or command semantics, still main-thread unlocked): event
+poll/ack, the inspector trace filter / trace-cell writes, and trade
+topology/visibility capture. Long-running probes that need day-exact samples
+pause `WorldClock` and wait for `live_readable` (see
+`tests/family_economy_probe.gd`).
 
 ## Fiscal terminal visibility (2026-09-20)
 

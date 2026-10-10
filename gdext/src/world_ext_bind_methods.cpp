@@ -783,6 +783,8 @@ void DCWorldExt::_bind_methods() {
                                  "offset", "limit"),
                          &DCWorldExt::get_building_notable_people, DEFVAL(0),
                          DEFVAL(64));
+    ClassDB::bind_method(D_METHOD("get_economy_read_view_status"),
+                         &DCWorldExt::get_economy_read_view_status);
     ClassDB::bind_method(D_METHOD("run_economy_fixed_math_probe", "vectors"),
                          &DCWorldExt::run_economy_fixed_math_probe);
     ClassDB::bind_method(D_METHOD(

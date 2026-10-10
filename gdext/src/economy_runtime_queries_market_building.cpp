@@ -1674,11 +1674,20 @@ Dictionary NativeEconomyRuntime::building_visual_snapshot(
 
 Dictionary NativeEconomyRuntime::consume_building_visual_dirty_cells() {
     Dictionary out;
-    PackedInt32Array cells;
-    cells.resize(static_cast<int64_t>(_building_visual_dirty_cells.size()));
-    for (int64_t i = 0; i < cells.size(); ++i)
-        cells.set(i, _building_visual_dirty_cells[static_cast<size_t>(i)]);
+    std::vector<int32_t> merged;
+    {
+        std::lock_guard<std::mutex> lock(_building_visual_outbox_mutex);
+        merged.swap(_building_visual_outbox);
+    }
+    merged.insert(merged.end(), _building_visual_dirty_cells.begin(),
+                  _building_visual_dirty_cells.end());
+    std::sort(merged.begin(), merged.end());
+    merged.erase(std::unique(merged.begin(), merged.end()), merged.end());
     _building_visual_dirty_cells.clear();
+    PackedInt32Array cells;
+    cells.resize(static_cast<int64_t>(merged.size()));
+    for (int64_t i = 0; i < cells.size(); ++i)
+        cells.set(i, merged[static_cast<size_t>(i)]);
     out["ok"] = _bootstrapped;
     out["building_generation"] = static_cast<int64_t>(_building_visual_generation);
     out["dirty_cells"] = cells;

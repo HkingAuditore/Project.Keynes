@@ -13,7 +13,9 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <initializer_list>
 #include <limits>
+#include <mutex>
 
 namespace pk {
 
@@ -49,6 +51,73 @@ Dictionary unavailable() {
     out["ok"] = false;
     out["reason"] = "economy_not_configured";
     return out;
+}
+
+using ReadQuery = NativeEconomyRuntime::ReadQuery;
+using ReadKey = NativeEconomyRuntime::ReadKey;
+
+ReadKey read_key(ReadQuery query, std::initializer_list<int64_t> args) {
+    ReadKey key;
+    key.query = query;
+    size_t index = 0;
+    for (const int64_t value : args)
+        if (index < key.args.size()) key.args[index++] = value;
+    return key;
+}
+
+// Same transient contract as colonization "busy": callers keep their previous
+// rows and retry on the next refresh.
+Dictionary read_view_pending() {
+    Dictionary out;
+    out["ok"] = false;
+    out["code"] = "economy_busy_retry";
+    out["reason"] = "economy_read_view_pending";
+    out["busy"] = true;
+    out["committed"] = false;
+    out["nonbinding"] = true;
+    out["fatal"] = false;
+    out["read_view_pending"] = true;
+    out["read_view_source"] = "pending";
+    return out;
+}
+
+bool economy_live_readable(const NativeSimulationHost *host,
+                           const NativeEconomyRuntime *runtime,
+                           std::unique_lock<std::mutex> &boundary) {
+    boundary = host->try_lock_economy_read_boundary();
+    return boundary.owns_lock() && !runtime->epoch_active();
+}
+
+// Worker-owned economy is read live only while this thread holds the authority
+// boundary between epochs; otherwise from the worker-published commit view.
+template <class Live>
+Dictionary committed_read(const NativeSimulationHost *host,
+                          NativeEconomyRuntime *runtime, ReadKey key,
+                          Live &&live) {
+    if (host == nullptr || !host->economy_worker_owns_execution()) return live();
+    {
+        std::unique_lock<std::mutex> boundary;
+        if (economy_live_readable(host, runtime, boundary)) {
+            Dictionary out = live();
+            out["read_view_source"] = "live_boundary";
+            out["read_view_pending"] = false;
+            return out;
+        }
+    }
+    key.seal();
+    runtime->read_view_subscribe(key);
+    const auto view = runtime->read_view();
+    if (view != nullptr) {
+        if (const NativeEconomyRuntime::ReadViewEntry *entry = view->find(key)) {
+            Dictionary out = entry->value.duplicate(true);
+            out["read_view_source"] = "committed_view";
+            out["read_view_pending"] = false;
+            out["read_view_day"] = entry->committed_day;
+            out["read_view_serial"] = static_cast<int64_t>(view->serial);
+            return out;
+        }
+    }
+    return read_view_pending();
 }
 
 bool read_generation_u64(const Dictionary &generation, const char *key,
@@ -198,6 +267,7 @@ Dictionary DCWorldExt::configure_economy(const Dictionary &catalog,
         runtime_from(_economy_runtime)->attach_effect_runtime(
             static_cast<EffectRuntime *>(_effect_runtime));
     _economy_last_notified_event_id = 0;
+    invalidate_economy_read_view();
     return runtime_from(_economy_runtime)->configure(catalog, profile, cell_count, seed);
 }
 
@@ -209,9 +279,15 @@ Dictionary DCWorldExt::bootstrap_economy(const Dictionary &population_packet,
         return unavailable();
     }
     Dictionary result = runtime_from(_economy_runtime)->bootstrap(population_packet, market_packet);
-    if (bool(result.get("ok", false)))
+        if (bool(result.get("ok", false)))
         _economy_read_report_cache = runtime_from(_economy_runtime)->report();
+    invalidate_economy_read_view();
     return result;
+}
+
+void DCWorldExt::invalidate_economy_read_view() {
+    _building_visual_pending_cells.clear();
+    if (_economy_runtime != nullptr) runtime_from(_economy_runtime)->read_view_reset();
 }
 
 Dictionary DCWorldExt::submit_economy_commands(const Dictionary &packed_batch) {
@@ -1027,9 +1103,11 @@ Dictionary DCWorldExt::get_economy_report() const {
 }
 
 Dictionary DCWorldExt::get_country_class_opinion_snapshot() const {
-    return _economy_runtime == nullptr ? unavailable()
-        : runtime_from(_economy_runtime)->
-            country_class_opinion_snapshot_debug();
+    if (_economy_runtime == nullptr) return unavailable();
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::COUNTRY_CLASS_OPINION_SNAPSHOT, {}),
+        [&] { return runtime->country_class_opinion_snapshot_debug(); });
 }
 
 Dictionary DCWorldExt::get_population_cell_snapshot(
@@ -1037,6 +1115,13 @@ Dictionary DCWorldExt::get_population_cell_snapshot(
     if (_economy_runtime == nullptr) {
         return unavailable();
     }
+    return committed_read(_runtime_host.get(), runtime_from(_economy_runtime),
+        read_key(ReadQuery::POPULATION_CELL_SNAPSHOT, {cell_idx, include_details ? 1 : 0}),
+        [&] { return population_cell_snapshot_live(cell_idx, include_details); });
+}
+
+Dictionary DCWorldExt::population_cell_snapshot_live(
+        int cell_idx, bool include_details) const {
     if (!include_details) {
         return runtime_from(_economy_runtime)->population_cell_snapshot(
             cell_idx, false);
@@ -1063,59 +1148,83 @@ Dictionary DCWorldExt::get_population_cell_summary(int cell_idx) const {
     if (_economy_runtime == nullptr) {
         return unavailable();
     }
-    return runtime_from(_economy_runtime)->population_cell_summary(cell_idx);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::POPULATION_CELL_SUMMARY, {cell_idx}),
+        [&] { return runtime->population_cell_summary(cell_idx); });
 }
 
 Dictionary DCWorldExt::get_named_settlement_snapshot() const {
     if (_economy_runtime == nullptr) {
         return unavailable();
     }
-    return runtime_from(_economy_runtime)->named_settlement_snapshot();
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::NAMED_SETTLEMENT_SNAPSHOT, {}),
+        [&] { return runtime->named_settlement_snapshot(); });
 }
 
 Dictionary DCWorldExt::get_settlement_delta(int64_t since_revision) const {
     if (_economy_runtime == nullptr) {
         return unavailable();
     }
-    return runtime_from(_economy_runtime)->settlement_delta(since_revision);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::SETTLEMENT_DELTA, {since_revision}),
+        [&] { return runtime->settlement_delta(since_revision); });
 }
 
 Dictionary DCWorldExt::get_market_cell_snapshot(int cell_idx) const {
     if (_economy_runtime == nullptr) {
         return unavailable();
     }
-    return runtime_from(_economy_runtime)->market_cell_snapshot(cell_idx);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::MARKET_CELL_SNAPSHOT, {cell_idx}),
+        [&] { return runtime->market_cell_snapshot(cell_idx); });
 }
 
 Dictionary DCWorldExt::explain_cohort_satisfaction(int64_t cohort_handle) const {
     if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->explain_cohort_satisfaction(
-        cohort_handle);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::EXPLAIN_COHORT_SATISFACTION, {cohort_handle}),
+        [&] { return runtime->explain_cohort_satisfaction(cohort_handle); });
 }
 
 Dictionary DCWorldExt::get_cell_satisfaction_attractiveness(int cell_idx) const {
     if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->cell_satisfaction_attractiveness(
-        cell_idx);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::CELL_SATISFACTION_ATTRACTIVENESS, {cell_idx}),
+        [&] { return runtime->cell_satisfaction_attractiveness(cell_idx); });
 }
 
 Dictionary DCWorldExt::get_country_fiscal_snapshot(int64_t handle) const {
     if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->fiscal_snapshot(handle);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::FISCAL_SNAPSHOT, {handle}),
+        [&] { return runtime->fiscal_snapshot(handle); });
 }
 
 Dictionary DCWorldExt::get_country_trade_snapshot(
         int64_t handle, const String &view, int offset, int limit) const {
     if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->country_trade_snapshot(
-        handle, view, offset, limit);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    ReadKey key = read_key(ReadQuery::COUNTRY_TRADE_SNAPSHOT, {handle, offset, limit});
+    key.text = view;
+    return committed_read(_runtime_host.get(), runtime, key,
+        [&] { return runtime->country_trade_snapshot(handle, view, offset, limit); });
 }
 
 Dictionary DCWorldExt::get_trade_orders_for_cell(
         int cell_idx, int offset, int limit) const {
     if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->trade_orders_for_cell(
-        cell_idx, offset, limit);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::TRADE_ORDERS_FOR_CELL, {cell_idx, offset, limit}),
+        [&] { return runtime->trade_orders_for_cell(cell_idx, offset, limit); });
 }
 
 Dictionary DCWorldExt::capture_economy_trade_topology(
@@ -1161,7 +1270,9 @@ Dictionary DCWorldExt::capture_economy_trade_visibility(
 Dictionary DCWorldExt::get_building_cell_snapshot(int cell_idx) const {
     if (_economy_runtime == nullptr) return unavailable();
     NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
-    Dictionary out = runtime->building_cell_snapshot(cell_idx);
+    Dictionary out = committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::BUILDING_CELL_SNAPSHOT, {cell_idx}),
+        [&] { return runtime->building_cell_snapshot(cell_idx); });
     if (!static_cast<bool>(out.get("ok", false))) return out;
     PackedInt64Array reserves;
     PackedInt64Array pending_changes;
@@ -1237,8 +1348,29 @@ Dictionary DCWorldExt::get_building_cell_snapshot(int cell_idx) const {
 Dictionary DCWorldExt::get_building_visual_snapshot(
         const PackedInt32Array &requested_cells) const {
     if (_economy_runtime == nullptr) return unavailable();
-    Dictionary out = runtime_from(_economy_runtime)->building_visual_snapshot(
-        requested_cells);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    const NativeSimulationHost *host = _runtime_host.get();
+    Dictionary out;
+    if (host != nullptr && host->economy_worker_owns_execution()) {
+        PackedInt32Array cells = requested_cells;
+        cells.append_array(_building_visual_pending_cells);
+        {
+            std::unique_lock<std::mutex> boundary;
+            if (economy_live_readable(host, runtime, boundary))
+                runtime->publish_building_visual_view();
+        }
+        const auto view = runtime->building_visual_view();
+        if (view == nullptr) {
+            // Newly visible cells are consumed by the caller; keep them for the
+            // first call that has a committed view.
+            _building_visual_pending_cells = cells;
+            return read_view_pending();
+        }
+        _building_visual_pending_cells.clear();
+        out = NativeEconomyRuntime::building_visual_rows(*view, cells);
+    } else {
+        out = runtime->building_visual_snapshot(requested_cells);
+    }
     if (!static_cast<bool>(out.get("ok", false))) return out;
     PackedInt32Array cells = out["cell_indices"];
     PackedInt32Array country_slots;
@@ -1263,62 +1395,101 @@ Dictionary DCWorldExt::get_building_visual_snapshot(
 }
 
 Dictionary DCWorldExt::consume_building_visual_dirty_cells() {
-    return _economy_runtime == nullptr ? unavailable()
-        : runtime_from(_economy_runtime)->consume_building_visual_dirty_cells();
+    if (_economy_runtime == nullptr) return unavailable();
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    const NativeSimulationHost *host = _runtime_host.get();
+    if (host == nullptr || !host->economy_worker_owns_execution())
+        return runtime->consume_building_visual_dirty_cells();
+    {
+        std::unique_lock<std::mutex> boundary;
+        if (economy_live_readable(host, runtime, boundary))
+            runtime->publish_building_visual_view();
+    }
+    const auto view = runtime->building_visual_view();
+    Dictionary out;
+    out["ok"] = true;
+    out["building_generation"] = view != nullptr
+        ? static_cast<int64_t>(view->generation) : int64_t{0};
+    out["dirty_cells"] = runtime->drain_building_visual_outbox();
+    return out;
 }
 
 Dictionary DCWorldExt::get_treasury_construction_quotes(
         int64_t country_handle, int cell_idx,
         const PackedInt32Array &type_ids) const {
     if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->treasury_construction_quotes(
-        country_handle, cell_idx, type_ids);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    ReadKey key = read_key(ReadQuery::TREASURY_CONSTRUCTION_QUOTES,
+                           {country_handle, cell_idx});
+    key.ints = type_ids;
+    return committed_read(_runtime_host.get(), runtime, key, [&] {
+        return runtime->treasury_construction_quotes(country_handle, cell_idx, type_ids);
+    });
 }
 
 Dictionary DCWorldExt::get_construction_command_receipts(
         int64_t after_receipt_id, int limit) const {
     if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->construction_command_receipts(
-        after_receipt_id, limit);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::CONSTRUCTION_COMMAND_RECEIPTS, {after_receipt_id, limit}),
+        [&] { return runtime->construction_command_receipts(after_receipt_id, limit); });
 }
 
 Dictionary DCWorldExt::get_family_cell_snapshot(
         int cell_idx, int offset, int limit) const {
     if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->family_cell_snapshot(
-        cell_idx, offset, limit);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::FAMILY_CELL_SNAPSHOT, {cell_idx, offset, limit}),
+        [&] { return runtime->family_cell_snapshot(cell_idx, offset, limit); });
 }
 
 Dictionary DCWorldExt::get_family_snapshot(int64_t family_handle) const {
     if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->family_snapshot(family_handle);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::FAMILY_SNAPSHOT, {family_handle}),
+        [&] { return runtime->family_snapshot(family_handle); });
 }
 
 Dictionary DCWorldExt::get_family_traits(int64_t family_handle) const {
     if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->family_traits(family_handle);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::FAMILY_TRAITS, {family_handle}),
+        [&] { return runtime->family_traits(family_handle); });
 }
 
 Dictionary DCWorldExt::get_family_branches(
         int64_t family_handle, int offset, int limit) const {
     if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->family_branches(
-        family_handle, offset, limit);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::FAMILY_BRANCHES, {family_handle, offset, limit}),
+        [&] { return runtime->family_branches(family_handle, offset, limit); });
 }
 
 Dictionary DCWorldExt::get_canal_route_quote(
         int64_t country_handle, int start_cell, int end_cell,
         const PackedInt32Array &waypoints) {
     if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->canal_route_quote(
-        country_handle, start_cell, end_cell, waypoints);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    ReadKey key = read_key(ReadQuery::CANAL_ROUTE_QUOTE,
+                           {country_handle, start_cell, end_cell});
+    key.ints = waypoints;
+    return committed_read(_runtime_host.get(), runtime, key, [&] {
+        return runtime->canal_route_quote(country_handle, start_cell, end_cell, waypoints);
+    });
 }
 
 Dictionary DCWorldExt::get_canal_route_quote_detail(
         int64_t country_handle, int64_t quote_token) const {
     if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->canal_route_quote_detail(
-        country_handle, quote_token);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::CANAL_ROUTE_QUOTE_DETAIL, {country_handle, quote_token}),
+        [&] { return runtime->canal_route_quote_detail(country_handle, quote_token); });
 }
 
 Dictionary DCWorldExt::queue_canal_construction(
@@ -1332,8 +1503,14 @@ Dictionary DCWorldExt::queue_canal_construction(
 Dictionary DCWorldExt::get_canal_construction_receipts(
         int64_t country_handle, int64_t after_receipt_id, int limit) const {
     if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->canal_construction_receipts(
-        country_handle, after_receipt_id, limit);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::CANAL_CONSTRUCTION_RECEIPTS,
+                 {country_handle, after_receipt_id, limit}),
+        [&] {
+            return runtime->canal_construction_receipts(
+                country_handle, after_receipt_id, limit);
+        });
 }
 
 Dictionary DCWorldExt::get_family_colonization_quotes(
@@ -1359,16 +1536,25 @@ Dictionary DCWorldExt::get_family_colonization_quotes(
     const PackedByteArray visible = visible_variant;
     const uint64_t revision = static_cast<uint64_t>(static_cast<int64_t>(
         _map_data->get(StringName("vision_revision"))));
-    return runtime_from(_economy_runtime)->family_colonization_quotes(
-        country_handle, target_cell, family_filter, source_filter, offset,
-        limit, visible.ptr(), visible.size(), revision);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    ReadKey key = read_key(ReadQuery::FAMILY_COLONIZATION_QUOTES,
+        {country_handle, target_cell, family_filter, source_filter, offset, limit,
+         static_cast<int64_t>(revision)});
+    key.bytes = visible;
+    return committed_read(_runtime_host.get(), runtime, key, [&] {
+        return runtime->family_colonization_quotes(
+            country_handle, target_cell, family_filter, source_filter, offset,
+            limit, visible.ptr(), visible.size(), revision);
+    });
 }
 
 Dictionary DCWorldExt::get_family_colonization_quote_detail(
         int64_t quote_token, int64_t population) const {
-    return _economy_runtime == nullptr ? unavailable() :
-        runtime_from(_economy_runtime)->family_colonization_quote_detail(
-            quote_token, population);
+    if (_economy_runtime == nullptr) return unavailable();
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::FAMILY_COLONIZATION_QUOTE_DETAIL, {quote_token, population}),
+        [&] { return runtime->family_colonization_quote_detail(quote_token, population); });
 }
 
 void DCWorldExt::service_economy_boundary_inbox() {
@@ -1415,30 +1601,42 @@ Dictionary DCWorldExt::cancel_family_colonization(
 
 Dictionary DCWorldExt::get_family_expeditions(
         int64_t country_handle, int offset, int limit) const {
-    return _economy_runtime == nullptr ? unavailable() :
-        runtime_from(_economy_runtime)->family_expeditions(
-            country_handle, offset, limit);
+    if (_economy_runtime == nullptr) return unavailable();
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::FAMILY_EXPEDITIONS, {country_handle, offset, limit}),
+        [&] { return runtime->family_expeditions(country_handle, offset, limit); });
 }
 
 Dictionary DCWorldExt::get_family_expedition_snapshot(
         int64_t country_handle, int64_t expedition_handle) const {
-    return _economy_runtime == nullptr ? unavailable() :
-        runtime_from(_economy_runtime)->family_expedition_snapshot(
-            country_handle, expedition_handle);
+    if (_economy_runtime == nullptr) return unavailable();
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::FAMILY_EXPEDITION_SNAPSHOT, {country_handle, expedition_handle}),
+        [&] { return runtime->family_expedition_snapshot(country_handle, expedition_handle); });
 }
 
 Dictionary DCWorldExt::get_family_colonization_receipts(
         int64_t country_handle, int64_t after_receipt_id, int limit) const {
-    return _economy_runtime == nullptr ? unavailable() :
-        runtime_from(_economy_runtime)->family_colonization_receipts(
-            country_handle, after_receipt_id, limit);
+    if (_economy_runtime == nullptr) return unavailable();
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::FAMILY_COLONIZATION_RECEIPTS,
+                 {country_handle, after_receipt_id, limit}),
+        [&] {
+            return runtime->family_colonization_receipts(
+                country_handle, after_receipt_id, limit);
+        });
 }
 
 Dictionary DCWorldExt::get_family_branch_effects(
         int64_t family_handle, int cell_idx) const {
     if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->family_branch_effects(
-        family_handle, cell_idx);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::FAMILY_BRANCH_EFFECTS, {family_handle, cell_idx}),
+        [&] { return runtime->family_branch_effects(family_handle, cell_idx); });
 }
 
 Dictionary DCWorldExt::submit_family_trait_commands(
@@ -1450,7 +1648,10 @@ Dictionary DCWorldExt::submit_family_trait_commands(
 
 Dictionary DCWorldExt::get_family_founding_offers(int offset, int limit) const {
     if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->family_founding_offers(offset, limit);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::FAMILY_FOUNDING_OFFERS, {offset, limit}),
+        [&] { return runtime->family_founding_offers(offset, limit); });
 }
 
 Dictionary DCWorldExt::submit_family_founding_choice(
@@ -1464,35 +1665,74 @@ Dictionary DCWorldExt::submit_family_founding_choice(
 Dictionary DCWorldExt::get_family_industries(
         int64_t family_handle, int offset, int limit) const {
     if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->family_industries(
-        family_handle, offset, limit);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::FAMILY_INDUSTRIES, {family_handle, offset, limit}),
+        [&] { return runtime->family_industries(family_handle, offset, limit); });
 }
 
 Dictionary DCWorldExt::get_family_notable_people(
         int64_t family_handle, int offset, int limit) const {
     if (_economy_runtime == nullptr) return Dictionary();
-    return runtime_from(_economy_runtime)->family_notable_people(
-        family_handle, offset, limit);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::FAMILY_NOTABLE_PEOPLE, {family_handle, offset, limit}),
+        [&] { return runtime->family_notable_people(family_handle, offset, limit); });
 }
 
 Dictionary DCWorldExt::get_notable_person_snapshot(
         int64_t person_handle) const {
     if (_economy_runtime == nullptr) return Dictionary();
-    return runtime_from(_economy_runtime)->notable_person_snapshot(person_handle);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::NOTABLE_PERSON_SNAPSHOT, {person_handle}),
+        [&] { return runtime->notable_person_snapshot(person_handle); });
 }
 
 Dictionary DCWorldExt::get_notable_person_needs(
         int64_t person_handle, int offset, int limit) const {
     if (_economy_runtime == nullptr) return Dictionary();
-    return runtime_from(_economy_runtime)->notable_person_needs(
-        person_handle, offset, limit);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::NOTABLE_PERSON_NEEDS, {person_handle, offset, limit}),
+        [&] { return runtime->notable_person_needs(person_handle, offset, limit); });
 }
 
 Dictionary DCWorldExt::get_building_notable_people(
         int64_t building_handle, int offset, int limit) const {
     if (_economy_runtime == nullptr) return Dictionary();
-    return runtime_from(_economy_runtime)->building_notable_people(
-        building_handle, offset, limit);
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::BUILDING_NOTABLE_PEOPLE, {building_handle, offset, limit}),
+        [&] { return runtime->building_notable_people(building_handle, offset, limit); });
+}
+
+void DCWorldExt::append_economy_read_view_perf(Dictionary &out) const {
+    if (_economy_runtime == nullptr) return;
+    const Dictionary status = runtime_from(_economy_runtime)->read_view_status();
+    out["economy_read_view_subscriptions"] = status.get("subscriptions", 0);
+    out["economy_read_view_serve_count"] = status.get("serve_count", 0);
+    out["economy_read_view_eval_count"] = status.get("eval_count", 0);
+    out["economy_read_view_serve_us_total"] = status.get("serve_us_total", 0);
+    out["economy_read_view_serve_us_max"] = status.get("serve_us_max", 0);
+    out["economy_read_view_evicted_count"] = status.get("evicted_count", 0);
+}
+
+Dictionary DCWorldExt::get_economy_read_view_status() const {
+    if (_economy_runtime == nullptr) return unavailable();
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    Dictionary out = runtime->read_view_status();
+    const NativeSimulationHost *host = _runtime_host.get();
+    const bool worker_owned = host != nullptr && host->economy_worker_owns_execution();
+    bool live_readable = !worker_owned;
+    if (worker_owned) {
+        std::unique_lock<std::mutex> boundary;
+        live_readable = economy_live_readable(host, runtime, boundary);
+    }
+    out["ok"] = true;
+    out["worker_owned"] = worker_owned;
+    out["live_readable"] = live_readable;
+    return out;
 }
 
 Dictionary DCWorldExt::run_economy_fixed_math_probe(const Dictionary &vectors) const {
@@ -1580,6 +1820,7 @@ Dictionary DCWorldExt::reset_economy(const String &reason) {
     }
     _economy_last_notified_event_id = 0;
     Dictionary out = runtime_from(_economy_runtime)->reset(reason);
+    invalidate_economy_read_view();
     if (static_cast<bool>(out.get("ok", false))) {
         invalidate_economy_input_capture_cache(true);
         _economy_read_report_cache = runtime_from(_economy_runtime)->report();
@@ -1824,6 +2065,7 @@ Dictionary DCWorldExt::restore_economy_ecp2(const PackedByteArray &bytes) {
         return out;
     }
     invalidate_economy_input_capture_cache(true);
+    invalidate_economy_read_view();
     _economy_read_report_cache = runtime_from(_economy_runtime)->report();
     out["ok"] = true;
     out["schema_version"] = state.schema_version;
@@ -1881,6 +2123,7 @@ Dictionary DCWorldExt::end_economy_restore() {
         return unavailable();
     }
     Dictionary out = runtime_from(_economy_runtime)->end_restore();
+    invalidate_economy_read_view();
     if (static_cast<bool>(out.get("ok", false))) {
         invalidate_economy_input_capture_cache(true);
         _economy_read_report_cache = runtime_from(_economy_runtime)->report();

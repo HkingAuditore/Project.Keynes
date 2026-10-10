@@ -715,6 +715,7 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["economy_negative_tax_mask"] = static_cast<int>(host.economy_negative_tax_mask);
         out["economy_active_tax_mask"] = static_cast<int>(host.economy_active_tax_mask);
         out["economy_attempt_slices"] = static_cast<int>(host.economy_attempt_slices);
+        append_economy_read_view_perf(out);
         out["main_wait_on_sim_us"] = static_cast<int64_t>(host.main_wait_on_sim_us);
         out["simulation_environment_generation"] = static_cast<int64_t>(host.environment_generation);
         out["simulation_environment_day"] = host.environment_day;
@@ -1241,6 +1242,7 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
         out["economy_negative_tax_mask"] = static_cast<int>(host.economy_negative_tax_mask);
         out["economy_active_tax_mask"] = static_cast<int>(host.economy_active_tax_mask);
         out["economy_attempt_slices"] = static_cast<int>(host.economy_attempt_slices);
+        append_economy_read_view_perf(out);
         out["main_wait_on_sim_us"] = static_cast<int64_t>(host.main_wait_on_sim_us);
         out["simulation_environment_generation"] = static_cast<int64_t>(host.environment_generation);
         out["simulation_environment_day"] = host.environment_day;

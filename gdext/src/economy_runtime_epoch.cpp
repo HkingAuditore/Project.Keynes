@@ -39,6 +39,8 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _family_ledger_clamps = 0;
     _family_people_recruited = 0;
     _family_units_released = 0;
+    _family_release_deferred = 0;
+    _family_owner_seats_guarded = 0;
     _family_demography_weights_ms = 0.0;
     _persons_promoted = 0;
     _persons_died = 0;

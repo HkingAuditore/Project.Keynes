@@ -104,8 +104,13 @@ contract from roadmap text or a previous chat.
   is `Σ claim + building_reset_capital_value()` in both snapshot and branches.
 - Owner-job totals still come from profession clamps (membership is attribution, not admission). A
   family-owned unit's filled owner posts are attributed first to local members with the exact owner
-  signature; remaining filled posts split between families and anonymous by free people. Review
-  releases owned groups whose owner cohort has no family members (`family_units_released`).
+  signature; remaining filled posts split between families and anonymous by free people. Outflow
+  keeps a family's own owner seats (`_family_owner_seat_rows`, rebuilt with demography rows) out
+  of the proportional draw until everyone else has moved; owner hiring into a family-owned
+  group's exact owner signature pulls that family's idle members first (strict). Review with zero
+  members defers while the group has open owner seats and the family has same-ethnicity idle
+  members (`family_release_deferred`), otherwise releases at most `ceil(owned / 4)` units
+  (`family_units_released`). All three are stateless: no cross-day intent, no schema change.
 - Do not add manager/proxy ownership without a new explicit design and migration.
 - Derive per-profession people, owner-employed, and employee-employed counts from membership and
   committed building employment. Do not create an independent family labor ledger.

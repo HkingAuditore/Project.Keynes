@@ -183,9 +183,107 @@ void NativeEconomyRuntime::attribute_family_funds_delta(
     }
 }
 
+void NativeEconomyRuntime::rebuild_family_owner_seats() {
+    _family_owner_seat_rows.clear();
+    if (_family_runtime_mode.get() != 2 || family_ownerships().empty()) return;
+    int64_t sat = 0;
+    for (int32_t i = 0; i < static_cast<int32_t>(family_ownerships().size()); ++i) {
+        const FamilyBuildingOwnership &ownership = family_ownerships().read_at(
+            i, __FILE__, __LINE__);
+        if (ownership.owned_count <= 0 || ownership.family_handle == 0) continue;
+        const int32_t building = building_index_for_handle(ownership.building_handle);
+        if (building < 0) continue;
+        const auto group = building_view(static_cast<size_t>(building));
+        if (group.owner_signature_id < 0 || group.type_id < 0 ||
+            group.type_id >= static_cast<int32_t>(_building_types.size())) continue;
+        const int64_t seats = saturating_mul(ownership.owned_count,
+            _building_types[group.type_id].owner_slots_per_building, sat);
+        if (seats <= 0) continue;
+        const int32_t owner_slot = find_cohort_slot(group.cell, group.owner_signature_id);
+        if (owner_slot < 0) continue;
+        _family_owner_seat_rows.push_back({population_store().handle_for_slot(owner_slot),
+                                           ownership.family_handle, seats});
+    }
+    std::sort(_family_owner_seat_rows.begin(), _family_owner_seat_rows.end(),
+        [](const FamilyOwnerSeatRow &a, const FamilyOwnerSeatRow &b) {
+            return std::tie(a.cohort_handle, a.family_handle) <
+                std::tie(b.cohort_handle, b.family_handle);
+        });
+    size_t merged = 0;
+    for (size_t i = 0; i < _family_owner_seat_rows.size(); ++i) {
+        if (merged > 0 &&
+            _family_owner_seat_rows[merged - 1].cohort_handle ==
+                _family_owner_seat_rows[i].cohort_handle &&
+            _family_owner_seat_rows[merged - 1].family_handle ==
+                _family_owner_seat_rows[i].family_handle) {
+            _family_owner_seat_rows[merged - 1].seats = saturating_add(
+                _family_owner_seat_rows[merged - 1].seats,
+                _family_owner_seat_rows[i].seats, sat);
+        } else {
+            _family_owner_seat_rows[merged++] = _family_owner_seat_rows[i];
+        }
+    }
+    _family_owner_seat_rows.resize(merged);
+    _saturation_count = saturating_add(_saturation_count, sat, _saturation_count);
+}
+
+int64_t NativeEconomyRuntime::family_owner_seats(uint64_t cohort_handle,
+                                                 uint64_t family_handle) const {
+    if (_family_owner_seat_rows.empty()) return 0;
+    const auto found = std::lower_bound(_family_owner_seat_rows.begin(),
+        _family_owner_seat_rows.end(), std::make_pair(cohort_handle, family_handle),
+        [](const FamilyOwnerSeatRow &row, const std::pair<uint64_t, uint64_t> &key) {
+            return std::tie(row.cohort_handle, row.family_handle) <
+                std::tie(key.first, key.second);
+        });
+    return found != _family_owner_seat_rows.end() &&
+            found->cohort_handle == cohort_handle && found->family_handle == family_handle
+        ? found->seats : 0;
+}
+
+uint64_t NativeEconomyRuntime::owning_family_for_owner_hire(
+        int32_t group_index, int32_t pool_slot) const {
+    if (group_index < 0 || pool_slot < 0 ||
+        _family_building_offsets.size() != building_count() + 1 ||
+        _family_cohort_offsets.size() != population_store().active.size() + 1 ||
+        static_cast<size_t>(pool_slot) + 1 >= _family_cohort_offsets.size()) return 0;
+    const int32_t pool_begin = _family_cohort_offsets[pool_slot];
+    const int32_t pool_end = _family_cohort_offsets[pool_slot + 1];
+    if (pool_begin == pool_end) return 0;
+    const uint64_t building_handle = buildings_store().modifier_handle[group_index];
+    const uint64_t pool_handle = population_store().handle_for_slot(pool_slot);
+    uint64_t best = 0;
+    int64_t best_owned = 0;
+    for (int32_t p = _family_building_offsets[group_index];
+         p < _family_building_offsets[group_index + 1]; ++p) {
+        const int32_t index = _family_building_edge_indices[p];
+        if (index < 0 || index >= static_cast<int32_t>(family_ownerships().size())) continue;
+        const FamilyBuildingOwnership &ownership = family_ownerships().read_at(
+            index, __FILE__, __LINE__);
+        if (ownership.building_handle != building_handle || ownership.owned_count <= 0 ||
+            ownership.owned_count < best_owned) continue;
+        for (int32_t q = pool_begin; q < pool_end; ++q) {
+            const int32_t edge = _family_cohort_edge_indices[q];
+            if (edge < 0 || static_cast<size_t>(edge) >= family_memberships().size()) continue;
+            const FamilyMembershipEdge &member = family_memberships()[edge];
+            if (member.cohort_handle != pool_handle ||
+                member.family_handle != ownership.family_handle || member.people <= 0)
+                continue;
+            if (ownership.owned_count > best_owned ||
+                (ownership.owned_count == best_owned && ownership.family_handle < best)) {
+                best = ownership.family_handle;
+                best_owned = ownership.owned_count;
+            }
+            break;
+        }
+    }
+    return best;
+}
+
 void NativeEconomyRuntime::rebuild_family_demography_weights() {
     const auto started = Clock::now();
     _family_demography_rows.clear();
+    rebuild_family_owner_seats();
     if (_family_runtime_mode.get() != 2 || families_store().active_count <= 0 ||
         family_memberships().empty()) {
         _family_demography_weights_ms = elapsed_ms(started);
@@ -589,10 +687,19 @@ int64_t NativeEconomyRuntime::plan_family_membership_move(
             remaining -= strict_alloc.back();
         }
     }
+    thread_local std::vector<int64_t> guarded;
+    guarded.assign(_family_edge_scratch.size() + 1, 0);
+    const uint64_t source_handle = population_store().handle_for_slot(source_slot);
     int64_t total_weight = 0;
     for (size_t i = 0; i < _family_edge_scratch.size(); ++i) {
         const FamilyMembershipEdge &row = family_memberships()[_family_edge_scratch[i]];
-        const int64_t people = std::max<int64_t>(0, row.people) - strict_alloc[i];
+        const int64_t members = std::max<int64_t>(0, row.people) - strict_alloc[i];
+        // Members holding the family's own owner seats leave last.
+        if (!_family_owner_seat_rows.empty() && members > 0 &&
+            !(preferred_family_strict && row.family_handle == preferred_family_handle))
+            guarded[i] = std::min(members,
+                family_owner_seats(source_handle, row.family_handle));
+        const int64_t people = members - guarded[i];
         int64_t cap = people;
         const int32_t mobility = family_behavior_score_term_q16(
             row.family_handle, destination_cell, FAMILY_SCORE_CAREER_MOBILITY);
@@ -609,28 +716,41 @@ int64_t NativeEconomyRuntime::plan_family_membership_move(
     shares.push_back({saturating_mul(anonymous_left, kQ16, sat), anonymous_left, 0, 0});
     full_caps.push_back(anonymous_left);
     total_weight = saturating_add(total_weight, shares.back().expected_q16, sat);
-    if (remaining > 0 && total_weight > 0) {
-        for (RoundedShare &share : shares)
-            share.expected_q16 = mul_div_sat(saturating_mul(remaining, kQ16, sat),
-                                             share.expected_q16, total_weight, sat);
-        uint64_t seed = mix64(static_cast<uint64_t>(_seed.get()), 0x464d4f5645ULL); // "FMOVE"
-        seed = mix64(seed, static_cast<uint64_t>(_epoch_id.get()));
-        seed = mix64(seed, population_store().handle_for_slot(source_slot));
-        seed = mix64(seed, static_cast<uint64_t>(population));
-        seed = mix64(seed, static_cast<uint64_t>(static_cast<uint32_t>(destination_cell)));
-        round_shares(shares, remaining, seed);
+    for (RoundedShare &share : shares) share.alloc = 0;
+    if (remaining > 0) {
+        if (total_weight > 0) {
+            for (RoundedShare &share : shares)
+                share.expected_q16 = mul_div_sat(saturating_mul(remaining, kQ16, sat),
+                                                 share.expected_q16, total_weight, sat);
+            uint64_t seed = mix64(static_cast<uint64_t>(_seed.get()), 0x464d4f5645ULL); // "FMOVE"
+            seed = mix64(seed, static_cast<uint64_t>(_epoch_id.get()));
+            seed = mix64(seed, source_handle);
+            seed = mix64(seed, static_cast<uint64_t>(population));
+            seed = mix64(seed, static_cast<uint64_t>(static_cast<uint32_t>(destination_cell)));
+            round_shares(shares, remaining, seed);
+        }
         int64_t placed = 0;
         for (const RoundedShare &share : shares) placed += share.alloc;
         // Mobility caps may leave the move short; the cohort move itself is
-        // fixed, so fill the rest from the uncapped headcount.
+        // fixed, so fill the rest from the uncapped headcount, and only then
+        // from guarded owner-seat holders.
         for (size_t i = 0; i < shares.size() && placed < remaining; ++i) {
             const int64_t add = std::min(full_caps[i] - shares[i].alloc, remaining - placed);
             if (add <= 0) continue;
             shares[i].alloc += add;
             placed += add;
         }
-    } else {
-        for (RoundedShare &share : shares) share.alloc = 0;
+        int64_t guard_total = 0;
+        for (size_t i = 0; i < shares.size(); ++i) {
+            guard_total += guarded[i];
+            if (placed >= remaining) continue;
+            const int64_t add = std::min(guarded[i], remaining - placed);
+            if (add <= 0) continue;
+            shares[i].alloc += add;
+            placed += add;
+            guard_total -= add;
+        }
+        _family_owner_seats_guarded += guard_total;
     }
     for (size_t i = 0; i < _family_edge_scratch.size(); ++i) {
         const int64_t people = strict_alloc[i] + shares[i].alloc;
@@ -846,10 +966,38 @@ void NativeEconomyRuntime::release_unstaffable_family_ownership(int32_t family_i
                     members += std::max<int64_t>(0, family_memberships()[edge].people);
         }
         if (members > 0) continue;
+        // Open owner seats plus idle members of the owner ethnicity: owner
+        // hiring pulls this family first, so keep the units for that pass.
+        if (group.owner_signature_id >= 0 &&
+            group.owner_signature_id < static_cast<int32_t>(_signatures.size()) &&
+            group.filled_owner < planned_owner_demand(group, _saturation_count)) {
+            const int32_t unemployed = unemployed_signature_for_ethnicity(
+                _signatures[group.owner_signature_id].ethnicity_id);
+            const int32_t pool = unemployed >= 0
+                ? find_cohort_slot(group.cell, unemployed) : -1;
+            bool idle_members = false;
+            if (pool >= 0) {
+                collect_family_edges_for_cohort(pool, _family_edge_scratch);
+                for (int32_t edge : _family_edge_scratch)
+                    if (family_memberships()[edge].family_handle == handle &&
+                        family_memberships()[edge].people > 0) {
+                        idle_members = true;
+                        break;
+                    }
+            }
+            if (idle_members) {
+                ++_family_release_deferred;
+                continue;
+            }
+        }
+        // Release in steps so one bad review cannot strip a branch.
         auto ownership_write = family_ownerships().edit_row(ownership_index,
                                                            market_mutation_sink());
-        _family_units_released += ownership_write[0].owned_count;
-        ownership_write[0].owned_count = 0;
+        const int64_t owned = ownership_write[0].owned_count;
+        const int64_t released = std::min(owned, std::max<int64_t>(1,
+            (owned + FAMILY_RELEASE_STEP_DIVISOR - 1) / FAMILY_RELEASE_STEP_DIVISOR));
+        _family_units_released += released;
+        ownership_write[0].owned_count = owned - released;
         ownership_write[0].filled_owner = 0;
         _family_indices_dirty = true;
     }

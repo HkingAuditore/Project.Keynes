@@ -1,0 +1,42 @@
+[
+    {
+        "round":  1,
+        "variant":  "base",
+        "csv":  "D:/Godot/ProjectKeynes/Project.Keynes/tmp/perf_record_20261010_233823.csv"
+    },
+    {
+        "round":  1,
+        "variant":  "head",
+        "csv":  "D:/Godot/ProjectKeynes/Project.Keynes/tmp/perf_record_20261010_233842.csv"
+    },
+    {
+        "round":  2,
+        "variant":  "base",
+        "csv":  "D:/Godot/ProjectKeynes/Project.Keynes/tmp/perf_record_20261010_233901.csv"
+    },
+    {
+        "round":  2,
+        "variant":  "head",
+        "csv":  "D:/Godot/ProjectKeynes/Project.Keynes/tmp/perf_record_20261010_233920.csv"
+    },
+    {
+        "round":  3,
+        "variant":  "base",
+        "csv":  "D:/Godot/ProjectKeynes/Project.Keynes/tmp/perf_record_20261010_233939.csv"
+    },
+    {
+        "round":  3,
+        "variant":  "head",
+        "csv":  "D:/Godot/ProjectKeynes/Project.Keynes/tmp/perf_record_20261010_233958.csv"
+    },
+    {
+        "round":  4,
+        "variant":  "base",
+        "csv":  "D:/Godot/ProjectKeynes/Project.Keynes/tmp/perf_record_20261010_234018.csv"
+    },
+    {
+        "round":  4,
+        "variant":  "head",
+        "csv":  "D:/Godot/ProjectKeynes/Project.Keynes/tmp/perf_record_20261010_234037.csv"
+    }
+]

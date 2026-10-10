@@ -22163,6 +22163,7 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     family_memberships().clear();
     _family_csr_edge_count = SIZE_MAX;
     _family_demography_rows.clear();
+    _family_owner_seat_rows.clear();
     family_ownerships().clear();
     family_trait_rolls().clear();
     _family_behavior_factor_offsets.clear();

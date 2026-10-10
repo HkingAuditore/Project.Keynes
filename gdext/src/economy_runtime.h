@@ -281,6 +281,8 @@ public:
     static constexpr int32_t FAMILY_ABSORB_TARGET_BONUS_Q16 = 3277;     // 5%
     // Career-move tilt toward the preferred family's members.
     static constexpr int32_t FAMILY_PREFERRED_MOVE_WEIGHT_Q16 = 131072; // 2.0
+    // An unstaffed holding releases at most ceil(owned / divisor) units per review.
+    static constexpr int64_t FAMILY_RELEASE_STEP_DIVISOR = 4;
     static constexpr uint16_t FAMILY_FLAG_SPLIT_MODE_MASK =
         FAMILY_FLAG_SPLIT_RETAIN_ONLY | FAMILY_FLAG_SPLIT_BONUS_WEIGHT |
         FAMILY_FLAG_SPLIT_REPLACE;
@@ -967,6 +969,100 @@ public:
             static_cast<size_t>(_class_opinion_committed_buffer)];
     }
     godot::Dictionary country_class_opinion_snapshot_debug() const;
+
+    // EconomyCommitView. While the worker owns economy execution the main
+    // thread must not read live economy state outside the authority boundary.
+    // It registers demand for a query key; the worker evaluates the demanded
+    // keys at its committed day boundary and publishes an immutable view.
+    // Views are UI/diagnostic reads only: never simulation input, PKEC or hash.
+    enum class ReadQuery : uint16_t {
+        NONE = 0,
+        POPULATION_CELL_SNAPSHOT,
+        POPULATION_CELL_SUMMARY,
+        NAMED_SETTLEMENT_SNAPSHOT,
+        SETTLEMENT_DELTA,
+        MARKET_CELL_SNAPSHOT,
+        EXPLAIN_COHORT_SATISFACTION,
+        CELL_SATISFACTION_ATTRACTIVENESS,
+        FISCAL_SNAPSHOT,
+        COUNTRY_TRADE_SNAPSHOT,
+        TRADE_ORDERS_FOR_CELL,
+        BUILDING_CELL_SNAPSHOT,
+        TREASURY_CONSTRUCTION_QUOTES,
+        CONSTRUCTION_COMMAND_RECEIPTS,
+        CANAL_ROUTE_QUOTE,
+        CANAL_ROUTE_QUOTE_DETAIL,
+        CANAL_CONSTRUCTION_RECEIPTS,
+        FAMILY_CELL_SNAPSHOT,
+        FAMILY_SNAPSHOT,
+        FAMILY_TRAITS,
+        FAMILY_BRANCHES,
+        FAMILY_COLONIZATION_QUOTES,
+        FAMILY_COLONIZATION_QUOTE_DETAIL,
+        FAMILY_EXPEDITIONS,
+        FAMILY_EXPEDITION_SNAPSHOT,
+        FAMILY_COLONIZATION_RECEIPTS,
+        FAMILY_BRANCH_EFFECTS,
+        FAMILY_FOUNDING_OFFERS,
+        FAMILY_INDUSTRIES,
+        FAMILY_NOTABLE_PEOPLE,
+        NOTABLE_PERSON_SNAPSHOT,
+        NOTABLE_PERSON_NEEDS,
+        BUILDING_NOTABLE_PEOPLE,
+        COUNTRY_CLASS_OPINION_SNAPSHOT,
+    };
+    struct ReadKey {
+        ReadQuery query = ReadQuery::NONE;
+        std::array<int64_t, 8> args{};
+        godot::String text;
+        godot::PackedInt32Array ints;
+        // Payload only (colonization visibility); its identity is the vision
+        // revision carried in args.
+        godot::PackedByteArray bytes;
+        uint64_t hash = 0;
+        void seal();
+        bool same(const ReadKey &other) const;
+    };
+    struct ReadViewEntry {
+        ReadKey key;
+        godot::Dictionary value;
+        // Entries survive across serves until the refresh interval, so each
+        // carries the committed day it was evaluated at.
+        int64_t committed_day = -1;
+        uint64_t generation = 0;
+    };
+    struct ReadView {
+        uint64_t serial = 0;
+        uint64_t generation = 0;
+        int64_t committed_day = -1;
+        std::vector<ReadViewEntry> entries; // sorted by key.hash
+        const ReadViewEntry *find(const ReadKey &key) const;
+    };
+    struct BuildingVisualView {
+        uint64_t generation = 0;
+        int32_t cell_count = 0;
+        std::vector<int32_t> cell_offsets;
+        std::vector<int32_t> type_indices;
+        std::vector<int64_t> counts;
+    };
+    godot::Dictionary evaluate_read_query(const ReadKey &key);
+    void read_view_subscribe(const ReadKey &key);
+    std::shared_ptr<const ReadView> read_view() const {
+        return std::atomic_load_explicit(&_read_view, std::memory_order_acquire);
+    }
+    // Caller must hold the economy authority boundary with no epoch open.
+    void serve_read_view();
+    void publish_building_visual_view();
+    std::shared_ptr<const BuildingVisualView> building_visual_view() const {
+        return std::atomic_load_explicit(&_building_visual_view,
+                                         std::memory_order_acquire);
+    }
+    static godot::Dictionary building_visual_rows(
+        const BuildingVisualView &view,
+        const godot::PackedInt32Array &requested_cells);
+    godot::PackedInt32Array drain_building_visual_outbox();
+    void read_view_reset();
+    godot::Dictionary read_view_status() const;
 
 private:
     friend class EconomyCsvRecorder;
@@ -5131,6 +5227,14 @@ private:
         int32_t death_weight_q16 = 0;
     };
     std::vector<FamilyDemographyRow> _family_demography_rows;
+    // Owner seats a family's owned units need in each owner cohort, frozen
+    // with the demography rows; sorted by (cohort_handle, family_handle).
+    struct FamilyOwnerSeatRow {
+        uint64_t cohort_handle = 0;
+        uint64_t family_handle = 0;
+        int64_t seats = 0;
+    };
+    std::vector<FamilyOwnerSeatRow> _family_owner_seat_rows;
     std::vector<int32_t> _family_edge_scratch;
     std::vector<int64_t> _family_ledger_business_by_slot;
     std::vector<int32_t> _family_ledger_touched_slots;
@@ -5141,6 +5245,8 @@ private:
     int64_t _family_ledger_clamps = 0;
     int64_t _family_people_recruited = 0;
     int64_t _family_units_released = 0;
+    int64_t _family_release_deferred = 0;
+    int64_t _family_owner_seats_guarded = 0;
     double _family_demography_weights_ms = 0.0;
     // Derived notable-person CSR; rebuilt at PERSON_COMMIT and restore.
     std::vector<int32_t> _person_family_offsets;
@@ -6108,6 +6214,25 @@ private:
     std::vector<int64_t> _building_visual_counts;
     std::vector<int32_t> _building_visual_dirty_cells;
     uint64_t _building_visual_generation = 0;
+    struct ReadSubscription {
+        ReadKey key;
+        uint64_t last_access_us = 0;
+        bool pending = true;
+    };
+    std::shared_ptr<const ReadView> _read_view;
+    std::shared_ptr<const BuildingVisualView> _building_visual_view;
+    mutable std::mutex _read_subscription_mutex;
+    std::vector<ReadSubscription> _read_subscriptions;
+    std::atomic<uint32_t> _read_subscription_count{0};
+    std::mutex _building_visual_outbox_mutex;
+    std::vector<int32_t> _building_visual_outbox;
+    uint64_t _read_view_serial = 0;
+    uint64_t _read_view_last_refresh_us = 0;
+    std::atomic<uint64_t> _read_view_serve_count{0};
+    std::atomic<uint64_t> _read_view_eval_count{0};
+    std::atomic<uint64_t> _read_view_serve_us_total{0};
+    std::atomic<uint64_t> _read_view_serve_us_max{0};
+    std::atomic<uint64_t> _read_view_evicted_count{0};
     // Transient CSR baked from stable building order. Recovery reviews touch
     // only the current cell-modulo-review bucket instead of scanning all groups.
     std::vector<int32_t> _building_review_phase_offsets;
@@ -7172,6 +7297,12 @@ private:
     void apply_family_birth_attribution(int32_t slot, int64_t births);
     void settle_family_claim_ledger();
     void recruit_family_dependents();
+    void rebuild_family_owner_seats();
+    int64_t family_owner_seats(uint64_t cohort_handle, uint64_t family_handle) const;
+    // Owning family of group `group_index` with idle members in `pool_slot`,
+    // or 0. Only used when the hire lands in the group's owner signature.
+    uint64_t owning_family_for_owner_hire(int32_t group_index,
+                                          int32_t pool_slot) const;
     void release_unstaffable_family_ownership(int32_t family_index);
     void record_person_deaths_for_family(int32_t cohort_slot,
                                          uint64_t family_handle,
