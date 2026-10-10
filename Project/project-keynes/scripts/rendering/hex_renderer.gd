@@ -271,9 +271,10 @@ var terrain_materials_enabled: bool = true
 		gi_bounce_strength = clampf(value, 0.0, 0.5)
 		_push_terrain_horizon_uniforms()
 ## 0=off 1=sky visibility 2=bent normal 3=occluder cell id 4=bounce only 5=clay (gray albedo, full lighting)
-@export_range(0, 5, 1) var gi_debug_view: int = 0:
+## 6=clay rough 7=normal shade (all normals, fixed light) 8=normal shade (terrain geometry only)
+@export_range(0, 8, 1) var gi_debug_view: int = 0:
 	set(value):
-		gi_debug_view = clampi(value, 0, 5)
+		gi_debug_view = clampi(value, 0, 8)
 		_push_terrain_horizon_uniforms()
 
 @export_group("Visual Overhaul")

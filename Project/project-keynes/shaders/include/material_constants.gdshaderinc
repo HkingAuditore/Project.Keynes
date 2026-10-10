@@ -123,6 +123,13 @@ const float DEFAULT_METALLIC_ICE       = 0.05;
 const float DEFAULT_AO_LAND            = 1.00;
 const float DEFAULT_AO_WATER           = 1.00;
 const float TERRAIN_EROSION_CREASE_AO  = 0.22;   // 侵蚀沟谷最深处的局部遮蔽量
+const float TERRAIN_STRATA_THICKNESS   = 0.012;  // 层状台坎的层厚（height 单位）
+const float TERRAIN_STRATA_RISER       = 0.45;   // 每层中陡坎所占比例，其余为平台
+const float TERRAIN_STRATA_MIN_SPACING_HEX = 0.40; // 台坎最小水平层距（hex 倍数）
+const float TERRAIN_DETAIL_CREST_ROUND = 0.22;   // 尖脊沟谷剖面的最小圆角（平滑 abs 的 ε）
+const float TERRAIN_GULLY_FULL_SLOPE   = 0.30;   // 宏观坡度达到此值时沟谷取满强度，以下线性减弱（下限 25%）
+const float TERRAIN_GULLY_BASE_WL      = 128.0;  // 沟谷最粗倍频层波长（世界单位，× world_size/72），其下逐层减半
+const float TERRAIN_DETAIL_PHASOR_NORM = 0.45;   // 条纹相量归一化程度：1 = 完全恒定对比，0 = 原始干涉和
 const float DEFAULT_ALPHA              = 1.00;
 const vec3  DEFAULT_EMISSION           = vec3(0.0);
 

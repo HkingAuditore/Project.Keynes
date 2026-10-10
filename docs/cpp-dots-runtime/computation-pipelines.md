@@ -435,7 +435,24 @@ relief（见下 “P0 relief”）。
 1. **噪声地貌（C++ step7，`gdext/src/bake_dem_landform.h::landform`）**：ridged 山脊 + 顺坡沟纹，振幅 = 局地起伏 × `dem_*_amp_per_relief`，最细倍频截断在 4 像素波长。它只提供小尺度纹理和汇流的初始扰动，默认振幅已调低（`amp 0.1`，`ridge 0.2`）。
 2. **汇流刻谷（`pk_dem::carve_drainage_valleys`，fused pass 的 ①b，terrain-index 之后、droplet erosion 之前）**：Barnes ε 优先级洪泛填洼（出口 = 水体像素、河心 `flow >= dem_valley_river_outlet_flow` 的像素、上下边缘）→ 多流向（slope^`mfd_exponent`）累积汇水面积 → 谷底下切 `depth_per_relief × relief × smooth(log A)^depth_exp` → 倒角最大值传播成 V 形谷壁（坡度 `wall_per_relief × relief / 格`，谷深不超过 `depth_per_relief × relief`）→ 按拓扑序保证每点不低于下游，支谷在河口和海岸平接、不出凹坑。X 方向在 `round(wrap_period_x / step)` 列上环绕，别名列复制周期内的下切量。`relief` 来自 terrain-index 新输出的 `dem_relief_buffer`（局地起伏 × 门控，平原和水体为 0），所以平原不刻。全图约 135 ms（1024×606）。
 
-旋钮全部在 `terrain_index_baker.gd::DEM_DEFAULTS`，可用 ProjectSettings `project_keynes/rendering/dem/<去掉 dem_ 前缀的键>` 覆盖。粗法线半径 `TERRAIN_NORMAL_SAMPLE_RADIUS_HEX` 相应降到 0.35 格，否则谷地会被法线低通抹平；shader 侧 `terrain_erosion_strength` 降到 0.35，只补近景细纹。
+旋钮全部在 `terrain_index_baker.gd::DEM_DEFAULTS`，可用 ProjectSettings `project_keynes/rendering/dem/<去掉 dem_ 前缀的键>` 覆盖。粗法线半径 `TERRAIN_NORMAL_SAMPLE_RADIUS_HEX` 相应降到 0.35 格，否则谷地会被法线低通抹平；格子尺度以下的细节由 shader 侧分地形细节法线负责（见下）。
+
+**分地形细节法线（2026-10-10，shader，`hillshade_tod.gdshaderinc::terrain_apply_landform_detail`）**：烘焙高度图只到格子尺度，格内的地貌特征由 shader 叠加到 `macro_normal`（参与 hillshade / TOD 起伏 / GI，不是材质贴图法线）。五种形态按地形配比，配置表 `terrain_detail_profile(biome)`：
+
+| 形态 | 表现 | 主要地形 |
+| --- | --- | --- |
+| gully | 顺坡冲沟，`sharp` 控制剖面（0 圆缓 → 1 尖脊 V 谷） | 山地、荒地、丘陵、寒漠 |
+| strata | 沿平滑等高线的平台 + 陡坎（岩层出露） | 方山、高原 / 峡谷 / 裂谷地貌、荒地 |
+| dune | 随低频风向转动的不对称沙丘 + 细波纹 | 沙漠、寒漠、雪原 |
+| rolling | 宽缓的圆形起伏 | 丘陵、平原、草原、灌丛 |
+| hummock | 小尺度丘状凹凸（树冠 / 冻融丘 / 草丘） | 森林、苔原、沼泽 |
+
+- **配置场**：biome / 地貌不读逐像素的 warp 归属（格界参差、有 texel 飞地，会让强度逐 texel 跳变），而在不扭曲的 hex 对偶三角网上取三个相邻格心的 biome / landform，按立方锐化的重心权重混合；格内保持本格配置，过渡集中在格界。水格 / 地图外用像素自身配置补位。传入的是主 biome（`geo_biome`），不是 DitherUV 抽选的视觉 biome。
+- **地貌与坡度补强**：`terrain_detail_slope_boost` 按宏观坡度连续抬高 gully / sharp（林地长在山上也有冲沟）；`terrain_detail_landform_boost` 给层状地貌加 strata、给荒地地貌加尖锐 gully + strata，均乘坡度门控。
+- **沟谷**：Phacelle 式归一化相量噪声（3×3 抖动核，归一化防止干涉相消成大理石纹），走向 = 约 1 格半径的平滑高程梯度 + 低频兜底向量场；细层按粗层导数偏转（封顶 35%）形成分叉。所有地形共用固定波长倍频层（`TERRAIN_GULLY_BASE_WL` 起每层减半），`gully_wl` 只决定能量峰值落在哪一层——波长随空间插值会在过渡带把相位拉成同心圆环。幅度乘 `clamp(slope / TERRAIN_GULLY_FULL_SLOPE, 0.25, 1)`，缓坡上不会读成揉皱的锡纸。
+- **台坎**：在 4 点平滑高程上按 `TERRAIN_STRATA_THICKNESS` 量化，层距下限取 3 个高度 texel / 4 屏幕像素 / `TERRAIN_STRATA_MIN_SPACING_HEX` 格中的最大值，不够时层厚按 2 倍逐级对数合并，超过 4 级淡出。
+- **LOD 与开关**：每层按屏幕像素波长（3→7 px）淡出；`terrain_erosion_strength`（默认 1.0，0 关）是全局倍率，`terrain_erosion_world_size`（默认 72）是全部尺度的参照。MOBILE / LOW 画质整体编译掉。返回值的 w 是沟谷深度，调用方用于凹处遮蔽。
+- **调试**：`HexRenderer.gi_debug_view = 8` 只显示地形几何法线（固定西北光、无底色 / GI），`7` 显示含材质贴图法线的最终法线。
 
 下游收益：权威主索引固定为 warp 后的 `cube_round`，`dyn_lut`、`eco_lut`、天气、迷雾和交互状态均使用同一个 NEAREST 主格，不再通过图集空间 Dither 改派归属。静态地表边界由独立的 RG8 副索引与 R8 距离纹理在屏幕空间窄带内处理；边界数据缺失时直接退化为硬主索引。C++ 单 pass 与 fused pass 应逐字节一致，并由 headless parity 测试覆盖。
 

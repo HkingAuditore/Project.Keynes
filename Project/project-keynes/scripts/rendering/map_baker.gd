@@ -5125,11 +5125,12 @@ func refresh_weather_lut_from_weather(map: MapData, world: WorldData) -> Diction
 
 func refresh_cell_luts_daily(map: MapData, world: WorldData,
 		dirty_indices: PackedInt32Array = PackedInt32Array(),
-		force_full_encode: bool = true) -> Dictionary:
+		force_full_encode: bool = true,
+		publish_weather_lut: bool = false) -> Dictionary:
 	if world == null or world.lut_dims.x <= 0 or world.lut_dims.y <= 0:
 		return {"path": "none", "fallback": true, "reason": "missing_world_or_lut_dims"}
 	# cache_valid=true：C++ encode_cell_luts 按 prev 推进 eco transition_age（每日衰减）。
-	return bake_cell_luts(map, world, true, false, dirty_indices, force_full_encode)
+	return bake_cell_luts(map, world, true, publish_weather_lut, dirty_indices, force_full_encode)
 
 
 func cell_lut_active_transition_pending() -> bool:

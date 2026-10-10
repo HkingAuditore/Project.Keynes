@@ -41,6 +41,7 @@ struct LandModInputs {
 // ═══════════════════════════════════════════════════════════════════════
 SurfaceParams compute_land_base_surface(
 		int biome,
+		int geo_biome,
 		int landform,
 		float elev,
 		vec2 wp,
@@ -133,11 +134,13 @@ SurfaceParams compute_land_base_surface(
 		col = mix(col, contour_color, contour_t * contour_strength);
 	}
 	// LAND 1.5：Normal / roughness / AO / metallic
-	// macro_normal = 高度场法线 + 侵蚀沟谷（都是地形几何）；材质贴图法线只进 BRDF 的 normal。
+	// macro_normal = 高度场法线 + 分地形细节（都是地形几何）；材质贴图法线只进 BRDF 的 normal。
+	// 几何细节按格子的主 biome 走：biome 是 DitherUV 逐像素抽选的视觉 biome，
+	// 直接用会让过渡带里的起伏强度逐像素跳变。
 	vec3 coarse_normal = terrain_coarse_normal(uv);
-	vec4 erosion = terrain_apply_erosion_detail(
-			terrain_add_height_detail(coarse_normal, uv, visual_quality, biome),
-			coarse_normal, wp, elev, visual_quality, biome);
+	vec4 erosion = terrain_apply_landform_detail(
+			terrain_add_height_detail(coarse_normal, uv, visual_quality, geo_biome),
+			coarse_normal, uv, wp, elev, visual_quality, geo_biome, landform);
 	vec3 macro_normal = erosion.xyz;
 	vec3 normal = macro_normal;
 	if (terrain_materials_active()) {
@@ -613,6 +616,13 @@ vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
 	if (gi_debug_view == 4) {
 		return lc.bounce * lc.sun_color_linear;
 	}
+	// 7 = 最终法线晕渲（含材质贴图法线）；8 = 只看地形几何法线（高度场 + 分地形细节）。
+	//   固定西北光源、无 GI / 阴影 / 底色，专门用来检查细节法线的形态与强度。
+	if (gi_debug_view == 7 || gi_debug_view == 8) {
+		vec3 Nd = normalize(gi_debug_view == 7 ? surface.normal : surface.macro_normal);
+		float shade = clamp(0.5 + 1.6 * (dot(Nd, vec3(-0.5, -0.5, 0.70710678)) - 0.70710678), 0.0, 1.0);
+		return vec3(pow(shade, 2.2));
+	}
 	vec3 lit = evaluate_brdf(surface, lc, SPEC_MAX_LAND_LEGACY, SPEC_MIN_LAND_LEGACY);
 
 	// [tod 地形方向性 2026-06-25 / 加强 2026-06-25b] 在 BRDF 之上叠一层 terrain-only 的方向性
@@ -672,6 +682,7 @@ vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
 // ═══════════════════════════════════════════════════════════════════════
 vec3 render_land_pipeline(
 		int biome,
+		int geo_biome,
 		int veg,
 		int cover,
 		int landform,
@@ -694,7 +705,7 @@ vec3 render_land_pipeline(
 	}
 	float mixed_micro_strength = terrain_biome_micro_strength(biome);
 	SurfaceParams surface = compute_land_base_surface(
-			biome, landform, elev, wp, uv, scals,
+			biome, geo_biome, landform, elev, wp, uv, scals,
 			mixed_micro_strength);
 
 	LandModInputs mi;
