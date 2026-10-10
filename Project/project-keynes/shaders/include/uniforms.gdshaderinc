@@ -104,7 +104,7 @@ uniform bool terrain_material_tex_bound = false;
 uniform bool terrain_materials_enabled = true;
 uniform float terrain_material_world_size = 384.0;
 uniform float terrain_material_albedo_strength = 0.6;
-uniform float terrain_material_normal_strength = 0.15;
+uniform float terrain_material_normal_strength = 0.24;
 uniform float terrain_material_roughness_strength = 0.35;
 // [pk-web-texture-budget] GLES3 canvas 把顶部单元预留给内建纹理（MAX-7 高光 / MAX-6 法线
 // / MAX-5 SDF / MAX-4 屏幕 / MAX-2 灯光图集），材质 sampler 从 unit 1 顺序分配——WebGL2
@@ -501,7 +501,8 @@ uniform bool  hillshade_detail_enabled = true;                          // 细�
 uniform float hillshade_detail_strength : hint_range(0.0, 1.0)  = 0.16;
 // [terrain-erosion 2026-10-09] 沿宏观坡向延伸的多尺度沟谷 / 山脊细节（DEM 晕渲观感）。
 //   strength = 细节坡度幅度（0 关）；world_size = 最粗一层的沟距（世界单位），每层减半。
-//   每层按屏幕像素波长淡出，远景不产生闪烁；平地不出现，坡越陡、海拔越高越清晰。
+//   每层按屏幕像素波长淡出，远景不产生闪烁；平地以更宽、更弱的缓波纹呈现，
+//   丘陵/高原/山地再逐级增强为浅冲刷、台地风化和顺坡沟脊。
 //   格子尺度以上的谷地已由烘焙期汇流刻谷写进高度图，这里只补近景细纹。
 uniform float terrain_erosion_strength   : hint_range(0.0, 2.0) = 0.35;
 uniform float terrain_erosion_world_size : hint_range(8.0, 256.0) = 72.0;

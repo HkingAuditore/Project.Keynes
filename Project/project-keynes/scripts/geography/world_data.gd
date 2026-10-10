@@ -186,6 +186,9 @@ var terrain_material_tex_bound: bool = false
 # lut_dims：(lut_w, lut_h)，lut_w=min(n_cells, 2048)，lut_h=ceil(n_cells/lut_w)。
 var enum_lut_tex: ImageTexture
 var dyn_lut_tex: ImageTexture
+# 动态 LUT 双缓冲：更新时写入非当前采样纹理，完成后交换引用，避免高频
+# ImageTexture.update 与渲染帧竞争；固定两张纹理，避免长期运行持续分配 GPU 资源。
+var dyn_lut_tex_back: ImageTexture
 var eco_lut_tex: ImageTexture
 # [terrain-gi 2026-07-31] bounce_lut（RGBA8 NEAREST，同 lut_dims 网格）：per-cell 弹射代表色。
 #   RGB=该 cell 当前地表代表色（sRGB 域），A=有效性/强度缩放（0=水体或 map 外，不参与弹射）。

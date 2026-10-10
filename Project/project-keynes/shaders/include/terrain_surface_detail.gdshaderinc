@@ -355,13 +355,13 @@ SurfaceParams apply_terrain_micro_surface(
 		float moist,
 		float vitality,
 		float snow_amount) {
-	// HIGH tiled materials already provide albedo, tangent normal and roughness;
-	// keep the old micro texture completely out of that path.
+	// Tiled materials provide the broad albedo/normal layer. Keep the separate
+	// micro map as a restrained second scale for readable close-ground relief.
 #ifdef PK_WEB_TEXTURE_BUDGET
 	// web 预算下 terrain_micro_tex 声明已被整体裁剪（纹理单元撞车防护，见 uniforms）。
 	return surface;
 #else
-	if (terrain_materials_active() || !has_terrain_micro_tex) {
+	if (!has_terrain_micro_tex) {
 		return surface;
 	}
 	float zoom_alpha = terrain_micro_zoom_alpha();
@@ -381,7 +381,9 @@ SurfaceParams apply_terrain_micro_surface(
 
 	// [normal-soften 2026-07-31] 再降到 0.045：近距碎感的另一半来自微表面法线。
 	// albedo 微粒（grain）保留更多，让"纹理感"走颜色而非法线噪声。
-	float normal_strength = strength * terrain_micro_normal_quality() * snow_flatten * 0.045;
+	float material_path_scale = terrain_materials_active() ? 0.72 : 1.0;
+	float normal_strength = strength * terrain_micro_normal_quality() * snow_flatten
+			* 0.060 * material_path_scale;
 	surface.normal = normalize(vec3(
 			surface.normal.xy + micro_xy * normal_strength,
 			max(surface.normal.z, 0.12)));

@@ -179,7 +179,7 @@ var terrain_materials_enabled: bool = true
 		if _shader_mat != null:
 			_shader_mat.set_shader_parameter("terrain_material_albedo_strength", terrain_material_albedo_strength)
 
-@export_range(0.0, 0.5, 0.005) var terrain_material_normal_strength: float = 0.15:
+@export_range(0.0, 0.8, 0.005) var terrain_material_normal_strength: float = 0.24:
 	set(value):
 		terrain_material_normal_strength = clampf(value, 0.0, 0.5)
 		if _shader_mat != null:

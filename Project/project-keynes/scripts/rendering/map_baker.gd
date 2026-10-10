@@ -4870,8 +4870,13 @@ func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false,
 					report["enum_lut_upload_ms"] = 0.0
 				if dyn_changed:
 					var dyn_upload_t0_us := Time.get_ticks_usec()
+					# 动态 LUT 由主地图 shader 高频采样。写入非当前采样纹理后
+					# 再交换引用，避免 update 与当前渲染帧竞争；双缓冲固定复用，
+					# 防止长期运行不断分配 GPU 纹理。
+					var dyn_front := world.dyn_lut_tex
 					world.dyn_lut_tex = _lut_tex_from_data(
-						d, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex)
+						d, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex_back)
+					world.dyn_lut_tex_back = dyn_front
 					report["dyn_lut_upload_ms"] = float(Time.get_ticks_usec() - dyn_upload_t0_us) / 1000.0
 					_cell_dyn_lut_bytes_cache = d
 				else:
@@ -4952,7 +4957,10 @@ func _bake_cell_luts_gd(map: MapData, world: WorldData, lw: int, lh: int,
 		weather_data[w4 + 2] = _q01_byte(float(cell.weather_cloud))
 		weather_data[w4 + 3] = _q01_byte(float(cell.weather_vapor))
 	world.enum_lut_tex = _lut_tex_from_data(enum_data, lw, lh, Image.FORMAT_RGBA8, world.enum_lut_tex)
-	world.dyn_lut_tex = _lut_tex_from_data(dyn_data, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex)
+	var dyn_front := world.dyn_lut_tex
+	world.dyn_lut_tex = _lut_tex_from_data(
+		dyn_data, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex_back)
+	world.dyn_lut_tex_back = dyn_front
 	world.eco_lut_tex = _lut_tex_from_data(eco_data, lw, lh, Image.FORMAT_RGBA8, world.eco_lut_tex)
 	_publish_bounce_lut(enum_data, dyn_data, world, lw, lh)
 	if publish_weather_lut:

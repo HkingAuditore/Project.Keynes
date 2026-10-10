@@ -137,7 +137,7 @@ SurfaceParams compute_land_base_surface(
 	vec3 coarse_normal = terrain_coarse_normal(uv);
 	vec4 erosion = terrain_apply_erosion_detail(
 			terrain_add_height_detail(coarse_normal, uv, visual_quality, biome),
-			coarse_normal, wp, elev, visual_quality);
+			coarse_normal, wp, elev, visual_quality, biome);
 	vec3 macro_normal = erosion.xyz;
 	vec3 normal = macro_normal;
 	if (terrain_materials_active()) {
