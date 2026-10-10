@@ -33,6 +33,16 @@ constexpr float CREST_ROUND = 0.22f;
 constexpr float STRATA_THICKNESS = 0.012f;
 constexpr float STRATA_RISER = 0.45f;
 constexpr float STRATA_MIN_SPACING_HEX = 0.40f;
+constexpr float DUNE_BEND_WL = 230.0f;
+constexpr float DUNE_BEND_RAD = 0.90f;
+constexpr float DUNE_FIELD_WL = 130.0f;
+constexpr float DUNE_INTERDUNE_FLOOR = 0.15f;
+constexpr float DUNE_SLOPE_LO = 0.04f;
+constexpr float DUNE_SLOPE_HI = 0.14f;
+constexpr float DUNE_ROCKY_CUT = 0.85f;
+// 本格 + 6 邻格中沙丘格占比的过渡区间：≤3/7 无沙丘，7/7 满强度。
+constexpr float DUNE_ERG_FRAC_LO = 0.40f;
+constexpr float DUNE_ERG_FRAC_HI = 0.95f;
 // 粗 / 细两段的分界波长（世界单位，terrain_erosion_world_size = 72 时）。
 constexpr float RELIEF_SPLIT_WL = 32.0f;
 // 编码：v -> sign(v)·sqrt(|v|/RANGE)，小坡度保留更多 8-bit 精度。shader 侧同值解码。
@@ -54,10 +64,10 @@ inline Profile profile_for(int b) {
     if (b == B_BADLANDS) return {0.52f, 30.0f, 0.85f, 0.28f, 0.0f, 0.00f, 0.02f};
     if (b == B_HILL) return {0.22f, 84.0f, 0.10f, 0.00f, 0.0f, 0.26f, 0.06f};
     if (b == B_DESERT) return {0.00f, 64.0f, 0.00f, 0.00f, 0.30f, 0.03f, 0.00f};
-    if (b == B_COLD_DESERT) return {0.12f, 56.0f, 0.50f, 0.10f, 0.12f, 0.04f, 0.05f};
+    if (b == B_COLD_DESERT) return {0.12f, 56.0f, 0.50f, 0.10f, 0.00f, 0.07f, 0.08f};
     if (b == B_SALT_FLAT) return {0.00f, 64.0f, 0.00f, 0.00f, 0.00f, 0.01f, 0.02f};
     if (b == B_TUNDRA) return {0.06f, 72.0f, 0.20f, 0.00f, 0.00f, 0.05f, 0.09f};
-    if (b == B_SNOW || b == B_GLACIER) return {0.10f, 96.0f, 0.00f, 0.00f, 0.06f, 0.05f, 0.00f};
+    if (b == B_SNOW || b == B_GLACIER) return {0.10f, 96.0f, 0.00f, 0.00f, 0.00f, 0.08f, 0.02f};
     if (b == B_SHRUBLAND || b == B_CHAPARRAL) return {0.10f, 64.0f, 0.40f, 0.04f, 0.00f, 0.09f, 0.06f};
     if (b == B_GRASSLAND || b == B_STEPPE || b == B_SAVANNA)
         return {0.05f, 96.0f, 0.00f, 0.00f, 0.00f, 0.09f, 0.03f};
@@ -350,12 +360,25 @@ inline Output evaluate(const Inputs &in) {
         cy += in.flow_gy * k;
     }
 
-    // ③ 沙丘：风向随超大尺度噪声缓慢转动。
-    const float dune_amp = P.dune;
+    // ③ 沙丘：风向随超大尺度噪声缓慢转动。相量噪声在方向恒定时会生成无限长的直线，
+    //    所以再叠中尺度摆动让脊线弯曲，并用低频场把连续脊线切成成片沙丘群与丘间平地。
+    //    沙丘只在平坦低地成片堆积；台地 / 峡谷 / 荒地上的沙漠是石质戈壁，坡面上沙也留不住。
+    float dune_amp = P.dune * (1.0f - smoothstepf(DUNE_SLOPE_LO, DUNE_SLOPE_HI, slope)) *
+            (1.0f - DUNE_ROCKY_CUT * std::max(in.lf_layered, in.lf_bad));
+    if (dune_amp > 0.002f) {
+        float fi_x, fi_y, field_period;
+        cell_coord(in.wx, in.wy, DUNE_FIELD_WL * scale, in.wrap_period, fi_x, fi_y, field_period);
+        const float field = value_noise(fi_x + 11.0f, fi_y + 53.0f, field_period);
+        dune_amp *= mixf(DUNE_INTERDUNE_FLOOR, 1.0f, smoothstepf(0.30f, 0.72f, field));
+    }
     if (dune_amp > 0.002f) {
         float wi_x, wi_y, wind_period;
         cell_coord(in.wx, in.wy, 900.0f * scale, in.wrap_period, wi_x, wi_y, wind_period);
-        const float wa = 0.65f + (value_noise(wi_x, wi_y, wind_period) - 0.5f) * 2.2f;
+        float be_x, be_y, bend_period;
+        cell_coord(in.wx, in.wy, DUNE_BEND_WL * scale, in.wrap_period, be_x, be_y, bend_period);
+        const float bend = value_noise(be_x + 31.0f, be_y + 7.0f, bend_period) - 0.5f;
+        const float wa = 0.65f + (value_noise(wi_x, wi_y, wind_period) - 0.5f) * 2.2f +
+                bend * DUNE_BEND_RAD;
         const float wdx = std::cos(wa), wdy = std::sin(wa);
         float wl = 44.0f * scale;
         float amp = 1.0f;

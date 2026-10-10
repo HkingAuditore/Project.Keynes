@@ -443,7 +443,7 @@ relief（见下 “P0 relief”）。
 | --- | --- | --- |
 | gully | 顺坡冲沟，`sharp` 控制剖面（0 圆缓 → 1 尖脊 V 谷） | 山地、荒地、丘陵、寒漠 |
 | strata | 沿平滑等高线的平台 + 陡坎（岩层出露） | 方山、高原 / 峡谷 / 裂谷地貌、荒地 |
-| dune | 随低频风向转动的不对称沙丘 + 细波纹 | 沙漠、寒漠、雪原 |
+| dune | 随低频风向转动的不对称沙丘 + 细波纹 | 成片的沙漠（寒漠 / 雪原不起沙丘） |
 | rolling | 宽缓的圆形起伏 | 丘陵、平原、草原、灌丛 |
 | hummock | 小尺度丘状凹凸（树冠 / 冻融丘 / 草丘） | 森林、苔原、沼泽 |
 
@@ -451,6 +451,7 @@ relief（见下 “P0 relief”）。
 - **地貌与坡度补强**：`terrain_detail_slope_boost` 按宏观坡度连续抬高 gully / sharp（林地长在山上也有冲沟）；`terrain_detail_landform_boost` 给层状地貌加 strata、给荒地地貌加尖锐 gully + strata，均乘坡度门控。
 - **沟谷**：Phacelle 式归一化相量噪声（3×3 抖动核，归一化防止干涉相消成大理石纹），走向 = 约 1 格半径的平滑高程梯度 + 低频兜底向量场；细层按粗层导数偏转（封顶 35%）形成分叉。所有地形共用固定波长倍频层（`TERRAIN_GULLY_BASE_WL` 起每层减半），`gully_wl` 只决定能量峰值落在哪一层——波长随空间插值会在过渡带把相位拉成同心圆环。幅度乘 `clamp(slope / TERRAIN_GULLY_FULL_SLOPE, 0.25, 1)`，缓坡上不会读成揉皱的锡纸。
 - **台坎**：在 4 点平滑高程上按 `TERRAIN_STRATA_THICKNESS` 量化，层距下限取 3 个高度 texel / 4 屏幕像素 / `TERRAIN_STRATA_MIN_SPACING_HEX` 格中的最大值，不够时层厚按 2 倍逐级对数合并，超过 4 级淡出。
+- **沙丘**：相量噪声在方向恒定时会生成无限长的平行直线（在戈壁 / 孤立沙漠格上读成刀刻的竖纹），因此风向除 900 单位的低频转动外再叠 `TERRAIN_DUNE_BEND_WL` 摆动让脊线弯曲，并用 `TERRAIN_DUNE_FIELD_WL` 低频场切出沙丘群与丘间平地（保留 `TERRAIN_DUNE_INTERDUNE_FLOOR`）。强度另乘三道门控：宏观坡度 `TERRAIN_DUNE_SLOPE_LO→HI` 消退；层状 / 荒地地貌削减 `TERRAIN_DUNE_ROCKY_CUT`（石质戈壁）；**沙海占比**——本格 + 6 邻格中沙丘地形的占比经 `DUNE_ERG_FRAC_LO→HI` 平滑，孤立的一两格沙漠不起沙丘。沙海占比需要邻格拓扑，只在 C++ 静态烘焙里做（`world_ext_bake.cpp` 的 `dune_erg`），legacy 运行期回退路径没有这道门控。
 - **LOD 与开关**：每层按屏幕像素波长（3→7 px）淡出；`terrain_erosion_strength`（默认 1.0，0 关）是全局倍率，`terrain_erosion_world_size`（默认 72）是全部尺度的参照。MOBILE / LOW 画质整体编译掉。返回值的 w 是沟谷深度，调用方用于凹处遮蔽。
 - **调试**：`HexRenderer.gi_debug_view = 8` 只显示地形几何法线（固定西北光、无底色 / GI），`7` 显示含材质贴图法线的最终法线。
 

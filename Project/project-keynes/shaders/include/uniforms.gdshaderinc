@@ -378,7 +378,7 @@ uniform float insolation_season_gain : hint_range(0.0, 2.0) = 1.0;
 // 【植被 / 雪 / 洋流 / 风组】
 // =========================================================================
 // 植被换色总开关与强度
-uniform float vegetation_season_strength : hint_range(0.0, 1.0) = 1.0;
+uniform float vegetation_season_strength : hint_range(0.0, 1.0) = 0.85;
 // 动态雪量（季节性雪盖叠加在 biome SNOW 之外）总开关与强度
 uniform float dynamic_snow_strength : hint_range(0.0, 1.0) = 0.85;
 // 调试用：true 时雪盖跳过 fbm cosmetic 抖动，直接拿 dyn_snow 上屏，
@@ -547,6 +547,16 @@ uniform float coast_halo_strength : hint_range(0.0, 1.0) = 0.22;
 uniform vec3  parchment_tint        : source_color = vec3(0.96, 0.88, 0.74);
 uniform float parchment_strength    : hint_range(0.0, 0.4) = 0.10;
 uniform float paper_grain_strength  : hint_range(0.0, 0.2) = 0.05;
+
+// ─── 陆地色度 ─────────────────────────────────────────────────────────────
+// 地形类型乘色、物候色、植被轴色与环境调色都是逐通道相乘，色度会逐层复利放大；
+// 逐通道 ACES 的 toe 又会把暗通道压得更低。三个旋钮分别在源头、光照前、色调映射处收敛。
+// biome_tint_strength：biome_hue_modulate 乘数向 1 收拢的比例（1 = 原始偏色）。
+uniform float biome_tint_strength    : hint_range(0.0, 1.0) = 0.80;
+// land_albedo_saturation：所有陆地变色/覆盖层之后、BRDF 之前的反照率饱和度。
+uniform float land_albedo_saturation : hint_range(0.0, 1.5) = 0.92;
+// tonemap_hue_preserve：陆地像素在逐通道 ACES 与按明度 ACES 之间的混合（0 = 纯逐通道）。
+uniform float tonemap_hue_preserve   : hint_range(0.0, 1.0) = 0.3;
 
 
 // =========================================================================

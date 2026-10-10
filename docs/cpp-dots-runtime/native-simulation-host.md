@@ -249,4 +249,12 @@ stage 位和自己的 snapshot ring，legacy `GameplayEventBus` journal 仍是�
 
 Report 暴露 `events_pod_*` 与 `events_worker_authoritative`。消费者迁移是后续 PR。
 
+ACTIVE authority 下（`events_worker_authoritative()`），单个非法 EVENTS 包只得到拒绝回执并
+随当天提交出队，`events_pod_rejected_count` 累计、`events_pod_fallback_reason` 记首个原因、
+日志打印 `[runtime-events] day=… rejected=…`。plan/commit 硬失败（含 commit 校验失败，其
+原因同样写进 `events_pod_fallback_reason`）才阻止 COMMIT，并设置 `events_failed_day`；
+worker 日循环在缺 EVENTS 且 `events_failed_day == day` 持续超过
+`RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS` 时置 `events_day_failed` 故障，而不是在满的
+Climate 环后面无声重试。
+
 

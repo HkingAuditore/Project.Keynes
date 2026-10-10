@@ -1129,6 +1129,9 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
             host.events_pod_ack_count);
         out["events_pod_drop_count"] = static_cast<int64_t>(
             host.events_pod_drop_count);
+        out["events_pod_rejected_count"] = static_cast<int64_t>(
+            host.events_pod_rejected_count);
+        out["events_failed_day"] = host.events_failed_day;
         out["events_pod_fallback_reason"] = String(
             host.events_pod_fallback_reason);
         out["command_queue_depth"] = static_cast<int>(host.command_queue_depth);

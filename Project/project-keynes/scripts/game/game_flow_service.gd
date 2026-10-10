@@ -16,6 +16,8 @@ func _ready() -> void:
 	# tools/runtime/Invoke-SaveReplay.ps1。
 	_attach_headless_runner("PK_SAVE_REPLAY",
 		"res://tests/headless_save_replay.gd")
+	_attach_headless_runner("PK_FAMILY_PROBE",
+		"res://tests/family_economy_probe.gd")
 
 
 func _attach_headless_runner(env_name: String, script_path: String) -> void:

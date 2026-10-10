@@ -2727,11 +2727,42 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
         const float b = HW[(y0 + 1) * WW + x0] * (1.0f - tx) + HW[(y0 + 1) * WW + x0 + 1] * tx;
         return a * (1.0f - ty) + b * ty;
     };
+    // 沙丘只在成片沙海里成形：按本格 + 6 邻格中有沙丘配置的占比衰减，孤立的一两格沙漠不起沙丘。
+    std::vector<float> dune_erg(size_t(std::max(n_cells, 0)), 1.0f);
+    if (O2I != nullptr && CT != nullptr) {
+        static const int NQ[6] = {1, -1, 0, 0, 1, -1};
+        static const int NR[6] = {0, 0, 1, -1, -1, 1};
+        auto has_dune = [&](int ci) {
+            return ci >= 0 && ci < n_cells && pk_relief::profile_for(CT[ci]).dune > 0.0f;
+        };
+        for (int r = 0; r < map_h; ++r) {
+            for (int col = 0; col < map_w; ++col) {
+                const int ci = O2I[r * map_w + col];
+                if (!has_dune(ci)) continue;
+                const int q = col - (r - (r & 1)) / 2;
+                int count = 1;
+                for (int k = 0; k < 6; ++k) {
+                    const int nr = r + NR[k];
+                    if (nr < 0 || nr >= map_h) continue;
+                    int ncol = q + NQ[k] + (nr - (nr & 1)) / 2;
+                    ncol = ((ncol % map_w) + map_w) % map_w;
+                    if (has_dune(O2I[nr * map_w + ncol])) ++count;
+                }
+                dune_erg[size_t(ci)] = pk_relief::smoothstepf(pk_relief::DUNE_ERG_FRAC_LO,
+                        pk_relief::DUNE_ERG_FRAC_HI, float(count) / 7.0f);
+            }
+        }
+    }
+    auto erg_of = [&](int ci) {
+        return (ci >= 0 && ci < n_cells) ? dune_erg[size_t(ci)] : 1.0f;
+    };
+
     // 格内配置在不扭曲的 hex 对偶三角网上插值：取像素所在三角形三个格心的地形 / 地貌，
     // 按立方锐化的重心权重混合。格心必在本格内，不受边界扭曲影响。
-    auto relief_profile = [&](double wx, double wy, int own_biome, int own_lf,
+    auto relief_profile = [&](double wx, double wy, int own_biome, int own_lf, int own_ci,
             pk_relief::Profile &P, float &lf_layered, float &lf_bad) {
-        const pk_relief::Profile own = pk_relief::profile_for(own_biome);
+        pk_relief::Profile own = pk_relief::profile_for(own_biome);
+        own.dune *= erg_of(own_ci);
         const float own_layered = pk_relief::landform_is_layered(own_lf);
         const float own_bad = own_lf == pk_relief::LF_BADLANDS ? 1.0f : 0.0f;
         const double ax = (0.57735027 * wx - 0.33333333 * wy) / hex_size;
@@ -2769,6 +2800,7 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
                 const int ci = O2I[r * map_w + col];
                 if (ci >= 0 && ci < n_cells && !pk_relief::is_water(CT[ci])) {
                     pi = pk_relief::profile_for(CT[ci]);
+                    pi.dune *= dune_erg[size_t(ci)];
                     const int lf = (LF != nullptr && ci < landform.size()) ? LF[ci] : 0;
                     li_layered = pk_relief::landform_is_layered(lf);
                     li_bad = lf == pk_relief::LF_BADLANDS ? 1.0f : 0.0f;
@@ -2828,7 +2860,8 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
                     ri.flow_mean = (hl + hr + hu + hd) * 0.25f;
                     const int ci = P2C[si];
                     const int own_lf = (LF != nullptr && ci >= 0 && ci < landform.size()) ? LF[ci] : 0;
-                    relief_profile(ri.wx, ri.wy, own_biome, own_lf, ri.P, ri.lf_layered, ri.lf_bad);
+                    relief_profile(ri.wx, ri.wy, own_biome, own_lf, ci, ri.P, ri.lf_layered,
+                            ri.lf_bad);
                     ri.hex_size = float(hex_size);
                     ri.height_scale_hex = float(normal_height_scale_hex);
                     ri.texel_world = sub_texel_world;

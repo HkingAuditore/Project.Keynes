@@ -99,6 +99,7 @@ private:
     static bool validate_snapshot(const RuntimeEventsSnapshot &snapshot,
                                   std::string &error);
     static void set_error(RuntimeEventsReport &report, const char *reason);
+    static void prune_idempotency(RuntimeEventsSnapshot &state);
     bool apply_packet(RuntimeEventsSnapshot &state,
                       const RuntimeCommandPacket &packet, int64_t day,
                       RuntimeEventsReport &report, std::string &error);

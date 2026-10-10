@@ -93,6 +93,10 @@ const RUNTIME_THREAD_KEYS := [
 	"economy_input_requested_day", "environment_ring_pending",
 	"day_stall_reason_mask", "day_stall_day", "day_stall_peer_ms",
 	"country_worker_plan_active", "country_worker_waiting_for_peer",
+	# ACTIVE Events 拒绝一个包时整天重试，环满后表现为 climate capacity 卡死。
+	"events_pod_ready", "events_pod_fallback_reason",
+	"events_pod_event_count", "events_pod_ack_count",
+	"events_pod_rejected_count", "events_failed_day",
 ]
 
 

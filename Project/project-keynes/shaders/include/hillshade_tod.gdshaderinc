@@ -399,11 +399,11 @@ TerrainDetailProfile terrain_detail_profile(int biome) {
 	if (biome == B_BADLANDS)   return TerrainDetailProfile(0.52, 30.0, 0.85, 0.28, 0.0, 0.00, 0.02);
 	if (biome == B_HILL)       return TerrainDetailProfile(0.22, 84.0, 0.10, 0.00, 0.0, 0.26, 0.06);
 	if (biome == B_DESERT)     return TerrainDetailProfile(0.00, 64.0, 0.00, 0.00, 0.30, 0.03, 0.00);
-	if (biome == B_COLD_DESERT) return TerrainDetailProfile(0.12, 56.0, 0.50, 0.10, 0.12, 0.04, 0.05);
+	if (biome == B_COLD_DESERT) return TerrainDetailProfile(0.12, 56.0, 0.50, 0.10, 0.00, 0.07, 0.08);
 	if (biome == B_SALT_FLAT)  return TerrainDetailProfile(0.00, 64.0, 0.00, 0.00, 0.00, 0.01, 0.02);
 	if (biome == B_TUNDRA)     return TerrainDetailProfile(0.06, 72.0, 0.20, 0.00, 0.00, 0.05, 0.09);
 	if (biome == B_SNOW || biome == B_GLACIER)
-		return TerrainDetailProfile(0.10, 96.0, 0.00, 0.00, 0.06, 0.05, 0.00);
+		return TerrainDetailProfile(0.10, 96.0, 0.00, 0.00, 0.00, 0.08, 0.02);
 	if (biome == B_SHRUBLAND || biome == B_CHAPARRAL)
 		return TerrainDetailProfile(0.10, 64.0, 0.40, 0.04, 0.00, 0.09, 0.06);
 	if (biome == B_GRASSLAND || biome == B_STEPPE || biome == B_SAVANNA)
@@ -656,12 +656,27 @@ vec4 terrain_apply_landform_detail(
 		detail_grad += tp_mix * flow_grad * flow_to_slope * strata_amp * lod;
 	}
 
-	// ③ 沙丘：风向随超大尺度噪声缓慢转动；主沙丘锯齿剖面 + 细波纹。
-	float dune_amp = P.dune * k;
+	// ③ 沙丘：风向随超大尺度噪声缓慢转动；主沙丘锯齿剖面 + 细波纹。相量噪声在方向恒定时
+	//    会生成无限长的直线，所以再叠中尺度摆动让脊线弯曲，并用低频场切出沙丘群与丘间平地。
+	//    沙丘只在平坦低地成片堆积；台地 / 峡谷 / 荒地上的沙漠是石质戈壁，坡面上沙也留不住。
+	//    按邻格沙海占比的衰减需要拓扑，只在 C++ 静态烘焙里做，本回退路径没有。
+	float dune_amp = P.dune * k
+			* (1.0 - smoothstep(TERRAIN_DUNE_SLOPE_LO, TERRAIN_DUNE_SLOPE_HI, slope))
+			* (1.0 - TERRAIN_DUNE_ROCKY_CUT * max(lf_w.x, lf_w.y));
+	if (dune_amp > 0.002) {
+		float field_period;
+		vec2 field_p = terrain_erosion_cell_coord(wp, TERRAIN_DUNE_FIELD_WL * scale, field_period);
+		float field = terrain_erosion_value_noise(field_p + vec2(11.0, 53.0), field_period);
+		dune_amp *= mix(TERRAIN_DUNE_INTERDUNE_FLOOR, 1.0, smoothstep(0.30, 0.72, field));
+	}
 	if (dune_amp > 0.002) {
 		float wind_period;
 		vec2 wind_p = terrain_erosion_cell_coord(wp, 900.0 * scale, wind_period);
-		float wa = 0.65 + (terrain_erosion_value_noise(wind_p, wind_period) - 0.5) * 2.2;
+		float bend_period;
+		vec2 bend_p = terrain_erosion_cell_coord(wp, TERRAIN_DUNE_BEND_WL * scale, bend_period);
+		float bend = terrain_erosion_value_noise(bend_p + vec2(31.0, 7.0), bend_period) - 0.5;
+		float wa = 0.65 + (terrain_erosion_value_noise(wind_p, wind_period) - 0.5) * 2.2
+				+ bend * TERRAIN_DUNE_BEND_RAD;
 		vec2 wind = vec2(cos(wa), sin(wa));
 		float wl = 44.0 * scale;
 		float amp = 1.0;

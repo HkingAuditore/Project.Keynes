@@ -940,6 +940,8 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _events_pod_event_count.store(0, std::memory_order_release);
     _events_pod_ack_count.store(0, std::memory_order_release);
     _events_pod_drop_count.store(0, std::memory_order_release);
+    _events_pod_rejected_count.store(0, std::memory_order_release);
+    _events_failed_day.store(-1, std::memory_order_release);
     for (auto &character : _events_pod_fallback_reason) {
         character.store('\0', std::memory_order_relaxed);
     }
@@ -8851,6 +8853,26 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         } else {
             _events_authority.discard_plan();
         }
+        // plan_day 只为包级拒绝填 fallback_reason；commit/注入失败只有 events_error。
+        if (!events_ok && events_report.fallback_reason[0] == '\0') {
+            const char *source = events_error.empty() ? "events_commit_failed"
+                                                      : events_error.c_str();
+            size_t n = 0;
+            for (; n + 1u < sizeof(events_report.fallback_reason) && source[n] != '\0'; ++n)
+                events_report.fallback_reason[n] = source[n];
+            events_report.fallback_reason[n] = '\0';
+        }
+        if (events_ok && events_report.rejected_commands > 0u) {
+            _events_pod_rejected_count.fetch_add(events_report.rejected_commands,
+                                                 std::memory_order_relaxed);
+            static std::atomic<int> s_events_reject_logs_left{16};
+            if (s_events_reject_logs_left.fetch_sub(1, std::memory_order_relaxed) > 0) {
+                godot::UtilityFunctions::print(godot::vformat(
+                    "[runtime-events] day=%d rejected=%d reason=%s",
+                    event_day, static_cast<int64_t>(events_report.rejected_commands),
+                    godot::String(events_report.fallback_reason)));
+            }
+        }
         const bool events_authoritative =
             _mode.load(std::memory_order_acquire) ==
                 RuntimeSimulationMode::ACTIVE &&
@@ -8860,6 +8882,8 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         // the same sealed day and cannot advance its watermark on failure.
         if (events_ok || !events_authoritative)
             _events_last_processed_day = event_day;
+        _events_failed_day.store(events_ok || !events_authoritative ? -1 : event_day,
+                                 std::memory_order_release);
         _events_pod_ready.store(events_ok, std::memory_order_release);
         _events_pod_plan_ms.store(events_plan_ms, std::memory_order_release);
         _events_pod_replay_ms.store(events_replay_ms, std::memory_order_release);
@@ -11132,7 +11156,8 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             (_requested_authority_mask.load(std::memory_order_acquire) &
              runtime_domain_mask(RuntimeDomainId::EVENTS)) != 0u) {
             // ACTIVE Events is the production journal and consumer-cursor
-            // owner. A rejected batch holds COMMIT at the sealed day.
+            // owner. A rejected packet is receipted and consumed; only a
+            // plan/commit failure holds COMMIT at the sealed day.
             if (climate_authority_requested && !active_climate_ok) {
                 stage.completed = 0;
                 continue;
@@ -12904,6 +12929,8 @@ void NativeSimulationHost::worker_main() {
     pending_commands.reserve(RUNTIME_COMMAND_QUEUE_CAPACITY);
     int64_t logged_pending_day = -1;
     uint32_t logged_pending_mask = 0;
+    int64_t events_failed_wait_day = -1;
+    uint64_t events_failed_since_us = 0;
     size_t pending_begin = 0;
     if (!_worker_initial_pending_commands.empty()) {
         pending_commands = std::move(_worker_initial_pending_commands);
@@ -13390,6 +13417,37 @@ void NativeSimulationHost::worker_main() {
                                 godot::String(yield_reason),
                                 climate_committed));
                         }
+                    }
+                    // Events 硬失败不设任何 stall 位，peer 超时永不触发；
+                    // 环满后主线程停在 capacity barrier，表现为无声卡死。
+                    if ((missing & runtime_domain_mask(RuntimeDomainId::EVENTS)) != 0u &&
+                        _events_failed_day.load(std::memory_order_acquire) == day) {
+                        if (events_failed_wait_day != day) {
+                            events_failed_wait_day = day;
+                            events_failed_since_us = now_us();
+                        } else if ((now_us() - events_failed_since_us) / 1000u >=
+                                   RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS) {
+                            char events_reason[64];
+                            size_t er = 0;
+                            for (; er + 1 < sizeof(events_reason) &&
+                                   er < _events_pod_fallback_reason.size(); ++er) {
+                                events_reason[er] = _events_pod_fallback_reason[er].load(
+                                    std::memory_order_acquire);
+                                if (events_reason[er] == '\0') break;
+                            }
+                            events_reason[er] = '\0';
+                            const godot::String fault_line = godot::vformat(
+                                "[day-stall-fault] day=%d events_day_failed reason=%s "
+                                "ring=%d",
+                                day, godot::String(events_reason),
+                                static_cast<int64_t>(_environment_ring.size()));
+                            godot::UtilityFunctions::print(fault_line);
+                            godot::UtilityFunctions::printerr(fault_line);
+                            set_fault("events_day_failed");
+                            break;
+                        }
+                    } else {
+                        events_failed_wait_day = -1;
                     }
 
                     if (_state.load(std::memory_order_acquire) ==
@@ -14156,6 +14214,9 @@ RuntimeThreadReport NativeSimulationHost::report() const {
     out.events_pod_event_count = _events_pod_event_count.load(std::memory_order_acquire);
     out.events_pod_ack_count = _events_pod_ack_count.load(std::memory_order_acquire);
     out.events_pod_drop_count = _events_pod_drop_count.load(std::memory_order_acquire);
+    out.events_pod_rejected_count =
+        _events_pod_rejected_count.load(std::memory_order_relaxed);
+    out.events_failed_day = _events_failed_day.load(std::memory_order_acquire);
     for (size_t i = 0; i + 1 < sizeof(out.events_pod_fallback_reason); ++i) {
         const char value = _events_pod_fallback_reason[i].load(
             std::memory_order_acquire);

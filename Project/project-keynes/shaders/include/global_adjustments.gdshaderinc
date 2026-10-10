@@ -16,7 +16,7 @@
 //   后 7 个参数保留旧热重载 ABI；不得在此重新用于气候乘色。
 //
 // 依赖（Why）
-//   - uniforms.gdshaderinc：parchment_* / paper_grain_strength
+//   - uniforms.gdshaderinc：parchment_* / paper_grain_strength / tonemap_hue_preserve
 //   - common_noise.gdshaderinc：pixel_noise 来源（caller 已在 SETUP 阶段采样）
 //   - tonemap.gdshaderinc / material_constants.gdshaderinc：apply_tonemap /
 //     linear_to_srgb / USE_LINEAR_LIGHTING
@@ -47,7 +47,9 @@ vec4 apply_global_adjustments(
 	// PBR 输出仍是 linear-HDR，必须继续 tonemap，避免关闭昼夜后整图过曝。
 	// ═══════════════════════════════════════════════════════════════════════
 	if (USE_LINEAR_LIGHTING && USE_PBR_BRDF) {
-		col = apply_tonemap(col);   // apply_tonemap 内部已乘 TONEMAP_EXPOSURE_BIAS
+		// apply_tonemap 内部已乘 TONEMAP_EXPOSURE_BIAS；水面保持逐通道曲线。
+		col = mix(apply_tonemap(col), apply_tonemap_luminance(col),
+				tonemap_hue_preserve * land_mask);
 		col = linear_to_srgb(col);
 	}
 

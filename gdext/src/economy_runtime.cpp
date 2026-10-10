@@ -826,6 +826,8 @@ bool NativeEconomyRuntime::advance_country_research_procurement(
             return false;
         }
         continuation.merchant_population = 0;
+        continuation.merchant_weights.clear();
+        continuation.merchant_weights.reserve(continuation.living_merchants.size());
         for (const int32_t merchant : continuation.living_merchants) {
             if (!is_merchant_slot(merchant) || merchant < 0 ||
                 merchant >= static_cast<int32_t>(population_store().population.size()) ||
@@ -833,6 +835,8 @@ bool NativeEconomyRuntime::advance_country_research_procurement(
                 reject_reason = "country_research_peer_merchant_changed";
                 return false;
             }
+            continuation.merchant_weights.push_back(
+                population_store().population[merchant]);
             continuation.merchant_population = saturating_add(
                 continuation.merchant_population,
                 population_store().population[merchant], _saturation_count);
@@ -1093,11 +1097,14 @@ bool NativeEconomyRuntime::advance_country_research_procurement(
         }
         while (continuation.merchant_cursor <
                 continuation.living_merchants.size()) {
-            const int32_t merchant = continuation.living_merchants[
-                continuation.merchant_cursor++];
+            const size_t index = continuation.merchant_cursor++;
+            const int32_t merchant = continuation.living_merchants[index];
+            const int64_t weight = index < continuation.merchant_weights.size()
+                ? continuation.merchant_weights[index]
+                : population_store().population[merchant];
             continuation.merchant_population_prefix = saturating_add(
-                continuation.merchant_population_prefix,
-                population_store().population[merchant], _saturation_count);
+                continuation.merchant_population_prefix, weight,
+                _saturation_count);
             const int64_t next = mul_div_sat(
                 continuation.cash, continuation.merchant_population_prefix,
                 continuation.merchant_population, _saturation_count);
