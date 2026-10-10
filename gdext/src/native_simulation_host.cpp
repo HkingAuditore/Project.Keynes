@@ -13640,6 +13640,11 @@ void NativeSimulationHost::worker_main() {
                 _committed_day.store(day, std::memory_order_release);
                 _completed_days.fetch_add(1, std::memory_order_relaxed);
                 publish_day(from_day, day, day_commit, day_receipts);
+                // Still inside the boundary: the post-command committed state
+                // is stable, so this is where main-thread read demand is served.
+                if (_economy_production_runtime != nullptr &&
+                    economy_worker_owns_execution())
+                    _economy_production_runtime->serve_read_view();
                 _day_waterfall.mark(RuntimeDayWaterfall::WORKER_PUBLISH_DAY);
                 _day_waterfall.finish(true, day_commit.completed_domain_mask);
                 _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);

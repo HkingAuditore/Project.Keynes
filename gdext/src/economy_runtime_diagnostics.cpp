@@ -1120,6 +1120,8 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     out["family_ledger_clamps"] = _family_ledger_clamps;
     out["family_people_recruited"] = _family_people_recruited;
     out["family_units_released"] = _family_units_released;
+    out["family_release_deferred"] = _family_release_deferred;
+    out["family_owner_seats_guarded"] = _family_owner_seats_guarded;
     out["family_demography_rows"] = static_cast<int64_t>(_family_demography_rows.size());
     out["family_demography_weights_ms"] = _family_demography_weights_ms;
     out["notable_person_runtime_mode"] = _person_runtime_mode.get() == 0 ? "OFF" :
@@ -2117,6 +2119,8 @@ Dictionary NativeEconomyRuntime::report() const {
     out["family_ledger_clamps"] = _family_ledger_clamps;
     out["family_people_recruited"] = _family_people_recruited;
     out["family_units_released"] = _family_units_released;
+    out["family_release_deferred"] = _family_release_deferred;
+    out["family_owner_seats_guarded"] = _family_owner_seats_guarded;
     out["family_demography_rows"] = static_cast<int64_t>(_family_demography_rows.size());
     out["family_demography_weights_ms"] = _family_demography_weights_ms;
     out["notable_person_runtime_mode"] = _person_runtime_mode.get() == 0 ? "OFF" :

@@ -86,7 +86,12 @@ w_d = clamp(1 − k_d·φ + λ·D, w_min, w_max)
 
 - **外流按比例。** `move_cohort_population()` 先调用 `plan_family_membership_move()`：`m` 人按人数
   比例分到匿名与各家族边，`career_mobility` 作为家族边上限，职业偏好家族权重 ×2；投资转业与
-  开拓包使用 strict 模式，先移 sponsor 方（`preferred == 0` 表示匿名）。资金随人移动：
+  开拓包使用 strict 模式，先移 sponsor 方（`preferred == 0` 表示匿名）。**业主岗保护：**
+  若源 cohort 是某家族持有组的业主 cohort，该家族边先扣出“自家业主岗数”（
+  `_family_owner_seat_rows`，EPOCH_BEGIN 随人口学行重建，按 `(cohort_handle, family_handle)`
+  排序二分查找；岗数 = 持有单元 × `owner_slots_per_building`）不参与抽样，只有其余人全部
+  移完仍不够时才动用（strict 模式下的 preferred 家族不受保护）。保护人数计入
+  `family_owner_seats_guarded`。资金随人移动：
   `Σ 被移动边人均 claim × 人数 + 匿名人均余额 × 匿名人数`；cohort 全部移出时资金全部移出。
 - **每日比例重算已删除。** `normalize_family_memberships()` 只做向下兜底（`Σ people >
   population` 时按比例扣减，记 `family_reconcile_corrections`）。
@@ -129,8 +134,16 @@ w_d = clamp(1 − k_d·φ + λ·D, w_min, w_max)
   sponsor 生成匿名建筑。sponsor 覆盖在 `commit_preflighted_build_command` 前后设置与清除。
 - **业主岗归因。** 岗位总数仍由职业钳制决定；家族持有单元的业主岗先由同格同 signature 的本家族
   成员占用（≤ 持有单元岗位数）；剩余的已填业主岗按“未占自家岗”的人数比例分给家族与匿名。
-- **释放。** 分支评审到期时，若家族在某持有组的业主 cohort 中已无成员，所有权释放给匿名
-  （`family_units_released`）。实现取“零成员即释放”，不维护连续计数，因此无新增持久化字段。
+- **自家补岗。** 就业阶段为家族持有组招业主、且落点正是该组业主 signature 时，若持有家族在
+  失业池中有成员（`owning_family_for_owner_hire`，读 `_family_building_offsets` CSR 并校验
+  building handle），以 strict 模式先移本家族成员，再按比例补匿名；仍受原有收入门槛与配额约束。
+- **释放。** 分支评审到期时，若家族在某持有组的业主 cohort 中已无成员：
+  1. 该组还有空业主岗、且家族在同格同民族失业池中有成员 → 本次不释放，留给下次招业主
+     （`family_release_deferred`）；
+  2. 否则分批释放，每次至多 `max(1, ceil(owned / 4))` 个单元（`FAMILY_RELEASE_STEP_DIVISOR`，
+     `family_units_released`）。
+  三项都只读持久化状态并在每日重建派生表，不保存跨日意图，因此无新增持久化字段，读档后与连续
+  运行一致。
 
 ## 6. FamilyEffect 兼容
 
@@ -150,10 +163,10 @@ FamilyEffect metric 仍为 0–36；占比/目标/困难度通过查询暴露
 ## 7. 调度
 
 ```text
-EPOCH_BEGIN        : clear_epoch_metrics → rebuild_family_demography_weights
+EPOCH_BEGIN        : clear_epoch_metrics → rebuild_family_demography_weights（含业主岗表）
 HOUSEHOLD_MARKET   : worker 发出 family_demography 死亡事件；主线程合并时按 w_d 归属
 STRUCTURAL_COMMIT  : 出生命令按 w_b 归属
-BUILDING_*         : 投资/施工资金归属、业主岗归因
+BUILDING_*         : 投资/施工资金归属、业主岗归因、家族持有组业主招聘先取本家族
 FAMILY_COMMIT
   phase 0 : 重建 CSR → 归属账结算与人数兜底 → 依附招募 → 当日新家族吸收 → 就业归因
   phase 1 : 里程碑评审与立族
@@ -186,7 +199,8 @@ PKEC schema 不变：不新增字段，`funds_basis` 语义改为 cohort 账本�
 ## 10. 诊断
 
 `family_births_attributed`、`family_deaths_attributed`、`family_reconcile_corrections`（应为 0）、
-`family_ledger_clamps`、`family_people_recruited`、`family_units_released`、`family_demography_rows`、
+`family_ledger_clamps`、`family_people_recruited`、`family_units_released`、`family_release_deferred`、
+`family_owner_seats_guarded`、`family_demography_rows`、
 `family_demography_weights_ms`，均为每 epoch 计数。
 
 ## 11. 已知取舍

@@ -776,6 +776,8 @@ public:
     godot::Dictionary get_building_notable_people(int64_t building_handle,
                                                   int offset = 0,
                                                   int limit = 64) const;
+    godot::Dictionary get_economy_read_view_status() const;
+    void append_economy_read_view_perf(godot::Dictionary &out) const;
     godot::Dictionary run_economy_fixed_math_probe(const godot::Dictionary &vectors) const;
     godot::Dictionary run_economy_production_climate_math_probe(
         const godot::Dictionary &vectors) const;
@@ -3106,6 +3108,12 @@ private:
     // Main-thread-only compatibility report. Never read worker-owned vectors
     // without the authority boundary; a busy worker yields this private copy.
     mutable godot::Dictionary                _economy_read_report_cache;
+    // Visual requests that arrived before the worker published its first
+    // committed building view; replayed with the next request.
+    mutable godot::PackedInt32Array          _building_visual_pending_cells;
+    void invalidate_economy_read_view();
+    godot::Dictionary population_cell_snapshot_live(int cell_idx,
+                                                    bool include_details) const;
     // A running worker re-takes the economy boundary right after each input
     // capture, so a deferred Economy effect adapter call is replayed by the
     // next capture that already holds the boundary.

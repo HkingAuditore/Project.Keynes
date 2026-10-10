@@ -2497,10 +2497,17 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         slot->rejection_reason = EMPLOYMENT_REJECTION_NONE;
                     }
                     bool drained = false;
-                    const uint64_t preferred_family =
-                        preferred_family_for_cohort(pool, 1, 0, owner_profession);
+                    // A family-owned lot staffs its owner seats from the
+                    // owning family before anonymous entrants.
+                    uint64_t preferred_family = target_sig == group.owner_signature_id
+                        ? owning_family_for_owner_hire(g, pool) : 0;
+                    const bool owner_family_first = preferred_family != 0;
+                    if (!owner_family_first)
+                        preferred_family = preferred_family_for_cohort(
+                            pool, 1, 0, owner_profession);
                     if (!move_cohort_population(pool, cell, target_sig, capped_take,
-                                                error, &drained, preferred_family)) {
+                                                error, &drained, preferred_family,
+                                                owner_family_first)) {
                         return false;
                     }
                     group.filled_owner = saturating_add(group.filled_owner, capped_take,

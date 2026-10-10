@@ -546,6 +546,11 @@ ACTIVE/SHADOW 切换或旧迁移实验开关。
   条件缓存另看 `family_behavior_metric_contexts_built` 与
   `family_behavior_condition_edges_evaluated`：前者应接近活跃 family-cell 数，后者可远大于前者；若两者
   同阶于 behavior row 数，说明条件边又开始重复构造完整指标 slab。
+  经济只读提交视图看 `get_economy_read_view_status()`（perf record 同步记录为
+  `runtime_graph_economy_read_view_*` 累计列；无界面录制没有订阅，这些列应为 0）：`serve_us_max` 是 worker 在边界内为主线程
+  需求求值的最长耗时（直接加在每日边界持有时间上），`eval_count / serve_count` 是每次服务的平均
+  求值数，`subscriptions` 接近 128 或 `evicted_count` 持续增长说明有调用方在逐格扫图，应改为暂停后
+  走 `live_readable` 或分页。
   家族人口学另看 `family_demography_weights_ms` 与 `family_demography_rows`（EPOCH_BEGIN 派生，行数应
   ≈ 活跃 family-cell 数，耗时只随成员边数近线性）；`family_births_attributed` /
   `family_deaths_attributed` / `family_people_recruited` 是归属事件计数，`family_reconcile_corrections`
