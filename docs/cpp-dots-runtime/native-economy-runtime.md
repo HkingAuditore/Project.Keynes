@@ -228,6 +228,17 @@ reservation/settlement continuation；政府采购在 `government_research_procu
 continuation 在同一 advance 内：`finish_worker_country_asset(request_id)` 或
 `flush_country_economy_asset_commits(error, settle_request_id)` +
 `publish_country_worker_snapshot` 落地国库扣款/科技值，再完成市场扣货与商人入账。
+同理，殖民远征采购 continuation 在 epoch 之间推进，其 `GOOD_FROM_MARKET`（市场 → 国库，
+商人入账在 continuation 内）与 `TREASURY_SPEND`（国库 → 远征货物）入队后经
+`defer_country_economy_asset_settlement` 登记：任何不带该 id 的 flush（通用或科研采购的
+定向 flush）都不得提前提交其 `COMPLETED` 终态；epoch 打开期间
+`service_country_economy_asset_peer` 也不 journal 这类请求，留待 epoch 外服务。否则市场扣货
+或国库扣款落在科研采购所在的 epoch 窗口内、商人入账/远征装货落在窗口外，会打出
+`money_conservation_failed` / `goods_conservation_failed`。远征取消时
+`release_country_economy_asset_settlement` 交还通用 flush。只交物资不付现金的
+`TREASURY_SPEND` / `GOOD_TO_MARKET` / `GOOD_FROM_MARKET`（`requested_cash == 0`）的
+`committed_cash` 必须为 0，Country worker 提交扣款不得超过 prepare 的 `reserved_cash`；
+旧存档 journal 中“数量当现金”的记录读档时归零。
 若当时 Country `plan_active`，flush 必须同时写入 `plan.next_state` 与 authority
 （不 bump generation），否则 publish 仍读到未扣款基线、UI 科技值停在开局库存、
 商人入账后守恒失败。拒绝/故障终态仍由通用 flush 立即退役。Country ACTIVE 时主线程图会打开

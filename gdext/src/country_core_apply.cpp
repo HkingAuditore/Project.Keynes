@@ -948,6 +948,13 @@ bool country_core_apply_economy_asset_commit(
         ? result.committed_cash : request.reserved_cash;
     const bool pays = country_core_country_pays(request.operation);
     if (pays) {
+        // Prepare validated and reserved exactly reserved_cash; a larger
+        // peer-committed amount would debit treasury value Economy never
+        // credited anywhere.
+        if (cash < 0 || cash > request.reserved_cash) {
+            error = "country_economy_asset_commit_cash_exceeds_reserved";
+            return false;
+        }
         if (state.country_cash[country] < cash) {
             error = "country_economy_asset_cash_insufficient";
             return false;

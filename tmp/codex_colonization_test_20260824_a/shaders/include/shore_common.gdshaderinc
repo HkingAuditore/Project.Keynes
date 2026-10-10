@@ -34,7 +34,8 @@ struct ShoreSamples {
 };
 
 // 单点采样：把 8 邻居（高质量）/ 4 邻居（低质量）的 biome 类型分类计数。
-ShoreSamples sample_shore_neighborhood(vec2 uv) {
+// shore_frac = edge_distance.ba（烘焙的 8 邻域水 / 湖占比），由 fragment setup 一次采样后传入。
+ShoreSamples sample_shore_neighborhood(vec2 uv, vec2 shore_frac) {
 	ShoreSamples s;
 	s.nearby_water_cnt = 0.0;
 	s.nearby_land_cnt  = 0.0;
@@ -42,6 +43,19 @@ ShoreSamples sample_shore_neighborhood(vec2 uv) {
 	s.nearby_ocean_cnt = 0.0;
 	s.total_cnt        = 0.0;
 
+#ifdef PK_TERRAIN_STATIC_BAKED
+	// 8 邻域占比已在烘焙时按 texel 求好，双线性插值后过渡更连续。海占比取水 − 湖
+	// （海冰邻居也算作海，与旧计数只差在极地冰缘的 halo 配色）。
+	if (terrain_static_baked) {
+		s.nearby_water_cnt = shore_frac.x * 8.0;
+		s.nearby_land_cnt  = 8.0 - s.nearby_water_cnt;
+		s.nearby_lake_cnt  = shore_frac.y * 8.0;
+		s.nearby_ocean_cnt = max(s.nearby_water_cnt - s.nearby_lake_cnt, 0.0);
+		s.total_cnt = 8.0;
+		s.inv_total = 0.125;
+		return s;
+	}
+#endif
 	vec2 texel = 1.0 / derived_resolution;
 	for (int sy = -1; sy <= 1; sy++) {
 		for (int sx = -1; sx <= 1; sx++) {

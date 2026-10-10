@@ -92,6 +92,7 @@ render_mode blend_mix, unshaded;
 //   - EDGE_NEIGHBOR / EDGE_DISTANCE：次生生态过渡带关闭，退化为硬主 cell 边界。
 #ifndef PK_WEB_TEXTURE_BUDGET
 #define VT_USE_TERRAIN_NORMAL
+#define VT_USE_TERRAIN_RELIEF
 #define VT_USE_WATER_DEPTH
 #define VT_USE_TERRAIN_DETAIL
 #define VT_USE_EDGE_NEIGHBOR
@@ -167,7 +168,9 @@ void fragment() {
 	}
 #endif
 
-	float elev = decode_height_rg8(uv);
+	// height 一次采样同时给出：RG=16-bit 高程，B=天然河流 SDF，A=运河 SDF。
+	vec4 height_px = visual_sample_height(uv);
+	float elev = (height_px.r * 256.0 + height_px.g) / 257.0;
 
 	vec4 scals = vec4(0.0);  // scalar_atlas 退役：moist/lat 由 LUT/uv 重建。
 	// [river-render-restore / height-flow-pack] flow：Legacy/Tiled 均自 height*.B。
@@ -175,16 +178,31 @@ void fragment() {
 	// 坡向流纹已在 land_pipeline 里按质量档裁掉。
 	// 降级必须走 has_flow_tex 而不是"没绑就采样得 0"：GLES3/WebGL2 下解析不到的
 	// sampler2D 兜底成 4×4 白纹理，flow 会恒为 1，整片陆地被混上河水色。
-	float flow_raw = visual_sample_flow(uv).r;
+	float flow_raw = height_px.b;
 	scals.g = has_flow_tex ? flow_raw : 0.0;
-	// Same texture/sampler: height.A is the artificial-canal SDF.
-	scals.b = visual_sample_height(uv).a;
+	scals.b = height_px.a;
+	// edge_distance 一次采样：scals.r = 格界距离（生态过渡 / 材质边缘），
+	// scals.a = 烘焙沟谷折痕，shore_frac = 8 邻域水 / 湖占比（海岸 halo）。
+	// 下游一律从这里取，不再重复采样。
+	vec2 shore_frac = vec2(0.0);
+#ifdef VT_USE_EDGE_DISTANCE
+	vec4 edge_px = visual_sample_edge_distance(uv);
+	scals.r = edge_px.r;
+	scals.a = edge_px.g;
+	shore_frac = edge_px.ba;
+#else
+	scals.r = 1.0;
+#endif
 	vec4 vects = vec4(0.5);  // vector_atlas 退役：洋流/风视觉取中性零向量。
 
+	// map_index 一次采样：R=像素 biome，GB=cell id，A=landform。
+	vec4 map_px = visual_sample_map_index(uv);
+	int _cell_id = int(map_px.g * 255.0 + 0.5) + int(map_px.b * 255.0 + 0.5) * 256;
+	_cell_id = (_cell_id >= 65535) ? -1 : _cell_id;
 	// dyn_lut.a 与旧 dyn_atlas_smooth.a 同语义（水格=sea_ice_frac，陆格=vegetation_vitality）。
 	// [dither-index 2026-06-25] 全档位 NEAREST：cell 索引边缘融合（烘焙期 Bayer dither）已在
 	// 索引层软化离散硬边，无需再对 dyn/eco LUT 做跨格 4-tap 双线性。
-	vec4 dyns = dyn_lut_nearest(uv);
+	vec4 dyns = (_cell_id >= 0) ? texture(dyn_lut, cell_lut_uv(_cell_id)) : vec4(0.0);
 	// [eco-lut-retire 2026-08-06] 主地形不再读 eco_lut：着色与 dyn_vitality 重叠，
 	// 纹理槽让给 terrain_material_tex（web/mobile/desktop 统一）。植被层自有 eco_lut。
 
@@ -194,7 +212,6 @@ void fragment() {
 	int biome;
 	int veg;
 	int cover;
-	int _cell_id = decode_cell_index(uv);
 	// fog_k = 视野知识度：0 未探索 / 0.5 已探索未可见 / 1 完全可见。它搭车在
 	// enum_lut 的 A 通道上，所以拿到它是**零新增 texture sample** —— 主 shader
 	// 本来就无条件采这张 LUT，只是多读一个分量。地图外 padding 视作全知，不参与
@@ -209,7 +226,7 @@ void fragment() {
 #if defined(PK_MOBILE_ANY)
 		// 与 FogOfWarLayer 使用同一移动端 DitherUV 选择，仅替换知识度的视觉采样；
 		// 地表分类、交互和动态权威状态仍属于硬主 cell。
-		float fog_edge_w = terrain_edge_secondary_weight(uv, wp);
+		float fog_edge_w = terrain_edge_secondary_weight_d(scals.r, wp);
 		if (fog_edge_w > 0.0001
 				&& terrain_mobile_dither_uv_threshold(uv, wp) < fog_edge_w) {
 			int fog_secondary_id = decode_edge_secondary_index(uv);
@@ -225,7 +242,7 @@ void fragment() {
 	}
 	// [landform 轴可视化 2026-06-25] landform id 走 map_index_atlas.A（per-pixel, NEAREST），
 	// 供陆地管线给火山/高原/峡谷/裂谷/高峰补充专属着色。地图外哨兵采样得 0（=DEEP_OCEAN，陆地分支不消费）。
-	int landform = int(visual_sample_map_index(uv).a * 255.0 + 0.5);
+	int landform = int(map_px.a * 255.0 + 0.5);
 	float moist = dyns.g;
 	float _Hf = visual_static_texture_size().y;
 	float lat_norm = clamp((uv.y * _Hf - 0.5) / max(_Hf - 1.0, 1.0), 0.0, 1.0);
@@ -257,7 +274,7 @@ void fragment() {
 	int visual_land_veg = veg;
 	int visual_land_cover = cover;
 	if (!is_water && _cell_id >= 0 && has_terrain_edge_data) {
-		float land_edge_w = terrain_edge_secondary_weight(uv, wp);
+		float land_edge_w = terrain_edge_secondary_weight_d(scals.r, wp);
 		float land_dither_probability =
 				land_edge_w * terrain_land_dither_zoom_strength();
 		if (land_dither_probability > 0.0001
@@ -284,7 +301,7 @@ void fragment() {
 	float visual_water_ice_fraction = (_cell_id < 0) ? 1.0 : dyns.a;
 #if !defined(PK_QUALITY_LOW)
 	if (is_water && _cell_id >= 0 && has_terrain_edge_data) {
-		float water_edge_w = terrain_edge_secondary_weight(uv, wp);
+		float water_edge_w = terrain_edge_secondary_weight_d(scals.r, wp);
 		if (water_edge_w > 0.0001) {
 			int water_secondary_id = decode_edge_secondary_index(uv);
 			if (water_secondary_id >= 0) {
@@ -336,13 +353,13 @@ void fragment() {
 			col = render_land_pipeline(
 				visual_land_biome, biome, visual_land_veg, visual_land_cover, landform,
 				elev, moist, wp, uv, scals, lat_signed, current_temp,
-				wind_v, dyn_snow, dyn_valid, dyn_vitality, pixel_noise);
+				wind_v, dyn_snow, dyn_valid, dyn_vitality, pixel_noise, shore_frac);
 		} else {
 			col = render_water_pipeline(
 				biome, cover, water_secondary_biome, water_secondary_cover,
 				water_static_edge_mix, elev, wp, uv, scals,
 				lat_signed, current_temp, ocean_current_v, wind_v,
-				visual_water_ice_fraction);
+				visual_water_ice_fraction, shore_frac, pixel_noise);
 		}
 		int visual_surface_cover = is_water ? cover : visual_land_cover;
 		int visual_surface_veg = is_water ? veg : visual_land_veg;

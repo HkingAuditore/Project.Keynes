@@ -49,7 +49,7 @@ SurfaceParams compute_land_base_surface(
 		vec4 scals,
 		out float mixed_micro_strength) {
 	// LAND 1.1: hard primary state with screen-space static material edge AA.
-	TerrainStaticMaterial static_mat = compute_terrain_static_material(biome, elev, wp, uv);
+	TerrainStaticMaterial static_mat = compute_terrain_static_material(biome, elev, wp, uv, scals.r);
 	vec3 col = static_mat.color;
 	mixed_micro_strength = static_mat.micro_strength;
 
@@ -102,11 +102,24 @@ SurfaceParams compute_land_base_surface(
 			&& river_flow_speed > 0.001
 			&& visual_quality >= 1) {
 		vec2 texel = 1.0 / hm_resolution;
-		float hl = decode_height_rg8(uv - vec2(texel.x, 0.0));
-		float hr = decode_height_rg8(uv + vec2(texel.x, 0.0));
-		float hu = decode_height_rg8(uv - vec2(0.0, texel.y));
-		float hd = decode_height_rg8(uv + vec2(0.0, texel.y));
-		vec2 grad = vec2(hr - hl, hd - hu);
+		vec2 grad;
+#ifdef PK_TERRAIN_STATIC_BAKED
+		if (terrain_static_baked) {
+			// 烘焙粗法线 → 2-texel 高程差（与下方差分同量纲）。
+			vec2 nxy = visual_sample_terrain_normal(uv).rg * 2.0 - 1.0;
+			float nz = sqrt(max(1e-4, 1.0 - clamp(dot(nxy, nxy), 0.0, 0.998)));
+			float texel_world = world_size.x / max(hm_resolution.x, 1.0);
+			grad = -nxy / nz * (2.0 * texel_world
+					/ max(terrain_normal_height_scale_hex * max(hex_size, 1e-4), 1e-4));
+		} else
+#endif
+		{
+			float hl = decode_height_rg8(uv - vec2(texel.x, 0.0));
+			float hr = decode_height_rg8(uv + vec2(texel.x, 0.0));
+			float hu = decode_height_rg8(uv - vec2(0.0, texel.y));
+			float hd = decode_height_rg8(uv + vec2(0.0, texel.y));
+			grad = vec2(hr - hl, hd - hu);
+		}
 		float slope_mag = length(grad);
 		if (slope_mag > 0.002) {
 			vec2 fbm_smooth = vec2(
@@ -137,10 +150,18 @@ SurfaceParams compute_land_base_surface(
 	// macro_normal = 高度场法线 + 分地形细节（都是地形几何）；材质贴图法线只进 BRDF 的 normal。
 	// 几何细节按格子的主 biome 走：biome 是 DitherUV 逐像素抽选的视觉 biome，
 	// 直接用会让过渡带里的起伏强度逐像素跳变。
-	vec3 coarse_normal = terrain_coarse_normal(uv);
-	vec4 erosion = terrain_apply_landform_detail(
-			terrain_add_height_detail(coarse_normal, uv, visual_quality, geo_biome),
-			coarse_normal, uv, wp, elev, visual_quality, geo_biome, landform);
+	vec4 erosion;
+#ifdef PK_TERRAIN_STATIC_BAKED
+	if (terrain_static_baked) {
+		erosion = terrain_baked_normal(uv, visual_quality, scals.a);
+	} else
+#endif
+	{
+		vec3 coarse_normal = terrain_coarse_normal(uv);
+		erosion = terrain_apply_landform_detail(
+				terrain_add_height_detail(coarse_normal, uv, visual_quality, geo_biome),
+				coarse_normal, uv, wp, elev, visual_quality, geo_biome, landform);
+	}
 	vec3 macro_normal = erosion.xyz;
 	vec3 normal = macro_normal;
 	if (terrain_materials_active()) {
@@ -474,7 +495,8 @@ SurfaceParams apply_land_color_overlays(
 		float current_temp,
 		float dyn_snow,
 		float dyn_valid,
-		vec4 pixel_noise) {
+		vec4 pixel_noise,
+		vec2 shore_frac) {
 	vec3 col = surface.base_color;
 
 	// LAND 3.1.a：海岸 / 湖岸 / 河口柔和过渡（shore_common 共享）
@@ -482,7 +504,7 @@ SurfaceParams apply_land_color_overlays(
 #if defined(PK_MOBILE_ANY)
 	// 无 halo
 #else
-	ShoreSamples shore_samp = sample_shore_neighborhood(uv);
+	ShoreSamples shore_samp = sample_shore_neighborhood(uv, shore_frac);
 	ShoreHaloResult shore_halo_r = compute_shore_halo(shore_samp, elev, scals.g, 0);
 	col = mix(col, shore_halo_r.halo_color, shore_halo_r.halo_weight);
 	// [coast-smooth 2026-06-26] 海岸过渡带（陆侧）：在贴水的一圈把陆色混向"水色与陆色的中间色"，柔化
@@ -697,11 +719,12 @@ vec3 render_land_pipeline(
 		float dyn_snow,
 		float dyn_valid,
 		float dyn_vitality,
-	vec4 pixel_noise) {
+	vec4 pixel_noise,
+	vec2 shore_frac) {
 	// 15 = 河流层之前的静态材质底色。与 12（底色全部叠加完、光照前）成对使用：
 	// 15 正常而 12 发蓝，说明是 compute_land_base_surface 里的河流 flow 层把陆地刷成了水色。
 	if (terrain_surface_debug_view == 15) {
-		return compute_terrain_static_material(biome, elev, wp, uv).color;
+		return compute_terrain_static_material(biome, elev, wp, uv, scals.r).color;
 	}
 	float mixed_micro_strength = terrain_biome_micro_strength(biome);
 	SurfaceParams surface = compute_land_base_surface(
@@ -729,7 +752,7 @@ vec3 render_land_pipeline(
 
 	surface = apply_land_color_overlays(
 		surface, biome, veg, cover, elev, moist, wp, uv, scals, current_temp,
-		dyn_snow, dyn_valid, pixel_noise);
+		dyn_snow, dyn_valid, pixel_noise, shore_frac);
 	surface = apply_land_material_overlays(
 		surface, biome, cover, current_temp, elev, moist, dyn_snow, dyn_valid, scals.g);
 

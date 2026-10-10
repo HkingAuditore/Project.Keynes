@@ -804,7 +804,16 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                 break;
             }
         }
-        if (!terrain_seeded) next.terrain = input.terrain;
+        if (!terrain_seeded) {
+            next.terrain = input.terrain;
+            // sea_ice 与翻转后的 terrain 是同一份状态，一起冷启动。全零本身是合法的
+            // 海冰状态，不能像 terrain 那样用"有无非零"判断是否已播种。
+            const auto &seed_ice = input.climate_round_input.sea_ice_frac_inout;
+            if (seed_ice.size() == current.cell_count &&
+                next.sea_ice.size() == current.cell_count) {
+                next.sea_ice = seed_ice;
+            }
+        }
     }
     if (current.cover.size() == current.cell_count &&
         !current.cover.empty() &&
@@ -1136,6 +1145,33 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
         if (next.terrain.size() == cells) {
             _round_in.terrain = next.terrain;
         }
+        // 海冰同理：capture 抓的是主线程 slot，而回灌落后于流水线中的 worker 若干天，
+        // 用它当起点会让多天从同一个旧值起算，冰的累积按流水线深度被摊薄。
+        if (input.climate_worker_authoritative && next.sea_ice.size() == cells) {
+            _round_in.sea_ice_frac = next.sea_ice;
+            _round_in.sea_ice_frac_inout = next.sea_ice;
+        }
+        // 其余有 store 成员的跨天 lane 同一条理由。锁步下 slot 恰好等于昨天回灌的
+        // store，这里是 no-op；流水线下 slot 落后若干天。首日 store 还没提交过
+        // （temp_baseline / vapor 等未播种），只能用 capture。
+        // season refresh 写的 moisture 已在上面并入 next.moisture，所以用它不会丢。
+        if (input.climate_worker_authoritative && current.committed_day >= 0) {
+            auto own = [cells](auto &dst, const auto &src) {
+                if (src.size() == cells) dst = src;
+            };
+            own(_round_in.temp, next.temperature);
+            own(_round_in.temp_30d, next.temperature_30d_ema);
+            own(_round_in.temp_365d, next.temperature_365d_ema);
+            own(_round_in.thermal_energy, next.thermal_energy);
+            own(_round_in.temp_baseline, next.temperature_baseline);
+            own(_round_in.moisture, next.moisture);
+            own(_round_in.snowpack, next.snowpack);
+            own(_round_in.water_balance_30d, next.water_balance_30d);
+            own(_round_in.weather_precip, next.weather_precipitation);
+            own(_round_in.weather_vapor, next.vapor);
+            own(_round_in.vegetation, next.vegetation);
+            own(_round_in.cover, next.cover);
+        }
         // scalars 由 capture 侧整套填好（world_ext_simulation_host.cpp 里
         // climate_round_scalars 那段），这里不再逐字段补。
         //
@@ -1145,6 +1181,13 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
         if (input.climate_worker_authoritative &&
             _round_in.scalars.season_phase == 0.0 && input.season_phase != 0.0) {
             _round_in.scalars.season_phase = input.season_phase;
+        }
+        // TTA 不在 climate store / parity 回写里，ACTIVE 下 capture 给的 slot 永远是
+        // 生成时的值；ocean_water 以它为 blend 基值，等于每天从头收敛一步。
+        if (input.climate_worker_authoritative && _physics.tta_seeded &&
+            std::getenv("PK_TTA_CARRY_OFF") == nullptr &&
+            _physics.temp_transport_anomaly.size() == cells) {
+            _round_in.temp_transport_anomaly = _physics.temp_transport_anomaly;
         }
         _round_out.n_cells = static_cast<int>(cells);
         pk_async_climate::ClimateRoundPassTiming timing;
@@ -1225,6 +1268,26 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
         // 温度场的唯一授权写者。
         scatter(next.temperature,          _round_out.temp);
         scatter(next.sea_ice,              _round_out.sea_ice_frac);
+        if (input.climate_worker_authoritative) {
+            // finalizer 没跑时，round 内 ocean 累加完的值已回写到 _round_in。
+            const std::vector<float> &tta_end =
+                (_round_out.fin_applied && _round_out.tta_final.size() == cells)
+                    ? _round_out.tta_final : _round_in.temp_transport_anomaly;
+            if (tta_end.size() == cells) {
+                _physics.temp_transport_anomaly = tta_end;
+                _physics.tta_seeded = true;
+            }
+            if (std::getenv("PK_TTA_DIAG") != nullptr) {
+                double a = 0, mx = 0, t = 0, ice = 0;
+                for (size_t i = 0; i < cells; ++i) {
+                    const double v = std::fabs(tta_end[i]); a += v; if (v > mx) mx = v;
+                    t += next.temperature[i]; ice += next.sea_ice[i];
+                }
+                std::printf("[tta] day=%lld mean_abs=%.6f max=%.6f T=%.6f ice=%.4f\n",
+                    static_cast<long long>(day), a / cells, mx, t / cells, ice);
+                std::fflush(stdout);
+            }
+        }
         // ABI 8：sea_ice 翻转后的 terrain 写回 worker store，供次日 round 与 writeback。
         if (_round_out.terrain.size() == cells && next.terrain.size() == cells) {
             std::memcpy(next.terrain.data(), _round_out.terrain.data(), cells);
@@ -1538,15 +1601,24 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
         if (!shared_albedo_ran) return;
         run_stage(report, RuntimeClimateStage::ALBEDO, [&]() {
             const auto &knobs = input.climate_round_static_knobs;
+            // ACTIVE 下 vegetation / cover 由 worker 推进，capture 那份落后流水线深度。
+            const bool own_lanes = input.climate_worker_authoritative &&
+                current.committed_day >= 0;
+            const std::vector<uint8_t> &alb_veg =
+                (own_lanes && next.vegetation.size() == cells)
+                    ? next.vegetation : input.vegetation;
+            const std::vector<uint8_t> &alb_cover =
+                (own_lanes && next.cover.size() == cells)
+                    ? next.cover : input.cover;
             if (input.is_water.size() != cells ||
-                input.vegetation.size() != cells ||
-                input.cover.size() != cells ||
+                alb_veg.size() != cells ||
+                alb_cover.size() != cells ||
                 knobs.albedo_table.empty()) {
                 return static_cast<uint64_t>(0);
             }
             pk_async_climate::albedo_apply_pure(
                 input.climate_albedo, input.is_water.data(),
-                input.vegetation.data(), input.cover.data(),
+                alb_veg.data(), alb_cover.data(),
                 knobs.albedo_table.data(),
                 static_cast<int>(knobs.albedo_table.size()),
                 next.temperature.data(), static_cast<int>(cells));
@@ -1630,11 +1702,16 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             tables.next_up = vd.next_up.data();
             tables.next_down = vd.next_down.data();
 
+            // terrain / vegetation 由 worker 推进（海冰翻转、演替），capture 那份落后。
+            const bool own_lanes = input.climate_worker_authoritative &&
+                current.committed_day >= 0;
             pk_async_climate::VegetationDynamicsLanes lanes;
             lanes.is_water = vd.is_water.data();
-            lanes.terrain = vd.terrain.data();
+            lanes.terrain = (own_lanes && next.terrain.size() == cells)
+                ? next.terrain.data() : vd.terrain.data();
             lanes.landform = vd.landform.data();
-            lanes.vegetation = vd.vegetation.data();
+            lanes.vegetation = (own_lanes && next.vegetation.size() == cells)
+                ? next.vegetation.data() : vd.vegetation.data();
             lanes.temp_30d = veg_temp_30d;
             lanes.moisture = veg_moisture;
             lanes.water_balance_30d = veg_water_balance;
@@ -1810,6 +1887,14 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                 owned_weather.moisture_read = next.moisture;
                 owned_weather.sea_ice = next.sea_ice;
                 owned_weather.snow_cover = next.snow_cover;
+                if (current.committed_day >= 0) {
+                    if (next.terrain.size() == cells) owned_weather.terrain = next.terrain;
+                    if (next.vegetation.size() == cells) owned_weather.vegetation = next.vegetation;
+                    if (!owned_weather.vitality.empty() &&
+                        next.vegetation_vitality.size() == cells) {
+                        owned_weather.vitality = next.vegetation_vitality;
+                    }
+                }
                 owned_weather.traj_idx.clear();
                 owned_weather.traj_w.clear();
                 if (input.climate_physics_knobs.wind_traj_weather_share && _physics.wind_traj_valid) {

@@ -1253,6 +1253,8 @@ bool NativeEconomyRuntime::advance_family_expedition_procurement(
             static_cast<uint64_t>(family_expeditions_store().country_handle[c.expedition]),
             0, c.quantity, ids, treasury, error, &c.pending_request_id);
         if (route == CountryWorkerAssetRoute::ENQUEUED_PENDING) {
+            _simulation_host->defer_country_economy_asset_settlement(
+                c.pending_request_id);
             c.host_peer = true;
             c.phase = 5;
             error = "colonization_treasury_transfer_pending";
@@ -1412,6 +1414,8 @@ bool NativeEconomyRuntime::start_family_expedition_procurement(
         static_cast<uint64_t>(family_expeditions_store().country_handle[expedition]),
         cash, quantity, ids, goods, error, &c.pending_request_id, market);
     if (route == CountryWorkerAssetRoute::ENQUEUED_PENDING) {
+        _simulation_host->defer_country_economy_asset_settlement(
+            c.pending_request_id);
         error = "colonization_treasury_peer_pending";
         c.host_peer = true;
         return false;

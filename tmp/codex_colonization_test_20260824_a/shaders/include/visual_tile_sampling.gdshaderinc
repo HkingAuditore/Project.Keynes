@@ -63,10 +63,62 @@ vec4 visual_sample_terrain_normal(vec2 uv) { return texture(terrain_normal_tex, 
 #endif
 #endif
 
+// [static-bake 2026-10-10] 运行期不变的逐像素地表量由 visual tile 烘焙写入：
+//   terrain_normal.ba = 近景高度细节坡度，terrain_relief = 粗段/细段分地形细节坡度，
+//   edge_distance.g = 沟谷深度，terrain_detail.gba = 8 邻域水/湖/海占比，
+//   water_depth.gba = 湖/礁/海带软权重。只有 tiled 静态烘焙产出这些通道，Legacy 贴图
+//   仍是旧格式，所以只在 tiled 变体里定义 PK_TERRAIN_STATIC_BAKED；运行期再由
+//   terrain_static_baked 确认本张图确实是新烘焙。
+#if defined(MAP_VISUAL_TILED) && defined(VT_USE_TERRAIN_RELIEF) && defined(VT_USE_TERRAIN_NORMAL) && defined(VT_USE_TERRAIN_DETAIL) && defined(VT_USE_WATER_DEPTH) && defined(VT_USE_EDGE_DISTANCE)
+#define PK_TERRAIN_STATIC_BAKED
+uniform bool terrain_static_baked = false;
+uniform sampler2DArray visual_terrain_relief_tiles : filter_linear, repeat_disable;
+vec4 visual_sample_terrain_relief(vec2 uv) { return texture(visual_terrain_relief_tiles, visual_tile_address(uv)); }
+// 与 pk_relief::encode_slope 互逆：v = sign(e)·e²·RANGE。
+const float TERRAIN_RELIEF_ENCODE_RANGE = 3.0;
+vec2 decode_relief_slope(vec2 enc) {
+	vec2 e = enc * 2.0 - 1.0;
+	return sign(e) * e * e * TERRAIN_RELIEF_ENCODE_RANGE;
+}
+vec4 decode_relief_slope4(vec4 enc) {
+	vec4 e = enc * 2.0 - 1.0;
+	return sign(e) * e * e * TERRAIN_RELIEF_ENCODE_RANGE;
+}
+#endif
+
 #ifdef VT_USE_HORIZON
 #ifdef MAP_VISUAL_TILED
 uniform sampler2DArray visual_horizon_tiles : filter_nearest, repeat_disable;
+#if CURRENT_RENDERER != RENDERER_COMPATIBILITY
+// Vulkan 后端：horizon 的 4 字节按 RG16 存（VisualTileSet._field_texture_format），
+// 两次 textureGather 拿到 2×2 全部 texel。GLES3 没有 gather，保留 RGBA8 + 4 次采样。
+#define PK_HORIZON_GATHER
+// RG16 → 与 RGBA8 布局相同的 4 字节（R=字节 0/1，G=字节 2/3，小端）。
+vec4 horizon_bytes_from_rg16(vec2 rg) {
+	vec2 w = floor(rg * 65535.0 + 0.5);
+	vec2 hi = floor(w * (1.0 / 256.0));
+	vec2 lo = w - hi * 256.0;
+	return vec4(lo.x, hi.x, lo.y, hi.y) * (1.0 / 255.0);
+}
+vec4 visual_sample_horizon(vec2 uv) {
+	return horizon_bytes_from_rg16(texture(visual_horizon_tiles, visual_tile_address(uv)).rg);
+}
+// 返回 uv 所在 2×2 足迹（与双线性同一足迹，gutter 保证不跨层）及其插值分数 f。
+void visual_gather_horizon(vec2 uv, out vec4 p00, out vec4 p10, out vec4 p01, out vec4 p11,
+		out vec2 f) {
+	vec3 addr = visual_tile_address(uv);
+	f = fract(addr.xy * visual_layer_size - 0.5);
+	vec4 r = textureGather(visual_horizon_tiles, addr, 0);
+	vec4 g = textureGather(visual_horizon_tiles, addr, 1);
+	// gather 分量顺序：x=(i0,j1) y=(i1,j1) z=(i1,j0) w=(i0,j0)
+	p00 = horizon_bytes_from_rg16(vec2(r.w, g.w));
+	p10 = horizon_bytes_from_rg16(vec2(r.z, g.z));
+	p01 = horizon_bytes_from_rg16(vec2(r.x, g.x));
+	p11 = horizon_bytes_from_rg16(vec2(r.y, g.y));
+}
+#else
 vec4 visual_sample_horizon(vec2 uv) { return texture(visual_horizon_tiles, visual_tile_address(uv)); }
+#endif
 #else
 uniform sampler2D terrain_horizon_tex : filter_nearest, repeat_disable;
 vec4 visual_sample_horizon(vec2 uv) { return texture(terrain_horizon_tex, visual_static_wrap_uv(uv)); }

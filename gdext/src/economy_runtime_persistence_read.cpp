@@ -2621,14 +2621,16 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 record.late_ack_rejection_reason = record.reason;
             }
             const char *record_defect = nullptr;
-            // Treasury spend uses quantity as its amount on the Country peer
-            // route (cash=0), and journals that same amount in both terminal
-            // lanes. Validate that wire convention, rather than rejecting a
-            // legitimately committed spend against the unused cash lane.
-            const bool quantity_cash_spend =
-                record.operation == RuntimeEconomyAssetOperation::TREASURY_SPEND &&
-                record.requested_cash == 0;
-            const int64_t requested_cash_limit = quantity_cash_spend
+            // Goods-only treasury/market transfers (cash=0) commit zero cash.
+            // Older saves journaled the goods quantity in the cash lane too;
+            // accept that legacy shape but clear it below so a replayed
+            // terminal never debits treasury cash by a goods count.
+            const bool goods_only_transfer =
+                record.requested_cash == 0 &&
+                (record.operation == RuntimeEconomyAssetOperation::TREASURY_SPEND ||
+                 record.operation == RuntimeEconomyAssetOperation::GOOD_TO_MARKET ||
+                 record.operation == RuntimeEconomyAssetOperation::GOOD_FROM_MARKET);
+            const int64_t requested_cash_limit = goods_only_transfer
                 ? record.requested_quantity : record.requested_cash;
             if (record.request_id == 0 || record.transaction_id == 0)
                 record_defect = "identity";
@@ -2657,7 +2659,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                      record.committed_cash < 0 ||
                      record.committed_quantity > record.requested_quantity ||
                      record.committed_cash > requested_cash_limit ||
-                     (quantity_cash_spend &&
+                     (goods_only_transfer && record.committed_cash != 0 &&
                       record.committed_cash != record.committed_quantity))
                 record_defect = "amounts";
             else if (reserved0 != 0 || reserved1 != 0) record_defect = "reserved";
@@ -2665,6 +2667,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 error = std::string("save_fiscal_peer_record_invalid:") + record_defect;
                 return false;
             }
+            if (goods_only_transfer) record.committed_cash = 0;
             if (record.result_code == RuntimeEconomyAssetResultCode::COMPLETED) {
                 const char *completed_defect =
                     record.accepted == 0 ? "not_accepted" :
@@ -2672,7 +2675,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     record.country_generation == 0 ? "country_generation" :
                     record.peer_generation == 0 ? "peer_generation" :
                     record.committed_quantity <= 0 ? "committed_quantity" :
-                    record.committed_cash <= 0 ? "committed_cash" : nullptr;
+                    (!goods_only_transfer && record.committed_cash <= 0)
+                        ? "committed_cash" : nullptr;
                 if (completed_defect != nullptr) {
                     error = std::string("save_fiscal_peer_completed_record_invalid:") +
                         completed_defect + ":op" +

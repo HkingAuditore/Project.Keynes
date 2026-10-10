@@ -1,0 +1,165 @@
+﻿Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] world shader source loads
+  [PASS] terrain edge blend contains an explicit coast-domain guard
+  [PASS] desktop terrain combines distance-field blending with zoom-aware DitherUV
+  [PASS] MID/HIGH ocean forwards a continuous distance-field weight
+  [PASS] LOW compiles out secondary water-cell lookup
+  [PASS] continuous ocean blending cannot cross the land/water domain
+  [PASS] ocean no longer converts its distance field to binary DitherUV
+  [PASS] water categories consume continuous primary/secondary weights
+  [PASS] MID/HIGH ocean depth uses the continuous interpolated height field
+  [PASS] river normal starts from an independent horizontal water surface
+  [PASS] river center replaces terrain normal through an explicit bank blend
+  [PASS] river wave normal no longer inherits terrain normal in its core
+  [PASS] tod aspect relief reads the macro normal, not material detail
+  [PASS] relief tint slope reads the macro normal
+  [PASS] land base surface keeps material detail out of macro_normal
+  [PASS] tod relief scales with slope instead of a normalized binary aspect
+  [PASS] macro normal carries per-terrain landform detail
+  [PASS] erosion noise stays periodic across the world X wrap
+  [PASS] river normal separation uses centralized material constants
+  [PASS] full land material pipeline consumes a DitherUV-selected visual biome
+  [PASS] land DitherUV selects static biome/vegetation/cover axes together
+  [PASS] land DitherUV cannot cross the land/water domain
+  [PASS] land DitherUV has an explicit close-view zoom fade
+  [PASS] close land view has no non-zero DitherUV floor
+  [PASS] terrain Bayer rank tails are compressed to prevent elongated teeth
+  [PASS] full land visual cell selection shares the close-view zoom fade
+  [PASS] landform material receives continuous river geometry
+  [PASS] canyon material is masked by continuous geometry
+  [PASS] canyon no longer darkens the entire categorical cell
+  [PASS] tiled DitherUV follows the active visual resolution
+  [PASS] desktop exposes terrain edge neighbor
+  [PASS] desktop exposes terrain ecotone width
+  [PASS] desktop exposes terrain ecotone noise
+  [PASS] desktop exposes terrain micro texture
+  [PASS] desktop exposes terrain material array
+  [PASS] desktop exposes terrain material bound flag
+  [PASS] desktop exposes terrain material switch
+  [PASS] desktop exposes terrain material world size
+  [PASS] desktop exposes tod_terrain_relief_slope_gain
+  [PASS] desktop exposes terrain_erosion_strength
+  [PASS] desktop exposes terrain_erosion_world_size
+  [PASS] desktop exposes camera zoom
+  [PASS] mobile_low exposes terrain edge neighbor
+  [PASS] mobile_low exposes terrain ecotone width
+  [PASS] mobile_low exposes terrain ecotone noise
+  [PASS] mobile_low exposes terrain micro texture
+  [PASS] mobile_low exposes terrain material array
+  [PASS] mobile_low exposes terrain material bound flag
+  [PASS] mobile_low exposes terrain material switch
+  [PASS] mobile_low exposes terrain material world size
+  [PASS] mobile_low exposes tod_terrain_relief_slope_gain
+  [PASS] mobile_low exposes terrain_erosion_strength
+  [PASS] mobile_low exposes terrain_erosion_world_size
+  [PASS] mobile_low exposes camera zoom
+  [PASS] mobile_mid exposes terrain edge neighbor
+  [PASS] mobile_mid exposes terrain ecotone width
+  [PASS] mobile_mid exposes terrain ecotone noise
+  [PASS] mobile_mid exposes terrain micro texture
+  [PASS] mobile_mid exposes terrain material array
+  [PASS] mobile_mid exposes terrain material bound flag
+  [PASS] mobile_mid exposes terrain material switch
+  [PASS] mobile_mid exposes terrain material world size
+  [PASS] mobile_mid exposes tod_terrain_relief_slope_gain
+  [PASS] mobile_mid exposes terrain_erosion_strength
+  [PASS] mobile_mid exposes terrain_erosion_world_size
+  [PASS] mobile_mid exposes camera zoom
+  [PASS] mobile_high exposes terrain edge neighbor
+  [PASS] mobile_high exposes terrain ecotone width
+  [PASS] mobile_high exposes terrain ecotone noise
+  [PASS] mobile_high exposes terrain micro texture
+  [PASS] mobile_high exposes terrain material array
+  [PASS] mobile_high exposes terrain material bound flag
+  [PASS] mobile_high exposes terrain material switch
+  [PASS] mobile_high exposes terrain material world size
+  [PASS] mobile_high exposes tod_terrain_relief_slope_gain
+  [PASS] mobile_high exposes terrain_erosion_strength
+  [PASS] mobile_high exposes terrain_erosion_world_size
+  [PASS] mobile_high exposes camera zoom
+  [PASS] desktop tiled variant compiles
+  [PASS] desktop tiled exposes height array
+  [PASS] desktop tiled exposes map-index array
+  [PASS] desktop tiled exposes horizon array
+  [PASS] desktop tiled omits retired visual_flow_tiles (height.B)
+  [PASS] desktop tiled omits legacy height sampler
+  [PASS] desktop tiled omits legacy map-index sampler
+  [PASS] desktop tiled omits legacy horizon sampler
+  [PASS] desktop tiled exposes terrain material array
+  [PASS] desktop tiled exposes baked terrain relief + static-bake gate
+  [PASS] mobile_low tiled variant compiles
+  [PASS] mobile_low tiled exposes height array
+  [PASS] mobile_low tiled exposes map-index array
+  [PASS] mobile_low tiled exposes horizon array
+  [PASS] mobile_low tiled omits retired visual_flow_tiles (height.B)
+  [PASS] mobile_low tiled omits legacy height sampler
+  [PASS] mobile_low tiled omits legacy map-index sampler
+  [PASS] mobile_low tiled omits legacy horizon sampler
+  [PASS] mobile_low tiled exposes terrain material array
+  [PASS] mobile_low tiled exposes baked terrain relief + static-bake gate
+  [PASS] mobile_mid tiled variant compiles
+  [PASS] mobile_mid tiled exposes height array
+  [PASS] mobile_mid tiled exposes map-index array
+  [PASS] mobile_mid tiled exposes horizon array
+  [PASS] mobile_mid tiled omits retired visual_flow_tiles (height.B)
+  [PASS] mobile_mid tiled omits legacy height sampler
+  [PASS] mobile_mid tiled omits legacy map-index sampler
+  [PASS] mobile_mid tiled omits legacy horizon sampler
+  [PASS] mobile_mid tiled exposes terrain material array
+  [PASS] mobile_mid tiled exposes baked terrain relief + static-bake gate
+  [PASS] mobile_high tiled variant compiles
+  [PASS] mobile_high tiled exposes height array
+  [PASS] mobile_high tiled exposes map-index array
+  [PASS] mobile_high tiled exposes horizon array
+  [PASS] mobile_high tiled omits retired visual_flow_tiles (height.B)
+  [PASS] mobile_high tiled omits legacy height sampler
+  [PASS] mobile_high tiled omits legacy map-index sampler
+  [PASS] mobile_high tiled omits legacy horizon sampler
+  [PASS] mobile_high tiled exposes terrain material array
+  [PASS] mobile_high tiled exposes baked terrain relief + static-bake gate
+  [PASS] tiled land reads baked landform detail instead of per-pixel noise
+  [PASS] shore neighbourhood reads baked 8-neighbour fractions
+  [PASS] water category weights read baked 3x3 weights
+  [PASS] fragment setup fetches height and map_index once
+  [PASS] terrain material path uses sampler2DArray
+  [PASS] HIGH tiled material path keeps a restrained terrain_micro_tex layer
+  [PASS] biome-to-layer material sampling is present
+  [PASS] main terrain uniforms no longer declare eco_lut
+  [PASS] web budget keeps material samplers within 8 units (got 7)
+  [PASS] web texture budget variant compiles
+  [PASS] web budget exposes terrain_material_tex after eco_lut retire
+  [PASS] web budget exposes tod_terrain_relief_slope_gain
+  [PASS] web budget exposes terrain_erosion_strength
+  [PASS] web budget exposes terrain_erosion_world_size
+  [PASS] web budget omits eco_lut from main terrain
+  [PASS] web budget omits retired legacy flow_tex (packed into height_tex.B)
+  [PASS] web budget keeps has_flow_tex gate
+  [PASS] web budget still omits terrain_micro_tex
+  [PASS] web budget omits baked terrain relief sampler
+  [PASS] desktop legacy omits flow_tex sampler (height_tex.B)
+  [PASS] desktop legacy keeps height_tex + has_flow_tex
+  [PASS] desktop legacy keeps the runtime fallback (no static-bake gate)
+  [PASS] mobile_low legacy omits flow_tex sampler (height_tex.B)
+  [PASS] mobile_low legacy keeps height_tex + has_flow_tex
+  [PASS] mobile_low legacy keeps the runtime fallback (no static-bake gate)
+  [PASS] mobile_mid legacy omits flow_tex sampler (height_tex.B)
+  [PASS] mobile_mid legacy keeps height_tex + has_flow_tex
+  [PASS] mobile_mid legacy keeps the runtime fallback (no static-bake gate)
+  [PASS] mobile_high legacy omits flow_tex sampler (height_tex.B)
+  [PASS] mobile_high legacy keeps height_tex + has_flow_tex
+  [PASS] mobile_high legacy keeps the runtime fallback (no static-bake gate)
+=== terrain shader variants: 149 checks, 0 failures ===
+Godot_v4.6.2-stable_win64_console.exe : ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyText
+ureE' were leaked at exit.
+所在位置 C:\Users\hkinghuang\AppData\Local\Temp\ps-script-03dc657c-e51c-454a-b9f6-7df7a301b7f3.ps1:90 字符: 66
++ ... ect-keynes; & "D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-st ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 11 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 111 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

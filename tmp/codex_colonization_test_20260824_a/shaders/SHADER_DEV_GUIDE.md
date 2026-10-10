@@ -335,7 +335,7 @@ vec3 render_land_pipeline(
     float elev, float moist, vec2 wp, vec2 uv,
     vec4 scals, float lat_signed, float current_temp,
     float dyn_snow, float dyn_valid, float dyn_vitality,
-    vec4 pixel_noise);
+    vec4 pixel_noise, vec2 shore_frac);
 ```
 
 ### 8.2 LAND 1.x — `compute_land_base_surface`
@@ -405,8 +405,13 @@ vec3 render_water_pipeline(
     int secondary_biome, int secondary_cover, float edge_mix,
     float elev, vec2 wp, vec2 uv,
     vec4 scals, float lat_signed, float current_temp,
-    vec2 ocean_current_v, vec2 wind_v, float dyn_ice_frac);
+    vec2 ocean_current_v, vec2 wind_v, float dyn_ice_frac,
+    vec2 shore_frac, vec4 pixel_noise);
 ```
+
+`shore_frac` 是 fragment setup 读到的 `edge_distance.ba`（烘焙的 8 邻域水 / 湖占比），
+`pixel_noise` 是入口的静态像素噪声；两者都是复用已有采样，水面管线内部不再为海岸 halo
+或冰缘破碎单独读贴图。
 
 `secondary_*` 与 `edge_mix` 只是距离场驱动的静态视觉输入。水陆分支、交互、温度、
 海冰浓度、洋流与风仍由主格权威所有；水面管线不会计算两遍。

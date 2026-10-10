@@ -105,6 +105,63 @@ float water_surface_height(vec2 wp, float t, float amp_scale, float freq_scale, 
 	return h * amp_scale;
 }
 
+#if CURRENT_RENDERER != RENDERER_COMPATIBILITY
+// 解析梯度版 water_surface_height：返回 (∂h/∂x, ∂h/∂y)，替代 4 次中心差分。
+// 正弦项直接求导；细节 fBM-2 用一次 textureGather 取 2×2 texel，对硬件双线性面片求导——
+// 原差分步长 0.5 世界单位在噪声空间只有约 0.03 texel，读到的本来就是同一块面片的斜率。
+// GLES3 没有 textureGather，Compatibility 继续走差分。
+#define PK_WATER_ANALYTIC_NORMAL
+
+vec2 water_periodic_wave_phase_grad(vec2 dir, float k) {
+	if (wrap_period_x <= 0.0001) {
+		return dir * k;
+	}
+	float desired_cycles = dir.x * k * wrap_period_x / WATER_WRAP_TAU;
+	float cycles = floor(abs(desired_cycles) + 0.5);
+	float gx = (cycles > 0.0) ? sign(desired_cycles) * cycles * WATER_WRAP_TAU / wrap_period_x : 0.0;
+	return vec2(gx, dir.y * k);
+}
+
+// fbm(water_cyl_noise_p(wp, freq, ofs), 2) 对 wp 的梯度。
+vec2 water_fbm2_cyl_grad(vec2 wp, float freq, vec2 ofs) {
+	vec2 nuv = water_cyl_noise_p(wp, freq, ofs) / NOISE_TEX_SCALE;
+	vec2 ts = vec2(textureSize(noise_tex, 0));
+	vec2 f = fract(nuv * ts - 0.5);
+	vec4 g = textureGather(noise_tex, nuv, 1);
+	// gather 分量顺序：x=(i0,j1) y=(i1,j1) z=(i1,j0) w=(i0,j0)
+	vec2 dfdp = vec2(mix(g.z - g.w, g.y - g.x, f.y), mix(g.x - g.w, g.y - g.z, f.x))
+			* ts / NOISE_TEX_SCALE;
+	if (wrap_period_x <= 0.0001) {
+		return dfdp * freq;
+	}
+	// 圆柱映射 p = (cosθ·r, sinθ·r + y·freq)，r·dθ/dx = freq。
+	float theta = water_wrap_lon_angle(wp);
+	return vec2(dot(dfdp, vec2(-sin(theta), cos(theta))), dfdp.y) * freq;
+}
+
+vec2 water_surface_height_grad(vec2 wp, float t, float amp_scale, float freq_scale, int quality) {
+	vec2 dA = normalize(WATER_WAVE_DIR_A);
+	float kA = WATER_WAVE_FREQ_A * freq_scale;
+	float pA = water_periodic_wave_phase(wp, dA, kA) - t * WATER_WAVE_SPEED_A;
+	vec2 grad = cos(pA) * WATER_WAVE_AMP_A * water_periodic_wave_phase_grad(dA, kA);
+	if (quality >= 1) {
+#if !defined(PK_MOBILE_ANY)
+		vec2 dB = normalize(WATER_WAVE_DIR_B);
+		vec2 dC = normalize(WATER_WAVE_DIR_C);
+		float kB = WATER_WAVE_FREQ_B * freq_scale;
+		float kC = WATER_WAVE_FREQ_C * freq_scale;
+		float pB = water_periodic_wave_phase(wp, dB, kB) - t * WATER_WAVE_SPEED_B;
+		float pC = water_periodic_wave_phase(wp, dC, kC) - t * WATER_WAVE_SPEED_C;
+		grad += cos(pB) * WATER_WAVE_AMP_B * water_periodic_wave_phase_grad(dB, kB);
+		grad += cos(pC) * WATER_WAVE_AMP_C * water_periodic_wave_phase_grad(dC, kC);
+		grad += water_fbm2_cyl_grad(wp, 0.060, vec2(-t * 0.055, t * 0.036))
+				* (WATER_WAVE_AMP_A * 0.58);
+#endif
+	}
+	return grad * amp_scale;
+}
+#endif
+
 // 低频、慢速的法线强度包络：只改斜率强弱，不改水面高度相位，用来打散整片水面一致的高光条纹。
 // [wave-patchiness 2026-06-29] 这层低频 fbm 同时充当"波浪强度乘子"：复用它（不新增采样），把波浪
 // 整体斜率（含细节法线，因为 detail 的 ds=normal_gain*strength 也吃这里）按空间做强弱分布，模拟
@@ -145,18 +202,23 @@ vec3 sample_water_normal(vec2 wp, float t, float amp_scale, float freq_scale, in
 	// [base-normal tilling] 宏观涌浪频率单独乘 water_base_normal_scale（细节法线那块仍用原 freq_scale，
 	// 两者 tilling 互不影响）。等价于缩放 3 个主波频率。
 	float base_fs = freq_scale * water_base_normal_scale;
+#ifdef PK_WATER_ANALYTIC_NORMAL
+	vec2 h_grad = water_surface_height_grad(wpw, t, amp_scale, base_fs, quality);
+#else
 	float hx0 = water_surface_height(wpw - vec2(eps, 0.0), t, amp_scale, base_fs, quality);
 	float hx1 = water_surface_height(wpw + vec2(eps, 0.0), t, amp_scale, base_fs, quality);
 	float hy0 = water_surface_height(wpw - vec2(0.0, eps), t, amp_scale, base_fs, quality);
 	float hy1 = water_surface_height(wpw + vec2(0.0, eps), t, amp_scale, base_fs, quality);
+	vec2 h_grad = vec2(hx1 - hx0, hy1 - hy0) / (2.0 * eps);
+#endif
 	// 差分斜率：dhx = ∂h/∂x，dhy = ∂h/∂y；法线 = normalize((-dhx, -dhy, 1))
 	// 中尺度波频率已回升，斜率增益略收，避免高光重新变成密集白线。
 	// normal_gain = 固定增益 8.5 × 低频强度包络（含 water_wave_patch_strength 浪带调制）。
 	// base 与 detail 共享这一项，所以 patch 对两者都生效；base 额外乘 water_base_normal_strength
 	// 单独控制"宏观涌浪法线"强度，detail 走 water_detail_normal_strength，互不干扰。
 	float normal_gain = 8.5 * water_normal_strength_envelope(wpw, t, quality);
-	float dhx = (hx1 - hx0) / (2.0 * eps) * normal_gain * water_base_normal_strength;
-	float dhy = (hy1 - hy0) / (2.0 * eps) * normal_gain * water_base_normal_strength;
+	float dhx = h_grad.x * normal_gain * water_base_normal_strength;
+	float dhy = h_grad.y * normal_gain * water_base_normal_strength;
 
 	// [water-detail-normal] 高频细节涟漪：直接用 analytic 梯度叠到坡度上（不增加 height 差分 tap）。
 	// [门控修复 2026-06-29] 原写 quality>=2，但本函数收到的 quality 参数被 caller 钳到最大 1

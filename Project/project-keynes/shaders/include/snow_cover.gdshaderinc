@@ -14,8 +14,28 @@
 //   - common_noise.gdshaderinc：fbm（仅 ±10% cosmetic 抖动，1 次 fbm）。
 //   - height.gdshaderinc：decode_height_rg8（坡度削雪）。
 //   - weather_front.gdshaderinc：compute_extreme_weather_mask（BLIZZARD 新雪）。
-// 性能（PERF）：1 次 fbm + 按需 4 次 height_tex 邻域采样；比旧版省 2 次 fbm。
+// 性能（PERF）：抖动复用 pixel_noise（0 次新增采样）；坡度卸雪按需 1 次（烘焙法线）/ 4 次（旧路径）。
 // ─────────────────────────────────────────────────────────────────────────
+
+// 卸雪 / 新雪用的地表坡度：1-texel 高程差分 × hillshade_slope_gain。
+float snow_terrain_slope_mag(vec2 uv) {
+#ifdef PK_TERRAIN_STATIC_BAKED
+	// 由烘焙粗法线换算成同一量纲（坡度 = |∇h|·2·texel·gain），省掉 4 次高度采样。
+	if (terrain_static_baked) {
+		vec2 nxy = visual_sample_terrain_normal(uv).rg * 2.0 - 1.0;
+		float slope = length(nxy) / sqrt(max(1e-4, 1.0 - clamp(dot(nxy, nxy), 0.0, 0.998)));
+		float texel_world = world_size.x / max(hm_resolution.x, 1.0);
+		return slope * 2.0 * texel_world * hillshade_slope_gain
+				/ max(terrain_normal_height_scale_hex * max(hex_size, 1e-4), 1e-4);
+	}
+#endif
+	vec2 texel = 1.0 / hm_resolution;
+	float hl = decode_height_rg8(uv - vec2(texel.x, 0.0));
+	float hr = decode_height_rg8(uv + vec2(texel.x, 0.0));
+	float hu = decode_height_rg8(uv - vec2(0.0, texel.y));
+	float hd = decode_height_rg8(uv + vec2(0.0, texel.y));
+	return length(vec2(hr - hl, hd - hu)) * hillshade_slope_gain;
+}
 
 // 唯一雪盖入口：返回已叠加雪色后的颜色。
 // CPU/GPU SAME_SOURCE：温度/海拔阈值与 map_generator._derived_snow_cover 保持一致。
@@ -55,7 +75,8 @@ vec3 apply_snow_cover(
 #ifdef PK_MOBILE_ANY
 	float amount_jitter = 1.0;
 #else
-	float amount_n = fbm(wp * 0.18 + vec2(63.0, -29.0), 1);
+	// 复用 fragment 入口已采的 pixel_noise.r（与原 fbm(…,1) 同为 raw×0.5 的分布）。
+	float amount_n = pixel_noise.r * 0.5;
 	float amount_jitter = mix(0.90, 1.10, amount_n);  // ±10%
 #endif
 
@@ -74,12 +95,7 @@ vec3 apply_snow_cover(
 	bool slope_ready = false;
 	float slope_shed = 0.0;
 	if (raw_snow_signal > 0.01 && ecology_visual_quality >= 2 && snowline_visual_strength > 0.001) {
-		vec2 snow_texel = 1.0 / hm_resolution;
-		float sl = decode_height_rg8(uv - vec2(snow_texel.x, 0.0));
-		float sr = decode_height_rg8(uv + vec2(snow_texel.x, 0.0));
-		float su = decode_height_rg8(uv - vec2(0.0, snow_texel.y));
-		float sd = decode_height_rg8(uv + vec2(0.0, snow_texel.y));
-		snow_slope_mag = length(vec2(sr - sl, sd - su)) * hillshade_slope_gain;
+		snow_slope_mag = snow_terrain_slope_mag(uv);
 		slope_ready = true;
 		slope_shed = smoothstep(0.42, 1.10, snow_slope_mag) * 0.16;
 	}
@@ -120,12 +136,7 @@ vec3 apply_snow_cover(
 		float blizz_mask = compute_extreme_weather_mask(wp, WT_BLIZZARD);
 		if (blizz_mask > 0.001) {
 			if (!slope_ready) {
-				vec2 texel = 1.0 / hm_resolution;
-				float hl = decode_height_rg8(uv - vec2(texel.x, 0.0));
-				float hr = decode_height_rg8(uv + vec2(texel.x, 0.0));
-				float hu = decode_height_rg8(uv - vec2(0.0, texel.y));
-				float hd = decode_height_rg8(uv + vec2(0.0, texel.y));
-				snow_slope_mag = length(vec2(hr - hl, hd - hu)) * hillshade_slope_gain;
+				snow_slope_mag = snow_terrain_slope_mag(uv);
 			}
 			float slope_w = 1.0 - smoothstep(0.35, 0.85, snow_slope_mag);
 			float veg_w = 1.0;

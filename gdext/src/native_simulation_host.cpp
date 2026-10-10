@@ -1351,6 +1351,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _country_economy_asset_terminal_results.clear();
         _country_economy_asset_dispatched.clear();
         _country_economy_asset_committed.clear();
+        _country_economy_asset_self_settled.clear();
         _economy_origin_asset_queue.clear();
         _country_economy_asset_protocol = RuntimeEconomyAssetProtocolStatus{};
         _country_command_terminals.clear();
@@ -2892,6 +2893,7 @@ bool NativeSimulationHost::publish_country_catalog(
     _country_economy_asset_terminal_results.clear();
     _country_economy_asset_dispatched.clear();
     _country_economy_asset_committed.clear();
+    _country_economy_asset_self_settled.clear();
     _economy_origin_asset_queue.clear();
     _country_economy_asset_protocol = RuntimeEconomyAssetProtocolStatus{};
     _country_command_terminals.clear();
@@ -4068,6 +4070,27 @@ bool NativeSimulationHost::publish_country_economy_asset_requests(
     return true;
 }
 
+void NativeSimulationHost::defer_country_economy_asset_settlement(
+        uint64_t request_id) {
+    if (request_id == 0) return;
+    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    _country_economy_asset_self_settled.insert(request_id);
+}
+
+void NativeSimulationHost::release_country_economy_asset_settlement(
+        uint64_t request_id) noexcept {
+    if (request_id == 0) return;
+    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    _country_economy_asset_self_settled.erase(request_id);
+}
+
+bool NativeSimulationHost::country_economy_asset_settlement_deferred(
+        uint64_t request_id) const {
+    if (request_id == 0) return false;
+    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    return _country_economy_asset_self_settled.count(request_id) != 0;
+}
+
 void NativeSimulationHost::acknowledge_country_economy_asset_consumed(
         uint64_t request_id) noexcept {
     if (request_id == 0) return;
@@ -4090,6 +4113,7 @@ void NativeSimulationHost::acknowledge_country_economy_asset_consumed(
     _country_economy_asset_terminal_results.erase(terminal);
     _country_economy_asset_dispatched.erase(request_id);
     _country_economy_asset_committed.erase(request_id);
+    _country_economy_asset_self_settled.erase(request_id);
     if (_country_economy_asset_protocol.pending_requests > 0)
         --_country_economy_asset_protocol.pending_requests;
     _country_economy_asset_protocol.queued_requests = static_cast<uint32_t>(
@@ -4627,6 +4651,91 @@ bool NativeSimulationHost::country_economy_asset_protocol_self_test(
         error = "country_economy_asset_self_test_corrupt_journal_accepted";
         return false;
     }
+
+    // A goods-only treasury spend (colonization kit cargo) must move goods
+    // without touching treasury cash, and a peer result that commits more cash
+    // than prepare reserved must be refused rather than debited.
+    {
+        RuntimeCountryPodSnapshot pod;
+        pod.country_count = 1;
+        pod.good_count = 2;
+        pod.generation = 3;
+        pod.country_cash = {1000};
+        pod.country_goods = {0, 50};
+        pod.country_state_version = {0};
+        const RuntimeCountryPodCatalog pod_catalog;
+        RuntimeEconomyAssetRequest goods_spend;
+        goods_spend.operation = RuntimeEconomyAssetOperation::TREASURY_SPEND;
+        goods_spend.country_slot = 0;
+        goods_spend.requested_cash = 0;
+        goods_spend.requested_quantity = 7;
+        goods_spend.requested_goods_total = 7;
+        goods_spend.good_count = 1;
+        goods_spend.good_id = 1;
+        goods_spend.good_ids[0] = 1;
+        goods_spend.good_quantities[0] = 7;
+        std::string pod_error;
+        if (!country_core_apply_economy_asset_prepare(
+                pod, pod_catalog, goods_spend, pod_error) ||
+            goods_spend.reserved_cash != 0) {
+            error = "country_economy_asset_self_test_goods_spend_prepare_failed";
+            return false;
+        }
+        RuntimeEconomyAssetResult goods_done;
+        goods_done.code = RuntimeEconomyAssetResultCode::COMPLETED;
+        goods_done.state = RuntimeEconomyAssetState::COMPLETED;
+        goods_done.committed_quantity = 7;
+        goods_done.committed_cash = 7;
+        RuntimeCountryPodSnapshot legacy_pod = pod;
+        if (country_core_apply_economy_asset_commit(
+                legacy_pod, pod_catalog, goods_spend, goods_done, pod_error) ||
+            pod_error != "country_economy_asset_commit_cash_exceeds_reserved" ||
+            legacy_pod.country_cash[0] != 1000) {
+            error = "country_economy_asset_self_test_goods_spend_cash_guard_failed";
+            return false;
+        }
+        goods_done.committed_cash = 0;
+        if (!country_core_apply_economy_asset_commit(
+                pod, pod_catalog, goods_spend, goods_done, pod_error) ||
+            pod.country_cash[0] != 1000 || pod.country_goods[1] != 43) {
+            error = "country_economy_asset_self_test_goods_spend_commit_failed";
+            return false;
+        }
+    }
+
+    // A continuation-owned COMPLETED terminal is neither swept in by the
+    // generic flush nor reported idle for authority handoff until its owner
+    // settles it or releases it.
+    {
+        auto settle_probe = std::make_unique<NativeSimulationHost>();
+        RuntimeEconomyAssetRequest owned = request;
+        owned.request_id = 7201;
+        owned.transaction_id = 7201;
+        RuntimeEconomyAssetResult owned_done = completed;
+        owned_done.request_id = owned.request_id;
+        owned_done.transaction_id = owned.transaction_id;
+        settle_probe->_country_economy_asset_requests[owned.request_id] = owned;
+        settle_probe->_country_economy_asset_terminal_results[owned.request_id] =
+            owned_done;
+        settle_probe->defer_country_economy_asset_settlement(owned.request_id);
+        std::string flush_error;
+        if (!settle_probe->country_economy_asset_settlement_deferred(
+                owned.request_id) ||
+            !settle_probe->flush_country_economy_asset_commits(flush_error) ||
+            settle_probe->_country_economy_asset_committed.count(
+                owned.request_id) != 0 ||
+            settle_probe->country_authority_drain_idle_locked()) {
+            error = "country_economy_asset_self_test_deferred_settle_swept";
+            return false;
+        }
+        settle_probe->release_country_economy_asset_settlement(owned.request_id);
+        if (settle_probe->country_economy_asset_settlement_deferred(
+                owned.request_id) ||
+            !settle_probe->country_authority_drain_idle_locked()) {
+            error = "country_economy_asset_self_test_deferred_release_failed";
+            return false;
+        }
+    }
     return true;
 }
 
@@ -4783,9 +4892,12 @@ bool NativeSimulationHost::flush_country_economy_asset_commits(
             // treasury for COMPLETED RESEARCH_PURCHASE before Economy phase 4
             // credits merchants in the same conservation window. Early flush
             // left opening cash already reduced while merchant credit landed
-            // next epoch → money_conservation_failed / goods_error.
-            if (request->second.operation ==
-                    RuntimeEconomyAssetOperation::RESEARCH_PURCHASE &&
+            // next epoch → money_conservation_failed / goods_error. The same
+            // holds for wire ids whose Economy leg runs in the continuation
+            // (colonization market purchase and treasury-to-cargo transfer).
+            if ((request->second.operation ==
+                     RuntimeEconomyAssetOperation::RESEARCH_PURCHASE ||
+                 _country_economy_asset_self_settled.count(entry.first) != 0) &&
                 entry.second.code ==
                     RuntimeEconomyAssetResultCode::COMPLETED &&
                 settle_request_id != entry.first) {
@@ -4986,10 +5098,11 @@ bool NativeSimulationHost::country_authority_drain_idle_locked() const {
             _country_economy_asset_terminal_results.find(entry.first);
         if (terminal != _country_economy_asset_terminal_results.end() &&
             economy_asset_result_terminal(terminal->second)) {
-            // COMPLETED research still awaits Economy settlement flush; do not
-            // treat the bare terminal as idle handoff-ready.
-            if (entry.second.operation ==
-                    RuntimeEconomyAssetOperation::RESEARCH_PURCHASE &&
+            // COMPLETED research / continuation-owned terminals still await
+            // Economy settlement flush; do not treat them as handoff-ready.
+            if ((entry.second.operation ==
+                     RuntimeEconomyAssetOperation::RESEARCH_PURCHASE ||
+                 _country_economy_asset_self_settled.count(entry.first) != 0) &&
                 terminal->second.code ==
                     RuntimeEconomyAssetResultCode::COMPLETED &&
                 _country_economy_asset_committed.find(entry.first) ==

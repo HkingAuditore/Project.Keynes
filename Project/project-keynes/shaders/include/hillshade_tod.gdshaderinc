@@ -243,6 +243,41 @@ vec3 compute_terrain_normal(vec2 uv, int quality, int biome) {
 	return terrain_add_height_detail(terrain_coarse_normal(uv), uv, quality, biome);
 }
 
+#ifdef PK_TERRAIN_STATIC_BAKED
+// 烘焙版地形几何法线：粗法线、近景高度细节、分地形细节（沟谷/台坎/沙丘/起伏/丘状）
+// 都已在 visual tile 烘焙时逐 texel 求好，这里 2 次采样 + 按缩放淡出。
+// 返回 (法线, 沟谷深度)；crease 由调用方从已采样的 edge_distance.g 传入。
+// 细节坡度分粗段（波长 >= 32·scale）与细段两组，各自只在屏幕上够宽时淡入，
+// 代替原先逐倍频的屏幕波长淡出；近景高度细节保留原来的拉近门控。
+vec4 terrain_baked_normal(vec2 uv, int quality, float crease) {
+	vec4 n = visual_sample_terrain_normal(uv);
+	vec2 nxy = (n.rg * 2.0 - 1.0) * hillshade_coarse_strength;
+	float nz = sqrt(max(1e-4, 1.0 - clamp(dot(nxy, nxy), 0.0, 0.998)));
+#if defined(PK_MOBILE_ANY) || defined(PK_QUALITY_LOW)
+	return vec4(nxy, nz, 0.0);
+#else
+	if (quality < 1) {
+		return vec4(nxy, nz, 0.0);
+	}
+	vec2 s = nxy / max(nz, 0.2);
+	if (hillshade_detail_enabled) {
+		float qf = (quality >= 2) ? 1.0 : 0.64;
+		s += decode_relief_slope(n.ba) * (qf * smoothstep(1.35, 2.10, camera_zoom));
+	}
+	float k_relief = 0.0;
+	if (terrain_erosion_strength > 0.0001) {
+		float scale = max(terrain_erosion_world_size, 1.0) / 72.0;
+		vec4 r = decode_relief_slope4(visual_sample_terrain_relief(uv));
+		float fade_coarse = smoothstep(3.0, 7.0, 48.0 * scale * camera_zoom);
+		float fade_fine = smoothstep(3.0, 7.0, 14.0 * scale * camera_zoom);
+		s += r.xy * fade_coarse + r.zw * fade_fine;
+		k_relief = fade_coarse;
+	}
+	return vec4(normalize(vec3(s, 1.0)), crease * k_relief);
+#endif
+}
+#endif
+
 // ─── 侵蚀沟谷细节（DEM 晕渲观感）──────────────────────────────────────
 // 高度场只有宏观起伏和无方向的残差噪声，读不出真实地形里顺坡而下的沟谷与山脊。
 // 这里在世界空间叠一组"沿坡度方向拉长"的条纹噪声：每个抖动特征点贡献一段余弦起伏，
