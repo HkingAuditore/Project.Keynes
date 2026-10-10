@@ -305,10 +305,27 @@ vec3 terrain_gully_noise(vec2 p, vec2 dir, float period_cells) {
 	return acc / max(wsum, 1e-4);
 }
 
+// 平地也需要地貌尺度的起伏，但不应继承山地沟谷的强度。这个权重把
+// 视觉语言从“沟壑”连续过渡到平原缓波纹、草原浅冲刷和高原风化层。
+float terrain_surface_relief_factor(int biome) {
+	if (biome == B_MOUNTAIN || biome == B_MESA) return 1.00;
+	if (biome == B_HILL || biome == B_BADLANDS) return 0.78;
+	if (biome == B_TUNDRA || biome == B_DESERT || biome == B_COLD_DESERT
+			|| biome == B_SALT_FLAT) return 0.46;
+	if (biome == B_GRASSLAND || biome == B_SAVANNA || biome == B_STEPPE
+			|| biome == B_SHRUBLAND || biome == B_CHAPARRAL) return 0.34;
+	if (biome == B_FOREST || biome == B_JUNGLE || biome == B_TAIGA
+			|| biome == B_MANGROVE) return 0.28;
+	if (biome == B_PLAIN || biome == B_SWAMP || biome == B_MOOR
+			|| biome == B_DELTA || biome == B_FLOODPLAIN || biome == B_OASIS) return 0.22;
+	return 0.30;
+}
+
 // N = 要叠加侵蚀的法线；N_coarse = 只含宏观起伏的粗法线，决定沟谷走向与强度。
 // 走向不能取 N：近距的高度细节 / 近岸细节是逐 texel 残差，方向乱跳会把条纹扭成水泡纹。
 // 返回 (叠加侵蚀后的法线, 沟谷深度 0..1)。沟谷深度给调用方做凹处遮蔽。
-vec4 terrain_apply_erosion_detail(vec3 N, vec3 N_coarse, vec2 wp, float elev, int quality) {
+vec4 terrain_apply_erosion_detail(
+		vec3 N, vec3 N_coarse, vec2 wp, float elev, int quality, int biome) {
 #if defined(PK_MOBILE_ANY) || defined(PK_QUALITY_LOW)
 	return vec4(N, 0.0);
 #else
@@ -321,8 +338,12 @@ vec4 terrain_apply_erosion_detail(vec3 N, vec3 N_coarse, vec2 wp, float elev, in
 	float land_h = clamp((elev - sea_level) / max(1.0 - sea_level, 0.001), 0.0, 1.0);
 	// 海拔给主权重（高地沟谷密）；烘焙法线差分半径约 1.35 hex，山地宏观坡度也只有
 	// 0.02~0.1，坡度只在这一段区分"有起伏"和"高原顶"，高原顶保留三成细节。
-	float relief_w = smoothstep(0.02, 0.40, land_h)
-			* mix(0.35, 1.0, smoothstep(0.01, 0.06, slope));
+	float surface_relief = terrain_surface_relief_factor(biome);
+	// Keep a non-zero floor on flat land: its signal is broad and quiet rather than
+	// absent. Elevation and slope still strengthen the result on uplands/hills.
+	float land_gate = smoothstep(0.0, 0.12, land_h);
+	float relief_w = surface_relief * mix(0.58, 1.0, land_gate)
+			* mix(0.72, 1.0, smoothstep(0.01, 0.06, slope));
 	if (relief_w <= 0.001) {
 		return vec4(N, 0.0);
 	}
@@ -335,8 +356,10 @@ vec4 terrain_apply_erosion_detail(vec3 N, vec3 N_coarse, vec2 wp, float elev, in
 			terrain_erosion_value_noise(flow_p + vec2(0.0, 57.0), flow_period)) * 2.0 - 1.0;
 	vec2 grad_dir = grad + flow_field * 0.03;
 	float amp_scale = terrain_erosion_strength * relief_w;
+	float flat_shape = 1.0 - smoothstep(0.28, 0.82, surface_relief);
 	int octaves = (quality >= 2) ? 4 : 3;
-	float wl = max(terrain_erosion_world_size, 1.0);
+	float wl = max(terrain_erosion_world_size, 1.0)
+			* mix(1.0, 1.65, flat_shape);
 	float amp = 1.0;
 	float h_sum = 0.0;
 	float h_norm = 0.0;
