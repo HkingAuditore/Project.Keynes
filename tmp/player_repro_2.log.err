@@ -1,0 +1,113 @@
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:362)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:345)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1190)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1228)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:362)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:345)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1190)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1228)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:362)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:345)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1190)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1228)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:362)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:345)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1190)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1228)
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:4675)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2356)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:724)
+       [3] generate (res://scripts/geography/map_generator.gd:1606)
+       [4] _yield_generation_frame (res://scripts/geography/map_generator.gd:19926)
+WARNING: [runtime-worker] Ideology opinion publish deferred: ideology_opinion_snapshot_invalid
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _start_production_shadow_worker (res://scripts/game/world_runtime_host.gd:815)
+       [1] generate_world (res://scripts/game/world_runtime_host.gd:733)
+       [2] generate (res://scripts/geography/map_generator.gd:1606)
+       [3] _yield_generation_frame (res://scripts/geography/map_generator.gd:19926)
+[runtime-day-wait] day=1 env_day=0 missing=0x3ff stall=0x10 economy_input=-1
+[climate/worker][b8] physics_knobs day=1 ready=0 missing=physics_knobs
+[climate-kernel][round] shared=1 ok=1 n_cells=2400 mask=0x1FF ran=0x1FF starved=0x0 knobs_cells=2400
+[country][parity] worker_day=1 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=1 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[economy-mirror-cost] day=1 capture_ms=2.042 import_ms=2.993
+[climate/writeback][b8] day=1 vapor store0=0 map0=0 dirty_fields=42 applied=42
+[climate/worker][b8] physics_knobs day=2 ready=1 missing=
+[climate/worker][b8] paw day=2 cell=247 moisture=0.853867 wb30=0 soil=0 paw=0.853867 zeros(water=1715 land=0) nonzero=685 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/worker][b8] cyclone_gate day=2 input_enabled=0 force_env=0 effective=0
+[climate/worker][b8] weather_solve day=2 cells=2400 psi=1 vapor0=0.114033 precip0=0 cloud0=0.0285695 type0=0 field_init0=1
+[research-procure-diag] day=2 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[economy-mirror-cost] day=2 capture_ms=1.716 import_ms=1.266
+[climate/writeback][b8] day=2 vapor store0=0.114033 map0=0.114033 dirty_fields=54 applied=54
+[climate/worker][b8] physics_knobs day=3 ready=1 missing=
+[climate/worker][b8] paw day=3 cell=247 moisture=0.844294 wb30=-0.000405852 soil=-0.000974045 paw=0.84403 zeros(water=1715 land=0) nonzero=685 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/worker][b8] cyclone_gate day=3 input_enabled=0 force_env=0 effective=0
+[climate/worker][b8] weather_solve day=3 cells=2400 psi=1 vapor0=0.0989389 precip0=0 cloud0=0.0405212 type0=0 field_init0=1
+[country][parity] worker_day=3 uncompared reference_range=2..2 depth=1
+[research-procure-diag] day=3 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/writeback][b8] day=3 vapor store0=0.0989389 map0=0.0989389 dirty_fields=54 applied=54
+[climate/worker][b8] physics_knobs day=4 ready=1 missing=
+[climate/worker][b8] paw day=4 cell=247 moisture=0.839906 wb30=-0.000722745 soil=-0.00173784 paw=0.839436 zeros(water=1715 land=0) nonzero=685 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/worker][b8] weather_solve day=4 cells=2400 psi=1 vapor0=0.0896858 precip0=0 cloud0=0.0369352 type0=0 field_init0=1
+[country][parity] worker_day=4 uncompared reference_range=2..2 depth=1
+[research-procure-diag] day=4 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/writeback][b8] day=4 vapor store0=0.0896858 map0=0.0896858 dirty_fields=54 applied=54
+[climate/worker][b8] physics_knobs day=5 ready=1 missing=
+[climate/worker][b8] paw day=5 cell=247 moisture=0.860092 wb30=-0.00120188 soil=-0.00289344 paw=0.85931 zeros(water=1715 land=0) nonzero=685 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/worker][b8] weather_solve day=5 cells=2400 psi=1 vapor0=0.0848425 precip0=0 cloud0=0.0355571 type0=0 field_init0=1
+[country][parity] worker_day=5 uncompared reference_range=2..2 depth=1
+[research-procure-diag] day=5 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] physics_knobs day=6 ready=1 missing=
+[climate/worker][b8] paw day=6 cell=247 moisture=0.847378 wb30=-0.00155621 soil=-0.00375317 paw=0.846367 zeros(water=1715 land=0) nonzero=685 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[country][parity] worker_day=6 uncompared reference_range=2..2 depth=1
+[research-procure-diag] day=6 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=7 cell=247 moisture=0.835737 wb30=-0.00179907 soil=-0.00434794 paw=0.834568 zeros(water=1715 land=0) nonzero=685 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[country][parity] worker_day=7 uncompared reference_range=2..2 depth=1
+[research-procure-diag] day=7 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=8 cell=247 moisture=0.826307 wb30=-0.0019531 soil=-0.00473111 paw=0.825038 zeros(water=1715 land=0) nonzero=685 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[country][parity] worker_day=8 uncompared reference_range=2..2 depth=1
+[research-procure-diag] day=8 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=9 cell=247 moisture=0.818437 wb30=-0.00204765 soil=-0.00497234 paw=0.817106 zeros(water=1715 land=0) nonzero=685 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[country][parity] worker_day=9 uncompared reference_range=2..2 depth=1
+[research-procure-diag] day=9 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=10 cell=247 moisture=0.812002 wb30=-0.00213758 soil=-0.00520282 paw=0.810612 zeros(water=1715 land=0) nonzero=685 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=10 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=11 cell=247 moisture=0.806841 wb30=-0.00222335 soil=-0.00542357 paw=0.805396 zeros(water=1715 land=0) nonzero=685 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=11 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=12 cell=247 moisture=0.802718 wb30=-0.00230531 soil=-0.00563545 paw=0.801219 zeros(water=1715 land=0) nonzero=685 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=12 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=13 cell=247 moisture=0.799609 wb30=-0.00238384 soil=-0.00583927 paw=0.798059 zeros(water=1715 land=0) nonzero=685 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=13 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=14 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=15 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=16 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=17 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=18 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=19 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=20 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=21 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=22 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=23 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=24 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=100 country=0.253 workset=0.025 fiscal=0.032 csr=0.004 recovery=0.020 vectors=0.849 audit=0.721 commands=0.001
+[economy-prelude-cost] day=100 ms=2.200 pending=0
+[economy-aggregate-cost] day=100 publish_ms=3.015 native_hash_ms=0.317
+[economy-ledger-cost] day=100 copy_ms=0.582 validate_ms=0.148 hash_ms=0.000 cohorts=384 markets=321600
+[economy-boundary-cost] day=100 formulas_ms=9.419 stages_ms=6.585 mirror_ms=1.388
+[runtime-day-cost] day=100 ok=1 ms=15.202

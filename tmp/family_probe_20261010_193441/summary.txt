@@ -1,0 +1,96 @@
+﻿days 364..2364 samples=2001 families_seen=6
+events: Counter({'discovered': 6})
+
+== per-family trajectory (pop / cash(万) / buildings / snapshot-asset / branch-asset / professions)
+family ..7296 home=388 founded=0 flags=32
+   d  364 pop=  12 cash=    3086.7 bld=  9 snapA=     7.8 branchA=   1205.4 decl=0 forager:9/7/0;merchant:3/0/0
+   d  614 pop=  13 cash=    3368.6 bld= 14 snapA=    13.1 branchA=   1356.8 decl=0 forager:4/1/0;hunter:6/4/0;merchant:3/0/0
+   d  864 pop=  15 cash=    2691.3 bld= 21 snapA=     7.8 branchA=   2169.4 decl=0 forager:3/2/0;hunter:9/8/0;merchant:3/0/0
+   d 1114 pop=  17 cash=    3096.1 bld= 23 snapA=     8.1 branchA=    733.4 decl=0 forager:7/6/0;hunter:7/7/0;merchant:3/0/0
+   d 1364 pop=  19 cash=    3012.3 bld= 25 snapA=    48.7 branchA=   1342.2 decl=0 forager:5/4/0;hunter:11/9/0;merchant:3/0/0
+   d 1614 pop=  21 cash=    3120.6 bld= 31 snapA=    65.4 branchA=   1277.3 decl=0 forager:8/7/0;hunter:10/9/0;merchant:3/0/0
+   d 1864 pop=  23 cash=    3820.4 bld= 32 snapA=    60.6 branchA=   1281.9 decl=0 forager:6/4/0;hunter:14/10/0;merchant:3/0/0
+   d 2114 pop=  26 cash=    4054.5 bld= 38 snapA=    18.4 branchA=   2539.4 decl=0 forager:9/8/0;hunter:14/10/0;merchant:3/0/0
+   d 2364 pop=  29 cash=    3998.6 bld= 46 snapA=    58.9 branchA=   1620.9 decl=0 forager:11/9/0;hunter:15/13/0;merchant:3/0/0
+family ..7297 home=659 founded=0 flags=32
+   d  364 pop=  13 cash=    5504.0 bld= 13 snapA=    47.0 branchA=    307.0 decl=0 hunter:6/3/0;merchant:3/1/0;miner:4/0/4
+   d  614 pop=  16 cash=    9232.7 bld= 14 snapA=    54.2 branchA=    462.9 decl=0 forager:3/2/0;hunter:6/3/0;merchant:3/1/0;miner:4/0/4
+   d  864 pop=  16 cash=   22216.5 bld= 17 snapA=    19.9 branchA=    558.0 decl=0 forager:1/0/0;hunter:11/5/0;merchant:1/1/0;unemployed:3/0/0
+   d 1114 pop=  18 cash=   31299.4 bld= 24 snapA=    17.2 branchA=    714.7 decl=0 forager:1/0/0;hunter:11/7/0;merchant:2/2/0;unemployed:4/0/0
+   d 1364 pop=  19 cash=   49933.3 bld= 26 snapA=    11.7 branchA=    775.2 decl=0 forager:14/11/0;hunter:4/3/0;unemployed:1/0/0
+   d 1614 pop=  22 cash=   70650.9 bld= 27 snapA=     9.7 branchA=    945.9 decl=0 forager:17/13/0;hunter:1/1/0;merchant:1/1/0;unemployed:3/0/0
+   d 1864 pop=  25 cash=   76560.6 bld= 29 snapA=    22.3 branchA=   1149.3 decl=0 forager:16/12/0;hunter:5/4/0;unemployed:4/0/0
+   d 2114 pop=  30 cash=   92217.6 bld= 33 snapA=    25.4 branchA=   1384.0 decl=0 forager:23/18/0;hunter:3/3/0;merchant:1/0/0;unemployed:3/0/0
+   d 2364 pop=  31 cash=   87568.5 bld= 37 snapA=    22.5 branchA=   1697.9 decl=0 forager:26/18/0;merchant:1/1/0;unemployed:4/0/0
+family ..7298 home=1817 founded=0 flags=32
+   d  364 pop=  16 cash=   15734.5 bld= 11 snapA=    33.6 branchA=    347.3 decl=0 forager:3/3/0;hunter:6/4/0;merchant:2/2/0;miner:5/0/5
+   d  614 pop=  15 cash=   18569.6 bld= 13 snapA=    29.4 branchA=    239.7 decl=0 forager:1/1/0;hunter:10/5/0;miner:3/0/3;unemployed:1/0/0
+   d  864 pop=  17 cash=   14884.5 bld= 19 snapA=    18.7 branchA=    147.6 decl=0 forager:7/7/0;hunter:8/6/0;merchant:1/0/0;miner:1/0/1
+   d 1114 pop=  17 cash=    5240.2 bld= 31 snapA=    28.2 branchA=    523.1 decl=0 forager:14/13/0;hunter:3/3/0
+   d 1364 pop=  19 cash=   10954.9 bld= 38 snapA=    17.6 branchA=   1095.7 decl=0 forager:11/10/0;hunter:8/8/0
+   d 1614 pop=  21 cash=   18260.2 bld= 40 snapA=    16.2 branchA=   1291.4 decl=0 forager:18/16/0;hunter:3/3/0
+   d 1864 pop=  25 cash=   24756.0 bld= 40 snapA=     8.6 branchA=   1621.9 decl=0 forager:17/15/0;hunter:8/8/0
+   d 2114 pop=  28 cash=   22953.8 bld= 53 snapA=    12.2 branchA=   2055.7 decl=0 forager:18/16/0;hunter:10/10/0
+   d 2364 pop=  31 cash=   22894.6 bld= 70 snapA=    26.4 branchA=   2866.8 decl=0 forager:14/12/0;hunter:17/17/0
+family ..7299 home=1918 founded=0 flags=56
+   d  364 pop=  15 cash=   11318.8 bld= 12 snapA=    13.5 branchA=    252.3 decl=0 forager:6/4/0;hunter:3/3/0;merchant:1/1/0;miner:3/0/3;unemployed:2/0/0
+   d  614 pop=  15 cash=   22213.0 bld= 15 snapA=    29.3 branchA=    335.8 decl=0 forager:2/1/0;hunter:9/7/0;merchant:1/1/0;miner:1/0/1;unemployed:2/0/0
+   d  864 pop=  18 cash=   30638.9 bld= 22 snapA=    26.0 branchA=    433.7 decl=0 forager:1/0/0;hunter:14/10/0;merchant:1/1/0;miner:1/0/1;unemployed:1/0/0
+   d 1114 pop=  17 cash=   31192.1 bld= 23 snapA=     6.7 branchA=    449.8 decl=0 forager:9/7/0;hunter:5/5/0;miner:1/0/1;unemployed:2/0/0
+   d 1364 pop=  20 cash=   46737.8 bld= 24 snapA=    17.8 branchA=   1216.4 decl=0 forager:11/9/0;hunter:9/8/0
+   d 1614 pop=  22 cash=   40821.0 bld= 38 snapA=    31.5 branchA=   1164.4 decl=0 forager:19/18/0;hunter:3/3/0
+   d 1864 pop=  25 cash=   45274.5 bld= 38 snapA=    19.4 branchA=   1328.5 decl=0 forager:18/15/0;hunter:7/7/0
+   d 2114 pop=  28 cash=   47486.3 bld= 39 snapA=     5.9 branchA=   2428.6 decl=0 forager:18/16/0;hunter:10/10/0
+   d 2364 pop=  31 cash=   48980.8 bld= 43 snapA=    17.2 branchA=   2203.2 decl=0 forager:23/21/0;hunter:8/8/0
+family ..7300 home=1946 founded=0 flags=32
+   d  364 pop=  13 cash=    7575.0 bld= 17 snapA=   218.4 branchA=   1293.2 decl=0 forager:3/1/0;hunter:4/2/0;merchant:3/1/0;miner:3/0/3
+   d  614 pop=  16 cash=    6602.5 bld= 25 snapA=   130.3 branchA=    940.5 decl=0 forager:4/3/0;hunter:6/6/0;merchant:2/2/0;miner:4/0/4
+   d  864 pop=  16 cash=   10729.9 bld= 25 snapA=   102.0 branchA=    659.4 decl=0 forager:1/0/0;hunter:9/7/0;merchant:2/2/0;miner:4/0/4
+   d 1114 pop=  17 cash=   36623.9 bld= 29 snapA=    53.5 branchA=    674.8 decl=0 forager:3/3/0;hunter:8/8/0;merchant:1/0/0;miner:4/0/4;unemployed:1/0/0
+   d 1364 pop=  22 cash=   59657.5 bld= 35 snapA=    54.2 branchA=    799.9 decl=0 forager:11/11/0;hunter:7/6/0;miner:4/0/4
+   d 1614 pop=  22 cash=   67893.4 bld= 37 snapA=    41.4 branchA=    710.1 decl=0 forager:4/3/0;hunter:12/12/0;merchant:2/1/0;miner:3/0/3;unemployed:1/0/0
+   d 1864 pop=  25 cash=   80829.3 bld= 40 snapA=     8.9 branchA=    960.4 decl=0 forager:21/21/0;hunter:3/3/0;miner:1/0/1
+   d 2114 pop=  28 cash=   54056.3 bld= 53 snapA=    13.5 branchA=   1975.2 decl=0 forager:19/18/0;hunter:9/9/0
+   d 2364 pop=  31 cash=   49921.8 bld= 59 snapA=     4.2 branchA=   2688.1 decl=0 forager:21/20/0;hunter:10/10/0
+family ..7301 home=1991 founded=0 flags=32
+   d  364 pop=  16 cash=    5089.7 bld= 10 snapA=    79.6 branchA=    387.1 decl=0 hunter:7/3/0;merchant:6/3/0;miner:3/0/3
+   d  614 pop=  13 cash=   16246.9 bld= 14 snapA=    54.1 branchA=    322.8 decl=0 forager:1/1/0;hunter:5/3/0;merchant:2/2/0;miner:5/0/5
+   d  864 pop=  15 cash=   32967.6 bld= 17 snapA=    47.2 branchA=    333.7 decl=0 forager:6/6/0;hunter:5/5/0;merchant:1/0/0;miner:3/0/3
+   d 1114 pop=  17 cash=   44136.5 bld= 26 snapA=    19.3 branchA=    342.1 decl=0 forager:11/11/0;hunter:2/2/0;merchant:2/1/0;miner:2/0/2
+   d 1364 pop=  19 cash=   59064.7 bld= 26 snapA=    30.5 branchA=    422.0 decl=0 forager:13/11/0;hunter:2/2/0;merchant:1/0/0;miner:3/0/3
+   d 1614 pop=  22 cash=   65509.9 bld= 28 snapA=    32.4 branchA=    453.3 decl=0 forager:13/12/0;hunter:4/4/0;merchant:2/1/0;miner:3/0/3
+   d 1864 pop=  25 cash=   67708.2 bld= 29 snapA=    54.6 branchA=    590.8 decl=0 forager:16/15/0;hunter:4/4/0;miner:4/0/4;unemployed:1/0/0
+   d 2114 pop=  28 cash=   74727.4 bld= 38 snapA=    24.7 branchA=    655.4 decl=0 forager:23/22/0;hunter:2/2/0;merchant:1/1/0;miner:2/0/2
+   d 2364 pop=  31 cash=   77943.0 bld= 40 snapA=    37.8 branchA=   1043.5 decl=0 forager:24/24/0;hunter:3/3/0;merchant:1/0/0;miner:3/0/3
+
+== holdings: owned units vs family-filled owner posts (last sample per family)
+  ..7296 cell=388 deadwood_gathering_camp      owner_prof=forager    owned=3/5 family_owner_posts=0/6 group_owner_filled=4/10 state=0 rev=0 cost=0 cohort_pop=38 family_people_in_cell=29
+  ..7296 cell=388 gathering_ground             owner_prof=forager    owned=29/33 family_owner_posts=8/29 group_owner_filled=30/33 state=0 rev=213072 cost=1286 cohort_pop=38 family_people_in_cell=29
+  ..7296 cell=388 stone_age_hunting_camp       owner_prof=hunter     owned=13/18 family_owner_posts=13/13 group_owner_filled=15/18 state=0 rev=230876 cost=1403 cohort_pop=15 family_people_in_cell=29
+  ..7296 cell=388 timber_collector             owner_prof=forager    owned=1/2 family_owner_posts=1/2 group_owner_filled=4/4 state=0 rev=12335 cost=0 cohort_pop=38 family_people_in_cell=29
+  ..7297 cell=659 deadwood_gathering_camp      owner_prof=forager    owned=1/4 family_owner_posts=2/2 group_owner_filled=8/8 state=0 rev=0 cost=0 cohort_pop=34 family_people_in_cell=31
+  ..7297 cell=659 gathering_ground             owner_prof=forager    owned=16/20 family_owner_posts=13/16 group_owner_filled=20/20 state=0 rev=111907 cost=544 cohort_pop=34 family_people_in_cell=31
+  ..7297 cell=659 placer_gold_working          owner_prof=merchant   owned=2/8 family_owner_posts=2/2 group_owner_filled=6/8 state=0 rev=0 cost=109 cohort_pop=6 family_people_in_cell=31
+  ..7297 cell=659 stone_age_hunting_camp       owner_prof=hunter     owned=15/21 family_owner_posts=1/15 group_owner_filled=17/21 state=0 rev=12179 cost=1141 cohort_pop=17 family_people_in_cell=31
+  ..7297 cell=659 timber_collector             owner_prof=forager    owned=3/3 family_owner_posts=3/6 group_owner_filled=6/6 state=0 rev=26918 cost=0 cohort_pop=34 family_people_in_cell=31
+  ..7298 cell=1817 deadwood_gathering_camp      owner_prof=forager    owned=5/7 family_owner_posts=1/10 group_owner_filled=4/14 state=0 rev=0 cost=0 cohort_pop=38 family_people_in_cell=31
+  ..7298 cell=1817 gathering_ground             owner_prof=forager    owned=27/32 family_owner_posts=7/27 group_owner_filled=21/32 state=0 rev=160471 cost=188 cohort_pop=38 family_people_in_cell=31
+  ..7298 cell=1817 placer_gold_working          owner_prof=merchant   owned=2/8 family_owner_posts=0/2 group_owner_filled=0/8 state=1 rev=0 cost=0 cohort_pop=1 family_people_in_cell=31
+  ..7298 cell=1817 stone_age_hunting_camp       owner_prof=hunter     owned=29/36 family_owner_posts=17/29 group_owner_filled=24/36 state=0 rev=17458 cost=423 cohort_pop=24 family_people_in_cell=31
+  ..7298 cell=1817 timber_collector             owner_prof=forager    owned=7/7 family_owner_posts=4/14 group_owner_filled=13/14 state=0 rev=0 cost=0 cohort_pop=38 family_people_in_cell=31
+  ..7299 cell=1918 deadwood_gathering_camp      owner_prof=forager    owned=2/5 family_owner_posts=4/4 group_owner_filled=10/10 state=0 rev=14731 cost=0 cohort_pop=45 family_people_in_cell=31
+  ..7299 cell=1918 gathering_ground             owner_prof=forager    owned=18/32 family_owner_posts=14/18 group_owner_filled=29/32 state=0 rev=2159 cost=403 cohort_pop=45 family_people_in_cell=31
+  ..7299 cell=1918 placer_gold_working          owner_prof=merchant   owned=1/8 family_owner_posts=0/1 group_owner_filled=0/8 state=1 rev=0 cost=0 cohort_pop=1 family_people_in_cell=31
+  ..7299 cell=1918 stone_age_hunting_camp       owner_prof=hunter     owned=17/24 family_owner_posts=8/17 group_owner_filled=17/24 state=0 rev=42251 cost=604 cohort_pop=17 family_people_in_cell=31
+  ..7299 cell=1918 timber_collector             owner_prof=forager    owned=5/6 family_owner_posts=3/10 group_owner_filled=6/12 state=0 rev=96983 cost=0 cohort_pop=45 family_people_in_cell=31
+  ..7300 cell=1946 deadwood_gathering_camp      owner_prof=forager    owned=4/8 family_owner_posts=1/8 group_owner_filled=3/16 state=0 rev=0 cost=0 cohort_pop=42 family_people_in_cell=31
+  ..7300 cell=1946 gathering_ground             owner_prof=forager    owned=32/37 family_owner_posts=16/32 group_owner_filled=33/37 state=0 rev=914 cost=970 cohort_pop=42 family_people_in_cell=31
+  ..7300 cell=1946 placer_gold_working          owner_prof=merchant   owned=4/8 family_owner_posts=0/4 group_owner_filled=0/8 state=1 rev=0 cost=0 cohort_pop=1 family_people_in_cell=31
+  ..7300 cell=1946 stone_age_hunting_camp       owner_prof=hunter     owned=14/20 family_owner_posts=10/14 group_owner_filled=19/20 state=0 rev=42532 cost=1048 cohort_pop=19 family_people_in_cell=31
+  ..7300 cell=1946 timber_collector             owner_prof=forager    owned=5/5 family_owner_posts=3/10 group_owner_filled=6/10 state=0 rev=0 cost=0 cohort_pop=42 family_people_in_cell=31
+  ..7301 cell=1991 deadwood_gathering_camp      owner_prof=forager    owned=5/7 family_owner_posts=9/10 group_owner_filled=13/14 state=0 rev=20933 cost=0 cohort_pop=36 family_people_in_cell=31
+  ..7301 cell=1991 gathering_ground             owner_prof=forager    owned=14/20 family_owner_posts=13/14 group_owner_filled=20/20 state=0 rev=86203 cost=134 cohort_pop=36 family_people_in_cell=31
+  ..7301 cell=1991 placer_gold_working          owner_prof=merchant   owned=3/8 family_owner_posts=0/3 group_owner_filled=5/8 state=0 rev=800000 cost=637486 cohort_pop=5 family_people_in_cell=31
+  ..7301 cell=1991 stone_age_hunting_camp       owner_prof=hunter     owned=14/20 family_owner_posts=3/14 group_owner_filled=19/20 state=0 rev=88244 cost=268 cohort_pop=19 family_people_in_cell=31
+  ..7301 cell=1991 timber_collector             owner_prof=forager    owned=4/4 family_owner_posts=2/8 group_owner_filled=3/8 state=0 rev=31721 cost=0 cohort_pop=36 family_people_in_cell=31
+  TOTAL owned units=295 family-owned owner posts filled by family=158/340

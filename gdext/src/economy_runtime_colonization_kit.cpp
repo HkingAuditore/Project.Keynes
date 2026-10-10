@@ -1204,10 +1204,11 @@ bool NativeEconomyRuntime::advance_family_expedition_procurement(
             c.market_applied = true;
         }
         while (c.merchant_cursor < c.living_merchants.size()) {
-            const int32_t slot = c.living_merchants[c.merchant_cursor++];
+            const size_t index = c.merchant_cursor++;
+            const int32_t slot = c.living_merchants[index];
             c.merchant_population_prefix = saturating_add(
                 c.merchant_population_prefix,
-                population_store().population[slot], _saturation_count);
+                c.merchant_weights[index], _saturation_count);
             const int64_t next = mul_div_sat(
                 c.cash, c.merchant_population_prefix,
                 c.merchant_population, _saturation_count);
@@ -1403,10 +1404,13 @@ bool NativeEconomyRuntime::start_family_expedition_procurement(
         c.active = false;
         return false;
     }
-    for (int32_t slot : c.living_merchants)
+    c.merchant_weights.reserve(c.living_merchants.size());
+    for (int32_t slot : c.living_merchants) {
+        const int64_t weight = population_store().population[slot];
+        c.merchant_weights.push_back(weight);
         c.merchant_population = saturating_add(
-            c.merchant_population, population_store().population[slot],
-            _saturation_count);
+            c.merchant_population, weight, _saturation_count);
+    }
     std::vector<int32_t> ids{good};
     std::vector<int64_t> goods{quantity};
     const auto route = block_or_enqueue_country_worker_asset(

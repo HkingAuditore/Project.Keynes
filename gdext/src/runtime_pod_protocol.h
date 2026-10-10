@@ -1736,6 +1736,8 @@ struct RuntimeThreadReport {
     uint32_t events_pod_event_count = 0;
     uint32_t events_pod_ack_count = 0;
     uint64_t events_pod_drop_count = 0;
+    uint64_t events_pod_rejected_count = 0;
+    int64_t events_failed_day = -1;
     char events_pod_fallback_reason[64]{};
     // Trigger POD SHADOW parity. These fields are diagnostic only and never
     // contribute to implemented_domain_mask or authoritative_domain_mask.

@@ -1466,7 +1466,9 @@ pump 作为协议路径。触发日第一次访问必然 `ack_barrier_incomplete
 - [x] I3 命令层：固定 little-endian ABI、ABI/count header、单批最多
       `RUNTIME_EVENTS_MAX_BATCH_RECORDS`，worker preflight 允许 Events probe
 - [x] I4 ACK：ACTIVE 下 `ack_gameplay_events()` 只提交稳定 UTF-8 consumer key 的
-      typed ACK，poll 默认游标直接读取 worker snapshot；SHADOW/回退才保留 legacy cursor
+      typed ACK，poll 默认游标直接读取 worker snapshot；SHADOW/回退才保留 legacy cursor。
+      ACTIVE ACK 不再与 legacy cursor 取 max（legacy id 可能领先 worker `next_event_id`），
+      而是截断到最新 snapshot 的 `next_event_id - 1`，未前进时不发包；`auto_ack` 同理
 - [x] I5 immutable snapshot：generation/hash/day、事件列、consumer ACK 列和幂等证据列；
       `poll_runtime_events_snapshot(after_generation)` 读取后立即释放 ring slot，旧 READY
       槽在 ring 满时可被最新写者回收
@@ -1477,6 +1479,13 @@ pump 作为协议路径。触发日第一次访问必然 `ack_barrier_incomplete
 - [x] I8 放行（`0xFFF`；EVENTS 进入 `implemented_domain_mask` 并在 ACTIVE stage loop 里拥有
       自己的阶段位；请求掩码含 EVENTS 时 `start()` 强制打开 `_events_probe_enabled`，否则
       阶段会永远 soft-complete 而不产出 snapshot）
+- [x] I9 包级拒绝不钉死日：`plan_day` 对非法包回 `INVALID_PAYLOAD/INVALID_VALUE` 回执、
+      计入 `events_pod_rejected_count` 并随当天提交出队（命令只在 COMMIT 后消费，旧的
+      "任一包失败整天失败" 会让同一坏包每次重试重放，Climate 环满后时钟停在
+      `climate_input_capacity_day_barrier`）。幂等证据在超过 capacity 时裁剪到最老保留事件，
+      否则越过 `validate_snapshot` 上限后每天 commit 失败。仍会阻止 COMMIT 的只剩 plan/commit
+      硬失败：`events_failed_day == day` 持续 `RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS`
+      后打印 `[day-stall-fault] ... events_day_failed reason=` 并置 `events_day_failed` 故障
 
 **当前边界（M3）**：请求掩码授予 EVENTS 后，`RuntimeEventsAuthority` 是唯一生产 journal。
 主线程 producer 只提交 APPEND_BATCH；legacy deque 不再追加，poll/replay/ACK 从 worker

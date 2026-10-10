@@ -78,6 +78,17 @@ static uint64_t stable_consumer_key(const StringName &consumer_id) {
     return hash == 0 ? 1 : hash;
 }
 
+static int64_t worker_consumer_ack(const RuntimeEventsSnapshot &snapshot,
+                                   uint64_t consumer_key) {
+    const auto found = std::lower_bound(snapshot.consumer_acks.begin(),
+        snapshot.consumer_acks.end(), consumer_key,
+        [](const RuntimeEventsConsumerAck &entry, uint64_t key) {
+            return entry.consumer_key < key;
+        });
+    return found != snapshot.consumer_acks.end() &&
+        found->consumer_key == consumer_key ? found->event_id : 0;
+}
+
 static bool queue_events_bridge_batch(
         NativeSimulationHost *host,
         const std::vector<RuntimeEventsRecord> &records,
@@ -973,13 +984,32 @@ Dictionary DCWorldExt::ack_gameplay_events(StringName consumer_id, int64_t up_to
     Dictionary out;
     const bool worker_authoritative =
         _runtime_host && _runtime_host->events_worker_authoritative();
-    const int64_t prev = _gameplay_consumer_ack.has(consumer_id)
+    int64_t prev = _gameplay_consumer_ack.has(consumer_id)
         ? _gameplay_consumer_ack[consumer_id] : 0;
-    const int64_t next = std::max(prev, up_to_event_id);
+    int64_t next = std::max(prev, up_to_event_id);
+    bool skip_worker_ack = false;
     // ACTIVE Events owns the consumer cursor in the worker snapshot. Keep the
     // legacy cursor untouched there; probe/fallback retains the old API state.
-    if (!worker_authoritative)
+    if (!worker_authoritative) {
         _gameplay_consumer_ack[consumer_id] = next;
+    } else {
+        // 旧游标是 legacy 日志 id，可能领先 worker 的 next_event_id；混入后
+        // ACK 会被 Events 判非法。权威下只信 worker 快照，并截断到已发布 id。
+        uint32_t slot = 0;
+        if (_runtime_host->try_acquire_events_snapshot(0, slot)) {
+            const RuntimeEventsSnapshot &snapshot =
+                _runtime_host->events_snapshot_buffer(slot);
+            prev = worker_consumer_ack(snapshot, stable_consumer_key(consumer_id));
+            next = std::min(up_to_event_id, snapshot.next_event_id - 1);
+            skip_worker_ack = next <= prev;
+            next = std::max(prev, next);
+            _runtime_host->release_events_snapshot(slot);
+        } else {
+            prev = 0;
+            next = 0;
+            skip_worker_ack = true;
+        }
+    }
     out["consumer_id"] = consumer_id;
     out["previous_event_id"] = prev;
     out["acked_event_id"] = next;
@@ -990,8 +1020,8 @@ Dictionary DCWorldExt::ack_gameplay_events(StringName consumer_id, int64_t up_to
     // In EVENTS-authoritative mode the typed ACK is the production path. In
     // probe/fallback mode it remains best-effort and cannot make the legacy
     // acknowledgement fail.
-    if (_runtime_host && (_runtime_host->events_probe_enabled() ||
-                          worker_authoritative) &&
+    if (_runtime_host && !skip_worker_ack &&
+        (_runtime_host->events_probe_enabled() || worker_authoritative) &&
         next >= 0) {
         std::string bridge_error;
         if (queue_events_bridge_ack(_runtime_host.get(), consumer_id, next,
@@ -1050,16 +1080,10 @@ Dictionary DCWorldExt::poll_runtime_events_snapshot_opts(const Dictionary &opts)
 
     const RuntimeEventsSnapshot &snapshot =
         _runtime_host->events_snapshot_buffer(slot);
-    if (!explicit_after_event_id && _runtime_host->events_worker_authoritative()) {
-        const uint64_t consumer_key = stable_consumer_key(consumer_id);
-        const auto found = std::lower_bound(snapshot.consumer_acks.begin(),
-            snapshot.consumer_acks.end(), consumer_key,
-            [](const RuntimeEventsConsumerAck &entry, uint64_t key) {
-                return entry.consumer_key < key;
-            });
-        after_event_id = found != snapshot.consumer_acks.end() &&
-            found->consumer_key == consumer_key ? found->event_id : 0;
-    }
+    const int64_t worker_acked =
+        worker_consumer_ack(snapshot, stable_consumer_key(consumer_id));
+    if (!explicit_after_event_id && _runtime_host->events_worker_authoritative())
+        after_event_id = worker_acked;
     PackedInt64Array ids;
     PackedInt64Array ticks;
     PackedInt32Array phases;
@@ -1162,10 +1186,12 @@ Dictionary DCWorldExt::poll_runtime_events_snapshot_opts(const Dictionary &opts)
     out["idempotency_request_id"] = idempotency_requests;
     out["idempotency_event_id"] = idempotency_events;
     out["idempotency_count"] = idempotency_keys.size();
-    if (auto_ack && last_event_id >= 0) {
+    const int64_t auto_ack_event_id =
+        std::min(last_event_id, snapshot.next_event_id - 1);
+    if (auto_ack && auto_ack_event_id > worker_acked) {
         std::string ack_error;
         if (queue_events_bridge_ack(_runtime_host.get(), consumer_id,
-                                    last_event_id, ack_error)) {
+                                    auto_ack_event_id, ack_error)) {
             out["auto_ack_queued"] = true;
         } else {
             out["auto_ack_queued"] = false;

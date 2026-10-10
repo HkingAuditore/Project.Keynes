@@ -195,9 +195,14 @@ else            →  render_water_pipeline()
 
 GLOBAL          →  apply_global_adjustments
                      ├── 羊皮纸纸纹（pixel_noise.b 派生 grain）
-                     ├── apply_tonemap（ACES 或 Reinhard）
+                     ├── apply_tonemap（ACES 或 Reinhard）；陆地按 tonemap_hue_preserve
+                     │   混入 apply_tonemap_luminance（按明度压缩，不在 toe 段放大色度）
                      └── linear_to_srgb（仅 USE_LINEAR_LIGHTING=true）
 ```
+
+陆地色度三个旋钮（`hex_renderer.gd` 的 `Land Chroma` 组，setter 直推材质）：
+`biome_tint_strength`（`biome_hue_modulate` 乘数保留比例）、`land_albedo_saturation`
+（所有陆地变色/覆盖层之后、BRDF 之前的反照率饱和度）、`tonemap_hue_preserve`。
 
 **统一的"5 段式"管线契约**（land 完整体现，water 因为不需要 modifier 阶段简化为 3 段）：
 
@@ -469,7 +474,8 @@ vec4 apply_global_adjustments(vec3 col, vec2 wp, vec4 pixel_noise, float dyn_sno
     col = apply_paper_grain(col, wp, pixel_noise);          // 羊皮纸纸纹
     col = apply_equator_band(col, ...);                     // 赤道带柔光
     if (USE_LINEAR_LIGHTING && day_night_enabled) {
-        col = apply_tonemap(col);    // ACES 或 Reinhard，内部自带 exposure_bias
+        col = mix(apply_tonemap(col), apply_tonemap_luminance(col),
+                  tonemap_hue_preserve * land_mask);    // 内部自带 exposure_bias
         col = linear_to_srgb(col);
     }
     return col;

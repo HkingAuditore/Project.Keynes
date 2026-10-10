@@ -104,12 +104,37 @@ const DETAIL_PLAN_FINALIZE: int = 7
 @export_range(0.0, 0.4, 0.01) var parchment_strength: float = 0.10
 @export_range(0.0, 0.2, 0.01) var paper_grain_strength: float = 0.05
 
+# ─── 陆地色度：setter 直推 _shader_mat，可经远程场景树实时拖动 ─────────────
+@export_group("Land Chroma")
+## biome_hue_modulate 乘数保留比例；1 = 原始地形偏色，0 = 只剩海拔底色。
+@export_range(0.0, 1.0, 0.01) var biome_tint_strength: float = 0.80:
+	set(value):
+		biome_tint_strength = clampf(value, 0.0, 1.0)
+		if _shader_mat != null:
+			_shader_mat.set_shader_parameter("biome_tint_strength", biome_tint_strength)
+## 所有陆地变色层之后、光照之前的反照率饱和度。
+@export_range(0.0, 1.5, 0.01) var land_albedo_saturation: float = 0.92:
+	set(value):
+		land_albedo_saturation = clampf(value, 0.0, 1.5)
+		if _shader_mat != null:
+			_shader_mat.set_shader_parameter("land_albedo_saturation", land_albedo_saturation)
+## 陆地色调映射中按明度 ACES 的占比；0 = 纯逐通道 ACES（toe 段会放大色度）。
+@export_range(0.0, 1.0, 0.01) var tonemap_hue_preserve: float = 0.3:
+	set(value):
+		tonemap_hue_preserve = clampf(value, 0.0, 1.0)
+		if _shader_mat != null:
+			_shader_mat.set_shader_parameter("tonemap_hue_preserve", tonemap_hue_preserve)
+
 # ─── 季节 / 气候系统（每帧由 main.gd 通过 set_*_phase 推进） ─────────────
 # 2026-05-19 Plan-C：season_temp_amp 默认 0.20 → 0.32，与 climate_profile.gd
 # 和 uniforms.gdshaderinc 同步。这是真正推送到 shader 的数据源（行 989）。
 @export_group("Climate")
 @export_range(0.0, 0.4, 0.01) var season_temp_amp: float = 0.32
-@export_range(0.0, 1.0, 0.01) var vegetation_season_strength: float = 1.0
+@export_range(0.0, 1.0, 0.01) var vegetation_season_strength: float = 0.85:
+	set(value):
+		vegetation_season_strength = clampf(value, 0.0, 1.0)
+		if _shader_mat != null:
+			_shader_mat.set_shader_parameter("vegetation_season_strength", vegetation_season_strength)
 @export_range(0.0, 1.0, 0.01) var dynamic_snow_strength: float = 0.85
 @export_range(0.0, 1.0, 0.01) var ocean_current_strength: float = 0.88
 # 2026-05-19：dynamic_cell / dyn_atlas_smooth / ecology / ice 四张 atlas 的上传节流。
@@ -3824,6 +3849,10 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("parchment_tint", parchment_tint)
 	sm.set_shader_parameter("parchment_strength", parchment_strength)
 	sm.set_shader_parameter("paper_grain_strength", paper_grain_strength)
+
+	sm.set_shader_parameter("biome_tint_strength", biome_tint_strength)
+	sm.set_shader_parameter("land_albedo_saturation", land_albedo_saturation)
+	sm.set_shader_parameter("tonemap_hue_preserve", tonemap_hue_preserve)
 
 # ─── map-visual-overhaul-v1：植被四季 LUT 推送 ──────────────────────────
 # 把 VegetationProfileRegistry 加载的 24 个 VegetationProfile 的

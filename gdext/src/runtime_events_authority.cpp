@@ -389,22 +389,20 @@ bool RuntimeEventsAuthority::plan_day(int64_t day,
         receipt.effective_day = packet.envelope.effective_day;
         receipt.generation = _current.generation + 1u;
         std::string packet_error;
+        // 命令只在当天提交后出队；坏包若让整天失败，会在每次重试里重放，
+        // 把 worker 永久钉在这一天。apply_packet 失败时不改状态，只回拒绝。
         if (!apply_packet(_planned, packet, day, report, packet_error)) {
             receipt.code = packet_error.find("payload") != std::string::npos ||
                 packet_error.find("record") != std::string::npos ||
                 packet_error.find("header") != std::string::npos
                 ? RuntimeReceiptCode::INVALID_PAYLOAD : RuntimeReceiptCode::INVALID_VALUE;
+            if (report.rejected_commands == 0u)
+                set_error(report, packet_error.c_str());
             ++report.rejected_commands;
-            if (error.empty()) error = packet_error;
         }
         receipts.push_back(receipt);
     }
-    if (!error.empty()) {
-        report.preflight_ok = 0;
-        set_error(report, error.c_str());
-        _plan_ready = false;
-        return false;
-    }
+    prune_idempotency(_planned);
     _planned.committed_day = day;
     _planned.generation = _current.generation + 1u;
     _planned.state_hash = hash_snapshot(_planned);
@@ -432,6 +430,21 @@ bool RuntimeEventsAuthority::commit_day(const RuntimeEventsSnapshot &planned_sna
 }
 
 void RuntimeEventsAuthority::discard_plan() { _plan_ready = false; }
+
+void RuntimeEventsAuthority::prune_idempotency(RuntimeEventsSnapshot &state) {
+    // 事件按 capacity 从队首淘汰，证据却按 key 排序且不随之删除；不裁剪会
+    // 越过 validate_snapshot 的上限，让此后每天 commit 都失败。保留的事件 id
+    // 连续，故只留 event_id >= 最老保留事件的证据，数量必不超过 capacity。
+    if (state.idempotency.size() <= state.capacity) return;
+    const int64_t oldest_retained = state.events.empty()
+        ? state.next_event_id : state.events.front().event_id;
+    state.idempotency.erase(
+        std::remove_if(state.idempotency.begin(), state.idempotency.end(),
+            [oldest_retained](const RuntimeEventsIdempotencyEvidence &entry) {
+                return entry.event_id < oldest_retained;
+            }),
+        state.idempotency.end());
+}
 
 bool RuntimeEventsAuthority::serialize(std::vector<uint8_t> &out,
                                        std::string &error) const {
@@ -610,6 +623,39 @@ bool RuntimeEventsAuthority::self_test(std::string &error) {
         restored.snapshot().consumer_acks.size() != 1u ||
         restored.snapshot().idempotency.size() != 2u) {
         if (error.empty()) error = "events_save_roundtrip_invalid";
+        return false;
+    }
+
+    RuntimeEventsAuthority isolated;
+    isolated.reset(2u);
+    RuntimeCommandPacket future_ack = ack;
+    future_ack.envelope.request_id = 40; future_ack.envelope.sequence = 1;
+    future_ack.envelope.requested_day = 1; future_ack.envelope.effective_day = 1;
+    ack_payload.clear();
+    append_le<uint32_t>(ack_payload, RUNTIME_EVENTS_ABI_VERSION);
+    append_le<uint64_t>(ack_payload, 123u);
+    append_le<int64_t>(ack_payload, 50);
+    future_ack.envelope.payload_size = static_cast<uint32_t>(ack_payload.size());
+    std::memcpy(future_ack.payload.data(), ack_payload.data(), ack_payload.size());
+    commands = {future_ack, make_append_packet(41u, 1u, 2u, 1, first, 700u)};
+    if (!isolated.plan_day(1, commands, planned, receipts, report, error) ||
+        !isolated.commit_day(planned, error) || report.rejected_commands != 1u ||
+        receipts.size() != 2u || receipts[0].code == RuntimeReceiptCode::OK ||
+        receipts[1].code != RuntimeReceiptCode::OK ||
+        isolated.snapshot().events.size() != 1u ||
+        !isolated.snapshot().consumer_acks.empty() ||
+        report.fallback_reason[0] == '\0') {
+        if (error.empty()) error = "events_rejected_packet_blocked_day";
+        return false;
+    }
+    commands.clear();
+    for (uint64_t i = 0; i < 4u; ++i)
+        commands.push_back(make_append_packet(50u + i, 1u, 3u + i, 2, second, 600u + i));
+    if (!isolated.plan_day(2, commands, planned, receipts, report, error) ||
+        !isolated.commit_day(planned, error) ||
+        isolated.snapshot().events.size() != 2u ||
+        isolated.snapshot().idempotency.size() > 2u) {
+        if (error.empty()) error = "events_idempotency_not_pruned";
         return false;
     }
     return RuntimeEventsSnapshotRing::self_test();

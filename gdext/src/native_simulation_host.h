@@ -1368,6 +1368,9 @@ private:
     std::atomic<uint32_t> _events_pod_ack_count{0};
     std::atomic<uint64_t> _events_pod_drop_count{0};
     std::array<std::atomic<char>, 64> _events_pod_fallback_reason{};
+    std::atomic<uint64_t> _events_pod_rejected_count{0};
+    // ACTIVE 下硬失败（非包级拒绝）的日子；-1 表示最近一次 Events 已提交。
+    std::atomic<int64_t> _events_failed_day{-1};
     // Events is a diagnostic sidecar. Keep a worker-local watermark so a
     // Climate input-barrier retry cannot advance its generation twice for the
     // same host day.

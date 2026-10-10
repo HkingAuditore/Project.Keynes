@@ -58,3 +58,13 @@ vec3 apply_tonemap(vec3 hdr) {
 	}
 	return tonemap_reinhard_legacy(hdr);
 }
+
+// 按明度压缩、RGB 等比缩放：保持通道比例，不像逐通道曲线那样在 toe 段放大色度。
+vec3 apply_tonemap_luminance(vec3 hdr) {
+	hdr *= TONEMAP_EXPOSURE_BIAS;
+	float l_in = dot(hdr, vec3(0.2126, 0.7152, 0.0722));
+	float l_out = USE_FILMIC_TONEMAP
+			? tonemap_filmic_aces(vec3(l_in)).r
+			: tonemap_reinhard_legacy(vec3(l_in)).r;
+	return min(hdr * (l_out / max(l_in, 1e-5)), vec3(1.0));
+}

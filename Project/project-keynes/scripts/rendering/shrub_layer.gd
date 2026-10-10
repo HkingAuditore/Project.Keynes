@@ -592,7 +592,7 @@ void fragment() {
 	// 先展开色度与明度，再覆雪；严寒区收紧色度，避免健康绿色变成荧光色。
 	float grade_luma = dot(rgb, vec3(0.299, 0.587, 0.114));
 	float warm_grade_mix = max(heat_visual, dry_hot) * 0.82;
-	float effective_saturation_gain = mix(color_saturation_gain, 1.12,
+	float effective_saturation_gain = mix(color_saturation_gain, color_saturation_gain * 0.93,
 		clamp(warm_grade_mix, 0.0, 0.86));
 	float cold_grade_mix = cool_visual * temperature_color_strength * 0.90;
 	effective_saturation_gain = mix(effective_saturation_gain, 0.76,
@@ -603,7 +603,7 @@ void fragment() {
 	float green_chroma_w = smoothstep(0.07, 0.26, green_axis)
 		* clamp(wet_w + healthy_w + stage_w.y, 0.0, 1.0);
 	effective_saturation_gain = mix(effective_saturation_gain,
-		min(effective_saturation_gain, 1.06), green_chroma_w * 0.90);
+		min(effective_saturation_gain, color_saturation_gain * 0.88), green_chroma_w * 0.90);
 	rgb = mix(vec3(grade_luma), rgb, effective_saturation_gain) * color_value_gain;
 	rgb = clamp(rgb, vec3(0.0), vec3(1.0));
 	// 风格化调色板禁止大面积橄榄黄绿：它通常来自基础色、物候色和气候色的

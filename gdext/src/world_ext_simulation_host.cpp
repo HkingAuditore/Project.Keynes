@@ -423,6 +423,9 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
     out["events_pod_event_count"] = static_cast<int>(report.events_pod_event_count);
     out["events_pod_ack_count"] = static_cast<int>(report.events_pod_ack_count);
     out["events_pod_drop_count"] = static_cast<int64_t>(report.events_pod_drop_count);
+    out["events_pod_rejected_count"] =
+        static_cast<int64_t>(report.events_pod_rejected_count);
+    out["events_failed_day"] = report.events_failed_day;
     out["events_pod_fallback_reason"] = String(report.events_pod_fallback_reason);
     out["fault_code"] = String(report.fault_code);
     out["fault_injection_armed"] = report.fault_injection_armed;

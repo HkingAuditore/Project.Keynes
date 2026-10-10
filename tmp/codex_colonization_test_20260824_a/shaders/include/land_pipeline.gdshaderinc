@@ -756,6 +756,10 @@ vec3 render_land_pipeline(
 	surface = apply_land_material_overlays(
 		surface, biome, cover, current_temp, elev, moist, dyn_snow, dyn_valid, scals.g);
 
+	float albedo_luma = dot(surface.base_color, vec3(0.299, 0.587, 0.114));
+	surface.base_color = max(mix(vec3(albedo_luma), surface.base_color, land_albedo_saturation),
+			vec3(0.0));
+
 	// 12 = 光照前的地表底色。与 11（光照后、全局调整前）配合把陆地管线切成
 	// 「底色 / 光照 / 全局调整」三段，一次导出定位到其中一段。
 	if (terrain_surface_debug_view == 12) {

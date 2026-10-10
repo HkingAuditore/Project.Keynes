@@ -1022,6 +1022,10 @@ private:
         size_t merchant_cursor = 0;
         bool market_applied = false;
         std::vector<int32_t> living_merchants;
+        // Population of each living merchant when merchant_population was
+        // summed. The credit may land on a later pulse; live populations can
+        // have moved by then and would no longer add up to cash.
+        std::vector<int64_t> merchant_weights;
         std::string last_error;
     };
 
@@ -1052,6 +1056,9 @@ private:
         int64_t merchant_distributed = 0;
         int64_t started_day = -1;
         std::vector<int32_t> living_merchants;
+        // Frozen at start: the Country terminal arrives days later, after
+        // merchant populations may have changed.
+        std::vector<int64_t> merchant_weights;
         std::string last_error;
     };
 

@@ -1,0 +1,668 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+D3D12 12_0 - Forward Mobile - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4080
+
+[ui-layout-diag/bind_ui] is_web=false viewport_visible_rect=[P: (0.0, 0.0), S: (1092.8, 614.4)] window_size=(1366, 768) content_scale_factor=1.250 content_scale_mode=0 device_pixel_ratio=-1.000 top_bar_rect=[P: (0.0, 0.0), S: (1092.8, 56.0)] right_panel_rect=[P: (632.8, 68.0), S: (460.0, 534.4)] country_action_bar_rect=[P: (380.4, 532.4), S: (400.0, 74.0)]
+[building-visual] queue_probe ticks=1 queued=0 chunk=-1 camera_rect=[P: (-546.4, -307.2), S: (1092.8, 614.4)] prefetch=false zoom=1.000
+[clock/step] delta=150.0ms speed=1x target=0.15d cap=8.00d/f cost=0.00ms ran=0 pulse=0.00ms loop=0.00ms full=0.31ms carry=0.15 barrier=
+[building-visual] queue_probe ticks=2 queued=0 chunk=-1 camera_rect=[P: (-546.4, -307.2), S: (1092.8, 614.4)] prefetch=false zoom=1.000
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=6.106 water=1723 land=677
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=1.209 lakes=4 rivers=80 volcanoes=0
+[native_generation/vegetation] native_ms=0.405 candidates=685 none=1345 score=[0.000,1.287,1.138] plant_water_land=685 river_adjacent_desert=0 coastal_highland_desert=0 terrain_weight=[0.180,1.200]
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=1 largest=1715 | land_below_sea=0.7% | terr_distinct=21 entropy=2.843bit | river_ratio=3.333%
+MapGenerator v7: per-cell 60ms (2400 cells, path=gdext)
+[building-visual] queue_probe ticks=3 queued=0 chunk=-1 camera_rect=[P: (-546.4, -307.2), S: (1092.8, 614.4)] prefetch=false zoom=1.000
+MapBaker v6: hm=(1024, 606) seed=1656259869
+    [fused] terrain=73.0ms valley=118.0ms erosion=2.3ms(ok=true) river=11.2ms(ok=true) latitude=0.1ms coast_sdf=3.2ms(ok=true)
+  geometry fields (fused C++): 265ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  visual tiles: {"degradation_reason":"","effective_budget_px":1717248,"effective_texels_per_hex":16.0059221751742,"effective_world_units_per_texel":"(1.373983, 1.375)","estimated_peak_bytes":110496960,"estimated_resident_bytes":82434240,"fallback_reason":"","generation_id":1,"grid_size":"(4, 3)","gutter_px":2,"hex_size":22.0,"horizon_path":"neutral_pending","interior_size":"(416, 344)","layer_size":"(420, 348)","layers":[{"bake_ms":82.6631,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-4823064257823468389,"edge_neighbor":1395413315301188588,"height":-2673833050342814905,"map_index":-6030053651197731436,"terrain_detail":8383798121081907718,"terrain_normal":3074056752977753658,"terrain_relief":-2261281031417846270,"water_depth":6557174587142147402},"layer":0,"normal_radius_px":"(6, 6)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.677,"wall_ms":83.571},{"bake_ms":127.8451,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-9191566511128131952,"edge_neighbor":-412299613482904981,"height":448735021220348872,"map_index":-7671462821296022330,"terrain_detail":-3787563020645128639,"terrain_normal":-4446281463191927855,"terrain_relief":5591197168098404932,"water_depth":2546200205794552278},"layer":1,"normal_radius_px":"(6, 6)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.572,"wall_ms":128.707},{"bake_ms":161.3712,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":1850221387587037952,"edge_neighbor":7210631686615624824,"height":2950859530524666626,"map_index":3425498614852911030,"terrain_detail":-1767933118964899478,"terrain_normal":5538789146692576738,"terrain_relief":9184786550351365465,"water_depth":7925653705352207579},"layer":2,"normal_radius_px":"(6, 6)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.715,"wall_ms":162.674},{"bake_ms":154.6228,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":376484171888282002,"edge_neighbor":8468954508526153361,"height":3780861711097419193,"map_index":-4328453676744232579,"terrain_detail":420696182891019013,"terrain_normal":-4666007082634583545,"terrain_relief":-5727677997671446083,"water_depth":8688230613093361893},"layer":3,"normal_radius_px":"(6, 6)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":1.155,"wall_ms":156.112},{"bake_ms":170.4899,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":389853179133507263,"edge_neighbor":8806279907516624947,"height":-5218630015082240112,"map_index":5459055999019507742,"terrain_detail":-4416607354569633259,"terrain_normal":-1728449202955934395,"terrain_relief":3934105474820813546,"water_depth":-4546686790228422148},"layer":4,"normal_radius_px":"(6, 6)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.625,"wall_ms":171.427},{"bake_ms":221.3023,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-3883748807355479648,"edge_neighbor":-4344563344256426158,"height":1873161298998549975,"map_index":3714766956859831020,"terrain_detail":6863128159770156986,"terrain_normal":7403719791550362678,"terrain_relief":-3304699406233508361,"water_depth":-3615343731476480199},"layer":5,"normal_radius_px":"(6, 6)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.96,"wall_ms":222.554},{"bake_ms":105.4623,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-7165501997410667777,"edge_neighbor":6901176923886511026,"height":5093039066514815825,"map_index":571181810410081678,"terrain_detail":-428537870891541250,"terrain_normal":5191422322612168747,"terrain_relief":2193823194240207226,"water_depth":2949002707447120560},"layer":6,"normal_radius_px":"(6, 6)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.735,"wall_ms":106.747},{"bake_ms":118.5408,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":4987331086288943071,"edge_neighbor":-6550067382951184296,"height":-3610491681101299896,"map_index":-5084918631792382785,"terrain_detail":1415929167655012223,"terrain_normal":7887037681499737257,"terrain_relief":7991670333972716410,"water_depth":8940867536956171857},"layer":7,"normal_radius_px":"(6, 6)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.546,"wall_ms":119.398},{"bake_ms":70.1287,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":1262452298134433075,"edge_neighbor":-3377214366589928283,"height":6848203577494658936,"map_index":3370128141585802502,"terrain_detail":-1519962444017723338,"terrain_normal":5779970262413407435,"terrain_relief":-2293596890386336293,"water_depth":-3171753230092560535},"layer":8,"normal_radius_px":"(6, 6)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.57,"wall_ms":70.999},{"bake_ms":99.5777,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-4118470498370965542,"edge_neighbor":4886779365627186214,"height":9027195371148930952,"map_index":6661816335219127983,"terrain_detail":-5473121926428587066,"terrain_normal":4071676941353808583,"terrain_relief":6413109731302929739,"water_depth":7960241872657421001},"layer":9,"normal_radius_px":"(6, 6)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":1.341,"wall_ms":101.349},{"bake_ms":153.4717,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":8332771765751862105,"edge_neighbor":-8219422759051150625,"height":-5507697108499806198,"map_index":-3689298552957694166,"terrain_detail":-2005628183757797117,"terrain_normal":-1585210673769480194,"terrain_relief":5273083122084175024,"water_depth":1292440535641623947},"layer":10,"normal_radius_px":"(6, 6)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.777,"wall_ms":154.841},{"bake_ms":58.2516,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-5010876781106605019,"edge_neighbor":-1785599421922437618,"height":6171588584813417975,"map_index":-4123287103192282322,"terrain_detail":3437375552995593092,"terrain_normal":2042301429532935912,"terrain_relief":-6822459053770801175,"water_depth":-2408015056771513598},"layer":11,"normal_radius_px":"(6, 6)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":1.107,"wall_ms":59.775}],"logical_size":"(1664, 1032)","mode":"tiled","path":"visual_tiled_static","profile":"desktop_high","relief_scale":2,"renderer":"mobile","requested_budget_px":1716216,"requested_texels_per_hex":16.0,"requested_tile_world_span":"(704.0, 704.0)","requested_world_units_per_texel":1.375,"tile_world_area":270355.817993164,"tile_world_span":"(571.5768, 473.0)","total_ms":1565.188,"visual_domain":"[P: (0.0, -44.0), S: (2286.307, 1419.0)]","wrap_period_x":2286.30706599092,"wrap_x":true}
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 3881ms
+MapBaker v6: total 4162ms
+MapGenerator v7: bake 4188ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=2400 wrap_period_x=103.923
+[native_generation] path=gdext n=2400 published=9 native_ms=0.109 compute_ms=0.055 flush_ms=0.054
+[hex_cell] facade ENABLED (2400 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=0.85ms wind=0.39ms psi=0.30ms(ran=true) upwelling=0.03ms total=2.04ms
+PhysicalCirculation solve@phase=1.50 total=3ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 4ms
+[cell_lut] deferred encode: 2ms path=gdext
+[bio-occupancy] seed landmasses=11 provinces=11 species=20 secondary_hearths=4
+[bio-occupancy]   bio.maize envelope=46 hearth=2 seeded_landmasses=1 primary_landmass=3 primary_envelope=8 occupied=2 occupied/envelope=0.25
+[bio-occupancy]   bio.wheat envelope=178 hearth=51 seeded_landmasses=1 primary_landmass=2 primary_envelope=99 occupied=51 occupied/envelope=0.52
+[bio-occupancy]   bio.rice envelope=99 hearth=15 seeded_landmasses=2 primary_landmass=2 primary_envelope=72 occupied=15 occupied/envelope=0.21
+[bio-occupancy]   bio.potato envelope=131 hearth=46 seeded_landmasses=2 primary_landmass=3 primary_envelope=66 occupied=46 occupied/envelope=0.70
+[bio-occupancy]   bio.horse envelope=221 hearth=59 seeded_landmasses=1 primary_landmass=2 primary_envelope=121 occupied=59 occupied/envelope=0.49
+[bio-occupancy]   bio.cotton envelope=104 hearth=16 seeded_landmasses=1 primary_landmass=2 primary_envelope=85 occupied=16 occupied/envelope=0.19
+[bio-occupancy]   bio.flax envelope=175 hearth=54 seeded_landmasses=1 primary_landmass=2 primary_envelope=99 occupied=54 occupied/envelope=0.55
+[bio-occupancy]   bio.spice envelope=105 hearth=21 seeded_landmasses=1 primary_landmass=2 primary_envelope=90 occupied=21 occupied/envelope=0.23
+[bio-occupancy]   bio.rubber envelope=60 hearth=5 seeded_landmasses=1 primary_landmass=3 primary_envelope=10 occupied=5 occupied/envelope=0.50
+[bio-occupancy]   bio.sheep envelope=41 hearth=4 seeded_landmasses=1 primary_landmass=2 primary_envelope=20 occupied=4 occupied/envelope=0.20
+[bio-occupancy]   bio.goat envelope=340 hearth=68 seeded_landmasses=1 primary_landmass=3 primary_envelope=138 occupied=68 occupied/envelope=0.49
+[bio-occupancy]   bio.cattle envelope=6 hearth=2 seeded_landmasses=1 primary_landmass=3 primary_envelope=4 occupied=2 occupied/envelope=0.50
+[bio-occupancy]   bio.pig envelope=281 hearth=92 seeded_landmasses=2 primary_landmass=2 primary_envelope=188 occupied=92 occupied/envelope=0.49
+[bio-occupancy]   bio.camel envelope=78 hearth=18 seeded_landmasses=1 primary_landmass=2 primary_envelope=49 occupied=18 occupied/envelope=0.37
+[bio-occupancy]   bio.yak envelope=43 hearth=16 seeded_landmasses=2 primary_landmass=2 primary_envelope=22 occupied=16 occupied/envelope=0.73
+[bio-occupancy]   bio.silkworm envelope=155 hearth=14 seeded_landmasses=1 primary_landmass=2 primary_envelope=122 occupied=14 occupied/envelope=0.11
+[bio-occupancy]   bio.reed envelope=126 hearth=22 seeded_landmasses=2 primary_landmass=2 primary_envelope=82 occupied=22 occupied/envelope=0.27
+[bio-occupancy]   bio.bast_fiber envelope=222 hearth=37 seeded_landmasses=1 primary_landmass=2 primary_envelope=134 occupied=37 occupied/envelope=0.28
+[bio-occupancy]   bio.dye_plant envelope=104 hearth=4 seeded_landmasses=1 primary_landmass=3 primary_envelope=19 occupied=4 occupied/envelope=0.21
+[bio-occupancy]   bio.medicinal_herb envelope=312 hearth=95 seeded_landmasses=2 primary_landmass=2 primary_envelope=200 occupied=95 occupied/envelope=0.47
+[bio-occupancy]   landmass 1 classes=none foods=none
+[bio-occupancy]   landmass 2 classes=fiber_forest, fiber_wet, highland_food, open_food, open_grazer, fiber_open, forest_grazer, wetland_food, tropical, dry_grazer, cold_grazer foods=potato, wheat, rice
+[bio-occupancy]   landmass 3 classes=cold_grazer, dry_grazer, highland_food, fiber_forest, fiber_wet, forest_grazer, open_grazer, open_food, wetland_food, fiber_open, tropical foods=potato, maize, rice
+[bio-occupancy]   landmass 4 classes=none foods=none
+[bio-occupancy]   landmass 5 classes=none foods=none
+[bio-occupancy]   landmass 6 classes=none foods=none
+[bio-occupancy]   landmass 7 classes=none foods=none
+[bio-occupancy]   landmass 8 classes=none foods=none
+[bio-occupancy]   landmass 9 classes=none foods=none
+[bio-occupancy]   landmass 10 classes=none foods=none
+[bio-occupancy]   landmass 11 classes=none foods=none
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[economy] ACTIVE native graph cells=2400 goods=134 cohorts=24 epoch_days=1 trade=ACTIVE topology_ready=true topology_generation=1 bootstrap=starter_settlement_bootstrap_v9 founder_families=6 founder_people=6
+[country] ACTIVE native authority countries=6 cells=2400 generation=1
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily + bio_occupancy_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "trigger_runtime", "ideology_runtime", "effect_runtime", "modifier_daily", "gameplay_effect", "natural_resource_daily", "bio_occupancy_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+[hex_renderer/variant] tiled=true quality= web_texture_budget=false shader=res://shaders/world_map.gdshader
+[visual-tiles/horizon] compute start generation=1 layers=12
+[hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+[building-visual] intel_refresh requested=47 changed=1 known=1 catalog=400 resident=0 body=0 queued=0 zoom=1.000
+[vision] fog=ON player_slot=0 early_out=OFF visible=47 explored=47/2400 solve_ms=0.087 border_edges=36
+[DIAG pass_a_entry] day=0 phase=0.002 gdext_pass_a=true use_data_core_climate=true use_soa_pipeline=true use_sparse_climate=true ext_bound=true
+[DIAG pass_a_cpp] day=0 rc=0.0000 cpp_taken_over=true dirty_count_after_cpp=2400
+[climate_b/F.3] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_climate_pass_b = true (flag removed; constant true)
+  cp.use_sparse_climate = true（C++ 会跑 full path 等价结果，不阻止）
+  _data_core_world_ext != null = true
+  ext.has_method('run_climate_pass_b') = true
+  fast_indexed = true (need n_cells*6=14400, got nb_size=14400)
+  rs_lookback = 3, t_freeze = 0.0800, coupling_gain = 1.5000
+  verdict = OK → will try C++
+[gdext sig] run_climate_pass_b match[0]: args.size()=1 names=[knobs] flags=1 id=15370
+[gdext sig] run_climate_pass_b: probe PASS (found match with 1 args)
+[climate_b/F.3] sig probe result = true（仅作诊断）
+[climate_b/F.3] DEBUG call#1: path=simd rc=0.0751 n_cells=2400 rs_lookback=3
+[climate_b/F.3] gdext path ACTIVE (dispatch=simd) — first run elapsed=0.08ms (legacy GDScript baseline ≈ 5.2ms; charter §7 target < 0.5ms)
+[ocean_water/F.2a] precondition probe (one-time):
+  active ClimateProfile = <in-memory>
+  cp.use_gdext_ocean_water = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_ocean_water_pass') = true
+  fast_indexed = true (n=2400 nb=14400)
+  advect_steps=3 heat_mix=0.5500
+  verdict = OK → will try C++
+[gdext sig] run_ocean_water_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15361
+[gdext sig] run_ocean_water_pass: probe PASS (found match with 1 args)
+[ocean_water/F.2a] sig probe result = true（仅作诊断）
+[ocean_water/F.2a] DEBUG call#1: path=scalar rc=0.2001 n=2400 advect=3
+[ocean_water/F.2a] gdext path ACTIVE — first run elapsed=0.20ms (legacy GDScript baseline ≈ 3.4ms; charter §7 target < 0.5ms)
+[ocean_land/F.2b] precondition probe (one-time):
+  active ClimateProfile = <in-memory>
+  cp.use_gdext_ocean_land = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_ocean_land_pass') = true
+  fast_indexed = true (n=2400 nb=14400)
+  effective_leak=0.5500 (coast_leak=0.5500 winter_boost=1.0000)
+  verdict = OK → will try C++
+[gdext sig] run_ocean_land_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15362
+[gdext sig] run_ocean_land_pass: probe PASS (found match with 1 args)
+[ocean_land/F.2b] sig probe result = true（仅作诊断）
+[ocean_land/F.2b] DEBUG call#1: path=scalar rc=0.0252 n=2400 effective_leak=0.5500
+[ocean_land/F.2b] gdext path ACTIVE — first run elapsed=0.03ms (legacy GDScript baseline ≈ 3.4ms; charter §7 target < 0.5ms)
+[sea_ice/F.4] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_sea_ice = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_sea_ice_daily_pass') = true
+  fast_indexed = true (need n_cells*6=14400, got neighbor_indices.size()=14400)
+  verdict = OK → will try C++
+[gdext sig] run_sea_ice_daily_pass match[0]: args.size()=2 names=[knobs, season_phase] flags=1 id=15373
+[gdext sig] run_sea_ice_daily_pass: probe PASS (found match with 2 args)
+[sea_ice/F.4] sig probe result = true（仅作诊断，不阻止下方 C++ 调用）
+[sea_ice/F.4] DEBUG call#1: path=scalar rc=0.0881 n_cells=2400 enable_oht=true
+[sea_ice/F.4] gdext path ACTIVE (dispatch=scalar) — first run elapsed=0.09ms (legacy GDScript baseline ≈ 5.1ms; charter §7 target < 0.5ms)
+_apply_sea_ice_daily_pass[F.4]: 0.09ms (water=1715, flipped=0, phase=0.002)
+[sea_ice/DIAG] thr_eff t_form=0.080 t_melt=0.130 flip_thr=0.720 | temp all min=0.000 max=0.981 avg=0.521 | water n=1715 t_min_w=0.000 below_form=316 (18.4%) | SIF pos=326 max=0.402 avg_w=0.0475 near_thr=120 | climate_anom=0.000
+[sea_ice/slow-dump] tick=0 path=gdext total_wall=12.98ms (pack=0.04 refresh=0.00 native=0.09 native_wall=0.14 sync=0.08 flip=0.02) water=1715 flipped=0
+[transp/F.5] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_transpiration = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_transpiration_pass') = true
+  fast_indexed = true (need n_cells*6=14400, got neighbor_indices.size()=14400)
+  verdict = OK → will try C++
+[gdext sig] run_transpiration_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15375
+[gdext sig] run_transpiration_pass: probe PASS (found match with 1 args)
+[transp/F.5] sig probe result = true（仅作诊断，不阻止下方 C++ 调用）
+[transp/F.5] DEBUG call#1: rc=0.0596 donor_table.size()=28 n_cells=2400 outflow=0.0250 self=0.0150
+[transp/F.5] gdext path ACTIVE — first run elapsed=0.06ms (legacy GDScript baseline ≈ 3.2ms; charter §7 target < 0.3ms)
+refresh_climate_daily #1: 143ms (cells=2400, phase=0.002) | A=3.2 B=10.6 ocean=21.2 wind=85.9 sea_ice=13.4 ice_bake=0.0 transp=9.2 path=data_core_cells_only
+[runtime-worker] production ACTIVE started mask=4095 auto_pod=true
+[economy-climate-gate] day=1 climate_ok=0 stall=0x10 ring=0
+[tech-ui-diag/query] apply ok gen=1 day=-1 view_gen=1 progress_total=0 pending_words=36
+[runtime-day-wait] day=1 env_day=0 missing=0x3ff stall=0x10 economy_input=-1 ring=0 country=
+[weather-layer][lut] #1 update_usec=13456386 last_usec=13456386 lerp=0.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #2 update_usec=13456386 last_usec=13456386 lerp=0.636 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #3 update_usec=13456386 last_usec=13456386 lerp=0.649 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+[visual-tiles/horizon] published {"command_record_ms":0.062,"compile_ms":176.785,"conservative_tail_ratio":0.0,"conservative_tail_rays":0,"gi_occluder_ok":true,"global_fallback_rays":0,"gpu_wait_ms":119.976,"hash":2477177344,"height_pyramid_bytes":9159292,"height_world_scale":352.0,"max_horizon_angle":1.309,"mip_levels":12,"non_converged_rays":0,"occluder_hash":2922109947,"occluder_output_bytes":7015680,"occluder_sentinel_ratio":0.137896825396825,"occluder_sentinel_texels":241860,"ok":true,"path":"gpu_compute_hierarchical","physical_output_bytes":7015680,"readback_ms":8.009,"resource_setup_ms":100.254,"sea_level":0.5,"submit_ms":1.89,"total_ms":522.101,"total_rays":14031360,"upload_ms":3.674}
+[weather-layer][lut] #4 update_usec=13456386 last_usec=13456386 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #5 update_usec=13456386 last_usec=13456386 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #6 update_usec=13456386 last_usec=13456386 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #7 update_usec=13456386 last_usec=13456386 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #8 update_usec=13456386 last_usec=13456386 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #9 update_usec=13456386 last_usec=13456386 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #10 update_usec=13456386 last_usec=13456386 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #11 update_usec=13456386 last_usec=13456386 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[weather-layer][lut] #12 update_usec=13456386 last_usec=13456386 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[DCSystemScheduler][RT] ocean_skip#1 tick=1 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=0.62d/f cost=12.86ms ran=0 pulse=0.00ms loop=0.00ms full=0.26ms carry=0.14 barrier=
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=0.62d/f cost=12.86ms ran=0 pulse=0.00ms loop=0.00ms full=0.35ms carry=0.60 barrier=
+[climate][publish] day=0 round_ran=1 prod_stage=0xff scalar_mask=0x7f alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[DCSystemScheduler][RT] ocean_skip#2 tick=2 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[tech-ui-diag/query] apply ok gen=1 day=1 view_gen=1 progress_total=0 pending_words=36
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=4.9ms speed=1x target=0.00d cap=0.45d/f cost=17.76ms ran=0 pulse=0.00ms loop=0.00ms full=0.31ms carry=0.11 barrier=
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=0.45d/f cost=17.76ms ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.54 barrier=
+[weather-layer][lut] #13 update_usec=13456386 last_usec=13456386 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=0.45d/f cost=17.76ms ran=0 pulse=0.00ms loop=0.00ms full=0.18ms carry=0.94 barrier=
+[phys/knobs] projection ready: slp=31 wind=33 psi=26 up=10
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[tech-ui-diag/query] apply ok gen=1 day=2 view_gen=1 progress_total=0 pending_words=36
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=0.51d/f cost=15.72ms ran=0 pulse=0.00ms loop=0.00ms full=0.30ms carry=0.30 barrier=
+[clock/step] delta=4.7ms speed=1x target=0.00d cap=0.51d/f cost=15.72ms ran=0 pulse=0.00ms loop=0.00ms full=0.47ms carry=0.94 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[tech-ui-diag/query] apply ok gen=1 day=3 view_gen=1 progress_total=0 pending_words=36
+[clock/step] delta=5.6ms speed=1x target=0.01d cap=0.57d/f cost=14.10ms ran=0 pulse=0.00ms loop=0.00ms full=0.31ms carry=0.57 barrier=
+[weather-layer][lut] #14 update_usec=28423020 last_usec=28423020 lerp=1.000 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[tech-ui-diag/query] apply ok gen=1 day=4 view_gen=1 progress_total=0 pending_words=36
+[clock/step] delta=3.1ms speed=1x target=0.00d cap=0.63d/f cost=12.79ms ran=0 pulse=0.00ms loop=0.00ms full=0.30ms carry=0.19 barrier=
+[clock/step] delta=8.3ms speed=1x target=0.01d cap=0.63d/f cost=12.79ms ran=0 pulse=0.00ms loop=0.00ms full=0.41ms carry=0.67 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[tech-ui-diag/query] apply ok gen=1 day=5 view_gen=1 progress_total=0 pending_words=36
+[clock/step] delta=4.2ms speed=1x target=0.00d cap=0.69d/f cost=11.60ms ran=0 pulse=0.00ms loop=0.00ms full=0.40ms carry=0.25 barrier=
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=0.69d/f cost=11.60ms ran=0 pulse=0.00ms loop=0.00ms full=0.34ms carry=0.72 barrier=
+[weather-layer][lut] #15 update_usec=30409256 last_usec=30409256 lerp=0.952 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[tech-ui-diag/query] apply ok gen=1 day=6 view_gen=1 progress_total=0 pending_words=36
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=0.74d/f cost=10.81ms ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.18 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=0.74d/f cost=10.81ms ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.50 barrier=
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=0.74d/f cost=10.81ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.91 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[tech-ui-diag/query] apply ok gen=1 day=7 view_gen=1 progress_total=0 pending_words=36
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=0.81d/f cost=9.93ms ran=0 pulse=0.00ms loop=0.00ms full=0.25ms carry=0.28 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=0.81d/f cost=9.93ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.62 barrier=
+[weather-layer][lut] #16 update_usec=32406109 last_usec=32406109 lerp=0.865 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=0.81d/f cost=9.93ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.94 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=0.86d/f cost=9.27ms ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.31 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=0.86d/f cost=9.27ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.62 barrier=
+[clock/step] delta=3.6ms speed=1x target=0.00d cap=0.86d/f cost=9.27ms ran=0 pulse=0.00ms loop=0.00ms full=0.43ms carry=0.98 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=0.88d/f cost=9.08ms ran=0 pulse=0.00ms loop=0.00ms full=0.35ms carry=0.47 barrier=
+[weather-layer][lut] #17 update_usec=34427497 last_usec=34427497 lerp=0.801 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=0.88d/f cost=9.08ms ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.90 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.5ms speed=1x target=0.00d cap=0.93d/f cost=8.57ms ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.26 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=0.93d/f cost=8.57ms ran=0 pulse=0.00ms loop=0.00ms full=0.26ms carry=0.60 barrier=
+[clock/step] delta=3.9ms speed=1x target=0.00d cap=0.97d/f cost=8.21ms ran=0 pulse=0.00ms loop=0.00ms full=0.40ms carry=0.01 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=0.97d/f cost=8.21ms ran=0 pulse=0.00ms loop=0.00ms full=0.25ms carry=0.40 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=0.97d/f cost=8.21ms ran=0 pulse=0.00ms loop=0.00ms full=0.31ms carry=0.71 barrier=
+[weather-layer][lut] #18 update_usec=36417817 last_usec=36417817 lerp=0.799 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.03d/f cost=7.74ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.06 barrier=
+[clock/step] delta=4.2ms speed=1x target=0.00d cap=1.03d/f cost=7.74ms ran=0 pulse=0.00ms loop=0.00ms full=0.33ms carry=0.44 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.03d/f cost=7.74ms ran=0 pulse=0.00ms loop=0.00ms full=0.15ms carry=0.80 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.06d/f cost=7.54ms ran=0 pulse=0.00ms loop=0.00ms full=0.18ms carry=0.16 barrier=
+[clock/step] delta=2.7ms speed=1x target=0.00d cap=1.06d/f cost=7.54ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.47 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.06d/f cost=7.54ms ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.76 barrier=
+[weather-layer][lut] #19 update_usec=38417262 last_usec=38417262 lerp=0.791 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=4.2ms speed=1x target=0.00d cap=1.07d/f cost=7.50ms ran=0 pulse=0.00ms loop=0.00ms full=0.50ms carry=0.16 barrier=
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.07d/f cost=7.50ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.57 barrier=
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.10d/f cost=7.28ms ran=0 pulse=0.00ms loop=0.00ms full=0.38ms carry=0.01 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.10d/f cost=7.28ms ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.35 barrier=
+[clock/step] delta=2.6ms speed=1x target=0.00d cap=1.10d/f cost=7.28ms ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.68 barrier=
+[weather-layer][lut] #20 update_usec=40405342 last_usec=40405342 lerp=0.804 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.2ms speed=1x target=0.00d cap=1.12d/f cost=7.16ms ran=0 pulse=0.00ms loop=0.00ms full=0.27ms carry=0.16 barrier=
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.12d/f cost=7.16ms ran=0 pulse=0.00ms loop=0.00ms full=0.22ms carry=0.57 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.12d/f cost=7.16ms ran=0 pulse=0.00ms loop=0.00ms full=0.18ms carry=0.91 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.13d/f cost=7.09ms ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.26 barrier=
+[clock/step] delta=2.7ms speed=1x target=0.00d cap=1.13d/f cost=7.09ms ran=0 pulse=0.00ms loop=0.00ms full=0.22ms carry=0.65 barrier=
+[weather-layer][lut] #21 update_usec=42404609 last_usec=42404609 lerp=0.803 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.14d/f cost=7.03ms ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.06 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.14d/f cost=7.03ms ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.42 barrier=
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.14d/f cost=7.03ms ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.73 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.16d/f cost=6.87ms ran=0 pulse=0.00ms loop=0.00ms full=0.22ms carry=0.03 barrier=
+[clock/step] delta=2.9ms speed=1x target=0.00d cap=1.16d/f cost=6.87ms ran=0 pulse=0.00ms loop=0.00ms full=0.32ms carry=0.42 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.16d/f cost=6.87ms ran=0 pulse=0.00ms loop=0.00ms full=0.18ms carry=0.80 barrier=
+[weather-layer][lut] #22 update_usec=44416688 last_usec=44416688 lerp=0.790 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.17d/f cost=6.86ms ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.21 barrier=
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.17d/f cost=6.86ms ran=0 pulse=0.00ms loop=0.00ms full=0.34ms carry=0.64 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.17d/f cost=6.86ms ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.98 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.20d/f cost=6.67ms ran=0 pulse=0.00ms loop=0.00ms full=0.22ms carry=0.45 barrier=
+[weather-layer][lut] #23 update_usec=46419416 last_usec=46419416 lerp=0.788 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=4.2ms speed=1x target=0.00d cap=1.20d/f cost=6.67ms ran=0 pulse=0.00ms loop=0.00ms full=0.31ms carry=0.84 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.7ms speed=1x target=0.00d cap=1.19d/f cost=6.72ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.28 barrier=
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.19d/f cost=6.72ms ran=0 pulse=0.00ms loop=0.00ms full=0.31ms carry=0.66 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.16d/f cost=6.89ms ran=0 pulse=0.00ms loop=0.00ms full=0.29ms carry=0.19 barrier=
+[clock/step] delta=3.9ms speed=1x target=0.00d cap=1.16d/f cost=6.89ms ran=0 pulse=0.00ms loop=0.00ms full=0.34ms carry=0.65 barrier=
+[weather-layer][lut] #24 update_usec=48414729 last_usec=48414729 lerp=0.793 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.17d/f cost=6.85ms ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.02 barrier=
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.17d/f cost=6.85ms ran=0 pulse=0.00ms loop=0.00ms full=0.25ms carry=0.40 barrier=
+[clock/step] delta=5.1ms speed=1x target=0.01d cap=1.17d/f cost=6.85ms ran=0 pulse=0.00ms loop=0.00ms full=0.58ms carry=0.79 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=4.2ms speed=1x target=0.00d cap=1.16d/f cost=6.90ms ran=0 pulse=0.00ms loop=0.00ms full=0.38ms carry=0.40 barrier=
+[weather-layer][lut] #25 update_usec=50412407 last_usec=50412407 lerp=0.796 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=4.2ms speed=1x target=0.00d cap=1.16d/f cost=6.90ms ran=0 pulse=0.00ms loop=0.00ms full=0.37ms carry=0.88 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.16d/f cost=6.87ms ran=0 pulse=0.00ms loop=0.00ms full=0.29ms carry=0.41 barrier=
+[clock/step] delta=5.1ms speed=1x target=0.01d cap=1.16d/f cost=6.87ms ran=0 pulse=0.00ms loop=0.00ms full=0.43ms carry=0.87 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=8.3ms speed=1x target=0.01d cap=1.16d/f cost=6.90ms ran=0 pulse=0.00ms loop=0.00ms full=0.33ms carry=0.40 barrier=
+[weather-layer][lut] #26 update_usec=52410837 last_usec=52410837 lerp=0.800 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=4.8ms speed=1x target=0.00d cap=1.16d/f cost=6.90ms ran=0 pulse=0.00ms loop=0.00ms full=0.34ms carry=0.98 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.16d/f cost=6.89ms ran=0 pulse=0.00ms loop=0.00ms full=0.31ms carry=0.44 barrier=
+[clock/step] delta=4.2ms speed=1x target=0.00d cap=1.16d/f cost=6.89ms ran=0 pulse=0.00ms loop=0.00ms full=0.32ms carry=0.97 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=5.6ms speed=1x target=0.01d cap=1.14d/f cost=6.99ms ran=0 pulse=0.00ms loop=0.00ms full=0.37ms carry=0.71 barrier=
+[weather-layer][lut] #27 update_usec=54414145 last_usec=54414145 lerp=0.800 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=5.1ms speed=1x target=0.01d cap=1.10d/f cost=7.30ms ran=0 pulse=0.00ms loop=0.00ms full=0.37ms carry=0.36 barrier=
+[clock/step] delta=5.6ms speed=1x target=0.01d cap=1.10d/f cost=7.30ms ran=0 pulse=0.00ms loop=0.00ms full=0.38ms carry=0.97 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=4.5ms speed=1x target=0.00d cap=1.07d/f cost=7.51ms ran=0 pulse=0.00ms loop=0.00ms full=0.33ms carry=0.57 barrier=
+[weather-layer][lut] #28 update_usec=56437237 last_usec=56437237 lerp=0.776 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=5.0ms speed=1x target=0.01d cap=1.07d/f cost=7.51ms ran=0 pulse=0.00ms loop=0.00ms full=0.33ms carry=0.11 barrier=
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.07d/f cost=7.51ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.57 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.07d/f cost=7.51ms ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.91 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=5.6ms speed=1x target=0.01d cap=1.08d/f cost=7.42ms ran=0 pulse=0.00ms loop=0.00ms full=0.32ms carry=0.44 barrier=
+[weather-layer][lut] #29 update_usec=58427270 last_usec=58427270 lerp=0.792 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=5.6ms speed=1x target=0.01d cap=1.08d/f cost=7.42ms ran=0 pulse=0.00ms loop=0.00ms full=0.37ms carry=0.89 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.06d/f cost=7.58ms ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.36 barrier=
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.06d/f cost=7.58ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.75 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=4.5ms speed=1x target=0.00d cap=1.08d/f cost=7.38ms ran=0 pulse=0.00ms loop=0.00ms full=0.52ms carry=0.15 barrier=
+[clock/step] delta=2.1ms speed=1x target=0.00d cap=1.08d/f cost=7.38ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.64 barrier=
+[weather-layer][lut] #30 update_usec=60415972 last_usec=60415972 lerp=0.807 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.6ms speed=1x target=0.00d cap=1.10d/f cost=7.30ms ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.18 barrier=
+[clock/step] delta=3.9ms speed=1x target=0.00d cap=1.10d/f cost=7.30ms ran=0 pulse=0.00ms loop=0.00ms full=0.49ms carry=0.52 barrier=
+[clock/step] delta=6.1ms speed=1x target=0.01d cap=1.10d/f cost=7.30ms ran=0 pulse=0.00ms loop=0.00ms full=0.32ms carry=0.96 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.08d/f cost=7.42ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.49 barrier=
+[weather-layer][lut] #31 update_usec=62414556 last_usec=62414556 lerp=0.812 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.08d/f cost=7.42ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.94 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.09d/f cost=7.32ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.37 barrier=
+[clock/step] delta=6.7ms speed=1x target=0.01d cap=1.09d/f cost=7.32ms ran=0 pulse=0.00ms loop=0.00ms full=0.34ms carry=0.82 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.05d/f cost=7.64ms ran=0 pulse=0.00ms loop=0.00ms full=0.30ms carry=0.31 barrier=
+[clock/step] delta=2.3ms speed=1x target=0.00d cap=1.05d/f cost=7.64ms ran=0 pulse=0.00ms loop=0.00ms full=0.22ms carry=0.82 barrier=
+[weather-layer][lut] #32 update_usec=64422595 last_usec=64422595 lerp=0.801 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.4ms speed=1x target=0.00d cap=1.07d/f cost=7.45ms ran=0 pulse=0.00ms loop=0.00ms full=0.49ms carry=0.20 barrier=
+[clock/step] delta=5.6ms speed=1x target=0.01d cap=1.07d/f cost=7.45ms ran=0 pulse=0.00ms loop=0.00ms full=0.52ms carry=0.67 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=4.2ms speed=1x target=0.00d cap=1.09d/f cost=7.33ms ran=0 pulse=0.00ms loop=0.00ms full=0.38ms carry=0.21 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.09d/f cost=7.33ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.66 barrier=
+[weather-layer][lut] #33 update_usec=66412544 last_usec=66412544 lerp=0.814 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.09d/f cost=7.33ms ran=0 pulse=0.00ms loop=0.00ms full=0.27ms carry=0.99 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.10d/f cost=7.30ms ran=0 pulse=0.00ms loop=0.00ms full=0.46ms carry=0.49 barrier=
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.10d/f cost=7.30ms ran=0 pulse=0.00ms loop=0.00ms full=0.29ms carry=0.91 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.10d/f cost=7.28ms ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.32 barrier=
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.10d/f cost=7.28ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.67 barrier=
+[weather-layer][lut] #34 update_usec=68415822 last_usec=68415822 lerp=0.811 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=4.2ms speed=1x target=0.00d cap=1.10d/f cost=7.30ms ran=0 pulse=0.00ms loop=0.00ms full=0.33ms carry=0.08 barrier=
+[clock/step] delta=4.2ms speed=1x target=0.00d cap=1.10d/f cost=7.30ms ran=0 pulse=0.00ms loop=0.00ms full=0.30ms carry=0.57 barrier=
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.10d/f cost=7.30ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.94 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.10d/f cost=7.26ms ran=0 pulse=0.00ms loop=0.00ms full=0.26ms carry=0.46 barrier=
+[weather-layer][lut] #35 update_usec=70414310 last_usec=70414310 lerp=0.815 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=4.2ms speed=1x target=0.00d cap=1.10d/f cost=7.26ms ran=0 pulse=0.00ms loop=0.00ms full=0.46ms carry=0.87 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.11d/f cost=7.23ms ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.32 barrier=
+[clock/step] delta=2.6ms speed=1x target=0.00d cap=1.11d/f cost=7.23ms ran=0 pulse=0.00ms loop=0.00ms full=0.22ms carry=0.79 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.14d/f cost=7.00ms ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.16 barrier=
+[clock/step] delta=4.2ms speed=1x target=0.00d cap=1.14d/f cost=7.00ms ran=0 pulse=0.00ms loop=0.00ms full=0.43ms carry=0.56 barrier=
+[weather-layer][lut] #36 update_usec=72402113 last_usec=72402113 lerp=0.829 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=1.9ms speed=1x target=0.00d cap=1.14d/f cost=7.01ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.05 barrier=
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.14d/f cost=7.01ms ran=0 pulse=0.00ms loop=0.00ms full=0.30ms carry=0.48 barrier=
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.14d/f cost=7.01ms ran=0 pulse=0.00ms loop=0.00ms full=0.26ms carry=0.85 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.17d/f cost=6.85ms ran=0 pulse=0.00ms loop=0.00ms full=0.43ms carry=0.26 barrier=
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.17d/f cost=6.85ms ran=0 pulse=0.00ms loop=0.00ms full=0.30ms carry=0.80 barrier=
+[weather-layer][lut] #37 update_usec=74416610 last_usec=74416610 lerp=0.812 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.15d/f cost=6.96ms ran=0 pulse=0.00ms loop=0.00ms full=0.28ms carry=0.27 barrier=
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.15d/f cost=6.96ms ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.65 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.4ms speed=1x target=0.00d cap=1.12d/f cost=7.12ms ran=0 pulse=0.00ms loop=0.00ms full=0.33ms carry=0.14 barrier=
+[clock/step] delta=4.3ms speed=1x target=0.00d cap=1.12d/f cost=7.12ms ran=0 pulse=0.00ms loop=0.00ms full=0.31ms carry=0.70 barrier=
+[weather-layer][lut] #38 update_usec=76429987 last_usec=76429987 lerp=0.799 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.2ms speed=1x target=0.00d cap=1.09d/f cost=7.36ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.17 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.09d/f cost=7.36ms ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.49 barrier=
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.09d/f cost=7.36ms ran=0 pulse=0.00ms loop=0.00ms full=0.56ms carry=0.86 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.10d/f cost=7.27ms ran=0 pulse=0.00ms loop=0.00ms full=0.27ms carry=0.35 barrier=
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.10d/f cost=7.27ms ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.73 barrier=
+[weather-layer][lut] #39 update_usec=78405940 last_usec=78405940 lerp=0.833 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.14d/f cost=7.02ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.10 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.14d/f cost=7.02ms ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.48 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.14d/f cost=7.02ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=1.00 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.12d/f cost=7.17ms ran=0 pulse=0.00ms loop=0.00ms full=0.29ms carry=0.45 barrier=
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.12d/f cost=7.17ms ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.81 barrier=
+[weather-layer][lut] #40 update_usec=80408237 last_usec=80408237 lerp=0.831 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.15d/f cost=6.96ms ran=0 pulse=0.00ms loop=0.00ms full=0.28ms carry=0.15 barrier=
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.15d/f cost=6.96ms ran=0 pulse=0.00ms loop=0.00ms full=0.30ms carry=0.65 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.15d/f cost=6.96ms ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.08 barrier=
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.15d/f cost=6.96ms ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.45 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.15d/f cost=6.96ms ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.82 barrier=
+[weather-layer][lut] #41 update_usec=82415347 last_usec=82415347 lerp=0.822 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.17d/f cost=6.86ms ran=0 pulse=0.00ms loop=0.00ms full=0.22ms carry=0.19 barrier=
+[clock/step] delta=4.2ms speed=1x target=0.00d cap=1.17d/f cost=6.86ms ran=0 pulse=0.00ms loop=0.00ms full=0.37ms carry=0.69 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=4.2ms speed=1x target=0.00d cap=1.17d/f cost=6.83ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.13 barrier=
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.17d/f cost=6.83ms ran=0 pulse=0.00ms loop=0.00ms full=0.25ms carry=0.48 barrier=
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.17d/f cost=6.83ms ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.81 barrier=
+[weather-layer][lut] #42 update_usec=84418399 last_usec=84418399 lerp=0.823 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.9ms speed=1x target=0.00d cap=1.17d/f cost=6.81ms ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.19 barrier=
+[clock/step] delta=5.6ms speed=1x target=0.01d cap=1.17d/f cost=6.81ms ran=0 pulse=0.00ms loop=0.00ms full=0.55ms carry=0.67 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.13d/f cost=7.11ms ran=0 pulse=0.00ms loop=0.00ms full=0.33ms carry=0.16 barrier=
+[clock/step] delta=2.6ms speed=1x target=0.00d cap=1.13d/f cost=7.11ms ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.60 barrier=
+[weather-layer][lut] #43 update_usec=86426147 last_usec=86426147 lerp=0.813 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.13d/f cost=7.11ms ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.92 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.15d/f cost=6.98ms ran=0 pulse=0.00ms loop=0.00ms full=0.27ms carry=0.36 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.15d/f cost=6.98ms ran=0 pulse=0.00ms loop=0.00ms full=0.28ms carry=0.75 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.18d/f cost=6.79ms ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.16 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.18d/f cost=6.79ms ran=0 pulse=0.00ms loop=0.00ms full=0.27ms carry=0.48 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.18d/f cost=6.79ms ran=0 pulse=0.00ms loop=0.00ms full=0.18ms carry=0.81 barrier=
+[weather-layer][lut] #44 update_usec=88410061 last_usec=88410061 lerp=0.835 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.07d/f cost=7.48ms ran=0 pulse=0.00ms loop=0.00ms full=0.29ms carry=0.30 barrier=
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.07d/f cost=7.48ms ran=0 pulse=0.00ms loop=0.00ms full=0.26ms carry=0.68 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.10d/f cost=7.31ms ran=0 pulse=0.00ms loop=0.00ms full=0.32ms carry=0.09 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.10d/f cost=7.31ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.45 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.10d/f cost=7.31ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.80 barrier=
+[weather-layer][lut] #45 update_usec=90409654 last_usec=90409654 lerp=0.839 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.12d/f cost=7.16ms ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.29 barrier=
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.12d/f cost=7.16ms ran=0 pulse=0.00ms loop=0.00ms full=0.34ms carry=0.68 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.10d/f cost=7.26ms ran=0 pulse=0.00ms loop=0.00ms full=0.31ms carry=0.11 barrier=
+[clock/step] delta=5.6ms speed=1x target=0.01d cap=1.10d/f cost=7.26ms ran=0 pulse=0.00ms loop=0.00ms full=0.44ms carry=0.65 barrier=
+[weather-layer][lut] #46 update_usec=92410065 last_usec=92410065 lerp=0.838 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.06d/f cost=7.52ms ran=0 pulse=0.00ms loop=0.00ms full=0.42ms carry=0.26 barrier=
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.06d/f cost=7.52ms ran=0 pulse=0.00ms loop=0.00ms full=0.27ms carry=0.72 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=4.2ms speed=1x target=0.00d cap=1.09d/f cost=7.35ms ran=0 pulse=0.00ms loop=0.00ms full=0.32ms carry=0.11 barrier=
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.09d/f cost=7.35ms ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.54 barrier=
+[weather-layer][lut] #47 update_usec=94419686 last_usec=94419686 lerp=0.826 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=4.1ms speed=1x target=0.00d cap=1.09d/f cost=7.35ms ran=0 pulse=0.00ms loop=0.00ms full=0.25ms carry=0.98 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.10d/f cost=7.27ms ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.44 barrier=
+[clock/step] delta=2.2ms speed=1x target=0.00d cap=1.10d/f cost=7.27ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.80 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.12d/f cost=7.13ms ran=0 pulse=0.00ms loop=0.00ms full=0.29ms carry=0.17 barrier=
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.12d/f cost=7.13ms ran=0 pulse=0.00ms loop=0.00ms full=0.29ms carry=0.68 barrier=
+[weather-layer][lut] #48 update_usec=96415742 last_usec=96415742 lerp=0.834 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=4.2ms speed=1x target=0.00d cap=1.13d/f cost=7.07ms ran=0 pulse=0.00ms loop=0.00ms full=0.29ms carry=0.12 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.13d/f cost=7.07ms ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.49 barrier=
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.13d/f cost=7.07ms ran=0 pulse=0.00ms loop=0.00ms full=0.29ms carry=0.84 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.14d/f cost=7.03ms ran=0 pulse=0.00ms loop=0.00ms full=0.30ms carry=0.30 barrier=
+[clock/step] delta=4.2ms speed=1x target=0.00d cap=1.14d/f cost=7.03ms ran=0 pulse=0.00ms loop=0.00ms full=0.36ms carry=0.80 barrier=
+[weather-layer][lut] #49 update_usec=98420036 last_usec=98420036 lerp=0.830 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=4.2ms speed=1x target=0.00d cap=1.15d/f cost=6.96ms ran=0 pulse=0.00ms loop=0.00ms full=0.27ms carry=0.29 barrier=
+[clock/step] delta=4.5ms speed=1x target=0.00d cap=1.15d/f cost=6.96ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.66 barrier=
+[clock/step] delta=2.1ms speed=1x target=0.00d cap=1.15d/f cost=6.96ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=1.00 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=4.2ms speed=1x target=0.00d cap=1.12d/f cost=7.14ms ran=0 pulse=0.00ms loop=0.00ms full=0.52ms carry=0.42 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.12d/f cost=7.14ms ran=0 pulse=0.00ms loop=0.00ms full=0.31ms carry=0.81 barrier=
+[weather-layer][lut] #50 update_usec=100416004 last_usec=100416004 lerp=0.837 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.14d/f cost=7.04ms ran=0 pulse=0.00ms loop=0.00ms full=0.30ms carry=0.22 barrier=
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.14d/f cost=7.04ms ran=0 pulse=0.00ms loop=0.00ms full=0.26ms carry=0.56 barrier=
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.14d/f cost=7.04ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.93 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.14d/f cost=7.03ms ran=0 pulse=0.00ms loop=0.00ms full=0.37ms carry=0.42 barrier=
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.14d/f cost=7.03ms ran=0 pulse=0.00ms loop=0.00ms full=0.32ms carry=0.80 barrier=
+[weather-layer][lut] #51 update_usec=102412397 last_usec=102412397 lerp=0.842 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.7ms speed=1x target=0.00d cap=1.14d/f cost=7.02ms ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.17 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.14d/f cost=7.02ms ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.46 barrier=
+[clock/step] delta=2.5ms speed=1x target=0.00d cap=1.14d/f cost=7.02ms ran=0 pulse=0.00ms loop=0.00ms full=0.22ms carry=0.78 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=5.6ms speed=1x target=0.01d cap=1.15d/f cost=6.95ms ran=0 pulse=0.00ms loop=0.00ms full=0.32ms carry=0.16 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.15d/f cost=6.95ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.56 barrier=
+[weather-layer][lut] #52 update_usec=104414471 last_usec=104414471 lerp=0.839 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.15d/f cost=6.95ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.93 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.17d/f cost=6.86ms ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.23 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.17d/f cost=6.86ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.55 barrier=
+[clock/step] delta=5.1ms speed=1x target=0.01d cap=1.17d/f cost=6.86ms ran=0 pulse=0.00ms loop=0.00ms full=0.57ms carry=0.91 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.16d/f cost=6.89ms ran=0 pulse=0.00ms loop=0.00ms full=0.27ms carry=0.30 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.16d/f cost=6.89ms ran=0 pulse=0.00ms loop=0.00ms full=0.26ms carry=0.60 barrier=
+[weather-layer][lut] #53 update_usec=106410159 last_usec=106410159 lerp=0.848 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=4.2ms speed=1x target=0.00d cap=1.16d/f cost=6.89ms ran=0 pulse=0.00ms loop=0.00ms full=0.25ms carry=0.98 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.0ms speed=1x target=0.00d cap=1.17d/f cost=6.83ms ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.38 barrier=
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.17d/f cost=6.83ms ran=0 pulse=0.00ms loop=0.00ms full=0.33ms carry=0.71 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.14d/f cost=7.03ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.26 barrier=
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.14d/f cost=7.03ms ran=0 pulse=0.00ms loop=0.00ms full=0.26ms carry=0.61 barrier=
+[weather-layer][lut] #54 update_usec=108417927 last_usec=108417927 lerp=0.840 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.14d/f cost=7.03ms ran=0 pulse=0.00ms loop=0.00ms full=0.26ms carry=0.94 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.15d/f cost=6.96ms ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.37 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.15d/f cost=6.96ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.69 barrier=
+[clock/step] delta=3.2ms speed=1x target=0.00d cap=1.15d/f cost=6.96ms ran=0 pulse=0.00ms loop=0.00ms full=0.31ms carry=1.00 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.15d/f cost=6.97ms ran=0 pulse=0.00ms loop=0.00ms full=0.22ms carry=0.47 barrier=
+[clock/step] delta=1.9ms speed=1x target=0.00d cap=1.15d/f cost=6.97ms ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.84 barrier=
+[weather-layer][lut] #55 update_usec=110416251 last_usec=110416251 lerp=0.843 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.17d/f cost=6.81ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.20 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.17d/f cost=6.81ms ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.50 barrier=
+[clock/step] delta=4.2ms speed=1x target=0.00d cap=1.17d/f cost=6.81ms ran=0 pulse=0.00ms loop=0.00ms full=0.31ms carry=0.96 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.10d/f cost=7.27ms ran=0 pulse=0.00ms loop=0.00ms full=0.35ms carry=0.40 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.10d/f cost=7.27ms ran=0 pulse=0.00ms loop=0.00ms full=0.18ms carry=0.80 barrier=
+[weather-layer][lut] #56 update_usec=112420320 last_usec=112420320 lerp=0.837 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.00d/f cost=8.00ms ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.12 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.00d/f cost=8.00ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.43 barrier=
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.00d/f cost=8.00ms ran=0 pulse=0.00ms loop=0.00ms full=0.34ms carry=0.82 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.6ms speed=1x target=0.00d cap=0.99d/f cost=8.10ms ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.21 barrier=
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=0.99d/f cost=8.10ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.58 barrier=
+[weather-layer][lut] #57 update_usec=114413859 last_usec=114413859 lerp=0.850 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=0.96d/f cost=8.32ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.13 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=0.96d/f cost=8.32ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.44 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=0.96d/f cost=8.32ms ran=0 pulse=0.00ms loop=0.00ms full=0.15ms carry=0.75 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.4ms speed=1x target=0.00d cap=0.91d/f cost=8.75ms ran=0 pulse=0.00ms loop=0.00ms full=0.22ms carry=0.22 barrier=
+[clock/step] delta=3.6ms speed=1x target=0.00d cap=0.91d/f cost=8.75ms ran=0 pulse=0.00ms loop=0.00ms full=0.34ms carry=0.61 barrier=
+[weather-layer][lut] #58 update_usec=116409272 last_usec=116409272 lerp=0.856 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=0.91d/f cost=8.75ms ran=0 pulse=0.00ms loop=0.00ms full=0.15ms carry=0.99 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=0.95d/f cost=8.39ms ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.35 barrier=
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=0.95d/f cost=8.39ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.76 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=0.99d/f cost=8.11ms ran=0 pulse=0.00ms loop=0.00ms full=0.27ms carry=0.18 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=0.99d/f cost=8.11ms ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.51 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=0.99d/f cost=8.11ms ran=0 pulse=0.00ms loop=0.00ms full=0.15ms carry=0.84 barrier=
+[weather-layer][lut] #59 update_usec=118410964 last_usec=118410964 lerp=0.854 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.02d/f cost=7.86ms ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.20 barrier=
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.02d/f cost=7.86ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.63 barrier=
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.02d/f cost=7.86ms ran=0 pulse=0.00ms loop=0.00ms full=0.44ms carry=0.96 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.04d/f cost=7.66ms ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.35 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.04d/f cost=7.66ms ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.65 barrier=
+[weather-layer][lut] #60 update_usec=120411694 last_usec=120411694 lerp=0.857 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=5.0ms speed=1x target=0.01d cap=1.05d/f cost=7.62ms ran=0 pulse=0.00ms loop=0.00ms full=0.26ms carry=0.02 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.05d/f cost=7.62ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.47 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.05d/f cost=7.62ms ran=0 pulse=0.00ms loop=0.00ms full=0.26ms carry=0.81 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.6ms speed=1x target=0.00d cap=1.06d/f cost=7.56ms ran=0 pulse=0.00ms loop=0.00ms full=0.35ms carry=0.32 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.06d/f cost=7.56ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.69 barrier=
+[weather-layer][lut] #61 update_usec=122419365 last_usec=122419365 lerp=0.848 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=4.4ms speed=1x target=0.00d cap=1.00d/f cost=8.01ms ran=0 pulse=0.00ms loop=0.00ms full=0.35ms carry=0.15 barrier=
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.00d/f cost=8.01ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.55 barrier=
+[clock/step] delta=3.4ms speed=1x target=0.00d cap=1.00d/f cost=8.01ms ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.99 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.04d/f cost=7.70ms ran=0 pulse=0.00ms loop=0.00ms full=0.38ms carry=0.38 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.04d/f cost=7.70ms ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.73 barrier=
+[weather-layer][lut] #62 update_usec=124414521 last_usec=124414521 lerp=0.856 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=4.5ms speed=1x target=0.00d cap=1.06d/f cost=7.57ms ran=0 pulse=0.00ms loop=0.00ms full=0.45ms carry=0.20 barrier=
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.06d/f cost=7.57ms ran=0 pulse=0.00ms loop=0.00ms full=0.31ms carry=0.60 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.05d/f cost=7.65ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.10 barrier=
+[clock/step] delta=4.8ms speed=1x target=0.00d cap=1.05d/f cost=7.65ms ran=0 pulse=0.00ms loop=0.00ms full=0.36ms carry=0.45 barrier=
+[weather-layer][lut] #63 update_usec=126420356 last_usec=126420356 lerp=0.849 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.05d/f cost=7.65ms ran=0 pulse=0.00ms loop=0.00ms full=0.22ms carry=0.95 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.1ms speed=1x target=0.00d cap=1.06d/f cost=7.53ms ran=0 pulse=0.00ms loop=0.00ms full=0.30ms carry=0.51 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.06d/f cost=7.53ms ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.97 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.09d/f cost=7.32ms ran=0 pulse=0.00ms loop=0.00ms full=0.28ms carry=0.31 barrier=
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.09d/f cost=7.32ms ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.77 barrier=
+[weather-layer][lut] #64 update_usec=128411820 last_usec=128411820 lerp=0.863 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=1.9ms speed=1x target=0.00d cap=1.09d/f cost=7.32ms ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.16 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.09d/f cost=7.32ms ran=0 pulse=0.00ms loop=0.00ms full=0.18ms carry=0.52 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.09d/f cost=7.32ms ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.80 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=4.5ms speed=1x target=0.00d cap=1.12d/f cost=7.17ms ran=0 pulse=0.00ms loop=0.00ms full=0.30ms carry=0.29 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.12d/f cost=7.17ms ran=0 pulse=0.00ms loop=0.00ms full=0.27ms carry=0.62 barrier=
+[weather-layer][lut] #65 update_usec=130422520 last_usec=130422520 lerp=0.850 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.12d/f cost=7.17ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=1.00 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.12d/f cost=7.17ms ran=0 pulse=0.00ms loop=0.00ms full=0.22ms carry=0.31 barrier=
+[clock/step] delta=2.6ms speed=1x target=0.00d cap=1.12d/f cost=7.17ms ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.64 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=5.2ms speed=1x target=0.01d cap=1.10d/f cost=7.24ms ran=0 pulse=0.00ms loop=0.00ms full=0.38ms carry=0.08 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.10d/f cost=7.24ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.50 barrier=
+[weather-layer][lut] #66 update_usec=132422555 last_usec=132422555 lerp=0.851 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.10d/f cost=7.24ms ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.95 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.14d/f cost=7.04ms ran=0 pulse=0.00ms loop=0.00ms full=0.27ms carry=0.29 barrier=
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.14d/f cost=7.04ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.68 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=4.2ms speed=1x target=0.00d cap=1.16d/f cost=6.90ms ran=0 pulse=0.00ms loop=0.00ms full=0.46ms carry=0.17 barrier=
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.16d/f cost=6.90ms ran=0 pulse=0.00ms loop=0.00ms full=0.25ms carry=0.56 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.16d/f cost=6.90ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.88 barrier=
+[weather-layer][lut] #67 update_usec=134411913 last_usec=134411913 lerp=0.866 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.17d/f cost=6.81ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.22 barrier=
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.17d/f cost=6.81ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.57 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=4.5ms speed=1x target=0.00d cap=1.17d/f cost=6.82ms ran=0 pulse=0.00ms loop=0.00ms full=0.32ms carry=0.06 barrier=
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.17d/f cost=6.82ms ran=0 pulse=0.00ms loop=0.00ms full=0.31ms carry=0.48 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.17d/f cost=6.82ms ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.83 barrier=
+[weather-layer][lut] #68 update_usec=136413911 last_usec=136413911 lerp=0.863 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.18d/f cost=6.77ms ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.14 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.18d/f cost=6.77ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.43 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.18d/f cost=6.77ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.73 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.1ms speed=1x target=0.00d cap=1.17d/f cost=6.85ms ran=0 pulse=0.00ms loop=0.00ms full=0.30ms carry=0.17 barrier=
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.17d/f cost=6.85ms ran=0 pulse=0.00ms loop=0.00ms full=0.25ms carry=0.51 barrier=
+[clock/step] delta=2.1ms speed=1x target=0.00d cap=1.17d/f cost=6.85ms ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.79 barrier=
+[weather-layer][lut] #69 update_usec=138419083 last_usec=138419083 lerp=0.857 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.1ms speed=1x target=0.00d cap=1.17d/f cost=6.85ms ran=0 pulse=0.00ms loop=0.00ms full=0.15ms carry=0.12 barrier=
+[clock/step] delta=4.5ms speed=1x target=0.00d cap=1.17d/f cost=6.85ms ran=0 pulse=0.00ms loop=0.00ms full=0.32ms carry=0.46 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.17d/f cost=6.85ms ran=0 pulse=0.00ms loop=0.00ms full=0.25ms carry=0.81 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.16d/f cost=6.91ms ran=0 pulse=0.00ms loop=0.00ms full=0.25ms carry=0.17 barrier=
+[clock/step] delta=2.1ms speed=1x target=0.00d cap=1.16d/f cost=6.91ms ran=0 pulse=0.00ms loop=0.00ms full=0.22ms carry=0.47 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.16d/f cost=6.91ms ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.75 barrier=
+[weather-layer][lut] #70 update_usec=140421616 last_usec=140421616 lerp=0.855 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.6ms speed=1x target=0.00d cap=1.14d/f cost=7.00ms ran=0 pulse=0.00ms loop=0.00ms full=0.22ms carry=0.13 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.14d/f cost=7.00ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.51 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.14d/f cost=7.00ms ran=0 pulse=0.00ms loop=0.00ms full=0.38ms carry=0.86 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.1ms speed=1x target=0.00d cap=1.18d/f cost=6.79ms ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.18 barrier=
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.18d/f cost=6.79ms ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.47 barrier=
+[clock/step] delta=4.5ms speed=1x target=0.00d cap=1.18d/f cost=6.79ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.80 barrier=
+[weather-layer][lut] #71 update_usec=142412093 last_usec=142412093 lerp=0.868 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.16d/f cost=6.90ms ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.22 barrier=
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.16d/f cost=6.90ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.56 barrier=
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.16d/f cost=6.90ms ran=0 pulse=0.00ms loop=0.00ms full=0.27ms carry=0.85 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=2.4ms speed=1x target=0.00d cap=1.17d/f cost=6.84ms ran=0 pulse=0.00ms loop=0.00ms full=0.25ms carry=0.20 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.17d/f cost=6.84ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.49 barrier=
+[weather-layer][lut] #72 update_usec=144403871 last_usec=144403871 lerp=0.879 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.17d/f cost=6.84ms ran=0 pulse=0.00ms loop=0.00ms full=0.44ms carry=1.00 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.0ms speed=1x target=0.00d cap=1.11d/f cost=7.18ms ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.46 barrier=
+[clock/step] delta=1.8ms speed=1x target=0.00d cap=1.11d/f cost=7.18ms ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.86 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.3ms speed=1x target=0.00d cap=1.09d/f cost=7.33ms ran=0 pulse=0.00ms loop=0.00ms full=0.22ms carry=0.26 barrier=
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.09d/f cost=7.33ms ran=0 pulse=0.00ms loop=0.00ms full=0.30ms carry=0.61 barrier=
+[weather-layer][lut] #73 update_usec=146423357 last_usec=146423357 lerp=0.855 prev_tex=true curr_tex=true dims=(2048, 2) visible=true
+[clock/step] delta=2.8ms speed=1x target=0.00d cap=1.09d/f cost=7.33ms ran=0 pulse=0.00ms loop=0.00ms full=0.27ms carry=0.93 barrier=
+[hex_renderer] dyn_lut rebind (material held a stale LUT texture object)
+[clock/step] delta=3.7ms speed=1x target=0.00d cap=1.12d/f cost=7.13ms ran=0 pulse=0.00ms loop=0.00ms full=0.34ms carry=0.31 barrier=

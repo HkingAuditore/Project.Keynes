@@ -1,0 +1,140 @@
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:362)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:345)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1190)
+       [3] generate (res://scripts/geography/map_generator.gd:1474)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:670)
+       [5] _run (res://tests/headless_perf_record.gd:237)
+       [6] _init (res://tests/headless_perf_record.gd:35)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:362)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:345)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1190)
+       [3] generate (res://scripts/geography/map_generator.gd:1474)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:670)
+       [5] _run (res://tests/headless_perf_record.gd:237)
+       [6] _init (res://tests/headless_perf_record.gd:35)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:362)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:345)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1190)
+       [3] generate (res://scripts/geography/map_generator.gd:1474)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:670)
+       [5] _run (res://tests/headless_perf_record.gd:237)
+       [6] _init (res://tests/headless_perf_record.gd:35)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:362)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:345)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1190)
+       [3] generate (res://scripts/geography/map_generator.gd:1474)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:670)
+       [5] _run (res://tests/headless_perf_record.gd:237)
+       [6] _init (res://tests/headless_perf_record.gd:35)
+WARNING: [building-visual] disabled: building_visual_renderer_unavailable
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] generate_world (res://scripts/game/world_runtime_host.gd:705)
+       [1] _run (res://tests/headless_perf_record.gd:237)
+       [2] _init (res://tests/headless_perf_record.gd:35)
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:4675)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2356)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:724)
+       [3] _run (res://tests/headless_perf_record.gd:237)
+       [4] _init (res://tests/headless_perf_record.gd:35)
+WARNING: [runtime-worker] Ideology opinion publish deferred: ideology_opinion_snapshot_invalid
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _start_production_shadow_worker (res://scripts/game/world_runtime_host.gd:815)
+       [1] generate_world (res://scripts/game/world_runtime_host.gd:733)
+       [2] _run (res://tests/headless_perf_record.gd:237)
+       [3] _init (res://tests/headless_perf_record.gd:35)
+[runtime-day-wait] day=1 env_day=0 missing=0x3ff stall=0x10 economy_input=-1
+[climate/worker][b8] physics_knobs day=1 ready=0 missing=physics_knobs
+[climate-kernel][round] shared=1 ok=1 n_cells=6400 mask=0x1FF ran=0x1FF starved=0x0 knobs_cells=6400
+[country][parity] worker_day=1 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=1 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[economy-mirror-cost] day=1 capture_ms=3.581 import_ms=8.729
+[climate/worker][b8] physics_knobs day=2 ready=0 missing=physics_knobs
+[country][parity] worker_day=2 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=2 phase=0 done=0 cands=4 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[economy-mirror-cost] day=2 capture_ms=4.201 import_ms=2.684
+[climate/worker][b8] physics_knobs day=3 ready=0 missing=physics_knobs
+[country][parity] worker_day=3 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=3 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[economy-mirror-cost] day=3 capture_ms=2.033 import_ms=3.998
+[climate/worker][b8] physics_knobs day=4 ready=0 missing=physics_knobs
+[country][parity] worker_day=4 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=4 phase=0 done=0 cands=4 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[economy-mirror-cost] day=4 capture_ms=2.711 import_ms=2.777
+[climate/writeback][b8] day=4 vapor store0=0 map0=0 dirty_fields=42 applied=42
+[climate/worker][b8] physics_knobs day=5 ready=1 missing=
+[climate/worker][b8] paw day=5 cell=834 moisture=0.705536 wb30=0 soil=0 paw=0.705536 zeros(water=4958 land=47) nonzero=1395 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/worker][b8] cyclone_gate day=5 input_enabled=0 force_env=0 effective=0
+[climate/worker][b8] weather_solve day=5 cells=6400 psi=1 vapor0=0.111569 precip0=0 cloud0=0.0302345 type0=0 field_init0=1
+[country][parity] worker_day=5 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=5 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[economy-mirror-cost] day=5 capture_ms=2.181 import_ms=2.535
+[climate/worker][b8] physics_knobs day=6 ready=1 missing=
+[climate/worker][b8] paw day=6 cell=834 moisture=0.700135 wb30=-0.000161783 soil=0 paw=0.70003 zeros(water=4958 land=51) nonzero=1391 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/worker][b8] cyclone_gate day=6 input_enabled=0 force_env=0 effective=0
+[climate/worker][b8] weather_solve day=6 cells=6400 psi=1 vapor0=0.0388567 precip0=0.0360419 cloud0=0.033198 type0=0 field_init0=1
+[country][parity] worker_day=6 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=6 phase=0 done=0 cands=4 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/writeback][b8] day=5 vapor store0=0.111569 map0=0.111569 dirty_fields=54 applied=54
+[economy-mirror-cost] day=6 capture_ms=2.755 import_ms=3.410
+[climate/worker][b8] paw day=7 cell=834 moisture=0.701755 wb30=-0.00029601 soil=-0.000388279 paw=0.701562 zeros(water=4958 land=51) nonzero=1391 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/worker][b8] weather_solve day=7 cells=6400 psi=1 vapor0=0.0298417 precip0=0.0428863 cloud0=0.0318827 type0=0 field_init0=1
+[country][parity] worker_day=7 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=7 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/writeback][b8] day=6 vapor store0=0.0388567 map0=0.0388567 dirty_fields=54 applied=54
+[economy-mirror-cost] day=7 capture_ms=2.118 import_ms=2.834
+[climate/worker][b8] paw day=8 cell=834 moisture=0.700971 wb30=-0.00042544 soil=-0.000335087 paw=0.700694 zeros(water=4958 land=51) nonzero=1391 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/worker][b8] weather_solve day=8 cells=6400 psi=1 vapor0=0.0784318 precip0=0 cloud0=0.0279556 type0=0 field_init0=1
+[country][parity] worker_day=8 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=8 phase=0 done=0 cands=4 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/writeback][b8] day=7 vapor store0=0.0298417 map0=0.0298417 dirty_fields=54 applied=54
+[economy-mirror-cost] day=8 capture_ms=2.379 import_ms=2.852
+[climate/worker][b8] paw day=9 cell=834 moisture=0.699126 wb30=-0.000549993 soil=-0.000710943 paw=0.698768 zeros(water=4958 land=51) nonzero=1391 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=9 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=10 cell=834 moisture=0.697567 wb30=-0.000669912 soil=-0.00102142 paw=0.697132 zeros(water=4958 land=49) nonzero=1393 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=10 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=11 cell=834 moisture=0.696055 wb30=-0.000785374 soil=-0.00102142 paw=0.695544 zeros(water=4958 land=47) nonzero=1395 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=11 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=12 cell=834 moisture=0.694654 wb30=-0.000896564 soil=-0.00132148 paw=0.694071 zeros(water=4958 land=47) nonzero=1395 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=12 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=13 cell=834 moisture=0.693089 wb30=-0.00100359 soil=-0.00132046 paw=0.692436 zeros(water=4958 land=47) nonzero=1395 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=13 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=14 cell=834 moisture=0.69165 wb30=-0.00110664 soil=-0.00161043 paw=0.690931 zeros(water=4958 land=46) nonzero=1396 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=14 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=15 cell=834 moisture=0.690239 wb30=-0.00120585 soil=-0.00160845 paw=0.689455 zeros(water=4958 land=45) nonzero=1397 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=15 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=16 cell=834 moisture=0.689063 wb30=-0.00130142 soil=-0.00188876 paw=0.688218 zeros(water=4958 land=44) nonzero=1398 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=16 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=17 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=18 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=19 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=20 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=21 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=22 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=23 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=24 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+ERROR: [headless-perf] authoritative throughput checkpoint failed: measured=30 need>=30 days/s=32.798 threshold=50.000 main_wait_on_sim_us=0
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _run (res://tests/headless_perf_record.gd:697)
+ERROR: 26 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 312 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
