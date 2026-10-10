@@ -135,6 +135,14 @@ TerrainHorizonSample sample_terrain_horizon(vec2 uv, vec3 light_dir) {
 		return result;
 	}
 
+	vec4 p00;
+	vec4 p10;
+	vec4 p01;
+	vec4 p11;
+	vec2 f;
+	#ifdef PK_HORIZON_GATHER
+	visual_gather_horizon(uv, p00, p10, p01, p11, f);
+	#else
 	#ifdef MAP_VISUAL_TILED
 	vec2 dims = visual_logical_resolution;
 	vec2 world_p = world_origin + uv * world_size;
@@ -149,7 +157,7 @@ TerrainHorizonSample sample_terrain_horizon(vec2 uv, vec3 light_dir) {
 	vec2 p = wrap_map_uv(uv) * dims - vec2(0.5);
 	#endif
 	vec2 b = floor(p);
-	vec2 f = fract(p);
+	f = fract(p);
 	vec2 inv_dims = 1.0 / max(dims, vec2(1.0));
 
 	#ifdef MAP_VISUAL_TILED
@@ -168,10 +176,11 @@ TerrainHorizonSample sample_terrain_horizon(vec2 uv, vec3 light_dir) {
 	vec2 uv11 = wrap_map_uv((b + vec2(1.5, 1.5)) * inv_dims);
 	#endif
 
-	vec4 p00 = visual_sample_horizon(uv00);
-	vec4 p10 = visual_sample_horizon(uv10);
-	vec4 p01 = visual_sample_horizon(uv01);
-	vec4 p11 = visual_sample_horizon(uv11);
+	p00 = visual_sample_horizon(uv00);
+	p10 = visual_sample_horizon(uv10);
+	p01 = visual_sample_horizon(uv01);
+	p11 = visual_sample_horizon(uv11);
+	#endif
 	result.has_data = true;
 
 	// 最近邻 texel：step 是选择而非插值，packed 字节保持原值。

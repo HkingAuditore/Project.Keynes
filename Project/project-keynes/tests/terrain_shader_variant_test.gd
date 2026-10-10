@@ -139,6 +139,45 @@ func _init() -> void:
 		_expect(not names.has("map_index_atlas"), "%s tiled omits legacy map-index sampler" % label)
 		_expect(not names.has("terrain_horizon_tex"), "%s tiled omits legacy horizon sampler" % label)
 		_expect(names.has("terrain_material_tex"), "%s tiled exposes terrain material array" % label)
+		_expect(names.has("visual_terrain_relief_tiles") and names.has("terrain_static_baked"),
+			"%s tiled exposes baked terrain relief + static-bake gate" % label)
+	_expect(hillshade_source.contains("vec4 terrain_baked_normal(")
+		and land_source.contains("terrain_baked_normal(uv, visual_quality"),
+		"tiled land reads baked landform detail instead of per-pixel noise")
+	var shore_source := FileAccess.get_file_as_string(
+		"res://shaders/include/shore_common.gdshaderinc")
+	_expect(shore_source.contains("shore_frac.x * 8.0")
+		and not shore_source.contains("visual_sample_terrain_detail"),
+		"shore neighbourhood reuses baked edge_distance.ba (no extra fetch)")
+	var tile_sampling_source := FileAccess.get_file_as_string(
+		"res://shaders/include/visual_tile_sampling.gdshaderinc")
+	var horizon_source := FileAccess.get_file_as_string(
+		"res://shaders/include/terrain_horizon.gdshaderinc")
+	_expect(tile_sampling_source.count("textureGather(visual_horizon_tiles") == 2
+		and tile_sampling_source.contains("CURRENT_RENDERER != RENDERER_COMPATIBILITY")
+		and horizon_source.contains("visual_gather_horizon(uv, p00, p10, p01, p11, f)"),
+		"tiled Vulkan horizon fetches its 2x2 footprint with two gathers")
+	var snow_source := FileAccess.get_file_as_string(
+		"res://shaders/include/snow_cover.gdshaderinc")
+	_expect(snow_source.contains("float amount_n = pixel_noise.r * 0.5;")
+		and not water_source.contains("water_fbm_cyl(ctx.wpw, 0.045"),
+		"snow jitter and sea-ice edge reuse pixel_noise")
+	var water_inc_source := FileAccess.get_file_as_string(
+		"res://shaders/include/water.gdshaderinc")
+	_expect(water_inc_source.contains("textureGather(noise_tex, nuv, 1)")
+		and water_inc_source.contains("vec2 h_grad = water_surface_height_grad("),
+		"water normal uses an analytic gradient (one gather) instead of 4 height taps")
+	_expect(water_source.contains("bw = vec4(ctx.water_depth_px.gba, 0.0)")
+		and water_source.count("visual_sample_water_depth(") == 1,
+		"water pipeline fetches water_depth once (depth + baked 3x3 weights)")
+	_expect(source.contains("vec4 height_px = visual_sample_height(uv)")
+		and source.contains("vec4 map_px = visual_sample_map_index(uv)")
+		and not source.contains("dyn_lut_nearest("),
+		"fragment setup fetches height and map_index once")
+	_expect(source.count("visual_sample_edge_distance(") == 1
+		and not land_source.contains("visual_sample_edge_distance(")
+		and land_source.contains("terrain_baked_normal(uv, visual_quality, scals.a)"),
+		"edge_distance fetched once in setup and reused via scals.r/.a")
 	_expect(uniforms_source.contains("sampler2DArray terrain_material_tex"),
 		"terrain material path uses sampler2DArray")
 	_expect(surface_source.contains("float material_path_scale = terrain_materials_active() ? 0.72 : 1.0;"),
@@ -171,6 +210,8 @@ func _init() -> void:
 		"web budget keeps has_flow_tex gate")
 	_expect(not web_names.has("terrain_micro_tex"),
 		"web budget still omits terrain_micro_tex")
+	_expect(not web_names.has("visual_terrain_relief_tiles"),
+		"web budget omits baked terrain relief sampler")
 	for label in variants:
 		var shader := Shader.new()
 		shader.code = String(variants[label]) + source
@@ -181,6 +222,8 @@ func _init() -> void:
 			"%s legacy omits flow_tex sampler (height_tex.B)" % label)
 		_expect(names.has("height_tex") and names.has("has_flow_tex"),
 			"%s legacy keeps height_tex + has_flow_tex" % label)
+		_expect(not names.has("terrain_static_baked"),
+			"%s legacy keeps the runtime fallback (no static-bake gate)" % label)
 	print("=== terrain shader variants: %d checks, %d failures ===" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
 

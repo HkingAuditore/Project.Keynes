@@ -21,12 +21,13 @@ func _init() -> void:
 		return
 	var expected := {
 		"height": 20 * 20 * 4,
-		"terrain_normal": 20 * 20 * 2,
+		"terrain_normal": 20 * 20 * 4,
+		"terrain_relief": 20 * 20 * 4,
 		"map_index": 20 * 20 * 4,
-		"water_depth": 20 * 20,
+		"water_depth": 20 * 20 * 4,
 		"terrain_detail": 20 * 20,
 		"edge_neighbor": 20 * 20 * 2,
-		"edge_distance": 20 * 20,
+		"edge_distance": 20 * 20 * 4,
 	}
 	for field in expected:
 		var data: PackedByteArray = first.get(field, PackedByteArray())
@@ -45,6 +46,17 @@ func _init() -> void:
 		return
 	if bool(first.get("csr_emitted", true)):
 		push_error("visual_tile_native_bake_test: high-resolution CSR was emitted")
+		quit(1)
+		return
+	if not _test_static_relief_payload(first):
+		quit(1)
+		return
+	var ss_knobs: Dictionary = knobs.duplicate(true)
+	ss_knobs["relief_supersample"] = 2
+	var ss: Dictionary = ext.run_bake_visual_tile_layer_pass(ss_knobs)
+	if PackedByteArray(ss.get("terrain_relief", PackedByteArray())).size() != 40 * 40 * 4 \
+			or PackedByteArray(ss.get("terrain_normal", PackedByteArray())).size() != 20 * 20 * 4:
+		push_error("visual_tile_native_bake_test: relief_supersample=2 payload sizes wrong")
 		quit(1)
 		return
 	if not _test_normal_resolution_invariance(ext):
@@ -67,6 +79,26 @@ func _init() -> void:
 		print("visual_tile_native_bake_test: horizon resample SKIP (stale DLL)")
 	print("visual_tile_native_bake_test: PASS %s" % JSON.stringify(first.get("hashes", {})))
 	quit(0)
+
+
+# 分地形细节坡度 / 海岸邻域 / 水面软权重：全陆地的倾斜平原应有非零细节坡度，
+# 且不会出现水邻域与水面类别权重。
+func _test_static_relief_payload(result: Dictionary) -> bool:
+	var relief: PackedByteArray = result.get("terrain_relief", PackedByteArray())
+	var edge: PackedByteArray = result.get("edge_distance", PackedByteArray())
+	var water: PackedByteArray = result.get("water_depth", PackedByteArray())
+	var max_dev := 0
+	for i in range(relief.size()):
+		max_dev = maxi(max_dev, absi(int(relief[i]) - 128))
+	if max_dev < 2:
+		push_error("visual_tile_native_bake_test: terrain_relief is flat (max deviation %d)" % max_dev)
+		return false
+	for i in range(int(edge.size() / 4)):
+		if edge[i * 4 + 2] != 0 or edge[i * 4 + 3] != 0 or water[i * 4 + 1] != 0 \
+				or water[i * 4 + 2] != 0 or water[i * 4 + 3] != 0:
+			push_error("visual_tile_native_bake_test: land-only tile reports water neighbours")
+			return false
+	return true
 
 
 func _test_normal_resolution_invariance(ext: Object) -> bool:
@@ -127,7 +159,7 @@ func _average_normal_x(result: Dictionary, width: int, height: int) -> float:
 	var count := 0
 	for y in range(y0, y1):
 		for x in range(x0, x1):
-			total += float(data[(y * width + x) * 2]) / 255.0 * 2.0 - 1.0
+			total += float(data[(y * width + x) * 4]) / 255.0 * 2.0 - 1.0
 			count += 1
 	return total / float(maxi(count, 1))
 
@@ -198,7 +230,7 @@ func _test_edge_distance_resolution_invariance(ext: Object) -> bool:
 		for x in range(low_width):
 			var low_index := y * low_width + x
 			var high_index := (y * 3 + 1) * high_width + (x * 3 + 1)
-			if absi(int(low_distance[low_index]) - int(high_distance[high_index])) > 1:
+			if absi(int(low_distance[low_index * 4]) - int(high_distance[high_index * 4])) > 1:
 				push_error("visual_tile_native_bake_test: edge distance changed with resolution")
 				return false
 			for channel in range(2):
@@ -221,7 +253,7 @@ func _test_canal_height_alpha_and_partial_payload(ext: Object) -> bool:
 	if bool(plain.get("fallback", true)) or bool(canal.get("fallback", true)):
 		push_error("visual_tile_native_bake_test: canal bake fallback")
 		return false
-	if canal.has("map_index") or canal.has("water_depth") \
+	if canal.has("map_index") or canal.has("water_depth") or canal.has("terrain_relief") \
 			or canal.has("terrain_detail") or canal.has("edge_neighbor"):
 		push_error("visual_tile_native_bake_test: canal refresh uploaded non-height fields")
 		return false

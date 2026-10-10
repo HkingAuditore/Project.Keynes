@@ -15103,11 +15103,13 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 		elif n_sub > 30: n_sub = 30
 		var sub_dt: float = dt_days / float(n_sub)
 		var new_frac: float = prev_frac
+		var thermo_tendency: float = 0.0
 		for _sub in range(n_sub):
 			var solar_melt_s: float = (solar_melt_base * _sea_ice_solar_exposure(new_frac, min_thick_ice_solar_exposure)) if solar_gate_enabled else 0.0
 			var rate: float = freeze_term - (melt_thermal + solar_melt_s)
 			if daily_delta_cap > 0.0:
 				rate = clampf(rate, -daily_delta_cap, daily_delta_cap)
+			thermo_tendency += rate * sub_dt
 			new_frac += rate * sub_dt
 			if new_frac <= 0.0:
 				new_frac = 0.0
@@ -15146,9 +15148,11 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 					new_frac = clampf(lerpf(new_frac, avg_nb_frac, mix), 0.0, 1.0)
 					# 与 runtime_climate_passes.cpp 同一条：邻居混合只能顺着当天的
 					# 冻结或融化，不能反向拉。否则冰缘形成之后会隔日来回闪。
-					if thermo_frac > prev_frac:
+					# 方向取未钳位的速率：钳在 1 的冻结格 / 钳在 0 的融化格
+					# thermo_frac == prev_frac，按中性处理会被拉离边界、次日又被拉回。
+					if thermo_tendency > 0.0:
 						new_frac = maxf(new_frac, thermo_frac)
-					elif thermo_frac < prev_frac:
+					elif thermo_tendency < 0.0:
 						new_frac = minf(new_frac, thermo_frac)
 					else:
 						new_frac = clampf(new_frac, prev_frac - 0.02, prev_frac + 0.02)

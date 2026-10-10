@@ -1889,6 +1889,9 @@ Trigger 与 Events 已随 H8/I8 进入 `implemented_domain_mask`；Economy 专�
 | 大地图跟拍 | ✅ 环境 FIFO ring + wait(0)；吞吐仍受 worker 成本限制 |
 | 小地图负收益 / 阈值 | ✅ 实测无正阈值；AUTO keep-on + 显式诊断 |
 | terrain/cover | ✅ CLM2 ABI 8 writeback |
+| sea_ice round 起点 | ✅ ACTIVE 下 round 吃 worker store 的前一日 `sea_ice`（与 terrain 同时冷播种），不再吃 capture 时的主线程 slot |
+| 有 store 成员的跨天 round lane | ✅ ACTIVE 且 store 已提交过（`committed_day>=0`）时，round 的 temp / temp_30d / temp_365d / thermal_energy / temp_baseline / moisture / snowpack / water_balance_30d / weather_precip / weather_vapor / vegetation / cover，albedo 的 vegetation / cover，植被动力学的 terrain / vegetation，physics-owned weather 的 terrain / vegetation / vitality 都吃 worker store。锁步下 slot 恰等于昨天回灌的 store，是 no-op（实测开/关轨迹逐日相同）；`pipeline_depth=3` 下海冰总量与锁步的偏差从 24–78 格当量降到 <1 |
+| 无 store 成员的跨天 round 输入 | ⚠️ temp_transport_anomaly / local_thermal_anomaly / ocean_thermal_anomaly / air_mass_temp_anomaly / soil_moisture 被 round 当作前一日状态读，但不在 parity 回写表里，round 读的是 capture 时主线程 slot 里的值。逐日哈希对比：TTA 与 local_thermal_anomaly 在锁步/流水线下每天都相同（疑似 ACTIVE 下 slot 不再推进），ocean/air/soil 从第 3–4 天起分叉（slot 仍有别的写者）。wind_* / ocean_current_* / upwelling / wind_traj_* 在 physics_owned 时已取自 worker `_physics`，它们的分叉是下游结果；insolation_* 会被 pass_a 的输出覆盖，不影响结果。另有第 1 天 round 输入全同、第 2 天 store 温度即已分叉的来源在 round 输入之外（physics/weather/hydrology/season 输入之一），未定位 |
 | C5 场景表 | ✅ `runtime_climate_c5_scenarios_test.gd` |
 
 ### 测量能力缺口（→ 阶段 C，影响所有域）

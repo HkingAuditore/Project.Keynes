@@ -1390,10 +1390,32 @@ bool NativeEconomyRuntime::service_country_economy_asset_peer(
         return true;
     }
 
+    // Continuation-owned requests (colonization procurement) run their
+    // Economy legs between epochs. Journaling one inside an open epoch would
+    // apply its market leg inside the conservation window while the
+    // continuation's merchant/cargo leg lands outside it, so leave them queued
+    // for the next out-of-epoch service.
+    struct RequeueOnExit {
+        NativeSimulationHost *host;
+        std::vector<uint64_t> ids;
+        ~RequeueOnExit() {
+            for (const uint64_t id : ids) {
+                std::string ignored;
+                host->requeue_country_economy_asset_request(id, ignored);
+            }
+        }
+    } outside_epoch{_simulation_host, {}};
+
     for (uint32_t inspected = 0; inspected < max_requests; ++inspected) {
         RuntimeEconomyAssetRequest request;
         if (!_simulation_host->poll_country_economy_asset_request(request))
             break;
+        if (_epoch_active &&
+            _simulation_host->country_economy_asset_settlement_deferred(
+                request.request_id)) {
+            outside_epoch.ids.push_back(request.request_id);
+            continue;
+        }
 
         const auto journal = _asset_peer_journal.find(request.request_id);
         if (journal != _asset_peer_journal.end()) {
@@ -1471,13 +1493,14 @@ bool NativeEconomyRuntime::service_country_economy_asset_peer(
             // Non-fiscal (M2–M5): Country already committed treasury value.
             // Apply local cohort/market side effects when simple, then journal
             // COMPLETED with prepared cash/quantity as the committed amounts.
+            // Cash never falls back to the goods quantity: a goods-only
+            // treasury spend or market delivery (requested_cash == 0) must
+            // commit zero cash, or Country debits its treasury by the goods
+            // count with no Economy-side counterpart.
             const int64_t committed_qty = request.prepared_quantity > 0
                 ? request.prepared_quantity : request.requested_quantity;
-            const int64_t committed_cash = request.prepared_quantity > 0
-                ? (request.reserved_cash > 0 ? request.reserved_cash
-                                             : request.prepared_quantity)
-                : (request.requested_cash > 0 ? request.requested_cash
-                                              : request.requested_quantity);
+            const int64_t committed_cash = request.reserved_cash > 0
+                ? request.reserved_cash : request.requested_cash;
             if (!gate_open || !prepared ||
                 request.origin_domain !=
                     static_cast<uint32_t>(RuntimeDomainId::ECONOMY)) {

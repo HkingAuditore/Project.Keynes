@@ -4,6 +4,7 @@
 #include "system_schedule.h"           // Phase C.1 — 静态 DAG 调度图
 #include "parallel_dispatcher.h"       // Phase C.3a — 并行分发 helper（统一 5 个手写 _thread）
 #include "bake_dem_landform.h"
+#include "bake_terrain_relief.h"
 
 // MSVC 默认不定义 M_PI；必须在引入 <cmath> 之前打开 _USE_MATH_DEFINES。
 // 双保险：仍未定义时手动兜底，避免某些编译器/PCH 顺序问题。
@@ -2365,10 +2366,16 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
             normal_radius_world / step_x))));
     const int normal_radius_y = std::max(1, std::min(64, int(std::round(
             normal_radius_world / step_y))));
+    // 静态地表派生量（细节法线 / 海岸邻域 / 水面类别软过渡）需要的邻域半径。
+    const double water_biome_radius_px = std::max(0.25, std::min(4.0,
+            double(knobs.get("water_biome_radius_px", 4.0))));
+    const int relief_flow_radius_px = int(std::ceil(hex_size / std::min(step_x, step_y))) + 2;
     const int required_halo = std::max({normal_radius_x, normal_radius_y,
             int(std::ceil(river_sdf_max_dist_px)) + 2,
             int(std::ceil(coast_sdf_max_dist_px)) + 2,
-            shore_carve_band_px + 2});
+            shore_carve_band_px + 2,
+            relief_flow_radius_px,
+            int(std::ceil(water_biome_radius_px)) + 1});
     const int halo = std::max(required_halo,
             std::max(2, std::min(64, int(knobs.get("algorithm_halo_px", 8)))));
     const int WW = W + halo * 2;
@@ -2631,15 +2638,28 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     // height RGBA8: RG=16-bit carved visual elevation, B=natural river SDF,
     // A=artificial canal SDF.
     // 与 Legacy encode_height_flow_tex 对齐；不再单独产出 flow 层。
+    // terrain_normal RGBA8: RG=粗法线 xy，BA=近景高度细节坡度（运行期只在拉近时淡入）。
+    // terrain_relief RGBA8: RG=粗段细节坡度，BA=细段细节坡度。坡度均为 pk_relief::encode_slope。
+    // terrain_detail R8: 连续细节噪声。
+    // water_depth RGBA8: R=水深，G/B/A=湖 / 礁 / 海带的 3×3 软权重。
+    // edge_distance RGBA8: R=到次生格的距离，G=沟谷深度（凹处遮蔽），B/A=8 邻域水 / 湖占比
+    //   （海岸过渡；海占比 ≈ 水 − 湖）。fragment setup 每像素只读这一次，陆地和水面共用。
     PackedByteArray height_data; height_data.resize(N * 4);
-    PackedByteArray normal_data; normal_data.resize(N * 2);
+    PackedByteArray normal_data; normal_data.resize(N * 4);
+    // 细节坡度是 sub-hex 尺度的高频量，按 relief_supersample 倍分辨率烘焙（只这一张），
+    // 运行期仍是 1 次采样：tile 寻址是归一化坐标，与该数组的物理尺寸无关。
+    const int RS = std::max(1, std::min(4, int(knobs.get("relief_supersample", 1))));
+    const int RW = W * RS;
+    const int RH = H * RS;
+    PackedByteArray relief_data; relief_data.resize(RW * RH * 4);
     PackedByteArray map_index_data; map_index_data.resize(N * 4);
-    PackedByteArray water_data; water_data.resize(N);
+    PackedByteArray water_data; water_data.resize(N * 4);
     PackedByteArray detail_data; detail_data.resize(N);
     PackedByteArray edge_data; edge_data.resize(N * 2);
-    PackedByteArray edge_distance_data; edge_distance_data.resize(N);
+    PackedByteArray edge_distance_data; edge_distance_data.resize(N * 4);
     uint8_t * const HD = height_data.ptrw();
     uint8_t * const ND = normal_data.ptrw();
+    uint8_t * const RD = relief_data.ptrw();
     uint8_t * const MD = map_index_data.ptrw();
     uint8_t * const WD = water_data.ptrw();
     uint8_t * const DD = detail_data.ptrw();
@@ -2676,6 +2696,161 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
                 std::cos(phase) * radius, std::sin(phase) * radius, wy));
     };
 
+    // 分地形细节法线与静态邻域量的输入。运行期着色参数在这里取默认值烘死；
+    // 改动后需重新生成地图（与 normal_height_scale_hex 同类）。
+    const float relief_coarse_strength = float(knobs.get("hillshade_coarse_strength", 1.65));
+    const float relief_height_detail = float(knobs.get("hillshade_detail_strength", 0.16)) *
+            float(knobs.get("hillshade_detail_quality", 0.55));
+    const float relief_slope_gain = float(knobs.get("hillshade_slope_gain", 15.0));
+    const float relief_shore_detail = float(knobs.get("shore_detail_strength", 0.45)) *
+            float(knobs.get("hillshade_detail_quality", 0.55));
+    const float relief_shore_band = std::max(0.001f, float(knobs.get("shore_band_height", 0.06)));
+    const float relief_world_scale = std::max(1.0f,
+            float(knobs.get("terrain_erosion_world_size", 72.0))) / 72.0f;
+    const float relief_strength = std::max(0.0f, float(knobs.get("terrain_erosion_strength", 1.0)));
+    const int map_w = int(knobs.get("map_width", 0));
+    const int map_h = int(knobs.get("map_height", 0));
+    PackedInt32Array offset_to_index = knobs.get("offset_to_index", PackedInt32Array());
+    const int32_t * const O2I = (map_w > 0 && map_h > 0 &&
+            offset_to_index.size() >= map_w * map_h) ? offset_to_index.ptr() : nullptr;
+    const float flow_off_x = float(hex_size / step_x);
+    const float flow_off_y = float(hex_size / step_y);
+    const float hd_off = 3.5f;
+
+    auto height_bilinear = [&](float fx, float fy) -> float {
+        fx = std::max(0.0f, std::min(float(WW - 1), fx));
+        fy = std::max(0.0f, std::min(float(WH - 1), fy));
+        const int x0 = std::min(WW - 2, int(fx));
+        const int y0 = std::min(WH - 2, int(fy));
+        const float tx = fx - float(x0), ty = fy - float(y0);
+        const float a = HW[y0 * WW + x0] * (1.0f - tx) + HW[y0 * WW + x0 + 1] * tx;
+        const float b = HW[(y0 + 1) * WW + x0] * (1.0f - tx) + HW[(y0 + 1) * WW + x0 + 1] * tx;
+        return a * (1.0f - ty) + b * ty;
+    };
+    // 格内配置在不扭曲的 hex 对偶三角网上插值：取像素所在三角形三个格心的地形 / 地貌，
+    // 按立方锐化的重心权重混合。格心必在本格内，不受边界扭曲影响。
+    auto relief_profile = [&](double wx, double wy, int own_biome, int own_lf,
+            pk_relief::Profile &P, float &lf_layered, float &lf_bad) {
+        const pk_relief::Profile own = pk_relief::profile_for(own_biome);
+        const float own_layered = pk_relief::landform_is_layered(own_lf);
+        const float own_bad = own_lf == pk_relief::LF_BADLANDS ? 1.0f : 0.0f;
+        const double ax = (0.57735027 * wx - 0.33333333 * wy) / hex_size;
+        const double ay = (0.66666667 * wy) / hex_size;
+        const double bx = std::floor(ax), by = std::floor(ay);
+        const float fx = float(ax - bx), fy = float(ay - by);
+        const bool upper = fx + fy >= 1.0f;
+        int vq[3], vr[3];
+        float w[3];
+        if (upper) {
+            vq[0] = int(bx) + 1; vr[0] = int(by) + 1; w[0] = fx + fy - 1.0f;
+            w[1] = 1.0f - fy; w[2] = 1.0f - fx;
+        } else {
+            vq[0] = int(bx); vr[0] = int(by); w[0] = 1.0f - fx - fy;
+            w[1] = fx; w[2] = fy;
+        }
+        vq[1] = int(bx) + 1; vr[1] = int(by);
+        vq[2] = int(bx); vr[2] = int(by) + 1;
+        float wsum = 0.0f;
+        for (int i = 0; i < 3; ++i) {
+            w[i] = w[i] * w[i] * w[i];
+            wsum += w[i];
+        }
+        P = {0, 0, 0, 0, 0, 0, 0};
+        lf_layered = 0.0f;
+        lf_bad = 0.0f;
+        for (int i = 0; i < 3; ++i) {
+            const float wi = w[i] / std::max(wsum, 1e-6f);
+            pk_relief::Profile pi = own;
+            float li_layered = own_layered, li_bad = own_bad;
+            const int r = vr[i];
+            if (O2I != nullptr && CT != nullptr && r >= 0 && r < map_h) {
+                int col = vq[i] + (r - (r & 1)) / 2;
+                col = ((col % map_w) + map_w) % map_w;
+                const int ci = O2I[r * map_w + col];
+                if (ci >= 0 && ci < n_cells && !pk_relief::is_water(CT[ci])) {
+                    pi = pk_relief::profile_for(CT[ci]);
+                    const int lf = (LF != nullptr && ci < landform.size()) ? LF[ci] : 0;
+                    li_layered = pk_relief::landform_is_layered(lf);
+                    li_bad = lf == pk_relief::LF_BADLANDS ? 1.0f : 0.0f;
+                }
+            }
+            P.gully += pi.gully * wi;
+            P.gully_wl += pi.gully_wl * wi;
+            P.sharp += pi.sharp * wi;
+            P.strata += pi.strata * wi;
+            P.dune += pi.dune * wi;
+            P.rolling += pi.rolling * wi;
+            P.hummock += pi.hummock * wi;
+            lf_layered += li_layered * wi;
+            lf_bad += li_bad * wi;
+        }
+    };
+
+    // ── 分地形细节坡度（RS 倍分辨率）─────────────────────────────────────
+    // 子 texel 的粗法线 / 平滑高程场都从工作高度场双线性取，与基础分辨率的粗法线同半径同增益。
+    const bool canal_refresh_only = bool(knobs.get("canal_refresh_only", false));
+    std::vector<float> crease_sub(size_t(RW) * size_t(RH), 0.0f);
+    const float sub_texel_world = float(std::sqrt(step_x * step_y) / double(RS));
+    auto relief_rows = [&](int ry_begin, int ry_end) {
+        for (int ry = ry_begin; ry < ry_end; ++ry) {
+            const float fyw = float(halo) + (float(ry) + 0.5f) / float(RS) - 0.5f;
+            const double wy = origin_y + (double(ry) + 0.5) * step_y / double(RS);
+            const int by = std::min(H - 1, ry / RS);
+            for (int rx = 0; rx < RW; ++rx) {
+                const int ri_idx = ry * RW + rx;
+                const int bx = std::min(W - 1, rx / RS);
+                const int si = (by + halo) * WW + bx + halo;
+                const int own_biome = BIOME_W[si];
+                float out_c[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+                if (!pk_relief::is_water(own_biome)) {
+                    const float fxw = float(halo) + (float(rx) + 0.5f) / float(RS) - 0.5f;
+                    const double wx = origin_x + (double(rx) + 0.5) * step_x / double(RS);
+                    const float sx = (height_bilinear(fxw + float(normal_radius_x), fyw) -
+                            height_bilinear(fxw - float(normal_radius_x), fyw)) * float(normal_gain_x);
+                    const float sy = (height_bilinear(fxw, fyw + float(normal_radius_y)) -
+                            height_bilinear(fxw, fyw - float(normal_radius_y))) * float(normal_gain_y);
+                    const float inv_len = 1.0f / std::sqrt(sx * sx + sy * sy + 1.0f);
+                    pk_relief::Inputs ri;
+                    ri.wx = float(wrap_world_x(wx));
+                    ri.wy = float(wy);
+                    ri.nc_x = -sx * inv_len * relief_coarse_strength;
+                    ri.nc_y = -sy * inv_len * relief_coarse_strength;
+                    ri.nc_z = std::sqrt(std::max(1e-4f,
+                            1.0f - std::min(ri.nc_x * ri.nc_x + ri.nc_y * ri.nc_y, 0.998f)));
+                    ri.elev = pk_relief::clampf(height_bilinear(fxw, fyw), 0.0f, 1.0f);
+                    ri.sea_level = float(sea_level);
+                    const float hl = height_bilinear(fxw - flow_off_x, fyw);
+                    const float hr = height_bilinear(fxw + flow_off_x, fyw);
+                    const float hu = height_bilinear(fxw, fyw - flow_off_y);
+                    const float hd = height_bilinear(fxw, fyw + flow_off_y);
+                    ri.flow_gx = (hr - hl) / float(2.0 * hex_size);
+                    ri.flow_gy = (hd - hu) / float(2.0 * hex_size);
+                    ri.flow_mean = (hl + hr + hu + hd) * 0.25f;
+                    const int ci = P2C[si];
+                    const int own_lf = (LF != nullptr && ci >= 0 && ci < landform.size()) ? LF[ci] : 0;
+                    relief_profile(ri.wx, ri.wy, own_biome, own_lf, ri.P, ri.lf_layered, ri.lf_bad);
+                    ri.hex_size = float(hex_size);
+                    ri.height_scale_hex = float(normal_height_scale_hex);
+                    ri.texel_world = sub_texel_world;
+                    ri.wrap_period = float(wrap_period_x);
+                    ri.world_scale = relief_world_scale;
+                    ri.strength = relief_strength;
+                    const pk_relief::Output ro = pk_relief::evaluate(ri);
+                    out_c[0] = ro.coarse_x;
+                    out_c[1] = ro.coarse_y;
+                    out_c[2] = ro.fine_x;
+                    out_c[3] = ro.fine_y;
+                    crease_sub[size_t(ri_idx)] = ro.crease;
+                }
+                for (int c = 0; c < 4; ++c) RD[ri_idx * 4 + c] = pk_relief::encode_slope(out_c[c]);
+            }
+        }
+    };
+    if (!canal_refresh_only) {
+        pk::parallel_for_range("pk_bake_visual_tile_relief", RH, bake_row_tasks(RH),
+                /*seq_threshold=*/8, relief_rows);
+    }
+
     auto encode_rows = [&](int y_begin, int y_end) {
         for (int y = y_begin; y < y_end; ++y) {
             const int wy_i = y + halo;
@@ -2699,12 +2874,80 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
                 const double sy = (double(HW[(wy_i + normal_radius_y) * WW + wx_i]) -
                         double(HW[(wy_i - normal_radius_y) * WW + wx_i])) * normal_gain_y;
                 const double inv_len = 1.0 / std::sqrt(sx * sx + sy * sy + 1.0);
-                ND[di * 2] = uint8_t(std::max(0, std::min(255,
+                ND[di * 4] = uint8_t(std::max(0, std::min(255,
                         int(std::round((-sx * inv_len * 0.5 + 0.5) * 255.0)))));
-                ND[di * 2 + 1] = uint8_t(std::max(0, std::min(255,
+                ND[di * 4 + 1] = uint8_t(std::max(0, std::min(255,
                         int(std::round((-sy * inv_len * 0.5 + 0.5) * 255.0)))));
 
                 const int ci = P2C[si];
+                const int own_biome = BIOME_W[si];
+                const bool own_water = pk_relief::is_water(own_biome);
+
+                // ── 沟谷深度（子 texel 平均）与近景高度细节 ─────────────────────
+                float crease = 0.0f;
+                for (int oy = 0; oy < RS; ++oy) {
+                    for (int ox = 0; ox < RS; ++ox) {
+                        crease += crease_sub[size_t((y * RS + oy) * RW + x * RS + ox)];
+                    }
+                }
+                crease /= float(RS * RS);
+                float hd_sx = 0.0f, hd_sy = 0.0f;
+                if (!own_water) {
+                    const float ncx = float(-sx * inv_len) * relief_coarse_strength;
+                    const float ncy = float(-sy * inv_len) * relief_coarse_strength;
+                    const float nc_z = std::sqrt(std::max(1e-4f,
+                            1.0f - std::min(ncx * ncx + ncy * ncy, 0.998f)));
+                    const float fxc = float(wx_i), fyc = float(wy_i);
+
+                    // 近景高度细节：宽差分读出崖壁 / 河岸局部坡，近岸窄带单独增强。
+                    // 按格主地形取强度：逐像素 biome 在过渡带是抖动抽选的，会让强度逐像素跳变。
+                    const int geo_biome = (CT != nullptr && ci >= 0 && ci < n_cells &&
+                            !pk_relief::is_water(CT[ci])) ? int(CT[ci]) : own_biome;
+                    float hd_amt = relief_height_detail * pk_relief::height_detail_factor(geo_biome);
+                    if (relief_shore_detail > 0.0f && h > sea_level) {
+                        const float band = 1.0f - pk_relief::smoothstepf(0.0f, relief_shore_band,
+                                float(h - sea_level));
+                        hd_amt = std::max(hd_amt, band * relief_shore_detail);
+                    }
+                    if (hd_amt > 0.0f) {
+                        const float g = relief_slope_gain / hd_off;
+                        const float ddx = (height_bilinear(fxc + hd_off, fyc) -
+                                height_bilinear(fxc - hd_off, fyc)) * g;
+                        const float ddy = (height_bilinear(fxc, fyc + hd_off) -
+                                height_bilinear(fxc, fyc - hd_off)) * g;
+                        hd_sx = -ddx * hd_amt / nc_z;
+                        hd_sy = -ddy * hd_amt / nc_z;
+                    }
+                }
+                ND[di * 4 + 2] = pk_relief::encode_slope(hd_sx);
+                ND[di * 4 + 3] = pk_relief::encode_slope(hd_sy);
+
+                // ── 海岸 8 邻域：水 / 湖占比 ─────────────────────────────────
+                int n_water = 0, n_lake = 0;
+                for (int oy = -1; oy <= 1; ++oy) {
+                    for (int ox = -1; ox <= 1; ++ox) {
+                        if (ox == 0 && oy == 0) continue;
+                        const int nb = BIOME_W[(wy_i + oy) * WW + wx_i + ox];
+                        n_water += pk_relief::is_water(nb) ? 1 : 0;
+                        n_lake += nb == pk_relief::B_LAKE ? 1 : 0;
+                    }
+                }
+                // ── 水面类别 3×3 软权重（湖 / 礁 / 海带），足迹半径 water_biome_radius_px ─
+                float c_lake = 0.0f, c_reef = 0.0f, c_kelp = 0.0f, c_total = 0.0f;
+                for (int oy = -1; oy <= 1; ++oy) {
+                    for (int ox = -1; ox <= 1; ++ox) {
+                        const int tx = wx_i + int(std::lround(double(ox) * water_biome_radius_px));
+                        const int ty = wy_i + int(std::lround(double(oy) * water_biome_radius_px));
+                        const int nb = BIOME_W[ty * WW + tx];
+                        const float sw = 1.0f - 0.18f * std::min(1.41421356f,
+                                std::sqrt(float(ox * ox + oy * oy)));
+                        c_lake += nb == pk_relief::B_LAKE ? sw : 0.0f;
+                        c_reef += nb == pk_relief::B_REEF ? sw : 0.0f;
+                        c_kelp += nb == pk_relief::B_KELP ? sw : 0.0f;
+                        c_total += sw;
+                    }
+                }
+                const float inv_ct = 255.0f / std::max(c_total, 0.001f);
                 MD[di * 4] = BIOME_W[si];
                 MD[di * 4 + 1] = ci >= 0 && ci < 0xFFFF ? uint8_t(ci & 0xFF) : 0xFF;
                 MD[di * 4 + 2] = ci >= 0 && ci < 0xFFFF ? uint8_t((ci >> 8) & 0xFF) : 0xFF;
@@ -2718,12 +2961,18 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
                 } else if (BWATER != nullptr) {
                     depth = sample_base_byte(BWATER, wx, wy);
                 }
-                WD[di] = uint8_t(std::round(depth * 255.0));
+                WD[di * 4] = uint8_t(std::round(depth * 255.0));
+                WD[di * 4 + 1] = uint8_t(std::lround(c_lake * inv_ct));
+                WD[di * 4 + 2] = uint8_t(std::lround(c_reef * inv_ct));
+                WD[di * 4 + 3] = uint8_t(std::lround(c_kelp * inv_ct));
                 const double dn = std::max(-1.0, std::min(1.0, detail_periodic(wx, wy)));
                 DD[di] = uint8_t(std::round((dn * 0.5 + 0.5) * 255.0));
                 ED[di * 2] = EW[si * 2];
                 ED[di * 2 + 1] = EW[si * 2 + 1];
-                EDD[di] = EDW[si];
+                EDD[di * 4] = EDW[si];
+                EDD[di * 4 + 1] = uint8_t(std::lround(pk_relief::clampf(crease, 0.0f, 1.0f) * 255.0f));
+                EDD[di * 4 + 2] = uint8_t(std::lround(float(n_water) * (255.0f / 8.0f)));
+                EDD[di * 4 + 3] = uint8_t(std::lround(float(n_lake) * (255.0f / 8.0f)));
             }
         }
     };
@@ -2742,8 +2991,8 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     Dictionary hashes;
     hashes["height"] = hash_bytes(height_data);
     hashes["terrain_normal"] = hash_bytes(normal_data);
-    const bool canal_refresh_only = bool(knobs.get("canal_refresh_only", false));
     if (!canal_refresh_only) {
+        hashes["terrain_relief"] = hash_bytes(relief_data);
         hashes["map_index"] = hash_bytes(map_index_data);
         hashes["water_depth"] = hash_bytes(water_data);
         hashes["terrain_detail"] = hash_bytes(detail_data);
@@ -2761,6 +3010,7 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     out["height"] = height_data;
     out["terrain_normal"] = normal_data;
     if (!canal_refresh_only) {
+        out["terrain_relief"] = relief_data;
         out["map_index"] = map_index_data;
         out["water_depth"] = water_data;
         out["terrain_detail"] = detail_data;
@@ -2768,6 +3018,7 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
         out["edge_distance"] = edge_distance_data;
     }
     out["hashes"] = hashes;
+    out["relief_supersample"] = RS;
     out["normal_sample_radius_hex"] = normal_sample_radius_hex;
     out["normal_height_scale_hex"] = normal_height_scale_hex;
     out["normal_radius_x_px"] = normal_radius_x;

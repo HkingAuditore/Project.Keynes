@@ -3548,6 +3548,7 @@ func _apply_uniforms() -> void:
 	if tiled:
 		sm.set_shader_parameter("visual_height_tiles", visual_tiles.height)
 		sm.set_shader_parameter("visual_terrain_normal_tiles", visual_tiles.terrain_normal)
+		sm.set_shader_parameter("visual_terrain_relief_tiles", visual_tiles.terrain_relief)
 		sm.set_shader_parameter("visual_horizon_tiles", visual_tiles.horizon)
 		sm.set_shader_parameter("visual_map_index_tiles", visual_tiles.map_index)
 		sm.set_shader_parameter("visual_water_depth_tiles", visual_tiles.water_depth)
@@ -3563,6 +3564,10 @@ func _apply_uniforms() -> void:
 		sm.set_shader_parameter("terrain_normal_tex", _world.terrain_normal_tex)
 	sm.set_shader_parameter("terrain_normal_tex_bound",
 		visual_tiles.terrain_normal != null if tiled else _world.terrain_normal_tex != null)
+	# [static-bake 2026-10-10] 分地形细节法线、海岸邻域、水面软权重只在 tiled 静态烘焙里产出；
+	# Legacy 贴图仍是单通道旧格式，shader 走运行期回退路径。
+	sm.set_shader_parameter("terrain_static_baked",
+		tiled and visual_tiles.static_ready and visual_tiles.terrain_relief != null)
 	# [terrain-horizon 2026-07-03] 8 方向 horizon angle：运行期只遮蔽直射光；未绑定/低档自动回退。
 	# [terrain-gi 2026-07-31] 同一张图还派生天空可见度(AO)/bent normal/弹射；见 _push_gi_uniforms。
 	if not tiled:

@@ -10,13 +10,17 @@ const DEFAULT_GUTTER_PX := 2
 const DEFAULT_LAYER_CAP := 64
 const MIN_TEXELS_PER_HEX := 1.0
 const DENSITY_DEGRADE_FACTOR := 0.90
-# height 4 (RGBA8: RG=elev16, B=flow) + terrain_normal 2 + map_index 4
-# + water_depth 1 + terrain_detail 1 + edge_neighbor 2 + edge_distance 1
-# + horizon 4 + gi_occluder 4 = 23.
+# height 4 (RGBA8: RG=elev16, B=flow) + terrain_normal 4 + terrain_relief 4
+# + map_index 4 + water_depth 4 + terrain_detail 1 + edge_neighbor 2 + edge_distance 4
+# + horizon 4 + gi_occluder 4 = 35.
+# [static-bake 2026-10-10] 运行期不变的细节法线 / 海岸邻域 / 水面软权重改为烘焙：23→36；
+#   海岸邻域随后并入 edge_distance.ba、terrain_detail 回到 R8：36→35。
 # [height-flow-pack 2026-08-06] height 2→4、去掉独立 flow 1：22→23。
 # [terrain-gi 2026-07-31] gi_occluder 使这一项由 18 升到 22；漏改会让 resolver 低估
 # 显存占用，把本该降级的大地图放行到超预算。
-const BYTES_PER_PHYSICAL_TEXEL := 23
+const BYTES_PER_PHYSICAL_TEXEL := 35
+# terrain_relief 按 relief_scale 倍分辨率存（RGBA8），超出基础 4 字节的部分另计。
+const RELIEF_BYTES_PER_TEXEL := 4
 # Local RenderingDevice keeps a duplicate RG8 input, a float max pyramid and
 # the packed output until readback. Round up so the resolver enforces peak RAM.
 # [terrain-gi 2026-07-31] compute 现在还多持有一份 RGBA8 map_index 输入与一份 RGBA8
@@ -34,6 +38,8 @@ var grid_size: Vector2i = Vector2i.ONE
 var layer_count: int = 1
 var interior_size: Vector2i = Vector2i.ZERO
 var gutter_px: int = DEFAULT_GUTTER_PX
+# 分地形细节坡度（terrain_relief）相对基础 tile 的分辨率倍数。移动端 shader 不读这一层。
+var relief_scale: int = 1
 var layer_size: Vector2i = Vector2i.ZERO
 var logical_size: Vector2i = Vector2i.ZERO
 var hex_size: float = 1.0
@@ -89,6 +95,7 @@ static func resolve(
 		layout.hex_size / layout.requested_texels_per_hex)
 
 	layout.gutter_px = maxi(1, int(options.get("gutter_px", DEFAULT_GUTTER_PX)))
+	layout.relief_scale = clampi(int(options.get("relief_scale", 1 if mobile else 2)), 1, 4)
 	var tile_edge := clampi(int(options.get("tile_edge", DEFAULT_TILE_EDGE)), 64, 2048)
 	var max_layers := mini(DEFAULT_LAYER_CAP, maxi(1, int(options.get(
 		"max_array_layers", _device_limit(RenderingDevice.LIMIT_MAX_TEXTURE_ARRAY_LAYERS, DEFAULT_LAYER_CAP)
@@ -195,7 +202,8 @@ func _constraint_failure(max_layers: int, max_texture_size: int,
 
 func _estimate_memory() -> void:
 	var physical_px := int(layer_size.x) * int(layer_size.y) * layer_count
-	estimated_resident_bytes = physical_px * BYTES_PER_PHYSICAL_TEXEL
+	estimated_resident_bytes = physical_px * (BYTES_PER_PHYSICAL_TEXEL
+		+ RELIEF_BYTES_PER_TEXEL * (relief_scale * relief_scale - 1))
 	estimated_peak_bytes = estimated_resident_bytes + physical_px * COMPUTE_TEMP_BYTES_PER_TEXEL
 
 
@@ -238,6 +246,7 @@ func diagnostic_report() -> Dictionary:
 		"layers": layer_count,
 		"interior_size": interior_size,
 		"gutter_px": gutter_px,
+		"relief_scale": relief_scale,
 		"layer_size": layer_size,
 		"logical_size": logical_size,
 		"hex_size": hex_size,

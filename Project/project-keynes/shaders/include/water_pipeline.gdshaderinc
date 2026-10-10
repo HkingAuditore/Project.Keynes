@@ -47,6 +47,8 @@ struct WaterStageCtx {
 	float lake_shore_w;  // shader 端湖岸近似 SDF：1=靠岸，0=湖心
 	float lake_depth_proxy; // 湖泊没有海平面深度，使用湖岸距离近似深浅
 	float ice_frac;      // 海冰浓度（dyn_atlas_smooth.a；fragment 入口已采样，避免冗余 sample）
+	vec4  water_depth_px; // water_depth 一次采样：R 深度，GBA 烘焙湖/礁/海藻权重
+	vec4  pixel_noise;    // fragment 入口的静态像素噪声（R raw，GBA 2/3/4 octave fBM）
 	// [water-noise-reuse 2026-06-29] 共享低频 fbm：原 base_ripple/calm_brightness（~0.006~0.008）
 	// 与 deep_ripple/calm_tint（~0.0038~0.0039）各自独立采样，频率几乎一致 → 合并成两层共享噪声，
 	// 全 desktop 路径下省 2 个 fbm(2-oct)/像素。ctx 构造时算一次，多个 helper 复用。
@@ -222,7 +224,7 @@ void compute_offshore_depth(inout WaterStageCtx ctx) {
 	// 16× biome 多半径"两套估算。湖泊深浅、海洋大陆架→深渊全部来自 C++ 真实 per-cell 深度。
 #ifdef VT_USE_WATER_DEPTH
 	if (has_water_depth_tex) {
-		float wd = visual_sample_water_depth(ctx.uv).r;
+		float wd = ctx.water_depth_px.r;
 		float depth_signal = wd;
 #if !defined(PK_QUALITY_LOW)
 		// The baked R8 is cell-owned. For ordinary sea water, height_tex already
@@ -367,8 +369,16 @@ WaterWeights compute_water_biome_weights(WaterStageCtx ctx) {
 #else
 	// Desktop：保留 radius-aware 3×3 邻域采样
 	if (water_biome_blend_radius > 0.001) {
-		float blend_radius_eff = water_biome_blend_radius * mix(1.0, 1.45, water_transition_softness);
-		bw = water_biome_weights(ctx.uv, 1.0 / derived_resolution, blend_radius_eff);
+#ifdef PK_TERRAIN_STATIC_BAKED
+		// 3×3 软权重已按默认足迹半径烘焙进 water_depth.gba（1 次采样替代 9 次）。
+		if (terrain_static_baked) {
+			bw = vec4(ctx.water_depth_px.gba, 0.0);
+		} else
+#endif
+		{
+			float blend_radius_eff = water_biome_blend_radius * mix(1.0, 1.45, water_transition_softness);
+			bw = water_biome_weights(ctx.uv, 1.0 / derived_resolution, blend_radius_eff);
+		}
 	} else {
 		bw = vec4(
 			ctx.biome == B_LAKE    ? 1.0 : 0.0,
@@ -404,8 +414,8 @@ WaterWeights compute_water_biome_weights(WaterStageCtx ctx) {
 	// 60 FPS 优化（2026-06-15）：mobile 三档全砍 ridge_n fbm（海冰边缘破碎扰动）。
 	float ridge_offset = 0.0;
 #if !defined(MOBILE_QUALITY_LOW) && !defined(MOBILE_QUALITY_MID) && !defined(MOBILE_QUALITY_HIGH)
-	float ridge_n = water_fbm_cyl(ctx.wpw, 0.045, vec2(-71.0, 23.0), 2);
-	ridge_offset = (ridge_n - 0.5) * 0.06;
+	// 冰缘破碎是静态 2-octave 扰动，直接用入口已采的 pixel_noise.g（同为 fBM-2）。
+	ridge_offset = (ctx.pixel_noise.g - 0.5) * 0.06;
 #endif
 	float lake_freeze = ww.w_lake * (1.0 - smoothstep(0.24, 0.44, ctx.current_temp));
 	ww.w_ice = clamp(max(
@@ -826,10 +836,12 @@ SurfaceParams compute_water_base_surface(
 		float current_temp,
 		vec2 ocean_current_v,
 		vec2 wind_v,
-		float dyn_ice_frac) {
+		float dyn_ice_frac,
+		vec4 pixel_noise) {
 
 	// ── 0. ctx 构造 ───────────────────────────────────────────────────
 	WaterStageCtx ctx;
+	ctx.pixel_noise = pixel_noise;
 	ctx.biome = biome;
 	ctx.secondary_biome = secondary_biome;
 	ctx.edge_mix = edge_mix;
@@ -851,6 +863,11 @@ SurfaceParams compute_water_base_surface(
 	ctx.quality = visual_quality;
 #endif
 	ctx.ice_frac = dyn_ice_frac;
+#ifdef VT_USE_WATER_DEPTH
+	ctx.water_depth_px = visual_sample_water_depth(uv);
+#else
+	ctx.water_depth_px = vec4(0.0);
+#endif
 	ctx.detail_oct = (ctx.quality >= 2) ? 2 : 1;
 	{
 #if defined(PK_MOBILE_ANY)
@@ -923,7 +940,8 @@ SurfaceParams apply_water_overlay_surface(
 		float elev,
 		vec2 wp,
 		vec2 uv,
-		vec2 wind_v) {
+		vec2 wind_v,
+		vec2 shore_frac) {
 	vec3 col = surface.base_color;
 	float coast_sdf = abs(elev - sea_level);
 
@@ -947,7 +965,7 @@ SurfaceParams apply_water_overlay_surface(
 #if defined(PK_MOBILE_ANY)
 	// 无 halo —— 海面/陆面边界硬切（视觉上海岸线略硬，但不影响功能）
 #else
-	ShoreSamples shore_samp = sample_shore_neighborhood(uv);
+	ShoreSamples shore_samp = sample_shore_neighborhood(uv, shore_frac);
 	ShoreHaloResult shore_halo_r = compute_shore_halo(shore_samp, elev, 0.0, 1);
 	col = mix(col, shore_halo_r.halo_color, shore_halo_r.halo_weight);
 	surface.roughness = mix(surface.roughness, shore_halo_r.roughness_target,
@@ -1201,10 +1219,12 @@ vec3 render_water_pipeline_raw(
 		float current_temp,
 		vec2 ocean_current_v,
 		vec2 wind_v,
-		float dyn_ice_frac) {
+		float dyn_ice_frac,
+		vec2 shore_frac,
+		vec4 pixel_noise) {
 	SurfaceParams surface = compute_water_base_surface(
 		biome, secondary_biome, edge_mix, elev, wp, uv, scals, lat_signed,
-		current_temp, ocean_current_v, wind_v, dyn_ice_frac);
+		current_temp, ocean_current_v, wind_v, dyn_ice_frac, pixel_noise);
 	// [远洋华 2026-06-25] PELAGIC_BLOOM（浮游生物大量繁殖）：开阔海面叠加淡绿富营养 tint，
 	// 带低频斑驳让"水华羽流"自然分布。此前 cover_overlay 定义了该色但只在陆地路径调用 → 海面从不显示，
 	// 这里在水管线补回。
@@ -1224,7 +1244,7 @@ vec3 render_water_pipeline_raw(
 			clamp(0.20 + (bloom - 0.5) * 0.14, 0.0, 0.34) * bloom_cover_w);
 	}
 	surface = apply_water_overlay_surface(
-		surface, biome, secondary_biome, edge_mix, elev, wp, uv, wind_v);
+		surface, biome, secondary_biome, edge_mix, elev, wp, uv, wind_v, shore_frac);
 	return shade_water_surface(
 		surface, biome, secondary_biome, edge_mix, wp, visual_quality, uv, lat_signed, dyn_ice_frac);
 }
@@ -1243,9 +1263,11 @@ vec3 render_water_pipeline(
 		float current_temp,
 		vec2 ocean_current_v,
 		vec2 wind_v,
-		float dyn_ice_frac) {
+		float dyn_ice_frac,
+		vec2 shore_frac,
+		vec4 pixel_noise) {
 	return render_water_pipeline_raw(
 		biome, cover, secondary_biome, secondary_cover, edge_mix, elev,
 		wrap_world_pos(wp), uv, scals, lat_signed, current_temp,
-		ocean_current_v, wind_v, dyn_ice_frac);
+		ocean_current_v, wind_v, dyn_ice_frac, shore_frac, pixel_noise);
 }

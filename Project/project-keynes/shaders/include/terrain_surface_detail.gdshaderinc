@@ -167,7 +167,8 @@ float terrain_hybrid_static_weight(float edge_w, vec2 uv, vec2 wp) {
 // The inner fwidth band removes raster stair-steps. A wider world-space ecotone
 // provides a shared visual anchor for the final land pipeline; cell-owned
 // weather, fog, ecology and interaction state remain hard-primary data.
-float terrain_edge_secondary_weight(vec2 uv, vec2 wp) {
+// distance_to_edge = edge_distance.r（fragment setup 读一次存进 scals.r）。
+float terrain_edge_secondary_weight_d(float distance_to_edge, vec2 wp) {
 #ifndef VT_USE_EDGE_DISTANCE
 	// [pk-web-texture-budget] edge_distance tile 已裁掉：次生生态过渡带永远关闭，
 	// 与 decode_edge_secondary_index() 的 -1 回退配合，退化为硬主 cell 边界。
@@ -176,7 +177,6 @@ float terrain_edge_secondary_weight(vec2 uv, vec2 wp) {
 	if (!has_terrain_edge_data) {
 		return 0.0;
 	}
-	float distance_to_edge = visual_sample_edge_distance(uv).r;
 #if defined(PK_MOBILE_ANY)
 	float mobile_quality_scale = (visual_quality <= 0) ? 0.58
 			: ((visual_quality == 1) ? 0.82 : 0.94);
@@ -211,6 +211,14 @@ float terrain_edge_secondary_weight(vec2 uv, vec2 wp) {
 #endif
 }
 
+float terrain_edge_secondary_weight(vec2 uv, vec2 wp) {
+#ifndef VT_USE_EDGE_DISTANCE
+	return 0.0;
+#else
+	return terrain_edge_secondary_weight_d(visual_sample_edge_distance(uv).r, wp);
+#endif
+}
+
 float terrain_biome_micro_strength(int biome) {
 	// [micro-soften 2026-07-31] 全表下调：旧值在近距下把微法线叠到 BRDF 后，
 	// 干燥/有机地表会读成"碎石点阵"，盖过宏观坡向。岩石保留相对层次，但不再顶满。
@@ -233,7 +241,8 @@ TerrainStaticMaterial compute_terrain_static_material(
 		int primary_biome,
 		float elev,
 		vec2 wp,
-		vec2 uv) {
+		vec2 uv,
+		float edge_distance) {
 	TerrainStaticMaterial out_mat;
 	vec3 hyps = hypsometric_tint(elev, false);
 	bool use_material_tiles = terrain_materials_active();
@@ -254,7 +263,7 @@ TerrainStaticMaterial compute_terrain_static_material(
 	out_mat.edge_factor = 0.0;
 	out_mat.secondary_biome = -1;
 
-	float edge_w = terrain_edge_secondary_weight(uv, wp);
+	float edge_w = terrain_edge_secondary_weight_d(edge_distance, wp);
 	if (edge_w <= 0.0001) {
 		return out_mat;
 	}

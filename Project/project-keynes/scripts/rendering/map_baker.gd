@@ -1340,6 +1340,7 @@ func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
 		"coast_sdf_max_dist_px": COAST_SDF_MAX_DIST_PX,
 		"normal_sample_radius_hex": TERRAIN_NORMAL_SAMPLE_RADIUS_HEX,
 		"normal_height_scale_hex": TERRAIN_NORMAL_HEIGHT_SCALE_HEX,
+		"relief_supersample": layout.relief_scale,
 	}
 	base_knobs.merge(TerrainIndexBakerScript.dem_landform_knobs())
 	var texel_world: Vector2 = layout.visual_domain.size / Vector2(layout.logical_size)

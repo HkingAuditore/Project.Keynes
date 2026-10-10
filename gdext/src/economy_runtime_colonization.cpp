@@ -3,6 +3,7 @@
 #include "country_runtime.h"
 #include "economy_runtime_variant_helpers.h"
 #include "effect_runtime.h"
+#include "native_simulation_host.h"
 
 #include <algorithm>
 #include <chrono>
@@ -1220,9 +1221,13 @@ void NativeEconomyRuntime::refresh_preparing_family_expedition_missing(
 void NativeEconomyRuntime::abort_preparing_family_expedition(
         int32_t expedition, int64_t day, uint8_t kind, const char *code) {
     if (_family_expedition_procurement_continuation.active &&
-        _family_expedition_procurement_continuation.expedition == expedition)
+        _family_expedition_procurement_continuation.expedition == expedition) {
+        if (_simulation_host != nullptr)
+            _simulation_host->release_country_economy_asset_settlement(
+                _family_expedition_procurement_continuation.pending_request_id);
         _family_expedition_procurement_continuation =
             FamilyExpeditionProcurementContinuation{};
+    }
     _family_expedition_procurement_rejections.erase(expedition);
     // Stocked goods were drawn from the source market and must go back there,
     // or cancelling a preparation would destroy them.

@@ -1381,6 +1381,7 @@ void sea_ice_pure(const SeaIceKnobs &knobs,
         else if (n_sub > 30) n_sub = 30;
         const float sub_dt = dt_days / float(n_sub);
         float new_frac = prev_frac;
+        float thermo_tendency = 0.0f;
         for (int sub = 0; sub < n_sub; ++sub) {
             const float solar_melt_s = knobs.solar_gate_enabled
                 ? solar_melt_base * sea_ice_solar_exposure(new_frac, knobs.min_thick_ice_solar_exposure)
@@ -1390,6 +1391,7 @@ void sea_ice_pure(const SeaIceKnobs &knobs,
                 if (rate > knobs.daily_delta_cap) rate = knobs.daily_delta_cap;
                 else if (rate < -knobs.daily_delta_cap) rate = -knobs.daily_delta_cap;
             }
+            thermo_tendency += rate * sub_dt;
             new_frac += rate * sub_dt;
             if (new_frac <= 0.0f) { new_frac = 0.0f; if (rate < 0.0f) break; }
             else if (new_frac >= 1.0f) { new_frac = 1.0f; if (rate > 0.0f) break; }
@@ -1415,9 +1417,13 @@ void sea_ice_pure(const SeaIceKnobs &knobs,
                     // Neighbor smoothing may continue today's freeze or melt, but
                     // must not oppose it. A pullback of even 25% is enough to
                     // reverse the visible edge every other day once the pack exists.
-                    if (thermo_frac > prev_frac) {
+                    // The direction comes from the unclamped rate: a freezing cell
+                    // pinned at 1 (or a melting cell pinned at 0) has
+                    // thermo_frac == prev_frac, and treating it as neutral lets the
+                    // mix pull it off the bound only for the next day to undo it.
+                    if (thermo_tendency > 0.0f) {
                         if (new_frac < thermo_frac) new_frac = thermo_frac;
-                    } else if (thermo_frac < prev_frac) {
+                    } else if (thermo_tendency < 0.0f) {
                         if (new_frac > thermo_frac) new_frac = thermo_frac;
                     } else {
                         const float lo = prev_frac - 0.02f;

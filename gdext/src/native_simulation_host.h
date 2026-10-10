@@ -354,7 +354,8 @@ public:
     // preferred when Economy is also authoritative.
     // COMPLETED RESEARCH_PURCHASE is deferred until Economy settles market /
     // merchant credits in the same advance: pass settle_request_id to include
-    // that one wire id. Rejected/faulted research still retires immediately.
+    // that one wire id. Ids registered via defer_country_economy_asset_settlement
+    // follow the same rule. Rejected/faulted terminals still retire immediately.
     bool flush_country_economy_asset_commits(std::string &error,
                                             uint64_t settle_request_id = 0);
     bool publish_country_worker_snapshot(uint32_t dirty_families,
@@ -592,6 +593,14 @@ public:
             const std::vector<RuntimeEconomyAssetRequest> &requests,
             std::string &error);
     void acknowledge_country_economy_asset_consumed(uint64_t request_id) noexcept;
+    // An Economy continuation that commits Country and applies its own
+    // market/merchant/cargo leg in one advance registers its wire id so the
+    // generic flush leaves the COMPLETED terminal for the targeted settle.
+    void defer_country_economy_asset_settlement(uint64_t request_id);
+    // The owning continuation was abandoned: hand the wire id back to the
+    // generic flush so its terminal still retires.
+    void release_country_economy_asset_settlement(uint64_t request_id) noexcept;
+    bool country_economy_asset_settlement_deferred(uint64_t request_id) const;
     void set_country_economy_asset_protocol_error_locked(
             RuntimeEconomyAssetProtocolError code, uint64_t transaction_id,
             uint64_t request_id, const char *reason) noexcept;
@@ -1043,6 +1052,7 @@ private:
     RuntimeEconomyAssetProtocolStatus _country_economy_asset_protocol{};
     std::deque<uint64_t> _economy_origin_asset_queue;
     std::unordered_set<uint64_t> _country_economy_asset_committed;
+    std::unordered_set<uint64_t> _country_economy_asset_self_settled;
     CountryAuthorityOwner _country_authority_owner =
         CountryAuthorityOwner::SYNC;
     CountryAuthorityOwner _country_authority_prepared =

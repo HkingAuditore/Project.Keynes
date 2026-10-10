@@ -593,6 +593,13 @@ struct RuntimeClimatePhysicsState {
     bool     synoptic_seeded = false;
     int32_t  synoptic_tick = 0;
 
+    // ── 温度输运距平 TTA（finalizer 收尾后的值，次日 round 的起点）──────────
+    // ocean_water 以前一日 TTA 为基值做 blend/decay，它是真正的跨天状态；climate
+    // store 没有这条 lane，parity 回写也不带它，ACTIVE 下只能由 worker 在这里接力。
+    // tta_seeded=false（新图 / CHP1 v1 旧档）时 round 退回 capture 值。
+    std::vector<float> temp_transport_anomaly;
+    bool     tta_seeded = false;
+
     // 按 cell_count 重建全部 cell 索引缓冲（派生缓存一并失效）。
     void resize(int cells) {
         if (cells < 0) cells = 0;
@@ -630,6 +637,8 @@ struct RuntimeClimatePhysicsState {
         synoptic_psi_prev.assign(n, 0.0f);
         synoptic_seeded = false;
         synoptic_tick = 0;
+        temp_transport_anomaly.assign(n, 0.0f);
+        tta_seeded = false;
         // water 索引缓冲等拓扑重建时再定形（这里只清空）。
         n_water = 0;
         water_to_cell.clear();
@@ -687,7 +696,8 @@ struct RuntimeClimatePhysicsState {
             !ok_n(ocean_current_x) || !ok_n(ocean_current_y) ||
             !ok_n(upwelling) || !ok_n(wind_stress_curl) ||
             !ok_n(ocean_thermal_anomaly) || !ok_n(synoptic_psi) ||
-            !ok_n(synoptic_psi_prev) || !ok_n(ocean_psi) || !ok_n(ocean_psi_prev)) {
+            !ok_n(synoptic_psi_prev) || !ok_n(ocean_psi) || !ok_n(ocean_psi_prev) ||
+            !ok_n(temp_transport_anomaly)) {
             error = "cell_lane_shape_mismatch";
             return false;
         }
@@ -745,6 +755,8 @@ struct RuntimeClimatePhysicsState {
         mix_vec(synoptic_psi); mix_vec(synoptic_psi_prev); mix_vec(slp_prev);
         mix_vec(ocean_psi_prev); mix_vec(wind_stress_curl);
         mix_vec(ocean_thermal_anomaly); mix_vec(monsoon_thermal);
+        // 未播种时不参与，保持与 CHP1 v1 存档里记录的哈希一致。
+        if (tta_seeded) { mix(1u); mix_vec(temp_transport_anomaly); }
         return h;
     }
 };

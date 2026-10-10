@@ -454,6 +454,29 @@ relief（见下 “P0 relief”）。
 - **LOD 与开关**：每层按屏幕像素波长（3→7 px）淡出；`terrain_erosion_strength`（默认 1.0，0 关）是全局倍率，`terrain_erosion_world_size`（默认 72）是全部尺度的参照。MOBILE / LOW 画质整体编译掉。返回值的 w 是沟谷深度，调用方用于凹处遮蔽。
 - **调试**：`HexRenderer.gi_debug_view = 8` 只显示地形几何法线（固定西北光、无底色 / GI），`7` 显示含材质贴图法线的最终法线。
 
+**静态地形烘焙（2026-10-10，桌面平铺路径）**：上面这套分地形细节、平滑高度细节、海岸邻域、水体软过渡全部不随运行时变化，桌面端已改为在 `DCWorldExt::run_bake_visual_tile_layer_pass` 里逐 tile 烘焙，shader 只做解码与按缩放淡入淡出。C++ 实现在 `gdext/src/bake_terrain_relief.h`（与 shader 逐项对应的配置表、相量噪声、台坎、沙丘、圆丘、草丘）。tile 通道布局：
+
+| 字段 | 格式 | 内容 |
+| --- | --- | --- |
+| `terrain_normal` | RGBA8 | RG 粗法线；BA 平滑高度细节坡度（含海岸窄带补强） |
+| `terrain_relief` | RGBA8，`relief_scale` 倍分辨率 | RG 粗波段坡度（波长 ≥ 32·scale）；BA 细波段坡度 |
+| `terrain_detail` | R8 | 噪声 |
+| `water_depth` | RGBA8 | R 深度；GBA 3×3 软化后的湖 / 礁 / 海藻权重 |
+| `edge_distance` | RGBA8 | R 格界距离；G 沟谷折痕（`relief_scale²` 个子像素均值）；BA 8 邻域水 / 湖占比（海占比取水 − 湖） |
+| `horizon` | Vulkan 为 RG16，GLES3 为 RGBA8 | 同一份 32 bit：8 个 4-bit 方位角。RG16 只是换个解释方式，比特不变 |
+
+- 坡度编码 `pk_relief::encode_slope = sign(v)·sqrt(|v|/3)`，shader `decode_relief_slope` 解 `sign(e)·e²·3`。粗/细波段分别按 `smoothstep(3,7,48·scale·zoom)` / `smoothstep(3,7,14·scale·zoom)` 淡入；高度细节保留原来的近景门控 `smoothstep(1.35,2.10,zoom)`。入口是 `hillshade_tod.gdshaderinc::terrain_baked_normal`。
+- `relief_scale` 由 `VisualTileLayout.resolve` 决定（桌面 2、移动 1，`options.relief_scale` 可覆盖），经 `MapBaker` 的 knob `relief_supersample` 传给 C++。2 倍时每物理 texel 36 B，比 1 倍多约 21 MB；1 倍在 z1.6 近景会糊并出现方块走样。
+- 烘焙用的强度旋钮（`hillshade_coarse_strength`、`hillshade_detail_strength`×画质、`shore_detail_strength`、`terrain_erosion_world_size`、`terrain_erosion_strength`、`water_biome_radius_px`）在烘焙时固化，运行时再改这些 uniform 不会影响烘焙路径。
+- 运行时开关 `terrain_static_baked`（`HexRenderer._apply_uniforms` 在 tile 静态层就绪且 `terrain_relief` 存在时置 true）；Web 预算和 legacy 单纹理路径不定义 `PK_TERRAIN_STATIC_BAKED`，继续走旧的运行时计算。运河刷新只重算 normal / detail / water / edge，不重烘 relief。
+- 静态贴图每像素只读一次：fragment setup 读一次 `edge_distance`，R 存进 `scals.r`（格界距离）、G 存进 `scals.a`（折痕）、BA 作为 `shore_frac` 传给陆地 / 水面管线的 `sample_shore_neighborhood`；生态过渡、材质边缘、烘焙法线、海岸 halo 都从这里取（`terrain_edge_secondary_weight_d`）。`map_index` 一次采样同时给 cell id 与 landform，`dyn_lut` 直接按该 id 取；水体在 `WaterStageCtx.water_depth_px` 里只读一次 `water_depth`。
+- 不靠 `if` 省采样：GPU 上同组像素只要有一个走进分支整组都会执行，带隐式导数的 `texture()` 也常被编译器提到分支外。所以剩下的削减都是结构性的：
+  - horizon 2×2：`visual_tile_sampling.gdshaderinc::visual_gather_horizon` 用两次 `textureGather`（R、G 两个 16 bit 分量）取齐 4 个 texel，tile 2 px gutter 保证足迹不跨层；解码后的字节布局与 RGBA8 完全相同，下游公式不变。`CURRENT_RENDERER == RENDERER_COMPATIBILITY` 时没有 gather，保留 4 次采样，`VisualTileSet._field_texture_format` 同步按渲染器选 RGBA8。
+  - 水面法线：`water.gdshaderinc::water_surface_height_grad` 对正弦项解析求导，细节 fBM-2 用一次 `textureGather` 对双线性面片求精确导数，替代 4 次中心差分采样（原步长在噪声空间只有约 0.03 texel，读的是同一块面片）。GLES3 继续走差分。
+  - 雪边缘 ±10% 抖动与海冰边缘破碎改用入口已采的 `pixel_noise`（`WaterStageCtx.pixel_noise`）。
+- 高画质近景每像素纹理采样：陆地约 15 次（setup 6、材质 / 微表面 2、法线 / 细节坡度 2、horizon 2、GI 3），深海约 27 次（setup 6、水深 1、horizon 2，其余 18 次是随时间变化的水面噪声）；改造前为 44 / 57。
+- 收益（RTX 4080，1366×768，高画质 GPU 帧时中位数）：近景 1.41→0.81 ms，中景 1.69→0.87 ms，全图 1.57→0.94 ms（纯色 shader 基线约 0.53–0.67 ms）。全图烘焙总时长约 1.06→1.96 s。
+
 下游收益：权威主索引固定为 warp 后的 `cube_round`，`dyn_lut`、`eco_lut`、天气、迷雾和交互状态均使用同一个 NEAREST 主格，不再通过图集空间 Dither 改派归属。静态地表边界由独立的 RG8 副索引与 R8 距离纹理在屏幕空间窄带内处理；边界数据缺失时直接退化为硬主索引。C++ 单 pass 与 fused pass 应逐字节一致，并由 headless parity 测试覆盖。
 
 **分层地形法线（2026-06-25，2026-09-01 尺度修复，宏观起伏增强）**：粗法线仍优先采样 `terrain_normal_tex`；烘焙与未绑定 fallback 统一按 `terrain_normal_sample_radius_hex=1.35` 与 `terrain_normal_height_scale_hex=2.10` 从 `world_size/hm_resolution/hex_size` 换算差分半径和增益。1.35-hex 宽半径低通格内 residual，保留山系、高地和盆地的跨格走向；2.10 只夸张视觉法线，不改权威 elevation。显示端 hillshade 默认强度为 `0.90`，粗法线增益为 `1.65`；Terrain GI/AO 默认强度为 `0.90`、天空可见度下限为 `0.38`。陆地 hypsometric 色带同步收紧为 `0.08/0.42/0.72/0.94`，使强环境光下仍有高程分层。细节法线和性能分档契约不变。
@@ -1530,6 +1553,11 @@ true 时 return false（job 整个 short-circuit）。回退路径（async flag 
   `sea_ice_edge_mix_rate`。daily pass 会先复制上一日 `sea_ice_frac` 快照，冷邻居判定和
   边缘混合都读这份快照；混合只在水域非湖泊邻域、且本格或邻居已有少量海冰时把
   `new_frac` 轻微拉向邻域平均，避免向赤道或湖泊扩散误冰。
+  混合只能顺着当天的热力学方向（冻结格不被拉低、融化格不被抬高），方向取子步积分里
+  **未钳位**速率的累计符号 `thermo_tendency`，而不是 `thermo_frac - prev_frac`：
+  钳在 1 的冻结格 / 钳在 0 的日照融化格后者为 0，按中性处理会被邻居拉离边界、次日
+  又被热力学拉回，形成全图同相的周期 2 闪烁（2026-10-10 修复，C++ `sea_ice_pure`
+  与 GDScript legacy 镜像同步）。
 - 坐标契约：`ny=0` 是视觉北极、`ny=1` 是视觉南极；`lat_signed=(ny-0.5)*2`
   正值表示南半球。`dc_insolation_now` / `DCClimateMath.compute_daily_insolation`
   按这个契约计算，因此北半球 6-7 月日照高、南半球 1 月日照高。若 CSV 中看似南北反相，
