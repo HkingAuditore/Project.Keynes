@@ -1,0 +1,90 @@
+﻿extends SceneTree
+
+## 鍦板潡妗ｆ鎴浘 QA锛氱湡瀹炲紑灞€璺戣嫢骞插ぉ鍚庯紝閫変腑鐜╁璧峰鏍笺€佺浉閭婚噹澶栨牸涓庝竴涓按鍩熸牸锛?
+## 鍦?1280脳720 / 1366脳768 / 1920脳1080 涓嬮€愰〉绛炬埅鍥俱€傞渶瑕佸甫娓叉煋杩愯锛堜笉鍔?--headless锛夈€?
+
+const OUTPUT_DIR := "res://tmp/cell_inspector_qa"
+const SIZES := [Vector2i(1280, 720), Vector2i(1366, 768), Vector2i(1920, 1080)]
+const WARMUP_DAYS := 10
+
+var _failures := PackedStringArray()
+
+
+func _init() -> void:
+	call_deferred("_run")
+
+
+func _run() -> void:
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUTPUT_DIR))
+	root.size = SIZES[0]
+	var game := (load("res://scenes/player_game.tscn") as PackedScene).instantiate()
+	var runtime: WorldRuntimeHost = game.get_node("RuntimeHost")
+	root.add_child(game)
+	await runtime.world_ready
+	await process_frame
+	var ui := game.get_node("UI") as GameUIManager
+	var clock := game.get_node("WorldClock") as WorldClock
+	var controller = ui.get("_player_controller")
+	var start_day := clock.day_index()
+	clock.pause(false)
+	clock.set_speed(50.0)
+	var deadline := Time.get_ticks_msec() + 60000
+	while clock.day_index() < start_day + WARMUP_DAYS and Time.get_ticks_msec() < deadline:
+		await process_frame
+	clock.pause(true)
+	var map: MapData = runtime.get("_current_map")
+	var start := int(runtime.call("_resolve_player_start_cell"))
+	var targets := {"home": start}
+	var start_cell := map.cell_at(start)
+	for neighbor in map.get_neighbors(start_cell):
+		var cell := neighbor as HexCell
+		if cell == null:
+			continue
+		if not targets.has("wild") and TerrainType.is_passable_land(cell.terrain) \
+				and int(map.country_slot_arr[cell.index]) != int(map.country_slot_arr[start]):
+			targets["wild"] = cell.index
+		if not targets.has("water") and TerrainType.is_passable_sea(cell.terrain):
+			targets["water"] = cell.index
+	if not targets.has("wild"):
+		for neighbor in map.get_neighbors(start_cell):
+			var cell := neighbor as HexCell
+			if cell != null and TerrainType.is_passable_land(cell.terrain):
+				targets["wild"] = cell.index
+				break
+	var panel := ui.get("_right_panel") as InspectorPanel
+	for viewport_size in SIZES:
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+		DisplayServer.window_set_size(viewport_size)
+		root.size = viewport_size
+		for label in targets:
+			controller.select_cell(map.cell_at(int(targets[label])))
+			await process_frame
+			await process_frame
+			var tabs: Array = (panel.get("_model") as Dictionary).get("tabs", [])
+			if tabs.is_empty():
+				await _capture("%s_none" % label, viewport_size)
+			for tab in tabs:
+				panel.select_tab(String((tab as Dictionary).get("id", "")))
+				await _capture("%s_%s" % [label, String((tab as Dictionary).get("id", ""))],
+					viewport_size)
+			panel.select_tab("geography")
+	_finish()
+
+
+func _capture(label: String, viewport_size: Vector2i) -> void:
+	await create_timer(UITokens.ANIM_MED + 0.2).timeout
+	await RenderingServer.frame_post_draw
+	var image := root.get_texture().get_image()
+	var path := "%s/%s_%dx%d.png" % [OUTPUT_DIR, label, viewport_size.x, viewport_size.y]
+	if image == null or image.is_empty() or image.save_png(path) != OK:
+		_failures.append("failed to capture %s" % path)
+		return
+	print("[cell-inspector-screenshot] %s" % ProjectSettings.globalize_path(path))
+
+
+func _finish() -> void:
+	for failure in _failures:
+		push_error(failure)
+	print("=== cell inspector screenshot QA: %d failures ===" % _failures.size())
+	quit(0 if _failures.is_empty() else 1)
+

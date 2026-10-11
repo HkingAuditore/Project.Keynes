@@ -464,6 +464,10 @@ public:
     godot::Dictionary get_country_trade_snapshot(
         int64_t handle, const godot::String &view = "summary",
         int offset = 0, int limit = 32) const;
+    godot::Dictionary get_country_economy_overview(
+        int64_t handle, const godot::String &view = "summary",
+        int scope_cell = -1, int filter_id = -1, int offset = 0,
+        int limit = 0) const;
     godot::Dictionary poll_country_events(int64_t after_event_id, int limit = 128) const;
     godot::Dictionary reset_country(const godot::String &reason);
     godot::Dictionary begin_country_save(int chunk_bytes = 4 * 1024 * 1024);

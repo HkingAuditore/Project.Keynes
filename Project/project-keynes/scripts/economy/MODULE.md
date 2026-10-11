@@ -36,6 +36,10 @@ GDScript 不模拟价格，界面将 0.01 以下金额显示为四位小数。
 - C++ `NativeEconomyRuntime` 拥有全部可变经济状态和 hot loop。
 - `DCWorldExt` 只组合 runtime 并暴露粗粒度 API 与周期 sample-day 环境快照。
 - `EconomyCatalog` 冷启动编译 stable ID/CSR/PackedArrays；`EconomyFacade` 只打包命令和查询。
+- 国民经济卷宗只经 `EconomyFacade.country_economy_overview(handle, view, scope_cell,
+  filter_id, offset, limit)` 读取原生聚合（summary / professions / buildings / investment /
+  goods / settlements）。展示阶层（`data/ui/social_strata.tres`）、卡点归类与趋势缓冲
+  （`scripts/ui/economy_history_buffer.gd`）都是纯展示层，不得回写或成为模拟输入。
 - 玩家建设使用 `TREASURY_SPONSORED_BUILD`：只访问目标建筑 construction CSR、目标格市场行和
   国家稠密国库行。结算先扣国库物资，再以执行边界本地零售价购买缺口；物资、商人或现金任一
   不足则整单零变更。UI 报价限制为当前分页最多 32 个 dense type，并明确为非锁定预览。

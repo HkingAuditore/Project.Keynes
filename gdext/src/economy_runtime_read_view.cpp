@@ -133,6 +133,9 @@ Dictionary NativeEconomyRuntime::evaluate_read_query(const ReadKey &key) {
         return building_notable_people(a[0], i32(a[1]), i32(a[2]));
     case ReadQuery::COUNTRY_CLASS_OPINION_SNAPSHOT:
         return country_class_opinion_snapshot_debug();
+    case ReadQuery::COUNTRY_ECONOMY_OVERVIEW:
+        return country_economy_overview(a[0], key.text, i32(a[1]), i32(a[2]),
+                                        i32(a[3]), i32(a[4]));
     case ReadQuery::NONE:
         break;
     }
@@ -248,6 +251,13 @@ void NativeEconomyRuntime::publish_building_visual_view() {
         next->cell_offsets = _building_visual_cell_offsets;
         next->type_indices = _building_visual_type_indices;
         next->counts = _building_visual_counts;
+        const size_t cells = static_cast<size_t>(std::max(0, next->cell_count));
+        next->settlement_tiers.assign(cells, 0);
+        for (size_t cell = 0; cell < cells && cell < _settlements.tier.size(); ++cell)
+            next->settlement_tiers[cell] = _settlements.tier[cell];
+        next->living_levels = _visual_living_level;
+        next->rich_buckets = _visual_rich_bucket;
+        next->poor_buckets = _visual_poor_bucket;
         std::atomic_store_explicit(&_building_visual_view,
             std::shared_ptr<const BuildingVisualView>(std::move(next)),
             std::memory_order_release);
@@ -286,6 +296,14 @@ Dictionary NativeEconomyRuntime::building_visual_rows(
     PackedInt32Array type_offsets;
     PackedInt32Array type_indices;
     PackedInt64Array counts;
+    PackedByteArray tiers;
+    PackedByteArray living;
+    PackedByteArray rich;
+    PackedByteArray poor;
+    auto column = [](const std::vector<uint8_t> &values, int32_t cell, uint8_t fallback) {
+        return static_cast<size_t>(cell) < values.size()
+            ? values[static_cast<size_t>(cell)] : fallback;
+    };
     type_offsets.push_back(0);
     for (const int32_t cell : cells) {
         cell_indices.push_back(cell);
@@ -296,12 +314,20 @@ Dictionary NativeEconomyRuntime::building_visual_rows(
             counts.push_back(view.counts[static_cast<size_t>(row)]);
         }
         type_offsets.push_back(type_indices.size());
+        tiers.push_back(column(view.settlement_tiers, cell, 0));
+        living.push_back(column(view.living_levels, cell, BUILDING_VISUAL_UNKNOWN));
+        rich.push_back(column(view.rich_buckets, cell, BUILDING_VISUAL_UNKNOWN));
+        poor.push_back(column(view.poor_buckets, cell, BUILDING_VISUAL_UNKNOWN));
     }
     out["ok"] = true;
     out["cell_indices"] = cell_indices;
     out["type_offsets"] = type_offsets;
     out["type_indices"] = type_indices;
     out["counts"] = counts;
+    out["settlement_tiers"] = tiers;
+    out["living_levels"] = living;
+    out["rich_buckets"] = rich;
+    out["poor_buckets"] = poor;
     return out;
 }
 
@@ -329,6 +355,7 @@ void NativeEconomyRuntime::read_view_reset() {
                                std::memory_order_release);
     std::atomic_store_explicit(&_building_visual_view,
         std::shared_ptr<const BuildingVisualView>(), std::memory_order_release);
+    rebuild_building_visual_social();
     _read_view_last_refresh_us = 0;
 }
 

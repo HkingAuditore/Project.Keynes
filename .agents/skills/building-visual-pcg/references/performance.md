@@ -1,88 +1,104 @@
 # Building Visual Performance
 
-## C++ first
+## Budget principle
 
-The production path is `DCWorldExt::bake_building_visual_chunk`. C++ performs CSR reads,
-six-category aggregation, logarithmic quota calculation, stable best-candidate placement,
-water/river rejection, importance trimming, and packed buffer encoding. GDScript handles
-resource loading, coarse scheduling, node/material creation, upload, diagnostics, and an
-explicit test-only fallback. The fallback is not an acceptable desktop/Web default: a
-historical 16x16 stress fixture took about 53 ms in GDScript, while the native fixture is
-about 0.91 ms average, 1.02 ms p95, and 1.05 ms max on the recorded machine.
+Visual computation must cost far less than the simulation, and nothing heavy may run on the
+main thread. Layout is planned per cell on a background worker, only for cells whose input
+changed; the main thread submits changed rows and uploads assembled chunks.
 
-If native baking exceeds the 1.5 ms chunk gate, set `bulk_encoder_required` and investigate
-profile or a GDExtension bulk encoder. Do not silently switch production back to GDScript.
+## Background per-cell cache
+
+`NativeBuildingVisualCache` (`gdext/src/building_visual_cache.h`, implementation at the end of
+`world_ext_building_visual.cpp`) owns one dedicated `std::thread` worker in the
+`EconomyCsvRecorder` style: mutex + condition variables, POD inputs copied at `configure`,
+no Godot API on the worker. Per cell it keeps the input (era, water, four social bands,
+type/count CSR), an input hash, `input_gen/output_gen`, and the encoded body/decal floats.
+
+- `submit_cells(rows)`: unchanged hash is skipped; a change bumps the generation and queues
+  the cell once.
+- Worker: copies the input under the lock, runs `plan_cells` with K = 1 unlocked, commits
+  only if the generation still matches (otherwise the cell is already requeued).
+- A chunk enters `take_ready_chunks()` only when its pending count reaches zero.
+- `build_chunk(chunk, cap)`: memcpy of the cached cells in cell order; over-cap chunks keep
+  each cell's lowest ranks (`select_by_rank`).
+- `chunks_in_rect(rect, center, limit)`: residency from per-chunk bounds of non-empty chunks.
+- `set_quality(q)`: requeues every cached cell; old geometry stays until replaced.
+
+C++ performs CSR reads, family weight aggregation, the log lot ladder and `weight^0.75`
+quotas, tier housing, villas/shanties, ring ordering, settlement planning (plaza, streets,
+frontage cursors, OBB collision with bounding-circle reject, hex and river checks, outer
+farmland), in-cell rank, and buffer encoding. The social bands come precomputed from the
+economy's existing social-pressure scan (no extra cohort pass). GDScript
+builds the changed-row CSR, chooses resident chunks through the cache, and uploads
+`MultiMesh` buffers into reused nodes. There is no GDScript baker.
+
+Recorded local samples (debug DLL, stress fixture of 16×16 cells at 100k buildings each):
+
+| Item | Thread | Cost |
+|---|---|---|
+| plan one cell | worker | ~60 µs avg, ~180 µs max |
+| `submit_cells` 256 cells / 1 changed | main | ~0.08 ms / ~0.02 ms |
+| `build_chunk` 6144 instances, rank-capped | main | ~0.07 ms median, ~0.28 ms max |
+
+The art harness (66 cells of mixed real families) averages ~43 µs per cell on the worker.
+A 60×40 fresh-start headless 50-day run marks 0–1 building-visual dirty cells per day and
+keeps ~69 days/s, inside the pre-change 62–74 range. The old synchronous chunk bake cost
+~9.4 ms of main thread for the stress fixture. Planning cost is dominated by failed
+placement probes, which is why a cell stops after 4 consecutive failed slots.
 
 ## Representation
 
-Use 16x16 cell render chunks. A chunk has at most one shared node for each of Body, Ground
-Decal, Landmark, and Shadow. All procedural era/category styles share a superset mesh and
-material. The instance format is 16 floats:
+Use 16x16 cell render chunks. A chunk has at most three nodes — GroundDecal (z 1), Shadow
+(z 2), Body (z 3). Body and GroundDecal use one unit quad, Shadow the hull fan mesh; Body and
+Shadow share one buffer. The
+16-float instance layout is defined in `shaders/include/building_form.gdshaderinc`:
 
 ```text
-0..7   2D transform
-8..11  instance color/transition metadata
-12..13 world UV
-14     packed style index (era * 6 + archetype)
-15     stable seed/variant
+0..7   2D transform; basis column lengths are the half extents
+8..11  body: eave/16, ridge/16, (material+0.5)/16, rank   decal: param, flag, 0, 1
+12..15 style=(era*6+archetype)/65, seed, cell/(cell_count-1),
+       body: (form+0.5)/32 (decode with BF_FORM_SCALE)   decal: (kind+0.5)/16
 ```
 
-Use `visible_instance_count` for Far/Mid/Near prefixes. Do not copy or mutate every instance
-on camera movement or weather change. Macro is one world quad reading a building LUT and glyph
-atlas; a large map must not create one node per cell.
+LOD is one `lod_fraction` uniform on the Body and Shadow materials (0.28 below zoom 0.82,
+0.62 below 1.30, 1.0 otherwise; chunks clear below 0.46 where Macro takes over). The vertex
+stage collapses instances whose in-cell rank `(n+0.5)/N` exceeds it, so every settlement
+thins from its edge. Do not copy or mutate instances on camera movement or weather change.
 
 ## Budgets
 
-Default resident limits are 128 chunks on desktop and 48 on Web. Body caps for desktop q0/q1/q2
-are 6,000/18,000/36,000; Web low/mid/high are 1,200/3,000/6,000. Per-cell Near caps are
-4/8/12 for desktop q0/q1/q2. Web uses 2/4/6. Desktop q1/q2 may use bounded analytic shadows;
-Web normally keeps contact AO and disables long shadows. Ground decals are off in q0/Web low,
-one per cell in q1, and one per major category in q2.
-
-The visual compound count is `1` for total `1`; otherwise use
-`ceil(1.05 * log2(1 + total))`, clamped to the active quality cap. Category quotas use
-`log2(1 + count)` weights, stable descending order, and a largest-remainder allocation.
-
-Target draw calls are one Macro call at full-map zoom and no more than about 96/72 per visible
-desktop q2/q1 chunks or 36 on Web. When over budget, retain center/high-screen-coverage
-chunks, reduce secondary categories, and return edge chunks to Macro. Do not truncate by cell
-index and do not delete primary category or era cues randomly.
+Resident limits are 128 chunks on desktop and 48 on Web. Body caps q0/q1/q2 are
+6,000/18,000/36,000. Lots per cell are `NEAR_CAP = [8, 16, 24]`, infill houses
+`[4, 10, 18]`. q0 has no ground decals; Web has no cast shadows.
 
 ## Shader cost
 
-Use static q0/q1/q2 shader variants. Keep approximate texture samples to 2-3 for q0, 4 for q1,
-and 6 for q2. Avoid raymarching, per-pixel module loops, large transparent billboards, and
-high-frequency noise at far zoom. Snow, wetness, fog, sunlight, terrain normal, and horizon
-are sampled in the shader. They must not trigger MultiMesh rebuilds. Shadow meshes use one
-analytic soft edge, no material atlas, and a bounded sun-height projection.
+No ray marching. Body: one parallax correction onto the roof height field, analytic wall
+intersection (box slabs, disc quadratic, cross union, courtyard inner wall), numerical roof
+normals (4 roof taps). Shadow follows the vegetation blob approach: the shape is built in
+the vertex stage on a 9-vertex hull fan (edges facing away from the sun pushed along the
+shadow), and the fragment evaluates one footprint distance for the soft edge plus one for
+contact AO. Daylight is evaluated once per vertex and passed as flat varyings.
+Patterns fade through `bf_detail` at far zoom so high-frequency noise does not alias.
 
 ## Scheduling and resident lifecycle
 
-Merge dirty cells before mapping to chunks. Prioritize new visible cells and camera-center
-chunks. Desktop normally uploads one chunk per frame; Web low uploads one every two frames.
-Allow at most two in-flight desktop bake tasks and use a synchronous credit-limited fallback
-on Web without worker support. Store only the newest pending generation per chunk. Discard
-stale worker results after the generation check.
-
-Evict chunks outside the prefetch range, then by least recent visibility, low density, and
-opposition to camera motion. Eviction releases nodes/buffers but never deletes intelligence.
-Era changes are spread by camera distance; do not rebuild a whole country in one frame.
+Ready chunks that are resident or inside the prefetch range join the upload queue; the
+layer uploads the nearest first, at most 4 per frame within 1.5 ms. Evict chunks outside
+the prefetch range; eviction releases nodes but keeps the cached layout, so returning to an
+area is a memcpy, not a replan. Diagnostics report `last/max_submit_ms`,
+`last/max_upload_frame_ms`, and worker statistics under `cache`.
 
 ## Validation
 
 Run the focused catalog, native bridge, intelligence, and layer tests under
-`Project/project-keynes/tests/building_visual_*_test.gd`. Also run Godot parser/shader checks,
-debug and release GDExtension builds, save/restore checks for PKFG/PKCN/PKEC, and:
+`Project/project-keynes/tests/building_visual_*_test.gd`, debug and release GDExtension
+builds, the art harness, and:
 
 ```powershell
-git diff --check -- .agents/skills/building-visual-pcg Project/project-keynes/scripts/rendering Project/project-keynes/shaders gdext/src/world_ext_building_visual.cpp docs/cpp-dots-runtime/building-visual-runtime.md
+git diff --check -- .agents/skills/building-visual-pcg Project/project-keynes/scripts/rendering Project/project-keynes/shaders gdext/src/world_ext_building_visual.cpp gdext/src/building_visual_cache.h docs/cpp-dots-runtime/building-visual-runtime.md
 ```
 
-Record average/p95/max native bake time, chunk upload time, resident chunks, draw calls, body/
-shadow/decal instances, GPU frame delta, VRAM, queue depth, and whether `bulk_encoder_required`
-was set. Test zoom 0.25/0.45/0.65/1.0/1.5/3.0, 5%/25%/100% occupancy, water/river edges, fog
-memory state, all six archetypes, all eleven eras, snow/rain, and east-west wrapping.
-
-The current native numbers are local samples, not a device guarantee. A real rendered-device
-screenshot is still required for house recognition, spacing, snow silhouette, shadow direction,
-and the absence of large transparent gaps.
+Record the worker per-cell time and the main-thread submit/assemble times printed by the
+native bridge test. Native numbers are local samples, not a device guarantee; real rendered
+screenshots are required for art sign-off.

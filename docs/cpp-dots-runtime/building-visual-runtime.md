@@ -9,14 +9,38 @@
 
 `DCWorldExt.get_building_visual_snapshot(requested_cells)` 在桥接边界排序、去重并检查
 范围，返回与请求一一对齐的 `cell_indices/type_offsets/type_indices/counts`，空地块保留
-零宽 CSR 行。`consume_building_visual_dirty_cells()` 和
+零宽 CSR 行。同一快照还带四列逐格 `PackedByteArray` 社会档位：
+
+| 列 | 取值 | 来源 |
+|---|---|---|
+| `settlement_tiers` | 0–7 | `_settlements.tier`（人口规模） |
+| `living_levels` | 0–6，255 = 无人口 | cohort 人口加权 composite 满意度，阈值与 `living_standard_level_for` 共用 `LIVING_STANDARD_THRESHOLDS_Q16` |
+| `rich_buckets` | 0–3，255 = 无人口 | composite ≥ T[4]（生活水平 5 档及以上）的人口占比，按 5%/20%/40% 分桶 |
+| `poor_buckets` | 0–3，255 = 无人口 | composite < T[1]（生活水平 0–1 档）的人口占比，同样分桶 |
+
+后三列在 `publish_social_pressure_facts` 里与社会压力同一次扫描算出，并带滞回：生活水平
+越过阈值 ±1.5%、占比越过阈值 ±2% 才移动一档、每次只移一档，因此在边界上抖动的 cohort
+不会每天重绘地块。聚落等级变化和社会档位变化都通过 `mark_building_visual_cell` 进入脏格
+（outbox 排序去重，未消费时以格数为上界）；`read_view_reset` 时整表重建。这三列只用于表现，
+不写 PKEC、不进 state hash。`consume_building_visual_dirty_cells()` 和
 `consume_country_visual_era_dirty_slots()` 只报告提交后的变化。镜像不写 PKEC、不进入
 经济 state hash；生产、工资和库存变化不会触发视觉 generation。
 
-`EconomyFacade.building_visual_catalog()` 是唯一类别入口。启动审计当前 395 个作者建筑，
-类别优先级为显式 `visual.archetype.*` tag、`building_kind`、作者的
-`economic_sector_id`；解析失败的类型被记录并跳过，不会以文件名推断。时代是 11 个
-`TechnologyCatalog` 顺序时代，且每个时代必须有对应里程碑。普通科技、pending 科技和
+`EconomyFacade.building_visual_catalog()` 是唯一类别入口。启动时审计全部作者建筑，
+六大类（archetype）由视觉族决定。**视觉族**共 22 个（顺序即 C++ `Family` 枚举）：
+`field paddy plantation pasture forage fishery mine quarry forestry saltworks wells
+workshop food textile kiln metallurgy chemical machinery electronics energy knowledge
+service`，规则表是 `data/rendering/building_visual_families.tres`
+（`BuildingVisualFamilyTable`）。解析顺序：显式 `visual.family.<id>` tag → sector/kind →
+生产气候档 → 生产资源 → 关键词（类型 id、产业链、产出品的子串，按表序）。当前 400 个作者
+类型全部命中显式规则，fallback 为 0（`building_visual_catalog_test` 断言）。每个类型另派生：
+
+- `type_to_scale`：`clamp(round(8 * sqrt(业主 + 雇员岗位)), 8, 255)`，岗位多的建筑占地更大；
+- `type_to_grade`：建造用品的最高建造档（0 原始、1 古典、2 工业、3 钢构），决定该族 lot
+  最多用到哪个时代带的造型，防止“石器时代的茅草作坊”在信息时代被画成玻璃塔，反之亦然。
+
+这些表只在表现层，不新增 catalog 列，`building_catalog_hash` 与存档兼容哈希不变。时代是
+11 个 `TechnologyCatalog` 顺序时代，且每个时代必须有对应里程碑。普通科技、pending 科技和
 未 ACK 的永久 modifier 都不会换代。
 
 ## 玩家情报与存档
@@ -24,100 +48,142 @@
 `BuildingVisualIntelCache` 由 `WorldRuntimeHost` 持有。只有当前可见地块才接受建筑或
 国家时代快照；隐藏地块保留最后一行，新增建设和外国时代变化不会泄露。再次可见时批量
 刷新，关闭迷雾时把全图视为可见。缓存行保存精确数量供 Inspector 使用，同时保存
-`log2(1+count)` 桶、主类别和时代供几何签名使用。
+`log2(1+count)` 桶、主类别、时代和四个社会档位（`settlement_tier/living_level/
+rich_bucket/poor_bucket`）供几何签名使用；签名不变的格不会重新提交。没有建筑但 tier 1–7
+的格（只住人的村落）保留在缓存里并绘制民居。
 
-PKFG v2 保存稀疏情报 CSR：`building_intel_cells/country_slots/era_indices/type_offsets/
-type_indices/counts`。写入前按 cell 排序；恢复先完整校验单调 offset、尾 offset、类型范围、
-正 count 和时代范围，再一次性替换缓存，最后提交 `explored_arr`。无 version 的 PKFG v1
-只恢复 explored 并清空建筑情报，绝不使用当前外国建筑填充缺失行。
+PKFG v3 保存稀疏情报 CSR：`building_intel_cells/country_slots/era_indices/type_offsets/
+type_indices/counts`，加四列与 cell 对齐的 `building_intel_settlement_tiers/
+living_levels/rich_buckets/poor_buckets`。写入前按 cell 排序；恢复先完整校验单调 offset、
+尾 offset、类型范围、正 count、时代范围和社会列长度与取值，再一次性替换缓存，最后提交
+`explored_arr`。v2 存档仍可读，社会档位记为未知（255），由数量估算 tier，下次可见时刷新。
+无 version 的 PKFG v1 只恢复 explored 并清空建筑情报，绝不使用当前外国建筑填充缺失行。
 
 ## 渲染组织
 
-`BuildingVisualLayer` 使用 16×16 cell render chunk。Macro 层是一个世界 quad，读取
+表现目标是**真俯视的程序化聚落**：每栋建筑是一个独立实例，屋顶、墙面、投影和地面全部在
+GPU 上按实时太阳、季节积雪和 11 个时代的材质程序化生成，零外部美术资产。
+
+`BuildingVisualLayer` 使用 16×16 cell render chunk。远景 Macro 层是一个世界 quad，读取
 RGBA8 `building_macro_lut`（密度、主类别、时代、occupied）和共享 glyph 语法。原有
 `enum_atlas` 只有 16 位 cell ID，因此建筑层额外生成 R8 high-byte atlas，宏观 shader
 组合 24 位索引，覆盖 500×400 桌面压力地图而不回绕。
 
-Far/Mid/Near 共用一套 superset compound mesh；一个实例是主体、附属房、院落和产业
-设施的复合体。数量在 `total=1` 时固定为 1，之后采用 `ceil(1.05*log2(1+total))`，类别用权重最大余数配额，布局使用
-`world_seed/cell/archetype/rank/layout_version` 稳定 hash 和 8 候选 best-candidate。
-主体避开水域和 river SDF；建筑采用统一朝向，地基始终位于图标下方，不使用随机旋转，类别差异由模块和材质轮廓表达；不声明不存在的道路 mask。Body、GroundDecal、
-Landmark、Shadow 每 chunk 各至多一个 MultiMesh 节点，质量档和平台预算通过
-`visible_instance_count` 与 resident chunk 淘汰控制。
+近景每 chunk 至多三个 MultiMesh 节点；Body 与 GroundDecal 共享单位 quad，Shadow 用凸包扇形网格：
 
-实例使用 16-float buffer：2D transform 8、instance color 4、custom/style 4。Body 和
-Shadow 直接共享同一 PackedFloat32Array，天气、积雪、fog、日照和地形法线均由 shader
-采样，不逐实例更新或重建 buffer。隐藏地块 shader 只使用缓存的记忆材质，关闭实时雪雨。
-Web 默认关闭长投影；Desktop q1/q2 使用解析 soft shadow，阴影长度受太阳高度和最大值
-限制。Ground decal 紧贴 footprint，q0/Web 低档关闭。
+| 节点 | shader | z | 内容 |
+|---|---|---|---|
+| GroundDecal | `building_ground_decal.gdshader` | 1 | 广场、街道、农田、水田、果园/草料地、牧场、庭院花园、矿坑、堆场、木料场、盐田、码头、光伏场、石器时代石圈 |
+| Shadow | `building_shadow.gdshader` | 2 | 与 Body 共享 buffer 的投影 + 接触 AO（`blend_mul`） |
+| Body | `building_compound.gdshader` | 3 | 屋顶、墙面立面、风车叶片、烟囱/冷却塔蒸汽 |
 
-近景 Body、远景 Macro 与解析 Shadow 统一 include
-`shaders/include/earth_daylight.gdshaderinc`。`HexRenderer` 向建筑层同步
-`season_phase/day_phase/axial_tilt/day_night/TODProfile/debug sun`；Body 从
-MultiMesh 实例世界中心换算稳定 map UV，Macro 直接使用世界 quad UV。夜侧采用冷蓝环境光，
-窗光随 `pixel_night` 增强；解析阴影按当地太阳水平向量投射并在夜侧消失。所有变化只更新
-共享材质 uniform，不改实例 transform/custom data。
+q0 与 Web 不生成 GroundDecal；Web 不生成 Shadow。LOD 是 Body 与 Shadow 材质上的同一个
+`lod_fraction` uniform：缩放 < 0.82 为 0.28，< 1.30 为 0.62，否则 1.0；< 0.46 整体清空，
+由 Macro 接管。每个 body 在 color.a 里带它在本格重要度序（公共核心优先）中的名次
+`(n+0.5)/N`，vertex 阶段把名次超过阈值的实例乘 0 塌成零面积，因此每个聚落都从外围小屋
+开始变稀，换 LOD 只改一个 uniform，不碰 buffer、不逐 chunk 设置。
 
-## 聚落密度阶梯
+### 实例 ABI
 
-早期版本用两套互不相干的离散档：数量按 `ceil(gain * log2(1 + total))`，尺寸按
-`floor_log2(1 + 该 archetype 数量)` 取 12 级。这个设计有三个问题：档位边界全挤在十栋以下、
-量程在数百栋就封顶（成熟城市与小镇无法区分）、以及**密度被算了两次**——数量和尺寸同时随密度
-增长，底部于是又多又挤。
+两套实例都使用 16-float buffer：2D transform 8 + color 4 + custom 4，规范写在
+`shaders/include/building_form.gdshaderinc`，C++ 侧编码在
+`world_ext_building_visual.cpp` 末尾，两处必须一致。
 
-现在三个视觉维度由同一个连续量驱动，没有可见跳档：
+- transform：`[ax*hl, -ay*hw, 0, px, ay*hl, ax*hw, 0, py]`。basis 列长度就是半长/半宽，
+  shader 在 vertex 阶段自行把单位 quad 扩张到所需范围（屋顶倾斜、投影、风车叶片）。
+- Body color：`(eave_h/16, ridge_h/16, (material+0.5)/16, rank)`，rank 是本格重要度名次
+  `(n+0.5)/N`，供 LOD 使用。
+- Body custom：`((era*6 + archetype)/65, seed, cell/(cell_count-1), (form+0.5)/32)`。
+  form 用 /32 编码为新体量留余量，shader 统一用 `BF_FORM_SCALE` 解码。民居使用 service
+  的 style；产业 lot 的 era 已按建造档截到该族允许的最新时代。
+- Decal color：`(param, flag, 0, 1)`；decal custom.a 为 `(kind+0.5)/16`。广场与街道的
+  param 是该格财富 `living_level/6`（未知为 0.5）；yard flag 1 = 棚户泥地；garden
+  param = 财富、flag 1 = 泳池/水池；quay flag 1 = 混凝土码头；pasture/field flag 1 =
+  篱笆；orchard flag 1 = 草料地（无树）。
 
-```
-density = clamp(log2(1 + total) / log2(1 + DENSITY_LADDER_TOP), 0, 1)
-compounds    = clamp(round(COMPOUND_COUNT_MAX * density), 1, NEAR_CAP[quality])
-baker scale  = hex_size * lerp(COMPOUND_SCALE_MIN, COMPOUND_SCALE_MAX, density)
-spread scale = lerp(COMPOUND_SPREAD_MIN, COMPOUND_SPREAD_MAX, density)
-```
+Form 15 种（gable、hipped、cone、dome、flat、sawtooth、cross、courtyard、tower、
+mound、windmill、chimney、greenhouse、cooling、tank），Material 16 种（thatch … stone），
+Ground 14 种（plaza、road、field、pit、yard、solar、stone_ring、paddy、orchard、pasture、
+garden、log_yard、salt_pan、quay）。
 
-`total` 是该格所有 BuildingGroup 的 `count` 之和。`DENSITY_LADDER_TOP=100000`
-是达到完整表达的建筑总数；取 `round` 而非 `ceil` 保证 compound 数**永不超过实际建筑数**
-（旧公式在 total=2 时会画 3 栋）。
+### Shader 要点
 
-注意后两列的主体不同：一列是**单栋**的宽度，一列是**整簇**的面积。
+- Body：不做 ray march。屋顶从半坡高度做一次视差修正落到高度场上；墙面用解析求交
+  （矩形 slab、圆形二次方程、十字取两盒并集、四合院取内院墙），山墙可升到屋面线，
+  其余停在檐口。倾斜量为每单位高度向屏幕上方 0.30，露出一条立面。屋面数值法线 + 每材质程序化纹理（茅草纹、瓦/石板行、波纹铁皮、
+  沥青、混凝土设备、玻璃幕墙塔的屋面设备、绿顶、铜绿……）。积雪只落在朝上屋面，
+  湿润降低反照并加镜面。窗户在近景逐格点亮，远到像素以下时以平均窗光代替，夜间立面
+  仍可读。四合院内院按时代铺石或种植。
+- Shadow：与植被软边 blob 投影同一思路，形状在顶点阶段完成。专用 9 顶点扇形网格
+  （中心 + 每个角按两条邻边各一个顶点）；背光侧边的顶点沿
+  `-sun.xy / max(sun.z, 0.22) * 投影高度`（总长 ≤ 5）平移，正好围出足印扫掠的凸包，圆形
+  体量用八边形近似。片元只取扫掠线上离像素最近的一点算一次足印距离做柔边（半影随距离
+  变宽），再算一次接触 AO；夜侧只剩接触 AO。Body 与 Shadow 共享实例 buffer，网格不同。
+- Decal：街道带噪声蜿蜒、端部淡出；铺装按时代从泥土车辙、卵石、碎石到沥青标线，贫穷
+  格的街道比时代落后一档（极贫一直是土路）；农田按半球校正的季节显示作物，水田春季
+  灌水、夏绿、秋黄并画田埂；广场在石器/农耕时代带夜间篝火，贫穷广场边缘磨回泥地，富裕
+  广场中心有喷泉（时代 3 之前为纪念石台）。棚户泥地带积水，富人庭院有修剪绿篱与水池。
+- Tank（圆罐）：平顶圆柱，屋面画焊缝环与中央检修口，不开窗，投影取罐顶高度。
+- 三个 shader 统一 include `shaders/include/earth_daylight.gdshaderinc`，在 vertex
+  阶段求一次日照并用 flat varying 传给 fragment。`HexRenderer` 向建筑层同步
+  `season_phase/day_phase/axial_tilt/day_night/TODProfile/debug sun`，所有变化只更新
+  共享材质 uniform，不改实例 buffer。白天环境光增益 0.62、太阳 0.78、月光 0.40；夜侧
+  环境光增益回到 1.0，使屋顶与地形同亮。
+- 隐藏地块 shader 只使用缓存的记忆材质，去饱和并关闭实时雪雨。
 
-| total | density | compounds | 单栋占 hex 宽度 | 整簇占 hex 面积 |
-|---|---|---|---|---|
-| 1 | 0.060 | 1 | 8.9% | 0.9% |
-| 15（正式开局） | 0.241 | 6 | 10.3% | 7.3% |
-| 100 | 0.401 | 10 | 11.5% | 15.2% |
-| 1 000 | 0.600 | 14 | 12.9% | 27.0% |
-| 10 000 | 0.800 | 19 | 14.4% | 45.6% |
-| 100 000 | 1.000 | 24 | 15.9% | 70.0% |
+## 聚落规划
 
-散布圆的面积与建筑面积之比（圆内填充率）随密度上升：15 栋时约 65%（松散一簇、有空隙），
-1000 栋时约 82%，顶端约 100%（实心建成区）。这不是单独调出来的，是尺寸与环半径挂在同一个
-density 上的自然结果。
+`world_ext_building_visual.cpp` 里的 `plan_cells` 是唯一几何实现，**没有 GDScript
+baker**。它逐格独立规划（blocker 与 RNG 都按格重置），所以一格的输出只取决于该格自己的
+情报行和静态表。运行时入口是 `NativeBuildingVisualCache`（见下节“调度”）；
+`DCWorldExt::bake_building_visual_chunk` 保留为同一规划器的同步多格包装，供测试和离线
+工具使用，两条路径对同一输入逐位一致。扩展缺失或配置失败时层 fail-closed：只发出一次
+stale DLL 诊断、停用近景几何，Macro 继续工作。
 
-占宽推导：建筑 quad 宽 2 单位、作者画面覆盖约 85%，Body/Shadow/GroundDecal 在 shader
-顶点阶段统一乘 `COMPOUND_VISUAL_SCALE=0.144`，而 pointy-top hex 宽 `sqrt(3) * hex_size`，
-故可见占宽为 `1.7 * baker_scale * COMPOUND_VISUAL_SCALE / sqrt(3)`。占面积为
-`compounds * 占宽^2 / (sqrt(3)/2)`。上限由 `COMPOUND_MAX_HEX_WIDTH_FRACTION=0.16` 断言。
+每个有情报（有建筑，或 tier 1–7 有人住）的陆地格按以下步骤生成一个聚落。核心原则：
+**人口决定住宅骨架，产业决定用地，财富决定质量与贫富分区**；不保证每种建筑都出现。
 
-散布环沿用 `_best_candidate` 的 per-archetype 半径带（农业/采掘 0.54 最外、知识/服务 0.34
-最内）作为形状，再乘 density 驱动的 spread scale。顶端最远触及为
-`0.54 * COMPOUND_SPREAD_MAX + 半个建筑宽 = 0.759 * hex_size`，小于 hex 内切半径
-`0.866 * hex_size`，因此最大都市也不会越界到邻格。覆盖率主要靠环张开与尺寸增长换取，
-而不是线性堆实例。
+1. **族权重**：每个类型的 `count * scale / 8` 累加到它的视觉族；同时记录族内最高建造档。
+2. **产业用地（对数压缩）**：lot 总数
+   `clamp(round(20 * log2(1+W) / log2(1+200000)), 1, LOT_CAP[quality])`，`W` 为全部族权重
+   之和，`LOT_CAP = [6, 12, 20]`。按 `weight^0.75` 最大余数分给各族：大产业得到更多更大的
+   lot，小产业可能一个都没有。lot 高度/尺寸按 `hscale = clamp(0.8 + 0.12·平均 scale +
+   0.05·log2(每 lot 权重), 0.85, 1.9)` 放大（高度按 sqrt）。
+3. **住宅（人口骨架）**：tier 未知时由建筑数估算 `1 + floor(log2(1+total)/2)`（≤7）。
+   民居数 `HOUSE_COUNT[tier] = [0,3,6,10,15,20,26,32]`，截到 `HOUSE_CAP[quality] =
+   [6,16,30]`；民居形态随 tier 从农舍、联排、合院/排屋到板楼、塔楼，每户财富在格财富 ±0.15
+   内抖动，决定屋面材料与庭院（贫穷用茅草/土、富裕用瓦/石板并带花园）。
+4. **贫富分区**：`villa = round(rich/3 · (1 + tier/3))`（≤4），`shanty = round(poor/3 ·
+   (1 + tier/2))`（≤5）；农耕及更早时代的不平等系数为 0.35。别墅带花园和水池，棚户是
+   杂乱小屋加泥地。
+5. **环带**：slot 按环排序后依次放置——0 公共（知识/服务）→ 1 富人区 → 2 民居与轻工
+   （作坊/食品/纺织）→ 3 重工（窑业到电子）→ 4 棚户 → 5 采掘与能源 → 6 农林牧渔；
+   同环内按 `frac` 交错，所以民居与商铺混排。
+6. **骨架**：中心在格心附近抖动并避开河流；石器时代为环形营地（无街道），其余按 tier
+   生成 1–4 条街，广场半径 `0.65 + 0.22·tier`；路宽与退线随时代变宽。水田与渔业 lot 优先
+   沿朝向河流的街道排布，田、水田与码头地面豁免河流检测。
+7. **排布**：每条街两侧各两排 frontage 游标；lot 依次尝试离中心最近的游标、每个游标沿街
+   探 4 步，全部失败时该游标只前进一步。碰撞用 OBB + 外接圆粗筛，同时检查 hex 边界和
+   river SDF。连续 4 个 slot 失败视为该格已满。
+8. **族造型**：22 个族各有 builder，按时代带（石器 0、农耕 1、古典 2–3、近世 4–5、工业 6–7、
+   原子 8、信息 9–10）组合体量与地面，并被建造档截断：例如水田的谷仓与灌水田块、纺织的
+   锯齿厂房、冶金的高炉与圆罐、油井的井架与储罐、盐业的盐田、码头的木栈道/混凝土岸线。
+9. **外环农田**：农业族权重占比越高，外环补的田块越多
+   （`FIELD_FILL_CAP[quality] = [0, 8, 16]` × sqrt(占比)），地面类型随族（田、水田、果园、
+   牧场、草料地）。
+10. **街道**：至少一到两条出口街通到 hex 边缘（tier ≥ 5 时全部通出），其余街道截到最远 lot。
 
-尺寸改由**每格密度**驱动而非 per-archetype 数量，代价是同一格内不同产业的 compound 尺寸
-一致，无法再表达「这一格以某产业为主」。这个信号原本也很弱（旧量程只有 8.0%→11.6%，
-肉眼难辨），产业差异由图集轮廓与环带位置承担。
+每格的 body 按重要度降序（同重要度按 lot 内顺序，主屋顶先于烟囱）排列并写入名次，地面
+按 order 排列；chunk 内按 cell 升序拼接。chunk 超过 cap 时按名次截断（`select_by_rank`，
+同名次按输入顺序补满），每个聚落保留核心。同步包装在 cap 装不下时每格最多规划两倍公平
+份额（`2 * cap / 有效格数`），输出：`ok/path/instance_count/decal_instance_count/lot_count/
+house_count/villa_count/shanty_count/field_count/family_lots(22)/candidate_count/
+river_rejected/buffer/decal_buffer/far_count/elapsed_ms`。同步包装的可选输入：
+`type_to_family/type_to_scale/type_to_grade`（为空或与 `type_to_archetype` 等长）和
+`settlement_tiers/living_levels/rich_buckets/poor_buckets`（为空或与 cell 等长）；缺省时
+族按 archetype 回退、scale 为 8、grade 不截断、社会档位按未知处理。
 
-`building_visual_layer_test.gd` 用 `ladder anchor total=N` 系列断言钉住上表，并断言
-compound 数不超过实际建筑数、簇触及半径小于内切半径。
-
-`NEAR_CAP` 从 `[4, 8, 12]` 提到 `[8, 16, 24]`，16x16 最坏情况实例预算相应从 3072 涨到
-6144。该 fixture 是 256 个相邻格各 10 万栋的极端假设，不描述任何真实地图。
-
-以下常量必须与 `world_ext_building_visual.cpp` 逐一同步：`DENSITY_LADDER_TOP` /
-`kDensityLadderTop`、`COMPOUND_COUNT_MAX` / `kCompoundCountMax`、
-`COMPOUND_SCALE_MIN|MAX` / `kCompoundScaleMin|Max`、
-`COMPOUND_SPREAD_MIN|MAX` / `kCompoundSpreadMin|Max`、`NEAR_CAP` / `kNearCap`。
+布局 hash 只依赖 `cell/族或 slot 种类/rank/layout_seed`，同一输入逐位确定。
 
 ## 地名层序
 
@@ -127,102 +193,100 @@ compound 数不超过实际建筑数、簇触及半径小于内切半径。
 
 ## DLL 同步
 
-数量、尺寸、散布都属于 baker 输出的实例 transform，**修改 C++ 侧后必须重新编译 dots_ext
-DLL 才会在生产路径生效**（`gdext/rebuild.bat`，编译前需关闭 Godot 编辑器；debug 与
-release 两个目标都要出，headless 测试加载的是 debug）。
-
-`building_visual_native_bridge_test.gd` 的 `C++ building chunk baker returns packed
-geometry`（7 个 compound）与 `C++ 16x16 stress bake`（6144 实例）直接校验原生阶梯，
-DLL 过期时这两条会失败，可作为探测器。注意 `water cells never create building geometry`
-在新旧公式下 total=32 都得 7，**无法**用来判断 DLL 是否过期。
-
-## 作者图集与视觉风格
-
-战略地图是正俯视、扁平几何纯色的表现（参考 `ShrubLayer` 的程序化 archetype 网格）。
-建筑主体因此使用作者图集，而不是写实厚涂或 3/4 等距资产：
-
-- 图集为 12 列 × 6 行、每格 160px，共 72 个 slot。索引为
-  `art_era_band * 18 + archetype * 3 + variant`，`column = index % 12`、
-  `row = index / 12`；C++ baker、GDScript fallback 和
-  `building_compound.gdshader` 三处必须一致。
-- 运行时时代仍由 TechnologyCatalog 里程碑决定。图集只把权威时代映射到四个美术带：
-  early 0–1、masonry 2–5、industrial 6–7、modern 8–10。这些断点与程序化回退的
-  `_style_palette` 完全相同，因此在作者图集和回退之间切换不会改变某个时代的读法。
-  渲染层启动时校验 manifest 的 `runtime_era_to_band` 与 shader 映射逐项一致，
-  否则拒绝加载。
-- 四个带之间必须存在**几何**差异而非仅换配色：early 用深前坡、无窗、加宽地基的土木
-  形体，masonry 引入陶瓦屋脊、窗与烟囱，industrial 用锯齿/筒拱与金属附属，modern
-  用平顶、玻璃带与天线/碟。
-- `variant` 是风格槽位而非语义声明。作者可用 `visual.profile.<n>` 语义标签固定
-  （与既有 `visual.archetype.*` 同一通道，不新增 catalog 列，因此
-  `building_catalog_hash` 与存档兼容哈希不变）；未标注时按类型下标稳定 hash 分配，
-  保证相邻类型不共用轮廓。
-- 双通道资产：albedo 为 RGB 扁平色 + A 轮廓；surface 为
-  R 朝上积雪接受度、G 湿润响应、B 窗光自发光、A 环境遮蔽/占位。积雪只落在朝上屋顶
-  面，墙体保留本色。
-- 资产**不得**烘焙阴影。假阴影由 `building_shadow` 解析 pass 拥有；manifest 的
-  `baked_shadow` 必须为 `false`，测试会同时检查画面内是否存在低 alpha 暗色裙边。
-- 朝向固定正俯视、地基位于图标下沿；屋脊为水平线，前后坡各为一条扁平色带。
-- 加载 fail-closed 到程序化 glyph：manifest 缺失、形状不符、纹理尺寸不匹配或时代映射
-  不一致时，`use_authored_atlas` 保持 `false`，建筑仍可渲染，并在
-  `diagnostics().authored_atlas_reason` 暴露原因。
-
-资产由 `tools/building_visuals/author_building_atlas.py` 确定性生成，同时输出 54 个
-可替换的 SVG 源、两张图集 PNG 和带源/输出 sha256 的 manifest。`--from-svg` 用
-Inkscape 光栅化美术手改的 SVG，缺少 CLI 时直接失败而不静默退化。
+布局、实例编码和缓存 worker 都在 C++ 中，**修改 `world_ext_building_visual.cpp` 或
+`building_visual_cache.h` 后必须重新编译
+dots_ext DLL 才会在生产路径生效**（`gdext/rebuild.bat` 或
+`scons platform=windows target=template_debug dev_build=no` 与 `target=template_release`；
+headless 测试加载的是 debug）。另一个 Godot 进程持有 DLL 时链接会报拒绝访问，可先把旧
+DLL 改名再链接。shader 修改不需要重编。
 
 ## 画质与植被协调
 
-`building_compound.gdshader` 的 style LUT 为 66 行（11 时代 × 6 类），共享材质图集和
-mask 图集。雪量由动态 LUT 的 snow cover、pseudo normal、时代材质保持率和 mask 共同决定；
-湿润只改变材质响应，不写回经济或环境状态。建筑层输出每格 settlement core bucket，
-`ShrubLayer` 在候选生成时拒绝 core 内点；同一 bucket 不重建植被，隐藏外国建设也不改变
-本地植被外观。
+雪量由动态 LUT 的 snow cover、法线朝向和每种材质的积雪保持率共同决定；湿润只改变材质
+响应，不写回经济或环境状态。建筑层输出每格 settlement core bucket，`ShrubLayer` 在
+候选生成时拒绝 core 内点；同一 bucket 不重建植被，隐藏外国建设也不改变本地植被外观。
 
-## 调度和性能闸门
+## 调度：后台逐格规划 + 主线程只上传
 
-脏格先合并到情报缓存，再按 signature 映射到 chunk。镜头中心和新可见地块优先；每帧
-最多上传一个 chunk（Web 低档每两帧一个），offscreen dirty 只记 generation。Desktop
-resident 上限 128、Web 48；Body 上限 q0/q1/q2 为 6k/18k/36k，Web 为 1.2k/3k/6k。
+视觉计算不得挤占模拟。布局只在后台算、只算变化的格子，主线程只做提交和上传。
 
-层提供 `diagnostics()`：resident、队列、实例数、宏观上传数、chunk bake 最近值/峰值、
-原生调用/失败次数、`native_required`、`gdscript_fallback_enabled` 和
-`bulk_encoder_required`。桌面与已加载 GDExtension 的默认路径是
-`DCWorldExt::bake_building_visual_chunk`：C++ 负责 CSR 读取、六类聚合、对数配额、
-best-candidate 布局、河流排除、重要度裁剪和 16-float buffer 编码；Godot 层只负责调度、
-结果校验以及 `MultiMesh`/材质资源上传。`allow_gdscript_baker_fallback` 默认是
-`false`；native 方法缺失或失败时生产路径 fail-closed，只发出一次 stale DLL 诊断并
-停用几何。只有兼容性测试或旧 DLL 调试显式打开这个开关，才会调用 GDScript baker。
+`NativeBuildingVisualCache`（`building_visual_cache.h`，RefCounted）持有一个专用
+`std::thread` worker，模式与 `EconomyCsvRecorder` 相同：mutex + condition variable，worker
+只读 `configure` 时拷入的 POD（cell 世界坐标、类型→archetype/族/scale/grade 表、river
+flow 场），**不触碰任何 Godot API**。API：
 
-GDScript baker 仅保留给显式兼容测试或旧 DLL 调试，不能作为桌面/Web 默认性能实现。
-历史回退压测在 16×16、每格 12 个复合体时约 53 ms；该数字只描述
-GDScript fallback，不代表当前 C++ 路径。当前 native bridge 的同规格 30 次压力夹具
-（16×16、3072 个复合体、24576 个候选）测得 avg `0.9096 ms`、p95 `1.0237 ms`、
-max `1.0467 ms`；层专项小 fixture（4×4 地图、2 个有情报格、6 个复合体）为
-`0.0399 ms`。这些是本机样本，不是跨设备性能保证；完整地图和目标设备仍需单独记录。
-任何 native bake 超过 1.5 ms 都会置位
-`bulk_encoder_required`，用于后续 profile/批量编码优化诊断，不会自动切回 GDScript。
+| 方法 | 线程 | 作用 |
+|---|---|---|
+| `configure(config)` | 主 | 停 worker、清空缓存、拷静态表、算每 chunk 包围盒、重启 worker |
+| `submit_cells(rows)` | 主 | CSR 行（cell/era/is_water/types/counts，可选四列社会档位）；按输入 hash（含社会档位）跳过未变格，变化格 generation+1 并入队 |
+| `set_quality(q)` | 主 | 所有缓存格 generation+1 重新入队（旧几何在新结果就绪前保留） |
+| `take_ready_chunks()` | 主 | 返回自上次以来所有格都已规划完的 chunk |
+| `chunks_in_rect(rect, center, limit)` | 主 | 按包围盒选非空 chunk，按距离排序截到 limit |
+| `build_chunk(chunk, cap)` | 主 | 拼接 chunk 内各格缓存好的已编码实例（memcpy），超 cap 按名次截断 |
+| `wait_idle(ms)` / `pending_cells()` / `diagnostics()` / `shutdown()` | 主 | 测试同步、计数、停 worker |
+
+一致性：每格有 `input_gen/output_gen`。worker 取任务时拷走输入与 gen，规划不持锁；提交时
+gen 不等（规划期间又被提交或换画质）则丢弃结果，该格已经重新入队。chunk 的 pending
+计数归零才进入 ready 列表，所以一个 chunk 不会因多个格陆续完成而反复上传。行变空且
+tier 为 0/未知的格在提交空结果后从缓存删除；有人住但没有建筑的格保留并绘制民居。
+
+`BuildingVisualLayer` 的数据流：
+
+1. `update_intel(changed_cells)`：`BuildingVisualIntelCache.apply_snapshot` 已经只报告几何
+   签名（时代、类型、`log2` 数量桶、社会档位）变化的格；层只为这些格组 CSR 调一次
+   `submit_cells`，同时改 Macro 像素（密度取建筑数与 `tier/8` 的较大者）。没有逐 chunk
+   遍历全部格的 GDScript 循环。
+2. `_process`：`take_ready_chunks()` 中驻留或在预取范围内的 chunk 进入上传队列；每帧按
+   离镜头距离最多上传 4 个、预算 1.5 ms。上传复用 chunk 已有的 MultiMesh 节点，只改
+   `instance_count` 和 `buffer`。
+3. `set_camera_view`：一次 `chunks_in_rect` 决定驻留集合，新进入的 chunk 直接从缓存拼接
+   上传，不再重算布局；只在 zoom 变化时更新 `camera_zoom` uniform。
+
+Desktop resident 上限 128、Web 48；Body 上限 q0/q1/q2 为 6k/18k/36k（扣除其他驻留 chunk
+后作为单 chunk cap）。层 `diagnostics()` 报告 resident、上传队列、实例数、宏观上传数、
+`chunk_uploads`、`last/max_submit_ms`、`last/max_upload_frame_ms`、`native_failures`、
+`lod_fraction`，并在 `cache` 键下附 worker 统计（cached/queued/planned/unchanged/stale、
+`worker_plan_us_avg/max`、`last/max_build_us`）。
+
+本机样本（debug DLL，非跨设备保证），native bridge 压力夹具为 16×16 格全部 10 万栋，
+远超任何真实地图：
+
+| 项 | 线程 | 耗时 |
+|---|---|---|
+| 单格规划 | worker | avg 约 60 µs，max 约 180 µs（256 格合计约 15 ms，全在后台） |
+| `submit_cells` 256 格 / 改 1 格 | 主 | 约 0.08 ms / 约 0.02 ms |
+| `build_chunk` 拼接 6144 实例（超 cap 名次截断） | 主 | 中位约 0.07 ms，max 约 0.28 ms |
+
+旧同步路径同一夹具每 chunk 主线程约 9.4 ms。改 1 格只重算 1 格（约 60 µs，后台）。截图台
+66 格真实混合产业的 worker 平均约 43 µs/格。60×40 新开局 headless 50 天：建筑视觉脏格
+每天 0–1 格，吞吐 69 天/秒，与改动前的 62–74 天/秒区间一致。
 
 ## 验证入口
 
 专项脚本：
 
-- `tests/building_visual_catalog_test.gd`：395 类型、11 时代和里程碑审计。
-- `tests/building_visual_native_bridge_test.gd`：CSR 聚合、排序、时代组合和 state hash。
-- `tests/building_visual_intel_cache_test.gd`：可见性、PKFG v2/v1、原子失败和桶稳定性。
-- `tests/building_visual_layer_test.gd`：shader/材质、三批次、LOD、河流排除、确定性和
-  24 位宏观索引。
-- `tests/building_visual_atlas_test.gd`：作者图集契约——72 slot 齐备、索引公式与网格
-  顺序、时代映射与 shader 一致、无烘焙阴影、每个时代带 18 个轮廓互异、全 72 slot 互异、
-  扁平色阶（distinct tone ratio < 0.06）以及渲染层确实启用了图集。
-
-重新生成资产：
+- `tests/building_visual_catalog_test.gd`：全部作者类型可解析且无 fallback、22 族全部有
+  类型、族抽查、scale/grade 随岗位与建造品单调、11 时代和里程碑审计。
+- `tests/building_visual_native_bridge_test.gd`：CSR 聚合、排序、时代组合、社会档位列
+  对齐与取值范围、state hash、body/decal buffer 步长、水格无建筑、确定性、int64 饱和与
+  16×16 压力上界；tier 越高民居越多、贫富桶带来别墅与棚户、主导产业族拿到最多 lot、
+  建筑越多 lot 不减、只住人的格也画民居；缓存与同步规划器逐位一致、超 cap 名次截断、
+  未变行不重算、改 1 格只重算 1 格、生活水平档位变化只重算该格、人走后空格被移除，并
+  打印 worker 与主线程耗时。
+- `tests/building_visual_intel_cache_test.gd`：可见性、社会档位签名、PKFG v3 往返与
+  v2/v1 迁移、原子失败和桶稳定性。
+- `tests/building_visual_layer_test.gd`：无 GDScript baker、worker 规划、ready chunk 驻留、
+  三批次、Shadow 共享 buffer、未变行跳过、画质往返逐位一致且复用节点、单格增量重算、
+  社会档位变化只重算变化行、`lod_fraction` 与名次、水格与 hex 边界、TOD uniform（含
+  decal）和 24 位宏观索引。
+- `tests/_tmp_building_art_harness.tscn`：美术截图台。11 列时代 × 6 行地方经济（稻作小村、
+  麦作农镇、纺织城、矿冶镇、富裕首府、积雪渔林盐业；各行带 tier 与贫富档），走真实层与
+  DLL，输出总览、近景、城市、夜景、黄昏截图；`detail` 输出单格特写，`wealth` 改为在
+  时代 5 横扫生活水平与贫富：
 
 ```powershell
-python tools\building_visuals\author_building_atlas.py
-& 'D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe' --headless --path Project\project-keynes --import
-& 'D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe' --headless --path Project\project-keynes --script res://tests/building_visual_atlas_test.gd
+& 'D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe' --path Project\project-keynes --resolution 1600x900 res://tests/_tmp_building_art_harness.tscn -- <out_dir> [detail|wealth]
 ```
 
-这些测试不改变 DataCore 或 PKEC。图形截图仍需在真实渲染设备上执行；headless 仅验证
-资源装载、脚本解析和数据/缓冲确定性。
+这些测试不改变 DataCore 或 PKEC。截图台需要真实渲染设备；headless 只验证资源装载、
+脚本解析和数据/缓冲确定性。

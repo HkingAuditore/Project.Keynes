@@ -418,9 +418,16 @@ section tab；section 切换只由底栏 `CountryActionBar` 驱动。经济 sect
 
 打开科技 section 时只装配拓扑（`TechnologyTreeLayout.build_topology`）与 soft-edge 索引，
 不立刻对全图数千条 visual edge 做贝塞尔烘焙；完整 `build()` 仅在 `layout_report()` /
-审计路径按需触发。玩家日常默认视图是 `TechnologyAvailableView`：只列出
-`technology_states == 2` 的可研究 `tech.*` 节点（按领域分组），双击入队，行内按钮展开聚焦树；
-`app.*` 不进清单。需要纵览时再进入自绘 `TechnologyTreeView`：农业、工程、科学、社会四个权威
+审计路径按需触发。工作区外壳是卷宗样式：顶部 `DossierChapterNav` 切换「可研究 / 科技树 /
+总览」（固定宽度，选中签条按页签序号插值，布局变化中途不会错位），时代步进只在科技树模式出现；
+其下 KPI 条（`DossierKpiCard`）显示当前时代、科技值库存、日研究投入、在研项目、国库现金，
+库存/投入/国库带最近 30 个研究日的迷你曲线（工作区按 `last_research_day` 自采样，不新增
+runtime 字段）。工作区高度低于 480 时 KPI 条切为单行 `dense` 模式，窄宽下隐藏投入与国库两张。
+
+玩家日常默认视图是 `TechnologyAvailableView`：单个自绘 `TechnologyAvailableList`（无逐行节点），
+分「研究中（state 3，按领域与队列序）/ 可立即研究（state 2，按领域）/ 待生效（state 4）」三组
+卡片网格，卡片显示时代、成本、路线、队列位次、进度与预计天数，带「加入 / 移出」按钮和
+「在科技树中查看」入口，只绘制可见滚动区；`app.*` 不进清单。需要纵览时再进入自绘 `TechnologyTreeView`：农业、工程、科学、社会四个权威
 领域同图展示。每次取前一、当前、下一可见时代；时代内按硬前置深度分层，同深度同领域的兄弟在本泳道
 内向下叠放，避免横向溢出。列宽随中央画布均分，节点不超出画布；内容较短时垂直居中，较高时只
 允许纵向平移。每个可见时代带底部显示时代里程碑关隘；未揭示时只标“时代里程碑”与候选进度，
@@ -429,14 +436,18 @@ section tab；section 切换只由底栏 `CountryActionBar` 驱动。经济 sect
 应用交汇只在选中端点时显示细线（`index_soft_edges` 预索引，避免每次 focus 扫描全部 application 边）。
 里程碑候选仍用节点底边进度条表达“已完成/要求”，不铺开候选边。
 
-独立自绘 `TechnologyOverviewView` 以四领域为行、可见时代为列，每个单元格只画状态刻度。
-它不显示完整卡片或连线，点击单元格返回聚焦视图。初次打开优先选中最高权重领域的队列首项，
+独立自绘 `TechnologyOverviewView` 以四领域为行、可见时代为列，是掌握度账表：行首显示领域
+「已掌握 a / b」，单元格显示「已掌握 n / m」与已掌握/研究中/可研究堆叠条，只统计已呈现
+（state ≥ 2）的科技；行高随画布自适应，四行在 1280×720 下完整可见。它不显示完整卡片或连线，
+点击单元格返回聚焦视图；状态未变时跳过重算，揭示集合不变时只重新计数不重建格子。
+聚焦树卡片较窄（< 150px）时省去与泳道表头重复的领域图标，把宽度留给科技名称，仍放不下才截断。初次打开优先选中最高权重领域的队列首项，
 没有队列则选中最深可研究前沿，但仍停留在可研究清单；搜索、队列行、相邻时代入口和总览单元格
 统一跳转到同一聚焦路径。
 
 研究完成反馈：当玩家国某项科技从低于 4 进入待生效（state ≥ 4）时，`GameUIManager` 对
-`technology_states` 做差分，经 HUD `ResearchToast` 提示「某某科技研究完成，明日生效」。
-面板关闭时同样弹出；不新建 TechnologyRuntime，也不依赖 gameplay journal 消费。
+`technology_states` 做差分，经 HUD `ResearchToast` 提示「某某科技研究完成 · 次日生效」。
+面板关闭时同样弹出；不新建 TechnologyRuntime，也不依赖 gameplay journal 消费。`ResearchToast`
+是 `research_toast.tscn` 实例化的自绘卷宗便笺（最多两条，无运行时子节点），空闲时停止 `_process`。
 
 迷雾按「可研究集合 ∪ 其直接未知后继」裁剪聚焦视图。只有揭示条件已满足且全部硬前置已完成
 的节点才显示名称；已揭示但前置未完成的节点与未发现节点一样只画暗轮廓。总览固定显示四个领域，但只列出至少一个
@@ -446,23 +457,32 @@ section tab；section 切换只由底栏 `CountryActionBar` 驱动。经济 sect
 两种视图永远 1:1 绘制，没有缩放。聚焦视图依靠有界节点集保持文字清晰，必要时可拖动背景；
 总览使用固定密度刻度，不把缩小文字当成信息压缩手段。
 
-所有政策控件改完即生效，界面上没有任何提交按钮：`ResearchWeightDial` 是四轴菱形雷达盘，
-抓取区是整条轴臂（轴线两侧各 26px），不是顶点小圆点——权重接近均衡时四个顶点会挤在圆心
-附近，逐个瞄准必然误触；圆心 18px 是无主死区，斜向空隙不响应。拖动按「按下点到当前点的
-径向位移」做相对调整，因此误点不会让权重跳变，按下未移动则一条命令都不发。拖动一轴时其余
-三域按原比例缩放，最大余数法保证 `sum == 10000`，松手提交一次 `SET_RESEARCH_WEIGHTS`，
-双击圆心恢复各 25%。半径按份额的平方根映射（`DISPLAY_GAMMA=0.5`）：线性半径会让 25%
-基准下四个顶点全叠在圆心针脚上，而这正是盘面绝大多数时间的状态，开方后 25% 落在半径一半
-处的黄铜「均衡圈」上，刻度圈 25/50/75/100% 随之向外收窄；拖动在绘制空间里做相对位移，
-所以顶点仍然逐像素跟手，畸变对手感不可见。盘面只在轴端画领域 icon，百分比由「研究队列」表头常驻显示并随拖动
-实时更新，当前操作的轴臂旁再浮一枚读数标签；`ProcurementBudgetSlider` 以「国库百分比/日」
-为量纲，最左端即关闭，实时预览每日上限与可支撑天数，松手提交 `SET_RESEARCH_BUDGET`。
-队列排序完全依赖拖放，队列行只有 icon 化状态、进度微条与移出按钮。
+所有政策控件改完即生效，界面上没有任何提交按钮：`ResearchAllocationBars` 是四行横条
+（领域 icon + 名称 + 「队列 n/8 / 空队列」+ 份额条 + 百分比）。拖动按「按下点到当前点的
+水平位移」做相对调整，误点不会让权重跳变，按下未移动则一条命令都不发；拖动一行时其余三域
+按原比例缩放，最大余数法保证 `sum == 10000`，松手提交一次 `SET_RESEARCH_WEIGHTS`；
+「均衡分配」恢复各 25%。空队列行淡化并注明「空队列的份额并入其他领域」，与运行时把空领域份额
+并回非空领域的规则一致。拖动中实时预览各队列项的预计天数。`ProcurementBudgetSlider` 以
+「国库百分比/日」为量纲，最左端即关闭，实时预览每日上限与可支撑天数，松手提交
+`SET_RESEARCH_BUDGET`。队列排序完全依赖拖放，队列行（自绘 `TechnologyQueueRow`）显示位次、
+名称、预计天数与进度微条，悬停出现移出按钮。
 
-日 tick 只走 `TechnologyWorkspace.refresh_research()`：状态数组未变化时，树只在可见进度条
-节点的 progress 变化时 `queue_redraw()`，不重算局部几何或迷雾；隐藏总览不刷新单元格；可研究
-清单仅在可研究集合签名变化时重建行；队列行仅在队列构成签名变化时重建，详情卡仅在选中项或
-相关状态变化时重建前后置行，其余 tick 只更新进度与按钮。可研究节点显示路线标签、当前阻塞谓词、证据数量、首次发现日和第一证据格；
+预计天数只在 UI 估算：取最近至多 8 个研究日 `progress_total` 的日均增量为研究速率，按
+「本领域权重 / 非空领域权重和」得到领域速率，再按同领域队列前方剩余成本累加求天数
+（显示「约 N 日 / 超过 999 日 / 暂无投入」，样本不足两天时留空）。详情卡用事实表展示时代、
+领域、完整研究成本、类型与路线，进度块下方显示「队列第 n 位 · 约 N 日」。
+
+刷新链：`country_committed` → `GameUIManager` 标记 TECH 脏（面板关闭时也失效缓存，重开即最新）
+→ 延迟 flush（科技页 50ms 节流，计时器回调统一清除节流标志，不会因计时器提前触发而永久吞掉
+后续提交）→ `CountryViewModel.build("technology")` → `TechnologyWorkspace.refresh_research()`。
+工作区不持有、不修改 view model 缓存字典；科技页打开时经济事件批次也会以 500ms 节流补一次刷新。
+
+日 tick 只走 `TechnologyWorkspace.refresh_research()`：整份研究快照签名不变时直接返回（p95 约
+5µs）；变化时树只在可见进度条节点的 progress 变化时 `queue_redraw()`，不重算局部几何或迷雾；
+隐藏总览不刷新单元格；可研究清单只修补状态与进度并重绘；队列行仅在队列构成签名变化时重建；
+KPI 卡各自按输入签名更新（时代标签按状态数组哈希缓存）；详情卡仅在选中项或相关状态变化时
+重建前后置行，状态未变时不再重设主题色。研究日刷新 p95 约 0.25ms（冒烟测试门槛 1ms）。
+可研究节点显示路线标签、当前阻塞谓词、证据数量、首次发现日和第一证据格；
 未知节点仍不读取或显示名称、效果、前置、路线或辅助文字。
 
 可研究科技的名称、效果摘要、路线徽章、前置科技名称和发现证据均显示中文；内部稳定 ID 只用于
@@ -503,7 +523,9 @@ section tab；section 切换只由底栏 `CountryActionBar` 驱动。经济 sect
   取下限 1 缩放单位，因此 `cost_points` 为 0 的节点仍需付费；UI 必须用
   `cost_points_scaled` 而不是整数除法得到的 `cost_points`，否则会显示成「0% · 还需 0」）
 - `technology_modifier_activation_test.gd`
-- `technology_workspace_smoke_test.gd`
+- `technology_workspace_smoke_test.gd`（含份额条交互、可研究卡片、KPI、总览计数、研究日刷新 p95 门槛）
+- `technology_refresh_latency_test.gd`（真实开局 20×/5×/1× 下面板跟随提交的最大滞后、暂停收敛、关闭后重开即最新）
+- `technology_workspace_screenshot_qa.gd`（需带渲染运行；1280×720 / 1366×768 / 1920×1080 三视图截图到 `tmp/technology_workspace_qa/`）
 - `country_runtime_test.gd`
 - `economy_rolling_runtime_test.gd`
 - `economy_trade_runtime_test.gd`

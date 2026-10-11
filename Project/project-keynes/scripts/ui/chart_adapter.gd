@@ -22,6 +22,36 @@ static func make_sparkline(
 	return chart
 
 
+static func make_dossier_stacked_bar(title: String, segments: Array, total_text: String = "") -> DossierStackedBar:
+	var chart := DossierStackedBar.new()
+	chart.set_segments(title, segments, total_text)
+	return chart
+
+
+static func make_dossier_bar_list(rows: Array, diverging: bool = false,
+		selectable: bool = false) -> DossierBarList:
+	var chart := DossierBarList.new()
+	chart.diverging = diverging
+	chart.selectable = selectable
+	chart.set_rows(rows)
+	return chart
+
+
+static func make_dossier_radar(axes: PackedStringArray, values: PackedFloat32Array,
+		reference: PackedFloat32Array = PackedFloat32Array(),
+		accent: Color = UITokens.DOSSIER_OXBLOOD) -> DossierRadarChart:
+	var chart := DossierRadarChart.new()
+	chart.set_values(axes, values, reference, accent)
+	return chart
+
+
+static func make_dossier_ledger(columns: Array, rows: Array, default_sort: String = "") -> DossierLedgerTable:
+	var table := DossierLedgerTable.new()
+	table.set_columns(columns, default_sort)
+	table.set_rows(rows)
+	return table
+
+
 static func preferred_backend() -> String:
 	if ClassDB.class_exists("TauPlot"):
 		return "TauPlot"

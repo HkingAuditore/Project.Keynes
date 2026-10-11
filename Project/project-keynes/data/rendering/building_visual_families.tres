@@ -1,0 +1,167 @@
+[gd_resource type="Resource" script_class="BuildingVisualFamilyTable" format=3]
+
+[ext_resource type="Script" path="res://scripts/rendering/building_visual_family_table.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+families = Array[Dictionary]([{
+"archetype": 0,
+"climate_profiles": PackedStringArray("dryland_crop"),
+"id": "field",
+"keywords": PackedStringArray(),
+"resources": PackedStringArray()
+}, {
+"archetype": 0,
+"climate_profiles": PackedStringArray("paddy_crop"),
+"id": "paddy",
+"keywords": PackedStringArray(),
+"resources": PackedStringArray()
+}, {
+"archetype": 0,
+"climate_profiles": PackedStringArray("plantation_crop"),
+"id": "plantation",
+"keywords": PackedStringArray(),
+"resources": PackedStringArray()
+}, {
+"archetype": 0,
+"climate_profiles": PackedStringArray("pasture_livestock"),
+"id": "pasture",
+"keywords": PackedStringArray("wool", "horse", "livestock"),
+"resources": PackedStringArray()
+}, {
+"archetype": 0,
+"climate_profiles": PackedStringArray("foraging_plants"),
+"id": "forage",
+"keywords": PackedStringArray("reed_", "hunting", "game_meat"),
+"resources": PackedStringArray("wild_game")
+}, {
+"archetype": 0,
+"climate_profiles": PackedStringArray(),
+"id": "fishery",
+"keywords": PackedStringArray("fishing", "production.fish"),
+"resources": PackedStringArray("marine_fish", "freshwater_fish")
+}, {
+"archetype": 1,
+"climate_profiles": PackedStringArray(),
+"id": "mine",
+"keywords": PackedStringArray(),
+"resources": PackedStringArray("coal", "iron_ore", "copper_ore", "tin_ore", "lead_ore", "zinc_ore", "manganese_ore", "gold_ore", "silver_ore", "bauxite", "rare_earth")
+}, {
+"archetype": 1,
+"climate_profiles": PackedStringArray(),
+"id": "quarry",
+"keywords": PackedStringArray("turf", "quarry"),
+"resources": PackedStringArray("stone", "limestone", "clay", "flint", "silica_sand", "phosphate_rock")
+}, {
+"archetype": 1,
+"climate_profiles": PackedStringArray(),
+"id": "forestry",
+"keywords": PackedStringArray("lumber", "logs", "forestry"),
+"resources": PackedStringArray("timber")
+}, {
+"archetype": 1,
+"climate_profiles": PackedStringArray(),
+"id": "saltworks",
+"keywords": PackedStringArray("salt", "brine"),
+"resources": PackedStringArray("salt", "saltpeter", "sulfur")
+}, {
+"archetype": 1,
+"climate_profiles": PackedStringArray(),
+"id": "wells",
+"keywords": PackedStringArray("crude_oil", "natural_gas"),
+"resources": PackedStringArray("oil", "natural_gas")
+}, {
+"archetype": 2,
+"climate_profiles": PackedStringArray(),
+"id": "workshop",
+"keywords": PackedStringArray("tool", "knapping", "furniture", "cabinet", "jewel", "goldsmith", "leather", "footwear", "cobbler", "tann", "paper", "parchment", "print", "manuscript", "scriptor", "packaging", "glassware", "housewares", "latex"),
+"resources": PackedStringArray()
+}, {
+"archetype": 2,
+"climate_profiles": PackedStringArray(),
+"id": "food",
+"keywords": PackedStringArray("bread", "bak", "beverage", "brew", "distill", "staple", "communal_hearth", "canned", "canning", "dairy", "cream", "meat", "slaughter", "edible_oil", "processed_food", "kitchen"),
+"resources": PackedStringArray()
+}, {
+"archetype": 2,
+"climate_profiles": PackedStringArray(),
+"id": "textile",
+"keywords": PackedStringArray("cloth", "weav", "_loom", "fiber", "cotton", "flax", "garment", "tailor", "felt", "fur_sewing", "hide_scraping", "bast", "textile"),
+"resources": PackedStringArray()
+}, {
+"archetype": 2,
+"climate_profiles": PackedStringArray(),
+"id": "kiln",
+"keywords": PackedStringArray("brick", "pottery", "glass", "lime", "cement", "concrete", "adobe", "charcoal", "masonry", "construction_components", "public_works"),
+"resources": PackedStringArray()
+}, {
+"archetype": 2,
+"climate_profiles": PackedStringArray(),
+"id": "metallurgy",
+"keywords": PackedStringArray("steel", "smelter", "bloomery", "coke", "aluminum", "production.copper", "production.tin", "production.zinc", "production.lead", "rare_earth_metals", "wrought_iron", "wire", "bronzesmith"),
+"resources": PackedStringArray()
+}, {
+"archetype": 2,
+"climate_profiles": PackedStringArray(),
+"id": "chemical",
+"keywords": PackedStringArray("chemical", "plastic", "rubber", "fertilizer", "compost", "explosive", "detergent", "soap", "lubricant", "refined_fuel", "pharma", "nuclear_fuel", "nuclear_medicine"),
+"resources": PackedStringArray()
+}, {
+"archetype": 2,
+"climate_profiles": PackedStringArray(),
+"id": "machinery",
+"keywords": PackedStringArray("engine", "machinery", "machine_parts", "railway", "automobile", "vessel", "shipyard", "maritime", "appliance", "electric_motor", "reactor_component"),
+"resources": PackedStringArray()
+}, {
+"archetype": 2,
+"climate_profiles": PackedStringArray(),
+"id": "electronics",
+"keywords": PackedStringArray("semiconductor", "chip", "computer", "electronic", "telecom", "radio", "batter", "scientific_instrument", "electrical_equipment", "insulated_cable", "autonomous_systems"),
+"resources": PackedStringArray()
+}, {
+"archetype": 3,
+"climate_profiles": PackedStringArray(),
+"id": "energy",
+"keywords": PackedStringArray(),
+"resources": PackedStringArray(),
+"sectors": PackedStringArray("energy")
+}, {
+"archetype": 4,
+"climate_profiles": PackedStringArray(),
+"id": "knowledge",
+"keywords": PackedStringArray(),
+"resources": PackedStringArray(),
+"sectors": PackedStringArray("knowledge")
+}, {
+"archetype": 5,
+"climate_profiles": PackedStringArray(),
+"id": "service",
+"keywords": PackedStringArray(),
+"kinds": PackedInt32Array(2),
+"resources": PackedStringArray()
+}])
+grade_goods = {
+"adobe_brick": 0,
+"advanced_chips": 3,
+"bast_fiber": 0,
+"bricks": 1,
+"clay": 0,
+"computers": 3,
+"concrete": 2,
+"construction_components": 2,
+"copper": 1,
+"electrical_equipment": 3,
+"electronic_components": 3,
+"flint": 0,
+"gathered_plants": 0,
+"glass": 2,
+"logs": 0,
+"lumber": 1,
+"oceanic_vessels": 3,
+"railway_equipment": 2,
+"raw_stone": 0,
+"reed_bundle": 0,
+"steel": 3,
+"tools": 1,
+"turf_block": 0
+}

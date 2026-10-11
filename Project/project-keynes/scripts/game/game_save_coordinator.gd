@@ -258,10 +258,12 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 
 func _wait_for_safe_boundary() -> Dictionary:
 	const MAX_WAIT_FRAMES := 1800
+	var last_boundary := {}
 	for frame in range(MAX_WAIT_FRAMES):
 		var boundary := _can_save()
 		if bool(boundary.get("ok", false)):
 			return boundary
+		last_boundary = boundary
 		var code := String(boundary.get("code", ""))
 		if code not in ["save_requires_committed_boundary", "save_requires_idle_country", \
 			"save_requires_idle_country_peer", \
@@ -273,7 +275,41 @@ func _wait_for_safe_boundary() -> Dictionary:
 		if generator != null and generator.has_method("advance_save_boundary"):
 			generator.advance_save_boundary()
 		await get_tree().process_frame
-	return _result(false, "save_boundary_timeout", "等待国家与经济提交边界超时。")
+	var blocking_code := String(last_boundary.get("code", ""))
+	push_warning("[save] boundary timeout blocking=%s detail=%s" % [
+		blocking_code, JSON.stringify(_boundary_diagnostics())])
+	var timeout := _result(false, "save_boundary_timeout",
+		"等待国家与经济提交边界超时（阻塞：%s）。" % blocking_code)
+	timeout["blocking_code"] = blocking_code
+	return timeout
+
+
+func _boundary_diagnostics() -> Dictionary:
+	var out := {"day": _world_clock.day_index() if _world_clock != null else -1}
+	var generator = _runtime_host.generator() if _runtime_host != null else null
+	if generator == null:
+		return out
+	var economy = generator.get_economy_facade()
+	if economy != null:
+		var report: Dictionary = economy.report()
+		out["economy"] = {"busy": report.get("busy", null),
+			"epoch_active": report.get("epoch_active", null),
+			"committed": report.get("committed", null),
+			"last_committed_day": report.get("last_committed_day", null)}
+	var country = generator.get_country_facade()
+	var country_ext = country.world_ext() if country != null else null
+	if country_ext != null and country_ext.has_method("get_country_peer_protocol_status"):
+		out["country_peer"] = country_ext.get_country_peer_protocol_status()
+	if generator.has_method("get_runtime_thread_report"):
+		var thread: Dictionary = generator.get_runtime_thread_report()
+		for key in ["simulation_host_state", "day_stall_reason_mask", "fault_code",
+				"country_worker_plan_active", "country_worker_waiting_for_peer"]:
+			out[key] = thread.get(key, null)
+	var effect = generator.get_effect_facade()
+	var effect_ext = effect.world_ext() if effect != null and effect.has_method("world_ext") else null
+	if effect_ext != null and effect_ext.has_method("get_effect_native_adapter_report"):
+		out["effect_adapters"] = effect_ext.get_effect_native_adapter_report()
+	return out
 
 
 func _can_save() -> Dictionary:
@@ -417,7 +453,7 @@ func _register_providers() -> void:
 			"_can_modifier_provider", "_write_gameplay_modifier_provider",
 			"_restore_gameplay_modifier_provider"),
 		# 视野排在 PKCN 之后：恢复时要先有领土才能重解算可见性。
-		_make_provider(&"pkfg", 2, PackedStringArray(["pkfg"]),
+		_make_provider(&"pkfg", 3, PackedStringArray(["pkfg"]),
 			"_can_vision_provider", "_write_vision_provider", "_restore_vision_provider"),
 		# v4 also persists custom gameplay commits (including canal geography)
 		# with event_id=-1 idempotency evidence. The manifest
@@ -477,7 +513,7 @@ func _manifest_compatible(raw_manifest) -> bool:
 		var saved_schema := int(entry.get("schema_version", -1))
 		var schema_compatible: bool = saved_schema == provider.schema_version()
 		if provider_id == "pkfg":
-			schema_compatible = saved_schema in [1, 2]
+			schema_compatible = saved_schema in [1, 2, 3]
 		if provider_id == "environment":
 			schema_compatible = saved_schema in [1, 2]
 		elif provider_id == "pkcn":
@@ -868,7 +904,7 @@ func _write_vision_provider(context: Dictionary) -> Dictionary:
 				"玩家视野尚未解算，写档会清空探索进度。")
 	var payload := {
 		"schema": "PKFogOfWar",
-		"version": 2,
+		"version": 3,
 		"cells": map.cell_count(),
 		"explored": explored,
 	}
@@ -884,6 +920,10 @@ func _write_vision_provider(context: Dictionary) -> Dictionary:
 			"building_intel_type_offsets": PackedInt32Array([0]),
 			"building_intel_type_indices": PackedInt32Array(),
 			"building_intel_counts": PackedInt64Array(),
+			"building_intel_settlement_tiers": PackedByteArray(),
+			"building_intel_living_levels": PackedByteArray(),
+			"building_intel_rich_buckets": PackedByteArray(),
+			"building_intel_poor_buckets": PackedByteArray(),
 		}, true)
 	return {"ok": true, "sections": {"pkfg": payload}}
 
@@ -1051,7 +1091,7 @@ func _restore_vision_provider(sections: Dictionary, context: Dictionary) -> Dict
 		if not bool(intel_restore.get("ok", false)):
 			return _result(false, "pkfg_restore_failed",
 				String(intel_restore.get("reason", "建筑情报 CSR 无效。")))
-	# Commit exploration only after the complete PKFG v2 payload validated. A bad
+	# Commit exploration only after the complete PKFG payload validated. A bad
 	# building CSR therefore cannot partially mutate the current fog state.
 	map.explored_arr = explored
 	# 玩家 session provider 仍在 PKFG 之后。这里只提交单调探索权威；全部

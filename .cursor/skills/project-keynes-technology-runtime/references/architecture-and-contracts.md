@@ -196,20 +196,29 @@ All revealed technology names, effect summaries, route badges, prerequisite name
 evidence are Chinese presentation strings. UI code resolves those labels from public definitions and
 signal metadata; it never displays stable IDs or native authoring text as the normal player-facing label.
 
-Every policy control commits on release and there is no submit button: the weight dial renormalises
+Every policy control commits on release and there is no submit button: the four-row
+`ResearchAllocationBars` (replaced the old weight dial) drags relative to the press point, renormalises
 the other three domains and uses largest-remainder rounding to keep `sum == 10000`; the budget slider
 is expressed as a treasury share per day with "off" at the far-left stop. Queue drag/drop submits
 country commands and never mutates authoritative state locally.
 
 Daily refreshes do not rebuild focused geometry when only progress changes. Hidden overview geometry
 is not refreshed; relation rows rebuild only after selected or related technology states change.
+An unchanged research snapshot returns after one signature check; KPI cards update per-card on their
+own input signatures. Smoke test gate: research-day refresh p95 < 1 ms. The workspace never retains
+or mutates the view model's cached dictionary; `GameUIManager` invalidates the technology cache on
+every country commit even while the panel is closed. ETA / queue position are UI-side estimates from
+sampled `progress_total` per `last_research_day`; see `docs/cpp-dots-runtime/technology-tree-runtime.md`.
 
 Key files:
 
 - `Project/project-keynes/scripts/ui/technology_tree_layout.gd`
 - `Project/project-keynes/scripts/ui/components/technology_workspace.gd`
 - `Project/project-keynes/scripts/ui/components/technology_tree_view.gd`
-- `Project/project-keynes/scripts/ui/components/research_weight_dial.gd`
+- `Project/project-keynes/scripts/ui/components/research_allocation_bars.gd`
+- `Project/project-keynes/scripts/ui/components/technology_available_list.gd`
+- `Project/project-keynes/scripts/ui/components/technology_overview_view.gd`
+- `Project/project-keynes/scripts/ui/components/research_toast.gd`
 - `Project/project-keynes/scripts/ui/components/procurement_budget_slider.gd`
 - `Project/project-keynes/scripts/ui/components/technology_detail_card.gd`
 - `Project/project-keynes/scripts/ui/components/technology_queue_row.gd`

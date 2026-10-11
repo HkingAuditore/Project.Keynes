@@ -222,6 +222,7 @@ void NativeEconomyRuntime::update_settlements_for_changed_cells() {
         if (after == before) continue;
         _settlements.tier.write_scalar(cell, after, market_mutation_sink());
         _settlements.prosperity_generation.write_scalar(cell, _settlements.prosperity_generation[cell] + 1, market_mutation_sink());
+        mark_building_visual_cell(cell);
         if (after > before) ++_prosperity_promotions;
         else ++_prosperity_demotions;
         if (before < _settlement_named_tier &&

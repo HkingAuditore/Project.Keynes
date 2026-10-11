@@ -191,7 +191,14 @@ market 完成后，`household_market/income_subsidy` 子阶段按 cohort 汇总�
 
 ## UI 与验证
 
-税务页位于国家“经济”工作区内部，包含国库、所得税、交易税、营业税和关税分页；关税
+国家事务的“国民经济”页是 `EconomyDossier`（`scenes/ui/economy_dossier.tscn`）：章节
+索引为总览、阶层民生、产业建筑、投资风向、物资市场、贸易、城市、财政，顶部可切换全国或
+单个城市范围。前七章只读 `EconomyFacade.country_economy_overview`；“财政”章原样承载
+`EconomyWorkspace`（嵌入模式隐藏其页头和贸易分页，贸易统一在“贸易”章），因此下述税务
+编辑逻辑与命令路径不变。章节节点全部来自 .tscn，每日刷新只更新当前可见章节，章节节点、
+滚动位置与选中项在快进中保持；城市章可切换范围或关闭面板并在地图上定位该格。
+
+税务页位于“财政”章的经济工作区内部，包含国库、所得税、交易税、营业税和关税分页；关税
 页按物资合并展示同一物资的进口、出口两档税率。分页以卡片网格渲染：页签带税种图标与
 “已解锁 X/Y”提示，卡片内名称与税率输入相邻。CountryViewModel 的 `present_tax_policy`
 按国家已完成科技过滤条目：profile `technology_tags` 中的可执行 `tech.*` 要求全部满足

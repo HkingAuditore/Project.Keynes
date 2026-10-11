@@ -11,7 +11,8 @@ func _init() -> void:
 	_test_snapshot_and_bucket_signature()
 	_test_unknown_era_preserves_building_intel()
 	_test_empty_row_clears_last_seen()
-	_test_pkfg_v2_round_trip()
+	_test_social_bands()
+	_test_pkfg_v3_round_trip_and_v2_migration()
 	_test_v1_migration_and_atomic_rejection()
 	print("building visual intel: %d checks, %d failures" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
@@ -70,22 +71,80 @@ func _test_unknown_era_preserves_building_intel() -> void:
 		and int(cache.row_for_cell(2).counts[0]) == 18)
 
 
-func _test_pkfg_v2_round_trip() -> void:
+func _test_social_bands() -> void:
+	var cache: BuildingVisualIntelCache = IntelCacheScript.new()
+	cache.configure(8)
+	var base := _snapshot(PackedInt32Array([1, 4]), PackedInt32Array([0, 0]),
+		PackedInt32Array([2, 2]), PackedInt32Array([0, 1, 1]),
+		PackedInt32Array([5]), PackedInt64Array([3]))
+	_with_social(base, [3, 2], [3, 4], [0, 1], [1, 0])
+	var first := cache.apply_snapshot(base)
+	_expect("populated cell without buildings keeps a settlement row",
+		bool(first.get("ok", false)) and cache.has_cell(4)
+		and int(cache.row_for_cell(4).settlement_tier) == 2
+		and int(cache.row_for_cell(4).living_level) == 4)
+	var richer := base.duplicate(true)
+	_with_social(richer, [3, 2], [4, 4], [0, 1], [1, 0])
+	var changed := cache.apply_snapshot(richer)
+	_expect("living-standard change rebuilds only that cell",
+		(changed.changed_cells as PackedInt32Array) == PackedInt32Array([1]))
+	var empty := _snapshot(PackedInt32Array([4]), PackedInt32Array([0]),
+		PackedInt32Array([2]), PackedInt32Array([0, 0]),
+		PackedInt32Array(), PackedInt64Array())
+	_with_social(empty, [0], [255], [255], [255])
+	cache.apply_snapshot(empty)
+	_expect("depopulated empty cell clears its last-seen row", not cache.has_cell(4))
+	var bad := base.duplicate(true)
+	_with_social(bad, [3, 9], [3, 4], [0, 1], [1, 0])
+	_expect("out-of-range settlement tier is rejected",
+		not bool(cache.apply_snapshot(bad).get("ok", false)))
+
+
+func _test_pkfg_v3_round_trip_and_v2_migration() -> void:
 	var source: BuildingVisualIntelCache = IntelCacheScript.new()
 	source.configure(12)
-	source.apply_snapshot(_snapshot(PackedInt32Array([2, 9]), PackedInt32Array([0, 3]),
+	var snapshot := _snapshot(PackedInt32Array([2, 9]), PackedInt32Array([0, 3]),
 		PackedInt32Array([1, 8]), PackedInt32Array([0, 1, 3]),
-		PackedInt32Array([7, 1, 11]), PackedInt64Array([4, 2, 32])))
-	var payload := {"schema": "PKFogOfWar", "version": 2}
+		PackedInt32Array([7, 1, 11]), PackedInt64Array([4, 2, 32]))
+	_with_social(snapshot, [1, 6], [2, 5], [0, 3], [2, 0])
+	source.apply_snapshot(snapshot)
+	var payload := {"schema": "PKFogOfWar", "version": 3}
 	payload.merge(source.to_pkfg_fields(), true)
 	var restored: BuildingVisualIntelCache = IntelCacheScript.new()
 	restored.configure(12)
 	var result := restored.restore_pkfg(payload, 12)
-	_expect("PKFG v2 sparse CSR round-trips", bool(result.get("ok", false))
+	_expect("PKFG v3 sparse CSR round-trips", bool(result.get("ok", false))
 		and restored.known_cells() == PackedInt32Array([2, 9]))
-	_expect("round-trip preserves observed era and counts",
+	_expect("round-trip preserves observed era, counts and social bands",
 		int(restored.row_for_cell(9).observed_era_index) == 8
-		and (restored.row_for_cell(9).counts as PackedInt64Array) == PackedInt64Array([2, 32]))
+		and (restored.row_for_cell(9).counts as PackedInt64Array) == PackedInt64Array([2, 32])
+		and int(restored.row_for_cell(9).settlement_tier) == 6
+		and int(restored.row_for_cell(9).rich_bucket) == 3
+		and int(restored.row_for_cell(2).poor_bucket) == 2)
+	var v2 := payload.duplicate(true)
+	v2.version = 2
+	for key in ["building_intel_settlement_tiers", "building_intel_living_levels",
+			"building_intel_rich_buckets", "building_intel_poor_buckets"]:
+		v2.erase(key)
+	var migrated: BuildingVisualIntelCache = IntelCacheScript.new()
+	migrated.configure(12)
+	var v2_result := migrated.restore_pkfg(v2, 12)
+	_expect("PKFG v2 migrates with unknown social bands",
+		bool(v2_result.get("ok", false)) and migrated.known_cells() == PackedInt32Array([2, 9])
+		and int(migrated.row_for_cell(9).settlement_tier) == 255
+		and int(migrated.row_for_cell(9).living_level) == 255)
+	var truncated := payload.duplicate(true)
+	truncated.building_intel_rich_buckets = PackedByteArray([1])
+	_expect("truncated v3 social column is rejected",
+		not bool(migrated.restore_pkfg(truncated, 12).get("ok", false)))
+
+
+func _with_social(snapshot: Dictionary, tiers: Array, living: Array, rich: Array,
+		poor: Array) -> void:
+	snapshot.settlement_tiers = PackedByteArray(tiers)
+	snapshot.living_levels = PackedByteArray(living)
+	snapshot.rich_buckets = PackedByteArray(rich)
+	snapshot.poor_buckets = PackedByteArray(poor)
 
 
 func _test_v1_migration_and_atomic_rejection() -> void:

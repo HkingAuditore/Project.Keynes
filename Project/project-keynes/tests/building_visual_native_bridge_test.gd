@@ -1,6 +1,7 @@
 extends SceneTree
 
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
+const BuildingVisualLayerScript = preload("res://scripts/rendering/building_visual_layer.gd")
 
 var _checks := 0
 var _failures := 0
@@ -79,6 +80,17 @@ func _run() -> void:
 	_expect("country ownership and deepest catalog milestone compose at cold bridge",
 		(snapshot.country_slots as PackedInt32Array) == PackedInt32Array([0, 0, -1])
 		and (snapshot.era_indices as PackedInt32Array) == PackedInt32Array([10, 10, -1]))
+	var social_ok := true
+	for key in ["settlement_tiers", "living_levels", "rich_buckets", "poor_buckets"]:
+		var column := PackedByteArray(snapshot.get(key, PackedByteArray()))
+		social_ok = social_ok and column.size() == 3
+	_expect("snapshot carries aligned social band columns", social_ok)
+	if social_ok:
+		var tiers := PackedByteArray(snapshot.settlement_tiers)
+		var living := PackedByteArray(snapshot.living_levels)
+		_expect("social bands stay inside their published ranges",
+			tiers[0] <= 7 and tiers[2] == 0
+			and (living[0] <= 6 or living[0] == 255) and living[2] == 255)
 	_expect("visual queries never alter economy state hash",
 		int(ext.get_economy_state_hash()) == hash_before)
 	var dirty: Dictionary = ext.consume_building_visual_dirty_cells()
@@ -103,13 +115,24 @@ func _run() -> void:
 		"quality": 1, "instance_cap": 100,
 		"hex_size": 22.0, "cell_count": 3,
 	})
-	# 32 buildings sit at density 0.304 on the settlement ladder, which rounds to
-	# 7 compounds; the water cell contributes none.
-	_expect("C++ building chunk baker returns packed geometry",
+	var body_count := int(native_chunk.get("instance_count", 0))
+	var decal_count := int(native_chunk.get("decal_instance_count", 0))
+	var body_buffer := PackedFloat32Array(native_chunk.get("buffer", PackedFloat32Array()))
+	var decal_buffer := PackedFloat32Array(native_chunk.get("decal_buffer", PackedFloat32Array()))
+	_expect("C++ building chunk baker returns packed body and ground geometry",
 		bool(native_chunk.get("ok", false))
 		and String(native_chunk.get("path", "")) == "gdext_building_visual"
-		and int(native_chunk.get("instance_count", 0)) == 7
-		and PackedFloat32Array(native_chunk.get("buffer", PackedFloat32Array())).size() == 112)
+		and body_count > 0 and body_count <= 100
+		and body_buffer.size() == body_count * 16
+		and decal_count > 0 and decal_buffer.size() == decal_count * 16
+		and int(native_chunk.get("lot_count", 0)) > 0)
+	# custom.b carries cell / (cell_count - 1): cell 0 encodes 0.0, the water
+	# cell 1 would encode 0.5.
+	var only_land_cell := true
+	for i in body_count:
+		if body_buffer[i * 16 + 14] > 0.25:
+			only_land_cell = false
+	_expect("water cell contributes no buildings", only_land_cell)
 	var native_chunk_again: Dictionary = ext.bake_building_visual_chunk({
 		"cell_indices": PackedInt32Array([0, 1]),
 		"cell_pos_x": PackedFloat32Array([0.0, 22.0]),
@@ -125,7 +148,9 @@ func _run() -> void:
 	})
 	_expect("C++ chunk baker is deterministic",
 		PackedFloat32Array(native_chunk.buffer) ==
-		PackedFloat32Array(native_chunk_again.buffer))
+		PackedFloat32Array(native_chunk_again.buffer)
+		and PackedFloat32Array(native_chunk.decal_buffer) ==
+		PackedFloat32Array(native_chunk_again.decal_buffer))
 	var malformed: Dictionary = ext.bake_building_visual_chunk({
 		"cell_indices": PackedInt32Array([0, 1]),
 		"cell_pos_x": PackedFloat32Array([0.0, 22.0]),
@@ -156,15 +181,22 @@ func _run() -> void:
 		"quality": 0, "instance_cap": 100,
 		"hex_size": 22.0, "cell_count": 3,
 	})
-	# An int64-max count saturates the ladder, so the compound count is decided
-	# purely by the quality cap: NEAR_CAP[0] = 8.
-	_expect("C++ count bucketing saturates at int64 max",
+	# An int64-max count saturates settlement density; the planner is then bounded
+	# only by the hex and the quality-0 lot budget.
+	var huge_instances := int(huge_count.get("instance_count", 0))
+	var huge_buffer := PackedFloat32Array(huge_count.get("buffer", PackedFloat32Array()))
+	var huge_finite := true
+	for v in huge_buffer:
+		if is_nan(v) or is_inf(v):
+			huge_finite = false
+			break
+	_expect("C++ density saturates at int64 max with finite geometry",
 		bool(huge_count.get("ok", false))
-		and int(huge_count.get("instance_count", 0)) == 8
-		and PackedFloat32Array(huge_count.get("buffer", PackedFloat32Array())).size() == 128)
+		and huge_instances > 0 and huge_instances <= 100
+		and huge_buffer.size() == huge_instances * 16 and huge_finite)
 	# Worst-case numeric stress fixture: one 16x16 chunk where every land cell
-	# sits at the top of the density ladder, so each draws the full 24-compound
-	# budget. This is far past any plausible map (256 adjacent cells of 100k
+	# sits at saturated density, so the planned settlements overflow the chunk
+	# instance cap. This is far past any plausible map (256 adjacent cells of 100k
 	# buildings each); it exists to bound the bake, not to describe gameplay.
 	# Print the native timing without making the test hardware dependent; the
 	# runtime diagnostic owns the 1.5 ms performance gate.
@@ -215,10 +247,198 @@ func _run() -> void:
 		int(stress_chunk.get("instance_count", 0)),
 		int(stress_chunk.get("candidate_count", 0)),
 	])
-	_expect("C++ 16x16 stress bake keeps the full compound budget",
+	_expect("C++ 16x16 stress bake fills exactly the chunk instance cap",
 		bool(stress_chunk.get("ok", false))
 		and int(stress_chunk.get("instance_count", 0)) == 6144
-		and int(stress_chunk.get("candidate_count", 0)) == 49152)
+		and int(stress_chunk.get("candidate_count", 0)) > 6144
+		and PackedFloat32Array(stress_chunk.get("buffer", PackedFloat32Array())).size() == 6144 * 16)
+	_check_social_layout(ext, catalog)
+	_check_layout_cache(stress_knobs, type_to_archetype)
+
+
+## Housing follows the settlement tier, villas and shanties the rich and poor
+## buckets, and industry lots the scale-weighted family mix.
+func _check_social_layout(ext: Object, catalog: Dictionary) -> void:
+	var layer: BuildingVisualLayer = BuildingVisualLayerScript.new()
+	var audit := layer.configure_catalog(catalog)
+	_expect("visual family tables derive from the catalog", bool(audit.get("ok", false)))
+	var ids := catalog.building_type_ids as PackedStringArray
+	var textile := ids.find("textile_mill")
+	var paddy := ids.find("tenant_paddy")
+	var textile_family := layer.FAMILY_NAMES.find("textile")
+	var paddy_family := layer.FAMILY_NAMES.find("paddy")
+	var tables := {
+		"type_to_archetype": layer._type_to_archetype, "type_to_family": layer._type_to_family,
+		"type_to_scale": layer._type_to_scale, "type_to_grade": layer._type_to_grade,
+	}
+	var bake := func(types: PackedInt32Array, counts: PackedInt64Array,
+			social: PackedByteArray) -> Dictionary:
+		var knobs := {
+			"cell_indices": PackedInt32Array([0]),
+			"cell_pos_x": PackedFloat32Array([0.0]), "cell_pos_y": PackedFloat32Array([0.0]),
+			"type_offsets": PackedInt32Array([0, types.size()]),
+			"type_indices": types, "type_counts": counts,
+			"era_indices": PackedInt32Array([5]), "is_water": PackedByteArray([0]),
+			"settlement_tiers": PackedByteArray([social[0]]),
+			"living_levels": PackedByteArray([social[1]]),
+			"rich_buckets": PackedByteArray([social[2]]),
+			"poor_buckets": PackedByteArray([social[3]]),
+			"quality": 2, "instance_cap": 4096, "hex_size": 22.0, "cell_count": 3,
+		}
+		knobs.merge(tables)
+		return ext.bake_building_visual_chunk(knobs)
+	var mixed_types := PackedInt32Array([textile, paddy])
+	var hamlet: Dictionary = bake.call(mixed_types, PackedInt64Array([8, 8]),
+		PackedByteArray([2, 3, 0, 0]))
+	var city: Dictionary = bake.call(mixed_types, PackedInt64Array([8, 8]),
+		PackedByteArray([6, 3, 0, 0]))
+	_expect("a larger settlement tier draws more houses",
+		bool(hamlet.get("ok", false)) and bool(city.get("ok", false))
+		and int(hamlet.get("house_count", 0)) > 0
+		and int(city.get("house_count", 0)) > int(hamlet.get("house_count", 0)))
+	var plain: Dictionary = bake.call(mixed_types, PackedInt64Array([8, 8]),
+		PackedByteArray([5, 3, 0, 0]))
+	var unequal: Dictionary = bake.call(mixed_types, PackedInt64Array([8, 8]),
+		PackedByteArray([5, 3, 3, 3]))
+	_expect("rich and poor buckets add villas and shanties",
+		int(plain.get("villa_count", -1)) == 0 and int(plain.get("shanty_count", -1)) == 0
+		and int(unequal.get("villa_count", 0)) > 0 and int(unequal.get("shanty_count", 0)) > 0)
+	var mill_town: Dictionary = bake.call(mixed_types, PackedInt64Array([64, 4]),
+		PackedByteArray([4, 3, 0, 0]))
+	var rice_town: Dictionary = bake.call(mixed_types, PackedInt64Array([4, 64]),
+		PackedByteArray([4, 3, 0, 0]))
+	var mill_lots := PackedInt32Array(mill_town.get("family_lots", PackedInt32Array()))
+	var rice_lots := PackedInt32Array(rice_town.get("family_lots", PackedInt32Array()))
+	_expect("the dominant industry family takes the most lots",
+		mill_lots.size() == layer.FAMILY_NAMES.size() and rice_lots.size() == mill_lots.size()
+		and mill_lots[textile_family] > mill_lots[paddy_family]
+		and rice_lots[paddy_family] > rice_lots[textile_family])
+	var small_mill: Dictionary = bake.call(PackedInt32Array([textile]), PackedInt64Array([4]),
+		PackedByteArray([4, 3, 0, 0]))
+	var big_mill: Dictionary = bake.call(PackedInt32Array([textile]), PackedInt64Array([256]),
+		PackedByteArray([4, 3, 0, 0]))
+	_expect("more buildings of a family never draw fewer lots",
+		int(big_mill.get("lot_count", 0)) >= int(small_mill.get("lot_count", 0))
+		and int(big_mill.get("lot_count", 0)) > 0)
+	var homes_only: Dictionary = bake.call(PackedInt32Array(), PackedInt64Array(),
+		PackedByteArray([4, 3, 0, 0]))
+	_expect("a populated cell without buildings still draws its houses",
+		bool(homes_only.get("ok", false)) and int(homes_only.get("house_count", 0)) > 0
+		and int(homes_only.get("lot_count", -1)) == 0)
+	layer.free()
+
+
+## The per-cell cache must reproduce the chunk planner exactly, plan on its
+## worker, and replan only cells whose input changed. Timing is printed, not
+## asserted, so the test stays hardware independent.
+func _check_layout_cache(stress_knobs: Dictionary, type_to_archetype: PackedByteArray) -> void:
+	if not ClassDB.class_exists("NativeBuildingVisualCache"):
+		_expect("NativeBuildingVisualCache is registered", false)
+		return
+	var raw_x := PackedFloat32Array()
+	var raw_y := PackedFloat32Array()
+	for v in PackedFloat32Array(stress_knobs.cell_pos_x):
+		raw_x.append(v / 22.0)
+	for v in PackedFloat32Array(stress_knobs.cell_pos_y):
+		raw_y.append(v / 22.0)
+	var cache: Object = ClassDB.instantiate("NativeBuildingVisualCache")
+	var configured: Dictionary = cache.configure({
+		"cell_count": 256, "map_width": 16, "chunk_size": 16, "hex_size": 22.0,
+		"cell_pos_x": raw_x, "cell_pos_y": raw_y,
+		"type_to_archetype": type_to_archetype, "quality": 2,
+	})
+	_expect("layout cache configures one 16x16 chunk",
+		bool(configured.get("ok", false)) and int(configured.get("chunk_count", 0)) == 1)
+	var rows := {
+		"cell_indices": stress_knobs.cell_indices, "era_indices": stress_knobs.era_indices,
+		"is_water": stress_knobs.is_water, "type_offsets": stress_knobs.type_offsets,
+		"type_indices": stress_knobs.type_indices, "type_counts": stress_knobs.type_counts,
+	}
+	var submit_begin := Time.get_ticks_usec()
+	var submitted: Dictionary = cache.submit_cells(rows)
+	var submit_ms := float(Time.get_ticks_usec() - submit_begin) / 1000.0
+	var idle := bool(cache.wait_idle(10000))
+	var ready := PackedInt32Array(cache.take_ready_chunks())
+	var diag: Dictionary = cache.diagnostics()
+	_expect("worker plans all submitted cells and reports the chunk ready",
+		bool(submitted.get("ok", false)) and int(submitted.get("accepted", 0)) == 256
+		and idle and ready == PackedInt32Array([0])
+		and int(diag.get("planned_cells", 0)) == 256)
+
+	var unbounded := stress_knobs.duplicate()
+	unbounded["instance_cap"] = 1 << 20
+	var reference: Dictionary = (ClassDB.instantiate("DCWorldExt") as Object) \
+		.bake_building_visual_chunk(unbounded)
+	var assembled: Dictionary = cache.build_chunk(0, 1 << 20)
+	_expect("cached cells assemble to exactly the chunk planner output",
+		PackedFloat32Array(assembled.buffer) == PackedFloat32Array(reference.buffer)
+		and PackedFloat32Array(assembled.decal_buffer) == PackedFloat32Array(reference.decal_buffer))
+
+	var build_samples: Array[float] = []
+	var capped: Dictionary = {}
+	for _i in 30:
+		capped = cache.build_chunk(0, 6144)
+		build_samples.append(float(capped.get("elapsed_ms", -1.0)))
+	build_samples.sort()
+	_expect("over-cap assembly keeps exactly the cap by in-cell rank",
+		int(capped.get("instance_count", 0)) == 6144
+		and PackedFloat32Array(capped.buffer).size() == 6144 * 16)
+
+	cache.submit_cells(rows)
+	cache.wait_idle(10000)
+	var after_same: Dictionary = cache.diagnostics()
+	_expect("identical resubmission plans nothing",
+		int(after_same.get("planned_cells", 0)) == 256
+		and int(after_same.get("unchanged_cells", 0)) == 256)
+	cache.take_ready_chunks()
+	var one_counts := PackedInt64Array(stress_knobs.type_counts).duplicate()
+	one_counts[37] = 12
+	var one_rows := rows.duplicate()
+	one_rows["type_counts"] = one_counts
+	var one_submit_begin := Time.get_ticks_usec()
+	var one: Dictionary = cache.submit_cells(one_rows)
+	var one_submit_ms := float(Time.get_ticks_usec() - one_submit_begin) / 1000.0
+	cache.wait_idle(10000)
+	var after_one: Dictionary = cache.diagnostics()
+	_expect("one changed cell replans only that cell",
+		int(one.get("accepted", 0)) == 1
+		and int(after_one.get("planned_cells", 0)) == 257
+		and PackedInt32Array(cache.take_ready_chunks()) == PackedInt32Array([0]))
+	var living := PackedByteArray()
+	living.resize(256)
+	living.fill(255)
+	living[90] = 6
+	var social_rows := one_rows.duplicate()
+	social_rows["living_levels"] = living
+	var social_submit: Dictionary = cache.submit_cells(social_rows)
+	cache.wait_idle(10000)
+	_expect("a living-level band change replans only that cell",
+		int(social_submit.get("accepted", 0)) == 1
+		and int(cache.diagnostics().get("planned_cells", 0)) == 258)
+	var homes_rows := {
+		"cell_indices": PackedInt32Array([37]), "era_indices": PackedInt32Array([10]),
+		"is_water": PackedByteArray([0]), "type_offsets": PackedInt32Array([0, 0]),
+		"type_indices": PackedInt32Array(), "type_counts": PackedInt64Array(),
+		"settlement_tiers": PackedByteArray([4]),
+	}
+	var homes_submit: Dictionary = cache.submit_cells(homes_rows)
+	cache.wait_idle(10000)
+	var homes_rows_gone := homes_rows.duplicate()
+	homes_rows_gone["settlement_tiers"] = PackedByteArray([0])
+	var gone_submit: Dictionary = cache.submit_cells(homes_rows_gone)
+	cache.wait_idle(10000)
+	var gone_again: Dictionary = cache.submit_cells(homes_rows_gone)
+	_expect("a populated cell without buildings stays cached until its people leave",
+		int(homes_submit.get("accepted", 0)) == 1 and int(gone_submit.get("accepted", 0)) == 1
+		and int(gone_again.get("unchanged", 0)) == 1)
+	cache.take_ready_chunks()
+	print(("building visual cache: worker %.1f us/cell avg, %.1f us max, %.2f ms for 256 cells; "
+		+ "main thread submit(256)=%.4f ms submit(1 of 256)=%.4f ms "
+		+ "assemble(6144) median=%.4f ms max=%.4f ms") % [
+		float(diag.get("worker_plan_us_avg", -1.0)), float(diag.get("worker_plan_us_max", -1.0)),
+		float(diag.get("worker_plan_ms_total", -1.0)), submit_ms, one_submit_ms,
+		build_samples[build_samples.size() / 2], build_samples[-1]])
+	cache.shutdown()
 
 
 func _new_ext(catalog: Dictionary, cell_count: int) -> Object:

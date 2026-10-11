@@ -17,8 +17,12 @@ var _accent: Color = UITokens.ACCENT
 var _header_icon: IconBadge
 var _name: Label
 var _state_label: Label
-var _chips: BadgeRow
-var _gauge: RadialGauge
+var _summary: Label
+var _chips: TechnologyFactSheet
+var _gauge: TechnologyProgressBlock
+var _condition_title: Label
+var _conditions: InsightList
+var _effect_title: Label
 var _effects: InsightList
 var _body: VBoxContainer
 var _detail_block: VBoxContainer
@@ -44,8 +48,12 @@ func _ready() -> void:
 	_state_label = get_node_or_null("%StateLabel") as Label
 	_placeholder = get_node_or_null("%Placeholder") as Label
 	_detail_block = get_node_or_null("%DetailBlock") as VBoxContainer
-	_chips = get_node_or_null("%Chips") as BadgeRow
-	_gauge = get_node_or_null("%Gauge") as RadialGauge
+	_summary = get_node_or_null("%Summary") as Label
+	_chips = get_node_or_null("%Chips") as TechnologyFactSheet
+	_gauge = get_node_or_null("%Gauge") as TechnologyProgressBlock
+	_condition_title = get_node_or_null("%ConditionTitle") as Label
+	_conditions = get_node_or_null("%Conditions") as InsightList
+	_effect_title = get_node_or_null("%EffectTitle") as Label
 	_effects = get_node_or_null("%Effects") as InsightList
 	_prerequisite_title = get_node_or_null("%PrerequisiteTitle") as Label
 	_prerequisites = get_node_or_null("%Prerequisites") as VBoxContainer
@@ -60,6 +68,8 @@ func _ready() -> void:
 	if _body == null or _header_icon == null or _name == null \
 			or _state_label == null or _placeholder == null \
 			or _detail_block == null or _chips == null or _gauge == null \
+			or _summary == null or _conditions == null or _condition_title == null \
+			or _effect_title == null \
 			or _effects == null or _prerequisite_title == null \
 			or _prerequisites == null or _hard_successor_title == null \
 			or _hard_successors == null or _branch_successor_title == null \
@@ -67,7 +77,7 @@ func _ready() -> void:
 			or _applications == null or _action == null:
 		push_error("TechnologyDetailCard 必须通过 technology_detail_card.tscn 实例化。")
 		return
-	_header_icon.set_semantic(&"country.technology", UITokens.CLIMATE)
+	_header_icon.set_semantic(&"country.technology", UITokens.DOSSIER_UMBER)
 	_action.pressed.connect(_on_action_pressed)
 	show_empty()
 
@@ -78,12 +88,14 @@ func show_empty() -> void:
 	_index = -1
 	_state = 0
 	_submitted = false
-	_header_icon.set_semantic(&"country.technology", UITokens.ARCHIVE_INK_MUTED)
+	_header_icon.set_semantic(&"country.technology", UITokens.DOSSIER_INK_MUTED)
 	_name.text = "科技详情"
-	_state_label.text = ""
+	_state_label.text = "尚未选择"
+	_state_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
 	_placeholder.visible = true
 	_placeholder.text = "在可研究清单或科技树中选择一项科技，查看成本、效果与前置。"
 	_detail_block.visible = false
+	_action.visible = false
 
 
 func show_unknown() -> void:
@@ -92,12 +104,14 @@ func show_unknown() -> void:
 	_index = -1
 	_state = 0
 	_submitted = false
-	_header_icon.set_semantic(&"technology.state.unknown", UITokens.ARCHIVE_INK_MUTED)
+	_header_icon.set_semantic(&"technology.state.unknown", UITokens.DOSSIER_INK_MUTED)
 	_name.text = "未知科技"
 	_state_label.text = STATE_NAMES[0]
+	_state_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
 	_placeholder.visible = true
 	_placeholder.text = "这个节点在可研究之前不会显示名称、成本与效果。"
 	_detail_block.visible = false
+	_action.visible = false
 
 
 func show_milestone_locked(era_name: String, completed: int, required: int) -> void:
@@ -106,14 +120,15 @@ func show_milestone_locked(era_name: String, completed: int, required: int) -> v
 	_index = -1
 	_state = 0
 	_submitted = false
-	_header_icon.set_semantic(&"technology.milestone", UITokens.BRASS_HIGHLIGHT)
+	_header_icon.set_semantic(&"technology.milestone", UITokens.DOSSIER_BRASS)
 	_name.text = "时代里程碑"
 	_state_label.text = era_name
-	_state_label.add_theme_color_override("font_color", UITokens.BRASS_HIGHLIGHT)
+	_state_label.add_theme_color_override("font_color", UITokens.DOSSIER_BRASS)
 	_placeholder.visible = true
 	_placeholder.text = "完成本时代 %d / %d 项后可研究此关隘。可研究后显示名称与效果。" \
 		% [completed, maxi(1, required)]
 	_detail_block.visible = false
+	_action.visible = false
 
 
 func show_technology(index: int, definition: Dictionary, state: int, fraction: float,
@@ -138,47 +153,28 @@ func show_technology(index: int, definition: Dictionary, state: int, fraction: f
 	_state_label.text = _application_state_name(state) if is_application \
 		else STATE_NAMES[clampi(state, 0, STATE_NAMES.size() - 1)]
 	_state_label.add_theme_color_override("font_color", _state_colour(state))
-	var chips: Array = [{"text": era_name, "accent": UITokens.BRASS_HIGHLIGHT}]
-	if is_application:
-		chips.append({"text": "静态应用", "accent": UITokens.RESOURCE})
-		var chain_name := String(definition.get(
-			"industry_chain_display_name", ""))
-		if not chain_name.is_empty():
-			chips.append({"text": "产业链 · %s" % chain_name,
-				"accent": UITokens.BRASS_HIGHLIGHT})
-		var step := int(definition.get("progression_step", 0))
-		if step > 0:
-			chips.append({"text": "产业步骤 %d" % step, "accent": UITokens.CLIMATE})
-		for maturity_name in definition.get("maturity_display_names", PackedStringArray()):
-			chips.append({"text": String(maturity_name), "accent": UITokens.WARN})
-		for role in definition.get("progression_roles", PackedStringArray()):
-			chips.append({"text": _progression_role_name(String(role)),
-				"accent": UITokens.RESOURCE})
-	else:
-		chips.append({"text": "成本 %s" % UITokens.format_compact_number_cn(
-			float(definition.get("cost_points", 0)), 1), "accent": UITokens.CLIMATE})
-	if bool(definition.get("is_milestone", false)):
-		chips.append({"text": "时代里程碑", "accent": UITokens.WARN})
-	elif bool(definition.get("is_era_key", false)):
-		chips.append({"text": "时代关键", "accent": UITokens.RESOURCE})
-	var route_tags: PackedStringArray = definition.get("route_tags", PackedStringArray())
-	var route_names: PackedStringArray = definition.get(
-		"route_display_names", PackedStringArray())
-	for route_index in range(route_tags.size()):
-		var route_name := String(route_names[route_index]) \
-			if route_index < route_names.size() else String(route_tags[route_index])
-		chips.append({
-			"text": "条件 · %s" % route_name,
-			"accent": UITokens.RESOURCE,
-		})
-	_chips.set_badges(chips)
+	var summary := String(definition.get("effect_summary", "")).strip_edges()
+	_summary.text = summary
+	_chips.set_facts(_facts_for(definition, era_name, domain_name, is_application))
 	_gauge.visible = not is_application
 	if not is_application:
-		_gauge.set_data("研究进度", clampf(fraction, 0.0, 1.0),
-			_progress_caption(definition, fraction, state), accent)
-	var insight_items: Array = relations.get("condition_items", [])
-	insight_items.append_array(_effect_items(definition))
-	_effects.set_items(insight_items)
+		_gauge.set_progress(fraction, _progress_caption(definition, fraction, state),
+			accent, state)
+	var condition_items: Array = relations.get("condition_items", [])
+	_condition_title.text = "应用条件" if is_application else "研究条件"
+	_condition_title.visible = not condition_items.is_empty()
+	_conditions.visible = not condition_items.is_empty()
+	_conditions.set_items(condition_items)
+	var effect_items := _effect_items(definition)
+	# Without structured effects the bullet list is the summary split apart;
+	# showing both would print every effect twice.
+	var structured := not (definition.get("content_effects", []) as Array).is_empty() \
+		or not (definition.get("modifier_terms", []) as Array).is_empty()
+	_summary.visible = not summary.is_empty() and structured
+	_effect_title.text = "启用后效果" if is_application else "掌握后效果"
+	_effect_title.visible = not effect_items.is_empty()
+	_effects.visible = not effect_items.is_empty()
+	_effects.set_items(effect_items)
 	var required := int(definition.get("milestone_required_count", 0))
 	var prerequisites: Array = relations.get("prerequisites", [])
 	if is_application:
@@ -213,13 +209,16 @@ func update_progress(state: int, fraction: float, definition: Dictionary) -> voi
 	var previous_state := _state
 	_state = state
 	var is_application := _is_application(definition)
-	_state_label.text = _application_state_name(state) if is_application \
-		else STATE_NAMES[clampi(state, 0, STATE_NAMES.size() - 1)]
-	_state_label.add_theme_color_override("font_color", _state_colour(state))
+	if state != previous_state:
+		# Theme overrides re-run theme propagation and layout; daily ticks only
+		# move the gauge, so restyle on real state changes.
+		_state_label.text = _application_state_name(state) if is_application \
+			else STATE_NAMES[clampi(state, 0, STATE_NAMES.size() - 1)]
+		_state_label.add_theme_color_override("font_color", _state_colour(state))
 	_gauge.visible = not is_application
 	if not is_application:
-		_gauge.set_data("研究进度", clampf(fraction, 0.0, 1.0),
-			_progress_caption(definition, fraction, state), _accent)
+		_gauge.set_progress(fraction, _progress_caption(definition, fraction, state),
+			_accent, state)
 	# Clear optimistic "次日生效" once the authoritative state actually moves,
 	# or once the node is observably queued (state 3) / finished (state >= 4).
 	if _submitted and (state != previous_state or state == 3 or state >= 4):
@@ -230,9 +229,69 @@ func update_progress(state: int, fraction: float, definition: Dictionary) -> voi
 		_action.visible = false
 
 
+## Daily schedule line beside the progress bar (ETA or queue position).
+func set_schedule(text: String) -> void:
+	if _gauge != null:
+		_gauge.set_schedule(text)
+
+
+func schedule_text() -> String:
+	return _gauge.schedule_text() if _gauge != null else ""
+
+
+func _facts_for(definition: Dictionary, era_name: String, domain_name: String,
+		is_application: bool) -> Array:
+	var facts: Array = [
+		{"key": "时代", "value": era_name},
+		{"key": "领域", "value": domain_name},
+	]
+	if is_application:
+		facts.append({"key": "类型", "value": "静态应用 · 前置齐备后自动启用"})
+		var chain_name := String(definition.get("industry_chain_display_name", ""))
+		if not chain_name.is_empty():
+			facts.append({"key": "产业链", "value": chain_name})
+		var step := int(definition.get("progression_step", 0))
+		if step > 0:
+			facts.append({"key": "产业步骤", "value": "第 %d 步" % step})
+		var traits := PackedStringArray()
+		for maturity_name in definition.get("maturity_display_names", PackedStringArray()):
+			traits.append(String(maturity_name))
+		for role in definition.get("progression_roles", PackedStringArray()):
+			traits.append(_progression_role_name(String(role)))
+		if not traits.is_empty():
+			facts.append({"key": "定位", "value": "、".join(traits)})
+	else:
+		facts.append({"key": "研究成本", "value": "%s 科技值" % _cost_text(definition)})
+	if bool(definition.get("is_milestone", false)):
+		facts.append({"key": "类型", "value": "时代里程碑", "accent": UITokens.DOSSIER_OXBLOOD})
+	elif bool(definition.get("is_era_key", false)):
+		facts.append({"key": "类型", "value": "时代关键科技", "accent": UITokens.DOSSIER_OXBLOOD})
+	var route_tags: PackedStringArray = definition.get("route_tags", PackedStringArray())
+	var route_names: PackedStringArray = definition.get(
+		"route_display_names", PackedStringArray())
+	var routes := PackedStringArray()
+	for route_index in range(route_tags.size()):
+		routes.append(String(route_names[route_index]) \
+			if route_index < route_names.size() else String(route_tags[route_index]))
+	if not routes.is_empty():
+		facts.append({"key": "研究路线", "value": "、".join(routes)})
+	return facts
+
+
+func _cost_text(definition: Dictionary) -> String:
+	var cost_scaled := maxf(1.0, float(definition.get("cost_points_scaled",
+		float(definition.get("cost_points", 0)) * 1000.0)))
+	var points := cost_scaled / 1000.0
+	if points < 0.1:
+		return "<0.1"
+	return UITokens.format_compact_number_cn(points, 1)
+
+
 func _progress_caption(definition: Dictionary, fraction: float, state: int) -> String:
 	if state >= 5:
 		return "已掌握"
+	if state == 4:
+		return "研究完成 · 次日生效"
 	if state <= 1:
 		return "尚未开始"
 	# Derive from the scaled cost: cost_points is an integer point count and
@@ -244,8 +303,8 @@ func _progress_caption(definition: Dictionary, fraction: float, state: int) -> S
 		0.0, cost_scaled * (1.0 - clampf(fraction, 0.0, 1.0)))
 	var remaining := remaining_scaled / 1000.0
 	if remaining > 0.0 and remaining < 0.1:
-		return "还需 <0.1"
-	return "还需 %s" % UITokens.format_compact_number_cn(remaining, 1)
+		return "还需 <0.1 科技值"
+	return "还需 %s 科技值" % UITokens.format_compact_number_cn(remaining, 1)
 
 
 func _is_application(definition: Dictionary) -> bool:
@@ -336,8 +395,8 @@ func _fill_relation_rows(host: VBoxContainer, entries: Array) -> void:
 		var label := row.get_node("Label") as Label
 		label.text = String(data.get("name", "未知科技"))
 		label.add_theme_color_override("font_color",
-			UITokens.ARCHIVE_INK if TechnologyTreeView.presents_state(state) \
-			else UITokens.ARCHIVE_INK_MUTED)
+			UITokens.DOSSIER_INK_SOFT if TechnologyTreeView.presents_state(state) \
+			else UITokens.DOSSIER_INK_MUTED)
 		host.add_child(row)
 
 
@@ -404,12 +463,12 @@ func _on_action_pressed() -> void:
 func _state_colour(state: int) -> Color:
 	match state:
 		2:
-			return UITokens.BRASS_HIGHLIGHT
+			return UITokens.DOSSIER_OXBLOOD
 		3:
-			return UITokens.WATER.lerp(UITokens.ARCHIVE_INK, 0.30)
+			return UITokens.DOSSIER_SLATE
 		4:
-			return UITokens.WARN
+			return UITokens.DOSSIER_BRASS.lerp(UITokens.DOSSIER_INK, 0.25)
 		5:
-			return UITokens.GOOD
+			return UITokens.DOSSIER_VERDIGRIS
 		_:
-			return UITokens.ARCHIVE_INK_MUTED
+			return UITokens.DOSSIER_INK_MUTED

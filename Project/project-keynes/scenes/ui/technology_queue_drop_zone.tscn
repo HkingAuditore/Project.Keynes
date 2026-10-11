@@ -3,14 +3,14 @@
 [ext_resource type="Script" path="res://scripts/ui/components/technology_queue_drop_zone.gd" id="1_script"]
 
 [node name="TechnologyQueueDropZone" type="VBoxContainer"]
-custom_minimum_size = Vector2(0, 22)
+custom_minimum_size = Vector2(0, 24)
 mouse_filter = 0
-theme_override_constants/separation = 2
+theme_override_constants/separation = 0
 script = ExtResource("1_script")
 
 [node name="Hint" type="Label" parent="."]
 unique_name_in_owner = true
 layout_mode = 2
-text = "空闲 · 双击科技加入"
+text = "空闲 · 在可研究清单中点“加入”"
 autowrap_mode = 2
-theme_type_variation = &"PKMutedLabel"
+theme_type_variation = &"PKDossierCaption"

@@ -21,11 +21,13 @@ var _treasury := 0
 var _limit := 0
 var _dragging := false
 var _hovered := false
-var _label_font: Font = UITokens.font_with_weight(620)
+var _track_style := StyleBoxFlat.new()
 
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(0.0, 64.0)
+	_track_style.set_corner_radius_all(int(TRACK_HEIGHT * 0.5))
+	_track_style.anti_aliasing = true
+	custom_minimum_size = Vector2(0.0, 62.0)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	tooltip_text = "拖到最左端即关闭自动采购；松手立即生效"
 
@@ -97,42 +99,41 @@ func _grabber_x() -> float:
 
 
 func _draw() -> void:
-	var font := get_theme_default_font()
 	var enabled := is_enabled()
-	_draw_glyph(IconCatalog.good_semantic("technology_points"), Vector2(3.0, 14.0), 12,
-		UITokens.CLIMATE.lerp(UITokens.ARCHIVE_INK, 0.40))
-	draw_string(_label_font, Vector2(21.0, 14.0), "科技值采购",
-		HORIZONTAL_ALIGNMENT_LEFT, -1.0, UITokens.FONT_SMALL, UITokens.ARCHIVE_INK_MUTED)
-	var value_text := "关闭" if not enabled else "每日 %s" % \
+	var sans := UITokens.dossier_font("sans")
+	var strong := UITokens.dossier_font("sans_strong")
+	var serif := UITokens.dossier_font("serif")
+	_draw_glyph(IconCatalog.good_semantic("technology_points"), Vector2(2.0, 15.0), 12,
+		UITokens.DOSSIER_INK_SOFT)
+	draw_string(strong, Vector2(20.0, 15.0), "国库采购科技值",
+		HORIZONTAL_ALIGNMENT_LEFT, -1.0, 13, UITokens.DOSSIER_INK)
+	var value_text := "已关闭" if not enabled else "每日 %s" % \
 		UITokens.format_compact_number_cn(float(_limit) / CASH_SCALE, 2)
-	var value_extent := _label_font.get_string_size(
-		value_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, UITokens.FONT_SMALL)
-	draw_string(_label_font, Vector2(size.x - value_extent.x - 1.0, 14.0), value_text,
-		HORIZONTAL_ALIGNMENT_LEFT, -1.0, UITokens.FONT_SMALL,
-		UITokens.BRASS_HIGHLIGHT if enabled else UITokens.ARCHIVE_INK_MUTED)
+	var value_extent := serif.get_string_size(
+		value_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 14)
+	draw_string(serif, Vector2(size.x - value_extent.x - 1.0, 16.0), value_text,
+		HORIZONTAL_ALIGNMENT_LEFT, -1.0, 14,
+		UITokens.DOSSIER_OXBLOOD if enabled else UITokens.DOSSIER_INK_MUTED)
 	var track := Rect2(GRABBER_RADIUS, TRACK_TOP, maxf(1.0, size.x - GRABBER_RADIUS * 2.0),
 		TRACK_HEIGHT)
-	draw_rect(track, Color(0.024, 0.021, 0.018, 0.94), true)
-	draw_rect(track, Color(UITokens.PANEL_BORDER_SOFT.r, UITokens.PANEL_BORDER_SOFT.g,
-		UITokens.PANEL_BORDER_SOFT.b, 0.80), false, 1.0)
+	_track_style.bg_color = UITokens.DOSSIER_TRACK
+	draw_style_box(_track_style, track)
 	for tick in TICKS:
 		var tick_x := track.position.x + track.size.x * float(tick)
-		draw_line(Vector2(tick_x, track.position.y - 3.0),
-			Vector2(tick_x, track.position.y - 1.0),
-			Color(UITokens.PANEL_BORDER.r, UITokens.PANEL_BORDER.g,
-				UITokens.PANEL_BORDER.b, 0.66), 1.0, true)
+		draw_line(Vector2(tick_x, track.end.y + 2.0), Vector2(tick_x, track.end.y + 5.0),
+			UITokens.DOSSIER_RULE, 1.0)
 	if enabled:
-		draw_rect(Rect2(track.position, Vector2(_grabber_x() - track.position.x,
-			track.size.y)), UITokens.ACCENT.lerp(UITokens.BRASS_HIGHLIGHT, 0.34), true)
+		_track_style.bg_color = UITokens.DOSSIER_BRASS.lerp(UITokens.DOSSIER_OXBLOOD, 0.35)
+		draw_style_box(_track_style, Rect2(track.position,
+			Vector2(maxf(TRACK_HEIGHT, _grabber_x() - track.position.x), track.size.y)))
 	var grabber := Vector2(_grabber_x(), TRACK_TOP + TRACK_HEIGHT * 0.5)
-	var radius := GRABBER_RADIUS + (1.4 if _dragging or _hovered else 0.0)
-	draw_circle(grabber + Vector2(0.0, 1.0), radius + 1.2, Color(0.0, 0.0, 0.0, 0.46))
-	draw_circle(grabber, radius, UITokens.WALNUT_SOFT if not enabled \
-		else UITokens.BRASS_HIGHLIGHT.lerp(UITokens.WALNUT, 0.28))
-	draw_arc(grabber, radius - 1.0, 0.0, TAU, 18,
-		Color(1.0, 0.93, 0.72, 0.66 if _dragging or _hovered else 0.34), 1.1, true)
-	draw_string(font, Vector2(1.0, 58.0), _preview_text(),
-		HORIZONTAL_ALIGNMENT_LEFT, size.x - 2.0, UITokens.FONT_SMALL, UITokens.ARCHIVE_INK_MUTED)
+	var radius := GRABBER_RADIUS + (1.0 if _dragging or _hovered else 0.0)
+	draw_circle(grabber, radius + 1.0, Color(UITokens.DOSSIER_INK, 0.35))
+	draw_circle(grabber, radius, UITokens.DOSSIER_PAPER)
+	draw_circle(grabber, radius - 2.5, UITokens.DOSSIER_OXBLOOD if enabled \
+		else UITokens.DOSSIER_UMBER)
+	draw_string(sans, Vector2(1.0, 56.0), _preview_text(),
+		HORIZONTAL_ALIGNMENT_LEFT, size.x - 2.0, 11, UITokens.DOSSIER_INK_MUTED)
 
 
 func _preview_text() -> String:

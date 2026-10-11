@@ -1,10 +1,11 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/components/country_panel.gd" id="1_script"]
 [ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
 [ext_resource type="PackedScene" path="res://scenes/ui/technology_workspace.tscn" id="3_technology"]
-[ext_resource type="PackedScene" path="res://scenes/ui/economy_workspace.tscn" id="4_economy"]
+[ext_resource type="PackedScene" path="res://scenes/ui/economy_dossier.tscn" id="4_economy"]
 [ext_resource type="PackedScene" path="res://scenes/ui/ideology_workspace.tscn" id="5_ideology"]
+[ext_resource type="Texture2D" path="res://assets/ui/dossier_shell/hinge.png" id="6_hinge"]
 
 [node name="CountryPanel" type="Control"]
 visible = false
@@ -85,7 +86,7 @@ vertical_alignment = 1
 theme_type_variation = &"PKCountryRailMuted"
 
 [node name="Technology" type="Button" parent="Center/Dialog/Main/NavRail/NavColumn"]
-custom_minimum_size = Vector2(0, 58)
+custom_minimum_size = Vector2(0, 52)
 layout_mode = 2
 toggle_mode = true
 theme_type_variation = &"PKCountryNavButton"
@@ -94,12 +95,14 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_left = 28.0
+offset_right = -18.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 theme_override_constants/separation = 10
 [node name="Icon" type="TextureRect" parent="Center/Dialog/Main/NavRail/NavColumn/Technology/Row"]
-custom_minimum_size = Vector2(28, 28)
+custom_minimum_size = Vector2(24, 24)
 layout_mode = 2
 size_flags_vertical = 4
 mouse_filter = 2
@@ -113,7 +116,7 @@ vertical_alignment = 1
 theme_type_variation = &"PKCountryRailMuted"
 
 [node name="Ideology" type="Button" parent="Center/Dialog/Main/NavRail/NavColumn"]
-custom_minimum_size = Vector2(0, 58)
+custom_minimum_size = Vector2(0, 52)
 layout_mode = 2
 toggle_mode = true
 theme_type_variation = &"PKCountryNavButton"
@@ -122,12 +125,14 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_left = 28.0
+offset_right = -18.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 theme_override_constants/separation = 10
 [node name="Icon" type="TextureRect" parent="Center/Dialog/Main/NavRail/NavColumn/Ideology/Row"]
-custom_minimum_size = Vector2(28, 28)
+custom_minimum_size = Vector2(24, 24)
 layout_mode = 2
 size_flags_vertical = 4
 mouse_filter = 2
@@ -141,7 +146,7 @@ vertical_alignment = 1
 theme_type_variation = &"PKCountryRailMuted"
 
 [node name="Economy" type="Button" parent="Center/Dialog/Main/NavRail/NavColumn"]
-custom_minimum_size = Vector2(0, 58)
+custom_minimum_size = Vector2(0, 52)
 layout_mode = 2
 toggle_mode = true
 theme_type_variation = &"PKCountryNavButton"
@@ -150,12 +155,14 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_left = 28.0
+offset_right = -18.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 theme_override_constants/separation = 10
 [node name="Icon" type="TextureRect" parent="Center/Dialog/Main/NavRail/NavColumn/Economy/Row"]
-custom_minimum_size = Vector2(28, 28)
+custom_minimum_size = Vector2(24, 24)
 layout_mode = 2
 size_flags_vertical = 4
 mouse_filter = 2
@@ -169,7 +176,7 @@ vertical_alignment = 1
 theme_type_variation = &"PKCountryRailMuted"
 
 [node name="Military" type="Button" parent="Center/Dialog/Main/NavRail/NavColumn"]
-custom_minimum_size = Vector2(0, 58)
+custom_minimum_size = Vector2(0, 52)
 layout_mode = 2
 toggle_mode = true
 theme_type_variation = &"PKCountryNavButton"
@@ -178,12 +185,14 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_left = 28.0
+offset_right = -18.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 theme_override_constants/separation = 10
 [node name="Icon" type="TextureRect" parent="Center/Dialog/Main/NavRail/NavColumn/Military/Row"]
-custom_minimum_size = Vector2(28, 28)
+custom_minimum_size = Vector2(24, 24)
 layout_mode = 2
 size_flags_vertical = 4
 mouse_filter = 2
@@ -197,7 +206,7 @@ vertical_alignment = 1
 theme_type_variation = &"PKCountryRailMuted"
 
 [node name="Diplomacy" type="Button" parent="Center/Dialog/Main/NavRail/NavColumn"]
-custom_minimum_size = Vector2(0, 58)
+custom_minimum_size = Vector2(0, 52)
 layout_mode = 2
 toggle_mode = true
 theme_type_variation = &"PKCountryNavButton"
@@ -206,12 +215,14 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_left = 28.0
+offset_right = -18.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 theme_override_constants/separation = 10
 [node name="Icon" type="TextureRect" parent="Center/Dialog/Main/NavRail/NavColumn/Diplomacy/Row"]
-custom_minimum_size = Vector2(28, 28)
+custom_minimum_size = Vector2(24, 24)
 layout_mode = 2
 size_flags_vertical = 4
 mouse_filter = 2
@@ -243,7 +254,7 @@ theme_type_variation = &"PKCountryPage"
 unique_name_in_owner = true
 layout_mode = 2
 clip_contents = true
-theme_override_constants/separation = 10
+theme_override_constants/separation = 8
 
 [node name="MobileNav" type="ScrollContainer" parent="Center/Dialog/Main/PageSurface/PageArea"]
 unique_name_in_owner = true
@@ -287,7 +298,7 @@ toggle_mode = true
 theme_type_variation = &"PKChapterTab"
 
 [node name="Header" type="PanelContainer" parent="Center/Dialog/Main/PageSurface/PageArea"]
-custom_minimum_size = Vector2(0, 72)
+custom_minimum_size = Vector2(0, 60)
 layout_mode = 2
 theme_type_variation = &"PKCountryHeader"
 [node name="HeaderRow" type="HBoxContainer" parent="Center/Dialog/Main/PageSurface/PageArea/Header"]
@@ -355,7 +366,7 @@ size_flags_vertical = 3
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-[node name="EconomyWorkspace" parent="Center/Dialog/Main/PageSurface/PageArea/SectionHost" instance=ExtResource("4_economy")]
+[node name="EconomyDossier" parent="Center/Dialog/Main/PageSurface/PageArea/SectionHost" instance=ExtResource("4_economy")]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
@@ -363,3 +374,35 @@ layout_mode = 2
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
+
+[node name="Hinges" type="Control" parent="Center/Dialog"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+
+[node name="HingeTop" type="TextureRect" parent="Center/Dialog/Hinges"]
+layout_mode = 0
+offset_right = 50.0
+offset_bottom = 34.0
+mouse_filter = 2
+texture = ExtResource("6_hinge")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="HingeMiddle" type="TextureRect" parent="Center/Dialog/Hinges"]
+layout_mode = 0
+offset_right = 50.0
+offset_bottom = 34.0
+mouse_filter = 2
+texture = ExtResource("6_hinge")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="HingeBottom" type="TextureRect" parent="Center/Dialog/Hinges"]
+layout_mode = 0
+offset_right = 50.0
+offset_bottom = 34.0
+mouse_filter = 2
+texture = ExtResource("6_hinge")
+expand_mode = 1
+stretch_mode = 5

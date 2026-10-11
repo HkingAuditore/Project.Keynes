@@ -1,0 +1,166 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/strata_page.gd" id="1_script"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_ledger_table.gd" id="2_ledger"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_radar_chart.gd" id="3_radar"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_bar_list.gd" id="4_bars"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_kpi_card.gd" id="5_kpi"]
+
+[node name="StrataPage" type="VBoxContainer"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 14
+script = ExtResource("1_script")
+chapter_id = "strata"
+
+[node name="Body" type="GridContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 24
+theme_override_constants/v_separation = 18
+columns = 2
+
+[node name="ListColumn" type="VBoxContainer" parent="Body"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+theme_override_constants/separation = 8
+
+[node name="ListKicker" type="Label" parent="Body/ListColumn"]
+layout_mode = 2
+text = "八个展示阶层 · 点选查看详情"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="StrataTable" type="Control" parent="Body/ListColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("2_ledger")
+
+[node name="ListNote" type="Label" parent="Body/ListColumn"]
+layout_mode = 2
+text = "展示阶层由职业归并而来，仅供阅读，不改变理念与阶级支持。"
+autowrap_mode = 3
+theme_type_variation = &"PKDossierCaption"
+
+[node name="Detail" type="PanelContainer" parent="Body"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+theme_type_variation = &"PKDossierAside"
+
+[node name="DetailBox" type="VBoxContainer" parent="Body/Detail"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="DetailHeader" type="HBoxContainer" parent="Body/Detail/DetailBox"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="DetailTitle" type="Label" parent="Body/Detail/DetailBox/DetailHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierHeading"
+
+[node name="DetailMeta" type="Label" parent="Body/Detail/DetailBox/DetailHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 8
+horizontal_alignment = 2
+text_overrun_behavior = 3
+theme_type_variation = &"PKDossierCaption"
+
+[node name="TopRow" type="HBoxContainer" parent="Body/Detail/DetailBox"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Radar" type="Control" parent="Body/Detail/DetailBox/TopRow"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("3_radar")
+
+[node name="TierColumn" type="VBoxContainer" parent="Body/Detail/DetailBox/TopRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="TierKicker" type="Label" parent="Body/Detail/DetailBox/TopRow/TierColumn"]
+layout_mode = 2
+text = "分档满足率 · 竖线为全国"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="TierList" type="Control" parent="Body/Detail/DetailBox/TopRow/TierColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("4_bars")
+
+[node name="TrendRow" type="HBoxContainer" parent="Body/Detail/DetailBox/TopRow/TierColumn"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="SatisfactionTrend" type="Control" parent="Body/Detail/DetailBox/TopRow/TierColumn/TrendRow"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("5_kpi")
+
+[node name="IncomeTrend" type="Control" parent="Body/Detail/DetailBox/TopRow/TierColumn/TrendRow"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("5_kpi")
+
+[node name="LowerRow" type="GridContainer" parent="Body/Detail/DetailBox"]
+layout_mode = 2
+theme_override_constants/h_separation = 18
+theme_override_constants/v_separation = 10
+columns = 2
+
+[node name="NeedsColumn" type="VBoxContainer" parent="Body/Detail/DetailBox/LowerRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="NeedsKicker" type="Label" parent="Body/Detail/DetailBox/LowerRow/NeedsColumn"]
+layout_mode = 2
+text = "最常短缺的需求"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="NeedsList" type="Control" parent="Body/Detail/DetailBox/LowerRow/NeedsColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("4_bars")
+
+[node name="NeedsEmpty" type="Label" parent="Body/Detail/DetailBox/LowerRow/NeedsColumn"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+
+[node name="ProfessionColumn" type="VBoxContainer" parent="Body/Detail/DetailBox/LowerRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="ProfessionKicker" type="Label" parent="Body/Detail/DetailBox/LowerRow/ProfessionColumn"]
+layout_mode = 2
+text = "职业构成"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="ProfessionList" type="Control" parent="Body/Detail/DetailBox/LowerRow/ProfessionColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("4_bars")
+
+[node name="CitiesKicker" type="Label" parent="Body/Detail/DetailBox"]
+layout_mode = 2
+text = "在各城市的分布 · 点击切换范围"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="CitiesList" type="Control" parent="Body/Detail/DetailBox"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("4_bars")
+
+[node name="CitiesEmpty" type="Label" parent="Body/Detail/DetailBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"

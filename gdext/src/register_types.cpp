@@ -6,6 +6,7 @@
 #include <godot_cpp/godot.hpp>
 
 #include "world_ext.h"
+#include "building_visual_cache.h"
 #include "knobs_struct.h"
 #include "sus_scheduler_ext.h"
 #include "environment_runtime.h"
@@ -30,6 +31,7 @@ void initialize_dots_ext_module(ModuleInitializationLevel p_level) {
     // dirty masks and snapshot versions. Hot pipelines bind to this in later
     // tasks while GDScript remains the high-level scheduler.
     ClassDB::register_class<pk::EnvironmentRuntime>();
+    ClassDB::register_class<pk::NativeBuildingVisualCache>();
 }
 
 void uninitialize_dots_ext_module(ModuleInitializationLevel p_level) {

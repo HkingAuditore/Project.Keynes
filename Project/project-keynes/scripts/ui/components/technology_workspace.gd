@@ -14,6 +14,12 @@ const DevelopmentAchievementCatalogScript = preload(
 signal policy_submitted()
 
 const TechnologyQueueRowScene := preload("res://scenes/ui/technology_queue_row.tscn")
+const TechnologyObjectiveRowScene := preload("res://scenes/ui/technology_objective_row.tscn")
+const KPI_IDS := ["Era", "Stock", "Output", "Queue", "Treasury"]
+const COMPACT_HIDDEN_KPIS := ["Output", "Treasury"]
+const QUEUE_CAPACITY := 8
+const HISTORY_DAYS := 30
+const MODE_IDS := ["available", "focus", "overview"]
 
 const CASH_SCALE := 10000.0
 const POINT_SCALE := 1000.0
@@ -23,7 +29,10 @@ const COMPACT_POLICY_WIDTH := 300.0
 const COMPACT_DETAIL_WIDTH := 320.0
 const COMPACT_RAIL_WIDTH := 42.0
 const INTERNAL_COMPACT_WIDTH := 1120.0
-const LIVE_REFRESH_INTERVAL_MSEC := 33
+# Below this workspace height the KPI band collapses to one line so the map and
+# lists keep most of the page.
+const DENSE_KPI_HEIGHT := 480.0
+const MODE_NAV_WIDTH := 300.0
 const DOMAIN_COUNT := 4
 const MODE_AVAILABLE := 0
 const MODE_FOCUS := 1
@@ -57,7 +66,18 @@ var _compact_requested := false
 var _policy_open := true
 var _detail_open := true
 
-var _status_chips: Dictionary = {}
+var _kpi_cards: Dictionary = {}
+var _kpi_signatures: Dictionary = {}
+var _era_label_key := 0
+var _current_era_text := ""
+var _mode_nav: DossierChapterNav
+var _era_plate: Control
+var _detail_header: Control
+# Per research-day samples feeding the KPI sparklines and ETA estimates.
+var _history: Array = []
+var _queue_order: Dictionary = {}
+var _queue_eta: Dictionary = {}
+var _schedule_inputs: Dictionary = {}
 var _policy_panel: PanelContainer
 var _dial: Control
 var _budget: Control
@@ -71,9 +91,6 @@ var _detail_rail: Button
 var _policy_close: Button
 var _detail_close: Button
 var _main: Control
-var _available_mode: Button
-var _focus_mode: Button
-var _overview_mode: Button
 var _prev_era: Button
 var _next_era: Button
 var _era_label: Label
@@ -83,10 +100,9 @@ var _queue_headers: Array = []
 var _queue_rows: Array = []
 var _development_rows: Array = []
 var _development_signature := ""
-var _pending_refresh_model: Dictionary = {}
-var _refresh_dirty := false
-var _last_render_msec := 0
-var _has_rendered_model := false
+var _research_signature := 0
+var _refresh_count := 0
+var _current_day := -1
 # Host-accepted enqueue that the worker snapshot has not reflected yet. Keeps
 # the left-hand queue honest while Country peers / next-day commit catch up.
 # Values are {domain, request_id, technology_id}; request_id ties receipts.
@@ -104,7 +120,7 @@ func _ready() -> void:
 	set_process(false)
 	var required_paths := {
 		"policy_panel": "Root/Main/PolicyPanel",
-		"dial": "Root/Main/PolicyPanel/Scroll/Body/Dial",
+		"dial": "Root/Main/PolicyPanel/Scroll/Body/Allocation",
 		"budget": "Root/Main/PolicyPanel/Scroll/Body/Budget",
 		"available": "Root/Main/Available",
 		"tree": "Root/Main/Tree",
@@ -127,23 +143,23 @@ func _ready() -> void:
 	_detail_close = get_node_or_null("Root/Main/DetailHost/Body/Header/Close") as Button
 	_detail = get_node_or_null(required_paths.detail) as Control
 	_main = get_node_or_null("Root/Main") as Control
-	_available_mode = get_node_or_null("Root/Toolbar/Row/AvailableMode") as Button
-	_focus_mode = get_node_or_null("Root/Toolbar/Row/FocusMode") as Button
-	_overview_mode = get_node_or_null("Root/Toolbar/Row/OverviewMode") as Button
+	_mode_nav = get_node_or_null("Root/Toolbar/Row/ModeNav") as DossierChapterNav
+	_era_plate = get_node_or_null("Root/Toolbar/Row/EraPlate") as Control
 	_prev_era = get_node_or_null("Root/Toolbar/Row/EraPlate/EraRow/PrevEra") as Button
 	_next_era = get_node_or_null("Root/Toolbar/Row/EraPlate/EraRow/NextEra") as Button
 	_era_label = get_node_or_null("Root/Toolbar/Row/EraPlate/EraRow/EraLabel") as Label
 	_search = get_node_or_null("Root/Toolbar/Row/Search") as LineEdit
+	_detail_header = get_node_or_null("Root/Main/DetailHost/Body/Header") as Control
 	if _policy_panel == null or _dial == null or _budget == null \
 			or _available == null or _tree == null or _overview == null or _detail == null \
-			or _detail_host == null or _main == null or _available_mode == null \
-			or _focus_mode == null or _overview_mode == null or _prev_era == null \
+			or _detail_host == null or _main == null or _mode_nav == null \
+			or _era_plate == null or _prev_era == null \
 			or _next_era == null or _era_label == null or _search == null:
 		var missing := PackedStringArray()
 		for key in required_paths:
 			if get_node_or_null(required_paths[key]) == null:
 				missing.append(String(required_paths[key]))
-		for extra in ["Root/Toolbar/Row/AvailableMode",
+		for extra in ["Root/Toolbar/Row/ModeNav",
 				"Root/Toolbar/Row/EraPlate/EraRow/PrevEra",
 				"Root/Toolbar/Row/EraPlate/EraRow/NextEra",
 				"Root/Toolbar/Row/EraPlate/EraRow/EraLabel",
@@ -153,22 +169,26 @@ func _ready() -> void:
 		push_error("TechnologyWorkspace 必须通过 technology_workspace.tscn 实例化；缺失节点：%s" \
 			% ", ".join(missing))
 		return
-	var status_defs := [
-		{"id": "era", "node": "Era", "icon": &"technology.milestone", "accent": UITokens.BRASS_HIGHLIGHT},
-		{"id": "points", "node": "Points", "icon": IconCatalog.good_semantic("technology_points"), "accent": UITokens.CLIMATE},
-		{"id": "treasury", "node": "Treasury", "icon": &"metric.treasury", "accent": UITokens.RESOURCE},
-		{"id": "queued", "node": "Queued", "icon": &"technology.state.queued", "accent": UITokens.WATER},
-		{"id": "completed", "node": "Completed", "icon": &"technology.state.completed", "accent": UITokens.GOOD},
-		{"id": "purchased", "node": "Purchased", "icon": &"metric.technology", "accent": UITokens.ACCENT},
-	]
-	for item in status_defs:
-		var chip := get_node("Root/StatusStrip/Row/%s" % String(item.node)) as HBoxContainer
-		var icon := chip.get_node("Icon") as IconBadge
-		var value := chip.get_node("Value") as Label
-		icon.set_semantic(item.icon, item.accent)
-		value.add_theme_color_override("font_color", (item.accent as Color).lerp(UITokens.ARCHIVE_INK, 0.60))
-		_status_chips[String(item.id)] = chip
-		_status_chips["%s_value" % String(item.id)] = value
+	for key in KPI_IDS:
+		var card := get_node_or_null("Root/KpiBand/Row/%s" % String(key)) as DossierKpiCard
+		if card != null:
+			_kpi_cards[String(key)] = card
+	var last_card := _kpi_cards.get(KPI_IDS[KPI_IDS.size() - 1]) as DossierKpiCard
+	if last_card != null:
+		last_card.show_divider = false
+	# DossierChapterNav's _init defaults (fill width) override scene values, and
+	# a fill-width nav would resize whenever the era stepper toggles.
+	_mode_nav.custom_minimum_size = Vector2(MODE_NAV_WIDTH, DossierChapterNav.HEIGHT)
+	_mode_nav.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_mode_nav.set_chapters([
+		{"id": "available", "label": "可研究", "icon": &"technology.state.available",
+			"question": "现在能研究什么、正在研究什么"},
+		{"id": "focus", "label": "科技树", "icon": &"country.technology",
+			"question": "前置、后继与研究路线"},
+		{"id": "overview", "label": "总览", "icon": &"technology.milestone",
+			"question": "各领域在各时代的掌握程度"},
+	], "available")
+	_mode_nav.chapter_selected.connect(_on_mode_chapter_selected)
 	for domain in range(DOMAIN_COUNT):
 		var header := get_node("Root/Main/PolicyPanel/Scroll/Body/Domain%d" % domain) as HBoxContainer
 		var zone := get_node("Root/Main/PolicyPanel/Scroll/Body/Zone%d" % domain)
@@ -183,15 +203,14 @@ func _ready() -> void:
 	_available.technology_selected.connect(_on_available_selected)
 	_available.technology_activated.connect(_on_tree_activated)
 	_available.show_in_tree_requested.connect(_focus_technology)
+	_available.enqueue_requested.connect(_enqueue)
+	_available.remove_requested.connect(_remove_from_queue)
 	_tree.technology_selected.connect(_on_tree_selected)
 	_tree.technology_activated.connect(_on_tree_activated)
 	_tree.portal_requested.connect(_focus_technology)
 	_overview.cell_activated.connect(_on_overview_cell_activated)
 	_detail.enqueue_requested.connect(_enqueue)
 	_detail.remove_requested.connect(_remove_from_queue)
-	_available_mode.pressed.connect(func() -> void: _set_mode(MODE_AVAILABLE))
-	_focus_mode.pressed.connect(func() -> void: _set_mode(MODE_FOCUS))
-	_overview_mode.pressed.connect(func() -> void: _set_mode(MODE_OVERVIEW))
 	_prev_era.pressed.connect(func() -> void: _shift_era(-1))
 	_next_era.pressed.connect(func() -> void: _shift_era(1))
 	_search.text_submitted.connect(_on_search_submitted)
@@ -214,9 +233,6 @@ func _ready() -> void:
 func set_model(model: Dictionary) -> void:
 	if _tree == null:
 		_ready()
-	_pending_refresh_model.clear()
-	_refresh_dirty = false
-	set_process(false)
 	if _definitions.is_empty():
 		_definitions = model.get("technology_definitions", [])
 		_research_definition_count = int(model.get(
@@ -255,12 +271,14 @@ func set_model(model: Dictionary) -> void:
 	var candidate_development = model.get("development", null)
 	if candidate_development is Dictionary and not (candidate_development as Dictionary).is_empty():
 		_development = candidate_development
-	_apply_research()
-	_has_rendered_model = true
-	_last_render_msec = Time.get_ticks_msec()
+	_current_day = int(model.get("current_day", _current_day))
+	_apply_research(true)
 
 
 # Daily ticks reuse this path: only cached values and visible text change.
+# GameUIManager already coalesces commit bursts, so every model that reaches
+# this point is applied at once. The model dictionary is the view model's
+# cache entry and must never be retained or mutated here.
 func refresh_research(model: Dictionary) -> void:
 	if _tree == null:
 		return
@@ -275,45 +293,25 @@ func refresh_research(model: Dictionary) -> void:
 	var candidate := _research_from_model(model)
 	if candidate.is_empty():
 		return
-	var now := Time.get_ticks_msec()
-	if _has_rendered_model and now - _last_render_msec < LIVE_REFRESH_INTERVAL_MSEC:
-		_pending_refresh_model = model
-		_refresh_dirty = true
-		set_process(true)
-		return
-	_apply_refresh_model(model, now)
+	_research = candidate
+	_has_valid_research = true
+	var candidate_development = model.get("development", null)
+	if candidate_development is Dictionary and not (candidate_development as Dictionary).is_empty():
+		_development = candidate_development
+	_current_day = int(model.get("current_day", _current_day))
+	_apply_research()
 
 
 func _process(_delta: float) -> void:
 	_poll_optimistic_receipts()
 	if not _optimistic_queue.is_empty():
 		_reconcile_optimistic_from_live_snapshot()
-	if not _refresh_dirty:
-		if _optimistic_queue.is_empty():
-			set_process(false)
-		return
-	var now := Time.get_ticks_msec()
-	if now - _last_render_msec < LIVE_REFRESH_INTERVAL_MSEC:
-		return
-	var model := _pending_refresh_model
-	_pending_refresh_model.clear()
-	_refresh_dirty = false
-	_apply_refresh_model(model, now)
+	if _optimistic_queue.is_empty():
+		set_process(false)
 
 
-func _apply_refresh_model(model: Dictionary, now_msec: int) -> void:
-	var candidate := _research_from_model(model)
-	if candidate.is_empty():
-		return
-	_research = candidate
-	_has_valid_research = true
-	var candidate_development = model.get("development", null)
-	if candidate_development is Dictionary and not (candidate_development as Dictionary).is_empty():
-		_development = candidate_development
-	_apply_research()
-	_last_render_msec = now_msec
-	_has_rendered_model = true
-	set_process(_refresh_dirty or not _optimistic_queue.is_empty())
+func refresh_count() -> int:
+	return _refresh_count
 
 
 func _research_from_model(model: Dictionary) -> Dictionary:
@@ -360,10 +358,17 @@ func _update_effective_compact() -> void:
 		_compact = effective
 		_policy_open = not effective
 		_detail_open = not effective
-	for key in ["purchased", "completed"]:
-		var chip := _status_chips.get(key) as Control
-		if chip != null:
-			chip.visible = not _compact
+	for key in COMPACT_HIDDEN_KPIS:
+		var card := _kpi_cards.get(key) as Control
+		if card != null:
+			card.visible = not _compact
+	var queue_card := _kpi_cards.get("Queue") as DossierKpiCard
+	if queue_card != null:
+		queue_card.show_divider = not _compact
+		queue_card.queue_redraw()
+	var dense := size.y > 0.0 and size.y < DENSE_KPI_HEIGHT
+	for card in _kpi_cards.values():
+		(card as DossierKpiCard).dense = dense
 	_apply_column_layout()
 
 
@@ -424,12 +429,12 @@ func _set_mode(mode: int) -> void:
 		_mode = MODE_FOCUS
 	else:
 		_mode = MODE_AVAILABLE
-	_available_mode.set_pressed_no_signal(_mode == MODE_AVAILABLE)
-	_focus_mode.set_pressed_no_signal(_mode == MODE_FOCUS)
-	_overview_mode.set_pressed_no_signal(_mode == MODE_OVERVIEW)
+	if _mode_nav.current != MODE_IDS[_mode]:
+		_mode_nav.select(MODE_IDS[_mode])
 	_available.visible = _mode == MODE_AVAILABLE
 	_tree.visible = _mode == MODE_FOCUS
 	_overview.visible = _mode == MODE_OVERVIEW
+	_era_plate.visible = _mode == MODE_FOCUS
 	_prev_era.disabled = _mode != MODE_FOCUS
 	_next_era.disabled = _mode != MODE_FOCUS
 	if _mode == MODE_FOCUS:
@@ -445,6 +450,10 @@ func _set_mode(mode: int) -> void:
 	var canvas := _available if _mode == MODE_AVAILABLE \
 		else (_tree if _mode == MODE_FOCUS else _overview)
 	UIAnimation.crossfade(canvas, UITokens.ANIM_FAST)
+
+
+func _on_mode_chapter_selected(chapter_id: String) -> void:
+	_set_mode(maxi(0, MODE_IDS.find(chapter_id)))
 
 
 func _shift_era(delta: int) -> void:
@@ -665,6 +674,8 @@ func _apply_column_layout() -> void:
 	_detail_rail.visible = _compact and not _detail_open
 	_policy_close.visible = _compact
 	_detail_close.visible = _compact
+	if _detail_header != null:
+		_detail_header.visible = _compact
 	_policy_panel.offset_left = 0.0
 	_policy_panel.offset_right = left
 	_detail_host.offset_left = -right
@@ -688,10 +699,37 @@ func _configure_queues() -> void:
 		var name_label := header.name as Label
 		name_label.text = _domain_name(domain)
 		name_label.add_theme_color_override("font_color",
-			accent.lerp(UITokens.ARCHIVE_INK, 0.52))
+			accent.lerp(UITokens.DOSSIER_INK, 0.6))
 
 
-func _apply_research() -> void:
+func _research_state_signature() -> int:
+	return hash([
+		int(_research.get("generation", 0)),
+		int(_research.get("technology_points_stock", 0)),
+		int(_research.get("country_cash", 0)),
+		int(_research.get("purchased_total", 0)),
+		int(_research.get("consumed_total", 0)),
+		int(_research.get("progress_total", 0)),
+		int(_research.get("deferred_unallocated_points", 0)),
+		int(_research.get("daily_procurement_budget", 0)),
+		bool(_research.get("auto_purchase_enabled", false)),
+		_research.get("technology_states", PackedInt32Array()),
+		_research.get("technology_progress", PackedInt64Array()),
+		_research.get("queue_offsets", PackedInt32Array()),
+		_research.get("queue_technology_indices", PackedInt32Array()),
+		_research.get("domain_weights_bp", PackedInt32Array()),
+		_development.get("progress_by_signal", {}),
+		_optimistic_queue.keys(),
+		_current_day,
+	])
+
+
+func _apply_research(force: bool = false) -> void:
+	var signature := _research_state_signature()
+	if not force and signature == _research_signature:
+		return
+	_research_signature = signature
+	_refresh_count += 1
 	var research_states: PackedInt32Array = _research.get(
 		"technology_states", PackedInt32Array()).duplicate()
 	var research_progress: PackedInt64Array = _research.get(
@@ -719,8 +757,12 @@ func _apply_research() -> void:
 		int(_research.get("country_cash", 0)))
 	_patch_queues(research_states, research_progress, weights,
 		offsets, technologies)
+	_sample_history()
+	_schedule_inputs = {"states": research_states, "progress": research_progress,
+		"offsets": offsets, "technologies": technologies}
+	_patch_schedule(research_states, research_progress, weights, offsets, technologies)
 	_patch_development()
-	_update_status(research_states)
+	_update_kpis(research_states)
 	if _initial_focus_pending:
 		_apply_default_focus()
 	_refresh_detail(relations_changed)
@@ -942,43 +984,237 @@ func _poll_optimistic_receipts() -> void:
 			_apply_research()
 
 
-func _update_status(states: PackedInt32Array) -> void:
+func _sample_history() -> void:
+	var day := int(_research.get("last_research_day", _current_day))
+	if day < 0:
+		day = _current_day
+	if day < 0:
+		return
+	var sample := {
+		"day": day,
+		"stock": int(_research.get("technology_points_stock", 0)),
+		"progress": int(_research.get("progress_total", 0)),
+		"cash": int(_research.get("country_cash", 0)),
+		"purchased": int(_research.get("purchased_total", 0)),
+	}
+	if not _history.is_empty():
+		var last_day := int((_history[_history.size() - 1] as Dictionary).day)
+		if day < last_day:
+			_history.clear()
+		elif day == last_day:
+			_history[_history.size() - 1] = sample
+			return
+	_history.append(sample)
+	while _history.size() > HISTORY_DAYS:
+		_history.pop_front()
+
+
+## Scaled research points invested per day over the recent window, or -1 when
+## fewer than two research days have been observed.
+func _daily_research_rate() -> float:
+	if _history.size() < 2:
+		return -1.0
+	var first: Dictionary = _history[maxi(0, _history.size() - 8)]
+	var last: Dictionary = _history[_history.size() - 1]
+	var days := int(last.day) - int(first.day)
+	if days <= 0:
+		return -1.0
+	return maxf(0.0, float(int(last.progress) - int(first.progress)) / float(days))
+
+
+func _history_series(key: String, scale: float) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	for sample in _history:
+		out.append(float((sample as Dictionary).get(key, 0)) / scale)
+	return out
+
+
+func _daily_progress_series() -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	for cursor in range(1, _history.size()):
+		var previous: Dictionary = _history[cursor - 1]
+		var current: Dictionary = _history[cursor]
+		var days := maxi(1, int(current.day) - int(previous.day))
+		out.append(maxf(0.0, float(int(current.progress) - int(previous.progress)))
+			/ float(days) / POINT_SCALE)
+	return out
+
+
+func _history_delta(key: String, scale: float) -> float:
+	if _history.size() < 2:
+		return NAN
+	return float(int((_history[_history.size() - 1] as Dictionary).get(key, 0))
+		- int((_history[_history.size() - 2] as Dictionary).get(key, 0))) / scale
+
+
+# Queue order and ETA per queued technology. Overflow moves to the next item of
+# the same domain, and empty domains hand their share to non-empty ones, so an
+# item finishes once the domain's share has paid for everything ahead of it.
+func _patch_schedule(states: PackedInt32Array, progress: PackedInt64Array,
+		weights: PackedInt32Array, offsets: PackedInt32Array,
+		technologies: PackedInt32Array) -> void:
+	var order := {}
+	var eta := {}
+	var counts := PackedInt32Array([0, 0, 0, 0])
+	var rate := _daily_research_rate()
+	var active_weight := 0
+	if offsets.size() >= DOMAIN_COUNT + 1:
+		for domain in range(DOMAIN_COUNT):
+			var position := 0
+			for cursor in range(offsets[domain], offsets[domain + 1]):
+				if cursor < 0 or cursor >= technologies.size():
+					continue
+				var technology := int(technologies[cursor])
+				if technology < 0 or technology >= states.size() or int(states[technology]) >= 4:
+					continue
+				order[technology] = position
+				position += 1
+			counts[domain] = position
+			if position > 0 and domain < weights.size():
+				active_weight += int(weights[domain])
+		for domain in range(DOMAIN_COUNT):
+			if counts[domain] == 0:
+				continue
+			var share := float(weights[domain]) / float(active_weight) \
+				if active_weight > 0 and domain < weights.size() else 0.0
+			var domain_rate := rate * share
+			var owed := 0.0
+			for cursor in range(offsets[domain], offsets[domain + 1]):
+				if cursor < 0 or cursor >= technologies.size():
+					continue
+				var technology := int(technologies[cursor])
+				if not order.has(technology):
+					continue
+				var definition: Dictionary = _definitions[technology]
+				var cost := maxf(1.0, float(definition.get("cost_points_scaled",
+					int(definition.get("cost_points", 1)) * POINT_SCALE)))
+				var earned := float(progress[technology]) if technology < progress.size() else 0.0
+				owed += maxf(0.0, cost - earned)
+				if rate < 0.0:
+					eta[technology] = ""
+				elif domain_rate <= 0.0:
+					eta[technology] = "暂无投入"
+				else:
+					var days := int(ceil(owed / domain_rate))
+					eta[technology] = "约 %d 日" % days if days <= 999 else "超过 999 日"
+	_queue_order = order
+	_queue_eta = eta
+	_dial.set_queue_counts(counts, QUEUE_CAPACITY)
+	for domain in range(mini(DOMAIN_COUNT, _queue_headers.size())):
+		((_queue_headers[domain] as Dictionary).share as Label).text = \
+			"%d / %d" % [counts[domain], QUEUE_CAPACITY]
+		for row in _queue_rows[domain]:
+			row.set_eta(String(eta.get(int(row.technology_index), "")))
+	_available.set_queue_info(order, eta)
+
+
+func _schedule_text(index: int, state: int) -> String:
+	match state:
+		3:
+			var position := int(_queue_order.get(index, -1))
+			var eta := String(_queue_eta.get(index, ""))
+			if position < 0:
+				return eta
+			return "队列第 %d 位%s" % [position + 1, (" · %s" % eta) if not eta.is_empty() else ""]
+		4:
+			return "次日生效"
+		2:
+			return "未在队列中"
+	return ""
+
+
+func _update_kpis(states: PackedInt32Array) -> void:
+	if _kpi_cards.is_empty():
+		return
 	var completed := 0
 	var queued := 0
-	for state in states:
+	var pending := 0
+	for index in range(mini(states.size(), _research_definition_count \
+			if _research_definition_count > 0 else states.size())):
+		var state := int(states[index])
 		if state >= 5:
 			completed += 1
-		elif state == 3 or state == 4:
+		elif state == 4:
+			pending += 1
+		elif state == 3:
 			queued += 1
-	_set_chip("era", _current_era_label(states), "当前时代")
-	_set_chip("points", UITokens.format_compact_number_cn(
-		float(_research.get("technology_points_stock", 0)) / POINT_SCALE, 2),
-		"国库科技值存量")
-	_set_chip("treasury", UITokens.format_compact_number_cn(
-		float(_research.get("country_cash", 0)) / CASH_SCALE, 2), "国库现金")
-	_set_chip("queued", "%d 项在研" % queued, "研究队列与待生效科技数量")
-	_set_chip("completed", "%d 项已掌握" % completed, "已掌握科技数量")
-	_set_chip("purchased", UITokens.format_compact_number_cn(
-		float(_research.get("purchased_total", 0)) / POINT_SCALE, 2), "累计采购科技值")
+	queued += _optimistic_queue.size()
+	var stock := float(_research.get("technology_points_stock", 0)) / POINT_SCALE
+	var deferred := float(_research.get("deferred_unallocated_points", 0)) / POINT_SCALE
+	var cash := float(_research.get("country_cash", 0)) / CASH_SCALE
+	var budget := float(_research.get("daily_procurement_budget", 0)) / CASH_SCALE
+	var auto_purchase := bool(_research.get("auto_purchase_enabled", false))
+	var rate := _daily_research_rate()
+	var history_day := int((_history[_history.size() - 1] as Dictionary).day) \
+		if not _history.is_empty() else -1
+	# Each card restyles only when its own inputs move, so a research day touches
+	# the two or three cards whose numbers actually changed.
+	var era := _current_era_label(states)
+	if _kpi_changed("era", hash([era, completed])):
+		(_kpi_cards.Era as DossierKpiCard).set_metric({
+			"id": "era", "title": "当前时代", "kind": "text", "text": era,
+			"caption": "已掌握 %d 项科技" % completed, "icon": &"technology.milestone",
+			"tooltip": "已掌握里程碑中最深的时代；未发现的时代不会显示。",
+		})
+	if _kpi_changed("stock", hash([stock, deferred, queued == 0, history_day])):
+		var stock_caption := "每日全部投入研究"
+		if deferred > 0.0:
+			stock_caption = "%s 因队列阻塞暂存" % UITokens.format_compact_number_cn(deferred, 1)
+		elif queued == 0:
+			stock_caption = "队列为空，研究暂停"
+		(_kpi_cards.Stock as DossierKpiCard).set_metric({
+			"id": "stock", "title": "科技值库存", "kind": "count", "value": stock,
+			"delta": _history_delta("stock", POINT_SCALE), "caption": stock_caption,
+			"icon": IconCatalog.good_semantic("technology_points"),
+			"spark": _history_series("stock", POINT_SCALE),
+		})
+	if _kpi_changed("output", hash([rate, history_day])):
+		var output_caption := "等待第二个研究日" if rate < 0.0 \
+			else "近 %d 日均值" % mini(7, _history.size() - 1)
+		(_kpi_cards.Output as DossierKpiCard).set_metric({
+			"id": "output", "title": "日研究投入", "kind": "count",
+			"value": maxf(0.0, rate) / POINT_SCALE if rate >= 0.0 else NAN,
+			"caption": output_caption, "icon": &"metric.technology",
+			"spark": _daily_progress_series(),
+			"tooltip": "每个研究日投入各领域队列的科技值（产出与采购合计）。",
+		})
+	if _kpi_changed("queue", hash([queued, pending])):
+		(_kpi_cards.Queue as DossierKpiCard).set_metric({
+			"id": "queue", "title": "在研项目", "kind": "text",
+			"text": "%d 项" % queued,
+			"caption": ("待生效 %d 项" % pending) if pending > 0 \
+				else "每个领域最多 %d 项" % QUEUE_CAPACITY,
+			"icon": &"technology.state.queued",
+		})
+	if _kpi_changed("treasury", hash([cash, budget, auto_purchase, history_day])):
+		(_kpi_cards.Treasury as DossierKpiCard).set_metric({
+			"id": "treasury", "title": "国库现金", "kind": "money", "value": cash,
+			"delta": _history_delta("cash", CASH_SCALE),
+			"caption": ("采购上限 %s/日" % UITokens.format_compact_number_cn(budget, 2)) \
+				if auto_purchase and budget > 0.0 else "自动采购已关闭",
+			"icon": &"metric.treasury", "spark": _history_series("cash", CASH_SCALE),
+		})
 
 
-func _set_chip(id: String, text: String, tooltip: String) -> void:
-	var value := _status_chips.get("%s_value" % id) as Label
-	if value == null:
-		return
-	value.text = text
-	value.tooltip_text = tooltip
+func _kpi_changed(id: String, signature: int) -> bool:
+	if _kpi_signatures.has(id) and int(_kpi_signatures[id]) == signature:
+		return false
+	_kpi_signatures[id] = signature
+	return true
 
 
 func _patch_development() -> void:
 	var title := get_node_or_null("Root/Main/PolicyPanel/Scroll/Body/DevelopmentTitle") as Label
 	var list := get_node_or_null("Root/Main/PolicyPanel/Scroll/Body/DevelopmentList") as VBoxContainer
+	var rule := get_node_or_null("Root/Main/PolicyPanel/Scroll/Body/DevelopmentRule") as Control
 	if title == null or list == null:
 		return
 	var objectives: Array = _development.get("objectives", [])
 	var era_name := String(_era_names.get(String(_development.get("era_id", "")), ""))
 	title.visible = not objectives.is_empty()
 	list.visible = not objectives.is_empty()
+	if rule != null:
+		rule.visible = not objectives.is_empty()
 	if objectives.is_empty():
 		return
 	title.text = "国家发展目标" if era_name.is_empty() else "国家发展目标 · %s" % era_name
@@ -990,36 +1226,21 @@ func _patch_development() -> void:
 	if signature != _development_signature:
 		_development_signature = signature
 		for child in list.get_children():
+			list.remove_child(child)
 			child.queue_free()
 		_development_rows.clear()
 		for objective_value in objectives:
 			var objective: Dictionary = objective_value
-			var row := VBoxContainer.new()
-			row.add_theme_constant_override("separation", 2)
-			var line := HBoxContainer.new()
-			var name := Label.new()
-			name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			name.text = String(objective.get("display_name", "发展目标"))
-			name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-			var value := Label.new()
-			value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-			value.theme_type_variation = &"PKMutedLabel"
-			line.add_child(name)
-			line.add_child(value)
-			var bar := ProgressBar.new()
-			bar.custom_minimum_size = Vector2(0, 8)
-			bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			bar.show_percentage = false
-			row.add_child(line)
-			row.add_child(bar)
+			var row := TechnologyObjectiveRowScene.instantiate() as TechnologyObjectiveRow
+			row.setup(String(objective.get("signal_id", "")), objective,
+				String(objective.get("display_name", "发展目标")))
 			list.add_child(row)
-			_development_rows.append({"signal_id": String(objective.get("signal_id", "")),
-				"definition": objective, "value": value, "bar": bar})
+			_development_rows.append(row)
 	var progress_by_signal: Dictionary = _development.get("progress_by_signal", {})
 	for row_value in _development_rows:
-		var row: Dictionary = row_value
+		var row := row_value as TechnologyObjectiveRow
 		var definition: Dictionary = row.definition
-		var progress: Dictionary = progress_by_signal.get(String(row.signal_id), {})
+		var progress: Dictionary = progress_by_signal.get(row.signal_id, {})
 		var completed := int(progress.get("completed", 0)) > 0
 		var qualifier := int(progress.get("qualifier_threshold", definition.get("qualifier_threshold", 0)))
 		var current := int(progress.get("current_value", 0))
@@ -1027,10 +1248,10 @@ func _patch_development() -> void:
 		var consecutive := int(progress.get("consecutive_days", 0))
 		var value_text := "已达成" if completed else _development_value_text(
 			definition, current, qualifier, consecutive, target_days)
-		(row.value as Label).text = value_text
 		var value_ratio := 1.0 if qualifier <= 0 and completed else (float(current) / float(qualifier) if qualifier > 0 else 0.0)
 		var duration_ratio := 1.0 if target_days <= 1 and completed else float(consecutive) / float(target_days)
-		(row.bar as ProgressBar).value = clampf(minf(value_ratio, duration_ratio), 0.0, 1.0)
+		row.set_progress(value_text, minf(value_ratio, duration_ratio) if not completed else 1.0,
+			completed)
 
 
 func _development_value_text(definition: Dictionary, current: int, qualifier: int,
@@ -1053,6 +1274,15 @@ func _development_value_text(definition: Dictionary, current: int, qualifier: in
 # The current era is the deepest era whose milestone the country already holds,
 # which never leaks how many eras remain.
 func _current_era_label(states: PackedInt32Array) -> String:
+	var key := hash(states)
+	if key == _era_label_key and not _current_era_text.is_empty():
+		return _current_era_text
+	_era_label_key = key
+	_current_era_text = _scan_era_label(states)
+	return _current_era_text
+
+
+func _scan_era_label(states: PackedInt32Array) -> String:
 	var reached := ""
 	var pending := ""
 	for index in range(mini(states.size(), _definitions.size())):
@@ -1091,15 +1321,7 @@ func _patch_queues(states: PackedInt32Array, progress: PackedInt64Array,
 	if signature != _queue_signature:
 		_queue_signature = signature
 		_rebuild_queue_rows(offsets, technologies)
-	var total_weight := 0
-	for weight in weights:
-		total_weight += int(weight)
 	for domain in range(DOMAIN_COUNT):
-		var header: Dictionary = _queue_headers[domain]
-		var share := 0.0
-		if total_weight > 0 and domain < weights.size():
-			share = float(weights[domain]) * 100.0 / float(total_weight)
-		(header.share as Label).text = "%d%%" % int(round(share))
 		for row in _queue_rows[domain]:
 			var index := int(row.technology_index)
 			var state := int(states[index]) if index < states.size() else 0
@@ -1193,6 +1415,7 @@ func _refresh_detail(refresh_relations: bool = true) -> void:
 	var cost := maxf(1.0, float(definition.get("cost_points_scaled",
 		int(definition.get("cost_points", 1)) * POINT_SCALE)))
 	var earned := float(progress[index]) if index < progress.size() else 0.0
+	_detail.set_schedule(_schedule_text(index, state))
 	if not refresh_relations and not _detail_signature.is_empty():
 		_detail.update_progress(state, earned / cost, definition)
 		return
@@ -1558,16 +1781,14 @@ func _on_tree_activated(index: int) -> void:
 		_enqueue(index)
 
 
+# Dragging the allocation re-projects every ETA so the trade-off is visible
+# before anything is committed.
 func _on_weights_previewed(weights_bp: PackedInt32Array) -> void:
-	var total := 0
-	for weight in weights_bp:
-		total += int(weight)
-	for domain in range(mini(DOMAIN_COUNT, _queue_headers.size())):
-		var share := 0.0
-		if total > 0 and domain < weights_bp.size():
-			share = float(weights_bp[domain]) * 100.0 / float(total)
-		((_queue_headers[domain] as Dictionary).share as Label).text = \
-			"%d%%" % int(round(share))
+	if _schedule_inputs.is_empty():
+		return
+	_patch_schedule(_schedule_inputs.states, _schedule_inputs.progress, weights_bp,
+		_schedule_inputs.offsets, _schedule_inputs.technologies)
+	_refresh_detail(false)
 
 
 func _on_weights_committed(weights_bp: PackedInt32Array) -> void:

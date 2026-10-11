@@ -671,6 +671,12 @@ void DCWorldExt::_bind_methods() {
                                   "country_handle", "view", "offset", "limit"),
                          &DCWorldExt::get_country_trade_snapshot,
                          DEFVAL("summary"), DEFVAL(0), DEFVAL(32));
+    ClassDB::bind_method(D_METHOD("get_country_economy_overview",
+                                  "country_handle", "view", "scope_cell",
+                                  "filter_id", "offset", "limit"),
+                         &DCWorldExt::get_country_economy_overview,
+                         DEFVAL("summary"), DEFVAL(-1), DEFVAL(-1), DEFVAL(0),
+                         DEFVAL(0));
     ClassDB::bind_method(D_METHOD("get_trade_orders_for_cell", "cell_idx", "offset", "limit"),
                          &DCWorldExt::get_trade_orders_for_cell, DEFVAL(0), DEFVAL(64));
     ClassDB::bind_method(D_METHOD("capture_economy_trade_topology", "neighbor_indices",

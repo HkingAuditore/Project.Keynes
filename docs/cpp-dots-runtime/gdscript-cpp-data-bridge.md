@@ -1,5 +1,27 @@
 # GDScript / C++ Data Bridge
 
+## Country economy overview bridge (2026-10-11)
+
+`DCWorldExt.get_country_economy_overview(handle, view, scope_cell, filter_id,
+offset, limit)` returns parallel PackedArrays (stable ids, never display names).
+`EconomyFacade.country_economy_overview()` is the only GDScript entry point; it
+appends `*_display_names` from the session catalog and passes busy/pending
+results through unchanged. Consumers:
+
+- `EconomyDossierViewModel` (`scripts/ui/economy_dossier_view_model.gd`) memoizes
+  each `(view, scope, filter, offset, limit)` key per refresh round
+  (`begin_refresh()`), so one daily refresh issues at most one native call per view.
+- `EconomyHistoryBuffer` samples the `summary` + `professions` views once per
+  committed day (deduped by `state_day_max`, 120-day ring) for KPI and stratum
+  sparklines. It is UI memory only: not saved, reset when the country changes.
+- `SocialStrataTable` (`data/ui/social_strata.tres`) maps every profession id to
+  one of 8 display strata. It is presentation-only and must not feed ideology,
+  class opinion or any simulation input.
+
+Bottleneck classification (`classify_bottlenecks`) is a display heuristic over
+the investment rejection histogram, wage arrears, job openings, discard,
+climate loss and shortages; it never writes back.
+
 ## Economy compatibility report boundary (2026-10-09)
 
 `get_economy_report()` acquires the native economy authority boundary with
@@ -56,10 +78,13 @@ stale keys only when `_committed_generation` moved and ≥100 ms passed, then
 oldest evicted first. A view value is therefore exact to the committed day in
 `read_view_day`, never a partial epoch.
 
-Building visuals use a separate immutable `BuildingVisualView` (CSR copy,
-republished only when the building generation or cell count changes) plus a
-mutex-protected dirty-cell outbox; `consume_building_visual_dirty_cells` in
-worker mode drains the outbox. Pending visual cells are retried main-side.
+Building visuals use a separate immutable `BuildingVisualView` (CSR copy plus
+per-cell `settlement_tiers/living_levels/rich_buckets/poor_buckets` byte
+columns, republished only when the building generation or cell count changes)
+plus a mutex-protected, sorted and deduplicated dirty-cell outbox; settlement
+tier changes and hysteretic social-band changes bump the same generation and
+mark only their cell. `consume_building_visual_dirty_cells` in worker mode
+drains the outbox. Pending visual cells are retried main-side.
 
 Configure, bootstrap, reset, ECP2 restore and `end_economy_restore` call
 `invalidate_economy_read_view()`. `get_economy_read_view_status()` reports
@@ -345,12 +370,15 @@ DataCore、PKEC 或权威哈希，旧调用缺省为 0.8ms。
 
 ### Building visual native boundary
 
-建筑视觉的数值热路径固定在 `DCWorldExt::bake_building_visual_chunk()`：GDScript 只在
-chunk 边界收集玩家情报 CSR、位置和地形排除输入，并上传 C++ 返回的 PackedFloat32Array。
-六类聚合、对数规模映射、类别配额、稳定候选布局、河流 SDF 排除、全局重要度裁剪以及
-16-float Body/Decal buffer 编码均不得在逐帧 GDScript 中重算。`BuildingVisualLayer`
-的 `allow_gdscript_baker_fallback` 默认关闭；native 方法缺失或失败时 fail-closed 并
-记录诊断，只有旧 DLL 兼容测试显式开启后才允许 GDScript baker。Godot 对象创建、
+建筑视觉的数值热路径固定在 `NativeBuildingVisualCache` 的后台 worker：GDScript 只为
+情报签名变化的格子组一次 CSR 调 `submit_cells`，主线程之后只取 `take_ready_chunks()` 并用
+`build_chunk()` 拼接各格缓存好的 PackedFloat32Array 上传。worker 只读 `configure` 时拷入的
+POD 表（类型→archetype/视觉族/scale/grade），不调用 Godot API。视觉族权重聚合、对数
+lot 配额、人口骨架与民居、贫富分区、环带排序、聚落规划（街道骨架、frontage 排布、OBB
+碰撞、外环农田）、河流 SDF 排除、格内重要度名次以及 16-float Body/Decal buffer
+编码均不得在逐帧 GDScript 或主线程中重算；`DCWorldExt::bake_building_visual_chunk()` 是同一
+规划器的同步包装，只供测试和离线工具使用。不存在 GDScript baker：原生类缺失或配置失败时
+`BuildingVisualLayer` fail-closed、只记录一次诊断并停用近景几何。Godot 对象创建、
 `MultiMesh`/材质绑定、shader 天气采样和视野调度仍留在 GDScript，因为这些操作必须在
 SceneTree/RenderingServer 主线程完成。
 
@@ -1223,11 +1251,11 @@ bridge surfaces and component slots.
   report fields, not as climate pass fields.
 ## Building graph bridge
 
-建筑视觉 chunk 的数值热路径也固定在 C++：`DCWorldExt::bake_building_visual_chunk`
-接收 chunk 级 PackedArrays，完成 CSR 聚合、对数实例配额、稳定布局/河流排除和
-MultiMesh buffer 编码。`BuildingVisualLayer` 只负责可见性情报调度、generation 校验以及
-Godot `MultiMesh`/纹理对象上传；旧 DLL、Web 或原生 API 不可用时才使用同步 GDScript
-编码器回退。该视觉路径不写入经济、科技、DataCore、PKEC 或 state hash。
+建筑视觉布局也固定在 C++：`NativeBuildingVisualCache` 按格缓存规划结果，后台 worker
+只重算输入 hash 变化的格，完成 CSR 聚合、对数实例配额、稳定布局/河流排除和
+MultiMesh buffer 编码。`BuildingVisualLayer` 只负责提交变化格、驻留选择以及 Godot
+`MultiMesh`/纹理对象上传；没有 GDScript 编码器回退，原生类不可用时停用近景几何。该视觉
+路径不写入经济、科技、DataCore、PKEC 或 state hash。
 
 建筑目录、owner-lot、岗位和生产账本不进入 component schema。`world_ext_economy.cpp` 在周期
 sample day 从已有 static/climate slots 捕获地理条件，并只为建筑目录实际引用的自然资源复制

@@ -8,11 +8,11 @@ const CONTROL_TYPES := ["Control", "PanelContainer", "VBoxContainer", "HBoxConta
 	"OptionButton", "CheckBox", "HSlider", "VSlider", "SpinBox",
 	"TabContainer", "CenterContainer", "AspectRatioContainer", "RichTextLabel"]
 # These screens intentionally materialize bounded, data-shaped rows at runtime:
-# expedition entries, development objectives, and the optional .pkmap path
-# field. All other player UI scripts remain covered by the static-scene rule.
+# expedition entries and the optional .pkmap path field. All other player UI
+# scripts remain covered by the static-scene rule.
 const SCRIPT_EXCLUSIONS := ["debug_console.gd", "info_panel_controller.gd",
 	"perf_mini_hud.gd", "perf_recorder.gd", "tile_data_recorder.gd",
-	"colonization_planner_panel.gd", "technology_workspace.gd", "world_setup.gd"]
+	"colonization_planner_panel.gd", "world_setup.gd"]
 
 var _failures := PackedStringArray()
 
@@ -84,11 +84,20 @@ func _check_theme_contract() -> void:
 		session_theme.get_stylebox("normal", "PKArchiveNavButton") is StyleBoxTexture
 		and session_theme.get_stylebox("pressed", "PKArchiveNavButton") is StyleBoxTexture)
 	var country_page := session_theme.get_stylebox(
-		"panel", "PKCountryPage") as StyleBoxFlat
-	_expect("wide country pages use an opaque reading surface",
-		country_page != null and country_page.bg_color.a >= 0.99)
-	_expect("country navigation does not stretch family dossier bitmaps",
-		session_theme.get_stylebox("normal", "PKCountryNavButton") is StyleBoxFlat)
+		"panel", "PKCountryPage") as StyleBoxTexture
+	_expect("country pages use the 9-slice dossier page frame",
+		country_page != null and country_page.texture != null
+		and country_page.texture.resource_path.ends_with("dossier_shell/page_frame.png")
+		and country_page.content_margin_left >= 24.0)
+	var country_rail := session_theme.get_stylebox("panel", "PKCountryRail") as StyleBoxTexture
+	_expect("country rail is a tiled leather spine",
+		country_rail != null and country_rail.axis_stretch_vertical
+		== StyleBoxTexture.AXIS_STRETCH_MODE_TILE)
+	var country_nav := session_theme.get_stylebox(
+		"normal", "PKCountryNavButton") as StyleBoxTexture
+	_expect("country navigation uses pre-scaled ribbon tabs instead of stretching family bitmaps",
+		country_nav != null and country_nav.texture != null
+		and country_nav.texture.get_height() <= 96)
 	_expect("HUD buttons do not inherit archive bitmap material",
 		session_theme.get_stylebox("normal", "PKHUDButton") is StyleBoxFlat)
 
@@ -159,7 +168,8 @@ func _check_player_game() -> void:
 func _check_component_scenes() -> void:
 	var expectations := {
 		"res://scenes/ui/inspector_panel.tscn": "Margin/Split/InspectorRoot/ContentShell/ContentMargin/Scroll/ContentBox",
-		"res://scenes/ui/country_panel.tscn": "Center/Dialog/Main/PageSurface/PageArea/SectionHost/EconomyWorkspace",
+		"res://scenes/ui/country_panel.tscn": "Center/Dialog/Main/PageSurface/PageArea/SectionHost/EconomyDossier",
+		"res://scenes/ui/economy_dossier.tscn": "FinanceHost/EconomyWorkspace",
 		"res://scenes/ui/economy_workspace.tscn": "Column/Ledger/LedgerColumn/Scroll/Flow",
 		"res://scenes/ui/technology_workspace.tscn": "Root/Main/DetailHost/Body/Detail",
 		"res://scenes/ui/technology_overview_view.tscn": "",
@@ -179,6 +189,15 @@ func _check_component_scenes() -> void:
 		var required_path := String(expectations[scene_path])
 		_expect("%s has complete fixed tree" % scene_path,
 			required_path.is_empty() or scene.has_node(required_path))
+		if scene_path.ends_with("country_panel.tscn"):
+			_expect("country shell has seam hinges", scene.has_node("Center/Dialog/Hinges/HingeMiddle"))
+		if scene_path.ends_with("economy_dossier.tscn"):
+			for page_name in ["OverviewPage", "StrataPage", "IndustryPage", "InvestmentPage",
+					"MarketPage", "TradePage", "CitiesPage"]:
+				_expect("economy dossier has %s" % page_name,
+					scene.has_node("PageViewport/PageColumn/PageStack/%s" % page_name))
+			_expect("economy dossier KPI strip scrolls with the chapter",
+				scene.has_node("PageViewport/PageColumn/KpiStrip/KpiRow/Kpi4"))
 		if scene_path.ends_with("economy_workspace.tscn"):
 			_expect("economy workspace has tax sub-tabs", scene.has_node("Column/TaxTabs"))
 			_expect("economy workspace has treasury insights", scene.has_node("Column/Insights"))

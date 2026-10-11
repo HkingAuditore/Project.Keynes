@@ -1,0 +1,56 @@
+[gd_resource type="Resource" script_class="SocialStrataTable" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/social_strata_table.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+strata = Array[Dictionary]([{
+"color": Color(0.48, 0.16, 0.1, 1),
+"icon": "population.profession.owner",
+"id": "owners",
+"name": "业主资本",
+"professions": PackedStringArray("landlord", "industrialist", "guild_master", "manager")
+}, {
+"color": Color(0.69, 0.49, 0.24, 1),
+"icon": "population.profession.merchant",
+"id": "merchants",
+"name": "商人",
+"professions": PackedStringArray("merchant")
+}, {
+"color": Color(0.31, 0.43, 0.53, 1),
+"icon": "population.profession.scholar",
+"id": "knowledge",
+"name": "知识阶层",
+"professions": PackedStringArray("scribe", "lorekeeper", "scholar", "natural_philosopher", "scientist", "researcher", "research_scientist", "data_scientist", "ai_researcher")
+}, {
+"color": Color(0.62, 0.36, 0.19, 1),
+"icon": "population.profession.artisan",
+"id": "artisans",
+"name": "技术工匠",
+"professions": PackedStringArray("artisan", "journeyman", "apprentice", "engineer", "technician", "machinist", "electrician", "metallurgist", "chemist")
+}, {
+"color": Color(0.27, 0.42, 0.4, 1),
+"icon": "population.profession.worker",
+"id": "workers",
+"name": "产业工人",
+"professions": PackedStringArray("worker", "industrial_worker", "construction_worker", "transport_worker", "petroleum_worker", "miner", "forestry_worker", "cooperative_member")
+}, {
+"color": Color(0.34, 0.48, 0.31, 1),
+"icon": "economy.crop",
+"id": "smallholders",
+"name": "自耕农牧渔",
+"professions": PackedStringArray("household_farmer", "subsistence_farmer", "pastoralist", "fisher", "hunter", "forager")
+}, {
+"color": Color(0.43, 0.31, 0.22, 1),
+"icon": "population.living.struggling",
+"id": "dependent",
+"name": "依附劳动",
+"professions": PackedStringArray("serf", "sharecropper", "tenant_farmer", "agricultural_worker", "corvee_worker", "indentured_laborer", "enslaved_laborer")
+}, {
+"color": Color(0.5, 0.46, 0.4, 1),
+"icon": "population.profession.unemployed",
+"id": "unemployed",
+"name": "无业",
+"professions": PackedStringArray("unemployed")
+}])
+fallback_stratum = &"workers"

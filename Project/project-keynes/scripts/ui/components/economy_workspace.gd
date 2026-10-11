@@ -87,6 +87,7 @@ var _refresh_dirty := false
 var _has_rendered_model := false
 var _last_render_msec := 0
 var _compact := false
+var _embedded := false
 
 
 func _ready() -> void:
@@ -175,6 +176,21 @@ func set_player_controller(controller) -> void:
 	_player_controller = controller
 
 
+## 嵌入国民经济卷宗「财政」章时：外壳已有国家页头，贸易由独立章节承担。
+func set_embedded(embedded: bool) -> void:
+	if _cash_card == null:
+		_ready()
+	_embedded = embedded
+	var header := get_node_or_null("Column/Header") as Control
+	if header != null:
+		header.visible = not embedded
+	_tab_signature = ""
+	if embedded and _page == "trade":
+		_select_page("treasury")
+	elif not _model.is_empty():
+		_refresh_tabs()
+
+
 func set_compact(compact: bool) -> void:
 	_compact = compact
 	if _summary_heading != null:
@@ -261,6 +277,8 @@ func _refresh_tabs() -> void:
 	var signature_parts: Array[String] = []
 	var tabs: Array = []
 	for page in TOP_PAGE_IDS:
+		if _embedded and page == "trade":
+			continue
 		var definition: Dictionary = PAGE_DEFINITIONS[page]
 		var tooltip := String(definition.label)
 		if page == "trade":
