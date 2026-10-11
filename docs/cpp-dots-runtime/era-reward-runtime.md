@@ -37,6 +37,34 @@ era_reward.choose { offer_generation, choice_index }
 ACK 后才关闭弹窗，并按打开前状态恢复运行或继续暂停。`player_view` 保存锁定、恢复
 意图、速度和 generation，读档后会重新挂载同一冻结 Offer。
 
+## Worker 权威（ACTIVE）路径
+
+- **Offer 打开**：Country worker 提交里程碑激活后，Host 在提交点排队
+  `NOTIFY_ERA_REWARD`（`poll_country_worker_notification`）；主线程
+  `service_country_worker_peer_adapter` 以该次提交的 Country 快照作为 Planner 的
+  Country 视图交付通知。未交付的通知计入 drain-idle 判定。
+- **选择提交**：EFFECT worker 权威时主线程 `EffectRuntime` 只是只读副本，不派发事务。
+  `choose_era_reward` 改为 Host 提交：Offer 进入 `SELECTED_PENDING` 且
+  `transaction_id=0`，选中备选的 Modifier 命令（仅支持 `MODIFIER_COMMAND` APPLY）
+  以 `UNIQUE_SOURCE` 提交给 worker Modifier，字段为 producer 200、ENTITY 作用域、
+  `source_type='ERAR'`、`source_id=offer_generation`。批次带
+  `unbound_input_generation=true`，命令不受环境代次的陈旧检查约束。
+- **ACK 判定**：读取 Host 最新发布的 Modifier POD 快照。主线程 legacy
+  `ModifierRuntime` 在 worker 模式下不是活副本，不能用来判定。所有命令的唯一来源条目
+  都存在时进入 `RESOLVED`。提交后两个已提交日内未落地就重提，最多三次，之后进入
+  `ERROR(era_reward_modifier_commit_missing)`；重复提交由 `UNIQUE_SOURCE` 保证幂等。
+- **时钟**：worker Modifier 命令只在模拟日落地，所以 `era_reward_offer()` 返回
+  `settles_on_day_advance=true`。PlayerController 在该状态下以 1 倍速推进日期，其余
+  玩家命令仍被锁定，`RESOLVED` 后恢复打开前的速度与运行状态。`era_reward.choose`
+  成功后总会延迟同步一次 Offer，不依赖弹窗回调。时代奖励锁持有期间，家族立族锁不接管
+  时钟，并继承时代奖励锁保存的恢复状态。
+- **持久化**：PKEF 接受 `status=2, transaction_id=0`（要求 `selected_choice` 为
+  0..2）。读档后 Host 会话计数清零并重新提交，`UNIQUE_SOURCE` 保证不会重复叠加。
+  Country 查询副本会镜像主线程的 `era_reward_reference`，使副本捕获的 PKCN 与 PKEF
+  跨段审计一致。
+- **已知限制**：里程碑已经完成的旧存档不会补发 Offer；`NOTIFY_ECONOMY_MILESTONE`
+  （家族祖训）在 worker 模式下尚未投递。
+
 持久化采用精确版本：PKCN v11 保存 `{plan_id, offer_generation, milestone, status}`；
 PKEF v10 保存完整三备选、理由、冻结目标、plan hash、选择和 pending 事务。恢复固定先
 PKCN 后 PKEF，PKEF 逐字段审计 PKCN 引用；任何旧 schema 或目录差异返回

@@ -343,16 +343,156 @@ Dictionary DCWorldExt::bind_era_reward_player_country(int64_t country_handle) {
 }
 
 Dictionary DCWorldExt::get_era_reward_offer() {
-    return _effect_runtime == nullptr ? unavailable()
-        : runtime_from(_effect_runtime)->era_reward_offer_snapshot();
+    if (_effect_runtime == nullptr) return unavailable();
+    EffectRuntime *effect = runtime_from(_effect_runtime);
+    String host_error;
+    if (effect->era_reward_host_selection_pending())
+        host_error = service_era_reward_host_selection(-1);
+    Dictionary out = effect->era_reward_offer_snapshot();
+    // A Host-committed selection lands on a simulated day boundary; the
+    // dateless save-boundary drain cannot settle it.
+    out["settles_on_day_advance"] = effect->era_reward_host_selection_pending();
+    if (!host_error.is_empty()) out["host_commit_error"] = host_error;
+    return out;
 }
 
 Dictionary DCWorldExt::choose_era_reward(int64_t offer_generation,
                                          int choice_index,
                                          int64_t effective_day) {
-    return _effect_runtime == nullptr ? unavailable()
-        : runtime_from(_effect_runtime)->choose_era_reward(
-            offer_generation, choice_index, effective_day);
+    if (_effect_runtime == nullptr) return unavailable();
+    EffectRuntime *effect = runtime_from(_effect_runtime);
+    Dictionary out = effect->choose_era_reward(offer_generation, choice_index,
+                                               effective_day,
+                                               era_reward_host_commit_active());
+    if (bool(out.get("ok", false)) && effect->era_reward_host_selection_pending()) {
+        _era_reward_host_generation = 0;
+        _era_reward_host_attempts = 0;
+        const String host_error = service_era_reward_host_selection(effective_day);
+        if (!host_error.is_empty()) out["host_commit_error"] = host_error;
+    }
+    return out;
+}
+
+bool DCWorldExt::era_reward_host_commit_active() const {
+    return _runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT);
+}
+
+String DCWorldExt::service_era_reward_host_selection(int64_t effective_day) {
+    if (_effect_runtime == nullptr || _modifier_runtime == nullptr)
+        return "era_reward_runtime_unavailable";
+    EffectRuntime *effect = runtime_from(_effect_runtime);
+    if (!effect->era_reward_host_selection_pending()) return String();
+    std::vector<EffectRuntime::EraRewardModifierCommand> commands;
+    std::string error;
+    if (!effect->era_reward_selected_modifier_commands(commands, error)) {
+        effect->settle_era_reward_selection_pod(false, error.c_str());
+        return String(error.c_str());
+    }
+    const ModifierRuntime *modifier = static_cast<ModifierRuntime *>(_modifier_runtime);
+    bool committed = true;
+    int64_t committed_day = modifier->committed_day();
+    if (_runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::MODIFIER)) {
+        // The legacy ModifierRuntime is not a live replica of the worker, so
+        // read the latest published Modifier POD snapshot instead.
+        uint32_t slot = 0;
+        if (!_runtime_host->try_acquire_modifier_snapshot(0, slot)) return String();
+        const RuntimeModifierPodSnapshot &snapshot =
+            _runtime_host->modifier_snapshot_buffer(slot);
+        committed_day = snapshot.committed_day;
+        for (const EffectRuntime::EraRewardModifierCommand &command : commands) {
+            const int32_t definition_id =
+                modifier->definition_id_for_key(command.definition_key);
+            bool present = false;
+            for (const RuntimeModifierPodEntry &entry : snapshot.entries) {
+                if (entry.modifier_handle != 0 &&
+                    entry.domain == static_cast<uint32_t>(command.domain) &&
+                    entry.definition_id == definition_id &&
+                    entry.scope == ModifierRuntime::ENTITY &&
+                    entry.entity_handle == command.target_handle &&
+                    entry.source_type == EffectRuntime::ERA_REWARD_SOURCE_TYPE &&
+                    entry.source_id == static_cast<uint64_t>(command.source_id)) {
+                    present = true;
+                    break;
+                }
+            }
+            committed = committed && definition_id >= 0 && present;
+        }
+        _runtime_host->release_modifier_snapshot(slot);
+    } else {
+        for (const EffectRuntime::EraRewardModifierCommand &command : commands) {
+            committed = committed && modifier->has_unique_source_entry(
+                command.domain, command.definition_key, command.target_handle,
+                EffectRuntime::ERA_REWARD_SOURCE_TYPE,
+                static_cast<uint64_t>(command.source_id));
+        }
+    }
+    const int64_t generation = commands.front().source_id;
+    if (committed) {
+        effect->settle_era_reward_selection_pod(true, "");
+        _era_reward_host_generation = 0;
+        _era_reward_host_attempts = 0;
+        return String();
+    }
+    const bool submitted = _era_reward_host_generation == generation;
+    if (submitted && committed_day < _era_reward_host_deadline_day) return String();
+    if (submitted && _era_reward_host_attempts >= 3) {
+        effect->settle_era_reward_selection_pod(false, "era_reward_modifier_commit_missing");
+        _era_reward_host_generation = 0;
+        _era_reward_host_attempts = 0;
+        return "era_reward_modifier_commit_missing";
+    }
+    const int64_t day = std::max<int64_t>(effective_day, committed_day + 1);
+    const int32_t count = static_cast<int32_t>(commands.size());
+    PackedInt32Array opcodes, producers, domains, scopes, durations, stacks, magnitudes;
+    PackedInt64Array sequences, days, entities, groups, source_types, source_ids, handles;
+    PackedStringArray definition_keys;
+    for (const EffectRuntime::EraRewardModifierCommand &command : commands) {
+        opcodes.push_back(1);
+        producers.push_back(200);
+        sequences.push_back(_runtime_host != nullptr
+            ? static_cast<int64_t>(_runtime_host->allocate_producer_sequence(200))
+            : generation);
+        days.push_back(day);
+        definition_keys.push_back(String(command.definition_key.c_str()));
+        domains.push_back(command.domain);
+        scopes.push_back(ModifierRuntime::ENTITY);
+        entities.push_back(static_cast<int64_t>(command.target_handle));
+        groups.push_back(0);
+        source_types.push_back(EffectRuntime::ERA_REWARD_SOURCE_TYPE);
+        source_ids.push_back(command.source_id);
+        durations.push_back(command.duration_days);
+        stacks.push_back(command.stacks);
+        magnitudes.push_back(command.magnitude_q16);
+        handles.push_back(0);
+    }
+    Dictionary batch;
+    batch["protocol_version"] = ModifierRuntime::PROTOCOL_VERSION;
+    batch["unbound_input_generation"] = true;
+    batch["opcodes"] = opcodes;
+    batch["producer_ids"] = producers;
+    batch["sequences"] = sequences;
+    batch["effective_days"] = days;
+    batch["definition_keys"] = definition_keys;
+    batch["domains"] = domains;
+    batch["scopes"] = scopes;
+    batch["entity_handles"] = entities;
+    batch["group_handles"] = groups;
+    batch["source_types"] = source_types;
+    batch["source_ids"] = source_ids;
+    batch["duration_days"] = durations;
+    batch["stacks"] = stacks;
+    batch["magnitude_q16"] = magnitudes;
+    batch["modifier_handles"] = handles;
+    const Dictionary result = submit_modifier_commands(batch);
+    const PackedInt64Array request_ids = result.get("request_ids", PackedInt64Array());
+    if (!bool(result.get("ok", false)) || request_ids.size() != count)
+        return String(result.get("reason", "era_reward_modifier_submit_failed"));
+    _era_reward_host_attempts = submitted ? _era_reward_host_attempts + 1 : 1;
+    _era_reward_host_generation = generation;
+    _era_reward_host_deadline_day = day + 2;
+    return String();
 }
 
 Dictionary DCWorldExt::submit_effect_instances(const Dictionary &batch) {
@@ -929,11 +1069,15 @@ PackedByteArray DCWorldExt::capture_effect_state() const {
 }
 
 Dictionary DCWorldExt::restore_effect_state(const PackedByteArray &bytes) {
+    _era_reward_host_generation = 0;
+    _era_reward_host_attempts = 0;
     return _effect_runtime == nullptr ? unavailable()
         : runtime_from(_effect_runtime)->restore(bytes);
 }
 
 Dictionary DCWorldExt::clear_effect_state() {
+    _era_reward_host_generation = 0;
+    _era_reward_host_attempts = 0;
     return _effect_runtime == nullptr ? unavailable()
         : runtime_from(_effect_runtime)->clear_state();
 }

@@ -1347,6 +1347,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _country_worker_intents.clear();
         _country_worker_results.clear();
         _country_worker_terminal_results.clear();
+        _country_worker_notifications.clear();
         _country_economy_asset_request_queue.clear();
         _country_economy_asset_requests.clear();
         _country_economy_asset_results.clear();
@@ -1817,6 +1818,24 @@ bool NativeSimulationHost::economy_authority_fault_gate_self_test(
     return true;
 }
 
+// Opens the D7 asset gates the current Country/Economy grant requires. Only
+// ever widens the mask. Attach and every worker ECONOMY visit both call it: a
+// new game is promoted to worker authority after attach, and ACTIVE never runs
+// the main-thread runtime-graph pulse that would otherwise mirror the grant,
+// so without the per-day refresh expedition procurement stays gate-closed.
+static void open_granted_economy_d7_gates(
+        const NativeSimulationHost &host, NativeEconomyRuntime &rt) noexcept {
+    if (host.domain_is_worker_authoritative(RuntimeDomainId::ECONOMY)) {
+        rt.open_all_d7_operation_gates();
+    } else if (host.domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) ||
+               host.country_authority_owner_is_worker()) {
+        rt.open_research_purchase_d7_gate();
+        rt.open_country_market_purchase_d7_gates();
+    } else {
+        rt.open_research_purchase_d7_gate();
+    }
+}
+
 void NativeSimulationHost::attach_economy_production_runtime(
         NativeEconomyRuntime *rt) noexcept {
     if (rt != nullptr &&
@@ -1830,14 +1849,7 @@ void NativeSimulationHost::attach_economy_production_runtime(
         // sync_runtime_domain_ownership pulse. Open research (and full D7 when
         // Economy is ACTIVE) here so government procurement is not soft-gated
         // for the entire early game.
-        if (domain_is_worker_authoritative(RuntimeDomainId::ECONOMY))
-            rt->open_all_d7_operation_gates();
-        else if (country_authority_owner_is_worker()) {
-            rt->open_research_purchase_d7_gate();
-            rt->open_country_market_purchase_d7_gates();
-        }
-        else
-            rt->open_research_purchase_d7_gate();
+        open_granted_economy_d7_gates(*this, *rt);
         class NativeEconomyPodCommandExecutor final
             : public EconomyPodCommandExecutor {
         public:
@@ -2889,6 +2901,7 @@ bool NativeSimulationHost::publish_country_catalog(
     _country_worker_intents.clear();
     _country_worker_results.clear();
     _country_worker_terminal_results.clear();
+    _country_worker_notifications.clear();
     _country_economy_asset_request_queue.clear();
     _country_economy_asset_requests.clear();
     _country_economy_asset_results.clear();
@@ -5077,6 +5090,7 @@ bool NativeSimulationHost::finish_worker_country_asset(
 bool NativeSimulationHost::country_authority_drain_idle_locked() const {
     if (!_country_worker_intent_queue.empty() ||
         !_country_worker_intents.empty() ||
+        !_country_worker_notifications.empty() ||
         !_economy_origin_asset_queue.empty() ||
         !_country_economy_asset_request_queue.empty() ||
         _country_pod_plan_active.load(std::memory_order_acquire)) {
@@ -5338,6 +5352,45 @@ bool NativeSimulationHost::poll_country_worker_intent(CountryPeerIntent &out) {
         std::min<size_t>(_country_worker_intent_queue.size(),
                          std::numeric_limits<uint32_t>::max()));
     return false;
+}
+
+bool NativeSimulationHost::poll_country_worker_notification(
+        CountryWorkerNotification &out) {
+    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    if (_country_worker_notifications.empty()) return false;
+    out = std::move(_country_worker_notifications.front());
+    _country_worker_notifications.pop_front();
+    return true;
+}
+
+void NativeSimulationHost::queue_country_milestone_notifications_locked(
+        const std::shared_ptr<const RuntimeCountryPodSnapshot> &snapshot) {
+    if (snapshot == nullptr) return;
+    for (const RuntimeCountryPodMilestoneActivation &activation :
+         _country_pod_plan.activated_milestones) {
+        if (activation.slot < 0 ||
+            static_cast<size_t>(activation.slot) >=
+                snapshot->country_generation.size())
+            continue;
+        CountryWorkerNotification notification;
+        CountryPeerIntent &intent = notification.intent;
+        intent.opcode = CountryPeerIntentCode::NOTIFY_ERA_REWARD;
+        intent.session_epoch = _country_worker_session_epoch;
+        intent.country_generation = snapshot->generation;
+        intent.day = _country_pod_plan.header.day;
+        intent.country_slot = activation.slot;
+        intent.technology = activation.technology;
+        intent.target_handle =
+            (static_cast<uint64_t>(snapshot->country_generation[
+                static_cast<size_t>(activation.slot)]) << 32u) |
+            static_cast<uint32_t>(activation.slot);
+        intent.request_id = country_peer_request_id(
+            intent.session_epoch, intent.country_generation, intent.day, 0u,
+            intent.country_slot, intent.technology, intent.opcode);
+        intent.idempotency_key = intent.request_id;
+        notification.snapshot = snapshot;
+        _country_worker_notifications.push_back(std::move(notification));
+    }
 }
 
 bool NativeSimulationHost::submit_country_worker_result(
@@ -7903,6 +7956,12 @@ bool NativeSimulationHost::execute_country_worker_stage(
             commit.preflight_ok = 0;
             return false;
         }
+        {
+            std::lock_guard<std::mutex> lock(_country_transport_mutex);
+            queue_country_milestone_notifications_locked(
+                std::atomic_load_explicit(&_country_snapshot,
+                                          std::memory_order_acquire));
+        }
         commit.completed_domain_mask |= runtime_domain_mask(
             RuntimeDomainId::COUNTRY);
         commit.dirty_families |= _country_pod_plan.header.dirty_families;
@@ -7986,6 +8045,7 @@ bool NativeSimulationHost::execute_country_worker_stage(
                                    std::memory_order_release);
         std::atomic_store_explicit(&_country_economy_audit_snapshot,
                                    committed_view, std::memory_order_release);
+        queue_country_milestone_notifications_locked(committed_view);
         for (const RuntimeDomainIntent &intent : _country_pod_plan.intents) {
             const uint64_t request_id = intent.request_id != 0
                 ? intent.request_id : intent.source_id;
@@ -10431,6 +10491,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             }
             const EconomyProductionWriter production_writer =
                 economy_production_writer_effective();
+            open_granted_economy_d7_gates(*this, *_economy_production_runtime);
             const auto economy_attempt_started = std::chrono::steady_clock::now();
             std::string economy_error;
             bool economy_day_done = false;
@@ -12391,7 +12452,10 @@ void NativeSimulationHost::build_save_bundle(
     if (country_checkpoint != nullptr &&
         domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) &&
         country_checkpoint->committed_day != bundle->committed_day) {
-        record_save_failure("save_country_checkpoint_day_mismatch");
+        const std::string reason = "save_country_checkpoint_day_mismatch:c=" +
+            std::to_string(country_checkpoint->committed_day) + ",b=" +
+            std::to_string(bundle->committed_day);
+        record_save_failure(reason.c_str());
         return;
     }
     if (country_checkpoint != nullptr) {

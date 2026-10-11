@@ -543,6 +543,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
         cap(buffer);
     cap(_staging_cell_generation);
     cap(_structural_touched_cells); cap(_population_changed_cells);
+    cap(_deferred_population_reconcile_cells);
     cap(_demand_basis_cache_day); cap(_demand_basis_variant_scores);
     cap(_demand_basis_variant_prices); cap(_demand_basis_need_score_sums);
     cap(_demand_basis_need_composites); cap(_demand_basis_need_environment);

@@ -322,6 +322,14 @@ public:
     bool poll_country_worker_intent(CountryPeerIntent &out);
     bool submit_country_worker_result(const CountryPeerResult &result,
                                       std::string &error);
+    // Post-commit Country notifications (era milestones). Unlike plan intents
+    // they carry no ACK barrier; `snapshot` is the committed Country state that
+    // activated the milestone, so the main-thread planner reads that boundary.
+    struct CountryWorkerNotification {
+        CountryPeerIntent intent;
+        std::shared_ptr<const RuntimeCountryPodSnapshot> snapshot;
+    };
+    bool poll_country_worker_notification(CountryWorkerNotification &out);
     bool poll_country_economy_asset_request(
             RuntimeEconomyAssetRequest &out);
     // Economy owns peer-side mutation. Its continuation needs a read-only
@@ -783,6 +791,8 @@ private:
     // Returns how many origin requests were prepared (0 = queue was empty).
     uint32_t prepare_economy_origin_country_assets(std::string &error);
     bool country_authority_drain_idle_locked() const;
+    void queue_country_milestone_notifications_locked(
+        const std::shared_ptr<const RuntimeCountryPodSnapshot> &snapshot);
     bool execute_ideology_worker_stage(int64_t day,
                                        RuntimeDayCommit &commit,
                                        std::string &error);
@@ -1034,6 +1044,7 @@ private:
     std::unordered_map<uint64_t, CountryPeerIntent> _country_worker_intents;
     std::unordered_map<uint64_t, CountryPeerResult> _country_worker_results;
     std::unordered_map<uint64_t, CountryPeerResult> _country_worker_terminal_results;
+    std::deque<CountryWorkerNotification> _country_worker_notifications;
     // Country -> Economy is a separate bounded transport.  Requests remain
     // addressable after polling so a delayed/duplicate result can be checked
     // against the original transaction identity; only terminal results are

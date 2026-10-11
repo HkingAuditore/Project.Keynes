@@ -507,7 +507,11 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _cell_moved_out.assign(static_cast<size_t>(std::max(0, _cell_count.get())), 0);
     _saturation_count = 0;
     _structural_touched_cells.clear();
-    _population_changed_cells.clear();
+    // Copied, not moved: a start_epoch retry clears this vector again, and the
+    // deferred cells are only dropped once STRUCTURAL_COMMIT reconciled them.
+    _population_changed_cells.assign(
+        _deferred_population_reconcile_cells.begin(),
+        _deferred_population_reconcile_cells.end());
     _structural_reconciled_upto = 0;
     _structural_funds_to_treasury = 0;
     _publish_accum = {};

@@ -2030,6 +2030,49 @@ func _run_employed_expedition_departure(catalog: Dictionary) -> void:
 	_expect("employed departure commits without an invalid ledger",
 		bool(settled.get("done", false)) and not bool(report.get("fatal", false))
 		and int(report.get("population_error", -1)) == 0)
+	# The payload carries its source job lanes. Landing staffs the opening kit
+	# from those same cohorts, which once left owner + employee above the
+	# cohort population on the destination and faulted the POD ledger export.
+	var expedition_handle := int(started.get("expedition_handle", 0))
+	var arrival := maxi(int(started.get("arrival_day", next_day + 4)), next_day + 1)
+	var landed := _settle_unowned_expedition(ext, country_handle,
+		expedition_handle, arrival)
+	_expect("employed payload lands", landed)
+	if not landed:
+		return
+	var landed_shape := _employment_shape_valid(ext, 2) \
+		and _employment_shape_valid(ext, 0)
+	var after_day := maxi(arrival, int(ext.get_economy_report().get("current_day", 0))) + 1
+	var reconciled := _run_day(ext, after_day)
+	var landed_report: Dictionary = ext.get_economy_report()
+	_expect("employed landing keeps job lanes within cohort population",
+		landed_shape and _employment_shape_valid(ext, 2)
+		and _employment_shape_valid(ext, 0)
+		and bool(reconciled.get("done", false))
+		and not bool(landed_report.get("fatal", false))
+		and int(landed_report.get("population_error", -1)) == 0)
+	# The landing epoch froze the target as unowned, so its reconcile idles the
+	# kit owners; later epochs rehire them. Every day the cohort owner lanes
+	# must agree with the building fills they were derived from.
+	var lanes_match := true
+	var owner_fills := 0
+	for extra in range(6):
+		if extra > 0:
+			_run_day(ext, after_day + extra)
+		var owner_lanes := 0
+		for value in ext.get_population_cell_snapshot(2).get(
+				"owner_employed_by_cohort", PackedInt64Array()):
+			owner_lanes += int(value)
+		owner_fills = 0
+		for value in ext.get_building_cell_snapshot(2).get(
+				"filled_owner", PackedInt64Array()):
+			owner_fills += int(value)
+		if owner_lanes != owner_fills:
+			lanes_match = false
+			print("  landed_day+%d owner_lanes=%d owner_fills=%d" % [extra,
+				owner_lanes, owner_fills])
+	_expect("landed owner lanes follow the building fills they staff",
+		lanes_match and owner_fills > 0 and _employment_shape_valid(ext, 2))
 
 
 func _grow_founder_family(ext: Object, family_handle: int, cell_idx: int,

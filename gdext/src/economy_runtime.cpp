@@ -14246,6 +14246,7 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                 fail(error.empty() ? "building_employment_reconcile_failed" : error);
                 break;
             }
+            _deferred_population_reconcile_cells.clear();
             // Everything pushed so far is now reconciled; building_commit.finalize
             // only needs the tail appended after this point (e.g. investment
             // profession transitions via move_cohort_population).
@@ -20004,6 +20005,7 @@ bool NativeEconomyRuntime::run_structural_commit_drain(int64_t &work_done,
         fail(error.empty() ? "building_employment_reconcile_failed" : error);
         return false;
     }
+    _deferred_population_reconcile_cells.clear();
     _structural_reconciled_upto =
         static_cast<int64_t>(_structural_touched_cells.size());
     publish_shadow_graph_stage_reference(
@@ -22107,6 +22109,7 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _audit_mutation_generation = 0;
     _closing_audit_mismatch_ledger = "none";
     _closing_audit_mismatch_lane = -1;
+    _deferred_population_reconcile_cells.clear();
     clear_epoch_metrics();
     _epoch_previous_producer_sellable.clear();
     _epoch_previous_producer_merchant_sold.clear();
@@ -22275,6 +22278,7 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _staging_cells.clear();
     _structural_touched_cells.clear();
     _population_changed_cells.clear();
+    _deferred_population_reconcile_cells.clear();
     _structural_reconciled_upto = 0;
     _publish_accum = {};
     _structural_funds_to_treasury = 0;

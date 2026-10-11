@@ -358,15 +358,43 @@ public:
     void attach_country_runtime(NativeCountryRuntime *runtime) {
         _country_runtime = runtime;
     }
+    // Read-only Country state frozen for era-reward planning. Under worker
+    // Country authority the attached store is not the committed state, so the
+    // caller supplies the committed boundary for the duration of one notify.
+    void set_era_reward_country_view(const NativeCountryRuntime *view) {
+        _era_reward_country_view = view;
+    }
     bool bind_era_reward_player_country_pod(uint64_t country_handle,
                                             std::string &error);
     bool notify_era_reward_technology_activated_pod(
         uint64_t country_handle, int32_t technology_id, int64_t day_index,
         std::string &error);
     godot::Dictionary era_reward_offer_snapshot();
+    // host_commit: under worker Effect authority this runtime is a read
+    // replica and cannot own transactions. The selection is then recorded
+    // without one (transaction_id 0) and the caller commits the selected
+    // Modifier commands through the Host, settling via
+    // settle_era_reward_selection_pod once they are committed.
     godot::Dictionary choose_era_reward(int64_t offer_generation,
                                         int32_t choice_index,
-                                        int64_t effective_day);
+                                        int64_t effective_day,
+                                        bool host_commit = false);
+    static constexpr int32_t ERA_REWARD_SOURCE_TYPE = 0x45524152; // ERAR
+    struct EraRewardModifierCommand {
+        std::string definition_key;
+        int32_t domain = 0;
+        uint64_t target_handle = 0;
+        int32_t magnitude_q16 = 0;
+        int32_t duration_days = -1;
+        int32_t stacks = 1;
+        int64_t source_id = 0;
+    };
+    bool era_reward_host_selection_pending() const {
+        return _era_reward_offer.status == 2 && _era_reward_offer.transaction_id == 0;
+    }
+    bool era_reward_selected_modifier_commands(
+        std::vector<EraRewardModifierCommand> &out, std::string &error) const;
+    void settle_era_reward_selection_pod(bool ok, const char *error);
 
 private:
     struct Condition {
@@ -754,6 +782,7 @@ private:
     std::string _last_parallel_fallback_reason;
     std::string _last_error;
     NativeCountryRuntime *_country_runtime = nullptr;
+    const NativeCountryRuntime *_era_reward_country_view = nullptr;
 
     std::vector<std::string> _metric_keys;
     std::vector<std::string> _behavior_command_keys;

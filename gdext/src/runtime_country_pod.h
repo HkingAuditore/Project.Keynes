@@ -10,6 +10,11 @@
 
 namespace pk {
 
+struct RuntimeCountryPodMilestoneActivation {
+    int32_t slot = -1;
+    int32_t technology = -1;
+};
+
 struct RuntimeCountryPodPlan {
     RuntimeDomainHeader header{};
     RuntimeCountryPodSnapshot next_state{};
@@ -21,6 +26,9 @@ struct RuntimeCountryPodPlan {
     // asset transaction has its own prepare/commit/complete lifecycle and
     // must not be coerced into a generic peer ACK.
     std::vector<RuntimeEconomyAssetRequest> economy_requests;
+    // Era milestones whose completed bit this plan sets. They are notified to
+    // the era-reward planner only after the plan commits and never gate it.
+    std::vector<RuntimeCountryPodMilestoneActivation> activated_milestones;
     std::vector<RuntimeDomainAck> acks;
     uint32_t required_ack_count = 0;
     uint8_t preflight_ok = 0;
@@ -157,7 +165,7 @@ private:
                           std::string &error) const;
     bool activate_pending_technology(RuntimeCountryPodSnapshot &state,
                                      int32_t slot, int32_t technology,
-                                     const RuntimeCountryPodPlan &plan,
+                                     RuntimeCountryPodPlan &plan,
                                      uint8_t peer_flags,
                                      std::string &error) const;
     void rebuild_territory_csr(RuntimeCountryPodSnapshot &state) const;
