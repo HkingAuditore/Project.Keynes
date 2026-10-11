@@ -1,0 +1,231 @@
+[gd_scene load_steps=14 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/economy_dossier.gd" id="1_script"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_chapter_nav.gd" id="2_nav"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_kpi_card.gd" id="3_kpi"]
+[ext_resource type="PackedScene" path="res://scenes/ui/economy_workspace.tscn" id="4_workspace"]
+[ext_resource type="PackedScene" path="res://scenes/ui/economy_dossier/overview_page.tscn" id="5_overview"]
+[ext_resource type="PackedScene" path="res://scenes/ui/economy_dossier/strata_page.tscn" id="6_strata"]
+[ext_resource type="PackedScene" path="res://scenes/ui/economy_dossier/industry_page.tscn" id="7_industry"]
+[ext_resource type="PackedScene" path="res://scenes/ui/economy_dossier/investment_page.tscn" id="8_investment"]
+[ext_resource type="PackedScene" path="res://scenes/ui/economy_dossier/market_page.tscn" id="9_market"]
+[ext_resource type="PackedScene" path="res://scenes/ui/economy_dossier/trade_page.tscn" id="10_trade"]
+[ext_resource type="PackedScene" path="res://scenes/ui/economy_dossier/cities_page.tscn" id="11_cities"]
+
+[node name="EconomyDossier" type="VBoxContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+script = ExtResource("1_script")
+
+[node name="TopBar" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="ChapterNav" type="Control" parent="TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(240, 38)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("2_nav")
+
+[node name="ScopeBox" type="HBoxContainer" parent="TopBar"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_constants/separation = 6
+
+[node name="ScopeCaption" type="Label" parent="TopBar/ScopeBox"]
+layout_mode = 2
+text = "范围"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="ScopeOption" type="OptionButton" parent="TopBar/ScopeBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(150, 30)
+layout_mode = 2
+tooltip_text = "全国，或单独查看一个城市"
+fit_to_longest_item = false
+
+[node name="ScopeReset" type="Button" parent="TopBar/ScopeBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+tooltip_text = "回到全国范围"
+text = "回到全国"
+theme_type_variation = &"PKDossierLink"
+
+[node name="FilterBar" type="HBoxContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="FilterLabel" type="Label" parent="FilterBar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "筛选"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="FilterChips" type="HBoxContainer" parent="FilterBar"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 5
+
+[node name="Chip0" type="Button" parent="FilterBar/FilterChips"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+theme_type_variation = &"PKDossierChip"
+
+[node name="Chip1" type="Button" parent="FilterBar/FilterChips"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+theme_type_variation = &"PKDossierChip"
+
+[node name="Chip2" type="Button" parent="FilterBar/FilterChips"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+theme_type_variation = &"PKDossierChip"
+
+[node name="Chip3" type="Button" parent="FilterBar/FilterChips"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+theme_type_variation = &"PKDossierChip"
+
+[node name="Chip4" type="Button" parent="FilterBar/FilterChips"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+theme_type_variation = &"PKDossierChip"
+
+[node name="Chip5" type="Button" parent="FilterBar/FilterChips"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+theme_type_variation = &"PKDossierChip"
+
+[node name="Chip6" type="Button" parent="FilterBar/FilterChips"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+theme_type_variation = &"PKDossierChip"
+
+[node name="Chip7" type="Button" parent="FilterBar/FilterChips"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+theme_type_variation = &"PKDossierChip"
+
+[node name="Chip8" type="Button" parent="FilterBar/FilterChips"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+theme_type_variation = &"PKDossierChip"
+
+[node name="StatusLabel" type="Label" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+autowrap_mode = 3
+theme_type_variation = &"PKDossierCaption"
+
+[node name="PageViewport" type="ScrollContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="PageColumn" type="VBoxContainer" parent="PageViewport"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="KpiStrip" type="PanelContainer" parent="PageViewport/PageColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierBand"
+
+[node name="KpiRow" type="HBoxContainer" parent="PageViewport/PageColumn/KpiStrip"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Kpi0" type="Control" parent="PageViewport/PageColumn/KpiStrip/KpiRow"]
+custom_minimum_size = Vector2(150, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="Kpi1" type="Control" parent="PageViewport/PageColumn/KpiStrip/KpiRow"]
+custom_minimum_size = Vector2(150, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="Kpi2" type="Control" parent="PageViewport/PageColumn/KpiStrip/KpiRow"]
+custom_minimum_size = Vector2(150, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="Kpi3" type="Control" parent="PageViewport/PageColumn/KpiStrip/KpiRow"]
+custom_minimum_size = Vector2(150, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="Kpi4" type="Control" parent="PageViewport/PageColumn/KpiStrip/KpiRow"]
+custom_minimum_size = Vector2(150, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="PageStack" type="MarginContainer" parent="PageViewport/PageColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/margin_left = 2
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 28
+
+[node name="OverviewPage" parent="PageViewport/PageColumn/PageStack" instance=ExtResource("5_overview")]
+layout_mode = 2
+
+[node name="StrataPage" parent="PageViewport/PageColumn/PageStack" instance=ExtResource("6_strata")]
+visible = false
+layout_mode = 2
+
+[node name="IndustryPage" parent="PageViewport/PageColumn/PageStack" instance=ExtResource("7_industry")]
+visible = false
+layout_mode = 2
+
+[node name="InvestmentPage" parent="PageViewport/PageColumn/PageStack" instance=ExtResource("8_investment")]
+visible = false
+layout_mode = 2
+
+[node name="MarketPage" parent="PageViewport/PageColumn/PageStack" instance=ExtResource("9_market")]
+visible = false
+layout_mode = 2
+
+[node name="TradePage" parent="PageViewport/PageColumn/PageStack" instance=ExtResource("10_trade")]
+visible = false
+layout_mode = 2
+
+[node name="CitiesPage" parent="PageViewport/PageColumn/PageStack" instance=ExtResource("11_cities")]
+visible = false
+layout_mode = 2
+
+[node name="FinanceHost" type="MarginContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="EconomyWorkspace" parent="FinanceHost" instance=ExtResource("4_workspace")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="RefreshTimer" type="Timer" parent="."]
+unique_name_in_owner = true
+one_shot = true

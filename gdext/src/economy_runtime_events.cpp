@@ -47,7 +47,123 @@ PackedByteArray make_event_archive_chunk(uint16_t section, uint32_t records,
     if (!bytes.empty()) std::memcpy(out.ptrw(), bytes.data(), bytes.size());
     return out;
 }
+// Moves `previous` one band at a time and only once `value` clears the
+// neighbouring threshold by `margin`, so a cohort hovering on a boundary does
+// not repaint its cell every day.
+uint8_t hysteretic_band(int64_t value, const int64_t *thresholds, int32_t count,
+                        uint8_t previous, int64_t margin) {
+    int32_t level = 0;
+    if (previous > count) {
+        while (level < count && value >= thresholds[level]) ++level;
+        return static_cast<uint8_t>(level);
+    }
+    level = previous;
+    while (level < count && value >= thresholds[level] + margin) ++level;
+    while (level > 0 && value < thresholds[level - 1] - margin) --level;
+    return static_cast<uint8_t>(level);
+}
+
+constexpr int32_t VISUAL_RICH_LEVEL = 5;
+constexpr int32_t VISUAL_POOR_LEVEL = 1;
+constexpr int64_t VISUAL_SHARE_THRESHOLDS_Q16[3] = {
+    NativeEconomyRuntime::Q16_ONE * 5 / 100, NativeEconomyRuntime::Q16_ONE * 20 / 100,
+    NativeEconomyRuntime::Q16_ONE * 40 / 100,
+};
+constexpr int64_t VISUAL_SHARE_MARGIN_Q16 = NativeEconomyRuntime::Q16_ONE * 2 / 100;
+constexpr int64_t VISUAL_LIVING_MARGIN_Q16 = NativeEconomyRuntime::Q16_ONE * 15 / 1000;
 } // namespace
+
+bool NativeEconomyRuntime::update_building_visual_social(
+        int32_t cell, int64_t population, int64_t composite_q16, int64_t rich,
+        int64_t poor) {
+    const size_t index = static_cast<size_t>(cell);
+    if (cell < 0 || index >= _visual_living_level.size()) return false;
+    uint8_t living = BUILDING_VISUAL_UNKNOWN;
+    uint8_t rich_bucket = BUILDING_VISUAL_UNKNOWN;
+    uint8_t poor_bucket = BUILDING_VISUAL_UNKNOWN;
+    if (population > 0) {
+        living = hysteretic_band(composite_q16, LIVING_STANDARD_THRESHOLDS_Q16, 6,
+                                 _visual_living_level[index], VISUAL_LIVING_MARGIN_Q16);
+        rich_bucket = hysteretic_band(rich * Q16_ONE / population,
+            VISUAL_SHARE_THRESHOLDS_Q16, 3, _visual_rich_bucket[index],
+            VISUAL_SHARE_MARGIN_Q16);
+        poor_bucket = hysteretic_band(poor * Q16_ONE / population,
+            VISUAL_SHARE_THRESHOLDS_Q16, 3, _visual_poor_bucket[index],
+            VISUAL_SHARE_MARGIN_Q16);
+    }
+    if (living == _visual_living_level[index] &&
+        rich_bucket == _visual_rich_bucket[index] &&
+        poor_bucket == _visual_poor_bucket[index])
+        return false;
+    _visual_living_level[index] = living;
+    _visual_rich_bucket[index] = rich_bucket;
+    _visual_poor_bucket[index] = poor_bucket;
+    return true;
+}
+
+void NativeEconomyRuntime::mark_building_visual_cell(int32_t cell) {
+    if (cell < 0 || cell >= _cell_count.get()) return;
+    _building_visual_dirty_cells.push_back(cell);
+    ++_building_visual_generation;
+}
+
+void NativeEconomyRuntime::rebuild_building_visual_social() {
+    const size_t cells = static_cast<size_t>(std::max(0, _cell_count.get()));
+    _visual_living_level.assign(cells, BUILDING_VISUAL_UNKNOWN);
+    _visual_rich_bucket.assign(cells, BUILDING_VISUAL_UNKNOWN);
+    _visual_poor_bucket.assign(cells, BUILDING_VISUAL_UNKNOWN);
+    if (!_bootstrapped) return;
+    for (int32_t cell = 0; cell < static_cast<int32_t>(cells); ++cell) {
+        int64_t weighted = 0;
+        int64_t population = 0;
+        int64_t rich = 0;
+        int64_t poor = 0;
+        population_store().for_each_in_cell(cell, [&](int32_t slot) {
+            const int64_t people = std::max<int64_t>(
+                0, population_store().population[slot]);
+            if (people <= 0) return;
+            const int64_t composite = population_store().composite_satisfaction[slot];
+            population = saturating_add(population, people, _saturation_count);
+            weighted = saturating_add(weighted,
+                saturating_mul(composite, people, _saturation_count),
+                _saturation_count);
+            const int32_t level = living_standard_level_for(composite);
+            if (level >= VISUAL_RICH_LEVEL) rich += people;
+            if (level <= VISUAL_POOR_LEVEL) poor += people;
+        });
+        if (population <= 0) continue;
+        update_building_visual_social(cell, population,
+            std::clamp<int64_t>(weighted / population, 0, Q16_ONE - 1), rich, poor);
+    }
+    ++_building_visual_generation;
+}
+
+void NativeEconomyRuntime::append_building_visual_social_rows(
+        const std::vector<int32_t> &cells, Dictionary &out) const {
+    PackedByteArray tiers;
+    PackedByteArray living;
+    PackedByteArray rich;
+    PackedByteArray poor;
+    tiers.resize(static_cast<int64_t>(cells.size()));
+    living.resize(tiers.size());
+    rich.resize(tiers.size());
+    poor.resize(tiers.size());
+    for (size_t i = 0; i < cells.size(); ++i) {
+        const size_t cell = static_cast<size_t>(cells[i]);
+        const int64_t at = static_cast<int64_t>(i);
+        tiers.set(at, cell < _settlements.tier.size() ? _settlements.tier[cell] : 0);
+        living.set(at, cell < _visual_living_level.size()
+            ? _visual_living_level[cell] : BUILDING_VISUAL_UNKNOWN);
+        rich.set(at, cell < _visual_rich_bucket.size()
+            ? _visual_rich_bucket[cell] : BUILDING_VISUAL_UNKNOWN);
+        poor.set(at, cell < _visual_poor_bucket.size()
+            ? _visual_poor_bucket[cell] : BUILDING_VISUAL_UNKNOWN);
+    }
+    out["settlement_tiers"] = tiers;
+    out["living_levels"] = living;
+    out["rich_buckets"] = rich;
+    out["poor_buckets"] = poor;
+}
 
 void NativeEconomyRuntime::publish_social_pressure_facts() {
     for (const int32_t cell : _epoch_settlement_cells) {
@@ -56,6 +172,8 @@ void NativeEconomyRuntime::publish_social_pressure_facts() {
             continue;
         int64_t weighted = 0;
         int64_t population = 0;
+        int64_t rich = 0;
+        int64_t poor = 0;
         int32_t grievance_slot = -1;
         int64_t grievance_q16 = Q16_ONE;
         population_store().for_each_in_cell(cell, [&](int32_t slot) {
@@ -67,14 +185,20 @@ void NativeEconomyRuntime::publish_social_pressure_facts() {
             weighted = saturating_add(weighted,
                 saturating_mul(composite, people, _saturation_count),
                 _saturation_count);
+            if (composite >= LIVING_STANDARD_THRESHOLDS_Q16[VISUAL_RICH_LEVEL - 1])
+                rich += people;
+            if (composite < LIVING_STANDARD_THRESHOLDS_Q16[VISUAL_POOR_LEVEL])
+                poor += people;
             if (composite < grievance_q16) {
                 grievance_q16 = composite;
                 grievance_slot = slot;
             }
         });
-        if (population <= 0) continue;
-        const int64_t composite_q16 = std::clamp<int64_t>(
+        const int64_t composite_q16 = population <= 0 ? 0 : std::clamp<int64_t>(
             weighted / population, 0, Q16_ONE - 1);
+        if (update_building_visual_social(cell, population, composite_q16, rich, poor))
+            mark_building_visual_cell(cell);
+        if (population <= 0) continue;
         const int32_t level = social_pressure_level_for(composite_q16);
         const int32_t previous = _cell_social_pressure_level[cell];
         if (level == previous) continue;

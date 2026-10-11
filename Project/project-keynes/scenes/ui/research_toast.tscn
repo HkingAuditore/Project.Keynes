@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/research_toast.gd" id="1_toast"]
+
+[node name="ResearchToast" type="Control"]
+mouse_filter = 2
+script = ExtResource("1_toast")

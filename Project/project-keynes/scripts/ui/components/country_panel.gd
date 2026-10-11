@@ -5,11 +5,12 @@ class_name CountryPanel
 # but framing, so no screen inherits another domain's dossier chrome or tabs.
 signal close_requested()
 signal section_selected(section_id: String)
+signal locate_cell_requested(cell: int)
 
 const SECTION_DEFINITIONS := [
 	{"id": "technology", "label": "科技研究", "subtitle": "编排研究投入，浏览技术网络与时代前沿", "icon": &"country.technology", "accent": UITokens.CLIMATE, "available": true},
 	{"id": "ideology", "label": "国家理念", "subtitle": "形成国家道路，审视社会支持与民族精神", "icon": &"country.politics", "accent": UITokens.ACCENT, "available": true},
-	{"id": "economy", "label": "财政经济", "subtitle": "核对国库、税制、贸易与财政调度", "icon": &"country.economy", "accent": UITokens.RESOURCE, "available": true},
+	{"id": "economy", "label": "国民经济", "subtitle": "阶层民生、产业运营、投资风向、物资贸易与财政", "icon": &"country.economy", "accent": UITokens.RESOURCE, "available": true},
 	{"id": "military", "label": "军事", "subtitle": "尚未开放", "icon": &"country.military", "accent": UITokens.RISK, "available": false},
 	{"id": "diplomacy", "label": "外交", "subtitle": "尚未开放", "icon": &"country.diplomacy", "accent": UITokens.WATER, "available": false},
 ]
@@ -32,7 +33,9 @@ var _mobile_nav: ScrollContainer
 var _nav_buttons: Dictionary = {}
 var _mobile_nav_buttons: Dictionary = {}
 var _technology_workspace: Control
+var _economy_dossier: EconomyDossier
 var _economy_workspace: Control
+var _hinges: Control
 var _ideology_workspace: Control
 var _model: Dictionary = {}
 var _section_id := ""
@@ -59,8 +62,10 @@ func _ready() -> void:
 	_country_mark = get_node_or_null("Center/Dialog/Main/PageSurface/PageArea/Header/HeaderRow/CountryMark") as TextureRect
 	_header_panel = get_node_or_null("Center/Dialog/Main/PageSurface/PageArea/Header") as PanelContainer
 	_technology_workspace = get_node_or_null("Center/Dialog/Main/PageSurface/PageArea/SectionHost/TechnologyWorkspace") as Control
-	_economy_workspace = get_node_or_null("Center/Dialog/Main/PageSurface/PageArea/SectionHost/EconomyWorkspace") as Control
+	_economy_dossier = get_node_or_null("Center/Dialog/Main/PageSurface/PageArea/SectionHost/EconomyDossier") as EconomyDossier
+	_economy_workspace = _economy_dossier.economy_workspace() if _economy_dossier != null else null
 	_ideology_workspace = get_node_or_null("Center/Dialog/Main/PageSurface/PageArea/SectionHost/IdeologyWorkspace") as Control
+	_hinges = get_node_or_null("Center/Dialog/Hinges") as Control
 	var close_button := get_node_or_null("Center/Dialog/Main/PageSurface/PageArea/Header/HeaderRow/CloseButton") as Button
 	if _center == null or _dialog == null or _section_host == null \
 			or _nav_rail == null or _nav_column == null or _page_surface == null \
@@ -68,8 +73,8 @@ func _ready() -> void:
 			or _section_icon == null or _section_title == null \
 			or _section_subtitle == null or _country_title == null \
 			or _country_subtitle == null or _country_mark == null or _header_panel == null \
-			or _technology_workspace == null or _economy_workspace == null or _ideology_workspace == null \
-			or close_button == null:
+			or _technology_workspace == null or _economy_dossier == null or _economy_workspace == null \
+			or _ideology_workspace == null or _hinges == null or close_button == null:
 		push_error("CountryPanel 必须通过 country_panel.tscn 实例化。")
 		return
 	_country_mark.texture = IconCatalog.texture_for_key(&"country.affairs")
@@ -77,6 +82,8 @@ func _ready() -> void:
 	_setup_navigation()
 	IconButton.apply(close_button, &"action.close", IconButton.SMALL, "关闭国家事务")
 	close_button.pressed.connect(close_panel)
+	_economy_dossier.locate_cell_requested.connect(func(cell): locate_cell_requested.emit(cell))
+	_dialog.resized.connect(_place_hinges)
 	call_deferred("_update_responsive_layout")
 
 
@@ -89,10 +96,15 @@ func show_section(section_id: String, model: Dictionary) -> void:
 	if _dialog == null:
 		_ready()
 	_model = model
+	var was_open := visible
 	_section_id = _normalized_section(section_id)
 	_apply_section()
 	visible = true
-	UIAnimation.crossfade(_dialog, UITokens.ANIM_MED)
+	if was_open:
+		UIAnimation.crossfade(_section_host, UITokens.ANIM_FAST)
+	else:
+		modulate.a = 1.0
+		UIAnimation.fade_slide_in(_dialog, Vector2(0.0, 14.0), UITokens.ANIM_MED)
 
 
 func close_panel() -> void:
@@ -110,8 +122,8 @@ func set_player_controller(controller) -> void:
 	_player_controller = controller
 	if _technology_workspace != null and _technology_workspace.has_method("set_player_controller"):
 		_technology_workspace.set_player_controller(controller)
-	if _economy_workspace != null and _economy_workspace.has_method("set_player_controller"):
-		_economy_workspace.set_player_controller(controller)
+	if _economy_dossier != null:
+		_economy_dossier.set_player_controller(controller)
 	if _ideology_workspace != null and _ideology_workspace.has_method("set_player_controller"):
 		_ideology_workspace.set_player_controller(controller)
 
@@ -129,8 +141,8 @@ func refresh_summary(model: Dictionary) -> void:
 	if _section_id == "technology" and _technology_workspace != null:
 		_technology_workspace.refresh_research(model)
 		return
-	if _section_id == "economy" and _economy_workspace != null:
-		_economy_workspace.refresh_model(model)
+	if _section_id == "economy" and _economy_dossier != null:
+		_economy_dossier.refresh_model(model)
 		return
 	if _section_id == "ideology" and _ideology_workspace != null:
 		_ideology_workspace.refresh_model(model)
@@ -171,7 +183,7 @@ func _apply_section() -> void:
 	var economy_open := _section_id == "economy"
 	var ideology_open := _section_id == "ideology"
 	_technology_workspace.visible = technology_open
-	_economy_workspace.visible = economy_open
+	_economy_dossier.visible = economy_open
 	_ideology_workspace.visible = ideology_open
 	if technology_open:
 		if _technology_workspace.has_method("set_player_controller"):
@@ -182,11 +194,9 @@ func _apply_section() -> void:
 			_technology_workspace.reset_navigation()
 		return
 	if economy_open:
-		if _economy_workspace.has_method("set_player_controller"):
-			_economy_workspace.set_player_controller(_player_controller)
-		if _economy_workspace.has_method("set_compact"):
-			_economy_workspace.set_compact(_compact)
-		_economy_workspace.set_model(_model)
+		_economy_dossier.set_player_controller(_player_controller)
+		_economy_dossier.set_compact(_compact)
+		_economy_dossier.set_model(_model)
 		return
 	if ideology_open:
 		if _ideology_workspace.has_method("set_player_controller"):
@@ -256,7 +266,11 @@ func _update_navigation_state() -> void:
 		if caption != null:
 			caption.add_theme_color_override("font_color",
 				Color("#fff0c8") if active else (
-					Color("#d9c6a3") if not desktop.disabled else Color("#776b58")))
+					Color("#3a2414") if not desktop.disabled else Color("#8a7a62")))
+		var icon := desktop.get_node_or_null("Row/Icon") as TextureRect if desktop != null else null
+		if icon != null and not desktop.disabled:
+			var accent: Color = _definition_for(String(section_id)).get("accent", UITokens.ACCENT)
+			icon.modulate = Color("#fff0c8") if active else accent.lerp(UITokens.ARCHIVE_INK, 0.35)
 		if mobile != null and not mobile.disabled:
 			mobile.button_pressed = active
 
@@ -291,7 +305,25 @@ func _update_responsive_layout() -> void:
 	_section_subtitle.visible = not _compact
 	if _technology_workspace != null:
 		_technology_workspace.set_compact(_compact)
-	if _economy_workspace != null and _economy_workspace.has_method("set_compact"):
-		_economy_workspace.set_compact(_compact)
+	if _economy_dossier != null:
+		_economy_dossier.set_compact(_compact)
 	if _ideology_workspace != null:
 		_ideology_workspace.set_compact(_compact)
+	_place_hinges()
+
+
+# 铜铰链压在书脊与纸页的接缝上；紧凑布局没有书脊，铰链随之隐藏。
+func _place_hinges() -> void:
+	if _hinges == null or _nav_rail == null:
+		return
+	_hinges.visible = _nav_rail.visible
+	if not _hinges.visible:
+		return
+	var seam := _nav_rail.size.x
+	var height := _dialog.size.y
+	var ratios := [0.18, 0.5, 0.82]
+	var children := _hinges.get_children()
+	for i in range(mini(children.size(), ratios.size())):
+		var hinge := children[i] as Control
+		hinge.position = Vector2(seam - hinge.size.x * 0.5,
+			round(height * float(ratios[i]) - hinge.size.y * 0.5))

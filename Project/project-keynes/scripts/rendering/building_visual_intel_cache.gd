@@ -4,6 +4,13 @@ extends RefCounted
 ## Player-owned, last-seen building intelligence. Native economy/technology
 ## remain authoritative; this cache is the only source the renderer may read.
 
+const UNKNOWN := 255
+## Snapshot keys (PKFG keys add the `building_intel_` prefix) and inclusive
+## maxima of the per-cell social bands, in the same order.
+const SOCIAL_KEYS: Array[String] = [
+	"settlement_tiers", "living_levels", "rich_buckets", "poor_buckets"]
+const SOCIAL_MAX := [7, 6, 3, 3]
+
 var _cell_to_row := PackedInt32Array()
 var _rows: Array[Dictionary] = []
 var _free_rows := PackedInt32Array()
@@ -87,10 +94,18 @@ func apply_snapshot(snapshot: Dictionary) -> Dictionary:
 	var offsets := PackedInt32Array(snapshot.get("type_offsets", PackedInt32Array()))
 	var types := PackedInt32Array(snapshot.get("type_indices", PackedInt32Array()))
 	var counts := PackedInt64Array(snapshot.get("counts", PackedInt64Array()))
+	# Social columns are optional (PKFG v2 and older bridges); a missing column
+	# reads as UNKNOWN and the planner derives it from building density.
+	var social: Array[PackedByteArray] = []
+	for key in SOCIAL_KEYS:
+		social.append(PackedByteArray(snapshot.get(key, PackedByteArray())))
+	var social_ok := true
+	for column in social:
+		social_ok = social_ok and (column.is_empty() or column.size() == cells.size())
 	if countries.size() != cells.size() or eras.size() != cells.size() \
 			or offsets.size() != cells.size() + 1 or offsets.is_empty() \
 			or offsets[0] != 0 or offsets[-1] != types.size() \
-			or types.size() != counts.size():
+			or types.size() != counts.size() or not social_ok:
 		return {"ok": false, "reason": "building_visual_snapshot_shape_invalid"}
 	# Validate the complete CSR before touching last-seen intelligence. A corrupt
 	# PKFG or stale bridge result must never leave a partially restored cache.
@@ -102,6 +117,10 @@ func apply_snapshot(snapshot: Dictionary) -> Dictionary:
 				or offsets[i] < 0 or offsets[i] > offsets[i + 1]:
 			return {"ok": false, "reason": "building_visual_snapshot_csr_invalid"}
 		previous_cell = cell
+		for c in SOCIAL_KEYS.size():
+			if not social[c].is_empty() and social[c][i] != UNKNOWN \
+					and social[c][i] > SOCIAL_MAX[c]:
+				return {"ok": false, "reason": "building_visual_snapshot_value_invalid"}
 		var previous_type := -1
 		for edge in range(offsets[i], offsets[i + 1]):
 			if types[edge] < 0 or types[edge] <= previous_type or counts[edge] <= 0:
@@ -116,16 +135,21 @@ func apply_snapshot(snapshot: Dictionary) -> Dictionary:
 			row_types.append(types[edge])
 			row_counts.append(counts[edge])
 		var old_signature := int(row_for_cell(cell).get("visual_signature", -1))
+		var values := PackedByteArray()
+		for column in social:
+			values.append(UNKNOWN if column.is_empty() else column[i])
+		var tier := values[0]
 		# An unknown era is still valid intelligence.  The technology runtime is
 		# authoritative for era discovery; until its first milestone is complete
 		# the renderer uses the neutral/unknown style while preserving the known
-		# building footprint and counts.
-		if row_types.is_empty():
+		# building footprint and counts. A populated cell without buildings is
+		# still a settlement and keeps its housing.
+		if row_types.is_empty() and (tier == UNKNOWN or tier == 0):
 			_remove_cell(cell)
 			if old_signature != -1:
 				changed.append(cell)
 			continue
-		var signature := _signature(countries[i], eras[i], row_types, row_counts)
+		var signature := _signature(countries[i], eras[i], row_types, row_counts, values)
 		var total := 0
 		for value in row_counts:
 			total += int(value)
@@ -136,6 +160,10 @@ func apply_snapshot(snapshot: Dictionary) -> Dictionary:
 			"observed_era_index": eras[i],
 			"type_indices": row_types,
 			"counts": row_counts,
+			"settlement_tier": int(values[0]),
+			"living_level": int(values[1]),
+			"rich_bucket": int(values[2]),
+			"poor_bucket": int(values[3]),
 			"visual_signature": signature,
 			"settlement_core_bucket": density_bucket,
 			"dominant_archetype": -1,
@@ -155,6 +183,12 @@ func to_pkfg_fields() -> Dictionary:
 	var offsets := PackedInt32Array([0])
 	var types := PackedInt32Array()
 	var counts := PackedInt64Array()
+	# Packed arrays held inside an Array are copied on access, so each social
+	# column is a separate local.
+	var tiers := PackedByteArray()
+	var living := PackedByteArray()
+	var rich := PackedByteArray()
+	var poor := PackedByteArray()
 	for cell in cells:
 		var row := row_for_cell(cell)
 		countries.append(int(row.observed_country_slot))
@@ -162,6 +196,10 @@ func to_pkfg_fields() -> Dictionary:
 		types.append_array(PackedInt32Array(row.type_indices))
 		counts.append_array(PackedInt64Array(row.counts))
 		offsets.append(types.size())
+		tiers.append(int(row.get("settlement_tier", UNKNOWN)))
+		living.append(int(row.get("living_level", UNKNOWN)))
+		rich.append(int(row.get("rich_bucket", UNKNOWN)))
+		poor.append(int(row.get("poor_bucket", UNKNOWN)))
 	return {
 		"building_intel_cells": cells,
 		"building_intel_country_slots": countries,
@@ -169,6 +207,10 @@ func to_pkfg_fields() -> Dictionary:
 		"building_intel_type_offsets": offsets,
 		"building_intel_type_indices": types,
 		"building_intel_counts": counts,
+		"building_intel_settlement_tiers": tiers,
+		"building_intel_living_levels": living,
+		"building_intel_rich_buckets": rich,
+		"building_intel_poor_buckets": poor,
 	}
 
 
@@ -177,7 +219,7 @@ func restore_pkfg(payload: Dictionary, type_count: int = -1) -> Dictionary:
 	if version <= 1:
 		configure(_cell_to_row.size())
 		return {"ok": true, "migrated_from": 1, "rows": 0}
-	if version != 2:
+	if version != 2 and version != 3:
 		return {"ok": false, "reason": "pkfg_version_unsupported"}
 	var snapshot := {
 		"cell_indices": payload.get("building_intel_cells", PackedInt32Array()),
@@ -187,6 +229,13 @@ func restore_pkfg(payload: Dictionary, type_count: int = -1) -> Dictionary:
 		"type_indices": payload.get("building_intel_type_indices", PackedInt32Array()),
 		"counts": payload.get("building_intel_counts", PackedInt64Array()),
 	}
+	if version >= 3:
+		var cells := PackedInt32Array(snapshot.cell_indices)
+		for key in SOCIAL_KEYS:
+			var column := PackedByteArray(payload.get("building_intel_" + key, PackedByteArray()))
+			if column.size() != cells.size():
+				return {"ok": false, "reason": "pkfg_building_social_truncated"}
+			snapshot[key] = column
 	var types := PackedInt32Array(snapshot.type_indices)
 	if type_count >= 0:
 		for type_idx in types:
@@ -244,11 +293,13 @@ static func _floor_log2(value: int) -> int:
 
 
 static func _signature(country: int, era: int, types: PackedInt32Array,
-		counts: PackedInt64Array) -> int:
+		counts: PackedInt64Array, social: PackedByteArray) -> int:
 	# 31-bit FNV-style hash avoids signed overflow differences between targets.
 	var value := 0x45D9F3B
 	value = ((value ^ country) * 16777619) & 0x7FFFFFFF
 	value = ((value ^ era) * 16777619) & 0x7FFFFFFF
+	for band in social:
+		value = ((value ^ band) * 16777619) & 0x7FFFFFFF
 	for i in types.size():
 		value = ((value ^ types[i]) * 16777619) & 0x7FFFFFFF
 		# Geometry reacts to logarithmic scale buckets. Exact economic counts remain

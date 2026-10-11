@@ -168,6 +168,12 @@ public:
     static constexpr int64_t MONEY_SCALE = 10000;
     static constexpr int64_t GOODS_SCALE = 1000;
     static constexpr int64_t Q16_ONE = 65536;
+    // Seven presentation bands over the cohort composite satisfaction.
+    static constexpr int64_t LIVING_STANDARD_THRESHOLDS_Q16[6] = {
+        Q16_ONE * 12 / 100, Q16_ONE * 22 / 100, Q16_ONE * 33 / 100,
+        Q16_ONE * 45 / 100, Q16_ONE * 58 / 100, Q16_ONE * 72 / 100,
+    };
+    static constexpr uint8_t BUILDING_VISUAL_UNKNOWN = 255;
     static constexpr int64_t PRODUCER_SUPPORT_PRICE_NUMERATOR = 1;
     static constexpr int64_t PRODUCER_SUPPORT_PRICE_DENOMINATOR = 5;
     static constexpr int32_t PRICE_NUMERIC_GUARD_MIN = 1;
@@ -664,6 +670,16 @@ public:
                                               const godot::String &view,
                                               int32_t offset, int32_t limit) const;
     godot::Dictionary building_cell_snapshot(int32_t cell_idx) const;
+    // Read-only country economy rollup over the frozen epoch territory. Views:
+    // summary / professions / buildings / goods / investment / settlements.
+    // scope_cell < 0 aggregates the whole territory; filter_id narrows the
+    // buildings view to one economic sector. Never simulation input.
+    godot::Dictionary country_economy_overview(int64_t country_handle,
+                                               const godot::String &view,
+                                               int32_t scope_cell,
+                                               int32_t filter_id,
+                                               int32_t offset,
+                                               int32_t limit) const;
     // Sparse, committed visual projection. This lane is deliberately excluded
     // from PKEC and state_hash; it is rebuilt from authoritative groups.
     godot::Dictionary building_visual_snapshot(
@@ -1010,6 +1026,7 @@ public:
         NOTABLE_PERSON_NEEDS,
         BUILDING_NOTABLE_PEOPLE,
         COUNTRY_CLASS_OPINION_SNAPSHOT,
+        COUNTRY_ECONOMY_OVERVIEW,
     };
     struct ReadKey {
         ReadQuery query = ReadQuery::NONE;
@@ -1044,6 +1061,11 @@ public:
         std::vector<int32_t> cell_offsets;
         std::vector<int32_t> type_indices;
         std::vector<int64_t> counts;
+        // Per cell; BUILDING_VISUAL_UNKNOWN where no cohort has been sampled.
+        std::vector<uint8_t> settlement_tiers;
+        std::vector<uint8_t> living_levels;
+        std::vector<uint8_t> rich_buckets;
+        std::vector<uint8_t> poor_buckets;
     };
     godot::Dictionary evaluate_read_query(const ReadKey &key);
     void read_view_subscribe(const ReadKey &key);
@@ -6218,6 +6240,11 @@ private:
     std::vector<int64_t> _building_visual_counts;
     std::vector<int32_t> _building_visual_dirty_cells;
     uint64_t _building_visual_generation = 0;
+    // Presentation-only social bands with hysteresis: not persisted and not
+    // part of the state hash; rebuilt from cohorts on read_view_reset().
+    std::vector<uint8_t> _visual_living_level;
+    std::vector<uint8_t> _visual_rich_bucket;
+    std::vector<uint8_t> _visual_poor_bucket;
     struct ReadSubscription {
         ReadKey key;
         uint64_t last_access_us = 0;
@@ -6745,6 +6772,14 @@ private:
     // distressed band and 4 is contentment.
     int32_t social_pressure_level_for(int64_t composite_q16) const;
     void publish_social_pressure_facts();
+    void rebuild_building_visual_social();
+    // Returns true when a presentation band of `cell` changed.
+    bool update_building_visual_social(int32_t cell, int64_t population,
+                                       int64_t composite_q16, int64_t rich,
+                                       int64_t poor);
+    void mark_building_visual_cell(int32_t cell);
+    void append_building_visual_social_rows(
+        const std::vector<int32_t> &cells, godot::Dictionary &out) const;
     void publish_technology_practice_facts();
     void publish_country_development_facts();
     bool prepare_fiscal_budgets(int64_t day_index, std::string &error);
@@ -7916,6 +7951,8 @@ private:
         bool include_details) const;
     void append_population_employment_fields(
         godot::Dictionary &out, int32_t cell_idx) const;
+    void group_job_totals(BuildingGroupConstRef group, int64_t &job_capacity,
+                          int64_t &jobs_filled, int64_t &sat) const;
     bool compile_settlement_catalog(const godot::Dictionary &catalog,
                                     std::string &error);
     int64_t population_total_for_cell(int32_t cell) const;

@@ -1,0 +1,138 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/investment_page.gd" id="1_script"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_stacked_bar.gd" id="2_stacked"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_bar_list.gd" id="3_bars"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_ledger_table.gd" id="4_ledger"]
+
+[node name="InvestmentPage" type="VBoxContainer"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 20
+script = ExtResource("1_script")
+chapter_id = "investment"
+
+[node name="Top" type="GridContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 28
+theme_override_constants/v_separation = 18
+columns = 2
+
+[node name="FlowColumn" type="VBoxContainer" parent="Top"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="FlowKicker" type="Label" parent="Top/FlowColumn"]
+layout_mode = 2
+text = "资本流向"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="FlowBar" type="Control" parent="Top/FlowColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("2_stacked")
+
+[node name="FlowNote" type="Label" parent="Top/FlowColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+theme_type_variation = &"PKDossierCaption"
+
+[node name="PressureColumn" type="VBoxContainer" parent="Top"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="PressureKicker" type="Label" parent="Top/PressureColumn"]
+layout_mode = 2
+text = "需求压力 · 最可能吸引下一轮投资"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="PressureList" type="Control" parent="Top/PressureColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("3_bars")
+
+[node name="PressureEmpty" type="Label" parent="Top/PressureColumn"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+autowrap_mode = 3
+theme_type_variation = &"PKDossierCaption"
+
+[node name="Body" type="GridContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 28
+theme_override_constants/v_separation = 18
+columns = 2
+
+[node name="CategoryColumn" type="VBoxContainer" parent="Body"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+theme_override_constants/separation = 6
+
+[node name="CategoryKicker" type="Label" parent="Body/CategoryColumn"]
+layout_mode = 2
+text = "扩产受阻 · 点选查看原因"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="CategoryList" type="Control" parent="Body/CategoryColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("3_bars")
+
+[node name="CategoryEmpty" type="Label" parent="Body/CategoryColumn"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+autowrap_mode = 3
+theme_type_variation = &"PKDossierCaption"
+
+[node name="ReasonAside" type="PanelContainer" parent="Body"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+theme_type_variation = &"PKDossierAside"
+
+[node name="ReasonBox" type="VBoxContainer" parent="Body/ReasonAside"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="ReasonTitle" type="Label" parent="Body/ReasonAside/ReasonBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierHeading"
+
+[node name="ReasonAdvice" type="Label" parent="Body/ReasonAside/ReasonBox"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+theme_type_variation = &"PKDossierCaption"
+
+[node name="ReasonList" type="Control" parent="Body/ReasonAside/ReasonBox"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("3_bars")
+
+[node name="SectorKicker" type="Label" parent="Body/ReasonAside/ReasonBox"]
+layout_mode = 2
+text = "受阻部门"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="SectorList" type="Control" parent="Body/ReasonAside/ReasonBox"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("3_bars")
+
+[node name="PendingKicker" type="Label" parent="."]
+layout_mode = 2
+text = "在建项目"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="PendingTable" type="Control" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("4_ledger")

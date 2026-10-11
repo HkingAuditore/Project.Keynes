@@ -39,6 +39,8 @@ const COUNTRY_UI_TECH_REFRESH_INTERVAL_MSEC := 50
 const RESEARCH_TOAST_POLL_INTERVAL_MSEC := 100
 # Open technology archive progress bars; keep this slower than a double-click.
 const RESEARCH_PANEL_PROGRESS_INTERVAL_MSEC := 750
+const TECH_ECONOMY_REFRESH_INTERVAL_MSEC := 500
+var _next_tech_economy_refresh_ms := 0
 var _top_bar: PlayerTopBar
 var _right_panel: InspectorPanel
 var _loading_overlay: WorldLoadingOverlay
@@ -96,7 +98,7 @@ const NATIVE_DIRTY_COUNTRY_STATE := 1 << 1
 const NATIVE_DIRTY_COUNTRY_TERRITORY := 1 << 2
 const NATIVE_DIRTY_COUNTRY_VISUAL_ERA := 1 << 3
 
-const ResearchToastScript = preload("res://scripts/ui/components/research_toast.gd")
+const ResearchToastScene = preload("res://scenes/ui/research_toast.tscn")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 
 var _research_toast: ResearchToast
@@ -214,7 +216,18 @@ func _on_country_research_signal_discovered(_event: Dictionary) -> void:
 
 
 func _on_economy_event_batch_available(_meta: Dictionary) -> void:
-	_mark_country_panel_dirty(COUNTRY_DIRTY_ECONOMY, "economy_commit")
+	if _country_view_model != null:
+		_country_view_model.sample_economy_history()
+	var domains := COUNTRY_DIRTY_ECONOMY
+	# Treasury cash and development objectives on the research page are fed by
+	# economy commits even on days when no country commit arrives.
+	if _country_panel != null and _country_panel.is_panel_open() \
+			and _country_panel.current_section() == "technology":
+		var now := Time.get_ticks_msec()
+		if now >= _next_tech_economy_refresh_ms:
+			_next_tech_economy_refresh_ms = now + TECH_ECONOMY_REFRESH_INTERVAL_MSEC
+			domains |= COUNTRY_DIRTY_TECHNOLOGY
+	_mark_country_panel_dirty(domains, "economy_commit")
 
 
 func _on_ideology_runtime_settled(_result: Dictionary) -> void:
@@ -268,7 +281,7 @@ func _flush_country_panel_refresh() -> void:
 		if not _country_refresh_timer_active:
 			_country_refresh_timer_active = true
 			get_tree().create_timer(float(wait_ms) / 1000.0).timeout.connect(
-				_flush_country_panel_refresh, CONNECT_ONE_SHOT)
+				_on_country_refresh_timer, CONNECT_ONE_SHOT)
 		return
 	_country_refresh_queued = false
 	_country_refresh_timer_active = false
@@ -279,6 +292,14 @@ func _flush_country_panel_refresh() -> void:
 		if section_mask == COUNTRY_DIRTY_TECHNOLOGY \
 		else COUNTRY_UI_REFRESH_INTERVAL_MSEC
 	_country_next_refresh_ms = now_ms + interval
+
+
+# SceneTreeTimer advances on frame delta, which can land a millisecond before
+# the wall-clock deadline. Disarm first so the flush can re-arm instead of
+# leaving the queued bit set with no timer behind it.
+func _on_country_refresh_timer() -> void:
+	_country_refresh_timer_active = false
+	_flush_country_panel_refresh()
 
 
 func set_diagnostics_source(source: Node) -> void:
@@ -483,12 +504,12 @@ func _on_country_committed(report: Dictionary) -> void:
 	# leaving the legacy dirty-family bits empty.  The technology archive reads
 	# that committed research snapshot, so while it is open it must observe every
 	# committed country boundary; otherwise the old cached model survives until a
-	# technology click forces a direct live snapshot.
-	if _country_panel != null and _country_panel.is_panel_open() \
-			and String(_country_panel.current_section()) == "technology" \
-			and (int(report.get("generation", report.get("country_generation", 0))) > 0 \
+	# technology click forces a direct live snapshot.  Closed or other sections
+	# only invalidate the cached technology model (no build), so reopening never
+	# presents a model from before the panel was closed.
+	if int(report.get("generation", report.get("country_generation", 0))) > 0 \
 			or int(report.get("changed_countries", 0)) > 0 \
-			or state_dirty):
+			or state_dirty:
 		domains |= COUNTRY_DIRTY_TECHNOLOGY
 	var research_poll := {"states_changed": false, "completed": false}
 	if state_dirty:
@@ -568,6 +589,15 @@ func _load_country_section_deferred(section_id: String, generation: int) -> void
 		if open_mask == COUNTRY_DIRTY_TECHNOLOGY \
 		else COUNTRY_UI_REFRESH_INTERVAL_MSEC
 	_country_next_refresh_ms = Time.get_ticks_msec() + open_interval
+
+
+func _locate_cell_from_country_panel(cell_index: int) -> void:
+	close_country_panel()
+	if _player_controller == null or _map == null:
+		return
+	var cell := _map.cell_at(cell_index)
+	if cell != null:
+		_player_controller.select_cell(cell)
 
 
 func close_country_panel() -> void:
@@ -1087,6 +1117,7 @@ func _bind_ui() -> void:
 		_restore_inspector_after_country()
 	)
 	_country_panel.section_selected.connect(open_country_section)
+	_country_panel.locate_cell_requested.connect(_locate_cell_from_country_panel)
 
 	_loading_overlay = get_node("UIRoot/ModalLayer/WorldLoadingOverlay") as WorldLoadingOverlay
 
@@ -1238,7 +1269,7 @@ func _ensure_research_toast() -> void:
 	var hud := get_node_or_null("UIRoot/HUDLayer") as Control
 	if hud == null:
 		return
-	_research_toast = ResearchToastScript.new() as ResearchToast
+	_research_toast = ResearchToastScene.instantiate() as ResearchToast
 	_research_toast.name = "ResearchToast"
 	_research_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud.add_child(_research_toast)

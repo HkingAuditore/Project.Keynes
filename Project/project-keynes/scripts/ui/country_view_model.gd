@@ -18,12 +18,35 @@ var _generator = null
 var _section_cache: Dictionary = {}
 var _section_cache_revisions: Dictionary = {}
 var _static_catalog_cache: Dictionary = {}
+var _economy_history := EconomyHistoryBuffer.new()
+var _strata_table: SocialStrataTable
 
 
 func set_context(generator) -> void:
 	_generator = generator
 	_section_cache.clear()
 	_section_cache_revisions.clear()
+	_economy_history.reset()
+
+
+func economy_history() -> EconomyHistoryBuffer:
+	return _economy_history
+
+
+func strata_table() -> SocialStrataTable:
+	if _strata_table == null:
+		_strata_table = SocialStrataTable.load_default()
+	return _strata_table
+
+
+## 每个经济提交批次调用一次；同一已提交日只记录一个趋势点。
+func sample_economy_history() -> bool:
+	var context := _country_context()
+	if not bool(context.get("ok", false)) or _generator == null \
+			or not _generator.has_method("get_economy_facade"):
+		return false
+	return _economy_history.sample(_generator.get_economy_facade(),
+		int(context.country_handle), int(context.summary.get("cash", 0)), strata_table())
 
 
 func invalidate_cache(domains: int = -1) -> void:
@@ -476,6 +499,9 @@ func build(section_id: String = "technology") -> Dictionary:
 		if treasury_available else int(context.summary.get("nonzero_good_count", 0))
 	model["country_facade"] = facade
 	model["economy_facade"] = economy_facade
+	if normalized_section == "economy":
+		model["economy_history"] = _economy_history
+		model["strata_table"] = strata_table()
 	model.merge(section_snapshot, true)
 	if normalized_section == "technology":
 		var research: Dictionary = model.get("research", {})

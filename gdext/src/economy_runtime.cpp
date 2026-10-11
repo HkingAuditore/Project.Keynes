@@ -5837,12 +5837,8 @@ int32_t NativeEconomyRuntime::living_standard_level_for(int64_t composite_q16) c
     // Calibrated against the composite, not the old survival figure: a cohort
     // that eats well but owns nothing and lives in a hamlet lands near 0.45, so
     // the bands sit well below the pre-composite thresholds.
-    static constexpr int64_t THRESHOLDS[6] = {
-        Q16_ONE * 12 / 100, Q16_ONE * 22 / 100, Q16_ONE * 33 / 100,
-        Q16_ONE * 45 / 100, Q16_ONE * 58 / 100, Q16_ONE * 72 / 100,
-    };
     int32_t level = 0;
-    while (level < 6 && composite_q16 >= THRESHOLDS[level]) ++level;
+    while (level < 6 && composite_q16 >= LIVING_STANDARD_THRESHOLDS_Q16[level]) ++level;
     return level;
 }
 

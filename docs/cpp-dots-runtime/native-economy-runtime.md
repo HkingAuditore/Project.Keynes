@@ -1,5 +1,27 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V6）
 
+## 国家经济总览查询（2026-10-11）
+
+`NativeEconomyRuntime::country_economy_overview(handle, view, scope_cell, filter_id,
+offset, limit)`（`economy_runtime_queries_country.cpp`）是国民经济卷宗唯一的数据源，
+只读、不进 PKEC、不参与状态 hash，也不得被任何模拟阶段读取。`scope_cell < 0` 汇总
+本国全部领土格，`>= 0` 只看该格（不属于本国返回 `cell_not_in_country`）。
+
+| view | 内容 |
+| --- | --- |
+| `summary` | 人口/就业/资金、居民日收支（工资、补贴、实物、税）、综合与温饱满意度、建筑单位/停业/产值/成本/欠薪/产出/丢弃/气候损失、5 个经济部门数组、`state_day_min/max` |
+| `professions` | 每职业人口、就业、资金、日收支、8 维满意度（扁平 `satisfaction_dims_q16`）、按需求的最差需求人口 |
+| `buildings` | 每建筑类型的单位、停业、营收与各项成本、岗位、利用率、在建数和 19 种投资拒绝直方图；`filter_id` = 经济部门 |
+| `investment` | 全局与分部门拒绝直方图、在建项目（类型、组数、首个完工日） |
+| `goods` | 每物资需求/供给/实际提取 EMA、库存、短缺率、价格与成本锚、外贸 EMA、短缺格数 |
+| `settlements` | 每聚落人口、收入、满意度、岗位、建筑、利润、最缺物资和职业 CSR |
+
+口径：人口侧 period 账本按每格自身经过的天数折算为“每日”，建筑侧同样逐格归一；
+不同城市结算日可能不同步，结果用 `state_day_min/max` 标出，UI 必须提示而不是假装同日。
+金额为 money scale 10000 的整数，比率为 Q16。查询在 worker 模式下走
+`EconomyCommitView`（`ReadQuery::COUNTRY_ECONOMY_OVERVIEW`），未命中返回
+`economy_busy_retry`，调用方下一帧重试。
+
 ## 建筑报价与税费口径（2026-09-30）
 
 建筑预测把产出拆成业主自用、商人收购和 producer support 三条收入分量。商人收购比例

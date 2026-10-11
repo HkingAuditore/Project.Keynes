@@ -71,17 +71,23 @@ var _canal_receipt_cursors: Dictionary = {}
 
 ## Cold visual metadata boundary. It exposes only catalog-authored category
 ## columns; renderers never inspect IDs, filenames, outputs, or years.
+const BUILDING_VISUAL_CATALOG_KEYS := [
+	"building_type_ids", "building_kinds", "building_economic_sectors",
+	"building_semantic_tag_offsets", "building_semantic_tags",
+	"building_production_climate_profile_indices", "production_climate_profile_ids",
+	"building_resource_offsets", "building_production_resource_ids", "building_resource_ids",
+	"building_industry_chain_ids", "building_output_offsets", "building_output_good_ids",
+	"good_ids", "building_owner_slots", "building_employee_offsets", "building_employee_slots",
+	"building_construction_offsets", "building_construction_good_ids",
+]
+
+
 func building_visual_catalog() -> Dictionary:
-	return {
-		"building_type_ids": _catalog.get("building_type_ids", PackedStringArray()),
-		"building_kinds": _catalog.get("building_kinds", PackedInt32Array()),
-		"building_economic_sectors": _catalog.get(
-			"building_economic_sectors", PackedInt32Array()),
-		"building_semantic_tag_offsets": _catalog.get(
-			"building_semantic_tag_offsets", PackedInt32Array()),
-		"building_semantic_tags": _catalog.get(
-			"building_semantic_tags", PackedStringArray()),
-	}
+	var out := {}
+	for key in BUILDING_VISUAL_CATALOG_KEYS:
+		if _catalog.has(key):
+			out[key] = _catalog[key]
+	return out
 
 func configure(world_ext: Object, cell_count: int, seed: int, profile = null) -> Dictionary:
 	_world_ext = world_ext
@@ -321,6 +327,50 @@ func country_trade_snapshot(country_handle: int, view: String = "summary",
 		country_handle, view, offset, clampi(limit, 1, 64))
 	page["good_ids"] = _catalog.get("good_ids", PackedStringArray())
 	return page
+
+
+## 国家经济卷宗只读聚合。scope_cell < 0 为全国；filter_id 仅对 buildings 视图生效（产业部门）。
+func country_economy_overview(country_handle: int, view: String = "summary",
+		scope_cell: int = -1, filter_id: int = -1, offset: int = 0,
+		limit: int = 0) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_country_economy_overview"):
+		return {"ok": false, "reason": "country economy overview API unavailable",
+			"view": view}
+	var page: Dictionary = _world_ext.get_country_economy_overview(
+		country_handle, view, scope_cell, filter_id, offset, limit)
+	if not bool(page.get("ok", false)):
+		return page
+	if page.has("profession_stable_ids"):
+		page["profession_display_names"] = _mapped_names(
+			page["profession_stable_ids"], _profession_display_names)
+	if page.has("building_stable_ids"):
+		page["building_display_names"] = _mapped_names(
+			page["building_stable_ids"], _building_display_names)
+	if page.has("good_stable_ids"):
+		page["good_display_names"] = _mapped_names(
+			page["good_stable_ids"], _good_display_names)
+	if page.has("need_ids"):
+		page["need_display_names"] = _mapped_names(page["need_ids"], _need_display_names)
+	return page
+
+
+static func _mapped_names(stable_ids: PackedStringArray, table: Dictionary) -> PackedStringArray:
+	var names := PackedStringArray()
+	for stable_id in stable_ids:
+		names.append(String(table.get(String(stable_id), String(stable_id))))
+	return names
+
+
+func need_display_name(stable_id: String) -> String:
+	return String(_need_display_names.get(stable_id, stable_id))
+
+
+func building_display_name(building_index: int) -> String:
+	var ids: PackedStringArray = _catalog.get("building_type_ids", PackedStringArray())
+	if building_index < 0 or building_index >= ids.size():
+		return "建筑 %d" % building_index
+	var stable_id := String(ids[building_index])
+	return String(_building_display_names.get(stable_id, stable_id))
 
 
 func good_display_name(good_index: int) -> String:

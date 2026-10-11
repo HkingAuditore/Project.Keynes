@@ -1669,6 +1669,7 @@ Dictionary NativeEconomyRuntime::building_visual_snapshot(
     out["type_offsets"] = type_offsets;
     out["type_indices"] = type_indices;
     out["counts"] = counts;
+    append_building_visual_social_rows(cells, out);
     return out;
 }
 

@@ -1,78 +1,128 @@
-extends PanelContainer
+extends DossierChart
 class_name ResearchToast
 
 # Thin HUD toast for research completion. Owned by GameUIManager; not a runtime.
+# Notes are drawn, not instanced, and processing stops once the stack is empty.
 
 const DISPLAY_MSEC := 3200
+const FADE_MSEC := 180
 const MAX_VISIBLE := 2
+const NOTE_WIDTH := 420.0
+const NOTE_HEIGHT := 40.0
+const NOTE_GAP := 8.0
+const SLIDE_IN := 18.0
+const SLIDE_OUT := 12.0
 
-var _stack: VBoxContainer
 var _entries: Array = []
+var _note_style: StyleBoxFlat
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	theme_type_variation = &"PKWorkspaceStatus"
-	if _stack != null:
-		return
-	_stack = VBoxContainer.new()
-	_stack.add_theme_constant_override("separation", 6)
-	_stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_stack)
+	set_process(false)
 	visible = false
 
 
 func show_research_completed(display_name: String) -> void:
 	if display_name.strip_edges().is_empty():
 		return
-	_ready()
-	while _entries.size() >= MAX_VISIBLE:
-		_dismiss_oldest()
-	var row := PanelContainer.new()
-	row.theme_type_variation = &"PKInsetPanel"
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var body := HBoxContainer.new()
-	body.add_theme_constant_override("separation", 8)
-	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(body)
-	var icon := Label.new()
-	IconButton.apply_to_label(icon, &"technology.state.completed", 14)
-	icon.add_theme_color_override("font_color", UITokens.GOOD)
-	body.add_child(icon)
-	var text := Label.new()
-	text.text = "「%s」研究完成，明日生效" % display_name
-	text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	text.theme_type_variation = &"PKWorkspaceLabel"
-	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	body.add_child(text)
-	_stack.add_child(row)
+	var now := Time.get_ticks_msec()
+	while _live_count(now) >= MAX_VISIBLE:
+		_dismiss_oldest(now)
+	_entries.append({
+		"text": "「%s」研究完成 · 次日生效" % display_name,
+		"start": now,
+		"until": now + DISPLAY_MSEC,
+	})
 	visible = true
-	UIAnimation.fade_slide_in(row, Vector2(0.0, 18.0), UITokens.ANIM_FAST)
-	var token := {"row": row, "until": Time.get_ticks_msec() + DISPLAY_MSEC}
-	_entries.append(token)
-	get_tree().create_timer(float(DISPLAY_MSEC) / 1000.0).timeout.connect(
-		func() -> void: _expire(token))
+	set_process(true)
+	queue_redraw()
 
 
-func _expire(token: Dictionary) -> void:
-	if token not in _entries:
-		return
-	_entries.erase(token)
-	var row: Control = token.get("row", null)
-	if row != null and is_instance_valid(row):
-		UIAnimation.fade_slide_out(row, Vector2(0.0, -12.0), UITokens.ANIM_FAST)
-		get_tree().create_timer(UITokens.ANIM_FAST + 0.05).timeout.connect(
-			func() -> void:
-				if is_instance_valid(row):
-					row.queue_free()
-				if _entries.is_empty():
-					visible = false
-		)
-	elif _entries.is_empty():
+func visible_texts() -> PackedStringArray:
+	var out := PackedStringArray()
+	var now := Time.get_ticks_msec()
+	for entry in _entries:
+		if now < int(entry.until):
+			out.append(String(entry.text))
+	return out
+
+
+func _process(_delta: float) -> void:
+	var now := Time.get_ticks_msec()
+	var kept: Array = []
+	for entry in _entries:
+		if now < int(entry.until) + FADE_MSEC:
+			kept.append(entry)
+	_entries = kept
+	if _entries.is_empty():
 		visible = false
+		set_process(false)
+	queue_redraw()
 
 
-func _dismiss_oldest() -> void:
+func _live_count(now: int) -> int:
+	var count := 0
+	for entry in _entries:
+		if now < int(entry.until):
+			count += 1
+	return count
+
+
+func _dismiss_oldest(now: int) -> void:
+	for entry in _entries:
+		if now < int(entry.until):
+			entry.until = now
+			return
+
+
+func _draw() -> void:
 	if _entries.is_empty():
 		return
-	_expire(_entries[0])
+	if _note_style == null:
+		_note_style = StyleBoxFlat.new()
+		_note_style.anti_aliasing = true
+		_note_style.set_corner_radius_all(3)
+		_note_style.set_border_width_all(1)
+		_note_style.border_width_left = 4
+		_note_style.shadow_size = 6
+		_note_style.shadow_offset = Vector2(0.0, 2.0)
+	var now := Time.get_ticks_msec()
+	var width := minf(NOTE_WIDTH, size.x)
+	var left := (size.x - width) * 0.5
+	var y := 0.0
+	for entry in _entries:
+		var age := float(now - int(entry.start))
+		var remaining := float(int(entry.until) - now)
+		var alpha := clampf(age / float(FADE_MSEC), 0.0, 1.0)
+		var offset := (1.0 - _ease_out(alpha)) * SLIDE_IN
+		if remaining < 0.0:
+			var leaving := clampf(-remaining / float(FADE_MSEC), 0.0, 1.0)
+			alpha = 1.0 - leaving
+			offset = -leaving * SLIDE_OUT
+		var rect := Rect2(left, y + offset, width, NOTE_HEIGHT)
+		_draw_note(rect, String(entry.text), alpha)
+		y += NOTE_HEIGHT + NOTE_GAP
+
+
+func _draw_note(rect: Rect2, text: String, alpha: float) -> void:
+	_note_style.bg_color = _fade(UITokens.DOSSIER_PAPER, alpha)
+	_note_style.border_color = _fade(UITokens.DOSSIER_RULE_STRONG, alpha)
+	_note_style.shadow_color = Color(0.0, 0.0, 0.0, 0.22 * alpha)
+	draw_style_box(_note_style, rect)
+	draw_rect(Rect2(rect.position, Vector2(4.0, rect.size.y)),
+		_fade(UITokens.DOSSIER_VERDIGRIS, alpha))
+	var icon_rect := Rect2(rect.position + Vector2(14.0, 11.0), Vector2(18.0, 18.0))
+	_icon(&"technology.state.completed", icon_rect, _fade(UITokens.DOSSIER_VERDIGRIS, alpha))
+	var text_left := icon_rect.end.x + 10.0
+	var text_width := rect.end.x - 14.0 - text_left
+	_text(Vector2(text_left, rect.position.y + 26.0), _fit_text(text, 15, text_width,
+		"sans_strong"), 15, _fade(UITokens.DOSSIER_INK, alpha), "sans_strong")
+
+
+static func _fade(color: Color, alpha: float) -> Color:
+	return Color(color.r, color.g, color.b, color.a * alpha)
+
+
+static func _ease_out(t: float) -> float:
+	return 1.0 - pow(1.0 - t, 3.0)

@@ -8,11 +8,12 @@ signal portal_requested(index: int)
 const LayoutScript = preload("res://scripts/ui/technology_tree_layout.gd")
 const VIEW_PADDING := 34.0
 const NAME_FONT_SIZE := 18
-const NAME_FONT_MIN_SIZE := 14
+const NAME_FONT_MIN_SIZE := 13
+const NARROW_CARD_WIDTH := 150.0
 const ERA_FONT_SIZE := 16
 const PORTAL_SIZE := Vector2(26.0, 24.0)
-const BAND_PAPER_FOCUS := Color(0.975, 0.94, 0.84, 1.0)
-const BAND_PAPER_ADJACENT := Color(0.91, 0.845, 0.70, 1.0)
+const BAND_PAPER_FOCUS := Color(1.0, 0.985, 0.94, 0.46)
+const BAND_PAPER_ADJACENT := Color(0.36, 0.25, 0.13, 0.06)
 const CARD_PAPER := Color(0.965, 0.925, 0.82, 0.98)
 const CARD_PAPER_DIM := Color(0.89, 0.83, 0.70, 0.96)
 const CARD_PAPER_UNKNOWN := Color(0.80, 0.75, 0.65, 0.96)
@@ -509,14 +510,14 @@ func _draw_bands() -> void:
 		draw_rect(rect, BAND_PAPER_FOCUS if focus else BAND_PAPER_ADJACENT, true)
 		draw_line(Vector2(rect.position.x, rect.position.y),
 			Vector2(rect.end.x, rect.position.y),
-			UITokens.ARCHIVE_BRASS if focus else UITokens.ARCHIVE_RULE,
+			UITokens.DOSSIER_RULE_STRONG if focus else UITokens.DOSSIER_RULE,
 			2.0 if focus else 1.0)
 		if focus:
 			draw_line(Vector2(rect.position.x, rect.end.y), Vector2(rect.end.x, rect.end.y),
-				Color(UITokens.ARCHIVE_RULE, 0.45), 1.0)
+				UITokens.DOSSIER_RULE, 1.0)
 		var label := String(band.get("display_name", ""))
-		var colour := UITokens.ARCHIVE_INK if focus else UITokens.ARCHIVE_INK_MUTED
-		draw_string(font, rect.position + Vector2(12.0, 21.0), label,
+		var colour := UITokens.DOSSIER_INK if focus else UITokens.DOSSIER_INK_MUTED
+		draw_string(UITokens.dossier_font("serif"), rect.position + Vector2(12.0, 21.0), label,
 			HORIZONTAL_ALIGNMENT_LEFT, -1.0, ERA_FONT_SIZE, colour)
 		var lanes: Array = band.get("lanes", [])
 		for lane_value in lanes:
@@ -664,16 +665,23 @@ func _draw_node(node: Dictionary) -> void:
 			HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 46.0, NAME_FONT_SIZE,
 			muted_text_colour)
 		return
-	_draw_glyph(&"technology.milestone" if is_milestone \
-		else (&"economy.building" if is_application \
-		else IconCatalog.technology_domain_semantic(String(definition.get("domain_id", "")))),
-		rect.position + Vector2(14.0, 28.0 if is_milestone else 36.0), 13,
-		text_colour if emphasis == 2 else accent)
+	# Narrow lanes already carry the domain glyph in their header; dropping it on
+	# the card keeps four-character names readable instead of ellipsized.
+	var narrow := rect.size.x < NARROW_CARD_WIDTH and not is_milestone and not is_application
+	var text_x := 12.0 if narrow else 38.0
+	if not narrow:
+		_draw_glyph(&"technology.milestone" if is_milestone \
+			else (&"economy.building" if is_application \
+			else IconCatalog.technology_domain_semantic(String(definition.get("domain_id", "")))),
+			rect.position + Vector2(14.0, 28.0 if is_milestone else 36.0), 13,
+			text_colour if emphasis == 2 else accent)
 	var label := String(definition.get("display_name", ""))
-	var label_font_size := _fitted_name_size(label, rect.size.x - 60.0)
-	draw_string(_name_font, rect.position + Vector2(38.0, 28.0 if is_milestone else 35.0),
-		label, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 60.0, label_font_size,
-		text_colour)
+	# Leave the right edge to the state glyph drawn at size.x - 24.
+	var label_width := rect.size.x - text_x - (22.0 if is_milestone or is_application else 30.0)
+	var label_font_size := _fitted_name_size(label, label_width)
+	draw_string(_name_font, rect.position + Vector2(text_x, 28.0 if is_milestone else 35.0),
+		_ellipsize(label, label_width, label_font_size), HORIZONTAL_ALIGNMENT_LEFT, -1.0,
+		label_font_size, text_colour)
 	if is_milestone:
 		draw_string(get_theme_default_font(), rect.position + Vector2(38.0, 49.0),
 			"时代里程碑", HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 60.0, 12,
@@ -735,6 +743,17 @@ func _node_text_colour(emphasis: int, muted: bool = false) -> Color:
 	if emphasis == 2:
 		return Color(UITokens.ARCHIVE_PAPER, 0.82) if muted else UITokens.ARCHIVE_PAPER_LIGHT
 	return UITokens.ARCHIVE_INK_MUTED if muted or emphasis == 0 else UITokens.ARCHIVE_INK
+
+
+func _ellipsize(label: String, available_width: float, font_size: int) -> String:
+	if _name_font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1.0,
+			font_size).x <= available_width:
+		return label
+	var out := label
+	while out.length() > 1 and _name_font.get_string_size(out + "…",
+			HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size).x > available_width:
+		out = out.substr(0, out.length() - 1)
+	return out + "…"
 
 
 func _fitted_name_size(label: String, available_width: float) -> int:

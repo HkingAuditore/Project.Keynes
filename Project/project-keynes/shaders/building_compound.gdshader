@@ -1,25 +1,27 @@
 shader_type canvas_item;
 render_mode unshaded;
 
+// One instance is one building volume (footprint + eave/ridge heights + roof
+// form + material, see building_form.gdshaderinc). The quad is expanded in the
+// vertex stage to cover the footprint and its leaned roof; the fragment stage
+// corrects one parallax step onto the roof height field, intersects the walls
+// analytically, lights the result with the shared earth daylight, and paints
+// procedural roof materials.
+
 uniform sampler2D dyn_lut : filter_nearest, repeat_disable;
 uniform sampler2D enum_lut : filter_nearest, repeat_disable;
 uniform sampler2D weather_lut : filter_nearest, repeat_disable;
-uniform sampler2D building_style_lut : filter_nearest, repeat_disable;
-uniform sampler2D building_material_atlas : filter_linear_mipmap, repeat_disable;
-uniform sampler2D building_material_mask_atlas : filter_linear_mipmap, repeat_disable;
 uniform vec2 lut_dims = vec2(1.0);
 uniform float cell_count = 1.0;
 uniform float camera_zoom = 1.0;
 uniform float geometry_alpha = 1.0;
 uniform int visual_quality = 1;
-uniform bool use_authored_atlas = false;
-uniform vec2 atlas_grid = vec2(12.0, 6.0);
-uniform float atlas_tile_size = 160.0;
-uniform float compound_visual_scale = 0.144;
+// Instances whose in-cell importance rank (COLOR.a) exceeds this collapse.
+uniform float lod_fraction = 1.0;
+// Screen-space lean per world unit of height. The map camera looks straight
+// down; a slight lean toward screen-up keeps one facade sliver readable.
+uniform float oblique = 0.30;
 
-// Reuse the terrain/vegetation astronomical daylight source. Buildings derive
-// one stable map UV from the instance centre; TOD remains a material update and
-// never rewrites the MultiMesh buffer.
 uniform vec2 world_origin = vec2(0.0);
 uniform vec2 world_size = vec2(1.0);
 uniform float wrap_origin_x = 0.0;
@@ -34,25 +36,30 @@ uniform float tod_debug_sun_height_scale = 1.0;
 uniform vec3 tod_sun_dir = vec3(0.4, -0.7, 0.6);
 uniform float tod_exposure = 1.0;
 
-// Windows are emissive only after the local sun has crossed into night.  Keep
+// Windows are emissive only after the local sun has crossed into night. Keep
 // the transition soft so the whole map does not pop when the terminator moves.
 const float BUILDING_WINDOW_NIGHT_START = 0.18;
 const float BUILDING_WINDOW_NIGHT_FULL = 0.62;
 const float BUILDING_WINDOW_LIGHT_GAIN = 1.45;
 const float BUILDING_WINDOW_HALO_GAIN = 0.34;
+const float BUILDING_AMBIENT_GAIN = 0.62;
+const float BUILDING_SUN_GAIN = 0.78;
+const float BUILDING_MOON_GAIN = 0.40;
 #include "res://shaders/include/earth_daylight.gdshaderinc"
+#include "res://shaders/include/building_form.gdshaderinc"
 
-varying flat float v_style;
-varying flat float v_cell;
-varying flat float v_seed;
-varying flat float v_profile;
-varying vec2 v_uv;
+varying vec2 v_p;
+varying flat vec2 v_half;
+varying flat vec2 v_height;
+varying flat vec2 v_ux;
+varying flat vec2 v_lift;
+varying flat vec4 v_ids;      // form, material, era, archetype
+varying flat vec2 v_seed_cell;
 varying flat vec2 v_map_uv;
-
-vec4 style_parameter(float style, float parameter_index) {
-	return texture(building_style_lut,
-		vec2((parameter_index + 0.5) / 8.0, (style + 0.5) / 66.0));
-}
+varying flat vec3 v_sun_dir;
+varying flat vec3 v_sun_col;
+varying flat vec3 v_amb_col;
+varying flat vec3 v_day;      // local_day, pixel_night, moon_strength
 
 vec2 lut_uv(float cell_value) {
 	float cell = clamp(floor(cell_value * max(cell_count - 1.0, 1.0) + 0.5),
@@ -62,285 +69,387 @@ vec2 lut_uv(float cell_value) {
 	return (vec2(x, y) + 0.5) / max(lut_dims, vec2(1.0));
 }
 
-float box_mask(vec2 p, vec2 center, vec2 half_size, float softness) {
-	vec2 d = half_size - abs(p - center);
-	return smoothstep(-softness, softness, min(d.x, d.y));
-}
-
-float roof_mask(vec2 p, float apex_y, float eave_y, float eave_half_width) {
-	float span = max(eave_y - apex_y, 0.001);
-	float t = clamp((p.y - apex_y) / span, 0.0, 1.0);
-	float width = max(0.02, eave_half_width * t);
-	float inside_y = smoothstep(apex_y - 0.028, apex_y + 0.028, p.y)
-		* (1.0 - smoothstep(eave_y - 0.028, eave_y + 0.028, p.y));
-	float inside_x = smoothstep(-0.035, 0.035, width - abs(p.x));
-	return inside_y * inside_x;
-}
-
-float circle_mask(vec2 p, vec2 center, float radius) {
-	return 1.0 - smoothstep(radius - 0.035, radius + 0.035,
-		length(p - center));
-}
-
 void vertex() {
-	v_style = floor(INSTANCE_CUSTOM.r * 65.0 + 0.5);
-	v_seed = INSTANCE_CUSTOM.g;
-	v_cell = INSTANCE_CUSTOM.b;
-	v_profile = floor(INSTANCE_CUSTOM.a * 2.0 + 0.5);
-	v_uv = UV;
+	vec2 ax = MODEL_MATRIX[0].xy;
+	vec2 ay = MODEL_MATRIX[1].xy;
+	float hl = max(length(ax), 1e-4);
+	float hw = max(length(ay), 1e-4);
+	vec2 ux = ax / hl;
+	vec2 uy = ay / hw;
+	v_half = vec2(hl, hw);
+	v_ux = ux;
+	v_height = vec2(COLOR.r, COLOR.g) * BF_HEIGHT_RANGE;
+	int form = int(INSTANCE_CUSTOM.a * BF_FORM_SCALE);
+	int mat = int(COLOR.b * 16.0);
+	float style = floor(INSTANCE_CUSTOM.r * 65.0 + 0.5);
+	v_ids = vec4(float(form), float(mat), floor(style / 6.0), mod(style, 6.0));
+	v_seed_cell = INSTANCE_CUSTOM.gb;
+	vec2 lean = vec2(0.0, -oblique);
+	v_lift = vec2(dot(lean, ux), dot(lean, uy));
+
+	vec2 extent = v_half;
+	if (form == BF_WINDMILL) {
+		extent = vec2(bf_sail_radius(mat, v_half.y) + 0.1);
+	}
+	vec2 shift = v_lift * v_height.y;
+	vec2 margin = vec2(visual_quality > 0 ? 0.9 : 0.25);
+	vec2 lo = -extent - margin + min(vec2(0.0), shift);
+	vec2 hi = extent + margin + max(vec2(0.0), shift);
+	vec2 p = mix(lo, hi, VERTEX * 0.5 + 0.5);
+	v_p = p;
+	// A culled instance collapses to its origin and rasterises nothing.
+	VERTEX = p / v_half * step(COLOR.a, lod_fraction);
+
 	vec2 world_center = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xy;
 	v_map_uv = (world_center - world_origin) / max(world_size, vec2(0.0001));
-	VERTEX *= compound_visual_scale;
+	float lat_signed = clamp(v_map_uv.y, 0.0, 1.0) * 2.0 - 1.0;
+	EarthDaylight ed = eval_earth_daylight(v_map_uv, lat_signed, day_night_enabled);
+	v_sun_dir = ed.sun_dir;
+	v_sun_col = ed.sun_col;
+	v_amb_col = ed.amb_col;
+	v_day = vec3(ed.local_day, ed.pixel_night, ed.moon_strength);
 }
 
-vec3 era_base(float era) {
-	if (era < 1.0) return vec3(0.49, 0.32, 0.18); // stone
-	if (era < 2.0) return vec3(0.58, 0.43, 0.27); // agrarian
-	if (era < 4.0) return vec3(0.54, 0.43, 0.32); // kingdom/empire
-	if (era < 6.0) return vec3(0.57, 0.47, 0.37); // exploration/enlightenment
-	if (era < 8.0) return vec3(0.42, 0.35, 0.31); // steam/electrical
-	if (era < 9.0) return vec3(0.47, 0.47, 0.44); // atomic
-	if (era < 10.0) return vec3(0.40, 0.50, 0.53); // information
-	return vec3(0.43, 0.52, 0.54); // intelligent
+float footprint(vec2 p) {
+	return bf_footprint(int(v_ids.x), p, v_half);
 }
 
-vec3 archetype_tint(float archetype) {
-	if (archetype < 0.5) return vec3(1.08, 0.96, 0.72); // agriculture
-	if (archetype < 1.5) return vec3(0.78, 0.74, 0.68); // extractive
-	if (archetype < 2.5) return vec3(0.98, 0.79, 0.65); // manufacturing
-	if (archetype < 3.5) return vec3(0.70, 0.82, 0.88); // energy
-	if (archetype < 4.5) return vec3(0.88, 0.90, 0.84); // knowledge
-	return vec3(1.00, 0.82, 0.60); // service
+float roof_z(vec2 p) {
+	return bf_roof_height(int(v_ids.x), p, v_half, v_height.x, v_height.y);
+}
+
+vec3 to_world(vec3 n) {
+	vec2 uy = vec2(-v_ux.y, v_ux.x);
+	return normalize(vec3(v_ux * n.x + uy * n.y, n.z));
+}
+
+vec3 light_at(vec3 n) {
+	float ndl = max(dot(n, v_sun_dir), 0.0) * v_day.x;
+	float mdl = max(dot(n, -v_sun_dir), 0.0) * v_day.z;
+	vec3 amb = earth_sky_sh(v_amb_col, v_sun_col, v_sun_dir, v_day.x, n);
+	// The reduced ambient gain balances roofs against direct sun; at night the
+	// sky is the only light the terrain gets, so roofs must match it.
+	float amb_gain = mix(1.0, BUILDING_AMBIENT_GAIN, v_day.x);
+	return (amb * amb_gain + v_sun_col * ndl * BUILDING_SUN_GAIN
+		+ EARTH_MOONLIGHT * mdl * BUILDING_MOON_GAIN) * tod_exposure;
+}
+
+// Courses run along `along`, rows step down the slope along `across`.
+vec3 roof_albedo(int mat, vec2 P, float along, float across, float px,
+		float seed, float era, out float spec, out float snow_hold) {
+	vec2 q = P + seed * 37.0;
+	float n = bf_fbm(q * 1.7);
+	spec = 0.0;
+	snow_hold = 0.9;
+	vec3 c = vec3(0.5);
+	if (mat == BM_THATCH) {
+		c = mix(vec3(0.55, 0.45, 0.28), vec3(0.66, 0.55, 0.34), seed);
+		float streak = bf_vnoise(vec2(along * 9.0, across * 1.4) + seed * 13.0);
+		c *= 0.80 + 0.32 * mix(0.5, streak, bf_detail(9.0, px));
+		c = mix(c, vec3(0.36, 0.38, 0.24), smoothstep(0.58, 0.82, n) * 0.40);
+	} else if (mat == BM_SHINGLE || mat == BM_TILE || mat == BM_SLATE || mat == BM_BRICK) {
+		float rows = mat == BM_TILE ? 6.0 : (mat == BM_SLATE ? 6.5 : 5.0);
+		vec3 a = mat == BM_TILE ? vec3(0.60, 0.31, 0.20)
+			: (mat == BM_SLATE ? vec3(0.30, 0.32, 0.36)
+			: (mat == BM_BRICK ? vec3(0.52, 0.29, 0.21) : vec3(0.42, 0.35, 0.29)));
+		vec3 b = mat == BM_TILE ? vec3(0.70, 0.43, 0.28)
+			: (mat == BM_SLATE ? vec3(0.37, 0.37, 0.42)
+			: (mat == BM_BRICK ? vec3(0.60, 0.36, 0.26) : vec3(0.50, 0.42, 0.33)));
+		c = mix(a, b, seed);
+		float row = across * rows;
+		float fd = bf_detail(rows, px);
+		float jitter = bf_hash12(vec2(floor(along * rows * 0.8 + floor(row) * 0.5), floor(row)) + seed);
+		c *= mix(1.0, 0.86 + 0.26 * jitter, fd);
+		c *= mix(1.0, 0.74 + 0.26 * smoothstep(0.0, 0.22, fract(row)), fd);
+		if (mat == BM_TILE) {
+			c *= mix(1.0, 0.90 + 0.12 * cos(along * 6.2831853 * 6.0), bf_detail(6.0, px));
+		}
+		c = mix(c, c * vec3(0.78, 0.84, 0.70), smoothstep(0.6, 0.85, n) * 0.5);
+		spec = mat == BM_SLATE ? 0.10 : 0.04;
+	} else if (mat == BM_METAL) {
+		c = mix(vec3(0.54, 0.55, 0.55), vec3(0.47, 0.40, 0.34), smoothstep(0.55, 0.85, n) * seed * 0.45);
+		c *= mix(1.0, 0.90 + 0.10 * sin(along * 6.2831853 * 9.0), bf_detail(9.0, px));
+		spec = 0.30;
+		snow_hold = 0.75;
+	} else if (mat == BM_BITUMEN) {
+		c = vec3(0.27, 0.27, 0.28) * (0.88 + 0.22 * bf_vnoise(q * 9.0));
+		spec = 0.05;
+	} else if (mat == BM_CONCRETE) {
+		c = vec3(0.64, 0.63, 0.60) * (0.92 + 0.10 * n);
+		vec2 g = q * 1.1;
+		vec2 gi = floor(g);
+		float has = step(0.55, bf_hash12(gi + 3.1));
+		vec2 off = vec2(bf_hash12(gi + 7.3), bf_hash12(gi + 1.9)) * 0.5 + 0.25;
+		float unit = 1.0 - smoothstep(0.10, 0.10 + px, bf_box(fract(g) - off, vec2(0.14, 0.10)));
+		c = mix(c, vec3(0.50, 0.51, 0.50), unit * has * bf_detail(1.1, px));
+	} else if (mat == BM_GLASS) {
+		// Curtain-wall towers still carry a membrane roof with plant on top;
+		// the glass reads on the facade, not from above.
+		c = vec3(0.36, 0.38, 0.40) * (0.92 + 0.10 * n);
+		vec2 g = q * 0.9;
+		vec2 gi = floor(g);
+		vec2 off = vec2(bf_hash12(gi + 5.7), bf_hash12(gi + 2.3)) * 0.4 + 0.3;
+		float plant = 1.0 - smoothstep(0.12, 0.12 + px, bf_box(fract(g) - off, vec2(0.18, 0.13)));
+		c = mix(c, vec3(0.56, 0.57, 0.56), plant * step(0.4, bf_hash12(gi + 8.1)) * bf_detail(0.9, px));
+		spec = 0.12;
+		snow_hold = 0.6;
+	} else if (mat == BM_GREEN) {
+		c = mix(vec3(0.30, 0.42, 0.22), vec3(0.42, 0.52, 0.28), n);
+		snow_hold = 1.0;
+	} else if (mat == BM_COPPER) {
+		c = mix(vec3(0.36, 0.56, 0.48), vec3(0.46, 0.64, 0.56), n);
+		c = mix(c, vec3(0.30, 0.40, 0.33), smoothstep(0.55, 0.8, bf_vnoise(vec2(along * 2.0, across * 12.0))) * 0.3);
+		spec = 0.15;
+	} else if (mat == BM_EARTH) {
+		c = mix(vec3(0.42, 0.35, 0.27), vec3(0.52, 0.43, 0.32), n);
+		c *= 0.86 + 0.2 * bf_vnoise(q * 7.0);
+		c = mix(c, vec3(0.38, 0.42, 0.26), smoothstep(0.62, 0.8, bf_fbm(q * 0.8)) * 0.45);
+		snow_hold = 1.0;
+	} else if (mat == BM_HAY) {
+		c = mix(vec3(0.72, 0.60, 0.33), vec3(0.80, 0.68, 0.40), n);
+		c *= 0.86 + 0.18 * bf_vnoise(vec2(along * 11.0, across * 2.0) + seed * 5.0);
+		snow_hold = 1.0;
+	} else if (mat == BM_CHARCOAL) {
+		c = mix(vec3(0.32, 0.27, 0.21), vec3(0.15, 0.14, 0.13), smoothstep(0.4, 0.7, n));
+		snow_hold = 0.4;
+	} else if (mat == BM_SOLAR) {
+		c = vec3(0.60, 0.60, 0.58);
+		vec2 cellp = vec2(along * 1.4, across * 2.2);
+		vec2 f = fract(cellp);
+		float panel = step(0.08, f.x) * step(f.x, 0.92) * step(0.10, f.y) * step(f.y, 0.86);
+		panel = mix(0.8, panel, bf_detail(2.2, px));
+		c = mix(c, vec3(0.10, 0.15, 0.26), panel);
+		spec = 0.65 * panel;
+		snow_hold = 0.3;
+	} else if (mat == BM_STONE) {
+		c = mix(vec3(0.56, 0.54, 0.49), vec3(0.64, 0.61, 0.55), n);
+		vec2 b = vec2(along * 3.0 + floor(across * 4.0) * 0.5, across * 4.0);
+		vec2 f = abs(fract(b) - 0.5);
+		c *= mix(1.0, 0.82 + 0.18 * smoothstep(0.42, 0.36, max(f.x * 0.9, f.y)), bf_detail(4.0, px));
+		spec = 0.03;
+	}
+	// Age the roofs of older eras a little more than modern ones.
+	c *= mix(0.92, 1.0, smoothstep(0.0, 8.0, era)) * (0.94 + 0.12 * n);
+	return c;
+}
+
+vec3 wall_albedo(int mat, float era, float archetype, float seed) {
+	if (mat == BM_GLASS) return vec3(0.30, 0.38, 0.44);
+	if (mat == BM_METAL) return vec3(0.50, 0.50, 0.48);
+	if (mat == BM_CONCRETE || mat == BM_BITUMEN || mat == BM_SOLAR || mat == BM_GREEN)
+		return mix(vec3(0.62, 0.60, 0.56), vec3(0.72, 0.70, 0.64), seed);
+	if (mat == BM_BRICK || mat == BM_CHARCOAL) return vec3(0.50, 0.30, 0.22);
+	if (mat == BM_STONE || mat == BM_COPPER) return vec3(0.62, 0.59, 0.52);
+	if (era < 1.5) return mix(vec3(0.46, 0.36, 0.25), vec3(0.54, 0.43, 0.30), seed);
+	if (era < 6.0) return mix(vec3(0.78, 0.72, 0.60), vec3(0.70, 0.60, 0.47), seed);
+	return mix(vec3(0.58, 0.40, 0.30), vec3(0.70, 0.66, 0.58), seed);
 }
 
 void fragment() {
-	if (use_authored_atlas) {
-		float authored_era = floor(v_style / 6.0);
-		float authored_archetype = mod(v_style, 6.0);
-		// Band breakpoints mirror _style_palette so the authored and procedural
-		// paths never disagree about what an era looks like.
-		float art_era = authored_era < 2.0 ? 0.0
-			: (authored_era < 6.0 ? 1.0 : (authored_era < 8.0 ? 2.0 : 3.0));
-		float tile_index = (art_era * 6.0 + authored_archetype) * 3.0
-			+ clamp(v_profile, 0.0, 2.0);
-		vec2 tile = vec2(mod(tile_index, atlas_grid.x),
-			floor(tile_index / atlas_grid.x));
-		// Stay inside the tile so mip sampling cannot bleed a neighbour's roof
-		// into this silhouette at far zoom.
-		vec2 inset = vec2(0.5) / (atlas_grid * max(atlas_tile_size, 1.0));
-		vec2 tile_uv = clamp(v_uv, inset, vec2(1.0) - inset);
-		vec2 atlas_uv = (tile + tile_uv) / atlas_grid;
-		vec4 authored = texture(building_material_atlas, atlas_uv);
-		vec4 surface = texture(building_material_mask_atlas, atlas_uv);
-		if (authored.a < 0.012) discard;
+	int form = int(v_ids.x + 0.5);
+	int mat = int(v_ids.y + 0.5);
+	float era = v_ids.z;
+	float archetype = v_ids.w;
+	float seed = v_seed_cell.x;
+	float he = v_height.x;
+	float hr = v_height.y;
+	vec2 s = v_p;
+	float px = max(length(fwidth(v_p)) * 0.7, 1e-4);
 
-		vec2 authored_cell_uv = lut_uv(v_cell);
-		vec4 authored_dyn = texture(dyn_lut, authored_cell_uv);
-		vec4 authored_knowledge = texture(enum_lut, authored_cell_uv);
-		vec4 authored_weather = texture(weather_lut, authored_cell_uv);
-		vec4 authored_palette = style_parameter(v_style, 1.0);
-		bool authored_live = authored_knowledge.a > 0.88;
-		vec3 authored_color = authored.rgb;
-		if (authored_live) {
-			float authored_snow = authored_dyn.b * surface.r
-				* authored_palette.a;
-			authored_color = mix(authored_color, vec3(0.90, 0.93, 0.95),
-				clamp(authored_snow, 0.0, 0.86));
-			if (visual_quality > 0) {
-				float authored_wet = authored_dyn.g * authored_weather.g * surface.g;
-				authored_color *= 1.0 - authored_wet * 0.15;
-				authored_color += vec3(0.022, 0.024, 0.026)
-					* authored_wet * surface.a;
+	vec2 cell_uv = lut_uv(v_seed_cell.y);
+	vec4 dyn = texture(dyn_lut, cell_uv);
+	vec4 knowledge = texture(enum_lut, cell_uv);
+	vec4 weather = texture(weather_lut, cell_uv);
+	bool live = knowledge.a > 0.88;
+	float snow = live ? clamp(dyn.b * 1.25, 0.0, 1.0) : 0.0;
+	float wet = (live && visual_quality > 0) ? clamp(dyn.g * weather.g, 0.0, 1.0) : 0.0;
+	float night = smoothstep(BUILDING_WINDOW_NIGHT_START, BUILDING_WINDOW_NIGHT_FULL, v_day.y);
+
+	// Roof: the lean is small next to the roof slopes, so one correction of a
+	// mid-pitch guess lands on the surface.
+	vec2 P = s - v_lift * mix(he, hr, 0.6);
+	P = s - v_lift * roof_z(P);
+	float f_roof = footprint(P);
+	float roof_cov = 1.0 - smoothstep(-0.6 * px, 0.6 * px, f_roof);
+
+	// Walls: analytic ray/footprint intersection. Gable ends rise to the roof
+	// line; elsewhere the wall stops at the eave.
+	float wall_t = bf_wall_t(form, s, v_lift, v_half, hr);
+	if (wall_t >= 0.0 && wall_t > roof_z(s - v_lift * wall_t) + 0.02) {
+		wall_t = bf_wall_t(form, s, v_lift, v_half, he);
+	}
+	// Coverage from the nearest ground point of the swept footprint keeps the
+	// silhouette antialiased without a march.
+	float lift2 = dot(v_lift, v_lift);
+	float t_near = lift2 > 1e-8 ? clamp(dot(s, v_lift) / lift2, 0.0, he) : 0.0;
+	float g_edge = wall_t >= 0.0 ? -px : footprint(s - v_lift * t_near);
+	float wall_cov = (1.0 - smoothstep(-0.6 * px, 0.6 * px, g_edge)) * (1.0 - roof_cov);
+	if (wall_t < 0.0) wall_t = t_near;
+	vec2 wall_B = s - v_lift * wall_t;
+
+	vec3 col = vec3(0.0);
+	float alpha = 0.0;
+
+	if (roof_cov > 0.0) {
+		float e = max(0.025, px * 0.5);
+		float zx = roof_z(P + vec2(e, 0.0)) - roof_z(P - vec2(e, 0.0));
+		float zy = roof_z(P + vec2(0.0, e)) - roof_z(P - vec2(0.0, e));
+		vec3 n_loc = normalize(vec3(-zx / (2.0 * e), -zy / (2.0 * e), 1.0));
+		vec2 slope = n_loc.xy;
+		float along = P.x;
+		float across = P.y;
+		if (length(slope) > 0.05) {
+			vec2 down = normalize(slope);
+			along = dot(P, vec2(-down.y, down.x));
+			across = dot(P, down);
+		}
+		float spec_amt;
+		float snow_hold;
+		vec3 albedo = roof_albedo(mat, P, along, across, px, seed, era, spec_amt, snow_hold);
+		vec3 n = to_world(n_loc);
+
+		if (form == BF_CHIMNEY || form == BF_COOLING) {
+			float r = length(P) / max(v_half.y, 0.001);
+			float inner = form == BF_COOLING ? 0.80 : 0.55;
+			float hole = 1.0 - smoothstep(inner - 0.05, inner + 0.02, r);
+			albedo = mix(albedo, vec3(0.07, 0.07, 0.075), hole);
+			snow_hold *= 1.0 - hole;
+			if (form == BF_COOLING) {
+				float steam = bf_fbm(P * 1.6 + vec2(TIME * 0.12, TIME * 0.05) + seed * 9.0);
+				albedo = mix(albedo, vec3(0.86, 0.88, 0.90), hole * smoothstep(0.35, 0.75, steam) * 0.85);
 			}
+		}
+		if (form == BF_GREENHOUSE) {
+			albedo = mix(albedo, vec3(0.36, 0.50, 0.32), 0.35);
+		}
+		// Flat roofs read through a lit parapet line around the edge.
+		if (form == BF_FLAT || form == BF_COURTYARD || form == BF_SAWTOOTH || form == BF_TANK) {
+			float rim = 1.0 - smoothstep(0.06, 0.06 + px * 1.5, -f_roof);
+			albedo = mix(albedo, albedo * 1.22 + 0.04, rim * 0.6 * bf_detail(4.0, px));
+		}
+		// Tank lids: a welded seam ring and a central hatch.
+		if (form == BF_TANK) {
+			float r = length(P) / max(v_half.y, 0.001);
+			float seam = 1.0 - smoothstep(0.0, 0.04 + px, abs(r - 0.62));
+			float hatch = 1.0 - smoothstep(0.10, 0.10 + px * 2.0, r);
+			albedo *= 1.0 - (seam * 0.18 + hatch * 0.25) * bf_detail(3.0, px);
+		}
+		float snow_amt = snow * snow_hold * smoothstep(0.30, 0.80, n.z);
+		albedo = mix(albedo, vec3(0.88, 0.91, 0.95), snow_amt);
+		albedo *= 1.0 - wet * 0.18;
+		spec_amt = spec_amt * (1.0 - snow_amt) + wet * 0.30;
+
+		vec3 c = albedo * light_at(n);
+		vec3 h = normalize(v_sun_dir + vec3(0.0, 0.0, 1.0));
+		c += v_sun_col * pow(max(dot(n, h), 0.0), 28.0) * spec_amt * v_day.x * 0.6 * tod_exposure;
+
+		// Eave shade darkens the outline so roofs stay legible against fields.
+		float eave = smoothstep(0.0, 0.10 + px * 1.5, -f_roof);
+		c *= mix(0.68, 1.0, eave);
+		if (live && era >= 7.5 && (form == BF_FLAT || form == BF_TOWER) && visual_quality > 0) {
+			vec2 g = fract(P * 2.2 + seed * 3.0);
+			float skylight = step(0.82, bf_hash12(floor(P * 2.2 + seed * 3.0)))
+				* (1.0 - smoothstep(0.12, 0.2, length(g - 0.5)));
+			c += vec3(1.0, 0.78, 0.48) * skylight * night * 0.8 * tod_exposure;
+		}
+		if (live && mat == BM_CHARCOAL) {
+			float ember = smoothstep(0.78, 0.92, bf_vnoise(P * 5.0 + TIME * 0.3));
+			c += vec3(1.0, 0.42, 0.12) * ember * mix(0.15, 0.9, night) * tod_exposure;
+		}
+		col = c * roof_cov;
+		alpha = roof_cov;
+	}
+
+	if (wall_cov > 0.0) {
+		vec2 n2 = bf_wall_normal(form, wall_B, v_half);
+		vec3 n = to_world(normalize(vec3(n2, 0.12)));
+		float face = dot(wall_B, vec2(-n2.y, n2.x));
+		float hf = clamp(wall_t / max(he, 0.05), 0.0, 1.0);
+		vec3 albedo;
+		float snow_hold;
+		float spec_amt;
+		if (form == BF_MOUND || form == BF_CONE && he < 0.05) {
+			albedo = roof_albedo(mat, wall_B, face, wall_t, px, seed, era, spec_amt, snow_hold);
 		} else {
-			float authored_gray = dot(authored_color, vec3(0.299, 0.587, 0.114));
-			authored_color = mix(vec3(authored_gray), authored_color, 0.38) * 0.78;
+			albedo = wall_albedo(mat, era, archetype, seed);
+			albedo *= 0.92 + 0.14 * bf_vnoise(vec2(face * 3.0, wall_t * 2.0) + seed * 11.0);
 		}
-		float authored_lat = clamp(v_map_uv.y, 0.0, 1.0) * 2.0 - 1.0;
-		EarthDaylight authored_ed = eval_earth_daylight(
-			v_map_uv, authored_lat, day_night_enabled);
-		// surface.r doubles as a conservative up-facing weight: roofs receive
-		// more sky/direct light than walls while preserving the flat palette.
-		float authored_up = clamp(surface.r, 0.0, 1.0);
-		vec3 authored_light = authored_ed.amb_col * mix(0.72, 1.0, authored_up)
-			+ authored_ed.sun_col * authored_ed.local_day
-				* mix(0.12, 0.34, authored_up) * max(authored_ed.sun_dir.z, 0.0)
-			+ authored_ed.moon_col * authored_ed.moon_strength
-				* mix(0.05, 0.12, authored_up);
-		authored_color *= max(authored_light, vec3(0.08)) * tod_exposure;
-		// Windows are emissive only for live knowledge.  Fogged memory keeps its
-		// remembered neutral appearance instead of receiving live TOD lighting.
-		if (authored_live && surface.b > 0.001) {
-			float authored_window_night = smoothstep(
-				BUILDING_WINDOW_NIGHT_START, BUILDING_WINDOW_NIGHT_FULL,
-				authored_ed.pixel_night);
-			authored_color += vec3(1.0, 0.62, 0.24) * surface.b
-				* authored_window_night * BUILDING_WINDOW_LIGHT_GAIN * tod_exposure;
-			// Give sub-pixel windows enough energy to survive mip filtering at the
-			// compound/macro transition without turning the whole facade emissive.
-			authored_color += vec3(1.0, 0.44, 0.12)
-				* smoothstep(0.02, 0.42, surface.b) * authored_window_night
-				* BUILDING_WINDOW_HALO_GAIN * tod_exposure;
+		// Contact darkening near the ground and a darker gable band above the eave.
+		albedo *= mix(0.62, 1.0, smoothstep(0.0, 0.45, wall_t));
+		albedo *= wall_t > he + 0.02 ? 0.88 : 1.0;
+		vec3 c = albedo * light_at(n);
+
+		bool windows = era >= 1.5 && form != BF_MOUND && form != BF_CHIMNEY
+			&& form != BF_COOLING && form != BF_DOME && form != BF_TANK
+			&& mat != BM_HAY && mat != BM_CHARCOAL;
+		if (windows && wall_t < he) {
+			float floor_h = era >= 7.5 ? 0.62 : 0.85;
+			float spacing = era >= 7.5 ? 0.34 : 0.48;
+			float fy = fract(wall_t / floor_h);
+			float fx = fract(face / spacing + seed * 7.0);
+			float win_detail = bf_detail(1.0 / spacing, px);
+			float in_win = step(0.36, fy) * step(fy, 0.78) * step(0.28, fx) * step(fx, 0.72)
+				* step(0.25, wall_t) * win_detail;
+			if (mat == BM_GLASS) in_win = 0.6;
+			float lit = step(0.35, bf_hash12(vec2(floor(face / spacing), floor(wall_t / floor_h)) + seed * 17.0));
+			c = mix(c, vec3(0.10, 0.11, 0.13) * light_at(n) * 1.6, in_win * 0.8);
+			if (live) {
+				// Once individual windows are below pixel size their average
+				// glow keeps lit facades readable at night.
+				float glow = in_win * lit + (1.0 - win_detail) * 0.16 * step(0.25, wall_t);
+				c += vec3(1.0, 0.64, 0.28) * glow * night * BUILDING_WINDOW_LIGHT_GAIN * tod_exposure;
+			}
 		}
-		float authored_alpha = authored.a * geometry_alpha
-			* smoothstep(0.36, 0.54, camera_zoom);
-		COLOR = vec4(authored_color, authored_alpha);
-	} else {
-	// Procedural fallback body, kept so a missing authored atlas still renders.
-	float era = floor(v_style / 6.0);
-	float archetype = mod(v_style, 6.0);
-	vec2 uv = lut_uv(v_cell);
-	vec4 dyn = texture(dyn_lut, uv);
-	vec4 knowledge = texture(enum_lut, uv);
-	vec4 weather = texture(weather_lut, uv);
-	vec4 shape = style_parameter(v_style, 0.0);
-	vec4 palette = style_parameter(v_style, 1.0);
-	vec4 masks = texture(building_material_mask_atlas,
-		vec2((archetype + 0.5) / 6.0, (era + 0.5) / 11.0));
-	vec3 atlas_color = texture(building_material_atlas,
-		vec2((archetype + 0.5) / 6.0, (era + 0.5) / 11.0)).rgb;
-	vec3 base = mix(era_base(era) * archetype_tint(archetype),
-		atlas_color, visual_quality > 0 ? 0.42 : 0.22);
-
-	// The body is a compact orthographic house glyph. The dark foundation is
-	// deliberately wider than the facade, while the two roof planes meet at a
-	// visible ridge. This remains readable when the camera is exactly overhead.
-	vec2 p = v_uv * 2.0 - 1.0;
-	float steepness = clamp((shape.r - 0.72) / 0.52, 0.0, 1.0);
-	float modern = smoothstep(7.0, 10.0, era);
-	float apex_y = mix(-0.58, -0.82, steepness);
-	apex_y = mix(apex_y, -0.43, modern * 0.70);
-	float eave_y = 0.02;
-	float roof_half = mix(0.66, 0.76, clamp(shape.g, 0.0, 1.0));
-	float roof_outer = roof_mask(p, apex_y - 0.075, eave_y + 0.085,
-		roof_half + 0.075);
-	float roof = roof_mask(p, apex_y, eave_y, roof_half);
-	float roof_left = roof * (1.0 - smoothstep(-0.025, 0.025, p.x));
-	float roof_right = roof * smoothstep(-0.025, 0.025, p.x);
-	float roof_ridge = box_mask(p, vec2(0.0, apex_y + 0.045),
-		vec2(0.028, 0.075), 0.012);
-	float eave = box_mask(p, vec2(0.0, eave_y + 0.045),
-		vec2(roof_half + 0.035, 0.042), 0.016);
-
-	float wall_height = mix(0.26, 0.34, clamp(shape.g, 0.0, 1.0));
-	float wall_front = box_mask(p, vec2(-0.045, 0.30),
-		vec2(0.50, wall_height), 0.025);
-	float wall_side = box_mask(p, vec2(0.47, 0.30),
-		vec2(0.15, wall_height * 0.94), 0.022);
-	float foundation = box_mask(p, vec2(0.02, 0.61),
-		vec2(0.59, 0.075), 0.022);
-	float foundation_edge = box_mask(p, vec2(0.02, 0.64),
-		vec2(0.64, 0.036), 0.012);
-
-	vec3 foundation_color = vec3(0.105, 0.075, 0.055);
-	vec3 wall_color = base * 1.13;
-	vec3 side_color = base * 0.67;
-	vec3 roof_left_color = base * 1.28;
-	vec3 roof_right_color = base * 0.91;
-	vec3 roof_outline = vec3(0.145, 0.095, 0.055);
-	vec3 color = foundation_color * max(foundation, foundation_edge);
-	color = mix(color, wall_color, wall_front);
-	color = mix(color, side_color, wall_side);
-	color = mix(color, roof_outline, roof_outer);
-	color = mix(color, roof_left_color, roof_left);
-	color = mix(color, roof_right_color, roof_right);
-	color = mix(color, min(roof_left_color * 1.18, vec3(1.0)), roof_ridge * 0.72);
-	color = mix(color, vec3(0.075, 0.052, 0.035), eave * 0.80);
-
-	// A small chimney is behind the ridge. Its cap is intentionally visible
-	// even at the strategic zoom so the silhouette cannot be mistaken for a
-	// flat resource marker.
-	float chimney = box_mask(p, vec2(-0.34, -0.22), vec2(0.065, 0.20), 0.014);
-	float chimney_cap = box_mask(p, vec2(-0.34, -0.40), vec2(0.095, 0.035), 0.010);
-	color = mix(color, vec3(0.19, 0.13, 0.095), chimney);
-	color = mix(color, vec3(0.10, 0.072, 0.052), chimney_cap);
-
-	// Door and two windows anchor the facade. They are larger and warmer than
-	// the old micro marks so a single instance reads as a dwelling.
-	float door_frame = box_mask(p, vec2(-0.20, 0.39), vec2(0.13, 0.225), 0.016);
-	float door = box_mask(p, vec2(-0.20, 0.405), vec2(0.082, 0.19), 0.010);
-	float window_l = box_mask(p, vec2(0.12, 0.235), vec2(0.105, 0.078), 0.014);
-	float window_r = box_mask(p, vec2(0.36, 0.235), vec2(0.072, 0.072), 0.014);
-	float windows = max(window_l, window_r);
-	float window_glow = max(
-		box_mask(p, vec2(0.12, 0.235), vec2(0.064, 0.040), 0.009),
-		box_mask(p, vec2(0.36, 0.235), vec2(0.039, 0.036), 0.009));
-	float window_halo = max(
-		box_mask(p, vec2(0.12, 0.235), vec2(0.125, 0.090), 0.045),
-		box_mask(p, vec2(0.36, 0.235), vec2(0.090, 0.084), 0.040));
-	color = mix(color, vec3(0.14, 0.085, 0.048), door_frame);
-	color = mix(color, vec3(0.050, 0.035, 0.025), door);
-	color = mix(color, vec3(0.115, 0.085, 0.055), windows);
-	color = mix(color, vec3(0.98, 0.72, 0.31), window_glow);
-
-	// Category facilities are small secondary silhouettes on the same quad.
-	// They change the reading of a compound without turning every type into a
-	// separate node or material.
-	float feature = 0.0;
-	if (archetype < 0.5) {
-		feature = box_mask(p, vec2(0.48, 0.61), vec2(0.20, 0.045), 0.010);
-		feature = max(feature, box_mask(p, vec2(0.48, 0.53),
-			vec2(0.16, 0.025), 0.008));
-	} else if (archetype < 1.5) {
-		feature = circle_mask(p, vec2(0.48, 0.58), 0.14);
-		feature *= 0.70 + 0.18 * sin((p.x + v_seed) * 28.0);
-	} else if (archetype < 2.5) {
-		feature = box_mask(p, vec2(0.55, 0.07), vec2(0.048, 0.27), 0.010);
-		feature = max(feature, box_mask(p, vec2(0.55, -0.21),
-			vec2(0.11, 0.030), 0.008));
-	} else if (archetype < 3.5) {
-		feature = box_mask(p, vec2(0.51, 0.03), vec2(0.045, 0.31), 0.010);
-		feature = max(feature, box_mask(p, vec2(0.51, -0.28),
-			vec2(0.15, 0.028), 0.008));
-	} else if (archetype < 4.5) {
-		feature = circle_mask(p, vec2(0.43, -0.08), 0.15);
-		feature *= step(-0.08, p.y);
-	} else {
-		feature = box_mask(p, vec2(0.45, 0.54), vec2(0.24, 0.065), 0.012);
-		feature = max(feature, box_mask(p, vec2(0.45, 0.43),
-			vec2(0.19, 0.023), 0.008));
-	}
-	vec3 feature_color = archetype < 1.5 ? vec3(0.17, 0.13, 0.09)
-		: archetype < 3.5 ? vec3(0.105, 0.115, 0.12)
-		: vec3(0.30, 0.23, 0.13);
-	color = mix(color, feature_color, feature * 0.76);
-
-	bool live_visible = knowledge.a > 0.88;
-	float snow_roof_mask = max(roof_left, roof_right) + eave * 0.24;
-	float snow = live_visible ? dyn.b * snow_roof_mask * palette.a * masks.r : 0.0;
-	// Keep roof planes distinct under snow; only the brightest ridge becomes
-	// white, preserving the house silhouette in a blizzard.
-	color = mix(color, vec3(0.89, 0.92, 0.94), snow * 0.78);
-	if (live_visible && visual_quality > 0) {
-		float wet = dyn.g * weather.g * masks.g;
-		color *= 1.0 - wet * 0.13;
-		color += vec3(0.024, 0.021, 0.017) * wet * max(roof, wall_front);
-	}
-	if (!live_visible) {
-		float gray = dot(color, vec3(0.299, 0.587, 0.114));
-		color = mix(vec3(gray), color, 0.38) * 0.78;
-	}
-	float lat_signed = clamp(v_map_uv.y, 0.0, 1.0) * 2.0 - 1.0;
-	EarthDaylight ed = eval_earth_daylight(v_map_uv, lat_signed, day_night_enabled);
-	float roof_weight = clamp(max(roof, roof_ridge), 0.0, 1.0);
-	vec3 building_light = ed.amb_col * mix(0.72, 1.0, roof_weight)
-		+ ed.sun_col * ed.local_day * mix(0.12, 0.34, roof_weight)
-			* max(ed.sun_dir.z, 0.0)
-		+ ed.moon_col * ed.moon_strength * mix(0.05, 0.12, roof_weight);
-	color *= max(building_light, vec3(0.08)) * tod_exposure;
-	if (live_visible) {
-		float window_night = smoothstep(BUILDING_WINDOW_NIGHT_START,
-			BUILDING_WINDOW_NIGHT_FULL, ed.pixel_night);
-		color += vec3(1.0, 0.62, 0.24) * window_glow
-			* window_night * BUILDING_WINDOW_LIGHT_GAIN * tod_exposure;
-		color += vec3(1.0, 0.44, 0.12) * window_halo
-			* window_night * BUILDING_WINDOW_HALO_GAIN * tod_exposure;
+		col += c * wall_cov;
+		alpha += wall_cov;
 	}
 
-	float glyph = max(max(max(roof_outer, wall_front),
-		max(wall_side, foundation)), max(chimney, max(feature, windows)));
-	if (glyph < 0.01) discard;
-	float alpha = glyph * geometry_alpha * smoothstep(0.36, 0.54, camera_zoom);
-	COLOR = vec4(color, alpha);
+	// Courtyard interiors are paved or planted ground, never bare terrain.
+	if (form == BF_COURTYARD && alpha < 1.0) {
+		float wing = bf_courtyard_wing(v_half);
+		float d_inner = bf_box(s, v_half - vec2(wing));
+		float yard = 1.0 - smoothstep(-px, px, d_inner);
+		if (yard > 0.0) {
+			vec3 ground = era < 3.5 ? vec3(0.60, 0.56, 0.47) : vec3(0.40, 0.48, 0.30);
+			vec2 cob = abs(fract(s * 3.0 + seed * 5.0) - 0.5);
+			ground *= mix(1.0, 0.88 + 0.12 * smoothstep(0.46, 0.36, max(cob.x, cob.y)),
+				bf_detail(3.0, px) * (era < 3.5 ? 1.0 : 0.3));
+			ground = mix(ground, vec3(0.88, 0.91, 0.95), snow * 0.9);
+			float court_ao = mix(0.55, 1.0, smoothstep(0.0, 0.7, -d_inner));
+			vec3 c = ground * light_at(vec3(0.0, 0.0, 1.0)) * court_ao;
+			float a = yard * (1.0 - alpha);
+			col += c * a;
+			alpha += a;
+		}
 	}
+
+	if (form == BF_WINDMILL) {
+		vec2 hub = s - v_lift * (hr + 0.08);
+		bool turbine = bf_is_turbine(mat);
+		float angle = seed * 6.2831853 + TIME * (turbine ? 1.1 : 0.35);
+		float sail = bf_sails(hub, mat, v_half.y, angle, px);
+		vec3 sail_col = turbine ? vec3(0.86, 0.87, 0.88) : vec3(0.74, 0.69, 0.58);
+		vec3 lit_sail = sail_col * light_at(vec3(0.0, 0.0, 1.0));
+		col = col * (1.0 - sail) + lit_sail * sail;
+		alpha = alpha + sail * (1.0 - alpha);
+	}
+
+	if (!live && alpha > 0.0) {
+		vec3 base = col / max(alpha, 1e-4);
+		float gray = dot(base, vec3(0.299, 0.587, 0.114));
+		col = (mix(vec3(gray), base, 0.38) * 0.78) * alpha;
+	}
+
+	// Night: warm spill on the ground around inhabited buildings.
+	if (live && visual_quality > 0 && night > 0.0 && form != BF_MOUND && mat != BM_HAY) {
+		float fg = max(footprint(s), 0.0);
+		float level = era < 1.5 ? 0.22 : (era < 5.5 ? 0.40 : (era < 7.5 ? 0.62 : 0.9));
+		float halo = exp(-fg * 2.6) * level * night * BUILDING_WINDOW_HALO_GAIN * (1.0 - alpha);
+		col += vec3(1.0, 0.56, 0.22) * halo * tod_exposure;
+		alpha += halo;
+	}
+
+	if (alpha < 0.004) discard;
+	float fade = geometry_alpha * smoothstep(0.36, 0.54, camera_zoom);
+	COLOR = vec4(col / alpha, clamp(alpha, 0.0, 1.0) * fade);
 }

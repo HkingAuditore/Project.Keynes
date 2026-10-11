@@ -1,0 +1,208 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/overview_page.gd" id="1_script"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_stacked_bar.gd" id="2_stacked"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_ring_gauge.gd" id="3_ring"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_bar_list.gd" id="4_bars"]
+
+[node name="OverviewPage" type="VBoxContainer"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 22
+script = ExtResource("1_script")
+chapter_id = "overview"
+
+[node name="Columns" type="GridContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 28
+theme_override_constants/v_separation = 20
+columns = 3
+
+[node name="FlowColumn" type="VBoxContainer" parent="Columns"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="FlowKicker" type="Label" parent="Columns/FlowColumn"]
+layout_mode = 2
+text = "居民收支 · 每日"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="IncomeBar" type="Control" parent="Columns/FlowColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("2_stacked")
+
+[node name="ExpenseBar" type="Control" parent="Columns/FlowColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("2_stacked")
+
+[node name="FlowNote" type="Label" parent="Columns/FlowColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+theme_type_variation = &"PKDossierCaption"
+
+[node name="StrataColumn" type="VBoxContainer" parent="Columns"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="StrataHeader" type="HBoxContainer" parent="Columns/StrataColumn"]
+layout_mode = 2
+
+[node name="StrataKicker" type="Label" parent="Columns/StrataColumn/StrataHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "阶层满意度"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="StrataLink" type="Button" parent="Columns/StrataColumn/StrataHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+text = "阶层民生 ›"
+theme_type_variation = &"PKDossierLink"
+
+[node name="StrataGrid" type="GridContainer" parent="Columns/StrataColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 2
+theme_override_constants/v_separation = 2
+columns = 4
+
+[node name="Gauge0" type="Control" parent="Columns/StrataColumn/StrataGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_ring")
+
+[node name="Gauge1" type="Control" parent="Columns/StrataColumn/StrataGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_ring")
+
+[node name="Gauge2" type="Control" parent="Columns/StrataColumn/StrataGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_ring")
+
+[node name="Gauge3" type="Control" parent="Columns/StrataColumn/StrataGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_ring")
+
+[node name="Gauge4" type="Control" parent="Columns/StrataColumn/StrataGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_ring")
+
+[node name="Gauge5" type="Control" parent="Columns/StrataColumn/StrataGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_ring")
+
+[node name="Gauge6" type="Control" parent="Columns/StrataColumn/StrataGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_ring")
+
+[node name="Gauge7" type="Control" parent="Columns/StrataColumn/StrataGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_ring")
+
+[node name="BottleneckColumn" type="VBoxContainer" parent="Columns"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="BottleneckKicker" type="Label" parent="Columns/BottleneckColumn"]
+layout_mode = 2
+text = "当前卡点"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="BottleneckList" type="Control" parent="Columns/BottleneckColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("4_bars")
+
+[node name="BottleneckEmpty" type="Label" parent="Columns/BottleneckColumn"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+autowrap_mode = 3
+theme_type_variation = &"PKDossierCaption"
+
+[node name="BottleneckDetail" type="Label" parent="Columns/BottleneckColumn"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+autowrap_mode = 3
+theme_type_variation = &"PKDossierBody"
+
+[node name="Lower" type="GridContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 28
+theme_override_constants/v_separation = 20
+columns = 2
+
+[node name="SectorColumn" type="VBoxContainer" parent="Lower"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="SectorHeader" type="HBoxContainer" parent="Lower/SectorColumn"]
+layout_mode = 2
+
+[node name="SectorKicker" type="Label" parent="Lower/SectorColumn/SectorHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "产业部门 · 产值 / 日"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="SectorLink" type="Button" parent="Lower/SectorColumn/SectorHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+text = "产业建筑 ›"
+theme_type_variation = &"PKDossierLink"
+
+[node name="SectorList" type="Control" parent="Lower/SectorColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("4_bars")
+
+[node name="ShortageColumn" type="VBoxContainer" parent="Lower"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="ShortageHeader" type="HBoxContainer" parent="Lower/ShortageColumn"]
+layout_mode = 2
+
+[node name="ShortageKicker" type="Label" parent="Lower/ShortageColumn/ShortageHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "最缺的物资"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="ShortageLink" type="Button" parent="Lower/ShortageColumn/ShortageHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+text = "物资市场 ›"
+theme_type_variation = &"PKDossierLink"
+
+[node name="ShortageList" type="Control" parent="Lower/ShortageColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("4_bars")
+
+[node name="ShortageEmpty" type="Label" parent="Lower/ShortageColumn"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+autowrap_mode = 3
+theme_type_variation = &"PKDossierCaption"

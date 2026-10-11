@@ -465,6 +465,9 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _cell_living_cost_per_capita.assign(cell_count, 0);
     _epoch_cell_development_q16.assign(cell_count, 0);
     _cell_social_pressure_level.assign(cell_count, 0);
+    _visual_living_level.assign(cell_count, BUILDING_VISUAL_UNKNOWN);
+    _visual_rich_bucket.assign(cell_count, BUILDING_VISUAL_UNKNOWN);
+    _visual_poor_bucket.assign(cell_count, BUILDING_VISUAL_UNKNOWN);
         _cell_support_ema_q16.assign(cell_count, Q16_ONE);
         _cell_carrying_k_geo.assign(cell_count, 0);
         _cell_carrying_k_eff.assign(cell_count, 0);

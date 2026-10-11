@@ -1218,6 +1218,20 @@ Dictionary DCWorldExt::get_country_trade_snapshot(
         [&] { return runtime->country_trade_snapshot(handle, view, offset, limit); });
 }
 
+Dictionary DCWorldExt::get_country_economy_overview(
+        int64_t handle, const String &view, int scope_cell, int filter_id,
+        int offset, int limit) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    ReadKey key = read_key(ReadQuery::COUNTRY_ECONOMY_OVERVIEW,
+        {handle, scope_cell, filter_id, offset, limit});
+    key.text = view;
+    return committed_read(_runtime_host.get(), runtime, key, [&] {
+        return runtime->country_economy_overview(
+            handle, view, scope_cell, filter_id, offset, limit);
+    });
+}
+
 Dictionary DCWorldExt::get_trade_orders_for_cell(
         int cell_idx, int offset, int limit) const {
     if (_economy_runtime == nullptr) return unavailable();

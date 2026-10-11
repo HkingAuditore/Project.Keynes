@@ -1,8 +1,8 @@
 extends SceneTree
 
 const WorkspaceScene := preload("res://scenes/ui/technology_workspace.tscn")
-const DialScene := preload("res://scenes/ui/research_weight_dial.tscn")
-const DialScript = preload("res://scripts/ui/components/research_weight_dial.gd")
+const AllocationScene := preload("res://scenes/ui/research_allocation_bars.tscn")
+const ToastScene := preload("res://scenes/ui/research_toast.tscn")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 const TechnologyTreeLayoutScript = preload("res://scripts/ui/technology_tree_layout.gd")
 const ResearchSignalCatalogScript = preload("res://scripts/research/research_signal_catalog.gd")
@@ -110,7 +110,9 @@ func _init() -> void:
 	var layout: Dictionary = tree.layout_report()
 	_audit_layout(layout, definitions)
 	_audit_fog(tree, layout)
-	_audit_dial()
+	_audit_allocation(domains)
+	_audit_desk(workspace)
+	_audit_toast()
 	await _audit_fit(workspace, tree)
 	_audit_refresh(workspace, tree, definitions, eras, domains)
 	_audit_navigation(workspace, tree, definitions)
@@ -341,41 +343,102 @@ func _audit_fog(tree: Control, layout: Dictionary) -> void:
 		tree.patch_states(states, tree.get("_progress"))
 
 
-func _audit_dial() -> void:
-	var dial := DialScene.instantiate() as Control
-	get_root().add_child(dial)
-	dial.size = Vector2(200.0, 226.0)
-	var centre := dial.size * 0.5
-	var radius: float = dial._radius()
-	_expect("the dial ring is large enough to aim at", radius >= 68.0)
+# The research desk shows queued work with ETAs, inline enqueue buttons, a KPI
+# band, and a detail fact sheet — all drawn without per-row Control nodes.
+func _audit_desk(workspace: Control) -> void:
+	var available := workspace.available_view() as TechnologyAvailableView
+	var list := available.list_canvas()
+	_expect("available desk draws its cards instead of spawning rows",
+		list != null and list.get_child_count() == 0)
+	var report: Dictionary = available.available_report()
+	_expect("available desk separates queued work from researchable work",
+		int(report.get("queued_count", 0)) == 1 and int(report.get("count", 0)) == 3)
+	var enqueued: Array = []
+	list.enqueue_requested.connect(func(index: int) -> void: enqueued.append(index))
+	var card: Rect2 = list.item_rect(5)
+	_press(list, list.action_rect(card).get_center())
+	_release(list, list.action_rect(card).get_center())
+	_expect("the card's 加入 button requests that technology", enqueued == [5])
+	var model: Dictionary = workspace.get("_research").duplicate()
+	model["last_research_day"] = 14
+	model["progress_total"] = 4000
+	workspace.refresh_research({"research": model, "development": workspace.get("_development")})
+	var eta: Dictionary = workspace.get("_queue_eta")
+	var eta_text := String(eta.get(4, ""))
+	_expect("queued research gets an ETA once two research days are observed",
+		eta_text.begins_with("约") or eta_text == "超过 999 日")
+	workspace._on_available_selected(4)
+	var detail := workspace.get("_detail") as TechnologyDetailCard
+	_expect("detail shows queue position and ETA for queued research",
+		detail.schedule_text().begins_with("队列第 1 位"))
+	var facts: Array = (detail.get("_chips") as TechnologyFactSheet).facts()
+	var cost_fact := ""
+	for fact in facts:
+		if String((fact as Dictionary).get("key", "")) == "研究成本":
+			cost_fact = String((fact as Dictionary).get("value", ""))
+	_expect("detail fact sheet states the full research cost", cost_fact.ends_with("科技值"))
+	var cards: Dictionary = workspace.get("_kpi_cards")
+	_expect("KPI band reports the live queue",
+		cards.size() == 5 and (cards.Queue as DossierKpiCard).value_text() == "1 项")
+	_expect("KPI band names the current era",
+		not (cards.Era as DossierKpiCard).value_text().is_empty()
+		and (cards.Era as DossierKpiCard).value_text() != "—")
+	var nav := workspace.get("_mode_nav") as DossierChapterNav
+	var era_plate := workspace.get("_era_plate") as Control
+	nav.chapter_selected.emit("focus")
+	_expect("chapter nav switches to the tree and shows the era stepper",
+		int(workspace.navigation_report().mode) == 1 and era_plate.visible)
+	nav.chapter_selected.emit("available")
+	_expect("era stepper hides outside the tree",
+		int(workspace.navigation_report().mode) == 0 and not era_plate.visible)
+	var steady_count: int = workspace.refresh_count()
+	var steady := {"research": workspace.get("_research"),
+		"development": workspace.get("_development")}
+	workspace.refresh_research(steady)
+	_expect("an unchanged research snapshot skips the patch entirely",
+		workspace.refresh_count() == steady_count)
+
+
+func _audit_toast() -> void:
+	var toast := ToastScene.instantiate() as ResearchToast
+	get_root().add_child(toast)
+	toast.size = Vector2(800.0, 96.0)
+	_expect("research toast idles hidden without processing",
+		not toast.visible and not toast.is_processing())
+	for name in ["陶器", "弓箭", "驯化"]:
+		toast.show_research_completed(name)
+	var texts := toast.visible_texts()
+	_expect("research toast keeps the two newest notes",
+		texts.size() == 2 and texts[1].contains("驯化"))
+	_expect("research toast draws notes instead of spawning nodes",
+		toast.visible and toast.get_child_count() == 0)
+	toast.queue_free()
+
+
+func _audit_allocation(domains: Array) -> void:
+	var bars := AllocationScene.instantiate() as ResearchAllocationBars
+	get_root().add_child(bars)
+	bars.size = Vector2(292.0, 168.0)
+	bars.configure(domains)
+	bars.set_queue_counts(PackedInt32Array([1, 2, 0, 1]))
 	var commits: Array = []
-	dial.weights_committed.connect(func(weights: PackedInt32Array) -> void:
+	bars.weights_committed.connect(func(weights: PackedInt32Array) -> void:
 		commits.append(weights)
 	)
-	# At the 25% baseline a linear radius would stack all four handles on the
-	# centre pip, which is what made the dial so easy to mis-grab.
-	dial.set_weights(PackedInt32Array([2500, 2500, 2500, 2500]))
-	var balanced_reach: float = (dial._handle_position(0) - centre).length()
-	_expect("balanced weights push the handles out to the balance ring",
-		balanced_reach >= radius * 0.45)
-	_expect("balanced handles clear the centre dead zone",
-		balanced_reach > float(DialScript.CENTRE_RADIUS) + 8.0)
+	var track: float = bars.bar_rect(0).size.x
+	_expect("allocation bars leave a wide drag track", track >= 140.0)
 	var normalised := true
 	var non_negative := true
-	for sample in [
-		{"domain": 0, "grab": Vector2(0.0, -40.0), "drop": Vector2(0.0, -radius)},
-		{"domain": 1, "grab": Vector2(radius * 0.9, 0.0), "drop": Vector2(6.0, 0.0)},
-		{"domain": 2, "grab": Vector2(20.0, 34.0), "drop": Vector2(0.0, radius * 0.72)},
-		{"domain": 3, "grab": Vector2(-30.0, 0.0), "drop": Vector2(-400.0, 0.0)},
-		{"domain": 0, "grab": Vector2(0.0, -30.0), "drop": Vector2(0.0, -radius * 0.95)},
-	]:
-		dial.set_weights(PackedInt32Array([4000, 3000, 2000, 1000]))
-		_press(dial, centre + (sample.grab as Vector2))
-		_expect("pressing along an arm grabs that domain",
-			dial.get("_dragging") == int(sample.domain))
-		_move(dial, centre + (sample.drop as Vector2))
-		_release(dial, centre + (sample.drop as Vector2))
-		var weights: PackedInt32Array = dial.weights_bp()
+	var proportional := true
+	for domain in range(4):
+		bars.set_weights(PackedInt32Array([4000, 3000, 2000, 1000]))
+		var row: Rect2 = bars.bar_rect(domain)
+		var grab := row.get_center()
+		_press(bars, grab)
+		_expect("pressing a row grabs that domain", bars.get("_dragging") == domain)
+		_move(bars, grab + Vector2(track * 0.1, 0.0))
+		_release(bars, grab + Vector2(track * 0.1, 0.0))
+		var weights: PackedInt32Array = bars.weights_bp()
 		var total := 0
 		for weight in weights:
 			total += int(weight)
@@ -383,36 +446,54 @@ func _audit_dial() -> void:
 				non_negative = false
 		if total != 10000:
 			normalised = false
-	_expect("dragging any axis keeps the weights summing to 10000", normalised)
+		# The other three keep their mutual ratio while yielding share.
+		var others: Array = []
+		for other in range(4):
+			if other != domain:
+				others.append(other)
+		var before := PackedInt32Array([4000, 3000, 2000, 1000])
+		var ratio_before := float(before[others[0]]) / float(before[others[1]])
+		var ratio_after := float(weights[others[0]]) / maxf(1.0, float(weights[others[1]]))
+		if absf(ratio_before - ratio_after) > 0.02:
+			proportional = false
+	_expect("dragging any row keeps the weights summing to 10000", normalised)
 	_expect("normalisation never produces negative weights", non_negative)
-	_expect("every drag commits exactly once", commits.size() == 5)
-	# Mis-touch guards: the centre disc and the diagonal gaps own no axis, and a
-	# press that never moves must not send a command.
-	_press(dial, centre + Vector2(6.0, -8.0))
-	_expect("the centre disc grabs no axis", dial.get("_dragging") == -1)
-	_release(dial, centre)
-	_press(dial, centre + Vector2(radius * 0.6, radius * 0.6))
-	_expect("the diagonal gap between two arms grabs nothing",
-		dial.get("_dragging") == -1)
-	_release(dial, centre)
-	_press(dial, centre + Vector2(-radius - 60.0, 0.0))
-	_expect("pressing well outside the ring grabs nothing",
-		dial.get("_dragging") == -1)
-	_release(dial, centre)
-	var before: PackedInt32Array = dial.weights_bp()
+	_expect("other domains yield share in proportion", proportional)
+	_expect("every drag commits exactly once", commits.size() == 4)
+	bars.set_weights(PackedInt32Array([4000, 3000, 2000, 1000]))
+	var first: Rect2 = bars.bar_rect(0)
+	_press(bars, first.get_center())
+	_move(bars, first.get_center() + Vector2(track * 0.1, 0.0))
+	_release(bars, first.get_center() + Vector2(track * 0.1, 0.0))
+	var dragged: PackedInt32Array = bars.weights_bp()
+	_expect("a drag is relative to the press point, not a jump to the cursor",
+		absi(int(dragged[0]) - 5000) <= 30)
+	var before_quiet: PackedInt32Array = bars.weights_bp()
 	var quiet := commits.size()
-	_press(dial, centre + Vector2(0.0, -radius * 0.7))
-	_release(dial, centre + Vector2(0.0, -radius * 0.7))
-	_expect("a press without movement changes nothing", dial.weights_bp() == before)
+	_press(bars, first.position + Vector2(4.0, 4.0))
+	_release(bars, first.position + Vector2(4.0, 4.0))
+	_expect("a press without movement changes nothing", bars.weights_bp() == before_quiet)
 	_expect("a press without movement sends no command", commits.size() == quiet)
-	# A sloppy aim still lands on the intended arm.
-	_press(dial, centre + Vector2(20.0, -radius * 0.8))
-	_expect("aiming 20px off an arm still grabs it", dial.get("_dragging") == 0)
-	_release(dial, centre + Vector2(20.0, -radius * 0.8))
-	dial.set_weights(PackedInt32Array([10000, 0, 0, 0]))
+	_press(bars, Vector2(bars.size.x * 0.5, bars.size.y + 40.0))
+	_expect("pressing below the rows grabs nothing", bars.get("_dragging") == -1)
+	_release(bars, Vector2(bars.size.x * 0.5, bars.size.y + 40.0))
+	var reset: Rect2 = bars.reset_rect()
+	_press(bars, reset.get_center())
+	_expect("balance resets to 25% each and commits once",
+		bars.weights_bp() == PackedInt32Array([2500, 2500, 2500, 2500])
+		and commits.size() == quiet + 1)
+	_release(bars, reset.get_center())
+	bars.set_weights(PackedInt32Array([10000, 0, 0, 0]))
 	_expect("snapshot weights round-trip",
-		dial.weights_bp() == PackedInt32Array([10000, 0, 0, 0]))
-	dial.queue_free()
+		bars.weights_bp() == PackedInt32Array([10000, 0, 0, 0]))
+	var from_zero := bars.bar_rect(1)
+	_press(bars, from_zero.get_center())
+	_move(bars, from_zero.get_center() + Vector2(track * 0.3, 0.0))
+	_release(bars, from_zero.get_center() + Vector2(track * 0.3, 0.0))
+	var revived: PackedInt32Array = bars.weights_bp()
+	_expect("a zero-weight domain can be dragged back in",
+		int(revived[1]) >= 2500 and int(revived[0]) + int(revived[1]) == 10000)
+	bars.queue_free()
 
 
 func _press(control: Control, position: Vector2) -> void:
@@ -494,6 +575,53 @@ func _audit_fit(workspace: Control, tree: Control) -> void:
 	await process_frame
 
 
+# A research day patches values only; it must stay well inside one frame even
+# while the stock, progress, and history move every day.
+func _audit_refresh_cost(workspace: Control, definitions: Array, eras: Array,
+		domains: Array) -> void:
+	var base := _model(definitions, eras, domains)
+	var research: Dictionary = base.research
+	var progress: PackedInt64Array = (research.technology_progress as PackedInt64Array).duplicate()
+	var samples := PackedFloat64Array()
+	var rows_before: int = ((workspace.get("_queue_rows") as Array)[0] as Array).size()
+	for day in range(120):
+		progress[4] = 500 * 1000 + day * 1200
+		var daily := research.duplicate()
+		daily.technology_progress = progress.duplicate()
+		daily.last_research_day = 13 + day
+		daily.progress_total = day * 1200
+		daily.technology_points_stock = 10000 + (day % 7) * 300
+		daily.country_cash = 500000000 - day * 10000
+		daily.generation = 100 + day
+		var model := base.duplicate()
+		model.research = daily
+		var started := Time.get_ticks_usec()
+		workspace.refresh_research(model)
+		samples.append(float(Time.get_ticks_usec() - started))
+	var steady := PackedFloat64Array()
+	var last_model := base.duplicate()
+	last_model.research = workspace.get("_research")
+	for _i in range(120):
+		var started := Time.get_ticks_usec()
+		workspace.refresh_research(last_model)
+		steady.append(float(Time.get_ticks_usec() - started))
+	var daily_p95 := _p95(samples)
+	var steady_p95 := _p95(steady)
+	print("  [info] research-day refresh p95 %.0fus, unchanged snapshot p95 %.0fus" % [
+		daily_p95, steady_p95])
+	_expect("a research-day refresh stays under 1ms at p95", daily_p95 < 1000.0)
+	_expect("an unchanged snapshot refresh stays under 0.1ms at p95", steady_p95 < 100.0)
+	_expect("research-day refreshes never rebuild queue rows",
+		((workspace.get("_queue_rows") as Array)[0] as Array).size() == rows_before)
+	workspace.refresh_research(base)
+
+
+func _p95(values: PackedFloat64Array) -> float:
+	var sorted := values.duplicate()
+	sorted.sort()
+	return sorted[int(floor(float(sorted.size() - 1) * 0.95))] if not sorted.is_empty() else 0.0
+
+
 func _audit_refresh(workspace: Control, tree: Control, definitions: Array,
 		eras: Array, domains: Array) -> void:
 	var before_layout: Dictionary = tree.layout_report()
@@ -513,6 +641,7 @@ func _audit_refresh(workspace: Control, tree: Control, definitions: Array,
 	_expect("daily refresh reuses queue rows instead of rebuilding them",
 		((refreshed[0] as Array)[0] as Node).get_instance_id() == row_id)
 	_expect("tree view still owns no child nodes", tree.get_child_count() == 0)
+	_audit_refresh_cost(workspace, definitions, eras, domains)
 	var user_offset: Vector2 = tree.get("_offset") + Vector2(-8.0, -8.0)
 	tree.set("_offset", user_offset)
 	tree.call("_clamp_offset")
@@ -619,6 +748,26 @@ func _audit_navigation(workspace: Control, tree: Control, definitions: Array) ->
 		and int(fog_overview.visible_domains) > 0
 		and int(fog_overview.visible_domains) <= 4
 		and int(fog_overview.visible_eras) < 11)
+	var counted := {"owned": 0, "total": 0}
+	var expected := {"owned": 0, "total": 0}
+	for index in range(fog_states.size()):
+		if TechnologyTreeView.presents_state(int(fog_states[index])):
+			expected.total += 1
+			if int(fog_states[index]) == 5:
+				expected.owned += 1
+	for cell in overview.get("_cells"):
+		counted.owned += int((cell.counts as Dictionary).owned)
+		counted.total += int((cell.counts as Dictionary).total)
+	_expect("overview mastery tallies count only presented technologies",
+		counted == expected and int(expected.total) > 0)
+	var known := fog_states.duplicate()
+	known[5] = 5
+	overview.patch_states(known)
+	var recounted := 0
+	for cell in overview.get("_cells"):
+		recounted += int((cell.counts as Dictionary).owned)
+	_expect("overview recounts mastery when a technology completes",
+		recounted == int(expected.owned) + 1)
 	workspace._set_mode(0)
 
 

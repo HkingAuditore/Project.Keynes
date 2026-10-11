@@ -83,6 +83,29 @@ const ARCHIVE_BRASS := Color(0.69, 0.49, 0.24, 1.0)
 const ARCHIVE_RULE := Color(0.40, 0.28, 0.16, 0.55)
 const ARCHIVE_CONTENT_MARGIN := 16
 
+# Dossier palette shared by the country-affairs shell, the national economy
+# dossier and the family archive. Semantic tones are for lines, ticks and
+# glyphs only; large fills stay on paper so the page reads like a ledger.
+const DOSSIER_PAPER := Color(0.955, 0.915, 0.80, 1.0)
+const DOSSIER_PAPER_DEEP := Color(0.90, 0.835, 0.69, 1.0)
+const DOSSIER_PAPER_SHADE := Color(0.36, 0.25, 0.13, 0.07)
+const DOSSIER_INK := Color(0.12, 0.075, 0.04, 1.0)
+const DOSSIER_INK_SOFT := Color(0.27, 0.19, 0.12, 1.0)
+const DOSSIER_INK_MUTED := Color(0.40, 0.31, 0.22, 0.92)
+const DOSSIER_RULE := Color(0.42, 0.29, 0.16, 0.38)
+const DOSSIER_RULE_STRONG := Color(0.48, 0.16, 0.10, 0.70)
+const DOSSIER_TRACK := Color(0.40, 0.29, 0.17, 0.15)
+const DOSSIER_HOVER := Color(0.69, 0.49, 0.24, 0.13)
+const DOSSIER_SELECTED := Color(0.48, 0.16, 0.10, 0.10)
+const DOSSIER_OXBLOOD := Color(0.55, 0.19, 0.13, 1.0)
+const DOSSIER_BRASS := Color(0.69, 0.49, 0.24, 1.0)
+const DOSSIER_VERDIGRIS := Color(0.24, 0.46, 0.40, 1.0)
+const DOSSIER_SLATE := Color(0.31, 0.43, 0.53, 1.0)
+const DOSSIER_UMBER := Color(0.47, 0.37, 0.27, 1.0)
+const DOSSIER_SERIF: FontFile = preload("res://assets/fonts/source_han_serif/SourceHanSerifCN-Regular.otf")
+
+static var _dossier_fonts: Dictionary = {}
+
 
 static func accent_for_key(key: String) -> Color:
 	match key:
@@ -122,4 +145,22 @@ static func font_with_weight(weight: int) -> FontVariation:
 	var font := FontVariation.new()
 	font.base_font = UI_FONT
 	font.variation_opentype = {&"wght": float(clampi(weight, 200, 900))}
+	return font
+
+
+## Cached fonts for self-drawn dossier charts: "sans", "sans_strong", "serif".
+static func dossier_font(kind: String) -> Font:
+	if _dossier_fonts.has(kind):
+		return _dossier_fonts[kind]
+	var font: FontVariation
+	match kind:
+		"serif":
+			font = FontVariation.new()
+			font.base_font = DOSSIER_SERIF
+			font.variation_embolden = 0.7
+		"sans_strong":
+			font = font_with_weight(760)
+		_:
+			font = font_with_weight(560)
+	_dossier_fonts[kind] = font
 	return font

@@ -124,9 +124,18 @@ func _run() -> void:
 	_expect("economy summary exposes the native treasury",
 		bool(treasury.get("available", false)) \
 			and int(treasury.get("cash", -1)) == int(model.get("cash", -2)))
+	var dossier := panel.get("_economy_dossier") as EconomyDossier
+	_expect("economy dossier opens on the overview chapter",
+		dossier != null and dossier.visible and panel.current_section() == "economy"
+		and dossier.current_chapter() == "overview")
+	_expect("economy dossier KPI strip reads the live country",
+		dossier != null and dossier.kpi_texts().size() == 5 and dossier.view_model().available())
+	if dossier != null:
+		dossier.select_chapter("finance")
+		await process_frame
 	var economy := panel.get("_economy_workspace") as Control
-	_expect("economy workspace opens for the economy action",
-		economy != null and economy.visible and panel.current_section() == "economy")
+	_expect("finance chapter hosts the treasury workspace",
+		economy != null and economy.is_visible_in_tree() and dossier.current_chapter() == "finance")
 	_expect("economy workspace shows current treasury cash",
 		economy != null and String(economy.call("cash_text")) \
 			== String(treasury.get("cash_text", "")))
@@ -685,6 +694,27 @@ func _run() -> void:
 	_expect("50x soak leaves core country actions clickable",
 		not (buttons.get("technology") as Button).disabled \
 			and not (buttons.get("economy") as Button).disabled)
+
+	dossier.select_chapter("strata")
+	await process_frame
+	var strata_page := dossier.page("strata")
+	var strata_page_id := strata_page.get_instance_id()
+	var dossier_scroll := dossier.get_node("%PageViewport") as ScrollContainer
+	dossier.set_scroll_for_test(mini(40, int(dossier_scroll.get_v_scroll_bar().max_value)))
+	var dossier_scroll_before := dossier.scroll_value()
+	var dossier_start_day := clock.day_index()
+	clock.set_speed(50.0)
+	soak_deadline = Time.get_ticks_msec() + 20000
+	while clock.day_index() < dossier_start_day + 10 \
+			and Time.get_ticks_msec() < soak_deadline:
+		await process_frame
+	clock.set_speed(speed_before)
+	_expect("50x soak keeps the dossier chapter, page node and scroll",
+		dossier.current_chapter() == "strata" and dossier.page("strata").get_instance_id() == strata_page_id
+			and dossier.scroll_value() == dossier_scroll_before)
+	_expect("50x soak keeps dossier KPIs populated",
+		dossier.kpi_texts().size() == 5 and not dossier.kpi_texts()[0].is_empty())
+	dossier.select_chapter("finance")
 
 	var unavailable := CountryViewModel.new().build()
 	_expect("missing country context returns recoverable unavailable state",
