@@ -1757,6 +1757,9 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
         }
     }
     _structural_touched_cells.push_back(destination_cell);
+    // Staffing moved people out of cohorts that may carry job lanes restored
+    // from the source, and raised owner lanes without looking at employees.
+    clip_cell_employment_and_defer_reconcile(destination_cell);
     return true;
 }
 

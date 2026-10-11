@@ -12,6 +12,24 @@ This closes a concurrent live-vector read; it is still a compatibility DETAIL
 report. Cold per-cell/per-entity queries go through `EconomyCommitView` below.
 The committed audit summary remains separately bound to `before_effect_command_drain`.
 
+## Family expedition snapshot blocker (2026-10-11)
+
+`get_family_expedition_snapshot()["kit_blocker"]` is derived from the same
+`preparing_kit_launchable()` gate that releases a PREPARING party each day, so
+`READY` always means the next due pulse departs. A new value `INCOMPLETE` covers
+a plan the gate still rejects while both escrow-based shortfalls read zero;
+`kit_bridge_missing_units` / `kit_material_missing_units` then include the
+planner's own shortfall so the panel never shows 100% for a party that cannot
+leave. Consumers must treat unknown blocker strings as "still preparing".
+
+`kit_procurement_rejection == "country_economy_operation_gate_closed"` means the
+Economy D7 mask lacked `GOOD_FROM_MARKET`. The worker now re-opens the granted
+gates on every ECONOMY visit, so a new game reaches `0x3fe` (reported as
+`get_runtime_thread_report()["economy_pod_operation_gate_mask"]`) on its first
+worker day; a persistent gate-closed rejection is a runtime bug, not a market
+shortage. `tests/colonization_probe.gd` (`PK_COLONIZATION_PROBE=1`, optional
+`PK_COLONIZATION_PROBE_NEW_GAME=1`) prints the snapshot and mask per day.
+
 ## Economy commit view (2026-10-10)
 
 When the background worker owns ECONOMY, main-thread cold queries on

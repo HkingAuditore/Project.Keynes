@@ -139,6 +139,11 @@ public:
     bool has_technology_effect(uint64_t country_handle,
                                const std::string &definition_key,
                                int32_t technology_id) const;
+    // Active non-INDEPENDENT ENTITY entry keyed by exactly this source.
+    bool has_unique_source_entry(int32_t domain, const std::string &definition_key,
+                                 uint64_t entity_handle, uint64_t source_type,
+                                 uint64_t source_id) const;
+    int64_t committed_day() const { return _current_day; }
     bool queue_family_group_effect(const std::string &definition_key,
                                    int32_t settlement_cell,
                                    uint64_t branch_stable_id,

@@ -1,0 +1,155 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] catalog compiles
+  [PASS] all-technology production country bootstraps
+  [PASS] native runtime configures: ok
+  [PASS] bullion diagnostic trace registers
+  [PASS] power and bullion buildings bootstrap
+  [PASS] production cycle commits
+  [PASS] gold monetary receipt never exceeds configured face value (accepted=30600 issued=24480000)
+  [PASS] silver monetary receipt never exceeds configured face value (accepted=204000 issued=10200000)
+  [PASS] only accepted bullion contributes monetary issue
+  [PASS] bullion quotas are retired
+  [PASS] utility prepass supplies same-cycle electricity
+  [FAIL] unused electricity is cleared
+  [PASS] all ledgers conserve exactly
+  [PASS] accepted bullion is consumed by monetary issuance
+  [FAIL] cycle-flow inventory does not cross boundary
+  [PASS] market snapshot exposes metadata
+  [PASS] building snapshot reports actual per-slot input selections
+  [PASS] building snapshot exposes kind and technology tags
+  [PASS] household response country configures
+  [PASS] household response runtime configures
+  [PASS] household response bootstraps
+  [PASS] household response cycle commits
+  [PASS] household response country configures
+  [PASS] household response runtime configures
+  [PASS] household response bootstraps
+  [PASS] household response cycle commits
+  [PASS] household response country configures
+  [PASS] household response runtime configures
+  [PASS] household response bootstraps
+  [PASS] household response cycle commits
+  [PASS] household response country configures
+  [PASS] household response runtime configures
+  [PASS] household response bootstraps
+  [PASS] household response cycle commits
+  [PASS] household wheat demand is positive at reference wealth
+  [PASS] same class buys at least as much wheat when wealth rises
+  [PASS] lower wheat price does not reduce household demand
+  [PASS] zero-inventory staple country configures
+  [PASS] zero-inventory staple runtime configures
+  [PASS] zero-inventory staple population bootstraps
+  [PASS] zero-inventory staple cycle commits
+  [PASS] zero-inventory cultivated staple emits demand: wheat_grain
+  [PASS] zero-inventory cultivated staple emits demand: rice_grain
+  [PASS] zero-inventory cultivated staple emits demand: corn_grain
+  [PASS] startup demand remains transient and off EMA
+  [PASS] bullion feedback keeps the monetary driver bounded: gold_mine
+  [PASS] bullion feedback keeps the monetary driver bounded: silver_mine
+  [FAIL] exhausted shared pool eventually constrains incumbent bullion capacity
+  [PASS] bullion feedback cycles conserve exactly
+  [PASS] bullion-tax country bootstraps
+  [PASS] bullion-tax economy configures
+  [PASS] bullion-tax placer fixture bootstraps
+  [PASS] bullion-tax placer construction queues
+  [PASS] 95% bullion business tax commits
+  [PASS] 95% bullion business tax is authoritative
+  [PASS] 95% business tax withholds bullion support receipts
+  [PASS] bullion business tax reaches the country fiscal ledger
+  [PASS] bullion business tax conserves all ledgers
+  [PASS] bullion-entry country bootstraps
+  [PASS] bullion-entry runtime configures
+  [PASS] bullion-entry diagnostic trace registers
+  [PASS] bullion-entry population bootstraps
+  [FAIL] mint face value makes new bullion entry viable: gold_mine (row=109 pressure=65536 utilization=65536 profit=0 reason=15)
+  [PASS] greenfield bullion candidate uses face-value support: gold_mine
+  [PASS] mint face value makes new bullion entry viable: silver_mine (row=337 pressure=65536 utilization=65536 profit=4995733 reason=0)
+  [PASS] greenfield bullion candidate uses face-value support: silver_mine
+  [PASS] gold and silver greenfield forecasts use independent face-value receipts
+  [PASS] bullion-entry review conserves exactly
+  [PASS] stone-start runtime configures
+  [PASS] stone-start runtime bootstraps
+  [PASS] stone-start demand excludes undiscovered goods
+  [PASS] stone start unlocks hunting and gathering
+  [PASS] post-industrial technology starts locked
+  [PASS] stone start hides legacy modern goods but exposes gathered food
+  [PASS] stone start keeps unresearched bullion workings unavailable
+  [PASS] unresearched agrarian building is unavailable
+  [PASS] stone start hides locked professions from family behavior
+  [FAIL] technology grant queues: tech.application.subsistence_farm
+  [PASS] technology grant enters pending state: tech.application.subsistence_farm
+  [PASS] technology grant activates next day: tech.application.subsistence_farm
+  [PASS] economy observes the committed technology epoch
+  [FAIL] technology grant becomes committed cell state
+  [FAIL] granted technology unlocks tagged building
+  [PASS] early knowledge institution is catalogued
+  [PASS] early knowledge starts locked without the institution tech
+  [PASS] technology grant queues: tech.early_knowledge_institution
+  [PASS] technology grant enters pending state: tech.early_knowledge_institution
+  [PASS] technology grant activates next day: tech.early_knowledge_institution
+  [PASS] economy observes the knowledge-institution epoch
+  [PASS] early knowledge technology becomes committed
+  [PASS] early knowledge technology unlocks the institution building
+  [PASS] upgrade test country configures
+  [PASS] upgrade test country bootstraps
+  [PASS] upgrade test runtime configures
+  [PASS] upgrade test population bootstraps
+  [PASS] stone tier build command queues
+  [PASS] stone tier builds before replacement
+  [PASS] zero-day construction produces from the following cycle
+  [FAIL] technology grant queues: tech.application.subsistence_farm,tech.application.household_loom
+  [PASS] technology grant enters pending state: tech.application.subsistence_farm,tech.application.household_loom
+  [PASS] technology grant activates next day: tech.application.subsistence_farm,tech.application.household_loom
+  [PASS] unlocked stone build command remains queueable
+  [PASS] higher technology adds choices instead of banning old construction
+  [PASS] new stone building and existing asset both keep producing
+  [FAIL] all unlocked pottery-era family tiers remain constructible
+  [FAIL] technology grant queues: tech.application.three_field_smallholding,tech.application.cottage_weaving
+  [PASS] technology grant enters pending state: tech.application.three_field_smallholding,tech.application.cottage_weaving
+  [PASS] technology grant activates next day: tech.application.three_field_smallholding,tech.application.cottage_weaving
+  [FAIL] guild tier extends construction choices without deleting old assets
+  [FAIL] technology grant queues: tech.application.improved_smallholding,tech.application.improved_domestic_loom
+  [PASS] technology grant enters pending state: tech.application.improved_smallholding,tech.application.improved_domestic_loom
+  [PASS] technology grant activates next day: tech.application.improved_smallholding,tech.application.improved_domestic_loom
+  [FAIL] steam tier joins the constructible subsistence choices
+  [PASS] technology grant queues: tech.autonomous_systems
+  [PASS] technology grant enters pending state: tech.autonomous_systems
+  [PASS] technology grant activates next day: tech.autonomous_systems
+  [FAIL] post-industrial technology does not create a fifth subsistence tier
+  [PASS] upgrade cycles conserve all ledgers
+=== modern economy runtime FAIL ===
+[economy-open-finish] day=0 country=0.040 workset=0.007 fiscal=0.009 csr=0.000 recovery=0.003 vectors=0.678 audit=0.007 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.027 workset=0.007 fiscal=0.002 csr=0.000 recovery=0.000 vectors=0.010 audit=0.007 commands=0.001
+[research-procure-diag] day=0 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.042 workset=0.011 fiscal=0.003 csr=0.000 recovery=0.000 vectors=0.012 audit=0.010 commands=0.001
+[research-procure-diag] day=0 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.030 workset=0.009 fiscal=0.002 csr=0.000 recovery=0.000 vectors=0.010 audit=0.007 commands=0.001
+[research-procure-diag] day=0 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.033 workset=0.009 fiscal=0.003 csr=0.000 recovery=0.000 vectors=0.011 audit=0.007 commands=0.001
+[research-procure-diag] day=0 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.027 workset=0.010 fiscal=0.002 csr=0.000 recovery=0.000 vectors=0.011 audit=0.006 commands=0.001
+[research-procure-diag] day=0 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=5 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=10 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.028 workset=0.006 fiscal=0.002 csr=0.000 recovery=0.000 vectors=0.010 audit=0.007 commands=0.003
+[research-procure-diag] day=0 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.040 workset=0.021 fiscal=0.004 csr=0.000 recovery=0.000 vectors=0.011 audit=0.007 commands=0.001
+[research-procure-diag] day=0 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=10 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.029 workset=0.016 fiscal=0.004 csr=0.000 recovery=0.000 vectors=0.014 audit=0.010 commands=0.004
+[research-procure-diag] day=0 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=5 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=11 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=15 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=20 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

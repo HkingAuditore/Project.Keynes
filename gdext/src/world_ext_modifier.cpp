@@ -89,6 +89,11 @@ Dictionary DCWorldExt::submit_modifier_commands(const Dictionary &packed_batch) 
         int32_t enqueued = 0;
         std::string enqueue_error;
         const RuntimeThreadReport host_report = _runtime_host->report();
+        // Commands that are valid on whichever day they land (rather than
+        // against the environment generation observed now) opt out of the
+        // worker's input-generation staleness check.
+        const bool bind_input_generation =
+            !bool(batch.get("unbound_input_generation", false));
         for (int32_t i = 0; i < count; ++i) {
             RuntimeCommandPacket packet;
             packet.envelope.request_id = static_cast<uint64_t>(request_ids[i]);
@@ -129,7 +134,8 @@ Dictionary DCWorldExt::submit_modifier_commands(const Dictionary &packed_batch) 
             append(static_cast<int32_t>(magnitudes[i]));
             append(static_cast<uint64_t>(handles[i]));
             append(target_generation);
-            append(host_report.environment_generation);
+            append(bind_input_generation ? host_report.environment_generation
+                                         : decltype(host_report.environment_generation){0});
             if (cursor != RUNTIME_MODIFIER_POD_WIRE_SIZE ||
                 !_runtime_host->enqueue_modifier_shadow(std::move(packet))) {
                 enqueue_error = "modifier_host_enqueue_failed";

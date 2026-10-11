@@ -249,6 +249,15 @@ continuation 在同一 advance 内：`finish_worker_country_asset(request_id)` �
 cohort/market/treasury 的跨帧 continuation 与 operation gate 验收仍未完成；未开放的
 operation 继续显式返回 `country_economy_operation_gate_closed`。
 
+2026-10-11：D7 掩码的开放规则收敛到 `native_simulation_host.cpp` 的
+`open_granted_economy_d7_gates`（Economy worker 权威 → 全开；Country worker 权威 →
+研究 + `GOOD_FROM_MARKET` / `TREASURY_SPEND`；否则只开研究），只做按位或。
+`attach_economy_production_runtime` 与 worker 每次进入 ECONOMY 阶段都调用它。新开局的
+worker 在 attach 之后才异步提升为权威，而 ACTIVE 下主线程不再跑 runtime-graph pulse，
+`sync_runtime_domain_ownership` 不会再执行；此前掩码因此停在 attach 时的 `0x1e`，
+家族开拓备货每天以 `country_economy_operation_gate_closed` 被拒、停在 0%。读档路径在
+worker start 后立即同步，不受影响。
+
 ## 2026-09-03 Incumbent 扩容使用揭示单位经济
 
 本地已有同类型在营组且上期有产出实绩时，扩容投资的利用率取

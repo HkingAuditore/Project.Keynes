@@ -1507,19 +1507,21 @@ bool EffectRuntime::plan_era_reward_offer(int32_t pool_index,
                                           int64_t day_index,
                                           std::string &error) {
     const auto plan_start = std::chrono::steady_clock::now();
+    const NativeCountryRuntime *source = _era_reward_country_view != nullptr
+        ? _era_reward_country_view : _country_runtime;
     if (pool_index < 0 || pool_index >= static_cast<int32_t>(_era_reward_pools.size()) ||
         _country_runtime == nullptr ||
-        !_country_runtime->valid_handle(static_cast<int64_t>(country_handle))) {
+        !source->valid_handle(static_cast<int64_t>(country_handle))) {
         error = "era_reward_plan_input_invalid";
         return false;
     }
-    const Dictionary country = _country_runtime->country_snapshot(
+    const Dictionary country = source->country_snapshot(
         static_cast<int64_t>(country_handle));
-    const Dictionary treasury = _country_runtime->treasury_snapshot(
+    const Dictionary treasury = source->treasury_snapshot(
         static_cast<int64_t>(country_handle));
-    const Dictionary research = _country_runtime->research_snapshot(
+    const Dictionary research = source->research_snapshot(
         static_cast<int64_t>(country_handle));
-    const Dictionary signals_snapshot = _country_runtime->research_signal_snapshot(
+    const Dictionary signals_snapshot = source->research_signal_snapshot(
         static_cast<int64_t>(country_handle));
     if (!static_cast<bool>(country.get("ok", false)) ||
         !static_cast<bool>(treasury.get("ok", false)) ||
@@ -1575,7 +1577,7 @@ bool EffectRuntime::plan_era_reward_offer(int32_t pool_index,
             candidate.reasons, candidate.reason_count);
         (option.fallback != 0 ? fallbacks : normal).push_back(std::move(candidate));
     }
-    uint64_t seed = static_cast<uint64_t>(_country_runtime->world_seed());
+    uint64_t seed = static_cast<uint64_t>(source->world_seed());
     seed = fnv_string(seed, String(country.get("country_id", "")).utf8().get_data());
     seed = fnv_string(seed, pool.id);
     seed = fnv_value(seed, _era_reward_next_generation);
@@ -1661,7 +1663,8 @@ bool EffectRuntime::plan_era_reward_offer(int32_t pool_index,
 
 Dictionary EffectRuntime::choose_era_reward(int64_t offer_generation,
                                              int32_t choice_index,
-                                             int64_t effective_day) {
+                                             int64_t effective_day,
+                                             bool host_commit) {
     refresh_era_reward_offer_status();
     if (!_configured) return failure("effect_runtime_unconfigured");
     if (_era_reward_offer.status != 1 ||
@@ -1680,11 +1683,32 @@ Dictionary EffectRuntime::choose_era_reward(int64_t offer_generation,
         option.program_id >= static_cast<int32_t>(_definitions.size()))
         return failure("era_reward_program_invalid");
     const Definition &definition = _definitions[static_cast<size_t>(option.program_id)];
+    if (host_commit) {
+        _era_reward_offer.selected_choice = choice_index;
+        std::vector<EraRewardModifierCommand> commands;
+        std::string error;
+        if (!era_reward_selected_modifier_commands(commands, error)) {
+            _era_reward_offer.selected_choice = -1;
+            return failure(error.c_str());
+        }
+        _era_reward_offer.status = 2;
+        _era_reward_offer.transaction_id = 0;
+        if (_country_runtime != nullptr)
+            _country_runtime->set_era_reward_reference_pod(
+                _era_reward_offer.plan_id, _era_reward_offer.generation,
+                _era_reward_offer.milestone_technology, _era_reward_offer.status);
+        Dictionary out;
+        out["ok"] = true;
+        out["offer_generation"] = offer_generation;
+        out["choice_index"] = choice_index;
+        out["transaction_id"] = 0;
+        return out;
+    }
     const int64_t instance_id = static_cast<int64_t>(
         0x4552410000000000ULL | (static_cast<uint64_t>(_era_reward_offer.plan_id) &
                                 0x000000ffffffffffULL));
     std::string error;
-    if (!upsert_instance_pod(instance_id, definition.key, 1, 0x45524152,
+    if (!upsert_instance_pod(instance_id, definition.key, 1, ERA_REWARD_SOURCE_TYPE,
             _era_reward_offer.generation, _era_reward_offer.country_handle,
             alternative.target_handle, alternative.target_generation, 0,
             effective_day, false, error))
@@ -1768,6 +1792,69 @@ Dictionary EffectRuntime::choose_era_reward(int64_t offer_generation,
     out["choice_index"] = choice_index;
     out["transaction_id"] = _era_reward_offer.transaction_id;
     return out;
+}
+
+bool EffectRuntime::era_reward_selected_modifier_commands(
+        std::vector<EraRewardModifierCommand> &out, std::string &error) const {
+    out.clear();
+    error.clear();
+    const int32_t choice = _era_reward_offer.selected_choice;
+    if (choice < 0 || choice >= 3) {
+        error = "era_reward_choice_invalid";
+        return false;
+    }
+    const EraRewardAlternative &alternative =
+        _era_reward_offer.alternatives[static_cast<size_t>(choice)];
+    if (alternative.option_index < 0 ||
+        alternative.option_index >= static_cast<int32_t>(_era_reward_options.size())) {
+        error = "era_reward_frozen_alternative_invalid";
+        return false;
+    }
+    const EraRewardOption &option = _era_reward_options[
+        static_cast<size_t>(alternative.option_index)];
+    if (option.program_id < 0 ||
+        option.program_id >= static_cast<int32_t>(_definitions.size())) {
+        error = "era_reward_program_invalid";
+        return false;
+    }
+    const Definition &definition = _definitions[static_cast<size_t>(option.program_id)];
+    for (int32_t ordinal = 0; ordinal < definition.command_count; ++ordinal) {
+        const CommandDefinition &source = _command_definitions[
+            static_cast<size_t>(definition.command_begin + ordinal)];
+        if (source.action != MODIFIER_COMMAND || source.opcode != 1 ||
+            source.definition_key.empty()) {
+            error = "era_reward_host_command_unsupported";
+            return false;
+        }
+        // Same mapping as the generic declarative Modifier adapter, so both
+        // commit paths produce one identical UNIQUE_SOURCE entry.
+        EraRewardModifierCommand command;
+        command.definition_key = source.definition_key;
+        command.domain = source.domain;
+        command.target_handle = alternative.target_handle;
+        command.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
+            source.value, 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+        command.duration_days = source.duration_days;
+        command.stacks = std::max(1, source.stacks);
+        command.source_id = _era_reward_offer.generation;
+        out.push_back(std::move(command));
+    }
+    if (out.empty() || out.size() > 128) {
+        error = "era_reward_transaction_command_count_invalid";
+        return false;
+    }
+    return true;
+}
+
+void EffectRuntime::settle_era_reward_selection_pod(bool ok, const char *error) {
+    if (!era_reward_host_selection_pending()) return;
+    _era_reward_offer.status = ok ? 3 : 4;
+    if (!ok) _era_reward_offer.error = error != nullptr && error[0] != '\0'
+        ? error : "era_reward_transaction_rejected";
+    if (_country_runtime != nullptr)
+        _country_runtime->set_era_reward_reference_pod(
+            _era_reward_offer.plan_id, _era_reward_offer.generation,
+            _era_reward_offer.milestone_technology, _era_reward_offer.status);
 }
 
 void EffectRuntime::refresh_era_reward_offer_status() {
@@ -6886,9 +6973,12 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
           restored_offer.country_handle == 0 || restored_offer.country_generation == 0)) ||
         (restored_offer.status == 1 && restored_offer.transaction_id != 0) ||
         (restored_offer.status == 2 &&
-         (restored_offer.transaction_id <= 0 ||
-          restored_transaction_ids.find(restored_offer.transaction_id) ==
-              restored_transaction_ids.end())))
+         (restored_offer.transaction_id < 0 ||
+          (restored_offer.transaction_id > 0 &&
+           restored_transaction_ids.find(restored_offer.transaction_id) ==
+               restored_transaction_ids.end()))) ||
+        (restored_offer.status == 2 && restored_offer.transaction_id == 0 &&
+         (restored_offer.selected_choice < 0 || restored_offer.selected_choice > 2)))
         return failure("pkef_era_reward_identity_invalid");
     if (restored_offer.status != 0) {
         for (const EraRewardAlternative &alternative : restored_offer.alternatives) {

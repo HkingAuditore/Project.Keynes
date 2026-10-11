@@ -62,7 +62,16 @@ scratch 长期复用，generation stamp 避免每次清空全图数组，单次�
 必须把已扣的源地 cohort / 成员边 / 人物句柄滚回去，不能只 release 开拓队。
 空闲出发会立即 `ensure_merchant_invariant` 并重建商人 CSR：抽离写入的
 `_structural_touched_cells` 会在下一轮 `start_epoch` 被清空，不能再等到
-`STRUCTURAL_COMMIT` 才补商人。开工包落地按建筑转职时同样保留最后一名本地商人；
+`STRUCTURAL_COMMIT` 才补商人。同理，空闲边界的抽离、载荷还原和开工包配员都走
+`clip_cell_employment_and_defer_reconcile(cell)`：先把该格每个 cohort 的
+`owner_employed` / `employee_employed` 裁到 `owner + employee <= population`
+（POD 账本导出 `validate_shape_and_values` 以 `cohort_employment_exceeds_population`
+拒绝违例并让 worker fault），再把格子记入 `_deferred_population_reconcile_cells`；
+`start_epoch`（`clear_epoch_metrics()`）把该列表**复制**进本轮 `_population_changed_cells`，
+由 `STRUCTURAL_COMMIT` 按真实建筑填充重算就业，重算成功后才清空延迟列表；
+这样 `start_epoch` 中途失败重试、再次清空 `_population_changed_cells` 时不会丢格子。`move_cohort_population` 不改来源 cohort 的就业 lane，
+开工包配员从带着源地就业 lane 的载荷 cohort 抽人、并只抬高业主 lane，是 day 6885
+worker fault 的来源。开工包落地按建筑转职时同样保留最后一名本地商人；
 `rebuild_merchant_ranges` 若发现有人口格缺少活商人，先走同一套兜底修复，
 只有修复失败才 fatal `merchant_invariant_broken:cell=`。所有比例运算复用原生
 `mul_div_sat`，保留 population、funds、收入/支出 EMA、税与补贴归因、满意度、
@@ -237,7 +246,13 @@ revision 5 起 identity 不再用于跳过重规划（每日必重规划），�
 筹备进度另由 `kit_bridge_required_units` / `kit_bridge_missing_units`（未被库存钳制的
 原始桥接需求与剩余缺口）与 `kit_material_required_units` / `kit_material_missing_units`
 （完整开工意图的建造需求，以及源地当前仍供不起的那部分）暴露，`kit_blocker` 再给出
-`READY` / `BRIDGE` / `MATERIALS` / `NO_BUILDINGS` / `UNBUILDABLE` 之一说明真正卡在哪。
+`READY` / `BRIDGE` / `MATERIALS` / `INCOMPLETE` / `NO_BUILDINGS` / `UNBUILDABLE` 之一说明真正卡在哪。
+`READY` 只在每日出发闸门 `preparing_kit_launchable(kit, people)` 为真时出现；该闸门与
+`apply_start_family_expedition` 同一规则：只有放置开工建筑且 `N >= 3` 的队伍才要求
+`kit_partial == 0 && !buildings.empty()`，筹备期间目标已出现建筑（`place_buildings == 0`）
+的队伍直接出发。托管合计把口粮、衣物、工具各组物理量加在一起，可能盖住某一组缺口；
+闸门不通过时快照会把规划器的 `kit.*_missing_units` 并入缺口，不再显示 100%，
+两项都为 0 仍不能出发则报 `INCOMPLETE`。
 UI 的"已囤积 N%"必须按桥接 + 建材合计口径算：只看桥接会在建材还差一大截时显示 100%。
 快照另带只读采购诊断：`kit_procurement_pending` / `kit_procurement_phase` /
 `kit_procurement_good_id` / `kit_procurement_quantity` / `kit_procurement_started_day`

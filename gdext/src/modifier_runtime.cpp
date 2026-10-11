@@ -1531,6 +1531,25 @@ bool ModifierRuntime::has_technology_effect(uint64_t country_handle,
         store.active[existing->second] != 0;
 }
 
+bool ModifierRuntime::has_unique_source_entry(int32_t domain,
+                                              const std::string &definition_key,
+                                              uint64_t entity_handle,
+                                              uint64_t source_type,
+                                              uint64_t source_id) const {
+    if (!_configured || domain < 0 || domain >= DOMAIN_COUNT || entity_handle == 0)
+        return false;
+    const int32_t definition = definition_id(definition_key);
+    if (definition < 0 || _definitions[static_cast<size_t>(definition)].domain != domain ||
+        _definitions[static_cast<size_t>(definition)].policy == INDEPENDENT)
+        return false;
+    const Store &store = _stores[domain];
+    const UniqueKey unique{definition, ENTITY, entity_handle, source_type, source_id};
+    const auto existing = store.unique_instances.find(unique);
+    return existing != store.unique_instances.end() &&
+        existing->second < store.active.size() &&
+        store.active[existing->second] != 0;
+}
+
 bool ModifierRuntime::queue_family_group_effect(
         const std::string &definition_key, int32_t settlement_cell,
         uint64_t branch_stable_id, int32_t magnitude_q16,

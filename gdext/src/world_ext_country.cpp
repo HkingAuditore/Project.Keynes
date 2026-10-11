@@ -1552,6 +1552,35 @@ Dictionary DCWorldExt::service_country_worker_peer_adapter(
         ++inspected;
         if (result.code != CountryPeerResultCode::REJECTED) ++replayed;
     }
+    int notified = 0;
+    String notification_error;
+    NativeSimulationHost::CountryWorkerNotification notification;
+    while (notified < max_intents &&
+           _runtime_host->poll_country_worker_notification(notification)) {
+        ++notified;
+        // SHADOW keeps planning on the sync store, which already notified.
+        if (shadow_replay || notification.snapshot == nullptr) continue;
+        NativeCountryRuntime *source = country_runtime_from(_country_runtime);
+        NativeCountryRuntime committed_view(*source);
+        if (!committed_view.apply_committed_read_snapshot(
+                *notification.snapshot)) {
+            notification_error = "country_worker_notification_view_rejected";
+            continue;
+        }
+        auto *effect = static_cast<EffectRuntime *>(_effect_runtime);
+        if (effect != nullptr) effect->set_era_reward_country_view(&committed_view);
+        const CountryPeerResult result =
+            source->execute_peer_intent_from_worker(notification.intent);
+        if (effect != nullptr) effect->set_era_reward_country_view(nullptr);
+        if (result.code == CountryPeerResultCode::REJECTED)
+            notification_error = String(result.reason.data());
+    }
+    if (!notification_error.is_empty())
+        UtilityFunctions::printerr(
+            String("[era-reward] milestone notification failed: ") +
+            notification_error);
+    out["notified"] = notified;
+    out["notification_error"] = notification_error;
     // Effect may catchup-fire after ENSURE left PENDING (not re-queued). Promote
     // any fire-acked tech peers so Country can leave country_worker_peer_results_pending.
     const uint32_t promoted =
@@ -1821,6 +1850,7 @@ NativeCountryRuntime *DCWorldExt::country_query_runtime() const {
             }
         }
     }
+    view->mirror_era_reward_reference(source->era_reward_reference_pod());
     return view;
 }
 

@@ -1140,7 +1140,7 @@ bool RuntimeCountryPodAuthority::run_research_day(
 
 bool RuntimeCountryPodAuthority::activate_pending_technology(
         RuntimeCountryPodSnapshot &state, int32_t slot, int32_t technology,
-        const RuntimeCountryPodPlan &, uint8_t peer_flags,
+        RuntimeCountryPodPlan &plan, uint8_t peer_flags,
         std::string &error) const {
     error.clear();
     if (slot < 0 || technology < 0 ||
@@ -1173,6 +1173,9 @@ bool RuntimeCountryPodAuthority::activate_pending_technology(
     state.country_pending_technologies[word] &= ~bit;
     state.country_technologies[word] |= bit;
     ++state.country_state_version[static_cast<size_t>(slot)];
+    if (static_cast<size_t>(technology) < _catalog.technology_flags.size() &&
+        (_catalog.technology_flags[static_cast<size_t>(technology)] & 2) != 0)
+        plan.activated_milestones.push_back({slot, technology});
 
     country_core_refresh_discovery(state, _catalog, slot);
     return true;
@@ -1889,6 +1892,7 @@ bool RuntimeCountryPodAuthority::self_test(std::string &error) {
     RuntimeCountryPodCatalog research_catalog = catalog;
     research_catalog.technology_effect_required.assign(4, 0);
     research_catalog.technology_effect_required[0] = 1;
+    research_catalog.technology_flags[0] |= 2;
     RuntimeCountryPodSnapshot research_state = state;
     research_state.country_goods = {1, 0};
     research_state.research_queues.assign(2 * 4 * COUNTRY_QUEUE_SLOTS, -1);
@@ -1909,6 +1913,7 @@ bool RuntimeCountryPodAuthority::self_test(std::string &error) {
     RuntimeCountryPodPlan research_plan;
     if (!research_authority.plan_day(0, 1, research_plan, error) ||
         research_plan.intents.size() != 1u ||
+        !research_plan.activated_milestones.empty() ||
         research_plan.next_state.research_consumed_total[0] != 1 ||
         research_plan.next_state.last_research_day != 0) {
         error = "country_pod_self_test_research_plan_failed";
@@ -1935,9 +1940,16 @@ bool RuntimeCountryPodAuthority::self_test(std::string &error) {
         error = "country_pod_self_test_research_commit_failed";
         return false;
     }
+    if (research_plan.activated_milestones.size() != 1u ||
+        research_plan.activated_milestones[0].slot != 0 ||
+        research_plan.activated_milestones[0].technology != 0) {
+        error = "country_pod_self_test_milestone_activation_unreported";
+        return false;
+    }
     RuntimeCountryPodPlan continuation_plan;
     if (!research_authority.plan_day(1, 2, continuation_plan, error) ||
-        continuation_plan.next_state.research_consumed_total[0] != 1) {
+        continuation_plan.next_state.research_consumed_total[0] != 1 ||
+        !continuation_plan.activated_milestones.empty()) {
         error = "country_pod_self_test_research_double_consume";
         return false;
     }

@@ -3139,6 +3139,14 @@ private:
     void                                     *_modifier_runtime       = nullptr;
     void                                     *_trigger_runtime         = nullptr;
     void                                     *_effect_runtime          = nullptr;
+    // Host-committed era-reward selection under worker Effect authority.
+    // Session-only: a restored pending selection is re-submitted, which the
+    // UNIQUE_SOURCE Modifier policy makes idempotent.
+    bool era_reward_host_commit_active() const;
+    godot::String service_era_reward_host_selection(int64_t effective_day);
+    int64_t                                   _era_reward_host_generation = 0;
+    int64_t                                   _era_reward_host_deadline_day = -1;
+    int32_t                                   _era_reward_host_attempts = 0;
     void                                     *_ideology_runtime        = nullptr;
     uint64_t                                  _natural_resource_modifier_version =
         std::numeric_limits<uint64_t>::max();

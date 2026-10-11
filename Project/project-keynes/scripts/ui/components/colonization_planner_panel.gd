@@ -730,6 +730,8 @@ func _preparing_missing_text(handle: int, state: int) -> String:
 			lines.append("仍缺路上口粮，等源地产出")
 		"MATERIALS":
 			lines.append("仍缺开工建材，等源地产出")
+		"INCOMPLETE":
+			lines.append("开工包尚未凑齐可出发的完整方案，等源地备货")
 	var procurement := _procurement_status_text(snap)
 	if not procurement.is_empty():
 		lines.append(procurement)

@@ -1308,6 +1308,18 @@ bool NativeEconomyRuntime::launch_preparing_family_expedition(
     return true;
 }
 
+bool NativeEconomyRuntime::preparing_kit_launchable(
+        const ColonizationKitPlan &kit, int64_t people) const {
+    // Only a party that plants the opening build plan waits for a complete
+    // kit; this is the rule apply_start_family_expedition uses. A target that
+    // gained buildings while the party stocked up gets no kit, and holding the
+    // party for one would leave it "ready" forever.
+    const bool needs_complete_kit = kit.place_buildings != 0 &&
+        people >= COLONIZATION_KIT_MIN_OWNER_SLOTS;
+    return !needs_complete_kit ||
+        (kit.kit_partial == 0 && !kit.buildings.empty());
+}
+
 bool NativeEconomyRuntime::advance_preparing_family_expedition(
         int32_t expedition, int64_t day, std::string &error) {
     const int32_t source = family_expeditions_store().source_cell[expedition];
@@ -1423,7 +1435,7 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
         push_family_expedition_due(expedition);
         return true;
     }
-    if (kit.kit_partial == 0 && !kit.buildings.empty())
+    if (preparing_kit_launchable(kit, people))
         return launch_preparing_family_expedition(expedition, day, kit, error);
     store_preparing_missing_goods(expedition, kit);
     family_expeditions_store().due_day.write_scalar(expedition, day + 1, market_mutation_sink());
@@ -1625,6 +1637,31 @@ void NativeEconomyRuntime::unwind_family_expedition_payload_extract(
     family_expeditions_store().population.write_scalar(expedition, 0, market_mutation_sink());
     _family_indices_dirty = true;
     _person_indices_dirty = true;
+}
+
+void NativeEconomyRuntime::clip_cell_employment_and_defer_reconcile(
+        int32_t cell) {
+    if (cell < 0 || cell >= _cell_count.get()) return;
+    // move_cohort_population leaves the source cohort's job lanes to its
+    // caller, and the POD ledger export rejects owner + employee > population.
+    population_store().for_each_in_cell(cell, [&](int32_t slot) {
+        const int64_t population = std::max<int64_t>(0,
+            population_store().population[slot]);
+        const int64_t owner = std::clamp<int64_t>(
+            population_store().owner_employed[slot], 0, population);
+        const int64_t employee = std::clamp<int64_t>(
+            population_store().employee_employed[slot], 0, population - owner);
+        if (owner != population_store().owner_employed[slot])
+            population_store().owner_employed.write_scalar(slot, owner,
+                market_mutation_sink());
+        if (employee != population_store().employee_employed[slot])
+            population_store().employee_employed.write_scalar(slot, employee,
+                market_mutation_sink());
+    });
+    // The clip keeps the ledger exportable; building fills still have to be
+    // re-derived from the moved people, which only the structural reconcile
+    // does. Inside an epoch the touched list reaches it before it is cleared.
+    if (!_epoch_active) _deferred_population_reconcile_cells.push_back(cell);
 }
 
 bool NativeEconomyRuntime::extract_family_expedition_payload(
@@ -1912,15 +1949,7 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
     // cohort employment lanes clipped to the remaining population before any
     // POD mirror/export can observe the command, including rounding across
     // multiple family membership edges.
-    population_store().for_each_in_cell(source_cell, [&](int32_t slot) {
-        const int64_t population = std::max<int64_t>(0,
-            population_store().population[slot]);
-        population_store().owner_employed.write_scalar(slot, std::clamp<int64_t>(
-            population_store().owner_employed[slot], 0, population), market_mutation_sink());
-        population_store().employee_employed.write_scalar(slot, std::clamp<int64_t>(
-            population_store().employee_employed[slot], 0,
-            population - population_store().owner_employed[slot]), market_mutation_sink());
-    });
+    clip_cell_employment_and_defer_reconcile(source_cell);
     family_expeditions_store().payload_count.write_scalar(expedition, static_cast<uint32_t>(
         family_expedition_payloads().size()) -
         family_expeditions_store().payload_begin[expedition], market_mutation_sink());
@@ -2067,6 +2096,7 @@ bool NativeEconomyRuntime::restore_family_expedition_payload(
     }
     _family_indices_dirty = true; _person_indices_dirty = true;
     _structural_touched_cells.push_back(destination_cell);
+    clip_cell_employment_and_defer_reconcile(destination_cell);
     return true;
 }
 
@@ -2607,6 +2637,18 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
                 bridge_required - acquired_bridge);
             material_missing = std::max<int64_t>(0,
                 material_required - acquired_material);
+            // Escrow totals pool every bridge group, so surplus food can hide
+            // a clothing or tool shortfall the planner still reports.
+            const bool launchable = preparing_kit_launchable(kit,
+                family_expeditions_store().population[expedition]);
+            if (!launchable) {
+                bridge_missing = std::max(bridge_missing, std::min(
+                    std::max<int64_t>(1, bridge_required),
+                    std::max<int64_t>(0, kit.bridge_missing_units)));
+                material_missing = std::max(material_missing, std::min(
+                    std::max<int64_t>(1, material_required),
+                    std::max<int64_t>(0, kit.material_missing_units)));
+            }
             // One reason, ordered by how final it is: an unreachable material
             // ends the preparation, an empty plan is a target problem, and the
             // two shortfalls are the ordinary day-by-day stockpiling states.
@@ -2618,6 +2660,8 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
                 blocker = "MATERIALS";
             else if (bridge_missing > 0)
                 blocker = "BRIDGE";
+            else if (!launchable)
+                blocker = "INCOMPLETE";
             else
                 blocker = "READY";
         }

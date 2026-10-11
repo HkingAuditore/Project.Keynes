@@ -18,6 +18,8 @@ func _ready() -> void:
 		"res://tests/headless_save_replay.gd")
 	_attach_headless_runner("PK_FAMILY_PROBE",
 		"res://tests/family_economy_probe.gd")
+	_attach_headless_runner("PK_COLONIZATION_PROBE",
+		"res://tests/colonization_probe.gd")
 
 
 func _attach_headless_runner(env_name: String, script_path: String) -> void:

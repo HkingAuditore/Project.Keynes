@@ -5787,6 +5787,10 @@ private:
     // re-reconciles only the tail appended after that point (investment
     // profession transitions), instead of double-reconciling the full set.
     int64_t _structural_reconciled_upto = 0;
+    // Cells whose cohorts were moved at the idle boundary between epochs
+    // (colonization launch/landing/return). Epoch begin clears the touched
+    // list, so these are handed to the next structural employment reconcile.
+    std::vector<int32_t> _deferred_population_reconcile_cells;
     std::vector<int64_t> _prosperity_thresholds;
     std::vector<std::string> _prosperity_ids;
     std::vector<std::string> _prosperity_names;
@@ -6526,6 +6530,9 @@ private:
     bool extract_family_expedition_payload(int32_t expedition,
                                            int64_t requested,
                                            std::string &error);
+    void clip_cell_employment_and_defer_reconcile(int32_t cell);
+    bool preparing_kit_launchable(const ColonizationKitPlan &kit,
+                                  int64_t people) const;
     void unwind_family_expedition_payload_extract(int32_t expedition);
     bool extract_family_expedition_cargo(int32_t expedition,
                                          const ColonizationKitPlan &kit,

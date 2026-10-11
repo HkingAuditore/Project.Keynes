@@ -350,6 +350,10 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 			result = facade.choose_era_reward(
 				int(args.get("offer_generation", 0)),
 				int(args.get("choice_index", -1)), effective_day)
+			# The clock is still paused from OPEN; any caller (not just the
+			# modal) must re-sync so a day-advance settlement can start.
+			if bool(result.get("ok", false)):
+				call_deferred("_sync_era_reward_offer")
 		COMMAND_FAMILY_FOUNDING_CHOOSE:
 			result = _economy_facade.submit_family_founding_choice(
 				int(args.get("offer_id", 0)), int(args.get("generation", 0)),
@@ -994,7 +998,13 @@ func _sync_era_reward_offer() -> void:
 				if _world_clock != null else 1.0
 			_era_reward_locked = true
 		if _world_clock != null:
-			_world_clock.pause(true)
+			# Worker-owned Modifier commits only land on a simulated day; run
+			# one-day steps until ACK while every other command stays locked.
+			if status == "SELECTED_PENDING" and bool(offer.get("settles_on_day_advance", false)):
+				_world_clock.set_speed(1.0)
+				_world_clock.pause(false)
+			else:
+				_world_clock.pause(true)
 		_era_reward_generation = int(offer.get("offer_generation", 0))
 		if _ui_manager != null:
 			if not _ui_manager.is_era_reward_modal_open():
@@ -1074,11 +1084,17 @@ func _sync_family_founding_offer() -> void:
 			family_founding_offer_changed.emit({})
 		return
 	if not _family_founding_locked:
-		_family_founding_resume_running = _world_clock != null and not _world_clock.paused
-		_family_founding_previous_speed = _world_clock.speed_multiplier \
-			if _world_clock != null else 1.0
+		if _era_reward_locked:
+			_family_founding_resume_running = _era_reward_resume_running
+			_family_founding_previous_speed = _era_reward_previous_speed
+		else:
+			_family_founding_resume_running = _world_clock != null and not _world_clock.paused
+			_family_founding_previous_speed = _world_clock.speed_multiplier \
+				if _world_clock != null else 1.0
 		_family_founding_locked = true
-	if _world_clock != null:
+	# The era-reward lock owns the clock while held, including its day-advance
+	# settlement; the founding pause takes over once that lock releases.
+	if _world_clock != null and not _era_reward_locked:
 		_world_clock.pause(true)
 	var current: Dictionary = open_offers[0]
 	current["queue_remaining"] = open_offers.size() - 1

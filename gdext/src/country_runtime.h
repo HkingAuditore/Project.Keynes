@@ -563,6 +563,18 @@ public:
     EraRewardReference era_reward_reference_pod() const {
         return _era_reward_reference;
     }
+    // Read replicas do not receive this main-thread-owned reference through
+    // worker snapshots; mirror it so a replica-captured PKCN matches PKEF.
+    void mirror_era_reward_reference(const EraRewardReference &reference) {
+        if (_era_reward_reference.plan_id == reference.plan_id &&
+            _era_reward_reference.offer_generation == reference.offer_generation &&
+            _era_reward_reference.milestone_technology ==
+                reference.milestone_technology &&
+            _era_reward_reference.status == reference.status)
+            return;
+        _era_reward_reference = reference;
+        _state_hash_cache_valid = false;
+    }
     void attach_modifier_runtime(ModifierRuntime *runtime) { _modifier_runtime = runtime; }
     void attach_economy_runtime(NativeEconomyRuntime *runtime) { _economy_runtime = runtime; }
     void attach_effect_runtime(EffectRuntime *runtime) {
