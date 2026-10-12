@@ -1183,6 +1183,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     trace_begin_epoch();
     const auto commands_started = Clock::now();
     _epoch_commands.clear();
+    process_country_ai_colonization_intents(day_index);
     drain_worker_command_inbox();
     auto due_end = _pending_commands.stable_partition(
                                          [&](const Command &c) { return c.effective_day <= day_index; });

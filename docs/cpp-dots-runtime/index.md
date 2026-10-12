@@ -21,6 +21,10 @@
   `NewGameConfig v3`、确定性多国单格开局、每国 20 人聚落、PKSV 安全边界与恢复顺序。
 - 修改启动场景、玩家出生、完整存档或退出流程前先读该文档。
 
+- [Country AI 运行时](./country-ai-runtime.md)：外国的确定性分层效用 AI（科研/时代、默认税、
+  立族偏好、开拓），`COUNTRY_AI_PRODUCER_ID` 命令通道、worker/同步双路径、PKSV `pkai`、
+  `country_ai_record` CSV 与离线 sep-CMA-ES 调参。
+
 - [PlayerController 玩家会话运行时](./player-controller-runtime.md)：正式玩家输入、
 
 - [配置化时代三选一奖励](./era-reward-runtime.md)：里程碑 ACK 后的确定性三选一、
@@ -129,6 +133,7 @@ cohort 与家族分支的八维度综合满意度、阶层权重、生存闸门�
 
 12. [Country Scheduling / Save](./country-scheduling-save.md)
    - `country_daily`、命令屏障、PKCN v11 + PKEF v11 + PKTR v6 + PKID v3 + PKEC v41 顺序与兼容性拒绝。
+   - 外国 AI 的规划/提交时机与 `pkai` 见 [Country AI 运行时](./country-ai-runtime.md)。
 
 13. [Economy Fixed Point / Ledger / Formula](./economy-fixed-point-ledger-formulas.md)
    - 定点 ABI、守恒、命令和原生 batch 公式规范。

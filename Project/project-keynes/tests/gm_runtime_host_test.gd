@@ -103,17 +103,33 @@ func _run() -> void:
 	host.set("day_night_enabled", false)
 	var renderer := HexRenderer.new()
 	host.set("_renderer", renderer)
-	var locked := host.set_gm_tod_sun_preview(true, Vector2(8.5, 1.4), 0.4)
+	var held_before := clock.visual_day_phase
+	var locked := host.set_gm_tod_sun_preview(true, Vector2(0.5, 1.0), 1.0)
 	var locked_uv: Vector2 = locked.get("uv", Vector2.ZERO)
+	var sun_dir: Vector3 = renderer.get("_tod_sun_dir")
 	_expect(bool(locked.get("ok", false)) and bool(locked.get("preview", false))
-		and clock.visual_day_phase_held and is_equal_approx(clock.visual_day_phase, 0.5)
-		and host.is_day_night_enabled()
-		and is_equal_approx(locked_uv.x, 0.5) and is_equal_approx(locked_uv.y, 1.0),
-		"sun preview holds phase, enables day night, and clamps uv", failures)
-	_expect(bool(renderer.get("_tod_debug_sun_position_enabled"))
+		and not host.is_day_night_enabled()
+		and clock.visual_day_phase_held and is_equal_approx(clock.visual_day_phase, held_before)
+		and is_equal_approx(locked_uv.x, 0.5) and is_equal_approx(locked_uv.y, 1.0)
+		and is_equal_approx(float(locked.get("azimuth_deg", 0.0)), 90.0)
+		and is_equal_approx(float(locked.get("elevation_deg", 0.0)), 8.0)
+		and bool(renderer.get("_tod_debug_sun_position_enabled"))
+		and absf(sun_dir.x) < 0.02
+		and sun_dir.y > 0.9
+		and is_equal_approx(sun_dir.z, sin(deg_to_rad(8.0))),
+		"eternal daylight drag lights from the handle direction", failures)
+	var default_uv := WorldRuntimeHost.eternal_uv_from_angles(-60.0, 37.0)
+	var default_angles := WorldRuntimeHost.eternal_angles_from_uv(default_uv)
+	_expect(is_equal_approx(default_angles.x, -60.0) and is_equal_approx(default_angles.y, 37.0),
+		"eternal sun angle mapping roundtrips", failures)
+	host.set_day_night_enabled(true)
+	var day_locked := host.set_gm_tod_sun_preview(true, Vector2(0.5, 0.2), 0.4)
+	_expect(bool(day_locked.get("ok", false)) and host.is_day_night_enabled()
+		and is_equal_approx(clock.visual_day_phase, 0.5)
+		and bool(renderer.get("_tod_debug_sun_position_enabled"))
 		and is_equal_approx(float(renderer.get("_day_phase")), 0.5)
 		and is_equal_approx(float(renderer.get("_tod_debug_sun_height_scale")), 0.4),
-		"sun preview pushes renderer override", failures)
+		"day night drag still scrubs the visual phase", failures)
 	var held_phase := clock.visual_day_phase
 	clock.call("_advance_visual_day_phase", 30.0)
 	_expect(is_equal_approx(clock.visual_day_phase, held_phase),
@@ -127,6 +143,14 @@ func _run() -> void:
 	clock.call("_advance_visual_day_phase", 12.0)
 	_expect(not is_equal_approx(clock.visual_day_phase, held_phase),
 		"released visual phase advances again", failures)
+	var bounds := Rect2(0.0, 0.0, 1000.0, 500.0)
+	var viewport := Vector2(200.0, 100.0)
+	var camera_pos := Vector2(500.0, 250.0)
+	var sun_uv := Vector2(0.25, 0.5)
+	var sun_screen := WorldRuntimeHost.map_sun_uv_to_screen(sun_uv, camera_pos, 1.0, viewport, bounds)
+	var roundtrip := WorldRuntimeHost.map_screen_to_sun_uv(sun_screen, camera_pos, 1.0, viewport, bounds)
+	_expect(is_equal_approx(roundtrip.x, sun_uv.x) and is_equal_approx(roundtrip.y, sun_uv.y),
+		"map sun drag screen mapping roundtrips", failures)
 	for failure in failures:
 		push_error("[gm-runtime-host] FAIL: %s" % failure)
 	print("[gm-runtime-host] %s" % ("PASS" if failures.is_empty() else "FAIL"))

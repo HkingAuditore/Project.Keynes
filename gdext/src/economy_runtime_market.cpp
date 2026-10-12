@@ -1709,33 +1709,27 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                                         buildings_store().last_bullion_mint_receipt[
                                             entry->building_group], support_paid, sat));
                             }
-                            _production_output_supported = saturating_add(
-                                _production_output_supported, entry->quantity, sat);
-                            _production_output_stock = saturating_add(
-                                _production_output_stock, entry->quantity, sat);
-                            _producer_support_money_issued = saturating_add(
-                                _producer_support_money_issued, support_paid, sat);
-                            _explicit_money_mint = saturating_add(
-                                _explicit_money_mint, support_paid, sat);
-                            _producer_revenue = saturating_add(
-                                _producer_revenue, support_paid, sat);
+                            result.supported_output = saturating_add(
+                                result.supported_output, entry->quantity, sat);
+                            result.supported_money = saturating_add(
+                                result.supported_money, support_paid, sat);
                             if (issue_value > 0) {
-                                _bullion_money_issued = saturating_add(
-                                    _bullion_money_issued, support_paid, sat);
-                                _bullion_stock_consumed = saturating_add(
-                                    _bullion_stock_consumed, entry->quantity, sat);
+                                result.bullion_money = saturating_add(
+                                    result.bullion_money, support_paid, sat);
+                                result.bullion_stock = saturating_add(
+                                    result.bullion_stock, entry->quantity, sat);
                                 market_store().stock.write_scalar(stock_index, saturating_sub(
                                     market_store().stock[stock_index], entry->quantity, sat), market_mutation_sink());
                                 if (_good_ids[entry->good_id] == "gold") {
-                                    _gold_accepted = saturating_add(
-                                        _gold_accepted, entry->quantity, sat);
-                                    _gold_money_issued = saturating_add(
-                                        _gold_money_issued, support_paid, sat);
+                                    result.gold_accepted = saturating_add(
+                                        result.gold_accepted, entry->quantity, sat);
+                                    result.gold_money = saturating_add(
+                                        result.gold_money, support_paid, sat);
                                 } else {
-                                    _silver_accepted = saturating_add(
-                                        _silver_accepted, entry->quantity, sat);
-                                    _silver_money_issued = saturating_add(
-                                        _silver_money_issued, support_paid, sat);
+                                    result.silver_accepted = saturating_add(
+                                        result.silver_accepted, entry->quantity, sat);
+                                    result.silver_money = saturating_add(
+                                        result.silver_money, support_paid, sat);
                                 }
                             }
                             supported_remainder = true;

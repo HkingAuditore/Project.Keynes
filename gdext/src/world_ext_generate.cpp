@@ -900,6 +900,13 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
         return double(nz->get_noise_3d(ct * rc + ox, st * rc + oy, ny * scale + oz));
     };
 
+    // 地台起伏 / 造山带 / 山脊噪声按格距定义：大图得到更多、同等格尺寸的山系，而不是把
+    // 参考图的山系整体放大（放大后格间高差 ∝ 1/s，内陆读成平地）。大陆轮廓仍按整图定义。
+    // N <= feature_ref_cells 时 feature_scale=1，与旧行为逐位一致。
+    const double feature_ref_cells = std::max(100.0, getd(profile, "feature_ref_cells", 2400.0));
+    const double feature_scale = std::pow(std::max(1.0, std::sqrt(double(width) * double(height) / feature_ref_cells)),
+                                          std::clamp(getd(profile, "feature_scale_exp", 1.0), 0.0, 1.0));
+
     // ── 1. coords + elevation —— 镜像 _compute_elevation（行主序，与 all_cells() 一致）──
     for (int row = 0; row < height; ++row) {
         for (int col = 0; col < width; ++col) {
@@ -943,7 +950,7 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
             const double cont_noise = ((c1 * 0.70 + c2 * 0.30) + 1.0) * 0.5;
             const double offshore_raw = cyl_noise(detail_noise.ptr(), ct, st, ny, 900.0, -333.0, 217.0, 0.0);
             const double offshore = std::pow(std::max(offshore_raw - 0.55, 0.0), 1.5) * offshore_amp;  // 近海岛屿
-            const double macro = cyl_noise(height_noise.ptr(), ct, st, ny, 95.0, 701.0, -419.0, 0.0);   // 大尺度起伏
+            const double macro = cyl_noise(height_noise.ptr(), ct, st, ny, 95.0 * feature_scale, 701.0, -419.0, 0.0);   // 大尺度起伏
             // 极地纬度衰减（双峰下用于降低极地大陆性；旧路径下仍用于减高程）。
             const double edge_dy = std::fabs(ny - 0.5) * 2.0;
             const double edge_perturb = cyl_noise(height_warp.ptr(), ct, st, ny, 150.0, 199.0, -73.0, 0.0) * 0.38;
@@ -957,11 +964,11 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                 const double C = pk_smoothstep(PK_CONT_THRESH - PK_CONT_MARGIN,
                                                PK_CONT_THRESH + PK_CONT_MARGIN, cont);  // 锐化→陡坡折
                 // 造山带：ridged(1-|n|，成脉) × 低频 belt(成带) → 成脉山系；仅陆地(随 C)。
-                const double ro1 = cyl_noise(height_noise.ptr(), ct, st, ny, 115.0, 313.0, -271.0, 0.0);
-                const double ro2 = cyl_noise(detail_noise.ptr(), ct, st, ny, 57.0, -191.0, 421.0, 0.0);
+                const double ro1 = cyl_noise(height_noise.ptr(), ct, st, ny, 115.0 * feature_scale, 313.0, -271.0, 0.0);
+                const double ro2 = cyl_noise(detail_noise.ptr(), ct, st, ny, 57.0 * feature_scale, -191.0, 421.0, 0.0);
                 double ridge = (1.0 - std::fabs(ro1)) * 0.7 + (1.0 - std::fabs(ro2)) * 0.3;
                 ridge = pk_clamp01(ridge);
-                const double belt_n = cyl_noise(detail_noise.ptr(), ct, st, ny, 70.0, 137.0, -91.0, 0.0);
+                const double belt_n = cyl_noise(detail_noise.ptr(), ct, st, ny, 70.0 * feature_scale, 137.0, -91.0, 0.0);
                 const double belt = pk_smoothstep(PK_OROG_BELT_LO, PK_OROG_BELT_HI, (belt_n + 1.0) * 0.5);
                 const double orogeny = std::pow(ridge, PK_OROG_SHARP) * belt * PK_OROGENY_AMP;
                 // 合成：海岸线定在 C=0.5。陆地从海岸(sea)抬到内陆平台(含造山) → 内陆平坦 + 海岸上坡(海岸法线)；
@@ -1089,6 +1096,12 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
         const double spl_k = std::max(0.0, getd(profile, "spl_erodibility", 1.2));
         const double spl_m = getd(profile, "spl_area_exp", 0.45);
         const double spl_uplift_rate = std::max(0.0, getd(profile, "spl_uplift_rate", 0.10));
+        // [spl-scale 2026-10-12] 准平衡满足 E[i] = E[down] + U/C，逐格成立 → 内陆高度 ≈ 海岸起
+        // 格数 × U/C。格数 ∝ sqrt(N)，不缩放时 200x150 内陆整片顶到 land_elev_cap 成纯平高原。
+        // 物理一致：每格高差 ∝ 1/s，故 C ×s；汇水面积 A∝s²、均值 Ā∝s，(A/Ā)/s 换回参考格距。
+        // N <= spl_ref_cells 时 s=1，与旧行为逐位一致。
+        const double spl_ref_cells = std::max(100.0, getd(profile, "spl_ref_cells", 2400.0));
+        const double spl_res_scale = std::max(1.0, std::sqrt(double(n) / spl_ref_cells));
         if (spl_iters > 0) {
             std::vector<float> relief0(size_t(n), 0.0f);
             for (int i = 0; i < n; ++i) relief0[size_t(i)] = std::max(0.0f, float(double(E[i]) - sea_level));
@@ -1138,11 +1151,39 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                     const int i = proc[k]; const int d = down[size_t(i)];
                     if (d < 0) continue;
                     if (double(E[i]) < sea_level) continue; // 海洋不侵蚀
-                    const double C = spl_k * std::pow(area[size_t(i)] * inv_area_mean, spl_m);
+                    const double C = spl_k * spl_res_scale
+                            * std::pow(area[size_t(i)] * inv_area_mean / spl_res_scale, spl_m);
                     const double U = spl_uplift_rate * double(relief0[size_t(i)]);
                     double z = (double(E[i]) + U + C * double(E[d])) / (1.0 + C);
                     if (z < double(E[d])) z = double(E[d]);
                     E[i] = float(z);
+                }
+            }
+            // 内陆高度沿流路逐格累加，高海平面 + 大陆地图上会冲出 1.0，硬截后内陆成整片平顶。
+            // 超出余量时把膝点以上的陆地高度线性压进 [knee, headroom]，p99 落在 headroom；
+            // 膝点以下（低地/中山的群系分布）不动，未超出的地图逐位不变。
+            {
+                std::vector<float> land_h;
+                land_h.reserve(size_t(n));
+                for (int i = 0; i < n; ++i) {
+                    const double e = double(E[i]);
+                    if (e >= sea_level) land_h.push_back(float(e - sea_level));
+                }
+                // 大图对齐山脊 pass 的 land_elev_cap(0.93)，否则 SPL 已占满上限、山脊无处可加。
+                const double spl_top = spl_res_scale > 1.0 ? 0.93 : 1.0;
+                const double headroom = (spl_top - sea_level) * std::clamp(getd(profile, "spl_headroom_frac", 0.97), 0.5, 1.0);
+                if (!land_h.empty() && headroom > 1e-4) {
+                    const size_t k99 = std::min(land_h.size() - 1, size_t(double(land_h.size()) * 0.99));
+                    std::nth_element(land_h.begin(), land_h.begin() + std::ptrdiff_t(k99), land_h.end());
+                    const double p99 = double(land_h[k99]);
+                    const double knee = headroom * std::clamp(getd(profile, "spl_headroom_knee", 0.7), 0.0, 0.95);
+                    if (p99 > headroom) {
+                        const double f = (headroom - knee) / (p99 - knee);
+                        for (int i = 0; i < n; ++i) {
+                            const double h = double(E[i]) - sea_level;
+                            if (h > knee) E[i] = float(sea_level + knee + (h - knee) * f);
+                        }
+                    }
                 }
             }
             for (int i = 0; i < n; ++i) {
@@ -1341,6 +1382,17 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
     // ── 5. mountain ridges —— 镜像 _apply_mountain_ridges（就地，slope 读当前 E）──
     if (ridge_boost_amp > 0.0) {
         const double denom_lf = std::max(1.0 - sea_level, 0.001);
+        const double land_elev_cap = 0.93;
+        // 软上限起点随海平面上移（sea=0.5 时为 0.78）；固定 0.78 会让高海平面地图的
+        // 大半陆地落进指数压缩段，格间高差被压到约 1/10。
+        const double soft_max = std::max(0.78, sea_level + (land_elev_cap - sea_level) * (0.28 / 0.43));
+        // 大图内陆 E 已接近上限，再叠最多 ridge_boost_amp 的山脊后只能靠软上限整体压缩，
+        // 高海拔带格间高差被压到约 1/10 → 整片平顶高原。大图按 w=1-1/s 混入"全局缩小山脊
+        // 增量 g，使 p99(E+g·add) 落在上限内"，保留 SPL 起伏；N <= ridge_cap_ref_cells 逐位不变。
+        const double ridge_cap_ref = std::max(100.0, getd(profile, "ridge_cap_ref_cells", 2400.0));
+        const double ridge_cap_w = 1.0 - 1.0 / std::max(1.0, std::sqrt(double(n) / ridge_cap_ref));
+        std::vector<float> ridge_pre(ridge_cap_w > 0.0 ? size_t(n) : 0u, -1.0f);
+        std::vector<float> ridge_add(ridge_pre.size(), 0.0f);
         for (int row = 0; row < height; ++row) {
             for (int col = 0; col < width; ++col) {
                 const int idx = row * width + col;
@@ -1351,8 +1403,8 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                 const double th2 = PK_TWO_PI * (double(col) / double(width));
                 const double ct2 = std::cos(th2);
                 const double st2 = std::sin(th2);
-                const double ridge_a = 1.0 - std::fabs(cyl_noise(detail_noise.ptr(), ct2, st2, ny2, 180.0, 71.3, -33.7, 0.0));
-                const double ridge_b = 1.0 - std::fabs(cyl_noise(detail_noise.ptr(), ct2, st2, ny2, 220.0, -50.7, 91.1, 0.0));
+                const double ridge_a = 1.0 - std::fabs(cyl_noise(detail_noise.ptr(), ct2, st2, ny2, 180.0 * feature_scale, 71.3, -33.7, 0.0));
+                const double ridge_b = 1.0 - std::fabs(cyl_noise(detail_noise.ptr(), ct2, st2, ny2, 220.0 * feature_scale, -50.7, 91.1, 0.0));
                 const double ridge_signal = std::pow(std::max(ridge_a, ridge_b), 1.4);
                 double lowest = double(E[idx]);
                 for (int d = 0; d < 6; ++d) {
@@ -1367,8 +1419,10 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                 land_factor = std::pow(land_factor, 1.5);
                 const double addition = ridge_signal * land_factor * slope_gate * ridge_boost_amp;
                 double raw_post = double(E[idx]) + addition;
-                const double soft_max = 0.78;
-                const double land_elev_cap = 0.93;
+                if (!ridge_pre.empty()) {
+                    ridge_pre[size_t(idx)] = E[idx];
+                    ridge_add[size_t(idx)] = float(addition);
+                }
                 if (raw_post > soft_max) {
                     const double excess = raw_post - soft_max;
                     raw_post = soft_max + (land_elev_cap - soft_max) * (1.0 - std::exp(-excess * 3.0));
@@ -1376,6 +1430,39 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                 if (raw_post < 0.0) raw_post = 0.0;
                 else if (raw_post > land_elev_cap) raw_post = land_elev_cap;
                 E[idx] = float(raw_post);
+            }
+        }
+        if (!ridge_pre.empty()) {
+            std::vector<int> land_idx;
+            land_idx.reserve(size_t(n));
+            for (int i = 0; i < n; ++i) {
+                if (ridge_pre[size_t(i)] >= 0.0f) land_idx.push_back(i);
+            }
+            if (!land_idx.empty()) {
+                std::vector<float> scratch(land_idx.size());
+                const size_t k99 = std::min(land_idx.size() - 1, size_t(double(land_idx.size()) * 0.99));
+                auto p99_at = [&](double g) -> double {
+                    for (size_t j = 0; j < land_idx.size(); ++j) {
+                        const size_t i = size_t(land_idx[j]);
+                        scratch[j] = float(double(ridge_pre[i]) + g * double(ridge_add[i]));
+                    }
+                    std::nth_element(scratch.begin(), scratch.begin() + std::ptrdiff_t(k99), scratch.end());
+                    return double(scratch[k99]);
+                };
+                double g = 1.0;
+                if (p99_at(1.0) > land_elev_cap) {
+                    double lo = 0.0, hi = 1.0;
+                    for (int it = 0; it < 24; ++it) {
+                        const double mid = 0.5 * (lo + hi);
+                        if (p99_at(mid) > land_elev_cap) hi = mid; else lo = mid;
+                    }
+                    g = lo;
+                }
+                for (const int i : land_idx) {
+                    const double lin = std::clamp(double(ridge_pre[size_t(i)]) + g * double(ridge_add[size_t(i)]),
+                                                  0.0, land_elev_cap);
+                    E[i] = float(double(E[i]) + (lin - double(E[i])) * ridge_cap_w);
+                }
             }
         }
     }
@@ -1902,10 +1989,24 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     // too many plateau candidates on large maps. Tighten by (ref/N)^k; exponent
     // 0.25 is a mild, conservative factor — the area-ratio cap above is the
     // primary density control, this is a secondary nudge.
+    // [relief-physical 2026-10-12] PLATEAU/MOUNTAIN 的局部起伏改在固定物理半径上测量：
+    // 噪声在归一化坐标采样，N 增大时 1 圈邻格高差随之变小，1 圈 relief 会把大图高地整片
+    // 判成 PLATEAU（实测 60x40→200x150 占陆 6%→30%）。N > relief_ref_cells 时取半径
+    // k=round(sqrt(N/ref)) 圈的 max-min，并按 sqrt(N/ref)/k 换算回参考格距的 1 圈当量；
+    // 阈值冻结在 ref 尺寸的值。N <= ref 时 k=1、换算系数 1，与旧行为逐位一致。
+    // base pass 的造山/山脊噪声已按 feature_scale 改为格距定义，只剩未抵消的那部分放大需要扩半径。
+    const double relief_ref_cells = std::max(100.0, getd(profile, "relief_ref_cells", 2400.0));
+    const double relief_feature_scale = std::pow(
+            std::max(1.0, std::sqrt(double(n) / std::max(100.0, getd(profile, "feature_ref_cells", 2400.0)))),
+            std::clamp(getd(profile, "feature_scale_exp", 1.0), 0.0, 1.0));
+    const double relief_ideal_radius = std::max(1.0, std::sqrt(double(n) / relief_ref_cells) / relief_feature_scale);
+    const int relief_radius = std::clamp(int(std::lround(relief_ideal_radius)), 1, 6);
+    const double relief_radius_norm = relief_ideal_radius / double(relief_radius);
+    const double geomorph_relief_n = std::min(double(n), relief_ref_cells);
     constexpr double plateau_relief_ref_cells = 15000.0;
     constexpr double plateau_relief_scale_exp = 0.25;
     const double plateau_relief_scale = std::pow(
-            std::min(1.0, plateau_relief_ref_cells / std::max(1.0, double(n))),
+            std::min(1.0, plateau_relief_ref_cells / std::max(1.0, geomorph_relief_n)),
             plateau_relief_scale_exp);
     const double plateau_max_relief = plateau_max_relief_base * plateau_relief_scale;
     const double mountain_min_land_h = getd(profile, "mountain_min_land_h", 0.70);
@@ -1934,7 +2035,10 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     const double relief_thresh_scale = std::pow(
             std::max(0.25, PK_GEN_REF_CELLS / std::max(1.0, double(n))),
             relief_thresh_scale_exp);
-    const double mountain_min_relief = mountain_min_relief_base * relief_thresh_scale;
+    const double geomorph_relief_scale = std::pow(
+            std::max(0.25, PK_GEN_REF_CELLS / std::max(1.0, geomorph_relief_n)),
+            relief_thresh_scale_exp);
+    const double mountain_min_relief = mountain_min_relief_base * geomorph_relief_scale;
     const double badlands_min_relief = badlands_min_relief_base * relief_thresh_scale;
     const double rift_min_wall = rift_min_wall_base * relief_thresh_scale;
     const double rift_min_axis = rift_min_axis_base * relief_thresh_scale;
@@ -3561,6 +3665,30 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
 
     // ── 高原(PLATEAU) landform override：高海拔、低局部起伏、连通成片的陆地 ──
     // 不新增 terrain；只把三轴 landform 覆写为 PLATEAU，保留原 biome/vegetation。
+    auto land_neighbor_count = [&](int i) -> int {
+        int land_nb = 0;
+        for (int d = 0; d < 6; ++d) {
+            const int ni = NB[size_t(i) * 6 + d];
+            if (ni >= 0 && !pk_is_water_terrain(TERR[ni])) ++land_nb;
+        }
+        return land_nb;
+    };
+    auto geomorph_relief = [&](int i) -> double {
+        float min_e = E[i], max_e = E[i];
+        for (int dq = -relief_radius; dq <= relief_radius; ++dq) {
+            const int dr_lo = std::max(-relief_radius, -dq - relief_radius);
+            const int dr_hi = std::min(relief_radius, -dq + relief_radius);
+            for (int dr = dr_lo; dr <= dr_hi; ++dr) {
+                if (dq == 0 && dr == 0) continue;
+                const int ni = index_for_qr(Q[i] + dq, R[i] + dr);
+                if (ni < 0 || pk_is_water_terrain(TERR[ni])) continue;
+                min_e = std::min(min_e, E[ni]);
+                max_e = std::max(max_e, E[ni]);
+            }
+        }
+        return (double(max_e) - double(min_e)) * relief_radius_norm;
+    };
+
     std::vector<uint8_t> plateau_candidate(size_t(n), 0);
     int plateau_candidate_count = 0;
     for (int i : land) {
@@ -3568,17 +3696,8 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         if (pk_is_permanent_landform(TERR[i])) continue;
         const double lh = geomorph_h(i);
         if (lh < plateau_min_land_h || lh > 0.90) continue;
-        float min_e = E[i], max_e = E[i];
-        int land_nb = 0;
-        for (int d = 0; d < 6; ++d) {
-            const int ni = NB[size_t(i) * 6 + d];
-            if (ni < 0 || pk_is_water_terrain(TERR[ni])) continue;
-            ++land_nb;
-            min_e = std::min(min_e, E[ni]);
-            max_e = std::max(max_e, E[ni]);
-        }
-        if (land_nb < 2) continue;
-        const double relief = double(max_e) - double(min_e);
+        if (land_neighbor_count(i) < 2) continue;
+        const double relief = geomorph_relief(i);
         const bool broad_bench = lh >= plateau_min_land_h && relief <= plateau_max_relief;
         const bool high_bench = lh >= plateau_min_land_h + 0.10 && relief <= plateau_max_relief * 1.35;
         if (broad_bench || high_bench) {
@@ -3621,17 +3740,8 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
         if (LF[i] != 7 || pk_is_water_terrain(TERR[i]) || VOLC[i] != 0) continue;
         if (TERR[i] == 22 || TERR[i] == 24 || TERR[i] == 25 || TERR[i] == 30) continue;
         const double lh = geomorph_h(i);
-        float min_e = E[i], max_e = E[i];
-        int land_nb = 0;
-        for (int d = 0; d < 6; ++d) {
-            const int ni = NB[size_t(i) * 6 + d];
-            if (ni < 0 || pk_is_water_terrain(TERR[ni])) continue;
-            ++land_nb;
-            min_e = std::min(min_e, E[ni]);
-            max_e = std::max(max_e, E[ni]);
-        }
-        if (land_nb < 3) continue;
-        const double relief = double(max_e) - double(min_e);
+        if (land_neighbor_count(i) < 3) continue;
+        const double relief = geomorph_relief(i);
         const bool summit_rugged = lh >= peak_min_land_h && relief >= mountain_min_relief * 0.65;
         const bool keep_mountain = lh >= mountain_min_land_h && (relief >= mountain_min_relief || summit_rugged);
         if (lh >= mountain_min_land_h) ++mountain_height_candidates;
@@ -4220,6 +4330,9 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     out["relief_thresh_scale"] = relief_thresh_scale;
     out["relief_thresh_scale_exp"] = relief_thresh_scale_exp;
     out["mountain_min_relief_effective"] = mountain_min_relief;
+    out["plateau_max_relief_effective"] = plateau_max_relief;
+    out["geomorph_relief_radius"] = relief_radius;
+    out["geomorph_relief_radius_norm"] = relief_radius_norm;
     out["badlands_min_relief_effective"] = badlands_min_relief;
     out["flow_eq_scale"] = flow_eq_scale;
     out["rain_shadow_lookback_effective"] = lookback;

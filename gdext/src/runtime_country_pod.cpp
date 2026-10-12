@@ -1191,6 +1191,16 @@ void RuntimeCountryPodAuthority::remove_pending_commands(
         }), _pending.end());
 }
 
+size_t RuntimeCountryPodAuthority::remove_pending_producer(
+        uint64_t producer_id) noexcept {
+    const size_t before = _pending.size();
+    _pending.erase(std::remove_if(_pending.begin(), _pending.end(),
+        [producer_id](const RuntimeCountryCommand &command) {
+            return command.producer_id == producer_id;
+        }), _pending.end());
+    return before - _pending.size();
+}
+
 bool RuntimeCountryPodAuthority::apply_command(
         RuntimeCountryPodSnapshot &state, const RuntimeCountryCommand &command,
         RuntimeCountryPodPlan &plan, std::string &error) const {

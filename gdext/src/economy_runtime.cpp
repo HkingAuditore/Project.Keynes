@@ -3154,13 +3154,20 @@ bool NativeEconomyRuntime::coordinate_country_cohort_cash(
     }
     if (cohort_slot < 0 || cohort_slot >= static_cast<int32_t>(
             population_store().active.size()) || population_store().active[cohort_slot] == 0 ||
-        country_handle == 0 || amount < 0 ||
+        amount < 0 ||
         (operation != NativeCountryRuntime::ECONOMY_ASSET_CASH_TO_COHORT &&
          operation != NativeCountryRuntime::ECONOMY_ASSET_CASH_FROM_COHORT)) {
         error = "country_cohort_cash_request_invalid";
         return false;
     }
     if (amount == 0) return true;
+    if (country_handle == 0) {
+        // A cohort can sit in a cell whose Country claim has not committed yet
+        // (a settling expedition). There is no treasury to move its cash to,
+        // so callers keep the cash on the cohort and retry later.
+        error = "country_cohort_cash_treasury_unowned";
+        return true;
+    }
     // The in-thread prepare below is worker-only: it reads the Country POD
     // authority directly. Economy still runs on the main thread until its own
     // ACTIVE grant lands, and taking this branch from there raised
@@ -12594,7 +12601,8 @@ bool NativeEconomyRuntime::commit_structural(const StructuralCommand &cmd,
             // cohort until a later day can transfer the estate. Do not burn
             // money and do not release the slot.
             if (moved == 0 &&
-                cohort_cash_error == "country_economy_operation_gate_closed")
+                (cohort_cash_error == "country_economy_operation_gate_closed" ||
+                 cohort_cash_error == "country_cohort_cash_treasury_unowned"))
                 return true;
             error = "country_treasury_estate_transfer_failed";
             return false;
@@ -12823,7 +12831,8 @@ bool NativeEconomyRuntime::move_cohort_population(int32_t source, int32_t dest_c
             // Same gate soft-unavailable path as STRUCTURAL_REMOVE_EMPTY:
             // keep residual funds on the drained slot until Country peer opens.
             if (moved == 0 &&
-                cohort_cash_error == "country_economy_operation_gate_closed") {
+                (cohort_cash_error == "country_economy_operation_gate_closed" ||
+                 cohort_cash_error == "country_cohort_cash_treasury_unowned")) {
                 if (source_drained_out != nullptr) *source_drained_out = false;
                 return true;
             }
@@ -19129,6 +19138,32 @@ NativeEconomyRuntime::advance_household_market_chunk(
         _production_output_discarded = saturating_add(
             _production_output_discarded, market_result.retained_output_discarded,
             _saturation_count);
+        _production_output_supported = saturating_add(
+            _production_output_supported, market_result.supported_output,
+            _saturation_count);
+        _production_output_stock = saturating_add(
+            _production_output_stock, market_result.supported_output,
+            _saturation_count);
+        _producer_support_money_issued = saturating_add(
+            _producer_support_money_issued, market_result.supported_money,
+            _saturation_count);
+        _explicit_money_mint = saturating_add(
+            _explicit_money_mint, market_result.supported_money,
+            _saturation_count);
+        _producer_revenue = saturating_add(
+            _producer_revenue, market_result.supported_money, _saturation_count);
+        _bullion_money_issued = saturating_add(
+            _bullion_money_issued, market_result.bullion_money, _saturation_count);
+        _bullion_stock_consumed = saturating_add(
+            _bullion_stock_consumed, market_result.bullion_stock, _saturation_count);
+        _gold_accepted = saturating_add(
+            _gold_accepted, market_result.gold_accepted, _saturation_count);
+        _gold_money_issued = saturating_add(
+            _gold_money_issued, market_result.gold_money, _saturation_count);
+        _silver_accepted = saturating_add(
+            _silver_accepted, market_result.silver_accepted, _saturation_count);
+        _silver_money_issued = saturating_add(
+            _silver_money_issued, market_result.silver_money, _saturation_count);
         _owner_working_capital_reserved = saturating_add(
             _owner_working_capital_reserved,
             market_result.owner_working_capital_reserved, _saturation_count);
@@ -22144,6 +22179,7 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _family_expedition_due_heap.clear();
     _colonization_receipts.clear();
     _next_colonization_receipt_id = 1;
+    import_country_ai_pending({}, {}, 0);
     _next_family_expedition_stable_id = 1;
     _colonization_quote_cache.clear();
     _colonization_quote_index.clear();

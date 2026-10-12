@@ -361,6 +361,28 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::set_country_sync_store_writes_forbidden);
     ClassDB::bind_method(D_METHOD("run_country_slice", "ctx"),
                          &DCWorldExt::run_country_slice);
+    ClassDB::bind_method(D_METHOD("configure_country_ai", "catalog"),
+                         &DCWorldExt::configure_country_ai);
+    ClassDB::bind_method(D_METHOD("set_country_ai_mode", "mode"),
+                         &DCWorldExt::set_country_ai_mode);
+    ClassDB::bind_method(D_METHOD("set_country_ai_excluded_handles", "handles"),
+                         &DCWorldExt::set_country_ai_excluded_handles);
+    ClassDB::bind_method(D_METHOD("set_country_ai_topology", "neighbors", "cell_value_q16"),
+                         &DCWorldExt::set_country_ai_topology);
+    ClassDB::bind_method(D_METHOD("get_country_ai_report"),
+                         &DCWorldExt::get_country_ai_report);
+    ClassDB::bind_method(D_METHOD("get_country_ai_country_snapshot", "handle"),
+                         &DCWorldExt::get_country_ai_country_snapshot);
+    ClassDB::bind_method(D_METHOD("poll_country_ai_decisions", "after_id", "limit"),
+                         &DCWorldExt::poll_country_ai_decisions, DEFVAL(128));
+    ClassDB::bind_method(D_METHOD("drain_country_ai_record_rows", "limit"),
+                         &DCWorldExt::drain_country_ai_record_rows, DEFVAL(4096));
+    ClassDB::bind_method(D_METHOD("encode_country_ai_state"),
+                         &DCWorldExt::encode_country_ai_state);
+    ClassDB::bind_method(D_METHOD("restore_country_ai_state", "bytes"),
+                         &DCWorldExt::restore_country_ai_state);
+    ClassDB::bind_method(D_METHOD("runtime_country_ai_self_test"),
+                         &DCWorldExt::runtime_country_ai_self_test);
     ClassDB::bind_method(D_METHOD("sync_country_territory_to_map"),
                          &DCWorldExt::sync_country_territory_to_map);
     ClassDB::bind_method(D_METHOD("country_should_run", "day_index"),

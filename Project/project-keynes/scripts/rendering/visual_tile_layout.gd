@@ -8,6 +8,8 @@ const MODE_TILED := "tiled"
 const DEFAULT_TILE_EDGE := 512
 const DEFAULT_GUTTER_PX := 2
 const DEFAULT_LAYER_CAP := 64
+# 200x150 级大地图在 14 texels/hex 下需要约 70 层；桌面放宽，移动端维持 64。
+const DESKTOP_LAYER_CAP := 128
 const MIN_TEXELS_PER_HEX := 1.0
 const DENSITY_DEGRADE_FACTOR := 0.90
 # height 4 (RGBA8: RG=elev16, B=flow) + terrain_normal 4 + terrain_relief 4
@@ -97,8 +99,9 @@ static func resolve(
 	layout.gutter_px = maxi(1, int(options.get("gutter_px", DEFAULT_GUTTER_PX)))
 	layout.relief_scale = clampi(int(options.get("relief_scale", 1 if mobile else 2)), 1, 4)
 	var tile_edge := clampi(int(options.get("tile_edge", DEFAULT_TILE_EDGE)), 64, 2048)
-	var max_layers := mini(DEFAULT_LAYER_CAP, maxi(1, int(options.get(
-		"max_array_layers", _device_limit(RenderingDevice.LIMIT_MAX_TEXTURE_ARRAY_LAYERS, DEFAULT_LAYER_CAP)
+	var layer_cap := DEFAULT_LAYER_CAP if mobile else DESKTOP_LAYER_CAP
+	var max_layers := mini(layer_cap, maxi(1, int(options.get(
+		"max_array_layers", _device_limit(RenderingDevice.LIMIT_MAX_TEXTURE_ARRAY_LAYERS, layer_cap)
 	))))
 	var max_texture_size := maxi(64, int(options.get(
 		"max_texture_size", _device_limit(RenderingDevice.LIMIT_MAX_TEXTURE_SIZE_2D, 4096)
@@ -109,9 +112,9 @@ static func resolve(
 		float(tile_edge) * layout.requested_world_units_per_texel)
 
 	var resident_cap_mb := float(options.get("resident_cap_mb",
-		_configured_cap_mb("resident_cap_mb", 64.0 if mobile else 192.0)))
+		_configured_cap_mb("resident_cap_mb", 64.0 if mobile else 512.0)))
 	var peak_cap_mb := float(options.get("peak_cap_mb",
-		_configured_cap_mb("peak_cap_mb", 96.0 if mobile else 256.0)))
+		_configured_cap_mb("peak_cap_mb", 96.0 if mobile else 768.0)))
 	var resident_cap := maxi(1, int(round(resident_cap_mb * 1024.0 * 1024.0)))
 	var peak_cap := maxi(1, int(round(peak_cap_mb * 1024.0 * 1024.0)))
 

@@ -187,6 +187,15 @@ and technology-practice Trigger accumulation. PKEF v11 saves Effect recipe/progr
 identity and pending ACK state. Old PKCN/PKEF/PKTR schemas or related catalog
 identity changes are rejected with `catalog_hash_mismatch`.
 
+`pkai` (Country AI v1) is registered after `pkfg` and before `journal`, and is
+required. It stores the AI catalog hash, the excluded player handles, per-country
+AI memory, Economy-pending colonization intents and their receipt cursor. A world
+without Country AI writes an empty section. Restore runs after PKCN/ECP2 so
+handles and the Economy inbox already exist, and rejects a different AI catalog
+with `catalog_hash_mismatch`. Until `pkai` (or the player handles) are restored,
+the AI is unarmed and never plans. See
+[Country AI 运行时](./country-ai-runtime.md).
+
 `pkfg` is `PKFogOfWar v1` and persists exactly one array: the monotonic
 `cell_explored` progress, plus the cell count it was captured at. Current
 visibility and the blurred fog knowledge `fog_k` are pure functions of territory
@@ -230,6 +239,7 @@ Restore order is strict:
    mesh through `WorldRuntimeHost.finalize_save_restore_visuals()`. That call fails
    the load when fog is enabled but the player country slot cannot be rebound;
    a silently unexplored map would be persisted by the next autosave.
+   Then restore `pkai` (Country AI memory, player exclusion, pending colonization).
 8. Restore journal v4 and PKTR v6, then PKID v3
    ideology state. PKID verifies its active PKEF bindings before the session is
    allowed to resume.

@@ -265,6 +265,8 @@ int32_t NativeEconomyRuntime::build_family_founding_candidates(
 int32_t NativeEconomyRuntime::family_founding_auto_choice(
         const FamilyFoundingOffer &offer) const {
     if (offer.candidates.empty()) return -1;
+    const int32_t ai_choice = family_founding_ai_choice(offer);
+    if (ai_choice >= 0) return ai_choice;
     uint64_t hash = 1469598103934665603ULL;
     hash = trace_hash_mix(hash, static_cast<uint64_t>(_seed.get()));
     hash = trace_hash_mix(hash, 0x4155544f5049434bULL); // "AUTOPICK"

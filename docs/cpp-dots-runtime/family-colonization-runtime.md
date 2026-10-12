@@ -150,6 +150,15 @@ SETTLE 的 `i32_1` 来自 Effect payload[3]（可选守恒 `population_reward`�
 事件回执为 `STARTED`、`CANCELLED_RETURNING`、`TARGET_LOST_RETURNING`、
 `CLAIMED`、`RELOCATED`、`RETURNED`。UI 在日期边界消费增量回执，不轮询或每日重建列表。
 
+外国 AI 开拓走同一条命令路径。Country AI 提交的开拓意图（目标格 + 当时可见格列表）在经济周期
+开启时由 `process_country_ai_colonization_intents` 处理：先用可见格掩码调用
+`family_colonization_quotes` 预检，再为第一个合格家族生成普通的
+`COMMAND_START_FAMILY_EXPEDITION`。生成的命令 `sequence` 带
+`COUNTRY_AI_COLONIZATION_SEQUENCE_TAG`（`1 << 62`），所以执行期拒绝回执（kind 7）会计入该国的
+AI 开拓失败数，AI 据此进入冷却。目标已被占用、报价失败或人口不足的意图直接计为失败，不入队。
+待处理意图、统计和回执游标随 PKSV `pkai` 保存。见
+[Country AI 运行时](./country-ai-runtime.md)。
+
 ## 玩家 UI
 
 目标地块入口与家族详情入口共用 `ColonizationPlannerPanel`。无主格显示开拓，
@@ -212,7 +221,9 @@ busy。家族入口进入地图选点模式，Esc/右键退出。
 
 齐套后 `launch_preparing_family_expedition` 只抽人口（cargo 已在托管里），并在此刻才写入
 `kit_building_*`；抽人失败保留托管、次日重试。`abort_preparing_family_expedition`（取消、
-目标易主、源地人口不足）必须先把托管 cargo 退回源地市场，否则取消筹备会凭空销毁货物。
+目标易主、源地人口不足）必须先把托管 cargo 退回源地市场，否则取消筹备会凭空销毁货物。若此时
+采购续接还有在途的 Country 请求（`GOOD_FROM_MARKET` 或 `TREASURY_SPEND`），续接转为孤儿结算，
+等终态到达后再补商人入账或把货退回市场，不能直接丢弃（见 `native-economy-runtime.md`）。
 
 `kit_partial` 的建材位只反映**最终**规划与原始意图的差距，不再被"历史上砍过一栋建筑"永久锁定；
 `missing_good_ids` 同样只收录最后一次 `materials_fit` 的缺口，并与 `plan_construction_materials`

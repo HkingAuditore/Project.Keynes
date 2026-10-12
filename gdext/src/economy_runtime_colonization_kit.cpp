@@ -1203,31 +1203,8 @@ bool NativeEconomyRuntime::advance_family_expedition_procurement(
             market_store().stock.write_scalar(lane, market_store().stock[lane] - (c.quantity), market_mutation_sink());
             c.market_applied = true;
         }
-        while (c.merchant_cursor < c.living_merchants.size()) {
-            const size_t index = c.merchant_cursor++;
-            const int32_t slot = c.living_merchants[index];
-            c.merchant_population_prefix = saturating_add(
-                c.merchant_population_prefix,
-                c.merchant_weights[index], _saturation_count);
-            const int64_t next = mul_div_sat(
-                c.cash, c.merchant_population_prefix,
-                c.merchant_population, _saturation_count);
-            const int64_t share = std::max<int64_t>(
-                0, next - c.merchant_distributed);
-            c.merchant_distributed = next;
-            audit_touch_population_lane(slot);
-            touch_accounting_slot(slot);
-            population_store().funds.write_scalar(slot, saturating_add(
-                population_store().funds[slot], share, _saturation_count), market_mutation_sink());
-            population_store().epoch_income.write_scalar(slot, saturating_add(
-                population_store().epoch_income[slot], share, _saturation_count), market_mutation_sink());
-            trace_record_cashflow(c.source_cell,
-                population_store().handle_for_slot(slot),
-                CASHFLOW_MERCHANT_BUSINESS, share, 0);
-        }
-        if (c.merchant_distributed != c.cash) {
+        if (!credit_family_expedition_procurement_merchants(c, error)) {
             c.active = false;
-            error = "colonization_treasury_peer_distribution_drift";
             return false;
         }
         if (!c.host_peer) {
@@ -1371,6 +1348,90 @@ bool NativeEconomyRuntime::advance_family_expedition_procurement(
     error = "colonization_treasury_peer_phase_invalid";
     c.active = false;
     return false;
+}
+
+bool NativeEconomyRuntime::credit_family_expedition_procurement_merchants(
+        FamilyExpeditionProcurementContinuation &c, std::string &error) {
+    while (c.merchant_cursor < c.living_merchants.size()) {
+        const size_t index = c.merchant_cursor++;
+        const int32_t slot = c.living_merchants[index];
+        c.merchant_population_prefix = saturating_add(
+            c.merchant_population_prefix,
+            c.merchant_weights[index], _saturation_count);
+        const int64_t next = mul_div_sat(
+            c.cash, c.merchant_population_prefix,
+            c.merchant_population, _saturation_count);
+        const int64_t share = std::max<int64_t>(
+            0, next - c.merchant_distributed);
+        c.merchant_distributed = next;
+        audit_touch_population_lane(slot);
+        touch_accounting_slot(slot);
+        population_store().funds.write_scalar(slot, saturating_add(
+            population_store().funds[slot], share, _saturation_count), market_mutation_sink());
+        population_store().epoch_income.write_scalar(slot, saturating_add(
+            population_store().epoch_income[slot], share, _saturation_count), market_mutation_sink());
+        trace_record_cashflow(c.source_cell,
+            population_store().handle_for_slot(slot),
+            CASHFLOW_MERCHANT_BUSINESS, share, 0);
+    }
+    if (c.merchant_distributed != c.cash) {
+        error = "colonization_treasury_peer_distribution_drift";
+        return false;
+    }
+    return true;
+}
+
+bool NativeEconomyRuntime::settle_family_expedition_procurement_orphans(
+        std::string &error) {
+    error.clear();
+    auto &orphans = _family_expedition_procurement_orphans;
+    if (orphans.empty() || _simulation_host == nullptr) return true;
+    size_t kept = 0;
+    for (size_t i = 0; i < orphans.size(); ++i) {
+        FamilyExpeditionProcurementContinuation &c = orphans[i];
+        RuntimeEconomyAssetResult terminal;
+        if (!_simulation_host->country_economy_asset_terminal_result(
+                c.pending_request_id, terminal)) {
+            if (kept != i) orphans[kept] = std::move(c);
+            ++kept;
+            continue;
+        }
+        const RuntimeEconomyAssetOperation expected = c.phase == 1
+            ? RuntimeEconomyAssetOperation::GOOD_FROM_MARKET
+            : RuntimeEconomyAssetOperation::TREASURY_SPEND;
+        if (terminal.code != RuntimeEconomyAssetResultCode::COMPLETED ||
+            terminal.operation != expected) {
+            _simulation_host->acknowledge_country_economy_asset_consumed(
+                c.pending_request_id);
+            continue;
+        }
+        if (_simulation_host->domain_is_worker_authoritative(
+                RuntimeDomainId::ECONOMY)) {
+            if (!_simulation_host->finish_worker_country_asset(
+                    c.pending_request_id, terminal, error))
+                return false;
+        } else if (!_simulation_host->flush_country_economy_asset_commits(
+                       error, c.pending_request_id) ||
+                   !_simulation_host->publish_country_worker_snapshot(
+                       RUNTIME_DIRTY_COUNTRY_STATE, error)) {
+            return false;
+        } else {
+            _simulation_host->acknowledge_country_economy_asset_consumed(
+                c.pending_request_id);
+        }
+        // A completed market purchase leaves the goods in the Country
+        // treasury; a completed treasury transfer has nowhere to go but back
+        // to the source market, as cancelled cargo does.
+        if (c.phase == 1) {
+            if (!credit_family_expedition_procurement_merchants(c, error))
+                return false;
+        } else if (!adjust_market_stock(c.source_cell, c.good, c.quantity,
+                                        error)) {
+            return false;
+        }
+    }
+    orphans.resize(kept);
+    return true;
 }
 
 bool NativeEconomyRuntime::start_family_expedition_procurement(

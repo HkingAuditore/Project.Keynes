@@ -443,6 +443,7 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
         static_cast<NativeCountryRuntime *>(_country_runtime)
             ->attach_simulation_host(_runtime_host.get());
     }
+    attach_country_ai_to_host();
     RuntimeSimulationMode mode = RuntimeSimulationMode::ACTIVE;
     String mode_error;
     Dictionary out;

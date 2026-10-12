@@ -1844,6 +1844,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
             int64_t base_input_cost = 0;
             int64_t input_fiscal_transfer = 0;
             int64_t settled_input_outlay = 0;
+            const FiscalLaneSnapshot input_tax_lane = snapshot_fiscal_lane(
+                cell, NativeCountryRuntime::TAX_TRANSACTION);
             // Reuse the final preflight bills verbatim, so splitting a recipe
             // into several input edges cannot change the rounded fee or tax.
             for (size_t policy = 0; policy < input_policy_count; ++policy) {
@@ -1868,15 +1870,29 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 cash_input_outlay, owner_contribution_cap);
             const int64_t draw = cash_input_outlay - owner_contribution;
             if (draw > 0) {
-                if (_merchant_credit_runtime_mode.get() != 2 ||
-                    group.operating_state != 0 ||
-                    group.merchant_debt_delinquent_cycles != 0 ||
-                    draw > drawable_credit ||
-                    debit_local_merchants(cell, draw, CASHFLOW_MERCHANT_BUSINESS,
-                                          &_saturation_count) != draw) {
+                const bool credit_allowed =
+                    _merchant_credit_runtime_mode.get() == 2 &&
+                    group.operating_state == 0 &&
+                    group.merchant_debt_delinquent_cycles == 0 &&
+                    draw <= drawable_credit;
+                const int64_t merchant_debited = credit_allowed
+                    ? debit_local_merchants(cell, draw, CASHFLOW_MERCHANT_BUSINESS,
+                                            &_saturation_count)
+                    : 0;
+                if (merchant_debited != draw) {
                     // Credit exhaustion must keep the building ACTIVE with
                     // bounded purchase intent. Fail-closed abort of the whole
                     // cell would masquerade finance shortfalls as hard errors.
+                    // The abandoned purchase must not leave settled tax or a
+                    // partial merchant debit behind.
+                    restore_fiscal_lane(input_tax_lane);
+                    if (merchant_debited > 0 &&
+                        credit_local_merchants(cell, merchant_debited,
+                                               CASHFLOW_MERCHANT_BUSINESS,
+                                               &_saturation_count) != merchant_debited) {
+                        error = "building_input_credit_refund_drift";
+                        return false;
+                    }
                     group.last_capacity_q16 = 0;
                     _building_funded_capacity_q16[g] = 0;
                     group.purchase_intent_capacity_q16 = std::max<int64_t>(

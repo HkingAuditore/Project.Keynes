@@ -158,6 +158,12 @@ CSR、元数据和分配器余量，也以 `<8MB` 为验收门槛。
 明确的本地 reason 或 `country_research_weight_policy_invalid`。该协议目前只冻结输入边界，
 尚未把 Country store 接入 `NativeSimulationHost`，因此不改变当前 ACTIVE 门禁和同步权威。
 
+外国 AI 与玩家共用同一命令面，没有 AI 专用 opcode。它只提交 `ENQUEUE_RESEARCH`、
+`SET_RESEARCH_WEIGHTS`、`SET_RESEARCH_BUDGET` 和 percent 模式的 `SET_TAX_DEFAULT`，来源为
+`COUNTRY_AI_PRODUCER_ID`（`0x41494331`），`sequence = (day << 16) | index`。内部入队 API
+`submit_country_ai_batch` 带显式 producer，玩家入口的 `producer_id = 0` 保持不变。AI 命令的
+REJECT 终态不进入玩家回执队列。见 [Country AI 运行时](./country-ai-runtime.md)。
+
 GM 的“点击地块接管领土”不新增 opcode：`WorldRuntimeHost` 在会话级模式开启时监听既有
 选中回调，解析玩家国家 handle，并包装 `TRANSFER_TERRITORY` 到下一游戏日。水域、已归属和
 同格重复排队在 host 边界提前返回；最后领土保护、handle 有效性、原子批次与经济冻结规则

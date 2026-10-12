@@ -1222,9 +1222,15 @@ void NativeEconomyRuntime::abort_preparing_family_expedition(
         int32_t expedition, int64_t day, uint8_t kind, const char *code) {
     if (_family_expedition_procurement_continuation.active &&
         _family_expedition_procurement_continuation.expedition == expedition) {
-        if (_simulation_host != nullptr)
+        FamilyExpeditionProcurementContinuation &c =
+            _family_expedition_procurement_continuation;
+        if (c.pending_request_id != 0 && (c.phase == 1 || c.phase == 5)) {
+            c.expedition = -1;
+            _family_expedition_procurement_orphans.push_back(std::move(c));
+        } else if (_simulation_host != nullptr) {
             _simulation_host->release_country_economy_asset_settlement(
-                _family_expedition_procurement_continuation.pending_request_id);
+                c.pending_request_id);
+        }
         _family_expedition_procurement_continuation =
             FamilyExpeditionProcurementContinuation{};
     }
@@ -2316,6 +2322,7 @@ void NativeEconomyRuntime::queue_family_settlement_command(
 bool NativeEconomyRuntime::process_due_family_expeditions(
         int64_t day, std::string &error) {
     const auto started = std::chrono::steady_clock::now();
+    if (!settle_family_expedition_procurement_orphans(error)) return false;
     while (!_family_expedition_due_heap.empty()) {
         const auto top = _family_expedition_due_heap.front();
         if (top.first > day) break;
@@ -2440,6 +2447,7 @@ void NativeEconomyRuntime::rebuild_family_expedition_indices() {
     _family_expedition_target_index.clear();
     _family_expedition_due_heap.clear();
     _family_expedition_procurement_rejections.clear();
+    _family_expedition_procurement_orphans.clear();
     for (int32_t i = 0; i < static_cast<int32_t>(
             family_expeditions_store().active.size()); ++i) {
         if (family_expeditions_store().active[i] == 0) continue;
