@@ -90,6 +90,8 @@ var _country_handle := 0
 var _history: EconomyHistoryBuffer = null
 var _strata: SocialStrataTable = null
 var _memo: Dictionary = {}
+var _last_good: Dictionary = {}
+var _pending_seen := false
 
 
 func _init(strata_table: SocialStrataTable = null) -> void:
@@ -98,8 +100,12 @@ func _init(strata_table: SocialStrataTable = null) -> void:
 
 func configure(model: Dictionary, history: EconomyHistoryBuffer = null) -> void:
 	_model = model
-	_facade = model.get("economy_facade", null)
-	_country_handle = int(model.get("country_handle", 0))
+	var facade = model.get("economy_facade", null)
+	var handle := int(model.get("country_handle", 0))
+	if facade != _facade or handle != _country_handle:
+		_last_good.clear()
+	_facade = facade
+	_country_handle = handle
 	if history != null:
 		_history = history
 	_memo.clear()
@@ -131,8 +137,15 @@ func unavailable_reason() -> String:
 ## 每次实时刷新前清空本轮查询缓存；同一轮里各区块共享同一份原生结果。
 func begin_refresh() -> void:
 	_memo.clear()
+	_pending_seen = false
 
 
+## 本轮是否有查询撞上经济结算（原生只读视图尚未就绪）；外壳据此短延迟重试。
+func had_pending() -> bool:
+	return _pending_seen
+
+
+## 结算进行中时沿用该查询上一次成功的结果，避免整页闪回“结算进行中”。
 func query(view: String, filter_id: int = -1, offset: int = 0, limit: int = 0,
 		scope_override: int = -2) -> Dictionary:
 	if not available():
@@ -143,8 +156,19 @@ func query(view: String, filter_id: int = -1, offset: int = 0, limit: int = 0,
 		return _memo[key]
 	var result: Dictionary = _facade.country_economy_overview(
 		_country_handle, view, scope, filter_id, offset, limit)
+	if bool(result.get("ok", false)):
+		_last_good[key] = result
+	elif is_pending(result):
+		_pending_seen = true
+		if _last_good.has(key):
+			result = _last_good[key]
 	_memo[key] = result
 	return result
+
+
+static func is_pending(page: Dictionary) -> bool:
+	return bool(page.get("busy", false)) or bool(page.get("read_view_pending", false)) \
+		or String(page.get("reason", "")) in ["read_view_pending", "economy_read_view_pending"]
 
 
 func scope_label() -> String:
@@ -936,11 +960,9 @@ static func _at(values, index: int) -> float:
 
 
 static func _reason(page: Dictionary) -> String:
-	if bool(page.get("busy", false)):
-		return "经济结算进行中，稍后刷新"
+	if is_pending(page):
+		return "正在读取经济数据…"
 	match String(page.get("reason", "")):
-		"read_view_pending":
-			return "经济结算进行中，稍后刷新"
 		"country_handle_invalid":
 			return "国家档案已失效"
 		"cell_not_in_country":

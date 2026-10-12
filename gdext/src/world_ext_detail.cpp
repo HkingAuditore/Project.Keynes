@@ -119,6 +119,24 @@ godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
     const int rotation_mode = int(knobs.get("rotation_mode", 0)); // 0 random, 1 upright, 2 upright jitter
     const double rotation_strength = std::max(0.0, std::min(1.0, double(knobs.get("random_rotation_strength", 1.0))));
     const double upright_jitter_rad = std::max(0.0, std::min(0.610865238, double(knobs.get("upright_jitter_radians", 0.104719755))));
+    // Top-down impostor forms (SAME_SOURCE: shrub_layer.gd _candidate_form /
+    // _overlaps_cell_instance / pack_form). Canopy profiles turn dense interior
+    // candidates into clusters and groves sized so each crown keeps
+    // crown_diameter_hex; the instance carries sub_form and element count in
+    // custom.a.
+    const bool sub_form_enabled = bool(knobs.get("sub_form_enabled", false));
+    const double crown_diameter_hex = double(knobs.get("crown_diameter_hex", 0.30));
+    const double cluster_threshold = double(knobs.get("cluster_density_threshold", 0.30));
+    const double grove_threshold = double(knobs.get("grove_density_threshold", 0.55));
+    const int grove_min_raw = int(knobs.get("grove_crown_min", 5));
+    const int grove_max_raw = int(knobs.get("grove_crown_max", 15));
+    const double edge_single_bias = double(knobs.get("edge_single_bias", 0.35));
+    const int element_min_raw = int(knobs.get("element_count_min", 1));
+    const int element_max_raw = int(knobs.get("element_count_max", 1));
+    const double quad_half = double(knobs.get("impostor_quad_half", 0.62));
+    constexpr int kFormCountMax = 32;
+    constexpr double kPatchRadius = 0.88;
+    constexpr double kPatchOverlap = 0.72;
 
     PackedInt32Array keys = knobs.get("keys", PackedInt32Array());
     PackedInt32Array cell_indices_in = knobs.get("cell_indices", PackedInt32Array());
@@ -386,19 +404,67 @@ godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
         return clampd(cont * 0.72 + dith * 0.28, 0.0, 1.0);
     };
 
+    auto crown_local_radius = [](int count) -> double {
+        return count <= 1 ? 0.80 : std::min(0.58, 0.88 / std::sqrt(double(count)));
+    };
+    auto pack_form = [&](int sub_form, int count) -> double {
+        const int n = std::max(1, std::min(kFormCountMax, count));
+        return double(std::max(0, std::min(3, sub_form))) + (double(n) - 0.5) / double(kFormCountMax);
+    };
+    struct FormChoice {
+        int sub_form = 0;
+        int count = 1;
+        double size = 0.0;
+    };
+    auto candidate_form = [&](int64_t key, int attempt, double wn, double cell_suit,
+            double size_density) -> FormChoice {
+        FormChoice f;
+        const double size_hash = hash01(key, 400 + attempt);
+        const double count_hash = hash01(key, 8100 + attempt);
+        if (sub_form_enabled) {
+            const double density = clampd(std::sqrt(clampd(wn, 0.0, 1.0)) * 0.6
+                + std::min(cell_suit, 1.0) * 0.4, 0.0, 1.0);
+            const double single_p = edge_single_bias * (1.0 - smoothstep(0.15, 0.55, wn));
+            const double edge_roll = hash01(key, 8200 + attempt);
+            if (density >= grove_threshold && edge_roll >= single_p) {
+                f.sub_form = 2;
+                const double t = (density - grove_threshold) / std::max(1.0 - grove_threshold, 0.001);
+                const int lo = std::min(grove_min_raw, grove_max_raw);
+                const int hi = std::max(grove_min_raw, grove_max_raw);
+                f.count = (int)std::round(lerpd(double(lo), double(hi),
+                    clampd(t * 0.8 + count_hash * 0.35, 0.0, 1.0)));
+                f.count = std::max(5, std::min(kFormCountMax, f.count));
+            } else if (density >= cluster_threshold && edge_roll >= single_p) {
+                f.sub_form = 1;
+                f.count = 2 + (int)std::floor(count_hash * 2.999);
+            }
+            const double crown_world = crown_diameter_hex * hex_size;
+            f.size = crown_world / (2.0 * quad_half * crown_local_radius(f.count));
+            f.size *= lerpd(0.88, 1.12, size_hash) * lerpd(0.92, 1.06, size_density);
+            f.size *= (double)size_scale;
+            return f;
+        }
+        f.size = hex_size * lerpd((double)min_size, (double)max_size, size_hash);
+        f.size *= lerpd(0.85, 1.12, size_density);
+        f.size *= (double)size_scale;
+        const int lo_n = std::max(1, std::min(kFormCountMax, std::min(element_min_raw, element_max_raw)));
+        const int hi_n = std::max(1, std::min(kFormCountMax, std::max(element_min_raw, element_max_raw)));
+        f.count = lo_n + (int)std::floor(count_hash * double(hi_n - lo_n + 1) * 0.9999);
+        return f;
+    };
+
     // 候选累积（按 score 排序后取 instance_cap）。
     struct Inst {
         int32_t cell_idx;
         float px, py, rot, size, seed, variant, score;
         float r, g, b, a;
+        float form;
     };
     std::vector<Inst> insts;
     insts.reserve((size_t)instance_cap * 2);
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
-    const double min_sz = (double)min_size;
-    const double max_sz = (double)max_size;
     for (int c = 0; c < K; ++c) {
         const int64_t key = (int64_t)KEY[c];
         const int32_t cell_idx = CELL_IN[c];
@@ -421,20 +487,22 @@ godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
                 }
             }
             // _candidate_position
-            double angle = std::fmod(hash01(key, 101) + double(attempt) * 0.61803398875, 1.0);
-            if (angle < 0.0) angle += 1.0;
-            angle *= TAU;
-            double radius = std::sqrt(hash01(key, 200 + attempt * 37)) * hex_size * (double)spawn_radius_factor;
+            // R2 low-discrepancy sequence over the hex disc.
+            double angle = posmodd(hash01(key, 101) + double(attempt) * 0.7548776662, 1.0) * TAU;
+            double radius = std::sqrt(posmodd(hash01(key, 200) + double(attempt) * 0.5698402910, 1.0))
+                * hex_size * (double)spawn_radius_factor;
             double bpx = center_x + std::cos(angle) * radius;
             double bpy = center_y + std::sin(angle) * radius;
             double wnx = (value_noise2(bpx * 0.033, bpy * 0.033, 911) - 0.5);
             double wny = (value_noise2(bpx * 0.033, bpy * 0.033, 977) - 0.5);
             double px = bpx + wnx * (hex_size * (double)warp_strength);
             double py = bpy + wny * (hex_size * (double)warp_strength);
-            double size = hex_size * lerpd(
-                min_sz, max_sz, hash01(key, 400 + attempt));
-            size *= lerpd(0.85, 1.12, size_density);
-            size *= (double)size_scale;
+            double wn = world_noise_suit(px, py);
+            if (wn <= 0.001) {
+                continue;
+            }
+            const FormChoice form = candidate_form(key, attempt, wn, cell_suit, size_density);
+            const double size = form.size;
             const GridLocation location = world_grid_location(px, py);
             if (spawn_domain != 1 && candidate_overlaps_settlement(
                     location, px, py, size, cell_idx, center_x, center_y)) {
@@ -451,10 +519,6 @@ godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
             if (spawn_domain != 1 && river_body(px, py)) {
                 continue;
             }
-            double wn = world_noise_suit(px, py);
-            if (wn <= 0.001) {
-                continue;
-            }
             double micro = world_micro_gap(px, py, key, attempt);
             if (micro < (double)micro_gap) {
                 continue;
@@ -465,6 +529,23 @@ godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
             double local_acc = clampd(accept_p * patch_gate, 0.0, 1.0);
             if (hash01(key, 9300 + attempt) > local_acc) {
                 continue;
+            }
+            if (sub_form_enabled) {
+                const double radius_a = size * quad_half * kPatchRadius;
+                bool crowded = false;
+                for (int j = (int)insts.size() - 1; j >= 0 && insts[j].cell_idx == cell_idx; --j) {
+                    const Inst &o = insts[j];
+                    const double limit = (radius_a + double(o.size) * quad_half * kPatchRadius) * kPatchOverlap;
+                    const double dx = px - double(o.px);
+                    const double dy = py - double(o.py);
+                    if (dx * dx + dy * dy < limit * limit) {
+                        crowded = true;
+                        break;
+                    }
+                }
+                if (crowded) {
+                    continue;
+                }
             }
             double variant = hash01(key, 300 + attempt);
             double rot = hash01(key, 500 + attempt) * TAU;
@@ -505,6 +586,7 @@ godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
             it.g = (float)gg2;
             it.b = (float)bb2;
             it.a = (float)base_a;
+            it.form = (float)pack_form(form.sub_form, form.count);
             insts.push_back(it);
         }
     }
@@ -668,7 +750,7 @@ godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
         BUF[b + 12] = (float)uvx;
         BUF[b + 13] = (float)uvy;
         BUF[b + 14] = it.seed;
-        BUF[b + 15] = it.variant;
+        BUF[b + 15] = it.form;
     }
 
     auto t1 = std::chrono::high_resolution_clock::now();

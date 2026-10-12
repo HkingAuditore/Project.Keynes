@@ -1,0 +1,81 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] all 31x28 envelope entries are bounded
+  [PASS] canonical table covers every terrain id
+  [PASS] canonical envelope is strong t=0
+  [PASS] canonical envelope is strong t=1
+  [PASS] canonical envelope is strong t=2
+  [PASS] canonical envelope is strong t=3
+  [PASS] canonical envelope is strong t=4
+  [PASS] canonical envelope is strong t=5
+  [PASS] canonical envelope is strong t=6
+  [PASS] canonical envelope is strong t=7
+  [PASS] canonical envelope is strong t=8
+  [PASS] canonical envelope is strong t=9
+  [PASS] canonical envelope is strong t=10
+  [PASS] canonical envelope is strong t=11
+  [PASS] canonical envelope is strong t=12
+  [PASS] canonical envelope is strong t=13
+  [PASS] canonical envelope is strong t=14
+  [PASS] canonical envelope is strong t=15
+  [PASS] canonical envelope is strong t=16
+  [PASS] canonical envelope is strong t=17
+  [PASS] canonical envelope is strong t=18
+  [PASS] canonical envelope is strong t=19
+  [PASS] canonical envelope is strong t=20
+  [PASS] canonical envelope is strong t=21
+  [PASS] canonical envelope is strong t=22
+  [PASS] canonical envelope is strong t=23
+  [PASS] canonical envelope is strong t=24
+  [PASS] canonical envelope is strong t=25
+  [PASS] canonical envelope is strong t=26
+  [PASS] canonical envelope is strong t=27
+  [PASS] canonical envelope is strong t=28
+  [PASS] canonical envelope is strong t=29
+  [PASS] canonical envelope is strong t=30
+  [PASS] cross-biome pair reconciles t=1 v=14
+  [PASS] cross-biome pair reconciles t=9 v=14
+  [PASS] cross-biome pair reconciles t=10 v=19
+  [PASS] cross-biome pair reconciles t=16 v=10
+  [PASS] cross-biome pair reconciles t=22 v=5
+  [PASS] cross-biome pair reconciles t=23 v=14
+  [PASS] cross-biome pair reconciles t=24 v=13
+  [PASS] cross-biome pair reconciles t=25 v=14
+  [PASS] cross-biome pair reconciles t=30 v=14
+  [PASS] cross-biome pair reconciles t=4 v=25
+  [PASS] cross-biome pair reconciles t=3 v=14
+  [PASS] cross-biome pair reconciles t=14 v=15
+  [PASS] cross-biome pair reconciles t=7 v=15
+  [PASS] cross-biome pair reconciles t=12 v=14
+  [PASS] cross-biome pair reconciles t=8 v=14
+  [PASS] cross-biome pair reconciles t=13 v=14
+  [PASS] cross-biome pair reconciles t=26 v=6
+  [PASS] transitional pair is not hard-reconciled t=11 v=15
+  [PASS] transitional pair is not hard-reconciled t=12 v=15
+  [PASS] transitional pair is not hard-reconciled t=29 v=14
+  [PASS] transitional pair is not hard-reconciled t=29 v=15
+  [PASS] transitional pair is not hard-reconciled t=29 v=5
+  [PASS] transitional pair is not hard-reconciled t=8 v=5
+  [PASS] transitional pair is not hard-reconciled t=13 v=6
+  [PASS] transitional pair is not hard-reconciled t=10 v=14
+  [PASS] transitional pair is not hard-reconciled t=1 v=26
+  [PASS] derive representative t=4
+  [PASS] derive representative t=11
+  [PASS] derive representative t=11
+  [PASS] derive representative t=12
+  [PASS] derive representative t=12
+  [PASS] derive representative t=3
+  [PASS] derive representative t=14
+  [PASS] derive representative t=7
+  [PASS] derive representative t=7
+  [PASS] derive representative t=8
+  [PASS] derive representative t=13
+  [PASS] derive representative t=22
+  [PASS] derive representative t=22
+  [PASS] derive representative t=29
+  [PASS] derive representative t=10
+  [PASS] DCWorldExt instantiated
+  [PASS] native generation succeeds
+  [PASS] native output has no unresolved cross-biome pairs
+[biome-vegetation-alignment] native unresolved=0 reconciled=0
+[biome-vegetation-alignment] checks=77 failures=0

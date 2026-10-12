@@ -4,7 +4,7 @@
 
 [resource]
 script = ExtResource("1")
-enabled = true
+enabled = false
 detail_kind = 8
 render_z_index = 1
 density_scale = 0.90
@@ -33,3 +33,5 @@ base_color_override_enabled = true
 base_color_override = Color(0.96, 0.56, 0.42, 0.88)
 vegetation_weight_overrides = {"23": 2.65, "26": 0.25}
 landform_weight_overrides = {"2": 1.45}
+element_count_min = 3
+element_count_max = 7

@@ -16,6 +16,6 @@ extends Resource
 func valid_layers() -> Array:
 	var out: Array = []
 	for p in layers:
-		if p != null:
+		if p != null and p.enabled:
 			out.append(p)
 	return out

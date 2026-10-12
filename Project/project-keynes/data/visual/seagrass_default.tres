@@ -34,3 +34,5 @@ base_color_override = Color(0.20, 0.58, 0.31, 0.78)
 vegetation_weight_overrides = {"26": 2.55, "22": 0.55, "23": 0.30}
 landform_weight_overrides = {"2": 1.45, "3": 0.70, "1": 0.45}
 cover_weight_overrides = {"6": 1.05}
+element_count_min = 3
+element_count_max = 7

@@ -7,7 +7,27 @@ class FakeRuntime:
 	var command_calls := 0
 	var toggle_set_calls := 0
 	var flow_report_calls := 0
+	var tod_preview_calls := 0
 	var toggle_state := false
+	var tod_preview := {
+		"ok": true,
+		"preview": false,
+		"uv": Vector2(0.25, 0.5),
+		"height_scale": 1.0,
+	}
+
+	func get_gm_tod_sun_preview() -> Dictionary:
+		return tod_preview.duplicate()
+
+	func set_gm_tod_sun_preview(active: bool, uv: Vector2, height_scale: float) -> Dictionary:
+		tod_preview_calls += 1
+		tod_preview = {
+			"ok": true,
+			"preview": active,
+			"uv": uv,
+			"height_scale": height_scale,
+		}
+		return tod_preview.duplicate()
 
 	func get_gm_capabilities() -> Dictionary:
 		return {
@@ -78,6 +98,7 @@ func _run() -> void:
 	await create_timer(0.62).timeout
 	_expect(runtime.snapshot_calls > calls_when_open, "visible 2Hz refresh", failures)
 	_expect(runtime.toggle_set_calls == 0, "opening and refreshing GM panel never writes toggles", failures)
+	_expect(runtime.tod_preview_calls == 0, "opening GM panel never locks the sun", failures)
 	console.call("_show_gm_page", "toggles")
 	console.call("_refresh_gm_toggles")
 	var day_night_toggle: CheckBox = (
@@ -94,6 +115,15 @@ func _run() -> void:
 		await process_frame
 		_expect(runtime.flow_report_calls == 1, "flow report action calls runtime", failures)
 	_expect(runtime.toggle_set_calls == 0, "toggle-state readback never invokes setter", failures)
+	var sun_pad: Control = console.get("_gm_tod_sun_pad")
+	_expect(sun_pad != null, "sun position pad is on the toggle page", failures)
+	if sun_pad != null:
+		sun_pad.emit_signal("sun_preview_requested", true, Vector2(0.5, 0.8), 1.25)
+		_expect(runtime.tod_preview_calls == 1, "dragging the sun requests a preview lock", failures)
+		_expect(bool(runtime.tod_preview.get("preview", false)), "preview lock is active", failures)
+		var locked_uv: Vector2 = runtime.tod_preview.get("uv", Vector2.ZERO)
+		_expect(is_equal_approx(locked_uv.x, 0.5) and is_equal_approx(locked_uv.y, 0.8),
+			"preview keeps the dragged sun uv", failures)
 	console.close_panel()
 	await create_timer(0.25).timeout
 	var calls_when_hidden := runtime.snapshot_calls

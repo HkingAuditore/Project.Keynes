@@ -63,7 +63,8 @@ func set_selected(row_id: String) -> void:
 
 func _apply_row(_row_id: String, refs: Dictionary, data: Dictionary) -> void:
 	var applied: Dictionary = refs.get("applied", {})
-	var accent: Color = data.get("accent", UITokens.RESOURCE)
+	var accent: Color = UITokens.DOSSIER_OXBLOOD if String(data.get("risk", "")) != "" \
+		else UITokens.DOSSIER_INK_SOFT
 	var panel := refs.get("panel") as PanelContainer
 	var row_visible := bool(data.get("visible", true))
 	if panel.visible != row_visible:
@@ -72,11 +73,23 @@ func _apply_row(_row_id: String, refs: Dictionary, data: Dictionary) -> void:
 	if not applied.has("icon") or applied["icon"] != icon_key \
 			or not applied.has("accent") or applied["accent"] != accent:
 		(refs.get("icon") as IconBadge).set_semantic(StringName(icon_key), accent)
+	var risk := String(data.get("risk", ""))
 	var name_text := String(data.get("name", "商品"))
 	var name_label := refs.get("name") as Label
 	if name_label.text != name_text:
 		name_label.text = name_text
-	var stock_text := String(data.get("stock", ""))
+	if not applied.has("risk") or applied["risk"] != risk:
+		if risk != "":
+			name_label.add_theme_color_override("font_color", UITokens.DOSSIER_OXBLOOD)
+		else:
+			name_label.remove_theme_color_override("font_color")
+	var stock_parts := PackedStringArray([String(data.get("stock", ""))])
+	var delta := String(data.get("delta", ""))
+	if delta != "" and delta != "—":
+		stock_parts.append("%s/日" % delta)
+	if risk != "":
+		stock_parts.append(risk)
+	var stock_text := " · ".join(stock_parts)
 	var stock_label := refs.get("stock") as Label
 	if stock_label.text != stock_text:
 		stock_label.text = stock_text
@@ -84,19 +97,9 @@ func _apply_row(_row_id: String, refs: Dictionary, data: Dictionary) -> void:
 	var price_label := refs.get("price") as Label
 	if price_label.text != price_text:
 		price_label.text = price_text
-	var delta := String(data.get("delta", "—"))
-	var delta_label := refs.get("delta") as Label
-	if delta_label.text != delta:
-		delta_label.text = delta
-	var delta_color := UITokens.GOOD if delta.begins_with("+") \
-		else (UITokens.RISK if delta.begins_with("-") else UITokens.ARCHIVE_INK_MUTED)
-	if not applied.has("delta_color") or applied["delta_color"] != delta_color:
-		delta_label.add_theme_color_override("font_color", delta_color)
-	var risk := String(data.get("risk", ""))
-	var risk_label := refs.get("risk") as Label
-	if risk_label.text != risk:
-		risk_label.text = risk
+	(refs.get("delta") as Label).visible = false
+	(refs.get("risk") as Label).visible = false
 	applied["accent"] = accent
 	applied["icon"] = icon_key
-	applied["delta_color"] = delta_color
+	applied["risk"] = risk
 	refs["applied"] = applied

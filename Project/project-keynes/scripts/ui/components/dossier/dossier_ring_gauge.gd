@@ -38,8 +38,9 @@ func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var button := event as InputEventMouseButton
 		if button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
-			pressed.emit(gauge_id)
 			accept_event()
+			if gauge_id != null:
+				pressed.emit(gauge_id)
 
 
 func _notification(what: int) -> void:

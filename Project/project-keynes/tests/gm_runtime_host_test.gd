@@ -54,7 +54,8 @@ func _run() -> void:
 	_expect(autosave_toggle_found, "autosave toggle capability", failures)
 	_expect(river_probe_command_found, "river probe command capability", failures)
 	_expect(flow_report_action_found, "flow report action capability", failures)
-	_expect(host.dump_flow_tex_report().get("code") == "renderer_unavailable",
+	var flow_report: Dictionary = await host.dump_flow_tex_report()
+	_expect(flow_report.get("code") == "renderer_unavailable",
 		"flow report renderer readiness boundary", failures)
 	_expect(host.execute_gm_command("diagnostics.dump_atlas_river_probe", {}).get("code") == "baker_unavailable",
 		"river probe command readiness boundary", failures)
@@ -99,6 +100,33 @@ func _run() -> void:
 	_expect(GameUIManager.gm_available_for_build(true, false), "debug build entry", failures)
 	_expect(GameUIManager.gm_available_for_build(false, true), "editor entry", failures)
 	_expect(not GameUIManager.gm_available_for_build(false, false), "release entry hidden", failures)
+	host.set("day_night_enabled", false)
+	var renderer := HexRenderer.new()
+	host.set("_renderer", renderer)
+	var locked := host.set_gm_tod_sun_preview(true, Vector2(8.5, 1.4), 0.4)
+	var locked_uv: Vector2 = locked.get("uv", Vector2.ZERO)
+	_expect(bool(locked.get("ok", false)) and bool(locked.get("preview", false))
+		and clock.visual_day_phase_held and is_equal_approx(clock.visual_day_phase, 0.5)
+		and host.is_day_night_enabled()
+		and is_equal_approx(locked_uv.x, 0.5) and is_equal_approx(locked_uv.y, 1.0),
+		"sun preview holds phase, enables day night, and clamps uv", failures)
+	_expect(bool(renderer.get("_tod_debug_sun_position_enabled"))
+		and is_equal_approx(float(renderer.get("_day_phase")), 0.5)
+		and is_equal_approx(float(renderer.get("_tod_debug_sun_height_scale")), 0.4),
+		"sun preview pushes renderer override", failures)
+	var held_phase := clock.visual_day_phase
+	clock.call("_advance_visual_day_phase", 30.0)
+	_expect(is_equal_approx(clock.visual_day_phase, held_phase),
+		"held visual phase ignores the live clock", failures)
+	var released := host.set_gm_tod_sun_preview(false, Vector2(0.5, 0.2), 0.4)
+	_expect(bool(released.get("ok", false)) and not bool(released.get("preview", true))
+		and not clock.visual_day_phase_held
+		and not bool(renderer.get("_tod_debug_sun_position_enabled"))
+		and is_equal_approx(float(renderer.get("_tod_debug_sun_height_scale")), 1.0),
+		"releasing sun preview restores the live clock", failures)
+	clock.call("_advance_visual_day_phase", 12.0)
+	_expect(not is_equal_approx(clock.visual_day_phase, held_phase),
+		"released visual phase advances again", failures)
 	for failure in failures:
 		push_error("[gm-runtime-host] FAIL: %s" % failure)
 	print("[gm-runtime-host] %s" % ("PASS" if failures.is_empty() else "FAIL"))

@@ -7,6 +7,7 @@ class_name DossierKpiCard
 const ICON_SIZE := 16.0
 const HEIGHT := 66.0
 const DENSE_HEIGHT := 32.0
+const STACKED_DENSE_MAX_WIDTH := 150.0
 
 var metric_id := ""
 var title := ""
@@ -25,6 +26,8 @@ var dense := false:
 		queue_redraw()
 
 var text_value := ""
+## "risk" 让数值与说明转为朱砂色，"warn" 转为黄铜色；空串为常规墨色。
+var tone := ""
 var _value := 0.0
 var _from_value := 0.0
 var _delta := NAN
@@ -51,7 +54,9 @@ func set_metric(data: Dictionary) -> void:
 	_delta = float(data.get("delta", NAN))
 	_spark = data.get("spark", PackedFloat32Array())
 	text_value = String(data.get("text", ""))
-	tooltip_text = String(data.get("tooltip", "%s：%s\n%s" % [title, value_text(), caption]))
+	tone = String(data.get("tone", ""))
+	tooltip_text = String(data.get("tooltip",
+		("%s：%s\n%s" % [title, value_text(), caption]).strip_edges()))
 	_start_animation()
 
 
@@ -76,20 +81,23 @@ func _draw() -> void:
 		_draw_dense(w, h)
 		return
 	var x := 10.0
+	var has_footer := not caption.is_empty() or (not is_nan(_delta) and absf(_delta) > 1e-6)
+	var dy := 0.0 if has_footer else 7.0
 	if icon_key != &"":
-		_icon(icon_key, Rect2(Vector2(x, 7.0), Vector2(ICON_SIZE, ICON_SIZE)),
+		_icon(icon_key, Rect2(Vector2(x, 7.0 + dy), Vector2(ICON_SIZE, ICON_SIZE)),
 			UITokens.DOSSIER_INK_SOFT)
 		x += ICON_SIZE + 5.0
-	_text(Vector2(x, 20.0), _fit_text(title, 12, w - x - 8.0), 12, UITokens.DOSSIER_INK_MUTED)
+	_text(Vector2(x, 20.0 + dy), _fit_text(title, 12, w - x - 8.0), 12,
+		UITokens.DOSSIER_INK_MUTED)
 	var shown := lerpf(_from_value, _value, _blend) if _has_grown else _value
 	var value_string := text_value if kind == "text" \
 		else EconomyDossierViewModel.format_value(shown, kind)
 	var spark_width := clampf(w * 0.34, 0.0, 86.0) if _spark.size() >= 2 else 0.0
 	var value_size := 22 if w >= 170.0 else 19
-	_text(Vector2(10.0, 46.0), _fit_text(value_string, value_size, w - spark_width - 18.0, "serif"),
-		value_size, UITokens.DOSSIER_INK, "serif")
+	_text(Vector2(10.0, 46.0 + dy), _fit_text(value_string, value_size,
+		w - spark_width - 18.0, "serif"), value_size, _value_color(), "serif")
 	var delta_line := caption
-	var delta_color := UITokens.DOSSIER_INK_MUTED
+	var delta_color := UITokens.DOSSIER_INK_MUTED if tone.is_empty() else _value_color()
 	if not is_nan(_delta) and absf(_delta) > 1e-6:
 		var up := _delta > 0.0
 		var good := up == positive_good
@@ -114,6 +122,9 @@ func _draw() -> void:
 
 
 func _draw_dense(w: float, h: float) -> void:
+	if w < STACKED_DENSE_MAX_WIDTH:
+		_draw_dense_stacked(w)
+		return
 	var mid := h * 0.5
 	var x := 10.0
 	if icon_key != &"":
@@ -127,7 +138,30 @@ func _draw_dense(w: float, h: float) -> void:
 	_text(Vector2(x, mid + 5.0), _fit_text(title, 12, w - x - value_width - 18.0), 12,
 		UITokens.DOSSIER_INK_MUTED)
 	_text(Vector2(w - 10.0 - value_width, mid + 6.0), _fit_text(value_string, 16, value_width,
-		"serif"), 16, UITokens.DOSSIER_INK, "serif")
+		"serif"), 16, _value_color(), "serif")
+
+
+## 窄卡（地块档案四格并排约 100px）单行放不下“标题……数值”，改成上标题、下数值。
+func _draw_dense_stacked(w: float) -> void:
+	var x := 8.0
+	if icon_key != &"":
+		_icon(icon_key, Rect2(Vector2(x, 3.0), Vector2(12.0, 12.0)), UITokens.DOSSIER_INK_SOFT)
+		x += 15.0
+	_text(Vector2(x, 13.0), _fit_text(title, 11, w - x - 6.0), 11, UITokens.DOSSIER_INK_MUTED)
+	var shown := lerpf(_from_value, _value, _blend) if _has_grown else _value
+	var value_string := text_value if kind == "text" \
+		else EconomyDossierViewModel.format_value(shown, kind)
+	_text(Vector2(8.0, 30.0), _fit_text(value_string, 16, w - 14.0, "serif"), 16,
+		_value_color(), "serif")
+
+
+func _value_color() -> Color:
+	match tone:
+		"risk":
+			return UITokens.DOSSIER_OXBLOOD
+		"warn":
+			return UITokens.DOSSIER_BRASS
+	return UITokens.DOSSIER_INK
 
 
 func _draw_spark(rect: Rect2) -> void:

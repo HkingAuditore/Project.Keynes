@@ -36,3 +36,5 @@ biomass_ceil = 1.35
 biomass_exponent = 1.0
 river_edge_density = 1.35
 river_valley_boost = 1.70
+element_count_min = 1
+element_count_max = 3

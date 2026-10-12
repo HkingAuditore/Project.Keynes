@@ -31,3 +31,5 @@ micro_gap_threshold = 0.06
 world_noise_acceptance = 1.70
 base_color_override_enabled = true
 base_color_override = Color(0.56, 0.55, 0.52, 1.0)
+element_count_min = 1
+element_count_max = 3

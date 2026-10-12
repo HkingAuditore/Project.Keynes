@@ -29,7 +29,14 @@ func _run() -> void:
 		node.multimesh.instance_count == 5 and family.instance_count() == 5)
 	var buffer := node.multimesh.buffer
 	_expect("family buffer interleaves styles for deterministic LOD prefixes",
-		floori(buffer[15]) == 0 and floori(buffer[31]) == 1)
+		floori(buffer[15] * 0.25) == 0 and floori(buffer[31] * 0.25) == 1)
+	_expect("family packing keeps the source sub_form and element count",
+		is_equal_approx(buffer[31] - 4.0, ShrubLayerScript.pack_form(ShrubLayerScript.SUB_FORM_GROVE, 9)))
+	var canopy_lut: Image = family._style_lut.get_image()
+	_expect("style LUT carries per-style top-down form and evergreen phenology",
+		int(round(canopy_lut.get_pixel(3, 0).r)) == ProfileScript.FORM_BROADLEAF
+		and int(round(canopy_lut.get_pixel(3, 1).r)) == ProfileScript.FORM_CONIFER
+		and canopy_lut.get_pixel(3, 1).g < canopy_lut.get_pixel(3, 0).g)
 	_expect("source profile draw nodes are suppressed", not tree._chunk_nodes[7].visible and not conifer._chunk_nodes[7].visible)
 	_expect("style LUT is bound to the family material", bool(family.diagnostics().get("style_lut_bound", false)))
 
@@ -126,7 +133,7 @@ func _make_source(detail_kind: int, count: int, seed_base: float):
 		buffer[b + 12] = 0.5
 		buffer[b + 13] = 0.5
 		buffer[b + 14] = seed_base + float(i) * 0.01
-		buffer[b + 15] = float(i) / maxf(float(count), 1.0)
+		buffer[b + 15] = ShrubLayerScript.pack_form(ShrubLayerScript.SUB_FORM_GROVE, 9)
 	mm.buffer = buffer
 	layer._instance_count = count
 	return layer

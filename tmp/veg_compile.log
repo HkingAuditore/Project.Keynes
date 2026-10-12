@@ -1,0 +1,11 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+D3D12 12_0 - Forward Mobile - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4080
+
+[veg-compile] body uniforms=80
+[veg-compile] body_tiled uniforms=87
+[veg-compile] body_family uniforms=82
+[veg-compile] body_mobile uniforms=80
+[veg-compile] body_low uniforms=80
+[veg-compile] shadow uniforms=28
+[veg-compile] shadow_family uniforms=30
+[veg-compile] done

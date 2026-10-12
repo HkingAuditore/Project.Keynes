@@ -1,0 +1,15 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] unordered encode succeeds
+  [PASS] ordered encode succeeds
+  [PASS] ordered encode reports lod_ordered
+  [PASS] encode produces instances (got 135)
+  [PASS] instance count identical across runs
+  [PASS] far_count matches GDScript reference (native=87 ref=87)
+  [PASS] full buffer multiset matches
+  [PASS] far prefix multiset matches
+  [PASS] wrap clusters never straddle the far/near boundary
+  [PASS] cache assembly preserves every instance
+  [PASS] cache assembly preserves the full multiset
+  [PASS] cache assembly directly preserves the native far prefix
+=== detail scatter lod order: 12 checks, 0 failures ===

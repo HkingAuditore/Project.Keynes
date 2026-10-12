@@ -138,7 +138,7 @@ func _run() -> void:
 	if manifest != null and manifest.has_method("valid_layers"):
 		for profile in manifest.valid_layers():
 			paths.append(str(profile.resource_path))
-	_expect("default manifest keeps twenty visual layers", paths.size() == 20)
+	_expect("default manifest spawns seventeen visual layers", paths.size() == 17)
 	_expect("default manifest no longer spawns seagrass coverage",
 		not paths.has(SEAGRASS_PATH))
 	_expect("runtime vegetation chunks default to 16x16",

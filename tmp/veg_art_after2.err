@@ -1,0 +1,110 @@
+ERROR: Condition "hr != ((HRESULT)0x00000000)" is true. Returning: ERR_CANT_OPEN
+   at: audio_device_init (drivers/wasapi/audio_driver_wasapi.cpp:275)
+ERROR: WASAPI: init_output_device error.
+   at: init (drivers/wasapi/audio_driver_wasapi.cpp:600)
+WARNING: All audio drivers failed, falling back to the dummy driver.
+   at: initialize (servers/audio/audio_server.cpp:247)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:362)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:345)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1190)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1228)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:362)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:345)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1190)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1228)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:362)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:345)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1190)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1228)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:362)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:345)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1190)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1228)
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:4675)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2356)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:724)
+       [3] generate (res://scripts/geography/map_generator.gd:1606)
+       [4] _yield_generation_frame (res://scripts/geography/map_generator.gd:19926)
+WARNING: [runtime-worker] Ideology opinion publish deferred: ideology_opinion_snapshot_invalid
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _start_production_shadow_worker (res://scripts/game/world_runtime_host.gd:815)
+       [1] generate_world (res://scripts/game/world_runtime_host.gd:733)
+       [2] generate (res://scripts/geography/map_generator.gd:1606)
+       [3] _yield_generation_frame (res://scripts/geography/map_generator.gd:19926)
+[runtime-day-wait] day=1 env_day=0 missing=0x3ff stall=0x10 economy_input=-1
+[climate/worker][b8] physics_knobs day=1 ready=0 missing=physics_knobs
+[climate-kernel][round] shared=1 ok=1 n_cells=4000 mask=0x1FF ran=0x1FF starved=0x0 knobs_cells=4000
+[country][parity] worker_day=1 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=1 phase=0 done=0 cands=4 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[economy-mirror-cost] day=1 capture_ms=3.269 import_ms=5.669
+[climate/writeback][b8] day=1 vapor store0=0 map0=0 dirty_fields=42 applied=42
+[climate/worker][b8] physics_knobs day=2 ready=1 missing=
+[climate/worker][b8] paw day=2 cell=59 moisture=0.252561 wb30=0 soil=0 paw=0.252561 zeros(water=1558 land=17) nonzero=2425 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/worker][b8] cyclone_gate day=2 input_enabled=0 force_env=0 effective=0
+[climate/worker][b8] weather_solve day=2 cells=4000 psi=1 vapor0=0.100876 precip0=0 cloud0=0.0406688 type0=0 field_init0=1
+[research-procure-diag] day=2 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/writeback][b8] day=2 vapor store0=0.100876 map0=0.100876 dirty_fields=54 applied=54
+[climate/worker][b8] physics_knobs day=3 ready=1 missing=
+[climate/worker][b8] paw day=3 cell=59 moisture=0.199897 wb30=-7.58333e-05 soil=-0.000182 paw=0.199847 zeros(water=1558 land=17) nonzero=2425 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/worker][b8] cyclone_gate day=3 input_enabled=0 force_env=0 effective=0
+[climate/worker][b8] weather_solve day=3 cells=4000 psi=1 vapor0=0.095099 precip0=0 cloud0=0.0488406 type0=0 field_init0=1
+[country][parity] worker_day=3 uncompared reference_range=2..2 depth=1
+[research-procure-diag] day=3 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/writeback][b8] day=3 vapor store0=0.095099 map0=0.095099 dirty_fields=54 applied=54
+[climate/worker][b8] physics_knobs day=4 ready=1 missing=
+[climate/worker][b8] paw day=4 cell=59 moisture=0.160311 wb30=-0.000149139 soil=-0.00035854 paw=0.160214 zeros(water=1558 land=17) nonzero=2425 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/worker][b8] weather_solve day=4 cells=4000 psi=1 vapor0=0.0940442 precip0=0 cloud0=0.0492577 type0=0 field_init0=1
+[country][parity] worker_day=4 uncompared reference_range=2..2 depth=1
+[research-procure-diag] day=4 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/writeback][b8] day=4 vapor store0=0.0940442 map0=0.0940442 dirty_fields=54 applied=54
+[climate/worker][b8] physics_knobs day=5 ready=1 missing=
+[climate/worker][b8] paw day=5 cell=59 moisture=0.140479 wb30=-0.000220001 soil=-0.000529784 paw=0.140336 zeros(water=1558 land=17) nonzero=2425 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/worker][b8] weather_solve day=5 cells=4000 psi=1 vapor0=0.0948131 precip0=0 cloud0=0.0482843 type0=0 field_init0=1
+[country][parity] worker_day=5 uncompared reference_range=2..2 depth=1
+[research-procure-diag] day=5 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] physics_knobs day=6 ready=1 missing=
+[climate/worker][b8] paw day=6 cell=59 moisture=0.130531 wb30=-0.000288501 soil=-0.00069589 paw=0.130343 zeros(water=1558 land=18) nonzero=2424 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[country][parity] worker_day=6 uncompared reference_range=2..2 depth=1
+[research-procure-diag] day=6 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=7 cell=59 moisture=0.125641 wb30=-0.000354718 soil=-0.000857014 paw=0.125411 zeros(water=1558 land=18) nonzero=2424 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[country][parity] worker_day=7 uncompared reference_range=2..2 depth=1
+[research-procure-diag] day=7 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=8 cell=59 moisture=0.123024 wb30=-0.000418727 soil=-0.0010133 paw=0.122752 zeros(water=1558 land=18) nonzero=2424 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[country][parity] worker_day=8 uncompared reference_range=2..2 depth=1
+[research-procure-diag] day=8 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=9 cell=59 moisture=0.121688 wb30=-0.000480603 soil=-0.0011649 paw=0.121376 zeros(water=1558 land=18) nonzero=2424 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[country][parity] worker_day=9 uncompared reference_range=2..2 depth=1
+[research-procure-diag] day=9 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=10 cell=59 moisture=0.120929 wb30=-0.000540416 soil=-0.00131196 paw=0.120578 zeros(water=1558 land=18) nonzero=2424 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=10 phase=0 done=0 cands=4 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=11 cell=59 moisture=0.121194 wb30=-0.000598235 soil=-0.0014546 paw=0.120805 zeros(water=1558 land=18) nonzero=2424 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=11 phase=0 done=0 cands=4 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=12 cell=59 moisture=0.120567 wb30=-0.000654128 soil=-0.00159296 paw=0.120142 zeros(water=1558 land=18) nonzero=2424 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=12 phase=0 done=0 cands=4 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=13 cell=59 moisture=0.121585 wb30=-0.000708157 soil=-0.00172717 paw=0.121124 zeros(water=1558 land=18) nonzero=2424 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=13 phase=0 done=0 cands=4 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+ERROR: 48 RID allocations of type 'N10RendererRD14TextureStorage7TextureE' were leaked at exit.
+WARNING: 81 RIDs of type "Texture" were leaked.
+   at: finalize (servers/rendering/rendering_device.cpp:7505)
+ERROR: 25 RID allocations of type 'PN18TextServerAdvanced22ShapedTextDataAdvancedE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 986 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

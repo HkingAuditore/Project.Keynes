@@ -565,6 +565,8 @@ func _on_simulation_committed(_from_day: int, to_day: int, _generation: int) -> 
 	_sync_time_ui()
 	if _ui_manager != null and _selected_cell != null:
 		_ui_manager.refresh_selected_daily_lines(false, to_day)
+	if _ui_manager != null and _ui_manager.has_method("notify_committed_day"):
+		_ui_manager.notify_committed_day()
 	_sync_era_reward_offer()
 	_sync_family_founding_offer()
 
@@ -672,6 +674,8 @@ func _on_day_changed(day_idx: int) -> void:
 	var ui_breakdown: Dictionary = {}
 	if _ui_manager != null:
 		ui_breakdown = _ui_manager.refresh_selected_daily_lines(false, day_idx)
+		if _ui_manager.has_method("notify_committed_day"):
+			_ui_manager.notify_committed_day()
 		# Country workspaces are event-driven. Daily ticks only patch the selected
 		# cell and clock; country/economy/ideology commits invalidate their section.
 		ui_breakdown["country_summary_ms"] = 0.0

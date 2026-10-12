@@ -31,3 +31,5 @@ temperature_color_strength = 0.82
 moisture_color_strength = 0.88
 snow_white_strength = 0.96
 vitality_color_contrast = 0.92
+element_count_min = 3
+element_count_max = 6

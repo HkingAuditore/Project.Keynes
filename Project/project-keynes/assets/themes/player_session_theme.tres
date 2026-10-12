@@ -719,6 +719,63 @@ border_color = Color(0.42, 0.29, 0.16, 0.38)
 [sub_resource type="StyleBoxFlat" id="DossierCanvas"]
 bg_color = Color(1, 0.98, 0.93, 0.32)
 
+[sub_resource type="StyleBoxEmpty" id="DossierRow"]
+
+[sub_resource type="StyleBoxFlat" id="DossierRowButtonNormal"]
+content_margin_left = 6.0
+content_margin_top = 3.0
+content_margin_right = 6.0
+content_margin_bottom = 3.0
+bg_color = Color(0, 0, 0, 0)
+border_width_bottom = 1
+border_color = Color(0.42, 0.29, 0.16, 0.24)
+
+[sub_resource type="StyleBoxFlat" id="DossierRowButtonHover"]
+content_margin_left = 6.0
+content_margin_top = 3.0
+content_margin_right = 6.0
+content_margin_bottom = 3.0
+bg_color = Color(0.69, 0.49, 0.24, 0.13)
+border_width_bottom = 1
+border_color = Color(0.42, 0.29, 0.16, 0.38)
+
+[sub_resource type="StyleBoxFlat" id="DossierRowButtonPressed"]
+content_margin_left = 6.0
+content_margin_top = 3.0
+content_margin_right = 6.0
+content_margin_bottom = 3.0
+bg_color = Color(0.48, 0.16, 0.1, 0.1)
+border_width_left = 3
+border_width_bottom = 1
+border_color = Color(0.55, 0.19, 0.13, 0.92)
+
+[sub_resource type="StyleBoxFlat" id="DossierSectionNormal"]
+content_margin_left = 2.0
+content_margin_top = 4.0
+content_margin_right = 2.0
+content_margin_bottom = 4.0
+bg_color = Color(0, 0, 0, 0)
+border_width_bottom = 1
+border_color = Color(0.48, 0.16, 0.1, 0.55)
+
+[sub_resource type="StyleBoxFlat" id="DossierSectionHover"]
+content_margin_left = 2.0
+content_margin_top = 4.0
+content_margin_right = 2.0
+content_margin_bottom = 4.0
+bg_color = Color(0.69, 0.49, 0.24, 0.1)
+border_width_bottom = 1
+border_color = Color(0.48, 0.16, 0.1, 0.8)
+
+[sub_resource type="StyleBoxFlat" id="DossierNote"]
+content_margin_left = 10.0
+content_margin_top = 6.0
+content_margin_right = 8.0
+content_margin_bottom = 6.0
+bg_color = Color(0.36, 0.25, 0.13, 0.05)
+border_width_left = 2
+border_color = Color(0.69, 0.49, 0.24, 0.8)
+
 [resource]
 default_font = SubResource("SansMedium")
 default_font_size = 16
@@ -847,6 +904,42 @@ PKDossierKicker/base_type = &"Label"
 PKDossierKicker/colors/font_color = Color(0.55, 0.19, 0.13, 0.9)
 PKDossierKicker/font_sizes/font_size = 12
 PKDossierKicker/fonts/font = SubResource("SansStrong")
+PKDossierMuted/base_type = &"Label"
+PKDossierMuted/colors/font_color = Color(0.4, 0.31, 0.22, 0.92)
+PKDossierMuted/font_sizes/font_size = 11
+PKDossierMuted/fonts/font = SubResource("SansMedium")
+PKDossierNote/base_type = &"PanelContainer"
+PKDossierNote/styles/panel = SubResource("DossierNote")
+PKDossierRow/base_type = &"PanelContainer"
+PKDossierRow/styles/panel = SubResource("DossierRow")
+PKDossierRowButton/base_type = &"Button"
+PKDossierRowButton/colors/font_color = Color(0.12, 0.075, 0.04, 1)
+PKDossierRowButton/colors/font_hover_color = Color(0.12, 0.075, 0.04, 1)
+PKDossierRowButton/colors/font_pressed_color = Color(0.12, 0.075, 0.04, 1)
+PKDossierRowButton/styles/disabled = SubResource("DossierRowButtonNormal")
+PKDossierRowButton/styles/focus = SubResource("DossierRow")
+PKDossierRowButton/styles/hover = SubResource("DossierRowButtonHover")
+PKDossierRowButton/styles/hover_pressed = SubResource("DossierRowButtonPressed")
+PKDossierRowButton/styles/normal = SubResource("DossierRowButtonNormal")
+PKDossierRowButton/styles/pressed = SubResource("DossierRowButtonPressed")
+PKDossierRowText/base_type = &"Label"
+PKDossierRowText/colors/font_color = Color(0.12, 0.075, 0.04, 1)
+PKDossierRowText/font_sizes/font_size = 14
+PKDossierRowText/fonts/font = SubResource("SansStrong")
+PKDossierSection/base_type = &"Button"
+PKDossierSection/styles/focus = SubResource("DossierRow")
+PKDossierSection/styles/hover = SubResource("DossierSectionHover")
+PKDossierSection/styles/hover_pressed = SubResource("DossierSectionHover")
+PKDossierSection/styles/normal = SubResource("DossierSectionNormal")
+PKDossierSection/styles/pressed = SubResource("DossierSectionNormal")
+PKDossierSectionTitle/base_type = &"Label"
+PKDossierSectionTitle/colors/font_color = Color(0.12, 0.075, 0.04, 1)
+PKDossierSectionTitle/font_sizes/font_size = 15
+PKDossierSectionTitle/fonts/font = SubResource("SerifStrong")
+PKDossierValue/base_type = &"Label"
+PKDossierValue/colors/font_color = Color(0.12, 0.075, 0.04, 1)
+PKDossierValue/font_sizes/font_size = 14
+PKDossierValue/fonts/font = SubResource("SerifStrong")
 PKDossierLink/base_type = &"Button"
 PKDossierLink/colors/font_color = Color(0.55, 0.19, 0.13, 1)
 PKDossierLink/colors/font_hover_color = Color(0.69, 0.32, 0.15, 1)

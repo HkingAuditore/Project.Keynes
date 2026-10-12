@@ -279,6 +279,9 @@ var _country_worker_read_rejected_count: int = 0
 var _gm_sequence: int = 1
 var _gm_click_claim_territory_enabled: bool = false
 var _gm_click_claim_pending_days: Dictionary = {}
+var _gm_tod_preview_enabled: bool = false
+var _gm_tod_sun_uv: Vector2 = Vector2(0.25, 0.5)
+var _gm_tod_sun_height_scale: float = 1.0
 
 const GM_SPEED_PRESETS: Array[float] = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
 const GM_CASH_SCALE: int = 10000
@@ -4000,10 +4003,84 @@ func _sync_runtime_worker_clock() -> void:
 func on_visual_day_phase_changed(visual_day_phase: float) -> void:
 	if _renderer == null:
 		return
+	if _gm_tod_preview_enabled:
+		_gm_tod_sun_uv.x = fposmod(visual_day_phase, 1.0)
+		_apply_gm_tod_sun_preview()
+		return
 	_renderer.set_day_phase(visual_day_phase)
 	if _tod_profile != null and _renderer.has_method("apply_tod"):
 		_tod_profile.recompute(visual_day_phase, day_night_enabled)
 		_renderer.apply_tod(_tod_profile)
+
+
+func get_gm_tod_sun_preview() -> Dictionary:
+	if _world_clock == null:
+		return _gm_error("clock_unavailable", "时钟尚未就绪。")
+	var uv := _gm_tod_sun_uv if _gm_tod_preview_enabled else _gm_live_sun_uv()
+	return {
+		"ok": true,
+		"preview": _gm_tod_preview_enabled,
+		"uv": uv,
+		"height_scale": _gm_tod_sun_height_scale if _gm_tod_preview_enabled else 1.0,
+		"day_night": day_night_enabled,
+	}
+
+
+func set_gm_tod_sun_preview(enabled: bool, uv: Vector2 = Vector2(0.25, 0.5),
+		height_scale: float = 1.0) -> Dictionary:
+	if _world_clock == null:
+		return _gm_error("clock_unavailable", "时钟尚未就绪。")
+	_gm_tod_sun_uv = Vector2(fposmod(uv.x, 1.0), clampf(uv.y, 0.0, 1.0))
+	_gm_tod_sun_height_scale = clampf(height_scale, 0.2, 1.5)
+	_gm_tod_preview_enabled = enabled
+	if enabled and not day_night_enabled:
+		set_gm_toggle("visual.day_night", true)
+	if enabled:
+		_world_clock.hold_visual_day_phase(_gm_tod_sun_uv.x)
+		_apply_gm_tod_sun_preview()
+	else:
+		_clear_gm_tod_sun_preview()
+		_world_clock.release_visual_day_phase()
+	return get_gm_tod_sun_preview()
+
+
+func _gm_live_sun_uv() -> Vector2:
+	var phase := 0.25
+	var season := 1.0
+	if _world_clock != null:
+		phase = _world_clock.visual_day_phase
+		season = _world_clock.season_phase()
+	var tilt := deg_to_rad(23.5)
+	if _renderer != null:
+		tilt = deg_to_rad(float(_renderer.axial_tilt_deg))
+	var year_progress := fposmod(season, 4.0) * 0.25
+	var decl := tilt * cos(TAU * year_progress)
+	var lat_signed := clampf(decl / (PI * 0.5), -1.0, 1.0)
+	return Vector2(fposmod(phase, 1.0), lat_signed * 0.5 + 0.5)
+
+
+func _apply_gm_tod_sun_preview() -> void:
+	if _renderer == null or not _gm_tod_preview_enabled:
+		return
+	if _tod_profile == null:
+		_init_tod_profile()
+	_renderer.set_day_phase(_gm_tod_sun_uv.x)
+	if _tod_profile != null and _renderer.has_method("apply_tod"):
+		_tod_profile.recompute(_gm_tod_sun_uv.x, true)
+		_renderer.apply_tod(_tod_profile)
+	if _renderer.has_method("set_tod_debug_sun_position"):
+		_renderer.set_tod_debug_sun_position(true, _gm_tod_sun_uv)
+	if _renderer.has_method("set_tod_debug_sun_height_scale"):
+		_renderer.set_tod_debug_sun_height_scale(_gm_tod_sun_height_scale)
+
+
+func _clear_gm_tod_sun_preview() -> void:
+	if _renderer == null:
+		return
+	if _renderer.has_method("set_tod_debug_sun_position"):
+		_renderer.set_tod_debug_sun_position(false, _gm_tod_sun_uv)
+	if _renderer.has_method("set_tod_debug_sun_height_scale"):
+		_renderer.set_tod_debug_sun_height_scale(1.0)
 
 
 func on_season_changed(season_idx: int) -> void:
@@ -4186,6 +4263,9 @@ func refresh_country_visuals(reason: String) -> Dictionary:
 	if _player_country_slot < 0:
 		_player_country_slot = _resolve_player_country_slot()
 	var previous_visible := _current_map.visible_arr.duplicate()
+	# 首解前 enum_lut.a 按全知 255 编码，而 fog_dirty_indices 是对内存里全 0 的
+	# fog_k_arr 求差，只覆盖首都周边；首次发布必须全量重编码，否则其余格子保持全知。
+	var first_fog_publish := not _current_map.fog_solved
 	out["vision"] = _refresh_vision()
 	if not out["vision"].has("newly_visible_cells"):
 		var changed := PackedInt32Array()
@@ -4207,7 +4287,7 @@ func refresh_country_visuals(reason: String) -> Dictionary:
 		out["vision"]["newly_visible_cells"] = newly_visible
 		out["vision"]["newly_hidden_cells"] = newly_hidden
 		out["vision"]["vision_revision"] = _current_map.vision_revision
-	out["lut"] = _republish_cell_luts(_vision_dirty_indices)
+	out["lut"] = _republish_cell_luts(_vision_dirty_indices, first_fog_publish)
 	out["building_intel"] = _refresh_building_visual_intel(out["vision"])
 	out["border"] = _refresh_country_borders()
 	if _settlement_label_layer != null:
@@ -4546,13 +4626,15 @@ func _submit_discovered_map_signals(previous: PackedByteArray) -> void:
 ## 迷雾值住在 enum_lut 的 A 通道，所以视野一变就必须重烘一次 LUT。
 ## 不能等 DynamicVisualAtlasUploadSystem 的日刷——它在 dirty_count==0 时会
 ## early-return，视野变化不体现在 climate/weather dirty mask 上。
-func _republish_cell_luts(dirty_indices: PackedInt32Array = PackedInt32Array()) -> Dictionary:
+func _republish_cell_luts(dirty_indices: PackedInt32Array = PackedInt32Array(),
+		force_full_encode: bool = false) -> Dictionary:
 	if _generator == null or not ("_baker" in _generator):
 		return {"ok": false, "reason": "no_baker"}
 	var baker = _generator._baker
 	if baker == null or not baker.has_method("refresh_cell_luts_daily"):
 		return {"ok": false, "reason": "baker_missing_refresh"}
-	return baker.refresh_cell_luts_daily(_current_map, _world_data, dirty_indices, false)
+	return baker.refresh_cell_luts_daily(
+		_current_map, _world_data, dirty_indices, force_full_encode)
 
 
 func _refresh_country_borders() -> Dictionary:

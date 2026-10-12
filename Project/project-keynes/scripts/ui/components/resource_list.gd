@@ -64,22 +64,26 @@ func set_selected(row_id: String) -> void:
 
 
 func _apply_row(refs: Dictionary, data: Dictionary) -> void:
-	var accent: Color = data.get("accent", UITokens.RESOURCE)
 	var panel := refs.get("panel") as PanelContainer
 	panel.visible = bool(data.get("visible", true))
 	var icon := refs.get("icon") as IconBadge
-	icon.set_semantic(StringName(data.get("icon", &"economy.resource")), accent)
+	icon.set_semantic(StringName(data.get("icon", &"economy.resource")),
+		UITokens.DOSSIER_INK_SOFT)
 	var name_label := refs.get("name") as Label
 	name_label.text = String(data.get("name", "资源"))
+	name_label.tooltip_text = "" if bool(data.get("extractable", true)) \
+		else "当前科技尚不能开采"
 	var density_label := refs.get("density") as Label
 	density_label.text = String(data.get("density", ""))
-	density_label.add_theme_color_override("font_color", accent.lerp(UITokens.ARCHIVE_INK, 0.18))
 	var value_label := refs.get("value") as Label
 	value_label.text = String(data.get("value", ""))
 	var delta_label := refs.get("delta") as Label
 	delta_label.text = String(data.get("delta", ""))
 	var delta_text := delta_label.text
+	delta_label.visible = delta_text != ""
 	delta_label.add_theme_color_override(
 		"font_color",
-		UITokens.GOOD if delta_text.contains("+") else (UITokens.RISK if delta_text.contains("-") else UITokens.ARCHIVE_INK_MUTED)
+		UITokens.DOSSIER_VERDIGRIS if delta_text.begins_with("+") \
+			else (UITokens.DOSSIER_OXBLOOD if delta_text.begins_with("-") \
+				else UITokens.DOSSIER_INK_MUTED)
 	)

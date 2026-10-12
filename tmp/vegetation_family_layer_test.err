@@ -1,0 +1,10 @@
+WARNING: 15 RIDs of type "CanvasItem" were leaked.
+   at: _free_rids (servers/rendering/renderer_canvas_cull.cpp:2692)
+ERROR: 10 RID allocations of type 'N13RendererDummy11MeshStorage14DummyMultiMeshE' were leaked at exit.
+ERROR: 6 RID allocations of type 'N13RendererDummy9DummyMeshE' were leaked at exit.
+ERROR: 10 RID allocations of type 'N13RendererDummy15MaterialStorage13DummyMaterialE' were leaked at exit.
+ERROR: 10 RID allocations of type 'N13RendererDummy15MaterialStorage11DummyShaderE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 7 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

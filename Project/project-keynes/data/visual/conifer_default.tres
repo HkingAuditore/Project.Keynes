@@ -55,3 +55,7 @@ vitality_size_max = 1.22
 vitality_low_color_strength = 0.66
 vitality_high_color_strength = 0.54
 vitality_color_contrast = 0.96
+sub_form_enabled = true
+crown_diameter_hex = 0.24
+grove_crown_min = 7
+grove_crown_max = 18

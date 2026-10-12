@@ -80,9 +80,23 @@ Prefer `MultiMeshInstance2D` for large visual detail layers.
 
 - Keep one mesh/material per layer; use per-instance transform, color, and custom data.
 - Treat per-instance custom data as static generation data: sample UV, seed, variant, coarse biome/style id, or other values that do not change every climate tick.
-- Build richer meshes from several simple lobes or sub-shapes instead of relying only on count; this makes each GPU instance read as a shrub/tree cluster rather than a dot.
 - Use shader `INSTANCE_CUSTOM` for stable seed/variant and global-state sampling coordinates. Do not use it as a per-frame/per-day climate upload channel.
 - Keep rendering side effects in the visual layer and renderer wiring. Do not add C++/DOTS work for purely visual scatter unless profiling proves GDScript rebuilds are the bottleneck.
+
+## Top-Down Procedural Impostors (current, 2026-10)
+
+The map is viewed straight down. Every vegetation instance is one camera-facing quad (`IMPOSTOR_QUAD_HALF = 0.62`) whose fragment shader draws a top-down form procedurally. Do not go back to lobe meshes, side-view sprites, or marching/raymarched volumes; reuse the existing projected-shadow approach for depth.
+
+- Shader split: `shaders/vegetation_family.gdshader` (+ `shrub_layer.gdshader`) include `shaders/include/vegetation_forms.gdshaderinc` (forms: broadleaf, conifer, palm, shrub, grass/tussock, rock, snow mound, kelp, reed, cactus, lichen, peat, coral, flower) and `vegetation_shadow.gdshaderinc` (shadow pass, absolute strength from style LUT px2.a, alpha ×0.80 cluster / ×0.55 grove).
+- Form resolution: `ShrubVisualProfile.resolved_visual_form()` / `detail_visual_form()` maps archetype to form; `ShrubLayer._archetype_casts_shadow()` disables shadows for kelp, coral, lichen, peat.
+- Multi-element instances: one instance draws 1..32 elements in a 3×3 cell field. `sub_form` 0 single, 1 cluster (2–4), 2 grove (5–32 crowns). `crown_local_radius(count) = count<=1 ? 0.80 : min(0.58, 0.88/sqrt(count))` must stay identical in C++ (`world_ext_detail.cpp`), GDScript (`shrub_layer.gd`) and the shader.
+- `custom.a` contract: scatter writes `sub_form + (count-0.5)/32`; `VegetationFamilyLayer` re-packs as `style_id*4 + form`; shader decodes `style = floor(a*0.25)`. Colour variant no longer lives in `custom.a`.
+- Profile knobs (`data/visual/*.tres`): `sub_form_enabled`, `crown_diameter_hex` (canopy ≈ 0.24–0.32 hex, about 2–3× a house), `cluster_density_threshold`, `grove_density_threshold`, `grove_crown_min/max`, `edge_single_bias`, `element_count_min/max` (non-canopy). Canopy instance size is derived so the crown diameter stays constant while count grows with density.
+- Scatter: R2 low-discrepancy candidates; world noise evaluated before form choice; same-cell exclusion rejects instances with `dist < (ra+rb)*0.72`. C++ and GDScript fallback must stay per-instance identical.
+- Style LUT (16×32 RGBAF): px0 wind/shape/family, px1 base colour, px2 casts/foot/length/strength, px3 form/phen_resp/phen_dom/veg_resp, px4 bloom/snow_ret/alb_floor/burial, px5 aquatic/size_floor/sat_gain/val_gain.
+- Soft shadows are deliberately approximate (one ellipse per element, never the exact silhouette). In-quad: `vf_soft_shadow` (desktop q2, `hs>0.1`) reuses `vf_ring_slot`/`vf_grid_slot` and stretches each ellipse along `-L.xy/max(L.z,0.28)*hs*top` (cap `r0*1.1`); penumbra width and lightening grow with `len/(2.5r)` so noon is short/crisp and dusk long/soft. Out-of-quad: the cast pass uses one ellipse per instance, length `clamp(cot(elev),0,shadow_max_len=3.6)` (caps near 15.5° elevation, below that `local_day` fades it), and `shadow_soft` drives inner-penumbra, far-end spread and lightening. Family shadow materials are duplicated at configure time, so `VegetationFamilyLayer.sync_dynamic_materials()` must also copy the sun/day/season/tod_debug params to them.
+- Performance: climate/GI/horizon sampling only in `vertex()`; fragment does the 3×3 field plus the analytic ellipse soft-shadow loop on desktop q2 (no second `vf_eval`). Far fallback `vf_far` when element radius < 3px (6px mobile). Budget reference: ~34k instances, vegetation GPU ≈ 0.11–0.14 ms, rebuild ≈ 9–12 ms.
+- Tests: `tests/vegetation_form_scatter_test.gd` (pack round-trip, determinism, crown diameter, grove growth, exclusion, GD/native parity), `tests/vegetation_family_layer_test.gd` (LUT/pack), plus manifest perf / settlement avoidance / LOD tests. Contract doc: `docs/cpp-dots-runtime/computation-pipelines.md` → 俯视程序化冒名体.
 
 ## Performance Rules
 
