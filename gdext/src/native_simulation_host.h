@@ -37,6 +37,7 @@
 namespace pk {
 
 class NativeEconomyRuntime;
+class CountryAiRuntime;
 class NativeSimulationHost {
 public:
     NativeSimulationHost();
@@ -264,6 +265,13 @@ public:
     }
     bool economy_production_runtime_attached() const noexcept {
         return _economy_production_runtime != nullptr;
+    }
+    // Country AI planner owned by DCWorldExt. Under ACTIVE+COUNTRY the worker
+    // plans AI commands for day D from Country committed through D-1, queues
+    // them with producer COUNTRY_AI_PRODUCER_ID before plan_day, and commits
+    // the AI memory only when the Country day commits.
+    void attach_country_ai_runtime(class CountryAiRuntime *runtime) noexcept {
+        _country_ai_runtime.store(runtime, std::memory_order_release);
     }
     // Phase 4+: POD queue admits opcodes 1..23; commit_pending_commands applies
     // via EconomyPodCommandExecutor. Under POD_ACTIVE, opcodes 1–23 mutate
@@ -1023,6 +1031,10 @@ private:
     RuntimeCountryPodCatalog _country_pod_catalog;
     std::atomic<bool> _country_pod_configured{false};
     std::atomic<bool> _country_pod_plan_active{false};
+    std::atomic<CountryAiRuntime *> _country_ai_runtime{nullptr};
+    RuntimeCountryPodSnapshot _country_ai_snapshot;
+    CountryAiRuntime *country_ai_for_worker() const noexcept;
+    void commit_country_ai_day(int64_t day);
     // One preview publish per open peer-wait so research enqueue appears in the
     // left queue without soft-committing the Country calendar boundary.
     bool _country_peer_wait_preview_published = false;

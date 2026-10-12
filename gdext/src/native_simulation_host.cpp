@@ -5,6 +5,7 @@
 #endif
 #include "native_simulation_host.h"
 #include "country_core_apply.h"
+#include "country_ai_runtime.h"
 #include "country_runtime.h"
 #include "economy_runtime.h"
 #include "runtime_economy_ecp2.h"
@@ -6920,12 +6921,40 @@ bool NativeSimulationHost::poll_receipt(RuntimeCommandReceipt &out) {
     return true;
 }
 
+CountryAiRuntime *NativeSimulationHost::country_ai_for_worker() const noexcept {
+    CountryAiRuntime *runtime = _country_ai_runtime.load(std::memory_order_acquire);
+    if (runtime == nullptr) return nullptr;
+    // SHADOW mirrors the synchronous adapter's AI commands; only ACTIVE with
+    // Country authority plans on the worker.
+    if (_mode.load(std::memory_order_acquire) != RuntimeSimulationMode::ACTIVE ||
+        (_requested_authority_mask.load(std::memory_order_acquire) &
+         runtime_domain_mask(RuntimeDomainId::COUNTRY)) == 0u)
+        return nullptr;
+    return runtime->active() ? runtime : nullptr;
+}
+
+void NativeSimulationHost::commit_country_ai_day(int64_t day) {
+    CountryAiRuntime *runtime = country_ai_for_worker();
+    if (runtime == nullptr) return;
+    CountryAiCommitResult result = runtime->commit(day);
+    if (_economy_production_runtime == nullptr) return;
+    if (result.family_preferences_changed)
+        _economy_production_runtime->set_country_ai_family_preferences(
+            std::move(result.family_preferences));
+    if (!result.colonization.empty())
+        _economy_production_runtime->queue_country_ai_colonization(
+            std::move(result.colonization));
+}
+
 void NativeSimulationHost::publish_country_command_terminals(
         const std::vector<RuntimeCountryCommand> &commands,
         CountryCommandReceiptCode code, uint64_t generation,
         const char *reason) {
     std::lock_guard<std::mutex> lock(_country_transport_mutex);
     for (const RuntimeCountryCommand &command : commands) {
+        // AI commands are internal to the worker: player receipt consumers
+        // treat any REJECT terminal as their own failure.
+        if (command.producer_id == COUNTRY_AI_PRODUCER_ID) continue;
         if (command.request_id == 0 ||
             _country_command_terminals.find(command.request_id) !=
                 _country_command_terminals.end()) {
@@ -7429,8 +7458,15 @@ bool NativeSimulationHost::execute_country_worker_stage(
         std::vector<RuntimeCountryCommand> newly_queued_commands;
         newly_queued_ids.reserve(sealed_country_commands.size());
         newly_queued_commands.reserve(sealed_country_commands.size());
+        CountryAiRuntime *country_ai = country_ai_for_worker();
         for (const RuntimeCommandPacket &packet : day_commands) {
             if (packet.envelope.domain != static_cast<uint16_t>(RuntimeDomainId::COUNTRY))
+                continue;
+            // AI batches submitted by the synchronous adapter before the worker
+            // took Country authority: the worker AI replans that day from the
+            // same state, so replaying them would only duplicate or go stale.
+            if (country_ai != nullptr &&
+                packet.envelope.producer_id == COUNTRY_AI_PRODUCER_ID)
                 continue;
             if (packet.envelope.request_id != 0 &&
                 _country_pod_authority.has_pending_request(
@@ -7462,8 +7498,47 @@ bool NativeSimulationHost::execute_country_worker_stage(
                 newly_queued_ids.push_back(command.request_id);
             newly_queued_commands.push_back(command);
         }
-        if (!_country_pod_authority.plan_day(
-                day, input_generation, _country_pod_plan, error)) {
+        // Country AI: plan day D from the authority committed through D-1.
+        // AI commands are tracked separately so a rejection never strands
+        // them in _pending (plan_day fails the whole day on any bad command).
+        std::vector<uint64_t> ai_ids;
+        if (country_ai != nullptr && country_ai->due(day)) {
+            std::string snapshot_error;
+            if (_country_pod_authority.snapshot(_country_ai_snapshot, snapshot_error)) {
+                std::shared_ptr<const CountryAiEconomyDigest> digest;
+                if (_economy_production_runtime != nullptr)
+                    digest = _economy_production_runtime->country_ai_digest();
+                std::vector<CountryAiCommand> planned;
+                if (country_ai->plan(day, _country_ai_snapshot, _country_pod_catalog,
+                                     digest.get(), planned)) {
+                    for (uint32_t i = 0; i < planned.size(); ++i) {
+                        RuntimeCountryCommand command =
+                            CountryAiRuntime::to_runtime_command(planned[i], day, i);
+                        command.request_id = allocate_command_request_id();
+                        std::string queue_error;
+                        if (!_country_pod_authority.queue_command(command, queue_error)) {
+                            _country_pod_authority.remove_pending_commands(ai_ids);
+                            ai_ids.clear();
+                            country_ai->reject_staged(day, queue_error.c_str());
+                            break;
+                        }
+                        ai_ids.push_back(command.request_id);
+                    }
+                }
+            }
+        }
+        bool country_planned = _country_pod_authority.plan_day(
+            day, input_generation, _country_pod_plan, error);
+        if (!country_planned &&
+            _country_pod_authority.remove_pending_producer(COUNTRY_AI_PRODUCER_ID) > 0) {
+            ai_ids.clear();
+            if (country_ai != nullptr) country_ai->reject_staged(day, error.c_str());
+            error.clear();
+            country_planned = _country_pod_authority.plan_day(
+                day, input_generation, _country_pod_plan, error);
+        }
+        if (!country_planned) {
+            if (country_ai != nullptr) country_ai->abort(day);
             if (error.empty()) error = "country_worker_plan_failed";
             _country_pod_authority.remove_pending_commands(newly_queued_ids);
             publish_country_command_terminals(
@@ -7582,6 +7657,9 @@ bool NativeSimulationHost::execute_country_worker_stage(
                 continue;
             }
             if (packet.envelope.request_id == 0) continue;
+            if (packet.envelope.producer_id == COUNTRY_AI_PRODUCER_ID &&
+                country_ai_for_worker() != nullptr)
+                continue;
             bool in_open_plan = false;
             for (const RuntimeCountryCommand &planned :
                     _country_pod_plan.commands) {
@@ -7910,6 +7988,7 @@ bool NativeSimulationHost::execute_country_worker_stage(
         publish_country_command_terminals(
             _country_pod_plan.commands, CountryCommandReceiptCode::COMMITTED,
             _country_pod_authority.generation(), nullptr);
+        commit_country_ai_day(_country_pod_authority.committed_day());
         _country_pod_plan_active.store(false, std::memory_order_release);
         _country_peer_wait_preview_published = false;
         {
@@ -7990,6 +8069,7 @@ bool NativeSimulationHost::execute_country_worker_stage(
     publish_country_command_terminals(
         _country_pod_plan.commands, CountryCommandReceiptCode::COMMITTED,
         _country_pod_authority.generation(), nullptr);
+    commit_country_ai_day(_country_pod_authority.committed_day());
     _country_pod_plan_active.store(false, std::memory_order_release);
     _country_peer_wait_preview_published = false;
     // Same as soft-reject path: Country commit must not clear Economy stalls.
@@ -9966,6 +10046,10 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                                 static_cast<uint16_t>(
                                     RuntimeDomainId::COUNTRY) ||
                             packet.envelope.request_id == 0) {
+                            continue;
+                        }
+                        if (packet.envelope.producer_id == COUNTRY_AI_PRODUCER_ID &&
+                            country_ai_for_worker() != nullptr) {
                             continue;
                         }
                         if (_country_pod_authority.has_pending_request(

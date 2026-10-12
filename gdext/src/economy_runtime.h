@@ -32,6 +32,7 @@
 #include "economy_owned_record_value.h"
 #include "runtime_economy_population_store.h"
 #include "runtime_pod_protocol.h"
+#include "country_ai_core.h"
 
 namespace pk {
 
@@ -985,6 +986,33 @@ public:
             static_cast<size_t>(_class_opinion_committed_buffer)];
     }
     godot::Dictionary country_class_opinion_snapshot_debug() const;
+
+    // Country AI boundary (see docs/cpp-dots-runtime/country-ai-runtime.md).
+    // All three are thread-safe: the digest is an immutable snapshot swapped
+    // at Economy commit, preferences are frozen inputs read by FAMILY_COMMIT,
+    // and colonization intents are converted into ordinary expedition
+    // commands at the next epoch open.
+    std::shared_ptr<const CountryAiEconomyDigest> country_ai_digest() const;
+    void set_country_ai_family_preferences(
+        std::vector<CountryAiFamilyPreferenceRow> rows);
+    void queue_country_ai_colonization(
+        std::vector<CountryAiColonizationIntent> intents);
+    // AI expedition commands carry this tag in `sequence` so execution-time
+    // rejection receipts (kind 7) can be attributed back to the AI.
+    static constexpr int64_t COUNTRY_AI_COLONIZATION_SEQUENCE_TAG = int64_t{1} << 62;
+    struct CountryAiColonizationStat {
+        uint64_t country_handle = 0;
+        uint32_t failures = 0;
+        uint32_t started = 0;
+    };
+    void export_country_ai_pending(
+        std::vector<CountryAiColonizationIntent> &intents,
+        std::vector<CountryAiColonizationStat> &stats,
+        int64_t &receipt_cursor) const;
+    void import_country_ai_pending(
+        std::vector<CountryAiColonizationIntent> intents,
+        std::vector<CountryAiColonizationStat> stats,
+        int64_t receipt_cursor);
 
     // EconomyCommitView. While the worker owns economy execution the main
     // thread must not read live economy state outside the authority boundary.
@@ -3407,6 +3435,16 @@ private:
         std::vector<FoodAccessEntry> food_access_by_cell;
         int64_t retained_output_consumed = 0;
         int64_t retained_output_discarded = 0;
+        // Markets run on parallel tasks, so producer-support ledgers are
+        // accumulated here and folded into the runtime totals serially.
+        int64_t supported_output = 0;
+        int64_t supported_money = 0;
+        int64_t bullion_money = 0;
+        int64_t bullion_stock = 0;
+        int64_t gold_accepted = 0;
+        int64_t gold_money = 0;
+        int64_t silver_accepted = 0;
+        int64_t silver_money = 0;
         std::vector<int64_t> retained_consumed_by_good;
         std::vector<BuildingInKindCredit> building_in_kind_credits;
         int64_t owner_working_capital_reserved = 0;
@@ -4734,6 +4772,12 @@ private:
     CountryResearchProcurementContinuation _country_research_procurement_continuation;
     FamilyExpeditionProcurementContinuation
         _family_expedition_procurement_continuation;
+    // Cancelled preparations whose Country leg was already in flight. The
+    // Country side commits that leg regardless, so the matching merchant
+    // credit (market purchase) or market return (treasury transfer) must still
+    // run once the terminal arrives.
+    std::vector<FamilyExpeditionProcurementContinuation>
+        _family_expedition_procurement_orphans;
     std::unordered_map<int32_t, FamilyExpeditionProcurementRejection>
         _family_expedition_procurement_rejections;
     std::vector<int64_t> _merchant_procurement_paid_by_cell;
@@ -5643,6 +5687,19 @@ private:
     std::array<CountryClassOpinionSnapshot, 2> _class_opinion_buffers;
     int32_t _class_opinion_committed_buffer = 0;
     uint64_t _class_opinion_revision = 0;
+    struct CountryAiShared {
+        std::mutex mutex;
+        std::shared_ptr<const CountryAiEconomyDigest> digest;
+        std::shared_ptr<const std::vector<CountryAiFamilyPreferenceRow>> family_preferences;
+        std::vector<CountryAiColonizationIntent> colonization_inbox;
+        std::vector<CountryAiColonizationStat> colonization_stats; // sorted by handle
+        int64_t receipt_cursor = 0; // last colonization receipt_id scanned
+        uint64_t digest_revision = 0;
+    };
+    std::unique_ptr<CountryAiShared> _country_ai = std::make_unique<CountryAiShared>();
+    void publish_country_ai_digest();
+    void process_country_ai_colonization_intents(int64_t day_index);
+    int32_t family_founding_ai_choice(const FamilyFoundingOffer &offer) const;
     uint64_t _class_opinion_cells_scanned = 0;
     uint64_t _class_opinion_slots_scanned = 0;
     uint64_t _class_opinion_zero_population_rows = 0;
@@ -6663,6 +6720,10 @@ private:
     bool advance_family_expedition_procurement(
         FamilyExpeditionProcurementContinuation &continuation,
         std::string &error);
+    bool credit_family_expedition_procurement_merchants(
+        FamilyExpeditionProcurementContinuation &continuation,
+        std::string &error);
+    bool settle_family_expedition_procurement_orphans(std::string &error);
     bool start_family_expedition_procurement(
         FamilyExpeditionProcurementContinuation &continuation,
         int32_t expedition, int32_t source_cell, int32_t market,
@@ -6815,6 +6876,19 @@ private:
     int64_t apply_fiscal_tax(int32_t cell, int32_t kind, int64_t base,
                              int32_t rate, int32_t mode,
                              int64_t &saturation_count);
+    struct FiscalLaneSnapshot {
+        size_t lane = SIZE_MAX;
+        int64_t bases = 0;
+        int64_t assessed = 0;
+        int64_t collected = 0;
+        int64_t current_requests = 0;
+        int64_t remaining = 0;
+        int64_t paid = 0;
+    };
+    // apply_fiscal_tax settles immediately; callers that may abandon the
+    // purchase afterwards must restore the lane so tax never outlives payment.
+    FiscalLaneSnapshot snapshot_fiscal_lane(int32_t cell, int32_t kind) const;
+    void restore_fiscal_lane(const FiscalLaneSnapshot &snapshot);
     int64_t expected_fiscal_transfer(int32_t cell, int32_t kind, int64_t base,
                                      int32_t rate,
                                      int64_t &saturation_count) const;

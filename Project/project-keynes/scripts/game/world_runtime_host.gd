@@ -10,6 +10,7 @@ signal simulation_committed(from_day: int, to_day: int, generation: int)
 signal country_peer_serviced(report: Dictionary)
 signal generation_progress(stage: String, fraction: float)
 signal gm_toggle_changed(toggle_id: String, enabled: bool)
+signal gm_tod_preview_changed(active: bool)
 signal gm_action_completed(action_id: String, result: Dictionary)
 
 const RuntimeForensics = preload("res://scripts/game/runtime_forensics.gd")
@@ -281,6 +282,9 @@ var _gm_click_claim_territory_enabled: bool = false
 var _gm_click_claim_pending_days: Dictionary = {}
 var _gm_tod_preview_enabled: bool = false
 var _gm_tod_sun_uv: Vector2 = Vector2(0.25, 0.5)
+var _gm_tod_cycle_uv: Vector2 = Vector2(0.25, 0.5)
+var _gm_tod_eternal_uv: Vector2 = Vector2(0.25, 0.5)
+var _gm_tod_eternal_uv_valid: bool = false
 var _gm_tod_sun_height_scale: float = 1.0
 
 const GM_SPEED_PRESETS: Array[float] = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
@@ -590,6 +594,13 @@ func set_day_night_enabled(enabled: bool) -> void:
 	day_night_enabled = enabled
 	if _renderer != null:
 		_renderer.set_day_night_enabled(enabled)
+	if _gm_tod_preview_enabled:
+		_gm_tod_sun_uv = _gm_tod_cycle_uv if enabled else _current_eternal_uv()
+		if enabled and _world_clock != null:
+			_world_clock.hold_visual_day_phase(_gm_tod_cycle_uv.x)
+		_apply_gm_tod_sun_preview()
+		gm_tod_preview_changed.emit(true)
+		return
 	if _tod_profile == null or _renderer == null:
 		return
 	var phase := _world_clock.visual_day_phase if _world_clock != null else 0.25
@@ -4004,7 +4015,9 @@ func on_visual_day_phase_changed(visual_day_phase: float) -> void:
 	if _renderer == null:
 		return
 	if _gm_tod_preview_enabled:
-		_gm_tod_sun_uv.x = fposmod(visual_day_phase, 1.0)
+		if day_night_enabled:
+			_gm_tod_cycle_uv.x = fposmod(visual_day_phase, 1.0)
+			_gm_tod_sun_uv = _gm_tod_cycle_uv
 		_apply_gm_tod_sun_preview()
 		return
 	_renderer.set_day_phase(visual_day_phase)
@@ -4016,13 +4029,18 @@ func on_visual_day_phase_changed(visual_day_phase: float) -> void:
 func get_gm_tod_sun_preview() -> Dictionary:
 	if _world_clock == null:
 		return _gm_error("clock_unavailable", "时钟尚未就绪。")
-	var uv := _gm_tod_sun_uv if _gm_tod_preview_enabled else _gm_live_sun_uv()
+	var uv := _gm_preview_marker_uv()
+	var angles := eternal_angles_from_uv(_current_eternal_uv())
+	var elevation := clampf(angles.y * (_gm_tod_sun_height_scale if _gm_tod_preview_enabled else 1.0),
+		8.0, 85.0)
 	return {
 		"ok": true,
 		"preview": _gm_tod_preview_enabled,
 		"uv": uv,
 		"height_scale": _gm_tod_sun_height_scale if _gm_tod_preview_enabled else 1.0,
 		"day_night": day_night_enabled,
+		"azimuth_deg": angles.x,
+		"elevation_deg": elevation,
 	}
 
 
@@ -4030,18 +4048,103 @@ func set_gm_tod_sun_preview(enabled: bool, uv: Vector2 = Vector2(0.25, 0.5),
 		height_scale: float = 1.0) -> Dictionary:
 	if _world_clock == null:
 		return _gm_error("clock_unavailable", "时钟尚未就绪。")
-	_gm_tod_sun_uv = Vector2(fposmod(uv.x, 1.0), clampf(uv.y, 0.0, 1.0))
+	var clamped := Vector2(fposmod(uv.x, 1.0), clampf(uv.y, 0.0, 1.0))
 	_gm_tod_sun_height_scale = clampf(height_scale, 0.2, 1.5)
+	if day_night_enabled:
+		_gm_tod_cycle_uv = clamped
+	else:
+		_gm_tod_eternal_uv = clamped
+		_gm_tod_eternal_uv_valid = true
+	_gm_tod_sun_uv = clamped
 	_gm_tod_preview_enabled = enabled
-	if enabled and not day_night_enabled:
-		set_gm_toggle("visual.day_night", true)
 	if enabled:
-		_world_clock.hold_visual_day_phase(_gm_tod_sun_uv.x)
+		if day_night_enabled:
+			_world_clock.hold_visual_day_phase(_gm_tod_cycle_uv.x)
+		elif not _world_clock.visual_day_phase_held:
+			_world_clock.hold_visual_day_phase(_world_clock.visual_day_phase)
 		_apply_gm_tod_sun_preview()
 	else:
 		_clear_gm_tod_sun_preview()
 		_world_clock.release_visual_day_phase()
+	gm_tod_preview_changed.emit(_gm_tod_preview_enabled)
 	return get_gm_tod_sun_preview()
+
+
+static func eternal_uv_from_angles(azimuth_deg: float, elevation_deg: float) -> Vector2:
+	var elevation := clampf(elevation_deg, 8.0, 85.0)
+	var dist := (85.0 - elevation) / 77.0
+	var azimuth := deg_to_rad(azimuth_deg)
+	# 标记离地图中心越远，太阳越低；标记所在方向就是光线方向（+x 东，+y 北）。
+	var offset := Vector2(cos(azimuth), sin(azimuth)) * (dist * 0.5)
+	return Vector2(clampf(0.5 + offset.x, 0.0, 1.0), clampf(0.5 + offset.y, 0.0, 1.0))
+
+
+static func eternal_angles_from_uv(uv: Vector2) -> Vector2:
+	var offset := Vector2(clampf(uv.x, 0.0, 1.0) - 0.5, clampf(uv.y, 0.0, 1.0) - 0.5)
+	var dist := clampf(offset.length() * 2.0, 0.0, 1.0)
+	var elevation := lerpf(85.0, 8.0, dist)
+	if offset.length_squared() <= 0.000001:
+		return Vector2(0.0, elevation)
+	return Vector2(rad_to_deg(atan2(offset.y, offset.x)), elevation)
+
+
+static func eternal_sun_dir(azimuth_deg: float, elevation_deg: float) -> Vector3:
+	var azimuth := deg_to_rad(azimuth_deg)
+	var elevation := deg_to_rad(clampf(elevation_deg, 8.0, 85.0))
+	var horiz := cos(elevation)
+	return Vector3(cos(azimuth) * horiz, sin(azimuth) * horiz, sin(elevation)).normalized()
+
+
+static func map_screen_to_sun_uv(screen_pos: Vector2, camera_position: Vector2,
+		zoom: float, viewport_size: Vector2, bounds: Rect2) -> Vector2:
+	if bounds.size.x <= 0.0 or bounds.size.y <= 0.0 or zoom <= 0.0:
+		return Vector2(0.25, 0.5)
+	var world := camera_position + (screen_pos - viewport_size * 0.5) / zoom
+	return Vector2(
+		fposmod((world.x - bounds.position.x) / bounds.size.x, 1.0),
+		clampf((world.y - bounds.position.y) / bounds.size.y, 0.0, 1.0))
+
+
+static func map_sun_uv_to_screen(uv: Vector2, camera_position: Vector2,
+		zoom: float, viewport_size: Vector2, bounds: Rect2) -> Vector2:
+	var world := bounds.position + Vector2(
+		fposmod(uv.x, 1.0) * bounds.size.x,
+		clampf(uv.y, 0.0, 1.0) * bounds.size.y)
+	return viewport_size * 0.5 + (world - camera_position) * zoom
+
+
+func gm_tod_screen_to_sun_uv(screen_pos: Vector2) -> Vector2:
+	var current := _gm_tod_sun_uv if _gm_tod_preview_enabled else _gm_live_sun_uv()
+	if _camera == null or _renderer == null or _camera.zoom.x <= 0.0:
+		return current
+	var bounds := _renderer.get_world_bounds()
+	if bounds.size.x <= 0.0 or bounds.size.y <= 0.0:
+		return current
+	return map_screen_to_sun_uv(screen_pos, _camera.position, _camera.zoom.x,
+		_camera.get_viewport_rect().size, bounds)
+
+
+func gm_tod_sun_screen_position() -> Vector2:
+	if _camera == null or _renderer == null or _camera.zoom.x <= 0.0:
+		return Vector2(INF, INF)
+	var bounds := _renderer.get_world_bounds()
+	if bounds.size.x <= 0.0 or bounds.size.y <= 0.0:
+		return Vector2(INF, INF)
+	var uv := _gm_tod_sun_uv if _gm_tod_preview_enabled else _gm_live_sun_uv()
+	return map_sun_uv_to_screen(uv, _camera.position, _camera.zoom.x,
+		_camera.get_viewport_rect().size, bounds)
+
+
+func _current_eternal_uv() -> Vector2:
+	if _gm_tod_eternal_uv_valid:
+		return _gm_tod_eternal_uv
+	return eternal_uv_from_angles(-60.0, 37.0)
+
+
+func _gm_preview_marker_uv() -> Vector2:
+	if day_night_enabled:
+		return _gm_tod_cycle_uv if _gm_tod_preview_enabled else _gm_live_sun_uv()
+	return _current_eternal_uv()
 
 
 func _gm_live_sun_uv() -> Vector2:
@@ -4064,12 +4167,26 @@ func _apply_gm_tod_sun_preview() -> void:
 		return
 	if _tod_profile == null:
 		_init_tod_profile()
-	_renderer.set_day_phase(_gm_tod_sun_uv.x)
-	if _tod_profile != null and _renderer.has_method("apply_tod"):
-		_tod_profile.recompute(_gm_tod_sun_uv.x, true)
-		_renderer.apply_tod(_tod_profile)
-	if _renderer.has_method("set_tod_debug_sun_position"):
-		_renderer.set_tod_debug_sun_position(true, _gm_tod_sun_uv)
+	if day_night_enabled:
+		_gm_tod_sun_uv = _gm_tod_cycle_uv
+		_renderer.set_day_phase(_gm_tod_cycle_uv.x)
+		if _tod_profile != null and _renderer.has_method("apply_tod"):
+			_tod_profile.recompute(_gm_tod_cycle_uv.x, true)
+			_renderer.apply_tod(_tod_profile)
+		if _renderer.has_method("set_tod_debug_sun_position"):
+			_renderer.set_tod_debug_sun_position(true, _gm_tod_cycle_uv)
+	else:
+		var uv := _current_eternal_uv()
+		_gm_tod_sun_uv = uv
+		var angles := eternal_angles_from_uv(uv)
+		var elevation := clampf(angles.y * _gm_tod_sun_height_scale, 8.0, 85.0)
+		var phase := _world_clock.visual_day_phase if _world_clock != null else 0.25
+		if _tod_profile != null and _renderer.has_method("apply_tod"):
+			_tod_profile.recompute(phase, false)
+			_tod_profile.sun_dir = eternal_sun_dir(angles.x, elevation)
+			_renderer.apply_tod(_tod_profile)
+		if _renderer.has_method("set_tod_debug_sun_position"):
+			_renderer.set_tod_debug_sun_position(true, uv)
 	if _renderer.has_method("set_tod_debug_sun_height_scale"):
 		_renderer.set_tod_debug_sun_height_scale(_gm_tod_sun_height_scale)
 

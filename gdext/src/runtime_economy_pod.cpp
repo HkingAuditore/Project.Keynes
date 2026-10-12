@@ -1258,11 +1258,7 @@ bool RuntimeEconomyPodAuthority::run_bound_stage(RuntimeEconomyGraphStage stage,
                 error == "fiscal_settlement_peer_pending" ||
                 error == "fiscal_reserve_peer_results" ||
                 error == "fiscal_peer_results" ||
-                error == "country_economy_asset_host_pending" ||
-                error == "country_economy_asset_results_pending" ||
-                error == "country_economy_asset_rejection_retry_pending" ||
-                error == "country_economy_asset_completion_retry_pending" ||
-                error == "country_economy_fiscal_terminal_retry_pending";
+                runtime_country_asset_pending_reason(error);
             if (result.fatal && !peer_park) {
                 _replay.fatal = 1;
                 copy_reason(_replay.fatal_reason, sizeof(_replay.fatal_reason),

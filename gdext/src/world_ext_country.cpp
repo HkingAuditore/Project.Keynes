@@ -1,4 +1,5 @@
 #include "world_ext.h"
+#include "country_ai_core.h"
 #include "country_runtime.h"
 #include "effect_runtime.h"
 #include "modifier_runtime.h"
@@ -45,7 +46,7 @@ void country_copy_fixed(std::array<char, N> &destination, const String &value) {
 
 Dictionary enqueue_country_host_command_batch(
         NativeSimulationHost &host, const Dictionary &packed_batch,
-        bool enforce_committed_day) {
+        bool enforce_committed_day, uint32_t producer_id = 0) {
     const PackedInt32Array opcodes = packed_batch.get(
         "opcodes", PackedInt32Array());
     const PackedInt64Array effective_days = packed_batch.get(
@@ -145,10 +146,10 @@ Dictionary enqueue_country_host_command_batch(
         RuntimeCountryCommand command;
         command.request_id = host.allocate_command_request_id();
         request_ids[index] = static_cast<int64_t>(command.request_id);
-        command.producer_id = 0;
+        command.producer_id = producer_id;
         command.sequence = sequences[index] > 0
             ? static_cast<uint64_t>(sequences[index])
-            : host.allocate_producer_sequence(0);
+            : host.allocate_producer_sequence(producer_id);
         command.observed_generation = 0;
         command.requested_day = effective_days[index];
         command.effective_day = scheduled_day;
@@ -301,6 +302,21 @@ Dictionary DCWorldExt::submit_country_commands(const Dictionary &packed_batch) {
     }
     out["shadow_mirror_ok"] = true;
     out["shadow_request_ids"] = mirrored.get("request_ids", PackedInt64Array());
+    return out;
+}
+
+Dictionary DCWorldExt::submit_country_ai_batch(const Dictionary &packed_batch) {
+    if (_country_runtime == nullptr) return country_unavailable();
+    Dictionary out = country_runtime_from(_country_runtime)->submit_commands(packed_batch);
+    if (!static_cast<bool>(out.get("ok", false)) || _runtime_host == nullptr) return out;
+    const RuntimeWorkerState host_state = _runtime_host->state();
+    if (host_state == RuntimeWorkerState::STOPPED || host_state == RuntimeWorkerState::FAULTED ||
+        !_runtime_host->country_pod_configured())
+        return out;
+    // SHADOW parity: the worker replays the exact AI commands on the same day.
+    Dictionary mirrored = enqueue_country_host_command_batch(
+        *_runtime_host, packed_batch, false, COUNTRY_AI_PRODUCER_ID);
+    out["shadow_mirror_ok"] = static_cast<bool>(mirrored.get("ok", false));
     return out;
 }
 
@@ -1698,7 +1714,11 @@ Dictionary DCWorldExt::run_country_slice(const Dictionary &ctx) {
         return out;
     }
     NativeCountryRuntime *runtime = country_runtime_from(_country_runtime);
+    const int64_t ai_day = static_cast<int64_t>(ctx.get("day_index", -1));
+    country_ai_sync_plan(ai_day);
     Dictionary out = runtime->run_slice(ctx);
+    if (static_cast<bool>(out.get("done", true)))
+        country_ai_sync_finish(ai_day, static_cast<bool>(out.get("ok", false)), out);
     if (static_cast<bool>(out.get("ok", false)) &&
         static_cast<bool>(out.get("published_to_slot", false)) &&
         static_cast<int64_t>(out.get("changed_cells", 0)) > 0) {
@@ -1789,7 +1809,9 @@ Dictionary DCWorldExt::sync_country_territory_to_map() {
 }
 
 bool DCWorldExt::country_should_run(int64_t day_index) const {
-    return _country_runtime != nullptr && country_runtime_from(_country_runtime)->should_run(day_index);
+    return _country_runtime != nullptr &&
+        (country_runtime_from(_country_runtime)->should_run(day_index) ||
+         country_ai_sync_due(day_index));
 }
 
 Dictionary DCWorldExt::get_country_report() const {

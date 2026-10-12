@@ -67,6 +67,9 @@ var _country_view_model: CountryViewModel
 var _country_action_bar: CountryActionBar
 var _country_panel: CountryPanel
 var _gm_console: DebugConsole
+var _gm_sun_camera: MapCamera
+var _gm_sun_handle: Button
+var _gm_sun_dragging := false
 var _perf_hud: PerfMiniHUD
 var _diagnostics_source: Node = null
 var _map_overlay_toolbar: MapOverlayToolbar
@@ -315,11 +318,19 @@ func set_diagnostics_source(source: Node) -> void:
 		var old_callback := Callable(self, "_on_runtime_gm_toggle_changed")
 		if _diagnostics_source.is_connected("gm_toggle_changed", old_callback):
 			_diagnostics_source.disconnect("gm_toggle_changed", old_callback)
+	if _diagnostics_source != null and _diagnostics_source.has_signal("gm_tod_preview_changed"):
+		var old_sun_callback := Callable(self, "_on_gm_tod_preview_changed")
+		if _diagnostics_source.is_connected("gm_tod_preview_changed", old_sun_callback):
+			_diagnostics_source.disconnect("gm_tod_preview_changed", old_sun_callback)
 	_diagnostics_source = source
 	if source != null and source.has_signal("gm_toggle_changed"):
 		var callback := Callable(self, "_on_runtime_gm_toggle_changed")
 		if not source.is_connected("gm_toggle_changed", callback):
 			source.connect("gm_toggle_changed", callback)
+	if source != null and source.has_signal("gm_tod_preview_changed"):
+		var sun_callback := Callable(self, "_on_gm_tod_preview_changed")
+		if not source.is_connected("gm_tod_preview_changed", sun_callback):
+			source.connect("gm_tod_preview_changed", sun_callback)
 	if _gm_console != null:
 		_gm_console.set_main(source)
 	if _perf_hud != null:
@@ -328,6 +339,108 @@ func set_diagnostics_source(source: Node) -> void:
 
 func set_colonization_route_layer(layer: ColonizationRouteLayer) -> void:
 	_colonization_route = layer
+
+
+func bind_gm_sun_camera(camera: MapCamera) -> void:
+	if _gm_sun_camera != null and _gm_sun_camera.view_changed.is_connected(_on_gm_sun_camera_moved):
+		_gm_sun_camera.view_changed.disconnect(_on_gm_sun_camera_moved)
+	_gm_sun_camera = camera
+	if _gm_sun_camera != null and not _gm_sun_camera.view_changed.is_connected(_on_gm_sun_camera_moved):
+		_gm_sun_camera.view_changed.connect(_on_gm_sun_camera_moved)
+
+
+func _on_gm_sun_camera_moved(_world_rect: Rect2, _center: Vector2, _zoom_value: float) -> void:
+	_position_gm_sun_handle()
+
+
+func _ensure_gm_sun_handle() -> void:
+	if _gm_sun_handle != null and is_instance_valid(_gm_sun_handle):
+		return
+	_gm_sun_handle = Button.new()
+	_gm_sun_handle.name = "GMTODSunHandle"
+	_gm_sun_handle.text = "☀"
+	_gm_sun_handle.tooltip_text = "拖动太阳位置"
+	_gm_sun_handle.custom_minimum_size = Vector2(38.0, 38.0)
+	_gm_sun_handle.size = Vector2(38.0, 38.0)
+	_gm_sun_handle.focus_mode = Control.FOCUS_NONE
+	_gm_sun_handle.mouse_filter = Control.MOUSE_FILTER_STOP
+	_gm_sun_handle.visible = false
+	_gm_sun_handle.z_index = 20
+	_gm_sun_handle.gui_input.connect(_on_gm_sun_handle_input)
+	add_child(_gm_sun_handle)
+
+
+func _on_gm_tod_preview_changed(_active: bool) -> void:
+	_sync_gm_sun_handle()
+
+
+func _sync_gm_sun_handle() -> void:
+	var preview := false
+	if _diagnostics_source != null and _diagnostics_source.has_method("get_gm_tod_sun_preview"):
+		var state: Variant = _diagnostics_source.call("get_gm_tod_sun_preview")
+		if state is Dictionary:
+			preview = bool(state.get("preview", false))
+	_ensure_gm_sun_handle()
+	_gm_sun_handle.visible = preview
+	if _gm_sun_handle.visible and not _gm_sun_dragging:
+		_position_gm_sun_handle()
+
+
+func _position_gm_sun_handle() -> void:
+	if _gm_sun_handle == null or not _gm_sun_handle.visible:
+		return
+	if _diagnostics_source == null or not _diagnostics_source.has_method("gm_tod_sun_screen_position"):
+		return
+	var screen: Vector2 = _diagnostics_source.call("gm_tod_sun_screen_position")
+	if not is_finite(screen.x) or not is_finite(screen.y):
+		return
+	_gm_sun_handle.position = screen - _gm_sun_handle.size * 0.5
+
+
+func _on_gm_sun_handle_input(event: InputEvent) -> void:
+	if _diagnostics_source == null or not _diagnostics_source.has_method("set_gm_tod_sun_preview"):
+		return
+	if event is InputEventMouseButton:
+		var button := event as InputEventMouseButton
+		if button.button_index != MOUSE_BUTTON_LEFT:
+			return
+		_gm_sun_dragging = button.pressed
+		if button.pressed:
+			_apply_gm_sun_drag(get_viewport().get_mouse_position())
+		else:
+			_sync_gm_sun_handle()
+		_gm_sun_handle.accept_event()
+	elif event is InputEventMouseMotion and _gm_sun_dragging:
+		_apply_gm_sun_drag(get_viewport().get_mouse_position())
+		_gm_sun_handle.accept_event()
+	elif event is InputEventScreenTouch:
+		var touch := event as InputEventScreenTouch
+		_gm_sun_dragging = touch.pressed
+		if touch.pressed:
+			_apply_gm_sun_drag(touch.position)
+		else:
+			_sync_gm_sun_handle()
+		_gm_sun_handle.accept_event()
+	elif event is InputEventScreenDrag and _gm_sun_dragging:
+		_apply_gm_sun_drag((event as InputEventScreenDrag).position)
+		_gm_sun_handle.accept_event()
+
+
+func _apply_gm_sun_drag(screen_pos: Vector2) -> void:
+	var height := 1.0
+	var uv := Vector2(0.25, 0.5)
+	if _diagnostics_source.has_method("get_gm_tod_sun_preview"):
+		var state: Variant = _diagnostics_source.call("get_gm_tod_sun_preview")
+		if state is Dictionary:
+			height = float(state.get("height_scale", 1.0))
+			var current: Variant = state.get("uv", uv)
+			if current is Vector2:
+				uv = current
+	if _diagnostics_source.has_method("gm_tod_screen_to_sun_uv"):
+		uv = _diagnostics_source.call("gm_tod_screen_to_sun_uv", screen_pos)
+	_diagnostics_source.call("set_gm_tod_sun_preview", true, uv, height)
+	if _gm_sun_handle != null:
+		_gm_sun_handle.position = screen_pos - _gm_sun_handle.size * 0.5
 
 
 func toggle_gm_panel() -> void:
@@ -1088,6 +1201,7 @@ func _bind_ui() -> void:
 		_gm_console.set_gm_local_toggle_provider(
 			Callable(self, "_get_local_gm_toggle_state"),
 			Callable(self, "_set_local_gm_toggle"))
+		_gm_console.visibility_changed.connect(_sync_gm_sun_handle)
 		_layout_gm_panel()
 
 	_perf_hud = get_node("UIRoot/HUDLayer/PerfMiniHUD") as PerfMiniHUD

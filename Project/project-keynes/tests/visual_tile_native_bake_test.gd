@@ -51,6 +51,9 @@ func _init() -> void:
 	if not _test_static_relief_payload(first):
 		quit(1)
 		return
+	if not _test_procedural_detail(ext):
+		quit(1)
+		return
 	var ss_knobs: Dictionary = knobs.duplicate(true)
 	ss_knobs["relief_supersample"] = 2
 	var ss: Dictionary = ext.run_bake_visual_tile_layer_pass(ss_knobs)
@@ -272,6 +275,36 @@ func _test_canal_height_alpha_and_partial_payload(ext: Object) -> bool:
 	if canal_pixels <= 0 or carved_pixels <= 0:
 		push_error("visual_tile_native_bake_test: canal SDF/carve absent pixels=%d carved=%d" % [
 			canal_pixels, carved_pixels])
+		return false
+	return true
+
+
+# 基线程序高度存在时，tile 高度 = 基线 + (tile 程序高度 − 基线程序高度)；gain=0 等同未提供。
+func _test_procedural_detail(ext: Object) -> bool:
+	var plain_knobs := _make_knobs()
+	var detail_knobs: Dictionary = plain_knobs.duplicate(true)
+	detail_knobs["baseline_procedural_height_buffer"] = plain_knobs["baseline_height_buffer"]
+	var off_knobs: Dictionary = detail_knobs.duplicate(true)
+	off_knobs["procedural_detail_gain"] = 0.0
+	var plain: Dictionary = ext.run_bake_visual_tile_layer_pass(plain_knobs)
+	var detail: Dictionary = ext.run_bake_visual_tile_layer_pass(detail_knobs)
+	var off: Dictionary = ext.run_bake_visual_tile_layer_pass(off_knobs)
+	if bool(plain.get("fallback", true)) or bool(detail.get("fallback", true)) \
+			or bool(off.get("fallback", true)):
+		push_error("visual_tile_native_bake_test: procedural detail bake fallback")
+		return false
+	var plain_height: PackedByteArray = plain.get("height", PackedByteArray())
+	if PackedByteArray(off.get("height", PackedByteArray())) != plain_height:
+		push_error("visual_tile_native_bake_test: procedural_detail_gain=0 changed height")
+		return false
+	var detail_height: PackedByteArray = detail.get("height", PackedByteArray())
+	var changed := 0
+	for pixel in range(int(plain_height.size() / 4)):
+		if plain_height[pixel * 4] != detail_height[pixel * 4] \
+				or plain_height[pixel * 4 + 1] != detail_height[pixel * 4 + 1]:
+			changed += 1
+	if changed == 0:
+		push_error("visual_tile_native_bake_test: procedural detail did not reach tile height")
 		return false
 	return true
 

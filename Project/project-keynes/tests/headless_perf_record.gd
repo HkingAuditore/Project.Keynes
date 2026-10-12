@@ -10,6 +10,8 @@ extends SceneTree
 # same perf_record_YYYYMMDD_HHMMSS.csv schema as the GM performance panel.
 
 const PerfRecorderScript = preload("res://scripts/ui/perf_recorder.gd")
+const CountryAiCsvRecorderScript = preload("res://scripts/country/country_ai_csv_recorder.gd")
+const CountryAiCatalogScript = preload("res://scripts/country/country_ai_catalog.gd")
 
 const DEFAULT_DAYS := 50
 const DEFAULT_WARMUP_DAYS := 5
@@ -87,6 +89,13 @@ func _run() -> int:
 	var use_saved_setup := str(args.get("use_saved_setup", "false")).to_lower() in [
 		"1", "true", "yes", "on",
 	]
+	# Foreign-country AI A/B (OFF/PROBE/ACTIVE); empty keeps the catalog default.
+	var country_ai_mode := str(args.get("country_ai", "")).to_upper()
+	if country_ai_mode in ["OFF", "PROBE", "ACTIVE"]:
+		OS.set_environment(CountryAiCatalogScript.MODE_ENV, country_ai_mode)
+	var country_ai_difficulty := str(args.get("country_ai_difficulty", "")).to_lower()
+	if country_ai_difficulty in ["easy", "normal", "hard"]:
+		OS.set_environment(CountryAiCatalogScript.DIFFICULTY_ENV, country_ai_difficulty)
 
 	if days <= 0:
 		push_error("[headless-perf] days must be positive")
@@ -313,6 +322,19 @@ func _run() -> int:
 	# Production throughput uses compact snapshots. Full diagnostics are an
 	# explicit separate measurement, not hidden inside every measured day.
 	recorder.call("start", detail_mode, 1)
+	var country_ai = generator.get_country_ai_facade() \
+		if generator.has_method("get_country_ai_facade") else null
+	var country_ai_recorder: RefCounted = null
+	if country_ai != null and country_ai.is_configured():
+		country_ai_recorder = CountryAiCsvRecorderScript.new()
+		var ai_dir := output_dir if not output_dir.is_empty() \
+			else ProjectSettings.globalize_path("res://../../tmp").simplify_path()
+		var ai_started: Dictionary = country_ai_recorder.call("start", country_ai,
+			ai_dir.path_join("country_ai_record_%s_%s.csv" % [
+				Time.get_datetime_string_from_system().replace(":", "").replace("-", ""), label]))
+		if not bool(ai_started.get("ok", false)):
+			push_warning("[headless-perf] country_ai_record disabled: %s" % str(ai_started))
+			country_ai_recorder = null
 
 	var runtime_report_start := _runtime_report_snapshot(generator)
 	if host.runtime_climate_authority_enabled:
@@ -476,6 +498,8 @@ func _run() -> int:
 				ledger_failures += 1
 		if generator != null and generator.has_method("get_effect_report"):
 			effect_report = generator.get_effect_report()
+		if country_ai_recorder != null and day % 30 == 0:
+			country_ai_recorder.call("poll")
 		if fatal:
 			push_error("[headless-perf] fatal economy report at day %d reason=%s stage=%s" % [
 				day,
@@ -530,6 +554,8 @@ func _run() -> int:
 	var output_path := String(recorder.call("stop_and_export"))
 	var country_perf_path := _write_country_perf_samples(
 		output_dir, country_perf_samples)
+	if country_ai_recorder != null:
+		_print_country_ai_summary(country_ai, country_ai_recorder.call("finish"))
 	var run_ms := float(Time.get_ticks_usec() - run_started) / 1000.0
 	var rows := _csv_data_row_count(output_path)
 	var output_ok := output_path != "" and FileAccess.file_exists(output_path)
@@ -1096,3 +1122,33 @@ func _load_saved_world_setup() -> Dictionary:
 	if str(setup.get("source", "")) != "world_setup":
 		setup["source"] = "world_setup"
 	return setup
+
+
+func _print_country_ai_summary(country_ai, finished: Dictionary) -> void:
+	var report: Dictionary = country_ai.report()
+	print("[headless-perf/country-ai] mode=%s armed=%s controlled=%d plans=%d countries_thought=%d commands_emitted=%d commands_rejected=%d retries=%d colonization_intents=%d plan_ms_max=%.3f plan_ms_total=%.1f state_hash=%d csv_rows=%d path=%s" % [
+		str(report.get("mode", "?")), str(report.get("armed", false)),
+		int(report.get("controlled", 0)), int(report.get("plans", 0)),
+		int(report.get("countries_thought", 0)), int(report.get("commands_emitted", 0)),
+		int(report.get("commands_rejected", 0)), int(report.get("retries", 0)),
+		int(report.get("colonization_intents", 0)), float(report.get("plan_ms_max", 0.0)),
+		float(report.get("plan_ms_total", 0.0)), int(report.get("state_hash", 0)),
+		int(finished.get("rows", 0)), str(finished.get("path", "")),
+	])
+	var last_by_handle: Dictionary = finished.get("last_by_handle", {})
+	var handles := last_by_handle.keys()
+	handles.sort()
+	for handle in handles:
+		var row: Dictionary = last_by_handle[handle]
+		print("[headless-perf/country-ai/country] handle=%d day=%d personality=%s agenda=%s cash=%d reserve_days=%d population=%d territory=%d milestones=%d goal=%d gap=%d queued=%d budget=%d tax=%d/%d/%d expeditions=%d families=%d colonize=%d/%d emitted=%d rejected=%d" % [
+			int(handle), int(row.get("day", -1)), str(row.get("personality", "")),
+			str(row.get("agenda", "")), int(row.get("cash", 0)), int(row.get("reserve_days", 0)),
+			int(row.get("population", 0)), int(row.get("territory", 0)),
+			int(row.get("completed_milestones", 0)), int(row.get("goal_milestone", -1)),
+			int(row.get("milestone_gap", 0)), int(row.get("queued_techs", 0)),
+			int(row.get("research_budget", 0)), int(row.get("tax_income_bp", 0)),
+			int(row.get("tax_consumption_bp", 0)), int(row.get("tax_business_bp", 0)),
+			int(row.get("expeditions", 0)), int(row.get("families", 0)),
+			int(row.get("colonize_started", 0)), int(row.get("colonize_failures", 0)),
+			int(row.get("commands_emitted", 0)), int(row.get("commands_rejected", 0)),
+		])

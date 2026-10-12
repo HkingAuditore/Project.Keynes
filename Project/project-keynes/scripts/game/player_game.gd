@@ -94,6 +94,7 @@ func _configure_runtime() -> void:
 	_apply_stage_c_debug_metadata()
 	_runtime_host.configure(_renderer, _camera, _world_clock, _map_overlay)
 	_ui_manager.set_diagnostics_source(_runtime_host)
+	_ui_manager.bind_gm_sun_camera(_camera)
 	_player_controller.configure(_camera, _highlight, _runtime_host, _world_clock, _ui_manager)
 	_ui_manager.set_colonization_route_layer(_colonization_route)
 	var save: Node = _game_save()

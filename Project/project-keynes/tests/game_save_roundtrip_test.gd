@@ -149,9 +149,15 @@ func _run() -> void:
 		# 前进了一次则身份/领地/科技不变，国库只可能因收税而增加。
 		var saved_generation := int(expected_capital.get("generation", 0))
 		var loaded_generation := int(loaded_capital.get("generation", 0))
+		# generation 是全局计数：外国 Country AI 的研究推进与国库划拨同一天内
+		# 也会各自 +1，AI 开着时只能断言"没有回退"。
+		var country_ai = loaded_generator.get_country_ai_facade()
+		var ai_mutates_foreign: bool = country_ai != null and country_ai.is_configured() \
+			and String(country_ai.report().get("mode", "OFF")) == "ACTIVE"
 		_expect("loaded country starts from the saved generation (%d -> %d)" % [
 			saved_generation, loaded_generation],
-			loaded_generation == saved_generation or loaded_generation == saved_generation + 1)
+			loaded_generation == saved_generation or loaded_generation == saved_generation + 1
+			or (ai_mutates_foreign and loaded_generation > saved_generation))
 		for key in ["country_handle", "technology_count", "territory_count",
 				"nonzero_good_count"]:
 			_expect("capital country %s survives save/load (%s -> %s)" % [

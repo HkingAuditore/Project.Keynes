@@ -73,6 +73,20 @@ PKEC v20 不保存全局国库与逐地块科技，header 记录对应 PKCN sche
 恢复顺序必须是 PKCN 后 PKEC；顺序或交叉 hash 不一致返回
 `economy_country_restore_order_or_hash_mismatch`。
 
+## Country AI stage 与 PKAI v1
+
+外国 AI 不是独立的 SUS system，它挂在 Country 日内：
+
+- Worker 权威下，`execute_country_worker_stage` 在 `plan_day(D)` 之前，从 D-1 已提交的状态
+  规划 D 的命令（`producer = COUNTRY_AI_PRODUCER_ID`），Country `commit_day` 成功后再提交 AI
+  记忆。如果 plan 因 AI 命令失败，会剔除所有 AI 命令后重试一次，玩家命令不受影响。
+- 非 worker 权威时，`run_country_slice` 用同一内核走同步提交。同步路径在 worker 接管前留下的
+  AI 包会被 worker 跳过，不会重放。
+- `pkai` 排在 `pkfg` 之后、`journal` 之前恢复。AI 目录 hash 不一致返回
+  `catalog_hash_mismatch`。
+
+细节见 [Country AI 运行时](./country-ai-runtime.md)。
+
 ## PKFG v1（视野）
 
 PKFG 不属于国家权威，但恢复顺序依赖它：视野解算以玩家领土为源，所以 `pkfg` 必须

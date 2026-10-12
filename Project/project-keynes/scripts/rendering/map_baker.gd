@@ -538,6 +538,9 @@ var _pending_wind_buf: PackedByteArray = PackedByteArray()
 var _world_ext = null
 var _visual_tile_generation_id: int = 0
 var _visual_tile_base_knobs: Dictionary = {}
+# 全局基线的刻谷/侵蚀前程序高度（hm_size）。visual tile 用它把 1024 基线丢掉的高频
+# 程序地形按 tile 分辨率补回；为空时 tile 退回纯基线高度。
+var _baseline_procedural_height := PackedFloat32Array()
 var _visual_tile_refresh_layers: Dictionary = {}
 var _visual_tile_refresh_running: bool = false
 var _last_bake_map: MapData = null
@@ -998,6 +1001,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# 返回 fallback 时回退到下方旧 per-pass 编排（terrain-index native / GDScript ground-truth）。
 	var t := Time.get_ticks_msec()
 	var pix_count := world.hm_size.x * world.hm_size.y
+	_baseline_procedural_height = PackedFloat32Array()
 	var fused := _bake_geometry_fields_native(map, hex_size, world, seed_val)
 	if fused:
 		print("  geometry fields (fused C++): %dms" % (Time.get_ticks_msec() - t))
@@ -1324,6 +1328,7 @@ func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
 		"baseline_size_x": world.world_bounds.size.x,
 		"baseline_size_y": world.world_bounds.size.y,
 		"baseline_height_buffer": world.height_buffer,
+		"baseline_procedural_height_buffer": _baseline_procedural_height,
 		"baseline_flow_buffer": world.flow_buffer,
 		"baseline_water_depth_buffer": world.water_depth_buffer,
 		"algorithm_halo_px": 8,
@@ -1333,6 +1338,8 @@ func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
 			"project_keynes/rendering/map_tiles/residual_amp", 0.01)),
 		"residual_filter_hex": float(ProjectSettings.get_setting(
 			"project_keynes/rendering/map_tiles/residual_filter_hex", 0.06)),
+		"procedural_detail_gain": float(ProjectSettings.get_setting(
+			"project_keynes/rendering/map_tiles/procedural_detail_gain", 1.0)),
 		"river_stroke_hex_factor": RIVER_STROKE_HEX_FACTOR,
 		"sdf_max_dist_px": SDF_MAX_DIST_PX,
 		"shore_carve_amp": SHORE_CARVE_AMP,
@@ -4245,6 +4252,8 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 	# [water-depth-tex] 海/湖统一水深 R8（空 = C++ 未产出 → encode 时退化为空 tex，shader 回退旧路径）。
 	var wd_buf: PackedByteArray = rep.get("water_depth_buffer", PackedByteArray())
 	world.water_depth_buffer = wd_buf if wd_buf.size() == pix_count else PackedByteArray()
+	var proc_h: PackedFloat32Array = rep.get("procedural_height_buffer", PackedFloat32Array())
+	_baseline_procedural_height = proc_h if proc_h.size() == pix_count else PackedFloat32Array()
 
 	print("    [fused] terrain=%.1fms valley=%.1fms erosion=%.1fms(ok=%s) river=%.1fms(ok=%s) latitude=%.1fms coast_sdf=%.1fms(ok=%s)" % [
 		float(rep.get("terrain_ms", -1.0)), float(rep.get("valley_ms", -1.0)),

@@ -1,0 +1,33 @@
+{
+  "description": "Country AI catalog search space for cmaes_tune.py. Paths follow tools/country_ai_tune/apply_params.gd. Bounds are hard; the optimizer works in the normalized [0,1] box.",
+  "params": [
+    {"path": "agenda_min_days", "min": 30, "max": 360},
+    {"path": "agenda_inertia_bp", "min": 0, "max": 4000},
+    {"path": "research_budget_horizon_days", "min": 90, "max": 720},
+    {"path": "research_weight_threshold_bp", "min": 500, "max": 4000},
+    {"path": "research_budget_change_bp", "min": 500, "max": 5000},
+    {"path": "tax_step_bp", "min": 50, "max": 300},
+    {"path": "tax_deadband", "min": 0.01, "max": 0.15},
+    {"path": "satisfaction_floor", "min": 0.3, "max": 0.7},
+    {"path": "reserve_target_days", "min": 90, "max": 720},
+    {"path": "colonize_population_share_bp", "min": 1000, "max": 5000},
+    {"path": "colonize_min_population", "min": 3, "max": 12},
+    {"path": "colonize_target_ring", "min": 1, "max": 4},
+    {"path": "colonize_failure_cooldown_days", "min": 30, "max": 360},
+    {"path": "colonize_min_reserve_days", "min": 30, "max": 360},
+    {"path": "agendas.develop.research_share_bp", "min": 500, "max": 7000},
+    {"path": "agendas.expand.research_share_bp", "min": 500, "max": 7000},
+    {"path": "agendas.accumulate.research_share_bp", "min": 500, "max": 7000},
+    {"path": "agendas.era_push.research_share_bp", "min": 500, "max": 7000},
+    {"path": "agendas.stabilize.research_share_bp", "min": 500, "max": 7000},
+    {"path": "agendas.accumulate.tax_bias_bp", "min": 0, "max": 4000},
+    {"path": "agendas.stabilize.tax_bias_bp", "min": -4000, "max": 0},
+    {"path": "agendas.expand.considerations.0.x1", "min": 4, "max": 24}
+  ],
+  "objective": {
+    "weights": {"survival": 0.35, "development": 0.30, "balance": 0.15, "diversity": 0.15, "rejection": 0.05},
+    "target_milestones": 2,
+    "target_territory_growth": 4,
+    "failed_run_score": -1.0
+  }
+}

@@ -256,8 +256,12 @@ continuation 在同一 advance 内：`finish_worker_country_asset(request_id)` �
 定向 flush）都不得提前提交其 `COMPLETED` 终态；epoch 打开期间
 `service_country_economy_asset_peer` 也不 journal 这类请求，留待 epoch 外服务。否则市场扣货
 或国库扣款落在科研采购所在的 epoch 窗口内、商人入账/远征装货落在窗口外，会打出
-`money_conservation_failed` / `goods_conservation_failed`。远征取消时
-`release_country_economy_asset_settlement` 交还通用 flush。只交物资不付现金的
+`money_conservation_failed` / `goods_conservation_failed`。远征取消时，若第 1/5 阶段请求仍在途，
+续接转入 `_family_expedition_procurement_orphans` 并保持推迟；
+`settle_family_expedition_procurement_orphans`（`process_due_family_expeditions` 开头调用）
+等到终态后定向结算。采购腿补上商人入账，货留在国库；转移腿把货退回来源市场。直接
+`release_country_economy_asset_settlement` 交还通用 flush 会丢掉这条对侧腿。没有在途请求时才
+`release`。只交物资不付现金的
 `TREASURY_SPEND` / `GOOD_TO_MARKET` / `GOOD_FROM_MARKET`（`requested_cash == 0`）的
 `committed_cash` 必须为 0，Country worker 提交扣款不得超过 prepare 的 `reserved_cash`；
 旧存档 journal 中“数量当现金”的记录读档时归零。

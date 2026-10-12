@@ -1,0 +1,66 @@
+{
+	"captured_at": "2026-10-12T22:20:35",
+	"economy": {
+		"country_research_procurement_continuation_phase": 0,
+		"country_research_procurement_last_error": "",
+		"current_day": 177,
+		"epoch_active": false,
+		"epoch_begin_pending_day": -1,
+		"epoch_begin_post_fiscal_pending": false,
+		"epoch_id": 177,
+		"executed_stage": "fiscal_settlement",
+		"executed_substage": "verify",
+		"fatal": true,
+		"fatal_context": {
+			"amount": 0,
+			"command_cursor": 0,
+			"command_opcode": 0,
+			"country_sync_writes_forbidden": true,
+			"country_worker_authoritative": true,
+			"d7_operation_gate_mask": 1022,
+			"day": 177,
+			"epoch_id": 177,
+			"executed_stage": "fiscal_settlement",
+			"executed_substage": "verify",
+			"reason": "money_conservation_failed",
+			"stage": "aggregate_publish",
+			"structural_cursor": 0,
+			"subject_handle": 0,
+			"target_handle": 0,
+			"valid": true
+		},
+		"fatal_reason": "money_conservation_failed",
+		"fiscal_reservation_continuation_active": false,
+		"fiscal_reservation_continuation_phase": 2,
+		"fiscal_reservation_last_error": "",
+		"last_completed_sample_day": 176,
+		"newest_state_day": 176,
+		"sample_day": 177,
+		"stage": "fatal"
+	},
+	"epoch_active": false,
+	"files": {
+		"country.pkcn": {
+			"bytes": 111764,
+			"native_generation": 1,
+			"native_schema_version": 13,
+			"native_state_hash": 3999469079299163108,
+			"ok": true,
+			"path": "D:/Godot/ProjectKeynes/Project.Keynes/tmp/runtime_snapshots_economy_fatal_20261012_222035/country.pkcn",
+			"reason": ""
+		},
+		"economy.pkec": {
+			"bytes": 9676338,
+			"native_generation": 0,
+			"native_schema_version": 55,
+			"native_state_hash": 0,
+			"ok": true,
+			"path": "D:/Godot/ProjectKeynes/Project.Keynes/tmp/runtime_snapshots_economy_fatal_20261012_222035/economy.pkec",
+			"reason": ""
+		}
+	},
+	"forensics_only": true,
+	"reason": "money_conservation_failed",
+	"restore_eligible": false,
+	"snapshot_boundary": "committed_boundary"
+}

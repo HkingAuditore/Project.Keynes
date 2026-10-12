@@ -155,6 +155,7 @@ const ClimateProfileScript = preload("res://scripts/data/climate_profile.gd")
 const DetailScatterChangeSetScript = preload("res://scripts/data/detail_scatter_change_set.gd")
 const EconomyFacadeScript = preload("res://scripts/economy/economy_facade.gd")
 const CountryFacadeScript = preload("res://scripts/country/country_facade.gd")
+const CountryAiFacadeScript = preload("res://scripts/country/country_ai_facade.gd")
 const ModifierFacadeScript = preload("res://scripts/modifier/modifier_facade.gd")
 const TriggerFacadeScript = preload("res://scripts/trigger/trigger_facade.gd")
 const EffectFacadeScript = preload("res://scripts/effect/effect_facade.gd")
@@ -1125,6 +1126,7 @@ var _bio_observation_country_handle: int = 0
 var _economy_facade = null
 var _economy_daily_job = null
 var _country_facade = null
+var _country_ai_facade = null
 var _country_daily_job = null
 var _modifier_facade = null
 var _modifier_daily_job = null
@@ -1628,6 +1630,9 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 	_economy_facade = null
 	_economy_daily_job = null
 	_country_facade = null
+	_country_ai_facade = null
+	if _data_core_world_ext != null and _data_core_world_ext.has_method("set_country_ai_mode"):
+		_data_core_world_ext.set_country_ai_mode("OFF")
 	_country_daily_job = null
 	_modifier_facade = null
 	_modifier_daily_job = null
@@ -1721,6 +1726,8 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		else:
 			push_error("[ideology] configure failed: %s" % String(
 				ideology_configured.get("reason", "unknown")))
+	if not _gameplay_start_context.is_empty():
+		_configure_country_ai(map, seed_value, _gameplay_player_country_handles())
 	# Production bootstrap remains empty. The explicit test fixture is a
 	# generation-time cold path and never becomes a historical population source.
 	var population_packet: Dictionary = {}
@@ -1925,6 +1932,38 @@ func get_economy_facade():
 
 func get_country_facade():
 	return _country_facade
+
+
+func get_country_ai_facade():
+	return _country_ai_facade
+
+
+func _configure_country_ai(map, seed_value: int, player_handles: PackedInt64Array) -> void:
+	_country_ai_facade = null
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("configure_country_ai"):
+		return
+	var facade := CountryAiFacadeScript.new()
+	var configured: Dictionary = facade.configure(_data_core_world_ext, seed_value, map, player_handles)
+	if not bool(configured.get("ok", false)):
+		push_error("[country_ai] configure failed: %s" % String(configured.get("reason", "unknown")))
+		_data_core_world_ext.set_country_ai_mode("OFF")
+		return
+	_country_ai_facade = facade
+
+
+func _gameplay_player_country_handles() -> PackedInt64Array:
+	var handles := PackedInt64Array()
+	if _country_facade == null:
+		return handles
+	for start_value in _gameplay_start_context.get("country_starts", []):
+		var start: Dictionary = start_value
+		if not bool(start.get("is_player", false)):
+			continue
+		var handle := int(_country_facade.cell_summary(int(start.get("cell", -1))).get(
+			"country_handle", 0))
+		if handle != 0:
+			handles.append(handle)
+	return handles
 
 
 func get_modifier_facade():
@@ -2799,6 +2838,9 @@ func prepare_economy_save_restore_runtime() -> Dictionary:
 			if not bool(ideology_configured.get("ok", false)):
 				return ideology_configured
 			_ideology_facade = ideology_facade
+		# Player handles arrive with PKSV pkai (or the legacy fallback); until
+		# then the native AI stays unarmed.
+		_configure_country_ai(_sus_map, _save_restore_seed, PackedInt64Array())
 		print("[save/restore] PKCN restored; economy configured and awaiting PKEC")
 	return configured
 

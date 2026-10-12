@@ -7,7 +7,7 @@ const REQUIRED_SECTIONS := [
 	"new_game_config", "world_clock", "dynamic_world", "environment",
 	"simulation_runtime",
 	"pkcm", "pkcn", "ecp2", "pkgp", "pkfg", "journal",
-	"player_context", "player_view", "preview", "pktr", "pkef", "pkid",
+	"player_context", "player_view", "preview", "pktr", "pkef", "pkid", "pkai",
 ]
 const SaveRepositoryScript = preload("res://scripts/game/save_repository.gd")
 const RuntimeStateProviderScript = preload("res://scripts/game/runtime_state_provider.gd")
@@ -119,7 +119,7 @@ func prepare_load(slot_id: String) -> Dictionary:
 	var bytes_by_id: Dictionary = container.get("section_bytes", {})
 	for required in REQUIRED_SECTIONS:
 		if not bytes_by_id.has(required):
-			if required in ["pkcm", "pkgp", "pktr", "pkef", "pkid"]:
+			if required in ["pkcm", "pkgp", "pktr", "pkef", "pkid", "pkai"]:
 				bytes_by_id[required] = PackedByteArray()
 				continue
 			return _result(false, "save_provider_missing", "存档缺少必需 section：%s" % required)
@@ -149,6 +149,7 @@ func prepare_load(slot_id: String) -> Dictionary:
 	decoded["pktr"] = bytes_by_id.pktr
 	decoded["pkef"] = bytes_by_id.pkef
 	decoded["pkid"] = bytes_by_id.pkid
+	decoded["pkai"] = bytes_by_id.pkai
 	decoded["preview"] = bytes_by_id.preview
 	_pending_load = {
 		"slot_id": slot_id,
@@ -455,6 +456,11 @@ func _register_providers() -> void:
 		# 视野排在 PKCN 之后：恢复时要先有领土才能重解算可见性。
 		_make_provider(&"pkfg", 3, PackedStringArray(["pkfg"]),
 			"_can_vision_provider", "_write_vision_provider", "_restore_vision_provider"),
+		# Country AI memory, player exclusion and Economy-pending colonization
+		# intents. Restores after PKCN/ECP2 so handles and the Economy inbox exist.
+		_make_provider(&"pkai", 1, PackedStringArray(["pkai"]),
+			"_can_country_ai_provider", "_write_country_ai_provider",
+			"_restore_country_ai_provider"),
 		# v4 also persists custom gameplay commits (including canal geography)
 		# with event_id=-1 idempotency evidence. The manifest
 		# must match the payload schema, or list_slots() rejects newly written saves.
@@ -506,7 +512,7 @@ func _manifest_compatible(raw_manifest) -> bool:
 	for provider in _providers:
 		var provider_id := String(provider.provider_id())
 		if not by_id.has(provider_id):
-			if provider_id in ["pkcm", "pkgp", "pkef", "pkid"]:
+			if provider_id in ["pkcm", "pkgp", "pkef", "pkid", "pkai"]:
 				continue
 			return false
 		var entry: Dictionary = by_id[provider_id]
@@ -539,6 +545,8 @@ func _manifest_compatible(raw_manifest) -> bool:
 			# as an empty ideology state. PKID v1 is readable only for fully
 			# inactive ideology state; active v1 lacks the required PKEF binding.
 			schema_compatible = saved_schema in [1, 2]
+		elif provider_id == "pkai":
+			schema_compatible = saved_schema == 1
 		if not schema_compatible:
 			return false
 		var actual := PackedStringArray(entry.get("sections", []))
@@ -794,6 +802,14 @@ func _can_ideology_provider(context: Dictionary) -> Dictionary:
 		"Ideology provider unavailable" if not available else "")
 
 
+func _can_country_ai_provider(context: Dictionary) -> Dictionary:
+	# A world without Country AI still writes an empty pkai section.
+	var generator = context.get("generator")
+	var available: bool = generator != null and generator.has_method("get_country_ai_facade")
+	return _result(available, "ok" if available else "save_provider_missing",
+		"Country AI provider unavailable" if not available else "")
+
+
 func _can_journal_provider(context: Dictionary) -> Dictionary:
 	var event_bus = context.get("event_bus")
 	return _result(event_bus != null, "ok" if event_bus != null else "save_provider_missing",
@@ -869,6 +885,16 @@ func _write_ideology_provider(context: Dictionary) -> Dictionary:
 	if bytes.is_empty():
 		return _result(false, "pkid_save_failed", "Ideology state serialization failed")
 	return {"ok": true, "sections": {"pkid": bytes}}
+
+
+func _write_country_ai_provider(context: Dictionary) -> Dictionary:
+	var facade = context.generator.get_country_ai_facade()
+	if facade == null or not facade.is_configured():
+		return {"ok": true, "sections": {"pkai": PackedByteArray()}}
+	var bytes: PackedByteArray = facade.encode_state()
+	if bytes.is_empty():
+		return _result(false, "pkai_save_failed", "Country AI state serialization failed")
+	return {"ok": true, "sections": {"pkai": bytes}}
 
 
 func _write_modifier_provider(context: Dictionary, domain: int,
@@ -1052,6 +1078,27 @@ func _restore_ideology_provider(sections: Dictionary, context: Dictionary) -> Di
 	var result: Dictionary = ext.clear_ideology_state() if bytes.is_empty() else ext.restore_ideology_state(bytes)
 	return result if bool(result.get("ok", false)) else _result(false,
 		"pkid_restore_failed", String(result.get("reason", "Ideology state restore failed")))
+
+
+func _restore_country_ai_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
+	var facade = context.generator.get_country_ai_facade()
+	if facade == null or not facade.is_configured():
+		return {"ok": true}
+	var bytes := PackedByteArray(sections.get("pkai", PackedByteArray()))
+	if not bytes.is_empty():
+		var restored: Dictionary = facade.restore_state(bytes)
+		return restored if bool(restored.get("ok", false)) else _result(false,
+			"pkai_restore_failed", String(restored.get("reason", "Country AI state restore failed")))
+	# Saves made before Country AI: exclude the player country found at the
+	# saved start cell, then let the AI start fresh for every foreign country.
+	var player_context = sections.get("player_context", {})
+	var start_cell := int(player_context.get("start_cell", -1)) if player_context is Dictionary else -1
+	var country = context.generator.get_country_facade()
+	var handle := int(country.cell_summary(start_cell).get("country_handle", 0)) \
+		if country != null and start_cell >= 0 else 0
+	if handle == 0:
+		return {"ok": true}
+	return facade.set_player_handles(PackedInt64Array([handle]))
 
 
 func _restore_modifier_provider(sections: Dictionary, context: Dictionary,

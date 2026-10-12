@@ -219,6 +219,11 @@ PKEC family policy header，改动会使旧存档 `save_family_policy_profile_mi
   校验 generation/状态后置为 SELECTED，phase 1 立族。
 - **AI/无主地块或 `AUTO` 模式**：按 `(seed, offer_id, cell, milestone)` 确定性选卡，当场立族，不
   留下待决卡组。玩家地块转手后，遗留 OPEN 卡组在下一次评审自动结算。
+- **Country AI 国家地块**：如果该格所属国家有 Country AI 下发的冻结偏好行，phase 1 改用
+  `family_founding_ai_choice` 打分选卡。打分项是建筑的已实现利润率、营收、创始人数和
+  `(seed, "AIFO", offer_id, index)` hash 抖动，按偏好加权。没有偏好行时（无主地块、AI 关闭、
+  非 AI 国家）仍走上面的随机规则。结果完全确定，没有往返交互，也没有模态锁。见
+  [Country AI 运行时](./country-ai-runtime.md)。
 
 立族沿用被选卡的 stable_id、姓氏、核心特性；卡上的随机池效果写入
 `_family_founding_effects`（按 stable_id 排序的侧表），`grant_random_pool_family_effect`

@@ -26,6 +26,14 @@ void NativeEconomyRuntime::MarketResult::reset() {
     cycle_flow_discarded = 0;
     retained_output_consumed = 0;
     retained_output_discarded = 0;
+    supported_output = 0;
+    supported_money = 0;
+    bullion_money = 0;
+    bullion_stock = 0;
+    gold_accepted = 0;
+    gold_money = 0;
+    silver_accepted = 0;
+    silver_money = 0;
     food_access_eq = 0;
     food_access_events = 0;
     food_access_by_cell.clear();

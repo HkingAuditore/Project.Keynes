@@ -74,6 +74,7 @@ public:
     // used when transport admission succeeded but worker decode/preflight
     // rejects the batch before a committed plan exists.
     void remove_pending_commands(const std::vector<uint64_t> &request_ids) noexcept;
+    size_t remove_pending_producer(uint64_t producer_id) noexcept;
     bool plan_day(int64_t day, uint64_t input_generation,
                   RuntimeCountryPodPlan &plan, std::string &error);
     bool commit_day(RuntimeCountryPodPlan &plan,

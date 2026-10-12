@@ -67,7 +67,7 @@ logical = grid * interior
 ```
 
 所有 Tile 等分 `visual_domain`，因此实际 `tile_world_span = visual_domain / grid`；未降级时不
-超过档位目标跨度，设备约束触发密度降级后会相应增大。layer 数同时受 64、
+超过档位目标跨度，设备约束触发密度降级后会相应增大。layer 数同时受 64（Mobile）/ 128（Desktop）、
 `LIMIT_MAX_TEXTURE_ARRAY_LAYERS` 和
 `LIMIT_MAX_TEXTURE_SIZE_2D` 限制。resolver 以 0.90 逐级降低 `texels_per_hex`，直到 layer、
 纹理尺寸、稳态和峰值内存全部满足；无法在最低密度求解时回退 legacy。`budget_mp` 仅作为旧
@@ -77,8 +77,11 @@ logical = grid * interior
 3.46 MP；High 解析为约 `2784x1632`、24 layers、4.54 MP。它们是地图面积和密度的结果，
 不是固定目标值。
 
-默认内存硬上限：Mobile 64/96 MB，Desktop 192/256 MB（稳态/峰值）。稳态按每物理
-texel 18 bytes 估算；compute 临时工作集额外按 12 bytes 估算。可通过以下设置或命令行覆盖：
+默认内存硬上限：Mobile 64/96 MB，Desktop 512/768 MB（稳态/峰值）。稳态按每物理
+texel 35 bytes 加 relief 超采样额外的 `4×(relief_scale²−1)` bytes 估算；compute 临时工作集
+额外按 16 bytes 估算。Desktop 上限 2026-10-12 由 192/256 MB、64 layers 放宽：200x150 在旧上限下
+只能拿到 6.75 texels/hex（100x64 及以下为满额 14），放宽后 150x100 恢复满额 14（稳态约
+352 MB），200x150 为 11.5（稳态约 469 MB），300x200 为 8.3。可通过以下设置或命令行覆盖：
 
 - `project_keynes/rendering/map_tiles/mode`
 - `project_keynes/rendering/map_tiles/texels_per_hex`
@@ -134,8 +137,15 @@ wrap period、海平面及地形参数。输出为八个静态字段的 `PackedB
 O(n_pixels) 循环。每个 layer 返回后立即 `update_layer()` 并让出一帧，staging bundle
 随即释放。
 
-视觉高度为 bicubic 全局侵蚀高度加世界坐标驱动的有界高频 residual。residual 与 tile id
-无关，按 seed 确定，并保持权威海陆侧不变。河流 SDF、海岸 carve、水深和法线在目标
+视觉高度为 bicubic 全局侵蚀高度，加 tile 分辨率程序地形细节，再加世界坐标驱动的有界高频
+residual。程序细节 = tile 自己的 terrain-index 高度 − bicubic(全局刻谷/侵蚀前程序高度)，
+即全局基线（桌面固定 1024 宽）丢掉的高频部分：200x150 地图基线每格约 3 texel，DEM 沟脊
+噪声按奈奎斯特截断后一层都不剩，由 tile 在自身分辨率补回。全局刻谷、侵蚀、河流与海岸下切
+仍只来自基线。程序高度由 `run_bake_geometry_fields_pass` 的 `procedural_height_buffer`
+返回、经 `baseline_procedural_height_buffer` 传入；缺失（旧 per-pass 回退路径）时细节为 0。
+幅度由 `procedural_detail_gain`（ProjectSettings `map_tiles/procedural_detail_gain`，默认
+1.0，0 等同关闭）与 `procedural_detail_max`（默认 ±0.12）控制，水体像素不叠加。
+residual 与 tile id 无关，按 seed 确定，并保持权威海陆侧不变。河流 SDF、海岸 carve、水深和法线在目标
 分辨率重新计算，不从 R8 基线放大。河流/海岸 SDF 截断距离与岸坡带宽以全局基线 texel
 为参考，按 Tile 相对基线的 X/Y 几何平均像素倍率换算；算法 halo 同步覆盖换算后的范围，
 所以提高视觉 MP 不会让河岸、海岸或 carve 带在世界空间变窄。cell 边界距离不是像素距离，

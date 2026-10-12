@@ -479,6 +479,21 @@ public:
     godot::Dictionary end_country_restore();
     void publish_restored_country_territory(godot::Dictionary &out);
 
+    // Country AI (foreign countries only). Plans typed Country commands on the
+    // worker (ACTIVE) or through the synchronous adapter in run_country_slice.
+    godot::Dictionary configure_country_ai(const godot::Dictionary &catalog);
+    godot::Dictionary set_country_ai_mode(const godot::String &mode);
+    godot::Dictionary set_country_ai_excluded_handles(const godot::PackedInt64Array &handles);
+    godot::Dictionary set_country_ai_topology(const godot::PackedInt32Array &neighbors,
+                                              const godot::PackedInt32Array &cell_value_q16);
+    godot::Dictionary get_country_ai_report() const;
+    godot::Dictionary get_country_ai_country_snapshot(int64_t handle) const;
+    godot::Dictionary poll_country_ai_decisions(int64_t after_id, int limit = 128) const;
+    godot::Dictionary drain_country_ai_record_rows(int limit = 4096);
+    godot::PackedByteArray encode_country_ai_state() const;
+    godot::Dictionary restore_country_ai_state(const godot::PackedByteArray &bytes);
+    bool runtime_country_ai_self_test() const;
+
     // Shared data-oriented Modifier runtime. Four domain stores are isolated;
     // this facade is the only GDScript mutation boundary.
     godot::Dictionary configure_modifiers(const godot::Dictionary &catalog,
@@ -3137,6 +3152,16 @@ private:
     void                                     *_economy_csv_recorder   = nullptr;
     int64_t                                   _economy_last_notified_event_id = 0;
     void                                     *_country_runtime        = nullptr;
+    void                                     *_country_ai_runtime     = nullptr;
+    std::vector<std::string>                  _country_ai_personality_ids;
+    int64_t                                   _country_ai_sync_day = -1;
+    std::shared_ptr<RuntimeCountryPodCatalog> _country_ai_catalog_cache;
+    bool country_ai_sync_due(int64_t day) const;
+    void country_ai_sync_plan(int64_t day);
+    void country_ai_sync_finish(int64_t day, bool ok, godot::Dictionary &out);
+    godot::Dictionary submit_country_ai_batch(const godot::Dictionary &packed_batch);
+    void attach_country_ai_to_host();
+    void push_country_ai_family_preferences();
     NativeCountryRuntime *country_query_runtime() const;
     mutable void *_country_query_runtime = nullptr;
     mutable std::shared_ptr<const RuntimeCountryPodSnapshot> _country_query_snapshot;

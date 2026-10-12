@@ -119,7 +119,7 @@ func _run() -> void:
 	_expect(sun_pad != null, "sun position pad is on the toggle page", failures)
 	if sun_pad != null:
 		sun_pad.emit_signal("sun_preview_requested", true, Vector2(0.5, 0.8), 1.25)
-		_expect(runtime.tod_preview_calls == 1, "dragging the sun requests a preview lock", failures)
+		_expect(runtime.tod_preview_calls == 1, "enabling map sun drag requests a preview lock", failures)
 		_expect(bool(runtime.tod_preview.get("preview", false)), "preview lock is active", failures)
 		var locked_uv: Vector2 = runtime.tod_preview.get("uv", Vector2.ZERO)
 		_expect(is_equal_approx(locked_uv.x, 0.5) and is_equal_approx(locked_uv.y, 0.8),

@@ -56,6 +56,7 @@
 
 #include "world_ext_internal.h"
 #include "native_simulation_host.h"
+#include "country_ai_runtime.h"
 
 namespace pk {
 
@@ -73,6 +74,10 @@ DCWorldExt::~DCWorldExt() {
         _runtime_host->request_stop();
         _runtime_host->join_for_destruction();
         _runtime_host.reset();
+    }
+    if (_country_ai_runtime != nullptr) {
+        delete static_cast<CountryAiRuntime *>(_country_ai_runtime);
+        _country_ai_runtime = nullptr;
     }
     if (_ideology_runtime != nullptr) {
         delete static_cast<NativeIdeologyRuntime *>(_ideology_runtime);

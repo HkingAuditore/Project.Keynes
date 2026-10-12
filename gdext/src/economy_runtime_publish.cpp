@@ -672,6 +672,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         publish_social_pressure_facts();
         publish_technology_practice_facts();
         publish_country_development_facts();
+        publish_country_ai_digest();
         commit_food_flow_snapshot();
         _rolling_processed_cells = static_cast<int32_t>(_epoch_settlement_cells.size());
         _rolling_deferred_cells = std::max(

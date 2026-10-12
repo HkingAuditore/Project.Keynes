@@ -1528,6 +1528,9 @@ godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary kn
         return out;
     }
     PackedFloat32Array height_buf = terr.get("height_buffer", PackedFloat32Array());
+    // 刻谷/侵蚀/下切之前的程序高度；visual tile 用 final − procedural 作为低频改造量，
+    // 叠到 tile 分辨率重算的程序高度上（COW：下面 ptrw 不会改到这份）。
+    const PackedFloat32Array procedural_height = height_buf;
 
     // ③ river SDF：读 ext 暂存拓扑（_gen_river_*），trace+CR+warp+stamp+chamfer+normalize。
     //    不依赖高度，提前算好供汇流刻谷把河道当作出口。
@@ -1718,6 +1721,7 @@ godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary kn
 
     // terrain 字段（数据枢纽，原样透传）
     out["height_buffer"] = height_final;  // 已含侵蚀
+    out["procedural_height_buffer"] = procedural_height;
     out["biome_buffer"] = terr.get("biome_buffer", PackedByteArray());
     out["moisture_buffer"] = terr.get("moisture_buffer", PackedFloat32Array());
     out["vegetation_buffer"] = terr.get("vegetation_buffer", PackedByteArray());
@@ -2438,7 +2442,16 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
         return ((a0 * t + a1) * t + a2) * t + p1;
     };
     const float * const BASE_H = baseline_height.ptr();
-    auto sample_base_height = [&](double wx, double wy) -> double {
+    PackedFloat32Array baseline_procedural = knobs.get("baseline_procedural_height_buffer",
+            PackedFloat32Array());
+    const float * const BASE_P = baseline_procedural.size() >= BN ? baseline_procedural.ptr() : nullptr;
+    // 基线 hm 宽度固定（桌面 1024），大地图每格只剩数个 texel，程序地形的 DEM 沟脊被奈奎斯特
+    // 截断。tile 自己的 terrain-index 高度减去同位置的基线程序高度，即基线缺失的高频地形。
+    const double procedural_detail_gain = std::max(0.0, std::min(2.0,
+            double(knobs.get("procedural_detail_gain", 1.0))));
+    const double procedural_detail_max = std::max(0.0, std::min(0.5,
+            double(knobs.get("procedural_detail_max", 0.12))));
+    auto sample_base_bicubic = [&](const float *src, double wx, double wy) -> double {
         wx = wrap_world_x(wx);
         double fx = (wx - base_origin_x) / base_size_x * double(BW) - 0.5;
         double fy = (wy - base_origin_y) / base_size_y * double(BH) - 0.5;
@@ -2452,12 +2465,15 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
             double v[4];
             for (int kx = -1; kx <= 2; ++kx) {
                 const int sx = std::max(0, std::min(BW - 1, ix + kx));
-                v[kx + 1] = double(BASE_H[sy * BW + sx]);
+                v[kx + 1] = double(src[sy * BW + sx]);
             }
             rows[ky + 1] = cubic(v[0], v[1], v[2], v[3], tx);
         }
         return std::max(0.0, std::min(1.0,
                 cubic(rows[0], rows[1], rows[2], rows[3], ty)));
+    };
+    auto sample_base_height = [&](double wx, double wy) -> double {
+        return sample_base_bicubic(BASE_H, wx, wy);
     };
     auto sample_base_scalar = [&](const float *src, double wx, double wy) -> double {
         wx = wrap_world_x(wx);
@@ -2508,6 +2524,11 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
             const double wx = work_origin_x + (double(x) + 0.5) * step_x;
             const double base = sample_base_height(wx, wy);
             const bool water = pk_is_water_terrain(BIOME_W[i]);
+            double procedural_detail = 0.0;
+            if (!water && BASE_P != nullptr && procedural_detail_gain > 0.0) {
+                procedural_detail = std::max(-procedural_detail_max, std::min(procedural_detail_max,
+                        (double(PH[i]) - sample_base_bicubic(BASE_P, wx, wy)) * procedural_detail_gain));
+            }
             double residual = 0.0;
             if (!water && residual_amp > 0.0) {
                 const double n0 = periodic_noise(wx, wy);
@@ -2521,7 +2542,7 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
                 residual = std::max(-residual_amp, std::min(residual_amp,
                         (n0 - navg) * residual_amp * 3.0 * relief_gate));
             }
-            double h = std::max(0.0, std::min(1.0, base + residual));
+            double h = std::max(0.0, std::min(1.0, base + procedural_detail + residual));
             if (water) h = std::min(h, sea_level);
             else h = std::max(h, sea_level);
             HW[i] = float(h);

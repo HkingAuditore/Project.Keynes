@@ -52,7 +52,11 @@ reservation, tax policy snapshots, Modifier-effective rates, subsidy history, or
   consumers subscribe to it; do not add a second notification path.
 - Add taxation only through the dedicated tax/fiscal contract: country owns policy and treasury;
   economy owns taxable events and fiscal escrow. Do not add research growth, diplomacy, war,
-  country AI, deletion, or technology revocation as incidental behavior.
+  deletion, or technology revocation as incidental behavior.
+- Foreign-country AI lives only in the Country AI runtime (`country_ai_*`, PKSV `pkai`) and acts
+  through player-equivalent commands. Do not add AI decisions or AI-only writes to the Country
+  runtime itself; load `project-keynes-country-ai-runtime` and
+  `docs/cpp-dots-runtime/country-ai-runtime.md` instead.
 
 ## The Country POD plan window is not a leak
 

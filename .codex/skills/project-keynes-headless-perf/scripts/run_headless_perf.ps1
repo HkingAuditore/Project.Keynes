@@ -30,6 +30,10 @@ param(
     [string]$WorkerMode = '',
     [ValidateSet('', 'OFF', 'SHADOW', 'ACTIVE')]
     [string]$RuntimeGraphMode = '',
+    [ValidateSet('', 'OFF', 'PROBE', 'ACTIVE')]
+    [string]$CountryAi = '',
+    [ValidateSet('', 'easy', 'normal', 'hard')]
+    [string]$CountryAiDifficulty = '',
     [switch]$SyntheticTestEconomy,
     [switch]$TradeScenario,
     [switch]$UseSavedSetup
@@ -79,6 +83,8 @@ if ($ClosingAuditMode -ne '') {
 }
 if ($WorkerMode -ne '') { $godotArgs += "worker_mode=$WorkerMode" }
 if ($RuntimeGraphMode -ne '') { $godotArgs += "runtime_graph_mode=$RuntimeGraphMode" }
+if ($CountryAi -ne '') { $godotArgs += "country_ai=$CountryAi" }
+if ($CountryAiDifficulty -ne '') { $godotArgs += "country_ai_difficulty=$CountryAiDifficulty" }
 
 # Godot writes warnings to stderr. Under Stop mode a merged pipeline turns the
 # first one into a terminating NativeCommandError and kills the run mid-flight,

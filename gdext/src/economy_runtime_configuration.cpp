@@ -293,6 +293,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
         _worker_command_inbox->commands.clear();
     }
     _next_colonization_receipt_id = 1;
+    import_country_ai_pending({}, {}, 0);
     _next_family_expedition_stable_id = 1;
     _colonization_quote_cache.clear();
     _colonization_quote_index.clear();

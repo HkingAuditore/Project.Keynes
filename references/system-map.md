@@ -56,6 +56,7 @@ sliced Bio 每次固定 2048 cells，`bio_occupancy_day_barrier` 在最终 publi
 - 气候/天气/海洋：读 `Project/project-keynes/scripts/simulation/systems/climate_daily_system.gd`、`Project/project-keynes/scripts/weather/weather_system.gd`、`Project/project-keynes/scripts/weather/field_solver.gd`、`Project/project-keynes/scripts/simulation/sus/jobs/ocean_currents_job.gd`、`docs/cpp-dots-runtime/computation-pipelines.md`。
 - 渲染和视觉：读 `Project/project-keynes/scripts/rendering/map_baker.gd`、`Project/project-keynes/scripts/rendering/hex_renderer.gd`、`Project/project-keynes/scripts/rendering/weather_layer.gd`、`Project/project-keynes/scripts/rendering/shrub_layer.gd`、`Project/project-keynes/shaders/world_map.gdshader`。
 - 视野迷雾与国界：读 `docs/cpp-dots-runtime/vision-fog-and-borders.md`、`Project/project-keynes/scripts/geography/vision_solver.gd`、`Project/project-keynes/scripts/rendering/fog_of_war_layer.gd`、`Project/project-keynes/scripts/rendering/country_border_layer.gd`。
+- 外国 AI（科研/时代、默认税、立族偏好、开拓）：读 `docs/cpp-dots-runtime/country-ai-runtime.md`、`gdext/src/country_ai_core.*`、`gdext/src/country_ai_runtime.*`、`gdext/src/economy_runtime_country_ai.cpp`、`gdext/src/world_ext_country_ai.cpp`、`Project/project-keynes/scripts/country/country_ai_*.gd`、`data/country/default_country_ai.tres`，以及仓库 Skill `project-keynes-country-ai-runtime`。AI 只经 `COUNTRY_AI_PRODUCER_ID` 提交玩家同款命令；开拓意图在经济周期开启时转成普通远征命令；记忆随 PKSV `pkai` 保存。
 - 调试、记录和验收：读 `Project/project-keynes/scripts/ui/debug_console.gd`、`Project/project-keynes/scripts/ui/tile_data_recorder.gd`、`Project/project-keynes/scripts/ui/perf_recorder.gd`、`docs/cpp-dots-runtime/performance-diagnostics-playbook.md`、`Project/project-keynes/tests/*.gd`。
 - 阶层、市场、财政、建筑、就业、投资、资源、显赫家族与重要人物：读 `gdext/src/economy_runtime.{h,cpp}`、`gdext/src/economy_runtime_storage.cpp`、`gdext/src/economy_runtime_math.cpp`、`gdext/src/economy_runtime_fiscal.cpp`、`gdext/src/economy_runtime_building_storage.cpp`、`gdext/src/economy_runtime_building_employment.cpp`、`gdext/src/economy_runtime_building_resources.cpp`、`gdext/src/economy_runtime_building_production.cpp`、`gdext/src/economy_runtime_building_investment.cpp`、`gdext/src/economy_runtime_building_construction.cpp`、`gdext/src/economy_runtime_building_commit.cpp`、`gdext/src/economy_runtime_market.cpp`、`Project/project-keynes/scripts/economy/`、`Project/project-keynes/scripts/simulation/systems/economy_daily_system.gd`、`docs/cpp-dots-runtime/native-economy-runtime.md`、`docs/cpp-dots-runtime/tax-fiscal-runtime.md`、`docs/cpp-dots-runtime/notable-family-runtime.md` 和 `docs/cpp-dots-runtime/notable-person-runtime.md`。拆分依赖矩阵见 `docs/architecture/economy-runtime-split.md`。
 
@@ -472,6 +473,14 @@ DataCore 或 MapData。
   Exploration progress persists as PKSV `pkfg` (after PKCN); the Inspector gates
   tabs by `VisionSolver.fog_state()`. See
   [`vision-fog-and-borders.md`](../docs/cpp-dots-runtime/vision-fog-and-borders.md).
+- Foreign-country AI: `gdext/src/country_ai_{core,runtime}.{h,cpp}` plan inside the
+  Country day (worker: before `plan_day(D)`, commit after `commit_day`; sync:
+  `run_country_slice`). Commands use `COUNTRY_AI_PRODUCER_ID`; Economy reads frozen
+  founding preferences and converts colonization intents into ordinary expedition
+  commands (`economy_runtime_country_ai.cpp`). Catalog
+  `data/country/default_country_ai.tres`, facade `scripts/country/country_ai_facade.gd`,
+  PKSV `pkai` after `pkfg`. Offline tuning: `tools/country_ai_tune/cmaes_tune.py`. See
+  [`country-ai-runtime.md`](../docs/cpp-dots-runtime/country-ai-runtime.md).
 
 ## Economy v18 portfolio investment
 
