@@ -1,8 +1,8 @@
 [gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/components/inspector_panel.gd" id="1_script"]
-[ext_resource type="PackedScene" path="res://scenes/ui/radial_gauge.tscn" id="2_gauge"]
-[ext_resource type="PackedScene" path="res://scenes/ui/category_tabs.tscn" id="3_tabs"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_kpi_card.gd" id="2_kpi"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_chapter_nav.gd" id="3_nav"]
 [ext_resource type="PackedScene" path="res://scenes/ui/object_detail_dialog.tscn" id="4_detail"]
 [ext_resource type="PackedScene" path="res://scenes/ui/construction_picker.tscn" id="5_construction"]
 [ext_resource type="PackedScene" path="res://scenes/ui/family_workspace.tscn" id="6_family"]
@@ -91,32 +91,34 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(424, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 10
+theme_override_constants/separation = 8
 
-[node name="Cap" type="ColorRect" parent="Margin/Split/InspectorRoot"]
-custom_minimum_size = Vector2(0, 2)
+[node name="Header" type="MarginContainer" parent="Margin/Split/InspectorRoot"]
+unique_name_in_owner = true
 layout_mode = 2
 mouse_filter = 2
-color = Color(0.92, 0.72, 0.38, 0.72)
-
-[node name="Header" type="PanelContainer" parent="Margin/Split/InspectorRoot"]
-layout_mode = 2
-theme_type_variation = &"PKArchiveBand"
+theme_override_constants/margin_left = 2
+theme_override_constants/margin_top = 0
+theme_override_constants/margin_right = 0
+theme_override_constants/margin_bottom = 0
 
 [node name="Row" type="HBoxContainer" parent="Margin/Split/InspectorRoot/Header"]
 layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="Accent" type="ColorRect" parent="Margin/Split/InspectorRoot/Header/Row"]
-custom_minimum_size = Vector2(3, 0)
-layout_mode = 2
-mouse_filter = 2
-color = Color(0.78, 0.57, 0.28, 1)
+theme_override_constants/separation = 6
 
 [node name="Titles" type="VBoxContainer" parent="Margin/Split/InspectorRoot/Header/Row"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 1
+theme_override_constants/separation = 0
+
+[node name="KickerLabel" type="Label" parent="Margin/Split/InspectorRoot/Header/Row/Titles"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "地块档案"
+clip_text = true
+text_overrun_behavior = 3
+theme_type_variation = &"PKDossierKicker"
 
 [node name="TitleLabel" type="Label" parent="Margin/Split/InspectorRoot/Header/Row/Titles"]
 unique_name_in_owner = true
@@ -125,17 +127,21 @@ text = "地块档案"
 clip_text = true
 text_overrun_behavior = 3
 theme_type_variation = &"PKTitle"
+theme_override_font_sizes/font_size = 21
 
 [node name="SubtitleLabel" type="Label" parent="Margin/Split/InspectorRoot/Header/Row/Titles"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_type_variation = &"PKMutedLabel"
+clip_text = true
+text_overrun_behavior = 3
+theme_type_variation = &"PKDossierCaption"
 
 [node name="ColonizationButton" type="Button" parent="Margin/Split/InspectorRoot/Header/Row"]
 unique_name_in_owner = true
 visible = false
 custom_minimum_size = Vector2(56, 32)
 layout_mode = 2
+size_flags_vertical = 0
 text = "开拓"
 theme_type_variation = &"PKPrimaryButton"
 
@@ -144,6 +150,7 @@ unique_name_in_owner = true
 visible = false
 custom_minimum_size = Vector2(34, 32)
 layout_mode = 2
+size_flags_vertical = 0
 focus_mode = 0
 theme_type_variation = &"PKIconButton"
 item_count = 1
@@ -154,37 +161,56 @@ popup/item_0/id = 1
 unique_name_in_owner = true
 custom_minimum_size = Vector2(34, 32)
 layout_mode = 2
+size_flags_vertical = 0
 focus_mode = 0
 theme_type_variation = &"PKIconButton"
 
+[node name="Rule" type="ColorRect" parent="Margin/Split/InspectorRoot"]
+custom_minimum_size = Vector2(0, 2)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.48, 0.16, 0.1, 0.7)
+
 [node name="Summary" type="PanelContainer" parent="Margin/Split/InspectorRoot"]
-layout_mode = 2
-theme_type_variation = &"PKArchiveBand"
-
-[node name="Row" type="HBoxContainer" parent="Margin/Split/InspectorRoot/Summary"]
-layout_mode = 2
-theme_override_constants/separation = 10
-
-[node name="ScoreGauge" parent="Margin/Split/InspectorRoot/Summary/Row" instance=ExtResource("2_gauge")]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(104, 112)
 layout_mode = 2
-size_flags_vertical = 4
+theme_type_variation = &"PKDossierBand"
 
-[node name="SummaryGrid" type="GridContainer" parent="Margin/Split/InspectorRoot/Summary/Row"]
+[node name="KpiRow" type="HBoxContainer" parent="Margin/Split/InspectorRoot/Summary"]
 unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Kpi0" type="Control" parent="Margin/Split/InspectorRoot/Summary/KpiRow"]
+custom_minimum_size = Vector2(80, 66)
 layout_mode = 2
 size_flags_horizontal = 3
-columns = 2
-theme_override_constants/h_separation = 6
-theme_override_constants/v_separation = 4
+script = ExtResource("2_kpi")
 
-[node name="Rule" type="HSeparator" parent="Margin/Split/InspectorRoot"]
+[node name="Kpi1" type="Control" parent="Margin/Split/InspectorRoot/Summary/KpiRow"]
+custom_minimum_size = Vector2(80, 66)
 layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("2_kpi")
 
-[node name="CategoryTabs" parent="Margin/Split/InspectorRoot" instance=ExtResource("3_tabs")]
+[node name="Kpi2" type="Control" parent="Margin/Split/InspectorRoot/Summary/KpiRow"]
+custom_minimum_size = Vector2(80, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("2_kpi")
+
+[node name="Kpi3" type="Control" parent="Margin/Split/InspectorRoot/Summary/KpiRow"]
+custom_minimum_size = Vector2(80, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("2_kpi")
+
+[node name="ChapterNav" type="Control" parent="Margin/Split/InspectorRoot"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 38)
 layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_nav")
 
 [node name="ContentShell" type="PanelContainer" parent="Margin/Split/InspectorRoot"]
 layout_mode = 2

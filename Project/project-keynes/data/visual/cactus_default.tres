@@ -34,3 +34,5 @@ patch_cutoff = 0.20
 patch_contrast = 1.90
 micro_gap_threshold = 0.06
 world_noise_acceptance = 1.50
+element_count_min = 1
+element_count_max = 3

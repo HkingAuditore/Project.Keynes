@@ -3,31 +3,31 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="1_icon"]
 
 [node name="ConstructionEntry" type="PanelContainer"]
-theme_type_variation = &"PKInsetPanel"
+theme_type_variation = &"PKDossierNote"
 
 [node name="Row" type="HBoxContainer" parent="."]
 layout_mode = 2
 theme_override_constants/separation = 8
 
 [node name="Icon" parent="Row" instance=ExtResource("1_icon")]
-custom_minimum_size = Vector2(24, 24)
+custom_minimum_size = Vector2(22, 22)
 layout_mode = 2
+size_flags_vertical = 4
 
 [node name="Text" type="VBoxContainer" parent="Row"]
 layout_mode = 2
 size_flags_horizontal = 3
+size_flags_vertical = 4
+theme_override_constants/separation = 0
 
 [node name="Title" type="Label" parent="Row/Text"]
 layout_mode = 2
 text = "修建新建筑"
-theme_type_variation = &"PKSectionTitle"
-
-[node name="Subtitle" type="Label" parent="Row/Text"]
-layout_mode = 2
-text = "浏览可用项目与当前国库报价"
-theme_type_variation = &"PKMutedLabel"
+theme_type_variation = &"PKDossierRowText"
 
 [node name="OpenButton" type="Button" parent="Row"]
-custom_minimum_size = Vector2(92, 34)
+custom_minimum_size = Vector2(84, 30)
 layout_mode = 2
-text = "新建建筑"
+size_flags_vertical = 4
+text = "选择项目"
+theme_type_variation = &"PKPrimaryButton"

@@ -1467,6 +1467,19 @@ fallback `run_resample_visual_horizon_layer_pass` follows the same one-layer byt
 No Tile array is attached to component schema or save data. Full contract:
 [Visual Tile Rendering](./visual-tile-rendering.md).
 
+## Detail scatter form bridge (2026-10)
+
+`encode_detail_scatter` (and its delta / family-cells wrappers) receive the top-down form
+knobs merged from `ShrubLayer._form_knobs()`: `sub_form_enabled`, `crown_diameter_hex`,
+`cluster_density_threshold`, `grove_density_threshold`, `grove_crown_min/max`,
+`edge_single_bias`, `element_count_min/max` and `impostor_quad_half`. Old knob
+dictionaries without them keep single-element behaviour. The returned buffer's
+`custom.a` (`buffer[i*16+15]`) is `sub_form + (count-0.5)/32`, not the colour variant;
+`VegetationFamilyLayer` re-packs it as `style_id*4 + form`. The GDScript fallback
+(`_candidate_form`, `_overlaps_cell_instance`, `_candidate_position`) mirrors the C++
+candidate loop, and `tests/vegetation_form_scatter_test.gd` checks per-instance parity.
+Full contract: [computation pipelines → detail scatter](./computation-pipelines.md).
+
 ## Effect Runtime packed bridge
 
 `EffectCatalog` is a cold Resource compiler. It emits packed metric/definition

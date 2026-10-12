@@ -67,14 +67,12 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 	var tab_spec: Array = model.get("tabs", [])
-	panel._tabs.set_tabs(tab_spec, "geography", false)
-	panel._tabs.set_tabs(tab_spec, "geography", true)
-	panel._tabs.set_tabs(tab_spec, "population", false)
-	if panel._tabs.get_child_count() != tab_spec.size():
-		failures.append("rebuilding inspector tabs left stale buttons in the tree: %d" %
-			panel._tabs.get_child_count())
-	panel._tabs.set_tabs(tab_spec, "geography",
-		panel._inspector_show_tab_labels(tab_spec))
+	panel.set_model_for_selection(model)
+	if panel._chapter_nav.chapters.size() != tab_spec.size() \
+			or panel._chapter_nav.current != "geography" \
+			or not panel._chapter_nav.visible:
+		failures.append("chapter index did not mirror the inspector tabs: %s" %
+			[panel._chapter_nav.chapters])
 	var closed_signals := [0]
 	panel.detail_visibility_changed.connect(func(open: bool) -> void:
 		if not open:
@@ -92,36 +90,26 @@ func _run() -> void:
 		failures.append("closing object detail on cell change skipped the layout signal")
 	if panel._inspector_root.size_flags_horizontal != Control.SIZE_EXPAND_FILL:
 		failures.append("closed object detail did not let the dossier fill the panel")
-	var show_labels := panel._inspector_show_tab_labels(tab_spec)
-	if panel._tabs.get_child_count() != tab_spec.size():
-		panel._tabs.set_tabs(tab_spec, "geography", show_labels)
-		await process_frame
-	for button in panel._tabs._buttons.values():
-		if show_labels and String((button as Button).text).is_empty():
-			failures.append("dossier tab header does not display its short label")
-		if not show_labels and not String((button as Button).text).is_empty():
-			failures.append("crowded dossier tabs still rendered full labels")
-		var icons := (button as Button).find_children("", "IconBadge", true, false)
-		if icons.size() != 1:
-			failures.append("dossier tab is missing its icon")
+	await process_frame
+	if panel._chapter_nav.icon_only:
+		failures.append("five chapter labels no longer fit the 424px dossier column")
+	var kpi_specs: Array = model.get("kpis", [])
+	var shown_kpis := 0
+	for card_value in panel._kpi_cards:
+		var kpi_card := card_value as DossierKpiCard
+		if not kpi_card.visible:
 			continue
-		var button_center: Vector2 = (button as Control).get_global_rect().get_center()
-		var icon_center: Vector2 = (icons[0] as Control).get_global_rect().get_center()
-		if absf(icon_center.y - button_center.y) > 1.0:
-			failures.append("dossier tab icon is not vertically centered")
-		if show_labels and icon_center.x >= button_center.x:
-			failures.append("dossier tab icon is not aligned before its label: button=%s icon=%s" % [
-				(button as Control).get_global_rect(),
-				(icons[0] as Control).get_global_rect()])
-		if not show_labels and absf(icon_center.x - button_center.x) > 4.0:
-			failures.append("icon-only dossier tab is not centered")
-	if panel._summary_grid.columns != 2:
-		failures.append("dossier summary is not using the compact two-column grid")
-	for raw_card in panel._summary_cards.values():
-		var summary_card := raw_card as MetricCard
-		if summary_card != null and summary_card.size.x < 120.0:
-			failures.append("summary cards are too narrow for the compact dossier grid: card=%s grid=%s" % [
-				summary_card.size, panel._summary_grid.size])
+		shown_kpis += 1
+		if kpi_card.size.x < 90.0:
+			failures.append("KPI cell is too narrow to read: %s" % kpi_card.size)
+	if shown_kpis != kpi_specs.size():
+		failures.append("KPI band shows %d cells for %d metrics" % [shown_kpis, kpi_specs.size()])
+	if panel._kicker_label.text != "地块档案 · 区域 12, 8":
+		failures.append("identity band dropped the kicker line")
+	var kpi_signature := String(panel._kpi_values.get("kpi_0", ""))
+	panel.apply_live_patch({"kpis": kpi_specs})
+	if String(panel._kpi_values.get("kpi_0", "")) != kpi_signature:
+		failures.append("unchanged KPI patch restarted the card animation")
 	var overview_count := panel.visible_node_count()
 	var overview_patch := _make_patch("geography")
 	var title_before_partial := panel._title_label.text
@@ -354,17 +342,16 @@ func _run() -> void:
 func _make_model() -> Dictionary:
 	return {
 		"header": {
+			"kicker": "地块档案 · 区域 12, 8",
 			"title": "低地 · 平原",
-			"subtitle": "区域 12-8 · 地块档案 #42",
-			"badges": _badges(),
+			"subtitle": "测试国 · 本国领土 · 临河",
 		},
-		"score": {"id": "habitability", "title": "地块适宜度", "value": 0.72, "caption": "可发展", "accent": UITokens.GOOD},
-		"summary_cards": _summary_cards(0.0),
+		"kpis": _kpis(0.0),
 		"tabs": [
-			{"id": "geography", "label": "地理信息", "icon": "geo"},
-			{"id": "population", "label": "人口信息", "icon": "growth"},
+			{"id": "geography", "label": "地理", "icon": "geo"},
+			{"id": "population", "label": "人口", "icon": "growth"},
 			{"id": "families", "label": "家族", "icon": "family.house"},
-			{"id": "market", "label": "市场信息", "icon": "resource"},
+			{"id": "market", "label": "市场", "icon": "resource"},
 			{"id": "buildings", "label": "建筑", "icon": "building"},
 		],
 		"categories": {
@@ -385,12 +372,11 @@ func _make_patch(tab_id: String, step: float = 1.0) -> Dictionary:
 		"buildings": category = _building_category(step)
 	return {
 		"header": {
+			"kicker": "地块档案 · 区域 12, 8",
 			"title": "低地 · 平原",
-			"subtitle": "区域 12-8 · 地块档案 #42",
-			"badges": _badges(),
+			"subtitle": "测试国 · 本国领土 · 临河",
 		},
-		"score": {"id": "habitability", "title": "地块适宜度", "value": 0.76, "caption": "可发展", "accent": UITokens.GOOD},
-		"summary_cards": _summary_cards(step),
+		"kpis": _kpis(step),
 		"tab_id": tab_id,
 		"category": category,
 	}
@@ -423,20 +409,12 @@ func _construction_scroll_model() -> Dictionary:
 	}
 
 
-func _badges() -> Array:
+func _kpis(step: float) -> Array:
 	return [
-		{"text": "平原", "accent": UITokens.GEO},
-		{"text": "低地", "accent": UITokens.GEO},
-		{"text": "温带草原", "accent": UITokens.ECO},
-		{"text": "无覆盖", "accent": UITokens.WATER},
-		{"text": "晴朗", "accent": UITokens.WATER},
-	]
-
-
-func _summary_cards(step: float) -> Array:
-	return [
-		{"id": "summary_climate", "title": "气候", "value": "温暖 · 适中", "subtitle": "", "accent": UITokens.CLIMATE, "icon": "sun"},
-		{"id": "summary_population", "title": "人口", "value": "%d 人" % (1200 + int(step)), "subtitle": "4 个阶层", "accent": UITokens.ACCENT, "icon": "growth"},
+		{"id": "kpi_population", "title": "人口", "kind": "count", "value": 1200.0 + step, "caption": "4 个阶层", "icon": "summary.overview"},
+		{"id": "kpi_food", "title": "粮食保障", "kind": "percent", "value": 0.92, "caption": "承载 1500 人", "icon": "economy.crop"},
+		{"id": "kpi_jobs", "title": "就业", "kind": "percent", "value": 0.8, "caption": "空缺 12 岗", "icon": "economy.building"},
+		{"id": "kpi_satisfaction", "title": "需求满足", "kind": "percent", "value": 0.55, "caption": "生计困难", "tone": "risk", "icon": "family.house"},
 	]
 
 

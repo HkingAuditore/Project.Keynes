@@ -52,3 +52,7 @@ color_value_gain = 1.14
 snow_body_color_retention = 0.22
 snow_alpha_loss_strength = 0.18
 snow_hide_strength = 0.28
+sub_form_enabled = true
+crown_diameter_hex = 0.32
+grove_crown_min = 5
+grove_crown_max = 13

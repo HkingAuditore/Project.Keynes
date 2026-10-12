@@ -1168,6 +1168,7 @@ detail scatter 日志：
 - 若 `tail_vegetation_ms` 在没有 chunk task 时仍持续偏高，检查 `detail_scatter_budget_report()`：稳态帧应为 `budget_total_scan_ms=0` 且 `budget_total_scan_count` 不增长；`budget_total_dirty=true` 表示下一次预算应用需要重扫。持续增长通常说明相机/LOD/画质或 chunk 可见状态被无意义地反复标脏。
 - 若预算扫描确实发生，检查各层 `get_scatter_diagnostics()` 的 `chunk_cell_cache_builds`、`chunk_bounds_cache_builds` 和 `active_instance_count_scans`。同一地图、hex size、chunk size 下，前两项应在首次访问后稳定；只有 active-instance scan 应随真实可见性或实例变化增长。
 - `budget_total_scan_ms` 只统计各层 active-instance 总数汇总；`budget_apply_ms` 统计 `visible_instance_count` 的渐进下发。前者高说明可见性/空间查询退化，后者高说明层数或 MultiMesh 提交成本高，二者不要混为 chunk encode/apply 成本。
+- 植被 GPU 成本（俯视程序化冒名体，2026-10）：片元成本主要来自 3×3 元素场与 q2 桌面的 `vf_soft_shadow` 椭圆软阴影循环（解析椭圆，不做第二次 `vf_eval`）。若植被 GPU 时间异常，先用 `veg_shade_quality<2` 关掉软阴影对比；再确认远景是否进入 `vf_far`（元素半径 <3px，移动端 <6px）；气候/GI/地平线采样应只出现在 vertex 阶段。参考数据（RTX 4080，1600×900，~34k 实例，31 张截图）：植被 GPU 均值约 0.11–0.14 ms，重建 8.7–9.4 ms，与重做前同级。
 
 本次实现的本机验证记录（2026-06-26）：
 

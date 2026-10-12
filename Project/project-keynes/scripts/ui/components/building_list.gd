@@ -65,14 +65,22 @@ func _apply_row(_row_id: String, refs: Dictionary, data: Dictionary) -> void:
 	var accent: Color = data.get("accent", UITokens.ACCENT)
 	(refs.panel as Control).visible = bool(data.get("visible", true))
 	(refs.icon as IconBadge).set_semantic(
-		StringName(data.get("icon", &"economy.building")), accent)
+		StringName(data.get("icon", &"economy.building")), UITokens.DOSSIER_INK_SOFT)
 	(refs.name as Label).text = String(data.get("name", "建筑"))
-	(refs.owner as Label).text = String(data.get("owner", ""))
+	var owner_text := String(data.get("owner", ""))
+	var status_text := String(data.get("status", ""))
+	(refs.owner as Label).text = owner_text if status_text.is_empty() \
+		else "%s · %s" % [owner_text.trim_prefix("业主 · "), status_text]
+	(refs.owner as Label).tooltip_text = (refs.owner as Label).text
 	(refs.count as Label).text = String(data.get("count", ""))
-	(refs.profit_label as Label).text = String(data.get("profit_label", "利润"))
+	# 列头已标“利润”，常规行不再重复；机会收益、停产等例外状态仍写明。
+	var profit_label := String(data.get("profit_label", "利润"))
+	(refs.profit_label as Label).text = profit_label
+	(refs.profit_label as Label).visible = profit_label != "利润"
 	(refs.profit as Label).text = String(data.get("profit", ""))
-	(refs.profit as Label).add_theme_color_override("font_color", accent)
+	(refs.profit as Label).add_theme_color_override("font_color",
+		InspectorFactGrid.tone_color(accent))
 	var state: Dictionary = data.get("state_summary", {})
-	var state_accent: Color = state.get("accent", UITokens.WARN)
+	var state_accent: Color = InspectorNoteList.tick_color(state.get("accent", UITokens.WARN))
 	(refs.state_icon as IconBadge).set_semantic(StringName(state.get("icon", &"")), state_accent)
 	(refs.state_icon as Control).tooltip_text = String(state.get("label", ""))

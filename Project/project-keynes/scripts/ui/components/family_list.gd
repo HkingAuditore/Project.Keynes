@@ -43,7 +43,8 @@ func _create_row(row_id: String) -> Dictionary:
 		{"kind": "family", "row_id": row_id}))
 	add_child(button)
 	return {"button": button, "icon": button.get_node("Margin/Line/Icon"),
-		"name": button.get_node("Margin/Line/Name"),
+		"name": button.get_node("Margin/Line/Identity/Name"),
+		"meta": button.get_node("Margin/Line/Identity/Meta"),
 		"prestige": button.get_node("Margin/Line/Prestige")}
 
 
@@ -55,11 +56,19 @@ func set_selected(row_id: String) -> void:
 
 
 func _apply_row(refs: Dictionary, data: Dictionary) -> void:
-	var accent: Color = data.get("accent", UITokens.ACCENT)
 	var button := refs.get("button") as Button
 	button.visible = true
-	(refs.get("icon") as IconBadge).set_semantic(&"family.house", accent)
+	(refs.get("icon") as IconBadge).set_semantic(&"family.house", UITokens.DOSSIER_INK_SOFT)
 	(refs.get("name") as Label).text = String(data.get("name", "家族"))
+	var meta := PackedStringArray(["族人 %s" % String(data.get("population", "0")),
+		"产业 %s 栋" % String(data.get("owned_buildings", "0"))])
+	var notable := int(data.get("notable_people", 0))
+	if notable > 0:
+		meta.append("名人 %d" % notable)
+	var cash := String(data.get("cash_claim", ""))
+	if cash != "":
+		meta.append("现金 %s" % cash)
+	(refs.get("meta") as Label).text = " · ".join(meta)
 	var prestige := refs.get("prestige") as Label
-	prestige.text = "威望 %s" % String(data.get("prestige", "0"))
-	prestige.add_theme_color_override("font_color", accent)
+	prestige.text = String(data.get("prestige", "0"))
+	prestige.tooltip_text = "威望"

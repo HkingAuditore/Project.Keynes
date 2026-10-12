@@ -36,6 +36,49 @@ enum RenderFamily {
 	AQUATIC,
 }
 
+# Shader form ids drawn by vegetation_forms.gdshaderinc. AUTO resolves from
+# detail_kind and the profile file name; explicit values are form id + 1.
+enum VisualForm {
+	AUTO,
+	BROADLEAF,
+	CONIFER,
+	PALM,
+	SHRUB,
+	CACTUS,
+	REED,
+	GRASS,
+	LICHEN,
+	FLOWER,
+	ROCK,
+	SCREE,
+	SNOW_MOUND,
+	SNAG,
+	FALLEN_LOG,
+	MANGROVE,
+	KELP,
+	CORAL,
+	PEAT_TUFT,
+}
+
+const FORM_BROADLEAF := 0
+const FORM_CONIFER := 1
+const FORM_PALM := 2
+const FORM_SHRUB := 3
+const FORM_CACTUS := 4
+const FORM_REED := 5
+const FORM_GRASS := 6
+const FORM_LICHEN := 7
+const FORM_FLOWER := 8
+const FORM_ROCK := 9
+const FORM_SCREE := 10
+const FORM_SNOW_MOUND := 11
+const FORM_SNAG := 12
+const FORM_FALLEN_LOG := 13
+const FORM_MANGROVE := 14
+const FORM_KELP := 15
+const FORM_CORAL := 16
+const FORM_PEAT_TUFT := 17
+
 @export var enabled: bool = true
 
 @export_group("Global Defaults")
@@ -73,6 +116,66 @@ func resolved_render_family() -> int:
 		DetailKind.ROCK, DetailKind.SNOW_MOUND:
 			return RenderFamily.HARDSCAPE
 	return RenderFamily.BRUSH
+
+
+func resolved_visual_form() -> int:
+	if visual_form != VisualForm.AUTO:
+		return visual_form - 1
+	var file_name := resource_path.get_file().to_lower()
+	if file_name.contains("fallen_log"):
+		return FORM_FALLEN_LOG
+	if file_name.contains("mangrove_root"):
+		return FORM_MANGROVE
+	if file_name.contains("peat_bog"):
+		return FORM_PEAT_TUFT
+	if file_name.contains("tundra_lichen"):
+		return FORM_LICHEN
+	if file_name.contains("kelp"):
+		return FORM_KELP
+	if file_name.contains("coral"):
+		return FORM_CORAL
+	if file_name.contains("scree"):
+		return FORM_SCREE
+	match detail_kind:
+		DetailKind.TREE:
+			return FORM_BROADLEAF
+		DetailKind.GRASS:
+			return FORM_GRASS
+		DetailKind.CONIFER:
+			return FORM_CONIFER
+		DetailKind.PALM:
+			return FORM_PALM
+		DetailKind.CACTUS:
+			return FORM_CACTUS
+		DetailKind.REED:
+			return FORM_REED
+		DetailKind.ALPINE_FLOWER:
+			return FORM_FLOWER
+		DetailKind.ROCK:
+			return FORM_ROCK
+		DetailKind.SNOW_MOUND:
+			return FORM_SNOW_MOUND
+		DetailKind.DEAD_SNAG:
+			return FORM_SNAG
+	return FORM_SHRUB
+
+@export_group("Top-down Form")
+@export_enum("Auto", "Broadleaf", "Conifer", "Palm", "Shrub", "Cactus", "Reed", "Grass", "Lichen", "Flower", "Rock", "Scree", "SnowMound", "Snag", "FallenLog", "Mangrove", "Kelp", "Coral", "PeatTuft") var visual_form: int = VisualForm.AUTO
+# Element count drawn inside one instance when grove sub-forms are off
+# (shrub stems, grass tussocks, scree stones, coral colonies).
+@export_range(1, 32, 1) var element_count_min: int = 1
+@export_range(1, 32, 1) var element_count_max: int = 1
+# Canopy profiles turn dense, interior candidates into clusters and groves.
+# One instance then draws several crowns; its size is chosen so every crown
+# keeps crown_diameter_hex regardless of how many it carries.
+@export var sub_form_enabled: bool = false
+@export_range(0.08, 0.6, 0.01) var crown_diameter_hex: float = 0.30
+@export_range(0.0, 1.0, 0.01) var cluster_density_threshold: float = 0.30
+@export_range(0.0, 1.0, 0.01) var grove_density_threshold: float = 0.55
+@export_range(2, 32, 1) var grove_crown_min: int = 5
+@export_range(2, 32, 1) var grove_crown_max: int = 15
+# Probability scale for keeping thin patch edges as single crowns.
+@export_range(0.0, 1.0, 0.01) var edge_single_bias: float = 0.35
 
 @export_group("Camera Zoom LOD")
 # Negative values use the archetype defaults resolved by ShrubLayer.
@@ -235,9 +338,9 @@ func resolved_render_family() -> int:
 @export var cast_shadow_enabled: bool = true
 @export var cast_shadow_on_mobile: bool = false
 @export var shadow_color: Color = Color(0.05, 0.06, 0.08, 1.0)
-@export_range(0.0, 1.0, 0.01) var shadow_strength: float = 0.28
+@export_range(0.0, 1.0, 0.01) var shadow_strength: float = 0.32
 @export_range(0.0, 4.0, 0.05) var shadow_length_scale: float = 1.0
-@export_range(0.1, 5.0, 0.05) var shadow_max_length: float = 1.4
+@export_range(0.1, 5.0, 0.05) var shadow_max_length: float = 3.6
 # 太阳高度角低于此值（近晨昏/夜）时阴影淡出，避免无限拉长。
 @export_range(0.02, 1.0, 0.01) var shadow_min_sun_elevation: float = 0.16
 # 足部半径（局部单位，×实例 size = 世界足印）：阴影根部的椭圆短轴/接触圆盘大小。

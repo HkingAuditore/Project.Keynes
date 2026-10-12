@@ -25,7 +25,8 @@ func _run() -> void:
 
 	var manifest = load("res://data/visual/world_decoration_manifest.tres")
 	var layers: Array = manifest.valid_layers() if manifest != null else []
-	_expect("default manifest has exactly 20 profiles", layers.size() == 20)
+	_expect("default manifest lists 20 profiles", manifest != null and manifest.layers.size() == 20)
+	_expect("default manifest spawns 17 enabled profiles (aquatic and snow mound disabled)", layers.size() == 17)
 	var has_seagrass := false
 	var family_counts := {}
 	for profile in layers:
@@ -35,12 +36,12 @@ func _run() -> void:
 			var family := int(profile.resolved_render_family())
 			family_counts[family] = int(family_counts.get(family, 0)) + 1
 	_expect("default manifest excludes seagrass rendering profile", not has_seagrass)
-	_expect("20 profiles map to the five declared render families",
+	_expect("17 enabled profiles map to the four land render families",
 		int(family_counts.get(1, 0)) == 4
 		and int(family_counts.get(2, 0)) == 4
 		and int(family_counts.get(3, 0)) == 6
-		and int(family_counts.get(4, 0)) == 4
-		and int(family_counts.get(5, 0)) == 2)
+		and int(family_counts.get(4, 0)) == 3
+		and int(family_counts.get(5, 0)) == 0)
 
 	var recorder = PerfRecorderScript.new()
 	var row := {"tick_idx": 9}

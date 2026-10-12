@@ -74,3 +74,5 @@ vitality_low_color_strength = 0.78
 vitality_high_color_strength = 0.5
 vitality_color_contrast = 0.96
 vitality_dieback_noise_strength = 0.58
+element_count_min = 4
+element_count_max = 9

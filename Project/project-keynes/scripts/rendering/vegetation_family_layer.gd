@@ -183,8 +183,8 @@ func rebuild_family_chunk(family: int, chunk_id: int) -> void:
 				for k in range(BUFFER_STRIDE):
 					merged[dest_base + k] = source_buffer[source_base + k]
 				var style_id := int(payload.get("style_id", 0))
-				var variant := clampf(source_buffer[source_base + 15], 0.0, 0.999999)
-				merged[dest_base + 15] = float(style_id) + variant / 16.0
+				var form_pack := clampf(source_buffer[source_base + 15], 0.0, 3.9999)
+				merged[dest_base + 15] = float(style_id) * 4.0 + form_pack
 				dst += 1
 	_last_assemble_ms = float(Time.get_ticks_usec() - assemble_t0) / 1000.0
 	var upload_t0 := Time.get_ticks_usec()
@@ -374,6 +374,20 @@ func sync_dynamic_materials() -> void:
 			continue
 		for param in params:
 			target.set_shader_parameter(param, representative._material.get_shader_parameter(param))
+	# Shadow copies are duplicated at configure time; without this they keep
+	# the sun of that moment and stop following day, season and debug sun.
+	var shadow_params := [
+		"season_phase", "day_phase", "axial_tilt_rad", "day_night_enabled", "tod_sun_dir",
+		"tod_debug_sun_position_enabled", "tod_debug_sun_uv", "tod_debug_sun_height_scale",
+	]
+	for raw_family in _shadow_materials.keys():
+		var shadow_target: ShaderMaterial = _shadow_materials[raw_family]
+		var shadow_source = _shadow_representatives.get(int(raw_family), null)
+		if shadow_target == null or shadow_source == null or shadow_source._shadow_material == null:
+			continue
+		for param in shadow_params:
+			shadow_target.set_shader_parameter(param,
+				shadow_source._shadow_material.get_shader_parameter(param))
 
 
 func set_frame_state(world_time: float, wind_dir: Vector2, wind_boost: float) -> void:
@@ -411,7 +425,24 @@ func _build_style_lut() -> ImageTexture:
 		image.set_pixel(1, style_id, base)
 		var casts_shadow: bool = layer.has_method("detail_family_casts_shadow") \
 			and bool(layer.detail_family_casts_shadow())
-		image.set_pixel(2, style_id, Color(1.0 if casts_shadow else 0.0, 0.0, 0.0, 0.0))
+		var shading: Dictionary = layer.detail_style_shading() \
+			if layer.has_method("detail_style_shading") else {}
+		image.set_pixel(2, style_id, Color(1.0 if casts_shadow else 0.0,
+			float(shading.get("shadow_foot_radius", 0.42)),
+			float(shading.get("shadow_length_scale", 1.0)),
+			float(shading.get("shadow_strength", 1.0))))
+		image.set_pixel(3, style_id, Color(float(shading.get("detail_form", 3)),
+			float(shading.get("phenology_response", 1.0)),
+			float(shading.get("phenology_color_dominance", 0.5)),
+			float(shading.get("veg_response", 1.0))))
+		image.set_pixel(4, style_id, Color(float(shading.get("bloom_strength", 0.0)),
+			float(shading.get("snow_body_color_retention", 0.5)),
+			float(shading.get("albedo_light_floor", 0.5)),
+			float(shading.get("snow_burial", 0.5))))
+		image.set_pixel(5, style_id, Color(float(shading.get("aquatic_response", 0.0)),
+			float(shading.get("snow_size_floor", 0.6)),
+			float(shading.get("color_saturation_gain", 1.0)),
+			float(shading.get("color_value_gain", 1.0))))
 	return ImageTexture.create_from_image(image)
 
 

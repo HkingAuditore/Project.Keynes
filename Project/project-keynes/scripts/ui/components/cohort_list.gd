@@ -53,6 +53,7 @@ func _create_row(row_id: String, data: Dictionary) -> Dictionary:
 	var refs := {"panel": panel, "button": button,
 		"icon": panel.get_node("Body/Button/Header/Icon"),
 		"living_icon": living_icon, "name": panel.get_node("Body/Button/Header/Identity/Name"),
+		"meta": panel.get_node("Body/Button/Header/Identity/Meta"),
 		"population": panel.get_node("Body/Button/Header/Population"),
 		"wealth": panel.get_node("Body/Button/Header/Balance/Wealth"),
 		"net": panel.get_node("Body/Button/Header/Balance/Net")}
@@ -68,25 +69,32 @@ func set_selected(row_id: String) -> void:
 
 
 func _apply_row(_row_id: String, refs: Dictionary, data: Dictionary) -> void:
-	var accent: Color = data.get("accent", UITokens.ACCENT)
 	var panel := refs.get("panel") as PanelContainer
 	panel.visible = bool(data.get("visible", true))
 	(refs.get("icon") as IconBadge).set_semantic(
-		StringName(data.get("icon", &"ecology.growth")), accent)
+		StringName(data.get("icon", &"ecology.growth")), UITokens.DOSSIER_INK_SOFT)
 	var living_accent: Color = data.get("living_accent", UITokens.ARCHIVE_INK_MUTED)
 	var living_badge := refs.get("living_icon") as IconBadge
 	living_badge.set_semantic(
 		StringName(data.get("living_icon", &"action.history")), living_accent)
+	living_badge.visible = false
 	var living_text := String(data.get("living_standard", "待评估"))
-	living_badge.tooltip_text = "%s · 满意度 %s" % [
-		living_text,
-		String(data.get("satisfaction", "—"))]
+	var satisfaction := String(data.get("satisfaction", "—"))
 	var name_label := refs.get("name") as Label
 	name_label.text = String(data.get("name", "阶层"))
 	name_label.tooltip_text = String(data.get("status", ""))
+	var meta_parts := PackedStringArray()
+	var identity := String(data.get("cohort_identity", ""))
+	if identity != "":
+		meta_parts.append(identity)
+	meta_parts.append(living_text)
+	if satisfaction.ends_with("%"):
+		meta_parts.append("满意 %d%%" % roundi(satisfaction.trim_suffix("%").to_float()))
+	(refs.get("meta") as Label).text = " · ".join(meta_parts)
 	(refs.get("population") as Label).text = String(data.get("population", ""))
 	(refs.get("wealth") as Label).text = String(data.get("wealth", "")).trim_prefix("人均 ")
 	var card_net_label := refs.get("net") as Label
 	card_net_label.text = String(data.get("net", "—"))
-	card_net_label.add_theme_color_override(
-		"font_color", UITokens.GOOD if bool(data.get("net_positive", true)) else UITokens.RISK)
+	card_net_label.add_theme_color_override("font_color",
+		UITokens.DOSSIER_VERDIGRIS if bool(data.get("net_positive", true)) \
+			else UITokens.DOSSIER_OXBLOOD)

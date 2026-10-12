@@ -65,6 +65,8 @@ var _gm_action_buttons: Dictionary = {}
 var _gm_record_status_labels: Dictionary = {}
 var _gm_local_toggle_getter: Callable
 var _gm_local_toggle_setter: Callable
+const GmTodSunPadScript = preload("res://scripts/ui/gm_tod_sun_pad.gd")
+var _gm_tod_sun_pad
 
 # --- 内部 UI 节点缓存 -----------------------------------------------------
 var _overlay_option_btn: OptionButton
@@ -560,6 +562,10 @@ func _rebuild_gm_toggle_controls(toggles: Array) -> void:
 		child.queue_free()
 	_gm_toggle_buttons.clear()
 	_gm_action_buttons.clear()
+	_gm_tod_sun_pad = GmTodSunPadScript.new()
+	_gm_tod_sun_pad.sun_preview_requested.connect(_on_gm_tod_sun_preview_requested)
+	_gm_toggle_container.add_child(_gm_tod_sun_pad)
+	_sync_gm_tod_sun_pad()
 	var last_group := ""
 	for raw in toggles:
 		var spec: Dictionary = raw
@@ -681,6 +687,30 @@ func _refresh_gm_toggles() -> void:
 			if bool(result.get("ok", false)):
 				button.set_pressed_no_signal(bool(result.get("enabled", false)))
 	_suppress_sync_signals = false
+	_sync_gm_tod_sun_pad()
+
+
+func _sync_gm_tod_sun_pad() -> void:
+	if _gm_tod_sun_pad == null:
+		return
+	if _main == null or not _main.has_method("get_gm_tod_sun_preview"):
+		_gm_tod_sun_pad.set_available(false)
+		return
+	_gm_tod_sun_pad.set_available(true)
+	var state: Variant = _main.call("get_gm_tod_sun_preview")
+	if state is Dictionary:
+		_gm_tod_sun_pad.apply_runtime_state(state)
+
+
+func _on_gm_tod_sun_preview_requested(active: bool, uv: Vector2, height_scale: float) -> void:
+	if _main == null or not _main.has_method("set_gm_tod_sun_preview"):
+		return
+	var state: Variant = _main.call("set_gm_tod_sun_preview", active, uv, height_scale)
+	if state is Dictionary and not bool(state.get("ok", false)):
+		_append_gm_output(String(state.get("message", "太阳预览失败")), true)
+		return
+	if _gm_tod_sun_pad != null and state is Dictionary and not active:
+		_gm_tod_sun_pad.apply_runtime_state(state)
 
 
 func _get_gm_toggle_state(toggle_id: String) -> Dictionary:

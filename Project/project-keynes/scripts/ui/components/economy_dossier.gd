@@ -8,6 +8,7 @@ class_name EconomyDossier
 signal locate_cell_requested(cell: int)
 
 const LIVE_REFRESH_INTERVAL_MSEC := 200
+const PENDING_RETRY_SECONDS := 0.25
 const COMPACT_WIDTH := 760.0
 const FILTER_CHAPTERS := {"industry": "sector", "market": "group"}
 
@@ -193,7 +194,21 @@ func _refresh_now() -> void:
 	_refresh_page()
 
 
+## 原生只读视图在结算间隙才发布；撞上结算的查询已登记订阅，短延迟后重读即可拿到。
+## 暂停时没有新的提交事件推动刷新，必须由这里自行重试。
+func _schedule_pending_retry() -> void:
+	if not _vm.had_pending() or not is_visible_in_tree() or _refresh_pending:
+		return
+	_refresh_pending = true
+	_refresh_timer.start(PENDING_RETRY_SECONDS)
+
+
 func _refresh_page() -> void:
+	_render_page()
+	_schedule_pending_retry()
+
+
+func _render_page() -> void:
 	if _chapter == "finance":
 		_status_label.visible = false
 		return
@@ -203,7 +218,8 @@ func _refresh_page() -> void:
 		return
 	var summary := _vm.query("summary")
 	if not bool(summary.get("ok", false)):
-		_show_status(EconomyDossierViewModel._reason(summary))
+		_show_status(EconomyDossierViewModel._reason(summary),
+			not EconomyDossierViewModel.is_pending(summary))
 		return
 	var day_min := int(summary.get("state_day_min", -1))
 	var day_max := int(summary.get("state_day_max", -1))

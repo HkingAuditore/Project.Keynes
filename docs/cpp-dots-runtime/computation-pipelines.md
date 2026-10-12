@@ -2877,7 +2877,22 @@ Chunked MultiMesh 路径：
 
 - 纯 **buffer-encoder**：不读 `_slots`、不写 slot、不要求 `_bound`——散布是 render product，所有输入由 knobs flat PackedArray 喂入，地图刚生成 / climate slot 未绑定也能工作（同 `encode_overlay_atlas`）。
 - `hash01` / `hash2i` / `value_noise2` / `smoothstep` 与 `shrub_layer.gd` 同公式同 64-bit 整型语义（GDScript `float`=double，`>>` 算术移位），native 与 fallback 输出近 bit-一致（仅 libm `sin` 末位差异）；这是确定性 stochastic 场，验收按聚合密度而非 bit-equal。
-- MultiMesh 2D buffer 布局：`[xx, yx, 0, ox, xy, yy, 0, oy, r,g,b,a, u,v,seed,variant]`，与 `set_instance_transform_2d/color/custom_data` 等价。
+- MultiMesh 2D buffer 布局：`[xx, yx, 0, ox, xy, yy, 0, oy, r,g,b,a, u,v,seed,form]`，与 `set_instance_transform_2d/color/custom_data` 等价。`form = sub_form + (count-0.5)/32`（`ShrubLayer.pack_form`）；颜色明暗仍由 `variant = hash01(key,300+attempt)` 烘进 `color`。family batch 再打包为 `style_id*4 + form`。
+
+### 俯视程序化冒名体（2026-10 植被美术重做）
+
+- 每个实例只画一张 `±0.62` 的 quad；形态全部在片元里程序化求值：`shaders/include/vegetation_forms.gdshaderinc`（18 种 form：阔叶/针叶/棕榈/灌丛/仙人掌/芦苇/草丛/地衣/高山花/岩石/碎石/雪丘/枯立木/倒木/红树根/海带/珊瑚/泥炭丛）、`vegetation_climate.gdshaderinc`（气候调色板，逐顶点）、`vegetation_impostor.gdshaderinc`（vertex/fragment 主体）、`vegetation_shadow.gdshaderinc`（太阳投影 blob 阴影，无 marching）。
+- 海洋点缀（`kelp_frond_default` / `coral_detail_default`，`spawn_domain=WATER`）与雪堆（`snow_mound_default`，积雪改由地形着色器连续表现）目前 `enabled=false`；`DecorationManifest.valid_layers()` 跳过 disabled profile，因此不会生成对应 ShrubLayer，也没有散布 / 阴影 / family batch 成本。重新开启只需把 `.tres` 的 `enabled` 改回 `true`，并同步 `vegetation_manifest_perf_test` / `detail_scatter_budget_slice_test` 的层数断言。
+- form 由 `ShrubVisualProfile.resolved_visual_form()` 决定（显式 `visual_form` > 文件名 > `detail_kind`），单图层走 `detail_form` uniform，family batch 走 style LUT px3。
+- 冠层 profile（`sub_form_enabled=true`：tree / cloud_forest / monsoon / conifer / palm）在散布时按局部密度 `sqrt(wn)*0.6 + min(suit,1)*0.4` 与林缘概率 `edge_single_bias*(1-smoothstep(0.15,0.55,wn))` 选 single / cluster(2–4) / grove(`grove_crown_min..max`)，实例尺寸 = `crown_diameter_hex*hex/(2*0.62*r_local(count))`，保证每个树冠在世界里约 0.24–0.32 hex（约 2–3 栋房屋）。`r_local(count) = count<=1 ? 0.80 : min(0.58, 0.88/sqrt(count))`，C++、GDScript 与 shader 三处同源。
+- 非冠层 profile 用 `element_count_min/max` 决定一个实例里画几簇（灌丛、草丛、碎石等），尺寸沿用 `min/max_size_factor`。
+- 候选点改为 R2 低差异序列（`fract(h + k*0.7548776662)` / `fract(h + k*0.5698402910)`）覆盖整个 hex 圆盘；冠层同格实例按 `(ra+rb)*0.72`（`r = size*0.62*0.88`）互斥，避免林团叠成黑团。
+- 近似软阴影（不追求剪影精确）：
+  - quad 内（q2 桌面、`hs>0.1`）：`vf_soft_shadow` 复用 `vf_ring_slot` / `vf_grid_slot` 的元素布局，每个元素一枚解析椭圆。椭圆沿 `-L.xy/max(L.z,0.28)*hs*top` 拉长，长度上限 `r0*1.1`；半影宽度和变淡程度都随遮挡物到地面的距离 `len/(2.5r)` 增大，所以正午短而锐、黄昏长而软。返回 `(ground, crown)`：ground 作为地面阴影（×0.70，quad 边缘 0.72–0.98 淡出，避免直线截断）；crown 作为冠间遮光（`sun_vis -= crown*0.5`）。这里只用解析循环，不再做第二次完整 `vf_eval`。
+  - quad 外：投影 pass `vegetation_shadow.gdshaderinc` 每实例一枚椭圆，长度 `clamp(cot(elev), 0, shadow_max_len=3.6)*length_scale*height`，约 15.5° 仰角封顶；更低的太阳由 `local_day` 晨昏淡出接管。`shadow_soft = proj/(2.5*foot)` 控制半影内缘、远端横向扩散（最多 ×1.45）和整体变淡（×0.85）。
+  - family batch 的 shadow 材质是 configure 时 duplicate 的，`VegetationFamilyLayer.sync_dynamic_materials()` 必须同步 `season_phase/day_phase/axial_tilt_rad/day_night_enabled/tod_sun_dir/tod_debug_sun_*`，否则 family 阴影不随太阳变化。
+- 性能约束：气候调色板、日照、地平线可见性、天空 GI、地形法线和谷地 AO 都在 vertex 阶段算成 flat varying；片元只做 3×3 元素场与上述椭圆软阴影循环。元素小于 3px（移动端 6px）时退化到 `vf_far` 单噪声斑块。隐藏实例在 vertex 阶段塌缩为零面积。
+- 验证：`tests/vegetation_form_scatter_test.gd`（打包往返、确定性、冠径守恒、密度→林团单调、同格互斥、GDScript 回退与 native 逐实例一致）；`tests/vegetation_family_layer_test.gd`（`style*4` 打包与 style LUT 的 form/物候列）。
 
 ## 后续迁移优先级
 

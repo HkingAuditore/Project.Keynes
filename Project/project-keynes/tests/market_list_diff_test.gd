@@ -34,7 +34,7 @@ func _init() -> void:
 
 	market_list.update_rows(_rows("12", "4"))
 	_expect(_node_count(market_list) == node_count, "差量刷新复用商品行节点")
-	_expect((grain.get("stock") as Label).text == "12", "差量刷新更新商品摘要值")
+	_expect((grain.get("stock") as Label).text == "12 · +1/日", "差量刷新更新商品摘要值")
 
 	market_list.update_rows([_rows("12", "4")[0]])
 	var iron: Dictionary = market_list._row_refs["market_iron"]

@@ -1,7 +1,8 @@
-﻿extends SceneTree
+extends SceneTree
 
-## 鍦板潡妗ｆ鎴浘 QA锛氱湡瀹炲紑灞€璺戣嫢骞插ぉ鍚庯紝閫変腑鐜╁璧峰鏍笺€佺浉閭婚噹澶栨牸涓庝竴涓按鍩熸牸锛?
-## 鍦?1280脳720 / 1366脳768 / 1920脳1080 涓嬮€愰〉绛炬埅鍥俱€傞渶瑕佸甫娓叉煋杩愯锛堜笉鍔?--headless锛夈€?
+## Tile inspector screenshot QA: start a real game, run a few days, then select the player start cell,
+## a neighbouring wild cell and a water cell, and capture every tab at 1280x720 / 1366x768 / 1920x1080.
+## Must run with rendering (without --headless).
 
 const OUTPUT_DIR := "res://tmp/cell_inspector_qa"
 const SIZES := [Vector2i(1280, 720), Vector2i(1366, 768), Vector2i(1920, 1080)]
@@ -73,13 +74,15 @@ func _run() -> void:
 
 func _capture(label: String, viewport_size: Vector2i) -> void:
 	await create_timer(UITokens.ANIM_MED + 0.2).timeout
-	await RenderingServer.frame_post_draw
-	var image := root.get_texture().get_image()
 	var path := "%s/%s_%dx%d.png" % [OUTPUT_DIR, label, viewport_size.x, viewport_size.y]
-	if image == null or image.is_empty() or image.save_png(path) != OK:
-		_failures.append("failed to capture %s" % path)
-		return
-	print("[cell-inspector-screenshot] %s" % ProjectSettings.globalize_path(path))
+	for attempt in 4:
+		await RenderingServer.frame_post_draw
+		var image := root.get_texture().get_image()
+		if image != null and not image.is_empty() and image.save_png(path) == OK:
+			print("[cell-inspector-screenshot] %s" % ProjectSettings.globalize_path(path))
+			return
+		await process_frame
+	_failures.append("failed to capture %s" % path)
 
 
 func _finish() -> void:

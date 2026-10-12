@@ -1,19 +1,17 @@
 extends PanelContainer
 class_name InspectorPanel
 
-const MetricCardScene := preload("res://scenes/ui/metric_card.tscn")
-const InsightShellScene := preload("res://scenes/ui/insight_shell.tscn")
 const ResourceListScene := preload("res://scenes/ui/resource_list.tscn")
 const FamilyListScene := preload("res://scenes/ui/family_list.tscn")
 const MarketListScene := preload("res://scenes/ui/market_list.tscn")
 const CohortListScene := preload("res://scenes/ui/cohort_list.tscn")
 const BuildingListScene := preload("res://scenes/ui/building_list.tscn")
 const ConstructionEntryScene := preload("res://scenes/ui/construction_entry.tscn")
-const GaugeBarScene := preload("res://scenes/ui/gauge_bar.tscn")
 const BadgeRowScene := preload("res://scenes/ui/badge_row.tscn")
-const MetricGridScene := preload("res://scenes/ui/metric_grid.tscn")
-const SectionHeaderScene := preload("res://scenes/ui/section_header.tscn")
-const GroupSeparatorScene := preload("res://scenes/ui/group_separator.tscn")
+const FactGridScene := preload("res://scenes/ui/inspector_fact_grid.tscn")
+const MeterListScene := preload("res://scenes/ui/inspector_meter_list.tscn")
+const NoteListScene := preload("res://scenes/ui/inspector_note_list.tscn")
+const ColumnHeaderScene := preload("res://scenes/ui/inspector_column_header.tscn")
 const CollapsibleSectionScene := preload("res://scenes/ui/inspector_collapsible_section.tscn")
 const TaxSectionScene := preload("res://scenes/ui/object_tax_section.tscn")
 const TaxLaneScene := preload("res://scenes/ui/object_tax_lane.tscn")
@@ -24,6 +22,10 @@ const CLEAR_ALL_MENU_ID := 1
 const SPLIT_DETAIL_MIN_WIDTH := 800.0
 const INSPECTOR_MARGIN_TOP := 12
 const INSPECTOR_MARGIN_BOTTOM := 16
+## 档案列低于此高度时 KPI 条改为单行，给正文多留约 34px。
+const DENSE_KPI_MAX_HEIGHT := 500.0
+const ROW_LIST_KEYS := ["family_rows", "cohort_rows", "resource_rows",
+	"market_rows", "building_rows"]
 
 signal close_requested()
 signal tab_data_requested(tab_id: String)
@@ -41,12 +43,13 @@ var _cell_index := -1
 var _scroll_by_tab: Dictionary = {}
 var _compact_detail := false
 
+var _kicker_label: Label
 var _title_label: Label
 var _subtitle_label: Label
-var _score_gauge: RadialGauge
-var _summary_grid: GridContainer
-var _summary_cards: Dictionary = {}
-var _tabs: CategoryTabs
+var _titles_box: Control
+var _summary_band: Control
+var _kpi_cards: Array = []
+var _chapter_nav: DossierChapterNav
 var _scroll: ScrollContainer
 var _content_box: VBoxContainer
 var _inspector_root: VBoxContainer
@@ -59,19 +62,21 @@ var _construction_picker: ConstructionPicker
 var _more_button: MenuButton
 var _clear_tax_confirmation: ConfirmationDialog
 
-var _insight_list: InsightList
-var _insight_controls: Dictionary = {}
+## 以下控件表都按“块 id”（根块为 "_root"，其余为 section id）索引，
+## 每日补丁按 id 改值，不增删节点。
+var _note_controls: Dictionary = {}
+var _metric_controls: Dictionary = {}
+var _gauge_controls: Dictionary = {}
+var _list_caption_controls: Dictionary = {}
+var _section_refs: Dictionary = {}
+var _chart_controls: Dictionary = {}
 var _badge_row: BadgeRow
 var _resource_list: ResourceList
 var _cohort_list
 var _building_list
 var _market_list
 var _family_list
-var _metric_controls: Dictionary = {}
-var _gauge_controls: Dictionary = {}
-var _chart_controls: Dictionary = {}
-var _summary_trends: Dictionary = {}
-var _last_score_band := -1
+var _kpi_values: Dictionary = {}
 var _player_controller = null
 var _colonization_button: Button
 var _tax_context: Dictionary = {}
@@ -86,17 +91,24 @@ var _detail_change_notify := true
 var _section_collapsed: Dictionary = {}
 var _family_chrome_active := false
 var _empty_panel_style := StyleBoxEmpty.new()
-const InspectorIconBadgeScene := preload("res://scenes/ui/icon_badge.tscn")
 
 
 func _ready() -> void:
 	if _content_box != null:
 		return
+	_kicker_label = get_node_or_null("%KickerLabel") as Label
 	_title_label = get_node_or_null("%TitleLabel") as Label
 	_subtitle_label = get_node_or_null("%SubtitleLabel") as Label
-	_score_gauge = get_node_or_null("%ScoreGauge") as RadialGauge
-	_summary_grid = get_node_or_null("%SummaryGrid") as GridContainer
-	_tabs = get_node_or_null("%CategoryTabs") as CategoryTabs
+	_titles_box = get_node_or_null("%Titles") as Control
+	_summary_band = get_node_or_null("%Summary") as Control
+	var kpi_row := get_node_or_null("%KpiRow")
+	_kpi_cards.clear()
+	if kpi_row != null:
+		for child in kpi_row.get_children():
+			if child is DossierKpiCard:
+				(child as Control).custom_minimum_size = Vector2(80.0, DossierKpiCard.HEIGHT)
+				_kpi_cards.append(child)
+	_chapter_nav = get_node_or_null("%ChapterNav") as DossierChapterNav
 	_scroll = get_node_or_null("%Scroll") as ScrollContainer
 	_content_box = get_node_or_null("%ContentBox") as VBoxContainer
 	_inspector_root = get_node_or_null("%InspectorRoot") as VBoxContainer
@@ -110,8 +122,8 @@ func _ready() -> void:
 	_clear_tax_confirmation = get_node_or_null("%ClearTaxConfirmation") as ConfirmationDialog
 	_colonization_button = get_node_or_null("%ColonizationButton") as Button
 	var close_button := get_node_or_null("%CloseButton") as Button
-	if _title_label == null or _subtitle_label == null or _score_gauge == null \
-			or _summary_grid == null or _tabs == null or _scroll == null \
+	if _title_label == null or _subtitle_label == null or _kicker_label == null \
+			or _kpi_cards.size() != 4 or _chapter_nav == null or _scroll == null \
 			or _content_box == null or close_button == null or _detail_shell == null \
 			or _object_detail_dialog == null or _family_workspace == null \
 			or _construction_picker == null:
@@ -150,8 +162,11 @@ func _ready() -> void:
 			construction_page_requested.emit(search, offset))
 	_construction_picker.build_requested.connect(
 		func(request: Dictionary) -> void: construction_requested.emit(request))
-	_tabs.tab_selected.connect(_on_tab_selected)
+	(_kpi_cards[_kpi_cards.size() - 1] as DossierKpiCard).show_divider = false
+	_chapter_nav.custom_minimum_size = Vector2(0.0, DossierChapterNav.HEIGHT)
+	_chapter_nav.chapter_selected.connect(_on_tab_selected)
 	resized.connect(_on_inspector_resized)
+	_inspector_root.resized.connect(_sync_kpi_density)
 	_sync_split_layout()
 
 
@@ -171,12 +186,14 @@ func set_model_for_selection(model: Dictionary) -> void:
 	if _content_box == null:
 		_ready()
 	var new_cell_index := int(model.get("cell_index", -1))
-	if new_cell_index != _cell_index:
+	var cell_changed := new_cell_index != _cell_index
+	if cell_changed:
 		_scroll_by_tab.clear()
 		_pending_tax.clear()
 		_draft_tax.clear()
 		_deferred_object_detail_payload.clear()
 		_section_collapsed.clear()
+		_kpi_values.clear()
 		close_detail(false)
 		_cell_index = new_cell_index
 		if _scroll != null:
@@ -185,24 +202,27 @@ func set_model_for_selection(model: Dictionary) -> void:
 	if _model.is_empty():
 		return
 	_apply_header(_model.get("header", {}), false)
+	if cell_changed and visible and is_inside_tree():
+		UIAnimation.crossfade(_titles_box, UITokens.ANIM_FAST)
 	_apply_colonization_action(_model.get("colonization_action", {}))
-	_render_summary(_model.get("score", {}), _model.get("summary_cards", []))
+	_apply_kpis(_model.get("kpis", []), not cell_changed)
 	var tabs: Array = _model.get("tabs", [])
 	if not _has_tab(tabs, _current_tab):
 		_current_tab = "geography"
 	# 页签集合会随视野状态变化（未探索 0 个 / 已探索 1 个 / 可见 5 个），
-	# 所以不能只在首次装配时 set_tabs，得按签名判断是否需要重建页签栏。
+	# 所以按签名判断是否需要重设章节索引。
 	var signature := _tabs_signature(tabs)
-	var show_labels := _inspector_show_tab_labels(tabs)
-	signature += "|labels:%s" % ("1" if show_labels else "0")
 	if signature != _tabs_signature_cache:
 		_tabs_signature_cache = signature
-		_tabs.set_tabs(tabs, _current_tab, show_labels)
+		_chapter_nav.set_chapters(_chapter_spec(tabs), _current_tab)
 	else:
-		_tabs.select_tab(_current_tab)
+		_chapter_nav.select(_current_tab, false)
+	_chapter_nav.visible = tabs.size() > 1
 	if not tabs.is_empty():
 		_request_tab_data_if_missing(_current_tab)
 	_render_content(false)
+	if cell_changed:
+		_animate_content_in()
 
 
 func apply_live_patch(patch: Dictionary) -> void:
@@ -210,19 +230,8 @@ func apply_live_patch(patch: Dictionary) -> void:
 		return
 	if patch.has("header"):
 		_apply_header(patch.get("header", {}), true)
-	if patch.has("score"):
-		_apply_score(patch.get("score", {}), true)
-	for raw in patch.get("summary_cards", []):
-		var data: Dictionary = raw
-		var card_id := String(data.get("id", ""))
-		var card := _summary_cards.get(card_id) as MetricCard
-		if card != null:
-			_apply_metric_card(card, data)
-			var trend := String(data.get("trend", ""))
-			var previous_trend := String(_summary_trends.get(card_id, ""))
-			if previous_trend != "" and trend != "" and trend != previous_trend:
-				UIAnimation.pulse(card, UITokens.ANIM_MED)
-			_summary_trends[card_id] = trend
+	if patch.has("kpis"):
+		_apply_kpis(patch.get("kpis", []), true)
 	var patch_tab := String(patch.get("tab_id", ""))
 	if not patch.has("category"):
 		return
@@ -248,7 +257,6 @@ func current_tab() -> String:
 func select_tab(tab_id: String) -> void:
 	if tab_id == _current_tab or not _has_tab(_model.get("tabs", []), tab_id):
 		return
-	_tabs.select_tab(tab_id)
 	_on_tab_selected(tab_id)
 
 
@@ -261,16 +269,11 @@ func reset_for_world() -> void:
 	_draft_tax.clear()
 	close_detail(false)
 	_tabs_signature_cache = ""
-	_last_score_band = -1
 	_section_collapsed.clear()
-	_insight_controls.clear()
-	_summary_cards.clear()
-	_summary_trends.clear()
-	_metric_controls.clear()
-	_gauge_controls.clear()
-	_chart_controls.clear()
-	if _tabs != null:
-		_tabs.clear_tabs()
+	_kpi_values.clear()
+	_clear_block_controls()
+	if _chapter_nav != null:
+		_chapter_nav.set_chapters([], "")
 	if _scroll != null:
 		_scroll.scroll_vertical = 0
 
@@ -280,8 +283,35 @@ func visible_node_count() -> int:
 
 
 func _apply_header(header: Dictionary, _live_patch: bool) -> void:
+	_kicker_label.text = String(header.get("kicker", "地块档案"))
 	_title_label.text = String(header.get("title", "地块档案"))
+	_title_label.tooltip_text = _title_label.text
 	_subtitle_label.text = String(header.get("subtitle", ""))
+	_subtitle_label.tooltip_text = _subtitle_label.text
+	_subtitle_label.visible = not _subtitle_label.text.is_empty()
+
+
+## KPI 卡片固定 4 张：多余的隐藏，补丁只改值（卡片自带数值补间）。
+## 数值相同的补丁不重启动画，避免每日刷新时卡片反复闪动。
+func _apply_kpis(kpis: Array, live_patch: bool) -> void:
+	if _summary_band != null:
+		_summary_band.visible = not kpis.is_empty()
+	var visible_count := mini(kpis.size(), _kpi_cards.size())
+	for i in range(_kpi_cards.size()):
+		var card := _kpi_cards[i] as DossierKpiCard
+		card.visible = i < visible_count
+		card.show_divider = i < visible_count - 1
+		if i >= visible_count:
+			continue
+		var data: Dictionary = kpis[i]
+		var signature := "%s|%s|%s|%s|%s" % [String(data.get("id", "")),
+			str(data.get("value", "")), String(data.get("text", "")),
+			String(data.get("caption", "")), String(data.get("tone", ""))]
+		var slot := "kpi_%d" % i
+		if live_patch and String(_kpi_values.get(slot, "")) == signature:
+			continue
+		_kpi_values[slot] = signature
+		card.set_metric(data)
 
 
 func _apply_colonization_action(action: Dictionary) -> void:
@@ -299,44 +329,28 @@ func _apply_colonization_action(action: Dictionary) -> void:
 		_colonization_button.tooltip_text = String(action.get("reason", ""))
 
 
-func _render_summary(score: Dictionary, cards: Array) -> void:
-	_apply_score(score, false)
-	for child in _summary_grid.get_children():
-		child.queue_free()
-	_summary_cards.clear()
-	for raw in cards:
-		var data: Dictionary = raw
-		var card := MetricCardScene.instantiate() as MetricCard
-		card.custom_minimum_size = Vector2(0.0, 42.0)
-		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		_summary_grid.add_child(card)
-		_apply_metric_card(card, data)
-		var card_id := String(data.get("id", "summary_%d" % _summary_cards.size()))
-		_summary_cards[card_id] = card
-		_summary_trends[card_id] = String(data.get("trend", ""))
-
-
-func _apply_score(score: Dictionary, live_patch: bool) -> void:
-	if score.is_empty():
-		# 未探索格没有适宜度可言，留着上一格的表盘会读成这一格的数据。
-		# live patch 里的空 score 只表示「这次没更新」，不能据此隐藏。
-		if not live_patch and _score_gauge != null:
-			_score_gauge.visible = false
-			_last_score_band = -1
+func _sync_kpi_density() -> void:
+	if _inspector_root == null:
 		return
-	if _score_gauge != null:
-		_score_gauge.visible = true
-	var score_value := float(score.get("value", 0.0))
-	var score_band := _score_band(score_value)
-	if live_patch and _last_score_band >= 0 and score_band != _last_score_band:
-		UIAnimation.pulse(_score_gauge, UITokens.ANIM_MED)
-	_last_score_band = score_band
-	_score_gauge.set_data(
-		String(score.get("title", "适宜度")),
-		score_value,
-		String(score.get("caption", "")),
-		score.get("accent", UITokens.ACCENT)
-	)
+	var dense := _inspector_root.size.y > 1.0 \
+		and _inspector_root.size.y < DENSE_KPI_MAX_HEIGHT
+	for card_value in _kpi_cards:
+		(card_value as DossierKpiCard).dense = dense
+
+
+func _clear_block_controls() -> void:
+	_note_controls.clear()
+	_metric_controls.clear()
+	_gauge_controls.clear()
+	_list_caption_controls.clear()
+	_section_refs.clear()
+	_chart_controls.clear()
+	_badge_row = null
+	_resource_list = null
+	_cohort_list = null
+	_building_list = null
+	_market_list = null
+	_family_list = null
 
 
 func _render_content(reset_scroll: bool) -> void:
@@ -344,20 +358,11 @@ func _render_content(reset_scroll: bool) -> void:
 	for child in _content_box.get_children():
 		_content_box.remove_child(child)
 		child.queue_free()
-	_insight_list = null
-	_insight_controls.clear()
-	_badge_row = null
-	_resource_list = null
-	_cohort_list = null
-	_building_list = null
-	_market_list = null
+	_clear_block_controls()
 	_tax_context = {}
 	_tax_editors.clear()
 	_page_tax_editors.clear()
 	_page_tax_section = null
-	_metric_controls.clear()
-	_gauge_controls.clear()
-	_chart_controls.clear()
 	var categories: Dictionary = _model.get("categories", {})
 	var data: Dictionary = categories.get(_current_tab, categories.get("geography", {}))
 	_build_category_content(data)
@@ -407,105 +412,40 @@ func _build_category_content(data: Dictionary) -> void:
 		var section: Dictionary = raw_section
 		var body := _add_collapsible_section(section)
 		_build_category_block(body, section)
+	_build_page_tax_section(_tax_context)
 
 
+## 一个块（页根或折叠节）的固定阅读顺序：
+## 批注（警示）→ 事实表 → 指标条 → 趋势 → 物种徽记 → 建造入口 → 列头 + 名录 → 名录附注。
+## 键存在就建控件（空则隐藏），这样补丁里内容由无到有时也只改可见性、不增删节点。
 func _build_category_block(host: Control, data: Dictionary) -> void:
-	var insights: Array = data.get("insights", [])
-	if not insights.is_empty():
-		var insight_shell := InsightShellScene.instantiate() as PanelContainer
-		host.add_child(insight_shell)
-		_insight_list = insight_shell.get_node("InsightList") as InsightList
-		_insight_list.set_items(insights)
-		_insight_controls[String(data.get("id", "_root"))] = _insight_list
+	var block_id := String(data.get("id", "_root"))
+	if data.has("insights"):
+		var notes := NoteListScene.instantiate() as InspectorNoteList
+		host.add_child(notes)
+		var insights: Array = data.get("insights", [])
+		notes.set_notes(insights)
+		notes.visible = not insights.is_empty()
+		_note_controls[block_id] = notes
 
-	if host == _content_box:
-		_build_page_tax_section(host, _tax_context)
+	if data.has("metrics"):
+		var facts := FactGridScene.instantiate() as InspectorFactGrid
+		host.add_child(facts)
+		var metrics: Array = data.get("metrics", [])
+		facts.set_facts(metrics)
+		facts.visible = not metrics.is_empty()
+		_metric_controls[block_id] = facts
 
-	var cohort_rows: Array = data.get("cohort_rows", [])
-	if data.has("family_rows"):
-		_family_list = FamilyListScene.instantiate()
-		_family_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		_family_list.details_requested.connect(
-			_request_object_detail)
-		_family_list.set_rows(data.get("family_rows", []))
-		host.add_child(_family_list)
-	if data.has("cohort_rows"):
-		_add_group_separator(host)
-		_cohort_list = CohortListScene.instantiate() as CohortList
-		_cohort_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		_cohort_list.details_requested.connect(
-			_request_object_detail)
-		_cohort_list.set_rows(cohort_rows)
-		host.add_child(_cohort_list)
-
-	var resource_rows: Array = data.get("resource_rows", [])
-	if data.has("resource_rows"):
-		_add_group_separator(host)
-		_resource_list = ResourceListScene.instantiate() as ResourceList
-		_resource_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		_resource_list.details_requested.connect(
-			_request_object_detail)
-		_resource_list.set_rows(resource_rows)
-		host.add_child(_resource_list)
-
-	var market_rows: Array = data.get("market_rows", [])
-	if data.has("market_rows"):
-		_add_group_separator(host)
-		_market_list = MarketListScene.instantiate()
-		_market_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		_market_list.details_requested.connect(
-			_request_object_detail)
-		_market_list.set_rows(market_rows)
-		host.add_child(_market_list)
-
-	var building_rows: Array = data.get("building_rows", [])
-	if data.has("building_rows"):
-		_add_group_separator(host)
-		if data.has("construction"):
-			_construction_model = data.get("construction", {})
-			_construction_picker.set_model(_construction_model)
-			var entry := ConstructionEntryScene.instantiate() as PanelContainer
-			(entry.get_node("Row/Icon") as IconBadge).set_semantic(
-				&"economy.building", UITokens.CLIMATE)
-			(entry.get_node("Row/OpenButton") as Button).pressed.connect(
-				_open_construction)
-			host.add_child(entry)
-			_add_group_separator(host)
-		_building_list = BuildingListScene.instantiate() as BuildingList
-		_building_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		_building_list.details_requested.connect(
-			_request_object_detail)
-		_building_list.set_rows(building_rows)
-		host.add_child(_building_list)
-
-	var metrics: Array = data.get("metrics", [])
-	if not metrics.is_empty():
-		_add_group_separator(host)
-		var grid := MetricGridScene.instantiate() as GridContainer
-		host.add_child(grid)
-		for raw in metrics:
-			var metric: Dictionary = raw
-			var card := MetricCardScene.instantiate() as MetricCard
-			card.custom_minimum_size = Vector2(184.0, 56.0)
-			card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			grid.add_child(card)
-			_apply_metric_card(card, metric)
-			_metric_controls[String(metric.get("id", "metric_%d" % _metric_controls.size()))] = card
-
-	var gauges: Array = data.get("gauges", [])
-	if not gauges.is_empty():
-		_add_group_separator(host)
-		for raw in gauges:
-			var gauge: Dictionary = raw
-			var bar := GaugeBarScene.instantiate() as GaugeBar
-			bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			host.add_child(bar)
-			_apply_gauge(bar, gauge)
-			_gauge_controls[String(gauge.get("id", "gauge_%d" % _gauge_controls.size()))] = bar
+	if data.has("gauges"):
+		var meters := MeterListScene.instantiate() as InspectorMeterList
+		host.add_child(meters)
+		var gauges: Array = data.get("gauges", [])
+		meters.set_meters(gauges)
+		meters.visible = not gauges.is_empty()
+		_gauge_controls[block_id] = meters
 
 	var charts: Array = data.get("charts", [])
 	if not charts.is_empty():
-		_add_group_separator(host)
 		for raw in charts:
 			var chart: Dictionary = raw
 			var spark := ChartAdapter.make_sparkline(
@@ -523,27 +463,89 @@ func _build_category_block(host: Control, data: Dictionary) -> void:
 
 	var badges: Array = data.get("badges", [])
 	if not badges.is_empty():
-		_add_group_separator(host)
 		var row := BadgeRowScene.instantiate() as BadgeRow
 		row.set_badges(badges)
 		host.add_child(row)
 		_badge_row = row
 
+	if data.has("building_rows") and data.has("construction"):
+		_construction_model = data.get("construction", {})
+		_construction_picker.set_model(_construction_model)
+		var entry := ConstructionEntryScene.instantiate() as PanelContainer
+		(entry.get_node("Row/Icon") as IconBadge).set_semantic(
+			&"economy.building", UITokens.CLIMATE)
+		(entry.get_node("Row/OpenButton") as Button).pressed.connect(
+			_open_construction)
+		host.add_child(entry)
 
-func _build_page_tax_section(host: Control, context: Dictionary) -> void:
+	for row_key in ROW_LIST_KEYS:
+		if data.has(row_key):
+			_build_row_list(host, data, String(row_key), block_id)
+
+
+func _build_row_list(host: Control, data: Dictionary, row_key: String,
+		block_id: String) -> void:
+	var rows: Array = data.get(row_key, [])
+	var header_spec: Dictionary = data.get("list_header", {})
+	if not header_spec.is_empty() and not rows.is_empty():
+		var header := ColumnHeaderScene.instantiate() as InspectorColumnHeader
+		header.lead_indent = float(header_spec.get("indent", header.lead_indent))
+		header.set_columns(String(header_spec.get("lead", "")),
+			header_spec.get("columns", []))
+		host.add_child(header)
+	var list: Control
+	match row_key:
+		"family_rows":
+			_family_list = FamilyListScene.instantiate()
+			list = _family_list
+		"cohort_rows":
+			_cohort_list = CohortListScene.instantiate() as CohortList
+			list = _cohort_list
+		"resource_rows":
+			_resource_list = ResourceListScene.instantiate() as ResourceList
+			list = _resource_list
+		"market_rows":
+			_market_list = MarketListScene.instantiate()
+			list = _market_list
+		"building_rows":
+			_building_list = BuildingListScene.instantiate() as BuildingList
+			list = _building_list
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list.connect(&"details_requested", _request_object_detail)
+	list.call(&"set_rows", rows)
+	host.add_child(list)
+	if data.has("list_caption"):
+		var caption := NoteListScene.instantiate() as InspectorNoteList
+		host.add_child(caption)
+		_set_list_caption(caption, String(data.get("list_caption", "")))
+		_list_caption_controls[block_id] = caption
+
+
+func _set_list_caption(caption: InspectorNoteList, text: String) -> void:
+	caption.visible = not text.is_empty()
+	caption.set_notes([] if text.is_empty() else [{"id": "list_caption", "text": text,
+		"accent": UITokens.TEXT_MUTED}])
+
+
+## 税率编辑收进页尾的折叠「税务」节：默认收起，节头直接给出当前税率，
+## 展开后才是可编辑的税档。_page_tax_section 指向整个折叠节，
+## 打开对象详情时整节隐藏（对象详情自带对象级税档）。
+func _build_page_tax_section(context: Dictionary) -> void:
 	_page_tax_editors.clear()
 	_page_tax_section = null
 	var defaults: Array = context.get("default_lanes", [])
 	if defaults.is_empty():
 		return
+	var body := _add_collapsible_section({
+		"id": "page_tax", "title": _page_tax_title(_current_tab),
+		"icon": "tax.section", "accent": UITokens.BRASS_HIGHLIGHT,
+		"collapsed": true, "summary": _tax_summary(defaults),
+	})
+	_page_tax_section = body.get_parent() as Control
 	var section := TaxSectionScene.instantiate() as VBoxContainer
-	host.add_child(section)
-	_page_tax_section = section
-	(section.get_node("Head/Icon") as IconBadge).set_semantic(
-		&"tax.section", UITokens.BRASS_HIGHLIGHT)
-	(section.get_node("Head/Title") as Label).text = _page_tax_title(_current_tab)
+	body.add_child(section)
+	(section.get_node("Head") as Control).visible = false
 	var editable := bool(context.get("editable", false))
-	(section.get_node("Head/Readonly") as Control).visible = not editable
 	var hint := section.get_node("Hint") as Label
 	if not bool(context.get("available", true)):
 		hint.text = String(context.get("reason", "该领土没有可调整的税收政策。"))
@@ -570,6 +572,20 @@ func _page_tax_title(tab_id: String) -> String:
 	"market": "此地交易税与关税",
 		"buildings": "此地营业税",
 	}.get(tab_id, "此地税率")
+
+
+func _tax_summary(lanes: Array) -> String:
+	var parts := PackedStringArray()
+	var adjusted := false
+	for lane_value in lanes:
+		var lane: Dictionary = lane_value
+		var label := String(lane.get("kind_label", "")).trim_prefix("此地")
+		parts.append("%s %s" % [label, TaxLaneEditor._format_value(
+			int(lane.get("base", 0)), int(lane.get("mode", 0)))])
+		adjusted = adjusted or bool(lane.get("has_override", false))
+	var text := " · ".join(parts) if parts.size() <= 1 \
+		else "%s 等 %d 项" % [parts[0], parts.size()]
+	return "%s · %s" % [text, "已调整" if adjusted else "沿用国家"]
 
 
 func _restore_lane_pending(editor: TaxLaneEditor, lane: Dictionary) -> void:
@@ -828,17 +844,40 @@ func _apply_category_patch(data: Dictionary) -> void:
 		_update_more_button()
 		_apply_page_tax_patch(_tax_context)
 		_resolve_tax_pending(_tax_context, data)
-	_apply_category_block_patch(data)
+		var tax_refs: Dictionary = _section_refs.get("page_tax", {})
+		if not tax_refs.is_empty():
+			(tax_refs.summary as Label).text = _tax_summary(
+				_tax_context.get("default_lanes", []))
+	var root_data := data.duplicate(false)
+	root_data.erase("sections")
+	_apply_category_block_patch(root_data)
 	for raw_section in data.get("sections", []):
 		_apply_category_block_patch(raw_section as Dictionary)
 
 
 func _apply_category_block_patch(data: Dictionary) -> void:
-	var insight_list := _insight_controls.get(String(data.get("id", "_root"))) as InsightList
-	if insight_list == null:
-		insight_list = _insight_list
-	if insight_list != null and data.has("insights"):
-		insight_list.update_items(data.get("insights", []))
+	var block_id := String(data.get("id", "_root"))
+	var notes := _note_controls.get(block_id) as InspectorNoteList
+	if notes != null and data.has("insights"):
+		var insights: Array = data.get("insights", [])
+		notes.set_notes(insights)
+		notes.visible = not insights.is_empty()
+	var facts := _metric_controls.get(block_id) as InspectorFactGrid
+	if facts != null and data.has("metrics"):
+		var metrics: Array = data.get("metrics", [])
+		facts.set_facts(metrics)
+		facts.visible = not metrics.is_empty()
+	var meters := _gauge_controls.get(block_id) as InspectorMeterList
+	if meters != null and data.has("gauges"):
+		var gauges: Array = data.get("gauges", [])
+		meters.set_meters(gauges)
+		meters.visible = not gauges.is_empty()
+	var caption := _list_caption_controls.get(block_id) as InspectorNoteList
+	if caption != null and data.has("list_caption"):
+		_set_list_caption(caption, String(data.get("list_caption", "")))
+	var refs: Dictionary = _section_refs.get(block_id, {})
+	if not refs.is_empty():
+		_apply_section_texts(refs, data)
 	if _badge_row != null and data.has("badges"):
 		_badge_row.update_badges(data.get("badges", []))
 	if _cohort_list != null and data.has("cohort_rows"):
@@ -854,16 +893,6 @@ func _apply_category_block_patch(data: Dictionary) -> void:
 		_construction_picker.set_model(_construction_model)
 	if _market_list != null and data.has("market_rows"):
 		_market_list.update_rows(data.get("market_rows", []))
-	for raw in data.get("metrics", []):
-		var metric: Dictionary = raw
-		var card := _metric_controls.get(String(metric.get("id", ""))) as MetricCard
-		if card != null:
-			_apply_metric_card(card, metric)
-	for raw in data.get("gauges", []):
-		var gauge: Dictionary = raw
-		var bar := _gauge_controls.get(String(gauge.get("id", ""))) as GaugeBar
-		if bar != null:
-			_apply_gauge(bar, gauge)
 	for raw in data.get("charts", []):
 		var chart: Dictionary = raw
 		var spark := _chart_controls.get(String(chart.get("id", ""))) as SparklineChart
@@ -880,8 +909,6 @@ func _apply_category_block_patch(data: Dictionary) -> void:
 
 
 func _add_collapsible_section(section: Dictionary) -> VBoxContainer:
-	if _content_box.get_child_count() > 0:
-		_add_group_separator(_content_box)
 	var section_id := String(section.get("id", "section"))
 	var key := "%s:%s" % [_current_tab, section_id]
 	var collapsed := bool(_section_collapsed.get(key, section.get("collapsed", false)))
@@ -892,89 +919,83 @@ func _add_collapsible_section(section: Dictionary) -> VBoxContainer:
 	var icon := root.get_node("Header/Row/Icon") as IconBadge
 	var label := root.get_node("Header/Row/Label") as Label
 	var body := root.get_node("Body") as VBoxContainer
+	var refs := {
+		"summary": root.get_node("Header/Row/Summary") as Label,
+		"caption": root.get_node("Body/Caption") as Label,
+	}
 	header.set_pressed_no_signal(not collapsed)
 	icon.set_semantic(
-		StringName(section.get("icon", &"summary.overview")),
+		StringName(IconBadge.normalize_icon(section.get("icon", &"summary.overview"))),
 		section.get("accent", UITokens.ACCENT)
 	)
 	label.text = String(section.get("title", "资料"))
+	_apply_section_texts(refs, section)
 	body.visible = not collapsed
 	_apply_section_chevron(chevron, collapsed)
 	header.toggled.connect(func(expanded: bool) -> void:
-		body.visible = expanded
 		_section_collapsed[key] = not expanded
 		_apply_section_chevron(chevron, not expanded)
+		body.visible = expanded
+		if expanded:
+			UIAnimation.fade_slide_in(body, Vector2(0.0, -6.0), UITokens.ANIM_FAST)
 	)
 	_content_box.add_child(root)
+	_section_refs[section_id] = refs
 	return body
+
+
+func _apply_section_texts(refs: Dictionary, section: Dictionary) -> void:
+	if section.has("summary"):
+		var summary := refs.summary as Label
+		summary.text = String(section.get("summary", ""))
+		summary.visible = not summary.text.is_empty()
+	if section.has("caption"):
+		var caption := refs.caption as Label
+		caption.text = String(section.get("caption", ""))
+		caption.visible = not caption.text.is_empty()
 
 
 func _apply_section_chevron(chevron: IconBadge, collapsed: bool) -> void:
 	chevron.set_semantic(
 		&"action.chevron_right" if collapsed else &"action.chevron_down",
-		UITokens.BRASS_HIGHLIGHT
+		UITokens.DOSSIER_INK_SOFT
 	)
 
 
-func _inspector_show_tab_labels(tabs: Array) -> bool:
-	if tabs.size() <= 4:
-		return true
-	if detail_open():
-		return false
-	# 关对象详情后外层可能还停在 860+，档案列会短暂吃满加宽。
-	# 不能据此给 5 个页签加字，否则最小宽度会再次把面板撑开。
-	if size.x > 560.0:
-		return false
-	return _dossier_column_width() >= 520.0
-
-
-func _dossier_column_width() -> float:
-	if _inspector_root != null and _inspector_root.size.x > 1.0:
-		return _inspector_root.size.x
-	if size.x > 1.0:
-		var reserved := 0.0
-		if _detail_shell != null and _detail_shell.visible:
-			reserved = maxf(_detail_shell.size.x, 0.0) + 12.0
-		return maxf(size.x - reserved, 1.0)
-	return 460.0
+func _chapter_spec(tabs: Array) -> Array:
+	var chapters := []
+	for raw in tabs:
+		var tab: Dictionary = raw
+		chapters.append({
+			"id": String(tab.get("id", "")),
+			"label": String(tab.get("label", "")),
+			"icon": IconBadge.normalize_icon(tab.get("icon", "")),
+			"question": String(tab.get("tooltip", "")),
+		})
+	return chapters
 
 
 func _on_inspector_resized() -> void:
 	_sync_split_layout()
-	if _model.is_empty() or _tabs == null:
+
+
+## 切页或换格后正文逐块淡入：每块错开 28ms，总时长不超过约 0.3s。
+func _animate_content_in() -> void:
+	if not visible or not is_inside_tree():
 		return
-	var tabs: Array = _model.get("tabs", [])
-	var signature := _tabs_signature(tabs)
-	var show_labels := _inspector_show_tab_labels(tabs)
-	signature += "|labels:%s" % ("1" if show_labels else "0")
-	if signature == _tabs_signature_cache:
-		return
-	_tabs_signature_cache = signature
-	_tabs.set_tabs(tabs, _current_tab, show_labels)
-
-
-func _apply_metric_card(card: MetricCard, data: Dictionary) -> void:
-	card.set_data(
-		String(data.get("title", "")),
-		String(data.get("value", "")),
-		String(data.get("subtitle", "")),
-		data.get("accent", UITokens.ACCENT),
-		String(data.get("trend", "")),
-		String(data.get("icon", ""))
-	)
-
-
-func _apply_gauge(bar: GaugeBar, gauge: Dictionary) -> void:
-	bar.set_data(
-		String(gauge.get("label", "")),
-		float(gauge.get("value", 0.0)),
-		String(gauge.get("min_label", "")),
-		String(gauge.get("max_label", "")),
-		gauge.get("accent", UITokens.ACCENT),
-		float(gauge.get("marker", -1.0)),
-		String(gauge.get("status_label", "")),
-		String(gauge.get("value_text", ""))
-	)
+	var index := 0
+	for child in _content_box.get_children():
+		var block := child as Control
+		if block == null or not block.visible:
+			continue
+		if index >= 8:
+			break
+		block.modulate.a = 0.0
+		var tween := block.create_tween()
+		tween.tween_interval(0.028 * float(index))
+		tween.tween_property(block, "modulate:a", 1.0, UITokens.ANIM_FAST) \
+			.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		index += 1
 
 
 func set_construction_model(model: Dictionary) -> void:
@@ -1173,23 +1194,17 @@ func _sync_split_layout() -> void:
 	_detail_shell.size_flags_stretch_ratio = 1.0
 
 
-func _add_group_separator(host: Control = null) -> void:
-	var target := host if host != null else _content_box
-	if target == null or target.get_child_count() == 0:
-		return
-	var line := GroupSeparatorScene.instantiate() as HSeparator
-	target.add_child(line)
-
-
 func _on_tab_selected(tab_id: String) -> void:
 	if _scroll != null:
 		_scroll_by_tab[_current_tab] = _scroll.scroll_vertical
 	close_detail()
 	_current_tab = tab_id
+	if _chapter_nav != null:
+		_chapter_nav.select(tab_id)
 	tab_data_requested.emit(tab_id)
 	_render_content(false)
 	call_deferred("_restore_tab_scroll", tab_id)
-	UIAnimation.crossfade(_content_box, UITokens.ANIM_FAST)
+	_animate_content_in()
 
 
 func _restore_tab_scroll(tab_id: String) -> void:
@@ -1224,11 +1239,3 @@ func _count_nodes(node: Node) -> int:
 	for child in node.get_children():
 		count += _count_nodes(child)
 	return count
-
-
-func _score_band(value: float) -> int:
-	if value >= 0.80: return 4
-	if value >= 0.62: return 3
-	if value >= 0.42: return 2
-	if value >= 0.24: return 1
-	return 0

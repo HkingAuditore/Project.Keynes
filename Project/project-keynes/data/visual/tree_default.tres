@@ -80,3 +80,7 @@ vitality_low_color_strength = 0.66
 vitality_high_color_strength = 0.36
 vitality_color_contrast = 0.88
 vitality_dieback_noise_strength = 0.3
+sub_form_enabled = true
+crown_diameter_hex = 0.3
+grove_crown_min = 6
+grove_crown_max = 15

@@ -89,6 +89,8 @@ var speed_multiplier: float = 1.0
 # [cylindrical-earth-daylight] 视觉昼夜相位 ∈ [0,1)：0=日出 0.25=正午 0.5=日落 0.75=午夜。
 # 与 day_phase()(随倍速) 解耦，驱动 shader 的 day_phase uniform、TODProfile 与 UI 小时位。
 var visual_day_phase: float = 0.25
+# GM 截图预览钉住视觉相位。不写入存档：读档后继续按实时晨昏线走。
+var visual_day_phase_held: bool = false
 
 # Phase 4：长期气候异常值（游戏内"全球温度偏移"），shader 直接读
 var climate_anomaly: float = 0.0
@@ -364,11 +366,31 @@ func day_phase() -> float:
 # 解耦模式（默认）：按真实 delta 匀速绕圈，visual_daylen_seconds 一圈，与倍速无关 → 快进不闪。
 # 跟随模式（visual_tod_follow_speed=true）：取 day_phase()，回退旧的随倍速行为。
 func _advance_visual_day_phase(delta: float) -> void:
+	# 钉住时不推进、不发信号，避免实时晨昏线把 GM 太阳预览冲掉。
+	if visual_day_phase_held:
+		return
 	if visual_tod_follow_speed:
 		visual_day_phase = day_phase()
 	else:
 		var period: float = maxf(visual_daylen_seconds, 1.0)
 		visual_day_phase = fposmod(visual_day_phase + delta / period, 1.0)
+	visual_day_phase_changed.emit(visual_day_phase)
+
+
+func hold_visual_day_phase(phase: float) -> void:
+	var next := fposmod(phase, 1.0)
+	var entered := not visual_day_phase_held
+	visual_day_phase_held = true
+	var changed := not is_equal_approx(visual_day_phase, next)
+	visual_day_phase = next
+	if entered or changed:
+		visual_day_phase_changed.emit(visual_day_phase)
+
+
+func release_visual_day_phase() -> void:
+	if not visual_day_phase_held:
+		return
+	visual_day_phase_held = false
 	visual_day_phase_changed.emit(visual_day_phase)
 
 # 将 day_phase 映射为 0−24 小时（UI 仅用），精度到整小时。
@@ -524,6 +546,7 @@ func restore_state(state: Dictionary) -> Dictionary:
 	paused = bool(state.get("paused", true))
 	speed_multiplier = maxf(float(state.get("speed_multiplier", 1.0)), 0.0)
 	visual_day_phase = fposmod(float(state.get("visual_day_phase", 0.25)), 1.0)
+	visual_day_phase_held = false
 	climate_anomaly = clampf(float(state.get("climate_anomaly", 0.0)),
 		-climate_anomaly_max, climate_anomaly_max)
 	_last_day = int(state.get("last_day", int(floor(current_day))))

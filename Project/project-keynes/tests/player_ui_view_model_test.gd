@@ -239,25 +239,40 @@ func _initialize() -> void:
 	if UITokens.format_compact_number_cn(12500.0, 2) != "1.25万":
 		failures.append("Chinese compact number formatting regressed")
 
-	for raw in model.get("summary_cards", []):
-		var card: Dictionary = raw
-		if String(card.get("id", "")).is_empty():
-			failures.append("summary card missing stable id")
-		if _is_legacy_icon(String(card.get("icon", ""))):
-			failures.append("summary card still uses a legacy Unicode icon")
-	if not _find_by_id(model.get("summary_cards", []), "summary_geo").is_empty():
-		failures.append("summary still repeats terrain already shown in the title")
-	if not _find_by_id(model.get("summary_cards", []), "summary_risk").is_empty():
-		failures.append("summary still exposes the presentation-only risk heuristic")
-	if (model.get("summary_cards", []) as Array).size() != 4:
-		failures.append("summary should contain climate, population, prosperity, and country")
-	for summary_id in ["summary_climate", "summary_population",
-			"summary_prosperity", "summary_country"]:
-		if _find_by_id(model.get("summary_cards", []), summary_id).is_empty():
-			failures.append("summary missing %s" % summary_id)
-	for hidden_summary_id in ["summary_market", "summary_resource"]:
-		if not _find_by_id(model.get("summary_cards", []), hidden_summary_id).is_empty():
-			failures.append("summary still displays %s" % hidden_summary_id)
+	if model.has("summary_cards") or model.has("score"):
+		failures.append("dossier model still carries the retired gauge/summary cards")
+	var kpis: Array = model.get("kpis", [])
+	if kpis.size() != 4:
+		failures.append("KPI band should hold exactly four facts: %d" % kpis.size())
+	for raw in kpis:
+		var kpi: Dictionary = raw
+		if String(kpi.get("id", "")).is_empty() or String(kpi.get("title", "")).is_empty():
+			failures.append("KPI missing stable id or title")
+		if _is_legacy_icon(String(kpi.get("icon", ""))):
+			failures.append("KPI still uses a legacy Unicode icon")
+		if String(kpi.get("kind", "")) == "text" and String(kpi.get("text", "")).is_empty():
+			failures.append("text KPI %s has no text" % String(kpi.get("id", "")))
+	var expected_kpis := ["kpi_population", "kpi_food", "kpi_jobs", "kpi_satisfaction"] \
+		if not _find_by_id(kpis, "kpi_population").is_empty() \
+		else ["kpi_suitability", "kpi_climate", "kpi_owner"]
+	for kpi_id in expected_kpis:
+		if _find_by_id(kpis, kpi_id).is_empty():
+			failures.append("KPI band missing %s" % kpi_id)
+	if _find_by_id(kpis, "kpi_population").is_empty() \
+			and _find_by_id(kpis, "kpi_carrying").is_empty() \
+			and _find_by_id(kpis, "kpi_resource").is_empty():
+		failures.append("unsettled KPI band should show carrying capacity or the main resource")
+	var named_kpis: Array = named_model.get("kpis", [])
+	if _find_by_id(named_kpis, "kpi_population").is_empty() \
+			or _find_by_id(named_kpis, "kpi_food").is_empty():
+		failures.append("settled cell did not switch the KPI band to livelihood facts")
+	var header_kicker := String(model.get("header", {}).get("kicker", ""))
+	if not header_kicker.begins_with("地块档案 · 区域 "):
+		failures.append("header kicker should carry the dossier region label")
+	var unexplored: Dictionary = view_model._build_unexplored_model(cell) \
+		if view_model.has_method("_build_unexplored_model") else {}
+	if not unexplored.is_empty() and not (unexplored.get("kpis", []) as Array).is_empty():
+		failures.append("unexplored dossier should not render KPIs")
 
 	var categories: Dictionary = model.get("categories", {})
 	if categories.size() != 1 or not categories.has("geography"):
@@ -276,9 +291,20 @@ func _initialize() -> void:
 		failures.append("geography tab is missing grouped sections")
 	if bool(physical.get("collapsed", false)):
 		failures.append("landform section should stay expanded by default")
-	if not bool(climate.get("collapsed", false)) \
-			or not bool(ecology.get("collapsed", false)):
-		failures.append("climate and ecology gauges should start collapsed")
+	if bool(climate.get("collapsed", false)):
+		failures.append("climate section carries the key temperature/moisture facts and should start expanded")
+	if not bool(ecology.get("collapsed", false)):
+		failures.append("ecology details should start collapsed")
+	var section_order := PackedStringArray()
+	for raw_section in geography.get("sections", []):
+		section_order.append(String((raw_section as Dictionary).get("id", "")))
+	if section_order.size() >= 2 and section_order[0] == "physical_geography" \
+			and section_order.has("natural_resources") \
+			and section_order[1] != "natural_resources":
+		failures.append("natural resources should follow the landform section: %s" % [section_order])
+	for retired_metric in ["climate_wind", "climate_current", "hydrology_upwelling"]:
+		if not _find_by_id(climate.get("metrics", []), retired_metric).is_empty():
+			failures.append("climate section still shows %s" % retired_metric)
 	if biogeography.is_empty() or String(biogeography.get("title", "")) != "本地物种":
 		failures.append("geography tab is missing local species facts")
 	var maize_badge := _find_by_id(biogeography.get("badges", []), "bio.maize")
@@ -581,11 +607,10 @@ func _initialize() -> void:
 	if gated_market_rows.size() != 1 \
 			or String(gated_market_rows[0].get("id", "")) != "market_gathered_plants":
 		failures.append("market dossier exposed technology-locked goods")
-	if (gated_market.get("metrics", []) as Array).size() != 3 \
+	if (gated_market.get("metrics", []) as Array).size() != 2 \
 			or _find_by_id(gated_market.get("metrics", []), "merchant_cash").is_empty() \
-			or _find_by_id(gated_market.get("metrics", []), "market_shortage_count").is_empty() \
 			or _find_by_id(gated_market.get("metrics", []), "merchant_trade_net").is_empty():
-		failures.append("market dossier should keep three player-facing summary cards")
+		failures.append("market dossier should keep cash and trade net as summary facts")
 	var merchant_accounts: Dictionary = _find_section(
 		gated_market.get("sections", []), "merchant_accounts")
 	if merchant_accounts.is_empty() or not bool(merchant_accounts.get("collapsed", false)):
@@ -596,7 +621,7 @@ func _initialize() -> void:
 			or not _find_by_id(gated_market.get("insights", []),
 				"market_trade_in_transit").is_empty() \
 			or String(_find_by_id(gated_market.get("metrics", []),
-				"merchant_trade_net").get("subtitle", "")) != "无在途":
+				"merchant_trade_net").get("subtitle", "")) != "":
 		failures.append("zero-flow market dossier leaked cross-cell trade copy")
 
 	var trade_market: Dictionary = view_model._market_category({
@@ -648,8 +673,8 @@ func _initialize() -> void:
 	var trade_net_card: Dictionary = _find_by_id(
 		trade_market.get("metrics", []), "merchant_trade_net")
 	if String(trade_insight.get("text", "")) != "1 种物资在途，下一批还有 4 日到货。" \
-			or String(trade_net_card.get("subtitle", "")) != "在途 1 种 · 4 日后到货" \
-			or (trade_market.get("metrics", []) as Array).size() != 3:
+			or String(trade_net_card.get("subtitle", "")) != "" \
+			or (trade_market.get("metrics", []) as Array).size() != 2:
 		failures.append("market trade summary cards did not stay curated")
 
 	var daily_cache := {}

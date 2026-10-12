@@ -230,6 +230,14 @@ func _on_economy_event_batch_available(_meta: Dictionary) -> void:
 	_mark_country_panel_dirty(domains, "economy_commit")
 
 
+## 经济事件批次只在有事件的日子发布，开局常连续数日没有；经济卷宗打开时
+## 每个已提交日都要推进一次，否则数据停在打开那天。刷新仍走墙钟节流。
+func notify_committed_day() -> void:
+	if _country_panel != null and _country_panel.is_panel_open() \
+			and _country_panel.current_section() == "economy":
+		_mark_country_panel_dirty(COUNTRY_DIRTY_ECONOMY, "economy_day")
+
+
 func _on_ideology_runtime_settled(_result: Dictionary) -> void:
 	_mark_country_panel_dirty(COUNTRY_DIRTY_IDEOLOGY, "ideology_commit")
 

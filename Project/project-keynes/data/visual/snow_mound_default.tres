@@ -4,7 +4,7 @@
 
 [resource]
 script = ExtResource("1")
-enabled = true
+enabled = false
 detail_kind = 9
 render_z_index = 1
 density_scale = 1.25
@@ -31,3 +31,5 @@ micro_gap_threshold = 0.06
 world_noise_acceptance = 1.65
 base_color_override_enabled = true
 base_color_override = Color(0.88, 0.91, 0.95, 1.0)
+element_count_min = 1
+element_count_max = 2
