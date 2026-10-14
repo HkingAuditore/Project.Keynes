@@ -1668,6 +1668,7 @@ bool NativeEconomyRuntime::advance_fiscal_settlement(std::string &error) {
 }
 
 bool NativeEconomyRuntime::run_fiscal_settlement_drain(std::string &error) {
+    struct DiagGuard { NativeEconomyRuntime *r; ~DiagGuard() { r->diag_stage_money_probe("fiscal_settlement"); } } diag_guard{this};
     error.clear();
     if (!_bootstrapped || _fatal) {
         return true;

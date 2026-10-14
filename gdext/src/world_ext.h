@@ -340,6 +340,14 @@ public:
     godot::Dictionary set_runtime_qos_threaded(bool interactive);
     godot::Dictionary poll_runtime_commit(int64_t after_generation);
     godot::Dictionary flush_runtime_economy_resource_writeback();
+    bool economy_worker_owns_natural_resources() const;
+    // PK_SIM_DAY_TRACE: one "[main-write]" line with climate slot hashes.
+    void sim_trace_main_write(const char *tag);
+    struct SimTraceWriteGuard {
+        DCWorldExt *self;
+        const char *tag;
+        ~SimTraceWriteGuard() { self->sim_trace_main_write(tag); }
+    };
     godot::Dictionary consume_runtime_visual_patch(int64_t generation, int family,
                                                     int cursor, int max_items);
     godot::Dictionary request_runtime_save(int64_t request_id);
@@ -352,6 +360,9 @@ public:
     // stale, and a stale `false` would run a duplicate Climate day while the
     // worker is already producing one.
     bool climate_worker_authoritative() const;
+    // The main-thread Climate schedule gate: authoritative, or ACTIVE Climate
+    // requested and the worker's first day not yet committed.
+    bool climate_main_thread_suppressed() const;
     bool climate_physics_authoritative() const;
     godot::Dictionary get_climate_physics_read_view() const;
     // Applies the newest worker-committed Climate day into the DataCore slots
@@ -675,6 +686,9 @@ public:
                                         const godot::Dictionary &profile,
                                         int cell_count,
                                         int64_t seed);
+    // Hands ResourceProfileRegistry.build_pass_knobs() to the economy so a
+    // worker-owned economy regenerates its own reserves.
+    godot::Dictionary configure_economy_natural_resources(const godot::Dictionary &knobs);
     godot::Dictionary bootstrap_economy(const godot::Dictionary &population_packet,
                                         const godot::Dictionary &market_packet);
     godot::Dictionary submit_economy_commands(const godot::Dictionary &packed_batch);
@@ -3067,6 +3081,12 @@ private:
     // 只在主线程应用完整提交后替换；读视图不读 worker scratch、不再次获取 ring。
     std::shared_ptr<const pk_async_physics::RuntimeClimatePhysicsState> _climate_physics_committed;
     uint64_t _climate_physics_map_id = 0;
+    // Last climate writeback applied to MapData, whoever asked for it. The host's
+    // per-frame apply and the season-refresh drain share one ring; without this
+    // the host would re-apply a generation the drain already applied and roll
+    // the *_prev lanes onto the current values.
+    uint64_t _climate_writeback_applied_generation = 0;
+    int64_t _climate_writeback_applied_day = -1;
     bool _climate_physics_capture_ready = false;
     // Main-thread cache for the most recently consumed immutable commit.  The
     // visual patch API reads this exact generation instead of polling the ring

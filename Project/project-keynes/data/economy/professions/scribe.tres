@@ -8,3 +8,4 @@ semantic_tags = PackedStringArray("industry.knowledge")
 default_consumption_plan_id = &"scholarly_household"
 profession_class_id = &"technology"
 technology_tags = PackedStringArray()
+entry_savings_days = 180

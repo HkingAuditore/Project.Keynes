@@ -786,11 +786,29 @@ void NativeEconomyRuntime::publish_country_development_facts() {
         }
     }
 
+    constexpr int64_t NEVER_PUBLISHED = std::numeric_limits<int64_t>::min();
+    if (_development_fact_country_handles.size() != country_count ||
+        _development_fact_last_day.size() != country_count * metric_count) {
+        _development_fact_country_handles.assign(country_count, 0);
+        _development_fact_last_day.assign(country_count * metric_count, NEVER_PUBLISHED);
+        _development_fact_qualified.assign(country_count * metric_count, 0);
+    }
     for (int32_t country = 0; country < _epoch_country_count; ++country) {
         if (_epoch_country_handles[static_cast<size_t>(country)] == 0 ||
             metric_at(country, 0).first_cell < 0)
             continue;
         const size_t country_index = static_cast<size_t>(country);
+        if (_development_fact_country_handles[country_index] !=
+                _epoch_country_handles[country_index]) {
+            _development_fact_country_handles[country_index] =
+                _epoch_country_handles[country_index];
+            std::fill_n(_development_fact_last_day.begin() +
+                            static_cast<std::ptrdiff_t>(country_index * metric_count),
+                        metric_count, NEVER_PUBLISHED);
+            std::fill_n(_development_fact_qualified.begin() +
+                            static_cast<std::ptrdiff_t>(country_index * metric_count),
+                        metric_count, uint8_t{0});
+        }
         const int64_t population = satisfaction_population[country_index];
         const int64_t satisfaction = population > 0
             ? std::clamp<int64_t>(satisfaction_weighted[country_index] / population,
@@ -816,6 +834,19 @@ void NativeEconomyRuntime::publish_country_development_facts() {
             const int32_t signal = _development_metric_signal_indices[metric];
             if (signal < 0 || _country_runtime->has_research_signal(country, signal))
                 continue;
+            // A skipped below-qualifier sample is still a reset for Trigger: the
+            // next qualified sample lands after a coverage gap and restarts the
+            // consecutive count.
+            const size_t row = country_index * metric_count + metric;
+            const bool qualified =
+                value.value >= _development_metric_qualifier_thresholds[metric];
+            const int64_t last_day = _development_fact_last_day[row];
+            if (!qualified && _development_fact_qualified[row] == 0 &&
+                last_day != NEVER_PUBLISHED &&
+                _sample_day - last_day < DEVELOPMENT_IDLE_FACT_INTERVAL_DAYS)
+                continue;
+            _development_fact_qualified[row] = qualified ? 1 : 0;
+            _development_fact_last_day[row] = _sample_day;
             CommittedGameplayFact fact;
             fact.kind = GAMEPLAY_FACT_COUNTRY_DEVELOPMENT_METRIC;
             fact.cell = value.first_cell;

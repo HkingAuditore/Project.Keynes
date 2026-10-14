@@ -1018,6 +1018,7 @@ void DCWorldExt::flush_slots_to_map_keys(const PackedStringArray &slot_names) {
 }
 
 void DCWorldExt::refresh_slots_from_map() {
+    SimTraceWriteGuard sim_trace_guard{this, "refresh_slots_from_map"};
     if (!_map_data) return;
     for (int i = 0; i < BIND_TABLE_SIZE; ++i) {
         const StringName slot_name(BIND_TABLE[i].slot_name);
@@ -1057,6 +1058,7 @@ void DCWorldExt::complete_native_daily_moisture_commit() {
 }
 
 void DCWorldExt::refresh_slots_from_map_keys(const PackedStringArray &slot_names) {
+    SimTraceWriteGuard sim_trace_guard{this, "refresh_slots_from_map_keys"};
     if (!_map_data) return;
     for (int k = 0; k < slot_names.size(); ++k) {
         const StringName requested(slot_names[k]);

@@ -1275,6 +1275,8 @@ habitat 按原始 suit 降序排序，在最适宜的前 N 个地块确保最低
 
 **权威 / fallback**：native pass 是 reserve slot 权威。`published_to_slot=false`（含 native 不可用 / 无可发布资源）时 `run_natural_resource_pass_native` 退回 GDScript fallback（`_run_natural_resource_pass_gdscript`，同模板直接读写 `MapData.*_arr`）。两路逐 cell 逐资源 A/B 对拍一致（见 `tests/natural_resource_pass_test.gd`，≥20 cell 覆盖 SIMD body+尾段+陆/水混合）。
 
+**worker 自持例外（2026-10-13）**：经济在 worker 执行且已调用 `configure_economy_natural_resources` 时，经济用到的资源由 worker 经济自己再生（标量内核在 `gdext/src/natural_resource_kernel.h`，两边共用），native pass 跳过这些资源并在返回值里给出 `skipped_worker_owned_resources`，跳过的资源计入"全静态"判断，不会触发 GDScript fallback。这些资源的槽位由 `flush_runtime_economy_resource_writeback` 镜像 worker 值。详见 `native-economy-runtime.md`「worker 自持资源储量」。
+
 **性能路径（多核 + SIMD）**：因 `L`、`inv_denom=1/(1+L)` 与 `P=C0+C1·tn+C2·m` 的系数都是「每资源常数」，per-cell 除法被提到资源外，内层只剩 clamp + 2×FMA + 1×乘。native pass 据此：
 - **多核**：先预筛动态资源，再走一次 `pk::parallel_for_range_with_emit`（`WorkerThreadPool`，自适应每 task ~1024 cell、clamp [1,16]）按 cell range 分块；每个 task 内循环全部动态资源，避免 2400-cell 小图上“每资源一次 WTP dispatch”的固定开销。小图继续走同一 fused body 的 single-thread SIMD（当前阈值 `n_cells < 100000`），大图才进 WTP。`total_delta` 经 thread-local `DeltaEmit` 串行 reduce；无线程池自动降级为单线程，且与多线程 bit-equal。
 - **SIMD**：`PK_HAVE_AVX2` 构建下内层 8 cell/iter（`loadu`/`fmadd`/`max`；`land_only` 经 `blendv` 让水面格保持原值），尾段与非 AVX2 构建共用同一标量 helper，lane/tail/标量三路数值一致。带 `extra_change`、气候适宜度或非线性生态动态的资源走标量精确路径；其他资源继续走原 SIMD 路径。数据保持 SoA、无 cell 间依赖和邻居 gather。

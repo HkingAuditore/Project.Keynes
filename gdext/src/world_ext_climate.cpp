@@ -103,6 +103,7 @@ const float *DCWorldExt::ensure_insol_annual_mean_cache(const float *lat_ptr, in
 
 
 double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase, double season_phase) {
+    SimTraceWriteGuard sim_trace_guard{this, "run_climate_pass_a"};
     _production_stage_mask |= pk_async_climate::CLIMATE_STAGE_BIT_PASS_A;
     (void)phase; // current contract: phase == season_phase (same fast tick)
 
@@ -3238,6 +3239,7 @@ double DCWorldExt::run_transpiration_pass(Dictionary knobs) {
 }
 
 Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
+    SimTraceWriteGuard sim_trace_guard{this, "run_runtime_hydrology_pass"};
     using godot::PackedFloat32Array;
     using godot::StringName;
 
@@ -3922,6 +3924,7 @@ double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_t
 // PackedArray 模式（与 vegetation_dynamics 的 vitality/streak 同模式）。
 // base_moisture 已有 cell_base_moisture SoA，C++ 直读直写。
 double DCWorldExt::run_climate_feedback_pass(Dictionary knobs) {
+    SimTraceWriteGuard sim_trace_guard{this, "run_climate_feedback_pass"};
     using godot::StringName;
     using godot::PackedFloat32Array;
     using godot::PackedInt32Array;
@@ -4093,6 +4096,7 @@ double DCWorldExt::run_climate_feedback_pass_thread(Dictionary knobs, int n_task
 // **不修改任何算法逻辑**。如果发现 SAME_SOURCE A/B 漂移，回头去改这里就是
 // 合并破坏了语义；目标是字节级一致。
 double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
+    SimTraceWriteGuard sim_trace_guard{this, "run_stage_b_pass"};
     using godot::StringName;
     using godot::PackedFloat32Array;
     using godot::PackedInt32Array;

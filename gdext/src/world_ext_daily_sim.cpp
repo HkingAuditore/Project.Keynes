@@ -859,7 +859,7 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
         // call that returns before reaching the gate still reports the state
         // rather than dropping the key and reading as "not suppressed".
         _native_daily_slice_breakdown["climate_authority_suppressed"] =
-            climate_worker_authoritative();
+            climate_main_thread_suppressed();
 
         const auto t_context0 = std::chrono::high_resolution_clock::now();
         if (bool(_native_daily_slice_bundle.get("refresh_slots_from_map", true))) {
@@ -1354,7 +1354,7 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
     //
     // any_pass_ran is forced true because the caller treats false as "the
     // bundle had no pass knobs" and fails the tick.
-    const bool climate_suppressed = climate_worker_authoritative();
+    const bool climate_suppressed = climate_main_thread_suppressed();
     // Written unconditionally. The diagnostics bus *merges* breakdowns rather
     // than replacing them, so a key only set while suppressed would survive
     // revocation and report the main thread as still suppressed after it had

@@ -28,6 +28,25 @@ order, and the worker is the **sole Trigger writer**:
 - The committed day is copied back through `RuntimeTriggerSnapshotRing` and
   `TriggerRuntime::apply_pod_snapshot`, gated on the snapshot generation. The
   legacy facade stays the read surface for UI, save, and the Effect handoff.
+  `WorldRuntimeHost._consume_trigger_worker_snapshot_if_authoritative` calls
+  `MapGenerator.apply_runtime_trigger_snapshot`, which forwards to `DCWorldExt`.
+  Until 2026-10-13 that forwarder was missing, the host's `has_method` probe
+  failed silently, and no worker-fired trigger (development signals included)
+  ever reached a country. Ideology got the same forwarder. Modifier and Effect
+  forwarders are also present (2026-10-14): earlier joint enablement crashed
+  within ~100 ACTIVE days because Effect write-back wiped Economy-owned
+  `program_id == -1` colonization transactions/bindings while still holding
+  ring-buffer references into snapshots the worker could overwrite. Apply paths
+  now copy the POD snapshot out of the ring before rebuilding, and Effect
+  `apply_pod_snapshot` preserves colonization builtins across the swap.
+- Event ingress under ACTIVE: the Economy stage drains committed gameplay facts
+  into Events `APPEND_BATCH` packets (construction facts excluded, since they need
+  a main-thread Modifier building identity), and after Events commits,
+  `forward_committed_events_to_trigger` queues every new journal row as an
+  `INGEST_EVENT` command (producer 3, effective next day, at most 2048 a day,
+  rows outside the catalog's source/type span skipped). The main-thread
+  `ingest_trigger_events` only sees the synchronous journal, which stays empty
+  while Events is worker-authoritative.
 - Effect intents are real, not synthetic. The stage publishes them before
   deciding success, so a day whose ACK barrier is incomplete replays the same
   intent ids on its next visit instead of queueing duplicates: the worker's

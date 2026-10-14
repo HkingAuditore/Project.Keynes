@@ -73,7 +73,7 @@ func _run() -> void:
 	var birth_weights: PackedInt64Array = catalog.signature_satisfaction_birth_weight_q16
 	_expect("profession defaults compile calibrated natural demography",
 		birth_rates.size() > 0 and birth_rates[0] == 2353407 and
-		death_rates.size() == birth_rates.size() and death_rates[0] == 294176 and
+		death_rates.size() == birth_rates.size() and death_rates[0] == 882528 and
 		birth_weights.size() == birth_rates.size() and birth_weights[0] == 65536)
 	if not ClassDB.class_exists("DCWorldExt"):
 		print("  [SKIP] DCWorldExt unavailable")

@@ -39,6 +39,14 @@ var _b_plus_finish_pending: bool = false
 #   （仍消费 has_pending_season_refresh），默认 false。
 var period_ticks: int = 30
 var _ticks_since_last_round: int = 0
+# Set when finish_round_now() completed the round outside the scheduler. A
+# continuation tick that arrives without a should_run() call must then report
+# done instead of starting the next round.
+var _finished_outside_scheduler: bool = false
+# Climate worker-authoritative: a due round is not sliced across frames but run
+# whole by the next worker input capture, after the generator has drained the
+# worker's climate writeback (see MapGenerator.capture_runtime_inputs_for_worker).
+var _capture_round_pending: bool = false
 
 
 func _init(p_generator, p_map: MapData, p_world: WorldData) -> void:
@@ -107,6 +115,7 @@ func season_refresh_state_snapshot() -> Dictionary:
 		"active_owner_requested": active_owner_requested,
 		"simulation_authority": owner == "native_active",
 		"round_active": _round_active,
+		"capture_round_pending": _capture_round_pending,
 		"stage": _stage,
 		"stage_cursor": _stage_cursor,
 		"stage_name": _season_stage_name(_stage),
@@ -135,10 +144,13 @@ func season_refresh_state_snapshot() -> Dictionary:
 
 
 func should_run(_ctx: SusTickContext) -> bool:
+	_finished_outside_scheduler = false
 	if generator == null or map == null or world_data == null:
 		return false
 	if _round_active:
 		return true
+	if _capture_round_pending:
+		return false
 	# 兼容开关：保留旧"信号脉冲驱动"路径供回归对照。
 	var legacy_signal: bool = false
 	if generator.has_method("_c"):
@@ -157,37 +169,88 @@ func should_run(_ctx: SusTickContext) -> bool:
 	return true
 
 
+## Runs the remaining slices of an active round in this call. The worker input
+## capture uses it so a capture sees either none or all of a round; otherwise
+## how many slices landed before it depends on frames per game day.
+func finish_round_now() -> int:
+	if not _round_active:
+		return 0
+	var slices := 0
+	while _round_active and slices < 4096:
+		tick(null)
+		slices += 1
+	_finished_outside_scheduler = true
+	return slices
+
+
+func has_capture_round_pending() -> bool:
+	return _capture_round_pending
+
+
+## Runs a deferred round start to finish. The caller must have brought the
+## climate fields in MapData to a fixed worker day first.
+func run_round_for_capture() -> int:
+	if not _capture_round_pending or _round_active:
+		return 0
+	_capture_round_pending = false
+	_begin_round()
+	var slices := 0
+	while _round_active and slices < 4096:
+		tick(null)
+		slices += 1
+	return slices
+
+
+func _defers_rounds_to_capture() -> bool:
+	return generator != null and generator.has_method("season_refresh_defers_to_capture") \
+		and bool(generator.season_refresh_defers_to_capture())
+
+
+func _begin_round() -> void:
+	# 新路径优先：周期自驱调用 begin_periodic_season_refresh；legacy_signal
+	# 模式下走 begin_pending_season_refresh 消费 pending flag（与旧行为一致）。
+	var legacy_signal: bool = false
+	if generator.has_method("_c"):
+		var cp = generator._c()
+		if cp != null and "season_refresh_legacy_signal" in cp:
+			legacy_signal = bool(cp.season_refresh_legacy_signal)
+	if legacy_signal and generator.has_method("begin_pending_season_refresh"):
+		_season_idx = int(generator.begin_pending_season_refresh())
+	elif generator.has_method("begin_periodic_season_refresh"):
+		_season_idx = int(generator.begin_periodic_season_refresh())
+	elif generator.has_method("begin_pending_season_refresh"):
+		# 防御性回退（旧 generator 没新方法时）
+		_season_idx = int(generator.begin_pending_season_refresh())
+	_stage = 0
+	_stage_cursor = 0
+	_round_active = true
+	_ticks_since_last_round = 0
+	# DOTS-Final-Frontier Phase B+：尝试启用 round-level 单 C++ 调用路径。
+	_b_plus_active = false
+	_b_plus_finish_pending = false
+	if generator.has_method("season_round_b_plus_available") and generator.season_round_b_plus_available():
+		if generator.has_method("start_season_round_b_plus"):
+			var bp_handle: int = int(generator.start_season_round_b_plus(map, world_data, _season_idx))
+			_b_plus_active = bp_handle > 0
+
+
 func tick(_ctx) -> Dictionary:
 	var t_start_us: int = Time.get_ticks_usec()
 	if generator == null or map == null or world_data == null:
 		return {"done": true, "work_done": 0, "elapsed_ms": 0.0, "progress_ratio": 1.0}
 
+	if not _round_active and _finished_outside_scheduler:
+		_finished_outside_scheduler = false
+		return {"done": true, "work_done": 0, "elapsed_ms": 0.0, "progress_ratio": 1.0,
+			"stage": 12, "stage_name": "finished_for_capture", "path": "capture_finish"}
+
 	if not _round_active:
-		# 新路径优先：周期自驱调用 begin_periodic_season_refresh；legacy_signal
-		# 模式下走 begin_pending_season_refresh 消费 pending flag（与旧行为一致）。
-		var legacy_signal: bool = false
-		if generator.has_method("_c"):
-			var cp = generator._c()
-			if cp != null and "season_refresh_legacy_signal" in cp:
-				legacy_signal = bool(cp.season_refresh_legacy_signal)
-		if legacy_signal and generator.has_method("begin_pending_season_refresh"):
-			_season_idx = int(generator.begin_pending_season_refresh())
-		elif generator.has_method("begin_periodic_season_refresh"):
-			_season_idx = int(generator.begin_periodic_season_refresh())
-		elif generator.has_method("begin_pending_season_refresh"):
-			# 防御性回退（旧 generator 没新方法时）
-			_season_idx = int(generator.begin_pending_season_refresh())
-		_stage = 0
-		_stage_cursor = 0
-		_round_active = true
-		_ticks_since_last_round = 0
-		# DOTS-Final-Frontier Phase B+：尝试启用 round-level 单 C++ 调用路径。
-		_b_plus_active = false
-		_b_plus_finish_pending = false
-		if generator.has_method("season_round_b_plus_available") and generator.season_round_b_plus_available():
-			if generator.has_method("start_season_round_b_plus"):
-				var bp_handle: int = int(generator.start_season_round_b_plus(map, world_data, _season_idx))
-				_b_plus_active = bp_handle > 0
+		if _defers_rounds_to_capture():
+			_capture_round_pending = true
+			_ticks_since_last_round = 0
+			return {"done": true, "work_done": 0, "elapsed_ms": 0.0, "progress_ratio": 1.0,
+				"stage": 0, "stage_name": "deferred_to_capture", "path": "capture_deferred"}
+		_begin_round()
 
 	# Native math has committed, but the Godot facade/history mirror is published
 	# in fixed ranges before this day barrier may release.
@@ -319,6 +382,7 @@ func reset_progress() -> void:
 	_stage = 0
 	_stage_cursor = 0
 	_round_active = false
+	_capture_round_pending = false
 	# B+ 路径残留 round handle 强制清理（generator 内部会 abort 掉 C++ 端 round_state）。
 	if _b_plus_active and generator != null and generator.has_method("_abort_season_round_b_plus_safe"):
 		generator._abort_season_round_b_plus_safe()

@@ -4,6 +4,7 @@
 #include "runtime_economy_family_side_tables.h"
 
 #include <algorithm>
+#include <limits>
 #include <tuple>
 #include <vector>
 
@@ -107,6 +108,10 @@ void NativeEconomyRuntime::publish_country_ai_digest() {
         int64_t expense = 0;
         int32_t families = 0;
         int32_t expeditions = 0;
+        int64_t k_eff = 0;
+        int64_t k_geo = 0;
+        int64_t load_weighted = 0;
+        int64_t hungry = 0;
     };
     std::vector<Acc> acc(countries);
     const auto country_of_cell = [&](int32_t cell) -> int32_t {
@@ -116,6 +121,7 @@ void NativeEconomyRuntime::publish_country_ai_digest() {
     };
     const RuntimeEconomyPopulationStore &pop = population_store();
     const int32_t slots = static_cast<int32_t>(pop.active.size());
+    std::vector<int64_t> cell_people(_epoch_cell_country.size(), 0);
     for (int32_t slot = 0; slot < slots; ++slot) {
         if (pop.active[slot] == 0) continue;
         const int64_t people = std::max<int64_t>(0, pop.population[slot]);
@@ -123,14 +129,31 @@ void NativeEconomyRuntime::publish_country_ai_digest() {
         const int32_t cell = pop.page_cell[slot / RuntimeEconomyPopulationStore::COHORT_PAGE_SIZE];
         const int32_t country = country_of_cell(cell);
         if (country < 0) continue;
+        cell_people[static_cast<size_t>(cell)] += people;
         Acc &a = acc[static_cast<size_t>(country)];
         a.population += people;
         a.satisfaction_weighted += people * static_cast<int64_t>(pop.composite_satisfaction[slot]);
         a.essentials_weighted += people * static_cast<int64_t>(pop.needs_satisfaction[slot]);
-        a.tax_paid += pop.epoch_tax_paid[slot];
-        a.subsidy += pop.epoch_subsidy_received[slot];
-        a.income += pop.epoch_income[slot];
-        a.expense += pop.epoch_expense[slot];
+        if (static_cast<int32_t>(pop.needs_satisfaction[slot]) < COUNTRY_AI_HUNGRY_ESSENTIALS_Q16)
+            a.hungry += people;
+        const int64_t days = cell_elapsed_days(cell);
+        a.tax_paid += pop.epoch_tax_paid[slot] / days;
+        a.subsidy += pop.epoch_subsidy_received[slot] / days;
+        a.income += pop.epoch_income[slot] / days;
+        a.expense += pop.epoch_expense[slot] / days;
+    }
+    for (size_t cell = 0; cell < cell_people.size(); ++cell) {
+        const int32_t country = country_of_cell(static_cast<int32_t>(cell));
+        if (country < 0) continue;
+        Acc &a = acc[static_cast<size_t>(country)];
+        const int64_t k_eff = cell < _cell_carrying_k_eff.size() ? _cell_carrying_k_eff[cell] : 0;
+        a.k_eff += std::max<int64_t>(0, k_eff);
+        if (cell < _cell_carrying_k_geo.size()) a.k_geo += std::max<int64_t>(0, _cell_carrying_k_geo[cell]);
+        const int64_t people = cell_people[cell];
+        if (people <= 0) continue;
+        const int64_t load = k_eff > 0
+            ? std::min<int64_t>(Q16_ONE * 4, people * Q16_ONE / k_eff) : Q16_ONE * 4;
+        a.load_weighted += people * load;
     }
     const auto &families = families_store();
     for (size_t f = 0; f < families.active.size(); ++f) {
@@ -176,6 +199,12 @@ void NativeEconomyRuntime::publish_country_ai_digest() {
         row.expense = a.expense;
         row.family_count = a.families;
         row.expeditions_active = a.expeditions;
+        row.carrying_k_eff = a.k_eff;
+        row.carrying_k_geo = a.k_geo;
+        row.carrying_load_q16 = a.population > 0
+            ? static_cast<int32_t>(a.load_weighted / a.population) : 0;
+        row.hungry_share_q16 = a.population > 0
+            ? static_cast<int32_t>(a.hungry * Q16_ONE / a.population) : 0;
         const auto it = std::lower_bound(stats.begin(), stats.end(), handle,
             [](const CountryAiColonizationStat &s, uint64_t h) { return s.country_handle < h; });
         if (it != stats.end() && it->country_handle == handle) {
@@ -187,6 +216,19 @@ void NativeEconomyRuntime::publish_country_ai_digest() {
     std::sort(digest->rows.begin(), digest->rows.end(), [](const auto &l, const auto &r) {
         return l.country_handle < r.country_handle;
     });
+    digest->food_building_types.assign(_building_types.size(), 0);
+    for (size_t t = 0; t < _building_types.size(); ++t) {
+        const BuildingType &type = _building_types[t];
+        for (int32_t i = 0; i < type.output_count; ++i) {
+            const int32_t good = _building_outputs[static_cast<size_t>(type.output_begin + i)].good_id;
+            if (good >= 0 && static_cast<size_t>(good) < _survival_food_good_mask.size() &&
+                _survival_food_good_mask[static_cast<size_t>(good)] != 0) {
+                digest->food_building_types[t] = 1;
+                break;
+            }
+        }
+    }
+    digest->cell_population = std::move(cell_people);
     std::lock_guard<std::mutex> lock(_country_ai->mutex);
     _country_ai->digest = std::move(digest);
 }
@@ -238,9 +280,18 @@ void NativeEconomyRuntime::process_country_ai_colonization_intents(int64_t day_i
         const PackedInt64Array family_handles = quotes.get("family_handles", PackedInt64Array());
         const PackedInt32Array sources = quotes.get("source_cells", PackedInt32Array());
         const PackedInt64Array maximums = quotes.get("maximum_populations", PackedInt64Array());
+        const PackedInt32Array costs = quotes.get("route_costs", PackedInt32Array());
         const PackedInt64Array tokens = quotes.get("quote_tokens", PackedInt64Array());
-        bool queued = false;
-        for (int64_t i = 0; i < family_handles.size() && !queued; ++i) {
+        // Quotes are sorted by route cost, which prefers the nearest (often
+        // tiniest) branch. Pick the largest viable party so AI colonies can
+        // staff kit buildings instead of founding three-person dead ends.
+        const bool reinforce_target =
+            _country_runtime->country_handle_for_cell(intent.target_cell) ==
+            static_cast<int64_t>(intent.country_handle);
+        int64_t best_i = -1;
+        int64_t best_population = -1;
+        int32_t best_cost = std::numeric_limits<int32_t>::max();
+        for (int64_t i = 0; i < family_handles.size(); ++i) {
             const int64_t maximum = maximums[i];
             if (maximum < intent.min_population) continue;
             const int64_t share = maximum * std::max(0, intent.population_share_bp) / 10000;
@@ -249,17 +300,36 @@ void NativeEconomyRuntime::process_country_ai_colonization_intents(int64_t day_i
                 family_population_in_cell(static_cast<uint64_t>(family_handles[i]), sources[i]) <=
                     population)
                 continue;
+            // Relocate must not strip a healthy source city below the AI floor;
+            // otherwise reinforce just moves the dead-end problem around.
+            if (reinforce_target) {
+                const int32_t src = sources[i];
+                const int64_t source_cell_pop =
+                    src >= 0 && static_cast<size_t>(src) < _cell_population_total.size()
+                        ? _cell_population_total[static_cast<size_t>(src)] : 0;
+                if (source_cell_pop - population < intent.min_population) continue;
+            }
+            const int32_t cost = i < costs.size() ? costs[i] : std::numeric_limits<int32_t>::max();
+            if (best_i >= 0 && (population < best_population ||
+                    (population == best_population && cost >= best_cost)))
+                continue;
+            best_i = i;
+            best_population = population;
+            best_cost = cost;
+        }
+        bool queued = false;
+        if (best_i >= 0) {
             Command command;
             command.opcode = COMMAND_START_FAMILY_EXPEDITION;
             command.effective_day = day_index;
             command.sequence = COUNTRY_AI_COLONIZATION_SEQUENCE_TAG |
                 static_cast<int64_t>(intent.sequence &
                     static_cast<uint64_t>(COUNTRY_AI_COLONIZATION_SEQUENCE_TAG - 1));
-            command.target_handle = static_cast<uint64_t>(family_handles[i]);
-            command.i32_0 = sources[i];
+            command.target_handle = static_cast<uint64_t>(family_handles[best_i]);
+            command.i32_0 = sources[best_i];
             command.i32_1 = intent.target_cell;
-            command.i64_0 = population;
-            command.i64_1 = tokens[i];
+            command.i64_0 = best_population;
+            command.i64_1 = tokens[best_i];
             command.submit_order = _next_submit_order++;
             _pending_commands.push_back(command);
             queued = true;

@@ -1423,11 +1423,23 @@
 					"effect_rationale": "食物储藏提高主粮加工与仓储相关建筑产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.population.death_factor",
+					"operation": 0.0,
+					"value": -0.08,
+					"subject_kind": "society",
+					"subject_id": "country.population.death_factor",
+					"subject_display_name": "人口自然死亡率",
+					"effect_class": "人口自然死亡率",
+					"effect_rationale": "储存食物平滑季节性饥荒。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::process_market_cell"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "商品「加工主食」产量 +12%；「主粮加工」生产家族建筑产出 +12%",
+			"effect_summary": "人口自然死亡率 -8%；商品「加工主食」产量 +12%；「主粮加工」生产家族建筑产出 +12%",
 			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -3005,7 +3017,20 @@
 			"starter_capability_tags": [
 				"starter.knowledge"
 			],
-			"modifier_terms": [],
+			"modifier_terms": [
+				{
+					"stat": "country.population.death_factor",
+					"operation": 0.0,
+					"value": -0.08,
+					"subject_kind": "society",
+					"subject_id": "country.population.death_factor",
+					"subject_display_name": "人口自然死亡率",
+					"effect_class": "人口自然死亡率",
+					"effect_rationale": "熟食降低肠道感染与寄生虫致死。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::process_market_cell"
+				}
+			],
 			"expected_bindings": [
 				{
 					"kind": 2,
@@ -3042,7 +3067,7 @@
 					"display_name": "熟制主食"
 				}
 			],
-			"effect_summary": "解锁建筑：公共火塘；解锁物资：熟制主食；作为必要支撑：主食厨房",
+			"effect_summary": "人口自然死亡率 -8%；解锁建筑：公共火塘；解锁物资：熟制主食；作为必要支撑：主食厨房",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -5884,10 +5909,23 @@
 			"is_starting": false,
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
-			"modifier_terms": [],
+			"modifier_terms": [
+				{
+					"stat": "country.population.death_factor",
+					"operation": 0.0,
+					"value": -0.08,
+					"subject_kind": "society",
+					"subject_id": "country.population.death_factor",
+					"subject_display_name": "人口自然死亡率",
+					"effect_class": "人口自然死亡率",
+					"effect_rationale": "辨识草药缓解常见病痛。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::process_market_cell"
+				}
+			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "",
+			"effect_summary": "人口自然死亡率 -8%",
 			"opportunity_cost": "需要持续观察药性、毒性与生境，延后其他自然辨识路线。",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -10166,6 +10204,18 @@
 					"effect_rationale": "永久聚落提高全社会经济产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.population.death_factor",
+					"operation": 0.0,
+					"value": -0.06,
+					"subject_kind": "society",
+					"subject_id": "country.population.death_factor",
+					"subject_display_name": "人口自然死亡率",
+					"effect_class": "人口自然死亡率",
+					"effect_rationale": "定居减少迁徙途中的伤亡。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::process_market_cell"
 				}
 			],
 			"expected_bindings": [
@@ -10205,7 +10255,7 @@
 					"summary_visible": false
 				}
 			],
-			"effect_summary": "解锁建筑：定居采集营地；全社会经济产出 +4%",
+			"effect_summary": "人口自然死亡率 -6%；解锁建筑：定居采集营地；全社会经济产出 +4%",
 			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -13255,11 +13305,23 @@
 					"effect_rationale": "公共仓储提高主粮加工与仓储相关建筑产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.population.death_factor",
+					"operation": 0.0,
+					"value": -0.1,
+					"subject_kind": "society",
+					"subject_id": "country.population.death_factor",
+					"subject_display_name": "人口自然死亡率",
+					"effect_class": "人口自然死亡率",
+					"effect_rationale": "公共仓储在歉收年提供口粮。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::process_market_cell"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "商品「加工主食」产量 +25%；「主粮加工」生产家族建筑产出 +25%",
+			"effect_summary": "人口自然死亡率 -10%；商品「加工主食」产量 +25%；「主粮加工」生产家族建筑产出 +25%",
 			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
 			"application_target_ids": [],
 			"terminal_reason": "公共仓储是食物、保存与公共储备在当前目录中的应用端点，其终点效果由庄园水田消费",
@@ -20475,6 +20537,18 @@
 					"effect_rationale": "城市卫生提高全社会经济产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.population.death_factor",
+					"operation": 0.0,
+					"value": -0.1,
+					"subject_kind": "society",
+					"subject_id": "country.population.death_factor",
+					"subject_display_name": "人口自然死亡率",
+					"effect_class": "人口自然死亡率",
+					"effect_rationale": "城市排污减少水源性疾病。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::process_market_cell"
 				}
 			],
 			"expected_bindings": [
@@ -20513,7 +20587,7 @@
 					"display_name": "肥皂"
 				}
 			],
-			"effect_summary": "解锁建筑：制皂工坊；解锁物资：肥皂；全社会经济产出 +8%",
+			"effect_summary": "人口自然死亡率 -10%；解锁建筑：制皂工坊；解锁物资：肥皂；全社会经济产出 +8%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 3 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -27280,11 +27354,23 @@
 					"effect_rationale": "城市水务提高全社会经济产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.population.death_factor",
+					"operation": 0.0,
+					"value": -0.1,
+					"subject_kind": "society",
+					"subject_id": "country.population.death_factor",
+					"subject_display_name": "人口自然死亡率",
+					"effect_class": "人口自然死亡率",
+					"effect_rationale": "城市供水提供洁净饮水。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::process_market_cell"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "全社会经济产出 +8%",
+			"effect_summary": "人口自然死亡率 -10%；全社会经济产出 +8%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 4 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "城市水务是水力、风力、水务与流域工程在当前目录中的应用端点，其终点效果由营造方法25%消费",
@@ -27873,11 +27959,23 @@
 					"effect_rationale": "区域粮仓提高主粮加工与仓储相关建筑产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.population.death_factor",
+					"operation": 0.0,
+					"value": -0.08,
+					"subject_kind": "society",
+					"subject_id": "country.population.death_factor",
+					"subject_display_name": "人口自然死亡率",
+					"effect_class": "人口自然死亡率",
+					"effect_rationale": "区域粮仓调剂地方歉收。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::process_market_cell"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "商品「加工主食」产量 +12%；「主粮加工」生产家族建筑产出 +12%",
+			"effect_summary": "人口自然死亡率 -8%；商品「加工主食」产量 +12%；「主粮加工」生产家族建筑产出 +12%",
 			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
 			"application_target_ids": [],
 			"terminal_reason": "区域粮仓是当前技术网络中的应用端点，其效果由已绑定内容直接消费",
@@ -35128,11 +35226,23 @@
 					"effect_rationale": "公共卫生提高全社会经济产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.population.death_factor",
+					"operation": 0.0,
+					"value": -0.12,
+					"subject_kind": "society",
+					"subject_id": "country.population.death_factor",
+					"subject_display_name": "人口自然死亡率",
+					"effect_class": "人口自然死亡率",
+					"effect_rationale": "公共卫生制度控制传染病。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::process_market_cell"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "全社会经济产出 +4%",
+			"effect_summary": "人口自然死亡率 -12%；全社会经济产出 +4%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 6 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -43949,6 +44059,18 @@
 					"effect_rationale": "现代医学提高全社会经济产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.population.death_factor",
+					"operation": 0.0,
+					"value": -0.12,
+					"subject_kind": "society",
+					"subject_id": "country.population.death_factor",
+					"subject_display_name": "人口自然死亡率",
+					"effect_class": "人口自然死亡率",
+					"effect_rationale": "现代医学显著降低疾病死亡。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::process_market_cell"
 				}
 			],
 			"expected_bindings": [
@@ -44020,7 +44142,7 @@
 					"display_name": "药品"
 				}
 			],
-			"effect_summary": "解锁建筑：受控环境药材农场；解锁建筑：制药厂；解锁物资：药品；全社会经济产出 +4%；作为必要支撑：核医学制药中心",
+			"effect_summary": "人口自然死亡率 -12%；解锁建筑：受控环境药材农场；解锁建筑：制药厂；解锁物资：药品；全社会经济产出 +4%；作为必要支撑：核医学制药中心",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 8 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "现代医学是当前技术网络中的应用端点，其效果由已绑定内容直接消费",
@@ -47978,11 +48100,23 @@
 					"effect_rationale": "机械制冷降低牧业生产建筑的热害损失。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.population.death_factor",
+					"operation": 0.0,
+					"value": -0.04,
+					"subject_kind": "society",
+					"subject_id": "country.population.death_factor",
+					"subject_display_name": "人口自然死亡率",
+					"effect_class": "人口自然死亡率",
+					"effect_rationale": "冷藏减少食物腐败致病。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::process_market_cell"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "全社会经济产出 +8%；商品「肉类」家庭消费 -8%；牧业生产·热害损失 -8%",
+			"effect_summary": "人口自然死亡率 -4%；全社会经济产出 +8%；商品「肉类」家庭消费 -8%；牧业生产·热害损失 -8%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 8 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -50523,11 +50657,23 @@
 					"effect_rationale": "公共卫生体系提高全社会经济产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.population.death_factor",
+					"operation": 0.0,
+					"value": -0.1,
+					"subject_kind": "society",
+					"subject_id": "country.population.death_factor",
+					"subject_display_name": "人口自然死亡率",
+					"effect_class": "人口自然死亡率",
+					"effect_rationale": "全民卫生体系覆盖基本医疗。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::process_market_cell"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "全社会经济产出 +8%",
+			"effect_summary": "人口自然死亡率 -10%；全社会经济产出 +8%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 9 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "公共卫生体系是当前技术网络中的应用端点，其效果由已绑定内容直接消费",

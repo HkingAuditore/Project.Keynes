@@ -742,6 +742,11 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
     if (!compile_technology_tags(profession_tag_offsets, profession_tags,
             _profession_ids.size(), _profession_technology_offsets,
             _profession_required_technologies, "profession_technology_catalog_invalid")) return false;
+    _profession_entry_savings_days = packed_i32(catalog, "profession_entry_savings_days");
+    if (_profession_entry_savings_days.size() != _profession_ids.size())
+        _profession_entry_savings_days.assign(_profession_ids.size(), 0);
+    for (int32_t &days : _profession_entry_savings_days)
+        days = std::clamp<int32_t>(days, 0, 36500);
 
     _good_default_price = packed_i32(catalog, "good_default_price");
     _good_default_stock = packed_i64(catalog, "good_initial_stock");

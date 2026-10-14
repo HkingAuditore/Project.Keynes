@@ -77,7 +77,8 @@ catalog 编译成 `signature_satisfaction_dimension_weights_q16`
 | `satisfaction_tax_tolerance_q16` | `22938`（0.35） | 净税负占毛收入达到该比例时税负维度归零 |
 | `satisfaction_development_weights_q16` | `[26214, 26214, 13107]` | 聚落等级 / 国家技术 / 本地产业种类三项权重 |
 | `satisfaction_development_variety_target` | `12` | 本地建成建筑种类数的饱和点 |
-| `satisfaction_birth_reference_q16` | `45875`（0.70） | 出生率视为「完全满意」的 composite 参考值 |
+| `satisfaction_birth_reference_q16` | `45875`（0.70） | 出生乘数达到 1.0 的 composite 参考值 |
+| `satisfaction_birth_bonus_reference_q16` | `55706`（0.85） | 出生乘数升到 `carrying_sat_cap_q16`（默认 1.15）的 composite；负载 0.9→1.0 时奖励渐退 |
 | `satisfaction_pressure_thresholds_q16` | `[13107, 26214, 39322, 52429]` | 五档社会压力等级的分界 |
 
 ## 计算位置与预算
@@ -135,7 +136,10 @@ DEVELOPMENT: dim    = _epoch_cell_development_q16[cell]
 ```
 
 人均日生活成本来自 `compute_cell_living_costs_from_basis` 已经算好的
-`_cell_living_cost_per_capita`，是纯诊断派生量，**不搬运任何货币**。
+`_cell_living_cost_per_capita`，是纯诊断派生量，**不搬运任何货币**。它按可购买量加权：每个
+variant 的覆盖率 = `min(1, 4 × 可购买量 / (人口 × 基础用量))`，按 1/16 量化；覆盖率为 0 的 variant
+不参与，其余 variant 的评分乘覆盖率，需求量乘累计覆盖率（上限 1）。因此两三个高价库存不能再把整格
+的主食成本按天价计算。向上转职的存款门槛也读这个值。
 
 ### per-cohort 税负累加器
 
@@ -169,7 +173,8 @@ epoch 起始清零。`record_fiscal` 自身会先调用 `touch_accounting_slot`�
 - **出生率**：格级 `sat_cell` 进入承载力 `K_eff`；cohort 只乘
   `cohort_sat_residual = clamp(rescale(cohort) / sat_cell)`。
   `rescale` 仍按 `satisfaction_birth_reference_q16` 重标定，否则早期 cohort
-  （按构造在奢侈、储蓄、发展上必然得零分）会自己掐死自己的出生率。
+  （按构造在奢侈、储蓄、发展上必然得零分）会自己掐死自己的出生率。composite 在 0.70–0.85
+  之间线性升到 1.15，负载超过 `carrying_soft_start_q16` 后超出 1 的部分渐退。
   贴上 `K_eff` 后 `fertility_land` 落到更替，未解锁 need 不进物资族分母。
 - **饥饿死亡只读 `SAT_DIM_SUBSISTENCE`**，代码里写成显式不变量与注释：
   饿死是生理事实，税重、囊中羞涩或聚落落后都不得致死。

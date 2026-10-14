@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <iterator>
 #include <limits>
 #include <tuple>
 
@@ -442,6 +443,22 @@ void think_research(ThinkContext &ctx, TechView &view) {
     if (queued_total > 0) target = std::max(target, catalog.research_min_daily_budget);
     if (catalog.research_max_daily_budget > 0)
         target = std::min(target, catalog.research_max_daily_budget);
+    const CountryAiEconomyRow *row = ctx.obs.economy;
+    if (row == nullptr || row->essentials_q16 < catalog.research_essentials_floor_q16 ||
+        row->hungry_share_q16 >= catalog.research_hungry_share_max_q16) {
+        target = 0;
+    } else {
+        const int64_t fiscal =
+            clamp64(row->tax_paid, 0, CASH_EMA_LIMIT) / 10000 * catalog.research_tax_share_bp +
+            clamp64(row->population, 0, CASH_EMA_LIMIT) * catalog.research_per_capita_budget;
+        target = std::min(target, fiscal);
+        const int64_t full = catalog.research_load_full_q16;
+        const int64_t zero = catalog.research_load_zero_q16;
+        const int64_t load = row->carrying_load_q16;
+        if (load >= zero) target = 0;
+        else if (load > full)
+            target = clamp64(target, 0, CASH_EMA_LIMIT) * (zero - load) / (zero - full);
+    }
     const int64_t current = state.research_daily_budgets[static_cast<size_t>(ctx.obs.slot)];
     const uint8_t auto_purchase = state.research_auto_purchase[static_cast<size_t>(ctx.obs.slot)];
     const int32_t want_auto = target > 0 ? 1 : static_cast<int32_t>(auto_purchase);
@@ -547,6 +564,57 @@ void think_tax(ThinkContext &ctx) {
     if (next != rate) emit(kind, next, reason, sat);
 }
 
+// Food subsidy as a player would set it: a negative business-tax override on
+// every survival-food building type, switched on while too many people are
+// hungry and off once hunger recedes. The switch state is read back from the
+// committed Country tax policy, so it needs no memory. Returns the rate in force.
+int32_t think_subsidy(ThinkContext &ctx) {
+    constexpr int32_t BUSINESS = 2;
+    const CountryAiCatalog &catalog = ctx.catalog;
+    const RuntimeCountryPodSnapshot &state = *ctx.input.state;
+    const CountryAiEconomyRow *row = ctx.obs.economy;
+    const CountryAiEconomyDigest *digest = ctx.input.economy;
+    const int32_t rate = catalog.subsidy_food_rate_bp;
+    const size_t types = state.building_type_count;
+    const size_t base = static_cast<size_t>(ctx.obs.slot) * types;
+    if (rate == 0 || row == nullptr || digest == nullptr ||
+        (catalog.tax_kind_mask & (1u << BUSINESS)) == 0 ||
+        digest->food_building_types.size() != types ||
+        state.country_business_tax_overrides.size() < base + types)
+        return 0;
+    size_t food = 0;
+    size_t active = 0;
+    for (size_t t = 0; t < types; ++t) {
+        if (digest->food_building_types[t] == 0) continue;
+        ++food;
+        if (state.country_business_tax_overrides[base + t] == rate) ++active;
+    }
+    if (food == 0) return 0;
+    const bool on = active > 0;
+    bool want = on;
+    if (!on && row->hungry_share_q16 >= catalog.subsidy_on_hungry_share_q16) want = true;
+    else if (on && row->hungry_share_q16 <= catalog.subsidy_off_hungry_share_q16) want = false;
+    if (want == on && (!want || active == food)) return want ? rate : 0;
+    uint32_t changed = 0;
+    for (size_t t = 0; t < types; ++t) {
+        if (digest->food_building_types[t] == 0) continue;
+        const bool at_rate = state.country_business_tax_overrides[base + t] == rate;
+        if (want == at_rate) continue;
+        CountryAiCommand &command = push_command(ctx, want ? 12 : 13, COUNTRY_AI_MODULE_TAX);
+        command.tax_kind = BUSINESS;
+        command.tax_item = static_cast<int32_t>(t);
+        command.tax_rate_bp = want ? rate : 0;
+        command.tax_mode = 0;
+        ++changed;
+    }
+    CountryAiDecision &decision = push_decision(ctx, COUNTRY_AI_MODULE_TAX,
+        COUNTRY_AI_OUTCOME_EMITTED, BUSINESS, want ? "food_subsidy_on" : "food_subsidy_off");
+    decision.value = want ? rate : 0;
+    decision.amount = changed;
+    decision.score_q16 = row->hungry_share_q16;
+    return want ? rate : 0;
+}
+
 void bfs_rings(const RuntimeCountryPodSnapshot &state, int32_t slot,
                const std::vector<int32_t> &neighbors, int32_t radius,
                std::vector<int32_t> &dist, std::vector<int32_t> &cells) {
@@ -588,8 +656,16 @@ void think_colonize(ThinkContext &ctx) {
                       row == nullptr ? "economy_digest_missing" : "topology_missing");
         return;
     }
+    if (row->ai_colonization_started > ctx.mem.colonize_started_seen)
+        ctx.mem.colonize_last_target = -1;
     if (row->ai_colonization_failures > ctx.mem.colonize_failures_seen) {
         ctx.mem.colonize_cooldown_until = ctx.input.day + catalog.colonize_failure_cooldown_days;
+        if (ctx.mem.colonize_last_target >= 0) {
+            const uint32_t at = ctx.mem.colonize_bad_cursor % COUNTRY_AI_COLONIZE_BAD_TARGETS;
+            ctx.mem.colonize_bad_targets[at] = ctx.mem.colonize_last_target;
+            ctx.mem.colonize_bad_cursor = at + 1;
+            ctx.mem.colonize_last_target = -1;
+        }
     }
     ctx.mem.colonize_failures_seen = row->ai_colonization_failures;
     ctx.mem.colonize_started_seen = row->ai_colonization_started;
@@ -599,8 +675,15 @@ void think_colonize(ThinkContext &ctx) {
     else if (ctx.input.day < ctx.mem.colonize_cooldown_until) skip = "colonize_cooldown";
     else if (row->expeditions_active >= cap) skip = "colonize_in_flight_cap";
     else if (ctx.obs.reserve_days < catalog.colonize_min_reserve_days) skip = "colonize_reserve_low";
-    else if (ctx.obs.frontier <= 0) skip = "colonize_no_frontier";
     else if (row->family_count <= 0) skip = "colonize_no_family";
+    else if (row->population < catalog.colonize_min_country_population ||
+             row->population < catalog.colonize_min_population_per_cell *
+                 std::max<int64_t>(1, ctx.obs.territory))
+        skip = "colonize_population_low";
+    else if (row->essentials_q16 < catalog.colonize_essentials_floor_q16)
+        skip = "colonize_essentials_low";
+    else if (row->hungry_share_q16 > catalog.colonize_hungry_share_max_q16)
+        skip = "colonize_hungry";
     if (skip != nullptr) {
         push_decision(ctx, COUNTRY_AI_MODULE_COLONIZE, COUNTRY_AI_OUTCOME_SKIPPED, -1, skip);
         return;
@@ -610,14 +693,67 @@ void think_colonize(ThinkContext &ctx) {
     std::vector<int32_t> cells;
     const int32_t radius = std::max(catalog.colonize_vision_radius, catalog.colonize_target_ring);
     bfs_rings(state, ctx.obs.slot, neighbors, radius, dist, cells);
+    const auto bad_target = [&](int32_t cell) {
+        return std::find(std::begin(ctx.mem.colonize_bad_targets),
+                         std::end(ctx.mem.colonize_bad_targets), cell) !=
+               std::end(ctx.mem.colonize_bad_targets);
+    };
+    const auto cell_people = [&](int32_t cell) -> int64_t {
+        if (ctx.input.economy == nullptr || cell < 0 ||
+            static_cast<size_t>(cell) >= ctx.input.economy->cell_population.size())
+            return 0;
+        return std::max<int64_t>(0, ctx.input.economy->cell_population[
+            static_cast<size_t>(cell)]);
+    };
     struct Target { int32_t cell; int64_t score; };
-    std::vector<Target> targets;
+    std::vector<Target> reinforce;
+    std::vector<Target> expand;
+    // Reinforce first: own cells below the founding floor never become cities
+    // without follow-up relocate expeditions (Economy kind=relocate).
+    const int64_t reinforce_below = std::max<int64_t>(3, catalog.colonize_min_population);
+    const int32_t terr_begin = state.territory_offsets[static_cast<size_t>(ctx.obs.slot)];
+    const int32_t terr_end = state.territory_offsets[static_cast<size_t>(ctx.obs.slot) + 1u];
+    // Need a second owned cell to pull settlers from; otherwise relocate quotes
+    // have no legal source != target.
+    if (terr_end - terr_begin >= 2) {
+        for (int32_t i = terr_begin; i < terr_end; ++i) {
+            const int32_t cell = state.territory_cells[static_cast<size_t>(i)];
+            if (cell < 0 || bad_target(cell)) continue;
+            if (static_cast<size_t>(cell) < state.is_water.size() &&
+                state.is_water[static_cast<size_t>(cell)] != 0) continue;
+            const int64_t people = cell_people(cell);
+            if (people >= reinforce_below) continue;
+            const int64_t gap = reinforce_below - people;
+            int64_t score = gap * COUNTRY_AI_Q16 / reinforce_below;
+            if (ctx.input.cell_value_q16 != nullptr &&
+                static_cast<size_t>(cell) < ctx.input.cell_value_q16->size()) {
+                const int64_t value = (*ctx.input.cell_value_q16)[static_cast<size_t>(cell)];
+                if (value > 0)
+                    score += value * catalog.colonize_cell_value_weight_bp / 10000;
+            }
+            int32_t own_adjacent = 0;
+            for (int32_t k = 0; k < 6; ++k) {
+                const int32_t n = neighbors[static_cast<size_t>(cell) * 6u +
+                    static_cast<size_t>(k)];
+                if (n < 0) continue;
+                if (state.cell_country_slot[static_cast<size_t>(n)] == ctx.obs.slot)
+                    ++own_adjacent;
+            }
+            score += static_cast<int64_t>(own_adjacent) * COUNTRY_AI_Q16 / 6;
+            // Prefer emptiest first; tiny noise breaks ties deterministically.
+            score = score * 2 + static_cast<int64_t>(country_ai_mix(catalog.seed,
+                ctx.obs.handle, static_cast<uint64_t>(ctx.input.day),
+                static_cast<uint64_t>(cell) ^ 0x52454e46ull) % 1024u);
+            reinforce.push_back({cell, score});
+        }
+    }
     for (const int32_t cell : cells) {
         const int32_t d = dist[static_cast<size_t>(cell)];
         if (d <= 0 || d > catalog.colonize_target_ring) continue;
         if (state.cell_country_slot[static_cast<size_t>(cell)] >= 0) continue;
         if (static_cast<size_t>(cell) < state.is_water.size() &&
             state.is_water[static_cast<size_t>(cell)] != 0) continue;
+        if (bad_target(cell)) continue;
         int32_t own_adjacent = 0;
         int32_t land_adjacent = 0;
         for (int32_t k = 0; k < 6; ++k) {
@@ -630,16 +766,21 @@ void think_colonize(ThinkContext &ctx) {
         int64_t score = static_cast<int64_t>(own_adjacent) * COUNTRY_AI_Q16 / 6 +
                         static_cast<int64_t>(land_adjacent) * COUNTRY_AI_Q16 / 12;
         if (ctx.input.cell_value_q16 != nullptr &&
-            static_cast<size_t>(cell) < ctx.input.cell_value_q16->size())
-            score += (*ctx.input.cell_value_q16)[static_cast<size_t>(cell)];
+            static_cast<size_t>(cell) < ctx.input.cell_value_q16->size()) {
+            const int64_t value = (*ctx.input.cell_value_q16)[static_cast<size_t>(cell)];
+            if (value < catalog.colonize_min_cell_value_q16) continue;
+            score += value * catalog.colonize_cell_value_weight_bp / 10000;
+        }
         score = score * 2 / (1 + d);
         score += static_cast<int64_t>(country_ai_mix(catalog.seed, ctx.obs.handle,
             static_cast<uint64_t>(ctx.input.day), static_cast<uint64_t>(cell)) % 2048u);
-        targets.push_back({cell, score});
+        expand.push_back({cell, score});
     }
+    const bool prefer_reinforce = !reinforce.empty();
+    std::vector<Target> &targets = prefer_reinforce ? reinforce : expand;
     if (targets.empty()) {
         push_decision(ctx, COUNTRY_AI_MODULE_COLONIZE, COUNTRY_AI_OUTCOME_SKIPPED, -1,
-                      "colonize_no_target");
+                      ctx.obs.frontier <= 0 ? "colonize_no_frontier" : "colonize_no_target");
         return;
     }
     std::sort(targets.begin(), targets.end(), [](const Target &l, const Target &r) {
@@ -653,14 +794,18 @@ void think_colonize(ThinkContext &ctx) {
     intent.min_population = catalog.colonize_min_population;
     intent.sequence = (static_cast<uint64_t>(ctx.input.day) << 12) |
                       static_cast<uint64_t>(ctx.obs.slot & 0xfff);
+    // Own territory is dist 0 in the BFS; keep it visible so relocate quotes
+    // can pull from any homeland branch, not only the frontier ring.
     for (const int32_t cell : cells)
         if (dist[static_cast<size_t>(cell)] <= catalog.colonize_vision_radius)
             intent.visible_cells.push_back(cell);
     std::sort(intent.visible_cells.begin(), intent.visible_cells.end());
     ctx.out.colonization.push_back(std::move(intent));
     ++ctx.mem.colonize_intents;
+    ctx.mem.colonize_last_target = targets.front().cell;
     CountryAiDecision &decision = push_decision(ctx, COUNTRY_AI_MODULE_COLONIZE,
-        COUNTRY_AI_OUTCOME_EMITTED, targets.front().cell, "colonize_intent");
+        COUNTRY_AI_OUTCOME_EMITTED, targets.front().cell,
+        prefer_reinforce ? "reinforce_intent" : "colonize_intent");
     decision.score_q16 = static_cast<int32_t>(clamp64(targets.front().score, 0,
         std::numeric_limits<int32_t>::max()));
     for (size_t i = 0; i < 3; ++i) {
@@ -855,6 +1000,8 @@ uint64_t country_ai_catalog_hash(const CountryAiCatalog &c) {
     mix(c.colonize_days); mix(c.agenda_min_days); mix(c.agenda_inertia_bp);
     mix(c.decision_noise_bp); mix(c.research_budget_horizon_days);
     mix(c.research_min_daily_budget); mix(c.research_max_daily_budget);
+    mix(c.research_tax_share_bp); mix(c.research_per_capita_budget);
+    mix(c.research_essentials_floor_q16);
     mix(c.research_weight_threshold_bp); mix(c.research_max_enqueue_per_eval);
     mix(c.research_budget_change_bp); mix(c.research_frontier_visit_limit);
     mix(c.tax_kind_mask); mix(c.tax_step_bp); mix(c.tax_max_step_bp);
@@ -863,6 +1010,13 @@ uint64_t country_ai_catalog_hash(const CountryAiCatalog &c) {
     mix(c.colonize_population_share_bp); mix(c.colonize_min_population);
     mix(c.colonize_vision_radius); mix(c.colonize_target_ring);
     mix(c.colonize_failure_cooldown_days); mix(c.colonize_min_reserve_days);
+    mix(c.colonize_min_country_population); mix(c.colonize_min_population_per_cell);
+    mix(c.colonize_essentials_floor_q16); mix(c.colonize_min_cell_value_q16);
+    mix(c.colonize_cell_value_weight_bp);
+    mix(c.research_load_full_q16); mix(c.research_load_zero_q16);
+    mix(c.research_hungry_share_max_q16); mix(c.colonize_hungry_share_max_q16);
+    mix(c.subsidy_food_rate_bp); mix(c.subsidy_on_hungry_share_q16);
+    mix(c.subsidy_off_hungry_share_q16);
     for (const CountryAiAgendaDef &a : c.agendas) {
         mix(a.consideration_count);
         for (uint32_t i = 0; i < a.consideration_count; ++i) {
@@ -921,6 +1075,16 @@ bool country_ai_validate_catalog(const CountryAiCatalog &c, std::string &error) 
         return fail("country_ai_research_enqueue_invalid");
     if (c.colonize_population_share_bp < 0 || c.colonize_population_share_bp > 10000)
         return fail("country_ai_colonize_share_invalid");
+    if (c.research_load_full_q16 < 0 || c.research_load_zero_q16 <= c.research_load_full_q16)
+        return fail("country_ai_research_load_invalid");
+    const auto share_ok = [](int32_t v) { return v >= 0 && v <= COUNTRY_AI_Q16; };
+    if (!share_ok(c.research_hungry_share_max_q16) || !share_ok(c.colonize_hungry_share_max_q16))
+        return fail("country_ai_hungry_share_invalid");
+    if (c.subsidy_food_rate_bp > 0 || c.subsidy_food_rate_bp < -100000 ||
+        !share_ok(c.subsidy_on_hungry_share_q16) ||
+        c.subsidy_off_hungry_share_q16 < 0 ||
+        c.subsidy_off_hungry_share_q16 > c.subsidy_on_hungry_share_q16)
+        return fail("country_ai_food_subsidy_invalid");
     return true;
 }
 
@@ -1033,6 +1197,7 @@ void country_ai_plan(const CountryAiCatalog &catalog, const CountryAiPlanInput &
         if (first || day - mem.last_research_day >= catalog.research_days) think_research(ctx, view);
         if (first || day - mem.last_tax_day >= catalog.tax_days) think_tax(ctx);
         if (!first && day - mem.last_colonize_day >= catalog.colonize_days) think_colonize(ctx);
+        const int32_t food_subsidy_bp = first ? 0 : think_subsidy(ctx);
         if (obs.queued_techs == 0) {
             for (int32_t tech = 0; tech < static_cast<int32_t>(pod.technology_count); ++tech)
                 obs.queued_techs += view.is_queued(tech) ? 1 : 0;
@@ -1060,6 +1225,15 @@ void country_ai_plan(const CountryAiCatalog &catalog, const CountryAiPlanInput &
         row.milestone_gap = mem.milestone_gap;
         row.queued_techs = obs.queued_techs;
         row.research_budget = state.research_daily_budgets[slot];
+        row.tax_paid = obs.economy != nullptr ? obs.economy->tax_paid : 0;
+        row.household_income = obs.economy != nullptr ? obs.economy->income : 0;
+        if (obs.economy != nullptr) {
+            row.carrying_k_eff = obs.economy->carrying_k_eff;
+            row.carrying_k_geo = obs.economy->carrying_k_geo;
+            row.carrying_load_q16 = obs.economy->carrying_load_q16;
+            row.hungry_share_q16 = obs.economy->hungry_share_q16;
+        }
+        row.food_subsidy_bp = food_subsidy_bp;
         for (uint32_t k = 0; k < 3; ++k)
             row.tax_bp[k] = state.country_tax_defaults[static_cast<size_t>(slot) *
                                                        COUNTRY_AI_TAX_KIND_COUNT + k];
@@ -1089,8 +1263,12 @@ uint64_t country_ai_hash_memory(const std::vector<CountryAiMemory> &memory) {
             static_cast<uint64_t>(static_cast<int64_t>(m.completed_milestones)),
             static_cast<uint64_t>(static_cast<int64_t>(m.tax_pressure)),
             m.colonize_failures_seen, m.colonize_started_seen, m.commands_emitted,
-            m.commands_rejected, m.colonize_intents};
+            m.commands_rejected, m.colonize_intents,
+            static_cast<uint64_t>(static_cast<int64_t>(m.colonize_last_target)),
+            m.colonize_bad_cursor};
         for (const uint64_t f : fields) h = fnv_u64(h, f);
+        for (const int32_t cell : m.colonize_bad_targets)
+            h = fnv_u64(h, static_cast<uint64_t>(static_cast<int64_t>(cell)));
     }
     return h & 0x7fffffffffffffffull;
 }

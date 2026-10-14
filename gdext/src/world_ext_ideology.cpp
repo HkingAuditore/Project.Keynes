@@ -274,6 +274,15 @@ Dictionary DCWorldExt::apply_runtime_ideology_snapshot(int64_t after_generation)
         out["code"] = "ideology_not_worker_authoritative";
         return out;
     }
+    // Serialize against the worker day boundary the same way Modifier/Effect
+    // write-back does: peer Country/Economy paths may still touch ideology
+    // facades while a day is inflight.
+    auto boundary_lock = _runtime_host->try_lock_economy_input_capture();
+    if (!boundary_lock.owns_lock()) {
+        out["ok"] = true;
+        out["code"] = "economy_day_inflight";
+        return out;
+    }
     const uint64_t cursor = after_generation < 0
         ? std::numeric_limits<uint64_t>::max()
         : static_cast<uint64_t>(after_generation);
@@ -283,13 +292,15 @@ Dictionary DCWorldExt::apply_runtime_ideology_snapshot(int64_t after_generation)
         out["code"] = "ideology_snapshot_unavailable";
         return out;
     }
-    const RuntimeIdeologyPodSnapshot &snapshot =
+    // Copy out of the ring before apply so release cannot race a concurrent
+    // publish that reclaims the READY slot under the rebuild.
+    const RuntimeIdeologyPodSnapshot snapshot =
         _runtime_host->ideology_snapshot_buffer(slot);
+    const int64_t generation = static_cast<int64_t>(snapshot.generation);
+    _runtime_host->release_ideology_snapshot(slot);
     std::string apply_error;
     const bool applied = ideology_runtime_from(_ideology_runtime)
         ->apply_pod_snapshot(snapshot, apply_error);
-    const int64_t generation = static_cast<int64_t>(snapshot.generation);
-    _runtime_host->release_ideology_snapshot(slot);
     out["ok"] = applied;
     out["applied"] = applied;
     out["generation"] = generation;

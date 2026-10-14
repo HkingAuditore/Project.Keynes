@@ -377,7 +377,7 @@ int dispatch_system_schedule(DCWorldExt* self,
     // worker just fed back into MapData.
     // Written unconditionally so a stale `true` cannot survive revocation in a
     // merged diagnostics breakdown.
-    const bool climate_suppressed = self->climate_worker_authoritative();
+    const bool climate_suppressed = self->climate_main_thread_suppressed();
     breakdown["climate_authority_suppressed"] = climate_suppressed;
     if (climate_suppressed) {
         breakdown["climate_ms"] = 0.0;

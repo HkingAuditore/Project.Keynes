@@ -1841,6 +1841,17 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     ",budget=" + std::to_string(settlement_budget);
                 return false;
             }
+            if (actual_cost > 0 && !local_merchants_can_receive(cell)) {
+                // A famine can empty every merchant cohort while stock is
+                // still on the shelf; with no seller the lot cannot buy.
+                group.last_capacity_q16 = 0;
+                _building_funded_capacity_q16[g] = 0;
+                group.purchase_intent_capacity_q16 = std::max<int64_t>(
+                    group.purchase_intent_capacity_q16, industrial_probe_floor);
+                result.active_unfunded_building_groups = saturating_add(
+                    result.active_unfunded_building_groups, 1, _saturation_count);
+                continue;
+            }
             int64_t base_input_cost = 0;
             int64_t input_fiscal_transfer = 0;
             int64_t settled_input_outlay = 0;
@@ -2921,6 +2932,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
             group.count, std::max(1, _epoch_days.get()), _saturation_count);
         int64_t paid = 0;
         GoodsBill maintenance_bill;
+        const bool merchants_present = local_merchants_can_receive(cell);
         for (int32_t i = 0; i < type.maintenance_count; ++i) {
             const GoodAmount &item =
                 _building_maintenance_goods[type.maintenance_begin + i];
@@ -2937,7 +2949,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
             const int64_t price = maintenance_settlement_price(
                 cell, item.good_id, _saturation_count);
             const int64_t stock_index = market_store().index(market, item.good_id);
-            const int64_t stock = std::max<int64_t>(0, market_store().stock[stock_index]);
+            const int64_t stock = merchants_present
+                ? std::max<int64_t>(0, market_store().stock[stock_index]) : 0;
             const int64_t affordable = price > 0
                 ? mul_div_sat(std::max<int64_t>(0, population_store().funds[owner_slot]),
                               GOODS_SCALE, price, _saturation_count)

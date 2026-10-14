@@ -12,6 +12,10 @@ extends SceneTree
 const PerfRecorderScript = preload("res://scripts/ui/perf_recorder.gd")
 const CountryAiCsvRecorderScript = preload("res://scripts/country/country_ai_csv_recorder.gd")
 const CountryAiCatalogScript = preload("res://scripts/country/country_ai_catalog.gd")
+const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
+
+var _tech_signal_ids := PackedStringArray()
+var _tech_index_cache := {}
 
 const DEFAULT_DAYS := 50
 const DEFAULT_WARMUP_DAYS := 5
@@ -365,6 +369,18 @@ func _run() -> int:
 	# this bound only stops a run whose worker no longer commits.
 	var total_driver_days := warmup_days + days + 1 if pipeline_depth == 0 \
 		else 2 * (warmup_days + days + pipeline_depth) + 16
+	var watch_cells := PackedInt32Array()
+	for token in OS.get_environment("PK_HEADLESS_WATCH_CELLS").split(",", false):
+		if token.strip_edges().is_valid_int():
+			watch_cells.append(int(token.strip_edges()))
+	var tech_every := maxi(0, int(OS.get_environment("PK_HEADLESS_TECH_EVERY")))
+	var watch_every := maxi(1, int(OS.get_environment("PK_HEADLESS_WATCH_EVERY"))) \
+		if OS.get_environment("PK_HEADLESS_WATCH_EVERY").is_valid_int() else 180
+	var watch_pending := false
+	var famine_watch := not OS.get_environment("PK_HEADLESS_FAMINE_WATCH").strip_edges().is_empty()
+	var active_watch_cells := PackedInt32Array()
+	var famine_owned := {}
+	var watch_pending_since := 0
 	for day in range(1, total_driver_days + 1):
 		if country_daily_workload:
 			if country == null or country_handles.is_empty():
@@ -500,6 +516,27 @@ func _run() -> int:
 			effect_report = generator.get_effect_report()
 		if country_ai_recorder != null and day % 30 == 0:
 			country_ai_recorder.call("poll")
+		if tech_every > 0 and day % tech_every == 0:
+			_print_country_technology(day, country, country_handles, generator)
+		if (not watch_cells.is_empty() or famine_watch) and day % watch_every == 0:
+			watch_pending = true
+			watch_pending_since = day
+			famine_owned = _famine_owned_cells(actual_map, country, country_ai_recorder) \
+				if famine_watch else {}
+		if watch_pending:
+			# Mid-epoch population reads are empty; pick famine cells on the
+			# same retry day the watched print succeeds.
+			active_watch_cells = watch_cells.duplicate()
+			for cell in _famine_top_cells(economy, famine_owned):
+				if not active_watch_cells.has(cell):
+					active_watch_cells.append(cell)
+			var famine_unready := not famine_owned.is_empty() \
+				and active_watch_cells.size() == watch_cells.size() \
+				and day - watch_pending_since < 20
+			if active_watch_cells.is_empty() and not famine_unready:
+				watch_pending = false
+			elif not famine_unready and _print_watched_cells(day, economy, active_watch_cells):
+				watch_pending = false
 		if fatal:
 			push_error("[headless-perf] fatal economy report at day %d reason=%s stage=%s" % [
 				day,
@@ -556,6 +593,10 @@ func _run() -> int:
 		output_dir, country_perf_samples)
 	if country_ai_recorder != null:
 		_print_country_ai_summary(country_ai, country_ai_recorder.call("finish"))
+	if not OS.get_environment("PK_HEADLESS_CARRYING_DUMP").strip_edges().is_empty():
+		_print_owned_cell_carrying(actual_map, economy, country)
+	if tech_every > 0:
+		_print_country_technology(-1, country, country_handles, generator)
 	var run_ms := float(Time.get_ticks_usec() - run_started) / 1000.0
 	var rows := _csv_data_row_count(output_path)
 	var output_ok := output_path != "" and FileAccess.file_exists(output_path)
@@ -1122,6 +1163,376 @@ func _load_saved_world_setup() -> Dictionary:
 	if str(setup.get("source", "")) != "world_setup":
 		setup["source"] = "world_setup"
 	return setup
+
+
+## Opt-in (PK_HEADLESS_CARRYING_DUMP): one line per owned cell with the
+## food-flow carrying inputs, to see why a cell's births are capped.
+func _print_owned_cell_carrying(map: MapData, economy, country) -> void:
+	if map == null or economy == null or country == null \
+			or not economy.has_method("population_cell_summary"):
+		return
+	var reserve_fields := ["res_fertile_soil_reserve_arr", "res_arable_land_reserve_arr",
+		"res_wild_game_reserve_arr"]
+	var reserve_arrays: Array = []
+	for field in reserve_fields:
+		var arr = map.get(field)
+		reserve_arrays.append(arr if arr is PackedFloat32Array else PackedFloat32Array())
+	for cell in map.cell_count():
+		var owner: Dictionary = country.cell_summary(cell)
+		var handle := int(owner.get("country_handle", 0))
+		if handle == 0:
+			continue
+		var s: Dictionary = economy.population_cell_summary(cell)
+		var buildings := PackedStringArray()
+		var b: Dictionary = economy.building_cell_snapshot(cell)
+		var type_ids: PackedStringArray = b.get("building_type_ids", PackedStringArray())
+		var type_counts: PackedInt64Array = b.get("building_counts_by_type", PackedInt64Array())
+		for i in mini(type_ids.size(), type_counts.size()):
+			if type_counts[i] > 0:
+				buildings.append("%s*%d" % [type_ids[i], type_counts[i]])
+		var reserves := PackedStringArray()
+		for r in reserve_fields.size():
+			var arr: PackedFloat32Array = reserve_arrays[r]
+			reserves.append("%.0f" % (arr[cell] if cell < arr.size() else -1.0))
+		print("[headless-perf/carrying] cell=%d handle=%d population=%d local_food_per_day=%d effective_food_per_day=%d stock_persons=%d k_geo=%d k_eff=%d access=%.2f load=%.2f reserve_soil_arable_game=%s buildings=%s" % [
+			cell, handle, int(s.get("population", s.get("total_population", 0))),
+			int(s.get("local_food_output_eq_per_day", 0)),
+			int(s.get("effective_food_supply_eq_per_day", 0)),
+			int(s.get("food_stock_capacity_persons", 0)),
+			int(s.get("carrying_k_geo", 0)), int(s.get("carrying_k_eff", 0)),
+			float(s.get("food_access_q16", 0)) / 65536.0,
+			float(s.get("population_load_q16", 0)) / 65536.0,
+			"/".join(reserves), ",".join(buildings),
+		])
+		_print_cell_savings(economy, cell)
+
+
+## Opt-in (PK_HEADLESS_FAMINE_WATCH): owned cells of every country whose last
+## recorded hungry share is above 25%, keyed by country handle.
+func _famine_owned_cells(map: MapData, country, recorder) -> Dictionary:
+	var owned := {}
+	if map == null or country == null or recorder == null:
+		return owned
+	var last: Dictionary = recorder.get("_last_by_handle")
+	for handle in last.keys():
+		if int(last[handle].get("hungry_share_q16", 0)) > 16384:
+			owned[int(handle)] = PackedInt32Array()
+	if owned.is_empty():
+		return owned
+	for cell in map.cell_count():
+		var handle := int(country.cell_summary(cell).get("country_handle", 0))
+		if owned.has(handle):
+			owned[handle].append(cell)
+	return owned
+
+
+## The two most populous cells per hungry country; empty while mid-epoch
+## population reads are unavailable.
+func _famine_top_cells(economy, owned: Dictionary) -> PackedInt32Array:
+	var cells := PackedInt32Array()
+	if economy == null:
+		return cells
+	for handle in owned.keys():
+		var ranked: Array = []
+		for cell in owned[handle]:
+			var snapshot: Dictionary = economy.population_cell_snapshot(cell, false)
+			var people := 0
+			for p in snapshot.get("populations", PackedInt64Array()):
+				people += int(p)
+			if people > 0:
+				ranked.append([people, cell])
+		if ranked.is_empty():
+			continue
+		ranked.sort_custom(func(a, b): return a[0] > b[0])
+		for i in mini(2, ranked.size()):
+			cells.append(int(ranked[i][1]))
+		print("[headless-perf/famine-watch] handle=%d cells=%s" % [handle, str(ranked.slice(0, 4))])
+	return cells
+
+
+## Opt-in (PK_HEADLESS_WATCH_CELLS=c1,c2; PK_HEADLESS_WATCH_EVERY=days): a time
+## series of the survival-food and tool chain in chosen cells.
+func _print_watched_cells(day: int, economy, cells: PackedInt32Array) -> bool:
+	if economy == null or not economy.has_method("building_cell_snapshot"):
+		return true
+	# Mid-epoch the cell queries come back empty; report not-ready so the caller retries next day.
+	var ready := false
+	for cell in cells:
+		var probe: Dictionary = economy.population_cell_snapshot(cell, false)
+		var market_probe: Dictionary = economy.market_cell_snapshot(cell)
+		var building_probe: Dictionary = economy.building_cell_snapshot(cell)
+		if probe.get("populations", []).size() > 0 \
+				and market_probe.get("good_ids", []).size() > 0 \
+				and building_probe.get("group_type_ids", []).size() > 0:
+			ready = true
+			break
+	if not ready:
+		return false
+	var watch_goods := ["gathered_plants", "game_meat", "wheat_grain", "prepared_staples",
+		"chipped_stone_tools", "flint", "logs", "clothing", "raw_hide", "fur", "bast_fiber"]
+	var watch_types := ["gathering_ground", "wild_wheat_stand", "stone_age_hunting_camp",
+		"small_game_trapline", "knapping_workshop", "flint_quarry", "communal_hearth",
+		"timber_collector"]
+	for cell in cells:
+		var s: Dictionary = economy.population_cell_summary(cell)
+		var attractiveness: Dictionary = economy.cell_satisfaction_attractiveness(cell)
+		var living_cost := float(attractiveness.get("living_cost_per_capita", 0))
+		var snapshot: Dictionary = economy.population_cell_snapshot(cell, false)
+		var names: PackedStringArray = snapshot.get("profession_stable_ids", PackedStringArray())
+		var professions: PackedInt32Array = snapshot.get("profession_ids", PackedInt32Array())
+		var populations: PackedInt64Array = snapshot.get("populations", PackedInt64Array())
+		var funds: PackedInt64Array = snapshot.get("funds_by_cohort", PackedInt64Array())
+		var sats: PackedInt32Array = snapshot.get("overall_satisfaction_by_cohort_q16", PackedInt32Array())
+		var people_by := {}
+		var funds_by := {}
+		var sat_by := {}
+		for i in mini(professions.size(), mini(populations.size(), funds.size())):
+			var p := int(professions[i])
+			var key := String(names[p]) if p >= 0 and p < names.size() else str(p)
+			people_by[key] = int(people_by.get(key, 0)) + int(populations[i])
+			funds_by[key] = int(funds_by.get(key, 0)) + int(funds[i])
+			if i < sats.size():
+				sat_by[key] = float(sat_by.get(key, 0.0)) + float(sats[i]) * float(populations[i])
+		var jobs := PackedStringArray()
+		var cell_people := 0
+		for key in people_by.keys():
+			cell_people += int(people_by[key])
+			if int(people_by[key]) > 0:
+				jobs.append("%s:%d:%.0f:%.2f" % [key, int(people_by[key]),
+					float(funds_by[key]) / float(people_by[key]) / maxf(1.0, living_cost),
+					float(sat_by.get(key, 0.0)) / float(people_by[key]) / 65536.0])
+		var market: Dictionary = economy.market_cell_snapshot(cell)
+		var good_ids = market.get("good_ids", PackedStringArray())
+		var prices = market.get("price", PackedInt64Array())
+		var stocks = market.get("stock", PackedInt64Array())
+		var demands = market.get("demand_ema", PackedInt64Array())
+		var goods := PackedStringArray()
+		for g in mini(good_ids.size(), mini(prices.size(), mini(stocks.size(), demands.size()))):
+			if String(good_ids[g]) in watch_goods:
+				goods.append("%s:p%d/s%d/d%d" % [good_ids[g], prices[g], stocks[g], demands[g]])
+		print("[headless-perf/watch] day=%d cell=%d pop=%d access=%.2f load=%.2f living_cost=%d jobs=%s goods=%s" % [
+			day, cell, int(s.get("population", s.get("total_population", cell_people))),
+			float(s.get("food_access_q16", 0)) / 65536.0,
+			float(s.get("population_load_q16", 0)) / 65536.0, int(living_cost),
+			",".join(jobs), ",".join(goods)])
+		var b: Dictionary = economy.building_cell_snapshot(cell)
+		var type_names = b.get("building_type_ids", PackedStringArray())
+		var group_types = b.get("group_type_ids", PackedInt32Array())
+		var input_offsets = b.get("group_input_selected_offsets", PackedInt32Array())
+		var input_goods = b.get("group_input_selected_good_ids", PackedInt32Array())
+		var fields := ["group_counts", "filled_owner", "owner_required", "operating_state",
+			"planned_utilization_q16", "capacity_q16", "last_output", "last_revenue",
+			"last_input_cost", "last_quoted_operating_cost", "projected_owner_income_per_day",
+			"opportunity_owner_income_per_day", "survival_priority",
+			"recovery_cooldown_cycles", "recovery_failed_reviews",
+			"merchant_debt_delinquent_cycles"]
+		var parts := PackedStringArray()
+		for g in group_types.size():
+			var type_id := int(group_types[g])
+			var type_name := String(type_names[type_id]) \
+				if type_id >= 0 and type_id < type_names.size() else str(type_id)
+			var count_column = b.get("group_counts", [])
+			if not type_name in watch_types and (g >= count_column.size() or int(count_column[g]) <= 0):
+				continue
+			var values := PackedStringArray()
+			for field in fields:
+				var column = b.get(field, [])
+				values.append(str(int(column[g])) if g < column.size() else "-")
+			var inputs := PackedStringArray()
+			if g + 1 < input_offsets.size():
+				for k in range(int(input_offsets[g]), int(input_offsets[g + 1])):
+					var good := int(input_goods[k])
+					inputs.append(String(good_ids[good]) \
+						if good >= 0 and good < good_ids.size() else str(good))
+			parts.append("%s[%s|in=%s]" % [type_name, "/".join(values), "+".join(inputs)])
+		print("[headless-perf/watch-groups] day=%d cell=%d count/owner/need/state/plan/cap/out/rev/in_cost/quoted/proj_income/opp_income/survival/cooldown/failed/delinquent %s" % [
+			day, cell, " ".join(parts)])
+	return true
+
+
+func _print_cell_savings(economy, cell: int) -> void:
+	var attractiveness: Dictionary = economy.cell_satisfaction_attractiveness(cell)
+	var living_cost := float(attractiveness.get("living_cost_per_capita", 0))
+	var snapshot: Dictionary = economy.population_cell_snapshot(cell, false)
+	var names: PackedStringArray = snapshot.get("profession_stable_ids", PackedStringArray())
+	var professions: PackedInt32Array = snapshot.get("profession_ids", PackedInt32Array())
+	var populations: PackedInt64Array = snapshot.get("populations", PackedInt64Array())
+	var funds: PackedInt64Array = snapshot.get("funds_by_cohort", PackedInt64Array())
+	var people_by := {}
+	var funds_by := {}
+	for i in mini(professions.size(), mini(populations.size(), funds.size())):
+		var p := int(professions[i])
+		var key := String(names[p]) if p >= 0 and p < names.size() else str(p)
+		people_by[key] = int(people_by.get(key, 0)) + int(populations[i])
+		funds_by[key] = int(funds_by.get(key, 0)) + int(funds[i])
+	var parts := PackedStringArray()
+	for key in people_by.keys():
+		var people := int(people_by[key])
+		if people <= 0:
+			continue
+		var days := float(funds_by[key]) / float(people) / maxf(1.0, living_cost)
+		parts.append("%s:%d:%.0f" % [key, people, days])
+	print("[headless-perf/savings] cell=%d living_cost_per_capita=%d profession_people_savings_days=%s" % [
+		cell, int(living_cost), ",".join(parts)])
+	var market: Dictionary = economy.market_cell_snapshot(cell)
+	var good_ids = market.get("good_ids", PackedStringArray())
+	var prices = market.get("price", PackedInt64Array())
+	var stocks = market.get("stock", PackedInt64Array())
+	var demands = market.get("demand_ema", PackedInt64Array())
+	var ranked: Array = []
+	var staples := PackedStringArray()
+	for g in mini(good_ids.size(), mini(prices.size(), mini(stocks.size(), demands.size()))):
+		var id := String(good_ids[g])
+		if id in ["gathered_plants", "game_meat", "potatoes", "fish", "prepared_staples"]:
+			staples.append("%s:%d" % [id, int(prices[g])])
+		var weight := float(prices[g]) * float(demands[g])
+		if weight > 0.0:
+			ranked.append([weight, id, int(prices[g]), int(stocks[g]), int(demands[g])])
+	ranked.sort_custom(func(a, b): return a[0] > b[0])
+	var top := PackedStringArray()
+	for i in mini(6, ranked.size()):
+		top.append("%s:p%d/s%d/d%d" % [ranked[i][1], ranked[i][2], ranked[i][3], ranked[i][4]])
+	print("[headless-perf/prices] cell=%d staples=%s top_spend=%s" % [
+		cell, ",".join(staples), ",".join(top)])
+	var buildings: Dictionary = economy.building_cell_snapshot(cell)
+	var type_names = buildings.get("building_type_ids", PackedStringArray())
+	var group_types = buildings.get("group_type_ids", PackedInt32Array())
+	var group_counts = buildings.get("group_counts", PackedInt64Array())
+	var rows: Array = []
+	for g in group_types.size():
+		rows.append([int(group_counts[g]) if g < group_counts.size() else 0, g])
+	rows.sort_custom(func(a, b): return a[0] > b[0])
+	var group_parts := PackedStringArray()
+	var fields := ["filled_owner", "operating_state", "planned_utilization_q16", "capacity_q16",
+		"last_output", "last_revenue", "last_input_cost", "last_quoted_operating_cost"]
+	for i in mini(8, rows.size()):
+		var g: int = rows[i][1]
+		var type_id := int(group_types[g])
+		var values := PackedStringArray()
+		for field in fields:
+			var column = buildings.get(field, [])
+			values.append(str(int(column[g])) if g < column.size() else "-")
+		group_parts.append("%s*%d[%s]" % [
+			String(type_names[type_id]) if type_id >= 0 and type_id < type_names.size() else str(type_id),
+			rows[i][0], "/".join(values)])
+	print("[headless-perf/groups] cell=%d owner/state/plan/cap/out/rev/in_cost/quoted_cost %s" % [
+		cell, " ".join(group_parts)])
+
+
+## Opt-in (PK_HEADLESS_TECH_EVERY=days): per country, the current era (first era
+## whose milestone is not done) and per-era done/discovered/ready/total counts
+## from research_snapshot states (0 hidden, 1 blocked, 2 ready, 3 queued,
+## 4 pending, 5 done). `stuck` lists current-era nodes that are ready but not
+## queued, which usually means an unmet research route.
+func _tech_index_by_id(definitions: Array) -> Dictionary:
+	if _tech_index_cache.is_empty():
+		for i in definitions.size():
+			_tech_index_cache[String(definitions[i].get("id", ""))] = i
+	return _tech_index_cache
+
+
+func _print_country_technology(day: int, country, handles: PackedInt64Array,
+		generator) -> void:
+	if country == null or not country.has_method("research_snapshot"):
+		return
+	var definitions := TechnologyCatalogScript.public_definitions()
+	var eras := TechnologyCatalogScript.public_era_metadata()
+	if _tech_signal_ids.is_empty():
+		_tech_signal_ids = TechnologyCatalogScript.compile_native_catalog().get(
+			"research_signal_ids", PackedStringArray())
+	var signal_ids := _tech_signal_ids
+	var era_index := {}
+	for i in eras.size():
+		era_index[String(eras[i].get("id", ""))] = i
+	for handle in handles:
+		var research: Dictionary = country.research_snapshot(int(handle))
+		if not bool(research.get("ok", false)):
+			continue
+		var states: PackedInt32Array = research.get("technology_states", PackedInt32Array())
+		var counts := []
+		for i in eras.size():
+			counts.append([0, 0, 0, 0])
+		var milestone_done := {}
+		for tech in mini(states.size(), definitions.size()):
+			var era := int(era_index.get(String(definitions[tech].get("era_id", "")), -1))
+			if era < 0:
+				continue
+			var state := states[tech]
+			counts[era][3] += 1
+			if state >= 4:
+				counts[era][0] += 1
+			if state >= 1:
+				counts[era][1] += 1
+			if state >= 2:
+				counts[era][2] += 1
+			if bool(definitions[tech].get("is_milestone", false)) and state == 5:
+				milestone_done[era] = true
+		var current := 0
+		while current < eras.size() and milestone_done.has(current):
+			current += 1
+		var stuck := PackedStringArray()
+		var hidden := 0
+		for tech in mini(states.size(), definitions.size()):
+			if int(era_index.get(String(definitions[tech].get("era_id", "")), -1)) != current:
+				continue
+			if states[tech] == 0:
+				hidden += 1
+			elif states[tech] == 2 and stuck.size() < 8:
+				stuck.append(String(definitions[tech].get("id", "")))
+		var parts := PackedStringArray()
+		for i in mini(eras.size(), current + 2):
+			parts.append("%d:%d/%d/%d/%d" % [i, counts[i][0], counts[i][1], counts[i][2], counts[i][3]])
+		print("[headless-perf/tech] day=%d handle=%d era=%d %s budget=%d points=%d hidden_current=%d stuck=%s" % [
+			day, int(handle), current, " ".join(parts),
+			int(research.get("daily_procurement_budget", 0)),
+			int(research.get("technology_points_stock", 0)), hidden, ",".join(stuck)])
+		# Hidden prerequisites of blocked nodes, ranked by how many blocked nodes
+		# they hold back. A ready set equal to the done set means research has
+		# nothing to buy until one of these is revealed.
+		var blockers := {}
+		for tech in mini(states.size(), definitions.size()):
+			if states[tech] != 1:
+				continue
+			for prerequisite in definitions[tech].get("hard_prerequisite_ids", PackedStringArray()):
+				var index := int(_tech_index_by_id(definitions).get(String(prerequisite), -1))
+				if index >= 0 and index < states.size() and states[index] == 0:
+					blockers[index] = int(blockers.get(index, 0)) + 1
+		var ranked := blockers.keys()
+		ranked.sort_custom(func(a, b): return int(blockers[a]) > int(blockers[b]))
+		var blocker_parts := PackedStringArray()
+		for index in ranked.slice(0, 6):
+			var blocker: Dictionary = definitions[int(index)]
+			blocker_parts.append("%s(%s,x%d):%s" % [String(blocker.get("id", "")),
+				String(blocker.get("era_id", "")), int(blockers[index]),
+				String(blocker.get("reveal_summary", "")).left(60)])
+		print("[headless-perf/tech-blockers] day=%d handle=%d %s" % [
+			day, int(handle), " | ".join(blocker_parts)])
+		if not country.has_method("research_signal_snapshot"):
+			continue
+		var signals: Dictionary = country.research_signal_snapshot(int(handle))
+		var by_kind := {}
+		var development := PackedStringArray()
+		for raw in signals.get("signal_ids", PackedInt32Array()):
+			var id := String(signal_ids[raw]) if raw >= 0 and raw < signal_ids.size() else str(raw)
+			var kind := id.get_slice(".", 0)
+			by_kind[kind] = int(by_kind.get(kind, 0)) + 1
+			if kind == "development":
+				development.append(id.trim_prefix("development."))
+		print("[headless-perf/tech-signals] day=%d handle=%d kinds=%s development=%s" % [
+			day, int(handle), str(by_kind), ",".join(development)])
+		var ext: Object = country.world_ext() if country.has_method("world_ext") else null
+		if ext != null and ext.has_method("get_development_progress"):
+			var progress: Dictionary = ext.get_development_progress(int(handle), 1)
+			print("[headless-perf/tech-dev] day=%d handle=%d agrarian values=%s days=%s done=%s" % [
+				day, int(handle), str(progress.get("current_values", [])),
+				str(progress.get("consecutive_days", [])), str(progress.get("completed", []))])
+	var report := _runtime_report_snapshot(generator)
+	var pod := PackedStringArray()
+	for key in report:
+		var name := String(key)
+		if name.begins_with("events_pod_") or name.begins_with("trigger_pod_"):
+			pod.append("%s=%s" % [name, str(report[key])])
+	print("[headless-perf/tech-pods] day=%d %s" % [day, " ".join(pod)])
 
 
 func _print_country_ai_summary(country_ai, finished: Dictionary) -> void:

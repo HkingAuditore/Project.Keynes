@@ -30,6 +30,74 @@
 namespace pk {
 
 namespace {
+std::FILE *sim_day_trace_file() {
+    static std::FILE *file = [] () -> std::FILE * {
+        const char *path = std::getenv("PK_SIM_DAY_TRACE");
+        return path != nullptr && path[0] != '\0' ? std::fopen(path, "w") : nullptr;
+    }();
+    return file;
+}
+
+// The trace file is shared by the worker and the main thread; multi-call
+// records must hold the stream lock or lines interleave mid-record.
+struct SimTraceLock {
+    std::FILE *file;
+    explicit SimTraceLock(std::FILE *f) : file(f) {
+#if defined(_WIN32)
+        _lock_file(file);
+#else
+        flockfile(file);
+#endif
+    }
+    ~SimTraceLock() {
+#if defined(_WIN32)
+        _unlock_file(file);
+#else
+        funlockfile(file);
+#endif
+    }
+};
+
+template <typename Column>
+uint64_t sim_trace_vector_hash(const Column &values) {
+    uint64_t hash = 1469598103934665603ull;
+    const size_t count = static_cast<size_t>(values.size());
+    for (size_t i = 0; i < count; ++i) {
+        const auto value = values[i];
+        const auto *bytes = reinterpret_cast<const uint8_t *>(&value);
+        for (size_t b = 0; b < sizeof(value); ++b)
+            hash = (hash ^ bytes[b]) * 1099511628211ull;
+    }
+    return hash ^ count;
+}
+
+void sim_trace_environment_fields(std::FILE *trace, const RuntimeEnvironmentSnapshot &s) {
+    std::fprintf(trace, "[env-fields] day=%lld", static_cast<long long>(s.day));
+#define PK_TRACE_FIELD(name) \
+    std::fprintf(trace, " " #name "=%llu", static_cast<unsigned long long>(sim_trace_vector_hash(s.name)))
+    PK_TRACE_FIELD(cell_temp); PK_TRACE_FIELD(cell_temp_30d); PK_TRACE_FIELD(cell_temp_365d);
+    PK_TRACE_FIELD(cell_temp_baseline_year); PK_TRACE_FIELD(cell_base_moisture); PK_TRACE_FIELD(cell_moisture);
+    PK_TRACE_FIELD(cell_plant_available_water); PK_TRACE_FIELD(cell_soil_moisture);
+    PK_TRACE_FIELD(cell_water_balance_30d); PK_TRACE_FIELD(cell_weather_precip); PK_TRACE_FIELD(cell_snow_cover);
+    PK_TRACE_FIELD(cell_weather_intensity); PK_TRACE_FIELD(cell_weather_vapor);
+    PK_TRACE_FIELD(cell_weather_cloud_water); PK_TRACE_FIELD(cell_weather_cloud); PK_TRACE_FIELD(cell_weather_type);
+    PK_TRACE_FIELD(cell_weather_transition); PK_TRACE_FIELD(cell_sea_ice_frac_prev);
+    PK_TRACE_FIELD(cell_river_discharge_30d); PK_TRACE_FIELD(cell_vegetation_vitality);
+    PK_TRACE_FIELD(cell_insolation_dev); PK_TRACE_FIELD(cell_heat_input); PK_TRACE_FIELD(cell_wind_x);
+    PK_TRACE_FIELD(cell_wind_y); PK_TRACE_FIELD(cell_wind_speed); PK_TRACE_FIELD(cell_ocean_current_x);
+    PK_TRACE_FIELD(cell_ocean_current_y); PK_TRACE_FIELD(cell_air_mass_temp_anomaly);
+    PK_TRACE_FIELD(cell_ocean_thermal_anomaly); PK_TRACE_FIELD(cell_local_thermal_anomaly);
+    PK_TRACE_FIELD(cell_temperature_transport_anomaly); PK_TRACE_FIELD(cell_ema_initialized);
+    PK_TRACE_FIELD(vegetation); PK_TRACE_FIELD(cover); PK_TRACE_FIELD(is_water); PK_TRACE_FIELD(has_river);
+    PK_TRACE_FIELD(canal_edge_mask); PK_TRACE_FIELD(canal_water); PK_TRACE_FIELD(visible);
+    PK_TRACE_FIELD(building_resource_reserve); PK_TRACE_FIELD(building_resource_extra);
+    PK_TRACE_FIELD(climate_physics_seed_slp); PK_TRACE_FIELD(climate_physics_seed_psi);
+    PK_TRACE_FIELD(climate_physics_seed_upwelling); PK_TRACE_FIELD(cyclone_seed_blob);
+#undef PK_TRACE_FIELD
+    std::fprintf(trace, " vision=%llu season=%.17g anomaly=%.17g\n",
+        static_cast<unsigned long long>(s.vision_revision), s.season_phase, s.climate_anomaly);
+}
+
 bool d7_read_u32(const uint8_t *bytes, size_t size, size_t &cursor,
                  uint32_t &out);
 bool d7_read_u64(const uint8_t *bytes, size_t size, size_t &cursor,
@@ -933,6 +1001,9 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _events_authority.reset();
     _events_snapshots.reset();
     _events_last_processed_day = -1;
+    _economy_fact_event_sequence = 0;
+    _trigger_forwarded_event_id = 0;
+    _trigger_forward_sequence = 0;
     _events_pod_ready.store(false, std::memory_order_release);
     _events_pod_plan_ms.store(0.0, std::memory_order_release);
     _events_pod_replay_ms.store(0.0, std::memory_order_release);
@@ -5598,6 +5669,53 @@ bool NativeSimulationHost::queue_trigger_pod_command(
     return _domain_authority_runner.queue_trigger_command(command, error);
 }
 
+void NativeSimulationHost::forward_committed_events_to_trigger(int64_t day) {
+    if ((_requested_authority_mask.load(std::memory_order_acquire) &
+         runtime_domain_mask(RuntimeDomainId::TRIGGER_INPUT)) == 0u ||
+        !_domain_authority_runner.trigger_pod_configured()) {
+        return;
+    }
+    // An invalid ingest fails the whole Trigger day, so rows outside the
+    // catalog are skipped here. The per-day cap stays under the command queue
+    // and pending-event capacities; the rest carries over to the next day.
+    constexpr uint32_t MAX_FORWARD_PER_DAY = 2048u;
+    const RuntimeTriggerPodCatalog &catalog = _domain_authority_runner.trigger_catalog();
+    uint32_t forwarded = 0;
+    for (const RuntimeEventsRecord &record : _events_authority.snapshot().events) {
+        if (record.event_id <= _trigger_forwarded_event_id) continue;
+        if (forwarded >= MAX_FORWARD_PER_DAY) break;
+        if (record.source < 0 || record.source >= catalog.source_count ||
+            record.type < 0 || record.type >= catalog.event_type_span) {
+            _trigger_forwarded_event_id = record.event_id;
+            continue;
+        }
+        RuntimeTriggerCommand command;
+        command.request_id = 0xE7F0000000000000ull | (_trigger_forward_sequence + 1u);
+        command.producer_id = 3u;
+        command.sequence = _trigger_forward_sequence + 1u;
+        command.opcode = RuntimeTriggerCommandOpcode::INGEST_EVENT;
+        command.requested_day = day;
+        command.effective_day = day + 1;
+        command.event.source_id = record.source;
+        command.event.event_id = record.event_id;
+        command.event.day = std::max<int64_t>(0, record.tick);
+        command.event.event_type = record.type;
+        command.event.payload_schema = record.payload_schema;
+        command.event.entity_handle = record.entity_handle != 0
+            ? record.entity_handle
+            : static_cast<uint64_t>(std::max(0, record.entity_id));
+        command.event.group_handle = static_cast<uint64_t>(std::max(0, record.cell_idx));
+        command.event.value = record.value_i64;
+        command.event.payload = {record.payload_i0, record.payload_i1,
+                                 record.payload_i2, record.payload_i3};
+        std::string queue_error;
+        if (!_domain_authority_runner.queue_trigger_command(command, queue_error)) break;
+        ++_trigger_forward_sequence;
+        _trigger_forwarded_event_id = record.event_id;
+        ++forwarded;
+    }
+}
+
 bool NativeSimulationHost::try_acquire_trigger_snapshot(uint64_t after_generation,
                                                         uint32_t &slot) {
     return _trigger_snapshots.try_acquire_latest(after_generation, slot);
@@ -8686,6 +8804,68 @@ RuntimeCommandPacket make_effect_intent_events_packet(
     return event_packet;
 }
 
+// Worker twin of the synchronous economy fact bridge. Construction facts need a
+// Modifier building identity that only the main thread can mint, so they are
+// not published from the worker.
+static void append_economy_fact_event_packets(
+        const std::vector<NativeEconomyRuntime::CommittedGameplayFact> &facts,
+        int64_t day, uint64_t &sequence, std::vector<RuntimeCommandPacket> &out) {
+    size_t index = 0;
+    while (index < facts.size()) {
+        std::vector<uint8_t> payload;
+        payload.reserve(8u + RUNTIME_EVENTS_MAX_BATCH_RECORDS * 76u);
+        const auto put_u32 = [&payload](uint32_t value) {
+            for (int i = 0; i < 4; ++i)
+                payload.push_back(static_cast<uint8_t>((value >> (i * 8)) & 0xffu));
+        };
+        const auto put_u64 = [&payload](uint64_t value) {
+            for (int i = 0; i < 8; ++i)
+                payload.push_back(static_cast<uint8_t>((value >> (i * 8)) & 0xffu));
+        };
+        put_u32(RUNTIME_EVENTS_ABI_VERSION);
+        put_u32(0u);
+        uint32_t rows = 0;
+        for (; index < facts.size() && rows < RUNTIME_EVENTS_MAX_BATCH_RECORDS; ++index) {
+            const NativeEconomyRuntime::CommittedGameplayFact &fact = facts[index];
+            int32_t event_type = 0;
+            int32_t payload_schema = 0;
+            if (fact.kind == NativeEconomyRuntime::GAMEPLAY_FACT_CONSTRUCTION_COMPLETED ||
+                !NativeEconomyRuntime::gameplay_fact_event(fact.kind, event_type,
+                                                           payload_schema))
+                continue;
+            put_u64(static_cast<uint64_t>(day));
+            put_u32(9u);
+            put_u32(static_cast<uint32_t>(event_type));
+            put_u32(1u);
+            put_u32(static_cast<uint32_t>(fact.flags));
+            put_u64(fact.entity_handle);
+            put_u32(static_cast<uint32_t>(fact.entity_id));
+            put_u32(static_cast<uint32_t>(fact.cell));
+            put_u32(static_cast<uint32_t>(payload_schema));
+            put_u64(static_cast<uint64_t>(fact.value));
+            for (int32_t value : fact.payload) put_u32(static_cast<uint32_t>(value));
+            put_u64(0u);
+            ++rows;
+        }
+        if (rows == 0) continue;
+        for (int i = 0; i < 4; ++i)
+            payload[4 + i] = static_cast<uint8_t>((rows >> (i * 8)) & 0xffu);
+        RuntimeCommandPacket packet{};
+        ++sequence;
+        packet.envelope.request_id = 0xEC0F000000000000ull | sequence;
+        packet.envelope.producer_id = 78u;
+        packet.envelope.sequence = sequence;
+        packet.envelope.requested_day = day;
+        packet.envelope.effective_day = day;
+        packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::EVENTS);
+        packet.envelope.opcode = static_cast<uint16_t>(RuntimeEventsCommand::APPEND_BATCH);
+        packet.envelope.payload_size = static_cast<uint32_t>(payload.size());
+        if (payload.size() > packet.payload.size()) continue;
+        std::memcpy(packet.payload.data(), payload.data(), payload.size());
+        out.push_back(packet);
+    }
+}
+
 bool NativeSimulationHost::drain_effect_transport_queues(std::string &error) {
     error.clear();
     if (!_effect_pod_configured) {
@@ -8904,6 +9084,23 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             manifest.catalog_hash = accepted.climate_catalog_hash;
             manifest.command_watermark = admitted_submit_order;
             uint64_t manifest_hash = RuntimeClimateKernel::input_hash(accepted);
+            if (std::FILE *trace = sim_day_trace_file()) {
+                SimTraceLock trace_lock(trace);
+                std::fprintf(trace,
+                    "[input-capture] day=%lld env_hash=%llu gen=%llu session=%llu map=%llu "
+                    "country=%llu building=%llu resource=%llu catalog=%llu watermark=%llu\n",
+                    static_cast<long long>(accepted.day),
+                    static_cast<unsigned long long>(manifest_hash),
+                    static_cast<unsigned long long>(manifest.input_generation),
+                    static_cast<unsigned long long>(manifest.session_epoch),
+                    static_cast<unsigned long long>(manifest.map_generation),
+                    static_cast<unsigned long long>(manifest.country_generation),
+                    static_cast<unsigned long long>(manifest.building_generation),
+                    static_cast<unsigned long long>(manifest.resource_generation),
+                    static_cast<unsigned long long>(manifest.catalog_hash),
+                    static_cast<unsigned long long>(manifest.command_watermark));
+                sim_trace_environment_fields(trace, accepted);
+            }
             manifest_hash = mix_hash(manifest_hash, manifest.session_epoch);
             manifest_hash = mix_hash(manifest_hash, manifest.input_generation);
             manifest_hash = mix_hash(manifest_hash, static_cast<uint64_t>(manifest.effective_day));
@@ -10586,9 +10783,64 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 !_economy_production_runtime->epoch_active() &&
                 (_economy_production_runtime->needs_environment_capture(plan.context.day) ||
                  _economy_production_runtime->needs_building_context_capture(plan.context.day))) {
-                if (environment->economy_input->day != plan.context.day ||
+                // The main-thread climate slots copied into economy_input only
+                // catch up when this worker's climate writeback is applied, so
+                // how many days they lag depends on machine speed. When Climate
+                // already committed this day here, read its store instead.
+                const RuntimeEconomyDayInput *economy_day_input =
+                    environment->economy_input.get();
+                RuntimeEconomyDayInput worker_climate_input;
+                const RuntimeClimateStore &climate_store = _climate_authority.store();
+                const size_t climate_cells = economy_day_input->fields[0].size();
+                const auto climate_lane_ok = [climate_cells](const auto &lane) {
+                    return lane.size() == climate_cells;
+                };
+                if (climate_authority_requested && active_climate_ok &&
+                    climate_store.committed_day == plan.context.day &&
+                    climate_store.cell_count == economy_day_input->cell_count &&
+                    climate_lane_ok(climate_store.temperature) &&
+                    climate_lane_ok(climate_store.temperature_30d_ema) &&
+                    climate_lane_ok(climate_store.moisture) &&
+                    climate_lane_ok(climate_store.plant_available_water) &&
+                    climate_lane_ok(climate_store.weather_precipitation) &&
+                    climate_lane_ok(climate_store.snow_cover) &&
+                    climate_lane_ok(climate_store.weather_intensity)) {
+                    worker_climate_input = *economy_day_input;
+                    worker_climate_input.fields[0] = climate_store.temperature;
+                    worker_climate_input.fields[1] = climate_store.temperature_30d_ema;
+                    worker_climate_input.fields[2] = climate_store.moisture;
+                    worker_climate_input.fields[3] = climate_store.plant_available_water;
+                    worker_climate_input.fields[4] = climate_store.weather_precipitation;
+                    worker_climate_input.fields[5] = climate_store.snow_cover;
+                    worker_climate_input.fields[6] = climate_store.weather_intensity;
+                    if (climate_lane_ok(climate_store.terrain))
+                        worker_climate_input.geography[0] = climate_store.terrain;
+                    if (climate_lane_ok(climate_store.vegetation))
+                        worker_climate_input.geography[2] = climate_store.vegetation;
+                    economy_day_input = &worker_climate_input;
+                }
+                if (std::FILE *trace = sim_day_trace_file()) {
+                    SimTraceLock trace_lock(trace);
+                    std::fprintf(trace, "[economy-input] day=%lld worker_climate=%d",
+                        static_cast<long long>(plan.context.day),
+                        economy_day_input == &worker_climate_input ? 1 : 0);
+                    for (size_t i = 0; i < economy_day_input->fields.size(); ++i)
+                        std::fprintf(trace, " f%zu=%llu", i, static_cast<unsigned long long>(
+                            sim_trace_vector_hash(economy_day_input->fields[i])));
+                    for (size_t i = 0; i < economy_day_input->geography.size(); ++i)
+                        std::fprintf(trace, " g%zu=%llu", i, static_cast<unsigned long long>(
+                            sim_trace_vector_hash(economy_day_input->geography[i])));
+                    for (size_t r = 0; r < economy_day_input->reserves.size(); ++r)
+                        std::fprintf(trace, " r%zu=%llu c%zu=%llu", r,
+                            static_cast<unsigned long long>(sim_trace_vector_hash(economy_day_input->reserves[r])),
+                            r, static_cast<unsigned long long>(sim_trace_vector_hash(economy_day_input->changes[r])));
+                    std::fprintf(trace, " env=%d build=%d\n",
+                        _economy_production_runtime->needs_environment_capture(plan.context.day) ? 1 : 0,
+                        _economy_production_runtime->needs_building_context_capture(plan.context.day) ? 1 : 0);
+                }
+                if (economy_day_input->day != plan.context.day ||
                     !_economy_production_runtime->capture_worker_day_input(
-                        *environment->economy_input, economy_error)) {
+                        *economy_day_input, economy_error)) {
                     set_fault(economy_error.empty() ? "economy_worker_input_day_mismatch" : economy_error.c_str());
                     stage.completed = 0;
                     commit.preflight_ok = 0;
@@ -10830,6 +11082,20 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             commit.completed_domain_mask |=
                 runtime_domain_mask(RuntimeDomainId::ECONOMY);
             ++commit.completed_stage_count;
+            // The synchronous fact bridge is skipped while the worker owns the
+            // economy, so committed facts are drained here even when no Events
+            // journal will take them.
+            {
+                std::vector<NativeEconomyRuntime::CommittedGameplayFact> facts;
+                if (_economy_production_runtime->drain_committed_gameplay_facts(facts) &&
+                    !facts.empty() &&
+                    (_requested_authority_mask.load(std::memory_order_acquire) &
+                     runtime_domain_mask(RuntimeDomainId::EVENTS)) != 0u) {
+                    append_economy_fact_event_packets(facts, plan.context.day,
+                                                      _economy_fact_event_sequence,
+                                                      gameplay_event_commands);
+                }
+            }
             if (economy_work > 0u) {
                 _active_evidence_mask.fetch_or(
                     runtime_domain_mask(RuntimeDomainId::ECONOMY),
@@ -11320,6 +11586,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 commit.preflight_ok = 0;
                 continue;
             }
+            forward_committed_events_to_trigger(plan.context.day);
             stage.completed = 1;
             commit.completed_domain_mask |=
                 runtime_domain_mask(RuntimeDomainId::EVENTS);
@@ -11424,6 +11691,38 @@ void NativeSimulationHost::publish_day(
     const uint64_t next_hash = mix_hash(
         _state_hash.load(std::memory_order_relaxed), static_cast<uint64_t>(day));
     _state_hash.store(next_hash, std::memory_order_release);
+    std::FILE *day_trace = sim_day_trace_file();
+    if (day_trace != nullptr) {
+        SimTraceLock trace_lock(day_trace);
+        std::fprintf(day_trace,
+            "[sim-day-trace] day=%lld input_day=%lld input_hash=%llu env_day=%lld "
+            "econ_day=%lld econ_sample=%lld econ_hash=%llu climate_hash=%llu "
+            "trigger_hash=%llu modifier_hash=%llu effect_hash=%llu\n",
+            static_cast<long long>(day),
+            static_cast<long long>(_input_capture_day.load(std::memory_order_acquire)),
+            static_cast<unsigned long long>(_input_capture_hash.load(std::memory_order_acquire)),
+            static_cast<long long>(_environment_day.load(std::memory_order_acquire)),
+            static_cast<long long>(_economy_pod_committed_day.load(std::memory_order_acquire)),
+            static_cast<long long>(_economy_pod_epoch_sample_day.load(std::memory_order_acquire)),
+            static_cast<unsigned long long>(_economy_pod_state_hash.load(std::memory_order_acquire)),
+            static_cast<unsigned long long>(_climate_pod_state_hash.load(std::memory_order_acquire)),
+            static_cast<unsigned long long>(_trigger_pod_state_hash.load(std::memory_order_acquire)),
+            static_cast<unsigned long long>(_modifier_pod_state_hash.load(std::memory_order_acquire)),
+            static_cast<unsigned long long>(_effect_pod_state_hash.load(std::memory_order_acquire)));
+        const auto &econ_state = _economy_pod_authority.state();
+        std::fprintf(day_trace,
+            "[econ-data] day=%lld gen=%llu pop=%llu funds=%llu active=%llu stock=%llu price=%llu demand=%llu resource=%llu\n",
+            static_cast<long long>(day),
+            static_cast<unsigned long long>(econ_state.state_generation),
+            static_cast<unsigned long long>(sim_trace_vector_hash(econ_state.population.population)),
+            static_cast<unsigned long long>(sim_trace_vector_hash(econ_state.population.funds)),
+            static_cast<unsigned long long>(sim_trace_vector_hash(econ_state.population.active)),
+            static_cast<unsigned long long>(sim_trace_vector_hash(econ_state.market.stock)),
+            static_cast<unsigned long long>(sim_trace_vector_hash(econ_state.market.price)),
+            static_cast<unsigned long long>(sim_trace_vector_hash(econ_state.market.demand_ema)),
+            static_cast<unsigned long long>(sim_trace_vector_hash(econ_state.resources.stock)));
+        std::fflush(day_trace);
+    }
     // Publish scalar header fields before the generation release store. A
     // non-blocking reader that observes this generation therefore cannot see
     // metadata from the preceding day even when the visual ring is saturated.
@@ -14418,5 +14717,7 @@ RuntimeThreadReport NativeSimulationHost::report() const {
     out.fault_injection_point[sizeof(out.fault_injection_point) - 1] = '\0';
     return out;
 }
+
+std::FILE *pk_sim_trace_file() { return sim_day_trace_file(); }
 
 } // namespace pk

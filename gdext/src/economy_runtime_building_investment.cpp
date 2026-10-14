@@ -1912,6 +1912,9 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             _investment_diagnostics.reserve(_building_types.size());
         }
         ++_investment_review_cells;
+        // Construction pays materials to local merchants; a cell whose
+        // merchant cohorts all died has no seller and cannot build.
+        if (!local_merchants_can_receive(cell)) continue;
         int64_t cell_population = 0;
         int64_t cell_unemployed = 0;
         thread_local std::vector<int64_t> cell_profession_population;
@@ -4485,7 +4488,10 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     candidate.plan.sponsor, cell, candidate.plan.owner_signature_id,
                     owner_population, error, &source_drained,
                     candidate.plan.sponsor_family_handle, true)) return false;
-            if (source_drained) {
+            // A full-cohort profession transition releases the sponsor slot by
+            // design. Only a partial move that still drained the source is a
+            // ledger fault (family/rounding residue path).
+            if (source_drained && source_population_before > owner_population) {
                 error = "building_investment_source_unexpectedly_drained";
                 return false;
             }
@@ -4501,34 +4507,70 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 error = "building_investment_owner_transition_failed";
                 return false;
             }
-            if (profession_transition) {
+            if (profession_transition && source_drained) {
+                // Sponsor slot is gone; every fund unit already moved with the
+                // people. Surplus above required_capital stays on the owner.
                 const int64_t carried =
                     population_store().funds[owner_slot] - target_funds_before;
-                const int64_t correction = required_capital - carried;
+                if (carried < required_capital) {
+                    error = "building_investment_capital_preflight_drift";
+                    return false;
+                }
+                ++_building_owner_mobility;
+                _building_investment_owner_population_moved = saturating_add(
+                    _building_investment_owner_population_moved,
+                    owner_population, _saturation_count);
+                _building_investment_capital_transferred = saturating_add(
+                    _building_investment_capital_transferred,
+                    required_capital, _saturation_count);
+            } else if (profession_transition) {
+                // `carried` is the ledger delta on the destination. When the
+                // destination already held a negative balance, that delta can
+                // exceed the post-move liquid funds on the slot; only the
+                // non-negative balance is refundable surplus.
+                const int64_t owner_funds_after =
+                    population_store().funds[owner_slot];
+                const int64_t carried = owner_funds_after - target_funds_before;
+                int64_t correction = required_capital - carried;
                 if (correction > 0 &&
                     population_store().funds[candidate.plan.sponsor] < correction) {
                     error = "building_investment_capital_preflight_drift";
                     return false;
                 }
-                if (correction < 0 &&
-                    population_store().funds[owner_slot] < -correction) {
-                    error = "building_investment_capital_refund_preflight_drift";
-                    return false;
+                if (correction < 0) {
+                    const int64_t refund = -correction;
+                    const int64_t payable = std::min<int64_t>(
+                        refund, std::max<int64_t>(0, owner_funds_after));
+                    // Unpayable surplus patched a destination deficit and
+                    // stays absorbed there; sponsor already lost it via the
+                    // move and will therefore pay more than required_capital.
+                    correction = -payable;
                 }
-                touch_accounting_slot(candidate.plan.sponsor);
-                touch_accounting_slot(owner_slot);
-                population_store().funds.write_scalar(candidate.plan.sponsor, saturating_sub(
-                    population_store().funds[candidate.plan.sponsor], correction,
-                    _saturation_count), market_mutation_sink());
-                population_store().funds.write_scalar(owner_slot, saturating_add(
-                    population_store().funds[owner_slot], correction,
-                    _saturation_count), market_mutation_sink());
-                attribute_family_funds_delta(candidate.plan.sponsor,
-                    candidate.plan.sponsor_family_handle, -correction);
-                attribute_family_funds_delta(owner_slot,
-                    candidate.plan.sponsor_family_handle, correction);
-                if (population_store().funds[candidate.plan.sponsor] !=
-                        source_funds_before - required_capital) {
+                if (correction != 0) {
+                    touch_accounting_slot(candidate.plan.sponsor);
+                    touch_accounting_slot(owner_slot);
+                    population_store().funds.write_scalar(candidate.plan.sponsor,
+                        saturating_sub(
+                            population_store().funds[candidate.plan.sponsor],
+                            correction, _saturation_count),
+                        market_mutation_sink());
+                    population_store().funds.write_scalar(owner_slot,
+                        saturating_add(
+                            population_store().funds[owner_slot], correction,
+                            _saturation_count),
+                        market_mutation_sink());
+                    attribute_family_funds_delta(candidate.plan.sponsor,
+                        candidate.plan.sponsor_family_handle, -correction);
+                    attribute_family_funds_delta(owner_slot,
+                        candidate.plan.sponsor_family_handle, correction);
+                }
+                const int64_t sponsor_paid = source_funds_before -
+                    population_store().funds[candidate.plan.sponsor];
+                // Must fund the building; overpay is allowed only when a
+                // destination deficit absorbed unpayable refund surplus.
+                if (sponsor_paid < required_capital ||
+                    (sponsor_paid != required_capital &&
+                        correction == required_capital - carried)) {
                     error = "building_investment_capital_transfer_drift";
                     return false;
                 }
@@ -4546,10 +4588,12 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 std::vector<EventLeg> legs;
                 legs.push_back({FIELD_COHORT_POPULATION, SUBJECT_COHORT,
                     source_handle, -1, source_population_before,
-                    population_store().population[candidate.plan.sponsor]});
+                    source_drained ? 0
+                        : population_store().population[candidate.plan.sponsor]});
                 legs.push_back({FIELD_COHORT_FUNDS, SUBJECT_COHORT,
                     source_handle, -1, source_funds_before,
-                    population_store().funds[candidate.plan.sponsor]});
+                    source_drained ? 0
+                        : population_store().funds[candidate.plan.sponsor]});
                 legs.push_back({FIELD_COHORT_POPULATION, SUBJECT_COHORT,
                     target_handle, -1, target_population_before,
                     population_store().population[owner_slot]});

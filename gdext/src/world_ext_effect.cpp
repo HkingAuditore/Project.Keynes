@@ -851,6 +851,16 @@ Dictionary DCWorldExt::apply_runtime_effect_snapshot(int64_t after_generation) {
         out["code"] = "effect_not_worker_authoritative";
         return out;
     }
+    // Worker Economy holds this boundary for the whole day and may enqueue
+    // colonization/canal builtins into the shared EffectRuntime. Skip apply
+    // while the day is inflight; the host keeps the same after_generation and
+    // retries on the next main-thread tick.
+    auto boundary_lock = _runtime_host->try_lock_economy_input_capture();
+    if (!boundary_lock.owns_lock()) {
+        out["ok"] = true;
+        out["code"] = "economy_day_inflight";
+        return out;
+    }
     const uint64_t cursor = after_generation < 0
         ? std::numeric_limits<uint64_t>::max()
         : static_cast<uint64_t>(after_generation);
@@ -860,13 +870,15 @@ Dictionary DCWorldExt::apply_runtime_effect_snapshot(int64_t after_generation) {
         out["code"] = "effect_snapshot_unavailable";
         return out;
     }
-    const RuntimeEffectPodSnapshot &snapshot =
+    // Copy out of the ring before apply so a concurrent worker publish that
+    // steals a READY slot cannot mutate vectors under the legacy rebuild.
+    const RuntimeEffectPodSnapshot snapshot =
         _runtime_host->effect_snapshot_buffer(slot);
+    const int64_t generation = static_cast<int64_t>(snapshot.generation);
+    _runtime_host->release_effect_snapshot(slot);
     std::string apply_error;
     const bool applied = runtime_from(_effect_runtime)->apply_pod_snapshot(
         snapshot, apply_error);
-    const int64_t generation = static_cast<int64_t>(snapshot.generation);
-    _runtime_host->release_effect_snapshot(slot);
     out["ok"] = applied;
     out["applied"] = applied;
     out["generation"] = generation;

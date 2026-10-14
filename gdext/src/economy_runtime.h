@@ -33,6 +33,7 @@
 #include "runtime_economy_population_store.h"
 #include "runtime_pod_protocol.h"
 #include "country_ai_core.h"
+#include "natural_resource_kernel.h"
 
 namespace pk {
 
@@ -832,6 +833,28 @@ public:
     int32_t cell_count() const { return _cell_count; }
     bool drain_building_resource_deltas(std::vector<size_t> &out_lanes,
                                         std::vector<int64_t> &out_deltas);
+    // Natural regeneration coefficients for the worker-owned reserve lanes,
+    // aligned with _resource_ids. Pointers inside `constants` stay unset.
+    struct WorkerNaturalResource {
+        NatResRuntime constants;
+        int32_t habitat_mode = 0;
+        int32_t temperature_signal = 0;
+        int32_t moisture_signal = 0;
+    };
+    void configure_worker_natural_resources(
+        std::vector<WorkerNaturalResource> resources);
+    bool worker_natural_resources_configured() const {
+        return !_worker_natural_resources.empty() &&
+            _worker_natural_resources.size() == _resource_ids.size();
+    }
+    bool worker_resource_seeded() const { return _worker_resource_seeded; }
+    void take_worker_resource_mirror_cells(std::vector<int32_t> &out);
+    const std::vector<float> &worker_resource_reserve_lanes() const {
+        return _worker_resource_reserve;
+    }
+    const std::vector<float> &worker_resource_extra_lanes() const {
+        return _worker_resource_extra;
+    }
     struct CommittedGameplayFact {
         int32_t kind = 0;
         int32_t cell = -1;
@@ -886,6 +909,10 @@ public:
     };
     bool drain_committed_gameplay_facts(
         std::vector<CommittedGameplayFact> &out);
+    // Gameplay journal row for a committed fact (phase 9, source 1). False for
+    // kinds that are not published.
+    static bool gameplay_fact_event(int32_t kind, int32_t &event_type,
+                                    int32_t &payload_schema);
     bool compile_development_catalog(const godot::Dictionary &catalog,
                                      std::string &error);
     int32_t building_resource_access_cells(int32_t cell, int32_t resource_id,
@@ -2512,7 +2539,7 @@ private:
         EMPLOYMENT_REJECTION_SURVIVAL_FLOOR = 6,
         EMPLOYMENT_REJECTION_HURDLE = 7,
         EMPLOYMENT_REJECTION_NO_ALLOCATION = 8,
-        EMPLOYMENT_REJECTION_KNOWLEDGE_CAP = 9,
+        EMPLOYMENT_REJECTION_ENTRY_SAVINGS = 9,
         EMPLOYMENT_REJECTION_SIGNATURE_SELF = 10,
         EMPLOYMENT_REJECTION_PROFESSION_UNAVAILABLE = 11,
         EMPLOYMENT_REJECTION_ZERO_TAKE = 12,
@@ -4410,6 +4437,7 @@ private:
         _satisfaction_development_weights_q16 = {26214, 26214, 13107};
     int32_t _satisfaction_development_variety_target = 12;
     int32_t _satisfaction_birth_reference_q16 = 45875;
+    int32_t _satisfaction_birth_bonus_reference_q16 = 55706;
     int64_t _carrying_k_habitat_ref = 40;
     int64_t _carrying_k_floor = 8;
     int32_t _carrying_river_bonus_q16 = 72090;
@@ -4422,7 +4450,7 @@ private:
     int32_t _carrying_surplus_floor_q16 = 16384;
     int32_t _carrying_surplus_cap_q16 = 98304;
     int32_t _carrying_sat_floor_q16 = 8192;
-    int32_t _carrying_sat_cap_q16 = Q16_ONE;
+    int32_t _carrying_sat_cap_q16 = 75366;
     int32_t _carrying_residual_floor_q16 = Q16_ONE / 2;
     int32_t _carrying_residual_cap_q16 = Q16_ONE * 2;
     int32_t _carrying_support_ema_alpha_q16 = 1024;
@@ -4651,6 +4679,9 @@ private:
     int64_t _building_employee_to_owner_reallocations = 0;
     int64_t _building_employee_job_reallocations = 0;
     int64_t _building_employee_job_profession_changes = 0;
+    // Heads forced off zero/negative-income seats while distressed so they
+    // can re-enter via unemployed → survival-food hire in the same period.
+    int64_t _building_distress_career_exits = 0;
     int64_t _building_employee_job_hurdle_rejections = 0;
     int64_t _building_employee_cold_start_forecasts = 0;
     int64_t _building_employee_funding_limited_forecasts = 0;
@@ -5443,6 +5474,10 @@ private:
     // Scratch union of populated / building / pending-construction cells.
     // Rebuilt each epoch_begin; never saved or hashed.
     std::vector<int32_t> _economy_live_cells;
+    // Copy for main-thread readers: the worker iterates _economy_live_cells
+    // (tax, investment) during an epoch, so queries must never rebuild it.
+    mutable std::mutex _economy_live_cells_published_mutex;
+    std::shared_ptr<const std::vector<int32_t>> _economy_live_cells_published;
     std::vector<int32_t> _epoch_settlement_cells;
     std::vector<int32_t> _epoch_building_cells;
     // Subset of today's market workset whose plan evaluation is due on the
@@ -5680,6 +5715,9 @@ private:
     std::vector<int64_t> _rule_params;
     EconomyKeyedVariableRecords<std::string> _profession_ids{{{26, 9}, "catalog_ids.profession_ids", EconomyFieldEncoding::CanonicalRecord, 1}};
     std::vector<int32_t> _profession_class_index;
+    // Days of the cell's per-capita living cost a cohort must hold per person
+    // before members may move into this profession from a lower-entry one.
+    std::vector<int32_t> _profession_entry_savings_days;
     std::vector<std::string> _carrying_class_ids;
     std::vector<int32_t> _profession_political_class_index;
     std::vector<std::string> _political_class_ids;
@@ -5814,6 +5852,25 @@ private:
     // A restored resource stock is authoritative until the first post-restore
     // building-context capture has consumed the matching map snapshot.
     bool _resource_stock_restored_pending_capture = false;
+    // Worker-owned reserves: after the first worker capture the main-thread
+    // reserve/extra slots are only a display mirror. Their content at capture
+    // time depends on how far the main thread ran ahead of the worker.
+    std::vector<WorkerNaturalResource> _worker_natural_resources;
+    bool _worker_resource_seeded = false;
+    std::vector<float> _worker_resource_reserve;
+    std::vector<float> _worker_resource_extra;
+    std::vector<uint8_t> _worker_resource_extra_dirty;
+    std::vector<int32_t> _worker_resource_last_day;
+    std::vector<uint8_t> _worker_resource_was_live;
+    std::vector<uint8_t> _worker_resource_cell_live;
+    std::vector<uint8_t> _worker_resource_mirror_mark;
+    std::vector<int32_t> _worker_resource_mirror_cells;
+    std::vector<float> _worker_resource_regen_factors;
+    bool advance_worker_resource_reserves(const RuntimeEconomyDayInput &input,
+                                          std::string &error);
+    void fold_worker_resource_deltas();
+    void write_worker_resource_stock(size_t lane);
+    void mark_worker_resource_mirror_cell(int32_t cell);
     std::vector<size_t> _resource_touched_lanes;
     std::vector<size_t> _last_published_resource_touched_lanes;
     uint32_t _resource_current_generation = 0;
@@ -5954,6 +6011,13 @@ private:
     std::vector<int32_t> _development_metric_subject_indices;
     std::vector<int64_t> _development_metric_qualifier_thresholds;
     std::vector<int32_t> _development_metric_duration_days;
+    // Per country x metric publication state: below-qualifier samples only feed
+    // the progress display, so they are throttled; qualified samples and the
+    // drop below the qualifier are always published.
+    static constexpr int64_t DEVELOPMENT_IDLE_FACT_INTERVAL_DAYS = 30;
+    std::vector<uint64_t> _development_fact_country_handles;
+    std::vector<int64_t> _development_fact_last_day;
+    std::vector<uint8_t> _development_fact_qualified;
     int32_t _technology_words = 0;
     NativeCountryRuntime *_country_runtime = nullptr;
     NativeSimulationHost *_simulation_host = nullptr;
@@ -5988,6 +6052,7 @@ private:
     std::vector<int32_t> _country_building_output_stat_ids;
     int32_t _country_production_input_stat_id = -1;
     int32_t _country_household_consumption_stat_id = -1;
+    int32_t _country_population_death_stat_id = -1;
     int32_t _country_resource_use_stat_id = -1;
     std::array<int32_t, 4> _country_climate_loss_stat_ids{-1, -1, -1, -1};
     // Dense [production climate profile][hazard] stat IDs, resolved at configure.
@@ -6133,6 +6198,7 @@ private:
     std::vector<int32_t> _epoch_country_building_output_factor_q16;
     std::vector<int32_t> _epoch_country_production_input_factor_q16;
     std::vector<int32_t> _epoch_country_household_consumption_factor_q16;
+    std::vector<int32_t> _epoch_country_death_factor_q16;
     std::vector<int32_t> _epoch_country_resource_global_use_factor_q16;
     std::vector<int32_t> _epoch_country_climate_loss_factor_q16;
     // Dense [country][production climate profile][hazard] Q16 loss factors.
@@ -7215,6 +7281,9 @@ private:
     int64_t credit_local_merchants(int32_t cell, int64_t amount,
                                    int32_t cashflow_source = CASHFLOW_MERCHANT_BUSINESS,
                                    int64_t *saturation_override = nullptr);
+    // Same denominator as credit_local_merchants: false when every local
+    // merchant cohort is empty, so a market purchase has no seller to pay.
+    bool local_merchants_can_receive(int32_t cell) const;
     int64_t debit_local_merchants(int32_t cell, int64_t amount,
                                   int32_t cashflow_source = CASHFLOW_MERCHANT_PROCUREMENT,
                                   int64_t *saturation_override = nullptr);
@@ -7355,6 +7424,7 @@ private:
     // Phase-2.4.3.2: StageOps-only fiscal bridge after BUILDING_COMMIT.
     // Fail-closed on country peer pending (compact yields; StageOps cannot).
     bool run_fiscal_settlement_drain(std::string &error);
+    void diag_stage_money_probe(const char *where);
     // Phase-2.4.4.3: StageOps bounded mid-graph drains (cursor + slice caps).
     // Compact keeps its own slice loops; these drains never re-enter
     // run_slice_compact.

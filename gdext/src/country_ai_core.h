@@ -17,6 +17,7 @@ namespace pk {
 
 constexpr uint32_t COUNTRY_AI_PRODUCER_ID = 0x41494331u; // "AIC1"
 constexpr int32_t COUNTRY_AI_Q16 = 65536;
+constexpr int32_t COUNTRY_AI_COLONIZE_BAD_TARGETS = 4;
 constexpr uint32_t COUNTRY_AI_SCHEMA = 1u;
 constexpr uint32_t COUNTRY_AI_DOMAIN_COUNT = RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT;
 constexpr uint32_t COUNTRY_AI_TAX_KIND_COUNT = RuntimeCountryPodSnapshot::TAX_KIND_COUNT;
@@ -128,6 +129,12 @@ struct CountryAiCatalog {
     int32_t research_max_enqueue_per_eval = 3;
     int32_t research_budget_change_bp = 2500;
     int32_t research_frontier_visit_limit = 256;
+    // Procurement pays merchants straight from the treasury, which dwarfs a
+    // young economy; spending beyond tax revenue plus a per-capita allowance
+    // inflates prices until households cannot afford essentials.
+    int32_t research_tax_share_bp = 3500;
+    int64_t research_per_capita_budget = 0;
+    int32_t research_essentials_floor_q16 = 58982; // ~0.90
     // Fiscal / tax.
     uint32_t tax_kind_mask = 0x7u;          // income, consumption, business
     int32_t tax_step_bp = 100;
@@ -138,18 +145,45 @@ struct CountryAiCatalog {
     int64_t reserve_floor_cash = 0;
     // Colonization.
     int32_t colonize_max_in_flight = 1;
-    int32_t colonize_population_share_bp = 2500;
-    int64_t colonize_min_population = 3;    // COLONIZATION_KIT_MIN_OWNER_SLOTS
+    // Party size: a few settlers never become a city. Match starter-settlement
+    // scale (~20) and take half the family's local surplus so the outpost can
+    // staff kit buildings and keep growing. Kit floor remains 3 in Economy.
+    int32_t colonize_population_share_bp = 5000;
+    int64_t colonize_min_population = 20;
     int32_t colonize_vision_radius = 3;
     int32_t colonize_target_ring = 2;
     int32_t colonize_failure_cooldown_days = 120;
     int32_t colonize_min_reserve_days = 180;
+    // An expedition carries away a share of a family; launching it from a
+    // small or hungry homeland, or into land that cannot feed settlers,
+    // shrinks the country instead of growing it.
+    int64_t colonize_min_country_population = 150;
+    int64_t colonize_min_population_per_cell = 80;
+    int32_t colonize_essentials_floor_q16 = 63570; // ~0.97
+    int32_t colonize_min_cell_value_q16 = 1;       // only with topology cell values
+    int32_t colonize_cell_value_weight_bp = 20000;
+    // Food security ahead of research: the budget scales from full at the
+    // first carrying load to zero at the second, and stops while too large a
+    // share of the population is hungry.
+    int32_t research_load_full_q16 = 32768;        // 0.50
+    int32_t research_load_zero_q16 = 55705;        // 0.85
+    int32_t research_hungry_share_max_q16 = 3932;  // 0.06
+    int32_t colonize_hungry_share_max_q16 = 1966;  // 0.03
+    // Food subsidy: a negative business-tax override on every building type
+    // with a survival-food output, switched with hysteresis on the hungry share.
+    int32_t subsidy_food_rate_bp = -3000;          // 0 disables
+    int32_t subsidy_on_hungry_share_q16 = 3932;    // 0.06
+    int32_t subsidy_off_hungry_share_q16 = 1311;   // 0.02
     std::array<CountryAiAgendaDef, COUNTRY_AI_AGENDA_COUNT> agendas{};
     std::vector<CountryAiPersonality> personalities;
     uint64_t catalog_hash = 0;
 };
 
-// Committed Economy facts, published once per Economy commit.
+// A cohort below this essentials satisfaction counts as hungry.
+constexpr int32_t COUNTRY_AI_HUNGRY_ESSENTIALS_Q16 = 58982; // 0.9
+
+// Committed Economy facts, published once per Economy commit. Money flows are
+// per day: an Economy batch spans a variable number of days.
 struct CountryAiEconomyRow {
     uint64_t country_handle = 0;
     int64_t population = 0;
@@ -163,12 +197,27 @@ struct CountryAiEconomyRow {
     int32_t expeditions_active = 0;
     uint32_t ai_colonization_failures = 0;
     uint32_t ai_colonization_started = 0;
+    // Food-flow carrying capacity over owned cells, in persons. Births slow
+    // once a cell's population passes ~90% of its K_eff, so the load is
+    // population-weighted: a one-person colony must not dominate it.
+    int64_t carrying_k_eff = 0;
+    int64_t carrying_k_geo = 0;
+    int32_t carrying_load_q16 = 0;
+    // Population share below COUNTRY_AI_HUNGRY_ESSENTIALS_Q16; the mean
+    // essentials value hides one starving cell.
+    int32_t hungry_share_q16 = 0;
 };
 
 struct CountryAiEconomyDigest {
     uint64_t revision = 0;
     int64_t commit_day = -1;
     std::vector<CountryAiEconomyRow> rows; // sorted by country_handle
+    // Indexed like the Country business-tax items: 1 when the building type
+    // has a survival-food output.
+    std::vector<uint8_t> food_building_types;
+    // Per-map-cell living population at digest publish (0 for empty/unowned).
+    // Used by colonize reinforce to find thin own-territory outposts.
+    std::vector<int64_t> cell_population;
     const CountryAiEconomyRow *find(uint64_t handle) const;
 };
 
@@ -200,6 +249,11 @@ struct CountryAiMemory {
     uint32_t commands_rejected = 0;
     uint32_t colonize_intents = 0;
     uint32_t reserved = 0;
+    // A failed expedition is attributed to the last intent target (one intent
+    // in flight per think); recent failures are skipped by target selection.
+    int32_t colonize_last_target = -1;
+    uint32_t colonize_bad_cursor = 0;
+    int32_t colonize_bad_targets[COUNTRY_AI_COLONIZE_BAD_TARGETS] = {-1, -1, -1, -1};
 };
 
 struct CountryAiCommand {
@@ -216,6 +270,7 @@ struct CountryAiCommand {
     int32_t tax_rate_bp = 0;
     int32_t tax_mode = 0;
     int64_t value = 0;
+    int32_t tax_item = -1;
 };
 
 struct CountryAiColonizationIntent {
@@ -273,6 +328,11 @@ struct CountryAiRecordRow {
     int32_t milestone_gap = 0;
     int32_t queued_techs = 0;
     int64_t research_budget = 0;
+    int64_t tax_paid = 0;
+    int64_t household_income = 0;
+    int64_t carrying_k_eff = 0;
+    int64_t carrying_k_geo = 0;
+    int32_t carrying_load_q16 = 0;
     std::array<int32_t, 3> tax_bp{{0, 0, 0}};
     int32_t expeditions = 0;
     int32_t families = 0;
@@ -280,6 +340,8 @@ struct CountryAiRecordRow {
     uint32_t colonize_failures = 0;
     uint32_t commands_emitted = 0;
     uint32_t commands_rejected = 0;
+    int32_t hungry_share_q16 = 0;
+    int32_t food_subsidy_bp = 0;
 };
 
 // Derived, catalog-bound technology indices. Rebuilt only when the Country

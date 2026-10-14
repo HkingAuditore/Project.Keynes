@@ -285,7 +285,11 @@ Good 的 `tech.*` 标签是生产许可，不再只是可见性标签：每个 G
 提交事实使用 `EVENT_COUNTRY_DEVELOPMENT_METRIC = 17` 与
 `PAYLOAD_COUNTRY_DEVELOPMENT_V1 = 10`。Trigger protocol v3 的
 `CONSECUTIVE_DURATION` 每个提交日最多推进一次，跌破阈值清零，同日重复不累计，采样日空洞
-重新起算。达标后沿 Effect/Country ACK 路径授予永久 `development.*` 信号；Economy 不直接
+重新起算。Economy 只在三种情况下发布某国某指标的事实（国家已持有该信号的不再发布）：
+达到资格阈值时每个 epoch 都发；从达标跌回不达标时立即发一次以清零；一直不达标时最多每
+30 天发一次（`DEVELOPMENT_IDLE_FACT_INTERVAL_DAYS`），只为刷新 UI 当前值。被跳过的不达标
+采样对 Trigger 等价于清零：下一次达标采样落在覆盖期空洞之后，从本期覆盖日数重新起算。
+此前每个 epoch 发布全部未持有指标（8 国约 730 条/日），ACTIVE 吞吐从约 33 降到 21 日/秒。达标后沿 Effect/Country ACK 路径授予永久 `development.*` 信号；Economy 不直接
 写国家研究状态。科技 UI 只查询当前最高开放时代的中性目标和进度，并在选中科技时分别解释
 核心知识与每个研究条件分支，未知科技不会泄露名称、效果或条件细节。
 
@@ -382,6 +386,13 @@ worker 与依赖国家日的其它结算（例如开拓落地）。
 
 采购受每日预算、国库现金、市场库存与队列剩余成本限制，并计入需求 EMA、价格形成及现金/
 商品守恒。国家研究在下一日消费国库科技值，形成明确的一日经济边界延迟。v1 不允许跨国采购。
+
+epoch 内重读实时采购策略（某国 `remaining` 归零或整轮结束时唤醒新需求）只在购买阶段
+（phase 0）或整轮结束后进行。phase 1 只把价格上限信号记到 `remaining` 上，不发生购买；
+2026-10-13 之前在 phase 1 也会重读，`remaining` 被信号扣到 0 就被当成“买完了”，实时需求未变
+于是判定新需求出现、游标归零。候选不超过一个切片（32）时整轮一次走完不会触发；后期属地
+市场超过 32 个后每次调用都从头开始，排空循环耗尽 2^20 次守卫，以
+`government_research_guard_exhausted` 致命停机。
 
 ## Modifier 消费者
 

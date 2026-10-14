@@ -436,8 +436,11 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
 }
 
 Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
-    if (!_runtime_host || _runtime_host->state() == RuntimeWorkerState::STOPPED)
+    if (!_runtime_host || _runtime_host->state() == RuntimeWorkerState::STOPPED) {
         _climate_physics_committed.reset();
+        _climate_writeback_applied_generation = 0;
+        _climate_writeback_applied_day = -1;
+    }
     if (!_runtime_host) _runtime_host = std::make_unique<NativeSimulationHost>();
     if (_country_runtime != nullptr) {
         static_cast<NativeCountryRuntime *>(_country_runtime)
@@ -827,7 +830,42 @@ Dictionary DCWorldExt::set_runtime_qos_threaded(bool interactive) {
     return out;
 }
 
+std::FILE *pk_sim_trace_file();
+
+void DCWorldExt::sim_trace_main_write(const char *tag) {
+    std::FILE *trace = pk_sim_trace_file();
+    if (trace == nullptr || !_bound) return;
+    auto hash_slot = [&](const char *name) -> unsigned long long {
+        const int sid = component_id(StringName(name));
+        if (sid < 0 || sid >= _slots.size()) return 0ull;
+        const Slot &slot = _slots[sid];
+        uint64_t hash = 1469598103934665603ull;
+        const uint8_t *bytes = nullptr;
+        size_t size = 0;
+        if (slot.dtype == SlotDType::F32) {
+            bytes = reinterpret_cast<const uint8_t *>(slot.arr_f32.ptr());
+            size = static_cast<size_t>(slot.arr_f32.size()) * sizeof(float);
+        } else if (slot.dtype == SlotDType::U8) {
+            bytes = slot.arr_u8.ptr();
+            size = static_cast<size_t>(slot.arr_u8.size());
+        }
+        for (size_t i = 0; i < size; ++i) hash = (hash ^ bytes[i]) * 1099511628211ull;
+        return static_cast<unsigned long long>(hash ^ size);
+    };
+    const long long committed = _runtime_host != nullptr
+        ? static_cast<long long>(_runtime_host->report().committed_day) : -1;
+    std::fprintf(trace,
+        "[main-write] fn=%s committed=%lld base=%llu soil=%llu moist=%llu temp=%llu "
+        "wtype=%llu wint=%llu veg=%llu tta=%llu\n",
+        tag, committed, hash_slot("cell_base_moisture"), hash_slot("cell_soil_moisture"),
+        hash_slot("cell_moisture"), hash_slot("cell_temp"), hash_slot("cell_weather_type"),
+        hash_slot("cell_weather_intensity"), hash_slot("cell_vegetation"),
+        hash_slot("cell_temperature_transport_anomaly"));
+    std::fflush(trace);
+}
+
 Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
+    SimTraceWriteGuard sim_trace_guard{this, "capture_runtime_inputs"};
     Dictionary out;
     _climate_physics_capture_ready = false;
     if (!_runtime_host) {
@@ -2102,6 +2140,13 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
             copy_slot_f32(reserve_slots[r].c_str(), economy_input->reserves[r]);
         for (size_t r = 0; r < extra_slots.size(); ++r)
             copy_slot_f32(extra_slots[r].c_str(), economy_input->changes[r]);
+        const int habitat_sid = component_id(StringName("cell_resource_habitat_mask"));
+        if (habitat_sid >= 0 && habitat_sid < _slots.size() &&
+            _slots[habitat_sid].dtype == SlotDType::U8 &&
+            static_cast<size_t>(_slots[habitat_sid].arr_u8.size()) == cells) {
+            const auto &array = _slots[habitat_sid].arr_u8;
+            economy_input->resource_habitat.assign(array.ptr(), array.ptr() + array.size());
+        }
         snapshot.economy_input = std::move(economy_input);
     }
     if (!_runtime_host->publish_environment(snapshot, publish_error)) {
@@ -2600,6 +2645,8 @@ Dictionary DCWorldExt::restore_runtime_bundle(const PackedByteArray &bytes) {
     }
     _climate_physics_committed.reset();
     _climate_physics_capture_ready = false;
+    _climate_writeback_applied_generation = 0;
+    _climate_writeback_applied_day = -1;
     // The bundle is held by the host until the next start() consumes it.  Do
     // not expose or decode the payload here; this call remains a main-thread
     // validation/copy boundary only.
@@ -2614,6 +2661,8 @@ Dictionary DCWorldExt::restore_runtime_bundle(const PackedByteArray &bytes) {
 Dictionary DCWorldExt::request_runtime_stop() {
     _climate_physics_committed.reset();
     _climate_physics_capture_ready = false;
+    _climate_writeback_applied_generation = 0;
+    _climate_writeback_applied_day = -1;
     Dictionary out;
     if (!_runtime_host) {
         out["ok"] = true;
@@ -2989,6 +3038,12 @@ bool DCWorldExt::climate_worker_authoritative() const {
         RuntimeDomainId::CLIMATE);
 }
 
+bool DCWorldExt::climate_main_thread_suppressed() const {
+    if (!_runtime_host) return false;
+    return _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::CLIMATE) ||
+           _runtime_host->domain_grant_pending(RuntimeDomainId::CLIMATE);
+}
+
 bool DCWorldExt::climate_physics_authoritative() const {
     if (!climate_worker_authoritative() || !_climate_physics_capture_ready || !_map_data ||
         _climate_physics_map_id != _map_data->get_instance_id() || !_climate_physics_committed ||
@@ -3152,8 +3207,13 @@ Dictionary DCWorldExt::wait_climate_consumed(
 
 Dictionary DCWorldExt::apply_runtime_climate_writeback(
         int64_t after_generation) {
+    SimTraceWriteGuard sim_trace_guard{this, "apply_runtime_climate_writeback"};
     Dictionary out;
     const auto writeback_start = std::chrono::steady_clock::now();
+    if (after_generation < 0) after_generation = 0;
+    after_generation = std::max<int64_t>(
+        after_generation, static_cast<int64_t>(_climate_writeback_applied_generation));
+    out["last_applied_day"] = _climate_writeback_applied_day;
     out["committed_day"] = _climate_physics_committed ? _climate_physics_committed->committed_day : -1;
     out["input_generation"] = _climate_physics_committed
         ? static_cast<int64_t>(_climate_physics_committed->input_generation) : int64_t(0);
@@ -3474,6 +3534,9 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
     const double total_ms = std::chrono::duration<double, std::milli>(
         flush_done - writeback_start).count();
 
+    _climate_writeback_applied_generation = applied_generation;
+    _climate_writeback_applied_day = applied_day;
+    out["last_applied_day"] = applied_day;
     out["ok"] = true;
     // applied 只在真的写进了字段时为真。曾经这里无条件报 true，于是"回灌假活跃"
     // 让一次全空的写回看起来和成功一模一样。

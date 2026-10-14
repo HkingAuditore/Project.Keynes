@@ -47,6 +47,19 @@ const Q16 := 65536
 @export_range(1, 32, 1) var research_max_enqueue_per_eval: int = 3
 @export_range(0, 10000, 1) var research_budget_change_bp: int = 2500
 @export_range(1, 4096, 1) var research_frontier_visit_limit: int = 256
+## Daily budget cap = household tax revenue x share + population x per-capita
+## allowance. Procurement is paid from the treasury, so without this cap a large
+## treasury floods merchants with cash and prices outrun household incomes.
+@export_range(0, 10000, 1) var research_tax_share_bp: int = 3500
+@export var research_per_capita_budget: int = 0
+## No procurement while population-weighted essentials satisfaction is below this.
+@export_range(0.0, 1.0, 0.01) var research_essentials_floor: float = 0.90
+## Food before research: the budget is full up to the first carrying load,
+## falls linearly to zero at the second, and stops while the hungry share
+## (essentials below 0.9) reaches the maximum.
+@export_range(0.0, 4.0, 0.01) var research_load_full: float = 0.50
+@export_range(0.0, 4.0, 0.01) var research_load_zero: float = 0.85
+@export_range(0.0, 1.0, 0.01) var research_hungry_share_max: float = 0.06
 
 @export_group("Tax")
 ## Bit mask over income(0), consumption(1), business(2), and reserved kinds.
@@ -60,13 +73,32 @@ const Q16 := 65536
 
 @export_group("Colonization")
 @export_range(0, 16, 1) var colonize_max_in_flight: int = 1
-@export_range(1, 10000, 1) var colonize_population_share_bp: int = 2500
-## The economy rejects kits below 3 owner slots (COLONIZATION_KIT_MIN_OWNER_SLOTS).
-@export_range(3, 100000, 1) var colonize_min_population: int = 3
+## Share of a family's local surplus sent on each expedition (basis points).
+## Tiny parties never staff a colony; half the surplus matches a real town seed.
+@export_range(1, 10000, 1) var colonize_population_share_bp: int = 5000
+## AI floor above the economy kit minimum (3). Starter settlements are ~20.
+@export_range(3, 100000, 1) var colonize_min_population: int = 20
 @export_range(1, 16, 1) var colonize_vision_radius: int = 3
 @export_range(1, 16, 1) var colonize_target_ring: int = 2
 @export_range(0, 3650, 1) var colonize_failure_cooldown_days: int = 120
 @export_range(0, 3650, 1) var colonize_min_reserve_days: int = 180
+## Expeditions carry away part of a family: wait until the homeland is large,
+## dense and well fed, otherwise every colony shrinks the country.
+@export_range(0, 100000, 1) var colonize_min_country_population: int = 150
+@export_range(0, 100000, 1) var colonize_min_population_per_cell: int = 80
+@export_range(0.0, 1.0, 0.01) var colonize_essentials_floor: float = 0.97
+## Target cells scoring below this habitability (0..1) are never colonized.
+@export_range(0.0, 1.0, 0.01) var colonize_min_cell_value: float = 0.0
+@export_range(0, 100000, 1) var colonize_cell_value_weight_bp: int = 20000
+## No expedition while more than this share of the population is hungry.
+@export_range(0.0, 1.0, 0.01) var colonize_hungry_share_max: float = 0.03
+
+@export_group("Food subsidy")
+## Negative business-tax override on survival-food building types; 0 disables.
+@export_range(-100000, 0, 1) var subsidy_food_rate_bp: int = -3000
+## Switched on at the first hungry share, off again at the second.
+@export_range(0.0, 1.0, 0.01) var subsidy_on_hungry_share: float = 0.06
+@export_range(0.0, 1.0, 0.01) var subsidy_off_hungry_share: float = 0.02
 
 @export_group("Agendas and personalities")
 ## Exactly one entry per AGENDA_IDS id.  Each consideration:
@@ -132,6 +164,9 @@ func compile_native_catalog(seed: int) -> Dictionary:
 		"research_max_enqueue_per_eval": research_max_enqueue_per_eval,
 		"research_budget_change_bp": research_budget_change_bp,
 		"research_frontier_visit_limit": research_frontier_visit_limit,
+		"research_tax_share_bp": research_tax_share_bp,
+		"research_per_capita_budget": research_per_capita_budget,
+		"research_essentials_floor_q16": roundi(research_essentials_floor * Q16),
 		"tax_kind_mask": tax_kind_mask,
 		"tax_step_bp": tax_step_bp,
 		"tax_max_step_bp": tax_max_step_bp,
@@ -146,6 +181,18 @@ func compile_native_catalog(seed: int) -> Dictionary:
 		"colonize_target_ring": colonize_target_ring,
 		"colonize_failure_cooldown_days": colonize_failure_cooldown_days,
 		"colonize_min_reserve_days": maxi(0, roundi(colonize_min_reserve_days * reserve_scale)),
+		"colonize_min_country_population": colonize_min_country_population,
+		"colonize_min_population_per_cell": colonize_min_population_per_cell,
+		"colonize_essentials_floor_q16": roundi(colonize_essentials_floor * Q16),
+		"colonize_min_cell_value_q16": maxi(1, roundi(colonize_min_cell_value * Q16)),
+		"colonize_cell_value_weight_bp": colonize_cell_value_weight_bp,
+		"research_load_full_q16": roundi(research_load_full * Q16),
+		"research_load_zero_q16": roundi(research_load_zero * Q16),
+		"research_hungry_share_max_q16": roundi(research_hungry_share_max * Q16),
+		"colonize_hungry_share_max_q16": roundi(colonize_hungry_share_max * Q16),
+		"subsidy_food_rate_bp": subsidy_food_rate_bp,
+		"subsidy_on_hungry_share_q16": roundi(subsidy_on_hungry_share * Q16),
+		"subsidy_off_hungry_share_q16": roundi(subsidy_off_hungry_share * Q16),
 	}
 	var agenda_rows: Array = []
 	var seen := {}

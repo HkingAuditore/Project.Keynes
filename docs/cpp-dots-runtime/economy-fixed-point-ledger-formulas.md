@@ -254,6 +254,21 @@ clearing_desired   = max(elastic_desired, survival_required)
 
 它不乘财富或价格 composite。生产者自留和死亡分母读取同一结果，避免销售收入改变最低生存标准。
 
+三类生存食物是互相替代的子篮子（任一完整即可活命），因此 `survival_required` 下限只给
+接近最便宜在库价格水平的食物 need。每个市场按 need 取在库 variant 的最低
+`price_index = unit_price / reference_unit_price`，记最便宜者为 `cheapest`：
+
+```text
+index == 0 (无在库) 且别的食物在库      -> floor = 0
+index > 4 * cheapest                    -> floor = 0,
+                                           elastic_desired *= 4 * cheapest / index
+否则                                     -> floor = survival_required
+```
+
+这样某一食物价格失控（如猎物打光后肉价涨到上限）时，家庭转买便宜的采集物/主食，该 need 的
+支出被限制在 4 倍便宜价格水平内，不会把整格存款吸进商人账户。`cohort_food_required`、
+饥饿满足度和死亡分母仍用原始 `survival_required`。
+
 资金和库存短缺使用累计前缀商：
 
 ```text
@@ -303,7 +318,11 @@ effective_birth_rate_q32 = birth_rate_q32 × fertility_land × city.birth_factor
 expected_births_q32 = population × effective_birth_rate_q32 × epoch_days
 ```
 
-`rescale` 仍按 `satisfaction_birth_reference_q16` 重标定。上述食物流量来自上一完整周期的实际结算；
+`rescale` 仍按 `satisfaction_birth_reference_q16` 重标定：composite 低于 0.70 时为 `composite/0.70`（下限
+`carrying_sat_floor_q16`）；高于 0.70 后线性升到 `satisfaction_birth_bonus_reference_q16`（默认 `55706`，0.85）
+处的 `carrying_sat_cap_q16`（默认 `75366`，1.15）。负载超过 `carrying_soft_start_q16` 后，超出 1 的部分按
+`1 − t` 渐退，负载 1.0 时归零，因此奖励只加速 `P ≪ K_eff` 时的增长，不抬高承载力上的更替水平。
+上述食物流量来自上一完整周期的实际结算；
 资源生态储量、地形、气候和建筑加成通过真实产出结果生效；当地可用食品库存另按有限缓冲天数计入有效承载力。
 家庭购买属于所有权转移，不得再次加到本地产出；
 加工链按输出减投入计量。上一期流量快照进入 PKEC v45 与 `state_hash`。
@@ -313,9 +332,16 @@ expected_births_q32 = population × effective_birth_rate_q32 × epoch_days
 [综合满意度运行时](./satisfaction-runtime.md)。
 
 周期开始时仍存活人口先就业和生产，不用上周期满足度削减劳动力。
-职业默认出生率为每日 Q32 `2353407`（约 20.0%/年），自然死亡率为 `294176`（约 2.5%/年），
-完全满足时净增长约 17.5%/年，健康人口在 `P ≪ K_eff` 时理论翻倍时间约 4.3 年；贴上格承载力后出生落到更替
-（`death_rate/birth_rate`）。库存按 `carrying_stock_buffer_days`（默认 30 天）折算为有限期食物流量，
+职业默认出生率为每日 Q32 `2353407`（约 20.0%/年），基础自然死亡率为 `882528`（约 7.5%/年）。
+自然死亡率先乘所在国家冻结的 `country.population.death_factor`（科技 Modifier，`[1/3, 4]`；未解析的
+stat 视为 1），所以科技可以把它压到 2.5%/年；
+
+```text
+base_death_rate_q32 = death_rate_q32 × modifier_factor_q16(country.population.death_factor) / Q16
+```
+
+`base_death_rate_q32` 同时用于更替生育率和饥饿死亡的叠加底数。石器开局综合满足度 0.85 时净增长约
+`20%×1.15 − 7.5% ≈ 15.5%`/年；贴上格承载力后出生落到更替（`base_death_rate/birth_rate`）。库存按 `carrying_stock_buffer_days`（默认 30 天）折算为有限期食物流量，
 并扣除生产/建设锁定量；`carrying_soft_start_q16` 默认值为 `58982`（约 90%），使人口接近有效承载力前保持更长的增长窗口。同一 cell
 内按 ethnicity 汇总 `expected_births_q32`；整数部分直接出生，Q32 小数部分写入每格每民族的
 `birth_residual_q32` 并跨周期累计，由 PKEC 持久化。

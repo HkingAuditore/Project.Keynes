@@ -1256,6 +1256,13 @@ func build_field_knobs_for_worker(map: MapData, world: WorldData,
 	return knobs
 
 
+# begin_weather_field_solve 的 refresh_convergence 按 _field_solve_tick 调用次数取
+# 奇偶；worker 的 capture 会因失败重试或其他调用多走一步，所以 worker 侧改按
+# 捕获日取同一个 stride。
+func convergence_refresh_due_on_day(day: int) -> bool:
+	return posmod(day - 1, maxi(1, _field_convergence_refresh_stride)) == 0
+
+
 # ACTIVE climate authority：worker 侧 distribute stage 的 knobs 入口。
 #
 # 生产路径经 build_unified_fast_tick_weather_knobs 一次拿 field+distribute+summary
