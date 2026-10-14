@@ -1,0 +1,140 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/inspector_note_list.gd" id="1_notes"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_diverging_bar.gd" id="2_diverging"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_bar_list.gd" id="3_bars"]
+
+[node name="GoodDossier" type="VBoxContainer"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="OverviewPage" type="VBoxContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="Notes" type="Control" parent="OverviewPage"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("1_notes")
+
+[node name="SupplyCard" type="PanelContainer" parent="OverviewPage"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierAside"
+
+[node name="Box" type="VBoxContainer" parent="OverviewPage/SupplyCard"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="OverviewPage/SupplyCard/Box"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="OverviewPage/SupplyCard/Box/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "供需对冲与构成"
+theme_type_variation = &"PKDossierSectionTitle"
+
+[node name="Hint" type="Label" parent="OverviewPage/SupplyCard/Box/Header"]
+layout_mode = 2
+text = "暗红需求 · 铜绿供给"
+theme_type_variation = &"PKDossierMuted"
+
+[node name="SupplyDemandBar" type="Control" parent="OverviewPage/SupplyCard/Box"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(200, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("2_diverging")
+
+[node name="DemandSupplyBars" type="Control" parent="OverviewPage/SupplyCard/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_bars")
+
+[node name="PriceCard" type="PanelContainer" parent="OverviewPage"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierAside"
+
+[node name="Box" type="VBoxContainer" parent="OverviewPage/PriceCard"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="OverviewPage/PriceCard/Box"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="OverviewPage/PriceCard/Box/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "价格传导与库存保障"
+theme_type_variation = &"PKDossierSectionTitle"
+
+[node name="Hint" type="Label" parent="OverviewPage/PriceCard/Box/Header"]
+layout_mode = 2
+text = "竖线为 1.0x 成本锚"
+theme_type_variation = &"PKDossierMuted"
+
+[node name="PriceStockBars" type="Control" parent="OverviewPage/PriceCard/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_bars")
+
+[node name="OperationsPage" type="VBoxContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="TradeCard" type="PanelContainer" parent="OperationsPage"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierAside"
+
+[node name="Box" type="VBoxContainer" parent="OperationsPage/TradeCard"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="OperationsPage/TradeCard/Box"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="OperationsPage/TradeCard/Box/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "跨区贸易与在途物流"
+theme_type_variation = &"PKDossierSectionTitle"
+
+[node name="Hint" type="Label" parent="OperationsPage/TradeCard/Box/Header"]
+layout_mode = 2
+text = "外销 vs 调入"
+theme_type_variation = &"PKDossierMuted"
+
+[node name="TradeFlowBar" type="Control" parent="OperationsPage/TradeCard/Box"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(200, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("2_diverging")
+
+[node name="TradeBars" type="Control" parent="OperationsPage/TradeCard/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_bars")
+
+[node name="TradeEmptyNote" type="Label" parent="OperationsPage/TradeCard/Box"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+autowrap_mode = 3
+theme_type_variation = &"PKDossierCaption"

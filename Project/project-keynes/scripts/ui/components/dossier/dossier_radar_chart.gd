@@ -12,7 +12,7 @@ var _reference := PackedFloat32Array()
 
 func _init() -> void:
 	super()
-	custom_minimum_size = Vector2(220.0, 210.0)
+	custom_minimum_size = Vector2(168.0, 164.0)
 
 
 func set_values(p_axes: PackedStringArray, values: PackedFloat32Array,
@@ -39,7 +39,11 @@ func _draw() -> void:
 	if count < 3:
 		return
 	var center := size * 0.5 + Vector2(0.0, 4.0)
-	var radius := maxf(20.0, minf(size.x * 0.5 - 52.0, size.y * 0.5 - 24.0))
+	var compact := size.x < 195.0
+	var font_sz := 11 if compact else 12
+	var pad_x := 42.0 if compact else 52.0
+	var pad_y := 18.0 if compact else 24.0
+	var radius := maxf(20.0, minf(size.x * 0.5 - pad_x, size.y * 0.5 - pad_y))
 	for ring in range(1, 5):
 		var points := _polygon(center, radius * float(ring) / 4.0, PackedFloat32Array(), count, 1.0)
 		points.append(points[0])
@@ -49,15 +53,15 @@ func _draw() -> void:
 		var angle := _angle(i, count)
 		var tip := center + Vector2(cos(angle), sin(angle)) * radius
 		draw_line(center, tip, Color(UITokens.DOSSIER_RULE, 0.30), 1.0, true)
-		var label_pos := center + Vector2(cos(angle), sin(angle)) * (radius + 14.0)
+		var label_pos := center + Vector2(cos(angle), sin(angle)) * (radius + (11.0 if compact else 14.0))
 		var label := axes[i]
-		var width := _text_width(label, 12)
+		var width := _text_width(label, font_sz)
 		var align_x := label_pos.x - width * 0.5
 		if cos(angle) > 0.3:
 			align_x = label_pos.x - 2.0
 		elif cos(angle) < -0.3:
 			align_x = label_pos.x - width + 2.0
-		_text(Vector2(align_x, label_pos.y + 5.0), label, 12, UITokens.DOSSIER_INK_SOFT)
+		_text(Vector2(align_x, label_pos.y + 4.0), label, font_sz, UITokens.DOSSIER_INK_SOFT)
 	if _reference.size() == count:
 		var ref := _polygon(center, radius, _reference, count, 1.0)
 		ref.append(ref[0])

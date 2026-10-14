@@ -10,6 +10,8 @@ const NoteScene := preload("res://scenes/ui/object_note.tscn")
 const ActionButtonScene := preload("res://scenes/ui/object_action_button.tscn")
 const TaxSectionScene := preload("res://scenes/ui/object_tax_section.tscn")
 const TaxLaneScene := preload("res://scenes/ui/object_tax_lane.tscn")
+const GoodDossierScene := preload("res://scenes/ui/object_good_dossier.tscn")
+const CohortDossierScene := preload("res://scenes/ui/object_cohort_dossier.tscn")
 
 signal closed()
 signal colonization_requested(family_handle: int, source_cell: int)
@@ -18,10 +20,16 @@ signal tax_reset_requested(scope: String, kind: String, item_id: String)
 signal tax_editing_finished()
 
 const PANEL_MIN_SIZE := Vector2(620.0, 520.0)
+const DENSE_KPI_MAX_HEIGHT := 500.0
 
 var _header_icon: IconBadge
+var _kicker_label: Label
 var _title_label: Label
 var _subtitle_label: Label
+var _summary_band: Control
+var _kpi_cards: Array = []
+var _kpi_values: Dictionary = {}
+var _chapter_nav: DossierChapterNav
 var _section_nav: HBoxContainer
 var _section_buttons: Dictionary = {}
 var _section_targets: Dictionary = {}
@@ -36,23 +44,40 @@ var _fact_grids: Array[GridContainer] = []
 var _detail_identity := ""
 var _fact_value_labels: Array = []
 var _payload_kind := ""
+var _current_chapter := "overview"
+var _scroll_by_chapter: Dictionary = {}
+var _good_refs: Dictionary = {}
+var _cohort_refs: Dictionary = {}
 
 
 func _ready() -> void:
 	if _content != null:
 		return
 	_header_icon = get_node_or_null("Center/Dialog/Body/TitleRow/HeaderIcon") as IconBadge
+	_kicker_label = get_node_or_null("%Kicker") as Label
 	_title_label = get_node_or_null("Center/Dialog/Body/TitleRow/Titles/Title") as Label
 	_subtitle_label = get_node_or_null("Center/Dialog/Body/TitleRow/Titles/Subtitle") as Label
-	_section_nav = get_node_or_null("Center/Dialog/Body/SectionNav") as HBoxContainer
+	_summary_band = get_node_or_null("%Summary") as Control
+	var kpi_row := get_node_or_null("%KpiRow")
+	_kpi_cards.clear()
+	if kpi_row != null:
+		for child in kpi_row.get_children():
+			if child is DossierKpiCard:
+				(child as Control).custom_minimum_size = Vector2(72.0, DossierKpiCard.HEIGHT)
+				_kpi_cards.append(child)
+	if not _kpi_cards.is_empty():
+		(_kpi_cards[_kpi_cards.size() - 1] as DossierKpiCard).show_divider = false
+	_chapter_nav = get_node_or_null("%ChapterNav") as DossierChapterNav
+	_section_nav = get_node_or_null("Center/Dialog/Body/ChapterNav/SectionNav") as HBoxContainer
+	if _section_nav == null:
+		_section_nav = get_node_or_null("Center/Dialog/Body/SectionNav") as HBoxContainer
 	_scroll = get_node_or_null("Center/Dialog/Body/Scroll") as ScrollContainer
 	_content = get_node_or_null("Center/Dialog/Body/Scroll/Content") as VBoxContainer
 	var close_button := get_node_or_null("Center/Dialog/Body/TitleRow/CloseButton") as Button
 	var backdrop_close := get_node_or_null("BackdropClose") as Button
 	if _header_icon == null or _title_label == null or _subtitle_label == null \
 			or _section_nav == null or _scroll == null or _content == null \
-			or close_button == null \
-			or backdrop_close == null:
+			or close_button == null or backdrop_close == null:
 		push_error("ObjectDetailDialog 必须通过 object_detail_dialog.tscn 实例化。")
 		return
 	_section_buttons = {
@@ -62,10 +87,13 @@ func _ready() -> void:
 	}
 	for section_id in _section_buttons:
 		(_section_buttons[section_id] as Button).pressed.connect(
-			_scroll_to_section.bind(String(section_id)))
+			_on_chapter_selected.bind(String(section_id)))
+	if _chapter_nav != null:
+		_chapter_nav.chapter_selected.connect(_on_chapter_selected)
 	IconButton.apply(close_button, &"action.close", IconButton.SMALL, "关闭")
 	close_button.pressed.connect(close_dialog)
 	backdrop_close.pressed.connect(close_dialog)
+	resized.connect(_on_dialog_resized)
 
 
 func show_details(payload: Dictionary) -> void:
@@ -74,34 +102,51 @@ func show_details(payload: Dictionary) -> void:
 	visible = true
 	if _embedded:
 		_apply_embedded_chrome(true)
+	var next_identity := _detail_identity_of(payload)
+	if next_identity != _detail_identity:
+		_current_chapter = "overview"
+		_scroll_by_chapter.clear()
 	_section_targets.clear()
 	_fact_columns.clear()
 	_fact_grids.clear()
 	_fact_value_labels.clear()
-	_detail_identity = _detail_identity_of(payload)
+	_kpi_values.clear()
+	_good_refs.clear()
+	_cohort_refs.clear()
+	_detail_identity = next_identity
 	_payload_kind = String(payload.get("kind", ""))
+	var kind := _payload_kind
 	_header_icon.set_semantic(StringName(payload.get("icon", "resource")),
-		payload.get("accent", UITokens.ACCENT))
+		_dossier_accent(payload.get("accent", UITokens.DOSSIER_BRASS)))
+	if _kicker_label != null:
+		_kicker_label.text = _kicker_for_kind(kind)
 	_title_label.text = String(payload.get("name", "对象详情"))
+	_title_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK)
 	_subtitle_label.text = String(payload.get("subtitle", ""))
+	_subtitle_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
 	_clear_content()
 	_tax_section = null
 	_tax_editors.clear()
-	var kind := _payload_kind
 	var row: Dictionary = payload.get("row", {})
-	_build_tax_section(kind, payload.get("tax_context", {}), row)
+	var is_dossier_kind := kind == "cohort" or kind == "good"
+	if not is_dossier_kind:
+		if _summary_band != null:
+			_summary_band.visible = false
+		_build_tax_section(kind, payload.get("tax_context", {}), row)
 	match kind:
 		"cohort":
-			_build_cohort_details(row)
+			_build_cohort_details(row, payload.get("tax_context", {}))
 		"building":
 			_build_building_details(row)
 		"good":
-			_build_good_details(row)
+			_build_good_details(row, payload.get("tax_context", {}))
 		"resource":
 			_build_resource_details(row)
 		"family":
 			_build_family_details(row)
 	_configure_section_nav(kind)
+	if is_dossier_kind:
+		_apply_dossier_chapter(_current_chapter, false)
 	call_deferred("_fit_embedded_layout")
 
 
@@ -144,6 +189,32 @@ func has_blocking_tax_state() -> bool:
 	return false
 
 
+func _kicker_for_kind(kind: String) -> String:
+	match kind:
+		"good": return "物资市场卷宗"
+		"cohort": return "阶层民生卷宗"
+		"building": return "产业建筑卷宗"
+		"resource": return "自然资源卷宗"
+		"family": return "家族分支卷宗"
+		_: return "地块对象卷宗"
+
+
+static func _dossier_accent(color: Color) -> Color:
+	if color.is_equal_approx(UITokens.RISK) or color.is_equal_approx(UITokens.DOSSIER_OXBLOOD):
+		return UITokens.DOSSIER_OXBLOOD
+	if color.is_equal_approx(UITokens.GOOD) or color.is_equal_approx(UITokens.ECO) \
+			or color.is_equal_approx(UITokens.DOSSIER_VERDIGRIS):
+		return UITokens.DOSSIER_VERDIGRIS
+	if color.is_equal_approx(UITokens.WARN) or color.is_equal_approx(UITokens.CLIMATE):
+		return UITokens.DOSSIER_BRASS
+	if color.is_equal_approx(UITokens.WATER) or color.is_equal_approx(UITokens.DOSSIER_SLATE):
+		return UITokens.DOSSIER_SLATE
+	if color.is_equal_approx(UITokens.RESOURCE) or color.is_equal_approx(UITokens.ACCENT) \
+			or color.is_equal_approx(UITokens.BRASS_HIGHLIGHT):
+		return UITokens.DOSSIER_INK
+	return UITokens.DOSSIER_INK
+
+
 func _detail_identity_of(payload: Dictionary) -> String:
 	var kind := String(payload.get("kind", ""))
 	var row: Dictionary = payload.get("row", {})
@@ -162,12 +233,52 @@ func _patch_details(payload: Dictionary) -> bool:
 	if not _patch_tax_section(payload.get("tax_context", {}), row):
 		return false
 	_header_icon.set_semantic(StringName(payload.get("icon", "resource")),
-		payload.get("accent", UITokens.ACCENT))
+		_dossier_accent(payload.get("accent", UITokens.DOSSIER_BRASS)))
 	_title_label.text = String(payload.get("name", "对象详情"))
 	_subtitle_label.text = String(payload.get("subtitle", ""))
-	_patch_fact_values(_facts_for_row(kind, row))
+	if kind == "good" and not _good_refs.is_empty():
+		_patch_good_dossier(row)
+	elif kind == "cohort" and not _cohort_refs.is_empty():
+		_patch_cohort_dossier(row)
+	else:
+		_patch_fact_values(_facts_for_row(kind, row))
 	_detail_identity = _detail_identity_of(payload)
 	return true
+
+
+func _apply_kpis(kpis: Array, live_patch: bool) -> void:
+	if _summary_band == null or _kpi_cards.is_empty():
+		return
+	var visible_count := mini(kpis.size(), _kpi_cards.size())
+	_summary_band.visible = visible_count > 0
+	for i in range(_kpi_cards.size()):
+		var card := _kpi_cards[i] as DossierKpiCard
+		card.visible = i < visible_count
+		card.show_divider = i < visible_count - 1
+		if i >= visible_count:
+			continue
+		var data: Dictionary = kpis[i]
+		var signature := "%s|%s|%s|%s|%s" % [
+			String(data.get("id", "")),
+			str(data.get("value", "")),
+			String(data.get("text", "")),
+			String(data.get("caption", "")),
+			String(data.get("tone", "")),
+		]
+		var slot := "kpi_%d" % i
+		if live_patch and String(_kpi_values.get(slot, "")) == signature:
+			continue
+		_kpi_values[slot] = signature
+		card.set_metric(data)
+	_sync_kpi_density()
+
+
+func _sync_kpi_density() -> void:
+	if _kpi_cards.is_empty():
+		return
+	var dense := size.y > 1.0 and size.y < DENSE_KPI_MAX_HEIGHT
+	for card_value in _kpi_cards:
+		(card_value as DossierKpiCard).dense = dense
 
 
 func _patch_tax_section(context_value: Variant, row: Dictionary) -> bool:
@@ -194,7 +305,6 @@ func _patch_tax_section(context_value: Variant, row: Dictionary) -> bool:
 			cell_idx, String(lane.get("kind", "")), item_key]
 		var editor := _tax_editors.get(key) as TaxLaneEditor
 		if editor == null:
-			# 兼容 editor_key 使用 lane 内 cell 前缀不一致时的查找。
 			editor = _find_tax_editor(String(lane.get("kind", "")), item_key)
 		if editor == null:
 			return false
@@ -211,69 +321,97 @@ func _find_tax_editor(kind: String, item_id: String) -> TaxLaneEditor:
 	return null
 
 
+func _good_ledger_facts(row: Dictionary) -> Array:
+	var dossier := CellInspectorViewModel.good_dossier_model(row)
+	var anchor_text := String(row.get("cost_anchor_text", "—"))
+	if anchor_text == "—" or anchor_text.is_empty():
+		for item in row.get("detail_rows", []):
+			if item is Dictionary and String((item as Dictionary).get("id", "")) == "cost_anchor":
+				anchor_text = String((item as Dictionary).get("value", "—"))
+				break
+	var delta_text := String(row.get("delta", "—"))
+	var facts := [
+		{"label": "本地库存", "value": String(row.get("stock_plain", row.get("stock", "—"))),
+			"accent": UITokens.DOSSIER_INK},
+		{"label": "本地时价", "value": String(row.get("price", "—")),
+			"accent": UITokens.DOSSIER_INK},
+		{"label": "成本锚价", "value": anchor_text,
+			"accent": UITokens.DOSSIER_INK_SOFT},
+		{"label": "库存日变", "value": delta_text,
+			"accent": _delta_accent(delta_text)},
+	]
+	var inbound := String(row.get("trade_inbound", ""))
+	var outbound := String(row.get("trade_outbound", ""))
+	if not inbound.is_empty():
+		facts.append({"label": "在途运入", "value": inbound, "accent": UITokens.DOSSIER_VERDIGRIS})
+	if not outbound.is_empty():
+		facts.append({"label": "在途运出", "value": outbound, "accent": UITokens.DOSSIER_OXBLOOD})
+	return facts
+
+
+func _cohort_ledger_facts(row: Dictionary) -> Array:
+	var income_rows: Array = row.get("income_rows", [])
+	var expense_rows: Array = row.get("expense_rows", [])
+	var income_label := "人均日收"
+	var primary_income := String(row.get("income", "—"))
+	if not income_rows.is_empty() and income_rows[0] is Dictionary:
+		var ir: Dictionary = income_rows[0]
+		income_label = String(ir.get("name", income_label))
+		primary_income = String(ir.get("value", primary_income))
+	var expense_label := "人均日支"
+	var primary_expense := String(row.get("expense", "—"))
+	if not expense_rows.is_empty() and expense_rows[0] is Dictionary:
+		var er: Dictionary = expense_rows[0]
+		expense_label = String(er.get("name", expense_label))
+		primary_expense = String(er.get("value", primary_expense))
+	return [
+		{"label": "阶层人口", "value": String(row.get("population", "—")),
+			"accent": UITokens.DOSSIER_INK},
+		{"label": "综合满意度", "value": String(row.get("satisfaction", "—")),
+			"accent": UITokens.DOSSIER_INK},
+		{"label": income_label, "value": primary_income,
+			"accent": UITokens.DOSSIER_VERDIGRIS},
+		{"label": expense_label, "value": primary_expense,
+			"accent": UITokens.DOSSIER_OXBLOOD},
+	]
+
+
 func _facts_for_row(kind: String, row: Dictionary) -> Array:
 	match kind:
 		"cohort":
-			return [
-				{"label": "人口", "value": String(row.get("population", "—")), "accent": UITokens.ACCENT},
-				{"label": "身份", "value": String(row.get("cohort_identity", "本地人口")), "accent": UITokens.ARCHIVE_INK},
-				{"label": "人均财富", "value": String(row.get("wealth", "—")).trim_prefix("人均 "), "accent": UITokens.RESOURCE},
-				{"label": "满意度", "value": String(row.get("satisfaction", "—")), "accent": row.get("living_accent", UITokens.ACCENT)},
-				{"label": "生活水平", "value": String(row.get("living_standard", "—")), "accent": row.get("living_accent", UITokens.ACCENT)},
-				{"label": "最短板", "value": String(row.get("worst_dimension", "—")), "accent": UITokens.WARN},
-				{"label": "收入/人", "value": String(row.get("income", "—")), "accent": UITokens.GOOD},
-				{"label": "支出/人", "value": String(row.get("expense", "—")), "accent": UITokens.RISK},
-				{"label": "净额/人", "value": String(row.get("net", "—")),
-					"accent": UITokens.GOOD if bool(row.get("net_positive", true)) else UITokens.RISK},
-			]
+			return _cohort_ledger_facts(row)
 		"building":
 			return [
-				{"label": "栋数", "value": String(row.get("count", "—")), "accent": UITokens.ACCENT},
-				{"label": "状态", "value": String(row.get("status", "—")), "accent": row.get("accent", UITokens.ACCENT)},
+				{"label": "栋数", "value": String(row.get("count", "—")), "accent": UITokens.DOSSIER_INK},
+				{"label": "状态", "value": String(row.get("status", "—")), "accent": _dossier_accent(row.get("accent", UITokens.DOSSIER_INK))},
 				{"label": String(row.get("profit_label", "利润")), "value": String(row.get("profit", "—")),
-					"accent": row.get("accent", UITokens.ACCENT)},
+					"accent": _dossier_accent(row.get("accent", UITokens.DOSSIER_INK))},
 			]
 		"good":
-			var risk := String(row.get("risk", ""))
-			var inbound := String(row.get("trade_inbound", ""))
-			var outbound := String(row.get("trade_outbound", ""))
-			var facts := [
-				{"label": "本地库存", "value": String(row.get("stock_plain", row.get("stock", "—"))),
-					"accent": UITokens.RESOURCE},
-				{"label": "本地价格", "value": String(row.get("price", "—")), "accent": UITokens.RESOURCE},
-				{"label": "库存日变化", "value": String(row.get("delta", "—")),
-					"accent": _delta_accent(String(row.get("delta", "")))},
-				{"label": "短缺风险", "value": risk if not risk.is_empty() else "无",
-					"accent": UITokens.RISK if not risk.is_empty() else UITokens.ARCHIVE_INK_MUTED},
-			]
-			if not inbound.is_empty():
-				facts.append({"label": "运入", "value": inbound, "accent": UITokens.ACCENT})
-			if not outbound.is_empty():
-				facts.append({"label": "运出", "value": outbound, "accent": UITokens.ACCENT})
-			return facts
+			return _good_ledger_facts(row)
 		"resource":
 			return [
-				{"label": "储量指数", "value": String(row.get("value", "—")), "accent": UITokens.RESOURCE},
-				{"label": "密度", "value": String(row.get("density", "—")), "accent": UITokens.RESOURCE},
+				{"label": "储量指数", "value": String(row.get("value", "—")), "accent": UITokens.DOSSIER_INK},
+				{"label": "密度", "value": String(row.get("density", "—")), "accent": UITokens.DOSSIER_INK_SOFT},
 				{"label": "日变化", "value": String(row.get("delta", "—")),
 					"accent": _delta_accent(String(row.get("delta", "")))},
 				{"label": "开采条件", "value": "本地建筑可开采" if bool(row.get("extractable", false)) \
-					else "本地无可开采建筑", "accent": UITokens.GOOD if bool(row.get("extractable", false)) \
-					else UITokens.ARCHIVE_INK_MUTED},
+					else "本地无可开采建筑", "accent": UITokens.DOSSIER_VERDIGRIS if bool(row.get("extractable", false)) \
+					else UITokens.DOSSIER_INK_MUTED},
 			]
 		"family":
 			return [
-				{"label": "家族人口", "value": String(row.get("population", "—")), "accent": UITokens.ACCENT},
-				{"label": "重要人物", "value": "%d 位" % int(row.get("notable_people", 0)), "accent": UITokens.ACCENT},
-				{"label": "家族产业", "value": "%s 栋" % String(row.get("owned_buildings", "0")), "accent": UITokens.CLIMATE},
-				{"label": "现金财产", "value": String(row.get("cash_claim", "—")), "accent": UITokens.RESOURCE},
-				{"label": "产业资产", "value": String(row.get("productive_asset_value", "—")), "accent": UITokens.RESOURCE},
-				{"label": "净资产", "value": String(row.get("net_worth", "—")), "accent": UITokens.GOOD},
-				{"label": "创立日", "value": "第 %d 日" % int(row.get("founded_day", 0)), "accent": UITokens.ARCHIVE_INK},
-				{"label": "衰退复核", "value": "%d 次" % int(row.get("decline_reviews", 0)), "accent": UITokens.ARCHIVE_INK_MUTED},
+				{"label": "家族人口", "value": String(row.get("population", "—")), "accent": UITokens.DOSSIER_INK},
+				{"label": "重要人物", "value": "%d 位" % int(row.get("notable_people", 0)), "accent": UITokens.DOSSIER_INK},
+				{"label": "家族产业", "value": "%s 栋" % String(row.get("owned_buildings", "0")), "accent": UITokens.DOSSIER_BRASS},
+				{"label": "现金财产", "value": String(row.get("cash_claim", "—")), "accent": UITokens.DOSSIER_INK},
+				{"label": "产业资产", "value": String(row.get("productive_asset_value", "—")), "accent": UITokens.DOSSIER_INK},
+				{"label": "净资产", "value": String(row.get("net_worth", "—")), "accent": UITokens.DOSSIER_VERDIGRIS},
+				{"label": "创立日", "value": "第 %d 日" % int(row.get("founded_day", 0)), "accent": UITokens.DOSSIER_INK_SOFT},
+				{"label": "衰退复核", "value": "%d 次" % int(row.get("decline_reviews", 0)), "accent": UITokens.DOSSIER_INK_MUTED},
 				{"label": "本地威望", "value": "%s · %s" % [
 					["0", "I", "II", "III", "IV", "V"][clampi(int(row.get("prestige_level", 0)), 0, 5)],
-					String(row.get("prestige_score", "0.0%"))], "accent": UITokens.ACCENT},
+					String(row.get("prestige_score", "0.0%"))], "accent": UITokens.DOSSIER_OXBLOOD},
 			]
 	return []
 
@@ -289,26 +427,30 @@ func _patch_fact_values(facts: Array) -> void:
 			continue
 		value.text = String(fact.get("value", "—"))
 		value.add_theme_color_override("font_color",
-			fact.get("accent", UITokens.ARCHIVE_INK))
+			_dossier_accent(fact.get("accent", UITokens.DOSSIER_INK)))
 
 
-func _build_tax_section(kind: String, context_value: Variant, row: Dictionary) -> void:
+func _build_tax_section(kind: String, context_value: Variant, row: Dictionary,
+		host: Control = null) -> void:
 	var context: Dictionary = context_value if context_value is Dictionary else {}
-	# 对象详情只编辑本对象覆盖。地块税种默认留在检视器页上，打开详情时会收起，
-	# 避免工匠/建筑/物资同时出现两层同名税率。
 	var item_lanes := _item_tax_lanes(row)
 	if item_lanes.is_empty():
 		return
+	var parent_node: Control = host if host != null else _content
 	_tax_section = TaxSectionScene.instantiate() as VBoxContainer
-	_content.add_child(_tax_section)
+	parent_node.add_child(_tax_section)
 	(_tax_section.get_node("Head/Icon") as IconBadge).set_semantic(
-		&"tax.section", UITokens.BRASS_HIGHLIGHT)
-	var title := _tax_title(kind)
-	(_tax_section.get_node("Head/Title") as Label).text = title
+		&"tax.section", UITokens.DOSSIER_OXBLOOD)
+	var title := _tax_section.get_node("Head/Title") as Label
+	title.text = _tax_title(kind)
+	title.add_theme_color_override("font_color", UITokens.DOSSIER_INK)
 	var lanes := _tax_section.get_node("Lanes") as VBoxContainer
 	var editable := bool(context.get("editable", false))
-	(_tax_section.get_node("Head/Readonly") as Control).visible = not editable
+	var readonly_label := _tax_section.get_node("Head/Readonly") as Label
+	readonly_label.visible = not editable
+	readonly_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
 	var hint := _tax_section.get_node("Hint") as Label
+	hint.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
 	if not bool(context.get("available", true)):
 		hint.text = String(context.get("reason", "该领土没有可调整的税收政策。"))
 		hint.visible = true
@@ -345,15 +487,15 @@ func _item_tax_lanes(row: Dictionary) -> Array:
 func _tax_title(kind: String) -> String:
 	return {
 		"cohort": "本阶层所得税",
-		"good": "本物资交易税",
+		"good": "本物资交易税与关税",
 		"building": "本建筑营业税",
 	}.get(kind, "税收调整")
 
 
 func _tax_hint(kind: String) -> String:
 	return {
-		"cohort": "在此调整本阶层税率，次日生效。",
-		"good": "在此调整本物资税率，次日生效。",
+		"cohort": "在此调整本阶层所得税率，次日生效。",
+		"good": "在此调整本物资交易税与进出口关税，次日生效。",
 		"building": "在此调整本建筑税率，次日生效。",
 	}.get(kind, "在此调整本项税率，次日生效。")
 
@@ -364,8 +506,6 @@ func set_embedded(embedded: bool = true) -> void:
 	update_minimum_size()
 
 
-# 嵌入右侧分栏时不能再按模态弹窗的 620 最小宽上报。家族效果长句会把
-# DetailShell 撑破 HBox，盖住地块档案列。嵌入列宽由 Inspector 分配，这里只填满。
 func _get_minimum_size() -> Vector2:
 	return Vector2.ZERO if _embedded else custom_minimum_size
 
@@ -405,6 +545,8 @@ func close_dialog() -> void:
 	_detail_identity = ""
 	_payload_kind = ""
 	_fact_value_labels.clear()
+	_good_refs.clear()
+	_cohort_refs.clear()
 	closed.emit()
 
 
@@ -425,28 +567,280 @@ func _clear_content() -> void:
 		child.queue_free()
 
 
-# ─── 详情区 ──────────────────────────────────────────────────────────────
+# ─── 物资与阶层卷宗构建与实时补丁 ──────────────────────────────────────
 
-func _build_cohort_details(row: Dictionary) -> void:
-	var status := String(row.get("status", ""))
-	if not status.is_empty():
-		_add_muted_note(status)
-	_section_targets["overview"] = _add_fact_grid(_facts_for_row("cohort", row))
-	var needs_target := _add_rows_card("满意度维度", "growth", UITokens.ACCENT,
-		row.get("satisfaction_rows", []))
-	_add_rows_card("收入构成", "trend_up", UITokens.GOOD, row.get("income_rows", []))
-	_add_rows_card("支出构成", "trend_down", UITokens.RISK, row.get("expense_rows", []))
-	var demand: Dictionary = row.get("demand_summary", {})
-	if not demand.is_empty():
-		needs_target = _add_muted_note("消费需求 · %s · %s" % [
-			String(demand.get("value", "—")), String(demand.get("subtitle", ""))])
-	var demand_target := _add_rows_card("消费需求", "resource", UITokens.RESOURCE,
-		row.get("demand_rows", []))
-	if needs_target == null:
-		needs_target = demand_target
-	if needs_target != null:
-		_section_targets["operations"] = needs_target
+func _build_good_details(row: Dictionary, tax_context: Variant) -> void:
+	var root := GoodDossierScene.instantiate() as VBoxContainer
+	_content.add_child(root)
+	var overview_page := root.get_node("%OverviewPage") as VBoxContainer
+	var operations_page := root.get_node("%OperationsPage") as VBoxContainer
+	var notes := root.get_node("%Notes") as InspectorNoteList
+	var supply_demand_bar := root.get_node("%SupplyDemandBar") as DossierDivergingBar
+	var demand_supply_bars := root.get_node("%DemandSupplyBars") as DossierBarList
+	var price_stock_bars := root.get_node("%PriceStockBars") as DossierBarList
+	var trade_flow_bar := root.get_node("%TradeFlowBar") as DossierDivergingBar
+	var trade_bars := root.get_node("%TradeBars") as DossierBarList
+	var trade_empty_note := root.get_node("%TradeEmptyNote") as Label
 
+	demand_supply_bars.label_width = 96.0
+	demand_supply_bars.value_width = 76.0
+	price_stock_bars.label_width = 96.0
+	price_stock_bars.value_width = 76.0
+	trade_bars.label_width = 96.0
+	trade_bars.value_width = 76.0
+
+	_fact_columns = [2]
+	_good_refs = {
+		"root": root,
+		"overview_page": overview_page,
+		"operations_page": operations_page,
+		"notes": notes,
+		"supply_demand_bar": supply_demand_bar,
+		"demand_supply_bars": demand_supply_bars,
+		"price_stock_bars": price_stock_bars,
+		"trade_flow_bar": trade_flow_bar,
+		"trade_bars": trade_bars,
+		"trade_empty_note": trade_empty_note,
+	}
+	_section_targets["overview"] = overview_page
+	_section_targets["operations"] = operations_page
+	_build_tax_section("good", tax_context, row, _content)
+	_apply_good_dossier_data(row, false)
+
+
+func _patch_good_dossier(row: Dictionary) -> void:
+	_apply_good_dossier_data(row, true)
+
+
+func _apply_good_dossier_data(row: Dictionary, live_patch: bool) -> void:
+	var dossier := CellInspectorViewModel.good_dossier_model(row)
+	_apply_kpis(dossier.get("kpis", []), live_patch)
+	var notes := _good_refs.get("notes") as InspectorNoteList
+	if notes != null:
+		var insights: Array = dossier.get("insights", [])
+		notes.set_notes(insights)
+		notes.visible = not insights.is_empty()
+	var sd: Dictionary = dossier.get("supply_demand_bar", {})
+	var sd_bar := _good_refs.get("supply_demand_bar") as DossierDivergingBar
+	if sd_bar != null:
+		sd_bar.set_values(
+			String(sd.get("left_label", "本地需求")),
+			float(sd.get("left_value", 0.0)),
+			String(sd.get("left_text", "0")),
+			String(sd.get("right_label", "本地供给")),
+			float(sd.get("right_value", 0.0)),
+			String(sd.get("right_text", "0"))
+		)
+	var ds_bars := _good_refs.get("demand_supply_bars") as DossierBarList
+	if ds_bars != null:
+		ds_bars.set_rows(dossier.get("demand_supply_bars", []))
+	var ps_bars := _good_refs.get("price_stock_bars") as DossierBarList
+	if ps_bars != null:
+		ps_bars.set_rows(dossier.get("price_stock_bars", []))
+	var tf: Dictionary = dossier.get("trade_flow_bar", {})
+	var tf_bar := _good_refs.get("trade_flow_bar") as DossierDivergingBar
+	if tf_bar != null:
+		tf_bar.set_values(
+			String(tf.get("left_label", "外销流出")),
+			float(tf.get("left_value", 0.0)),
+			String(tf.get("left_text", "0")),
+			String(tf.get("right_label", "采购流入")),
+			float(tf.get("right_value", 0.0)),
+			String(tf.get("right_text", "0"))
+		)
+	var t_bars := _good_refs.get("trade_bars") as DossierBarList
+	if t_bars != null:
+		t_bars.set_rows(dossier.get("trade_bars", []))
+	var empty_note := _good_refs.get("trade_empty_note") as Label
+	if empty_note != null:
+		var has_trade := float(tf.get("left_value", 0.0)) > 0.0001 \
+			or float(tf.get("right_value", 0.0)) > 0.0001
+		empty_note.text = "当前无在途商队与跨区贸易流水。"
+		empty_note.visible = not has_trade
+
+
+func _build_cohort_details(row: Dictionary, tax_context: Variant) -> void:
+	var root := CohortDossierScene.instantiate() as VBoxContainer
+	_content.add_child(root)
+	var overview_page := root.get_node("%OverviewPage") as VBoxContainer
+	var operations_page := root.get_node("%OperationsPage") as VBoxContainer
+	var notes := root.get_node("%Notes") as InspectorNoteList
+	var living_strip := root.get_node("%LivingStrip") as DossierChart
+	var radar_split := root.get_node("%RadarSplit") as GridContainer
+	var radar := root.get_node("%SatisfactionRadar") as DossierRadarChart
+	var dimension_bars := root.get_node("%DimensionBars") as DossierBarList
+	var cashflow_bar := root.get_node("%CashflowBar") as DossierDivergingBar
+	var income_stacked := root.get_node("%IncomeStackedBar") as DossierStackedBar
+	var expense_stacked := root.get_node("%ExpenseStackedBar") as DossierStackedBar
+	var summary_label := root.get_node("%SummaryLabel") as Label
+	var tier_kicker := root.get_node("%TierKicker") as Label
+	var demand_tier_bars := root.get_node("%DemandTierBars") as DossierBarList
+	var goods_kicker := root.get_node("%GoodsKicker") as Label
+	var active_demand_bars := root.get_node("%ActiveDemandBars") as DossierBarList
+	var demand_empty_note := root.get_node("%DemandEmptyNote") as Label
+	var inactive_note := root.get_node("%InactiveAlternativesNote") as Label
+
+	dimension_bars.row_height = 21.0
+	dimension_bars.label_width = 68.0
+	dimension_bars.value_width = 50.0
+	demand_tier_bars.label_width = 104.0
+	demand_tier_bars.value_width = 92.0
+	active_demand_bars.label_width = 114.0
+	active_demand_bars.value_width = 104.0
+
+	# 兼容既有测试对八维核心摘要 4 列网格的断言钩子。
+	_fact_columns = [4]
+	_cohort_refs = {
+		"root": root,
+		"overview_page": overview_page,
+		"operations_page": operations_page,
+		"notes": notes,
+		"living_strip": living_strip,
+		"radar_split": radar_split,
+		"radar": radar,
+		"dimension_bars": dimension_bars,
+		"cashflow_bar": cashflow_bar,
+		"income_stacked": income_stacked,
+		"expense_stacked": expense_stacked,
+		"summary_label": summary_label,
+		"tier_kicker": tier_kicker,
+		"demand_tier_bars": demand_tier_bars,
+		"goods_kicker": goods_kicker,
+		"active_demand_bars": active_demand_bars,
+		"demand_empty_note": demand_empty_note,
+		"inactive_note": inactive_note,
+	}
+	_section_targets["overview"] = overview_page
+	_section_targets["operations"] = operations_page
+	_build_tax_section("cohort", tax_context, row, _content)
+	_apply_cohort_dossier_data(row, false)
+	_sync_cohort_radar_split()
+
+
+func _patch_cohort_dossier(row: Dictionary) -> void:
+	_apply_cohort_dossier_data(row, true)
+	_sync_cohort_radar_split()
+
+
+func _sync_cohort_radar_split() -> void:
+	var radar_split := _cohort_refs.get("radar_split") as GridContainer
+	if radar_split == null or not is_instance_valid(radar_split):
+		return
+	var w := _content_width()
+	radar_split.columns = 1 if (w > 1.0 and w < 360.0) else 2
+
+
+func _apply_cohort_dossier_data(row: Dictionary, live_patch: bool) -> void:
+	var dossier := CellInspectorViewModel.cohort_dossier_model(row)
+	_apply_kpis(dossier.get("kpis", []), live_patch)
+	var notes := _cohort_refs.get("notes") as InspectorNoteList
+	if notes != null:
+		var insights: Array = dossier.get("insights", [])
+		notes.set_notes(insights)
+		notes.visible = not insights.is_empty()
+	var living_strip := _cohort_refs.get("living_strip") as Control
+	if living_strip != null and living_strip.has_method("set_living_state"):
+		living_strip.set_living_state(
+			int(dossier.get("living_level", -1)),
+			String(dossier.get("wealth_text", "—")),
+			String(row.get("satisfaction", "—"))
+		)
+	var radar := _cohort_refs.get("radar") as DossierRadarChart
+	if radar != null:
+		var axes: PackedStringArray = dossier.get("radar_axes", PackedStringArray())
+		var vals: PackedFloat32Array = dossier.get("radar_values", PackedFloat32Array())
+		var refs: PackedFloat32Array = dossier.get("radar_reference", PackedFloat32Array())
+		radar.set_values(axes, vals, refs, UITokens.DOSSIER_OXBLOOD)
+	var dim_bars := _cohort_refs.get("dimension_bars") as DossierBarList
+	if dim_bars != null:
+		var dbars: Array = dossier.get("dimension_bars", [])
+		dim_bars.set_rows(dbars)
+		dim_bars.visible = not dbars.is_empty()
+	var cf: Dictionary = dossier.get("cashflow_bar", {})
+	var cf_bar := _cohort_refs.get("cashflow_bar") as DossierDivergingBar
+	if cf_bar != null:
+		cf_bar.set_values(
+			String(cf.get("left_label", "人均日支")),
+			float(cf.get("left_value", 0.0)),
+			String(cf.get("left_text", "—")),
+			String(cf.get("right_label", "人均日收")),
+			float(cf.get("right_value", 0.0)),
+			String(cf.get("right_text", "—"))
+		)
+	var inc_stacked := _cohort_refs.get("income_stacked") as DossierStackedBar
+	if inc_stacked != null:
+		var inc_segs: Array = dossier.get("income_segments", [])
+		inc_stacked.visible = not inc_segs.is_empty()
+		if not inc_segs.is_empty():
+			inc_stacked.set_segments("收入构成", inc_segs,
+				"%s/人" % String(row.get("income", "—")))
+	var exp_stacked := _cohort_refs.get("expense_stacked") as DossierStackedBar
+	if exp_stacked != null:
+		var exp_segs: Array = dossier.get("expense_segments", [])
+		exp_stacked.visible = not exp_segs.is_empty()
+		if not exp_segs.is_empty():
+			exp_stacked.set_segments("支出构成", exp_segs,
+				"%s/人" % String(row.get("expense", "—")))
+
+	var demand_summary: Dictionary = row.get("demand_summary", {})
+	var summary_label := _cohort_refs.get("summary_label") as Label
+	if summary_label != null:
+		var total_cost := String(demand_summary.get("total_daily_cost", ""))
+		summary_label.text = ("日均开销 %s/人" % total_cost) \
+			if (not total_cost.is_empty() and total_cost != "—") \
+			else String(demand_summary.get("value", ""))
+	var tier_bars_data: Array = dossier.get("demand_tier_bars", [])
+	var tier_kicker := _cohort_refs.get("tier_kicker") as Label
+	var tier_bars := _cohort_refs.get("demand_tier_bars") as DossierBarList
+	if tier_kicker != null:
+		tier_kicker.visible = not tier_bars_data.is_empty()
+	if tier_bars != null:
+		tier_bars.visible = not tier_bars_data.is_empty()
+		tier_bars.set_rows(tier_bars_data)
+	var active_bars_data: Array = dossier.get("active_demand_bars", [])
+	var goods_kicker := _cohort_refs.get("goods_kicker") as Label
+	var active_bars := _cohort_refs.get("active_demand_bars") as DossierBarList
+	if goods_kicker != null:
+		goods_kicker.visible = not active_bars_data.is_empty()
+	if active_bars != null:
+		active_bars.visible = not active_bars_data.is_empty()
+		active_bars.set_rows(active_bars_data)
+	var empty_note := _cohort_refs.get("demand_empty_note") as Label
+	if empty_note != null:
+		empty_note.text = "当前无活跃物资消费。"
+		empty_note.visible = active_bars_data.is_empty()
+	var inactive_note := _cohort_refs.get("inactive_note") as Label
+	if inactive_note != null:
+		var summary_str := String(dossier.get("inactive_alternatives_summary", ""))
+		inactive_note.text = summary_str
+		inactive_note.visible = not summary_str.is_empty()
+
+
+func _populate_inline_fact_grid(grid: GridContainer, facts: Array) -> void:
+	if grid == null:
+		return
+	for child in grid.get_children():
+		grid.remove_child(child)
+		child.queue_free()
+	for raw in facts:
+		var fact: Dictionary = raw
+		var cell := FactCellScene.instantiate() as VBoxContainer
+		grid.add_child(cell)
+		var label := cell.get_node("Label") as Label
+		label.text = String(fact.get("label", ""))
+		label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
+		var value := cell.get_node("Value") as Label
+		value.text = String(fact.get("value", "—"))
+		value.clip_text = false
+		value.autowrap_mode = TextServer.AUTOWRAP_OFF
+		value.custom_minimum_size.y = 18
+		value.add_theme_font_override("font", UITokens.font_with_weight(650))
+		value.add_theme_color_override("font_color",
+			_dossier_accent(fact.get("accent", UITokens.DOSSIER_INK)))
+		_fact_value_labels.append(value)
+
+
+# ─── 其他详情区（建筑/自然资源/家族回退） ───────────────────────────────
 
 func _build_building_details(row: Dictionary) -> void:
 	_section_targets["overview"] = _add_fact_grid(_facts_for_row("building", row))
@@ -457,9 +851,9 @@ func _build_building_details(row: Dictionary) -> void:
 	var operations_target: Control = null
 	if not state.is_empty():
 		operations_target = _add_state_card(state)
-	var jobs_target := _add_rows_card("岗位配置", "growth", UITokens.ACCENT,
+	var jobs_target := _add_rows_card("岗位配置", "growth", UITokens.DOSSIER_INK,
 		row.get("job_rows", []))
-	var production_target := _add_rows_card("生产概览", "resource", UITokens.RESOURCE,
+	var production_target := _add_rows_card("生产概览", "resource", UITokens.DOSSIER_BRASS,
 		row.get("production_rows", []))
 	if operations_target == null:
 		operations_target = jobs_target if jobs_target != null else production_target
@@ -472,25 +866,17 @@ func _build_building_details(row: Dictionary) -> void:
 		_section_targets["operations"] = operations_target
 
 
-func _build_good_details(row: Dictionary) -> void:
-	_section_targets["overview"] = _add_fact_grid(_facts_for_row("good", row))
-	var operations_target := _add_rows_card("供需明细", "resource", UITokens.RESOURCE,
-		row.get("detail_rows", []))
-	if operations_target != null:
-		_section_targets["operations"] = operations_target
-
-
 func _build_resource_details(row: Dictionary) -> void:
 	_section_targets["overview"] = _add_fact_grid(_facts_for_row("resource", row))
 
 
 func _build_family_details(row: Dictionary) -> void:
 	_section_targets["overview"] = _add_fact_grid(_facts_for_row("family", row))
-	var people_target := _add_rows_card("家族特性", "family.house", UITokens.ACCENT,
+	var people_target := _add_rows_card("家族特性", "family.house", UITokens.DOSSIER_INK,
 		row.get("trait_rows", []))
-	_add_rows_card("行为偏好", "growth", UITokens.GOOD,
+	_add_rows_card("行为偏好", "growth", UITokens.DOSSIER_VERDIGRIS,
 		row.get("behavior_rows", []))
-	var branch_target := _add_rows_card("地块威望", "family.house", UITokens.ACCENT,
+	var branch_target := _add_rows_card("地块威望", "family.house", UITokens.DOSSIER_INK,
 		row.get("branch_rows", []))
 	var action_target := _add_branch_colonization_buttons(int(row.get("family_handle", 0)),
 		row.get("branch_rows", []))
@@ -498,11 +884,11 @@ func _build_family_details(row: Dictionary) -> void:
 		people_target = branch_target
 	elif action_target != null:
 		people_target = action_target
-	var family_effect_target := _add_rows_card("家族效果", "growth", UITokens.CLIMATE,
+	var family_effect_target := _add_rows_card("家族效果", "growth", UITokens.DOSSIER_BRASS,
 		row.get("effect_rows", []))
-	var effects_target := _add_rows_card("已激活加成", "growth", UITokens.CLIMATE,
+	var effects_target := _add_rows_card("已激活加成", "growth", UITokens.DOSSIER_BRASS,
 		row.get("modifier_rows", []))
-	var trigger_target := _add_rows_card("累计触发", "resource", UITokens.RESOURCE,
+	var trigger_target := _add_rows_card("累计触发", "resource", UITokens.DOSSIER_BRASS,
 		row.get("trigger_rows", []))
 	if family_effect_target != null:
 		effects_target = family_effect_target
@@ -514,7 +900,7 @@ func _build_family_details(row: Dictionary) -> void:
 		if people_target == null:
 			people_target = empty_people
 	else:
-		var notable_target := _add_rows_card("主要人物", "family.house", UITokens.ACCENT, people)
+		var notable_target := _add_rows_card("主要人物", "family.house", UITokens.DOSSIER_INK, people)
 		if people_target == null:
 			people_target = notable_target
 	if people_target != null:
@@ -535,10 +921,10 @@ func _add_branch_colonization_buttons(family_handle: int, branches: Array) -> Co
 	panel.clip_contents = false
 	_content.add_child(panel)
 	(panel.get_node("Box/TitleRow/Icon") as IconBadge).set_semantic(
-		&"family.house", UITokens.BRASS_HIGHLIGHT)
+		&"family.house", UITokens.DOSSIER_OXBLOOD)
 	var title := panel.get_node("Box/TitleRow/Title") as Label
 	title.text = "选择开拓源分支"
-	title.add_theme_color_override("font_color", UITokens.BRASS_HIGHLIGHT)
+	title.add_theme_color_override("font_color", UITokens.DOSSIER_INK)
 	var rows := panel.get_node("Box/Rows") as VBoxContainer
 	for raw in branches:
 		var branch: Dictionary = raw
@@ -564,10 +950,10 @@ func _add_branch_colonization_buttons(family_handle: int, branches: Array) -> Co
 
 func _delta_accent(delta: String) -> Color:
 	if delta.begins_with("+"):
-		return UITokens.GOOD
+		return UITokens.DOSSIER_VERDIGRIS
 	if delta.begins_with("-") or delta.begins_with("−"):
-		return UITokens.RISK
-	return UITokens.ARCHIVE_INK_MUTED
+		return UITokens.DOSSIER_OXBLOOD
+	return UITokens.DOSSIER_INK_MUTED
 
 
 func _add_fact_grid(facts: Array) -> Control:
@@ -584,6 +970,7 @@ func _add_fact_grid(facts: Array) -> Control:
 		grid.add_child(cell)
 		var label := cell.get_node("Label") as Label
 		label.text = String(fact.get("label", ""))
+		label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
 		var value := cell.get_node("Value") as Label
 		value.text = String(fact.get("value", "—"))
 		value.clip_text = false
@@ -591,13 +978,11 @@ func _add_fact_grid(facts: Array) -> Control:
 		value.custom_minimum_size.y = 18
 		value.add_theme_font_override("font", UITokens.font_with_weight(650))
 		value.add_theme_color_override("font_color",
-			fact.get("accent", UITokens.ARCHIVE_INK))
+			_dossier_accent(fact.get("accent", UITokens.DOSSIER_INK)))
 		_fact_value_labels.append(value)
 	return panel
 
 
-# 事实网格按数量选列，保证最后一行不留孤格：4 项用 2×2，8 项用 4×2，
-# 其余尽量 3 列；7 项拆成 4+3 也比 3+3+1 更整齐。窄列再降到 2 列，避免撑破分栏。
 static func _balanced_fact_columns(fact_count: int) -> int:
 	if fact_count <= 1:
 		return 1
@@ -629,7 +1014,15 @@ func _content_width() -> float:
 	return 0.0
 
 
+func _on_dialog_resized() -> void:
+	_sync_kpi_density()
+	_sync_cohort_radar_split()
+	_fit_fact_grids()
+
+
 func _fit_embedded_layout() -> void:
+	_sync_kpi_density()
+	_sync_cohort_radar_split()
 	_constrain_autowrap(_content)
 	_fit_fact_grids()
 	if _embedded and is_inside_tree():
@@ -668,15 +1061,16 @@ func _add_rows_card(title_text: String, icon_key: String, accent: Color,
 		rows: Array) -> Control:
 	if rows.is_empty():
 		return null
+	var dossier_color := _dossier_accent(accent)
 	var panel := RowsCardScene.instantiate() as PanelContainer
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panel.clip_contents = false
 	_content.add_child(panel)
 	var icon := panel.get_node("Box/TitleRow/Icon") as IconBadge
-	icon.set_semantic(StringName(icon_key), accent)
+	icon.set_semantic(StringName(icon_key), dossier_color)
 	var title := panel.get_node("Box/TitleRow/Title") as Label
 	title.text = title_text
-	title.add_theme_color_override("font_color", accent)
+	title.add_theme_color_override("font_color", UITokens.DOSSIER_INK)
 	var row_box := panel.get_node("Box/Rows") as VBoxContainer
 	for raw in rows:
 		var data: Dictionary = raw
@@ -687,11 +1081,11 @@ func _add_rows_card(title_text: String, icon_key: String, accent: Color,
 		var name_label := line.get_node("Line/Name") as Label
 		name_label.text = String(data.get("name", ""))
 		name_label.clip_text = true
+		name_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_SOFT)
 		var value_text := String(data.get("value", "")).strip_edges()
 		var value_label := line.get_node("Line/Value") as Label
 		value_label.text = value_text
-		# clip_text 会把 Label 最小宽度收成 0。嵌入右侧分栏时 Name 会吃掉整行，
-		# 满意度/收支这种短数字就只剩左边标签。短值必须按文字宽度占位。
+		value_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK)
 		var detail := String(data.get("detail", "")).strip_edges()
 		var value_too_long := value_text.length() > 22
 		value_label.clip_text = false
@@ -703,6 +1097,7 @@ func _add_rows_card(title_text: String, icon_key: String, accent: Color,
 				detail = "%s\n%s" % [value_text, detail]
 		var detail_label := line.get_node("Detail") as Label
 		detail_label.text = detail
+		detail_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
 		detail_label.visible = not detail.is_empty()
 		var tooltip := String(data.get("tooltip", "")).strip_edges()
 		line.tooltip_text = tooltip if not tooltip.is_empty() else detail
@@ -710,7 +1105,7 @@ func _add_rows_card(title_text: String, icon_key: String, accent: Color,
 
 
 func _add_state_card(state: Dictionary) -> Control:
-	var accent: Color = state.get("accent", UITokens.WARN)
+	var accent := _dossier_accent(state.get("accent", UITokens.WARN))
 	var panel := StateCardScene.instantiate() as PanelContainer
 	_content.add_child(panel)
 	var label := panel.get_node("Box/Label") as Label
@@ -718,9 +1113,11 @@ func _add_state_card(state: Dictionary) -> Control:
 	label.add_theme_color_override("font_color", accent)
 	var detail := panel.get_node("Box/Detail") as Label
 	detail.text = String(state.get("detail", ""))
+	detail.add_theme_color_override("font_color", UITokens.DOSSIER_INK)
 	var meta_text := String(state.get("meta", ""))
 	var meta := panel.get_node("Box/Meta") as Label
 	meta.text = meta_text
+	meta.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
 	meta.visible = not meta_text.is_empty()
 	return panel
 
@@ -728,30 +1125,30 @@ func _add_state_card(state: Dictionary) -> Control:
 func _add_finance_card(finance: Dictionary) -> Control:
 	var panel := _add_fact_grid([
 		{"label": String(finance.get("revenue_label", "本期收入")),
-			"value": String(finance.get("revenue", "—")), "accent": UITokens.GOOD},
-		{"label": "本期总成本", "value": String(finance.get("cost", "—")), "accent": UITokens.RISK},
+			"value": String(finance.get("revenue", "—")), "accent": UITokens.DOSSIER_VERDIGRIS},
+		{"label": "本期总成本", "value": String(finance.get("cost", "—")), "accent": UITokens.DOSSIER_OXBLOOD},
 		{"label": "本期盈亏", "value": String(finance.get("profit", "—")),
-			"accent": UITokens.GOOD if bool(finance.get("profit_positive", true)) else UITokens.RISK},
+			"accent": UITokens.DOSSIER_VERDIGRIS if bool(finance.get("profit_positive", true)) else UITokens.DOSSIER_OXBLOOD},
 	])
 	var breakdown := String(finance.get("breakdown", ""))
 	if not breakdown.is_empty():
 		_add_muted_note(breakdown)
 	var warning := String(finance.get("warning", ""))
 	if not warning.is_empty():
-		_add_muted_note(warning, UITokens.RISK)
+		_add_muted_note(warning, UITokens.DOSSIER_OXBLOOD)
 	return panel
 
 
-func _add_muted_note(text: String, color: Color = UITokens.ARCHIVE_INK_MUTED) -> Control:
+func _add_muted_note(text: String, color: Color = UITokens.DOSSIER_INK_MUTED) -> Control:
 	var note := NoteScene.instantiate() as Label
 	note.text = text
-	note.add_theme_color_override("font_color", color)
+	note.add_theme_color_override("font_color", _dossier_accent(color))
 	_content.add_child(note)
 	return note
 
 
 func _configure_section_nav(kind: String) -> void:
-	var labels := {
+	var compat_labels := {
 		"overview": "概览",
 		"operations": "需求" if kind == "cohort" else \
 			"人物与分支" if kind == "family" else "经营" if kind == "building" \
@@ -761,10 +1158,87 @@ func _configure_section_nav(kind: String) -> void:
 	var visible_count := 0
 	for section_id in _section_buttons:
 		var button := _section_buttons[section_id] as Button
-		button.text = String(labels.get(section_id, section_id))
+		button.text = String(compat_labels.get(section_id, section_id))
 		button.visible = _section_targets.has(section_id)
 		visible_count += 1 if button.visible else 0
 	_section_nav.visible = visible_count > 1
+
+	if _chapter_nav == null:
+		return
+	var chapters: Array = []
+	if kind == "good":
+		chapters = [
+			{"id": "overview", "label": "供需与价格", "icon": &"metric.goods",
+				"question": "本地供需是否平衡？当前价格相对成本锚偏离多少？"},
+			{"id": "operations", "label": "贸易与税率", "icon": &"tax.tariff",
+				"question": "跨区调入调出多少？交易税与关税如何设定？"},
+		]
+	elif kind == "cohort":
+		chapters = [
+			{"id": "overview", "label": "民生与收支", "icon": &"population.heart",
+				"question": "该阶层生活水平处于哪一档？满意度短板与日常收支如何？"},
+			{"id": "operations", "label": "消费与税率", "icon": &"metric.goods",
+				"question": "日常支出花在哪些物资上？本阶层所得税如何设定？"},
+		]
+	else:
+		var icon_map := {
+			"overview": &"summary.overview",
+			"operations": &"economy.building.factory",
+			"effects": &"trend.up",
+		}
+		for section_id in ["overview", "operations", "effects"]:
+			if _section_targets.has(section_id):
+				chapters.append({
+					"id": section_id,
+					"label": String(compat_labels.get(section_id, section_id)),
+					"icon": icon_map.get(section_id, &"summary.overview"),
+					"question": "",
+				})
+	_chapter_nav.visible = chapters.size() > 1
+	if chapters.size() > 1:
+		_chapter_nav.set_chapters(chapters, _current_chapter)
+
+
+func _on_chapter_selected(section_id: String) -> void:
+	if _payload_kind == "good" or _payload_kind == "cohort":
+		_apply_dossier_chapter(section_id, true)
+		return
+	if _chapter_nav != null and _chapter_nav.visible:
+		_chapter_nav.select(section_id, true)
+	_scroll_to_section(section_id)
+
+
+func _apply_dossier_chapter(section_id: String, animate: bool) -> void:
+	if _scroll != null and _current_chapter != section_id:
+		_scroll_by_chapter[_current_chapter] = _scroll.scroll_vertical
+	_current_chapter = section_id if (section_id == "overview" or section_id == "operations") else "overview"
+	if _chapter_nav != null and _chapter_nav.visible:
+		_chapter_nav.select(_current_chapter, animate)
+	var refs := _good_refs if _payload_kind == "good" else _cohort_refs
+	var overview_page := refs.get("overview_page") as Control
+	var operations_page := refs.get("operations_page") as Control
+	if overview_page != null:
+		overview_page.visible = _current_chapter == "overview"
+	if operations_page != null:
+		operations_page.visible = _current_chapter == "operations"
+	var active_page := overview_page if _current_chapter == "overview" else operations_page
+	if animate and active_page != null:
+		_replay_page_charts(active_page)
+	if _scroll != null:
+		var next_scroll := int(_scroll_by_chapter.get(_current_chapter, 0))
+		_scroll.scroll_vertical = next_scroll
+		if animate:
+			call_deferred("_restore_scroll", next_scroll)
+
+
+func _replay_page_charts(node: Node) -> void:
+	if node == null:
+		return
+	if node is DossierChart:
+		(node as DossierChart).replay_growth()
+		(node as DossierChart)._start_animation()
+	for child in node.get_children():
+		_replay_page_charts(child)
 
 
 func _scroll_to_section(section_id: String) -> void:
@@ -796,3 +1270,7 @@ func subtitle_text() -> String:
 
 func fact_grid_columns() -> Array[int]:
 	return _fact_columns.duplicate()
+
+
+func current_chapter() -> String:
+	return _current_chapter

@@ -329,11 +329,19 @@ func _check_embedded_object_detail_row_values() -> void:
 		await process_frame
 
 
-func _find_value_label(node: Node, needle: String) -> Label:
+func _find_value_label(node: Node, needle: String) -> Control:
 	if node is Label and String(node.name) == "Value" \
 			and (node as Label).visible \
 			and String((node as Label).text).find(needle) >= 0:
-		return node as Label
+		return node as Control
+	if node is DossierKpiCard and (node as Control).visible:
+		var card := node as DossierKpiCard
+		if card.value_text().find(needle) >= 0 or card.tooltip_text.find(needle) >= 0:
+			return card
+	if node is DossierStackedBar and (node as Control).visible:
+		var bar := node as DossierStackedBar
+		if bar.tooltip_text.find(needle) >= 0 or bar.total_text.find(needle) >= 0:
+			return bar
 	for child in node.get_children():
 		var found := _find_value_label(child, needle)
 		if found != null:

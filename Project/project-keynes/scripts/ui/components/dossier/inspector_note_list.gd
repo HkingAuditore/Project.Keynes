@@ -55,11 +55,11 @@ func _relayout() -> void:
 
 
 static func tick_color(accent: Color) -> Color:
-	if accent.is_equal_approx(UITokens.RISK):
+	if accent.is_equal_approx(UITokens.RISK) or accent.is_equal_approx(UITokens.DOSSIER_OXBLOOD):
 		return UITokens.DOSSIER_OXBLOOD
-	if accent.is_equal_approx(UITokens.WARN):
+	if accent.is_equal_approx(UITokens.WARN) or accent.is_equal_approx(UITokens.DOSSIER_BRASS):
 		return UITokens.DOSSIER_BRASS
-	if accent.is_equal_approx(UITokens.GOOD):
+	if accent.is_equal_approx(UITokens.GOOD) or accent.is_equal_approx(UITokens.DOSSIER_VERDIGRIS):
 		return UITokens.DOSSIER_VERDIGRIS
 	return UITokens.DOSSIER_RULE_STRONG
 

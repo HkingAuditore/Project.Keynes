@@ -233,8 +233,15 @@ func _run() -> void:
 		for node in panel._object_detail_dialog.find_children(
 				"", "Label", true, false):
 			refreshed_text += String((node as Label).text) + "\n"
+		for kpi_value in panel._object_detail_dialog._kpi_cards:
+			if kpi_value is DossierKpiCard:
+				refreshed_text += (kpi_value as DossierKpiCard).value_text() + "\n"
 		if not refreshed_text.contains("99 人"):
 			failures.append("object detail live refresh did not update visible facts")
+		var detail_chapter_nav := panel._object_detail_dialog._chapter_nav as DossierChapterNav
+		if detail_chapter_nav == null or not detail_chapter_nav.visible \
+				or detail_chapter_nav.chapters.size() != 2:
+			failures.append("cohort detail did not expose the two-tab DossierChapterNav")
 		var detail_nav := panel._object_detail_dialog._section_nav as Control
 		var operations_button := panel._object_detail_dialog._section_buttons.get(
 			"operations") as Button
@@ -251,8 +258,30 @@ func _run() -> void:
 			var scroll_rect := scroll.get_global_rect() if scroll != null else Rect2()
 			var target_rect := operations_target.get_global_rect() \
 				if operations_target != null else Rect2()
-			if operations_target == null or not scroll_rect.intersects(target_rect):
+			if operations_target == null or not scroll_rect.intersects(target_rect) \
+					or panel._object_detail_dialog.current_chapter() != "operations":
 				failures.append("cohort detail operations navigation did not reveal the section")
+		# 验证物资详情卷宗双分页与实时补丁节点稳定性。
+		var good_data: Dictionary = _market_category(0.0).market_rows[0]
+		panel.show_object_detail({
+			"kind": "good", "name": "熟制主食", "subtitle": "物资 · 区域 1, 1",
+			"icon": "resource", "accent": UITokens.RESOURCE,
+			"row": good_data,
+		})
+		await process_frame
+		if panel._object_detail_dialog.title_text() != "熟制主食" \
+				or panel._object_detail_dialog.current_chapter() != "overview":
+			failures.append("good detail did not open on the overview chapter")
+		var good_node_count := panel._object_detail_dialog.get_node("Center/Dialog/Body/Scroll/Content").get_child_count()
+		for step_idx in range(30):
+			panel.refresh_object_detail({
+				"kind": "good", "name": "熟制主食", "subtitle": "物资 · 区域 1, 1",
+				"icon": "resource", "accent": UITokens.RESOURCE,
+				"row": good_data.merged({"price": "%.2f" % (1.2 + float(step_idx) * 0.05)}, true),
+			})
+		await process_frame
+		if panel._object_detail_dialog.get_node("Center/Dialog/Body/Scroll/Content").get_child_count() != good_node_count:
+			failures.append("good detail live patches rebuilt content nodes")
 		if not (cohort_refs.get("tax_editors", {}) as Dictionary).is_empty():
 			failures.append("population row still owns tax editors after tax migration")
 		panel.set_compact_detail_mode(true)

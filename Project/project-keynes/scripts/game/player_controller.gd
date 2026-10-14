@@ -1110,10 +1110,27 @@ func _sync_family_founding_offer() -> void:
 			if _ui_manager.is_family_founding_modal_open():
 				_ui_manager.close_family_founding_offer()
 		elif changed or not _ui_manager.is_family_founding_modal_open():
+			focus_family_founding_cell(int(current.get("cell", -1)))
 			_ui_manager.show_family_founding_offer(current)
 	sync_ui()
 	if changed:
 		family_founding_offer_changed.emit(current)
+
+
+func focus_family_founding_cell(cell_idx: int = -1) -> void:
+	var map = _runtime_host.current_map() \
+		if _runtime_host != null and _runtime_host.has_method("current_map") else null
+	var resolved_idx := cell_idx
+	if resolved_idx < 0 and _selected_cell != null:
+		resolved_idx = int(_selected_cell.index)
+	if map == null or resolved_idx < 0 or resolved_idx >= map.cell_count():
+		return
+	var target_cell = map.cell_at(resolved_idx)
+	if target_cell == null:
+		return
+	select_cell(target_cell)
+	if _highlight is CanvasItem:
+		UIAnimation.pulse(_highlight as CanvasItem, UITokens.ANIM_SLOW)
 
 
 func _tax_item_exists(facade, kind: int, item_id: StringName) -> bool:

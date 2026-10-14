@@ -1,6 +1,10 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=5 format=3]
+
 [ext_resource type="Script" path="res://scripts/ui/components/object_detail_dialog.gd" id="1_script"]
 [ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_kpi_card.gd" id="3_kpi"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_chapter_nav.gd" id="4_nav"]
+
 [node name="ObjectDetailDialog" type="Control"]
 visible = false
 layout_mode = 3
@@ -12,6 +16,7 @@ grow_vertical = 2
 clip_contents = true
 mouse_filter = 0
 script = ExtResource("1_script")
+
 [node name="Backdrop" type="ColorRect" parent="."]
 layout_mode = 1
 anchors_preset = 15
@@ -20,6 +25,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 color = Color(0.012, 0.01, 0.008, 0.76)
+
 [node name="BackdropClose" type="Button" parent="."]
 layout_mode = 1
 anchors_preset = 15
@@ -29,6 +35,7 @@ grow_horizontal = 2
 grow_vertical = 2
 focus_mode = 0
 flat = true
+
 [node name="Center" type="Control" parent="."]
 layout_mode = 1
 anchors_preset = 15
@@ -38,6 +45,7 @@ grow_horizontal = 2
 grow_vertical = 2
 clip_contents = true
 mouse_filter = 1
+
 [node name="Dialog" type="PanelContainer" parent="Center"]
 custom_minimum_size = Vector2(620, 520)
 layout_mode = 1
@@ -54,66 +62,147 @@ grow_horizontal = 2
 grow_vertical = 2
 clip_contents = true
 theme_type_variation = &"PKDialog"
+
 [node name="Body" type="VBoxContainer" parent="Center/Dialog"]
 layout_mode = 2
-theme_override_constants/separation = 12
+theme_override_constants/separation = 8
+
 [node name="TitleRow" type="HBoxContainer" parent="Center/Dialog/Body"]
 layout_mode = 2
 theme_override_constants/separation = 8
+
 [node name="HeaderIcon" parent="Center/Dialog/Body/TitleRow" instance=ExtResource("2_icon")]
 custom_minimum_size = Vector2(32, 32)
 layout_mode = 2
+
 [node name="Titles" type="VBoxContainer" parent="Center/Dialog/Body/TitleRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 0
+
+[node name="Kicker" type="Label" parent="Center/Dialog/Body/TitleRow/Titles"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "地块卷宗"
+clip_text = true
+text_overrun_behavior = 3
+theme_type_variation = &"PKDossierKicker"
+
 [node name="Title" type="Label" parent="Center/Dialog/Body/TitleRow/Titles"]
 layout_mode = 2
 clip_text = true
 text_overrun_behavior = 3
 theme_type_variation = &"PKTitle"
+
 [node name="Subtitle" type="Label" parent="Center/Dialog/Body/TitleRow/Titles"]
 layout_mode = 2
 clip_text = true
 text_overrun_behavior = 3
-theme_type_variation = &"PKMutedLabel"
+theme_type_variation = &"PKDossierCaption"
+
 [node name="CloseButton" type="Button" parent="Center/Dialog/Body/TitleRow"]
 custom_minimum_size = Vector2(34, 34)
 layout_mode = 2
 focus_mode = 0
 theme_type_variation = &"PKIconButton"
-[node name="RuleTop" type="HSeparator" parent="Center/Dialog/Body"]
+
+[node name="RuleTop" type="ColorRect" parent="Center/Dialog/Body"]
+custom_minimum_size = Vector2(0, 2)
 layout_mode = 2
-[node name="SectionNav" type="HBoxContainer" parent="Center/Dialog/Body"]
+mouse_filter = 2
+color = Color(0.48, 0.16, 0.1, 0.7)
+
+[node name="Summary" type="PanelContainer" parent="Center/Dialog/Body"]
+unique_name_in_owner = true
 visible = false
-custom_minimum_size = Vector2(0, 34)
 layout_mode = 2
+theme_type_variation = &"PKDossierBand"
+
+[node name="KpiRow" type="HBoxContainer" parent="Center/Dialog/Body/Summary"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Kpi0" type="Control" parent="Center/Dialog/Body/Summary/KpiRow"]
+custom_minimum_size = Vector2(72, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="Kpi1" type="Control" parent="Center/Dialog/Body/Summary/KpiRow"]
+custom_minimum_size = Vector2(72, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="Kpi2" type="Control" parent="Center/Dialog/Body/Summary/KpiRow"]
+custom_minimum_size = Vector2(72, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="Kpi3" type="Control" parent="Center/Dialog/Body/Summary/KpiRow"]
+custom_minimum_size = Vector2(72, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="ChapterNav" type="Control" parent="Center/Dialog/Body"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 38)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("4_nav")
+
+[node name="SectionNav" type="HBoxContainer" parent="Center/Dialog/Body/ChapterNav"]
+visible = false
+modulate = Color(1, 1, 1, 0)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
 theme_override_constants/separation = 4
-[node name="Overview" type="Button" parent="Center/Dialog/Body/SectionNav"]
+
+[node name="Overview" type="Button" parent="Center/Dialog/Body/ChapterNav/SectionNav"]
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
+mouse_filter = 2
 text = "概览"
 theme_type_variation = &"PKTabButton"
-[node name="Operations" type="Button" parent="Center/Dialog/Body/SectionNav"]
+
+[node name="Operations" type="Button" parent="Center/Dialog/Body/ChapterNav/SectionNav"]
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
+mouse_filter = 2
 text = "经营"
 theme_type_variation = &"PKTabButton"
-[node name="Effects" type="Button" parent="Center/Dialog/Body/SectionNav"]
+
+[node name="Effects" type="Button" parent="Center/Dialog/Body/ChapterNav/SectionNav"]
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
+mouse_filter = 2
 text = "效果"
 theme_type_variation = &"PKTabButton"
+
 [node name="Scroll" type="ScrollContainer" parent="Center/Dialog/Body"]
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
+
 [node name="Content" type="VBoxContainer" parent="Center/Dialog/Body/Scroll"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 8
-[node name="RuleBottom" type="HSeparator" parent="Center/Dialog/Body"]
+theme_override_constants/separation = 10
+
+[node name="RuleBottom" type="ColorRect" parent="Center/Dialog/Body"]
+custom_minimum_size = Vector2(0, 1)
 layout_mode = 2
+mouse_filter = 2
+color = Color(0.42, 0.29, 0.16, 0.38)

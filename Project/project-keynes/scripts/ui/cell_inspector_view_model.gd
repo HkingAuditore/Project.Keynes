@@ -3,6 +3,8 @@ class_name CellInspectorViewModel
 
 const TEMPERATURE_HISTORY_CAPACITY := 32
 const TEMPERATURE_HISTORY_CACHE_LIMIT := 64
+const DETAIL_HISTORY_CAPACITY := 48
+const DETAIL_HISTORY_LOOKBACK := 7
 
 # 对象详情弹窗：行类型 → 页签 / 行列表键 / 中文类型名。
 const OBJECT_DETAIL_TAB := {
@@ -55,6 +57,11 @@ var _market_prev_stock: Dictionary = {}
 var _population_summary_cache: Dictionary = {}
 var _temperature_histories: Dictionary = {}
 var _temperature_history_order: Array[int] = []
+var _detail_history_cell := -1
+var _detail_history_market_day := -1
+var _detail_history_pop_day := -1
+var _good_history: Dictionary = {}
+var _cohort_history: Dictionary = {}
 var _need_display_names: Dictionary = {}
 var _need_display_names_loaded := false
 var _player_country_resolved := false
@@ -74,6 +81,11 @@ func set_context(map: MapData, generator, view_adapter: DCViewAdapter, world_clo
 	_market_prev_stock.clear()
 	_temperature_histories.clear()
 	_temperature_history_order.clear()
+	_detail_history_cell = -1
+	_detail_history_market_day = -1
+	_detail_history_pop_day = -1
+	_good_history.clear()
+	_cohort_history.clear()
 	_player_country_resolved = false
 	_player_country_handle_cache = -1
 
@@ -634,6 +646,659 @@ static func _family_unique_rows(rows: Array, key_fields: Array) -> Array:
 
 static func _family_text_key(value: Variant) -> String:
 	return str(value).strip_edges().replace(" ", "").replace("\n", "").replace("\r", "")
+
+
+const DOSSIER_INCOME_COLORS: Array[Color] = [
+	UITokens.DOSSIER_VERDIGRIS,
+	UITokens.DOSSIER_BRASS,
+	UITokens.DOSSIER_SLATE,
+	UITokens.DOSSIER_UMBER,
+]
+const DOSSIER_EXPENSE_COLORS: Array[Color] = [
+	UITokens.DOSSIER_OXBLOOD,
+	UITokens.DOSSIER_BRASS,
+	UITokens.DOSSIER_UMBER,
+	UITokens.DOSSIER_SLATE,
+]
+
+
+static func _parse_leading_float(text: Variant, fallback: float = 0.0) -> float:
+	if text is float or text is int:
+		return float(text)
+	var raw := String(text).strip_edges().replace("−", "-").replace("+", "")
+	if raw.is_empty() or raw == "—":
+		return fallback
+	var mult := 1.0
+	if raw.find("亿") >= 0:
+		mult = 100000000.0
+	elif raw.find("万") >= 0:
+		mult = 10000.0
+	var num_str := ""
+	var dot_seen := false
+	for idx in range(raw.length()):
+		var ch := raw[idx]
+		if (ch >= "0" and ch <= "9") or (ch == "-" and num_str.is_empty()):
+			num_str += ch
+		elif ch == "." and not dot_seen:
+			dot_seen = true
+			num_str += ch
+		elif not num_str.is_empty():
+			break
+	if num_str.is_empty() or num_str == "-" or num_str == ".":
+		return fallback
+	return float(num_str) * mult
+
+
+static func _detail_row_value_map(detail_rows: Array) -> Dictionary:
+	var out := {}
+	for raw in detail_rows:
+		if not (raw is Dictionary):
+			continue
+		var item: Dictionary = raw
+		var id_key := String(item.get("id", ""))
+		var name_key := String(item.get("name", ""))
+		var val := String(item.get("value", ""))
+		if not id_key.is_empty():
+			out[id_key] = val
+		if not name_key.is_empty():
+			out[name_key] = val
+	return out
+
+
+## 物资详情卷宗视图模型：提炼 4 格 KPI、诊断批注、供需对冲条、价格锚点刻度条与贸易对冲条。
+static func good_dossier_model(row: Dictionary) -> Dictionary:
+	var detail_map := _detail_row_value_map(row.get("detail_rows", []))
+	var stock_plain := String(row.get("stock_plain", row.get("stock", "0 单位")))
+	var stock_units := float(row.get("stock_units_float", _parse_leading_float(stock_plain, 0.0)))
+	var price_text := String(row.get("price", "—"))
+	var price_val := float(row.get("price_float", _parse_leading_float(price_text, 0.0)))
+	var anchor_text := String(row.get("cost_anchor_text", detail_map.get("cost_anchor", detail_map.get("成本锚", "—"))))
+	var anchor_val := float(row.get("cost_anchor_float", _parse_leading_float(anchor_text, 0.0)))
+	var has_anchor := anchor_val > 0.00001 and anchor_text != "—" and not anchor_text.is_empty()
+	var price_index := float(row.get("price_index_float",
+		(price_val / anchor_val) if has_anchor else 1.0))
+	var hh_demand := float(row.get("household_demand_float",
+		_parse_leading_float(detail_map.get("household_demand", detail_map.get("居民需求", "0")), 0.0)))
+	var biz_demand := float(row.get("business_demand_float",
+		_parse_leading_float(detail_map.get("business_demand", detail_map.get("产业需求", "0")), 0.0)))
+	var total_demand := hh_demand + biz_demand
+	var supply_units := float(row.get("supply_float",
+		_parse_leading_float(detail_map.get("supply", detail_map.get("供给", "0")), 0.0)))
+	var shortage_ratio := float(row.get("shortage_float",
+		_parse_leading_float(detail_map.get("shortage", detail_map.get("短缺", "0")), 0.0) / 100.0))
+	if shortage_ratio <= 0.0 and String(row.get("risk", "")) == "短缺":
+		shortage_ratio = 0.25
+	var days_of_stock := float(row.get("days_of_stock_float",
+		stock_units / total_demand if total_demand > 0.001 else (999.0 if stock_units > 0.001 else 0.0)))
+	var delta_text := String(row.get("delta", "—"))
+	var inbound_text := String(row.get("trade_inbound", detail_map.get("trade_inbound", detail_map.get("运入", ""))))
+	var outbound_text := String(row.get("trade_outbound", detail_map.get("trade_outbound", detail_map.get("运出", ""))))
+	var inbound_units := float(row.get("inbound_float", _parse_leading_float(inbound_text, 0.0)))
+	var outbound_units := float(row.get("outbound_float", _parse_leading_float(outbound_text, 0.0)))
+	var import_flow_units := float(row.get("import_flow_float",
+		_parse_leading_float(detail_map.get("trade_import_flow", detail_map.get("进口均量", "0")), 0.0)))
+	var export_flow_units := float(row.get("export_flow_float",
+		_parse_leading_float(detail_map.get("trade_export_flow", detail_map.get("出口均量", "0")), 0.0)))
+
+	var price_tone := "risk" if price_index >= 1.35 else ("warn" if price_index >= 1.15 else "")
+	var price_index_caption := "贴近成本锚"
+	if has_anchor:
+		if price_index > 1.05:
+			price_index_caption = "高于成本锚 %.0f%%" % minf(999.0, (price_index - 1.0) * 100.0)
+		elif price_index < 0.95:
+			price_index_caption = "低于成本锚 %.0f%%" % ((1.0 - price_index) * 100.0)
+	else:
+		price_index_caption = "尚无本地成本锚"
+
+	var stock_caption := "日变 %s" % delta_text if delta_text != "—" else "无日常消耗"
+	if total_demand > 0.001:
+		stock_caption = "库存充裕" if days_of_stock >= 180.0 else ("可支 %d 日" % int(days_of_stock))
+
+	var balance_text := "静态库存"
+	if shortage_ratio >= 0.02 or String(row.get("risk", "")) != "":
+		balance_text = "短缺 %.0f%%" % (shortage_ratio * 100.0) if shortage_ratio >= 0.02 else String(row.get("risk", "短缺"))
+	elif supply_units > total_demand * 1.15 and supply_units > 0.01:
+		balance_text = "供过于求"
+	elif total_demand > 0.001 or supply_units > 0.001:
+		balance_text = "供需平衡"
+	var net_supply := supply_units - total_demand
+	var balance_caption := "日均供需持平"
+	if net_supply < -0.01:
+		balance_caption = "日缺口 %s" % UITokens.format_compact_number_cn(absf(net_supply), 2)
+	elif net_supply > 0.01:
+		balance_caption = "日盈余 +%s" % UITokens.format_compact_number_cn(net_supply, 2)
+	elif delta_text != "—":
+		balance_caption = "日变 %s" % delta_text
+
+	var kpis := [
+		{
+			"id": "good_price",
+			"title": "本地时价",
+			"value": price_val,
+			"kind": "text",
+			"text": price_text,
+			"caption": "锚价 %s" % anchor_text if has_anchor else "本地零售单价",
+			"tone": price_tone,
+			"positive_good": false,
+			"spark": row.get("price_spark", PackedFloat32Array()),
+			"delta": float(row.get("price_delta", NAN)),
+			"icon": &"metric.goods",
+		},
+		{
+			"id": "good_anchor_ratio",
+			"title": "价格锚比",
+			"value": price_index,
+			"kind": "text",
+			"text": "%.2f 倍" % price_index if has_anchor else "—",
+			"caption": price_index_caption,
+			"tone": price_tone,
+			"positive_good": false,
+			"icon": &"trend.up" if price_index > 1.05 else (&"trend.down" if price_index < 0.95 else &"trend.flat"),
+		},
+		{
+			"id": "good_stock",
+			"title": "本地库存",
+			"value": stock_units,
+			"kind": "text",
+			"text": UITokens.format_compact_number_cn(stock_units, 1),
+			"caption": stock_caption,
+			"tone": "risk" if (total_demand > 0.01 and days_of_stock < 3.0) else "",
+			"positive_good": true,
+			"spark": row.get("stock_spark", PackedFloat32Array()),
+			"delta": float(row.get("stock_delta", NAN)),
+			"icon": &"economy.resource",
+			"tooltip": "本地库存：%s\n%s" % [stock_plain, stock_caption],
+		},
+		{
+			"id": "good_balance",
+			"title": "供需状态",
+			"value": shortage_ratio,
+			"kind": "text",
+			"text": balance_text,
+			"caption": balance_caption,
+			"tone": "risk" if shortage_ratio >= 0.25 else ("warn" if shortage_ratio >= 0.05 or net_supply < -0.05 else ""),
+			"positive_good": false,
+			"icon": &"status.warning" if shortage_ratio >= 0.25 else &"summary.overview",
+		},
+	]
+
+	var insights := []
+	if shortage_ratio >= 0.25:
+		insights.append({
+			"id": "good_shortage_alert",
+			"text": "本地供给短缺 %.0f%%，主要靠消耗库存或外部输入维持。" % (shortage_ratio * 100.0),
+			"accent": UITokens.DOSSIER_OXBLOOD,
+			"icon": "status.warning",
+		})
+	elif total_demand > supply_units + 0.02:
+		var main_driver := "居民消费" if hh_demand >= biz_demand else "产业投入"
+		insights.append({
+			"id": "good_demand_pressure",
+			"text": "%s拉动本地需求，日均缺口 %s 单位。" % [
+				main_driver, UITokens.format_compact_number_cn(total_demand - supply_units, 2)],
+			"accent": UITokens.DOSSIER_BRASS,
+			"icon": "trend.up",
+		})
+	elif supply_units > total_demand + 0.05:
+		insights.append({
+			"id": "good_surplus",
+			"text": "本地产出充裕，日均盈余 %s 单位可供储蓄或外销。" % UITokens.format_compact_number_cn(supply_units - total_demand, 2),
+			"accent": UITokens.DOSSIER_VERDIGRIS,
+			"icon": "trend.down",
+		})
+	if has_anchor and price_index >= 1.35:
+		insights.append({
+			"id": "good_price_surge",
+			"text": "当前时价达成本锚（%s）的 %.2f 倍，高价正在抑制本地采购。" % [anchor_text, price_index],
+			"accent": UITokens.DOSSIER_OXBLOOD,
+			"icon": "metric.goods",
+		})
+	elif insights.is_empty():
+		insights.append({
+			"id": "good_steady",
+			"text": "本地供需与价格处于平稳区间。" if (total_demand > 0.001 or supply_units > 0.001) else "本地暂无日常供需成交，仅保有静态库存。",
+			"accent": UITokens.DOSSIER_INK_SOFT,
+			"icon": "summary.overview",
+		})
+
+	var flow_peak := maxf(maxf(total_demand, supply_units), 0.001)
+	var demand_supply_bars := [
+		{
+			"id": "hh_demand",
+			"label": "居民需求",
+			"icon": &"population.heart",
+			"value": clampf(hh_demand / flow_peak, 0.0, 1.0) if (total_demand > 0.0 or supply_units > 0.0) else 0.0,
+			"text": "%s/日" % UITokens.format_compact_number_cn(hh_demand, 2),
+			"color": UITokens.DOSSIER_OXBLOOD,
+			"tooltip": "本地各阶层居民日常消费需求：%s 单位/日" % UITokens.format_compact_number_cn(hh_demand, 2),
+		},
+		{
+			"id": "biz_demand",
+			"label": "产业需求",
+			"icon": &"economy.building.factory",
+			"value": clampf(biz_demand / flow_peak, 0.0, 1.0) if (total_demand > 0.0 or supply_units > 0.0) else 0.0,
+			"text": "%s/日" % UITokens.format_compact_number_cn(biz_demand, 2),
+			"color": UITokens.DOSSIER_BRASS,
+			"tooltip": "本地生产建筑与在建工程的原料需求：%s 单位/日" % UITokens.format_compact_number_cn(biz_demand, 2),
+		},
+		{
+			"id": "local_supply",
+			"label": "本地供给",
+			"icon": &"economy.building.farm",
+			"value": clampf(supply_units / flow_peak, 0.0, 1.0) if (total_demand > 0.0 or supply_units > 0.0) else 0.0,
+			"text": "%s/日" % UITokens.format_compact_number_cn(supply_units, 2),
+			"color": UITokens.DOSSIER_VERDIGRIS,
+			"tooltip": "本地建筑向市场提供的日常供给：%s 单位/日" % UITokens.format_compact_number_cn(supply_units, 2),
+		},
+	]
+
+	var price_stock_bars := [
+		{
+			"id": "price_anchor_bar",
+			"label": "价格指数",
+			"icon": &"metric.goods",
+			"value": clampf(price_index / 2.0, 0.0, 1.0) if has_anchor else 0.5,
+			"marker": 0.5,
+			"text": ("%.2f 倍" % price_index) if has_anchor else price_text,
+			"color": UITokens.DOSSIER_OXBLOOD if price_index > 1.05 else (UITokens.DOSSIER_VERDIGRIS if price_index < 0.95 else UITokens.DOSSIER_BRASS),
+			"tooltip": "竖线刻度为成本锚基准（1.00 倍 = %s），当前时价 %s" % [anchor_text, price_text],
+		},
+		{
+			"id": "shortage_bar",
+			"label": "短缺率",
+			"icon": &"status.warning",
+			"value": clampf(shortage_ratio, 0.0, 1.0),
+			"text": "%.1f%%" % (shortage_ratio * 100.0),
+			"color": UITokens.DOSSIER_OXBLOOD if shortage_ratio >= 0.25 else (UITokens.DOSSIER_BRASS if shortage_ratio >= 0.05 else UITokens.DOSSIER_VERDIGRIS),
+			"tooltip": "买方未能买到所需物资的比例：%.1f%%" % (shortage_ratio * 100.0),
+		},
+		{
+			"id": "stock_days_bar",
+			"label": "库存保障",
+			"icon": &"economy.resource",
+			"value": clampf(days_of_stock / 60.0, 0.0, 1.0) if stock_units > 0.0 else 0.0,
+			"text": "充裕" if (days_of_stock >= 180.0 and stock_units > 0.0) else ("%d 日" % int(days_of_stock) if total_demand > 0.001 else stock_plain),
+			"color": UITokens.DOSSIER_VERDIGRIS if days_of_stock >= 15.0 else (UITokens.DOSSIER_BRASS if days_of_stock >= 5.0 else UITokens.DOSSIER_OXBLOOD),
+			"tooltip": "按当前日需求估算，现有库存（%s）可支撑的天数" % stock_plain,
+		},
+	]
+
+	var trade_peak := maxf(maxf(inbound_units, outbound_units), maxf(maxf(import_flow_units, export_flow_units), 0.001))
+	var has_any_trade := inbound_units > 0.0 or outbound_units > 0.0 or import_flow_units > 0.0 or export_flow_units > 0.0
+	var trade_bars := [
+		{
+			"id": "trade_import_flow",
+			"label": "日均进口",
+			"icon": &"trend.up",
+			"value": clampf(import_flow_units / trade_peak, 0.0, 1.0) if has_any_trade else 0.0,
+			"text": "%s/日" % UITokens.format_compact_number_cn(import_flow_units, 2),
+			"color": UITokens.DOSSIER_VERDIGRIS,
+			"tooltip": "外地向本地市场输入的日均流量",
+		},
+		{
+			"id": "trade_export_flow",
+			"label": "日均出口",
+			"icon": &"trend.down",
+			"value": clampf(export_flow_units / trade_peak, 0.0, 1.0) if has_any_trade else 0.0,
+			"text": "%s/日" % UITokens.format_compact_number_cn(export_flow_units, 2),
+			"color": UITokens.DOSSIER_OXBLOOD,
+			"tooltip": "本地市场向外地输出的日均流量",
+		},
+		{
+			"id": "trade_inbound",
+			"label": "在途运入",
+			"icon": &"tax.tariff",
+			"value": clampf(inbound_units / trade_peak, 0.0, 1.0) if has_any_trade else 0.0,
+			"text": "%s 单位" % UITokens.format_compact_number_cn(inbound_units, 2),
+			"color": UITokens.DOSSIER_SLATE,
+			"tooltip": "商队正在运往本地的在途货物总量",
+		},
+		{
+			"id": "trade_outbound",
+			"label": "在途运出",
+			"icon": &"tax.tariff",
+			"value": clampf(outbound_units / trade_peak, 0.0, 1.0) if has_any_trade else 0.0,
+			"text": "%s 单位" % UITokens.format_compact_number_cn(outbound_units, 2),
+			"color": UITokens.DOSSIER_BRASS,
+			"tooltip": "商队正从本地运往外地的在途货物总量",
+		},
+	]
+
+	return {
+		"kpis": kpis,
+		"insights": insights,
+		"supply_demand_bar": {
+			"left_label": "本地需求",
+			"left_value": total_demand,
+			"left_text": "%s/日" % UITokens.format_compact_number_cn(total_demand, 2),
+			"right_label": "本地供给",
+			"right_value": supply_units,
+			"right_text": "%s/日" % UITokens.format_compact_number_cn(supply_units, 2),
+		},
+		"demand_supply_bars": demand_supply_bars,
+		"price_stock_bars": price_stock_bars,
+		"trade_flow_bar": {
+			"left_label": "外销流出",
+			"left_value": export_flow_units + outbound_units,
+			"left_text": "%s/日" % UITokens.format_compact_number_cn(export_flow_units, 2),
+			"right_label": "采购流入",
+			"right_value": import_flow_units + inbound_units,
+			"right_text": "%s/日" % UITokens.format_compact_number_cn(import_flow_units, 2),
+		},
+		"trade_bars": trade_bars,
+	}
+
+
+## 阶层详情卷宗视图模型：提炼 4 格 KPI、7 档生活水平刻度、8 维满意度雷达/短板条、
+## 收支对冲与堆叠条、按用途分组的消费结构条，以及零消费替代品折叠摘要。
+static func cohort_dossier_model(row: Dictionary) -> Dictionary:
+	var pop_text := String(row.get("population", "—"))
+	var pop_raw := int(row.get("population_raw", int(_parse_leading_float(pop_text, 0.0))))
+	var employed_raw := int(row.get("employed_raw", -1))
+	var identity_text := String(row.get("cohort_identity", "本地人口"))
+	if identity_text.is_empty():
+		identity_text = "本地常住"
+	var wealth_text := String(row.get("wealth", "—")).trim_prefix("人均 ").strip_edges()
+	var living_name := String(row.get("living_standard", "待评估"))
+	var living_level := int(row.get("living_level", -1))
+	if living_level < 0:
+		living_level = ["赤贫", "挣扎", "贫困", "温饱", "小康", "富裕", "奢华"].find(living_name)
+	var sat_text := String(row.get("satisfaction", "—"))
+	var sat_float := float(row.get("satisfaction_float", _parse_leading_float(sat_text, 0.0) / 100.0))
+	var worst_dim_name := String(row.get("worst_dimension", "—"))
+	var income_text := String(row.get("income", "—"))
+	var expense_text := String(row.get("expense", "—"))
+	var net_text := String(row.get("net", "—"))
+	var income_float := float(row.get("income_pc_float", absf(_parse_leading_float(income_text, 0.0))))
+	var expense_float := float(row.get("expense_pc_float", absf(_parse_leading_float(expense_text, 0.0))))
+	var net_float := float(row.get("net_pc_float", _parse_leading_float(net_text, income_float - expense_float)))
+	var net_positive := bool(row.get("net_positive", net_float >= -1e-6))
+
+	var pop_caption := identity_text
+	if employed_raw >= 0:
+		pop_caption = "就业 %s 人 · %s" % [
+			UITokens.format_compact_number_cn(float(employed_raw), 1), identity_text]
+
+	var kpis := [
+		{
+			"id": "cohort_population",
+			"title": "阶层人口",
+			"value": float(pop_raw),
+			"kind": "text",
+			"text": pop_text,
+			"caption": pop_caption,
+			"positive_good": true,
+			"icon": StringName(row.get("icon", "population.profession.worker")),
+		},
+		{
+			"id": "cohort_living",
+			"title": "生活水平",
+			"value": float(maxi(0, living_level)),
+			"kind": "text",
+			"text": living_name,
+			"caption": "人均存款 %s" % wealth_text,
+			"tone": "risk" if (living_level >= 0 and living_level <= 1) else ("warn" if living_level == 2 else ""),
+			"positive_good": true,
+			"icon": &"family.metric.wealth",
+		},
+		{
+			"id": "cohort_satisfaction",
+			"title": "综合满意度",
+			"value": sat_float,
+			"kind": "text",
+			"text": sat_text,
+			"caption": ("短板：%s" % worst_dim_name) if (not worst_dim_name.is_empty() and worst_dim_name != "—") else "各维均衡",
+			"tone": "risk" if sat_float < 0.40 else ("warn" if sat_float < 0.65 else ""),
+			"positive_good": true,
+			"spark": row.get("satisfaction_spark", PackedFloat32Array()),
+			"delta": float(row.get("satisfaction_delta", NAN)),
+			"icon": &"population.heart",
+		},
+		{
+			"id": "cohort_net",
+			"title": "人均日净收",
+			"value": net_float,
+			"kind": "text",
+			"text": net_text,
+			"caption": "收 %s · 支 %s" % [income_text, expense_text],
+			"tone": "" if net_positive else "risk",
+			"positive_good": true,
+			"spark": row.get("net_spark", PackedFloat32Array()),
+			"delta": float(row.get("net_delta", NAN)),
+			"icon": &"trend.up" if net_positive else &"trend.down",
+		},
+	]
+
+	var sat_rows: Array = row.get("satisfaction_rows", [])
+	var dims_float: PackedFloat32Array = row.get("satisfaction_dims_float", PackedFloat32Array())
+	var ref_dims_float: PackedFloat32Array = row.get("cell_reference_dims_float", PackedFloat32Array())
+	var radar_axes := PackedStringArray(SATISFACTION_DIMENSION_NAMES)
+	var radar_values := dims_float.duplicate()
+	if radar_values.size() != SATISFACTION_DIMENSION_NAMES.size():
+		radar_values.resize(SATISFACTION_DIMENSION_NAMES.size())
+		for d in range(SATISFACTION_DIMENSION_NAMES.size()):
+			radar_values[d] = sat_float
+		for raw_s in sat_rows:
+			if not (raw_s is Dictionary):
+				continue
+			var sdict: Dictionary = raw_s
+			var sname := String(sdict.get("name", ""))
+			var sidx := SATISFACTION_DIMENSION_NAMES.find(sname)
+			if sidx >= 0:
+				radar_values[sidx] = clampf(_parse_leading_float(sdict.get("value", "0"), 0.0) / 100.0, 0.0, 1.0)
+
+	var dimension_bars := []
+	if not sat_rows.is_empty():
+		for idx in range(sat_rows.size()):
+			var sdict: Dictionary = sat_rows[idx]
+			if not bool(sdict.get("visible", true)):
+				continue
+			var sname := String(sdict.get("name", ""))
+			var sval_text := String(sdict.get("value", "0%"))
+			var sval := clampf(_parse_leading_float(sval_text, 0.0) / 100.0, 0.0, 1.0)
+			var is_worst := bool(sdict.get("worst", sname == worst_dim_name))
+			var marker := ref_dims_float[idx] if idx < ref_dims_float.size() else -1.0
+			var color := UITokens.DOSSIER_OXBLOOD if (is_worst or sval < 0.45) \
+				else (UITokens.DOSSIER_BRASS if sval < 0.72 else UITokens.DOSSIER_VERDIGRIS)
+			dimension_bars.append({
+				"id": String(sdict.get("id", "dim_%d" % idx)),
+				"label": sname,
+				"value": sval,
+				"marker": marker,
+				"text": sval_text,
+				"color": color,
+				"text_color": UITokens.DOSSIER_OXBLOOD if is_worst else UITokens.DOSSIER_INK,
+				"tooltip": "%s满意度 %s%s%s" % [
+					sname, sval_text,
+					"（当前最短板）" if is_worst else "",
+					("（本地均值 %.0f%%）" % (marker * 100.0)) if marker >= 0.0 else ""],
+			})
+
+	var insights := []
+	if not worst_dim_name.is_empty() and worst_dim_name != "—":
+		insights.append({
+			"id": "cohort_bottleneck",
+			"text": "当前生活水平为【%s】，制约满意度的首要短板是【%s】。" % [living_name, worst_dim_name],
+			"accent": UITokens.DOSSIER_OXBLOOD if sat_float < 0.60 else UITokens.DOSSIER_BRASS,
+			"icon": "population.heart",
+		})
+	if not net_positive:
+		insights.append({
+			"id": "cohort_deficit",
+			"text": "日常收支入不敷出（人均净额 %s/日），正在消耗储蓄存款。" % net_text,
+			"accent": UITokens.DOSSIER_OXBLOOD,
+			"icon": "trend.down",
+		})
+
+	var income_segments := []
+	var income_rows: Array = row.get("income_rows", [])
+	for idx in range(income_rows.size()):
+		var ir: Dictionary = income_rows[idx]
+		if not bool(ir.get("visible", true)):
+			continue
+		var vtext := String(ir.get("value", ""))
+		var vnum := maxf(0.0001, float(ir.get("raw_per_capita", absf(_parse_leading_float(vtext, 0.0)))))
+		income_segments.append({
+			"label": String(ir.get("name", "收入")),
+			"value": vnum,
+			"text": vtext,
+			"color": DOSSIER_INCOME_COLORS[idx % DOSSIER_INCOME_COLORS.size()],
+		})
+
+	var expense_segments := []
+	var expense_rows: Array = row.get("expense_rows", [])
+	for idx in range(expense_rows.size()):
+		var er: Dictionary = expense_rows[idx]
+		if not bool(er.get("visible", true)):
+			continue
+		var vtext := String(er.get("value", ""))
+		var vnum := maxf(0.0001, float(er.get("raw_per_capita", absf(_parse_leading_float(vtext, 0.0)))))
+		expense_segments.append({
+			"label": String(er.get("name", "支出")),
+			"value": vnum,
+			"text": vtext,
+			"color": DOSSIER_EXPENSE_COLORS[idx % DOSSIER_EXPENSE_COLORS.size()],
+		})
+
+	var demand_groups: Array = row.get("demand_groups", [])
+	var demand_tier_bars := []
+	for idx in range(demand_groups.size()):
+		var grp: Dictionary = demand_groups[idx]
+		var gname := String(grp.get("name", "消费"))
+		var sat_str := String(grp.get("satisfaction", ""))
+		var sat_ratio := float(grp.get("satisfaction_ratio",
+			_parse_leading_float(sat_str, 100.0) / 100.0 if not sat_str.is_empty() else 1.0))
+		var clamped_sat := clampf(sat_ratio, 0.0, 1.0)
+		var grp_cost_raw := int(grp.get("daily_cost_raw", 0))
+		var right_text := sat_str.trim_prefix("满足 ") if not sat_str.is_empty() else "%.0f%%" % (clamped_sat * 100.0)
+		if grp_cost_raw > 0:
+			right_text = "%s · 支 %s" % [
+				right_text,
+				UITokens.format_compact_number_cn(float(grp_cost_raw) / 10000.0, 2)]
+		demand_tier_bars.append({
+			"id": String(grp.get("id", "tier_%d" % idx)),
+			"label": gname,
+			"icon": &"population.heart",
+			"value": clamped_sat,
+			"text": right_text,
+			"color": UITokens.DOSSIER_OXBLOOD if clamped_sat < 0.45 else (UITokens.DOSSIER_BRASS if clamped_sat < 0.75 else UITokens.DOSSIER_VERDIGRIS),
+			"tooltip": "用途【%s】%s" % [gname, sat_str if not sat_str.is_empty() else right_text],
+		})
+
+	var demand_rows: Array = row.get("demand_rows", [])
+	var active_candidates := []
+	var inactive_names := PackedStringArray()
+	var peak_metric := 0.0001
+	for raw_d in demand_rows:
+		if not (raw_d is Dictionary):
+			continue
+		var drow: Dictionary = raw_d
+		if not bool(drow.get("visible", true)):
+			continue
+		var dname := String(drow.get("name", ""))
+		var qty_float := float(drow.get("quantity_raw", -1)) / 1000.0 \
+			if drow.has("quantity_raw") \
+			else _parse_leading_float(drow.get("quantity", drow.get("value", "0")), 0.0)
+		var cost_float := float(drow.get("daily_cost_raw", -1)) / 10000.0 \
+			if int(drow.get("daily_cost_raw", -1)) >= 0 \
+			else _parse_leading_float(drow.get("daily_cost", "0"), 0.0)
+		if qty_float <= 0.00001:
+			if not dname.is_empty():
+				inactive_names.append(dname)
+			continue
+		var metric := cost_float if cost_float > 0.00001 else qty_float
+		peak_metric = maxf(peak_metric, metric)
+		active_candidates.append({
+			"row": drow,
+			"qty": qty_float,
+			"cost": cost_float,
+			"metric": metric,
+		})
+	active_candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a.metric) > float(b.metric))
+
+	var active_demand_bars := []
+	for item in active_candidates:
+		var drow: Dictionary = item.row
+		var dname := String(drow.get("name", ""))
+		var qty_text := String(drow.get("quantity", ""))
+		if qty_text.is_empty():
+			qty_text = String(drow.get("value", "")).replace(" 单位/人/日", "")
+		var cost_text := String(drow.get("daily_cost", ""))
+		var right_text := "%s/日" % qty_text
+		if not cost_text.is_empty() and cost_text != "—":
+			right_text = "支 %s · %s" % [cost_text, qty_text]
+		var wealth_delta := int(drow.get("wealth_delta_raw", 0))
+		var price_delta := int(drow.get("price_delta_raw", 0))
+		var drivers := PackedStringArray()
+		if wealth_delta > 0:
+			drivers.append("财富拉动 +%s" % UITokens.format_compact_number_cn(float(wealth_delta) / 1000.0, 3))
+		elif wealth_delta < 0:
+			drivers.append("贫困抑制 %s" % UITokens.format_compact_number_cn(float(wealth_delta) / 1000.0, 3))
+		if price_delta < 0:
+			drivers.append("高价抑制 %s" % UITokens.format_compact_number_cn(float(price_delta) / 1000.0, 3))
+		elif price_delta > 0:
+			drivers.append("低价促进 +%s" % UITokens.format_compact_number_cn(float(price_delta) / 1000.0, 3))
+		var need_names: Array = drow.get("need_names", [])
+		var tip_lines := PackedStringArray([
+			"%s：%s 单位/人/日" % [dname, qty_text],
+		])
+		if not cost_text.is_empty() and cost_text != "—":
+			tip_lines.append("单价 %s · 日均开销 %s/人" % [String(drow.get("price", "—")), cost_text])
+		if not need_names.is_empty():
+			tip_lines.append("满足用途：%s" % "、".join(need_names))
+		if not drivers.is_empty():
+			tip_lines.append("弹性归因：%s" % "，".join(drivers))
+		var bar_color := UITokens.DOSSIER_BRASS
+		if price_delta < -10:
+			bar_color = UITokens.DOSSIER_OXBLOOD
+		elif wealth_delta > 10:
+			bar_color = UITokens.DOSSIER_VERDIGRIS
+		active_demand_bars.append({
+			"id": String(drow.get("id", "demand_" + dname)),
+			"label": dname,
+			"icon": StringName(drow.get("icon", &"metric.goods")),
+			"value": clampf(float(item.metric) / peak_metric, 0.0, 1.0),
+			"text": right_text,
+			"color": bar_color,
+			"tooltip": "\n".join(tip_lines),
+		})
+
+	var inactive_summary := ""
+	if not inactive_names.is_empty():
+		var preview := PackedStringArray()
+		for idx in range(mini(4, inactive_names.size())):
+			preview.append(inactive_names[idx])
+		inactive_summary = "未采购替代品：另有 %s%s（共 %d 种）已解锁商品因本地无货或性价比偏低暂未消费。" % [
+			"、".join(preview),
+			" 等" if inactive_names.size() > preview.size() else "",
+			inactive_names.size(),
+		]
+
+	return {
+		"kpis": kpis,
+		"insights": insights,
+		"living_level": living_level,
+		"living_name": living_name,
+		"wealth_text": wealth_text,
+		"radar_axes": radar_axes,
+		"radar_values": radar_values,
+		"radar_reference": ref_dims_float,
+		"dimension_bars": dimension_bars,
+		"cashflow_bar": {
+			"left_label": "人均日支",
+			"left_value": expense_float,
+			"left_text": expense_text,
+			"right_label": "人均日收",
+			"right_value": income_float,
+			"right_text": income_text,
+		},
+		"income_segments": income_segments,
+		"expense_segments": expense_segments,
+		"demand_tier_bars": demand_tier_bars,
+		"active_demand_bars": active_demand_bars,
+		"inactive_alternatives_summary": inactive_summary,
+	}
 
 
 func _decorate_category_with_tax(
@@ -2130,6 +2795,16 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 			local_prices[market_good_id] = int(market_prices[market_good_idx])
 			if enforce_local_technology:
 				local_technology_available[market_good_id] = market_technology[market_good_idx] != 0
+	var pop_cell_idx := int(snapshot.get("cell_idx", -1))
+	var pop_sample_day := int(snapshot.get("sample_day", _current_sample_day()))
+	if pop_cell_idx >= 0:
+		_ensure_detail_history_cell(pop_cell_idx)
+	var should_sample_pop := not list_only and pop_cell_idx >= 0 \
+		and pop_sample_day >= 0 and pop_sample_day != _detail_history_pop_day
+	if should_sample_pop:
+		_detail_history_pop_day = pop_sample_day
+	var cell_avg_dims := _compute_cell_avg_satisfaction_dims(
+		populations, satisfaction_dims, dimension_count)
 	for i in range(populations.size()):
 		var profession_id := String(profession_ids[profession_indices[i]]) if profession_indices[i] >= 0 and profession_indices[i] < profession_ids.size() else "unknown"
 		var ethnicity_id := String(ethnicity_ids[ethnicity_indices[i]]) if ethnicity_indices[i] >= 0 and ethnicity_indices[i] < ethnicity_ids.size() else "unknown"
@@ -2142,6 +2817,8 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 			if i < worst_dimensions.size() else -1
 		var dimension_rows := [] if list_only else _satisfaction_dimension_rows(
 			satisfaction_dims, dimension_count, i, worst_dimension)
+		var cohort_dims_float := PackedFloat32Array() if list_only \
+			else _cohort_satisfaction_dims_float(satisfaction_dims, dimension_count, i)
 		var need_satisfaction_by_id := {}
 		if not list_only and welfare_need_offsets.size() == populations.size() + 1:
 			var welfare_begin := clampi(int(welfare_need_offsets[i]), 0, welfare_need_ids.size())
@@ -2248,10 +2925,12 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 				var source_id := String(settlement_source_ids[source_idx]) if source_idx >= 0 and source_idx < settlement_source_ids.size() else "other"
 				var income_value := int(settlement_income[flow]) if flow < settlement_income.size() else 0
 				var expense_value := int(settlement_expense[flow]) if flow < settlement_expense.size() else 0
+				var income_pc_flow := income_value / maxi(population, 1)
+				var expense_pc_flow := expense_value / maxi(population, 1)
 				if income_value > 0:
-					income_rows.append({"id": "income_%s" % source_id, "name": _cashflow_source_name(source_id, true), "value": "+%s/人" % _money_text(income_value / maxi(population, 1)), "visible": true})
+					income_rows.append({"id": "income_%s" % source_id, "source_id": source_id, "name": _cashflow_source_name(source_id, true), "value": "+%s/人" % _money_text(income_pc_flow), "raw_per_capita": float(income_pc_flow) / 10000.0, "visible": true})
 				if expense_value > 0:
-					expense_rows.append({"id": "expense_%s" % source_id, "name": _cashflow_source_name(source_id, false), "value": "−%s/人" % _money_text(expense_value / maxi(population, 1)), "visible": true})
+					expense_rows.append({"id": "expense_%s" % source_id, "source_id": source_id, "name": _cashflow_source_name(source_id, false), "value": "−%s/人" % _money_text(expense_pc_flow), "raw_per_capita": float(expense_pc_flow) / 10000.0, "visible": true})
 		# Fiscal attribution is authoritative even when the detailed cashflow trace
 		# has expired or was intentionally omitted from this snapshot.
 		var tax_paid_pc := int(epoch_tax_paid[i]) / maxi(population, 1) \
@@ -2265,9 +2944,9 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 			or _has_cashflow_row(income_rows, "consumption_subsidy") \
 			or _has_cashflow_row(income_rows, "business_subsidy")
 		if tax_paid_pc > 0 and not has_tax_detail:
-			expense_rows.append({"id": "expense_fiscal_tax", "name": "税费（本批）", "value": "−%s/人" % _money_text(tax_paid_pc), "visible": true})
+			expense_rows.append({"id": "expense_fiscal_tax", "source_id": "fiscal_tax", "name": "税费（本批）", "value": "−%s/人" % _money_text(tax_paid_pc), "raw_per_capita": float(tax_paid_pc) / 10000.0, "visible": true})
 		if subsidy_received_pc > 0 and not has_subsidy_detail:
-			income_rows.append({"id": "income_fiscal_subsidy", "name": "财政补贴（本批）", "value": "+%s/人" % _money_text(subsidy_received_pc), "visible": true})
+			income_rows.append({"id": "income_fiscal_subsidy", "source_id": "fiscal_subsidy", "name": "财政补贴（本批）", "value": "+%s/人" % _money_text(subsidy_received_pc), "raw_per_capita": float(subsidy_received_pc) / 10000.0, "visible": true})
 		var income_pc := int(settlement_income_by_cohort[i]) / maxi(population, 1) \
 			if settlement_available and i < settlement_income_by_cohort.size() else 0
 		var expense_pc := int(settlement_expense_by_cohort[i]) / maxi(population, 1) \
@@ -2277,20 +2956,36 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 		if not has_tax_detail:
 			expense_pc += tax_paid_pc
 		var net_pc := income_pc - expense_pc
+		var cohort_hist_key := "%s|%s" % [profession_id, ethnicity_id]
+		if should_sample_pop:
+			_record_cohort_history(cohort_hist_key, sat,
+				float(net_pc) / 10000.0, float(income_pc) / 10000.0,
+				float(wealth_pc) / 10000.0)
+		var cohort_hist: Dictionary = _cohort_history.get(cohort_hist_key, {})
+		var sat_series: PackedFloat32Array = cohort_hist.get("satisfaction", PackedFloat32Array())
+		var net_series: PackedFloat32Array = cohort_hist.get("net", PackedFloat32Array())
 		var demand_count := visible_demand_count
 		var demand_group_count := demand_groups.size()
 		var demand_subtitle := "主要：%s%s" % ["、".join(demand_names), " 等" if demand_count > demand_names.size() else ""] if demand_count > 0 else "当前无消费需求"
-		rows.append({
+		var row_dict := {
 			"id": "cohort_%s" % str(handles[i] if i < handles.size() else i),
 			"name": profession_name,
 			"cohort_identity": ethnicity_name,
 			"profession_id": profession_id,
 			"cohort_handle": int(handles[i]) if i < handles.size() else -1,
 			"population": "%s 人" % UITokens.format_compact_number_cn(float(population), 1),
+			"population_raw": population,
+			"employed_raw": owners + employees,
+			"owners_raw": owners,
+			"employees_raw": employees,
 			"wealth": _money_text(wealth_pc),
+			"wealth_raw": float(wealth_pc) / 10000.0,
 			"income": "+%s" % _money_text(income_pc) if settlement_available or subsidy_received_pc > 0 else "+—",
 			"expense": "−%s" % _money_text(expense_pc) if settlement_available or tax_paid_pc > 0 else "−—",
 			"net": "%s%s" % ["+" if net_pc > 0 else ("−" if net_pc < 0 else ""), _money_text(absi(net_pc))] if settlement_available or subsidy_received_pc > 0 or tax_paid_pc > 0 else "—",
+			"income_pc_float": float(income_pc) / 10000.0,
+			"expense_pc_float": float(expense_pc) / 10000.0,
+			"net_pc_float": float(net_pc) / 10000.0,
 			"net_positive": net_pc >= 0,
 			"status": "%s%s · 满意度 %.1f%% · 就业 %s · 结算 %d日" % [
 				"商人 · " if i < merchant_flags.size() and merchant_flags[i] != 0 else "",
@@ -2298,12 +2993,21 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 				UITokens.format_compact_number_cn(float(owners + employees), 1), settlement_days],
 			"accent": UITokens.ACCENT,
 			"icon": IconCatalog.profession_semantic(profession_id),
+			"living_level": living_level,
 			"living_icon": _living_standard_icon(living_level),
 			"living_accent": _living_standard_accent(living_level),
 			"living_standard": living_name,
 			"satisfaction": "%.1f%%" % (sat * 100.0),
+			"satisfaction_float": sat,
 			"satisfaction_rows": dimension_rows,
+			"satisfaction_dims_float": cohort_dims_float,
+			"cell_reference_dims_float": cell_avg_dims,
 			"worst_dimension": _satisfaction_dimension_name(worst_dimension),
+			"worst_dimension_index": worst_dimension,
+			"satisfaction_spark": sat_series,
+			"satisfaction_delta": _series_lookback_delta(sat_series),
+			"net_spark": net_series,
+			"net_delta": _series_lookback_delta(net_series),
 			"demand_rows": demand_rows,
 			"demand_groups": demand_groups,
 			"income_rows": income_rows,
@@ -2315,7 +3019,8 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 				"total_daily_cost": _money_text(demand_total_cost) if demand_cost_available else "—",
 			},
 			"visible": true,
-		})
+		}
+		rows.append(row_dict)
 	var insights := []
 	if rows.is_empty():
 		insights.append({"id": "population_empty", "text": "此地尚无人口。", "accent": UITokens.TEXT_MUTED, "icon": "growth"})
@@ -2427,16 +3132,111 @@ func _group_demand_rows_by_usage(rows: Array) -> Array:
 		group["rows"] = group_rows
 		var satisfaction_total := 0
 		var satisfaction_count := 0
+		var group_cost_raw := 0
+		var group_qty_raw := 0
 		for group_row in group_rows:
-			var value := int((group_row as Dictionary).get("need_satisfaction_q16", -1))
+			var rdict := group_row as Dictionary
+			var value := int(rdict.get("need_satisfaction_q16", -1))
 			if value >= 0:
 				satisfaction_total += value
 				satisfaction_count += 1
-		group["satisfaction"] = "满足 %.0f%%" % (
-			float(satisfaction_total) * 100.0 / 65536.0 / satisfaction_count) \
-			if satisfaction_count > 0 else ""
+			var q_raw := int(rdict.get("quantity_raw", 0))
+			if q_raw > 0:
+				group_qty_raw += q_raw
+				var c_raw := int(rdict.get("daily_cost_raw", 0))
+				if c_raw > 0:
+					group_cost_raw += c_raw
+		var sat_ratio := float(satisfaction_total) / 65536.0 / float(satisfaction_count) \
+			if satisfaction_count > 0 else -1.0
+		group["satisfaction_ratio"] = sat_ratio
+		group["daily_cost_raw"] = group_cost_raw
+		group["quantity_raw"] = group_qty_raw
+		group["satisfaction"] = "满足 %.0f%%" % (sat_ratio * 100.0) \
+			if sat_ratio >= 0.0 else ""
 		groups[group_idx] = group
 	return groups
+
+
+func _ensure_detail_history_cell(cell_idx: int) -> void:
+	if cell_idx >= 0 and cell_idx != _detail_history_cell:
+		_detail_history_cell = cell_idx
+		_detail_history_market_day = -1
+		_detail_history_pop_day = -1
+		_good_history.clear()
+		_cohort_history.clear()
+
+
+func _append_history_sample(bucket: Dictionary, key: String, value: float) -> PackedFloat32Array:
+	var series: PackedFloat32Array = bucket.get(key, PackedFloat32Array())
+	series.append(value)
+	if series.size() > DETAIL_HISTORY_CAPACITY:
+		series = series.slice(series.size() - DETAIL_HISTORY_CAPACITY)
+	bucket[key] = series
+	return series
+
+
+static func _series_lookback_delta(series: PackedFloat32Array) -> float:
+	if series.size() < 2:
+		return NAN
+	var lookback := mini(DETAIL_HISTORY_LOOKBACK, series.size() - 1)
+	var latest := series[series.size() - 1]
+	var earlier := series[series.size() - 1 - lookback]
+	return latest - earlier if not is_nan(latest) and not is_nan(earlier) else NAN
+
+
+func _record_cohort_history(cohort_key: String, sat: float, net_val: float,
+		income_val: float, wealth_val: float) -> void:
+	var bucket: Dictionary = _cohort_history.get(cohort_key, {})
+	_append_history_sample(bucket, "satisfaction", sat)
+	_append_history_sample(bucket, "net", net_val)
+	_append_history_sample(bucket, "income", income_val)
+	_append_history_sample(bucket, "wealth", wealth_val)
+	_cohort_history[cohort_key] = bucket
+
+
+func _record_good_history(good_id: String, price_val: float, price_index: float,
+		stock_units: float, shortage_ratio: float) -> void:
+	var bucket: Dictionary = _good_history.get(good_id, {})
+	_append_history_sample(bucket, "price", price_val)
+	_append_history_sample(bucket, "price_index", price_index)
+	_append_history_sample(bucket, "stock", stock_units)
+	_append_history_sample(bucket, "shortage", shortage_ratio)
+	_good_history[good_id] = bucket
+
+
+func _compute_cell_avg_satisfaction_dims(populations: PackedInt64Array,
+		dims: PackedInt32Array, dimension_count: int) -> PackedFloat32Array:
+	var avg := PackedFloat32Array()
+	if dimension_count <= 0 or populations.is_empty():
+		return avg
+	avg.resize(dimension_count)
+	var total_pop := 0
+	for i in range(populations.size()):
+		var pop := maxi(0, int(populations[i]))
+		var begin := i * dimension_count
+		if pop <= 0 or begin < 0 or begin + dimension_count > dims.size():
+			continue
+		total_pop += pop
+		for d in range(dimension_count):
+			avg[d] += (float(dims[begin + d]) / 65536.0) * float(pop)
+	if total_pop > 0:
+		for d in range(dimension_count):
+			avg[d] = clampf(avg[d] / float(total_pop), 0.0, 1.0)
+	return avg
+
+
+func _cohort_satisfaction_dims_float(dims: PackedInt32Array, dimension_count: int,
+		cohort_idx: int) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	if dimension_count <= 0:
+		return out
+	var begin := cohort_idx * dimension_count
+	if begin < 0 or begin + dimension_count > dims.size():
+		return out
+	out.resize(dimension_count)
+	for d in range(dimension_count):
+		out[d] = clampf(float(dims[begin + d]) / 65536.0, 0.0, 1.0)
+	return out
 
 
 func _living_standard_name(level: int) -> String:
@@ -2618,7 +3418,13 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 		"trade_export_ema", PackedInt64Array())
 	var enforce_technology := technology_available.size() == good_ids.size()
 	var market_id := int(snapshot.get("market_id", snapshot.get("cell_idx", -1)))
-	var sample_day := _current_sample_day()
+	var sample_day := int(snapshot.get("sample_day", _current_sample_day()))
+	if market_id >= 0:
+		_ensure_detail_history_cell(market_id)
+	var should_sample_market := market_id >= 0 and sample_day >= 0 \
+		and sample_day != _detail_history_market_day
+	if should_sample_market:
+		_detail_history_market_day = sample_day
 	var shortage_count := 0
 	var in_transit_kinds := 0
 	for i in range(good_ids.size()):
@@ -2627,8 +3433,19 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 		var stable_id := String(good_ids[i])
 		var profile = GoodProfileRegistry.profile_by_id(stable_id)
 		var display_name := String(profile.display_name) if profile != null else stable_id
+		var stock_raw := int(stock[i]) if i < stock.size() else 0
+		var stock_units := float(stock_raw) / 1000.0
+		var price_raw := int(prices[i]) if i < prices.size() else 0
+		var price_val := float(price_raw) / 10000.0
+		var anchor_raw := int(cost_anchor[i]) if i < cost_anchor.size() else 0
+		var anchor_val := float(anchor_raw) / 10000.0
+		var price_index := float(price_raw) / float(anchor_raw) if anchor_raw > 0 else 1.0
+		var hh_demand_units := float(demand_ema[i]) / 1000.0 if i < demand_ema.size() else 0.0
+		var biz_demand_units := float(business_demand_ema[i]) / 1000.0 if i < business_demand_ema.size() else 0.0
+		var total_demand_units := hh_demand_units + biz_demand_units
+		var supply_units := float(offered_supply_ema[i]) / 1000.0 if i < offered_supply_ema.size() else 0.0
 		var stock_daily := _sample_daily_delta(_market_prev_stock,
-			"%d:%s" % [market_id, stable_id], float(stock[i]) / 1000.0, sample_day)
+			"%d:%s" % [market_id, stable_id], stock_units, sample_day)
 		var shortage := float(shortage_q16[i]) * 100.0 / 65536.0 if i < shortage_q16.size() else 0.0
 		if shortage >= 25.0:
 			shortage_count += 1
@@ -2637,25 +3454,30 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 		var outbound := _packed_i64_at(trade_outbound, i) if allow_trade else 0
 		var import_flow := _packed_i64_at(trade_import_ema, i) if allow_trade else 0
 		var export_flow := _packed_i64_at(trade_export_ema, i) if allow_trade else 0
+		var inbound_units := float(inbound) / 1000.0
+		var outbound_units := float(outbound) / 1000.0
+		var import_flow_units := float(import_flow) / 1000.0
+		var export_flow_units := float(export_flow) / 1000.0
 		var in_transit := inbound > 0 or outbound > 0
 		if in_transit:
 			in_transit_kinds += 1
-		var stock_plain := _goods_unit_text(int(stock[i]) if i < stock.size() else 0)
+		if should_sample_market:
+			_record_good_history(stable_id, price_val, price_index, stock_units, shortage / 100.0)
+		var good_hist: Dictionary = _good_history.get(stable_id, {})
+		var price_series: PackedFloat32Array = good_hist.get("price", PackedFloat32Array())
+		var stock_series: PackedFloat32Array = good_hist.get("stock", PackedFloat32Array())
+		var stock_plain := _goods_unit_text(stock_raw)
+		var anchor_text := _money_text(anchor_raw) if anchor_raw > 0 else "—"
+		var days_of_stock := stock_units / total_demand_units if total_demand_units > 0.001 \
+			else (999.0 if stock_units > 0.001 else 0.0)
 		var detail_rows := [
-			{"id": "household_demand", "name": "居民需求", "value": UITokens.format_compact_number_cn(float(demand_ema[i]) / 1000.0, 2) if i < demand_ema.size() else "0"},
-			{"id": "business_demand", "name": "产业需求", "value": UITokens.format_compact_number_cn(float(business_demand_ema[i]) / 1000.0, 2) if i < business_demand_ema.size() else "0"},
-			{"id": "supply", "name": "供给", "value": UITokens.format_compact_number_cn(float(offered_supply_ema[i]) / 1000.0, 2) if i < offered_supply_ema.size() else "0"},
-			{"id": "cost_anchor", "name": "成本锚", "value": _money_text(int(cost_anchor[i])) if i < cost_anchor.size() and cost_anchor[i] > 0 else "—"},
+			{"id": "household_demand", "name": "居民需求", "value": UITokens.format_compact_number_cn(hh_demand_units, 2)},
+			{"id": "business_demand", "name": "产业需求", "value": UITokens.format_compact_number_cn(biz_demand_units, 2)},
+			{"id": "supply", "name": "供给", "value": UITokens.format_compact_number_cn(supply_units, 2)},
+			{"id": "cost_anchor", "name": "成本锚", "value": anchor_text},
+			{"id": "price_index", "name": "价格倍率", "value": "%.2f 倍" % price_index if anchor_raw > 0 else "—"},
 			{"id": "shortage", "name": "短缺", "value": "%.1f%%" % shortage},
 		]
-		if i < reference_ceiling.size() and i < base_ceiling.size() and i < effective_ceiling.size() and i < target_ceiling.size() and i < confirmation_days.size():
-			detail_rows.append_array([
-				{"id": "reference_ceiling", "name": "参考上限", "value": _money_text(reference_ceiling[i])},
-				{"id": "base_ceiling", "name": "成本上限", "value": _money_text(base_ceiling[i])},
-				{"id": "effective_ceiling", "name": "有效上限", "value": _money_text(effective_ceiling[i])},
-				{"id": "target_ceiling", "name": "目标上限", "value": _money_text(target_ceiling[i])},
-				{"id": "ceiling_confirmation", "name": "短缺确认", "value": "%d 天" % confirmation_days[i]},
-			])
 		if inbound > 0:
 			detail_rows.append({"id": "trade_inbound", "name": "运入",
 				"value": _goods_unit_text(inbound)})
@@ -2674,7 +3496,25 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 			"good_id": stable_id,
 			"stock": "%s · 在途" % stock_plain if in_transit else stock_plain,
 			"stock_plain": stock_plain,
-			"price": _money_text(prices[i] if i < prices.size() else 0),
+			"stock_units_float": stock_units,
+			"days_of_stock_float": days_of_stock,
+			"price": _money_text(price_raw),
+			"price_float": price_val,
+			"cost_anchor_text": anchor_text,
+			"cost_anchor_float": anchor_val,
+			"price_index_float": price_index,
+			"household_demand_float": hh_demand_units,
+			"business_demand_float": biz_demand_units,
+			"supply_float": supply_units,
+			"shortage_float": shortage / 100.0,
+			"inbound_float": inbound_units,
+			"outbound_float": outbound_units,
+			"import_flow_float": import_flow_units,
+			"export_flow_float": export_flow_units,
+			"price_spark": price_series,
+			"price_delta": _series_lookback_delta(price_series),
+			"stock_spark": stock_series,
+			"stock_delta": stock_daily,
 			"delta": _daily_delta_text(stock_daily),
 			"risk": "短缺" if shortage >= 25.0 else "",
 			"trade_inbound": _goods_unit_text(inbound) if inbound > 0 else "",

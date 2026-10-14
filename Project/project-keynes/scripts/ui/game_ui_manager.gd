@@ -1024,7 +1024,14 @@ func map_safe_area() -> Rect2:
 
 
 func dismiss_overlay_menu() -> bool:
-	if is_era_reward_modal_open() or is_family_founding_modal_open():
+	if is_era_reward_modal_open():
+		return true
+	if is_family_founding_modal_open():
+		if _right_panel != null and _right_panel.detail_open():
+			_right_panel.close_detail()
+			return true
+		if _family_founding_dialog != null:
+			_family_founding_dialog.toggle_collapsed()
 		return true
 	if not _colonization_targeting.is_empty():
 		_cancel_colonization_targeting()
@@ -1077,8 +1084,14 @@ func is_era_reward_modal_open() -> bool:
 
 
 func show_family_founding_offer(offer: Dictionary) -> void:
+	if _country_panel != null and _country_panel.is_panel_open():
+		close_country_panel()
+	if _colonization_panel != null and _colonization_panel.visible:
+		_colonization_panel.close_panel()
 	if _family_founding_dialog != null:
+		_layout_family_founding_dialog()
 		_family_founding_dialog.present_offer(offer)
+		_layout_family_founding_dialog()
 
 
 func show_family_founding_error(message: String) -> void:
@@ -1226,6 +1239,7 @@ func _bind_ui() -> void:
 	get_viewport().size_changed.connect(_layout_country_action_bar)
 	get_viewport().size_changed.connect(_layout_top_bar)
 	get_viewport().size_changed.connect(_layout_right_panel)
+	get_viewport().size_changed.connect(_layout_family_founding_dialog)
 	_layout_overlay_legend()
 	_log_ui_layout_diagnostics("bind_ui")
 
@@ -1259,6 +1273,28 @@ func _bind_ui() -> void:
 		_family_founding_dialog.choice_requested.connect(
 			func(offer_id: int, generation: int, index: int) -> void:
 				family_founding_choice_requested.emit(offer_id, generation, index))
+		_family_founding_dialog.locate_cell_requested.connect(
+			_locate_cell_from_family_founding)
+		_layout_family_founding_dialog()
+
+
+func _locate_cell_from_family_founding(cell_index: int) -> void:
+	if _country_panel != null and _country_panel.is_panel_open():
+		close_country_panel()
+	if _player_controller != null and _player_controller.has_method(
+			"focus_family_founding_cell"):
+		_player_controller.focus_family_founding_cell(cell_index)
+	elif _player_controller != null and _map != null and cell_index >= 0:
+		var cell := _map.cell_at(cell_index)
+		if cell != null:
+			_player_controller.select_cell(cell)
+	_layout_family_founding_dialog()
+
+
+func _layout_family_founding_dialog() -> void:
+	if _family_founding_dialog == null:
+		return
+	_family_founding_dialog.set_safe_area(map_safe_area())
 
 
 func _cancel_colonization_targeting() -> void:
@@ -1321,6 +1357,7 @@ func _on_inspector_visibility_changed() -> void:
 	_layout_overlay_legend()
 	_layout_country_action_bar()
 	_layout_gm_panel()
+	_layout_family_founding_dialog()
 
 
 func _on_inspector_detail_visibility_changed(open: bool) -> void:
@@ -1330,6 +1367,7 @@ func _on_inspector_detail_visibility_changed(open: bool) -> void:
 	_layout_overlay_legend()
 	_layout_country_action_bar()
 	_layout_gm_panel()
+	_layout_family_founding_dialog()
 	var wide_threshold := FAMILY_WORKSPACE_BREAKPOINT \
 		if _right_panel != null and _right_panel.family_workspace_open() \
 		else DETAIL_LAYOUT_BREAKPOINT
