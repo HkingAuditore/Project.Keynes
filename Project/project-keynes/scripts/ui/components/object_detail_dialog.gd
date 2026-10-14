@@ -12,6 +12,7 @@ const TaxSectionScene := preload("res://scenes/ui/object_tax_section.tscn")
 const TaxLaneScene := preload("res://scenes/ui/object_tax_lane.tscn")
 const GoodDossierScene := preload("res://scenes/ui/object_good_dossier.tscn")
 const CohortDossierScene := preload("res://scenes/ui/object_cohort_dossier.tscn")
+const BuildingDossierScene := preload("res://scenes/ui/object_building_dossier.tscn")
 
 signal closed()
 signal colonization_requested(family_handle: int, source_cell: int)
@@ -48,6 +49,7 @@ var _current_chapter := "overview"
 var _scroll_by_chapter: Dictionary = {}
 var _good_refs: Dictionary = {}
 var _cohort_refs: Dictionary = {}
+var _building_refs: Dictionary = {}
 
 
 func _ready() -> void:
@@ -113,10 +115,13 @@ func show_details(payload: Dictionary) -> void:
 	_kpi_values.clear()
 	_good_refs.clear()
 	_cohort_refs.clear()
+	_building_refs.clear()
 	_detail_identity = next_identity
 	_payload_kind = String(payload.get("kind", ""))
 	var kind := _payload_kind
-	_header_icon.set_semantic(StringName(payload.get("icon", "resource")),
+	var header_icon_key := StringName("family.workspace.crest") \
+		if kind == "family" else StringName(payload.get("icon", "resource"))
+	_header_icon.set_semantic(header_icon_key,
 		_dossier_accent(payload.get("accent", UITokens.DOSSIER_BRASS)))
 	if _kicker_label != null:
 		_kicker_label.text = _kicker_for_kind(kind)
@@ -128,7 +133,7 @@ func show_details(payload: Dictionary) -> void:
 	_tax_section = null
 	_tax_editors.clear()
 	var row: Dictionary = payload.get("row", {})
-	var is_dossier_kind := kind == "cohort" or kind == "good"
+	var is_dossier_kind := kind in ["cohort", "good", "building"]
 	if not is_dossier_kind:
 		if _summary_band != null:
 			_summary_band.visible = false
@@ -137,7 +142,7 @@ func show_details(payload: Dictionary) -> void:
 		"cohort":
 			_build_cohort_details(row, payload.get("tax_context", {}))
 		"building":
-			_build_building_details(row)
+			_build_building_details(row, payload.get("tax_context", {}))
 		"good":
 			_build_good_details(row, payload.get("tax_context", {}))
 		"resource":
@@ -232,7 +237,9 @@ func _patch_details(payload: Dictionary) -> bool:
 	var row: Dictionary = payload.get("row", {})
 	if not _patch_tax_section(payload.get("tax_context", {}), row):
 		return false
-	_header_icon.set_semantic(StringName(payload.get("icon", "resource")),
+	var header_icon_key := StringName("family.workspace.crest") \
+		if kind == "family" else StringName(payload.get("icon", "resource"))
+	_header_icon.set_semantic(header_icon_key,
 		_dossier_accent(payload.get("accent", UITokens.DOSSIER_BRASS)))
 	_title_label.text = String(payload.get("name", "对象详情"))
 	_subtitle_label.text = String(payload.get("subtitle", ""))
@@ -240,6 +247,8 @@ func _patch_details(payload: Dictionary) -> bool:
 		_patch_good_dossier(row)
 	elif kind == "cohort" and not _cohort_refs.is_empty():
 		_patch_cohort_dossier(row)
+	elif kind == "building" and not _building_refs.is_empty():
+		_patch_building_dossier(row)
 	else:
 		_patch_fact_values(_facts_for_row(kind, row))
 	_detail_identity = _detail_identity_of(payload)
@@ -547,6 +556,7 @@ func close_dialog() -> void:
 	_fact_value_labels.clear()
 	_good_refs.clear()
 	_cohort_refs.clear()
+	_building_refs.clear()
 	closed.emit()
 
 
@@ -842,28 +852,137 @@ func _populate_inline_fact_grid(grid: GridContainer, facts: Array) -> void:
 
 # ─── 其他详情区（建筑/自然资源/家族回退） ───────────────────────────────
 
-func _build_building_details(row: Dictionary) -> void:
-	_section_targets["overview"] = _add_fact_grid(_facts_for_row("building", row))
-	var owner := String(row.get("owner", ""))
-	if not owner.is_empty():
-		_add_muted_note(owner)
-	var state: Dictionary = row.get("state_summary", {})
-	var operations_target: Control = null
-	if not state.is_empty():
-		operations_target = _add_state_card(state)
-	var jobs_target := _add_rows_card("岗位配置", "growth", UITokens.DOSSIER_INK,
-		row.get("job_rows", []))
-	var production_target := _add_rows_card("生产概览", "resource", UITokens.DOSSIER_BRASS,
-		row.get("production_rows", []))
-	if operations_target == null:
-		operations_target = jobs_target if jobs_target != null else production_target
-	var finance: Dictionary = row.get("finance", {})
-	if not finance.is_empty():
-		var finance_target := _add_finance_card(finance)
-		if operations_target == null:
-			operations_target = finance_target
-	if operations_target != null:
-		_section_targets["operations"] = operations_target
+func _build_building_details(row: Dictionary, tax_context: Variant = {}) -> void:
+	var root := BuildingDossierScene.instantiate() as VBoxContainer
+	_content.add_child(root)
+	var overview_page := root.get_node("%OverviewPage") as VBoxContainer
+	var operations_page := root.get_node("%OperationsPage") as VBoxContainer
+	var notes := root.get_node("%Notes") as InspectorNoteList
+	var capacity_bars := root.get_node("%CapacityBars") as DossierBarList
+	var job_kicker := root.get_node("%JobKicker") as Label
+	var job_bars := root.get_node("%JobBars") as DossierBarList
+	var job_empty_note := root.get_node("%JobEmptyNote") as Label
+	var production_bars := root.get_node("%ProductionBars") as DossierBarList
+	var production_empty_note := root.get_node("%ProductionEmptyNote") as Label
+	var unused_inputs_note := root.get_node("%UnusedInputsNote") as Label
+	var finance_warning := root.get_node("%FinanceWarning") as Label
+	var finance_diverging_bar := root.get_node("%FinanceDivergingBar") as DossierDivergingBar
+	var revenue_stacked_bar := root.get_node("%RevenueStackedBar") as DossierStackedBar
+	var cost_stacked_bar := root.get_node("%CostStackedBar") as DossierStackedBar
+	var finance_note := root.get_node("%FinanceNote") as Label
+
+	capacity_bars.label_width = 96.0
+	capacity_bars.value_width = 64.0
+	job_bars.label_width = 112.0
+	job_bars.value_width = 64.0
+	production_bars.label_width = 124.0
+	production_bars.value_width = 104.0
+
+	_fact_columns = [3]
+	_building_refs = {
+		"root": root,
+		"overview_page": overview_page,
+		"operations_page": operations_page,
+		"notes": notes,
+		"capacity_bars": capacity_bars,
+		"job_kicker": job_kicker,
+		"job_bars": job_bars,
+		"job_empty_note": job_empty_note,
+		"production_bars": production_bars,
+		"production_empty_note": production_empty_note,
+		"unused_inputs_note": unused_inputs_note,
+		"finance_warning": finance_warning,
+		"finance_diverging_bar": finance_diverging_bar,
+		"revenue_stacked_bar": revenue_stacked_bar,
+		"cost_stacked_bar": cost_stacked_bar,
+		"finance_note": finance_note,
+	}
+	_section_targets["overview"] = overview_page
+	_section_targets["operations"] = operations_page
+	_build_tax_section("building", tax_context, row, _content)
+	_apply_building_dossier_data(row, false)
+
+
+func _patch_building_dossier(row: Dictionary) -> void:
+	_apply_building_dossier_data(row, true)
+
+
+func _apply_building_dossier_data(row: Dictionary, live_patch: bool) -> void:
+	var dossier := CellInspectorViewModel.building_dossier_model(row)
+	_apply_kpis(dossier.get("kpis", []), live_patch)
+	var notes := _building_refs.get("notes") as InspectorNoteList
+	if notes != null:
+		var insights: Array = dossier.get("insights", [])
+		notes.set_notes(insights)
+		notes.visible = not insights.is_empty()
+	var cap_bars := _building_refs.get("capacity_bars") as DossierBarList
+	if cap_bars != null:
+		var cbars: Array = dossier.get("capacity_bars", [])
+		cap_bars.set_rows(cbars)
+		cap_bars.visible = not cbars.is_empty()
+	var jbars_data: Array = dossier.get("job_bars", [])
+	var job_kicker := _building_refs.get("job_kicker") as Label
+	var job_bars := _building_refs.get("job_bars") as DossierBarList
+	var job_empty := _building_refs.get("job_empty_note") as Label
+	if job_kicker != null:
+		job_kicker.visible = not jbars_data.is_empty()
+	if job_bars != null:
+		job_bars.visible = not jbars_data.is_empty()
+		job_bars.set_rows(jbars_data)
+	if job_empty != null:
+		job_empty.text = "建造中或无专职岗位配置。"
+		job_empty.visible = jbars_data.is_empty()
+
+	var pbars_data: Array = dossier.get("production_bars", [])
+	var prod_bars := _building_refs.get("production_bars") as DossierBarList
+	var prod_empty := _building_refs.get("production_empty_note") as Label
+	var unused_note := _building_refs.get("unused_inputs_note") as Label
+	if prod_bars != null:
+		prod_bars.visible = not pbars_data.is_empty()
+		prod_bars.set_rows(pbars_data)
+	if prod_empty != null:
+		prod_empty.text = "当前无日常投入或产出流水。"
+		prod_empty.visible = pbars_data.is_empty()
+	if unused_note != null:
+		var unused_str := String(dossier.get("unused_inputs_summary", ""))
+		unused_note.text = unused_str
+		unused_note.visible = not unused_str.is_empty()
+
+	var fwarn := _building_refs.get("finance_warning") as Label
+	if fwarn != null:
+		var warn_str := String(dossier.get("finance_warning", ""))
+		fwarn.text = warn_str
+		fwarn.visible = not warn_str.is_empty()
+	var fd: Dictionary = dossier.get("finance_diverging_bar", {})
+	var fd_bar := _building_refs.get("finance_diverging_bar") as DossierDivergingBar
+	if fd_bar != null:
+		fd_bar.set_values(
+			String(fd.get("left_label", "本期总成本")),
+			float(fd.get("left_value", 0.0)),
+			String(fd.get("left_text", "0")),
+			String(fd.get("right_label", "税后总收入")),
+			float(fd.get("right_value", 0.0)),
+			String(fd.get("right_text", "0"))
+		)
+	var rev_stacked := _building_refs.get("revenue_stacked_bar") as DossierStackedBar
+	if rev_stacked != null:
+		var rev_segs: Array = dossier.get("revenue_segments", [])
+		rev_stacked.visible = not rev_segs.is_empty()
+		if not rev_segs.is_empty():
+			rev_stacked.set_segments("收入构成（含自用折算）", rev_segs,
+				String(fd.get("right_text", "0")))
+	var cost_stacked := _building_refs.get("cost_stacked_bar") as DossierStackedBar
+	if cost_stacked != null:
+		var cost_segs: Array = dossier.get("cost_segments", [])
+		cost_stacked.visible = not cost_segs.is_empty()
+		if not cost_segs.is_empty():
+			cost_stacked.set_segments("成本构成", cost_segs,
+				String(fd.get("left_text", "0")))
+	var fnote := _building_refs.get("finance_note") as Label
+	if fnote != null:
+		var note_str := String(dossier.get("finance_note", ""))
+		fnote.text = note_str
+		fnote.visible = not note_str.is_empty()
 
 
 func _build_resource_details(row: Dictionary) -> void:
@@ -1180,6 +1299,13 @@ func _configure_section_nav(kind: String) -> void:
 			{"id": "operations", "label": "消费与税率", "icon": &"metric.goods",
 				"question": "日常支出花在哪些物资上？本阶层所得税如何设定？"},
 		]
+	elif kind == "building":
+		chapters = [
+			{"id": "overview", "label": "生产与岗位", "icon": &"economy.building.factory",
+				"question": "产能出力与岗位到岗如何？有哪些投入与产出？"},
+			{"id": "operations", "label": "财务与税率", "icon": &"metric.treasury",
+				"question": "本期营收、自用留存与成本构成如何？营业税率如何设定？"},
+		]
 	else:
 		var icon_map := {
 			"overview": &"summary.overview",
@@ -1200,7 +1326,7 @@ func _configure_section_nav(kind: String) -> void:
 
 
 func _on_chapter_selected(section_id: String) -> void:
-	if _payload_kind == "good" or _payload_kind == "cohort":
+	if _payload_kind in ["good", "cohort", "building"]:
 		_apply_dossier_chapter(section_id, true)
 		return
 	if _chapter_nav != null and _chapter_nav.visible:
@@ -1214,7 +1340,8 @@ func _apply_dossier_chapter(section_id: String, animate: bool) -> void:
 	_current_chapter = section_id if (section_id == "overview" or section_id == "operations") else "overview"
 	if _chapter_nav != null and _chapter_nav.visible:
 		_chapter_nav.select(_current_chapter, animate)
-	var refs := _good_refs if _payload_kind == "good" else _cohort_refs
+	var refs := _good_refs if _payload_kind == "good" \
+		else (_cohort_refs if _payload_kind == "cohort" else _building_refs)
 	var overview_page := refs.get("overview_page") as Control
 	var operations_page := refs.get("operations_page") as Control
 	if overview_page != null:

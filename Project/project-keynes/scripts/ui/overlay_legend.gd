@@ -115,7 +115,9 @@ func _ready() -> void:
 		return
 	_icon_label.add_theme_font_override("font", IconBadge.FA_SOLID_FONT)
 	_icon_label.add_theme_font_size_override("font_size", 15)
-	_icon_label.add_theme_color_override("font_color", UITokens.ACCENT)
+	_icon_label.add_theme_color_override("font_color", UITokens.DOSSIER_OXBLOOD)
+	_title_label.add_theme_font_override("font", UITokens.dossier_font("serif"))
+	_title_label.add_theme_font_size_override("font_size", 15)
 
 # 主入口：切换通道（含 NONE 隐藏）。
 func update_for_mode(

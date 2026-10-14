@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- Papercut Openwork Mountains, Sun & River Waves -->
+  <path fill="#9e2e1e" fill-rule="evenodd" d="
+    M96 8 A18 18 0 1 1 96 44 A18 18 0 1 1 96 8 Z
+    M96 16 A10 10 0 1 0 96 36 A10 10 0 1 0 96 16 Z
+  "/>
+  <path fill="#b87b28" fill-rule="evenodd" d="
+    M54 96 L94 32 L124 96 Z
+    M94 46 L106 68 L94 62 L82 68 Z
+  "/>
+  <path fill="#734222" fill-rule="evenodd" d="
+    M4 96 L46 12 L88 96 Z
+    M46 27 L60 54 L46 46 L32 54 Z
+    M22 86 L46 56 L70 86 Z
+  "/>
+  <path fill="none" stroke="#9e2e1e" stroke-width="6.5" stroke-linecap="round" d="
+    M6 108 Q36 96 64 108 T122 108
+    M18 120 Q46 110 64 120 T110 120
+  "/>
+</svg>

@@ -8,11 +8,11 @@ signal section_selected(section_id: String)
 signal locate_cell_requested(cell: int)
 
 const SECTION_DEFINITIONS := [
-	{"id": "technology", "label": "科技研究", "subtitle": "编排研究投入，浏览技术网络与时代前沿", "icon": &"country.technology", "accent": UITokens.CLIMATE, "available": true},
-	{"id": "ideology", "label": "国家理念", "subtitle": "形成国家道路，审视社会支持与民族精神", "icon": &"country.politics", "accent": UITokens.ACCENT, "available": true},
-	{"id": "economy", "label": "国民经济", "subtitle": "阶层民生、产业运营、投资风向、物资贸易与财政", "icon": &"country.economy", "accent": UITokens.RESOURCE, "available": true},
-	{"id": "military", "label": "军事", "subtitle": "尚未开放", "icon": &"country.military", "accent": UITokens.RISK, "available": false},
-	{"id": "diplomacy", "label": "外交", "subtitle": "尚未开放", "icon": &"country.diplomacy", "accent": UITokens.WATER, "available": false},
+	{"id": "technology", "label": "科技研究", "subtitle": "编排研究投入，浏览技术网络与时代前沿", "icon": &"country.technology", "hud_icon": &"hud.country.technology", "accent": UITokens.CLIMATE, "available": true},
+	{"id": "ideology", "label": "国家理念", "subtitle": "形成国家道路，审视社会支持与民族精神", "icon": &"country.politics", "hud_icon": &"hud.country.ideology", "accent": UITokens.ACCENT, "available": true},
+	{"id": "economy", "label": "国民经济", "subtitle": "阶层民生、产业运营、投资风向、物资贸易与财政", "icon": &"country.economy", "hud_icon": &"hud.country.economy", "accent": UITokens.RESOURCE, "available": true},
+	{"id": "military", "label": "军事", "subtitle": "尚未开放", "icon": &"country.military", "hud_icon": &"hud.country.military", "accent": UITokens.RISK, "available": false},
+	{"id": "diplomacy", "label": "外交", "subtitle": "尚未开放", "icon": &"country.diplomacy", "hud_icon": &"hud.country.diplomacy", "accent": UITokens.WATER, "available": false},
 ]
 const HEADER_HEIGHT := 30.0
 
@@ -77,8 +77,8 @@ func _ready() -> void:
 			or _ideology_workspace == null or _hinges == null or close_button == null:
 		push_error("CountryPanel 必须通过 country_panel.tscn 实例化。")
 		return
-	_country_mark.texture = IconCatalog.texture_for_key(&"country.affairs")
-	_country_mark.modulate = UITokens.ARCHIVE_OXBLOOD
+	_country_mark.texture = IconCatalog.texture_for_key(&"family.workspace.crest")
+	_country_mark.modulate = Color.WHITE
 	_setup_navigation()
 	IconButton.apply(close_button, &"action.close", IconButton.SMALL, "关闭国家事务")
 	close_button.pressed.connect(close_panel)
@@ -231,15 +231,16 @@ func _setup_navigation() -> void:
 		desktop.focus_mode = Control.FOCUS_NONE
 		desktop.disabled = not available
 		desktop.tooltip_text = String(definition.subtitle)
+		var nav_icon_key: StringName = definition.get("hud_icon", definition.icon)
 		var icon := desktop.get_node("Row/Icon") as TextureRect
-		icon.texture = IconCatalog.texture_for_key(definition.icon)
-		icon.modulate = definition.accent if available else UITokens.ARCHIVE_INK_MUTED
+		icon.texture = IconCatalog.texture_for_key(nav_icon_key)
+		icon.modulate = Color.WHITE if available else Color(0.76, 0.72, 0.64, 0.48)
 		var caption := desktop.get_node("Row/Caption") as Label
 		caption.text = String(definition.label)
 		mobile.focus_mode = Control.FOCUS_NONE
 		mobile.disabled = not available
 		mobile.tooltip_text = String(definition.subtitle)
-		mobile.icon = IconCatalog.texture_for_key(definition.icon)
+		mobile.icon = IconCatalog.texture_for_key(nav_icon_key)
 		mobile.add_theme_constant_override("icon_max_width", 22)
 		if available:
 			desktop.pressed.connect(_request_section.bind(section_id))
@@ -269,8 +270,7 @@ func _update_navigation_state() -> void:
 					Color("#3a2414") if not desktop.disabled else Color("#8a7a62")))
 		var icon := desktop.get_node_or_null("Row/Icon") as TextureRect if desktop != null else null
 		if icon != null and not desktop.disabled:
-			var accent: Color = _definition_for(String(section_id)).get("accent", UITokens.ACCENT)
-			icon.modulate = Color("#fff0c8") if active else accent.lerp(UITokens.ARCHIVE_INK, 0.35)
+			icon.modulate = Color(1.08, 1.05, 0.98, 1.0) if active else Color.WHITE
 		if mobile != null and not mobile.disabled:
 			mobile.button_pressed = active
 

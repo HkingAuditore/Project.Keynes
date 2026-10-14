@@ -1,0 +1,196 @@
+[gd_scene format=3 uid="uid://dd2ye4l8p7pax"]
+
+[ext_resource type="Script" uid="uid://de3gfw3ybpae3" path="res://scripts/ui/components/dossier/inspector_note_list.gd" id="1_notes"]
+[ext_resource type="Script" uid="uid://04tee67qohrt" path="res://scripts/ui/components/dossier/dossier_bar_list.gd" id="2_bars"]
+[ext_resource type="Script" uid="uid://ctit4vqjpihge" path="res://scripts/ui/components/dossier/dossier_diverging_bar.gd" id="3_diverging"]
+[ext_resource type="Script" uid="uid://d0g2n3dvxeevs" path="res://scripts/ui/components/dossier/dossier_stacked_bar.gd" id="4_stacked"]
+
+[node name="BuildingDossier" type="VBoxContainer" unique_id=1813135752]
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="OverviewPage" type="VBoxContainer" parent="." unique_id=898492252]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="Notes" type="Control" parent="OverviewPage" unique_id=247833847]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("1_notes")
+
+[node name="CapacityCard" type="PanelContainer" parent="OverviewPage" unique_id=1747265439]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierAside"
+
+[node name="Box" type="VBoxContainer" parent="OverviewPage/CapacityCard" unique_id=1362353778]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="OverviewPage/CapacityCard/Box" unique_id=1713090403]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="OverviewPage/CapacityCard/Box/Header" unique_id=505195856]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierSectionTitle"
+text = "劳动力配置"
+clip_text = true
+text_overrun_behavior = 3
+
+[node name="Hint" type="Label" parent="OverviewPage/CapacityCard/Box/Header" unique_id=2017210392]
+layout_mode = 2
+theme_type_variation = &"PKDossierMuted"
+text = "到岗"
+
+[node name="CapacityBars" type="Control" parent="OverviewPage/CapacityCard/Box" unique_id=1579320259]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("2_bars")
+
+[node name="Rule" type="ColorRect" parent="OverviewPage/CapacityCard/Box" unique_id=1090787586]
+custom_minimum_size = Vector2(0, 1)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.42, 0.29, 0.16, 0.24)
+
+[node name="JobKicker" type="Label" parent="OverviewPage/CapacityCard/Box" unique_id=995481537]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierKicker"
+text = "岗位"
+clip_text = true
+text_overrun_behavior = 3
+
+[node name="JobBars" type="Control" parent="OverviewPage/CapacityCard/Box" unique_id=620485171]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("2_bars")
+
+[node name="JobEmptyNote" type="Label" parent="OverviewPage/CapacityCard/Box" unique_id=1160389672]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+
+[node name="ProductionCard" type="PanelContainer" parent="OverviewPage" unique_id=1564609049]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierAside"
+
+[node name="Box" type="VBoxContainer" parent="OverviewPage/ProductionCard" unique_id=981083435]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="OverviewPage/ProductionCard/Box" unique_id=1079688194]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="OverviewPage/ProductionCard/Box/Header" unique_id=325506836]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierSectionTitle"
+text = "投入与产出结构"
+clip_text = true
+text_overrun_behavior = 3
+
+[node name="Hint" type="Label" parent="OverviewPage/ProductionCard/Box/Header" unique_id=574290232]
+layout_mode = 2
+theme_type_variation = &"PKDossierMuted"
+text = "每栋 / 每日"
+
+[node name="ProductionBars" type="Control" parent="OverviewPage/ProductionCard/Box" unique_id=566931210]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("2_bars")
+
+[node name="ProductionEmptyNote" type="Label" parent="OverviewPage/ProductionCard/Box" unique_id=390945947]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+
+[node name="UnusedInputsNote" type="Label" parent="OverviewPage/ProductionCard/Box" unique_id=1288231806]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+
+[node name="OperationsPage" type="VBoxContainer" parent="." unique_id=142582309]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="FinanceCard" type="PanelContainer" parent="OperationsPage" unique_id=1745027015]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierAside"
+
+[node name="Box" type="VBoxContainer" parent="OperationsPage/FinanceCard" unique_id=1338861480]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="OperationsPage/FinanceCard/Box" unique_id=2023035380]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="OperationsPage/FinanceCard/Box/Header" unique_id=908534840]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierSectionTitle"
+text = "本期营收与成本核算"
+clip_text = true
+text_overrun_behavior = 3
+
+[node name="Hint" type="Label" parent="OperationsPage/FinanceCard/Box/Header" unique_id=668261634]
+layout_mode = 2
+theme_type_variation = &"PKDossierMuted"
+text = "暗红成本 · 铜绿收入"
+
+[node name="FinanceWarning" type="Label" parent="OperationsPage/FinanceCard/Box" unique_id=551107250]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierKicker"
+autowrap_mode = 3
+
+[node name="FinanceDivergingBar" type="Control" parent="OperationsPage/FinanceCard/Box" unique_id=441971542]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(200, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_diverging")
+
+[node name="RevenueStackedBar" type="Control" parent="OperationsPage/FinanceCard/Box" unique_id=792067407]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(200, 58)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("4_stacked")
+
+[node name="CostStackedBar" type="Control" parent="OperationsPage/FinanceCard/Box" unique_id=1273735786]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(200, 58)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("4_stacked")
+
+[node name="FinanceNote" type="Label" parent="OperationsPage/FinanceCard/Box" unique_id=1288193800]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3

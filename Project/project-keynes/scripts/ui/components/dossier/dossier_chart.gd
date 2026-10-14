@@ -104,7 +104,9 @@ func _icon(key: StringName, rect: Rect2, color: Color) -> void:
 		return
 	var texture := IconCatalog.texture_for_key(key)
 	if texture != null:
-		draw_texture_rect(texture, rect, false, color)
+		var modulate_col := Color.WHITE \
+			if IconCatalog.family_for_key(key) == &"project_keynes" else color
+		draw_texture_rect(texture, rect, false, modulate_col)
 		return
 	var glyph := IconCatalog.glyph_for_key(key)
 	if glyph.is_empty():

@@ -73,16 +73,16 @@ corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
 
 [sub_resource type="StyleBoxTexture" id="Card"]
-content_margin_left = 14.0
-content_margin_top = 14.0
-content_margin_right = 14.0
-content_margin_bottom = 14.0
+content_margin_left = 12.0
+content_margin_top = 10.0
+content_margin_right = 12.0
+content_margin_bottom = 10.0
 texture = ExtResource("5_card_frame")
 texture_margin_left = 24.0
 texture_margin_top = 22.0
 texture_margin_right = 24.0
 texture_margin_bottom = 22.0
-modulate_color = Color(1, 1, 1, 0.74)
+modulate_color = Color(1, 0.99, 0.96, 0.88)
 
 [sub_resource type="StyleBoxFlat" id="MetricCell"]
 content_margin_left = 8.0
@@ -91,7 +91,7 @@ content_margin_right = 8.0
 content_margin_bottom = 4.0
 bg_color = Color(0, 0, 0, 0)
 border_width_right = 1
-border_color = Color(0.34, 0.23, 0.13, 0.36)
+border_color = Color(0.38, 0.26, 0.15, 0.42)
 
 [sub_resource type="FontVariation" id="BodySemibold"]
 base_font = ExtResource("1_font")
@@ -153,9 +153,103 @@ texture_margin_right = 24.0
 texture_margin_bottom = 22.0
 modulate_color = Color(1, 1, 1, 0.66)
 
+[sub_resource type="StyleBoxFlat" id="TierActive"]
+content_margin_left = 10.0
+content_margin_top = 5.0
+content_margin_right = 10.0
+content_margin_bottom = 5.0
+bg_color = Color(0.55, 0.19, 0.13, 0.12)
+border_width_left = 3
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.69, 0.49, 0.24, 0.88)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="TierLocked"]
+content_margin_left = 10.0
+content_margin_top = 4.0
+content_margin_right = 10.0
+content_margin_bottom = 4.0
+bg_color = Color(0.36, 0.25, 0.13, 0.04)
+border_width_left = 2
+border_color = Color(0.42, 0.29, 0.16, 0.32)
+
 [sub_resource type="FontVariation" id="SerifStrong"]
 base_font = ExtResource("4_serif")
 variation_embolden = 0.9
+
+[sub_resource type="StyleBoxFlat" id="TraitBadgeNeg"]
+content_margin_left = 6.0
+content_margin_top = 2.0
+content_margin_right = 6.0
+content_margin_bottom = 2.0
+bg_color = Color(0.55, 0.19, 0.13, 0.15)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.55, 0.19, 0.13, 0.65)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="TraitBadgePos"]
+content_margin_left = 6.0
+content_margin_top = 2.0
+content_margin_right = 6.0
+content_margin_bottom = 2.0
+bg_color = Color(0.24, 0.46, 0.4, 0.16)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.24, 0.46, 0.4, 0.62)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="ScrollGrabber"]
+bg_color = Color(0.54, 0.36, 0.2, 0.78)
+border_width_left = 1
+border_width_right = 1
+border_color = Color(0.73, 0.51, 0.27, 0.88)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="ScrollGrabberHover"]
+bg_color = Color(0.7, 0.42, 0.22, 0.9)
+border_width_left = 1
+border_width_right = 1
+border_color = Color(0.88, 0.66, 0.34, 1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="ScrollGrabberPressed"]
+bg_color = Color(0.78, 0.5, 0.25, 1)
+border_width_left = 1
+border_width_right = 1
+border_color = Color(0.98, 0.79, 0.43, 1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="ScrollTrack"]
+bg_color = Color(0.34, 0.25, 0.16, 0.22)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
 
 [sub_resource type="StyleBoxFlat" id="ProgressBackground"]
 bg_color = Color(0.29, 0.23, 0.17, 0.32)
@@ -268,13 +362,37 @@ FamilySubtitle/font_sizes/font_size = 16
 FamilySubtitle/fonts/font = SubResource("BodyMedium")
 FamilySummaryBand/base_type = &"PanelContainer"
 FamilySummaryBand/styles/panel = SubResource("SummaryBand")
+FamilyTierActive/base_type = &"PanelContainer"
+FamilyTierActive/styles/panel = SubResource("TierActive")
+FamilyTierLocked/base_type = &"PanelContainer"
+FamilyTierLocked/styles/panel = SubResource("TierLocked")
 FamilyTitle/base_type = &"Label"
 FamilyTitle/colors/font_color = Color(0.045, 0.024, 0.012, 1)
 FamilyTitle/font_sizes/font_size = 31
 FamilyTitle/fonts/font = SubResource("SerifStrong")
+FamilyTraitBadgeNeg/base_type = &"Label"
+FamilyTraitBadgeNeg/colors/font_color = Color(0.52, 0.16, 0.1, 1)
+FamilyTraitBadgeNeg/font_sizes/font_size = 13
+FamilyTraitBadgeNeg/fonts/font = SubResource("BodySemibold")
+FamilyTraitBadgeNeg/styles/normal = SubResource("TraitBadgeNeg")
+FamilyTraitBadgePos/base_type = &"Label"
+FamilyTraitBadgePos/colors/font_color = Color(0.18, 0.38, 0.32, 1)
+FamilyTraitBadgePos/font_sizes/font_size = 13
+FamilyTraitBadgePos/fonts/font = SubResource("BodySemibold")
+FamilyTraitBadgePos/styles/normal = SubResource("TraitBadgePos")
+HScrollBar/styles/grabber = SubResource("ScrollGrabber")
+HScrollBar/styles/grabber_highlight = SubResource("ScrollGrabberHover")
+HScrollBar/styles/grabber_pressed = SubResource("ScrollGrabberPressed")
+HScrollBar/styles/scroll = SubResource("ScrollTrack")
+HScrollBar/styles/scroll_focus = SubResource("ScrollTrack")
 Label/colors/font_color = Color(0.075, 0.043, 0.022, 1)
 Label/colors/font_shadow_color = Color(0, 0, 0, 0)
 Label/constants/shadow_offset_x = 0
 Label/constants/shadow_offset_y = 0
 ProgressBar/styles/background = SubResource("ProgressBackground")
 ProgressBar/styles/fill = SubResource("ProgressFill")
+VScrollBar/styles/grabber = SubResource("ScrollGrabber")
+VScrollBar/styles/grabber_highlight = SubResource("ScrollGrabberHover")
+VScrollBar/styles/grabber_pressed = SubResource("ScrollGrabberPressed")
+VScrollBar/styles/scroll = SubResource("ScrollTrack")
+VScrollBar/styles/scroll_focus = SubResource("ScrollTrack")

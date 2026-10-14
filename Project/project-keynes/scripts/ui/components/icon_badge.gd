@@ -31,76 +31,87 @@ func _draw() -> void:
 	if icon_key == &"":
 		return
 	var center := size * 0.5
-	var radius := minf(size.x, size.y) * 0.38
-	var edge := accent.lerp(UITokens.TEXT_MAIN, 0.22)
-	var ink := accent.lerp(UITokens.TEXT_MAIN, 0.38)
+	var span := minf(size.x, size.y)
+	var radius := span * 0.44
+	var ink := accent.lerp(UITokens.DOSSIER_INK, 0.46)
+	var cut_edge := Color(1.0, 0.96, 0.86, 0.88)
 	var texture := IconCatalog.texture_for_key(icon_key)
-	draw_circle(center + Vector2(0.0, 1.0), radius + 2.0, Color(0.0, 0.0, 0.0, 0.28))
-	draw_circle(center, radius + 1.4, Color(edge.r, edge.g, edge.b, 0.62))
-	draw_circle(center, radius, UITokens.WALNUT)
-	draw_arc(center, radius - 1.0, deg_to_rad(205.0), deg_to_rad(335.0), 18,
-		Color(1.0, 0.90, 0.66, 0.16), 1.2, true)
 	if texture != null:
-		var icon_size := radius * 1.35
-		draw_texture_rect(texture, Rect2(center - Vector2.ONE * icon_size * 0.5,
-			Vector2.ONE * icon_size), false, ink)
+		var fam := IconCatalog.family_for_key(icon_key)
+		if fam == &"project_keynes":
+			var crest_size := span * 0.92
+			draw_texture_rect(texture, Rect2(center - Vector2.ONE * crest_size * 0.5,
+				Vector2.ONE * crest_size), false, Color.WHITE)
+			return
+		var icon_size := span * 0.82
+		var tex_rect := Rect2(center - Vector2.ONE * icon_size * 0.5, Vector2.ONE * icon_size)
+		draw_texture_rect(texture, tex_rect, false, ink)
 		return
+	var is_chevron := icon_key == &"action.chevron_right" or icon_key == &"action.chevron_down"
 	var material_label := IconCatalog.label_for_key(icon_key)
 	if not material_label.is_empty():
 		var glyph := IconCatalog.glyph_for_key(icon_key)
-		var glyph_size := 11
+		var glyph_size := clampi(int(round(span * 0.58)), 11, 18)
 		var glyph_extent := FA_SOLID_FONT.get_string_size(
 			glyph, HORIZONTAL_ALIGNMENT_LEFT, -1.0, glyph_size)
 		var glyph_baseline := center + Vector2(
-			-glyph_extent.x * 0.5 - 1.5, glyph_extent.y * 0.22 - 1.5)
+			-glyph_extent.x * 0.5 - 1.5, glyph_extent.y * 0.30 - 1.5)
+		draw_string(FA_SOLID_FONT, glyph_baseline + Vector2(0.8, 1.0), glyph,
+			HORIZONTAL_ALIGNMENT_LEFT, -1.0, glyph_size, cut_edge)
 		draw_string(FA_SOLID_FONT, glyph_baseline, glyph,
 			HORIZONTAL_ALIGNMENT_LEFT, -1.0, glyph_size,
-			Color(ink.r, ink.g, ink.b, 0.58))
+			Color(ink.r, ink.g, ink.b, 0.82))
 		var label_font := get_theme_default_font()
 		var label_size := 8 if material_label.length() <= 2 else 6
 		var measured := label_font.get_string_size(
 			material_label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, label_size)
 		var label_baseline := center + Vector2(
-			radius - measured.x - 1.0, radius - 1.0)
-		draw_circle(label_baseline + Vector2(measured.x * 0.5, -measured.y * 0.32),
-			maxf(4.0, measured.x * 0.58), UITokens.WALNUT)
+			radius - measured.x, radius)
+		var pill_center := label_baseline + Vector2(measured.x * 0.5, -measured.y * 0.32)
+		var pill_r := maxf(4.5, measured.x * 0.58)
+		draw_circle(pill_center, pill_r + 0.8, cut_edge)
+		draw_circle(pill_center, pill_r, UITokens.DOSSIER_PAPER_DEEP)
 		draw_string(label_font, label_baseline, material_label,
-			HORIZONTAL_ALIGNMENT_LEFT, -1.0, label_size, ink)
+			HORIZONTAL_ALIGNMENT_LEFT, -1.0, label_size, UITokens.DOSSIER_OXBLOOD)
 		return
 	var overlay_glyph := String(IconCatalog.spec_for(icon_key).get("overlay_glyph", ""))
 	if not overlay_glyph.is_empty():
-		_draw_composite_glyph(center, radius, ink, overlay_glyph)
+		_draw_composite_glyph(center, radius, span, ink, cut_edge, overlay_glyph)
 		return
 	var glyph := IconCatalog.glyph_for_key(icon_key)
-	var font_size := 13
+	var font_size := clampi(int(round(span * (0.64 if is_chevron else 0.72))), 11, 20)
 	var text_size := FA_SOLID_FONT.get_string_size(
 		glyph, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size)
 	var baseline := center + Vector2(-text_size.x * 0.5, text_size.y * 0.36)
-	draw_string(FA_SOLID_FONT, baseline + Vector2(0.0, 1.0), glyph,
-		HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, Color(0.0, 0.0, 0.0, 0.36))
+	draw_string(FA_SOLID_FONT, baseline + Vector2(0.8, 1.0), glyph,
+		HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, cut_edge)
 	draw_string(FA_SOLID_FONT, baseline, glyph,
 		HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, ink)
 
 
-func _draw_composite_glyph(center: Vector2, radius: float, ink: Color,
-		overlay_glyph: String) -> void:
+func _draw_composite_glyph(center: Vector2, radius: float, span: float, ink: Color,
+		cut_edge: Color, overlay_glyph: String) -> void:
 	var base_glyph := IconCatalog.glyph_for_key(icon_key)
-	var base_size := 11
+	var base_size := clampi(int(round(span * 0.58)), 11, 18)
 	var base_extent := FA_SOLID_FONT.get_string_size(
 		base_glyph, HORIZONTAL_ALIGNMENT_LEFT, -1.0, base_size)
-	var base_line := center + Vector2(-base_extent.x * 0.5 - 2.0, base_extent.y * 0.25 - 2.0)
+	var base_line := center + Vector2(-base_extent.x * 0.5 - 1.5, base_extent.y * 0.28 - 1.5)
+	draw_string(FA_SOLID_FONT, base_line + Vector2(0.8, 1.0), base_glyph,
+		HORIZONTAL_ALIGNMENT_LEFT, -1.0, base_size, cut_edge)
 	draw_string(FA_SOLID_FONT, base_line, base_glyph,
 		HORIZONTAL_ALIGNMENT_LEFT, -1.0, base_size,
-		Color(ink.r, ink.g, ink.b, 0.52))
-	var overlay_size := 9
+		Color(ink.r, ink.g, ink.b, 0.78))
+	var overlay_size := clampi(int(round(span * 0.44)), 9, 14)
 	var overlay_extent := FA_SOLID_FONT.get_string_size(
 		overlay_glyph, HORIZONTAL_ALIGNMENT_LEFT, -1.0, overlay_size)
 	var overlay_line := center + Vector2(
-		radius - overlay_extent.x - 1.0, radius - 1.0)
-	draw_circle(overlay_line + Vector2(overlay_extent.x * 0.5, -overlay_extent.y * 0.32),
-		maxf(4.0, overlay_extent.x * 0.62), UITokens.WALNUT)
+		radius - overlay_extent.x, radius)
+	var pill_center := overlay_line + Vector2(overlay_extent.x * 0.5, -overlay_extent.y * 0.32)
+	var pill_r := maxf(4.5, overlay_extent.x * 0.62)
+	draw_circle(pill_center, pill_r + 0.8, cut_edge)
+	draw_circle(pill_center, pill_r, UITokens.DOSSIER_PAPER_DEEP)
 	draw_string(FA_SOLID_FONT, overlay_line, overlay_glyph,
-		HORIZONTAL_ALIGNMENT_LEFT, -1.0, overlay_size, ink)
+		HORIZONTAL_ALIGNMENT_LEFT, -1.0, overlay_size, UITokens.DOSSIER_OXBLOOD)
 
 
 # Compatibility wrappers keep existing components source-compatible while all

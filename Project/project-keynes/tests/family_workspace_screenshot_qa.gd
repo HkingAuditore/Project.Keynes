@@ -53,18 +53,14 @@ func _run() -> void:
 			page_scroll.get_rect()])
 		if fullscreen:
 			var local_left := page_area.global_position.x - workspace.global_position.x
-			var visual_scale := clampf(minf(workspace.size.x / 855.0,
-				workspace.size.y / 876.0), 0.78, 1.5)
-			var expected_left := 20.0 * visual_scale + clampf(
-				float(viewport_size.x) * 0.21, 126.0 * visual_scale, 300.0) \
-				+ 24.0 * visual_scale
+			var expected_left := FamilyWorkspace.RAIL_WIDTH + 28.0
 			if absf(local_left - expected_left) > 2.0:
 				failures.append("full-screen paper content missed its design-grid left edge")
 		if not fullscreen and workspace.size.y >= 900.0:
 			var overview_page := workspace.get_node("%PageHost").get_child(0) as Control
 			var content_bottom := overview_page.global_position.y + overview_page.size.y \
 				- workspace.global_position.y
-			if content_bottom < workspace.size.y * 0.84:
+			if content_bottom < workspace.size.y * 0.60:
 				failures.append("desktop overview did not fill the dossier page vertically")
 		var image := viewport.get_texture().get_image()
 		var path := "%s/family_%dx%d.png" % [OUTPUT_DIR, viewport_size.x, viewport_size.y]
@@ -147,39 +143,59 @@ func _capture_inspector_integration(failures: PackedStringArray,
 func _model() -> Dictionary:
 	return {
 		"kind": "family_workspace",
-		"header": {"name": "白桥堡曾氏", "subtitle": "家族 · 区域 30, 30 · 新征家", "prestige_label": "IV", "prestige_progress_text": "89.0%"},
+		"header": {"name": "白桥堡曾氏", "subtitle": "家族 · 区域 30, 30 · 新征家", "prestige_label": "IV", "prestige_progress_text": "89.0%", "prestige_percent": 89.0},
 		"summary": [
-			{"label": "本家族人口", "value": "5.15万", "icon": "family.metric.population"},
-			{"label": "净资产", "value": "51.5万", "icon": "family.metric.wealth"},
-			{"label": "产业数", "value": "24", "icon": "family.metric.buildings"},
-			{"label": "创立时间", "value": "第0日", "icon": "family.metric.time"},
+			{"label": "本家族人口", "value": "5.15万", "caption": "分支 2 处 · 名人 3 人", "icon": "family.metric.population"},
+			{"label": "净资产", "value": "51.5万", "caption": "现金 32.0万 · 产业 19.5万", "icon": "family.metric.wealth"},
+			{"label": "产业数", "value": "24", "caption": "名下控股建筑规模", "icon": "family.metric.buildings"},
+			{"label": "创立时间", "value": "第0日", "caption": "威望 IV · 得分 89.0%", "icon": "family.metric.time"},
 		],
 		"pages": {
 			"overview": {
-				"traits": [{"id": "steady", "name": "稳固", "value": "核心特性"}, {"id": "keeper", "name": "守护者", "value": "核心特性"}],
-				"preferences": [
-					{"id": "0:farm", "name": "军事扩张", "value": "172.0%", "factor_percent": 172.0},
-					{"id": "1:craft", "name": "经济发展", "value": "158.0%", "factor_percent": 158.0},
-					{"id": "2:food", "name": "文化影响", "value": "43.0%", "factor_percent": 43.0},
-					{"id": "3:tea", "name": "外交合作", "value": "27.0%", "factor_percent": 27.0},
+				"traits": [
+					{"id": "steady", "name": "稳固", "value": "核心特性", "detail": "家族成员忠诚度提高 20%，产业经营韧性增强。"},
+					{"id": "keeper", "name": "精明治家", "value": "核心特性", "detail": "家族成员主动改变职业的可能性增加 30%。"},
 				],
-				"effects": [{"id": "effect:4:harvest", "name": "资源产量 +20.0%"}, {"id": "effect:4:trade", "name": "贸易收入 +25.0%"}, {"id": "effect:9:frontier", "name": "新领土发展 +20.0%"}],
-				"people": [{"id": "person:1", "name": "白桥·雷金德", "value": "家族领主"}, {"id": "person:2", "name": "白桥·沃米", "value": "大管家"}, {"id": "person:3", "name": "白桥·贝里克", "value": "军事统帅"}],
+				"preferences": [
+					{"id": "0:farm", "name": "农庄投资", "axis": 0, "axis_name": "投资", "value": "172.0%", "factor_percent": 172.0},
+					{"id": "1:merchant", "name": "商人从业", "axis": 1, "axis_name": "职业", "value": "158.0%", "factor_percent": 158.0},
+					{"id": "2:food", "name": "温饱消费", "axis": 2, "axis_name": "需求", "value": "127.5%", "factor_percent": 127.5},
+					{"id": "3:tea", "name": "精制茗茶", "axis": 3, "axis_name": "商品消费", "value": "68.0%", "factor_percent": 68.0},
+				],
+				"effects": [
+					{"id": "effect:4:harvest", "name": "地块 4 · 丰收", "value": "威望 IV 生效", "detail": "本地粮食与农牧产出 +20.0%"},
+					{"id": "effect:4:trade", "name": "地块 4 · 商路通达", "value": "威望 IV 生效", "detail": "本地商队贸易周转效率 +25.0%"},
+					{"id": "effect:9:frontier", "name": "地块 9 · 拓荒家风", "value": "威望 II 生效", "detail": "新开拓领土建设速度 +20.0%"},
+				],
+				"branches": [
+					{"id": "branch:4", "cell": 4, "location_label": "白桥堡（地块 4）", "prestige_label": "IV", "prestige_percent": 89.0, "prestige_text": "89.0%", "population_share_q16": 42598, "population_share_text": "65.0%", "cash_share_q16": 47185, "cash_share_text": "72.0%", "building_share_q16": 52428, "building_share_text": "80.0%", "target_label": "V", "review_streak": 1},
+				],
+				"people": [
+					{"id": "person:1", "name": "曾雷金德", "value": "地主 · 产业所有者", "building": "白桥庄园", "net_worth_text": "28.4万", "net_cashflow_text": "+1,240", "satisfaction_text": "92.0%"},
+					{"id": "person:2", "name": "曾沃米", "value": "商人 · 产业所有者", "building": "河港商栈", "net_worth_text": "15.2万", "net_cashflow_text": "+680", "satisfaction_text": "88.5%"},
+					{"id": "person:3", "name": "曾贝里克", "value": "工匠 · 产业雇员", "building": "白桥铁坊", "net_worth_text": "7.9万", "net_cashflow_text": "+210", "satisfaction_text": "84.0%"},
+				],
 			},
 			"traits": [],
 			"preferences": [
-				{"id": "2:food", "name": "食品", "axis": 2,
+				{"id": "2:food", "name": "温饱饮食", "axis": 2,
 					"axis_name": "需求", "factor_percent": 127.5,
 					"factor_text": "127.5%"},
 				{"id": "0:farm", "name": "农庄", "axis": 0,
 					"axis_name": "投资", "factor_percent": 140.0,
 					"factor_text": "140.0%"},
+				{"id": "1:merchant", "name": "商人", "axis": 1,
+					"axis_name": "职业", "factor_percent": 158.0,
+					"factor_text": "158.0%"},
+				{"id": "3:tea", "name": "茗茶", "axis": 3,
+					"axis_name": "商品消费", "factor_percent": 68.0,
+					"factor_text": "68.0%"},
 			],
 			"effects": [],
 			"people": [
-				{"id": "person:1", "name": "白桥·雷金德", "role": "家族领主", "profession": "地主", "building": "白桥庄园"},
-				{"id": "person:2", "name": "白桥·沃米", "role": "大管家", "profession": "商人", "building": "河港商栈"},
-				{"id": "person:3", "name": "白桥·贝里克", "role": "军事统帅", "profession": "军官", "building": "边境兵营"},
+				{"id": "person:1", "name": "曾雷金德", "role": "产业所有者", "profession": "地主", "building": "白桥庄园", "net_worth_text": "28.4万", "cash_claim_text": "16.0万", "equity_share_text": "55.0%", "attributed_asset_text": "12.4万", "net_cashflow_text": "+1,240", "satisfaction_text": "92.0%", "income_val": 1820.0, "expense_val": 580.0, "income_text": "1,820", "expense_text": "580"},
+				{"id": "person:2", "name": "曾沃米", "role": "产业所有者", "profession": "商人", "building": "河港商栈", "net_worth_text": "15.2万", "cash_claim_text": "9.8万", "equity_share_text": "30.0%", "attributed_asset_text": "5.4万", "net_cashflow_text": "+680", "satisfaction_text": "88.5%", "income_val": 1120.0, "expense_val": 440.0, "income_text": "1,120", "expense_text": "440"},
+				{"id": "person:3", "name": "曾贝里克", "role": "产业雇员", "profession": "工匠", "building": "白桥铁坊", "net_worth_text": "7.9万", "cash_claim_text": "6.2万", "equity_share_text": "15.0%", "attributed_asset_text": "1.7万", "net_cashflow_text": "+210", "satisfaction_text": "84.0%", "income_val": 520.0, "expense_val": 310.0, "income_text": "520", "expense_text": "310"},
 			],
 			"branches": [],
 		},

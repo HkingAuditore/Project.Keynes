@@ -11,12 +11,17 @@ func _run() -> void:
 	root.add_child(top_bar)
 	await process_frame
 
+	var gm_button: Button = top_bar.get("_gm_button")
+	_expect(gm_button != null and not gm_button.visible,
+		"GM 按钮在 UI 顶栏隐藏（仅通过键盘呼出）", failures)
+
 	var button: Button = top_bar.get("_day_night_button")
 	_expect(button != null, "昼夜按钮已创建", failures)
 	if button != null:
 		top_bar.set_day_night_enabled(true)
 		_expect(button.toggle_mode, "开启状态同步后仍保留 toggle_mode", failures)
 		_expect(button.button_pressed, "开启状态正确回显", failures)
+		_expect(button.text.is_empty() and button.icon != null, "昼夜按钮采用纯图标显示", failures)
 
 		var emitted_states: Array[bool] = []
 		top_bar.day_night_toggled.connect(func(enabled: bool) -> void:
@@ -26,6 +31,7 @@ func _run() -> void:
 		button.button_pressed = false
 		_expect(emitted_states == [false], "第一次点击可关闭昼夜循环", failures)
 		_expect(button.toggle_mode, "关闭状态回读后仍保留 toggle_mode", failures)
+		_expect(button.text.is_empty() and button.icon != null, "永昼状态仍采用纯图标显示", failures)
 		button.button_pressed = true
 		_expect(emitted_states == [false, true], "第二次点击可重新开启昼夜循环", failures)
 		_expect(button.toggle_mode and button.button_pressed,
@@ -51,6 +57,27 @@ func _run() -> void:
 		_expect(emitted_pause_states == [false, true], "继续后可再次点击暂停", failures)
 		_expect(pause_button.toggle_mode and pause_button.button_pressed,
 			"再次暂停后的按钮状态稳定", failures)
+
+	var speed_button: Button = top_bar.get("_speed_button")
+	_expect(speed_button != null, "倍速循环切换按钮已创建", failures)
+	if speed_button != null:
+		top_bar.update_time_state(0, 7, 1, false, 1.0)
+		_expect(speed_button.text == "1×", "初始倍速显示 1×", failures)
+		var emitted_speeds: Array[float] = []
+		top_bar.speed_selected.connect(func(spd: float) -> void:
+			emitted_speeds.append(spd)
+		)
+		speed_button.pressed.emit()
+		_expect(emitted_speeds == [2.0] and speed_button.text == "2×",
+			"左键点击从 1× 递增至 2×", failures)
+		top_bar.update_time_state(0, 7, 1, false, 50.0)
+		_expect(speed_button.text == "50×", "状态回读更新至 50×", failures)
+		speed_button.pressed.emit()
+		_expect(is_equal_approx(emitted_speeds.back(), 1.0) and speed_button.text == "1×",
+			"50× 再次左键点击回环至 1×", failures)
+		top_bar.cycle_speed_backward()
+		_expect(is_equal_approx(emitted_speeds.back(), 50.0) and speed_button.text == "50×",
+			"右键/逆向循环从 1× 回退至 50×", failures)
 
 	for failure in failures:
 		push_error("[player-top-bar-day-night] FAIL: %s" % failure)

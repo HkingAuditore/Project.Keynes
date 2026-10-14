@@ -1229,7 +1229,11 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 func _yield_generation_frame() -> void:
 	var main_loop := Engine.get_main_loop()
 	if main_loop is SceneTree:
-		await (main_loop as SceneTree).process_frame
+		var tree := main_loop as SceneTree
+		await tree.process_frame
+		if DisplayServer.get_name() != "headless":
+			for _i in range(3):
+				await tree.process_frame
 
 
 func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,

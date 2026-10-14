@@ -60,8 +60,10 @@ var _temperature_history_order: Array[int] = []
 var _detail_history_cell := -1
 var _detail_history_market_day := -1
 var _detail_history_pop_day := -1
+var _detail_history_building_day := -1
 var _good_history: Dictionary = {}
 var _cohort_history: Dictionary = {}
+var _building_history: Dictionary = {}
 var _need_display_names: Dictionary = {}
 var _need_display_names_loaded := false
 var _player_country_resolved := false
@@ -84,8 +86,10 @@ func set_context(map: MapData, generator, view_adapter: DCViewAdapter, world_clo
 	_detail_history_cell = -1
 	_detail_history_market_day = -1
 	_detail_history_pop_day = -1
+	_detail_history_building_day = -1
 	_good_history.clear()
 	_cohort_history.clear()
+	_building_history.clear()
 	_player_country_resolved = false
 	_player_country_handle_cache = -1
 
@@ -497,6 +501,19 @@ static func family_workspace_model(detail: Dictionary) -> Dictionary:
 	effects.append_array(row.get("trigger_rows", []))
 	effects = _family_unique_rows(effects,
 		["cell", "kind", "id", "title", "name", "value", "detail"])
+	var default_prestige_level := int(row.get("prestige_level", 0))
+	for effect_idx in range(effects.size()):
+		var eff: Dictionary = effects[effect_idx]
+		if not eff.has("prestige_level"):
+			eff["prestige_level"] = default_prestige_level
+		if not eff.has("tier_statements") or (eff.get("tier_statements", []) as Array).is_empty():
+			var raw_text := String(eff.get("detail", eff.get("value", "")))
+			var parsed_tiers := FamilyBuffCopy.prestige_statements(raw_text)
+			var tier_list: Array = []
+			for st in parsed_tiers:
+				tier_list.append(String(st))
+			eff["tier_statements"] = tier_list
+		effects[effect_idx] = eff
 	effects.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		var cell_a := int(a.get("cell", -1))
 		var cell_b := int(b.get("cell", -1))
@@ -532,6 +549,13 @@ static func family_workspace_model(detail: Dictionary) -> Dictionary:
 	var prestige_q16 := int(row.get("prestige_score_q16", 0))
 	var prestige_percent := float(prestige_q16) * 100.0 / 65536.0
 	var level := int(row.get("prestige_level", 0))
+	var notable_count := maxi(int(row.get("notable_people", 0)), people.size())
+	var branch_count := maxi(1, branches.size())
+	var cash_text := String(row.get("cash_claim", ""))
+	var asset_text := String(row.get("productive_asset_value", ""))
+	var wealth_caption := "现金 %s · 产业 %s" % [cash_text, asset_text] \
+		if not cash_text.is_empty() and not asset_text.is_empty() \
+		else ("现金 %s" % cash_text if not cash_text.is_empty() else "家族名下净值")
 	return {
 		"kind": "family_workspace",
 		"row_id": String(detail.get("row_id", "")),
@@ -544,19 +568,25 @@ static func family_workspace_model(detail: Dictionary) -> Dictionary:
 			"prestige_score_q16": prestige_q16,
 			"prestige_percent": prestige_percent,
 			"prestige_progress_text": _q16_percent_text(prestige_q16),
+			"origin_settlement_name": String(row.get("origin_settlement_name", "")),
+			"decline_reviews": int(row.get("decline_reviews", 0)),
 		},
 		"summary": [
 			{"id": "population", "label": "本家族人口",
 				"value": String(row.get("population", "0")),
+				"caption": "分支 %d 处 · 名人 %d 人" % [branch_count, notable_count],
 				"icon": "family.metric.population"},
 			{"id": "net_worth", "label": "净资产",
 				"value": String(row.get("net_worth", row.get("cash_claim", "0"))),
+				"caption": wealth_caption,
 				"icon": "family.metric.wealth"},
 			{"id": "owned_buildings", "label": "产业数",
 				"value": String(row.get("owned_buildings", "0")),
+				"caption": "名下控股建筑规模",
 				"icon": "family.metric.buildings"},
 			{"id": "founded_day", "label": "创立时间",
 				"value": "第%d日" % int(row.get("founded_day", 0)),
+				"caption": "威望 %s · 得分 %s" % [_prestige_text(level), _q16_percent_text(prestige_q16)],
 				"icon": "family.metric.time"},
 		],
 		"pages": {
@@ -565,6 +595,7 @@ static func family_workspace_model(detail: Dictionary) -> Dictionary:
 				"preferences": overview_preferences.slice(0, 4),
 				"effects": effects.slice(0, 4),
 				"people": people.slice(0, 5),
+				"branches": branches.slice(0, 3),
 			},
 			"traits": traits,
 			"preferences": sorted_preferences,
@@ -587,11 +618,14 @@ static func _family_unique_traits(rows: Array) -> Array:
 		if not row_value is Dictionary:
 			continue
 		var item := (row_value as Dictionary).duplicate(true)
-		var detail_key := _family_text_key(item.get("detail", ""))
+		var detail_text := String(item.get("detail", ""))
+		var detail_key := _family_text_key(detail_text)
 		var effect_key := _family_text_key(item.get("effect_summary", ""))
 		if not effect_key.is_empty() and effect_key == detail_key:
 			item["effect_summary"] = ""
 			effect_key = ""
+		if not item.has("badges"):
+			item["badges"] = FamilyBuffCopy.extract_trait_badges(detail_text)
 		var stable_id := _family_text_key(item.get("id", ""))
 		var key := "id:%s" % stable_id if not stable_id.is_empty() else \
 			"%s|%s|%s" % [_family_text_key(item.get("name", "")),
@@ -610,9 +644,28 @@ static func _family_unique_preferences(rows: Array) -> Array:
 		if not row_value is Dictionary:
 			continue
 		var item := (row_value as Dictionary).duplicate(true)
+		var factor_pct := float(item.get("factor_percent",
+			_parse_leading_float(item.get("value", "100"), 100.0)))
+		item["factor_percent"] = factor_pct
+		if not item.has("factor_text"):
+			item["factor_text"] = "%.1f%%" % factor_pct
+		var axis := int(item.get("axis", 0))
+		var stable_id := String(item.get("stable_id", ""))
+		if stable_id.is_empty() and String(item.get("id", "")).contains(":"):
+			stable_id = String(item.get("id", "")).get_slice(":", 1)
+			item["stable_id"] = stable_id
+		if not item.has("icon") or String(item.get("icon", "")).is_empty():
+			item["icon"] = String(_family_behavior_icon(
+				axis, stable_id, String(item.get("name", ""))))
+		var signed_delta := factor_pct - 100.0
+		item["signed_delta_percent"] = signed_delta
+		item["delta_text"] = "%s%.0f%%" % [
+			"+" if signed_delta >= 0.0 else "−", absf(signed_delta)]
+		item["bar_ratio"] = clampf(factor_pct / 200.0, 0.0, 1.0)
 		var axis_key := _family_text_key(item.get("axis", item.get("axis_name", "")))
 		var key := "%s|%s" % [axis_key, _family_text_key(item.get("name", ""))]
-		var deviation := absf(float(item.get("factor_percent", 100.0)) - 100.0)
+		var deviation := absf(factor_pct - 100.0)
+		item["deviation"] = deviation
 		if not result_index.has(key):
 			result_index[key] = result.size()
 			result.append(item)
@@ -1298,6 +1351,389 @@ static func cohort_dossier_model(row: Dictionary) -> Dictionary:
 		"demand_tier_bars": demand_tier_bars,
 		"active_demand_bars": active_demand_bars,
 		"inactive_alternatives_summary": inactive_summary,
+	}
+
+
+## 建筑详情卷宗视图模型：提炼 4 格 KPI、经营诊断批注、产能与气候适宜横条、
+## 岗位配置横条、投入产出结构横条（折叠未使用的可选替代原料），以及营收与成本堆叠对冲。
+static func building_dossier_model(row: Dictionary) -> Dictionary:
+	var count_text := String(row.get("count", "1 栋"))
+	var count_raw := maxi(1, int(row.get("count_raw", int(_parse_leading_float(count_text, 1.0)))))
+	var owner_raw := String(row.get("owner", "业主 · 本地产业"))
+	var owner_short := owner_raw.trim_prefix("业主 · ").strip_edges()
+	var status_text := String(row.get("status", "正常运转"))
+	var profit_label := String(row.get("profit_label", "利润"))
+	var profit_text := String(row.get("profit", "—"))
+	var profit_val := float(row.get("profit_float", _parse_leading_float(profit_text, 0.0)))
+
+	var job_rows: Array = row.get("job_rows", [])
+	var staff_actual := int(row.get("staffing_actual_raw", -1))
+	var staff_req := int(row.get("staffing_required_raw", -1))
+	if staff_actual < 0 or staff_req < 0:
+		staff_actual = 0
+		staff_req = 0
+		for raw_j in job_rows:
+			if not (raw_j is Dictionary):
+				continue
+			var jval := String((raw_j as Dictionary).get("value", ""))
+			var slash := jval.find("/")
+			if slash >= 0:
+				staff_actual += int(_parse_leading_float(jval.substr(0, slash), 0.0))
+				staff_req += int(_parse_leading_float(jval.substr(slash + 1), 0.0))
+	var staff_ratio := float(staff_actual) / float(staff_req) if staff_req > 0 else 1.0
+	var staff_text := "%d / %d" % [staff_actual, staff_req] if staff_req > 0 else "—"
+
+	var actual_util := float(row.get("actual_utilization_float", -1.0))
+	var planned_util := float(row.get("planned_utilization_float", 1.0))
+	if actual_util < 0.0:
+		var cap_pos := status_text.find("产能")
+		if cap_pos >= 0:
+			actual_util = clampf(_parse_leading_float(status_text.substr(cap_pos + 2), 100.0) / 100.0, 0.0, 1.0)
+		elif status_text.find("停") >= 0 or profit_text.find("停") >= 0:
+			actual_util = 0.0
+		else:
+			actual_util = 1.0
+
+	var state_summary: Dictionary = row.get("state_summary", {})
+	var is_halted := not state_summary.is_empty() or status_text.find("停") >= 0
+	var util_text := String(state_summary.get("label", "停产")) if is_halted \
+		else ("%.0f%%" % (actual_util * 100.0))
+	var util_caption := "正常运转"
+	if is_halted:
+		util_caption = String(state_summary.get("detail", "本期暂停生产"))
+	elif planned_util < 0.995:
+		util_caption = "计划限产 %.0f%%" % (planned_util * 100.0)
+	elif actual_util < 0.995:
+		util_caption = "受人力或环境制约"
+	else:
+		util_caption = "满负荷运转"
+
+	var finance: Dictionary = row.get("finance", {})
+	var rev_text := String(finance.get("revenue", "—"))
+	var cost_text := String(finance.get("cost", "—"))
+	var profit_positive := bool(finance.get("profit_positive", not profit_text.begins_with("-") and not profit_text.begins_with("−") and not is_halted))
+	var profit_caption := status_text
+	if not finance.is_empty():
+		profit_caption = "收 %s · 支 %s" % [rev_text, cost_text]
+
+	var kpis := [
+		{
+			"id": "building_scale",
+			"title": "建筑规模",
+			"value": float(count_raw),
+			"kind": "text",
+			"text": count_text,
+			"caption": "业主：%s" % owner_short if not owner_short.is_empty() else status_text,
+			"positive_good": true,
+			"icon": StringName(row.get("icon", &"economy.building")),
+		},
+		{
+			"id": "building_utilization",
+			"title": "产能出力",
+			"value": actual_util,
+			"kind": "text",
+			"text": util_text,
+			"caption": util_caption,
+			"tone": "risk" if (is_halted or actual_util < 0.25) else ("warn" if actual_util < 0.75 else ""),
+			"positive_good": true,
+			"spark": row.get("utilization_spark", PackedFloat32Array()),
+			"delta": float(row.get("utilization_delta", NAN)),
+			"icon": &"economy.building.factory",
+		},
+		{
+			"id": "building_staffing",
+			"title": "岗位到岗",
+			"value": staff_ratio,
+			"kind": "text",
+			"text": staff_text,
+			"caption": ("到岗 %.0f%%" % (staff_ratio * 100.0)) if staff_req > 0 else "无需专职岗位",
+			"tone": "risk" if (staff_req > 0 and staff_ratio < 0.5) else ("warn" if (staff_req > 0 and staff_ratio < 0.99) else ""),
+			"positive_good": true,
+			"icon": &"population.profession.worker",
+		},
+		{
+			"id": "building_profit",
+			"title": "本期%s" % profit_label if profit_label in ["利润", "亏损"] else profit_label,
+			"value": profit_val,
+			"kind": "text",
+			"text": profit_text,
+			"caption": profit_caption,
+			"tone": "risk" if (is_halted or not profit_positive) else "",
+			"positive_good": true,
+			"spark": row.get("profit_spark", PackedFloat32Array()),
+			"delta": float(row.get("profit_delta", NAN)),
+			"icon": &"trend.up" if (profit_positive and not is_halted) else &"trend.down",
+		},
+	]
+
+	var insights := []
+	if not state_summary.is_empty():
+		var slabel := String(state_summary.get("label", "经营异常"))
+		var sdetail := String(state_summary.get("detail", ""))
+		var smeta := String(state_summary.get("meta", ""))
+		var line := "%s：%s" % [slabel, sdetail] if not sdetail.is_empty() else slabel
+		if not smeta.is_empty():
+			line += "（%s）" % smeta
+		insights.append({
+			"id": "building_state_alert",
+			"text": line,
+			"accent": UITokens.DOSSIER_OXBLOOD,
+			"icon": "status.warning",
+		})
+	var climate_lost_text := String(row.get("climate_lost_daily_text", ""))
+	if not climate_lost_text.is_empty():
+		insights.append({
+			"id": "building_climate_loss",
+			"text": "本地气候条件非最优，每栋每日减产 %s。" % climate_lost_text,
+			"accent": UITokens.DOSSIER_BRASS,
+			"icon": "climate",
+		})
+	if insights.is_empty():
+		insights.append({
+			"id": "building_normal_note",
+			"text": "由【%s】阶层主持经营，当前产能出力 %.0f%%，岗位到岗 %s。" % [
+				owner_short if not owner_short.is_empty() else "本地业主",
+				actual_util * 100.0,
+				staff_text,
+			],
+			"accent": UITokens.DOSSIER_INK_SOFT,
+			"icon": "summary.overview",
+		})
+
+	var capacity_bars := [
+		{
+			"id": "cap_actual",
+			"label": "实际产能",
+			"icon": &"economy.building.factory",
+			"value": clampf(actual_util, 0.0, 1.0),
+			"marker": clampf(planned_util, 0.0, 1.0) if planned_util < 0.995 else -1.0,
+			"text": "%.0f%%" % (actual_util * 100.0),
+			"color": UITokens.DOSSIER_OXBLOOD if actual_util < 0.25 else (UITokens.DOSSIER_BRASS if actual_util < 0.75 else UITokens.DOSSIER_VERDIGRIS),
+			"tooltip": "实际产能利用率 %.1f%%（计划上限 %.1f%%）" % [actual_util * 100.0, planned_util * 100.0],
+		},
+	]
+	if bool(row.get("has_climate_profile", false)):
+		var climate_cap := clampf(float(row.get("climate_capacity_float", 1.0)), 0.0, 1.0)
+		var temp_fit := clampf(float(row.get("temperature_fit_float", 1.0)), 0.0, 1.0)
+		var water_fit := clampf(float(row.get("water_fit_float", 1.0)), 0.0, 1.0)
+		capacity_bars.append({
+			"id": "cap_climate",
+			"label": "气候出力",
+			"icon": &"climate",
+			"value": climate_cap,
+			"text": "%.0f%%" % (climate_cap * 100.0),
+			"color": UITokens.DOSSIER_VERDIGRIS if climate_cap >= 0.90 else (UITokens.DOSSIER_BRASS if climate_cap >= 0.60 else UITokens.DOSSIER_OXBLOOD),
+			"tooltip": "温度适宜度 %.1f%% · 水分适宜度 %.1f%% · 综合气候出力 %.1f%%" % [
+				temp_fit * 100.0, water_fit * 100.0, climate_cap * 100.0],
+		})
+		if temp_fit < 0.995 or water_fit < 0.995:
+			capacity_bars.append({
+				"id": "cap_temp",
+				"label": "温度适宜",
+				"value": temp_fit,
+				"text": "%.0f%%" % (temp_fit * 100.0),
+				"color": UITokens.DOSSIER_VERDIGRIS if temp_fit >= 0.85 else UITokens.DOSSIER_BRASS,
+			})
+			capacity_bars.append({
+				"id": "cap_water",
+				"label": "水分适宜",
+				"value": water_fit,
+				"text": "%.0f%%" % (water_fit * 100.0),
+				"color": UITokens.DOSSIER_SLATE if water_fit >= 0.85 else UITokens.DOSSIER_BRASS,
+			})
+
+	var job_bars := []
+	for idx in range(job_rows.size()):
+		var raw_j = job_rows[idx]
+		if not (raw_j is Dictionary):
+			continue
+		var jdict: Dictionary = raw_j
+		if not bool(jdict.get("visible", true)):
+			continue
+		var jname := String(jdict.get("name", "岗位"))
+		var jval := String(jdict.get("value", "0 / 0"))
+		var jratio := float(jdict.get("ratio", -1.0))
+		if jratio < 0.0:
+			var slash := jval.find("/")
+			if slash >= 0:
+				var f := _parse_leading_float(jval.substr(0, slash), 0.0)
+				var r := _parse_leading_float(jval.substr(slash + 1), 0.0)
+				jratio = f / r if r > 0.0 else 1.0
+			else:
+				jratio = 1.0
+		var clamped_j := clampf(jratio, 0.0, 1.0)
+		var is_owner_row := jname.begins_with("业主")
+		job_bars.append({
+			"id": String(jdict.get("id", "job_%d" % idx)),
+			"label": jname,
+			"icon": &"family.metric.wealth" if is_owner_row else &"population.profession.worker",
+			"value": clamped_j,
+			"text": jval.split("（")[0].strip_edges(),
+			"color": UITokens.DOSSIER_OXBLOOD if clamped_j < 0.50 else (UITokens.DOSSIER_BRASS if clamped_j < 0.99 else UITokens.DOSSIER_VERDIGRIS),
+			"tooltip": "%s：%s" % [jname, jval],
+		})
+
+	var prod_rows: Array = row.get("production_rows", [])
+	var production_candidates := []
+	var unused_input_notes := PackedStringArray()
+	var prod_peak := 0.001
+	var has_natural_input := false
+	var has_natural_gen := false
+	for raw_p in prod_rows:
+		if not (raw_p is Dictionary):
+			continue
+		var pdict: Dictionary = raw_p
+		var pid := String(pdict.get("id", ""))
+		if pid.begins_with("natural_input"):
+			has_natural_input = true
+		elif pid.begins_with("natural_generation"):
+			has_natural_gen = true
+
+	for idx in range(prod_rows.size()):
+		var raw_p = prod_rows[idx]
+		if not (raw_p is Dictionary):
+			continue
+		var pdict: Dictionary = raw_p
+		var pid := String(pdict.get("id", "prod_%d" % idx))
+		if pid in ["climate_fit", "climate_lost_output", "input_none", "output_none"]:
+			continue
+		# 仅在同时有培育与消耗时才显示“自然资源净额”，避免与单向消耗行重复。
+		if pid == "resource_net" and not (has_natural_input and has_natural_gen):
+			continue
+		var full_name := String(pdict.get("name", ""))
+		var short_name := String(pdict.get("short_name", full_name))
+		var val_str := String(pdict.get("value", ""))
+		var rate_num := float(pdict.get("daily_per_building_float", absf(_parse_leading_float(val_str, 0.0))))
+		var is_input := pid.begins_with("input_") or full_name.begins_with("原材料")
+		if is_input and rate_num <= 0.00001:
+			var cand_desc := String(pdict.get("candidates_detail", full_name.trim_prefix("原材料 · ")))
+			if not cand_desc.is_empty() and cand_desc != "无":
+				unused_input_notes.append(cand_desc)
+			continue
+		if short_name.length() > 14 and short_name.find("/") >= 0:
+			var first_part := short_name.split("/")[0].strip_edges()
+			short_name = "%s等" % first_part
+		var compact_val := val_str.replace(" 单位/栋/日", "/栋/日")
+		prod_peak = maxf(prod_peak, rate_num)
+		var bar_color := UITokens.DOSSIER_VERDIGRIS
+		var icon_key := &"metric.goods"
+		if pid.begins_with("output_") or full_name.begins_with("产出"):
+			bar_color = UITokens.DOSSIER_VERDIGRIS
+			icon_key = &"metric.goods"
+		elif pid.begins_with("natural_") or pid == "resource_net":
+			bar_color = UITokens.DOSSIER_SLATE if val_str.find("不足") < 0 else UITokens.DOSSIER_OXBLOOD
+			icon_key = &"economy.resource"
+		else:
+			bar_color = UITokens.DOSSIER_BRASS
+			icon_key = &"economy.building.factory"
+		production_candidates.append({
+			"id": pid,
+			"label": short_name,
+			"icon": icon_key,
+			"rate": rate_num,
+			"text": compact_val,
+			"color": bar_color,
+			"tooltip": "%s：%s" % [full_name, val_str],
+		})
+
+	var production_bars := []
+	for item in production_candidates:
+		var rate := float(item.rate)
+		production_bars.append({
+			"id": item.id,
+			"label": item.label,
+			"icon": item.icon,
+			"value": clampf(rate / prod_peak, 0.08 if rate > 0.0 else 0.0, 1.0),
+			"text": item.text,
+			"color": item.color,
+			"tooltip": item.tooltip,
+		})
+
+	var unused_inputs_summary := ""
+	if not unused_input_notes.is_empty():
+		unused_inputs_summary = "可选增产投入（当前未消耗）：%s。" % "；".join(unused_input_notes)
+
+	var cash_rev := float(finance.get("cash_revenue_float", 0.0))
+	var in_kind_rev := float(finance.get("in_kind_float", 0.0))
+	var subsidy_rev := float(finance.get("subsidy_float", 0.0))
+	var total_rev := float(finance.get("revenue_float", _parse_leading_float(rev_text, cash_rev + in_kind_rev)))
+	var input_cost_val := float(finance.get("input_cost_float", 0.0))
+	var wages_val := float(finance.get("wages_paid_float", 0.0))
+	var tax_val := float(finance.get("business_tax_float", 0.0))
+	var total_cost := float(finance.get("cost_float", _parse_leading_float(cost_text, input_cost_val + wages_val + tax_val)))
+
+	# 兼容未携带细分浮点字段的旧字典（按 breakdown 解析）
+	if cash_rev <= 0.0 and in_kind_rev <= 0.0 and total_rev > 0.0:
+		cash_rev = total_rev
+	var revenue_segments := []
+	if cash_rev > 0.0001:
+		revenue_segments.append({
+			"label": "市场销售",
+			"value": cash_rev,
+			"text": String(finance.get("cash_revenue_text", UITokens.format_compact_number_cn(cash_rev, 2))),
+			"color": UITokens.DOSSIER_VERDIGRIS,
+		})
+	if in_kind_rev > 0.0001:
+		revenue_segments.append({
+			"label": "自用留存折算",
+			"value": in_kind_rev,
+			"text": String(finance.get("in_kind_text", UITokens.format_compact_number_cn(in_kind_rev, 2))),
+			"color": UITokens.DOSSIER_BRASS,
+		})
+	if subsidy_rev > 0.0001:
+		revenue_segments.append({
+			"label": "经营补贴",
+			"value": subsidy_rev,
+			"text": String(finance.get("subsidy_text", UITokens.format_compact_number_cn(subsidy_rev, 2))),
+			"color": UITokens.DOSSIER_SLATE,
+		})
+
+	var cost_segments := []
+	if input_cost_val > 0.0001:
+		cost_segments.append({
+			"label": "原料采购",
+			"value": input_cost_val,
+			"text": String(finance.get("input_cost_text", UITokens.format_compact_number_cn(input_cost_val, 2))),
+			"color": UITokens.DOSSIER_OXBLOOD,
+		})
+	if wages_val > 0.0001:
+		cost_segments.append({
+			"label": "雇员工资",
+			"value": wages_val,
+			"text": String(finance.get("wages_paid_text", UITokens.format_compact_number_cn(wages_val, 2))),
+			"color": UITokens.DOSSIER_BRASS,
+		})
+	if tax_val > 0.0001:
+		cost_segments.append({
+			"label": "营业税费",
+			"value": tax_val,
+			"text": String(finance.get("business_tax_text", UITokens.format_compact_number_cn(tax_val, 2))),
+			"color": UITokens.DOSSIER_UMBER,
+		})
+
+	var finance_note := ""
+	if cost_segments.is_empty() and not finance.is_empty():
+		finance_note = "本期无外购原料、雇员薪资与营业税支出（业主自营收益已计入总收入）。"
+
+	return {
+		"kpis": kpis,
+		"insights": insights,
+		"capacity_bars": capacity_bars,
+		"job_bars": job_bars,
+		"production_bars": production_bars,
+		"unused_inputs_summary": unused_inputs_summary,
+		"finance_diverging_bar": {
+			"left_label": "本期总成本",
+			"left_value": total_cost,
+			"left_text": cost_text if cost_text != "—" else "0",
+			"right_label": "税后总收入",
+			"right_value": total_rev,
+			"right_text": rev_text if rev_text != "—" else "0",
+		},
+		"revenue_segments": revenue_segments,
+		"cost_segments": cost_segments,
+		"finance_note": finance_note,
+		"finance_warning": String(finance.get("warning", "")),
 	}
 
 
@@ -2240,6 +2676,8 @@ func _family_detail_fields(snapshot: Dictionary) -> Dictionary:
 		"notable_people": int(snapshot.get("notable_person_count", 0)),
 		"founded_day": int(snapshot.get("founded_day", 0)),
 		"decline_reviews": int(snapshot.get("decline_reviews", 0)),
+		"origin_cell": int(snapshot.get("origin_cell", -1)),
+		"origin_settlement_name": String(snapshot.get("origin_settlement_name", "")),
 	}
 
 
@@ -2249,6 +2687,7 @@ func _family_trait_rows(snapshot: Dictionary) -> Array:
 	var keys: PackedStringArray = snapshot.get("trait_keys", PackedStringArray())
 	var core: PackedByteArray = snapshot.get("core", PackedByteArray())
 	var descriptions: PackedStringArray = snapshot.get("descriptions", PackedStringArray())
+	var effect_names: PackedStringArray = snapshot.get("effect_display_names", PackedStringArray())
 	for index in range(keys.size()):
 		var detail := String(descriptions[index]).strip_edges() \
 			if index < descriptions.size() else ""
@@ -2262,6 +2701,8 @@ func _family_trait_rows(snapshot: Dictionary) -> Array:
 			"kind_label": "核心特性" if is_core else "附加特性",
 			"value": "核心特性" if is_core else "附加特性",
 			"detail": detail,
+			"badges": FamilyBuffCopy.extract_trait_badges(detail),
+			"effect_names": effect_names,
 			# 当前 facade 只提供一份说明文本；不要把它伪装成第二份效果摘要。
 			"effect_summary": "",
 			"tooltip": detail,
@@ -2289,19 +2730,82 @@ func _family_behavior_rows(snapshot: Dictionary, cell_idx: int = -1) -> Array:
 		var factor_percent := float(factor_q16) * 100.0 / 65536.0
 		var axis_name: String = axis_names[axis] if axis >= 0 \
 			and axis < axis_names.size() else "行为"
+		var display_name := String(names[index]) if index < names.size() else "目标 %d" % index
+		var signed_delta := factor_percent - 100.0
 		rows.append({
 			"id": "%d:%s" % [axis, stable_id],
 			"stable_id": stable_id,
 			"axis": axis,
 			"axis_name": axis_name,
-			"name": String(names[index]) if index < names.size() else "目标 %d" % index,
+			"name": display_name,
+			"icon": String(_family_behavior_icon(axis, stable_id, display_name)),
 			"factor_q16": factor_q16,
 			"factor_percent": factor_percent,
 			"factor_text": _q16_percent_text(factor_q16),
+			"signed_delta_percent": signed_delta,
+			"delta_text": "%s%.0f%%" % [
+				"+" if signed_delta >= 0.0 else "−", absf(signed_delta)],
+			"bar_ratio": clampf(factor_percent / 200.0, 0.0, 1.0),
 			"deviation": absf(factor_percent - 100.0),
 			"value": "%s偏好 · %s" % [axis_name, _q16_percent_text(factor_q16)],
 		})
 	return rows
+
+
+static func _family_behavior_icon(axis: int, stable_id: String, name_text: String = "") -> StringName:
+	match axis:
+		0:
+			if not stable_id.is_empty():
+				if stable_id.contains("hearth"): return &"economy.building.hearth"
+				if stable_id.contains("gathering"): return &"economy.building.gathering"
+				if stable_id.contains("merchant") or stable_id.contains("market") or stable_id.contains("trade"): return &"economy.building.market"
+				if stable_id.contains("fish"): return &"economy.building.fishing"
+				if stable_id.contains("hunting"): return &"economy.building.hunting"
+				if stable_id.contains("kitchen") or stable_id.contains("food") or stable_id.contains("slaughter"): return &"economy.building.food"
+				if stable_id.contains("farm") or stable_id.contains("estate") or stable_id.contains("pasture") or stable_id.contains("rice") or stable_id.contains("wheat") or stable_id.contains("cotton") or stable_id.contains("flax"): return &"economy.building.farm"
+				if stable_id.contains("timber") or stable_id.contains("lumber"): return &"economy.building.forestry"
+				if stable_id.contains("mine") or stable_id.contains("ore") or stable_id.contains("quarry") or stable_id.contains("stone") or stable_id.contains("coal") or stable_id.contains("salt"): return &"economy.building.mine"
+				if stable_id.contains("workshop") or stable_id.contains("kiln") or stable_id.contains("smith") or stable_id.contains("tailor") or stable_id.contains("tannery"): return &"economy.building.workshop"
+				if stable_id.contains("plant") or stable_id.contains("works") or stable_id.contains("mill") or stable_id.contains("factory"): return &"economy.building.factory"
+			if name_text.contains("农") or name_text.contains("田") or name_text.contains("牧"): return &"economy.building.farm"
+			if name_text.contains("矿") or name_text.contains("石") or name_text.contains("盐"): return &"economy.building.mine"
+			if name_text.contains("商") or name_text.contains("市") or name_text.contains("贸"): return &"economy.building.market"
+			if name_text.contains("林") or name_text.contains("木"): return &"economy.building.forestry"
+			if name_text.contains("猎"): return &"economy.building.hunting"
+			if name_text.contains("渔"): return &"economy.building.fishing"
+			return &"economy.building"
+		1:
+			var prof_icon := IconCatalog.profession_semantic(stable_id)
+			if prof_icon != &"system.unknown":
+				return prof_icon
+			if name_text.contains("采集"): return &"profession.forager"
+			if name_text.contains("猎"): return &"profession.hunter"
+			if name_text.contains("商"): return &"profession.merchant"
+			if name_text.contains("矿"): return &"profession.miner"
+			if name_text.contains("农"): return &"profession.agricultural_worker"
+			if name_text.contains("渔"): return &"profession.fisher"
+			if name_text.contains("匠") or name_text.contains("工"): return &"profession.artisan"
+			if name_text.contains("学") or name_text.contains("研"): return &"profession.scholar"
+			return &"population.profession.worker"
+		2:
+			if stable_id.contains("food") or stable_id.contains("staple") or stable_id.contains("protein") or name_text.contains("食") or name_text.contains("饮") or name_text.contains("温饱"):
+				return &"economy.building.food"
+			if stable_id.contains("cloth") or name_text.contains("衣") or name_text.contains("服"):
+				return &"good.clothing"
+			if stable_id.contains("heat") or stable_id.contains("fuel") or name_text.contains("暖") or name_text.contains("火"):
+				return &"economy.building.hearth"
+			if stable_id.contains("hous") or stable_id.contains("shelter") or name_text.contains("居") or name_text.contains("宅"):
+				return &"population.living.poor"
+			if stable_id.contains("lux") or name_text.contains("奢") or name_text.contains("礼"):
+				return &"population.living.luxury"
+			return &"population.heart"
+		3:
+			var good_icon := IconCatalog.good_semantic(stable_id)
+			if good_icon != &"system.unknown":
+				return good_icon
+			return &"metric.goods"
+		_:
+			return &"summary.overview"
 
 
 func _family_behavior_visibility(cell_idx: int) -> Dictionary:
@@ -2501,6 +3005,13 @@ func _family_branch_rows(snapshot: Dictionary) -> Array:
 	var targets: PackedInt32Array = snapshot.get(
 		"pending_target_levels", PackedInt32Array())
 	var streaks: PackedInt32Array = snapshot.get("review_streaks", PackedInt32Array())
+	var populations: PackedInt64Array = snapshot.get("populations", PackedInt64Array())
+	var cash_claims: PackedInt64Array = snapshot.get("cash_claims", PackedInt64Array())
+	var building_assets: PackedInt64Array = snapshot.get("building_asset_values", PackedInt64Array())
+	var satisfactions: PackedInt32Array = snapshot.get("satisfactions_q16", PackedInt32Array())
+	var demo_shares: PackedInt32Array = snapshot.get("demography_shares_q16", PackedInt32Array())
+	var target_shares: PackedInt32Array = snapshot.get("target_shares_q16", PackedInt32Array())
+	var settlement_names: PackedStringArray = snapshot.get("settlement_names", PackedStringArray())
 	for index in range(cells.size()):
 		var level := int(levels[index]) if index < levels.size() else 0
 		var target := int(targets[index]) if index < targets.size() else level
@@ -2509,10 +3020,22 @@ func _family_branch_rows(snapshot: Dictionary) -> Array:
 		var population_q16 := int(population_shares[index]) if index < population_shares.size() else 0
 		var cash_q16 := int(cash_shares[index]) if index < cash_shares.size() else 0
 		var building_q16 := int(building_shares[index]) if index < building_shares.size() else 0
+		var pop_count := int(populations[index]) if index < populations.size() else 0
+		var cash_val := int(cash_claims[index]) if index < cash_claims.size() else 0
+		var asset_val := int(building_assets[index]) if index < building_assets.size() else 0
+		var sat_q16 := int(satisfactions[index]) if index < satisfactions.size() else 0
+		var demo_q16 := int(demo_shares[index]) if index < demo_shares.size() else 0
+		var target_q16 := int(target_shares[index]) if index < target_shares.size() else 0
+		var settlement := String(settlement_names[index]).strip_edges() \
+			if index < settlement_names.size() else ""
+		var loc_label := "%s（地块 %d）" % [settlement, cell] \
+			if not settlement.is_empty() else "地块 %d" % cell
 		rows.append({
 			"id": "branch:%d" % cell,
 			"kind": "branch",
 			"cell": cell,
+			"settlement_name": settlement,
+			"location_label": loc_label,
 			"prestige_level": level,
 			"prestige_label": _prestige_text(level),
 			"prestige_score_q16": score_q16,
@@ -2524,10 +3047,19 @@ func _family_branch_rows(snapshot: Dictionary) -> Array:
 			"cash_share_text": _q16_percent_text(cash_q16),
 			"building_share_q16": building_q16,
 			"building_share_text": _q16_percent_text(building_q16),
+			"population_count": pop_count,
+			"population_count_text": "%s 人" % UITokens.format_compact_number_cn(float(pop_count), 1),
+			"cash_amount_text": _money_text(cash_val),
+			"building_asset_text": _money_text(asset_val),
+			"satisfaction_q16": sat_q16,
+			"satisfaction_percent": float(sat_q16) * 100.0 / 65536.0,
+			"satisfaction_text": _q16_percent_text(sat_q16),
+			"demography_share_text": _q16_percent_text(demo_q16),
+			"target_share_text": _q16_percent_text(target_q16),
 			"target_level": target,
 			"target_label": _prestige_text(target),
 			"review_streak": int(streaks[index]) if index < streaks.size() else 0,
-			"name": "地块 %d · 威望 %s" % [cell, _prestige_text(level)],
+			"name": "%s · 威望 %s" % [loc_label, _prestige_text(level)],
 			"value": "总分 %s · 人口 %s / 现金 %s / 建筑 %s · 目标 %s（%d/2）" % [
 				_q16_percent_text(score_q16), _q16_percent_text(population_q16),
 				_q16_percent_text(cash_q16), _q16_percent_text(building_q16),
@@ -2539,6 +3071,8 @@ func _family_branch_rows(snapshot: Dictionary) -> Array:
 func _family_bound_effect_rows(snapshot: Dictionary) -> Array:
 	var rows: Array = []
 	var cell := int(snapshot.get("cell_idx", -1))
+	var prestige_level := int(snapshot.get("prestige_level", 0))
+	var settlement_name := String(snapshot.get("settlement_name", "")).strip_edges()
 	var keys: PackedStringArray = snapshot.get(
 		"effect_definition_keys", PackedStringArray())
 	var names: PackedStringArray = snapshot.get(
@@ -2547,6 +3081,7 @@ func _family_bound_effect_rows(snapshot: Dictionary) -> Array:
 		"effect_descriptions", PackedStringArray())
 	var current_descriptions: PackedStringArray = snapshot.get(
 		"effect_current_descriptions", PackedStringArray())
+	var prestige_tiers_all: Array = snapshot.get("effect_prestige_descriptions", [])
 	var seen := {}
 	for index in range(keys.size()):
 		var key := String(keys[index]).strip_edges()
@@ -2563,10 +3098,23 @@ func _family_bound_effect_rows(snapshot: Dictionary) -> Array:
 			if index < current_descriptions.size() else ""
 		if current.is_empty():
 			current = detail
+		var tier_statements: Array = []
+		if index < prestige_tiers_all.size() and prestige_tiers_all[index] is PackedStringArray:
+			for st in (prestige_tiers_all[index] as PackedStringArray):
+				tier_statements.append(String(st))
+		elif index < prestige_tiers_all.size() and prestige_tiers_all[index] is Array:
+			for st in (prestige_tiers_all[index] as Array):
+				tier_statements.append(String(st))
+		if tier_statements.is_empty():
+			for st in FamilyBuffCopy.prestige_statements(detail):
+				tier_statements.append(String(st))
 		rows.append({
 			"id": "effect:%d:%s" % [cell, key],
 			"kind": "effect",
 			"cell": cell,
+			"settlement_name": settlement_name,
+			"prestige_level": prestige_level,
+			"tier_statements": tier_statements,
 			"effect_key": key,
 			"title": display,
 			"name": "地块 %d · %s" % [cell, display],
@@ -2700,6 +3248,7 @@ func _family_notable_person_rows(facade, family_handle: int) -> Array:
 		elif job_kind == 2:
 			job_text = "产业雇员"
 		var profession := String(person.get("profession_display_name", ""))
+		var profession_id := String(person.get("profession_stable_id", ""))
 		var building := String(person.get("building_type_display_name", ""))
 		var detail_parts: Array[String] = []
 		if not profession.is_empty():
@@ -2707,6 +3256,19 @@ func _family_notable_person_rows(facade, family_handle: int) -> Array:
 		detail_parts.append(job_text)
 		if not building.is_empty():
 			detail_parts.append(building)
+		var cash_val := int(person.get("cash_claim", 0))
+		var attr_asset_val := int(person.get("attributed_asset_value", 0))
+		var net_worth_val := int(person.get("estimated_net_worth", cash_val + attr_asset_val))
+		var equity_q32 := int(person.get("family_equity_share_q32", 0))
+		var equity_pct := clampf(float(equity_q32) * 100.0 / 4294967296.0, 0.0, 100.0)
+		var job_inc := maxi(0, int(person.get("epoch_job_income", 0)))
+		var biz_res := int(person.get("epoch_business_result", 0))
+		var cons_exp := maxi(0, int(person.get("epoch_consumption_expense", 0)))
+		var tax_exp := maxi(0, int(person.get("epoch_tax", 0)))
+		var total_inc := job_inc + maxi(0, biz_res)
+		var total_exp := cons_exp + tax_exp + maxi(0, -biz_res)
+		var net_flow := total_inc - total_exp
+		var sat_q16 := int(person.get("needs_satisfaction_q16", 0))
 		rows.append({
 			"id": "person:%d" % int(person_handle),
 			"kind": "person",
@@ -2715,7 +3277,27 @@ func _family_notable_person_rows(facade, family_handle: int) -> Array:
 			"name": String(person.get("full_name", "未命名人物")),
 			"role": job_text,
 			"profession": profession,
+			"profession_id": profession_id,
+			"profession_icon": String(IconCatalog.profession_semantic(profession_id)),
 			"building": building,
+			"cell_idx": int(person.get("cell_idx", -1)),
+			"notable_since_day": int(person.get("notable_since_day", 0)),
+			"cash_claim_text": _money_text(cash_val),
+			"attributed_asset_text": _money_text(attr_asset_val),
+			"net_worth_val": net_worth_val,
+			"net_worth_text": _money_text(net_worth_val),
+			"equity_share_percent": equity_pct,
+			"equity_share_text": "%.1f%%" % equity_pct,
+			"income_val": total_inc,
+			"expense_val": total_exp,
+			"income_text": _money_text(total_inc),
+			"expense_text": _money_text(total_exp),
+			"net_cashflow_val": net_flow,
+			"net_cashflow_text": "%s%s" % [
+				"+" if net_flow >= 0 else "−", _money_text(absi(net_flow))],
+			"satisfaction_q16": sat_q16,
+			"satisfaction_percent": float(sat_q16) * 100.0 / 65536.0,
+			"satisfaction_text": _q16_percent_text(sat_q16),
 			"value": " · ".join(detail_parts),
 		})
 	return rows
@@ -3162,8 +3744,10 @@ func _ensure_detail_history_cell(cell_idx: int) -> void:
 		_detail_history_cell = cell_idx
 		_detail_history_market_day = -1
 		_detail_history_pop_day = -1
+		_detail_history_building_day = -1
 		_good_history.clear()
 		_cohort_history.clear()
+		_building_history.clear()
 
 
 func _append_history_sample(bucket: Dictionary, key: String, value: float) -> PackedFloat32Array:
@@ -3202,6 +3786,14 @@ func _record_good_history(good_id: String, price_val: float, price_index: float,
 	_append_history_sample(bucket, "stock", stock_units)
 	_append_history_sample(bucket, "shortage", shortage_ratio)
 	_good_history[good_id] = bucket
+
+
+func _record_building_history(building_key: String, profit_val: float,
+		utilization_ratio: float) -> void:
+	var bucket: Dictionary = _building_history.get(building_key, {})
+	_append_history_sample(bucket, "profit", profit_val)
+	_append_history_sample(bucket, "utilization", utilization_ratio)
+	_building_history[building_key] = bucket
 
 
 func _compute_cell_avg_satisfaction_dims(populations: PackedInt64Array,
@@ -3636,6 +4228,13 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 		"building_technology_available", PackedByteArray())
 	var owner_slots: PackedInt64Array = snapshot.get("building_owner_slots", PackedInt64Array())
 	var period_days := maxi(1, int(snapshot.get("period_days", 1)))
+	var bld_sample_day := int(snapshot.get("sample_day", _current_sample_day()))
+	if cell_idx >= 0:
+		_ensure_detail_history_cell(cell_idx)
+	var should_sample_bld := cell_idx >= 0 and bld_sample_day >= 0 \
+		and bld_sample_day != _detail_history_building_day
+	if should_sample_bld:
+		_detail_history_building_day = bld_sample_day
 	var total_profit := 0
 	var halted_groups := 0
 	for i in range(group_types.size()):
@@ -3717,12 +4316,16 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 		var has_climate_profile := type_idx >= 0 \
 			and type_idx < building_climate_profiles.size() \
 			and int(building_climate_profiles[type_idx]) >= 0
+		var temp_fit := 100.0
+		var water_fit := 100.0
+		var climate_capacity := 100.0
+		var climate_lost_daily_text := ""
 		if has_climate_profile:
-			var temp_fit := float(temperature_fit_q16[i]) * 100.0 / 65536.0 \
+			temp_fit = float(temperature_fit_q16[i]) * 100.0 / 65536.0 \
 				if i < temperature_fit_q16.size() else 100.0
-			var water_fit := float(water_fit_q16[i]) * 100.0 / 65536.0 \
+			water_fit = float(water_fit_q16[i]) * 100.0 / 65536.0 \
 				if i < water_fit_q16.size() else 100.0
-			var climate_capacity := float(climate_capacity_q16[i]) * 100.0 / 65536.0 \
+			climate_capacity = float(climate_capacity_q16[i]) * 100.0 / 65536.0 \
 				if i < climate_capacity_q16.size() else 100.0
 			production_rows.append({"id": "climate_fit", "name": "气候适宜度",
 				"value": "温度 %.1f%% · 水分 %.1f%% · 能力 %.1f%%" % [
@@ -3731,8 +4334,9 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 			var lost_output := int(climate_lost_output[i]) \
 				if i < climate_lost_output.size() else 0
 			if lost_output > 0:
+				climate_lost_daily_text = _actual_daily_rate(lost_output, count, period_days)
 				production_rows.append({"id": "climate_lost_output", "name": "气候减产",
-					"value": _actual_daily_rate(lost_output, count, period_days),
+					"value": climate_lost_daily_text,
 					"icon": "warning", "accent": UITokens.WARN})
 		var finance_breakdown := "现金 %s · 自用折算 %s · 原料 %s · 工资 %s · 营业税 %s" % [
 			_money_text(revenue), _money_text(in_kind_income), _money_text(input_cost),
@@ -3741,8 +4345,23 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 			finance_breakdown += " · 经营补贴 %s" % _money_text(business_subsidy)
 		var finance := {
 			"revenue": _money_text(revenue + in_kind_income),
+			"revenue_float": float(revenue + in_kind_income) / 10000.0,
+			"cash_revenue_float": float(revenue) / 10000.0,
+			"cash_revenue_text": _money_text(revenue),
+			"in_kind_float": float(in_kind_income) / 10000.0,
+			"in_kind_text": _money_text(in_kind_income),
+			"subsidy_float": float(business_subsidy) / 10000.0,
+			"subsidy_text": _money_text(business_subsidy),
 			"cost": _money_text(operating_cost),
+			"cost_float": float(operating_cost) / 10000.0,
+			"input_cost_float": float(input_cost) / 10000.0,
+			"input_cost_text": _money_text(input_cost),
+			"wages_paid_float": float(wages) / 10000.0,
+			"wages_paid_text": _money_text(wages),
+			"business_tax_float": float(business_tax) / 10000.0,
+			"business_tax_text": _money_text(business_tax),
 			"profit": "%s%s" % ["+" if profit > 0 else "", _money_text(profit)],
+			"profit_float": float(profit) / 10000.0,
 			"profit_positive": profit >= 0,
 			"breakdown": finance_breakdown,
 			"revenue_label": "税后总收入（含自用）",
@@ -3821,19 +4440,41 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 			headline_profit = "停用"
 		if is_loss_suspended:
 			finance.warning = "停产中 · 利润率取自上一经营期"
+		var bld_hist_key := "%d|%d" % [type_idx, int(owner_signatures[i]) if i < owner_signatures.size() else i]
+		if should_sample_bld:
+			_record_building_history(bld_hist_key, float(profit) / 10000.0,
+				clampf(actual_percent / 100.0, 0.0, 1.0))
+		var bld_hist: Dictionary = _building_history.get(bld_hist_key, {})
+		var profit_series: PackedFloat32Array = bld_hist.get("profit", PackedFloat32Array())
+		var util_series: PackedFloat32Array = bld_hist.get("utilization", PackedFloat32Array())
 		rows.append({
 			"id": "building_%d_%d" % [type_idx, i],
 			"name": String(type_names[type_idx]) if type_idx >= 0 and type_idx < type_names.size() else (String(type_ids[type_idx]) if type_idx >= 0 and type_idx < type_ids.size() else "建筑"),
 			"building_type_id": building_id,
 			"count": "%d 栋" % count,
+			"count_raw": count,
 			"owner": "业主 · %s" % _owner_profession_name(snapshot, int(owner_signatures[i]) if i < owner_signatures.size() else -1),
 			"status": state_label,
+			"staffing_actual_raw": staffing_actual,
+			"staffing_required_raw": staffing_required,
+			"actual_utilization_float": clampf(actual_percent / 100.0, 0.0, 1.0),
+			"planned_utilization_float": clampf(planned_percent / 100.0, 0.0, 1.0),
+			"has_climate_profile": has_climate_profile,
+			"temperature_fit_float": clampf(temp_fit / 100.0, 0.0, 1.0),
+			"water_fit_float": clampf(water_fit / 100.0, 0.0, 1.0),
+			"climate_capacity_float": clampf(climate_capacity / 100.0, 0.0, 1.0),
+			"climate_lost_daily_text": climate_lost_daily_text,
 			"state_summary": {"label": state_label, "detail": state_detail,
 				"meta": state_meta, "accent": state_accent,
 				"icon": "warning"} \
 				if show_state_summary else {},
 			"profit": headline_profit,
+			"profit_float": float(profit) / 10000.0,
 			"profit_label": headline_profit_label,
+			"profit_spark": profit_series,
+			"profit_delta": _series_lookback_delta(profit_series),
+			"utilization_spark": util_series,
+			"utilization_delta": _series_lookback_delta(util_series),
 			"accent": state_accent if show_state_summary else (UITokens.GOOD if profit > 0 else (UITokens.RISK if profit < 0 else UITokens.TEXT_MUTED)),
 			"icon": _building_icon(building_id, snapshot, type_idx), "job_rows": job_rows,
 			"production_rows": production_rows, "finance": finance, "visible": true,
@@ -4041,6 +4682,7 @@ func _append_recipe_rows(rows: Array, snapshot: Dictionary, type_idx: int, kind:
 	var recipe_total := 0
 	for cursor in range(begin, end):
 		recipe_total += int(quantities[cursor]) if cursor < quantities.size() else 0
+	var divisor := maxi(1, building_count) * maxi(1, period_days)
 	for cursor in range(begin, end):
 		var good_idx := int(good_indices[cursor]) if cursor < good_indices.size() else -1
 		var stable_id := String(good_ids[good_idx]) if good_idx >= 0 and good_idx < good_ids.size() else "unknown"
@@ -4049,7 +4691,49 @@ func _append_recipe_rows(rows: Array, snapshot: Dictionary, type_idx: int, kind:
 		var good_label := _input_candidate_label(
 			snapshot, cursor, cursor - begin, group_idx, stable_id) \
 			if kind == "input" else _good_display_name(stable_id)
-		rows.append({"id": "%s_%d" % [kind, cursor], "name": "%s · %s" % ["原材料" if kind == "input" else "产出", good_label], "value": _actual_daily_rate(actual, building_count, period_days), "icon": "resource", "accent": UITokens.RESOURCE})
+		var short_good := _selected_input_short_label(
+			snapshot, cursor, cursor - begin, group_idx, stable_id) \
+			if kind == "input" else _good_display_name(stable_id)
+		rows.append({
+			"id": "%s_%d" % [kind, cursor],
+			"name": "%s · %s" % ["原材料" if kind == "input" else "产出", good_label],
+			"short_name": "%s · %s" % ["投入" if kind == "input" else "产出", short_good],
+			"candidates_detail": good_label if kind == "input" else "",
+			"daily_per_building_float": float(actual) / 1000.0 / float(divisor),
+			"value": _actual_daily_rate(actual, building_count, period_days),
+			"icon": "resource",
+			"accent": UITokens.RESOURCE,
+		})
+
+
+func _selected_input_short_label(snapshot: Dictionary, input_idx: int, local_input_idx: int,
+		group_idx: int, fallback_id: String) -> String:
+	var good_ids: PackedStringArray = snapshot.get("good_ids", PackedStringArray())
+	var selected_offsets: PackedInt32Array = snapshot.get(
+		"group_input_selected_offsets", PackedInt32Array())
+	var selected_goods: PackedInt32Array = snapshot.get(
+		"group_input_selected_good_ids", PackedInt32Array())
+	if group_idx >= 0 and group_idx + 1 < selected_offsets.size():
+		var selected_idx := int(selected_offsets[group_idx]) + local_input_idx
+		if selected_idx >= int(selected_offsets[group_idx]) \
+				and selected_idx < int(selected_offsets[group_idx + 1]) \
+				and selected_idx < selected_goods.size():
+			var selected_good := int(selected_goods[selected_idx])
+			if selected_good >= 0 and selected_good < good_ids.size():
+				return _good_display_name(String(good_ids[selected_good]))
+	var offsets: PackedInt32Array = snapshot.get(
+		"building_input_candidate_offsets", PackedInt32Array())
+	var candidates: PackedInt32Array = snapshot.get(
+		"building_input_candidate_good_ids", PackedInt32Array())
+	if input_idx >= 0 and input_idx + 1 < offsets.size():
+		var first_idx := int(offsets[input_idx])
+		var count_cand := int(offsets[input_idx + 1]) - first_idx
+		if count_cand > 0 and first_idx >= 0 and first_idx < candidates.size():
+			var good_idx := int(candidates[first_idx])
+			if good_idx >= 0 and good_idx < good_ids.size():
+				var base_name := _good_display_name(String(good_ids[good_idx]))
+				return "%s等" % base_name if count_cand > 1 else base_name
+	return _good_display_name(fallback_id)
 
 
 func _input_candidate_label(snapshot: Dictionary, input_idx: int, local_input_idx: int,

@@ -1,96 +1,96 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene format=3 uid="uid://ccxofru2cbv4e"]
 
-[ext_resource type="Script" path="res://scripts/ui/components/dossier/industry_page.gd" id="1_script"]
-[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_stacked_bar.gd" id="2_stacked"]
-[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_ledger_table.gd" id="3_ledger"]
+[ext_resource type="Script" uid="uid://dyj3svswvs6c" path="res://scripts/ui/components/dossier/industry_page.gd" id="1_script"]
+[ext_resource type="Script" uid="uid://d0g2n3dvxeevs" path="res://scripts/ui/components/dossier/dossier_stacked_bar.gd" id="2_stacked"]
+[ext_resource type="Script" uid="uid://bxx5ywbnw2x5g" path="res://scripts/ui/components/dossier/dossier_ledger_table.gd" id="3_ledger"]
 
-[node name="IndustryPage" type="VBoxContainer"]
+[node name="IndustryPage" type="VBoxContainer" unique_id=816720221]
 size_flags_horizontal = 3
 theme_override_constants/separation = 14
 script = ExtResource("1_script")
 chapter_id = "industry"
 
-[node name="Detail" type="PanelContainer" parent="."]
+[node name="Detail" type="PanelContainer" parent="." unique_id=1421944305]
 layout_mode = 2
 theme_type_variation = &"PKDossierAside"
 
-[node name="DetailGrid" type="GridContainer" parent="Detail"]
+[node name="DetailGrid" type="GridContainer" parent="Detail" unique_id=119692085]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/h_separation = 24
 theme_override_constants/v_separation = 10
 columns = 3
 
-[node name="InfoColumn" type="VBoxContainer" parent="Detail/DetailGrid"]
+[node name="InfoColumn" type="VBoxContainer" parent="Detail/DetailGrid" unique_id=630550845]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="DetailKicker" type="Label" parent="Detail/DetailGrid/InfoColumn"]
+[node name="DetailKicker" type="Label" parent="Detail/DetailGrid/InfoColumn" unique_id=1813522371]
 layout_mode = 2
-text = "选中建筑"
 theme_type_variation = &"PKDossierKicker"
+text = "选中建筑"
 
-[node name="DetailTitle" type="Label" parent="Detail/DetailGrid/InfoColumn"]
+[node name="DetailTitle" type="Label" parent="Detail/DetailGrid/InfoColumn" unique_id=363423283]
 unique_name_in_owner = true
 layout_mode = 2
-text_overrun_behavior = 3
 theme_type_variation = &"PKDossierHeading"
+text_overrun_behavior = 3
 
-[node name="DetailMeta" type="Label" parent="Detail/DetailGrid/InfoColumn"]
+[node name="DetailMeta" type="Label" parent="Detail/DetailGrid/InfoColumn" unique_id=1460488428]
 unique_name_in_owner = true
 layout_mode = 2
-autowrap_mode = 3
 theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
 
-[node name="MixColumn" type="VBoxContainer" parent="Detail/DetailGrid"]
+[node name="MixColumn" type="VBoxContainer" parent="Detail/DetailGrid" unique_id=158473086]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="MixBar" type="Control" parent="Detail/DetailGrid/MixColumn"]
+[node name="MixBar" type="Control" parent="Detail/DetailGrid/MixColumn" unique_id=1478560494]
 unique_name_in_owner = true
 layout_mode = 2
 script = ExtResource("2_stacked")
 
-[node name="AdviceColumn" type="VBoxContainer" parent="Detail/DetailGrid"]
+[node name="AdviceColumn" type="VBoxContainer" parent="Detail/DetailGrid" unique_id=1308049903]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="AdviceKicker" type="Label" parent="Detail/DetailGrid/AdviceColumn"]
+[node name="AdviceKicker" type="Label" parent="Detail/DetailGrid/AdviceColumn" unique_id=661632504]
 layout_mode = 2
-text = "运营诊断"
 theme_type_variation = &"PKDossierKicker"
+text = "运营情况"
 
-[node name="AdviceLabel" type="Label" parent="Detail/DetailGrid/AdviceColumn"]
+[node name="AdviceLabel" type="Label" parent="Detail/DetailGrid/AdviceColumn" unique_id=1627720077]
 unique_name_in_owner = true
 layout_mode = 2
-autowrap_mode = 3
 theme_type_variation = &"PKDossierBody"
+autowrap_mode = 3
 
-[node name="TableHeader" type="HBoxContainer" parent="."]
+[node name="TableHeader" type="HBoxContainer" parent="." unique_id=1038266712]
 layout_mode = 2
 
-[node name="TableKicker" type="Label" parent="TableHeader"]
+[node name="TableKicker" type="Label" parent="TableHeader" unique_id=195876414]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "建筑类型 · 点击表头排序，点击行查看诊断"
 theme_type_variation = &"PKDossierKicker"
+text = "建筑类型"
 
-[node name="CountLabel" type="Label" parent="TableHeader"]
+[node name="CountLabel" type="Label" parent="TableHeader" unique_id=1549988263]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"PKDossierCaption"
 
-[node name="BuildingTable" type="Control" parent="."]
+[node name="BuildingTable" type="Control" parent="." unique_id=638261243]
 unique_name_in_owner = true
 layout_mode = 2
 script = ExtResource("3_ledger")
 
-[node name="EmptyLabel" type="Label" parent="."]
+[node name="EmptyLabel" type="Label" parent="." unique_id=143154584]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-autowrap_mode = 3
 theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3

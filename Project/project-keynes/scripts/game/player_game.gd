@@ -114,7 +114,6 @@ func _connect_signals() -> void:
 	_player_controller.regeneration_requested.connect(_regenerate_world)
 	_ui_manager.fit_requested.connect(_on_fit_requested)
 	_ui_manager.regenerate_requested.connect(_on_regenerate_requested)
-	_ui_manager.setup_requested.connect(_return_to_world_setup)
 	_ui_manager.day_night_toggled.connect(_on_day_night_toggled)
 	_ui_manager.map_overlay_requested.connect(_runtime_host.set_map_overlay)
 	_ui_manager.map_overlay_cleared.connect(_runtime_host.clear_map_overlay)
@@ -182,12 +181,6 @@ func _regenerate_world() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	await _runtime_host.generate_world(0, _ui_manager.map_safe_area())
-
-
-func _return_to_world_setup() -> void:
-	var flow: Node = _game_flow()
-	if flow != null:
-		flow.return_to_main_menu()
 
 
 func _on_day_night_toggled(enabled: bool) -> void:

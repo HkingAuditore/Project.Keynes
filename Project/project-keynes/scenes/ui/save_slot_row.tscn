@@ -1,16 +1,84 @@
 [gd_scene load_steps=2 format=3]
+
 [ext_resource type="PackedScene" path="res://scenes/ui/main_menu_button.tscn" id="1_button"]
-[node name="SaveSlotRow" type="HBoxContainer"]
-custom_minimum_size = Vector2(0, 72)
-theme_override_constants/separation = 8
-[node name="Preview" type="TextureRect" parent="."]
-custom_minimum_size = Vector2(112, 63)
+
+[node name="SaveSlotRow" type="PanelContainer"]
+custom_minimum_size = Vector2(0, 86)
+theme_type_variation = &"PKArchivePanel"
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 4
+
+[node name="Row" type="HBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="PreviewFrame" type="PanelContainer" parent="Margin/Row"]
+custom_minimum_size = Vector2(124, 68)
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"PKInsetPanel"
+
+[node name="Preview" type="TextureRect" parent="Margin/Row/PreviewFrame"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(112, 58)
 layout_mode = 2
 expand_mode = 1
-stretch_mode = 5
-[node name="Description" type="Label" parent="."]
+stretch_mode = 6
+
+[node name="EmptySeal" type="Label" parent="Margin/Row/PreviewFrame"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 1
+theme_type_variation = &"PKDossierCaption"
+text = "空槽位"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="InfoColumn" type="VBoxContainer" parent="Margin/Row"]
 layout_mode = 2
 size_flags_horizontal = 3
-autowrap_mode = 2
-[node name="LoadButton" parent="." instance=ExtResource("1_button")]
+size_flags_vertical = 4
+theme_override_constants/separation = 3
+
+[node name="HeaderRow" type="HBoxContainer" parent="Margin/Row/InfoColumn"]
 layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="SlotBadge" type="Label" parent="Margin/Row/InfoColumn/HeaderRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierKicker"
+text = "手动存档 1"
+
+[node name="SavedAtLabel" type="Label" parent="Margin/Row/InfoColumn/HeaderRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierMuted"
+text = ""
+horizontal_alignment = 2
+
+[node name="TitleLabel" type="Label" parent="Margin/Row/InfoColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierSectionTitle"
+text = "空槽位"
+
+[node name="Description" type="Label" parent="Margin/Row/InfoColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierBody"
+autowrap_mode = 2
+
+[node name="LoadButton" parent="Margin/Row" instance=ExtResource("1_button")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(104, 40)
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"PKSealPrimaryButton"

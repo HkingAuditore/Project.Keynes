@@ -28,6 +28,10 @@ func _capture() -> void:
 			"new": current_scene.call("_show_new_game")
 			"load": current_scene.call("_show_load_game")
 			"settings": current_scene.call("_show_settings")
+	elif current_scene != null and scene_path.ends_with("world_loading_overlay.tscn"):
+		(current_scene as Control).theme = load("res://assets/themes/player_session_theme.tres") as Theme
+		current_scene.call("show_message", "正在生成世界")
+		current_scene.call("set_progress", "encode", 0.85)
 	for _frame in range(8):
 		await process_frame
 	var image := root.get_texture().get_image()
