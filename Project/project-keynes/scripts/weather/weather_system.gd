@@ -817,11 +817,11 @@ func uses_weather_field() -> bool:
 func is_weather_field_solve_active() -> bool:
 	return _field_solver._field_slice_active
 
-func begin_weather_field_solve(map: MapData, world: WorldData, season_idx: int, climate_anomaly: float, season_phase: float = -1.0, count_day: bool = true) -> void:
+func begin_weather_field_solve(map: MapData, world: WorldData, season_idx: int, climate_anomaly: float, season_phase: float = -1.0, count_day: bool = true, for_worker_knobs_only: bool = false) -> void:
 	# dots-monolith-split §1.2 / PR-6：切片初始化主体已搬迁到
 	# scripts/weather/field_solver.gd::begin_slice()。本侧仅作为外部 caller
 	# (map_generator.gd / weather_refresh_job 等 SUS job) 的薄转发入口。
-	_field_solver.begin_slice(map, world, season_idx, climate_anomaly, season_phase, count_day)
+	_field_solver.begin_slice(map, world, season_idx, climate_anomaly, season_phase, count_day, for_worker_knobs_only)
 
 func run_weather_field_solve_slice(cell_budget: int) -> Dictionary:
 	# dots-monolith-split §1.2 / PR-6：切片单步主体（含 DCWorldExt fast path
@@ -1244,13 +1244,15 @@ func build_field_knobs_for_worker(map: MapData, world: WorldData,
 		return {}
 	_current_map_for_tick = map
 	begin_weather_field_solve(map, world, season_idx, climate_anomaly,
-		season_phase, true)
+		season_phase, true, true)
 	if not _field_solver._field_slice_fast_indexed:
 		# fast-indexed 是 solve 的硬前置，缺了它生产也会 fallback。
 		_clear_weather_field_slice_state()
 		_current_map_for_tick = null
 		return {}
-	var knobs: Dictionary = _build_weather_field_knobs(map, world, n_cells)
+	var knobs: Dictionary = _field_solver._field_slice_native_knobs \
+		if not _field_solver._field_slice_native_knobs.is_empty() \
+		else _build_weather_field_knobs(map, world, n_cells)
 	_clear_weather_field_slice_state()
 	_current_map_for_tick = null
 	return knobs

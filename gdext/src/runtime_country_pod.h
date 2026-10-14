@@ -107,6 +107,9 @@ public:
             const RuntimeEconomyAssetRequest &request,
             const RuntimeEconomyAssetResult &result, std::string &error);
     bool snapshot(RuntimeCountryPodSnapshot &out, std::string &error) const;
+    const RuntimeCountryPodSnapshot *borrow_state() const noexcept {
+        return _bootstrapped ? &_state : nullptr;
+    }
     bool encode_save(RuntimeCountryPodSaveSection &out, std::string &error) const;
     bool restore_save(const RuntimeCountryPodSaveSection &section,
                       const RuntimeCountryPodCatalog &catalog,

@@ -340,7 +340,8 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
     const int64_t savings_months_q16 = basic_living_cost > 0
         ? mul_div_sat(wealth_pc, Q16_ONE,
             saturating_mul(basic_living_cost, 30, sat), sat) : 0;
-    std::vector<int64_t> totals(market_store().good_count.get(), 0);
+    const bool safe_zero_skip =
+        population <= (std::numeric_limits<int64_t>::max() >> 20);
     for (int32_t n = 0; n < plan.need_count; ++n) {
         const int32_t need_index = plan.need_begin + n;
         const Need &need = _needs[need_index];
@@ -349,8 +350,13 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
         int64_t score_sum = 0;
         for (int32_t v = 0; v < need.variant_count; ++v) {
             const int32_t variant_id = need.variant_begin + v;
+            const int64_t base_v_score = variant_scores[variant_id];
+            if (base_v_score <= 0 && safe_zero_skip) {
+                cohort_variant_scores[v] = 0;
+                continue;
+            }
             int64_t score = std::max<int64_t>(0, mul_div_sat(
-                variant_scores[variant_id],
+                base_v_score,
                 family_variant_preference_factor_q16(slot, variant_id, sat),
                 Q16_ONE, sat));
             score = mul_div_sat(score, interpolate_household_wealth_lut(
@@ -380,10 +386,12 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
             const int64_t next = mul_div_sat(desired, prefix, score_sum, sat);
             const int64_t units = std::max<int64_t>(0, next - allocated);
             allocated = next;
+            if (units <= 0) continue;
             const VariantChoice &variant = _variants[variant_id];
             for (int32_t c = 0; c < variant.component_count; ++c) {
                 const NeedComponent &component = _components[variant.component_begin + c];
-                totals[component.good_id] = saturating_add(totals[component.good_id],
+                good_per_capita_daily[component.good_id] = saturating_add(
+                    good_per_capita_daily[component.good_id],
                     mul_div_sat(units, effective_household_good_quantity(
                         market, component.good_id, component.qty_per_need, sat),
                         GOODS_SCALE, sat), sat);
@@ -391,7 +399,7 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
         }
     }
     for (int32_t good = 0; good < market_store().good_count.get(); ++good)
-        good_per_capita_daily[good] = totals[good] / population;
+        good_per_capita_daily[good] /= population;
     // Validate the complete actor-specific result, including saturation events,
     // against a fresh basis. This diagnostic does not change production cadence.
     const char *verify = std::getenv("PK_ECONOMY_MEMO_VERIFY");
@@ -1155,6 +1163,12 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                     approximation_variant_active[variant_id] == 0) continue;
                 const int64_t base_score = std::max<int64_t>(
                     0, variant_score_cache[variant_id]);
+                if (base_score <= 0 &&
+                    population <=
+                        (std::numeric_limits<int64_t>::max() >> 20)) {
+                    cohort_variant_scores[v] = 0;
+                    continue;
+                }
                 base_score_sum = saturating_add(
                     base_score_sum, base_score, sat);
                 int64_t score = mul_div_sat(

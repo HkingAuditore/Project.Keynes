@@ -25,9 +25,14 @@ and blocking the main thread waiting for work that needs its peer pump.
 
 **Host frame split (liveness vs progress).** `_process` always runs
 `_service_runtime_liveness()` (economy same-day capture, Country peer pump,
-Effect/Trigger/Ideology snapshot+intent ACK). Under capacity pending it skips
-`_service_runtime_progress()` (country read-view, building visual, map overlay)
-so peer ACKs keep the frame budget. Early-returns must never skip liveness.
+Effect/Trigger/Ideology snapshot+intent ACK). Under capacity pending it retries
+`_on_clock_day_changed(_climate_capacity_pending_day)`: if capacity cleared
+(`_climate_capacity_pending_day < 0`), the same frame continues into
+`_service_runtime_progress()`; if capacity remains full, it still runs
+`_consume_runtime_commit_if_ready()` before returning and only skips heavier
+progress work (country read-view, building visual, map overlay) so committed
+day/visual updates are never starved while peer ACKs keep the frame budget.
+Early-returns must never skip liveness.
 
 **Unified day stall mask.** `RuntimeThreadReport.day_stall_reason_mask` ORs
 `RUNTIME_DAY_STALL_*` bits (`climate_capacity`, `country_peer`, `effect_ack`,

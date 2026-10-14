@@ -39,7 +39,7 @@ void country_core_rebuild_territory_csr(RuntimeCountryPodSnapshot &state);
 // Economy-origin / Country-origin treasury mutation against the worker
 // snapshot. Reservations live on the Host request record, not the snapshot.
 bool country_core_apply_economy_asset_prepare(
-    RuntimeCountryPodSnapshot &state,
+    const RuntimeCountryPodSnapshot &state,
     const RuntimeCountryPodCatalog &catalog,
     RuntimeEconomyAssetRequest &request,
     std::string &error);

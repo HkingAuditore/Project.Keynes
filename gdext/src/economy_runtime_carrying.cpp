@@ -117,14 +117,17 @@ int64_t NativeEconomyRuntime::food_flow_capacity_for_cell(
     int64_t stock_food_eq = 0;
     if (cell < market_store().market_count.get()) {
         const int32_t market = cell;
-        for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
-            if (good < 0 || good >= static_cast<int32_t>(
-                    _good_food_equivalent_q16.size())) continue;
+        const int32_t good_limit = std::min<int32_t>(
+            market_store().good_count.get(),
+            static_cast<int32_t>(_good_food_equivalent_q16.size()));
+        for (int32_t good = 0; good < good_limit; ++good) {
             const int32_t coefficient = _good_food_equivalent_q16[
                 static_cast<size_t>(good)];
             if (coefficient <= 0) continue;
             const int64_t idx = market_store().index(market, good);
             if (idx < 0 || idx >= static_cast<int64_t>(market_store().stock.size())) continue;
+            const int64_t raw_stock = market_store().stock[static_cast<size_t>(idx)];
+            if (raw_stock <= 0) continue;
             int64_t reserve = 0;
             const int32_t signal = market_signal_index(market, good);
             if (signal >= 0) {
@@ -135,8 +138,8 @@ int64_t NativeEconomyRuntime::food_flow_capacity_for_cell(
                     reserve = std::max(reserve, _construction_material_reserve[
                         static_cast<size_t>(signal)]);
             }
-            const int64_t available = std::max<int64_t>(0,
-                market_store().stock[static_cast<size_t>(idx)] - reserve);
+            const int64_t available = std::max<int64_t>(0, raw_stock - reserve);
+            if (available <= 0) continue;
             stock_food_eq = saturating_add(stock_food_eq,
                 mul_div_sat(available, coefficient, Q16_ONE, sat), sat);
         }

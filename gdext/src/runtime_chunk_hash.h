@@ -81,6 +81,34 @@ public:
         return update_impl(values, domain, column, nullptr);
     }
 
+    template<class T>
+    uint64_t update_tail(const std::vector<T> &values, uint32_t domain, uint32_t column,
+                         size_t dirty_from_index) {
+        _tracked_owner = nullptr;
+        constexpr size_t width = sizeof(T);
+        constexpr size_t per_page = PAGE_BYTES / width;
+        const size_t count = (values.size() + per_page - 1) / per_page;
+        const bool same_identity = _width == width && _domain == domain &&
+            _column == column && !_tree.empty();
+        if (!same_identity || count > _leaf_capacity || values.size() < _lanes ||
+            dirty_from_index == 0) {
+            return update_impl(values, domain, column, nullptr);
+        }
+        if (_pages.size() != count) {
+            _pages.resize(count);
+        }
+        _lanes = values.size();
+        const size_t start_block = dirty_from_index / per_page;
+        std::vector<uint64_t> dirty_blocks;
+        if (start_block < count) {
+            dirty_blocks.reserve(count - start_block);
+            for (size_t b = start_block; b < count; ++b) {
+                dirty_blocks.push_back(static_cast<uint64_t>(b));
+            }
+        }
+        return update_impl(values, domain, column, &dirty_blocks);
+    }
+
 private:
     template<class T>
     uint64_t update_impl(const std::vector<T> &values, uint32_t domain, uint32_t column,
@@ -89,15 +117,24 @@ private:
         constexpr size_t width = sizeof(T);
         constexpr size_t per_page = PAGE_BYTES / width;
         const size_t count = (values.size() + per_page - 1) / per_page;
-        const bool reshape = values.size() != _lanes || _width != width ||
-            _domain != domain || _column != column || _tree.empty();
+        const bool same_identity = _width == width && _domain == domain &&
+            _column == column && !_tree.empty();
+        const bool reshape = !same_identity ||
+            (dirty == nullptr && values.size() != _lanes) ||
+            count > _leaf_capacity;
         _metrics = {};
-        if (reshape) {
+        if (!same_identity) {
             _pages.assign(count, {});
+        } else if (_pages.size() != count) {
+            _pages.resize(count);
+        }
+        if (reshape) {
             _leaf_capacity = 1;
             while (_leaf_capacity < count) _leaf_capacity *= 2;
             _tree.assign(_leaf_capacity * 2, mix(OFFSET, EMPTY));
             _lanes = values.size(); _width = width; _domain = domain; _column = column;
+        } else {
+            _lanes = values.size();
         }
         const size_t iterations = reshape || !dirty ? count : dirty->size();
         for (size_t cursor = 0; cursor < iterations; ++cursor) {
@@ -110,6 +147,9 @@ private:
             _metrics.compared_bytes += bytes;
             if (_pages[block] && _pages[block]->source.size() == bytes &&
                 std::memcmp(source, _pages[block]->source.data(), bytes) == 0) {
+                if (reshape) {
+                    _tree[_leaf_capacity + block] = _pages[block]->digest;
+                }
                 ++_metrics.reused_pages;
                 continue;
             }

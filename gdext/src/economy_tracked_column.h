@@ -141,7 +141,16 @@ public:
     void write_values(size_t first, const T *values, size_t count, EconomyWorkerChanges *sink = nullptr) {
         if (first > size() || count > size() - first || (count && !values))
             economy_tracking_range_failure("economy_column_write_values_invalid", descriptor().name, first, size());
+        constexpr size_t kBlock = 64;
         for (size_t index = 0; index < count;) {
+            if constexpr (std::is_trivially_copyable<T>::value) {
+                if (index + kBlock <= count &&
+                    std::memcmp(_values.data() + first + index, values + index,
+                                kBlock * sizeof(T)) == 0) {
+                    index += kBlock;
+                    continue;
+                }
+            }
             if (_values[first + index] == values[index]) { ++index; continue; }
             const size_t start = index;
             do {

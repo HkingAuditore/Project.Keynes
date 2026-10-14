@@ -3732,7 +3732,9 @@ void NativeSimulationHost::bind_shadow_country_peer_mirrors_locked() {
 
 void NativeSimulationHost::record_country_parity_locked(
         const RuntimeCountryPodSnapshot &worker) {
-    const uint64_t worker_hash = country_core_hash_business_state(worker);
+    const uint64_t worker_hash = worker.state_hash != 0
+        ? worker.state_hash
+        : country_core_hash_business_state(worker);
     _country_parity_worker_hash.store(worker_hash, std::memory_order_release);
     const auto found = _country_references.find(worker.committed_day);
     if (found == _country_references.end()) {
@@ -4895,11 +4897,15 @@ uint32_t NativeSimulationHost::prepare_economy_origin_country_assets(
                 request.state == RuntimeEconomyAssetState::COUNTRY_PREPARED;
         }
         if (!already_prepared) {
-            RuntimeCountryPodSnapshot snapshot;
             std::string snap_error;
-            if (!_country_pod_authority.snapshot(snapshot, snap_error) ||
+            const RuntimeCountryPodSnapshot *borrowed =
+                _country_pod_authority.borrow_state();
+            if (borrowed == nullptr) {
+                snap_error = "country_pod_not_bootstrapped";
+            }
+            if (borrowed == nullptr ||
                 !country_core_apply_economy_asset_prepare(
-                    snapshot, _country_pod_catalog, request, snap_error)) {
+                    *borrowed, _country_pod_catalog, request, snap_error)) {
                 // Soft-reject this wire id so research/fiscal continuations
                 // observe a terminal instead of a CREATED orphan.
                 RuntimeEconomyAssetResult rejected;
@@ -4957,7 +4963,8 @@ uint32_t NativeSimulationHost::prepare_economy_origin_country_assets(
 }
 
 bool NativeSimulationHost::flush_country_economy_asset_commits(
-        std::string &error, uint64_t settle_request_id) {
+        std::string &error, uint64_t settle_request_id,
+        bool skip_audit_snapshot) {
     error.clear();
     struct PendingCommit {
         uint64_t request_id = 0;
@@ -5024,7 +5031,7 @@ bool NativeSimulationHost::flush_country_economy_asset_commits(
     // Authority treasury mutated outside an open plan must refresh the Economy
     // audit pin immediately. Otherwise opening/VERIFY keep reading the last
     // sealed day and report goods_error equal to the settled purchase.
-    if (applied > 0u && !plan_active) {
+    if (applied > 0u && !plan_active && !skip_audit_snapshot) {
         RuntimeCountryPodSnapshot audit_snap;
         std::string audit_error;
         if (_country_pod_authority.snapshot(audit_snap, audit_error)) {
@@ -5124,12 +5131,16 @@ bool NativeSimulationHost::prepare_worker_cohort_cash(
     request.transaction_id = request.request_id;
     request.operation_sequence = request.request_id;
     request.origin_domain = static_cast<uint32_t>(RuntimeDomainId::ECONOMY);
-    RuntimeCountryPodSnapshot snapshot;
-    if (!_country_pod_authority.snapshot(snapshot, error) ||
-        !country_core_apply_economy_asset_prepare(
-            snapshot, _country_pod_catalog, request, error)) return false;
+    const RuntimeCountryPodSnapshot *borrowed =
+        _country_pod_authority.borrow_state();
+    if (borrowed == nullptr) {
+        error = "country_pod_not_bootstrapped";
+        return false;
+    }
+    if (!country_core_apply_economy_asset_prepare(
+            *borrowed, _country_pod_catalog, request, error)) return false;
     if (request.operation == RuntimeEconomyAssetOperation::CASH_FROM_COHORT &&
-        snapshot.country_cash[static_cast<size_t>(request.country_slot)] >
+        borrowed->country_cash[static_cast<size_t>(request.country_slot)] >
             INT64_MAX - request.requested_cash) {
         error = "country_worker_cohort_cash_treasury_overflow";
         return false;
@@ -5152,7 +5163,7 @@ bool NativeSimulationHost::finish_worker_country_asset(
         if (error.empty()) error = "country_worker_cohort_cash_rejected";
         return false;
     }
-    if (!flush_country_economy_asset_commits(error, request_id)) return false;
+    if (!flush_country_economy_asset_commits(error, request_id, true)) return false;
     if (!publish_country_worker_snapshot(RUNTIME_DIRTY_COUNTRY_STATE, error))
         return false;
     acknowledge_country_economy_asset_consumed(request_id);
@@ -8323,7 +8334,7 @@ bool NativeSimulationHost::execute_trigger_worker_stage(
     }
     const auto plan_started = std::chrono::steady_clock::now();
     std::vector<RuntimeTriggerEffectIntent> intents;
-    RuntimeTriggerSnapshot snapshot;
+    thread_local RuntimeTriggerSnapshot snapshot;
     uint32_t required_ack_count = 0;
     uint64_t state_hash = 0;
     double replay_ms = 0.0;
@@ -9133,7 +9144,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             _events_last_processed_day >= event_day) {
             return true;
         }
-        RuntimeEventsSnapshot events_snapshot;
+    thread_local RuntimeEventsSnapshot events_snapshot;
         RuntimeEventsReport events_report;
         std::string events_error;
         // RuntimeEventsAuthority owns its receipt vector. Keep that vector

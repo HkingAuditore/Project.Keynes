@@ -208,7 +208,7 @@ void NativeEconomyRuntime::consume_remote_startup_demand(
 
 int64_t NativeEconomyRuntime::startup_producer_hard_input_cover_q16(
         int32_t cell, int32_t good_id, int64_t &sat) const {
-    // Recursion guard: cover ranking may nest through select_startup_producer
+    // recursion guard: cover ranking may nest through select_startup_producer
     // → select_startup_input_candidate → cover again on a different good.
     int32_t &depth = startup_cover_depth();
     if (depth >= 3) return 0;
@@ -217,12 +217,49 @@ int64_t NativeEconomyRuntime::startup_producer_hard_input_cover_q16(
         int32_t &value;
         ~DepthGuard() { --value; }
     } guard{depth};
+    auto &memo = startup_producer_memo_state();
+    const bool memo_active = memo.depth > 0 && memo.owner == this &&
+        good_id >= 0 && good_id < static_cast<int32_t>(_good_ids.size()) &&
+        depth >= 0 && depth < 4;
+    const size_t slot_idx =
+        static_cast<size_t>(good_id >= 0 ? good_id : 0) * 4u +
+        static_cast<size_t>(depth & 3);
+    if (memo_active) {
+        memo.ensure_cell(cell, _good_ids.size(),
+                         _building_construction_goods.size());
+        if (memo.cover_stamp[slot_idx] == memo.fast_gen) {
+            sat += memo.cover_sat_delta[slot_idx];
+            return memo.cover_value[slot_idx];
+        }
+    }
+    const int64_t sat_before = sat;
     const int32_t type_id = select_startup_producer(cell, good_id);
-    if (type_id < 0) return 0;
+    if (type_id < 0) {
+        if (memo_active && memo.fast_cell == cell) {
+            memo.cover_stamp[slot_idx] = memo.fast_gen;
+            memo.cover_value[slot_idx] = 0;
+            memo.cover_sat_delta[slot_idx] = sat - sat_before;
+        }
+        return 0;
+    }
     const BuildingType &type = _building_types[type_id];
-    if (type.input_count <= 0) return Q16_ONE;
+    if (type.input_count <= 0) {
+        if (memo_active && memo.fast_cell == cell) {
+            memo.cover_stamp[slot_idx] = memo.fast_gen;
+            memo.cover_value[slot_idx] = Q16_ONE;
+            memo.cover_sat_delta[slot_idx] = sat - sat_before;
+        }
+        return Q16_ONE;
+    }
     const int32_t market = market_store().cell_to_market[cell];
-    if (market < 0) return 0;
+    if (market < 0) {
+        if (memo_active && memo.fast_cell == cell) {
+            memo.cover_stamp[slot_idx] = memo.fast_gen;
+            memo.cover_value[slot_idx] = 0;
+            memo.cover_sat_delta[slot_idx] = sat - sat_before;
+        }
+        return 0;
+    }
     int64_t cover = Q16_ONE;
     bool saw_hard = false;
     for (int32_t edge = 0; edge < type.input_count; ++edge) {
@@ -232,7 +269,14 @@ int64_t NativeEconomyRuntime::startup_producer_hard_input_cover_q16(
         int64_t physical = 0;
         const int32_t input_good = select_startup_input_candidate(
             cell, input, physical);
-        if (input_good < 0 || physical <= 0) return 0;
+        if (input_good < 0 || physical <= 0) {
+            if (memo_active && memo.fast_cell == cell) {
+                memo.cover_stamp[slot_idx] = memo.fast_gen;
+                memo.cover_value[slot_idx] = 0;
+                memo.cover_sat_delta[slot_idx] = sat - sat_before;
+            }
+            return 0;
+        }
         const int64_t stock = std::max<int64_t>(0,
             market_store().stock[market_store().index(market, input_good)]);
         const int32_t signal = market_signal_index(cell, input_good);
@@ -252,7 +296,13 @@ int64_t NativeEconomyRuntime::startup_producer_hard_input_cover_q16(
     // whose producers have no hard gate, while knapping (hard flint, empty)
     // scored 0 and never received substitute pressure. Neutral 0 lets price /
     // quality break ties among uncovered substitutes.
-    return saw_hard ? cover : 0;
+    const int64_t result_cover = saw_hard ? cover : 0;
+    if (memo_active && memo.fast_cell == cell) {
+        memo.cover_stamp[slot_idx] = memo.fast_gen;
+        memo.cover_value[slot_idx] = result_cover;
+        memo.cover_sat_delta[slot_idx] = sat - sat_before;
+    }
+    return result_cover;
 }
 
 bool NativeEconomyRuntime::startup_candidate_better(
@@ -333,6 +383,20 @@ int32_t NativeEconomyRuntime::select_startup_construction_candidate(
         group >= static_cast<int32_t>(_building_construction_goods.size()) ||
         group + 1 >= static_cast<int32_t>(
             _building_construction_candidate_offsets.size())) return -1;
+    const int32_t cur_depth = startup_cover_depth();
+    auto &memo = startup_producer_memo_state();
+    const bool memo_active = memo.depth > 0 && memo.owner == this &&
+        cur_depth >= 0 && cur_depth < 4;
+    const size_t slot_idx =
+        static_cast<size_t>(group) * 4u + static_cast<size_t>(cur_depth & 3);
+    if (memo_active) {
+        memo.ensure_cell(cell, _good_ids.size(),
+                         _building_construction_goods.size());
+        if (memo.construction_stamp[slot_idx] == memo.fast_gen) {
+            physical_quantity = memo.construction_physical[slot_idx];
+            return memo.construction_good[slot_idx];
+        }
+    }
     const int32_t market = market_store().cell_to_market[cell];
     const GoodAmount &preferred = _building_construction_goods[group];
     int32_t best_good = -1;
@@ -370,6 +434,11 @@ int32_t NativeEconomyRuntime::select_startup_construction_candidate(
             best_physical = physical;
         }
     }
+    if (memo_active && memo.fast_cell == cell) {
+        memo.construction_stamp[slot_idx] = memo.fast_gen;
+        memo.construction_good[slot_idx] = best_good;
+        memo.construction_physical[slot_idx] = best_physical;
+    }
     physical_quantity = best_physical;
     return best_good;
 }
@@ -387,7 +456,7 @@ NativeEconomyRuntime::StartupProducerMemoScope::StartupProducerMemoScope(
     if (state.depth != 0 && state.owner != &owner) return;
     if (state.depth++ == 0) {
         state.owner = &owner;
-        state.entries.clear();
+        state.invalidate();
         state.hits = state.misses = 0;
     }
     active = true;
@@ -401,7 +470,7 @@ NativeEconomyRuntime::StartupProducerMemoScope::~StartupProducerMemoScope() {
             runtime._current_day.get(), 0.0, state.hits);
         EconomyCostProbe::record("startup_producer.memo_miss",
             runtime._current_day.get(), 0.0, state.misses);
-        state.entries.clear();
+        state.invalidate();
         state.owner = nullptr;
     }
 }
@@ -433,12 +502,17 @@ int32_t NativeEconomyRuntime::select_startup_producer(
     if (cell < 0 || cell >= _cell_count.get() || good_id < 0 ||
         good_id + 1 >= static_cast<int32_t>(_investment_good_type_offsets.size()))
         return -1;
+    const int32_t cur_depth = startup_cover_depth();
     auto &memo = startup_producer_memo_state();
-    const bool memo_active = memo.depth > 0 && memo.owner == this;
-    const std::array<int32_t, 3> memo_key{cell, good_id, startup_cover_depth()};
+    const bool memo_active = memo.depth > 0 && memo.owner == this &&
+        good_id < static_cast<int32_t>(_good_ids.size()) &&
+        cur_depth >= 0 && cur_depth < 4;
+    const size_t slot_idx =
+        static_cast<size_t>(good_id) * 4u + static_cast<size_t>(cur_depth & 3);
     if (memo_active) {
-        const auto found = memo.entries.find(memo_key);
-        if (found != memo.entries.end()) {
+        memo.ensure_cell(cell, _good_ids.size(),
+                         _building_construction_goods.size());
+        if (memo.producer_stamp[slot_idx] == memo.fast_gen) {
             const char *verify = std::getenv("PK_ECONOMY_MEMO_VERIFY");
             if (verify && std::strcmp(verify, "1") == 0) {
                 const auto *previous_owner = memo.owner;
@@ -447,8 +521,9 @@ int32_t NativeEconomyRuntime::select_startup_producer(
                 const int32_t reference = select_startup_producer(
                     cell, good_id, &reference_plan);
                 memo.owner = previous_owner;
-                if (reference != found->second.first ||
-                    !same_startup_plan(reference_plan, found->second.second)) {
+                if (reference != memo.producer_type[slot_idx] ||
+                    !same_startup_plan(reference_plan,
+                                       memo.producer_plan[slot_idx])) {
                     std::fprintf(stderr,
                         "[startup-producer-memo-mismatch] day=%lld cell=%d good=%d\n",
                         static_cast<long long>(_current_day.get()), cell, good_id);
@@ -456,8 +531,10 @@ int32_t NativeEconomyRuntime::select_startup_producer(
                 }
             }
             ++memo.hits;
-            if (selected_plan != nullptr) *selected_plan = found->second.second;
-            return found->second.first;
+            if (selected_plan != nullptr) {
+                *selected_plan = memo.producer_plan[slot_idx];
+            }
+            return memo.producer_type[slot_idx];
         }
         ++memo.misses;
     }
@@ -467,6 +544,7 @@ int32_t NativeEconomyRuntime::select_startup_producer(
     int64_t best_unit_cost = std::numeric_limits<int64_t>::max();
     int64_t best_output = 0;
     InvestmentCandidatePlan best_plan;
+    InvestmentCandidatePlan candidate_plan;
     const int32_t market = market_store().cell_to_market[cell];
     int64_t sat = 0;
     for (int32_t cursor = _investment_good_type_offsets[good_id];
@@ -478,7 +556,6 @@ int32_t NativeEconomyRuntime::select_startup_producer(
         // Startup selection writes the same candidate record used by ordinary
         // investment.  The selector may still return a type id for legacy
         // callers, but its ranking is now based on one plan shape.
-        InvestmentCandidatePlan candidate_plan;
         candidate_plan.cell = cell;
         candidate_plan.type_id = type_id;
         candidate_plan.owner_signature_id = -1;
@@ -488,6 +565,11 @@ int32_t NativeEconomyRuntime::select_startup_producer(
         candidate_plan.request.allow_reallocation = false;
         candidate_plan.owner_slots = std::max<int64_t>(1,
             type.owner_slots_per_building);
+        candidate_plan.employee_slots = 0;
+        candidate_plan.input_good_ids.clear();
+        candidate_plan.input_quantities.clear();
+        candidate_plan.material_good_ids.clear();
+        candidate_plan.material_quantities.clear();
         int64_t output_quantity = 0;
         for (int32_t edge = 0; edge < type.output_count; ++edge) {
             const GoodAmount &output = _building_outputs[type.output_begin + edge];
@@ -497,12 +579,12 @@ int32_t NativeEconomyRuntime::select_startup_producer(
         }
         output_quantity = mul_div_sat(output_quantity,
             _building_output_efficiency_q16, Q16_ONE, sat);
-        output_quantity = mul_div_sat(output_quantity,
-            production_climate_capacity_q16(
-                type, cell, nullptr, nullptr, sat), Q16_ONE, sat);
-        if (output_quantity <= 0) continue;
-        candidate_plan.utilization_q16 = production_climate_capacity_q16(
+        const int64_t climate_cap = production_climate_capacity_q16(
             type, cell, nullptr, nullptr, sat);
+        output_quantity = mul_div_sat(output_quantity,
+            climate_cap, Q16_ONE, sat);
+        if (output_quantity <= 0) continue;
+        candidate_plan.utilization_q16 = climate_cap;
         int64_t operating_cost = 0;
         int64_t input_cost = 0;
         for (int32_t edge = 0; edge < type.input_count; ++edge) {
@@ -601,8 +683,11 @@ int32_t NativeEconomyRuntime::select_startup_producer(
             best_plan = candidate_plan;
         }
     }
-    if (memo_active && memo.owner == this)
-        memo.entries.emplace(memo_key, std::make_pair(best_type, best_plan));
+    if (memo_active && memo.fast_cell == cell) {
+        memo.producer_stamp[slot_idx] = memo.fast_gen;
+        memo.producer_type[slot_idx] = best_type;
+        memo.producer_plan[slot_idx] = best_plan;
+    }
     if (selected_plan != nullptr) *selected_plan = best_plan;
     return best_type;
 }
@@ -997,12 +1082,12 @@ void NativeEconomyRuntime::prepare_startup_demand() {
                     pending.type_id >= static_cast<int32_t>(
                         _building_types.size())) continue;
                 const BuildingType &type = _building_types[pending.type_id];
-                const int64_t climate = production_climate_capacity_q16(
-                    type, cell, nullptr, nullptr, _saturation_count);
                 for (int32_t edge = 0; edge < type.output_count; ++edge) {
                     const GoodAmount &output =
                         _building_outputs[type.output_begin + edge];
                     if (output.good_id != good) continue;
+                    const int64_t climate = production_climate_capacity_q16(
+                        type, cell, nullptr, nullptr, _saturation_count);
                     int64_t daily = mul_div_sat(output.quantity,
                         _building_output_efficiency_q16, Q16_ONE,
                         _saturation_count);
@@ -1203,14 +1288,20 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
         int64_t needed = 0;
     };
     thread_local std::vector<QueueEntry> queue;
+    thread_local std::vector<uint32_t> seeded_good_stamp;
+    if (seeded_good_stamp.size() < _good_ids.size()) {
+        seeded_good_stamp.assign(_good_ids.size(), 0);
+    }
+    LivingCostMemoScope memo(*this);
+    StartupProducerMemoScope startup_memo(*this);
     for (const int32_t cell : _economy_live_cells) {
         if (cell < 0 || cell >= _cell_count.get()) continue;
-        LivingCostMemoScope memo(*this);
-        StartupProducerMemoScope startup_memo(*this);
         ++_investment_review_stamp_generation;
         if (_investment_review_stamp_generation == 0) {
             std::fill(_investment_good_stamp.begin(),
                       _investment_good_stamp.end(), 0);
+            std::fill(seeded_good_stamp.begin(),
+                      seeded_good_stamp.end(), 0);
             _investment_review_stamp_generation = 1;
         }
         const uint32_t visit = _investment_review_stamp_generation;
@@ -1225,6 +1316,10 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
         household_demand_by_good.assign(market_store().good_count.get(), 0);
         bool household_preview_ready = false;
         auto seed_good = [&](int32_t good) {
+            if (good >= 0 && good < static_cast<int32_t>(seeded_good_stamp.size())) {
+                if (seeded_good_stamp[good] == visit) return;
+                seeded_good_stamp[good] = visit;
+            }
             const int32_t market = market_store().cell_to_market[cell];
             if (!household_preview_ready && market >= 0 && good >= 0) {
                 household_preview_ready = true;
@@ -1903,6 +1998,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
     for (int32_t ordinal = ordinal_begin; ordinal < ordinal_end; ++ordinal) {
         PhaseTimer investment_phase{Clock::now(), &_investment_evaluate_ms};
         const int32_t cell = _investment_review_cell_indices[ordinal];
+        StartupProducerMemoScope cell_startup_memo(*this);
         const bool capture_investment_diagnostics =
             cell == _inspector_trace_cell;
         if (capture_investment_diagnostics) {
@@ -2448,7 +2544,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         type.owner_profession_id, 0);
                 int64_t effective_unit_output = existing_group >= 0
                     ? effective_building_output_quantity(
-                        building_at(static_cast<size_t>(existing_group)), output.good_id,
+                        building_view(static_cast<size_t>(existing_group)), output.good_id,
                         output.quantity,
                         Q16_ONE, 1, _saturation_count)
                     : effective_building_output_quantity_for_target(

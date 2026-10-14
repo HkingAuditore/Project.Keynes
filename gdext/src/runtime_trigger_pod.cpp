@@ -98,17 +98,158 @@ bool effect_less(const RuntimeTriggerEffectIntent &a,
                  b.target_handle, b.fire_sequence, b.id);
 }
 
+void canonicalize_snapshot_in_place(RuntimeTriggerSnapshot &value,
+                                    bool include_generation) {
+    if (!include_generation) value.generation = 0;
+    if (!std::is_sorted(value.states.begin(), value.states.end(), state_less)) {
+        std::stable_sort(value.states.begin(), value.states.end(), state_less);
+    }
+    if (!std::is_sorted(value.branch_bindings.begin(),
+                        value.branch_bindings.end(), binding_less)) {
+        std::stable_sort(value.branch_bindings.begin(),
+                         value.branch_bindings.end(), binding_less);
+    }
+    if (!std::is_sorted(value.pending_events.begin(),
+                        value.pending_events.end(), event_less)) {
+        std::stable_sort(value.pending_events.begin(),
+                         value.pending_events.end(), event_less);
+    }
+    if (!std::is_sorted(value.pending_effects.begin(),
+                        value.pending_effects.end(), effect_less)) {
+        std::stable_sort(value.pending_effects.begin(),
+                         value.pending_effects.end(), effect_less);
+    }
+}
+
+bool is_snapshot_canonical(const RuntimeTriggerSnapshot &value) {
+    return std::is_sorted(value.states.begin(), value.states.end(), state_less) &&
+        std::is_sorted(value.branch_bindings.begin(), value.branch_bindings.end(),
+                       binding_less) &&
+        std::is_sorted(value.pending_events.begin(), value.pending_events.end(),
+                       event_less) &&
+        std::is_sorted(value.pending_effects.begin(), value.pending_effects.end(),
+                       effect_less);
+}
+
+void copy_trigger_snapshot_reuse_capacity(RuntimeTriggerSnapshot &dst,
+                                          const RuntimeTriggerSnapshot &src) {
+    dst.generation = src.generation;
+    dst.catalog_hash = src.catalog_hash;
+    dst.committed_day = src.committed_day;
+    dst.current_day = src.current_day;
+    dst.next_effect_id = src.next_effect_id;
+    dst.acked_effect_id = src.acked_effect_id;
+    dst.source_cursor = src.source_cursor;
+    dst.source_needs_resync = src.source_needs_resync;
+    dst.source_gap_begin = src.source_gap_begin;
+    dst.source_gap_end = src.source_gap_end;
+    dst.enabled = src.enabled;
+    dst.branch_bindings = src.branch_bindings;
+    dst.pending_events = src.pending_events;
+    dst.pending_effects = src.pending_effects;
+    dst.states.resize(src.states.size());
+    for (size_t i = 0; i < src.states.size(); ++i) {
+        RuntimeTriggerPodSnapshotState &d = dst.states[i];
+        const RuntimeTriggerPodSnapshotState &s = src.states[i];
+        d.trigger_id = s.trigger_id;
+        d.target_handle = s.target_handle;
+        d.target_generation = s.target_generation;
+        d.accumulator = s.accumulator;
+        d.remainder = s.remainder;
+        d.last_event_id = s.last_event_id;
+        d.fire_sequence = s.fire_sequence;
+        d.cooldown_until = s.cooldown_until;
+        d.window_start_day = s.window_start_day;
+        d.last_observed = s.last_observed;
+        d.last_sample_day = s.last_sample_day;
+        d.completed = s.completed;
+        d.initialized = s.initialized;
+        d.needs_resync = s.needs_resync;
+        d.distinct_keys = s.distinct_keys;
+    }
+}
+
+void hash_snapshot_dual(const RuntimeTriggerSnapshot &snapshot,
+                        uint64_t &hash_with_gen, uint64_t &hash_zero_gen) {
+    uint64_t h1 = mix_value(FNV_OFFSET, snapshot.generation);
+    uint64_t h0 = mix_value(FNV_OFFSET, uint64_t{0});
+    auto mix2_bytes = [&](const void *data, size_t size) {
+        const auto *bytes = static_cast<const uint8_t *>(data);
+        for (size_t i = 0; i < size; ++i) {
+            const uint8_t b = bytes[i];
+            h1 = (h1 ^ b) * FNV_PRIME;
+            h0 = (h0 ^ b) * FNV_PRIME;
+        }
+    };
+    auto mix2 = [&](auto value) {
+        mix2_bytes(&value, sizeof(value));
+    };
+    mix2(snapshot.catalog_hash);
+    mix2(snapshot.committed_day);
+    mix2(snapshot.current_day);
+    mix2(snapshot.next_effect_id);
+    mix2(snapshot.acked_effect_id);
+    if (!snapshot.source_cursor.empty())
+        mix2_bytes(snapshot.source_cursor.data(), snapshot.source_cursor.size() * sizeof(int64_t));
+    if (!snapshot.source_needs_resync.empty())
+        mix2_bytes(snapshot.source_needs_resync.data(), snapshot.source_needs_resync.size());
+    if (!snapshot.source_gap_begin.empty())
+        mix2_bytes(snapshot.source_gap_begin.data(), snapshot.source_gap_begin.size() * sizeof(int64_t));
+    if (!snapshot.source_gap_end.empty())
+        mix2_bytes(snapshot.source_gap_end.data(), snapshot.source_gap_end.size() * sizeof(int64_t));
+    if (!snapshot.enabled.empty())
+        mix2_bytes(snapshot.enabled.data(), snapshot.enabled.size());
+    for (const RuntimeTriggerPodSnapshotState &state : snapshot.states) {
+        mix2(state.trigger_id);
+        mix2(state.target_handle);
+        mix2(state.target_generation);
+        mix2(state.accumulator);
+        mix2(state.remainder);
+        mix2(state.last_event_id);
+        mix2(state.fire_sequence);
+        mix2(state.cooldown_until);
+        mix2(state.window_start_day);
+        mix2(state.last_observed);
+        mix2(state.last_sample_day);
+        mix2(state.completed);
+        mix2(state.initialized);
+        mix2(state.needs_resync);
+        if (!state.distinct_keys.empty()) {
+            mix2_bytes(state.distinct_keys.data(),
+                       state.distinct_keys.size() * sizeof(int64_t));
+        }
+    }
+    for (const RuntimeTriggerBranchBinding &binding : snapshot.branch_bindings) {
+        mix2(binding.trigger_id); mix2(binding.branch_handle);
+        mix2(binding.cell); mix2(binding.reward_target);
+        mix2(binding.enabled);
+    }
+    for (const RuntimeTriggerEvent &event : snapshot.pending_events) {
+        mix2(event.source_id); mix2(event.event_id);
+        mix2(event.day); mix2(event.event_type);
+        mix2(event.payload_schema); mix2(event.entity_handle);
+        mix2(event.group_handle); mix2(event.value);
+        mix2_bytes(event.payload.data(), event.payload.size() * sizeof(int64_t));
+        mix2(event.snapshot);
+    }
+    for (const RuntimeTriggerEffectIntent &effect : snapshot.pending_effects) {
+        mix2(effect.id); mix2(effect.effective_day);
+        mix2(effect.source_priority); mix2(effect.trigger_id);
+        mix2(effect.effect_definition_id); mix2(effect.target_handle);
+        mix2(effect.target_generation); mix2(effect.fire_sequence);
+        mix2(effect.action); mix2(effect.domain);
+        mix2(effect.opcode); mix2(effect.resolved_value);
+        mix2(effect.duration_days); mix2(effect.stacks);
+        mix2_bytes(effect.payload.data(), effect.payload.size() * sizeof(int64_t));
+    }
+    hash_with_gen = h1;
+    hash_zero_gen = h0;
+}
+
 RuntimeTriggerSnapshot canonicalize_snapshot(const RuntimeTriggerSnapshot &source,
                                              bool include_generation) {
     RuntimeTriggerSnapshot value = source;
-    if (!include_generation) value.generation = 0;
-    std::stable_sort(value.states.begin(), value.states.end(), state_less);
-    std::stable_sort(value.branch_bindings.begin(), value.branch_bindings.end(),
-                     binding_less);
-    std::stable_sort(value.pending_events.begin(), value.pending_events.end(),
-                     event_less);
-    std::stable_sort(value.pending_effects.begin(), value.pending_effects.end(),
-                     effect_less);
+    canonicalize_snapshot_in_place(value, include_generation);
     return value;
 }
 
@@ -811,7 +952,13 @@ bool RuntimeTriggerPodAuthority::plan_day(int64_t day, uint64_t input_generation
                                           RuntimeTriggerPodPlan &plan,
                                           std::string &error) {
     error.clear();
-    plan = RuntimeTriggerPodPlan{};
+    plan.header = RuntimeDomainHeader{};
+    plan.consumed_commands.clear();
+    plan.intents.clear();
+    plan.acks.clear();
+    plan.required_ack_count = 0;
+    plan.preflight_ok = 0;
+    plan.committed = 0;
     if (!_bootstrapped) { error = "trigger_pod_not_bootstrapped"; return false; }
     if (_plan_active) { error = "trigger_plan_already_pending"; return false; }
     if (day < 0 || day < _state.committed_day) { error = "trigger_day_invalid"; return false; }
@@ -819,7 +966,7 @@ bool RuntimeTriggerPodAuthority::plan_day(int64_t day, uint64_t input_generation
     plan.header.day = day;
     plan.header.input_generation = input_generation;
     plan.header.base_generation = _state.generation;
-    plan.next_state = _state;
+    copy_trigger_snapshot_reuse_capacity(plan.next_state, _state);
     std::vector<RuntimeTriggerCommand> ordered = _pending_commands;
     std::stable_sort(ordered.begin(), ordered.end(),
         [](const RuntimeTriggerCommand &a, const RuntimeTriggerCommand &b) {
@@ -852,7 +999,11 @@ bool RuntimeTriggerPodAuthority::plan_day(int64_t day, uint64_t input_generation
     }
     plan.next_state.generation = _state.generation + 1u;
     plan.next_state.committed_day = day;
-    plan.header.state_hash = hash_snapshot(plan.next_state);
+    canonicalize_snapshot_in_place(plan.next_state, true);
+    uint64_t hash_with_gen = 0;
+    uint64_t hash_zero_gen = 0;
+    hash_snapshot_dual(plan.next_state, hash_with_gen, hash_zero_gen);
+    plan.header.state_hash = hash_with_gen;
     plan.header.intent_count = static_cast<uint32_t>(plan.intents.size());
     plan.required_ack_count = static_cast<uint32_t>(plan.intents.size());
     plan.header.ack_count = plan.required_ack_count;
@@ -874,7 +1025,7 @@ bool RuntimeTriggerPodAuthority::plan_day(int64_t day, uint64_t input_generation
     _diagnostics.committed_day = _state.committed_day;
     _diagnostics.acked_effect_id = _state.acked_effect_id;
     _diagnostics.pending_command_count = static_cast<uint32_t>(_pending_commands.size());
-    _diagnostics.worker_state_hash = canonical_state_hash(plan.next_state);
+    _diagnostics.worker_state_hash = hash_zero_gen;
     _diagnostics.worker_effect_hash = hash_effects(plan.intents);
     _diagnostics.required_ack_count = plan.required_ack_count;
     _diagnostics.received_ack_count = 0;
@@ -936,12 +1087,16 @@ bool RuntimeTriggerPodAuthority::commit_day(RuntimeTriggerPodPlan &plan,
         copy_reason(_diagnostics.blocker, error);
         return false;
     }
-    _state = plan.next_state;
-    _state_hash = hash_snapshot(_state);
+    copy_trigger_snapshot_reuse_capacity(_state, plan.next_state);
+    _state_hash = plan.header.state_hash != 0
+        ? plan.header.state_hash
+        : hash_snapshot(_state);
     plan.committed = 1;
     _plan_active = false;
     _active_plan = nullptr;
-    _diagnostics.worker_state_hash = canonical_state_hash(_state);
+    if (_diagnostics.worker_state_hash == 0) {
+        _diagnostics.worker_state_hash = canonical_state_hash(_state);
+    }
     _diagnostics.worker_effect_hash = hash_effects(_state.pending_effects);
     _diagnostics.generation = _state.generation;
     _diagnostics.committed_day = _state.committed_day;
@@ -969,7 +1124,7 @@ bool RuntimeTriggerPodAuthority::snapshot(RuntimeTriggerSnapshot &out,
                                           std::string &error) const {
     error.clear();
     if (!_bootstrapped) { error = "trigger_pod_not_bootstrapped"; return false; }
-    out = _state;
+    copy_trigger_snapshot_reuse_capacity(out, _state);
     return true;
 }
 
@@ -1032,6 +1187,9 @@ uint64_t RuntimeTriggerPodAuthority::hash_snapshot_impl(
 
 uint64_t RuntimeTriggerPodAuthority::hash_snapshot(
         const RuntimeTriggerSnapshot &snapshot) {
+    if (is_snapshot_canonical(snapshot)) {
+        return hash_snapshot_impl(snapshot);
+    }
     return hash_snapshot_impl(canonicalize_snapshot(snapshot, true));
 }
 
@@ -1045,6 +1203,18 @@ uint64_t RuntimeTriggerPodAuthority::canonical_state_hash(
     // Generation is a worker transaction detail. The facade exports zero
     // because it has no corresponding POD commit generation; excluding it
     // makes the reference and worker hashes describe the same semantic state.
+    if (is_snapshot_canonical(snapshot)) {
+        if (snapshot.generation == 0) {
+            return hash_snapshot_impl(snapshot);
+        }
+        RuntimeTriggerSnapshot &mutable_ref =
+            const_cast<RuntimeTriggerSnapshot &>(snapshot);
+        const uint64_t saved_gen = mutable_ref.generation;
+        mutable_ref.generation = 0;
+        const uint64_t result = hash_snapshot_impl(mutable_ref);
+        mutable_ref.generation = saved_gen;
+        return result;
+    }
     return hash_snapshot_impl(canonicalize_snapshot(snapshot, false));
 }
 

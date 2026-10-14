@@ -855,7 +855,7 @@ bool country_core_country_pays(RuntimeEconomyAssetOperation operation) {
 } // namespace
 
 bool country_core_apply_economy_asset_prepare(
-        RuntimeCountryPodSnapshot &state,
+        const RuntimeCountryPodSnapshot &state,
         const RuntimeCountryPodCatalog &catalog,
         RuntimeEconomyAssetRequest &request,
         std::string &error) {
@@ -959,6 +959,27 @@ bool country_core_apply_economy_asset_commit(
             error = "country_economy_asset_cash_insufficient";
             return false;
         }
+        for (uint32_t i = 0; i < request.good_count &&
+             i < RUNTIME_ECONOMY_ASSET_GOOD_CAPACITY; ++i) {
+            if (request.operation == RuntimeEconomyAssetOperation::RESEARCH_PURCHASE)
+                continue;
+            const int32_t good = request.good_ids[i];
+            const int64_t qty = request.good_quantities[i];
+            if (good < 0 || good >= static_cast<int32_t>(state.good_count)) continue;
+            const int64_t stock = state.country_goods[
+                country * state.good_count + static_cast<size_t>(good)];
+            if (request.operation == RuntimeEconomyAssetOperation::GOOD_FROM_MARKET) {
+                if (stock > std::numeric_limits<int64_t>::max() - qty) {
+                    error = "country_economy_asset_goods_overflow";
+                    return false;
+                }
+            } else {
+                if (stock < qty) {
+                    error = "country_economy_asset_goods_insufficient";
+                    return false;
+                }
+            }
+        }
         state.country_cash[country] -= cash;
         if (request.operation == RuntimeEconomyAssetOperation::RESEARCH_PURCHASE &&
             catalog.technology_points_good_id >= 0 &&
@@ -981,16 +1002,8 @@ bool country_core_apply_economy_asset_commit(
             int64_t &stock = state.country_goods[
                 country * state.good_count + static_cast<size_t>(good)];
             if (request.operation == RuntimeEconomyAssetOperation::GOOD_FROM_MARKET) {
-                if (stock > std::numeric_limits<int64_t>::max() - qty) {
-                    error = "country_economy_asset_goods_overflow";
-                    return false;
-                }
                 stock += qty;
             } else {
-                if (stock < qty) {
-                    error = "country_economy_asset_goods_insufficient";
-                    return false;
-                }
                 stock -= qty;
             }
         }
@@ -1226,13 +1239,23 @@ uint64_t country_core_hash_business_state(const RuntimeCountryPodSnapshot &state
     mix_u64(static_cast<uint64_t>(state.last_research_day));
     hash_vector(state.country_active);
     hash_vector(state.country_generation);
-    for (const std::string &value : state.country_stable_ids) {
-        hash_vector(std::vector<uint8_t>(value.begin(), value.end()));
+    const auto hash_string = [&](const std::string &value) {
+        const uint32_t count = static_cast<uint32_t>(value.size());
+        for (size_t i = 0; i < sizeof(count); ++i) {
+            hash ^= static_cast<uint8_t>(count >> (i * 8u));
+            hash *= FNV_PRIME;
+        }
+        for (unsigned char byte : value) {
+            hash ^= byte;
+            hash *= FNV_PRIME;
+        }
         mix_u64(0);
+    };
+    for (const std::string &value : state.country_stable_ids) {
+        hash_string(value);
     }
     for (const std::string &value : state.country_display_names) {
-        hash_vector(std::vector<uint8_t>(value.begin(), value.end()));
-        mix_u64(0);
+        hash_string(value);
     }
     // Per-country state versions are read-view invalidation cursors. They can
     // differ when production batches internal writes differently from SHADOW,

@@ -102,7 +102,7 @@ func solve(map: MapData, world: WorldData, season_idx: int, climate_anomaly: flo
 # _neighbor_average_vapor*）已在 PR-1/2/3 搬入本类，自调用。
 
 ## 切片初始化：分配 prev/next buffer、读 SoA 进 prev_vapor/precip。
-func begin_slice(map: MapData, world: WorldData, season_idx: int, climate_anomaly: float, season_phase: float = -1.0, count_day: bool = true) -> void:
+func begin_slice(map: MapData, world: WorldData, season_idx: int, climate_anomaly: float, season_phase: float = -1.0, count_day: bool = true, for_worker_knobs_only: bool = false) -> void:
 	_weather_system._clear_weather_field_slice_state()
 	if map == null or world == null:
 		return
@@ -132,10 +132,11 @@ func begin_slice(map: MapData, world: WorldData, season_idx: int, climate_anomal
 		_convective_inhib.resize(n_cells)
 	_field_slice_temp_read = map.temp_arr_prev if map.temp_arr_prev.size() == n_cells else map.temp_arr
 	_field_slice_moisture_read = map.moisture_arr_prev if map.moisture_arr_prev.size() == n_cells else map.moisture_arr
-	if map.weather_classification_temp_arr.size() == n_cells:
-		map.weather_classification_temp_arr = _field_slice_temp_read.duplicate()
-	if map.weather_classification_moisture_arr.size() == n_cells:
-		map.weather_classification_moisture_arr = _field_slice_moisture_read.duplicate()
+	if not for_worker_knobs_only:
+		if map.weather_classification_temp_arr.size() == n_cells:
+			map.weather_classification_temp_arr = _field_slice_temp_read.duplicate()
+		if map.weather_classification_moisture_arr.size() == n_cells:
+			map.weather_classification_moisture_arr = _field_slice_moisture_read.duplicate()
 	_field_slice_snow_cover_read = map.snow_cover_arr_prev if map.snow_cover_arr_prev.size() == n_cells else map.snow_cover_arr
 	_field_slice_neighbor_indices = map.neighbor_indices_packed() if map.has_indices() else PackedInt32Array()
 	_field_slice_fast_indexed = _field_slice_neighbor_indices.size() >= n_cells * 6
@@ -165,48 +166,42 @@ func begin_slice(map: MapData, world: WorldData, season_idx: int, climate_anomal
 	_weather_system._tick_cell_pos.clear()
 	_weather_system._tick_cell_neighbors.clear()
 
-	_field_slice_prev_vapor = PackedFloat32Array()
-	_field_slice_prev_precip = PackedFloat32Array()
-	_field_slice_next_vapor = PackedFloat32Array()
-	_field_slice_next_cloud = PackedFloat32Array()
-	_field_slice_next_cloud_water = PackedFloat32Array()
-	_field_slice_next_precip = PackedFloat32Array()
-	_field_slice_next_instability = PackedFloat32Array()
-	_field_slice_next_intensity = PackedFloat32Array()
-	_field_slice_next_convergence = PackedFloat32Array()
-	_field_slice_next_type = PackedInt32Array()
-	_field_slice_prev_vapor.resize(n_cells)
-	_field_slice_prev_precip.resize(n_cells)
-	_field_slice_next_vapor.resize(n_cells)
-	_field_slice_next_cloud.resize(n_cells)
-	_field_slice_next_cloud_water.resize(n_cells)
-	_field_slice_next_precip.resize(n_cells)
-	_field_slice_next_instability.resize(n_cells)
-	_field_slice_next_intensity.resize(n_cells)
-	_field_slice_next_convergence.resize(n_cells)
-	_field_slice_next_type.resize(n_cells)
-	# B-full Step-2：prev 拷贝走 SoA 直读，消除每 cell 4 次 HexCell 字段访问。
-	# SoA 数组在 bake_world 时由 rebuild_soa_from_cells() alloc 并与 DCWorld view_f32
-	# 同引用；--data-core=true / false 行为完全一致，因为 SoA 始终被维护。
-	# 等价语义保留：未 init 的 cell（field_init==0）用 moisture 兜底，precip 当 0。
-	var soa_vapor_in: PackedFloat32Array = map.weather_vapor_arr
-	var soa_precip_in: PackedFloat32Array = map.weather_precip_arr
-	var soa_field_init: PackedByteArray = map.weather_field_init_arr
-	var soa_moisture: PackedFloat32Array = _field_slice_moisture_read if _field_slice_moisture_read.size() == n_cells else map.moisture_arr
-	for i in range(n_cells):
-		if soa_field_init[i] > 0:
-			_field_slice_prev_vapor[i] = soa_vapor_in[i]
-			_field_slice_prev_precip[i] = soa_precip_in[i]
-		else:
-			# Stage6d (2026-06-23) 修首帧暴雨/暴雪：原 prev_vapor=moisture(满饱和，洋=1.0)→首 tick 处处过饱和
-			# →全图凝结成雨(实测首 tick 86% 格降水、21% 暴雪)，再经 ~15 tick 弛豫。改为按稳态量级(≈0.15×moisture)
-			# 起步，让水汽由蒸发温和积累、降水渐次涌现，消除 spin-up 暴雨暴雪瞬变。
-			_field_slice_prev_vapor[i] = soa_moisture[i] * 0.15
-			_field_slice_prev_precip[i] = 0.0
+	if not for_worker_knobs_only:
+		_field_slice_prev_vapor = PackedFloat32Array()
+		_field_slice_prev_precip = PackedFloat32Array()
+		_field_slice_next_vapor = PackedFloat32Array()
+		_field_slice_next_cloud = PackedFloat32Array()
+		_field_slice_next_cloud_water = PackedFloat32Array()
+		_field_slice_next_precip = PackedFloat32Array()
+		_field_slice_next_instability = PackedFloat32Array()
+		_field_slice_next_intensity = PackedFloat32Array()
+		_field_slice_next_convergence = PackedFloat32Array()
+		_field_slice_next_type = PackedInt32Array()
+		_field_slice_prev_vapor.resize(n_cells)
+		_field_slice_prev_precip.resize(n_cells)
+		_field_slice_next_vapor.resize(n_cells)
+		_field_slice_next_cloud.resize(n_cells)
+		_field_slice_next_cloud_water.resize(n_cells)
+		_field_slice_next_precip.resize(n_cells)
+		_field_slice_next_instability.resize(n_cells)
+		_field_slice_next_intensity.resize(n_cells)
+		_field_slice_next_convergence.resize(n_cells)
+		_field_slice_next_type.resize(n_cells)
+		var soa_vapor_in: PackedFloat32Array = map.weather_vapor_arr
+		var soa_precip_in: PackedFloat32Array = map.weather_precip_arr
+		var soa_field_init: PackedByteArray = map.weather_field_init_arr
+		var soa_moisture: PackedFloat32Array = _field_slice_moisture_read if _field_slice_moisture_read.size() == n_cells else map.moisture_arr
+		for i in range(n_cells):
+			if soa_field_init[i] > 0:
+				_field_slice_prev_vapor[i] = soa_vapor_in[i]
+				_field_slice_prev_precip[i] = soa_precip_in[i]
+			else:
+				_field_slice_prev_vapor[i] = soa_moisture[i] * 0.15
+				_field_slice_prev_precip[i] = 0.0
 	var tta_soa: PackedFloat32Array = map.temperature_transport_anomaly_arr
 	if tta_soa.size() == n_cells:
 		_field_slice_temp_anom = tta_soa
-	else:
+	elif not for_worker_knobs_only:
 		_field_slice_temp_anom = PackedFloat32Array()
 		_field_slice_temp_anom.resize(n_cells)
 		for ti in range(n_cells):
