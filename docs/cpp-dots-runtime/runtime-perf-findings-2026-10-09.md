@@ -294,3 +294,34 @@ household ≈ 1.2。生产中写循环仍每组取可写引用（working_capital
 
 - release 对 debug A/B：编辑器内 Godot 只加载 template_debug 映射，未测。
 - 编辑器 50x 复录后期（第 8000 天后）确认 execute 降幅；编辑器内主线程空闲，应接近 worker 上限。
+
+## 2026-10-14 50x 稳定吞吐五项热路径收敛
+
+针对编辑器 50x 录制（`perf_record_20261014_105332.csv` / `110150.csv`）及多国 AI 长跑（`famine2`）暴露的卡点，落地以下逐位等价（bit-equal）优化：
+
+1. **`StartupProducerMemoState` 扁平化与递归树缓存 + `compute_cohort_demand_preview` 去冗余**：
+   - `StartupProducerMemoState` 改用按 `(good_id * 4 + depth)` 与 `(bom_group * 4 + depth)` 索引的 generation-stamped 扁平表，同时缓存 `select_startup_producer`、`startup_producer_hard_input_cover_q16` 与 `select_startup_construction_candidate`，消除 3 层冷启动替代品递归树的指数级重入与 `std::map` 节点分配。
+   - `select_startup_producer` 将 `candidate_plan` 移至循环外复用 `std::vector` 容量；`refresh_derived_business_demand` 将 memo 作用域提升至外层并对 `seed_good` 去重；`run_endogenous_building_investment` 单格循环包裹 `StartupProducerMemoScope` 复用 `propagate_startup_demand_for_cell` 的选品结果。
+   - `compute_cohort_demand_preview` 复用输出向量消除每次 `totals` 堆分配，并跳过 `variant_scores == 0` 及 `units == 0` 的内层组件遍历。
+2. **`RuntimeChunkHash::update_tail` 扩容保缓存 + `_fiscal_hash_words` 增量追加**：
+   - 修复 `RuntimeChunkHash::update_impl` 在同列仅长度增长时 `reshape` 调用 `_pages.assign(count, {})` 清空全部历史 4KB 页缓存的缺陷；新增 `update_tail` 仅重算脏页尾段。
+   - `record_fiscal_peer_terminal` 直接向有序 `_fiscal_hash_words` 增量追加/二分更新，避免每日 `state_hash_internal` 全表遍历 `std::map<uint64_t, uint64_t> _fiscal_record_digests`。`native_hash_ms` 在 Day 3000+ 从 `5.90 ms/天`（Day 16000 达 `15.88 ms/天`）降至 **`0.38 ~ 0.42 ms/天`**。
+3. **`run_building_production_drain` 多核并行 + `RuntimeEconomyPodAuthority` 阶段计时修正 + 稀疏热路径**：
+   - Worker `STAGE_OPS` 生产阶段 `run_building_production_drain` 复用 `_production_results_scratch` 并接入 `parallel_for_range("pk_economy_building_production")` 多核并行与确定性主线程归并。
+   - `RuntimeEconomyPodAuthority::run_bound_stage` 在 `peer_park` 返回 `false` 时累加已耗时的 `_replay.stage_ms[index]`，修复 `BUILDING_COMMIT` / `GOVERNMENT_RESEARCH_PROCUREMENT` 因同日重试丢失首轮计时的探针盲区。
+   - `commit_food_flow_snapshot` 跳过零库存通道的信号查找；`refresh_epoch_research_demand` 改为遍历 `_economy_live_cells` 而非全图 `3 × _cell_count`。
+4. **每日收盘镜像与跨国资产 Peer 零冗余拷贝 + `EconomyTrackedColumn::write_values` 块级 `memcmp`**：
+   - `capture_committed_ledger_state` 直接向 `out.trade_escrow.store` / `out.family.store` / `out.resource.store` 同步，消除栈上临时三大 Store 的构造与二次深拷贝。
+   - `EconomyTrackedColumn::write_values` 对 `trivially_copyable` 列先按 64 元素块执行 `std::memcmp` 快速跳过未变更区间。
+   - `prepare_economy_origin_country_assets` / `prepare_worker_cohort_cash` 改用 `_country_pod_authority.borrow_state()` 只读借用；`apply_economy_asset_result` 原地更新 `_state`；`record_country_parity_locked` 复用 `worker.state_hash`；`finish_worker_country_asset` 跳过被 `publish_country_worker_snapshot` 立即覆盖的重复 `audit_snap` 拷贝。`building_commit` 与 `research` 耗时各降约 **46%**。
+   - `RuntimeTriggerPodAuthority` / `RuntimeTriggerKernel` / `RuntimeEventsAuthority`：事件淘汰改为批量 `erase`，Trigger 状态查找改为哈希索引 + `(source_id, event_type)` 分桶，`plan_day` 复用 `distinct_keys` 容量并用单遍双路 `hash_snapshot_dual` 同时产出 `state_hash` 与 `worker_state_hash`。
+5. **主线程 `WorldRuntimeHost._process` 容量背压提交消费与 `WeatherSystem` 捕获减负**：
+   - `world_runtime_host.gd::_process` 在 `capacity_pending` 重试成功后若 `_climate_capacity_pending_day < 0` 立即放行 `_service_runtime_progress()`，若仍满环则在返回前调用 `_consume_runtime_commit_if_ready()`，消除 50x 满环期间主线程提交消费与日历刷新的长帧饥饿。
+   - `weather_system.gd::build_field_knobs_for_worker` 与 `field_solver.gd::begin_slice` 新增 `for_worker_knobs_only` 快路径，跳过 Worker 不读取的 10 个 `n_cells` PackedArray 分配、逐格初始化循环及重复 `_build_weather_field_knobs` 调用。
+
+| 基准场景 | 优化前 Worker `execute` | 优化后 Worker `execute` | Worker 理论吞吐上限 |
+|---|---|---|---|
+| 6 国常规 2000 天 (`economy_auto_pod=true`) | `21.06 ms/天` | **`17.55 ms/天`** | **56.99 天/秒** |
+| 4 国常规 50 天 (`run_headless_perf` 标准门槛) | `~21 ms/天` | **`~16.8 ms/天`** | **53.20 天/秒 (`checkpoint_ok=true`)** |
+| 7 国 `country_ai=ACTIVE` Day 2086–3117 | `42.96 ms/天` (23.3 天/秒) | **`23.52 ms/天`** | **42.5 天/秒 (+82%)** |
+| 7 国 `country_ai=ACTIVE` Day 3117–4180 | `47.24 ms/天` (21.2 天/秒) | **`27.96 ms/天`** | **35.8 天/秒 (+69%)** |

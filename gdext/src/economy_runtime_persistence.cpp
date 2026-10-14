@@ -625,6 +625,7 @@ void NativeEconomyRuntime::prepare_restore_candidate_scratch() {
     _asset_peer_journal.clear();
     _fiscal_digest_rebuild = true;
     _fiscal_words_dirty = true;
+    _fiscal_hash_dirty_from_word = 0;
     _fiscal_record_digests.clear();
     _fiscal_hash_words.clear();
     _fiscal_hash_pages.clear();

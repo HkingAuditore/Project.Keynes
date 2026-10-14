@@ -1218,7 +1218,7 @@ void RuntimeEconomyPodAuthority::publish_replay_stage(
     if (index >= RuntimeEconomyPodReplayReport::STAGE_COUNT) return;
     _replay.stage_work[index] = work;
     _replay.stage_hash[index] = stage_hash;
-    _replay.stage_ms[index] = ms;
+    _replay.stage_ms[index] += ms;
     _replay.completed_stage_mask |= runtime_economy_graph_stage_bit(stage);
     _replay.stage_cursor = static_cast<uint32_t>(
         std::max<uint64_t>(_replay.stage_cursor, work));
@@ -1251,6 +1251,10 @@ bool RuntimeEconomyPodAuthority::run_bound_stage(RuntimeEconomyGraphStage stage,
     if (_stage_ops != nullptr) {
         if (!economy_kernel_run_stage(*_stage_ops, stage, _stage_cursor, _input,
                                       result, error)) {
+            const size_t index = static_cast<size_t>(stage);
+            if (index < RuntimeEconomyPodReplayReport::STAGE_COUNT) {
+                _replay.stage_ms[index] += elapsed_ms(begin);
+            }
             // Peer parks must not poison the epoch. commit_epoch treats any
             // replay fatal as economy_pod_fatal even if the slice later retries.
             const bool peer_park =

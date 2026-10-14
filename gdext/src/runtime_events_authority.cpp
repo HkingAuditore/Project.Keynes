@@ -294,13 +294,15 @@ bool RuntimeEventsAuthority::apply_packet(RuntimeEventsSnapshot &state,
             }
             ++report.appended_events;
             ++report.work_units;
-            if (state.events.size() > state.capacity) {
-                const int64_t dropped = state.events.front().event_id;
-                if (state.first_dropped_event_id == 0) state.first_dropped_event_id = dropped;
-                state.events.erase(state.events.begin());
-                ++state.dropped_event_count;
-                ++report.dropped_events;
-            }
+        }
+        if (state.events.size() > state.capacity) {
+            const size_t excess = state.events.size() - state.capacity;
+            const int64_t dropped = state.events.front().event_id;
+            if (state.first_dropped_event_id == 0) state.first_dropped_event_id = dropped;
+            state.events.erase(state.events.begin(),
+                               state.events.begin() + static_cast<ptrdiff_t>(excess));
+            state.dropped_event_count += excess;
+            report.dropped_events += static_cast<uint32_t>(excess);
         }
         return true;
     }

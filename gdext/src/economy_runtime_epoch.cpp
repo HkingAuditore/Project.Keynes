@@ -1022,6 +1022,11 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
             continue;
         for (int32_t g = _building_cell_offsets[cell];
              g < _building_cell_offsets[cell + 1]; ++g) {
+            const auto view = building_view(static_cast<size_t>(g));
+            if (view.pending_operating_state > 1 && view.operating_state <= 1 &&
+                view.recovery_cycles == 0 && view.recovery_cooldown_cycles == 0) {
+                continue;
+            }
             auto group = building_at(static_cast<size_t>(g));
             const bool applying_pending = group.pending_operating_state <= 1;
             if (applying_pending) {

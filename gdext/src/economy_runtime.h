@@ -1349,6 +1349,7 @@ private:
     mutable RuntimeChunkHash _fiscal_hash_pages;
     mutable bool _fiscal_digest_rebuild = true;
     mutable bool _fiscal_words_dirty = true;
+    mutable size_t _fiscal_hash_dirty_from_word = 0;
     struct OwnerOpportunityQuote;
     struct LivingCostMemoState {
         const NativeEconomyRuntime *owner = nullptr;
@@ -2470,8 +2471,56 @@ private:
         const NativeEconomyRuntime *owner = nullptr;
         int32_t depth = 0;
         uint64_t hits = 0, misses = 0;
+        int32_t fast_cell = -1;
+        uint32_t fast_gen = 1;
+        std::vector<uint32_t> producer_stamp;
+        std::vector<int32_t> producer_type;
+        std::vector<InvestmentCandidatePlan> producer_plan;
+        std::vector<uint32_t> cover_stamp;
+        std::vector<int64_t> cover_value;
+        std::vector<int64_t> cover_sat_delta;
+        std::vector<uint32_t> construction_stamp;
+        std::vector<int32_t> construction_good;
+        std::vector<int64_t> construction_physical;
         std::map<std::array<int32_t, 3>,
             std::pair<int32_t, InvestmentCandidatePlan>> entries;
+
+        void ensure_cell(int32_t cell, size_t good_count, size_t bom_count) {
+            const size_t prod_slots = good_count * 4u;
+            const size_t bom_slots = bom_count * 4u;
+            if (producer_stamp.size() < prod_slots) {
+                producer_stamp.assign(prod_slots, 0);
+                producer_type.resize(prod_slots, -1);
+                producer_plan.resize(prod_slots);
+                cover_stamp.assign(prod_slots, 0);
+                cover_value.resize(prod_slots, 0);
+                cover_sat_delta.resize(prod_slots, 0);
+            }
+            if (construction_stamp.size() < bom_slots) {
+                construction_stamp.assign(bom_slots, 0);
+                construction_good.resize(bom_slots, -1);
+                construction_physical.resize(bom_slots, 0);
+            }
+            if (fast_cell != cell) {
+                fast_cell = cell;
+                if (++fast_gen == 0) {
+                    std::fill(producer_stamp.begin(), producer_stamp.end(), 0);
+                    std::fill(cover_stamp.begin(), cover_stamp.end(), 0);
+                    std::fill(construction_stamp.begin(), construction_stamp.end(), 0);
+                    fast_gen = 1;
+                }
+            }
+        }
+        void invalidate() {
+            fast_cell = -1;
+            if (++fast_gen == 0) {
+                std::fill(producer_stamp.begin(), producer_stamp.end(), 0);
+                std::fill(cover_stamp.begin(), cover_stamp.end(), 0);
+                std::fill(construction_stamp.begin(), construction_stamp.end(), 0);
+                fast_gen = 1;
+            }
+            entries.clear();
+        }
     };
     static StartupProducerMemoState &startup_producer_memo_state() {
         thread_local StartupProducerMemoState state;

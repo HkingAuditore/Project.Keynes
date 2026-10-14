@@ -1302,19 +1302,38 @@ bool RuntimeCountryPodAuthority::apply_economy_asset_result(
         error = "country_economy_asset_apply_invalid";
         return false;
     }
-    RuntimeCountryPodSnapshot next = _state;
+    const int32_t slot = request.country_slot;
+    const size_t c = (slot >= 0 && slot < static_cast<int32_t>(_state.country_count))
+        ? static_cast<size_t>(slot) : 0;
+    const uint32_t ver_before = c < _state.country_state_version.size()
+        ? _state.country_state_version[c] : 0;
+    const int64_t cash_before = c < _state.country_cash.size()
+        ? _state.country_cash[c] : 0;
+    const int64_t research_before = c < _state.research_purchased_total.size()
+        ? _state.research_purchased_total[c] : 0;
     if (!country_core_apply_economy_asset_commit(
-            next, _catalog, request, result, error)) {
+            _state, _catalog, request, result, error)) {
         return false;
     }
-    const bool mutated =
-        next.country_cash != _state.country_cash ||
-        next.country_goods != _state.country_goods ||
-        next.research_purchased_total != _state.research_purchased_total;
+    const uint32_t ver_after = c < _state.country_state_version.size()
+        ? _state.country_state_version[c] : 0;
+    const int64_t cash_after = c < _state.country_cash.size()
+        ? _state.country_cash[c] : 0;
+    const int64_t research_after = c < _state.research_purchased_total.size()
+        ? _state.research_purchased_total[c] : 0;
+    bool goods_changed = false;
+    for (uint32_t i = 0; i < request.good_count &&
+         i < RUNTIME_ECONOMY_ASSET_GOOD_CAPACITY; ++i) {
+        if (request.good_quantities[i] != 0) {
+            goods_changed = true;
+            break;
+        }
+    }
+    const bool mutated = (ver_after != ver_before) &&
+        (cash_after != cash_before || research_after != research_before || goods_changed);
     if (mutated) {
-        next.generation = _next_generation++;
-        next.state_hash = hash_business_state(next);
-        _state = std::move(next);
+        _state.generation = _next_generation++;
+        _state.state_hash = hash_business_state(_state);
     }
     return true;
 }

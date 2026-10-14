@@ -4,6 +4,7 @@
 #include <cstring>
 #include <limits>
 #include <tuple>
+#include <unordered_map>
 
 namespace pk {
 namespace {
@@ -369,11 +370,89 @@ bool RuntimeTriggerKernel::evaluate_day(const RuntimeTriggerPodCatalog &catalog,
         for (size_t i = 0; i < catalog.definitions.size(); ++i)
             state.enabled[i] = catalog.definitions[i].enabled;
     }
-    std::stable_sort(state.pending_events.begin(), state.pending_events.end(),
+    if (state.pending_events.empty()) {
+        return true;
+    }
+    if (!std::is_sorted(state.pending_events.begin(), state.pending_events.end(),
         [](const RuntimeTriggerEvent &a, const RuntimeTriggerEvent &b) {
             return std::tie(a.day, a.source_id, a.event_id) <
                 std::tie(b.day, b.source_id, b.event_id);
-        });
+        })) {
+        std::stable_sort(state.pending_events.begin(), state.pending_events.end(),
+            [](const RuntimeTriggerEvent &a, const RuntimeTriggerEvent &b) {
+                return std::tie(a.day, a.source_id, a.event_id) <
+                    std::tie(b.day, b.source_id, b.event_id);
+            });
+    }
+    struct StateKey {
+        int32_t trigger_id = -1;
+        uint64_t target = 0;
+        bool operator==(const StateKey &o) const noexcept {
+            return trigger_id == o.trigger_id && target == o.target;
+        }
+    };
+    struct StateKeyHash {
+        size_t operator()(const StateKey &k) const noexcept {
+            uint64_t h = distinct_hash(k.target ^ (static_cast<uint64_t>(
+                static_cast<uint32_t>(k.trigger_id)) * 0x9e3779b97f4a7c15ULL));
+            return static_cast<size_t>(h);
+        }
+    };
+    std::unordered_map<StateKey, int32_t, StateKeyHash> state_lookup;
+    state_lookup.reserve(state.states.size() + 64u);
+    for (int32_t idx = 0; idx < static_cast<int32_t>(state.states.size()); ++idx) {
+        state_lookup.try_emplace(
+            StateKey{state.states[idx].trigger_id, state.states[idx].target_handle},
+            idx);
+    }
+    const auto find_or_create_indexed_state = [&](int32_t trigger_id,
+                                                  uint64_t target) -> int32_t {
+        const StateKey key{trigger_id, target};
+        const auto it = state_lookup.find(key);
+        if (it != state_lookup.end()) return it->second;
+        if (state.states.size() >= static_cast<size_t>(catalog.max_states)) {
+            error = "trigger_state_capacity_exhausted";
+            return -1;
+        }
+        RuntimeTriggerPodSnapshotState created;
+        created.trigger_id = trigger_id;
+        created.target_handle = target;
+        created.target_generation = generation_from_handle(target);
+        created.distinct_keys.assign(catalog.distinct_capacity, EMPTY_DISTINCT_KEY);
+        const int32_t new_idx = static_cast<int32_t>(state.states.size());
+        state.states.push_back(std::move(created));
+        state_lookup.emplace(key, new_idx);
+        return new_idx;
+    };
+    const int32_t bucket_count = std::max(0, catalog.source_count) *
+        std::max(0, catalog.event_type_span);
+    std::vector<int32_t> static_def_offsets(static_cast<size_t>(bucket_count + 1), 0);
+    std::vector<int32_t> static_def_indices;
+    if (bucket_count > 0) {
+        for (int32_t tid = 0; tid < static_cast<int32_t>(catalog.definitions.size()); ++tid) {
+            const RuntimeTriggerDefinition &def = catalog.definitions[tid];
+            if (def.dynamic_binding == 0 && def.source_id >= 0 &&
+                def.source_id < catalog.source_count && def.event_type >= 0 &&
+                def.event_type < catalog.event_type_span) {
+                ++static_def_offsets[def.source_id * catalog.event_type_span + def.event_type + 1];
+            }
+        }
+        for (int32_t b = 0; b < bucket_count; ++b) {
+            static_def_offsets[b + 1] += static_def_offsets[b];
+        }
+        static_def_indices.resize(static_cast<size_t>(static_def_offsets.back()));
+        std::vector<int32_t> cursors(static_def_offsets.begin(),
+                                     static_def_offsets.end() - 1);
+        for (int32_t tid = 0; tid < static_cast<int32_t>(catalog.definitions.size()); ++tid) {
+            const RuntimeTriggerDefinition &def = catalog.definitions[tid];
+            if (def.dynamic_binding == 0 && def.source_id >= 0 &&
+                def.source_id < catalog.source_count && def.event_type >= 0 &&
+                def.event_type < catalog.event_type_span) {
+                const int32_t b = def.source_id * catalog.event_type_span + def.event_type;
+                static_def_indices[cursors[b]++] = tid;
+            }
+        }
+    }
     size_t retained = 0;
     for (const RuntimeTriggerEvent &event : state.pending_events) {
         if (event.day > day) {
@@ -392,8 +471,7 @@ bool RuntimeTriggerKernel::evaluate_day(const RuntimeTriggerPodCatalog &catalog,
                 (definition.payload_schema > 0 &&
                  definition.payload_schema != event.payload_schema) ||
                 !event_matches(definition, event)) return;
-            const int32_t state_index = find_or_create_state(state, catalog, trigger_id,
-                target, error);
+            const int32_t state_index = find_or_create_indexed_state(trigger_id, target);
             if (state_index < 0) return;
             RuntimeTriggerPodSnapshotState &trigger_state = state.states[state_index];
             if (trigger_state.needs_resync != 0 ||
@@ -418,12 +496,14 @@ bool RuntimeTriggerKernel::evaluate_day(const RuntimeTriggerPodCatalog &catalog,
             if (definition.cooldown_days > 0)
                 trigger_state.cooldown_until = day + definition.cooldown_days;
         };
-        for (int32_t trigger_id = 0;
-             trigger_id < static_cast<int32_t>(catalog.definitions.size()); ++trigger_id) {
-            const RuntimeTriggerDefinition &definition = catalog.definitions[trigger_id];
-            if (definition.dynamic_binding == 0 && definition.source_id == event.source_id &&
-                definition.event_type == event.event_type)
+        if (bucket_count > 0) {
+            const int32_t b = event.source_id * catalog.event_type_span + event.event_type;
+            for (int32_t cursor = static_def_offsets[b];
+                 cursor < static_def_offsets[b + 1]; ++cursor) {
+                const int32_t trigger_id = static_def_indices[cursor];
+                const RuntimeTriggerDefinition &definition = catalog.definitions[trigger_id];
                 process(trigger_id, resolve_target(definition, event));
+            }
         }
         for (const RuntimeTriggerBranchBinding &binding : state.branch_bindings) {
             if (binding.enabled == 0 || binding.cell != static_cast<int32_t>(event.group_handle) ||

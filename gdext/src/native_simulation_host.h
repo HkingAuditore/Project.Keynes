@@ -373,7 +373,8 @@ public:
     // that one wire id. Ids registered via defer_country_economy_asset_settlement
     // follow the same rule. Rejected/faulted terminals still retire immediately.
     bool flush_country_economy_asset_commits(std::string &error,
-                                            uint64_t settle_request_id = 0);
+                                            uint64_t settle_request_id = 0,
+                                            bool skip_audit_snapshot = false);
     bool publish_country_worker_snapshot(uint32_t dirty_families,
                                          std::string &error);
     // Publish plan.next_state for UI while the open plan is still peer-waiting.

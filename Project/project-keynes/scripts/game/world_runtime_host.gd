@@ -1003,10 +1003,12 @@ func _process(_delta: float) -> void:
 			if worker_committed >= _climate_capacity_pending_day:
 				_climate_capacity_pending_day = worker_committed + 1
 		_on_clock_day_changed(_climate_capacity_pending_day)
-		_observe_runtime_worker_fault()
-		_poll_runtime_health()
-		_sched_proc_last_total_ms = _sched_elapsed_ms(frame_usec)
-		return
+		if _climate_capacity_pending_day >= 0:
+			_consume_runtime_commit_if_ready()
+			_observe_runtime_worker_fault()
+			_poll_runtime_health()
+			_sched_proc_last_total_ms = _sched_elapsed_ms(frame_usec)
+			return
 	_service_runtime_progress(frame_usec)
 	_sched_proc_last_total_ms = _sched_elapsed_ms(frame_usec)
 
