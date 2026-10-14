@@ -1,7 +1,9 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/components/research_toast.gd" id="1_toast"]
+[ext_resource type="Theme" path="res://assets/themes/player_session_theme.tres" id="2_theme"]
 
 [node name="ResearchToast" type="Control"]
+theme = ExtResource("2_theme")
 mouse_filter = 2
 script = ExtResource("1_toast")

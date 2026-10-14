@@ -13,7 +13,7 @@ anchor_bottom = 1.0
 grow_horizontal = 0
 grow_vertical = 0
 mouse_filter = 2
-theme_type_variation = &"PKPaperCard"
+theme_type_variation = &"PKPaperPopup"
 script = ExtResource("1_script")
 
 [node name="Margin" type="MarginContainer" parent="."]

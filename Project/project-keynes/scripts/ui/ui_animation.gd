@@ -2,6 +2,34 @@ extends RefCounted
 class_name UIAnimation
 
 
+static func cancel(control: Control) -> void:
+	if control == null:
+		return
+	_kill_active(control)
+	control.modulate.a = 1.0
+
+
+## Animate a clipped wrapper's height; its Container parent still owns position.
+static func reveal_vertical(wrapper: Control, content: Control, expanded: bool,
+		duration: float = UITokens.ANIM_DISCLOSURE) -> void:
+	_kill_active(wrapper)
+	wrapper.visible = true
+	var target_height := content.get_combined_minimum_size().y if expanded else 0.0
+	var tween := wrapper.create_tween()
+	wrapper.set_meta("_ui_active_tween", tween)
+	tween.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.parallel().tween_property(wrapper, "custom_minimum_size:y", target_height, duration)
+	tween.parallel().tween_property(content, "modulate:a", 1.0 if expanded else 0.0, duration)
+	tween.tween_callback(func() -> void:
+		if not is_instance_valid(wrapper):
+			return
+		wrapper.visible = expanded
+		if expanded:
+			wrapper.custom_minimum_size.y = content.get_combined_minimum_size().y
+		content.modulate.a = 1.0
+		wrapper.remove_meta("_ui_active_tween"))
+
+
 static func fade_slide_in(control: Control, offset: Vector2 = Vector2(28.0, 0.0), duration: float = UITokens.ANIM_MED) -> void:
 	if control == null:
 		return

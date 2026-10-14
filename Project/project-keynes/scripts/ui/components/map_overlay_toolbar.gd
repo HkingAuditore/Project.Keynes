@@ -93,7 +93,7 @@ func dismiss_submenu() -> bool:
 
 
 func primary_safe_width() -> float:
-	return COLUMN_WIDTH + UITokens.SPACE_MD
+	return COLUMN_WIDTH + UITokens.ARCHIVE_EDGE_INSET + UITokens.SPACE_MD
 
 
 func _configure_category_button(category: int, button: Button,
@@ -102,6 +102,7 @@ func _configure_category_button(category: int, button: Button,
 		"%s\n%s" % [tr(title), tr(description)], true, false)
 	button.focus_mode = Control.FOCUS_NONE
 	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	UIAnimation.bind_tactile_button(button)
 	button.pressed.connect(func() -> void:
 		_set_category(Category.NONE if _category == category else category)
 	)

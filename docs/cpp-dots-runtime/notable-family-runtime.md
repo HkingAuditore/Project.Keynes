@@ -242,8 +242,10 @@ PlayerController 把玩家 OPEN 卡组当作强制模态：锁定其他玩家命
 （`family_founding_choice_required`），暂停时钟并记住原速度，逐个出示队列；时代奖励优先，
 二者同时存在时家族卡组隐藏等待。选择提交后状态转 `SELECTED_PENDING`，控制器解锁并恢复原速度，
 家族在下一次经济结算出现。锁定状态随 view state 存读。UI 为
-`scenes/ui/family/family_founding_dialog.tscn`（ModalLayer，档案纸风格，1/2/3 列响应式，
-键盘焦点导航）。
+`scenes/ui/family/family_founding_dialog.tscn`（ModalLayer，左侧档案纸面板，三户纵排摘要，
+一次展开一户的完整家风与五档效果；扶持按钮与详情按钮分离，键盘焦点导航）。家风数值
+以文案展示，不绘制强度进度条。镜头安全区域避让展开面板；右侧大档案打开时临时收起为
+待决入口，关闭后恢复详情与滚动位置，手动收起优先。展开/收起均不解除扶持时钟锁。
 
 ### 家庭规模与吸收
 

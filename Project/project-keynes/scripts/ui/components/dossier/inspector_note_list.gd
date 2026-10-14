@@ -5,8 +5,8 @@ class_name InspectorNoteList
 ## 数据形状沿用视图模型的 insights（id/text/accent）。
 
 const FONT_SIZE := 13
-const LINE_GAP := 6.0
-const PAD_LEFT := 12.0
+const LINE_GAP := UITokens.PAPER_NOTE_LINE_GAP
+const PAD_LEFT := UITokens.PAPER_NOTE_PAD_X + 10.0
 
 var _notes: Array = []
 var _paragraphs: Array = []
@@ -40,9 +40,10 @@ func _notification(what: int) -> void:
 
 func _relayout() -> void:
 	_paragraphs.clear()
-	var width := maxf(40.0, (size.x if size.x > 1.0 else 380.0) - PAD_LEFT - 4.0)
+	var width := maxf(40.0, (size.x if size.x > 1.0 else 380.0)
+		- PAD_LEFT - UITokens.PAPER_NOTE_PAD_X)
 	_layout_width = size.x
-	var total := 0.0
+	var total := UITokens.PAPER_NOTE_PAD_Y * 2.0
 	for raw in _notes:
 		var note: Dictionary = raw
 		var paragraph := TextParagraph.new()
@@ -50,7 +51,10 @@ func _relayout() -> void:
 		paragraph.add_string(String(note.get("text", "")), _font("sans"), FONT_SIZE)
 		_paragraphs.append(paragraph)
 		total += paragraph.get_size().y + LINE_GAP
-	custom_minimum_size.y = maxf(1.0, total)
+	var paper_minimum := 0.0
+	if has_theme_stylebox("panel", "PKPaperNote"):
+		paper_minimum = get_theme_stylebox("panel", "PKPaperNote").get_minimum_size().y
+	custom_minimum_size.y = maxf(paper_minimum, total - LINE_GAP) if not _notes.is_empty() else 1.0
 	queue_redraw()
 
 
@@ -65,15 +69,21 @@ static func tick_color(accent: Color) -> Color:
 
 
 func _draw() -> void:
-	var y := 0.0
 	var count := mini(_notes.size(), _paragraphs.size())
+	if count == 0:
+		return
+	if has_theme_stylebox("panel", "PKPaperNote"):
+		draw_style_box(get_theme_stylebox("panel", "PKPaperNote"),
+			Rect2(Vector2.ZERO, Vector2(size.x, custom_minimum_size.y)))
+	var y := UITokens.PAPER_NOTE_PAD_Y
 	for i in range(count):
 		var note: Dictionary = _notes[i]
 		var paragraph := _paragraphs[i] as TextParagraph
 		var height := paragraph.get_size().y
 		var appear := clampf(_grow * float(count + 1) - float(i), 0.0, 1.0) if _has_grown else 1.0
 		var tick := tick_color(note.get("accent", UITokens.ACCENT))
-		draw_rect(Rect2(Vector2(0.0, y + 2.0), Vector2(3.0, height - 4.0)), Color(tick, appear))
+		draw_rect(Rect2(Vector2(UITokens.PAPER_NOTE_PAD_X, y + 2.0),
+			Vector2(3.0, height - 4.0)), Color(tick, appear))
 		var ink := UITokens.DOSSIER_OXBLOOD if tick == UITokens.DOSSIER_OXBLOOD \
 			else UITokens.DOSSIER_INK_SOFT
 		paragraph.draw(get_canvas_item(), Vector2(PAD_LEFT + (1.0 - appear) * 6.0, y),

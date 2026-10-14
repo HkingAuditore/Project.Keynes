@@ -47,3 +47,11 @@ size_flags_vertical = 4
 horizontal_alignment = 2
 text = "0"
 theme_type_variation = &"PKDossierValue"
+
+[node name="DispatchButton" type="Button" parent="Margin/Line"]
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 0
+text = "派遣"
+theme_type_variation = &"PKTabButton"
+mouse_filter = 0

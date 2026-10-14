@@ -576,8 +576,17 @@ func family_colonization_quotes(country_handle: int, target_cell: int,
 		offset: int = 0, limit: int = 64) -> Dictionary:
 	if not _configured or not _world_ext.has_method("get_family_colonization_quotes"):
 		return {"ok": false, "code": "family_colonization_unavailable"}
-	return _world_ext.get_family_colonization_quotes(country_handle, target_cell,
+	var page: Dictionary = _world_ext.get_family_colonization_quotes(country_handle, target_cell,
 		family_filter, source_filter, offset, limit)
+	if bool(page.get("ok", false)):
+		var names := _settlement_name_lookup()
+		var sources: PackedInt32Array = page.get("source_cells", PackedInt32Array())
+		var source_names := PackedStringArray()
+		for cell in sources:
+			var name := String(names.get(int(cell), "")).strip_edges()
+			source_names.append(name if not name.is_empty() else "聚落 %d" % (int(cell) + 1))
+		page["source_settlement_names"] = source_names
+	return page
 
 
 func family_colonization_quote_detail(quote_token: int,
@@ -607,6 +616,7 @@ func family_colonization_quote_detail(quote_token: int,
 		kit_names.append(String(building_ids[type_id]) if type_id >= 0 \
 			and type_id < building_ids.size() else "")
 	detail["kit_building_stable_ids"] = kit_names
+	detail["kit_building_display_names"] = _mapped_names(kit_names, _building_display_names)
 	return detail
 
 
@@ -769,6 +779,10 @@ static func compose_family_display_name(
 			return "%s%s" % [settlement, stem]
 		_:
 			return "%s%s%s" % [settlement, stem, suffix]
+
+
+func settlement_display_name(cell: int) -> String:
+	return String(_settlement_name_lookup().get(cell, "地块 %d" % (cell + 1)))
 
 
 func _settlement_name_lookup() -> Dictionary:

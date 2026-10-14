@@ -20,8 +20,8 @@ func set_badges(badges: Array) -> void:
 	for item in badges:
 		var data: Dictionary = item
 		var badge := BadgeLabelScene.instantiate() as Label
-		_apply_badge(badge, data)
 		add_child(badge)
+		_apply_badge(badge, data)
 		_labels.append(badge)
 
 
@@ -34,10 +34,11 @@ func update_badges(badges: Array) -> void:
 
 func _apply_badge(badge: Label, data: Dictionary) -> void:
 	badge.text = String(data.get("text", "—"))
-	var measured := UITokens.UI_FONT.get_string_size(badge.text,
-		HORIZONTAL_ALIGNMENT_LEFT, -1.0, UITokens.FONT_SMALL).x
+	var measured := badge.get_theme_font("font").get_string_size(badge.text,
+		HORIZONTAL_ALIGNMENT_LEFT, -1.0, badge.get_theme_font_size("font_size")).x
+	var paper := badge.get_theme_stylebox("normal")
 	badge.custom_minimum_size.x = minf(measured, max_badge_width) \
-		+ float(UITokens.SPACE_SM) * 2.0 + 7.0
+		+ paper.content_margin_left + paper.content_margin_right
 	var accent: Color = data.get("accent", UITokens.ACCENT)
 	badge.add_theme_color_override("font_color", accent.lerp(UITokens.ARCHIVE_INK, 0.38))
 	badge.tooltip_text = String(data.get("tooltip", "")).strip_edges()

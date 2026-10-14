@@ -112,3 +112,19 @@ godot --headless --path Project/project-keynes
 
 预期专用测试均为 `0 failures`。headless dummy renderer 的 RID/resource leak
 告警是退出清理噪声，应与断言失败分开报告。
+
+## 家族派遣只读入口（2026-10）
+
+双入口工作区复用 `family.colonization.start/cancel`，不增加模拟命令或存档字段。
+`get_family_dispatch_candidates(source_cell, offset, limit)` 校验玩家国家与源地归属后，
+委托 EconomyFacade 读取当地家族分页摘要；不得先读全国家族再由 UI 隐藏外国行。
+`get_family_dispatch_preview(family_handle, source_cell)` 先查到真实当地成员分支，再读取该家族的
+特性与当地分支效果。`can_family_colonize_from` 只检查合法当地来源与至少两人，路线与物资
+仍在选择目的地之后由原生报价决定。`dispatch_cell_display_name` 只对本国或当前可见地块读取
+聚落显示名；EconomyFacade 的 `settlement_display_name` 只补显示文本。
+
+面板未选目的地时保存未报价的 UI 意图，不能提交 token=0；有效选点后绑定原生 token。
+悬停预览与确认选择分开。GameUIManager 仅在面板主动选点时消费地图选择，不打开普通
+Inspector；工作区覆盖计入地图安全区，关闭恢复原来 Inspector／工具栏可见状态。
+回归入口：`colonization_workbench_ui_test.gd`、`colonization_planner_context_test.gd`、
+`player_controller_contract_test.gd`。原生领域权威、资金归属与 PKSV 保存顺序不变。

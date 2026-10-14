@@ -17,8 +17,8 @@ signal era_reward_choice_requested(offer_generation: int, choice_index: int)
 signal family_founding_choice_requested(offer_id: int, generation: int, choice_index: int)
 
 const RIGHT_PANEL_WIDTH := 460.0
-const DETAIL_LAYOUT_BREAKPOINT := UITokens.DETAIL_BREAKPOINT_COMPACT
-const FAMILY_WORKSPACE_BREAKPOINT := UITokens.ARCHIVE_BREAKPOINT_COMPACT
+const DETAIL_LAYOUT_BREAKPOINT := UITokens.DETAIL_BREAKPOINT_COMPACT + UITokens.ARCHIVE_EDGE_INSET * 2.0
+const FAMILY_WORKSPACE_BREAKPOINT := UITokens.ARCHIVE_BREAKPOINT_COMPACT + UITokens.ARCHIVE_EDGE_INSET * 2.0
 const DETAIL_PANEL_MIN_WIDTH := 860.0
 const DETAIL_PANEL_MAX_WIDTH := 1040.0
 const MAP_REMAINING_MIN_WIDTH := 320.0
@@ -47,6 +47,9 @@ var _loading_overlay: WorldLoadingOverlay
 var _colonization_panel: ColonizationPlannerPanel
 var _colonization_route: ColonizationRouteLayer
 var _colonization_targeting: Dictionary = {}
+var _dispatch_previous_inspector_visible := false
+var _dispatch_previous_toolbar_visible := false
+var _dispatch_ui_suppressed := false
 var _object_detail_context: Dictionary = {}
 var _inspector_view_model: CellInspectorViewModel
 var _map: MapData
@@ -462,16 +465,15 @@ func toggle_perf_hud() -> void:
 
 
 func show_cell_panel(cell: HexCell) -> void:
+	if _colonization_panel != null and _colonization_panel.visible:
+		if cell != null and _colonization_panel.is_target_picking():
+			if _colonization_panel.try_target_cell(int(cell.index)):
+				_colonization_targeting.clear()
+		return
 	if _right_panel != null:
 		_right_panel.close_detail(false)
 	_object_detail_context.clear()
 	_selected_cell = cell
-	if not _colonization_targeting.is_empty():
-		var targeting := _colonization_targeting.duplicate()
-		_colonization_targeting.clear()
-		_open_colonization_target(int(cell.index),
-			int(targeting.get("family_handle", 0)),
-			int(targeting.get("source_cell", -1)))
 	_invalidate_live_revision()
 	_last_cached_panel_ms = Time.get_ticks_msec()
 	if _inspector_view_model == null or _right_panel == null:
@@ -491,7 +493,7 @@ func show_cell_panel(cell: HexCell) -> void:
 		_inspector_suppressed_for_country = true
 		_right_panel.visible = false
 		return
-	if not _right_panel.visible:
+	if not _right_panel.visible or _right_panel.has_meta("_ui_active_tween"):
 		UIAnimation.fade_slide_in(_right_panel, Vector2(24.0, 0.0), UITokens.ANIM_MED)
 
 
@@ -823,7 +825,10 @@ func _open_colonization_target(target_cell: int, family_handle: int = 0,
 	if _colonization_panel == null:
 		return
 	_close_object_detail_dialog()
+	_suppress_ui_for_dispatch()
 	_colonization_panel.open_target(target_cell, family_handle, source_cell)
+	if _player_controller != null and _player_controller.has_method("ensure_selected_visible"):
+		_player_controller.ensure_selected_visible()
 
 
 func _on_colonization_requested(request: Dictionary) -> void:
@@ -832,13 +837,41 @@ func _on_colonization_requested(request: Dictionary) -> void:
 
 func _on_family_colonization_requested(family_handle: int,
 		source_cell: int) -> void:
-	_colonization_targeting = {
-		"family_handle": family_handle,
-		"source_cell": source_cell,
-	}
+	if _colonization_panel == null:
+		return
 	_close_object_detail_dialog()
+	_suppress_ui_for_dispatch()
+	_colonization_panel.open_source(source_cell, family_handle)
+	if _player_controller != null and _player_controller.has_method("ensure_selected_visible"):
+		_player_controller.ensure_selected_visible()
+
+
+func _suppress_ui_for_dispatch() -> void:
+	if _dispatch_ui_suppressed:
+		return
+	_dispatch_ui_suppressed = true
+	_dispatch_previous_inspector_visible = _right_panel != null and _right_panel.visible
+	_dispatch_previous_toolbar_visible = _map_overlay_toolbar != null and _map_overlay_toolbar.visible
 	if _right_panel != null:
 		_right_panel.hide()
+	if _map_overlay_toolbar != null:
+		_map_overlay_toolbar.hide()
+
+
+func _on_dispatch_closed() -> void:
+	_colonization_targeting.clear()
+	if not _dispatch_ui_suppressed:
+		return
+	_dispatch_ui_suppressed = false
+	if _right_panel != null:
+		_right_panel.visible = _dispatch_previous_inspector_visible
+	if _map_overlay_toolbar != null:
+		_map_overlay_toolbar.visible = _dispatch_previous_toolbar_visible
+	if _dispatch_previous_inspector_visible and _player_controller != null \
+			and _player_controller.has_method("selected_cell"):
+		var cell = _player_controller.selected_cell()
+		if cell != null:
+			show_cell_panel(cell)
 
 
 func _on_colonization_start_requested(args: Dictionary) -> void:
@@ -1004,16 +1037,34 @@ func hide_loading() -> void:
 
 
 func map_safe_area() -> Rect2:
+	var safe := _base_map_safe_area()
+	if _colonization_panel != null and _colonization_panel.visible:
+		var edge := _colonization_panel.get_global_rect().end.x + UITokens.SPACE_MD
+		var inset := clampf(edge - safe.position.x, 0.0, maxf(safe.size.x - 1.0, 0.0))
+		safe.position.x += inset
+		safe.size.x -= inset
+	if _family_founding_dialog != null:
+		var occupied_edge := _family_founding_dialog.map_reserved_right_edge()
+		if occupied_edge > safe.position.x:
+			var inset := minf(occupied_edge + UITokens.SPACE_MD - safe.position.x,
+				maxf(safe.size.x - 1.0, 0.0))
+			safe.position.x += inset
+			safe.size.x -= inset
+	return safe
+
+
+func _base_map_safe_area() -> Rect2:
 	var viewport_size := get_viewport().get_visible_rect().size
 	var top_height := PlayerTopBar.BAR_HEIGHT + 4.0
 	if _top_bar != null and _top_bar.size.y > 0.0:
 		top_height = _top_bar.size.y + 4.0
 	var right_width := 0.0
 	if _right_panel != null and _right_panel.visible:
-		right_width = _right_panel.size.x if _right_panel.size.x > 0.0 else RIGHT_PANEL_WIDTH
+		right_width = (_right_panel.size.x if _right_panel.size.x > 0.0 else RIGHT_PANEL_WIDTH) \
+			+ UITokens.ARCHIVE_EDGE_INSET + UITokens.SPACE_MD
 	var left_width := _map_overlay_toolbar.primary_safe_width() \
 		if _map_overlay_toolbar != null else 0.0
-	var bottom_height := CountryActionBar.BAR_HEIGHT + UITokens.SPACE_SM
+	var bottom_height := CountryActionBar.BAR_HEIGHT + UITokens.ARCHIVE_EDGE_INSET
 	return Rect2(
 		Vector2(left_width, top_height),
 		Vector2(
@@ -1033,7 +1084,7 @@ func dismiss_overlay_menu() -> bool:
 		if _family_founding_dialog != null:
 			_family_founding_dialog.toggle_collapsed()
 		return true
-	if not _colonization_targeting.is_empty():
+	if _colonization_panel != null and _colonization_panel.is_target_picking():
 		_cancel_colonization_targeting()
 		return true
 	if _colonization_panel != null and _colonization_panel.visible:
@@ -1092,6 +1143,8 @@ func show_family_founding_offer(offer: Dictionary) -> void:
 		_layout_family_founding_dialog()
 		_family_founding_dialog.present_offer(offer)
 		_layout_family_founding_dialog()
+		if _player_controller != null:
+			_player_controller.ensure_selected_visible()
 
 
 func show_family_founding_error(message: String) -> void:
@@ -1191,6 +1244,9 @@ func _bind_ui() -> void:
 	_colonization_panel = get_node(
 		"UIRoot/ModalLayer/ColonizationPlannerPanel") as ColonizationPlannerPanel
 	_colonization_panel.set_player_controller(_player_controller)
+	_colonization_panel.closed.connect(_on_dispatch_closed)
+	_colonization_panel.target_selection_requested.connect(func() -> void:
+		_colonization_targeting = {"active": true})
 	_colonization_panel.route_requested.connect(func(detail: Dictionary) -> void:
 		if _colonization_route != null:
 			_colonization_route.show_quote(detail)
@@ -1275,6 +1331,10 @@ func _bind_ui() -> void:
 				family_founding_choice_requested.emit(offer_id, generation, index))
 		_family_founding_dialog.locate_cell_requested.connect(
 			_locate_cell_from_family_founding)
+		_family_founding_dialog.inspector_close_requested.connect(func() -> void:
+			if _right_panel != null:
+				_right_panel.close_detail())
+		_family_founding_dialog.collapsed_changed.connect(_on_founding_collapsed_changed)
 		_layout_family_founding_dialog()
 
 
@@ -1294,19 +1354,26 @@ func _locate_cell_from_family_founding(cell_index: int) -> void:
 func _layout_family_founding_dialog() -> void:
 	if _family_founding_dialog == null:
 		return
-	_family_founding_dialog.set_safe_area(map_safe_area())
+	_family_founding_dialog.set_inspector_obscures(
+		_right_panel != null and _right_panel.visible and _right_panel.detail_open())
+	# The dossier is placed against HUD bounds; camera bounds additionally exclude it.
+	_family_founding_dialog.set_safe_area(_base_map_safe_area())
+
+
+func _on_founding_collapsed_changed(collapsed: bool) -> void:
+	_layout_country_action_bar()
+	if not collapsed and _player_controller != null:
+		_player_controller.ensure_selected_visible()
 
 
 func _cancel_colonization_targeting() -> void:
 	_colonization_targeting.clear()
-	if _colonization_route != null:
-		_colonization_route.clear_route()
-	if _selected_cell != null and _right_panel != null:
-		show_cell_panel(_selected_cell)
+	if _colonization_panel != null:
+		_colonization_panel.cancel_target_selection()
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _colonization_targeting.is_empty():
+	if _colonization_panel == null or not _colonization_panel.is_target_picking():
 		return
 	if event is InputEventKey and event.pressed and not event.echo \
 			and event.keycode == KEY_ESCAPE:
@@ -1387,12 +1454,12 @@ func _layout_overlay_legend() -> void:
 	_map_overlay_legend.modulate.a = 0.0 if compact_detail else 1.0
 	_map_overlay_legend.mouse_filter = Control.MOUSE_FILTER_IGNORE \
 		if compact_detail else Control.MOUSE_FILTER_PASS
-	var right_inset := UITokens.SPACE_MD
+	var right_inset := UITokens.ARCHIVE_EDGE_INSET
 	if _right_panel != null and _right_panel.visible:
 		var panel_width := _right_panel.size.x
 		if panel_width <= 0.0:
 			panel_width = RIGHT_PANEL_WIDTH
-		right_inset += panel_width + UITokens.SPACE_MD
+		right_inset += panel_width + UITokens.SPACE_MD + UITokens.ARCHIVE_EDGE_INSET
 	_map_overlay_legend.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	_map_overlay_legend.offset_right = -right_inset
 	_map_overlay_legend.offset_left = -right_inset - OVERLAY_LEGEND_WIDTH
@@ -1407,17 +1474,17 @@ func _layout_country_action_bar() -> void:
 		return
 	_country_action_bar.visible = true
 	var viewport_width := get_viewport().get_visible_rect().size.x
-	var safe := map_safe_area()
+	var safe := _base_map_safe_area()
 	var bar_width := 336.0
 	var side_margin := maxf(safe.position.x + (safe.size.x - bar_width) * 0.5,
-		UITokens.SPACE_SM)
+		UITokens.ARCHIVE_EDGE_INSET)
 	var right_margin := maxf(viewport_width - side_margin - bar_width,
-		UITokens.SPACE_SM)
+		UITokens.ARCHIVE_EDGE_INSET)
 	_country_action_bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	_country_action_bar.offset_left = side_margin
 	_country_action_bar.offset_right = -right_margin
-	_country_action_bar.offset_top = -CountryActionBar.BAR_HEIGHT - UITokens.SPACE_SM
-	_country_action_bar.offset_bottom = -UITokens.SPACE_SM
+	_country_action_bar.offset_top = -CountryActionBar.BAR_HEIGHT - UITokens.ARCHIVE_EDGE_INSET
+	_country_action_bar.offset_bottom = -UITokens.ARCHIVE_EDGE_INSET
 	var window_width := get_window().size.x if get_window() != null else int(viewport_width)
 	_country_action_bar.set_compact(window_width < 720)
 	_layout_research_toast()
@@ -1542,12 +1609,12 @@ func _layout_right_panel() -> void:
 	_right_panel.set_compact_detail_mode(compact)
 	var panel_width := float(layout.get("panel_width", RIGHT_PANEL_WIDTH))
 	_right_panel.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
-	_right_panel.offset_left = -panel_width
+	_right_panel.offset_left = -panel_width - UITokens.ARCHIVE_EDGE_INSET
 	var top_bar_height := _top_bar.size.y if _top_bar != null and _top_bar.size.y > 0.0 \
 		else PlayerTopBar.BAR_HEIGHT
 	_right_panel.offset_top = top_bar_height + UITokens.SPACE_MD
-	_right_panel.offset_right = 0.0
-	_right_panel.offset_bottom = -12.0  # 与 inspector_panel.tscn 原始烘焙值保持一致
+	_right_panel.offset_right = -UITokens.ARCHIVE_EDGE_INSET
+	_right_panel.offset_bottom = -UITokens.ARCHIVE_EDGE_INSET
 	_right_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_right_panel.grow_vertical = Control.GROW_DIRECTION_END
 	_right_panel.custom_minimum_size.x = panel_width if detail_open else RIGHT_PANEL_WIDTH
@@ -1560,33 +1627,34 @@ func _layout_right_panel() -> void:
 
 static func inspector_layout_for_width(viewport_width: float,
 		detail_open: bool, family_open: bool = false) -> Dictionary:
+	var available_width := maxf(viewport_width - UITokens.ARCHIVE_EDGE_INSET * 2.0, 1.0)
 	if detail_open and family_open:
 		var family_compact := viewport_width < FAMILY_WORKSPACE_BREAKPOINT
-		var family_width := viewport_width if family_compact else viewport_width * 0.5
+		var family_width := available_width if family_compact else available_width * 0.5
 		return {
 			"compact": family_compact,
 			"panel_width": family_width,
 			"detail_width": family_width,
-			"map_width": 0.0 if family_compact else viewport_width - family_width,
+			"map_width": 0.0 if family_compact else available_width - family_width,
 		}
 	var compact := viewport_width < DETAIL_LAYOUT_BREAKPOINT
 	var panel_width := RIGHT_PANEL_WIDTH
 	if detail_open:
 		if compact:
-			panel_width = viewport_width
+			panel_width = available_width
 		else:
 			panel_width = minf(DETAIL_PANEL_MAX_WIDTH,
 				maxf(DETAIL_PANEL_MIN_WIDTH, viewport_width * 0.62))
 			panel_width = minf(panel_width,
 				maxf(RIGHT_PANEL_WIDTH,
-					viewport_width - MAP_REMAINING_MIN_WIDTH))
+					available_width - MAP_REMAINING_MIN_WIDTH))
 	return {
 		"compact": compact,
 		"panel_width": panel_width,
 		"detail_width": maxf(panel_width - RIGHT_PANEL_WIDTH, 0.0) \
 			if detail_open and not compact else panel_width if detail_open else 0.0,
 		"map_width": 0.0 if compact and detail_open \
-			else maxf(viewport_width - panel_width, 0.0),
+			else maxf(available_width - panel_width, 0.0),
 	}
 
 

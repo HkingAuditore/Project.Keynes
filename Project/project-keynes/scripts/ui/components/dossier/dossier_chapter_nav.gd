@@ -143,8 +143,7 @@ func _draw() -> void:
 	if indicator.size.x > 0.0:
 		var tab := Rect2(Vector2(indicator.position.x + 2.0, 3.0),
 			Vector2(indicator.size.x - 4.0, HEIGHT - 4.0))
-		draw_rect(tab, UITokens.DOSSIER_OXBLOOD)
-		draw_line(tab.position, Vector2(tab.end.x, tab.position.y), UITokens.DOSSIER_BRASS, 2.0)
+		draw_style_box(get_theme_stylebox("pressed", "PKChapterTab"), tab)
 	for i in range(chapters.size()):
 		if i >= _rects.size():
 			break
@@ -152,8 +151,8 @@ func _draw() -> void:
 		var rect: Rect2 = _rects[i]
 		var active := String(chapter.id) == current
 		if i == _hover and not active:
-			draw_rect(Rect2(rect.position + Vector2(2.0, 3.0), rect.size - Vector2(4.0, 4.0)),
-				UITokens.DOSSIER_HOVER)
+			draw_style_box(get_theme_stylebox("hover", "PKChapterTab"),
+				Rect2(rect.position + Vector2(2.0, 3.0), rect.size - Vector2(4.0, 4.0)))
 		var ink := UITokens.DOSSIER_PAPER if active else UITokens.DOSSIER_INK_SOFT
 		var icon_key := StringName(chapter.get("icon", &""))
 		var label := String(chapter.label)

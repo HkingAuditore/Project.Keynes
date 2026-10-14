@@ -52,7 +52,7 @@ func _ready() -> void:
 	_nav_rail = get_node_or_null("Center/Dialog/Main/NavRail") as PanelContainer
 	_nav_column = get_node_or_null("Center/Dialog/Main/NavRail/NavColumn") as VBoxContainer
 	_page_surface = get_node_or_null("Center/Dialog/Main/PageSurface") as PanelContainer
-	_mobile_nav = get_node_or_null("Center/Dialog/Main/PageSurface/PageArea/MobileNav") as ScrollContainer
+	_mobile_nav = get_node_or_null("%MobileNav") as ScrollContainer
 	_section_host = get_node_or_null("Center/Dialog/Main/PageSurface/PageArea/SectionHost") as MarginContainer
 	_section_icon = get_node_or_null("Center/Dialog/Main/PageSurface/PageArea/Header/HeaderRow/SectionIcon") as IconBadge
 	_section_title = get_node_or_null("Center/Dialog/Main/PageSurface/PageArea/Header/HeaderRow/SectionBlock/SectionTitle") as Label
@@ -82,6 +82,10 @@ func _ready() -> void:
 	_setup_navigation()
 	IconButton.apply(close_button, &"action.close", IconButton.SMALL, "关闭国家事务")
 	close_button.pressed.connect(close_panel)
+	var compact_close := get_node("%CompactClose") as Button
+	IconButton.apply(compact_close, &"action.close", IconButton.SMALL, "关闭国家事务")
+	compact_close.pressed.connect(close_panel)
+	UIAnimation.bind_tactile_button(compact_close)
 	_economy_dossier.locate_cell_requested.connect(func(cell): locate_cell_requested.emit(cell))
 	_dialog.resized.connect(_place_hinges)
 	call_deferred("_update_responsive_layout")
@@ -96,7 +100,7 @@ func show_section(section_id: String, model: Dictionary) -> void:
 	if _dialog == null:
 		_ready()
 	_model = model
-	var was_open := visible
+	var was_open := visible and not has_meta("_ui_active_tween")
 	_section_id = _normalized_section(section_id)
 	_apply_section()
 	visible = true
@@ -104,7 +108,8 @@ func show_section(section_id: String, model: Dictionary) -> void:
 		UIAnimation.crossfade(_section_host, UITokens.ANIM_FAST)
 	else:
 		modulate.a = 1.0
-		UIAnimation.fade_slide_in(_dialog, Vector2(0.0, 14.0), UITokens.ANIM_MED)
+		# 窗口布局由锚点和容器负责；淡入同时取消尚未结束的关闭动画。
+		UIAnimation.crossfade(self, UITokens.ANIM_MED)
 
 
 func close_panel() -> void:
@@ -292,11 +297,15 @@ func _country_summary_line() -> String:
 func _update_responsive_layout() -> void:
 	if _dialog == null or _center == null:
 		return
-	var window_size := get_window().size if get_window() != null else Vector2i(_center.size)
-	_compact = window_size.x < 900
+	var viewport_size := get_viewport_rect().size
+	var available_height := viewport_size.y - PlayerTopBar.BAR_HEIGHT \
+		- CountryActionBar.BAR_HEIGHT - UITokens.ARCHIVE_EDGE_INSET * 2.0
+	# 字号缩放后的逻辑高度不足时折叠书脊，避免其最小高度把窗口顶进 HUD。
+	_compact = viewport_size.x < 900.0 or available_height < 520.0
 	_dialog.custom_minimum_size = Vector2.ZERO
 	_nav_rail.visible = not _compact
 	_mobile_nav.visible = _compact
+	(_mobile_nav.get_parent() as Control).visible = _compact
 	_header_panel.visible = not _compact
 	_country_title.add_theme_font_size_override("font_size", 22 if _compact else 30)
 	var country_block := _country_title.get_parent() as Control

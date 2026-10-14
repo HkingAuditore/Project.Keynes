@@ -51,6 +51,7 @@ func _ready() -> void:
 		caption.text = String(definition.label)
 		caption.visible = false
 		if available:
+			UIAnimation.bind_tactile_button(button)
 			button.pressed.connect(func() -> void: section_selected.emit(section_id))
 			button.mouse_entered.connect(_sync_button_visual.bind(section_id, true))
 			button.mouse_exited.connect(_sync_button_visual.bind(section_id, false))
