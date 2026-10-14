@@ -4764,6 +4764,7 @@ Dictionary DCWorldExt::_run_native_generation_publish_pass(
 }
 
 godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) {
+    SimTraceWriteGuard sim_trace_guard{this, "run_season_refresh_stage"};
     using godot::Dictionary;
     using godot::PackedFloat32Array;
     using godot::String;

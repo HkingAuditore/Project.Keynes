@@ -61,8 +61,13 @@ Also load `project-keynes-country-runtime` (Country authority, commands, PKCN),
   why a module skipped (`agenda_locked`, cooldown, reserve floor, no frontier, no families).
 - `commands_rejected > 0` usually means a stale generation or an invalid research target; check
   the receipt reason before changing planner logic.
-- Colonization failures (kind-7 receipts) trigger `colonize_failure_cooldown_days`; persistent
-  failures point to quote/population thresholds, not to the core.
+- Colonization failures (kind-7 receipts) trigger `colonize_failure_cooldown_days` and put the last
+  intent target into the 4-cell `colonize_bad_targets` ring (PKAI v2), so an unroutable target is
+  not re-picked after every cooldown. Persistent failures with a full ring point to
+  quote/population thresholds, not to the core.
+- Before tuning AI thresholds for population, check whether growth is already at the demographic
+  ceiling (~15%/yr) and whether collapses are famines with unmet food demand: those are Economy
+  bugs (e.g. a suspended survival producer that cannot restart), and the AI has no lever for them.
 - The AI is the first thing that makes foreign countries tax and colonize. A conservation fault in
   an AI soak is usually a latent Economy bug on a rarely used path (see section 10 of the doc):
   fix the Economy path, never paper over it in the AI.
@@ -71,6 +76,26 @@ Also load `project-keynes-country-runtime` (Country authority, commands, PKCN),
   (for example a cancelled expedition procurement), not a research bug. Temporarily log each
   `flush_country_economy_asset_commits` commit with its `settle_request_id`. A self-settled
   op 8/9 committed under a different settle id is the leak.
+- If AI countries grow slower than PROBE or starve, ablate one module at a time with BOM-free
+  `PK_COUNTRY_AI_CATALOG` overrides and compare per-slot populations against a same-seed PROBE run.
+  Compare `research_budget` with `household_income` in the record CSV: treasury-paid procurement
+  far above household income inflates prices, and an early colony drains its homeland. Some start
+  cells starve even under PROBE; that is not an AI decision problem.
+- Country records are staggered: each slot writes on its own day. Aggregate per slot with the last
+  row at or before the target day, never by summing rows of one calendar day.
+- After the 2026-10 rule changes (base death 7.5% lowered by technology, savings gate, no
+  knowledge cap) PROBE stays at 7.5% death because it never researches; compare ACTIVE/PROBE
+  ratios, not absolute totals, against older runs. Remaining ACTIVE famine cells show empty hunting
+  camps and knapping workshops with stone tools at 0 stock; read `[headless-perf/groups]` first.
+- Long soaks are not reproducible, PROBE included: same seed and code differed by 10–25% in
+  year-25 population across reruns. Run each configuration at least 3 times and compare means.
+  `PK_HEADLESS_WATCH_CELLS` / `PK_HEADLESS_WATCH_EVERY` print per-cell jobs, savings, satisfaction
+  and every built group (state, opportunity income, recovery cooldown/failed reviews, delinquent
+  merchant debt); the run log is UTF-16 when produced by the runner script.
+  `PK_HEADLESS_FAMINE_WATCH=1` adds, each watch period, the two most populous cells of every country
+  whose last AI row has hungry share > 25%, so a famine is captured without guessing its cell.
+  Hungry share counts cohorts whose `needs_satisfaction` is below the essentials floor; a protein
+  gap alone (all hunting camps suspended) makes a cell 100% hungry next to a plant glut.
 
 ## Offline tuning
 

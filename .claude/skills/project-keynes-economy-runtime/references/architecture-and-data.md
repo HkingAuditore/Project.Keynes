@@ -256,6 +256,13 @@ fills, and per-cohort owner/employee employment counts. Keep `(cell, signature)`
 ownership stores the sponsor's stable signature identity rather than adding employer to signatures.
 Buildings stay outside MapData/HexCell/component slots. The bridge only samples geographic/resource
 slots and publishes resource extraction through `extra_change`.
+On the worker path (`capture_worker_day_input`) the economy owns its reserves: slots seed the
+worker float lanes once (or the saved stock on restore), extraction folds into them at publish,
+and natural regeneration runs at each capture through the shared `natural_resource_kernel.h`
+with knobs from `configure_economy_natural_resources`. The main-thread natural pass then skips
+those resources and `flush_runtime_economy_resource_writeback` only mirrors worker values back to
+the slots. Never re-seed from slots on the worker: their content lags by a machine-speed
+dependent number of days.
 
 PKEC v8 extends owner-lot/role state with adaptive contract wages, living-cost and local-wage
 anchors, base/bonus settlement and wage suspension. These fields, v7 building economics, and sparse

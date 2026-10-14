@@ -160,6 +160,12 @@ Facade API：
 是 ACTIVE 单 slice 节点，没有独立的 SHADOW 双算实现；领域 SHADOW 必须只比较最终输出，
 不能双写 store。
 
+主线程 `apply_runtime_modifier_snapshot` 在重建 legacy Store 前必须
+`try_lock_economy_input_capture`：worker Economy 整天持有该边界并读取共享
+`ModifierRuntime`（`effective_value` / bucket）。拿不到锁时返回
+`economy_day_inflight`，host 保持 `after_generation` 并在下一 tick 重试；
+apply 前仍需把 POD 快照从 ring 拷出再 release。
+
 ## 领域接入
 
 ### Climate

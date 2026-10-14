@@ -78,6 +78,11 @@ Tests inject fixed cycle milliseconds, or set
 automatic locking) when a small fixture must reproduce a historical 5/10/30
 bucket. Those force keys are test-only and never part of production profiles.
 Forcing plan without forcing investment still yields I > P.
+Headless soaks can set them with `PK_ECONOMY_FORCE_CADENCE=N,P,I` (e.g. `1,5,10`;
+`EconomyFacade._apply_forced_cadence_env`). Without it, automatic cadence follows
+machine load: concurrent soaks pick different cycles, and long-run results then
+differ by load (12 parallel runs all grew more slowly). With it, repeated runs are
+byte-identical, so A/B rule or AI comparisons are only valid with a forced cadence.
 
 Trade planning limits are deterministic work units. Never use measured wall time
 to decide how far the simulation advances. An unfinished trade planning slice

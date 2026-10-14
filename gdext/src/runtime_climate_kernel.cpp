@@ -8,9 +8,12 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <string>
 
 namespace pk {
+std::FILE *pk_sim_trace_file();
 namespace {
 constexpr uint64_t FNV_OFFSET = 1469598103934665603ull;
 constexpr uint64_t FNV_PRIME = 1099511628211ull;
@@ -140,6 +143,11 @@ bool physics_prepass(int64_t day, const RuntimeEnvironmentSnapshot &in,
     using namespace pk_async_physics;
     const auto &k = in.climate_physics_knobs;
     const int n = s.cell_count;
+    // 海冰翻转在 worker 上推进 terrain；MapData 那份要等回灌才追上，流水线下落后的
+    // 天数取决于机器快慢。已提交过的 worker 读自己昨天的 terrain。
+    const std::vector<uint8_t> &terrain =
+        (in.climate_worker_authoritative && current.committed_day >= 0 &&
+         current.terrain.size() == static_cast<size_t>(n)) ? current.terrain : in.terrain;
     const bool cold = !s.initialized;
     if (cold) {
         for (const auto *v : {&in.cell_wind_x, &in.cell_wind_y, &in.cell_wind_speed,
@@ -169,16 +177,16 @@ bool physics_prepass(int64_t day, const RuntimeEnvironmentSnapshot &in,
     // 缓存可重建；存档不包含地图派生 CSR/coast。重建不得清除 cell-index ψ。
     if (!s.topo_valid) {
         int nw = 0;
-        for (uint8_t t : in.terrain) if (water[t]) ++nw;
+        for (uint8_t t : terrain) if (water[t]) ++nw;
         s.resize_water(nw);
-        if (nw > 0) psi_topology_build_pure(n, in.terrain.data(), nb.data(), water,
+        if (nw > 0) psi_topology_build_pure(n, terrain.data(), nb.data(), water,
             s.cell_to_water.data(), s.water_to_cell.data(), s.nb_w.data());
         else std::fill(s.cell_to_water.begin(), s.cell_to_water.end(), -1);
         s.topo_valid = true;
     }
     if (!s.coast_valid) {
         WindCoastLanes l;
-        l.terrain = in.terrain.data(); l.neighbors = nb.data(); l.is_water_lut = water;
+        l.terrain = terrain.data(); l.neighbors = nb.data(); l.is_water_lut = water;
         l.coast_dist = s.coast_dist.data(); l.coast_sea_x = s.coast_sea_x.data(); l.coast_sea_y = s.coast_sea_y.data();
         l.coast_sea_anchor = s.coast_sea_anchor.data(); l.sea_dist = s.sea_dist.data();
         l.sea_land_x = s.sea_land_x.data(); l.sea_land_y = s.sea_land_y.data();
@@ -222,7 +230,7 @@ bool physics_prepass(int64_t day, const RuntimeEnvironmentSnapshot &in,
             k.slp_mobile_low_period_days, base, heat);
         SlpPassALanes l;
         l.lat_norm = in.cell_lat_norm.data(); l.pos_x = in.cell_pos_x.data(); l.pos_y = in.cell_pos_y.data();
-        l.terrain = in.terrain.data(); l.neighbors = nb.data(); l.is_water_lut = water;
+        l.terrain = terrain.data(); l.neighbors = nb.data(); l.is_water_lut = water;
         l.temp_anomaly = temp_anomaly.data(); l.ice = current.sea_ice.data();
         l.snow = current.snow_cover.data(); l.vapor = current.vapor.data(); l.cloud = current.cloud_cover.data();
         s.slp_prev = s.slp;
@@ -270,7 +278,7 @@ bool physics_prepass(int64_t day, const RuntimeEnvironmentSnapshot &in,
         if (w.momentum_advect_w > 0.0 && s.wind_traj_valid) { w.traj_idx = s.wind_traj_idx.data(); w.traj_w = s.wind_traj_w.data(); }
         WindFieldLanes l;
         l.lat_norm = in.cell_lat_norm.data(); l.pos_x = in.cell_pos_x.data(); l.pos_y = in.cell_pos_y.data();
-        l.slp = s.slp.data(); l.neighbors = nb.data(); l.terrain = in.terrain.data(); l.landform = in.landform.data(); l.is_water_lut = water;
+        l.slp = s.slp.data(); l.neighbors = nb.data(); l.terrain = terrain.data(); l.landform = in.landform.data(); l.is_water_lut = water;
         l.coast_dist = s.coast_dist.data(); l.coast_sea_x = s.coast_sea_x.data(); l.coast_sea_y = s.coast_sea_y.data(); l.coast_sea_anchor = s.coast_sea_anchor.data();
         l.sea_dist = s.sea_dist.data(); l.sea_land_x = s.sea_land_x.data(); l.sea_land_y = s.sea_land_y.data(); l.sea_land_anchor = s.sea_land_anchor.data();
         l.temp = current.temperature.data(); l.wind_x = s.wind_x.data(); l.wind_y = s.wind_y.data(); l.wind_speed = s.wind_speed.data();
@@ -291,7 +299,7 @@ bool physics_prepass(int64_t day, const RuntimeEnvironmentSnapshot &in,
     if (ocean_due) {
         s.ocean_psi_prev = s.ocean_psi;
         PsiSolveLanes l;
-        l.n_cells = n; l.n_water = s.n_water; l.neighbors = nb.data(); l.terrain = in.terrain.data(); l.is_water_lut = water;
+        l.n_cells = n; l.n_water = s.n_water; l.neighbors = nb.data(); l.terrain = terrain.data(); l.is_water_lut = water;
         l.cell_to_water = s.cell_to_water.data(); l.water_to_cell = s.water_to_cell.data(); l.nb_w = s.nb_w.data();
         l.wind_x = s.wind_x.data(); l.wind_y = s.wind_y.data(); l.wind_speed = s.wind_speed.data();
         l.lat_norm = in.cell_lat_norm.data(); l.pos_y = in.cell_pos_y.data(); l.temp = current.temperature.data();
@@ -303,7 +311,7 @@ bool physics_prepass(int64_t day, const RuntimeEnvironmentSnapshot &in,
         PsiSolveStats stats;
         if (!psi_solve_pure(k.psi, l, scratch, stats)) { error = "physics_psi_failed"; return false; }
         UpwellingLanes u;
-        u.lat_norm = in.cell_lat_norm.data(); u.pos_y = in.cell_pos_y.data(); u.terrain = in.terrain.data(); u.neighbors = nb.data(); u.is_water_lut = water;
+        u.lat_norm = in.cell_lat_norm.data(); u.pos_y = in.cell_pos_y.data(); u.terrain = terrain.data(); u.neighbors = nb.data(); u.is_water_lut = water;
         u.wind_x = s.wind_x.data(); u.wind_y = s.wind_y.data(); u.wind_speed = s.wind_speed.data(); u.upwelling = s.upwelling.data();
         upwelling_range(n, 0, n, k.upwelling, u);
         s.last_ocean_day = day;
@@ -316,10 +324,77 @@ float normalised_rng(uint64_t &value) noexcept {
     return climate_formula::normalized_rng(value);
 }
 
+// field_solver.gd begin_slice 的热赤道：zonal-mean 温度最高的纬带，抛物线细化。
+float thermal_equator_lat_norm(const std::vector<float> &temp,
+                               const std::vector<float> &pos_y,
+                               float bounds_pos_y, float bounds_size_y,
+                               float fallback) {
+    constexpr int TE_NB = 24;
+    if (!(bounds_size_y > 0.001f) || temp.empty() || pos_y.size() != temp.size())
+        return fallback;
+    float sum[TE_NB] = {};
+    int count[TE_NB] = {};
+    for (size_t i = 0; i < temp.size(); ++i) {
+        const float ny = std::clamp((pos_y[i] - bounds_pos_y) / bounds_size_y, 0.0f, 0.999999f);
+        const int bucket = static_cast<int>(ny * TE_NB);
+        sum[bucket] += temp[i];
+        ++count[bucket];
+    }
+    float best_m = -1.0f;
+    int best_b = TE_NB / 2;
+    for (int b = 0; b < TE_NB; ++b) {
+        if (count[b] <= 0) continue;
+        const float m = sum[b] / static_cast<float>(count[b]);
+        if (m > best_m) { best_m = m; best_b = b; }
+    }
+    float bf = static_cast<float>(best_b);
+    if (best_b > 0 && best_b < TE_NB - 1 && count[best_b - 1] > 0 && count[best_b + 1] > 0) {
+        const float ml = sum[best_b - 1] / static_cast<float>(count[best_b - 1]);
+        const float mr = sum[best_b + 1] / static_cast<float>(count[best_b + 1]);
+        const float denom = ml - 2.0f * best_m + mr;
+        if (std::fabs(denom) > 1.0e-6f)
+            bf += std::clamp(0.5f * (ml - mr) / denom, -0.5f, 0.5f);
+    }
+    return std::clamp((bf + 0.5f) / static_cast<float>(TE_NB), 0.0f, 1.0f);
+}
+
+// PK_SIM_DAY_TRACE 的 [climate-out]：每个 stage 之后 store 关键 lane 的短哈希，
+// 用来定位两次运行从哪个 stage 开始分叉。
+thread_local std::string *g_diag_stage_line = nullptr;
+thread_local const RuntimeClimateStore *g_diag_stage_store = nullptr;
+template <typename T>
+uint64_t diag_lane_hash(const std::vector<T> &values) {
+    uint64_t h = 1469598103934665603ull;
+    const auto *bytes = reinterpret_cast<const uint8_t *>(values.data());
+    for (size_t b = 0; b < values.size() * sizeof(T); ++b) h = (h ^ bytes[b]) * 1099511628211ull;
+    return h ^ values.size();
+}
+void diag_note_stage(const char *tag) {
+    if (g_diag_stage_line == nullptr || g_diag_stage_store == nullptr) return;
+    const RuntimeClimateStore &s = *g_diag_stage_store;
+    char buf[384];
+    std::snprintf(buf, sizeof(buf), " %s:t=%llu,m=%llu,sc=%llu,sp=%llu,cv=%llu,wb=%llu,pw=%llu,wi=%llu,wp=%llu,wt=%llu,va=%llu",
+        tag,
+        static_cast<unsigned long long>(diag_lane_hash(s.temperature) % 100000),
+        static_cast<unsigned long long>(diag_lane_hash(s.moisture) % 100000),
+        static_cast<unsigned long long>(diag_lane_hash(s.snow_cover) % 100000),
+        static_cast<unsigned long long>(diag_lane_hash(s.snowpack) % 100000),
+        static_cast<unsigned long long>(diag_lane_hash(s.cover) % 100000),
+        static_cast<unsigned long long>(diag_lane_hash(s.water_balance_30d) % 100000),
+        static_cast<unsigned long long>(diag_lane_hash(s.plant_available_water) % 100000),
+        static_cast<unsigned long long>(diag_lane_hash(s.weather_intensity) % 100000),
+        static_cast<unsigned long long>(diag_lane_hash(s.weather_precipitation) % 100000),
+        static_cast<unsigned long long>(diag_lane_hash(s.weather_type) % 100000),
+        static_cast<unsigned long long>(diag_lane_hash(s.vapor) % 100000));
+    *g_diag_stage_line += buf;
+}
+
 template <typename Fn>
 void run_stage(RuntimeClimateKernelReport &report, RuntimeClimateStage stage, Fn &&body) {
     const auto begin = std::chrono::steady_clock::now();
     const uint64_t work = body();
+    if (g_diag_stage_line != nullptr)
+        diag_note_stage(std::to_string(static_cast<int>(stage)).c_str());
     const size_t index = static_cast<size_t>(stage);
     report.stage_work[index] = work;
     report.work_units += work;
@@ -699,6 +774,25 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                                     bool compute_state_hash,
                                     bool validate_input) const {
     report = RuntimeClimateKernelReport{};
+    struct DiagStageTrace {
+        std::string line; int64_t day;
+        DiagStageTrace(int64_t d, const RuntimeClimateStore &s) : day(d) {
+            if (pk_sim_trace_file() != nullptr) {
+                g_diag_stage_line = &line; g_diag_stage_store = &s;
+            }
+        }
+        ~DiagStageTrace() {
+            if (g_diag_stage_line == &line) {
+                diag_note_stage("end");
+                if (std::FILE *trace = pk_sim_trace_file()) {
+                    const std::string out = "[climate-out] day=" + std::to_string(day) + line + "\n";
+                    std::fputs(out.c_str(), trace);
+                    std::fflush(trace);
+                }
+            }
+            g_diag_stage_line = nullptr; g_diag_stage_store = nullptr;
+        }
+    } diag_stage_trace{day, next};
     // B8 P2：物理环流 prepass 的就绪状态。worker 用自己的 lane，只缺 profile 标量；
     // 未就绪时物理继续读生产 transport（不静默算错），这一行给出第一手证据。
     {
@@ -737,6 +831,20 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
     // next 是可丢弃工作区。上次失败留下的无效值不能阻止从有效 current 重试。
     if (!next.validate_shape(next_error)) next.reset(current.cell_count);
     copy_store_lanes(next, current);
+    {
+        const bool own_extras = input.climate_worker_authoritative &&
+            current.committed_day >= 0;
+        auto stash = [&](std::vector<float> &dst, const std::vector<float> &src) {
+            if (own_extras && src.size() == current.cell_count) dst = src;
+            else dst.clear();
+        };
+        stash(_committed_soil, _distribute_soil_scratch);
+        stash(_committed_insolation_now, _round_out.insolation_now);
+        stash(_committed_insolation_dev, _round_out.insolation_dev);
+        stash(_committed_heat_input, _round_out.heat_input);
+    }
+    const std::vector<float> &soil_in =
+        !_committed_soil.empty() ? _committed_soil : input.cell_soil_moisture;
     // 每次计划从提交态恢复；kernel 成员只是工作区，discard/retry 不推进权威。
     if (!pk_async_physics::restore_physics_state(current.physics_state.data(),
             current.physics_state.size(), _physics, error)) {
@@ -879,7 +987,10 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             ck.wrap_width_x = input.cyclone_wrap_width_x; ck.max_radius_cells = input.cyclone_max_radius_cells;
             pk_async_climate::CycloneLanes cl;
             cl.neighbors = nb.data(); cl.pos_x = input.cell_pos_x.data(); cl.pos_y = input.cell_pos_y.data();
-            cl.lat_norm = input.cell_lat_norm.data(); cl.terrain = input.terrain.data(); cl.temp = current.temperature.data();
+            cl.lat_norm = input.cell_lat_norm.data();
+            cl.terrain = (input.climate_worker_authoritative && current.committed_day >= 0 &&
+                          current.terrain.size() == n) ? current.terrain.data() : input.terrain.data();
+            cl.temp = current.temperature.data();
             cl.wind_x = _physics.wind_x.data(); cl.wind_y = _physics.wind_y.data(); cl.wind_speed = _physics.wind_speed.data();
             cl.vapor = current.vapor.data(); cl.instability = current.instability.data(); cl.convergence = current.convergence.data();
             pk_async_climate::CycloneStamp stamp;
@@ -958,14 +1069,13 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
     // 这一段由 climate_own_paw 门控。
     //
     // 用 next 而不是 current 读 moisture：上面那段收回可能刚把 season refresh 的
-    // base_moisture 写进 next.moisture，PAW 应当看到它。soil 只能从 environment 读 ——
-    // 它没有 store 成员，worker 手里那份是 distribute 的 scratch，跨天累积由 MapData
-    // 承载（见 RuntimeClimateSnapshot::soil_moisture）。
+    // base_moisture 写进 next.moisture，PAW 应当看到它。soil 没有 store 成员，读的是
+    // worker 昨天 distribute scratch 的副本（soil_in，见 _committed_soil）。
     if (input.climate_worker_authoritative &&
         next.plant_available_water.size() == current.cell_count &&
         next.moisture.size() == current.cell_count &&
         next.water_balance_30d.size() == current.cell_count) {
-        const auto &soil = input.cell_soil_moisture;
+        const auto &soil = soil_in;
         const auto &water = input.is_water;
         // B8-3 归因诊断：PAW 链 collapse 的逐日输入。只打前 12 天、每图选第一个
         // 陆地格（水域 PAW 恒 0，看它没有意义）。定位"是 WB30 变负、soil 缺席、
@@ -1171,6 +1281,12 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             own(_round_in.weather_vapor, next.vapor);
             own(_round_in.vegetation, next.vegetation);
             own(_round_in.cover, next.cover);
+            own(_round_in.soil_moisture, _committed_soil);
+            own(_round_in.insolation_now, _committed_insolation_now);
+            own(_round_in.insolation_dev, _committed_insolation_dev);
+            if (physics_owned) {
+                own(_round_in.ocean_thermal_anomaly, _physics.ocean_thermal_anomaly);
+            }
         }
         // scalars 由 capture 侧整套填好（world_ext_simulation_host.cpp 里
         // climate_round_scalars 那段），这里不再逐字段补。
@@ -1188,6 +1304,48 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             std::getenv("PK_TTA_CARRY_OFF") == nullptr &&
             _physics.temp_transport_anomaly.size() == cells) {
             _round_in.temp_transport_anomaly = _physics.temp_transport_anomaly;
+        }
+        if (std::FILE *trace = pk_sim_trace_file()) {
+            std::string line = "[climate-round-in] day=" + std::to_string(day);
+            auto lane = [&line](const char *name, const auto &values) {
+                uint64_t h = FNV_OFFSET;
+                for (const auto &value : values) {
+                    const auto *bytes = reinterpret_cast<const uint8_t *>(&value);
+                    for (size_t b = 0; b < sizeof(value); ++b) h = (h ^ bytes[b]) * FNV_PRIME;
+                }
+                line += ' '; line += name; line += '='; line += std::to_string(h ^ values.size());
+            };
+#define PK_ROUND_LANE(name) lane(#name, _round_in.name)
+            PK_ROUND_LANE(landform); PK_ROUND_LANE(vegetation); PK_ROUND_LANE(is_water);
+            PK_ROUND_LANE(terrain); PK_ROUND_LANE(cover); PK_ROUND_LANE(ema_initialized);
+            PK_ROUND_LANE(moisture); PK_ROUND_LANE(elevation); PK_ROUND_LANE(base_moisture);
+            PK_ROUND_LANE(weather_vapor); PK_ROUND_LANE(soil_moisture); PK_ROUND_LANE(water_balance_30d);
+            PK_ROUND_LANE(lat_norm); PK_ROUND_LANE(maritime); PK_ROUND_LANE(temp_baseline_year);
+            PK_ROUND_LANE(insol_annual_mean); PK_ROUND_LANE(temp); PK_ROUND_LANE(temp_30d);
+            PK_ROUND_LANE(temp_365d); PK_ROUND_LANE(thermal_energy); PK_ROUND_LANE(snowpack);
+            PK_ROUND_LANE(radiative_modifier_add); PK_ROUND_LANE(radiative_modifier_factor);
+            PK_ROUND_LANE(pos_x); PK_ROUND_LANE(pos_y); PK_ROUND_LANE(insolation_dev);
+            PK_ROUND_LANE(temp_transport_anomaly); PK_ROUND_LANE(sea_ice_frac);
+            PK_ROUND_LANE(local_thermal_anomaly); PK_ROUND_LANE(ocean_current_x);
+            PK_ROUND_LANE(ocean_current_y); PK_ROUND_LANE(ocean_thermal_anomaly);
+            PK_ROUND_LANE(production_ocean_anomaly); PK_ROUND_LANE(production_ocean_baseline);
+            PK_ROUND_LANE(production_ocean_temp_before); PK_ROUND_LANE(wind_x); PK_ROUND_LANE(wind_y);
+            PK_ROUND_LANE(wind_speed); PK_ROUND_LANE(temp_baseline); PK_ROUND_LANE(air_mass_temp_anomaly);
+            PK_ROUND_LANE(wind_baseline); PK_ROUND_LANE(wind_traj_idx); PK_ROUND_LANE(wind_traj_w);
+            PK_ROUND_LANE(base_terrain); PK_ROUND_LANE(upwelling_strength); PK_ROUND_LANE(insolation_now);
+            PK_ROUND_LANE(cell_temperature_arr); PK_ROUND_LANE(production_sea_ice_oanom);
+            PK_ROUND_LANE(production_sea_ice_tta); PK_ROUND_LANE(water_terrain_ids);
+            PK_ROUND_LANE(sea_ice_frac_inout); PK_ROUND_LANE(temp_start_of_day);
+            PK_ROUND_LANE(tta_start_of_day); PK_ROUND_LANE(sea_ice_frac_prev); PK_ROUND_LANE(weather_precip);
+#undef PK_ROUND_LANE
+            lane("paw_soil", soil_in);
+            lane("season_moist", input.climate_round_input.moisture);
+            lane("season_base", input.climate_round_input.base_moisture);
+            line += " season=" + std::to_string(_round_in.scalars.season_phase);
+            line += " season_ran=" + std::to_string(input.climate_season_refresh_ran ? 1 : 0);
+            line += '\n';
+            std::fputs(line.c_str(), trace);
+            std::fflush(trace);
         }
         _round_out.n_cells = static_cast<int>(cells);
         pk_async_climate::ClimateRoundPassTiming timing;
@@ -1312,6 +1470,7 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             report.stage_work[slot] = static_cast<uint64_t>(cells);
             report.work_units += static_cast<uint64_t>(cells);
         }
+        diag_note_stage("round");
         shared_round_ran = true;
     }
 
@@ -1715,7 +1874,8 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             lanes.temp_30d = veg_temp_30d;
             lanes.moisture = veg_moisture;
             lanes.water_balance_30d = veg_water_balance;
-            lanes.soil_moisture = vd.has_soil_moisture ? vd.soil_moisture.data() : nullptr;
+            lanes.soil_moisture = !vd.has_soil_moisture ? nullptr
+                : (soil_in.size() == cells ? soil_in.data() : vd.soil_moisture.data());
             lanes.weather_type = wx_type;
             lanes.weather_intensity = wx_intensity;
             lanes.weather_field_init = wx_field_init;
@@ -1823,7 +1983,7 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                 return static_cast<uint64_t>(0);
             }
             _feedback_base_moisture = fb.base_moisture;
-            _feedback_soil_moisture = fb.soil_moisture;
+            _feedback_soil_moisture = soil_in.size() == cells ? soil_in : fb.soil_moisture;
             pk_async_climate::climate_feedback_apply_pure(
                 fb.knobs, fb.is_water.data(), wx_type,
                 wx_intensity, wx_field_init,
@@ -2038,6 +2198,12 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
 
             pk_async_climate::WeatherFieldKnobs knobs = wx.knobs;
             knobs.use_next_outputs = true;
+            // capture 侧按 MapData 温度算热赤道，而 MapData 是按回写时机落后的那份。
+            if (physics_owned) {
+                knobs.weather_lat_te_norm = thermal_equator_lat_norm(
+                    wx.temp_read, wx.pos_y, knobs.world_bounds_pos_y,
+                    knobs.world_bounds_size_y, knobs.weather_lat_te_norm);
+            }
 
             pk_async_climate::WeatherFieldLanes lanes;
             lanes.temp_read = wx.temp_read.data();
@@ -2051,8 +2217,8 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             lanes.river_q30 = lane_ok(wx.river_q30) ? wx.river_q30.data() : nullptr;
             lanes.elevation = wx.elevation.data();
             lanes.vegetation = wx.vegetation.data();
-            lanes.soil_moisture =
-                lane_ok(wx.soil_moisture) ? wx.soil_moisture.data() : nullptr;
+            lanes.soil_moisture = !lane_ok(wx.soil_moisture) ? nullptr
+                : (soil_in.size() == cells ? soil_in.data() : wx.soil_moisture.data());
             lanes.vitality = lane_ok(wx.vitality) ? wx.vitality.data() : nullptr;
             lanes.sea_ice = lane_ok(wx.sea_ice) ? wx.sea_ice.data() : nullptr;
             lanes.pos_x = wx.pos_x.data();
@@ -2546,7 +2712,7 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             } else {
                 _distribute_cover_scratch = wd.cover;
             }
-            _distribute_soil_scratch = wd.soil_moisture;
+            _distribute_soil_scratch = soil_in.size() == cells ? soil_in : wd.soil_moisture;
             // 两条积雪计数：own_snow_state 决定跨天由谁持有（见
             // WeatherDistributeInput 那里的说明）。SHADOW 每天跟生产播种以便对拍
             // 同一条状态链；ACTIVE 只在首次（或换图）建立初值，之后 worker 自持
@@ -2568,7 +2734,8 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             lanes.water_balance_30d = next.water_balance_30d.data();
             lanes.soil_moisture = _distribute_soil_scratch.data();
             lanes.cover = _distribute_cover_scratch.data();
-            lanes.heat = wd.heat.data();
+            lanes.heat = _committed_heat_input.size() == cells
+                ? _committed_heat_input.data() : wd.heat.data();
             lanes.elevation = wd.elevation.data();
             lanes.landform = wd.landform.data();
             lanes.terrain = next.terrain.size() == cells

@@ -7,6 +7,7 @@ extends RefCounted
 ## (worker or synchronous slice) and only emits player-equivalent commands.
 
 const CountryAiCatalogScript = preload("res://scripts/country/country_ai_catalog.gd")
+const StartLocationProfile = preload("res://scripts/game/start_location_profile.gd")
 
 var _world_ext: Object = null
 var _configured := false
@@ -40,12 +41,47 @@ func configure(world_ext: Object, seed: int, map = null,
 		_configure_result = {"ok": false, "reason": String(result.get("code", "country_ai_configure_failed"))}
 		return _configure_result
 	if map != null and map.has_method("neighbor_indices_packed"):
-		_world_ext.set_country_ai_topology(map.neighbor_indices_packed(), PackedInt32Array())
+		_world_ext.set_country_ai_topology(map.neighbor_indices_packed(),
+				colonization_cell_values(map))
 	if not excluded_handles.is_empty():
 		_world_ext.set_country_ai_excluded_handles(excluded_handles)
 	_configured = true
 	_configure_result = result
 	return result
+
+
+## Q16 habitability per cell; negative cells are never colonization targets.
+## Only generation-time fields are read, so a restored save recomputes the same
+## values without persisting them.  Thresholds mirror start-location picking.
+static func colonization_cell_values(map) -> PackedInt32Array:
+	var values := PackedInt32Array()
+	var count := int(map.is_water_arr.size())
+	if count <= 0 or map.base_terrain_arr.size() != count or map.elevation_arr.size() != count \
+			or map.base_moisture_arr.size() != count or map.temp_baseline_year_arr.size() != count:
+		return values
+	values.resize(count)
+	for i in count:
+		if map.is_water_arr[i] != 0 or not TerrainType.is_passable_land(int(map.base_terrain_arr[i])):
+			values[i] = -65536
+			continue
+		var elevation := float(map.elevation_arr[i])
+		var height := clampf(elevation, 0.0, 1.0)
+		var temperature := clampf(float(map.temp_baseline_year_arr[i]) - height * 0.40
+				- smoothstep(0.45, 1.0, height) * 0.22, 0.0, 1.0)
+		var moisture := float(map.base_moisture_arr[i])
+		if temperature < StartLocationProfile.TEMPERATURE_MIN \
+				or temperature > StartLocationProfile.TEMPERATURE_MAX \
+				or moisture < StartLocationProfile.MOISTURE_MIN \
+				or moisture > StartLocationProfile.MOISTURE_MAX \
+				or elevation < StartLocationProfile.ELEVATION_MIN \
+				or elevation > StartLocationProfile.ELEVATION_MAX:
+			values[i] = -32768
+			continue
+		var score := (1.0 - absf(temperature - 0.55) / 0.55) * 0.40 \
+				+ (1.0 - absf(moisture - 0.60) / 0.60) * 0.35 \
+				+ (1.0 - absf(elevation - 0.35) / 0.65) * 0.25
+		values[i] = maxi(1, roundi(clampf(score, 0.0, 1.0) * 65536.0))
+	return values
 
 
 func is_configured() -> bool:

@@ -243,7 +243,8 @@ snapshot 暴露；周期中保存继续以 `save_requires_committed_boundary` �
 用于在平台调优时区分可控数值误差与真实现金短缺。
 
 v11 继续从统一 `survival_household` 目录建立无财富/价格弹性的冻结 `survival_required`；生存品订单、
-生产者自留和死亡分母共享该基准。短缺恢复读取扣除生产投入预留后的家庭可用库存，并容忍 1 个
+生产者自留和死亡分母共享该基准。食物订单的这一下限只给价格指数不超过最便宜在库食物 4 倍的子篮子，
+更贵的子篮子按比例缩量（见 economy-fixed-point-ledger-formulas）。短缺恢复读取扣除生产投入预留后的家庭可用库存，并容忍 1 个
 goods 子单位残量。生存食物组的利用率下限按同一业主人口跨过饥饿阈值所需的自留量动态计算。
 投入预留按互补配方共同可执行容量缩放，非生存加工让家庭生存食物优先；生产者托底只填正常目标库存缺口，超目标余量丢弃。上述缓存均可重建，不新增 stage、DataCore 槽或 PKEC 字段。
 
@@ -274,6 +275,10 @@ v12 在 `building_commit` 增加原生内生投资。评估使用本周期已完
 EMA 是设备校准，不进存档和 state hash。v38 读档把已存 S 当作 P，并合成 I > P。
 `note_completed_epoch_cadence_ms()` 只在整日 COMMIT 完成时调用，因此 `cadence_market_ms_per_knife`
 反映真实每刀，而不是每个 publish 切片。
+
+因为选档用实测毫秒，同种子同代码的两次运行（不同机器，或同一台机器负载不同）可能锁出不同的 N/P/I，
+从那一周期起市场工作集不同、经济结果分叉。这是有意保留的设备自适应（2026-10-13 决定不改成确定性档位）。
+`PK_SIM_DAY_TRACE` 下每次周期变化写一行 `[econ-cadence] day n p i ema reason`，比较两次运行时先看它。
 
 At a due boundary, one pending trade-planner slice is returned separately from
 `epoch_begin`. `boundary_continuation_required` requests one same-day WorldClock

@@ -456,6 +456,15 @@ Dictionary DCWorldExt::apply_runtime_modifier_snapshot(int64_t after_generation)
         out["reason"] = "modifier_not_worker_authoritative";
         return out;
     }
+    // Worker Economy reads the shared ModifierRuntime under this boundary for
+    // the whole day. Rebuild only between days so effective_value / bucket
+    // vectors cannot be torn under the hot loop.
+    auto boundary_lock = _runtime_host->try_lock_economy_input_capture();
+    if (!boundary_lock.owns_lock()) {
+        out["ok"] = true;
+        out["reason"] = "economy_day_inflight";
+        return out;
+    }
     const uint64_t cursor = after_generation < 0
         ? std::numeric_limits<uint64_t>::max()
         : static_cast<uint64_t>(after_generation);
@@ -465,8 +474,15 @@ Dictionary DCWorldExt::apply_runtime_modifier_snapshot(int64_t after_generation)
         out["reason"] = "";
         return out;
     }
-    const RuntimeModifierPodSnapshot &snapshot =
+    // Copy out of the ring before apply. Modifier release returns the slot to
+    // FREE; without a local copy a concurrent publish can rewrite the buffer
+    // while legacy Store vectors are still being rebuilt from it.
+    const RuntimeModifierPodSnapshot snapshot =
         _runtime_host->modifier_snapshot_buffer(slot);
+    const int64_t generation = static_cast<int64_t>(snapshot.generation);
+    const int64_t committed_day = snapshot.committed_day;
+    const int64_t state_hash = static_cast<int64_t>(snapshot.state_hash);
+    _runtime_host->release_modifier_snapshot(slot);
     bool shape_ok = snapshot.abi_version == RUNTIME_MODIFIER_POD_ABI_VERSION &&
         snapshot.catalog_hash == _runtime_host->modifier_pod_catalog_hash();
     for (const RuntimeModifierPodEntry &entry : snapshot.entries)
@@ -474,7 +490,6 @@ Dictionary DCWorldExt::apply_runtime_modifier_snapshot(int64_t after_generation)
     for (const RuntimeModifierPodBucket &bucket : snapshot.buckets)
         shape_ok = shape_ok && bucket.domain < 4 && bucket.scope < 3;
     if (!shape_ok) {
-        _runtime_host->release_modifier_snapshot(slot);
         out["reason"] = "modifier_snapshot_shape_or_catalog_invalid";
         return out;
     }
@@ -484,11 +499,10 @@ Dictionary DCWorldExt::apply_runtime_modifier_snapshot(int64_t after_generation)
     out["ok"] = applied;
     out["available"] = true;
     out["applied"] = applied;
-    out["generation"] = static_cast<int64_t>(snapshot.generation);
-    out["committed_day"] = snapshot.committed_day;
-    out["state_hash"] = static_cast<int64_t>(snapshot.state_hash);
+    out["generation"] = generation;
+    out["committed_day"] = committed_day;
+    out["state_hash"] = state_hash;
     out["reason"] = applied ? "" : String(apply_error.c_str());
-    _runtime_host->release_modifier_snapshot(slot);
     return out;
 }
 

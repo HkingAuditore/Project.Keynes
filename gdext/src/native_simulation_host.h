@@ -739,6 +739,22 @@ public:
     bool domain_is_worker_authoritative(RuntimeDomainId domain) const {
         return (authoritative_domain_mask() & runtime_domain_mask(domain)) != 0u;
     }
+    // ACTIVE 请求了该域、worker 仍在跑、但还没有一日提交覆盖它。这段窗口里主线程
+    // 若照常跑该域，写进 MapData 的结果会被 worker 首日当作种子读走，而它落在首次
+    // capture 之前还是之后取决于线程时机。stop/fault 撤销授权时这里同样变 false，
+    // 域交还主线程。
+    bool domain_grant_pending(RuntimeDomainId domain) const {
+        if (domain_is_worker_authoritative(domain) ||
+            _mode.load(std::memory_order_acquire) != RuntimeSimulationMode::ACTIVE ||
+            (_requested_authority_mask.load(std::memory_order_acquire) &
+             runtime_domain_mask(domain)) == 0u ||
+            _stop_requested.load(std::memory_order_acquire)) {
+            return false;
+        }
+        const RuntimeWorkerState s = state();
+        return s == RuntimeWorkerState::STARTING || s == RuntimeWorkerState::RUNNING ||
+               s == RuntimeWorkerState::PAUSED || s == RuntimeWorkerState::SAVE_PENDING;
+    }
 
     // Snapshot of one field's cumulative divergence. Read on the main thread
     // while the worker keeps writing, so the counters are individually atomic
@@ -1398,6 +1414,12 @@ private:
     // Climate input-barrier retry cannot advance its generation twice for the
     // same host day.
     int64_t _events_last_processed_day = -1;
+    // Worker-only: ACTIVE economy facts become Events rows, and committed
+    // Events rows become Trigger POD ingest commands.
+    uint64_t _economy_fact_event_sequence = 0;
+    int64_t _trigger_forwarded_event_id = 0;
+    uint64_t _trigger_forward_sequence = 0;
+    void forward_committed_events_to_trigger(int64_t day);
     RuntimeEffectPodAuthority _effect_pod_authority;
     RuntimeEffectPodCatalog _effect_pod_catalog;
     RuntimeEffectSnapshotRing _effect_snapshots;

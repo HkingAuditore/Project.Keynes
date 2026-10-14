@@ -45,6 +45,13 @@ unbounded output container.
 The required flow is `evaluate -> plan -> adapter preflight -> runtime
 PREFLIGHTED -> safe commit -> runtime COMMITTED -> ACK`. Cross-domain
 transactions remain pending until every required domain bit is acknowledged.
+ACTIVE write-back (`apply_pod_snapshot`) replaces catalog instances from the
+worker POD ring but must keep Economy-enqueued `program_id == -1` colonization
+/canal builtins and their Country/Economy adapter bindings; apply through
+`MapGenerator.apply_runtime_effect_snapshot` after copying the snapshot out of
+the ring, and only while `try_lock_economy_input_capture` succeeds (otherwise
+return `economy_day_inflight` and retry — worker Economy may enqueue into the
+shared EffectRuntime for the whole day under that boundary).
 Known Modifier commands should use the native batch bridge first:
 `EffectRuntime::dispatch_native_modifier()` -> `ModifierRuntime` POD enqueue ->
 `modifier_daily` -> `ack_native_modifier()`. `EffectFacade` is only the

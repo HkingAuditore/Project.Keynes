@@ -109,6 +109,12 @@ family branch promotion, and social-pressure events; `needs_satisfaction`
 (`SAT_DIM_SUBSISTENCE`) drives starvation mortality and nothing else. Full contract:
 `docs/cpp-dots-runtime/satisfaction-runtime.md`.
 
+Birth multiplier: composite/0.70 below the reference, then linear to `carrying_sat_cap_q16`
+(1.15) at `satisfaction_birth_bonus_reference_q16` (0.85); the part above 1 fades out as load goes
+from `carrying_soft_start_q16` to 1.0. Base natural death is 7.5%/year, multiplied by the frozen
+country stat `country.population.death_factor` (technology Modifier, floor 1/3, so 2.5% at full
+medicine). Use that same `base_death_rate_q32` for replacement fertility and starvation stacking.
+
 Merchants also submit household demand. Total cohort money does not change from purchases.
 
 ## 6. EMA and Price V3
@@ -268,3 +274,12 @@ new owner's projected income must cover 110% of living cost and exceed source in
 Per-capita source funds must cover local-price construction goods plus 30 living-cost days. Move one
 person with proportional funds, then use the ordinary BUILD transfer and construction-goods sink.
 Do not apply this price-driven path to collectors or services.
+
+There is no knowledge-sector headcount cap. Upward mobility is gated by
+`ProfessionProfile.entry_savings_days`: when the target gate exceeds the source gate, the source
+cohort's per-capita funds must reach `days × _cell_living_cost_per_capita` (nothing is debited).
+Check it in unemployed-pool eligibility before proportional allocation (rejection code 9,
+`EMPLOYMENT_REJECTION_ENTRY_SAVINGS`) and while choosing the source ethnicity cohort in all four
+job-to-job lanes. `_cell_living_cost_per_capita` weights each variant by purchasable coverage
+(`min(1, 4 × purchasable / (pop × base_qty))`, 1/16 steps) so a thin expensive stock cannot price
+the whole need.

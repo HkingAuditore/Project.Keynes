@@ -16,6 +16,15 @@ packed catalog evaluation and cumulative trigger state. It must not mutate Modif
 Country, Economy, Gameplay, DataCore, or a conserved ledger. Domain adapters enqueue
 typed commands and apply them at safe boundaries.
 
+Under ACTIVE the worker owns both ends: the Economy stage turns committed facts into
+Events `APPEND_BATCH` packets and `forward_committed_events_to_trigger` feeds new
+journal rows to the Trigger POD as `INGEST_EVENT`. The Trigger -> Effect handoff
+still reads the facade, which only `MapGenerator.apply_runtime_trigger_snapshot`
+refreshes (the host probes `MapGenerator`, not `DCWorldExt`; Modifier/Effect
+forwarders are intentionally absent because enabling both crashes). When triggers "never fire", check in order: `events_pod_event_count > 0`,
+worker development progress, then whether the host write-back generation advances.
+An invalid ingest fails the whole Trigger day, so filter by catalog source/type span.
+
 ## Hot-path contract
 
 Compile Resources/JSON/GDScript into dense IDs and packed columns. Native loops use

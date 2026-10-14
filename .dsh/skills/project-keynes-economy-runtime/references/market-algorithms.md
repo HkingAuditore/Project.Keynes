@@ -218,3 +218,12 @@ new owner's projected income must cover 110% of living cost and exceed source in
 Per-capita source funds must cover local-price construction goods plus 30 living-cost days. Move one
 person with proportional funds, then use the ordinary BUILD transfer and construction-goods sink.
 Do not apply this price-driven path to collectors or services.
+
+There is no knowledge-sector headcount cap. Upward mobility is gated by
+`ProfessionProfile.entry_savings_days`: when the target gate exceeds the source gate, the source
+cohort's per-capita funds must reach `days × _cell_living_cost_per_capita` (nothing is debited).
+Check it in unemployed-pool eligibility before proportional allocation (rejection code 9,
+`EMPLOYMENT_REJECTION_ENTRY_SAVINGS`) and while choosing the source ethnicity cohort in all four
+job-to-job lanes. `_cell_living_cost_per_capita` weights each variant by purchasable coverage
+(`min(1, 4 × purchasable / (pop × base_qty))`, 1/16 steps) so a thin expensive stock cannot price
+the whole need.

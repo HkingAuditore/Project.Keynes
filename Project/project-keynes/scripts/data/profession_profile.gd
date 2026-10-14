@@ -8,6 +8,12 @@ extends Resource
 @export var default_consumption_plan_id: StringName = &""
 ## UI/content taxonomy only; employment identity remains the stable profession id.
 @export var profession_class_id: StringName = &"general"
+## Savings gate for upward mobility, standing in for the education and literacy
+## the simulation does not model: a cohort may move people into this profession
+## only while its per-capita funds cover this many days of the cell's
+## per-capita living cost. Moves from a profession with an equal or higher gate
+## are exempt, so lateral and downward mobility stay free.
+@export_range(0, 36500, 1) var entry_savings_days: int = 0
 ## Optional cold-path labels for family/job selectors.
 @export var semantic_tags: PackedStringArray = PackedStringArray()
 ## Executable availability requirements. Only `tech.*` tags are interpreted by
@@ -15,14 +21,17 @@ extends Resource
 @export var technology_tags: PackedStringArray = PackedStringArray()
 
 ## Per-person, per-day Q32 demographic rates.
-## 20.0% births and 2.5% natural deaths per 365-day year produce a
-## fully-satisfied long-run net growth target of approximately 17.5%. This is a
-## gameplay-scale demographic rate: a healthy population doubles in about 4.3
-## years and a 20-person starter settlement averages one birth every 91 days.
+## 20.0% births and 7.5% pre-technology natural deaths per 365-day year. The
+## country stat `country.population.death_factor` (storage, sanitation and
+## medicine technologies, floor 1/3) lowers natural deaths toward 2.5%, and
+## composite satisfaction above the birth reference raises births up to 1.15x,
+## so a developed, well-fed population grows near 20% per year while a stagnant
+## stone-age one grows near 12.5%. A 20-person starter settlement averages one
+## birth every 91 days.
 ## Composite satisfaction fully modulates births. Healthy cohorts retain the
 ## gameplay-scale rate while severe deprivation sharply suppresses births.
 @export var birth_rate_q32: int = 2353407
-@export var death_rate_q32: int = 294176
+@export var death_rate_q32: int = 882528
 @export var satisfaction_birth_weight_q16: int = 65536
 
 ## Q16 weights for the eight composite satisfaction dimensions, in native enum

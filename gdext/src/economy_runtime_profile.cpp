@@ -510,6 +510,9 @@ void NativeEconomyRuntime::configure_satisfaction_profile(const Dictionary &prof
     _satisfaction_birth_reference_q16 = std::clamp(
         dict_num<int32_t>(profile, "satisfaction_birth_reference_q16", 45875),
         1, static_cast<int32_t>(Q16_ONE));
+    _satisfaction_birth_bonus_reference_q16 = std::clamp(
+        dict_num<int32_t>(profile, "satisfaction_birth_bonus_reference_q16", 55706),
+        _satisfaction_birth_reference_q16 + 1, static_cast<int32_t>(Q16_ONE));
     const std::vector<int32_t> thresholds = packed_i32(
         profile, "satisfaction_pressure_thresholds_q16");
     if (thresholds.size() == _satisfaction_pressure_thresholds_q16.size()) {
@@ -553,7 +556,7 @@ void NativeEconomyRuntime::configure_satisfaction_profile(const Dictionary &prof
         dict_num<int32_t>(profile, "carrying_sat_floor_q16", 8192),
         0, q16);
     _carrying_sat_cap_q16 = std::max(_carrying_sat_floor_q16,
-        dict_num<int32_t>(profile, "carrying_sat_cap_q16", q16));
+        dict_num<int32_t>(profile, "carrying_sat_cap_q16", 75366));
     _carrying_residual_floor_q16 = std::clamp(
         dict_num<int32_t>(profile, "carrying_residual_floor_q16", q16 / 2),
         1, q16 * 4);

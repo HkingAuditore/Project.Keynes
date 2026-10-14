@@ -22,6 +22,7 @@ using namespace variant_helpers;
 Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dictionary &profile,
                                            int32_t cell_count, int64_t seed) {
     reset("reconfigure");
+    _worker_natural_resources.clear();
     Dictionary out;
     out["path"] = "ECONOMY_GRAPH";
     out["mode"] = "native";
@@ -180,6 +181,8 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
             "country.household.consumption_factor") : -1;
     _country_resource_use_stat_id = _modifier_runtime != nullptr
         ? _modifier_runtime->stat_id_for_key("country.resource.use_factor") : -1;
+    _country_population_death_stat_id = _modifier_runtime != nullptr
+        ? _modifier_runtime->stat_id_for_key("country.population.death_factor") : -1;
     _country_building_output_stat_ids.clear();
     _country_building_output_stat_ids.reserve(_building_type_ids.size());
     for (const std::string &building_id : _building_type_ids) {
@@ -424,6 +427,10 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _cell_rain_event_q16.clear();
     _epoch_market_ids.clear();
     _economy_live_cells.clear();
+    {
+        std::lock_guard<std::mutex> lock(_economy_live_cells_published_mutex);
+        _economy_live_cells_published.reset();
+    }
     _epoch_settlement_cells.clear();
     _epoch_building_cells.clear();
     _epoch_plan_cells.clear();

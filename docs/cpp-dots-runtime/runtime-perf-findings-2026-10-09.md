@@ -147,6 +147,9 @@
   日瀑布稳态 0 次同日重试，`INPUT_WAIT` 全部来自“环境 ring 为空”那处等待。
 - 领先不破坏数据契约：经济日输入挂在环境快照（`RuntimeEnvironmentSnapshot::economy_input`）里随 FIFO 逐日走；
   写回 ring 是最新值语义，跳过中间日的写回在生产里同样发生。
+  - 2026-10-13 更正：FIFO 只保证日序，不保证内容。快照里的气候字段和资源储量是从主线程镜像复制的，
+    镜像停在 worker 的哪一天取决于领先了几天，所以领先会让长跑不可复现。经济的气候输入已改读 worker
+    气候 store；其余来源见 `country-ai-runtime.md` §9。
 
 修复：驱动新增 `pipeline_depth`（默认 3，`0` = 旧锁步），轮询条件改为 worker 提交到
 `输入日 - pipeline_depth` 即可；提交前先按 `wait_for_climate_consumed(0)` 等 ring 有空位（`capacity_waits` 计数），

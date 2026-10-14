@@ -451,6 +451,10 @@ var _last_sea_ice_atlas_upload_breakdown: Dictionary = {}
 # 把 "305 行重复值" 累加成假象总耗时。
 var _current_fast_tick_idx: int = 0
 var _runtime_input_generation: int = 0
+# Day of the last accepted worker input capture; the season-refresh drain waits
+# for the worker's writeback of this day.
+var _runtime_last_capture_day: int = -1
+const SEASON_REFRESH_DRAIN_TIMEOUT_MS := 60000
 # Climate trace is a release protocol, not a best-effort diagnostic stream.
 # Keep the main-thread capture/reference bookkeeping here so a worker can only
 # consume a day after the OFF path has released its matching reference hash.
@@ -1335,6 +1339,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	_last_seed = effective_seed
 	_runtime_input_generation = 0
 	_runtime_climate_trace_pending.clear()
+	_runtime_last_capture_day = -1
 	_runtime_climate_reference_last_day = -1
 	_runtime_climate_reference_last_hash = 0
 	_runtime_climate_reference_failures = 0
@@ -2052,6 +2057,36 @@ func get_runtime_thread_report() -> Dictionary:
 	return _data_core_world_ext.get_runtime_thread_report()
 
 
+## WorldRuntimeHost probes the generator, not DCWorldExt, for the ACTIVE
+## write-backs that refresh the legacy facades. The Trigger facade feeds the
+## main-thread Trigger -> Effect handoff, so a missing forwarder here means no
+## worker-fired trigger (e.g. development signals) ever takes effect.
+## Modifier and Effect were previously omitted because applying both together
+## crashed (~100 ACTIVE days); the native apply paths now copy the POD snapshot
+## out of the ring and preserve Economy-owned colonization builtins across
+## Effect write-back.
+func apply_runtime_trigger_snapshot(after_generation: int) -> Dictionary:
+	return _forward_runtime_snapshot_apply("apply_runtime_trigger_snapshot", after_generation)
+
+
+func apply_runtime_ideology_snapshot(after_generation: int) -> Dictionary:
+	return _forward_runtime_snapshot_apply("apply_runtime_ideology_snapshot", after_generation)
+
+
+func apply_runtime_modifier_snapshot(after_generation: int) -> Dictionary:
+	return _forward_runtime_snapshot_apply("apply_runtime_modifier_snapshot", after_generation)
+
+
+func apply_runtime_effect_snapshot(after_generation: int) -> Dictionary:
+	return _forward_runtime_snapshot_apply("apply_runtime_effect_snapshot", after_generation)
+
+
+func _forward_runtime_snapshot_apply(method: StringName, after_generation: int) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method(method):
+		return {"ok": false, "code": "runtime_worker_api_missing"}
+	return _data_core_world_ext.call(method, after_generation)
+
+
 func record_runtime_visual_timings(ui_input_to_feedback_ms: float,
 		visual_apply_ms: float, gpu_upload_ms: float) -> Dictionary:
 	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
@@ -2365,6 +2400,21 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0) -> Di
 			_runtime_input_generation,
 			int(thread_report.get("simulation_environment_generation",
 				thread_report.get("environment_generation", 0))))
+		if _climate_authority_grant_pending(thread_report):
+			thread_report = _wait_climate_authority_grant()
+	# Season refresh reads the climate fields in MapData and writes base_moisture /
+	# moisture that this capture hands to the worker. Under worker authority a due
+	# round runs here in one piece, after MapData has been brought to the worker's
+	# writeback of the last captured day; sliced across frames, both what it read
+	# and how much of it landed before the capture depended on machine speed.
+	if bool(thread_report.get("climate_worker_authoritative", false)) \
+			and _season_refresh_job != null:
+		if _season_refresh_job.has_method("has_capture_round_pending") \
+				and _season_refresh_job.has_capture_round_pending():
+			_drain_climate_writeback_for_season_refresh()
+			_season_refresh_job.run_round_for_capture()
+		elif _season_refresh_job.has_method("finish_round_now"):
+			_season_refresh_job.finish_round_now()
 	var next_generation := maxi(1, _runtime_input_generation + 1)
 	var catalog_hash := _runtime_climate_catalog_hash_for_map(map)
 	var topology_generation := _runtime_climate_topology_generation_for_map(map)
@@ -2498,10 +2548,9 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0) -> Di
 		# 陈旧副本上、每 48 天才被 vegetation_dynamics 动一次，而生产侧每 30 天就被
 		# season refresh 重算一次。
 		#
-		# 顺序上成立：回灌 → season refresh → capture 是同一调用栈内串行的（见
-		# world_runtime_host._on_clock_day_changed），所以这里读到的 MapData 已经是
-		# season refresh 写完之后的值。
-		"climate_season_refresh_ran": _consume_season_refresh_edge(),
+		# 顺序上成立：权威下到期的 season refresh 就在本函数开头跑完（见
+		# run_round_for_capture），所以这里读到的 MapData 已经是它写完之后的值。
+		"climate_season_refresh_ran": _season_refresh_edge_pending(),
 		# Climate 在 worker 手上时，worker 要自己补上「生产被抑制后就停更」的那些
 		# 记录：round scalars（season_phase）与 PAW。两处都不能无条件做，否则
 		# SHADOW parity 立刻分叉。见 RuntimeEnvironmentSnapshot::climate_worker_authoritative。
@@ -2510,6 +2559,8 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0) -> Di
 	})
 	if bool(result.get("ok", false)):
 		_runtime_input_generation = input_generation
+		_runtime_last_capture_day = day
+		_last_capture_season_refresh_day = _last_season_refresh_day
 		var round_state := _native_daily_climate_round_state_snapshot()
 		_runtime_climate_trace_pending[day] = {
 			"day": day,
@@ -4620,7 +4671,9 @@ func _build_runtime_climate_stage_knobs(map: MapData, day: int,
 	# 动态 LUT 一档以下。
 	var stride: int = _native_daily_weather_cadence_stride(cp_now)
 	var stage_b_due: bool = true
-	if stride > 1:
+	# capture 失败会在同一天重试；节拍必须按日而不是按调用推进。
+	var stage_b_repeat_day: bool = day == _runtime_climate_worker_weather_embed_day
+	if stride > 1 and not stage_b_repeat_day:
 		if _runtime_climate_worker_weather_embed_day <= -1000000:
 			# 冷启动首跑日与 legacy weather bucket 对齐（StridePolicy 在
 			# (day+phase)%stride==0 首跑，即 day=stride-phase）。
@@ -4635,8 +4688,9 @@ func _build_runtime_climate_stage_knobs(map: MapData, day: int,
 		else:
 			stage_b_due = (day - _runtime_climate_worker_weather_embed_day) >= stride
 	if stage_b_due:
-		_runtime_climate_worker_weather_embed_day = day
-		_runtime_climate_worker_stage_b_call_index += 1
+		if not stage_b_repeat_day:
+			_runtime_climate_worker_weather_embed_day = day
+			_runtime_climate_worker_stage_b_call_index += 1
 		out["weather_round"] = true
 		# 复用生产那份组装：节拍与标量口径必须与生产逐位一致，重写一份就等于在
 		# worker 侧引入第二套 stride 语义。elapsed_days_per_call 取 weather 轮间隔，
@@ -4673,6 +4727,12 @@ func _build_runtime_climate_stage_knobs(map: MapData, day: int,
 					float(clock.get("anomaly", 0.0)),
 					float(clock.get("season_phase", 0.0)))
 			if not field_knobs.is_empty():
+				if _weather_system.has_method("convergence_refresh_due_on_day"):
+					field_knobs["refresh_convergence"] = \
+						_weather_system.convergence_refresh_due_on_day(day)
+				# The builder's dt is the main thread's gap between its own weather
+				# solves, which are suppressed here; the worker solves every day.
+				field_knobs["weather_transition_dt_days"] = 1.0
 				out["stage_weather"] = field_knobs
 			elif not _runtime_climate_field_reported:
 				_runtime_climate_field_reported = true
@@ -7174,9 +7234,9 @@ func _record_native_daily_slice_climate_breakdown(res: Dictionary, breakdown: Di
 	# state itself. Without it the key set by the schedule path disappears here
 	# and readers see a suppressed main thread as having resumed (or vice versa).
 	if _data_core_world_ext != null \
-			and _data_core_world_ext.has_method("climate_worker_authoritative"):
+			and _data_core_world_ext.has_method("climate_main_thread_suppressed"):
 		diag["climate_authority_suppressed"] = \
-			_data_core_world_ext.climate_worker_authoritative()
+			_data_core_world_ext.climate_main_thread_suppressed()
 	_diagnostics_bus.record_climate_breakdown(diag)
 
 
@@ -7965,6 +8025,7 @@ func sus_reset_all() -> void:
 	# stopped by WorldRuntimeHost before this reset, so no stale reference may be
 	# released into the next map's trace.
 	_runtime_climate_trace_pending.clear()
+	_runtime_last_capture_day = -1
 	_runtime_climate_reference_last_day = -1
 	_runtime_climate_reference_last_hash = 0
 	_runtime_climate_reference_last_error = ""
@@ -8793,11 +8854,91 @@ func finish_season_refresh(_map: MapData, _world: WorldData, _season_idx: int) -
 
 # capture 侧的 season refresh 边沿检测。见 _last_capture_season_refresh_day。
 # 返回「距上次 capture 之间 season refresh 完成过一轮」，读完即消费。
-func _consume_season_refresh_edge() -> bool:
-	if _last_season_refresh_day == _last_capture_season_refresh_day:
+## Only peeks: the edge is consumed once the capture is accepted, so a capture
+## retried on the same day still carries it.
+func _season_refresh_edge_pending() -> bool:
+	return _last_season_refresh_day != _last_capture_season_refresh_day
+
+
+const RUNTIME_CLIMATE_DOMAIN_BIT := 1 << 1
+const CLIMATE_AUTHORITY_GRANT_TIMEOUT_MS := 60000
+
+
+## The worker is granted Climate when it commits its first day. Pipelined, the
+## capture that first observes the grant depended on how far the worker had got,
+## and every capture before it ran Climate on the main thread instead.
+func _climate_authority_grant_pending(thread_report: Dictionary) -> bool:
+	if _runtime_last_capture_day < 0 \
+			or bool(thread_report.get("climate_worker_authoritative", false)):
 		return false
-	_last_capture_season_refresh_day = _last_season_refresh_day
-	return true
+	if String(thread_report.get("requested_simulation_thread_mode", "")) != "ACTIVE" \
+			or String(thread_report.get("state", "")) == "FAULTED":
+		return false
+	if (int(thread_report.get("requested_authority_mask", 0)) \
+			& RUNTIME_CLIMATE_DOMAIN_BIT) == 0:
+		return false
+	return int(thread_report.get("simulation_committed_day", -1)) \
+		< _runtime_last_capture_day
+
+
+## Waits until the worker has committed the last captured day; if the grant did
+## not land with it, it is not coming on a fixed day and waiting longer only stalls.
+func _wait_climate_authority_grant() -> Dictionary:
+	var ext = _data_core_world_ext
+	var started_ms := Time.get_ticks_msec()
+	var report: Dictionary = get_runtime_thread_report()
+	while _climate_authority_grant_pending(report):
+		if Time.get_ticks_msec() - started_ms > CLIMATE_AUTHORITY_GRANT_TIMEOUT_MS:
+			push_warning("[climate-authority] grant wait timed out at day %d"
+				% _runtime_last_capture_day)
+			break
+		service_country_worker_peer_adapter(64, false)
+		if ext != null and ext.has_method("wait_climate_consumed"):
+			ext.wait_climate_consumed(_runtime_input_generation, 10)
+		OS.delay_usec(200)
+		report = get_runtime_thread_report()
+	return report
+
+
+func season_refresh_defers_to_capture() -> bool:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("get_runtime_thread_report"):
+		return false
+	return bool(get_runtime_thread_report().get("climate_worker_authoritative", false))
+
+
+## Brings the climate fields in MapData to the worker's writeback of the last
+## captured day. Pipelined, the writeback applied so far trails by however many
+## days the worker happens to be behind. Country peer intents are serviced
+## between waits: the worker can be parked on one before it reaches that day.
+func _drain_climate_writeback_for_season_refresh() -> void:
+	var ext = _data_core_world_ext
+	if ext == null or _runtime_last_capture_day < 0 \
+			or not ext.has_method("apply_runtime_climate_writeback") \
+			or not ext.has_method("wait_climate_consumed"):
+		return
+	var target_day := _runtime_last_capture_day
+	var started_ms := Time.get_ticks_msec()
+	while true:
+		service_country_worker_peer_adapter(64, false)
+		var applied: Dictionary = ext.apply_runtime_climate_writeback(0)
+		if not bool(applied.get("ok", false)):
+			push_warning("[season-refresh] climate drain stopped: %s" % String(
+				applied.get("code", "unknown")))
+			return
+		if int(applied.get("last_applied_day", -1)) >= target_day:
+			return
+		if Time.get_ticks_msec() - started_ms > SEASON_REFRESH_DRAIN_TIMEOUT_MS:
+			push_warning("[season-refresh] climate drain timed out before day %d" % target_day)
+			return
+		var slice: Dictionary = ext.wait_climate_consumed(_runtime_input_generation, 10)
+		if bool(slice.get("ok", false)):
+			# Climate is consumed; the writeback is published when the worker
+			# finishes the rest of that day.
+			OS.delay_usec(200)
+		elif String(slice.get("code", "")) != "climate_wait_timeout_slice":
+			push_warning("[season-refresh] climate drain stopped: %s" % String(
+				slice.get("code", "unknown")))
+			return
 
 
 func sus_season_refresh_breakdown() -> Dictionary:

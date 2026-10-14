@@ -1,0 +1,212 @@
+﻿Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[food-audit] ration_per_person_per_day=824 food_goods=15
+[food-audit/good] good=prepared_staples need=staple_food food_per_subunit=1.5385
+[food-audit/good] good=bread need=staple_food food_per_subunit=1.5385
+[food-audit/good] good=grain need=staple_food food_per_subunit=1.2500
+[food-audit/good] good=wheat_grain need=staple_food food_per_subunit=1.2500
+[food-audit/good] good=rice_grain need=staple_food food_per_subunit=1.2500
+[food-audit/good] good=corn_grain need=staple_food food_per_subunit=1.2500
+[food-audit/good] good=potatoes need=staple_food food_per_subunit=1.2500
+[food-audit/good] good=gathered_plants need=staple_food food_per_subunit=1.0000
+[food-audit/good] good=game_meat need=protein food_per_subunit=1.0000
+[food-audit/good] good=meat need=protein food_per_subunit=1.0000
+[food-audit/good] good=fish need=protein food_per_subunit=1.0000
+[food-audit/good] good=canned_fish need=protein food_per_subunit=1.0000
+[food-audit/good] good=dairy_products need=protein food_per_subunit=1.0000
+[food-audit/good] good=vegetables need=produce food_per_subunit=1.0000
+[food-audit/good] good=processed_food need=produce food_per_subunit=1.0000
+[food-audit/building] id=automated_farm kind=0 era=intelligent tech=tech.automated_agriculture workers=21 food_net_per_day=6351108.8 fed_per_building=7707.66 fed_per_worker=367.03 outputs=grain:2822715,vegetables:2822715 inputs=fertilizer:8793@0.50,agricultural_machinery:21471@0.50,electricity:30534@0.88,computers:13416@0.88,autonomous_systems:13416@0.88,tools:2100@0.50 resources=0:12245/m1,5:12245/m1
+[food-audit/building] id=bakery kind=1 era=agrarian tech=tech.grain_baking workers=4 food_net_per_day=6120.9 fed_per_building=7.43 fed_per_worker=1.86 outputs=bread:9558 inputs=wheat_grain:6867@1.00,salt:79@0.00,tools:400@0.50 resources=
+[food-audit/building] id=bread_plant kind=1 era=steam tech=tech.assembly_line workers=23 food_net_per_day=350976.6 fed_per_building=425.94 fed_per_worker=18.52 outputs=bread:494647 inputs=wheat_grain:328015@1.00,packaging:5541@1.00,tools:2415@0.50 resources=
+[food-audit/building] id=bunded_rice_field kind=0 era=agrarian tech=tech.rice_water_control workers=3 food_net_per_day=9335.0 fed_per_building=11.33 fed_per_worker=3.78 outputs=rice_grain:7468 inputs=tools:300@0.50 resources=16:195/m1
+[food-audit/building] id=canned_fish_plant kind=1 era=steam tech=tech.industrial_canning workers=23 food_net_per_day=166632.0 fed_per_building=202.22 fed_per_worker=8.79 outputs=canned_fish:494647 inputs=fish:328015@1.00,salt:5399@1.00,packaging:5399@1.00,tools:2355@0.50 resources=
+[food-audit/building] id=canning_workshop kind=1 era=enlightenment tech=tech.canning workers=17 food_net_per_day=39470.0 fed_per_building=47.90 fed_per_worker=2.82 outputs=canned_fish:121870 inputs=fish:82400@1.00,salt:2189@1.00,packaging:2189@1.00,tools:3204@0.50 resources=
+[food-audit/building] id=communal_hearth kind=1 era=stone tech=tech.fire_control workers=1 food_net_per_day=1062.4 fed_per_building=1.29 fed_per_worker=1.29 outputs=prepared_staples:1375 inputs=gathered_plants:702@1.00,game_meat:351@1.00,logs:5240@1.00,tools:100@0.50 resources=
+[food-audit/building] id=creamery kind=1 era=agrarian tech=tech.dairy_processing workers=4 food_net_per_day=6452.0 fed_per_building=7.83 fed_per_worker=1.96 outputs=dairy_products:6452 inputs=livestock_products:4837@1.00,tools:400@0.50 resources=
+[food-audit/building] id=dairy_products_plant kind=1 era=electrical tech=tech.cold_chain workers=23 food_net_per_day=1099216.0 fed_per_building=1334.00 fed_per_worker=58.00 outputs=dairy_products:1099216 inputs=livestock_products:715170@1.00,packaging:9644@1.00,tools:5287@0.50 resources=
+[food-audit/building] id=dryland_wheat_field kind=0 era=agrarian tech=tech.dryland_wheat_cultivation workers=2 food_net_per_day=7467.5 fed_per_building=9.06 fed_per_worker=4.53 outputs=wheat_grain:5974 inputs=tools:200@0.50 resources=0:220/m1
+[food-audit/building] id=estate_paddy kind=0 era=empire tech=tech.estate_paddy_management workers=14 food_net_per_day=156817.5 fed_per_building=190.31 fed_per_worker=13.59 outputs=rice_grain:125454 inputs=fertilizer:655@0.50,tools:1400@0.50 resources=16:482/m1
+[food-audit/building] id=fertile_soil_collector kind=0 era=agrarian tech=tech.household_landholding workers=1 food_net_per_day=2390.0 fed_per_building=2.90 fed_per_worker=2.90 outputs=vegetables:2390 inputs=tools:100@0.50 resources=0:1305/m1,5:1305/m1
+[food-audit/building] id=floodplain_maize_plot kind=0 era=agrarian tech=tech.flood_recession_maize workers=2 food_net_per_day=5040.0 fed_per_building=6.12 fed_per_worker=3.06 outputs=corn_grain:4032 inputs=tools:200@0.50 resources=0:377/m1
+[food-audit/building] id=floodplain_wheat_plot kind=0 era=agrarian tech=tech.flood_recession_wheat workers=1 food_net_per_day=2521.3 fed_per_building=3.06 fed_per_worker=3.06 outputs=wheat_grain:2017 inputs=tools:100@0.50 resources=0:228/m1
+[food-audit/building] id=freshwater_fishing_camp kind=0 era=stone tech=tech.freshwater_fishing workers=1 food_net_per_day=2262.0 fed_per_building=2.75 fed_per_worker=2.75 outputs=fish:2262 inputs=tools:100@0.50 resources=7:104/m0
+[food-audit/building] id=gathering_ground kind=0 era=stone tech=tech.gathering workers=1 food_net_per_day=3741.0 fed_per_building=4.54 fed_per_worker=4.54 outputs=gathered_plants:3741 inputs=tools:100@0.50 resources=5:1215/m1
+[food-audit/building] id=highland_tuber_plot kind=0 era=agrarian tech=tech.highland_tuber_farming workers=2 food_net_per_day=5040.0 fed_per_building=6.12 fed_per_worker=3.06 outputs=potatoes:4032 inputs=tools:200@0.50 resources=0:325/m1
+[food-audit/building] id=household_tuber_garden kind=0 era=stone tech=tech.potato_propagation workers=1 food_net_per_day=2723.8 fed_per_building=3.31 fed_per_worker=3.31 outputs=potatoes:2179 inputs=tools:100@0.50 resources=5:200/m1
+[food-audit/building] id=improved_smallholding kind=0 era=enlightenment tech=tech.agricultural_improvement workers=1 food_net_per_day=30244.5 fed_per_building=36.70 fed_per_worker=36.70 outputs=grain:13442,vegetables:13442 inputs=tools:100@0.50 resources=0:2959/m1,5:2959/m1
+[food-audit/building] id=intensive_farm kind=0 era=atomic tech=tech.industrial_agronomy workers=31 food_net_per_day=2083432.5 fed_per_building=2528.44 fed_per_worker=81.56 outputs=grain:925970,vegetables:925970 inputs=fertilizer:8081@0.50,agricultural_machinery:14760@0.50,electricity:16796@0.75,tools:3100@0.50 resources=0:10149/m1,5:10149/m1
+[food-audit/building] id=landed_estate kind=0 era=empire tech=tech.estate_cereal_management workers=11 food_net_per_day=123213.8 fed_per_building=149.53 fed_per_worker=13.59 outputs=corn_grain:98571 inputs=fertilizer:270@0.50,tools:1100@0.50 resources=0:8212/m1,5:8212/m1
+[food-audit/building] id=maize_garden kind=0 era=agrarian tech=tech.maize_garden_horticulture workers=1 food_net_per_day=2723.8 fed_per_building=3.31 fed_per_worker=3.31 outputs=corn_grain:2179 inputs=tools:100@0.50 resources=0:200/m1
+[food-audit/building] id=marine_fish_collector kind=0 era=stone tech=tech.coastal_fishing workers=2 food_net_per_day=6062.0 fed_per_building=7.36 fed_per_worker=3.68 outputs=fish:6062 inputs=natural_rubber:66@0.50,tools:200@0.50 resources=13:279/m0
+[food-audit/building] id=mechanized_farm kind=0 era=electrical tech=tech.motorized_agriculture workers=27 food_net_per_day=816570.0 fed_per_building=990.98 fed_per_worker=36.70 outputs=grain:362920,vegetables:362920 inputs=agricultural_machinery:7111@0.50,tools:2700@0.50 resources=0:9638/m1,5:9638/m1
+[food-audit/building] id=mechanized_slaughterhouse kind=1 era=electrical tech=tech.mass_production workers=23 food_net_per_day=494647.0 fed_per_building=600.30 fed_per_worker=26.10 outputs=meat:494647,raw_hide:494647 inputs=livestock_products:328015@1.00,industrial_machinery:17982@0.50,tools:5398@0.50 resources=
+[food-audit/building] id=method_gathering_ground_r1 kind=0 era=agrarian tech=tech.permanent_settlements workers=9 food_net_per_day=33225.0 fed_per_building=40.32 fed_per_worker=4.48 outputs=gathered_plants:33225 inputs=tools:269@0.50 resources=5:22266/m1
+[food-audit/building] id=method_highland_precision_agriculture kind=0 era=information tech=tech.highland_precision_agriculture workers=17 food_net_per_day=2856318.8 fed_per_building=3466.41 fed_per_worker=203.91 outputs=potatoes:2285055 inputs=fertilizer:31488@0.50,agricultural_machinery:87831@0.50,electricity:107626@0.75,computers:40541@0.75,tools:1700@0.50 resources=0:256/m1
+[food-audit/building] id=method_landed_estate_r6 kind=0 era=electrical tech=tech.motorized_agriculture workers=27 food_net_per_day=907301.3 fed_per_building=1101.09 fed_per_worker=40.78 outputs=corn_grain:725841 inputs=agricultural_machinery:2908@0.50,tools:2700@0.50 resources=0:23578/m1,5:23578/m1
+[food-audit/building] id=method_maize_farm_r10 kind=0 era=intelligent tech=tech.automated_agriculture workers=21 food_net_per_day=3528393.8 fed_per_building=4282.03 fed_per_worker=203.91 outputs=corn_grain:2822715 inputs=fertilizer:8793@0.50,agricultural_machinery:21471@0.50,electricity:30534@0.88,computers:13416@0.88,autonomous_systems:13416@0.88,tools:2100@0.50 resources=0:12245/m1,5:12245/m1
+[food-audit/building] id=method_maize_farm_r8 kind=0 era=information tech=tech.precision_agriculture workers=27 food_net_per_day=2268252.5 fed_per_building=2752.73 fed_per_worker=101.95 outputs=corn_grain:1814602 inputs=fertilizer:9661@0.50,agricultural_machinery:20732@0.50,electricity:23587@0.75,computers:6912@0.75,tools:2700@0.50 resources=0:10849/m1,5:10849/m1
+[food-audit/building] id=method_marine_fish_collector_r2 kind=0 era=agrarian tech=tech.fishing_boats workers=9 food_net_per_day=27280.0 fed_per_building=33.11 fed_per_worker=3.68 outputs=fish:27280 inputs=tools:449@0.50,natural_rubber:101@0.00 resources=13:328/m0
+[food-audit/building] id=method_marine_fish_collector_r4 kind=0 era=exploration tech=tech.oceanic_provisioning workers=9 food_net_per_day=26373.0 fed_per_building=32.01 fed_per_worker=3.56 outputs=fish:26373 inputs=tools:1163@0.50 resources=13:161/m0
+[food-audit/building] id=method_potato_collector_r6 kind=0 era=electrical tech=tech.motorized_agriculture workers=27 food_net_per_day=907301.3 fed_per_building=1101.09 fed_per_worker=40.78 outputs=potatoes:725841 inputs=agricultural_machinery:2908@0.50,tools:2700@0.50 resources=0:23578/m1,5:23578/m1
+[food-audit/building] id=method_potato_farm_r10 kind=0 era=intelligent tech=tech.automated_agriculture workers=21 food_net_per_day=3528393.8 fed_per_building=4282.03 fed_per_worker=203.91 outputs=potatoes:2822715 inputs=fertilizer:8793@0.50,agricultural_machinery:21471@0.50,electricity:30534@0.88,computers:13416@0.88,autonomous_systems:13416@0.88,tools:2100@0.50 resources=0:12245/m1,5:12245/m1
+[food-audit/building] id=method_potato_farm_r5 kind=0 era=enlightenment tech=tech.agricultural_improvement workers=17 food_net_per_day=205655.0 fed_per_building=249.58 fed_per_worker=14.68 outputs=potatoes:164524 inputs=tools:1348@0.50,fertilizer:331@0.50 resources=0:16735/m1,5:16735/m1
+[food-audit/building] id=method_potato_farm_r8 kind=0 era=information tech=tech.precision_agriculture workers=27 food_net_per_day=2268252.5 fed_per_building=2752.73 fed_per_worker=101.95 outputs=potatoes:1814602 inputs=fertilizer:9661@0.50,agricultural_machinery:20732@0.50,electricity:23587@0.75,computers:6912@0.75,tools:2700@0.50 resources=0:10849/m1,5:10849/m1
+[food-audit/building] id=method_rice_collector_r10 kind=0 era=intelligent tech=tech.automated_agriculture workers=21 food_net_per_day=3528393.8 fed_per_building=4282.03 fed_per_worker=203.91 outputs=rice_grain:2822715 inputs=fertilizer:8793@0.50,agricultural_machinery:21471@0.50,electricity:30534@0.88,computers:13416@0.88,autonomous_systems:13416@0.88,tools:2100@0.50 resources=16:12245/m1
+[food-audit/building] id=method_rice_collector_r3 kind=0 era=kingdom tech=tech.tenant_paddy_management workers=13 food_net_per_day=77662.5 fed_per_building=94.25 fed_per_worker=7.25 outputs=rice_grain:62130 inputs=tools:464@0.50 resources=16:14740/m1
+[food-audit/building] id=method_rice_collector_r5 kind=0 era=enlightenment tech=tech.agricultural_cooperatives workers=17 food_net_per_day=205655.0 fed_per_building=249.58 fed_per_worker=14.68 outputs=rice_grain:164524 inputs=tools:1355@0.50 resources=16:13723/m1
+[food-audit/building] id=method_rice_collector_r6 kind=0 era=electrical tech=tech.motorized_agriculture workers=27 food_net_per_day=907301.3 fed_per_building=1101.09 fed_per_worker=40.78 outputs=rice_grain:725841 inputs=agricultural_machinery:2908@0.50,tools:2700@0.50 resources=16:23578/m1
+[food-audit/building] id=method_rice_collector_r8 kind=0 era=information tech=tech.precision_agriculture workers=27 food_net_per_day=2268252.5 fed_per_building=2752.73 fed_per_worker=101.95 outputs=rice_grain:1814602 inputs=fertilizer:9661@0.50,agricultural_machinery:20732@0.50,electricity:23587@0.75,computers:6912@0.75,tools:2700@0.50 resources=16:10849/m1
+[food-audit/building] id=method_stone_age_hunting_camp_r4 kind=0 era=kingdom tech=tech.market_institutions workers=9 food_net_per_day=27280.0 fed_per_building=33.11 fed_per_worker=3.68 outputs=game_meat:27280,raw_hide:21824,fur:21824 inputs=tools:900@0.50 resources=29:1721/m0
+[food-audit/building] id=method_wheat_farm_r10 kind=0 era=intelligent tech=tech.automated_agriculture workers=21 food_net_per_day=3528393.8 fed_per_building=4282.03 fed_per_worker=203.91 outputs=wheat_grain:2822715 inputs=fertilizer:8793@0.50,agricultural_machinery:21471@0.50,electricity:30534@0.88,computers:13416@0.88,autonomous_systems:13416@0.88,tools:2100@0.50 resources=0:12245/m1,5:12245/m1
+[food-audit/building] id=method_wheat_farm_r3 kind=0 era=empire tech=tech.estate_cereal_management workers=13 food_net_per_day=145616.3 fed_per_building=176.72 fed_per_worker=13.59 outputs=wheat_grain:116493 inputs=tools:1250@0.50 resources=0:12767/m1,5:12767/m1
+[food-audit/building] id=method_wheat_farm_r5 kind=0 era=enlightenment tech=tech.crop_breeding workers=17 food_net_per_day=205655.0 fed_per_building=249.58 fed_per_worker=14.68 outputs=wheat_grain:164524 inputs=tools:1348@0.50,fertilizer:331@0.50 resources=0:16735/m1,5:16735/m1
+[food-audit/building] id=method_wheat_farm_r6 kind=0 era=electrical tech=tech.motorized_agriculture workers=27 food_net_per_day=907301.3 fed_per_building=1101.09 fed_per_worker=40.78 outputs=wheat_grain:725841 inputs=agricultural_machinery:2908@0.50,tools:2700@0.50 resources=0:23578/m1,5:23578/m1
+[food-audit/building] id=method_wheat_farm_r8 kind=0 era=information tech=tech.precision_agriculture workers=27 food_net_per_day=2268252.5 fed_per_building=2752.73 fed_per_worker=101.95 outputs=wheat_grain:1814602 inputs=fertilizer:9661@0.50,agricultural_machinery:20732@0.50,electricity:23587@0.75,computers:6912@0.75,tools:2700@0.50 resources=0:10849/m1,5:10849/m1
+[food-audit/building] id=potato_collector kind=0 era=agrarian tech=tech.ridge_tuber_cultivation workers=1 food_net_per_day=5973.8 fed_per_building=7.25 fed_per_worker=7.25 outputs=potatoes:4779 inputs=tools:100@0.50 resources=0:965/m1,5:965/m1
+[food-audit/building] id=potato_estate kind=0 era=empire tech=tech.intensive_crop_rotation workers=13 food_net_per_day=72807.5 fed_per_building=88.36 fed_per_worker=6.80 outputs=potatoes:58246 inputs=tools:1250@0.50 resources=0:12767/m1,5:12767/m1
+[food-audit/building] id=precision_farm kind=0 era=information tech=tech.precision_agriculture workers=27 food_net_per_day=4082854.5 fed_per_building=4954.92 fed_per_worker=183.52 outputs=grain:1814602,vegetables:1814602 inputs=fertilizer:9661@0.50,agricultural_machinery:20732@0.50,electricity:23587@0.75,computers:6912@0.75,tools:2700@0.50 resources=0:10849/m1,5:10849/m1
+[food-audit/building] id=processed_food_plant kind=1 era=electrical tech=tech.cold_chain workers=36 food_net_per_day=400198.8 fed_per_building=485.68 fed_per_worker=13.49 outputs=processed_food:1720512 inputs=prepared_staples:373132@1.00,meat:373132@1.00,vegetables:373132@1.00,edible_oil:9009@1.00,packaging:9009@1.00,tools:4940@0.50,electricity:11236@0.75,industrial_machinery:3290@0.50 resources=
+[food-audit/building] id=rainfed_maize_field kind=0 era=agrarian tech=tech.rainfed_maize_cultivation workers=2 food_net_per_day=5798.8 fed_per_building=7.04 fed_per_worker=3.52 outputs=corn_grain:4639 inputs=tools:200@0.50 resources=0:384/m1,5:307/m1
+[food-audit/building] id=rainfed_wheat_plot kind=0 era=agrarian tech=tech.rainfed_wheat_cultivation workers=1 food_net_per_day=2723.8 fed_per_building=3.31 fed_per_worker=3.31 outputs=wheat_grain:2179 inputs=tools:100@0.50 resources=0:221/m1
+[food-audit/building] id=rice_collector kind=0 era=agrarian tech=tech.wetland_rice_gardening workers=1 food_net_per_day=2987.5 fed_per_building=3.63 fed_per_worker=3.63 outputs=rice_grain:2390 inputs=tools:100@0.50 resources=16:1227/m1
+[food-audit/building] id=sharecrop_paddy kind=0 era=kingdom tech=tech.tenant_paddy_management workers=8 food_net_per_day=25808.8 fed_per_building=31.32 fed_per_worker=3.92 outputs=rice_grain:20647 inputs=tools:800@0.50 resources=16:702/m1
+[food-audit/building] id=slaughterhouse kind=1 era=agrarian tech=tech.meat_processing workers=4 food_net_per_day=7647.0 fed_per_building=9.28 fed_per_worker=2.32 outputs=meat:7647,raw_hide:7647 inputs=livestock_products:5610@1.00,salt:304@0.00,tools:400@0.50 resources=
+[food-audit/building] id=small_game_trapline kind=0 era=stone tech=tech.animal_tracking workers=1 food_net_per_day=3032.0 fed_per_building=3.68 fed_per_worker=3.68 outputs=game_meat:3032,raw_hide:67,fur:25 inputs=tools:100@0.50 resources=29:221/m0
+[food-audit/building] id=staple_food_plant kind=1 era=electrical tech=tech.mass_production workers=23 food_net_per_day=797139.0 fed_per_building=967.40 fed_per_worker=42.06 outputs=prepared_staples:1099216 inputs=grain:715170@1.00,packaging:9795@1.00,tools:5370@0.50 resources=
+[food-audit/building] id=staple_kitchen kind=1 era=agrarian tech=tech.grain_threshing workers=4 food_net_per_day=3879.9 fed_per_building=4.71 fed_per_worker=1.18 outputs=prepared_staples:6452 inputs=grain:4837@1.00,salt:113@0.00,tools:400@0.50 resources=
+[food-audit/building] id=stone_age_hunting_camp kind=0 era=stone tech=tech.hunting workers=1 food_net_per_day=1624.0 fed_per_building=1.97 fed_per_worker=1.97 outputs=game_meat:1624,raw_hide:75,fur:75 inputs=tools:100@0.50 resources=29:209/m0
+[food-audit/building] id=subsistence_farm kind=0 era=agrarian tech=tech.household_landholding workers=1 food_net_per_day=2268.0 fed_per_building=2.75 fed_per_worker=2.75 outputs=grain:1008,vegetables:1008 inputs=tools:100@0.50 resources=0:9409/m1,5:9409/m1
+[food-audit/building] id=swidden_maize_plot kind=0 era=agrarian tech=tech.swidden_maize_cultivation workers=2 food_net_per_day=5798.8 fed_per_building=7.04 fed_per_worker=3.52 outputs=corn_grain:4639 inputs=tools:200@0.50 resources=5:307/m1,27:128/m0
+[food-audit/building] id=tenant_paddy kind=0 era=kingdom tech=tech.tenant_paddy_management workers=8 food_net_per_day=27478.8 fed_per_building=33.35 fed_per_worker=4.17 outputs=rice_grain:21983 inputs=tools:800@0.50 resources=16:702/m1
+[food-audit/building] id=tenant_potato_field kind=0 era=kingdom tech=tech.tenant_cereal_farming workers=7 food_net_per_day=20908.8 fed_per_building=25.37 fed_per_worker=3.62 outputs=potatoes:16727 inputs=tools:700@0.50 resources=0:664/m1,5:508/m1
+[food-audit/building] id=tenant_rainfed_maize_field kind=0 era=kingdom tech=tech.tenant_cereal_farming workers=7 food_net_per_day=20908.8 fed_per_building=25.37 fed_per_worker=3.62 outputs=corn_grain:16727 inputs=tools:700@0.50 resources=0:664/m1,5:508/m1
+[food-audit/building] id=tenant_rainfed_wheat_field kind=0 era=kingdom tech=tech.tenant_cereal_farming workers=7 food_net_per_day=20908.8 fed_per_building=25.37 fed_per_worker=3.62 outputs=wheat_grain:16727 inputs=tools:700@0.50 resources=0:664/m1
+[food-audit/building] id=three_field_smallholding kind=0 era=empire tech=tech.intensive_crop_rotation workers=1 food_net_per_day=5377.5 fed_per_building=6.53 fed_per_worker=6.53 outputs=grain:2390,vegetables:2390 inputs=tools:100@0.50 resources=0:5780/m1,5:5780/m1
+[food-audit/building] id=upland_rice_plot kind=0 era=agrarian tech=tech.upland_rice_propagation workers=1 food_net_per_day=2521.3 fed_per_building=3.06 fed_per_worker=3.06 outputs=rice_grain:2017 inputs=tools:100@0.50 resources=0:228/m1
+[food-audit/building] id=wetland_rice_garden kind=0 era=agrarian tech=tech.wetland_rice_gardening workers=1 food_net_per_day=2723.8 fed_per_building=3.31 fed_per_worker=3.31 outputs=rice_grain:2179 inputs=tools:100@0.50 resources=16:221/m1
+[food-audit/building] id=wheat_farm kind=0 era=agrarian tech=tech.rainfed_wheat_cultivation workers=1 food_net_per_day=3226.3 fed_per_building=3.92 fed_per_worker=3.92 outputs=wheat_grain:2581 inputs=tools:100@0.50 resources=0:1227/m1,5:1227/m1
+[food-audit/building] id=wild_maize_stand kind=0 era=stone tech=tech.wild_maize_collection workers=1 food_net_per_day=2147.5 fed_per_building=2.61 fed_per_worker=2.61 outputs=corn_grain:1718 inputs=tools:100@0.50 resources=5:120/m1
+[food-audit/building] id=wild_rice_marsh kind=0 era=stone tech=tech.wild_rice_collection workers=1 food_net_per_day=2147.5 fed_per_building=2.61 fed_per_worker=2.61 outputs=rice_grain:1718 inputs=tools:100@0.50 resources=16:120/m1
+[food-audit/building] id=wild_tuber_patch kind=0 era=stone tech=tech.wild_tuber_collection workers=1 food_net_per_day=2147.5 fed_per_building=2.61 fed_per_worker=2.61 outputs=potatoes:1718 inputs=tools:100@0.50 resources=5:175/m1
+[food-audit/building] id=wild_wheat_stand kind=0 era=stone tech=tech.wild_wheat_collection workers=1 food_net_per_day=2147.5 fed_per_building=2.61 fed_per_worker=2.61 outputs=wheat_grain:1718 inputs=tools:100@0.50 resources=5:120/m1
+[food-audit/term] era=stone tech=tech.seasonal_foraging stat=country.output.good.gathered_plants_factor op=0 value=0.1200 subject=gathered_plants
+[food-audit/term] era=stone tech=tech.food_storage stat=country.output.good.prepared_staples_factor op=0 value=0.1200 subject=prepared_staples
+[food-audit/term] era=stone tech=tech.natural_observation stat=country.research.agriculture_efficiency op=0 value=0.0800 subject=country.research.agriculture_efficiency
+[food-audit/term] era=stone tech=tech.crop_domestication stat=country.output.agriculture_factor op=0 value=0.0400 subject=country.output.agriculture_factor
+[food-audit/term] era=stone tech=tech.maize_identification stat=country.output.good.corn_grain_factor op=0 value=0.1200 subject=corn_grain
+[food-audit/term] era=stone tech=tech.wild_maize_collection stat=country.output.good.corn_grain_factor op=0 value=0.0800 subject=corn_grain
+[food-audit/term] era=stone tech=tech.maize_seed_saving stat=country.output.good.corn_grain_factor op=0 value=0.1200 subject=corn_grain
+[food-audit/term] era=stone tech=tech.maize_propagation stat=country.output.good.corn_grain_factor op=0 value=0.2500 subject=corn_grain
+[food-audit/term] era=stone tech=tech.wheat_identification stat=country.output.good.wheat_grain_factor op=0 value=0.1200 subject=wheat_grain
+[food-audit/term] era=stone tech=tech.wild_wheat_collection stat=country.output.good.wheat_grain_factor op=0 value=0.1200 subject=wheat_grain
+[food-audit/term] era=stone tech=tech.wheat_seed_saving stat=country.output.good.wheat_grain_factor op=0 value=0.1200 subject=wheat_grain
+[food-audit/term] era=stone tech=tech.wheat_propagation stat=country.output.good.wheat_grain_factor op=0 value=0.2800 subject=wheat_grain
+[food-audit/term] era=stone tech=tech.rice_identification stat=country.output.good.rice_grain_factor op=0 value=0.1200 subject=rice_grain
+[food-audit/term] era=stone tech=tech.potato_identification stat=country.output.good.potatoes_factor op=0 value=0.1200 subject=potatoes
+[food-audit/term] era=stone tech=tech.tuber_storage stat=country.output.good.potatoes_factor op=0 value=0.1200 subject=potatoes
+[food-audit/term] era=stone tech=tech.tuber_storage stat=country.output.good.prepared_staples_factor op=0 value=0.1200 subject=prepared_staples
+[food-audit/term] era=stone tech=tech.potato_propagation stat=country.output.good.potatoes_factor op=0 value=0.1200 subject=potatoes
+[food-audit/term] era=stone tech=tech.freshwater_fishing stat=country.output.agriculture_factor op=0 value=0.1000 subject=country.output.agriculture_factor
+[food-audit/term] era=stone tech=tech.coastal_fishing stat=country.output.agriculture_factor op=0 value=0.1000 subject=country.output.agriculture_factor
+[food-audit/term] era=stone tech=tech.wild_rice_collection stat=country.output.good.rice_grain_factor op=0 value=0.1200 subject=rice_grain
+[food-audit/term] era=stone tech=tech.rice_seed_saving stat=country.output.good.rice_grain_factor op=0 value=0.1200 subject=rice_grain
+[food-audit/term] era=stone tech=tech.phenology_observation stat=country.research.agriculture_efficiency op=0 value=0.0300 subject=country.research.agriculture_efficiency
+[food-audit/term] era=stone tech=tech.pastoral_route_memory stat=country.research.agriculture_efficiency op=0 value=0.0300 subject=country.research.agriculture_efficiency
+[food-audit/term] era=agrarian tech=tech.seed_selection stat=country.output.agriculture_factor op=0 value=0.1200 subject=country.output.agriculture_factor
+[food-audit/term] era=agrarian tech=tech.irrigation stat=country.output.good.rice_grain_factor op=0 value=0.1400 subject=rice_grain
+[food-audit/term] era=agrarian tech=tech.irrigation stat=country.output.agriculture_factor op=0 value=0.1400 subject=country.output.agriculture_factor
+[food-audit/term] era=agrarian tech=tech.plough_agriculture stat=country.output.good.wheat_grain_factor op=0 value=0.1800 subject=wheat_grain
+[food-audit/term] era=agrarian tech=tech.plough_agriculture stat=country.output.good.corn_grain_factor op=0 value=0.1800 subject=corn_grain
+[food-audit/term] era=agrarian tech=tech.plough_agriculture stat=country.output.good.grain_factor op=0 value=0.1800 subject=grain
+[food-audit/term] era=agrarian tech=tech.plough_agriculture stat=country.output.agriculture_factor op=0 value=0.1800 subject=country.output.agriculture_factor
+[food-audit/term] era=agrarian tech=tech.maize_selection stat=country.output.good.corn_grain_factor op=0 value=0.1800 subject=corn_grain
+[food-audit/term] era=agrarian tech=tech.dryland_farming stat=country.output.agriculture_factor op=0 value=0.0800 subject=country.output.agriculture_factor
+[food-audit/term] era=agrarian tech=tech.rainfed_field_system stat=country.output.agriculture_factor op=0 value=0.1200 subject=country.output.agriculture_factor
+[food-audit/term] era=agrarian tech=tech.paddy_bunding stat=country.output.good.rice_grain_factor op=0 value=0.2200 subject=rice_grain
+[food-audit/term] era=agrarian tech=tech.dryland_water_retention stat=country.output.agriculture_factor op=0 value=0.0800 subject=country.output.agriculture_factor
+[food-audit/term] era=agrarian tech=tech.public_storehouses stat=country.output.good.prepared_staples_factor op=0 value=0.2500 subject=prepared_staples
+[food-audit/term] era=agrarian tech=tech.maize_garden_horticulture stat=country.output.good.corn_grain_factor op=0 value=0.1200 subject=corn_grain
+[food-audit/term] era=agrarian tech=tech.swidden_maize_cultivation stat=country.output.good.corn_grain_factor op=0 value=0.1200 subject=corn_grain
+[food-audit/term] era=agrarian tech=tech.flood_recession_maize stat=country.output.terrain.floodplain.agriculture_factor op=0 value=0.2500 subject=terrain.floodplain.agriculture
+[food-audit/term] era=agrarian tech=tech.flood_recession_maize stat=country.output.good.corn_grain_factor op=0 value=0.2500 subject=corn_grain
+[food-audit/term] era=agrarian tech=tech.grain_threshing stat=country.output.good.wheat_grain_factor op=0 value=0.1800 subject=wheat_grain
+[food-audit/term] era=agrarian tech=tech.grain_threshing stat=country.output.good.rice_grain_factor op=0 value=0.1800 subject=rice_grain
+[food-audit/term] era=agrarian tech=tech.grain_threshing stat=country.output.good.corn_grain_factor op=0 value=0.1800 subject=corn_grain
+[food-audit/term] era=agrarian tech=tech.rainfed_wheat_cultivation stat=country.output.good.wheat_grain_factor op=0 value=0.1200 subject=wheat_grain
+[food-audit/term] era=agrarian tech=tech.flood_recession_wheat stat=country.output.terrain.floodplain.agriculture_factor op=0 value=0.2500 subject=terrain.floodplain.agriculture
+[food-audit/term] era=agrarian tech=tech.flood_recession_wheat stat=country.output.good.wheat_grain_factor op=0 value=0.2500 subject=wheat_grain
+[food-audit/term] era=agrarian tech=tech.dryland_wheat_cultivation stat=country.output.good.wheat_grain_factor op=0 value=0.1200 subject=wheat_grain
+[food-audit/term] era=agrarian tech=tech.wetland_rice_gardening stat=country.output.good.rice_grain_factor op=0 value=0.1200 subject=rice_grain
+[food-audit/term] era=agrarian tech=tech.rice_water_control stat=country.output.good.rice_grain_factor op=0 value=0.2200 subject=rice_grain
+[food-audit/term] era=agrarian tech=tech.rice_paddy_cultivation stat=country.output.good.rice_grain_factor op=0 value=0.2500 subject=rice_grain
+[food-audit/term] era=agrarian tech=tech.ridge_tuber_cultivation stat=country.output.good.potatoes_factor op=0 value=0.1200 subject=potatoes
+[food-audit/term] era=agrarian tech=tech.frost_protected_storage stat=country.output.good.prepared_staples_factor op=0 value=0.2500 subject=prepared_staples
+[food-audit/term] era=agrarian tech=tech.highland_tuber_farming stat=country.output.landform.plateau.agriculture_factor op=0 value=0.3200 subject=landform.plateau.agriculture
+[food-audit/term] era=agrarian tech=tech.highland_tuber_farming stat=country.output.landform.mountain.agriculture_factor op=0 value=0.2400 subject=landform.mountain.agriculture
+[food-audit/term] era=agrarian tech=tech.highland_tuber_farming stat=country.output.good.potatoes_factor op=0 value=0.2800 subject=potatoes
+[food-audit/term] era=agrarian tech=tech.salt_preservation stat=country.consumption.good.processed_food_factor op=0 value=-0.0800 subject=processed_food
+[food-audit/term] era=agrarian tech=tech.grain_baking stat=country.output.good.wheat_grain_factor op=0 value=0.2800 subject=wheat_grain
+[food-audit/term] era=agrarian tech=tech.grain_baking stat=country.output.good.rice_grain_factor op=0 value=0.2800 subject=rice_grain
+[food-audit/term] era=agrarian tech=tech.grain_baking stat=country.output.good.corn_grain_factor op=0 value=0.2800 subject=corn_grain
+[food-audit/term] era=kingdom tech=tech.crop_rotation stat=country.output.agriculture_factor op=0 value=0.1800 subject=country.output.agriculture_factor
+[food-audit/term] era=kingdom tech=tech.natural_philosophy stat=country.research.agriculture_efficiency op=0 value=0.0800 subject=country.research.agriculture_efficiency
+[food-audit/term] era=kingdom tech=tech.tenant_cereal_farming stat=country.output.agriculture_factor op=0 value=0.0800 subject=country.output.agriculture_factor
+[food-audit/term] era=kingdom tech=tech.tenant_paddy_management stat=country.output.good.rice_grain_factor op=0 value=0.1200 subject=rice_grain
+[food-audit/term] era=empire tech=tech.forest_management stat=country.output.agriculture_factor op=0 value=0.0800 subject=country.output.agriculture_factor
+[food-audit/term] era=empire tech=tech.intensive_crop_rotation stat=country.output.agriculture_factor op=0 value=0.2200 subject=country.output.agriculture_factor
+[food-audit/term] era=empire tech=tech.manorial_cereal_farming stat=country.output.agriculture_factor op=0 value=0.0800 subject=country.output.agriculture_factor
+[food-audit/term] era=empire tech=tech.regional_granaries stat=country.output.good.prepared_staples_factor op=0 value=0.1200 subject=prepared_staples
+[food-audit/term] era=empire tech=tech.estate_paddy_management stat=country.output.good.rice_grain_factor op=0 value=0.2800 subject=rice_grain
+[food-audit/term] era=exploration tech=tech.commodity_crop_management stat=country.output.agriculture_factor op=0 value=0.0800 subject=country.output.agriculture_factor
+[food-audit/term] era=exploration tech=tech.interregional_botany stat=country.research.agriculture_efficiency op=0 value=0.0800 subject=country.research.agriculture_efficiency
+[food-audit/term] era=exploration tech=tech.agronomic_exchange stat=country.output.agriculture_factor op=0 value=0.1200 subject=country.output.agriculture_factor
+[food-audit/term] era=exploration tech=tech.crop_transplantation stat=country.output.agriculture_factor op=0 value=0.0800 subject=country.output.agriculture_factor
+[food-audit/term] era=exploration tech=tech.crop_transplantation stat=country.research.agriculture_efficiency op=0 value=0.0800 subject=country.research.agriculture_efficiency
+[food-audit/term] era=exploration tech=tech.crop_acclimatization stat=country.research.agriculture_efficiency op=0 value=0.2200 subject=country.research.agriculture_efficiency
+[food-audit/term] era=enlightenment tech=tech.scientific_classification stat=country.research.agriculture_efficiency op=0 value=0.0800 subject=country.research.agriculture_efficiency
+[food-audit/term] era=enlightenment tech=tech.agricultural_improvement stat=country.output.agriculture_factor op=0 value=0.0800 subject=country.output.agriculture_factor
+[food-audit/term] era=enlightenment tech=tech.learned_societies stat=country.research.agriculture_efficiency op=0 value=0.0800 subject=country.research.agriculture_efficiency
+[food-audit/term] era=enlightenment tech=tech.soil_experimentation stat=country.research.agriculture_efficiency op=0 value=0.0800 subject=country.research.agriculture_efficiency
+[food-audit/term] era=enlightenment tech=tech.crop_breeding stat=country.output.good.wheat_grain_factor op=0 value=0.1200 subject=wheat_grain
+[food-audit/term] era=enlightenment tech=tech.crop_breeding stat=country.output.good.rice_grain_factor op=0 value=0.1200 subject=rice_grain
+[food-audit/term] era=enlightenment tech=tech.crop_breeding stat=country.output.good.corn_grain_factor op=0 value=0.1200 subject=corn_grain
+[food-audit/term] era=enlightenment tech=tech.crop_breeding stat=country.output.good.potatoes_factor op=0 value=0.1200 subject=potatoes
+[food-audit/term] era=enlightenment tech=tech.agricultural_cooperatives stat=country.output.agriculture_factor op=0 value=0.0800 subject=country.output.agriculture_factor
+[food-audit/term] era=enlightenment tech=tech.canning stat=country.consumption.good.processed_food_factor op=0 value=-0.0800 subject=processed_food
+[food-audit/term] era=steam tech=tech.mechanized_agriculture stat=country.output.agriculture_factor op=0 value=0.0800 subject=country.output.agriculture_factor
+[food-audit/term] era=steam tech=tech.mechanical_threshing stat=country.output.good.wheat_grain_factor op=0 value=0.2000 subject=wheat_grain
+[food-audit/term] era=steam tech=tech.mechanical_threshing stat=country.output.good.rice_grain_factor op=0 value=0.2000 subject=rice_grain
+[food-audit/term] era=steam tech=tech.mechanical_threshing stat=country.output.good.corn_grain_factor op=0 value=0.2000 subject=corn_grain
+[food-audit/term] era=electrical tech=tech.synthetic_fertilizer stat=country.output.agriculture_factor op=0 value=0.0800 subject=country.output.agriculture_factor
+[food-audit/term] era=electrical tech=tech.motorized_agriculture stat=country.output.agriculture_factor op=0 value=0.0800 subject=country.output.agriculture_factor
+[food-audit/term] era=electrical tech=tech.refrigeration stat=country.consumption.good.meat_factor op=0 value=-0.0800 subject=meat
+[food-audit/term] era=electrical tech=tech.cold_chain stat=country.consumption.good.fish_factor op=0 value=-0.1000 subject=fish
+[food-audit/term] era=electrical tech=tech.cold_chain stat=country.consumption.good.meat_factor op=0 value=-0.1000 subject=meat
+[food-audit/term] era=electrical tech=tech.genetics stat=country.output.agriculture_factor op=0 value=0.0600 subject=country.output.agriculture_factor
+[food-audit/term] era=atomic tech=tech.industrial_agronomy stat=country.output.agriculture_factor op=0 value=0.0800 subject=country.output.agriculture_factor
+[food-audit/term] era=atomic tech=tech.molecular_biology stat=country.research.agriculture_efficiency op=0 value=0.0600 subject=country.research.agriculture_efficiency
+[food-audit/term] era=information tech=tech.precision_agriculture stat=country.output.agriculture_factor op=0 value=0.0800 subject=country.output.agriculture_factor
+[food-audit/term] era=information tech=tech.biotechnology stat=country.research.agriculture_efficiency op=0 value=0.0800 subject=country.research.agriculture_efficiency
+[food-audit/term] era=information tech=tech.precision_irrigation stat=country.output.good.rice_grain_factor op=0 value=0.2000 subject=rice_grain
+[food-audit/term] era=information tech=tech.precision_irrigation stat=country.output.agriculture_factor op=0 value=0.2000 subject=country.output.agriculture_factor
+[food-audit/term] era=information tech=tech.bioinformatics stat=country.research.agriculture_efficiency op=0 value=0.0800 subject=country.research.agriculture_efficiency
+[food-audit/term] era=intelligent tech=tech.automated_agriculture stat=country.output.agriculture_factor op=0 value=0.0800 subject=country.output.agriculture_factor
+[food-audit/term] era=intelligent tech=tech.computational_biology stat=country.research.agriculture_efficiency op=0 value=0.2200 subject=country.research.agriculture_efficiency
+[food-audit/term] era=intelligent tech=tech.intelligent_breeding stat=country.research.agriculture_efficiency op=0 value=0.2200 subject=country.research.agriculture_efficiency
+[food-audit/term] era=intelligent tech=tech.intelligent_breeding stat=country.output.good.wheat_grain_factor op=0 value=0.1200 subject=wheat_grain
+[food-audit/term] era=intelligent tech=tech.adaptive_irrigation stat=country.output.good.rice_grain_factor op=0 value=0.2800 subject=rice_grain
+[food-audit/term] era=intelligent tech=tech.adaptive_irrigation stat=country.output.agriculture_factor op=0 value=0.2800 subject=country.output.agriculture_factor
+Godot_v4.6.2-stable_win64_console.exe : ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyText
+ureE' were leaked at exit.
+所在位置 C:\Users\hkinghuang\AppData\Local\Temp\ps-script-fc5875ce-f3e9-41ba-8081-688b44d003e2.ps1:100 字符: 1
++ & 'D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_c ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 11 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 278 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

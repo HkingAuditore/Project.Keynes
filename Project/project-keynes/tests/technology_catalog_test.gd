@@ -123,7 +123,7 @@ func _init() -> void:
 	var milestone_position := 0
 	var recipe_ids := {}
 	var modifier_stats: PackedStringArray = catalog.technology_modifier_term_stat_keys
-	assert(modifier_stats.size() == 468)
+	assert(modifier_stats.size() == 480)
 	var geography_terms := 0
 	var climate_terms := 0
 	var geography_technologies := {}

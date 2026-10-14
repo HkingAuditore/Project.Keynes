@@ -6,6 +6,19 @@
 script = ExtResource("1")
 mode = "ACTIVE"
 difficulty = "normal"
+research_tax_share_bp = 3500
+research_essentials_floor = 0.9
+research_load_full = 0.5
+research_load_zero = 0.85
+research_hungry_share_max = 0.06
+colonize_population_share_bp = 5000
+colonize_min_population = 20
+colonize_min_country_population = 150
+colonize_min_population_per_cell = 80
+colonize_essentials_floor = 0.97
+colonize_hungry_share_max = 0.03
+subsidy_food_rate_bp = -3000
+subsidy_on_hungry_share = 0.06
 agendas = Array[Dictionary]([{
 "considerations": [{
 "curve": "smoothstep",
@@ -23,7 +36,7 @@ agendas = Array[Dictionary]([{
 "y1": 1.0
 }],
 "id": "develop",
-"research_share_bp": 3500
+"research_share_bp": 2800
 }, {
 "considerations": [{
 "curve": "smoothstep",
@@ -49,7 +62,7 @@ agendas = Array[Dictionary]([{
 }],
 "expansion_slots": 1,
 "id": "expand",
-"research_share_bp": 2000
+"research_share_bp": 1500
 }, {
 "considerations": [{
 "curve": "linear",
@@ -87,7 +100,7 @@ agendas = Array[Dictionary]([{
 }],
 "era_focus": true,
 "id": "era_push",
-"research_share_bp": 5500
+"research_share_bp": 4000
 }, {
 "considerations": [{
 "curve": "linear",
@@ -105,30 +118,30 @@ agendas = Array[Dictionary]([{
 "y1": 0.2
 }],
 "id": "stabilize",
-"research_share_bp": 1500,
+"research_share_bp": 1200,
 "satisfaction_floor_shift": 0.1,
 "tax_bias_bp": -2000
 }])
 personalities = Array[Dictionary]([{
-"agenda_bias": [1.2, 0.9, 1.0, 1.0, 1.0],
-"domain_affinity": [1.2, 1.2, 0.9, 0.9],
+"agenda_bias": [1.3, 0.8, 1.0, 0.9, 1.1],
+"domain_affinity": [1.3, 1.2, 0.9, 0.9],
 "family_pref": [1.0, 0.4, 0.2, 0.1],
 "id": "builder",
 "risk": 0.5,
 "tax_initial": [8, 5, 8, 0, 0],
 "tax_max": [20, 15, 20, 0, 0],
 "tax_min": [2, 2, 2, 0, 0],
-"weight": 3
+"weight": 4
 }, {
-"agenda_bias": [0.9, 1.4, 0.8, 0.9, 0.9],
+"agenda_bias": [0.9, 1.2, 0.8, 0.9, 1.0],
 "domain_affinity": [1.3, 1.0, 0.8, 1.0],
 "family_pref": [0.6, 0.3, 1.0, 0.1],
 "id": "expansionist",
-"risk": 0.7,
+"risk": 0.65,
 "tax_initial": [10, 6, 10, 0, 0],
 "tax_max": [25, 18, 25, 0, 0],
 "tax_min": [3, 2, 3, 0, 0],
-"weight": 2
+"weight": 1
 }, {
 "agenda_bias": [1.0, 0.9, 1.3, 0.9, 1.0],
 "domain_affinity": [0.9, 1.2, 1.0, 1.1],
@@ -140,23 +153,23 @@ personalities = Array[Dictionary]([{
 "tax_min": [2, 2, 1, 0, 0],
 "weight": 2
 }, {
-"agenda_bias": [1.0, 0.8, 0.9, 1.4, 1.0],
-"domain_affinity": [0.9, 1.0, 1.4, 1.1],
+"agenda_bias": [1.0, 0.8, 0.9, 1.2, 1.0],
+"domain_affinity": [0.9, 1.0, 1.3, 1.1],
 "family_pref": [1.0, 0.3, 0.3, 0.1],
 "id": "scholar",
-"risk": 0.6,
+"risk": 0.55,
 "tax_initial": [9, 6, 8, 0, 0],
 "tax_max": [22, 16, 20, 0, 0],
 "tax_min": [2, 2, 2, 0, 0],
-"weight": 2
+"weight": 1
 }, {
-"agenda_bias": [1.0, 1.0, 0.9, 0.9, 1.4],
-"domain_affinity": [1.2, 0.9, 0.9, 1.2],
+"agenda_bias": [1.1, 0.9, 0.9, 0.8, 1.5],
+"domain_affinity": [1.3, 0.9, 0.9, 1.2],
 "family_pref": [0.8, 0.2, 0.6, 0.2],
 "id": "populist",
 "risk": 0.3,
 "tax_initial": [5, 4, 6, 0, 0],
 "tax_max": [15, 12, 15, 0, 0],
 "tax_min": [1, 1, 1, 0, 0],
-"weight": 1
+"weight": 2
 }])

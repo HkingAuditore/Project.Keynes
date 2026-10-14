@@ -1,0 +1,6 @@
+Godot_v4.6.2-stable_win64_console.exe : ERROR: [economy-test-bootstrap] FAIL: settlement without local forest closes th
+ERROR: [economy-test-bootstrap] FAIL: distributed regional survival and construction chains survive local pruning ok=fa
+ERROR: [economy-test-bootstrap] FAIL: one-year construction roots start a map below the normal ten-year runway
+ERROR: [economy-test-bootstrap] FAIL: incomplete isolated candidate stays empty without aborting a closed mainland ok=f
+ERROR: [economy-test-bootstrap] FAIL: fixture builds: bootstrap_construction_source_missing
+ERROR: [economy-test-bootstrap] FAIL: repeated fixture builds: bootstrap_construction_source_missing

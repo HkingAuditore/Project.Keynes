@@ -229,6 +229,7 @@ static func compile_native_catalog(
 
 	var profession_ids := PackedStringArray()
 	var profession_class_ids := PackedStringArray()
+	var profession_entry_savings_days := PackedInt32Array()
 	var profession_technology_tag_offsets := PackedInt32Array([0])
 	var profession_technology_tags := PackedStringArray()
 	var profession_semantic_tag_offsets := PackedInt32Array([0])
@@ -241,6 +242,9 @@ static func compile_native_catalog(
 			return {"ok": false, "reason": "invalid profession: %s" % stable_id}
 		profession_ids.append(stable_id)
 		profession_class_ids.append(String(professions[i].profession_class_id))
+		if int(professions[i].entry_savings_days) < 0:
+			return {"ok": false, "reason": "invalid profession entry savings: %s" % stable_id}
+		profession_entry_savings_days.append(int(professions[i].entry_savings_days))
 		profession_index[stable_id] = i
 		for tag in professions[i].technology_tags:
 			var normalized := String(tag).strip_edges()
@@ -320,6 +324,7 @@ static func compile_native_catalog(
 	var catalog := {
 		"profession_ids": profession_ids,
 		"profession_class_ids": profession_class_ids,
+		"profession_entry_savings_days": profession_entry_savings_days,
 		"profession_technology_tag_offsets": profession_technology_tag_offsets,
 		"profession_technology_tags": profession_technology_tags,
 		"profession_semantic_tag_offsets": profession_semantic_tag_offsets,

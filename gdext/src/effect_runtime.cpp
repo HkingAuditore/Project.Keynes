@@ -404,6 +404,69 @@ bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
         return false;
     }
 
+    // Economy enqueues family colonization (and canal) builtins onto this
+    // main-thread EffectRuntime with program_id == -1. The worker POD snapshot
+    // never carries them. Preserve those transactions and their Country/Economy
+    // adapter bindings across write-back so CLAIM/SETTLE cannot race the apply
+    // into a use-after-free on cleared binding vectors.
+    struct PreservedBuiltin {
+        Transaction transaction;
+        std::vector<Command> commands;
+    };
+    std::vector<PreservedBuiltin> preserved_builtins;
+    std::unordered_set<int64_t> preserved_tx_ids;
+    preserved_builtins.reserve(8);
+    for (const Transaction &tx : _transactions) {
+        if (tx.program_id != -1) continue;
+        PreservedBuiltin row;
+        row.transaction = tx;
+        row.commands.reserve(tx.command_count);
+        for (uint32_t ordinal = 0; ordinal < tx.command_count; ++ordinal) {
+            const Command *command = command_at(tx, ordinal);
+            if (command == nullptr) {
+                error = "effect_pod_snapshot_builtin_command_missing";
+                return false;
+            }
+            row.commands.push_back(*command);
+        }
+        preserved_tx_ids.insert(tx.id);
+        preserved_builtins.push_back(std::move(row));
+    }
+    std::vector<int64_t> preserved_country_request_ids;
+    std::vector<NativeAckBinding> preserved_country_bindings;
+    std::unordered_set<int64_t> preserved_country_bound_ids;
+    std::vector<int64_t> preserved_economy_request_ids;
+    std::vector<NativeAckBinding> preserved_economy_bindings;
+    std::unordered_set<int64_t> preserved_economy_bound_ids;
+    auto keep_bindings = [&](const std::vector<int64_t> &request_ids,
+                             const std::vector<NativeAckBinding> &bindings,
+                             const std::unordered_set<int64_t> &bound_ids,
+                             std::vector<int64_t> &out_ids,
+                             std::vector<NativeAckBinding> &out_bindings,
+                             std::unordered_set<int64_t> &out_bound) {
+        for (const NativeAckBinding &binding : bindings) {
+            if (preserved_tx_ids.count(binding.transaction_id) == 0) continue;
+            const uint32_t begin = binding.request_begin;
+            const uint32_t end = begin + binding.request_count;
+            if (end < begin || end > request_ids.size()) continue;
+            NativeAckBinding kept = binding;
+            kept.request_begin = static_cast<uint32_t>(out_ids.size());
+            for (uint32_t i = begin; i < end; ++i)
+                out_ids.push_back(request_ids[i]);
+            out_bindings.push_back(kept);
+            if (bound_ids.count(binding.transaction_id) != 0)
+                out_bound.insert(binding.transaction_id);
+        }
+    };
+    keep_bindings(_native_country_request_ids, _native_country_ack_bindings,
+                  _native_country_bound_transaction_ids,
+                  preserved_country_request_ids, preserved_country_bindings,
+                  preserved_country_bound_ids);
+    keep_bindings(_native_economy_request_ids, _native_economy_ack_bindings,
+                  _native_economy_bound_transaction_ids,
+                  preserved_economy_request_ids, preserved_economy_bindings,
+                  preserved_economy_bound_ids);
+
     const size_t metric_width = _metric_keys.size();
     std::vector<Instance> next_instances;
     std::unordered_map<int64_t, int32_t> next_instance_ids;
@@ -547,15 +610,35 @@ bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
     _native_request_ids.clear();
     _native_ack_bindings.clear();
     _native_bound_transaction_ids.clear();
-    _native_country_request_ids.clear();
-    _native_country_ack_bindings.clear();
-    _native_country_bound_transaction_ids.clear();
-    _native_economy_request_ids.clear();
-    _native_economy_ack_bindings.clear();
-    _native_economy_bound_transaction_ids.clear();
+    _native_country_request_ids = std::move(preserved_country_request_ids);
+    _native_country_ack_bindings = std::move(preserved_country_bindings);
+    _native_country_bound_transaction_ids =
+        std::move(preserved_country_bound_ids);
+    _native_economy_request_ids = std::move(preserved_economy_request_ids);
+    _native_economy_ack_bindings = std::move(preserved_economy_bindings);
+    _native_economy_bound_transaction_ids =
+        std::move(preserved_economy_bound_ids);
     _native_gameplay_request_ids.clear();
     _native_gameplay_ack_bindings.clear();
     _native_gameplay_bound_transaction_ids.clear();
+    for (PreservedBuiltin &row : preserved_builtins) {
+        if (_transaction_ids.count(row.transaction.id) != 0) continue;
+        row.transaction.command_begin =
+            static_cast<uint32_t>(_command_arena.size());
+        row.transaction.command_count =
+            static_cast<uint32_t>(row.commands.size());
+        for (Command &command : row.commands)
+            _command_arena.push_back(std::move(command));
+        _transaction_ids[row.transaction.id] =
+            static_cast<int32_t>(_transactions.size());
+        if (row.transaction.status == PLANNED ||
+            row.transaction.status == PREFLIGHTED ||
+            row.transaction.status == COMMITTED) {
+            _pending_transactions_by_instance[row.transaction.source_instance_id] =
+                static_cast<uint32_t>(_transactions.size());
+        }
+        _transactions.push_back(std::move(row.transaction));
+    }
     _dirty_queue.clear();
     _run_candidates.clear();
     _candidate_cursor = 0;

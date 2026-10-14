@@ -109,9 +109,17 @@ func configure(world_ext: Object, cell_count: int, seed: int, profile = null) ->
 	_need_display_names = EconomyCatalogScript.need_display_names()
 	_good_display_names = _load_display_names(GOOD_PROFILE_DIR)
 	_load_family_effect_displays()
+	var native_profile: Dictionary = _profile.to_native_profile()
+	_apply_forced_cadence_env(native_profile)
 	var result: Dictionary = _world_ext.configure_economy(
-		native_catalog, _profile.to_native_profile(), cell_count, seed)
+		native_catalog, native_profile, cell_count, seed)
 	_configured = bool(result.get("ok", false))
+	if _configured and _world_ext.has_method("configure_economy_natural_resources"):
+		var natural: Dictionary = _world_ext.configure_economy_natural_resources(
+			ResourceProfileRegistry.build_pass_knobs())
+		if not bool(natural.get("ok", false)):
+			push_warning("EconomyFacade: worker natural resources not configured: %s" % [
+				str(natural.get("code", ""))])
 	_construction_receipt_cursor = 0
 	_colonization_receipt_cursors.clear()
 	_canal_receipt_cursors.clear()
@@ -1697,6 +1705,18 @@ func _family_max_prestige_level(family_handle: int) -> int:
 	for level in levels:
 		prestige = maxi(prestige, int(level))
 	return prestige
+
+
+## Headless A/B only: PK_ECONOMY_FORCE_CADENCE="market,plan,investment" (days)
+## replaces the measured-ms cadence, which otherwise varies with machine load
+## and makes two runs of the same seed diverge.
+static func _apply_forced_cadence_env(profile: Dictionary) -> void:
+	var parts := OS.get_environment("PK_ECONOMY_FORCE_CADENCE").split(",", false)
+	if parts.size() != 3:
+		return
+	profile["economy_cadence_force_market_days"] = int(parts[0])
+	profile["economy_cadence_force_plan_days"] = int(parts[1])
+	profile["economy_cadence_force_investment_days"] = int(parts[2])
 
 
 static func _load_display_names(directory: String) -> Dictionary:

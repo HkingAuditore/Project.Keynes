@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -116,6 +117,9 @@ bool parse_catalog(const Dictionary &d, CountryAiCatalog &c, std::vector<std::st
     c.research_max_enqueue_per_eval = dict_i32(d, "research_max_enqueue_per_eval", c.research_max_enqueue_per_eval);
     c.research_budget_change_bp = dict_i32(d, "research_budget_change_bp", c.research_budget_change_bp);
     c.research_frontier_visit_limit = dict_i32(d, "research_frontier_visit_limit", c.research_frontier_visit_limit);
+    c.research_tax_share_bp = dict_i32(d, "research_tax_share_bp", c.research_tax_share_bp);
+    c.research_per_capita_budget = dict_i64(d, "research_per_capita_budget", c.research_per_capita_budget);
+    c.research_essentials_floor_q16 = dict_i32(d, "research_essentials_floor_q16", c.research_essentials_floor_q16);
     c.tax_kind_mask = static_cast<uint32_t>(dict_i64(d, "tax_kind_mask", c.tax_kind_mask));
     c.tax_step_bp = dict_i32(d, "tax_step_bp", c.tax_step_bp);
     c.tax_max_step_bp = dict_i32(d, "tax_max_step_bp", c.tax_max_step_bp);
@@ -130,6 +134,18 @@ bool parse_catalog(const Dictionary &d, CountryAiCatalog &c, std::vector<std::st
     c.colonize_target_ring = dict_i32(d, "colonize_target_ring", c.colonize_target_ring);
     c.colonize_failure_cooldown_days = dict_i32(d, "colonize_failure_cooldown_days", c.colonize_failure_cooldown_days);
     c.colonize_min_reserve_days = dict_i32(d, "colonize_min_reserve_days", c.colonize_min_reserve_days);
+    c.colonize_min_country_population = dict_i64(d, "colonize_min_country_population", c.colonize_min_country_population);
+    c.colonize_min_population_per_cell = dict_i64(d, "colonize_min_population_per_cell", c.colonize_min_population_per_cell);
+    c.colonize_essentials_floor_q16 = dict_i32(d, "colonize_essentials_floor_q16", c.colonize_essentials_floor_q16);
+    c.colonize_min_cell_value_q16 = dict_i32(d, "colonize_min_cell_value_q16", c.colonize_min_cell_value_q16);
+    c.colonize_cell_value_weight_bp = dict_i32(d, "colonize_cell_value_weight_bp", c.colonize_cell_value_weight_bp);
+    c.research_load_full_q16 = dict_i32(d, "research_load_full_q16", c.research_load_full_q16);
+    c.research_load_zero_q16 = dict_i32(d, "research_load_zero_q16", c.research_load_zero_q16);
+    c.research_hungry_share_max_q16 = dict_i32(d, "research_hungry_share_max_q16", c.research_hungry_share_max_q16);
+    c.colonize_hungry_share_max_q16 = dict_i32(d, "colonize_hungry_share_max_q16", c.colonize_hungry_share_max_q16);
+    c.subsidy_food_rate_bp = dict_i32(d, "subsidy_food_rate_bp", c.subsidy_food_rate_bp);
+    c.subsidy_on_hungry_share_q16 = dict_i32(d, "subsidy_on_hungry_share_q16", c.subsidy_on_hungry_share_q16);
+    c.subsidy_off_hungry_share_q16 = dict_i32(d, "subsidy_off_hungry_share_q16", c.subsidy_off_hungry_share_q16);
     const Array agendas = d.get("agendas", Array());
     if (agendas.size() != COUNTRY_AI_AGENDA_COUNT) {
         error = "country_ai_agenda_count_invalid";
@@ -454,6 +470,11 @@ Dictionary DCWorldExt::drain_country_ai_record_rows(int limit) {
         row["milestone_gap"] = r.milestone_gap;
         row["queued_techs"] = r.queued_techs;
         row["research_budget"] = r.research_budget;
+        row["tax_paid"] = r.tax_paid;
+        row["household_income"] = r.household_income;
+        row["carrying_k_eff"] = r.carrying_k_eff;
+        row["carrying_k_geo"] = r.carrying_k_geo;
+        row["carrying_load_q16"] = r.carrying_load_q16;
         row["tax_income_bp"] = r.tax_bp[0];
         row["tax_consumption_bp"] = r.tax_bp[1];
         row["tax_business_bp"] = r.tax_bp[2];
@@ -463,6 +484,8 @@ Dictionary DCWorldExt::drain_country_ai_record_rows(int limit) {
         row["colonize_failures"] = static_cast<int64_t>(r.colonize_failures);
         row["commands_emitted"] = static_cast<int64_t>(r.commands_emitted);
         row["commands_rejected"] = static_cast<int64_t>(r.commands_rejected);
+        row["hungry_share_q16"] = r.hungry_share_q16;
+        row["food_subsidy_bp"] = r.food_subsidy_bp;
         rows.push_back(row);
     }
     Dictionary out;
@@ -807,6 +830,56 @@ bool DCWorldExt::runtime_country_ai_self_test() const {
     a.commit(4);
     c.commit(4);
     if (a.state_hash() != c.state_hash()) return fail("restore_state_divergence");
+
+    // Food subsidy: on above the hungry threshold, only on food building
+    // types, applied as ordinary overrides, and cleared once hunger recedes.
+    {
+        constexpr int32_t inherit = std::numeric_limits<int32_t>::min();
+        RuntimeCountryPodSnapshot fed = state;
+        fed.building_type_count = 3;
+        fed.country_business_tax_overrides.assign(6, inherit);
+        fed.country_business_tax_mode_overrides.assign(6, inherit);
+        CountryAiEconomyDigest hungry = digest;
+        hungry.food_building_types = {1, 0, 1};
+        hungry.rows[0].hungry_share_q16 = COUNTRY_AI_Q16 / 4;
+        CountryAiRuntime s;
+        std::vector<CountryAiCommand> cmds;
+        s.configure(catalog, error);
+        s.set_mode(CountryAiMode::ACTIVE);
+        s.set_excluded_handles({(uint64_t{1} << 32) | 0u});
+        if (!s.plan(1, fed, pod, &hungry, cmds)) return fail("subsidy_first_plan");
+        s.commit(1);
+        if (!s.plan(4, fed, pod, &hungry, cmds)) return fail("subsidy_plan");
+        s.commit(4);
+        int32_t on = 0;
+        RuntimeCountryPodPlan plan;
+        for (uint32_t i = 0; i < cmds.size(); ++i) {
+            if (cmds[i].opcode != 12) continue;
+            if (cmds[i].tax_kind != 2 || cmds[i].tax_item == 1 ||
+                cmds[i].tax_rate_bp != catalog.subsidy_food_rate_bp)
+                return fail("subsidy_command_shape");
+            if (!country_core_apply_command(fed, pod, CountryAiRuntime::to_runtime_command(cmds[i], 4, i),
+                                            plan, error))
+                return fail((std::string("subsidy_apply:") + error).c_str());
+            ++on;
+        }
+        if (on != 2 || fed.country_business_tax_overrides[3] != catalog.subsidy_food_rate_bp ||
+            fed.country_business_tax_overrides[4] != inherit)
+            return fail("subsidy_not_applied");
+        hungry.rows[0].hungry_share_q16 = 0;
+        if (!s.plan(9, fed, pod, &hungry, cmds)) return fail("subsidy_off_plan");
+        s.commit(9);
+        int32_t off = 0;
+        for (uint32_t i = 0; i < cmds.size(); ++i) {
+            if (cmds[i].opcode != 13) continue;
+            if (!country_core_apply_command(fed, pod, CountryAiRuntime::to_runtime_command(cmds[i], 9, i),
+                                            plan, error))
+                return fail((std::string("subsidy_clear:") + error).c_str());
+            ++off;
+        }
+        if (off != 2 || fed.country_business_tax_overrides[3] != inherit)
+            return fail("subsidy_not_cleared");
+    }
     return true;
 }
 

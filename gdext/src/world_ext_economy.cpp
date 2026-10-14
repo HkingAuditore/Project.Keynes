@@ -420,6 +420,82 @@ Dictionary DCWorldExt::run_economy_slice_compact(const Dictionary &ctx) {
     return run_economy_slice_internal(ctx, true);
 }
 
+Dictionary DCWorldExt::configure_economy_natural_resources(const Dictionary &knobs) {
+    Dictionary out;
+    out["ok"] = false;
+    if (_economy_runtime == nullptr) {
+        out["code"] = "economy_runtime_unavailable";
+        return out;
+    }
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    const PackedStringArray reserve_slots = knobs.get("reserve_slots", PackedStringArray());
+    const PackedInt32Array habitat_modes = knobs.get("habitat_modes", PackedInt32Array());
+    const PackedInt32Array temperature_signals =
+        knobs.get("temperature_signals", PackedInt32Array());
+    const PackedInt32Array moisture_signals = knobs.get("moisture_signals", PackedInt32Array());
+    const char *float_keys[] = {"temp_lo", "temp_hi", "gen_base", "gen_temp", "gen_moisture",
+        "gen_self", "decay_base", "decay_temp", "decay_moisture", "decay_self",
+        "climate_temp_opt", "climate_temp_tol", "climate_moisture_opt",
+        "climate_moisture_tol", "runtime_climate_fit_weight", "decay_stress",
+        "ecology_capacity", "ecology_growth_rate", "ecology_immigration",
+        "ecology_stress_mortality_rate"};
+    constexpr size_t FLOAT_KEY_COUNT = sizeof(float_keys) / sizeof(float_keys[0]);
+    std::array<PackedFloat32Array, FLOAT_KEY_COUNT> values;
+    const int32_t knob_count = reserve_slots.size();
+    if (habitat_modes.size() != knob_count || temperature_signals.size() != knob_count ||
+        moisture_signals.size() != knob_count) {
+        out["code"] = "natural_resource_knob_size_mismatch";
+        return out;
+    }
+    for (size_t k = 0; k < FLOAT_KEY_COUNT; ++k) {
+        values[k] = knobs.get(float_keys[k], PackedFloat32Array());
+        if (values[k].size() != knob_count) {
+            out["code"] = "natural_resource_knob_size_mismatch";
+            out["key"] = float_keys[k];
+            return out;
+        }
+    }
+    const auto &economy_slots = runtime->building_resource_reserve_slots();
+    std::vector<NativeEconomyRuntime::WorkerNaturalResource> resources(economy_slots.size());
+    PackedStringArray missing;
+    for (size_t r = 0; r < economy_slots.size(); ++r) {
+        int32_t k = -1;
+        for (int32_t i = 0; i < knob_count; ++i) {
+            if (String(reserve_slots[i]) == String(economy_slots[r].c_str())) {
+                k = i;
+                break;
+            }
+        }
+        if (k < 0) {
+            missing.push_back(String(economy_slots[r].c_str()));
+            continue;
+        }
+        auto v = [&](size_t key) { return values[key][k]; };
+        NativeEconomyRuntime::WorkerNaturalResource &resource = resources[r];
+        natres_init_constants(resource.constants, v(0), v(1), v(2), v(3), v(4), v(5),
+            v(6), v(7), v(8), v(9), v(10), v(11), v(12), v(13), v(14), v(15),
+            v(16), v(17), v(18), v(19));
+        resource.habitat_mode = habitat_modes[k];
+        resource.temperature_signal = temperature_signals[k];
+        resource.moisture_signal = moisture_signals[k];
+    }
+    if (!missing.is_empty()) {
+        out["code"] = "natural_resource_knob_missing_resource";
+        out["missing"] = missing;
+        return out;
+    }
+    runtime->configure_worker_natural_resources(std::move(resources));
+    out["ok"] = true;
+    out["resource_count"] = static_cast<int64_t>(economy_slots.size());
+    return out;
+}
+
+bool DCWorldExt::economy_worker_owns_natural_resources() const {
+    return _economy_runtime != nullptr && _runtime_host != nullptr &&
+        _runtime_host->economy_worker_owns_execution() &&
+        runtime_from(_economy_runtime)->worker_natural_resources_configured();
+}
+
 Dictionary DCWorldExt::flush_runtime_economy_resource_writeback() {
     Dictionary out;
     out["ok"] = true;
@@ -444,6 +520,47 @@ Dictionary DCWorldExt::flush_runtime_economy_resource_writeback() {
     NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
     std::vector<size_t> lanes;
     std::vector<int64_t> deltas;
+    if (runtime->worker_resource_seeded()) {
+        // The worker already folded its consumption into its own lanes; the
+        // slots only mirror the worker reserve for readers on this thread.
+        runtime->drain_building_resource_deltas(lanes, deltas);
+        std::vector<int32_t> cells;
+        runtime->take_worker_resource_mirror_cells(cells);
+        const int32_t count = runtime->cell_count();
+        const auto &reserve_slots = runtime->building_resource_reserve_slots();
+        const auto &extra_slots = runtime->building_resource_extra_slots();
+        const auto &reserve = runtime->worker_resource_reserve_lanes();
+        const auto &extra = runtime->worker_resource_extra_lanes();
+        PackedStringArray published;
+        for (size_t r = 0; r < reserve_slots.size() && !cells.empty(); ++r) {
+            const size_t base = r * static_cast<size_t>(std::max(0, count));
+            if (base + static_cast<size_t>(count) > reserve.size() ||
+                base + static_cast<size_t>(count) > extra.size()) break;
+            const int sid_reserve = component_id(StringName(reserve_slots[r].c_str()));
+            const int sid_extra = r < extra_slots.size()
+                ? component_id(StringName(extra_slots[r].c_str())) : -1;
+            auto writable = [&](int sid) {
+                return sid >= 0 && sid < _slots.size() && _slots[sid].dtype == SlotDType::F32 &&
+                    _slots[sid].arr_f32.size() == count;
+            };
+            if (writable(sid_reserve)) {
+                float *dst = _slots.write[sid_reserve].arr_f32.ptrw();
+                for (const int32_t cell : cells) dst[cell] = reserve[base + cell];
+                published.append(String(reserve_slots[r].c_str()));
+            }
+            if (writable(sid_extra)) {
+                float *dst = _slots.write[sid_extra].arr_f32.ptrw();
+                for (const int32_t cell : cells) dst[cell] = extra[base + cell];
+                published.append(String(extra_slots[r].c_str()));
+            }
+        }
+        if (!published.is_empty()) flush_slots_to_map_keys(published);
+        out["changed_cells"] = static_cast<int64_t>(cells.size());
+        out["applied"] = !cells.empty();
+        out["building_resource_mirror_committed"] = true;
+        out["worker_owned_reserves"] = true;
+        return out;
+    }
     if (!runtime->drain_building_resource_deltas(lanes, deltas)) return out;
     const int32_t count = runtime->cell_count();
     const auto &extra_slots = runtime->building_resource_extra_slots();
@@ -969,43 +1086,15 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
         for (NativeEconomyRuntime::CommittedGameplayFact &fact : gameplay_facts) {
             int32_t event_type = 0;
             int32_t payload_schema = 0;
-            if (fact.kind == NativeEconomyRuntime::GAMEPLAY_FACT_CONSTRUCTION_COMPLETED) {
-                event_type = 6;
-                payload_schema = 3;
-                if (_modifier_runtime != nullptr) {
-                    fact.entity_handle = static_cast<ModifierRuntime *>(
-                        _modifier_runtime)->ensure_building_identity(
-                            fact.cell, fact.payload[1], fact.payload[2]);
-                }
-            } else if (fact.kind == NativeEconomyRuntime::GAMEPLAY_FACT_TRADE_ARRIVED) {
-                event_type = 7;
-                payload_schema = 8;
-            } else if (fact.kind ==
-                    NativeEconomyRuntime::GAMEPLAY_FACT_TARIFF_SUBSIDY_INTENT) {
-                event_type = 15;
-                payload_schema = 8;
-            } else if (fact.kind ==
-                    NativeEconomyRuntime::GAMEPLAY_FACT_SOCIAL_PRESSURE) {
-                event_type = 8;
-                payload_schema = 5;
-            } else if (fact.kind ==
-                    NativeEconomyRuntime::GAMEPLAY_FACT_TECHNOLOGY_PRACTICE) {
-                event_type = 14;
-                payload_schema = 7;
-            } else if (fact.kind ==
-                    NativeEconomyRuntime::GAMEPLAY_FACT_TECHNOLOGY_CONTACT) {
-                event_type = 16;
-                payload_schema = 7;
-            } else if (fact.kind ==
-                    NativeEconomyRuntime::GAMEPLAY_FACT_REPEATED_CROP_FAILURE) {
-                event_type = 11;
-                payload_schema = 9;
-            } else if (fact.kind ==
-                    NativeEconomyRuntime::GAMEPLAY_FACT_COUNTRY_DEVELOPMENT_METRIC) {
-                event_type = 17;
-                payload_schema = 10;
+            if (!NativeEconomyRuntime::gameplay_fact_event(fact.kind, event_type,
+                                                           payload_schema))
+                continue;
+            if (fact.kind == NativeEconomyRuntime::GAMEPLAY_FACT_CONSTRUCTION_COMPLETED &&
+                _modifier_runtime != nullptr) {
+                fact.entity_handle = static_cast<ModifierRuntime *>(
+                    _modifier_runtime)->ensure_building_identity(
+                        fact.cell, fact.payload[1], fact.payload[2]);
             }
-            if (event_type == 0) continue;
             if (_emit_gameplay_event(day_index, 9, event_type, 1, fact.flags,
                     fact.entity_handle, fact.entity_id, fact.cell, payload_schema,
                     fact.value, fact.payload[0], fact.payload[1], fact.payload[2],

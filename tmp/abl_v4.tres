@@ -1,0 +1,166 @@
+[gd_resource type="Resource" script_class="CountryAiCatalog" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/country/country_ai_catalog.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+mode = "ACTIVE"
+research_hungry_share_max = 0.03
+colonize_min_population = 20
+colonize_min_country_population = 150
+colonize_min_population_per_cell = 150
+difficulty = "normal"
+agendas = Array[Dictionary]([{
+"considerations": [{
+"curve": "smoothstep",
+"input": "reserve_days",
+"x0": 30,
+"x1": 360,
+"y0": 0.3,
+"y1": 1.0
+}, {
+"curve": "linear",
+"input": "satisfaction_q16",
+"x0": 0.3,
+"x1": 0.7,
+"y0": 0.3,
+"y1": 1.0
+}],
+"id": "develop",
+"research_share_bp": 3500
+}, {
+"considerations": [{
+"curve": "smoothstep",
+"input": "frontier_cells",
+"x0": 0,
+"x1": 12,
+"y0": 0.0,
+"y1": 1.0
+}, {
+"curve": "linear",
+"input": "reserve_days",
+"x0": 120,
+"x1": 720,
+"y0": 0.2,
+"y1": 1.0
+}, {
+"curve": "linear",
+"input": "expeditions",
+"x0": 0,
+"x1": 3,
+"y0": 1.0,
+"y1": 0.4
+}],
+"expansion_slots": 1,
+"id": "expand",
+"research_share_bp": 2000
+}, {
+"considerations": [{
+"curve": "linear",
+"input": "reserve_days",
+"x0": 30,
+"x1": 540,
+"y0": 1.0,
+"y1": 0.1
+}, {
+"curve": "linear",
+"input": "cash_trend_bp",
+"x0": -3000,
+"x1": 2000,
+"y0": 1.0,
+"y1": 0.3
+}],
+"id": "accumulate",
+"research_share_bp": 1200,
+"tax_bias_bp": 2000
+}, {
+"considerations": [{
+"curve": "linear",
+"input": "milestone_gap",
+"x0": 1,
+"x1": 6,
+"y0": 1.0,
+"y1": 0.2
+}, {
+"curve": "smoothstep",
+"input": "reserve_days",
+"x0": 90,
+"x1": 540,
+"y0": 0.25,
+"y1": 1.0
+}],
+"era_focus": true,
+"id": "era_push",
+"research_share_bp": 5500
+}, {
+"considerations": [{
+"curve": "linear",
+"input": "satisfaction_q16",
+"x0": 0.3,
+"x1": 0.6,
+"y0": 1.0,
+"y1": 0.05
+}, {
+"curve": "linear",
+"input": "essentials_q16",
+"x0": 0.5,
+"x1": 0.95,
+"y0": 1.0,
+"y1": 0.2
+}],
+"id": "stabilize",
+"research_share_bp": 1500,
+"satisfaction_floor_shift": 0.1,
+"tax_bias_bp": -2000
+}])
+personalities = Array[Dictionary]([{
+"agenda_bias": [1.2, 0.9, 1.0, 1.0, 1.0],
+"domain_affinity": [1.2, 1.2, 0.9, 0.9],
+"family_pref": [1.0, 0.4, 0.2, 0.1],
+"id": "builder",
+"risk": 0.5,
+"tax_initial": [8, 5, 8, 0, 0],
+"tax_max": [20, 15, 20, 0, 0],
+"tax_min": [2, 2, 2, 0, 0],
+"weight": 3
+}, {
+"agenda_bias": [0.9, 1.4, 0.8, 0.9, 0.9],
+"domain_affinity": [1.3, 1.0, 0.8, 1.0],
+"family_pref": [0.6, 0.3, 1.0, 0.1],
+"id": "expansionist",
+"risk": 0.7,
+"tax_initial": [10, 6, 10, 0, 0],
+"tax_max": [25, 18, 25, 0, 0],
+"tax_min": [3, 2, 3, 0, 0],
+"weight": 2
+}, {
+"agenda_bias": [1.0, 0.9, 1.3, 0.9, 1.0],
+"domain_affinity": [0.9, 1.2, 1.0, 1.1],
+"family_pref": [0.5, 1.0, 0.2, 0.1],
+"id": "merchant",
+"risk": 0.4,
+"tax_initial": [6, 8, 6, 0, 0],
+"tax_max": [18, 20, 15, 0, 0],
+"tax_min": [2, 2, 1, 0, 0],
+"weight": 2
+}, {
+"agenda_bias": [1.0, 0.8, 0.9, 1.4, 1.0],
+"domain_affinity": [0.9, 1.0, 1.4, 1.1],
+"family_pref": [1.0, 0.3, 0.3, 0.1],
+"id": "scholar",
+"risk": 0.6,
+"tax_initial": [9, 6, 8, 0, 0],
+"tax_max": [22, 16, 20, 0, 0],
+"tax_min": [2, 2, 2, 0, 0],
+"weight": 2
+}, {
+"agenda_bias": [1.0, 1.0, 0.9, 0.9, 1.4],
+"domain_affinity": [1.2, 0.9, 0.9, 1.2],
+"family_pref": [0.8, 0.2, 0.6, 0.2],
+"id": "populist",
+"risk": 0.3,
+"tax_initial": [5, 4, 6, 0, 0],
+"tax_max": [15, 12, 15, 0, 0],
+"tax_min": [1, 1, 1, 0, 0],
+"weight": 1
+}])

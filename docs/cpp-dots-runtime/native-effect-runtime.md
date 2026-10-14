@@ -227,6 +227,15 @@ second Modifier-definition copy.
   instance, stack arbitration, transaction and ACK. Family metrics 0–9 are
   occupied and must append-only. Built-in colonization SETTLE carries optional
   `population_reward` on payload[3], never in the CLAIM/SETTLE cell word.
+  Under EFFECT worker authority, `apply_pod_snapshot` must preserve these
+  `program_id == -1` builtins (and their Country/Economy adapter bindings)
+  because the worker POD snapshot never carries them; wiping them races the
+  colonization CLAIM/SETTLE pump into cleared binding storage.
+  Main-thread `apply_runtime_effect_snapshot` also takes
+  `try_lock_economy_input_capture` before rebuild: the worker holds that
+  boundary for the whole economy day and may enqueue colonization/canal
+  builtins into the shared `EffectRuntime`. A failed try-lock returns
+  `economy_day_inflight` so the host retries with the same after_generation.
 - Person: native promotion and every `PERSON_COMMIT` reconcile a
   generation-safe `person.modifier.gameplay.generic.bonus` instance. The public
   `EffectFacade.submit_person_modifier_instance()` remains the extension entry

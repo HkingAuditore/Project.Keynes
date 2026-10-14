@@ -9,7 +9,7 @@ namespace pk {
 namespace {
 
 constexpr uint32_t PKAI_MAGIC = 0x49414b50u; // "PKAI"
-constexpr uint32_t PKAI_VERSION = 1u;
+constexpr uint32_t PKAI_VERSION = 2u;
 constexpr uint64_t FNV_OFFSET = 1469598103934665603ull;
 constexpr uint64_t FNV_PRIME = 1099511628211ull;
 
@@ -57,6 +57,8 @@ void write_memory(Writer &w, const CountryAiMemory &m) {
     w.i32(m.goal_milestone); w.i32(m.milestone_gap); w.i32(m.completed_milestones);
     w.i32(m.tax_pressure); w.u32(m.colonize_failures_seen); w.u32(m.colonize_started_seen);
     w.u32(m.commands_emitted); w.u32(m.commands_rejected); w.u32(m.colonize_intents);
+    w.i32(m.colonize_last_target); w.u32(m.colonize_bad_cursor);
+    for (const int32_t cell : m.colonize_bad_targets) w.i32(cell);
 }
 
 CountryAiMemory read_memory(Reader &r) {
@@ -69,6 +71,8 @@ CountryAiMemory read_memory(Reader &r) {
     m.goal_milestone = r.i32(); m.milestone_gap = r.i32(); m.completed_milestones = r.i32();
     m.tax_pressure = r.i32(); m.colonize_failures_seen = r.u32(); m.colonize_started_seen = r.u32();
     m.commands_emitted = r.u32(); m.commands_rejected = r.u32(); m.colonize_intents = r.u32();
+    m.colonize_last_target = r.i32(); m.colonize_bad_cursor = r.u32();
+    for (int32_t &cell : m.colonize_bad_targets) cell = r.i32();
     return m;
 }
 
@@ -84,7 +88,8 @@ uint64_t hash_command(uint64_t h, const CountryAiCommand &c, int64_t day) {
         static_cast<uint64_t>(static_cast<int64_t>(c.weights_bp[3])),
         static_cast<uint64_t>(static_cast<int64_t>(c.tax_kind)),
         static_cast<uint64_t>(static_cast<int64_t>(c.tax_rate_bp)),
-        static_cast<uint64_t>(c.value)};
+        static_cast<uint64_t>(c.value),
+        static_cast<uint64_t>(static_cast<int64_t>(c.tax_item))};
     for (const uint64_t f : fields) {
         for (int i = 0; i < 8; ++i) {
             h ^= (f >> (i * 8)) & 0xffu;
@@ -316,7 +321,7 @@ RuntimeCountryCommand CountryAiRuntime::to_runtime_command(const CountryAiComman
     command.position = c.position;
     command.weights_bp = c.weights_bp;
     command.tax_kind = c.tax_kind;
-    command.tax_item = -1;
+    command.tax_item = c.tax_item;
     command.tax_rate_basis_points = c.tax_rate_bp;
     command.tax_assessment_mode = c.tax_mode;
     command.value = c.value;

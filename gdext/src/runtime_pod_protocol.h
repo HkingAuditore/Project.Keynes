@@ -217,6 +217,7 @@ struct RuntimeEconomyDayInput {
     std::vector<int32_t> neighbors;
     std::vector<std::vector<float>> reserves;
     std::vector<std::vector<float>> changes;
+    std::vector<uint8_t> resource_habitat; // cell_resource_habitat_mask; empty when absent
     bool fog_solved = false;
 };
 

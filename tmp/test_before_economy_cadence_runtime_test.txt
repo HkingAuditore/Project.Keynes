@@ -1,0 +1,131 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] catalog compiles
+  [PASS] cadence fixture country bootstraps
+  [PASS] cadence fixture configures
+  [PASS] cadence fixture bootstraps
+Godot_v4.6.2-stable_win64_console.exe : [economy-open-finish] day=0 country=0.028 workset=0.007 fiscal=0.006 csr=0.000 
+recovery=0.000 vectors=0.029 audit=0.013 commands=0.003
+ËùÔÚÎ»ÖÃ C:\Users\hkinghuang\AppData\Local\Temp\ps-script-52b57b28-5db1-46be-866b-e65f24279656.ps1:92 ×Ö·û: 501
++ ... ma_test') { & $g --headless --path . -s "res://tests/$t.gd" 2>&1 | Ou ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([economy-open-f... commands=0.003:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[research-procure-diag] day=0 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=
+0 orders=0 rej=0 procured=0 last_err=
+  [PASS] opening one-cell world locks N=1, P near 5, and I > P
+  [PASS] opening cell settles on sample day
+[research-procure-diag] day=1 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=
+0 orders=0 rej=0 procured=0 last_err=
+  [PASS] second day still daily with injected fast timing
+  [PASS] cadence knife ms stays on completed-COMMIT order of magnitude
+  [PASS] cadence fixture country bootstraps
+  [PASS] cadence fixture configures
+  [PASS] cadence fixture bootstraps
+  [PASS] injected medium timing lands in 2â€?
+  [PASS] cadence fixture country bootstraps
+  [PASS] cadence fixture configures
+  [PASS] cadence fixture bootstraps
+  [info] heavy lock N=5 P=5 I=30 knives=5 plan_knives=1 invest_knives=64
+  [PASS] injected heavy timing locks N=5, I near 30, and I > P
+  [PASS] cadence fixture country bootstraps
+  [PASS] cadence fixture configures
+  [PASS] cadence fixture bootstraps
+  [PASS] forced five-day lock at bootstrap
+[research-procure-diag] day=1 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=
+0 orders=0 rej=0 procured=0 last_err=
+  [PASS] timing inject does not change N/P/I inside the cycle
+  [PASS] cadence fixture country bootstraps
+  [PASS] cadence fixture configures
+  [PASS] cadence fixture bootstraps
+  [PASS] nine-cell fixture uses a 2â€? day lock
+[economy-open-finish] day=0 country=0.089 workset=0.019 fiscal=0.011 csr=0.000 recovery=0.000 vectors=0.092 audit=0.019
+ commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=
+0 orders=0 rej=0 procured=0 last_err=
+  [PASS] day 0 conserves
+[research-procure-diag] day=1 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=
+0 orders=0 rej=0 procured=0 last_err=
+  [PASS] day 1 conserves
+[research-procure-diag] day=2 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=
+0 orders=0 rej=0 procured=0 last_err=
+  [PASS] day 2 conserves
+  [PASS] one cycle covers every populated cell once
+  [PASS] cadence fixture country bootstraps
+  [PASS] cadence fixture configures
+  [PASS] cadence fixture bootstraps
+[economy-open-finish] day=0 country=0.037 workset=0.010 fiscal=0.007 csr=0.000 recovery=0.000 vectors=0.046 audit=0.010
+ commands=0.001
+[research-procure-diag] day=0 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=
+0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=
+0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=
+0 orders=0 rej=0 procured=0 last_err=
+  [PASS] injected timing makes N/P/I sequence repeatable
+  [PASS] sparse cadence fixture country bootstraps
+  [PASS] sparse cadence fixture configures
+  [PASS] sparse cadence fixture bootstraps
+  [PASS] sparse fixture exposes three live cells
+  [PASS] sparse fixture still locks a 1-5 market cycle
+[economy-open-finish] day=0 country=0.045 workset=0.010 fiscal=0.004 csr=0.000 recovery=0.000 vectors=0.021 audit=0.042
+ commands=0.003
+[research-procure-diag] day=0 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=
+0 orders=0 rej=0 procured=0 last_err=
+  [PASS] sparse day 0 conserves
+  [PASS] sparse due_cells stay inside the live set
+  [PASS] one market cycle due_cells sum equals live cells, not cell_count
+  [PASS] cadence fixture country bootstraps
+  [PASS] cadence fixture configures
+  [PASS] cadence fixture bootstraps
+[economy-open-finish] day=0 country=0.033 workset=0.009 fiscal=0.010 csr=0.001 recovery=0.000 vectors=0.048 audit=0.010
+ commands=0.001
+[research-procure-diag] day=0 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=
+0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=
+0 orders=0 rej=0 procured=0 last_err=
+  [PASS] PKCN save begins
+  [PASS] PKCN save completes
+  [PASS] current economy save begins
+  [PASS] current economy save completes
+  [PASS] PKCN restore matches
+  [PASS] restore keeps locked cadence
+  [PASS] cadence fixture country bootstraps
+  [PASS] cadence fixture configures
+  [PASS] cadence fixture bootstraps
+[economy-open-finish] day=0 country=0.034 workset=0.009 fiscal=0.005 csr=0.001 recovery=0.000 vectors=0.025 audit=0.009
+ commands=0.001
+[research-procure-diag] day=0 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=
+0 orders=0 rej=0 procured=0 last_err=
+  [PASS] ECP2 source reaches a committed boundary
+  [PASS] ECP2 capture/restore API is exported
+  [PASS] ECP2 capture contains independent OwnedState SoA domain
+  [PASS] cadence fixture country bootstraps
+  [PASS] cadence fixture configures
+  [PASS] cadence fixture bootstraps
+[economy-open-finish] day=0 country=0.037 workset=0.008 fiscal=0.004 csr=0.000 recovery=0.000 vectors=0.025 audit=0.008
+ commands=0.001
+[research-procure-diag] day=0 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=
+0 orders=0 rej=0 procured=0 last_err=
+  [info] ECP2 hashes source=6804546547005885987 twin=6804546547005885987
+  [PASS] ECP2 typed OwnedState restores atomically
+  [PASS] ECP2 tampered OwnedState is rejected before mutation
+  [PASS] cadence fixture country bootstraps
+  [PASS] cadence fixture configures
+  [PASS] cadence fixture bootstraps
+[economy-open-finish] day=0 country=0.037 workset=0.008 fiscal=0.004 csr=0.000 recovery=0.000 vectors=0.032 audit=0.011
+ commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=
+0 orders=0 rej=0 procured=0 last_err=
+  [info] mid ECP2 capture reason=ecp2_owned_state_capture_invalid:epoch_cursor_never_committed epoch_active=true
+  [FAIL] ECP2 mid-epoch capture carries resume cursor
+=== economy cadence runtime FAIL ===
+[save-repository] slot directory overridden to D:\Godot\ProjectKeynes\Project.Keynes\tmp\save_rt
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 277 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+

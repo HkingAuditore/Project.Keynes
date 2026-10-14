@@ -2214,6 +2214,8 @@ Dictionary NativeEconomyRuntime::report() const {
         _building_employee_job_reallocations;
     out["building_employee_job_profession_changes"] =
         _building_employee_job_profession_changes;
+    out["building_distress_career_exits"] =
+        _building_distress_career_exits;
     out["building_employee_job_hurdle_rejections"] =
         _building_employee_job_hurdle_rejections;
     out["building_employee_cold_start_forecasts"] =

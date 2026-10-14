@@ -262,6 +262,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::request_runtime_stop);
     ClassDB::bind_method(D_METHOD("climate_worker_authoritative"),
                          &DCWorldExt::climate_worker_authoritative);
+    ClassDB::bind_method(D_METHOD("climate_main_thread_suppressed"),
+                         &DCWorldExt::climate_main_thread_suppressed);
     ClassDB::bind_method(D_METHOD("climate_physics_authoritative"),
                          &DCWorldExt::climate_physics_authoritative);
     ClassDB::bind_method(D_METHOD("get_climate_physics_read_view"),
@@ -637,6 +639,8 @@ void DCWorldExt::_bind_methods() {
     // Independent native PopulationCohort + local-market authority.
     ClassDB::bind_method(D_METHOD("configure_economy", "catalog", "profile", "cell_count", "seed"),
                          &DCWorldExt::configure_economy);
+    ClassDB::bind_method(D_METHOD("configure_economy_natural_resources", "knobs"),
+                         &DCWorldExt::configure_economy_natural_resources);
     ClassDB::bind_method(D_METHOD("bootstrap_economy", "population_packet", "market_packet"),
                          &DCWorldExt::bootstrap_economy);
     ClassDB::bind_method(D_METHOD("submit_economy_commands", "packed_batch"),

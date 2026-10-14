@@ -364,6 +364,8 @@ Effect 再应用专属 Modifier 或发布下一项研究机会。
 ### 已完成：专属数值效果
 
 - 科技 Modifier 已拆到生产家族、研究制度、气候适应、建设和运输消费者。
+- `country.population.death_factor`（国家级，`[1/3, 4]`）由 12 项食物储藏/医药/卫生科技各降 4–12%，
+  在 `NativeEconomyRuntime::process_market_cell` 中乘自然死亡率：基础 7.5%/年，叠满约 2.5%/年。
 - Effect 与 Economy 只交换冻结数值/typed POD 命令，热循环不读取字符串或 Dictionary。
 - 普通条件和算术继续使用 packed IR；开放式算法仍必须走注册的 C++ behavior。
 

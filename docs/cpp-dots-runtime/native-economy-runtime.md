@@ -375,7 +375,11 @@ capacity 执行，但就业、转职和投资使用一次性的建筑级 opportu
 可用现金，正税、补贴、营业税和收入税通过同一 after-tax cashflow helper 同时进入事实与预测。
 `last_observed_capacity_days_q16` 是上一结算期实际到岗能力天数的事实标记，不是计划值；已观测
 回款先除以该标记得到满能力日回款，再乘当前 `min(workforce, plan, climate)` 一次，不能把周期总额
-再次乘以建筑天数或把 workforce 重复缩放。实际回款为零仍是零，但生存食品/衣物可以在冻结最低
+再次乘以建筑天数或把 workforce 重复缩放。该标记只含到岗率、不含计划开工率，因此现金类回款
+（商人收购、铸币、兜底支持）还要再除以上期自选开工份额 `min(1, 上期计划/上期到岗)`（上期计划取
+`_building_planned_capacity_before_climate_q16`，份额下限 1/32，上期计划为 0 时不放大）；业主实物
+自用受消费篮上限约束，不做此缩放。否则停在生存下限的食物组会把自己的限产当作低价，永远报不出
+满负荷盈利。实际回款为零仍是零，但生存食品/衣物可以在冻结最低
 生存下限内获得有界执行探针，且仍受资源、投入和工作资本约束。
 
 经济录制器 CSV v25 追加且不重排既有列：`summary` 记录 epoch 的
@@ -585,8 +589,12 @@ sequence、settled day、稳定结果码及实际两类物资/现金支出；它
 - 企业采购意图容量取建筑可用性、业主/关键岗位就业率、业主输入资金覆盖率和自然资源覆盖率的瓶颈；实际产能再叠加本地输入库存瓶颈。缺货输入保留受约束的补货意图，但不能产生实际产出。
 - `EconomyProfile.building_output_efficiency_q16` 在 native 目录载入冷路径只缩放物资产出列，默认 `131072`（2 倍）；建设材料、日常投入、自然资源扣减、岗位与工资均不缩放。它是运行配置而非目录内容，因此不改变 building catalog hash、运行时状态布局或 PKEC 字节结构。
 - 食物产出倍率已从运行配置移除；食物平衡由各 `BuildingProfile.output_quantities_per_day` 直接表达。现有食物配置已吸收原 `1.25` 倍基线，石器时代采集、狩猎、捕鱼和陷阱线另有定向增产；自然资源消耗列保持不变。
-- 早期知识建筑的 `owner_slots_per_building` 为 1；知识产业（economic sector=knowledge）的新招聘和跨行业转岗软上限为本地人口的 30%（非零地块至少保留 1 个槽位），不会驱逐已在岗知识人口。
+- 早期知识建筑的 `owner_slots_per_building` 为 1。知识产业不再有本地人口占比上限；科研人数由工资、补贴和粮价调节。
+- 向上转职存款门槛：`ProfessionProfile.entry_savings_days`（编目为 `profession_entry_savings_days`，夹到 `[0, 36500]`）。目标职业门槛高于来源职业门槛时，来源 cohort 的人均存款必须 ≥ 门槛天数 × 本格 `_cell_living_cost_per_capita`，不扣钱；平级和向下流动免检。失业池招聘在比例分配前检查（拒绝码 `EMPLOYMENT_REJECTION_ENTRY_SAVINGS = 9`），雇员↔雇员、业主→雇员、业主↔业主、雇员→业主四条转岗路径在挑选来源民族 cohort 时检查。默认档：工匠/产业工人/熟练工/石油工人 60 天；机械师/电工/技术员/书记员/传知者 180 天；行会师傅/冶金/化学/工程师/经理/学者/自然哲学家 365 天；研究员/科学家/工业资本家 730 天；研究科学家/数据科学家/AI 研究员 1095 天；其余（含商人、地主、采集狩猎、农业与普通劳工）为 0。
 - 实际利润率按 `(销售收入 - 输入成本 - 应付基础工资 - 到岗业主最低生活费) / max(经营成本, MONEY_SCALE)` 计算。业主生活费只参与企业可持续性判断，不生成额外现金支出；连续三周期不高于 -25% 后进入 `SUSPENDED_LOSS`。停产期间岗位、采购、产出和企业需求全为零；反事实利润达到重启门槛（默认约 +10%），且硬投入有货、自然资源可用、本地可回岗劳动力存在、业主/信贷能覆盖**可执行**一周期成本后恢复。软投入（`required_q16 < 1`）不是开工门槛：货架为空时基础活动率仍按 100% 计算，实际产量倍率按 `1 + Σ(required × coverage)` 计算，不把软投入缺货计入重启信贷，不得把涨价后有利可图的停业组（如燧石采掘场）永久锁死。
+  重启融资只计「可执行投入 + 雇员工资」× 建筑天数，**不计业主生活费**：业主靠本组产出（现金或自留实物）生活，生活费只参与利润率判断。2026-10-13 之前重启成本含业主生活费，导致无投入、无雇员的空手组（狩猎营地）借款需求永远大于 0；组上若还挂着停业前的商人欠款，逾期计数（`merchant_debt_delinquent_cycles`）只增不减，信贷永远被拒，`_building_recovery_liquidation_eligible` 又要求 executable，于是利润率已到上限（+100%）的狩猎营地被锁死。表现为：野味价格涨到数百万、需求未满足，格内零收入工匠存款归零后饿死，人口从约 150 跌到个位数且多年不恢复（8 国 30 年测试里有 3 国这样崩溃）。修复后空手组借款需求为 0，可直接重启，正常就业/转岗再把挨饿人口吸引过去。
+  同日补充两道同类全有或全无门：①重启融资**只计硬投入**，有货的软投入也不计入（软投入由招来的业主按比例携带的存款购买，买不起就按 `1-required` 效率徒手干；仍计入复工利润率）；②自然资源门只要求**一栋建筑一个周期**的资源量（`mode==1` 为单栋容量，抽取为 `epoch_days × quantity`），不再要求整组满负荷。正式配置 `resource_safe_harvest_q16=0`（开放获取），抽取可用量就是剩余储量；好年景扩到 35 座的狩猎营地在猎物被压低后停业，整组一周期需求（35×209×epoch_days）超过当时储量，既不能复工（不 executable）也不会被清算，猎物恢复后仍可能长期达不到整组门槛，表现为营地机会收益数百万、野味与生皮库存为零。复工后生产照常按资源容量／密度 CPUE 缩放产量。
+- 本格商人全部死亡（商人 cohort 人口为 0，`local_merchants_can_receive(cell) == false`）时，市场仍可能有库存，但没有卖方可收款：建筑投入采购按 ACTIVE_UNFUNDED 处理（本周期产能 0、保留购买意向），维护品视为无货，投资审查跳过该格。此前分别以 `building_input_has_no_merchant_owner` / `building_maintenance_has_no_merchant_owner` / `building_construction_has_no_merchant_owner` 让整个世界致命停机。
 - 下一周期利用率的可负担需求同时读取居民 `demand_ema` 与稀疏 `business_demand_ema`。库存不足时，以两者之和相对实际出库 EMA 的缺口触发短缺恢复；因此没有家庭终端消费、但被下游建筑持续采购的工具和中间品不会被误压到 1/32 探测产能。
 - 商人库存目标使用 `max(可行 household/business 日需求, 实际出库 EMA, 平滑供给下限) + 出口 EMA` 乘 30 日基线和 good-specific 比例后的有效天数；生存食品/御寒衣物的供给下限为供给 EMA 的 1/2，其他耐储品为 1/4，库存天数和目标量级不下调。采购开始冻结现金并保留 12.5%；有限现金按生存品、短缺压力、生产投入 reserve 缺口加权，但总采购预算仍封顶于真实缺口价值，避免“提高优先级”反而造成有钱不买。`cycle_flow` 目标仍为 0。
 - `GoodProfile.inventory_target_ratio_q16` 在 catalog 配置阶段预计算为 dense 有效天数列；热循环不做字符串分类或额外目录遍历。catalog 同时保留 legacy `good_target_inventory_days_q16` 兼容列，使编辑器误加载旧 DLL 时仍能完成 economy/population bootstrap；新版 DLL 优先读取比例列。
@@ -849,6 +857,12 @@ owner_signature)` 排序的稀疏 POD owner-lot 保存数量，并用 cell CSR �
 自动施加（收入 0 + 只吃 survival food → satisfaction 掉 → 自然死上升，无硬编死亡率）。就业为
 **跨周期存量**（A1 真实人口迁移）：非商人/非失业的 `profession|eth` cohort 恒有
 `owner_employed + employee_employed == population`（无闲置，未被雇佣者立即迁往 `unemployed|eth`）；
+预期可支配收入 ≤ 0 且 cohort 已陷入困境（`needs_satisfaction < 0.5` 或人均资金不足一日生活成本）
+时，就业 pass 在裁员之前做 **distress career exit**：清掉对应 owner/employee 席位，经失业池
+在同周期再雇入仍有正收入的生存食物空岗（主动转行，不走国库救济）。饥饿 cohort 对自给食物岗
+免除普通转职门槛；自留口粮按生活成本热量估值（`max(市价, 生活成本口径)`），避免市价崩溃时
+采集岗在流动决策里被当成零收入。生存食物篮相对最便宜在库篮超过 `FOOD_SUBSTITUTE_RATIO`
+（默认 4×）时，该篮的 survival floor 与 ordinary demand 一并清零，强制改买便宜主食；
 `_unemployed_population` = Σ(unemployed cohort population)，是派生量、不进 save/hash（失业 cohort
 本身随 population section 存档）。工资 ABI 位于 employee role：`adaptive` 以本地基础生活
 成本、岗位 cohort 消费篮子和本地岗位合同工资 EMA 形成生活工资硬下限；`fixed` 仅保留给
@@ -991,7 +1005,9 @@ ACTIVE 自营业建筑的 planned owner demand 始终等于完整物理业主席
 岗在噪声下互挖乒乓；从来源机会收入≤0 跳到正机会目标时仍只用基础门槛，使离开亏损/零机会
 岗更容易。达到门槛后确定性转岗，不再用随机抽签截断已经形成的价格信号。每个目标和来源
 建筑组每周期最多参与一次成功流动，来源可失去最后一名普通业主或 employee，但最后一名本地
-商人不可流出。同职业只调整岗位归属；跨职业通过 `move_cohort_population()` 按人口比例携带
+商人不可流出。挂着重启采购意向、上期零产出零销售的 ACTIVE lot 原本整体不做 owner 来源（保住
+重启预留）；当其业主 cohort 生存满足度低于 0.5 时取消该保护，打光猎物的营地里挨饿的猎人
+可以转去其他岗位，而不是守着零产出的营地饿死。同职业只调整岗位归属；跨职业通过 `move_cohort_population()` 按人口比例携带
 资金和当期 cohort 账目，不发生出资、建设或额外现金转移。SUSPENDED、不可用建筑与不同民族
 不参与。report 以 `building_employee_to_owner_reallocations` 单独统计 employee 来源，
 `building_owner_understaffed_reallocations` 统计来源快照时缺编的 owner→owner 成功流动；
@@ -1042,6 +1058,28 @@ delta 会阻止跨周期重复超采。每条资源边有 `extract` 或 `capacit
 资源边只允许 `local`。海鱼储量由 `coastal_land` habitat 直接生成在与海洋相邻的沿海陆格，
 岸上渔场、狩猎营、矿山和农场 capacity 都只检查建筑本格；catalog 和 native 配置同时拒绝非本格
 访问模式。该约束不增加运行时状态，且移除了生产热循环的邻格 gather。
+
+**worker 自持资源储量（2026-10-13）。** 经济在 worker 上执行时（`capture_worker_day_input`），
+主线程槽位只在首次 worker 捕获时用来播种一次：worker 用和主线程同语义的 float 通道
+（`_worker_resource_reserve` / `_worker_resource_extra`，按资源 × 格排布）保存储量和待处理差额；
+读档时改用存档里的储量播种，差额为 0。之后：
+
+- 提交时（publish 末尾 `fold_worker_resource_deltas`），本 epoch 的采集差额并入 worker 差额通道，
+  并立刻重写对应格的 `resource_stock_lanes()`，存档拿到的就是采集后的储量；
+- 每次捕获时（`advance_worker_resource_reserves`），用 worker 当天的气候（经济输入 f0–f3）、
+  水面（geography[3]）、栖息地掩码（`RuntimeEconomyDayInput::resource_habitat`）和 ECONOMY 域的
+  `economy.city.resource[.<id>].regen_factor` 结算自然再生。节奏与主线程相同：有人格子
+  （`_economy_live_cells`）每天补算，连续有人时最多追 5 天；其他格子按 `idx % 60 == day % 60`
+  轮转，最多追 60 天。节奏状态不进存档，读档后从当天重新开始（与原主线程行为一致）；
+- 储量仍是 `max(0, reserve + min(extra, 0)) × GOODS_SCALE`，换算与原来的槽位播种完全相同。
+
+再生公式与主线程 `run_natural_resource_pass` 共用 `natural_resource_kernel.h`，系数来自
+`EconomyFacade.configure()` 调用 `configure_economy_natural_resources(ResourceProfileRegistry.build_pass_knobs())`，
+按储量槽名对齐经济资源。worker 模式下主线程的 `run_natural_resource_pass` 跳过这些资源
+（返回 `skipped_worker_owned_resources`），`flush_runtime_economy_resource_writeback` 改为把 worker 的
+储量和差额按变化格镜像回槽位并 flush 到 MapData，供 UI、生态和存档读取。同步（SUS）路径不变。
+原因：主线程最多领先 worker 3 天，槽位在捕获时反映到哪一天取决于机器速度，按槽位重置储量会让
+同种子长跑不可复现（见 `country-ai-runtime.md` §9）。
 
 世界设置启用测试经济数据时，fixture 先生成资源适配的自给、采集与本地产业 owner-lot，随后
 通过 `EconomyFacade.building_job_spec()` 读取 catalog 岗位列并派生 cohort。生成前用
@@ -1202,8 +1240,9 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 **只**驱动饥饿死亡，出生率与其余玩法读 `composite_satisfaction`，见
 [综合满意度运行时](./satisfaction-runtime.md)。周期开始时仍存活人口先就业和生产；默认 50%
 是消费后的饥饿满足度阈值，不前置削减劳动力。Q32 饥饿死亡率使用既有 residual、birth/death
-审计和结构回收路径。默认职业年出生/自然死亡率为 20.0%/2.5%，完全满足时净增长目标约 17.5%，
-健康人口理论翻倍时间约 4.3 年；
+审计和结构回收路径。默认职业年出生/基础自然死亡率为 20.0%/7.5%；自然死亡率乘国家科技 stat
+`country.population.death_factor`（下限 1/3，科技叠满到 2.5%）。出生乘数在 composite 0.70→0.85 间
+从 1.0 升到 1.15，负载 0.9→1.0 渐退，石器开局净增长约 15.5%/年；
 出生率折减先把 composite 按 `satisfaction_birth_reference_q16` 重标定，再把格级 sat
 混进 `K_eff`；cohort 只乘残差，避免把心情乘两次。未解锁物资族不进 surplus 分母。
 贴上 `K_eff` 后出生落到更替。饥饿死亡仍只读 `SAT_DIM_SUBSISTENCE`。
@@ -2030,7 +2069,9 @@ desired demand、business EMA、merchant target、价格响应、试算需求上
 支出包含本地交易税。上一期可售量与商人实购量在 epoch 边界冻结为瞬态快照，不进入
 PKEC 或权威状态哈希。未购买时不扣库存、不计入成本，也不发布对应的完整企业需求/短缺
 压力；购买后才计入投入成本，并按库存覆盖度提供效率加成。该判断按本轮市场的 catalog
-input edge 缓存。
+input edge 缓存。ACTIVE 组的 epoch 经营计划只按基础配方产量报收入，因此 `input_cost` 只累计
+硬投入（`required_q16 == Q16_ONE`），不计软投入：生产端只在增产价值超过采购支出时才买，
+把缺货或天价的工具按市价全额计入会让采集/狩猎组误判亏损、停在生存下限（2026-10-13 修复）。
 
 所有建筑的 owner 自用产出都属于 owner 的实物收入，并与现金收入共同参与经营可行性
 判断；已有结算值优先复用，只有没有结算值的新组才做一次机会报价。硬投入、资源、气候

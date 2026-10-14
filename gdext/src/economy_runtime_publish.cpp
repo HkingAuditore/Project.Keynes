@@ -425,8 +425,21 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         if (!error.empty()) return false;
         if (_closing_totals.population != population_expected)
             error = "population_conservation_failed";
-        else if (money_close != money_expected)
+        else if (money_close != money_expected) {
             error = "money_conservation_failed";
+            const AuditTotals fresh = audit_totals();
+            std::fprintf(stderr,
+                "[diag-money-verify] day=%lld expected=%lld close=%lld fresh=%lld "
+                "cohort close/fresh=%lld/%lld country close/fresh=%lld/%lld "
+                "escrow close/fresh=%lld/%lld fiscal_escrow_now=%lld\n",
+                static_cast<long long>(_current_day.get()),
+                static_cast<long long>(money_expected), static_cast<long long>(money_close),
+                static_cast<long long>(fresh.cohort_funds + fresh.country_cash + fresh.escrow_cash),
+                static_cast<long long>(_closing_totals.cohort_funds), static_cast<long long>(fresh.cohort_funds),
+                static_cast<long long>(_closing_totals.country_cash), static_cast<long long>(fresh.country_cash),
+                static_cast<long long>(_closing_totals.escrow_cash), static_cast<long long>(fresh.escrow_cash),
+                static_cast<long long>(fiscal_escrow_total()));
+        }
         else if (_closing_totals.goods_stock != goods_expected)
             error = "goods_conservation_failed";
         if (!error.empty()) return false;
@@ -686,6 +699,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
                 return index < resource_delta_lanes().size() &&
                     resource_delta_lanes()[index] != 0;
             });
+        fold_worker_resource_deltas();
         _epoch_commands.clear();
         _structural_commands.clear();
         _epoch_market_ids.clear();

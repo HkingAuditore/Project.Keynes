@@ -3154,11 +3154,16 @@ bool NativeEconomyRuntime::coordinate_country_cohort_cash(
     }
     if (cohort_slot < 0 || cohort_slot >= static_cast<int32_t>(
             population_store().active.size()) || population_store().active[cohort_slot] == 0 ||
-        amount < 0 ||
         (operation != NativeCountryRuntime::ECONOMY_ASSET_CASH_TO_COHORT &&
          operation != NativeCountryRuntime::ECONOMY_ASSET_CASH_FROM_COHORT)) {
         error = "country_cohort_cash_request_invalid";
         return false;
+    }
+    if (amount < 0) {
+        // An indebted estate or residue has no cash to hand over. Structural
+        // callers keep the drained cohort and its debt rather than mint or burn.
+        error = "country_cohort_cash_negative_balance";
+        return true;
     }
     if (amount == 0) return true;
     if (country_handle == 0) {
@@ -3648,8 +3653,13 @@ bool NativeEconomyRuntime::run_government_research_procurement(std::string &erro
     // slice. Country research may then spend that stock and enqueue more work
     // while this economy epoch is still open. Re-read live policy when the
     // pass is finished, or when a country had no live demand — never rewrite
-    // in-flight remaining mid-purchase (that would over-buy).
-    if (!continuation.active) {
+    // in-flight remaining mid-purchase (that would over-buy). Phase 1 only
+    // books ceiling signals against remaining; a zero there is not a bought
+    // gap, and waking on it rewinds the cursor forever once candidates
+    // exceed one slice.
+    if (!continuation.active &&
+        (_country_research_procurement_phase == 0 ||
+         _country_research_procurement_done)) {
         const size_t country_count = static_cast<size_t>(
             std::max(0, _epoch_country_count));
         if (_country_research_procurement_budgets.size() != country_count ||
@@ -3980,11 +3990,227 @@ bool NativeEconomyRuntime::capture_worker_day_input(
             !capture_trade_visibility(input.geography[5].empty() ? nullptr : input.geography[5].data(),
                 static_cast<int32_t>(input.geography[5].size()), input.fog_solved, true, error)) return false;
     }
-    return !needs_building_context_capture(input.day) ||
-        capture_building_context(input.day, input.fields[7].data(),
+    if (needs_building_context_capture(input.day) &&
+        !capture_building_context(input.day, input.fields[7].data(),
             input.geography[0].data(), input.geography[1].data(), input.geography[2].data(),
             input.geography[3].data(), input.geography[4].data(), input.neighbors.data(),
-            reserves, changes, _cell_count.get(), error);
+            reserves, changes, _cell_count.get(), error)) return false;
+    return !worker_natural_resources_configured() ||
+        advance_worker_resource_reserves(input, error);
+}
+
+void NativeEconomyRuntime::configure_worker_natural_resources(
+        std::vector<WorkerNaturalResource> resources) {
+    _worker_natural_resources = std::move(resources);
+    _worker_resource_seeded = false;
+}
+
+void NativeEconomyRuntime::mark_worker_resource_mirror_cell(int32_t cell) {
+    if (cell < 0 || static_cast<size_t>(cell) >= _worker_resource_mirror_mark.size() ||
+        _worker_resource_mirror_mark[static_cast<size_t>(cell)] != 0) return;
+    _worker_resource_mirror_mark[static_cast<size_t>(cell)] = 1;
+    _worker_resource_mirror_cells.push_back(cell);
+}
+
+void NativeEconomyRuntime::take_worker_resource_mirror_cells(std::vector<int32_t> &out) {
+    out.swap(_worker_resource_mirror_cells);
+    _worker_resource_mirror_cells.clear();
+    for (const int32_t cell : out)
+        _worker_resource_mirror_mark[static_cast<size_t>(cell)] = 0;
+    std::sort(out.begin(), out.end());
+}
+
+void NativeEconomyRuntime::write_worker_resource_stock(size_t lane) {
+    if (lane >= resource_stock_lanes().size() || lane >= _worker_resource_reserve.size()) return;
+    const float reserve_f = _worker_resource_reserve[lane];
+    const float change_f = _worker_resource_extra[lane];
+    const double reserve = std::isfinite(reserve_f) ? static_cast<double>(reserve_f) : 0.0;
+    const double pending = std::isfinite(change_f) ? static_cast<double>(change_f) : 0.0;
+    const double value = std::max(0.0, reserve + std::min(0.0, pending));
+    resource_stock_lanes().write_scalar(lane, static_cast<int64_t>(std::min<double>(
+        value * static_cast<double>(GOODS_SCALE),
+        static_cast<double>(std::numeric_limits<int64_t>::max()))));
+}
+
+bool NativeEconomyRuntime::advance_worker_resource_reserves(
+        const RuntimeEconomyDayInput &input, std::string &error) {
+    constexpr int32_t WILDERNESS_STRIDE = 60;
+    constexpr int32_t LIVE_CATCHUP_MAX_DAYS = 5;
+    const int32_t count = _cell_count.get();
+    const size_t resource_count = _resource_ids.size();
+    const size_t lanes = static_cast<size_t>(count) * resource_count;
+    if (count <= 0 || resource_count == 0) return true;
+    const int32_t day = static_cast<int32_t>(std::clamp<int64_t>(
+        input.day, 0, std::numeric_limits<int32_t>::max()));
+    if (!_worker_resource_seeded) {
+        const bool restored = _resource_stock_restored_pending_capture &&
+            resource_stock_lanes().size() == lanes;
+        _worker_resource_reserve.assign(lanes, 0.0f);
+        _worker_resource_extra.assign(lanes, 0.0f);
+        for (size_t r = 0; r < resource_count; ++r) {
+            const auto &src = input.reserves[r];
+            const auto &change = input.changes[r];
+            for (int32_t cell = 0; cell < count; ++cell) {
+                const size_t lane = r * static_cast<size_t>(count) + cell;
+                if (restored) {
+                    _worker_resource_reserve[lane] = static_cast<float>(
+                        static_cast<double>(resource_stock_lanes()[lane]) /
+                        static_cast<double>(GOODS_SCALE));
+                } else {
+                    if (!src.empty()) _worker_resource_reserve[lane] = src[cell];
+                    if (!change.empty()) _worker_resource_extra[lane] = change[cell];
+                }
+            }
+        }
+        if (resource_stock_lanes().size() != lanes)
+            resource_stock_lanes().assign(lanes, 0);
+        _worker_resource_extra_dirty.assign(resource_count, 1);
+        _worker_resource_last_day.assign(static_cast<size_t>(count), std::max(day - 1, 0));
+        _worker_resource_was_live.assign(static_cast<size_t>(count), 0);
+        _worker_resource_cell_live.assign(static_cast<size_t>(count), 0);
+        _worker_resource_mirror_mark.assign(static_cast<size_t>(count), 0);
+        _worker_resource_mirror_cells.clear();
+        _worker_resource_regen_factors.assign(static_cast<size_t>(count), 1.0f);
+        _worker_resource_seeded = true;
+        for (size_t lane = 0; lane < lanes; ++lane) write_worker_resource_stock(lane);
+        for (int32_t cell = 0; cell < count; ++cell) mark_worker_resource_mirror_cell(cell);
+    }
+    if (_worker_resource_reserve.size() != lanes || _worker_resource_extra.size() != lanes ||
+        _worker_resource_last_day.size() != static_cast<size_t>(count)) {
+        error = "economy_worker_resource_shape_invalid";
+        return false;
+    }
+
+    std::vector<int32_t> cells;
+    std::vector<int32_t> cell_dt;
+    cells.reserve(_economy_live_cells.size() + static_cast<size_t>(count / WILDERNESS_STRIDE + 1));
+    auto dt_for = [&](int32_t cell, bool live) {
+        int32_t elapsed = std::clamp(day - _worker_resource_last_day[static_cast<size_t>(cell)],
+                                     1, WILDERNESS_STRIDE);
+        if (live && _worker_resource_was_live[static_cast<size_t>(cell)] != 0)
+            elapsed = std::clamp(elapsed, 1, LIVE_CATCHUP_MAX_DAYS);
+        return elapsed;
+    };
+    for (const int32_t cell : _economy_live_cells) {
+        if (cell < 0 || cell >= count) continue;
+        _worker_resource_cell_live[static_cast<size_t>(cell)] = 1;
+        if (_worker_resource_last_day[static_cast<size_t>(cell)] >= day) continue;
+        cells.push_back(cell);
+        cell_dt.push_back(dt_for(cell, true));
+    }
+    for (int32_t cell = day % WILDERNESS_STRIDE; cell < count; cell += WILDERNESS_STRIDE) {
+        if (_worker_resource_cell_live[static_cast<size_t>(cell)] != 0 ||
+            _worker_resource_last_day[static_cast<size_t>(cell)] >= day) continue;
+        cells.push_back(cell);
+        cell_dt.push_back(dt_for(cell, false));
+    }
+
+    const bool have_habitat = input.resource_habitat.size() == static_cast<size_t>(count);
+    const uint8_t *habitat = have_habitat ? input.resource_habitat.data() : nullptr;
+    const bool have_water = input.geography[3].size() == static_cast<size_t>(count);
+    const uint8_t *water = have_water ? input.geography[3].data() : nullptr;
+    const ModifierRuntime *modifier = _modifier_runtime;
+    const bool modifier_ready = modifier != nullptr && modifier->configured();
+    const int32_t generic_stat = modifier_ready
+        ? modifier->stat_id_for_key("economy.city.resource.regen_factor") : -1;
+
+    if (!cells.empty()) {
+        std::vector<NatResRuntime> active;
+        active.reserve(resource_count);
+        for (size_t r = 0; r < resource_count; ++r) {
+            const WorkerNaturalResource &config = _worker_natural_resources[r];
+            if (config.habitat_mode < 0 || config.habitat_mode > 5) continue;
+            if (!config.constants.has_natural_dynamics && _worker_resource_extra_dirty[r] == 0)
+                continue;
+            NatResRuntime rr = config.constants;
+            rr.resource_index = static_cast<int>(r);
+            rr.R = _worker_resource_reserve.data() + r * static_cast<size_t>(count);
+            rr.X = _worker_resource_extra.data() + r * static_cast<size_t>(count);
+            rr.use_extra = true;
+            rr.temperature = config.temperature_signal == 1
+                ? input.fields[1].data() : input.fields[0].data();
+            rr.moisture = config.moisture_signal == 1
+                ? input.fields[3].data() : input.fields[2].data();
+            rr.land_gate = config.habitat_mode == 1 && have_water;
+            rr.habitat_bit = natres_habitat_bit(config.habitat_mode);
+            rr.regen_factors = nullptr;
+            rr.has_regen_modifier = false;
+            active.push_back(rr);
+        }
+        double seg = 0.0;
+        for (NatResRuntime &rr : active) {
+            const int32_t resource_stat = modifier_ready
+                ? modifier->stat_id_for_key("economy.city.resource." +
+                    _resource_ids[static_cast<size_t>(rr.resource_index)] + ".regen_factor")
+                : -1;
+            if (generic_stat >= 0 || resource_stat >= 0) {
+                std::vector<float> &factors = _worker_resource_regen_factors;
+                bool any = false;
+                for (const int32_t cell : cells) {
+                    double factor = 1.0;
+                    if (generic_stat >= 0)
+                        factor = modifier->effective_value(ModifierRuntime::ECONOMY,
+                            generic_stat, 0, static_cast<uint64_t>(cell), 1.0);
+                    if (resource_stat >= 0)
+                        factor = modifier->effective_value(ModifierRuntime::ECONOMY,
+                            resource_stat, 0, static_cast<uint64_t>(cell), factor);
+                    if (!std::isfinite(factor) || factor < 0.0) factor = 1.0;
+                    factors[static_cast<size_t>(cell)] = static_cast<float>(factor);
+                    if (std::fabs(factor - 1.0) > 1e-7) any = true;
+                }
+                if (any) {
+                    // Factors are rewritten per resource; run this resource now.
+                    rr.regen_factors = factors.data();
+                    rr.has_regen_modifier = true;
+                    for (size_t k = 0; k < cells.size(); ++k)
+                        natres_apply_one_cell(rr, cells[k], cell_dt[k], have_habitat,
+                                              habitat, have_water, water, seg);
+                    rr.R = nullptr;
+                }
+            }
+        }
+        for (size_t k = 0; k < cells.size(); ++k) {
+            for (const NatResRuntime &rr : active) {
+                if (rr.R == nullptr) continue;
+                natres_apply_one_cell(rr, cells[k], cell_dt[k], have_habitat,
+                                      habitat, have_water, water, seg);
+            }
+        }
+        for (const int32_t cell : cells) {
+            _worker_resource_last_day[static_cast<size_t>(cell)] = day;
+            _worker_resource_was_live[static_cast<size_t>(cell)] =
+                _worker_resource_cell_live[static_cast<size_t>(cell)];
+            for (size_t r = 0; r < resource_count; ++r)
+                write_worker_resource_stock(r * static_cast<size_t>(count) + cell);
+            mark_worker_resource_mirror_cell(cell);
+        }
+    }
+    for (const int32_t cell : _economy_live_cells) {
+        if (cell >= 0 && cell < count) _worker_resource_cell_live[static_cast<size_t>(cell)] = 0;
+    }
+    return true;
+}
+
+void NativeEconomyRuntime::fold_worker_resource_deltas() {
+    if (!_worker_resource_seeded) return;
+    const int32_t count = _cell_count.get();
+    if (count <= 0) return;
+    std::vector<size_t> touched = _resource_touched_lanes;
+    std::sort(touched.begin(), touched.end());
+    touched.erase(std::unique(touched.begin(), touched.end()), touched.end());
+    for (const size_t lane : touched) {
+        if (lane >= resource_delta_lanes().size() || lane >= _worker_resource_extra.size())
+            continue;
+        const int64_t delta = resource_delta_lanes()[lane];
+        if (delta == 0) continue;
+        _worker_resource_extra[lane] += static_cast<float>(delta) /
+            static_cast<float>(GOODS_SCALE);
+        const size_t resource = lane / static_cast<size_t>(count);
+        if (resource < _worker_resource_extra_dirty.size())
+            _worker_resource_extra_dirty[resource] = 1;
+        write_worker_resource_stock(lane);
+        mark_worker_resource_mirror_cell(static_cast<int32_t>(lane % static_cast<size_t>(count)));
+    }
 }
 
 bool NativeEconomyRuntime::capture_environment(int64_t day_index, const float *temperature,
@@ -4108,7 +4334,7 @@ bool NativeEconomyRuntime::capture_building_context(
     const size_t expected_resource_lanes =
         static_cast<size_t>(count) * resources.size();
     const bool preserve_restored_stock =
-        _resource_stock_restored_pending_capture &&
+        (_resource_stock_restored_pending_capture || _worker_resource_seeded) &&
         resource_stock_lanes().size() == expected_resource_lanes;
     if (!preserve_restored_stock) {
         resource_stock_lanes().assign(expected_resource_lanes, 0);
@@ -4714,6 +4940,8 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
         static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
     _epoch_country_household_consumption_factor_q16.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
+    _epoch_country_death_factor_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
     _epoch_country_resource_global_use_factor_q16.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
     _epoch_country_climate_loss_factor_q16.assign(
@@ -4893,6 +5121,12 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
                     ModifierRuntime::COUNTRY,
                     _country_household_consumption_stat_id,
                     country_handle, 0, 1.0));
+            if (_country_population_death_stat_id >= 0)
+                _epoch_country_death_factor_q16[country] =
+                    modifier_factor_q16(_modifier_runtime->effective_value(
+                        ModifierRuntime::COUNTRY,
+                        _country_population_death_stat_id,
+                        country_handle, 0, 1.0));
             _epoch_country_resource_global_use_factor_q16[country] =
                 modifier_factor_q16(_modifier_runtime->effective_value(
                     ModifierRuntime::COUNTRY, _country_resource_use_stat_id,
@@ -7449,14 +7683,44 @@ void NativeEconomyRuntime::compute_cell_living_costs_from_basis(
         static_cast<int64_t>(market) * market_store().good_count.get();
     const auto stock_begin = market_store().stock.begin() +
         static_cast<int64_t>(market) * market_store().good_count.get();
-    // Living cost now depends on which goods are purchasable (stock > 0), so the
-    // cache must invalidate when the in-stock set changes even if prices did not.
-    // We only need the sign of each stock (a good's exact quantity does not move
-    // living cost), so hash a purchasable-bitset rather than snapshotting stock.
+    // Each variant is weighted by how much of the cell's need its shelf stock
+    // can cover (a quarter day counts as full), quantized to sixteenths: a few
+    // units of a scarce good must not price the whole need. The cache hashes
+    // the quantized coverage.
+    int64_t cell_population = 0;
+    population_store().for_each_in_cell(cell, [&](int32_t slot) {
+        cell_population = saturating_add(cell_population,
+            std::max<int64_t>(0, population_store().population[slot]), sat);
+    });
+    constexpr int64_t COVERAGE_STEP_Q16 = Q16_ONE / 16;
+    thread_local std::vector<int32_t> variant_coverage_q16;
+    variant_coverage_q16.assign(_variants.size(), 0);
     uint64_t stock_presence = 1469598103934665603ULL; // FNV-1a offset basis
-    for (int32_t g = 0; g < market_store().good_count.get(); ++g) {
-        const uint64_t bit = (*(stock_begin + g) > 0) ? 1ULL : 0ULL;
-        stock_presence = (stock_presence ^ bit) * 1099511628211ULL;
+    for (const Need &need : _needs) {
+        const int64_t daily_need = saturating_mul(
+            std::max<int64_t>(1, cell_population),
+            std::max<int64_t>(1, need.base_qty_per_person), sat);
+        for (int32_t v = 0; v < need.variant_count; ++v) {
+            const int32_t variant = need.variant_begin + v;
+            const VariantChoice &vc = _variants[variant];
+            int64_t purchasable = vc.component_count > 0
+                ? std::numeric_limits<int64_t>::max() : 0;
+            for (int32_t c = 0; c < vc.component_count; ++c) {
+                const NeedComponent &comp = _components[vc.component_begin + c];
+                purchasable = std::min(purchasable, mul_div_sat(
+                    std::max<int64_t>(0, *(stock_begin + comp.good_id)),
+                    GOODS_SCALE, std::max<int64_t>(1, comp.qty_per_need), sat));
+            }
+            const int64_t coverage = purchasable <= 0 ? 0 :
+                std::min<int64_t>(Q16_ONE, mul_div_sat(
+                    purchasable, 4 * Q16_ONE, daily_need, sat)) /
+                    COVERAGE_STEP_Q16 * COVERAGE_STEP_Q16;
+            variant_coverage_q16[static_cast<size_t>(variant)] =
+                static_cast<int32_t>(coverage);
+            stock_presence = (stock_presence ^
+                static_cast<uint64_t>(coverage / COVERAGE_STEP_Q16)) *
+                1099511628211ULL;
+        }
     }
     const bool same_basis =
         cached_prices.size() == static_cast<size_t>(market_store().good_count.get()) &&
@@ -7503,21 +7767,17 @@ void NativeEconomyRuntime::compute_cell_living_costs_from_basis(
             int64_t avail_score = 0;    // Sum(score) over in-stock variants
             int64_t avail_ref_num = 0;  // Sum(reference_price * score) over in-stock
             int64_t min_avail_price = 0; // Cheapest in-stock variant unit price
+            int64_t avail_coverage = 0;  // Share of the daily need on the shelf
             for (int32_t v = 0; v < need.variant_count; ++v) {
                 const int32_t variant = need.variant_begin + v;
-                // A variant is purchasable only if every component good has stock.
                 const VariantChoice &vc = _variants[variant];
-                bool in_stock = vc.component_count > 0;
-                for (int32_t c = 0; c < vc.component_count; ++c) {
-                    const NeedComponent &comp = _components[vc.component_begin + c];
-                    if (market_store().stock[market_store().index(market, comp.good_id)] <= 0) {
-                        in_stock = false;
-                        break;
-                    }
-                }
-                if (!in_stock) continue;
+                const int64_t coverage = variant_coverage_q16[static_cast<size_t>(variant)];
+                if (coverage <= 0) continue;
+                avail_coverage = std::min<int64_t>(Q16_ONE,
+                    saturating_add(avail_coverage, coverage, sat));
                 const int64_t vp = variant_prices[variant];
-                const int64_t vs = variant_scores[variant];
+                const int64_t vs = mul_div_sat(
+                    variant_scores[variant], coverage, Q16_ONE, sat);
                 avail_num = saturating_add(avail_num,
                     saturating_mul(vp, vs, sat), sat);
                 avail_score = saturating_add(avail_score, vs, sat);
@@ -7528,7 +7788,7 @@ void NativeEconomyRuntime::compute_cell_living_costs_from_basis(
                 }
             }
             if (avail_score <= 0) {
-                // Every variant of this need is out of stock: the consumer cannot
+                // Every variant of this need is (nearly) out of stock: the consumer cannot
                 // spend anything on it, so it contributes nothing to living cost.
                 // (Wage floors should only cover goods people can actually buy;
                 // an unpurchasable need does not create a real cost of living, and
@@ -7583,6 +7843,7 @@ void NativeEconomyRuntime::compute_cell_living_costs_from_basis(
                 static_cast<int32_t>(_need_ids.size()) + need.stable_id;
             quantity = saturating_mul(
                 quantity, _ethnicity_need_factor_q16[factor], sat) >> 16;
+            quantity = mul_div_sat(quantity, avail_coverage, Q16_ONE, sat);
             total = saturating_add(total, mul_div_sat(
                 quantity, weighted_price, GOODS_SCALE, sat), sat);
         }
@@ -8241,6 +8502,12 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
         bool hard_input_market_available = true;
         for (int32_t i = 0; i < type.input_count; ++i) {
             const ProductionInput &item = _building_inputs[type.input_begin + i];
+            // Soft inputs add a productivity bonus on top of the base recipe,
+            // and production buys them only when the bonus output is worth
+            // more than their outlay. The quote here prices base output only,
+            // so billing a soft input would charge for a bonus never counted.
+            if (std::clamp<int64_t>(item.required_q16, 0, Q16_ONE) < Q16_ONE)
+                continue;
             int64_t best_effective_price = std::numeric_limits<int64_t>::max();
             for (int32_t c = item.candidate_begin;
                  c < item.candidate_begin + item.candidate_count; ++c) {
@@ -8446,23 +8713,55 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
             // survival producer can legitimately receive zero cash while its
             // retained food fully pays for the owner's livelihood; treating
             // that period as zero revenue creates a self reinforcing shutdown.
-            const int64_t observed_receipts = saturating_add(
-                saturating_add(
-                    saturating_add(std::max<int64_t>(0, group.last_market_receipt),
-                                   std::max<int64_t>(0, group.last_bullion_mint_receipt),
-                                   _saturation_count),
-                    std::max<int64_t>(0, group.last_producer_support_receipt),
-                    _saturation_count),
-                std::max<int64_t>(0, group.last_in_kind_livelihood_value),
+            const int64_t observed_sales = saturating_add(
+                saturating_add(std::max<int64_t>(0, group.last_market_receipt),
+                               std::max<int64_t>(0, group.last_bullion_mint_receipt),
+                               _saturation_count),
+                std::max<int64_t>(0, group.last_producer_support_receipt),
                 _saturation_count);
+            const int64_t observed_in_kind = std::max<int64_t>(
+                0, group.last_in_kind_livelihood_value);
             // `last_observed_capacity_days_q16` already contains the prior
             // group count, elapsed days, and Q16 workforce share. Convert
             // the receipt to a full-capacity per-building-day quote here;
             // apply the current effective scale only once below.
+            //
+            // Production ran at min(workforce, previous plan). Sales scale
+            // with that chosen activity, so divide it back out; otherwise a
+            // group parked on its survival floor reads its own throttling as
+            // low prices and never quotes a profitable full run again. In-kind
+            // retention is capped by the owner basket, so it is not scaled.
+            const int64_t observed_days = std::max<int64_t>(
+                1, group.last_observed_capacity_days_q16);
+            const int64_t observed_workforce_q16 = std::clamp<int64_t>(
+                observed_days / std::max<int64_t>(1, saturating_mul(
+                    group.count, std::max(1, _epoch_days.get()),
+                    _saturation_count)), 0, Q16_ONE);
+            const int64_t previous_plan_q16 = group_index >= 0 &&
+                    group_index < static_cast<int32_t>(
+                        _building_planned_capacity_before_climate_q16.size())
+                ? std::clamp<int64_t>(
+                    _building_planned_capacity_before_climate_q16[group_index],
+                    0, Q16_ONE)
+                : Q16_ONE;
+            // A zero plan observed nothing about prices; a tiny probe floor
+            // is capped so one noisy sale cannot be amplified without bound.
+            const int64_t chosen_activity_share_q16 = previous_plan_q16 > 0 &&
+                    observed_workforce_q16 > 0 &&
+                    previous_plan_q16 < observed_workforce_q16
+                ? std::max<int64_t>(Q16_ONE / 32, mul_div_sat(
+                    previous_plan_q16, Q16_ONE, observed_workforce_q16,
+                    _saturation_count))
+                : Q16_ONE;
             full_capacity_revenue = group.last_observed_capacity_days_q16 > 0
-                ? mul_div_sat(observed_receipts, Q16_ONE,
-                    std::max<int64_t>(1,
-                        group.last_observed_capacity_days_q16),
+                ? saturating_add(
+                    mul_div_sat(observed_sales, Q16_ONE,
+                        std::max<int64_t>(1, mul_div_sat(observed_days,
+                            chosen_activity_share_q16, Q16_ONE,
+                            _saturation_count)),
+                        _saturation_count),
+                    mul_div_sat(observed_in_kind, Q16_ONE, observed_days,
+                        _saturation_count),
                     _saturation_count)
                 : 0;
             revenue = mul_div_sat(full_capacity_revenue,
@@ -8647,6 +8946,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
             bool physical_inputs_available = true;
             int64_t soft_coverage_scale_q16 = Q16_ONE;
             int64_t restart_input_unit_cost = 0;
+            int64_t restart_hard_input_unit_cost = 0;
             for (int32_t i = 0; i < type.input_count && physical_inputs_available; ++i) {
                 const ProductionInput &item = _building_inputs[type.input_begin + i];
                 const int64_t required_q16 = std::clamp<int64_t>(
@@ -8691,6 +8991,9 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                         restart_input_unit_cost = saturating_add(
                             restart_input_unit_cost, best_unit_cost,
                             _saturation_count);
+                        restart_hard_input_unit_cost = saturating_add(
+                            restart_hard_input_unit_cost, best_unit_cost,
+                            _saturation_count);
                     }
                 } else if (candidate_available &&
                     best_unit_cost != std::numeric_limits<int64_t>::max()) {
@@ -8705,13 +9008,19 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                         soft_coverage_scale_q16, Q16_ONE - required_q16);
                 }
             }
+            // Production clamps a resource-limited group to its capacity or
+            // safe-harvest budget, so restart needs one building's worth, not
+            // the whole group: 35 hunting camps built in a good decade need
+            // far more than the regrown game's safe harvest and would
+            // otherwise stay shut forever while the cell starves of protein.
             bool physical_resources_available = true;
             if (type.behavior_id == 1 || type.behavior_id == 2) {
                 for (int32_t i = 0; i < type.resource_count; ++i) {
                     const ResourceAmount &item = _building_resources[type.resource_begin + i];
                     const int64_t raw_base = item.mode == 1
-                        ? saturating_mul(group.count, item.quantity, _saturation_count)
-                        : saturating_mul(building_days, item.quantity, _saturation_count);
+                        ? item.quantity
+                        : saturating_mul(std::max(1, _epoch_days.get()),
+                            item.quantity, _saturation_count);
                     const int64_t base = effective_resource_use_quantity(
                         group.cell, item.resource_id, raw_base, _saturation_count);
                     if (base > available_resource_amount(item, group.cell)) {
@@ -8724,15 +9033,17 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                 group.cell, group.owner_signature_id);
             const int64_t owner_slot_cash = owner_slot >= 0
                 ? std::max<int64_t>(0, population_store().funds[owner_slot]) : 0;
-            // Restart finance bills only executable inputs (hard stocked + soft
-            // stocked). Unstocked soft tools must not demand credit that blocks
-            // a bare-hands restart after owners were shed into unemployment.
+            // Restart finance bills only hard inputs and employee wages. Soft
+            // tools are optional productivity bought from the recruited
+            // owners' carried savings; billing them, or owner livelihood
+            // (paid by the lot's own output, cash or in kind), made every
+            // suspended lot with delinquent merchant debt need credit it could
+            // never get, so a profitable hunting camp stayed shut forever
+            // while its cell starved.
             const int64_t restart_cost = saturating_add(
-                saturating_add(saturating_mul(restart_input_unit_cost, building_days,
+                saturating_mul(restart_hard_input_unit_cost, building_days,
                     _saturation_count), saturating_mul(employee_wages,
-                    building_days, _saturation_count), _saturation_count),
-                saturating_mul(owner_living_cost, building_days,
-                    _saturation_count), _saturation_count);
+                    building_days, _saturation_count), _saturation_count);
             const int64_t credit_needed = std::max<int64_t>(0,
                 restart_cost - std::min(restart_cost, owner_slot_cash));
             const bool finance_available = credit_needed == 0 ||
@@ -9520,6 +9831,16 @@ int64_t NativeEconomyRuntime::credit_local_merchants(int32_t cell, int64_t amoun
                               share, 0);
     }
     return distributed;
+}
+
+bool NativeEconomyRuntime::local_merchants_can_receive(int32_t cell) const {
+    if (cell < 0 || cell >= _cell_count.get() ||
+        _merchant_offsets.size() != static_cast<size_t>(_cell_count.get() + 1))
+        return false;
+    for (int32_t k = _merchant_offsets[cell]; k < _merchant_offsets[cell + 1]; ++k) {
+        if (population_store().population[_merchant_slots[k]] > 0) return true;
+    }
+    return false;
 }
 
 int64_t NativeEconomyRuntime::debit_local_merchants(int32_t cell, int64_t amount,
@@ -10900,10 +11221,41 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
                 producer_support_cash_receipt,
                 producer_support_receipt_value(group.cell, output.good_id,
                     support_quantity, sat), sat);
+            int64_t unit_price = std::max<int64_t>(0,
+                market_store().price[market_store().index(market, output.good_id)]);
+            // Self-provisioned survival food is livelihood, not a thin market
+            // scrap. Floor its mobility/quote value at living-cost calories so
+            // a collapsed local price cannot make foraging look worthless.
+            if (retained > 0 &&
+                output.good_id >= 0 &&
+                output.good_id < static_cast<int32_t>(
+                    _survival_food_good_mask.size()) &&
+                _survival_food_good_mask[output.good_id] != 0 &&
+                output.good_id < static_cast<int32_t>(
+                    _good_food_equivalent_q16.size())) {
+                const int64_t food_eq_coeff = std::max<int64_t>(0,
+                    _good_food_equivalent_q16[
+                        static_cast<size_t>(output.good_id)]);
+                const int64_t living = group.cell >= 0 &&
+                        group.cell < static_cast<int32_t>(
+                            _cell_living_cost_per_capita.size())
+                    ? std::max<int64_t>(0,
+                        _cell_living_cost_per_capita[group.cell])
+                    : 0;
+                const int64_t survival_ration = std::max<int64_t>(
+                    1, _carrying_survival_food_per_person);
+                if (food_eq_coeff > 0 && living > 0) {
+                    const int64_t living_unit = mul_div_sat(
+                        saturating_mul(living, food_eq_coeff, sat),
+                        GOODS_SCALE,
+                        saturating_mul(Q16_ONE, survival_ration, sat),
+                        sat);
+                    unit_price = std::max(unit_price, living_unit);
+                }
+            }
             result.in_kind_retail_value = saturating_add(
-                result.in_kind_retail_value, mul_div_sat(retained,
-                    std::max<int64_t>(0, market_store().price[market_store().index(market,
-                        output.good_id)]), GOODS_SCALE, sat), sat);
+                result.in_kind_retail_value,
+                mul_div_sat(retained, unit_price, GOODS_SCALE, sat), sat);
         }
         result.cash_receipt = saturating_add(merchant_cash_receipt,
             producer_support_cash_receipt, sat);
@@ -10939,11 +11291,11 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
         for (int32_t i = 0; i < type.output_count; ++i) {
             const int32_t good = _building_outputs[type.output_begin + i].good_id;
             if (good >= 0 && good < static_cast<int32_t>(_survival_food_good_mask.size()) &&
-                _survival_food_good_mask[good] != 0 && group.cell >= 0 &&
-                group.cell < _cell_count.get() && market_store().last_shortage_q16.size() > 0 &&
-                market_store().last_shortage_q16[market_store().index(market, good)] >=
-                    Q16_ONE / 8) {
+                _survival_food_good_mask[good] != 0) {
+                // Hungry mobility prefers any feasible self-provisioning food
+                // lot, not only cells already reporting a shortage spike.
                 result.survival_priority = result.feasible;
+                break;
             }
         }
         // Normalized economic decomposition.  These fields are projections of
@@ -12602,7 +12954,8 @@ bool NativeEconomyRuntime::commit_structural(const StructuralCommand &cmd,
             // money and do not release the slot.
             if (moved == 0 &&
                 (cohort_cash_error == "country_economy_operation_gate_closed" ||
-                 cohort_cash_error == "country_cohort_cash_treasury_unowned"))
+                 cohort_cash_error == "country_cohort_cash_treasury_unowned" ||
+                 cohort_cash_error == "country_cohort_cash_negative_balance"))
                 return true;
             error = "country_treasury_estate_transfer_failed";
             return false;
@@ -12832,7 +13185,8 @@ bool NativeEconomyRuntime::move_cohort_population(int32_t source, int32_t dest_c
             // keep residual funds on the drained slot until Country peer opens.
             if (moved == 0 &&
                 (cohort_cash_error == "country_economy_operation_gate_closed" ||
-                 cohort_cash_error == "country_cohort_cash_treasury_unowned")) {
+                 cohort_cash_error == "country_cohort_cash_treasury_unowned" ||
+                 cohort_cash_error == "country_cohort_cash_negative_balance")) {
                 if (source_drained_out != nullptr) *source_drained_out = false;
                 return true;
             }
@@ -13344,10 +13698,59 @@ bool NativeEconomyRuntime::worker_run_compact_slice(int64_t day_index,
     return true;
 }
 
+void NativeEconomyRuntime::diag_stage_money_probe(const char *where) {
+    static const char *env = std::getenv("PK_DIAG_STAGE_MONEY");
+    static const int64_t from_day = env ? std::atoll(env) : -1;
+    if (from_day < 0 || _current_day.get() < from_day) return;
+    static int64_t last_diff = 0;
+    static bool armed = false;
+    if (!armed) {
+        armed = true;
+        std::fprintf(stderr, "[diag-stage-money] armed day=%lld where=%s\n",
+            static_cast<long long>(_current_day.get()), where);
+    }
+    static int64_t probe_day = -1;
+    static bool post_commit = false;
+    if (probe_day != _current_day.get()) {
+        probe_day = _current_day.get();
+        post_commit = false;
+    }
+    const AuditTotals now = audit_totals();
+    int64_t money_now = now.cohort_funds + now.country_cash + now.escrow_cash;
+    if (!post_commit && std::strcmp(where, "fiscal_settlement") != 0) {
+        // Before commit_fiscal folds lanes into escrow, withheld tax and paid
+        // subsidy live only in the lane tallies.
+        for (size_t lane = 0; lane < _fiscal_epoch_collected.size(); ++lane)
+            money_now += _fiscal_epoch_collected[lane];
+        for (size_t lane = 0; lane < _fiscal_epoch_paid.size(); ++lane)
+            money_now -= _fiscal_epoch_paid[lane];
+        for (size_t lane = 0; lane < _tariff_epoch_collected.size(); ++lane)
+            money_now += _tariff_epoch_collected[lane];
+        for (size_t lane = 0; lane < _tariff_epoch_paid.size(); ++lane)
+            money_now -= _tariff_epoch_paid[lane];
+    }
+    if (std::strcmp(where, "fiscal_settlement") == 0) post_commit = true;
+    const int64_t money_open = _opening_totals.cohort_funds +
+        _opening_totals.country_cash + _opening_totals.escrow_cash;
+    const int64_t diff = money_now - (money_open + _explicit_money_mint - _explicit_money_burn);
+    if (diff != last_diff) {
+        std::fprintf(stderr,
+            "[diag-stage-money] day=%lld where=%s stage=%d executed=%d substage=%s diff=%lld delta=%lld\n",
+            static_cast<long long>(_current_day.get()), where, static_cast<int>(_stage),
+            static_cast<int>(_executed_stage), _executed_substage.c_str(),
+            static_cast<long long>(diff), static_cast<long long>(diff - last_diff));
+        last_diff = diff;
+    }
+}
+
 Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool compact) {
     const auto slice_start = Clock::now();
     _executed_stage = _stage;
     _executed_substage.clear();
+    struct DiagMoneyGuard {
+        NativeEconomyRuntime *runtime;
+        ~DiagMoneyGuard() { runtime->diag_stage_money_probe("slice"); }
+    } diag_money_guard{this};
     // Report planner wall time for this native slice only. The planner can run
     // before start_epoch(), so epoch metric resets cannot own this counter.
     _trade_plan_ms = 0.0;
@@ -18548,6 +18951,7 @@ NativeEconomyRuntime::advance_building_commit_chunk(
 
 bool NativeEconomyRuntime::run_building_commit_slice(int64_t &work_done,
                                                      std::string &error) {
+    struct DiagGuard { NativeEconomyRuntime *r; ~DiagGuard() { r->diag_stage_money_probe("building_commit"); } } diag_guard{this};
     error.clear();
     work_done = 0;
     if (!_bootstrapped || _fatal) {
@@ -19432,6 +19836,7 @@ market_result.price_numeric_ceiling_hits, _saturation_count);
 
 bool NativeEconomyRuntime::run_household_market_drain(int64_t &work_done,
                                                       std::string &error) {
+    struct DiagGuard { NativeEconomyRuntime *r; ~DiagGuard() { r->diag_stage_money_probe("household_market"); } } diag_guard{this};
     error.clear();
     if (!_bootstrapped || _fatal) {
         return true;
@@ -20049,6 +20454,7 @@ bool NativeEconomyRuntime::run_structural_commit_drain(int64_t &work_done,
 
 bool NativeEconomyRuntime::run_building_employment_drain(int64_t &work_done,
                                                           std::string &error) {
+    struct DiagGuard { NativeEconomyRuntime *r; ~DiagGuard() { r->diag_stage_money_probe("employment"); } } diag_guard{this};
     error.clear();
     if (!_bootstrapped || _fatal) {
         return true;
@@ -20128,6 +20534,7 @@ bool NativeEconomyRuntime::run_building_employment_drain(int64_t &work_done,
 
 bool NativeEconomyRuntime::run_building_production_drain(int64_t &work_done,
                                                           std::string &error) {
+    struct DiagGuard { NativeEconomyRuntime *r; ~DiagGuard() { r->diag_stage_money_probe("production"); } } diag_guard{this};
     error.clear();
     if (!_bootstrapped || _fatal) {
         return true;
@@ -20252,6 +20659,7 @@ bool NativeEconomyRuntime::run_building_production_drain(int64_t &work_done,
 
 bool NativeEconomyRuntime::run_family_commit_drain(int64_t &work_done,
                                                     std::string &error) {
+    struct DiagGuard { NativeEconomyRuntime *r; ~DiagGuard() { r->diag_stage_money_probe("family_commit"); } } diag_guard{this};
     error.clear();
     if (!_bootstrapped || _fatal) {
         return true;
@@ -20978,6 +21386,7 @@ bool NativeEconomyRuntime::run_person_commit_slice(int64_t &work_done,
 
 bool NativeEconomyRuntime::run_person_commit_drain(int64_t &work_done,
                                                     std::string &error) {
+    struct DiagGuard { NativeEconomyRuntime *r; ~DiagGuard() { r->diag_stage_money_probe("person_commit"); } } diag_guard{this};
     error.clear();
     if (!_bootstrapped || _fatal) {
         return true;
@@ -21012,6 +21421,7 @@ bool NativeEconomyRuntime::run_person_commit_drain(int64_t &work_done,
 
 bool NativeEconomyRuntime::run_aggregate_publish_drain(int64_t &work_done,
                                                        std::string &error) {
+    diag_stage_money_probe("publish_entry");
     error.clear();
     if (!_bootstrapped || _fatal) {
         return true;
@@ -22391,6 +22801,16 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     resource_delta_lanes().clear();
     resource_lane_generation_lanes().clear();
     _resource_stock_restored_pending_capture = false;
+    _worker_resource_seeded = false;
+    _worker_resource_reserve.clear();
+    _worker_resource_extra.clear();
+    _worker_resource_extra_dirty.clear();
+    _worker_resource_last_day.clear();
+    _worker_resource_was_live.clear();
+    _worker_resource_cell_live.clear();
+    _worker_resource_mirror_mark.clear();
+    _worker_resource_mirror_cells.clear();
+    _worker_resource_regen_factors.clear();
     _resource_touched_lanes.clear();
     _last_published_resource_touched_lanes.clear();
     _resource_current_generation = 0;
@@ -22417,6 +22837,7 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _epoch_country_climate_profile_loss_factor_q16.clear();
     _epoch_country_production_input_factor_q16.clear();
     _epoch_country_household_consumption_factor_q16.clear();
+    _epoch_country_death_factor_q16.clear();
     _epoch_country_resource_global_use_factor_q16.clear();
     _epoch_cell_birth_factor_q16.clear();
     _epoch_cell_need_consumption_factor_q16.clear();
@@ -22562,6 +22983,10 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _cell_rain_event_q16.clear();
     _epoch_market_ids.clear();
     _economy_live_cells.clear();
+    {
+        std::lock_guard<std::mutex> lock(_economy_live_cells_published_mutex);
+        _economy_live_cells_published.reset();
+    }
     _epoch_settlement_cells.clear();
     _epoch_building_cells.clear();
     _epoch_plan_cells.clear();

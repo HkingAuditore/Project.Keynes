@@ -2,12 +2,15 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 #include <vector>
 
 #include <godot_cpp/variant/variant.hpp>
 
 namespace pk {
+
+std::FILE *pk_sim_trace_file();
 
 using namespace godot;
 
@@ -141,14 +144,22 @@ void NativeEconomyRuntime::rebuild_economy_live_cells() {
     _economy_live_cells.erase(
         std::unique(_economy_live_cells.begin(), _economy_live_cells.end()),
         _economy_live_cells.end());
+    auto published = std::make_shared<const std::vector<int32_t>>(_economy_live_cells);
+    std::lock_guard<std::mutex> lock(_economy_live_cells_published_mutex);
+    _economy_live_cells_published = std::move(published);
 }
 
 PackedInt32Array NativeEconomyRuntime::economy_live_cells_query() {
-    rebuild_economy_live_cells();
+    std::shared_ptr<const std::vector<int32_t>> cells;
+    {
+        std::lock_guard<std::mutex> lock(_economy_live_cells_published_mutex);
+        cells = _economy_live_cells_published;
+    }
     PackedInt32Array out;
-    out.resize(static_cast<int32_t>(_economy_live_cells.size()));
-    for (int32_t i = 0; i < static_cast<int32_t>(_economy_live_cells.size()); ++i)
-        out[i] = _economy_live_cells[static_cast<size_t>(i)];
+    if (!cells) return out;
+    out.resize(static_cast<int32_t>(cells->size()));
+    for (int32_t i = 0; i < static_cast<int32_t>(cells->size()); ++i)
+        out[i] = (*cells)[static_cast<size_t>(i)];
     return out;
 }
 
@@ -666,6 +677,24 @@ void NativeEconomyRuntime::lock_investment_cycle(int64_t day_index) {
 }
 
 void NativeEconomyRuntime::maybe_lock_cadence_cycles(int64_t day_index) {
+    // PK_SIM_DAY_TRACE：周期天数取决于实测耗时，经济在两次运行间分叉时先看这一行。
+    struct CadenceTrace {
+        NativeEconomyRuntime *self; int64_t day; int32_t n0, p0, i0;
+        ~CadenceTrace() {
+            const int32_t n = self->locked_market_cycle_days();
+            const int32_t p = self->locked_plan_cycle_days();
+            const int32_t i = self->locked_investment_cycle_days();
+            if (n == n0 && p == p0 && i == i0) return;
+            if (std::FILE *trace = pk_sim_trace_file()) {
+                std::fprintf(trace, "[econ-cadence] day=%lld n=%d p=%d i=%d ema=%.4f/%.4f/%.4f reason=%d\n",
+                    static_cast<long long>(day), n, p, i,
+                    self->_market_ms_per_knife_ema, self->_slow_ms_per_knife_ema,
+                    self->_investment_ms_per_knife_ema, self->_cadence_change_reason);
+                std::fflush(trace);
+            }
+        }
+    } cadence_trace{this, day_index, _cadence_initialized ? locked_market_cycle_days() : -1,
+        locked_plan_cycle_days(), locked_investment_cycle_days()};
     if (!_cadence_initialized) {
         lock_market_cycle(day_index);
         lock_plan_cycle(day_index);

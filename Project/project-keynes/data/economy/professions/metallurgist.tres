@@ -6,3 +6,4 @@ id = &"metallurgist"
 display_name = "冶金师"
 default_consumption_plan_id = &"artisan_household"
 technology_tags = PackedStringArray()
+entry_savings_days = 365

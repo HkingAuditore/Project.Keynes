@@ -73,7 +73,10 @@ PKEC v20 不保存全局国库与逐地块科技，header 记录对应 PKCN sche
 恢复顺序必须是 PKCN 后 PKEC；顺序或交叉 hash 不一致返回
 `economy_country_restore_order_or_hash_mismatch`。
 
-## Country AI stage 与 PKAI v1
+## Country AI stage 与 PKAI v2
+
+PKAI v2 在每国记忆末尾增加了开拓失败目标黑名单（`colonize_last_target`、
+`colonize_bad_cursor`、4 个 `colonize_bad_targets`）。v1 存档返回 `pkai_version_unsupported`。
 
 外国 AI 不是独立的 SUS system，它挂在 Country 日内：
 

@@ -143,6 +143,23 @@ Details: `docs/cpp-dots-runtime/native-economy-runtime.md`, section
 - Buy inputs and produce/sell output before wage transfer. Then cap wage transfer by post-sale owner
   cash and pay only committed local employees. Report paid and unpaid wages separately without
   changing total money; arrears do not retroactively cancel current production.
+- Restart finance for a SUSPENDED group bills only hard inputs and employee wages, never soft inputs
+  or owner livelihood. Every restart gate must be reachable by a group with zero owners and delinquent
+  merchant debt; otherwise a profitable bare-hands survival producer (hunting camp) stays shut
+  forever and its cell starves next to unmet demand. Resource gates require one building's worth,
+  not the whole group: under open access (`resource_safe_harvest_q16=0`) extract availability is the
+  remaining stock, which a group that grew in a good decade may never meet at full scale after the
+  stock was hunted down, and production already clamps to it. When adding a
+  recovery gate, check it against both cases (non-executable groups are never liquidated either).
+- Any cash leg paid to local merchants must first check `local_merchants_can_receive(cell)`: a famine
+  can empty every merchant cohort while stock remains, and a failed credit is world-fatal.
+- Survival food floors are substitutes, not three must-buys: `process_market_cell` gives the
+  price-blind `survival_required` floor only to food needs whose cheapest in-stock price index
+  (price / reference) is within 4x of the cheapest food need, and scales dominated needs' elastic
+  demand by `4*cheapest/index`. Without this, a hunted-out meat price drains every household's
+  savings into the merchant and the cell starves next to a cheap, unsold staple pile.
+- A restart-reserved ACTIVE lot (purchase intent, no output/sales) is not an owner mobility source,
+  except when its owner cohort's needs satisfaction is below 0.5; starving owners must be able to leave.
 - Use sorted cell CSR and visit active building cells/groups only. Never scan all building groups
   once per cell or materialize Godot objects in the native graph.
 - Keep pending construction, committed building groups, role fills, per-cohort employment, building

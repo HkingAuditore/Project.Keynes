@@ -260,8 +260,8 @@ public:
     // 这条场就没有任何日频写者。实测表现是非零 cell 恒定在初始那一批（537），而主
     // 线程那侧 240 天内从 914 长到 1845。
     //
-    // 跨天累积由 MapData 承载：每天从 environment 播种进 scratch、算完回灌，所以这里
-    // 只需要把当天的结果暴露出去，worker 不需要自持它。
+    // ACTIVE 下次日从 _committed_soil（即这份 scratch 的副本）起算，而不是从 capture
+    // 的 MapData；首日 / 读档后还没有这份时才从 environment 播种。
     const std::vector<float> &distribute_soil_moisture() const {
         return _distribute_soil_scratch;
     }
@@ -358,6 +358,14 @@ private:
     mutable std::vector<int32_t> _distribute_pre_cover_scratch;
     mutable std::vector<float>   _distribute_soil_scratch;
     mutable std::vector<uint8_t> _distribute_field_init_scratch;
+    // ACTIVE 下这四条没有 store 成员，跨天值靠 writeback extras 经 MapData 回到
+    // capture。锁步时 capture 读到的恰好是 worker 昨天的结果；流水线下主线程回灌
+    // 落后几天取决于机器快慢，capture 读到哪一天并不确定。plan 开头从 kernel 自己
+    // 昨天的输出留一份，两种模式读同一份（空 = 还没有昨天，退回 capture）。
+    mutable std::vector<float>   _committed_soil;
+    mutable std::vector<float>   _committed_insolation_now;
+    mutable std::vector<float>   _committed_insolation_dev;
+    mutable std::vector<float>   _committed_heat_input;
 };
 
 } // namespace pk

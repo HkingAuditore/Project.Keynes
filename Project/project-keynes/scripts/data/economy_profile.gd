@@ -145,6 +145,10 @@ extends Resource
 ## early-era cohort with no luxuries, savings, or development does not collapse
 ## its own birth rate.
 @export_range(1, 65536, 1) var satisfaction_birth_reference_q16: int = 45875
+## Composite at which the birth multiplier reaches `carrying_sat_cap_q16`.
+## Between the two references the bonus above 1.0 rises linearly, and it fades
+## back to 1.0 as carrying load moves from the soft start to full capacity.
+@export_range(1, 65536, 1) var satisfaction_birth_bonus_reference_q16: int = 55706
 ## Composite thresholds (Q16, ascending) separating the five social-pressure
 ## levels. A cell publishes `EVENT_ECONOMY_SOCIAL_PRESSURE` only when its
 ## population-weighted level crosses one of these boundaries.
@@ -307,7 +311,7 @@ extends Resource
 @export_range(0, 65536, 1) var carrying_surplus_floor_q16: int = 16384
 @export_range(65536, 262144, 1) var carrying_surplus_cap_q16: int = 98304
 @export_range(0, 65536, 1) var carrying_sat_floor_q16: int = 8192
-@export_range(1, 65536, 1) var carrying_sat_cap_q16: int = 65536
+@export_range(1, 131072, 1) var carrying_sat_cap_q16: int = 75366
 @export_range(1, 262144, 1) var carrying_residual_floor_q16: int = 32768
 @export_range(65536, 262144, 1) var carrying_residual_cap_q16: int = 131072
 @export_range(1, 65536, 1) var carrying_support_ema_alpha_q16: int = 1024
@@ -401,6 +405,7 @@ func to_native_profile() -> Dictionary:
 		"satisfaction_development_variety_target":
 			satisfaction_development_variety_target,
 		"satisfaction_birth_reference_q16": satisfaction_birth_reference_q16,
+		"satisfaction_birth_bonus_reference_q16": satisfaction_birth_bonus_reference_q16,
 		"satisfaction_pressure_thresholds_q16": satisfaction_pressure_thresholds_q16,
 		"wage_ema_alpha_q16": wage_ema_alpha_q16,
 		"employment_mobility_daily_q16": employment_mobility_daily_q16,
