@@ -911,28 +911,104 @@ func _decorate_family_founding_card(card: Dictionary, settlement_name: String) -
 	var building_id := String(card.get("building_type_id", ""))
 	card["building_display_name"] = String(
 		_building_display_names.get(building_id, building_id))
+	card["building_icon_key"] = String(_building_icon_for_type(building_id))
 	var profession_id := String(card.get("owner_profession_id", ""))
 	card["owner_profession_display_name"] = String(
 		_profession_display_names.get(profession_id, profession_id))
+	card["profession_icon_key"] = String(
+		IconCatalog.profession_semantic(profession_id) \
+		if not profession_id.is_empty() else &"population.profession.owner")
 	var trait_keys: PackedStringArray = card.get("trait_keys", PackedStringArray())
+	var strengths: PackedInt32Array = card.get("trait_strength_q16", PackedInt32Array())
 	var trait_names := PackedStringArray()
 	for trait_key in trait_keys:
 		var copy: Dictionary = _family_trait_copy.get(String(trait_key), {})
 		var display := String(copy.get("display_name", ""))
 		trait_names.append(display if not display.is_empty() else String(trait_key))
 	card["trait_display_names"] = trait_names
-	card["trait_descriptions"] = _family_trait_description_column(
-		trait_keys, card.get("trait_strength_q16", PackedInt32Array()))
+	var trait_descriptions := _family_trait_description_column(trait_keys, strengths)
+	card["trait_descriptions"] = trait_descriptions
+	var trait_items: Array[Dictionary] = []
+	for index in range(trait_keys.size()):
+		var trait_key := String(trait_keys[index])
+		var copy: Dictionary = _family_trait_copy.get(trait_key, {})
+		var display_name := String(trait_names[index]) if index < trait_names.size() else trait_key
+		var description := String(trait_descriptions[index]) \
+			if index < trait_descriptions.size() else ""
+		var min_q16 := int(copy.get("strength_min_q16", 0))
+		var max_q16 := int(copy.get("strength_max_q16", 65536))
+		var strength := int(strengths[index]) if index < strengths.size() else min_q16
+		var span := max_q16 - min_q16
+		var ratio := 0.65 if span <= 0 else clampf(
+			float(strength - min_q16) / float(span), 0.0, 1.0)
+		var axis := int(copy.get("primary_axis", -1))
+		trait_items.append({
+			"key": trait_key,
+			"name": display_name,
+			"description": description,
+			"axis": axis,
+			"axis_label": FamilyBuffCopyScript.axis_short_label(axis),
+			"badges": FamilyBuffCopyScript.extract_trait_badges(description),
+			"strength_ratio": ratio,
+			"factor_percent": FamilyBuffCopyScript.trait_factor_percent(description, ratio),
+		})
+	card["trait_items"] = trait_items
 	var effect_key := String(card.get("effect_key", ""))
 	if effect_key.is_empty():
 		card["effect_display_name"] = ""
 		card["effect_description"] = ""
+		card["effect_prestige_descriptions"] = PackedStringArray()
+		card["effect_full_description"] = ""
 		return
 	var keys := PackedStringArray([effect_key])
 	card["effect_display_name"] = String(_mapped_effect_names(
 		keys, _family_effect_displays)[0])
-	card["effect_description"] = String(
-		_mapped_effect_current_descriptions(keys, 0)[0])
+	var effect_entry: Dictionary = _family_effect_displays.get(effect_key, {})
+	var prestige_statements: PackedStringArray = effect_entry.get(
+		"prestige_descriptions", PackedStringArray())
+	card["effect_prestige_descriptions"] = prestige_statements
+	var preview := FamilyBuffCopyScript.founding_effect_preview(
+		prestige_statements, String(effect_entry.get("description", "")))
+	if preview.is_empty():
+		preview = String(_mapped_effect_current_descriptions(keys, 1)[0]).strip_edges()
+	card["effect_description"] = preview
+	card["effect_full_description"] = FamilyBuffCopyScript.join_prestige(
+		prestige_statements, preview)
+
+
+func _building_icon_for_type(type_id: String) -> StringName:
+	if type_id.is_empty():
+		return &"economy.building"
+	var type_ids: PackedStringArray = _catalog.get(
+		"building_type_ids", PackedStringArray())
+	var type_idx := type_ids.find(type_id)
+	var output_offsets: PackedInt32Array = _catalog.get(
+		"building_output_offsets", PackedInt32Array())
+	var output_good_indices: PackedInt32Array = _catalog.get(
+		"building_output_good_ids", PackedInt32Array())
+	var good_ids: PackedStringArray = _catalog.get("good_ids", PackedStringArray())
+	var kinds: PackedInt32Array = _catalog.get("building_kinds", PackedInt32Array())
+	if type_idx >= 0 and type_idx + 1 < output_offsets.size():
+		var output_pos := int(output_offsets[type_idx])
+		if output_pos < int(output_offsets[type_idx + 1]) \
+				and output_pos >= 0 and output_pos < output_good_indices.size():
+			var good_idx := int(output_good_indices[output_pos])
+			if good_idx >= 0 and good_idx < good_ids.size():
+				var kind := int(kinds[type_idx]) if type_idx < kinds.size() else 1
+				return IconCatalog.building_semantic(type_id, good_ids[good_idx], kind)
+	if type_id.contains("gathering"):
+		return &"economy.building.gathering"
+	if type_id.contains("hunting"):
+		return &"economy.building.hunting"
+	if type_id.contains("fish"):
+		return &"economy.building.fishing"
+	if type_id.contains("timber") or type_id.contains("lumber"):
+		return &"economy.building.forestry"
+	if type_id.contains("farm") or type_id.contains("pasture"):
+		return &"economy.building.farm"
+	if type_id.contains("mine") or type_id.contains("quarry"):
+		return &"economy.building.mine"
+	return &"economy.building"
 
 
 func queue_family_trigger_reward(effect: Dictionary) -> Dictionary:
@@ -1480,12 +1556,17 @@ func _load_family_effect_displays() -> void:
 				continue
 			_family_trait_descriptions[trait_key] = String(
 				definition.description).strip_edges()
+			var primary_axis := -1
+			if definition.behaviors is Array and not definition.behaviors.is_empty() \
+					and definition.behaviors[0] != null:
+				primary_axis = int(definition.behaviors[0].get("axis"))
 			_family_trait_copy[trait_key] = {
 				"display_name": String(definition.display_name).strip_edges(),
 				"template": String(definition.get("description_template")).strip_edges(),
 				"range_text": String(definition.get("range_text")).strip_edges(),
 				"strength_min_q16": int(definition.strength_min_q16),
 				"strength_max_q16": int(definition.strength_max_q16),
+				"primary_axis": primary_axis,
 			}
 			var effect_keys := PackedStringArray()
 			var seen := {}

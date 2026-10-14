@@ -92,10 +92,15 @@ func _draw() -> void:
 	var shown := lerpf(_from_value, _value, _blend) if _has_grown else _value
 	var value_string := text_value if kind == "text" \
 		else EconomyDossierViewModel.format_value(shown, kind)
-	var spark_width := clampf(w * 0.34, 0.0, 86.0) if _spark.size() >= 2 else 0.0
-	var value_size := 22 if w >= 170.0 else 19
+	var compact_card := w < 135.0
+	var spark_width := (clampf(w * 0.28, 0.0, 28.0) if compact_card else clampf(w * 0.34, 0.0, 86.0)) \
+		if _spark.size() >= 2 else 0.0
+	var value_size := 22 if w >= 170.0 else (18 if w >= 135.0 else 16)
+	var avail_value_w := w - spark_width - (14.0 if compact_card else 18.0)
+	if value_size > 14 and _text_width(value_string, value_size, "serif") > avail_value_w:
+		value_size = 14
 	_text(Vector2(10.0, 46.0 + dy), _fit_text(value_string, value_size,
-		w - spark_width - 18.0, "serif"), value_size, _value_color(), "serif")
+		avail_value_w, "serif"), value_size, _value_color(), "serif")
 	var delta_line := caption
 	var delta_color := UITokens.DOSSIER_INK_MUTED if tone.is_empty() else _value_color()
 	if not is_nan(_delta) and absf(_delta) > 1e-6:

@@ -1,0 +1,206 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/inspector_note_list.gd" id="1_notes"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_living_strip.gd" id="2_living"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_radar_chart.gd" id="3_radar"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_bar_list.gd" id="4_bars"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_diverging_bar.gd" id="5_diverging"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_stacked_bar.gd" id="6_stacked"]
+
+[node name="CohortDossier" type="VBoxContainer"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="OverviewPage" type="VBoxContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="Notes" type="Control" parent="OverviewPage"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("1_notes")
+
+[node name="LivingCard" type="PanelContainer" parent="OverviewPage"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierAside"
+
+[node name="Box" type="VBoxContainer" parent="OverviewPage/LivingCard"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="LivingStrip" type="Control" parent="OverviewPage/LivingCard/Box"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(200, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("2_living")
+
+[node name="Rule" type="ColorRect" parent="OverviewPage/LivingCard/Box"]
+custom_minimum_size = Vector2(0, 1)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.42, 0.29, 0.16, 0.24)
+
+[node name="Header" type="HBoxContainer" parent="OverviewPage/LivingCard/Box"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="OverviewPage/LivingCard/Box/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "满意度八维诊断"
+clip_text = true
+text_overrun_behavior = 3
+theme_type_variation = &"PKDossierSectionTitle"
+
+[node name="Hint" type="Label" parent="OverviewPage/LivingCard/Box/Header"]
+layout_mode = 2
+text = "虚线为均值 · 朱砂为短板"
+theme_type_variation = &"PKDossierMuted"
+
+[node name="RadarSplit" type="GridContainer" parent="OverviewPage/LivingCard/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 8
+columns = 2
+
+[node name="SatisfactionRadar" type="Control" parent="OverviewPage/LivingCard/Box/RadarSplit"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(168, 168)
+layout_mode = 2
+size_flags_vertical = 4
+script = ExtResource("3_radar")
+
+[node name="DimensionBars" type="Control" parent="OverviewPage/LivingCard/Box/RadarSplit"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+script = ExtResource("4_bars")
+
+[node name="CashflowCard" type="PanelContainer" parent="OverviewPage"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierAside"
+
+[node name="Box" type="VBoxContainer" parent="OverviewPage/CashflowCard"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="OverviewPage/CashflowCard/Box"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="OverviewPage/CashflowCard/Box/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "日常收支对冲与构成"
+theme_type_variation = &"PKDossierSectionTitle"
+
+[node name="Hint" type="Label" parent="OverviewPage/CashflowCard/Box/Header"]
+layout_mode = 2
+text = "人均 / 日"
+theme_type_variation = &"PKDossierMuted"
+
+[node name="CashflowBar" type="Control" parent="OverviewPage/CashflowCard/Box"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(200, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("5_diverging")
+
+[node name="IncomeStackedBar" type="Control" parent="OverviewPage/CashflowCard/Box"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(200, 58)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("6_stacked")
+
+[node name="ExpenseStackedBar" type="Control" parent="OverviewPage/CashflowCard/Box"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(200, 58)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("6_stacked")
+
+[node name="OperationsPage" type="VBoxContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="DemandCard" type="PanelContainer" parent="OperationsPage"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierAside"
+
+[node name="Box" type="VBoxContainer" parent="OperationsPage/DemandCard"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="OperationsPage/DemandCard/Box"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="OperationsPage/DemandCard/Box/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "消费需求与用途满足"
+clip_text = true
+text_overrun_behavior = 3
+theme_type_variation = &"PKDossierSectionTitle"
+
+[node name="SummaryLabel" type="Label" parent="OperationsPage/DemandCard/Box/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierMuted"
+
+[node name="TierKicker" type="Label" parent="OperationsPage/DemandCard/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "按需求用途满足率"
+clip_text = true
+text_overrun_behavior = 3
+theme_type_variation = &"PKDossierKicker"
+
+[node name="DemandTierBars" type="Control" parent="OperationsPage/DemandCard/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("4_bars")
+
+[node name="GoodsKicker" type="Label" parent="OperationsPage/DemandCard/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "活跃消费物资明细"
+clip_text = true
+text_overrun_behavior = 3
+theme_type_variation = &"PKDossierKicker"
+
+[node name="ActiveDemandBars" type="Control" parent="OperationsPage/DemandCard/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("4_bars")
+
+[node name="DemandEmptyNote" type="Label" parent="OperationsPage/DemandCard/Box"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+autowrap_mode = 3
+theme_type_variation = &"PKDossierCaption"
+
+[node name="InactiveAlternativesNote" type="Label" parent="OperationsPage/DemandCard/Box"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+autowrap_mode = 3
+theme_type_variation = &"PKDossierCaption"

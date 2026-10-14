@@ -73,6 +73,61 @@ static func join_prestige(statements: PackedStringArray, fallback: String = "") 
 	return "\n".join(statements)
 
 
+static func founding_effect_preview(statements: PackedStringArray,
+		fallback: String = "") -> String:
+	if not statements.is_empty():
+		var first := String(statements[0]).strip_edges()
+		if not first.is_empty():
+			return first
+	var clean := fallback.strip_edges()
+	if clean.begins_with("当前未达威望"):
+		return ""
+	return clean
+
+
+static func extract_trait_badges(description: String) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var clean := description.strip_edges()
+	if clean.is_empty():
+		return out
+	var regex := RegEx.new()
+	regex.compile("(增加|提高|提升|扩大|偏爱|减少|降低|缩减|排斥)\\s*([0-9]+(?:\\.[0-9]+)?%?)")
+	for m in regex.search_all(clean):
+		var verb := m.get_string(1)
+		var amount := m.get_string(2)
+		var positive := verb in ["增加", "提高", "提升", "扩大", "偏爱"]
+		var prefix := "+" if positive else "-"
+		out.append({
+			"text": "%s%s" % [prefix, amount],
+			"positive": positive,
+			"delta": float(amount.trim_suffix("%")) * (1.0 if positive else -1.0),
+		})
+	return out
+
+
+static func trait_factor_percent(description: String,
+		strength_ratio: float = 0.65) -> float:
+	var badges := extract_trait_badges(description)
+	if not badges.is_empty():
+		var delta := float(badges[0].get("delta", 0.0))
+		return clampf(100.0 + delta, 15.0, 200.0)
+	return clampf(70.0 + clampf(strength_ratio, 0.0, 1.0) * 90.0, 15.0, 200.0)
+
+
+static func axis_short_label(axis: int) -> String:
+	match axis:
+		0:
+			return "产业投资"
+		1:
+			return "职业从业"
+		2:
+			return "民生消费"
+		3:
+			return "偏好物资"
+		_:
+			return "家风门风"
+
+
 static func _format_quantity(value: float) -> String:
 	var scaled: float = snapped(value, 0.1)
 	if is_equal_approx(scaled, round(scaled)):
