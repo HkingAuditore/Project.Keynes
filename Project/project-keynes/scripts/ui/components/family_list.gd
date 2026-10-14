@@ -4,6 +4,7 @@ class_name FamilyList
 const FamilyRowScene := preload("res://scenes/ui/family_row.tscn")
 
 signal details_requested(request: Dictionary)
+signal dispatch_requested(family_handle: int, source_cell: int)
 
 var _row_refs: Dictionary = {}
 var _selected_row := ""
@@ -43,10 +44,14 @@ func _create_row(row_id: String) -> Dictionary:
 	button.pressed.connect(func() -> void: details_requested.emit(
 		{"kind": "family", "row_id": row_id}))
 	add_child(button)
+	var dispatch := button.get_node("Margin/Line/DispatchButton") as Button
+	dispatch.pressed.connect(func() -> void:
+		var intent: Dictionary = dispatch.get_meta("dispatch", {})
+		dispatch_requested.emit(int(intent.get("family_handle", 0)), int(intent.get("source_cell", -1))))
 	return {"button": button, "icon": button.get_node("Margin/Line/Icon"),
 		"name": button.get_node("Margin/Line/Identity/Name"),
 		"meta": button.get_node("Margin/Line/Identity/Meta"),
-		"prestige": button.get_node("Margin/Line/Prestige")}
+		"prestige": button.get_node("Margin/Line/Prestige"), "dispatch": dispatch}
 
 
 func set_selected(row_id: String) -> void:
@@ -59,6 +64,11 @@ func set_selected(row_id: String) -> void:
 func _apply_row(refs: Dictionary, data: Dictionary) -> void:
 	var button := refs.get("button") as Button
 	button.visible = true
+	var dispatch := refs.get("dispatch") as Button
+	dispatch.set_meta("dispatch", data)
+	dispatch.disabled = not bool(data.get("can_dispatch", false))
+	dispatch.tooltip_text = "从此城派遣该家族，再选择目的地" if not dispatch.disabled \
+		else "仅本国城市且当地家族至少两人时可以派遣"
 	(refs.get("icon") as IconBadge).set_semantic(&"family.workspace.crest", UITokens.DOSSIER_BRASS)
 	(refs.get("name") as Label).text = String(data.get("name", "家族"))
 	var meta := PackedStringArray(["族人 %s" % String(data.get("population", "0")),

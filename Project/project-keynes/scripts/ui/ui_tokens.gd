@@ -17,6 +17,12 @@ const RADIUS_LG := 12
 const ANIM_FAST := 0.12
 const ANIM_MED := 0.18
 const ANIM_SLOW := 0.28
+const ANIM_DISCLOSURE := 0.14
+
+const FAMILY_FOUNDING_WIDTH := 480.0
+const FAMILY_FOUNDING_WIDE_WIDTH := 520.0
+const FAMILY_FOUNDING_COLLAPSED_WIDTH := 320.0
+const FAMILY_FOUNDING_MAP_GAP := 240.0
 
 const FONT_BODY := 14
 const FONT_SMALL := 12
@@ -82,6 +88,20 @@ const ARCHIVE_OXBLOOD := Color(0.48, 0.16, 0.10, 1.0)
 const ARCHIVE_BRASS := Color(0.69, 0.49, 0.24, 1.0)
 const ARCHIVE_RULE := Color(0.40, 0.28, 0.16, 0.55)
 const ARCHIVE_CONTENT_MARGIN := 16
+
+# 材质透明留白只用于绘制投影，不参与布局或点击区域。
+const ARCHIVE_EDGE_INSET := 16.0
+const ARCHIVE_SHADOW_SIZE := 18.0
+const ARCHIVE_SHADOW_OFFSET := Vector2(0.0, 5.0)
+const HUD_SHADOW_SIZE := 12.0
+const HUD_SHADOW_OFFSET := Vector2(0.0, 3.0)
+const ARCHIVE_BUTTON_HOVER := Color(1.06, 1.04, 0.98, 1.0)
+const ARCHIVE_BUTTON_DISABLED := Color(0.78, 0.75, 0.68, 0.74)
+
+# 辅助纸片比主档案框轻：只留纤维边和接触阴影。
+const PAPER_NOTE_PAD_X := 12.0
+const PAPER_NOTE_PAD_Y := 8.0
+const PAPER_NOTE_LINE_GAP := 6.0
 
 # Hybrid Atlas-Dossier HUD & ornament tokens (walnut + burnished brass + oxblood).
 const HUD_WALNUT_BG := Color(0.082, 0.058, 0.038, 0.98)

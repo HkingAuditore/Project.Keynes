@@ -7,10 +7,10 @@
 anchors_preset = 13
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 12.0
-offset_top = 68.0
-offset_right = -12.0
-offset_bottom = -12.0
+offset_left = 16.0
+offset_top = 76.0
+offset_right = -16.0
+offset_bottom = -16.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
@@ -51,11 +51,10 @@ layout_mode = 2
 
 [node name="SecondaryPanel" type="PanelContainer" parent="."]
 visible = false
-clip_contents = true
-offset_left = 68.0
-offset_right = 136.0
+offset_left = 76.0
+offset_right = 144.0
 mouse_filter = 0
-theme_type_variation = &"PKPaperCard"
+theme_type_variation = &"PKPaperPopup"
 
 [node name="Margin" type="MarginContainer" parent="SecondaryPanel"]
 layout_mode = 2

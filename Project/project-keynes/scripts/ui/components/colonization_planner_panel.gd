@@ -3,6 +3,7 @@ class_name ColonizationPlannerPanel
 
 const FamilyRowScene := preload("res://scenes/ui/colonization_family_row.tscn")
 
+signal target_selection_requested()
 signal closed()
 signal route_requested(detail: Dictionary)
 signal route_cleared()
@@ -10,10 +11,34 @@ signal start_requested(args: Dictionary)
 signal cancel_requested(expedition_handle: int)
 signal expedition_selected(expedition_handle: int)
 
+var _search: LineEdit
+var _sort: OptionButton
+var _workflow: Label
+var _target_button: Button
+var _preview_title: Label
+var _preview_metrics: Label
+var _preview_traits: Label
+var _preview_preferences: Label
+var _preview_effects: Label
+var _preview_route: Label
+var _footer_selection: Label
+var _preview_cache: Dictionary = {}
+var _quote_preview_cache: Dictionary = {}
+var _local_families: Dictionary = {}
+var _display_order: Array = []
+var _hover_family := 0
+var _preview_family := 0
+var _hover_timer: Timer
+var _target_picking := false
+var _detail_valid := false
+var _source_first := false
 var _controller
 var _target_cell := -1
 var _family_filter := 0
 var _source_filter := -1
+var _sources_loaded := false
+var _source_cities_identity := ""
+var _source_city: OptionButton
 var _selected_quote: Dictionary = {}
 var _economy_busy := false
 var _quotes_identity := ""
@@ -45,10 +70,32 @@ func _ready() -> void:
 	_population = get_node_or_null("%PopulationSpin") as SpinBox
 	_feedback = get_node_or_null("%FeedbackLabel") as Label
 	_start = get_node_or_null("%StartButton") as Button
+	_source_city = get_node_or_null("%SourceCity") as OptionButton
+	_search = get_node("%FamilySearch") as LineEdit
+	_sort = get_node("%FamilySort") as OptionButton
+	_workflow = get_node("%Workflow") as Label
+	_target_button = get_node("%TargetButton") as Button
+	_preview_title = get_node("%PreviewTitle") as Label
+	_preview_metrics = get_node("%PreviewMetrics") as Label
+	_preview_traits = get_node("%PreviewTraits") as Label
+	_preview_preferences = get_node("%PreviewPreferences") as Label
+	_preview_effects = get_node("%PreviewEffects") as Label
+	_preview_route = get_node("%PreviewRoute") as Label
+	_footer_selection = get_node("%FooterSelection") as Label
+	_hover_timer = get_node("%HoverTimer") as Timer
+	_hover_timer.timeout.connect(_show_hover_preview)
+	_search.text_changed.connect(func(_text: String) -> void: _apply_list_filter_sort())
+	_sort.add_item("可派人数", 0)
+	_sort.add_item("威望", 1)
+	_sort.add_item("名称", 2)
+	_sort.item_selected.connect(func(_index: int) -> void:
+		_display_order.clear()
+		_apply_list_filter_sort())
+	_target_button.pressed.connect(begin_target_selection)
 	var close_button := get_node_or_null("%CloseButton") as Button
 	if _title == null or _subtitle == null or _status == null or _tabs == null \
 			or _list == null or _population_row == null or _population == null \
-			or _feedback == null or _start == null or close_button == null:
+			or _feedback == null or _start == null or _source_city == null or close_button == null:
 		push_error("ColonizationPlannerPanel 必须通过 colonization_planner_panel.tscn 实例化。")
 		return
 	theme_type_variation = &"PKArchivePanel"
@@ -64,6 +111,10 @@ func _ready() -> void:
 	_population.value_changed.connect(func(_value: float) -> void:
 		_refresh_selected_kit())
 	_start.pressed.connect(_submit_selected)
+	_source_city.item_selected.connect(_on_source_city_selected)
+	if is_inside_tree():
+		get_viewport().size_changed.connect(_layout_left_panel)
+	_layout_left_panel()
 	visible = false
 
 
@@ -76,8 +127,24 @@ func open_target(target_cell: int, family_filter: int = 0,
 	if _list == null:
 		_ready()
 	_target_cell = target_cell
+	_target_picking = false
+	_source_first = target_cell < 0
+	_detail_valid = false
+	_preview_cache.clear()
+	_quote_preview_cache.clear()
+	_local_families.clear()
+	_display_order.clear()
+	_hover_family = 0
+	_hover_timer.stop()
+	_search.clear()
+	_show_family_preview({})
 	_family_filter = family_filter
 	_source_filter = source_filter
+	_sources_loaded = false
+	_source_cities_identity = ""
+	_source_city.clear()
+	_source_city.add_item("先选择出发城市", -1)
+	_source_city.disabled = true
 	_selected_quote.clear()
 	_quotes_identity = ""
 	_expeditions_identity = ""
@@ -85,23 +152,44 @@ func open_target(target_cell: int, family_filter: int = 0,
 	_family_view_cache.clear()
 	_economy_busy = false
 	_title.text = "开拓"
-	_subtitle.text = "选择要派遣的家族"
+	_subtitle.text = "先选出发城市，再选当地家族"
 	_feedback.text = ""
 	visible = true
 	if is_inside_tree():
-		UIAnimation.fade_slide_in(self, Vector2(0.0, 18.0))
+		_layout_left_panel()
+		UIAnimation.crossfade(self)
 	if _controller != null:
 		var page := _filter_expedition_page(_controller.get_family_expeditions(0, 128))
 		if bool(page.get("ok", false)) and int(page.get("total", 0)) > 0:
 			_show_expeditions()
 			return
 	_show_quotes()
+	_update_workflow()
+
+
+func _layout_left_panel() -> void:
+	if not is_inside_tree():
+		return
+	var viewport_size := get_viewport().get_visible_rect().size
+	set_anchors_preset(Control.PRESET_TOP_LEFT)
+	position = Vector2(UITokens.ARCHIVE_EDGE_INSET, PlayerTopBar.BAR_HEIGHT + 4.0)
+	size = Vector2(roundf(viewport_size.x * 0.45), maxf(0.0,
+		viewport_size.y - position.y - CountryActionBar.BAR_HEIGHT - UITokens.ARCHIVE_EDGE_INSET))
+	var body := get_node("%Body") as BoxContainer
+	var narrow := size.x < 560.0
+	body.vertical = narrow
+	var list_pane := get_node("%ListPane") as Control
+	var preview := get_node("%PreviewScroll") as Control
+	list_pane.size_flags_stretch_ratio = 0.6 if narrow else 0.44
+	preview.size_flags_stretch_ratio = 0.4 if narrow else 0.56
 
 
 func close_panel() -> void:
 	if not visible:
 		return
 	visible = false
+	_target_picking = false
+	_hover_timer.stop()
 	_selected_quote.clear()
 	route_cleared.emit()
 	closed.emit()
@@ -118,6 +206,8 @@ func set_command_result(result: Dictionary) -> void:
 	if message.is_empty():
 		message = _reason_text(code) if not code.is_empty() else ""
 	_feedback.text = message
+	_feedback.visible = not message.is_empty()
+	_feedback.tooltip_text = message
 	if ok:
 		_feedback.add_theme_color_override("font_color", UITokens.GOOD)
 		if code == "colonization_queued" or code == "colonization_cancel_queued":
@@ -149,12 +239,18 @@ func refresh_visible() -> void:
 	if not visible:
 		return
 	if _current_tab == "quotes":
+		_preview_cache.clear()
+		_quote_preview_cache.clear()
 		if _economy_busy and _controller != null and _has_quote_rows():
 			var probe: Dictionary = _controller.get_family_expeditions(0, 1)
 			if bool(probe.get("ok", true)) and probe.has("busy") \
 					and bool(probe.get("busy", false)):
 				return
 		_show_quotes()
+		if _hover_family == 0:
+			_show_family_preview(_selected_quote)
+		else:
+			_show_hover_preview()
 		return
 	_show_expeditions()
 
@@ -164,6 +260,65 @@ func _on_tab_selected(tab_id: String) -> void:
 		_show_expeditions()
 	else:
 		_show_quotes()
+
+
+func _load_source_cities() -> Dictionary:
+	var cities := {}
+	var offset := 0
+	var page: Dictionary
+	while true:
+		page = _controller.get_family_colonization_quotes(
+			_target_cell, _family_filter, -1, offset, 256)
+		if not bool(page.get("ok", false)):
+			return page
+		var sources: PackedInt32Array = page.get("source_cells", PackedInt32Array())
+		var names: PackedStringArray = page.get("source_settlement_names", PackedStringArray())
+		for index in range(sources.size()):
+			var cell := int(sources[index])
+			cities[cell] = String(names[index]) if index < names.size() else "聚落 %d" % (cell + 1)
+		if not bool(page.get("has_more", false)) or sources.is_empty():
+			break
+		offset += sources.size()
+	var cells: Array = cities.keys()
+	cells.sort()
+	var parts := PackedStringArray()
+	for cell in cells:
+		parts.append("%d:%s" % [int(cell), String(cities[cell])])
+	var identity := "|".join(parts)
+	if identity != _source_cities_identity or not _sources_loaded:
+		_source_cities_identity = identity
+		_source_city.clear()
+		_source_city.add_item("先选择出发城市", -1)
+		for cell in cells:
+			_source_city.add_item(String(cities[cell]), int(cell))
+	_source_city.disabled = cells.is_empty()
+	_sources_loaded = true
+	if _source_filter >= 0:
+		var selected := _source_city.get_item_index(_source_filter)
+		if selected > 0:
+			_source_city.select(selected)
+			return _get_source_quotes()
+		_source_filter = -1
+	_source_city.select(0)
+	return page
+
+
+func _on_source_city_selected(index: int) -> void:
+	var source := _source_city.get_item_id(index)
+	if source == _source_filter:
+		return
+	_source_filter = source
+	_source_city.select(index)
+	_local_families.clear()
+	_preview_cache.clear()
+	_display_order.clear()
+	_show_family_preview({})
+	_selected_quote.clear()
+	_quotes_identity = ""
+	_feedback.text = ""
+	_clear_list()
+	route_cleared.emit()
+	_show_quotes()
 
 
 func _show_quotes() -> void:
@@ -178,8 +333,14 @@ func _show_quotes() -> void:
 		_add_note("玩家控制器尚未就绪。", UITokens.RISK)
 		_update_start_enabled()
 		return
-	var page: Dictionary = _controller.get_family_colonization_quotes(
-		_target_cell, _family_filter, _source_filter, 0, 128)
+	if _target_cell < 0:
+		_show_source_families()
+		return
+	var page: Dictionary
+	if not _sources_loaded or _source_filter < 0:
+		page = _load_source_cities()
+	else:
+		page = _get_source_quotes()
 	_economy_busy = bool(page.get("busy", false))
 	if not bool(page.get("ok", false)):
 		var code := String(page.get("code", "command_rejected"))
@@ -201,25 +362,45 @@ func _show_quotes() -> void:
 		_add_note(_reason_text(code), UITokens.RISK)
 		_update_start_enabled()
 		return
-	var identity := _quotes_identity_of(page)
+	if _source_filter < 0:
+		_clear_list()
+		_selected_quote.clear()
+		_apply_kind(String(page.get("kind", "colonize")))
+		_set_busy_status(_economy_busy)
+		if _source_city.item_count > 1:
+			_add_note("请选择出发城市，然后选择该城要派遣的家族。", UITokens.ARCHIVE_INK_MUTED)
+		elif _economy_busy:
+			_sources_loaded = false
+			_add_note("经济正在结算，提交后刷新可派遣的城市与家族。", UITokens.ARCHIVE_INK_MUTED)
+		else:
+			_add_note("没有可向此地派遣家族的城市。", UITokens.WARN)
+		_update_start_enabled()
+		return
+	_load_local_families()
+	var identity := _quotes_identity_of(page) + str(_local_families.hash())
 	if identity == _quotes_identity and _has_quote_rows():
 		_apply_kind(String(page.get("kind", "colonize")))
 		_set_busy_status(_economy_busy)
-		_update_start_enabled()
+		_refresh_selected_kit()
 		return
 	_quotes_identity = identity
 	_apply_kind(String(page.get("kind", "colonize")))
 	_set_busy_status(_economy_busy)
-	var quotes := _collapse_quotes(page)
+	var quotes := _quotes_for_source(page)
 	var keep_population := int(_population.value) if not _selected_quote.is_empty() else 0
 	var restored := _sync_quote_rows(quotes, keep_population)
+	if not restored:
+		_selected_quote.clear()
+		_detail_valid = false
+		_show_family_preview({})
+		route_cleared.emit()
 	if quotes.is_empty():
 		_clear_list()
 		if _economy_busy:
 			_add_note("经济正在结算。家族列表将在提交后刷新，也可先查看在途队伍。",
 				UITokens.ARCHIVE_INK_MUTED)
 		else:
-			_add_note("没有可派遣的家族。", UITokens.WARN)
+			_add_note("该城没有可向此地派遣的家族，请更换出发城市。", UITokens.WARN)
 	if restored:
 		_refresh_selected_kit()
 	else:
@@ -231,52 +412,53 @@ func _sync_quote_rows(quotes: Array, keep_population: int) -> bool:
 	var keep := {}
 	var restored := false
 	for quote_value in quotes:
-		var quote: Dictionary = quote_value
-		var family_handle := int(quote.get("family_handle", 0))
-		keep[family_handle] = true
-		var maximum_population := int(quote.get("maximum_population", 0))
-		var decorated: Dictionary = quote.duplicate(true)
-		decorated.merge(_family_view_for(family_handle,
-			maximum_population + 1), true)
-		var row := _quote_row_refs.get(family_handle) as Button
+		var quote: Dictionary = quote_value.duplicate(true)
+		var handle := int(quote.get("family_handle", 0))
+		keep[handle] = true
+		var local: Dictionary = _local_families.get(handle, {})
+		for field in ["display_name", "population", "cash_claim", "owned_buildings", "prestige_level"]:
+			if local.has(field):
+				quote[field] = local[field]
+		if not _local_families.has(handle) and _controller.has_method("get_family_snapshot"):
+			var identity: Dictionary = _controller.get_family_snapshot(handle)
+			quote["display_name"] = identity.get("family_name", quote.get("display_name", "家族"))
+		var maximum := int(quote.get("maximum_population", 0))
+		var row := _quote_row_refs.get(handle) as Button
 		if row == null or not is_instance_valid(row):
 			row = FamilyRowScene.instantiate() as Button
 			row.pressed.connect(_on_reusable_quote_pressed.bind(row))
+			row.mouse_entered.connect(_on_row_preview_entered.bind(row))
+			row.mouse_exited.connect(_on_row_preview_exited.bind(row))
+			row.focus_entered.connect(_on_row_preview_entered.bind(row))
 			_list.add_child(row)
-			_quote_row_refs[family_handle] = row
-		row.set_meta("quote", decorated)
-		row.set_row({
-			"name": String(decorated.get("display_name", "家族")),
-			"population": int(decorated.get("family_population",
-				maximum_population + 1)),
-			"badges": decorated.get("trait_badges", []),
-			"effect": String(decorated.get("effect_text", "")),
-			"tooltip": _quote_tooltip(quote),
+			_quote_row_refs[handle] = row
+		row.set_meta("quote", quote)
+		row.set_compact_summary({
+			"name": String(quote.get("display_name", "家族")),
+			"population": int(quote.get("population", maximum + 1)),
+			"population_tooltip": "当地分支人口；至少留下一人",
+			"effect": "可派 %s · 威望 %s · 产业 %s" % [
+				UITokens.format_compact_number_cn(float(maximum), 0),
+				str(quote.get("prestige_level", "—")),
+				str(quote.get("owned_buildings", "—"))],
 		})
-		var selected := int(_selected_quote.get("family_handle", 0)) == family_handle
+		row.disabled = maximum <= 0
+		var selected := int(_selected_quote.get("family_handle", 0)) == handle
 		row.set_pressed_no_signal(selected)
 		if selected:
-			_selected_quote = decorated.duplicate(true)
-			var maximum := maxi(1, maximum_population)
-			var population_editor := _population.get_line_edit()
-			var population_editing := _population.has_focus() \
-				or (population_editor != null and population_editor.has_focus())
-			# Daily quote refreshes may update the selected row, but they must not
-			# write into a SpinBox while the player is editing its value.
-			if not population_editing:
-				_population.max_value = maximum
-				_population.value = clampi(keep_population, 1, maximum) \
-					if keep_population > 0 else maximum
-			restored = true
-	var stale: Array = []
-	for handle_value in _quote_row_refs.keys():
-		if not keep.has(handle_value):
-			stale.append(handle_value)
-	for handle_value in stale:
-		var stale_row := _quote_row_refs[handle_value] as Node
-		_quote_row_refs.erase(handle_value)
-		if stale_row != null and is_instance_valid(stale_row):
-			stale_row.queue_free()
+			_selected_quote = quote.duplicate(true)
+			var editor := _population.get_line_edit()
+			if not _population.has_focus() and not editor.has_focus():
+				_population.max_value = maxi(1, maximum)
+				_population.set_value_no_signal(clampi(keep_population, 1, maxi(1, maximum)))
+			restored = maximum > 0
+	for handle in _quote_row_refs.keys():
+		if not keep.has(handle):
+			var row := _quote_row_refs[handle] as Node
+			_list.remove_child(row)
+			row.queue_free()
+			_quote_row_refs.erase(handle)
+	_apply_list_filter_sort()
 	return restored
 
 
@@ -296,10 +478,15 @@ func _on_quote_row_pressed(quote: Dictionary, row: Button) -> void:
 
 
 func _select_quote(quote: Dictionary) -> void:
+	_hover_family = 0
+	_hover_timer.stop()
+	_feedback.text = ""
 	_selected_quote = quote.duplicate(true)
+	_detail_valid = false
 	var maximum := maxi(1, int(quote.get("maximum_population", 1)))
 	_population.max_value = maximum
-	_population.value = maximum
+	_population.set_value_no_signal(maximum)
+	_show_family_preview(quote)
 	_refresh_selected_kit()
 
 
@@ -319,7 +506,14 @@ func _show_expeditions() -> void:
 	_current_tab = "expeditions"
 	if _tabs != null:
 		_tabs.select_tab("expeditions")
-	_selected_quote.clear()
+	_hover_timer.stop()
+	_hover_family = 0
+	_preview_title.text = "在途队伍"
+	_preview_metrics.text = "点击队伍查看路线；筹备与返程可在列表中取消。"
+	_preview_traits.text = ""
+	_preview_preferences.text = ""
+	_preview_effects.text = ""
+	_preview_route.text = ""
 	_discard_quote_rows()
 	_update_start_enabled()
 	if _controller == null:
@@ -439,17 +633,20 @@ func _sync_expedition_rows(page: Dictionary) -> void:
 			cancel = row_wrap.get_child(1) as Button
 		row.set_meta("expedition_handle", expedition_handle)
 		cancel.set_meta("expedition_handle", expedition_handle)
-		row.set_row({
+		row.set_compact_summary({
 			"name": String(view.get("display_name", "家族")),
 			"population": int(populations[index]) if index < populations.size() else 0,
 			"badges": [{
 				"text": _state_text(state),
 				"accent": UITokens.WARN if returning else UITokens.ACCENT,
 			}],
-			"effect": _preparing_missing_text(expedition_handle, state),
+			"effect": "%s · %s" % [_state_text(state), _preparing_missing_text(expedition_handle, state).get_slice("\n", 0)],
 			"tooltip": _expedition_row_tooltip(expedition_handle, state,
 				int(dues[index]) if index < dues.size() else -1),
 		})
+		row.set_meta("expedition_view", {"name": String(view.get("display_name", "家族")),
+			"population": int(populations[index]) if index < populations.size() else 0,
+			"state": state, "due_day": int(dues[index]) if index < dues.size() else -1})
 		cancel.disabled = returning
 		if returning:
 			cancel.tooltip_text = "返程中的队伍不能重复取消"
@@ -467,7 +664,17 @@ func _sync_expedition_rows(page: Dictionary) -> void:
 
 
 func _on_reusable_expedition_pressed(row: Button) -> void:
-	expedition_selected.emit(int(row.get_meta("expedition_handle", 0)))
+	var handle := int(row.get_meta("expedition_handle", 0))
+	var view: Dictionary = row.get_meta("expedition_view", {})
+	_preview_title.text = "队伍 · " + String(view.get("name", "家族"))
+	_preview_metrics.text = "%s · %s 人" % [_state_text(int(view.get("state", 0))),
+		UITokens.format_compact_number_cn(float(view.get("population", 0)), 0)]
+	_preview_traits.text = ""
+	_preview_preferences.text = ""
+	_preview_effects.text = _preparing_missing_text(handle, int(view.get("state", 0)))
+	_preview_route.text = "第 %d 日抵达" % int(view.get("due_day", -1)) \
+		if int(view.get("due_day", -1)) >= 0 else ""
+	expedition_selected.emit(handle)
 
 
 func _on_reusable_cancel_pressed(cancel: Button) -> void:
@@ -475,6 +682,8 @@ func _on_reusable_cancel_pressed(cancel: Button) -> void:
 
 
 func _clear_list() -> void:
+	_hover_family = 0
+	_hover_timer.stop()
 	_quote_row_refs.clear()
 	_expedition_row_refs.clear()
 	for child in _list.get_children():
@@ -486,6 +695,7 @@ func _discard_quote_rows() -> void:
 	for row_value in _quote_row_refs.values():
 		var row := row_value as Node
 		if row != null and is_instance_valid(row):
+			_list.remove_child(row)
 			row.queue_free()
 	_quote_row_refs.clear()
 
@@ -494,6 +704,7 @@ func _discard_expedition_rows() -> void:
 	for row_value in _expedition_row_refs.values():
 		var row := row_value as Node
 		if row != null and is_instance_valid(row):
+			_list.remove_child(row)
 			row.queue_free()
 	_expedition_row_refs.clear()
 
@@ -518,13 +729,13 @@ func _add_note(text: String, color: Color) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not visible:
 		return
-	if event is InputEventKey and event.pressed and not event.echo \
-			and event.keycode == KEY_ESCAPE:
-		close_panel()
-		get_viewport().set_input_as_handled()
-	elif event is InputEventMouseButton and event.pressed \
-			and event.button_index == MOUSE_BUTTON_RIGHT:
-		close_panel()
+	var cancel: bool = event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE
+	cancel = cancel or (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT)
+	if cancel:
+		if _target_picking:
+			cancel_target_selection()
+		else:
+			close_panel()
 		get_viewport().set_input_as_handled()
 
 
@@ -565,25 +776,24 @@ static func _reason_text(code: String) -> String:
 
 
 func _apply_kind(kind: String) -> void:
-	if kind == "relocate":
-		_title.text = "迁徙"
-		_subtitle.text = "向本国地块派遣家族人口"
-	else:
-		_title.text = "开拓"
-		_subtitle.text = "选择要派遣的家族"
+	_title.text = "迁徙" if kind == "relocate" else "开拓"
+	_update_workflow()
 
 
 func _set_busy_status(busy: bool) -> void:
 	if _status == null:
 		return
 	_status.visible = busy
-	_status.text = "经济正在结算。可查看家族与在途队伍；派遣和取消会先排队，提交完成后自动执行。" \
-		if busy else ""
+	_status.text = "结算中 · 派遣与取消将排队执行" if busy else ""
+	_status.tooltip_text = "经济正在结算，提交完成后自动执行排队命令。"
 	_status.add_theme_color_override("font_color", UITokens.WARN)
 
 
 func _refresh_selected_kit() -> void:
 	if _selected_quote.is_empty():
+		_update_start_enabled()
+		return
+	if int(_selected_quote.get("quote_token", 0)) <= 0 or _target_cell < 0:
 		_update_start_enabled()
 		return
 	var detail: Dictionary = {}
@@ -592,6 +802,7 @@ func _refresh_selected_kit() -> void:
 			int(_selected_quote.get("quote_token", 0)), int(_population.value))
 	_economy_busy = _economy_busy or bool(detail.get("busy", false))
 	if not bool(detail.get("ok", false)):
+		_detail_valid = _transient_query_failure(String(detail.get("code", "")), detail)
 		_update_start_enabled()
 		var detail_code := String(detail.get("code", "command_rejected"))
 		if _transient_query_failure(detail_code, detail):
@@ -599,10 +810,14 @@ func _refresh_selected_kit() -> void:
 			_feedback.add_theme_color_override("font_color", UITokens.ARCHIVE_INK_MUTED)
 			return
 		_feedback.text = _reason_text(detail_code)
+		_feedback.visible = true
 		_feedback.add_theme_color_override("font_color", UITokens.RISK)
 		return
+	_detail_valid = true
 	_selected_quote.merge(detail, true)
 	_update_start_enabled()
+	if _hover_family == 0:
+		_update_preview_route(_selected_quote)
 	route_requested.emit(detail)
 
 
@@ -610,10 +825,17 @@ func _update_start_enabled() -> void:
 	if _start == null:
 		return
 	var on_quotes := _current_tab == "quotes"
+	_footer_selection.visible = on_quotes
+	_source_city.get_parent().visible = on_quotes
+	_search.get_parent().visible = on_quotes
+	_target_button.visible = on_quotes
+	_update_workflow()
 	var has_selection := not _selected_quote.is_empty()
 	_population_row.visible = on_quotes and has_selection
 	_start.visible = on_quotes
-	_start.disabled = not has_selection
+	_start.disabled = not has_selection or _target_cell < 0 or _target_picking \
+		or int(_selected_quote.get("quote_token", 0)) <= 0 or not _detail_valid \
+		or int(_population.value) > int(_selected_quote.get("maximum_population", 1))
 	var count := int(_population.value) if has_selection else 0
 	var count_text := UITokens.format_compact_number_cn(float(count), 0)
 	var kit_partial := bool(_selected_quote.get("kit_partial", false))
@@ -622,7 +844,9 @@ func _update_start_enabled() -> void:
 		"kit_building_ids", PackedInt32Array())
 	var complete_kit := place_buildings and not kit_partial and not kit_ids.is_empty()
 	var preparing_kit := place_buildings and (kit_partial or kit_ids.is_empty())
-	if _economy_busy:
+	if _target_cell < 0 or _target_picking:
+		_start.text = "请先选择目的地"
+	elif _economy_busy:
 		_start.text = "排队派遣 %s 人" % count_text if has_selection else "排队派遣"
 		_start.tooltip_text = "经济正在结算。现在确认后会排队，提交完成后自动出发。"
 	elif complete_kit:
@@ -641,6 +865,8 @@ func _update_start_enabled() -> void:
 			and _feedback.text.find("已经出发") < 0:
 		_feedback.text = "基础物资不足，只携带当前可用物资"
 		_feedback.add_theme_color_override("font_color", UITokens.WARN)
+	_feedback.visible = not _feedback.text.is_empty()
+	_feedback.tooltip_text = _feedback.text
 
 
 static func _transient_query_failure(code: String, page: Dictionary) -> bool:
@@ -803,7 +1029,7 @@ func _expedition_row_tooltip(handle: int, state: int, due_day: int) -> String:
 		return "第 %d 日抵达" % due_day
 	return ""
 
-func _collapse_quotes(page: Dictionary) -> Array:
+func _quotes_for_source(page: Dictionary) -> Array:
 	var families: PackedInt64Array = page.get("family_handles", PackedInt64Array())
 	var sources: PackedInt32Array = page.get("source_cells", PackedInt32Array())
 	var maximums: PackedInt64Array = page.get("maximum_populations", PackedInt64Array())
@@ -813,8 +1039,10 @@ func _collapse_quotes(page: Dictionary) -> Array:
 	var surnames: PackedStringArray = page.get("surnames", PackedStringArray())
 	var disambiguators: PackedInt32Array = page.get(
 		"surname_disambiguators", PackedInt32Array())
-	var best: Dictionary = {}
+	var quotes: Array = []
 	for index in range(families.size()):
+		if index >= sources.size() or int(sources[index]) != _source_filter:
+			continue
 		var handle := int(families[index])
 		var surname := String(surnames[index]) if index < surnames.size() else "家族"
 		var disambiguator := int(disambiguators[index]) if index < disambiguators.size() else 0
@@ -829,24 +1057,10 @@ func _collapse_quotes(page: Dictionary) -> Array:
 			"surname": surname,
 			"display_name": _family_display_name(surname, disambiguator),
 		}
-		if not best.has(handle) or _quote_better(candidate, best[handle]):
-			best[handle] = candidate
-	var quotes: Array = best.values()
+		quotes.append(candidate)
 	quotes.sort_custom(func(a, b) -> bool:
 		return String(a.get("display_name", "")) < String(b.get("display_name", "")))
 	return quotes
-
-
-static func _quote_better(candidate: Dictionary, current: Dictionary) -> bool:
-	var candidate_people := int(candidate.get("maximum_population", 0))
-	var current_people := int(current.get("maximum_population", 0))
-	if candidate_people != current_people:
-		return candidate_people > current_people
-	var candidate_cost := int(candidate.get("route_cost", 0))
-	var current_cost := int(current.get("route_cost", 0))
-	if candidate_cost != current_cost:
-		return candidate_cost < current_cost
-	return int(candidate.get("source_cell", 0)) < int(current.get("source_cell", 0))
 
 
 static func _family_display_name(surname: String, disambiguator: int) -> String:
@@ -867,7 +1081,7 @@ static func _quote_tooltip(quote: Dictionary) -> String:
 
 static func _kit_summary_text(quote: Dictionary) -> String:
 	var names: PackedStringArray = quote.get(
-		"kit_building_stable_ids", PackedStringArray())
+		"kit_building_display_names", quote.get("kit_building_stable_ids", PackedStringArray()))
 	var counts: PackedInt64Array = quote.get(
 		"kit_building_counts", PackedInt64Array())
 	if names.is_empty():
@@ -902,11 +1116,6 @@ func _family_view_for(family_handle: int, fallback_people: int) -> Dictionary:
 				view["display_name"] = family_name
 			elif not surname.is_empty():
 				view["display_name"] = _family_display_name(surname, disambiguator)
-	if _controller != null and _controller.has_method("get_family_traits"):
-		var traits: Dictionary = _controller.get_family_traits(family_handle)
-		if bool(traits.get("ok", false)):
-			view["trait_badges"] = _trait_badges(traits)
-			view["effect_text"] = _effect_text(traits)
 	if int(view.family_population) <= 0:
 		view["family_population"] = maxi(0, fallback_people)
 	_family_view_cache[family_handle] = view
@@ -985,3 +1194,298 @@ static func _effect_text(traits: Dictionary) -> String:
 	var trait_names: PackedStringArray = traits.get(
 		"display_names", PackedStringArray())
 	return "暂无特性" if trait_names.is_empty() else ""
+
+
+
+func open_source(source_cell: int, family_handle: int) -> void:
+	open_target(-1, 0, source_cell)
+	var row := _quote_row_refs.get(family_handle) as Button
+	if row != null and not row.disabled:
+		_on_reusable_quote_pressed(row)
+		_scroll_to_pinned_family()
+		begin_target_selection()
+	else:
+		_feedback.text = "该城分支已无法派遣，请重新选择家族。"
+		_feedback.visible = true
+
+
+func _scroll_to_pinned_family() -> void:
+	if not is_inside_tree():
+		return
+	await get_tree().process_frame
+	var row := _quote_row_refs.get(int(_selected_quote.get("family_handle", 0))) as Control
+	if visible and row != null:
+		(get_node("%RowsScroll") as ScrollContainer).ensure_control_visible(row)
+
+
+func begin_target_selection() -> void:
+	_target_picking = true
+	_update_start_enabled()
+	target_selection_requested.emit()
+
+
+func cancel_target_selection() -> void:
+	_target_picking = false
+	_update_start_enabled()
+
+
+func is_target_picking() -> bool:
+	return visible and _target_picking
+
+
+func try_target_cell(cell: int) -> bool:
+	if _controller == null or cell < 0:
+		return false
+	var family := int(_selected_quote.get("family_handle", 0))
+	var page: Dictionary = _controller.get_family_colonization_quotes(cell, family, _source_filter, 0, 256)
+	if not bool(page.get("ok", false)) or (family > 0 and int(page.get("total", 0)) <= 0):
+		_feedback.text = _reason_text(String(page.get("code", "colonization_target_invalid"))) \
+			if not bool(page.get("ok", false)) else "该家族当前无法从此城前往此地，请选择其他目的地。"
+		_feedback.visible = true
+		_feedback.tooltip_text = _feedback.text
+		return false
+	_target_cell = cell
+	_target_picking = false
+	_sources_loaded = false
+	_quotes_identity = ""
+	_feedback.text = ""
+	_show_quotes()
+	_update_start_enabled()
+	return true
+
+
+func _cell_name(cell: int) -> String:
+	if cell < 0:
+		return "待选目的地"
+	if _controller != null and _controller.has_method("dispatch_cell_display_name"):
+		return String(_controller.dispatch_cell_display_name(cell))
+	return "地块 %d" % (cell + 1)
+
+
+func _update_workflow() -> void:
+	if _workflow == null:
+		return
+	var source := _source_city.text if _source_filter >= 0 else "待选城市"
+	var family := String(_selected_quote.get("display_name", "待选家族"))
+	_workflow.text = "%s → %s → %s" % [source, family, _cell_name(_target_cell)]
+	_footer_selection.text = "已选：%s" % family if not _selected_quote.is_empty() else "点击家族确定派遣对象"
+	_subtitle.text = "请在地图上选择目的地 · Esc 退出选点" if _target_picking \
+		else ("先选出发家族，再选目的地" if _source_first else "先选目的地，再选出发城市与家族")
+	_subtitle.visible = _target_picking
+	_target_button.text = "重新选点" if _target_cell >= 0 else "选择目的地"
+
+
+func _load_local_families() -> Dictionary:
+	if _source_filter < 0 or _controller == null or not _controller.has_method("get_family_dispatch_candidates"):
+		return {"ok": true}
+	var rebuilt := {}
+	var offset := 0
+	while true:
+		var page: Dictionary = _controller.get_family_dispatch_candidates(_source_filter, offset, 256)
+		if not bool(page.get("ok", false)):
+			return page
+		var handles: PackedInt64Array = page.get("family_handles", PackedInt64Array())
+		for index in range(handles.size()):
+			var data := {"family_handle": int(handles[index]), "source_cell": _source_filter,
+				"target_cell": _target_cell, "quote_token": 0}
+			for pair in [["family_names", "display_name"], ["populations", "population"],
+					["cash_claims", "cash_claim"], ["owned_buildings", "owned_buildings"], ["prestige_levels", "prestige_level"]]:
+				var values: Variant = page.get(pair[0], [])
+				if index < values.size():
+					data[pair[1]] = values[index]
+			data["maximum_population"] = maxi(0, int(data.get("population", 0)) - 1)
+			rebuilt[int(handles[index])] = data
+		if not bool(page.get("has_more", false)) or handles.is_empty():
+			break
+		offset += handles.size()
+	_local_families = rebuilt
+	return {"ok": true}
+
+
+func _get_source_quotes() -> Dictionary:
+	var page: Dictionary = _controller.get_family_colonization_quotes(
+		_target_cell, _family_filter, _source_filter, 0, 256)
+	var offset := (page.get("family_handles", PackedInt64Array()) as PackedInt64Array).size()
+	while bool(page.get("ok", false)) and bool(page.get("has_more", false)) and offset > 0:
+		var next: Dictionary = _controller.get_family_colonization_quotes(
+			_target_cell, _family_filter, _source_filter, offset, 256)
+		if not bool(next.get("ok", false)):
+			return next
+		var handles: PackedInt64Array = next.get("family_handles", PackedInt64Array())
+		if handles.is_empty():
+			break
+		for key in ["family_handles", "source_cells", "maximum_populations", "route_costs",
+				"travel_days", "quote_tokens", "surnames", "surname_disambiguators", "source_settlement_names"]:
+			if page.has(key) and next.has(key):
+				var values: Variant = page[key]
+				values.append_array(next[key])
+				page[key] = values
+		offset += handles.size()
+		page["has_more"] = bool(next.get("has_more", false))
+	return page
+
+
+func _show_source_families() -> void:
+	_title.text = "家族派遣"
+	if _source_city.item_count == 1:
+		_source_city.add_item(_cell_name(_source_filter), _source_filter)
+		_source_city.select(1)
+	_source_city.disabled = true
+	var page := _load_local_families()
+	if not bool(page.get("ok", false)):
+		_selected_quote.clear()
+		_clear_list()
+		_add_note(String(page.get("message", "当地家族暂不可用。")), UITokens.RISK)
+	else:
+		var restored := _sync_quote_rows(_local_families.values(), int(_population.value))
+		if not restored:
+			_selected_quote.clear()
+			_show_family_preview({})
+	_update_start_enabled()
+
+
+func _apply_list_filter_sort() -> void:
+	if _current_tab != "quotes":
+		return
+	var added: Array = []
+	for handle in _quote_row_refs:
+		if not _display_order.has(handle):
+			added.append(handle)
+	added.sort_custom(func(a, b) -> bool:
+		var left: Dictionary = _quote_row_refs[a].get_meta("quote", {})
+		var right: Dictionary = _quote_row_refs[b].get_meta("quote", {})
+		var field := "prestige_level" if _sort.selected == 1 else "maximum_population"
+		if _sort.selected < 2 and int(left.get(field, 0)) != int(right.get(field, 0)):
+			return int(left.get(field, 0)) > int(right.get(field, 0))
+		var ln := String(left.get("display_name", ""))
+		var rn := String(right.get("display_name", ""))
+		return ln < rn if ln != rn else int(a) < int(b))
+	_display_order.append_array(added)
+	var query := _search.text.strip_edges().to_lower()
+	var child_index := 0
+	for handle in _display_order:
+		if not _quote_row_refs.has(handle):
+			continue
+		var row := _quote_row_refs[handle] as Button
+		var quote: Dictionary = row.get_meta("quote", {})
+		row.visible = query.is_empty() or String(quote.get("display_name", "")).to_lower().contains(query)
+		_list.move_child(row, child_index)
+		child_index += 1
+	if _hover_family != 0:
+		var hovered := _quote_row_refs.get(_hover_family) as Control
+		if hovered == null or not hovered.visible:
+			_hover_family = 0
+			_hover_timer.stop()
+			_show_family_preview(_selected_quote)
+
+
+func _on_row_preview_entered(row: Button) -> void:
+	_hover_family = int(row.get_meta("quote", {}).get("family_handle", 0))
+	_hover_timer.start()
+
+
+func _on_row_preview_exited(row: Button) -> void:
+	if _hover_family == int(row.get_meta("quote", {}).get("family_handle", 0)):
+		_hover_family = 0
+		_hover_timer.stop()
+		_show_family_preview(_selected_quote)
+
+
+func _show_hover_preview() -> void:
+	var row := _quote_row_refs.get(_hover_family) as Button
+	if visible and _current_tab == "quotes" and row != null and row.visible:
+		_show_family_preview(row.get_meta("quote", {}), true)
+
+
+func _show_family_preview(quote: Dictionary, hovering: bool = false) -> void:
+	if _preview_title == null:
+		return
+	_preview_family = int(quote.get("family_handle", 0))
+	if quote.is_empty():
+		_preview_title.text = "家族预览"
+		_preview_metrics.text = "悬停查看详情，点击家族固定选择。"
+		_preview_traits.text = ""
+		_preview_preferences.text = ""
+		_preview_effects.text = ""
+		_preview_route.text = ""
+		return
+	_preview_title.text = ("预览 · " if hovering else "已选 · ") + String(quote.get("display_name", "家族"))
+	var key := "%d:%d" % [_source_filter, _preview_family]
+	var preview: Dictionary = _preview_cache.get(key, {})
+	if preview.is_empty():
+		if _controller != null and _controller.has_method("get_family_dispatch_preview"):
+			preview = _controller.get_family_dispatch_preview(_preview_family, _source_filter)
+		else:
+			preview = {"ok": true, "traits": {}}
+			if _controller != null and _controller.has_method("get_family_traits"):
+				preview["traits"] = _controller.get_family_traits(_preview_family)
+		if bool(preview.get("ok", false)):
+			_preview_cache[key] = preview
+	if not bool(preview.get("ok", false)):
+		_preview_metrics.text = String(preview.get("message", "当地分支详情暂不可用。"))
+		_preview_traits.text = ""
+		_preview_preferences.text = ""
+		_preview_effects.text = ""
+		_preview_route.text = ""
+		return
+	var branch: Dictionary = preview.get("branch", {})
+	_preview_metrics.text = "当地族人 %s · 可派 %s
+威望 %s · 产业 %s
+资金归属 %s" % [
+		UITokens.format_compact_number_cn(float(branch.get("populations", quote.get("population", int(quote.get("maximum_population", 0)) + 1))), 0),
+		UITokens.format_compact_number_cn(float(quote.get("maximum_population", 0)), 0),
+		str(branch.get("prestige_levels", quote.get("prestige_level", "—"))),
+		str(branch.get("owned_buildings", quote.get("owned_buildings", "—"))),
+		UITokens.format_compact_number_cn(float(branch.get("cash_claims", quote.get("cash_claim", 0))) / 10000.0, 2)]
+	var traits: Dictionary = preview.get("traits", {})
+	var names: PackedStringArray = traits.get("display_names", PackedStringArray())
+	var descriptions: PackedStringArray = traits.get("descriptions", PackedStringArray())
+	var core: PackedByteArray = traits.get("core", PackedByteArray())
+	var lines := PackedStringArray()
+	for i in range(names.size()):
+		lines.append("%s · %s
+%s" % ["核心" if i < core.size() and core[i] != 0 else "附加",
+			names[i], descriptions[i] if i < descriptions.size() else ""])
+	_preview_traits.text = "特性
+" + "
+
+".join(lines) if not lines.is_empty() else "暂无特性"
+	var preferences: PackedStringArray = traits.get("behavior_selector_display_names", PackedStringArray())
+	_preview_preferences.text = "行为偏好
+" + "、".join(preferences) if not preferences.is_empty() else ""
+	var effects: Dictionary = preview.get("effects", traits)
+	var effect_names: PackedStringArray = effects.get("effect_display_names", PackedStringArray())
+	var effect_copy: PackedStringArray = effects.get("effect_current_descriptions", effects.get("effect_descriptions", PackedStringArray()))
+	lines.clear()
+	for i in range(effect_names.size()):
+		lines.append(String(effect_names[i]) + ("
+" + String(effect_copy[i]) if i < effect_copy.size() else ""))
+	_preview_effects.text = "当地效果
+" + "
+
+".join(lines) if not lines.is_empty() else ""
+	var route_quote := quote.duplicate(true)
+	if hovering and _target_cell >= 0 and int(quote.get("quote_token", 0)) > 0:
+		var people := maxi(1, int(quote.get("maximum_population", 1)))
+		var route_key := "%d:%d" % [int(quote.quote_token), people]
+		var detail: Dictionary = _quote_preview_cache.get(route_key, {})
+		if detail.is_empty() and _controller != null:
+			detail = _controller.get_family_colonization_quote_detail(int(quote.quote_token), people)
+			if bool(detail.get("ok", false)):
+				_quote_preview_cache[route_key] = detail
+		if bool(detail.get("ok", false)):
+			route_quote.merge(detail, true)
+	_update_preview_route(route_quote)
+
+
+func _update_preview_route(quote: Dictionary) -> void:
+	if _target_cell < 0:
+		_preview_route.text = "选定目的地后计算路线和开工物资。"
+		return
+	_preview_route.text = "目的地 · %s
+预计 %d 日抵达
+%s" % [_cell_name(_target_cell),
+		int(quote.get("travel_days", 1)), _kit_summary_text(quote)]
+	if bool(quote.get("kit_partial", false)):
+		_preview_route.text += "
+" + ("物资不足，将先在源地筹备。" if bool(quote.get("kit_place_buildings", false)) else "仅携带当前可用的基础物资。")

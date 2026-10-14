@@ -1,9 +1,8 @@
 extends SceneTree
 
 ## Family founding 1-of-3 dialog plus the PlayerController modal lock:
-## cards render structured KPIs, trait delta pills, Prestige I-V preview/drawer,
-## safe-area floating layout (leaving the right InspectorPanel uncovered),
-## collapse/expand map peek, cell locate signal, and clock pause/resume lock.
+## Left dossier summaries, one expanded house, plain buff copy, inspector
+## avoidance, queued-offer animation safety, and the existing clock lock.
 
 const PlayerControllerScript = preload("res://scripts/game/player_controller.gd")
 
@@ -119,34 +118,47 @@ func _run() -> void:
 		and not (dialog.get_node("ArchiveSurface/PaperBackground") as Control).visible)
 	var first := cards.get_child(0) as FamilyFoundingCard
 	var third := cards.get_child(2) as FamilyFoundingCard
-	_expect("card shows family name, industry, founders, traits and effect",
-		String(first.get_node("Margin/Column/Top/Labels/Title").text) == "长安张氏"
-		and String(first.get_node("Margin/Column/Industry").text).find("采集营地") >= 0
-		and String(first.get_node("Margin/Column/Industry").text).find("42") >= 0
-		and String(first.get_node("Margin/Column/Traits").text).find("节俭：日常消费减少 10%") >= 0
-		and String(first.get_node("Margin/Column/Effect").text).find("专精产业") >= 0)
-	_expect("structured KPI strip and trait list render on card",
-		String((first.get_node("%IndustryValue") as Label).text) == "采集营地"
-		and String((first.get_node("%FounderValue") as Label).text).find("42") >= 0
+	_expect("summary shows name, origin, founder count, trait keywords and first prestige effect",
+		String((first.get_node("%Title") as Label).text) == "长安张氏"
+		and String((first.get_node("%Origin") as Label).text).contains("采集营地")
+		and String((first.get_node("%Origin") as Label).text).contains("42")
+		and String((first.get_node("%TraitSummary") as Label).text).contains("节俭")
+		and String((first.get_node("%EffectPreview") as Label).text).contains("专精产业"))
+	_expect("all details start collapsed, all three summaries remain in one column",
+		not first.is_details_expanded() and not third.is_details_expanded()
+		and (cards as GridContainer).columns == 1)
+	_expect("buff copy has no progress bars or duplicate numeric pills",
+		first.find_children("*", "ProgressBar", true, false).is_empty()
 		and (first.get_node("%TraitsList") as VBoxContainer).get_child_count() == 2)
 	var effect_preview := String((first.get_node("%EffectPreview") as Label).text)
 	_expect("effect preview shows Prestige I statement instead of unreached-prestige placeholder",
-		effect_preview.find("威望Ⅰ：本地块产出提高 2%") >= 0
-		and effect_preview.find("当前未达威望") < 0)
-	var tier_toggle := first.tier_toggle_button()
-	_expect("tier toggle expands and collapses 5-tier effect list",
-		tier_toggle != null and tier_toggle.visible and not first.is_tiers_expanded())
-	if tier_toggle != null:
-		tier_toggle.button_pressed = true
-		_expect("5-tier drawer becomes visible when toggled",
-			first.is_tiers_expanded()
-			and (first.get_node("%EffectTiersBox") as Control).visible
-			and (first.get_node("%EffectTiersBox") as Control).get_child_count() == 5)
-	_expect("prompt names the settlement, milestone and remaining queue",
-		String(dialog.get_node(
-			"ArchiveSurface/Frame/Margin/Column/Body/Prompt/Margin/Text").text).find("长安人口已达 200") >= 0
-		and String(dialog.get_node(
-			"ArchiveSurface/Frame/Margin/Column/Body/Prompt/Margin/Text").text).find("另有 1 处") >= 0)
+		effect_preview.contains("威望Ⅰ：本地块产出提高 2%")
+		and not effect_preview.contains("当前未达威望"))
+	first.details_button().emit_signal("pressed")
+	await create_timer(0.22).timeout
+	_expect("details show complete trait copy and five prestige tiers without submitting",
+		first.is_details_expanded()
+		and (first.get_node("%DetailsClip") as Control).visible
+		and (first.get_node("%EffectTiersBox") as Control).get_child_count() == 5
+		and _choice == [-1, -1, -1])
+	_expect("expanded text uses the full card width",
+		absf((first.get_node("%DetailsContent") as Control).size.x
+			- (first.get_node("%DetailsClip") as Control).size.x) <= 1.0)
+	var second := cards.get_child(1) as FamilyFoundingCard
+	second.details_button().emit_signal("pressed")
+	await create_timer(0.22).timeout
+	_expect("opening another house collapses its predecessor and preserves three summaries",
+		not first.is_details_expanded() and second.is_details_expanded()
+		and cards.get_child_count() == 3)
+	var existing_card_id := first.get_instance_id()
+	var old_scroll := (dialog.get_node("%CardsScroll") as ScrollContainer).scroll_vertical
+	dialog.present_offer({"offer_id": 9, "generation": 3})
+	_expect("same offer refresh preserves nodes, expanded house and scroll",
+		first.get_instance_id() == existing_card_id and second.is_details_expanded()
+		and (dialog.get_node("%CardsScroll") as ScrollContainer).scroll_vertical == old_scroll)
+	_expect("prompt explains the settlement milestone and consequence",
+		String(dialog.get_node("ArchiveSurface/Frame/Margin/Column/Body/Prompt/Margin/Text").text).contains("长安人口已达 200")
+		and String(dialog.get_node("ArchiveSurface/Frame/Margin/Column/Body/Prompt/Margin/Text").text).contains("其余两户"))
 	var locate_btn := dialog.get_node("%LocateButton") as Button
 	locate_btn.emit_signal("pressed")
 	_expect("locate button emits cell index for map/inspector focus", _located_cell == 17)
@@ -154,24 +166,38 @@ func _run() -> void:
 	_expect("collapse mode hides body to reveal map and shrinks height",
 		dialog.is_collapsed()
 		and not (dialog.get_node("ArchiveSurface/Frame/Margin/Column/Body") as Control).visible
-		and (dialog.get_node("ArchiveSurface") as Control).size.y <= 80.0)
+		and (dialog.get_node("%CollapsedEntry") as Control).visible
+		and (dialog.get_node("%CollapsedEntry") as Control).size.y <= 50.0)
 	dialog.toggle_collapsed()
 	_expect("expanding restores body and card grid",
 		not dialog.is_collapsed()
+		and second.is_details_expanded()
 		and (dialog.get_node("ArchiveSurface/Frame/Margin/Column/Body") as Control).visible)
-	for res in [Vector2(1280.0, 720.0), Vector2(1366.0, 768.0), Vector2(1920.0, 1080.0)]:
+	dialog.set_inspector_obscures(true)
+	_expect("large inspector temporarily collapses founding panel", dialog.is_collapsed())
+	dialog.set_inspector_obscures(false)
+	_expect("closing inspector restores expanded house", not dialog.is_collapsed() and second.is_details_expanded())
+	dialog.set_collapsed(true, false)
+	dialog.set_inspector_obscures(true)
+	dialog.set_inspector_obscures(false)
+	_expect("manual collapse survives large inspector open and close", dialog.is_collapsed())
+	dialog.set_collapsed(false, false)
+	for res in [Vector2(1280.0, 720.0), Vector2(1366.0, 768.0), Vector2(1920.0, 1080.0), Vector2(2560.0, 1440.0)]:
 		var safe := Rect2(Vector2(52.0, 52.0), Vector2(res.x - 52.0 - 460.0, res.y - 104.0))
 		dialog.set_safe_area(safe)
 		var surface := dialog.get_node("ArchiveSurface") as Control
 		_expect("floating dossier avoids right 460px inspector at %dx%d" % [int(res.x), int(res.y)],
-			surface.position.x >= safe.position.x
+			absf(surface.position.x - safe.position.x - UITokens.SPACE_SM) <= 1.0
+			and surface.size.x <= UITokens.FAMILY_FOUNDING_WIDE_WIDTH
 			and surface.position.x + surface.size.x <= res.x - 460.0 + 1.0)
 	_expect("missing third candidate disables only its button",
 		not first.choose_button().disabled and third.choose_button().disabled)
 	_expect("first available choice takes keyboard focus",
-		first.choose_button().has_focus())
-	(cards.get_child(1) as FamilyFoundingCard).choose_button().emit_signal("pressed")
+		first.details_button().has_focus())
+	second.choose_button().emit_signal("pressed")
 	_expect("choice carries offer id, generation and index", _choice == [9, 3, 1])
+	first.choose_button().emit_signal("pressed")
+	_expect("repeated input cannot overwrite pending choice", _choice == [9, 3, 1])
 	_expect("pending state disables every choice",
 		first.choose_button().disabled
 		and (cards.get_child(1) as FamilyFoundingCard).choose_button().disabled)
@@ -182,6 +208,33 @@ func _run() -> void:
 			"ArchiveSurface/Frame/Margin/Column/Body/Status").text).find("候选已过期") >= 0)
 	dialog.close_offer()
 	_expect("close hides the dialog", not dialog.is_offer_open())
+	dialog.present_offer({"offer_id": 10, "generation": 1,
+		"candidates": [_card("新城王氏", "伐木场", "多子多福")]})
+	await create_timer(0.2).timeout
+	_expect("old close callback cannot hide the next queued offer",
+		dialog.is_offer_open() and dialog.visible and dialog.current_offer_id() == 10)
+	var long_card := _card("新城张氏繁衍兴盛产业广布四方之家", "跨地区联合经营狩猎采集营地", "狩猎与采集产业经营者")
+	long_card["trait_display_names"] = PackedStringArray(["节俭持家", "采集产业专精", "勤勉从业", "开拓门风"])
+	long_card["trait_descriptions"] = PackedStringArray(["日常消费减少 10%。", "投资相关产业的可能性增加 50%。",
+		"更倾向选择当地已经存在或解锁的合法职业。", "更倾向参与开拓并寻找新的发展机会。"])
+	dialog.set_safe_area(Rect2(Vector2(88.0, 76.0), Vector2(700.0, 540.0)))
+	dialog.present_offer({"offer_id": 11, "generation": 1,
+		"settlement_name": "沿河多产业联合发展与贸易枢纽城市", "candidates": [long_card, long_card]})
+	first.details_button().pressed.emit()
+	second.details_button().pressed.emit()
+	first.details_button().pressed.emit()
+	await create_timer(0.25).timeout
+	_expect("rapid details switching leaves exactly the last house expanded",
+		first.is_details_expanded() and not second.is_details_expanded())
+	var surface := dialog.get_node("ArchiveSurface") as Control
+	var frame := dialog.get_node("ArchiveSurface/Frame") as Control
+	_expect("long city, house and industry names wrap within panel width",
+		frame.get_global_rect().end.x <= surface.get_global_rect().end.x + 1.0
+		and first.get_global_rect().end.x <= surface.get_global_rect().end.x + 1.0)
+	_expect("four full traits remain accessible in expanded details",
+		(first.get_node("%TraitsList") as VBoxContainer).get_child_count() == 4)
+	dialog.close_offer()
+	await create_timer(0.2).timeout
 	if OS.get_environment("PK_CAPTURE_FOUNDING_QA") == "1":
 		await _capture_visual_qa()
 	dialog.queue_free()
@@ -344,7 +397,7 @@ func _capture_visual_qa() -> void:
 		"candidates": [c0, c1, c2],
 	}
 	var session_theme := load("res://assets/themes/player_session_theme.tres") as Theme
-	for viewport_size in [Vector2i(1920, 1080), Vector2i(1366, 768), Vector2i(1280, 720)]:
+	for viewport_size in [Vector2i(1920, 1080), Vector2i(1366, 768), Vector2i(1280, 720), Vector2i(2560, 1440)]:
 		var vp := SubViewport.new()
 		vp.size = viewport_size
 		vp.disable_3d = true
@@ -401,8 +454,7 @@ func _capture_visual_qa() -> void:
 		var safe := Rect2(Vector2(52.0, 56.0), Vector2(viewport_size.x - 52.0 - 460.0, viewport_size.y - 104.0))
 		dlg.set_safe_area(safe)
 		dlg.present_offer(sample_offer)
-		for _i in 16:
-			await process_frame
+		await create_timer(0.3).timeout
 		await RenderingServer.frame_post_draw
 		var img := vp.get_texture().get_image()
 		var out_path := "%s/founding_%dx%d.png" % [out_dir, viewport_size.x, viewport_size.y]
@@ -411,10 +463,9 @@ func _capture_visual_qa() -> void:
 			print("[founding-qa] %s" % ProjectSettings.globalize_path(out_path))
 		if viewport_size == Vector2i(1920, 1080):
 			var card0 := dlg.get_node("ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid/Card0") as FamilyFoundingCard
-			if card0 != null and card0.tier_toggle_button() != null:
-				card0.tier_toggle_button().button_pressed = true
-				for _i in 6:
-					await process_frame
+			if card0 != null:
+				card0.details_button().emit_signal("pressed")
+				await create_timer(0.25).timeout
 				await RenderingServer.frame_post_draw
 				var img_tiers := vp.get_texture().get_image()
 				var tiers_path := "%s/founding_1920x1080_tiers_open.png" % out_dir

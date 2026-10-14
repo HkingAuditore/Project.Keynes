@@ -9,14 +9,15 @@ func _run() -> void:
 	var failures := PackedStringArray()
 	_check_wide(failures, 1920.0, 1040.0)
 	_check_wide(failures, 1366.0, 860.0)
-	_check_wide(failures, 1180.0, 860.0)
-	_check_compact(failures, 1179.0)
+	_check_wide(failures, 1212.0, 860.0)
+	_check_compact(failures, 1211.0)
 	_check_compact(failures, 1024.0)
-	_check_family_layout(failures, 1920.0, 960.0, false)
-	_check_family_layout(failures, 1366.0, 683.0, false)
-	_check_family_layout(failures, 1280.0, 640.0, false)
-	_check_family_layout(failures, 1279.0, 1279.0, true)
-	_check_family_layout(failures, 1024.0, 1024.0, true)
+	_check_family_layout(failures, 1920.0, 944.0, false)
+	_check_family_layout(failures, 1366.0, 667.0, false)
+	_check_family_layout(failures, 1312.0, 640.0, false)
+	_check_family_layout(failures, 1311.0, 1279.0, true)
+	_check_family_layout(failures, 1280.0, 1248.0, true)
+	_check_family_layout(failures, 1024.0, 992.0, true)
 	var closed := GameUIManager.inspector_layout_for_width(1024.0, false)
 	if bool(closed.get("compact", false)) != true \
 			or not is_equal_approx(float(closed.get("panel_width", 0.0)), 460.0):
@@ -45,7 +46,8 @@ func _check_wide(failures: PackedStringArray, viewport_width: float,
 func _check_compact(failures: PackedStringArray, viewport_width: float) -> void:
 	var layout := GameUIManager.inspector_layout_for_width(viewport_width, true)
 	if not bool(layout.get("compact", false)) \
-			or not is_equal_approx(float(layout.get("panel_width", 0.0)), viewport_width) \
+			or not is_equal_approx(float(layout.get("panel_width", 0.0)),
+				viewport_width - UITokens.ARCHIVE_EDGE_INSET * 2.0) \
 			or not is_zero_approx(float(layout.get("map_width", -1.0))):
 		failures.append("%.0fpx did not produce the full content drawer" % viewport_width)
 
@@ -58,7 +60,7 @@ func _check_family_layout(failures: PackedStringArray, viewport_width: float,
 			or not is_equal_approx(float(layout.get("panel_width", 0.0)), expected_width) \
 			or not is_equal_approx(float(layout.get("detail_width", 0.0)), expected_width) \
 			or not is_equal_approx(float(layout.get("map_width", -1.0)),
-				0.0 if expected_compact else viewport_width * 0.5):
+				0.0 if expected_compact else (viewport_width - UITokens.ARCHIVE_EDGE_INSET * 2.0) * 0.5):
 		failures.append("%.0fpx family workspace did not follow 50:50/fullscreen rule: %s" % [
 			viewport_width, layout])
 

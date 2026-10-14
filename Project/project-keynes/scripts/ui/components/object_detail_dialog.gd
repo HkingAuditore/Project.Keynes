@@ -520,7 +520,7 @@ func _get_minimum_size() -> Vector2:
 
 
 func _apply_embedded_chrome(embedded: bool) -> void:
-	clip_contents = true
+	clip_contents = embedded
 	var backdrop := get_node_or_null("Backdrop") as Control
 	var backdrop_close := get_node_or_null("BackdropClose") as Control
 	var center := get_node_or_null("Center") as Control
@@ -530,10 +530,10 @@ func _apply_embedded_chrome(embedded: bool) -> void:
 	if backdrop_close != null:
 		backdrop_close.visible = not embedded
 	if center != null:
-		center.clip_contents = true
+		center.clip_contents = embedded
 	if dialog == null:
 		return
-	dialog.clip_contents = true
+	dialog.clip_contents = embedded
 	dialog.custom_minimum_size = Vector2.ZERO if embedded else PANEL_MIN_SIZE
 	if embedded:
 		dialog.theme_type_variation = &""
@@ -1053,7 +1053,7 @@ func _add_branch_colonization_buttons(family_handle: int, branches: Array) -> Co
 		var button := ActionButtonScene.instantiate() as Button
 		button.clip_text = true
 		button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		button.text = "%s · 进入地图选点" % String(branch.get(
+		button.text = "%s · 从此城派遣" % String(branch.get(
 			"name", "地块 %d" % source_cell))
 		var owned: bool = _player_controller != null and \
 			_player_controller.has_method("is_player_owned_cell") and \

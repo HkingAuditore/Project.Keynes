@@ -2633,6 +2633,10 @@ func _family_category(snapshot: Dictionary) -> Dictionary:
 	var prestige_levels: PackedInt32Array = snapshot.get(
 		"prestige_levels", PackedInt32Array())
 	var rows: Array = []
+	var source_cell := int(snapshot.get("cell_idx", -1))
+	var country := _country_summary(source_cell) if source_cell >= 0 else {}
+	var player_owned := bool(country.get("owned", false)) \
+		and int(country.get("country_handle", 0)) == _player_country_handle()
 	for i in range(surnames.size()):
 		var suffix := "" if i >= disambiguators.size() or disambiguators[i] == 0 \
 			else "（%d）" % (int(disambiguators[i]) + 1)
@@ -2644,6 +2648,8 @@ func _family_category(snapshot: Dictionary) -> Dictionary:
 		rows.append({
 			"id": "family_%d" % family_handle,
 			"family_handle": family_handle,
+			"source_cell": source_cell,
+			"can_dispatch": player_owned and i < populations.size() and populations[i] > 1,
 			"name": "%s%s" % [display_name, suffix],
 			"population": UITokens.format_compact_number_cn(float(populations[i]), 1) if i < populations.size() else "0",
 			"notable_people": int(notable_people[i]) if i < notable_people.size() else 0,

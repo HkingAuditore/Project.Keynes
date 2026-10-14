@@ -1,26 +1,23 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://c51wbvw3bwucj"]
+
 [ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="1_icon"]
-[node name="TaxSection" type="VBoxContainer"]
+
+[node name="TaxSection" type="VBoxContainer" unique_id=1098090064]
 theme_override_constants/separation = 8
-[node name="Head" type="HBoxContainer" parent="."]
+
+[node name="Head" type="HBoxContainer" parent="." unique_id=1403731808]
 layout_mode = 2
 theme_override_constants/separation = 8
-[node name="Icon" parent="Head" instance=ExtResource("1_icon")]
+
+[node name="Icon" parent="Head" unique_id=1630211807 instance=ExtResource("1_icon")]
 custom_minimum_size = Vector2(20, 20)
 layout_mode = 2
-[node name="Title" type="Label" parent="Head"]
+
+[node name="Title" type="Label" parent="Head" unique_id=2081357988]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKSectionTitle"
-[node name="Readonly" type="Label" parent="Head"]
-layout_mode = 2
-text = "只读"
-theme_type_variation = &"PKMutedLabel"
-[node name="Hint" type="Label" parent="."]
-layout_mode = 2
-text = "仅可调整本国税率；上方为该国当前政策。"
-autowrap_mode = 2
-theme_type_variation = &"PKMutedLabel"
-[node name="Lanes" type="VBoxContainer" parent="."]
+
+[node name="Lanes" type="VBoxContainer" parent="." unique_id=505665230]
 layout_mode = 2
 theme_override_constants/separation = 4

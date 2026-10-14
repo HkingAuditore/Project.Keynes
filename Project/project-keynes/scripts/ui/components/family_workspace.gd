@@ -1175,10 +1175,10 @@ func _build_branch_page(page: VBoxContainer, rows: Array) -> void:
 		meters.set_meters(_branch_meter_dicts(row))
 		body.add_child(meters)
 		var action := FamilyButtonScene.instantiate() as Button
-		action.text = "进入地图选点"
+		action.text = "从此城派遣"
 		action.theme_type_variation = &"FamilyActionButton"
 		action.disabled = not _colonization_available(int(row.get("cell", -1)))
-		action.tooltip_text = "以此分支为来源进入地图选点"
+		action.tooltip_text = "保留此城与家族，打开派遣工作区选择目的地"
 		action.pressed.connect(func() -> void:
 			colonization_requested.emit(_family_handle, int(row.get("cell", -1))))
 		body.add_child(action)
@@ -1453,12 +1453,12 @@ func _apply_responsive_layout() -> void:
 
 	if _nav_rail_surface != null:
 		_nav_rail_surface.visible = not compact
-		_nav_rail_surface.position = Vector2.ZERO
-		_nav_rail_surface.size = Vector2(rail_width, size.y)
+		_nav_rail_surface.position = Vector2(8.0, 8.0)
+		_nav_rail_surface.size = Vector2(rail_width - 8.0, maxf(size.y - 16.0, 0.0))
 	if _page_surface != null:
-		var page_x := 0.0 if compact else rail_width
-		_page_surface.position = Vector2(page_x, 0.0)
-		_page_surface.size = Vector2(maxf(200.0, size.x - page_x), size.y)
+		var page_x := 8.0 if compact else rail_width
+		_page_surface.position = Vector2(page_x, 8.0)
+		_page_surface.size = Vector2(maxf(200.0, size.x - page_x - 8.0), maxf(size.y - 16.0, 0.0))
 	_place_hinges(rail_width, compact)
 
 	_safe_margin.add_theme_constant_override("margin_left", roundi(left_pad))

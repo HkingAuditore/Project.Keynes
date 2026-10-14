@@ -1,0 +1,27 @@
+diff --git a/.codex/skills/project-keynes-family-runtime/SKILL.md b/.codex/skills/project-keynes-family-runtime/SKILL.md
+--- a/.codex/skills/project-keynes-family-runtime/SKILL.md
++++ b/.codex/skills/project-keynes-family-runtime/SKILL.md
+@@ -283,5 +283,10 @@
+   Keep source-cell identity and the branch population cap in the selected quote and submitted intent;
+   never collapse branches across cities or substitute the family's origin/home cell.
+-  `EconomyFacade` decorates quote pages with `source_settlement_names`; the planner remains a
+-  432-wide left panel and clears selection/route on city changes or branch disappearance.
++  `EconomyFacade` decorates quote pages with `source_settlement_names` and kit display names.
++  The shared target-first/source-first workbench occupies 45% of the viewport on the left,
++  shows 48-high local branch summaries and lazily previews details. Hover must never change
++  the confirmed family, population or route. Source-first state has no native quote until a
++  valid target is chosen; token=0 is never submitted. Preserve source/family on target changes,
++  clear stale selection/route when changing source or losing the branch, and reserve camera space.
++  Controller readers validate source ownership before calling the local native family facade.
+ 
+diff --git a/.agents/skills/project-keynes-player-controller/SKILL.md b/.agents/skills/project-keynes-player-controller/SKILL.md
+--- a/.agents/skills/project-keynes-player-controller/SKILL.md
++++ b/.agents/skills/project-keynes-player-controller/SKILL.md
+@@ -25,3 +25,7 @@
+ ## Required Invariants
+ 
++Family dispatch readers must validate source ownership before querying local branches.
++The two dispatch entrypoints share the workbench and existing start/cancel commands;
++hover previews never select a family or submit a command, and a targetless intent is UI-only.
++See `family-colonization-runtime.md` and `colonization_workbench_ui_test.gd`.
+ 1. Mount exactly one `PlayerController` under `player_game.tscn`; do not mount

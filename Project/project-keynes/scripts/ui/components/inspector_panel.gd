@@ -497,6 +497,8 @@ func _build_row_list(host: Control, data: Dictionary, row_key: String,
 	match row_key:
 		"family_rows":
 			_family_list = FamilyListScene.instantiate()
+			_family_list.dispatch_requested.connect(func(family_handle: int, source_cell: int) -> void:
+				family_colonization_requested.emit(family_handle, source_cell))
 			list = _family_list
 		"cohort_rows":
 			_cohort_list = CohortListScene.instantiate() as CohortList
@@ -1165,9 +1167,9 @@ func _sync_split_layout() -> void:
 		return
 	var split := _inspector_root.get_parent() as Control
 	if split != null:
-		split.clip_contents = true
+		split.clip_contents = not _family_chrome_active
 	var inspecting := _detail_shell.visible
-	_detail_shell.clip_contents = true
+	_detail_shell.clip_contents = not _family_chrome_active
 	# 宽屏分栏需要约 400+424。面板尚未被 GameUIManager 加宽时（或测试里仍是
 	# 460）如果硬拆两列，详情会盖住档案。窄宽度先让详情独占。
 	var family_open := _family_workspace != null and _family_workspace.visible

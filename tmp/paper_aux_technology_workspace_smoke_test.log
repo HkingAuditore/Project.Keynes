@@ -1,0 +1,111 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] technology catalog compiles
+  [info] catalog compile + public metadata + layout 207.258ms
+  [PASS] technology layout compiles
+  [PASS] debug catalog compile and layout stay below 250ms
+  [PASS] era metadata carries display names
+  [PASS] domain metadata carries four accents
+  [PASS] deferred research refresh bootstraps technology catalog
+  [PASS] invalid research refresh preserves the visible technology tree
+  [PASS] technology presentation is fully Chinese
+  [PASS] revealed technology conditions expose discovered evidence
+  [PASS] technology detail explains independent research routes
+  [PASS] development board shows only current-era neutral objectives
+  [PASS] tree view exists
+  [PASS] tree view draws itself instead of spawning nodes
+  [PASS] available research desk exists
+  [PASS] opening the technology section defaults to the available desk
+  [PASS] available desk lists only researchable technologies
+  [PASS] layout covers the whole catalog
+  [PASS] layout bands one per era
+  [PASS] every hard dependency edge points strictly downwards
+  [PASS] era bands never overlap or invert
+  [PASS] era milestones are horizontally centred
+  [PASS] era milestones terminate their band
+  [PASS] only eight technologies are known at the start
+  [PASS] fog keeps the visible set far below the catalog size
+  [PASS] fog hides later eras entirely
+  [PASS] visible set is exactly researchable nodes plus their unknown frontier
+  [PASS] the opening frontier has a child that can be locked for the fog check
+  [PASS] revealed-but-locked nodes stay unnamed
+  [PASS] revealed-but-locked nodes remain unknown frontier
+  [PASS] tooltip does not leak locked technology names
+  [PASS] allocation bars leave a wide drag track
+  [PASS] pressing a row grabs that domain
+  [PASS] pressing a row grabs that domain
+  [PASS] pressing a row grabs that domain
+  [PASS] pressing a row grabs that domain
+  [PASS] dragging any row keeps the weights summing to 10000
+  [PASS] normalisation never produces negative weights
+  [PASS] other domains yield share in proportion
+  [PASS] every drag commits exactly once
+  [PASS] a drag is relative to the press point, not a jump to the cursor
+  [PASS] a press without movement changes nothing
+  [PASS] a press without movement sends no command
+  [PASS] pressing below the rows grabs nothing
+  [PASS] balance resets to 25% each and commits once
+  [PASS] snapshot weights round-trip
+  [PASS] a zero-weight domain can be dragged back in
+  [PASS] available desk draws its cards instead of spawning rows
+  [PASS] available desk separates queued work from researchable work
+  [PASS] the card's 加入 button requests that technology
+  [PASS] queued research gets an ETA once two research days are observed
+  [PASS] detail shows queue position and ETA for queued research
+  [PASS] detail fact sheet states the full research cost
+  [PASS] KPI band reports the live queue
+  [PASS] KPI band names the current era
+  [PASS] chapter nav switches to the tree and shows the era stepper
+  [PASS] era stepper hides outside the tree
+  [PASS] an unchanged research snapshot skips the patch entirely
+  [PASS] research toast idles hidden without processing
+  [PASS] research toast keeps the two newest notes
+  [PASS] research toast draws notes instead of spawning nodes
+  [info] policy column 320 x 482 at 0
+  [info] tree column 560 x 482 at 320
+  [info] detail column 360 x 482 at 880
+  [PASS] every research column stays inside 1280x720
+  [PASS] research policy and detail are permanent working columns
+  [PASS] policy close requests cannot hide the permanent left column
+  [PASS] detail close requests cannot hide the permanent right column
+  [PASS] detail body and relation rows fit the drawer width
+  [info] compact tree width 1156
+  [PASS] compact mode still leaves the tree over 420px wide
+  [PASS] compact mode turns side columns into optional drawers
+  [PASS] queued technology renders one row
+  [PASS] daily refresh keeps the baked geometry
+  [PASS] daily refresh reuses queue rows instead of rebuilding them
+  [PASS] tree view still owns no child nodes
+  [info] research-day refresh p95 406us, unchanged snapshot p95 17us
+  [PASS] a research-day refresh stays under 1ms at p95
+  [PASS] an unchanged snapshot refresh stays under 0.1ms at p95
+  [PASS] research-day refreshes never rebuild queue rows
+  [PASS] the tree view exposes no zoom state at all
+  [PASS] queued research determines the opening focus
+  [PASS] the toolbar no longer splits the tree by domain tabs
+  [PASS] focus view contains at most three era bands
+  [PASS] focus view exposes four domain lanes on one map
+  [PASS] focus view includes the era milestone gate
+  [PASS] full reveal keeps the atlas to a three-era bounded set
+  [PASS] focus geometry fills the centre canvas without horizontal overflow
+  [PASS] every focus node stays inside the canvas-fitted bounds
+  [PASS] full reveal still shows era milestones in the focused window
+  [PASS] focus view keeps all four research domains on one map
+  [PASS] each research domain occupies a single vertical lane
+  [PASS] overview uses four domain rows after full reveal
+  [PASS] overview keeps the four domain rows while hiding future eras
+  [PASS] overview mastery tallies count only presented technologies
+  [PASS] overview recounts mastery when a technology completes
+  [PASS] application card is visible but locked when one required tech is unfinished
+  [PASS] application detail distinguishes primary and supporting technologies
+  [PASS] application card remains unknown while a required tech is hidden
+  [PASS] application card is derived as enabled only after every required tech completes
+  [PASS] application card never enters native research state storage
+=== technology workspace smoke: 0 failures ===
+ERROR: 61 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 133 RID allocations of type 'PN18TextServerAdvanced22ShapedTextDataAdvancedE' were leaked at exit.
+ERROR: 4 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 292 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

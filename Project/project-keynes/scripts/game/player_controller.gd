@@ -436,6 +436,70 @@ func get_family_colonization_quote_detail(quote_token: int,
 	return detail
 
 
+func get_family_dispatch_candidates(source_cell: int, offset: int = 0,
+		limit: int = 64) -> Dictionary:
+	var ready := _resolve_player_country()
+	if not bool(ready.get("ok", false)):
+		return ready
+	var owned := _validate_owned_cell(ready.facade, source_cell)
+	if not bool(owned.get("ok", false)):
+		return owned
+	if _economy_facade == null:
+		return _result(false, "runtime_unavailable", "经济运行时尚未就绪。")
+	return _economy_facade.family_cell_snapshot(source_cell, offset, limit)
+
+
+func get_family_dispatch_preview(family_handle: int, source_cell: int) -> Dictionary:
+	var offset := 0
+	var branch := {}
+	while true:
+		var page := get_family_dispatch_candidates(source_cell, offset, 256)
+		if not bool(page.get("ok", false)):
+			return page
+		var handles: PackedInt64Array = page.get("family_handles", PackedInt64Array())
+		var index := handles.find(family_handle)
+		if index >= 0:
+			for key in ["populations", "cash_claims", "owned_buildings", "prestige_levels", "family_names"]:
+				var values: Variant = page.get(key, [])
+				if index < values.size():
+					branch[key] = values[index]
+			break
+		if not bool(page.get("has_more", false)) or handles.is_empty():
+			return _result(false, "colonization_population_insufficient", "该城已没有此家族的分支。")
+		offset += handles.size()
+	return {"ok": true, "branch": branch,
+		"traits": _economy_facade.get_family_traits(family_handle),
+		"effects": _economy_facade.get_family_branch_effects(family_handle, source_cell)}
+
+
+func can_family_colonize_from(family_handle: int, source_cell: int) -> bool:
+	# 只检查真实当地分支，路线和物资仍由选点后的原生报价决定。
+	var offset := 0
+	while true:
+		var page := get_family_dispatch_candidates(source_cell, offset, 256)
+		if not bool(page.get("ok", false)):
+			return false
+		var handles: PackedInt64Array = page.get("family_handles", PackedInt64Array())
+		var people: PackedInt64Array = page.get("populations", PackedInt64Array())
+		var index := handles.find(family_handle)
+		if index >= 0:
+			return index < people.size() and people[index] > 1
+		if not bool(page.get("has_more", false)) or handles.is_empty():
+			return false
+		offset += handles.size()
+	return false
+
+
+func dispatch_cell_display_name(cell: int) -> String:
+	if _economy_facade == null or cell < 0:
+		return "待选择"
+	if not is_player_owned_cell(cell):
+		if _runtime_host == null or _runtime_host.current_map() == null \
+				or VisionSolver.fog_state(_runtime_host.current_map(), cell) != VisionSolver.FOG_VISIBLE:
+			return "待选择"
+	return _economy_facade.settlement_display_name(cell)
+
+
 func get_family_expeditions(offset: int = 0, limit: int = 64) -> Dictionary:
 	var ready := _resolve_player_country()
 	if not bool(ready.get("ok", false)):

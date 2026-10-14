@@ -1,0 +1,205 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+OpenGL API 3.3.0 NVIDIA 610.88 - Compatibility - Using Device: NVIDIA - NVIDIA GeForce RTX 4080
+
+[hex_renderer/variant] tiled=false quality= web_texture_budget=true shader=res://shaders/world_map.gdshader
+[ui-layout-diag/bind_ui] is_web=false viewport_visible_rect=[P: (0.0, 0.0), S: (1280.0, 720.0)] window_size=(1280, 720) content_scale_factor=1.000 content_scale_mode=0 device_pixel_ratio=-1.000 top_bar_rect=[P: (0.0, 0.0), S: (1280.0, 64.0)] right_panel_rect=[P: (804.0, 76.0), S: (460.0, 628.0)] country_action_bar_rect=[P: (517.0, 630.0), S: (336.0, 74.0)]
+[clock/step] delta=144.6ms speed=1x target=0.14d cap=8.00d/f cost=0.00ms ran=0 pulse=0.00ms loop=0.00ms full=0.25ms carry=0.14 barrier=
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=1120 native_ms=2.830 water=868 land=252
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=1120 native_ms=0.539 lakes=0 rivers=15 volcanoes=0
+[native_generation/vegetation] native_ms=0.178 candidates=252 none=662 score=[0.000,1.544,1.063] plant_water_land=252 river_adjacent_desert=0 coastal_highland_desert=3 terrain_weight=[0.180,1.200]
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=1 largest=868 | land_below_sea=0.0% | terr_distinct=19 entropy=2.766bit | river_ratio=1.339%
+MapGenerator v7: per-cell 40ms (1120 cells, path=gdext)
+MapBaker v6: hm=(1024, 642) seed=782395644
+    [fused] terrain=75.4ms valley=133.2ms erosion=2.2ms(ok=true) river=11.7ms(ok=true) latitude=0.1ms coast_sdf=3.6ms(ok=true)
+  geometry fields (fused C++): 339ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  visual tiles: {"degradation_reason":"","effective_budget_px":848256,"effective_texels_per_hex":16.2265688080802,"effective_world_units_per_texel":"(1.351245, 1.360372)","estimated_peak_bytes":54583200,"estimated_resident_bytes":40720800,"fallback_reason":"compatibility_renderer_tiles_preferred","generation_id":1,"grid_size":"(3, 2)","gutter_px":2,"hex_size":22.0,"horizon_path":"neutral_pending","interior_size":"(376, 376)","layer_size":"(380, 380)","layers":[{"bake_ms":58.9526,"coast_sdf_max_dist_px":9.40103277785189,"distance_scale":1.17512909723149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-5315287135703830158,"edge_neighbor":-4159601293814994010,"height":-4857313555477206410,"map_index":4018135500640323978,"terrain_detail":5299112279179823096,"terrain_normal":101560773390859148,"terrain_relief":-8922939430871944223,"water_depth":6465213959127974477},"layer":0,"normal_radius_px":"(6, 6)","raster_scale":"(1.178931, 1.17134)","river_sdf_max_dist_px":4.1129518403102,"shore_carve_band_px":7,"upload_ms":7.239,"wall_ms":66.409},{"bake_ms":87.4715,"coast_sdf_max_dist_px":9.40103277785189,"distance_scale":1.17512909723149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":5787935302792502602,"edge_neighbor":4252275192802414298,"height":8152259592484412932,"map_index":-8015174662569925970,"terrain_detail":-6925177371019011647,"terrain_normal":1824408614183386385,"terrain_relief":2762524745526844276,"water_depth":383073965309213625},"layer":1,"normal_radius_px":"(6, 6)","raster_scale":"(1.178931, 1.17134)","river_sdf_max_dist_px":4.1129518403102,"shore_carve_band_px":7,"upload_ms":6.793,"wall_ms":94.587},{"bake_ms":131.9631,"coast_sdf_max_dist_px":9.40103277785189,"distance_scale":1.17512909723149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-9176354844270544401,"edge_neighbor":-8830834894316216273,"height":-7647087767262378318,"map_index":-1373890051930029781,"terrain_detail":-9111414286541544366,"terrain_normal":5929431699208613834,"terrain_relief":-6354165073072486885,"water_depth":-4422175940637838509},"layer":2,"normal_radius_px":"(6, 6)","raster_scale":"(1.178931, 1.17134)","river_sdf_max_dist_px":4.1129518403102,"shore_carve_band_px":7,"upload_ms":6.943,"wall_ms":139.227},{"bake_ms":127.0534,"coast_sdf_max_dist_px":9.40103277785189,"distance_scale":1.17512909723149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":2707555369279352424,"edge_neighbor":-8767668602598613723,"height":4200698555474059703,"map_index":-4171883442855404228,"terrain_detail":-5797605504103374627,"terrain_normal":3647769471702822140,"terrain_relief":1652465832738859503,"water_depth":4734225006907317641},"layer":3,"normal_radius_px":"(6, 6)","raster_scale":"(1.178931, 1.17134)","river_sdf_max_dist_px":4.1129518403102,"shore_carve_band_px":7,"upload_ms":7.108,"wall_ms":134.493},{"bake_ms":66.0994,"coast_sdf_max_dist_px":9.40103277785189,"distance_scale":1.17512909723149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":1587273089970979696,"edge_neighbor":9067666211942992012,"height":-8380627579348347015,"map_index":-1762596964667444140,"terrain_detail":7569783494140158688,"terrain_normal":1669545831245050874,"terrain_relief":-6789744187254801203,"water_depth":4966742615558655171},"layer":4,"normal_radius_px":"(6, 6)","raster_scale":"(1.178931, 1.17134)","river_sdf_max_dist_px":4.1129518403102,"shore_carve_band_px":7,"upload_ms":7.326,"wall_ms":73.818},{"bake_ms":175.7083,"coast_sdf_max_dist_px":9.40103277785189,"distance_scale":1.17512909723149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-8610401046009830264,"edge_neighbor":-8790689853862812561,"height":1975077536582468141,"map_index":8976310206802905439,"terrain_detail":-4902610243627770294,"terrain_normal":-2010252679962695784,"terrain_relief":317293925734374496,"water_depth":-7360045701538463450},"layer":5,"normal_radius_px":"(6, 6)","raster_scale":"(1.178931, 1.17134)","river_sdf_max_dist_px":4.1129518403102,"shore_carve_band_px":7,"upload_ms":6.866,"wall_ms":182.88}],"logical_size":"(1128, 752)","mode":"tiled","path":"visual_tiled_static","profile":"desktop_high","relief_scale":2,"renderer":"gl_compatibility","requested_budget_px":825096,"requested_texels_per_hex":16.0,"requested_tile_world_span":"(704.0, 704.0)","requested_world_units_per_texel":1.375,"tile_world_area":259876.903381348,"tile_world_span":"(508.0682, 511.5)","total_ms":775.498,"visual_domain":"[P: (0.0, -44.0), S: (1524.205, 1023.0)]","wrap_period_x":1524.20471066061,"wrap_x":true}
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 3360ms
+MapBaker v6: total 3771ms
+MapGenerator v7: bake 3802ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=1120 wrap_period_x=69.282
+[native_generation] path=gdext n=1120 published=9 native_ms=0.075 compute_ms=0.028 flush_ms=0.046
+[hex_cell] facade ENABLED (1120 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=0.83ms wind=0.27ms psi=0.18ms(ran=true) upwelling=0.03ms total=1.61ms
+PhysicalCirculation solve@phase=1.50 total=2ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 4ms
+[cell_lut] deferred encode: 1ms path=gdext
+[bio-occupancy] seed landmasses=8 provinces=8 species=20 secondary_hearths=11
+[bio-occupancy]   bio.maize envelope=21 hearth=2 seeded_landmasses=1 primary_landmass=6 primary_envelope=10 occupied=2 occupied/envelope=0.20
+[bio-occupancy]   bio.wheat envelope=72 hearth=21 seeded_landmasses=4 primary_landmass=6 primary_envelope=19 occupied=21 occupied/envelope=1.11
+[bio-occupancy]   bio.rice envelope=25 hearth=1 seeded_landmasses=1 primary_landmass=3 primary_envelope=8 occupied=1 occupied/envelope=0.13
+[bio-occupancy]   bio.potato envelope=52 hearth=17 seeded_landmasses=3 primary_landmass=7 primary_envelope=28 occupied=17 occupied/envelope=0.61
+[bio-occupancy]   bio.horse envelope=84 hearth=13 seeded_landmasses=1 primary_landmass=3 primary_envelope=25 occupied=13 occupied/envelope=0.52
+[bio-occupancy]   bio.cotton envelope=31 hearth=2 seeded_landmasses=1 primary_landmass=6 primary_envelope=11 occupied=2 occupied/envelope=0.18
+[bio-occupancy]   bio.flax envelope=70 hearth=10 seeded_landmasses=2 primary_landmass=3 primary_envelope=17 occupied=10 occupied/envelope=0.59
+[bio-occupancy]   bio.spice envelope=31 hearth=1 seeded_landmasses=1 primary_landmass=4 primary_envelope=10 occupied=1 occupied/envelope=0.10
+[bio-occupancy]   bio.rubber envelope=19 hearth=2 seeded_landmasses=1 primary_landmass=4 primary_envelope=7 occupied=2 occupied/envelope=0.29
+[bio-occupancy]   bio.sheep envelope=29 hearth=4 seeded_landmasses=1 primary_landmass=6 primary_envelope=9 occupied=4 occupied/envelope=0.44
+[bio-occupancy]   bio.goat envelope=121 hearth=23 seeded_landmasses=2 primary_landmass=7 primary_envelope=51 occupied=23 occupied/envelope=0.45
+[bio-occupancy]   bio.cattle envelope=2 hearth=1 seeded_landmasses=1 primary_landmass=7 primary_envelope=2 occupied=1 occupied/envelope=0.50
+[bio-occupancy]   bio.pig envelope=85 hearth=18 seeded_landmasses=4 primary_landmass=4 primary_envelope=14 occupied=18 occupied/envelope=1.29
+[bio-occupancy]   bio.camel envelope=36 hearth=6 seeded_landmasses=1 primary_landmass=6 primary_envelope=13 occupied=6 occupied/envelope=0.46
+[bio-occupancy]   bio.yak envelope=62 hearth=23 seeded_landmasses=1 primary_landmass=7 primary_envelope=46 occupied=23 occupied/envelope=0.50
+[bio-occupancy]   bio.silkworm envelope=34 hearth=9 seeded_landmasses=2 primary_landmass=4 primary_envelope=11 occupied=9 occupied/envelope=0.82
+[bio-occupancy]   bio.reed envelope=29 hearth=1 seeded_landmasses=1 primary_landmass=7 primary_envelope=12 occupied=1 occupied/envelope=0.08
+[bio-occupancy]   bio.bast_fiber envelope=90 hearth=20 seeded_landmasses=1 primary_landmass=7 primary_envelope=40 occupied=20 occupied/envelope=0.50
+[bio-occupancy]   bio.dye_plant envelope=35 hearth=4 seeded_landmasses=1 primary_landmass=4 primary_envelope=8 occupied=4 occupied/envelope=0.50
+[bio-occupancy]   bio.medicinal_herb envelope=104 hearth=32 seeded_landmasses=4 primary_landmass=7 primary_envelope=42 occupied=32 occupied/envelope=0.76
+[bio-occupancy]   landmass 1 classes=none foods=none
+[bio-occupancy]   landmass 2 classes=none foods=none
+[bio-occupancy]   landmass 3 classes=fiber_forest, open_grazer, fiber_open, highland_food, open_food, dry_grazer, wetland_food, forest_grazer foods=potato, wheat, rice
+[bio-occupancy]   landmass 4 classes=tropical, forest_grazer, open_food, fiber_forest, fiber_open foods=wheat
+[bio-occupancy]   landmass 5 classes=none foods=none
+[bio-occupancy]   landmass 6 classes=tropical, open_food, fiber_open, forest_grazer, dry_grazer, highland_food, open_grazer, fiber_forest foods=maize, wheat, potato
+[bio-occupancy]   landmass 7 classes=dry_grazer, fiber_wet, forest_grazer, fiber_forest, highland_food, open_food, fiber_open, open_grazer, cold_grazer foods=potato, wheat
+[bio-occupancy]   landmass 8 classes=none foods=none
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[economy] ACTIVE native graph cells=1120 goods=134 cohorts=4 epoch_days=1 trade=ACTIVE topology_ready=true topology_generation=1 bootstrap=starter_settlement_bootstrap_v9 founder_families=1 founder_people=1
+[country] ACTIVE native authority countries=1 cells=1120 generation=1
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily + bio_occupancy_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "trigger_runtime", "ideology_runtime", "effect_runtime", "modifier_daily", "gameplay_effect", "natural_resource_daily", "bio_occupancy_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+[hex_renderer/variant] tiled=true quality= web_texture_budget=true shader=res://shaders/world_map.gdshader
+[visual-tiles/horizon] compute start generation=1 layers=6
+[hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+[building-visual] intel_refresh requested=70 changed=1 known=1 catalog=400 resident=0 body=0 queued=0 zoom=1.000
+[vision] fog=ON player_slot=0 early_out=OFF visible=70 explored=70/1120 solve_ms=0.065 border_edges=6
+[DIAG pass_a_entry] day=0 phase=0.002 gdext_pass_a=true use_data_core_climate=true use_soa_pipeline=true use_sparse_climate=true ext_bound=true
+[DIAG pass_a_cpp] day=0 rc=0.0000 cpp_taken_over=true dirty_count_after_cpp=1120
+[climate_b/F.3] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_climate_pass_b = true (flag removed; constant true)
+  cp.use_sparse_climate = true（C++ 会跑 full path 等价结果，不阻止）
+  _data_core_world_ext != null = true
+  ext.has_method('run_climate_pass_b') = true
+  fast_indexed = true (need n_cells*6=6720, got nb_size=6720)
+  rs_lookback = 3, t_freeze = 0.0800, coupling_gain = 1.5000
+  verdict = OK → will try C++
+[gdext sig] run_climate_pass_b match[0]: args.size()=1 names=[knobs] flags=1 id=15385
+[gdext sig] run_climate_pass_b: probe PASS (found match with 1 args)
+[climate_b/F.3] sig probe result = true（仅作诊断）
+[climate_b/F.3] DEBUG call#1: path=simd rc=0.0446 n_cells=1120 rs_lookback=3
+[climate_b/F.3] gdext path ACTIVE (dispatch=simd) — first run elapsed=0.04ms (legacy GDScript baseline ≈ 5.2ms; charter §7 target < 0.5ms)
+[ocean_water/F.2a] precondition probe (one-time):
+  active ClimateProfile = <in-memory>
+  cp.use_gdext_ocean_water = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_ocean_water_pass') = true
+  fast_indexed = true (n=1120 nb=6720)
+  advect_steps=3 heat_mix=0.5500
+  verdict = OK → will try C++
+[gdext sig] run_ocean_water_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15376
+[gdext sig] run_ocean_water_pass: probe PASS (found match with 1 args)
+[ocean_water/F.2a] sig probe result = true（仅作诊断）
+[ocean_water/F.2a] DEBUG call#1: path=scalar rc=0.1319 n=1120 advect=3
+[ocean_water/F.2a] gdext path ACTIVE — first run elapsed=0.13ms (legacy GDScript baseline ≈ 3.4ms; charter §7 target < 0.5ms)
+[ocean_land/F.2b] precondition probe (one-time):
+  active ClimateProfile = <in-memory>
+  cp.use_gdext_ocean_land = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_ocean_land_pass') = true
+  fast_indexed = true (n=1120 nb=6720)
+  effective_leak=0.5500 (coast_leak=0.5500 winter_boost=1.0000)
+  verdict = OK → will try C++
+[gdext sig] run_ocean_land_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15377
+[gdext sig] run_ocean_land_pass: probe PASS (found match with 1 args)
+[ocean_land/F.2b] sig probe result = true（仅作诊断）
+[ocean_land/F.2b] DEBUG call#1: path=scalar rc=0.0203 n=1120 effective_leak=0.5500
+[ocean_land/F.2b] gdext path ACTIVE — first run elapsed=0.02ms (legacy GDScript baseline ≈ 3.4ms; charter §7 target < 0.5ms)
+[sea_ice/F.4] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_sea_ice = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_sea_ice_daily_pass') = true
+  fast_indexed = true (need n_cells*6=6720, got neighbor_indices.size()=6720)
+  verdict = OK → will try C++
+[gdext sig] run_sea_ice_daily_pass match[0]: args.size()=2 names=[knobs, season_phase] flags=1 id=15388
+[gdext sig] run_sea_ice_daily_pass: probe PASS (found match with 2 args)
+[sea_ice/F.4] sig probe result = true（仅作诊断，不阻止下方 C++ 调用）
+[sea_ice/F.4] DEBUG call#1: path=scalar rc=0.0813 n_cells=1120 enable_oht=true
+[sea_ice/F.4] gdext path ACTIVE (dispatch=scalar) — first run elapsed=0.08ms (legacy GDScript baseline ≈ 5.1ms; charter §7 target < 0.5ms)
+_apply_sea_ice_daily_pass[F.4]: 0.08ms (water=868, flipped=0, phase=0.002)
+[sea_ice/DIAG] thr_eff t_form=0.080 t_melt=0.130 flip_thr=0.720 | temp all min=0.000 max=0.979 avg=0.514 | water n=868 t_min_w=0.000 below_form=160 (18.4%) | SIF pos=187 max=0.402 avg_w=0.0551 near_thr=80 | climate_anom=0.000
+[sea_ice/slow-dump] tick=0 path=gdext total_wall=12.17ms (pack=0.04 refresh=0.00 native=0.08 native_wall=0.12 sync=0.06 flip=0.02) water=868 flipped=0
+[transp/F.5] precondition probe (one-time):
+  active ClimateProfile = <in-memory ClimateProfile>
+  cp.use_gdext_transpiration = true (flag removed; constant true)
+  _data_core_world_ext != null = true
+  ext.has_method('run_transpiration_pass') = true
+  fast_indexed = true (need n_cells*6=6720, got neighbor_indices.size()=6720)
+  verdict = OK → will try C++
+[gdext sig] run_transpiration_pass match[0]: args.size()=1 names=[knobs] flags=1 id=15390
+[gdext sig] run_transpiration_pass: probe PASS (found match with 1 args)
+[transp/F.5] sig probe result = true（仅作诊断，不阻止下方 C++ 调用）
+[transp/F.5] DEBUG call#1: rc=0.0329 donor_table.size()=28 n_cells=1120 outflow=0.0250 self=0.0150
+[transp/F.5] gdext path ACTIVE — first run elapsed=0.03ms (legacy GDScript baseline ≈ 3.2ms; charter §7 target < 0.3ms)
+refresh_climate_daily #1: 95ms (cells=1120, phase=0.002) | A=2.2 B=10.4 ocean=20.3 wind=39.4 sea_ice=12.7 ice_bake=0.0 transp=10.2 path=data_core_cells_only
+[runtime-worker] production ACTIVE started mask=4095 auto_pod=true
+[economy-climate-gate] day=1 climate_ok=0 stall=0x10 ring=0
+[tech-ui-diag/query] apply ok gen=1 day=-1 view_gen=1 progress_total=0 pending_words=6
+[runtime-day-wait] day=1 env_day=0 missing=0x3ff stall=0x10 economy_input=-1 ring=0 country=
+[weather-layer][lut] #1 update_usec=15323136 last_usec=15323136 lerp=0.000 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[weather-layer][lut] #2 update_usec=15323136 last_usec=15323136 lerp=1.000 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[weather-layer][lut] #3 update_usec=15323136 last_usec=15323136 lerp=1.000 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[weather-layer][lut] #4 update_usec=15323136 last_usec=15323136 lerp=1.000 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[weather-layer][lut] #5 update_usec=15323136 last_usec=15323136 lerp=1.000 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[weather-layer][lut] #6 update_usec=15323136 last_usec=15323136 lerp=1.000 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[weather-layer][lut] #7 update_usec=15323136 last_usec=15323136 lerp=1.000 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+[visual-tiles/horizon] published {"compute_failure":{"ok":false,"path":"gpu_compute_failed","reason":"compatibility_renderer","total_ms":0.003},"gi_occluder_ok":false,"layers":[{"elapsed_ms":0.1616,"hash":-508413268521981016,"layer":0},{"elapsed_ms":0.1904,"hash":871364238491639158,"layer":1},{"elapsed_ms":0.1692,"hash":1818124920283915698,"layer":2},{"elapsed_ms":0.2065,"hash":-5028403871002456553,"layer":3},{"elapsed_ms":0.1836,"hash":-8301178559306113635,"layer":4},{"elapsed_ms":0.159,"hash":5996573230349420638,"layer":5}],"ok":true,"path":"baseline_horizon_resample","source_ms":88.3191,"source_path":"native_global_horizon","total_ms":82.697}
+[weather-layer][lut] #8 update_usec=15323136 last_usec=15323136 lerp=1.000 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[weather-layer][lut] #9 update_usec=15323136 last_usec=15323136 lerp=1.000 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[weather-layer][lut] #10 update_usec=15323136 last_usec=15323136 lerp=1.000 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[weather-layer][lut] #11 update_usec=15323136 last_usec=15323136 lerp=1.000 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+[weather-layer][lut] #12 update_usec=15323136 last_usec=15323136 lerp=1.000 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+  [PASS] ordinary inspector stays clear at (1280, 720)
+  [PASS] camera bounds exclude founding dossier at (1280, 720)
+  [PASS] capture summary_1280x720
+  [PASS] details open at (1280, 720)
+  [PASS] detail copy fits card width at (1280, 720)
+  [PASS] capture detail_1280x720
+  [PASS] ordinary inspector stays clear at (1366, 768)
+  [PASS] camera bounds exclude founding dossier at (1366, 768)
+  [PASS] capture summary_1366x768
+  [PASS] details open at (1366, 768)
+  [PASS] detail copy fits card width at (1366, 768)
+  [PASS] capture detail_1366x768
+[weather-layer][lut] #13 update_usec=15323136 last_usec=15323136 lerp=1.000 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+  [PASS] ordinary inspector stays clear at (1920, 1080)
+  [PASS] camera bounds exclude founding dossier at (1920, 1080)
+  [PASS] capture summary_1920x1080
+  [PASS] details open at (1920, 1080)
+  [PASS] detail copy fits card width at (1920, 1080)
+  [PASS] capture detail_1920x1080
+[weather-layer][lut] #14 update_usec=15323136 last_usec=15323136 lerp=1.000 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+  [PASS] ordinary inspector stays clear at (2560, 1440)
+  [PASS] camera bounds exclude founding dossier at (2560, 1440)
+  [PASS] capture summary_2560x1440
+  [PASS] details open at (2560, 1440)
+  [PASS] detail copy fits card width at (2560, 1440)
+  [PASS] capture detail_2560x1440
+[weather-layer][lut] #15 update_usec=15323136 last_usec=15323136 lerp=1.000 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+  [PASS] map wheel zoom passes through outside founding panel
+  [PASS] map drag passes through outside founding panel
+  [PASS] formal inspector signal automatically collapses founding panel
+  [PASS] capture inspector_avoidance
+  [PASS] pending entry closes large inspector and restores founding panel
+  [PASS] inspector avoidance preserves expanded house and scroll
+  [PASS] formal inspector signals preserve manual collapse
+  [PASS] capture collapsed
+[weather-layer][lut] #16 update_usec=15323136 last_usec=15323136 lerp=1.000 prev_tex=true curr_tex=true dims=(1120, 1) visible=true
+family founding map QA: 0 failures

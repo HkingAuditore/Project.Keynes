@@ -1,8 +1,9 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/components/family_founding_dialog.gd" id="1_script"]
 [ext_resource type="PackedScene" path="res://scenes/ui/archival_surface.tscn" id="2_archive"]
 [ext_resource type="PackedScene" path="res://scenes/ui/family/family_founding_card.tscn" id="3_card"]
+[ext_resource type="Theme" path="res://assets/themes/player_session_theme.tres" id="4_theme"]
 
 [node name="FamilyFoundingDialog" type="Control"]
 process_mode = 3
@@ -49,38 +50,44 @@ theme_override_constants/margin_top = 12
 theme_override_constants/margin_right = 14
 theme_override_constants/margin_bottom = 12
 
-[node name="HeaderActions" type="HBoxContainer" parent="ArchiveSurface/Frame/Margin/Column/Header" index="2"]
+[node name="Title" parent="ArchiveSurface/Frame/Margin/Column/Header/Titles" index="0"]
+autowrap_mode = 3
+
+[node name="Subtitle" parent="ArchiveSurface/Frame/Margin/Column/Header/Titles" index="1"]
+autowrap_mode = 3
+
+[node name="HeaderActions" type="HBoxContainer" parent="ArchiveSurface/Frame/Margin/Column" index="1"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
 theme_override_constants/separation = 8
 
-[node name="QueueBadge" type="PanelContainer" parent="ArchiveSurface/Frame/Margin/Column/Header/HeaderActions"]
+[node name="QueueBadge" type="PanelContainer" parent="ArchiveSurface/Frame/Margin/Column/HeaderActions"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 size_flags_vertical = 4
 theme_type_variation = &"PKMetricCard"
 
-[node name="QueueLabel" type="Label" parent="ArchiveSurface/Frame/Margin/Column/Header/HeaderActions/QueueBadge"]
+[node name="QueueLabel" type="Label" parent="ArchiveSurface/Frame/Margin/Column/HeaderActions/QueueBadge"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "待决 1 处"
 theme_type_variation = &"PKDossierCaption"
 
-[node name="LocateButton" type="Button" parent="ArchiveSurface/Frame/Margin/Column/Header/HeaderActions"]
+[node name="LocateButton" type="Button" parent="ArchiveSurface/Frame/Margin/Column/HeaderActions"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
-focus_mode = 0
+focus_mode = 2
 text = "定位地块"
 theme_type_variation = &"PKDossierChip"
 
-[node name="CollapseButton" type="Button" parent="ArchiveSurface/Frame/Margin/Column/Header/HeaderActions"]
+[node name="CollapseButton" type="Button" parent="ArchiveSurface/Frame/Margin/Column/HeaderActions"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
-focus_mode = 0
+focus_mode = 2
 text = "收起看图 ▴"
 theme_type_variation = &"PKDossierChip"
 
@@ -104,7 +111,7 @@ theme_type_variation = &"PKDossierBody"
 
 [node name="CardsScroll" type="ScrollContainer" parent="ArchiveSurface/Frame/Margin/Column/Body" index="1"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 280)
+custom_minimum_size = Vector2(0, 0)
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
@@ -113,10 +120,10 @@ horizontal_scroll_mode = 0
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_vertical = 3
+size_flags_vertical = 0
 theme_override_constants/h_separation = 12
 theme_override_constants/v_separation = 12
-columns = 3
+columns = 1
 
 [node name="Card0" parent="ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid" instance=ExtResource("3_card")]
 layout_mode = 2
@@ -137,3 +144,15 @@ horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 2
 theme_type_variation = &"PKEraRewardStatus"
+
+[node name="CollapsedEntry" type="Button" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+z_index = 2
+custom_minimum_size = Vector2(0, 44)
+text = "待择族 · 展开"
+clip_text = true
+text_overrun_behavior = 3
+theme = ExtResource("4_theme")
+theme_type_variation = &"PKHUDButton"

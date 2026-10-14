@@ -41,9 +41,27 @@ func set_row(data: Dictionary) -> void:
 	_effect.visible = not effect.is_empty()
 	_population.text = "%s 人" % UITokens.format_compact_number_cn(
 		float(data.get("population", 0)), 0)
-	_population.tooltip_text = "可派遣人口：%s" % _population.text
+	_population.tooltip_text = String(data.get("population_tooltip", "队伍人口：%s" % _population.text))
 	tooltip_text = String(data.get("tooltip", ""))
 
 
 func display_name() -> String:
 	return _family_name
+
+
+func set_compact_summary(data: Dictionary) -> void:
+	set_row(data)
+	custom_minimum_size.y = 48.0
+	focus_mode = Control.FOCUS_ALL
+	_icon.visible = false
+	_badges.visible = false
+	_name.add_theme_font_size_override("font_size", 14)
+	_population.add_theme_font_size_override("font_size", 14)
+	_population.custom_minimum_size.x = 52.0
+	_effect.add_theme_font_size_override("font_size", 12)
+	_effect.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_effect.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_effect.max_lines_visible = 1
+	var margin := get_node("Margin") as MarginContainer
+	margin.add_theme_constant_override("margin_top", 4)
+	margin.add_theme_constant_override("margin_bottom", 4)

@@ -171,6 +171,7 @@ func _run_colonization_planner_busy_display() -> void:
 	var panel := _make_planner_panel()
 	panel.set_player_controller(stub)
 	panel.open_target(1585)
+	panel._on_source_city_selected(panel._source_city.get_item_index(0))
 	_expect("busy colonization quotes still list a source branch",
 		panel._has_quote_rows() and panel._status.visible
 		and panel._start.text.find("排队") >= 0)
@@ -273,36 +274,39 @@ func _run_colonization_planner_family_cards() -> void:
 	var panel := _make_planner_panel()
 	panel.set_player_controller(stub)
 	panel.open_target(22)
+	_expect("dispatch requires choosing a city before a family",
+		not panel._has_quote_rows() and panel._start.disabled
+		and panel._source_city.item_count == 3)
+	panel._on_source_city_selected(panel._source_city.get_item_index(8))
 	var rows := []
 	for child in panel._list.get_children():
 		if child.has_method("display_name"):
 			rows.append(child)
 	var visible := _visible_text(panel._list)
-	_expect("same family collapses to one dispatch card", rows.size() == 1)
-	_expect("colonization planner reserves a readable archive workspace",
-		panel.custom_minimum_size.x >= 680.0
-		and panel.custom_minimum_size.y >= 640.0)
-	_expect("dispatch card shows origin family name, people, and traits",
+	_expect("selected city shows one local family card", rows.size() == 1)
+	_expect("colonization planner provides a separate fixed preview",
+		panel.get_node_or_null("%PreviewScroll") != null
+		and panel.anchor_left == 0.0 and panel.offset_left == 16.0)
+	_expect("dispatch summary shows canonical family name and local population",
 		rows.size() == 1 and String(rows[0].display_name()) == "长安王氏"
-		and visible.find("40 人") >= 0 and visible.find("采集传统") >= 0
-		and visible.find("偏好：采集营地") >= 0)
+		and visible.find("13 人") >= 0 and visible.find("40 人") < 0
+		and visible.find("采集传统") < 0)
 	if rows.size() == 1:
 		var row := rows[0] as Control
 		var effect := row.get_node("Margin/Line/Info/Effect") as Label
 		var badges := row.get_node("Margin/Line/Info/Badges") as BadgeRow
 		var population := row.get_node("Margin/Line/Population") as Label
-		_expect("dispatch card provides enough height for wrapped traits and effects",
-			row.custom_minimum_size.y >= 120.0
-			and badges.max_badge_width >= 184.0
-			and effect.autowrap_mode != TextServer.AUTOWRAP_OFF
-			and effect.max_lines_visible >= 2)
-		_expect("dispatch population is explicit and high contrast",
-			population.text.ends_with(" 人")
-			and population.get_theme_font_size("font_size") >= 20
+		_expect("dispatch summaries stay compact and keep details out of the list",
+			row.custom_minimum_size.y == 48.0 and not badges.visible
+			and effect.max_lines_visible == 1)
+		_expect("local population remains explicit and readable",
+			population.text.ends_with(" 人") and population.get_theme_font_size("font_size") >= 14
 			and population.get_theme_color("font_color") == UITokens.ARCHIVE_INK)
-	_expect("dispatch trait chips carry Chinese descriptions as tooltips",
-		rows.size() == 1 and _badge_tooltips(rows[0]).find(
-			"更倾向投资采集建筑，并随威望提高本城总体产出。") >= 0)
+		rows[0].pressed.emit()
+	_expect("fixed preview shows traits and Chinese mechanism descriptions",
+		panel._preview_traits.text.find("采集传统") >= 0
+		and panel._preview_traits.text.find("更倾向投资采集建筑，并随威望提高本城总体产出。") >= 0
+		and panel._preview_preferences.text.find("采集营地") >= 0)
 	_expect("dispatch card hides source, cost, and travel debug fields",
 		visible.find("源地") < 0 and visible.find("成本") < 0
 		and visible.find("最多") < 0)
@@ -413,10 +417,13 @@ func _run_colonization_planner_effect_fallback() -> void:
 	var panel := _make_planner_panel()
 	panel.set_player_controller(stub)
 	panel.open_target(22)
-	var visible := _visible_text(panel._list)
-	_expect("dispatch cards without preferences show Chinese effect names",
-		visible.find("商路人脉") >= 0
-		and visible.find("效果：贸易产出加成") >= 0
+	panel._on_source_city_selected(panel._source_city.get_item_index(8))
+	var row: Button = panel._quote_row_refs.get(11)
+	if row != null:
+		row.pressed.emit()
+	var visible := _visible_text(panel)
+	_expect("fixed preview without preferences shows Chinese effect names",
+		visible.find("商路人脉") >= 0 and visible.find("贸易产出加成") >= 0
 		and visible.find("family.city.trade_output_boost") < 0)
 	panel.queue_free()
 

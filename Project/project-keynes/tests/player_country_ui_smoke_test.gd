@@ -10,6 +10,8 @@ func _init() -> void:
 
 
 func _run() -> void:
+	# 此测试的宽/窄断言使用 1:1 逻辑视口；缩放覆盖由截图 QA 单独验证。
+	root.content_scale_factor = 1.0
 	for argument in OS.get_cmdline_user_args():
 		var normalized := argument.trim_prefix("--")
 		if normalized.begins_with("capture_dir="):
@@ -330,13 +332,14 @@ func _run() -> void:
 	var layout := panel.layout_diagnostics()
 	var dialog_rect: Rect2 = layout.get("dialog_rect", Rect2())
 	var viewport_rect: Rect2 = layout.get("viewport_rect", root.get_visible_rect())
+	print("[country-layout] dialog=%s viewport=%s" % [dialog_rect, viewport_rect])
 	_expect("country dialog stays in viewport", viewport_rect.encloses(dialog_rect))
 	_expect("country dialog clears top bar", dialog_rect.position.y >= PlayerTopBar.BAR_HEIGHT)
 	_expect("country dialog fills available viewport width",
-		dialog_rect.size.x >= viewport_rect.size.x - UITokens.SPACE_SM * 2.0 - 1.0)
+		dialog_rect.size.x >= viewport_rect.size.x - UITokens.ARCHIVE_EDGE_INSET * 2.0 - 1.0)
 	_expect("country dialog fills available viewport height",
 		dialog_rect.size.y >= viewport_rect.size.y - PlayerTopBar.BAR_HEIGHT \
-			- CountryActionBar.BAR_HEIGHT - UITokens.SPACE_SM * 2.0 - 1.0)
+			- CountryActionBar.BAR_HEIGHT - UITokens.ARCHIVE_EDGE_INSET * 2.0 - 1.0)
 	root.size = Vector2i(640, 480)
 	await process_frame
 	await process_frame
@@ -346,10 +349,10 @@ func _run() -> void:
 	_expect("compact country dialog stays in viewport",
 		compact_viewport.encloses(compact_rect))
 	_expect("compact country dialog fills available viewport width",
-		compact_rect.size.x >= compact_viewport.size.x - UITokens.SPACE_SM * 2.0 - 1.0)
+		compact_rect.size.x >= compact_viewport.size.x - UITokens.ARCHIVE_EDGE_INSET * 2.0 - 1.0)
 	_expect("compact country dialog fills available viewport height",
 		compact_rect.size.y >= compact_viewport.size.y - PlayerTopBar.BAR_HEIGHT \
-			- CountryActionBar.BAR_HEIGHT - UITokens.SPACE_SM * 2.0 - 1.0)
+			- CountryActionBar.BAR_HEIGHT - UITokens.ARCHIVE_EDGE_INSET * 2.0 - 1.0)
 	var compact_dossier_navigation: Dictionary = panel.navigation_report()
 	_expect("compact country dossier folds chapters into a horizontal navigator",
 		bool(compact_dossier_navigation.get("mobile_visible", false))

@@ -86,10 +86,11 @@ func _check_theme_contract() -> void:
 		and session_theme.get_stylebox("pressed", "PKArchiveNavButton") is StyleBoxTexture)
 	var country_page := session_theme.get_stylebox(
 		"panel", "PKCountryPage") as StyleBoxTexture
-	_expect("country pages use the 9-slice dossier page frame",
+	_expect("country pages use quiet paper without nested outer projection",
 		country_page != null and country_page.texture != null
-		and country_page.texture.resource_path.ends_with("dossier_shell/page_frame.png")
-		and country_page.content_margin_left >= 24.0)
+		and country_page.texture.resource_path.ends_with("archive_material_v1/archive_page_v1.tres")
+		and country_page.content_margin_left >= 24.0
+		and is_zero_approx(country_page.expand_margin_bottom))
 	var country_rail := session_theme.get_stylebox("panel", "PKCountryRail") as StyleBoxTexture
 	_expect("country rail is a tiled leather spine",
 		country_rail != null and country_rail.axis_stretch_vertical
@@ -99,8 +100,20 @@ func _check_theme_contract() -> void:
 	_expect("country navigation uses pre-scaled ribbon tabs instead of stretching family bitmaps",
 		country_nav != null and country_nav.texture != null
 		and country_nav.texture.get_height() <= 96)
-	_expect("HUD buttons do not inherit archive bitmap material",
-		session_theme.get_stylebox("normal", "PKHUDButton") is StyleBoxFlat)
+	var hud_button := session_theme.get_stylebox("normal", "PKHUDButton") as StyleBoxTexture
+	var hud_pressed := session_theme.get_stylebox("pressed", "PKHUDButton") as StyleBoxTexture
+	_expect("HUD buttons use a compact material distinct from the archive frame",
+		hud_button != null and hud_button.texture != null
+		and hud_button.texture.get_width() <= 128
+		and hud_button.texture != session_theme.get_stylebox("panel", "PKArchivePanel").texture)
+	_expect("pressed material is distinct and has less projection",
+		hud_pressed != null and hud_pressed.texture != hud_button.texture
+		and hud_pressed.expand_margin_bottom < hud_button.expand_margin_bottom)
+	for variation in ["PKArchivePanel", "PKHUDPanel", "PKHUDInset"]:
+		var shell := session_theme.get_stylebox("panel", variation) as StyleBoxTexture
+		_expect("%s projection does not consume content space" % variation,
+			shell != null and shell.expand_margin_left > 0.0
+			and shell.expand_margin_bottom > shell.expand_margin_top)
 
 
 func _check_main_menu() -> void:

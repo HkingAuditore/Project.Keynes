@@ -280,6 +280,11 @@ EffectCondition in investment-day loops.
   paginated. Attach display names and stable catalog IDs in `EconomyFacade`.
 - Add display IDs/text in `EconomyFacade`; never copy a global family/cohort/building matrix into
   GDScript or UI state.
+- The colonization/migration planner selects a source city before its local family branch.
+  Keep source-cell identity and the branch population cap in the selected quote and submitted intent;
+  never collapse branches across cities or substitute the family's origin/home cell.
+  `EconomyFacade` decorates quote pages with `source_settlement_names`; the planner remains a
+  432-wide left panel and clears selection/route on city changes or branch disappearance.
 
 ## Evolve PKEC deliberately
 

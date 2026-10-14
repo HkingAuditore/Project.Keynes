@@ -14,7 +14,7 @@ const SLIDE_IN := 18.0
 const SLIDE_OUT := 12.0
 
 var _entries: Array = []
-var _note_style: StyleBoxFlat
+var _note_style: StyleBoxTexture
 
 
 func _ready() -> void:
@@ -80,13 +80,7 @@ func _draw() -> void:
 	if _entries.is_empty():
 		return
 	if _note_style == null:
-		_note_style = StyleBoxFlat.new()
-		_note_style.anti_aliasing = true
-		_note_style.set_corner_radius_all(3)
-		_note_style.set_border_width_all(1)
-		_note_style.border_width_left = 4
-		_note_style.shadow_size = 6
-		_note_style.shadow_offset = Vector2(0.0, 2.0)
+		_note_style = get_theme_stylebox("panel", "PKPaperToast").duplicate() as StyleBoxTexture
 	var now := Time.get_ticks_msec()
 	var width := minf(NOTE_WIDTH, size.x)
 	var left := (size.x - width) * 0.5
@@ -106,11 +100,9 @@ func _draw() -> void:
 
 
 func _draw_note(rect: Rect2, text: String, alpha: float) -> void:
-	_note_style.bg_color = _fade(UITokens.DOSSIER_PAPER, alpha)
-	_note_style.border_color = _fade(UITokens.DOSSIER_RULE_STRONG, alpha)
-	_note_style.shadow_color = Color(0.0, 0.0, 0.0, 0.22 * alpha)
+	_note_style.modulate_color = _fade(Color.WHITE, alpha)
 	draw_style_box(_note_style, rect)
-	draw_rect(Rect2(rect.position, Vector2(4.0, rect.size.y)),
+	draw_rect(Rect2(rect.position + Vector2(8.0, 11.0), Vector2(3.0, 18.0)),
 		_fade(UITokens.DOSSIER_VERDIGRIS, alpha))
 	var icon_rect := Rect2(rect.position + Vector2(14.0, 11.0), Vector2(18.0, 18.0))
 	_icon(&"technology.state.completed", icon_rect, _fade(UITokens.DOSSIER_VERDIGRIS, alpha))

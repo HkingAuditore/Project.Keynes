@@ -7,7 +7,7 @@ signal day_night_toggled(enabled: bool)
 signal setup_requested()
 signal gm_requested()
 
-const BAR_HEIGHT := 56.0
+const BAR_HEIGHT := 64.0
 const SPEED_PRESETS: Array[float] = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
 const HUD_ICON_SIZE := 28
 
@@ -70,6 +70,7 @@ func _ready() -> void:
 		if control_btn != null:
 			control_btn.focus_mode = Control.FOCUS_NONE
 			control_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+			UIAnimation.bind_tactile_button(control_btn)
 
 	_setup_button.pressed.connect(func() -> void: setup_requested.emit())
 	_gm_button.pressed.connect(func() -> void: gm_requested.emit())

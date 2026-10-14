@@ -1,0 +1,6 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+SCRIPT ERROR: Parse Error: Cannot infer the type of "cancel" variable because the value doesn't have a set type.
+   at: GDScript::reload (res://scripts/ui/components/colonization_planner_panel.gd:704)
+ERROR: Failed to load script "res://scripts/ui/components/colonization_planner_panel.gd" with error "Parse error".
+   at: load (modules/gdscript/gdscript.cpp:2907)
