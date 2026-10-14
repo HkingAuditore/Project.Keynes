@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- Papercut Openwork Armillary Rings (Ochre-Gold cut paper, no stroke outline) -->
+  <path fill="#b87b28" fill-rule="evenodd" d="
+    M64 4 A58 58 0 1 1 64 120 A58 58 0 1 1 64 4 Z
+    M64 11 A51 51 0 1 0 64 113 A51 51 0 1 0 64 11 Z
+  "/>
+  <!-- Papercut crescent notches on outer ring -->
+  <path fill="#734222" d="
+    M60 2 H68 V14 H60 Z M60 110 H68 V122 H60 Z
+    M2 58 H14 V66 H2 Z M114 58 H126 V66 H114 Z
+  "/>
+  <path fill="#c48832" fill-rule="evenodd" transform="rotate(-26 64 62)" d="
+    M64 38 A60 24 0 1 1 64 86 A60 24 0 1 1 64 38 Z
+    M64 44 A52 17 0 1 0 64 80 A52 17 0 1 0 64 44 Z
+  "/>
+  <!-- Hollow Carved Alembic Flask (Warm Umber & Cinnabar Papercut) -->
+  <path fill="#734222" fill-rule="evenodd" d="
+    M46 8 H82 A4 4 0 0 1 82 17 H75 V36 L108 94 A14 14 0 0 1 95 116 H33 A14 14 0 0 1 20 94 L53 36 V17 H46 A4 4 0 0 1 46 8 Z
+    M59 17 V38 L30 90 H98 L69 38 V17 Z
+  "/>
+  <!-- Cinnabar Alchemical Liquid with Hollow Star & Bubbles -->
+  <path fill="#9e2e1e" fill-rule="evenodd" d="
+    M33 82 Q48 75 64 82 T95 82 L100 92 A9 9 0 0 1 91 108 H37 A9 9 0 0 1 28 92 Z
+    M64 85 L67 93 L75 96 L67 99 L64 107 L61 99 L53 96 L61 93 Z
+    M44 90 A4.5 4.5 0 1 0 44 99 A4.5 4.5 0 1 0 44 90 Z
+    M84 88 A4 4 0 1 0 84 96 A4 4 0 1 0 84 88 Z
+  "/>
+  <polygon fill="#9e2e1e" points="64,22 68,34 80,38 68,42 64,54 60,42 48,38 60,34"/>
+</svg>

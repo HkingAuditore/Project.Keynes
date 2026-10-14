@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <path fill="#734222" fill-rule="evenodd" d="
+    M55 4 H73 L76 19 L90 25 L102 15 L114 27 L104 39 L110 53 L124 56 V72 L110 75 L104 89 L114 101 L102 113 L90 103 L76 109 L73 124 H55 L52 109 L38 103 L26 113 L14 101 L24 89 L18 75 L4 72 V56 L18 53 L24 39 L14 27 L26 15 L38 25 L52 19 Z
+    M64 26 A38 38 0 1 0 64 102 A38 38 0 1 0 64 26 Z
+  "/>
+  <path fill="#9e2e1e" fill-rule="evenodd" d="
+    M64 32 A32 32 0 1 1 64 96 A32 32 0 1 1 64 32 Z
+    M64 44 A20 20 0 1 0 64 84 A20 20 0 1 0 64 44 Z
+  "/>
+  <path fill="#b87b28" d="M60 28 H68 V46 H60 Z M60 82 H68 V100 H60 Z M28 60 H46 V68 H28 Z M82 60 H100 V68 H82 Z"/>
+</svg>

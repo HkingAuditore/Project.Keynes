@@ -39,6 +39,7 @@ func update_rows(rows: Array) -> void:
 func _create_row(row_id: String) -> Dictionary:
 	var button := FamilyRowScene.instantiate() as Button
 	button.toggle_mode = true
+	UIAnimation.bind_hover_glow(button)
 	button.pressed.connect(func() -> void: details_requested.emit(
 		{"kind": "family", "row_id": row_id}))
 	add_child(button)
@@ -58,7 +59,7 @@ func set_selected(row_id: String) -> void:
 func _apply_row(refs: Dictionary, data: Dictionary) -> void:
 	var button := refs.get("button") as Button
 	button.visible = true
-	(refs.get("icon") as IconBadge).set_semantic(&"family.house", UITokens.DOSSIER_INK_SOFT)
+	(refs.get("icon") as IconBadge).set_semantic(&"family.workspace.crest", UITokens.DOSSIER_BRASS)
 	(refs.get("name") as Label).text = String(data.get("name", "家族"))
 	var meta := PackedStringArray(["族人 %s" % String(data.get("population", "0")),
 		"产业 %s 栋" % String(data.get("owned_buildings", "0"))])
@@ -70,5 +71,8 @@ func _apply_row(refs: Dictionary, data: Dictionary) -> void:
 		meta.append("现金 %s" % cash)
 	(refs.get("meta") as Label).text = " · ".join(meta)
 	var prestige := refs.get("prestige") as Label
-	prestige.text = String(data.get("prestige", "0"))
-	prestige.tooltip_text = "威望"
+	var p_text := String(data.get("prestige", "0"))
+	prestige.text = "威望 %s" % p_text if not p_text.begins_with("威望") else p_text
+	prestige.add_theme_color_override("font_color",
+		UITokens.DOSSIER_OXBLOOD if p_text != "0" else UITokens.DOSSIER_INK_MUTED)
+	prestige.tooltip_text = "家族威望等级"

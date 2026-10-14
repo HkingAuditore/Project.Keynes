@@ -1168,9 +1168,9 @@ func _bind_ui() -> void:
 	_top_bar.speed_selected.connect(func(speed: float) -> void: speed_selected.emit(speed))
 	_top_bar.day_night_toggled.connect(
 		func(enabled: bool) -> void: day_night_toggled.emit(enabled))
-	_top_bar.setup_requested.connect(func() -> void: setup_requested.emit())
+	_top_bar.setup_requested.connect(toggle_pause_menu)
 	_top_bar.gm_requested.connect(toggle_gm_panel)
-	_top_bar.set_gm_available(_gm_available)
+	_top_bar.set_gm_available(false)
 	_layout_top_bar()
 
 	_right_panel = get_node("UIRoot/PanelLayer/RightPanel") as InspectorPanel
@@ -1408,7 +1408,7 @@ func _layout_country_action_bar() -> void:
 	_country_action_bar.visible = true
 	var viewport_width := get_viewport().get_visible_rect().size.x
 	var safe := map_safe_area()
-	var bar_width := 400.0
+	var bar_width := 336.0
 	var side_margin := maxf(safe.position.x + (safe.size.x - bar_width) * 0.5,
 		UITokens.SPACE_SM)
 	var right_margin := maxf(viewport_width - side_margin - bar_width,

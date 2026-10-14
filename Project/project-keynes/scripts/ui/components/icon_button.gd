@@ -21,12 +21,15 @@ static func apply(
 	var texture := IconCatalog.texture_for_key(semantic_key)
 	var label := IconCatalog.label_for_key(semantic_key)
 	button.icon = texture
-	button.expand_icon = texture != null
+	button.expand_icon = false
 	if texture != null:
 		button.text = ""
+		button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		button.add_theme_constant_override("icon_max_width", icon_size)
 		button.remove_theme_font_override("font")
 		button.remove_theme_font_size_override("font_size")
 		return
+	button.remove_theme_constant_override("icon_max_width")
 	if not label.is_empty():
 		button.text = label
 		button.remove_theme_font_override("font")
@@ -35,6 +38,32 @@ static func apply(
 	button.text = IconCatalog.glyph_for_key(semantic_key)
 	button.add_theme_font_override("font", IconCatalog.FONT_AWESOME)
 	button.add_theme_font_size_override("font_size", icon_size)
+
+
+static func apply_with_text(
+		button: Button,
+		semantic_key: StringName,
+		text_value: String,
+		icon_size: int = MEDIUM,
+		tooltip: String = "",
+		toggle: bool = false,
+		active: bool = false
+) -> void:
+	if button == null:
+		return
+	configure(button, tooltip, toggle, active)
+	var texture := IconCatalog.texture_for_key(semantic_key)
+	button.icon = texture
+	button.expand_icon = false
+	button.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	if texture != null:
+		button.add_theme_constant_override("icon_max_width", icon_size)
+		button.text = text_value
+		button.remove_theme_font_override("font")
+		return
+	button.remove_theme_constant_override("icon_max_width")
+	button.text = "%s %s" % [IconCatalog.glyph_for_key(semantic_key), text_value]
+	button.remove_theme_font_override("font")
 
 
 static func configure(

@@ -282,6 +282,31 @@ func _run() -> void:
 		await process_frame
 		if panel._object_detail_dialog.get_node("Center/Dialog/Body/Scroll/Content").get_child_count() != good_node_count:
 			failures.append("good detail live patches rebuilt content nodes")
+		# 验证建筑详情卷宗双分页与实时补丁节点稳定性。
+		var building_data: Dictionary = _building_category(0.0).building_rows[0]
+		panel.show_object_detail({
+			"kind": "building", "name": "纺织工坊", "subtitle": "建筑 · 区域 1, 1",
+			"icon": "building", "accent": UITokens.ACCENT,
+			"row": building_data,
+		})
+		await process_frame
+		if panel._object_detail_dialog.title_text() != "纺织工坊" \
+				or panel._object_detail_dialog.current_chapter() != "overview":
+			failures.append("building detail did not open on the overview chapter")
+		var bld_node_count := panel._object_detail_dialog.get_node("Center/Dialog/Body/Scroll/Content").get_child_count()
+		for step_idx in range(30):
+			panel.refresh_object_detail({
+				"kind": "building", "name": "纺织工坊", "subtitle": "建筑 · 区域 1, 1",
+				"icon": "building", "accent": UITokens.ACCENT,
+				"row": building_data.merged({"count": "%d 栋" % (2 + step_idx % 2)}, true),
+			})
+		await process_frame
+		if panel._object_detail_dialog.get_node("Center/Dialog/Body/Scroll/Content").get_child_count() != bld_node_count:
+			failures.append("building detail live patches rebuilt content nodes")
+		panel._object_detail_dialog._on_chapter_selected("operations")
+		await process_frame
+		if panel._object_detail_dialog.current_chapter() != "operations":
+			failures.append("building detail did not switch to the operations chapter")
 		if not (cohort_refs.get("tax_editors", {}) as Dictionary).is_empty():
 			failures.append("population row still owns tax editors after tax migration")
 		panel.set_compact_detail_mode(true)

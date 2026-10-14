@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- Papercut Openwork Botanical Leaves & Bud -->
+  <path fill="#734222" fill-rule="evenodd" d="
+    M58 90 C12 88 2 46 14 16 C46 16 58 40 58 90 Z
+    M49 74 C27 70 18 46 23 28 C40 30 47 46 49 74 Z
+  "/>
+  <path fill="#b87b28" fill-rule="evenodd" d="
+    M70 80 C116 78 126 36 114 8 C82 8 70 32 70 80 Z
+    M79 64 C101 60 110 36 105 20 C88 22 81 38 79 64 Z
+  "/>
+  <path fill="#9e2e1e" fill-rule="evenodd" d="
+    M64 4 C77 20 77 40 64 54 C51 40 51 20 64 4 Z
+    M64 18 C59 27 59 37 64 44 C69 37 69 27 64 18 Z
+  "/>
+  <path fill="none" stroke="#734222" stroke-width="7.5" stroke-linecap="round" d="M64 48 V116"/>
+  <path fill="none" stroke="#9e2e1e" stroke-width="6.5" stroke-linecap="round" d="M20 118 Q64 100 108 118"/>
+</svg>

@@ -876,7 +876,16 @@ func get_family_traits(family_handle: int) -> Dictionary:
 func family_branches(family_handle: int, offset: int = 0, limit: int = 64) -> Dictionary:
 	if not _configured or not _world_ext.has_method("get_family_branches"):
 		return {"ok": false, "reason": "family_runtime_unavailable"}
-	return _world_ext.get_family_branches(family_handle, offset, limit)
+	var snapshot: Dictionary = _world_ext.get_family_branches(family_handle, offset, limit)
+	if not bool(snapshot.get("ok", false)):
+		return snapshot
+	var settlements := _settlement_name_lookup()
+	var cells: PackedInt32Array = snapshot.get("cell_indices", PackedInt32Array())
+	var settlement_names := PackedStringArray()
+	for cell_idx in cells:
+		settlement_names.append(String(settlements.get(int(cell_idx), "")))
+	snapshot["settlement_names"] = settlement_names
+	return snapshot
 
 
 func get_family_branch_effects(family_handle: int, cell_idx: int) -> Dictionary:
@@ -906,6 +915,9 @@ func get_family_branch_effects(family_handle: int, cell_idx: int) -> Dictionary:
 	snapshot["effect_current_descriptions"] = _mapped_effect_current_descriptions(
 		effect_keys, prestige_level)
 	snapshot["effect_descriptions"] = snapshot["effect_current_descriptions"]
+	snapshot["effect_prestige_descriptions"] = _mapped_effect_prestige_descriptions(
+		effect_keys)
+	snapshot["settlement_name"] = String(_settlement_name_lookup().get(cell_idx, ""))
 	return snapshot
 
 
@@ -1775,6 +1787,16 @@ func _mapped_effect_current_descriptions(keys: PackedStringArray,
 			current = String(entry.get("description", "")).strip_edges()
 		descriptions.append(current)
 	return descriptions
+
+
+func _mapped_effect_prestige_descriptions(keys: PackedStringArray) -> Array:
+	var out: Array = []
+	for key in keys:
+		var entry: Dictionary = _family_effect_displays.get(String(key), {})
+		var statements: PackedStringArray = entry.get(
+			"prestige_descriptions", PackedStringArray())
+		out.append(statements)
+	return out
 
 
 func _family_max_prestige_level(family_handle: int) -> int:

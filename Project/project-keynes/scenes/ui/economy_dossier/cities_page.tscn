@@ -1,36 +1,36 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene format=3 uid="uid://0kt8ce1wjptp"]
 
-[ext_resource type="Script" path="res://scripts/ui/components/dossier/cities_page.gd" id="1_script"]
-[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_ledger_table.gd" id="2_ledger"]
+[ext_resource type="Script" uid="uid://yrnl2lxqk7gv" path="res://scripts/ui/components/dossier/cities_page.gd" id="1_script"]
+[ext_resource type="Script" uid="uid://bxx5ywbnw2x5g" path="res://scripts/ui/components/dossier/dossier_ledger_table.gd" id="2_ledger"]
 
-[node name="CitiesPage" type="VBoxContainer"]
+[node name="CitiesPage" type="VBoxContainer" unique_id=1806540539]
 size_flags_horizontal = 3
 theme_override_constants/separation = 10
 script = ExtResource("1_script")
 chapter_id = "cities"
 
-[node name="TableHeader" type="HBoxContainer" parent="."]
+[node name="TableHeader" type="HBoxContainer" parent="." unique_id=845196347]
 layout_mode = 2
 
-[node name="TableKicker" type="Label" parent="TableHeader"]
+[node name="TableKicker" type="Label" parent="TableHeader" unique_id=361163242]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "城市对比 · 点击行进入该城市的卷宗"
 theme_type_variation = &"PKDossierKicker"
+text = "城市"
 
-[node name="SummaryLabel" type="Label" parent="TableHeader"]
+[node name="SummaryLabel" type="Label" parent="TableHeader" unique_id=261409924]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"PKDossierCaption"
 
-[node name="CityTable" type="Control" parent="."]
+[node name="CityTable" type="Control" parent="." unique_id=1776791617]
 unique_name_in_owner = true
 layout_mode = 2
 script = ExtResource("2_ledger")
 
-[node name="EmptyLabel" type="Label" parent="."]
+[node name="EmptyLabel" type="Label" parent="." unique_id=90687820]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-autowrap_mode = 3
 theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3

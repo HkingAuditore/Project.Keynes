@@ -8,6 +8,7 @@ const PROFESSION_ROOT := "res://data/economy/professions"
 const BUILDING_ROOT := "res://data/economy/buildings"
 const LICENSE_PATHS := [
 	"res://assets/fonts/fontawesome/FONT-AWESOME-LICENSE.txt",
+	"res://assets/icons/hud/LICENSE.txt",
 	"res://assets/icons/lucide/LICENSE.txt",
 	"res://assets/icons/tabler/LICENSE.txt",
 ]

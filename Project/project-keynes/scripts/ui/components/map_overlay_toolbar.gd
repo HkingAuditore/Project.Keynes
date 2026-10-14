@@ -7,12 +7,14 @@ const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalo
 signal overlay_requested(request: Dictionary)
 signal overlay_cleared()
 
-const COLUMN_WIDTH := 56.0
-const SECONDARY_WIDTH := 62.0
+const COLUMN_WIDTH := 62.0
+const SECONDARY_WIDTH := 66.0
 const BUTTON_SIZE := Vector2(44.0, 44.0)
 const MAX_RESOURCE_PANEL_HEIGHT := 430.0
 const PANEL_MARGIN_TOTAL := 12.0
 const PANEL_THEME_MARGIN_TOTAL := 16.0
+const PRIMARY_ICON_SIZE := 38
+const SECONDARY_ICON_SIZE := 24
 
 enum Category { NONE, GEOGRAPHY, CLIMATE, RESOURCES, BIOLOGY }
 
@@ -43,20 +45,21 @@ func _ready() -> void:
 		push_error("MapOverlayToolbar 必须通过 map_overlay_toolbar.tscn 实例化。")
 		return
 	_configure_category_button(Category.GEOGRAPHY,
-		_primary_box.get_node("Geography") as Button, &"geography.terrain",
+		_primary_box.get_node("Geography") as Button, &"hud.overlay.geography",
 		"地理信息", "显示海拔、地貌、气候区与当前植被")
 	_configure_category_button(Category.CLIMATE,
-		_primary_box.get_node("Climate") as Button, &"climate.weather",
+		_primary_box.get_node("Climate") as Button, &"hud.overlay.climate",
 		"气候信息", "显示实时温度、湿度、风向与洋流")
 	_configure_category_button(Category.RESOURCES,
-		_primary_box.get_node("Resources") as Button, &"economy.resource",
+		_primary_box.get_node("Resources") as Button, &"hud.overlay.resources",
 		"资源信息", "显示当前所有自然资源储量")
 	_configure_category_button(Category.BIOLOGY,
-		_primary_box.get_node("Biology") as Button, &"ecology.growth",
+		_primary_box.get_node("Biology") as Button, &"hud.overlay.biology",
 		"生物信息", "显示当前物种占领分布")
-	IconButton.apply(_close_button, &"status.hidden", IconButton.LARGE,
-		"关闭图层\n关闭当前地图信息遮罩")
+	IconButton.apply(_close_button, &"hud.overlay.clear", 24,
+		"关闭图层\n关闭当前地图信息遮罩", false, false)
 	_close_button.focus_mode = Control.FOCUS_NONE
+	_close_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	_close_button.pressed.connect(_on_clear_pressed)
 	_resource_scroll.gui_input.connect(_on_resource_scroll_gui_input)
 
@@ -95,9 +98,10 @@ func primary_safe_width() -> float:
 
 func _configure_category_button(category: int, button: Button,
 		icon_key: StringName, title: String, description: String) -> void:
-	IconButton.apply(button, icon_key, IconButton.LARGE,
-		"%s\n%s" % [tr(title), tr(description)])
+	IconButton.apply(button, icon_key, PRIMARY_ICON_SIZE,
+		"%s\n%s" % [tr(title), tr(description)], true, false)
 	button.focus_mode = Control.FOCUS_NONE
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	button.pressed.connect(func() -> void:
 		_set_category(Category.NONE if _category == category else category)
 	)
@@ -295,9 +299,11 @@ func _add_biology_buttons() -> void:
 
 func _make_icon_button(icon_key: StringName, title: String, description: String) -> Button:
 	var button := OverlayButtonScene.instantiate() as Button
+	button.custom_minimum_size = BUTTON_SIZE
 	button.tooltip_text = "%s\n%s" % [tr(title), tr(description)]
-	IconButton.apply(button, icon_key, IconButton.LARGE)
+	IconButton.apply(button, icon_key, SECONDARY_ICON_SIZE)
 	button.focus_mode = Control.FOCUS_NONE
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	return button
 
 

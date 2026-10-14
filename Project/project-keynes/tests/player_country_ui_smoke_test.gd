@@ -14,6 +14,9 @@ func _run() -> void:
 		var normalized := argument.trim_prefix("--")
 		if normalized.begins_with("capture_dir="):
 			_capture_dir = normalized.trim_prefix("capture_dir=")
+	if DisplayServer.get_name() != "headless":
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+		DisplayServer.window_set_size(Vector2i(1280, 720))
 	root.size = Vector2i(1280, 720)
 	var packed := load("res://scenes/player_game.tscn") as PackedScene
 	var game := packed.instantiate()
@@ -365,6 +368,9 @@ func _run() -> void:
 		not bool(compact_navigation.policy_open) and not bool(compact_navigation.detail_open)
 		and compact_tree.offset_left == TechnologyWorkspace.COMPACT_RAIL_WIDTH
 		and compact_tree.offset_right == -TechnologyWorkspace.COMPACT_RAIL_WIDTH)
+	if DisplayServer.get_name() != "headless":
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+		DisplayServer.window_set_size(Vector2i(1280, 720))
 	root.size = Vector2i(1280, 720)
 	await process_frame
 	await process_frame

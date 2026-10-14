@@ -83,6 +83,16 @@ const ARCHIVE_BRASS := Color(0.69, 0.49, 0.24, 1.0)
 const ARCHIVE_RULE := Color(0.40, 0.28, 0.16, 0.55)
 const ARCHIVE_CONTENT_MARGIN := 16
 
+# Hybrid Atlas-Dossier HUD & ornament tokens (walnut + burnished brass + oxblood).
+const HUD_WALNUT_BG := Color(0.082, 0.058, 0.038, 0.98)
+const HUD_WALNUT_INSET := Color(0.135, 0.095, 0.058, 0.98)
+const HUD_BRASS_BORDER := Color(0.74, 0.52, 0.27, 0.95)
+const HUD_BRASS_GLOW := Color(0.95, 0.76, 0.40, 1.0)
+const HUD_OXBLOOD_ACTIVE := Color(0.48, 0.17, 0.10, 1.0)
+const DOSSIER_BADGE_BG := Color(0.94, 0.88, 0.74, 0.92)
+const DOSSIER_BADGE_POSITIVE := Color(0.24, 0.46, 0.40, 0.16)
+const DOSSIER_BADGE_NEGATIVE := Color(0.55, 0.19, 0.13, 0.15)
+
 # Dossier palette shared by the country-affairs shell, the national economy
 # dossier and the family archive. Semantic tones are for lines, ticks and
 # glyphs only; large fills stay on paper so the page reads like a ledger.
@@ -103,6 +113,32 @@ const DOSSIER_VERDIGRIS := Color(0.24, 0.46, 0.40, 1.0)
 const DOSSIER_SLATE := Color(0.31, 0.43, 0.53, 1.0)
 const DOSSIER_UMBER := Color(0.47, 0.37, 0.27, 1.0)
 const DOSSIER_SERIF: FontFile = preload("res://assets/fonts/source_han_serif/SourceHanSerifCN-Regular.otf")
+
+# Formal HUD archival medallion & plaque tokens (unified with Dossier/Archive popups).
+const HUD_LEATHER_BG := Color(0.165, 0.108, 0.070, 0.96)
+const HUD_PARCMENT_SURFACE := Color(0.945, 0.885, 0.755, 0.96)
+const HUD_PARCMENT_HOVER := Color(0.99, 0.945, 0.83, 0.99)
+const HUD_INK := Color(0.14, 0.082, 0.042, 1.0)
+const HUD_INK_MUTED := Color(0.38, 0.29, 0.20, 0.88)
+const HUD_ACTIVE_TEXT := Color(0.99, 0.93, 0.78, 1.0)
+
+# Papercut Atlas & Classical Tome palette for Main Menu, New Game Workbench, and Loading Atlas.
+const PAPERCUT_SEA_ABYSS := Color(0.115, 0.165, 0.185, 1.0)
+const PAPERCUT_SEA_DEEP := Color(0.155, 0.225, 0.245, 1.0)
+const PAPERCUT_SEA_MID := Color(0.215, 0.305, 0.315, 1.0)
+const PAPERCUT_SEA_SHALLOW := Color(0.315, 0.425, 0.405, 1.0)
+const PAPERCUT_COAST_FOAM := Color(0.84, 0.79, 0.66, 0.78)
+const PAPERCUT_LAND_PLAIN := Color(0.76, 0.71, 0.56, 1.0)
+const PAPERCUT_LAND_LUSH := Color(0.54, 0.61, 0.45, 1.0)
+const PAPERCUT_LAND_ARID := Color(0.81, 0.69, 0.49, 1.0)
+const PAPERCUT_LAND_HIGHLAND := Color(0.66, 0.55, 0.41, 1.0)
+const PAPERCUT_LAND_MOUNTAIN := Color(0.52, 0.42, 0.32, 1.0)
+const PAPERCUT_LAND_PEAK := Color(0.93, 0.89, 0.80, 1.0)
+const PAPERCUT_EDGE_CREAM := Color(0.97, 0.93, 0.83, 0.88)
+const PAPERCUT_EDGE_BRASS := Color(0.84, 0.66, 0.36, 0.85)
+const PAPERCUT_SHADOW := Color(0.04, 0.03, 0.02, 0.42)
+const PAPERCUT_SEAL_RED := Color(0.58, 0.17, 0.11, 1.0)
+const PAPERCUT_SEAL_GOLD := Color(0.95, 0.84, 0.58, 1.0)
 
 static var _dossier_fonts: Dictionary = {}
 

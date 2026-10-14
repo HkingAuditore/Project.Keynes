@@ -148,6 +148,13 @@ corner_radius_top_right = 4
 corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
 
+[sub_resource type="StyleBoxFlat" id="ArchivePage"]
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+bg_color = Color(0, 0, 0, 0)
+
 [sub_resource type="StyleBoxFlat" id="StyleInset"]
 content_margin_left = 8.0
 content_margin_top = 8.0
@@ -345,6 +352,8 @@ OptionButton/styles/focus = SubResource("ButtonFocus")
 OptionButton/styles/hover = SubResource("ButtonHover")
 OptionButton/styles/normal = SubResource("ButtonNormal")
 OptionButton/styles/pressed = SubResource("ButtonPressed")
+PKArchivePage/base_type = &"PanelContainer"
+PKArchivePage/styles/panel = SubResource("ArchivePage")
 PKBadgeLabel/base_type = &"Label"
 PKBadgeLabel/font_sizes/font_size = 12
 PKBadgeLabel/styles/normal = SubResource("StyleInset")
@@ -369,6 +378,8 @@ PKMetricCard/styles/panel = SubResource("StyleInset")
 PKMutedLabel/base_type = &"Label"
 PKMutedLabel/colors/font_color = Color(0.78, 0.7, 0.56, 1)
 PKMutedLabel/font_sizes/font_size = 12
+PKOrnamentCard/base_type = &"PanelContainer"
+PKOrnamentCard/styles/panel = SubResource("StyleInset")
 PKPanel/base_type = &"PanelContainer"
 PKPanel/styles/panel = SubResource("StylePanel")
 PKPrimaryButton/base_type = &"Button"

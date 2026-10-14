@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <path fill="#734222" fill-rule="evenodd" d="
+    M10 18 H118 V110 H10 Z
+    M20 28 H108 V100 H20 Z
+  "/>
+  <path fill="none" stroke="#b87b28" stroke-width="6" d="M20 46 H108 M20 64 H108 M20 82 H108"/>
+  <circle cx="48" cy="46" r="10" fill="#9e2e1e"/>
+  <circle cx="80" cy="64" r="10" fill="#b87b28"/>
+  <circle cx="56" cy="82" r="10" fill="#734222"/>
+</svg>

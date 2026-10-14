@@ -1,0 +1,6 @@
+Project.Keynes HUD Medallion Icon Set
+Copyright (c) 2026 Project.Keynes Contributors
+Licensed under the MIT License / CC0 1.0 Universal for in-project use.
+
+Bespoke historical grand-strategy brass and wax-seal medallion vector icons
+authored for the Project.Keynes formal player HUD.

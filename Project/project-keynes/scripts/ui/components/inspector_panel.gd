@@ -983,19 +983,7 @@ func _on_inspector_resized() -> void:
 func _animate_content_in() -> void:
 	if not visible or not is_inside_tree():
 		return
-	var index := 0
-	for child in _content_box.get_children():
-		var block := child as Control
-		if block == null or not block.visible:
-			continue
-		if index >= 8:
-			break
-		block.modulate.a = 0.0
-		var tween := block.create_tween()
-		tween.tween_interval(0.028 * float(index))
-		tween.tween_property(block, "modulate:a", 1.0, UITokens.ANIM_FAST) \
-			.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-		index += 1
+	UIAnimation.stagger_children_in(_content_box, 0.028, 8, UITokens.ANIM_FAST)
 
 
 func set_construction_model(model: Dictionary) -> void:

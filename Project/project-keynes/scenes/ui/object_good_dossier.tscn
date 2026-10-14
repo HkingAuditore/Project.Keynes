@@ -1,140 +1,130 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene format=3 uid="uid://dcd08ie2m668w"]
 
-[ext_resource type="Script" path="res://scripts/ui/components/dossier/inspector_note_list.gd" id="1_notes"]
-[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_diverging_bar.gd" id="2_diverging"]
-[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_bar_list.gd" id="3_bars"]
+[ext_resource type="Script" uid="uid://de3gfw3ybpae3" path="res://scripts/ui/components/dossier/inspector_note_list.gd" id="1_notes"]
+[ext_resource type="Script" uid="uid://ctit4vqjpihge" path="res://scripts/ui/components/dossier/dossier_diverging_bar.gd" id="2_diverging"]
+[ext_resource type="Script" uid="uid://04tee67qohrt" path="res://scripts/ui/components/dossier/dossier_bar_list.gd" id="3_bars"]
 
-[node name="GoodDossier" type="VBoxContainer"]
+[node name="GoodDossier" type="VBoxContainer" unique_id=409296260]
 size_flags_horizontal = 3
 theme_override_constants/separation = 10
 
-[node name="OverviewPage" type="VBoxContainer" parent="."]
+[node name="OverviewPage" type="VBoxContainer" parent="." unique_id=845116414]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 10
 
-[node name="Notes" type="Control" parent="OverviewPage"]
+[node name="Notes" type="Control" parent="OverviewPage" unique_id=600673360]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 24)
 layout_mode = 2
 size_flags_horizontal = 3
 script = ExtResource("1_notes")
 
-[node name="SupplyCard" type="PanelContainer" parent="OverviewPage"]
+[node name="SupplyCard" type="PanelContainer" parent="OverviewPage" unique_id=713662076]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKDossierAside"
 
-[node name="Box" type="VBoxContainer" parent="OverviewPage/SupplyCard"]
+[node name="Box" type="VBoxContainer" parent="OverviewPage/SupplyCard" unique_id=513844460]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Header" type="HBoxContainer" parent="OverviewPage/SupplyCard/Box"]
+[node name="Header" type="HBoxContainer" parent="OverviewPage/SupplyCard/Box" unique_id=352107214]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Title" type="Label" parent="OverviewPage/SupplyCard/Box/Header"]
+[node name="Title" type="Label" parent="OverviewPage/SupplyCard/Box/Header" unique_id=634639925]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "供需对冲与构成"
 theme_type_variation = &"PKDossierSectionTitle"
+text = "供需对冲与构成"
 
-[node name="Hint" type="Label" parent="OverviewPage/SupplyCard/Box/Header"]
-layout_mode = 2
-text = "暗红需求 · 铜绿供给"
-theme_type_variation = &"PKDossierMuted"
-
-[node name="SupplyDemandBar" type="Control" parent="OverviewPage/SupplyCard/Box"]
+[node name="SupplyDemandBar" type="Control" parent="OverviewPage/SupplyCard/Box" unique_id=195402867]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(200, 40)
 layout_mode = 2
 size_flags_horizontal = 3
 script = ExtResource("2_diverging")
 
-[node name="DemandSupplyBars" type="Control" parent="OverviewPage/SupplyCard/Box"]
+[node name="DemandSupplyBars" type="Control" parent="OverviewPage/SupplyCard/Box" unique_id=1892276087]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 script = ExtResource("3_bars")
 
-[node name="PriceCard" type="PanelContainer" parent="OverviewPage"]
+[node name="PriceCard" type="PanelContainer" parent="OverviewPage" unique_id=2001217957]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKDossierAside"
 
-[node name="Box" type="VBoxContainer" parent="OverviewPage/PriceCard"]
+[node name="Box" type="VBoxContainer" parent="OverviewPage/PriceCard" unique_id=702521024]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Header" type="HBoxContainer" parent="OverviewPage/PriceCard/Box"]
+[node name="Header" type="HBoxContainer" parent="OverviewPage/PriceCard/Box" unique_id=1653107607]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Title" type="Label" parent="OverviewPage/PriceCard/Box/Header"]
+[node name="Title" type="Label" parent="OverviewPage/PriceCard/Box/Header" unique_id=320145430]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "价格传导与库存保障"
 theme_type_variation = &"PKDossierSectionTitle"
+text = "物价和库存"
 
-[node name="Hint" type="Label" parent="OverviewPage/PriceCard/Box/Header"]
-layout_mode = 2
-text = "竖线为 1.0x 成本锚"
-theme_type_variation = &"PKDossierMuted"
-
-[node name="PriceStockBars" type="Control" parent="OverviewPage/PriceCard/Box"]
+[node name="PriceStockBars" type="Control" parent="OverviewPage/PriceCard/Box" unique_id=1828565019]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 script = ExtResource("3_bars")
 
-[node name="OperationsPage" type="VBoxContainer" parent="."]
+[node name="OperationsPage" type="VBoxContainer" parent="." unique_id=222794071]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 10
 
-[node name="TradeCard" type="PanelContainer" parent="OperationsPage"]
+[node name="TradeCard" type="PanelContainer" parent="OperationsPage" unique_id=1412708394]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKDossierAside"
 
-[node name="Box" type="VBoxContainer" parent="OperationsPage/TradeCard"]
+[node name="Box" type="VBoxContainer" parent="OperationsPage/TradeCard" unique_id=149602491]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Header" type="HBoxContainer" parent="OperationsPage/TradeCard/Box"]
+[node name="Header" type="HBoxContainer" parent="OperationsPage/TradeCard/Box" unique_id=980308723]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Title" type="Label" parent="OperationsPage/TradeCard/Box/Header"]
+[node name="Title" type="Label" parent="OperationsPage/TradeCard/Box/Header" unique_id=1636855849]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "跨区贸易与在途物流"
 theme_type_variation = &"PKDossierSectionTitle"
+text = "跨区贸易与在途物流"
 
-[node name="Hint" type="Label" parent="OperationsPage/TradeCard/Box/Header"]
+[node name="Hint" type="Label" parent="OperationsPage/TradeCard/Box/Header" unique_id=2127173265]
 layout_mode = 2
-text = "外销 vs 调入"
 theme_type_variation = &"PKDossierMuted"
+text = "外销 vs 调入"
 
-[node name="TradeFlowBar" type="Control" parent="OperationsPage/TradeCard/Box"]
+[node name="TradeFlowBar" type="Control" parent="OperationsPage/TradeCard/Box" unique_id=1215428606]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(200, 40)
 layout_mode = 2
 size_flags_horizontal = 3
 script = ExtResource("2_diverging")
 
-[node name="TradeBars" type="Control" parent="OperationsPage/TradeCard/Box"]
+[node name="TradeBars" type="Control" parent="OperationsPage/TradeCard/Box" unique_id=1233022102]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 script = ExtResource("3_bars")
 
-[node name="TradeEmptyNote" type="Label" parent="OperationsPage/TradeCard/Box"]
+[node name="TradeEmptyNote" type="Label" parent="OperationsPage/TradeCard/Box" unique_id=1776990880]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-autowrap_mode = 3
 theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3

@@ -81,6 +81,9 @@ func _check_view_model_contract(failures: PackedStringArray) -> void:
 		failures.append("preferences were not grouped in semantic axis order")
 	elif not is_equal_approx(float(preferences[0].get("factor_percent", 0.0)), 172.0):
 		failures.append("duplicate preference rows did not retain the strongest deviation")
+	elif String(preferences[0].get("icon", "")).is_empty() \
+			or String(preferences[0].get("delta_text", "")) != "+72%":
+		failures.append("preference rows did not compute semantic icon or baseline delta")
 	var traits: Array = model.get("pages", {}).get("traits", [])
 	if traits.size() != 2 or not String(traits[0].get("effect_summary", "")).is_empty():
 		failures.append("duplicate traits or duplicate detail/effect text were not collapsed")
@@ -106,6 +109,14 @@ func _check_workspace_interaction(failures: PackedStringArray) -> void:
 	await process_frame
 	var overview_effect_card := workspace.get_node("%PageHost").find_child(
 		"OverviewEffects", true, false) as PanelContainer
+	var overview_pref_bars := workspace.get_node("%PageHost").find_child(
+		"OverviewPrefBars", true, false) as DossierBarList
+	var overview_branch_meters := workspace.get_node("%PageHost").find_child(
+		"OverviewBranchMeters", true, false) as InspectorMeterList
+	if overview_pref_bars == null or overview_pref_bars.row_count() != 4:
+		failures.append("overview preference DossierBarList was not built with 4 rows")
+	if overview_branch_meters == null or overview_branch_meters.meter_count() < 2:
+		failures.append("overview branch InspectorMeterList was not built")
 	if overview_effect_card == null:
 		failures.append("overview effect card was not built")
 	else:
@@ -125,11 +136,7 @@ func _check_workspace_interaction(failures: PackedStringArray) -> void:
 	var local_left := page_area.global_position.x - workspace.global_position.x
 	var viewport_width := workspace.get_viewport_rect().size.x
 	if workspace.size.x >= viewport_width * 0.75:
-		var visual_scale := clampf(minf(workspace.size.x / 855.0,
-			workspace.size.y / 876.0), 0.78, 1.5)
-		var expected_left := 20.0 * visual_scale + clampf(
-			workspace.size.x * 0.21, 126.0 * visual_scale, 300.0) \
-			+ 24.0 * visual_scale
+		var expected_left := FamilyWorkspace.RAIL_WIDTH + 28.0
 		if absf(local_left - expected_left) > 2.0:
 			failures.append("full-width workspace did not inset content past the book spine")
 	var active_nav_label := workspace.get_node("%NavOverview/Visual").get_child(1) as Label

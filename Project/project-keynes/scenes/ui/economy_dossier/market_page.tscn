@@ -1,100 +1,100 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene format=3 uid="uid://s1f5o4je7u6x"]
 
-[ext_resource type="Script" path="res://scripts/ui/components/dossier/market_page.gd" id="1_script"]
-[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_heat_grid.gd" id="2_heat"]
-[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_diverging_bar.gd" id="3_diverging"]
-[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_bar_list.gd" id="4_bars"]
-[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_kpi_card.gd" id="5_kpi"]
+[ext_resource type="Script" uid="uid://ca78o0jfah38a" path="res://scripts/ui/components/dossier/market_page.gd" id="1_script"]
+[ext_resource type="Script" uid="uid://d4ibm7vxsci1u" path="res://scripts/ui/components/dossier/dossier_heat_grid.gd" id="2_heat"]
+[ext_resource type="Script" uid="uid://ctit4vqjpihge" path="res://scripts/ui/components/dossier/dossier_diverging_bar.gd" id="3_diverging"]
+[ext_resource type="Script" uid="uid://04tee67qohrt" path="res://scripts/ui/components/dossier/dossier_bar_list.gd" id="4_bars"]
+[ext_resource type="Script" uid="uid://byp8erwuf3moa" path="res://scripts/ui/components/dossier/dossier_kpi_card.gd" id="5_kpi"]
 
-[node name="MarketPage" type="VBoxContainer"]
+[node name="MarketPage" type="VBoxContainer" unique_id=646360126]
 size_flags_horizontal = 3
 theme_override_constants/separation = 10
 script = ExtResource("1_script")
 chapter_id = "market"
 
-[node name="Header" type="HBoxContainer" parent="."]
+[node name="Header" type="HBoxContainer" parent="." unique_id=1042812952]
 layout_mode = 2
 
-[node name="Kicker" type="Label" parent="Header"]
+[node name="Kicker" type="Label" parent="Header" unique_id=2133288333]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "供需热力 · 暗红为短缺，铜绿为积压，角标为价格偏离"
-text_overrun_behavior = 3
 theme_type_variation = &"PKDossierKicker"
+text = "供需情况"
+text_overrun_behavior = 3
 
-[node name="CountLabel" type="Label" parent="Header"]
+[node name="CountLabel" type="Label" parent="Header" unique_id=1970782747]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"PKDossierCaption"
 
-[node name="EmptyLabel" type="Label" parent="."]
+[node name="EmptyLabel" type="Label" parent="." unique_id=2058257602]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-autowrap_mode = 3
 theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
 
-[node name="Body" type="GridContainer" parent="."]
+[node name="Body" type="GridContainer" parent="." unique_id=341143926]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/h_separation = 22
 theme_override_constants/v_separation = 16
 columns = 2
 
-[node name="HeatGrid" type="Control" parent="Body"]
+[node name="HeatGrid" type="Control" parent="Body" unique_id=534745405]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 0
 script = ExtResource("2_heat")
 
-[node name="Detail" type="PanelContainer" parent="Body"]
+[node name="Detail" type="PanelContainer" parent="Body" unique_id=72728364]
 custom_minimum_size = Vector2(288, 0)
 layout_mode = 2
 size_flags_vertical = 0
 theme_type_variation = &"PKDossierAside"
 
-[node name="DetailBox" type="VBoxContainer" parent="Body/Detail"]
+[node name="DetailBox" type="VBoxContainer" parent="Body/Detail" unique_id=1442206177]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="DetailTitle" type="Label" parent="Body/Detail/DetailBox"]
+[node name="DetailTitle" type="Label" parent="Body/Detail/DetailBox" unique_id=235642941]
 unique_name_in_owner = true
 layout_mode = 2
-text_overrun_behavior = 3
 theme_type_variation = &"PKDossierHeading"
+text_overrun_behavior = 3
 
-[node name="DetailMeta" type="Label" parent="Body/Detail/DetailBox"]
+[node name="DetailMeta" type="Label" parent="Body/Detail/DetailBox" unique_id=1356223969]
 unique_name_in_owner = true
 layout_mode = 2
-autowrap_mode = 3
 theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
 
-[node name="SupplyKicker" type="Label" parent="Body/Detail/DetailBox"]
+[node name="SupplyKicker" type="Label" parent="Body/Detail/DetailBox" unique_id=459223133]
 layout_mode = 2
-text = "需求与供给 · 每日"
 theme_type_variation = &"PKDossierKicker"
+text = "需求/供给"
 
-[node name="SupplyBar" type="Control" parent="Body/Detail/DetailBox"]
+[node name="SupplyBar" type="Control" parent="Body/Detail/DetailBox" unique_id=1665123497]
 unique_name_in_owner = true
 layout_mode = 2
 script = ExtResource("3_diverging")
 
-[node name="StatsList" type="Control" parent="Body/Detail/DetailBox"]
+[node name="StatsList" type="Control" parent="Body/Detail/DetailBox" unique_id=1659836205]
 unique_name_in_owner = true
 layout_mode = 2
 script = ExtResource("4_bars")
 
-[node name="TradeKicker" type="Label" parent="Body/Detail/DetailBox"]
+[node name="TradeKicker" type="Label" parent="Body/Detail/DetailBox" unique_id=31880054]
 layout_mode = 2
-text = "对外贸易 · 每日"
 theme_type_variation = &"PKDossierKicker"
+text = "对外贸易"
 
-[node name="TradeBar" type="Control" parent="Body/Detail/DetailBox"]
+[node name="TradeBar" type="Control" parent="Body/Detail/DetailBox" unique_id=852304520]
 unique_name_in_owner = true
 layout_mode = 2
 script = ExtResource("3_diverging")
 
-[node name="PriceCard" type="Control" parent="Body/Detail/DetailBox"]
+[node name="PriceCard" type="Control" parent="Body/Detail/DetailBox" unique_id=1207837524]
 unique_name_in_owner = true
 layout_mode = 2
 script = ExtResource("5_kpi")

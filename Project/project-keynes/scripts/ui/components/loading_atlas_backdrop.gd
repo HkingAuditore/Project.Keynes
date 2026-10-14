@@ -1,37 +1,54 @@
 extends Control
 
+const PapercutReliefShader := preload("res://shaders/papercut_relief_map.gdshader")
+
+var _mat: ShaderMaterial
+var _target_reveal := 0.35
+var _current_reveal := 0.35
+
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	resized.connect(queue_redraw)
+	_mat = ShaderMaterial.new()
+	_mat.shader = PapercutReliefShader
+	_mat.set_shader_parameter("seed_val", 37.0)
+	_mat.set_shader_parameter("num_continents", 2)
+	_mat.set_shader_parameter("continent_size", 0.56)
+	_mat.set_shader_parameter("sea_level", 0.46)
+	_mat.set_shader_parameter("continent_spacing", 0.82)
+	_mat.set_shader_parameter("island_amount", 0.45)
+	_mat.set_shader_parameter("wetness", 0.60)
+	_mat.set_shader_parameter("river_density", 0.60)
+	_mat.set_shader_parameter("lake_density", 0.45)
+	_mat.set_shader_parameter("map_center_bias", Vector2(0.50, 0.50))
+	_mat.set_shader_parameter("compass_uv", Vector2(0.50, 0.50))
+	_mat.set_shader_parameter("compass_scale", 0.34)
+	_mat.set_shader_parameter("darken_veil", 0.28)
+	_mat.set_shader_parameter("reveal_progress", _current_reveal)
+	_mat.set_shader_parameter("show_outer_frame", true)
+	material = _mat
+	set_process(true)
+	resized.connect(_sync_size)
+	_sync_size()
+
+
+func set_loading_progress(fraction: float) -> void:
+	_target_reveal = lerpf(0.32, 1.0, clampf(fraction, 0.0, 1.0))
+
+
+func _sync_size() -> void:
+	if _mat != null and size.x > 1.0 and size.y > 1.0:
+		_mat.set_shader_parameter("viewport_size", size)
+	queue_redraw()
+
+
+func _process(delta: float) -> void:
+	_current_reveal = lerpf(_current_reveal, _target_reveal, clampf(delta * 4.5, 0.0, 1.0))
+	if _mat != null:
+		_mat.set_shader_parameter("reveal_progress", _current_reveal)
 
 
 func _draw() -> void:
-	var canvas := Rect2(Vector2.ZERO, size)
-	draw_rect(canvas, Color(0.020, 0.027, 0.028, 1.0))
-	var grid_color := Color(0.32, 0.43, 0.42, 0.13)
-	var major_color := Color(0.52, 0.43, 0.27, 0.18)
-	for column in range(1, 12):
-		var x := size.x * float(column) / 12.0
-		draw_line(Vector2(x, 0.0), Vector2(x, size.y),
-			major_color if column == 6 else grid_color, 1.0)
-	for row in range(1, 8):
-		var y := size.y * float(row) / 8.0
-		draw_line(Vector2(0.0, y), Vector2(size.x, y),
-			major_color if row == 4 else grid_color, 1.0)
-	var contour_color := Color(0.34, 0.50, 0.46, 0.16)
-	for band in range(5):
-		var points := PackedVector2Array()
-		for sample in range(33):
-			var t := float(sample) / 32.0
-			var wave := sin(t * TAU * (1.15 + band * 0.17) + band * 1.7)
-			var secondary := sin(t * TAU * 3.1 - band * 0.8) * 0.32
-			points.append(Vector2(t * size.x,
-				size.y * (0.18 + band * 0.155) + (wave + secondary) * size.y * 0.026))
-		draw_polyline(points, contour_color, 1.25, true)
-	var center := Vector2(size.x * 0.84, size.y * 0.76)
-	var radius := minf(size.x, size.y) * 0.085
-	draw_arc(center, radius, 0.0, TAU, 64, major_color, 1.5, true)
-	draw_arc(center, radius * 0.72, 0.0, TAU, 48, grid_color, 1.0, true)
-	draw_line(center - Vector2(radius, 0.0), center + Vector2(radius, 0.0), major_color, 1.0)
-	draw_line(center - Vector2(0.0, radius), center + Vector2(0.0, radius), major_color, 1.0)
+	if size.x <= 1.0 or size.y <= 1.0:
+		return
+	draw_rect(Rect2(Vector2.ZERO, size), Color.WHITE)

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- Papercut Openwork Charter Tome (Umber & Cinnabar, hollow filigree) -->
+  <path fill="#734222" fill-rule="evenodd" d="
+    M6 40 Q35 26 64 41 Q93 26 122 40 V100 Q93 86 64 101 Q35 86 6 100 Z
+    M14 47 Q37 36 60 47 V91 Q37 80 14 91 Z
+    M114 47 Q91 36 68 47 V91 Q91 80 114 91 Z
+  "/>
+  <!-- Carved Papercut Scroll Bars Inside Pages -->
+  <path fill="#b87b28" d="
+    M21 54 H52 V60 H21 Z
+    M21 65 H48 V71 H21 Z
+    M21 76 H44 V82 H21 Z
+    M76 54 H107 V60 H76 Z
+    M80 65 H107 V71 H80 Z
+    M84 76 H107 V82 H84 Z
+  "/>
+  <!-- Hollow Cinnabar Spirit Flame Above Tome -->
+  <path fill="#9e2e1e" fill-rule="evenodd" d="
+    M64 2 C82 19 89 33 78 45 C72 51 56 51 50 45 C39 33 46 19 64 2 Z
+    M64 15 C56 25 55 34 60 40 C62 42 66 42 68 40 C73 34 72 25 64 15 Z
+  "/>
+  <path fill="#c48832" d="M64 21 C68 27 68 33 64 38 C60 33 60 27 64 21 Z"/>
+  <!-- Hanging Cinnabar Wax Seal & Tassels -->
+  <path fill="#9e2e1e" fill-rule="evenodd" d="
+    M64 88 A14 14 0 1 1 64 116 A14 14 0 1 1 64 88 Z
+    M64 95 L67 100 L72 102 L67 104 L64 109 L61 104 L56 102 L61 100 Z
+  "/>
+  <path fill="#b87b28" d="M52 108 L42 126 L56 120 L59 110 Z M76 108 L86 126 L72 120 L69 110 Z"/>
+</svg>

@@ -66,7 +66,8 @@ func _check_theme_contract() -> void:
 			"PKCountryPage", "PKCountryHeader", "PKCountryNavButton",
 			"PKWorkspaceStatus", "PKWorkspaceToolbar", "PKWorkspaceCanvas",
 			"PKWorkspaceRail", "PKWorkspaceRailRight", "PKIdeologyStage",
-			"PKEconomyLedger"]:
+			"PKEconomyLedger", "PKMenuChapterButton", "PKSealPrimaryButton",
+			"PKPresetCardButton"]:
 		_expect("formal session theme defines %s" % variation,
 			not String(session_theme.get_type_variation_base(variation)).is_empty())
 	_expect("archive ornament is scoped to the outer shell",
@@ -104,7 +105,8 @@ func _check_theme_contract() -> void:
 
 func _check_main_menu() -> void:
 	var scene := (load("res://scenes/main_menu.tscn") as PackedScene).instantiate()
-	_expect("main menu inherits shared theme", _uses_shared_theme(scene))
+	_expect("main menu inherits formal session theme", _uses_theme(scene, PLAYER_THEME_PATH))
+	_expect("main menu has papercut atlas backdrop", scene.has_node("Backdrop"))
 	_expect("main menu has static page stack", scene.has_node("PageMargin/PageStack"))
 	for page_name in ["HomePage", "NewGamePage", "LoadGamePage", "SettingsPage"]:
 		_expect("main menu has %s" % page_name,
@@ -112,6 +114,8 @@ func _check_main_menu() -> void:
 	_expect("main menu has map source option", scene.has_node("%MapSourceOption"))
 	_expect("main menu has pkmap browse button", scene.has_node("%BrowsePkmapButton"))
 	_expect("main menu has pkmap dialog", scene.has_node("%PkmapDialog"))
+	_expect("main menu has papercut map preview", scene.has_node("%MapPreview"))
+	_expect("main menu has land layout cards row", scene.has_node("%LayoutCardsRow"))
 	root.add_child(scene)
 	await process_frame
 	_expect("main menu keeps four static pages",
@@ -182,6 +186,8 @@ func _check_component_scenes() -> void:
 		"res://scenes/ui/map_overlay_toolbar.tscn": "SecondaryPanel/Margin/Root/ResourceScroll/SecondaryBox",
 		"res://scenes/ui/map_overlay_legend.tscn": "Margin/Root/Vector/Wheel",
 		"res://scenes/ui/pause_menu.tscn": "Center/Frame/Panel/Rows",
+		"res://scenes/ui/papercut_map_preview.tscn": "Margin/Column/CanvasFrame/MapCanvas",
+		"res://scenes/ui/land_layout_card.tscn": "Margin/VBox/Emblem",
 	}
 	for scene_path in expectations:
 		var packed := load(scene_path) as PackedScene

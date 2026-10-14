@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bbdxooy6mbqcx"
-path="res://.godot/imported/founding_1920x1080.png-8d47fdb3a651c413879ca45d52610a4a.ctex"
+uid="uid://bicd87m55kipd"
+path="res://.godot/imported/family_1279x720_preferences.png-febf7461fc4cb7f71af9a807b23ebaa9.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://tmp/family_founding_qa/founding_1920x1080.png"
-dest_files=["res://.godot/imported/founding_1920x1080.png-8d47fdb3a651c413879ca45d52610a4a.ctex"]
+source_file="res://tmp/family_workspace_qa/family_1279x720_preferences.png"
+dest_files=["res://.godot/imported/family_1279x720_preferences.png-febf7461fc4cb7f71af9a807b23ebaa9.ctex"]
 
 [params]
 
