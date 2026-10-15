@@ -1,4 +1,6 @@
 #include "economy_runtime.h"
+#include "economy_cost_probe.h"
+#include "economy_hash.h"
 #include "country_runtime.h"
 #include "economy_runtime_persistence_codec.h"
 #include "effect_runtime.h"
@@ -37,12 +39,7 @@ void owned_put_i32(std::vector<uint8_t> &out, int32_t value) {
 }
 
 uint64_t owned_fnv1a(const uint8_t *data, size_t size) {
-    uint64_t hash = 1469598103934665603ull;
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= static_cast<uint64_t>(data[i]);
-        hash *= 1099511628211ull;
-    }
-    return hash;
+    return economy_save_hash_bytes(data, size);
 }
 
 bool append_owned_block(std::vector<uint8_t> &out, uint32_t id,
@@ -54,7 +51,8 @@ bool append_owned_block(std::vector<uint8_t> &out, uint32_t id,
 }
 
 void encode_owned_state_soa(const RuntimeEconomyLedgerState &ledger,
-                            std::vector<uint8_t> &out) {
+                            std::vector<uint8_t> &out,
+                            bool bulk = binary_codec::bulk_little_endian_enabled()) {
     out.clear();
     owned_put_u32(out, OWNED_STATE_MAGIC);
     owned_put_u32(out, OWNED_STATE_VERSION);
@@ -88,7 +86,18 @@ void encode_owned_state_soa(const RuntimeEconomyLedgerState &ledger,
     append_owned_block(out, 5u, block);
     block.clear();
     owned_put_u32(block, static_cast<uint32_t>(ledger.market_stock.size()));
-    for (size_t i = 0; i < ledger.market_stock.size(); ++i) {
+    if (bulk) {
+        const size_t offset = block.size();
+        // OSOA 的 8/4/8 交错记录固定为 20 字节，不能引入结构体填充。
+        block.resize(offset + ledger.market_stock.size() * 20u);
+        uint8_t *records = block.data() + offset;
+        for (size_t i = 0; i < ledger.market_stock.size(); ++i) {
+            uint8_t *record = records + i * 20u;
+            binary_codec::store_le(record, ledger.market_stock[i]);
+            binary_codec::store_le(record + 8u, ledger.market_price[i]);
+            binary_codec::store_le(record + 12u, ledger.market_demand_ema[i]);
+        }
+    } else for (size_t i = 0; i < ledger.market_stock.size(); ++i) {
         owned_put_u64(block, static_cast<uint64_t>(ledger.market_stock[i]));
         owned_put_u32(block, static_cast<uint32_t>(ledger.market_price[i]));
         owned_put_u64(block, static_cast<uint64_t>(ledger.market_demand_ema[i]));
@@ -1412,10 +1421,13 @@ Dictionary NativeEconomyRuntime::end_restore() {
             if (families_store().active[family] == 0) continue;
             const uint64_t family_handle = families_store().handle_for_index(family);
             const int32_t core_count = core_traits_by_family[family_handle];
-            if (core_count < _family_core_trait_min ||
-                core_count > _family_core_trait_max) {
+            // 初始抽取下限不适用于后代：分家可移除核心特性，新增项是附加特性。
+            if (core_count > _family_core_trait_max) {
                 out["ok"] = false;
                 out["reason"] = "restore_family_core_trait_count_invalid";
+                out["family_handle"] = static_cast<int64_t>(family_handle);
+                out["core_trait_count"] = core_count;
+                out["core_trait_max"] = _family_core_trait_max;
                 return out;
             }
             const auto found_traits = traits_by_family.find(family_handle);
@@ -1860,12 +1872,15 @@ bool NativeEconomyRuntime::capture_ecp2_authority(RuntimeEconomyEcp2State &out,
 
     NativeEconomyRuntime *self = const_cast<NativeEconomyRuntime *>(this);
     RuntimeEconomyLedgerState pre_owned_ledger;
+    {
+    EconomyCostProbe probe("save.ecp2.ledger", _current_day.get());
     self->capture_committed_ledger_state(pre_owned_ledger);
     const char *ledger_reason = nullptr;
     if (!pre_owned_ledger.valid(&ledger_reason)) {
         error = std::string("ecp2_owned_state_capture_invalid:") +
             (ledger_reason != nullptr ? ledger_reason : "unknown");
         return false;
+    }
     }
     const bool saved_allow = self->_ecp2_allow_mid_epoch_export;
     if ((flags & ECP2_CAPTURE_ALLOW_MID_EPOCH) != 0)
@@ -1907,6 +1922,8 @@ bool NativeEconomyRuntime::capture_ecp2_authority(RuntimeEconomyEcp2State &out,
     out.envelope.seed = _seed.get();
     out.authority_domain_mask = ECP2_DOMAIN_ENVELOPE;
 
+    {
+    EconomyCostProbe probe("save.ecp2.pkec_chunks", _current_day.get());
     while (true) {
         const PackedByteArray chunk = self->read_save_chunk(4 * 1024 * 1024);
         if (chunk.is_empty()) break;
@@ -1917,16 +1934,16 @@ bool NativeEconomyRuntime::capture_ecp2_authority(RuntimeEconomyEcp2State &out,
             self->end_save();
             return false;
         }
-        std::vector<uint8_t> bytes(static_cast<size_t>(chunk_size));
-        std::memcpy(bytes.data(), chunk.ptr(), bytes.size());
+        const uint8_t *bytes = chunk.ptr();
         const uint16_t section = static_cast<uint16_t>(bytes[6]) |
             static_cast<uint16_t>(static_cast<uint16_t>(bytes[7]) << 8u);
         if (section == SAVE_SECTION_END) continue;
         const uint32_t domain = ecp2_domain_for_pkec_section(section);
         if (domain == 0) continue;
         std::vector<uint8_t> &blob = out.domain_blobs[domain];
-        blob.insert(blob.end(), bytes.begin(), bytes.end());
+        blob.insert(blob.end(), bytes, bytes + static_cast<size_t>(chunk_size));
         out.authority_domain_mask |= domain;
+    }
     }
 
     Dictionary end = self->end_save();
@@ -1936,6 +1953,8 @@ bool NativeEconomyRuntime::capture_ecp2_authority(RuntimeEconomyEcp2State &out,
         return false;
     }
 
+    {
+    EconomyCostProbe probe("save.ecp2.resource", _current_day.get());
     RuntimeEconomyResourceStore resource_store;
     resource_store.resource_count =
         static_cast<int32_t>(_resource_ids.size());
@@ -1949,19 +1968,35 @@ bool NativeEconomyRuntime::capture_ecp2_authority(RuntimeEconomyEcp2State &out,
     resource_store.append_wire(resource_wire);
     out.domain_blobs[ECP2_DOMAIN_RESOURCE] = std::move(resource_wire);
     out.authority_domain_mask |= ECP2_DOMAIN_RESOURCE;
+    }
 
     // ECP2's authority payload is independent from the PKEC compatibility
     // chunks. Capture the typed SoA stores as one canonical, content-addressed
     // OwnedState block; restore still keeps PKEC as a compatibility decoder,
     // while this block is the cutover/audit proof for the native owner.
+    {
+    EconomyCostProbe probe("save.ecp2.owned_state", _current_day.get());
     std::vector<uint8_t> owned_state_wire;
     encode_owned_state_soa(pre_owned_ledger, owned_state_wire);
+    static const bool verify_codec = [] {
+        const char *value = std::getenv("PK_SAVE_CODEC_VERIFY");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    if (verify_codec) {
+        std::vector<uint8_t> reference;
+        encode_owned_state_soa(pre_owned_ledger, reference, false);
+        if (owned_state_wire != reference) {
+            error = "ecp2_owned_state_codec_mismatch";
+            return false;
+        }
+    }
     if (owned_state_wire.empty()) {
         error = "ecp2_owned_state_capture_empty";
         return false;
     }
     out.domain_blobs[ECP2_DOMAIN_OWNED_STATE] = std::move(owned_state_wire);
     out.authority_domain_mask |= ECP2_DOMAIN_OWNED_STATE;
+    }
 
     if ((flags & ECP2_CAPTURE_INCLUDE_RESUME) != 0 && _epoch_active) {
         RuntimeEconomyEcp2Resume &resume = out.resume;

@@ -872,7 +872,8 @@ private:
     void publish_country_command_terminals(
             const std::vector<RuntimeCountryCommand> &commands,
             CountryCommandReceiptCode code, uint64_t generation,
-            const char *reason);
+            const char *reason, bool include_superseded_ai = false);
+    void retire_country_ai_ingress(const std::vector<RuntimeCommandPacket> &packets);
     bool pop_command(RuntimeCommandPacket &out);
     bool push_receipt(const RuntimeCommandReceipt &receipt);
     void publish_day(int64_t from_day, int64_t day,

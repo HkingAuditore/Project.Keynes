@@ -1,4 +1,5 @@
 #include "economy_runtime.h"
+#include "economy_cost_probe.h"
 #include "economy_runtime_binary_codec.h"
 #include "economy_runtime_variant_helpers.h"
 #include "country_runtime.h"
@@ -166,6 +167,7 @@ void NativeEconomyRuntime::append_building_visual_social_rows(
 }
 
 void NativeEconomyRuntime::publish_social_pressure_facts() {
+    EconomyCostProbe probe("publish.social_pressure", _current_day.get());
     for (const int32_t cell : _epoch_settlement_cells) {
         if (cell < 0 || cell >= _cell_count.get() ||
             cell >= static_cast<int32_t>(_cell_social_pressure_level.size()))
@@ -227,6 +229,7 @@ void NativeEconomyRuntime::publish_social_pressure_facts() {
 
 
 void NativeEconomyRuntime::publish_technology_practice_facts() {
+    EconomyCostProbe probe("publish.technology_practice", _current_day.get());
     if (_country_runtime == nullptr || _epoch_country_handles.empty() ||
         _building_technology_practice_masks.size() != _building_types.size())
         return;
@@ -250,7 +253,7 @@ void NativeEconomyRuntime::publish_technology_practice_facts() {
             group.last_capacity_q16 > 0;
     };
     for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
-        const auto group = building_at(pk_row);
+        const auto group = building_view(pk_row);
         if (group.count <= 0 || group.cell < 0 || group.cell >= _cell_count.get() ||
             group.type_id < 0 ||
             group.type_id >= static_cast<int32_t>(_building_types.size()) ||
@@ -433,6 +436,7 @@ void NativeEconomyRuntime::publish_technology_practice_facts() {
 
 
 void NativeEconomyRuntime::publish_country_development_facts() {
+    EconomyCostProbe probe("publish.country_development", _current_day.get());
     if (_country_runtime == nullptr || _epoch_country_count <= 0 ||
         _epoch_country_handles.size() != static_cast<size_t>(_epoch_country_count))
         return;
@@ -687,7 +691,7 @@ void NativeEconomyRuntime::publish_country_development_facts() {
 
     const int64_t period_days = std::max<int64_t>(1, _epoch_days.get());
     for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
-        const auto group = building_at(pk_row);
+        const auto group = building_view(pk_row);
         if (group.count <= 0 || group.cell < 0 || group.cell >= _cell_count.get() ||
             group.type_id < 0 || group.type_id >= static_cast<int32_t>(_building_types.size()) ||
             group.cell >= static_cast<int32_t>(_epoch_cell_country.size()))

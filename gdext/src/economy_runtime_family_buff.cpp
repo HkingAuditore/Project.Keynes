@@ -225,7 +225,7 @@ void NativeEconomyRuntime::rebuild_family_industry_metrics() {
                     if (edge.family_handle != family_handle) continue;
                     const auto found = building_by_handle.find(edge.building_handle);
                     if (found == building_by_handle.end()) continue;
-                    const auto group = building_at(static_cast<size_t>(static_cast<size_t>(found->second)));
+                    const auto group = building_view(static_cast<size_t>(found->second));
                     if (group.cell != cell || group.count <= 0 ||
                         group.operating_state != 0) continue;
                     const int64_t owned = std::max<int64_t>(0,
@@ -261,7 +261,7 @@ void NativeEconomyRuntime::rebuild_family_industry_metrics() {
             for (int32_t group_index = _building_cell_offsets[static_cast<size_t>(cell)];
                  group_index < _building_cell_offsets[static_cast<size_t>(cell) + 1];
                  ++group_index) {
-                const auto group = building_at(static_cast<size_t>(static_cast<size_t>(group_index)));
+                const auto group = building_view(static_cast<size_t>(group_index));
                 if (group.count <= 0 || group.operating_state != 0) continue;
                 const int32_t type_id = group.type_id;
                 const int32_t upgrade_family = type_id >= 0 &&
@@ -922,8 +922,20 @@ void NativeEconomyRuntime::rebuild_family_policy_scalars() {
             continue;
         const int32_t cell = family_influences().cell[branch];
         const int32_t magnitude = clamp_factor_q16(binding.strength_q16);
+        // Direct policies consume only these five signals. Most bindings have
+        // no metric condition and need no population/building/resource scans.
+        uint64_t mask = 0;
+        if (binding.definition_key == kEffectWorkRelief)
+            mask = uint64_t{1} << FAMILY_METRIC_CELL_UNEMPLOYMENT_Q16;
+        else if (binding.definition_key == kEffectRemoteKin)
+            mask = uint64_t{1} << FAMILY_METRIC_FAMILY_REMOTE_BRANCH_COUNT;
+        else if (binding.definition_key == kEffectWealthyFew)
+            mask = uint64_t{1} << FAMILY_METRIC_FAMILY_CASH_PER_CAPITA_VS_CELL_Q16;
+        else if (binding.definition_key == kEffectOneIndustry)
+            mask = (uint64_t{1} << FAMILY_METRIC_CELL_DOMINANT_SECTOR_ID) |
+                (uint64_t{1} << FAMILY_METRIC_CELL_DOMINANT_SECTOR_SHARE_Q16);
         fill_family_behavior_metrics(family, branch, cell, metrics.data(),
-            FAMILY_METRIC_COUNT);
+            FAMILY_METRIC_COUNT, mask);
         if (binding.definition_key == kEffectWorkRelief) {
             if (metrics[FAMILY_METRIC_CELL_UNEMPLOYMENT_Q16] >= Q16_ONE * 15 / 100)
                 mix_family_factor(_family_investment_factor_q16[

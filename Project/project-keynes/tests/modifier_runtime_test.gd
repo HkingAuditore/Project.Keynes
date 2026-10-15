@@ -19,6 +19,29 @@ func _near(a: float, b: float) -> bool:
 	return absf(a - b) <= 0.0000001
 
 
+func _catalog_wire_hash(catalog: Dictionary) -> int:
+	var bytes := PackedByteArray()
+	for i in catalog.stat_keys.size():
+		bytes.append_array(catalog.stat_keys[i].to_utf8_buffer())
+		bytes.append_array(PackedInt32Array([catalog.stat_domains[i]]).to_byte_array())
+		bytes.append_array(PackedFloat64Array([
+			catalog.stat_min_values[i], catalog.stat_max_values[i]]).to_byte_array())
+	for i in catalog.definition_keys.size():
+		bytes.append_array(catalog.definition_keys[i].to_utf8_buffer())
+		bytes.append_array(PackedInt32Array([catalog.definition_versions[i]]).to_byte_array())
+	for i in catalog.term_stat_ids.size():
+		var op: int = catalog.term_operations[i]
+		var value: float = catalog.term_values[i]
+		bytes.append_array(PackedInt32Array([catalog.term_stat_ids[i], 0]).to_byte_array())
+		bytes.append_array(PackedFloat64Array([
+			value if op == 0 else -value if op == 1 else 0.0,
+			value if op == 2 else 1.0 / value if op == 3 else 1.0]).to_byte_array())
+	var hash_value: int = 1469598103934665603
+	for byte in bytes:
+		hash_value = (hash_value ^ byte) * 1099511628211
+	return hash_value
+
+
 func _run() -> void:
 	if not ClassDB.class_exists("DCWorldExt"):
 		print("[modifier-runtime] SKIP: DCWorldExt unavailable")
@@ -31,6 +54,9 @@ func _run() -> void:
 	if not bool(configured.get("ok", false)):
 		_finish()
 		return
+	_expect("catalog hash uses deterministic legacy wire bytes",
+		int(configured.get("catalog_hash", 0)) == _catalog_wire_hash(
+			ModifierCatalogScript.load_default().compile_native_catalog()))
 
 	var climate_target := {"domain": 0, "scope": 2, "entity_handle": 3, "group_handle": 0}
 	var source := {"type": 7, "id": 11}

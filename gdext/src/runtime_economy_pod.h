@@ -525,6 +525,11 @@ private:
     RuntimeEconomyLedgerState _committed_ledger_state;
     // 私有导出缓冲复用上一代容量；验证失败不得修改已发布账本。
     RuntimeEconomyLedgerState _export_ledger_scratch;
+    // Publish 消费游标只服务该双缓冲账本；Hash/Audit 的游标独立。
+    mutable std::array<std::vector<uint64_t>, 5> _market_export_previous_pages;
+    mutable uint32_t _market_export_warmup = 0;
+    bool export_committed_ledger_internal(RuntimeEconomyLedgerState &ledger,
+        std::string &error, bool compute_hash, bool incremental_market) const;
     // 读报告只取发布标量，不遍历 worker 正在替换的账本容器。
     std::atomic<uint32_t> _published_mirror_features{0};
     void publish_mirror_features() noexcept;

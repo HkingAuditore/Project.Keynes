@@ -583,6 +583,7 @@ func _test_opening_capital_keeps_anonymous_majority(catalog: Dictionary) -> void
 	var cell_pop := int(ext.get_population_cell_snapshot(0).population)
 	_expect("opening family stays the two gathering operators, not the whole town",
 		cell_pop == 20 and family_pop == 2)
+	_test_descendant_core_restore(ext, catalog, profile, 260803)
 	var ledgers_ok := true
 	var reconcile_ok := true
 	var diagnostics_ok := true
@@ -624,6 +625,44 @@ func _test_opening_capital_keeps_anonymous_majority(catalog: Dictionary) -> void
 			targets_ok = false
 	_expect("branch target share stays inside [0, S_total]",
 		not bool(branches.get("ok", false)) or targets_ok)
+
+
+func _test_descendant_core_restore(ext: Object, catalog: Dictionary,
+		profile: Dictionary, seed_value: int) -> void:
+	# Preserve every trait/strength while modelling a later descendant whose
+	# inherited core traits were replaced by the existing split policy.
+	var begin: Dictionary = ext.begin_economy_save(65536)
+	_expect("descendant source save begins", bool(begin.get("ok", false)))
+	if not bool(begin.get("ok", false)):
+		return
+	var chunks: Array[PackedByteArray] = []
+	for _i in 512:
+		var bytes: PackedByteArray = ext.read_economy_save_chunk(65536)
+		if bytes.is_empty():
+			break
+		chunks.append(bytes)
+	ext.end_economy_save()
+	var descendant := _new_ext(catalog)
+	_expect("descendant restore country bootstraps", _configure_country(
+		descendant, catalog, seed_value))
+	_expect("descendant restore economy configures", bool(descendant.configure_economy(
+		catalog, profile, 1, seed_value).get("ok", false)))
+	descendant.begin_economy_restore()
+	var changed_core_rows := 0
+	for original in chunks:
+		var chunk := original.duplicate()
+		if chunk.decode_u16(6) == 20: # SAVE_SECTION_FAMILY_TRAITS, 17-byte rows
+			for row in range(chunk.decode_u32(8)):
+				var core_offset := 16 + row * 17 + 16
+				changed_core_rows += int(chunk[core_offset] != 0)
+				chunk[core_offset] = 0
+		_expect("descendant restore chunk accepted", bool(
+			descendant.feed_economy_restore_chunk(chunk).get("ok", false)))
+	var result: Dictionary = descendant.end_economy_restore()
+	_expect("valid descendant below initial core-roll minimum restores",
+		changed_core_rows > 0 and bool(result.get("ok", false)))
+	if not bool(result.get("ok", false)):
+		print("descendant restore diagnostic=", result)
 
 
 func _test_ordinary_family_minimum(catalog: Dictionary) -> void:

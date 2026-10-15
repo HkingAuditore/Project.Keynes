@@ -43,6 +43,10 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(_on_viewport_size_changed)
 	_push_visual_toggles()
 	_ui_manager.show_loading("正在生成世界...")
+	var loading := _ui_manager.get_node("UIRoot/ModalLayer/WorldLoadingOverlay") as WorldLoadingOverlay
+	loading.set_layout_state(_runtime_host.session_config().get("base", {}))
+	loading.retry_requested.connect(_regenerate_world)
+	loading.return_requested.connect(func() -> void: get_tree().change_scene_to_file(MAIN_MENU_SCENE_PATH))
 	await get_tree().process_frame
 	await get_tree().process_frame
 	await _runtime_host.generate_world(-1, _ui_manager.map_safe_area())
@@ -130,6 +134,7 @@ func _on_world_ready(
 		generator: MapGenerator,
 		view_adapter: DCViewAdapter
 ) -> void:
+	var ready_t0 := Time.get_ticks_usec()
 	_player_controller.refresh_country_binding()
 	_player_controller.clear_selection()
 	_ui_manager.set_world_context(
@@ -141,7 +146,8 @@ func _on_world_ready(
 		_runtime_host.hex_size
 	)
 	_ui_manager.set_world_summary(map.width, map.height, map.cell_count(), _runtime_host.last_seed())
-	_ui_manager.hide_loading()
+	print("[player-ready-step] UI context %.1fms" % [float(Time.get_ticks_usec()-ready_t0)/1000.0])
+	await get_tree().process_frame
 	_player_controller.sync_ui()
 	var start_report: Dictionary = generator.gameplay_start_report() \
 		if generator != null and generator.has_method("gameplay_start_report") else {}
@@ -149,7 +155,10 @@ func _on_world_ready(
 		if not _runtime_host.is_loading_session():
 			var start_cell := map.cell_at(int(start_report.get("cell", -1)))
 			if start_cell != null:
+				await get_tree().process_frame
+				var select_t0 := Time.get_ticks_usec()
 				_player_controller.select_cell(start_cell)
+				print("[player-ready-step] select %.1fms" % [float(Time.get_ticks_usec()-select_t0)/1000.0])
 		var flow: Node = _game_flow()
 		if flow != null:
 			flow.set_session({
@@ -162,9 +171,10 @@ func _on_world_ready(
 	if save != null:
 		save.apply_pending_view(map)
 
+	_ui_manager.hide_loading()
 
 func _on_world_generation_failed(reason: String) -> void:
-	_ui_manager.show_loading("世界生成失败：%s" % reason)
+	(_ui_manager.get_node("UIRoot/ModalLayer/WorldLoadingOverlay") as WorldLoadingOverlay).show_failure(reason)
 
 
 func _on_fit_requested() -> void:

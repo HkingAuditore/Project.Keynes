@@ -5,7 +5,7 @@ env = Environment()
 env.Append(CPPPATH=[str(root/'src'), str(root/'godot-cpp/include'),
                    str(root/'godot-cpp/gen/include'), str(root/'godot-cpp/gdextension')])
 if env['PLATFORM'] == 'win32':
-    env.Append(CCFLAGS=['/std:c++17', '/EHsc', '/O2'])
+    env.Append(CCFLAGS=['/std:c++17', '/EHsc', '/O2', '/utf-8'])
 else:
     env.Append(CCFLAGS=['-std=c++17', '-O2'])
 obj = env.Object('../../tmp/price_v5/numeric_math', '../src/economy_runtime_math.cpp')

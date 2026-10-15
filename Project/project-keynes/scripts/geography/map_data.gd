@@ -374,8 +374,13 @@ func _build_indices() -> void:
 		i += 1
 	# 第二遍：填 _neighbor_indices；HexUtils.CUBE_DIRECTIONS 顺序：
 	# 0=E, 1=NE, 2=NW, 3=W, 4=SW, 5=SE
+	_build_neighbor_indices(0,n)
+	_indices_built = true
+
+
+func _build_neighbor_indices(begin: int, end: int) -> void:
 	var dirs: Array = HexUtils.CUBE_DIRECTIONS
-	for j in range(n):
+	for j in range(begin,end):
 		var c: HexCell = _cell_array[j]
 		var base: int = j * 6
 		for d in range(6):
@@ -397,6 +402,32 @@ func _build_indices() -> void:
 			else:
 				# 邻居一定已在 _cell_index 内（因为 _cells 是同源）
 				_neighbor_indices[base + d] = int(_cell_index.get(nb, -1))
+
+func build_indices_cooperative() -> void:
+	if _indices_built:
+		return
+	_cell_array.clear()
+	_cell_index.clear()
+	var n := _cells.size()
+	_cell_array.resize(n)
+	_neighbor_indices.resize(n*6)
+	var tree := Engine.get_main_loop() as SceneTree
+	var start := Time.get_ticks_usec()
+	var i := 0
+	for key in _cells.keys():
+		var cell: HexCell = _cells[key]
+		_cell_array[i] = cell
+		_cell_index[cell] = i
+		cell.index = i
+		i += 1
+		if tree != null and Time.get_ticks_usec()-start >= 4000:
+			await tree.process_frame
+			start = Time.get_ticks_usec()
+	for begin in range(0,n,16):
+		_build_neighbor_indices(begin,mini(begin+16,n))
+		if tree != null and Time.get_ticks_usec()-start >= 4000:
+			await tree.process_frame
+			start = Time.get_ticks_usec()
 	_indices_built = true
 
 ## 索引是否已构建（fast-tick 调用前断言用）。
@@ -766,19 +797,22 @@ func _alloc_soa(n: int) -> void:
 ## 任务 3（dots-completion）：本函数仅供 bake-time 使用；运行期 hot path 严禁调用。
 ## 推荐新代码使用 init_soa_from_bake()（语义更清晰的别名），旧调用点保留向后兼容。
 func rebuild_soa_from_cells() -> void:
-	# 任务 3：bake-time-only guard。如果 _soa_built 已为 true 且不在 bake 路径，
-	# debug build 下 push_warning 提示误用（运行期重建会盖掉 sub-pass 写入的 SoA）。
-	if _soa_built and OS.is_debug_build():
-		push_warning("[map_data] rebuild_soa_from_cells called when SoA already built; this is bake-time only. Prefer init_soa_from_bake() in new code.")
 	if not _indices_built:
 		_build_indices()
-	var n: int = _cell_array.size()
-	var hydro_parent_seed: PackedInt32Array = hydro_parent_arr.duplicate()
+	var seed := _prepare_bake_soa()
+	_copy_bake_cells(0,_cell_array.size(),seed)
+	_finish_bake_soa()
+
+func _prepare_bake_soa() -> PackedInt32Array:
+	var n := _cell_array.size()
+	var seed := hydro_parent_arr.duplicate()
 	_alloc_soa(n)
-	# 下面的循环把 visible/explored/fog_k 全部清零，等同于"尚未解算"。
 	fog_solved = false
-	# size=1 单位的 cube_to_world 缓存：内层循环用 dx/dy 相对位移，常量比例对方向判定无影响。
-	for i in range(n):
+	return seed
+
+func _copy_bake_cells(begin: int, end: int, hydro_parent_seed: PackedInt32Array) -> void:
+	var n := _cell_array.size()
+	for i in range(begin,end):
 		var c: HexCell = _cell_array[i]
 		temp_arr[i] = c.temperature
 		moisture_arr[i] = c.moisture
@@ -874,76 +908,73 @@ func rebuild_soa_from_cells() -> void:
 		vegetation_drought_stress_arr[i] = c.vegetation_drought_stress if has_live_vegetation else 0.0
 		vegetation_cold_stress_arr[i] = c.vegetation_cold_stress if has_live_vegetation else 0.0
 		vegetation_regen_score_arr[i] = c.vegetation_regen_score if has_live_vegetation else 0.0
-	# A 修复（climate-temp-pingpong-fix-2026-06）：anomaly 合成字段无 HexCell 镜像，
-	# 全图 fill 为 0（resize 已经填 0，这里显式 fill 防止后续手动 resize 残值）。
-	# Natural resources 储量同类（无 HexCell 镜像）：bake 时置 0，初值由
-	# _bootstrap_natural_resource_deposits 在 init_soa_from_bake 之后覆盖。
-	for i in range(n):
-		ocean_thermal_anomaly_arr[i] = 0.0
-		local_thermal_anomaly_arr[i] = 0.0
-		res_timber_reserve_arr[i] = 0.0
-		res_stone_reserve_arr[i] = 0.0
-		res_fertile_soil_reserve_arr[i] = 0.0
-		res_coal_reserve_arr[i] = 0.0
-		res_oil_reserve_arr[i] = 0.0
-		res_natural_gas_reserve_arr[i] = 0.0
-		res_copper_ore_reserve_arr[i] = 0.0
-		res_iron_ore_reserve_arr[i] = 0.0
-		res_gold_ore_reserve_arr[i] = 0.0
-		res_silver_ore_reserve_arr[i] = 0.0
-		res_salt_reserve_arr[i] = 0.0
-		res_saltpeter_reserve_arr[i] = 0.0
-		res_rare_earth_reserve_arr[i] = 0.0
-		res_clay_reserve_arr[i] = 0.0
-		res_wild_game_reserve_arr[i] = 0.0
-		res_marine_fish_reserve_arr[i] = 0.0
-		res_freshwater_fish_reserve_arr[i] = 0.0
-		res_arable_land_reserve_arr[i] = 0.0
-		res_paddy_land_reserve_arr[i] = 0.0
-		res_plantation_land_reserve_arr[i] = 0.0
-		res_pasture_reserve_arr[i] = 0.0
-		res_bauxite_reserve_arr[i] = 0.0
-		res_limestone_reserve_arr[i] = 0.0
-		res_silica_sand_reserve_arr[i] = 0.0
-		res_phosphate_rock_reserve_arr[i] = 0.0
-		res_tin_ore_reserve_arr[i] = 0.0
-		res_lead_ore_reserve_arr[i] = 0.0
-		res_zinc_ore_reserve_arr[i] = 0.0
-		res_manganese_ore_reserve_arr[i] = 0.0
-		res_sulfur_reserve_arr[i] = 0.0
-		res_flint_reserve_arr[i] = 0.0
-		res_timber_extra_change_arr[i] = 0.0
-		res_stone_extra_change_arr[i] = 0.0
-		res_fertile_soil_extra_change_arr[i] = 0.0
-		res_coal_extra_change_arr[i] = 0.0
-		res_oil_extra_change_arr[i] = 0.0
-		res_natural_gas_extra_change_arr[i] = 0.0
-		res_copper_ore_extra_change_arr[i] = 0.0
-		res_iron_ore_extra_change_arr[i] = 0.0
-		res_gold_ore_extra_change_arr[i] = 0.0
-		res_silver_ore_extra_change_arr[i] = 0.0
-		res_salt_extra_change_arr[i] = 0.0
-		res_saltpeter_extra_change_arr[i] = 0.0
-		res_rare_earth_extra_change_arr[i] = 0.0
-		res_clay_extra_change_arr[i] = 0.0
-		res_wild_game_extra_change_arr[i] = 0.0
-		res_marine_fish_extra_change_arr[i] = 0.0
-		res_freshwater_fish_extra_change_arr[i] = 0.0
-		res_arable_land_extra_change_arr[i] = 0.0
-		res_paddy_land_extra_change_arr[i] = 0.0
-		res_plantation_land_extra_change_arr[i] = 0.0
-		res_pasture_extra_change_arr[i] = 0.0
-		resource_habitat_mask_arr[i] = 0
-		res_bauxite_extra_change_arr[i] = 0.0
-		res_limestone_extra_change_arr[i] = 0.0
-		res_silica_sand_extra_change_arr[i] = 0.0
-		res_phosphate_rock_extra_change_arr[i] = 0.0
-		res_tin_ore_extra_change_arr[i] = 0.0
-		res_lead_ore_extra_change_arr[i] = 0.0
-		res_zinc_ore_extra_change_arr[i] = 0.0
-		res_manganese_ore_extra_change_arr[i] = 0.0
-		res_sulfur_extra_change_arr[i] = 0.0
-		res_flint_extra_change_arr[i] = 0.0
+
+func _finish_bake_soa() -> void:
+	ocean_thermal_anomaly_arr.fill(0.0)
+	local_thermal_anomaly_arr.fill(0.0)
+	res_timber_reserve_arr.fill(0.0)
+	res_stone_reserve_arr.fill(0.0)
+	res_fertile_soil_reserve_arr.fill(0.0)
+	res_coal_reserve_arr.fill(0.0)
+	res_oil_reserve_arr.fill(0.0)
+	res_natural_gas_reserve_arr.fill(0.0)
+	res_copper_ore_reserve_arr.fill(0.0)
+	res_iron_ore_reserve_arr.fill(0.0)
+	res_gold_ore_reserve_arr.fill(0.0)
+	res_silver_ore_reserve_arr.fill(0.0)
+	res_salt_reserve_arr.fill(0.0)
+	res_saltpeter_reserve_arr.fill(0.0)
+	res_rare_earth_reserve_arr.fill(0.0)
+	res_clay_reserve_arr.fill(0.0)
+	res_wild_game_reserve_arr.fill(0.0)
+	res_marine_fish_reserve_arr.fill(0.0)
+	res_freshwater_fish_reserve_arr.fill(0.0)
+	res_arable_land_reserve_arr.fill(0.0)
+	res_paddy_land_reserve_arr.fill(0.0)
+	res_plantation_land_reserve_arr.fill(0.0)
+	res_pasture_reserve_arr.fill(0.0)
+	res_bauxite_reserve_arr.fill(0.0)
+	res_limestone_reserve_arr.fill(0.0)
+	res_silica_sand_reserve_arr.fill(0.0)
+	res_phosphate_rock_reserve_arr.fill(0.0)
+	res_tin_ore_reserve_arr.fill(0.0)
+	res_lead_ore_reserve_arr.fill(0.0)
+	res_zinc_ore_reserve_arr.fill(0.0)
+	res_manganese_ore_reserve_arr.fill(0.0)
+	res_sulfur_reserve_arr.fill(0.0)
+	res_flint_reserve_arr.fill(0.0)
+	res_timber_extra_change_arr.fill(0.0)
+	res_stone_extra_change_arr.fill(0.0)
+	res_fertile_soil_extra_change_arr.fill(0.0)
+	res_coal_extra_change_arr.fill(0.0)
+	res_oil_extra_change_arr.fill(0.0)
+	res_natural_gas_extra_change_arr.fill(0.0)
+	res_copper_ore_extra_change_arr.fill(0.0)
+	res_iron_ore_extra_change_arr.fill(0.0)
+	res_gold_ore_extra_change_arr.fill(0.0)
+	res_silver_ore_extra_change_arr.fill(0.0)
+	res_salt_extra_change_arr.fill(0.0)
+	res_saltpeter_extra_change_arr.fill(0.0)
+	res_rare_earth_extra_change_arr.fill(0.0)
+	res_clay_extra_change_arr.fill(0.0)
+	res_wild_game_extra_change_arr.fill(0.0)
+	res_marine_fish_extra_change_arr.fill(0.0)
+	res_freshwater_fish_extra_change_arr.fill(0.0)
+	res_arable_land_extra_change_arr.fill(0.0)
+	res_paddy_land_extra_change_arr.fill(0.0)
+	res_plantation_land_extra_change_arr.fill(0.0)
+	res_pasture_extra_change_arr.fill(0.0)
+	resource_habitat_mask_arr.fill(0)
+	res_bauxite_extra_change_arr.fill(0.0)
+	res_limestone_extra_change_arr.fill(0.0)
+	res_silica_sand_extra_change_arr.fill(0.0)
+	res_phosphate_rock_extra_change_arr.fill(0.0)
+	res_tin_ore_extra_change_arr.fill(0.0)
+	res_lead_ore_extra_change_arr.fill(0.0)
+	res_zinc_ore_extra_change_arr.fill(0.0)
+	res_manganese_ore_extra_change_arr.fill(0.0)
+	res_sulfur_extra_change_arr.fill(0.0)
+	res_flint_extra_change_arr.fill(0.0)
 	# 同步初始化 _prev 双缓冲为 _next 当前快照，避免首日 sub-pass 切片读到 0。
 	temp_arr_prev = temp_arr.duplicate()
 	moisture_arr_prev = moisture_arr.duplicate()
@@ -953,6 +984,20 @@ func rebuild_soa_from_cells() -> void:
 	# B1-A：lat / temp_year LUT 必须由 generator 在 _last_cfg 就位后 bake；
 	# 这里仅置为未 bake 状态，bake_world 路径会立即调用 bake_lat_temp_year_lut()。
 	_lat_lut_baked = false
+
+func init_soa_from_bake_cooperative() -> void:
+	await build_indices_cooperative()
+	var seed := _prepare_bake_soa()
+	var n := _cell_array.size()
+	var tree := Engine.get_main_loop() as SceneTree
+	var start := Time.get_ticks_usec()
+	for begin in range(0,n,8):
+		_copy_bake_cells(begin,mini(begin+8,n),seed)
+		if tree != null and Time.get_ticks_usec()-start >= 4000:
+			await tree.process_frame
+			start = Time.get_ticks_usec()
+	_finish_bake_soa()
+	apply_pending_generation_ecology()
 
 
 ## 任务 3（dots-completion）：bake-time SoA 初始化的语义化别名。

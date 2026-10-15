@@ -103,12 +103,17 @@ func configure(world_ext: Object, cell_count: int, seed: int, profile = null) ->
 		return _catalog
 	var native_catalog := _catalog.duplicate()
 	native_catalog.erase("ok")
-	_profession_display_names = _load_display_names(EconomyCatalogScript.PROFESSION_DIR)
-	_ethnicity_display_names = _load_display_names(EconomyCatalogScript.ETHNICITY_DIR)
-	_building_display_names = _load_display_names(EconomyCatalogScript.BUILDING_DIR)
-	_need_display_names = EconomyCatalogScript.need_display_names()
-	_good_display_names = _load_display_names(GOOD_PROFILE_DIR)
-	_load_family_effect_displays()
+	var precompiled_display := LoadingCatalogCache.economy_display()
+	if not precompiled_display.is_empty():
+		for field in precompiled_display:
+			set(field,precompiled_display[field])
+	else:
+		_profession_display_names = _load_display_names(EconomyCatalogScript.PROFESSION_DIR)
+		_ethnicity_display_names = _load_display_names(EconomyCatalogScript.ETHNICITY_DIR)
+		_building_display_names = _load_display_names(EconomyCatalogScript.BUILDING_DIR)
+		_need_display_names = EconomyCatalogScript.need_display_names()
+		_good_display_names = _load_display_names(GOOD_PROFILE_DIR)
+		_load_family_effect_displays()
 	var native_profile: Dictionary = _profile.to_native_profile()
 	_apply_forced_cadence_env(native_profile)
 	var result: Dictionary = _world_ext.configure_economy(

@@ -693,28 +693,6 @@ static func present_ideology(snapshot: Dictionary, catalog: Dictionary) -> Dicti
 		offer_hint = "三选一已打开，请选择一条道路。"
 	elif points < offer_cost:
 		offer_hint = "抽取需 %s 理念点。" % _q16_display(offer_cost)
-	var empty_insights: Array = [
-		{
-			"icon": &"country.politics",
-			"accent": UITokens.ACCENT,
-			"text": "消耗理念点抽取三选一，选定后进入国家收藏。",
-		},
-		{
-			"icon": &"country.economy",
-			"accent": UITokens.RESOURCE,
-			"text": "每条道路改变不同的产出、贸易、研究或建设系数。",
-		},
-		{
-			"icon": &"country.affairs",
-			"accent": UITokens.BRASS_HIGHLIGHT,
-			"text": "装备占用意识形态槽；理解度积累后可晋升为民族精神。",
-		},
-		{
-			"icon": &"country.economy",
-			"accent": UITokens.RESOURCE,
-			"text": "阶层民意决定能否推行、废止或晋升一条理念。",
-		},
-	]
 	return {
 		"points": points,
 		"points_text": _q16_display(points),
@@ -731,7 +709,7 @@ static func present_ideology(snapshot: Dictionary, catalog: Dictionary) -> Dicti
 		"empty": known.is_empty() and not offer_active,
 		"empty_title": "尚未形成国家理念",
 		"empty_detail": "内阁还没有选定一条可推行的道路。",
-		"empty_insights": empty_insights,
+		"empty_insights": [],
 	}
 
 

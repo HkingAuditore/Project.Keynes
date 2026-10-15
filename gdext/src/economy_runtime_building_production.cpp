@@ -703,7 +703,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
                        retention_variant_scores, retention_variant_prices,
                        retention_need_score_sums, retention_need_composites,
                        retention_need_environment, _saturation_count);
+    thread_local std::vector<int32_t> retention_family_factors;
     for (size_t owner = 0; owner < payroll_owners.size(); ++owner) {
+        retention_family_factors.assign(_good_ids.size(), -1);
         const int32_t owner_slot = find_cohort_slot(cell, payroll_owners[owner]);
         retention_owner_slots[owner] = owner_slot;
         if (owner_slot < 0) continue;
@@ -778,10 +780,20 @@ bool NativeEconomyRuntime::run_building_production_cell(
             int64_t score_sum = 0;
             for (int32_t v = 0; v < need.variant_count; ++v) {
                 const int32_t variant_id = need.variant_begin + v;
+                // 目录的数量界也保证 family variant 加权不会饱和；零基础分数
+                // 因而可直接保留零，不必为未解锁/零偏好项反复查家族 CSR。
+                static_assert(GOODS_SCALE <= INT64_MAX / (4LL * Q16_ONE * Q16_ONE));
+                static const bool full_variant = [] {
+                    const char *value = std::getenv("PK_ECONOMY_ACTIVE_WORKSET_DISABLE");
+                    return value && std::strcmp(value, "1") == 0;
+                }();
+                if (!full_variant && retention_variant_scores[variant_id] == 0 &&
+                        _variants[variant_id].preview_price_saturation_free)
+                    continue;
                 owner_variant_scores[v] = std::max<int64_t>(0, mul_div_sat(
                     retention_variant_scores[variant_id],
                     family_variant_preference_factor_q16(
-                        owner_slot, variant_id, _saturation_count),
+                        owner_slot, variant_id, _saturation_count, retention_family_factors.data()),
                     Q16_ONE, _saturation_count));
                 score_sum = saturating_add(
                     score_sum, owner_variant_scores[v], _saturation_count);

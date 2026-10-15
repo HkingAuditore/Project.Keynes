@@ -879,3 +879,185 @@ static func _stable_hash(seed: int, purpose: String) -> int:
 
 static func _error(code: String, message: String) -> Dictionary:
 	return {"ok": false, "code": code, "message": message}
+
+static func select_and_prepare_cooperative(map: MapData, world: WorldData, seed: int, foreign_count: int = 0,
+		player_country_name: String = "新国家") -> Dictionary:
+	var tree := Engine.get_main_loop() as SceneTree
+	var slice_start := Time.get_ticks_usec()
+	if map == null or world == null or map.cell_count() <= 0:
+		return _error("start_world_missing", "生成的世界不包含可用地块。")
+	if foreign_count < NewGameConfig.MIN_FOREIGN_COUNT \
+			or foreign_count > NewGameConfig.MAX_FOREIGN_COUNT:
+		return _error("foreign_count_out_of_range", "外国数量超出允许范围。")
+	var candidates: Array[Dictionary] = []
+	var neighbors := map.neighbor_indices_packed()
+	var starter_catalog := _starter_catalog()
+	if not bool(starter_catalog.get("ok", false)):
+		return starter_catalog
+	for cell_idx in range(map.cell_count()):
+		if tree != null and Time.get_ticks_usec()-slice_start>=4000:
+			await tree.process_frame
+			slice_start = Time.get_ticks_usec()
+		if not _is_candidate(map, cell_idx, neighbors):
+			continue
+		var gold := _raw_reserve(map, "gold_ore", cell_idx)
+		var survival_score := _survival_score(map, cell_idx)
+		candidates.append({
+			"cell": cell_idx,
+			"score": survival_score,
+			"survival_score": survival_score,
+			"natural_precious": gold > 0.0,
+			"closure_missing_count": 0,
+		})
+	if candidates.is_empty():
+		return _error("starter_capability_unsatisfied",
+			"没有找到气候与通行条件合格的出生地。")
+	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if bool(a.natural_precious) != bool(b.natural_precious):
+			return bool(a.natural_precious)
+		if not is_equal_approx(float(a.survival_score), float(b.survival_score)):
+			return float(a.survival_score) > float(b.survival_score)
+		return int(a.cell) < int(b.cell))
+	var chosen: Dictionary = {}
+	for candidate in candidates:
+		if tree != null and Time.get_ticks_usec()-slice_start>=4000:
+			await tree.process_frame
+			slice_start = Time.get_ticks_usec()
+		if _close_candidate_route(map, world, neighbors, starter_catalog, candidate):
+			chosen = candidate
+			break
+	if chosen.is_empty():
+		return _error("starter_capability_unsatisfied",
+			"没有找到能以真实本地资源和可见地理信号闭合生存核心开局的出生地。")
+	var top_count := maxi(1, candidates.size() / 4)
+	var cell_idx := int(chosen.cell)
+	var minimum_distance := minimum_country_distance(map.width, map.height)
+	var nearest_start := PackedInt32Array()
+	nearest_start.resize(map.cell_count())
+	nearest_start.fill(UNREACHABLE_DISTANCE)
+	_relax_minimum_distances(map, neighbors, cell_idx, nearest_start)
+	var foreign_cells := PackedInt32Array()
+	var foreign_selection_distances := PackedInt32Array()
+	var foreign_routes: Array[Dictionary] = []
+	var remaining: Array[Dictionary] = []
+	for candidate in candidates:
+		if tree != null and Time.get_ticks_usec()-slice_start>=4000:
+			await tree.process_frame
+			slice_start = Time.get_ticks_usec()
+		if int(candidate.cell) != cell_idx:
+			remaining.append(candidate)
+	for _foreign_index in range(foreign_count):
+		if tree != null and Time.get_ticks_usec()-slice_start>=4000:
+			await tree.process_frame
+			slice_start = Time.get_ticks_usec()
+		var ordered: Array[Dictionary] = []
+		for candidate in remaining:
+			if tree != null and Time.get_ticks_usec()-slice_start>=4000:
+				await tree.process_frame
+				slice_start = Time.get_ticks_usec()
+			var candidate_distance := int(nearest_start[int(candidate.cell)])
+			if candidate_distance < minimum_distance:
+				continue
+			ordered.append(candidate)
+		ordered.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return _foreign_candidate_better(
+				a, int(nearest_start[int(a.cell)]),
+				b, int(nearest_start[int(b.cell)])))
+		var best: Dictionary = {}
+		var best_distance := -1
+		for candidate in ordered:
+			if tree != null and Time.get_ticks_usec()-slice_start>=4000:
+				await tree.process_frame
+				slice_start = Time.get_ticks_usec()
+			if not _close_candidate_route(map, world, neighbors, starter_catalog,
+					candidate):
+				continue
+			best = candidate
+			best_distance = int(nearest_start[int(candidate.cell)])
+			break
+		if best.is_empty():
+			return {
+				"ok": false,
+				"code": "foreign_start_count_unavailable",
+				"message": ("无法在至少 %d 格的陆路距离之外放置 %d 个外国；"
+					+ "当前只能放置 %d 个。请减少外国数量或增大地图。") % [
+						minimum_distance, foreign_count, foreign_cells.size()],
+				"requested_count": foreign_count,
+				"available_count": foreign_cells.size(),
+				"minimum_distance": minimum_distance,
+			}
+		var selected_cell := int(best.cell)
+		foreign_cells.append(selected_cell)
+		foreign_selection_distances.append(best_distance)
+		foreign_routes.append((best.starter_route as Dictionary).duplicate(true))
+		for index in range(remaining.size() - 1, -1, -1):
+			if tree != null and Time.get_ticks_usec()-slice_start>=4000:
+				await tree.process_frame
+				slice_start = Time.get_ticks_usec()
+			if int(remaining[index].cell) == selected_cell:
+				remaining.remove_at(index)
+				break
+		_relax_minimum_distances(map, neighbors, selected_cell, nearest_start)
+
+	var name_pack = ResourceLoader.load(COUNTRY_NAME_PACK_PATH, "Resource")
+	if name_pack == null or not name_pack.has_method("select"):
+		return _error("country_name_pack_unavailable", "外国名字库不可用。")
+	var selected_names: Dictionary = name_pack.select(
+		seed, foreign_count, player_country_name.strip_edges())
+	if not bool(selected_names.get("ok", false)):
+		return _error(String(selected_names.get("reason", "country_name_pack_invalid")),
+			"外国名字库无效或名字数量不足。")
+	var foreign_name_ids: PackedStringArray = selected_names.get(
+		"name_ids", PackedStringArray())
+	var foreign_names: PackedStringArray = selected_names.get(
+		"display_names", PackedStringArray())
+	var country_starts: Array[Dictionary] = []
+	var player_precious := String(chosen.starter_route.get("precious_resource", ""))
+	var player_start := {
+		"country_id": "country.player",
+		"country_name": player_country_name,
+		"name_id": "",
+		"cell": cell_idx,
+		"precious_resource": player_precious,
+		"is_player": true,
+		"selection_distance": 0,
+	}
+	player_start.merge((chosen.starter_route as Dictionary).duplicate(true), true)
+	_append_precious_route(player_start, player_precious)
+	country_starts.append(player_start)
+	for foreign_index in range(foreign_count):
+		if tree != null and Time.get_ticks_usec()-slice_start>=4000:
+			await tree.process_frame
+			slice_start = Time.get_ticks_usec()
+		var foreign_cell := int(foreign_cells[foreign_index])
+		var foreign_route: Dictionary = foreign_routes[foreign_index]
+		var foreign_start := {
+			"country_id": "country.foreign.%03d" % (foreign_index + 1),
+			"country_name": String(foreign_names[foreign_index]),
+			"name_id": String(foreign_name_ids[foreign_index]),
+			"cell": foreign_cell,
+			"precious_resource": String(foreign_route.get("precious_resource", "")),
+			"is_player": false,
+			"selection_distance": int(foreign_selection_distances[foreign_index]),
+		}
+		foreign_start.merge(foreign_route, true)
+		_append_precious_route(foreign_start, String(foreign_start.precious_resource))
+		country_starts.append(foreign_start)
+	_apply_start_resource_topups(map, country_starts)
+	return {
+		"ok": true,
+		"code": "ok",
+		"message": "",
+		"cell": cell_idx,
+		"precious_resource": player_precious,
+		"candidate_count": candidates.size(),
+		"top_quartile_count": top_count,
+		"score": float(chosen.score),
+		"foreign_count": foreign_count,
+		"minimum_country_distance": minimum_distance,
+		"foreign_cells": foreign_cells,
+		"foreign_names": foreign_names,
+		"foreign_name_ids": foreign_name_ids,
+		"country_starts": country_starts,
+	}
+

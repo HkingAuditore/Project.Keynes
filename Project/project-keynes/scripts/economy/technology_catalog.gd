@@ -161,6 +161,9 @@ static func validate_application_intersections(network: Dictionary,
 
 
 static func compile_native_catalog() -> Dictionary:
+	var precompiled := LoadingCatalogCache.technology_catalog()
+	if not precompiled.is_empty():
+		return precompiled
 	if bool(_native_catalog_cache.get("ok", false)):
 		return _native_catalog_cache
 	var signal_catalog := ResearchSignalCatalogScript.compile_native_catalog()

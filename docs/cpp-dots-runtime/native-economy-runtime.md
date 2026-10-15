@@ -1,5 +1,26 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V6）
 
+## 2026-10-15 稀疏工作集与提交发布
+
+需求预估先查询既有国家商品科技门，再计算可用 variant 的价格。EPOCH_BEGIN
+预估发生在 `_epoch_active` 置位之前，必须沿用原来的 `good_available` 查询；不能
+只依赖周期中途的冻结掩码。目录编译证明价格计算不会产生饱和事件的 variant
+才可提前跳过；超大自定义组件数量仍执行原路径，以保持诊断计数和完整 hash。
+生产科技门、可交易商品与已有库存仍遵循各自现有规则，不因未解锁本地生产而删除库存。
+
+OwnedState 的 committed mirror 复用既有 ChangeRegistry Publish 消费游标。
+市场五列按 4 KiB 脏页复制；双缓冲必须取本轮与前一轮脏页并集，前两次或形状改变时
+全量复制。Hash/Audit 游标独立。所有账本字段仍更新，完整 shape/value 校验仍在每次
+发布执行；验证成功后才交换快照，失败、import、restore 会重置预热状态。
+公开导出及存档参照仍可全量导出，派生脏页历史不进入存档或权威 hash。
+
+`PK_ECONOMY_ACTIVE_WORKSET_DISABLE=1` 恢复晚过滤和全格家族评审；
+`PK_ECONOMY_MARKET_PUBLISH_FULL=1` 恢复全量市场发布；
+`PK_ECONOMY_MIRROR_VERIFY=1` 逐次与独立全量账本比较完整 hash。
+回归入口包括 `economy_sparse_workset_parity_test.gd`、`runtime_economy_pod_test.gd`
+与 `runtime_authority_m5_m6_gate_test.gd`。OwnedState 能否生效还须检查 Host 的
+switch count、pending command count 和 formula backing，不能仅以架构配置推断。
+
 ## 国家经济总览查询（2026-10-11）
 
 `NativeEconomyRuntime::country_economy_overview(handle, view, scope_cell, filter_id,

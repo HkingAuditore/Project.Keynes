@@ -1,5 +1,16 @@
 # GDScript / C++ Data Bridge
 
+## Effect worker snapshot persistence (2026-10-15)
+
+The main-thread `apply_runtime_effect_snapshot()` remains an immutable-copy
+boundary. Its native `EffectRuntime::apply_pod_snapshot()` adapter must produce
+a complete PKEF instance/transaction representation: catalog metadata and stable
+activation order, ACKed applied state, program/command ownership, idempotency and
+the PKEF-format plan hash. A POD source ID is not an external-source binding.
+See [Native Effect Runtime](./native-effect-runtime.md#worker-mirror-persistence-repair-2026-10-15)
+for the validated recovery of old incomplete mirrors. No DataCore schema or
+component bind-table changes are involved.
+
 ## Country economy overview bridge (2026-10-11)
 
 `DCWorldExt.get_country_economy_overview(handle, view, scope_cell, filter_id,
@@ -1646,6 +1657,20 @@ materialized as a Godot `Dictionary` on the worker path. A failed capture is
 reported synchronously before publication; publication itself is lock-free for
 the worker through an atomic shared pointer.
 
+# Climate visible snapshot
+
+Climate 主线程 writeback 是完整可见场投影，不携带 Authority 私有的 365 天原始
+temperature_history；物理/cyclone capsule 和全部可见字段仍保持原契约。完整状态
+快照、CLM2 hash、存档序列化仍包含历史；不能对可见投影调用完整 store shape 校验。
+
 # Modifier snapshot bridge
 
 get_runtime_modifier_snapshot(after_generation) 是非阻塞消费 API。after_generation < 0 只用于取得 restore/start 发布的 generation 0 初始 snapshot；正常消费必须严格要求 generation 单调递增，并校验 Modifier POD ABI、catalog hash、四域 entry/bucket shape。返回值是 packed numeric arrays，不写回 legacy ModifierRuntime。命令仍先走 legacy API，再以相同 request/producer/sequence 投递 Host SHADOW；capture 后的请求顺延下一安全日。
+
+
+2026-10-15 v18: Climate's resident derived caches are private to the committed kernel,
+with exact terrain/neighbors/water-LUT/position/trajectory-knob invalidation. They do
+not enter the visible snapshot or CLM2 ABI. Host freezes and seals the complete Climate
+input hash before publishing the immutable environment copy; independent/reference
+kernel calls still recompute it. Resource wire-hash reuse follows tracked column
+mutation revisions and preserves the original FNV value across identical copies.

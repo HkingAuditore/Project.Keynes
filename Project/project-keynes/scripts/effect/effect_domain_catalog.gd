@@ -21,6 +21,10 @@ const Q16_ONE := 65536
 ## programs and never duplicates domain state. Tests may inject a FamilyEffect
 ## catalog fixture; production callers omit the override and load the default.
 static func build(family_effect_catalog_override: Resource = null) -> Resource:
+	if family_effect_catalog_override == null:
+		var precompiled := LoadingCatalogCache.effect_catalog()
+		if precompiled != null:
+			return precompiled
 	var catalog: Resource = EffectCatalogScript.load_default()
 	if catalog == null:
 		catalog = EffectCatalogScript.new()

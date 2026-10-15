@@ -1,4 +1,5 @@
 #include "runtime_trigger_kernel.h"
+#include "economy_cost_probe.h"
 
 #include <algorithm>
 #include <cstring>
@@ -357,7 +358,14 @@ bool RuntimeTriggerKernel::evaluate_day(const RuntimeTriggerPodCatalog &catalog,
                                         RuntimeTriggerSnapshot &state,
                                         int64_t day,
                                         std::vector<RuntimeTriggerEffectIntent> &emitted,
-                                        std::string &error) {
+                                        std::string &error,
+                                        bool reference_binding_scan) {
+    EconomyCostProbe kernel_cost("trigger.kernel", day, state.states.size());
+    static const bool scalar_bindings = [] {
+        const char *value = std::getenv("PK_TRIGGER_BINDING_SCAN_SCALAR");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    const bool index_bindings = !reference_binding_scan && !scalar_bindings;
     error.clear();
     emitted.clear();
     if (day < state.committed_day) {
@@ -453,6 +461,34 @@ bool RuntimeTriggerKernel::evaluate_day(const RuntimeTriggerPodCatalog &catalog,
             }
         }
     }
+    struct BindingRef {
+        int32_t source = -1;
+        int32_t event_type = -1;
+        int32_t cell = -1;
+        size_t index = 0;
+    };
+    std::vector<BindingRef> local_bindings;
+    if (index_bindings) {
+        local_bindings.reserve(state.branch_bindings.size());
+        for (size_t i = 0; i < state.branch_bindings.size(); ++i) {
+            const auto &binding = state.branch_bindings[i];
+            if (binding.enabled == 0 || binding.trigger_id < 0 ||
+                binding.trigger_id >= static_cast<int32_t>(catalog.definitions.size()))
+                continue;
+            const auto &definition = catalog.definitions[binding.trigger_id];
+            if (definition.dynamic_binding != 0)
+                local_bindings.push_back({definition.source_id, definition.event_type,
+                    binding.cell, i});
+        }
+        // Preserve the original binding order within each exact event key,
+        // including the order in which new state/effect ids are allocated.
+        std::sort(local_bindings.begin(), local_bindings.end(), [](const auto &a, const auto &b) {
+            return std::tie(a.source, a.event_type, a.cell, a.index) <
+                std::tie(b.source, b.event_type, b.cell, b.index);
+        });
+    }
+    uint64_t binding_candidates = 0;
+    uint64_t scalar_candidates = 0;
     size_t retained = 0;
     for (const RuntimeTriggerEvent &event : state.pending_events) {
         if (event.day > day) {
@@ -505,7 +541,23 @@ bool RuntimeTriggerKernel::evaluate_day(const RuntimeTriggerPodCatalog &catalog,
                 process(trigger_id, resolve_target(definition, event));
             }
         }
-        for (const RuntimeTriggerBranchBinding &binding : state.branch_bindings) {
+        scalar_candidates += state.branch_bindings.size();
+        if (index_bindings) {
+            const auto key = std::make_tuple(event.source_id, event.event_type,
+                static_cast<int32_t>(event.group_handle));
+            auto candidate = std::lower_bound(local_bindings.begin(), local_bindings.end(), key,
+                [](const BindingRef &binding, const auto &value) {
+                    return std::tie(binding.source, binding.event_type, binding.cell) < value;
+                });
+            for (; candidate != local_bindings.end() &&
+                    std::tie(candidate->source, candidate->event_type, candidate->cell) == key;
+                 ++candidate) {
+                ++binding_candidates;
+                const auto &binding = state.branch_bindings[candidate->index];
+                process(binding.trigger_id, binding.branch_handle);
+            }
+        } else for (const RuntimeTriggerBranchBinding &binding : state.branch_bindings) {
+            ++binding_candidates;
             if (binding.enabled == 0 || binding.cell != static_cast<int32_t>(event.group_handle) ||
                 binding.trigger_id < 0 ||
                 binding.trigger_id >= static_cast<int32_t>(catalog.definitions.size())) continue;
@@ -516,6 +568,8 @@ bool RuntimeTriggerKernel::evaluate_day(const RuntimeTriggerPodCatalog &catalog,
         }
     }
     state.pending_events.resize(retained);
+    EconomyCostProbe::record("trigger.binding_candidates", day, 0.0, binding_candidates);
+    EconomyCostProbe::record("trigger.binding_scalar_candidates", day, 0.0, scalar_candidates);
     state.pending_effects.insert(state.pending_effects.end(), emitted.begin(), emitted.end());
     std::stable_sort(state.pending_effects.begin(), state.pending_effects.end(),
         [](const RuntimeTriggerEffectIntent &a, const RuntimeTriggerEffectIntent &b) {

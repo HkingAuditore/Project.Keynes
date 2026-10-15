@@ -1,17 +1,24 @@
 extends ColorRect
 class_name WorldLoadingOverlay
 
+signal retry_requested
+signal return_requested
+
+var _failed := false
+
 const STAGE_LABELS := {
-	"preparing": "准备中",
-	"continents": "生成大陆",
-	"climate": "演化气候",
+	"preparing": "铺展海图与疆域卷宗",
+	"continents": "隆起大陆与群岛陆核",
+	"climate": "推演季风与大洋环流",
 	"terrain": "正在烘焙地形与水文图层",
-	"physical": "求解环流",
-	"atlas": "整理图集",
-	"encode": "渲染材质",
-	"ecology": "生成生态",
-	"simulation": "初始化国家",
-	"done": "完成",
+	"physical": "测绘山川水系与河床",
+	"atlas": "绘制疆域舆图与等高线",
+	"encode": "摹绘山海地貌与林原",
+	"ecology": "繁衍植被与自然群落",
+	"simulation": "建立开局城邦与秩序",
+	"done": "即将进入世界",
+	"bind": "校订世界历法与档案",
+	"upload": "展开世界画卷",
 }
 
 var _backdrop: Control
@@ -48,19 +55,22 @@ func _ready() -> void:
 		_compass_dial.draw.connect(_draw_compass_dial)
 	if _progress != null:
 		_progress.draw.connect(_draw_progress_shimmer)
-	set_process(true)
+	resized.connect(func() -> void: _card.custom_minimum_size.x = minf(640.0, maxf(240.0,size.x-64.0)))
+	get_node("Center/Card/Content/FailureActions/Retry").pressed.connect(func() -> void: retry_requested.emit())
+	get_node("Center/Card/Content/FailureActions/Return").pressed.connect(func() -> void: return_requested.emit())
+	visibility_changed.connect(func() -> void: set_process(is_visible_in_tree()))
+	set_process(is_visible_in_tree())
 
 
 func _process(delta: float) -> void:
 	if not visible:
 		return
+	if _failed or UIAnimation.reduced_motion():
+		return
 	_spin_time += delta
-	# 在阶段间隙保持柔和推进与旋转，避免视觉静止
-	var creep_ceiling := minf(0.99, _last_fraction + 0.12)
-	if _anim_fraction < _last_fraction:
-		_anim_fraction = lerpf(_anim_fraction, _last_fraction, clampf(delta * 10.0, 0.0, 1.0))
-	elif _last_fraction < 0.99:
-		_anim_fraction = minf(creep_ceiling, _anim_fraction + delta * 0.035)
+	var target_anim := maxf(_last_fraction, minf(0.12, _spin_time * 0.045))
+	_anim_fraction = lerpf(_anim_fraction, target_anim, minf(delta * 6.0, 1.0))
+
 	if _backdrop != null and _backdrop.has_method("set_loading_progress"):
 		_backdrop.call("set_loading_progress", _anim_fraction)
 	if _compass_dial != null:
@@ -138,7 +148,10 @@ func show_message(message: String) -> void:
 	if _card == null:
 		_ready()
 	_kill_tween()
+	_failed = false
+	get_node("Center/Card/Content/FailureActions").hide()
 	visible = true
+	set_process(true)
 	modulate = Color.WHITE
 	_card.modulate = Color.WHITE
 	_title_label.text = message
@@ -147,7 +160,7 @@ func show_message(message: String) -> void:
 	_progress.value = 0.0
 	_last_stage = ""
 	_last_fraction = 0.0
-	_anim_fraction = 0.04
+	_anim_fraction = 0.0
 	if _backdrop != null and _backdrop.has_method("set_loading_progress"):
 		_backdrop.call("set_loading_progress", _anim_fraction)
 
@@ -155,7 +168,12 @@ func show_message(message: String) -> void:
 func set_progress(stage: String, fraction: float) -> void:
 	if _card == null:
 		_ready()
-	_last_fraction = maxf(_last_fraction, clampf(fraction, 0.0, 1.0))
+	if _failed:
+		return
+	var completed := clampf(fraction,0.0,1.0)*.96
+	if stage == "upload":
+		completed = .96 + .025*clampf(fraction,0.0,1.0)
+	_last_fraction = maxf(_last_fraction,minf(completed,.99))
 	_anim_fraction = maxf(_anim_fraction, _last_fraction)
 	var percent := clampi(int(round(_last_fraction * 100.0)), 0, 100)
 	_title_label.text = "正在生成世界"
@@ -183,9 +201,11 @@ func hide_completed() -> void:
 	_active_tween.tween_property(_card, "modulate", Color(1.06, 1.03, 0.94, 1.0), 0.12)
 	_active_tween.tween_interval(0.10)
 	_active_tween.parallel().tween_property(self, "modulate:a", 0.0, UITokens.ANIM_SLOW)
-	_active_tween.parallel().tween_property(_card, "scale", Vector2(0.985, 0.985), UITokens.ANIM_SLOW)
+	if not UIAnimation.reduced_motion():
+		_active_tween.parallel().tween_property(_card, "scale", Vector2(0.985, 0.985), UITokens.ANIM_SLOW)
 	_active_tween.tween_callback(func() -> void:
 		visible = false
+		set_process(false)
 		modulate = Color.WHITE
 		_card.modulate = Color.WHITE
 		_card.scale = Vector2.ONE
@@ -196,3 +216,19 @@ func _kill_tween() -> void:
 	if _active_tween != null and _active_tween.is_valid():
 		_active_tween.kill()
 	_active_tween = null
+
+
+func set_layout_state(state: Dictionary) -> void:
+	if _backdrop != null and _backdrop.has_method("set_layout_state"):
+		_backdrop.call("set_layout_state", state)
+
+func show_failure(reason: String) -> void:
+	_kill_tween()
+	_failed = true
+	visible = true
+	modulate = Color.WHITE
+	_card.scale = Vector2.ONE
+	_title_label.text = "世界准备失败"
+	_stage_label.text = reason
+	_stage_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	get_node("Center/Card/Content/FailureActions").show()

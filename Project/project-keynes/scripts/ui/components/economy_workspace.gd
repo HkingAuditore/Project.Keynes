@@ -1061,14 +1061,10 @@ func _refresh_treasury_insights() -> void:
 	if not _insights.visible:
 		return
 	var fiscal: Dictionary = _model.get("fiscal", {})
-	var trade_summary: Dictionary = _model.get("trade_summary", {})
 	var subsidy := _sum_i64(fiscal.get("subsidy_paid", PackedInt64Array()))
 	var requested := _sum_i64(fiscal.get("subsidy_requested", PackedInt64Array()))
 	var reserved := _sum_i64(fiscal.get("subsidy_reserved", PackedInt64Array()))
 	var gap := maxi(0, requested - subsidy)
-	var imports := int(trade_summary.get("previous_import_base", 0))
-	var exports := int(trade_summary.get("previous_export_base", 0))
-	var net := int(trade_summary.get("previous_net_export_base", exports - imports))
 	var items: Array = []
 	if gap > 0:
 		items.append({
@@ -1078,27 +1074,7 @@ func _refresh_treasury_insights() -> void:
 			"accent": UITokens.RISK,
 			"icon": "tax.income",
 		})
-	if net < 0:
-		items.append({
-			"id": "trade_deficit",
-			"text": "贸易逆差 %s。" % _money(-net),
-			"accent": UITokens.RISK,
-			"icon": "metric.trade",
-		})
-	elif net > 0:
-		items.append({
-			"id": "trade_surplus",
-			"text": "贸易顺差 %s。" % _money(net),
-			"accent": UITokens.GOOD,
-			"icon": "metric.trade",
-		})
-	if items.size() < 4:
-		items.append({
-			"id": "market_shortage_hint",
-			"text": "物资短缺请到各地市场档案查看。",
-			"accent": UITokens.ARCHIVE_INK_MUTED,
-			"icon": "resource",
-		})
+	# 贸易顺逆差与「去市场档案查看」属修饰性说明，改由贸易页数据本身表达。
 	_insights.set_items(items.slice(0, 4))
 
 

@@ -7,8 +7,8 @@ const AdvancedLabelScene := preload("res://scenes/ui/advanced_field_label.tscn")
 const SetupSliderSpinScene := preload("res://scenes/ui/setup_slider_spin.tscn")
 const CountryNamesPack := preload("res://data/country/default_country_names.tres")
 
-const HOME_PANEL_WIDTH := 430.0
-const COMMAND_WIDTH := 300.0
+const HOME_PANEL_WIDTH := 396.0
+const COMMAND_WIDTH := 280.0
 const USER_MAPS_DIR := "user://maps"
 const MAP_PRESETS := [
 	{"label": "小型 40 × 28", "size": Vector2i(40, 28)},
@@ -36,7 +36,7 @@ const MAP_PRESETS := [
 @onready var _width_box: SpinBox = %WidthBox
 @onready var _height_box: SpinBox = %HeightBox
 @onready var _layout_option: OptionButton = %LayoutOption
-@onready var _layout_cards_row: HBoxContainer = %LayoutCardsRow
+@onready var _layout_cards_row: Container = %LayoutCardsRow
 @onready var _layout_hint: Label = %LayoutHint
 @onready var _advanced_grid: GridContainer = %AdvancedGrid
 @onready var _map_preview: PanelContainer = %MapPreview
@@ -68,8 +68,9 @@ func _ready() -> void:
 	_bind_settings_controls()
 	_connect_static_actions()
 	resized.connect(_apply_responsive_layout)
-	_show_home(false)
 	_apply_responsive_layout()
+	_show_home(false)
+	call_deferred("_apply_responsive_layout")
 
 
 func _open_technology_authoring_editor() -> void:
@@ -133,6 +134,7 @@ func _bind_settings_controls() -> void:
 		"ui_scale": %UIScale,
 		"volume": %Volume,
 		"muted": %Muted,
+		"reduce_motion": %ReduceMotion,
 	}
 	(%Volume as HSlider).value_changed.connect(func(val: float) -> void:
 		if _volume_value_label != null:
@@ -159,7 +161,11 @@ func _connect_static_actions() -> void:
 	_seed_box.value_changed.connect(func(_val: float) -> void: _sync_map_preview(false))
 	_width_box.value_changed.connect(func(_val: float) -> void: _sync_map_preview(false))
 	_height_box.value_changed.connect(func(_val: float) -> void: _sync_map_preview(false))
-	%AdvancedButton.toggled.connect(func(open: bool) -> void: _advanced_grid.visible = open)
+	%AdvancedButton.toggled.connect(func(open: bool) -> void:
+		_advanced_grid.visible = open
+		if open and not UIAnimation.reduced_motion():
+			UIAnimation.crossfade(_advanced_grid, UITokens.ANIM_FAST)
+	)
 	%BrowsePkmapButton.pressed.connect(_browse_pkmap)
 	_size_option.item_selected.connect(_on_size_preset_selected)
 	_layout_option.item_selected.connect(_on_land_layout_selected)
@@ -168,10 +174,10 @@ func _connect_static_actions() -> void:
 	_pkmap_dialog.file_selected.connect(_on_pkmap_file_selected)
 
 	for entry in [
-		[%NewGameButton, "新游戏", "plus", 18],
+		[%NewGameButton, "新游戏", "plus", 20],
 		[%LoadGameButton, "加载游戏", "history", 18],
-		[%SettingsButton, "设置", "settings", 18],
-		[%QuitButton, "退出", "close", 18],
+		[%SettingsButton, "设置", "settings", 16],
+		[%QuitButton, "退出", "close", 16],
 	]:
 		_decorate_chapter_button(entry[0], entry[1], entry[2], entry[3])
 
@@ -233,32 +239,61 @@ func _apply_responsive_layout() -> void:
 	_status_label.offset_right = -side_margin
 
 	var avail_w := maxf(280.0, size.x - float(side_margin * 2))
+	var avail_h := maxf(320.0, size.y - float(top_margin + bottom_margin))
+	var short_h := avail_h < 450.0
 	if _home_tome_shell != null:
-		_home_tome_shell.custom_minimum_size.x = minf(HOME_PANEL_WIDTH, avail_w)
-		_home_tome_shell.custom_minimum_size.y = minf(430.0, maxf(340.0, size.y - 72.0))
+		var shell_w := minf(HOME_PANEL_WIDTH, avail_w)
+		var shell_h := minf(avail_h - 8.0, clampf(size.y * 0.56, 368.0 if short_h else 428.0, 472.0))
+		_home_tome_shell.custom_minimum_size = Vector2(shell_w, shell_h)
+		var folio_surface := _home_tome_shell.get_node_or_null("FolioSurface") as ColorRect
+		if folio_surface != null and folio_surface.material is ShaderMaterial:
+			var fmat := folio_surface.material as ShaderMaterial
+			fmat.set_shader_parameter("panel_size", Vector2(shell_w, shell_h))
+			fmat.set_shader_parameter("motion_scale", 0.0 if UIAnimation.reduced_motion() else 1.0)
+		var folio_margin := _home_tome_shell.get_node_or_null("TomeRow/FrontispiecePage/FolioMargin") as MarginContainer
+		if folio_margin != null:
+			folio_margin.add_theme_constant_override("margin_top", 16 if short_h else 26)
+			folio_margin.add_theme_constant_override("margin_bottom", 20 if short_h else 30)
+		var folio_col := _home_tome_shell.get_node_or_null("TomeRow/FrontispiecePage/FolioMargin/Column") as VBoxContainer
+		if folio_col != null:
+			folio_col.add_theme_constant_override("separation", 6 if short_h else 10)
 	if _home_spine != null:
-		_home_spine.visible = not narrow
+		_home_spine.visible = false
 	if _home_hinges != null:
-		_home_hinges.visible = not narrow
-		if not narrow and _home_spine != null:
-			var seam := _home_spine.size.x
-			var h := _home_tome_shell.size.y
-			var ratios := [0.20, 0.50, 0.80]
-			var children := _home_hinges.get_children()
-			for i in range(mini(children.size(), ratios.size())):
-				var hinge := children[i] as Control
-				hinge.position = Vector2(seam - hinge.size.x * 0.5, round(h * float(ratios[i]) - hinge.size.y * 0.5))
+		_home_hinges.visible = false
 
+	for grid_name in ["PolityGrid", "SourceAndSizeGrid", "DimensionAndSeedGrid"]:
+		var grid := find_child(grid_name, true, false) as GridContainer
+		if grid != null:
+			grid.columns = 1 if size.x < 920.0 else 2
+	if _layout_cards_row is GridContainer:
+		(_layout_cards_row as GridContainer).columns = 3 if size.x < 1080.0 else 5
+	_map_preview.get_node("Margin/Column/SummaryGrid").visible = not compact_spread
+	_map_preview.get_node("Margin/Column/CanvasFrame").custom_minimum_size.y = 120.0 if compact_spread else 196.0
+	_map_preview.get_node("Margin/Column/CanvasFrame/MapCanvas").custom_minimum_size.y = 120.0 if compact_spread else 182.0
+	_map_preview.size_flags_vertical = Control.SIZE_SHRINK_BEGIN if compact_spread else Control.SIZE_EXPAND_FILL
+	_right_column.size_flags_vertical = Control.SIZE_SHRINK_BEGIN if compact_spread else Control.SIZE_EXPAND_FILL
 	if _dual_spread != null:
 		_dual_spread.vertical = compact_spread
 	if _right_column != null:
-		_right_column.custom_minimum_size.x = 0.0 if compact_spread else minf(420.0, avail_w * 0.42)
+		_right_column.custom_minimum_size.x = 0.0 if compact_spread else avail_w * 0.48
 	if _settings_spread != null:
 		_settings_spread.vertical = compact_spread
 
+	var slip_widths: Array[float] = [282.0, 270.0, 260.0, 250.0]
+	var slip_heights := PackedFloat32Array([44.0, 42.0, 42.0, 42.0]) if short_h else PackedFloat32Array([52.0, 48.0, 48.0, 48.0])
+	var cmd_idx := 0
 	for node in get_tree().get_nodes_in_group("main_menu_commands"):
 		if node is Button:
-			(node as Button).custom_minimum_size.x = minf(COMMAND_WIDTH, avail_w - 56.0)
+			var btn := node as Button
+			btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+			var target_w: float = minf(slip_widths[mini(cmd_idx, slip_widths.size() - 1)], avail_w - 86.0)
+			var target_h: float = float(slip_heights[mini(cmd_idx, slip_heights.size() - 1)])
+			btn.custom_minimum_size = Vector2(target_w, target_h)
+			var slip := btn.get_node_or_null("SlipSurface") as ColorRect
+			if slip != null and slip.material is ShaderMaterial:
+				(slip.material as ShaderMaterial).set_shader_parameter("button_size", Vector2(target_w, target_h))
+			cmd_idx += 1
 
 
 func _show_page(page: Control, page_key: String = "home", animate: bool = true) -> void:
@@ -267,11 +302,14 @@ func _show_page(page: Control, page_key: String = "home", animate: bool = true) 
 	if _backdrop != null and _backdrop.has_method("set_page_mode"):
 		_backdrop.call("set_page_mode", page_key)
 	for candidate in get_tree().get_nodes_in_group("main_menu_pages"):
+		UIAnimation.cancel(candidate as Control)
 		var c := candidate as Control
 		c.visible = c == page
 	if animate and is_inside_tree():
 		var offset := Vector2(-20.0, 0.0) if page_key == "home" else Vector2(24.0, 0.0)
-		UIAnimation.page_flip_in(page, offset, UITokens.ANIM_MED)
+		UIAnimation.crossfade(page, 0.12) if UIAnimation.reduced_motion() else UIAnimation.page_flip_in(page, offset, UITokens.MENU_PAGE_TRANSITION)
+	if page_key == "home" and animate and not UIAnimation.reduced_motion():
+		UIAnimation.stagger_children_in(%NewGameButton.get_parent(),.035,8,.24)
 	call_deferred("_apply_responsive_layout")
 	call_deferred("_focus_default_for_page", page_key)
 
@@ -377,6 +415,7 @@ func _show_settings() -> void:
 	if _volume_value_label != null:
 		_volume_value_label.text = "%d%%" % int(round(float(current.master_volume) * 100.0))
 	_settings_controls.muted.button_pressed = bool(current.master_muted)
+	_settings_controls.reduce_motion.button_pressed = bool(current.get("reduce_motion",false))
 
 
 func _configure_option(option: OptionButton, labels: Array, values: Array, selected) -> void:
@@ -440,16 +479,73 @@ func _decorate_chapter_button(button: Button, title_value: String, icon: String,
 	if content == null:
 		content = ButtonContentScene.instantiate() as MarginContainer
 		button.add_child(content)
+	content.add_theme_constant_override("margin_left", 8)
+	content.add_theme_constant_override("margin_right", 18)
+	content.add_theme_constant_override("margin_top", 2)
+	content.add_theme_constant_override("margin_bottom", 6)
 	var row := content.get_node("Row") as HBoxContainer
 	row.alignment = BoxContainer.ALIGNMENT_BEGIN
+	row.add_theme_constant_override("separation", 14)
 	var icon_label := content.get_node("Row/Icon") as Label
 	IconButton.apply_to_label(icon_label, StringName(icon), font_size)
-	icon_label.add_theme_color_override("font_color", UITokens.DOSSIER_OXBLOOD)
+	icon_label.custom_minimum_size = Vector2(38, 0)
+	icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	icon_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	icon_label.add_theme_color_override("font_color", Color(0.99, 0.91, 0.70, 1.0))
+	icon_label.add_theme_color_override("font_shadow_color", Color(0.16, 0.04, 0.02, 0.72))
+	icon_label.add_theme_constant_override("shadow_offset_x", 0)
+	icon_label.add_theme_constant_override("shadow_offset_y", 1)
 	var text_label := content.get_node("Row/Label") as Label
 	text_label.text = title_value
 	text_label.add_theme_font_override("font", UITokens.dossier_font("serif"))
 	text_label.add_theme_font_size_override("font_size", font_size)
-	UIAnimation.bind_tactile_button(button, content, 5.0)
+	text_label.add_theme_color_override("font_color", Color(0.14, 0.075, 0.035, 1.0))
+	text_label.add_theme_color_override("font_shadow_color", Color(1.0, 0.97, 0.88, 0.84))
+	text_label.add_theme_constant_override("shadow_offset_x", 0)
+	text_label.add_theme_constant_override("shadow_offset_y", 1)
+	_bind_paper_slip_button(button, content)
+
+
+func _bind_paper_slip_button(button: Button, content: Control) -> void:
+	if button == null or button.has_meta("_paper_slip_bound"):
+		return
+	button.set_meta("_paper_slip_bound", true)
+	var slip := button.get_node_or_null("SlipSurface") as ColorRect
+	var slip_mat := slip.material as ShaderMaterial if slip != null else null
+	var animate_slip := func(hovered: bool, pressed: bool) -> void:
+		if not is_instance_valid(button):
+			return
+		if button.has_meta("_slip_tween"):
+			var old_t = button.get_meta("_slip_tween")
+			if old_t is Tween and (old_t as Tween).is_valid():
+				(old_t as Tween).kill()
+		var tw := button.create_tween()
+		button.set_meta("_slip_tween", tw)
+		tw.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		var h_target := 1.0 if hovered else 0.0
+		var p_target := 1.0 if pressed else 0.0
+		if slip_mat != null:
+			tw.parallel().tween_method(
+				func(v: float) -> void: slip_mat.set_shader_parameter("hover_amount", v),
+				float(slip_mat.get_shader_parameter("hover_amount")),
+				h_target,
+				UITokens.ANIM_FAST
+			)
+			tw.parallel().tween_method(
+				func(v: float) -> void: slip_mat.set_shader_parameter("press_amount", v),
+				float(slip_mat.get_shader_parameter("press_amount")),
+				p_target,
+				0.08
+			)
+		if content != null and is_instance_valid(content):
+			var ofs := Vector2(-1.5, -2.0) if (hovered and not pressed) else (Vector2(1.0, 1.0) if pressed else Vector2.ZERO)
+			tw.parallel().tween_property(content, "position", ofs, UITokens.ANIM_FAST)
+	button.mouse_entered.connect(func() -> void: animate_slip.call(true, button.is_pressed()))
+	button.mouse_exited.connect(func() -> void: animate_slip.call(false, false))
+	button.focus_entered.connect(func() -> void: animate_slip.call(true, false))
+	button.focus_exited.connect(func() -> void: animate_slip.call(false, false))
+	button.button_down.connect(func() -> void: animate_slip.call(true, true))
+	button.button_up.connect(func() -> void: animate_slip.call(button.is_hovered(), false))
 
 
 func _decorate_text_button(button: Button, text_value: String, icon: String, font_size: int) -> void:
@@ -827,5 +923,6 @@ func _apply_settings() -> void:
 		"ui_scale_percent": _settings_controls.ui_scale.get_selected_metadata(),
 		"master_volume": _settings_controls.volume.value,
 		"master_muted": _settings_controls.muted.button_pressed,
+		"reduce_motion": _settings_controls.reduce_motion.button_pressed,
 	})
 	_status_label.text = "设置已应用。" if bool(result.get("ok", false)) else String(result.message)

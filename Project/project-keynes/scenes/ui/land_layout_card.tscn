@@ -3,7 +3,7 @@
 [ext_resource type="Script" path="res://scripts/ui/components/land_layout_card.gd" id="1_script"]
 
 [node name="LandLayoutCard" type="Button"]
-custom_minimum_size = Vector2(88, 62)
+custom_minimum_size = Vector2(76, 66)
 layout_mode = 2
 size_flags_horizontal = 3
 toggle_mode = true
@@ -29,7 +29,7 @@ mouse_filter = 2
 theme_override_constants/separation = 3
 
 [node name="Emblem" type="Control" parent="Margin/VBox"]
-custom_minimum_size = Vector2(0, 32)
+custom_minimum_size = Vector2(0, 38)
 layout_mode = 2
 size_flags_vertical = 3
 mouse_filter = 2

@@ -1,6 +1,7 @@
 #include "economy_hash.h"
 #include "economy_cost_probe.h"
 #include "runtime_economy_state.h"
+#include "economy_runtime_binary_codec.h"
 #include <cstddef>
 #include <cstring>
 
@@ -62,6 +63,12 @@ RuntimeEconomyResourceStore &RuntimeEconomyResourceStore::operator=(const Runtim
     stock.assign(other.stock.values()); cell_generation.assign(other.cell_generation.values());
     remaining = other.remaining; harvest_remaining = other.harvest_remaining;
     deltas = other.deltas; lane_generation = other.lane_generation;
+    wire_hash_cached = other.wire_hash_cached &&
+        other.wire_hash_stock_revision == other.stock.mutation_revision() &&
+        other.wire_hash_cell_revision == other.cell_generation.mutation_revision();
+    wire_hash_stock_revision = stock.mutation_revision();
+    wire_hash_cell_revision = cell_generation.mutation_revision();
+    wire_hash_value = other.wire_hash_value;
     return *this;
 }
 RuntimeEconomyResourceStore &RuntimeEconomyResourceStore::operator=(RuntimeEconomyResourceStore &&other) {
@@ -70,6 +77,8 @@ RuntimeEconomyResourceStore &RuntimeEconomyResourceStore::operator=(RuntimeEcono
     stock.move_from(other.stock); cell_generation.move_from(other.cell_generation);
     remaining = std::move(other.remaining); harvest_remaining = std::move(other.harvest_remaining);
     deltas = std::move(other.deltas); lane_generation = std::move(other.lane_generation);
+    wire_hash_cached = false;
+    other.wire_hash_cached = false;
     other.resource_count = other.cell_count = 0;
     return *this;
 }
@@ -111,6 +120,11 @@ bool RuntimeEconomyResourceStore::shape_valid(
 
 void RuntimeEconomyResourceStore::append_wire(
         std::vector<uint8_t> &out) const {
+    if (binary_codec::bulk_little_endian_enabled()) {
+        binary_codec::append_column_le(out, stock.data(), stock.size());
+        binary_codec::append_column_le(out, cell_generation.data(), cell_generation.size());
+        return;
+    }
     for (int64_t value : stock) {
         const auto *bytes = reinterpret_cast<const uint8_t *>(&value);
         out.insert(out.end(), bytes, bytes + sizeof(value));
@@ -151,6 +165,28 @@ bool RuntimeEconomyResourceStore::load_wire(const uint8_t *data, size_t size,
 }
 
 uint64_t RuntimeEconomyResourceStore::wire_content_hash() const noexcept {
+    static const bool scalar_stock = [] {
+        const char *value = std::getenv("PK_ECONOMY_RESOURCE_WIRE_HASH_SCALAR");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    static const bool little_endian = [] {
+        const uint64_t value = 1;
+        return *reinterpret_cast<const uint8_t *>(&value) == 1;
+    }();
+    static const bool disabled = [] {
+        const char *value = std::getenv("PK_ECONOMY_RESOURCE_WIRE_CACHE_DISABLE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    static const bool verify = [] {
+        const char *value = std::getenv("PK_ECONOMY_HASH_VERIFY");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    const uint64_t stock_revision = stock.mutation_revision();
+    const uint64_t cell_revision = cell_generation.mutation_revision();
+    const bool hit = !disabled && wire_hash_cached &&
+        wire_hash_stock_revision == stock_revision && wire_hash_cell_revision == cell_revision;
+    EconomyCostProbe::record("resource.wire_hash_reused", -1, 0.0, hit ? 1 : 0);
+    if (hit && !verify) return wire_hash_value;
     constexpr uint64_t kOffset = 1469598103934665603ull;
     constexpr uint64_t kPrime = 1099511628211ull;
     uint64_t hash = kOffset;
@@ -160,7 +196,11 @@ uint64_t RuntimeEconomyResourceStore::wire_content_hash() const noexcept {
             hash *= kPrime;
         }
     };
-    for (int64_t value : stock) {
+    if (!scalar_stock && little_endian) {
+        // This helper already implements the same eight-byte FNV-1a stream,
+        // combining only exact zero runs (including high bytes of small stocks).
+        hash = economy_hash_lanes<true>(hash, stock.values());
+    } else for (int64_t value : stock) {
         if (value == 0) {
             constexpr uint64_t prime2 = kPrime * kPrime;
             constexpr uint64_t prime4 = prime2 * prime2;
@@ -174,6 +214,30 @@ uint64_t RuntimeEconomyResourceStore::wire_content_hash() const noexcept {
         const auto *bytes = reinterpret_cast<const uint8_t *>(&value);
         mix_bytes(bytes, sizeof(value));
     }
+    if (verify) {
+        uint64_t reference = kOffset;
+        const auto reference_bytes = [&](const auto &column) {
+            for (const auto value : column) {
+                const auto *bytes = reinterpret_cast<const uint8_t *>(&value);
+                for (size_t i = 0; i < sizeof(value); ++i)
+                    reference = (reference ^ bytes[i]) * kPrime;
+            }
+        };
+        reference_bytes(stock);
+        reference_bytes(cell_generation);
+        if (hash != reference) {
+            std::fprintf(stderr, "economy_resource_wire_hash_scalar_mismatch\n");
+            std::abort();
+        }
+    }
+    if (hit && hash != wire_hash_value) {
+        std::fprintf(stderr, "economy_resource_wire_hash_cache_mismatch\n");
+        std::abort();
+    }
+    wire_hash_value = hash;
+    wire_hash_stock_revision = stock_revision;
+    wire_hash_cell_revision = cell_revision;
+    wire_hash_cached = true;
     return hash;
 }
 

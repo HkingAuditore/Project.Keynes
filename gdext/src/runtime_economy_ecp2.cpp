@@ -1,6 +1,7 @@
 #include "runtime_economy_ecp2.h"
 
 #include "economy_runtime.h"
+#include "economy_hash.h"
 #include "economy_runtime_binary_codec.h"
 #include "runtime_economy_state.h"
 
@@ -9,9 +10,6 @@
 
 namespace pk {
 namespace {
-
-constexpr uint64_t FNV_OFFSET = 1469598103934665603ull;
-constexpr uint64_t FNV_PRIME = 1099511628211ull;
 
 using persistence_codec::SAVE_MAGIC;
 using persistence_codec::SAVE_SECTION_AUDIT;
@@ -77,12 +75,7 @@ void append_u8(std::vector<uint8_t> &out, uint8_t value) {
 }
 
 uint64_t fnv1a_bytes(const uint8_t *data, size_t size) noexcept {
-    uint64_t hash = FNV_OFFSET;
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= static_cast<uint64_t>(data[i]);
-        hash *= FNV_PRIME;
-    }
-    return hash;
+    return economy_save_hash_bytes(data, size);
 }
 
 bool read_u32(const uint8_t *&p, const uint8_t *end, uint32_t &value) {
@@ -386,11 +379,17 @@ bool ecp2_has_required_domains(uint32_t mask, uint32_t required) noexcept {
     return (mask & required) == required;
 }
 
-bool encode_ecp2(const RuntimeEconomyEcp2State &state,
-                 std::vector<uint8_t> &out, std::string &error) {
+static bool encode_ecp2_impl(const RuntimeEconomyEcp2State &state,
+                 std::vector<uint8_t> &out, std::string &error, bool direct) {
     error.clear();
     out.clear();
-    out.reserve(256);
+    size_t reserve = 256;
+    if (direct) {
+        reserve += sizeof(state.envelope) + sizeof(state.resume);
+        for (const auto &domain : state.domain_blobs)
+            reserve += 8u + domain.second.size();
+    }
+    out.reserve(reserve);
     append_u32(out, RUNTIME_ECONOMY_ECP2_MARKER);
     append_u32(out, state.abi_version);
     append_u32(out, static_cast<uint32_t>(state.schema_version));
@@ -398,7 +397,9 @@ bool encode_ecp2(const RuntimeEconomyEcp2State &state,
     const size_t hash_at = out.size();
     append_u64(out, 0u);
 
-    std::vector<uint8_t> body;
+    std::vector<uint8_t> legacy_body;
+    // domain 已冻结，直接写入最终 envelope，避免整份 body 的再次搬移。
+    std::vector<uint8_t> &body = direct ? out : legacy_body;
     if ((state.authority_domain_mask & ECP2_DOMAIN_ENVELOPE) != 0) {
         // Typed envelope first, then any PKEC HEADER chunks captured under the
         // same domain bit so restore can rebuild SAVE_SECTION_HEADER.
@@ -425,18 +426,19 @@ bool encode_ecp2(const RuntimeEconomyEcp2State &state,
     for (const uint32_t bit : kDomainBits) {
         if ((state.authority_domain_mask & bit) == 0) continue;
         const auto found = state.domain_blobs.find(bit);
-        std::vector<uint8_t> payload;
+        std::vector<uint8_t> resume_payload;
+        const std::vector<uint8_t> *payload = &resume_payload;
         if (bit == ECP2_DOMAIN_EPOCH_RESUME) {
-            append_resume(payload, state.resume);
+            append_resume(resume_payload, state.resume);
         } else if (found != state.domain_blobs.end()) {
-            payload = found->second;
+            payload = &found->second;
         }
         append_u32(body, bit);
-        append_u32(body, static_cast<uint32_t>(payload.size()));
-        body.insert(body.end(), payload.begin(), payload.end());
+        append_u32(body, static_cast<uint32_t>(payload->size()));
+        body.insert(body.end(), payload->begin(), payload->end());
     }
 
-    out.insert(out.end(), body.begin(), body.end());
+    if (!direct) out.insert(out.end(), body.begin(), body.end());
     const uint64_t hash = fnv1a_bytes(out.data() + hash_at + 8u,
                                       out.size() - hash_at - 8u);
     out[hash_at] = static_cast<uint8_t>(hash & 0xffu);
@@ -447,6 +449,25 @@ bool encode_ecp2(const RuntimeEconomyEcp2State &state,
     out[hash_at + 5] = static_cast<uint8_t>((hash >> 40u) & 0xffu);
     out[hash_at + 6] = static_cast<uint8_t>((hash >> 48u) & 0xffu);
     out[hash_at + 7] = static_cast<uint8_t>((hash >> 56u) & 0xffu);
+    return true;
+}
+
+bool encode_ecp2(const RuntimeEconomyEcp2State &state,
+                 std::vector<uint8_t> &out, std::string &error) {
+    if (!encode_ecp2_impl(state, out, error,
+            binary_codec::bulk_little_endian_enabled())) return false;
+    static const bool verify = [] {
+        const char *value = std::getenv("PK_SAVE_CODEC_VERIFY");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    if (verify) {
+        std::vector<uint8_t> reference;
+        if (!encode_ecp2_impl(state, reference, error, false)) return false;
+        if (out != reference) {
+            error = "ecp2_envelope_codec_mismatch";
+            return false;
+        }
+    }
     return true;
 }
 

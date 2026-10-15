@@ -96,7 +96,7 @@ int64_t NativeEconomyRuntime::family_founding_founders_for_group(
         int32_t cell, int32_t group_index) const {
     if (cell < 0 || cell >= _cell_count.get() || group_index < 0 ||
         group_index >= static_cast<int32_t>(building_count())) return 0;
-    const auto group = building_at(static_cast<size_t>(group_index));
+    const auto group = building_view(static_cast<size_t>(group_index));
     if (group.cell != cell || group.count <= 0 || group.modifier_handle == 0 ||
         group.operating_state != 0 || group.type_id < 0 ||
         group.type_id >= static_cast<int32_t>(_building_types.size()))
@@ -166,7 +166,7 @@ int32_t NativeEconomyRuntime::build_family_founding_candidates(
          g < _building_cell_offsets[cell + 1]; ++g) {
         const int64_t founders = family_founding_founders_for_group(cell, g);
         if (founders <= 0) continue;
-        const auto group = building_at(static_cast<size_t>(g));
+        const auto group = building_view(static_cast<size_t>(g));
         ranked.push_back({g, founders, group.realized_profit_margin_q16,
             group.last_revenue, group.type_id, group.owner_signature_id});
     }
@@ -190,7 +190,7 @@ int32_t NativeEconomyRuntime::build_family_founding_candidates(
     std::unordered_set<int64_t> used_ids;
     for (int32_t card = 0; card < FAMILY_FOUNDING_CARD_COUNT; ++card) {
         const Ranked &pick = picks[static_cast<size_t>(card) % picks.size()];
-        const auto group = building_at(static_cast<size_t>(pick.group));
+        const auto group = building_view(static_cast<size_t>(pick.group));
         FamilyFoundingCandidate candidate;
         uint64_t hash = 1469598103934665603ULL;
         hash = trace_hash_mix(hash, static_cast<uint64_t>(_seed.get()));
@@ -297,7 +297,7 @@ bool NativeEconomyRuntime::resolve_family_founding_offer(
                  g < _building_cell_offsets[cell + 1]; ++g) {
                 const int64_t available = family_founding_founders_for_group(cell, g);
                 if (available <= 0) continue;
-                const auto group = building_at(static_cast<size_t>(g));
+                const auto group = building_view(static_cast<size_t>(g));
                 const auto key = std::make_tuple(group.realized_profit_margin_q16,
                     group.last_revenue, group.type_id, group.owner_signature_id);
                 if (group_index < 0 || key > best_key) {
@@ -309,7 +309,7 @@ bool NativeEconomyRuntime::resolve_family_founding_offer(
         }
     }
     if (group_index < 0 || founders <= 0) return false;
-    const auto group = building_at(static_cast<size_t>(group_index));
+    const auto group = building_view(static_cast<size_t>(group_index));
     const int64_t owner_slots =
         _building_types[static_cast<size_t>(group.type_id)].owner_slots_per_building;
     FamilyFoundingIdentity identity;

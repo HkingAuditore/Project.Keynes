@@ -61,6 +61,11 @@ money audit，也不会绕过税务。成员人数只经由出生/死亡归属�
 
 ## 特性、偏好与地块威望
 
+恢复校验中的核心特性数量只执行 catalog 上限，不把初始抽取下限当成终身不变量。
+分家可以移除一个继承核心特性，新增项标为附加特性，因此后代可低于初始下限，
+连续分家或 replace policy 也可使核心数量为零。恢复保留原 trait ID、强度与 core 标记，
+不补抽特性；资格、顺序/重复、强度、前置与互斥检查继续执行。
+
 `FamilyTraitCatalog` 在冷启动将 stable ID、产业部门、类别、替代类别和语义标签选择器展开为
 dense ID CSR。建筑、职业、需求、商品和自然资源 profile 可提供 `semantic_tags`；native 热循环
 只读取 exact dense edge。家族成立时按 `world_seed + family_stable_id + trait_catalog_version`
@@ -117,6 +122,15 @@ profession-class selector，查询时以 `_profession_class_index` 匹配，精�
 `family_behavior_class_row_count` 用于检查是否回退到重复全量物化；
 `family_behavior_metric_contexts_built` 应随 family-cell 数增长，
 `family_behavior_condition_edges_evaluated` 则记录复用这些上下文的条件边次数。
+
+2026-10-15 hotloop v23：上述惰性 slab 原先仍无条件计算全部 37 项；Effect
+发布虽已过滤 metric mask，helper 也仍计算全量。现从条件 IR 的比较操作数冷编译
+每 trait mask，在重建时按实际家族 traits 求并集。`fill_family_behavior_metrics`
+按 mask 门控依赖扫描；Effect 发布传既有 mask，冻结直接政策只请求实际读取的
+失业率、异地分支数、人均现金比或部门信息。不改变日界时效、trait 顺序、阈值、
+整数舍入和行为 CSR。`PK_ECONOMY_FAMILY_METRIC_MASK_DISABLE=1` 选全量参考路径，
+`PK_ECONOMY_MEMO_VERIFY=1` 核对全部被用到的指标和条件结果。
+`family.behavior_cache` 记录重建耗时，`family.behavior_metrics` 记录实际指标数。
 
 核心特性抽取、分家新增特性与 FamilyEffect 随机池共用科技前列：`FamilyTraitDefinition.prerequisite_technology_keys`
 与 `FamilyEffectDefinition.prerequisite_technology_keys`。空前列通过；默认 AND
@@ -396,6 +410,18 @@ v41 hash round-trip、旧 schema 明确拒绝、特性抽取/命令排序、分�
 开启的目标规模性能对比。
 
 ## 维护入口
+
+2026-10-15：FAMILY_COMMIT 里程碑评审不再遍历整个地图。工作集为既有
+`_economy_live_cells`、当前人口页、活跃建筑格、未结束 founding offer 所在格的
+有序去重并集。新迁入人口、新建建筑以及已无居民但尚需收尾的 offer 都被纳入，
+评审顺序仍按 cell id，里程碑状态数组仍按完整地图初始化。已有家族 CSR、
+影响力 dirty gate 和人物处理规则保持原契约。`family.review_cells` 提供工作量证据，
+`PK_ECONOMY_ACTIVE_WORKSET_DISABLE=1` 可恢复全图参照路径。
+
+2026-10-15：行为 factor 查询沿用现有已排序 CSR，对全局/本格、exact/class 的至多
+四个完整键做二分查找；按原 CSR 行号重放乘法，保留定点截断顺序。score term 查询
+只遍历对应 cell/term 范围。`PK_ECONOMY_FAMILY_LOOKUP_LINEAR=1` 走旧全扫描，
+`PK_ECONOMY_FAMILY_LOOKUP_VERIFY=1` 同时计算旧结果并逐次比对。
 
 - 后续开发先加载仓库 Skill：
   [project-keynes-family-runtime](../../.codex/skills/project-keynes-family-runtime/SKILL.md)。

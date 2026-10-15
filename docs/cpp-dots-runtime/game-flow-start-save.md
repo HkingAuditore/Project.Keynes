@@ -1,5 +1,43 @@
 # Formal Game Flow, Player Start, and PKSV
 
+Modifier catalog identity explicitly encodes term fields and the existing
+zero reserved word. It never hashes C++ padding; this preserves original x64
+PKCM/PKCN/PKEC/PKGP compatibility under MSVC cross-file optimization. Catalog
+and normalized-term validation remain mandatory.
+
+## Save hashing and pause boundary (2026-10-15)
+
+Desktop saves freeze provider-section Variant bytes at the existing safe boundary.
+The existing background repository task computes each manifest SHA256 from those
+exact bytes before writing the container. Provider schema/order, manifest hashes,
+section SHA256, compression, verified read-back and atomic replacement are unchanged.
+The task never calls a provider, facade or Node. `_busy` remains set through write
+completion. Web and `PK_SAVE_SYNC_WRITE=1` retain synchronous saving;
+`PK_SAVE_PROVIDER_HASH_SYNC=1` selects synchronous manifest hashing only, while
+`PK_SAVE_PROVIDER_HASH_VERIFY=1` compares background hashes with boundary references.
+Frozen manifest payloads temporarily retain an additional serialized provider copy.
+`PK_SAVE_PROFILE=1` reports provider capture and manifest preparation separately.
+
+Native ECP1/ECP2/OSOA and selected PKSR checksums use exact raw-byte FNV zero-run
+combination. This is distinct from hashing each numeric lane as an eight-byte value.
+`PK_SAVE_BYTE_HASH_SCALAR=1` selects the original byte loop;
+`PK_SAVE_BYTE_HASH_VERIFY=1` recomputes each selected checksum with that loop.
+No checksum layer or saved field is removed. PKSR reserves all frozen section sizes
+before assembly. Optional cost probes `save.bundle`, `save.climate`, `save.ecp2`
+and `save.wire` distinguish native capture/encoding from main-thread save pauses.
+
+## Existing-save restore repairs (2026-10-15)
+
+Provider ordering and PKSV/PKEF schemas are unchanged. PKEF v11 can recover the
+identified incomplete non-managed worker mirror after validating its POD plan
+hash; Economy restore accepts descendant core-trait counts below the initial-roll
+minimum while retaining per-trait constraints. D7 restore retains completed
+request/result-matched historical rows across their old session/date context;
+pending request admission stays strict. These repairs preserve business state
+and idempotency instead of clearing provider sections. The save-replay harness
+waits for runtime readiness and anchors its first committed-day sample after
+worker startup, so restored calendar values cannot masquerade as replay work.
+
 This document is the current contract for the player-facing startup path, the
 multi-country opening bootstrap, and complete-game persistence. The legacy
 `world_setup.tscn` remains a development tool and is not a product entry point.
@@ -443,6 +481,18 @@ ID migration is provided.
 
 ### Explicit economy hash migration (2026-10-08)
 
+2026-10-15 安全边界补充：暂停后 worker 仍可能排空已经接收的环境输入。
+`GameSaveCoordinator._can_save` 必须等待 worker 离开 STARTING/RUNNING/SAVE_PENDING，
+且 environment ring 与 day in-flight 都为零，才捕获主线程 Country 只读副本。
+`save_requires_idle_worker` 属于可重试边界原因，等待期间沿用现有 boundary pump。
+否则 PKCN 可能比稍后捕获的 PKSR 落后数天；Host 的 checkpoint day 不一致拒绝保持开启。
+
+安全边界捕获后，provider sections 在主线程冻结成私有 PackedByteArray，随后恢复
+原时钟模式。既有 SaveRepository 的压缩、SHA、临时文件、回读验证与原子替换移至
+WorkerThreadPool；保存请求直到落盘完成才回报成功，其间拒绝并发写入、删除和加载。
+web 及 `PK_SAVE_SYNC_WRITE=1` 保留同步路径。加载运行中存档时，在 worker 输入捕获和
+启动完成前临时暂停已恢复时钟，避免加载 await 期间日历越过尚未捕获的环境输入。
+
 `tools/runtime/Invoke-SaveMigration.ps1 -SavePath <old.pksv> -OutputPath <new.pksv>`
 loads a staged copy through the production restore path, pauses the restored
 clock, and saves ECP2 ABI 3 / schema 54 with hash version 2. An existing output
@@ -458,3 +508,36 @@ cash amount in requested_quantity. Their terminal committed cash and quantity
 must match and must fit that amount. This valid operation-specific encoding is
 checked without relaxing the nonnegative, quantity, identity or terminal rules.
 
+
+
+2026-10-15 v18 persistence optimization: PKEC market records are filled into one
+pre-sized little-endian byte range; CLM2 float arrays use contiguous little-endian
+bytes. Scalar fallback is `PK_SAVE_CODEC_SCALAR=1`. Record order, section cursor,
+checksums, full history, section schema and restore validation are unchanged.
+
+2026-10-15 v36/v37 extends that existing codec to OSOA's 20-byte market
+records, ECP1 contiguous integer columns, resource wire columns and PKEC's
+20-byte resource records. ECP2 writes frozen domain payloads directly into the
+final envelope, avoiding a complete intermediate body and per-domain copies.
+PKEC chunk capture also appends directly from the live chunk's const byte view.
+Both persisted economy representations, every checksum and the save ABI remain
+unchanged. `PK_SAVE_CODEC_VERIFY=1` compares the complete OSOA and ECP2 envelope
+with their original encoders and compares each optimized resource chunk with
+its original record encoder. `PK_SAVE_CODEC_SCALAR=1` retains the scalar codec
+and intermediate-envelope path. These flags are correctness diagnostics.
+
+`save.ecp2.ledger`, `save.ecp2.pkec_chunks`, `save.ecp2.resource` and
+`save.ecp2.owned_state` split capture cost within `save.ecp2`; envelope assembly
+and checksum remain in the outer probe. Do not add these nested measurements
+to the outer total.
+
+2026-10-15 v22: the worker save bundle already contains immutable ECP2 bytes.
+`poll_runtime_save()` returns those bytes as `economy_ecp2`; SaveCoordinator
+passes them through the capture context to the existing `ecp2` section provider.
+The standalone ECP2 section and native runtime bundle are both still written.
+This removes a second complete main-thread capture/encoding without changing
+section identity, manifest, PKCN checks or restore order. Missing shared bytes
+use the existing facade capture. `PK_SAVE_ECP2_REUSE_DISABLE=1` selects that
+reference path; `PK_SAVE_ECP2_REUSE_VERIFY=1` independently captures ECP2 again
+and rejects the save unless every byte matches. The original manual-save replay
+verified 44,697,814 identical bytes and an isolated saved-file restore.

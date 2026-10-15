@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <cstdlib>
+#include <cstring>
+#include <cstdio>
 
 #if defined(_MSC_VER) && defined(_M_X64)
 #include <intrin.h>
@@ -59,12 +62,21 @@ int64_t NativeEconomyRuntime::saturating_mul(int64_t a, int64_t b, int64_t &sat)
     const bool negative = (a < 0) ^ (b < 0);
     const uint64_t ua = economy_magnitude_i64(a);
     const uint64_t ub = economy_magnitude_i64(b);
-    if (ua > std::numeric_limits<uint64_t>::max() / ub) {
+#if defined(_MSC_VER) && defined(_M_X64)
+    uint64_t high = 0;
+    const uint64_t product = _umul128(ua, ub, &high);
+#else
+    const unsigned __int128 wide = static_cast<unsigned __int128>(ua) * ub;
+    const uint64_t high = static_cast<uint64_t>(wide >> 64);
+    const uint64_t product = static_cast<uint64_t>(wide);
+#endif
+    // 高位即可判断乘积是否溢出，避免为每次乘法额外执行一次整数除法。
+    if (high != 0) {
         ++sat;
         return negative ? std::numeric_limits<int64_t>::min()
                         : std::numeric_limits<int64_t>::max();
     }
-    return economy_clamp_i64_from_unsigned(ua * ub, negative, sat);
+    return economy_clamp_i64_from_unsigned(product, negative, sat);
 }
 
 int64_t NativeEconomyRuntime::mul_div_sat(int64_t a, int64_t b, int64_t divisor,
@@ -74,18 +86,37 @@ int64_t NativeEconomyRuntime::mul_div_sat(int64_t a, int64_t b, int64_t divisor,
         return ((a < 0) ^ (b < 0)) ? std::numeric_limits<int64_t>::min()
                                     : std::numeric_limits<int64_t>::max();
     }
+    static const bool scalar_identity = [] {
+        const char *value = std::getenv("PK_ECONOMY_MUL_DIV_SCALAR");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    if (!scalar_identity) {
+        // Exact cancellation in the original wide product, including INT64_MIN
+        // and negative divisors. The result is an existing int64 operand, so
+        // neither rounding nor saturation occurs. Neutral Q16 factors dominate
+        // the economy's scaling chains and need no multiply/divide machinery.
+        if (b == divisor) return a;
+        if (a == divisor) return b;
+    }
     const bool negative = (a < 0) ^ (b < 0) ^ (divisor < 0);
     const uint64_t ua = economy_magnitude_i64(a);
     const uint64_t ub = economy_magnitude_i64(b);
     const uint64_t ud = economy_magnitude_i64(divisor);
     if (ua == 0 || ub == 0) return 0;
-    if (ua <= std::numeric_limits<uint64_t>::max() / ub) {
-        const uint64_t quotient = (ua * ub) / ud;
-        return economy_clamp_i64_from_unsigned(quotient, negative, sat);
-    }
 #if defined(_MSC_VER) && defined(_M_X64)
     uint64_t hi = 0;
     const uint64_t lo = _umul128(ua, ub, &hi);
+#else
+    const unsigned __int128 product = static_cast<unsigned __int128>(ua) * ub;
+    const uint64_t hi = static_cast<uint64_t>(product >> 64);
+    const uint64_t lo = static_cast<uint64_t>(product);
+#endif
+    if (hi == 0) {
+        // 最常用的 Q16 / 整数缩放无需通用除法；负数仍按原 magnitude 截断。
+        const uint64_t quotient = ud == Q16_ONE ? lo >> 16 : (ud == 1 ? lo : lo / ud);
+        return economy_clamp_i64_from_unsigned(quotient, negative, sat);
+    }
+#if defined(_MSC_VER) && defined(_M_X64)
     if (hi >= ud) {
         ++sat;
         return negative ? std::numeric_limits<int64_t>::min()
@@ -95,7 +126,6 @@ int64_t NativeEconomyRuntime::mul_div_sat(int64_t a, int64_t b, int64_t divisor,
     const uint64_t quotient = _udiv128(hi, lo, ud, &remainder);
     return economy_clamp_i64_from_unsigned(quotient, negative, sat);
 #else
-    const unsigned __int128 product = static_cast<unsigned __int128>(ua) * ub;
     const unsigned __int128 quotient = product / ud;
     const unsigned __int128 limit = static_cast<unsigned __int128>(
         negative ? static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) + 1ULL
@@ -118,6 +148,7 @@ int64_t NativeEconomyRuntime::inventory_adjusted_cost_pressure(
 
 int64_t NativeEconomyRuntime::pow_q16(int64_t ratio_q16, int64_t exponent_q16,
                                       int64_t &sat) {
+    const auto compute = [&](int64_t &sat) -> int64_t {
     if (ratio_q16 <= 0) return exponent_q16 <= 0 ? Q16_ONE : 0;
     uint64_t x_q32 = static_cast<uint64_t>(ratio_q16) << 16;
     int32_t integer_log = 0;
@@ -182,6 +213,44 @@ int64_t NativeEconomyRuntime::pow_q16(int64_t ratio_q16, int64_t exponent_q16,
         out_q32 >>= -integer_exp;
     }
     return economy_clamp_i64_from_unsigned(out_q32 >> 16, false, sat);
+    };
+    static const bool disabled = [] {
+        const char *value = std::getenv("PK_ECONOMY_POW_CACHE_DISABLE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    static const bool verify = [] {
+        const char *value = std::getenv("PK_ECONOMY_MEMO_VERIFY");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    if (disabled) return compute(sat);
+    // 只缓存纯整数函数的完整输入，碰撞只会覆盖，不会把别的输入当命中。
+    // 不使用近似幂函数，不依赖世界/物价版本；线程私有且容量固定。
+    struct Entry {
+        int64_t ratio = -1, exponent = 0, value = 0, saturations = 0;
+    };
+    static thread_local std::array<Entry, 4096> entries;
+    uint64_t key = static_cast<uint64_t>(ratio_q16) * 0x9e3779b97f4a7c15ULL ^
+        static_cast<uint64_t>(exponent_q16);
+    key = (key ^ (key >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    key = (key ^ (key >> 27)) * 0x94d049bb133111ebULL;
+    Entry &entry = entries[(key ^ (key >> 31)) & (entries.size() - 1)];
+    // ratio=-1 是未初始化哨兵，只对正 ratio 使用缓存。
+    if (ratio_q16 > 0 && entry.ratio == ratio_q16 && entry.exponent == exponent_q16) {
+        if (verify) {
+            int64_t reference_sat = 0;
+            if (compute(reference_sat) != entry.value || reference_sat != entry.saturations) {
+                std::fprintf(stderr, "[pow-q16-cache-mismatch] ratio=%lld exponent=%lld\n",
+                    static_cast<long long>(ratio_q16), static_cast<long long>(exponent_q16));
+                std::abort();
+            }
+        }
+        sat += entry.saturations;
+        return entry.value;
+    }
+    const int64_t before = sat;
+    const int64_t value = compute(sat);
+    if (ratio_q16 > 0) entry = {ratio_q16, exponent_q16, value, sat - before};
+    return value;
 }
 
 void NativeEconomyRuntime::formula_fixed_per_capita(const FormulaBatchInput &in,

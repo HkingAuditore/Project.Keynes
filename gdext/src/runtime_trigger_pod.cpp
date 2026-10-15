@@ -1,5 +1,6 @@
 #include "runtime_trigger_pod.h"
 #include "runtime_trigger_kernel.h"
+#include "economy_cost_probe.h"
 
 #include <algorithm>
 #include <cstring>
@@ -15,6 +16,11 @@ constexpr uint32_t SAVE_MAGIC = 0x31445054u; // TPD1
 constexpr uint32_t SAVE_END = 0x31444e45u; // END1
 constexpr uint64_t FNV_OFFSET = 1469598103934665603ULL;
 constexpr uint64_t FNV_PRIME = 1099511628211ULL;
+constexpr uint64_t fnv_prime_power(unsigned exponent) {
+    uint64_t value = 1;
+    for (unsigned i = 0; i < exponent; ++i) value *= FNV_PRIME;
+    return value;
+}
 constexpr uint32_t MAX_SAVE_BYTES = 64u * 1024u * 1024u;
 
 template <typename T>
@@ -171,6 +177,16 @@ void copy_trigger_snapshot_reuse_capacity(RuntimeTriggerSnapshot &dst,
 
 void hash_snapshot_dual(const RuntimeTriggerSnapshot &snapshot,
                         uint64_t &hash_with_gen, uint64_t &hash_zero_gen) {
+    EconomyCostProbe hash_cost("trigger.hash_dual", snapshot.current_day, snapshot.states.size());
+    static const bool scalar_distinct = [] {
+        const char *value = std::getenv("PK_TRIGGER_HASH_SCALAR");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    static const bool little_endian = [] {
+        const uint64_t value = 1;
+        return *reinterpret_cast<const uint8_t *>(&value) == 1;
+    }();
+    uint64_t empty_keys = 0;
     uint64_t h1 = mix_value(FNV_OFFSET, snapshot.generation);
     uint64_t h0 = mix_value(FNV_OFFSET, uint64_t{0});
     auto mix2_bytes = [&](const void *data, size_t size) {
@@ -215,8 +231,26 @@ void hash_snapshot_dual(const RuntimeTriggerSnapshot &snapshot,
         mix2(state.initialized);
         mix2(state.needs_resync);
         if (!state.distinct_keys.empty()) {
-            mix2_bytes(state.distinct_keys.data(),
-                       state.distinct_keys.size() * sizeof(int64_t));
+            if (scalar_distinct) {
+                mix2_bytes(state.distinct_keys.data(),
+                           state.distinct_keys.size() * sizeof(int64_t));
+            } else for (const int64_t key : state.distinct_keys) {
+                if (key == std::numeric_limits<int64_t>::min()) {
+                    // The sentinel contains seven zero bytes and one 0x80.
+                    // FNV-1a over a zero byte is exactly h * prime. Combine
+                    // only that run, preserving every byte and the full hash.
+                    if (little_endian) {
+                        h1 = (h1 * fnv_prime_power(7) ^ uint64_t{0x80}) * FNV_PRIME;
+                        h0 = (h0 * fnv_prime_power(7) ^ uint64_t{0x80}) * FNV_PRIME;
+                    } else {
+                        h1 = (h1 ^ uint64_t{0x80}) * fnv_prime_power(8);
+                        h0 = (h0 ^ uint64_t{0x80}) * fnv_prime_power(8);
+                    }
+                    ++empty_keys;
+                } else {
+                    mix2(key);
+                }
+            }
         }
     }
     for (const RuntimeTriggerBranchBinding &binding : snapshot.branch_bindings) {
@@ -244,6 +278,7 @@ void hash_snapshot_dual(const RuntimeTriggerSnapshot &snapshot,
     }
     hash_with_gen = h1;
     hash_zero_gen = h0;
+    EconomyCostProbe::record("trigger.hash_empty_keys", snapshot.current_day, 0.0, empty_keys);
 }
 
 RuntimeTriggerSnapshot canonicalize_snapshot(const RuntimeTriggerSnapshot &source,
@@ -966,17 +1001,34 @@ bool RuntimeTriggerPodAuthority::plan_day(int64_t day, uint64_t input_generation
     plan.header.day = day;
     plan.header.input_generation = input_generation;
     plan.header.base_generation = _state.generation;
-    copy_trigger_snapshot_reuse_capacity(plan.next_state, _state);
-    std::vector<RuntimeTriggerCommand> ordered = _pending_commands;
-    std::stable_sort(ordered.begin(), ordered.end(),
-        [](const RuntimeTriggerCommand &a, const RuntimeTriggerCommand &b) {
-            return std::tie(a.effective_day, a.producer_id, a.sequence,
-                            a.request_id) <
-                std::tie(b.effective_day, b.producer_id, b.sequence, b.request_id);
-        });
+    {
+        EconomyCostProbe copy_cost("trigger.plan_copy", day, _state.states.size());
+        copy_trigger_snapshot_reuse_capacity(plan.next_state, _state);
+    }
     std::vector<RuntimeTriggerCommand> retained;
-    retained.reserve(ordered.size());
-    for (const RuntimeTriggerCommand &command : ordered) {
+    {
+    EconomyCostProbe command_cost("trigger.commands", day, _pending_commands.size());
+    static const bool scalar_commands = [] {
+        const char *value = std::getenv("PK_TRIGGER_COMMAND_COPY_SCALAR");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    std::vector<RuntimeTriggerCommand> scalar_ordered;
+    std::vector<const RuntimeTriggerCommand *> ordered;
+    if (scalar_commands) {
+        scalar_ordered = _pending_commands;
+        std::stable_sort(scalar_ordered.begin(), scalar_ordered.end(), command_less);
+    } else if (!std::is_sorted(_pending_commands.begin(), _pending_commands.end(), command_less)) {
+        // 命令携带大块 resync 数组；只排序引用，原表到成功 preflight 后才改动。
+        ordered.reserve(_pending_commands.size());
+        for (const auto &command : _pending_commands) ordered.push_back(&command);
+        std::stable_sort(ordered.begin(), ordered.end(), [](const auto *a, const auto *b) {
+            return command_less(*a, *b);
+        });
+    }
+    retained.reserve(_pending_commands.size());
+    for (size_t i = 0; i < _pending_commands.size(); ++i) {
+        const RuntimeTriggerCommand &command = scalar_commands ? scalar_ordered[i]
+            : ordered.empty() ? _pending_commands[i] : *ordered[i];
         if (command.effective_day > day) { retained.push_back(command); continue; }
         if (!apply_command(plan.next_state, command, error)) {
             plan.header.preflight_ok = 0;
@@ -987,6 +1039,17 @@ bool RuntimeTriggerPodAuthority::plan_day(int64_t day, uint64_t input_generation
         }
         plan.consumed_commands.push_back(command);
     }
+    EconomyCostProbe::record("trigger.command_order_copy_bytes", day, 0.0,
+        scalar_ordered.size() * sizeof(RuntimeTriggerCommand));
+    EconomyCostProbe::record("trigger.command_order_reference_bytes", day, 0.0,
+        ordered.size() * sizeof(const RuntimeTriggerCommand *));
+    }
+    static const bool verify_kernel = [] {
+        const char *value = std::getenv("PK_TRIGGER_MEMO_VERIFY");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    RuntimeTriggerSnapshot reference_state;
+    if (verify_kernel) reference_state = plan.next_state;
     std::string kernel_error;
     if (!RuntimeTriggerKernel::evaluate_day(_catalog, plan.next_state, day,
                                             plan.intents, kernel_error)) {
@@ -997,12 +1060,37 @@ bool RuntimeTriggerPodAuthority::plan_day(int64_t day, uint64_t input_generation
         copy_reason(_diagnostics.blocker, error);
         return false;
     }
+    if (verify_kernel) {
+        std::vector<RuntimeTriggerEffectIntent> reference_intents;
+        std::string reference_error;
+        if (!RuntimeTriggerKernel::evaluate_day(_catalog, reference_state, day,
+                reference_intents, reference_error, true) ||
+            hash_snapshot_impl(reference_state) != hash_snapshot_impl(plan.next_state) ||
+            hash_effects(reference_intents) != hash_effects(plan.intents)) {
+            error = "trigger_binding_index_reference_mismatch";
+            return false;
+        }
+    }
     plan.next_state.generation = _state.generation + 1u;
     plan.next_state.committed_day = day;
-    canonicalize_snapshot_in_place(plan.next_state, true);
+    {
+        EconomyCostProbe canonical_cost("trigger.canonicalize", day, plan.next_state.states.size());
+        canonicalize_snapshot_in_place(plan.next_state, true);
+    }
     uint64_t hash_with_gen = 0;
     uint64_t hash_zero_gen = 0;
     hash_snapshot_dual(plan.next_state, hash_with_gen, hash_zero_gen);
+    if (verify_kernel) {
+        const uint64_t reference_with_gen = hash_snapshot_impl(plan.next_state);
+        const uint64_t generation = plan.next_state.generation;
+        plan.next_state.generation = 0;
+        const uint64_t reference_zero_gen = hash_snapshot_impl(plan.next_state);
+        plan.next_state.generation = generation;
+        if (hash_with_gen != reference_with_gen || hash_zero_gen != reference_zero_gen) {
+            error = "trigger_hash_dual_reference_mismatch";
+            return false;
+        }
+    }
     plan.header.state_hash = hash_with_gen;
     plan.header.intent_count = static_cast<uint32_t>(plan.intents.size());
     plan.required_ack_count = static_cast<uint32_t>(plan.intents.size());
@@ -1087,7 +1175,10 @@ bool RuntimeTriggerPodAuthority::commit_day(RuntimeTriggerPodPlan &plan,
         copy_reason(_diagnostics.blocker, error);
         return false;
     }
-    copy_trigger_snapshot_reuse_capacity(_state, plan.next_state);
+    {
+        EconomyCostProbe copy_cost("trigger.commit_copy", plan.header.day, plan.next_state.states.size());
+        copy_trigger_snapshot_reuse_capacity(_state, plan.next_state);
+    }
     _state_hash = plan.header.state_hash != 0
         ? plan.header.state_hash
         : hash_snapshot(_state);
@@ -1124,6 +1215,7 @@ bool RuntimeTriggerPodAuthority::snapshot(RuntimeTriggerSnapshot &out,
                                           std::string &error) const {
     error.clear();
     if (!_bootstrapped) { error = "trigger_pod_not_bootstrapped"; return false; }
+    EconomyCostProbe copy_cost("trigger.snapshot_copy", _state.current_day, _state.states.size());
     copy_trigger_snapshot_reuse_capacity(out, _state);
     return true;
 }
@@ -1443,6 +1535,49 @@ bool RuntimeTriggerPodAuthority::self_test(std::string &error) {
     RuntimeTriggerPodPlan plan; if(!authority.plan_day(0,1,plan,error) || plan.intents.size()!=1 || !authority.commit_day(plan,plan.acks,error)) return false;
     RuntimeTriggerPodSaveSection save; if(!authority.encode_save(save,error)) return false; RuntimeTriggerPodAuthority restored; if(!restored.restore_save(save,catalog,error)) return false;
     if (restored.state_hash() != authority.state_hash()) { error = "trigger_self_test_save_roundtrip_failed"; return false; }
+    {
+        RuntimeTriggerPodAuthority ordering;
+        if (!ordering.bootstrap(initial, catalog, error)) return false;
+        auto enqueue = [&](uint64_t id, int64_t day, uint8_t enabled) {
+            RuntimeTriggerCommand value;
+            value.request_id = id;
+            value.sequence = id;
+            value.requested_day = 0;
+            value.effective_day = day;
+            value.opcode = RuntimeTriggerCommandOpcode::SET_ENABLED;
+            value.trigger_id = 0;
+            value.enabled = enabled;
+            return ordering.queue_command(value, error);
+        };
+        if (!enqueue(99, 2, 0) || !enqueue(10, 1, 0) || !enqueue(2, 1, 0) ||
+            !enqueue(10, 1, 1) || !enqueue(1, 1, 1)) return false;
+        RuntimeTriggerPodPlan ordered_plan;
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            if (!ordering.plan_day(1, 2, ordered_plan, error)) return false;
+            const std::array<uint64_t, 4> ids{1, 2, 10, 10};
+            if (ordered_plan.consumed_commands.size() != ids.size() ||
+                ordered_plan.next_state.enabled[0] != 1) {
+                error = "trigger_command_stable_order_failed";
+                return false;
+            }
+            for (size_t i = 0; i < ids.size(); ++i) {
+                if (ordered_plan.consumed_commands[i].request_id != ids[i]) {
+                    error = "trigger_command_order_failed";
+                    return false;
+                }
+            }
+            if (attempt == 0) ordering.discard_plan();
+        }
+        if (!ordering.commit_day(ordered_plan, {}, error) ||
+            !ordering.plan_day(2, 3, ordered_plan, error) ||
+            ordered_plan.consumed_commands.size() != 1 ||
+            ordered_plan.consumed_commands[0].request_id != 99 ||
+            ordered_plan.next_state.enabled[0] != 0 ||
+            !ordering.commit_day(ordered_plan, {}, error)) {
+            error = "trigger_command_retained_replay_failed";
+            return false;
+        }
+    }
     if (!RuntimeTriggerSnapshotRing::self_test()) { error = "trigger_snapshot_ring_self_test_failed"; return false; }
     return true;
 }

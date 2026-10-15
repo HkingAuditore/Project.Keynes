@@ -83,6 +83,10 @@ struct RuntimeEconomyResourceStore {
     std::vector<int64_t> harvest_remaining;
     std::vector<int64_t> deltas;
     std::vector<uint32_t> lane_generation;
+    // ABI9 原始 FNV 的精确缓存；复制时仅随完全相同的 wire 列转移。
+    mutable bool wire_hash_cached = false;
+    mutable uint64_t wire_hash_stock_revision = 0, wire_hash_cell_revision = 0;
+    mutable uint64_t wire_hash_value = 0;
 
     RuntimeEconomyResourceStore();
     RuntimeEconomyResourceStore(const RuntimeEconomyResourceStore &other);

@@ -7,7 +7,10 @@ var _failures := 0
 
 
 func _init() -> void:
-	_run()
+	call_deferred("_run_and_finish")
+
+func _run_and_finish() -> void:
+	await _run()
 	print("=== authored map: %d checks, %d failures ===" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
 
@@ -108,7 +111,7 @@ func _test_pkmap_roundtrip() -> void:
 		String((loaded.get("header", {}) as Dictionary).get("generator_hash", ""))
 		== SaveRepository.compatibility_hash())
 	var cfg := MapConfig.make(width, height)
-	var assembled: MapData = DCTerrainGenerator.new(null).assemble_native_result(
+	var assembled: MapData = await DCTerrainGenerator.new(null).assemble_native_result(
 		PkmapIOScript.native_result_from_payload(loaded.get("payload", {}), loaded.get("header", {})),
 		cfg)
 	_expect("assemble synthetic pkmap", assembled != null and assembled.cell_count() == width * height)
@@ -140,7 +143,7 @@ func _test_pkmap_bypass() -> void:
 	cfg.pkmap_path = ProjectSettings.globalize_path(path)
 	cfg.sea_level = 0.5
 	cfg.seed = 13
-	var map: MapData = generator._generate_cells_native_base(cfg, 13)
+	var map: MapData = await generator._generate_cells_native_base(cfg, 13)
 	_expect("generate pkmap returns map", map != null)
 	_expect("generate pkmap n_cells", map != null and map.cell_count() == width * height)
 	_expect("generate path=pkmap", String(generator._native_generation_base_report.get("path", "")) == "pkmap")
@@ -148,7 +151,7 @@ func _test_pkmap_bypass() -> void:
 	var procedural := MapConfig.make(width, height)
 	procedural.map_source = "pkmap"
 	procedural.pkmap_path = ""
-	var failed: MapData = generator._generate_cells_native_base(procedural, 13)
+	var failed: MapData = await generator._generate_cells_native_base(procedural, 13)
 	_expect("empty pkmap_path hard-aborts", failed == null)
 	_expect("empty path does not fallback to gdscript generate",
 		String(generator._native_generation_base_report.get("path", "")) == "pkmap")

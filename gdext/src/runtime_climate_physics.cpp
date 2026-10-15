@@ -2124,10 +2124,12 @@ bool RuntimeClimatePhysicsState::validate_values(std::string &error) const {
 bool serialize_physics_state(const RuntimeClimatePhysicsState &s,
                              std::vector<uint8_t> &blob, std::string &error) {
     if (!s.validate(error)) return false;
-    std::vector<uint8_t> out;
-    out.reserve(120u + static_cast<size_t>(s.cell_count) * 4u * kPhysicsLanesV2);
-    auto put = [&out](uint64_t v, int bytes) {
-        for (int i = 0; i < bytes; ++i) out.push_back(static_cast<uint8_t>(v >> (8 * i)));
+    // 校验通过后无其他失败点；复用胶囊容量，避免每天分配并逐字节 push_back。
+    std::vector<uint8_t> &out = blob;
+    out.resize(120u + static_cast<size_t>(s.cell_count) * 4u * kPhysicsLanesV2);
+    size_t offset = 0;
+    auto put = [&out, &offset](uint64_t v, int bytes) {
+        for (int i = 0; i < bytes; ++i) out[offset++] = static_cast<uint8_t>(v >> (8 * i));
     };
     put(0x31504843u, 4); // CHP1，小端显式字段，不序列化结构 padding/指针/缓存。
     put(2, 4); put(static_cast<uint32_t>(s.cell_count), 4);
@@ -2140,10 +2142,20 @@ bool serialize_physics_state(const RuntimeClimatePhysicsState &s,
     put(s.wind_traj_generation, 4);
     put(s.cyclone_total_injected, 8); put(s.cyclone_total_replaced, 8); put(s.cyclone_total_decayed, 8);
     put(s.state_hash(), 8);
-    for (auto member : saved_physics_lanes) for (float v : s.*member) {
-        uint32_t bits; std::memcpy(&bits, &v, sizeof(bits)); put(bits, 4);
+    const uint16_t endian = 1;
+    const bool little_endian = *reinterpret_cast<const uint8_t *>(&endian) == 1;
+    for (auto member : saved_physics_lanes) {
+        const auto &lane = s.*member;
+        if (little_endian) {
+            const size_t bytes = lane.size() * sizeof(float);
+            std::memcpy(out.data() + offset, lane.data(), bytes);
+            offset += bytes;
+        } else {
+            for (float v : lane) {
+                uint32_t bits; std::memcpy(&bits, &v, sizeof(bits)); put(bits, 4);
+            }
+        }
     }
-    blob.swap(out);
     error.clear();
     return true;
 }

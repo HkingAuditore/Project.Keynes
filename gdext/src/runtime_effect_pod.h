@@ -374,6 +374,9 @@ struct RuntimeEffectPodReport {
 
 class RuntimeEffectPodAuthority {
 public:
+    static uint64_t calculate_plan_hash(int64_t source_id, uint32_t generation,
+        int64_t day, uint64_t fire_sequence,
+        const std::vector<RuntimeEffectPodCommand> &commands) noexcept;
     RuntimeEffectPodAuthority();
 
     void reset(uint32_t instance_capacity = 4096u,

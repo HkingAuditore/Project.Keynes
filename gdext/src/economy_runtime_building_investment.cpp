@@ -1,6 +1,7 @@
 #include "economy_runtime.h"
 #include "economy_cost_probe.h"
 #include "country_runtime.h"
+#include "parallel_dispatcher.h"
 
 #include <algorithm>
 #include <array>
@@ -1292,9 +1293,61 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
     if (seeded_good_stamp.size() < _good_ids.size()) {
         seeded_good_stamp.assign(_good_ids.size(), 0);
     }
-    LivingCostMemoScope memo(*this);
+    const char *workset_disabled = std::getenv("PK_ECONOMY_ACTIVE_WORKSET_DISABLE");
+    const bool use_snapshot = !(workset_disabled && std::strcmp(workset_disabled, "1") == 0);
+    // capture_country_epoch 已完成，后面的派生传播不修改国家科技。这里可在
+    // _epoch_active 置位之前复用同一冻结掩码，避免每个组件再查询国家运行时。
+    LivingCostMemoScope memo(*this, false, use_snapshot);
     StartupProducerMemoScope startup_memo(*this);
-    for (const int32_t cell : _economy_live_cells) {
+    const int32_t cells = static_cast<int32_t>(_economy_live_cells.size());
+    const int32_t preview_tasks = use_snapshot && _worker_enabled && cells >= 2 &&
+            parallel_has_real_worker_threads()
+        ? std::min({cells, _worker_task_cap, _worker_tasks_hint > 0 ? _worker_tasks_hint : 8}) : 1;
+    auto &previews = _derived_household_preview_scratch;
+    if (preview_tasks > 1) {
+        previews.resize(static_cast<size_t>(cells));
+        for (auto &preview : previews) preview.ready = false;
+        const auto prepare = [&](int32_t first, int32_t last) {
+            LivingCostMemoScope worker_memo(*this, false, true);
+            thread_local std::vector<int64_t> actor_preview;
+            for (int32_t relative = first; relative < last; ++relative) {
+                const int32_t cell = _economy_live_cells[relative];
+                if (cell < 0 || cell >= _cell_count.get()) continue;
+                const int32_t market = market_store().cell_to_market[cell];
+                if (market < 0) continue;
+                bool has_seed = _market_signals.cell_offsets.size() ==
+                        static_cast<size_t>(_cell_count.get() + 1) &&
+                    _market_signals.cell_offsets[cell] < _market_signals.cell_offsets[cell + 1];
+                if (!has_seed) {
+                    const uint64_t first_key = static_cast<uint64_t>(static_cast<uint32_t>(cell)) << 32;
+                    const auto key = std::lower_bound(_trade_active_keys.begin(), _trade_active_keys.end(), first_key);
+                    has_seed = key != _trade_active_keys.end() && (*key >> 32) == static_cast<uint32_t>(cell);
+                }
+                if (!has_seed) continue;
+                auto &out = previews[relative];
+                out.goods.assign(market_store().good_count.get(), 0);
+                out.saturations = 0;
+                const EnvironmentSample environment = environment_sample_for_cell(cell);
+                population_store().for_each_in_cell(cell, [&](int32_t slot) {
+                    if (slot < 0 || slot >= static_cast<int32_t>(population_store().population.size()) ||
+                            population_store().population[slot] <= 0) return;
+                    int64_t actor_sat = 0;
+                    compute_cohort_demand_preview(slot, market, environment, nullptr,
+                        population_store().funds[slot], actor_preview, actor_sat);
+                    for (size_t lane = 0; lane < actor_preview.size(); ++lane)
+                        out.goods[lane] = saturating_add(out.goods[lane], saturating_mul(
+                            std::max<int64_t>(0, actor_preview[lane]), population_store().population[slot],
+                            out.saturations), out.saturations);
+                });
+                out.ready = true;
+            }
+        };
+        EconomyCostProbe probe("derived.household_prepare", _current_day.get(), cells);
+        parallel_for_range("pk_economy_derived_household", cells, preview_tasks, 2, prepare);
+    }
+    // 只并行只读预估；生产者选择、稀疏信号插入与所有累计仍按原 cell 顺序重放。
+    for (int32_t relative = 0; relative < cells; ++relative) {
+        const int32_t cell = _economy_live_cells[relative];
         if (cell < 0 || cell >= _cell_count.get()) continue;
         ++_investment_review_stamp_generation;
         if (_investment_review_stamp_generation == 0) {
@@ -1314,6 +1367,8 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
         // 同一冻结地块的完整需求预览只计算一次，各商品保持原 cohort 汇总顺序。
         thread_local std::vector<int64_t> household_demand_by_good;
         household_demand_by_good.assign(market_store().good_count.get(), 0);
+        const DerivedHouseholdPreview *prepared = preview_tasks > 1 && previews[relative].ready
+            ? &previews[relative] : nullptr;
         bool household_preview_ready = false;
         auto seed_good = [&](int32_t good) {
             if (good >= 0 && good < static_cast<int32_t>(seeded_good_stamp.size())) {
@@ -1323,6 +1378,9 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
             const int32_t market = market_store().cell_to_market[cell];
             if (!household_preview_ready && market >= 0 && good >= 0) {
                 household_preview_ready = true;
+                if (prepared != nullptr) {
+                    sat += prepared->saturations;
+                } else {
                 thread_local std::vector<int64_t> preview;
                 population_store().for_each_in_cell(cell, [&](int32_t slot) {
                     if (slot < 0 || slot >= static_cast<int32_t>(
@@ -1342,10 +1400,11 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
                                 population_store().population[slot], sat), sat);
                     }
                 });
+                }
             }
-            const int64_t household_demand = good >= 0 &&
-                    good < static_cast<int32_t>(household_demand_by_good.size())
-                ? household_demand_by_good[good] : 0;
+            const auto &household = prepared != nullptr ? prepared->goods : household_demand_by_good;
+            const int64_t household_demand = good >= 0 && good < static_cast<int32_t>(household.size())
+                ? household[good] : 0;
             const int64_t index = market >= 0
                 ? market_store().index(market, good) : -1;
             const int64_t stored_demand = index >= 0 && index <

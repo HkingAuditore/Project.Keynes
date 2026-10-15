@@ -2,12 +2,43 @@
 #include <cassert>
 #include <iostream>
 #include <limits>
+#include <fstream>
 
 namespace pk {
 struct EconomyPricingTests {
+    static void vectors(const char *path) {
+        std::ifstream input(path);
+        assert(input.good());
+        int64_t a, b, d, expected_mul, mul_sat, expected_div, div_sat;
+        char separator;
+        size_t count = 0;
+        while (input >> a >> separator >> b >> separator >> d >> separator >>
+                expected_mul >> separator >> mul_sat >> separator >> expected_div >> separator >> div_sat) {
+            int64_t actual_mul_sat = 0, actual_div_sat = 0;
+            assert(NativeEconomyRuntime::saturating_mul(a, b, actual_mul_sat) == expected_mul);
+            assert(actual_mul_sat == mul_sat);
+            assert(NativeEconomyRuntime::mul_div_sat(a, b, d, actual_div_sat) == expected_div);
+            assert(actual_div_sat == div_sat);
+            ++count;
+        }
+        assert(count >= 20000);
+        std::cout << "Fixed math bigint oracle: " << count << " vectors passed\n";
+    }
     static void run() {
         int64_t sat = 0;
         using R = NativeEconomyRuntime;
+        for (int64_t value : {std::numeric_limits<int64_t>::min(), int64_t{-1},
+                int64_t{0}, int64_t{1}, std::numeric_limits<int64_t>::max()}) {
+            for (int64_t divisor : {std::numeric_limits<int64_t>::min(), int64_t{-65536},
+                    int64_t{-1}, int64_t{1}, int64_t{65536},
+                    std::numeric_limits<int64_t>::max()}) {
+                int64_t previous_saturations = 17;
+                assert(R::mul_div_sat(value, divisor, divisor, previous_saturations) == value);
+                assert(previous_saturations == 17);
+                assert(R::mul_div_sat(divisor, value, divisor, previous_saturations) == value);
+                assert(previous_saturations == 17);
+            }
+        }
         assert(R::inventory_adjusted_cost_pressure(32768, 0, sat) == 32768);
         assert(R::inventory_adjusted_cost_pressure(32768, -32768, sat) == 16384);
         assert(R::inventory_adjusted_cost_pressure(32768, -65536, sat) == 0);
@@ -100,4 +131,7 @@ struct EconomyPricingTests {
     }
 };
 }
-int main() { pk::EconomyPricingTests::run(); }
+int main(int argc, char **argv) {
+    pk::EconomyPricingTests::run();
+    if (argc > 1) pk::EconomyPricingTests::vectors(argv[1]);
+}

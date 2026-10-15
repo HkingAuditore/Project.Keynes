@@ -1,4 +1,5 @@
 #include "runtime_climate_kernel.h"
+#include "economy_cost_probe.h"
 #include "runtime_climate_formulas.h"
 // S3：生产 Climate pass 的共享纯内核。worker 不再维护第二套 stage 实现。
 #include "runtime_climate_parity.h"
@@ -9,6 +10,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
@@ -50,10 +52,11 @@ void copy_error(RuntimeClimateKernelReport &report, const char *error) {
 
 template <typename T>
 void copy_lane(std::vector<T> &destination, const std::vector<T> &source) {
-    std::copy(source.begin(), source.end(), destination.begin());
+    destination.assign(source.begin(), source.end());
 }
 
-void copy_store_lanes(RuntimeClimateStore &next, const RuntimeClimateStore &current) {
+void copy_store_lanes(RuntimeClimateStore &next, const RuntimeClimateStore &current,
+                      bool reuse_committed_history = false, bool visible_only = false) {
     copy_lane(next.temperature, current.temperature);
     copy_lane(next.temperature_30d_ema, current.temperature_30d_ema);
     copy_lane(next.temperature_365d_ema, current.temperature_365d_ema);
@@ -98,7 +101,47 @@ void copy_store_lanes(RuntimeClimateStore &next, const RuntimeClimateStore &curr
     copy_lane(next.base_vegetation, current.base_vegetation);
     copy_lane(next.terrain, current.terrain);
     copy_lane(next.cover, current.cover);
-    copy_lane(next.temperature_history, current.temperature_history);
+    static const bool full_history = [] {
+        const char *value = std::getenv("PK_CLIMATE_HISTORY_COPY_FULL");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    static const bool verify_history = [] {
+        const char *value = std::getenv("PK_CLIMATE_HISTORY_COPY_VERIFY");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    const uint64_t gap = current.generation >= next.generation
+        ? current.generation - next.generation : UINT64_MAX;
+    const uint32_t cursor_gap = (current.history_cursor + 365u - next.history_cursor) % 365u;
+    const bool incremental = reuse_committed_history && !full_history &&
+        next.generation != 0 && gap < 365u && cursor_gap <= gap &&
+        next.cell_count == current.cell_count &&
+        current.temperature_history.size() == static_cast<size_t>(current.cell_count) * 365u &&
+        next.temperature_history.size() == current.temperature_history.size();
+    size_t history_copied = current.temperature_history.size();
+    if (visible_only) {
+        next.temperature_history.clear();
+        history_copied = 0;
+    } else if (incremental) {
+        // 每次提交至多推进一行；即使有空跑日，最后 gap 行也覆盖所有变化。
+        // 双缓冲重试的 speculative next 比 current 新，必须走完整恢复。
+        history_copied = static_cast<size_t>(gap) * current.cell_count;
+        for (uint64_t step = 0; step < gap; ++step) {
+            const size_t row = (current.history_cursor + 365u - gap + step) % 365u;
+            const size_t offset = row * current.cell_count;
+            std::copy_n(current.temperature_history.data() + offset,
+                current.cell_count, next.temperature_history.data() + offset);
+        }
+    } else {
+        copy_lane(next.temperature_history, current.temperature_history);
+    }
+    if (!visible_only && incremental && verify_history && !current.temperature_history.empty() &&
+            std::memcmp(next.temperature_history.data(), current.temperature_history.data(),
+                current.temperature_history.size() * sizeof(float)) != 0) {
+        std::fprintf(stderr, "[climate-history-copy-mismatch] day=%lld gap=%llu\n",
+            static_cast<long long>(current.committed_day), static_cast<unsigned long long>(gap));
+        std::abort();
+    }
+    EconomyCostProbe::record("climate.history_copied_lanes", current.committed_day, 0.0, history_copied);
     next.cell_count = current.cell_count;
     next.generation = current.generation;
     next.climate_generation = current.climate_generation;
@@ -619,6 +662,7 @@ bool runtime_climate_stage_sequence_is_canonical(
 }
 
 void RuntimeClimateKernel::reset(uint32_t) {
+    invalidate_committed_physics();
     // 换图 / authority reset 后，weather field_init 的"已播种"标记必须一起清掉。
     _weather_field_init_seeded = false;
     // B8 P2：物理常驻状态整份丢弃（含派生缓存指纹），下次 plan_day 按新 shape 重建。
@@ -772,7 +816,7 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                                     RuntimeClimateStore &next,
                                     RuntimeClimateKernelReport &report,
                                     bool compute_state_hash,
-                                    bool validate_input) const {
+                                    bool validate_input, bool reuse_committed_history) const {
     report = RuntimeClimateKernelReport{};
     struct DiagStageTrace {
         std::string line; int64_t day;
@@ -830,7 +874,7 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
     }
     // next 是可丢弃工作区。上次失败留下的无效值不能阻止从有效 current 重试。
     if (!next.validate_shape(next_error)) next.reset(current.cell_count);
-    copy_store_lanes(next, current);
+    copy_store_lanes(next, current, reuse_committed_history);
     {
         const bool own_extras = input.climate_worker_authoritative &&
             current.committed_day >= 0;
@@ -845,19 +889,78 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
     }
     const std::vector<float> &soil_in =
         !_committed_soil.empty() ? _committed_soil : input.cell_soil_moisture;
-    // 每次计划从提交态恢复；kernel 成员只是工作区，discard/retry 不推进权威。
-    if (!pk_async_physics::restore_physics_state(current.physics_state.data(),
-            current.physics_state.size(), _physics, error)) {
-        copy_error(report, error.c_str()); return false;
+    static const bool full_physics = [] {
+        const char *value = std::getenv("PK_CLIMATE_PHYSICS_RESTORE_FULL");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    const bool reuse_physics = reuse_committed_history && !full_physics &&
+        _committed_physics_owner == &current &&
+        _committed_physics_generation == current.generation &&
+        _physics.cell_count == static_cast<int>(current.cell_count) &&
+        !current.physics_state.empty();
+    const auto &physics_knobs = input.climate_physics_knobs;
+    const auto &physics_terrain = input.climate_worker_authoritative &&
+        current.committed_day >= 0 && current.terrain.size() == current.cell_count
+        ? current.terrain : input.terrain;
+    const std::array<double, 3> traj_knobs{physics_knobs.wrap_period_x,
+        double(physics_knobs.wind_traj_pos_scale), double(physics_knobs.wind_traj_dt_days)};
+    const bool same_neighbors = _physics_cache_keys_valid &&
+        _physics_cache_neighbors == input.neighbor_indices;
+    const bool same_geometry = same_neighbors &&
+        _physics_cache_terrain == physics_terrain &&
+        _physics_cache_water_ids == physics_knobs.water_terrain_ids;
+    auto same_float_bits = [](const std::vector<float> &a, const std::vector<float> &b) {
+        return a.size() == b.size() && (a.empty() ||
+            std::memcmp(a.data(), b.data(), a.size() * sizeof(float)) == 0);
+    };
+    const bool same_trajectory_inputs = same_neighbors &&
+        same_float_bits(_physics_cache_pos_x, input.cell_pos_x) &&
+        same_float_bits(_physics_cache_pos_y, input.cell_pos_y) &&
+        std::memcmp(_physics_cache_traj_knobs.data(), traj_knobs.data(), sizeof(traj_knobs)) == 0;
+    _committed_physics_owner = nullptr;
+    _planned_physics_generation = 0;
+    {
+        EconomyCostProbe probe("climate.physics_restore", day, reuse_physics ? 0 : 1);
+        // 与提交胶囊完全相同的 canonical lanes 可驻留；禁止复用 speculative 计划。
+        if (!reuse_physics && !pk_async_physics::restore_physics_state(current.physics_state.data(),
+                current.physics_state.size(), _physics, error)) {
+            copy_error(report, error.c_str()); return false;
+        }
+        if (reuse_physics) {
+            _physics.wind_speed_out = _physics.wind_speed;
+            // 邻居/地形/水域分类逐值匹配；海冰翻转当天立即重建。
+            _physics.topo_valid &= same_geometry;
+            _physics.coast_valid &= same_geometry;
+            // wind_prepass 每次改风都会更新或废弃轨迹。这里另核对地图坐标和配置。
+            _physics.wind_traj_valid &= same_trajectory_inputs;
+        }
     }
     if (current.physics_state.empty()) _physics.resize(static_cast<int>(current.cell_count));
     if (_physics.cell_count != static_cast<int>(current.cell_count)) {
         copy_error(report, "physics_store_shape_mismatch"); return false;
     }
     const bool physics_owned = physics_inputs_ready(input, current.cell_count);
-    if (physics_owned && !physics_prepass(day, input, current, _physics, error)) {
-        copy_error(report, error.c_str()); return false;
+    {
+        EconomyCostProbe probe("climate.physics_prepass", day, current.cell_count);
+        EconomyCostProbe cache_probe("climate.physics_geometry_reused", day,
+            physics_owned && _physics.topo_valid && _physics.coast_valid ? 1 : 0);
+        if (physics_owned && !physics_prepass(day, input, current, _physics, error)) {
+            copy_error(report, error.c_str()); return false;
+        }
     }
+    if (physics_owned) {
+        if (!same_geometry) {
+            _physics_cache_terrain = physics_terrain;
+            _physics_cache_water_ids = physics_knobs.water_terrain_ids;
+        }
+        if (!same_neighbors) _physics_cache_neighbors = input.neighbor_indices;
+        if (!same_trajectory_inputs) {
+            _physics_cache_pos_x = input.cell_pos_x;
+            _physics_cache_pos_y = input.cell_pos_y;
+            _physics_cache_traj_knobs = traj_knobs;
+        }
+        _physics_cache_keys_valid = true;
+    } else _physics_cache_keys_valid = false;
     if (physics_owned) report.work_units += uint64_t(current.cell_count) *
         (uint64_t(_physics.last_slp_day == day) + uint64_t(_physics.last_wind_day == day) +
          2u * uint64_t(_physics.last_ocean_day == day));
@@ -1152,7 +1255,18 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             }
         }
     }
-    report.input_hash = input_hash(input);
+    {
+        EconomyCostProbe probe("climate.input_hash", day, current.cell_count);
+        static const bool full_input_hash = [] {
+            const char *value = std::getenv("PK_CLIMATE_INPUT_HASH_FULL");
+            return value && std::strcmp(value, "1") == 0;
+        }();
+        // 仅消费 Host 已校验并冻结的副本；公开 kernel/独立对拍仍完整重算。
+        const bool sealed = reuse_committed_history && !validate_input && !full_input_hash &&
+            input.sealed_climate_input_hash != 0;
+        report.input_hash = sealed ? input.sealed_climate_input_hash : input_hash(input);
+        EconomyCostProbe::record("climate.input_hash_precomputed", day, 0.0, sealed ? 1 : 0);
+    }
     // 生产这一天跑了哪些 stage。与下面累积的 report.stage_ran_mask 的差集就是
     // "生产算了、worker 没算"——分叉矩阵里 stage 9..13 的字段全靠它归因。
     report.production_stage_mask = input.climate_production_stage_mask;
@@ -1198,6 +1312,7 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
         next.committed_day = day;
         ++next.generation;
         ++next.climate_generation;
+        _planned_physics_generation = next.generation;
         report.completed = 1;
         if (compute_state_hash) report.state_hash = next.state_hash();
         return true;
@@ -2950,9 +3065,13 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
     }
     if (physics_owned && shared_round_ran && _round_out.ocean_thermal_anomaly.size() == cells)
         _physics.ocean_thermal_anomaly = _round_out.ocean_thermal_anomaly;
-    if (!pk_async_physics::serialize_physics_state(_physics, next.physics_state, error)) {
-        copy_error(report, error.c_str()); return false;
+    {
+        EconomyCostProbe probe("climate.physics_serialize", day, next.physics_state.size());
+        if (!pk_async_physics::serialize_physics_state(_physics, next.physics_state, error)) {
+            copy_error(report, error.c_str()); return false;
+        }
     }
+    _planned_physics_generation = next.generation;
     if (compute_state_hash) report.state_hash = next.state_hash();
     // B8-2：把 cyclone 的累计动作数与当前存活数无条件写进 report。weather 是
     // 节拍制 —— 只跑 round 的那天（stage_ran_mask=0xFF）根本不会进 genesis 段，
@@ -2966,12 +3085,137 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
     return true;
 }
 
+void RuntimeClimateKernel::copy_visible_store(RuntimeClimateStore &destination,
+        const RuntimeClimateStore &source) {
+    copy_store_lanes(destination, source, false, true);
+}
+
 void RuntimeClimateKernel::commit(RuntimeClimateStore &current, RuntimeClimateStore &next) {
     using std::swap;
     swap(current, next);
 }
 
+void RuntimeClimateKernel::invalidate_committed_physics() {
+    _committed_physics_owner = nullptr;
+    _committed_physics_generation = 0;
+    _planned_physics_generation = 0;
+    _physics_cache_keys_valid = false;
+}
+
+void RuntimeClimateKernel::accept_committed_physics(const RuntimeClimateStore &store) {
+    if (_planned_physics_generation == store.generation && !store.physics_state.empty()) {
+        _committed_physics_owner = &store;
+        _committed_physics_generation = store.generation;
+    } else {
+        invalidate_committed_physics();
+    }
+    _planned_physics_generation = 0;
+}
+
 bool RuntimeClimateKernel::self_test(std::string &error) {
+    // 驻留缓存与完整解码逐日对拍，覆盖空闲日、海陆翻转、邻接、坐标与轨迹参数变化。
+    {
+        constexpr int n = 4;
+        RuntimeEnvironmentSnapshot in;
+        in.generation = 1; in.cell_count = n; in.day = 0;
+        in.climate_catalog_hash = 7;
+        in.climate_worker_authoritative = true;
+        in.terrain = {1, 0, 0, 1}; in.is_water = {0, 1, 1, 0};
+        in.landform.assign(n, 0);
+        in.cell_temp.assign(n, 0.5f); in.cell_moisture.assign(n, 0.5f);
+        in.cell_plant_available_water.assign(n, 0.5f);
+        in.cell_pos_x = {0, 1, 2, 3}; in.cell_pos_y.assign(n, 0.5f);
+        in.cell_lat_norm.assign(n, 0.5f); in.cell_elevation.assign(n, 0.1f);
+        in.cell_temperature_transport_anomaly.assign(n, 0.0f);
+        in.cell_wind_x.assign(n, 1.0f); in.cell_wind_y.assign(n, 0.0f);
+        in.cell_wind_speed.assign(n, 0.5f);
+        in.cell_ocean_current_x.assign(n, 0.0f); in.cell_ocean_current_y.assign(n, 0.0f);
+        in.neighbor_indices.assign(n * 6, -1);
+        for (int i = 0; i < n; ++i) {
+            if (i > 0) in.neighbor_indices[i * 6] = i - 1;
+            if (i + 1 < n) in.neighbor_indices[i * 6 + 1] = i + 1;
+        }
+        auto &k = in.climate_physics_knobs;
+        k.enabled = true; k.ready = 1; k.water_id_count = 4;
+        k.water_terrain_ids = {0, 3, 4, 5};
+        k.wind_traj_table_enabled = 1; k.wind_momentum_advect_w = 0.1f;
+        k.daily_period_days = 2;
+        RuntimeClimateKernel cached;
+        RuntimeClimateStore current, next;
+        current.reset(n); next.reset(n); current.terrain = in.terrain;
+        RuntimeClimateCatalog catalog;
+        if (!cached.compile_catalog(in, catalog, error)) return false;
+        for (int day = 0; day < 20; ++day) {
+            in.day = day; ++in.generation;
+            if (day == 4) { current.terrain[0] = 0; in.terrain[0] = 0; }
+            if (day == 6) in.neighbor_indices[1] = 2;
+            if (day == 8) in.cell_pos_x[1] = 1.25f;
+            if (day == 10) k.wind_traj_dt_days = 12.0f;
+            if (day == 12) k.wrap_period_x = 4.0;
+            if (day == 14) k.water_terrain_ids[1] = 1;
+            RuntimeClimateKernel reference = cached;
+            RuntimeClimateStore expected = next;
+            RuntimeClimateKernelReport got_report, expected_report;
+            if (!cached.plan_day(day, in, catalog, current, next, got_report, false, false, true) ||
+                !reference.plan_day(day, in, catalog, current, expected, expected_report, false, false, false) ||
+                next.state_hash() != expected.state_hash() ||
+                cached._physics.wind_traj_idx != reference._physics.wind_traj_idx ||
+                cached._physics.wind_traj_w != reference._physics.wind_traj_w ||
+                cached._physics.coast_dist != reference._physics.coast_dist ||
+                cached._physics.cell_to_water != reference._physics.cell_to_water) {
+                error = "climate_resident_cache_invalidation_mismatch:" + std::to_string(day) +
+                    ":" + got_report.error + ":" + expected_report.error;
+                return false;
+            }
+            commit(current, next);
+            cached.accept_committed_physics(current);
+            if (day == 16) cached.invalidate_committed_physics();
+        }
+    }
+    {
+        RuntimeClimateStore source;
+        source.reset(3);
+        source.generation = 1;
+        source.history_cursor = 350; // 很快跨过第 365 行。
+        RuntimeClimateStore copied = source;
+        for (uint64_t step = 1; step <= 400; ++step) {
+            if (step == 300) {
+                source.reset(3); // 跨恢复/新世界，禁止用旧缓冲的历史。
+                std::fill(source.temperature_history.begin(), source.temperature_history.end(), 0.25f);
+            }
+            source.generation += step == 200 ? 400 : 1;
+            source.committed_day = static_cast<int64_t>(step);
+            if (step % 3 != 0) {
+                const size_t offset = static_cast<size_t>(source.history_cursor) * source.cell_count;
+                std::fill_n(source.temperature_history.begin() + offset, source.cell_count,
+                    static_cast<float>(step) / 500.0f);
+                source.history_cursor = (source.history_cursor + 1u) % 365u;
+            }
+            if (step % 4 == 0) continue; // 模拟发布槽落后多轮。
+            if (step == 89) {
+                copied.generation = source.generation + 1; // speculative retry。
+                copied.temperature_history[0] = -1.0f;
+            }
+            copy_store_lanes(copied, source, true);
+            if (copied.state_hash() != source.state_hash()) {
+                error = "climate_incremental_history_copy_mismatch";
+                return false;
+            }
+        }
+        source.physics_state = {1, 2, 3};
+        source.cyclone_state = {4, 5};
+        RuntimeClimateStore visible;
+        copy_visible_store(visible, source);
+        if (!visible.temperature_history.empty()) {
+            error = "climate_visible_snapshot_copied_private_history";
+            return false;
+        }
+        visible.temperature_history = source.temperature_history;
+        if (visible.state_hash() != source.state_hash()) {
+            error = "climate_visible_snapshot_lost_public_fields";
+            return false;
+        }
+    }
     if (!climate_formula::self_test()) {
         error = "climate_formula_self_test_failed";
         return false;

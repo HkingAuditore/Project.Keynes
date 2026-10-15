@@ -126,7 +126,7 @@ func _advance(host: WorldRuntimeHost, clock: WorldClock, generator,
 		generator.get_economy_report().get("newest_state_day", -1))
 	var last_day_msec := Time.get_ticks_msec()
 	var started_msec := last_day_msec
-	var thread_start: Dictionary = generator.get_runtime_perf_snapshot(0)
+	var thread_start: Dictionary = generator.get_runtime_thread_report()
 	var worker_start := int(thread_start.get("simulation_committed_day", -1))
 	var worker_target := worker_start + int(_result["requested_days"])
 	var worker_end := worker_start
@@ -150,10 +150,6 @@ func _advance(host: WorldRuntimeHost, clock: WorldClock, generator,
 			thread_start = progress
 			started_msec = Time.get_ticks_msec()
 			measuring = true
-		if measuring and worker_start >= 0 and worker_end >= worker_target:
-			break
-		if worker_start < 0 and clock.day_index() >= target_day:
-			break
 		var economy: Dictionary = generator.get_economy_perf_report()
 		var worker_fault := int(progress.get("worker_fault_count", 0)) > 0 \
 			or bool(progress.get("economy_authority_fault_paused", false)) \
@@ -168,6 +164,10 @@ func _advance(host: WorldRuntimeHost, clock: WorldClock, generator,
 			_fail("economy_fatal:%s" % String(economy.get("fatal_reason",
 				progress.get("fault_code", "unknown"))))
 			return
+		if measuring and worker_start >= 0 and worker_end >= worker_target:
+			break
+		if worker_start < 0 and clock.day_index() >= target_day:
+			break
 		var day := worker_end if worker_start >= 0 else clock.day_index()
 		var now := Time.get_ticks_msec()
 		if day != last_day:
@@ -264,6 +264,8 @@ func _restore_defect(generator) -> String:
 	# 是否真的在跑由 _advance 结束时的 _worker_defect 判定。
 	if String(thread.get("simulation_host_state", "")) == "FAULTED":
 		return "restore_worker_faulted:%s" % String(thread.get("fault_code", ""))
+	if int(thread.get("worker_fault_count", 0)) > 0:
+		return "restore_worker_start_failed:%s" % String(thread.get("fault_code", ""))
 	return ""
 
 
@@ -281,12 +283,36 @@ func _worker_defect(generator) -> String:
 func _dump_full_thread_report(generator) -> void:
 	if not generator.has_method("get_runtime_thread_report"):
 		return
+	var report: Dictionary = generator.get_runtime_thread_report()
+	_result["economy_formula_backing"] = String(report.get("economy_formula_backing", ""))
+	_result["economy_pending_command_count"] = int(report.get("economy_pending_command_count", -1))
+	_result["economy_authority_switch_count"] = int(report.get("economy_authority_switch_count", 0))
+	var economy: Dictionary = generator.get_economy_report()
+	_result["economy_cadence"] = {
+		"market_days": int(economy.get("locked_market_cycle_days", 0)),
+		"plan_days": int(economy.get("locked_plan_cycle_days", 0)),
+		"investment_days": int(economy.get("locked_investment_cycle_days", 0)),
+		"forced": bool(economy.get("cadence_forced", false)),
+	}
+	if _env("PK_SAVE_REPLAY_REQUIRE_STAGE_TIMINGS", "0") == "1":
+		for stage in ["building_employment", "building_production", "building_plan"]:
+			var field := "last_completed_%s_ms" % stage
+			if float(economy.get(field, 0.0)) <= 0.0:
+				_failures.append("stage_timing_missing:%s" % stage)
+	if _env("PK_SAVE_REPLAY_REQUIRE_OWNED", "0") == "1" \
+			and _result["economy_formula_backing"] != "owned_state":
+		_failures.append("economy_owned_state_not_active")
 	var path := ProjectSettings.globalize_path("res://").path_join(
 		"..\\..\\tmp\\save_replay_thread_report.json").simplify_path()
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
-		return
-	var report: Dictionary = generator.get_runtime_thread_report()
+		_result["thread_report_error"] = error_string(FileAccess.get_open_error())
+		# 固定取证文件可能被外部查看器短暂占用；独立副本不影响测速窗口。
+		path = "user://diagnostics/save_replay_thread_%d.json" % Time.get_ticks_usec()
+		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("user://diagnostics"))
+		file = FileAccess.open(path, FileAccess.WRITE)
+		if file == null:
+			return
 	# 跨域资产事务（财政/研究/cohort 现金）的 D7 协议状态不在 thread report 里，
 	# 而经济卡在 *_peer_pending 时答案往往就在这里。
 	var ext = generator.get_data_core_world_ext() \
@@ -296,7 +322,7 @@ func _dump_full_thread_report(generator) -> void:
 	report["economy_report"] = generator.get_economy_report()
 	file.store_string(JSON.stringify(report, "  "))
 	file.close()
-	_result["thread_report"] = path
+	_result["thread_report"] = ProjectSettings.globalize_path(path)
 
 
 func _wait_for_runtime() -> WorldRuntimeHost:
@@ -306,8 +332,15 @@ func _wait_for_runtime() -> WorldRuntimeHost:
 		if scene == null or not scene is PlayerGame:
 			continue
 		var host := scene.get_node_or_null("RuntimeHost") as WorldRuntimeHost
+		if _env("PK_SAVE_REPLAY_READY_DIAG", "0") == "1" and _frame % 300 == 0 \
+				and host != null and host.generator() != null:
+			print("[save-replay/ready] ", JSON.stringify(host.generator().get_runtime_thread_report()))
 		if host != null and host.current_map() != null and host.generator() != null \
 				and bool(host.generator().gameplay_start_report().get("ok", false)):
+			# Restore publishes its map before the deferred worker start. Do not
+			# count the restored day jump from worker day 0 as simulated progress.
+			if not host.is_runtime_ready_for_ticks():
+				continue
 			await get_tree().process_frame
 			return host
 	return null

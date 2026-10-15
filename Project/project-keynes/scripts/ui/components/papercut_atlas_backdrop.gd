@@ -1,66 +1,71 @@
 extends Control
 class_name PapercutAtlasBackdrop
 
-const PapercutReliefShader := preload("res://shaders/papercut_relief_map.gdshader")
+const SeaChartShader := preload("res://shaders/sea_chart_astrolabe.gdshader")
 
-var _mat: ShaderMaterial
-var _parallax_current := Vector2.ZERO
-var _parallax_target := Vector2.ZERO
-var _focus_blend := 0.0
-var _focus_target := 0.0
+var _sea_chart: ColorRect
+var _sea_mat: ShaderMaterial
+var _stage: PaperAtlasStage
+var _page := "home"
+var _loading := false
 
 
 func _ready() -> void:
-	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_mat = ShaderMaterial.new()
-	_mat.shader = PapercutReliefShader
-	_mat.set_shader_parameter("seed_val", 29.0)
-	_mat.set_shader_parameter("num_continents", 2)
-	_mat.set_shader_parameter("continent_size", 0.58)
-	_mat.set_shader_parameter("sea_level", 0.45)
-	_mat.set_shader_parameter("continent_spacing", 0.78)
-	_mat.set_shader_parameter("island_amount", 0.48)
-	_mat.set_shader_parameter("wetness", 0.62)
-	_mat.set_shader_parameter("river_density", 0.65)
-	_mat.set_shader_parameter("lake_density", 0.45)
-	_mat.set_shader_parameter("map_center_bias", Vector2(0.66, 0.50))
-	_mat.set_shader_parameter("compass_uv", Vector2(0.68, 0.50))
-	_mat.set_shader_parameter("compass_scale", 0.27)
-	_mat.set_shader_parameter("show_outer_frame", true)
-	material = _mat
-	set_process(true)
+	mouse_filter = MOUSE_FILTER_IGNORE
+	_sea_chart = ColorRect.new()
+	_sea_chart.mouse_filter = MOUSE_FILTER_IGNORE
+	_sea_chart.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_sea_mat = ShaderMaterial.new()
+	_sea_mat.shader = SeaChartShader
+	_sea_chart.material = _sea_mat
+	add_child(_sea_chart)
+
+	_stage = PaperAtlasStage.new()
+	_stage.hero = not _loading
+	_stage.interactive_parallax = not _loading
+	add_child(_stage)
+
 	resized.connect(_sync_viewport_size)
+	visibility_changed.connect(_sync_motion_state)
 	_sync_viewport_size()
+	_sync_motion_state()
 
 
 func set_page_mode(page_key: String) -> void:
-	_focus_target = 0.0 if page_key == "home" else 1.0
+	_page = page_key
+	if _stage != null:
+		_stage.visible = page_key == "home" or _loading
+		_stage.interactive_parallax = (page_key == "home") and not _loading
+	_sync_viewport_size()
+
+
+func _sync_motion_state() -> void:
+	if _sea_mat != null:
+		_sea_mat.set_shader_parameter("motion_scale", 0.0 if UIAnimation.reduced_motion() else 1.0)
 
 
 func _sync_viewport_size() -> void:
-	if _mat != null and size.x > 1.0 and size.y > 1.0:
-		_mat.set_shader_parameter("viewport_size", size)
-	queue_redraw()
-
-
-func _process(delta: float) -> void:
-	var vp := get_viewport_rect().size
-	if vp.x > 1.0 and vp.y > 1.0:
-		var mouse := get_viewport().get_mouse_position()
-		_parallax_target = Vector2(
-			clampf((mouse.x / vp.x - 0.5) * 2.0, -1.0, 1.0),
-			clampf((mouse.y / vp.y - 0.5) * 2.0, -1.0, 1.0)
-		)
-	_parallax_current = _parallax_current.lerp(_parallax_target, clampf(delta * 5.0, 0.0, 1.0))
-	_focus_blend = lerpf(_focus_blend, _focus_target, clampf(delta * 5.5, 0.0, 1.0))
-	if _mat != null:
-		_mat.set_shader_parameter("parallax_offset", _parallax_current)
-		_mat.set_shader_parameter("darken_veil", _focus_blend)
-		_mat.set_shader_parameter("compass_uv", Vector2(lerpf(0.68, 0.76, _focus_blend), 0.50))
-		_mat.set_shader_parameter("compass_scale", lerpf(0.27, 0.21, _focus_blend))
-
-
-func _draw() -> void:
-	if size.x <= 1.0 or size.y <= 1.0:
-		return
-	draw_rect(Rect2(Vector2.ZERO, size), Color.WHITE)
+	var vp := size.max(Vector2.ONE)
+	if _sea_mat != null:
+		_sea_mat.set_shader_parameter("viewport_size", vp)
+		if _loading:
+			_sea_mat.set_shader_parameter("compass_uv", Vector2(0.50, 0.43))
+			_sea_mat.set_shader_parameter("compass_scale", 0.32)
+			_sea_mat.set_shader_parameter("secondary_rose_uv", Vector2(0.18, 0.26))
+		elif _page == "home":
+			_sea_mat.set_shader_parameter("compass_uv", Vector2(0.67, 0.48))
+			_sea_mat.set_shader_parameter("compass_scale", 0.30)
+			_sea_mat.set_shader_parameter("secondary_rose_uv", Vector2(0.38, 0.78))
+		else:
+			_sea_mat.set_shader_parameter("compass_uv", Vector2(0.50, 0.50))
+			_sea_mat.set_shader_parameter("compass_scale", 0.28)
+			_sea_mat.set_shader_parameter("secondary_rose_uv", Vector2(0.20, 0.80))
+		_sea_mat.set_shader_parameter("show_neatline", 1.0)
+		_sea_mat.set_shader_parameter("motion_scale", 0.0 if UIAnimation.reduced_motion() else 1.0)
+	if _stage != null:
+		if _loading:
+			_stage.position = Vector2(size.x * 0.11, size.y * 0.03)
+			_stage.size = Vector2(size.x * 0.78, size.y * 0.74)
+		else:
+			_stage.position = Vector2(size.x * 0.31, size.y * 0.02)
+			_stage.size = Vector2(size.x * 0.67, size.y * 0.94)

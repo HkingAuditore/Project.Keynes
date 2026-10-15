@@ -1360,8 +1360,12 @@ private:
             std::vector<int64_t> scores, sums, composites, environment;
             int64_t saturations = 0;
         };
-        std::map<std::array<int32_t, 9>, PreviewBasis> previews;
+        std::map<std::array<int64_t, 10>, PreviewBasis> previews;
+        // 仅覆盖同一冻结 scope；人口资金/岗位变化不影响 plan 自给目标。
+        std::map<std::array<int64_t, 4>, std::pair<int64_t, int64_t>> retention_targets;
         bool quote_enabled = false;
+        bool frozen_country_preview = false;
+        bool frozen_price_overrides = false;
         std::map<std::vector<int64_t>, std::pair<std::shared_ptr<const OwnerOpportunityQuote>, int64_t>> quotes;
     };
     static LivingCostMemoState &living_cost_memo_state() {
@@ -1372,20 +1376,32 @@ private:
         NativeEconomyRuntime &runtime;
         bool active = false;
         bool previous_quotes = false;
-        explicit LivingCostMemoScope(NativeEconomyRuntime &owner, bool allow_quotes = false) : runtime(owner) {
+        bool previous_frozen_country = false;
+        bool previous_frozen_prices = false;
+        explicit LivingCostMemoScope(NativeEconomyRuntime &owner, bool allow_quotes = false,
+                bool frozen_country_preview = false, bool frozen_price_overrides = false) : runtime(owner) {
             auto &state = living_cost_memo_state();
             const char *disabled = std::getenv("PK_ECONOMY_MEMO_DISABLE");
             if (disabled && std::strcmp(disabled, "1") == 0) return;
+            if (frozen_price_overrides) {
+                const char *attribution_disabled = std::getenv("PK_ECONOMY_ATTRIBUTION_MEMO_DISABLE");
+                if (attribution_disabled && std::strcmp(attribution_disabled, "1") == 0) return;
+            }
             if (state.depth != 0 && state.owner != &owner) return;
             if (state.depth++ == 0) {
                 state.owner = &owner;
                 state.values.clear();
                 state.previews.clear();
+                state.retention_targets.clear();
                 state.quotes.clear();
                 state.hits = state.misses = 0;
             }
             previous_quotes = state.quote_enabled;
             state.quote_enabled = state.quote_enabled || allow_quotes;
+            previous_frozen_country = state.frozen_country_preview;
+            state.frozen_country_preview = state.frozen_country_preview || frozen_country_preview;
+            previous_frozen_prices = state.frozen_price_overrides;
+            state.frozen_price_overrides = state.frozen_price_overrides || frozen_price_overrides;
             active = true;
         }
         ~LivingCostMemoScope();
@@ -1510,6 +1526,17 @@ private:
         int32_t wealth_elasticity_q16 = 0;
         int32_t savings_threshold_months_q16 = 0;
         std::array<int32_t, 9> wealth_lut_q16{};
+        // 目录证明：任意 i32 价格/消费系数下，预估价格不产生饱和事件。
+        bool preview_price_saturation_free = false;
+        int32_t price_basis_source = -1;
+    };
+
+    struct VariantPriceBasis {
+        int64_t unit_price = 1;
+        int64_t elasticity_factor = 0;
+        int64_t saturations = 0;
+        bool available = false;
+        bool ready = false;
     };
 
     struct NeedComponent {
@@ -2112,6 +2139,18 @@ private:
         int32_t selector_kind = 0;
         int32_t selector_id = 0;
         int32_t factor_q16 = Q16_ONE;
+        bool operator==(const FamilyBehaviorFactorRow &other) const {
+            return cell == other.cell && score_term == other.score_term &&
+                axis == other.axis && selector_kind == other.selector_kind &&
+                selector_id == other.selector_id && factor_q16 == other.factor_q16;
+        }
+    };
+    struct FamilyBehaviorSourceRow {
+        int32_t family_index = -1;
+        FamilyBehaviorFactorRow row;
+        bool operator==(const FamilyBehaviorSourceRow &other) const {
+            return family_index == other.family_index && row == other.row;
+        }
     };
 
     struct FamilyIndustryStats {
@@ -4467,6 +4506,8 @@ private:
     // Q16 standard-food-equivalent per goods subunit, compiled from the
     // survival household component quantities. Zero means non-food.
     std::vector<int32_t> _good_food_equivalent_q16;
+    // Ascending positive-coefficient goods; derived catalog index, not state.
+    std::vector<int32_t> _food_equivalent_goods;
     std::vector<uint8_t> _survival_clothing_good_mask;
     int32_t _survival_clothing_need_stable_id = -1;
     int32_t _starvation_satisfaction_threshold_q16 = Q16_ONE / 2;
@@ -4665,6 +4706,7 @@ private:
     int32_t _building_commit_cursor = 0;
     int32_t _building_finalize_phase = 0;
     int32_t _family_commit_cursor = 0;
+    std::vector<int32_t> _family_review_cells_scratch;
     int32_t _family_commit_phase = 0;
     int32_t _person_commit_cursor = 0;
     int32_t _person_commit_phase = 0;
@@ -5293,6 +5335,7 @@ private:
     EconomyTrackedRecords<FamilyTraitRoll> _family_traits_local{{{12, 3}, "family_records.family_trait_rolls", EconomyFieldEncoding::CanonicalRecord, 1}};
     std::vector<int32_t> _family_behavior_factor_offsets;
     std::vector<FamilyBehaviorFactorRow> _family_behavior_factor_rows;
+    std::vector<FamilyBehaviorSourceRow> _family_behavior_source_rows;
     std::vector<int32_t> _family_purchase_factor_q16;
     std::vector<int32_t> _family_investment_factor_q16;
     std::vector<int32_t> _family_birth_factor_q16;
@@ -5446,6 +5489,12 @@ private:
     // Leontief shadow derived demand from unmet final/business deficits through
     // preferred producer BOMs. Recomputed each sample; excluded from PKEC/hash.
     std::vector<int64_t> _epoch_derived_business_demand;
+    struct DerivedHouseholdPreview {
+        std::vector<int64_t> goods;
+        int64_t saturations = 0;
+        bool ready = false;
+    };
+    std::vector<DerivedHouseholdPreview> _derived_household_preview_scratch;
     // Same-input-edge substitutes that were not selected for procurement still
     // receive this shadow demand so producers of eligible SKUs (e.g. chipped
     // stone when bronze was chosen) can see category-level unmet need. Price,
@@ -5757,6 +5806,9 @@ private:
     std::vector<Need> _needs;
     std::vector<VariantChoice> _variants;
     std::vector<NeedComponent> _components;
+    // Catalog-only equivalence for the market/environment part of preview.
+    // Actor wealth, family preferences and quantities still run per cohort.
+    std::vector<int32_t> _preview_need_basis_source;
     std::vector<EnvironmentCurve> _environment_curves;
     std::vector<std::string> _need_ids;
     std::vector<int32_t> _ethnicity_need_factor_q16;
@@ -6503,6 +6555,8 @@ private:
     std::vector<int32_t> _family_trait_behavior_condition_ops;
     std::vector<int32_t> _family_trait_behavior_condition_arg0;
     std::vector<int64_t> _family_trait_behavior_condition_values;
+    // Catalog-derived union of metric operands; never persisted or hashed.
+    std::vector<uint64_t> _family_trait_behavior_metric_masks;
     std::vector<int32_t> _family_trait_modifier_offsets;
     std::vector<std::string> _family_trait_modifier_definition_keys;
     std::vector<int32_t> _family_trait_modifier_targets;
@@ -7268,6 +7322,7 @@ private:
     void publish_shadow_graph_stage_reference(RuntimeEconomyGraphStage stage);
     // Shared BUILDING_PLAN entry: routes through economy_kernel_prepare_building_plan
     // so sync and future worker probe worlds share one boundary (no second formula).
+    bool evaluate_building_plan_range(int32_t active_begin, int32_t active_end, std::string &error);
     bool prepare_building_economic_plan(int32_t active_begin, int32_t active_end,
                                         const std::vector<int32_t> *cells_override,
                                         BuildingPlanResult &result,
@@ -7630,7 +7685,8 @@ private:
     int32_t family_free_building_type_id(const Command &cmd) const;
     void fill_family_behavior_metrics(int32_t family_index, int32_t branch,
                                       int32_t cell, int64_t *metrics,
-                                      int32_t metric_count) const;
+                                      int32_t metric_count,
+                                      uint64_t metric_mask = UINT64_MAX) const;
     bool evaluate_family_behavior_conditions(int32_t edge,
                                              const int64_t *metrics,
                                              int32_t metric_count) const;
@@ -7666,7 +7722,7 @@ private:
                                                int32_t good_id) const;
     int32_t family_variant_preference_factor_q16(int32_t cohort_slot,
                                                  int32_t variant_id,
-                                                 int64_t &sat) const;
+                                                 int64_t &sat, int32_t *good_factors = nullptr) const;
     uint64_t preferred_family_for_cohort(int32_t cohort_slot,
                                          int32_t axis,
                                          int32_t selector_kind,

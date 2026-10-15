@@ -743,6 +743,7 @@ void NativeEconomyRuntime::capture_completed_perf_snapshot() {
 }
 
 bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
+    EconomyCostProbe probe("epoch.start", day_index);
     const auto epoch_started = Clock::now();
     if (!_bootstrapped || _fatal || _epoch_active) {
         error = "epoch_start_state_invalid";
@@ -959,6 +960,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
 
 bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         int64_t day_index, std::string &error) {
+    EconomyCostProbe probe("epoch.finish", day_index);
     if (_fiscal_reservation_continuation.active) {
         error = "fiscal_reservation_still_active";
         return false;
@@ -1418,6 +1420,7 @@ bool NativeEconomyRuntime::run_epoch_open_prelude_drain(
         }
 
         auto pull_due_family_settlements = [this]() {
+            EconomyCostProbe probe("epoch.family_dispatch", _current_day.get());
             if (_effect_runtime != nullptr) {
                 _effect_runtime->dispatch_native_economy(this);
             }

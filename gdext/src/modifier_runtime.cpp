@@ -69,6 +69,16 @@ uint64_t fnv_string(uint64_t hash, const std::string &value) {
     return fnv_mix(hash, value.data(), value.size());
 }
 
+uint64_t fnv_catalog_term(uint64_t hash, int32_t stat_id,
+                          double add, double factor) {
+    // 保留既有 x64 存档的 24 字节布局，不能把编译器填充字节当成目录数据。
+    constexpr uint32_t reserved = 0;
+    hash = fnv_mix(hash, &stat_id, sizeof(stat_id));
+    hash = fnv_mix(hash, &reserved, sizeof(reserved));
+    hash = fnv_mix(hash, &add, sizeof(add));
+    return fnv_mix(hash, &factor, sizeof(factor));
+}
+
 double elapsed_ms(const std::chrono::steady_clock::time_point &start) {
     return std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - start).count();
@@ -261,7 +271,8 @@ bool ModifierRuntime::compile_catalog(const Dictionary &catalog,
         hash = fnv_string(hash, definition.key);
         hash = fnv_mix(hash, &definition.version, sizeof(definition.version));
     }
-    for (const TermDefinition &term : terms) hash = fnv_mix(hash, &term, sizeof(term));
+    for (const TermDefinition &term : terms)
+        hash = fnv_catalog_term(hash, term.stat_id, term.add, term.factor);
     uint64_t legacy_hash = 1469598103934665603ULL;
     for (const StatDefinition &stat : stats) {
         if (stat.key.rfind("country.tax.", 0) == 0) continue;
@@ -276,7 +287,7 @@ bool ModifierRuntime::compile_catalog(const Dictionary &catalog,
             legacy_hash, &definition.version, sizeof(definition.version));
     }
     for (const TermDefinition &term : terms)
-        legacy_hash = fnv_mix(legacy_hash, &term, sizeof(term));
+        legacy_hash = fnv_catalog_term(legacy_hash, term.stat_id, term.add, term.factor);
 
     _stats = std::move(stats);
     _definitions = std::move(definitions);

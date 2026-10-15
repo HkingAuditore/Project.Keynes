@@ -59,6 +59,8 @@ struct RuntimeClimateSnapshot {
     uint64_t catalog_hash = 0;
     uint64_t state_hash = 0;
     uint32_t dirty_families = 0;
+    // writeback 为可见场投影，不携带无消费者的温度历史。
+    // snapshot() 的完整诊断快照仍包含全部字段。
     RuntimeClimateStore payload;
     // 没有 store 成员、但仍须回灌 MapData 的场。不需要跨天自持，不加入 CLM2。
     // RuntimeClimateStore 不决定 PKEC 或旧 PDP3/PDP4 格式；后者使用独立 POD 类型。
@@ -218,14 +220,15 @@ public:
     // 拷贝赋值进调用方的缓冲，复用其 lane 容量（writeback ring 槽位跨天复用）。
     // state_hash 只取已知的提交态归约；ACTIVE 热路径 plan 不算哈希时为 0，
     // 这里不补算整 store —— 唯一读者是写回诊断字典，存档 serialize 自己会算。
-    void snapshot_into(RuntimeClimateSnapshot &out) const {
+    void snapshot_into(RuntimeClimateSnapshot &out, bool visible_only = false) const {
         out.generation = _store.generation;
         out.committed_day = _store.committed_day;
         out.input_generation = _last_input_generation;
         out.catalog_hash = _catalog.hash;
         out.state_hash = _committed_state_hash;
         const auto probe_started = std::chrono::steady_clock::now();
-        out.payload = _store;
+        if (visible_only) RuntimeClimateKernel::copy_visible_store(out.payload, _store);
+        else out.payload = _store;
         out.soil_moisture = _kernel.distribute_soil_moisture();
         const auto &ro = _kernel.round_output();
         out.insolation_now = ro.insolation_now;
@@ -237,7 +240,7 @@ public:
         EconomyCostProbe::record("climate.snapshot.copy", _store.committed_day,
             std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - probe_started).count(),
-            _store.temperature_history.size());
+            out.payload.temperature_history.size()); // work = 本次实际复制的历史 lane。
     }
 
     // 与 host 外层 climate section 的 64 MiB 上限一致，禁止让外层静默截断。

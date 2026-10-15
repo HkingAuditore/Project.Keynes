@@ -2,8 +2,12 @@ extends PanelContainer
 class_name ColonizationPlannerPanel
 
 const FamilyRowScene := preload("res://scenes/ui/colonization_family_row.tscn")
+const TraitMeterScene := preload("res://scenes/ui/inspector_meter_list.tscn")
+const EffectNoteScene := preload("res://scenes/ui/inspector_note_list.tscn")
 
 signal target_selection_requested()
+signal source_selection_requested()
+signal planning_context_changed(context: Dictionary)
 signal closed()
 signal route_requested(detail: Dictionary)
 signal route_cleared()
@@ -54,8 +58,49 @@ var _tabs: CategoryTabs
 var _list: VBoxContainer
 var _population_row: HBoxContainer
 var _population: SpinBox
+var _population_slider: HSlider
 var _feedback: Label
 var _start: Button
+var _header_icon: IconBadge
+var _route_stepper: Control
+var _source_pick_button: Button
+var _family_step_label: Label
+var _source_step_icon: IconBadge
+var _family_step_icon: IconBadge
+var _target_step_icon: IconBadge
+var _city_picker: Control
+var _city_cards_box: VBoxContainer
+var _city_cards_identity := ""
+var _city_card_buttons: Array[Button] = []
+var _source_picking := false
+var _source_pick_armed := true
+var _guide_card: Control
+var _guide_icon: IconBadge
+var _guide_title: Label
+var _guide_facts: InspectorFactGrid
+var _guide_notes: InspectorNoteList
+var _identity_card: Control
+var _preview_crest: IconBadge
+var _preview_origin: Label
+var _preview_state_pill: Label
+var _preview_facts: InspectorFactGrid
+var _preview_meters: InspectorMeterList
+var _route_card: Control
+var _route_card_icon: IconBadge
+var _route_ready_pill: Label
+var _route_facts: InspectorFactGrid
+var _kit_badges: BadgeRow
+var _route_notes: InspectorNoteList
+var _traits_card: Control
+var _traits_box: VBoxContainer
+var _trait_meters: InspectorMeterList
+var _pref_badges: BadgeRow
+var _effects_card: Control
+var _effects_box: VBoxContainer
+var _effect_notes: InspectorNoteList
+var _max_population_button: Button
+var _preview_hovering := false
+var _planning_identity := ""
 
 
 func _ready() -> void:
@@ -112,6 +157,7 @@ func _ready() -> void:
 		_refresh_selected_kit())
 	_start.pressed.connect(_submit_selected)
 	_source_city.item_selected.connect(_on_source_city_selected)
+	_bind_atlas_shell()
 	if is_inside_tree():
 		get_viewport().size_changed.connect(_layout_left_panel)
 	_layout_left_panel()
@@ -128,6 +174,8 @@ func open_target(target_cell: int, family_filter: int = 0,
 		_ready()
 	_target_cell = target_cell
 	_target_picking = false
+	_source_picking = false
+	_source_pick_armed = true
 	_source_first = target_cell < 0
 	_detail_valid = false
 	_preview_cache.clear()
@@ -189,9 +237,12 @@ func close_panel() -> void:
 		return
 	visible = false
 	_target_picking = false
+	_source_picking = false
 	_hover_timer.stop()
 	_selected_quote.clear()
 	route_cleared.emit()
+	_planning_identity = ""
+	planning_context_changed.emit({})
 	closed.emit()
 
 
@@ -305,7 +356,10 @@ func _load_source_cities() -> Dictionary:
 
 func _on_source_city_selected(index: int) -> void:
 	var source := _source_city.get_item_id(index)
+	if source >= 0:
+		_source_picking = false
 	if source == _source_filter:
+		_update_start_enabled()
 		return
 	_source_filter = source
 	_source_city.select(index)
@@ -433,10 +487,19 @@ func _sync_quote_rows(quotes: Array, keep_population: int) -> bool:
 			_list.add_child(row)
 			_quote_row_refs[handle] = row
 		row.set_meta("quote", quote)
+		var local_people := int(quote.get("population", maximum + 1))
+		var prestige_level := int(quote.get("prestige_level", 0))
 		row.set_compact_summary({
 			"name": String(quote.get("display_name", "家族")),
-			"population": int(quote.get("population", maximum + 1)),
+			"population": local_people,
 			"population_tooltip": "当地分支人口；至少留下一人",
+			"prestige_level": prestige_level,
+			"icon": "family.workspace.crest" if prestige_level >= 1 else "family.house",
+			"accent": UITokens.DOSSIER_OXBLOOD if prestige_level >= 3 else UITokens.DOSSIER_BRASS,
+			"tag_text": "威望 %s" % str(quote.get("prestige_level", "—")),
+			"tag_color": UITokens.DOSSIER_OXBLOOD if prestige_level >= 3 else UITokens.DOSSIER_BRASS,
+			"bar_ratio": clampf(float(maximum) / float(maxi(local_people, 1)), 0.0, 1.0),
+			"bar_color": UITokens.DOSSIER_VERDIGRIS if maximum > 0 else UITokens.DOSSIER_OXBLOOD,
 			"effect": "可派 %s · 威望 %s · 产业 %s" % [
 				UITokens.format_compact_number_cn(float(maximum), 0),
 				str(quote.get("prestige_level", "—")),
@@ -514,6 +577,7 @@ func _show_expeditions() -> void:
 	_preview_preferences.text = ""
 	_preview_effects.text = ""
 	_preview_route.text = ""
+	_paint_expedition_card("在途队伍", _preview_metrics.text, "", "")
 	_discard_quote_rows()
 	_update_start_enabled()
 	if _controller == null:
@@ -633,14 +697,24 @@ func _sync_expedition_rows(page: Dictionary) -> void:
 			cancel = row_wrap.get_child(1) as Button
 		row.set_meta("expedition_handle", expedition_handle)
 		cancel.set_meta("expedition_handle", expedition_handle)
+		var party_people := int(populations[index]) if index < populations.size() else 0
+		var state_label := _state_text(state)
+		var missing_line := _preparing_missing_text(expedition_handle, state).get_slice("\n", 0)
 		row.set_compact_summary({
 			"name": String(view.get("display_name", "家族")),
-			"population": int(populations[index]) if index < populations.size() else 0,
+			"population": party_people,
+			"icon": "economy.building" if state == 4 else "action.history",
+			"accent": UITokens.DOSSIER_BRASS if state == 4 else UITokens.DOSSIER_VERDIGRIS,
+			"tag_text": state_label,
+			"tag_color": UITokens.DOSSIER_OXBLOOD if returning else (
+				UITokens.DOSSIER_BRASS if state == 4 else UITokens.DOSSIER_VERDIGRIS),
+			"bar_ratio": 0.35 if state == 4 else (1.0 if state == 2 else 0.62),
+			"bar_color": UITokens.DOSSIER_BRASS if state == 4 else UITokens.DOSSIER_VERDIGRIS,
 			"badges": [{
-				"text": _state_text(state),
+				"text": state_label,
 				"accent": UITokens.WARN if returning else UITokens.ACCENT,
 			}],
-			"effect": "%s · %s" % [_state_text(state), _preparing_missing_text(expedition_handle, state).get_slice("\n", 0)],
+			"effect": missing_line if not missing_line.is_empty() else state_label,
 			"tooltip": _expedition_row_tooltip(expedition_handle, state,
 				int(dues[index]) if index < dues.size() else -1),
 		})
@@ -674,6 +748,8 @@ func _on_reusable_expedition_pressed(row: Button) -> void:
 	_preview_effects.text = _preparing_missing_text(handle, int(view.get("state", 0)))
 	_preview_route.text = "第 %d 日抵达" % int(view.get("due_day", -1)) \
 		if int(view.get("due_day", -1)) >= 0 else ""
+	_paint_expedition_card(_preview_title.text, _preview_metrics.text,
+		_preview_effects.text, _preview_route.text)
 	expedition_selected.emit(handle)
 
 
@@ -732,7 +808,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	var cancel: bool = event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE
 	cancel = cancel or (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT)
 	if cancel:
-		if _target_picking:
+		if _source_picking:
+			cancel_source_selection()
+		elif _target_picking:
 			cancel_target_selection()
 		else:
 			close_panel()
@@ -777,6 +855,10 @@ static func _reason_text(code: String) -> String:
 
 func _apply_kind(kind: String) -> void:
 	_title.text = "迁徙" if kind == "relocate" else "开拓"
+	if _header_icon != null:
+		_header_icon.set_semantic(
+			&"metric.territory" if kind == "relocate" else &"family.house",
+			UITokens.DOSSIER_OXBLOOD)
 	_update_workflow()
 
 
@@ -825,10 +907,13 @@ func _update_start_enabled() -> void:
 	if _start == null:
 		return
 	var on_quotes := _current_tab == "quotes"
-	_footer_selection.visible = on_quotes
-	_source_city.get_parent().visible = on_quotes
+	_footer_selection.visible = false
+	_source_city.get_parent().visible = false
 	_search.get_parent().visible = on_quotes
 	_target_button.visible = on_quotes
+	if _route_stepper != null:
+		_route_stepper.visible = on_quotes
+	_sync_population_slider()
 	_update_workflow()
 	var has_selection := not _selected_quote.is_empty()
 	_population_row.visible = on_quotes and has_selection
@@ -1219,6 +1304,7 @@ func _scroll_to_pinned_family() -> void:
 
 
 func begin_target_selection() -> void:
+	_source_picking = false
 	_target_picking = true
 	_update_start_enabled()
 	target_selection_requested.emit()
@@ -1231,6 +1317,43 @@ func cancel_target_selection() -> void:
 
 func is_target_picking() -> bool:
 	return visible and _target_picking
+
+
+func begin_source_selection() -> void:
+	if _source_first or _source_picking:
+		return
+	_target_picking = false
+	_source_picking = true
+	_source_pick_armed = true
+	_update_start_enabled()
+	source_selection_requested.emit()
+
+
+func cancel_source_selection() -> void:
+	_source_picking = false
+	_source_pick_armed = false
+	_update_start_enabled()
+
+
+func is_source_picking() -> bool:
+	return visible and _source_picking
+
+
+func try_source_cell(cell: int) -> bool:
+	if not _source_picking or _source_city == null:
+		return false
+	var index := _source_city.get_item_index(cell)
+	if index <= 0:
+		_feedback.text = "请点选带青绿环的可派遣城市。"
+		_feedback.visible = true
+		_feedback.tooltip_text = _feedback.text
+		_feedback.add_theme_color_override("font_color", UITokens.RISK)
+		return false
+	_source_picking = false
+	_source_city.select(index)
+	_on_source_city_selected(index)
+	_update_start_enabled()
+	return true
 
 
 func try_target_cell(cell: int) -> bool:
@@ -1269,10 +1392,18 @@ func _update_workflow() -> void:
 	var family := String(_selected_quote.get("display_name", "待选家族"))
 	_workflow.text = "%s → %s → %s" % [source, family, _cell_name(_target_cell)]
 	_footer_selection.text = "已选：%s" % family if not _selected_quote.is_empty() else "点击家族确定派遣对象"
-	_subtitle.text = "请在地图上选择目的地 · Esc 退出选点" if _target_picking \
-		else ("先选出发家族，再选目的地" if _source_first else "先选目的地，再选出发城市与家族")
-	_subtitle.visible = _target_picking
-	_target_button.text = "重新选点" if _target_cell >= 0 else "选择目的地"
+	if _source_picking:
+		_subtitle.text = "请在地图上点选出发城市 · Esc 退出选点"
+	elif _target_picking:
+		_subtitle.text = "请在地图上选择目的地 · Esc 退出选点"
+	else:
+		_subtitle.text = "先选出发家族，再选目的地" if _source_first else "先在地图上点选出发城市，再选家族与目的地"
+	_subtitle.visible = _source_picking or _target_picking
+	_target_button.text = "正在选点" if _target_picking else (
+		"重新选点" if _target_cell >= 0 else "选择目的地")
+	_refresh_route_stepper(source, family)
+	_refresh_city_cards()
+	_publish_planning_context()
 
 
 func _load_local_families() -> Dictionary:
@@ -1408,7 +1539,9 @@ func _show_family_preview(quote: Dictionary, hovering: bool = false) -> void:
 		_preview_preferences.text = ""
 		_preview_effects.text = ""
 		_preview_route.text = ""
+		_paint_waiting_guide()
 		return
+	_preview_hovering = hovering
 	_preview_title.text = ("预览 · " if hovering else "已选 · ") + String(quote.get("display_name", "家族"))
 	var key := "%d:%d" % [_source_filter, _preview_family]
 	var preview: Dictionary = _preview_cache.get(key, {})
@@ -1427,6 +1560,7 @@ func _show_family_preview(quote: Dictionary, hovering: bool = false) -> void:
 		_preview_preferences.text = ""
 		_preview_effects.text = ""
 		_preview_route.text = ""
+		_paint_waiting_guide()
 		return
 	var branch: Dictionary = preview.get("branch", {})
 	_preview_metrics.text = "当地族人 %s · 可派 %s
@@ -1464,6 +1598,9 @@ func _show_family_preview(quote: Dictionary, hovering: bool = false) -> void:
 " + "
 
 ".join(lines) if not lines.is_empty() else ""
+	_paint_identity_card(quote, branch, hovering)
+	_paint_trait_card(traits)
+	_paint_effect_card(effects if not effects.is_empty() else traits)
 	var route_quote := quote.duplicate(true)
 	if hovering and _target_cell >= 0 and int(quote.get("quote_token", 0)) > 0:
 		var people := maxi(1, int(quote.get("maximum_population", 1)))
@@ -1481,6 +1618,7 @@ func _show_family_preview(quote: Dictionary, hovering: bool = false) -> void:
 func _update_preview_route(quote: Dictionary) -> void:
 	if _target_cell < 0:
 		_preview_route.text = "选定目的地后计算路线和开工物资。"
+		_paint_route_card(quote)
 		return
 	_preview_route.text = "目的地 · %s
 预计 %d 日抵达
@@ -1489,3 +1627,487 @@ func _update_preview_route(quote: Dictionary) -> void:
 	if bool(quote.get("kit_partial", false)):
 		_preview_route.text += "
 " + ("物资不足，将先在源地筹备。" if bool(quote.get("kit_place_buildings", false)) else "仅携带当前可用的基础物资。")
+	_paint_route_card(quote)
+
+
+func _bind_atlas_shell() -> void:
+	_header_icon = get_node_or_null("%HeaderIcon") as IconBadge
+	_route_stepper = get_node_or_null("%RouteStepper") as Control
+	_source_pick_button = get_node_or_null("%SourcePickButton") as Button
+	_family_step_label = get_node_or_null("%FamilyStepLabel") as Label
+	_source_step_icon = get_node_or_null("%SourceStepIcon") as IconBadge
+	_family_step_icon = get_node_or_null("%FamilyStepIcon") as IconBadge
+	_target_step_icon = get_node_or_null("%TargetStepIcon") as IconBadge
+	_city_picker = get_node_or_null("%CityPickerPane") as Control
+	_city_cards_box = get_node_or_null("%CityCardsBox") as VBoxContainer
+	_population_slider = get_node_or_null("%PopulationSlider") as HSlider
+	_max_population_button = get_node_or_null("%MaxPopButton") as Button
+	_guide_card = get_node_or_null("%PreviewGuideCard") as Control
+	_guide_icon = get_node_or_null("%GuideIcon") as IconBadge
+	_guide_title = get_node_or_null("%GuideTitle") as Label
+	_guide_facts = get_node_or_null("%GuideFacts") as InspectorFactGrid
+	_guide_notes = get_node_or_null("%GuideNotes") as InspectorNoteList
+	_identity_card = get_node_or_null("%PreviewIdentityCard") as Control
+	_preview_crest = get_node_or_null("%PreviewCrest") as IconBadge
+	_preview_origin = get_node_or_null("%PreviewOriginSub") as Label
+	_preview_state_pill = get_node_or_null("%PreviewStatePill") as Label
+	_preview_facts = get_node_or_null("%PreviewFactGrid") as InspectorFactGrid
+	_preview_meters = get_node_or_null("%PreviewMeters") as InspectorMeterList
+	_route_card = get_node_or_null("%PreviewRouteCard") as Control
+	_route_card_icon = get_node_or_null("%RouteCardIcon") as IconBadge
+	_route_ready_pill = get_node_or_null("%RouteReadyPill") as Label
+	_route_facts = get_node_or_null("%RouteFactGrid") as InspectorFactGrid
+	_kit_badges = get_node_or_null("%KitBadges") as BadgeRow
+	_route_notes = get_node_or_null("%RouteNotes") as InspectorNoteList
+	_traits_card = get_node_or_null("%PreviewTraitsCard") as Control
+	_traits_box = get_node_or_null("%TraitsVisualBox") as VBoxContainer
+	_pref_badges = get_node_or_null("%PrefBadges") as BadgeRow
+	_effects_card = get_node_or_null("%PreviewEffectsCard") as Control
+	_effects_box = get_node_or_null("%EffectsVisualBox") as VBoxContainer
+	_set_shell_icon(_header_icon, &"family.house", UITokens.DOSSIER_OXBLOOD)
+	_set_shell_icon(get_node_or_null("%SearchIcon") as IconBadge, &"summary.overview", UITokens.DOSSIER_UMBER)
+	_set_shell_icon(get_node_or_null("%SortIcon") as IconBadge, &"trend.flat", UITokens.DOSSIER_UMBER)
+	_set_shell_icon(_source_step_icon, &"metric.territory", UITokens.DOSSIER_VERDIGRIS)
+	_set_shell_icon(_family_step_icon, &"family.house", UITokens.DOSSIER_BRASS)
+	_set_shell_icon(_target_step_icon, &"system.target", UITokens.DOSSIER_BRASS)
+	_set_shell_icon(get_node_or_null("%CityPinIcon") as IconBadge, &"metric.territory", UITokens.DOSSIER_VERDIGRIS)
+	_set_shell_icon(get_node_or_null("%PopIcon") as IconBadge, &"family.metric.population", UITokens.DOSSIER_OXBLOOD)
+	_set_shell_icon(_guide_icon, &"metric.territory", UITokens.DOSSIER_OXBLOOD)
+	_set_shell_icon(get_node_or_null("%TraitsCardIcon") as IconBadge, &"technology.milestone", UITokens.DOSSIER_OXBLOOD)
+	_set_shell_icon(get_node_or_null("%EffectsCardIcon") as IconBadge, &"ecology.growth", UITokens.DOSSIER_VERDIGRIS)
+	_set_shell_icon(_route_card_icon, &"system.target", UITokens.DOSSIER_BRASS)
+	if _source_pick_button != null and not _source_pick_button.pressed.is_connected(_on_source_pick_pressed):
+		_source_pick_button.pressed.connect(_on_source_pick_pressed)
+	if _population_slider != null and not _population_slider.value_changed.is_connected(_on_population_slider_changed):
+		_population_slider.value_changed.connect(_on_population_slider_changed)
+	if _max_population_button != null and not _max_population_button.pressed.is_connected(_on_max_population_pressed):
+		_max_population_button.pressed.connect(_on_max_population_pressed)
+	if _traits_box != null and _trait_meters == null:
+		_trait_meters = TraitMeterScene.instantiate() as InspectorMeterList
+		_traits_box.add_child(_trait_meters)
+	if _effects_box != null and _effect_notes == null:
+		_effect_notes = EffectNoteScene.instantiate() as InspectorNoteList
+		_effects_box.add_child(_effect_notes)
+	_paint_waiting_guide()
+
+
+func _set_shell_icon(icon: IconBadge, key: StringName, accent: Color) -> void:
+	if icon != null:
+		icon.set_semantic(key, accent)
+
+
+func _on_source_pick_pressed() -> void:
+	if _source_first:
+		return
+	if _source_picking:
+		cancel_source_selection()
+		return
+	_source_pick_armed = true
+	begin_source_selection()
+
+
+func _on_population_slider_changed(value: float) -> void:
+	if _population == null or int(_population.value) == int(value):
+		return
+	_population.value = value
+
+
+func _on_max_population_pressed() -> void:
+	if _population == null:
+		return
+	_population.value = _population.max_value
+
+
+func _sync_population_slider() -> void:
+	if _population_slider == null or _population == null:
+		return
+	_population_slider.min_value = _population.min_value
+	_population_slider.max_value = maxf(_population.min_value, _population.max_value)
+	_population_slider.set_value_no_signal(_population.value)
+
+
+func _refresh_route_stepper(source_name: String, family_name: String) -> void:
+	if _source_pick_button == null:
+		return
+	_source_pick_button.disabled = _source_first
+	if _source_first or _source_filter >= 0:
+		_source_pick_button.text = source_name
+	elif _source_picking:
+		_source_pick_button.text = "正在选出发城"
+	else:
+		_source_pick_button.text = "地图点选出发城"
+	_source_pick_button.tooltip_text = "出发城已由家族档案锁定" if _source_first \
+		else "在地图上点选青绿环，或点击城市卡片"
+	if _family_step_label != null:
+		var waiting_family := _selected_quote.is_empty()
+		_family_step_label.text = "待选世家" if waiting_family else family_name
+		_family_step_label.add_theme_color_override("font_color",
+			UITokens.ARCHIVE_INK_MUTED if waiting_family else UITokens.DOSSIER_OXBLOOD)
+	_tint_step(_source_pick_button, _source_picking, _source_filter >= 0)
+	_tint_step(_target_button, _target_picking, _target_cell >= 0)
+	_set_shell_icon(_source_step_icon, &"metric.territory",
+		UITokens.DOSSIER_BRASS if _source_filter >= 0 else UITokens.DOSSIER_VERDIGRIS)
+	_set_shell_icon(_family_step_icon, &"family.house",
+		UITokens.DOSSIER_OXBLOOD if not _selected_quote.is_empty() else UITokens.ARCHIVE_INK_MUTED)
+	_set_shell_icon(_target_step_icon, &"system.target",
+		UITokens.DOSSIER_BRASS if _target_cell >= 0 else UITokens.ARCHIVE_INK_MUTED)
+
+
+func _tint_step(button: Button, active: bool, chosen: bool) -> void:
+	if button == null:
+		return
+	var color := UITokens.DOSSIER_OXBLOOD if active else (
+		UITokens.ARCHIVE_INK if chosen else UITokens.ARCHIVE_INK_MUTED)
+	button.add_theme_color_override("font_color", color)
+	button.add_theme_color_override("font_hover_color", color)
+	button.add_theme_color_override("font_pressed_color", UITokens.DOSSIER_OXBLOOD)
+
+
+func _refresh_city_cards() -> void:
+	if _city_cards_box == null or _source_city == null:
+		return
+	var show_picker := _current_tab == "quotes" and not _source_first \
+		and _source_city.item_count > 1 and (_source_filter < 0 or _source_picking)
+	if _city_picker != null:
+		_city_picker.visible = show_picker
+	if not show_picker:
+		return
+	var prompt := get_node_or_null("%CityPromptLabel") as Label
+	if prompt != null:
+		prompt.text = "正在地图上点选出发城，也可点击卡片" if _source_picking \
+			else "地图点选出发城市，或点击下方城市卡片"
+	if _city_cards_identity != _source_cities_identity:
+		_city_cards_identity = _source_cities_identity
+		for child in _city_cards_box.get_children():
+			_city_cards_box.remove_child(child)
+			child.queue_free()
+		_city_card_buttons.clear()
+		for index in range(1, _source_city.item_count):
+			var card := FamilyRowScene.instantiate() as Button
+			var city_name := _source_city.get_item_text(index)
+			card.set_compact_summary({
+				"name": city_name,
+				"population_text": "出发",
+				"population_tooltip": "选择这座城作为出发地",
+				"effect": "点击卡片，或点地图上的青绿环",
+				"icon": "metric.territory",
+				"accent": UITokens.DOSSIER_VERDIGRIS,
+				"tag_text": "可出发",
+				"tag_color": UITokens.DOSSIER_VERDIGRIS,
+				"bar_ratio": 1.0,
+				"bar_color": UITokens.DOSSIER_VERDIGRIS,
+			})
+			card.set_meta("source_index", index)
+			card.pressed.connect(_on_city_card_pressed.bind(card))
+			_city_cards_box.add_child(card)
+			_city_card_buttons.append(card)
+	for card in _city_card_buttons:
+		if not is_instance_valid(card):
+			continue
+		var index := int(card.get_meta("source_index", -1))
+		card.set_pressed_no_signal(index >= 0 and _source_city.get_item_id(index) == _source_filter)
+	if _source_filter < 0:
+		_maybe_arm_source_pick()
+
+
+func _maybe_arm_source_pick() -> void:
+	if _target_picking or _source_picking or not _source_pick_armed or _source_first or _source_filter >= 0:
+		return
+	begin_source_selection()
+
+
+func _on_city_card_pressed(card: Button) -> void:
+	var index := int(card.get_meta("source_index", -1))
+	if _source_city == null or index <= 0:
+		return
+	_source_picking = false
+	_source_city.select(index)
+	_on_source_city_selected(index)
+	_update_start_enabled()
+
+
+func _planning_sources() -> PackedInt32Array:
+	var sources := PackedInt32Array()
+	if _source_city == null:
+		return sources
+	for index in range(1, _source_city.item_count):
+		sources.append(_source_city.get_item_id(index))
+	if sources.is_empty() and _source_filter >= 0:
+		sources.append(_source_filter)
+	return sources
+
+
+func _publish_planning_context() -> void:
+	if not visible:
+		return
+	var sources := _planning_sources()
+	var parts := PackedStringArray()
+	for cell in sources:
+		parts.append(str(int(cell)))
+	var identity := "%s|%d|%d" % ["+".join(parts), _source_filter, _target_cell]
+	if identity == _planning_identity:
+		return
+	_planning_identity = identity
+	planning_context_changed.emit({
+		"sources": sources,
+		"selected_source": _source_filter,
+		"target_cell": _target_cell,
+	})
+
+
+func _show_preview_cards(guide: bool, identity: bool, route: bool,
+		traits: bool, effects: bool) -> void:
+	if _guide_card != null:
+		_guide_card.visible = guide
+	if _identity_card != null:
+		_identity_card.visible = identity
+	if _route_card != null:
+		_route_card.visible = route
+	if _traits_card != null:
+		_traits_card.visible = traits
+	if _effects_card != null:
+		_effects_card.visible = effects
+
+
+func _paint_waiting_guide() -> void:
+	_show_preview_cards(true, false, false, false, false)
+	if _guide_title != null:
+		_guide_title.text = "家族开拓与迁徙卷宗"
+	if _guide_facts != null:
+		var source_name := _source_city.text if _source_city != null and _source_filter >= 0 else "待选"
+		_guide_facts.set_facts([
+			{"id": "source", "title": "出发", "value": source_name,
+				"subtitle": "地图青绿环", "icon": "metric.territory",
+				"accent": UITokens.DOSSIER_VERDIGRIS},
+			{"id": "family", "title": "世家", "value": "待选",
+				"subtitle": "悬停预览，点击固定", "icon": "family.house",
+				"accent": UITokens.DOSSIER_BRASS},
+			{"id": "target", "title": "目的地", "value": _cell_name(_target_cell) if _target_cell >= 0 else "待选",
+				"subtitle": "地图黄环", "icon": "system.target",
+				"accent": UITokens.DOSSIER_BRASS},
+		])
+	if _guide_notes != null:
+		_guide_notes.set_notes([])
+		_guide_notes.visible = false
+
+
+func _paint_identity_card(quote: Dictionary, branch: Dictionary, hovering: bool) -> void:
+	_show_preview_cards(false, true, _route_card.visible if _route_card != null else false,
+		_traits_card.visible if _traits_card != null else false,
+		_effects_card.visible if _effects_card != null else false)
+	var people := float(branch.get("populations", quote.get("population",
+		int(quote.get("maximum_population", 0)) + 1)))
+	var maximum := float(quote.get("maximum_population", 0))
+	var prestige_value: Variant = branch.get("prestige_levels", quote.get("prestige_level", 0))
+	var prestige_number := float(prestige_value) if typeof(prestige_value) in [TYPE_INT, TYPE_FLOAT] else 0.0
+	var buildings := str(branch.get("owned_buildings", quote.get("owned_buildings", "—")))
+	var cash := float(branch.get("cash_claims", quote.get("cash_claim", 0))) / 10000.0
+	var city_name := _source_city.text if _source_city != null and _source_filter >= 0 else "待选城市"
+	if _preview_crest != null:
+		_preview_crest.set_semantic(
+			&"family.workspace.crest" if prestige_number >= 1.0 else &"family.house",
+			UITokens.DOSSIER_OXBLOOD if prestige_number >= 3.0 else UITokens.DOSSIER_BRASS)
+	if _preview_origin != null:
+		_preview_origin.text = "从%s出发" % city_name
+	if _preview_state_pill != null:
+		_preview_state_pill.text = "预览" if hovering else ("迁徙" if _title != null and _title.text == "迁徙" else "开拓")
+	if _preview_facts != null:
+		_preview_facts.set_facts([
+			{"id": "people", "title": "当地族人",
+				"value": UITokens.format_compact_number_cn(people, 0),
+				"subtitle": "人", "icon": "family.metric.population",
+				"accent": UITokens.DOSSIER_OXBLOOD},
+			{"id": "works", "title": "产业", "value": buildings,
+				"subtitle": "本地", "icon": "economy.building",
+				"accent": UITokens.DOSSIER_UMBER},
+			{"id": "cash", "title": "资金归属",
+				"value": UITokens.format_compact_number_cn(cash, 2),
+				"subtitle": "随队", "icon": "metric.treasury",
+				"accent": UITokens.DOSSIER_BRASS},
+		])
+	if _preview_meters != null:
+		_preview_meters.set_meters([
+			{"id": "dispatch", "label": "可派",
+				"value": clampf(maximum / maxf(people, 1.0), 0.0, 1.0),
+				"value_text": "%s / %s" % [
+					UITokens.format_compact_number_cn(maximum, 0),
+					UITokens.format_compact_number_cn(people, 0)],
+				"accent": UITokens.GOOD},
+			{"id": "prestige", "label": "威望",
+				"value": clampf(prestige_number / 5.0, 0.0, 1.0),
+				"value_text": str(prestige_value),
+				"accent": UITokens.WARN},
+		])
+
+
+func _paint_trait_card(traits: Dictionary) -> void:
+	var names: PackedStringArray = traits.get("display_names", PackedStringArray())
+	var descriptions: PackedStringArray = traits.get("descriptions", PackedStringArray())
+	var core: PackedByteArray = traits.get("core", PackedByteArray())
+	var show := not names.is_empty()
+	if _traits_card != null:
+		_traits_card.visible = show
+	if not show:
+		return
+	var meters: Array = []
+	for index in range(names.size()):
+		var description := descriptions[index] if index < descriptions.size() else ""
+		var is_core := index < core.size() and core[index] != 0
+		var factor := FamilyBuffCopy.trait_factor_percent(description)
+		var badges: Array[Dictionary] = FamilyBuffCopy.extract_trait_badges(description)
+		var readout := str(badges[0].get("text", "")) if not badges.is_empty() else ("核心" if is_core else "附加")
+		meters.append({
+			"id": "trait-%d" % index,
+			"label": String(names[index]),
+			"value": clampf(factor / 200.0, 0.0, 1.0),
+			"value_text": readout,
+			"status_label": "核心" if is_core else "附加",
+			"tooltip": description,
+			"accent": UITokens.RISK if is_core else UITokens.WARN,
+		})
+	if _trait_meters != null:
+		_trait_meters.set_meters(meters)
+	var preferences: PackedStringArray = traits.get("behavior_selector_display_names", PackedStringArray())
+	var pref_kicker := get_node_or_null("%PrefKicker") as Label
+	if pref_kicker != null:
+		pref_kicker.visible = not preferences.is_empty()
+	if _pref_badges != null:
+		_pref_badges.visible = not preferences.is_empty()
+		var badges: Array = []
+		for preference in preferences:
+			badges.append({"text": String(preference), "accent": UITokens.DOSSIER_BRASS})
+		_pref_badges.set_badges(badges)
+
+
+func _paint_effect_card(effects: Dictionary) -> void:
+	var names: PackedStringArray = effects.get("effect_display_names", PackedStringArray())
+	var copy: PackedStringArray = effects.get("effect_current_descriptions",
+		effects.get("effect_descriptions", PackedStringArray()))
+	var show := not names.is_empty()
+	if _effects_card != null:
+		_effects_card.visible = show
+	if not show or _effect_notes == null:
+		return
+	var notes: Array = []
+	for index in range(mini(names.size(), 4)):
+		var description := String(copy[index]) if index < copy.size() else ""
+		var text := String(names[index])
+		if not description.is_empty():
+			text += " · " + description
+		notes.append({
+			"id": "effect-%d" % index,
+			"text": text,
+			"accent": UITokens.DOSSIER_VERDIGRIS if index == 0 else UITokens.DOSSIER_UMBER,
+		})
+	_effect_notes.set_notes(notes)
+
+
+func _preview_party_count(quote: Dictionary) -> float:
+	if not _preview_hovering and _population != null and not _selected_quote.is_empty():
+		return float(_population.value)
+	return float(quote.get("maximum_population", 0))
+
+
+func _paint_route_card(quote: Dictionary) -> void:
+	if _route_card == null:
+		return
+	if _preview_family <= 0 and _selected_quote.is_empty():
+		return
+	_route_card.visible = true
+	var waiting := _target_cell < 0
+	if _route_ready_pill != null:
+		if waiting:
+			_route_ready_pill.text = "待选落点"
+		elif bool(quote.get("kit_partial", false)) and bool(quote.get("kit_place_buildings", false)):
+			_route_ready_pill.text = "先筹备"
+		elif bool(quote.get("kit_partial", false)):
+			_route_ready_pill.text = "基础物资"
+		else:
+			_route_ready_pill.text = "可安家"
+	if _route_facts != null:
+		_route_facts.set_facts([
+			{"id": "target", "title": "目的地", "value": _cell_name(_target_cell),
+				"subtitle": "地图点选", "icon": "system.target",
+				"accent": UITokens.DOSSIER_BRASS},
+			{"id": "days", "title": "行程",
+				"value": "待计算" if waiting else "%d 日" % int(quote.get("travel_days", 1)),
+				"subtitle": "预计抵达", "icon": "family.metric.time",
+				"accent": UITokens.DOSSIER_UMBER},
+			{"id": "party", "title": "随行",
+				"value": UITokens.format_compact_number_cn(_preview_party_count(quote), 0),
+				"subtitle": "人", "icon": "family.metric.population",
+				"accent": UITokens.DOSSIER_OXBLOOD},
+		])
+	var badges := _kit_badge_items(quote)
+	if _kit_badges != null:
+		_kit_badges.visible = not badges.is_empty()
+		_kit_badges.set_badges(badges)
+	var kicker := get_node_or_null("%KitKicker") as Label
+	if kicker != null:
+		kicker.visible = not badges.is_empty()
+	if _route_notes != null:
+		# 路线状态由 pill / facts / kit badges 表达，不再附修饰性引导批注。
+		_route_notes.set_notes([])
+		_route_notes.visible = false
+
+
+func _kit_badge_items(quote: Dictionary) -> Array:
+	var badges: Array = []
+	var names: PackedStringArray = quote.get("kit_building_display_names", PackedStringArray())
+	var counts: PackedInt64Array = quote.get("kit_building_counts", PackedInt64Array())
+	for index in range(names.size()):
+		var label := String(names[index]).strip_edges()
+		if label.is_empty() or label.contains("_") or label.contains("."):
+			continue
+		var count := int(counts[index]) if index < counts.size() else 1
+		badges.append({"text": "%s ×%d" % [label, count], "accent": UITokens.DOSSIER_VERDIGRIS})
+	var professions: PackedStringArray = quote.get("profession_display_names", PackedStringArray())
+	var populations: PackedInt64Array = quote.get("profession_populations", PackedInt64Array())
+	for index in range(professions.size()):
+		var label := String(professions[index]).strip_edges()
+		if label.is_empty() or label.contains("_") or label.contains("."):
+			continue
+		var count := int(populations[index]) if index < populations.size() else 0
+		var text := label if count <= 0 else "%s %s人" % [label, UITokens.format_compact_number_cn(float(count), 0)]
+		badges.append({"text": text, "accent": UITokens.DOSSIER_BRASS})
+	return badges
+
+
+func _paint_expedition_card(title: String, metrics: String, effects: String, route: String) -> void:
+	_show_preview_cards(false, true, true, false, false)
+	if _preview_origin != null:
+		_preview_origin.text = metrics
+	if _preview_state_pill != null:
+		_preview_state_pill.text = "在途"
+	if _preview_crest != null:
+		_preview_crest.set_semantic(&"action.history", UITokens.DOSSIER_BRASS)
+	if _preview_facts != null:
+		_preview_facts.set_facts([
+			{"id": "party", "title": "队伍", "value": title,
+				"subtitle": "点击列表查看", "icon": "action.history",
+				"accent": UITokens.DOSSIER_BRASS},
+		])
+	if _preview_meters != null:
+		_preview_meters.set_meters([])
+	if _route_ready_pill != null:
+		_route_ready_pill.text = "在途"
+	if _route_facts != null:
+		_route_facts.set_facts([
+			{"id": "due", "title": "抵达", "value": route if not route.is_empty() else "筹备中",
+				"subtitle": "进度", "icon": "family.metric.time",
+				"accent": UITokens.DOSSIER_UMBER},
+		])
+	if _route_notes != null:
+		if effects.is_empty():
+			_route_notes.set_notes([])
+			_route_notes.visible = false
+		else:
+			_route_notes.visible = true
+			_route_notes.set_notes([{
+				"id": "block", "text": effects, "accent": UITokens.DOSSIER_BRASS,
+			}])
+	if _kit_badges != null:
+		_kit_badges.visible = false
+	var kicker := get_node_or_null("%KitKicker") as Label
+	if kicker != null:
+		kicker.visible = false

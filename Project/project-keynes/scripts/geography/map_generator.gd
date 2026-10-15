@@ -1322,11 +1322,20 @@ func _ensure_daily_pass_modules() -> void:
 		_ocean_land_pass_module = DCOceanLandPass.new(self)
 
 
+var _loading_epoch := 0
+
 func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
+	_loading_epoch += 1
+	var epoch := _loading_epoch
 	cfg.validate()
 	_abort_all_climate_passes("generate_restart")
 	bake_progress.emit("preparing", 0.03)
 	await _yield_generation_frame()
+	if epoch != _loading_epoch:
+		return {}
+	await LoadingCatalogCache.prepare(_ensure_generation_world_ext())
+	if epoch != _loading_epoch:
+		return {}
 
 	var effective_seed: int = cfg.seed if cfg.seed != 0 else randi()
 	_rng = RandomNumberGenerator.new()
@@ -1384,7 +1393,9 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# parity PASS）。GDScript 生成 fallback（_generate_cells / 后处理）已删除——native
 	# 失败即硬中止，绝不静默降级。失败的常见原因：DLL 未 rebuild / DCWorldExt 未注册 /
 	# native_generation_mode != ACTIVE。
-	var map := _generate_cells_native_base(cfg, effective_seed)
+	var map: MapData = await _generate_cells_native_base(cfg, effective_seed)
+	if epoch != _loading_epoch:
+		return {}
 	if map == null:
 		push_error("[generate] native C++ 生成失败且 GDScript fallback 已移除（dots-total-cpp）。"
 			+ "请检查：GDExtension DLL 是否已 rebuild、DCWorldExt 是否注册、"
@@ -1397,6 +1408,8 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	])
 	bake_progress.emit("continents", 0.28)
 	await _yield_generation_frame()
+	if epoch != _loading_epoch:
+		return {}
 
 	# Milestone 1：landform / vegetation / cover 三轴在 native post_base 结果里已就绪
 	# （DCTerrainGenerator.assemble_native_result 装配时写入），无需再 _sync_axes_for_map。
@@ -1411,6 +1424,8 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	_sync_axes_for_map(map, cfg)
 	bake_progress.emit("climate", 0.40)
 	await _yield_generation_frame()
+	if epoch != _loading_epoch:
+		return {}
 
 	var t_bake := Time.get_ticks_msec()
 	_baker = MapBaker.new()
@@ -1436,7 +1451,15 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# (幂等：下方 _build_indices / init_soa_from_bake 会按同一 _cells 顺序再建，
 	# cell.index 与 SoA terrain_arr 排布严格一致)。此刻 has_soa() 仍为 false，
 	# 物理环流 defer 分支(MapBaker._bake_initial_physical_circulation)行为不变。
-	map._build_indices()
+	_loading_profile_step("await map.build_indices_cooperative()")
+	if epoch != _loading_epoch:
+		return {}
+	await map.build_indices_cooperative()
+	if epoch != _loading_epoch:
+		return {}
+	await _yield_generation_frame()
+	if epoch != _loading_epoch:
+		return {}
 	# [snow-dyn-valid-fix 2026-06-16] 温度 Bootstrap 必须在 bake_world 之前执行。
 	# 原因：bake_world 内部 rebake_dynamic_cell_atlas_only / bake_cell_luts 会把
 	# cell.temperature 烘进动态 atlas/LUT 的 R 通道。若此刻温度仍是默认 0.0，首帧
@@ -1479,12 +1502,16 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 		cell._temp_dev_from_annual_backing = 0.0
 		cell._ema_initialized = true
 	var world: WorldData = await _baker.bake_world(map, cfg, hex_size, effective_seed)
+	if epoch != _loading_epoch:
+		return {}
 	if _baker.has_method("prewarm_dynamic_axis_caches"):
 		_baker.prewarm_dynamic_axis_caches(map, world)
 	_last_world = world
 	print("MapGenerator v7: bake %dms" % (Time.get_ticks_msec() - t_bake))
 	bake_progress.emit("ecology", 0.90)
 	await _yield_generation_frame()
+	if epoch != _loading_epoch:
+		return {}
 
 	# 任务 7：在 bake 后新增一个轻量级 pass，把 MapBaker 烤好的 per-pixel 洋流场
 	# 折返为 per-cell HexCell.ocean_current。这是逻辑层的洋流字段——渲染层从这里
@@ -1566,7 +1593,10 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# 热路径直接通过 idx*6+dir 查表，不再走 6 次字典 lookup。
 	# regenerate 路径：MapData 实例随每次 generate() 调用整体替换，本次构建
 	# 的索引随旧 MapData 一起被丢弃，无需手动 invalidate。
-	map._build_indices()
+	if not map.has_indices():
+		await map.build_indices_cooperative()
+		if epoch != _loading_epoch:
+			return {}
 
 	# ─── Climate-Weather 2ms Budget 阶段 A.1：构建 SoA 镜像 ─────────────
 	# 一次性把 25 个热字段从 HexCell 同步到 SoA 数组。后续 climate / weather
@@ -1577,17 +1607,34 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# PR-2.3 HexCell facade 化完成 + 加载/regenerate 路径改为 _alloc_soa + 一次性
 	# write_f32_indexed 全字段后可彻底删除（master 手册 §3.10.3）。
 	# 任务 3（dots-completion）：改用语义化别名 init_soa_from_bake()，明确"仅 bake 时调用"。
-	map.init_soa_from_bake()
+	_loading_profile_step("await map.init_soa_from_bake_cooperative()")
+	if epoch != _loading_epoch:
+		return {}
+	await map.init_soa_from_bake_cooperative()
+	if epoch != _loading_epoch:
+		return {}
+	await _yield_generation_frame()
+	if epoch != _loading_epoch:
+		return {}
+	_loading_profile_step("_generate_static_research_signals(map)")
 	_generate_static_research_signals(map)
+	await _yield_generation_frame()
+	if epoch != _loading_epoch:
+		return {}
 	# Natural resources are bootstrapped in _setup_sus after the deferred
 	# physical circulation solve has published per-cell currents/upwelling.
 	# This keeps fisheries from silently sampling zero-valued ocean drivers.
 	var env_pixel_size: Vector2i = Vector2i.ZERO
 	if world != null and "derived_size" in world:
 		env_pixel_size = world.derived_size
+	_loading_profile_step("ensure_environment_runtime(map, env_pixel_size)")
 	ensure_environment_runtime(map, env_pixel_size)
+	await _yield_generation_frame()
+	if epoch != _loading_epoch:
+		return {}
 	# B1-A：SoA 就位后立即 bake 每 cell 的常量 LUT（归一化纬度 + 年均温度）。
 	# Pass A 运行期内层仅需数组索引，不再调用 _cube_row_norm / pow / cos。
+	_loading_profile_step("map.bake_lat_temp_year_lut(self)")
 	map.bake_lat_temp_year_lut(self)
 	# 季节 round-start knob 几何缓存预热（perf-2026-06）：row_indices + rain-shadow
 	# jitter 各跑 n_cells 次 HexCell 解引用共 ~3ms，是 season_refresh B+ round-start
@@ -1596,9 +1643,14 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# SUS tick 挪到生成期（本就数秒级，开销不可见），让运行期 round-start 命中缓存
 	# 降到 ~0.01ms。失败（cfg/warp 未就绪）静默回退到 round 内惰性构建，行为不变。
 	if map != null and map.has_indices():
-		_ensure_season_knob_geometry_cache(map, map.cell_count())
+		_loading_profile_step("_ensure_season_knob_geometry_cache(map, map.cell_count())")
+		await _prepare_season_geometry_cooperative(map, map.cell_count())
+		if epoch != _loading_epoch:
+			return {}
 	bake_progress.emit("simulation", 0.96)
 	await _yield_generation_frame()
+	if epoch != _loading_epoch:
+		return {}
 	# ─── SUS 注册（任务 4：接入点 ① + ③）─────────────────────────────────
 	# 此时 baker.bake_world 已经一次性烘完了 ocean currents + upwelling 完整版，
 	# per-cell 也已经被 _compute_ocean_currents 回填。SUS 从这里开始接管"逐日
@@ -1606,12 +1658,15 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# ocean_currents_slice_count 个切片完成，commit 时再一次性原子替换 4 件
 	# 产物（ocean_current_buffer / ocean_upwelling_buffer / vector_atlas_tex /
 	# upwelling_tex）并回填 per-cell。
-	_setup_sus(map, world, cfg, hex_size)
+	await _setup_sus(map, world, cfg, hex_size)
+	if epoch != _loading_epoch:
+		return {}
 	bake_progress.emit("done", 1.0)
 	await _yield_generation_frame()
+	if epoch != _loading_epoch:
+		return {}
 
 	return {"map": map, "world_data": world, "seed": effective_seed}
-
 
 # ─── SUS 接入点（任务 4） ────────────────────────────────────────────────
 
@@ -1656,6 +1711,8 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		return
 	var seed_value := int(cfg.seed) if cfg != null else 0
 	_modifier_facade = ModifierFacadeScript.new()
+	await _yield_generation_frame()
+	_loading_profile_step("_modifier_facade.configure(")
 	var modifier_configured: Dictionary = _modifier_facade.configure(
 		_data_core_world_ext, map.cell_count(), _world_clock_ref)
 	if not bool(modifier_configured.get("ok", false)):
@@ -1673,6 +1730,8 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		_modifier_facade.modifier_events_available.connect(modifier_events_callback)
 	if _data_core_world_ext.has_method("configure_triggers") and _gameplay_event_bus != null:
 		_trigger_facade = TriggerFacadeScript.new()
+		await _yield_generation_frame()
+		_loading_profile_step("_trigger_facade.configure(")
 		var trigger_configured: Dictionary = _trigger_facade.configure(
 			_data_core_world_ext, _gameplay_event_bus, _world_clock_ref, _modifier_facade)
 		if not bool(trigger_configured.get("ok", false)):
@@ -1693,6 +1752,8 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		if Engine.has_meta(&"country_pending_queue_enabled"):
 			country_profile.country_pending_queue_enabled = bool(
 				Engine.get_meta(&"country_pending_queue_enabled"))
+	await _yield_generation_frame()
+	_loading_profile_step("_country_facade.configure(")
 	var country_configured: Dictionary = _country_facade.configure(
 		_data_core_world_ext, map.cell_count(), seed_value, country_profile)
 	if not bool(country_configured.get("ok", false)):
@@ -1710,19 +1771,24 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 			"message": "无法建立玩家国家。"}
 		_country_facade = null
 		return
+	await _yield_generation_frame()
+	_loading_profile_step("_country_facade.bootstrap(map.is_water_arr, country_packet)")
 	var country_bootstrapped: Dictionary = _country_facade.bootstrap(map.is_water_arr, country_packet)
 	if not bool(country_bootstrapped.get("ok", false)):
 		push_error("[country] bootstrap failed: %s" % String(
 			country_bootstrapped.get("reason", "unknown")))
 		_country_facade = null
 		return
-	var economy_configured: Dictionary = _configure_economy_runtime(map, seed_value)
+	await _yield_generation_frame()
+	var economy_configured: Dictionary = await _configure_economy_runtime_cooperative(map, seed_value)
 	if not bool(economy_configured.get("ok", false)):
 		push_error("[economy] configure failed: %s" % String(
 			economy_configured.get("reason", "unknown")))
 		return
 	if _data_core_world_ext.has_method("configure_ideologies"):
 		var ideology_facade := IdeologyFacadeScript.new()
+		await _yield_generation_frame()
+		_loading_profile_step("ideology_facade.configure(")
 		var ideology_configured: Dictionary = ideology_facade.configure(
 			_data_core_world_ext, _country_facade.native_catalog(), null,
 			_economy_facade.native_catalog())
@@ -1732,7 +1798,10 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 			push_error("[ideology] configure failed: %s" % String(
 				ideology_configured.get("reason", "unknown")))
 	if not _gameplay_start_context.is_empty():
+		await _yield_generation_frame()
+		_loading_profile_step("country_ai_init")
 		_configure_country_ai(map, seed_value, _gameplay_player_country_handles())
+		await _yield_generation_frame()
 	# Production bootstrap remains empty. The explicit test fixture is a
 	# generation-time cold path and never becomes a historical population source.
 	var population_packet: Dictionary = {}
@@ -1744,6 +1813,7 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		var country_starts: Array[Dictionary] = []
 		for start in _gameplay_start_context.get("country_starts", []):
 			country_starts.append((start as Dictionary).duplicate(true))
+		_loading_profile_step("starter_settlements")
 		starter_bootstrap_report = StarterSettlementBootstrapScript.build_many(
 			map, _economy_facade, country_starts)
 		if not bool(starter_bootstrap_report.get("ok", false)):
@@ -1770,6 +1840,8 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		population_packet = test_bootstrap_report.get("population_packet", {})
 		market_packet = test_bootstrap_report.get("market_packet", {})
 		building_packet = test_bootstrap_report.get("building_packet", {})
+	await _yield_generation_frame()
+	_loading_profile_step("_economy_facade.bootstrap(")
 	var bootstrapped: Dictionary = _economy_facade.bootstrap(
 		population_packet, market_packet, building_packet)
 	if not bool(bootstrapped.get("ok", false)):
@@ -3646,7 +3718,9 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	_sus_world = world
 	# 生成收尾即刻建立散布同步基线：此后任何 tick 级写入（含 season-0 reconcile、
 	# 海冰、veg_dyn）都会在 finish_daily_tick 被 diff 捕获并补发散布刷新。
+	_loading_profile_step("scatter_snapshot")
 	_prime_scatter_sync_snapshot(map)
+	await _yield_generation_frame()
 	# 创建一个全新 DCSystemScheduler 实例（regenerate 路径会让旧实例随
 	# MapGenerator 一起被替换，不需要手动 reset_all_progress）。
 	var cp_sched := _c()
@@ -3674,7 +3748,9 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		var demo_tg_on: bool = false
 		if cp_dc != null and "demo_thermal_gradient_enabled" in cp_dc:
 			demo_tg_on = bool(cp_dc.demo_thermal_gradient_enabled)
+		_loading_profile_step("dc_world_bind")
 		_data_core_world.bind_map_data(map, demo_tg_on)
+		await _yield_generation_frame()
 	_sus.bind_world(_data_core_world)
 
 	# DataCore World — C++ co-processor（dots-roadmap-to-gdextension 务实 A）。
@@ -3695,7 +3771,9 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 				# 避免 PKLog 默认关闭下原生 diag print 仍然刷屏。
 				if _data_core_world_ext.has_method("set_diag_logs_enabled"):
 					_data_core_world_ext.set_diag_logs_enabled(PKLog.enabled)
+				_loading_profile_step("native_world_bind")
 				var ext_bound: bool = bool(_data_core_world_ext.bind_map_data(map))
+				await _yield_generation_frame()
 				print("[DataCore] _data_core_world_ext bound=%s (climate co-processor; class=DCWorldExt)" % str(ext_bound))
 				_dc_terrain_mirror_dirty = true
 				_reset_natural_resource_cadence(map.cell_count(), 0)
@@ -3751,7 +3829,11 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		var _facade_on: bool = true
 		var _cell_arr_for_bind: Array = map._cell_array
 		var _n_cells_for_bind: int = _cell_arr_for_bind.size()
+		_loading_profile_step("cell_facade_bind")
 		for _ci in range(_n_cells_for_bind):
+			if _generation_slice_due():
+				await (Engine.get_main_loop() as SceneTree).process_frame
+				_generation_slice_start_usec = Time.get_ticks_usec()
 			var _c_for_bind = _cell_arr_for_bind[_ci]
 			if _c_for_bind != null and _c_for_bind.has_method("bind_world"):
 				_c_for_bind.bind_world(_data_core_world, _facade_on, _data_core_world_ext)
@@ -3777,14 +3859,22 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# Resource bootstrap must observe committed physical geography. It still
 	# precedes economy bootstrap, and the explicit push keeps the native
 	# snapshot slots identical to MapData after replacing PackedArrays.
-	_bootstrap_natural_resource_deposits(map, cfg)
+	await _yield_generation_frame()
+	_loading_profile_step("_bootstrap_natural_resource_deposits")
+	await _bootstrap_natural_resource_deposits(map, cfg, true)
+	await _yield_generation_frame()
+	_loading_profile_step("_publish_bootstrapped_natural_resources_to_runtime")
 	_publish_bootstrapped_natural_resources_to_runtime(map)
+	await _yield_generation_frame()
+	_loading_profile_step("_append_natural_resource_research_signals")
 	_append_natural_resource_research_signals(map)
+	await _yield_generation_frame()
+	_loading_profile_step("_seed_bio_occupancy")
 	_seed_bio_occupancy(map)
 	if not _gameplay_start_context.is_empty():
 		var gameplay_config: Dictionary = _gameplay_start_context.get("config", {})
 		var country_config: Dictionary = gameplay_config.get("country", {})
-		_gameplay_start_report = StartLocationPolicyScript.select_and_prepare(
+		_gameplay_start_report = await StartLocationPolicyScript.select_and_prepare_cooperative(
 			map,
 			world,
 			int(cfg.seed),
@@ -3794,7 +3884,11 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 			return
 		_gameplay_start_context.merge(_gameplay_start_report, true)
 		if _gameplay_start_has_resource_topups(_gameplay_start_report):
+			await _yield_generation_frame()
+			_loading_profile_step("_append_natural_resource_research_signals")
 			_append_natural_resource_research_signals(map)
+			await _yield_generation_frame()
+			_loading_profile_step("_publish_bootstrapped_natural_resources_to_runtime")
 			_publish_bootstrapped_natural_resources_to_runtime(map)
 	# ─── Phase F.1：DCWorldExt 接管 weather field solve（charter §7 P0）──
 	# 把 ext 句柄一次性下发给 WeatherSystem。ext 为 null（gdext 未编译 / 未 bind）
@@ -3815,7 +3909,11 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	_gameplay_effect_job = null
 	if _data_core_world_ext != null and _data_core_world_ext.has_method("configure_effects"):
 		var effect_facade := EffectFacadeScript.new()
+		await _yield_generation_frame()
+		_loading_profile_step("effect_catalog")
 		var effect_catalog := EffectDomainCatalogScript.build()
+		await _yield_generation_frame()
+		_loading_profile_step("effect_configure")
 		if effect_catalog == null:
 			push_error("[effect] domain catalog build failed")
 		else:
@@ -3837,7 +3935,9 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# Independent ECONOMY_GRAPH is registered after EffectRuntime and before the
 	# native/legacy daily fork, so both environmental authority modes share one
 	# economy schedule.
-	_setup_economy_runtime(map, cfg, cp_sched)
+	await _yield_generation_frame()
+	_loading_profile_step("_setup_economy_runtime")
+	await _setup_economy_runtime(map, cfg, cp_sched)
 	_season_refresh_job = SeasonRefreshSystemScript.new(self, map, world)
 	_sus.configure_job_from_profile(_season_refresh_job, cp_sched)
 	_runtime_register_system(_season_refresh_job)
@@ -3898,6 +3998,8 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	_bio_occupancy_daily_job = BioOccupancyDailySystemScript.new(self, map, 8)
 	_sus.configure_job_from_profile(_bio_occupancy_daily_job, cp, false, &"bio_occupancy_daily", 1)
 	_runtime_register_system(_bio_occupancy_daily_job)
+	await _yield_generation_frame()
+	_loading_profile_step("if _try_register_native_daily_sim_job")
 	if _try_register_native_daily_sim_job(map, world):
 		if OS.is_debug_build():
 			print("[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily + bio_occupancy_daily; retained season_refresh + ocean_currents boundary jobs")
@@ -3905,6 +4007,8 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		_runtime_build_topology("native_daily path")
 		if _sus_bootstrap == null:
 			_sus_bootstrap = DCSusSystemsBootstrapScript.new(self)
+		await _yield_generation_frame()
+		_loading_profile_step("_sus_bootstrap.attach_post_setup")
 		_sus_bootstrap.attach_post_setup(self, _sus)
 		return
 
@@ -4005,6 +4109,8 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# 注意：实际注册逻辑仍在本函数内（Phase 3.4 拆分时才搬到 bootstrap.bootstrap()）。
 	if _sus_bootstrap == null:
 		_sus_bootstrap = DCSusSystemsBootstrapScript.new(self)
+	await _yield_generation_frame()
+	_loading_profile_step("_sus_bootstrap.attach_post_setup")
 	_sus_bootstrap.attach_post_setup(self, _sus)
 	if OS.is_debug_build():
 		print("[map_generator] %s" % _sus_bootstrap.status_one_liner())
@@ -4012,6 +4118,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 
 ## Phase 1.4 — 让 main.gd / debug overlay 拿到 sus_systems_bootstrap 引用。
 ## 在 _setup_sus 完成之前返回 null。
+
 func get_sus_bootstrap() -> RefCounted:
 	return _sus_bootstrap
 
@@ -9158,7 +9265,7 @@ func natural_resource_last_result() -> Dictionary:
 # （habitat 或 terrain/vegetation exclusion 不匹配时为 0）。
 # 在 init_soa_from_bake 之后调用（temp/moisture/water/terrain/elevation/landform/vegetation/
 # has_river/is_lake_seed/has_volcano/cell_pos 均已就位）。新因子默认 0/{} → 行为不变。
-func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
+func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = false) -> void:
 	if map_ref == null:
 		return
 	var n_cells: int = map_ref.cell_count()
@@ -9200,6 +9307,9 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 	if habitat_arr.size() < n_cells:
 		habitat_arr.resize(n_cells)
 	for i in range(n_cells):
+		if cooperative and _generation_slice_due():
+			await (Engine.get_main_loop() as SceneTree).process_frame
+			_generation_slice_start_usec = Time.get_ticks_usec()
 		var mask := 0
 		var is_water_cell := have_water and water_arr[i] != 0
 		var landform := int(lf_arr[i]) if have_lf else -1
@@ -9233,6 +9343,9 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 	estuary_strength_arr.resize(n_cells)
 	if have_river and have_river_downstream and have_lf:
 		for source in range(n_cells):
+			if cooperative and _generation_slice_due():
+				await (Engine.get_main_loop() as SceneTree).process_frame
+				_generation_slice_start_usec = Time.get_ticks_usec()
 			if river_arr[source] == 0:
 				continue
 			var outlet := int(river_downstream_arr[source])
@@ -9339,6 +9452,9 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg) -> void:
 				belt_noise.frequency = maxf(0.0001, float(p.init_belt_scale))
 				belt_noises[belt_key] = belt_noise
 		for i in range(n_cells):
+			if cooperative and _generation_slice_due():
+				await (Engine.get_main_loop() as SceneTree).process_frame
+				_generation_slice_start_usec = Time.get_ticks_usec()
 			if habitat_code > 0 and not ResourceProfileRegistry.habitat_available(
 					p, int(habitat_arr[i])):
 				arr[i] = 0.0
@@ -11629,7 +11745,7 @@ func _generate_cells_from_pkmap(cfg: MapConfig, seed: int) -> MapData:
 	var final_res: Dictionary = PkmapIOScript.native_result_from_payload(payload, header)
 	if _terrain_generator == null:
 		_terrain_generator = TerrainGeneratorScript.new(self)
-	var map: MapData = _terrain_generator.assemble_native_result(final_res, cfg)
+	var map: MapData = await _terrain_generator.assemble_native_result(final_res, cfg)
 	if map == null:
 		push_error("[native_generation/pkmap] assemble_native_result 失败；中止，不回退程序生成")
 		_native_generation_base_report = {
@@ -11679,7 +11795,7 @@ func _generate_cells_from_pkmap(cfg: MapConfig, seed: int) -> MapData:
 # 生态/地标后处理；GDScript 只发送请求、校验 PackedArray 并装配 HexCell。
 func _generate_cells_native_base(cfg: MapConfig, seed: int) -> MapData:
 	if cfg != null and String(cfg.map_source) == "pkmap":
-		return _generate_cells_from_pkmap(cfg, seed)
+		return await _generate_cells_from_pkmap(cfg, seed)
 	var cp := _c()
 	if not _native_mode_is_active(cp, "native_generation_mode"):
 		_native_generation_base_report = {
@@ -11708,7 +11824,7 @@ func _generate_cells_native_base(cfg: MapConfig, seed: int) -> MapData:
 	var final_res: Dictionary
 	var n: int
 	if ext.has_method("run_native_world_generate_full_pass"):
-		final_res = ext.run_native_world_generate_full_pass(seed, cfg_dict, profile_dict)
+		final_res = await NativeLoadingTasks.compute(ext,"generate", {"seed":seed,"cfg":cfg_dict,"profile":profile_dict})
 		_native_generation_base_report = final_res.duplicate(true)
 		if int(final_res.get("rc", -1)) != 0 or bool(final_res.get("fallback", true)):
 			var reason_f := String(final_res.get("fallback_reason", final_res.get("reason", "unknown")))
@@ -11773,7 +11889,7 @@ func _generate_cells_native_base(cfg: MapConfig, seed: int) -> MapData:
 
 	if _terrain_generator == null:
 		_terrain_generator = TerrainGeneratorScript.new(self)
-	var map: MapData = _terrain_generator.assemble_native_result(final_res, cfg)
+	var map: MapData = await _terrain_generator.assemble_native_result(final_res, cfg)
 	if map == null:
 		push_warning("[native_generation] final result invalid（装配失败）；中止生成")
 		return null
@@ -13007,43 +13123,39 @@ func _log_bio_occupancy_seed(knobs: Dictionary, seed_res: Dictionary, landmass_c
 	var food_bits: Array[int] = []
 	for food_id in ["bio.maize", "bio.wheat", "bio.rice", "bio.potato"]:
 		food_bits.append(ResearchSignalCatalogScript.occupancy_bit_for_signal(catalog, StringName(food_id)))
-	var seen := {}
-	for cell in range(mini(occupancy.size(), landmass.size())):
+	# Build all diagnostic summaries in one traversal. Re-scanning every cell
+	# for every island used to stall the loading UI without changing any data.
+	var summaries := {}
+	var food_names := ["maize","wheat","rice","potato"]
+	for cell in range(mini(occupancy.size(),landmass.size())):
 		var lid := int(landmass[cell])
-		if lid <= 0 or seen.has(lid):
+		if lid <= 0:
 			continue
-		seen[lid] = true
-		var foods: Array[String] = []
-		var classes: Array[String] = []
-		for other in range(occupancy.size()):
-			if int(landmass[other]) != lid:
+		if not summaries.has(lid):
+			summaries[lid] = {"foods":[],"classes":[]}
+		var foods: Array = summaries[lid].foods
+		var classes: Array = summaries[lid].classes
+		var bits := int(occupancy[cell])
+		if bits == 0:
+			continue
+		for i in food_bits.size():
+			if food_bits[i] >= 0 and (bits & (1 << food_bits[i])) != 0 and not foods.has(food_names[i]):
+				foods.append(food_names[i])
+		for si in range(mini(occ_bits.size(),habitat_class.size())):
+			var bit := int(occ_bits[si])
+			var habitat := int(habitat_class[si])
+			if bit < 0 or bit >= 32 or (bits & (1 << bit)) == 0 or habitat <= 0 or habitat >= class_names.size():
 				continue
-			var bits := int(occupancy[other])
-			if bits == 0:
-				continue
-			if int(food_bits[0]) >= 0 and (bits & (1 << int(food_bits[0]))) != 0 and not foods.has("maize"):
-				foods.append("maize")
-			if int(food_bits[1]) >= 0 and (bits & (1 << int(food_bits[1]))) != 0 and not foods.has("wheat"):
-				foods.append("wheat")
-			if int(food_bits[2]) >= 0 and (bits & (1 << int(food_bits[2]))) != 0 and not foods.has("rice"):
-				foods.append("rice")
-			if int(food_bits[3]) >= 0 and (bits & (1 << int(food_bits[3]))) != 0 and not foods.has("potato"):
-				foods.append("potato")
-			for si in range(mini(occ_bits.size(), habitat_class.size())):
-				var bit := int(occ_bits[si])
-				if bit < 0 or bit >= 32 or (bits & (1 << bit)) == 0:
-					continue
-				var hclass := int(habitat_class[si])
-				if hclass <= 0 or hclass >= class_names.size():
-					continue
-				var cname := String(class_names[hclass])
-				if not classes.has(cname):
-					classes.append(cname)
-		print("[bio-occupancy]   landmass %d classes=%s foods=%s" % [
-			lid,
+			var name := String(class_names[habitat])
+			if not classes.has(name):
+				classes.append(name)
+	for lid in summaries:
+		var foods: Array = summaries[lid].foods
+		var classes: Array = summaries[lid].classes
+		print("[bio-occupancy]   landmass %d classes=%s foods=%s" % [lid,
 			", ".join(classes) if not classes.is_empty() else "none",
-			", ".join(foods) if not foods.is_empty() else "none",
-		])
+			", ".join(foods) if not foods.is_empty() else "none"])
+
 
 
 func run_bio_occupancy_pass_native(map_ref, run_diffusion: bool = false,
@@ -13384,6 +13496,31 @@ func refresh_climate_daily(map: MapData, season_phase: float) -> void:
 			t_pass_a_ms, t_pass_b_ms, t_ocean_ms, t_wind_ms, t_sea_ice_ms, t_ice_bake_ms, t_transp_ms,
 			_wrap_path,
 		])
+
+## Initial publish uses the same pass kernels and ordering while the clock is paused.
+func refresh_climate_loading(map: MapData, season_phase: float) -> void:
+	var cp := _c()
+	if map == null or cp == null or _last_cfg == null or not cp.daily_climate_interpolation:
+		return
+	_climate_pass_a(map, season_phase)
+	await _yield_generation_frame()
+	if cp.enable_local_climate_coupling:
+		_climate_pass_b(map, season_phase)
+		await _yield_generation_frame()
+	if _last_cfg.enable_ocean_heat_transport:
+		_ocean_water_pass(map, season_phase)
+		await _yield_generation_frame()
+		_ocean_land_pass(map, season_phase)
+		await _yield_generation_frame()
+		await _wind_air_mass_pass(map, season_phase, true)
+		await _yield_generation_frame()
+		await _wind_surface_pass(map, season_phase, true)
+		await _yield_generation_frame()
+	_apply_sea_ice_daily_pass(map, season_phase)
+	await _yield_generation_frame()
+	if cp.enable_local_climate_coupling:
+		_apply_transpiration_pass(map)
+	_diagnostics_bus.increment_climate_call_count()
 
 # ─── Daily Sim SoA Refactor 方向 X：sub-pass API ──────────────────────────
 # 把 refresh_climate_daily 内部拆成可独立调用的 sub-pass，供 ClimateDailySystem
@@ -19889,7 +20026,7 @@ func run_wind_surface_pass_native(map: MapData, season_phase: float) -> Dictiona
 # 只写回 cell.air_mass_temp_anomaly；temperature 由紧随其后的 surface pass 注入。
 # [perf 2026-05-20] 不再循环 cell.X = setter（每帧 N 次 _dirty_mark_one 风暴），
 # 改成累积到 PackedFloat32Array → 末尾 write_f32_dense 一次性 commit + 一次性 mark dirty range。
-func _wind_air_mass_pass(map: MapData, season_phase: float) -> void:
+func _wind_air_mass_pass(map: MapData, season_phase: float, cooperative: bool = false) -> void:
 	if _last_cfg == null:
 		return
 	var advect_steps: int = max(0, _last_cfg.WIND_HEAT_ADVECT_STEPS)
@@ -19898,12 +20035,18 @@ func _wind_air_mass_pass(map: MapData, season_phase: float) -> void:
 	# 基线温度缓存（per-cell 的 temp_year_at_cell，用于算 anomaly）
 	var baseline: Dictionary = {}
 	for cell: HexCell in map.all_cells():
+		if cooperative and _generation_slice_due():
+			await (Engine.get_main_loop() as SceneTree).process_frame
+			_generation_slice_start_usec = Time.get_ticks_usec()
 		var ny: float = _cube_row_norm(cell, _last_cfg)
 		baseline[cell] = _compute_temperature(ny, cell.elevation)
 	
 	# 先把所有 cell 的当前 temperature 拷贝出来（避免半途被覆盖）
 	var temp_before: Dictionary = {}
 	for cell: HexCell in map.all_cells():
+		if cooperative and _generation_slice_due():
+			await (Engine.get_main_loop() as SceneTree).process_frame
+			_generation_slice_start_usec = Time.get_ticks_usec()
 		temp_before[cell] = _valid_runtime_temp_or_baseline(cell.temperature, float(baseline[cell]))
 	
 	# [perf] 累积输出，循环结束后批量 commit
@@ -19913,6 +20056,9 @@ func _wind_air_mass_pass(map: MapData, season_phase: float) -> void:
 	# 默认值：anom=0，temperature 保持原值。
 	var iter_cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
 	for ic in range(n_cells_air):
+		if cooperative and _generation_slice_due():
+			await (Engine.get_main_loop() as SceneTree).process_frame
+			_generation_slice_start_usec = Time.get_ticks_usec()
 		anom_out_arr[ic] = 0.0
 	
 	# climate-loop-closure 修复：直接读 SoA 风场（wind_x_arr/wind_y_arr，与 weather
@@ -19922,6 +20068,9 @@ func _wind_air_mass_pass(map: MapData, season_phase: float) -> void:
 	var wind_y_arr_air: PackedFloat32Array = map.wind_y_arr
 	var has_wind_soa_air: bool = wind_x_arr_air.size() == n_cells_air and wind_y_arr_air.size() == n_cells_air
 	for cell: HexCell in map.all_cells():
+		if cooperative and _generation_slice_due():
+			await (Engine.get_main_loop() as SceneTree).process_frame
+			_generation_slice_start_usec = Time.get_ticks_usec()
 		var ci_air: int = int(cell.index)
 		var wind: Vector2
 		if has_wind_soa_air and ci_air >= 0 and ci_air < n_cells_air:
@@ -19970,6 +20119,9 @@ func _wind_air_mass_pass(map: MapData, season_phase: float) -> void:
 	# 在本路径未反映到 map.air_mass_temp_anomaly_arr → air_mass 恒 0。
 	var _anom_ok: bool = map.air_mass_temp_anomaly_arr.size() == n_cells_air
 	for ic in range(n_cells_air):
+		if cooperative and _generation_slice_due():
+			await (Engine.get_main_loop() as SceneTree).process_frame
+			_generation_slice_start_usec = Time.get_ticks_usec()
 		if _anom_ok:
 			map.air_mass_temp_anomaly_arr[ic] = anom_out_arr[ic]
 		else:
@@ -19985,7 +20137,8 @@ func _wind_air_mass_pass(map: MapData, season_phase: float) -> void:
 # 每个 cell 从相邻 cell 收集 air_mass_temp_anomaly，按"邻 cell 的 wind_vector 是否流向本 cell"加权注入。
 # 必须在 _wind_air_mass_pass 之后调用——读取的是气团段写完的 anomaly。
 # [perf 2026-05-20] 同 _wind_air_mass_pass：循环只累积到 array，末尾 dense 一次性 commit。
-func _wind_surface_pass(map: MapData, season_phase: float) -> void:
+
+func _wind_surface_pass(map: MapData, season_phase: float, cooperative: bool = false) -> void:
 	# A 修复（climate-temp-pingpong-fix-2026-06）：C++ 路径在此 pass 末端做合成
 	# cell_temp = clamp(baseline + ocean_anom + local_anom + air_anom)。GDScript fallback
 	# 当前仍按旧"在自身温度上 += 风热 anomaly"的方式实现；fallback 命中率应趋近 0
@@ -19998,6 +20151,9 @@ func _wind_surface_pass(map: MapData, season_phase: float) -> void:
 	# baseline 在表面段也需要——用 cell.elevation + _cube_row_norm 重算
 	var baseline: Dictionary = {}
 	for cell: HexCell in map.all_cells():
+		if cooperative and _generation_slice_due():
+			await (Engine.get_main_loop() as SceneTree).process_frame
+			_generation_slice_start_usec = Time.get_ticks_usec()
 		var ny: float = _cube_row_norm(cell, _last_cfg)
 		baseline[cell] = _compute_temperature(ny, cell.elevation)
 	
@@ -20010,6 +20166,9 @@ func _wind_surface_pass(map: MapData, season_phase: float) -> void:
 	temp_out_s.resize(n_cells_s)
 	# 默认值：anom=0；temp 优先保留 air_mass pass 写入 SoA 的最新值。
 	for ic in range(n_cells_s):
+		if cooperative and _generation_slice_due():
+			await (Engine.get_main_loop() as SceneTree).process_frame
+			_generation_slice_start_usec = Time.get_ticks_usec()
 		var c0: HexCell = iter_cells_s[ic]
 		anom_out_s[ic] = 0.0
 		temp_out_s[ic] = c0.temperature
@@ -20023,9 +20182,15 @@ func _wind_surface_pass(map: MapData, season_phase: float) -> void:
 	var has_air_anom_soa_s: bool = air_anom_arr_s.size() == n_cells_s
 	var has_temp_soa_s: bool = temp_arr_s.size() == n_cells_s
 	for ic in range(n_cells_s):
+		if cooperative and _generation_slice_due():
+			await (Engine.get_main_loop() as SceneTree).process_frame
+			_generation_slice_start_usec = Time.get_ticks_usec()
 		if has_temp_soa_s:
 			temp_out_s[ic] = temp_arr_s[ic]
 	for cell: HexCell in map.all_cells():
+		if cooperative and _generation_slice_due():
+			await (Engine.get_main_loop() as SceneTree).process_frame
+			_generation_slice_start_usec = Time.get_ticks_usec()
 		var self_wp: Vector2 = HexUtils.cube_to_world(cell.q, cell.r, _last_hex_size)
 		var weighted_sum: float = 0.0
 		var weight_total: float = 0.0
@@ -20072,6 +20237,9 @@ func _wind_surface_pass(map: MapData, season_phase: float) -> void:
 	var _temp_ok_s: bool = map.temp_arr.size() == n_cells_s
 	var _anom_ok_s: bool = map.air_mass_temp_anomaly_arr.size() == n_cells_s
 	for ic in range(n_cells_s):
+		if cooperative and _generation_slice_due():
+			await (Engine.get_main_loop() as SceneTree).process_frame
+			_generation_slice_start_usec = Time.get_ticks_usec()
 		if _temp_ok_s:
 			map.temp_arr[ic] = temp_out_s[ic]
 		if _anom_ok_s:
@@ -20098,6 +20266,7 @@ func _wind_surface_pass(map: MapData, season_phase: float) -> void:
 
 # bake_world 阶段进度信号 forwarder：MapBaker.stage_progress → MapGenerator.bake_progress。
 # 详细 stage 含义见 map_baker.gd 顶部 stage_progress 信号注释。
+
 func _on_baker_stage_progress(stage: String, fraction: float) -> void:
 	var mapped_stage := "encode" if stage == "done" else stage
 	bake_progress.emit(mapped_stage, lerpf(0.44, 0.88, clampf(fraction, 0.0, 1.0)))
@@ -20499,3 +20668,70 @@ func _diff_f32_arrays(a: PackedFloat32Array, b: PackedFloat32Array, n: int) -> D
 		"max_abs_diff": max_abs_diff,
 		"first_diff_idx": first_diff_idx,
 	}
+
+
+func cancel_loading_work() -> void:
+	_loading_epoch += 1
+	if _data_core_world_ext != null and _data_core_world_ext.has_method("cancel_all_loading_tasks"):
+		_data_core_world_ext.cancel_all_loading_tasks()
+	if _baker != null:
+		_baker.cancel_loading_work()
+
+
+var _loading_step_usec := 0
+var _loading_step_name := ""
+func _loading_profile_step(label: String) -> void:
+	var now := Time.get_ticks_usec()
+	if _loading_step_usec > 0 and now-_loading_step_usec > 30000:
+		print("[loading-substep] %s %.1fms" % [_loading_step_name,float(now-_loading_step_usec)/1000.0])
+	_loading_step_usec = now
+	_loading_step_name = label
+	Engine.set_meta("loading_step",label)
+
+
+var _generation_slice_start_usec := 0
+func _generation_slice_due() -> bool:
+	var now := Time.get_ticks_usec()
+	if now-_generation_slice_start_usec < UITokens.LOADING_MAIN_SLICE_USEC:
+		return false
+	_generation_slice_start_usec = now
+	return true
+
+
+func _prepare_season_geometry_cooperative(map: MapData, n: int) -> void:
+	var rows := PackedInt32Array()
+	var jitter := PackedFloat32Array()
+	rows.resize(n)
+	jitter.resize(n)
+	var tree := Engine.get_main_loop() as SceneTree
+	var start := Time.get_ticks_usec()
+	for i in n:
+		var cell := map.cell_at(i)
+		if cell != null:
+			rows[i] = _cube_to_row(cell,_last_cfg)
+			jitter[i] = _height_warp.get_noise_2d(float(cell.q)*8.0,float(cell.r)*8.0)*.04 if _height_warp != null else 0.0
+		if tree != null and Time.get_ticks_usec()-start >= UITokens.LOADING_MAIN_SLICE_USEC:
+			await tree.process_frame
+			start = Time.get_ticks_usec()
+	_season_knob_row_idx_cache = rows
+	_season_knob_jitter_cache = jitter
+	_season_knob_cache_map_id = map.get_instance_id()
+	_season_knob_cache_cfg_id = _last_cfg.get_instance_id()
+	_season_knob_cache_warp_id = _height_warp.get_instance_id() if _height_warp != null else 0
+	_season_knob_cache_n = n
+
+func _configure_economy_runtime_cooperative(map: MapData, seed_value: int) -> Dictionary:
+	if map == null or _data_core_world_ext == null:
+		return {"ok": false, "reason": "economy_world_unavailable"}
+	_economy_facade = EconomyFacadeScript.new()
+	var configured: Dictionary = _economy_facade.configure(
+		_data_core_world_ext, map.cell_count(), seed_value)
+	if not bool(configured.get("ok", false)):
+		_economy_facade = null
+		return configured
+	await _yield_generation_frame()
+	var trade_topology := _capture_economy_trade_topology(map)
+	if not bool(trade_topology.get("ok", false)):
+		_economy_facade = null
+		return trade_topology
+	return configured

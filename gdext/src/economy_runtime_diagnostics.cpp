@@ -187,6 +187,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_cell_support_ema_q16);
     cap(_cell_carrying_k_geo); cap(_cell_carrying_k_eff);
     cap(_cell_carrying_surplus_q16); cap(_cell_carrying_sat_q16);
+    cap(_food_equivalent_goods);
     cap(_cell_carrying_family_surplus_q16); cap(_cell_carrying_family_bindable);
     cap(_cell_food_output_eq_period); cap(_cell_food_input_eq_period);
     cap(_cell_food_import_eq_period); cap(_cell_food_export_eq_period);
@@ -300,6 +301,8 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_market_signals_rebuild_scratch.cost_anchor_price);
     cap(_market_signal_overflow_cells);
     cap(_epoch_business_demand_ema); cap(_epoch_derived_business_demand);
+    cap(_derived_household_preview_scratch);
+    for (const auto &preview : _derived_household_preview_scratch) cap(preview.goods);
     cap(_epoch_substitute_business_demand);
     cap(_epoch_desired_business_demand);
     cap(_epoch_funded_business_demand); cap(_epoch_offered_supply_ema);
@@ -535,6 +538,9 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_labor_signals_rebuild_scratch.pay_ratio_q16);
     cap(_market_cell_offsets); cap(_market_cells);
     cap(_signatures); cap(_plans); cap(_survival_required_need_indices);
+    cap(_preview_need_basis_source);
+    cap(_family_behavior_source_rows);
+    cap(_family_review_cells_scratch);
     cap(_survival_food_need_mask);
     cap(_rules); cap(_rule_params); cap(_pending_commands);
     cap(_epoch_commands); cap(_structural_commands); cap(_committed_cells);

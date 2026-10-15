@@ -10,6 +10,7 @@ const DEFAULTS := {
 	"vsync": true,
 	"render_quality": "auto",
 	"ui_scale_percent": 100,
+	"reduce_motion": false,
 	"master_volume": 0.8,
 	"master_muted": false,
 	"autosave_enabled": true,
@@ -99,3 +100,4 @@ func _validate() -> void:
 		_settings.ui_scale_percent = 100
 	_settings.master_volume = clampf(float(_settings.master_volume), 0.0, 1.0)
 	_settings.autosave_enabled = bool(_settings.autosave_enabled)
+	_settings.reduce_motion = bool(_settings.reduce_motion)

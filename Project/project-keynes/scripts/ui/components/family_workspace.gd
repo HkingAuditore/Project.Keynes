@@ -13,7 +13,6 @@ const FamilyControlScene := preload("res://scenes/ui/family/family_control.tscn"
 const IconBadgeScene := preload("res://scenes/ui/icon_badge.tscn")
 const FactGridScene := preload("res://scenes/ui/inspector_fact_grid.tscn")
 const MeterListScene := preload("res://scenes/ui/inspector_meter_list.tscn")
-const NoteListScene := preload("res://scenes/ui/inspector_note_list.tscn")
 
 signal closed()
 signal colonization_requested(family_handle: int, source_cell: int)
@@ -909,13 +908,6 @@ func _build_trait_page(page: VBoxContainer, rows: Array) -> void:
 	if rows.is_empty():
 		_add_empty_label(page, "这个家族尚未形成可记录的特性。")
 		return
-	var notes := NoteListScene.instantiate() as InspectorNoteList
-	notes.set_notes([{
-		"id": "trait_intro",
-		"text": "当前共记录 %d 项家族特性。核心特性奠定立族门风，附加特性随家族经营演进。" % rows.size(),
-		"accent": UITokens.WARN,
-	}])
-	page.add_child(notes)
 	for raw in rows:
 		var row: Dictionary = raw
 		var card := _new_card()

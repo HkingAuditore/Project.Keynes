@@ -39,7 +39,7 @@ run/main_run_args="--use_data_core --use_data_core_weather"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/climate_profile_inspector/plugin.cfg")
+enabled=PackedStringArray("res://addons/climate_profile_inspector/plugin.cfg", "res://addons/loading_prebake/plugin.cfg")
 
 [input]
 

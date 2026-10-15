@@ -41,6 +41,7 @@ if env["platform"] == "windows" and env.get("is_msvc", False):
 # ---------------------------------------------------------------------------
 opts = Variables()
 opts.Add(BoolVariable("avx2", "Enable AVX2 codegen for SIMD bench paths", True))
+opts.Add(BoolVariable("runtime_lto", "Enable MSVC cross-file optimization for optimized native runtime builds", True))
 # WebAssembly SIMD128（Chrome 91+/Firefox 89+/Safari 16.4+）。默认关，首次 bring-up
 # 先用最保守的字节码；确认能跑之后再 `wasm_simd=yes` 找回一部分标量路径的损失。
 opts.Add(BoolVariable("wasm_simd", "Enable WebAssembly SIMD128 (web only)", False))
@@ -67,6 +68,15 @@ if env["platform"] == "web" and env["wasm_simd"]:
     env.Append(CCFLAGS=["-msimd128"])
     env.Append(LINKFLAGS=["-msimd128"])
 
+# godot-cpp's MSVC auto mode disables LTO. Clone before applying extension-only
+# flags: the library builders retain the original environment. Hot loops can
+# then inline exact fixed-point helpers across domain source files.
+env = env.Clone()
+if (env["runtime_lto"] and env["platform"] == "windows" and
+        env.get("is_msvc", False) and env["optimize"] in ("speed", "speed_trace")):
+    env.AppendUnique(CCFLAGS=["/GL"])
+    env.AppendUnique(LINKFLAGS=["/LTCG"])
+
 sources = (
     Glob("src/*.cpp")
     + Glob("src/components/*.cpp")
@@ -81,7 +91,7 @@ sources = (
 addons_bin = "../Project/project-keynes/addons/dots_ext/bin/"
 
 platform = env["platform"]
-output_basename = os.environ.get("DOTS_EXT_OUTPUT_BASENAME", "dots_ext")
+output_basename = os.environ.get("DOTS_EXT_OUTPUT_BASENAME", "dots_ext_hotloop_v37" if platform == "windows" else "dots_ext")
 if platform == "windows":
     output_path = addons_bin + "windows/{}{}{}".format(
         output_basename, env["suffix"], env["SHLIBSUFFIX"]

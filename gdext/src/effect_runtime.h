@@ -196,6 +196,7 @@ public:
         struct RuntimeEffectPodBehaviorOutput &output, std::string &error);
 
     godot::Dictionary configure(const godot::Dictionary &catalog);
+    bool pod_snapshot_persistence_self_test(std::string &error) const;
     // Native domain runtimes use this POD entry point at structural commit
     // boundaries. It avoids constructing Godot Dictionaries in hot loops while
     // keeping EffectRuntime as the sole owner of instance lifecycle.
@@ -703,6 +704,8 @@ private:
     void release_retired_instance_if_terminal(int32_t instance_index);
     const Command *command_at(const Transaction &transaction,
                                uint32_t ordinal) const;
+    uint64_t persisted_plan_hash(const Transaction &transaction,
+                                const std::vector<Command> &arena) const;
     int32_t transaction_index_for_id(int64_t transaction_id) const;
     int64_t *metric_ptr(Instance &instance, int32_t metric_id);
     const int64_t *metric_ptr(const Instance &instance, int32_t metric_id) const;

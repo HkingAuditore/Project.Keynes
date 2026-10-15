@@ -480,6 +480,9 @@ static func _veg_masks(veg_ids: Array) -> PackedInt32Array:
 
 
 static func compile_native_catalog() -> Dictionary:
+	var compiled := LoadingCatalogCache.research_catalog()
+	if not compiled.is_empty():
+		return compiled
 	var ids := PackedStringArray()
 	var names := PackedStringArray()
 	var kinds := PackedInt32Array()
