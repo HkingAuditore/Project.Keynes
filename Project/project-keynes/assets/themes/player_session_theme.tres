@@ -6,19 +6,13 @@
 [ext_resource type="Texture2D" path="res://assets/ui/family_workspace/bitmap/nav_normal_bitmap.tres" id="4_nav_normal"]
 [ext_resource type="Texture2D" path="res://assets/ui/family_workspace/bitmap/nav_active_bitmap.tres" id="5_nav_active"]
 [ext_resource type="Texture2D" uid="uid://t3y1rjg0u50q" path="res://assets/ui/dossier_shell/spine_leather.png" id="6_spine"]
-[ext_resource type="Texture2D" uid="uid://db03qrsgb8lrv" path="res://assets/ui/dossier_shell/page_frame.png" id="7_page"]
 [ext_resource type="Texture2D" uid="uid://65eooockiiy3" path="res://assets/ui/dossier_shell/nav_tab_normal.png" id="8_tab_normal"]
 [ext_resource type="Texture2D" uid="uid://448kkct6hvf4" path="res://assets/ui/dossier_shell/nav_tab_active.png" id="9_tab_active"]
-
 [ext_resource type="Texture2D" path="res://assets/ui/archive_material_v1/archive_frame_v1.tres" id="10_archive"]
-
 [ext_resource type="Texture2D" path="res://assets/ui/archive_material_v1/hud_frame_v1.tres" id="11_hud"]
-
 [ext_resource type="Texture2D" path="res://assets/ui/archive_material_v1/button_normal_v1.tres" id="12_button"]
-
 [ext_resource type="Texture2D" path="res://assets/ui/archive_material_v1/button_pressed_v1.tres" id="13_pressed"]
 [ext_resource type="Texture2D" path="res://assets/ui/archive_material_v1/archive_page_v1.tres" id="14_page"]
-
 [ext_resource type="Texture2D" path="res://assets/ui/paper_aux_v1/torn_note_v1.tres" id="15_note"]
 [ext_resource type="Texture2D" path="res://assets/ui/paper_aux_v1/cut_tag_v1.tres" id="16_tag"]
 
@@ -27,6 +21,7 @@ content_margin_left = 8.0
 content_margin_top = 4.0
 content_margin_right = 8.0
 content_margin_bottom = 4.0
+texture = ExtResource("12_button")
 texture_margin_left = 12.0
 texture_margin_top = 12.0
 texture_margin_right = 12.0
@@ -35,7 +30,6 @@ expand_margin_left = 4.0
 expand_margin_top = 3.0
 expand_margin_right = 4.0
 expand_margin_bottom = 7.0
-texture = ExtResource("12_button")
 modulate_color = Color(0.78, 0.75, 0.68, 0.74)
 
 [sub_resource type="StyleBoxFlat" id="ButtonFocus"]
@@ -55,6 +49,7 @@ content_margin_left = 8.0
 content_margin_top = 4.0
 content_margin_right = 8.0
 content_margin_bottom = 4.0
+texture = ExtResource("12_button")
 texture_margin_left = 12.0
 texture_margin_top = 12.0
 texture_margin_right = 12.0
@@ -63,29 +58,14 @@ expand_margin_left = 4.0
 expand_margin_top = 3.0
 expand_margin_right = 4.0
 expand_margin_bottom = 7.0
-texture = ExtResource("12_button")
 modulate_color = Color(1.06, 1.04, 0.98, 1)
-
-[sub_resource type="StyleBoxTexture" id="ButtonNormal"]
-content_margin_left = 8.0
-content_margin_top = 4.0
-content_margin_right = 8.0
-content_margin_bottom = 4.0
-texture_margin_left = 12.0
-texture_margin_top = 12.0
-texture_margin_right = 12.0
-texture_margin_bottom = 16.0
-expand_margin_left = 4.0
-expand_margin_top = 3.0
-expand_margin_right = 4.0
-expand_margin_bottom = 7.0
-texture = ExtResource("12_button")
 
 [sub_resource type="StyleBoxTexture" id="ButtonPressed"]
 content_margin_left = 8.0
 content_margin_top = 4.0
 content_margin_right = 8.0
 content_margin_bottom = 4.0
+texture = ExtResource("13_pressed")
 texture_margin_left = 18.0
 texture_margin_top = 18.0
 texture_margin_right = 18.0
@@ -94,7 +74,21 @@ expand_margin_left = 3.0
 expand_margin_top = 3.0
 expand_margin_right = 3.0
 expand_margin_bottom = 2.0
-texture = ExtResource("13_pressed")
+
+[sub_resource type="StyleBoxTexture" id="ButtonNormal"]
+content_margin_left = 8.0
+content_margin_top = 4.0
+content_margin_right = 8.0
+content_margin_bottom = 4.0
+texture = ExtResource("12_button")
+texture_margin_left = 12.0
+texture_margin_top = 12.0
+texture_margin_right = 12.0
+texture_margin_bottom = 16.0
+expand_margin_left = 4.0
+expand_margin_top = 3.0
+expand_margin_right = 4.0
+expand_margin_bottom = 7.0
 
 [sub_resource type="StyleBoxFlat" id="PresetCardPressed"]
 content_margin_left = 8.0
@@ -202,6 +196,7 @@ content_margin_left = 8.0
 content_margin_top = 5.0
 content_margin_right = 8.0
 content_margin_bottom = 4.0
+texture = ExtResource("12_button")
 texture_margin_left = 12.0
 texture_margin_top = 12.0
 texture_margin_right = 12.0
@@ -210,7 +205,6 @@ expand_margin_left = 4.0
 expand_margin_top = 3.0
 expand_margin_right = 4.0
 expand_margin_bottom = 7.0
-texture = ExtResource("12_button")
 modulate_color = Color(1.06, 1.04, 0.98, 1)
 
 [sub_resource type="StyleBoxTexture" id="ChapterNormal"]
@@ -218,6 +212,7 @@ content_margin_left = 8.0
 content_margin_top = 5.0
 content_margin_right = 8.0
 content_margin_bottom = 4.0
+texture = ExtResource("12_button")
 texture_margin_left = 12.0
 texture_margin_top = 12.0
 texture_margin_right = 12.0
@@ -226,13 +221,13 @@ expand_margin_left = 4.0
 expand_margin_top = 3.0
 expand_margin_right = 4.0
 expand_margin_bottom = 7.0
-texture = ExtResource("12_button")
 
 [sub_resource type="StyleBoxTexture" id="ChapterPressed"]
 content_margin_left = 8.0
 content_margin_top = 5.0
 content_margin_right = 8.0
 content_margin_bottom = 4.0
+texture = ExtResource("13_pressed")
 texture_margin_left = 18.0
 texture_margin_top = 18.0
 texture_margin_right = 18.0
@@ -241,7 +236,6 @@ expand_margin_left = 3.0
 expand_margin_top = 3.0
 expand_margin_right = 3.0
 expand_margin_bottom = 2.0
-texture = ExtResource("13_pressed")
 
 [sub_resource type="StyleBoxTexture" id="CountryNavDisabled"]
 content_margin_left = 30.0
@@ -522,6 +516,21 @@ texture_margin_top = 22.0
 texture_margin_right = 24.0
 texture_margin_bottom = 22.0
 
+[sub_resource type="StyleBoxTexture" id="CountryShell"]
+content_margin_left = 8.0
+content_margin_top = 8.0
+content_margin_right = 8.0
+content_margin_bottom = 8.0
+texture = ExtResource("10_archive")
+texture_margin_left = 52.0
+texture_margin_top = 52.0
+texture_margin_right = 52.0
+texture_margin_bottom = 60.0
+expand_margin_left = 18.0
+expand_margin_top = 13.0
+expand_margin_right = 18.0
+expand_margin_bottom = 23.0
+
 [sub_resource type="StyleBoxEmpty" id="ArchivePage"]
 content_margin_left = 2.0
 content_margin_top = 2.0
@@ -533,6 +542,7 @@ content_margin_left = 18.0
 content_margin_top = 16.0
 content_margin_right = 18.0
 content_margin_bottom = 16.0
+texture = ExtResource("10_archive")
 texture_margin_left = 52.0
 texture_margin_top = 52.0
 texture_margin_right = 52.0
@@ -541,7 +551,6 @@ expand_margin_left = 18.0
 expand_margin_top = 13.0
 expand_margin_right = 18.0
 expand_margin_bottom = 23.0
-texture = ExtResource("10_archive")
 
 [sub_resource type="StyleBoxFlat" id="ArchiveWorkbench"]
 content_margin_left = 12.0
@@ -552,21 +561,20 @@ bg_color = Color(0.98, 0.94, 0.84, 0.34)
 border_width_left = 2
 border_color = Color(0.48, 0.16, 0.1, 0.52)
 
-[sub_resource type="StyleBoxFlat" id="MetricCard"]
+[sub_resource type="StyleBoxTexture" id="PaperTag"]
 content_margin_left = 10.0
-content_margin_top = 7.0
-content_margin_right = 10.0
-content_margin_bottom = 7.0
-bg_color = Color(0.985, 0.945, 0.84, 0.97)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.48, 0.31, 0.17, 0.54)
-corner_radius_top_left = 2
-corner_radius_top_right = 2
-corner_radius_bottom_right = 2
-corner_radius_bottom_left = 2
+content_margin_top = 5.0
+content_margin_right = 18.0
+content_margin_bottom = 5.0
+texture = ExtResource("16_tag")
+texture_margin_left = 18.0
+texture_margin_top = 24.0
+texture_margin_right = 26.0
+texture_margin_bottom = 16.0
+expand_margin_left = 6.0
+expand_margin_top = 7.0
+expand_margin_right = 5.0
+expand_margin_bottom = 6.0
 
 [sub_resource type="StyleBoxFlat" id="CountryHeader"]
 content_margin_left = 6.0
@@ -599,21 +607,6 @@ texture_margin_top = 60.0
 texture_margin_right = 30.0
 texture_margin_bottom = 60.0
 axis_stretch_vertical = 1
-
-[sub_resource type="StyleBoxTexture" id="CountryShell"]
-content_margin_left = 8.0
-content_margin_top = 8.0
-content_margin_right = 8.0
-content_margin_bottom = 8.0
-texture_margin_left = 52.0
-texture_margin_top = 52.0
-texture_margin_right = 52.0
-texture_margin_bottom = 60.0
-expand_margin_left = 18.0
-expand_margin_top = 13.0
-expand_margin_right = 18.0
-expand_margin_bottom = 23.0
-texture = ExtResource("10_archive")
 
 [sub_resource type="StyleBoxFlat" id="DossierCanvas"]
 bg_color = Color(1, 0.98, 0.93, 0.32)
@@ -666,14 +659,20 @@ corner_radius_top_right = 11
 corner_radius_bottom_right = 11
 corner_radius_bottom_left = 11
 
-[sub_resource type="StyleBoxFlat" id="DossierNote"]
-content_margin_left = 10.0
-content_margin_top = 6.0
-content_margin_right = 8.0
-content_margin_bottom = 6.0
-bg_color = Color(0.36, 0.25, 0.13, 0.05)
-border_width_left = 2
-border_color = Color(0.69, 0.49, 0.24, 0.8)
+[sub_resource type="StyleBoxTexture" id="PaperNote"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+texture = ExtResource("15_note")
+texture_margin_left = 32.0
+texture_margin_top = 32.0
+texture_margin_right = 32.0
+texture_margin_bottom = 32.0
+expand_margin_left = 8.0
+expand_margin_top = 8.0
+expand_margin_right = 8.0
+expand_margin_bottom = 10.0
 
 [sub_resource type="StyleBoxFlat" id="DossierRail"]
 content_margin_left = 14.0
@@ -753,6 +752,7 @@ content_margin_left = 2.0
 content_margin_top = 2.0
 content_margin_right = 2.0
 content_margin_bottom = 2.0
+texture = ExtResource("12_button")
 texture_margin_left = 12.0
 texture_margin_top = 12.0
 texture_margin_right = 12.0
@@ -761,7 +761,6 @@ expand_margin_left = 4.0
 expand_margin_top = 3.0
 expand_margin_right = 4.0
 expand_margin_bottom = 7.0
-texture = ExtResource("12_button")
 modulate_color = Color(0.78, 0.75, 0.68, 0.74)
 
 [sub_resource type="StyleBoxFlat" id="HudButtonFocus"]
@@ -776,27 +775,12 @@ corner_radius_top_right = 2
 corner_radius_bottom_right = 2
 corner_radius_bottom_left = 2
 
-[sub_resource type="StyleBoxTexture" id="HudButtonHover"]
+[sub_resource type="StyleBoxTexture" id="MaterialPrimaryHover"]
 content_margin_left = 2.0
 content_margin_top = 2.0
 content_margin_right = 2.0
 content_margin_bottom = 2.0
-texture_margin_left = 12.0
-texture_margin_top = 12.0
-texture_margin_right = 12.0
-texture_margin_bottom = 16.0
-expand_margin_left = 4.0
-expand_margin_top = 3.0
-expand_margin_right = 4.0
-expand_margin_bottom = 7.0
-texture = ExtResource("12_button")
-modulate_color = Color(1.06, 1.04, 0.98, 1)
-
-[sub_resource type="StyleBoxTexture" id="HudButtonPressed"]
-content_margin_left = 2.0
-content_margin_top = 2.0
-content_margin_right = 2.0
-content_margin_bottom = 2.0
+texture = ExtResource("13_pressed")
 texture_margin_left = 18.0
 texture_margin_top = 18.0
 texture_margin_right = 18.0
@@ -805,22 +789,38 @@ expand_margin_left = 3.0
 expand_margin_top = 3.0
 expand_margin_right = 3.0
 expand_margin_bottom = 2.0
-texture = ExtResource("13_pressed")
+modulate_color = Color(1.15, 1.08, 1, 1)
 
-[sub_resource type="StyleBoxTexture" id="HudButtonNormal"]
+[sub_resource type="StyleBoxTexture" id="MaterialPrimaryDown"]
 content_margin_left = 2.0
 content_margin_top = 2.0
 content_margin_right = 2.0
 content_margin_bottom = 2.0
-texture_margin_left = 12.0
-texture_margin_top = 12.0
-texture_margin_right = 12.0
-texture_margin_bottom = 16.0
-expand_margin_left = 4.0
+texture = ExtResource("13_pressed")
+texture_margin_left = 18.0
+texture_margin_top = 18.0
+texture_margin_right = 18.0
+texture_margin_bottom = 18.0
+expand_margin_left = 3.0
 expand_margin_top = 3.0
-expand_margin_right = 4.0
-expand_margin_bottom = 7.0
-texture = ExtResource("12_button")
+expand_margin_right = 3.0
+expand_margin_bottom = 2.0
+modulate_color = Color(0.86, 0.88, 0.88, 1)
+
+[sub_resource type="StyleBoxTexture" id="HudButtonPressed"]
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+texture = ExtResource("13_pressed")
+texture_margin_left = 18.0
+texture_margin_top = 18.0
+texture_margin_right = 18.0
+texture_margin_bottom = 18.0
+expand_margin_left = 3.0
+expand_margin_top = 3.0
+expand_margin_right = 3.0
+expand_margin_bottom = 2.0
 
 [sub_resource type="StyleBoxFlat" id="PaperCard"]
 content_margin_left = 10.0
@@ -841,11 +841,43 @@ shadow_color = Color(0.04, 0.02, 0.01, 0.38)
 shadow_size = 8
 shadow_offset = Vector2(0, 3)
 
+[sub_resource type="StyleBoxTexture" id="HudButtonHover"]
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+texture = ExtResource("12_button")
+texture_margin_left = 12.0
+texture_margin_top = 12.0
+texture_margin_right = 12.0
+texture_margin_bottom = 16.0
+expand_margin_left = 4.0
+expand_margin_top = 3.0
+expand_margin_right = 4.0
+expand_margin_bottom = 7.0
+modulate_color = Color(1.06, 1.04, 0.98, 1)
+
+[sub_resource type="StyleBoxTexture" id="HudButtonNormal"]
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+texture = ExtResource("12_button")
+texture_margin_left = 12.0
+texture_margin_top = 12.0
+texture_margin_right = 12.0
+texture_margin_bottom = 16.0
+expand_margin_left = 4.0
+expand_margin_top = 3.0
+expand_margin_right = 4.0
+expand_margin_bottom = 7.0
+
 [sub_resource type="StyleBoxTexture" id="HudInset"]
 content_margin_left = 12.0
 content_margin_top = 5.0
 content_margin_right = 12.0
 content_margin_bottom = 5.0
+texture = ExtResource("11_hud")
 texture_margin_left = 30.0
 texture_margin_top = 30.0
 texture_margin_right = 30.0
@@ -854,13 +886,13 @@ expand_margin_left = 12.0
 expand_margin_top = 9.0
 expand_margin_right = 12.0
 expand_margin_bottom = 15.0
-texture = ExtResource("11_hud")
 
 [sub_resource type="StyleBoxTexture" id="HudPanel"]
 content_margin_left = 8.0
 content_margin_top = 5.0
 content_margin_right = 8.0
 content_margin_bottom = 5.0
+texture = ExtResource("11_hud")
 texture_margin_left = 30.0
 texture_margin_top = 30.0
 texture_margin_right = 30.0
@@ -869,7 +901,6 @@ expand_margin_left = 12.0
 expand_margin_top = 9.0
 expand_margin_right = 12.0
 expand_margin_bottom = 15.0
-texture = ExtResource("11_hud")
 
 [sub_resource type="StyleBoxEmpty" id="HudTopBarShell"]
 content_margin_left = 0.0
@@ -923,6 +954,22 @@ texture_margin_right = 24.0
 texture_margin_bottom = 22.0
 modulate_color = Color(0.88, 0.78, 0.64, 1)
 
+[sub_resource type="StyleBoxFlat" id="MetricCard"]
+content_margin_left = 10.0
+content_margin_top = 7.0
+content_margin_right = 10.0
+content_margin_bottom = 7.0
+bg_color = Color(0.985, 0.945, 0.84, 0.97)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.48, 0.31, 0.17, 0.54)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
 [sub_resource type="StyleBoxTexture" id="OrnamentCard"]
 content_margin_left = 10.0
 content_margin_top = 8.0
@@ -934,6 +981,36 @@ texture_margin_top = 22.0
 texture_margin_right = 24.0
 texture_margin_bottom = 22.0
 modulate_color = Color(1, 0.99, 0.96, 0.92)
+
+[sub_resource type="StyleBoxTexture" id="PaperPopup"]
+content_margin_left = 10.0
+content_margin_top = 8.0
+content_margin_right = 10.0
+content_margin_bottom = 8.0
+texture = ExtResource("15_note")
+texture_margin_left = 32.0
+texture_margin_top = 32.0
+texture_margin_right = 32.0
+texture_margin_bottom = 32.0
+expand_margin_left = 8.0
+expand_margin_top = 8.0
+expand_margin_right = 8.0
+expand_margin_bottom = 10.0
+
+[sub_resource type="StyleBoxTexture" id="PaperToast"]
+content_margin_left = 14.0
+content_margin_top = 8.0
+content_margin_right = 22.0
+content_margin_bottom = 8.0
+texture = ExtResource("16_tag")
+texture_margin_left = 18.0
+texture_margin_top = 24.0
+texture_margin_right = 26.0
+texture_margin_bottom = 16.0
+expand_margin_left = 6.0
+expand_margin_top = 7.0
+expand_margin_right = 5.0
+expand_margin_bottom = 6.0
 
 [sub_resource type="StyleBoxFlat" id="PresetCardHover"]
 content_margin_left = 8.0
@@ -1060,108 +1137,18 @@ corner_radius_top_right = 3
 corner_radius_bottom_right = 3
 corner_radius_bottom_left = 3
 
-[sub_resource type="StyleBoxTexture" id="MaterialPrimaryHover"]
-content_margin_left = 2.0
-content_margin_top = 2.0
-content_margin_right = 2.0
-content_margin_bottom = 2.0
-texture_margin_left = 18.0
-texture_margin_top = 18.0
-texture_margin_right = 18.0
-texture_margin_bottom = 18.0
-expand_margin_left = 3.0
-expand_margin_top = 3.0
-expand_margin_right = 3.0
-expand_margin_bottom = 2.0
-texture = ExtResource("13_pressed")
-modulate_color = Color(1.15, 1.08, 1, 1)
-
-[sub_resource type="StyleBoxTexture" id="MaterialPrimaryDown"]
-content_margin_left = 2.0
-content_margin_top = 2.0
-content_margin_right = 2.0
-content_margin_bottom = 2.0
-texture_margin_left = 18.0
-texture_margin_top = 18.0
-texture_margin_right = 18.0
-texture_margin_bottom = 18.0
-expand_margin_left = 3.0
-expand_margin_top = 3.0
-expand_margin_right = 3.0
-expand_margin_bottom = 2.0
-texture = ExtResource("13_pressed")
-modulate_color = Color(0.86, 0.88, 0.88, 1)
-
-[sub_resource type="StyleBoxTexture" id="PaperTag"]
-texture = ExtResource("16_tag")
-content_margin_left = 10.0
-content_margin_top = 5.0
-content_margin_right = 18.0
-content_margin_bottom = 5.0
-texture_margin_left = 18.0
-texture_margin_top = 24.0
-texture_margin_right = 26.0
-texture_margin_bottom = 16.0
-expand_margin_left = 6.0
-expand_margin_top = 7.0
-expand_margin_right = 5.0
-expand_margin_bottom = 6.0
-
-[sub_resource type="StyleBoxTexture" id="PaperNote"]
-texture = ExtResource("15_note")
-content_margin_left = 12.0
-content_margin_top = 8.0
-content_margin_right = 12.0
-content_margin_bottom = 8.0
-texture_margin_left = 32.0
-texture_margin_top = 32.0
-texture_margin_right = 32.0
-texture_margin_bottom = 32.0
-expand_margin_left = 8.0
-expand_margin_top = 8.0
-expand_margin_right = 8.0
-expand_margin_bottom = 10.0
-
-[sub_resource type="StyleBoxTexture" id="PaperPopup"]
-texture = ExtResource("15_note")
-content_margin_left = 10.0
-content_margin_top = 8.0
-content_margin_right = 10.0
-content_margin_bottom = 8.0
-texture_margin_left = 32.0
-texture_margin_top = 32.0
-texture_margin_right = 32.0
-texture_margin_bottom = 32.0
-expand_margin_left = 8.0
-expand_margin_top = 8.0
-expand_margin_right = 8.0
-expand_margin_bottom = 10.0
-
-[sub_resource type="StyleBoxTexture" id="PaperToast"]
-texture = ExtResource("16_tag")
-content_margin_left = 14.0
-content_margin_top = 8.0
-content_margin_right = 22.0
-content_margin_bottom = 8.0
-texture_margin_left = 18.0
-texture_margin_top = 24.0
-texture_margin_right = 26.0
-texture_margin_bottom = 16.0
-expand_margin_left = 6.0
-expand_margin_top = 7.0
-expand_margin_right = 5.0
-expand_margin_bottom = 6.0
-
 [resource]
 default_font = SubResource("SansMedium")
 default_font_size = 16
 Button/colors/font_color = Color(0.16, 0.09, 0.045, 1)
 Button/colors/font_disabled_color = Color(0.38, 0.3, 0.22, 0.62)
 Button/colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
+Button/colors/font_hover_pressed_color = Color(0.99, 0.94, 0.8, 1)
 Button/colors/font_pressed_color = Color(0.9, 0.74, 0.46, 1)
 Button/styles/disabled = SubResource("ButtonDisabled")
 Button/styles/focus = SubResource("ButtonFocus")
 Button/styles/hover = SubResource("ButtonHover")
+Button/styles/hover_pressed = SubResource("ButtonPressed")
 Button/styles/normal = SubResource("ButtonNormal")
 Button/styles/pressed = SubResource("ButtonPressed")
 CheckBox/colors/font_color = Color(0.16, 0.09, 0.045, 1)
@@ -1289,10 +1276,12 @@ LineEdit/styles/normal = SubResource("LineEditNormal")
 OptionButton/colors/font_color = Color(0.16, 0.09, 0.045, 1)
 OptionButton/colors/font_disabled_color = Color(0.38, 0.3, 0.22, 0.62)
 OptionButton/colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
+OptionButton/colors/font_hover_pressed_color = Color(0.99, 0.94, 0.8, 1)
 OptionButton/colors/font_pressed_color = Color(0.95, 0.86, 0.66, 1)
 OptionButton/styles/disabled = SubResource("ButtonDisabled")
 OptionButton/styles/focus = SubResource("ButtonFocus")
 OptionButton/styles/hover = SubResource("ButtonHover")
+OptionButton/styles/hover_pressed = SubResource("ButtonPressed")
 OptionButton/styles/normal = SubResource("ButtonNormal")
 OptionButton/styles/pressed = SubResource("ButtonPressed")
 PKArchiveBand/base_type = &"PanelContainer"
@@ -1311,12 +1300,12 @@ PKArchiveNavLabel/base_type = &"Label"
 PKArchiveNavLabel/colors/font_color = Color(0.14, 0.08, 0.04, 1)
 PKArchiveNavLabel/font_sizes/font_size = 15
 PKArchiveNavLabel/fonts/font = SubResource("SansStrong")
+PKArchiveOuterFrame/base_type = &"Panel"
+PKArchiveOuterFrame/styles/panel = SubResource("CountryShell")
 PKArchivePage/base_type = &"PanelContainer"
 PKArchivePage/styles/panel = SubResource("ArchivePage")
 PKArchivePanel/base_type = &"PanelContainer"
 PKArchivePanel/styles/panel = SubResource("ArchivePanel")
-PKArchiveOuterFrame/base_type = &"Panel"
-PKArchiveOuterFrame/styles/panel = SubResource("CountryShell")
 PKArchiveTitle/base_type = &"Label"
 PKArchiveTitle/colors/font_color = Color(0.08, 0.035, 0.018, 1)
 PKArchiveTitle/font_sizes/font_size = 30
@@ -1324,17 +1313,19 @@ PKArchiveTitle/fonts/font = SubResource("SerifStrong")
 PKArchiveWorkbench/base_type = &"PanelContainer"
 PKArchiveWorkbench/styles/panel = SubResource("ArchiveWorkbench")
 PKBadgeLabel/base_type = &"Label"
+PKBadgeLabel/colors/font_color = Color(0.25, 0.12, 0.06, 1)
 PKBadgeLabel/font_sizes/font_size = 12
 PKBadgeLabel/fonts/font = SubResource("SansStrong")
-PKBadgeLabel/colors/font_color = Color(0.25, 0.12, 0.06, 1)
 PKBadgeLabel/styles/normal = SubResource("PaperTag")
 PKChapterTab/base_type = &"Button"
 PKChapterTab/colors/font_color = Color(0.16, 0.09, 0.045, 1)
 PKChapterTab/colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
+PKChapterTab/colors/font_hover_pressed_color = Color(0.99, 0.94, 0.8, 1)
 PKChapterTab/colors/font_pressed_color = Color(0.98, 0.9, 0.68, 1)
 PKChapterTab/styles/disabled = SubResource("ButtonDisabled")
 PKChapterTab/styles/focus = SubResource("ButtonFocus")
 PKChapterTab/styles/hover = SubResource("ChapterHover")
+PKChapterTab/styles/hover_pressed = SubResource("ChapterPressed")
 PKChapterTab/styles/normal = SubResource("ChapterNormal")
 PKChapterTab/styles/pressed = SubResource("ChapterPressed")
 PKCountryHeader/base_type = &"PanelContainer"
@@ -1457,10 +1448,12 @@ PKEraRewardButton/base_type = &"Button"
 PKEraRewardButton/colors/font_color = Color(0.98, 0.9, 0.68, 1)
 PKEraRewardButton/colors/font_disabled_color = Color(0.62, 0.54, 0.43, 0.72)
 PKEraRewardButton/colors/font_hover_color = Color(1, 0.95, 0.8, 1)
+PKEraRewardButton/colors/font_hover_pressed_color = Color(0.99, 0.94, 0.8, 1)
 PKEraRewardButton/colors/font_pressed_color = Color(1, 0.95, 0.8, 1)
 PKEraRewardButton/styles/disabled = SubResource("HudButtonDisabled")
 PKEraRewardButton/styles/focus = SubResource("HudButtonFocus")
 PKEraRewardButton/styles/hover = SubResource("MaterialPrimaryHover")
+PKEraRewardButton/styles/hover_pressed = SubResource("MaterialPrimaryDown")
 PKEraRewardButton/styles/normal = SubResource("HudButtonPressed")
 PKEraRewardButton/styles/pressed = SubResource("MaterialPrimaryDown")
 PKEraRewardCard/base_type = &"PanelContainer"
@@ -1518,10 +1511,12 @@ PKHUDTopBarShell/styles/panel = SubResource("HudTopBarShell")
 PKIconButton/base_type = &"Button"
 PKIconButton/colors/font_color = Color(0.16, 0.09, 0.045, 1)
 PKIconButton/colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
+PKIconButton/colors/font_hover_pressed_color = Color(0.99, 0.94, 0.8, 1)
 PKIconButton/colors/font_pressed_color = Color(0.98, 0.9, 0.68, 1)
 PKIconButton/styles/disabled = SubResource("ButtonDisabled")
 PKIconButton/styles/focus = SubResource("ButtonFocus")
 PKIconButton/styles/hover = SubResource("ButtonHover")
+PKIconButton/styles/hover_pressed = SubResource("ButtonPressed")
 PKIconButton/styles/normal = SubResource("ButtonNormal")
 PKIconButton/styles/pressed = SubResource("ButtonPressed")
 PKIdeologyStage/base_type = &"PanelContainer"
@@ -1548,8 +1543,23 @@ PKOrnamentCard/base_type = &"PanelContainer"
 PKOrnamentCard/styles/panel = SubResource("OrnamentCard")
 PKPanel/base_type = &"PanelContainer"
 PKPanel/styles/panel = SubResource("PaperCard")
+PKPaperAnnotation/base_type = &"Label"
+PKPaperAnnotation/colors/font_color = Color(0.27, 0.19, 0.12, 1)
+PKPaperAnnotation/font_sizes/font_size = 13
+PKPaperAnnotation/styles/normal = SubResource("PaperNote")
 PKPaperCard/base_type = &"PanelContainer"
 PKPaperCard/styles/panel = SubResource("PaperCard")
+PKPaperNote/base_type = &"PanelContainer"
+PKPaperNote/styles/panel = SubResource("PaperNote")
+PKPaperPopup/base_type = &"PanelContainer"
+PKPaperPopup/styles/panel = SubResource("PaperPopup")
+PKPaperTag/base_type = &"Label"
+PKPaperTag/colors/font_color = Color(0.12, 0.075, 0.04, 1)
+PKPaperTag/font_sizes/font_size = 12
+PKPaperTag/fonts/font = SubResource("SansStrong")
+PKPaperTag/styles/normal = SubResource("PaperTag")
+PKPaperToast/base_type = &"PanelContainer"
+PKPaperToast/styles/panel = SubResource("PaperToast")
 PKPresetCardButton/base_type = &"Button"
 PKPresetCardButton/colors/font_color = Color(0.14, 0.08, 0.04, 1)
 PKPresetCardButton/colors/font_disabled_color = Color(0.42, 0.34, 0.25, 0.58)
@@ -1566,10 +1576,12 @@ PKPrimaryButton/base_type = &"Button"
 PKPrimaryButton/colors/font_color = Color(0.98, 0.9, 0.68, 1)
 PKPrimaryButton/colors/font_disabled_color = Color(0.62, 0.54, 0.43, 0.72)
 PKPrimaryButton/colors/font_hover_color = Color(1, 0.95, 0.8, 1)
+PKPrimaryButton/colors/font_hover_pressed_color = Color(0.99, 0.94, 0.8, 1)
 PKPrimaryButton/colors/font_pressed_color = Color(1, 0.95, 0.8, 1)
 PKPrimaryButton/styles/disabled = SubResource("HudButtonDisabled")
 PKPrimaryButton/styles/focus = SubResource("HudButtonFocus")
 PKPrimaryButton/styles/hover = SubResource("MaterialPrimaryHover")
+PKPrimaryButton/styles/hover_pressed = SubResource("MaterialPrimaryDown")
 PKPrimaryButton/styles/normal = SubResource("HudButtonPressed")
 PKPrimaryButton/styles/pressed = SubResource("MaterialPrimaryDown")
 PKSealPrimaryButton/base_type = &"Button"
@@ -1634,37 +1646,3 @@ VScrollBar/styles/grabber_pressed = SubResource("ScrollGrabberPressed")
 VScrollBar/styles/scroll = SubResource("ScrollTrack")
 VScrollBar/styles/scroll_focus = SubResource("ScrollTrack")
 VSeparator/styles/separator = SubResource("Rule")
-
-PKPrimaryButton/colors/font_hover_pressed_color = Color(0.99, 0.94, 0.8, 1)
-PKPrimaryButton/styles/hover_pressed = SubResource("MaterialPrimaryDown")
-
-PKEraRewardButton/colors/font_hover_pressed_color = Color(0.99, 0.94, 0.8, 1)
-PKEraRewardButton/styles/hover_pressed = SubResource("MaterialPrimaryDown")
-
-Button/colors/font_hover_pressed_color = Color(0.99, 0.94, 0.8, 1)
-Button/styles/hover_pressed = SubResource("ButtonPressed")
-
-OptionButton/colors/font_hover_pressed_color = Color(0.99, 0.94, 0.8, 1)
-OptionButton/styles/hover_pressed = SubResource("ButtonPressed")
-
-PKIconButton/colors/font_hover_pressed_color = Color(0.99, 0.94, 0.8, 1)
-PKIconButton/styles/hover_pressed = SubResource("ButtonPressed")
-
-PKChapterTab/colors/font_hover_pressed_color = Color(0.99, 0.94, 0.8, 1)
-PKChapterTab/styles/hover_pressed = SubResource("ChapterPressed")
-
-PKPaperTag/base_type = &"Label"
-PKPaperTag/colors/font_color = Color(0.12, 0.075, 0.04, 1)
-PKPaperTag/font_sizes/font_size = 12
-PKPaperTag/fonts/font = SubResource("SansStrong")
-PKPaperTag/styles/normal = SubResource("PaperTag")
-PKPaperAnnotation/base_type = &"Label"
-PKPaperAnnotation/colors/font_color = Color(0.27, 0.19, 0.12, 1)
-PKPaperAnnotation/font_sizes/font_size = 13
-PKPaperAnnotation/styles/normal = SubResource("PaperNote")
-PKPaperNote/base_type = &"PanelContainer"
-PKPaperNote/styles/panel = SubResource("PaperNote")
-PKPaperPopup/base_type = &"PanelContainer"
-PKPaperPopup/styles/panel = SubResource("PaperPopup")
-PKPaperToast/base_type = &"PanelContainer"
-PKPaperToast/styles/panel = SubResource("PaperToast")

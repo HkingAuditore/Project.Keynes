@@ -7,6 +7,10 @@ var _failures := 0
 
 
 func _init() -> void:
+	call_deferred("_run")
+
+
+func _run() -> void:
 	_cleanup()
 	var repository = RepositoryScript.new(TEST_DIR)
 	var empty_slots: Array = repository.list_slots()
@@ -92,9 +96,45 @@ func _init() -> void:
 	_expect("checksum-corrupt save stays visible and disabled",
 		bool(invalid_slots[3].exists) and not bool(invalid_slots[3].loadable) \
 		and not String(invalid_slots[3].reason).is_empty())
+	await _check_background_provider_hash(repository, written.header)
 	_cleanup()
 	print("save repository: %d checks, %d failures" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
+
+
+func _check_background_provider_hash(repository, original_header: Dictionary) -> void:
+	var source_sections := {"bytes": PackedByteArray([0, 1, 127, 128, 255])}
+	var payload := var_to_bytes(source_sections)
+	var hashing := HashingContext.new()
+	hashing.start(HashingContext.HASH_SHA256)
+	hashing.update(payload)
+	var expected := hashing.finish().hex_encode()
+	var header := original_header.duplicate(true)
+	header["provider_manifest"] = [{"provider_id": "test", "schema_version": 1,
+		"sections": ["bytes"], "state_hash": ""}]
+	var frozen := {"bytes": source_sections.bytes}
+	var completion: Array[Dictionary] = []
+	var task := WorkerThreadPool.add_task(repository.write_slot_background.bind(
+		"manual_3", header, frozen, completion,
+		[{"manifest_index": 0, "bytes": payload, "expected_hash": expected}]))
+	while not WorkerThreadPool.is_task_completed(task):
+		await process_frame
+	_expect("background provider hash task completes", WorkerThreadPool.wait_for_task_completion(task) == OK)
+	var loaded: Dictionary = repository.load_slot("manual_3")
+	_expect("background provider hash preserves the boundary reference",
+		not completion.is_empty() and bool(completion[0].get("ok", false)) \
+		and bool(loaded.get("ok", false)) \
+		and String(loaded.header.provider_manifest[0].state_hash) == expected \
+		and loaded.section_bytes.bytes == source_sections.bytes)
+	_expect("background provider hash keeps caller metadata private",
+		String(header.provider_manifest[0].state_hash).is_empty())
+	completion.clear()
+	repository.write_slot_background("manual_3", header, frozen, completion,
+		[{"manifest_index": 0, "bytes": payload, "expected_hash": "invalid"}])
+	_expect("provider hash mismatch fails before replacing a verified slot",
+		not bool(completion[0].get("ok", true)) \
+		and String(completion[0].get("code", "")) == "save_provider_hash_mismatch" \
+		and String(repository.load_slot("manual_3").header.provider_manifest[0].state_hash) == expected)
 
 
 func _cleanup() -> void:

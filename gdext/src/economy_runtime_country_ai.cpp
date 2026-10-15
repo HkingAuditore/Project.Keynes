@@ -1,4 +1,5 @@
 #include "economy_runtime.h"
+#include "economy_cost_probe.h"
 #include "country_runtime.h"
 #include "economy_hash.h"
 #include "runtime_economy_family_side_tables.h"
@@ -81,6 +82,7 @@ void add_colonization_stat(std::vector<NativeEconomyRuntime::CountryAiColonizati
 } // namespace
 
 void NativeEconomyRuntime::publish_country_ai_digest() {
+    EconomyCostProbe probe("publish.country_ai", _current_day.get());
     if (_epoch_country_count <= 0 ||
         _epoch_country_handles.size() != static_cast<size_t>(_epoch_country_count))
         return;
@@ -368,7 +370,7 @@ int32_t NativeEconomyRuntime::family_founding_ai_choice(const FamilyFoundingOffe
         const FamilyFoundingCandidate &c = offer.candidates[i];
         const int32_t group = building_index_for_handle(c.building_handle);
         if (group >= 0) {
-            const auto row = building_at(static_cast<size_t>(group));
+            const auto row = building_view(static_cast<size_t>(group));
             facts[i].margin = std::clamp<int64_t>(row.realized_profit_margin_q16, -Q16_ONE, Q16_ONE);
             facts[i].revenue = std::max<int64_t>(0, row.last_revenue);
         }

@@ -7,6 +7,13 @@ var _badges: BadgeRow
 var _effect: Label
 var _population: Label
 var _family_name := ""
+var _hovered := false
+var _prestige_level := -1
+var _tag_text := ""
+var _tag_color := UITokens.DOSSIER_BRASS
+var _bar_ratio := 0.0
+var _bar_color := UITokens.DOSSIER_VERDIGRIS
+var _empty_style := StyleBoxEmpty.new()
 
 
 func _ready() -> void:
@@ -20,16 +27,41 @@ func _ready() -> void:
 	toggle_mode = true
 	focus_mode = Control.FOCUS_NONE
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	for state_name in ["normal", "hover", "pressed", "disabled", "focus", "hover_pressed"]:
+		add_theme_stylebox_override(state_name, _empty_style)
 	_population.add_theme_font_override("font", UITokens.font_with_weight(650))
-	_population.add_theme_font_size_override("font_size", 20)
+	_population.add_theme_font_size_override("font_size", 15)
 	_population.add_theme_color_override("font_color", UITokens.ARCHIVE_INK)
+	mouse_entered.connect(func() -> void:
+		_hovered = true
+		_sync_visual_state()
+		queue_redraw())
+	mouse_exited.connect(func() -> void:
+		_hovered = false
+		_sync_visual_state()
+		queue_redraw())
+	focus_entered.connect(func() -> void:
+		_sync_visual_state()
+		queue_redraw())
+	focus_exited.connect(func() -> void:
+		_sync_visual_state()
+		queue_redraw())
+	toggled.connect(func(_pressed: bool) -> void:
+		_sync_visual_state()
+		queue_redraw())
 
 
 func set_row(data: Dictionary) -> void:
 	if _name == null:
 		_ready()
-	var accent: Color = data.get("accent", UITokens.ACCENT)
-	_icon.set_semantic(StringName(data.get("icon", "family.house")), accent)
+	_prestige_level = int(data.get("prestige_level", -1))
+	var accent: Color = data.get("accent",
+		UITokens.DOSSIER_OXBLOOD if _prestige_level >= 3 else (
+			UITokens.DOSSIER_BRASS if _prestige_level >= 1 else UITokens.ACCENT))
+	var default_icon := &"family.workspace.crest" if _prestige_level >= 1 else &"family.house"
+	var icon_key := StringName(data.get("icon", default_icon))
+	_icon.visible = true
+	_icon.set_semantic(icon_key, accent)
 	_family_name = String(data.get("name", "家族"))
 	_name.text = _family_name
 	var badges: Array = data.get("badges", [])
@@ -39,10 +71,19 @@ func set_row(data: Dictionary) -> void:
 	var effect := String(data.get("effect", "")).strip_edges()
 	_effect.text = effect
 	_effect.visible = not effect.is_empty()
-	_population.text = "%s 人" % UITokens.format_compact_number_cn(
-		float(data.get("population", 0)), 0)
-	_population.tooltip_text = String(data.get("population_tooltip", "队伍人口：%s" % _population.text))
+	var pop_text := String(data.get("population_text", ""))
+	if pop_text.is_empty():
+		pop_text = "%s 人" % UITokens.format_compact_number_cn(
+			float(data.get("population", 0)), 0)
+	_population.text = pop_text
+	_population.tooltip_text = String(data.get("population_tooltip", "当地人口：%s" % _population.text))
 	tooltip_text = String(data.get("tooltip", ""))
+	_tag_text = String(data.get("tag_text", ""))
+	_tag_color = data.get("tag_color", accent) as Color
+	_bar_ratio = clampf(float(data.get("bar_ratio", 0.0)), 0.0, 1.0)
+	_bar_color = data.get("bar_color", UITokens.DOSSIER_VERDIGRIS) as Color
+	_sync_visual_state()
+	queue_redraw()
 
 
 func display_name() -> String:
@@ -53,15 +94,87 @@ func set_compact_summary(data: Dictionary) -> void:
 	set_row(data)
 	custom_minimum_size.y = 48.0
 	focus_mode = Control.FOCUS_ALL
-	_icon.visible = false
+	_icon.visible = true
+	_icon.custom_minimum_size = Vector2(26.0, 26.0)
 	_badges.visible = false
 	_name.add_theme_font_size_override("font_size", 14)
 	_population.add_theme_font_size_override("font_size", 14)
-	_population.custom_minimum_size.x = 52.0
+	_population.add_theme_color_override("font_color", UITokens.ARCHIVE_INK)
+	_population.custom_minimum_size.x = 56.0
 	_effect.add_theme_font_size_override("font_size", 12)
 	_effect.autowrap_mode = TextServer.AUTOWRAP_OFF
 	_effect.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_effect.max_lines_visible = 1
 	var margin := get_node("Margin") as MarginContainer
+	margin.add_theme_constant_override("margin_left", 10)
 	margin.add_theme_constant_override("margin_top", 4)
-	margin.add_theme_constant_override("margin_bottom", 4)
+	margin.add_theme_constant_override("margin_right", 10)
+	margin.add_theme_constant_override("margin_bottom", 6)
+	_sync_visual_state()
+	queue_redraw()
+
+
+func _sync_visual_state() -> void:
+	if _name == null or _effect == null or _population == null:
+		return
+	var active := button_pressed and toggle_mode
+	_name.add_theme_color_override("font_color",
+		UITokens.DOSSIER_OXBLOOD if active else UITokens.ARCHIVE_INK)
+	_effect.add_theme_color_override("font_color",
+		UITokens.DOSSIER_INK_SOFT if active else UITokens.ARCHIVE_INK_MUTED)
+	_population.add_theme_color_override("font_color", UITokens.ARCHIVE_INK)
+
+
+func _draw() -> void:
+	var rect := Rect2(Vector2(1.0, 1.0), Vector2(maxf(2.0, size.x - 2.0), maxf(2.0, size.y - 2.0)))
+	var active := button_pressed and toggle_mode
+	var bg := Color(UITokens.DOSSIER_PAPER, 0.86)
+	var border := Color(UITokens.DOSSIER_RULE, 0.52)
+	var border_w := 1.0
+	if disabled:
+		bg = Color(UITokens.DOSSIER_PAPER_DEEP, 0.52)
+		border = Color(UITokens.DOSSIER_RULE, 0.28)
+	elif active:
+		bg = Color(0.975, 0.90, 0.745, 0.98)
+		border = UITokens.DOSSIER_OXBLOOD
+		border_w = 1.5
+	elif _hovered or has_focus():
+		bg = Color(0.985, 0.94, 0.83, 0.96)
+		border = UITokens.DOSSIER_BRASS
+		border_w = 1.2
+	draw_rect(rect, bg, true)
+	draw_rect(rect, border, false, border_w)
+
+	if active:
+		draw_rect(Rect2(Vector2(1.0, 2.0), Vector2(4.0, maxf(2.0, size.y - 4.0))),
+			UITokens.DOSSIER_OXBLOOD, true)
+	elif _hovered or has_focus():
+		draw_rect(Rect2(Vector2(1.0, 4.0), Vector2(3.0, maxf(2.0, size.y - 8.0))),
+			UITokens.DOSSIER_BRASS, true)
+	elif _prestige_level >= 1:
+		var p_col := UITokens.DOSSIER_OXBLOOD if _prestige_level >= 3 else UITokens.DOSSIER_BRASS
+		draw_rect(Rect2(Vector2(1.0, 6.0), Vector2(2.5, maxf(2.0, size.y - 12.0))),
+			Color(p_col, 0.72), true)
+
+	if _bar_ratio > 0.001:
+		var bar_left := 44.0
+		var bar_w := maxf(16.0, size.x - bar_left - 10.0)
+		var bar_y := size.y - 4.0
+		draw_rect(Rect2(Vector2(bar_left, bar_y), Vector2(bar_w, 2.2)),
+			UITokens.DOSSIER_TRACK, true)
+		var fill_c := UITokens.DOSSIER_OXBLOOD if active else _bar_color
+		draw_rect(Rect2(Vector2(bar_left, bar_y), Vector2(bar_w * _bar_ratio, 2.2)),
+			Color(fill_c, 0.88), true)
+
+	if not _tag_text.is_empty() and _name != null and size.x >= 200.0:
+		var font := UITokens.dossier_font("sans_strong")
+		var name_w := font.get_string_size(_family_name, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 14).x
+		var tag_w := font.get_string_size(_tag_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 10).x + 10.0
+		var tag_x := 44.0 + name_w + 8.0
+		var max_tag_right := size.x - 68.0
+		if tag_x + tag_w <= max_tag_right:
+			var pill_rect := Rect2(Vector2(tag_x, 6.0), Vector2(tag_w, 15.0))
+			draw_rect(pill_rect, Color(_tag_color, 0.15), true)
+			draw_rect(pill_rect, Color(_tag_color, 0.55), false, 1.0)
+			draw_string(font, Vector2(tag_x + 5.0, 17.5), _tag_text,
+				HORIZONTAL_ALIGNMENT_LEFT, -1.0, 10, _tag_color.lerp(UITokens.DOSSIER_INK, 0.25))

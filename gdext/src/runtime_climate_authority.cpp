@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <cstring>
+#include <cstdlib>
 #include <limits>
 
 namespace pk {
@@ -65,6 +66,17 @@ void append_f32(std::vector<uint8_t> &out, float value) {
 void append_float_vector(std::vector<uint8_t> &out,
                          const std::vector<float> &values) {
     append_u32(out, static_cast<uint32_t>(values.size()));
+    static const bool bulk = [] {
+        const uint16_t endian = 1;
+        const char *value = std::getenv("PK_SAVE_CODEC_SCALAR");
+        return *reinterpret_cast<const uint8_t *>(&endian) == 1 &&
+            !(value && std::strcmp(value, "1") == 0);
+    }();
+    if (bulk && !values.empty()) {
+        const auto *first = reinterpret_cast<const uint8_t *>(values.data());
+        out.insert(out.end(), first, first + values.size() * sizeof(float));
+        return;
+    }
     for (float value : values) append_f32(out, value);
 }
 void append_u8_vector(std::vector<uint8_t> &out,
@@ -366,13 +378,41 @@ bool RuntimeClimateAuthority::plan_day(
         return false;
     }
     RuntimeClimateKernelReport kernel_report;
+    static const bool verify_resident = [] {
+        const char *value = std::getenv("PK_CLIMATE_PHYSICS_RESIDENT_VERIFY");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    std::unique_ptr<RuntimeClimateKernel> reference_kernel;
+    RuntimeClimateStore reference_next;
+    if (verify_resident) {
+        reference_kernel = std::make_unique<RuntimeClimateKernel>(_kernel);
+        reference_next = _next;
+    }
     if (!_kernel.plan_day(day, environment, _catalog, _store, _next,
-                          kernel_report, compute_hashes, validate_input)) {
+                          kernel_report, compute_hashes, validate_input, true)) {
         set_error(report, kernel_report.error);
         report.plan_ms = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - begin).count();
         _last_report = report;
         return false;
+    }
+    if (reference_kernel) {
+        RuntimeClimateKernelReport reference_report;
+        const bool reference_ok = reference_kernel->plan_day(day, environment, _catalog,
+            _store, reference_next, reference_report, compute_hashes, validate_input, false);
+        const auto &a = _kernel.round_output();
+        const auto &b = reference_kernel->round_output();
+        if (!reference_ok || _next.state_hash() != reference_next.state_hash() ||
+                kernel_report.input_hash != reference_report.input_hash ||
+                kernel_report.stage_ran_mask != reference_report.stage_ran_mask ||
+                _kernel.distribute_soil_moisture() != reference_kernel->distribute_soil_moisture() ||
+                _kernel.weather_field_init() != reference_kernel->weather_field_init() ||
+                a.insolation_now != b.insolation_now || a.insolation_dev != b.insolation_dev ||
+                a.day_length != b.day_length || a.heat_input != b.heat_input ||
+                a.temp_season_offset != b.temp_season_offset) {
+            set_error(report, "climate_resident_physics_reference_mismatch");
+            return false;
+        }
     }
     report.work_units = kernel_report.work_units;
     report.changed_cells = kernel_report.changed_cells;
@@ -420,6 +460,7 @@ bool RuntimeClimateAuthority::commit_day(
     }
     // 整 store 交换包含 physics_state；发布前绝不改变 current 的胶囊。
     _kernel.commit(_store, _next);
+    _kernel.accept_committed_physics(_store);
     report.state_hash = _planned_state_hash;
     report.parity_hash = _planned_parity_hash;
     _committed_state_hash = _planned_state_hash;
@@ -504,6 +545,7 @@ bool RuntimeClimateAuthority::adopt_reference_baseline(
     // 新基线采用 reference 的物理胶囊；旧 reference 无胶囊时明确冷播种，
     // 不能保留另一段历史的物理缓存。forced commit 则保留刚计划出的 worker 胶囊。
     _store.physics_state = reference.physics_state;
+    _kernel.invalidate_committed_physics();
     _store.committed_day = day;
     ++_store.generation;
     ++_store.climate_generation;
@@ -527,6 +569,7 @@ bool RuntimeClimateAuthority::adopt_reference_baseline(
 }
 
 void RuntimeClimateAuthority::discard_plan() {
+    _kernel.invalidate_committed_physics();
     _next.physics_state.clear();
     _plan_ready = false;
     _planned_day = -1;
@@ -778,6 +821,7 @@ bool RuntimeClimateAuthority::restore(const uint8_t *bytes, size_t size,
     restored_catalog.map_width = map_width;
     restored_catalog.map_height = map_height;
     _store = std::move(restored);
+    _kernel.invalidate_committed_physics();
     _next = std::move(restored_next);
     _committed_state_hash = section_abi >= 8u ? expected_hash : 0;
     _catalog = restored_catalog;

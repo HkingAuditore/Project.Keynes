@@ -1023,7 +1023,10 @@ func queue_detail_scatter_changes(changes) -> void:
 		if family_mask == 0 or profile_mask == 0:
 			continue
 		affected_families |= family_mask
-		if _camera_view_initialized and not _detail_layers.is_empty():
+		# A layer can receive its first succession change before the camera has
+		# published a view. Treat that as offscreen until the view is known; this
+		# keeps the change deferred instead of eagerly rebuilding every family.
+		if not _detail_layers.is_empty():
 			var probe = _detail_layers[0]
 			if probe != null and is_instance_valid(probe) \
 					and probe.has_method("detail_chunk_id_for_cell") \
@@ -2060,13 +2063,40 @@ func set_map(map: MapData, world: WorldData = null) -> void:
 	# selects the legacy variant. Re-select after world injection; setting array
 	# uniforms on that legacy shader is ignored and leaves map_index_atlas unbound.
 	if is_inside_tree() and _world_quad != null:
+		var load_t0 := Time.get_ticks_usec()
 		_load_shader()
+		print("[loading-renderer-step] shader %.1fms" % [float(Time.get_ticks_usec()-load_t0)/1000.0])
 	if _weather_layer != null and _weather_layer.has_method("set_world_ref"):
 		_weather_layer.set_world_ref(_world)  # 帧间插值:weather_lut_prev_tex 源
 	# [terrain-horizon-gpu 2026-07-03] map_baker 若登记了 GPU 离屏烘焙，这里在场景树内发起。
+	var horizon_t0 := Time.get_ticks_usec()
 	_maybe_bake_terrain_horizon_gpu()
+	print("[loading-renderer-step] horizon %.1fms" % [float(Time.get_ticks_usec()-horizon_t0)/1000.0])
 	if is_inside_tree():
 		_rebuild()
+
+func set_map_cooperative(map: MapData, world: WorldData = null) -> void:
+	if _world != null and world != null and _world != world \
+			and _visual_tile_horizon_baker != null:
+		_visual_tile_horizon_baker.cancel()
+	_map = map
+	_world = world
+	# _ready() loads the shader before a generated world exists, so it necessarily
+	# selects the legacy variant. Re-select after world injection; setting array
+	# uniforms on that legacy shader is ignored and leaves map_index_atlas unbound.
+	if is_inside_tree() and _world_quad != null:
+		var load_t0 := Time.get_ticks_usec()
+		_load_shader()
+		print("[loading-renderer-step] shader %.1fms" % [float(Time.get_ticks_usec()-load_t0)/1000.0])
+	if _weather_layer != null and _weather_layer.has_method("set_world_ref"):
+		_weather_layer.set_world_ref(_world)  # 帧间插值:weather_lut_prev_tex 源
+	# [terrain-horizon-gpu 2026-07-03] map_baker 若登记了 GPU 离屏烘焙，这里在场景树内发起。
+	var horizon_t0 := Time.get_ticks_usec()
+	_maybe_bake_terrain_horizon_gpu()
+	print("[loading-renderer-step] horizon %.1fms" % [float(Time.get_ticks_usec()-horizon_t0)/1000.0])
+	if is_inside_tree():
+		await _rebuild_cooperative()
+
 
 
 func configure_building_visuals(catalog: Dictionary,
@@ -3439,16 +3469,7 @@ func _rebuild() -> void:
 	# 防御性：若 set_world_ext 尚未注入，尝试从已注入的 MapBaker 取 C++ ext。
 	if _world_ext == null and _map_baker != null and "_world_ext" in _map_baker:
 		set_world_ext(_map_baker._world_ext)
-	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
-		layer.set_world_ext(_world_ext)
-		if layer.has_method("set_defer_initial_rebuild"):
-			layer.set_defer_initial_rebuild(detail_scatter_family_renderer_enabled)
-		if layer.has_method("set_chunked_multimesh_enabled"):
-			layer.set_chunked_multimesh_enabled(detail_scatter_chunked_multimesh_enabled, detail_scatter_chunk_size_cells)
-		layer.setup(_map, _world, _world.world_bounds, hex_size, visual_quality)
-		if _camera_view_initialized and layer.has_method("set_camera_view"):
-			layer.set_camera_view(_camera_world_rect, _camera_world_center, _camera_zoom)
-	)
+	_for_each_vegetation_layer(_setup_loading_vegetation_layer)
 	if _detail_family_layer != null and is_instance_valid(_detail_family_layer):
 		_detail_family_layer.configure(_detail_layers, detail_scatter_family_renderer_enabled)
 		if _camera_view_initialized:
@@ -4084,3 +4105,60 @@ func debug_sea_ice_probe(cell) -> Dictionary:
 				_check_raw += "%d=%d " % [_i, int(raw_buf[_i * 4 + 3])]
 		print(_check_raw)
 	return report
+
+func _setup_loading_vegetation_layer(layer: ShrubLayer) -> void:
+	layer.set_world_ext(_world_ext)
+	if layer.has_method("set_defer_initial_rebuild"):
+		layer.set_defer_initial_rebuild(detail_scatter_family_renderer_enabled)
+	if layer.has_method("set_chunked_multimesh_enabled"):
+		layer.set_chunked_multimesh_enabled(detail_scatter_chunked_multimesh_enabled, detail_scatter_chunk_size_cells)
+	var layer_t0 := Time.get_ticks_usec()
+	layer.setup(_map, _world, _world.world_bounds, hex_size, visual_quality)
+	print("[loading-renderer-step] %s %.1fms" % [layer.name,float(Time.get_ticks_usec()-layer_t0)/1000.0])
+	if _camera_view_initialized and layer.has_method("set_camera_view"):
+		layer.set_camera_view(_camera_world_rect, _camera_world_center, _camera_zoom)
+
+func _rebuild_cooperative() -> void:
+	if _world_quad == null:
+		return
+	if _map == null or _world == null or _map.cell_count() == 0:
+		_world_quad.mesh = null
+		_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+			layer.clear()
+		)
+		_mark_detail_budget_total_dirty()
+		return
+
+	_world_quad.mesh = _build_world_quad_mesh(_world.world_bounds, _wrap_period_x())
+	# 防御性：若 set_world_ext 尚未注入，尝试从已注入的 MapBaker 取 C++ ext。
+	if _world_ext == null and _map_baker != null and "_world_ext" in _map_baker:
+		set_world_ext(_map_baker._world_ext)
+	for layer in _detail_layers:
+		if layer != null:
+			await _setup_loading_vegetation_layer_cooperative(layer)
+			await get_tree().process_frame
+	if _detail_family_layer != null and is_instance_valid(_detail_family_layer):
+		_detail_family_layer.configure(_detail_layers, detail_scatter_family_renderer_enabled)
+		if _camera_view_initialized:
+			_detail_family_layer.set_camera_view(_camera_world_rect, _camera_world_center, _camera_zoom)
+	if detail_scatter_family_renderer_enabled and _camera_view_initialized:
+		_queue_missing_prefetch_detail_chunks()
+		_reactivate_deferred_detail_chunks()
+	# 世界重建属于加载边界，可一次性完成预算同步；运行期 succession 则按层切片。
+	_apply_detail_global_budget(true)
+	_log_detail_scatter_rebuild_summary("renderer_rebuild")
+	if _shader_mat == null:
+		return
+	_apply_uniforms()
+
+func _setup_loading_vegetation_layer_cooperative(layer: ShrubLayer) -> void:
+	layer.set_world_ext(_world_ext)
+	if layer.has_method("set_defer_initial_rebuild"):
+		layer.set_defer_initial_rebuild(detail_scatter_family_renderer_enabled)
+	if layer.has_method("set_chunked_multimesh_enabled"):
+		layer.set_chunked_multimesh_enabled(detail_scatter_chunked_multimesh_enabled, detail_scatter_chunk_size_cells)
+	var layer_t0 := Time.get_ticks_usec()
+	await layer.setup_cooperative(_map, _world, _world.world_bounds, hex_size, visual_quality)
+	print("[loading-renderer-step] %s %.1fms" % [layer.name,float(Time.get_ticks_usec()-layer_t0)/1000.0])
+	if _camera_view_initialized and layer.has_method("set_camera_view"):
+		layer.set_camera_view(_camera_world_rect, _camera_world_center, _camera_zoom)

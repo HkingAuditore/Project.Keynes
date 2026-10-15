@@ -42,6 +42,12 @@ clamp((base + sum(add)) * product(factor), stat_min, stat_max)
 
 ## Catalog
 
+目录 term 的 hash 按 `int32 stat_id + uint32(0) + double add + double factor`
+编码，保留既有 x64 的 24 字节布局。不能对 `TermDefinition` 整个对象做 hash：
+其中 4 字节的编译器填充没有稳定值，MSVC 跨文件优化会暴露这个存档兼容性缺陷。
+正式目录和去税项的 legacy hash 共用同一编码，原存档的目录、版本及 term 检查保持严格。
+`modifier_runtime_test.gd` 用独立 GDScript 字节编码核对目录 hash。
+
 资源入口是
 `Project/project-keynes/data/modifiers/default_modifier_catalog.tres`。GDScript 资源类型位于
 `scripts/modifier/`，`ModifierCatalog.compile_native_catalog()` 将字符串 key 编译成启动期

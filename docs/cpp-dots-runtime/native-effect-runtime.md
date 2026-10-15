@@ -279,6 +279,31 @@ transactions not claimed by the native bridge.
 
 ## Persistence and diagnostics
 
+### Worker mirror persistence repair (2026-10-15)
+
+`apply_pod_snapshot()` rebuilds catalog-owned duration/stack metadata, preserves
+activation sequence for the same instance binding, derives the applied flag
+from ACKed stack state, and maps each transaction back to its source program.
+POD command IDs become catalog command IDs; POD source identity is not an
+external-source binding. The mirror computes the PKEF plan hash in the PKEF
+format, retains command idempotency/ACK masks, rebuilds pending-source counts
+and group indexes, and advances its day/transaction cursors. Both colonization
+and canal builtins stay outside the worker snapshot and survive write-back.
+
+The PKEF v11 reader recognizes the old non-managed POD mirror signature
+(`activation_sequence=0`, `stack_key_hash=0`, absent applied flag/revision).
+It reconstructs missing catalog metadata and deterministic activation order;
+misclassified transactions are recovered only for those source instances and
+catalog-owned commands. Their original POD plan hash must validate before
+conversion to PKEF hashing. Unknown shapes, managed instances, altered commands,
+and hash failures remain rejected. Parsing and conversion use temporary state,
+so a failed repair cannot replace live state. The wire schema remains v11.
+
+`runtime_effect_pod_test.gd` runs the native snapshot-to-PKEF fixture after
+catalog configuration, including repeated snapshot activation stability, legacy
+repair, byte-exact canonical round-trip, ACK/idempotency preservation, and
+atomic rejection of a modified legacy plan hash.
+
 `PKEF v11` stores catalog hash, runtime cursors, an in-progress candidate list,
 instances, input metrics, published and consumed input revisions, fire sequences, and pending
 transactions/commands. External commands persist their effect/source identity

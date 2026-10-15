@@ -1,7 +1,7 @@
 extends PanelContainer
 class_name PapercutMapPreview
 
-const PapercutReliefShader := preload("res://shaders/papercut_relief_map.gdshader")
+const SeaChartShader := preload("res://shaders/sea_chart_astrolabe.gdshader")
 
 var _state: Dictionary = {
 	"country_name": "新国家",
@@ -26,7 +26,9 @@ var _state: Dictionary = {
 }
 
 var _canvas: Control
-var _mat: ShaderMaterial
+var _sea_rect: ColorRect
+var _sea_mat: ShaderMaterial
+var _stage: PaperAtlasStage
 var _title_label: Label
 var _seed_badge: Label
 var _scope_val: Label
@@ -47,30 +49,46 @@ func _ready() -> void:
 	_climate_val = get_node_or_null("Margin/Column/SummaryGrid/ClimateBox/Value") as Label
 	_polity_val = get_node_or_null("Margin/Column/SummaryGrid/PolityBox/Value") as Label
 	if _canvas != null:
-		_mat = ShaderMaterial.new()
-		_mat.shader = PapercutReliefShader
-		_mat.set_shader_parameter("map_center_bias", Vector2(0.50, 0.50))
-		_mat.set_shader_parameter("compass_uv", Vector2(0.84, 0.78))
-		_mat.set_shader_parameter("compass_scale", 0.14)
-		_mat.set_shader_parameter("show_outer_frame", true)
-		_canvas.material = _mat
-		_canvas.draw.connect(_draw_map_canvas)
-		_canvas.resized.connect(func() -> void: _canvas.queue_redraw())
+		_sea_rect = ColorRect.new()
+		_sea_rect.mouse_filter = MOUSE_FILTER_IGNORE
+		_sea_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		_sea_mat = ShaderMaterial.new()
+		_sea_mat.shader = SeaChartShader
+		_sea_mat.set_shader_parameter("compass_uv", Vector2(0.83, 0.25))
+		_sea_mat.set_shader_parameter("compass_scale", 0.22)
+		_sea_mat.set_shader_parameter("secondary_rose_uv", Vector2(0.18, 0.78))
+		_sea_mat.set_shader_parameter("show_neatline", 1.0)
+		_sea_rect.material = _sea_mat
+		_canvas.add_child(_sea_rect)
+		_canvas.resized.connect(_sync_canvas_shader)
+
+		_stage = PaperAtlasStage.new()
+		_stage.interactive_parallax = false
+		_canvas.add_child(_stage)
+		_stage.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		_sync_canvas_shader()
+
 	_sync_shader_params()
 	_refresh_labels()
-	if _canvas != null:
-		_canvas.queue_redraw()
+
+
+func _sync_canvas_shader() -> void:
+	if _sea_mat != null and _canvas != null:
+		_sea_mat.set_shader_parameter("viewport_size", _canvas.size.max(Vector2.ONE))
+		_sea_mat.set_shader_parameter("motion_scale", 0.0 if UIAnimation.reduced_motion() else 1.0)
 
 
 func set_preview_state(next_state: Dictionary, animate_reveal: bool = false) -> void:
 	for k in next_state:
 		_state[k] = next_state[k]
-	var sig := "%s|%d|%d|%.2f|%.2f|%s" % [
+	var sig := "%s|%d|%d|%.2f|%.2f|%d|%d|%s" % [
 		String(_state.get("land_layout", "")),
 		int(_state.get("seed", 0)),
 		int(_state.get("num_continents", 2)),
 		float(_state.get("continent_size", 0.5)),
 		float(_state.get("sea_level", 0.5)),
+		int(_state.get("continent_spacing", 92)),
+		int(_state.get("island_amount", 38)),
 		str(bool(_state.get("is_pkmap", false))),
 	]
 	if (animate_reveal or sig != _last_layout_signature) and is_inside_tree():
@@ -79,39 +97,29 @@ func set_preview_state(next_state: Dictionary, animate_reveal: bool = false) -> 
 	else:
 		_sync_shader_params()
 	_refresh_labels()
-	if _canvas != null:
-		_canvas.queue_redraw()
 
 
 func _trigger_reveal() -> void:
+	_sync_shader_params()
+	if _stage == null:
+		return
 	if _reveal_tween != null and _reveal_tween.is_valid():
 		_reveal_tween.kill()
-	_reveal = 0.35
-	_sync_shader_params()
+	if UIAnimation.reduced_motion():
+		_stage.reveal = 1.0
+		return
+	_stage.reveal = 0.25
 	_reveal_tween = create_tween()
-	_reveal_tween.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	_reveal_tween.tween_method(
-		func(v: float) -> void:
-			_reveal = v
-			if _mat != null:
-				_mat.set_shader_parameter("reveal_progress", _reveal),
-		0.35, 1.0, UITokens.ANIM_SLOW
-	)
+	_reveal_tween.tween_property(_stage, "reveal", 1.0, UITokens.MENU_PAGE_TRANSITION) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 
 
 func _sync_shader_params() -> void:
-	if _mat == null:
-		return
-	_mat.set_shader_parameter("seed_val", float(int(_state.get("seed", 1024)) % 10000))
-	_mat.set_shader_parameter("num_continents", clampi(int(_state.get("num_continents", 2)), 1, 8))
-	_mat.set_shader_parameter("continent_size", clampf(float(_state.get("continent_size", 0.50)), 0.2, 0.9))
-	_mat.set_shader_parameter("sea_level", clampf(float(_state.get("sea_level", 0.50)), 0.1, 0.8))
-	_mat.set_shader_parameter("continent_spacing", clampf(float(_state.get("continent_spacing", 92)) / 100.0, 0.0, 1.0))
-	_mat.set_shader_parameter("island_amount", clampf(float(_state.get("island_amount", 38)) / 100.0, 0.0, 1.0))
-	_mat.set_shader_parameter("wetness", clampf(float(_state.get("wetness", 55)) / 100.0, 0.0, 1.0))
-	_mat.set_shader_parameter("river_density", clampf(float(_state.get("river_density", 55)) / 100.0, 0.0, 1.0))
-	_mat.set_shader_parameter("lake_density", clampf(float(_state.get("lake_density", 45)) / 100.0, 0.0, 1.0))
-	_mat.set_shader_parameter("reveal_progress", _reveal)
+	if _stage != null:
+		_stage.set_layout_state(_state)
+	if _sea_mat != null:
+		_sea_mat.set_shader_parameter("seed_offset", float(int(_state.get("seed", 1)) % 1000))
+		_sea_mat.set_shader_parameter("motion_scale", 0.0 if UIAnimation.reduced_motion() else 1.0)
 
 
 func _refresh_labels() -> void:
@@ -121,7 +129,7 @@ func _refresh_labels() -> void:
 	var is_pkmap := bool(_state.get("is_pkmap", false))
 	var seed_num := int(_state.get("seed", 1))
 	if _title_label != null:
-		_title_label.text = "作者地图" if is_pkmap else "地图预览"
+		_title_label.text = "地图预览"
 	if _seed_badge != null:
 		_seed_badge.text = "#%d" % seed_num
 	if _scope_val != null:
@@ -144,11 +152,3 @@ func _refresh_labels() -> void:
 			cname = "新国家"
 		var fcount := int(_state.get("foreign_count", 5))
 		_polity_val.text = "%s · 外国 %d" % [cname, fcount]
-
-
-func _draw_map_canvas() -> void:
-	if _canvas == null or _canvas.size.x <= 8.0 or _canvas.size.y <= 8.0:
-		return
-	if _mat != null:
-		_mat.set_shader_parameter("viewport_size", _canvas.size)
-	_canvas.draw_rect(Rect2(Vector2.ZERO, _canvas.size), Color.WHITE)

@@ -110,6 +110,37 @@ It never writes ideology storage, Country, or Modifier directly.
 发布一次，再扇出到本地合资格分支；无需为每个家族重复发布事实。解绑会立即删除对应 state 和
 未派发 effect，威望降级不会保留旧累计。
 
+2026-10-15 hotloop v24 corrects a missing native-kernel application of that
+index: the worker had still scanned every dynamic binding per event. The kernel
+now builds an exact `(source,event_type,cell,original_index)` sorted workset from
+the sealed branch bindings and visits the matching range. Original index order
+preserves state creation, fire sequence and effect allocation. This scratch never
+survives the evaluate call, so command changes cannot leave a stale binding index.
+The original manual-save fixture currently has zero dynamic bindings; this fix
+does not account for its measured throughput gain.
+
+Dual Trigger FNV-1a still includes every distinct-key byte and every field. Its
+INT64_MIN empty-key lane contains seven zero bytes; those multiplications are
+combined exactly into a precomputed power of the same prime. The hash ABI and
+strength are unchanged. `PK_TRIGGER_BINDING_SCAN_SCALAR=1` and
+`PK_TRIGGER_HASH_SCALAR=1` select the original paths. `PK_TRIGGER_MEMO_VERIFY=1`
+re-evaluates the sealed day with the full binding scan and compares complete state
+and effect hashes, then independently computes both original full-byte hashes.
+Probes `trigger.kernel`, `trigger.hash_dual`, `trigger.hash_empty_keys`,
+`trigger.binding_candidates` and `trigger.binding_scalar_candidates` distinguish
+compute, hash and candidate work.
+
+Hotloop v28 avoids copying the large `RuntimeTriggerCommand` records into a
+temporary sort table. An already ordered queue is visited directly; an unordered
+queue is stable-sorted through const pointers using the same four-field key.
+Consumed/retained commands remain owned copies, and the queue changes only after
+successful preflight. Discard, future-day retention and ACK semantics are unchanged.
+`PK_TRIGGER_COMMAND_COPY_SCALAR=1` restores the copied sort. The POD self-test
+covers unordered commands, equal-key stability, discard/replay and future retention.
+`trigger.commands`, `trigger.plan_copy`, `trigger.canonicalize`,
+`trigger.commit_copy` and `trigger.snapshot_copy` split host-side costs;
+`trigger.command_order_copy_bytes/reference_bytes` count temporary ordering storage.
+
 `ECONOMY_SOCIAL_PRESSURE = 8` / `SOCIAL_PRESSURE_V1 = 5` 走同一条 committed gameplay fact
 通路，**只在地块的人口加权满意度等级（0 最紧张 .. 4 最满足）跨越时**发布，沿用聚落繁荣度的
 level-change 去重模式，所以每 epoch 的事件量以滚动 workset 为上界。payload 为

@@ -1036,14 +1036,9 @@ bool RuntimeEffectPodAuthority::append_transaction(
         transaction.required_ack_mask |= adapter_ack_bit(command.action);
         state.command_arena.push_back(command);
     }
-    uint64_t hash = FNV_OFFSET;
-    hash = mix_value(hash, transaction.source_instance_id);
-    hash = mix_value(hash, transaction.source_generation);
-    hash = mix_value(hash, transaction.effective_day);
-    hash = mix_value(hash, transaction.fire_sequence);
-    for (uint32_t i = 0; i < transaction.command_count; ++i)
-        hash = command_hash(hash, state.command_arena[transaction.command_begin + i]);
-    transaction.plan_hash = hash;
+    transaction.plan_hash = calculate_plan_hash(transaction.source_instance_id,
+        transaction.source_generation, transaction.effective_day,
+        transaction.fire_sequence, commands);
     state.transactions.push_back(transaction);
     return true;
 }
@@ -1067,6 +1062,18 @@ uint64_t RuntimeEffectPodAuthority::command_hash(
     hash = mix_value(hash, command.idempotency_key);
     hash = mix_value(hash, command.effective_day);
     for (const int64_t value : command.payload) hash = mix_value(hash, value);
+    return hash;
+}
+
+uint64_t RuntimeEffectPodAuthority::calculate_plan_hash(int64_t source_id,
+        uint32_t generation, int64_t day, uint64_t fire_sequence,
+        const std::vector<RuntimeEffectPodCommand> &commands) noexcept {
+    uint64_t hash = FNV_OFFSET;
+    hash = mix_value(hash, source_id);
+    hash = mix_value(hash, generation);
+    hash = mix_value(hash, day);
+    hash = mix_value(hash, fire_sequence);
+    for (const auto &command : commands) hash = command_hash(hash, command);
     return hash;
 }
 

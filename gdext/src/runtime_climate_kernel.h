@@ -249,8 +249,15 @@ public:
                   const RuntimeClimateStore &current, RuntimeClimateStore &next,
                   RuntimeClimateKernelReport &report,
                   bool compute_state_hash = true,
-                  bool validate_input = true) const;
+                  bool validate_input = true,
+                  bool reuse_committed_history = false) const;
+    // 可见发布省去无消费者的温度历史；物理胶囊仍用于主线程提交与校验。
+    static void copy_visible_store(RuntimeClimateStore &destination,
+        const RuntimeClimateStore &source);
     static void commit(RuntimeClimateStore &current, RuntimeClimateStore &next);
+    // 只由 Authority 在成功交换提交后确认；任何丢弃/恢复都会撤销复用资格。
+    void accept_committed_physics(const RuntimeClimateStore &store);
+    void invalidate_committed_physics();
     static uint64_t input_hash(const RuntimeEnvironmentSnapshot &input);
     static bool self_test(std::string &error);
 
@@ -279,6 +286,16 @@ public:
     }
 
 private:
+    mutable const RuntimeClimateStore *_committed_physics_owner = nullptr;
+    mutable uint64_t _committed_physics_generation = 0;
+    mutable uint64_t _planned_physics_generation = 0;
+    // 只给已提交的驻留物理缓存作精确失效判定，不进存档/状态 hash。
+    mutable bool _physics_cache_keys_valid = false;
+    mutable std::vector<uint8_t> _physics_cache_terrain;
+    mutable std::vector<int32_t> _physics_cache_neighbors;
+    mutable std::array<uint8_t, 4> _physics_cache_water_ids{};
+    mutable std::vector<float> _physics_cache_pos_x, _physics_cache_pos_y;
+    mutable std::array<double, 3> _physics_cache_traj_knobs{};
     // 共享 round 编排的 scratch 缓冲。plan_day 是 const 因为它不改动 kernel 的
     // 语义状态；这三个只是复用的内存，每天重新分配 200+ KB 才是真问题。
     mutable pk_async_climate::ClimateInputBuf  _round_in;

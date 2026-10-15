@@ -1,12 +1,22 @@
 extends RefCounted
 class_name UIAnimation
 
+static func reduced_motion() -> bool:
+	var tree := Engine.get_main_loop() as SceneTree
+	var settings := tree.root.get_node_or_null("GameSettings") if tree != null else null
+	return bool(settings.values().get("reduce_motion", false)) if settings != null else false
+
 
 static func cancel(control: Control) -> void:
 	if control == null:
 		return
 	_kill_active(control)
-	control.modulate.a = 1.0
+	control.modulate = Color.WHITE
+	if is_equal_approx(control.anchor_right, 1.0) and is_equal_approx(control.anchor_bottom, 1.0):
+		control.offset_left = 0.0
+		control.offset_top = 0.0
+		control.offset_right = 0.0
+		control.offset_bottom = 0.0
 
 
 ## Animate a clipped wrapper's height; its Container parent still owns position.
@@ -93,19 +103,36 @@ static func page_flip_in(control: Control, from_offset: Vector2 = Vector2(24.0, 
 	if control == null:
 		return
 	_kill_active(control)
-	control.position = Vector2.ZERO
-	refresh_rest_position(control)
+	var is_full_rect := is_equal_approx(control.anchor_right, 1.0) and is_equal_approx(control.anchor_bottom, 1.0)
 	control.visible = true
 	control.modulate = Color(1.04, 1.01, 0.96, 0.0)
-	control.position = from_offset
 	var tween := control.create_tween()
 	control.set_meta("_ui_active_tween", tween)
 	tween.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	tween.parallel().tween_property(control, "position", Vector2.ZERO, duration)
+	if is_full_rect:
+		control.offset_left = from_offset.x
+		control.offset_right = from_offset.x
+		control.offset_top = from_offset.y
+		control.offset_bottom = from_offset.y
+		tween.parallel().tween_property(control, "offset_left", 0.0, duration)
+		tween.parallel().tween_property(control, "offset_right", 0.0, duration)
+		tween.parallel().tween_property(control, "offset_top", 0.0, duration)
+		tween.parallel().tween_property(control, "offset_bottom", 0.0, duration)
+	else:
+		control.position = Vector2.ZERO
+		refresh_rest_position(control)
+		control.position = from_offset
+		tween.parallel().tween_property(control, "position", Vector2.ZERO, duration)
 	tween.parallel().tween_property(control, "modulate", Color.WHITE, duration)
 	tween.tween_callback(func() -> void:
 		if control != null:
-			control.position = Vector2.ZERO
+			if is_full_rect:
+				control.offset_left = 0.0
+				control.offset_right = 0.0
+				control.offset_top = 0.0
+				control.offset_bottom = 0.0
+			else:
+				control.position = Vector2.ZERO
 			control.modulate = Color.WHITE
 			control.remove_meta("_ui_active_tween")
 	)

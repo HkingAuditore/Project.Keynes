@@ -7,6 +7,9 @@ const PLAYER_GAME_SCENE := "res://scenes/player_game.tscn"
 
 var _pending_request: Dictionary = {}
 var _session: Dictionary = {}
+var _transition_id := 0
+var _transition_active := false
+var _transition_layer: CanvasLayer
 
 
 func _ready() -> void:
@@ -33,6 +36,8 @@ func _attach_headless_runner(env_name: String, script_path: String) -> void:
 
 
 func begin_new_game(config: NewGameConfig) -> Dictionary:
+	if _transition_active:
+		return _result(false,"transition_pending","正在准备游戏。")
 	if config == null:
 		return _result(false, "new_game_config_missing", "缺少新游戏配置。")
 	var validation := config.validate()
@@ -43,7 +48,7 @@ func begin_new_game(config: NewGameConfig) -> Dictionary:
 		"config": config.to_dictionary(),
 	}
 	request_changed.emit("new_game")
-	var error := get_tree().change_scene_to_file(PLAYER_GAME_SCENE)
+	var error := _queue_player_scene()
 	if error != OK:
 		_pending_request.clear()
 		return _result(false, "scene_change_failed", "无法进入游戏场景。")
@@ -51,11 +56,13 @@ func begin_new_game(config: NewGameConfig) -> Dictionary:
 
 
 func begin_load_game(slot_id: String) -> Dictionary:
+	if _transition_active:
+		return _result(false,"transition_pending","正在准备游戏。")
 	if slot_id not in ["manual_1", "manual_2", "manual_3", "autosave"]:
 		return _result(false, "slot_invalid", "存档槽位无效。")
 	_pending_request = {"kind": "load_game", "slot_id": slot_id}
 	request_changed.emit("load_game")
-	var error := get_tree().change_scene_to_file(PLAYER_GAME_SCENE)
+	var error := _queue_player_scene()
 	if error != OK:
 		_pending_request.clear()
 		return _result(false, "scene_change_failed", "无法进入游戏场景。")
@@ -86,11 +93,65 @@ func clear_session() -> void:
 
 
 func return_to_main_menu() -> Dictionary:
+	_transition_id += 1
+	_transition_active = false
+	if is_instance_valid(_transition_layer):
+		_transition_layer.queue_free()
 	_pending_request.clear()
 	_session.clear()
 	var error := get_tree().change_scene_to_file(MAIN_MENU_SCENE)
 	return _result(error == OK, "ok" if error == OK else "scene_change_failed",
 		"" if error == OK else "无法返回主菜单。")
+
+
+func _queue_player_scene() -> Error:
+	var error := ResourceLoader.load_threaded_request(PLAYER_GAME_SCENE,"PackedScene")
+	if error != OK:
+		return error
+	_transition_active = true
+	_transition_id += 1
+	_transition_layer = CanvasLayer.new()
+	_transition_layer.layer = 100
+	get_tree().root.add_child(_transition_layer)
+	var overlay := load("res://scenes/ui/world_loading_overlay.tscn").instantiate() as WorldLoadingOverlay
+	_transition_layer.add_child(overlay)
+	overlay.show_message("正在创建世界")
+	overlay.set_layout_state((_pending_request.get("config",{}) as Dictionary).get("base",{}))
+	overlay.return_requested.connect(return_to_main_menu)
+	overlay.retry_requested.connect(func() -> void:
+		if is_instance_valid(_transition_layer):_transition_layer.queue_free()
+		_queue_player_scene())
+	call_deferred("_finish_player_scene_transition",_transition_id,overlay)
+	return OK
+
+
+func _finish_player_scene_transition(id: int, overlay: WorldLoadingOverlay) -> void:
+	await get_tree().process_frame
+	var load_progress: Array = []
+	while id==_transition_id and ResourceLoader.load_threaded_get_status(PLAYER_GAME_SCENE, load_progress)==ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+		var stage_frac := float(load_progress[0]) if not load_progress.is_empty() else 0.0
+		overlay.set_progress("preparing", clampf(stage_frac * 0.12, 0.02, 0.12))
+		await get_tree().process_frame
+	if id!=_transition_id:return
+	if ResourceLoader.load_threaded_get_status(PLAYER_GAME_SCENE)!=ResourceLoader.THREAD_LOAD_LOADED:
+		overlay.show_failure("游戏场景载入失败。")
+		_transition_active = false
+		return
+	overlay.set_progress("preparing", 0.15)
+	var ext: RefCounted = ClassDB.instantiate("DCWorldExt")
+	await LoadingCatalogCache.prepare(ext)
+	if id!=_transition_id:return
+	var scene := ResourceLoader.load_threaded_get(PLAYER_GAME_SCENE) as PackedScene
+	var error := get_tree().change_scene_to_packed(scene)
+	if error != OK:
+		overlay.show_failure("无法进入游戏场景。")
+		_transition_active = false
+		return
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if id==_transition_id and is_instance_valid(_transition_layer):
+		_transition_layer.queue_free()
+	_transition_active = false
 
 
 func quit_game() -> void:

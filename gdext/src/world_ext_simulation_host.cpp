@@ -9,6 +9,7 @@
 #include "runtime_ideology_pod.h"
 #include "runtime_economy_pod.h"
 #include "economy_graph_kernels.h"
+#include "effect_runtime.h"
 
 #include <algorithm>
 #include <chrono>
@@ -2590,6 +2591,14 @@ Dictionary DCWorldExt::poll_runtime_save(int64_t request_id) {
         std::memcpy(country_pkcn.ptrw(), bundle->country_pkcn_bytes.data(),
                     bundle->country_pkcn_bytes.size());
     }
+    // Both PKSR and the PKSV provider share this immutable boundary capture.
+    // Export the existing wire bytes instead of recapturing the economy on UI.
+    PackedByteArray economy_ecp2;
+    economy_ecp2.resize(static_cast<int64_t>(bundle->economy_ecp2_bytes.size()));
+    if (!bundle->economy_ecp2_bytes.empty()) {
+        std::memcpy(economy_ecp2.ptrw(), bundle->economy_ecp2_bytes.data(),
+                    bundle->economy_ecp2_bytes.size());
+    }
     out["ok"] = true;
     out["pending"] = false;
     out["ready"] = true;
@@ -2621,6 +2630,7 @@ Dictionary DCWorldExt::poll_runtime_save(int64_t request_id) {
         bundle->gameplay_effect_bytes.size());
     out["ideology_bytes"] = static_cast<int64_t>(bundle->ideology_bytes.size());
     out["country_pkcn"] = country_pkcn;
+    out["economy_ecp2"] = economy_ecp2;
     out["checksum"] = static_cast<int64_t>(bundle->checksum);
     out["bytes"] = bytes;
     return out;
@@ -2732,7 +2742,9 @@ bool DCWorldExt::runtime_trigger_pod_self_test() const {
 
 bool DCWorldExt::runtime_effect_pod_self_test() const {
     std::string error;
-    const bool ok = RuntimeEffectPodAuthority::self_test(error);
+    const bool ok = RuntimeEffectPodAuthority::self_test(error) &&
+        (_effect_runtime == nullptr ||
+         static_cast<const EffectRuntime *>(_effect_runtime)->pod_snapshot_persistence_self_test(error));
     if (!ok) {
         godot::UtilityFunctions::printerr(
             godot::String("runtime_effect_pod_self_test: ") +

@@ -417,7 +417,7 @@ bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
     std::unordered_set<int64_t> preserved_tx_ids;
     preserved_builtins.reserve(8);
     for (const Transaction &tx : _transactions) {
-        if (tx.program_id != -1) continue;
+        if (tx.program_id != -1 && tx.program_id != -2) continue;
         PreservedBuiltin row;
         row.transaction = tx;
         row.commands.reserve(tx.command_count);
@@ -475,10 +475,16 @@ bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
     next_instances.reserve(snapshot.instances.size());
     next_metric_values.reserve(snapshot.instances.size() * metric_width);
     next_metric_present.reserve(snapshot.instances.size() * metric_width);
+    uint64_t next_activation_sequence = _next_activation_sequence;
 
     for (const RuntimeEffectPodInstance &entry : snapshot.instances) {
         if (entry.instance_id == 0 || entry.generation == 0) {
             error = "effect_pod_snapshot_instance_invalid";
+            return false;
+        }
+        if (entry.program_id < 0 ||
+            entry.program_id >= static_cast<int32_t>(_definitions.size())) {
+            error = "effect_pod_snapshot_program_invalid";
             return false;
         }
         if (next_instance_ids.count(entry.instance_id) != 0) {
@@ -502,17 +508,26 @@ bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
         instance.fire_sequence = entry.fire_sequence;
         instance.active = entry.active;
         instance.lifecycle = static_cast<int32_t>(entry.lifecycle);
-        instance.duration_days = entry.expires_day >= 0
-            ? static_cast<int32_t>(entry.expires_day - snapshot.committed_day)
-            : -1;
         instance.stack_policy = static_cast<int32_t>(entry.stack_policy);
         instance.max_stacks = entry.max_stacks;
         instance.stack_count = entry.stack_count;
         instance.applied_stack_count = entry.applied_stack_count;
+        instance.effect_applied = entry.applied_stack_count > 0 ? 1 : 0;
+        instance.applied_input_revision = instance.effect_applied
+            ? entry.last_evaluated_input_revision : 0;
         instance.expires_day = entry.expires_day;
         instance.stack_key_hash = entry.stack_key_hash;
         instance.retire_requested = entry.retire_requested;
         instance.last_acked_fire_sequence = entry.last_acked_fire_sequence;
+        const int32_t previous_index = instance_index_for_id(instance.id);
+        if (previous_index >= 0) {
+            const Instance &previous = _instances[previous_index];
+            if (previous.generation == instance.generation &&
+                previous.program_id == instance.program_id)
+                instance.activation_sequence = previous.activation_sequence;
+        }
+        if (instance.activation_sequence == 0)
+            instance.activation_sequence = next_activation_sequence++;
         instance.metric_base = static_cast<uint32_t>(next_metric_values.size());
         if (metric_width > 0) {
             const size_t src_base = static_cast<size_t>(entry.metric_base);
@@ -534,6 +549,9 @@ bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
             instance.target_domain = definition.target_domain;
             instance.operation = definition.operation;
             instance.priority = definition.priority;
+            instance.duration_days = definition.duration_days;
+            instance.stack_key_hash = fnv_string(1469598103934665603ULL,
+                definition.stack_key.empty() ? definition.key : definition.stack_key);
         }
         next_instance_ids[instance.id] =
             static_cast<int32_t>(next_instances.size());
@@ -559,8 +577,7 @@ bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
             static_cast<int32_t>(command.command_definition_id);
         row.payload = command.payload;
         row.idempotency_key = command.idempotency_key;
-        row.external_effect_id =
-            static_cast<int64_t>(command.source_instance_id);
+        row.command_key_id = row.command_definition_id;
         next_command_arena.push_back(row);
     }
     next_transactions.reserve(snapshot.transactions.size());
@@ -573,6 +590,12 @@ bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
         tx.id = entry.transaction_id;
         tx.source_instance_id = entry.source_instance_id;
         tx.source_generation = entry.source_generation;
+        const auto source = next_instance_ids.find(entry.source_instance_id);
+        if (source == next_instance_ids.end()) {
+            error = "effect_pod_snapshot_transaction_source_missing";
+            return false;
+        }
+        tx.program_id = next_instances[source->second].program_id;
         tx.effective_day = entry.effective_day;
         tx.plan_hash = entry.plan_hash;
         tx.required_ack_mask = entry.required_ack_mask;
@@ -581,18 +604,26 @@ bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
         tx.transition_input_revision = entry.input_revision;
         tx.transition_fire_sequence = entry.fire_sequence;
         tx.transition_stack_count = entry.transition_stack_count;
+        if (uses_managed_lifecycle(_definitions[tx.program_id])) {
+            tx.instance_transition = entry.transition_stack_count > 0
+                ? TRANSITION_APPLY : TRANSITION_RETIRE;
+        } else {
+            tx.transition_input_revision = 0;
+            tx.transition_fire_sequence = 0;
+            tx.transition_stack_count = 0;
+        }
         tx.command_begin = entry.command_begin;
         tx.command_count = entry.command_count;
         if (tx.command_begin + tx.command_count > next_command_arena.size()) {
             error = "effect_pod_snapshot_command_range_invalid";
             return false;
         }
+        tx.plan_hash = persisted_plan_hash(tx, next_command_arena);
         next_transaction_ids[tx.id] =
             static_cast<int32_t>(next_transactions.size());
         if (tx.status == PLANNED || tx.status == PREFLIGHTED ||
             tx.status == COMMITTED) {
-            next_pending_by_instance[tx.source_instance_id] =
-                static_cast<uint32_t>(next_transactions.size());
+            ++next_pending_by_instance[tx.source_instance_id];
         }
         next_transactions.push_back(tx);
     }
@@ -634,12 +665,20 @@ bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
         if (row.transaction.status == PLANNED ||
             row.transaction.status == PREFLIGHTED ||
             row.transaction.status == COMMITTED) {
-            _pending_transactions_by_instance[row.transaction.source_instance_id] =
-                static_cast<uint32_t>(_transactions.size());
+            ++_pending_transactions_by_instance[row.transaction.source_instance_id];
         }
         _transactions.push_back(std::move(row.transaction));
     }
     _dirty_queue.clear();
+    _next_activation_sequence = next_activation_sequence;
+    for (const Transaction &tx : _transactions)
+        _next_transaction_id = std::max(_next_transaction_id, tx.id + 1);
+    _current_day = snapshot.committed_day;
+    _last_completed_day = snapshot.committed_day;
+    _run_day = -1;
+    _run_cursor = 0;
+    rebuild_family_effect_groups();
+    rebuild_command_idempotency_index();
     _run_candidates.clear();
     _candidate_cursor = 0;
     _due_heap = {};
@@ -6413,6 +6452,157 @@ Dictionary EffectRuntime::report() const {
     return out;
 }
 
+bool EffectRuntime::pod_snapshot_persistence_self_test(std::string &error) const {
+    auto fail = [&](const char *reason) { error = reason; return false; };
+    int32_t program = -1;
+    for (int32_t i = 0; i < static_cast<int32_t>(_definitions.size()); ++i) {
+        const Definition &d = _definitions[i];
+        if (!uses_managed_lifecycle(d) && d.behavior_id.empty() && d.command_count > 0) {
+            program = i;
+            break;
+        }
+    }
+    if (program < 0) return fail("effect_persistence_fixture_program_missing");
+    const Definition &d = _definitions[program];
+    const CommandDefinition &c = _command_definitions[d.command_begin];
+    RuntimeEffectPodSnapshot snapshot;
+    snapshot.generation = 1;
+    snapshot.committed_day = 12;
+    snapshot.metric_values.resize(_metric_count, 0);
+    RuntimeEffectPodInstance instance;
+    instance.instance_id = 42;
+    instance.program_id = program;
+    instance.source_handle = 7;
+    instance.target_handle = 9;
+    instance.target_generation = 1;
+    instance.next_due_day = 20;
+    instance.input_revision = 7;
+    instance.last_evaluated_input_revision = 7;
+    instance.fire_sequence = 3;
+    instance.last_acked_fire_sequence = 3;
+    instance.applied_stack_count = 1;
+    snapshot.instances.push_back(instance);
+    RuntimeEffectPodCommand command;
+    command.action = static_cast<RuntimeEffectPodAction>(c.action);
+    command.domain = c.domain;
+    command.opcode = c.opcode;
+    command.source_instance_id = 42;
+    command.source_generation = 1;
+    command.source_handle = 7;
+    command.target_handle = 9;
+    command.target_generation = 1;
+    command.value = c.value;
+    command.duration_days = c.duration_days;
+    command.stacks = c.stacks;
+    command.command_definition_id = d.command_begin;
+    command.command_key_hash = RuntimeEffectPodAuthority::hash_text(c.command_key.c_str());
+    command.definition_key_hash = c.definition_key.empty() ? 0
+        : RuntimeEffectPodAuthority::hash_text(c.definition_key.c_str());
+    command.effective_day = 12;
+    command.idempotency_key = 123;
+    command.payload = c.payload;
+    snapshot.command_arena.push_back(command);
+    RuntimeEffectPodTransaction tx;
+    tx.transaction_id = 5;
+    tx.source_instance_id = 42;
+    tx.source_generation = 1;
+    tx.effective_day = 12;
+    tx.command_count = 1;
+    tx.fire_sequence = 3;
+    tx.input_revision = 7;
+    tx.required_ack_mask = RuntimeEffectPodAuthority::adapter_ack_bit(command.action);
+    tx.received_ack_mask = tx.required_ack_mask;
+    tx.status = RuntimeEffectPodTransactionStatus::ACKED;
+    tx.plan_hash = RuntimeEffectPodAuthority::calculate_plan_hash(42, 1, 12, 3, snapshot.command_arena);
+    snapshot.transactions.push_back(tx);
+    EffectRuntime candidate = *this;
+    candidate.reset_runtime_state();
+    candidate._country_runtime = nullptr;
+    if (!candidate.apply_pod_snapshot(snapshot, error)) return false;
+    const PackedByteArray canonical = candidate.capture();
+    if (!bool(candidate.restore(canonical).get("ok", false)) ||
+        candidate.capture() != canonical)
+        return fail("effect_pod_snapshot_roundtrip_failed");
+    const uint64_t activation = candidate._instances[0].activation_sequence;
+    snapshot.generation = 2;
+    if (!candidate.apply_pod_snapshot(snapshot, error) ||
+        candidate._instances[0].activation_sequence != activation)
+        return fail("effect_pod_activation_changed_on_refresh");
+    // Reproduce the old bridge's exact omissions, including its original POD hash.
+    candidate._instances[0].activation_sequence = 0;
+    candidate._instances[0].stack_key_hash = 0;
+    candidate._instances[0].effect_applied = 0;
+    candidate._instances[0].applied_input_revision = 0;
+    candidate._transactions[0].program_id = -1;
+    candidate._transactions[0].transition_input_revision = 7;
+    candidate._transactions[0].transition_fire_sequence = 3;
+    candidate._transactions[0].plan_hash = tx.plan_hash;
+    candidate._command_arena[0].command_key_id = -1;
+    candidate._command_arena[0].external_effect_id = 42;
+    const PackedByteArray legacy = candidate.capture();
+    candidate._transactions[0].plan_hash ^= 1;
+    const PackedByteArray tampered = candidate.capture();
+    if (!bool(candidate.restore(legacy).get("ok", false)))
+        return fail("effect_legacy_pod_roundtrip_failed");
+    const PackedByteArray migrated = candidate.capture();
+    const Dictionary rejected = candidate.restore(tampered);
+    if (bool(rejected.get("ok", true)) ||
+        String(rejected.get("reason", "")) != "pkef_legacy_pod_plan_hash_invalid" ||
+        candidate.capture() != migrated)
+        return fail("effect_legacy_pod_tamper_not_atomic");
+    if (!bool(candidate.restore(migrated).get("ok", false)) ||
+        candidate.capture() != migrated || candidate._instances.size() != 1 ||
+        candidate._transactions.size() != 1 || candidate._instances[0].fire_sequence != 3 ||
+        candidate._instances[0].applied_stack_count != 1 ||
+        candidate._command_arena[0].idempotency_key != 123)
+        return fail("effect_legacy_pod_identity_changed");
+    return true;
+}
+
+uint64_t EffectRuntime::persisted_plan_hash(const Transaction &tx,
+        const std::vector<Command> &arena) const {
+    uint64_t hash = 1469598103934665603ULL;
+    const bool builtin = tx.program_id < 0;
+    if (builtin) {
+        hash = fnv_value(hash, tx.id);
+        hash = fnv_value(hash, tx.effective_day);
+    } else {
+        hash = fnv_value(hash, tx.source_instance_id);
+        hash = fnv_value(hash, tx.source_generation);
+        hash = fnv_value(hash, tx.program_id);
+        hash = fnv_value(hash, tx.effective_day);
+        if (tx.instance_transition != TRANSITION_NONE) {
+            hash = fnv_value(hash, tx.instance_transition);
+            hash = fnv_value(hash, tx.transition_input_revision);
+            hash = fnv_value(hash, tx.transition_fire_sequence);
+            hash = fnv_value(hash, tx.transition_stack_count);
+        }
+    }
+    for (uint32_t i = 0; i < tx.command_count; ++i) {
+        const Command &c = arena[static_cast<size_t>(tx.command_begin) + i];
+        hash = fnv_value(hash, c.action);
+        hash = fnv_value(hash, c.domain);
+        hash = fnv_value(hash, c.opcode);
+        hash = fnv_value(hash, c.target_handle);
+        hash = fnv_value(hash, c.target_generation);
+        if (!builtin) {
+            hash = fnv_value(hash, c.value_q16);
+            hash = fnv_value(hash, c.duration_days);
+            hash = fnv_value(hash, c.stacks);
+            hash = fnv_value(hash, c.command_key_id);
+            hash = fnv_value(hash, c.command_definition_id);
+        }
+        if (tx.program_id != -2)
+            for (const int64_t value : c.payload) hash = fnv_value(hash, value);
+        hash = fnv_value(hash, c.idempotency_key);
+        if (c.external_effect_id != 0) {
+            hash = fnv_value(hash, c.external_effect_id);
+            hash = fnv_value(hash, c.external_source_id);
+        }
+    }
+    return hash;
+}
+
 PackedByteArray EffectRuntime::capture() const {
     if (!_configured) return PackedByteArray();
     std::vector<uint8_t> bytes;
@@ -6608,6 +6798,7 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
     restored_metric_present.reserve(static_cast<size_t>(instance_count) *
                                     static_cast<size_t>(_metric_count));
     std::unordered_map<int64_t, int32_t> restored_instance_ids;
+    std::unordered_set<int64_t> legacy_pod_instance_ids;
     restored_instances.reserve(instance_count);
     for (uint32_t i = 0; i < instance_count; ++i) {
         Instance instance;
@@ -6641,6 +6832,23 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
             !read_le(bytes, size, cursor, metric_count) ||
             metric_count != static_cast<uint32_t>(_metric_count))
             return failure("pkef_instance_truncated_or_metric_mismatch");
+        // 旧 worker 写回漏填这两个必需字段；只修复可由当前目录重建的非托管实例。
+        if (schema == 11 && instance.id > 0 && instance.generation > 0 &&
+            instance.activation_sequence == 0 && instance.stack_key_hash == 0 &&
+            instance.effect_applied == 0 && instance.applied_input_revision == 0 &&
+            instance.program_id >= 0 &&
+            instance.program_id < static_cast<int32_t>(_definitions.size()) &&
+            !uses_managed_lifecycle(_definitions[instance.program_id])) {
+            const Definition &definition = _definitions[instance.program_id];
+            instance.activation_sequence = next_activation_sequence++;
+            instance.stack_key_hash = fnv_string(1469598103934665603ULL,
+                definition.stack_key.empty() ? definition.key : definition.stack_key);
+            instance.duration_days = definition.duration_days;
+            instance.effect_applied = instance.applied_stack_count > 0 ? 1 : 0;
+            instance.applied_input_revision = instance.effect_applied
+                ? instance.last_evaluated_input_revision : 0;
+            legacy_pod_instance_ids.insert(instance.id);
+        }
         if (instance.active > 1 || instance.source_kind < 0 || instance.source_kind > 5 ||
             instance.target_domain < 0 || instance.target_domain > 5 ||
             instance.operation < 0 || instance.operation > 4 ||
@@ -6756,6 +6964,25 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
             !read_le(bytes, size, cursor, transaction.transition_stack_count) ||
             !read_le(bytes, size, cursor, command_count) || command_count > 4096)
             return failure("pkef_transaction_truncated");
+        const bool legacy_pod_transaction = transaction.program_id == -1 &&
+            legacy_pod_instance_ids.count(transaction.source_instance_id) != 0;
+        const uint64_t legacy_pod_fire_sequence = transaction.transition_fire_sequence;
+        const uint64_t legacy_pod_plan_hash = transaction.plan_hash;
+        std::vector<RuntimeEffectPodCommand> legacy_pod_commands;
+        if (legacy_pod_transaction) {
+            const Instance &source = restored_instances[
+                restored_instance_ids.at(transaction.source_instance_id)];
+            if (transaction.source_generation != source.generation ||
+                transaction.instance_transition != TRANSITION_NONE ||
+                legacy_pod_fire_sequence == 0 ||
+                legacy_pod_fire_sequence > source.fire_sequence ||
+                transaction.transition_stack_count != 0 ||
+                transaction.transition_input_revision > source.input_revision)
+                return failure("pkef_legacy_pod_transaction_invalid");
+            transaction.program_id = source.program_id;
+            transaction.transition_fire_sequence = 0;
+            transaction.transition_input_revision = 0;
+        }
         const bool builtin_family_colonization = transaction.program_id == -1;
         const bool builtin_canal_commit = transaction.program_id == -2;
         const bool builtin_transaction = builtin_family_colonization ||
@@ -6830,6 +7057,17 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
                 (!read_le(bytes, size, cursor, command.external_effect_id) ||
                  !read_le(bytes, size, cursor, command.external_source_id)))
                 return failure("pkef_command_external_identity_truncated");
+            if (legacy_pod_transaction) {
+                if (command.command_key_id != -1 ||
+                    command.command_definition_id < 0 ||
+                    command.command_definition_id >= static_cast<int32_t>(_command_definitions.size()) ||
+                    _command_definitions[command.command_definition_id].owner_program_id != transaction.program_id ||
+                    command.external_effect_id != transaction.source_instance_id ||
+                    command.external_source_id != 0)
+                    return failure("pkef_legacy_pod_command_invalid");
+                command.command_key_id = command.command_definition_id;
+                command.external_effect_id = 0;
+            }
             if (command.action < MODIFIER_COMMAND || command.action > CUSTOM_DOMAIN_COMMAND ||
                 command.domain < -1 || command.domain >= 32 || command.stacks <= 0 ||
                 command.duration_days < -1 || command.command_key_id < -1 ||
@@ -6881,6 +7119,31 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
             derived_ack_mask |= adapter_ack_bit_for(command);
             for (int64_t &value : command.payload)
                 if (!read_le(bytes, size, cursor, value)) return failure("pkef_command_payload_truncated");
+            if (legacy_pod_transaction) {
+                const Instance &source = restored_instances[
+                    restored_instance_ids.at(transaction.source_instance_id)];
+                const CommandDefinition &definition = _command_definitions[command.command_definition_id];
+                RuntimeEffectPodCommand pod;
+                pod.action = static_cast<RuntimeEffectPodAction>(command.action);
+                pod.domain = command.domain;
+                pod.opcode = command.opcode;
+                pod.source_instance_id = static_cast<uint64_t>(source.id);
+                pod.source_generation = source.generation;
+                pod.source_handle = source.source_handle;
+                pod.target_handle = command.target_handle;
+                pod.target_generation = command.target_generation;
+                pod.value = command.value_q16;
+                pod.duration_days = command.duration_days;
+                pod.stacks = command.stacks;
+                pod.command_definition_id = command.command_definition_id;
+                pod.command_key_hash = RuntimeEffectPodAuthority::hash_text(definition.command_key.c_str());
+                pod.definition_key_hash = definition.definition_key.empty() ? 0
+                    : RuntimeEffectPodAuthority::hash_text(definition.definition_key.c_str());
+                pod.idempotency_key = command.idempotency_key;
+                pod.effective_day = transaction.effective_day;
+                pod.payload = command.payload;
+                legacy_pod_commands.push_back(pod);
+            }
             restored_command_arena.push_back(std::move(command));
             ++transaction.command_count;
         }
@@ -6977,6 +7240,14 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
                 expected_plan_hash = fnv_value(expected_plan_hash,
                                                command.external_source_id);
             }
+        }
+        if (legacy_pod_transaction) {
+            if (RuntimeEffectPodAuthority::calculate_plan_hash(
+                    transaction.source_instance_id, transaction.source_generation,
+                    transaction.effective_day, legacy_pod_fire_sequence,
+                    legacy_pod_commands) != legacy_pod_plan_hash)
+                return failure("pkef_legacy_pod_plan_hash_invalid");
+            transaction.plan_hash = expected_plan_hash;
         }
         if (expected_plan_hash != transaction.plan_hash)
             return failure("pkef_transaction_plan_hash_invalid");

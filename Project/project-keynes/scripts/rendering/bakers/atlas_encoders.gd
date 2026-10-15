@@ -211,6 +211,10 @@ static func encode_height_tex(buf: PackedFloat32Array, size: Vector2i,
 static func encode_height_flow_tex(height_buf: PackedFloat32Array, flow_buf: PackedFloat32Array,
 		size: Vector2i, existing: ImageTexture = null,
 		native_ext: Object = null) -> ImageTexture:
+	if native_ext != null and native_ext.has_method("encode_bake_height_flow_tex_data"):
+		var packed: Dictionary = native_ext.encode_bake_height_flow_tex_data({"height_buffer":height_buf,"flow_buffer":flow_buf,"width":size.x,"height":size.y})
+		if not bool(packed.get("fallback",true)):
+			return _upload_height_flow_result(packed,size,existing)
 	var W: int = size.x
 	var H: int = size.y
 	var n: int = W * H
@@ -285,6 +289,19 @@ static func encode_height_flow_tex(height_buf: PackedFloat32Array, flow_buf: Pac
 	last_flow_encode_info["out"] = _byte_buffer_stats(flow_only, n)
 	last_flow_encode_info["upload"] = {"format": "RGBA8", "n": n, "bytes": rgba.size()}
 	return _upload_rgba8(rgba, W, H, existing)
+
+
+static func _upload_height_flow_result(packed: Dictionary, size: Vector2i, existing: ImageTexture) -> ImageTexture:
+	last_flow_encode_info = {"size":size,"path":"height_flow_pack","height_path":"gdext","flow_path":"gdext","packed_channel":"B","format":"RGBA8","src":packed.get("src",{}),"out":packed.get("out",{}),"upload":{"format":"RGBA8","n":size.x*size.y,"bytes":size.x*size.y*4}}
+	return _upload_rgba8(packed.data,size.x,size.y,existing)
+
+
+static func encode_height_flow_tex_async(height_buf: PackedFloat32Array, flow_buf: PackedFloat32Array,
+		size: Vector2i, existing: ImageTexture, native_ext: Object) -> ImageTexture:
+	var packed: Dictionary = await NativeLoadingTasks.compute(native_ext,"height_flow",{"height_buffer":height_buf,"flow_buffer":flow_buf,"width":size.x,"height":size.y})
+	if not bool(packed.get("fallback",true)):
+		return _upload_height_flow_result(packed,size,existing)
+	return encode_height_flow_tex(height_buf,flow_buf,size,existing,native_ext)
 
 
 # [terrain-normal-bake 2026-06-25] 生成期烘焙"总体地形法线"（宽半径梯度 → RG8: nx,ny）。

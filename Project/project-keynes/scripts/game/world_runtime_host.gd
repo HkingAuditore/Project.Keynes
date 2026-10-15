@@ -646,7 +646,8 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 	# at a time before replacing the generator, so the old DCWorldExt destructor
 	# never has to join a live simulation from the UI call stack.
 	await _stop_previous_runtime_worker()
-	var restore_clock_from_save := not _pending_load_bundle.is_empty()
+	if not is_inside_tree():
+		return
 	var clock_was_paused := true
 	if _world_clock != null:
 		clock_was_paused = _world_clock.paused
@@ -682,6 +683,8 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 		_generator.bake_progress.connect(_on_baker_stage_progress)
 
 	var result: Dictionary = await _generator.generate(cfg, hex_size)
+	if not is_inside_tree():
+		return
 	if result.is_empty() or not result.has("map") or not result.has("world_data"):
 		_current_map = null
 		_world_data = null
@@ -712,7 +715,14 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 	if _world_clock != null:
 		_generator.set_world_clock_ref(_world_clock)
 	_rebuild_view_adapter()
-	_bind_renderer_and_camera(safe_area)
+	generation_progress.emit("upload",0.97)
+	await _bind_renderer_and_camera(safe_area)
+	if not is_inside_tree():
+		return
+	_loading_visual_step("building_visual_setup")
+	await get_tree().process_frame
+	if not is_inside_tree():
+		return
 	var building_visual_setup := refresh_building_visual_catalog()
 	if not bool(building_visual_setup.get("ok", false)) \
 			and not bool(building_visual_setup.get("deferred", false)):
@@ -729,6 +739,11 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 			])
 			world_generation_failed.emit(String(restore_result.get("message", "存档恢复失败。")))
 			return
+		# 运行中保存的时钟会恢复为 unpaused；随后仍有数个加载 await。
+		# 在输入捕获/worker 启动完成前推进日历会漏掉环境输入并卡住日屏障。
+		if _world_clock != null:
+			clock_was_paused = _world_clock.paused
+			_world_clock.pause(true)
 		_pending_load_bundle.clear()
 	# Phase A: freeze all worker inputs after generation/restore has completed.
 	# Capture is a copy boundary. SHADOW worker starts immediately after so
@@ -744,6 +759,10 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 		if not bool(_country_worker_transport_capture.get("ok", false)):
 			push_warning("[country-worker] capture deferred: %s" % String(
 				_country_worker_transport_capture.get("code", "unknown")))
+	_loading_visual_step("start_worker")
+	await get_tree().process_frame
+	if not is_inside_tree():
+		return
 	_start_production_shadow_worker()
 	var initial_visible_building_cells := PackedInt32Array()
 	for cell in _current_map.cell_count():
@@ -753,18 +772,20 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 		"newly_visible_cells": initial_visible_building_cells,
 		"vision_revision": _current_map.vision_revision,
 	})
+	_loading_visual_step("visual_done")
+	await get_tree().process_frame
+	if not is_inside_tree():
+		return
 	_runtime_ready_for_ticks = true
 	# The host process also drains building visual dirty cells. Keep it alive for
 	# the normal runtime; overlay refreshes must not disable construction/era
 	# intelligence updates.
 	set_process(true)
 	if _world_clock != null:
-		# 读档路径由 world_clock provider 恢复权威模式；新世界则恢复生成前模式。
-		if not restore_clock_from_save:
-			_world_clock.pause(clock_was_paused)
+		# 只在输入及 worker 均已建立后恢复新世界/存档原有的运行模式。
+		_world_clock.pause(clock_was_paused)
 		on_clock_running_changed(not _world_clock.paused)
 	world_ready.emit(_current_map, _world_data, _generator, _view_adapter)
-
 
 func _start_production_shadow_worker() -> void:
 	if not runtime_shadow_on_generate:
@@ -4250,13 +4271,15 @@ func _bind_renderer_and_camera(safe_area: Rect2) -> void:
 		_connect_country_committed()
 		# Keep monotonic exploration and discovery ingress identical to a visual
 		# session. Only texture/LUT/border publication is omitted.
+		_loading_visual_step("_refresh_vision()")
 		_refresh_vision()
 		return
 	_renderer.hex_size = hex_size
 	var ext = _generator.get_data_core_world_ext() if _generator != null and _generator.has_method("get_data_core_world_ext") else null
 	if ext != null and _renderer.has_method("set_world_ext"):
 		_renderer.set_world_ext(ext)
-	_renderer.set_map(_current_map, _world_data)
+	_loading_visual_step("_renderer.set_map(_current_map, _world_data)")
+	await _renderer.set_map_cooperative(_current_map, _world_data)
 	if _map_overlay_layer != null:
 		_map_overlay_layer.set_bounds(_renderer.get_world_bounds())
 		_map_overlay_layer.set_horizontal_wrap(map_wrap_period_x())
@@ -4266,7 +4289,10 @@ func _bind_renderer_and_camera(safe_area: Rect2) -> void:
 			_world_data.lut_dims
 		)
 	if _renderer.has_method("set_map_baker") and _generator != null and "_baker" in _generator:
+		_loading_visual_step("_renderer.set_map_baker(_generator._baker)")
 		_renderer.set_map_baker(_generator._baker)
+	_loading_visual_step("_bind_country_visuals()")
+	await get_tree().process_frame
 	_bind_country_visuals()
 	if _world_clock != null:
 		_renderer.set_season_phase(_world_clock.season_phase())
@@ -4274,7 +4300,9 @@ func _bind_renderer_and_camera(safe_area: Rect2) -> void:
 		on_visual_day_phase_changed(_world_clock.visual_day_phase)
 		var cp = _generator._c() if _generator != null and _generator.has_method("_c") else null
 		if cp != null and cp.daily_climate_interpolation:
-			_generator.refresh_climate_daily(_current_map, _world_clock.season_phase())
+			_loading_visual_step("_generator.refresh_climate_daily(_current_map, _world_clock.season_phase())")
+			await _generator.refresh_climate_loading(_current_map, _world_clock.season_phase())
+	await get_tree().process_frame
 	if _camera != null:
 		_camera.set_world_bounds(_renderer.get_world_bounds())
 		if _camera.has_method("set_horizontal_wrap"):
@@ -4938,3 +4966,18 @@ func _init_tod_profile() -> void:
 
 func _on_baker_stage_progress(stage: String, fraction: float) -> void:
 	generation_progress.emit(stage, fraction)
+
+
+func _exit_tree() -> void:
+	if _generator != null:
+		_generator.cancel_loading_work()
+
+
+var _loading_visual_usec := 0
+var _loading_visual_name := ""
+func _loading_visual_step(label: String) -> void:
+	var now:=Time.get_ticks_usec()
+	if _loading_visual_usec>0:
+		print("[loading-visual-substep] %s %.1fms" % [_loading_visual_name,float(now-_loading_visual_usec)/1000.0])
+	_loading_visual_usec=now
+	_loading_visual_name=label

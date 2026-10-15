@@ -93,6 +93,15 @@ class DCWorldExt : public godot::RefCounted {
 public:
     DCWorldExt();
     ~DCWorldExt() override;
+    // Cold loading tasks use an isolated, unbound compute context. No live slots
+    // or renderer objects cross this boundary. Handles are single-use generations.
+    int64_t begin_loading_task(const godot::String &operation, const godot::Dictionary &input);
+    godot::Dictionary poll_loading_task(int64_t handle);
+    godot::Dictionary take_loading_task(int64_t handle);
+    void cancel_loading_task(int64_t handle);
+    void cancel_all_loading_tasks();
+    static void shutdown_loading_tasks();
+    godot::Dictionary encode_bake_height_flow_tex_data(const godot::Dictionary &input);
 
     // ─── Diag log toggle (Fix #11 second pass, 2026-06-16) ──────────────
     // Mirror of GDScript PKLog.enabled. Pass kernels themselves don't print

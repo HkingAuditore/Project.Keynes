@@ -222,6 +222,9 @@ struct RuntimeEconomyDayInput {
 };
 
 struct RuntimeEnvironmentSnapshot {
+    // Host 私有 sealed copy 的派生摘要，不参与原输入 hash 或保存协议。
+    // publish_environment 完整校验后覆盖它，调用方提供的值从不被信任。
+    uint64_t sealed_climate_input_hash = 0;
     // 主线程捕获，发布后不可变；worker 仅在对应 epoch 开始前消费。
     std::shared_ptr<const RuntimeEconomyDayInput> economy_input;
     // Compiled on the Godot/main-thread capture boundary. A worker accepts a

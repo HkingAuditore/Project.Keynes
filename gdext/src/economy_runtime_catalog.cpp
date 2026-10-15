@@ -216,6 +216,7 @@ bool NativeEconomyRuntime::compile_family_trait_catalog(
         _family_trait_behavior_condition_ops.clear();
         _family_trait_behavior_condition_arg0.clear();
         _family_trait_behavior_condition_values.clear();
+        _family_trait_behavior_metric_masks.clear();
         _family_trait_modifier_offsets.assign(1, 0);
         _family_trait_modifier_definition_keys.clear();
         _family_trait_modifier_targets.clear();
@@ -394,6 +395,22 @@ bool NativeEconomyRuntime::compile_family_trait_catalog(
             error = "family_trait_behavior_condition_shape_invalid";
             return false;
         }
+    }
+    _family_trait_behavior_metric_masks.assign(count, 0);
+    for (size_t trait = 0; trait < count; ++trait) {
+        uint64_t mask = 0;
+        for (int32_t edge = _family_trait_behavior_offsets[trait];
+             edge < _family_trait_behavior_offsets[trait + 1]; ++edge) {
+            for (int32_t op_index = _family_trait_behavior_condition_offsets[edge];
+                 op_index < _family_trait_behavior_condition_offsets[edge + 1];
+                 ++op_index) {
+                const int32_t op = _family_trait_behavior_condition_ops[op_index];
+                const int32_t metric = _family_trait_behavior_condition_arg0[op_index];
+                if (op >= 2 && op <= 4 && metric >= 0 && metric < FAMILY_METRIC_COUNT)
+                    mask |= uint64_t{1} << metric;
+            }
+        }
+        _family_trait_behavior_metric_masks[trait] = mask;
     }
     for (int32_t factor : _family_trait_behavior_factors_q16)
         if (factor < 0 || factor > 4 * Q16_ONE) {
@@ -1147,6 +1164,56 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
     for (size_t c = 0; c < component_goods.size(); ++c) {
         _components[c] = {component_goods[c], component_qty[c]};
     }
+    // 未解锁项可以提前跳过，但必须保留旧路径的饱和计数。保守界同时
+    // 覆盖 signed i32 的价格和消费系数；超界目录仍执行原来的价格计算。
+    constexpr int64_t preview_safe_quantity = GOODS_SCALE * Q16_ONE;
+    for (VariantChoice &variant : _variants) {
+        const int64_t component_limit = preview_safe_quantity /
+            std::max(1, variant.component_count);
+        variant.preview_price_saturation_free = true;
+        for (int32_t c = 0; c < variant.component_count; ++c) {
+            if (_components[variant.component_begin + c].qty_per_need >
+                    component_limit) {
+                variant.preview_price_saturation_free = false;
+                break;
+            }
+        }
+    }
+    // Plans repeat market-side need formulas. Identify exact equivalents once,
+    // including ordered components (rounding) and every basis input. This is
+    // derived catalog metadata, never persisted or used as actor authority.
+    _preview_need_basis_source.resize(_needs.size());
+    // 偏好/环境不同的候选也可能拥有完全相同的价格基础；保留组件顺序及数量。
+    std::map<std::vector<int64_t>, int32_t> variant_price_sources;
+    for (int32_t v = 0; v < static_cast<int32_t>(_variants.size()); ++v) {
+        VariantChoice &variant = _variants[v];
+        std::vector<int64_t> key{variant.reference_unit_price,
+            variant.price_elasticity_q16, variant.component_count};
+        for (int32_t c = 0; c < variant.component_count; ++c) {
+            const NeedComponent &component = _components[variant.component_begin + c];
+            key.insert(key.end(), {component.good_id, component.qty_per_need});
+        }
+        variant.price_basis_source = variant_price_sources.emplace(std::move(key), v).first->second;
+    }
+    std::map<std::vector<int64_t>, int32_t> preview_basis_sources;
+    for (int32_t n = 0; n < static_cast<int32_t>(_needs.size()); ++n) {
+        const Need &need = _needs[n];
+        std::vector<int64_t> key{need.quantity_env_curve,
+            need.price_quantity_elasticity_q16, need.price_quantity_floor_q16,
+            need.variant_count};
+        for (int32_t v = 0; v < need.variant_count; ++v) {
+            const VariantChoice &variant = _variants[need.variant_begin + v];
+            key.insert(key.end(), {variant.preference_q16,
+                variant.price_elasticity_q16, variant.preference_env_curve,
+                variant.reference_unit_price, variant.component_count});
+            for (int32_t c = 0; c < variant.component_count; ++c) {
+                const NeedComponent &component = _components[variant.component_begin + c];
+                key.insert(key.end(), {component.good_id, component.qty_per_need});
+            }
+        }
+        _preview_need_basis_source[n] = preview_basis_sources.emplace(
+            std::move(key), n).first->second;
+    }
     // Derive one canonical food-equivalent coefficient from the authored
     // survival plan. A component quantity is the number of goods subunits
     // required for one standard need unit, so one such unit contributes
@@ -1206,6 +1273,12 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
                      })) {
         error = "survival_food_good_catalog_empty";
         return false;
+    }
+
+    _food_equivalent_goods.clear();
+    for (int32_t good = 0; good < goods; ++good) {
+        if (_good_food_equivalent_q16[static_cast<size_t>(good)] > 0)
+            _food_equivalent_goods.push_back(good);
     }
 
     const std::vector<int32_t> sig_prof = packed_i32(catalog, "signature_profession_ids");

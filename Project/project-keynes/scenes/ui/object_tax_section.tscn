@@ -18,6 +18,16 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKSectionTitle"
 
+[node name="Readonly" type="Label" parent="Head" unique_id=2081357989]
+layout_mode = 2
+text = "只读"
+theme_type_variation = &"PKMutedLabel"
+
+[node name="Hint" type="Label" parent="." unique_id=2081357990]
+layout_mode = 2
+autowrap_mode = 2
+theme_type_variation = &"PKMutedLabel"
+
 [node name="Lanes" type="VBoxContainer" parent="." unique_id=505665230]
 layout_mode = 2
 theme_override_constants/separation = 4

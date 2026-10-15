@@ -1,14 +1,59 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene format=3 uid="uid://dy2mlnqxpj25"]
 
-[ext_resource type="Script" path="res://scripts/ui/main_menu.gd" id="1_menu"]
-[ext_resource type="Theme" path="res://assets/themes/player_session_theme.tres" id="2_theme"]
-[ext_resource type="Script" path="res://scripts/ui/components/papercut_atlas_backdrop.gd" id="3_backdrop"]
+[ext_resource type="Script" uid="uid://d4g0j7ondatas" path="res://scripts/ui/main_menu.gd" id="1_menu"]
+[ext_resource type="Theme" path="res://assets/themes/menu_atlas_theme.tres" id="2_theme"]
+[ext_resource type="Script" uid="uid://w4b0x8ianye" path="res://scripts/ui/components/papercut_atlas_backdrop.gd" id="3_backdrop"]
 [ext_resource type="PackedScene" path="res://scenes/ui/land_layout_card.tscn" id="4_layout_card"]
 [ext_resource type="PackedScene" path="res://scenes/ui/papercut_map_preview.tscn" id="5_preview"]
-[ext_resource type="Texture2D" path="res://assets/ui/dossier_shell/hinge.png" id="6_hinge"]
+[ext_resource type="Texture2D" uid="uid://dtq8g7ce702ij" path="res://assets/ui/dossier_shell/hinge.png" id="6_hinge"]
 [ext_resource type="Texture2D" path="res://assets/ui/family_workspace/bitmap/crest_bitmap.tres" id="7_crest"]
+[ext_resource type="Shader" uid="uid://dspdg0p4uwrfm" path="res://shaders/paper_folio_plaque.gdshader" id="8_folio_shader"]
+[ext_resource type="Shader" uid="uid://cuehdjldca646" path="res://shaders/paper_command_slip.gdshader" id="9_slip_shader"]
+[ext_resource type="Texture2D" uid="uid://dbw72vpul2qsy" path="res://assets/ui/paper_aux_v1/torn_note_v1.png" id="10_grain"]
 
-[node name="MainMenu" type="Control"]
+[sub_resource type="ShaderMaterial" id="FolioMat"]
+shader = ExtResource("8_folio_shader")
+shader_parameter/paper_grain_tex = ExtResource("10_grain")
+shader_parameter/panel_size = Vector2(396, 484)
+shader_parameter/motion_scale = 1.0
+
+[sub_resource type="ShaderMaterial" id="SlipMat0"]
+shader = ExtResource("9_slip_shader")
+shader_parameter/paper_grain_tex = ExtResource("10_grain")
+shader_parameter/button_size = Vector2(280, 56)
+shader_parameter/seed_offset = 0.3
+shader_parameter/is_primary = 1.0
+shader_parameter/hover_amount = 0.0
+shader_parameter/press_amount = 0.0
+
+[sub_resource type="ShaderMaterial" id="SlipMat1"]
+shader = ExtResource("9_slip_shader")
+shader_parameter/paper_grain_tex = ExtResource("10_grain")
+shader_parameter/button_size = Vector2(268, 52)
+shader_parameter/seed_offset = 1.9
+shader_parameter/is_primary = 0.0
+shader_parameter/hover_amount = 0.0
+shader_parameter/press_amount = 0.0
+
+[sub_resource type="ShaderMaterial" id="SlipMat2"]
+shader = ExtResource("9_slip_shader")
+shader_parameter/paper_grain_tex = ExtResource("10_grain")
+shader_parameter/button_size = Vector2(260, 52)
+shader_parameter/seed_offset = 3.7
+shader_parameter/is_primary = 0.0
+shader_parameter/hover_amount = 0.0
+shader_parameter/press_amount = 0.0
+
+[sub_resource type="ShaderMaterial" id="SlipMat3"]
+shader = ExtResource("9_slip_shader")
+shader_parameter/paper_grain_tex = ExtResource("10_grain")
+shader_parameter/button_size = Vector2(252, 52)
+shader_parameter/seed_offset = 5.4
+shader_parameter/is_primary = 0.0
+shader_parameter/hover_amount = 0.0
+shader_parameter/press_amount = 0.0
+
+[node name="MainMenu" type="Control" unique_id=803862313]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -18,7 +63,7 @@ grow_vertical = 2
 theme = ExtResource("2_theme")
 script = ExtResource("1_menu")
 
-[node name="Backdrop" type="Control" parent="."]
+[node name="Backdrop" type="Control" parent="." unique_id=1075783915]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
@@ -29,7 +74,7 @@ grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("3_backdrop")
 
-[node name="PageMargin" type="MarginContainer" parent="."]
+[node name="PageMargin" type="MarginContainer" parent="." unique_id=1724460830]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
@@ -42,13 +87,13 @@ theme_override_constants/margin_top = 32
 theme_override_constants/margin_right = 48
 theme_override_constants/margin_bottom = 36
 
-[node name="PageStack" type="Control" parent="PageMargin"]
+[node name="PageStack" type="Control" parent="PageMargin" unique_id=481563088]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="HomePage" type="HBoxContainer" parent="PageMargin/PageStack" groups=["main_menu_pages"]]
+[node name="HomePage" type="HBoxContainer" parent="PageMargin/PageStack" unique_id=295228126 groups=["main_menu_pages"]]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
@@ -58,42 +103,59 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 0
 
-[node name="HomeTomeShell" type="PanelContainer" parent="PageMargin/PageStack/HomePage"]
+[node name="HomeTomeShell" type="PanelContainer" parent="PageMargin/PageStack/HomePage" unique_id=1830168211]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(430, 440)
+custom_minimum_size = Vector2(384, 420)
 layout_mode = 2
 size_flags_horizontal = 0
 size_flags_vertical = 4
 theme_type_variation = &"PKCountryShell"
 
-[node name="TomeRow" type="HBoxContainer" parent="PageMargin/PageStack/HomePage/HomeTomeShell"]
+[node name="FolioSurface" type="ColorRect" parent="PageMargin/PageStack/HomePage/HomeTomeShell" unique_id=1231861849]
+unique_name_in_owner = true
+material = SubResource("FolioMat")
+layout_mode = 2
+mouse_filter = 2
+
+[node name="TomeRow" type="HBoxContainer" parent="PageMargin/PageStack/HomePage/HomeTomeShell" unique_id=560041047]
 layout_mode = 2
 theme_override_constants/separation = 0
 
-[node name="HomeSpine" type="PanelContainer" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow"]
+[node name="HomeSpine" type="PanelContainer" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow" unique_id=1276861221]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(46, 0)
+visible = false
+custom_minimum_size = Vector2(44, 0)
 layout_mode = 2
 theme_type_variation = &"PKCountryRail"
 
-[node name="FrontispiecePage" type="PanelContainer" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow"]
+[node name="FrontispiecePage" type="PanelContainer" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow" unique_id=2053958246]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-theme_type_variation = &"PKCountryPage"
+theme_type_variation = &"PKMenuOpenPage"
 
-[node name="Column" type="VBoxContainer" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage"]
+[node name="FolioMargin" type="MarginContainer" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage" unique_id=590667367]
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_vertical = 4
-theme_override_constants/separation = 12
+size_flags_vertical = 3
+theme_override_constants/margin_left = 44
+theme_override_constants/margin_top = 26
+theme_override_constants/margin_right = 32
+theme_override_constants/margin_bottom = 30
 
-[node name="BrandRow" type="HBoxContainer" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/Column"]
+[node name="Column" type="VBoxContainer" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/FolioMargin" unique_id=1132983432]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="BrandRow" type="HBoxContainer" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/FolioMargin/Column" unique_id=618321107]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="Crest" type="TextureRect" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/Column/BrandRow"]
-custom_minimum_size = Vector2(54, 54)
+[node name="Crest" type="TextureRect" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/FolioMargin/Column/BrandRow" unique_id=193614032]
+custom_minimum_size = Vector2(58, 58)
 layout_mode = 2
 size_flags_vertical = 4
 mouse_filter = 2
@@ -101,69 +163,104 @@ texture = ExtResource("7_crest")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="Titles" type="VBoxContainer" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/Column/BrandRow"]
+[node name="Titles" type="VBoxContainer" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/FolioMargin/Column/BrandRow" unique_id=1925860781]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 4
-theme_override_constants/separation = 2
+theme_override_constants/separation = 3
 
-[node name="Title" type="Label" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/Column/BrandRow/Titles"]
+[node name="Title" type="Label" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/FolioMargin/Column/BrandRow/Titles" unique_id=647340503]
 layout_mode = 2
 theme_type_variation = &"PKArchiveTitle"
-theme_override_font_sizes/font_size = 30
-text = "PROJECT.KEYNES"
+theme_override_colors/font_color = Color(0.14, 0.075, 0.035, 1)
+theme_override_colors/font_shadow_color = Color(1, 0.96, 0.86, 0.82)
+theme_override_constants/shadow_offset_x = 0
+theme_override_constants/shadow_offset_y = 1
+theme_override_font_sizes/font_size = 38
+text = "KEYNES"
 
-[node name="Subtitle" type="Label" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/Column/BrandRow/Titles"]
+[node name="Rule" type="HSeparator" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/FolioMargin/Column" unique_id=1938113629]
+layout_mode = 2
+
+[node name="NewGameButton" type="Button" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/FolioMargin/Column" unique_id=1581517333 groups=["main_menu_commands"]]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(280, 56)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"PKMenuChapterButton"
+alignment = 0
+
+[node name="SlipSurface" type="ColorRect" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/FolioMargin/Column/NewGameButton" unique_id=1624673463]
+material = SubResource("SlipMat0")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="LoadGameButton" type="Button" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/FolioMargin/Column" unique_id=916638279 groups=["main_menu_commands"]]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(268, 52)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"PKMenuChapterButton"
+alignment = 0
+
+[node name="SlipSurface" type="ColorRect" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/FolioMargin/Column/LoadGameButton" unique_id=1711807947]
+material = SubResource("SlipMat1")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="SettingsButton" type="Button" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/FolioMargin/Column" unique_id=89484141 groups=["main_menu_commands"]]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(260, 52)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"PKMenuChapterButton"
+alignment = 0
+
+[node name="SlipSurface" type="ColorRect" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/FolioMargin/Column/SettingsButton" unique_id=431185309]
+material = SubResource("SlipMat2")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="QuitButton" type="Button" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/FolioMargin/Column" unique_id=1170601777 groups=["main_menu_commands"]]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(252, 52)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"PKMenuChapterButton"
+alignment = 0
+
+[node name="SlipSurface" type="ColorRect" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/FolioMargin/Column/QuitButton" unique_id=1313729196]
+material = SubResource("SlipMat3")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="HomeHinges" type="Control" parent="PageMargin/PageStack/HomePage/HomeTomeShell" unique_id=1094382230]
+unique_name_in_owner = true
 visible = false
-layout_mode = 2
-theme_type_variation = &"PKDossierBody"
-text = "PROJECT KEYNES"
-
-[node name="Rule" type="HSeparator" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/Column"]
-layout_mode = 2
-
-[node name="NewGameButton" type="Button" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/Column" groups=["main_menu_commands"]]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(290, 52)
-layout_mode = 2
-size_flags_horizontal = 3
-theme_type_variation = &"PKMenuChapterButton"
-text = "新游戏"
-alignment = 0
-
-[node name="LoadGameButton" type="Button" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/Column" groups=["main_menu_commands"]]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(290, 52)
-layout_mode = 2
-size_flags_horizontal = 3
-theme_type_variation = &"PKMenuChapterButton"
-text = "加载游戏"
-alignment = 0
-
-[node name="SettingsButton" type="Button" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/Column" groups=["main_menu_commands"]]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(290, 52)
-layout_mode = 2
-size_flags_horizontal = 3
-theme_type_variation = &"PKMenuChapterButton"
-text = "设置"
-alignment = 0
-
-[node name="QuitButton" type="Button" parent="PageMargin/PageStack/HomePage/HomeTomeShell/TomeRow/FrontispiecePage/Column" groups=["main_menu_commands"]]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(290, 52)
-layout_mode = 2
-size_flags_horizontal = 3
-theme_type_variation = &"PKMenuChapterButton"
-text = "退出"
-alignment = 0
-
-[node name="HomeHinges" type="Control" parent="PageMargin/PageStack/HomePage/HomeTomeShell"]
-unique_name_in_owner = true
 layout_mode = 2
 mouse_filter = 2
 
-[node name="HingeTop" type="TextureRect" parent="PageMargin/PageStack/HomePage/HomeTomeShell/HomeHinges"]
+[node name="HingeTop" type="TextureRect" parent="PageMargin/PageStack/HomePage/HomeTomeShell/HomeHinges" unique_id=935878915]
 layout_mode = 0
 offset_left = 24.0
 offset_top = 60.0
@@ -174,7 +271,7 @@ texture = ExtResource("6_hinge")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="HingeMid" type="TextureRect" parent="PageMargin/PageStack/HomePage/HomeTomeShell/HomeHinges"]
+[node name="HingeMid" type="TextureRect" parent="PageMargin/PageStack/HomePage/HomeTomeShell/HomeHinges" unique_id=1601569565]
 layout_mode = 0
 offset_left = 24.0
 offset_top = 205.0
@@ -185,7 +282,7 @@ texture = ExtResource("6_hinge")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="HingeBot" type="TextureRect" parent="PageMargin/PageStack/HomePage/HomeTomeShell/HomeHinges"]
+[node name="HingeBot" type="TextureRect" parent="PageMargin/PageStack/HomePage/HomeTomeShell/HomeHinges" unique_id=801926685]
 layout_mode = 0
 offset_left = 24.0
 offset_top = 350.0
@@ -196,7 +293,7 @@ texture = ExtResource("6_hinge")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="NewGamePage" type="PanelContainer" parent="PageMargin/PageStack" groups=["main_menu_pages"]]
+[node name="NewGamePage" type="PanelContainer" parent="PageMargin/PageStack" unique_id=319275442 groups=["main_menu_pages"]]
 unique_name_in_owner = true
 visible = false
 layout_mode = 1
@@ -207,190 +304,189 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_type_variation = &"PKCountryPage"
 
-[node name="Workbench" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage"]
+[node name="Workbench" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage" unique_id=211839821]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="HeaderBar" type="PanelContainer" parent="PageMargin/PageStack/NewGamePage/Workbench"]
+[node name="HeaderBar" type="PanelContainer" parent="PageMargin/PageStack/NewGamePage/Workbench" unique_id=684263413]
 layout_mode = 2
 theme_type_variation = &"PKCountryHeader"
 
-[node name="HeaderRow" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/HeaderBar"]
+[node name="HeaderRow" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/HeaderBar" unique_id=730913831]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="Title" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/HeaderBar/HeaderRow"]
+[node name="Title" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/HeaderBar/HeaderRow" unique_id=1123176695]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKArchiveTitle"
 theme_override_font_sizes/font_size = 24
 text = "新游戏"
 
-[node name="DualSpread" type="BoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench"]
+[node name="DualSpread" type="BoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench" unique_id=1716499463]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 14
 
-[node name="NewLeftScroll" type="ScrollContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread"]
+[node name="NewLeftScroll" type="ScrollContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread" unique_id=882944408]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="Body" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll"]
+[node name="Body" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll" unique_id=1080507589]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 10
 
-[node name="PolityCard" type="PanelContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body"]
+[node name="PolityCard" type="PanelContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body" unique_id=1188088860]
 layout_mode = 2
 theme_type_variation = &"PKArchivePanel"
 
-[node name="PolityCol" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard"]
+[node name="PolityCol" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard" unique_id=1285664553]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="SectionTitle" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol"]
+[node name="SectionTitle" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol" unique_id=2112304431]
 layout_mode = 2
 theme_type_variation = &"PKSectionTitle"
 text = "国家与开局"
 
-[node name="PolityGrid" type="GridContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol"]
+[node name="PolityGrid" type="GridContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol" unique_id=1023569322]
 layout_mode = 2
-columns = 2
 theme_override_constants/h_separation = 12
 theme_override_constants/v_separation = 6
+columns = 2
 
-[node name="CountryField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol/PolityGrid"]
+[node name="CountryField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol/PolityGrid" unique_id=1945489093]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol/PolityGrid/CountryField"]
+[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol/PolityGrid/CountryField" unique_id=873624540]
 layout_mode = 2
 theme_type_variation = &"PKDossierBody"
 text = "国家名称"
 
-[node name="CountryRow" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol/PolityGrid/CountryField"]
+[node name="CountryRow" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol/PolityGrid/CountryField" unique_id=51348332]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="CountryEdit" type="LineEdit" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol/PolityGrid/CountryField/CountryRow"]
+[node name="CountryEdit" type="LineEdit" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol/PolityGrid/CountryField/CountryRow" unique_id=1171888023]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "国家名称"
 text = "新国家"
+placeholder_text = "国家名称"
 max_length = 32
 
-[node name="RandomCountryButton" type="Button" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol/PolityGrid/CountryField/CountryRow"]
+[node name="RandomCountryButton" type="Button" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol/PolityGrid/CountryField/CountryRow" unique_id=815234561]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(36, 32)
 layout_mode = 2
 tooltip_text = "随机国家名称"
 text = "随机"
 
-[node name="ForeignField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol/PolityGrid"]
+[node name="ForeignField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol/PolityGrid" unique_id=1661272817]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol/PolityGrid/ForeignField"]
+[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol/PolityGrid/ForeignField" unique_id=1378597955]
 layout_mode = 2
 theme_type_variation = &"PKDossierBody"
 text = "外国数量"
 
-[node name="ForeignRow" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol/PolityGrid/ForeignField"]
+[node name="ForeignRow" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol/PolityGrid/ForeignField" unique_id=1943768450]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="ForeignSlider" type="HSlider" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol/PolityGrid/ForeignField/ForeignRow"]
+[node name="ForeignSlider" type="HSlider" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol/PolityGrid/ForeignField/ForeignRow" unique_id=576918246]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 4
 max_value = 12.0
-step = 1.0
 value = 5.0
 
-[node name="ForeignCount" type="SpinBox" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol/PolityGrid/ForeignField/ForeignRow"]
+[node name="ForeignCount" type="SpinBox" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol/PolityGrid/ForeignField/ForeignRow" unique_id=118129080]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(76, 32)
 layout_mode = 2
 tooltip_text = "生成在玩家国家一定距离之外的其他国家"
 
-[node name="AtlasCard" type="PanelContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body"]
+[node name="AtlasCard" type="PanelContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body" unique_id=2071223492]
 layout_mode = 2
 theme_type_variation = &"PKArchivePanel"
 
-[node name="AtlasCol" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard"]
+[node name="AtlasCol" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard" unique_id=153630691]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="SectionTitle" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol"]
+[node name="SectionTitle" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol" unique_id=1148209142]
 layout_mode = 2
 theme_type_variation = &"PKSectionTitle"
 text = "地图设置"
 
-[node name="SourceAndSizeGrid" type="GridContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol"]
+[node name="SourceAndSizeGrid" type="GridContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol" unique_id=577573156]
 layout_mode = 2
-columns = 2
 theme_override_constants/h_separation = 12
 theme_override_constants/v_separation = 6
+columns = 2
 
-[node name="MapSourceField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/SourceAndSizeGrid"]
+[node name="MapSourceField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/SourceAndSizeGrid" unique_id=746589315]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/SourceAndSizeGrid/MapSourceField"]
+[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/SourceAndSizeGrid/MapSourceField" unique_id=699683556]
 layout_mode = 2
 theme_type_variation = &"PKDossierBody"
 text = "世界来源"
 
-[node name="MapSourceOption" type="OptionButton" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/SourceAndSizeGrid/MapSourceField"]
+[node name="MapSourceOption" type="OptionButton" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/SourceAndSizeGrid/MapSourceField" unique_id=576180472]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "程序生成按种子造世界；作者地图读取已编译的 .pkmap。"
 
-[node name="SizeField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/SourceAndSizeGrid"]
+[node name="SizeField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/SourceAndSizeGrid" unique_id=272912296]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/SourceAndSizeGrid/SizeField"]
+[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/SourceAndSizeGrid/SizeField" unique_id=1288671]
 layout_mode = 2
 theme_type_variation = &"PKDossierBody"
 text = "地图尺寸"
 
-[node name="SizeOption" type="OptionButton" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/SourceAndSizeGrid/SizeField"]
+[node name="SizeOption" type="OptionButton" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/SourceAndSizeGrid/SizeField" unique_id=818432268]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="PkmapField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol"]
+[node name="PkmapField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol" unique_id=1297798775]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/PkmapField"]
+[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/PkmapField" unique_id=1728640611]
 layout_mode = 2
 theme_type_variation = &"PKDossierBody"
 text = "作者地图 (.pkmap)"
 
-[node name="PkmapPickOption" type="OptionButton" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/PkmapField"]
+[node name="PkmapPickOption" type="OptionButton" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/PkmapField" unique_id=860401857]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 tooltip_text = "user://maps 中已有的作者地图。"
 
-[node name="Row" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/PkmapField"]
+[node name="Row" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/PkmapField" unique_id=1617982200]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="PkmapPathLabel" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/PkmapField/Row"]
+[node name="PkmapPathLabel" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/PkmapField/Row" unique_id=1794988518]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -399,133 +495,130 @@ text = "尚未选择 .pkmap 文件"
 autowrap_mode = 3
 text_overrun_behavior = 3
 
-[node name="BrowsePkmapButton" type="Button" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/PkmapField/Row"]
+[node name="BrowsePkmapButton" type="Button" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/PkmapField/Row" unique_id=1237575148]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(104, 34)
 layout_mode = 2
 text = "浏览…"
 
-[node name="PkmapMetaLabel" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/PkmapField"]
+[node name="PkmapMetaLabel" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/PkmapField" unique_id=1056380295]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"PKMutedLabel"
 autowrap_mode = 3
 
-[node name="DimensionAndSeedGrid" type="GridContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol"]
+[node name="DimensionAndSeedGrid" type="GridContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol" unique_id=1004920894]
 layout_mode = 2
-columns = 2
 theme_override_constants/h_separation = 12
 theme_override_constants/v_separation = 6
+columns = 2
 
-[node name="DimensionField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/DimensionAndSeedGrid"]
+[node name="DimensionField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/DimensionAndSeedGrid" unique_id=885123805]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/DimensionAndSeedGrid/DimensionField"]
+[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/DimensionAndSeedGrid/DimensionField" unique_id=302289985]
 layout_mode = 2
 theme_type_variation = &"PKDossierBody"
 text = "自定义宽高"
 
-[node name="Row" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/DimensionAndSeedGrid/DimensionField"]
+[node name="Row" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/DimensionAndSeedGrid/DimensionField" unique_id=1962895030]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="WidthBox" type="SpinBox" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/DimensionAndSeedGrid/DimensionField/Row"]
+[node name="WidthBox" type="SpinBox" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/DimensionAndSeedGrid/DimensionField/Row" unique_id=1212048990]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="HeightBox" type="SpinBox" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/DimensionAndSeedGrid/DimensionField/Row"]
+[node name="HeightBox" type="SpinBox" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/DimensionAndSeedGrid/DimensionField/Row" unique_id=1963433795]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="SeedField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/DimensionAndSeedGrid"]
+[node name="SeedField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/DimensionAndSeedGrid" unique_id=593729793]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/DimensionAndSeedGrid/SeedField"]
+[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/DimensionAndSeedGrid/SeedField" unique_id=1550050976]
 layout_mode = 2
 theme_type_variation = &"PKDossierBody"
 text = "地图种子"
 
-[node name="Row" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/DimensionAndSeedGrid/SeedField"]
+[node name="Row" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/DimensionAndSeedGrid/SeedField" unique_id=2129917515]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="SeedBox" type="SpinBox" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/DimensionAndSeedGrid/SeedField/Row"]
+[node name="SeedBox" type="SpinBox" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/DimensionAndSeedGrid/SeedField/Row" unique_id=1513993763]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = 1.0
 max_value = 2147483647.0
-step = 1.0
+value = 1.0
 
-[node name="RandomSeedButton" type="Button" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/DimensionAndSeedGrid/SeedField/Row"]
+[node name="RandomSeedButton" type="Button" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/DimensionAndSeedGrid/SeedField/Row" unique_id=313251457]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(38, 32)
 layout_mode = 2
 text = "随机"
 
-[node name="LayoutField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol"]
+[node name="LayoutField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol" unique_id=865939185]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="LayoutHeaderRow" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/LayoutField"]
+[node name="LayoutHeaderRow" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/LayoutField" unique_id=1783113314]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/LayoutField/LayoutHeaderRow"]
+[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/LayoutField/LayoutHeaderRow" unique_id=187941915]
 layout_mode = 2
-size_flags_horizontal = 3
 theme_type_variation = &"PKDossierBody"
 text = "陆地布局"
 
-[node name="LayoutOption" type="OptionButton" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/LayoutField/LayoutHeaderRow"]
+[node name="LayoutHint" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/LayoutField/LayoutHeaderRow" unique_id=783598955]
 unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierCaption"
+horizontal_alignment = 2
+text_overrun_behavior = 3
+
+[node name="LayoutOption" type="OptionButton" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/LayoutField/LayoutHeaderRow" unique_id=2003884085]
+unique_name_in_owner = true
+visible = false
 custom_minimum_size = Vector2(138, 30)
 layout_mode = 2
 tooltip_text = "决定大陆块数与海洋分隔，而不是只改地图尺寸。"
 
-[node name="LayoutCardsRow" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/LayoutField"]
+[node name="LayoutCardsRow" type="GridContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/LayoutField" unique_id=1662652646]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_constants/separation = 6
+theme_override_constants/h_separation = 6
+theme_override_constants/v_separation = 6
+columns = 5
 
-[node name="CardSingle" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/LayoutField/LayoutCardsRow" instance=ExtResource("4_layout_card")]
-layout_mode = 2
+[node name="CardSingle" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/LayoutField/LayoutCardsRow" unique_id=192326662 instance=ExtResource("4_layout_card")]
 
-[node name="CardTwo" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/LayoutField/LayoutCardsRow" instance=ExtResource("4_layout_card")]
-layout_mode = 2
+[node name="CardTwo" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/LayoutField/LayoutCardsRow" unique_id=2105588967 instance=ExtResource("4_layout_card")]
 
-[node name="CardMultiple" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/LayoutField/LayoutCardsRow" instance=ExtResource("4_layout_card")]
-layout_mode = 2
+[node name="CardMultiple" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/LayoutField/LayoutCardsRow" unique_id=1232299427 instance=ExtResource("4_layout_card")]
 
-[node name="CardArchipelago" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/LayoutField/LayoutCardsRow" instance=ExtResource("4_layout_card")]
-layout_mode = 2
+[node name="CardArchipelago" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/LayoutField/LayoutCardsRow" unique_id=1003916823 instance=ExtResource("4_layout_card")]
 
-[node name="CardCustom" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/LayoutField/LayoutCardsRow" instance=ExtResource("4_layout_card")]
-layout_mode = 2
+[node name="CardCustom" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/LayoutField/LayoutCardsRow" unique_id=451632119 instance=ExtResource("4_layout_card")]
 
-[node name="LayoutHint" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/LayoutField"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_type_variation = &"PKDossierCaption"
-text = ""
-autowrap_mode = 3
-
-[node name="LawsCard" type="PanelContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body"]
+[node name="LawsCard" type="PanelContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body" unique_id=989830398]
 layout_mode = 2
 theme_type_variation = &"PKArchivePanel"
 
-[node name="LawsCol" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/LawsCard"]
+[node name="LawsCol" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/LawsCard" unique_id=152730598]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="AdvancedButton" type="Button" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/LawsCard/LawsCol"]
+[node name="AdvancedButton" type="Button" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/LawsCard/LawsCol" unique_id=1449514142]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 38)
 layout_mode = 2
@@ -533,15 +626,15 @@ toggle_mode = true
 text = "高级地图设置"
 alignment = 0
 
-[node name="AdvancedGrid" type="GridContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/LawsCard/LawsCol"]
+[node name="AdvancedGrid" type="GridContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/LawsCard/LawsCol" unique_id=1509585832]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-columns = 2
 theme_override_constants/h_separation = 12
 theme_override_constants/v_separation = 6
+columns = 2
 
-[node name="RightColumn" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread"]
+[node name="RightColumn" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread" unique_id=1051715281]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(360, 0)
 layout_mode = 2
@@ -549,31 +642,30 @@ size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 10
 
-[node name="MapPreview" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/RightColumn" instance=ExtResource("5_preview")]
+[node name="MapPreview" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/RightColumn" unique_id=1991816601 instance=ExtResource("5_preview")]
 unique_name_in_owner = true
-layout_mode = 2
 theme_type_variation = &"PKArchivePanel"
 
-[node name="NewActions" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/RightColumn"]
+[node name="NewActions" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench" unique_id=1947759586]
 custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 theme_override_constants/separation = 10
 alignment = 2
 
-[node name="NewBackButton" type="Button" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/RightColumn/NewActions"]
+[node name="NewBackButton" type="Button" parent="PageMargin/PageStack/NewGamePage/Workbench/NewActions" unique_id=806358152]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(112, 42)
 layout_mode = 2
 text = "返回"
 
-[node name="StartButton" type="Button" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/RightColumn/NewActions"]
+[node name="StartButton" type="Button" parent="PageMargin/PageStack/NewGamePage/Workbench/NewActions" unique_id=174833173]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(148, 42)
 layout_mode = 2
 theme_type_variation = &"PKSealPrimaryButton"
 text = "开始游戏"
 
-[node name="LoadGamePage" type="PanelContainer" parent="PageMargin/PageStack" groups=["main_menu_pages"]]
+[node name="LoadGamePage" type="PanelContainer" parent="PageMargin/PageStack" unique_id=1702404438 groups=["main_menu_pages"]]
 unique_name_in_owner = true
 visible = false
 layout_mode = 1
@@ -584,47 +676,47 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_type_variation = &"PKCountryPage"
 
-[node name="Column" type="VBoxContainer" parent="PageMargin/PageStack/LoadGamePage"]
+[node name="Column" type="VBoxContainer" parent="PageMargin/PageStack/LoadGamePage" unique_id=545958521]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="HeaderBar" type="PanelContainer" parent="PageMargin/PageStack/LoadGamePage/Column"]
+[node name="HeaderBar" type="PanelContainer" parent="PageMargin/PageStack/LoadGamePage/Column" unique_id=1730274402]
 layout_mode = 2
 theme_type_variation = &"PKCountryHeader"
 
-[node name="HeaderRow" type="HBoxContainer" parent="PageMargin/PageStack/LoadGamePage/Column/HeaderBar"]
+[node name="HeaderRow" type="HBoxContainer" parent="PageMargin/PageStack/LoadGamePage/Column/HeaderBar" unique_id=259026155]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="Title" type="Label" parent="PageMargin/PageStack/LoadGamePage/Column/HeaderBar/HeaderRow"]
+[node name="Title" type="Label" parent="PageMargin/PageStack/LoadGamePage/Column/HeaderBar/HeaderRow" unique_id=1490398700]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKArchiveTitle"
 theme_override_font_sizes/font_size = 24
 text = "加载游戏"
 
-[node name="LoadScroll" type="ScrollContainer" parent="PageMargin/PageStack/LoadGamePage/Column"]
+[node name="LoadScroll" type="ScrollContainer" parent="PageMargin/PageStack/LoadGamePage/Column" unique_id=748797998]
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="LoadSlots" type="VBoxContainer" parent="PageMargin/PageStack/LoadGamePage/Column/LoadScroll"]
+[node name="LoadSlots" type="VBoxContainer" parent="PageMargin/PageStack/LoadGamePage/Column/LoadScroll" unique_id=2033796665]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 10
 
-[node name="LoadActions" type="HBoxContainer" parent="PageMargin/PageStack/LoadGamePage/Column"]
+[node name="LoadActions" type="HBoxContainer" parent="PageMargin/PageStack/LoadGamePage/Column" unique_id=83504841]
 layout_mode = 2
 alignment = 2
 
-[node name="LoadBackButton" type="Button" parent="PageMargin/PageStack/LoadGamePage/Column/LoadActions"]
+[node name="LoadBackButton" type="Button" parent="PageMargin/PageStack/LoadGamePage/Column/LoadActions" unique_id=570819241]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(112, 42)
 layout_mode = 2
 text = "返回"
 
-[node name="SettingsPage" type="PanelContainer" parent="PageMargin/PageStack" groups=["main_menu_pages"]]
+[node name="SettingsPage" type="PanelContainer" parent="PageMargin/PageStack" unique_id=2012565711 groups=["main_menu_pages"]]
 unique_name_in_owner = true
 visible = false
 layout_mode = 1
@@ -635,161 +727,166 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_type_variation = &"PKCountryPage"
 
-[node name="Column" type="VBoxContainer" parent="PageMargin/PageStack/SettingsPage"]
+[node name="Column" type="VBoxContainer" parent="PageMargin/PageStack/SettingsPage" unique_id=1803106616]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="HeaderBar" type="PanelContainer" parent="PageMargin/PageStack/SettingsPage/Column"]
+[node name="HeaderBar" type="PanelContainer" parent="PageMargin/PageStack/SettingsPage/Column" unique_id=661375917]
 layout_mode = 2
 theme_type_variation = &"PKCountryHeader"
 
-[node name="HeaderRow" type="HBoxContainer" parent="PageMargin/PageStack/SettingsPage/Column/HeaderBar"]
+[node name="HeaderRow" type="HBoxContainer" parent="PageMargin/PageStack/SettingsPage/Column/HeaderBar" unique_id=587763515]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="Title" type="Label" parent="PageMargin/PageStack/SettingsPage/Column/HeaderBar/HeaderRow"]
+[node name="Title" type="Label" parent="PageMargin/PageStack/SettingsPage/Column/HeaderBar/HeaderRow" unique_id=578597812]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKArchiveTitle"
 theme_override_font_sizes/font_size = 24
 text = "设置"
 
-[node name="SettingsScroll" type="ScrollContainer" parent="PageMargin/PageStack/SettingsPage/Column"]
+[node name="SettingsScroll" type="ScrollContainer" parent="PageMargin/PageStack/SettingsPage/Column" unique_id=1810278940]
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="SettingsSpread" type="BoxContainer" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll"]
+[node name="SettingsSpread" type="BoxContainer" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll" unique_id=1749793702]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 14
 
-[node name="DisplayCard" type="PanelContainer" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread"]
+[node name="DisplayCard" type="PanelContainer" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread" unique_id=837306534]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKArchivePanel"
 
-[node name="DisplayCol" type="VBoxContainer" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard"]
+[node name="DisplayCol" type="VBoxContainer" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard" unique_id=434011491]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="CardTitle" type="Label" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol"]
+[node name="CardTitle" type="Label" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol" unique_id=639395617]
 layout_mode = 2
 theme_type_variation = &"PKSectionTitle"
 text = "显示"
 
-[node name="DisplayGrid" type="GridContainer" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol"]
+[node name="DisplayGrid" type="GridContainer" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol" unique_id=151746162]
 layout_mode = 2
-columns = 2
 theme_override_constants/h_separation = 12
 theme_override_constants/v_separation = 10
+columns = 2
 
-[node name="WindowModeLabel" type="Label" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid"]
+[node name="WindowModeLabel" type="Label" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid" unique_id=1315746614]
 layout_mode = 2
 theme_type_variation = &"PKDossierBody"
 text = "窗口模式"
 
-[node name="WindowMode" type="OptionButton" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid"]
+[node name="WindowMode" type="OptionButton" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid" unique_id=2081385416]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="ResolutionLabel" type="Label" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid"]
+[node name="ResolutionLabel" type="Label" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid" unique_id=1248435616]
 layout_mode = 2
 theme_type_variation = &"PKDossierBody"
 text = "分辨率"
 
-[node name="Resolution" type="OptionButton" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid"]
+[node name="Resolution" type="OptionButton" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid" unique_id=305963554]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="RenderQualityLabel" type="Label" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid"]
+[node name="RenderQualityLabel" type="Label" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid" unique_id=1618518331]
 layout_mode = 2
 theme_type_variation = &"PKDossierBody"
 text = "渲染质量"
 
-[node name="RenderQuality" type="OptionButton" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid"]
+[node name="RenderQuality" type="OptionButton" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid" unique_id=780953401]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="UIScaleLabel" type="Label" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid"]
+[node name="UIScaleLabel" type="Label" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid" unique_id=807138996]
 layout_mode = 2
 theme_type_variation = &"PKDossierBody"
 text = "界面缩放"
 
-[node name="UIScale" type="OptionButton" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid"]
+[node name="UIScale" type="OptionButton" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol/DisplayGrid" unique_id=528493351]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Vsync" type="CheckBox" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol"]
+[node name="Vsync" type="CheckBox" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol" unique_id=6452880]
 unique_name_in_owner = true
 layout_mode = 2
 text = "垂直同步"
 
-[node name="AudioCard" type="PanelContainer" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread"]
+[node name="ReduceMotion" type="CheckBox" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/DisplayCard/DisplayCol" unique_id=985686564]
+unique_name_in_owner = true
+layout_mode = 2
+text = "减少动态效果"
+
+[node name="AudioCard" type="PanelContainer" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread" unique_id=1312697644]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKArchivePanel"
 
-[node name="AudioCol" type="VBoxContainer" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/AudioCard"]
+[node name="AudioCol" type="VBoxContainer" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/AudioCard" unique_id=1952326598]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="CardTitle" type="Label" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/AudioCard/AudioCol"]
+[node name="CardTitle" type="Label" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/AudioCard/AudioCol" unique_id=1252576291]
 layout_mode = 2
 theme_type_variation = &"PKSectionTitle"
 text = "声音"
 
-[node name="VolumeHeader" type="HBoxContainer" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/AudioCard/AudioCol"]
+[node name="VolumeHeader" type="HBoxContainer" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/AudioCard/AudioCol" unique_id=965994079]
 layout_mode = 2
 
-[node name="VolumeLabel" type="Label" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/AudioCard/AudioCol/VolumeHeader"]
+[node name="VolumeLabel" type="Label" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/AudioCard/AudioCol/VolumeHeader" unique_id=1606125561]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKDossierBody"
 text = "主音量"
 
-[node name="VolumeValueLabel" type="Label" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/AudioCard/AudioCol/VolumeHeader"]
+[node name="VolumeValueLabel" type="Label" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/AudioCard/AudioCol/VolumeHeader" unique_id=1582139450]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"PKDossierValue"
 text = "100%"
 
-[node name="Volume" type="HSlider" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/AudioCard/AudioCol"]
+[node name="Volume" type="HSlider" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/AudioCard/AudioCol" unique_id=962814147]
 unique_name_in_owner = true
 layout_mode = 2
 max_value = 1.0
 step = 0.01
 value = 1.0
 
-[node name="Muted" type="CheckBox" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/AudioCard/AudioCol"]
+[node name="Muted" type="CheckBox" parent="PageMargin/PageStack/SettingsPage/Column/SettingsScroll/SettingsSpread/AudioCard/AudioCol" unique_id=1703606245]
 unique_name_in_owner = true
 layout_mode = 2
 text = "静音"
 
-[node name="SettingsActions" type="HBoxContainer" parent="PageMargin/PageStack/SettingsPage/Column"]
+[node name="SettingsActions" type="HBoxContainer" parent="PageMargin/PageStack/SettingsPage/Column" unique_id=594841108]
 layout_mode = 2
 theme_override_constants/separation = 10
 alignment = 2
 
-[node name="SettingsBackButton" type="Button" parent="PageMargin/PageStack/SettingsPage/Column/SettingsActions"]
+[node name="SettingsBackButton" type="Button" parent="PageMargin/PageStack/SettingsPage/Column/SettingsActions" unique_id=711498388]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(112, 42)
 layout_mode = 2
 text = "返回"
 
-[node name="ApplySettingsButton" type="Button" parent="PageMargin/PageStack/SettingsPage/Column/SettingsActions"]
+[node name="ApplySettingsButton" type="Button" parent="PageMargin/PageStack/SettingsPage/Column/SettingsActions" unique_id=1942205864]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(124, 42)
 layout_mode = 2
 theme_type_variation = &"PKSealPrimaryButton"
 text = "应用"
 
-[node name="StatusLabel" type="Label" parent="."]
+[node name="StatusLabel" type="Label" parent="." unique_id=1016500586]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 12
@@ -804,12 +901,11 @@ grow_horizontal = 2
 grow_vertical = 0
 theme_type_variation = &"PKDangerText"
 
-[node name="PkmapDialog" type="FileDialog" parent="."]
+[node name="PkmapDialog" type="FileDialog" parent="." unique_id=137094141]
 unique_name_in_owner = true
-visible = false
-title = "选择作者地图"
+title = "Open a File"
 ok_button_text = "打开"
 file_mode = 0
 access = 2
-use_native_dialog = true
 filters = PackedStringArray("*.pkmap ; 作者地图")
+use_native_dialog = true

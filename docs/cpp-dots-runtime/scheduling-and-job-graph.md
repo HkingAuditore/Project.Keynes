@@ -1443,3 +1443,10 @@ tools/runtime/Compare-ClimateB8Soak.ps1 `
 `serial_wait` 走的是生产等待路径；`serial` 保留旧 24ms 轮询作为 A/B 对照。
 比较器只读 `soak.json` 的结构化 samples（逐 25 天 nz/mean/min/max），
 不再从人类日志里抠数字。
+
+
+2026-10-15 v18: StageOps employment/production/plan drains now accumulate their actual
+wall times before the completed-epoch snapshot. The existing cadence policy consumes
+these metrics with its original bounds; no cycle is forced for performance. Building
+plan uses the same existing parallel range implementation as compact slices and replays
+result diagnostics in deterministic task order.

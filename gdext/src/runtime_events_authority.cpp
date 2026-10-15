@@ -1,6 +1,8 @@
 #include "runtime_events_authority.h"
+#include "economy_cost_probe.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <type_traits>
@@ -242,7 +244,8 @@ bool RuntimeEventsAuthority::validate_snapshot(const RuntimeEventsSnapshot &snap
 bool RuntimeEventsAuthority::apply_packet(RuntimeEventsSnapshot &state,
                                           const RuntimeCommandPacket &packet,
                                           int64_t day, RuntimeEventsReport &report,
-                                          std::string &error) {
+                                          std::string &error,
+                                          size_t &dropped_prefix) {
     const RuntimeCommandEnvelope &envelope = packet.envelope;
     if (!packet_payload_valid(packet) || envelope.domain !=
             static_cast<uint16_t>(RuntimeDomainId::EVENTS) ||
@@ -295,12 +298,11 @@ bool RuntimeEventsAuthority::apply_packet(RuntimeEventsSnapshot &state,
             ++report.appended_events;
             ++report.work_units;
         }
-        if (state.events.size() > state.capacity) {
-            const size_t excess = state.events.size() - state.capacity;
-            const int64_t dropped = state.events.front().event_id;
+        if (state.events.size() - dropped_prefix > state.capacity) {
+            const size_t excess = state.events.size() - dropped_prefix - state.capacity;
+            const int64_t dropped = state.events[dropped_prefix].event_id;
             if (state.first_dropped_event_id == 0) state.first_dropped_event_id = dropped;
-            state.events.erase(state.events.begin(),
-                               state.events.begin() + static_cast<ptrdiff_t>(excess));
+            dropped_prefix += excess;
             state.dropped_event_count += excess;
             report.dropped_events += static_cast<uint32_t>(excess);
         }
@@ -337,12 +339,13 @@ bool RuntimeEventsAuthority::apply_packet(RuntimeEventsSnapshot &state,
             return false;
         }
         state.capacity = capacity;
-        while (state.events.size() > state.capacity) {
-            const int64_t dropped = state.events.front().event_id;
+        if (state.events.size() - dropped_prefix > state.capacity) {
+            const size_t excess = state.events.size() - dropped_prefix - state.capacity;
+            const int64_t dropped = state.events[dropped_prefix].event_id;
             if (state.first_dropped_event_id == 0) state.first_dropped_event_id = dropped;
-            state.events.erase(state.events.begin());
-            ++state.dropped_event_count;
-            ++report.dropped_events;
+            dropped_prefix += excess;
+            state.dropped_event_count += excess;
+            report.dropped_events += static_cast<uint32_t>(excess);
         }
         ++report.work_units;
         return true;
@@ -356,6 +359,7 @@ bool RuntimeEventsAuthority::apply_packet(RuntimeEventsSnapshot &state,
         }
         const uint32_t capacity = state.capacity;
         state = RuntimeEventsSnapshot{};
+        dropped_prefix = 0;
         state.capacity = capacity;
         state.events.reserve(capacity);
         ++report.work_units;
@@ -371,19 +375,46 @@ bool RuntimeEventsAuthority::plan_day(int64_t day,
                                       std::vector<RuntimeCommandReceipt> &receipts,
                                       RuntimeEventsReport &report,
                                       std::string &error) {
+    static const bool scalar_compaction = [] {
+        const char *value = std::getenv("PK_EVENTS_APPEND_SCALAR");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    return plan_day_internal(day, commands, planned_snapshot, receipts, report, error, scalar_compaction);
+}
+
+bool RuntimeEventsAuthority::plan_day_internal(int64_t day,
+                                      const std::vector<RuntimeCommandPacket> &commands,
+                                      RuntimeEventsSnapshot &planned_snapshot,
+                                      std::vector<RuntimeCommandReceipt> &receipts,
+                                      RuntimeEventsReport &report,
+                                      std::string &error, bool scalar_compaction) {
     error.clear();
     receipts.clear();
     report = RuntimeEventsReport{};
     if (day < 0) { error = "events_day_invalid"; set_error(report, error.c_str()); return false; }
     _planned = _current;
-    std::vector<RuntimeCommandPacket> ordered;
+    std::vector<const RuntimeCommandPacket *> ordered;
     ordered.reserve(commands.size());
     for (const RuntimeCommandPacket &packet : commands) {
         if (packet.envelope.domain == static_cast<uint16_t>(RuntimeDomainId::EVENTS))
-            ordered.push_back(packet);
+            ordered.push_back(&packet);
     }
-    std::stable_sort(ordered.begin(), ordered.end(), packet_less);
-    for (const RuntimeCommandPacket &packet : ordered) {
+    const auto less = [](const auto *a, const auto *b) { return packet_less(*a, *b); };
+    if (!std::is_sorted(ordered.begin(), ordered.end(), less))
+        std::stable_sort(ordered.begin(), ordered.end(), less);
+    size_t dropped_prefix = 0;
+    uint64_t compactions = 0, moved_records = 0;
+    const auto compact = [&] {
+        if (dropped_prefix == 0) return;
+        moved_records += _planned.events.size() - dropped_prefix;
+        ++compactions;
+        _planned.events.erase(_planned.events.begin(),
+            _planned.events.begin() + static_cast<ptrdiff_t>(dropped_prefix));
+        dropped_prefix = 0;
+    };
+    // 只延迟物理搬移；每个命令仍立即更新逻辑队首和完整淘汰计数。
+    for (const RuntimeCommandPacket *reference : ordered) {
+        const RuntimeCommandPacket &packet = *reference;
         RuntimeCommandReceipt receipt;
         receipt.request_id = packet.envelope.request_id;
         receipt.producer_id = packet.envelope.producer_id;
@@ -393,7 +424,7 @@ bool RuntimeEventsAuthority::plan_day(int64_t day,
         std::string packet_error;
         // 命令只在当天提交后出队；坏包若让整天失败，会在每次重试里重放，
         // 把 worker 永久钉在这一天。apply_packet 失败时不改状态，只回拒绝。
-        if (!apply_packet(_planned, packet, day, report, packet_error)) {
+        if (!apply_packet(_planned, packet, day, report, packet_error, dropped_prefix)) {
             receipt.code = packet_error.find("payload") != std::string::npos ||
                 packet_error.find("record") != std::string::npos ||
                 packet_error.find("header") != std::string::npos
@@ -403,7 +434,13 @@ bool RuntimeEventsAuthority::plan_day(int64_t day,
             ++report.rejected_commands;
         }
         receipts.push_back(receipt);
+        if (scalar_compaction) compact();
     }
+    compact();
+    EconomyCostProbe::record("events.history_compactions", day, 0.0, compactions);
+    EconomyCostProbe::record("events.history_moved_records", day, 0.0, moved_records);
+    EconomyCostProbe::record("events.order_reference_bytes", day, 0.0,
+        ordered.size() * sizeof(const RuntimeCommandPacket *));
     prune_idempotency(_planned);
     _planned.committed_day = day;
     _planned.generation = _current.generation + 1u;
@@ -659,6 +696,68 @@ bool RuntimeEventsAuthority::self_test(std::string &error) {
         isolated.snapshot().idempotency.size() > 2u) {
         if (error.empty()) error = "events_idempotency_not_pruned";
         return false;
+    }
+    RuntimeEventsAuthority batched, scalar;
+    batched.reset(7u); scalar.reset(7u);
+    const auto control = [&](uint64_t sequence, int64_t day,
+                             RuntimeEventsCommand opcode, uint32_t capacity) {
+        RuntimeCommandPacket packet{};
+        packet.envelope.request_id = 1000u + sequence;
+        packet.envelope.sequence = sequence;
+        packet.envelope.effective_day = day;
+        packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::EVENTS);
+        packet.envelope.opcode = static_cast<uint16_t>(opcode);
+        std::vector<uint8_t> payload;
+        append_le<uint32_t>(payload, RUNTIME_EVENTS_ABI_VERSION);
+        if (opcode == RuntimeEventsCommand::CONFIGURE_CAPACITY) append_le<uint32_t>(payload, capacity);
+        packet.envelope.payload_size = static_cast<uint32_t>(payload.size());
+        std::memcpy(packet.payload.data(), payload.data(), payload.size());
+        return packet;
+    };
+    for (int64_t day = 0; day < 3; ++day) {
+        commands.clear();
+        for (uint64_t i = 0; i < 200u; ++i) {
+            if (i == 70u || i == 150u) {
+                commands.push_back(control(i, day, RuntimeEventsCommand::CONFIGURE_CAPACITY,
+                    i == 70u ? 2u : 9u));
+            } else if (i == 120u && day == 1) {
+                commands.push_back(control(i, day, RuntimeEventsCommand::CLEAR_RESET, 0u));
+            } else {
+                // Repeated idempotency keys must remain visible until the original
+                // end-of-day prune, even when their events were logically evicted.
+                commands.push_back(make_append_packet(1000u + i, 1u, i, day,
+                    i % 2 ? first : second, 5000u + i % 23u));
+            }
+        }
+        std::reverse(commands.begin(), commands.end());
+        RuntimeEventsSnapshot reference;
+        RuntimeEventsReport reference_report;
+        std::vector<RuntimeCommandReceipt> reference_receipts;
+        if (!batched.plan_day_internal(day, commands, planned, receipts, report, error, false) ||
+            !scalar.plan_day_internal(day, commands, reference, reference_receipts, reference_report, error, true) ||
+            planned.state_hash != reference.state_hash || receipts.size() != reference_receipts.size() ||
+            report.appended_events != reference_report.appended_events ||
+            report.dropped_events != reference_report.dropped_events ||
+            report.rejected_commands != reference_report.rejected_commands ||
+            report.work_units != reference_report.work_units) {
+            error = "events_batched_compaction_parity_invalid"; return false;
+        }
+        for (size_t i = 0; i < receipts.size(); ++i) {
+            if (receipts[i].request_id != reference_receipts[i].request_id ||
+                receipts[i].code != reference_receipts[i].code) {
+                error = "events_batched_receipt_order_invalid"; return false;
+            }
+        }
+        const uint64_t discarded_hash = planned.state_hash;
+        batched.discard_plan();
+        if (!batched.plan_day_internal(day, commands, planned, receipts, report, error, false) ||
+            planned.state_hash != discarded_hash || !batched.commit_day(planned, error) ||
+            !scalar.commit_day(reference, error)) return false;
+        std::vector<uint8_t> batched_bytes, scalar_bytes;
+        if (!batched.serialize(batched_bytes, error) || !scalar.serialize(scalar_bytes, error) ||
+                batched_bytes != scalar_bytes) {
+            error = "events_batched_save_bytes_invalid"; return false;
+        }
     }
     return RuntimeEventsSnapshotRing::self_test();
 }

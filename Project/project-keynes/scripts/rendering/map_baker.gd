@@ -333,9 +333,29 @@ var _wf_diag_dirty_sum: int = 0
 var _wf_diag_skipped_full: int = 0  # 整图跳过 Image.update 的次数
 var _wf_diag_total_cells: int = 0   # cell_pixel_lists.size()，最近一次记录
 
+const PREBAKED_LOADING_DIR := "res://assets/textures/loading_prebaked_v1/"
+static var _prebaked_images: Dictionary = {}
+
+static func prepare_shared_materials_async() -> void:
+	var paths := [PREBAKED_LOADING_DIR+"noise_rgba.res"]
+	var target := TERRAIN_MATERIAL_SIZE_MOBILE if OS.has_feature("mobile") or OS.has_feature("web") else TERRAIN_MATERIAL_SIZE_DESKTOP
+	for i in TERRAIN_MATERIAL_TEXTURE_PATHS.size():
+		paths.append(PREBAKED_LOADING_DIR+"material_%d_%d.res" % [target,i])
+	for path: String in paths:
+		if not _prebaked_images.has(path):
+			ResourceLoader.load_threaded_request(path)
+	var tree := Engine.get_main_loop() as SceneTree
+	for path: String in paths:
+		if _prebaked_images.has(path):
+			continue
+		while tree != null and ResourceLoader.load_threaded_get_status(path) == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+			await tree.process_frame
+		if ResourceLoader.load_threaded_get_status(path) == ResourceLoader.THREAD_LOAD_LOADED:
+			_prebaked_images[path] = ResourceLoader.load_threaded_get(path)
+
 static func get_or_build_shared_noise_tex() -> ImageTexture:
 	if _shared_noise_tex == null:
-		_shared_noise_tex = _build_noise_tex(NOISE_TEX_SIZE, NOISE_TEX_SEED)
+		_shared_noise_tex = ImageTexture.create_from_image(_prebaked_images.get(PREBAKED_LOADING_DIR+"noise_rgba.res", load(PREBAKED_LOADING_DIR+"noise_rgba.res")) as Image)
 	return _shared_noise_tex
 
 
@@ -357,18 +377,10 @@ static func _build_terrain_material_tex(target_size: int) -> Dictionary:
 	if target_size <= 0:
 		return {"texture": null, "reason": "invalid_target_size"}
 	var images: Array[Image] = []
-	for path in TERRAIN_MATERIAL_TEXTURE_PATHS:
-		var image := Image.new()
-		var load_error := image.load(String(path))
-		if load_error != OK or image.is_empty():
-			return {"texture": null, "reason": "load_failed:%s:%s" % [path, load_error]}
-		if image.get_format() != Image.FORMAT_RGBA8:
-			image.convert(Image.FORMAT_RGBA8)
-		if image.get_width() != target_size or image.get_height() != target_size:
-			image.resize(target_size, target_size, Image.INTERPOLATE_LANCZOS)
-		var mip_error := image.generate_mipmaps()
-		if mip_error != OK:
-			return {"texture": null, "reason": "mipmap_failed:%s:%s" % [path, mip_error]}
+	for i in TERRAIN_MATERIAL_TEXTURE_PATHS.size():
+		var image := load("res://assets/textures/loading_prebaked_v1/material_%d_%d.res" % [target_size,i]) as Image
+		if image == null or image.is_empty():
+			return {"texture":null,"reason":"prebaked_material_missing"}
 		images.append(image)
 	var texture := Texture2DArray.new()
 	var create_error := texture.create_from_images(images)
@@ -1002,7 +1014,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	var t := Time.get_ticks_msec()
 	var pix_count := world.hm_size.x * world.hm_size.y
 	_baseline_procedural_height = PackedFloat32Array()
-	var fused := _bake_geometry_fields_native(map, hex_size, world, seed_val)
+	var fused: bool = await _bake_geometry_fields_native(map, hex_size, world, seed_val)
 	if fused:
 		print("  geometry fields (fused C++): %dms" % (Time.get_ticks_msec() - t))
 	else:
@@ -1100,16 +1112,21 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	stage_progress.emit("encode", 0.88)
 	await _yield_generation_frame()
 	t = Time.get_ticks_msec()
-	world.height_tex = DCAtlasEncoders.encode_height_flow_tex(
+	world.height_tex = await DCAtlasEncoders.encode_height_flow_tex_async(
 		world.height_buffer, world.flow_buffer, world.hm_size, world.height_tex, _world_ext)
 	# 独立 flow_tex 退役：legacy shader 从 height_tex.B 读 flow。字段保留以兼容旧诊断/存档读。
 	world.flow_tex = null
 	# [terrain-normal-bake 2026-06-25] 烘焙总体地形法线（宽半径梯度 → RG8）。地形静态，运行期
 	# shader 直接 1 次采样拿宏观山脉走向，细节法线运行期按 biome/性能档叠（见 hillshade_tod）。
-	world.terrain_normal_tex = DCAtlasEncoders.encode_terrain_normal_tex(
-		world.height_buffer, world.hm_size,
-		4, 8.0, true, _world_ext, world.world_bounds.size, hex_size,
-		TERRAIN_NORMAL_SAMPLE_RADIUS_HEX, TERRAIN_NORMAL_HEIGHT_SCALE_HEX)
+	var normal_data: Dictionary = await NativeLoadingTasks.compute(_world_ext,"normal",{
+		"buffer":world.height_buffer,"width":world.hm_size.x,"height":world.hm_size.y,
+		"coarse_radius":4,"slope_gain":8.0,"wrap_x":true,"world_size_x":world.world_bounds.size.x,
+		"world_size_y":world.world_bounds.size.y,"hex_size":hex_size,
+		"sample_radius_hex":TERRAIN_NORMAL_SAMPLE_RADIUS_HEX,"height_scale_hex":TERRAIN_NORMAL_HEIGHT_SCALE_HEX})
+	if not bool(normal_data.get("fallback",true)):
+		world.terrain_normal_tex = DCAtlasEncoders._upload_rg8(normal_data.get("data",PackedByteArray()),world.hm_size.x,world.hm_size.y)
+	else:
+		world.terrain_normal_tex = DCAtlasEncoders.encode_terrain_normal_tex(world.height_buffer,world.hm_size,4,8.0,true,_world_ext,world.world_bounds.size,hex_size,TERRAIN_NORMAL_SAMPLE_RADIUS_HEX,TERRAIN_NORMAL_HEIGHT_SCALE_HEX)
 	stage_progress.emit("encode", 0.90)
 	await _yield_generation_frame()
 	# [terrain-horizon] 8 方向 horizon angle 烘焙，三条路径：
@@ -1169,9 +1186,16 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# 邻域 + 湖泊 16× biome-atlas 多半径"两套深浅估算。空 buffer（fused 失败/旧路径）→ null tex，
 	# shader 检测到无纹理（has_water_depth_tex=false）时回退旧深浅算法。
 	world.water_depth_tex = DCAtlasEncoders.encode_r8_tex(world.water_depth_buffer, world.derived_size, world.water_depth_tex, _world_ext) if not world.water_depth_buffer.is_empty() else null
-	world.terrain_detail_tex = TerrainBakerScript.rebake_terrain_detail_texture(
-		world, hex_size, _detail_noise, _ridge_noise, _world_ext,
-		TERRAIN_DETAIL_BAKE_MIN, TERRAIN_DETAIL_BAKE_MAX)
+	var detail_payload: Dictionary = await NativeLoadingTasks.compute(_world_ext,"terrain_detail",{
+		"width":world.derived_size.x,"height":world.derived_size.y,"seed":seed_val,
+		"origin_x":world.world_bounds.position.x,"origin_y":world.world_bounds.position.y,
+		"size_x":world.world_bounds.size.x,"size_y":world.world_bounds.size.y,
+		"wrap_period_x":world.wrap_period_x,"hex_size":hex_size,
+		"min_detail":TERRAIN_DETAIL_BAKE_MIN,"max_detail":TERRAIN_DETAIL_BAKE_MAX})
+	if not bool(detail_payload.get("fallback",true)):
+		world.terrain_detail_tex = DCAtlasEncoders.encode_r8_tex(detail_payload.data,world.derived_size,world.terrain_detail_tex,_world_ext)
+	else:
+		world.terrain_detail_tex = TerrainBakerScript.rebake_terrain_detail_texture(world,hex_size,_detail_noise,_ridge_noise,_world_ext,TERRAIN_DETAIL_BAKE_MIN,TERRAIN_DETAIL_BAKE_MAX)
 	await _bake_visual_tiles(map, world, hex_size, seed_val, visual_generation_id)
 	stage_progress.emit("encode", 0.96)
 	await _yield_generation_frame()
@@ -1183,6 +1207,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# 不绑定不会渲染异常（hex_renderer 也已改为仅在 debug 开启时 set_shader_parameter）。
 	world.upwelling_tex = null
 	# v10.noise-pack：共享 RGBA 噪声包（首次调用时 lazy 烘焙，之后所有 world 复用同一张）
+	await prepare_shared_materials_async()
 	world.noise_tex = get_or_build_shared_noise_tex()
 	# [terrain-material-tiles] Shared four-layer material array. A missing
 	# import, unsupported array allocation or mipmap failure is non-fatal: the
@@ -1381,7 +1406,7 @@ func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
 			"size_y": physical_size.y,
 		}, true)
 		var layer_t0 := Time.get_ticks_usec()
-		var bundle: Dictionary = _world_ext.run_bake_visual_tile_layer_pass(knobs)
+		var bundle: Dictionary = await NativeLoadingTasks.compute(_world_ext,"visual_tile",knobs)
 		if bundle == null or bool(bundle.get("fallback", true)) \
 				or int(bundle.get("generation_id", -1)) != generation_id:
 			tiles.fallback_reason = "native_layer_failed:%d:%s" % [
@@ -4187,6 +4212,7 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 		return false
 
 	# Cell SoA and object lookup are shared with the standalone native path.
+	await map.build_indices_cooperative()
 	var terrain_inputs: Dictionary = TerrainIndexBakerScript.build_cell_inputs(map)
 
 	# ── 几何参数（合并 sub-pass 所需 knob，origin/hex_size/seed/W/H 共用）──
@@ -4234,7 +4260,7 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 		"coast_sdf_max_dist_px": COAST_SDF_MAX_DIST_PX,
 	}
 	knobs.merge(TerrainIndexBakerScript.dem_landform_knobs())
-	var rep: Dictionary = _world_ext.run_bake_geometry_fields_pass(knobs)
+	var rep: Dictionary = await NativeLoadingTasks.compute(_world_ext,"geometry",knobs)
 	if rep == null or typeof(rep) != TYPE_DICTIONARY or bool(rep.get("fallback", true)):
 		push_warning("[bake_geometry_fields] 融合 pass 返回 fallback（reason=%s）；回退旧 per-pass 编排。"
 			% (String(rep.get("reason", "?")) if rep != null and typeof(rep) == TYPE_DICTIONARY else "null"))
@@ -7895,3 +7921,9 @@ func run_wind_field_rasterize_full(map: MapData, world: WorldData, _cfg: MapConf
 	out["pixels"] = int(res.get("pixels", 0))
 	out["atlas_updated"] = bool(res.get("atlas_updated", false))
 	return out
+
+
+func cancel_loading_work() -> void:
+	_visual_tile_generation_id += 1
+	if _world_ext != null and _world_ext.has_method("cancel_all_loading_tasks"):
+		_world_ext.cancel_all_loading_tasks()

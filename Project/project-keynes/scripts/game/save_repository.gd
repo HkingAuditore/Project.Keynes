@@ -65,6 +65,29 @@ func list_slots() -> Array:
 	return slots
 
 
+## WorkerThreadPool 入口：调用方先把全部 section 冻结为 PackedByteArray。
+## completion 只由此任务写，调用方在 wait_for_task_completion 后读取。
+func write_slot_background(slot_id: String, header_fields: Dictionary,
+		sections: Dictionary, completion: Array[Dictionary],
+		provider_hash_payloads: Array = []) -> void:
+	var header := header_fields.duplicate(true)
+	var manifest: Array = header.get("provider_manifest", [])
+	var seen := {}
+	for payload in provider_hash_payloads:
+		var index := int(payload.get("manifest_index", -1))
+		if index < 0 or index >= manifest.size() or seen.has(index) \
+				or not payload.get("bytes") is PackedByteArray:
+			completion.append(_error("save_provider_hash_invalid", "Provider hash payload is invalid."))
+			return
+		seen[index] = true
+		var state_hash := _sha256(payload.bytes)
+		if payload.has("expected_hash") and state_hash != String(payload.expected_hash):
+			completion.append(_error("save_provider_hash_mismatch", "Provider hash differs from the boundary reference."))
+			return
+		manifest[index]["state_hash"] = state_hash
+	completion.append(write_slot(slot_id, header, sections))
+
+
 func write_slot(slot_id: String, header_fields: Dictionary, sections: Dictionary) -> Dictionary:
 	if slot_id not in SLOT_IDS:
 		return _error("slot_invalid", "存档槽位无效。")

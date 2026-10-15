@@ -1,5 +1,39 @@
 # Simulation Computation Pipelines
 
+Read-only building traversal must use `building_view()`. A `const auto` result
+from non-const `building_at()` still acquires a writable row lease over all
+tracked columns. Modifier factor-cache hits now avoid the lease entirely;
+misses acquire it only when output/handle fields must change. Gameplay fact
+publication, family industry reads and persistence traversal also use const views.
+Audit journaling on actual mutations is unchanged.
+
+## Food capacity and Events maintenance (2026-10-15)
+
+`commit_food_flow_snapshot()` freezes the existing flow columns first, then uses
+the native executor for independent per-cell capacity calculations on maps with
+at least 1024 cells. Each task writes disjoint capacity and saturation scratch
+lanes; saturation totals replay on the coordinator. Empty cells and locked goods
+with owned stock remain part of the calculation. `PK_ECONOMY_FOOD_CAPACITY_SERIAL=1`
+selects the serial reference; `PK_ECONOMY_MEMO_VERIFY=1` checks every output and
+per-cell saturation against fresh serial evaluation.
+
+Events command ordering uses stable-sorted packet references. During a plan,
+each append/capacity command updates logical eviction and counters immediately;
+the vector prefix is physically removed once before pruning idempotency,
+hashing and publishing. Clear resets the logical prefix with the state. The
+committed snapshot, consumer ACKs, idempotency lifetime, capacity, hash and EVT1
+wire format are unchanged. `PK_EVENTS_APPEND_SCALAR=1` compacts after each packet
+for comparison. The native self-test compares complete serialized bytes across
+append, shrink/grow, clear, repeated keys and discard/replay sequences.
+
+## Effect worker mirror and load recovery (2026-10-15)
+
+The worker keeps Effect simulation authority. Snapshot write-back converts POD
+plans into complete PKEF state rather than copying the different POD hash/identity
+layout verbatim. Existing non-managed incomplete mirrors are repaired only after
+their original POD plan hashes validate. Lifecycle/evaluation cadence and domain
+ACK ownership are unchanged; see [Native Effect Runtime](./native-effect-runtime.md#worker-mirror-persistence-repair-2026-10-15).
+
 ## Economy exact-hash and scratch follow-up (2026-09-20)
 
 Native market stock/demand/shortage hashes and ledger scalar-vector hashes group
@@ -3427,6 +3461,25 @@ derived business demand 在单个冻结 cell 的作用域内复用需求基础�
 重新执行原始计算，并比较数值与饱和事件数；差异立即终止诊断进程。
 `PK_ECONOMY_MEMO_DISABLE=1` 是性能及正确性参照入口。
 
+2026-10-15：preview 的 catalog 编译同时建立精确 need-basis 等价索引。
+键包含 quantity 环境曲线、composite 弹性/下限、按序 variant 的偏好、
+价格弹性、环境曲线、参考价格以及按序 good/quantity 组成；同一冻结
+market/sample 内只计算第一份，复制其基础结果并重放相同饱和事件数。
+阶层财富、储蓄门槛、家族偏好和需求量继续逐 cohort 计算，不进入此等价层。
+索引随 catalog 重建，计入 runtime 内存，不进入 PKEC 或权威 hash。
+`PK_ECONOMY_PREVIEW_BASIS_DISABLE=1` 仅关闭这层复用；现有作用域 memo 保留，
+用于窄范围 A/B。`PK_ECONOMY_MEMO_VERIFY=1` 现在也核对 preview 的首次计算。
+`tests/economy_preview_basis_parity_test.gd` 在独立子进程中冻结节奏，比较原始/
+优化路径的 30 个逐日完整 state hash，同时开启需求和饱和事件逐调用对照。
+
+同日补充：未解锁 variant 的科技判断前移到价格计算之前；初始化期间尚未
+置位 `_epoch_active` 时仍用原有逐组件科技查询，避免过滤只在周期中途命中。
+仅目录证明无价格饱和事件的项走提前退出。`demand_preview.locked_variants_skipped`
+计实际省去的 variant 价格计算，`family.review_cells` 计实际评审格数；这些计数
+由 `PK_ECONOMY_COST_CSV` 启用。市场发布的实际/全量字节分别由
+`ledger_export.market_copied_bytes` / `ledger_export.market_dense_bytes` 记录。
+不得把父阶段与子探针的耗时相加，也不得将启用全量校验器的复制字节当生产开销。
+
 canonical 顺序：
 
 ```
@@ -3448,3 +3501,54 @@ ALBEDO > VEGETATION_DYNAMICS > CLIMATE_FEEDBACK > STAGE_B_AFTER_HYDROLOGY
 - 诊断近似回退路径（没有共享 round 输入时）同样遵守这张表；它没有 parity 语义，
   但顺序不能与生产相反，否则 stage_sequence 契约会拒绝它。
 - `STAGE_B_AFTER_HYDROLOGY` 只属于回退尾段，标为 `FALLBACK_TAIL`，永远在表尾。
+
+
+2026-10-15 v18: StageOps and compact building-plan entry points call the same
+`evaluate_building_plan_range`: existing task partition, per-range results, then
+fixed-order diagnostics/saturation reduction. Per-task living-cost/owner-quote scopes
+remain thread private. Actual demand basis also uses catalog need equivalence;
+preview skips all-zero needs only where the original candidate loop had no saturation.
+Resident Climate physics reuses topology/coast/trajectory only under exact input keys;
+canonical formula order, weather/ocean stride and save fields remain unchanged.
+
+2026-10-15 hotloop v19: owner-opportunity quotes reuse their plan-based self-retention
+target inside the existing frozen living-cost scope. The key includes cell, owner
+plan, owner-slot count and output good. A hit replays the exact saturation delta;
+`PK_ECONOMY_RETENTION_MEMO_DISABLE=1` restores the full loop. A one-component family
+variant returns its good factor directly only when the original quantity-weighted
+product cannot saturate; `PK_ECONOMY_VARIANT_WEIGHT_SCALAR=1` selects the reference.
+
+Detailed welfare attribution opens an explicit frozen price-override scope after all
+settlement writes. Old-price and current-price preview bases use distinct keys;
+funds, family factors and desired quantities still run per actor. The scope clears
+on exit and does not extend reuse across price updates. Disable only this scope via
+`PK_ECONOMY_ATTRIBUTION_MEMO_DISABLE=1`. `PK_ECONOMY_MEMO_VERIFY=1` compares preview
+and retention values plus saturation counts against fresh calculations. All caches
+are derived scratch and preserve PKEC, hash, audit and cadence contracts.
+
+2026-10-15 hotloop v20-v23: catalog compilation identifies variants with identical
+ordered price operands, preserving actor-specific preference and family factors.
+Food capacity traverses only goods with positive food-equivalent coefficients;
+all cells and existing locked-good stocks retain their original semantics.
+Family behavior conditions compile a per-trait metric operand mask; the daily
+rebuild unions masks for each actual family and computes one requested slab per
+family/cell. Effect metric publication passes its existing requested mask into
+the same helper. Direct frozen policies request only their actual signals.
+Building/cohort/resource/influence scans and upgrade-chain maps are skipped when
+no requested metric depends on them. Conditions still evaluate on every normal
+dirty daily boundary, in the same edge order, before exact behavior-row reuse.
+`PK_ECONOMY_FAMILY_METRIC_MASK_DISABLE=1` selects complete metric computation;
+`PK_ECONOMY_MEMO_VERIFY=1` checks each used scalar and condition against it.
+
+Hotloop v25 preserves resource mirror page dirtiness: existing-shape stock and
+generation projections use the tracked exact range writer instead of structural
+assign/reorder. Generations are no longer zeroed then rewritten on every daily
+projection. Changed runs still reach the registry; shape changes keep the full
+path. `PK_ECONOMY_RESOURCE_PROJECTION_SCALAR=1` selects the previous projection.
+
+Hotloop v26 cancels a nonzero divisor exactly when it equals either multiplier
+in `mul_div_sat`. Neutral Q16 chains return the other int64 operand without wide
+multiplication/division. Zero-divisor handling, truncation, overflow limits and
+saturation counts are unchanged, including INT64_MIN operands. The scalar flag
+is `PK_ECONOMY_MUL_DIV_SCALAR=1`; the standalone actual math implementation passes
+24,913 Python-bigint oracle vectors under both paths plus signed identity edges.

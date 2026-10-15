@@ -114,7 +114,12 @@ func assemble_native_result(res: Dictionary, cfg: MapConfig) -> MapData:
 	var is_lake_seed_arr: PackedByteArray = res["is_lake_seed_arr"] if res.has("is_lake_seed_arr") else PackedByteArray()
 	var water_depth_arr: PackedFloat32Array = res["water_depth_arr"] if res.has("water_depth_arr") else PackedFloat32Array()
 	var map := MapData.new(cfg.width, cfg.height)
+	var slice_start := Time.get_ticks_usec()
+	var tree := Engine.get_main_loop() as SceneTree
 	for i in range(n):
+		if tree != null and Time.get_ticks_usec()-slice_start >= UITokens.LOADING_MAIN_SLICE_USEC:
+			await tree.process_frame
+			slice_start = Time.get_ticks_usec()
 		var cell := HexCell.new(int(q_arr[i]), int(r_arr[i]))
 		cell.elevation = float(elevation_arr[i])
 		cell.moisture = float(moisture_arr[i])

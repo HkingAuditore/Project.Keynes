@@ -112,3 +112,25 @@
 - `weather_refresh` 稳态 p95 尽量 `<= 0.8ms`。
 - `refresh_climate_daily` round 目标 1–2 个 fast tick 完成。
 - `ocean_currents` p95 目标 `<= 1.5ms`，若仍高于该值，优先查看 SLP/PSI fallback reason。
+# Loading task boundary (2026-10)
+
+Cold generation and bake jobs use `DCWorldExt.begin_loading_task()` through
+`NativeLoadingTasks.compute()`. The caller copies value-only inputs before the
+coordinator starts a task. Each task owns a private `DCWorldExt` context and
+its river scratch buffers; workers never touch SceneTree objects, live DataCore
+slots, bound MapData, or GPU resources. `poll_loading_task()` is non-blocking,
+and `take_loading_task()` is the only result hand-off to the main thread.
+
+The generator and baker carry a generation epoch. Cancellation increments that
+epoch and cancels the owner's native handles. A result from an older epoch is
+discarded before assembly, binding, or upload. HexCell assembly, slot binding,
+texture creation, and renderer publication remain main-thread operations; long
+GDScript loops use the 4 ms loading slice budget. The synchronous public entry
+points still call the same kernels for deterministic parity tests.
+
+Catalog snapshots are build products, never authority. The export prebake
+plugin writes economy, effect, display, technology, research, and extension IR
+snapshots plus a source SHA-256 manifest. A missing or empty manifest disables
+the cache and forces source compilation. The native `catalog_manifest` task
+validates editor sources before a cached snapshot is used.
+

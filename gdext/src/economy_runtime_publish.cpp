@@ -179,9 +179,11 @@ bool NativeEconomyRuntime::publish_epoch_slice(
                          relative < relative_end; ++relative) {
                         const size_t index =
                             start + static_cast<size_t>(relative);
+                        const int64_t stock = market_store().stock[index];
+                        local.goods_stock += stock;
+                        if (stock <= 0) continue; // 总量仍完整审计；零估值无需价格/除法。
                         const int32_t good = static_cast<int32_t>(
                             index % static_cast<size_t>(market_store().good_count.get()));
-                        local.goods_stock += market_store().stock[index];
                         const int64_t retail_value = mul_div_sat(
                             std::max<int64_t>(0, market_store().stock[index]),
                             std::max<int64_t>(0, market_store().price[index]),
@@ -227,9 +229,11 @@ bool NativeEconomyRuntime::publish_epoch_slice(
                 _audit_task_ms_scratch.end(), 0.0);
         } else {
             for (size_t index = start; index < end; ++index) {
+                const int64_t stock = market_store().stock[index];
+                _closing_totals.goods_stock += stock;
+                if (stock <= 0) continue;
                 const int32_t good = static_cast<int32_t>(
                     index % static_cast<size_t>(market_store().good_count.get()));
-                _closing_totals.goods_stock += market_store().stock[index];
                 const int64_t retail_value = mul_div_sat(
                     std::max<int64_t>(0, market_store().stock[index]),
                     std::max<int64_t>(0, market_store().price[index]),

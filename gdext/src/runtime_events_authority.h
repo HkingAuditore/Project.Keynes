@@ -93,6 +93,10 @@ public:
     static bool self_test(std::string &error);
 
 private:
+    bool plan_day_internal(int64_t day, const std::vector<RuntimeCommandPacket> &commands,
+                  RuntimeEventsSnapshot &planned_snapshot,
+                  std::vector<RuntimeCommandReceipt> &receipts,
+                  RuntimeEventsReport &report, std::string &error, bool scalar_compaction);
     static uint64_t hash_snapshot(const RuntimeEventsSnapshot &snapshot);
     static bool packet_less(const RuntimeCommandPacket &lhs,
                             const RuntimeCommandPacket &rhs) noexcept;
@@ -102,7 +106,8 @@ private:
     static void prune_idempotency(RuntimeEventsSnapshot &state);
     bool apply_packet(RuntimeEventsSnapshot &state,
                       const RuntimeCommandPacket &packet, int64_t day,
-                      RuntimeEventsReport &report, std::string &error);
+                      RuntimeEventsReport &report, std::string &error,
+                      size_t &dropped_prefix);
 
     RuntimeEventsSnapshot _current;
     RuntimeEventsSnapshot _planned;

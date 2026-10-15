@@ -164,6 +164,17 @@ remains rejected until all domain handlers and ACK barriers are native POD.
 
 ## D7 transaction journal boundary
 
+Completed historical rows may carry a session different from the journal header
+after bootstrap or authority handoff. Restore accepts that difference only when
+the row has a matching result, terminal and committed markers, and belongs to
+neither pending queue. Request/result session and full transaction identity must
+still match; unresolved rows must match the journal session. Restore then rebinds
+both sides to the new session as before. Live ingress session checks are unchanged.
+The same completed-history gate accepts the original `day=-1` sentinel, validating
+the remaining admission shape with a temporary day-zero copy. Request/result
+dates are still compared exactly and the persisted date is retained. Pending
+negative-day requests remain invalid; no history row is requeued or executed.
+
 The Host owns the transport-level `D7T1` section for Country/Economy asset traffic.
 It serializes typed request/result identities, queue membership, dispatch and
 commit idempotency markers, terminal results, protocol counters, and the restored
@@ -237,6 +248,34 @@ H7/H8 在 Country 之后、Ideology 之前跑独立 ACTIVE Trigger stage
 6. 主线程回灌 `TriggerRuntime`（`apply_runtime_trigger_snapshot`，按 generation 门控）。
 
 Report 暴露 `trigger_pod_*` 与 `trigger_worker_authoritative`。
+
+## 2026-10-15 同日输入 hash 与气候可见投影
+
+同日 ACTIVE Climate kernel 已计算的环境输入 hash 可由 INPUT_CAPTURE 直接复用，
+只在同次 execute 调用内且 immutable snapshot 对象地址完全相同时生效；其余路径重算。
+`PK_RUNTIME_INPUT_HASH_FULL=1` 强制参照，`PK_RUNTIME_INPUT_HASH_VERIFY=1` 验证复用值。
+manifest 的 session/day/generation 混入顺序和 hash 格式不变。
+
+Climate writeback ring 使用 `snapshot_into(out, true)` 的可见投影，保留所有可见字段、
+物理状态及 cyclone capsule，省去 `temperature_history`（6400×365×4 = 9344000 bytes）。
+完整 `snapshot()` 和 CLM2 保存仍取 Authority 的完整历史。EMA 和 UI 历史不依赖此投影。
+Authority 私有双缓冲按 generation 差复制变化历史行；初始化、恢复、形状变化、失败
+speculative 缓冲或间隔 ≥365 提交回退全量。外部 kernel 调用默认完整复制。
+`PK_CLIMATE_HISTORY_COPY_FULL=1` 为参照，`PK_CLIMATE_HISTORY_COPY_VERIFY=1` 逐次完整比对。
+
+## 2026-10-15 遗留国家 AI ingress 收尾
+
+Worker 已在 ACTIVE Country AI 下重新规划，主线程旧 AI ingress 原本会被跳过；
+旧的 terminal publisher 同时跳过 AI，导致这些已到期包永久留在 pending 队列。
+旧存档可因此卡住 M6 安全切换，一直使用 `ner_local` 而非 `owned_state`。
+
+Country stage 现在只在 worker AI 确实接管时，为本日已到期的保留 AI producer 包
+发布 `REJECTED_AT_EXECUTION/country_ai_superseded_by_worker` 终态，再按既有协议出队。
+这表示取消被取代的请求，不表示执行成功。内部新 AI 计划仍不产生玩家回执；
+精确 request 查询可读收尾终态，玩家回执流过滤该保留 producer。
+保存合并仅允许同 producer/sequence/effective day 的旧 ACCEPTED 变为该特定终态，
+其他冲突仍拒绝。正常待处理命令、epoch in-flight 和 authority 安全检查不放宽。
+`runtime_authority_m5_m6_gate_test.gd` 的原生自检覆盖回执隔离、幂等与 pending gate。
 
 ## Events POD ACTIVE stage (I8)
 

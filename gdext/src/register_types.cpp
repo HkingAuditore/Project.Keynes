@@ -38,6 +38,7 @@ void uninitialize_dots_ext_module(ModuleInitializationLevel p_level) {
     if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) {
         return;
     }
+    pk::DCWorldExt::shutdown_loading_tasks();
 }
 
 extern "C" {

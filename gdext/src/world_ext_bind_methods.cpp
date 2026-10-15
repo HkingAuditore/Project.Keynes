@@ -9,6 +9,12 @@ using namespace godot;
 
 void DCWorldExt::_bind_methods() {
     using namespace godot;
+    ClassDB::bind_method(D_METHOD("begin_loading_task", "operation", "input"), &DCWorldExt::begin_loading_task);
+    ClassDB::bind_method(D_METHOD("poll_loading_task", "handle"), &DCWorldExt::poll_loading_task);
+    ClassDB::bind_method(D_METHOD("take_loading_task", "handle"), &DCWorldExt::take_loading_task);
+    ClassDB::bind_method(D_METHOD("cancel_loading_task", "handle"), &DCWorldExt::cancel_loading_task);
+    ClassDB::bind_method(D_METHOD("cancel_all_loading_tasks"), &DCWorldExt::cancel_all_loading_tasks);
+    ClassDB::bind_method(D_METHOD("encode_bake_height_flow_tex_data", "input"), &DCWorldExt::encode_bake_height_flow_tex_data);
 
     ClassDB::bind_method(D_METHOD("register_component", "name", "dtype", "stride", "track_prev"),
                          &DCWorldExt::register_component, DEFVAL(1), DEFVAL(false));

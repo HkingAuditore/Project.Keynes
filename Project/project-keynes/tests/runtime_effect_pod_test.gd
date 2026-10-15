@@ -46,6 +46,8 @@ func _run() -> void:
 			bool(configured.get("ok", false)) and
 			bool(configured.get("effect_pod_ready", false)) and
 			int(configured.get("effect_pod_catalog_hash", 0)) != 0)
+		_expect("worker snapshot and legacy PKEF roundtrip preserve identity and reject tampering",
+			bool(ext.runtime_effect_pod_self_test()))
 
 	var started: Dictionary = ext.start_runtime_worker({
 		"simulation_thread_mode": "SHADOW",

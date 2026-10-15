@@ -1,7 +1,12 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/components/colonization_planner_panel.gd" id="1_script"]
 [ext_resource type="PackedScene" path="res://scenes/ui/category_tabs.tscn" id="2_tabs"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="3_icon"]
+[ext_resource type="PackedScene" path="res://scenes/ui/inspector_fact_grid.tscn" id="4_facts"]
+[ext_resource type="PackedScene" path="res://scenes/ui/inspector_meter_list.tscn" id="5_meters"]
+[ext_resource type="PackedScene" path="res://scenes/ui/inspector_note_list.tscn" id="6_notes"]
+[ext_resource type="PackedScene" path="res://scenes/ui/badge_row.tscn" id="7_badges"]
 
 [node name="ColonizationPlannerPanel" type="PanelContainer"]
 visible = false
@@ -21,18 +26,24 @@ one_shot = true
 
 [node name="Margin" type="MarginContainer" parent="."]
 layout_mode = 2
-theme_override_constants/margin_left = 8
+theme_override_constants/margin_left = 10
 theme_override_constants/margin_top = 8
-theme_override_constants/margin_right = 8
+theme_override_constants/margin_right = 10
 theme_override_constants/margin_bottom = 8
 
 [node name="Root" type="VBoxContainer" parent="Margin"]
 layout_mode = 2
-theme_override_constants/separation = 4
+theme_override_constants/separation = 5
 
 [node name="Header" type="HBoxContainer" parent="Margin/Root"]
 layout_mode = 2
 theme_override_constants/separation = 8
+
+[node name="HeaderIcon" parent="Margin/Root/Header" instance=ExtResource("3_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(22, 22)
+layout_mode = 2
+size_flags_vertical = 4
 
 [node name="Title" type="Label" parent="Margin/Root/Header"]
 unique_name_in_owner = true
@@ -54,12 +65,14 @@ theme_type_variation = &"PKIconButton"
 
 [node name="Subtitle" type="Label" parent="Margin/Root"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 text_overrun_behavior = 3
 theme_type_variation = &"PKMutedLabel"
 
 [node name="Workflow" type="Label" parent="Margin/Root"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 text_overrun_behavior = 3
 theme_type_variation = &"PKSectionTitle"
@@ -72,6 +85,7 @@ text_overrun_behavior = 3
 theme_type_variation = &"PKMutedLabel"
 
 [node name="SourceRow" type="HBoxContainer" parent="Margin/Root"]
+visible = false
 layout_mode = 2
 theme_override_constants/separation = 8
 
@@ -89,22 +103,103 @@ fit_to_longest_item = false
 text_overrun_behavior = 3
 theme_type_variation = &"PKTabButton"
 
-[node name="TargetButton" type="Button" parent="Margin/Root/SourceRow"]
+[node name="RouteStepper" type="PanelContainer" parent="Margin/Root"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "选择目的地"
-theme_type_variation = &"PKTabButton"
+theme_type_variation = &"PKDossierNote"
 
-[node name="Tools" type="HBoxContainer" parent="Margin/Root"]
+[node name="Margin" type="MarginContainer" parent="Margin/Root/RouteStepper"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 4
+
+[node name="Row" type="HBoxContainer" parent="Margin/Root/RouteStepper/Margin"]
 layout_mode = 2
 theme_override_constants/separation = 6
+
+[node name="SourceStepIcon" parent="Margin/Root/RouteStepper/Margin/Row" instance=ExtResource("3_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="SourcePickButton" type="Button" parent="Margin/Root/RouteStepper/Margin/Row"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(76, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "地图点选出发城"
+clip_text = true
+text_overrun_behavior = 3
+theme_type_variation = &"PKDossierChip"
+
+[node name="Arrow1" type="Label" parent="Margin/Root/RouteStepper/Margin/Row"]
+layout_mode = 2
+text = "▸"
+theme_type_variation = &"PKDossierMuted"
+
+[node name="FamilyStepIcon" parent="Margin/Root/RouteStepper/Margin/Row" instance=ExtResource("3_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="FamilyStepLabel" type="Label" parent="Margin/Root/RouteStepper/Margin/Row"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "待选世家"
+clip_text = true
+text_overrun_behavior = 3
+theme_type_variation = &"FamilyStrongLabel"
+
+[node name="Arrow2" type="Label" parent="Margin/Root/RouteStepper/Margin/Row"]
+layout_mode = 2
+text = "▸"
+theme_type_variation = &"PKDossierMuted"
+
+[node name="TargetStepIcon" parent="Margin/Root/RouteStepper/Margin/Row" instance=ExtResource("3_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="TargetButton" type="Button" parent="Margin/Root/RouteStepper/Margin/Row"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(76, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "选择目的地"
+clip_text = true
+text_overrun_behavior = 3
+theme_type_variation = &"PKDossierChip"
+
+[node name="Tools" type="HBoxContainer" parent="Margin/Root"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="SearchIcon" parent="Margin/Root/Tools" instance=ExtResource("3_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+size_flags_vertical = 4
 
 [node name="FamilySearch" type="LineEdit" parent="Margin/Root/Tools"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "搜索家族"
+placeholder_text = "搜索世家名号"
 theme_type_variation = &"PKLineEdit"
+
+[node name="SortIcon" parent="Margin/Root/Tools" instance=ExtResource("3_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(16, 16)
+layout_mode = 2
+size_flags_vertical = 4
 
 [node name="FamilySort" type="OptionButton" parent="Margin/Root/Tools"]
 unique_name_in_owner = true
@@ -124,6 +219,53 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 size_flags_stretch_ratio = 0.44
+theme_override_constants/separation = 4
+
+[node name="CityPickerPane" type="PanelContainer" parent="Margin/Root/Body/ListPane"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierNote"
+
+[node name="Margin" type="MarginContainer" parent="Margin/Root/Body/ListPane/CityPickerPane"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 6
+
+[node name="Col" type="VBoxContainer" parent="Margin/Root/Body/ListPane/CityPickerPane/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="HeaderRow" type="HBoxContainer" parent="Margin/Root/Body/ListPane/CityPickerPane/Margin/Col"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="CityPinIcon" parent="Margin/Root/Body/ListPane/CityPickerPane/Margin/Col/HeaderRow" instance=ExtResource("3_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(16, 16)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="CityPromptLabel" type="Label" parent="Margin/Root/Body/ListPane/CityPickerPane/Margin/Col/HeaderRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "地图点选出发城市，或点击下方城市卡片："
+text_overrun_behavior = 3
+theme_type_variation = &"PKDossierKicker"
+
+[node name="CityCardsScroll" type="ScrollContainer" parent="Margin/Root/Body/ListPane/CityPickerPane/Margin/Col"]
+custom_minimum_size = Vector2(0, 108)
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="CityCardsBox" type="VBoxContainer" parent="Margin/Root/Body/ListPane/CityPickerPane/Margin/Col/CityCardsScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
 
 [node name="RowsScroll" type="ScrollContainer" parent="Margin/Root/Body/ListPane"]
 unique_name_in_owner = true
@@ -135,7 +277,7 @@ horizontal_scroll_mode = 0
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 2
+theme_override_constants/separation = 4
 
 [node name="PreviewScroll" type="ScrollContainer" parent="Margin/Root/Body"]
 unique_name_in_owner = true
@@ -148,52 +290,296 @@ horizontal_scroll_mode = 0
 [node name="Preview" type="VBoxContainer" parent="Margin/Root/Body/PreviewScroll"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 10
+theme_override_constants/separation = 8
 
-[node name="PreviewTitle" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview"]
+[node name="PreviewGuideCard" type="PanelContainer" parent="Margin/Root/Body/PreviewScroll/Preview"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FamilyCard"
+
+[node name="Margin" type="MarginContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewGuideCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 8
+
+[node name="Body" type="VBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewGuideCard/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Head" type="HBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewGuideCard/Margin/Body"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="GuideIcon" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewGuideCard/Margin/Body/Head" instance=ExtResource("3_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="GuideTitle" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewGuideCard/Margin/Body/Head"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "家族开拓与迁徙卷宗"
+theme_type_variation = &"PKDossierSectionTitle"
+
+[node name="GuideFacts" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewGuideCard/Margin/Body" instance=ExtResource("4_facts")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="GuideNotes" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewGuideCard/Margin/Body" instance=ExtResource("6_notes")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="PreviewIdentityCard" type="PanelContainer" parent="Margin/Root/Body/PreviewScroll/Preview"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"FamilyCard"
+
+[node name="Margin" type="MarginContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 8
+
+[node name="Body" type="VBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Head" type="HBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin/Body"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PreviewCrest" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin/Body/Head" instance=ExtResource("3_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="TitleCol" type="VBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin/Body/Head"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+
+[node name="PreviewTitle" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin/Body/Head/TitleCol"]
 unique_name_in_owner = true
 layout_mode = 2
 autowrap_mode = 3
 theme_type_variation = &"PKSectionTitle"
 
+[node name="PreviewOriginSub" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin/Body/Head/TitleCol"]
+unique_name_in_owner = true
+layout_mode = 2
+text_overrun_behavior = 3
+theme_type_variation = &"PKDossierCaption"
+
+[node name="PreviewStatePill" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin/Body/Head"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"FamilyTraitBadgePos"
+
+[node name="PreviewFactGrid" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin/Body" instance=ExtResource("4_facts")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="PreviewMeters" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin/Body" instance=ExtResource("5_meters")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="PreviewRouteCard" type="PanelContainer" parent="Margin/Root/Body/PreviewScroll/Preview"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"FamilyCard"
+
+[node name="Margin" type="MarginContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewRouteCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 8
+
+[node name="Body" type="VBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewRouteCard/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Head" type="HBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewRouteCard/Margin/Body"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="RouteCardIcon" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewRouteCard/Margin/Body/Head" instance=ExtResource("3_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(20, 20)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="RouteCardTitle" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewRouteCard/Margin/Body/Head"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "远征路线与安家方案"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="RouteReadyPill" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewRouteCard/Margin/Body/Head"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"FamilyTraitBadgePos"
+
+[node name="RouteFactGrid" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewRouteCard/Margin/Body" instance=ExtResource("4_facts")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="KitKicker" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewRouteCard/Margin/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "落地开工建筑与随行构成"
+theme_type_variation = &"PKDossierCaption"
+
+[node name="KitBadges" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewRouteCard/Margin/Body" instance=ExtResource("7_badges")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="RouteNotes" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewRouteCard/Margin/Body" instance=ExtResource("6_notes")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="PreviewTraitsCard" type="PanelContainer" parent="Margin/Root/Body/PreviewScroll/Preview"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"FamilyCard"
+
+[node name="Margin" type="MarginContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewTraitsCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 8
+
+[node name="Body" type="VBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewTraitsCard/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Head" type="HBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewTraitsCard/Margin/Body"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="TraitsCardIcon" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewTraitsCard/Margin/Body/Head" instance=ExtResource("3_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(20, 20)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="TraitsCardTitle" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewTraitsCard/Margin/Body/Head"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "家风特性与经营偏好"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="TraitsVisualBox" type="VBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewTraitsCard/Margin/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="PrefKicker" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewTraitsCard/Margin/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "显著经营与消费偏好"
+theme_type_variation = &"PKDossierCaption"
+
+[node name="PrefBadges" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewTraitsCard/Margin/Body" instance=ExtResource("7_badges")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="PreviewEffectsCard" type="PanelContainer" parent="Margin/Root/Body/PreviewScroll/Preview"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"FamilyCard"
+
+[node name="Margin" type="MarginContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewEffectsCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 8
+
+[node name="Body" type="VBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewEffectsCard/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Head" type="HBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewEffectsCard/Margin/Body"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="EffectsCardIcon" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewEffectsCard/Margin/Body/Head" instance=ExtResource("3_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(20, 20)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="EffectsCardTitle" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewEffectsCard/Margin/Body/Head"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "当地威望加成"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="EffectsVisualBox" type="VBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewEffectsCard/Margin/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
 [node name="PreviewMetrics" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 autowrap_mode = 3
 theme_type_variation = &"PKBodyLabel"
 
 [node name="PreviewRoute" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 autowrap_mode = 3
 theme_type_variation = &"PKMutedLabel"
 
 [node name="PreviewTraits" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 autowrap_mode = 3
 theme_type_variation = &"PKBodyLabel"
 
 [node name="PreviewPreferences" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 autowrap_mode = 3
 theme_type_variation = &"PKMutedLabel"
 
 [node name="PreviewEffects" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 autowrap_mode = 3
 theme_type_variation = &"PKBodyLabel"
 
 [node name="FeedbackLabel" type="Label" parent="Margin/Root"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 text_overrun_behavior = 3
 theme_type_variation = &"PKMutedLabel"
 
 [node name="FooterSelection" type="Label" parent="Margin/Root"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 text_overrun_behavior = 3
 theme_type_variation = &"PKMutedLabel"
@@ -204,22 +590,47 @@ theme_override_constants/separation = 8
 
 [node name="PopulationRow" type="HBoxContainer" parent="Margin/Root/Footer"]
 unique_name_in_owner = true
-layout_mode = 2
 visible = false
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="PopIcon" parent="Margin/Root/Footer/PopulationRow" instance=ExtResource("3_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+size_flags_vertical = 4
 
 [node name="PopulationLabel" type="Label" parent="Margin/Root/Footer/PopulationRow"]
 layout_mode = 2
 text = "人数"
 
+[node name="PopulationSlider" type="HSlider" parent="Margin/Root/Footer/PopulationRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(68, 0)
+layout_mode = 2
+size_flags_vertical = 4
+min_value = 1.0
+max_value = 1.0
+value = 1.0
+rounded = true
+
 [node name="PopulationSpin" type="SpinBox" parent="Margin/Root/Footer/PopulationRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(104, 0)
+custom_minimum_size = Vector2(88, 0)
 layout_mode = 2
 min_value = 1.0
 max_value = 1.0
 value = 1.0
 rounded = true
 allow_greater = false
+
+[node name="MaxPopButton" type="Button" parent="Margin/Root/Footer/PopulationRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 30)
+layout_mode = 2
+focus_mode = 0
+text = "满员"
+theme_type_variation = &"PKDossierChip"
 
 [node name="StartButton" type="Button" parent="Margin/Root/Footer"]
 unique_name_in_owner = true

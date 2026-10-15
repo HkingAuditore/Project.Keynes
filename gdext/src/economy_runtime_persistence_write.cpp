@@ -228,6 +228,26 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         const int32_t end = std::min(market_store().market_count.get(), _save.market_cursor + max_records);
         payload.reserve(static_cast<size_t>(std::max(0, end - _save.market_cursor)) * record_bytes);
         const int32_t begin = _save.market_cursor;
+        if (bulk_little_endian_enabled()) {
+            // 长度一次定形，保持原 market/good 交错记录和 LE 字节完全一致。
+            payload.resize(static_cast<size_t>(end - begin) * record_bytes);
+            uint8_t *cursor = payload.data();
+            for (; _save.market_cursor < end; ++_save.market_cursor) {
+                const int32_t market = _save.market_cursor;
+                store_le(cursor, market); cursor += 4;
+                const int64_t base = market_store().index(market, 0);
+                for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
+                    const int64_t idx = base + good;
+                    store_le<int64_t>(cursor, market_store().stock[idx]); cursor += 8;
+                    store_le<int32_t>(cursor, market_store().price[idx]); cursor += 4;
+                    store_le<int64_t>(cursor, market_store().demand_ema[idx]); cursor += 8;
+                    store_le<uint16_t>(cursor, market_store().last_shortage_q16[idx]); cursor += 2;
+                }
+            }
+            if (_save.market_cursor >= market_store().market_count.get()) ++_save.section;
+            return make_save_chunk(SAVE_SECTION_MARKETS,
+                static_cast<uint32_t>(end - begin), payload);
+        }
         for (; _save.market_cursor < end; ++_save.market_cursor) {
             const int32_t market = _save.market_cursor;
             append_le<int32_t>(payload, market);
@@ -355,7 +375,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                                               _save.building_cursor + max_records);
         const int32_t begin = _save.building_cursor;
         for (; _save.building_cursor < end; ++_save.building_cursor) {
-            const auto group = building_at(static_cast<size_t>(_save.building_cursor));
+            const auto group = building_view(static_cast<size_t>(_save.building_cursor));
             append_le<int32_t>(payload, group.cell);
             append_le<int32_t>(payload, group.type_id);
             append_le<int32_t>(payload, group.owner_signature_id);
@@ -1277,6 +1297,43 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         const int32_t begin = _save.resource_cursor;
         const int32_t end = std::min(lane_count, begin + max_records);
         payload.reserve(static_cast<size_t>(std::max(0, end - begin)) * record_bytes);
+        if (bulk_little_endian_enabled()) {
+            payload.resize(static_cast<size_t>(end - begin) * record_bytes);
+            uint8_t *record = payload.data();
+            for (; _save.resource_cursor < end; ++_save.resource_cursor) {
+                const int32_t lane = _save.resource_cursor;
+                const int32_t resource = _cell_count.get() > 0 ? lane / _cell_count.get() : 0;
+                const int32_t cell = _cell_count.get() > 0 ? lane % _cell_count.get() : 0;
+                store_le(record, resource);
+                store_le(record + 4, cell);
+                store_le(record + 8, resource_stock_lanes()[static_cast<size_t>(lane)]);
+                store_le(record + 16, static_cast<size_t>(lane) < resource_lane_generation_lanes().size()
+                    ? resource_lane_generation_lanes()[static_cast<size_t>(lane)] : 0u);
+                record += record_bytes;
+            }
+            static const bool verify_codec = [] {
+                const char *value = std::getenv("PK_SAVE_CODEC_VERIFY");
+                return value && std::strcmp(value, "1") == 0;
+            }();
+            if (verify_codec) {
+                std::vector<uint8_t> reference;
+                for (int32_t lane = begin; lane < end; ++lane) {
+                    append_le<int32_t>(reference, _cell_count.get() > 0 ? lane / _cell_count.get() : 0);
+                    append_le<int32_t>(reference, _cell_count.get() > 0 ? lane % _cell_count.get() : 0);
+                    append_le<int64_t>(reference, resource_stock_lanes()[static_cast<size_t>(lane)]);
+                    append_le<uint32_t>(reference, static_cast<size_t>(lane) < resource_lane_generation_lanes().size()
+                        ? resource_lane_generation_lanes()[static_cast<size_t>(lane)] : 0u);
+                }
+                if (payload != reference) {
+                    std::fputs("[save-resource-codec] scalar mismatch\n", stderr);
+                    std::abort();
+                }
+            }
+            if (_save.resource_cursor >= lane_count)
+                _save.section = SAVE_SECTION_CADENCE_STATE;
+            return make_save_chunk(SAVE_SECTION_RESOURCE_STOCK,
+                static_cast<uint32_t>(end - begin), payload);
+        }
         for (; _save.resource_cursor < end; ++_save.resource_cursor) {
             const int32_t lane = _save.resource_cursor;
             const int32_t resource = _cell_count.get() > 0 ? lane / _cell_count.get() : 0;

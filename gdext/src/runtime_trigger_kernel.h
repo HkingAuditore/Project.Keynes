@@ -13,7 +13,8 @@ public:
                              RuntimeTriggerSnapshot &state,
                              int64_t day,
                              std::vector<RuntimeTriggerEffectIntent> &emitted,
-                             std::string &error);
+                             std::string &error,
+                             bool reference_binding_scan = false);
 };
 
 } // namespace pk

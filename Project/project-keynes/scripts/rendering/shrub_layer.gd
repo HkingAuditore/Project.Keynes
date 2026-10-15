@@ -246,10 +246,14 @@ func setup(map: MapData, world: WorldData, bounds: Rect2, hex_size: float, visua
 	_native_delta_common_knobs = {}
 	# _ready/_ensure_resources 在 world/tiles 就绪前会编出 legacy 变体；setup 才是
 	# 第一次拿到 visual_tiles 的入口，必须按实际 tiled 状态重建 shader，不能只 sync。
+	var probe_start := Time.get_ticks_usec()
 	_ensure_shader_matches_tiles()
+	print("[shrub-load] shader %.1fms" % [float(Time.get_ticks_usec()-probe_start)/1000.0])
+	probe_start = Time.get_ticks_usec()
 	if _defer_initial_rebuild and _chunked_multimesh_enabled:
 		clear()
 		_last_rebuild_reason = "deferred_until_prefetch"
+		print("[shrub-load] clear %.1fms" % [float(Time.get_ticks_usec()-probe_start)/1000.0])
 	else:
 		_rebuild_instances()
 
@@ -729,8 +733,7 @@ func detail_family_material(style_lut: Texture2D) -> ShaderMaterial:
 	if _material == null:
 		_ensure_resources()
 	var out := _material.duplicate(true) as ShaderMaterial
-	var shader := Shader.new()
-	shader.code = _shader_quality_define_prefix() + "#define DETAIL_FAMILY_BATCH\n" + _SHADER_CODE
+	var shader := _compiled_shader(_shader_quality_define_prefix() + "#define DETAIL_FAMILY_BATCH\n" + _SHADER_CODE)
 	out.shader = shader
 	out.set_shader_parameter("detail_style_lut", style_lut)
 	out.set_shader_parameter("detail_style_lut_size", Vector2(16.0, 32.0))
@@ -742,8 +745,7 @@ func detail_family_shadow_material(style_lut: Texture2D = null) -> ShaderMateria
 		_ensure_resources()
 	var out := _shadow_material.duplicate(true) as ShaderMaterial
 	if style_lut != null:
-		var shader := Shader.new()
-		shader.code = _shader_quality_define_prefix() + "#define DETAIL_FAMILY_BATCH\n" + _SHADOW_SHADER_CODE
+		var shader := _compiled_shader(_shader_quality_define_prefix() + "#define DETAIL_FAMILY_BATCH\n" + _SHADOW_SHADER_CODE)
 		out.shader = shader
 		out.set_shader_parameter("detail_style_lut", style_lut)
 		out.set_shader_parameter("detail_style_lut_size", Vector2(16.0, 32.0))
@@ -1381,8 +1383,7 @@ func _ensure_resources() -> void:
 		_mmi.name = "ShrubMultiMesh"
 		add_child(_mmi)
 	if _material == null:
-		var shader := Shader.new()
-		shader.code = _shader_quality_define_prefix() + _SHADER_CODE
+		var shader := _compiled_shader(_shader_quality_define_prefix() + _SHADER_CODE)
 		_material = ShaderMaterial.new()
 		_material.shader = shader
 		_material.set_shader_parameter("world_time", 0.0)
@@ -1392,8 +1393,7 @@ func _ensure_resources() -> void:
 		_material.set_shader_parameter("day_night_enabled", true)
 		_mmi.material = _material
 	if _shadow_material == null:
-		var shadow_shader := Shader.new()
-		shadow_shader.code = _shader_quality_define_prefix() + _SHADOW_SHADER_CODE
+		var shadow_shader := _compiled_shader(_shader_quality_define_prefix() + _SHADOW_SHADER_CODE)
 		_shadow_material = ShaderMaterial.new()
 		_shadow_material.shader = shadow_shader
 		_shadow_material.set_shader_parameter("season_phase", 1.0)
@@ -1441,14 +1441,12 @@ func _refresh_shader_variants() -> void:
 		return
 	var prefix := _shader_quality_define_prefix()
 	if _material != null:
-		var shader := Shader.new()
-		shader.code = prefix + _SHADER_CODE
+		var shader := _compiled_shader(prefix + _SHADER_CODE)
 		_material.shader = shader
 		if _mmi != null:
 			_mmi.material = _material
 	if _shadow_material != null:
-		var shadow_shader := Shader.new()
-		shadow_shader.code = prefix + _SHADOW_SHADER_CODE
+		var shadow_shader := _compiled_shader(prefix + _SHADOW_SHADER_CODE)
 		_shadow_material.shader = shadow_shader
 		if _shadow_mmi != null:
 			_shadow_mmi.material = _shadow_material
@@ -2384,13 +2382,17 @@ func _assemble_chunk_cell_payloads(by_cell: Dictionary) -> Dictionary:
 	}
 
 
-func _apply_chunked_native_full(buffer: PackedFloat32Array, cell_indices: PackedInt32Array, inst: int) -> void:
+func _apply_chunked_native_full(buffer: PackedFloat32Array, cell_indices: PackedInt32Array, inst: int, cooperative: bool = false) -> void:
+	var slice_start := Time.get_ticks_usec()
 	_clear_chunk_nodes()
 	_mmi.multimesh = null
 	_multimesh = null
 	_sync_single_wrap_nodes()
 	var by_chunk := {}
 	for i in range(inst):
+		if cooperative and Time.get_ticks_usec()-slice_start >= UITokens.LOADING_MAIN_SLICE_USEC:
+			await get_tree().process_frame
+			slice_start = Time.get_ticks_usec()
 		var chunk_id := _chunk_id_for_cell_idx(int(cell_indices[i]))
 		if chunk_id < 0:
 			continue
@@ -2398,11 +2400,13 @@ func _apply_chunked_native_full(buffer: PackedFloat32Array, cell_indices: Packed
 		srcs.append(i)
 		by_chunk[chunk_id] = srcs
 	for chunk_id in by_chunk.keys():
+		if cooperative and Time.get_ticks_usec()-slice_start >= UITokens.LOADING_MAIN_SLICE_USEC:
+			await get_tree().process_frame
+			slice_start = Time.get_ticks_usec()
 		var src_indices: Array = by_chunk[chunk_id]
 		_apply_chunk_payload(int(chunk_id), buffer, src_indices, cell_indices, src_indices.size())
 	_refresh_instance_totals_from_chunks()
 	_last_dirty_chunks = by_chunk.size()
-
 
 func _refresh_instance_totals_from_chunks() -> void:
 	_instance_count = 0
@@ -4618,3 +4622,360 @@ func _hash2i(x: int, y: int, salt: int) -> float:
 	n = (n ^ (n >> 13)) * 1274126177
 	n = n ^ (n >> 16)
 	return float(n & 0x00ffffff) / float(0x01000000)
+
+
+static var _compiled_shader_variants: Dictionary = {}
+static func _compiled_shader(code: String) -> Shader:
+	if _compiled_shader_variants.has(code):
+		return _compiled_shader_variants[code]
+	var shader := Shader.new()
+	shader.code = code
+	_compiled_shader_variants[code] = shader
+	return shader
+
+func setup_cooperative(map: MapData, world: WorldData, bounds: Rect2, hex_size: float, visual_quality: int = 1) -> void:
+	_map = map
+	_world = world
+	_bounds = bounds
+	_hex_size = maxf(hex_size, 4.0)
+	_invalidate_chunk_spatial_cache()
+	_active_instance_count_valid = false
+	_visual_quality = clampi(visual_quality, 0, 2)
+	_native_offset_is_water_cache = PackedByteArray()
+	_native_offset_cache_dims = Vector2i.ZERO
+	_native_delta_common_knobs = {}
+	# _ready/_ensure_resources 在 world/tiles 就绪前会编出 legacy 变体；setup 才是
+	# 第一次拿到 visual_tiles 的入口，必须按实际 tiled 状态重建 shader，不能只 sync。
+	var probe_start := Time.get_ticks_usec()
+	_ensure_shader_matches_tiles()
+	print("[shrub-load] shader %.1fms" % [float(Time.get_ticks_usec()-probe_start)/1000.0])
+	probe_start = Time.get_ticks_usec()
+	if _defer_initial_rebuild and _chunked_multimesh_enabled:
+		clear()
+		_last_rebuild_reason = "deferred_until_prefetch"
+		print("[shrub-load] clear %.1fms" % [float(Time.get_ticks_usec()-probe_start)/1000.0])
+	else:
+		await _rebuild_instances_cooperative()
+
+
+func _rebuild_instances_cooperative() -> void:
+	_ensure_resources()
+	var t0_us := Time.get_ticks_usec()
+	var slice_start := Time.get_ticks_usec()
+	_last_candidate_count = 0
+	_last_wrap_edge_copy_count = 0
+	_last_rebuild_reason = ""
+	_last_incremental_cells = 0
+	_last_incremental_missing_slots = 0
+	_last_incremental_dropped_instances = 0
+	_last_dirty_chunks = 0
+	_last_native_sampled_cells = 0
+	_last_native_active_cells = 0
+	clear()
+	var cfg := _profile()
+	if not cfg.enabled or _map == null or _map.cell_count() <= 0:
+		_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
+		return
+
+	var cells: Array = _map.iter_cells()
+	if cells.is_empty():
+		cells = _map.all_cells()
+	if cells.is_empty():
+		_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
+		_last_rebuild_reason = "no_cells"
+		return
+
+	var cell_attempts := PackedInt32Array()
+	cell_attempts.resize(cells.size())
+	var cell_accepts := PackedFloat32Array()
+	cell_accepts.resize(cells.size())
+	var cell_states: Array = []
+	cell_states.resize(cells.size())
+	var cell_suitabilities := PackedFloat32Array()
+	cell_suitabilities.resize(cells.size())
+	var total_attempts: int = 0
+	var max_per_cell: int = maxi(1, _max_per_cell())
+	for order in range(cells.size()):
+		if Time.get_ticks_usec()-slice_start >= 4000:
+			await get_tree().process_frame
+			slice_start = Time.get_ticks_usec()
+		var cell = cells[order]
+		if cell == null:
+			continue
+		var idx := _cell_index(cell, order)
+		var key := _cell_hash_key(cell, order)
+		var state := _sample_cell_state(idx, cell)
+		var suitability := _cell_suitability(cell, idx, key, state)
+		if suitability <= 0.0:
+			continue
+		cell_states[order] = state
+		cell_suitabilities[order] = suitability
+		var quota := _cell_quota(suitability, max_per_cell)
+		var attempts: int = int(quota.x)
+		cell_attempts[order] = attempts
+		cell_accepts[order] = quota.y
+		total_attempts += attempts
+
+	if total_attempts <= 0:
+		_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
+		_last_rebuild_reason = "no_attempts"
+		return
+
+	# C++ 优先：把"每实例候选生成 + 噪声门 + 接受 + cap + MultiMesh buffer 组装"
+	# 整段热循环下沉 DCWorldExt.encode_detail_scatter，GDScript 仅做上面这段
+	# per-cell（N≤2400）廉价预计算。失败 / 旧 DLL 无该方法时回退到下方 GDScript 路径。
+	if await _rebuild_via_native_cooperative(cells, cell_states, cell_suitabilities, cell_attempts, cell_accepts):
+		if _last_scatter_path.is_empty():
+			_last_scatter_path = "gdext"
+		_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
+		_rebuild_cell_instance_lookup()
+		return
+	_last_scatter_path = "gdscript"
+
+	for order in range(cells.size()):
+		if Time.get_ticks_usec()-slice_start >= 4000:
+			await get_tree().process_frame
+			slice_start = Time.get_ticks_usec()
+		var cell = cells[order]
+		if cell == null:
+			continue
+		var idx := _cell_index(cell, order)
+		var key := _cell_hash_key(cell, order)
+		var suitability := cell_suitabilities[order]
+		if suitability <= 0.0:
+			continue
+		var state: Dictionary = cell_states[order]
+		var accept_p := cell_accepts[order]
+		for attempt in range(cell_attempts[order]):
+			_try_append_instance(cell, idx, key, attempt, suitability, accept_p, state)
+
+	_apply_instance_cap()
+	_reorder_generated_instances_for_lod()
+	_instance_count = _instance_cell_indices.size()
+	_rebuild_cell_instance_lookup()
+	if _instance_count <= 0:
+		_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
+		_last_rebuild_reason = "no_instances"
+		return
+
+	_multimesh = MultiMesh.new()
+	_multimesh.transform_format = MultiMesh.TRANSFORM_2D
+	_multimesh.use_colors = true
+	_multimesh.use_custom_data = true
+	_multimesh.mesh = _cached_detail_mesh()
+	_multimesh.instance_count = _instance_count
+	_multimesh.visible_instance_count = _lod_visible_count(_instance_count, _far_instance_count)
+	_mmi.multimesh = _multimesh
+
+	for i in range(_instance_count):
+		var xf := _instance_transform(i)
+		_multimesh.set_instance_transform_2d(i, xf)
+		var idx := _instance_cell_indices[i]
+		var state := _sample_cell_state(idx, _instance_cells[i])
+		_multimesh.set_instance_color(i, _base_color_for_state(state, _instance_variants[i]))
+		var uv := _world_uv(_instance_positions[i])
+		_multimesh.set_instance_custom_data(i, Color(
+			uv.x,
+			uv.y,
+			_instance_seeds[i],
+			_instance_forms[i]
+		))
+	visible = cfg.enabled and not _camera_lod_hidden and _instance_count > 0
+	_sync_single_wrap_nodes()
+	_sync_shadow_layer(true)
+	_last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
+	_last_candidate_count = _instance_scores.size()
+
+func _rebuild_via_native_cooperative(
+		cells: Array,
+		cell_states: Array,
+		cell_suitabilities: PackedFloat32Array,
+		cell_attempts: PackedInt32Array,
+		cell_accepts: PackedFloat32Array) -> bool:
+	if _world_ext == null or not _world_ext.has_method("encode_detail_scatter"):
+		return false
+	if _map == null:
+		return false
+	var grid_w: int = int(_map.width) if "width" in _map else 0
+	var grid_h: int = int(_map.height) if "height" in _map else 0
+	if grid_w <= 0 or grid_h <= 0:
+		return false
+	var cfg := _profile()
+
+	# offset 网格（odd-r）用于 C++ 端精确复刻 world_to_wrapped_cell：
+	# world_to_cube → cube_to_offset → 越界 / 横向环绕。水域空位预置 1
+	# （拒绝），cell 索引空位预置 -1。
+	var offset_is_water := PackedByteArray()
+	offset_is_water.resize(grid_w * grid_h)
+	offset_is_water.fill(1)
+	var offset_cell_indices := PackedInt32Array()
+	offset_cell_indices.resize(grid_w * grid_h)
+	offset_cell_indices.fill(-1)
+
+	# 每个"活跃 cell"（suitability>0 且 climate_presence>0.02）的廉价 per-cell 数据。
+	var keys := PackedInt32Array()
+	var native_cell_indices := PackedInt32Array()
+	var cx := PackedFloat32Array()
+	var cy := PackedFloat32Array()
+	var suit := PackedFloat32Array()
+	var att := PackedInt32Array()
+	var accp := PackedFloat32Array()
+	var vit := PackedFloat32Array()
+	var sized := PackedFloat32Array()
+	var col_r := PackedFloat32Array()
+	var col_g := PackedFloat32Array()
+	var col_b := PackedFloat32Array()
+	var col_a := PackedFloat32Array()
+
+	var slice_start := Time.get_ticks_usec()
+	for order in range(cells.size()):
+		if Time.get_ticks_usec()-slice_start >= 4000:
+			await get_tree().process_frame
+			slice_start = Time.get_ticks_usec()
+		var cell = cells[order]
+		if cell == null:
+			continue
+		var idx := _cell_index(cell, order)
+		# 填 is_water 栅格（所有 cell，含水域）。
+		var off := HexUtils.cube_to_offset(int(cell.q), int(cell.r))
+		if off.x >= 0 and off.x < grid_w and off.y >= 0 and off.y < grid_h:
+			offset_is_water[off.y * grid_w + off.x] = (1 if _is_water_cell(cell, idx) else 0)
+			offset_cell_indices[off.y * grid_w + off.x] = idx
+		var suitability := cell_suitabilities[order]
+		if suitability <= 0.0:
+			continue
+		var state: Dictionary = cell_states[order]
+		if not (state is Dictionary):
+			continue
+		if _scatter_presence(state) <= 0.02:
+			continue
+		var veg := int(state.get("vegetation", VegetationType.VEG.NONE))
+		var lf := int(state.get("landform", LandformType.LF.PLAIN))
+		var cover := int(state.get("cover", CoverType.CV.NONE))
+		var center := _cell_center(cell, idx)
+		var base := _base_color_for_vegetation(veg)
+		keys.append(_cell_hash_key(cell, order))
+		native_cell_indices.append(idx)
+		cx.append(center.x)
+		cy.append(center.y)
+		suit.append(suitability)
+		att.append(cell_attempts[order])
+		accp.append(cell_accepts[order])
+		vit.append(clampf(float(state.get("vitality", 0.7)), 0.0, 1.0))
+		sized.append(_vegetation_weight(veg) * _landform_weight(lf) * _cover_weight(cover))
+		col_r.append(base.r)
+		col_g.append(base.g)
+		col_b.append(base.b)
+		col_a.append(base.a)
+
+	if keys.is_empty():
+		return false
+
+	var knobs := {
+		"hex_size": _hex_size,
+		"origin_x": _bounds.position.x,
+		"origin_y": _bounds.position.y,
+		"size_x": _bounds.size.x,
+		"size_y": _bounds.size.y,
+		"wrap_period_x": HexUtils.wrap_period_x(grid_w, _hex_size),
+		"wrap_edge_margin": 0.0,
+		"grid_w": grid_w,
+		"grid_h": grid_h,
+		"offset_is_water": offset_is_water,
+		"offset_cell_indices": offset_cell_indices,
+		"flow_buffer": _world.flow_buffer if _world != null else PackedFloat32Array(),
+		"flow_w": int(_world.derived_size.x) if _world != null else 0,
+		"flow_h": int(_world.derived_size.y) if _world != null else 0,
+		"river_clear_threshold": cfg.river_clear_threshold,
+		"spawn_domain": _spawn_domain(),
+		"rotation_mode": _rotation_mode(),
+		"random_rotation_strength": _random_rotation_strength(),
+		"upright_jitter_radians": deg_to_rad(_upright_jitter_degrees()),
+		"spawn_radius_factor": _effective_spawn_radius_factor(),
+		"world_noise_warp_strength": cfg.world_noise_warp_strength,
+		"patch_frequency": cfg.patch_frequency,
+		"patch_cutoff": cfg.patch_cutoff,
+		"patch_contrast": cfg.patch_contrast,
+		"world_noise_mid_mix": cfg.world_noise_mid_mix,
+		"world_noise_fine_mix": cfg.world_noise_fine_mix,
+		"micro_gap_threshold": cfg.micro_gap_threshold,
+		"world_noise_acceptance": cfg.world_noise_acceptance,
+		"min_size_factor": minf(cfg.min_size_factor, cfg.max_size_factor),
+		"max_size_factor": maxf(cfg.min_size_factor, cfg.max_size_factor),
+		"size_scale": _quality_size_scale(),
+		"vitality_dead_threshold": cfg.vitality_dead_threshold,
+		"vitality_dieback_noise_strength": cfg.vitality_dieback_noise_strength,
+		"instance_cap": _instance_cap(),
+		"keys": keys,
+		"cell_indices": native_cell_indices,
+		"center_x": cx,
+		"center_y": cy,
+		"suitability": suit,
+		"attempts": att,
+		"accept_p": accp,
+		"vitality": vit,
+		"size_density": sized,
+		"color_r": col_r,
+		"color_g": col_g,
+		"color_b": col_b,
+		"color_a": col_a,
+	}
+	knobs.merge(_form_knobs())
+
+	var res: Dictionary = await NativeLoadingTasks.compute(_world_ext,"detail_scatter",knobs)
+	if not (res is Dictionary):
+		return false
+	if bool(res.get("fallback", true)):
+		_last_rebuild_reason = str(res.get("reason", "native_fallback"))
+		return false
+	_last_candidate_count = int(res.get("candidate_count", 0))
+	_last_wrap_edge_copy_count = int(res.get("wrap_edge_copy_count", 0))
+	var buffer: PackedFloat32Array = res.get("buffer", PackedFloat32Array())
+	var inst: int = int(res.get("instance_count", 0))
+	var cell_indices: PackedInt32Array = res.get("cell_indices", PackedInt32Array())
+	# 每实例 stride = transform2d(8) + color(4) + custom(4) = 16 float。
+	if inst <= 0 or buffer.size() < inst * 16:
+		clear()
+		_last_rebuild_reason = "native_empty"
+		return true
+	if cell_indices.size() < inst:
+		_last_rebuild_reason = "native_missing_cell_indices"
+		return false
+	var lod_payload := _lod_reorder_native_payload(buffer, cell_indices, inst)
+	buffer = lod_payload.get("buffer", PackedFloat32Array())
+	cell_indices = lod_payload.get("cell_indices", PackedInt32Array())
+	inst = int(lod_payload.get("instance_count", 0))
+	_far_instance_count = int(lod_payload.get("far_count", inst))
+
+	if _chunked_multimesh_enabled:
+		_instance_count = inst
+		_instance_cell_indices = cell_indices
+		visible = cfg.enabled and not _camera_lod_hidden and inst > 0  # 先定 visible，使 _apply_chunk_payload 内的 shadow 镜像取到正确可见性
+		await _apply_chunked_native_full(buffer, cell_indices, inst, true)
+		# shadow chunk 已随每个 _apply_chunk_payload 镜像完成（_clear_chunk_nodes 已清旧，无孤儿）
+		_last_scatter_path = "gdext_chunked"
+		return true
+
+	_instance_count = inst
+	_instance_cell_indices = cell_indices
+	_multimesh = MultiMesh.new()
+	_multimesh.transform_format = MultiMesh.TRANSFORM_2D
+	_multimesh.use_colors = true
+	_multimesh.use_custom_data = true
+	_multimesh.mesh = _cached_detail_mesh()
+	_multimesh.instance_count = inst
+	_multimesh.buffer = buffer
+	_multimesh.visible_instance_count = _lod_visible_count(inst, _far_instance_count)
+	_mmi.multimesh = _multimesh
+	visible = cfg.enabled and not _camera_lod_hidden and inst > 0
+	_sync_single_wrap_nodes()
+	_sync_shadow_layer(true)
+	return true
+
+
+# 每格散布配额：x = 投放次数，y = 每次的接受概率基数。
+# 期望株数 = x * y = max_per_cell * suitability，对 suitability 线性。
+#
+# 旧实现是 attempts = ceil(max_per_cell * suit) 再对每次投放以 suit 为概率接受，
+# 期望株数正比于 suitability² 而且丢掉了 max_per_cell 这一档，中低适宜度的格子
+# 因此变成纯抽签（河边季雨林的单格期望株数只有 0.05）。

@@ -102,10 +102,14 @@ func load_slot(slot_id: String) -> Dictionary:
 
 
 func delete_manual_slot(slot_id: String) -> Dictionary:
+	if _busy:
+		return _result(false, "save_busy", "已有存档请求正在处理。")
 	return _repository.delete_manual_slot(slot_id)
 
 
 func prepare_load(slot_id: String) -> Dictionary:
+	if _busy:
+		return _result(false, "save_busy", "已有存档请求正在处理。")
 	var container: Dictionary = _repository.load_slot(slot_id)
 	if not bool(container.get("ok", false)):
 		return container
@@ -216,6 +220,10 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 	_busy = true
 	var was_paused := _world_clock.paused
 	var previous_speed := _world_clock.speed_multiplier
+	var background_write := not OS.has_feature("web") \
+		and OS.get_environment("PK_SAVE_SYNC_WRITE") != "1"
+	var defer_provider_hashes := background_write \
+		and OS.get_environment("PK_SAVE_PROVIDER_HASH_SYNC") != "1"
 	_profile_save_window(true)
 	_world_clock.pause(true)
 	var boundary: Dictionary = await _wait_for_safe_boundary()
@@ -230,7 +238,8 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 		return runtime_bundle
 	var collected := _collect_sections(was_paused, previous_speed,
 		 runtime_bundle.get("bytes", PackedByteArray()),
-		 runtime_bundle.get("country_pkcn", PackedByteArray()))
+		 runtime_bundle.get("country_pkcn", PackedByteArray()),
+		 runtime_bundle.get("economy_ecp2", PackedByteArray()), defer_provider_hashes)
 	if not bool(collected.get("ok", false)):
 		_restore_clock_mode(was_paused, previous_speed)
 		_busy = false
@@ -250,8 +259,32 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 		"technology_industry_revision": TECHNOLOGY_INDUSTRY_REVISION,
 		"provider_manifest": collected.provider_manifest,
 	}
-	var result: Dictionary = _repository.write_slot(slot_id, header, collected.sections)
-	_restore_clock_mode(was_paused, previous_speed)
+	# provider 可能返回含运行时 PackedArray 的 Dictionary；在恢复时钟之前
+	# 序列化成私有字节，后台任务不能再读 Node、facade 或活跃的世界容器。
+	var frozen_sections := {}
+	for section_id in collected.sections:
+		var section = collected.sections[section_id]
+		frozen_sections[section_id] = section if section is PackedByteArray else var_to_bytes(section)
+	var result: Dictionary
+	if not background_write:
+		result = _repository.write_slot(slot_id, header, frozen_sections)
+		_restore_clock_mode(was_paused, previous_speed)
+	else:
+		# 捕获已经完成；恢复模拟后，压缩/SHA/回读验证/原子替换仍走原仓库路径。
+		# _busy 保持到真正落盘完成，禁止另一个写入、删除或加载与它交叉。
+		_restore_clock_mode(was_paused, previous_speed)
+		var completion: Array[Dictionary] = []
+		var task := WorkerThreadPool.add_task(_repository.write_slot_background.bind(
+			slot_id, header, frozen_sections, completion,
+			collected.get("provider_hash_payloads", [])), false, "Write PKSV save")
+		if task < 0:
+			result = _result(false, "save_writer_failed", "无法启动后台存档写入。")
+		else:
+			while not WorkerThreadPool.is_task_completed(task):
+				await get_tree().process_frame
+			var task_error := WorkerThreadPool.wait_for_task_completion(task)
+			result = completion[0] if task_error == OK and not completion.is_empty() \
+				else _result(false, "save_writer_failed", "后台存档写入未完成。")
 	_busy = false
 	save_completed.emit(slot_id, result)
 	return result
@@ -266,7 +299,7 @@ func _wait_for_safe_boundary() -> Dictionary:
 			return boundary
 		last_boundary = boundary
 		var code := String(boundary.get("code", ""))
-		if code not in ["save_requires_committed_boundary", "save_requires_idle_country", \
+		if code not in ["save_requires_committed_boundary", "save_requires_idle_worker", "save_requires_idle_country", \
 			"save_requires_idle_country_peer", \
 			"save_requires_idle_effect", "save_requires_idle_ideology", \
 			"save_requires_idle_effect_country", "save_requires_idle_effect_economy", \
@@ -303,7 +336,8 @@ func _boundary_diagnostics() -> Dictionary:
 		out["country_peer"] = country_ext.get_country_peer_protocol_status()
 	if generator.has_method("get_runtime_thread_report"):
 		var thread: Dictionary = generator.get_runtime_thread_report()
-		for key in ["simulation_host_state", "day_stall_reason_mask", "fault_code",
+		for key in ["simulation_host_state", "simulation_committed_day", "environment_ring_pending",
+				"worker_day_inflight", "day_stall_reason_mask", "fault_code",
 				"country_worker_plan_active", "country_worker_waiting_for_peer"]:
 			out[key] = thread.get(key, null)
 	var effect = generator.get_effect_facade()
@@ -317,6 +351,14 @@ func _can_save() -> Dictionary:
 	if _runtime_host == null or _world_clock == null or _runtime_host.generator() == null:
 		return _result(false, "save_runtime_missing", "游戏运行时尚未就绪。")
 	var generator := _runtime_host.generator()
+	# 暂停后 worker 仍会排空已经接收的环境输入。必须等它停稳，才可捕获
+	# 主线程国家只读副本，避免请求时的 PKCN 与稍后生成的 PKSR 相差数天。
+	if generator.has_method("get_runtime_thread_report"):
+		var thread: Dictionary = generator.get_runtime_thread_report()
+		if String(thread.get("simulation_host_state", "STOPPED")) in ["STARTING", "RUNNING", "SAVE_PENDING"] \
+				or int(thread.get("environment_ring_pending", 0)) > 0 \
+				or int(thread.get("worker_day_inflight", 0)) > 0:
+			return _result(false, "save_requires_idle_worker", "等待后台 worker 排空已接收的模拟输入。")
 	var country = generator.get_country_facade()
 	var economy = generator.get_economy_facade()
 	if country == null or economy == null:
@@ -377,14 +419,21 @@ func _can_save() -> Dictionary:
 
 func _collect_sections(saved_paused: bool, saved_speed: float,
 		native_runtime_bundle: PackedByteArray = PackedByteArray(),
-		native_country_pkcn: PackedByteArray = PackedByteArray()) -> Dictionary:
+		native_country_pkcn: PackedByteArray = PackedByteArray(),
+		native_economy_ecp2: PackedByteArray = PackedByteArray(),
+		defer_provider_hashes: bool = false) -> Dictionary:
 	var generator := _runtime_host.generator()
 	var context := _provider_context(_runtime_host, generator, saved_paused, saved_speed)
 	context["native_runtime_bundle"] = native_runtime_bundle
 	context["native_country_pkcn"] = native_country_pkcn
+	context["native_economy_ecp2"] = native_economy_ecp2
 	var sections := {}
 	var provider_manifest: Array = []
+	var provider_hash_payloads: Array = []
+	var profile_save := OS.get_environment("PK_SAVE_PROFILE") == "1"
+	var verify_provider_hashes := OS.get_environment("PK_SAVE_PROVIDER_HASH_VERIFY") == "1"
 	for provider in _providers:
+		var profile_start := Time.get_ticks_usec() if profile_save else 0
 		var available: Dictionary = provider.can_save(context)
 		if not bool(available.get("ok", false)):
 			return available
@@ -398,7 +447,21 @@ func _collect_sections(saved_paused: bool, saved_speed: float,
 					"多个 provider 写入了 section：%s" % section_id)
 			sections[section_id] = provider_sections[section_id]
 		context.current_provider_sections = provider_sections
-		provider_manifest.append(provider.manifest_entry(context))
+		var profile_hash_start := Time.get_ticks_usec() if profile_save else 0
+		var manifest: Dictionary = provider.manifest_entry(context, not defer_provider_hashes)
+		if defer_provider_hashes:
+			# 在安全边界冻结与原 state_hash 完全相同的 Variant 字节；
+			# 后台只读私有字节，不能再访问 provider、Node 或活跃世界。
+			var payload := {"manifest_index": provider_manifest.size(),
+				"bytes": var_to_bytes(provider_sections)}
+			if verify_provider_hashes:
+				payload["expected_hash"] = provider.state_hash(context)
+			provider_hash_payloads.append(payload)
+		provider_manifest.append(manifest)
+		if profile_save:
+			print("[save-provider-cost] id=%s capture_ms=%.3f manifest_ms=%.3f" % [
+				provider.provider_id(), float(profile_hash_start - profile_start) / 1000.0,
+				float(Time.get_ticks_usec() - profile_hash_start) / 1000.0])
 	provider_manifest.append({
 		"provider_id": TECHNOLOGY_INDUSTRY_PROVIDER_ID,
 		"schema_version": TECHNOLOGY_INDUSTRY_REVISION,
@@ -409,7 +472,7 @@ func _collect_sections(saved_paused: bool, saved_speed: float,
 		if not sections.has(required):
 			return _result(false, "save_provider_missing", "运行时缺少 provider：%s" % required)
 	return {"ok": true, "code": "ok", "message": "", "sections": sections,
-		"provider_manifest": provider_manifest}
+		"provider_manifest": provider_manifest, "provider_hash_payloads": provider_hash_payloads}
 
 
 func _economy_checkpoint_format() -> Dictionary:
@@ -675,7 +738,8 @@ func _capture_native_runtime_bundle() -> Dictionary:
 				return _result(false, "simulation_runtime_checksum_failed",
 					"后台 runtime bundle 校验失败。")
 			return {"ok": true, "bytes": bytes,
-				"country_pkcn": polled.get("country_pkcn", PackedByteArray())}
+				"country_pkcn": polled.get("country_pkcn", PackedByteArray()),
+				"economy_ecp2": polled.get("economy_ecp2", PackedByteArray())}
 		var state := String(generator.get_runtime_thread_report().get(
 			"simulation_host_state", ""))
 		if state == "FAULTED":
@@ -717,6 +781,15 @@ func _can_economy_provider(context: Dictionary) -> Dictionary:
 
 
 func _write_economy_provider(context: Dictionary) -> Dictionary:
+	var shared_ecp2: PackedByteArray = context.get("native_economy_ecp2", PackedByteArray())
+	if not shared_ecp2.is_empty() and OS.get_environment("PK_SAVE_ECP2_REUSE_DISABLE") != "1":
+		if OS.get_environment("PK_SAVE_ECP2_REUSE_VERIFY") == "1":
+			var reference: Dictionary = context.generator.get_economy_facade().capture_ecp2(0)
+			if not bool(reference.get("ok", false)) or reference.get("bytes") != shared_ecp2:
+				return _result(false, "ecp2_shared_capture_mismatch",
+					"冻结 ECP2 与完整捕获结果不一致。")
+			print("[save/ecp2-reuse] full byte comparison passed bytes=%d" % shared_ecp2.size())
+		return {"ok": true, "sections": {"ecp2": shared_ecp2}}
 	var facade = context.generator.get_economy_facade()
 	var captured: Dictionary = facade.capture_ecp2(0)
 	if not bool(captured.get("ok", false)):

@@ -272,3 +272,33 @@ stable IDs/display strings, and consumes cold snapshots or revision deltas.
 `SettlementLabelLayer` owns pooled Godot visual objects only. Inspector and map
 labels are read-only consumers and never become a parallel simulation.
 
+## Frozen economy formula reuse (2026-10-15)
+
+Hotloop v19 extends existing thread-private `LivingCostMemoScope` scratch. Owner
+quotes reuse self-retention targets keyed by cell/plan/owner slots/output good.
+Detailed welfare attribution shares market/environment bases only after price
+writes finish, with separate old-price and current-price keys. Actor funds and
+family factors remain actor-specific. An explicit frozen-override flag is required
+for non-null price vectors; arbitrary query price overrides never enable reuse.
+These caches are cleared at scope exit and do not move authority, alter cadence,
+or enter PKEC/state hash. Reference switches and complete value/saturation checks
+are documented in the performance diagnostics playbook.
+
+Hotloop v20-v23 keeps this authority boundary. Price basis and food-good indices
+are catalog-derived scratch; family condition masks describe existing IR operands
+and do not enter catalog identity, persistence or state hash. Family Effect and
+direct-policy consumers now constrain computation with their requested metrics,
+instead of computing an entire slab and merely filtering publication. No formula,
+condition timing or sparse-CSR validity contract changes. Save capture reuses the
+worker bundle's immutable ECP2 encoding in the existing PKSV provider, preserving
+both persisted sections and the ordered restore contract.
+
+Hotloop v24-v26 also retains existing authority: Trigger's branch event workset
+is local to a sealed kernel evaluation; its dual hash uses exact zero-byte
+multiplication compression. Resource projection uses existing tracked range
+writes to avoid falsely declaring unchanged columns structurally reordered.
+No change registry, source cursor, domain ACK, hash schema or daily cadence is
+removed or weakened. Native integral identity cancellation keeps all formulas
+and saturation semantics intact. Production benchmarks continue to use the
+existing adaptive cadence; elapsed-day results are not controlled timing A/Bs.
+

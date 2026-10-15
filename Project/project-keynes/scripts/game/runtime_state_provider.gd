@@ -76,12 +76,12 @@ func state_hash(context: Dictionary) -> String:
 	return str(_hash_callback.call(context))
 
 
-func manifest_entry(context: Dictionary) -> Dictionary:
+func manifest_entry(context: Dictionary, include_state_hash: bool = true) -> Dictionary:
 	return {
 		"provider_id": String(_provider_id),
 		"schema_version": _schema_version,
 		"sections": Array(_section_ids),
-		"state_hash": state_hash(context),
+		"state_hash": state_hash(context) if include_state_hash else "",
 	}
 
 

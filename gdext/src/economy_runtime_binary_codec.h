@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -10,14 +12,57 @@
 
 namespace pk::binary_codec {
 
+inline bool bulk_little_endian_enabled() {
+    static const bool enabled = [] {
+        const uint16_t endian = 1;
+        const char *scalar = std::getenv("PK_SAVE_CODEC_SCALAR");
+        return *reinterpret_cast<const uint8_t *>(&endian) == 1 &&
+            !(scalar && std::strcmp(scalar, "1") == 0);
+    }();
+    return enabled;
+}
+
+template <typename T>
+inline void store_le(uint8_t *out, T value) {
+    using U = std::make_unsigned_t<T>;
+    U bits = static_cast<U>(value);
+    if (bulk_little_endian_enabled()) std::memcpy(out, &bits, sizeof(bits));
+    else for (size_t i = 0; i < sizeof(T); ++i)
+        out[i] = static_cast<uint8_t>((bits >> (i * 8)) & static_cast<U>(0xff));
+}
+
 template <typename T>
 inline void append_le(std::vector<uint8_t> &out, T value) {
     using U = std::make_unsigned_t<T>;
     U bits = static_cast<U>(value);
+    if (bulk_little_endian_enabled()) {
+        const auto *bytes = reinterpret_cast<const uint8_t *>(&bits);
+        out.insert(out.end(), bytes, bytes + sizeof(bits));
+        return;
+    }
     for (size_t i = 0; i < sizeof(T); ++i) {
         out.push_back(static_cast<uint8_t>(
             (bits >> (i * 8)) & static_cast<U>(0xff)));
     }
+}
+
+template <typename T>
+inline void append_column_le(std::vector<uint8_t> &out,
+                             const T *values, size_t count) {
+    static_assert(std::is_integral_v<T> && !std::is_same_v<T, bool>);
+    if (count == 0) return;
+    if (bulk_little_endian_enabled()) {
+        const auto *bytes = reinterpret_cast<const uint8_t *>(values);
+        out.insert(out.end(), bytes, bytes + count * sizeof(T));
+    } else {
+        for (size_t i = 0; i < count; ++i) append_le(out, values[i]);
+    }
+}
+
+template <typename T>
+inline void append_column_le(std::vector<uint8_t> &out,
+                             const std::vector<T> &values) {
+    append_column_le(out, values.data(), values.size());
 }
 
 template <typename T>

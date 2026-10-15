@@ -43,6 +43,10 @@ var _failures := 0
 
 
 func _init() -> void:
+	call_deferred("_run_and_finish")
+
+
+func _run_and_finish() -> void:
 	var code := await _run()
 	print("checks: %d, failures: %d" % [_checks, _failures])
 	if _failures == 0:

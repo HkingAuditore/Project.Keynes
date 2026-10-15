@@ -466,6 +466,10 @@ func toggle_perf_hud() -> void:
 
 func show_cell_panel(cell: HexCell) -> void:
 	if _colonization_panel != null and _colonization_panel.visible:
+		if cell != null and _colonization_panel.is_source_picking():
+			if _colonization_panel.try_source_cell(int(cell.index)):
+				_colonization_targeting.clear()
+			return
 		if cell != null and _colonization_panel.is_target_picking():
 			if _colonization_panel.try_target_cell(int(cell.index)):
 				_colonization_targeting.clear()
@@ -1084,7 +1088,8 @@ func dismiss_overlay_menu() -> bool:
 		if _family_founding_dialog != null:
 			_family_founding_dialog.toggle_collapsed()
 		return true
-	if _colonization_panel != null and _colonization_panel.is_target_picking():
+	if _colonization_panel != null and (_colonization_panel.is_source_picking() \
+			or _colonization_panel.is_target_picking()):
 		_cancel_colonization_targeting()
 		return true
 	if _colonization_panel != null and _colonization_panel.visible:
@@ -1247,6 +1252,9 @@ func _bind_ui() -> void:
 	_colonization_panel.closed.connect(_on_dispatch_closed)
 	_colonization_panel.target_selection_requested.connect(func() -> void:
 		_colonization_targeting = {"active": true})
+	_colonization_panel.source_selection_requested.connect(func() -> void:
+		_colonization_targeting = {"active": true})
+	_colonization_panel.planning_context_changed.connect(_on_colonization_planning_context)
 	_colonization_panel.route_requested.connect(func(detail: Dictionary) -> void:
 		if _colonization_route != null:
 			_colonization_route.show_quote(detail)
@@ -1368,12 +1376,29 @@ func _on_founding_collapsed_changed(collapsed: bool) -> void:
 
 func _cancel_colonization_targeting() -> void:
 	_colonization_targeting.clear()
-	if _colonization_panel != null:
+	if _colonization_panel == null:
+		return
+	if _colonization_panel.is_source_picking():
+		_colonization_panel.cancel_source_selection()
+	else:
 		_colonization_panel.cancel_target_selection()
 
 
+func _on_colonization_planning_context(context: Dictionary) -> void:
+	if _colonization_route == null:
+		return
+	if context.is_empty():
+		_colonization_route.clear_planning_context()
+		return
+	var sources: PackedInt32Array = context.get("sources", PackedInt32Array())
+	_colonization_route.set_planning_context(sources,
+		int(context.get("selected_source", -1)),
+		int(context.get("target_cell", -1)))
+
+
 func _unhandled_input(event: InputEvent) -> void:
-	if _colonization_panel == null or not _colonization_panel.is_target_picking():
+	if _colonization_panel == null or not (_colonization_panel.is_source_picking() \
+			or _colonization_panel.is_target_picking()):
 		return
 	if event is InputEventKey and event.pressed and not event.echo \
 			and event.keycode == KEY_ESCAPE:

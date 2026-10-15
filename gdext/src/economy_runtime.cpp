@@ -2754,9 +2754,24 @@ void NativeEconomyRuntime::sync_owned_family_store(
 
 void NativeEconomyRuntime::sync_owned_resource_store(
         RuntimeEconomyResourceStore &out) const {
+    EconomyCostProbe projection_cost("projection.resource_source", _current_day.get());
+    static const bool scalar_projection = [] {
+        const char *value = std::getenv("PK_ECONOMY_RESOURCE_PROJECTION_SCALAR");
+        return value && std::strcmp(value, "1") == 0;
+    }();
     out.resource_count = static_cast<int32_t>(_resource_ids.size());
     out.cell_count = _cell_count.get();
-    out.stock = resource_stock_lanes();
+    const auto &source_stock = resource_stock_lanes();
+    if (!scalar_projection && out.stock.size() == source_stock.size()) {
+        if (&out.stock != &source_stock)
+            out.stock.write_values(0, source_stock.values().data(), source_stock.size());
+    } else out.stock = source_stock;
+    const size_t cells = static_cast<size_t>(std::max(0, _cell_count.get()));
+    if (!scalar_projection && out.cell_generation.size() == cells &&
+            _cell_resource_gen.size() == cells) {
+        out.cell_generation.write_values(0, _cell_resource_gen.values().data(), cells);
+        return;
+    }
     out.cell_generation.assign(static_cast<size_t>(std::max(0, _cell_count.get())), 0);
     const int32_t gen_cells = std::min(
         _cell_count.get(), static_cast<int32_t>(_cell_resource_gen.size()));
@@ -2808,6 +2823,11 @@ void NativeEconomyRuntime::fill_ledger_family_from_store(
 void NativeEconomyRuntime::fill_ledger_resource_from_store(
         RuntimeEconomyResourceCommittedBlock &block,
         const RuntimeEconomyResourceStore &store) const {
+    EconomyCostProbe projection_cost("projection.resource_mirror", _current_day.get());
+    static const bool scalar_projection = [] {
+        const char *value = std::getenv("PK_ECONOMY_RESOURCE_PROJECTION_SCALAR");
+        return value && std::strcmp(value, "1") == 0;
+    }();
     block.captured = true;
     block.catalog_hash =
         static_cast<uint64_t>(std::max<int64_t>(0, _catalog_hash.get()));
@@ -2821,8 +2841,17 @@ void NativeEconomyRuntime::fill_ledger_resource_from_store(
     // harvest scratch on a live store is transient and is never published.
     block.store.resource_count = store.resource_count;
     block.store.cell_count = store.cell_count;
-    block.store.stock = store.stock;
-    block.store.cell_generation = store.cell_generation;
+    // Structural assign/reorder marks every page dirty even when bytes match.
+    // The existing tracked range writer compares exact bytes and touches only
+    // changed runs, so unchanged mirror pages retain their canonical digest.
+    const auto project = [&](auto &target, const auto &source) {
+        if (&target == &source) return;
+        if (!scalar_projection && target.size() == source.size())
+            target.write_values(0, source.values().data(), source.size());
+        else target = source;
+    };
+    project(block.store.stock, store.stock);
+    project(block.store.cell_generation, store.cell_generation);
     block.sync_counts_from_store();
     block.recompute_content_hash();
 }
@@ -7447,15 +7476,20 @@ void NativeEconomyRuntime::build_demand_basis_cached(
 }
 
 void NativeEconomyRuntime::prepare_due_demand_basis_cache() {
+    EconomyCostProbe cost("demand_basis.prepare", _current_day.get(), _epoch_building_cells.size());
     const int32_t cell_count = static_cast<int32_t>(_epoch_building_cells.size());
     if (cell_count <= 0) return;
     std::vector<int64_t> saturation_by_cell(static_cast<size_t>(cell_count), 0);
-    const int32_t task_count = _worker_enabled &&
-            cell_count >= _worker_market_threshold &&
+    // 此处每格计算整个 need/variant 基底，不能沿用轻量 market range 的 64 格阈值。
+    static const bool serial = [] {
+        const char *value = std::getenv("PK_ECONOMY_ACTIVE_WORKSET_DISABLE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    const int32_t task_count = !serial && _worker_enabled && cell_count >= 2 &&
+            static_cast<size_t>(cell_count) * _variants.size() >= 256 &&
             parallel_has_real_worker_threads()
-        ? std::min<int32_t>(cell_count, _worker_tasks_hint > 0
-            ? _worker_tasks_hint
-            : std::clamp<int32_t>((cell_count + 127) / 128, 2, 16))
+        ? std::min({cell_count, _worker_task_cap,
+            _worker_tasks_hint > 0 ? _worker_tasks_hint : _worker_task_cap})
         : 1;
     auto prepare_range = [&](int32_t begin, int32_t end) {
         std::vector<int64_t> variant_scores;
@@ -7491,13 +7525,14 @@ void NativeEconomyRuntime::prepare_due_demand_basis_cache() {
     };
     if (task_count > 1) {
         parallel_for_range("pk_economy_demand_basis", cell_count, task_count,
-                           _worker_market_threshold, prepare_range);
+                           2, prepare_range);
     } else {
         prepare_range(0, cell_count);
     }
     for (const int64_t local_saturation : saturation_by_cell) {
         _saturation_count += local_saturation;
     }
+    EconomyCostProbe::record("demand_basis.prepare_tasks", _current_day.get(), 0.0, task_count);
 }
 
 void NativeEconomyRuntime::rebuild_labor_signals() {
@@ -7634,11 +7669,14 @@ NativeEconomyRuntime::LivingCostMemoScope::~LivingCostMemoScope() {
     if (!active) return;
     auto &state = living_cost_memo_state();
     state.quote_enabled = previous_quotes;
+    state.frozen_country_preview = previous_frozen_country;
+    state.frozen_price_overrides = previous_frozen_prices;
     if (--state.depth == 0) {
         EconomyCostProbe::record("living_cost.memo_hit", runtime._current_day.get(), 0.0, state.hits);
         EconomyCostProbe::record("living_cost.memo_miss", runtime._current_day.get(), 0.0, state.misses);
         state.values.clear();
         state.previews.clear();
+        state.retention_targets.clear();
         state.quotes.clear();
         state.owner = nullptr;
     }
@@ -8023,6 +8061,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
         int32_t active_begin, int32_t active_end,
         const std::vector<int32_t> *cells_override,
         BuildingPlanResult &result, std::string &error) {
+    LivingCostMemoScope memo(*this, true);
     result.reset();
     NativeEconomyBuildingPlanExecutor executor;
     executor.runtime = this;
@@ -10102,7 +10141,7 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
         std::numeric_limits<uint64_t>::max());
     for (size_t group_index = 0; group_index < building_count();
          ++group_index) {
-        auto group = building_at(static_cast<size_t>(group_index));
+        const auto group = building_view(static_cast<size_t>(group_index));
         BuildingFactorCacheEntry &cache = _building_factor_cache[group_index];
         const uint8_t count_positive = group.count > 0 ? uint8_t{1} : uint8_t{0};
         const int32_t exact_building_stat_id = group.type_id >= 0 &&
@@ -10247,14 +10286,16 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
         if (cache.cell != group.cell || cache.type_id != group.type_id ||
             cache.owner_signature_id != group.owner_signature_id)
             ++_building_factor_miss_identity_epoch;
-        group.output_factor_q16 = Q16_ONE;
+        // 命中缓存不申请整行写租约；只有实际重算才进入既有跟踪写路径。
+        auto writable_group = building_at(group_index);
+        writable_group.output_factor_q16 = Q16_ONE;
         if (!cell_country_valid) {
-            group.modifier_handle = 0;
-            group.output_factor_q16 = modifier_factor_q16(
+            writable_group.modifier_handle = 0;
+            writable_group.output_factor_q16 = modifier_factor_q16(
                 static_cast<double>(family_owned_factor_q16) / Q16_ONE *
                 static_cast<double>(cell_sector_factor_q16) / Q16_ONE);
         } else {
-            group.modifier_handle = _modifier_runtime->ensure_building_identity(
+            writable_group.modifier_handle = _modifier_runtime->ensure_building_identity(
                 group.cell, group.type_id, group.owner_signature_id);
             const double building_factor =
                 _modifier_runtime->economy_building_output_factor(
@@ -10264,7 +10305,7 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
                     ModifierRuntime::ECONOMY, exact_building_stat_id, 0,
                     static_cast<uint64_t>(group.cell), 1.0)
                 : 1.0;
-            group.output_factor_q16 = modifier_factor_q16(
+            writable_group.output_factor_q16 = modifier_factor_q16(
                 (static_cast<double>(country_factor_q16) / Q16_ONE) *
                 (static_cast<double>(sector_factor_q16) / Q16_ONE) *
                 (static_cast<double>(research_factor_q16) / Q16_ONE) *
@@ -10984,6 +11025,14 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
     auto output_retention_target = [&](int32_t output_good) -> int64_t {
         if (output_good < 0 || output_good >= market_store().good_count.get() || owner_plan_id < 0 ||
             owner_plan_id >= static_cast<int32_t>(_plans.size())) return 0;
+        auto &memo = living_cost_memo_state();
+        static const bool retention_disabled = [] {
+            const char *value = std::getenv("PK_ECONOMY_RETENTION_MEMO_DISABLE");
+            return value && std::strcmp(value, "1") == 0;
+        }();
+        const bool reuse_retention = !retention_disabled && memo.owner == this && memo.depth > 0;
+        const std::array<int64_t, 4> key{group.cell, owner_plan_id, owner_slots, output_good};
+        const auto compute = [&](int64_t &sat) {
         const Plan &plan = _plans[owner_plan_id];
         int64_t target = 0;
         for (int32_t n = 0; n < plan.need_count; ++n) {
@@ -11024,6 +11073,34 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
                     matching_score, score_sum, sat), sat);
         }
         return std::max<int64_t>(0, target);
+        };
+        if (reuse_retention) {
+            const auto found = memo.retention_targets.find(key);
+            if (found != memo.retention_targets.end()) {
+                static const bool verify = [] {
+                    const char *value = std::getenv("PK_ECONOMY_MEMO_VERIFY");
+                    return value && std::strcmp(value, "1") == 0;
+                }();
+                if (verify) {
+                    int64_t reference_sat = 0;
+                    const int64_t reference = compute(reference_sat);
+                    if (reference != found->second.first || reference_sat != found->second.second) {
+                        std::fprintf(stderr, "[owner-retention-memo-mismatch] cell=%d plan=%d good=%d\n",
+                            group.cell, owner_plan_id, output_good);
+                        std::abort();
+                    }
+                }
+                sat += found->second.second;
+                EconomyCostProbe::record("owner_retention.reused", _current_day.get(), 0.0, 1);
+                return found->second.first;
+            }
+        }
+        const int64_t saturation_before = sat;
+        const int64_t target = compute(sat);
+        if (reuse_retention)
+            memo.retention_targets.emplace(key, std::make_pair(target, sat - saturation_before));
+        EconomyCostProbe::record("owner_retention.computed", _current_day.get(), 0.0, 1);
+        return target;
     };
     thread_local std::vector<int32_t> quoted_input_candidates;
     quoted_input_candidates.clear();
@@ -14092,138 +14169,8 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                 : building_plan_slice_end(_building_cell_cursor);
             if (evaluate_phase) {
                 _executed_substage = "evaluate";
-                const int32_t cell_count = end - _plan_evaluate_cursor;
-                int64_t estimated_work = 0;
-                _production_cell_weights_scratch.resize(
-                    static_cast<size_t>(cell_count));
-                for (int32_t relative = 0; relative < cell_count; ++relative) {
-                    const int32_t cell = _epoch_plan_cells[
-                        _plan_evaluate_cursor + relative];
-                    int64_t cell_work = 1;
-                    for (int32_t group = _building_cell_offsets[cell];
-                         group < _building_cell_offsets[cell + 1]; ++group) {
-                        const int32_t type_id = buildings_store().type_id[group];
-                        if (type_id < 0 || type_id >= static_cast<int32_t>(
-                                _building_types.size())) {
-                            ++cell_work;
-                            continue;
-                        }
-                        const BuildingType &type = _building_types[type_id];
-                        cell_work += 8 +
-                            static_cast<int64_t>(type.input_count) * 4 +
-                            static_cast<int64_t>(type.output_count) * 3 +
-                            static_cast<int64_t>(type.employee_count) * 2 +
-                            static_cast<int64_t>(type.resource_count) * 2;
-                    }
-                    _production_cell_weights_scratch[relative] = cell_work;
-                    estimated_work += cell_work;
-                }
-                const int32_t default_tasks = _worker_task_cap <= 1
-                    ? 1
-                    : static_cast<int32_t>(std::clamp<int64_t>(
-                        (estimated_work + 1023) / 1024, 2,
-                        _worker_task_cap));
-                const int32_t task_count = _worker_enabled &&
-                        cell_count >= 2 && estimated_work >= 128 &&
-                        parallel_has_real_worker_threads()
-                    ? std::min({cell_count, _worker_task_cap,
-                        _worker_tasks_hint > 0
-                        ? _worker_tasks_hint : default_tasks})
-                    : 1;
-                _building_plan_worker_tasks_max = std::max(
-                    _building_plan_worker_tasks_max, task_count);
-                if (task_count > 1)
-                    ++_building_plan_worker_parallel_dispatches;
-                _building_plan_results_scratch.resize(
-                    static_cast<size_t>(task_count));
-                _production_task_offsets_scratch.assign(
-                    static_cast<size_t>(task_count + 1), 0);
-                _production_task_offsets_scratch[task_count] = cell_count;
-                int32_t previous = 0;
-                int64_t prefix_work = 0;
-                for (int32_t task = 1; task < task_count; ++task) {
-                    const int64_t target =
-                        (estimated_work * task + task_count - 1) / task_count;
-                    const int32_t last_allowed =
-                        cell_count - (task_count - task);
-                    int32_t boundary = previous;
-                    while (boundary < last_allowed &&
-                           prefix_work < target) {
-                        prefix_work +=
-                            _production_cell_weights_scratch[boundary];
-                        ++boundary;
-                    }
-                    if (boundary <= previous) {
-                        prefix_work +=
-                            _production_cell_weights_scratch[previous];
-                        boundary = previous + 1;
-                    }
-                    _production_task_offsets_scratch[task] = boundary;
-                    previous = boundary;
-                }
-                auto run_plan_tasks = [&](int32_t task_begin,
-                                          int32_t task_end) {
-                    for (int32_t task = task_begin; task < task_end; ++task) {
-                        BuildingPlanResult &task_result =
-                            _building_plan_results_scratch[task];
-                        std::string task_error;
-                        const auto task_started = Clock::now();
-                        task_result.ok = prepare_building_economic_plan(
-                            _plan_evaluate_cursor +
-                                _production_task_offsets_scratch[task],
-                            _plan_evaluate_cursor +
-                                _production_task_offsets_scratch[task + 1],
-                            &_epoch_plan_cells, task_result, task_error);
-                        task_result.worker_ms = elapsed_ms(task_started);
-                        if (!task_result.ok)
-                            task_result.error = std::move(task_error);
-                    }
-                };
-                if (task_count > 1) {
-                    parallel_for_range("pk_economy_building_plan",
-                                       task_count, task_count, 1,
-                                       run_plan_tasks);
-                } else {
-                    run_plan_tasks(0, 1);
-                }
-                for (int32_t task = 0; task < task_count; ++task) {
-                    const BuildingPlanResult &task_result =
-                        _building_plan_results_scratch[task];
-                    _building_plan_worker_cpu_ms += task_result.worker_ms;
-                    _saturation_count += task_result.saturation_count;
-                    _merchant_credit_budget = saturating_add(
-                        _merchant_credit_budget,
-                        task_result.merchant_credit_budget,
-                        _saturation_count);
-                    _merchant_credit_committed = saturating_add(
-                        _merchant_credit_committed,
-                        task_result.merchant_credit_committed,
-                        _saturation_count);
-                    _recovery_candidates = saturating_add(
-                        _recovery_candidates,
-                        task_result.recovery_candidates,
-                        _saturation_count);
-                    _recovery_approved = saturating_add(
-                        _recovery_approved,
-                        task_result.recovery_approved,
-                        _saturation_count);
-                    _loss_suspended_building_groups = saturating_add(
-                        _loss_suspended_building_groups,
-                        task_result.loss_suspended_building_groups,
-                        _saturation_count);
-                    _unprofitable_building_groups = saturating_add(
-                        _unprofitable_building_groups,
-                        task_result.unprofitable_building_groups,
-                        _saturation_count);
-                    _utilization_sum_q16 = saturating_add(
-                        _utilization_sum_q16,
-                        task_result.utilization_sum_q16,
-                        _saturation_count);
-                    if (!task_result.ok && !_fatal) {
-                        fail(task_result.error.empty()
-                            ? "building_plan_failed"
-                            : task_result.error);
-                    }
+                if (!evaluate_building_plan_range(_plan_evaluate_cursor, end, error)) {
+                    fail(error.empty() ? "building_plan_failed" : error);
                 }
             } else {
                 _executed_substage = "reserve";
@@ -15117,16 +15064,23 @@ bool NativeEconomyRuntime::rebuild_family_behavior_cache() {
         return false;
     }
     const auto cache_started = Clock::now();
+    EconomyCostProbe behavior_cost("family.behavior_cache", _current_day.get());
+    static const bool full_metrics = [] {
+        const char *value = std::getenv("PK_ECONOMY_FAMILY_METRIC_MASK_DISABLE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    static const bool verify_metrics = [] {
+        const char *value = std::getenv("PK_ECONOMY_MEMO_VERIFY");
+        return value && std::strcmp(value, "1") == 0;
+    }();
     const uint32_t rebuild_reasons = _family_behavior_cache_dirty_reasons;
     ensure_family_policy_factors();
-    struct TaggedRow {
-        int32_t family_index = -1;
-        FamilyBehaviorFactorRow row;
-    };
+    using TaggedRow = FamilyBehaviorSourceRow;
     struct FamilyCellContext {
         int32_t cell = -1;
         int32_t branch = -1;
         std::array<int64_t, FAMILY_METRIC_COUNT> metrics{};
+        std::array<int64_t, FAMILY_METRIC_COUNT> reference_metrics{};
         bool metrics_ready = false;
     };
     // Freeze the branch lookup together with the family cell workset. Looking
@@ -15134,6 +15088,15 @@ bool NativeEconomyRuntime::rebuild_family_behavior_cache() {
     // conditioned trait edge turns this rebuild into O(edges * branches).
     std::vector<std::vector<FamilyCellContext>> family_cells(
         families_store().active.size());
+    std::vector<uint64_t> family_metric_masks(family_cells.size(), 0);
+    for (const FamilyTraitRoll &roll : family_trait_rolls()) {
+        int32_t family = -1;
+        if (families_store().valid_handle(roll.family_handle, family) &&
+            roll.trait_id >= 0 && roll.trait_id < static_cast<int32_t>(
+                _family_trait_behavior_metric_masks.size()))
+            family_metric_masks[static_cast<size_t>(family)] |=
+                _family_trait_behavior_metric_masks[static_cast<size_t>(roll.trait_id)];
+    }
     for (int32_t branch = 0; branch < static_cast<int32_t>(
             family_influences().active.size()); ++branch) {
         if (family_influences().active[branch] == 0) continue;
@@ -15145,7 +15108,7 @@ bool NativeEconomyRuntime::rebuild_family_behavior_cache() {
         const int32_t cell = family_influences().cell[branch];
         if (cell < 0 || cell >= _cell_count.get()) continue;
         family_cells[static_cast<size_t>(family_index)].push_back(
-            FamilyCellContext{cell, branch, {}, false});
+            FamilyCellContext{cell, branch, {}, {}, false});
     }
     for (int32_t family = 0; family < static_cast<int32_t>(family_cells.size());
          ++family) {
@@ -15153,7 +15116,7 @@ bool NativeEconomyRuntime::rebuild_family_behavior_cache() {
         if (cells.empty() && families_store().active[family] != 0) {
             const int32_t home = families_store().home_cell[family];
             if (home >= 0 && home < _cell_count.get())
-                cells.push_back(FamilyCellContext{home, -1, {}, false});
+                cells.push_back(FamilyCellContext{home, -1, {}, {}, false});
         }
         std::sort(cells.begin(), cells.end(), [](const auto &a, const auto &b) {
             return std::tie(a.cell, a.branch) < std::tie(b.cell, b.branch);
@@ -15201,15 +15164,41 @@ bool NativeEconomyRuntime::rebuild_family_behavior_cache() {
                 family_cells[static_cast<size_t>(family_index)];
             for (FamilyCellContext &context : cells) {
                 if (!context.metrics_ready) {
+                    const uint64_t mask = full_metrics ? UINT64_MAX
+                        : family_metric_masks[static_cast<size_t>(family_index)];
                     fill_family_behavior_metrics(family_index, context.branch,
-                        context.cell, context.metrics.data(), FAMILY_METRIC_COUNT);
+                        context.cell, context.metrics.data(), FAMILY_METRIC_COUNT, mask);
+                    if (verify_metrics && !full_metrics) {
+                        fill_family_behavior_metrics(family_index, context.branch,
+                            context.cell, context.reference_metrics.data(), FAMILY_METRIC_COUNT);
+                        for (int32_t metric = 0; metric < FAMILY_METRIC_COUNT; ++metric) {
+                            if ((mask & (uint64_t{1} << metric)) != 0 &&
+                                context.metrics[metric] != context.reference_metrics[metric]) {
+                                std::fprintf(stderr, "[family-metric-mask-mismatch] day=%lld family=%d cell=%d metric=%d\n",
+                                    static_cast<long long>(_current_day.get()), family_index,
+                                    context.cell, metric);
+                                std::abort();
+                            }
+                        }
+                    }
+                    int32_t computed = 0;
+                    for (int32_t metric = 0; metric < FAMILY_METRIC_COUNT; ++metric)
+                        computed += (mask & (uint64_t{1} << metric)) != 0;
+                    EconomyCostProbe::record("family.behavior_metrics", _current_day.get(), 0.0, computed);
                     context.metrics_ready = true;
                     ++_family_behavior_metric_contexts_built;
                 }
                 ++_family_behavior_condition_edges_evaluated;
-                if (!evaluate_family_behavior_conditions(edge,
-                        context.metrics.data(),
-                        FAMILY_METRIC_COUNT))
+                const bool accepted = evaluate_family_behavior_conditions(edge,
+                    context.metrics.data(), FAMILY_METRIC_COUNT);
+                if (verify_metrics && !full_metrics && accepted !=
+                        evaluate_family_behavior_conditions(edge,
+                            context.reference_metrics.data(), FAMILY_METRIC_COUNT)) {
+                    std::fprintf(stderr, "[family-condition-mask-mismatch] day=%lld family=%d cell=%d edge=%d\n",
+                        static_cast<long long>(_current_day.get()), family_index, context.cell, edge);
+                    std::abort();
+                }
+                if (!accepted)
                     continue;
                 base.cell = context.cell;
                 expanded.push_back({family_index, base});
@@ -15244,6 +15233,30 @@ bool NativeEconomyRuntime::rebuild_family_behavior_cache() {
         row.factor_q16 = factor;
         expanded.push_back({family_index, row});
     }
+    static const bool full_cache = [] {
+        const char *value = std::getenv("PK_ECONOMY_ACTIVE_WORKSET_DISABLE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    static const bool verify_cache = [] {
+        const char *value = std::getenv("PK_ECONOMY_MEMO_VERIFY");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    // 每天仍评估真实条件；阈值未跨越时，展开后的完整整数行常常完全相同。
+    // 精确比较包括输入顺序和 factor，不用 hash，也不延迟条件生效。
+    const bool unchanged = !full_cache && expanded == _family_behavior_source_rows &&
+        _family_behavior_factor_offsets.size() == families_store().active.size() + 1;
+    if (unchanged && !verify_cache) {
+        _family_behavior_cache_dirty = false;
+        _family_behavior_cache_dirty_reasons = 0;
+        _family_behavior_cache_last_reasons = rebuild_reasons;
+        ++_family_behavior_cache_skips;
+        _family_behavior_cache_ms += elapsed_ms(cache_started);
+        EconomyCostProbe::record("family.behavior_rows_reused", _current_day.get(), 0.0, expanded.size());
+        return false;
+    }
+    const auto reference_rows = unchanged ? _family_behavior_factor_rows : std::vector<FamilyBehaviorFactorRow>{};
+    const auto reference_offsets = unchanged ? _family_behavior_factor_offsets : std::vector<int32_t>{};
+    _family_behavior_source_rows = expanded;
     std::sort(expanded.begin(), expanded.end(), [](const TaggedRow &a,
             const TaggedRow &b) {
         return std::tie(a.family_index, a.row.cell, a.row.score_term, a.row.axis,
@@ -15287,6 +15300,12 @@ bool NativeEconomyRuntime::rebuild_family_behavior_cache() {
             return row.selector_kind ==
                 FAMILY_BEHAVIOR_SELECTOR_PROFESSION_CLASS;
         }));
+    if (unchanged && (reference_rows != _family_behavior_factor_rows ||
+            reference_offsets != _family_behavior_factor_offsets)) {
+        std::fprintf(stderr, "[family-behavior-reuse-mismatch] day=%lld\n",
+            static_cast<long long>(_current_day.get()));
+        std::abort();
+    }
     _family_behavior_cache_dirty = false;
     _family_behavior_cache_dirty_reasons = 0;
     _family_behavior_cache_last_reasons = rebuild_reasons;
@@ -15530,8 +15549,16 @@ bool NativeEconomyRuntime::family_trait_context_allows(
 
 void NativeEconomyRuntime::fill_family_behavior_metrics(
         int32_t family_index, int32_t branch, int32_t cell, int64_t *metrics,
-        int32_t metric_count) const {
+        int32_t metric_count, uint64_t metric_mask) const {
     if (metrics == nullptr || metric_count <= 0) return;
+    static const bool full_metrics = [] {
+        const char *value = std::getenv("PK_ECONOMY_FAMILY_METRIC_MASK_DISABLE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    if (full_metrics) metric_mask = UINT64_MAX;
+    auto requested = [&](int32_t metric) {
+        return metric < metric_count && (metric_mask & (uint64_t{1} << metric)) != 0;
+    };
     std::fill(metrics, metrics + metric_count, 0);
     auto count_q16 = [](int64_t value) -> int64_t {
         if (value <= 0) return 0;
@@ -15543,25 +15570,25 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
     if (family_index >= 0 && family_index < static_cast<int32_t>(
             families_store().active.size()) && families_store().active[family_index] != 0) {
         family_handle = families_store().handle_for_index(family_index);
-        if (metric_count > FAMILY_METRIC_MAGNITUDE_Q16)
+        if (requested(FAMILY_METRIC_MAGNITUDE_Q16))
             metrics[FAMILY_METRIC_MAGNITUDE_Q16] = Q16_ONE;
-        if (metric_count > FAMILY_METRIC_FAMILY_POPULATION)
+        if (requested(FAMILY_METRIC_FAMILY_POPULATION))
             metrics[FAMILY_METRIC_FAMILY_POPULATION] =
                 count_q16(family_population(family_handle));
-        if (metric_count > FAMILY_METRIC_FAMILY_CASH_CLAIM)
+        if (requested(FAMILY_METRIC_FAMILY_CASH_CLAIM))
             metrics[FAMILY_METRIC_FAMILY_CASH_CLAIM] =
                 count_q16(family_cash_claim(family_handle));
     }
     if (branch >= 0 && branch < static_cast<int32_t>(
             family_influences().active.size()) &&
         family_influences().active[branch] != 0) {
-        if (metric_count > FAMILY_METRIC_BRANCH_PRESTIGE_Q16)
+        if (requested(FAMILY_METRIC_BRANCH_PRESTIGE_Q16))
             metrics[FAMILY_METRIC_BRANCH_PRESTIGE_Q16] =
                 family_influences().score_q16[branch];
-        if (metric_count > FAMILY_METRIC_BRANCH_POPULATION)
+        if (requested(FAMILY_METRIC_BRANCH_POPULATION))
             metrics[FAMILY_METRIC_BRANCH_POPULATION] =
                 count_q16(family_influences().population[branch]);
-        if (metric_count > FAMILY_METRIC_BRANCH_IS_LOCAL_PRESTIGE_MAX) {
+        if (requested(FAMILY_METRIC_BRANCH_IS_LOCAL_PRESTIGE_MAX)) {
             int32_t best_score = family_influences().score_q16[branch];
             uint64_t best_handle = family_handle;
             const int32_t local_cell = family_influences().cell[branch];
@@ -15583,67 +15610,69 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
         }
     }
     if (cell < 0 || cell >= _cell_count.get()) return;
-    if (metric_count > FAMILY_METRIC_CELL_TEMPERATURE_Q16)
+    if (requested(FAMILY_METRIC_CELL_TEMPERATURE_Q16))
         metrics[FAMILY_METRIC_CELL_TEMPERATURE_Q16] =
             cell < static_cast<int32_t>(_environment_temperature_q16.size())
                 ? _environment_temperature_q16[cell] : 0;
-    if (metric_count > FAMILY_METRIC_CELL_PRECIPITATION_Q16)
+    if (requested(FAMILY_METRIC_CELL_PRECIPITATION_Q16))
         metrics[FAMILY_METRIC_CELL_PRECIPITATION_Q16] =
             cell < static_cast<int32_t>(_environment_precipitation_q16.size())
                 ? _environment_precipitation_q16[cell] : 0;
-    if (metric_count > FAMILY_METRIC_CELL_RESOURCE_SHORTAGE_Q16)
+    if (requested(FAMILY_METRIC_CELL_RESOURCE_SHORTAGE_Q16))
         metrics[FAMILY_METRIC_CELL_RESOURCE_SHORTAGE_Q16] =
             cell < static_cast<int32_t>(_cell_effect_shortage_q16.size())
                 ? std::clamp<int64_t>(_cell_effect_shortage_q16[cell], 0, Q16_ONE)
                 : 0;
-    if (metric_count > FAMILY_METRIC_CELL_TRADE_EVENTS)
+    if (requested(FAMILY_METRIC_CELL_TRADE_EVENTS))
         metrics[FAMILY_METRIC_CELL_TRADE_EVENTS] =
             cell < static_cast<int32_t>(_cell_trade_gen.size())
                 ? count_q16(static_cast<int64_t>(_cell_trade_gen[cell])) : 0;
-    if (metric_count > FAMILY_METRIC_CELL_POPULATION)
+    if (requested(FAMILY_METRIC_CELL_POPULATION))
         metrics[FAMILY_METRIC_CELL_POPULATION] =
             cell < static_cast<int32_t>(_committed_cells.size())
                 ? count_q16(_committed_cells[cell].population) : 0;
-    if (metric_count > FAMILY_METRIC_CELL_LANDFORM) {
+    if (requested(FAMILY_METRIC_CELL_LANDFORM)) {
         const int32_t landform = cell < static_cast<int32_t>(
                 _building_landform.size()) ? _building_landform[cell] : 0;
         metrics[FAMILY_METRIC_CELL_LANDFORM] = count_q16(landform);
     }
-    if (metric_count > FAMILY_METRIC_CELL_ESSENTIALS_SHORTAGE_Q16)
+    if (requested(FAMILY_METRIC_CELL_ESSENTIALS_SHORTAGE_Q16))
         metrics[FAMILY_METRIC_CELL_ESSENTIALS_SHORTAGE_Q16] =
             cell < static_cast<int32_t>(_cell_essentials_shortage_q16.size())
                 ? std::clamp<int64_t>(_cell_essentials_shortage_q16[cell], 0,
                     Q16_ONE) : 0;
-    if (metric_count > FAMILY_METRIC_CELL_RAIN_EVENT)
+    if (requested(FAMILY_METRIC_CELL_RAIN_EVENT))
         metrics[FAMILY_METRIC_CELL_RAIN_EVENT] =
             cell < static_cast<int32_t>(_cell_rain_event_q16.size())
                 ? _cell_rain_event_q16[cell] : 0;
-    if (metric_count > FAMILY_METRIC_CELL_RESOURCE_ABUNDANCE_Q16)
+    if (requested(FAMILY_METRIC_CELL_RESOURCE_ABUNDANCE_Q16))
         metrics[FAMILY_METRIC_CELL_RESOURCE_ABUNDANCE_Q16] =
             cell < static_cast<int32_t>(_cell_resource_abundance_q16.size())
                 ? std::clamp<int64_t>(_cell_resource_abundance_q16[cell], 0,
                     Q16_ONE) : 0;
-    const FamilyIndustryStats *stats = family_industry_stats_for(family_index, cell);
-    if (metric_count > FAMILY_METRIC_HAS_OWNED_MANUFACTURING)
+    constexpr uint64_t industry_mask = ((uint64_t{1} << 22) - 1) ^ ((uint64_t{1} << 15) - 1);
+    const FamilyIndustryStats *stats = (metric_mask & industry_mask) != 0
+        ? family_industry_stats_for(family_index, cell) : nullptr;
+    if (requested(FAMILY_METRIC_HAS_OWNED_MANUFACTURING))
         metrics[FAMILY_METRIC_HAS_OWNED_MANUFACTURING] =
             stats != nullptr && stats->has_owned_manufacturing != 0 ? Q16_ONE : 0;
-    if (metric_count > FAMILY_METRIC_DISTINCT_SECTOR_COUNT)
+    if (requested(FAMILY_METRIC_DISTINCT_SECTOR_COUNT))
         metrics[FAMILY_METRIC_DISTINCT_SECTOR_COUNT] =
             stats != nullptr ? count_q16(stats->distinct_sector_count) : 0;
-    if (metric_count > FAMILY_METRIC_DOMINANT_SECTOR_ID)
+    if (requested(FAMILY_METRIC_DOMINANT_SECTOR_ID))
         metrics[FAMILY_METRIC_DOMINANT_SECTOR_ID] =
             stats == nullptr || stats->dominant_sector_id < 0
                 ? -Q16_ONE : count_q16(stats->dominant_sector_id);
-    if (metric_count > FAMILY_METRIC_DOMINANT_SECTOR_SHARE_Q16)
+    if (requested(FAMILY_METRIC_DOMINANT_SECTOR_SHARE_Q16))
         metrics[FAMILY_METRIC_DOMINANT_SECTOR_SHARE_Q16] =
             stats != nullptr ? stats->dominant_sector_share_q16 : 0;
-    if (metric_count > FAMILY_METRIC_COMPLETE_CHAIN_COUNT)
+    if (requested(FAMILY_METRIC_COMPLETE_CHAIN_COUNT))
         metrics[FAMILY_METRIC_COMPLETE_CHAIN_COUNT] =
             stats != nullptr ? count_q16(stats->complete_chain_count) : 0;
-    if (metric_count > FAMILY_METRIC_MAX_LOCAL_CHAIN_SHARE_Q16)
+    if (requested(FAMILY_METRIC_MAX_LOCAL_CHAIN_SHARE_Q16))
         metrics[FAMILY_METRIC_MAX_LOCAL_CHAIN_SHARE_Q16] =
             stats != nullptr ? stats->max_local_chain_share_q16 : 0;
-    if (metric_count > FAMILY_METRIC_MAX_CHAIN_UPGRADE_FAMILY_ID)
+    if (requested(FAMILY_METRIC_MAX_CHAIN_UPGRADE_FAMILY_ID))
         metrics[FAMILY_METRIC_MAX_CHAIN_UPGRADE_FAMILY_ID] =
             stats == nullptr || stats->max_chain_upgrade_family_id < 0
                 ? 0 : count_q16(stats->max_chain_upgrade_family_id);
@@ -15651,10 +15680,11 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
     int64_t cell_employed = 0;
     int64_t cell_funds = 0;
     std::vector<uint8_t> employed_professions;
-    if (metric_count > FAMILY_METRIC_CELL_UNEMPLOYMENT_Q16 ||
-        metric_count > FAMILY_METRIC_CELL_VACANT_PROFESSION_COUNT ||
-        metric_count > FAMILY_METRIC_FAMILY_CASH_PER_CAPITA_VS_CELL_Q16) {
-        employed_professions.assign(_profession_ids.size(), 0);
+    if (requested(FAMILY_METRIC_CELL_UNEMPLOYMENT_Q16) ||
+        requested(FAMILY_METRIC_CELL_VACANT_PROFESSION_COUNT) ||
+        requested(FAMILY_METRIC_FAMILY_CASH_PER_CAPITA_VS_CELL_Q16)) {
+        if (requested(FAMILY_METRIC_CELL_VACANT_PROFESSION_COUNT))
+            employed_professions.assign(_profession_ids.size(), 0);
         population_store().for_each_in_cell(cell, [&](int32_t slot) {
             const int64_t people = std::max<int64_t>(0, population_store().population[slot]);
             cell_population += people;
@@ -15675,13 +15705,13 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
             }
         });
     }
-    if (metric_count > FAMILY_METRIC_CELL_UNEMPLOYMENT_Q16) {
+    if (requested(FAMILY_METRIC_CELL_UNEMPLOYMENT_Q16)) {
         const int64_t unemployed = std::max<int64_t>(0, cell_population - cell_employed);
         metrics[FAMILY_METRIC_CELL_UNEMPLOYMENT_Q16] = cell_population > 0
             ? std::clamp<int64_t>(unemployed * Q16_ONE / cell_population, 0, Q16_ONE)
             : 0;
     }
-    if (metric_count > FAMILY_METRIC_CELL_RESOURCE_CLASS_COUNT) {
+    if (requested(FAMILY_METRIC_CELL_RESOURCE_CLASS_COUNT)) {
         int32_t resource_classes = 0;
         const size_t resources = _resource_ids.size();
         if (resources > 0 && resource_stock_lanes().size() >=
@@ -15701,10 +15731,21 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
     int32_t extractive_groups = 0;
     bool can_produce_corn = false;
     int32_t vacant_professions = 0;
-    std::vector<uint8_t> demanded_professions(_profession_ids.size(), 0);
+    std::vector<uint8_t> demanded_professions;
+    if (requested(FAMILY_METRIC_CELL_VACANT_PROFESSION_COUNT))
+        demanded_professions.assign(_profession_ids.size(), 0);
+    const bool needs_building_scan =
+        requested(FAMILY_METRIC_CELL_MANUFACTURING_BUILDING_COUNT) ||
+        requested(FAMILY_METRIC_CELL_DISTINCT_SECTOR_COUNT) ||
+        requested(FAMILY_METRIC_CELL_DOMINANT_SECTOR_ID) ||
+        requested(FAMILY_METRIC_CELL_DOMINANT_SECTOR_SHARE_Q16) ||
+        requested(FAMILY_METRIC_CELL_HAS_EXTRACTIVE_RESOURCE) ||
+        requested(FAMILY_METRIC_CELL_VACANT_PROFESSION_COUNT) ||
+        requested(FAMILY_METRIC_CELL_KNOWLEDGE_BUILDING_CLASS_COUNT) ||
+        requested(FAMILY_METRIC_CELL_CAN_PRODUCE_CORN);
     const bool building_csr = _building_cell_offsets.size() ==
         static_cast<size_t>(_cell_count.get()) + 1;
-    if (building_csr) {
+    if (needs_building_scan && building_csr) {
         for (int32_t group_index = _building_cell_offsets[cell];
              group_index < _building_cell_offsets[cell + 1]; ++group_index) {
             const auto group = building_view(static_cast<size_t>(static_cast<size_t>(group_index)));
@@ -15723,7 +15764,7 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
             if (sector == 1) ++extractive_groups;
             const BuildingType &type = _building_types[
                 static_cast<size_t>(group.type_id)];
-            if (_family_corn_good_id >= 0) {
+            if (requested(FAMILY_METRIC_CELL_CAN_PRODUCE_CORN) && _family_corn_good_id >= 0) {
                 for (int32_t output = type.output_begin;
                      output < type.output_begin + type.output_count; ++output) {
                     if (_building_outputs[static_cast<size_t>(output)].good_id ==
@@ -15733,6 +15774,7 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
                     }
                 }
             }
+            if (requested(FAMILY_METRIC_CELL_VACANT_PROFESSION_COUNT))
             for (int32_t edge = type.labor_signal_begin;
                  edge < type.labor_signal_begin + type.labor_signal_count; ++edge) {
                 if (edge < 0 || edge >= static_cast<int32_t>(
@@ -15752,7 +15794,7 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
              employed_professions[profession] == 0))
             ++vacant_professions;
     }
-    if (metric_count > FAMILY_METRIC_CELL_MANUFACTURING_BUILDING_COUNT)
+    if (requested(FAMILY_METRIC_CELL_MANUFACTURING_BUILDING_COUNT))
         metrics[FAMILY_METRIC_CELL_MANUFACTURING_BUILDING_COUNT] =
             count_q16(manufacturing_groups);
     int32_t distinct_sectors = 0;
@@ -15768,17 +15810,17 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
             dominant_sector = sector;
         }
     }
-    if (metric_count > FAMILY_METRIC_CELL_DISTINCT_SECTOR_COUNT)
+    if (requested(FAMILY_METRIC_CELL_DISTINCT_SECTOR_COUNT))
         metrics[FAMILY_METRIC_CELL_DISTINCT_SECTOR_COUNT] =
             count_q16(distinct_sectors);
-    if (metric_count > FAMILY_METRIC_CELL_DOMINANT_SECTOR_ID)
+    if (requested(FAMILY_METRIC_CELL_DOMINANT_SECTOR_ID))
         metrics[FAMILY_METRIC_CELL_DOMINANT_SECTOR_ID] =
             dominant_sector < 0 ? -Q16_ONE : count_q16(dominant_sector);
-    if (metric_count > FAMILY_METRIC_CELL_DOMINANT_SECTOR_SHARE_Q16)
+    if (requested(FAMILY_METRIC_CELL_DOMINANT_SECTOR_SHARE_Q16))
         metrics[FAMILY_METRIC_CELL_DOMINANT_SECTOR_SHARE_Q16] = total_buildings > 0
             ? static_cast<int32_t>(std::clamp<int64_t>(
                 dominant_owned * Q16_ONE / total_buildings, 0, Q16_ONE)) : 0;
-    if (metric_count > FAMILY_METRIC_CELL_COMPLETE_CHAIN_COUNT) {
+    if (requested(FAMILY_METRIC_CELL_COMPLETE_CHAIN_COUNT)) {
         int32_t complete = 0;
         if (building_csr) {
             std::unordered_map<int32_t, uint32_t> owned_tiers;
@@ -15820,7 +15862,7 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
         }
         metrics[FAMILY_METRIC_CELL_COMPLETE_CHAIN_COUNT] = count_q16(complete);
     }
-    if (metric_count > FAMILY_METRIC_CELL_HAS_EXTRACTIVE_RESOURCE) {
+    if (requested(FAMILY_METRIC_CELL_HAS_EXTRACTIVE_RESOURCE)) {
         bool extractive = extractive_groups > 0;
         if (!extractive && !resource_stock_lanes().empty()) {
             const size_t resources = _resource_ids.size();
@@ -15834,7 +15876,7 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
         metrics[FAMILY_METRIC_CELL_HAS_EXTRACTIVE_RESOURCE] =
             extractive ? Q16_ONE : 0;
     }
-    if (metric_count > FAMILY_METRIC_CELL_LEGAL_BUILDING_TYPE_COUNT) {
+    if (requested(FAMILY_METRIC_CELL_LEGAL_BUILDING_TYPE_COUNT)) {
         int32_t legal = 0;
         const int32_t country = cell < static_cast<int32_t>(_epoch_cell_country.size())
             ? _epoch_cell_country[static_cast<size_t>(cell)] : -1;
@@ -15844,11 +15886,11 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
                 _epoch_country_building_type_offsets[country]);
         metrics[FAMILY_METRIC_CELL_LEGAL_BUILDING_TYPE_COUNT] = count_q16(legal);
     }
-    if (metric_count > FAMILY_METRIC_CELL_VACANT_PROFESSION_COUNT)
+    if (requested(FAMILY_METRIC_CELL_VACANT_PROFESSION_COUNT))
         metrics[FAMILY_METRIC_CELL_VACANT_PROFESSION_COUNT] =
             count_q16(vacant_professions);
-    if (metric_count > FAMILY_METRIC_FAMILY_BRANCH_COUNT ||
-        metric_count > FAMILY_METRIC_FAMILY_REMOTE_BRANCH_COUNT) {
+    if (requested(FAMILY_METRIC_FAMILY_BRANCH_COUNT) ||
+        requested(FAMILY_METRIC_FAMILY_REMOTE_BRANCH_COUNT)) {
         int32_t branches = 0;
         int32_t remote = 0;
         const int32_t home = family_index >= 0 && family_index < static_cast<int32_t>(
@@ -15862,12 +15904,12 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
             ++branches;
             if (family_influences().cell[i] != home) ++remote;
         }
-        if (metric_count > FAMILY_METRIC_FAMILY_BRANCH_COUNT)
+        if (requested(FAMILY_METRIC_FAMILY_BRANCH_COUNT))
             metrics[FAMILY_METRIC_FAMILY_BRANCH_COUNT] = count_q16(branches);
-        if (metric_count > FAMILY_METRIC_FAMILY_REMOTE_BRANCH_COUNT)
+        if (requested(FAMILY_METRIC_FAMILY_REMOTE_BRANCH_COUNT))
             metrics[FAMILY_METRIC_FAMILY_REMOTE_BRANCH_COUNT] = count_q16(remote);
     }
-    if (metric_count > FAMILY_METRIC_FAMILY_CASH_PER_CAPITA_VS_CELL_Q16 &&
+    if (requested(FAMILY_METRIC_FAMILY_CASH_PER_CAPITA_VS_CELL_Q16) &&
         family_handle != 0) {
         const int64_t family_people = std::max<int64_t>(1,
             family_population(family_handle));
@@ -15880,12 +15922,28 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
                 4 * Q16_ONE)
             : (family_capita > 0 ? 4 * Q16_ONE : 0);
     }
-    if (metric_count > FAMILY_METRIC_CELL_KNOWLEDGE_BUILDING_CLASS_COUNT)
+    if (requested(FAMILY_METRIC_CELL_KNOWLEDGE_BUILDING_CLASS_COUNT))
         metrics[FAMILY_METRIC_CELL_KNOWLEDGE_BUILDING_CLASS_COUNT] =
             count_q16(knowledge_groups);
-    if (metric_count > FAMILY_METRIC_CELL_CAN_PRODUCE_CORN)
+    if (requested(FAMILY_METRIC_CELL_CAN_PRODUCE_CORN))
         metrics[FAMILY_METRIC_CELL_CAN_PRODUCE_CORN] =
             can_produce_corn ? Q16_ONE : 0;
+    static const bool verify_metrics = [] {
+        const char *value = std::getenv("PK_ECONOMY_MEMO_VERIFY");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    if (verify_metrics && metric_mask != UINT64_MAX && metric_count <= FAMILY_METRIC_COUNT) {
+        std::array<int64_t, FAMILY_METRIC_COUNT> reference{};
+        fill_family_behavior_metrics(family_index, branch, cell, reference.data(), metric_count);
+        for (int32_t metric = 0; metric < metric_count; ++metric) {
+            if (requested(metric) && metrics[metric] != reference[metric]) {
+                std::fprintf(stderr, "[family-metric-mask-mismatch] day=%lld family=%d cell=%d metric=%d\n",
+                    static_cast<long long>(_current_day.get()), family_index, cell, metric);
+                std::abort();
+            }
+        }
+    }
+
 }
 
 bool NativeEconomyRuntime::evaluate_family_behavior_conditions(
@@ -15953,6 +16011,68 @@ int32_t NativeEconomyRuntime::family_trait_behavior_factor_q16(
         return Q16_ONE;
     const int32_t begin = _family_behavior_factor_offsets[family_index];
     const int32_t end = _family_behavior_factor_offsets[family_index + 1];
+    static const bool linear = [] {
+        const char *value = std::getenv("PK_ECONOMY_FAMILY_LOOKUP_LINEAR");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    static const bool verify_index = [] {
+        const char *value = std::getenv("PK_ECONOMY_FAMILY_LOOKUP_VERIFY");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    if (!linear) {
+        // rebuild_family_behavior_cache 按完整键排序并合并唯一行。查询只可能
+        // 命中全局/本格的 exact selector 与职业 class，共最多四行。
+        std::array<int32_t, 4> matches{};
+        int32_t count = 0;
+        const auto first = _family_behavior_factor_rows.begin() + begin;
+        const auto last = _family_behavior_factor_rows.begin() + end;
+        const auto find = [&](int32_t row_cell, int32_t kind, int32_t id) {
+            const auto key = std::make_tuple(row_cell, FAMILY_SCORE_CANDIDATE_WEIGHT,
+                axis, kind, id);
+            const auto it = std::lower_bound(first, last, key,
+                [](const FamilyBehaviorFactorRow &row, const auto &wanted) {
+                    return std::tie(row.cell, row.score_term, row.axis,
+                        row.selector_kind, row.selector_id) < wanted;
+                });
+            if (it != last && std::tie(it->cell, it->score_term, it->axis,
+                    it->selector_kind, it->selector_id) == key)
+                matches[count++] = static_cast<int32_t>(it - _family_behavior_factor_rows.begin());
+        };
+        const bool has_class = axis == 1 && selector_kind == 0 && selector_id >= 0 &&
+            selector_id < static_cast<int32_t>(_profession_class_index.size());
+        const auto find_cell = [&](int32_t row_cell) {
+            find(row_cell, selector_kind, selector_id);
+            if (has_class)
+                find(row_cell, FAMILY_BEHAVIOR_SELECTOR_PROFESSION_CLASS,
+                    _profession_class_index[static_cast<size_t>(selector_id)]);
+        };
+        find_cell(-1);
+        if (cell >= 0) find_cell(cell);
+        // 保持原 CSR 的乘法/截断顺序，而不是按查询顺序合并。
+        std::sort(matches.begin(), matches.begin() + count);
+        int64_t indexed = Q16_ONE;
+        for (int32_t i = 0; i < count; ++i)
+            indexed = indexed * _family_behavior_factor_rows[matches[i]].factor_q16 / Q16_ONE;
+        const int32_t result = static_cast<int32_t>(std::clamp<int64_t>(indexed, 0, 4 * Q16_ONE));
+        if (!verify_index) return result;
+        int64_t reference = Q16_ONE;
+        for (int32_t row = begin; row < end; ++row) {
+            const auto &entry = _family_behavior_factor_rows[row];
+            const bool exact = entry.selector_kind == selector_kind && entry.selector_id == selector_id;
+            const bool profession_class = has_class &&
+                entry.selector_kind == FAMILY_BEHAVIOR_SELECTOR_PROFESSION_CLASS &&
+                _profession_class_index[static_cast<size_t>(selector_id)] == entry.selector_id;
+            if (entry.score_term == FAMILY_SCORE_CANDIDATE_WEIGHT && entry.axis == axis &&
+                    (exact || profession_class) && (entry.cell < 0 || entry.cell == cell))
+                reference = reference * entry.factor_q16 / Q16_ONE;
+        }
+        if (result != static_cast<int32_t>(std::clamp<int64_t>(reference, 0, 4 * Q16_ONE))) {
+            std::fprintf(stderr, "[family-factor-index-mismatch] family=%u cell=%d axis=%d\n",
+                family_index, cell, axis);
+            std::abort();
+        }
+        return result;
+    }
     int64_t factor = Q16_ONE;
     bool found = false;
     for (int32_t row = begin; row < end; ++row) {
@@ -15992,6 +16112,33 @@ int32_t NativeEconomyRuntime::family_behavior_score_term_q16(
         return Q16_ONE;
     const int32_t begin = _family_behavior_factor_offsets[family_index];
     const int32_t end = _family_behavior_factor_offsets[family_index + 1];
+    static const bool linear = [] {
+        const char *value = std::getenv("PK_ECONOMY_FAMILY_LOOKUP_LINEAR");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    static const bool verify_index = [] {
+        const char *value = std::getenv("PK_ECONOMY_FAMILY_LOOKUP_VERIFY");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    int32_t indexed_result = Q16_ONE;
+    if (!linear) {
+        int64_t indexed = Q16_ONE;
+        const auto first = _family_behavior_factor_rows.begin() + begin;
+        const auto last = _family_behavior_factor_rows.begin() + end;
+        const auto apply_cell = [&](int32_t row_cell) {
+            const auto key = std::make_tuple(row_cell, score_term);
+            auto it = std::lower_bound(first, last, key,
+                [](const FamilyBehaviorFactorRow &row, const auto &wanted) {
+                    return std::tie(row.cell, row.score_term) < wanted;
+                });
+            for (; it != last && it->cell == row_cell && it->score_term == score_term; ++it)
+                indexed = indexed * it->factor_q16 / Q16_ONE;
+        };
+        apply_cell(-1);
+        if (cell >= 0) apply_cell(cell);
+        indexed_result = static_cast<int32_t>(std::clamp<int64_t>(indexed, 0, 4 * Q16_ONE));
+        if (!verify_index) return indexed_result;
+    }
     int64_t factor = Q16_ONE;
     bool found = false;
     for (int32_t row = begin; row < end; ++row) {
@@ -16002,8 +16149,14 @@ int32_t NativeEconomyRuntime::family_behavior_score_term_q16(
         factor = factor * entry.factor_q16 / Q16_ONE;
         found = true;
     }
-    return found ? static_cast<int32_t>(std::clamp<int64_t>(factor, 0, 4 * Q16_ONE))
+    const int32_t result = found ? static_cast<int32_t>(std::clamp<int64_t>(factor, 0, 4 * Q16_ONE))
         : Q16_ONE;
+    if (!linear && result != indexed_result) {
+        std::fprintf(stderr, "[family-score-index-mismatch] family=%u cell=%d term=%d\n",
+            family_index, cell, score_term);
+        std::abort();
+    }
+    return result;
 }
 
 int32_t NativeEconomyRuntime::family_purchase_pay_factor_q16(
@@ -16177,7 +16330,7 @@ int32_t NativeEconomyRuntime::family_good_consumption_factor_q16(
 }
 
 int32_t NativeEconomyRuntime::family_variant_preference_factor_q16(
-        int32_t cohort_slot, int32_t variant_id, int64_t &sat) const {
+        int32_t cohort_slot, int32_t variant_id, int64_t &sat, int32_t *good_factors) const {
     if (variant_id < 0 || variant_id >= static_cast<int32_t>(_variants.size()))
         return Q16_ONE;
     const VariantChoice &variant = _variants[variant_id];
@@ -16186,10 +16339,35 @@ int32_t NativeEconomyRuntime::family_variant_preference_factor_q16(
     for (int32_t c = 0; c < variant.component_count; ++c) {
         const NeedComponent &component = _components[variant.component_begin + c];
         const int64_t quantity = std::max<int64_t>(1, component.qty_per_need);
+        int32_t factor = -1;
+        const bool cacheable = good_factors != nullptr && component.good_id >= 0 &&
+            component.good_id < static_cast<int32_t>(_good_ids.size());
+        if (cacheable) factor = good_factors[component.good_id];
+        if (factor < 0) {
+            factor = family_good_consumption_factor_q16(cohort_slot, component.good_id);
+            if (cacheable) good_factors[component.good_id] = factor;
+        } else {
+            static const bool verify = [] {
+                const char *value = std::getenv("PK_ECONOMY_MEMO_VERIFY");
+                return value && std::strcmp(value, "1") == 0;
+            }();
+            if (verify && factor != family_good_consumption_factor_q16(cohort_slot, component.good_id)) {
+                std::fprintf(stderr, "[family-good-factor-cache-mismatch] slot=%d good=%d\n",
+                    cohort_slot, component.good_id);
+                std::abort();
+            }
+        }
+        // 单组件的加权平均恒等于 factor；界内乘法不会产生饱和事件。
+        static const bool scalar_variant = [] {
+            const char *value = std::getenv("PK_ECONOMY_VARIANT_WEIGHT_SCALAR");
+            return value && std::strcmp(value, "1") == 0;
+        }();
+        if (!scalar_variant && variant.component_count == 1 && quantity <=
+                std::numeric_limits<int64_t>::max() / (4 * Q16_ONE))
+            return factor;
         quantity_sum = saturating_add(quantity_sum, quantity, sat);
         weighted_sum = saturating_add(weighted_sum, saturating_mul(
-            quantity, family_good_consumption_factor_q16(
-                cohort_slot, component.good_id), sat), sat);
+            quantity, factor, sat), sat);
     }
     return quantity_sum > 0 ? static_cast<int32_t>(std::clamp<int64_t>(
         mul_div_sat(weighted_sum, 1, quantity_sum, sat), 0, 4 * Q16_ONE))
@@ -16464,7 +16642,7 @@ bool NativeEconomyRuntime::publish_family_effect_metrics(
     const int32_t cell = family_influences().cell[branch];
     std::array<int64_t, FAMILY_METRIC_COUNT> metrics{};
     fill_family_behavior_metrics(family, branch, cell, metrics.data(),
-        FAMILY_METRIC_COUNT);
+        FAMILY_METRIC_COUNT, mask);
     metrics[FAMILY_METRIC_MAGNITUDE_Q16] = binding.strength_q16;
     std::string error;
     for (int32_t metric_id = 0; metric_id < FAMILY_METRIC_COUNT; ++metric_id) {
@@ -20029,6 +20207,28 @@ bool NativeEconomyRuntime::run_family_commit_slice(int64_t &work_done,
         const auto attribution_started = Clock::now();
         update_family_employment_attribution();
         _family_commit_attribution_ms += elapsed_ms(attribution_started);
+        // 沿用活跃经济格；补入本轮新人口页和待处理 offer，避免空格扫描，
+        // 同时不漏掉迁入、新建以及已经无人居住但仍需收尾的选择。
+        auto &review_cells = _family_review_cells_scratch;
+        review_cells.clear();
+        const char *workset_disabled = std::getenv("PK_ECONOMY_ACTIVE_WORKSET_DISABLE");
+        if (workset_disabled && std::strcmp(workset_disabled, "1") == 0) {
+            review_cells.resize(static_cast<size_t>(_cell_count.get()));
+            std::iota(review_cells.begin(), review_cells.end(), 0);
+        } else {
+            review_cells = _economy_live_cells;
+            const auto append_cell = [&](int32_t cell) {
+                if (cell >= 0 && cell < _cell_count.get()) review_cells.push_back(cell);
+            };
+            for (int32_t cell : population_store().page_cell) append_cell(cell);
+            for (int32_t cell : _building_active_cells) append_cell(cell);
+            for (const auto &offer : _family_founding_offers) append_cell(offer.cell);
+            std::sort(review_cells.begin(), review_cells.end());
+            review_cells.erase(std::unique(review_cells.begin(), review_cells.end()), review_cells.end());
+        }
+        if (_family_runtime_mode.get() == 2 && _family_milestones_reached.size() !=
+                static_cast<size_t>(_cell_count.get()))
+            _family_milestones_reached.resize(static_cast<size_t>(_cell_count.get()), 0);
         _family_commit_cursor = 0;
         _family_commit_phase = 1;
         ++work_done;
@@ -20038,17 +20238,20 @@ bool NativeEconomyRuntime::run_family_commit_slice(int64_t &work_done,
         const auto form_started = Clock::now();
         const int32_t scan_budget = std::max(1,
             _family_cells_per_slice * _family_review_days.get());
-        const int32_t end = std::min(_cell_count.get(),
+        const int32_t begin = _family_commit_cursor;
+        const int32_t end = std::min(static_cast<int32_t>(_family_review_cells_scratch.size()),
             _family_commit_cursor + scan_budget);
         for (; _family_commit_cursor < end; ++_family_commit_cursor) {
-            const int32_t cell = _family_commit_cursor;
+            const int32_t cell = _family_review_cells_scratch[_family_commit_cursor];
             const bool repaired = repair_forced_capital_founder(cell);
             if (!repaired)
                 review_family_milestone(cell);
         }
-        work_done += end - std::max(0, end - scan_budget);
+        work_done += end - begin;
+        EconomyCostProbe::record("family.review_cells", _current_day.get(), 0.0,
+            static_cast<uint64_t>(end - begin));
         _family_commit_form_ms += elapsed_ms(form_started);
-        if (_family_commit_cursor < _cell_count.get()) return true;
+        if (_family_commit_cursor < static_cast<int32_t>(_family_review_cells_scratch.size())) return true;
         _family_commit_phase = 2;
         return true;
     }
@@ -20111,6 +20314,151 @@ bool NativeEconomyRuntime::run_family_commit_slice(int64_t &work_done,
     return true;
 }
 
+bool NativeEconomyRuntime::evaluate_building_plan_range(
+        int32_t active_begin, int32_t end, std::string &error) {
+    error.clear();
+    if (active_begin >= end) return true;
+    static const bool force_serial = [] {
+        const char *value = std::getenv("PK_ECONOMY_STAGE_PLAN_SERIAL");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    const int32_t cell_count = end - active_begin;
+    int64_t estimated_work = 0;
+    _production_cell_weights_scratch.resize(
+        static_cast<size_t>(cell_count));
+    for (int32_t relative = 0; relative < cell_count; ++relative) {
+        const int32_t cell = _epoch_plan_cells[
+            active_begin + relative];
+        int64_t cell_work = 1;
+        for (int32_t group = _building_cell_offsets[cell];
+             group < _building_cell_offsets[cell + 1]; ++group) {
+            const int32_t type_id = buildings_store().type_id[group];
+            if (type_id < 0 || type_id >= static_cast<int32_t>(
+                    _building_types.size())) {
+                ++cell_work;
+                continue;
+            }
+            const BuildingType &type = _building_types[type_id];
+            cell_work += 8 +
+                static_cast<int64_t>(type.input_count) * 4 +
+                static_cast<int64_t>(type.output_count) * 3 +
+                static_cast<int64_t>(type.employee_count) * 2 +
+                static_cast<int64_t>(type.resource_count) * 2;
+        }
+        _production_cell_weights_scratch[relative] = cell_work;
+        estimated_work += cell_work;
+    }
+    const int32_t default_tasks = _worker_task_cap <= 1
+        ? 1
+        : static_cast<int32_t>(std::clamp<int64_t>(
+            (estimated_work + 1023) / 1024, 2,
+            _worker_task_cap));
+    const int32_t task_count = !force_serial && _worker_enabled &&
+            cell_count >= 2 && estimated_work >= 128 &&
+            parallel_has_real_worker_threads()
+        ? std::min({cell_count, _worker_task_cap,
+            _worker_tasks_hint > 0
+            ? _worker_tasks_hint : default_tasks})
+        : 1;
+    _building_plan_worker_tasks_max = std::max(
+        _building_plan_worker_tasks_max, task_count);
+    if (task_count > 1)
+        ++_building_plan_worker_parallel_dispatches;
+    _building_plan_results_scratch.resize(
+        static_cast<size_t>(task_count));
+    _production_task_offsets_scratch.assign(
+        static_cast<size_t>(task_count + 1), 0);
+    _production_task_offsets_scratch[task_count] = cell_count;
+    int32_t previous = 0;
+    int64_t prefix_work = 0;
+    for (int32_t task = 1; task < task_count; ++task) {
+        const int64_t target =
+            (estimated_work * task + task_count - 1) / task_count;
+        const int32_t last_allowed =
+            cell_count - (task_count - task);
+        int32_t boundary = previous;
+        while (boundary < last_allowed &&
+               prefix_work < target) {
+            prefix_work +=
+                _production_cell_weights_scratch[boundary];
+            ++boundary;
+        }
+        if (boundary <= previous) {
+            prefix_work +=
+                _production_cell_weights_scratch[previous];
+            boundary = previous + 1;
+        }
+        _production_task_offsets_scratch[task] = boundary;
+        previous = boundary;
+    }
+    auto run_plan_tasks = [&](int32_t task_begin,
+                              int32_t task_end) {
+        for (int32_t task = task_begin; task < task_end; ++task) {
+            BuildingPlanResult &task_result =
+                _building_plan_results_scratch[task];
+            std::string task_error;
+            const auto task_started = Clock::now();
+            task_result.ok = prepare_building_economic_plan(
+                active_begin +
+                    _production_task_offsets_scratch[task],
+                active_begin +
+                    _production_task_offsets_scratch[task + 1],
+                &_epoch_plan_cells, task_result, task_error);
+            task_result.worker_ms = elapsed_ms(task_started);
+            if (!task_result.ok)
+                task_result.error = std::move(task_error);
+        }
+    };
+    if (task_count > 1) {
+        parallel_for_range("pk_economy_building_plan",
+                           task_count, task_count, 1,
+                           run_plan_tasks);
+    } else {
+        run_plan_tasks(0, 1);
+    }
+    for (int32_t task = 0; task < task_count; ++task) {
+        const BuildingPlanResult &task_result =
+            _building_plan_results_scratch[task];
+        _building_plan_worker_cpu_ms += task_result.worker_ms;
+        _saturation_count += task_result.saturation_count;
+        _merchant_credit_budget = saturating_add(
+            _merchant_credit_budget,
+            task_result.merchant_credit_budget,
+            _saturation_count);
+        _merchant_credit_committed = saturating_add(
+            _merchant_credit_committed,
+            task_result.merchant_credit_committed,
+            _saturation_count);
+        _recovery_candidates = saturating_add(
+            _recovery_candidates,
+            task_result.recovery_candidates,
+            _saturation_count);
+        _recovery_approved = saturating_add(
+            _recovery_approved,
+            task_result.recovery_approved,
+            _saturation_count);
+        _loss_suspended_building_groups = saturating_add(
+            _loss_suspended_building_groups,
+            task_result.loss_suspended_building_groups,
+            _saturation_count);
+        _unprofitable_building_groups = saturating_add(
+            _unprofitable_building_groups,
+            task_result.unprofitable_building_groups,
+            _saturation_count);
+        _utilization_sum_q16 = saturating_add(
+            _utilization_sum_q16,
+            task_result.utilization_sum_q16,
+            _saturation_count);
+        if (!task_result.ok && !_fatal) {
+            error = task_result.error.empty() ? "building_plan_failed" : task_result.error;
+            fail(task_result.error.empty()
+                ? "building_plan_failed"
+                : task_result.error);
+        }
+    }
+    return !_fatal;
+}
+
 bool NativeEconomyRuntime::run_building_plan_drain(int64_t &work_done,
                                                     std::string &error) {
     LivingCostMemoScope memo(*this, true);
@@ -20141,6 +20489,7 @@ bool NativeEconomyRuntime::run_building_plan_drain(int64_t &work_done,
     if (_stage != Stage::BUILDING_PLAN) {
         _stage = Stage::BUILDING_PLAN;
     }
+    const auto plan_started = Clock::now();
     _building_plan_phase = 0;
     _plan_evaluate_cursor = 0;
     constexpr int kMaxChunks = 1 << 20;
@@ -20150,14 +20499,8 @@ bool NativeEconomyRuntime::run_building_plan_drain(int64_t &work_done,
             break;
         }
         const int32_t end = plan_evaluate_slice_end(_plan_evaluate_cursor);
-        BuildingPlanResult plan;
-        if (!prepare_building_economic_plan(_plan_evaluate_cursor, end,
-                                            &_epoch_plan_cells, plan,
-                                            error) ||
-            !plan.ok) {
-            fail(error.empty()
-                     ? (plan.error.empty() ? "building_plan_failed" : plan.error)
-                     : error);
+        if (!evaluate_building_plan_range(_plan_evaluate_cursor, end, error)) {
+            fail(error.empty() ? "building_plan_failed" : error);
             return false;
         }
         work_done += end - _plan_evaluate_cursor;
@@ -20172,6 +20515,9 @@ bool NativeEconomyRuntime::run_building_plan_drain(int64_t &work_done,
         fail(error);
         return false;
     }
+    const double plan_evaluate_ms = elapsed_ms(plan_started);
+    _building_plan_evaluate_ms += plan_evaluate_ms;
+    const auto reserve_started = Clock::now();
     _building_plan_phase = 1;
     _building_cell_cursor = 0;
     for (int guard = 0; guard < kMaxChunks && !_fatal; ++guard) {
@@ -20197,6 +20543,8 @@ bool NativeEconomyRuntime::run_building_plan_drain(int64_t &work_done,
     _building_cell_cursor = 0;
     _plan_evaluate_cursor = 0;
     _building_plan_phase = 0;
+    _building_plan_reserve_ms += elapsed_ms(reserve_started);
+    _building_plan_ms += elapsed_ms(plan_started);
     publish_shadow_graph_stage_reference(
         RuntimeEconomyGraphStage::BUILDING_PLAN);
     _stage = Stage::TRADE_SETTLE;
@@ -20552,6 +20900,7 @@ bool NativeEconomyRuntime::run_building_employment_drain(int64_t &work_done,
     // resumed; choosing a non-empty stale epoch list while slice_end_over()
     // has already switched to the live list leaves the cursor unchanged and
     // eventually trips the guard as building_employment_guard_exhausted.
+    const auto employment_started = Clock::now();
     const std::vector<int32_t> &cells = _epoch_active
         ? _epoch_building_cells : _building_active_cells;
     _building_cell_cursor = 0;
@@ -20581,6 +20930,7 @@ bool NativeEconomyRuntime::run_building_employment_drain(int64_t &work_done,
         return false;
     }
     _building_cell_cursor = 0;
+    _employment_ms += elapsed_ms(employment_started);
     prepare_due_demand_basis_cache();
     publish_shadow_graph_stage_reference(
         RuntimeEconomyGraphStage::BUILDING_EMPLOYMENT);
@@ -20628,6 +20978,7 @@ bool NativeEconomyRuntime::run_building_production_drain(int64_t &work_done,
 
     // Match building_slice_end() across worker epoch transitions; do not
     // process a stale epoch workset after _epoch_active has been cleared.
+    const auto production_started = Clock::now();
     const std::vector<int32_t> &cells = _epoch_active
         ? _epoch_building_cells : _building_active_cells;
     _building_cell_cursor = 0;
@@ -20693,6 +21044,11 @@ bool NativeEconomyRuntime::run_building_production_drain(int64_t &work_done,
                 _worker_tasks_hint > 0
                 ? _worker_tasks_hint : production_default_tasks})
             : 1;
+        _production_worker_tasks = worker_tasks;
+        _production_worker_tasks_max = std::max(_production_worker_tasks_max, worker_tasks);
+        _production_worker_task_sum += worker_tasks;
+        _production_worker_weight_total += estimated_work;
+        if (worker_tasks > 1) ++_production_worker_parallel_dispatches;
         auto run_cells = [&](int32_t range_begin, int32_t range_end) {
             for (int32_t relative = range_begin; relative < range_end; ++relative) {
                 ProductionResult &result = _production_results_scratch[relative];
@@ -20711,6 +21067,7 @@ bool NativeEconomyRuntime::run_building_production_drain(int64_t &work_done,
                 }
             }
         };
+        const auto compute_started = Clock::now();
         {
             EconomyCostProbe probe("production.compute", _current_day.get(),
                                    static_cast<uint64_t>(total_cells));
@@ -20749,6 +21106,8 @@ bool NativeEconomyRuntime::run_building_production_drain(int64_t &work_done,
                 run_cells(0, total_cells);
             }
         }
+        _production_worker_ms += elapsed_ms(compute_started);
+        const auto merge_started = Clock::now();
         {
             EconomyCostProbe probe("production.merge_summary", _current_day.get(),
                                    static_cast<uint64_t>(total_cells));
@@ -20767,6 +21126,7 @@ bool NativeEconomyRuntime::run_building_production_drain(int64_t &work_done,
                 ++work_done;
             }
         }
+        _production_merge_ms += elapsed_ms(merge_started);
         _building_cell_cursor = total_cells;
     }
     if (_fatal) {
@@ -20810,6 +21170,7 @@ bool NativeEconomyRuntime::run_building_production_drain(int64_t &work_done,
             _owner_retained_outputs[retained_write++] = entry;
         }
     }
+    _production_ms += elapsed_ms(production_started);
     _owner_retained_outputs.resize(retained_write);
     publish_shadow_graph_stage_reference(
         RuntimeEconomyGraphStage::BUILDING_PRODUCTION);
@@ -22785,6 +23146,7 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     family_trait_rolls().clear();
     _family_behavior_factor_offsets.clear();
     _family_behavior_factor_rows.clear();
+    _family_behavior_source_rows.clear();
     _family_behavior_cache_dirty = true;
     _family_behavior_cache_dirty_reasons =
         FAMILY_BEHAVIOR_DIRTY_INITIAL;

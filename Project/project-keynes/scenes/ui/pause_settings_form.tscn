@@ -16,3 +16,7 @@ step = 0.01
 [node name="Mute" type="CheckBox" parent="."]
 layout_mode = 2
 text = "静音"
+
+[node name="ReduceMotion" type="CheckBox" parent="."]
+layout_mode = 2
+text = "减少动态效果"

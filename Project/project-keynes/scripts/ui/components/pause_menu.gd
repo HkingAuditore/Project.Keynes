@@ -119,11 +119,13 @@ func _show_settings() -> void:
 	volume.value = float(current.master_volume)
 	var mute := form.get_node("Mute") as CheckBox
 	mute.button_pressed = bool(current.master_muted)
+	var reduce_motion := form.get_node("ReduceMotion") as CheckBox
+	reduce_motion.button_pressed = bool(current.get("reduce_motion",false))
 	_add_button("应用", "confirm", func() -> void:
 		if settings_service != null:
 			settings_service.update({"render_quality": quality.get_selected_metadata(),
 				"ui_scale_percent": scale.get_selected_metadata(), "master_volume": volume.value,
-				"master_muted": mute.button_pressed})
+				"master_muted": mute.button_pressed,"reduce_motion":reduce_motion.button_pressed})
 		_show_main())
 	_add_button("返回", "back", _show_main)
 

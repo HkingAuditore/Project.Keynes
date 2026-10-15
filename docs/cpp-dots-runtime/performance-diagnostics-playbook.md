@@ -1,5 +1,86 @@
 # Performance Diagnostics Playbook
 
+## Read leases, exact checksums and annual save pauses (2026-10-15)
+
+`const auto group = building_at(...)` inside a non-const method can still create
+an expensive writable row lease: borrow guards, audit preimages and final column
+comparisons. Use the existing const view for reads, including cache-hit checks.
+Do not remove mutation tracking on paths that actually write fields.
+
+MSVC cross-file optimization exposed a catalog identity bug: hashing a padded
+`TermDefinition` object made unchanged catalogs depend on uninitialized padding.
+The Modifier hash now explicitly encodes fields and the original zero reserved
+word, preserving legacy x64 save hashes. LTO remains enabled for speed builds;
+`runtime_lto=no` is the comparison build switch.
+
+Separate worker `execute`, `input_wait`, `save_build` and `save_pause`. A short
+late interval without a save is not sustained acceptance. At requested 50x,
+execute plus input wait can approach the 20ms/day pacing ceiling even while
+annual safe-boundary saves lower the total measured rate. Do not claim that
+additional compute speed alone removes a clock pause, or silently omit saves.
+The original-save v34 run measures 46.9601 days/s over 3000 authoritative days,
+including annual saves; its save pause is 1.037s, versus 3.587s in v33. Cadence
+is adaptive and differed, so this is not a controlled percentage speedup.
+
+Provider manifest SHA256 used to remain inside the pause despite background
+compression/file I/O: a manual-save profile measured 207ms for simulation_runtime
+and 112ms for ecp2 alone. The existing background write task now hashes immutable
+provider bytes before publishing the verified container. See the save document
+for comparison/verification switches. Exact FNV zero-byte combination accelerates
+sparse native wire checksums without sampling bytes or weakening validation.
+
+## Sparse worksets and inactive OwnedState diagnosis (2026-10-15)
+
+Read `economy_formula_backing`, `economy_authority_switch_count`,
+`economy_authority_switch_blocker` and `economy_pending_command_count` before
+assuming the configured OwnedState path is active. The reported manual saves
+contained 30 due Country AI ingress packets from day 2. Worker AI already
+superseded them, but the AI terminal filter prevented queue retirement. The
+fix explicitly cancels these packets under the existing worker AI authority;
+ordinary pending commands still block a switch. Both original manual saves
+now reach `owned_state`, one switch and zero pending commands.
+
+Demand preview starts before `_epoch_active` is set. A filter that only uses
+the active epoch country mask can therefore report zero skipped variants even
+with locked goods. The optimized path moves the existing technology lookup
+ahead of price calculation, only where catalog bounds prove no lost saturation
+events. Count actual skipped work with `demand_preview.locked_variants_skipped`.
+
+`family.review_cells` measures the sorted active-cell review union. In the
+6400-cell/two-settlement fixture, 30 days fall from 192000 to 60 reviews;
+7888 unavailable variant price calculations are skipped. Independent-process
+daily full hashes remain identical. Production and demand already had other
+active worksets; this is not evidence that the entire economy previously
+iterated every map cell.
+
+OwnedState market mirror publication now consumes existing Publish dirty
+pages, with two-generation union for its double buffer. The Hash/Audit cursors
+remain independent; full ledger validation still runs. Compare
+`ledger_export.market_copied_bytes` with `ledger_export.market_dense_bytes`.
+`PK_ECONOMY_MARKET_PUBLISH_FULL=1` restores the full copy;
+`PK_ECONOMY_MIRROR_VERIFY=1` compares against a full independent export and
+adds diagnostic work. Correctness/probe runs must stay separate from timing.
+Evidence, exact binary mappings and repeated same-save measurements are in
+`tmp/perf_sparse_20261015/report.md`.
+
+## Player-save restore rejects before replay (2026-10-15)
+
+`pkef_instance_identity_invalid` with zero activation/stack-key metadata and
+nonzero ACKed stacks can identify the old Effect worker mirror omission. PKEF
+v11 now has a narrowly identified, POD-plan-hash-validated recovery; malformed
+records still fail. A subsequent `restore_family_core_trait_count_invalid`
+formerly rejected descendants below the *initial-roll* minimum; restore now
+enforces the lifetime upper bound and the existing per-trait constraints.
+`d7_transaction_journal_request_invalid` can also indicate historical completed
+rows carrying a different session from the journal header. Only complete,
+request/result-matched terminal history is accepted across that boundary;
+pending session mismatch remains invalid.
+
+The save-replay harness waits for `is_runtime_ready_for_ticks()` after successful
+domain restore. A map/bootstrap report alone is earlier than the deferred worker
+start; otherwise restored worker day 0 -> saved day could appear as enormous
+throughput without one simulated day.
+
 ## Economy 写入登记异常（2026-10-09）
 
 `[economy-tracking-failure]` 给出 guard 存活期间的非法结构修改及字段名；
@@ -2513,3 +2594,149 @@ shadow. Periodic full audits remain enabled at the configured 25-day interval.
 closing against a full scan. Neither flag changes economic settlement cadence.
 An audit mismatch disables the incremental path and fails before publishing
 the generation; it must not silently publish a corrected partial commit.
+
+## 2026-10-15 saved-world preview basis reuse
+
+The original 50x graphical recording committed 139 days in 11.201 seconds
+(12.41 authoritative days/s). Worker execute accounted for 98.78% of that
+window; this category includes copies and waits inside execution, not only
+formula CPU. The sampled largest-slice label is not a daily additive cost.
+
+After save restoration was repaired, same-save headless probes identified
+`cohort_demand_preview` as roughly 7 ms/day. Catalog compilation now derives
+exact equivalence for its market/environment basis: 160 need rows reduce to
+44 distinct bases. Reuse retains ordered component rounding and replays each
+need's saturation events. Actor wealth, family factors and demand remain
+separate. No cadence, audit, hash, gameplay formula or save schema is relaxed.
+
+`PK_ECONOMY_PREVIEW_BASIS_DISABLE=1` restores only the original basis loop for
+A/B. Set it before process creation, particularly on Windows with separate
+native C runtimes. `PK_ECONOMY_MEMO_VERIFY=1` checks first-computation and cached
+preview results against the full loop, including saturation counts. The
+independent-process 30-day parity test compares complete daily state hashes.
+
+Four alternating runs, same manual save, debug DLL, headless production
+restore path, 50 warmup days and 500 measured authoritative days each, without
+probes/verifiers: reference 17.94 / 17.57 days/s, reuse 18.92 / 19.31 days/s.
+Aggregate throughput improves about 7.6%; all population/money/goods errors
+are zero. Keep probe observations separate: preview mean 6.97 -> 5.12 ms/day,
+but other segments varied enough that total probe throughput regressed.
+These short headless runs do not establish graphical throughput or meet the
+200-day warmup / 3000-day repeated 50 days/s acceptance requirement.
+Evidence and remaining cost breakdown: `tmp/perf_50x_opt/report.md`.
+
+
+## 2026-10-15 v18 hot-loop follow-up
+
+StageOps now records actual employment/production/plan timings and shares the
+compact path's building-plan worker range plus deterministic serial reduction.
+`PK_ECONOMY_STAGE_PLAN_SERIAL=1` selects the reference. Replay stage assertions
+read the economy report explicitly, rather than expecting it inside a thread report.
+
+Climate keeps only successfully committed resident physics. Terrain, fixed neighbors
+and water-LUT values exactly invalidate topology/coast caches; positions and trajectory
+knobs additionally invalidate wind trajectories. Failed/discarded plans and restore
+revoke reuse. `PK_CLIMATE_PHYSICS_RESIDENT_VERIFY=1` compares complete results with
+full restoration; climate authority self-test covers input mutation and idle days.
+
+PKEC bulk market records and CLM2 float arrays retain the existing little-endian wire.
+`PK_SAVE_CODEC_SCALAR=1` restores the scalar writer. The bulk market branch must advance
+the section cursor after its last record. Resource wire FNV hashes reuse exact tracked
+mutation revisions; `PK_ECONOMY_RESOURCE_WIRE_CACHE_DISABLE=1` disables reuse and
+`PK_ECONOMY_HASH_VERIFY=1` verifies against complete recomputation.
+
+Evidence: POD self-test 8/8; preview/sparse parity 33/0 with 30 complete hashes;
+climate authority PASS. v18 original manual-1 replay passed owned-state, stage-timing,
+and zero population/money/goods audit checks. Its cold 30-day sample was 35.97 days/s.
+An earlier warmed 30-day v15 sample was 45.73 days/s, but v15's 3000-day window was
+31.41 days/s (83.05 s execute, 4.84 s save_build, 7.24 s save_pause).
+Do not present the short sample as sustained 40/50 days/s acceptance.
+
+## Hotloop v19 retention and attribution probes
+
+`owner_retention.reused` / `owner_retention.computed` count frozen plan-retention
+reuse. `demand_preview.memo_hit` / `memo_miss` describe basis reuse across actors,
+including detailed welfare attribution when a traced cell is active. A SELECTIVE
+trace world without traced cells does not execute that attribution optimization;
+do not attribute throughput gains to an inactive path.
+
+`PK_ECONOMY_RETENTION_MEMO_DISABLE=1`, `PK_ECONOMY_VARIANT_WEIGHT_SCALAR=1`, and
+`PK_ECONOMY_ATTRIBUTION_MEMO_DISABLE=1` restore their separate reference paths.
+`PK_ECONOMY_MEMO_VERIFY=1` recomputes cached targets and complete actor previews,
+comparing saturation counts too. These flags must be set before spawning Godot.
+Probe CSV work counters are per-call records, not cumulative snapshots: sum only
+the measured authoritative-day interval. Do not mix prewarm/startup rows into a
+per-day rate. Cross-domain timing changes under identical code can indicate machine
+noise; a short 40/50 sample is permission to start sustained validation, not proof
+of acceptance or an isolated optimization percentage.
+
+## Hotloop v20–v22 exact reuse diagnostics
+
+`demand_basis.price_reused/computed` and `demand_preview.price_reused/computed`
+count exact ordered-component price/elasticity equivalence, independently of
+per-variant preference and environment multipliers. Restore the old loop with
+`PK_ECONOMY_VARIANT_PRICE_BASIS_DISABLE=1`; disable actual household family-good
+reuse with `PK_ECONOMY_FAMILY_GOOD_CACHE_DISABLE=1`. MEMO_VERIFY checks results
+and saturation events. Welfare parity explicitly activates a traced market and
+compares detail columns as well as the full committed state hash.
+
+`food_capacity.commit` measures food carrying publication; its
+`food_capacity.stock_scan_entries` work counter counts inspected catalog entries.
+`PK_ECONOMY_FOOD_STOCK_SCAN_SCALAR=1` restores all-good iteration. MEMO_VERIFY
+independently checks the food stock sum and saturation events for every cell.
+`publish.social_pressure`, `publish.technology_practice`,
+`publish.country_development`, and `publish.country_ai` split commit-finalize cost.
+
+PKSV ECP2 reuse removes a duplicate boundary capture, without dropping either
+persisted copy. `PK_SAVE_ECP2_REUSE_DISABLE=1` restores recapture;
+`PK_SAVE_ECP2_REUSE_VERIFY=1` requires complete byte equality with independent
+recapture before writing. These diagnostic flags are not performance settings.
+The v19 3000-day result was36.0213 days/s including production autosaves; its
+49.6524 short sample was not sustained acceptance.
+# Family requested-metric work (hotloop v23, 2026-10-15)
+
+`family.behavior_cache` measures the complete existing dirty rebuild, including
+exact source-row comparison. `family.behavior_metrics` counts requested metrics
+for actual family/cell condition slabs. Compare deterministic counts alongside
+timings; this is nested within family commit. Behavior IR operand masks, Effect
+publication masks and direct policy operands all constrain actual helper work.
+`PK_ECONOMY_FAMILY_METRIC_MASK_DISABLE=1` restores full slabs; MEMO_VERIFY checks
+all used values and conditioned behavior against the full path.
+
+Hotloop v24-v26 adds `trigger.kernel`, `trigger.hash_dual`, empty-key and binding
+candidate counts, plus `projection.resource_source` / `projection.resource_mirror`.
+Reference flags are `PK_TRIGGER_BINDING_SCAN_SCALAR`, `PK_TRIGGER_HASH_SCALAR`,
+`PK_ECONOMY_RESOURCE_PROJECTION_SCALAR` and `PK_ECONOMY_MUL_DIV_SCALAR` (all `=1`).
+Trigger's independent full-path checker is `PK_TRIGGER_MEMO_VERIFY=1`.
+Runtime chunk-hash verification continues to check actual dirty-page roots with
+`PK_ECONOMY_HASH_VERIFY=1`. Enable verifiers for correctness only, not throughput.
+
+Hotloop v27 also combines consecutive zero-byte FNV multiplications in the
+little-endian resource stock wire hash using the existing exact lane helper.
+Every byte and the wire hash ABI remain unchanged. Use
+`PK_ECONOMY_RESOURCE_WIRE_HASH_SCALAR=1` for the original byte loop; HASH_VERIFY
+checks the full stock/generation hash independently of revision-cache reuse.
+
+Hotloop v28 splits `demand_preview.basis` from `demand_preview.actor` and adds
+Trigger plan/command/copy probes. These are nested CPU totals, including parallel
+worker work, rather than disjoint daily wall-time components. The original-save
+late probe executes 255.70 Trigger commands/day; its ordering table requires
+zero copied records because the queue is already sorted. This does not establish
+a throughput improvement: v28 warmup200/measure3000 reaches 41.8317 days/s,
+including production autosaves, and still fails the 50 days/s target.
+
+For native-save diagnosis, `save.ecp2` includes capture and final envelope
+encoding. Its nested probes are `save.ecp2.ledger`, `save.ecp2.pkec_chunks`,
+`save.ecp2.resource` and `save.ecp2.owned_state`; their residual includes final
+envelope assembly/hash. Keep `PK_SAVE_CODEC_VERIFY=1` and byte/hash verifiers
+out of throughput runs. They deliberately encode or hash the full data again.
+
+Distinguish requested-rate tests from capacity tests. The existing WorldClock
+best-effort contract does not accumulate time while paused for a save. With
+annual autosaves, a 50x run can therefore remain below 50 authoritative days/s
+even when a separate 100x request exceeds 50. Report both rates explicitly;
+the higher requested-rate result is not 50x acceptance. Do not force cadence
+or change clock debt policy to make the result look faster. v35's isolated
+39.2860 result did not reproduce: v33 binary/current scripts rechecked at
+46.9689 and v35 rechecked at 47.2888 over 3000 measured days. Preserve the
+outlier but do not attribute it to a demonstrated code regression.

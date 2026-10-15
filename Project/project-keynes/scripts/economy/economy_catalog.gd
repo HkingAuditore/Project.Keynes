@@ -46,6 +46,10 @@ const SIGNAL_IDS := {
 static func compile_native_catalog(
 		family_effect_catalog_override: Resource = null,
 		family_trait_catalog_override: Resource = null) -> Dictionary:
+	if family_trait_catalog_override == null and family_effect_catalog_override == null:
+		var precompiled := LoadingCatalogCache.economy_catalog()
+		if not precompiled.is_empty():
+			return precompiled
 	var professions := _load_resources(PROFESSION_DIR)
 	var ethnicities := _load_resources(ETHNICITY_DIR)
 	var plans := _load_resources(PLAN_DIR)

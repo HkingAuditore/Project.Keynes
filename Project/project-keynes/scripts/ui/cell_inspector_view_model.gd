@@ -875,44 +875,8 @@ static func good_dossier_model(row: Dictionary) -> Dictionary:
 		},
 	]
 
+	# 物资卷宗不再附修饰性批注；短缺/盈余由 KPI 与条形图直接表达。
 	var insights := []
-	if shortage_ratio >= 0.25:
-		insights.append({
-			"id": "good_shortage_alert",
-			"text": "本地供给短缺 %.0f%%，主要靠消耗库存或外部输入维持。" % (shortage_ratio * 100.0),
-			"accent": UITokens.DOSSIER_OXBLOOD,
-			"icon": "status.warning",
-		})
-	elif total_demand > supply_units + 0.02:
-		var main_driver := "居民消费" if hh_demand >= biz_demand else "产业投入"
-		insights.append({
-			"id": "good_demand_pressure",
-			"text": "%s拉动本地需求，日均缺口 %s 单位。" % [
-				main_driver, UITokens.format_compact_number_cn(total_demand - supply_units, 2)],
-			"accent": UITokens.DOSSIER_BRASS,
-			"icon": "trend.up",
-		})
-	elif supply_units > total_demand + 0.05:
-		insights.append({
-			"id": "good_surplus",
-			"text": "本地产出充裕，日均盈余 %s 单位可供储蓄或外销。" % UITokens.format_compact_number_cn(supply_units - total_demand, 2),
-			"accent": UITokens.DOSSIER_VERDIGRIS,
-			"icon": "trend.down",
-		})
-	if has_anchor and price_index >= 1.35:
-		insights.append({
-			"id": "good_price_surge",
-			"text": "当前时价达成本锚（%s）的 %.2f 倍，高价正在抑制本地采购。" % [anchor_text, price_index],
-			"accent": UITokens.DOSSIER_OXBLOOD,
-			"icon": "metric.goods",
-		})
-	elif insights.is_empty():
-		insights.append({
-			"id": "good_steady",
-			"text": "本地供需与价格处于平稳区间。" if (total_demand > 0.001 or supply_units > 0.001) else "本地暂无日常供需成交，仅保有静态库存。",
-			"accent": UITokens.DOSSIER_INK_SOFT,
-			"icon": "summary.overview",
-		})
 
 	var flow_peak := maxf(maxf(total_demand, supply_units), 0.001)
 	var demand_supply_bars := [
@@ -1167,21 +1131,8 @@ static func cohort_dossier_model(row: Dictionary) -> Dictionary:
 					("（本地均值 %.0f%%）" % (marker * 100.0)) if marker >= 0.0 else ""],
 			})
 
+	# 阶层卷宗不再附修饰性批注；短板与收支由条形图/KPI 表达。
 	var insights := []
-	if not worst_dim_name.is_empty() and worst_dim_name != "—":
-		insights.append({
-			"id": "cohort_bottleneck",
-			"text": "当前生活水平为【%s】，制约满意度的首要短板是【%s】。" % [living_name, worst_dim_name],
-			"accent": UITokens.DOSSIER_OXBLOOD if sat_float < 0.60 else UITokens.DOSSIER_BRASS,
-			"icon": "population.heart",
-		})
-	if not net_positive:
-		insights.append({
-			"id": "cohort_deficit",
-			"text": "日常收支入不敷出（人均净额 %s/日），正在消耗储蓄存款。" % net_text,
-			"accent": UITokens.DOSSIER_OXBLOOD,
-			"icon": "trend.down",
-		})
 
 	var income_segments := []
 	var income_rows: Array = row.get("income_rows", [])
@@ -1466,6 +1417,7 @@ static func building_dossier_model(row: Dictionary) -> Dictionary:
 		},
 	]
 
+	# 仅保留真实经营异常；气候减产与「正常运转」叙述性批注去掉。
 	var insights := []
 	if not state_summary.is_empty():
 		var slabel := String(state_summary.get("label", "经营异常"))
@@ -1479,25 +1431,6 @@ static func building_dossier_model(row: Dictionary) -> Dictionary:
 			"text": line,
 			"accent": UITokens.DOSSIER_OXBLOOD,
 			"icon": "status.warning",
-		})
-	var climate_lost_text := String(row.get("climate_lost_daily_text", ""))
-	if not climate_lost_text.is_empty():
-		insights.append({
-			"id": "building_climate_loss",
-			"text": "本地气候条件非最优，每栋每日减产 %s。" % climate_lost_text,
-			"accent": UITokens.DOSSIER_BRASS,
-			"icon": "climate",
-		})
-	if insights.is_empty():
-		insights.append({
-			"id": "building_normal_note",
-			"text": "由【%s】阶层主持经营，当前产能出力 %.0f%%，岗位到岗 %s。" % [
-				owner_short if not owner_short.is_empty() else "本地业主",
-				actual_util * 100.0,
-				staff_text,
-			],
-			"accent": UITokens.DOSSIER_INK_SOFT,
-			"icon": "summary.overview",
 		})
 
 	var capacity_bars := [
@@ -2452,15 +2385,7 @@ func _ecology_category(cell: HexCell, idx: int, vegetation_v: int, vitality: flo
 	var stress_drought: float = _adapter_float("get_vegetation_drought_stress", idx, cell.vegetation_drought_stress)
 	var stress_cold: float = _adapter_float("get_vegetation_cold_stress", idx, cell.vegetation_cold_stress)
 	var regen: float = _adapter_float("get_vegetation_regen_score", idx, cell.vegetation_regen_score)
-	var countdown := _succession_text(cell)
 	var insights := []
-	if countdown != "":
-		insights.append({
-			"id": "ecology_succession",
-			"text": countdown,
-			"accent": UITokens.ECO if vitality >= 0.45 else UITokens.RISK,
-			"icon": "growth",
-		})
 	var stress_name := "热"
 	var stress := stress_heat
 	if stress_drought > stress:
@@ -2539,7 +2464,7 @@ func _resources_category(resource_state: Array, visibility: Dictionary = {}) -> 
 
 func _history_category(cell: HexCell) -> Dictionary:
 	return {
-		"insights": [{"id": "history_summary", "text": _history_sentence(cell), "accent": UITokens.ECO, "icon": "history"}],
+		"insights": [],
 		"charts": [
 			{"id": "history_vegetation", "title": "近期植被序列", "values": _history_values(cell), "accent": UITokens.ECO},
 			_temperature_chart("history_temperature", "近期温度变化", int(cell.index), _temp(cell, int(cell.index))),
@@ -3224,16 +3149,6 @@ static func _q16_percent_text(value: int) -> String:
 	return "%.1f%%" % (float(value) * 100.0 / 65536.0)
 
 
-static func _investment_block_reason_text(reason: int) -> String:
-	return [
-		"无阻塞", "已有待建项目", "存在停产产能", "现有岗位未填满",
-		"现有产能充足", "业主生计不足", "商品销售不足", "商品丢弃过高",
-		"投入链不足", "利润率不足", "回本周期过长", "发起资本不足",
-		"建材组不足", "自然资源不足", "居民意愿未通过", "缺少市场信号",
-		"扩建上限", "不支持的建筑类型",
-	][clampi(reason, 0, 17)]
-
-
 func _family_notable_person_rows(facade, family_handle: int) -> Array:
 	var rows: Array = []
 	if facade == null or not facade.has_method("family_notable_people") \
@@ -3609,6 +3524,7 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 			"visible": true,
 		}
 		rows.append(row_dict)
+	# 仅保留空态批注；承载/口粮/投资受阻改为由 gauges 与指标表达。
 	var insights := []
 	if rows.is_empty():
 		insights.append({"id": "population_empty", "text": "此地尚无人口。", "accent": UITokens.TEXT_MUTED, "icon": "growth"})
@@ -3620,20 +3536,6 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 	var effective_food_daily := int(snapshot.get("effective_food_supply_eq_per_day", 0))
 	var food_access := float(snapshot.get("food_access_q16", 65536)) / 65536.0
 	var population_total := int(snapshot.get("population", 0))
-	if population_total > 0 and carrying_k_eff > 0 and population_total > carrying_k_eff:
-		insights.append({
-			"id": "population_at_carrying",
-			"text": "人口已超出粮食承载，需增产或输入粮食才能继续增长。",
-			"accent": UITokens.RISK,
-			"icon": "growth",
-		})
-	elif food_access < 0.8 and population_total > 0:
-		insights.append({
-			"id": "population_food_short",
-			"text": "口粮仅满足 %.0f%%，满意度与人口增长受拖累。" % (food_access * 100.0),
-			"accent": UITokens.RISK,
-			"icon": "growth",
-		})
 	var gauges := []
 	if population_total > 0:
 		gauges.append({"id": "population_food_gauge", "label": "口粮保障",
@@ -3663,16 +3565,6 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 			"status_label": "空缺 %s" % UITokens.format_compact_number_cn(float(job_openings), 1) \
 				if job_openings > 0 else "满员",
 			"tooltip": "本地建筑提供的岗位中已有人到岗的数量。"})
-	var investment_block_reason := int(snapshot.get(
-		"investment_last_block_reason", 0))
-	var investment_review_day := int(snapshot.get("investment_last_review_day", -1))
-	if investment_review_day >= 0 and investment_block_reason > 0:
-		insights.append({
-			"id": "population_investment_block",
-			"text": "投资受阻 · %s" % _investment_block_reason_text(investment_block_reason),
-			"accent": UITokens.RISK,
-			"icon": "resource",
-		})
 	var epoch_income := int(snapshot.get("epoch_income", 0))
 	var epoch_expense := int(snapshot.get("epoch_expense", 0))
 	var epoch_net := epoch_income - epoch_expense
@@ -4023,7 +3915,6 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 		and sample_day != _detail_history_market_day
 	if should_sample_market:
 		_detail_history_market_day = sample_day
-	var shortage_count := 0
 	var in_transit_kinds := 0
 	for i in range(good_ids.size()):
 		if enforce_technology and technology_available[i] == 0:
@@ -4045,8 +3936,6 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 		var stock_daily := _sample_daily_delta(_market_prev_stock,
 			"%d:%s" % [market_id, stable_id], stock_units, sample_day)
 		var shortage := float(shortage_q16[i]) * 100.0 / 65536.0 if i < shortage_q16.size() else 0.0
-		if shortage >= 25.0:
-			shortage_count += 1
 		var allow_trade := _market_trade_enabled(trade_enabled, i)
 		var inbound := _packed_i64_at(trade_inbound, i) if allow_trade else 0
 		var outbound := _packed_i64_at(trade_outbound, i) if allow_trade else 0
@@ -4133,13 +4022,6 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 	var arrival_days := _trade_arrival_days(
 		int(snapshot.get("trade_next_arrival_day", -1)), sample_day)
 	var market_insights := []
-	if shortage_count > 0:
-		market_insights.append({
-			"id": "market_shortage",
-			"text": "%d 种物资短缺" % shortage_count,
-			"accent": UITokens.RISK,
-			"icon": "resource",
-		})
 	if in_transit_kinds > 0:
 		market_insights.append({
 			"id": "market_trade_in_transit",
@@ -5346,16 +5228,6 @@ func _adapter_float(method: String, idx: int, fallback: float) -> float:
 	return clampf(fallback, 0.0, 1.0)
 
 
-func _succession_text(cell: HexCell) -> String:
-	if cell._vitality_low_streak > 0:
-		var rem: int = int(_generator._c().succession_degrade_days if _generator != null else 180) - int(cell._vitality_low_streak)
-		return "退化倒计时 %d 天" % maxi(rem, 0) if rem <= 45 else "存在退化压力"
-	if cell._vitality_high_streak > 0:
-		var rem2: int = int(_generator._c().succession_upgrade_days if _generator != null else 360) - int(cell._vitality_high_streak)
-		return "升级倒计时 %d 天" % maxi(rem2, 0) if rem2 <= 60 else "存在恢复趋势"
-	return ""
-
-
 func _history_values(cell: HexCell) -> Array:
 	var values := []
 	var hist: Array = cell.vegetation_history if not cell.vegetation_history.is_empty() else cell.biome_history
@@ -5365,16 +5237,6 @@ func _history_values(cell: HexCell) -> Array:
 		values.append(float(cell.vegetation))
 		values.append(float(cell.vegetation))
 	return _densify_series(values, 9)
-
-
-func _history_sentence(cell: HexCell) -> String:
-	var hist: Array = cell.vegetation_history
-	if hist.is_empty():
-		return "暂无记录"
-	var names := PackedStringArray()
-	for raw in hist:
-		names.append(VegetationType.name_cn(int(raw)))
-	return " → ".join(names)
 
 
 func _temperature_chart(chart_id: String, title: String, idx: int, current_temp: float) -> Dictionary:

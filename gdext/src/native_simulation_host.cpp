@@ -8,6 +8,7 @@
 #include "country_ai_runtime.h"
 #include "country_runtime.h"
 #include "economy_runtime.h"
+#include "economy_hash.h"
 #include "runtime_economy_ecp2.h"
 #include "native_parallel_executor.h"
 #include "runtime_climate_parity.h"
@@ -486,12 +487,18 @@ bool economy_asset_request_shape_valid(
 }
 
 bool economy_asset_journal_request_valid(
-        const RuntimeEconomyAssetRequest &request, std::string &error) {
+        const RuntimeEconomyAssetRequest &request, std::string &error,
+        bool terminal_history = false) {
     if (!economy_asset_state_valid(request.state)) {
         error = "d7_transaction_journal_request_state_invalid";
         return false;
     }
     RuntimeEconomyAssetRequest admission = request;
+    // Historical terminal transfers may predate a captured calendar context.
+    // Keep their persisted day=-1 identity; only admission-shape validation
+    // uses day zero, and never for an unresolved transaction.
+    if (terminal_history && request.day == -1)
+        admission.day = 0;
     admission.state = request.origin_domain ==
             static_cast<uint32_t>(RuntimeDomainId::ECONOMY)
         ? RuntimeEconomyAssetState::CREATED
@@ -1831,6 +1838,44 @@ bool NativeSimulationHost::switch_economy_authority(
 bool NativeSimulationHost::economy_authority_fault_gate_self_test(
         std::string &error) const noexcept {
     error.clear();
+    // 遗留 AI 包的终态可供收尾/保存查询，但不能污染玩家回执流。
+    const auto receipt_probe = std::make_unique<NativeSimulationHost>();
+    RuntimeCountryCommand old_ai;
+    old_ai.request_id = 1;
+    old_ai.producer_id = COUNTRY_AI_PRODUCER_ID;
+    old_ai.sequence = 131072;
+    old_ai.effective_day = 2;
+    receipt_probe->publish_country_command_terminals({old_ai},
+        CountryCommandReceiptCode::COMMITTED, 3, nullptr);
+    if (!receipt_probe->_country_command_terminals.empty()) {
+        error = "worker_ai_internal_commands_became_player_terminals";
+        return false;
+    }
+    for (int repeat = 0; repeat < 2; ++repeat)
+        receipt_probe->publish_country_command_terminals({old_ai},
+            CountryCommandReceiptCode::REJECTED_AT_EXECUTION, 10838,
+            "country_ai_superseded_by_worker", true);
+    CountryCommandReceipt terminal;
+    std::vector<CountryCommandReceipt> player_receipts;
+    if (!receipt_probe->try_country_command_terminal(1, terminal) ||
+        terminal.code != CountryCommandReceiptCode::REJECTED_AT_EXECUTION ||
+        terminal.reason != "country_ai_superseded_by_worker" ||
+        receipt_probe->_country_command_terminals.size() != 1u ||
+        !receipt_probe->poll_country_command_receipts(0, 8, player_receipts) ||
+        !player_receipts.empty()) {
+        error = "superseded_ai_terminal_not_idempotent_or_leaked";
+        return false;
+    }
+    RuntimeCountryCommand player = old_ai;
+    player.request_id = 2;
+    player.producer_id = 0;
+    receipt_probe->publish_country_command_terminals({player},
+        CountryCommandReceiptCode::COMMITTED, 10839, nullptr);
+    if (!receipt_probe->poll_country_command_receipts(0, 8, player_receipts) ||
+        player_receipts.size() != 1u || player_receipts[0].request_id != 2) {
+        error = "superseded_ai_terminal_filter_hid_player_receipt";
+        return false;
+    }
     // First exercise the epoch-boundary half on a worker-shaped host without
     // starting a thread.  The switch must observe the explicit in-flight
     // counters even when the command ring itself is empty.
@@ -1847,6 +1892,14 @@ bool NativeSimulationHost::economy_authority_fault_gate_self_test(
         return false;
     }
     boundary_probe->_worker_day_inflight.store(0u, std::memory_order_release);
+    boundary_probe->_economy_pending_command_count.store(1u, std::memory_order_release);
+    if (boundary_probe->switch_economy_authority(
+            RuntimeEconomyAuthorityMode::POD_ACTIVE_WITH_LEGACY_PARITY,
+            boundary_error)) {
+        error = "economy_authority_pending_command_gate_weakened";
+        return false;
+    }
+    boundary_probe->_economy_pending_command_count.store(0u, std::memory_order_release);
     boundary_probe->_state.store(RuntimeWorkerState::PAUSED,
                                   std::memory_order_release);
     boundary_error.clear();
@@ -2543,6 +2596,10 @@ bool NativeSimulationHost::publish_environment(
         return false;
     }
     auto copy = std::make_shared<RuntimeEnvironmentSnapshot>(snapshot);
+    {
+        EconomyCostProbe probe("environment.seal_input_hash", snapshot.day, snapshot.cell_count);
+        copy->sealed_climate_input_hash = RuntimeClimateKernel::input_hash(*copy);
+    }
     bool dropped = false;
     if (climate_authoritative) {
         // ACTIVE：满环拒绝，主线程 wait_climate_consumed(0) 等空位 —— 不静默丢天。
@@ -3446,13 +3503,17 @@ bool NativeSimulationHost::restore_country_economy_asset_journal(
             !d7_read_u16(bytes, size, cursor, reserved16) ||
             request_id == 0 || request.request_id != request_id ||
             reserved8 != 0 || reserved16 != 0 || (flags & ~uint8_t{63}) != 0 ||
-            request.session_epoch != serialized_session ||
+            request.session_epoch == 0 ||
+            (request.session_epoch != serialized_session &&
+             ((flags & 7u) != 7u || (flags & (8u | 16u)) != 0)) ||
             !requests.emplace(request_id, request).second) {
             error = "d7_transaction_journal_request_invalid";
             return false;
         }
         std::string shape_error;
-        if (!economy_asset_journal_request_valid(request, shape_error)) {
+        const bool terminal_history = (flags & 7u) == 7u &&
+            (flags & (8u | 16u)) == 0;
+        if (!economy_asset_journal_request_valid(request, shape_error, terminal_history)) {
             error = shape_error.empty() ? "d7_transaction_journal_request_shape_invalid" : shape_error;
             return false;
         }
@@ -4628,6 +4689,11 @@ bool NativeSimulationHost::country_economy_asset_protocol_self_test(
     }
     std::vector<uint8_t> journal;
     std::string journal_error;
+    // Terminal history may predate the current transport session. Its matched
+    // request/result identity remains durable; unresolved requests may not.
+    probe._country_economy_asset_requests.at(request.request_id).session_epoch = 40;
+    probe._country_economy_asset_results.at(request.request_id).session_epoch = 40;
+    probe._country_economy_asset_terminal_results.at(request.request_id).session_epoch = 40;
     if (!probe.serialize_country_economy_asset_journal(journal, journal_error) ||
         journal.size() < 16u) {
         error = journal_error.empty()
@@ -4642,6 +4708,30 @@ bool NativeSimulationHost::country_economy_asset_protocol_self_test(
         error = journal_error.empty()
             ? "country_economy_asset_self_test_journal_restore_failed"
             : journal_error;
+        return false;
+    }
+    probe._country_economy_asset_requests.at(pending.request_id).session_epoch = 40;
+    std::vector<uint8_t> stale_pending_journal;
+    if (!probe.serialize_country_economy_asset_journal(stale_pending_journal, journal_error)) {
+        error = "country_economy_asset_self_test_stale_pending_encode_failed";
+        return false;
+    }
+    auto stale_pending_restore = std::make_unique<NativeSimulationHost>();
+    stale_pending_restore->_country_worker_session_epoch = 52;
+    if (stale_pending_restore->restore_country_economy_asset_journal(
+            stale_pending_journal.data(), stale_pending_journal.size(), journal_error) ||
+        journal_error != "d7_transaction_journal_request_invalid") {
+        error = "country_economy_asset_self_test_stale_pending_accepted";
+        return false;
+    }
+    probe._country_economy_asset_requests.at(pending.request_id).session_epoch = 41;
+    RuntimeEconomyAssetRequest bootstrap_history = request;
+    bootstrap_history.operation = RuntimeEconomyAssetOperation::FISCAL_COLLECT;
+    bootstrap_history.origin_domain = static_cast<uint32_t>(RuntimeDomainId::ECONOMY);
+    bootstrap_history.day = -1;
+    if (!economy_asset_journal_request_valid(bootstrap_history, journal_error, true) ||
+        economy_asset_journal_request_valid(bootstrap_history, journal_error, false)) {
+        error = "country_economy_asset_self_test_bootstrap_history_invalid";
         return false;
     }
     const auto restored_terminal =
@@ -7078,12 +7168,12 @@ void NativeSimulationHost::commit_country_ai_day(int64_t day) {
 void NativeSimulationHost::publish_country_command_terminals(
         const std::vector<RuntimeCountryCommand> &commands,
         CountryCommandReceiptCode code, uint64_t generation,
-        const char *reason) {
+        const char *reason, bool include_superseded_ai) {
     std::lock_guard<std::mutex> lock(_country_transport_mutex);
     for (const RuntimeCountryCommand &command : commands) {
         // AI commands are internal to the worker: player receipt consumers
         // treat any REJECT terminal as their own failure.
-        if (command.producer_id == COUNTRY_AI_PRODUCER_ID) continue;
+        if (command.producer_id == COUNTRY_AI_PRODUCER_ID && !include_superseded_ai) continue;
         if (command.request_id == 0 ||
             _country_command_terminals.find(command.request_id) !=
                 _country_command_terminals.end()) {
@@ -7103,6 +7193,30 @@ void NativeSimulationHost::publish_country_command_terminals(
     }
 }
 
+void NativeSimulationHost::retire_country_ai_ingress(
+        const std::vector<RuntimeCommandPacket> &packets) {
+    if (country_ai_for_worker() == nullptr) return;
+    std::vector<RuntimeCountryCommand> superseded;
+    for (const RuntimeCommandPacket &packet : packets) {
+        const auto &envelope = packet.envelope;
+        if (envelope.domain != static_cast<uint16_t>(RuntimeDomainId::COUNTRY) ||
+            envelope.producer_id != COUNTRY_AI_PRODUCER_ID || envelope.request_id == 0)
+            continue;
+        RuntimeCountryCommand command;
+        command.request_id = envelope.request_id;
+        command.producer_id = envelope.producer_id;
+        command.sequence = envelope.sequence;
+        command.effective_day = envelope.effective_day;
+        superseded.push_back(command);
+    }
+    if (superseded.empty()) return;
+    // 主线程 AI 的旧包已被既有 worker 重规划路径取代，必须明确收尾。
+    // 不伪造已执行，不让旧 ACCEPTED 包永久阻塞 OwnedState 的安全切换。
+    publish_country_command_terminals(superseded,
+        CountryCommandReceiptCode::REJECTED_AT_EXECUTION,
+        _country_pod_authority.generation(), "country_ai_superseded_by_worker", true);
+}
+
 bool NativeSimulationHost::poll_country_command_receipts(
         uint64_t after_request_id, uint32_t limit,
         std::vector<CountryCommandReceipt> &out) {
@@ -7113,6 +7227,7 @@ bool NativeSimulationHost::poll_country_command_receipts(
     auto it = _country_command_terminals.upper_bound(after_request_id);
     for (; it != _country_command_terminals.end() &&
            out.size() < bounded_limit; ++it) {
+        if (it->second.producer_id == COUNTRY_AI_PRODUCER_ID) continue;
         out.push_back(it->second);
     }
     return true;
@@ -9069,10 +9184,14 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
     }
     _pod_visual_intents.clear();
     // INPUT_CAPTURE is a real freeze boundary, not merely a validation bit.
+    // 仅复用本次调用中、同一不可变对象已经由 Climate kernel 计算的完整哈希。
+    // 不按 day/generation 猜测跨调用内容；重试或未跑 Climate 时仍完整计算。
+    const RuntimeEnvironmentSnapshot *climate_hashed_input = nullptr;
+    uint64_t climate_hashed_input_hash = 0;
     // Capture only an input that belongs to this exact sealed day. A stale or
     // future frame must never replace the last accepted manifest before the
     // stage has had a chance to reject it.
-    const auto capture_input_manifest = [&](const RuntimeEnvironmentSnapshot &accepted) {
+    const auto capture_input_manifest = [&](const RuntimeEnvironmentSnapshot &accepted) -> bool {
         const uint64_t prior_generation =
             _input_capture_generation.load(std::memory_order_relaxed);
         const int64_t prior_day =
@@ -9080,7 +9199,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         if (prior_generation == accepted.generation &&
             prior_day == accepted.day) {
             _input_capture_reused.fetch_add(1, std::memory_order_relaxed);
-            return;
+            return true;
         }
         {
             RuntimeInputCaptureManifest manifest{};
@@ -9094,7 +9213,22 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 std::memory_order_relaxed);
             manifest.catalog_hash = accepted.climate_catalog_hash;
             manifest.command_watermark = admitted_submit_order;
-            uint64_t manifest_hash = RuntimeClimateKernel::input_hash(accepted);
+            static const bool full_hash = [] {
+                const char *value = std::getenv("PK_RUNTIME_INPUT_HASH_FULL");
+                return value && std::strcmp(value, "1") == 0;
+            }();
+            static const bool verify_hash = [] {
+                const char *value = std::getenv("PK_RUNTIME_INPUT_HASH_VERIFY");
+                return value && std::strcmp(value, "1") == 0;
+            }();
+            const bool reused = !full_hash && climate_hashed_input == &accepted;
+            uint64_t manifest_hash = reused ? climate_hashed_input_hash
+                : RuntimeClimateKernel::input_hash(accepted);
+            if (reused && verify_hash && manifest_hash != RuntimeClimateKernel::input_hash(accepted)) {
+                set_fault("runtime_input_hash_reuse_mismatch");
+                return false;
+            }
+            EconomyCostProbe::record("input_manifest.hash_reused", accepted.day, 0.0, reused ? 1 : 0);
             if (std::FILE *trace = sim_day_trace_file()) {
                 SimTraceLock trace_lock(trace);
                 std::fprintf(trace,
@@ -9131,6 +9265,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             _input_capture_hash.store(manifest_hash, std::memory_order_relaxed);
             _input_capture_count.fetch_add(1, std::memory_order_relaxed);
         }
+        return true;
     };
     // Returns false only on a hard Events plan/commit failure. "Disabled" and
     // "already processed this host day" are true: an I8 ACTIVE Events stage
@@ -10048,6 +10183,8 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             active_climate_ok = _climate_authority.commit_day(climate_day,
                                                               climate_report);
             if (active_climate_ok) {
+                climate_hashed_input = environment;
+                climate_hashed_input_hash = climate_report.input_hash;
                 _climate_committed_input_generation.store(environment->generation,
                                                           std::memory_order_release);
                 _climate_committed_day.store(climate_day,
@@ -10201,7 +10338,11 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 commit.continuation_pending = 1;
                 continue;
             }
-            capture_input_manifest(*environment);
+            if (!capture_input_manifest(*environment)) {
+                stage.completed = 0;
+                commit.preflight_ok = 0;
+                return commit;
+            }
             stage.work_units = 1;
             stage.completed = 1;
             commit.work_units += stage.work_units;
@@ -10229,6 +10370,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
               (_requested_authority_mask.load(std::memory_order_acquire) &
                runtime_domain_mask(RuntimeDomainId::COUNTRY)) != 0u))) {
             if (_country_pod_configured) {
+                retire_country_ai_ingress(day_commands);
                 const int64_t country_committed =
                     _country_pod_authority.committed_day();
                 // Country packets behind the POD committed day are no longer
@@ -12051,11 +12193,7 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
         error = "runtime_bundle_checksum_missing";
         return false;
     }
-    uint64_t checksum = 1469598103934665603ull;
-    for (size_t i = 0; i + sizeof(uint64_t) < size; ++i) {
-        checksum ^= static_cast<uint64_t>(bytes[i]);
-        checksum *= 1099511628211ull;
-    }
+    const uint64_t checksum = economy_save_hash_bytes(bytes, size - sizeof(uint64_t));
     if (checksum != encoded_checksum) {
         error = "runtime_bundle_checksum_failed";
         return false;
@@ -12728,11 +12866,8 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
             error = "runtime_bundle_economy_ecp2_section_checksum_missing";
             return false;
         }
-        uint64_t computed = 1469598103934665603ull;
-        for (const uint8_t byte : parsed.economy_ecp2_bytes) {
-            computed ^= static_cast<uint64_t>(byte);
-            computed *= 1099511628211ull;
-        }
+        const uint64_t computed = economy_save_hash_bytes(
+            parsed.economy_ecp2_bytes.data(), parsed.economy_ecp2_bytes.size());
         if (computed != economy_checksum) {
             error = "runtime_bundle_economy_ecp2_section_checksum_failed";
             return false;
@@ -12798,6 +12933,7 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
 void NativeSimulationHost::build_save_bundle(
         uint64_t request_id,
         const std::vector<RuntimeCommandPacket> &pending_commands) {
+    EconomyCostProbe save_probe("save.bundle", _committed_day.load(std::memory_order_acquire));
     if (try_fault_injection("save.barrier.before")) {
         return;
     }
@@ -12829,6 +12965,7 @@ void NativeSimulationHost::build_save_bundle(
     _pod_pipeline.serialize(bundle->domain_pod_bytes);
     const bool include_climate = _climate_authority.store().cell_count != 0;
     if (include_climate) {
+        EconomyCostProbe climate_probe("save.climate", bundle->committed_day);
         std::string climate_save_error;
         if (!_climate_authority.serialize(bundle->climate_bytes, climate_save_error)) {
             set_fault(climate_save_error.empty() ? "climate_save_encode_failed" :
@@ -12874,6 +13011,18 @@ void NativeSimulationHost::build_save_bundle(
                     states.emplace(receipt.request_id, receipt);
                 } else if (existing->second.code != receipt.code ||
                            existing->second.effective_day != receipt.effective_day) {
+                    const auto &previous = existing->second;
+                    if (previous.code == CountryCommandReceiptCode::ACCEPTED &&
+                        receipt.code == CountryCommandReceiptCode::REJECTED_AT_EXECUTION &&
+                        receipt.producer_id == COUNTRY_AI_PRODUCER_ID &&
+                        previous.producer_id == receipt.producer_id &&
+                        previous.sequence == receipt.sequence &&
+                        previous.effective_day == receipt.effective_day &&
+                        receipt.reason == "country_ai_superseded_by_worker") {
+                        // 只读副本保留旧接收记录；Host 的 AI 收尾终态优先。
+                        existing->second = receipt;
+                        continue;
+                    }
                     set_fault("country_save_request_state_conflict");
                     return;
                 }
@@ -13028,6 +13177,7 @@ void NativeSimulationHost::build_save_bundle(
     }
     if (_economy_ecp2_dual_write.load(std::memory_order_acquire) &&
         _economy_production_runtime != nullptr) {
+        EconomyCostProbe economy_probe("save.ecp2", bundle->committed_day);
         // The committed-ledger contract (capture and restore alike) needs at
         // least one economy commit. Before that there is nothing restorable
         // to write; reject the request and keep the runtime running instead
@@ -13081,10 +13231,21 @@ void NativeSimulationHost::build_save_bundle(
     // carries an explicit ABI/section mask, followed by a bounded pending
     // command tail and producer cursors. The checksum remains the final eight
     // bytes and the complete tail is mandatory for v2 restores.
-    bundle->bytes.reserve(4 + 4 + 8 * 10 + 1 + 4 + 4 +
+    const auto wire_started = std::chrono::steady_clock::now();
+    size_t wire_reserve = 4 + 4 + 8 * 10 + 1 + 4 + 4 +
         bundle->pending_commands.size() * (8 + 4 + 8 + 8 + 8 + 8 + 2 + 2 + 4 +
                                            RUNTIME_MAX_COMMAND_PAYLOAD) +
-        bundle->producer_sequences.size() * 8 + 8 + 8);
+        bundle->producer_sequences.size() * 8 + 8 + 8;
+    // 所有 section 已冻结；一次预留，避免拼接大 section 时反复搬移前缀。
+    for (const auto *section : {&bundle->domain_pod_bytes, &bundle->climate_bytes,
+            &bundle->country_bytes, &bundle->economy_asset_bytes,
+            &bundle->trigger_bytes, &bundle->modifier_bytes, &bundle->events_bytes,
+            &bundle->gameplay_effect_bytes, &bundle->effect_bytes,
+            &bundle->ideology_bytes, &bundle->economy_pod_bytes,
+            &bundle->economy_ecp2_bytes}) {
+        wire_reserve += 16u + std::min<size_t>(section->size(), 64u * 1024u * 1024u);
+    }
+    bundle->bytes.reserve(wire_reserve);
     const auto append_bytes = [&bundle](const void *data, size_t size) {
         const size_t offset = bundle->bytes.size();
         bundle->bytes.resize(offset + size);
@@ -13175,11 +13336,8 @@ void NativeSimulationHost::build_save_bundle(
     if (domain_section_size > 0) {
         append_bytes(bundle->domain_pod_bytes.data(), domain_section_size);
     }
-    uint64_t domain_checksum = 1469598103934665603ull;
-    for (uint32_t i = 0; i < domain_section_size; ++i) {
-        domain_checksum ^= static_cast<uint64_t>(bundle->domain_pod_bytes[i]);
-        domain_checksum *= 1099511628211ull;
-    }
+    const uint64_t domain_checksum = economy_save_hash_bytes(
+        bundle->domain_pod_bytes.data(), domain_section_size);
     append_u64_le(domain_checksum);
 
     if (include_climate) {
@@ -13218,11 +13376,8 @@ void NativeSimulationHost::build_save_bundle(
             bundle->economy_asset_bytes.size(), 64u * 1024u * 1024u));
         append_u32_le(d7_section_size);
         append_bytes(bundle->economy_asset_bytes.data(), d7_section_size);
-        uint64_t d7_checksum = 1469598103934665603ull;
-        for (uint32_t i = 0; i < d7_section_size; ++i) {
-            d7_checksum ^= static_cast<uint64_t>(bundle->economy_asset_bytes[i]);
-            d7_checksum *= 1099511628211ull;
-        }
+        const uint64_t d7_checksum = economy_save_hash_bytes(
+            bundle->economy_asset_bytes.data(), d7_section_size);
         append_u64_le(d7_checksum);
     }
 
@@ -13329,12 +13484,8 @@ void NativeSimulationHost::build_save_bundle(
                              64u * 1024u * 1024u));
         append_u32_le(economy_section_size);
         append_bytes(bundle->economy_pod_bytes.data(), economy_section_size);
-        uint64_t economy_checksum = 1469598103934665603ull;
-        for (uint32_t i = 0; i < economy_section_size; ++i) {
-            economy_checksum ^=
-                static_cast<uint64_t>(bundle->economy_pod_bytes[i]);
-            economy_checksum *= 1099511628211ull;
-        }
+        const uint64_t economy_checksum = economy_save_hash_bytes(
+            bundle->economy_pod_bytes.data(), economy_section_size);
         append_u64_le(economy_checksum);
     }
 
@@ -13346,22 +13497,18 @@ void NativeSimulationHost::build_save_bundle(
                              64u * 1024u * 1024u));
         append_u32_le(ecp2_section_size);
         append_bytes(bundle->economy_ecp2_bytes.data(), ecp2_section_size);
-        uint64_t ecp2_checksum = 1469598103934665603ull;
-        for (uint32_t i = 0; i < ecp2_section_size; ++i) {
-            ecp2_checksum ^=
-                static_cast<uint64_t>(bundle->economy_ecp2_bytes[i]);
-            ecp2_checksum *= 1099511628211ull;
-        }
+        const uint64_t ecp2_checksum = economy_save_hash_bytes(
+            bundle->economy_ecp2_bytes.data(), ecp2_section_size);
         append_u64_le(ecp2_checksum);
     }
 
-    uint64_t checksum = 1469598103934665603ull;
-    for (uint8_t byte : bundle->bytes) {
-        checksum ^= static_cast<uint64_t>(byte);
-        checksum *= 1099511628211ull;
-    }
+    const uint64_t checksum = economy_save_hash_bytes(
+        bundle->bytes.data(), bundle->bytes.size());
     bundle->checksum = checksum;
     append_u64_le(bundle->checksum);
+    EconomyCostProbe::record("save.wire", bundle->committed_day,
+        std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - wire_started).count(), bundle->bytes.size());
 
     _save_consumed_request_id.store(0, std::memory_order_release);
     std::atomic_store_explicit(&_save_bundle,
@@ -14070,7 +14217,7 @@ void NativeSimulationHost::worker_main() {
                             _climate_writeback.try_begin_write(slot)) {
                             RuntimeClimateSnapshot &out =
                                 _climate_writeback.write_buffer(slot);
-                            _climate_authority.snapshot_into(out);
+                            _climate_authority.snapshot_into(out, true);
                             // Own monotonic sequence, not the commit
                             // generation: the commit generation is bumped later
                             // inside publish_day, so reading it here would
