@@ -2,13 +2,14 @@ extends SceneTree
 
 ## Composite satisfaction runtime coverage: the eight dimensions, the
 ## subsistence gate, class (profession) weight differentiation, the explain and
-## attractiveness read APIs, and PKEC v42 round-trip plus state hash.
+## attractiveness read APIs, and PKEC v55 round-trip plus state hash.
 
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const CountryTestHelper = preload("res://tests/country_test_helper.gd")
 
 const SAT_DIM_SUBSISTENCE := 0
 const SAT_DIM_BASIC := 1
+const SAT_DIM_COMFORT := 2
 const SAT_DIM_LUXURY := 3
 const SAT_DIM_INCOME := 4
 const SAT_DIM_SAVINGS := 5
@@ -36,6 +37,7 @@ func _run() -> void:
 	_test_catalog_columns(compiled)
 	_test_dimensions_and_gate(compiled)
 	_test_class_weight_differentiation(compiled)
+	_test_purchasing_power(compiled)
 	_test_explain_and_attractiveness(compiled)
 	_test_save_round_trip(compiled)
 
@@ -109,19 +111,19 @@ func _test_dimensions_and_gate(compiled: Dictionary) -> void:
 		"profession_ids", PackedInt32Array())
 	var starving_worsts: PackedInt32Array = starving_snapshot.get(
 		"worst_satisfaction_dimension_by_cohort", PackedInt32Array())
-	var farmer_worst := -1
-	var farmer_row := -1
+	var unemployed_worst := -1
+	var unemployed_row := -1
 	for row in range(starving_profession_indices.size()):
 		var profession_index := int(starving_profession_indices[row])
 		if profession_index < 0 or profession_index >= starving_professions.size():
 			continue
-		if String(starving_professions[profession_index]) != "subsistence_farmer":
+		if String(starving_professions[profession_index]) != "unemployed":
 			continue
-		farmer_row = row
-		farmer_worst = int(starving_worsts[row]) if row < starving_worsts.size() else -1
+		unemployed_row = row
+		unemployed_worst = int(starving_worsts[row]) if row < starving_worsts.size() else -1
 		break
 	_expect("the worst dimension points at the binding constraint",
-		farmer_row >= 0 and farmer_worst == SAT_DIM_SUBSISTENCE)
+		unemployed_row >= 0 and unemployed_worst == SAT_DIM_SUBSISTENCE)
 	var development := int(fed_dims[SAT_DIM_DEVELOPMENT])
 	_expect("social development stays inside its normalized range",
 		development >= 0 and development < Q16_ONE)
@@ -130,8 +132,8 @@ func _test_dimensions_and_gate(compiled: Dictionary) -> void:
 
 
 func _test_class_weight_differentiation(compiled: Dictionary) -> void:
-	# Identical material conditions, different profession weights: the composite
-	# must diverge, which is the whole point of data-driven class weights.
+	# Jobless households and merchants share a market but retain distinct
+	# profession weights; zero luxury weight must not hide the diagnostic score.
 	var ext := _configured_world(compiled, 4002, true, true)
 	if ext == null:
 		return
@@ -142,29 +144,141 @@ func _test_class_weight_differentiation(compiled: Dictionary) -> void:
 		"profession_stable_ids", PackedStringArray())
 	var profession_indices: PackedInt32Array = snapshot.get(
 		"profession_ids", PackedInt32Array())
-	var farmer_row := -1
+	var unemployed_row := -1
 	var merchant_row := -1
 	for row in range(profession_indices.size()):
 		var index := int(profession_indices[row])
 		if index < 0 or index >= professions.size():
 			continue
-		if String(professions[index]) == "subsistence_farmer":
-			farmer_row = row
+		if String(professions[index]) == "unemployed":
+			unemployed_row = row
 		elif String(professions[index]) == "merchant":
 			merchant_row = row
-	if farmer_row < 0 or merchant_row < 0:
+	if unemployed_row < 0 or merchant_row < 0:
 		_expect("both authored classes survive the settlement", false)
 		return
-	var farmer_dims := _dims_for_cohort(snapshot, farmer_row)
+	var unemployed_dims := _dims_for_cohort(snapshot, unemployed_row)
 	var merchant_dims := _dims_for_cohort(snapshot, merchant_row)
-	_expect("the luxury dimension is excluded from a plan without luxuries",
-		int(farmer_dims[SAT_DIM_LUXURY]) == Q16_ONE - 1)
+	var handles: PackedInt64Array = snapshot.handles
+	var unemployed_explain: Dictionary = ext.explain_cohort_satisfaction(handles[unemployed_row])
+	_expect("a class with no luxury weight still publishes its purchasing-power score",
+		int((unemployed_explain.dim_weights_q16 as PackedInt32Array)[SAT_DIM_LUXURY]) == 0 and
+		int(unemployed_dims[SAT_DIM_LUXURY]) == _purchasing_power_score(
+			int(unemployed_explain.purchasing_power_months_q16), 3 * Q16_ONE, 10 * Q16_ONE))
 	_expect("two classes under one market reach different composites",
-		_composite_for_cohort(snapshot, farmer_row) !=
+		_composite_for_cohort(snapshot, unemployed_row) !=
 			_composite_for_cohort(snapshot, merchant_row))
 	_expect("the basic tier is scored for both classes",
-		int(farmer_dims[SAT_DIM_BASIC]) >= 0 and
+		int(unemployed_dims[SAT_DIM_BASIC]) >= 0 and
 		int(merchant_dims[SAT_DIM_BASIC]) >= 0)
+
+
+func _test_purchasing_power(compiled: Dictionary) -> void:
+	# First price the local reference basket, then choose savings that exercise
+	# both ramps. The published score uses post-purchase cash, not initial cash.
+	var probe := _configured_world(compiled, 4010, true)
+	if probe == null:
+		return
+	_run_cycle(probe, 0)
+	var probe_snapshot: Dictionary = probe.get_population_cell_snapshot(0)
+	var probe_explain: Dictionary = probe.explain_cohort_satisfaction(
+		(probe_snapshot.handles as PackedInt64Array)[0])
+	var month_cost := int(probe_explain.living_cost_per_capita) * 400 * 30
+	_expect("purchasing power has a positive local reference basket", month_cost > 0)
+	if month_cost <= 0:
+		return
+	var previous_comfort := -1
+	var previous_luxury := -1
+	for months in [0, 1, 2, 3, 6, 10, 20]:
+		var ext := _configured_world(compiled, 4011, true, false,
+			{"funds": month_cost * months})
+		if ext == null:
+			continue
+		var report := _run_cycle(ext, 0)
+		_expect("purchasing-power settlement conserves all ledgers (%d months)" % months,
+			bool(report.get("done", false)) and not bool(report.get("fatal", false)) and
+			int(report.get("population_error", 1)) == 0 and
+			int(report.get("money_error", 1)) == 0 and int(report.get("goods_error", 1)) == 0)
+		var snapshot: Dictionary = ext.get_population_cell_snapshot(0)
+		var explained: Dictionary = ext.explain_cohort_satisfaction(
+			(snapshot.handles as PackedInt64Array)[0])
+		var dims: PackedInt32Array = explained.dim_values_q16
+		var power := int(explained.purchasing_power_months_q16)
+		_expect("purchasing power uses remaining cash and a fixed 30-day basket (%d months)" % months,
+			power == int(explained.funds) * Q16_ONE /
+				(int(explained.population) * int(explained.living_cost_per_capita) * 30) and
+			int(explained.purchasing_power_reference_days) == 30)
+		_expect("comfort and luxury follow cash purchasing power (%d months)" % months,
+			int(dims[SAT_DIM_COMFORT]) == _purchasing_power_score(power, Q16_ONE, 3 * Q16_ONE) and
+			int(dims[SAT_DIM_LUXURY]) == _purchasing_power_score(power, 3 * Q16_ONE, 10 * Q16_ONE))
+		_expect("more savings never lowers either score (%d months)" % months,
+			int(dims[SAT_DIM_COMFORT]) >= previous_comfort and
+			int(dims[SAT_DIM_LUXURY]) >= previous_luxury)
+		previous_comfort = int(dims[SAT_DIM_COMFORT])
+		previous_luxury = int(dims[SAT_DIM_LUXURY])
+		if months == 0:
+			_expect("zero savings scores zero even when both need tiers are empty",
+				previous_comfort == 0 and previous_luxury == 0)
+		if months == 2:
+			_expect("comfort reaches an intermediate value before luxury starts",
+				previous_comfort > 0 and previous_comfort < Q16_ONE - 1 and previous_luxury == 0)
+		if months == 6:
+			_expect("luxury has an intermediate value after comfort saturates",
+				previous_comfort == Q16_ONE - 1 and previous_luxury > 0 and previous_luxury < Q16_ONE - 1)
+	_expect("sufficient purchasing power saturates both dimensions",
+		previous_comfort == Q16_ONE - 1 and previous_luxury == Q16_ONE - 1)
+	var normal := _purchasing_power_fixture(compiled, month_cost * 6, 1)
+	var expensive := _purchasing_power_fixture(compiled, month_cost * 6, 2)
+	var normal_dims: PackedInt32Array = normal.dim_values_q16
+	var expensive_dims: PackedInt32Array = expensive.dim_values_q16
+	_expect("higher market prices lower purchasing power and luxury at equal initial savings",
+		int(expensive.living_cost_per_capita) > int(normal.living_cost_per_capita) and
+		int(expensive.purchasing_power_months_q16) < int(normal.purchasing_power_months_q16) and
+		int(expensive_dims[SAT_DIM_COMFORT]) <= int(normal_dims[SAT_DIM_COMFORT]) and
+		int(expensive_dims[SAT_DIM_LUXURY]) < int(normal_dims[SAT_DIM_LUXURY]))
+	var empty := _configured_world(compiled, 4012, false)
+	_run_cycle(empty, 0)
+	var empty_snapshot: Dictionary = empty.get_population_cell_snapshot(0)
+	var unavailable: Dictionary = empty.explain_cohort_satisfaction(
+		(empty_snapshot.handles as PackedInt64Array)[0])
+	var empty_dims: PackedInt32Array = unavailable.dim_values_q16
+	_expect("an unpriced empty market never grants full comfort or luxury",
+		not bool(unavailable.purchasing_power_basis_valid) and
+		int(empty_dims[SAT_DIM_COMFORT]) == 0 and int(empty_dims[SAT_DIM_LUXURY]) == 0)
+	var weights: PackedInt32Array = normal.dim_weights_q16
+	_expect("comfort keeps its profession weight without comfort-tier needs",
+		int(weights[SAT_DIM_COMFORT]) > 0)
+	var custom := _purchasing_power_fixture(compiled, month_cost * 6, 1, {
+		"satisfaction_comfort_floor_months_q16": 2 * Q16_ONE,
+		"satisfaction_comfort_ceiling_months_q16": 4 * Q16_ONE,
+		"satisfaction_luxury_floor_months_q16": 5 * Q16_ONE,
+		"satisfaction_luxury_ceiling_months_q16": 9 * Q16_ONE,
+	})
+	var custom_dims: PackedInt32Array = custom.dim_values_q16
+	_expect("profile overrides control both purchasing-power ramps",
+		int(custom.comfort_floor_months_q16) == 2 * Q16_ONE and
+		int(custom.luxury_ceiling_months_q16) == 9 * Q16_ONE and
+		int(custom_dims[SAT_DIM_COMFORT]) == _purchasing_power_score(
+			int(custom.purchasing_power_months_q16), 2 * Q16_ONE, 4 * Q16_ONE) and
+		int(custom_dims[SAT_DIM_LUXURY]) == _purchasing_power_score(
+			int(custom.purchasing_power_months_q16), 5 * Q16_ONE, 9 * Q16_ONE))
+
+
+func _purchasing_power_fixture(compiled: Dictionary, funds: int, price_multiplier: int,
+		profile: Dictionary = {}) -> Dictionary:
+	var ext := _configured_world(compiled, 4013, true, false,
+		{"funds": funds, "price_multiplier": price_multiplier, "profile": profile})
+	_run_cycle(ext, 0)
+	var snapshot: Dictionary = ext.get_population_cell_snapshot(0)
+	return ext.explain_cohort_satisfaction((snapshot.handles as PackedInt64Array)[0])
+
+
+func _purchasing_power_score(power: int, floor_value: int, ceiling: int) -> int:
+	if power <= floor_value:
+		return 0
+	if power >= ceiling:
+		return Q16_ONE - 1
+	return (power - floor_value) * (Q16_ONE - 1) / (ceiling - floor_value)
 
 
 func _test_explain_and_attractiveness(compiled: Dictionary) -> void:
@@ -212,23 +326,34 @@ func _test_explain_and_attractiveness(compiled: Dictionary) -> void:
 		not bool(ext.get_cell_satisfaction_attractiveness(99).get("ok", true)))
 
 
-func _test_save_round_trip(compiled: Dictionary) -> void:
+func _test_save_round_trip(compiled: Dictionary, check_full_replay_hash: bool = true) -> void:
 	var source := _configured_world(compiled, 4004, true)
 	if source == null:
 		return
 	for cycle in range(5):
 		_run_cycle(source, cycle)
 	var before: Dictionary = source.get_population_cell_snapshot(0)
+	# Economy replay requires the matching Country technology/assets snapshot.
+	var country_begin: Dictionary = source.begin_country_save(65536)
+	_expect("the replay fixture saves its Country peer", bool(country_begin.get("ok", false)))
+	var country_chunks: Array[PackedByteArray] = []
+	while true:
+		var chunk: PackedByteArray = source.read_country_save_chunk(65536)
+		if chunk.is_empty():
+			break
+		country_chunks.append(chunk)
+	_expect("Country peer save completes", bool(source.end_country_save().get("ok", false)))
 	var saved := _save(source)
-	_expect("PKEC v42 streams the satisfaction columns",
-		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 43)
+	_expect("PKEC v55 streams the satisfaction columns",
+		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 55)
 	if not bool(saved.get("ok", false)):
 		return
-	var restored := _configured_world(compiled, 4004, true)
+	var restored := _configured_world(compiled, 4004, true, false,
+		{"country_chunks": country_chunks, "skip_bootstrap": true})
 	if restored == null:
 		return
 	var restore_result := _restore(restored, saved.get("chunks", []))
-	_expect("PKEC v42 restores the satisfaction columns",
+	_expect("PKEC v55 restores the satisfaction columns",
 		bool(restore_result.get("ok", false)))
 	_expect("composite satisfaction enters the economy state hash",
 		int(source.get_economy_state_hash()) ==
@@ -243,22 +368,43 @@ func _test_save_round_trip(compiled: Dictionary) -> void:
 			after.get("worst_satisfaction_dimension_by_cohort", PackedInt32Array()))
 	var source_next := _run_cycle(source, 5)
 	var restored_next := _run_cycle(restored, 5)
-	_expect("the restored runtime replays the next cycle identically",
+	var source_dims: Dictionary = source.get_population_cell_snapshot(0)
+	var restored_dims: Dictionary = restored.get_population_cell_snapshot(0)
+	_expect("restored satisfaction scores replay the next settlement identically",
+		source_dims.satisfaction_dims_by_cohort_q16 == restored_dims.satisfaction_dims_by_cohort_q16 and
+		source_dims.overall_satisfaction_by_cohort_q16 == restored_dims.overall_satisfaction_by_cohort_q16)
+	_expect("both replayed settlements conserve ledgers",
 		int(source_next.get("population_error", 1)) == 0 and
+		int(source_next.get("money_error", 1)) == 0 and int(source_next.get("goods_error", 1)) == 0 and
 		int(restored_next.get("population_error", 1)) == 0 and
-		int(source.get_economy_state_hash()) ==
-			int(restored.get_economy_state_hash()))
+		int(restored_next.get("money_error", 1)) == 0 and int(restored_next.get("goods_error", 1)) == 0)
+	if check_full_replay_hash:
+		_expect("the restored runtime replays the next cycle identically",
+			int(source.get_economy_state_hash()) == int(restored.get_economy_state_hash()))
 
 
 func _configured_world(compiled: Dictionary, seed: int, stocked: bool,
-		mixed_classes: bool = false) -> Object:
+		mixed_classes: bool = false, tuning: Dictionary = {}) -> Object:
 	var ext := _new_ext(1)
 	var catalog := compiled.duplicate(true)
 	catalog.erase("ok")
+	if not CountryTestHelper.configure_all_technologies(ext, catalog, 1, seed):
+		_expect("satisfaction test country configures", false)
+		return null
+	if tuning.has("country_chunks"):
+		_expect("Country peer restore begins", bool(ext.begin_country_restore().get("ok", false)))
+		for chunk in tuning.country_chunks:
+			ext.feed_country_restore_chunk(chunk)
+		_expect("Country peer restores before Economy", bool(ext.end_country_restore().get("ok", false)))
 	var profile = load("res://data/economy/default_economy.tres").to_native_profile()
 	profile.market_runtime_mode = "ACTIVE"
 	profile.market_cycle_days = 5
 	profile.worker_enabled = false
+	# Keep numerical replay independent of transient approximation cooldowns.
+	profile.economy_accuracy_preset = "EXACT"
+	# Bound voluntary mobility; mandatory job loss may still create unemployed cohorts.
+	profile.employment_mobility_daily_q16 = 0
+	profile.merge(tuning.get("profile", {}), true)
 	var births: PackedInt64Array = catalog.signature_birth_rate_q32
 	var deaths: PackedInt64Array = catalog.signature_death_rate_q32
 	births.fill(0)
@@ -269,19 +415,20 @@ func _configured_world(compiled: Dictionary, seed: int, stocked: bool,
 	profile.carrying_k_floor = 100000
 	profile.carrying_surplus_elasticity_q16 = 0
 	profile.carrying_sat_elasticity_q16 = 0
-	if not CountryTestHelper.configure_all_technologies(ext, catalog, 1, seed):
-		_expect("satisfaction test country configures", false)
-		return null
-	if not bool(ext.configure_economy(catalog, profile, 1, seed).get("ok", false)):
+	var configured: Dictionary = ext.configure_economy(catalog, profile, 1, seed)
+	if not bool(configured.get("ok", false)):
+		print("satisfaction economy configuration: ", configured)
 		_expect("satisfaction test economy configures", false)
 		return null
+	if bool(tuning.get("skip_bootstrap", false)):
+		return ext
 	var signature_keys: PackedStringArray = catalog.signature_keys
 	var farmer := signature_keys.find("subsistence_farmer|default")
 	var merchant := signature_keys.find("merchant|default")
 	var signature_ids := PackedInt32Array([farmer])
 	var cell_indices := PackedInt32Array([0])
 	var populations := PackedInt64Array([400])
-	var funds := PackedInt64Array([200000000])
+	var funds := PackedInt64Array([int(tuning.get("funds", 200000000))])
 	if mixed_classes:
 		cell_indices.append(0)
 		signature_ids.append(merchant)
@@ -290,12 +437,15 @@ func _configured_world(compiled: Dictionary, seed: int, stocked: bool,
 	var stock := PackedInt64Array()
 	stock.resize((catalog.good_ids as PackedStringArray).size())
 	stock.fill(1000000000000 if stocked else 0)
+	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
+	for good in range(prices.size()):
+		prices[good] *= int(tuning.get("price_multiplier", 1))
 	if not bool(ext.bootstrap_economy({
 		"cell_indices": cell_indices,
 		"signature_ids": signature_ids,
 		"population": populations,
 		"funds": funds,
-	}, {"stock": stock}).get("ok", false)):
+	}, {"stock": stock, "price": prices}).get("ok", false)):
 		_expect("satisfaction test population bootstraps", false)
 		return null
 	return ext

@@ -1,2 +1,0 @@
-sxe -c ".ecxr;kn 60;.dump /ma /o D:\Godot\ProjectKeynes\Project.Keynes\tmp\crash_ai_dbg2.dmp;q" av
-g

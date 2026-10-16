@@ -7,6 +7,12 @@ and normalized-term validation remain mandatory.
 
 ## Save hashing and pause boundary (2026-10-15)
 
+Save admission checks `simulation_host_state == FAULTED` before waiting for
+residual environment or in-flight inputs. A faulted worker cannot drain them;
+return `worker_faulted` with `fault_code` immediately instead of timing out as
+`save_requires_idle_worker`. This does not make fault snapshots loadable or
+relax any committed-boundary requirement.
+
 Desktop saves freeze provider-section Variant bytes at the existing safe boundary.
 The existing background repository task computes each manifest SHA256 from those
 exact bytes before writing the container. Provider schema/order, manifest hashes,

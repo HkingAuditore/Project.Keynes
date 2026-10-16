@@ -23,15 +23,16 @@
 | --- | --- | --- | --- |
 | 0 | `SAT_DIM_SUBSISTENCE` | 温饱 | 既有 `survival_q16`（食品篮子与寒冷暴露衣着上限的较低值） |
 | 1 | `SAT_DIM_BASIC` | 基本生活 | `Need.satisfaction_tier == 1` 的需求加权满足率 |
-| 2 | `SAT_DIM_COMFORT` | 舒适 | `satisfaction_tier == 2` 的需求加权满足率 |
-| 3 | `SAT_DIM_LUXURY` | 奢侈 | `satisfaction_tier == 3` 的需求加权满足率 |
+| 2 | `SAT_DIM_COMFORT` | 舒适 | 剩余存款购买力：30 天基础生活篮子的 1～3 倍，线性归一 |
+| 3 | `SAT_DIM_LUXURY` | 奢侈 | 剩余存款购买力：30 天基础生活篮子的 3～10 倍，线性归一 |
 | 4 | `SAT_DIM_INCOME` | 收入增长 | 人均 `income_ema` 相对人均 `income_baseline_ema` 的比值 |
 | 5 | `SAT_DIM_SAVINGS` | 储蓄 | `funds` 能支撑的生活成本月数 |
 | 6 | `SAT_DIM_TAX` | 税负 | 本期净税负占本期毛收入（含实物）的比重，反向归一 |
 | 7 | `SAT_DIM_DEVELOPMENT` | 社会发展 | epoch 边界缓存的聚落等级 + 国家技术进度 + 本地建成建筑种类 |
 
-前 `SAT_TIER_COUNT = 4` 个维度是需求档位，由 household market 清算直接喂养；
-其余四个从 cohort 账本与冻结的 epoch 上下文推导。
+`SAT_TIER_COUNT = 4` 保留需求明细的分档 ABI。温饱使用生存满足率，基本生活使用
+basic 档的实际需求满足率；舒适、奢侈从本轮消费后的存款与本地基础生活成本推导，
+不再读取 tier 2/3 满足率。其余四维从 cohort 账本与冻结的 epoch 上下文推导。
 
 **扩展方式**：在 `SAT_DIM_COUNT` 之前追加枚举项，同步加宽
 `EconomyProfile.satisfaction_default_dimension_weights_q16` 与
@@ -46,7 +47,8 @@
 [economy_catalog.gd](../../Project/project-keynes/scripts/economy/economy_catalog.gd)
 编译成与 `need_ids` 等长的 dense 列，并计入 `catalog_hash`：
 
-- `satisfaction_tier`：`0..SAT_TIER_COUNT-1`，决定该需求落到哪个档位累加器。
+- `satisfaction_tier`：`0..SAT_TIER_COUNT-1`，决定该需求明细的档位累加器；只有 basic
+  档归约直接决定对应综合维度，tier 2/3 不再决定舒适/奢侈购买力。
 - `satisfaction_weight_q16`：该需求在档位内的权重。
 
 编译输出为 `need_satisfaction_tiers` 与 `need_satisfaction_weights_q16`。
@@ -74,6 +76,8 @@ catalog 编译成 `signature_satisfaction_dimension_weights_q16`
 | `satisfaction_income_growth_floor_q16` / `_ceiling_q16` | `58982` / `78643` | 收入比值 0.90 得零分、1.20 得满分 |
 | `satisfaction_income_baseline_alpha_q16` | `1024`（1/64 每日） | 慢基线 EMA 的 alpha；快 `income_ema` 为 1/8，两者相差八倍才构成增长信号 |
 | `satisfaction_savings_target_months_q16` | `393216`（6 个月） | 储蓄维度满分所需的生活成本月数 |
+| `satisfaction_comfort_floor_months_q16` / `_ceiling_months_q16` | `65536` / `196608`（1～3） | 舒适购买力零分/满分门槛，Q16 月 |
+| `satisfaction_luxury_floor_months_q16` / `_ceiling_months_q16` | `196608` / `655360`（3～10） | 奢侈购买力零分/满分门槛，Q16 月 |
 | `satisfaction_tax_tolerance_q16` | `22938`（0.35） | 净税负占毛收入达到该比例时税负维度归零 |
 | `satisfaction_development_weights_q16` | `[26214, 26214, 13107]` | 聚落等级 / 国家技术 / 本地产业种类三项权重 |
 | `satisfaction_development_variety_target` | `12` | 本地建成建筑种类数的饱和点 |
@@ -101,8 +105,9 @@ catalog 编译成 `signature_satisfaction_dimension_weights_q16`
 
 四个需求档位在**既有的** `for (const NeedState &state : need_states)` 归约循环里
 用四对 `Σ(weight × satisfaction)` / `Σweight` 累加器算出，**零额外遍历**。
-plan 内不含某档需求时，该档的分母为 0，维度取满分并从合成分母中剔除——
-贫农的 plan 里没有奢侈需求，不应因此被扣分。
+basic 档没有参与结算的需求时，基本生活维度取满分并从合成分母中剔除。
+舒适、奢侈始终计算购买力，并保留职业配置的维度权重；职业显式配置权重 0 时，
+该维度仍显示真实分数，但不参与综合值。没有舒适/奢侈需求不再使分数自动变成 100%。
 
 `SAT_DIM_SUBSISTENCE` 是例外：档位累加之后立刻用 `survival_q16`（食品篮子与寒冷衣着上限的较低值）覆盖维度值，并**恢复职业的生存权重**。当前内容把主食/肉类/蔬果编在 basic 档，生存维度仍必须进入 worst-dimension 与合成分母，否则空市场的最短板会错误地落在 basic。
 
@@ -122,6 +127,12 @@ worst_dimension_id = argmax_i((Q16 - 1 - dim_i) × w_i)   // 缺口贡献最大�
 各维度的具体公式：
 
 ```text
+PURCHASING_POWER:
+             monthly_cost = 本地基础人均日生活成本 × cohort 人口 × 30
+             months = max(0, 本轮消费后 cohort funds) × Q16 / monthly_cost
+COMFORT:     dim = normalize_band(months, comfort_floor, comfort_ceiling) // 默认 1～3
+LUXURY:      dim = normalize_band(months, luxury_floor, luxury_ceiling)   // 默认 3～10
+             monthly_cost <= 0 时两项均为 0，不把缺失估价当作无限购买力
 INCOME:      growth = 人均 income_ema × Q16 / 人均 income_baseline_ema
              dim    = normalize_band(growth, income_growth_floor, income_growth_ceiling)
              基线为 0 时（新播种或刚清空的 cohort）不臆造比值：
@@ -140,6 +151,14 @@ DEVELOPMENT: dim    = _epoch_cell_development_q16[cell]
 variant 的覆盖率 = `min(1, 4 × 可购买量 / (人口 × 基础用量))`，按 1/16 量化；覆盖率为 0 的 variant
 不参与，其余 variant 的评分乘覆盖率，需求量乘累计覆盖率（上限 1）。因此两三个高价库存不能再把整格
 的主食成本按天价计算。向上转职的存款门槛也读这个值。
+
+购买力复用该基础方案的本地市场估价，不使用 cohort 的实际支出或财富弹性缩减后的需求量。
+它沿用生活成本已有的科技、环境、替代品、库存覆盖及价格上限规则；这是现有可购基础篮子的
+成本指数，不表示按当前货架库存真的能一次买走 30 天或十个月的物资。全部消费需求缺货时
+成本为 0，舒适/奢侈取 0；部分缺货仍沿用现有生活成本覆盖规则。本次不改该成本算法。
+例：基础人均日成本 1、存款 60，则购买力 2 个月，舒适 50%、奢侈 0%；存款 195 则
+购买力 6.5 个月，舒适 100%、奢侈 50%。Q16 满分存储为 65535。
+两维公式每 cohort 为 O(1)，不新增需求遍历、资金划转、商品消耗或持久化列。
 
 ### per-cohort 税负累加器
 
@@ -199,6 +218,11 @@ epoch 起始清零。`record_fiscal` 自身会先调用 `touch_accounting_slot`�
    raw_q16 / ceiling_q16 / composite_q16`，外加各维度的原始输入
    （`income_ema`、`income_baseline_ema`、`funds`、`epoch_income`、`epoch_tax_paid`、
    `living_cost_per_capita`、`settlement_tier`、`development_q16` 与三个归一参考量）。
+   购买力另返回 `purchasing_power_basis_valid / purchasing_power_months_q16 /
+   purchasing_power_reference_days`（固定 30），及 `comfort_floor_months_q16 /
+   comfort_ceiling_months_q16 / luxury_floor_months_q16 / luxury_ceiling_months_q16`。
+   原始存款/成本和购买力是查询时诊断，八维值是最近一次结算结果；结算间发生资金变化时
+   二者不保证逐位重算相等。
    `DCWorldExt.get_cell_satisfaction_attractiveness(cell_idx)` 返回同一批列的
    人口加权聚合与已发布压力等级。两者都是纯读，**只在原生 slice 之间安全**，
    Inspector 打开时才调用。GDScript 侧包装见

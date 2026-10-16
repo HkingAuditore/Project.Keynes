@@ -1,5 +1,0 @@
-[gd_scene format=3]
-
-[node name="Control" type="Control"]
-layout_mode = 2
-mouse_filter = 2

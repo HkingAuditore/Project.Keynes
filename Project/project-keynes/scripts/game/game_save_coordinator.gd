@@ -355,6 +355,9 @@ func _can_save() -> Dictionary:
 	# 主线程国家只读副本，避免请求时的 PKCN 与稍后生成的 PKSR 相差数天。
 	if generator.has_method("get_runtime_thread_report"):
 		var thread: Dictionary = generator.get_runtime_thread_report()
+		if String(thread.get("simulation_host_state", "")) == "FAULTED":
+			return _result(false, "worker_faulted", "后台模拟线程发生故障（%s），无法保存。" %
+				String(thread.get("fault_code", "unknown")))
 		if String(thread.get("simulation_host_state", "STOPPED")) in ["STARTING", "RUNNING", "SAVE_PENDING"] \
 				or int(thread.get("environment_ring_pending", 0)) > 0 \
 				or int(thread.get("worker_day_inflight", 0)) > 0:

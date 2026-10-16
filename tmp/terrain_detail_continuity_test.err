@@ -1,4 +1,0 @@
-SCRIPT ERROR: Invalid call. Nonexistent function '_terrain_detail_bake_scalar' in base 'RefCounted (MapBaker)'.
-   at: _init (res://tests/terrain_detail_continuity_test.gd:14)
-   GDScript backtrace (most recent call first):
-       [0] _init (res://tests/terrain_detail_continuity_test.gd:14)

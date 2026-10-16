@@ -1,0 +1,366 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[save-repository] slot directory overridden to F:/Developent/Godot/Project.Keynes/tmp/colonization_player_map_early_saves
+[colonization-probe] new game begin={"code":"ok","message":"","ok":true}
+WARNING: [loading-catalog] source changed: rebuild tools/prebake_loading_catalogs.gd; using source compiler
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] prepare (res://scripts/game/loading_catalog_cache.gd:55)
+       [1] compute (res://scripts/geography/native_loading_tasks.gd:15)
+[ui-layout-diag/bind_ui] is_web=false viewport_visible_rect=[P: (0.0, 0.0), S: (64.0, 64.0)] window_size=(64, 64) content_scale_factor=1.000 content_scale_mode=0 device_pixel_ratio=-1.000 top_bar_rect=[P: (0.0, 0.0), S: (391.0, 64.0)] right_panel_rect=[P: (-412.0, 76.0), S: (460.0, 255.0)] country_action_bar_rect=[P: (16.0, -26.0), S: (330.0, 74.0)]
+WARNING: [loading-catalog] source changed: rebuild tools/prebake_loading_catalogs.gd; using source compiler
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] prepare (res://scripts/game/loading_catalog_cache.gd:55)
+       [1] compute (res://scripts/geography/native_loading_tasks.gd:15)
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=6400 native_ms=30.547 water=4649 land=1751
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=6400 native_ms=5.782 lakes=10 rivers=178 volcanoes=0
+[native_generation/vegetation] native_ms=1.961 candidates=1740 none=4075 score=[0.000,1.124,1.143] plant_water_land=1743 river_adjacent_desert=0 coastal_highland_desert=0 terrain_weight=[0.180,1.200]
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=2 largest=4639 | land_below_sea=0.0% | terr_distinct=25 entropy=2.525bit | river_ratio=2.781%
+MapGenerator v7: per-cell 374ms (6400 cells, path=gdext)
+MapBaker v6: hm=(1024, 578) seed=172763467
+    [fused] terrain=81.8ms valley=162.1ms erosion=3.1ms(ok=true) river=13.8ms(ok=true) latitude=0.1ms coast_sdf=4.8ms(ok=true)
+  geometry fields (fused C++): 394ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  visual tiles: {"degradation_reason":"","effective_budget_px":4543488,"effective_texels_per_hex":16.1559077521948,"effective_world_units_per_texel":"(1.368718, 1.354779)","estimated_peak_bytes":291537792,"estimated_resident_bytes":217496448,"fallback_reason":"","generation_id":1,"grid_size":"(6, 4)","gutter_px":2,"hex_size":22.0,"horizon_path":"neutral_pending","interior_size":"(464, 408)","layer_size":"(468, 412)","layers":[{"bake_ms":205.8872,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-7331899926536122948,"edge_neighbor":1482184083608543937,"height":7630342842161564652,"map_index":1481198681406573088,"terrain_detail":-8352889358279766624,"terrain_normal":-1984920396689594934,"terrain_relief":2008795881083888356,"water_depth":4672981505297864506},"layer":0,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.098,"wall_ms":207.82},{"bake_ms":227.7606,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-7835803088871741894,"edge_neighbor":1338626075118018077,"height":4828606922682261610,"map_index":-4129555980781211715,"terrain_detail":1851310733741798783,"terrain_normal":369868572541396609,"terrain_relief":5938419185533298916,"water_depth":-8674817849563806138},"layer":1,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.117,"wall_ms":234.866},{"bake_ms":160.7733,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":5634350532056395013,"edge_neighbor":7970358890231708327,"height":-7260575550243643497,"map_index":7253326258206403395,"terrain_detail":5684347313887038551,"terrain_normal":-5801998883290943711,"terrain_relief":-6621240622535845275,"water_depth":258043349579835535},"layer":2,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.113,"wall_ms":165.954},{"bake_ms":225.3181,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":6418897746386056903,"edge_neighbor":5919754288876219319,"height":4351670278987371858,"map_index":-2094242225283685205,"terrain_detail":-8553251010174856496,"terrain_normal":4238483836524149510,"terrain_relief":4004370486972022826,"water_depth":3198101012512755671},"layer":3,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.084,"wall_ms":227.937},{"bake_ms":67.702,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":847124675982694545,"edge_neighbor":-430000102085108388,"height":2062124992867803284,"map_index":-7568288867570963891,"terrain_detail":8441975431669133704,"terrain_normal":33531333299199145,"terrain_relief":3023731161166571395,"water_depth":-621306525191386094},"layer":4,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.069,"wall_ms":69.202},{"bake_ms":91.9842,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":5715600592513839126,"edge_neighbor":-4516933587943988698,"height":6589824105722384000,"map_index":-5200678114295248719,"terrain_detail":1376155383015056431,"terrain_normal":-25105791681000594,"terrain_relief":-2826327633435139255,"water_depth":3831466431581073648},"layer":5,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.084,"wall_ms":97.027},{"bake_ms":130.4623,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":2981539205953475144,"edge_neighbor":-4332036699991519464,"height":-5880192201545252091,"map_index":-5171201656418361237,"terrain_detail":-7110046983383577178,"terrain_normal":-459302764024497323,"terrain_relief":-7393538073351044316,"water_depth":-6095191161860686363},"layer":6,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.066,"wall_ms":131.411},{"bake_ms":257.8453,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-4597778803436001894,"edge_neighbor":-6445738359528569804,"height":-7490156770715044895,"map_index":-74960610561653664,"terrain_detail":6393372390157034527,"terrain_normal":5408636531592504067,"terrain_relief":2512738109528379056,"water_depth":-4169364807002430952},"layer":7,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.08,"wall_ms":262.656},{"bake_ms":110.177,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":3726152001069205116,"edge_neighbor":-3022703773230435845,"height":2955950250586438453,"map_index":-2327954262583266853,"terrain_detail":-5190423208460755333,"terrain_normal":-2810545791799950970,"terrain_relief":-3721096732347935099,"water_depth":3476227880689205723},"layer":8,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.091,"wall_ms":117.529},{"bake_ms":264.5509,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":6225677335910540348,"edge_neighbor":6591706352319267714,"height":-8332122780360707387,"map_index":-2867514883979196771,"terrain_detail":5928777143872815677,"terrain_normal":-836766682569457772,"terrain_relief":-7677307089318064897,"water_depth":4877069115365108128},"layer":9,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.116,"wall_ms":269.377},{"bake_ms":281.7329,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":8033771393399081474,"edge_neighbor":6104026338960020778,"height":6401573310472131691,"map_index":8654497186666224076,"terrain_detail":6189459654156031598,"terrain_normal":8994176941109039803,"terrain_relief":-6868075340294798764,"water_depth":-5171054638513937521},"layer":10,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.151,"wall_ms":283.346},{"bake_ms":129.9307,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":5267792585693070756,"edge_neighbor":4377476872090973589,"height":3782494415758784760,"map_index":6829945700913032824,"terrain_detail":6110654206930285092,"terrain_normal":8425017095168631815,"terrain_relief":-5787693867280530372,"water_depth":3248434679861725585},"layer":11,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.074,"wall_ms":131.378},{"bake_ms":139.7325,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-4792313502176604303,"edge_neighbor":-627548516731826025,"height":-5790535748778468972,"map_index":-3768867441357925185,"terrain_detail":-3842472150573167620,"terrain_normal":7136662636980686229,"terrain_relief":682473133474667411,"water_depth":507453643404709658},"layer":12,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.13,"wall_ms":145.179},{"bake_ms":423.4325,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":9036002615366018750,"edge_neighbor":-44811654273265535,"height":-2569196659979898064,"map_index":-7693907324089419802,"terrain_detail":3567039844512962181,"terrain_normal":-1609040985353895179,"terrain_relief":-1865369282581456889,"water_depth":7492447092650170430},"layer":13,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.158,"wall_ms":428.145},{"bake_ms":327.3446,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-5263944124822343364,"edge_neighbor":-8257021536341352048,"height":-2575491941384933436,"map_index":-1319611134004050936,"terrain_detail":-176578443374069801,"terrain_normal":-7921137263661585519,"terrain_relief":-6838513469805094634,"water_depth":-6243125650270901465},"layer":14,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.131,"wall_ms":331.531},{"bake_ms":276.2979,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-6224025547081974580,"edge_neighbor":3531990341550404096,"height":371556071787992326,"map_index":-5022820820898293558,"terrain_detail":-3501202607862912645,"terrain_normal":8871972572222408748,"terrain_relief":-8854928820874731430,"water_depth":1345859585248752892},"layer":15,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.133,"wall_ms":283.286},{"bake_ms":344.4936,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":9095241217412851170,"edge_neighbor":5257696501048039318,"height":1902674369274017852,"map_index":4542989244423290169,"terrain_detail":1171009739286637305,"terrain_normal":-1189380432320901078,"terrain_relief":-35100401195946130,"water_depth":8335791290084393195},"layer":16,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.169,"wall_ms":345.437},{"bake_ms":163.8283,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-8583289092567158477,"edge_neighbor":-6316071098539273803,"height":-9139735293628567466,"map_index":5616455348682361422,"terrain_detail":-5714517710455510449,"terrain_normal":3208856499190886459,"terrain_relief":-5749824272014616882,"water_depth":506763586015307674},"layer":17,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.135,"wall_ms":165.92},{"bake_ms":76.6767,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-4499078822977591465,"edge_neighbor":7168170232355992761,"height":182130105635195614,"map_index":-4413516508219946394,"terrain_detail":-2357999153577845346,"terrain_normal":-1827460084518961687,"terrain_relief":3023731161166571395,"water_depth":1205072184982978635},"layer":18,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.149,"wall_ms":83.142},{"bake_ms":230.591,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-2582574394989566853,"edge_neighbor":-3744297096309044583,"height":457995885421108746,"map_index":-6085922462257740417,"terrain_detail":1869160538286259963,"terrain_normal":3785947129417375850,"terrain_relief":1117144604490535319,"water_depth":-4225171586181877324},"layer":19,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.067,"wall_ms":234.753},{"bake_ms":263.8768,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":6021174356194062293,"edge_neighbor":-6937431000666156986,"height":2078131634238729713,"map_index":-1769389677030207140,"terrain_detail":7368701682208134461,"terrain_normal":6738105311616042450,"terrain_relief":251112794377129717,"water_depth":3847803138064205874},"layer":20,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.07,"wall_ms":269.412},{"bake_ms":175.6191,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":5991675677378572728,"edge_neighbor":-7202917361874120604,"height":-6268821367482023769,"map_index":-3530104120968231257,"terrain_detail":7138944842283332117,"terrain_normal":8802766729450714644,"terrain_relief":364183349077206082,"water_depth":-2795047459252912207},"layer":21,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.081,"wall_ms":179.711},{"bake_ms":70.5398,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-2116440016920077720,"edge_neighbor":7517667798525639607,"height":5147569587616314585,"map_index":6088717109903234484,"terrain_detail":-7764292431726867856,"terrain_normal":2128774750514484942,"terrain_relief":3023731161166571395,"water_depth":-3099539445551314782},"layer":22,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.068,"wall_ms":76.219},{"bake_ms":70.2502,"coast_sdf_max_dist_px":22.4743551571843,"distance_scale":2.80929439464804,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-2152571799556589131,"edge_neighbor":-4147370416414908092,"height":-2977355581297681043,"map_index":1588753747284980190,"terrain_detail":-2929439162615852741,"terrain_normal":-3756222037016368050,"terrain_relief":3023731161166571395,"water_depth":-1804263848619401048},"layer":23,"normal_radius_px":"(6, 6)","raster_scale":"(2.795131, 2.82353)","river_sdf_max_dist_px":9.83253038126814,"shore_carve_band_px":17,"upload_ms":0.075,"wall_ms":76.206}],"logical_size":"(2784, 1632)","mode":"tiled","path":"visual_tiled_static","profile":"desktop_high","relief_scale":2,"renderer":"mobile","requested_budget_px":4457376,"requested_texels_per_hex":16.0,"requested_tile_world_span":"(704.0, 704.0)","requested_world_units_per_texel":1.375,"tile_world_area":351043.380844116,"tile_world_span":"(635.0853, 552.75)","total_ms":4975.942,"visual_domain":"[P: (0.0, -44.0), S: (3810.512, 2211.0)]","wrap_period_x":3810.51177665153,"wrap_x":true}
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 5653ms
+MapBaker v6: total 6057ms
+MapGenerator v7: bake 6225ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[loading-substep] await map.build_indices_cooperative() 6226.5ms
+[loading-substep] await map.init_soa_from_bake_cooperative() 172.3ms
+[loading-substep] _generate_static_research_signals(map) 229.4ms
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=6400 wrap_period_x=173.205
+[native_generation] path=gdext n=6400 published=9 native_ms=0.352 compute_ms=0.243 flush_ms=0.109
+[hex_cell] facade ENABLED (6400 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=1.29ms wind=0.90ms psi=1.46ms(ran=true) upwelling=0.10ms total=5.32ms
+PhysicalCirculation solve@phase=1.50 total=6ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 6ms
+[cell_lut] deferred encode: 6ms path=gdext
+[loading-substep] cell_facade_bind 542.1ms
+[loading-substep] _bootstrap_natural_resource_deposits 1467.7ms
+[loading-substep] _publish_bootstrapped_natural_resources_to_runtime 33.8ms
+[bio-occupancy] seed landmasses=9 provinces=9 species=20 secondary_hearths=18
+[bio-occupancy]   bio.maize envelope=243 hearth=16 seeded_landmasses=2 primary_landmass=1 primary_envelope=20 occupied=16 occupied/envelope=0.80
+[bio-occupancy]   bio.wheat envelope=470 hearth=109 seeded_landmasses=2 primary_landmass=9 primary_envelope=240 occupied=109 occupied/envelope=0.45
+[bio-occupancy]   bio.rice envelope=94 hearth=28 seeded_landmasses=4 primary_landmass=6 primary_envelope=47 occupied=28 occupied/envelope=0.60
+[bio-occupancy]   bio.potato envelope=371 hearth=164 seeded_landmasses=4 primary_landmass=9 primary_envelope=190 occupied=164 occupied/envelope=0.86
+[bio-occupancy]   bio.horse envelope=546 hearth=77 seeded_landmasses=2 primary_landmass=1 primary_envelope=98 occupied=77 occupied/envelope=0.79
+[bio-occupancy]   bio.cotton envelope=346 hearth=101 seeded_landmasses=1 primary_landmass=6 primary_envelope=184 occupied=101 occupied/envelope=0.55
+[bio-occupancy]   bio.flax envelope=445 hearth=89 seeded_landmasses=2 primary_landmass=2 primary_envelope=87 occupied=89 occupied/envelope=1.02
+[bio-occupancy]   bio.spice envelope=190 hearth=27 seeded_landmasses=1 primary_landmass=6 primary_envelope=133 occupied=27 occupied/envelope=0.20
+[bio-occupancy]   bio.rubber envelope=124 hearth=4 seeded_landmasses=1 primary_landmass=9 primary_envelope=24 occupied=4 occupied/envelope=0.17
+[bio-occupancy]   bio.sheep envelope=185 hearth=21 seeded_landmasses=1 primary_landmass=2 primary_envelope=39 occupied=21 occupied/envelope=0.54
+[bio-occupancy]   bio.goat envelope=854 hearth=229 seeded_landmasses=3 primary_landmass=9 primary_envelope=435 occupied=229 occupied/envelope=0.53
+[bio-occupancy]   bio.cattle envelope=78 hearth=31 seeded_landmasses=1 primary_landmass=9 primary_envelope=71 occupied=31 occupied/envelope=0.44
+[bio-occupancy]   bio.pig envelope=601 hearth=247 seeded_landmasses=4 primary_landmass=9 primary_envelope=245 occupied=247 occupied/envelope=1.01
+[bio-occupancy]   bio.camel envelope=158 hearth=36 seeded_landmasses=1 primary_landmass=6 primary_envelope=84 occupied=36 occupied/envelope=0.43
+[bio-occupancy]   bio.yak envelope=246 hearth=105 seeded_landmasses=3 primary_landmass=9 primary_envelope=103 occupied=105 occupied/envelope=1.02
+[bio-occupancy]   bio.silkworm envelope=297 hearth=80 seeded_landmasses=2 primary_landmass=6 primary_envelope=175 occupied=80 occupied/envelope=0.46
+[bio-occupancy]   bio.reed envelope=227 hearth=51 seeded_landmasses=4 primary_landmass=9 primary_envelope=121 occupied=51 occupied/envelope=0.42
+[bio-occupancy]   bio.bast_fiber envelope=443 hearth=99 seeded_landmasses=1 primary_landmass=9 primary_envelope=210 occupied=99 occupied/envelope=0.47
+[bio-occupancy]   bio.dye_plant envelope=368 hearth=80 seeded_landmasses=1 primary_landmass=9 primary_envelope=159 occupied=80 occupied/envelope=0.50
+[bio-occupancy]   bio.medicinal_herb envelope=729 hearth=300 seeded_landmasses=4 primary_landmass=9 primary_envelope=302 occupied=300 occupied/envelope=0.99
+[bio-occupancy]   landmass 1 classes=cold_grazer, dry_grazer, fiber_forest, highland_food, open_grazer, fiber_open, forest_grazer, fiber_wet, tropical, wetland_food, open_food foods=potato, rice, maize
+[bio-occupancy]   landmass 2 classes=dry_grazer, fiber_forest, open_food, fiber_open, highland_food, forest_grazer, open_grazer, cold_grazer, fiber_wet, wetland_food foods=wheat, potato, rice
+[bio-occupancy]   landmass 3 classes=none foods=none
+[bio-occupancy]   landmass 4 classes=none foods=none
+[bio-occupancy]   landmass 5 classes=none foods=none
+[bio-occupancy]   landmass 6 classes=fiber_wet, forest_grazer, tropical, fiber_forest, fiber_open, dry_grazer, highland_food, open_food, open_grazer, wetland_food foods=potato, maize, rice
+[bio-occupancy]   landmass 7 classes=none foods=none
+[bio-occupancy]   landmass 8 classes=none foods=none
+[bio-occupancy]   landmass 9 classes=forest_grazer, fiber_forest, fiber_open, open_food, dry_grazer, highland_food, tropical, fiber_wet, open_grazer, wetland_food, cold_grazer foods=wheat, potato, rice
+[loading-substep] _seed_bio_occupancy 3138.0ms
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[loading-substep] _publish_bootstrapped_natural_resources_to_runtime 108.4ms
+[loading-substep] effect_catalog 8344.5ms
+[loading-substep] effect_configure 47.3ms
+[loading-substep] _modifier_facade.configure( 2271.6ms
+[loading-substep] _trigger_facade.configure( 32.6ms
+[loading-substep] _country_facade.configure( 2270.1ms
+[loading-substep] _country_facade.bootstrap(map.is_water_arr, country_packet) 3345.6ms
+[economy] ACTIVE native graph cells=6400 goods=134 cohorts=24 epoch_days=1 trade=ACTIVE topology_ready=true topology_generation=1 bootstrap=starter_settlement_bootstrap_v9 founder_families=6 founder_people=6
+[country] ACTIVE native authority countries=6 cells=6400 generation=1
+[loading-substep] _economy_facade.bootstrap( 135.9ms
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily + bio_occupancy_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "trigger_runtime", "ideology_runtime", "effect_runtime", "modifier_daily", "gameplay_effect", "natural_resource_daily", "bio_occupancy_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+[loading-substep] if _try_register_native_daily_sim_job 63.2ms
+[loading-visual-substep] _refresh_vision() 10.1ms
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:4884)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2517)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:753)
+[loading-visual-substep] building_visual_setup 61.5ms
+[colonization-probe] loaded simulation_thread_mode=OFF authoritative_domain_mask=0 economy_pod_authority_ready=false economy_pod_operation_gate_mask=0
+WARNING: [runtime-worker] Ideology opinion publish deferred: ideology_opinion_snapshot_invalid
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _start_production_shadow_worker (res://scripts/game/world_runtime_host.gd:850)
+       [1] generate_world (res://scripts/game/world_runtime_host.gd:766)
+[runtime-worker] production ACTIVE started mask=4095 auto_pod=true
+[tech-ui-diag/query] apply ok gen=1 day=-1 view_gen=1 progress_total=0 pending_words=36
+[building-visual] intel_refresh requested=42 changed=1 known=1 catalog=400 resident=0 body=0 queued=0 zoom=1.000
+[loading-visual-substep] start_worker 21.2ms
+[player-ready-step] UI context 27.7ms
+[DCSystemScheduler][RT] ocean_skip#1 tick=1 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[player-ready-step] select 41.9ms
+[economy-climate-gate] day=1 climate_ok=0 stall=0x10 ring=0
+[runtime-day-wait] day=1 env_day=0 missing=0x3ff stall=0x10 economy_input=-1 ring=0 country=
+[climate][publish] day=0 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[DCSystemScheduler][RT] ocean_skip#2 tick=2 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[tech-ui-diag/query] apply ok gen=2 day=1 view_gen=2 progress_total=0 pending_words=36
+[sim/graph-barrier] day=2 pulses=30 released=false pinned=economy work=1814 economy_slices=1813 economy_commits=0 yields=3 last_us=1516 trigger_blocked=0/
+[clock/step] delta=7.5ms speed=100x target=0.75d cap=0.13d/f cost=59.73ms ran=0 pulse=1.57ms loop=0.00ms full=2.27ms carry=0.11 barrier=country_day_barrier,economy_day_barrier
+[clock/step] delta=6.9ms speed=100x target=0.69d cap=0.13d/f cost=59.73ms ran=0 pulse=1.67ms loop=0.00ms full=2.29ms carry=0.11 barrier=country_day_barrier,economy_day_barrier
+[tech-ui-diag/research] handle=4294967296 gen=2 day=1 owned=5 pending=0 queued=0 progress_nonzero=0 stock=3000000 deferred=0 consumed=0 cash=2500000000000 budget=10000000 auto=1
+[phys/knobs] projection ready: slp=31 wind=33 psi=26 up=10
+WARNING: [climate/worker] field knobs empty (fast_indexed?)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_stage_knobs (res://scripts/geography/map_generator.gd:4846)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2517)
+       [2] _on_clock_day_changed (res://scripts/game/world_runtime_host.gd:407)
+       [3] _advance_one_sim_day (res://scripts/geography/world_clock.gd:178)
+       [4] _process (res://scripts/geography/world_clock.gd:245)
+[tech-ui-diag/query] apply ok gen=2 day=2 view_gen=2 progress_total=0 pending_words=36
+[tech-ui-diag/query] apply ok gen=2 day=3 view_gen=2 progress_total=0 pending_words=36
+[tech-ui-diag/query] apply ok gen=3 day=4 view_gen=3 progress_total=0 pending_words=36
+[tech-ui-diag/research] handle=4294967296 gen=3 day=4 owned=5 pending=0 queued=0 progress_nonzero=0 stock=3000000 deferred=0 consumed=0 cash=2500000000000 budget=10000000 auto=1
+[clock/step] delta=6.9ms speed=100x target=0.69d cap=0.33d/f cost=24.46ms ran=0 pulse=0.00ms loop=0.00ms full=5.25ms carry=0.09 barrier=climate_input_capacity_day_barrier
+[clock/step] delta=8.3ms speed=100x target=0.83d cap=0.33d/f cost=24.46ms ran=0 pulse=0.00ms loop=0.00ms full=0.57ms carry=0.09 barrier=climate_input_capacity_day_barrier
+[tech-ui-diag/query] apply ok gen=3 day=5 view_gen=3 progress_total=0 pending_words=36
+[clock/step] delta=7.6ms speed=100x target=0.76d cap=0.38d/f cost=20.86ms ran=0 pulse=0.01ms loop=0.00ms full=0.54ms carry=0.07 barrier=climate_input_capacity_day_barrier
+[clock/step] delta=7.1ms speed=100x target=0.71d cap=0.38d/f cost=20.86ms ran=0 pulse=0.01ms loop=0.00ms full=0.84ms carry=0.07 barrier=climate_input_capacity_day_barrier
+[tech-ui-diag/query] apply ok gen=6 day=6 view_gen=6 progress_total=0 pending_words=36
+[clock/step] delta=8.2ms speed=100x target=0.82d cap=0.45d/f cost=17.94ms ran=0 pulse=0.00ms loop=0.00ms full=0.81ms carry=0.22 barrier=climate_input_capacity_day_barrier
+[tech-ui-diag/query] apply ok gen=8 day=8 view_gen=8 progress_total=0 pending_words=36
+[tech-ui-diag/research] handle=4294967296 gen=9 day=9 owned=5 pending=0 queued=0 progress_nonzero=0 stock=3000000 deferred=0 consumed=0 cash=2500000000000 budget=10000000 auto=1
+[clock/step] delta=5.5ms speed=100x target=0.55d cap=0.47d/f cost=17.08ms ran=0 pulse=0.00ms loop=0.00ms full=0.42ms carry=0.33 barrier=climate_input_capacity_day_barrier
+[tech-ui-diag/research] handle=4294967296 gen=13 day=11 owned=5 pending=0 queued=0 progress_nonzero=0 stock=3000000 deferred=0 consumed=0 cash=2500000000000 budget=10000000 auto=1
+[tech-ui-diag/research] handle=4294967296 gen=14 day=11 owned=5 pending=0 queued=0 progress_nonzero=0 stock=3000000 deferred=0 consumed=0 cash=2500000000000 budget=10000000 auto=1
+[clock/step] delta=2.8ms speed=100x target=0.28d cap=0.70d/f cost=11.41ms ran=0 pulse=0.00ms loop=0.00ms full=0.35ms carry=0.41 barrier=climate_input_capacity_day_barrier
+[tech-ui-diag/research] handle=4294967296 gen=17 day=13 owned=5 pending=0 queued=0 progress_nonzero=0 stock=3000000 deferred=0 consumed=0 cash=2500000000000 budget=10000000 auto=1
+[clock/step] delta=7.6ms speed=100x target=0.76d cap=0.86d/f cost=9.34ms ran=0 pulse=0.01ms loop=0.00ms full=0.62ms carry=0.11 barrier=climate_input_capacity_day_barrier
+[tech-ui-diag/research] handle=4294967296 gen=18 day=14 owned=5 pending=0 queued=0 progress_nonzero=0 stock=3000000 deferred=0 consumed=0 cash=2500000000000 budget=10000000 auto=1
+[tech-ui-diag/research] handle=4294967296 gen=29 day=20 owned=5 pending=0 queued=0 progress_nonzero=0 stock=3000000 deferred=0 consumed=0 cash=2500000000000 budget=10000000 auto=1
+[tech-ui-diag/research] handle=4294967296 gen=36 day=24 owned=5 pending=0 queued=0 progress_nonzero=0 stock=3000000 deferred=0 consumed=0 cash=2500000000000 budget=10000000 auto=1
+[tech-ui-diag/research] handle=4294967296 gen=43 day=29 owned=5 pending=0 queued=0 progress_nonzero=0 stock=3000000 deferred=0 consumed=0 cash=2500000000000 budget=10000000 auto=1
+[tech-ui-diag/research] handle=4294967296 gen=52 day=34 owned=5 pending=0 queued=0 progress_nonzero=0 stock=3000000 deferred=0 consumed=0 cash=2500000000000 budget=10000000 auto=1
+[colonization-probe] start args={"family_handle":4294967298,"population":4,"quote_token":8321744957104236964,"source_cell":1522,"target_cell":1221} result={"code":"colonization_queued","effective_day":36,"message":"派遣已排队，将在经济结算完成后出发。","ok":true,"queued":true,"sequence":1}
+[colonization-probe] launched simulation_thread_mode=ACTIVE authoritative_domain_mask=4095 economy_pod_authority_ready=true economy_pod_operation_gate_mask=1022
+[tech-ui-diag/research] handle=4294967296 gen=60 day=37 owned=5 pending=0 queued=0 progress_nonzero=0 stock=3000000 deferred=0 consumed=0 cash=2500000000000 budget=10000000 auto=1
+[colonization-probe] day=37 ok=true state=4 blocker=MATERIALS material=13029/13029 bridge=72829/72829 missing=[0, 6, 18, 71, 101, 103, 126] pending=true phase=1 peer_blocked=false reject_day=-1 reject= gate_mask=0x3fe
+[colonization-probe] procurement={"day":37,"good_id":48,"quantity":317,"read_view_day":-1,"read_view_source":"live_boundary","started_day":36}
+[colonization-probe] day=38 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"busy":true,"code":"economy_busy_retry","committed":false,"fatal":false,"nonbinding":true,"ok":false,"read_view_pending":true,"read_view_source":"pending","reason":"economy_read_view_pending"}
+[colonization-probe] day=40 ok=true state=4 blocker=MATERIALS material=13029/13029 bridge=72512/72829 missing=[0, 6, 18, 71, 101, 103, 126] pending=true phase=5 peer_blocked=false reject_day=-1 reject= gate_mask=0x3fe
+[colonization-probe] procurement={"day":40,"good_id":50,"quantity":48785,"read_view_day":-1,"read_view_source":"live_boundary","started_day":38}
+[tech-ui-diag/research] handle=4294967296 gen=68 day=40 owned=5 pending=0 queued=0 progress_nonzero=0 stock=3000000 deferred=0 consumed=0 cash=2499999752961 budget=10000000 auto=1
+[colonization-probe] day=41 ok=true state=4 blocker=MATERIALS material=13029/13029 bridge=72512/72829 missing=[0, 6, 18, 71, 101, 103, 126] pending=true phase=5 peer_blocked=false reject_day=-1 reject= gate_mask=0x3fe
+[colonization-probe] procurement={"day":41,"good_id":50,"quantity":48785,"read_view_day":40,"read_view_source":"committed_view","started_day":38}
+[colonization-probe] day=42 ok=true state=4 blocker=MATERIALS material=13029/13029 bridge=23727/72829 missing=[0, 6, 18, 71, 101, 103, 126] pending=true phase=5 peer_blocked=false reject_day=-1 reject= gate_mask=0x3fe
+[colonization-probe] procurement={"day":42,"good_id":50,"quantity":23727,"read_view_day":-1,"read_view_source":"live_boundary","started_day":40}
+[colonization-probe] day=43 ok=true state=4 blocker=MATERIALS material=13029/13029 bridge=72512/72829 missing=[0, 6, 18, 71, 101, 103, 126] pending=true phase=5 peer_blocked=false reject_day=-1 reject= gate_mask=0x3fe
+[colonization-probe] procurement={"day":43,"good_id":50,"quantity":48785,"read_view_day":40,"read_view_source":"committed_view","started_day":38}
+[colonization-probe] day=44 ok=true state=4 blocker=MATERIALS material=13029/13029 bridge=0/72829 missing=[] pending=true phase=1 peer_blocked=false reject_day=-1 reject= gate_mask=0x3fe
+[colonization-probe] procurement={"day":44,"good_id":71,"quantity":13029,"read_view_day":-1,"read_view_source":"live_boundary","started_day":43}
+[tech-ui-diag/research] handle=4294967296 gen=85 day=45 owned=5 pending=0 queued=0 progress_nonzero=0 stock=3000000 deferred=0 consumed=0 cash=2499997809572 budget=10000000 auto=1
+[colonization-probe] day=45 ok=true state=4 blocker=MATERIALS material=13029/13029 bridge=0/72829 missing=[] pending=true phase=1 peer_blocked=false reject_day=-1 reject= gate_mask=0x3fe
+[colonization-probe] procurement={"day":45,"good_id":71,"quantity":13029,"read_view_day":44,"read_view_source":"committed_view","started_day":43}
+[colonization-probe] day=46 ok=true state=4 blocker=MATERIALS material=13029/13029 bridge=0/72829 missing=[] pending=true phase=1 peer_blocked=false reject_day=-1 reject= gate_mask=0x3fe
+[colonization-probe] procurement={"day":46,"good_id":71,"quantity":13029,"read_view_day":44,"read_view_source":"committed_view","started_day":43}
+[colonization-probe] day=47 ok=true state=4 blocker=MATERIALS material=13029/13029 bridge=0/72829 missing=[] pending=true phase=1 peer_blocked=false reject_day=-1 reject= gate_mask=0x3fe
+[colonization-probe] procurement={"day":47,"good_id":71,"quantity":13029,"read_view_day":44,"read_view_source":"committed_view","started_day":43}
+[colonization-probe] day=48 ok=true state=4 blocker=READY material=0/13029 bridge=0/72829 missing=[] pending=true phase=1 peer_blocked=false reject_day=-1 reject= gate_mask=0x3fe
+[colonization-probe] procurement={"day":48,"good_id":71,"quantity":3411,"read_view_day":48,"read_view_source":"committed_view","started_day":47}
+[tech-ui-diag/research] handle=4294967296 gen=96 day=49 owned=5 pending=0 queued=0 progress_nonzero=0 stock=3000000 deferred=0 consumed=0 cash=2499995948795 budget=10000000 auto=1
+[colonization-probe] day=49 ok=true state=4 blocker=READY material=0/13029 bridge=0/72829 missing=[] pending=true phase=1 peer_blocked=false reject_day=-1 reject= gate_mask=0x3fe
+[colonization-probe] procurement={"day":49,"good_id":71,"quantity":3411,"read_view_day":48,"read_view_source":"committed_view","started_day":47}
+[colonization-probe] day=50 ok=true state=4 blocker=READY material=0/13029 bridge=0/72829 missing=[] pending=true phase=1 peer_blocked=false reject_day=-1 reject= gate_mask=0x3fe
+[colonization-probe] procurement={"day":50,"good_id":71,"quantity":3411,"read_view_day":48,"read_view_source":"committed_view","started_day":47}
+[colonization-probe] departure receipt={"code":"STARTED","effective_day":50,"expedition_handle":4294967296,"kind":1,"receipt_id":2,"sequence":0,"settled_day":50,"target_cell":1221}
+[colonization-probe] day=51 ok=true state=1 blocker= material=0/0 bridge=0/0 missing=[] pending=false phase=0 peer_blocked=false reject_day=-1 reject= gate_mask=0x3fe
+[colonization-probe] day=53 ok=true state=1 blocker= material=0/0 bridge=0/0 missing=[] pending=false phase=0 peer_blocked=false reject_day=-1 reject= gate_mask=0x3fe
+[tech-ui-diag/research] handle=4294967296 gen=108 day=53 owned=5 pending=0 queued=0 progress_nonzero=0 stock=3000000 deferred=0 consumed=0 cash=2499995948795 budget=10000000 auto=1
+[colonization-probe] day=54 ok=true state=1 blocker= material=0/0 bridge=0/0 missing=[] pending=false phase=0 peer_blocked=false reject_day=-1 reject= gate_mask=0x3fe
+[colonization-probe] day=55 ok=true state=1 blocker= material=0/0 bridge=0/0 missing=[] pending=false phase=0 peer_blocked=false reject_day=-1 reject= gate_mask=0x3fe
+[colonization-probe] day=56 ok=true state=1 blocker= material=0/0 bridge=0/0 missing=[] pending=false phase=0 peer_blocked=false reject_day=-1 reject= gate_mask=0x3fe
+[colonization-probe] day=57 ok=true state=1 blocker= material=0/0 bridge=0/0 missing=[] pending=false phase=0 peer_blocked=false reject_day=-1 reject= gate_mask=0x3fe
+[colonization-probe] day=58 ok=true state=2 blocker= material=0/0 bridge=0/0 missing=[] pending=false phase=0 peer_blocked=false reject_day=-1 reject= gate_mask=0x3fe
+[colonization-probe] day=60 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_pending":false,"read_view_source":"live_boundary"}
+[colonization-probe] day=61 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":59,"read_view_pending":false,"read_view_serial":34,"read_view_source":"committed_view"}
+[colonization-probe] day=62 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":59,"read_view_pending":false,"read_view_serial":34,"read_view_source":"committed_view"}
+[colonization-probe] day=63 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_pending":false,"read_view_source":"live_boundary"}
+[colonization-probe] day=64 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":63,"read_view_pending":false,"read_view_serial":35,"read_view_source":"committed_view"}
+[colonization-probe] day=65 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":63,"read_view_pending":false,"read_view_serial":35,"read_view_source":"committed_view"}
+[colonization-probe] day=66 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":63,"read_view_pending":false,"read_view_serial":35,"read_view_source":"committed_view"}
+[colonization-probe] day=67 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":67,"read_view_pending":false,"read_view_serial":36,"read_view_source":"committed_view"}
+[colonization-probe] day=68 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":67,"read_view_pending":false,"read_view_serial":36,"read_view_source":"committed_view"}
+[colonization-probe] day=69 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":67,"read_view_pending":false,"read_view_serial":36,"read_view_source":"committed_view"}
+[colonization-probe] day=70 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":67,"read_view_pending":false,"read_view_serial":36,"read_view_source":"committed_view"}
+[colonization-probe] day=71 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":67,"read_view_pending":false,"read_view_serial":36,"read_view_source":"committed_view"}
+[colonization-probe] day=72 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":72,"read_view_pending":false,"read_view_serial":37,"read_view_source":"committed_view"}
+[colonization-probe] day=73 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":72,"read_view_pending":false,"read_view_serial":37,"read_view_source":"committed_view"}
+[colonization-probe] day=74 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":72,"read_view_pending":false,"read_view_serial":37,"read_view_source":"committed_view"}
+[clock/step] delta=22.4ms speed=100x target=2.24d cap=0.64d/f cost=12.42ms ran=0 pulse=0.00ms loop=0.00ms full=0.36ms carry=0.80 barrier=
+[colonization-probe] day=75 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":72,"read_view_pending":false,"read_view_serial":37,"read_view_source":"committed_view"}
+[colonization-probe] day=76 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":72,"read_view_pending":false,"read_view_serial":37,"read_view_source":"committed_view"}
+[colonization-probe] day=77 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":77,"read_view_pending":false,"read_view_serial":38,"read_view_source":"committed_view"}
+[colonization-probe] day=78 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":77,"read_view_pending":false,"read_view_serial":38,"read_view_source":"committed_view"}
+[colonization-probe] day=79 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":77,"read_view_pending":false,"read_view_serial":38,"read_view_source":"committed_view"}
+[colonization-probe] day=80 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":77,"read_view_pending":false,"read_view_serial":38,"read_view_source":"committed_view"}
+[colonization-probe] day=81 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":77,"read_view_pending":false,"read_view_serial":38,"read_view_source":"committed_view"}
+[colonization-probe] day=82 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":82,"read_view_pending":false,"read_view_serial":39,"read_view_source":"committed_view"}
+[colonization-probe] day=83 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":82,"read_view_pending":false,"read_view_serial":39,"read_view_source":"committed_view"}
+[colonization-probe] day=84 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":82,"read_view_pending":false,"read_view_serial":39,"read_view_source":"committed_view"}
+[colonization-probe] day=85 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":82,"read_view_pending":false,"read_view_serial":39,"read_view_source":"committed_view"}
+[colonization-probe] day=86 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":82,"read_view_pending":false,"read_view_serial":39,"read_view_source":"committed_view"}
+[colonization-probe] day=87 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":87,"read_view_pending":false,"read_view_serial":40,"read_view_source":"committed_view"}
+[colonization-probe] day=88 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":87,"read_view_pending":false,"read_view_serial":40,"read_view_source":"committed_view"}
+[colonization-probe] day=89 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":87,"read_view_pending":false,"read_view_serial":40,"read_view_source":"committed_view"}
+[colonization-probe] day=90 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":87,"read_view_pending":false,"read_view_serial":40,"read_view_source":"committed_view"}
+[colonization-probe] day=91 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_pending":false,"read_view_source":"live_boundary"}
+[colonization-probe] day=92 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":91,"read_view_pending":false,"read_view_serial":41,"read_view_source":"committed_view"}
+[colonization-probe] day=93 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":91,"read_view_pending":false,"read_view_serial":41,"read_view_source":"committed_view"}
+[colonization-probe] day=94 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":91,"read_view_pending":false,"read_view_serial":41,"read_view_source":"committed_view"}
+[colonization-probe] day=95 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":95,"read_view_pending":false,"read_view_serial":42,"read_view_source":"committed_view"}
+[colonization-probe] day=96 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":95,"read_view_pending":false,"read_view_serial":42,"read_view_source":"committed_view"}
+[colonization-probe] day=97 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":95,"read_view_pending":false,"read_view_serial":42,"read_view_source":"committed_view"}
+[colonization-probe] day=98 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":95,"read_view_pending":false,"read_view_serial":42,"read_view_source":"committed_view"}
+[colonization-probe] day=99 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":99,"read_view_pending":false,"read_view_serial":43,"read_view_source":"committed_view"}
+[colonization-probe] day=100 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":99,"read_view_pending":false,"read_view_serial":43,"read_view_source":"committed_view"}
+[colonization-probe] day=101 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":99,"read_view_pending":false,"read_view_serial":43,"read_view_source":"committed_view"}
+[colonization-probe] day=102 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":99,"read_view_pending":false,"read_view_serial":43,"read_view_source":"committed_view"}
+[colonization-probe] day=103 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":103,"read_view_pending":false,"read_view_serial":44,"read_view_source":"committed_view"}
+[colonization-probe] day=104 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":103,"read_view_pending":false,"read_view_serial":44,"read_view_source":"committed_view"}
+[colonization-probe] day=105 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":103,"read_view_pending":false,"read_view_serial":44,"read_view_source":"committed_view"}
+[colonization-probe] day=106 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":103,"read_view_pending":false,"read_view_serial":44,"read_view_source":"committed_view"}
+[colonization-probe] day=107 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":107,"read_view_pending":false,"read_view_serial":45,"read_view_source":"committed_view"}
+[colonization-probe] day=108 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":107,"read_view_pending":false,"read_view_serial":45,"read_view_source":"committed_view"}
+[colonization-probe] day=109 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":107,"read_view_pending":false,"read_view_serial":45,"read_view_source":"committed_view"}
+[colonization-probe] day=110 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":107,"read_view_pending":false,"read_view_serial":45,"read_view_source":"committed_view"}
+[colonization-probe] day=111 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":107,"read_view_pending":false,"read_view_serial":45,"read_view_source":"committed_view"}
+[colonization-probe] day=112 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":111,"read_view_pending":false,"read_view_serial":46,"read_view_source":"committed_view"}
+[colonization-probe] day=113 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":111,"read_view_pending":false,"read_view_serial":46,"read_view_source":"committed_view"}
+[colonization-probe] day=114 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":111,"read_view_pending":false,"read_view_serial":46,"read_view_source":"committed_view"}
+[colonization-probe] day=115 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":115,"read_view_pending":false,"read_view_serial":47,"read_view_source":"committed_view"}
+[colonization-probe] day=116 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":115,"read_view_pending":false,"read_view_serial":47,"read_view_source":"committed_view"}
+[colonization-probe] day=117 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":115,"read_view_pending":false,"read_view_serial":47,"read_view_source":"committed_view"}
+[colonization-probe] day=118 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":115,"read_view_pending":false,"read_view_serial":47,"read_view_source":"committed_view"}
+[colonization-probe] day=119 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":115,"read_view_pending":false,"read_view_serial":47,"read_view_source":"committed_view"}
+[colonization-probe] day=120 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":120,"read_view_pending":false,"read_view_serial":48,"read_view_source":"committed_view"}
+[colonization-probe] day=121 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":120,"read_view_pending":false,"read_view_serial":48,"read_view_source":"committed_view"}
+[colonization-probe] day=122 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":120,"read_view_pending":false,"read_view_serial":48,"read_view_source":"committed_view"}
+[colonization-probe] day=123 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":120,"read_view_pending":false,"read_view_serial":48,"read_view_source":"committed_view"}
+[colonization-probe] day=124 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":120,"read_view_pending":false,"read_view_serial":48,"read_view_source":"committed_view"}
+[colonization-probe] day=125 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":125,"read_view_pending":false,"read_view_serial":49,"read_view_source":"committed_view"}
+[colonization-probe] day=126 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":125,"read_view_pending":false,"read_view_serial":49,"read_view_source":"committed_view"}
+[colonization-probe] day=127 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":125,"read_view_pending":false,"read_view_serial":49,"read_view_source":"committed_view"}
+[colonization-probe] day=128 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":125,"read_view_pending":false,"read_view_serial":49,"read_view_source":"committed_view"}
+[colonization-probe] day=129 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":129,"read_view_pending":false,"read_view_serial":50,"read_view_source":"committed_view"}
+[colonization-probe] day=130 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":129,"read_view_pending":false,"read_view_serial":50,"read_view_source":"committed_view"}
+[colonization-probe] day=131 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":129,"read_view_pending":false,"read_view_serial":50,"read_view_source":"committed_view"}
+[colonization-probe] day=132 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":129,"read_view_pending":false,"read_view_serial":50,"read_view_source":"committed_view"}
+[colonization-probe] day=133 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":129,"read_view_pending":false,"read_view_serial":50,"read_view_source":"committed_view"}
+[colonization-probe] day=134 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":134,"read_view_pending":false,"read_view_serial":51,"read_view_source":"committed_view"}
+[colonization-probe] day=135 ok=false state= blocker= material=/ bridge=/ missing= pending= phase= peer_blocked= reject_day= reject= gate_mask=0x3fe
+[colonization-probe] snapshot={"code":"colonization_expedition_invalid","ok":false,"read_view_day":134,"read_view_pending":false,"read_view_serial":51,"read_view_source":"committed_view"}
+[colonization-probe] done code=0
+ERROR: 96 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 134 RID allocations of type 'PN18TextServerAdvanced22ShapedTextDataAdvancedE' were leaked at exit.
+ERROR: 6 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 1016 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

@@ -96,3 +96,13 @@ Do not claim completion unless code, focused tests, docs, and this skill agree. 
 the 3 percent median / 5 percent p95 target without same-machine baseline and after data.
 Run `quick_validate.py` after editing this skill. Forward-test in isolated context when agent
 delegation is available; otherwise report that gate as not executed.
+
+## Satisfaction purchasing power (2026-10-16)
+
+Comfort and luxury are native cash-purchasing-power dimensions, not need-tier fill rates.
+Use post-consumption cohort funds divided by population × local basic daily living cost × 30.
+The Q16-month ramps default to 1..3 for comfort and 3..10 for luxury; missing/zero cost
+scores both at zero. Keep the authored profession weights even when those need tiers are
+empty (explicit zero weights remain zero). Basic consumption and survival keep their
+existing inputs. See `docs/cpp-dots-runtime/satisfaction-runtime.md` for profile keys,
+diagnostics, current-market basket limitations and save semantics. No new wallet or state lane.

@@ -1,9 +1,0 @@
-[gd_scene format=3]
-
-[node name="OverlayButton" type="Button"]
-custom_minimum_size = Vector2(46, 46)
-toggle_mode = true
-focus_mode = 0
-mouse_filter = 0
-theme_type_variation = &"PKHUDButton"
-icon_alignment = 1

@@ -1,6 +1,0 @@
-ERROR: Condition "hr != ((HRESULT)0x00000000)" is true. Returning: ERR_CANT_OPEN
-   at: audio_device_init (drivers/wasapi/audio_driver_wasapi.cpp:275)
-ERROR: WASAPI: init_output_device error.
-   at: init (drivers/wasapi/audio_driver_wasapi.cpp:600)
-WARNING: All audio drivers failed, falling back to the dummy driver.
-   at: initialize (servers/audio/audio_server.cpp:247)

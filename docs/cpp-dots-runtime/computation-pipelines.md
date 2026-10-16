@@ -1,5 +1,16 @@
 # Simulation Computation Pipelines
 
+## Household purchasing-power satisfaction (2026-10-16)
+
+`NativeEconomyRuntime::update_cohort_satisfaction` derives comfort/luxury from
+post-consumption funds / (population × cached local basic daily living cost × 30).
+Default ramps are 1..3 / 3..10 Q16 months; a missing cost basis yields zero.
+Both retain the profession dimension weights independently of active need tiers.
+Basic-tier consumption, survival, household demand, settlement cadence, graph
+order and publication arrays are unchanged. This adds O(1) scalar arithmetic
+per settled cohort with no new market/need pass or persistent state lane.
+Full formulas and limitations: [satisfaction runtime](./satisfaction-runtime.md).
+
 Read-only building traversal must use `building_view()`. A `const auto` result
 from non-const `building_at()` still acquires a writable row lease over all
 tracked columns. Modifier factor-cache hits now avoid the lease entirely;

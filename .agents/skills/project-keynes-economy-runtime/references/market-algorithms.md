@@ -98,9 +98,12 @@ merchant epoch_income += revenue share
 Distribute merchant revenue once per market, not per order. Compute total and worst-need satisfaction
 in one linear pass over need states; do not scan all need states once per cohort.
 
-That same pass also drives composite satisfaction. Four `Σ(weight × satisfaction)` / `Σweight`
-accumulators — keyed by the data-driven `Need.satisfaction_tier` — produce the subsistence, basic,
-comfort, and luxury dimensions with **zero extra iteration**. Income growth, savings, tax burden,
+That same pass keeps the four data-driven need-tier accumulators for detail attribution.
+Basic consumption uses the basic-tier fill average; subsistence uses the survival figure.
+Comfort and luxury use post-consumption cash / (population × local basic daily cost × 30),
+normalized over 1..3 and 3..10 Q16 months. A missing cost basis scores both at zero;
+empty comfort/luxury need tiers never remove their authored profession weights.
+Income growth, savings, tax burden,
 and social development come from cohort ledgers and the epoch-boundary
 `_epoch_cell_development_q16` cache, so the hot loop only does multiply-add plus one
 `mul_div_sat`. Never add a second pass over need states, a string comparison, or a `Dictionary`

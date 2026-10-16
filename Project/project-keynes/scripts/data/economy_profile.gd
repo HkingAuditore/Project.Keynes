@@ -129,6 +129,13 @@ extends Resource
 ## Months of living cost a cohort must hold in funds to score full marks on the
 ## savings dimension (Q16 months).
 @export_range(1, 6553600, 1) var satisfaction_savings_target_months_q16: int = 393216
+## Purchasing power = cohort funds / (population * local daily basic cost * 30).
+## Q16 months of the fixed survival-plan basket; independent of activated needs.
+## Comfort rises from 0 to 100% at 1..3 months; luxury at 3..10 months.
+@export_range(0, 6553599, 1) var satisfaction_comfort_floor_months_q16: int = 65536
+@export_range(1, 6553600, 1) var satisfaction_comfort_ceiling_months_q16: int = 196608
+@export_range(0, 6553599, 1) var satisfaction_luxury_floor_months_q16: int = 196608
+@export_range(1, 6553600, 1) var satisfaction_luxury_ceiling_months_q16: int = 655360
 ## Net tax share of gross income that scores zero on the tax-burden dimension.
 ## Net subsidies (negative burden) saturate the dimension at full marks.
 @export_range(1, 65536, 1) var satisfaction_tax_tolerance_q16: int = 22938
@@ -400,6 +407,10 @@ func to_native_profile() -> Dictionary:
 		"satisfaction_income_growth_ceiling_q16": satisfaction_income_growth_ceiling_q16,
 		"satisfaction_income_baseline_alpha_q16": satisfaction_income_baseline_alpha_q16,
 		"satisfaction_savings_target_months_q16": satisfaction_savings_target_months_q16,
+		"satisfaction_comfort_floor_months_q16": satisfaction_comfort_floor_months_q16,
+		"satisfaction_comfort_ceiling_months_q16": satisfaction_comfort_ceiling_months_q16,
+		"satisfaction_luxury_floor_months_q16": satisfaction_luxury_floor_months_q16,
+		"satisfaction_luxury_ceiling_months_q16": satisfaction_luxury_ceiling_months_q16,
 		"satisfaction_tax_tolerance_q16": satisfaction_tax_tolerance_q16,
 		"satisfaction_development_weights_q16": satisfaction_development_weights_q16,
 		"satisfaction_development_variety_target":

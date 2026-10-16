@@ -993,6 +993,7 @@ static func _quotes_identity_of(page: Dictionary) -> String:
 static func _expeditions_identity_of(page: Dictionary) -> String:
 	var handles: PackedInt64Array = page.get("expedition_handles", PackedInt64Array())
 	var states: PackedInt32Array = page.get("states", PackedInt32Array())
+	var due_days: PackedInt64Array = page.get("due_days", PackedInt64Array())
 	var parts := PackedStringArray()
 	for index in range(handles.size()):
 		var state := int(states[index]) if index < states.size() else 0
@@ -1001,7 +1002,10 @@ static func _expeditions_identity_of(page: Dictionary) -> String:
 			"kit_missing_stock_identities", PackedInt64Array())
 		if index < identities.size():
 			missing = int(identities[index])
-		parts.append("%d:%d:%d" % [int(handles[index]), state, missing])
+		# A pending purchase can advance without changing stock or party state.
+		# The next preparation retry must refresh its tooltip as well.
+		var due := int(due_days[index]) if index < due_days.size() else -1
+		parts.append("%d:%d:%d:%d" % [int(handles[index]), state, missing, due])
 	return "%s|%s" % [int(page.get("total", 0)), ",".join(parts)]
 
 

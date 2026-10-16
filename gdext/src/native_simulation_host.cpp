@@ -1838,6 +1838,73 @@ bool NativeSimulationHost::switch_economy_authority(
 bool NativeSimulationHost::economy_authority_fault_gate_self_test(
         std::string &error) const noexcept {
     error.clear();
+    // A cohort can leave the merchant profession during employment while the
+    // cached merchant CSR still names its old slot. Debt service must never
+    // debit an owner when that cache has no living recipient (day 10315).
+    {
+        auto economy = std::make_unique<NativeEconomyRuntime>();
+        economy->_cell_count = 1;
+        economy->_merchant_profession_id = 0;
+        NativeEconomyRuntime::Signature merchant_signature;
+        merchant_signature.profession_id = 0;
+        NativeEconomyRuntime::Signature owner_signature;
+        owner_signature.profession_id = 1;
+        economy->_signatures.push_back(merchant_signature);
+        economy->_signatures.push_back(owner_signature);
+        auto &population = economy->population_store();
+        population.clear(1);
+        const int32_t merchant = population.allocate_slot(0, 0);
+        const int32_t owner = population.allocate_slot(0, 1);
+        population.population.write_scalar(merchant, 1);
+        population.population.write_scalar(owner, 1);
+        population.funds.write_scalar(owner, 100000);
+        if (!economy->rebuild_merchant_ranges(error)) return false;
+        population.population.write_scalar(merchant, 0);
+        NativeEconomyRuntime::BuildingGroup debt;
+        debt.cell = 0;
+        debt.owner_signature_id = 1;
+        debt.count = 1;
+        debt.merchant_debt_principal = 11166;
+        debt.merchant_debt_term_cycles_left = 1;
+        const size_t group = economy->append_building_group(debt);
+        int64_t premium = 0;
+        int64_t paid = 0;
+        {
+            auto row = economy->building_at(group);
+            paid = economy->repay_building_debt(0, owner, row, 11166, premium);
+        }
+        if (paid != 0 ||
+            population.funds[owner] != 100000 || premium != 0 ||
+            economy->buildings_store().merchant_debt_principal[group] != 11166) {
+            error = "merchant_debt_missing_receiver_burned_owner_cash";
+            return false;
+        }
+        int64_t repairs = 0;
+        if (!economy->ensure_merchant_invariant(0, repairs, error) ||
+            repairs != 1 || !economy->_merchant_ranges_dirty ||
+            !economy->refresh_merchant_ranges_if_dirty(error) ||
+            economy->_merchant_ranges_dirty ||
+            economy->_merchant_slots != std::vector<int32_t>{owner}) {
+            error = "merchant_replacement_did_not_refresh_receiver_csr";
+            return false;
+        }
+        const int32_t debtor = population.allocate_slot(0, 1);
+        population.population.write_scalar(debtor, 1);
+        population.funds.write_scalar(owner, 0);
+        population.funds.write_scalar(debtor, 100000);
+        {
+            auto row = economy->building_at(group);
+            paid = economy->repay_building_debt(0, debtor, row, 11166, premium);
+        }
+        if (paid != 11166 ||
+            population.funds[debtor] != 88834 ||
+            population.funds[owner] != 11166 ||
+            population.funds[merchant] != 0 ||
+            economy->buildings_store().merchant_debt_principal[group] != 0) {
+            error = "merchant_debt_receiver_retry_did_not_conserve_cash";
+            return false;
+        }
+    }
     // 遗留 AI 包的终态可供收尾/保存查询，但不能污染玩家回执流。
     const auto receipt_probe = std::make_unique<NativeSimulationHost>();
     RuntimeCountryCommand old_ai;

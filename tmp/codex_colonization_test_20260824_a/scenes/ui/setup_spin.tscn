@@ -1,5 +1,0 @@
-[gd_scene format=3]
-[node name="SetupSpin" type="SpinBox"]
-allow_greater = false
-allow_lesser = false
-select_all_on_focus = true

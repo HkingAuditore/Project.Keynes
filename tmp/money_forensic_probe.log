@@ -1,0 +1,50 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+modifiers { "ok": true, "protocol_version": 2, "save_schema_version": 3, "catalog_hash": 7211456854596385208, "stat_count": 2778, "definition_count": 479, "modifier_pod_ready": true, "modifier_pod_fallback_reason": "", "modifier_pod_catalog_hash": -5533278342825464387 }
+country config { "ok": true, "schema_version": 13, "runtime_mode": "ACTIVE", "cell_count": 6400, "good_count": 134, "profession_count": 45, "building_type_count": 400, "technology_count": 380, "catalog_hash": 3554568637651050431 }
+country begin { "ok": true }
+country feed { "ok": true, "bytes_received": 175202 }
+country end { "ok": true, "state_hash": 7375329570023943724, "generation": 2, "published_to_slot": false, "publish_reason": "country_slot_unavailable" }
+economy config { "path": "ECONOMY_GRAPH", "mode": "native", "ok": true, "schema_version": 55, "catalog_hash": 52414950728110956, "cell_count": 6400, "good_count": 134, "signature_count": 45, "building_type_count": 400, "family_catalog_hash": 2333736781, "money_scale": 10000, "goods_scale": 1000, "ratio_scale": 65536, "rate_scale": 4294967296 }
+economy begin { "ok": true, "schema_version": 55, "scratch_prepared": true, "requires_ecp2": true }
+diagnostic role clip cell=1941 type=205 filled=4 cap=3
+diagnostic role clip cell=3787 type=370 filled=4 cap=3
+economy end { "ok": true, "restored_pages": 83, "restored_commands": 0, "restored_buildings": 2577, "restored_trade_orders": 35, "restored_trade_flows": 1757, "cohort_count": 488, "state_hash_catalog": 52414950728110956, "restored_families": 27, "restored_persons": 108, "restored_person_needs": 268, "migration": "none" }
+[diag-stage-money] armed day=10315 where=slice
+[research-procure-diag] day=10315 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+diagnostic day 10315 done
+[diag-stage-money] day=10316 where=slice stage=1 executed=1 substage= diff=71463872 delta=71463872
+[diag-stage-money] day=10316 where=slice stage=14 executed=14 substage=evaluate diff=0 delta=-71463872
+diagnostic day 10316 done
+[research-procure-diag] day=10317 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+diagnostic day 10317 done
+[research-procure-diag] day=10318 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+diagnostic day 10318 done
+[research-procure-diag] day=10319 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+diagnostic day 10319 done
+[research-procure-diag] day=10320 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+diagnostic day 10320 done
+diagnostic day 10321 done
+[research-procure-diag] day=10322 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+diagnostic day 10322 done
+[research-procure-diag] day=10323 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+diagnostic day 10323 done
+[research-procure-diag] day=10324 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+diagnostic day 10324 done
+[research-procure-diag] day=10325 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+diagnostic day 10325 done
+diagnostic day 10326 done
+[research-procure-diag] day=10327 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+diagnostic day 10327 done
+[research-procure-diag] day=10328 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+diagnostic day 10328 done
+[research-procure-diag] day=10329 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+diagnostic day 10329 done
+[research-procure-diag] day=10330 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+diagnostic day 10330 done
+ERROR: 29 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 3 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 301 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

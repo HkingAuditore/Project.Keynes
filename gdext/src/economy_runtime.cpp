@@ -636,6 +636,7 @@ bool NativeEconomyRuntime::ensure_merchant_invariant(int32_t cell, int64_t &repa
     }
     const int64_t source_handle = static_cast<int64_t>(population_store().handle_for_slot(source));
     if (source_population == 1) {
+        _merchant_ranges_dirty = true;
         population_store().signature_id.write_scalar(source, static_cast<uint32_t>(merchant_signature), market_mutation_sink());
         if (_epoch_active) {
             std::vector<EventLeg> legs;
@@ -669,6 +670,7 @@ bool NativeEconomyRuntime::ensure_merchant_invariant(int32_t cell, int64_t &repa
     const int64_t destination_funds_before = population_store().funds[destination];
     touch_accounting_slot(source);
     touch_accounting_slot(destination);
+    _merchant_ranges_dirty = true;
     population_store().population.write_scalar(source, population_store().population[source] - (1), market_mutation_sink());
     population_store().funds.write_scalar(source, population_store().funds[source] - (funds_share), market_mutation_sink());
     population_store().population.write_scalar(destination, saturating_add(
@@ -742,7 +744,12 @@ bool NativeEconomyRuntime::rebuild_merchant_ranges(std::string &error) {
         }
     }
     _merchant_nonempty_cells_valid = true;
+    _merchant_ranges_dirty = false;
     return true;
+}
+
+bool NativeEconomyRuntime::refresh_merchant_ranges_if_dirty(std::string &error) {
+    return !_merchant_ranges_dirty || rebuild_merchant_ranges(error);
 }
 
 bool NativeEconomyRuntime::repair_cell_merchant_and_rebuild(
@@ -6047,20 +6054,20 @@ int64_t NativeEconomyRuntime::update_cohort_satisfaction(
         weights[static_cast<size_t>(dim)] =
             signature.satisfaction_weights_q16[static_cast<size_t>(dim)];
 
-    // Tiers 0-3 come from the need reduction that just ran. The subsistence tier
-    // is overridden by the calorie/cold survival figure so starvation semantics
-    // stay identical to the pre-composite runtime.
-    for (int32_t tier = 0; tier < SAT_TIER_COUNT; ++tier) {
+    // Only basic consumption is scored from realized need fills. Comfort and
+    // luxury below measure purchasing power even without an active need tier.
+    {
+        constexpr int32_t tier = SAT_DIM_BASIC;
         const int64_t weight = tier_weight_q16[tier];
         if (weight <= 0) {
             // The plan never asks for this tier, so scoring it would punish a
             // class for needs it does not have. Drop it from the denominator.
             weights[static_cast<size_t>(tier)] = 0;
             dims[static_cast<size_t>(tier)] = Q16_ONE - 1;
-            continue;
+        } else {
+            dims[static_cast<size_t>(tier)] = std::clamp<int64_t>(
+                tier_weighted_q16[tier] / weight, 0, Q16_ONE - 1);
         }
-        dims[static_cast<size_t>(tier)] = std::clamp<int64_t>(
-            tier_weighted_q16[tier] / weight, 0, Q16_ONE - 1);
     }
     dims[SAT_DIM_SUBSISTENCE] = std::clamp<int64_t>(subsistence_q16, 0,
                                                     Q16_ONE - 1);
@@ -6096,13 +6103,22 @@ int64_t NativeEconomyRuntime::update_cohort_satisfaction(
     const int64_t monthly_cost = saturating_mul(
         saturating_mul(std::max<int64_t>(0, daily_living_cost), population, sat),
         30, sat);
+    // Fixed 30-day reference basket: never shrink this denominator with the
+    // household's wealth/price-elastic demand or its actual consumption spend.
+    // A missing cost basis is not evidence of unlimited purchasing power.
+    const int64_t months_q16 = monthly_cost > 0 ? mul_div_sat(
+        std::max<int64_t>(0, population_store().funds[slot]), Q16_ONE,
+        monthly_cost, sat) : 0;
+    dims[SAT_DIM_COMFORT] = monthly_cost > 0 ? normalize_band_q16(
+        months_q16, _satisfaction_comfort_floor_months_q16,
+        _satisfaction_comfort_ceiling_months_q16, sat) : 0;
+    dims[SAT_DIM_LUXURY] = monthly_cost > 0 ? normalize_band_q16(
+        months_q16, _satisfaction_luxury_floor_months_q16,
+        _satisfaction_luxury_ceiling_months_q16, sat) : 0;
     if (monthly_cost <= 0) {
         // Nothing costs anything here, so savings cannot express anxiety.
         dims[SAT_DIM_SAVINGS] = Q16_ONE - 1;
     } else {
-        const int64_t months_q16 = mul_div_sat(
-            std::max<int64_t>(0, population_store().funds[slot]), Q16_ONE, monthly_cost,
-            sat);
         dims[SAT_DIM_SAVINGS] = normalize_band_q16(
             months_q16, 0, _satisfaction_savings_target_months_q16, sat);
     }
@@ -9918,6 +9934,7 @@ int64_t NativeEconomyRuntime::credit_local_merchants(int32_t cell, int64_t amoun
     const int32_t end = _merchant_offsets[cell + 1];
     int64_t total_population = 0;
     for (int32_t k = begin; k < end; ++k) {
+        if (!is_merchant_slot(_merchant_slots[k])) continue;
         total_population = saturating_add(total_population,
             population_store().population[_merchant_slots[k]], _saturation_count);
     }
@@ -9926,6 +9943,7 @@ int64_t NativeEconomyRuntime::credit_local_merchants(int32_t cell, int64_t amoun
     int64_t distributed = 0;
     for (int32_t k = begin; k < end; ++k) {
         const int32_t slot = _merchant_slots[k];
+        if (!is_merchant_slot(slot)) continue;
         touch_accounting_slot(slot);
         prefix = saturating_add(prefix, population_store().population[slot], _saturation_count);
         const int64_t next = mul_div_sat(amount, prefix, total_population, _saturation_count);
@@ -9945,7 +9963,7 @@ bool NativeEconomyRuntime::local_merchants_can_receive(int32_t cell) const {
         _merchant_offsets.size() != static_cast<size_t>(_cell_count.get() + 1))
         return false;
     for (int32_t k = _merchant_offsets[cell]; k < _merchant_offsets[cell + 1]; ++k) {
-        if (population_store().population[_merchant_slots[k]] > 0) return true;
+        if (is_merchant_slot(_merchant_slots[k])) return true;
     }
     return false;
 }
@@ -11551,6 +11569,9 @@ int64_t NativeEconomyRuntime::repay_building_debt(
     if (owner_slot < 0 || payment_cap <= 0 ||
         (group.merchant_debt_principal <= 0 && group.merchant_debt_premium <= 0))
         return 0;
+    // Employment can replace a merchant slot before the CSR is refreshed.
+    // An unavailable recipient defers repayment; it must not burn owner cash.
+    if (!local_merchants_can_receive(cell)) return 0;
     int64_t local_sat = 0;
     const int64_t due = building_debt_due(group, local_sat);
     _saturation_count = saturating_add(_saturation_count, local_sat, _saturation_count);
@@ -13235,6 +13256,9 @@ bool NativeEconomyRuntime::move_cohort_population(int32_t source, int32_t dest_c
         return false;
     }
     const int64_t destination_pop_before = population_store().population[destination];
+    if ((move_pop == source_pop && slot_has_merchant_profession(source)) ||
+        (destination_pop_before == 0 && slot_has_merchant_profession(destination)))
+        _merchant_ranges_dirty = true;
     const int64_t destination_funds_before = population_store().funds[destination];
     const int64_t destination_income_before = population_store().epoch_income[destination];
     const int64_t destination_expense_before = population_store().epoch_expense[destination];
@@ -14317,6 +14341,10 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
         }
         if (_stage == Stage::BUILDING_PRODUCTION) {
             _executed_stage = Stage::BUILDING_PRODUCTION;
+            if (!refresh_merchant_ranges_if_dirty(error)) {
+                fail(error.empty() ? "merchant_range_rebuild_before_production_failed" : error);
+                break;
+            }
             const auto start = Clock::now();
             cursor_start = _building_cell_cursor;
             const int32_t base_end = building_slice_end(_building_cell_cursor);
@@ -20975,6 +21003,10 @@ bool NativeEconomyRuntime::run_building_production_drain(int64_t &work_done,
         error = "building_production_prior_incomplete";
         return false;
     }
+    if (!refresh_merchant_ranges_if_dirty(error)) {
+        fail(error.empty() ? "merchant_range_rebuild_before_production_failed" : error);
+        return false;
+    }
 
     // Match building_slice_end() across worker epoch transitions; do not
     // process a stale epoch workset after _epoch_active has been cleared.
@@ -23277,6 +23309,7 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _merchant_offsets.clear();
     _merchant_slots.clear();
     _merchant_nonempty_cells.clear();
+    _merchant_ranges_dirty = false;
     _merchant_nonempty_cells_valid = false;
     _trace_cell_mask.clear();
     _pending_trace_cell_mask.clear();

@@ -1,5 +1,17 @@
 # GDScript / C++ Data Bridge
 
+## Satisfaction purchasing power (2026-10-16)
+
+`EconomyProfile.to_native_profile()` supplies four Q16-month parameters:
+`satisfaction_comfort_floor_months_q16` / `_ceiling_months_q16` (1/3), and
+`satisfaction_luxury_floor_months_q16` / `_ceiling_months_q16` (3/10).
+Native household settlement owns both scores, using remaining cohort cash and
+the existing local basic living-cost cache with a fixed 30-day reference.
+The existing eight-dimension snapshot arrays carry the results; UI performs no
+scoring. `explain_cohort_satisfaction` additionally exposes current purchasing
+power, basis validity, reference days and the four thresholds. No DataCore slots,
+bindings or save layout change. See [satisfaction runtime](./satisfaction-runtime.md).
+
 ## Effect worker snapshot persistence (2026-10-15)
 
 The main-thread `apply_runtime_effect_snapshot()` remains an immutable-copy

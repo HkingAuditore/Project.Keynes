@@ -1,5 +1,20 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V6）
 
+## 2026-10-16 商人迁移与还贷守恒修复
+
+第 10315 天现场的 `money_error=-11166` 对应格子 4847 的七笔还贷
+`4939+774+193+1+1439+325+3495`。原还贷路径先扣业主现金；旧商人 CSR
+已没有活的收款人时，分账返回零，债务保持未偿但现金已丢失。
+
+商人迁移清空源 cohort、新增商人目的 cohort 或 invariant repair 改变商人槽位时，
+原生侧标记派生 CSR 失效。compact 与 StageOps 的生产入口都在派发并行任务前按需
+刷新一次；无商人结构变化时不重建。还贷必须先确认存在有效收款商人，缺失时延期且
+保持业主现金和债务原值；分账跳过已失效或已转职的缓存槽位。
+该 dirty 标记不进入 hash 或 PKEC，不改变 N/P/I、税率、铸币规则或状态权威。
+
+`tests/merchant_debt_conservation_regression_test.gd` 经已有 native fault-gate self-test
+验证无收款人时不扣款、商人替换后 CSR 刷新，以及重试时准确转移 11166 并清偿本金。
+
 ## 2026-10-15 稀疏工作集与提交发布
 
 需求预估先查询既有国家商品科技门，再计算可用 variant 的价格。EPOCH_BEGIN
@@ -445,6 +460,9 @@ cohort 满意度不再是单一的生存指标。`_population.composite_satisfac
 数据驱动权重加权平均后经生存闸门封顶，接管出生率、同格就业流动排序与家族分支晋升评审，
 并按等级跨越发布 `EVENT_ECONOMY_SOCIAL_PRESSURE`。`needs_satisfaction`
 （`SAT_DIM_SUBSISTENCE`）保留原语义但**只**驱动饥饿死亡。
+
+2026-10-16 起舒适/奢侈取本轮剩余存款相对 30 天本地基础生活成本的购买力，
+分别在 1～3 / 3～10 倍区间线性评分，成本不可估价时两项为 0；职业权重不再因空需求档剔除。
 
 维度定义、数据驱动权重契约、合成公式、溯源 API、事件 payload、PKEC v30 列布局与
 性能验收数据是[综合满意度运行时](./satisfaction-runtime.md)的职责，本文件不重复。

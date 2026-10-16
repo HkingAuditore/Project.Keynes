@@ -12,6 +12,9 @@ extends Node
 ##   $env:PK_SAVE_DIR 指向临时目录，避免自动存档覆盖玩家槽位
 ## 通用：
 ##   $env:PK_COLONIZATION_PROBE_POPULATION = "20"   # 派遣人数上限
+##   $env:PK_COLONIZATION_PROBE_REQUIRE_OUTBOUND = "1" # 未观察到出发回执则失败
+##   $env:PK_COLONIZATION_PROBE_SAVE_PENDING = "1" # 阶段 5 时在隔离目录保存
+##   $env:PK_COLONIZATION_PROBE_WIDTH / HEIGHT     # 重放指定地图大小
 
 const RUNTIME_READY_FRAMES := 4800
 const BOUNDARY_WAIT_FRAMES := 1200
@@ -21,6 +24,8 @@ const STALL_FRAMES := 20000
 var _expedition := 0
 var _last_day := -1
 var _new_game := false
+var _save_attempted := false
+var _reached_outbound := false
 
 
 func _ready() -> void:
@@ -86,9 +91,37 @@ func _run() -> void:
 				_quit(1)
 				return
 			continue
-		_report(day, controller, generator)
+		var expedition := _report(day, controller, generator)
+		if int(expedition.get("state", -1)) in [1, 2]:
+			_reached_outbound = true
+		if not _reached_outbound:
+			# Background disk writes resume the clock before returning. A short
+			# route can finish during that await, so use durable receipts too.
+			var receipts: Dictionary = ext.get_family_colonization_receipts(
+				controller.get_player_country_handle(), 0, 256)
+			for receipt in receipts.get("receipts", []):
+				if int(receipt.get("expedition_handle", 0)) == _expedition \
+						and String(receipt.get("code", "")) == "STARTED":
+					_reached_outbound = true
+					print("[colonization-probe] departure receipt=%s" % JSON.stringify(receipt))
+		if _new_game and not _save_attempted \
+				and _env("PK_COLONIZATION_PROBE_SAVE_PENDING", "0") == "1" \
+				and bool(expedition.get("kit_procurement_pending", false)) \
+				and int(expedition.get("kit_procurement_phase", 0)) == 5:
+			_save_attempted = true
+			var saved: Dictionary = await get_tree().root.get_node("GameSave").request_manual_save("manual_3")
+			print("[colonization-probe] pending-save result=%s" % JSON.stringify({
+				"ok": saved.get("ok", false), "code": saved.get("code", ""),
+				"message": saved.get("message", ""),
+				"day": saved.get("header", {}).get("day", -1)}))
+			if not bool(saved.get("ok", false)):
+				_quit(1)
+				return
 		if _new_game and day - launch_day >= observe_days:
-			_quit(0)
+			var require_outbound := _env("PK_COLONIZATION_PROBE_REQUIRE_OUTBOUND", "0") == "1"
+			if require_outbound and not _reached_outbound:
+				push_error("[colonization-probe] expedition never reached OUTBOUND")
+			_quit(0 if not require_outbound or _reached_outbound else 1)
 			return
 
 
@@ -101,6 +134,8 @@ func _begin_new_game() -> bool:
 	config.country.name = "Probe Nation"
 	config.country.foreign_count = int(_env("PK_COLONIZATION_PROBE_FOREIGN", "3"))
 	config.base.initial_seed = int(_env("PK_COLONIZATION_PROBE_SEED", "20260718"))
+	config.base.map_width = int(_env("PK_COLONIZATION_PROBE_WIDTH", str(config.base.map_width)))
+	config.base.map_height = int(_env("PK_COLONIZATION_PROBE_HEIGHT", str(config.base.map_height)))
 	var begin: Dictionary = game_flow.call("begin_new_game", config)
 	print("[colonization-probe] new game begin=%s" % JSON.stringify(begin))
 	return bool(begin.get("ok", false))
@@ -115,6 +150,9 @@ func _drive(controller, clock: WorldClock, speed: float) -> void:
 		})
 		if bool(result.get("ok", false)):
 			print("[colonization-probe] family founding chosen: %s" % JSON.stringify(result))
+		# Match the UI choice handler: the modal can pause daily callbacks, so
+		# refresh the resolved offer lock on frame pulses as well.
+		controller._sync_family_founding_offer()
 	if bool(controller.get("_era_reward_locked")):
 		var era: Dictionary = controller.request_command(&"era_reward.choose", {
 			"offer_generation": int(controller.get("_era_reward_generation")),
@@ -128,7 +166,7 @@ func _drive(controller, clock: WorldClock, speed: float) -> void:
 		clock.pause(false)
 
 
-func _report(day: int, controller, generator) -> void:
+func _report(day: int, controller, generator) -> Dictionary:
 	var snap: Dictionary = controller.get_family_expedition_snapshot(_expedition)
 	var thread: Dictionary = generator.get_runtime_thread_report()
 	print("[colonization-probe] day=%d ok=%s state=%s blocker=%s material=%s/%s bridge=%s/%s missing=%s pending=%s phase=%s peer_blocked=%s reject_day=%s reject=%s gate_mask=0x%x" % [
@@ -145,10 +183,20 @@ func _report(day: int, controller, generator) -> void:
 	])
 	if not bool(snap.get("ok", false)):
 		print("[colonization-probe] snapshot=%s" % JSON.stringify(snap))
+	elif bool(snap.get("kit_procurement_pending", false)):
+		print("[colonization-probe] procurement=%s" % JSON.stringify({
+			"day": day, "good_id": snap.get("kit_procurement_good_id", -1),
+			"quantity": snap.get("kit_procurement_quantity", 0),
+			"started_day": snap.get("kit_procurement_started_day", -1),
+			"read_view_source": snap.get("read_view_source", ""),
+			"read_view_day": snap.get("read_view_day", -1),
+		}))
+	return snap
 
 
 func _start(controller, cell_count: int, population_cap: int) -> int:
-	for target in range(mini(cell_count, MAX_TARGET_PROBES)):
+	var target_limit := int(_env("PK_COLONIZATION_PROBE_TARGET_LIMIT", str(MAX_TARGET_PROBES)))
+	for target in range(mini(cell_count, target_limit)):
 		var page: Dictionary = controller.get_family_colonization_quotes(target, 0, -1, 0, 8)
 		if not bool(page.get("ok", false)):
 			if bool(page.get("busy", false)):

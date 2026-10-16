@@ -1,2 +1,0 @@
-﻿[FAIL] mining efficiency improves across historical building tiers
-[FAIL] shore fishery extracts only its local coastal-land reserve

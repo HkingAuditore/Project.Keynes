@@ -1,3 +1,0 @@
-[gd_scene format=3]
-[node name="SectionTitle" type="Label"]
-theme_type_variation = &"PKTitle"

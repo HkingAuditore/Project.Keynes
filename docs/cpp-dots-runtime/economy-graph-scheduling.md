@@ -173,6 +173,10 @@ building employment reconcile 与 `BUILDING_COMMIT` 的内生施工交易之前�
 invariant 并重建 merchant CSR；`AGGREGATE_PUBLISH` 保留最终校验，但不能作为建筑交易前
 的首次修复点。
 
+`BUILDING_EMPLOYMENT` 的职业迁移也可能替换商人槽位。compact 与 StageOps 的
+`BUILDING_PRODUCTION` 入口必须在并行派发前消费商人 CSR dirty 标记并按需重建，
+不能等到 household 或 structural 阶段。还贷无有效收款人时只延期，不扣业主现金。
+
 worker stage ms 是 task CPU 累计；`elapsed_ms` 才是 slice 墙钟。
 
 ## 误差契约

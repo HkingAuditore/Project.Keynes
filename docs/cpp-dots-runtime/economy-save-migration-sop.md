@@ -303,6 +303,12 @@ restore 校验每个维度值与 `worst_dimension_id` 的取值范围，越界�
 是历史 reader 行为；当前 provider/reader 只接受 v41。
 列语义见[综合满意度运行时](./satisfaction-runtime.md)。
 
+2026-10-16 舒适/奢侈从 need tier 满足率改为存款购买力评分，沿用现有
+`satisfaction_dims` / `composite_satisfaction` / `worst_dimension_id` 列；PKEC v55
+字节布局与 hash 字段集合不变，无需 bump schema。恢复保持已存的维度值，下一次市场结算
+按新公式刷新；同一新版运行时保存/恢复及后续重放应保持 hash 一致。四个购买力门槛由
+`EconomyProfile.to_native_profile()` 提供，与其他满意度旋钮一样在配置期冻结。
+
 ## PKEC v29（历史 writer）
 
 PKEC v29 保留 v28 的出生余数、人物、家族成员和建筑所有权，并新增家族特性运行时权威：

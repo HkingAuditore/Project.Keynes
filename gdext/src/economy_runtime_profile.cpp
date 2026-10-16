@@ -500,6 +500,22 @@ void NativeEconomyRuntime::configure_satisfaction_profile(const Dictionary &prof
     _satisfaction_savings_target_months_q16 = std::max<int64_t>(1,
         dict_num<int64_t>(profile, "satisfaction_savings_target_months_q16",
                           393216));
+    const auto read_purchasing_power_band = [&](const char *floor_key,
+            const char *ceiling_key, int64_t default_floor, int64_t default_ceiling,
+            int64_t &floor, int64_t &ceiling) {
+        floor = std::clamp<int64_t>(dict_num<int64_t>(profile, floor_key,
+            default_floor), 0, 100 * Q16_ONE - 1);
+        ceiling = std::clamp<int64_t>(dict_num<int64_t>(profile, ceiling_key,
+            default_ceiling), floor + 1, 100 * Q16_ONE);
+    };
+    read_purchasing_power_band("satisfaction_comfort_floor_months_q16",
+        "satisfaction_comfort_ceiling_months_q16", 65536, 196608,
+        _satisfaction_comfort_floor_months_q16,
+        _satisfaction_comfort_ceiling_months_q16);
+    read_purchasing_power_band("satisfaction_luxury_floor_months_q16",
+        "satisfaction_luxury_ceiling_months_q16", 196608, 655360,
+        _satisfaction_luxury_floor_months_q16,
+        _satisfaction_luxury_ceiling_months_q16);
     _satisfaction_tax_tolerance_q16 = std::clamp(
         dict_num<int32_t>(profile, "satisfaction_tax_tolerance_q16", 22938),
         1, static_cast<int32_t>(Q16_ONE));
