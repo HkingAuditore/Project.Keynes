@@ -68,7 +68,7 @@ func set_candidate(candidate: Dictionary) -> void:
 		origins.append(building)
 	if not profession.is_empty():
 		origins.append("%s出身" % profession)
-	origins.append("创始族人 %s 人" % founders)
+	origins.append("%s %s 人" % [String(candidate.get("people_label", "创始族人")), founders])
 	_origin.text = " · ".join(origins) if not _candidate_empty else "当前没有可扶持的家族。"
 	var names: PackedStringArray = candidate.get("trait_display_names", PackedStringArray())
 	var descriptions: PackedStringArray = candidate.get("trait_descriptions", PackedStringArray())
@@ -106,7 +106,9 @@ func set_candidate(candidate: Dictionary) -> void:
 	_effect_preview.tooltip_text = String(candidate.get("effect_full_description", ""))
 	_choose.disabled = _candidate_empty
 	_details_toggle.disabled = _candidate_empty
-	_choose.tooltip_text = "扶持「%s」在本地立族，其余两户将不再出现。" % _title.text
+	_choose.text = String(candidate.get("choice_label", "扶持此家族"))
+	_choose.tooltip_text = String(candidate.get("choice_tooltip",
+		"扶持「%s」在本地立族，其余两户将不再出现。" % _title.text))
 	_update_highlight(false)
 
 

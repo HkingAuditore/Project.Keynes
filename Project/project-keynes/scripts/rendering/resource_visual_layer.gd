@@ -750,14 +750,19 @@ func _clear_geometry() -> void:
 	_revision += 1
 
 func _build_style_texture() -> void:
-	var image := Image.create(2, 64, false, Image.FORMAT_RGBAF)
+	# shader在第143-144行从X=0.25和X=0.75采样
+	# 在4像素宽的纹理中：0.25→像素1(颜色)，0.75→像素3(元数据)
+	var image := Image.create(4, 64, false, Image.FORMAT_RGBAF)
 	_max_style_scale = 1.0
 	for i in _styles.size():
 		var e := _styles[i]
 		var override: Dictionary = profile.style_overrides.get(e.id, {})
 		_max_style_scale = maxf(_max_style_scale, float(override.get("size_scale", 1.0)))
-		image.set_pixel(0, i, override.get("color", e.color))
-		image.set_pixel(1, i, Color(float(e.form), float(e.family), float(e.get("sub_style", i % 4)), float(e.get("metallic", 0.0))))
+		# X=0.25采样（像素1）：颜色数据
+		var color_val = override.get("color", e.color) if override.has("color") else e.color
+		image.set_pixel(1, i, color_val)
+		# X=0.75采样（像素3）：元数据(form, family, sub_style, metallic)
+		image.set_pixel(3, i, Color(float(e.form), float(e.family), float(e.get("sub_style", i % 4)), float(e.get("metallic", 0.0))))
 	_material.set_shader_parameter("style_lut", ImageTexture.create_from_image(image))
 
 func diagnostics() -> Dictionary:

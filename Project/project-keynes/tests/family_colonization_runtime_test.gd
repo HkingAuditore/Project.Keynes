@@ -8,6 +8,15 @@ var _failures := 0
 
 
 func _init() -> void:
+	if OS.get_cmdline_user_args().has("--soft-tools-only"):
+		var compiled: Dictionary = EconomyCatalogScript.compile_native_catalog()
+		_expect("economy catalog compiles", bool(compiled.get("ok", false)))
+		if bool(compiled.get("ok", false)):
+			compiled.erase("ok")
+			_run_optional_tool_bridge(compiled)
+		print("=== family colonization soft tools: %d failures ===" % _failures)
+		quit(0 if _failures == 0 else 1)
+		return
 	if OS.get_cmdline_user_args().has("--worker-procurement-only"):
 		var compiled: Dictionary = EconomyCatalogScript.compile_native_catalog()
 		_expect("economy catalog compiles", bool(compiled.get("ok", false)))
@@ -293,6 +302,7 @@ func _run_colonization_kit_cases(catalog: Dictionary) -> void:
 	_run_interior_kit_settle_during_frozen_cycle(catalog.duplicate(true))
 	_run_mixed_substitute_kit(catalog.duplicate(true))
 	_run_aggregate_food_bridge(catalog.duplicate(true))
+	_run_optional_tool_bridge(catalog.duplicate(true))
 	_run_zero_stock_partial_kit(catalog.duplicate(true))
 	_run_preparing_stock_accumulation(catalog.duplicate(true))
 	_run_material_topup_departs(catalog.duplicate(true))
@@ -638,6 +648,54 @@ func _run_aggregate_food_bridge(catalog: Dictionary) -> void:
 	_expect("aggregate food bridge preserves economy ledgers",
 		int(ext.get_economy_report().get("goods_error", -1)) == 0
 		and int(ext.get_economy_report().get("population_error", -1)) == 0)
+
+
+func _run_optional_tool_bridge(catalog: Dictionary) -> void:
+	# Reproduce a fully stocked food/clothing/building kit with only a tiny
+	# amount of stone tools. Soft production inputs must not pin it at 97%.
+	var stock_overrides := {}
+	var goods: PackedStringArray = catalog.good_ids
+	for good in goods:
+		if String(good).contains("tool"):
+			stock_overrides[String(good)] = 0
+	stock_overrides["chipped_stone_tools"] = 1
+	for hard_input in [false, true]:
+		var test_catalog := catalog.duplicate(true)
+		if hard_input:
+			var building := (test_catalog.building_type_ids as PackedStringArray).find("gathering_ground")
+			var offsets: PackedInt32Array = test_catalog.building_input_offsets
+			var required: PackedInt32Array = test_catalog.building_input_required_q16
+			for input in range(offsets[building], offsets[building + 1]):
+				required[input] = 65536
+			test_catalog.building_input_required_q16 = required
+		var fixture := _make_fixture(test_catalog, 261017, 1000000,
+			stock_overrides, PackedStringArray(), 1, 1000000000000)
+		var ext: Object = fixture.ext
+		var country := int(fixture.country_handle)
+		var families: Dictionary = ext.get_family_cell_snapshot(0, 0, 64)
+		var family := int((families.family_handles as PackedInt64Array)[0])
+		var quotes: Dictionary = ext.get_family_colonization_quotes(country, 2, family, 0, 0, 64)
+		var token := int((quotes.quote_tokens as PackedInt64Array)[0])
+		var detail: Dictionary = ext.get_family_colonization_quote_detail(token, 3)
+		_expect("hard tools still block but soft tools do not block departure (%s)" % hard_input,
+			bool(detail.get("kit_partial", true)) == hard_input)
+		var started: Dictionary = ext.start_family_colonization(country, family,
+			0, 2, 3, token, _economy_command_day(ext), 261017)
+		_expect("tool-short kit starts successfully", bool(started.get("ok", false)))
+		var snap: Dictionary = ext.get_family_expedition_snapshot(country,
+			int(started.get("expedition_handle", 0)))
+		_expect("soft tool shortage departs; hard tool shortage prepares (%s)" % hard_input,
+			int(snap.get("state", -1)) == (4 if hard_input else 1))
+		if not hard_input:
+			var ids: PackedInt32Array = snap.get("cargo_good_ids", PackedInt32Array())
+			var qty: PackedInt64Array = snap.get("cargo_quantities", PackedInt64Array())
+			var tool := ids.find(goods.find("chipped_stone_tools"))
+			_expect("available optional tool stock is still bought and carried",
+				tool >= 0 and qty[tool] == 1)
+		var report: Dictionary = ext.get_economy_report()
+		_expect("tool-short departure preserves all conservation ledgers",
+			not bool(report.get("fatal", false)) and int(report.get("goods_error", -1)) == 0
+			and int(report.get("money_error", -1)) == 0 and int(report.get("population_error", -1)) == 0)
 
 
 func _run_colonization_population_reward(catalog: Dictionary) -> void:

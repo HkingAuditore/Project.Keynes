@@ -977,8 +977,19 @@ func family_founding_offers(offset: int = 0, limit: int = 16) -> Dictionary:
 	for offer in result.get("offers", []):
 		var settlement_name := String(settlements.get(int(offer.get("cell", -1)), ""))
 		offer["settlement_name"] = settlement_name
+		var split := String(offer.get("kind", "FOUNDING")) == "SPLIT"
+		if split:
+			var parent := family_snapshot(int(offer.get("source_family_handle", 0)))
+			offer["source_family_name"] = String(parent.get("family_name", "原家族"))
+		var plan_index := 0
 		for card in offer.get("candidates", []):
 			_decorate_family_founding_card(card, settlement_name)
+			if split:
+				plan_index += 1
+				card["family_name"] = "%s · 方案%s" % [card["family_name"], ["一", "二", "三"][plan_index - 1]]
+				card["people_label"] = "分支族人"
+				card["choice_label"] = "确立此家风"
+				card["choice_tooltip"] = "按此方案独立成族；本地整支族人、产业与名人统一转入新家族。"
 	return result
 
 

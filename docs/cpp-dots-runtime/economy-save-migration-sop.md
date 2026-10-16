@@ -597,3 +597,10 @@ allocate names deterministically in ascending cell order with
 
 
 Price V6 的动态上限、30 实际日确认及稀疏存档契约见 [实施与验收](price-v6-validation.md)。
+
+## PKEC v56 家族分支选择（2026-10-17）
+
+writer=56；reader 显式接受 55/56。v55 -> v56 只补空的分家来源与母子关联，不改变原有家族、
+候选身份和普通待决卡组哈希。section 35 的扩展、交互语义与回归入口见
+[家族运行时：分支立族与领土交互边界](notable-family-runtime.md#分支立族与领土交互边界2026-10-17pkec-v56)。
+实际 v55 DLL 写出的含待决卡组存档已用 v56 reader 验证恢复和 state hash 一致。

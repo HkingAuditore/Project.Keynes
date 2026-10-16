@@ -128,7 +128,8 @@ public:
     // carries the founder minimum and milestone-list hash, and section 35
     // stores milestone counts, open founding offers, queued choices, and
     // preselected founding effects.
-    static constexpr int32_t SCHEMA_VERSION = 55;
+    // 56: player-reviewed branch splits and persistent split lineage.
+    static constexpr int32_t SCHEMA_VERSION = 56;
     static constexpr uint32_t BUILDING_KIT_ROLE_TRADE = 1u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CONSTRUCTION = 2u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CLOTHING_INPUT = 4u;
@@ -2237,6 +2238,7 @@ private:
         int32_t chosen_index = -1;
         int64_t created_day = 0;
         int32_t failed_reviews = 0;
+        uint64_t source_family_handle = 0; // Nonzero: whole local branch split.
         std::vector<FamilyFoundingCandidate> candidates;
         template<class Visitor> void visit_persisted(Visitor &visit) const {
             visit(offer_id);
@@ -2248,6 +2250,7 @@ private:
             visit(chosen_index);
             visit(created_day);
             visit(failed_reviews);
+            visit(source_family_handle);
             visit(candidates);
         }
     };
@@ -2359,6 +2362,9 @@ private:
     struct ColonizationReserveContext {
         const std::vector<int64_t> *reserved = nullptr;
         bool prefer_reserved_candidates = false;
+        // Read-only demand forecast: retain reachable missing goods in the
+        // target bill. Never use this hypothetical cargo for departure.
+        bool forecast_missing = false;
     };
 
     // FamilyExpeditionStore: see runtime_economy_family_side_tables.h
@@ -5355,6 +5361,8 @@ private:
     EconomyTrackedRecords<FamilyFoundingChoiceCommand> _family_founding_choices{{{14, 5}, "commands.family_founding_choices", EconomyFieldEncoding::CanonicalRecord, 1}};
     EconomyKeyedVariableRecords<std::pair<int64_t, int32_t>> _family_founding_effects{
         {{24, 5}, "family.founding_effects", EconomyFieldEncoding::CanonicalRecord, 1}};
+    EconomyKeyedVariableRecords<std::pair<int64_t, int64_t>> _family_split_parents{
+        {{24, 6}, "family.split_parents", EconomyFieldEncoding::CanonicalRecord, 1}};
     EconomyTrackedScalar<int64_t> _next_family_founding_offer_id{_metadata_changes,
         {{15, 31}, "family.next_founding_offer_id", EconomyFieldEncoding::I64, 8}, 1};
     std::vector<int32_t> _family_founding_offer_by_cell;
@@ -5528,6 +5536,11 @@ private:
     // prices, and population at epoch begin. It is deliberately transient:
     // country treasury/goods remain Country authority and this cache is not
     // part of PKEC or the economy state hash.
+    // Frozen one-shot procurement backlog, sparse sorted (cell/market, good).
+    // Rebuilt from PREPARING custody and spendable Country cash each epoch;
+    // not an order, withdrawal, wallet, persistent EMA, or save/hash lane.
+    std::vector<std::pair<uint64_t, int64_t>> _epoch_colonization_demand_by_cell;
+    std::vector<std::pair<uint64_t, int64_t>> _epoch_colonization_demand_by_market;
     int32_t _epoch_research_good_id = -1;
     std::vector<int64_t> _epoch_research_demand_by_cell;
     std::vector<int64_t> _epoch_research_demand_by_market;
@@ -7108,7 +7121,7 @@ private:
                                      ConstructionMaterialPlan &plan,
                                      const std::vector<int64_t> *additional_stock = nullptr,
                                      std::vector<int64_t> *stock_inout = nullptr,
-                                     bool split_candidates = false) const;
+        bool split_candidates = false, bool forecast_missing = false) const;
     bool apply_demolish_command(const Command &cmd, int32_t owner_slot, std::string &error);
     bool run_building_employment_cell(int32_t cell,
                                       bool allow_owner_job_reallocation,
@@ -7347,6 +7360,12 @@ private:
     int64_t epoch_research_demand_daily_for_market(int32_t market,
                                                    int32_t good) const;
     void refresh_epoch_research_demand();
+    void refresh_epoch_colonization_demand();
+    int64_t epoch_colonization_demand(int32_t cell, int32_t good) const;
+    int64_t epoch_colonization_demand_daily(int32_t cell, int32_t good) const;
+    int64_t epoch_procurement_demand_daily(int32_t cell, int32_t good) const;
+    int64_t epoch_procurement_demand_daily_for_market(int32_t market,
+                                                       int32_t good) const;
     void refresh_epoch_bullion_quota();
     int64_t bullion_cell_quota_remaining(int32_t cell) const;
     int64_t bullion_cell_quota_initial(int32_t cell) const;
@@ -7574,6 +7593,11 @@ private:
     void apply_family_split_policy_flags(int32_t family_index, uint16_t policy,
                                          uint8_t weight_q8);
     void split_family_branches();
+    bool build_family_split_offer(int32_t parent, int32_t cell,
+                                  FamilyFoundingOffer &offer) const;
+    bool resolve_family_split_offer(const FamilyFoundingOffer &offer,
+                                    int32_t choice_index);
+    void transfer_family_branch(int32_t parent, int32_t child, int32_t cell);
     // commit_ledger is set only at FAMILY_COMMIT: it settles the claim ledger
     // against each cohort's opening basis. Mid-epoch callers only enforce
     // the subset caps.
@@ -7630,7 +7654,6 @@ private:
         int32_t cell, int32_t building_index, int64_t founders,
         int64_t filled_owner, bool allow_small_starter = false,
         const FamilyFoundingIdentity *identity = nullptr);
-    bool repair_forced_capital_founder(int32_t cell);
     void review_family_milestone(int32_t cell);
     int64_t family_milestone_hash() const;
     int64_t family_founding_founders_for_group(int32_t cell,
@@ -7978,6 +8001,7 @@ private:
                     case 3: return _family_trigger_bindings.registry();
                     case 4: return _family_effect_bindings.registry();
                     case 5: return _family_founding_effects.registry();
+                    case 6: return _family_split_parents.registry();
                     default: throw std::logic_error("economy_worker_variable_column_unregistered");
                 }
             case 16:

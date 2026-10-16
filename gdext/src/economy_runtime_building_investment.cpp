@@ -1103,7 +1103,7 @@ void NativeEconomyRuntime::prepare_startup_demand() {
             std::max<int64_t>(0, market_store().demand_ema[index]), business,
             _saturation_count);
         demand = saturating_add(demand,
-            epoch_research_demand_daily(cell, good), _saturation_count);
+            epoch_procurement_demand_daily(cell, good), _saturation_count);
         const int64_t supply = signal >= 0
             ? std::max<int64_t>(0, _market_signals.offered_supply_ema[signal]) : 0;
         const int64_t realized = signal >= 0
@@ -1326,7 +1326,7 @@ int64_t NativeEconomyRuntime::market_flow_deficit_daily(
         }
     }
     demand = saturating_add(demand,
-        epoch_research_demand_daily(cell, good_id), sat);
+        epoch_procurement_demand_daily(cell, good_id), sat);
     const int64_t supply = signal >= 0
         ? std::max<int64_t>(0, _market_signals.offered_supply_ema[signal]) : 0;
     const int64_t realized = signal >= 0
@@ -1388,6 +1388,11 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
     if (seeded_good_stamp.size() < _good_ids.size()) {
         seeded_good_stamp.assign(_good_ids.size(), 0);
     }
+    // The scratch is thread-local, while visit generations belong to one
+    // runtime. A second world (or restore) can reuse those generations and
+    // silently skip its real procurement/household seeds. Reset once per
+    // propagation call; keep generation stamping within the cell traversal.
+    std::fill(seeded_good_stamp.begin(), seeded_good_stamp.end(), 0);
     const char *workset_disabled = std::getenv("PK_ECONOMY_ACTIVE_WORKSET_DISABLE");
     const bool use_snapshot = !(workset_disabled && std::strcmp(workset_disabled, "1") == 0);
     // capture_country_epoch 已完成，后面的派生传播不修改国家科技。这里可在
@@ -2710,7 +2715,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 const bool monetary_issue =
                     _good_monetary_issue_values[output.good_id] > 0;
                 const int64_t research_demand =
-                    epoch_research_demand_daily(cell, output.good_id);
+                    epoch_procurement_demand_daily(cell, output.good_id);
                 const int64_t demand = saturating_add(
                     saturating_add(
                         market_store().demand_ema[index],
@@ -2989,7 +2994,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 const int64_t epoch_funded = signal >= 0 && signal <
                         static_cast<int32_t>(_epoch_funded_business_demand.size())
                     ? std::max<int64_t>(0, _epoch_funded_business_demand[signal]) : 0;
-                const int64_t research = epoch_research_demand_daily(
+                const int64_t research = epoch_procurement_demand_daily(
                     cell, driver.good_id);
                 const int64_t startup = std::max<int64_t>(
                     startup_demand_for(cell, driver.good_id),
@@ -3500,7 +3505,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         _building_outputs[type.output_begin + i];
                     const OutputInvestmentSignal &output_signal = output_signals[i];
                     const int64_t research_demand =
-                        epoch_research_demand_daily(cell, output.good_id);
+                        epoch_procurement_demand_daily(cell, output.good_id);
                     const int64_t prospective_quantity =
                         effective_building_output_quantity_for_target(
                             cell, type_id, target_signature,

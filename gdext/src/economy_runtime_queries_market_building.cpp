@@ -45,6 +45,7 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
     PackedInt64Array stock;
     PackedInt64Array demand_ema;
     PackedInt64Array business_demand_ema;
+    PackedInt64Array colonization_pending_demand, colonization_demand_daily;
     PackedInt64Array derived_business_demand;
     PackedInt64Array desired_business_demand;
     PackedInt64Array funded_business_demand;
@@ -119,6 +120,8 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
         }
     }
     for (int32_t g = 0; g < market_store().good_count.get(); ++g) {
+        colonization_pending_demand.push_back(epoch_colonization_demand(cell_idx, g));
+        colonization_demand_daily.push_back(epoch_colonization_demand_daily(cell_idx, g));
         const int64_t market_index = market_store().index(market, g);
         const int64_t retail_value = mul_div_sat(
             std::max<int64_t>(0, market_store().stock[market_index]),
@@ -279,6 +282,8 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
     out["price_ceiling_confirmation_days"] = ceiling_days;
     out["demand_ema"] = demand_ema;
     out["business_demand_ema"] = business_demand_ema;
+    out["colonization_pending_demand"] = colonization_pending_demand;
+    out["colonization_demand_daily"] = colonization_demand_daily;
     out["derived_business_demand"] = derived_business_demand;
     out["desired_business_demand"] = desired_business_demand;
     out["funded_business_demand"] = funded_business_demand;

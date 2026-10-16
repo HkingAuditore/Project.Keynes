@@ -100,6 +100,8 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
               _cell_food_access_eq_period.end(), 0);
     _epoch_cost_anchor_price.clear();
     _epoch_research_good_id = -1;
+    _epoch_colonization_demand_by_cell.clear();
+    _epoch_colonization_demand_by_market.clear();
     _epoch_research_demand_by_cell.clear();
     _epoch_research_demand_by_market.clear();
     _epoch_bullion_quota_keys.clear();
@@ -1096,6 +1098,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     _epoch_producer_discarded_current.assign(_market_signals.good_ids.size(), 0);
     _epoch_nonhousehold_withdrawals.assign(_market_signals.good_ids.size(), 0);
     _epoch_cost_anchor_price = _market_signals.cost_anchor_price;
+    refresh_epoch_colonization_demand();
     refresh_derived_business_demand();
     _epoch_substitute_business_demand.assign(_market_signals.good_ids.size(), 0);
     _epoch_begin_vector_init_ms = elapsed_ms(vector_init_started);

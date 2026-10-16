@@ -31,7 +31,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    if (schema != SCHEMA_VERSION) {
+    // Explicit v55 -> v56 migration: ordinary offers gain a zero source
+    // handle and an empty lineage table; all previous hashes stay unchanged.
+    if (schema != SCHEMA_VERSION && schema != 55) {
         error = "economy_save_price_v6_requires_new_game";
         return false;
     }
