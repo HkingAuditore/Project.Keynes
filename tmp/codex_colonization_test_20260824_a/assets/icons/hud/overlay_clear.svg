@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-  <path fill="#734222" fill-rule="evenodd" d="
-    M6 64 Q64 14 122 64 Q64 114 6 64 Z
-    M22 64 Q64 30 106 64 Q64 98 22 64 Z
-    M64 44 A20 20 0 1 1 64 84 A20 20 0 1 1 64 44 Z
-    M64 54 A10 10 0 1 0 64 74 A10 10 0 1 0 64 54 Z
-  "/>
-  <path fill="#9e2e1e" d="M20 116 L10 106 L108 8 L118 18 Z"/>
-</svg>

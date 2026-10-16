@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-  <circle cx="64" cy="64" r="44" fill="none" stroke="#b87b28" stroke-width="6.5" stroke-dasharray="16 8"/>
-  <path fill="#9e2e1e" fill-rule="evenodd" d="
-    M64 4 L78 44 L124 64 L78 84 L64 124 L50 84 L4 64 L50 44 Z
-    M64 26 L71 50 L98 64 L71 78 L64 102 L57 78 L30 64 L57 50 Z
-    M64 48 A16 16 0 1 1 64 80 A16 16 0 1 1 64 48 Z
-    M64 56 A8 8 0 1 0 64 72 A8 8 0 1 0 64 56 Z
-  "/>
-</svg>

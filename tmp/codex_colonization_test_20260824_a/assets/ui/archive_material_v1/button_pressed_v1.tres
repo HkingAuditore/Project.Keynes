@@ -1,8 +1,0 @@
-[gd_resource type="AtlasTexture" load_steps=2 format=3]
-
-[ext_resource type="Texture2D" path="res://assets/ui/archive_material_v1/button_pressed_v1.png" id="1"]
-
-[resource]
-atlas = ExtResource("1")
-region = Rect2(9, 10, 110, 107)
-filter_clip = true

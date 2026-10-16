@@ -1,5 +1,0 @@
-config_version=5
-[application]
-config/name="Money conservation native regression"
-[rendering]
-renderer/rendering_method="gl_compatibility"

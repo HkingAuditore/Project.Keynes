@@ -1,6 +1,0 @@
-[configuration]
-entry_symbol = "dots_ext_init"
-compatibility_minimum = "4.4"
-[libraries]
-windows.debug.x86_64 = "F:/Developent/Godot/Project.Keynes/Project/project-keynes/addons/dots_ext/bin/windows/dots_ext_money_fix_v39.windows.template_release.x86_64.dll"
-
