@@ -200,7 +200,7 @@ flowchart TD
 | Country visual era | `NativeCountryRuntime` | Derived from completed `TechnologyCatalog` era milestones; pending research cannot advance it. |
 | Per-cell settlement tier and visual social bands (living level, rich/poor share buckets) | `NativeEconomyRuntime` | Tier is the authoritative `_settlements.tier`; the three social bands are hysteretic presentation columns computed in `publish_social_pressure_facts`, published with the building visual view, not persisted and not hashed. |
 | Building type → visual family / scale / build grade | `BuildingVisualLayer` + `BuildingVisualFamilyTable` | Presentation-only derivation from catalog sector/kind/climate/resources/keywords, workforce slots and construction goods; never a catalog column or hash input. |
-| Player last-seen building intelligence | `BuildingVisualIntelCache` | GDScript-owned fog memory and PKFG v3 serialization (v2 migrates with unknown social bands); hidden foreign changes are ignored. |
+| Player last-seen building intelligence | `BuildingVisualIntelCache` | GDScript-owned fog memory and PKFG v4 serialization (v2 migrates with unknown social bands); hidden foreign changes are ignored. |
 | Per-cell aggregation, quota, layout, river rejection, buffer encoding | `NativeBuildingVisualCache` worker (`plan_cells`) | C++ only, off the main thread, replans only cells whose input hash changed; `DCWorldExt::bake_building_visual_chunk` is the synchronous wrapper for tests/tools. No GDScript baker. |
 | MultiMesh/texture/shader object lifetime | `BuildingVisualLayer` / Godot RenderingServer | Main-thread chunk assembly upload into reused nodes, `lod_fraction` uniform and resident scheduling; native failure is fail-closed. |
 
@@ -399,3 +399,8 @@ evidence gates; partial evidence must never be rewritten as full ACTIVE.
 # Modifier POD authority boundary
 
 Modifier E2-E8、Effect F8、Ideology G8 与 Trigger H7/H8 已完成：生产 ACTIVE 唯一写者、snapshot 回灌 legacy runtime、抑制对应 daily。Events I8 只拿到 stage 位与 worker 侧镜像，legacy journal 仍是消费源。当前 Host `implemented_domain_mask` 为完整图 `0xFFF`。
+
+
+### Resource scenery (PKFG v4)
+
+`ResourceVisualLayer` is a read-only consumer of published species occupancy and natural-resource reserves. `BuildingVisualIntelCache.resource_observations` owns player last-seen resource memory, independent of building rows; PKFG v4 persists it. Identification gates names and filters, never physical presence. Hidden cells retain prior observations. Positions, representative group counts, abundance bands, normals and shadows are presentation only and never enter economic/country state hashes. See [resource visual runtime](resource-visual-runtime.md).

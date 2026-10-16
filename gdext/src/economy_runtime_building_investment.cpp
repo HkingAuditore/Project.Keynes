@@ -20,6 +20,101 @@ double elapsed_ms(const Clock::time_point &start) {
 }
 } // namespace
 
+bool NativeEconomyRuntime::investment_portfolio_funds_feasible(
+        int32_t cell, const InvestmentCandidatePlan *const *plans,
+        const ConstructionMaterialPlan *materials, int32_t count) const {
+    struct Account {
+        int32_t signature;
+        int64_t population;
+        int64_t funds;
+    };
+    std::vector<Account> accounts;
+    population_store().for_each_in_cell(cell, [&](int32_t slot) {
+        accounts.push_back({static_cast<int32_t>(population_store().signature_id[slot]),
+            population_store().population[slot], population_store().funds[slot]});
+    });
+    const auto account_index = [&](int32_t signature) {
+        for (size_t i = 0; i < accounts.size(); ++i)
+            if (accounts[i].signature == signature) return i;
+        accounts.push_back({signature, 0, 0});
+        return accounts.size() - 1;
+    };
+    std::vector<size_t> merchants;
+    for (int32_t k = _merchant_offsets[cell]; k < _merchant_offsets[cell + 1]; ++k) {
+        merchants.push_back(account_index(static_cast<int32_t>(
+            population_store().signature_id[_merchant_slots[k]])));
+    }
+    int64_t sat = 0;
+    // 按实际的两阶段顺序预演：全部迁人/注资/放贷之后，才逐张支付建材。
+    // 商人自建款和已注入业主的建造款，不能再次当作另一项目的可用现金。
+    for (int32_t i = 0; i < count; ++i) {
+        const auto &plan = *plans[i];
+        if (plan.allocated_count <= 0) continue;
+        const size_t source = account_index(static_cast<int32_t>(
+            population_store().signature_id[plan.sponsor]));
+        const size_t owner = account_index(plan.owner_signature_id);
+        const int64_t capital = saturating_mul(
+            plan.allocated_count, plan.funding_capital, sat);
+        if (source != owner) {
+            const int64_t people = saturating_mul(plan.allocated_count,
+                std::max<int64_t>(1, _building_types[plan.type_id].owner_slots_per_building), sat);
+            // Sponsor selection protects one source occupant. Reject an
+            // overlapping allocation that would invalidate its stable slot.
+            if (people >= accounts[source].population ||
+                accounts[source].funds < capital || accounts[owner].funds < 0)
+                return false;
+            accounts[source].population -= people;
+            accounts[owner].population = saturating_add(accounts[owner].population, people, sat);
+            accounts[source].funds -= capital;
+            accounts[owner].funds = saturating_add(accounts[owner].funds, capital, sat);
+        }
+        const int64_t credit = saturating_mul(
+            plan.allocated_count, plan.merchant_credit, sat);
+        if (credit <= 0) continue;
+        int64_t cash = 0;
+        for (size_t merchant : merchants)
+            cash = saturating_add(cash, std::max<int64_t>(0, accounts[merchant].funds), sat);
+        if (cash < credit) return false;
+        int64_t prefix = 0, distributed = 0;
+        for (size_t merchant : merchants) {
+            prefix = saturating_add(prefix, std::max<int64_t>(0, accounts[merchant].funds), sat);
+            const int64_t next = mul_div_sat(credit, prefix, cash, sat);
+            const int64_t share = std::min(std::max<int64_t>(0, next - distributed),
+                std::max<int64_t>(0, accounts[merchant].funds));
+            distributed = saturating_add(distributed, share, sat);
+            accounts[merchant].funds -= share;
+        }
+        if (distributed != credit) return false;
+        accounts[owner].funds = saturating_add(accounts[owner].funds, credit, sat);
+    }
+    for (int32_t i = 0; i < count; ++i) {
+        const auto &plan = *plans[i];
+        if (plan.allocated_count <= 0) continue;
+        const size_t owner = account_index(plan.owner_signature_id);
+        const int64_t cost = materials[i].total_cost;
+        if (!materials[i].feasible || cost < 0 || accounts[owner].funds < cost)
+            return false;
+        accounts[owner].funds -= cost;
+        int64_t population = 0;
+        for (size_t merchant : merchants) {
+            if (_signatures[accounts[merchant].signature].profession_id == _merchant_profession_id)
+                population = saturating_add(population, accounts[merchant].population, sat);
+        }
+        if (cost > 0 && population <= 0) return false;
+        int64_t prefix = 0, distributed = 0;
+        for (size_t merchant : merchants) {
+            if (_signatures[accounts[merchant].signature].profession_id != _merchant_profession_id ||
+                accounts[merchant].population <= 0) continue;
+            prefix = saturating_add(prefix, accounts[merchant].population, sat);
+            const int64_t next = mul_div_sat(cost, prefix, population, sat);
+            accounts[merchant].funds = saturating_add(accounts[merchant].funds,
+                std::max<int64_t>(0, next - distributed), sat);
+            distributed = next;
+        }
+    }
+    return sat == 0;
+}
+
 void NativeEconomyRuntime::begin_investment_scratch_generation() {
     const size_t resource_lanes =
         _resource_ids.size() * static_cast<size_t>(_cell_count.get());
@@ -4568,6 +4663,19 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 error = "building_investment_cost_preflight_drift";
                 return false;
             }
+        }
+
+        std::array<const InvestmentCandidatePlan *, 4> funding_plans{};
+        for (int32_t i = 0; i < portfolio_size; ++i)
+            funding_plans[i] = &portfolio[i].plan;
+        while (!investment_portfolio_funds_feasible(cell, funding_plans.data(),
+                commit_material_plans.data(), portfolio_size)) {
+            // 保留得分较高的前缀。只移除尾部项目，前面的冻结材料发票无需重算。
+            int32_t last = portfolio_size - 1;
+            while (last >= 0 && portfolio[last].plan.allocated_count <= 0) --last;
+            if (last < 0) break;
+            portfolio[last].plan.allocated_count = 0;
+            ++_building_investment_capital_limited;
         }
 
         // 汇总和信贷额度都必须用收窄之后的批量重算，否则会按已经作废的旧

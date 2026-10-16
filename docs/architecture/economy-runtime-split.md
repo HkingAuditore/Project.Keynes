@@ -1,5 +1,14 @@
 # Economy Runtime Split Matrix
 
+### 2026-10-16 bounded investment cash-preflight exception
+
+The existing investment translation unit retains a cell-local funding preview
+and its pre-mutation portfolio-tail trimming call (~110 lines), with one private
+declaration in `economy_runtime.h`. Keeping the guard beside material preflight
+preserves its exact two-phase commit sequence. No persistent store, public API or
+new runtime owner is added. Regression fixtures reuse the existing native
+authority fault-gate self-test rather than adding another bound test API.
+
 ## Current contract supplement (2026-09)
 
 Investment, employment catch-up, startup and research entry points share

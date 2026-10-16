@@ -8,6 +8,7 @@ class DispatchStub extends RefCounted:
 	var expired := false
 	var revision := 0
 	var removed := false
+	var modern_unlocked := false
 
 	func dispatch_cell_display_name(cell: int) -> String:
 		return {3: "长安", 8: "洛阳", 22: "临海新城", 24: "北方谷地"}.get(cell, "目的地")
@@ -39,12 +40,16 @@ class DispatchStub extends RefCounted:
 	func get_family_dispatch_preview(handle: int, source: int) -> Dictionary:
 		preview_calls += 1
 		var i := handle - 11
-		return {"ok": true, "branch": {"populations": 6 + i if source == 3 else 20 + i,
+		var behavior_rows: Array = [{"name": "采集营地"}, {"name": "早期商栈"}]
+		if modern_unlocked:
+			behavior_rows.append({"name": "自动化农场"})
+		return {"ok": true, "behavior_rows": behavior_rows,
+			"branch": {"populations": 6 + i if source == 3 else 20 + i,
 			"cash_claims": 1000000 * (i + 1), "owned_buildings": 1 + i % 4, "prestige_levels": i % 6},
 			"traits": {"display_names": PackedStringArray(["采集传统", "勤劳持家"]),
 				"core": PackedByteArray([1, 1]),
 				"descriptions": PackedStringArray(["更倾向投资采集建筑，并优先选择相关职业。", "更倾向积累生活储备。"]),
-				"behavior_selector_display_names": PackedStringArray(["采集营地", "早期商栈"])},
+				"behavior_selector_display_names": PackedStringArray(["采集营地", "早期商栈", "自动化农场"])},
 			"effects": {"effect_display_names": PackedStringArray(["本城总体产出加成"]),
 				"effect_current_descriptions": PackedStringArray(["当地当前威望档：本城总体产出提高2%。"])} }
 
@@ -101,11 +106,28 @@ class CountryStub extends RefCounted:
 
 class EconomyStub extends RefCounted:
 	var reads := 0
+	var modern_unlocked := false
+	var snapshot_unavailable := false
 	func family_cell_snapshot(_cell: int, _offset: int, _limit: int) -> Dictionary:
 		reads += 1
 		return {"ok": true, "family_handles": PackedInt64Array([11]), "populations": PackedInt64Array([6])}
 	func get_family_traits(_handle: int) -> Dictionary:
-		return {"ok": true}
+		return {"ok": true, "behavior_axes": PackedInt32Array([0, 0, 3, 3]),
+			"behavior_selector_stable_ids": PackedStringArray([
+				"gathering_ground", "automated_farm", "berries", "computer"]),
+			"behavior_selector_display_names": PackedStringArray([
+				"采集营地", "自动化农场", "浆果", "计算机"])}
+	func building_cell_snapshot(_cell: int) -> Dictionary:
+		if snapshot_unavailable:
+			return {"ok": false, "pending": true}
+		return {"ok": true,
+			"building_type_ids": PackedStringArray(["gathering_ground", "automated_farm"]),
+			"building_technology_available": PackedByteArray([1, 1 if modern_unlocked else 0])}
+	func market_cell_snapshot(_cell: int) -> Dictionary:
+		if snapshot_unavailable:
+			return {"ok": false, "pending": true}
+		return {"ok": true, "good_ids": PackedStringArray(["berries", "computer"]),
+			"good_technology_available": PackedByteArray([1, 0])}
 	func get_family_branch_effects(_handle: int, _cell: int) -> Dictionary:
 		return {"ok": true}
 
@@ -148,6 +170,11 @@ func _run() -> void:
 		and stub.quote_calls == 0 and panel._start.disabled)
 	_expect("source branch details are available before choosing a destination",
 		panel._preview_traits.text.contains("采集传统") and panel._preview_metrics.text.contains("当地族人 6"))
+	_expect("dispatch preference text and badges hide locked buildings",
+		panel._preview_preferences.text.contains("采集营地")
+		and not panel._preview_preferences.text.contains("自动化农场")
+		and panel._pref_badges._labels.size() == 2
+		and panel._pref_badges._labels[0].text == "采集营地")
 	panel._population.value = 2
 	_expect("invalid map targets preserve the chosen origin and family",
 		not panel.try_target_cell(999) and not panel.try_target_cell(55)
@@ -196,6 +223,12 @@ func _run() -> void:
 	_expect("daily quote refresh keeps the chosen branch, order and control instances",
 		panel._selected_quote.family_handle == 11 and panel._quote_row_refs[11].get_instance_id() == row_id
 		and panel._display_order == order and int(panel._population.value) == 2)
+	stub.modern_unlocked = true
+	panel.refresh_visible()
+	_expect("technology unlock refreshes both preference presentations",
+		panel._preview_preferences.text.contains("自动化农场")
+		and panel._pref_badges._labels.size() == 3
+		and panel._pref_badges._labels[2].text == "自动化农场")
 	stub.expired = true
 	panel._refresh_selected_kit()
 	_expect("expired quote detail disables dispatch", panel._start.disabled)
@@ -315,7 +348,21 @@ func _run_controller_guard() -> void:
 	controller._economy_facade = economy
 	_expect("dispatch readers reject foreign sources before accessing family state",
 		not controller.get_family_dispatch_candidates(8).get("ok", false) and economy.reads == 0)
-	_expect("local dispatch preview delegates traits and branch effects", controller.get_family_dispatch_preview(11, 3).get("ok", false))
+	var preview := controller.get_family_dispatch_preview(11, 3)
+	_expect("local dispatch preview filters buildings and goods using source technology",
+		preview.get("ok", false) and preview.behavior_rows.size() == 2
+		and preview.behavior_rows[0].name == "采集营地"
+		and preview.behavior_rows[1].name == "浆果"
+		and preview.traits.behavior_selector_display_names.size() == 4)
+	economy.modern_unlocked = true
+	preview = controller.get_family_dispatch_preview(11, 3)
+	_expect("completed building technology becomes visible without unlocking goods",
+		preview.behavior_rows.size() == 3 and preview.behavior_rows[1].name == "自动化农场"
+		and preview.behavior_rows[2].name == "浆果")
+	economy.snapshot_unavailable = true
+	preview = controller.get_family_dispatch_preview(11, 3)
+	_expect("pending technology snapshots do not expose the unfiltered catalog",
+		preview.get("ok", false) and preview.behavior_rows.is_empty())
 	_expect("missing family and foreign source cannot be used as dispatch origins",
 		not controller.can_family_colonize_from(99, 3) and not controller.can_family_colonize_from(11, 8))
 	controller.free()

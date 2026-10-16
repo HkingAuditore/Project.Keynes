@@ -1,5 +1,13 @@
 # Market Algorithms and Numeric Contracts
 
+Investment cash preflight (2026-10-16): after freezing portfolio material bills,
+preview all sponsor transfers and proportional merchant loans, then ordered
+construction payments and merchant receipts, on cell-local scratch accounts.
+Shared sponsor/merchant/owner cohorts cannot spend the same cash twice. Trim the
+lowest-ranked tail until payable before any population or money mutation; keep
+construction drift guards and the existing capital-limited counter. Focused test:
+`building_portfolio_funds_regression_test.gd`. Authority/cadence/save ABI unchanged.
+
 ## Contents
 
 1. Numeric ABI

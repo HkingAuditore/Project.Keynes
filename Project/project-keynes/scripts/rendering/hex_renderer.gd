@@ -9,6 +9,9 @@ const VisualTileHorizonBakerScript = preload(
 const DetailScatterChangeSetScript = preload("res://scripts/data/detail_scatter_change_set.gd")
 const VegetationFamilyLayerScript = preload("res://scripts/rendering/vegetation_family_layer.gd")
 const BuildingVisualLayerScript = preload("res://scripts/rendering/building_visual_layer.gd")
+const ResourceVisualLayerScript = preload("res://scripts/rendering/resource_visual_layer.gd")
+var _resource_visual_layer: Node2D
+var _resource_visual_cpu_ms := 0.0
 
 const DETAIL_PLAN_IDLE: int = 0
 const DETAIL_PLAN_COLLECT: int = 1
@@ -685,6 +688,9 @@ func _ready() -> void:
 	_building_visual_layer = BuildingVisualLayerScript.new()
 	_building_visual_layer.name = "BuildingVisualLayer"
 	add_child(_building_visual_layer)
+	_resource_visual_layer = ResourceVisualLayerScript.new()
+	_resource_visual_layer.name = "ResourceVisualLayer"
+	add_child(_resource_visual_layer)
 	if _building_visual_layer.has_method("set_world_ext"):
 		_building_visual_layer.set_world_ext(_world_ext)
 	# Buildings share the same astronomical daylight state as terrain,
@@ -746,6 +752,17 @@ func _process(delta: float) -> void:
 		)
 	_sweep_dormant_detail_chunks()
 	var drain_started_usec := Time.get_ticks_usec()
+	if _resource_visual_layer != null:
+		_resource_visual_layer.prepare_frame(_world_time, _tod_sun_dir, {
+			"season_phase": _season_phase, "day_phase": _day_phase,
+			"axial_tilt_rad": deg_to_rad(axial_tilt_deg),
+			"day_night_enabled": day_night_enabled,
+			"tod_debug_sun_position_enabled": _tod_debug_sun_position_enabled,
+			"tod_debug_sun_uv": _tod_debug_sun_uv,
+			"tod_debug_sun_height_scale": _tod_debug_sun_height_scale,
+			"tod_sun_dir": _tod_sun_dir, "tod_exposure": _tod_exposure,
+			"wind_dir": _detail_wind_dir, "weather_wind_boost": wind_boost})
+	_resource_visual_cpu_ms = float(Time.get_ticks_usec() - drain_started_usec) / 1000.0
 	_drain_detail_refresh_queue()
 	_last_detail_drain_ms = float(Time.get_ticks_usec() - drain_started_usec) / 1000.0
 	# 任务 1：性能采样（仅当 perf_sampler_enabled 为 true 时启用）
@@ -874,6 +891,8 @@ var _mobile_quality_tier_define: String = ""
 
 func set_mobile_quality_tier(tier_define: String) -> void:
 	var veg_tier := _mobile_quality_tier_from_define(tier_define)
+	if _resource_visual_layer != null:
+		_resource_visual_layer.set_quality(visual_quality, veg_tier if not tier_define.is_empty() else -1)
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_mobile_quality_tier(veg_tier)
 	)
@@ -1415,7 +1434,13 @@ func _drain_detail_refresh_queue() -> void:
 	_last_detail_assemble_ms = 0.0
 	_last_detail_upload_ms = 0.0
 	var chunk_budget := maxi(1, detail_scatter_refresh_chunks_per_frame)
-	var ms_budget := maxf(0.0, detail_scatter_refresh_apply_budget_ms)
+	var ms_budget := maxf(0.01, detail_scatter_refresh_apply_budget_ms - _resource_visual_cpu_ms) \
+		if detail_scatter_refresh_apply_budget_ms > 0.0 else 0.0
+	# Reserve one of three shared upload opportunities for resources. Vegetation
+	# source/family work never uploads another buffer in the same opportunity.
+	if _resource_visual_layer != null and Engine.get_process_frames() % 3 == 0 \
+			and _resource_visual_layer.drain_one_upload():
+		return
 	# 信用制预算：每帧累积 ms_budget（上限 2× 防暴饮暴食）。严格闸门：信用不足
 	# 一整份预算时不启动新 chunk——单个 chunk 成本可超预算（water cache ≈4ms），
 	# 宽闸门（信用>0 即放行）会让贵 chunk 几乎每帧漏过，实测排水 3.5ms/帧远超
@@ -1592,6 +1617,12 @@ func _drain_detail_refresh_queue() -> void:
 
 
 func _drain_one_detail_family_upload() -> bool:
+	if _drain_one_vegetation_family_upload():
+		return true
+	return bool(_resource_visual_layer.drain_one_upload()) if _resource_visual_layer != null else false
+
+
+func _drain_one_vegetation_family_upload() -> bool:
 	if not detail_scatter_family_renderer_enabled \
 			or _detail_family_layer == null or not is_instance_valid(_detail_family_layer):
 		return false
@@ -2103,11 +2134,43 @@ func configure_building_visuals(catalog: Dictionary,
 		intel: BuildingVisualIntelCache) -> Dictionary:
 	if _building_visual_layer == null:
 		return {"ok": false, "reason": "building_visual_layer_unavailable"}
+	if _resource_visual_layer != null:
+		_resource_visual_layer.set_quality(visual_quality,
+			_mobile_quality_tier_from_define(_mobile_quality_tier_define) if not _mobile_quality_tier_define.is_empty() else -1)
+		var resource_result: Dictionary = _resource_visual_layer.configure(_map, _world, hex_size, intel)
+		_resource_visual_layer.set_terrain_lighting(_shader_mat)
+		if not bool(resource_result.get("ok", false)):
+			push_error("Resource visual catalog: %s" % str(resource_result))
 	return _building_visual_layer.configure(_map, _world, hex_size, catalog, intel)
+
+
+func set_resource_visual_context(fog_enabled: bool, seed_value: int = 0) -> void:
+	if _resource_visual_layer != null:
+		_resource_visual_layer.set_context(fog_enabled, seed_value)
+
+
+func set_resource_visual_filter(stable_id: String) -> void:
+	if _resource_visual_layer != null:
+		_resource_visual_layer.set_filter(stable_id)
+
+
+func set_resource_visual_lens(enabled: bool) -> void:
+	if _resource_visual_layer != null:
+		_resource_visual_layer.set_lens(enabled)
+
+
+func resource_visual_lens_enabled() -> bool:
+	return _resource_visual_layer != null and _resource_visual_layer.lens_enabled()
+
+
+func resource_visual_diagnostics() -> Dictionary:
+	return _resource_visual_layer.diagnostics() if _resource_visual_layer != null else {}
 
 
 func update_building_visual_intel(intel: BuildingVisualIntelCache,
 		changed_cells: PackedInt32Array) -> void:
+	if _resource_visual_layer != null:
+		_resource_visual_layer.notify_cells(changed_cells)
 	if _building_visual_layer != null:
 		_building_visual_layer.update_intel(intel, changed_cells)
 	var core_buckets := intel.settlement_core_buckets()
@@ -2301,6 +2364,9 @@ func set_tod_debug_sun_height_scale(v: float) -> void:
 #   2) 把对应 uniform 推到 shader（名字与后续任务 shader 分支匹配）；
 func set_visual_quality(q: int) -> void:
 	visual_quality = clampi(q, 0, 2)
+	if _resource_visual_layer != null:
+		_resource_visual_layer.set_quality(visual_quality,
+			_mobile_quality_tier_from_define(_mobile_quality_tier_define) if not _mobile_quality_tier_define.is_empty() else -1)
 	if _shader_mat != null:
 		_shader_mat.set_shader_parameter("visual_quality", visual_quality)
 	if _weather_layer != null:
@@ -2334,6 +2400,8 @@ func set_camera_zoom(value: float) -> void:
 	if absf(next_zoom - _camera_zoom) < 0.001:
 		return
 	_camera_zoom = next_zoom
+	if _resource_visual_layer != null:
+		_resource_visual_layer.set_camera_view(_camera_world_rect, _camera_world_center, _camera_zoom)
 	if _shader_mat != null:
 		_shader_mat.set_shader_parameter("camera_zoom", _camera_zoom)
 	if _building_visual_layer != null:
@@ -2350,6 +2418,8 @@ func set_camera_view(world_rect: Rect2, center: Vector2, zoom_value: float) -> v
 	_camera_world_center = center
 	_camera_view_initialized = world_rect.size.x > 0.0 and world_rect.size.y > 0.0
 	_camera_zoom = clampf(zoom_value, 0.01, 16.0)
+	if _resource_visual_layer != null:
+		_resource_visual_layer.set_camera_view(world_rect, center, _camera_zoom)
 	if _building_visual_layer != null:
 		_building_visual_layer.set_camera_view(world_rect, center, _camera_zoom)
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
@@ -2503,6 +2573,8 @@ func _push_terrain_horizon_uniforms() -> void:
 			gi_ao_strength, gi_ao_floor, gi_bent_strength, gi_normal_floor)
 	)
 	_sync_family_materials_from_sources()
+	if _resource_visual_layer != null:
+		_resource_visual_layer.set_terrain_lighting(_shader_mat)
 
 
 # [terrain-gi 2026-07-31] 4-bit 量化角的解码查表。shader 里 h_n = n/15·max_angle 只有 16 个

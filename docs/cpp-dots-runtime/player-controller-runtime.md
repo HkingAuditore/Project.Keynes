@@ -119,7 +119,9 @@ godot --headless --path Project/project-keynes
 `get_family_dispatch_candidates(source_cell, offset, limit)` 校验玩家国家与源地归属后，
 委托 EconomyFacade 读取当地家族分页摘要；不得先读全国家族再由 UI 隐藏外国行。
 `get_family_dispatch_preview(family_handle, source_cell)` 先查到真实当地成员分支，再读取该家族的
-特性与当地分支效果。`can_family_colonize_from` 只检查合法当地来源与至少两人，路线与物资
+特性与当地分支效果，并通过 Inspector 共用的只读视图模型生成 `behavior_rows`：按源城市的
+科技可用位过滤建筑、商品、职业与需求；未就绪快照不回退展示全部目录。开拓/迁徙面板的
+文字与标签都消费这些行，随每日预览缓存刷新。`can_family_colonize_from` 只检查合法当地来源与至少两人，路线与物资
 仍在选择目的地之后由原生报价决定。`dispatch_cell_display_name` 只对本国或当前可见地块读取
 聚落显示名；EconomyFacade 的 `settlement_display_name` 只补显示文本。
 

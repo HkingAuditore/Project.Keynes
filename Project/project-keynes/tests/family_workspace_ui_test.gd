@@ -174,7 +174,6 @@ func _check_workspace_interaction(failures: PackedStringArray) -> void:
 			or workspace.current_page() != "preferences":
 		failures.append("same-shape refresh rebuilt nodes or reset the current page")
 	host.size.x = 700.0
-	workspace.set_fullscreen_mode(true)
 	await process_frame
 	if not workspace.compact_navigation():
 		failures.append("workspace did not fold navigation below 720px")

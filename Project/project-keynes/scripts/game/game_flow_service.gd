@@ -105,6 +105,9 @@ func return_to_main_menu() -> Dictionary:
 
 
 func _queue_player_scene() -> Error:
+	var overlay_scene := load("res://scenes/ui/world_loading_overlay.tscn") as PackedScene
+	if overlay_scene == null:
+		return ERR_CANT_OPEN
 	var error := ResourceLoader.load_threaded_request(PLAYER_GAME_SCENE,"PackedScene")
 	if error != OK:
 		return error
@@ -113,7 +116,7 @@ func _queue_player_scene() -> Error:
 	_transition_layer = CanvasLayer.new()
 	_transition_layer.layer = 100
 	get_tree().root.add_child(_transition_layer)
-	var overlay := load("res://scenes/ui/world_loading_overlay.tscn").instantiate() as WorldLoadingOverlay
+	var overlay := overlay_scene.instantiate() as WorldLoadingOverlay
 	_transition_layer.add_child(overlay)
 	overlay.show_message("正在创建世界")
 	overlay.set_layout_state((_pending_request.get("config",{}) as Dictionary).get("base",{}))

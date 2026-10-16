@@ -355,6 +355,8 @@ building/market transaction
 出生/死亡权重，`family_demography_weights_ms`）；市场 worker 对可能含家族成员的 cohort 只发出
 `MarketResult.family_demography` 死亡事件，主线程合并时按死亡权重分摊到成员边与匿名；
 `STRUCTURAL_COMMIT` 的出生命令按出生权重把新生儿记入家族在无业 cohort 的成员边。
+出生归属的家族基准份额取 `min(实际占比, 目标占比)`，其余基准份额留给匿名新生儿；
+超过目标的既有成员保持身份，因此纯家族开拓地通过后续出生逐步恢复匿名人口，而不会永久封闭立族来源。
 同一重建还派生业主岗表 `_family_owner_seat_rows`：外流抽样先保留本家族业主岗，就业阶段为
 家族持有组招业主时先取本家族失业成员。细节见 `family-demography-ledger-design.md`。
 
@@ -375,6 +377,11 @@ family→`(cell, score_term, axis, id)` 行为因子表。CSR 不进入存档或
 - `get_family_branch_effects(handle, cell)`：威望拆分、已绑定 FamilyEffect、Modifier 贡献和 Trigger 进度；`EconomyFacade` 再附加效果/modifier/trigger 的中文 `display_names` 与 `descriptions`。格子详情「家族效果」只显示当前威望档的完整表述；偏好把设计表里的 X/Y 占位符按已抽取强度填成具体数字，不把取值范围符号展示给玩家。显示文案不进入 native catalog hash 或 PKEC。
 - `get_family_industries(handle, offset, limit)`：产业与业主占岗；
 - `get_building_cell_snapshot(cell)`：附带所有权 CSR。
+
+开拓/迁徙面板的 `get_family_dispatch_preview` 附加 `behavior_rows`，复用
+`CellInspectorViewModel.family_behavior_rows_for_cell` 按源城市的建筑、商品、职业和需求
+解锁状态过滤。文字详情与「经营与消费偏好」标签都只读取这些行，不直接展示原始选择器名称；
+每日刷新清除预览缓存，已完成科技随后正常显示。原始特性/偏好列、运行时分数与存档不变。
 
 查询只允许在 native slice 间读取，不复制全图、不产生命令、不进入 state hash。
 

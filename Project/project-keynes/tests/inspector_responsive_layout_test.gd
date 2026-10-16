@@ -12,12 +12,13 @@ func _run() -> void:
 	_check_wide(failures, 1212.0, 860.0)
 	_check_compact(failures, 1211.0)
 	_check_compact(failures, 1024.0)
-	_check_family_layout(failures, 1920.0, 944.0, false)
-	_check_family_layout(failures, 1366.0, 667.0, false)
-	_check_family_layout(failures, 1312.0, 640.0, false)
-	_check_family_layout(failures, 1311.0, 1279.0, true)
-	_check_family_layout(failures, 1280.0, 1248.0, true)
-	_check_family_layout(failures, 1024.0, 992.0, true)
+	_check_family_layout(failures, 1920.0, 1360.0, 900.0)
+	_check_family_layout(failures, 1600.0, 1248.0, 788.0)
+	_check_family_layout(failures, 1366.0, 1080.0, 620.0)
+	_check_family_layout(failures, 1312.0, 1080.0, 620.0)
+	_check_family_layout(failures, 1311.0, 1080.0, 620.0)
+	_check_family_layout(failures, 1280.0, 1080.0, 620.0)
+	_check_family_layout(failures, 1024.0, 992.0, 532.0)
 	var closed := GameUIManager.inspector_layout_for_width(1024.0, false)
 	if bool(closed.get("compact", false)) != true \
 			or not is_equal_approx(float(closed.get("panel_width", 0.0)), 460.0):
@@ -53,15 +54,15 @@ func _check_compact(failures: PackedStringArray, viewport_width: float) -> void:
 
 
 func _check_family_layout(failures: PackedStringArray, viewport_width: float,
-		expected_width: float, expected_compact: bool) -> void:
+		expected_width: float, expected_detail: float) -> void:
 	var layout := GameUIManager.inspector_layout_for_width(
 		viewport_width, true, true)
-	if bool(layout.get("compact", not expected_compact)) != expected_compact \
+	if bool(layout.get("compact", true)) \
 			or not is_equal_approx(float(layout.get("panel_width", 0.0)), expected_width) \
-			or not is_equal_approx(float(layout.get("detail_width", 0.0)), expected_width) \
+			or not is_equal_approx(float(layout.get("detail_width", 0.0)), expected_detail) \
 			or not is_equal_approx(float(layout.get("map_width", -1.0)),
-				0.0 if expected_compact else (viewport_width - UITokens.ARCHIVE_EDGE_INSET * 2.0) * 0.5):
-		failures.append("%.0fpx family workspace did not follow 50:50/fullscreen rule: %s" % [
+				viewport_width - UITokens.ARCHIVE_EDGE_INSET * 2.0 - expected_width):
+		failures.append("%.0fpx family workspace did not preserve both columns: %s" % [
 			viewport_width, layout])
 
 
@@ -106,16 +107,16 @@ func _check_scene_geometry(failures: PackedStringArray) -> void:
 			panel.show_family_workspace(CellInspectorViewModel.family_workspace_model(
 				_family_detail_payload()), false)
 			await process_frame
-			if not panel.family_workspace_open() or panel._inspector_root.visible \
-					or panel._detail_shell.size.x < panel_width - 30.0:
-				failures.append("specialized family workspace did not replace the dossier column")
+			if not panel.family_workspace_open() or not panel._inspector_root.visible \
+					or absf(panel._detail_shell.size.x - expected_detail) > 1.0:
+				failures.append("specialized family workspace did not preserve the dossier column")
 			var root_style := panel.get_theme_stylebox(&"panel")
 			var shell_style := panel._detail_shell.get_theme_stylebox(&"panel")
 			var outer_margin := panel.get_node("Margin") as MarginContainer
-			if not root_style is StyleBoxEmpty or not shell_style is StyleBoxEmpty \
-					or outer_margin.get_theme_constant(&"margin_top") != 0 \
-					or outer_margin.get_theme_constant(&"margin_bottom") != 0:
-				failures.append("family workspace retained the generic black inspector chrome")
+			if root_style is StyleBoxEmpty or not shell_style is StyleBoxEmpty \
+					or outer_margin.get_theme_constant(&"margin_top") != 12 \
+					or outer_margin.get_theme_constant(&"margin_bottom") != 16:
+				failures.append("family chrome changed the neighboring dossier material or margins")
 			panel.close_detail(false)
 			if panel.get_theme_stylebox(&"panel") is StyleBoxEmpty \
 					or panel._detail_shell.get_theme_stylebox(&"panel") is StyleBoxEmpty \

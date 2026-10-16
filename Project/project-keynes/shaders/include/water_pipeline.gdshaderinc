@@ -1225,6 +1225,8 @@ vec3 render_water_pipeline_raw(
 	SurfaceParams surface = compute_water_base_surface(
 		biome, secondary_biome, edge_mix, elev, wp, uv, scals, lat_signed,
 		current_temp, ocean_current_v, wind_v, dyn_ice_frac, pixel_noise);
+	// Underwater resources (oil/gas seeps, fish shoals) are drawn by ResourceVisualLayer's
+	// MultiMesh pass, not here: the terrain shader carries no per-resource cost.
 	// [远洋华 2026-06-25] PELAGIC_BLOOM（浮游生物大量繁殖）：开阔海面叠加淡绿富营养 tint，
 	// 带低频斑驳让"水华羽流"自然分布。此前 cover_overlay 定义了该色但只在陆地路径调用 → 海面从不显示，
 	// 这里在水管线补回。

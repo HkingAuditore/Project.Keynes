@@ -18,7 +18,8 @@ signal family_founding_choice_requested(offer_id: int, generation: int, choice_i
 
 const RIGHT_PANEL_WIDTH := 460.0
 const DETAIL_LAYOUT_BREAKPOINT := UITokens.DETAIL_BREAKPOINT_COMPACT + UITokens.ARCHIVE_EDGE_INSET * 2.0
-const FAMILY_WORKSPACE_BREAKPOINT := UITokens.ARCHIVE_BREAKPOINT_COMPACT + UITokens.ARCHIVE_EDGE_INSET * 2.0
+const FAMILY_DETAIL_MIN_WIDTH := 620.0
+const FAMILY_DETAIL_MAX_WIDTH := 900.0
 const DETAIL_PANEL_MIN_WIDTH := 860.0
 const DETAIL_PANEL_MAX_WIDTH := 1040.0
 const MAP_REMAINING_MIN_WIDTH := 320.0
@@ -51,6 +52,10 @@ var _dispatch_previous_inspector_visible := false
 var _dispatch_previous_toolbar_visible := false
 var _dispatch_ui_suppressed := false
 var _object_detail_context: Dictionary = {}
+var _pending_inspector_tab := ""
+var _pending_object_request: Dictionary = {}
+var _inspector_retry_generation := 0
+var _inspector_retry_queued := false
 var _inspector_view_model: CellInspectorViewModel
 var _map: MapData
 var _selected_cell: HexCell
@@ -139,6 +144,7 @@ func set_world_context(
 ) -> void:
 	if _inspector_view_model == null:
 		_inspector_view_model = CellInspectorViewModel.new()
+	_cancel_inspector_retry()
 	_map = map
 	if _colonization_route != null:
 		var wrap_period := float(_diagnostics_source.map_wrap_period_x()) \
@@ -474,6 +480,7 @@ func show_cell_panel(cell: HexCell) -> void:
 			if _colonization_panel.try_target_cell(int(cell.index)):
 				_colonization_targeting.clear()
 		return
+	_cancel_inspector_retry()
 	if _right_panel != null:
 		_right_panel.close_detail(false)
 	_object_detail_context.clear()
@@ -502,6 +509,7 @@ func show_cell_panel(cell: HexCell) -> void:
 
 
 func hide_cell_panel() -> void:
+	_cancel_inspector_retry()
 	_selected_cell = null
 	_selection_context = ""
 	_inspector_suppressed_for_country = false
@@ -800,8 +808,49 @@ func _on_inspector_tab_data_requested(tab_id: String) -> void:
 	if _selected_cell == null or _inspector_view_model == null or _right_panel == null:
 		return
 	_invalidate_live_revision()
-	_right_panel.set_tab_category(
-		tab_id, _inspector_view_model.build_tab_category(_selected_cell, tab_id))
+	_pending_object_request.clear()
+	var category := _inspector_view_model.build_tab_category(_selected_cell, tab_id)
+	_right_panel.set_tab_category(tab_id, category)
+	_pending_inspector_tab = tab_id if bool(category.get("data_pending", false)) else ""
+	if not _pending_inspector_tab.is_empty():
+		_schedule_inspector_retry()
+
+
+func _cancel_inspector_retry() -> void:
+	_inspector_retry_generation += 1
+	_inspector_retry_queued = false
+	_pending_inspector_tab = ""
+	_pending_object_request.clear()
+
+
+func _schedule_inspector_retry() -> void:
+	if _inspector_retry_queued or not is_inside_tree():
+		return
+	_inspector_retry_queued = true
+	get_tree().create_timer(0.15).timeout.connect(
+		_retry_inspector_reads.bind(_inspector_retry_generation), CONNECT_ONE_SHOT)
+
+
+func _retry_inspector_reads(generation: int) -> void:
+	if generation != _inspector_retry_generation:
+		return
+	_inspector_retry_queued = false
+	if _selected_cell == null or _right_panel == null or not _right_panel.visible:
+		_cancel_inspector_retry()
+		return
+	if not _pending_inspector_tab.is_empty():
+		var tab_id := _pending_inspector_tab
+		if tab_id == _right_panel.current_tab():
+			var category := _inspector_view_model.build_tab_category(_selected_cell, tab_id)
+			_right_panel.apply_live_patch({"tab_id": tab_id, "category": category})
+			if not bool(category.get("data_pending", false)):
+				_pending_inspector_tab = ""
+		else:
+			_pending_inspector_tab = ""
+	if not _pending_object_request.is_empty():
+		_on_object_details_requested(_pending_object_request)
+	if not _pending_inspector_tab.is_empty() or not _pending_object_request.is_empty():
+		_schedule_inspector_retry()
 
 
 func _on_construction_page_requested(search: String, offset: int) -> void:
@@ -947,6 +996,11 @@ func _on_object_details_requested(request: Dictionary) -> void:
 	var is_family := String(request.get("kind", "")) == "family"
 	var payload := _inspector_view_model.build_family_detail(_selected_cell, request) \
 		if is_family else _inspector_view_model.build_object_detail(_selected_cell, request)
+	if bool(payload.get("data_pending", false)):
+		_pending_object_request = request.duplicate(true)
+		_schedule_inspector_retry()
+		return
+	_pending_object_request = {}
 	if payload.is_empty():
 		return
 	_object_detail_context = {
@@ -962,6 +1016,7 @@ func _on_object_details_requested(request: Dictionary) -> void:
 
 
 func _close_object_detail_dialog() -> void:
+	_pending_object_request.clear()
 	_object_detail_context = {}
 	if _right_panel != null:
 		_right_panel.close_detail(false)
@@ -982,10 +1037,12 @@ func _refresh_object_detail(force: bool = false) -> void:
 	var is_family := String(_object_detail_context.get("kind", "")) == "family"
 	var payload := _inspector_view_model.build_family_detail(_selected_cell, request) \
 		if is_family else _inspector_view_model.build_object_detail(_selected_cell, request)
+	_last_object_detail_ms = now_ms
+	if bool(payload.get("data_pending", false)):
+		return
 	if payload.is_empty():
 		_close_object_detail_dialog()
 		return
-	_last_object_detail_ms = now_ms
 	if is_family:
 		_right_panel.refresh_family_workspace(payload)
 	else:
@@ -1104,6 +1161,9 @@ func dismiss_overlay_menu() -> bool:
 	if _map_overlay_toolbar != null and _map_overlay_toolbar.dismiss_submenu():
 		return true
 	if _right_panel != null and _right_panel.visible:
+		if _right_panel.detail_open():
+			_right_panel.close_detail()
+			return true
 		clear_selection_requested.emit()
 		return true
 	return false
@@ -1455,15 +1515,13 @@ func _on_inspector_visibility_changed() -> void:
 func _on_inspector_detail_visibility_changed(open: bool) -> void:
 	if not open:
 		_object_detail_context.clear()
+		_pending_object_request.clear()
 	_layout_right_panel()
 	_layout_overlay_legend()
 	_layout_country_action_bar()
 	_layout_gm_panel()
 	_layout_family_founding_dialog()
-	var wide_threshold := FAMILY_WORKSPACE_BREAKPOINT \
-		if _right_panel != null and _right_panel.family_workspace_open() \
-		else DETAIL_LAYOUT_BREAKPOINT
-	if open and get_viewport().get_visible_rect().size.x >= wide_threshold \
+	if open and _base_map_safe_area().size.x >= MAP_REMAINING_MIN_WIDTH \
 			and _player_controller != null and _player_controller.has_method(
 			"ensure_selected_visible"):
 		_player_controller.ensure_selected_visible()
@@ -1473,9 +1531,7 @@ func _layout_overlay_legend() -> void:
 	if _map_overlay_legend == null:
 		return
 	var compact_detail := _right_panel != null and _right_panel.detail_open() \
-		and get_viewport().get_visible_rect().size.x < (
-			FAMILY_WORKSPACE_BREAKPOINT if _right_panel.family_workspace_open() \
-			else DETAIL_LAYOUT_BREAKPOINT)
+		and _base_map_safe_area().size.x < OVERLAY_LEGEND_WIDTH + UITokens.SPACE_MD * 2.0
 	_map_overlay_legend.modulate.a = 0.0 if compact_detail else 1.0
 	_map_overlay_legend.mouse_filter = Control.MOUSE_FILTER_IGNORE \
 		if compact_detail else Control.MOUSE_FILTER_PASS
@@ -1501,6 +1557,9 @@ func _layout_country_action_bar() -> void:
 	var viewport_width := get_viewport().get_visible_rect().size.x
 	var safe := _base_map_safe_area()
 	var bar_width := 336.0
+	_country_action_bar.visible = not (_right_panel != null \
+		and _right_panel.family_workspace_open() \
+		and safe.size.x < bar_width + UITokens.ARCHIVE_EDGE_INSET * 2.0)
 	var side_margin := maxf(safe.position.x + (safe.size.x - bar_width) * 0.5,
 		UITokens.ARCHIVE_EDGE_INSET)
 	var right_margin := maxf(viewport_width - side_margin - bar_width,
@@ -1582,8 +1641,7 @@ func _layout_gm_panel() -> void:
 		return
 	var viewport_width := get_viewport().get_visible_rect().size.x
 	var compact_detail := _right_panel != null and _right_panel.detail_open() \
-		and viewport_width < (FAMILY_WORKSPACE_BREAKPOINT \
-			if _right_panel.family_workspace_open() else DETAIL_LAYOUT_BREAKPOINT)
+		and _base_map_safe_area().size.x < GM_PANEL_MIN_WIDTH + UITokens.SPACE_MD * 2.0
 	_gm_console.modulate.a = 0.0 if compact_detail else 1.0
 	_gm_console.mouse_filter = Control.MOUSE_FILTER_IGNORE \
 		if compact_detail else Control.MOUSE_FILTER_PASS
@@ -1654,13 +1712,16 @@ static func inspector_layout_for_width(viewport_width: float,
 		detail_open: bool, family_open: bool = false) -> Dictionary:
 	var available_width := maxf(viewport_width - UITokens.ARCHIVE_EDGE_INSET * 2.0, 1.0)
 	if detail_open and family_open:
-		var family_compact := viewport_width < FAMILY_WORKSPACE_BREAKPOINT
-		var family_width := available_width if family_compact else available_width * 0.5
+		# 地块栏的 460 已含外框与分栏间距；窄窗先让地图，再压缩家族正文。
+		var family_width := clampf(available_width - RIGHT_PANEL_WIDTH \
+			- MAP_REMAINING_MIN_WIDTH, FAMILY_DETAIL_MIN_WIDTH, FAMILY_DETAIL_MAX_WIDTH)
+		family_width = minf(family_width, maxf(available_width - RIGHT_PANEL_WIDTH, 1.0))
+		var panel_width := RIGHT_PANEL_WIDTH + family_width
 		return {
-			"compact": family_compact,
-			"panel_width": family_width,
+			"compact": false,
+			"panel_width": panel_width,
 			"detail_width": family_width,
-			"map_width": 0.0 if family_compact else available_width - family_width,
+			"map_width": maxf(available_width - panel_width, 0.0),
 		}
 	var compact := viewport_width < DETAIL_LAYOUT_BREAKPOINT
 	var panel_width := RIGHT_PANEL_WIDTH

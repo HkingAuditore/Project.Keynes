@@ -1854,7 +1854,9 @@ func _make_fixture(catalog: Dictionary, seed: int, stock_fill: int = 1000000,
 		stock_overrides: Dictionary = {},
 		granted_technology_ids: PackedStringArray = PackedStringArray(),
 		founder_building_count: int = 1,
-		country_cash: int = 0) -> Dictionary:
+		country_cash: int = 0, profile_overrides: Dictionary = {},
+		preserve_birth_rates: bool = false,
+		anonymous_destination_buildings: int = 0) -> Dictionary:
 	var map := MapData.new(3, 1)
 	for q in range(3):
 		var cell := HexCell.new(q, 0)
@@ -1910,8 +1912,10 @@ func _make_fixture(catalog: Dictionary, seed: int, stock_fill: int = 1000000,
 	profile.family_founding_choice_mode = "AUTO"
 	profile.notable_person_runtime_mode = "ACTIVE"
 	profile.starvation_death_rate_q32 = 0
+	profile.merge(profile_overrides, true)
 	var birth_rates: PackedInt64Array = catalog.signature_birth_rate_q32
-	birth_rates.fill(0)
+	if not preserve_birth_rates:
+		birth_rates.fill(0)
 	catalog.signature_birth_rate_q32 = birth_rates
 	_expect("economy runtime configures", bool(ext.configure_economy(
 		catalog, profile, 3, seed).get("ok", false)))
@@ -1945,6 +1949,15 @@ func _make_fixture(catalog: Dictionary, seed: int, stock_fill: int = 1000000,
 		var good_index := fixture_good_ids.find(String(stable_id))
 		if good_index >= 0:
 			stock[good_index] = int(stock_overrides[stable_id])
+	var building_cells := PackedInt32Array([0])
+	var building_types := PackedInt32Array([building])
+	var building_owners := PackedInt32Array([forager])
+	var building_counts := PackedInt64Array([founder_building_count])
+	if anonymous_destination_buildings > 0:
+		building_cells.append(2)
+		building_types.append(building)
+		building_owners.append(forager)
+		building_counts.append(anonymous_destination_buildings)
 	var boot: Dictionary = ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 0]),
 		"signature_ids": PackedInt32Array([forager, merchant]),
@@ -1953,15 +1966,17 @@ func _make_fixture(catalog: Dictionary, seed: int, stock_fill: int = 1000000,
 		"forced_named_cells": PackedInt32Array([0]),
 	}, {
 		"stock": stock,
-		"building_cells": PackedInt32Array([0]),
-		"building_type_ids": PackedInt32Array([building]),
-		"building_owner_signature_ids": PackedInt32Array([forager]),
-		"building_counts": PackedInt64Array([founder_building_count]),
+		"building_cells": building_cells,
+		"building_type_ids": building_types,
+		"building_owner_signature_ids": building_owners,
+		"building_counts": building_counts,
 		"founder_family_cells": PackedInt32Array([0]),
 		"founder_family_building_type_ids": PackedInt32Array([building]),
 		"founder_family_owner_signature_ids": PackedInt32Array([forager]),
 	})
 	_expect("economy and founder family bootstrap", bool(boot.get("ok", false)))
+	if not bool(boot.get("ok", false)):
+		print("colonization fixture bootstrap=", boot)
 	return {"ext": ext, "map": map, "country_handle": country_handle,
 		"neighbors": neighbors, "terrain": terrain,
 		"passable": passable, "costs": costs}

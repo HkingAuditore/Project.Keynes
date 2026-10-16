@@ -10,88 +10,10 @@ func _initialize() -> void:
 func _run() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUTPUT_DIR))
 	var failures := PackedStringArray()
-	for viewport_size in [Vector2i(1279, 720), Vector2i(1280, 720),
-			Vector2i(1366, 768), Vector2i(1920, 1080), Vector2i(2560, 1390)]:
-		var viewport := SubViewport.new()
-		viewport.size = viewport_size
-		viewport.disable_3d = true
-		viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-		viewport.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
-		get_root().add_child(viewport)
-		var host := Control.new()
-		host.size = Vector2(viewport_size)
-		viewport.add_child(host)
-		var map_placeholder := ColorRect.new()
-		map_placeholder.size = Vector2(float(viewport_size.x) * 0.5,
-			float(viewport_size.y))
-		map_placeholder.color = Color("#9eb0b2")
-		host.add_child(map_placeholder)
-		var top_bar := ColorRect.new()
-		top_bar.size = Vector2(viewport_size.x, 56.0)
-		top_bar.color = Color("#171410")
-		host.add_child(top_bar)
-		var workspace := (load("res://scenes/ui/family_workspace.tscn") as PackedScene) \
-			.instantiate() as FamilyWorkspace
-		host.add_child(workspace)
-		var fullscreen: bool = viewport_size.x < 1280
-		workspace.position = Vector2(0.0 if fullscreen else float(viewport_size.x) * 0.5,
-			68.0)
-		workspace.size = Vector2(float(viewport_size.x) if fullscreen else \
-			float(viewport_size.x) * 0.5, float(viewport_size.y) - 80.0)
-		# 复现真实 Inspector 重排：外部标志可能还未同步，工作区必须根据
-		# 自身实际占宽自动选择全宽书册缩进。
-		workspace.set_fullscreen_mode(false)
-		workspace.show_family(_model(), false)
-		await process_frame
-		await process_frame
-		await process_frame
-		var page_area := workspace.get_node("SafeMargin/Main/PageArea") as Control
-		var header := workspace.get_node("SafeMargin/Main/PageArea/Header") as Control
-		var page_scroll := workspace.get_node("%PageScroll") as Control
-		print("[family-workspace-geometry] viewport=%s root=%s page_area=%s header=%s scroll=%s" % [
-			viewport_size, workspace.get_rect(), page_area.get_rect(), header.get_rect(),
-			page_scroll.get_rect()])
-		if fullscreen:
-			var local_left := page_area.global_position.x - workspace.global_position.x
-			var expected_left := FamilyWorkspace.RAIL_WIDTH + 28.0
-			if absf(local_left - expected_left) > 2.0:
-				failures.append("full-screen paper content missed its design-grid left edge")
-		if not fullscreen and workspace.size.y >= 900.0:
-			var overview_page := workspace.get_node("%PageHost").get_child(0) as Control
-			var content_bottom := overview_page.global_position.y + overview_page.size.y \
-				- workspace.global_position.y
-			if content_bottom < workspace.size.y * 0.60:
-				failures.append("desktop overview did not fill the dossier page vertically")
-		var image := viewport.get_texture().get_image()
-		var path := "%s/family_%dx%d.png" % [OUTPUT_DIR, viewport_size.x, viewport_size.y]
-		if image == null or image.is_empty() or image.save_png(path) != OK:
-			failures.append("failed to capture %s" % viewport_size)
-		else:
-			print("[family-workspace-screenshot] %s" % ProjectSettings.globalize_path(path))
-		if fullscreen:
-			workspace.select_page("preferences", false)
-			await process_frame
-			await process_frame
-			var preference_image := viewport.get_texture().get_image()
-			var preference_path := "%s/family_%dx%d_preferences.png" % [
-				OUTPUT_DIR, viewport_size.x, viewport_size.y]
-			if preference_image == null or preference_image.is_empty() or \
-					preference_image.save_png(preference_path) != OK:
-				failures.append("failed to capture preference page %s" % viewport_size)
-			workspace.select_page("people", false)
-			await process_frame
-			await process_frame
-			var people_image := viewport.get_texture().get_image()
-			var people_path := "%s/family_%dx%d_people.png" % [
-				OUTPUT_DIR, viewport_size.x, viewport_size.y]
-			if people_image == null or people_image.is_empty() or \
-					people_image.save_png(people_path) != OK:
-				failures.append("failed to capture people page %s" % viewport_size)
-		viewport.queue_free()
-		await process_frame
-	await _capture_inspector_integration(failures, Vector2i(1920, 1080))
-	await _capture_inspector_integration(failures, Vector2i(2560, 1390))
+	for viewport_size in [Vector2i(1280, 720), Vector2i(1366, 768), Vector2i(1920, 1080)]:
+		await _capture_inspector_integration(failures, viewport_size)
 	if failures.is_empty():
+		print("[family-workspace-screenshot] PASS")
 		quit(0)
 	else:
 		for failure in failures:
@@ -109,7 +31,7 @@ func _capture_inspector_integration(failures: PackedStringArray,
 	get_root().add_child(viewport)
 	var host := Control.new()
 	host.size = Vector2(viewport.size)
-	host.theme = load("res://assets/themes/player_ui_theme.tres") as Theme
+	host.theme = load("res://assets/themes/player_session_theme.tres") as Theme
 	viewport.add_child(host)
 	var map_placeholder := ColorRect.new()
 	map_placeholder.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -119,23 +41,56 @@ func _capture_inspector_integration(failures: PackedStringArray,
 		.instantiate() as InspectorPanel
 	host.add_child(panel)
 	panel.visible = true
-	var panel_width := float(viewport_size.x) * 0.5
+	var layout := GameUIManager.inspector_layout_for_width(viewport_size.x, true, true)
+	var panel_width := float(layout.panel_width)
 	panel.custom_minimum_size.x = panel_width
-	panel.offset_left = -panel_width
+	panel.offset_left = -panel_width - UITokens.ARCHIVE_EDGE_INSET
 	panel.offset_top = 68.0
-	panel.offset_right = 0.0
+	panel.offset_right = -UITokens.ARCHIVE_EDGE_INSET
 	panel.offset_bottom = -12.0
+	var rows: Array = []
+	for i in 12:
+		rows.append({"id": "family_%d" % (17 + i), "name": "白桥堡曾氏" if i == 0 else "长河郡王氏%d" % i,
+			"population": "128", "owned_buildings": "12", "cash_claim": "3.56万", "prestige": "IV"})
+	panel.set_model_for_selection({"cell_index": 4,
+		"header": {"kicker": "地方档案", "title": "白桥堡", "subtitle": "本国城市 · 平原 · 地块 4"},
+		"kpis": [{"id": "population", "title": "人口", "value": 128, "text": "128"},
+			{"id": "wealth", "title": "资金", "value": 35600, "text": "3.56万"},
+			{"id": "buildings", "title": "建筑", "value": 12, "text": "12"},
+			{"id": "satisfaction", "title": "满足度", "value": 0.89, "text": "89%"}],
+		"tabs": [{"id": "geography", "label": "地理"}, {"id": "families", "label": "家族"}],
+		"categories": {"families": {"family_rows": rows}}})
+	panel.select_tab("families")
 	panel.show_family_workspace(_model(), false)
+	panel._family_list.set_selected("family_17")
 	await process_frame
 	await process_frame
 	await process_frame
-	var image := viewport.get_texture().get_image()
-	var path := "%s/family_inspector_%dx%d.png" % [
-		OUTPUT_DIR, viewport_size.x, viewport_size.y]
-	if image == null or image.is_empty() or image.save_png(path) != OK:
-		failures.append("failed to capture inspector-integrated family workspace")
-	else:
-		print("[family-workspace-screenshot] %s" % ProjectSettings.globalize_path(path))
+	var left := panel._detail_shell.get_global_rect()
+	var right := panel._inspector_root.get_global_rect()
+	if not panel._inspector_root.visible or left.end.x > right.position.x or \
+			absf(right.size.x - 424.0) > 1.0:
+		failures.append("integrated family columns overlap or hide the directory at %s" % viewport_size)
+	var workspace := panel._family_workspace
+	for page_id in ["overview", "preferences", "people"]:
+		workspace.select_page(page_id, false)
+		await process_frame
+		await process_frame
+		await RenderingServer.frame_post_draw
+		var scroll := workspace.get_node("%PageScroll") as ScrollContainer
+		for card in workspace.find_children("*", "PanelContainer", true, false):
+			if card.is_visible_in_tree() and card.theme_type_variation == &"FamilyCard":
+				var rect: Rect2 = card.get_global_rect()
+				if rect.position.x < scroll.global_position.x - 1.0 or \
+						rect.end.x > scroll.get_global_rect().end.x + 1.0:
+					failures.append("family card escaped its viewport at %s/%s" % [viewport_size, page_id])
+		var image := viewport.get_texture().get_image()
+		var path := "%s/family_inspector_%dx%d_%s.png" % [
+			OUTPUT_DIR, viewport_size.x, viewport_size.y, page_id]
+		if image == null or image.is_empty() or image.save_png(path) != OK:
+			failures.append("failed to capture inspector-integrated family workspace")
+		else:
+			print("[family-workspace-screenshot] %s" % ProjectSettings.globalize_path(path))
 	viewport.queue_free()
 	await process_frame
 

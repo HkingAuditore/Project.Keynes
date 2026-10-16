@@ -290,3 +290,8 @@ Desktop resident 上限 128、Web 48；Body 上限 q0/q1/q2 为 6k/18k/36k（扣
 
 这些测试不改变 DataCore 或 PKEC。截图台需要真实渲染设备；headless 只验证资源装载、
 脚本解析和数据/缓冲确定性。
+
+
+## Resource scenery and PKFG v4
+
+PKFG now writes version 4, preserving all v3 building columns and adding independent resource observations in `BuildingVisualIntelCache.resource_observations`. Empty building rows do not remove resource observations. Versions 1-3 remain readable with initially unknown resource memory. Physical scenery is visible before identification; knowledge gates still apply to names and filters. See [resource visual runtime](resource-visual-runtime.md) for the rendering, lighting, budgets and atomic-restore contract.

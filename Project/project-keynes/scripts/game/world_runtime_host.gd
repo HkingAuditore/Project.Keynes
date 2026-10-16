@@ -967,11 +967,16 @@ func set_map_overlay(request: Dictionary) -> void:
 		"occupancy_bit": occupancy_bit,
 	}
 	_map_overlay_dirty = true
+	if _renderer != null and _renderer.has_method("set_resource_visual_filter"):
+		_renderer.set_resource_visual_filter(String(signal_id) if mode == OverlayMode.MODE.BIO_OCCUPANCY \
+			else String(request.get("resource_id", "")) if mode == OverlayMode.MODE.RESOURCE_RESERVE else "")
 	set_process(true)
 	_refresh_map_overlay(true)
 
 
 func clear_map_overlay() -> void:
+	if _renderer != null and _renderer.has_method("set_resource_visual_filter"):
+		_renderer.set_resource_visual_filter("")
 	_map_overlay_request.clear()
 	_map_overlay_dirty = false
 	set_process(_runtime_ready_for_ticks)
@@ -1196,7 +1201,8 @@ func _service_country_worker_transport() -> void:
 	var shadow_replay := mode != "ACTIVE"
 	_country_worker_transport_last_service = \
 		_generator.service_country_worker_peer_adapter(64, shadow_replay)
-	if int(_country_worker_transport_last_service.get("inspected", 0)) > 0:
+	if int(_country_worker_transport_last_service.get("inspected", 0)) > 0 \
+			or int(_country_worker_transport_last_service.get("notified", 0)) > 0:
 		country_peer_serviced.emit(_country_worker_transport_last_service.duplicate(false))
 
 
@@ -4435,12 +4441,19 @@ func refresh_country_visuals(reason: String) -> Dictionary:
 		out["vision"]["newly_hidden_cells"] = newly_hidden
 		out["vision"]["vision_revision"] = _current_map.vision_revision
 	out["lut"] = _republish_cell_luts(_vision_dirty_indices, first_fog_publish)
+	_refresh_resource_visual_context()
 	out["building_intel"] = _refresh_building_visual_intel(out["vision"])
 	out["border"] = _refresh_country_borders()
 	if _settlement_label_layer != null:
 		_settlement_label_layer.set_fog_enabled(_fog_of_war_enabled)
 		_settlement_label_layer.mark_visibility_dirty()
 	return out
+
+
+func _refresh_resource_visual_context() -> void:
+	if _renderer == null or not _renderer.has_method("set_resource_visual_context"):
+		return
+	_renderer.set_resource_visual_context(_fog_of_war_enabled, _last_seed)
 
 
 func _refresh_building_visual_intel(vision_report: Dictionary) -> Dictionary:

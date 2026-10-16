@@ -55,6 +55,8 @@ var _market_prev_stock: Dictionary = {}
 ## 经济线程日内忙时读数会返回 pending；页头沿用该格上次成功的摘要，
 ## 免得 KPI 在“有人定居 / 无人之地”两套布局间来回跳。
 var _population_summary_cache: Dictionary = {}
+var _category_cache_cell := -1
+var _category_cache: Dictionary = {}
 var _temperature_histories: Dictionary = {}
 var _temperature_history_order: Array[int] = []
 var _detail_history_cell := -1
@@ -81,6 +83,9 @@ func set_context(map: MapData, generator, view_adapter: DCViewAdapter, world_clo
 	_hex_size = hex_size
 	_resource_prev_reserves.clear()
 	_market_prev_stock.clear()
+	_population_summary_cache.clear()
+	_category_cache.clear()
+	_category_cache_cell = -1
 	_temperature_histories.clear()
 	_temperature_history_order.clear()
 	_detail_history_cell = -1
@@ -294,6 +299,8 @@ func build_live_patch(
 			var market := _market_snapshot(idx) if include_details else {}
 			category = _population_category(population_summary, market)
 			category = _decorate_category_with_tax(idx, tab_id, category)
+			if bool(category.get("data_pending", false)):
+				population_summary = _population_summary(idx)
 		else:
 			population_summary = population_summary_override if not \
 				population_summary_override.is_empty() else _population_summary(idx)
@@ -326,6 +333,27 @@ func build_live_patch(
 
 
 func build_tab_category(cell: HexCell, tab_id: String) -> Dictionary:
+	if cell == null or _map == null:
+		return {}
+	var idx := int(cell.index)
+	if VisionSolver.fog_state(_map, idx) != VisionSolver.FOG_VISIBLE and tab_id != "geography":
+		_category_cache.clear()
+		return {}
+	if idx != _category_cache_cell:
+		_category_cache_cell = idx
+		_category_cache.clear()
+	var category := _build_tab_category(cell, tab_id)
+	if bool(category.get("data_pending", false)):
+		var cached: Dictionary = _category_cache.get(tab_id, {})
+		if not cached.is_empty():
+			category = cached.duplicate(true)
+			category["data_pending"] = true
+	elif not category.is_empty():
+		_category_cache[tab_id] = category.duplicate(true)
+	return category
+
+
+func _build_tab_category(cell: HexCell, tab_id: String) -> Dictionary:
 	if cell == null or _map == null:
 		return {}
 	var idx := int(cell.index)
@@ -403,6 +431,8 @@ func build_object_detail(cell: HexCell, request: Dictionary) -> Dictionary:
 					row = candidate
 					break
 	if row.is_empty():
+		if bool(category.get("data_pending", false)):
+			return {"data_pending": true}
 		return {}
 	if kind == "family":
 		var facade = _generator.get_economy_facade() if _generator != null \
@@ -479,6 +509,8 @@ func build_family_detail(cell: HexCell, request: Dictionary) -> Dictionary:
 	if String(request.get("kind", "")) != "family":
 		return {}
 	var detail := build_object_detail(cell, request)
+	if bool(detail.get("data_pending", false)):
+		return detail
 	if detail.is_empty() or String(detail.get("kind", "")) != "family":
 		return {}
 	return family_workspace_model(detail)
@@ -2473,6 +2505,15 @@ func _history_category(cell: HexCell) -> Dictionary:
 	}
 
 
+static func _snapshot_pending(snapshot: Dictionary) -> bool:
+	return bool(snapshot.get("busy", false)) or bool(snapshot.get("read_view_pending", false))
+
+
+static func _pending_category() -> Dictionary:
+	return {"data_pending": true, "insights": [{"id": "snapshot_pending",
+		"text": "正在读取最新档案…", "accent": UITokens.TEXT_MUTED, "icon": "history"}]}
+
+
 func _population_snapshot(cell_idx: int, include_details: bool = true) -> Dictionary:
 	if _generator == null or not _generator.has_method("get_economy_facade"):
 		return {}
@@ -2540,6 +2581,8 @@ func _family_cell_snapshot(cell_idx: int) -> Dictionary:
 
 
 func _family_category(snapshot: Dictionary) -> Dictionary:
+	if _snapshot_pending(snapshot):
+		return _pending_category()
 	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
 		return {"insights": [{"id": "families_unavailable", "text":
 			"家族情报暂不可用。", "accent": UITokens.TEXT_MUTED,
@@ -2642,8 +2685,22 @@ func _family_trait_rows(snapshot: Dictionary) -> Array:
 
 
 func _family_behavior_rows(snapshot: Dictionary, cell_idx: int = -1) -> Array:
-	var rows: Array = []
 	var visibility := _family_behavior_visibility(cell_idx)
+	return _family_behavior_rows_for_visibility(snapshot, visibility)
+
+
+static func family_behavior_rows_for_cell(snapshot: Dictionary, facade,
+		cell_idx: int) -> Array:
+	var visibility := _family_behavior_visibility_for_cell(facade, cell_idx)
+	# 派遣快照未就绪时不泄露整张目录；只显示已确认可见的选择器。
+	for axis in ["buildings", "goods", "professions", "needs"]:
+		visibility["enforce_" + axis] = true
+	return _family_behavior_rows_for_visibility(snapshot, visibility)
+
+
+static func _family_behavior_rows_for_visibility(snapshot: Dictionary,
+		visibility: Dictionary) -> Array:
+	var rows: Array = []
 	var axes: PackedInt32Array = snapshot.get("behavior_axes", PackedInt32Array())
 	var stable_ids: PackedStringArray = snapshot.get(
 		"behavior_selector_stable_ids", PackedStringArray())
@@ -2740,13 +2797,17 @@ static func _family_behavior_icon(axis: int, stable_id: String, name_text: Strin
 
 
 func _family_behavior_visibility(cell_idx: int) -> Dictionary:
+	var facade = _generator.get_economy_facade() if _generator != null \
+		and _generator.has_method("get_economy_facade") else null
+	return _family_behavior_visibility_for_cell(facade, cell_idx)
+
+
+static func _family_behavior_visibility_for_cell(facade, cell_idx: int) -> Dictionary:
 	var result := {"buildings": {}, "goods": {}, "professions": {}, "needs": {},
 		"enforce_buildings": false, "enforce_goods": false,
 		"enforce_professions": false, "enforce_needs": false}
 	if cell_idx < 0:
 		return result
-	var facade = _generator.get_economy_facade() if _generator != null \
-		and _generator.has_method("get_economy_facade") else null
 	if facade == null:
 		return result
 	var buildings: Dictionary = facade.building_cell_snapshot(cell_idx) \
@@ -3225,6 +3286,8 @@ func _family_notable_person_rows(facade, family_handle: int) -> Array:
 
 
 func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}) -> Dictionary:
+	if _snapshot_pending(snapshot):
+		return _pending_category()
 	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
 		return {"insights": [{"id": "population_unavailable", "text": "人口情报暂不可用。", "accent": UITokens.TEXT_MUTED, "icon": "growth"}]}
 	if not snapshot.has("populations"):
@@ -3876,6 +3939,8 @@ func _need_display_name(stable_id: String) -> String:
 
 
 func _market_category(snapshot: Dictionary) -> Dictionary:
+	if _snapshot_pending(snapshot):
+		return _pending_category()
 	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
 		return {"insights": [{"id": "market_unavailable", "text": "市场情报暂不可用。", "accent": UITokens.TEXT_MUTED, "icon": "resource"}]}
 	if not snapshot.has("good_ids"):
@@ -4055,6 +4120,8 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 
 
 func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
+	if _snapshot_pending(snapshot):
+		return _pending_category()
 	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
 		return {"insights": [{"id": "buildings_unavailable", "text": "建筑情报暂不可用。", "accent": UITokens.TEXT_MUTED, "icon": "building"}]}
 	if not snapshot.has("group_type_ids"):

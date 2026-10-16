@@ -51,6 +51,12 @@ class ColonizationQuoteStub:
 	func get_family_traits(_family_handle: int = 0) -> Dictionary:
 		return traits
 
+	func get_family_dispatch_preview(_family_handle: int, _source_cell: int) -> Dictionary:
+		var rows: Array = []
+		for name in traits.get("behavior_selector_display_names", PackedStringArray()):
+			rows.append({"name": String(name)})
+		return {"ok": true, "traits": traits, "behavior_rows": rows}
+
 
 var _failures := 0
 

@@ -5,8 +5,8 @@
 [resource]
 script = ExtResource("1")
 desktop_max_per_cell_quality0 = 5
-desktop_max_per_cell_quality1 = 11
-desktop_max_per_cell_quality2 = 16
+desktop_max_per_cell_quality1 = 13
+desktop_max_per_cell_quality2 = 18
 biomass_floor = 0.35
 biomass_ceil = 1.25
 biomass_exponent = 0.85
@@ -31,5 +31,6 @@ temperature_color_strength = 0.82
 moisture_color_strength = 0.88
 snow_white_strength = 0.96
 vitality_color_contrast = 0.92
-element_count_min = 3
-element_count_max = 6
+element_count_min = 4
+element_count_max = 8
+density_scale = 1.75
