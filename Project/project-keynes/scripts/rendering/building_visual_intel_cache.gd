@@ -5,6 +5,8 @@ extends RefCounted
 ## remain authoritative; this cache is the only source the renderer may read.
 
 const UNKNOWN := 255
+const ResourceObservationsScript = preload("res://scripts/rendering/resource_visual_observations.gd")
+var resource_observations = ResourceObservationsScript.new()
 ## Snapshot keys (PKFG keys add the `building_intel_` prefix) and inclusive
 ## maxima of the per-cell social bands, in the same order.
 const SOCIAL_KEYS: Array[String] = [
@@ -20,6 +22,7 @@ var _revision: int = 0
 
 
 func configure(cell_count: int) -> void:
+	resource_observations.configure(cell_count)
 	_cell_to_row.resize(maxi(0, cell_count))
 	_cell_to_row.fill(-1)
 	_rows.clear()
@@ -200,7 +203,7 @@ func to_pkfg_fields() -> Dictionary:
 		living.append(int(row.get("living_level", UNKNOWN)))
 		rich.append(int(row.get("rich_bucket", UNKNOWN)))
 		poor.append(int(row.get("poor_bucket", UNKNOWN)))
-	return {
+	var fields := {
 		"building_intel_cells": cells,
 		"building_intel_country_slots": countries,
 		"building_intel_era_indices": eras,
@@ -212,6 +215,8 @@ func to_pkfg_fields() -> Dictionary:
 		"building_intel_rich_buckets": rich,
 		"building_intel_poor_buckets": poor,
 	}
+	fields.merge(resource_observations.to_fields())
+	return fields
 
 
 func restore_pkfg(payload: Dictionary, type_count: int = -1) -> Dictionary:
@@ -219,7 +224,7 @@ func restore_pkfg(payload: Dictionary, type_count: int = -1) -> Dictionary:
 	if version <= 1:
 		configure(_cell_to_row.size())
 		return {"ok": true, "migrated_from": 1, "rows": 0}
-	if version != 2 and version != 3:
+	if version not in [2, 3, 4]:
 		return {"ok": false, "reason": "pkfg_version_unsupported"}
 	var snapshot := {
 		"cell_indices": payload.get("building_intel_cells", PackedInt32Array()),
@@ -246,12 +251,16 @@ func restore_pkfg(payload: Dictionary, type_count: int = -1) -> Dictionary:
 	var applied := staged.apply_snapshot(snapshot)
 	if not bool(applied.get("ok", false)):
 		return {"ok": false, "reason": String(applied.get("reason", "pkfg_restore_failed"))}
+	var resource_restore: Dictionary = staged.resource_observations.restore(payload)
+	if not bool(resource_restore.get("ok", false)):
+		return resource_restore
 	_cell_to_row = staged._cell_to_row
 	_rows = staged._rows
 	_free_rows = staged._free_rows
 	_row_generation = staged._row_generation
 	_core_buckets = staged._core_buckets
 	_revision = staged._revision
+	resource_observations = staged.resource_observations
 	return {"ok": true, "rows": known_cells().size()}
 
 

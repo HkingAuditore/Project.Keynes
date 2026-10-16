@@ -240,13 +240,14 @@ with `catalog_hash_mismatch`. Until `pkai` (or the player handles) are restored,
 the AI is unarmed and never plans. See
 [Country AI 运行时](./country-ai-runtime.md).
 
-`pkfg` is `PKFogOfWar v1` and persists exactly one array: the monotonic
-`cell_explored` progress, plus the cell count it was captured at. Current
-visibility and the blurred fog knowledge `fog_k` are pure functions of territory
-and terrain, so they are never written; restore recomputes them. A cell-count
-mismatch or a truncated array is rejected rather than padded. When fog has never
-been solved (sandbox or fog disabled) the provider still writes a zero-filled
-array so the section stays mandatory.
+`pkfg` writes `PKFogOfWar v4`: monotonic `cell_explored` progress, cell
+count, v3 last-seen building/social intelligence and independent resource
+observations (`resource_intel_cells/style_ids/bands/climates`). Current visibility
+and `fog_k` remain derived and are recomputed after restore. All PKFG columns
+must validate before committing either intelligence or exploration. Versions
+1-3 migrate with unknown resource memory until re-observation; no hidden current
+world state is used to fill it. See [resource scenery](resource-visual-runtime.md).
+When fog has never been solved the explored array is still present and zero-filled.
 
 The load screen validates every section without retaining full payloads, and
 loads the screenshot through a separately verified `preview` section. This

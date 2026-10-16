@@ -21,16 +21,22 @@ func set_rows(rows: Array) -> void:
 
 
 func update_rows(rows: Array) -> void:
-	for refs in _row_refs.values():
-		((refs as Dictionary).get("panel") as Control).visible = false
+	var active_rows := {}
 	for raw in rows:
 		var data: Dictionary = raw
 		var row_id := String(data.get("id", ""))
 		if row_id.is_empty():
 			continue
+		active_rows[row_id] = true
 		if not _row_refs.has(row_id):
 			_row_refs[row_id] = _create_row(row_id, data)
 		_apply_row(row_id, _row_refs[row_id], data)
+
+	# 保持现存行可见，避免日更在按下和松开之间取消点击。
+	for row_id in _row_refs.keys():
+		if not active_rows.has(row_id):
+			var row := (_row_refs[row_id] as Dictionary).get("panel") as Control
+			row.visible = false
 
 
 func _create_row(row_id: String, data: Dictionary) -> Dictionary:

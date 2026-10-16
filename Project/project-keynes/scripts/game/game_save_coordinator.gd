@@ -520,7 +520,7 @@ func _register_providers() -> void:
 			"_can_modifier_provider", "_write_gameplay_modifier_provider",
 			"_restore_gameplay_modifier_provider"),
 		# 视野排在 PKCN 之后：恢复时要先有领土才能重解算可见性。
-		_make_provider(&"pkfg", 3, PackedStringArray(["pkfg"]),
+		_make_provider(&"pkfg", 4, PackedStringArray(["pkfg"]),
 			"_can_vision_provider", "_write_vision_provider", "_restore_vision_provider"),
 		# Country AI memory, player exclusion and Economy-pending colonization
 		# intents. Restores after PKCN/ECP2 so handles and the Economy inbox exist.
@@ -585,7 +585,7 @@ func _manifest_compatible(raw_manifest) -> bool:
 		var saved_schema := int(entry.get("schema_version", -1))
 		var schema_compatible: bool = saved_schema == provider.schema_version()
 		if provider_id == "pkfg":
-			schema_compatible = saved_schema in [1, 2, 3]
+			schema_compatible = saved_schema in [1, 2, 3, 4]
 		if provider_id == "environment":
 			schema_compatible = saved_schema in [1, 2]
 		elif provider_id == "pkcn":
@@ -1006,7 +1006,7 @@ func _write_vision_provider(context: Dictionary) -> Dictionary:
 				"玩家视野尚未解算，写档会清空探索进度。")
 	var payload := {
 		"schema": "PKFogOfWar",
-		"version": 3,
+		"version": 4,
 		"cells": map.cell_count(),
 		"explored": explored,
 	}
@@ -1015,18 +1015,9 @@ func _write_vision_provider(context: Dictionary) -> Dictionary:
 	if intel != null:
 		payload.merge(intel.to_pkfg_fields(), true)
 	else:
-		payload.merge({
-			"building_intel_cells": PackedInt32Array(),
-			"building_intel_country_slots": PackedInt32Array(),
-			"building_intel_era_indices": PackedInt32Array(),
-			"building_intel_type_offsets": PackedInt32Array([0]),
-			"building_intel_type_indices": PackedInt32Array(),
-			"building_intel_counts": PackedInt64Array(),
-			"building_intel_settlement_tiers": PackedByteArray(),
-			"building_intel_living_levels": PackedByteArray(),
-			"building_intel_rich_buckets": PackedByteArray(),
-			"building_intel_poor_buckets": PackedByteArray(),
-		}, true)
+		var empty_intel := BuildingVisualIntelCache.new()
+		empty_intel.configure(map.cell_count())
+		payload.merge(empty_intel.to_pkfg_fields(), true)
 	return {"ok": true, "sections": {"pkfg": payload}}
 
 

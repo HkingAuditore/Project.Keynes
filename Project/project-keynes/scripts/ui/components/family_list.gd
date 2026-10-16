@@ -22,24 +22,28 @@ func set_rows(rows: Array) -> void:
 
 
 func update_rows(rows: Array) -> void:
-	for refs_value in _row_refs.values():
-		var refs: Dictionary = refs_value
-		var button := refs.get("button") as Button
-		if button != null:
-			button.visible = false
+	var active_rows := {}
 	for raw in rows:
 		var data: Dictionary = raw
 		var row_id := String(data.get("id", ""))
 		if row_id.is_empty():
 			continue
+		active_rows[row_id] = true
 		if not _row_refs.has(row_id):
 			_row_refs[row_id] = _create_row(row_id)
 		_apply_row(_row_refs[row_id], data)
+
+	# 保持现存行可见，避免日更在按下和松开之间取消点击。
+	for row_id in _row_refs.keys():
+		if not active_rows.has(row_id):
+			var row := (_row_refs[row_id] as Dictionary).get("button") as Control
+			row.visible = false
 
 
 func _create_row(row_id: String) -> Dictionary:
 	var button := FamilyRowScene.instantiate() as Button
 	button.toggle_mode = true
+	button.focus_mode = Control.FOCUS_ALL
 	UIAnimation.bind_hover_glow(button)
 	button.pressed.connect(func() -> void: details_requested.emit(
 		{"kind": "family", "row_id": row_id}))
@@ -61,9 +65,18 @@ func set_selected(row_id: String) -> void:
 		(refs.get("button") as Button).set_pressed_no_signal(String(key) == row_id)
 
 
+func focus_selected() -> void:
+	if not _row_refs.has(_selected_row):
+		return
+	var button := (_row_refs[_selected_row] as Dictionary).get("button") as Button
+	if button != null and button.is_visible_in_tree():
+		button.grab_focus()
+
+
 func _apply_row(refs: Dictionary, data: Dictionary) -> void:
 	var button := refs.get("button") as Button
 	button.visible = true
+	button.set_pressed_no_signal(String(data.get("id", "")) == _selected_row)
 	var dispatch := refs.get("dispatch") as Button
 	dispatch.set_meta("dispatch", data)
 	dispatch.disabled = not bool(data.get("can_dispatch", false))

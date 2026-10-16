@@ -76,10 +76,8 @@ const FAMILY_BLUE := Color(0.31, 0.43, 0.53, 1.0)
 # Formal player-session archive surfaces. Keep these separate from the legacy
 # dark theme used by the development menu and GM tooling.
 const ARCHIVE_REFERENCE_SIZE := Vector2i(1600, 960)
-# Ordinary tile/object detail keeps the map visible until the narrower drawer
-# no longer has room for its dossier column. Family workspaces use the wider
-# archival breakpoint because their two-page composition needs more breathing
-# room.
+# Ordinary object details fold below their compact breakpoint. Family details
+# retain the tile directory and adapt their own chapters to the allocated width.
 const DETAIL_BREAKPOINT_COMPACT := 1180.0
 const ARCHIVE_BREAKPOINT_COMPACT := 1280.0
 const ARCHIVE_BREAKPOINT_MEDIUM := 1366.0

@@ -81,7 +81,6 @@ var _mobile_buttons: Dictionary = {}
 var _kpi_cards: Array[DossierKpiCard] = []
 var _kpi_signatures: Dictionary = {}
 var _player_controller = null
-var _fullscreen_mode := false
 var _closing := false
 var _close_generation := 0
 
@@ -120,6 +119,7 @@ func _ready() -> void:
 		mobile.name = "Mobile%s" % page_id.capitalize()
 		mobile.custom_minimum_size = Vector2(96.0, 38.0)
 		mobile.toggle_mode = true
+		mobile.focus_mode = Control.FOCUS_ALL
 		mobile.text = String(PAGE_META[page_id].title)
 		mobile.icon = IconCatalog.texture_for_key(StringName(PAGE_META[page_id].icon))
 		mobile.add_theme_constant_override("icon_max_width", 20)
@@ -149,6 +149,7 @@ func _ready() -> void:
 		if not _kpi_cards.is_empty():
 			_kpi_cards[_kpi_cards.size() - 1].show_divider = false
 	IconButton.apply(_close_button, &"action.close", IconButton.SMALL, "关闭家族档案")
+	_close_button.focus_mode = Control.FOCUS_ALL
 	_close_button.pressed.connect(request_close)
 	resized.connect(_apply_responsive_layout)
 	_apply_responsive_layout()
@@ -159,6 +160,7 @@ func _setup_desktop_nav_button(button: Button, page_id: String) -> void:
 	button.text = ""
 	button.icon = null
 	button.clip_contents = false
+	button.focus_mode = Control.FOCUS_ALL
 	button.theme_type_variation = &"PKCountryNavButton"
 	button.tooltip_text = String(PAGE_META[page_id].get("question", PAGE_META[page_id].title))
 	var row := FamilyHBoxScene.instantiate() as HBoxContainer
@@ -197,20 +199,23 @@ func set_player_controller(controller) -> void:
 	_player_controller = controller
 
 
-func set_fullscreen_mode(fullscreen: bool) -> void:
-	_fullscreen_mode = fullscreen
-	_apply_responsive_layout()
-
-
 func show_family(model: Dictionary, animate: bool = true) -> void:
+	var continuing := visible and not _closing
 	_close_generation += 1
 	_closing = false
+	if not continuing:
+		_current_page = "overview"
+		_scroll_by_page.clear()
+		_page_scroll.scroll_vertical = 0
 	set_model(model)
-	if animate:
+	if not continuing:
+		_select_page(_current_page, false)
+	if animate and not continuing:
 		UIAnimation.fade_slide_in(self, Vector2(36.0, 0.0), OPEN_SECONDS)
 	else:
 		visible = true
-	call_deferred("_focus_current_navigation")
+	if not continuing:
+		call_deferred("_focus_current_navigation")
 
 
 func set_model(model: Dictionary) -> void:
@@ -222,7 +227,7 @@ func set_model(model: Dictionary) -> void:
 		_clear_page_cache()
 		_scroll_by_page.clear()
 		_kpi_signatures.clear()
-		_current_page = "overview"
+		_page_scroll.scroll_vertical = 0
 		_family_handle = next_handle
 	_model = model.duplicate(true)
 	_update_header()
@@ -231,6 +236,8 @@ func set_model(model: Dictionary) -> void:
 	_refresh_page(_current_page)
 	_update_nav_state()
 	_apply_responsive_layout()
+	if family_changed:
+		call_deferred("_restore_page_scroll", _current_page)
 
 
 func request_close() -> void:
@@ -1433,8 +1440,10 @@ func _update_nav_state() -> void:
 func _apply_responsive_layout() -> void:
 	if _nav_column == null or _safe_margin == null:
 		return
-	var full_width_book := _uses_full_width_book_layout()
-	var compact := (full_width_book and size.x < COMPACT_WIDTH) or size.x < 620.0
+	var compact := size.x < COMPACT_WIDTH
+	var focus_owner := get_viewport().gui_get_focus_owner()
+	var restore_navigation := compact != _mobile_nav.visible and (
+		_nav_buttons.values().has(focus_owner) or _mobile_buttons.values().has(focus_owner))
 	var rail_width := RAIL_WIDTH
 	var left_pad := 18.0
 	var right_pad := 28.0 if not compact else 20.0
@@ -1460,6 +1469,8 @@ func _apply_responsive_layout() -> void:
 	_nav_column.custom_minimum_size.x = nav_col_width
 	_nav_column.visible = not compact
 	_mobile_nav.visible = compact
+	if restore_navigation:
+		call_deferred("_focus_current_navigation")
 	if _chapter_nav != null:
 		_chapter_nav.visible = false
 	var main := $SafeMargin/Main as HBoxContainer
@@ -1475,13 +1486,14 @@ func _apply_responsive_layout() -> void:
 	if overview != null:
 		var top_grid := overview.find_child("OverviewTopGrid", true, false) as GridContainer
 		if top_grid != null:
-			top_grid.columns = 1 if content_width < 560.0 else 2
+			top_grid.columns = 1 if compact or content_width < 560.0 else 2
 		var mid_grid := overview.find_child("OverviewMidGrid", true, false) as GridContainer
 		if mid_grid != null:
-			mid_grid.columns = 1 if content_width < 560.0 else 2
+			mid_grid.columns = 1 if compact or content_width < 560.0 else 2
 		var ring_grid := overview.find_child("OverviewRingGrid", true, false) as GridContainer
 		if ring_grid != null:
-			ring_grid.columns = 2 if content_width < 620.0 else 4
+			var ring_width := content_width / float(top_grid.columns if top_grid != null else 1) - 24.0
+			ring_grid.columns = 4 if ring_width >= 280.0 else 2
 		var people_grid := overview.find_child("OverviewPeopleGrid", true, false) as GridContainer
 		if people_grid != null:
 			people_grid.columns = _overview_people_columns(
@@ -1518,15 +1530,6 @@ func _focus_current_navigation() -> void:
 		if _mobile_nav.visible else (_nav_buttons.get(_current_page) as Button)
 	if target != null:
 		target.grab_focus()
-
-
-func _uses_full_width_book_layout() -> bool:
-	if _fullscreen_mode:
-		return true
-	var viewport_width := get_viewport_rect().size.x
-	if viewport_width <= 0.0:
-		return false
-	return size.x >= viewport_width * 0.75
 
 
 func _page_rows(page_id: String) -> Array:

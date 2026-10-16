@@ -1,0 +1,101 @@
+[gd_scene format=3 uid="uid://dhr1g7bstygc"]
+
+[ext_resource type="Script" uid="uid://ct7peoadfcf7f" path="res://scripts/ui/components/world_loading_overlay.gd" id="1_script"]
+[ext_resource type="Script" uid="uid://cyu3exj53ufaa" path="res://scripts/ui/components/loading_atlas_backdrop.gd" id="2_backdrop"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="3_icon"]
+[ext_resource type="Theme" path="res://assets/themes/menu_atlas_theme.tres" id="4_theme"]
+
+[node name="WorldLoadingOverlay" type="ColorRect" unique_id=1549263222]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.06, 0.16, 0.18, 1)
+theme = ExtResource("4_theme")
+script = ExtResource("1_script")
+
+[node name="AtlasBackdrop" type="Control" parent="." unique_id=1370540993]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("2_backdrop")
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -244.0
+offset_bottom = -24.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="Card" type="PanelContainer" parent="Center" unique_id=2121466307]
+custom_minimum_size = Vector2(620, 176)
+layout_mode = 2
+theme_type_variation = &"PKCountryPage"
+
+[node name="Content" type="VBoxContainer" parent="Center/Card" unique_id=110747042]
+layout_mode = 2
+theme_override_constants/separation = 7
+alignment = 1
+
+[node name="CompassDial" type="Control" parent="Center/Card/Content" unique_id=1756594000]
+visible = true
+unique_name_in_owner = true
+custom_minimum_size = Vector2(44, 44)
+layout_mode = 2
+size_flags_horizontal = 4
+mouse_filter = 2
+
+[node name="Title" type="Label" parent="Center/Card/Content" unique_id=135557739]
+layout_mode = 2
+theme_type_variation = &"PKArchiveTitle"
+theme_override_font_sizes/font_size = 22
+text = "正在生成世界"
+horizontal_alignment = 1
+
+[node name="Rule" type="HSeparator" parent="Center/Card/Content" unique_id=1375413850]
+layout_mode = 2
+
+[node name="StageRow" type="HBoxContainer" parent="Center/Card/Content" unique_id=339858016]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Icon" parent="Center/Card/Content/StageRow" unique_id=2141797600 instance=ExtResource("3_icon")]
+custom_minimum_size = Vector2(26, 26)
+layout_mode = 2
+
+[node name="Stage" type="Label" parent="Center/Card/Content/StageRow" unique_id=102825673]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKMutedLabel"
+text = "正在生成地图"
+
+[node name="Percent" type="Label" parent="Center/Card/Content/StageRow" unique_id=247464246]
+layout_mode = 2
+theme_type_variation = &"PKSectionTitle"
+text = "0%"
+
+[node name="Progress" type="ProgressBar" parent="Center/Card/Content" unique_id=1938978740]
+custom_minimum_size = Vector2(240, 8)
+layout_mode = 2
+show_percentage = false
+
+[node name="FailureActions" type="HBoxContainer" parent="Center/Card/Content"]
+visible = false
+layout_mode = 2
+alignment = 2
+
+[node name="Retry" type="Button" parent="Center/Card/Content/FailureActions"]
+layout_mode = 2
+text = "重试"
+
+[node name="Return" type="Button" parent="Center/Card/Content/FailureActions"]
+layout_mode = 2
+text = "返回主菜单"

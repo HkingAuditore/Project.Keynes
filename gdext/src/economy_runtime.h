@@ -7092,6 +7092,9 @@ private:
     int64_t fiscal_escrow_total() const;
     bool apply_build_command(const Command &cmd, int32_t owner_slot,
                              std::string &error, bool allow_obsolete_tier = false);
+    bool investment_portfolio_funds_feasible(int32_t cell,
+        const InvestmentCandidatePlan *const *plans,
+        const ConstructionMaterialPlan *materials, int32_t count) const;
     bool commit_preflighted_build_command(
         const Command &cmd, int32_t owner_slot,
         const ConstructionMaterialPlan &material_plan,

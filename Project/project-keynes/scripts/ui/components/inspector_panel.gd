@@ -20,8 +20,6 @@ const TAX_KIND_IDS := {"income": 0, "consumption": 1, "business": 2,
 	"import": 3, "export": 4}
 const CLEAR_ALL_MENU_ID := 1
 const SPLIT_DETAIL_MIN_WIDTH := 800.0
-const INSPECTOR_MARGIN_TOP := 12
-const INSPECTOR_MARGIN_BOTTOM := 16
 ## 档案列低于此高度时 KPI 条改为单行，给正文多留约 34px。
 const DENSE_KPI_MAX_HEIGHT := 500.0
 const ROW_LIST_KEYS := ["family_rows", "cohort_rows", "resource_rows",
@@ -53,7 +51,6 @@ var _chapter_nav: DossierChapterNav
 var _scroll: ScrollContainer
 var _content_box: VBoxContainer
 var _inspector_root: VBoxContainer
-var _outer_margin: MarginContainer
 var _detail_shell: PanelContainer
 var _object_detail_dialog: ObjectDetailDialog
 var _family_workspace: FamilyWorkspace
@@ -91,6 +88,7 @@ var _detail_change_notify := true
 var _section_collapsed: Dictionary = {}
 var _family_chrome_active := false
 var _empty_panel_style := StyleBoxEmpty.new()
+var _content_structure := ""
 
 
 func _ready() -> void:
@@ -112,7 +110,6 @@ func _ready() -> void:
 	_scroll = get_node_or_null("%Scroll") as ScrollContainer
 	_content_box = get_node_or_null("%ContentBox") as VBoxContainer
 	_inspector_root = get_node_or_null("%InspectorRoot") as VBoxContainer
-	_outer_margin = get_node_or_null("Margin") as MarginContainer
 	_detail_shell = get_node_or_null("%DetailShell") as PanelContainer
 	_object_detail_dialog = get_node_or_null("%ObjectDetail") as ObjectDetailDialog
 	_family_workspace = get_node_or_null("%FamilyWorkspace") as FamilyWorkspace
@@ -131,7 +128,10 @@ func _ready() -> void:
 		return
 	IconButton.apply(close_button, &"action.close", IconButton.SMALL, "关闭地块档案")
 	close_button.pressed.connect(func() -> void:
-		if detail_open():
+		if family_workspace_open():
+			close_detail(false)
+			close_requested.emit()
+		elif detail_open():
 			close_detail()
 		else:
 			close_requested.emit())
@@ -239,13 +239,21 @@ func apply_live_patch(patch: Dictionary) -> void:
 		set_tab_category(patch_tab, patch.get("category", {}))
 	if patch_tab != _current_tab:
 		return
-	_apply_category_patch(patch.get("category", {}))
+	var category: Dictionary = (_model.get("categories", {}) as Dictionary).get(patch_tab, {})
+	if _category_structure(category) != _content_structure:
+		_render_content(false)
+	else:
+		_apply_category_patch(category)
 
 
 func set_tab_category(tab_id: String, category: Dictionary) -> void:
 	if tab_id == "" or category.is_empty():
 		return
 	var categories: Dictionary = _model.get("categories", {})
+	# 忙碌是暂态，不能用它覆盖已经显示的已提交内容。
+	if bool(category.get("data_pending", false)) and categories.has(tab_id) \
+			and not bool((categories[tab_id] as Dictionary).get("data_pending", false)):
+		return
 	categories[tab_id] = category
 	_model["categories"] = categories
 
@@ -364,7 +372,8 @@ func _render_content(reset_scroll: bool) -> void:
 	_page_tax_editors.clear()
 	_page_tax_section = null
 	var categories: Dictionary = _model.get("categories", {})
-	var data: Dictionary = categories.get(_current_tab, categories.get("geography", {}))
+	var data: Dictionary = categories.get(_current_tab, {})
+	_content_structure = _category_structure(data)
 	_build_category_content(data)
 	_rebuild_tax_editor_registry()
 	_restore_tax_drafts()
@@ -464,8 +473,8 @@ func _build_category_block(host: Control, data: Dictionary) -> void:
 	var badges: Array = data.get("badges", [])
 	if not badges.is_empty():
 		var row := BadgeRowScene.instantiate() as BadgeRow
-		row.set_badges(badges)
 		host.add_child(row)
+		row.set_badges(badges)
 		_badge_row = row
 
 	if data.has("building_rows") and data.has("construction"):
@@ -1015,12 +1024,14 @@ func show_object_detail(payload: Dictionary) -> void:
 func show_family_workspace(payload: Dictionary, animate: bool = true) -> void:
 	if payload.is_empty() or _family_workspace == null:
 		return
+	var was_open := family_workspace_open()
 	_set_family_chrome(true)
 	_deferred_object_detail_payload.clear()
 	_object_detail_dialog.visible = false
 	_construction_pane.visible = false
 	_family_workspace.show_family(payload, animate)
-	_show_detail_shell()
+	if not was_open:
+		_show_detail_shell()
 
 
 func refresh_family_workspace(payload: Dictionary) -> void:
@@ -1091,8 +1102,6 @@ func detail_open() -> bool:
 
 func set_compact_detail_mode(compact: bool) -> void:
 	_compact_detail = compact
-	if _family_workspace != null:
-		_family_workspace.set_fullscreen_mode(compact)
 	_sync_split_layout()
 
 
@@ -1124,6 +1133,7 @@ func _on_detail_closed() -> void:
 	if _detail_shell == null:
 		return
 	var was_open := _detail_shell.visible
+	var restore_family_focus := _family_chrome_active and _detail_change_notify
 	_object_detail_dialog.visible = false
 	_family_workspace.hide_immediately()
 	_construction_pane.visible = false
@@ -1131,6 +1141,8 @@ func _on_detail_closed() -> void:
 	_set_family_chrome(false)
 	_sync_split_layout()
 	_inspector_root.visible = true
+	if restore_family_focus and _family_list != null:
+		_family_list.focus_selected()
 	for list in [_cohort_list, _market_list, _building_list, _resource_list, _family_list]:
 		if list != null and list.has_method("set_selected"):
 			list.set_selected("")
@@ -1145,21 +1157,12 @@ func _set_family_chrome(active: bool) -> void:
 		return
 	_family_chrome_active = active
 	if active:
-		# 家族档案自带完整书册外框；通用 Inspector 的深色底、阴影和
-		# 内容边距会额外生成一层黑色矩形，家族模式下必须撤掉。
-		add_theme_stylebox_override(&"panel", _empty_panel_style)
+		# 只撤掉左侧详情的重复外框；右侧地块档案保留原有材质和边距。
 		if _detail_shell != null:
 			_detail_shell.add_theme_stylebox_override(&"panel", _empty_panel_style)
-		if _outer_margin != null:
-			_outer_margin.add_theme_constant_override(&"margin_top", 0)
-			_outer_margin.add_theme_constant_override(&"margin_bottom", 0)
 	else:
-		remove_theme_stylebox_override(&"panel")
 		if _detail_shell != null:
 			_detail_shell.remove_theme_stylebox_override(&"panel")
-		if _outer_margin != null:
-			_outer_margin.add_theme_constant_override(&"margin_top", INSPECTOR_MARGIN_TOP)
-			_outer_margin.add_theme_constant_override(&"margin_bottom", INSPECTOR_MARGIN_BOTTOM)
 
 
 func _sync_split_layout() -> void:
@@ -1170,11 +1173,10 @@ func _sync_split_layout() -> void:
 		split.clip_contents = not _family_chrome_active
 	var inspecting := _detail_shell.visible
 	_detail_shell.clip_contents = not _family_chrome_active
-	# 宽屏分栏需要约 400+424。面板尚未被 GameUIManager 加宽时（或测试里仍是
-	# 460）如果硬拆两列，详情会盖住档案。窄宽度先让详情独占。
+	# 家族栏始终保留右侧目录；普通对象详情仍沿用窄窗独占策略。
 	var family_open := _family_workspace != null and _family_workspace.visible
-	var can_split := not family_open and not _compact_detail \
-		and size.x >= SPLIT_DETAIL_MIN_WIDTH
+	var can_split := family_open or (not _compact_detail \
+		and size.x >= SPLIT_DETAIL_MIN_WIDTH)
 	var show_dossier := not inspecting or can_split
 	_inspector_root.visible = show_dossier
 	_inspector_root.size_flags_horizontal = Control.SIZE_FILL if inspecting \
@@ -1206,6 +1208,27 @@ func _request_tab_data_if_missing(tab_id: String) -> void:
 	var categories: Dictionary = _model.get("categories", {})
 	if not categories.has(tab_id):
 		tab_data_requested.emit(tab_id)
+
+
+func _category_structure(data: Dictionary) -> String:
+	var parts := PackedStringArray()
+	for key in ["insights", "metrics", "gauges", "construction"] + ROW_LIST_KEYS:
+		if data.has(key):
+			parts.append(String(key))
+	if not (data.get("badges", []) as Array).is_empty():
+		parts.append("badges:%d" % (data["badges"] as Array).size())
+	for key in ROW_LIST_KEYS:
+		if data.has("list_header") and not (data.get(key, []) as Array).is_empty():
+			parts.append("header:%s:%s" % [key, str(data.get("list_header", {}))])
+	if data.has("list_caption"):
+		parts.append("caption")
+	for chart in data.get("charts", []):
+		parts.append("chart:%s" % String((chart as Dictionary).get("id", "")))
+	for section in data.get("sections", []):
+		parts.append("section:%s:%s" % [String((section as Dictionary).get("id", "")),
+			_category_structure(section)])
+	parts.append("tax:%s" % str((data.get("tax_context", {}) as Dictionary).get("available", false)))
+	return "|".join(parts)
 
 
 func _tabs_signature(tabs: Array) -> String:

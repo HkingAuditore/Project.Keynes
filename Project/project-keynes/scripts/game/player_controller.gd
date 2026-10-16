@@ -467,8 +467,11 @@ func get_family_dispatch_preview(family_handle: int, source_cell: int) -> Dictio
 		if not bool(page.get("has_more", false)) or handles.is_empty():
 			return _result(false, "colonization_population_insufficient", "该城已没有此家族的分支。")
 		offset += handles.size()
+	var traits: Dictionary = _economy_facade.get_family_traits(family_handle)
 	return {"ok": true, "branch": branch,
-		"traits": _economy_facade.get_family_traits(family_handle),
+		"traits": traits,
+		"behavior_rows": CellInspectorViewModel.family_behavior_rows_for_cell(
+			traits, _economy_facade, source_cell),
 		"effects": _economy_facade.get_family_branch_effects(family_handle, source_cell)}
 
 
@@ -596,6 +599,12 @@ func _dispatch_player_input(event: InputEvent) -> void:
 		if debug_hotkeys_enabled and _ui_manager != null:
 			_ui_manager.toggle_perf_hud()
 			get_viewport().set_input_as_handled()
+	elif key.keycode == KEY_Y and not (key.ctrl_pressed or key.alt_pressed or key.meta_pressed):
+		# 资源透镜：把世界里的资源/物种实景切换为统一的识别徽章，便于一眼找到产区。
+		var renderer: Node = _runtime_host.get_renderer() if _runtime_host != null else null
+		if renderer != null and renderer.has_method("set_resource_visual_lens"):
+			renderer.set_resource_visual_lens(not renderer.resource_visual_lens_enabled())
+			get_viewport().set_input_as_handled()
 
 
 func _connect_runtime() -> void:
@@ -638,9 +647,8 @@ func _on_simulation_committed(_from_day: int, to_day: int, _generation: int) -> 
 func _on_country_peer_serviced(report: Dictionary) -> void:
 	# Era reward planning is completed while the host drains Country peer
 	# intents, after the worker commit signal has already been published.
-	# The host emits only when it actually serviced an intent, so this is an
-	# event wake-up rather than a per-frame offer poll.
-	if int(report.get("inspected", 0)) <= 0:
+	# 里程碑通知可能单独送达，此时没有普通 peer intent 但仍须立即打开弹窗。
+	if int(report.get("inspected", 0)) <= 0 and int(report.get("notified", 0)) <= 0:
 		return
 	_sync_era_reward_offer()
 	_sync_family_founding_offer()

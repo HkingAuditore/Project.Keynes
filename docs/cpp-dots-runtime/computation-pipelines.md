@@ -1,5 +1,14 @@
 # Simulation Computation Pipelines
 
+## Investment portfolio cash sequence (2026-10-16)
+
+After native material preflight, `investment_portfolio_funds_feasible` previews
+the same cell's complete sponsor-transfer/merchant-loan phase followed by ordered
+construction payments and merchant receipts. Overcommitted portfolios retain a
+payable prefix before any population or cash mutation. This is bounded local
+scratch inside the existing investment pass; no authority, graph, cadence, schema
+or bridge changes. See [native economy runtime](./native-economy-runtime.md).
+
 ## Household purchasing-power satisfaction (2026-10-16)
 
 `NativeEconomyRuntime::update_cohort_satisfaction` derives comfort/luxury from
@@ -3563,3 +3572,12 @@ multiplication/division. Zero-divisor handling, truncation, overflow limits and
 saturation counts are unchanged, including INT64_MIN operands. The scalar flag
 is `PK_ECONOMY_MUL_DIV_SCALAR=1`; the standalone actual math implementation passes
 24,913 Python-bigint oracle vectors under both paths plus signed identity edges.
+
+
+### 2026-10-16 植被覆盖调优
+
+本轮只调整现有 tree/conifer/palm/monsoon_tree/cloud_forest_tree/grass/shrub visual profile：
+增加适生区域的密度、树冠群落数和草灌覆盖；不改变 Native ecology、C++ scatter 算法、
+生物量、植被活力或河流/聚落掩码。Native 与 GDScript 仍读取同一组 profile knobs。
+资源层使用独立实景丰度/抽样门槛，不得为展示资源而扣减普通树木。
+具体参数与 GPU 验证见 resource-visual-runtime.md 的“植被优先的密度调整”。

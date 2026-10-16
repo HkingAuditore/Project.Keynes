@@ -1,5 +1,18 @@
 # Performance Diagnostics Playbook
 
+## Construction portfolio funds drift (2026-10-16)
+
+`building_construction_preflight_funds_drift` in `building_commit/investment`
+means the frozen invoice cannot be paid by the owner at commit. Independently
+affordable candidates can reuse a merchant's self-construction cash for lending,
+or consume the same cohort's capital in different portfolio roles. Check the
+whole funding sequence, not only material cost envelopes. Native investment now
+previews transfers, proportional merchant loans, invoices and merchant receipts
+before mutation, trimming the lowest-ranked tail until the sequence is payable.
+Use `building_portfolio_funds_regression_test.gd`; keep the commit guard enabled.
+When `audit_incomplete=true`, zero error fields are placeholders for an unfinished
+epoch and do not prove conservation. Fatal PKEC exports remain forensics-only.
+
 ## Money conservation after merchant migration (2026-10-16)
 
 `executed_stage=fiscal_settlement` with `executed_substage=verify` identifies

@@ -1,5 +1,19 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V6）
 
+## 2026-10-16 投资组合现金预检
+
+内生投资冻结整批建材发票后，先在本格临时账户上预演整组资金顺序：全部迁人、
+出资和商人放贷完成后，才依次支付建材并把收入分给商人。同一个 cohort 兼任
+出资人、商人或业主时，现金必须承受整个序列，不能把各候选的独立报价当成资金预留。
+不可支付时移除排名最低的剩余尾部项目并重试，沿用
+`building_investment_capital_limited` 计数；保留前缀不改变已冻结的材料选择。
+源 cohort 必须保留占位人口，负余额目标也必须在划款前通过可行性门。
+
+预演只使用 native、本格、临时数据；实际资金仍走原有迁移、家族归属、贷款和建造
+提交。funds/stock drift 硬校验、三项守恒、信贷敞口、周期、公共 API 和存档格式不变。
+`building_portfolio_funds_regression_test.gd` 通过现有 native fault-gate self-test
+覆盖商人自建款重复放贷、共用出资人透支、可支付前缀和资金充足的组合。
+
 ## 2026-10-16 商人迁移与还贷守恒修复
 
 第 10315 天现场的 `money_error=-11166` 对应格子 4847 的七笔还贷
@@ -1134,6 +1148,15 @@ Inspector 首屏通过 `get_population_cell_summary` 只读取人口聚合值；
 以及各族 bindable cover，不把 21 族做成调试表。
 资源明细由可见标签惰性读取，避免点击成本随全局 goods/building catalog 扩张。完整 snapshot 在
 Facade/UI 只读传递，不再为缓存和返回值各做一次递归深拷贝。
+
+Inspector 将 `busy/read_view_pending` 作为等待态：保留已显示的已提交内容，首次打开
+Tab 或对象详情时由 `GameUIManager` 每 150ms 重试，切格、关面板或换世界后取消旧请求。
+`CellInspectorViewModel` 只缓存当前地块各 Tab 的完整展示 category，等待态不覆盖它，
+且缓存仍受可见性门控；它不保存或修改经济权威状态。首份有效 category 到达后，
+`InspectorPanel` 按控件结构补建首次缺失的内容，其余数值更新只打补丁。人口、建筑、
+资源和家族名录仅隐藏已消失的行，不能先隐藏全部行再显示，以免高速日更打断点击。
+相关回归为 `tests/inspector_refresh_lifecycle_test.gd`，真实 50x worker 对局点击验证为
+`tests/inspector_fast_forward_runtime_test.gd`。
 
 公共冷路径 `get_building_cell_snapshot` 返回建筑 owner-lot、岗位实到、周期投入/产出/销售、
 资源容量/采收及选中地块的 reserve/pending/effective 三列。PKEC v5 的历史字段

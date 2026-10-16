@@ -604,8 +604,10 @@ void NativeEconomyRuntime::apply_family_birth_attribution(int32_t slot, int64_t 
         if (it->ethnicity != ethnicity || it->share_q16 <= 0) continue;
         int32_t family = -1;
         if (!families_store().valid_handle(it->family_handle, family)) continue;
-        family_share += it->share_q16;
-        shares.push_back({saturating_mul(it->share_q16, it->birth_weight_q16, sat),
+        // 超目标份额转给匿名新生儿，避免纯家族开拓地的零匿名状态永久自锁。
+        const int64_t inherited_share = std::min(it->share_q16, it->target_share_q16);
+        family_share += inherited_share;
+        shares.push_back({saturating_mul(inherited_share, it->birth_weight_q16, sat),
                           births, it->family_handle, 0});
     }
     if (shares.empty()) return;

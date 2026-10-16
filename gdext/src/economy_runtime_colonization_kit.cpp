@@ -248,6 +248,13 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
         int64_t remaining = std::max<int64_t>(0, required);
         kit.bridge_required_units = saturating_add(kit.bridge_required_units,
             remaining, sat);
+        // A bridge with no reachable candidate can never make progress.  This
+        // used to leave PREPARING expeditions retrying forever at (for example)
+        // 96% food even though the source had neither stock nor a producer for
+        // any survival good.  Keep temporary stock shortages retryable; only
+        // an empty candidate set is structurally unbuildable.
+        if (remaining > 0 && candidates.empty())
+            kit.kit_unbuildable = 1;
         // A party that escrowed a substitute over previous days must keep
         // spending that one first, otherwise a newly stocked preferred
         // candidate would strand the goods already paid for.
@@ -730,7 +737,8 @@ bool NativeEconomyRuntime::plan_colonization_kit(
         }
         kit.kit_partial = 1;
     }
-    kit.kit_unbuildable = structurally_unbuildable ? 1 : 0;
+    kit.kit_unbuildable = (structurally_unbuildable ||
+        kit.kit_unbuildable != 0) ? 1 : 0;
     rebuild_buildings();
     if (kit.buildings.empty())
         kit.kit_partial = 1;

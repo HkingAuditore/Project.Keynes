@@ -37,12 +37,18 @@ era_reward.choose { offer_generation, choice_index }
 ACK 后才关闭弹窗，并按打开前状态恢复运行或继续暂停。`player_view` 保存锁定、恢复
 意图、速度和 generation，读档后会重新挂载同一冻结 Offer。
 
+科技工作台的「当前时代」仅取已生效（state=5）里程碑所属时代中的最高项，初始显示
+石器时代。跨时代普通科技可按既有研究条件先行掌握，但不推进这个标签；待生效里程碑
+同样不推进标签，避免把科技所属时代误显示为已经晋升。
+
 ## Worker 权威（ACTIVE）路径
 
 - **Offer 打开**：Country worker 提交里程碑激活后，Host 在提交点排队
   `NOTIFY_ERA_REWARD`（`poll_country_worker_notification`）；主线程
   `service_country_worker_peer_adapter` 以该次提交的 Country 快照作为 Planner 的
   Country 视图交付通知。未交付的通知计入 drain-idle 判定。
+  Host 与 PlayerController 都将 `notified > 0` 视为展示刷新事件，即使 `inspected=0`
+  也立即同步奖励弹窗；空服务报告不触发 Offer 轮询。
 - **选择提交**：EFFECT worker 权威时主线程 `EffectRuntime` 只是只读副本，不派发事务。
   `choose_era_reward` 改为 Host 提交：Offer 进入 `SELECTED_PENDING` 且
   `transaction_id=0`，选中备选的 Modifier 命令（仅支持 `MODIFIER_COMMAND` APPLY）
@@ -77,3 +83,5 @@ PKCN 后 PKEF，PKEF 逐字段审计 PKCN 引用；任何旧 schema 或目录差
 验证入口：`era_reward_catalog_test.gd`、`era_reward_runtime_test.gd`、
 `era_reward_ui_smoke_test.gd`、`player_controller_contract_test.gd`，以及 Technology、
 Effect、Modifier、Country 与完整 PKSV round-trip 测试。
+`era_reward_notification_regression_test.gd` 覆盖当前时代的里程碑判定、仅通知帧的
+Host→PlayerController→真实弹窗链路，以及 50 倍速暂停与恢复意图保存。

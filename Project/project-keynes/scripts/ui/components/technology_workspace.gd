@@ -1283,19 +1283,15 @@ func _current_era_label(states: PackedInt32Array) -> String:
 
 
 func _scan_era_label(states: PackedInt32Array) -> String:
-	var reached := ""
-	var pending := ""
+	if _eras.is_empty():
+		return "—"
+	var reached := 0
 	for index in range(mini(states.size(), _definitions.size())):
 		var definition: Dictionary = _definitions[index]
-		var era_id := String(definition.get("era_id", ""))
-		var era_name := String(_era_names.get(era_id, era_id))
-		if states[index] >= 5:
-			reached = era_name
-		elif TechnologyTreeView.presents_state(states[index]) and pending.is_empty():
-			pending = era_name
-	if reached.is_empty():
-		return pending if not pending.is_empty() else "—"
-	return reached
+		# 跨时代普通科技不代表晋升；只有已生效里程碑决定当前时代。
+		if states[index] >= 5 and bool(definition.get("is_milestone", false)):
+			reached = maxi(reached, _era_index(String(definition.get("era_id", ""))))
+	return String((_eras[reached] as Dictionary).get("display_name", "—"))
 
 
 func _patch_queues(states: PackedInt32Array, progress: PackedInt64Array,

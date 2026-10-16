@@ -1576,6 +1576,12 @@ func _show_family_preview(quote: Dictionary, hovering: bool = false) -> void:
 		str(branch.get("owned_buildings", quote.get("owned_buildings", "—"))),
 		UITokens.format_compact_number_cn(float(branch.get("cash_claims", quote.get("cash_claim", 0))) / 10000.0, 2)]
 	var traits: Dictionary = preview.get("traits", {})
+	# 只替换预览副本的显示列，原始偏好仍由原生家族运行时持有。
+	traits = traits.duplicate()
+	var visible_preferences := PackedStringArray()
+	for behavior: Dictionary in preview.get("behavior_rows", []):
+		visible_preferences.append(String(behavior.get("name", "")))
+	traits["behavior_selector_display_names"] = visible_preferences
 	var names: PackedStringArray = traits.get("display_names", PackedStringArray())
 	var descriptions: PackedStringArray = traits.get("descriptions", PackedStringArray())
 	var core: PackedByteArray = traits.get("core", PackedByteArray())
