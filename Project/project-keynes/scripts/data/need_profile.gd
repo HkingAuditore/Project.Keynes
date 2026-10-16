@@ -14,7 +14,9 @@ extends Resource
 @export_range(0, 65536, 1) var living_cost_weight_q16: int = 0
 
 ## Composite satisfaction tier. Drives which satisfaction dimension this need
-## contributes to (0 subsistence, 1 basic, 2 comfort, 3 luxury). The value maps
+## is attributed to (0 subsistence, 1 basic, 2 comfort, 3 luxury). Basic feeds
+## realized consumption satisfaction; comfort/luxury composite dimensions use
+## cash purchasing power instead of their tier fill rates. The value maps
 ## directly onto the native SAT_DIM_SUBSISTENCE..SAT_DIM_LUXURY enum, so a need
 ## may never be authored outside this range.
 @export_enum("subsistence", "basic", "comfort", "luxury")

@@ -50,6 +50,24 @@ class DispatchControllerStub extends RefCounted:
 			"effect_display_names": PackedStringArray(["本城总体产出加成"])}
 
 
+class PreparingControllerStub extends ControllerStub:
+	var due_day := 7062
+	var phase := 5
+
+	func get_family_expeditions(offset: int, limit: int) -> Dictionary:
+		var page := super.get_family_expeditions(offset, limit)
+		page["due_days"] = PackedInt64Array([due_day, 7100])
+		page["kit_missing_stock_identities"] = PackedInt64Array([19, 0])
+		return page
+
+	func get_family_expedition_snapshot(_handle: int) -> Dictionary:
+		return {"ok": true, "kit_bridge_required_units": 100,
+			"kit_bridge_missing_units": 4, "kit_material_required_units": 30,
+			"kit_material_missing_units": 0, "kit_blocker": "BRIDGE",
+			"kit_procurement_pending": true, "kit_procurement_phase": phase,
+			"kit_procurement_started_day": 7061}
+
+
 var _failures := 0
 
 
@@ -83,7 +101,28 @@ func _run() -> void:
 	if not (passed and family_scope and empty_target):
 		_failures += 1
 	await _run_city_dispatch()
+	await _run_preparing_refresh()
 	quit(0 if _failures == 0 else 1)
+
+
+func _run_preparing_refresh() -> void:
+	var stub := PreparingControllerStub.new()
+	var panel = load("res://scenes/ui/colonization_planner_panel.tscn").instantiate()
+	root.add_child(panel)
+	panel.set_player_controller(stub)
+	panel.open_target(2)
+	var row_wrap: HBoxContainer = panel._expedition_row_refs[101]
+	var row := row_wrap.get_child(0) as Button
+	_expect("preparation initially shows its pending transfer", row.tooltip_text.contains("阶段 5"))
+	stub.due_day += 1
+	stub.phase = 1
+	panel._show_expeditions()
+	_expect("unchanged stock still refreshes procurement on the next due day",
+		row.tooltip_text.contains("阶段 1") and not row.tooltip_text.contains("阶段 5"))
+	_expect("preparation refresh preserves clickable row nodes",
+		panel._expedition_row_refs[101] == row_wrap)
+	panel.queue_free()
+	await process_frame
 
 
 func _run_city_dispatch() -> void:

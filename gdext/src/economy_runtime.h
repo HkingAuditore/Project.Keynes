@@ -4522,6 +4522,10 @@ private:
     int32_t _satisfaction_income_growth_ceiling_q16 = 78643;
     int32_t _satisfaction_income_baseline_alpha_q16 = 1024;
     int64_t _satisfaction_savings_target_months_q16 = 393216;
+    int64_t _satisfaction_comfort_floor_months_q16 = 65536;
+    int64_t _satisfaction_comfort_ceiling_months_q16 = 196608;
+    int64_t _satisfaction_luxury_floor_months_q16 = 196608;
+    int64_t _satisfaction_luxury_ceiling_months_q16 = 655360;
     int32_t _satisfaction_tax_tolerance_q16 = 22938;
     std::array<int32_t, SAT_DEVELOPMENT_INPUT_COUNT>
         _satisfaction_development_weights_q16 = {26214, 26214, 13107};
@@ -5902,6 +5906,8 @@ private:
     std::vector<int32_t> _merchant_primary_slot;
     std::vector<int32_t> _merchant_offsets;
     std::vector<int32_t> _merchant_slots;
+    // Derived CSR invalidation; never persisted or hashed.
+    bool _merchant_ranges_dirty = false;
     // 有商人的格，按格号升序，与 CSR 同一次构建产出。capture_country_epoch 原来
     // 为聚合每国商人人口扫整张地图；商人只存在于少数有人口的格，列表让它按实际
     // 端点数走。_valid=false 时消费方退回全图循环，语义不变。
@@ -7410,6 +7416,7 @@ private:
     bool ensure_merchant_invariant(int32_t cell, int64_t &repair_count,
                                    std::string &error);
     bool rebuild_merchant_ranges(std::string &error);
+    bool refresh_merchant_ranges_if_dirty(std::string &error);
     bool repair_cell_merchant_and_rebuild(int32_t cell, std::string &error);
     bool run_government_research_procurement(std::string &error);
     bool advance_country_research_procurement(

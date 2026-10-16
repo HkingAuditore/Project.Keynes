@@ -1,5 +1,17 @@
 # Performance Diagnostics Playbook
 
+## Money conservation after merchant migration (2026-10-16)
+
+`executed_stage=fiscal_settlement` with `executed_substage=verify` identifies
+where a deficit was detected, not necessarily where cash was lost. For the
+day-10315 `money_error=-11166` fault, seven unretired debt payments in cell 4847
+sum to that exact deficit. An employment migration left the merchant CSR stale;
+debt service debited owners before discovering there was no living receiver.
+The production entry now refreshes dirty merchant ranges before worker dispatch,
+and an unavailable debt receiver defers the payment without debiting cash.
+Use `merchant_debt_conservation_regression_test.gd` for the focused guard and
+replacement/retry check. Keep full conservation verification enabled.
+
 ## Read leases, exact checksums and annual save pauses (2026-10-15)
 
 `const auto group = building_at(...)` inside a non-const method can still create

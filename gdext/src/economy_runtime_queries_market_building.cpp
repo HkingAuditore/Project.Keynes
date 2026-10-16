@@ -482,6 +482,20 @@ Dictionary NativeEconomyRuntime::explain_cohort_satisfaction(
             _epoch_cell_development_q16.size())
         ? _epoch_cell_development_q16[cell] : 0;
     out["savings_target_months_q16"] = _satisfaction_savings_target_months_q16;
+    const int64_t daily_cost = out["living_cost_per_capita"];
+    const int64_t monthly_cost = saturating_mul(saturating_mul(
+        std::max<int64_t>(0, daily_cost),
+        std::max<int64_t>(1, population_store().population[slot]), diagnostic_sat),
+        30, diagnostic_sat);
+    out["purchasing_power_basis_valid"] = monthly_cost > 0;
+    out["purchasing_power_months_q16"] = monthly_cost > 0 ? mul_div_sat(
+        std::max<int64_t>(0, population_store().funds[slot]), Q16_ONE,
+        monthly_cost, diagnostic_sat) : 0;
+    out["purchasing_power_reference_days"] = 30;
+    out["comfort_floor_months_q16"] = _satisfaction_comfort_floor_months_q16;
+    out["comfort_ceiling_months_q16"] = _satisfaction_comfort_ceiling_months_q16;
+    out["luxury_floor_months_q16"] = _satisfaction_luxury_floor_months_q16;
+    out["luxury_ceiling_months_q16"] = _satisfaction_luxury_ceiling_months_q16;
     out["tax_tolerance_q16"] = _satisfaction_tax_tolerance_q16;
     out["subsistence_gate_slack_q16"] =
         _satisfaction_subsistence_gate_slack_q16;
