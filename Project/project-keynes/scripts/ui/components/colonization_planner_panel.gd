@@ -1029,7 +1029,7 @@ func _preparing_missing_text(handle: int, state: int) -> String:
 	var required := bridge_required + material_required
 	var missing := bridge_missing + material_missing
 	if required > 0:
-		lines.append("已囤积 %d%%（口粮 %d%% / 建材 %d%%），每日自动收进源地可用现货" % [
+		lines.append("已囤积 %d%%（补给 %d%% / 建材 %d%%），每日自动收进源地可用现货" % [
 			clampi(required - missing, 0, required) * 100 / required,
 			_stock_percent(bridge_required, bridge_missing),
 			_stock_percent(material_required, material_missing)])
@@ -1042,7 +1042,7 @@ func _preparing_missing_text(handle: int, state: int) -> String:
 		"READY":
 			lines.append("开工包已齐套，等待出发")
 		"BRIDGE":
-			lines.append("仍缺路上口粮，等源地产出")
+			lines.append("仍缺旅途补给（食品、衣物或必需工具），等源地备货")
 		"MATERIALS":
 			lines.append("仍缺开工建材，等源地产出")
 		"INCOMPLETE":

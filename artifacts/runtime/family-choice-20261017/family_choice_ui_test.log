@@ -1,0 +1,53 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] dialog opens with three card slots
+  [PASS] dialog root passes mouse outside floating dossier and hides fullscreen book background
+  [PASS] summary shows name, origin, founder count, trait keywords and first prestige effect
+  [PASS] all details start collapsed, all three summaries remain in one column
+  [PASS] buff copy has no progress bars or duplicate numeric pills
+  [PASS] effect preview shows Prestige I statement instead of unreached-prestige placeholder
+  [PASS] details show complete trait copy and five prestige tiers without submitting
+  [PASS] expanded text uses the full card width
+  [PASS] opening another house collapses its predecessor and preserves three summaries
+  [PASS] same offer refresh preserves nodes, expanded house and scroll
+  [PASS] prompt explains the settlement milestone and consequence
+  [PASS] locate button emits cell index for map/inspector focus
+  [PASS] collapse mode hides body to reveal map and shrinks height
+  [PASS] expanding restores body and card grid
+  [PASS] large inspector temporarily collapses founding panel
+  [PASS] closing inspector restores expanded house
+  [PASS] manual collapse survives large inspector open and close
+  [PASS] floating dossier avoids right 460px inspector at 1280x720
+  [PASS] floating dossier avoids right 460px inspector at 1366x768
+  [PASS] floating dossier avoids right 460px inspector at 1920x1080
+  [PASS] floating dossier avoids right 460px inspector at 2560x1440
+  [PASS] missing third candidate disables only its button
+  [PASS] first available choice takes keyboard focus
+  [PASS] choice carries offer id, generation and index
+  [PASS] repeated input cannot overwrite pending choice
+  [PASS] pending state disables every choice
+  [PASS] error re-enables valid choices and keeps a readable status
+  [PASS] close hides the dialog
+  [PASS] old close callback cannot hide the next queued offer
+  [PASS] split proposal explains surname, whole-branch transfer and the continuing parent
+  [PASS] split cards show branch people and a distinct confirmation action
+  [PASS] rapid details switching leaves exactly the last house expanded
+  [PASS] long city, house and industry names wrap within panel width
+  [PASS] four full traits remain accessible in expanded details
+  [PASS] facade decorates founding card with Prestige I effect and 5-tier list
+  [PASS] facade decorates founding card with structured trait items and icons
+  [PASS] open player offer locks the session and pauses the clock
+  [PASS] non-player offers are never presented
+  [PASS] other player commands wait for the founding choice
+  [PASS] choice for a different offer is rejected before the runtime
+  [PASS] unpausing is ignored while the founding pick is open
+  [PASS] view state records the founding lock and resume speed
+  [PASS] settled choice unlocks and resumes at the previous speed
+family founding dialog ui: 0 failures
+ERROR: 30 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced22ShapedTextDataAdvancedE' were leaked at exit.
+ERROR: 3 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 140 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

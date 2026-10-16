@@ -1,0 +1,5 @@
+warning: in the working copy of 'gdext/src/economy_runtime.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/economy_runtime_building_investment.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/economy_runtime_building_production.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/economy_runtime_trade.cpp', LF will be replaced by CRLF the next time Git touches it
+Project.Keynes economy runtime verification passed.

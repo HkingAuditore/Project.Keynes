@@ -1,0 +1,46 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] split fixture bootstraps
+  [PASS] fixture has one starter family
+  [PASS] source owner cohort exists
+  [PASS] migration command queues
+[economy-open-finish] day=0 country=0.191 workset=0.022 fiscal=0.014 csr=0.001 recovery=0.002 vectors=0.462 audit=0.019 commands=0.010
+[research-procure-diag] day=0 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+  [PASS] migration day conserves ledgers
+  [PASS] player branch opens a split proposal
+  [PASS] three proposals preserve the surname and reference the parent
+  [PASS] pending proposals create no new family
+  [PASS] split save completes
+  [PASS] split restore preserves state hash
+  [PASS] pending split survives save and restore
+[research-procure-diag] day=5 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+  [PASS] waiting neither auto-splits nor duplicates the proposal
+  [PASS] split choice is accepted
+[research-procure-diag] day=10 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+  [PASS] split selection conserves ledgers
+  [PASS] whole local branch has one chosen identity and keeps its surname
+  [PASS] parent remains in the original city
+  [PASS] resolved split leaves no pending offer
+  [PASS] chosen traits match the frozen proposal
+  [PASS] split save completes
+  [PASS] split restore preserves state hash
+  [PASS] source owner cohort exists
+  [PASS] migration command queues
+[research-procure-diag] day=15 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+  [PASS] later parent arrivals conserve ledgers
+  [FAIL] later parent arrivals keep their identity alongside the independent child
+  [PASS] split save completes
+  [PASS] split restore preserves state hash
+  [FAIL] parent and child remain separate after save and restore
+  [PASS] territory fixture pauses inside a frozen economy epoch
+  [PASS] Country transfers the foreign cell after economy begins
+[economy-open-finish] day=0 country=0.221 workset=0.009 fiscal=0.005 csr=0.001 recovery=0.000 vectors=0.124 audit=0.020 commands=0.003
+[research-procure-diag] day=0 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+  [PASS] newly acquired player's ordinary family waits for support
+=== family split choice runtime: 2 failures ===
+ERROR: 29 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 3 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 302 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

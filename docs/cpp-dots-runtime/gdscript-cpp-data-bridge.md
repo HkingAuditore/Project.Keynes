@@ -1,5 +1,12 @@
 # GDScript / C++ Data Bridge
 
+Colonization market diagnostics (2026-10-17): selected-cell market snapshots
+add `colonization_pending_demand` and `colonization_demand_daily`, aligned with
+`good_ids`. They are frozen native Economy forecasts, not completed orders or
+cash reservations. The existing committed-read view publishes both; no new
+binding, DataCore slot or save section is required. See
+[family colonization runtime](./family-colonization-runtime.md).
+
 ## Satisfaction purchasing power (2026-10-16)
 
 `EconomyProfile.to_native_profile()` supplies four Q16-month parameters:

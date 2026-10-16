@@ -1,0 +1,12 @@
+from pathlib import Path
+p=Path('Project/project-keynes/tests/family_split_choice_runtime_test.gd')
+s=p.read_text(encoding='utf-8').replace('_neutral_target','_foreign_target')
+s=s.replace('var _foreign_target := false','var _foreign_target := false\nvar _fixture_cells := 2')
+s=s.replace('func _test_newly_claimed_player_cell(catalog: Dictionary) -> void:\n\t_foreign_target = true','func _test_newly_claimed_player_cell(catalog: Dictionary) -> void:\n\t_fixture_cells = 3\n\t_foreign_target = true')
+s=s.replace('ext.configure_economy(catalog, profile, 2, SPLIT_SEED)','ext.configure_economy(catalog, profile, 3, SPLIT_SEED)')
+s=s.replace('stock.resize(2 * (catalog.good_ids as PackedStringArray).size())','stock.resize(_fixture_cells * (catalog.good_ids as PackedStringArray).size())')
+s=s.replace('ext.create_entities(2)','ext.create_entities(_fixture_cells)').replace('ext.configure_modifiers(modifier_catalog, 1)','ext.configure_modifiers(modifier_catalog, _fixture_cells)').replace('}, 2, seed)','}, _fixture_cells, seed)')
+s=s.replace('PackedInt32Array([0, 1, 2]) if _foreign_target','PackedInt32Array([0, 1, 3]) if _foreign_target')
+s=s.replace('"territory_cells": PackedInt32Array([0, 1]),','"territory_cells": PackedInt32Array([0, 1, 2]) if _foreign_target else PackedInt32Array([0, 1]),')
+s=s.replace('}, PackedByteArray([0, 0])).get','}, PackedByteArray([0, 0, 0]) if _foreign_target else PackedByteArray([0, 0])).get')
+p.write_text(s,encoding='utf-8')

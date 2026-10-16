@@ -109,8 +109,10 @@ func present_offer(offer: Dictionary) -> void:
 	var population := int(offer.get("milestone_population", 0))
 	var cell_pop := int(offer.get("cell_population", population))
 	var remaining := int(offer.get("queue_remaining", 0))
+	var split := String(offer.get("kind", "FOUNDING")) == "SPLIT"
 	if _archive_surface != null:
-		_archive_surface.configure_header("%s · 望族兴起" % settlement,
+		_archive_surface.configure_header("%s · %s" % [settlement, "分支立族" if split else "望族兴起"],
+			"同宗分支 · 择定家风" if split else
 			"人口 %s · 择一扶持" % UITokens.format_compact_number_cn(float(cell_pop), 0), &"family.house")
 	if _queue_badge != null and _queue_label != null:
 		_queue_badge.visible = remaining > 0
@@ -119,9 +121,13 @@ func present_offer(offer: Dictionary) -> void:
 		_locate_button.text = "定位城市"
 		_locate_button.tooltip_text = "定位%s，并查看右侧地块档案" % settlement
 	if _prompt != null:
-		_prompt.text = "%s人口已达 %s。择一户扶持，其余两户将不再出现。" % [
-			settlement, UITokens.format_compact_number_cn(float(population), 0)]
-	_collapsed_entry.text = "%s · 待择族    展开" % settlement
+		if split:
+			_prompt.text = "%s在%s的分支已具备独立条件。保留原姓氏，择定一套家风与效果；本地整支族人、产业和名人统一转入新家族，原家族在其他城市继续存在。" % [
+				String(offer.get("source_family_name", "原家族")), settlement]
+		else:
+			_prompt.text = "%s人口已达 %s。择一户扶持，其余两户将不再出现。" % [
+				settlement, UITokens.format_compact_number_cn(float(population), 0)]
+	_collapsed_entry.text = "%s · %s    展开" % [settlement, "待定家风" if split else "待择族"]
 	_status.text = ""
 	_status.visible = false
 	_status.modulate = UITokens.ARCHIVE_INK_MUTED

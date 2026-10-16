@@ -385,6 +385,14 @@ int64_t NativeEconomyRuntime::trade_relief_pressure_q16(
                             std::max<int64_t>(1, desired), sat), 0, Q16_ONE));
         }
     }
+    const int64_t procurement = std::max<int64_t>(0,
+        epoch_procurement_demand_daily_for_market(market, good) -
+        epoch_research_demand_daily_for_market(market, good));
+    if (procurement > 0) {
+        pressure = std::max(pressure, std::clamp<int64_t>(mul_div_sat(
+            std::max<int64_t>(0, procurement - market_store().stock[index]), Q16_ONE,
+            procurement, sat), 0, Q16_ONE));
+    }
     // Shadow derived demand is intentionally absent from the relief lane.
     // Otherwise a price-only upstream signal would create an actual import
     // target and spend merchant cash before a real downstream withdrawal.
@@ -410,6 +418,9 @@ int64_t NativeEconomyRuntime::trade_local_stock_target(
     const int32_t signal = market_signal_index(market, good);
     if (signal >= 0) demand = saturating_add(
         demand, _market_signals.business_demand_ema[signal], sat);
+    demand = saturating_add(demand, std::max<int64_t>(0,
+        epoch_procurement_demand_daily_for_market(market, good) -
+        epoch_research_demand_daily_for_market(market, good)), sat);
     // Derived demand is not a stock target.  It may influence price pressure
     // and investment ordering, but never creates a trade procurement lane.
     const int64_t relief_q16 = trade_relief_pressure_q16(market, good, sat);
@@ -600,7 +611,7 @@ int64_t NativeEconomyRuntime::merchant_inventory_target(
         feasible_daily, _market_signals.business_demand_ema[signal_index], sat);
     feasible_daily = saturating_add(
         feasible_daily,
-        epoch_research_demand_daily_for_market(market, good), sat);
+        epoch_procurement_demand_daily_for_market(market, good), sat);
     int64_t protected_daily = std::max<int64_t>(
         std::max<int64_t>(0, realized_withdrawal), feasible_daily);
     // Preserve the configured inventory-day target and add a smoothed

@@ -1,5 +1,17 @@
 # Simulation Computation Pipelines
 
+## Colonization procurement demand (2026-10-17)
+
+Economy epoch begin derives sparse, cash-capped PREPARING procurement balances
+after fiscal/research budgeting and before upstream demand propagation. Complete
+kit forecasts include reachable missing substitutes and subtract custody/in-flight
+goods. One-shot balances are normalized over inventory days and feed price,
+merchant replenishment/trade, production, hiring and investment evidence through
+`epoch_procurement_demand_daily[_for_market]`. No synthetic withdrawals or sales,
+new scheduler stage, persistent lane or authority move. Balances rebuild each
+epoch and expire when preparation ends. See
+[family colonization runtime](./family-colonization-runtime.md).
+
 ## Investment portfolio cash sequence (2026-10-16)
 
 After native material preflight, `investment_portfolio_funds_feasible` previews

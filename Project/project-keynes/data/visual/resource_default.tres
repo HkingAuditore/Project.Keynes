@@ -4,3 +4,51 @@
 
 [resource]
 script = ExtResource("1")
+enabled = true
+density_scale = 1.0
+desktop_instance_caps = PackedInt32Array(6000, 12000, 20000)
+mobile_instance_caps = PackedInt32Array(1000, 2000, 4000)
+per_cell_caps = PackedInt32Array(2, 4, 6)
+resource_types_per_cell = PackedInt32Array(1, 2, 3)
+resident_chunks_desktop = 128
+resident_chunks_mobile = 48
+observation_budget_ms = 1.0
+build_budget_ms = 1.0
+
+# 优化的视觉参数 (Phase 1)
+palette_saturation = 0.88
+luma_compress = 0.60
+contact_shadow = 0.68
+outline_strength = 0.15
+
+# 其他参数
+river_clear_threshold = 0.54
+patch_diameter_hex = 0.40
+plant_diameter_hex = 0.78
+fertility_diameter_hex = 1.20
+plant_cluster_density = 1.30
+mineral_min_abundance_band = 3
+mineral_presence = 1.0
+animal_presence = 1.0
+decal_diameter_hex = 0.80
+decal_opacity = 0.60
+submerged_opacity = 0.50
+water_depth_falloff = 2.6
+shoal_density = 0.30
+cast_shadow = 0.0
+luma_range = Vector2(0.28, 0.72)
+cluster_spread = 0.55
+patch_noise_strength = 0.55
+vitality_dead_threshold = 0.04
+vitality_power = 0.65
+climate_response = 0.85
+snow_response = 0.85
+wind_strength = 0.45
+animal_motion = 0.70
+detailed_pixels = 9.0
+simple_pixels = 4.0
+fade_pixels = 1.5
+palette_saturation = 0.88
+badge_px = 34.0
+lens_fade_seconds = 0.25
+style_overrides = {}

@@ -48,6 +48,41 @@ scratch 长期复用，generation stamp 避免每次清空全图数组，单次�
 市场中已经存在的野味、采集植物等库存可以进入远征队托管，而不会把“有货”误报
 成“口粮 0%”。
 
+## 筹备缺口的市场需求传导（2026-10-17）
+
+`EPOCH_BEGIN` 在财政预算准备、研究采购需求冻结以及市场临时数组初始化后，
+调用 `refresh_epoch_colonization_demand()`。只扫描活动 `PREPARING` 队伍，
+以 `(country_handle, stable_id)` 稳定顺序分配同一国家的只读预算上限。
+预算来自剩余国库现金，扣除本周期研究预算及尚未完成的 phase-1 采购金额；
+这不是资金托管，不提交国家资产事务，真实采购仍需正常校验与付款。
+
+需求预估复用开工包规划器的只读 `forecast_missing` 模式：按完整建筑意图、
+食品池、衣着和工具组选择具体可达商品，先使用现货与已托管替代品，再把
+每组剩余等效量分配给一个可达候选。不会把同一缺口复制到所有替代品。
+完整目标账单减去已经付费托管及本队在途采购的物资，再按本地报价和共享
+国库预算钳制；源地零库存也能产生需求。预估货物严禁写入真实 cargo 或用于出发。
+
+待购量按 `(cell,good)` 与 `(market,good)` 两组排序稀疏行冻结，不创建全图商品矩阵。
+一次性余额折为日需求：`ceil(待购量 / max(本周期天数, ceil(商品目标库存天数)))`。
+每周期从当前队伍与托管重新计算，绝不把整包物资当成每日反复发生的消费。
+出发、取消、人口不足或目标失效的队伍不再贡献下一周期需求；当前冻结周期的
+观测遵守既有快照边界。恢复旧存档后同样在下次周期重建，不新增存档字段。
+
+`epoch_procurement_demand_daily[_for_market]` 合并研究采购与上述开拓需求，
+接入价格形成、商人库存/采购配额、进口目标与救济压力、建筑生产计划、
+真实业主就业证据、投资缺口和上游派生需求传播。开拓需求本身不会写入
+`business_demand_ema`、`realized_withdrawal_ema` 或实际销售/提货；真实成交
+继续沿原有路径结算与审计。历史成交 EMA 仍按原规则衰减。
+
+选中格的市场快照新增 `colonization_pending_demand`（一次性未购余额）与
+`colonization_demand_daily`（折算日需求），按 `good_ids` 对齐，来自冻结周期。
+`colonization_demand_runtime_test.gd` 验证零库存价格/库存/进口反馈、资金上限、
+多队共用预算、替代品不重复、已购托管扣减、无虚构提货、取消清除、真实产出采购后
+出发与待购量清零，以及 scalar/worker-task 一致性。
+上游需求传播的 `seeded_good_stamp` 虽为 thread-local scratch，visit generation
+却属于各 runtime；每次传播入口必须清零该 scratch，避免同进程新世界/恢复世界
+复用 generation 后跳过真实需求种子。该重置不改变同一遍历内的按格去重。
+
 ## 守恒人口托管
 
 `FamilyExpeditionStore` 是 generation-safe SoA，路线、累计成本、cohort 载荷和
@@ -231,6 +266,11 @@ Controller 本国权限门控和 UI 恢复／地图安全区。UI 夹具 8／40�
 它们不再分别作为开拓或迁徙的出发门槛。衣物桥接仍按衣着 need 单独计算。
 衣物桥接与口粮相同，按衣着 need 的 `base_qty_per_person` × 日数计（生存方案为每人每日 2 毫单位），
 而不是每人每日 1 整件衣物。采集营 `tools` 类投入按 `max(旅行日+15, 开工包建筑数)` 记入 `EXPEDITION_CARGO_BUFFER`。
+`input_required_q16 < 65536` 的软工具按现货尽量携带，缺口不计入必需桥接量、
+`kit_partial` 或缺货候选，也不阻塞出发；解锁工具科技不改变这一规则。
+`input_required_q16 >= 65536` 的硬投入仍需配齐。修复前，源地只零星供应打制石器时，
+软工具会让食品与建材早已齐备的队伍在约 97% 无限筹备。
+已有筹备存档在下一次到期重规划时应用此规则；已付费托管物资继续保留，无需迁移存档。
 桥接食品按合并食品池的候选顺序从源地市场混装，衣着仍按衣着 need 的单组件 variant 顺序混装；工具先取 preferred good，
 再按已编译输入候选顺序混装；开拓建材同样在每个 construction candidate group 内按效率折算后
 混装。cargo 始终记录各具体物资的实际物理量，不允许跨食品池、衣着、输入组或建材组抵扣。普通 BUILD 与
@@ -308,6 +348,7 @@ revision 5 起 identity 不再用于跳过重规划（每日必重规划），�
 闸门不通过时快照会把规划器的 `kit.*_missing_units` 并入缺口，不再显示 100%，
 两项都为 0 仍不能出发则报 `INCOMPLETE`。
 UI 的"已囤积 N%"必须按桥接 + 建材合计口径算：只看桥接会在建材还差一大截时显示 100%。
+桥接项显示为“补给”，包含食品、衣物与必需工具，不能全部标成“口粮”。
 快照另带只读采购诊断：`kit_procurement_pending` / `kit_procurement_phase` /
 `kit_procurement_good_id` / `kit_procurement_quantity` / `kit_procurement_started_day`
 描述本队在途的国库采购；`kit_procurement_blocked_by_peer` 表示被另一支队伍的在途采购占用；

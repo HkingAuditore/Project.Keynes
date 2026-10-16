@@ -1,0 +1,60 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[PASS] source first opens with a real branch and no fabricated quote
+[PASS] source branch details are available before choosing a destination
+[PASS] dispatch preference text and badges hide locked buildings
+[PASS] invalid map targets preserve the chosen origin and family
+[PASS] valid target continues directly to dispatch with the chosen population
+[PASS] delayed hover previews another family without changing the dispatch
+[PASS] leaving hover restores the pinned family and reuses its cache
+[PASS] confirmation submits the pinned branch rather than the hover branch
+[PASS] canceling map selection leaves the ready dispatch intact
+[PASS] changing the destination preserves the branch and people and updates the quote
+[PASS] search hides summaries without changing the pinned dispatch
+[PASS] daily quote refresh keeps the chosen branch, order and control instances
+[PASS] technology unlock refreshes both preference presentations
+[PASS] expired quote detail disables dispatch
+[PASS] settlement keeps a real quote queueable
+[PASS] disappearing local branch clears the selection and route
+[PASS] target-first entry requires a city and family for 8 branches
+[PASS] summaries do not eagerly fetch 8 branch dossiers
+[PASS] 1280x720 shows at least six compact summaries for 8 branches
+[PASS] 45 percent workbench and footer fit (1280, 720) at 1.0 for 8 families
+[PASS] 45 percent workbench and footer fit (1280, 720) at 1.25 for 8 families
+[PASS] 45 percent workbench and footer fit (1920, 1080) at 1.0 for 8 families
+[PASS] 45 percent workbench and footer fit (1920, 1080) at 1.25 for 8 families
+[PASS] target-first entry requires a city and family for 40 branches
+[PASS] summaries do not eagerly fetch 40 branch dossiers
+[PASS] 1280x720 shows at least six compact summaries for 40 branches
+[PASS] 45 percent workbench and footer fit (1280, 720) at 1.0 for 40 families
+[PASS] 45 percent workbench and footer fit (1280, 720) at 1.25 for 40 families
+[PASS] 45 percent workbench and footer fit (1920, 1080) at 1.0 for 40 families
+[PASS] 45 percent workbench and footer fit (1920, 1080) at 1.25 for 40 families
+[PASS] target-first entry requires a city and family for 100 branches
+[PASS] summaries do not eagerly fetch 100 branch dossiers
+[PASS] 1280x720 shows at least six compact summaries for 100 branches
+[PASS] 45 percent workbench and footer fit (1280, 720) at 1.0 for 100 families
+[PASS] 45 percent workbench and footer fit (1280, 720) at 1.25 for 100 families
+[PASS] 45 percent workbench and footer fit (1920, 1080) at 1.0 for 100 families
+[PASS] 45 percent workbench and footer fit (1920, 1080) at 1.25 for 100 families
+[PASS] family entry opens the workbench and suppresses ordinary UI
+[PASS] camera safe area excludes the enlarged workbench
+[PASS] canceling target mode keeps the workbench open
+[PASS] closing dispatch restores previous ordinary UI visibility
+[PASS] destination entry opens the same workbench without target picking
+[PASS] map selection updates the workbench rather than reopening the Inspector
+[PASS] city roster dispatch supplies the family and actual local source without opening details
+[PASS] roster update disables an unavailable source on the same action button
+[PASS] dispatch readers reject foreign sources before accessing family state
+[PASS] local dispatch preview filters buildings and goods using source technology
+[PASS] completed building technology becomes visible without unlocking goods
+[PASS] pending technology snapshots do not expose the unfiltered catalog
+[PASS] missing family and foreign source cannot be used as dispatch origins
+=== colonization workbench: 0 failures ===
+ERROR: 46 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 101 RID allocations of type 'PN18TextServerAdvanced22ShapedTextDataAdvancedE' were leaked at exit.
+ERROR: 6 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 141 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

@@ -1371,7 +1371,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 const int32_t signal = market_signal_index(cell, good);
                 const int64_t demand = saturating_add(
                     signal >= 0 ? _market_signals.business_demand_ema[signal] : 0,
-                    epoch_research_demand_daily(cell, good),
+                    epoch_procurement_demand_daily(cell, good),
                     _saturation_count);
                 if (demand > 0) {
                     const int64_t stock = market_store().stock[idx];

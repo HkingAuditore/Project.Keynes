@@ -98,9 +98,8 @@ func _boot(catalog: Dictionary, mode: String, owner_people: int, seed: int) -> O
 
 
 func _test_player_offer_waits_and_resolves(catalog: Dictionary) -> void:
-	# 240 foragers + 140 merchants: the first house takes up to half the city
-	# (190), which still leaves 50 foragers for the 200-person milestone.
-	var ext := _boot(catalog, "PLAYER", 240, 261001)
+	# Leave an eligible anonymous household after the first family's 70% cap.
+	var ext := _boot(catalog, "PLAYER", 600, 261001)
 	_expect("player fixture boots", ext != null)
 	if ext == null:
 		return
@@ -213,8 +212,8 @@ func _test_offer_survives_save_restore(catalog: Dictionary) -> void:
 	var before: Dictionary = ext.get_family_founding_offers(0, 16)
 	var hash_before := int(ext.get_economy_state_hash())
 	var save_begin: Dictionary = ext.begin_economy_save(4096)
-	_expect("PKEC v55 save begins", bool(save_begin.get("ok", false))
-		and int(save_begin.get("schema_version", 0)) == 55)
+	_expect("PKEC v56 save begins", bool(save_begin.get("ok", false))
+		and int(save_begin.get("schema_version", 0)) == 56)
 	var chunks: Array[PackedByteArray] = []
 	for _i in 4096:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(4096)

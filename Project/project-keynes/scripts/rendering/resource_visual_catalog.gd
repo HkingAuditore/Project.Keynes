@@ -31,9 +31,11 @@ const BIO := [
 	["bio.medicinal_herb", 0, 5, "be4f48", 3, 0.30, 0.0],
 ]
 const RESOURCES := [
-	["timber", 0, 26, "7a5a3c", 0, 0.22, 0.0],
-	["stone", 2, 16, "8f8d85", 0, 0.34, 0.05],
-	["fertile_soil", 2, 22, "5a462e", 0, 0.22, 0.0],
+	# [id, family, form, color_hex, sub_style, specular, metallic]
+	# sub_style 现在用于区分形态变体
+	["timber", 0, 26, "7a5a3c", 0, 0.22, 0.0],  # 原木堆叠
+	["stone", 2, 16, "8f8d85", 0, 0.34, 0.05],  # 不规则岩块
+	["fertile_soil", 2, 22, "5a462e", 0, 0.22, 0.0],  # 深色土壤
 	["arable_land", 2, 22, "8e7848", 1, 0.18, 0.0],
 	["paddy_land", 2, 22, "5c8878", 2, 0.65, 0.0],
 	["plantation_land", 2, 22, "688448", 3, 0.20, 0.0],

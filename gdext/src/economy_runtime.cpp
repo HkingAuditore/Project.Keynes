@@ -9635,7 +9635,7 @@ NativeEconomyRuntime::PricePressure NativeEconomyRuntime::price_pressure(
     // default price forever because no historical stock withdrawal exists.
     out.business_demand = saturating_add(
         out.business_demand,
-        epoch_research_demand_daily_for_market(market, good), sat);
+        epoch_procurement_demand_daily_for_market(market, good), sat);
     // Shadow derived demand is consumed by price formation and investment
     // ranking only. Keep it out of real business demand so it cannot change
     // stock targets, procurement, sales, or owner vacancy.
@@ -10917,7 +10917,8 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
                 const int64_t withdrawal = signal < static_cast<int32_t>(
                         _market_signals.realized_withdrawal_ema.size())
                     ? _market_signals.realized_withdrawal_ema[signal] : 0;
-                if (household > 0 || business > 0 || withdrawal > 0)
+                if (household > 0 || business > 0 || withdrawal > 0 ||
+                    epoch_procurement_demand_daily(group.cell, good) > 0)
                     real_output_demand = true;
             }
             const int32_t lane = market_store().index(market, good);
@@ -11325,7 +11326,8 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
                 _epoch_derived_business_demand[output_signal] > 0 &&
                 output_signal < static_cast<int32_t>(
                     _market_signals.business_demand_ema.size()) &&
-                _market_signals.business_demand_ema[output_signal] <= 0) {
+                _market_signals.business_demand_ema[output_signal] <= 0 &&
+                epoch_procurement_demand_daily(group.cell, output.good_id) <= 0) {
                 continue;
             }
             // Counterfactual quotes still value sellable output at market
@@ -12317,7 +12319,7 @@ int64_t NativeEconomyRuntime::merchant_procurement_quota(
     // merchant procurement quota and therefore cannot spend stock or cash.
     feasible_daily = saturating_add(
         feasible_daily,
-        epoch_research_demand_daily_for_market(market, good), sat);
+        epoch_procurement_demand_daily_for_market(market, good), sat);
     const int64_t forecast_daily = std::max<int64_t>(
         std::max<int64_t>(0, realized_withdrawal), feasible_daily);
     const int64_t cycle_withdrawal = saturating_mul(
@@ -18225,150 +18227,38 @@ int32_t NativeEconomyRuntime::create_family_for_building(
     return family_index;
 }
 
-bool NativeEconomyRuntime::repair_forced_capital_founder(int32_t cell) {
-    if (_family_runtime_mode.get() != 2 || _person_runtime_mode.get() != 2 ||
-        cell < 0 || cell >= _cell_count.get() || _current_day.get() < 0 ||
-        _current_day.get() > 30 || _settlements.name_forced[cell] == 0)
-        return false;
-    // Use authoritative edges rather than possibly stale cell CSR: several
-    // capitals may be repaired in the same FAMILY_COMMIT before the final
-    // deterministic rebuild.
-    for (const FamilyMembershipEdge &edge : family_memberships()) {
+bool NativeEconomyRuntime::build_family_split_offer(
+        int32_t parent, int32_t cell, FamilyFoundingOffer &offer) const {
+    if (parent < 0 || parent >= static_cast<int32_t>(families_store().active.size()) ||
+        families_store().active[parent] == 0 || cell < 0 || cell >= _cell_count.get() ||
+        cell == families_store().origin_cell[parent]) return false;
+    int64_t people = 0;
+    const uint64_t parent_handle = families_store().handle_for_index(parent);
+    for (int32_t p = _family_member_offsets[parent]; p < _family_member_offsets[parent + 1]; ++p) {
+        const auto &edge = family_memberships()[_family_member_edge_indices[p]];
         int32_t slot = -1;
         if (population_store().valid_handle(edge.cohort_handle, slot) &&
-            population_store().page_cell[slot / COHORT_PAGE_SIZE] == cell && edge.people > 0)
-            return false;
+            population_store().page_cell[slot / COHORT_PAGE_SIZE] == cell)
+            people += edge.people;
     }
-    const auto type_it = std::lower_bound(_building_type_ids.begin(),
-        _building_type_ids.end(), std::string("gathering_ground"));
-    if (type_it == _building_type_ids.end() ||
-        *type_it != "gathering_ground") return false;
-    const int32_t type_id = static_cast<int32_t>(
-        type_it - _building_type_ids.begin());
-    const int32_t first = _building_cell_offsets[cell];
-    const int32_t last = _building_cell_offsets[cell + 1];
-    for (int32_t group_index = first; group_index < last; ++group_index) {
-        const auto group = building_view(static_cast<size_t>(group_index));
-        if (group.type_id != type_id || group.count <= 0 ||
-            group.modifier_handle == 0) continue;
-        const int64_t owner_slots =
-            _building_types[type_id].owner_slots_per_building;
-        const int32_t owner_slot = find_cohort_slot(
-            cell, group.owner_signature_id);
-        if (owner_slots <= 0 || owner_slot < 0 ||
-            group.filled_owner < owner_slots ||
-            population_store().population[owner_slot] < owner_slots) continue;
-        const int64_t founders = family_household_people_for_slot(
-            owner_slot, owner_slots);
-        return create_family_for_building(cell, group_index, founders,
-            owner_slots, true) >= 0;
-    }
-    return false;
-}
-
-void NativeEconomyRuntime::split_family_branches() {
-    if (_family_runtime_mode.get() != 2 || _family_split_population_threshold.get() <= 0)
-        return;
-    struct Candidate { int32_t parent = -1; int32_t cell = -1; int64_t stable = 0; };
-    std::vector<Candidate> candidates;
-    for (int32_t parent = 0; parent < static_cast<int32_t>(families_store().active.size()); ++parent) {
-        if (families_store().active[parent] == 0) continue;
-        std::map<int32_t, int64_t> branch_population;
-        const uint64_t parent_handle = families_store().handle_for_index(parent);
-        for (const FamilyMembershipEdge &edge : family_memberships()) {
-            if (edge.family_handle != parent_handle || edge.people <= 0) continue;
-            int32_t slot = -1;
-            if (!population_store().valid_handle(edge.cohort_handle, slot)) continue;
-            const int32_t cell = population_store().page_cell[slot / COHORT_PAGE_SIZE];
-            branch_population[cell] += edge.people;
-        }
-        for (const auto &branch : branch_population) {
-            if (branch.first >= 0 && branch.first != families_store().origin_cell[parent] &&
-                branch.second >= _family_split_population_threshold.get())
-                candidates.push_back({parent, branch.first, families_store().stable_id[parent]});
-        }
-    }
-    std::sort(candidates.begin(), candidates.end(), [](const Candidate &a, const Candidate &b) {
-        return std::tie(a.stable, a.cell) < std::tie(b.stable, b.cell);
-    });
-    for (const Candidate &candidate : candidates) {
-        const int32_t parent = candidate.parent;
-        if (parent < 0 || parent >= static_cast<int32_t>(families_store().active.size()) ||
-            families_store().active[parent] == 0) continue;
-        const uint64_t parent_handle = families_store().handle_for_index(parent);
-        const uint32_t sequence = families_store().split_sequence[parent];
-        families_store().split_sequence.write_scalar(parent, sequence + 1, market_mutation_sink());
+    if (people < _family_split_population_threshold.get()) return false;
+    offer.cell = cell;
+    offer.source_family_handle = parent_handle;
+    offer.milestone_population = _family_split_population_threshold.get();
+    offer.created_day = _current_day.get();
+    std::vector<int32_t> used_effects;
+    for (int32_t card = 0; card < FAMILY_FOUNDING_CARD_COUNT; ++card) {
         uint64_t identity = 1469598103934665603ULL;
         identity = trace_hash_mix(identity, static_cast<uint64_t>(_seed.get()));
         identity = trace_hash_mix(identity, static_cast<uint64_t>(families_store().stable_id[parent]));
-        identity = trace_hash_mix(identity, static_cast<uint32_t>(candidate.cell));
-        identity = trace_hash_mix(identity, sequence);
+        identity = trace_hash_mix(identity, static_cast<uint32_t>(cell));
+        identity = trace_hash_mix(identity, families_store().split_sequence[parent]);
         identity = trace_hash_mix(identity, static_cast<uint64_t>(_family_catalog_hash.get()));
+        identity = trace_hash_mix(identity, static_cast<uint32_t>(card));
+        identity = trace_hash_mix(identity, static_cast<uint64_t>(_next_family_founding_offer_id.get()));
         int64_t child_stable = static_cast<int64_t>((identity & 0x7fffffffffffffffULL) | 1ULL);
         for (uint64_t probe = 1; _family_stable_ids.count(child_stable) != 0; ++probe)
-            child_stable = static_cast<int64_t>((trace_hash_mix(identity, probe) &
-                0x7fffffffffffffffULL) | 1ULL);
-        const int32_t child = families_store().allocate();
-        reset_family_policy_factors(child);
-        const uint64_t child_handle = families_store().handle_for_index(child);
-        families_store().stable_id.write_scalar(child, child_stable, market_mutation_sink());
-        _family_stable_ids.insert(child_stable);
-        families_store().surname_id.write_scalar(child, families_store().surname_id[parent], market_mutation_sink());
-        families_store().surname_disambiguator.write_scalar(child, 0, market_mutation_sink());
-        if (families_store().surname_id[child] >= 0 && static_cast<size_t>(
-                families_store().surname_id[child]) < _family_surname_members.size()) {
-            auto &bucket = _family_surname_members[families_store().surname_id[child]];
-            for (int32_t index : bucket) {
-                if (index >= 0 && index < static_cast<int32_t>(families_store().active.size()) &&
-                    families_store().active[index] != 0 && families_store().surname_id[index] ==
-                        families_store().surname_id[child])
-                    families_store().surname_disambiguator.write_scalar(child, std::max(
-                        families_store().surname_disambiguator[child],
-                        families_store().surname_disambiguator[index] + 1U), market_mutation_sink());
-            }
-            bucket.push_back(child);
-        }
-        families_store().founded_day.write_scalar(child, std::max<int64_t>(0, _current_day.get()), market_mutation_sink());
-        families_store().home_cell.write_scalar(child, candidate.cell, market_mutation_sink());
-        families_store().origin_cell.write_scalar(child, candidate.cell, market_mutation_sink());
-        families_store().origin_ethnicity.write_scalar(child, families_store().origin_ethnicity[parent], market_mutation_sink());
-        families_store().culture_group_id.write_scalar(child, families_store().culture_group_id[parent], market_mutation_sink());
-        // A split branch must meet the ordinary family policy; the opening
-        // exception belongs only to the original starter household.
-        families_store().flags.write_scalar(child, static_cast<uint16_t>(
-            families_store().flags[parent] & ~FAMILY_FLAG_STARTER), market_mutation_sink());
-        families_store().split_sequence.write_scalar(child, 0, market_mutation_sink());
-        const size_t membership_count = family_memberships().size();
-        for (size_t e = 0; e < membership_count; ++e) {
-            auto edge_write = family_memberships().edit_row(e, market_mutation_sink());
-            FamilyMembershipEdge &edge = edge_write[0];
-            if (edge.family_handle != parent_handle || edge.people <= 0) continue;
-            int32_t slot = -1;
-            if (!population_store().valid_handle(edge.cohort_handle, slot) ||
-                population_store().page_cell[slot / COHORT_PAGE_SIZE] != candidate.cell) continue;
-            edge.family_handle = child_handle;
-            edge.owner_employed = std::max<int64_t>(0, edge.owner_employed);
-            edge.employee_employed = std::max<int64_t>(0, edge.employee_employed);
-        }
-        for (size_t ownership_row = 0; ownership_row < family_ownerships().size(); ++ownership_row) {
-        auto ownership_write = family_ownerships().edit_row(ownership_row, market_mutation_sink());
-        FamilyBuildingOwnership &ownership = ownership_write[0];
-            if (ownership.family_handle != parent_handle || ownership.owned_count <= 0) continue;
-            const int32_t group = building_index_for_handle(ownership.building_handle);
-            if (group >= 0 && group < static_cast<int32_t>(building_count()) &&
-                buildings_store().cell[group] == candidate.cell)
-                ownership.family_handle = child_handle;
-        }
-        for (int32_t person = 0; person < static_cast<int32_t>(persons_store().active.size()); ++person) {
-            if (persons_store().active[person] == 0 || persons_store().family_handle[person] != parent_handle) continue;
-            int32_t slot = -1;
-            bool move = population_store().valid_handle(persons_store().cohort_handle[person], slot) &&
-                population_store().page_cell[slot / COHORT_PAGE_SIZE] == candidate.cell;
-            const int32_t group = building_index_for_handle(persons_store().building_handle[person]);
-            if (!move && group >= 0 && group < static_cast<int32_t>(building_count()) &&
-                buildings_store().cell[group] == candidate.cell) move = true;
-            if (move) persons_store().family_handle.write_scalar(person, child_handle, market_mutation_sink());
-        }
+            child_stable = static_cast<int64_t>((trace_hash_mix(identity, probe) & 0x7fffffffffffffffULL) | 1ULL);
         // A split deliberately changes the family's identity: remove exactly
         // one inherited trait, then deterministically add one or two legal
         // traits. Effects are reconciled from this final child trait set.
@@ -18415,7 +18305,7 @@ void NativeEconomyRuntime::split_family_branches() {
             for (int32_t i = 0; i < static_cast<int32_t>(parent_traits.size()); ++i) {
                 if (i == removed_index) continue;
                 const FamilyTraitRoll &roll = parent_traits[i];
-                child_traits.push_back({child_handle, roll.trait_id,
+                child_traits.push_back({uint64_t{0}, roll.trait_id,
                     roll.strength_q16, roll.core});
             }
         }
@@ -18440,7 +18330,8 @@ void NativeEconomyRuntime::split_family_branches() {
                     if (_family_trait_exclusions[p] == trait_id) return false;
                 }
             }
-            return family_trait_context_allows(trait_id, child);
+            return (family_trait_technology_unlocked(trait_id, cell) &&
+                family_trait_origin_gates_allow(trait_id, cell));
         };
         const int32_t additions = retain_only ? 0 : 1 + static_cast<int32_t>(
             trace_hash_mix(identity, 0x414444434f554e54ULL) % 2ULL);
@@ -18476,45 +18367,197 @@ void NativeEconomyRuntime::split_family_branches() {
             const int32_t strength = lo + step * static_cast<int32_t>(
                 trace_hash_mix(identity, 0x535452454e475448ULL +
                     static_cast<uint64_t>(add)) % static_cast<uint64_t>(steps + 1));
-            child_traits.push_back({child_handle, chosen, strength, 0});
+            child_traits.push_back({uint64_t{0}, chosen, strength, 0});
         }
-        family_trait_rolls().insert(family_trait_rolls().end(), child_traits.begin(), child_traits.end());
-        if (!child_traits.empty())
-            mark_family_behavior_cache_dirty(FAMILY_BEHAVIOR_DIRTY_TRAITS);
-        if ((split_flags & (FAMILY_FLAG_SPLIT_GIFT_BUILDING |
-                FAMILY_FLAG_SPLIT_GIFT_POPULATION)) != 0) {
-            int32_t gift_type = -1;
-            for (const FamilyBuildingOwnership &ownership : family_ownerships()) {
-                if (ownership.family_handle != child_handle ||
-                    ownership.owned_count <= 0) continue;
-                const int32_t group = building_index_for_handle(
-                    ownership.building_handle);
-                if (group >= 0 && group < static_cast<int32_t>(building_count()) &&
-                    buildings_store().cell[static_cast<size_t>(group)] == candidate.cell) {
-                    gift_type = buildings_store().type_id[static_cast<size_t>(group)];
-                    break;
-                }
-            }
-            PendingFamilySplitGift gift;
-            gift.family_handle = child_handle;
-            gift.cell = candidate.cell;
-            gift.flags = static_cast<uint16_t>(split_flags &
-                (FAMILY_FLAG_SPLIT_GIFT_BUILDING | FAMILY_FLAG_SPLIT_GIFT_POPULATION));
-            gift.building_type_id = gift_type;
-            gift.population = 8;
-            _pending_family_split_gifts.push_back(gift);
+
+        FamilyFoundingCandidate candidate;
+        candidate.stable_id = child_stable;
+        candidate.surname_id = families_store().surname_id[parent];
+        candidate.culture_group_id = families_store().culture_group_id[parent];
+        candidate.founders = people;
+        for (const auto &roll : child_traits) {
+            candidate.trait_ids.push_back(roll.trait_id);
+            candidate.trait_strength_q16.push_back(roll.strength_q16);
         }
-        _family_indices_dirty = true;
-        ++_families_formed;
+        // Freeze a complete proposal; the UI never rolls traits or effects.
+        candidate.effect_id = roll_random_pool_family_effect(
+            static_cast<uint64_t>(child_stable), cell, {}, used_effects);
+        if (candidate.effect_id >= 0) used_effects.push_back(candidate.effect_id);
+        for (int32_t p = _family_owned_offsets[parent]; p < _family_owned_offsets[parent + 1]; ++p) {
+            const auto &ownership = family_ownerships()[_family_owned_edge_indices[p]];
+            const int32_t group = building_index_for_handle(ownership.building_handle);
+            if (group < 0 || buildings_store().cell[group] != cell || ownership.owned_count <= 0) continue;
+            candidate.building_handle = ownership.building_handle;
+            candidate.building_type_id = buildings_store().type_id[group];
+            candidate.owner_signature_id = buildings_store().owner_signature_id[group];
+            break;
+        }
+        offer.candidates.push_back(std::move(candidate));
     }
-    if (!candidates.empty()) {
-        family_trait_rolls().sort(
-            [](const FamilyTraitRoll &a, const FamilyTraitRoll &b) {
-                return std::tie(a.family_handle, a.trait_id) <
-                    std::tie(b.family_handle, b.trait_id);
-            });
+    return !offer.candidates.empty();
+}
+
+void NativeEconomyRuntime::transfer_family_branch(int32_t parent, int32_t child, int32_t cell) {
+    const uint64_t parent_handle = families_store().handle_for_index(parent);
+    const uint64_t child_handle = families_store().handle_for_index(child);
+    // Transfers only rewrite existing rows; the CSR row positions remain valid
+    // until the structural rebuild, including several splits in one commit.
+    for (int32_t p = _family_member_offsets[parent]; p < _family_member_offsets[parent + 1]; ++p) {
+        auto edge_write = family_memberships().edit_row(_family_member_edge_indices[p], market_mutation_sink());
+        auto &edge = edge_write[0];
+        int32_t slot = -1;
+        if (edge.family_handle == parent_handle && edge.people > 0 &&
+            population_store().valid_handle(edge.cohort_handle, slot) &&
+            population_store().page_cell[slot / COHORT_PAGE_SIZE] == cell)
+            edge.family_handle = child_handle;
+    }
+    for (int32_t p = _family_owned_offsets[parent]; p < _family_owned_offsets[parent + 1]; ++p) {
+        auto ownership_write = family_ownerships().edit_row(_family_owned_edge_indices[p], market_mutation_sink());
+        auto &ownership = ownership_write[0];
+        const int32_t group = building_index_for_handle(ownership.building_handle);
+        if (ownership.family_handle == parent_handle && ownership.owned_count > 0 &&
+            group >= 0 && buildings_store().cell[group] == cell)
+            ownership.family_handle = child_handle;
+    }
+    const bool person_csr = static_cast<size_t>(parent + 1) < _person_family_offsets.size();
+    const int32_t begin = person_csr ? _person_family_offsets[parent] : 0;
+    const int32_t end = person_csr ? _person_family_offsets[parent + 1]
+        : static_cast<int32_t>(persons_store().active.size());
+    for (int32_t p = begin; p < end; ++p) {
+        const int32_t person = person_csr ? _person_family_indices[p] : p;
+        if (persons_store().active[person] == 0 || persons_store().family_handle[person] != parent_handle) continue;
+        int32_t slot = -1;
+        bool move = population_store().valid_handle(persons_store().cohort_handle[person], slot) &&
+            population_store().page_cell[slot / COHORT_PAGE_SIZE] == cell;
+        const int32_t group = building_index_for_handle(persons_store().building_handle[person]);
+        if (!move && group >= 0 && buildings_store().cell[group] == cell) move = true;
+        if (move) persons_store().family_handle.write_scalar(person, child_handle, market_mutation_sink());
+    }
+    _family_indices_dirty = true;
+    _person_indices_dirty = true;
+}
+
+bool NativeEconomyRuntime::resolve_family_split_offer(
+        const FamilyFoundingOffer &offer, int32_t choice_index) {
+    int32_t parent = -1;
+    if (!families_store().valid_handle(offer.source_family_handle, parent) ||
+        choice_index < 0 || choice_index >= static_cast<int32_t>(offer.candidates.size()) ||
+        offer.cell == families_store().origin_cell[parent] ||
+        family_population_in_cell(offer.source_family_handle, offer.cell) <= 0) return false;
+    const auto &candidate = offer.candidates[static_cast<size_t>(choice_index)];
+    if (_family_stable_ids.count(candidate.stable_id) != 0) return false;
+    const int32_t child = families_store().allocate();
+    reset_family_policy_factors(child);
+    const uint64_t child_handle = families_store().handle_for_index(child);
+    families_store().stable_id.write_scalar(child, candidate.stable_id, market_mutation_sink());
+    _family_stable_ids.insert(candidate.stable_id);
+    families_store().surname_id.write_scalar(child, candidate.surname_id, market_mutation_sink());
+    families_store().surname_disambiguator.write_scalar(child, 0, market_mutation_sink());
+    if (candidate.surname_id >= 0 && static_cast<size_t>(candidate.surname_id) < _family_surname_members.size()) {
+        auto &bucket = _family_surname_members[candidate.surname_id];
+        for (int32_t index : bucket) {
+            if (index >= 0 && index < static_cast<int32_t>(families_store().active.size()) &&
+                families_store().active[index] != 0 && index != child)
+                families_store().surname_disambiguator.write_scalar(child, std::max(
+                    families_store().surname_disambiguator[child],
+                    families_store().surname_disambiguator[index] + 1U), market_mutation_sink());
+        }
+        bucket.push_back(child);
+    }
+    families_store().founded_day.write_scalar(child, std::max<int64_t>(0, _current_day.get()), market_mutation_sink());
+    families_store().home_cell.write_scalar(child, offer.cell, market_mutation_sink());
+    families_store().origin_cell.write_scalar(child, offer.cell, market_mutation_sink());
+    families_store().origin_ethnicity.write_scalar(child, families_store().origin_ethnicity[parent], market_mutation_sink());
+    families_store().culture_group_id.write_scalar(child, candidate.culture_group_id, market_mutation_sink());
+    families_store().flags.write_scalar(child, static_cast<uint16_t>(
+        families_store().flags[parent] & ~FAMILY_FLAG_STARTER), market_mutation_sink());
+    families_store().split_sequence.write_scalar(child, 0, market_mutation_sink());
+    families_store().split_sequence.write_scalar(parent, families_store().split_sequence[parent] + 1U, market_mutation_sink());
+    transfer_family_branch(parent, child, offer.cell);
+    const uint64_t parent_handle = offer.source_family_handle;
+    for (size_t t = 0; t < candidate.trait_ids.size(); ++t) {
+        uint8_t core = 0;
+        for (const auto &roll : family_trait_rolls())
+            if (roll.family_handle == parent_handle && roll.trait_id == candidate.trait_ids[t]) core = roll.core;
+        family_trait_rolls().push_back({child_handle, candidate.trait_ids[t], candidate.trait_strength_q16[t], core});
+    }
+    mark_family_behavior_cache_dirty(FAMILY_BEHAVIOR_DIRTY_TRAITS);
+    if (candidate.effect_id >= 0) {
+        auto it = std::lower_bound(_family_founding_effects.begin(), _family_founding_effects.end(),
+            std::make_pair(candidate.stable_id, std::numeric_limits<int32_t>::min()));
+        _family_founding_effects.insert(it, {candidate.stable_id, candidate.effect_id});
+    }
+    auto lineage = std::lower_bound(_family_split_parents.begin(), _family_split_parents.end(),
+        std::make_pair(candidate.stable_id, std::numeric_limits<int64_t>::min()));
+    _family_split_parents.insert(lineage, {candidate.stable_id, families_store().stable_id[parent]});
+    const uint16_t split_flags = families_store().flags[parent];
+    if ((split_flags & (FAMILY_FLAG_SPLIT_GIFT_BUILDING |
+            FAMILY_FLAG_SPLIT_GIFT_POPULATION)) != 0) {
+        int32_t gift_type = -1;
+        for (const FamilyBuildingOwnership &ownership : family_ownerships()) {
+            if (ownership.family_handle != child_handle ||
+                ownership.owned_count <= 0) continue;
+            const int32_t group = building_index_for_handle(
+                ownership.building_handle);
+            if (group >= 0 && group < static_cast<int32_t>(building_count()) &&
+                buildings_store().cell[static_cast<size_t>(group)] == offer.cell) {
+                gift_type = buildings_store().type_id[static_cast<size_t>(group)];
+                break;
+            }
+        }
+        PendingFamilySplitGift gift;
+        gift.family_handle = child_handle;
+        gift.cell = offer.cell;
+        gift.flags = static_cast<uint16_t>(split_flags &
+            (FAMILY_FLAG_SPLIT_GIFT_BUILDING | FAMILY_FLAG_SPLIT_GIFT_POPULATION));
+        gift.building_type_id = gift_type;
+        gift.population = 8;
+        _pending_family_split_gifts.push_back(gift);
+    }
+    family_trait_rolls().sort([](const FamilyTraitRoll &a, const FamilyTraitRoll &b) {
+        return std::tie(a.family_handle, a.trait_id) < std::tie(b.family_handle, b.trait_id);
+    });
+    ++_families_formed;
+    return true;
+}
+
+void NativeEconomyRuntime::split_family_branches() {
+    if (_family_runtime_mode.get() != 2 || _family_split_population_threshold.get() <= 0) return;
+    if (_family_indices_dirty) rebuild_family_indices(false);
+    struct Candidate { int32_t parent; int32_t cell; int64_t stable; };
+    std::vector<Candidate> candidates;
+    for (int32_t parent = 0; parent < static_cast<int32_t>(families_store().active.size()); ++parent) {
+        if (families_store().active[parent] == 0) continue;
+        std::map<int32_t, int64_t> branch_population;
+        for (int32_t p = _family_member_offsets[parent]; p < _family_member_offsets[parent + 1]; ++p) {
+            const auto &edge = family_memberships()[_family_member_edge_indices[p]];
+            int32_t slot = -1;
+            if (edge.people > 0 && population_store().valid_handle(edge.cohort_handle, slot))
+                branch_population[population_store().page_cell[slot / COHORT_PAGE_SIZE]] += edge.people;
+        }
+        for (const auto &branch : branch_population)
+            if (branch.first != families_store().origin_cell[parent] &&
+                branch.second >= _family_split_population_threshold.get())
+                candidates.push_back({parent, branch.first, families_store().stable_id[parent]});
+    }
+    std::sort(candidates.begin(), candidates.end(), [](const Candidate &a, const Candidate &b) {
+        return std::tie(a.stable, a.cell) < std::tie(b.stable, b.cell);
+    });
+    for (const auto &candidate : candidates) {
+        if (family_founding_offer_for_cell(candidate.cell) >= 0) continue;
+        FamilyFoundingOffer offer;
+        if (!build_family_split_offer(candidate.parent, candidate.cell, offer)) continue;
+        offer.offer_id = _next_family_founding_offer_id++;
+        if (family_founding_player_choice(candidate.cell)) {
+            _family_founding_offers.push_back(std::move(offer));
+            _family_founding_offer_index_dirty = true;
+            ++_family_offers_opened;
+        } else if (resolve_family_split_offer(offer, family_founding_auto_choice(offer))) {
+            ++_family_offers_auto_resolved;
+        }
     }
 }
+
 
 void NativeEconomyRuntime::dissolve_family(uint64_t family_handle) {
     int32_t index = -1;
@@ -20271,9 +20314,9 @@ bool NativeEconomyRuntime::run_family_commit_slice(int64_t &work_done,
             _family_commit_cursor + scan_budget);
         for (; _family_commit_cursor < end; ++_family_commit_cursor) {
             const int32_t cell = _family_review_cells_scratch[_family_commit_cursor];
-            const bool repaired = repair_forced_capital_founder(cell);
-            if (!repaired)
-                review_family_milestone(cell);
+            // Opening founders are created only by bootstrap. An emptied
+            // capital must not silently manufacture a replacement household.
+            review_family_milestone(cell);
         }
         work_done += end - begin;
         EconomyCostProbe::record("family.review_cells", _current_day.get(), 0.0,

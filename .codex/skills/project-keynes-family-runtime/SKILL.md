@@ -157,9 +157,8 @@ and promotes one already-filled owner as its notable representative. Keep this d
 validate exact cell/type/owner-signature columns, rebuild the normal family/person CSR, and never
 lower the ordinary tier/population/profit/reserve thresholds to simulate an opening guarantee.
 Treat `forced_named_cells` plus an actually bootstrapped `gathering_ground` as the native v2-packet
-compatibility signature when explicit founder columns are absent. Repair an empty forced capital only
-during days 0..30 and only after its exact owner posts are occupied; use authoritative membership edges
-for idempotence and let the normal PERSON_COMMIT promotion path create and bind the representative.
+compatibility signature when explicit founder columns are absent. Opening creation belongs to bootstrap only. Do not repair an empty capital during daily commit:
+a starter may have migrated or dissolved, so a replacement must follow the ordinary player choice gate.
 
 Spread reviews by stable family/cell phase. Rebase `home_cell` to the largest branch. Dissolve zero-
 population families immediately and apply configured consecutive decline reviews to weak families.
@@ -359,3 +358,18 @@ scores both at zero. Keep the authored profession weights even when those need t
 empty (explicit zero weights remain zero). Basic consumption and survival keep their
 existing inputs. See `docs/cpp-dots-runtime/satisfaction-runtime.md` for profile keys,
 diagnostics, current-market basket limitations and save semantics. No new wallet or state lane.
+
+## Player-reviewed branch splits (2026-10-17)
+
+Player-owned off-origin branches do not split silently. Freeze three surname-preserving trait/effect
+proposals in the existing FamilyFoundingOffer queue, wait for the player's choice, then transfer the
+whole local membership, cash attribution, ownership and people to the selected child. Keep the parent
+elsewhere. Persist the source generation-safe handle and child/parent stable-ID lineage in PKEC v56;
+explicit v55 decoding supplies zero/empty fields without inventing historical lineage. Later arrivals
+from the parent retain the parent's identity. Parent A and independent child A1 may coexist in the same
+cell; later A arrivals may independently qualify for another player-reviewed split. Lineage is metadata
+only and never routes migration or merges families, including related houses sharing a surname.
+Only the choice gate may consult committed Country ownership in addition to the frozen epoch, so
+territory acquired mid-epoch cannot automatically found a player family. Economic inputs stay frozen.
+Validate family_split_choice_runtime_test.gd and family_founding_dialog_ui_test.gd, conservation,
+pending/resolved save hashes, and v55 compatibility. See the authoritative notable-family-runtime.md.

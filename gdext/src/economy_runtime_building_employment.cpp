@@ -645,6 +645,7 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                                 0, _trade_flows.export_ema[output_flow])
                             : 0;
                         const int64_t demand_backed_absorption = std::max({
+                            epoch_procurement_demand_daily(cell, output.good_id),
                             historical_household_demand,
                             historical_withdrawal,
                             historical_business_demand,
@@ -1468,7 +1469,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     // real demand, while keeping shadow-derived demand out of
                     // owner recruitment.
                     if (frozen_real > 0 || frozen_funded > 0 ||
-                        observed_business > 0 || observed_withdrawal > 0)
+                        observed_business > 0 || observed_withdrawal > 0 ||
+                        epoch_procurement_demand_daily(group.cell, good) > 0)
                         any_real_output_demand = true;
                     if (signal >= 0 && signal < static_cast<int32_t>(
                             _epoch_derived_business_demand.size()) &&

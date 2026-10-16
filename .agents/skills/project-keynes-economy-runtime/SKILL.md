@@ -225,6 +225,21 @@ Include:
 - Whether locked N/S or a historical auto/fixed-five path was benchmarked.
 - Remaining blockers and intentionally excluded systems.
 
+## Colonization procurement demand (2026-10-17)
+
+PREPARING kit shortages now have an epoch-frozen, sparse cash-backed forecast.
+Use `epoch_procurement_demand_daily[_for_market]` for generic non-household
+price, inventory, production and investment consumers; keep research-only
+bootstrap/policy checks on the research helper. Full-kit forecasts choose one
+reachable substitute per residual group, subtract custody/in-flight goods and
+share a Country cash cap after fiscal/research budgeting. Do not credit sales,
+withdrawal EMA or real cargo from a forecast. One-shot balances normalize over
+inventory days and rebuild after cancellation/departure/restore. No new schema.
+See `docs/cpp-dots-runtime/family-colonization-runtime.md` and
+`tests/colonization_demand_runtime_test.gd`. Clear thread-local seed stamps at
+each propagation entry: runtime-local visit generations can collide across
+worlds in the same process.
+
 ## Satisfaction purchasing power (2026-10-16)
 
 Comfort and luxury are native cash-purchasing-power dimensions, not need-tier fill rates.

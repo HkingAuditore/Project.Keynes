@@ -69,3 +69,18 @@ Working-tree `tmp/` experiment logs and sandboxes remain classified-only until f
 - `tmp/codex_colonization_test_*` sandboxes
 
 Record → migrate formal diagnostics → then clean.
+
+## 2026-10-17 家族首都补建入口移除
+
+`NativeEconomyRuntime::repair_forced_capital_founder` 及 FAMILY_COMMIT 日常调用已删除。
+原0..30天兼容逻辑只以当地是否仍有家族判断是否补建，会在首都原族迁出或消亡后绕过玩家扶持
+再造 Starter。正式 bootstrap 的 v3 创始声明与 v2 forced_named_cells + gathering_ground
+兼容仍保留；后续普通家族走正常里程碑／玩家选择。分家另走同一待决队列。参见
+[家族运行时](notable-family-runtime.md) 的 v56 说明。此删除依据玩家明确要求修正静默立族。
+
+## 2026-10-17 母族后续迁入身份
+
+按玩家明确规则删除 `reunite_split_family_branches` 及其日常调用和声明：独立后的 A1
+不吸收后来从 A 迁入的成员，乙地允许 A 与 A1 同时存在。`_family_split_parents` 继续
+作为亲缘元数据保存，避免改变 v56 存档布局；不参与迁移归属。回归覆盖旧实现失败、
+新实现同格共存与存读档通过，证据在 artifacts/runtime/family-arrival-identity-20261017。

@@ -310,6 +310,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_epoch_producer_merchant_sold_current);
     cap(_epoch_producer_discarded_current);
     cap(_epoch_research_demand_by_cell); cap(_epoch_research_demand_by_market);
+    cap(_epoch_colonization_demand_by_cell); cap(_epoch_colonization_demand_by_market);
     cap(_epoch_bullion_quota_keys); cap(_epoch_bullion_quota_initial);
     cap(_epoch_bullion_quota_remaining);
     cap(_investment_monetary_units_by_cell);
@@ -616,7 +617,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
         _canal_quote_index.canonical_memory_bytes() + market_store().price_ceilings.canonical_memory_bytes() +
         _family_founding_offers.canonical_memory_bytes() + _family_modifier_bindings.canonical_memory_bytes() +
         _family_trigger_bindings.canonical_memory_bytes() + _family_effect_bindings.canonical_memory_bytes() +
-        _family_founding_effects.canonical_memory_bytes());
+        _family_founding_effects.canonical_memory_bytes() + _family_split_parents.canonical_memory_bytes());
     return bytes;
 }
 

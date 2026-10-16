@@ -214,6 +214,20 @@ func _run() -> void:
 	_expect("old close callback cannot hide the next queued offer",
 		dialog.is_offer_open() and dialog.visible and dialog.current_offer_id() == 10)
 	var long_card := _card("新城张氏繁衍兴盛产业广布四方之家", "跨地区联合经营狩猎采集营地", "狩猎与采集产业经营者")
+	var split_card := _card("洛阳陈氏 · 方案一", "采集营地", "勤勉持家")
+	split_card["people_label"] = "分支族人"
+	split_card["choice_label"] = "确立此家风"
+	split_card["choice_tooltip"] = "将本地整支族人、产业与名人统一转入新家族。"
+	dialog.present_offer({"offer_id": 12, "generation": 1, "kind": "SPLIT",
+		"settlement_name": "洛阳", "source_family_name": "雅典陈氏",
+		"candidates": [split_card, split_card.duplicate(true), split_card.duplicate(true)]})
+	var split_prompt := String(dialog.get_node("ArchiveSurface/Frame/Margin/Column/Body/Prompt/Margin/Text").text)
+	_expect("split proposal explains surname, whole-branch transfer and the continuing parent",
+		split_prompt.contains("保留原姓氏") and split_prompt.contains("本地整支")
+		and split_prompt.contains("其他城市继续存在"))
+	_expect("split cards show branch people and a distinct confirmation action",
+		(first.get_node("%Origin") as Label).text.contains("分支族人")
+		and first.choose_button().text == "确立此家风")
 	long_card["trait_display_names"] = PackedStringArray(["节俭持家", "采集产业专精", "勤勉从业", "开拓门风"])
 	long_card["trait_descriptions"] = PackedStringArray(["日常消费减少 10%。", "投资相关产业的可能性增加 50%。",
 		"更倾向选择当地已经存在或解锁的合法职业。", "更倾向参与开拓并寻找新的发展机会。"])
@@ -396,6 +410,15 @@ func _capture_visual_qa() -> void:
 		"queue_remaining": 1,
 		"candidates": [c0, c1, c2],
 	}
+	var split_qa := OS.get_environment("PK_CAPTURE_SPLIT_QA") == "1"
+	if split_qa:
+		sample_offer["kind"] = "SPLIT"
+		sample_offer["source_family_name"] = "雅典陈氏"
+		for i in 3:
+			var card: Dictionary = sample_offer.candidates[i]
+			card["family_name"] = "洛阳陈氏 · 方案%s" % ["一", "二", "三"][i]
+			card["people_label"] = "分支族人"
+			card["choice_label"] = "确立此家风"
 	var session_theme := load("res://assets/themes/player_session_theme.tres") as Theme
 	for viewport_size in [Vector2i(1920, 1080), Vector2i(1366, 768), Vector2i(1280, 720), Vector2i(2560, 1440)]:
 		var vp := SubViewport.new()
@@ -458,6 +481,8 @@ func _capture_visual_qa() -> void:
 		await RenderingServer.frame_post_draw
 		var img := vp.get_texture().get_image()
 		var out_path := "%s/founding_%dx%d.png" % [out_dir, viewport_size.x, viewport_size.y]
+		if split_qa:
+			out_path = out_path.replace("/founding_", "/split_")
 		if img != null and not img.is_empty():
 			img.save_png(out_path)
 			print("[founding-qa] %s" % ProjectSettings.globalize_path(out_path))

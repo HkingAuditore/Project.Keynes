@@ -21,7 +21,8 @@
 Facade 查询边界组合当前 `origin_cell` 的聚落显示名、文化组格式和姓氏文本，因此改城市名只改展示，
 不改 FamilyStore 或 state hash。非起源地块分支达到 100 人时，`FAMILY_COMMIT` 按父 stable ID、目标
 cell 顺序执行一次整支分裂；membership、cash claim、建筑 ownership 与重要人物只改归属，不复制账本。
-分裂后的特性混合采用“去一增一至二”：从父家族稳定排序后的特性中确定性移除一个，再按权重和稳定
+玩家地块的分裂先进入下述 v56「分支立族」三选一队列，确认前仍属于母族，不创建子家族。
+分裂候选的特性混合采用“去一增一至二”：从父家族稳定排序后的特性中确定性移除一个，再按权重和稳定
 hash 从满足前置、排斥、科技/起源门和强度规则的合法池中加入 1–2 个新特性。保留特性保留原强度；新增特性从其
 合法 Q16 最小强度开始。子家族 Modifier/Trigger 只依据最终特性和新分支威望重新计算。
 
@@ -203,7 +204,7 @@ Modifier stat，也禁止家族第二钱包：
 
 ## 形成与消亡
 
-### 人口里程碑与三选一扶持（PKEC v55）
+### 人口里程碑与三选一扶持（PKEC v55，v56 扩展见下）
 
 新家族只在地块人口跨过 `family_milestone_populations`（默认
 `100, 200, 500, 1000, 2000, 5000, 10000, 20000`，严格升序，至多 255 项）时出现，每个里程碑
@@ -286,8 +287,8 @@ generation-safe handle；账本命令（含 `family.population_reward` 的 `i32_
 
 为防止长驻编辑器仍发出 v2 packet，原生 bootstrap 还会从“`forced_named_cells` 中的首都 +
 该地块真实存在的 `gathering_ground`”派生同一声明。仅强制命名、但没有采集营地的测试/普通
-bootstrap 不触发。若旧会话已在无家族状态下运行，日常 `FAMILY_COMMIT` 会在第 0..30 天检查
-上述权威不变量，并在 owner 岗确已占满时补建一次；权威 membership 边防止同批次重复创建。
+bootstrap 不触发。v56 取消日常 FAMILY_COMMIT 的 0..30 天补建入口：原首都家族迁走或消亡后，
+后续家族必须走正常扶持，不再静默创建替代 Starter。开局 v2/v3 bootstrap 兼容仍保留。
 
 每个家族按 `stable_id % family_review_days` 分摊生命周期复核。人口归零立即消亡；非 Starter 家族
 无产业且人口低于 20 人，连续达到 `family_decline_reviews` 次后消亡；拥有资产的小家族保留，避免
@@ -446,3 +447,37 @@ Architecture Skill；本页仍是家族模型的项目文档单一事实源。
 两者都不改变 FamilyStore、分支 generation、Trigger binding 或人口/现金/建筑守恒边界；
 grant/remove/set-strength 仍只走家族命令。EffectRuntime 从不拥有家族、成员、建筑所有权或环境
 状态，Economy 也不直接写 Effect transaction/ACK。
+
+## 分支立族与领土交互边界（2026-10-17，PKEC v56）
+
+当前 writer 为 PKEC v56，并显式兼容读取 v55；以上 v41/v55 章节保留历史格式说明。
+开局创始家族只由 bootstrap 创建，已取消日常首都补建，以免原家族迁出或消亡后跳过扶持再造新族。
+
+玩家异地分支达到 100 人时先生成三套家风／效果方案。每套保留母族姓氏，沿用原来的
+去一增一至二及特效分家策略，提前冻结 stable_id、特性和随机池效果。确认前整支仍属于母族；
+确认后本地全部 membership、cash claim、建筑 ownership 和重要人物统一转入所选子族，
+母族在其他城市继续存在。未选方案不创建家族，不吸收匿名人口或建筑，不推进普通立族里程碑。
+
+`FamilyFoundingOffer.source_family_handle=0` 表示普通立族，非零表示分家。查询附加
+`kind=FOUNDING/SPLIT` 与源家族句柄。两者复用同格至多一组的队列、generation 检查、
+SELECTED_PENDING、时钟锁、地图定位与六次失败作废机制。UI 以「分支立族／择定家风」
+提醒玩家，展示分支人数、家风、效果及整支转移范围。AI 与显式 AUTO 仍自动选择。
+
+玩家选择门同时尊重日初冻结归属和 Country 当前已提交归属，避免周期开始后转归玩家的
+地块按原外国／无主归属自动立族。该读取只控制交互资格；经济、科技和税务输入继续冻结。
+
+`_family_split_parents` 仅保存按子族 stable_id 排序的真实母子稳定 ID 对，不参与迁入归属。
+A 在乙地的分支独立为 A1 后，后续从 A 迁入乙地的成员仍属于 A；乙地可同时有 A 与 A1。
+这批 A 成员达到分家条件时，再独立进入三选一，不并入 A1，也不覆盖 A1 的身份或家风。
+同姓或母子关系均不触发自动合并。旧档中的 lineage 继续读取和保存，存档格式及哈希规则不变。
+
+section 35 kind 0 追加 lineage 计数；kind 2 在 failed_reviews 后追加
+`u64 source_family_handle`；kind 5 保存 `(i64 child_stable_id, i64 parent_stable_id)`。
+v55 显式解码补零源句柄与空 lineage，不补抽家风、效果或历史母子关系；普通待决卡组保留
+原哈希。v56 待决分家与完成 lineage 均参与 state hash，支持完整 round-trip。其他旧版本
+拒绝规则保持原状。ECP2 外层格式不变，内层 PKEC 按对应版本解码。
+
+回归入口 `tests/family_split_choice_runtime_test.gd`：真实人口迁入、等待不自动分家、同姓
+三套方案、选择后整支替换与母族保留、冻结特性兑现、后续母族迁入保持身份、母子同格共存、待决／完成存读档哈希、
+EPOCH_BEGIN 后转归玩家地块的普通立族等待扶持。`family_founding_dialog_ui_test.gd` 覆盖
+分家提示、分支人数与专用选择文案。

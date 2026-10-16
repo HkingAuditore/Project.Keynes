@@ -1,4 +1,5 @@
 #include "economy_runtime.h"
+#include "country_runtime.h"
 #include "economy_hash.h"
 #include "economy_runtime_binary_codec.h"
 #include "economy_runtime_variant_helpers.h"
@@ -22,6 +23,7 @@ constexpr uint8_t kFoundingRecordMilestone = 1;
 constexpr uint8_t kFoundingRecordOffer = 2;
 constexpr uint8_t kFoundingRecordChoice = 3;
 constexpr uint8_t kFoundingRecordEffect = 4;
+constexpr uint8_t kFoundingRecordSplitParent = 5;
 constexpr uint32_t kFoundingMaxTraitsPerCard = 64;
 
 } // namespace
@@ -40,6 +42,7 @@ void NativeEconomyRuntime::clear_family_founding_state() {
     _family_founding_offers.clear();
     _family_founding_choices.clear();
     _family_founding_effects.clear();
+    _family_split_parents.clear();
     _next_family_founding_offer_id = 1;
     _family_founding_offer_by_cell.clear();
     _family_founding_offer_index_dirty = true;
@@ -67,9 +70,19 @@ int32_t NativeEconomyRuntime::family_founding_offer_for_cell(int32_t cell) {
 }
 
 bool NativeEconomyRuntime::family_founding_player_choice(int32_t cell) const {
-    return _family_founding_choice_mode == 1 && _epoch_player_country_slot >= 0 &&
-        cell >= 0 && static_cast<size_t>(cell) < _epoch_cell_country.size() &&
-        _epoch_cell_country[static_cast<size_t>(cell)] == _epoch_player_country_slot;
+    if (_family_founding_choice_mode != 1 || cell < 0 || cell >= _cell_count.get())
+        return false;
+    if (_epoch_player_country_slot >= 0 &&
+        static_cast<size_t>(cell) < _epoch_cell_country.size() &&
+        _epoch_cell_country[static_cast<size_t>(cell)] == _epoch_player_country_slot)
+        return true;
+    // A paired CLAIM can commit after EPOCH_BEGIN. Only the player-decision
+    // gate sees committed ownership; economic inputs remain frozen.
+    if (_country_runtime == nullptr) return false;
+    const int32_t player = _country_runtime->starting_country_slot();
+    const int64_t owner = _country_runtime->country_handle_for_cell(cell);
+    return player >= 0 && owner != 0 &&
+        static_cast<int32_t>(static_cast<uint64_t>(owner) & 0xffffffffU) == player;
 }
 
 int32_t NativeEconomyRuntime::family_founding_effect_for(int64_t stable_id) const {
@@ -81,7 +94,10 @@ int32_t NativeEconomyRuntime::family_founding_effect_for(int64_t stable_id) cons
 }
 
 void NativeEconomyRuntime::prune_family_founding_effects() {
-    if (_family_founding_effects.empty()) return;
+    _family_split_parents.erase_if(
+        [&](const std::pair<int64_t, int64_t> &row) {
+            return _family_stable_ids.count(row.first) == 0;
+        });
     _family_founding_effects.erase_if(
         [&](const std::pair<int64_t, int32_t> &row) {
             return _family_stable_ids.count(row.first) == 0;
@@ -278,6 +294,8 @@ int32_t NativeEconomyRuntime::family_founding_auto_choice(
 
 bool NativeEconomyRuntime::resolve_family_founding_offer(
         FamilyFoundingOffer &offer, int32_t choice_index) {
+    if (offer.source_family_handle != 0)
+        return resolve_family_split_offer(offer, choice_index);
     if (choice_index < 0 ||
         choice_index >= static_cast<int32_t>(offer.candidates.size()))
         return false;
@@ -351,7 +369,7 @@ void NativeEconomyRuntime::review_family_milestone(int32_t cell) {
             }
             if (choice < 0) return false;
             if (resolve_family_founding_offer(offer, choice)) {
-                if (reached < 255) ++reached;
+                if (offer.source_family_handle == 0 && reached < 255) ++reached;
                 if (automatic) ++_family_offers_auto_resolved;
                 return true;
             }
@@ -479,6 +497,8 @@ Dictionary NativeEconomyRuntime::family_founding_offers(int32_t offset,
             ? offer.chosen_index : queued_choice;
         row["created_day"] = offer.created_day;
         row["failed_reviews"] = offer.failed_reviews;
+        row["kind"] = offer.source_family_handle == 0 ? String("FOUNDING") : String("SPLIT");
+        row["source_family_handle"] = static_cast<int64_t>(offer.source_family_handle);
         // Offers only persist when opened for the player; before the first
         // post-restore epoch captures country ownership, trust that origin.
         row["player_choice"] = _family_founding_choice_mode == 1 &&
@@ -621,6 +641,8 @@ void NativeEconomyRuntime::append_family_founding_hash(uint64_t &hash) const {
         mix(static_cast<uint32_t>(offer.chosen_index));
         mix(static_cast<uint64_t>(offer.created_day));
         mix(static_cast<uint32_t>(offer.failed_reviews));
+        // Ordinary v55 offers retain their hash during explicit migration.
+        if (offer.source_family_handle != 0) mix(offer.source_family_handle);
         for (const FamilyFoundingCandidate &candidate : offer.candidates) {
             mix(static_cast<uint64_t>(candidate.stable_id));
             mix(static_cast<uint32_t>(candidate.surname_id));
@@ -648,6 +670,10 @@ void NativeEconomyRuntime::append_family_founding_hash(uint64_t &hash) const {
         mix(static_cast<uint64_t>(row.first));
         mix(static_cast<uint32_t>(row.second));
     }
+    for (const auto &row : _family_split_parents) {
+        mix(static_cast<uint64_t>(row.first));
+        mix(static_cast<uint64_t>(row.second));
+    }
 }
 
 bool NativeEconomyRuntime::write_family_founding_save_records(
@@ -662,7 +688,8 @@ bool NativeEconomyRuntime::write_family_founding_save_records(
     const int32_t offers = static_cast<int32_t>(_family_founding_offers.size());
     const int32_t choices = static_cast<int32_t>(_family_founding_choices.size());
     const int32_t effects = static_cast<int32_t>(_family_founding_effects.size());
-    const int32_t total = 1 + milestones + offers + choices + effects;
+    const int32_t lineages = static_cast<int32_t>(_family_split_parents.size());
+    const int32_t total = 1 + milestones + offers + choices + effects + lineages;
     const size_t limit = static_cast<size_t>(std::max(64, budget - 16));
     while (_save.family_founding_cursor < total) {
         std::vector<uint8_t> record;
@@ -674,6 +701,7 @@ bool NativeEconomyRuntime::write_family_founding_save_records(
             append_le<int32_t>(record, offers);
             append_le<int32_t>(record, choices);
             append_le<int32_t>(record, effects);
+            append_le<int32_t>(record, lineages);
         } else if ((index -= 1) < milestones) {
             const int32_t cell = _save.family_founding_cells[static_cast<size_t>(index)];
             append_le<uint8_t>(record, kFoundingRecordMilestone);
@@ -692,6 +720,7 @@ bool NativeEconomyRuntime::write_family_founding_save_records(
             append_le<int32_t>(record, offer.chosen_index);
             append_le<int64_t>(record, offer.created_day);
             append_le<int32_t>(record, offer.failed_reviews);
+            append_le<uint64_t>(record, offer.source_family_handle);
             append_le<uint8_t>(record, static_cast<uint8_t>(offer.candidates.size()));
             for (const FamilyFoundingCandidate &candidate : offer.candidates) {
                 append_le<int64_t>(record, candidate.stable_id);
@@ -719,12 +748,16 @@ bool NativeEconomyRuntime::write_family_founding_save_records(
             append_le<int64_t>(record, command.effective_day);
             append_le<int64_t>(record, command.sequence);
             append_le<uint64_t>(record, command.submit_order);
-        } else {
-            index -= choices;
+        } else if ((index -= choices) < effects) {
             const auto &row = _family_founding_effects[static_cast<size_t>(index)];
             append_le<uint8_t>(record, kFoundingRecordEffect);
             append_le<int64_t>(record, row.first);
             append_le<int32_t>(record, row.second);
+        } else {
+            const auto &row = _family_split_parents[static_cast<size_t>(index - effects)];
+            append_le<uint8_t>(record, kFoundingRecordSplitParent);
+            append_le<int64_t>(record, row.first);
+            append_le<int64_t>(record, row.second);
         }
         if (!payload.empty() && payload.size() + record.size() > limit) break;
         payload.insert(payload.end(), record.begin(), record.end());
@@ -741,6 +774,7 @@ bool NativeEconomyRuntime::read_family_founding_save_records(
         _family_founding_offers.clear();
         _family_founding_choices.clear();
         _family_founding_effects.clear();
+        _family_split_parents.clear();
         _family_founding_offer_index_dirty = true;
         _restore.expected_family_founding_records = -1;
         _restore.restored_family_founding_records = 0;
@@ -758,21 +792,22 @@ bool NativeEconomyRuntime::read_family_founding_save_records(
         }
         if (kind == kFoundingRecordHeader) {
             int64_t next_offer = 0;
-            int32_t milestones = 0, offers = 0, choices = 0, effects = 0;
+            int32_t milestones = 0, offers = 0, choices = 0, effects = 0, lineages = 0;
             if (!read_le(bytes, cursor, next_offer) ||
                 !read_le(bytes, cursor, milestones) ||
                 !read_le(bytes, cursor, offers) ||
                 !read_le(bytes, cursor, choices) ||
-                !read_le(bytes, cursor, effects) || next_offer <= 0 ||
+                !read_le(bytes, cursor, effects) ||
+                (_restore.schema_version >= 56 && !read_le(bytes, cursor, lineages)) || next_offer <= 0 ||
                 milestones < 0 || milestones > _cell_count.get() || offers < 0 ||
                 offers > _cell_count.get() || choices < 0 || choices > _cell_count.get() ||
-                effects < 0 || effects > 10000000) {
+                effects < 0 || effects > 10000000 || lineages < 0 || lineages > 10000000) {
                 error = "save_family_founding_header_invalid";
                 return false;
             }
             _next_family_founding_offer_id = next_offer;
             _restore.expected_family_founding_records =
-                1 + milestones + offers + choices + effects;
+                1 + milestones + offers + choices + effects + lineages;
         } else if (kind == kFoundingRecordMilestone) {
             int32_t cell = -1;
             uint8_t count = 0;
@@ -796,6 +831,7 @@ bool NativeEconomyRuntime::read_family_founding_save_records(
                 !read_le(bytes, cursor, offer.chosen_index) ||
                 !read_le(bytes, cursor, offer.created_day) ||
                 !read_le(bytes, cursor, offer.failed_reviews) ||
+                (_restore.schema_version >= 56 && !read_le(bytes, cursor, offer.source_family_handle)) ||
                 !read_le(bytes, cursor, candidate_count) ||
                 candidate_count == 0 || candidate_count > FAMILY_FOUNDING_CARD_COUNT) {
                 error = "save_family_founding_offer_truncated";
@@ -854,6 +890,15 @@ bool NativeEconomyRuntime::read_family_founding_save_records(
                 return false;
             }
             _family_founding_effects.push_back({stable_id, effect_id});
+        } else if (kind == kFoundingRecordSplitParent && _restore.schema_version >= 56) {
+            int64_t child = 0, parent = 0;
+            if (!read_le(bytes, cursor, child) || !read_le(bytes, cursor, parent) ||
+                child <= 0 || parent <= 0 || child == parent ||
+                (!_family_split_parents.empty() && _family_split_parents.back().first >= child)) {
+                error = "save_family_split_parent_invalid";
+                return false;
+            }
+            _family_split_parents.push_back({child, parent});
         } else {
             error = "save_family_founding_record_kind_invalid";
             return false;
@@ -890,6 +935,18 @@ bool NativeEconomyRuntime::validate_restored_family_founding(
             offer.failed_reviews < 0) {
             error = "restore_family_founding_offer_invalid";
             return false;
+        }
+        if (offer.source_family_handle != 0) {
+            int32_t parent = -1;
+            if (families_store().valid_handle(offer.source_family_handle, parent)) {
+                for (const auto &candidate : offer.candidates) {
+                    if (candidate.surname_id != families_store().surname_id[parent] ||
+                        candidate.culture_group_id != families_store().culture_group_id[parent]) {
+                        error = "restore_family_split_identity_invalid";
+                        return false;
+                    }
+                }
+            }
         }
         for (const FamilyFoundingCandidate &candidate : offer.candidates) {
             if (candidate.stable_id <= 0 || candidate.surname_id < -1 ||

@@ -11,7 +11,7 @@ bool NativeEconomyRuntime::plan_construction_materials(
         ConstructionMaterialPlan &plan,
         const std::vector<int64_t> *additional_stock,
         std::vector<int64_t> *stock_inout,
-        bool split_candidates) const {
+        bool split_candidates, bool forecast_missing) const {
     plan = ConstructionMaterialPlan{};
     if (cell < 0 || cell >= _cell_count.get() || type_id < 0 ||
         type_id >= static_cast<int32_t>(_building_types.size()) || count <= 0 ||
@@ -124,6 +124,28 @@ bool NativeEconomyRuntime::plan_construction_materials(
                             physical, efficiency, Q16_ONE, sat);
                         remaining = std::max<int64_t>(0,
                             remaining - std::min(remaining, credited));
+                    }
+                }
+                if (remaining > 0) {
+                    if (forecast_missing) {
+                        // Choose one reachable substitute for the residual,
+                        // after spending the real stock of every candidate.
+                        // This is a read-only target bill, never a BUILD.
+                        for (int32_t pass = 0; pass < 2 && remaining > 0; ++pass) {
+                            for (int32_t c = candidate_begin; c < candidate_end; ++c) {
+                                const ConstructionCandidate &candidate =
+                                    _building_construction_candidates[c];
+                                if ((pass == 0) != (candidate.good_id == preferred.good_id) ||
+                                    !construction_candidate_available(candidate.good_id)) continue;
+                                const int32_t efficiency = std::max(1, candidate.efficiency_q16);
+                                int64_t physical = mul_div_sat(remaining, Q16_ONE, efficiency, sat);
+                                if (mul_div_sat(physical, efficiency, Q16_ONE, sat) < remaining)
+                                    physical = saturating_add(physical, 1, sat);
+                                add_selection(candidate.good_id, physical);
+                                remaining = 0;
+                                break;
+                            }
+                        }
                     }
                 }
                 if (remaining > 0) {

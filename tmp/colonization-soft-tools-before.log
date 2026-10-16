@@ -1,0 +1,37 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] economy catalog compiles
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] map binds to native world
+  [PASS] modifier runtime configures
+  [PASS] effect runtime configures for built-in colonization transactions
+  [PASS] country runtime configures
+  [PASS] one-cell country bootstraps
+  [PASS] economy runtime configures
+  [PASS] packed six-neighbor topology configures
+  [PASS] economy and founder family bootstrap
+  [FAIL] hard tools still block but soft tools do not block departure (false)
+  [PASS] tool-short kit starts successfully
+  [FAIL] soft tool shortage departs; hard tool shortage prepares (false)
+  [FAIL] available optional tool stock is still bought and carried
+  [PASS] tool-short departure preserves all conservation ledgers
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] map binds to native world
+  [PASS] modifier runtime configures
+  [PASS] effect runtime configures for built-in colonization transactions
+  [PASS] country runtime configures
+  [PASS] one-cell country bootstraps
+  [PASS] economy runtime configures
+  [PASS] packed six-neighbor topology configures
+  [PASS] economy and founder family bootstrap
+  [PASS] hard tools still block but soft tools do not block departure (true)
+  [PASS] tool-short kit starts successfully
+  [PASS] soft tool shortage departs; hard tool shortage prepares (true)
+  [PASS] tool-short departure preserves all conservation ledgers
+=== family colonization soft tools: 3 failures ===
+ERROR: 29 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 3 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 307 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
