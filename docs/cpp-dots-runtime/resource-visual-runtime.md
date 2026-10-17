@@ -240,6 +240,21 @@ QA 截图：`tests/resource_visual_world_qa.gd`（非 headless）输出 `tmp/res
   叶片细节仍由 `s.tone` 保留。
   `ResourceGroundCover.memory_climate_only` 仅供 QA 截取干旱/积雪对照图。
 
+### 地被 TOD 调试分支修正（2026-10-17）
+
+- 植物群落走 `ResourceGroundCover`，与 `ShrubLayer` 的草丛/树冠是不同的渲染路径。
+  地被的法线、horizon/GI 本来就在片元中采样；仅修正 `vegetation_impostor` 不能解决这层的 TOD 错位。
+- 旧地被在 `tod_debug_sun_position_enabled` 时直接读取全局 `tod_sun_dir` 并自行计算 `day`，
+  绕过太阳直射点 UV 与像素经纬度，导致 GM 太阳预览下地形/树木已进入夜侧，地被仍按白昼照亮。
+  现统一调用 `eval_earth_daylight(map_uv, latitude, day_night_enabled)`：开启昼夜时按每像素经纬度
+  和调试直射点求光照，关闭昼夜时由共享函数保留调试平行光/年度平行光语义。
+  沿用已有材质同步、Horizon GI、艺术调色和密度参数；不改变树冠着色。
+- `tests/resource_ground_cover_lighting_render_test.gd` 使用真实 `ResourceGroundCover` 节点和导入位图，
+  覆盖桌面/移动低中高档、tiled、等价正常/调试太阳位置、像素夜侧、独立全局方向及永昼预览。
+  修正前 28 项中 21 项失败；D3D12 Mobile 与 OpenGL Compatibility 修正后各 28 项通过。
+  另用 40×28、seed 20260727 的生成地图，在同一机位切换旧/新 shader 与隐藏地被，确认夜侧
+  亮色贴片随地形变暗；截图在 `tmp/ground_cover_lighting_qa/world/`。
+
 ### 性能（RTX 4080 / Vulkan Mobile / 1440×1000）
 
 - world QA 整帧 GPU：资源层关 ≈ 0.80–1.00ms，开 ≈ 0.90–1.12ms（增量约 0.1ms）。

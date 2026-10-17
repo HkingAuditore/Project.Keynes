@@ -104,6 +104,7 @@ func run() -> void:
 	_set_normals(slope_image, "source")
 	var grass_slope := await _capture("grass_slope")
 	_expect("grass also follows pixel terrain normals", _alpha(grass_flat) > 50.0 and _difference(grass_flat, grass_slope) > 0.0005)
+	await _check_ground_tod()
 	print("vegetation pixel normals: %d checks, %d failures; %s" % [checks, failures, output])
 	viewport.queue_free()
 	await process_frame
@@ -158,6 +159,98 @@ func _configure(variant: String) -> void:
 		lut.set_pixel(5, 0, Color(0, 0, 1, 1))
 		mat.set_shader_parameter("detail_style_lut", ImageTexture.create_from_image(lut))
 
+func _check_ground_tod() -> void:
+	# Climate is uniform: moving only the climate anchor must not move high-quality
+	# ground lighting. The patch itself straddles the real Earth daylight terminator.
+	for variant in ["source", "family", "tiled_family", "mobile_high"]:
+		_configure(variant)
+		mat.set_shader_parameter("veg_shade_quality", 2)
+		_set_normals(flat_image, variant)
+		mat.set_shader_parameter("day_night_enabled", true)
+		mat.set_shader_parameter("tod_debug_sun_uv", Vector2(0.25, 0.5))
+		var mm := subject.multimesh
+		mm.set_instance_custom_data(0, Color(0.3, 0.5, 0.37, Shrubs.pack_form(2, 9)))
+		var west := await _capture(variant + "_tod_anchor_west")
+		mm.set_instance_custom_data(0, Color(0.7, 0.5, 0.37, Shrubs.pack_form(2, 9)))
+		var east := await _capture(variant + "_tod_anchor_east")
+		_expect(variant + " ground TOD follows pixels, not climate anchor", _difference(west, east) < 0.00001)
+		_expect(variant + " one patch crosses the terminator", _luma(west, 0, 128) > _luma(west, 128, 256) * 1.4)
+		mm.set_instance_custom_data(0, Color(0.5, 0.5, 0.37, Shrubs.pack_form(2, 9)))
+		mat.set_shader_parameter("tod_debug_sun_uv", Vector2(0.5, 0.5))
+		var noon := await _capture(variant + "_tod_noon")
+		mat.set_shader_parameter("tod_debug_sun_uv", Vector2(0.0, 0.5))
+		var night := await _capture(variant + "_tod_night")
+		_expect(variant + " ground night dims and cools", _luma(noon, 0, 256) > _luma(night, 0, 256) * 1.5
+			and _blue_ratio(night) > _blue_ratio(noon))
+		mat.set_shader_parameter("wrap_period_x", 256.0)
+		var base := await _capture(variant + "_tod_wrap_base")
+		mm.set_instance_transform_2d(0, Transform2D(0.0, Vector2(90, 90), 0.0, Vector2(384, 64)))
+		camera.position.x += 256.0
+		camera.force_update_scroll()
+		var wrapped := await _capture(variant + "_tod_wrap_copy")
+		_expect(variant + " wrapped ground retains its TOD", _difference(base, wrapped) < 0.001)
+		mm.set_instance_transform_2d(0, Transform2D(0.0, Vector2(90, 90), 0.0, Vector2(128, 64)))
+		camera.position.x -= 256.0
+		camera.force_update_scroll()
+		mat.set_shader_parameter("wrap_period_x", 0.0)
+		# Horizon shadow crosses the patch while its climate anchor is unchanged.
+		if variant != "mobile_high":
+			var horizon := flat_image.duplicate()
+			for y in horizon.get_height():
+				for x in horizon.get_width():
+					horizon.set_pixel(x, y, Color.WHITE if x < 32 else Color(0, 0, 0, 0))
+			_set_raster(horizon, variant, "terrain_horizon_tex", "visual_horizon_tiles")
+			mat.set_shader_parameter("terrain_horizon_tex_bound", true)
+			mat.set_shader_parameter("day_night_enabled", false)
+			mat.set_shader_parameter("terrain_horizon_debug_view", 2)
+			var shadow := await _capture(variant + "_pixel_horizon")
+			_expect(variant + " horizon visibility follows pixels", _luma(shadow, 128, 256) > _luma(shadow, 0, 128) * 1.5)
+			mat.set_shader_parameter("terrain_horizon_debug_view", 0)
+			var gi_lut := PackedVector3Array()
+			for i in 16:
+				var h := float(i) / 15.0 * 1.309
+				gi_lut.append(Vector3(pow(cos(h), 2), sin(h), cos(h)))
+			mat.set_shader_parameter("gi_horizon_lut", gi_lut)
+			mat.set_shader_parameter("gi_lut_bound", true)
+			mat.set_shader_parameter("terrain_horizon_strength", 0.0)
+			mat.set_shader_parameter("sun_shade_strength", 0.0)
+			var gi := await _capture(variant + "_pixel_gi")
+			_expect(variant + " sky GI follows pixels without direct light", _luma(gi, 128, 256) > _luma(gi, 0, 128) * 1.2)
+			mat.set_shader_parameter("gi_lut_bound", false)
+			mat.set_shader_parameter("terrain_horizon_strength", 0.9)
+			mat.set_shader_parameter("sun_shade_strength", 0.55)
+			mat.set_shader_parameter("terrain_horizon_tex_bound", false)
+			mat.set_shader_parameter("day_night_enabled", true)
+		# Existing tree TOD remains per-instance, even within a mixed family shader.
+		_set_form(Profile.FORM_BROADLEAF)
+		mat.set_shader_parameter("tod_debug_sun_uv", Vector2(0.25, 0.5))
+		mm.set_instance_custom_data(0, Color(0.3, 0.5, 0.37, Shrubs.pack_form(2, 9)))
+		var tree_day := await _capture(variant + "_tree_day")
+		mm.set_instance_custom_data(0, Color(0.7, 0.5, 0.37, Shrubs.pack_form(2, 9)))
+		var tree_night := await _capture(variant + "_tree_night")
+		_expect(variant + " tree retains shared anchor TOD", _difference(tree_day, tree_night) > 0.002)
+		mm.set_instance_custom_data(0, Color(0.5, 0.5, 0.37, Shrubs.pack_form(2, 9)))
+
+func _luma(image: Image, from_x: int, to_x: int) -> float:
+	var total := 0.0
+	var weight := 0.0
+	for y in image.get_height():
+		for x in range(from_x, to_x):
+			var c := image.get_pixel(x, y)
+			total += (c.r * 0.299 + c.g * 0.587 + c.b * 0.114) * c.a
+			weight += c.a
+	return total / maxf(weight, 0.001)
+
+func _blue_ratio(image: Image) -> float:
+	var red := 0.0
+	var blue := 0.0
+	for y in image.get_height():
+		for x in image.get_width():
+			var c := image.get_pixel(x, y)
+			red += c.r * c.a
+			blue += c.b * c.a
+	return blue / maxf(red, 0.001)
+
 func _set_form(form: int) -> void:
 	mat.set_shader_parameter("detail_form", form)
 	var texture = mat.get_shader_parameter("detail_style_lut")
@@ -169,8 +262,11 @@ func _set_form(form: int) -> void:
 		texture.update(image)
 
 func _set_normals(image: Image, variant: String) -> void:
+	_set_raster(image, variant, "terrain_normal_tex", "visual_terrain_normal_tiles")
+
+func _set_raster(image: Image, variant: String, legacy_param: String, tiled_param: String) -> void:
 	if variant != "tiled_family":
-		mat.set_shader_parameter("terrain_normal_tex", ImageTexture.create_from_image(image))
+		mat.set_shader_parameter(legacy_param, ImageTexture.create_from_image(image))
 		return
 	var layers: Array[Image] = []
 	for tile in 2:
@@ -181,7 +277,7 @@ func _set_normals(image: Image, variant: String) -> void:
 		layers.append(part)
 	var texture := Texture2DArray.new()
 	texture.create_from_images(layers)
-	mat.set_shader_parameter("visual_terrain_normal_tiles", texture)
+	mat.set_shader_parameter(tiled_param, texture)
 
 func _texture(color: Color) -> ImageTexture:
 	var image := Image.create(8, 8, false, Image.FORMAT_RGBA8)

@@ -3,10 +3,10 @@
 // family batches built by VegetationFamilyLayer).
 //
 // The instance mesh is a single quad. Everything that only depends on the
-// instance (cell climate, phenology palette, sun, horizon and
+// instance (cell climate, phenology palette, canopy sun/horizon and
 // sky visibility) is evaluated in the vertex stage and passed flat; the
 // fragment stage draws the top-down form from vegetation_forms and lights it.
-// 高档贴地植被按片元世界位置采样地表法线；树冠及其他档位保留簇中心法线。
+// 高档贴地植被按片元世界位置采样法线、昼夜与 horizon/GI；树冠保留簇中心采样。
 //
 // custom.a packs sub_form + (count - 0.5) / 32 (see ShrubLayer.pack_form).
 // Family batches add style_id * 4 and read per-style shading from the style
@@ -232,7 +232,7 @@ struct ShrubSkySample {
 };
 
 // Same formula as terrain_horizon.gdshaderinc (V_sky = 1/8 sum cos^2 h_d),
-// sampled once per instance.
+// Caller chooses the canopy anchor or the high-quality ground pixel UV.
 ShrubSkySample shrub_sample_sky(vec2 uv) {
 	ShrubSkySample s;
 	s.visibility = 1.0;
@@ -421,8 +421,20 @@ void vertex() {
 
 	float lat_signed = uv.y * 2.0 - 1.0;
 	EarthDaylight ed = eval_earth_daylight(uv, lat_signed, day_night_enabled);
-	float horizon_vis = shrub_horizon_direct_visibility(uv, ed.sun_dir);
-	ShrubSkySample sky = shrub_sample_sky(uv);
+	bool pixel_ground = false;
+#ifdef VEG_TERRAIN_SHADING
+	pixel_ground = veg_shade_quality >= 2 && veg_form_follows_ground(form);
+#endif
+	// High-quality ground samples these at its actual surface below; do not pay
+	// for both an anchor horizon lookup and the per-pixel lookup.
+	float horizon_vis = 1.0;
+	ShrubSkySample sky;
+	sky.bent_normal = vec3(0.0, 0.0, 1.0);
+	sky.visibility = 1.0;
+	if (!pixel_ground) {
+		horizon_vis = shrub_horizon_direct_visibility(uv, ed.sun_dir);
+		sky = shrub_sample_sky(uv);
+	}
 
 	vec2 terrain_n = vec2(0.0);
 	float valley_ao = 0.0;
@@ -487,9 +499,22 @@ void fragment() {
 	VegSurf s = far ? vf_far(form, pe, ctx) : vf_eval(form, pe, ctx, false);
 
 	vec3 L = v_h.xyz;
+	vec4 daylight = v_i;
+	vec4 sky = v_j;
+#ifdef VEG_TERRAIN_SHADING
+	if (veg_shade_quality >= 2 && veg_form_follows_ground(form)) {
+		vec2 ground_uv = shrub_wrap_map_uv(v_ground_uv);
+		EarthDaylight ed = eval_earth_daylight(ground_uv, ground_uv.y * 2.0 - 1.0, day_night_enabled);
+		L = ed.sun_dir;
+		daylight = vec4(ed.local_day, ed.sun_high, ed.moon_strength,
+			shrub_horizon_direct_visibility(ground_uv, L));
+		ShrubSkySample ground_sky = shrub_sample_sky(ground_uv);
+		sky = vec4(ground_sky.bent_normal, ground_sky.visibility);
+	}
+#endif
 	vec2 bx = v_g.xy;
 	vec2 by = vec2(-bx.y, bx.x);
-	float local_day = v_i.x;
+	float local_day = daylight.x;
 	float sun_vis = 1.0;
 	float floor_shadow = 0.0;
 #ifndef PK_MOBILE_ANY
@@ -506,7 +531,7 @@ void fragment() {
 
 	float body_a = s.cov * v_f.z;
 	float floor_a = max(s.floor_a * contact_ao_strength * 2.0,
-		floor_shadow * 0.70 * local_day * v_i.w) * v_f.w * (1.0 - s.cov);
+		floor_shadow * 0.70 * local_day * daylight.w) * v_f.w * (1.0 - s.cov);
 	if (body_a + floor_a < 0.004) {
 		discard;
 	}
@@ -537,7 +562,7 @@ void fragment() {
 	float local_snow = v_f.x * s.snow_hold * mix(1.0, cap, max(v_f.y, 0.55));
 	albedo = mix(albedo, vec3(0.93, 0.95, 0.99), clamp(local_snow, 0.0, 1.0));
 
-	vec3 sun_col = mix(EARTH_DAYLIGHT_DUSK, EARTH_DAYLIGHT_NOON, v_i.y);
+	vec3 sun_col = mix(EARTH_DAYLIGHT_DUSK, EARTH_DAYLIGHT_NOON, daylight.y);
 	vec3 amb_col = mix(EARTH_NIGHT_AMBIENT, EARTH_DAY_AMBIENT, local_day);
 	if (!day_night_enabled) {
 		sun_col *= EARTH_ETERNAL_SUN_GAIN;
@@ -553,16 +578,16 @@ void fragment() {
 	if (use_shading) {
 		float wrap = 0.30 * s.leaf_w;
 		float diff = clamp((dot(N, L) + wrap) / (1.0 + wrap), 0.0, 1.0);
-		float direct = diff * local_day * v_i.w * sun_vis;
-		vec3 bent = v_j.xyz;
+		float direct = diff * local_day * daylight.w * sun_vis;
+		vec3 bent = sky.xyz;
 		vec3 amb_n = N;
 		if (gi_bent_strength > 0.0) {
 			vec3 mixed_n = mix(N, bent, gi_bent_strength);
 			amb_n = dot(mixed_n, mixed_n) > 1e-6 ? normalize(mixed_n) : N;
 		}
-		float gi_ao = clamp(v_j.w * mix(gi_normal_floor, 1.0, clamp(dot(N, bent), 0.0, 1.0)), 0.0, 1.0);
+		float gi_ao = clamp(sky.w * mix(gi_normal_floor, 1.0, clamp(dot(N, bent), 0.0, 1.0)), 0.0, 1.0);
 		vec3 amb = earth_sky_sh(amb_col, sun_col, L, local_day, amb_n) * gi_ao;
-		float moon = max(dot(N, -L), 0.0) * v_i.z;
+		float moon = max(dot(N, -L), 0.0) * daylight.z;
 		vec3 light = max(amb * mix(1.0, 0.70, local_day), vec3(ambient_floor * 0.5))
 			+ sun_col * direct * sun_shade_strength * 1.40
 			+ EARTH_MOONLIGHT * moon * 0.35;
@@ -570,27 +595,32 @@ void fragment() {
 		rgb *= 1.0 - v_h.w * terrain_valley_ao_strength * mix(0.38, 1.0, v_e.a);
 		rgb = max(rgb, albedo * v_b.w * 0.45 * mix(0.35, 1.0, local_day));
 	} else {
-		vec3 light = max(amb_col * v_j.w, vec3(ambient_floor)) + sun_col * (local_day * 0.35 * v_i.w);
+		vec3 light = max(amb_col * sky.w, vec3(ambient_floor)) + sun_col * (local_day * 0.35 * daylight.w);
 		rgb = albedo * light;
 	}
-	float horizon_cast = clamp((1.0 - v_i.w) * local_day, 0.0, 1.0);
+	float horizon_cast = clamp((1.0 - daylight.w) * local_day, 0.0, 1.0);
 	if (horizon_cast > 0.001) {
 		float veg_floor = mix(1.0, terrain_horizon_cast_floor, 0.70);
 		if (gi_lut_bound) {
-			veg_floor = mix(1.0, veg_floor, mix(1.0, v_j.w, gi_ao_strength));
+			veg_floor = mix(1.0, veg_floor, mix(1.0, sky.w, gi_ao_strength));
 		}
 		rgb *= mix(1.0, veg_floor, horizon_cast);
 	}
 	rgb *= mix(1.0, 0.86, 1.0 - local_day);
 	rgb *= tod_exposure;
 	if (terrain_horizon_debug_view == 1) {
-		rgb = vec3(clamp((1.0 - v_i.w) * local_day, 0.0, 1.0));
+		rgb = vec3(clamp((1.0 - daylight.w) * local_day, 0.0, 1.0));
 	} else if (terrain_horizon_debug_view == 2) {
-		rgb = vec3(v_i.w);
+		rgb = vec3(daylight.w);
 	}
 	if (lod_debug_view) {
 		rgb = vec3(lod_alpha);
 	}
 	vec3 floor_col = mix(vec3(0.035, 0.05, 0.045), vec3(0.26, 0.31, 0.42), v_f.x * 0.7);
+	if (veg_form_follows_ground(form)) {
+		// Contact/snow in the gaps is still ground material, not an emissive
+		// overlay. Keep its cool night palette and exposure with the vegetation.
+		floor_col *= mix(EARTH_NIGHT_AMBIENT / EARTH_DAY_AMBIENT, vec3(1.0), local_day) * tod_exposure;
+	}
 	float a = body_a + floor_a;
 	COLOR = vec4((rgb * body_a + floor_col * floor_a) / a, clamp(a, 0.0, 1.0));}
