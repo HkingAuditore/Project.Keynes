@@ -1,0 +1,30 @@
+[remap]
+
+importer="2d_array_texture"
+type="CompressedTexture2DArray"
+uid="uid://ckqmqbdy0jrfh"
+path.s3tc="res://.godot/imported/crown_atlas.png-23e7173a76525ca34fa40b8688a31836.s3tc.ctexarray"
+path.etc2="res://.godot/imported/crown_atlas.png-23e7173a76525ca34fa40b8688a31836.etc2.ctexarray"
+metadata={
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
+}
+
+[deps]
+
+source_file="res://assets/textures/resource_art/crown_atlas.png"
+dest_files=["res://.godot/imported/crown_atlas.png-23e7173a76525ca34fa40b8688a31836.s3tc.ctexarray", "res://.godot/imported/crown_atlas.png-23e7173a76525ca34fa40b8688a31836.etc2.ctexarray"]
+
+[params]
+
+compress/mode=2
+compress/high_quality=false
+compress/lossy_quality=0.7
+compress/uastc_level=0
+compress/rdo_quality_loss=0.0
+compress/hdr_compression=1
+compress/channel_pack=0
+mipmaps/generate=true
+mipmaps/limit=-1
+slices/horizontal=1
+slices/vertical=4

@@ -11,13 +11,15 @@ namespace {
 
 constexpr uint64_t FNV_OFFSET = 1469598103934665603ull;
 constexpr uint64_t FNV_PRIME = 1099511628211ull;
-constexpr uint32_t SAVE_MAGIC = 0x31504449u; // IDP1
+constexpr uint32_t SAVE_MAGIC = 0x32504449u; // IDP2
 constexpr uint32_t SAVE_END = 0x21444e45u;
 constexpr uint32_t MAX_SAVE_BYTES = 64u * 1024u * 1024u;
 constexpr uint8_t ACQUIRE_DISCOVER = 1u;
 constexpr uint8_t ACQUIRE_DRAW = 2u;
 constexpr uint16_t EFFECT_TRANSITION_OPCODE = 1u;
 constexpr int64_t Q16_ONE = 65536;
+// Economy MONEY_SCALE: trade weights are authored per whole money unit.
+constexpr int64_t TRADE_MONEY_SCALE = 10000;
 
 template <typename T, bool = std::is_enum_v<std::remove_cv_t<T>>>
 struct raw_type { using type = std::remove_cv_t<T>; };
@@ -216,8 +218,18 @@ uint64_t RuntimeIdeologyPodAuthority::compute_catalog_hash(
     hash = hash_value(hash, catalog.gate_count);
     hash = hash_value(hash, catalog.ideology_capacity);
     hash = hash_value(hash, catalog.spirit_capacity);
+    hash = hash_value(hash, catalog.ideology_capacity_max);
+    hash = hash_value(hash, catalog.spirit_capacity_max);
     hash = hash_value(hash, catalog.offer_cost_q16);
+    hash = hash_value(hash, catalog.offer_cost_growth_percent);
+    hash = hash_value(hash, catalog.offer_cost_max_q16);
+    hash = hash_value(hash, catalog.reroll_cost_percent);
     hash = hash_value(hash, catalog.starting_points_q16);
+    hash = hash_value(hash, catalog.point_population_weight_q16);
+    hash = hash_value(hash, catalog.point_building_weight_q16);
+    hash = hash_value(hash, catalog.point_trade_weight_q16);
+    hash = hash_value(hash, catalog.point_gain_cap_q16);
+    hash = hash_value(hash, catalog.point_gain_stat_id);
     hash = hash_value(hash, catalog.owner_influence_weight);
     hash = hash_value(hash, catalog.funds_per_influence);
     hash = hash_value(hash, catalog.max_commands_per_slice);
@@ -239,6 +251,8 @@ uint64_t RuntimeIdeologyPodAuthority::compute_catalog_hash(
     for (const auto &level : catalog.levels) {
         hash = hash_value(hash, level.threshold_q16);
         hash = hash_value(hash, level.daily_understanding_q16);
+        hash = hash_value(hash, level.modifier_begin);
+        hash = hash_value(hash, level.modifier_count);
     }
     hash = hash_vector(hash, catalog.technology_requirements);
     hash = hash_vector(hash, catalog.signal_requirements);
@@ -256,9 +270,26 @@ uint64_t RuntimeIdeologyPodAuthority::compute_catalog_hash(
     for (const auto &synergy : catalog.synergies) {
         hash = hash_value(hash, synergy.requirement_begin);
         hash = hash_value(hash, synergy.requirement_count);
+        hash = hash_value(hash, synergy.min_count);
+        hash = hash_value(hash, synergy.modifier_begin);
+        hash = hash_value(hash, synergy.modifier_count);
     }
     hash = hash_vector(hash, catalog.ideology_synergy_offsets);
     hash = hash_vector(hash, catalog.ideology_synergy_ids);
+    for (const auto *rows : {&catalog.level_modifiers, &catalog.synergy_modifiers}) {
+        hash = hash_value(hash, static_cast<uint64_t>(rows->size()));
+        for (const auto &row : *rows) {
+            hash = hash_value(hash, row.definition_key_hash);
+            hash = hash_value(hash, row.domain);
+            hash = hash_value(hash, row.magnitude_q16);
+        }
+    }
+    hash = hash_value(hash, static_cast<uint64_t>(catalog.capacity_unlocks.size()));
+    for (const auto &unlock : catalog.capacity_unlocks) {
+        hash = hash_value(hash, unlock.technology_id);
+        hash = hash_value(hash, unlock.ideology_delta);
+        hash = hash_value(hash, unlock.spirit_delta);
+    }
     return hash;
 }
 
@@ -280,6 +311,15 @@ uint64_t RuntimeIdeologyPodAuthority::compute_state_hash(
     for (const auto &country : state.countries) {
         hash = hash_value(hash, country.handle); hash = hash_value(hash, country.generation);
         hash = hash_value(hash, country.ideology_points_q16); hash = hash_value(hash, country.rng_state);
+        hash = hash_value(hash, country.points_revision); hash = hash_value(hash, country.baseline_ready);
+        hash = hash_value(hash, country.history_count); hash = hash_value(hash, country.history_head);
+        hash = hash_value(hash, country.baseline_population); hash = hash_value(hash, country.baseline_buildings);
+        hash = hash_value(hash, country.lifetime_points_q16);
+        hash = hash_value(hash, country.ledger.population_q16); hash = hash_value(hash, country.ledger.building_q16);
+        hash = hash_value(hash, country.ledger.trade_q16); hash = hash_value(hash, country.ledger.opinion_factor_q16);
+        hash = hash_value(hash, country.ledger.gain_factor_q16); hash = hash_value(hash, country.ledger.gain_q16);
+        hash = hash_value(hash, country.ledger.day);
+        for (int64_t value : country.history_q16) hash = hash_value(hash, value);
         hash = hash_value(hash, country.draw_sequence); hash = hash_value(hash, country.ideology_slots_used);
         hash = hash_value(hash, country.spirit_slots_used); hash = hash_value(hash, country.opinion_revision);
         hash = hash_value(hash, country.offer.generation); hash = hash_value(hash, country.offer.active);
@@ -333,7 +373,14 @@ bool RuntimeIdeologyPodAuthority::validate_catalog(
     if (catalog.definitions.empty() || catalog.definitions.size() > RUNTIME_IDEOLOGY_POD_MAX_IDEAS ||
         catalog.class_count == 0 || catalog.class_hash == 0 || catalog.country_catalog_hash == 0 ||
         catalog.ideology_capacity < 0 || catalog.spirit_capacity < 0 ||
+        catalog.ideology_capacity_max < catalog.ideology_capacity ||
+        catalog.spirit_capacity_max < catalog.spirit_capacity ||
         catalog.offer_cost_q16 < 0 || catalog.starting_points_q16 < 0 ||
+        catalog.offer_cost_growth_percent < 100 || catalog.offer_cost_growth_percent > 400 ||
+        catalog.offer_cost_max_q16 < catalog.offer_cost_q16 ||
+        catalog.reroll_cost_percent < 0 || catalog.reroll_cost_percent > 400 ||
+        catalog.point_population_weight_q16 < 0 || catalog.point_building_weight_q16 < 0 ||
+        catalog.point_trade_weight_q16 < 0 || catalog.point_gain_cap_q16 < 0 ||
         catalog.owner_influence_weight < 0 || catalog.funds_per_influence <= 0 ||
         catalog.max_commands_per_slice == 0 || catalog.max_transition_commands == 0 ||
         catalog.max_transition_polls_per_slice == 0 || catalog.max_active_visits_per_slice == 0) {
@@ -365,7 +412,16 @@ bool RuntimeIdeologyPodAuthority::validate_catalog(
     for (const auto &requirement : catalog.synergy_requirements)
         if (requirement.ideology_id < 0 || requirement.ideology_id >= static_cast<int32_t>(catalog.definitions.size()) || requirement.minimum_level < 0 || requirement.location_mask == 0) { error = "ideology_pod_synergy_requirement_invalid"; return false; }
     for (const auto &synergy : catalog.synergies)
-        if (synergy.requirement_begin > catalog.synergy_requirements.size() || synergy.requirement_count > catalog.synergy_requirements.size() - synergy.requirement_begin) { error = "ideology_pod_synergy_invalid"; return false; }
+        if (synergy.requirement_begin > catalog.synergy_requirements.size() || synergy.requirement_count > catalog.synergy_requirements.size() - synergy.requirement_begin ||
+            synergy.min_count > synergy.requirement_count ||
+            synergy.modifier_begin > catalog.synergy_modifiers.size() || synergy.modifier_count > catalog.synergy_modifiers.size() - synergy.modifier_begin) { error = "ideology_pod_synergy_invalid"; return false; }
+    for (const auto &level : catalog.levels)
+        if (level.modifier_begin > catalog.level_modifiers.size() || level.modifier_count > catalog.level_modifiers.size() - level.modifier_begin) { error = "ideology_pod_level_modifier_invalid"; return false; }
+    for (const auto *rows : {&catalog.level_modifiers, &catalog.synergy_modifiers})
+        for (const auto &row : *rows)
+            if (row.definition_key_hash == 0 || row.domain < 0 || row.domain > 3 || row.magnitude_q16 < 0 || row.magnitude_q16 > 4 * Q16_ONE) { error = "ideology_pod_modifier_template_invalid"; return false; }
+    for (const auto &unlock : catalog.capacity_unlocks)
+        if (unlock.technology_id < 0 || unlock.technology_id >= static_cast<int32_t>(catalog.technology_count) || unlock.ideology_delta < 0 || unlock.spirit_delta < 0) { error = "ideology_pod_capacity_unlock_invalid"; return false; }
     if (catalog.ideology_synergy_offsets.size() != catalog.definitions.size() + 1u ||
         catalog.ideology_synergy_offsets.front() != 0u ||
         catalog.ideology_synergy_offsets.back() != catalog.ideology_synergy_ids.size()) {
@@ -517,7 +573,7 @@ bool RuntimeIdeologyPodAuthority::bootstrap(
 bool RuntimeIdeologyPodAuthority::validate_command(
         const RuntimeIdeologyPodCommand &command, std::string &error) const {
     const auto opcode = static_cast<uint16_t>(command.opcode);
-    if (opcode < 1 || opcode > 9 || command.request_id == 0 ||
+    if (opcode < 1 || opcode > 10 || command.request_id == 0 ||
         command.producer_id == 0 || command.country_handle == 0 ||
         command.effective_day < 0 || command.requested_day < 0) {
         error = "ideology_command_invalid"; return false;
@@ -643,18 +699,18 @@ void RuntimeIdeologyPodAuthority::compute_synergies(
         const uint32_t synergy_id = static_cast<uint32_t>(
             _catalog.ideology_synergy_ids[candidate]);
         const auto &synergy = _catalog.synergies[synergy_id];
-        bool active = true;
+        const uint32_t needed = synergy.min_count == 0 ? synergy.requirement_count : synergy.min_count;
+        uint32_t held = 0;
         for (uint32_t row = 0; row < synergy.requirement_count; ++row) {
             const auto &requirement = _catalog.synergy_requirements[synergy.requirement_begin + row];
             const auto &idea = country.ideas[static_cast<size_t>(requirement.ideology_id)];
             const int32_t level = requirement.ideology_id == override_ideology ? override_level : idea.level;
             const RuntimeIdeologyPodLocation location = requirement.ideology_id == override_ideology ? override_location : idea.location;
-            if (level < requirement.minimum_level ||
-                (requirement.location_mask & (1u << static_cast<uint8_t>(location))) == 0) {
-                active = false; break;
-            }
+            if (level >= requirement.minimum_level &&
+                (requirement.location_mask & (1u << static_cast<uint8_t>(location))) != 0)
+                ++held;
         }
-        bit_set(out, static_cast<int32_t>(synergy_id), active);
+        bit_set(out, static_cast<int32_t>(synergy_id), held >= needed);
     }
 }
 
@@ -672,9 +728,64 @@ uint64_t RuntimeIdeologyPodAuthority::transition_identity(
 }
 
 void RuntimeIdeologyPodAuthority::emit_transition(
+        const RuntimeIdeologyPodSnapshot &state,
         RuntimeIdeologyPodTransition &transition,
         RuntimeIdeologyPodPlan &plan) const {
     if (transition.intent_emitted != 0) return;
+    // Level rows of the retained (pre-ACK) state versus the desired state.
+    // UniqueSource APPLY is an upsert, so a tier change re-applies with the
+    // new magnitude and only definitions absent from the new tier are removed.
+    if (transition.country_slot < state.countries.size()) {
+        const auto &country = state.countries[transition.country_slot];
+        const auto &definition = _catalog.definitions[static_cast<size_t>(transition.ideology_id)];
+        const auto &idea = country.ideas[static_cast<size_t>(transition.ideology_id)];
+        auto tier = [&](int32_t level, RuntimeIdeologyPodLocation location,
+                        uint32_t &begin, uint32_t &count) {
+            begin = count = 0;
+            if (location == RuntimeIdeologyPodLocation::INACTIVE || level < 0 ||
+                level >= static_cast<int32_t>(definition.level_count)) return;
+            const auto &row = _catalog.levels[definition.level_begin + static_cast<uint32_t>(level)];
+            begin = row.modifier_begin; count = row.modifier_count;
+        };
+        uint32_t old_begin = 0, old_count = 0, new_begin = 0, new_count = 0;
+        tier(idea.level, idea.location, old_begin, old_count);
+        tier(transition.desired_level, transition.desired_location, new_begin, new_count);
+        const uint64_t handle = (static_cast<uint64_t>(transition.country_generation) << 32u) | transition.country_slot;
+        uint32_t ordinal = 0;
+        auto push = [&](const RuntimeIdeologyPodModifierTemplate &templ, uint16_t opcode) {
+            RuntimeIdeologyPodModifierRow row;
+            row.transition_id = transition.intent_id;
+            row.country_handle = handle;
+            row.country_generation = transition.country_generation;
+            row.opcode = opcode;
+            row.domain = static_cast<uint16_t>(templ.domain);
+            row.definition_key_hash = templ.definition_key_hash;
+            row.source_id = static_cast<uint64_t>(transition.ideology_id + 1);
+            row.magnitude_q16 = templ.magnitude_q16;
+            row.ordinal = ordinal++;
+            row.effective_day = transition.effective_day;
+            plan.modifier_rows.push_back(row);
+        };
+        for (uint32_t i = 0; i < old_count; ++i) {
+            const auto &old_row = _catalog.level_modifiers[old_begin + i];
+            bool kept = false;
+            for (uint32_t j = 0; j < new_count; ++j) {
+                const auto &new_row = _catalog.level_modifiers[new_begin + j];
+                if (new_row.definition_key_hash == old_row.definition_key_hash && new_row.domain == old_row.domain) { kept = true; break; }
+            }
+            if (!kept) push(old_row, 2u);
+        }
+        for (uint32_t j = 0; j < new_count; ++j) {
+            const auto &new_row = _catalog.level_modifiers[new_begin + j];
+            bool unchanged = false;
+            for (uint32_t i = 0; i < old_count; ++i) {
+                const auto &old_row = _catalog.level_modifiers[old_begin + i];
+                if (old_row.definition_key_hash == new_row.definition_key_hash && old_row.domain == new_row.domain &&
+                    old_row.magnitude_q16 == new_row.magnitude_q16) { unchanged = true; break; }
+            }
+            if (!unchanged) push(new_row, 1u);
+        }
+    }
     RuntimeDomainIntent intent;
     intent.source_domain = static_cast<uint16_t>(RuntimeDomainId::IDEOLOGY);
     intent.target_domain = static_cast<uint16_t>(RuntimeDomainId::EFFECT);
@@ -730,13 +841,50 @@ bool RuntimeIdeologyPodAuthority::begin_transition(
     transition.intent_id = transition_identity(transition,
         command != nullptr ? command->opcode : RuntimeIdeologyPodOpcode::ADD_UNDERSTANDING);
     state.pending_transitions.push_back(std::move(transition));
-    emit_transition(state.pending_transitions.back(), plan);
+    emit_transition(state, state.pending_transitions.back(), plan);
     return true;
+}
+
+void RuntimeIdeologyPodAuthority::settle_synergies(
+        RuntimeIdeologyPodCountryState &country, uint32_t country_slot,
+        int32_t ideology_id, int64_t day, RuntimeIdeologyPodPlan &plan) const {
+    // Recompute only the reverse-CSR candidates against the settled state, so
+    // two same-day transitions of one school still reach a shared resonance.
+    std::vector<uint64_t> next;
+    compute_synergies(country, ideology_id,
+        country.ideas[static_cast<size_t>(ideology_id)].level,
+        country.ideas[static_cast<size_t>(ideology_id)].location, next);
+    const uint32_t begin = _catalog.ideology_synergy_offsets[static_cast<size_t>(ideology_id)];
+    const uint32_t end = _catalog.ideology_synergy_offsets[static_cast<size_t>(ideology_id + 1)];
+    for (uint32_t candidate = begin; candidate < end; ++candidate) {
+        const int32_t synergy_id = _catalog.ideology_synergy_ids[candidate];
+        const bool was = bit_get(country.synergy_bits, synergy_id);
+        const bool now = bit_get(next, synergy_id);
+        if (was == now) continue;
+        const auto &synergy = _catalog.synergies[static_cast<size_t>(synergy_id)];
+        for (uint32_t row_index = 0; row_index < synergy.modifier_count; ++row_index) {
+            const auto &templ = _catalog.synergy_modifiers[synergy.modifier_begin + row_index];
+            RuntimeIdeologyPodModifierRow row;
+            row.transition_id = 0;
+            row.country_handle = country.handle;
+            row.country_generation = country.generation;
+            row.opcode = now ? 1u : 2u;
+            row.domain = static_cast<uint16_t>(templ.domain);
+            row.definition_key_hash = templ.definition_key_hash;
+            row.source_id = (1ull << 32u) | static_cast<uint64_t>(synergy_id + 1);
+            row.magnitude_q16 = templ.magnitude_q16;
+            row.ordinal = row_index;
+            row.effective_day = day;
+            plan.modifier_rows.push_back(row);
+        }
+        bit_set(country.synergy_bits, synergy_id, now);
+    }
+    (void)country_slot;
 }
 
 bool RuntimeIdeologyPodAuthority::apply_ack(
         RuntimeIdeologyPodSnapshot &state, const RuntimeDomainAck &ack,
-        int64_t day, std::string &error) const {
+        int64_t day, RuntimeIdeologyPodPlan &plan, std::string &error) const {
     if (ack.domain != static_cast<uint16_t>(RuntimeDomainId::EFFECT)) return true;
     for (size_t i = 0; i < state.pending_transitions.size(); ++i) {
         auto &transition = state.pending_transitions[i];
@@ -767,7 +915,9 @@ bool RuntimeIdeologyPodAuthority::apply_ack(
             ++idea.generation;
             if (idea.location == RuntimeIdeologyPodLocation::IDEOLOGY) country.ideology_slots_used += definition.ideology_cost;
             if (idea.location == RuntimeIdeologyPodLocation::NATIONAL_SPIRIT) country.spirit_slots_used += definition.spirit_cost;
-            country.synergy_bits = transition.desired_synergy_bits;
+            if (country.synergy_bits.size() != (_catalog.synergies.size() + 63u) / 64u)
+                country.synergy_bits.assign((_catalog.synergies.size() + 63u) / 64u, 0);
+            settle_synergies(country, transition.country_slot, transition.ideology_id, day, plan);
             rebuild_active_idea_ids(country);
             status = RuntimeIdeologyPodReceiptStatus::SETTLED;
         }
@@ -786,6 +936,133 @@ bool RuntimeIdeologyPodAuthority::apply_ack(
         return true;
     }
     return true;
+}
+
+int32_t RuntimeIdeologyPodAuthority::ideology_capacity_for(
+        const RuntimeCountryPodSnapshot &country, uint32_t slot) const {
+    int64_t capacity = _catalog.ideology_capacity;
+    for (const auto &unlock : _catalog.capacity_unlocks) {
+        if (unlock.ideology_delta == 0) continue;
+        const size_t index = static_cast<size_t>(slot) * country.technology_words + static_cast<size_t>(unlock.technology_id / 64);
+        if (index < country.country_technologies.size() &&
+            (country.country_technologies[index] & (1ull << (unlock.technology_id % 64))) != 0)
+            capacity += unlock.ideology_delta;
+    }
+    return static_cast<int32_t>(std::min<int64_t>(capacity, _catalog.ideology_capacity_max));
+}
+
+int32_t RuntimeIdeologyPodAuthority::spirit_capacity_for(
+        const RuntimeCountryPodSnapshot &country, uint32_t slot) const {
+    int64_t capacity = _catalog.spirit_capacity;
+    for (const auto &unlock : _catalog.capacity_unlocks) {
+        if (unlock.spirit_delta == 0) continue;
+        const size_t index = static_cast<size_t>(slot) * country.technology_words + static_cast<size_t>(unlock.technology_id / 64);
+        if (index < country.country_technologies.size() &&
+            (country.country_technologies[index] & (1ull << (unlock.technology_id % 64))) != 0)
+            capacity += unlock.spirit_delta;
+    }
+    return static_cast<int32_t>(std::min<int64_t>(capacity, _catalog.spirit_capacity_max));
+}
+
+int64_t RuntimeIdeologyPodAuthority::offer_cost_for(uint64_t draw_sequence) const {
+    return runtime_ideology_offer_cost_q16(_catalog.offer_cost_q16,
+        _catalog.offer_cost_growth_percent, _catalog.offer_cost_max_q16, draw_sequence);
+}
+
+int64_t RuntimeIdeologyPodAuthority::reroll_cost_for(uint64_t draw_sequence) const {
+    // The open offer was paid at draw_sequence - 1; rerolls cost a share of it.
+    const int64_t paid = offer_cost_for(draw_sequence == 0 ? 0 : draw_sequence - 1u);
+    return mul_sat(paid, _catalog.reroll_cost_percent) / 100;
+}
+
+bool RuntimeIdeologyPodAuthority::draw_offer(
+        RuntimeIdeologyPodSnapshot &state, const RuntimeCountryPodSnapshot &country,
+        uint32_t slot, std::string &error) const {
+    auto &row = state.countries[slot];
+    std::vector<int32_t> pool;
+    for (int32_t id = 0; id < static_cast<int32_t>(_catalog.definitions.size()); ++id)
+        if (!bit_get(row.known_bits, id) && (_catalog.definitions[id].acquisition & ACQUIRE_DRAW) != 0 &&
+            requirements_met(state, country, slot, id)) pool.push_back(id);
+    if (pool.empty()) { error = "ideology_offer_pool_insufficient"; return false; }
+    row.offer.ideology_ids = {{-1, -1, -1}};
+    const int32_t draws = static_cast<int32_t>(std::min<size_t>(3u, pool.size()));
+    for (int32_t draw = 0; draw < draws; ++draw) {
+        int64_t total = 0;
+        for (int32_t id : pool) total += _catalog.definitions[id].rarity_weight;
+        uint64_t roll = next_random(row.rng_state) % static_cast<uint64_t>(total);
+        size_t selected = 0;
+        for (; selected + 1 < pool.size(); ++selected) {
+            const uint64_t weight = static_cast<uint64_t>(_catalog.definitions[pool[selected]].rarity_weight);
+            if (roll < weight) break;
+            roll -= weight;
+        }
+        row.offer.ideology_ids[draw] = pool[selected];
+        pool.erase(pool.begin() + static_cast<std::ptrdiff_t>(selected));
+    }
+    row.offer.active = 1;
+    row.offer.generation = std::max<uint32_t>(1, row.offer.generation + 1u);
+    return true;
+}
+
+void RuntimeIdeologyPodAuthority::accrue_points(
+        RuntimeIdeologyPodSnapshot &state,
+        const RuntimeIdeologyOpinionSnapshot &opinion, int64_t day) const {
+    const size_t countries = state.countries.size();
+    if (opinion.country_population.size() != countries ||
+        opinion.country_buildings_installed.size() != countries ||
+        opinion.country_trade_base_value.size() != countries) return;
+    const int64_t period = std::max<int64_t>(1, opinion.period_days);
+    for (uint32_t slot = 0; slot < countries; ++slot) {
+        auto &row = state.countries[slot];
+        if (row.handle == 0 || row.points_revision == opinion.revision) continue;
+        row.points_revision = opinion.revision;
+        const int64_t population = std::max<int64_t>(0, opinion.country_population[slot]);
+        const int64_t buildings = std::max<int64_t>(0, opinion.country_buildings_installed[slot]);
+        if (row.baseline_ready == 0) {
+            // First observation is the baseline; it never pays out.
+            row.baseline_population = population;
+            row.baseline_buildings = buildings;
+            row.baseline_ready = 1;
+            continue;
+        }
+        // High-water baselines: only new peaks pay, so decline/recovery loops
+        // cannot farm points.
+        const int64_t population_gain = std::max<int64_t>(0, population - row.baseline_population);
+        const int64_t building_gain = std::max<int64_t>(0, buildings - row.baseline_buildings);
+        row.baseline_population = std::max(row.baseline_population, population);
+        row.baseline_buildings = std::max(row.baseline_buildings, buildings);
+        const int64_t trade_per_day = std::max<int64_t>(0, opinion.country_trade_base_value[slot]) / period;
+        RuntimeIdeologyPodPointLedger ledger;
+        ledger.day = day;
+        ledger.population_q16 = mul_sat(population_gain, _catalog.point_population_weight_q16);
+        ledger.building_q16 = mul_sat(building_gain, _catalog.point_building_weight_q16);
+        ledger.trade_q16 = mul_sat(trade_per_day, _catalog.point_trade_weight_q16) / TRADE_MONEY_SCALE;
+        int64_t total_influence = 0;
+        int64_t weighted = 0;
+        for (uint32_t class_index = 0; class_index < _catalog.class_count; ++class_index) {
+            const size_t lane = static_cast<size_t>(slot) * _catalog.class_count + class_index;
+            int64_t influence = std::max<int64_t>(0, opinion.population[lane]);
+            influence = add_sat(influence, mul_sat(std::max<int64_t>(0, opinion.owner_employed[lane]), _catalog.owner_influence_weight));
+            influence = add_sat(influence, std::max<int64_t>(0, opinion.funds[lane]) / _catalog.funds_per_influence);
+            total_influence = add_sat(total_influence, influence);
+            weighted = add_sat(weighted, mul_sat(influence, std::clamp<int64_t>(opinion.satisfaction_q16[lane], 0, Q16_ONE)));
+        }
+        const int64_t satisfaction = total_influence > 0 ? std::clamp<int64_t>(weighted / total_influence, 0, Q16_ONE) : Q16_ONE / 2;
+        ledger.opinion_factor_q16 = static_cast<int32_t>(Q16_ONE / 2 + satisfaction);
+        ledger.gain_factor_q16 = slot < opinion.point_gain_factor_q16.size()
+            ? std::clamp<int32_t>(opinion.point_gain_factor_q16[slot], 0, 4 * Q16_ONE) : static_cast<int32_t>(Q16_ONE);
+        const int64_t raw = add_sat(add_sat(ledger.population_q16, ledger.building_q16), ledger.trade_q16);
+        int64_t gain = mul_sat(raw, ledger.opinion_factor_q16) / Q16_ONE;
+        gain = mul_sat(gain, ledger.gain_factor_q16) / Q16_ONE;
+        if (_catalog.point_gain_cap_q16 > 0) gain = std::min(gain, _catalog.point_gain_cap_q16);
+        ledger.gain_q16 = std::max<int64_t>(0, gain);
+        row.ideology_points_q16 = add_sat(row.ideology_points_q16, ledger.gain_q16);
+        row.lifetime_points_q16 = add_sat(row.lifetime_points_q16, ledger.gain_q16);
+        row.ledger = ledger;
+        row.history_q16[row.history_head] = ledger.gain_q16;
+        row.history_head = static_cast<uint8_t>((row.history_head + 1u) % RUNTIME_IDEOLOGY_POD_HISTORY);
+        if (row.history_count < RUNTIME_IDEOLOGY_POD_HISTORY) ++row.history_count;
+    }
 }
 
 bool RuntimeIdeologyPodAuthority::apply_command(
@@ -810,31 +1087,24 @@ bool RuntimeIdeologyPodAuthority::apply_command(
         case RuntimeIdeologyPodOpcode::GRANT_POINTS:
             row.ideology_points_q16 = add_sat(row.ideology_points_q16, command.value_q16); return true;
         case RuntimeIdeologyPodOpcode::OPEN_OFFER: {
-            if (row.offer.active != 0 || row.ideology_points_q16 < _catalog.offer_cost_q16) { error = "ideology_offer_unavailable"; return false; }
-            std::vector<int32_t> pool;
-            for (int32_t id = 0; id < static_cast<int32_t>(_catalog.definitions.size()); ++id)
-                if (!bit_get(row.known_bits, id) && (_catalog.definitions[id].acquisition & ACQUIRE_DRAW) != 0 && requirements_met(state, country, slot, id)) pool.push_back(id);
-            if (pool.size() < 3) { error = "ideology_offer_pool_insufficient"; return false; }
-            for (int32_t draw = 0; draw < 3; ++draw) {
-                int64_t total = 0;
-                for (int32_t id : pool) total += _catalog.definitions[id].rarity_weight;
-                uint64_t roll = next_random(row.rng_state) % static_cast<uint64_t>(total);
-                size_t selected = 0;
-                for (; selected + 1 < pool.size(); ++selected) {
-                    const uint64_t weight = static_cast<uint64_t>(_catalog.definitions[pool[selected]].rarity_weight);
-                    if (roll < weight) break;
-                    roll -= weight;
-                }
-                row.offer.ideology_ids[draw] = pool[selected];
-                pool.erase(pool.begin() + static_cast<std::ptrdiff_t>(selected));
-            }
-            row.ideology_points_q16 -= _catalog.offer_cost_q16;
-            row.offer.active = 1; row.offer.generation = std::max<uint32_t>(1, row.offer.generation + 1u);
+            const int64_t cost = offer_cost_for(row.draw_sequence);
+            if (row.offer.active != 0) { error = "ideology_offer_pending"; return false; }
+            if (row.ideology_points_q16 < cost) { error = "ideology_points_insufficient"; return false; }
+            if (!draw_offer(state, country, slot, error)) return false;
+            row.ideology_points_q16 -= cost;
             ++row.draw_sequence; return true;
+        }
+        case RuntimeIdeologyPodOpcode::REROLL_OFFER: {
+            const int64_t cost = reroll_cost_for(row.draw_sequence);
+            if (row.offer.active == 0) { error = "ideology_offer_not_active"; return false; }
+            if (command.offer_generation != 0 && command.offer_generation != row.offer.generation) { error = "ideology_offer_generation_stale"; return false; }
+            if (row.ideology_points_q16 < cost) { error = "ideology_points_insufficient"; return false; }
+            if (!draw_offer(state, country, slot, error)) return false;
+            row.ideology_points_q16 -= cost; return true;
         }
         case RuntimeIdeologyPodOpcode::CHOOSE_OFFER:
             if (row.offer.active == 0 || row.offer.generation != command.offer_generation || command.choice_index < 0 || command.choice_index >= 3) { error = "ideology_offer_generation_stale"; return false; }
-            if (row.offer.ideology_ids[command.choice_index] < 0) { error = "ideology_offer_choice_invalid"; return false; }
+            if (row.offer.ideology_ids[command.choice_index] < 0 || bit_get(row.known_bits, row.offer.ideology_ids[command.choice_index])) { error = "ideology_offer_choice_invalid"; return false; }
             bit_set(row.known_bits, row.offer.ideology_ids[command.choice_index], true);
             row.offer.active = 0; row.offer.ideology_ids = {{-1, -1, -1}}; return true;
         case RuntimeIdeologyPodOpcode::EQUIP: {
@@ -846,7 +1116,7 @@ bool RuntimeIdeologyPodAuthority::apply_command(
             for (int32_t other = 0; other < static_cast<int32_t>(row.ideas.size()); ++other)
                 if (other != idea_id && row.ideas[other].location != RuntimeIdeologyPodLocation::INACTIVE && definition.exclusion_group_id >= 0 && _catalog.definitions[other].exclusion_group_id == definition.exclusion_group_id) { error = "ideology_exclusion_group_conflict"; return false; }
             if (!support_allows(state, opinion, slot, idea_id, 0)) { error = "ideology_support_threshold_not_met"; return false; }
-            if (row.ideology_slots_used + definition.ideology_cost > _catalog.ideology_capacity) { error = "ideology_slot_capacity_exceeded"; return false; }
+            if (row.ideology_slots_used + definition.ideology_cost > ideology_capacity_for(country, slot)) { error = "ideology_slot_capacity_exceeded"; return false; }
             const int32_t level = std::max(idea.level, unlocked_level(idea, idea_id));
             const uint64_t entered = level < 0 ? 0 : ((level == 63 ? ~0ull : ((1ull << (level + 1)) - 1ull)) & ~idea.entered_levels);
             return begin_transition(state, slot, idea_id, level, RuntimeIdeologyPodLocation::IDEOLOGY, entered, &command, command.effective_day, plan, error);
@@ -862,7 +1132,7 @@ bool RuntimeIdeologyPodAuthority::apply_command(
             const auto &definition = _catalog.definitions[idea_id];
             if (idea.location != RuntimeIdeologyPodLocation::IDEOLOGY) { error = "ideology_promotion_requires_equipped"; return false; }
             if (idea.level < definition.min_spirit_level) { error = "ideology_national_spirit_level_insufficient"; return false; }
-            if (row.spirit_slots_used + definition.spirit_cost > _catalog.spirit_capacity) { error = "national_spirit_slot_capacity_exceeded"; return false; }
+            if (row.spirit_slots_used + definition.spirit_cost > spirit_capacity_for(country, slot)) { error = "national_spirit_slot_capacity_exceeded"; return false; }
             if (!support_allows(state, opinion, slot, idea_id, 2)) { error = "ideology_support_threshold_not_met"; return false; }
             return begin_transition(state, slot, idea_id, idea.level, RuntimeIdeologyPodLocation::NATIONAL_SPIRIT, 0, &command, command.effective_day, plan, error);
         }
@@ -907,6 +1177,7 @@ bool RuntimeIdeologyPodAuthority::plan_day(
         state.pending_cursor = state.command_cursor = 0;
         state.active_country_cursor = state.active_idea_cursor = 0;
         state.input_generation = country.generation;
+        accrue_points(state, opinion, day);
     } else if (state.round_day != day || state.input_generation != country.generation) {
         error = "ideology_same_day_continuation_input_changed"; return false;
     } else if (state.opinion_revision != opinion.revision) {
@@ -914,11 +1185,11 @@ bool RuntimeIdeologyPodAuthority::plan_day(
     }
     state.opinion_revision = opinion.revision;
     if (state.phase == RuntimeIdeologyPodPhase::PENDING_TRANSITIONS) {
-        for (const auto &ack : acks) if (!apply_ack(state, ack, day, error)) return false;
+        for (const auto &ack : acks) if (!apply_ack(state, ack, day, plan, error)) return false;
         uint32_t visits = 0;
         while (state.pending_cursor < state.pending_transitions.size() &&
                visits < _catalog.max_transition_polls_per_slice) {
-            emit_transition(state.pending_transitions[state.pending_cursor], plan);
+            emit_transition(state, state.pending_transitions[state.pending_cursor], plan);
             ++state.pending_cursor; ++visits;
         }
         plan.transition_visits = visits;
@@ -1049,6 +1320,15 @@ void RuntimeIdeologyPodAuthority::serialize(std::vector<uint8_t> &out) const {
     for (const auto &country : _current.countries) {
         append_le<uint64_t>(out, country.handle); append_le<uint32_t>(out, country.generation);
         append_le<int64_t>(out, country.ideology_points_q16); append_le<uint64_t>(out, country.rng_state);
+        append_le<uint64_t>(out, country.points_revision); append_le<uint8_t>(out, country.baseline_ready);
+        append_le<uint8_t>(out, country.history_count); append_le<uint8_t>(out, country.history_head);
+        append_le<int64_t>(out, country.baseline_population); append_le<int64_t>(out, country.baseline_buildings);
+        append_le<int64_t>(out, country.lifetime_points_q16);
+        append_le<int64_t>(out, country.ledger.population_q16); append_le<int64_t>(out, country.ledger.building_q16);
+        append_le<int64_t>(out, country.ledger.trade_q16); append_le<int32_t>(out, country.ledger.opinion_factor_q16);
+        append_le<int32_t>(out, country.ledger.gain_factor_q16); append_le<int64_t>(out, country.ledger.gain_q16);
+        append_le<int64_t>(out, country.ledger.day);
+        for (int64_t value : country.history_q16) append_le<int64_t>(out, value);
         append_le<uint64_t>(out, country.draw_sequence); append_le<int32_t>(out, country.ideology_slots_used);
         append_le<int32_t>(out, country.spirit_slots_used); append_le<uint64_t>(out, country.opinion_revision);
         append_le<uint32_t>(out, country.offer.generation); for (int32_t id : country.offer.ideology_ids) append_le<int32_t>(out, id);
@@ -1136,6 +1416,16 @@ bool RuntimeIdeologyPodAuthority::restore(
     for (auto &country : state.countries) {
         if (!read_le(data,end,cursor,country.handle) || !read_le(data,end,cursor,country.generation) ||
             !read_le(data,end,cursor,country.ideology_points_q16) || !read_le(data,end,cursor,country.rng_state) ||
+            !read_le(data,end,cursor,country.points_revision) || !read_le(data,end,cursor,country.baseline_ready) ||
+            !read_le(data,end,cursor,country.history_count) || !read_le(data,end,cursor,country.history_head) ||
+            country.history_count > RUNTIME_IDEOLOGY_POD_HISTORY || country.history_head >= RUNTIME_IDEOLOGY_POD_HISTORY ||
+            !read_le(data,end,cursor,country.baseline_population) || !read_le(data,end,cursor,country.baseline_buildings) ||
+            !read_le(data,end,cursor,country.lifetime_points_q16) ||
+            !read_le(data,end,cursor,country.ledger.population_q16) || !read_le(data,end,cursor,country.ledger.building_q16) ||
+            !read_le(data,end,cursor,country.ledger.trade_q16) || !read_le(data,end,cursor,country.ledger.opinion_factor_q16) ||
+            !read_le(data,end,cursor,country.ledger.gain_factor_q16) || !read_le(data,end,cursor,country.ledger.gain_q16) ||
+            !read_le(data,end,cursor,country.ledger.day) ||
+            !std::all_of(country.history_q16.begin(), country.history_q16.end(), [&](int64_t &value) { return read_le(data,end,cursor,value); }) ||
             !read_le(data,end,cursor,country.draw_sequence) || !read_le(data,end,cursor,country.ideology_slots_used) ||
             !read_le(data,end,cursor,country.spirit_slots_used) || !read_le(data,end,cursor,country.opinion_revision) ||
             !read_le(data,end,cursor,country.offer.generation) || !read_le(data,end,cursor,country.offer.ideology_ids[0]) ||
@@ -1194,12 +1484,28 @@ bool RuntimeIdeologyPodAuthority::restore(
     return true;
 }
 
+void RuntimeIdeologyPodAuthority::rearm_pending_transitions() {
+    bool changed = false;
+    for (auto &transition : _current.pending_transitions) {
+        if (transition.intent_emitted == 0) continue;
+        transition.intent_emitted = 0;
+        changed = true;
+    }
+    if (changed) {
+        _current.pending_cursor = 0;
+        _current.state_hash = compute_state_hash(_current);
+        _planned = _current;
+        _plan_ready = false;
+    }
+}
+
 bool RuntimeIdeologyPodAuthority::self_test(std::string &error) {
     error.clear();
     RuntimeIdeologyPodCatalog catalog;
     catalog.country_catalog_hash = 77; catalog.class_hash = 88; catalog.class_count = 1;
     catalog.technology_count = 1; catalog.research_signal_count = 1; catalog.gate_count = 1;
     catalog.ideology_capacity = 4; catalog.spirit_capacity = 2; catalog.starting_points_q16 = Q16_ONE;
+    catalog.point_population_weight_q16 = Q16_ONE;
     catalog.max_commands_per_slice = 2; catalog.max_transition_polls_per_slice = 1; catalog.max_active_visits_per_slice = 1;
     catalog.levels = {{0, 0}};
     for (int i = 0; i < 4; ++i) {
@@ -1310,6 +1616,33 @@ bool RuntimeIdeologyPodAuthority::self_test(std::string &error) {
     auto unequip = command(9, RuntimeIdeologyPodOpcode::UNEQUIP, chosen, 0, 0); unequip.effective_day = unequip.requested_day = 7;
     if (!authority.queue_command(unequip, error)) return false;
     do { if (!authority.plan_day(7, country, opinion, {}, plan, error) || !authority.commit_day(plan, error)) return false; } while (!plan.completed_day);
+    // Increment-only accrual: the first lane observation is a baseline, the
+    // next pays delta-population * weight * opinion factor (satisfaction 0 -> 0.5).
+    RuntimeIdeologyOpinionSnapshot grow = opinion;
+    grow.revision = 5; grow.country_population = {100}; grow.country_buildings_installed = {0};
+    grow.country_trade_base_value = {0}; grow.period_days = 1;
+    do { if (!authority.plan_day(8, country, grow, {}, plan, error) || !authority.commit_day(plan, error)) return false; } while (!plan.completed_day);
+    const int64_t points_before = authority.snapshot().countries[0].ideology_points_q16;
+    grow.revision = 6; grow.country_population = {110};
+    do { if (!authority.plan_day(9, country, grow, {}, plan, error) || !authority.commit_day(plan, error)) return false; } while (!plan.completed_day);
+    if (authority.snapshot().countries[0].ideology_points_q16 - points_before != 5 * Q16_ONE ||
+        authority.snapshot().countries[0].history_count != 1) {
+        error = "ideology_self_test_point_accrual_failed"; return false;
+    }
+    auto reopen = command(10, RuntimeIdeologyPodOpcode::OPEN_OFFER, -1, 0, 0); reopen.effective_day = reopen.requested_day = 10;
+    if (!authority.queue_command(reopen, error)) return false;
+    do { if (!authority.plan_day(10, country, grow, {}, plan, error) || !authority.commit_day(plan, error)) return false; } while (!plan.completed_day);
+    const uint32_t offer_generation = authority.snapshot().countries[0].offer.generation;
+    const int64_t before_reroll = authority.snapshot().countries[0].ideology_points_q16;
+    auto reroll = command(11, RuntimeIdeologyPodOpcode::REROLL_OFFER, -1, 0, 0); reroll.effective_day = reroll.requested_day = 11;
+    reroll.offer_generation = offer_generation;
+    if (!authority.queue_command(reroll, error)) return false;
+    do { if (!authority.plan_day(11, country, grow, {}, plan, error) || !authority.commit_day(plan, error)) return false; } while (!plan.completed_day);
+    if (authority.snapshot().countries[0].offer.active == 0 ||
+        authority.snapshot().countries[0].offer.generation != offer_generation + 1u ||
+        before_reroll - authority.snapshot().countries[0].ideology_points_q16 != Q16_ONE / 2) {
+        error = "ideology_self_test_reroll_failed"; return false;
+    }
     std::vector<uint8_t> bytes; authority.serialize(bytes);
     RuntimeIdeologyPodAuthority restored;
     if (!restored.configure(catalog, error) || !restored.restore(bytes.data(), bytes.size(), error) ||

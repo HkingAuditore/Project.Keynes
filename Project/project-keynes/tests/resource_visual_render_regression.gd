@@ -54,6 +54,9 @@ func run() -> void:
 	mat.set_shader_parameter("gi_lut_bound", true)
 	mat.set_shader_parameter("visual_quality", 2)
 	mat.set_shader_parameter("camera_zoom", 1.0)
+	# Real-scale animals are ~1px in this 48px fixture; enlarge them so motion is measurable.
+	mat.set_shader_parameter("animal_length_hex", 0.35)
+	mat.set_shader_parameter("animal_min_pixels", 0.0)
 	for col in IDS.size():
 		var style := -1
 		for i in styles.size():

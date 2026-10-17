@@ -9,7 +9,7 @@ InfrastructureProjectStore 是施工/路线权威；Effect 仅负责跨域事务
 The current implementation supersedes older historical rows retained in the
 long-form matrix below: country authority is **PKCN v13**, economy authority is
 **PKEC v52**, configurable cross-domain effects are **PKEF v11**, Trigger state is
-**PKTR v6**, ideology state is **PKID v3**, and the native gameplay journal is
+**PKTR v6**, ideology state is **PKID v4**, and the native gameplay journal is
 **journal v4**. Country is production ACTIVE only for the granted
 `CLIMATE|COUNTRY|TRIGGER_INPUT|IDEOLOGY|MODIFIER|EFFECT|ECONOMY|EVENTS|COMMIT = 0xFFF`
 mask. Economy production ACTIVE advances via Host `worker_run_compact_slice` on the
@@ -42,11 +42,11 @@ paths; historical v47 rows below are not the current schema.
 | Gameplay modifiers | Gameplay `ModifierStore` + base/identity SoA | PKSV `pkgp` / PKGP v1 | Explicit native handles only; no Godot Object reflection |
 | Configurable effects and cross-domain plans | `EffectRuntime` | PKSV `pkef` / PKEF v11 | Owns catalog IR, FamilyEffect metadata/stack groups, managed lifecycle, unique technology recipes, flat metric slabs, due/dirty candidates, transactions, durable external bindings and ACKs; never owns country/economy/Modifier stores |
 | Trigger accumulation, technology-practice breakthroughs and development duration | `TriggerRuntime` | PKSV `pktr` / PKTR v6 | Owns source cursors, aggregate/remainder/window state, last sample day, fire sequence and unhanded effects; threshold crossing hands typed Country-signal commands to Effect and never writes Country or Economy directly |
-| Country ideology collection/progression/offers/public-opinion gates/synergies | Host `RuntimeIdeologyPodAuthority` while Ideology has the `0x010` grant; synchronous `NativeIdeologyRuntime` only when the switch is disabled, startup fails, or the grant is absent | PKSV `pkid` / PKID v3 plus worker `IDP1` | Owns sparse country idea state, slots, points, offer RNG, directional support policy, exclusion and synergy state; reads committed Economy class facts and verifies PKEF external identity rather than replaying effects. Under the grant the worker is the sole writer and its snapshot writes back into `NativeIdeologyRuntime`, so UI and save keep reading one runtime |
+| Country ideology collection/progression/offers/public-opinion gates/synergies | Host `RuntimeIdeologyPodAuthority` while Ideology has the `0x010` grant; synchronous `NativeIdeologyRuntime` only when the switch is disabled, startup fails, or the grant is absent | PKSV `pkid` / PKID v4 plus worker `IDP2` | Owns sparse country idea state, slots, points, offer RNG, directional support policy, exclusion and synergy state; reads committed Economy class facts and verifies PKEF external identity rather than replaying effects. Under the grant the worker is the sole writer and its snapshot writes back into `NativeIdeologyRuntime`, so UI and save keep reading one runtime |
 
 G8 promoted `RuntimeIdeologyPodAuthority` from a worker `SHADOW` mirror to the
 production writer; the Ideology bit is part of
-`implemented_domain_mask() == 0xFFF`. Its `IDP1` section stays independent from
+`implemented_domain_mask() == 0xFFF`. Its `IDP2` section stays independent from
 synchronous `PKID` and legacy composite `PDP3`, and the SHADOW diagnostic stage
 is retained for parity work.
 

@@ -12,7 +12,7 @@ var _failures := 0
 
 func _init() -> void:
 	_run()
-	print("runtime ideology IDP1 save: %d checks, %d failures" % [
+	print("runtime ideology IDP2 save: %d checks, %d failures" % [
 		_checks, _failures])
 	quit(0 if _failures == 0 else 1)
 
@@ -112,7 +112,7 @@ func _run() -> void:
 	var ready_report := _wait_for_ideology(ext)
 	_expect("SHADOW worker report is available", not ready_report.is_empty())
 	var saved: Dictionary = _request_save(ext, 2026090901)
-	_expect("PKSR writes an independent IDP1 section",
+	_expect("PKSR writes an independent IDP2 section",
 		bool(saved.get("ready", false))
 		and (int(saved.get("section_mask", 0)) & (1 << 8)) != 0
 		and int(saved.get("ideology_bytes", 0)) > 0)
@@ -121,7 +121,7 @@ func _run() -> void:
 	_stop(ext)
 
 	var restored: Dictionary = ext.restore_runtime_bundle(save_bytes)
-	_expect("IDP1 bundle restores transactionally", bool(restored.get("restored", false)))
+	_expect("IDP2 bundle restores transactionally", bool(restored.get("restored", false)))
 	var restarted: Dictionary = ext.start_runtime_worker({
 		"simulation_thread_mode": "SHADOW",
 		"graph_coverage_complete": false,
@@ -130,7 +130,7 @@ func _run() -> void:
 		"paused": true,
 	})
 	var restored_report: Dictionary = ext.get_runtime_thread_report()
-	_expect("restored IDP1 state is published before worker activity",
+	_expect("restored IDP2 state is published before worker activity",
 		bool(restarted.get("ok", false))
 		and int(restored_report.get("ideology_pod_state_hash", 0)) == saved_hash)
 	_stop(ext)

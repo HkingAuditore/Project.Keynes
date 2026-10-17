@@ -804,6 +804,8 @@ func _start_production_shadow_worker() -> void:
 	_runtime_climate_writeback_generation = 0
 	_runtime_climate_writeback_days = 0
 	_runtime_climate_writeback_last_day = -1
+	# A new worker lifetime restarts Ideology snapshot generations at 1.
+	_ideology_worker_snapshot_generation = 0
 	var config: Dictionary = {
 		"simulation_thread_mode": "SHADOW",
 		"graph_coverage_complete": false,
@@ -4488,8 +4490,10 @@ func _refresh_building_visual_intel(vision_report: Dictionary) -> Dictionary:
 			dirty_slots[int(slot)] = true
 		if not dirty_slots.is_empty():
 			for cell in _building_visual_intel.known_cells():
-				if cell < _current_map.visible_arr.size() \
-						and _current_map.visible_arr[cell] != 0 \
+				var cell_visible := not _fog_of_war_enabled or (
+					cell < _current_map.visible_arr.size()
+					and _current_map.visible_arr[cell] != 0)
+				if cell_visible \
 						and cell < _current_map.country_slot_arr.size() \
 						and dirty_slots.has(int(_current_map.country_slot_arr[cell])):
 					requested.append(cell)

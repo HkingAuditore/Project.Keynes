@@ -585,7 +585,9 @@ bool RuntimeModifierPodAuthority::plan_day(
         RuntimeModifierPodSnapshot &planned_snapshot,
         std::vector<RuntimeDomainAck> &acks,
         RuntimeModifierPodReport &report,
-        std::string &error) {
+        std::string &error,
+        const std::vector<std::vector<RuntimeModifierPodCommand>> *atomic_batches,
+        std::vector<uint8_t> *atomic_batch_ok) {
     clear_error(error);
     report = RuntimeModifierPodReport{};
     report.generation = _current.generation;
@@ -730,6 +732,44 @@ bool RuntimeModifierPodAuthority::plan_day(
             return false;
         }
         if (!ok && error.empty()) error = command_error;
+    }
+    // Atomic producer batches (worker ideology transitions): every command in
+    // a batch applies, or the batch is rolled back and reported as rejected.
+    // They never produce Effect ACKs and never fail the shared Modifier day.
+    if (atomic_batch_ok != nullptr) atomic_batch_ok->clear();
+    if (atomic_batches != nullptr) {
+        for (const auto &batch : *atomic_batches) {
+            State backup = _next;
+            uint32_t applied = 0;
+            uint32_t changed_units = 0;
+            bool batch_ok = true;
+            for (const auto &source : batch) {
+                RuntimeModifierPodCommand command = source;
+                command.input_generation = input_generation;
+                std::string command_error;
+                RuntimeDomainAck ack;
+                bool changed = false;
+                bool ok = validate_command(command, command_error);
+                if (ok && command.opcode == COMMAND_APPLY)
+                    ok = apply_command(_next, command, day, ack, changed, command_error);
+                else if (ok && command.opcode == COMMAND_REMOVE)
+                    ok = remove_entry(_next, command, day, ack, changed, command_error);
+                else if (ok)
+                    ok = false;
+                if (!ok) { batch_ok = false; break; }
+                ++applied;
+                if (changed) ++changed_units;
+            }
+            if (!batch_ok) {
+                _next = std::move(backup);
+                report.rejected_commands += static_cast<uint32_t>(batch.size());
+            } else {
+                report.applied_commands += applied;
+                report.work_units += changed_units;
+            }
+            if (atomic_batch_ok != nullptr)
+                atomic_batch_ok->push_back(batch_ok ? 1u : 0u);
+        }
     }
     for (DomainState &domain : _next.domains) rebuild_expiry_queue(domain);
     _next.generation = _current.generation + 1;

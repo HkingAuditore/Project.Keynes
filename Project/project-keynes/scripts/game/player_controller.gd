@@ -11,6 +11,11 @@ signal regeneration_requested()
 signal country_committed(report: Dictionary)
 signal era_reward_offer_changed(offer: Dictionary)
 signal family_founding_offer_changed(offer: Dictionary)
+## Emitted once the native authority published a fresh three-card offer; the
+## clock is already paused when this fires.
+signal ideology_offer_ready(snapshot: Dictionary)
+## phase is "", "offer", "choose" or "reroll"; "" means the flow released.
+signal ideology_draw_state_changed(phase: String, detail: Dictionary)
 
 const COMMAND_RESEARCH_SET_WEIGHTS := &"research.set_weights"
 const COMMAND_RESEARCH_SET_BUDGET := &"research.set_budget"
@@ -35,6 +40,10 @@ const COMMAND_IDEOLOGY_CHOOSE := &"ideology.choose"
 const COMMAND_IDEOLOGY_EQUIP := &"ideology.equip"
 const COMMAND_IDEOLOGY_UNEQUIP := &"ideology.unequip"
 const COMMAND_IDEOLOGY_PROMOTE := &"ideology.promote"
+const COMMAND_IDEOLOGY_REROLL := &"ideology.reroll"
+## A draw/choose/reroll that has not settled after this many simulated days
+## releases the lock and restores the clock.
+const IDEOLOGY_DRAW_TIMEOUT_DAYS := 3
 
 const SUPPORTED_COMMANDS := {
 	COMMAND_RESEARCH_SET_WEIGHTS: true,
@@ -60,6 +69,7 @@ const SUPPORTED_COMMANDS := {
 	COMMAND_IDEOLOGY_EQUIP: true,
 	COMMAND_IDEOLOGY_UNEQUIP: true,
 	COMMAND_IDEOLOGY_PROMOTE: true,
+	COMMAND_IDEOLOGY_REROLL: true,
 }
 
 var _camera = null
@@ -85,6 +95,14 @@ var _family_founding_resume_running := false
 var _family_founding_previous_speed := 1.0
 var _family_founding_offer_id := 0
 var _family_founding_generation := 0
+# Ideology draw flow: pause + one-day steps until the native offer settles.
+var _ideology_draw_phase := ""
+var _ideology_draw_clock_saved := false
+var _ideology_draw_resume_running := false
+var _ideology_draw_previous_speed := 1.0
+var _ideology_draw_baseline_generation := 0
+var _ideology_draw_start_day := 0
+var _ideology_draw_sequence := -1
 
 
 func configure(
@@ -219,6 +237,13 @@ func capture_view_state() -> Dictionary:
 		"family_founding_locked": _family_founding_locked,
 		"family_founding_resume_running": _family_founding_resume_running,
 		"family_founding_previous_speed": _family_founding_previous_speed,
+		"ideology_draw_phase": _ideology_draw_phase,
+		"ideology_draw_clock_saved": _ideology_draw_clock_saved,
+		"ideology_draw_resume_running": _ideology_draw_resume_running,
+		"ideology_draw_previous_speed": _ideology_draw_previous_speed,
+		"ideology_draw_baseline_generation": _ideology_draw_baseline_generation,
+		"ideology_draw_start_day": _ideology_draw_start_day,
+		"ideology_draw_sequence": _ideology_draw_sequence,
 	}
 
 
@@ -235,6 +260,16 @@ func restore_view_state(map, state: Dictionary) -> void:
 	_family_founding_locked = bool(state.get("family_founding_locked", false))
 	_family_founding_offer_id = 0
 	_family_founding_generation = 0
+	_ideology_draw_phase = String(state.get("ideology_draw_phase", ""))
+	if not ["", "offer", "presenting", "choose", "reroll"].has(_ideology_draw_phase):
+		_ideology_draw_phase = ""
+	_ideology_draw_clock_saved = bool(state.get("ideology_draw_clock_saved", false))
+	_ideology_draw_resume_running = bool(state.get("ideology_draw_resume_running", false))
+	_ideology_draw_previous_speed = float(state.get("ideology_draw_previous_speed", 1.0))
+	_ideology_draw_baseline_generation = int(state.get(
+		"ideology_draw_baseline_generation", 0))
+	_ideology_draw_start_day = int(state.get("ideology_draw_start_day", 0))
+	_ideology_draw_sequence = int(state.get("ideology_draw_sequence", -1))
 	if _camera != null:
 		var saved_position = state.get(
 			"camera_position", _camera.global_position)
@@ -255,12 +290,16 @@ func restore_view_state(map, state: Dictionary) -> void:
 			clear_selection()
 	_sync_era_reward_offer()
 	_sync_family_founding_offer()
+	_sync_ideology_draw()
 
 
 func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 	if _era_reward_locked and id != COMMAND_ERA_REWARD_CHOOSE:
 		return _complete_command(id, _result(false,
 			"era_reward_choice_required", "必须先完成时代奖励选择。"))
+	if ideology_draw_locked() and id != COMMAND_ERA_REWARD_CHOOSE:
+		return _complete_command(id, _result(false,
+			"ideology_draw_in_progress", "正在抽取。"))
 	if _family_founding_locked and id != COMMAND_FAMILY_FOUNDING_CHOOSE \
 			and id != COMMAND_ERA_REWARD_CHOOSE:
 		return _complete_command(id, _result(false,
@@ -366,10 +405,19 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 		COMMAND_IDEOLOGY_OFFER:
 			result = _ideology_facade.request_offer(
 				_player_country_handle, effective_day, sequence)
+			if bool(result.get("ok", false)):
+				_begin_ideology_draw("offer", sequence)
 		COMMAND_IDEOLOGY_CHOOSE:
 			result = _ideology_facade.choose_offer(_player_country_handle,
 				int(args.get("offer_generation", 0)),
 				int(args.get("choice_index", -1)), effective_day, sequence)
+			if bool(result.get("ok", false)):
+				_begin_ideology_draw("choose", sequence)
+		COMMAND_IDEOLOGY_REROLL:
+			result = _ideology_facade.reroll_offer(_player_country_handle,
+				int(args.get("offer_generation", 0)), effective_day, sequence)
+			if bool(result.get("ok", false)):
+				_begin_ideology_draw("reroll", sequence)
 		COMMAND_IDEOLOGY_EQUIP:
 			result = _ideology_facade.equip(_player_country_handle,
 				int(args.get("ideology_id", -1)), effective_day, sequence)
@@ -572,6 +620,8 @@ func _dispatch_player_input(event: InputEvent) -> void:
 	if key.is_action_pressed(&"player_pause"):
 		if _family_founding_locked:
 			get_viewport().set_input_as_handled()
+		elif ideology_draw_locked():
+			get_viewport().set_input_as_handled()
 		elif _world_clock != null:
 			_world_clock.toggle_pause()
 			sync_ui()
@@ -642,6 +692,8 @@ func _on_simulation_committed(_from_day: int, to_day: int, _generation: int) -> 
 		_ui_manager.notify_committed_day()
 	_sync_era_reward_offer()
 	_sync_family_founding_offer()
+	# ACTIVE worker days settle here before Godot's own day signal.
+	_sync_ideology_draw()
 
 
 func _on_country_peer_serviced(report: Dictionary) -> void:
@@ -725,7 +777,13 @@ func _on_ideology_command_settled(result: Dictionary) -> void:
 		5: COMMAND_IDEOLOGY_EQUIP,
 		6: COMMAND_IDEOLOGY_UNEQUIP,
 		7: COMMAND_IDEOLOGY_PROMOTE,
+		10: COMMAND_IDEOLOGY_REROLL,
 	}.get(int(result.get("opcode", 0)), &"ideology.unknown") as StringName
+	if ideology_draw_locked() and int(result.get("sequence", -2)) == _ideology_draw_sequence:
+		if not bool(result.get("ok", false)):
+			_finish_ideology_draw(String(result.get("reason", "ideology_command_rejected")))
+		else:
+			_sync_ideology_draw()
 	command_settled.emit(command_id, result)
 
 
@@ -738,6 +796,7 @@ func _on_day_changed(day_idx: int) -> void:
 	# second SUS invocation when a worker commit is introduced.
 	_sync_era_reward_offer()
 	_sync_family_founding_offer()
+	_sync_ideology_draw()
 	if _economy_facade != null and _player_country_handle != 0 and \
 			_economy_facade.has_method("dispatch_family_colonization_receipts"):
 		_economy_facade.dispatch_family_colonization_receipts(
@@ -800,6 +859,14 @@ func _on_pause_toggled(paused: bool) -> void:
 	if _family_founding_locked and not paused:
 		sync_ui()
 		return
+	if ideology_draw_locked():
+		# The draw owns the clock until its one-day settlement lands.
+		sync_ui()
+		return
+	if _ideology_draw_phase == "presenting" and not paused:
+		# The player resumed manually; drop the saved clock instead of restoring it.
+		_ideology_draw_clock_saved = false
+		_finish_ideology_draw("")
 	_world_clock.pause(paused)
 	sync_ui()
 
@@ -814,6 +881,14 @@ func _on_speed_selected(speed: float) -> void:
 	if _family_founding_locked:
 		_family_founding_previous_speed = speed
 		_family_founding_resume_running = true
+		sync_ui()
+		return
+	if ideology_draw_locked() or _ideology_draw_phase == "presenting":
+		_ideology_draw_previous_speed = speed
+		_ideology_draw_resume_running = true
+		if _ideology_draw_phase == "presenting":
+			# Picking a speed while the offer is shown means "decide later".
+			_finish_ideology_draw("")
 		sync_ui()
 		return
 	_world_clock.set_speed(speed)
@@ -1018,6 +1093,23 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 		COMMAND_IDEOLOGY_OFFER:
 			if _ideology_facade == null:
 				return _result(false, "runtime_unavailable", "理念运行时尚未就绪。")
+			# Never advance time for a draw the authority would reject.
+			var preview := ideology_offer_eligibility()
+			if not bool(preview.get("can_draw", false)):
+				var reason := String(preview.get("reason", "ideology_offer_unavailable"))
+				return _result(false, reason, CountryViewModel.ideology_player_reason(reason))
+		COMMAND_IDEOLOGY_REROLL:
+			if _ideology_facade == null:
+				return _result(false, "runtime_unavailable", "理念运行时尚未就绪。")
+			var reroll_preview := ideology_offer_eligibility()
+			if not bool(reroll_preview.get("can_reroll", false)):
+				var reroll_reason := "ideology_offer_not_active" \
+					if not bool(reroll_preview.get("offer_active", false)) else (
+					"ideology_offer_pool_insufficient" \
+					if int(reroll_preview.get("pool_size", 0)) <= 0 \
+					else "ideology_points_insufficient")
+				return _result(false, reroll_reason,
+					CountryViewModel.ideology_player_reason(reroll_reason))
 		COMMAND_IDEOLOGY_CHOOSE:
 			if _ideology_facade == null:
 				return _result(false, "runtime_unavailable", "理念运行时尚未就绪。")
@@ -1094,7 +1186,8 @@ func _sync_era_reward_offer() -> void:
 		if status == "SELECTED_PENDING":
 			_drain_era_reward_until_settled()
 		return
-	if status == "RESOLVED" and _era_reward_locked:
+	# NONE also releases a stale lock, e.g. restored player_view without an Offer.
+	if _era_reward_locked:
 		if _ui_manager != null:
 			_ui_manager.close_era_reward_offer()
 		if _world_clock != null:
@@ -1109,6 +1202,118 @@ func _sync_era_reward_offer() -> void:
 
 func era_reward_locked() -> bool:
 	return _era_reward_locked
+
+
+## True while a submitted draw/choose/reroll waits for its one-day settlement.
+## The "presenting" phase (offer visible, clock paused) is not a lock: the
+## player may close the offer and choose later.
+func ideology_draw_locked() -> bool:
+	return _ideology_draw_phase == "offer" or _ideology_draw_phase == "choose" \
+		or _ideology_draw_phase == "reroll"
+
+
+func ideology_draw_phase() -> String:
+	return _ideology_draw_phase
+
+
+func ideology_offer_eligibility() -> Dictionary:
+	if _ideology_facade == null or _player_country_handle == 0 \
+			or not _ideology_facade.has_method("preview_offer_eligibility"):
+		return {"ok": false, "can_draw": false, "can_reroll": false,
+			"reason": "ideology_runtime_unavailable"}
+	return _ideology_facade.preview_offer_eligibility(_player_country_handle)
+
+
+func _ideology_player_snapshot() -> Dictionary:
+	if _ideology_facade == null or _player_country_handle == 0 \
+			or not _ideology_facade.has_method("snapshot"):
+		return {}
+	var snapshot: Dictionary = _ideology_facade.snapshot(_player_country_handle)
+	return snapshot if bool(snapshot.get("ok", false)) else {}
+
+
+func _begin_ideology_draw(phase: String, sequence: int) -> void:
+	if not _ideology_draw_clock_saved:
+		_ideology_draw_resume_running = _world_clock != null and not _world_clock.paused
+		_ideology_draw_previous_speed = _world_clock.speed_multiplier \
+			if _world_clock != null else 1.0
+		_ideology_draw_clock_saved = true
+	var snapshot := _ideology_player_snapshot()
+	_ideology_draw_baseline_generation = int(snapshot.get("offer_generation", 0))
+	_ideology_draw_start_day = _world_clock.day_index() if _world_clock != null else 0
+	_ideology_draw_sequence = sequence
+	_ideology_draw_phase = phase
+	# Commands are effective tomorrow: step the world at 1x until the native
+	# authority publishes the settled offer (or the timeout fires).
+	if _world_clock != null and not _era_reward_locked:
+		_world_clock.set_speed(1.0)
+		_world_clock.pause(false)
+	ideology_draw_state_changed.emit(phase, {"sequence": sequence})
+	sync_ui()
+
+
+func _sync_ideology_draw() -> void:
+	if _ideology_draw_phase.is_empty():
+		return
+	var snapshot := _ideology_player_snapshot()
+	if _ideology_draw_phase == "presenting":
+		# Offer resolved elsewhere (load, debug grant): release the saved clock.
+		if not snapshot.is_empty() and not bool(snapshot.get("offer_active", false)):
+			_finish_ideology_draw("")
+		return
+	if snapshot.is_empty():
+		return
+	var active := bool(snapshot.get("offer_active", false))
+	var generation := int(snapshot.get("offer_generation", 0))
+	if _ideology_draw_phase == "offer" or _ideology_draw_phase == "reroll":
+		if active and generation > _ideology_draw_baseline_generation:
+			_ideology_draw_phase = "presenting"
+			if _world_clock != null and not _era_reward_locked:
+				_world_clock.pause(true)
+			sync_ui()
+			ideology_draw_state_changed.emit("presenting", {"offer_generation": generation})
+			ideology_offer_ready.emit(snapshot)
+			return
+	elif _ideology_draw_phase == "choose":
+		if not active or generation != _ideology_draw_baseline_generation:
+			_finish_ideology_draw("")
+			return
+	var today: int = _world_clock.day_index() if _world_clock != null else 0
+	if today - _ideology_draw_start_day > IDEOLOGY_DRAW_TIMEOUT_DAYS:
+		_finish_ideology_draw("ideology_draw_timeout")
+
+
+func _finish_ideology_draw(failure_reason: String) -> void:
+	var phase := _ideology_draw_phase
+	_ideology_draw_phase = ""
+	_ideology_draw_sequence = -1
+	if _ideology_draw_clock_saved and _world_clock != null:
+		if _era_reward_locked:
+			# The era-reward lock owns the clock now; hand over the saved state.
+			_era_reward_resume_running = _ideology_draw_resume_running
+			_era_reward_previous_speed = _ideology_draw_previous_speed
+		else:
+			_world_clock.set_speed(_ideology_draw_previous_speed)
+			_world_clock.pause(not _ideology_draw_resume_running)
+	_ideology_draw_clock_saved = false
+	sync_ui()
+	ideology_draw_state_changed.emit("", {"previous_phase": phase,
+		"reason": failure_reason,
+		"message": _ideology_draw_failure_message(failure_reason)})
+
+
+static func _ideology_draw_failure_message(reason: String) -> String:
+	if reason.is_empty():
+		return ""
+	if reason == "ideology_draw_timeout":
+		return "抽取超时，请重试。"
+	return CountryViewModel.ideology_player_reason(reason)
+
+
+## Close the visible offer without choosing; the offer stays pending natively.
+func dismiss_ideology_offer() -> void:
+	if _ideology_draw_phase == "presenting":
+		_finish_ideology_draw("")
 
 
 func family_founding_locked() -> bool:

@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="IdeologyCatalog" load_steps=45 format=3]
+[gd_resource type="Resource" script_class="IdeologyCatalog" load_steps=355 format=3]
 
 [ext_resource type="Script" path="res://scripts/ideology/ideology_catalog.gd" id="1_catalog"]
 [ext_resource type="Script" path="res://scripts/ideology/ideology_profile.gd" id="2_profile"]
@@ -7,15 +7,30 @@
 [ext_resource type="Script" path="res://scripts/ideology/ideology_class_stance.gd" id="5_stance"]
 [ext_resource type="Script" path="res://scripts/ideology/ideology_synergy_definition.gd" id="6_synergy"]
 [ext_resource type="Script" path="res://scripts/effect/effect_command.gd" id="7_effect"]
+[ext_resource type="Script" path="res://scripts/ideology/ideology_requirement.gd" id="8_requirement"]
 
 [sub_resource type="Resource" id="Profile"]
 script = ExtResource("2_profile")
-ideology_capacity = 3
-national_spirit_capacity = 2
-starting_points_q16 = 196608
-max_transition_commands = 64
+ideology_capacity = 2
+national_spirit_capacity = 1
+ideology_capacity_max = 6
+national_spirit_capacity_max = 3
+offer_cost_q16 = 393216
+offer_cost_growth_percent = 120
+offer_cost_max_q16 = 2147483647
+reroll_cost_percent = 50
+starting_points_q16 = 0
+max_transition_commands = 256
+point_population_weight_q16 = 1311
+point_building_weight_q16 = 16384
+point_trade_weight_q16 = 131
+point_gain_cap_q16 = 131072
+capacity_unlock_technology_keys = PackedStringArray("tech.kingdom_administration", "tech.imperial_integration", "tech.enlightenment_institutions", "tech.industrialization", "tech.electrical_society")
+capacity_unlock_ideology_deltas = PackedInt32Array(1, 1, 1, 1, 0)
+capacity_unlock_spirit_deltas = PackedInt32Array(0, 1, 0, 0, 1)
+point_gain_stat_key = &"country.ideology.point_gain_factor"
 
-[sub_resource type="Resource" id="CollectiveLow"]
+[sub_resource type="Resource" id="EffectCollectiveStewardshipL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -27,19 +42,465 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.collective_stewardship"
 
-[sub_resource type="Resource" id="CollectiveHigh"]
+[sub_resource type="Resource" id="LevelCollectiveStewardshipL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectCollectiveStewardshipL1")])
+
+[sub_resource type="Resource" id="EffectCollectiveStewardshipL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 131072
+value_q16 = 104858
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.collective_stewardship"
 
-[sub_resource type="Resource" id="ExchangeLow"]
+[sub_resource type="Resource" id="LevelCollectiveStewardshipL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectCollectiveStewardshipL2")])
+
+[sub_resource type="Resource" id="EffectCollectiveStewardshipL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.collective_stewardship"
+
+[sub_resource type="Resource" id="LevelCollectiveStewardshipL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectCollectiveStewardshipL3")])
+
+[sub_resource type="Resource" id="StanceCollectiveStewardshipFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = 40960
+repeal_stance_q16 = -32768
+promote_stance_q16 = 32768
+
+[sub_resource type="Resource" id="StanceCollectiveStewardshipGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 16384
+repeal_stance_q16 = -8192
+promote_stance_q16 = 16384
+
+[sub_resource type="Resource" id="StanceCollectiveStewardshipTechnology"]
+script = ExtResource("5_stance")
+class_id = &"technology"
+adopt_stance_q16 = -8192
+repeal_stance_q16 = 8192
+promote_stance_q16 = 0
+
+[sub_resource type="Resource" id="IdeaCollectiveStewardship"]
+script = ExtResource("3_definition")
+id = &"idea.collective_stewardship"
+icon_key = &"country.economy"
+name_key = &"共同体治理"
+detail_key = "以共同仓储、互助义务和长期土地责任组织生产。"
+school_id = &"agrarian"
+rarity = 1
+rarity_weight = 120
+national_spirit_min_level = 1
+class_stances = Array[Resource]([SubResource("StanceCollectiveStewardshipFarmer"), SubResource("StanceCollectiveStewardshipGeneral"), SubResource("StanceCollectiveStewardshipTechnology")])
+adopt_threshold_q16 = 4096
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 16384
+exclusion_group = &"economic_order"
+levels = Array[Resource]([SubResource("LevelCollectiveStewardshipL1"), SubResource("LevelCollectiveStewardshipL2"), SubResource("LevelCollectiveStewardshipL3")])
+
+[sub_resource type="Resource" id="EffectIntensiveTillageL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.intensive_tillage"
+
+[sub_resource type="Resource" id="LevelIntensiveTillageL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectIntensiveTillageL1")])
+
+[sub_resource type="Resource" id="EffectIntensiveTillageL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.intensive_tillage"
+
+[sub_resource type="Resource" id="LevelIntensiveTillageL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectIntensiveTillageL2")])
+
+[sub_resource type="Resource" id="EffectIntensiveTillageL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.intensive_tillage"
+
+[sub_resource type="Resource" id="LevelIntensiveTillageL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectIntensiveTillageL3")])
+
+[sub_resource type="Resource" id="StanceIntensiveTillageFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = 40960
+repeal_stance_q16 = -32768
+promote_stance_q16 = 32768
+
+[sub_resource type="Resource" id="StanceIntensiveTillageGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 16384
+repeal_stance_q16 = -8192
+promote_stance_q16 = 16384
+
+[sub_resource type="Resource" id="StanceIntensiveTillageTechnology"]
+script = ExtResource("5_stance")
+class_id = &"technology"
+adopt_stance_q16 = -8192
+repeal_stance_q16 = 8192
+promote_stance_q16 = 0
+
+[sub_resource type="Resource" id="IdeaIntensiveTillage"]
+script = ExtResource("3_definition")
+id = &"idea.intensive_tillage"
+icon_key = &"country.economy"
+name_key = &"精耕细作"
+detail_key = "深耕、轮作与精细田管提高地力，但要投入更多耕作物资。"
+school_id = &"agrarian"
+rarity = 1
+rarity_weight = 120
+national_spirit_min_level = 1
+class_stances = Array[Resource]([SubResource("StanceIntensiveTillageFarmer"), SubResource("StanceIntensiveTillageGeneral"), SubResource("StanceIntensiveTillageTechnology")])
+adopt_threshold_q16 = 4096
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 16384
+exclusion_group = &"land_order"
+levels = Array[Resource]([SubResource("LevelIntensiveTillageL1"), SubResource("LevelIntensiveTillageL2"), SubResource("LevelIntensiveTillageL3")])
+
+[sub_resource type="Resource" id="EffectEverNormalGranaryL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.ever_normal_granary"
+
+[sub_resource type="Resource" id="LevelEverNormalGranaryL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectEverNormalGranaryL1")])
+
+[sub_resource type="Resource" id="EffectEverNormalGranaryL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.ever_normal_granary"
+
+[sub_resource type="Resource" id="LevelEverNormalGranaryL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectEverNormalGranaryL2")])
+
+[sub_resource type="Resource" id="EffectEverNormalGranaryL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.ever_normal_granary"
+
+[sub_resource type="Resource" id="LevelEverNormalGranaryL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectEverNormalGranaryL3")])
+
+[sub_resource type="Resource" id="StanceEverNormalGranaryFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = 40960
+repeal_stance_q16 = -32768
+promote_stance_q16 = 32768
+
+[sub_resource type="Resource" id="StanceEverNormalGranaryGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 16384
+repeal_stance_q16 = -8192
+promote_stance_q16 = 16384
+
+[sub_resource type="Resource" id="StanceEverNormalGranaryTechnology"]
+script = ExtResource("5_stance")
+class_id = &"technology"
+adopt_stance_q16 = -8192
+repeal_stance_q16 = 8192
+promote_stance_q16 = 0
+
+[sub_resource type="Resource" id="IdeaEverNormalGranary"]
+script = ExtResource("3_definition")
+id = &"idea.ever_normal_granary"
+icon_key = &"country.economy"
+name_key = &"常平仓"
+detail_key = "丰年籴入、歉年粜出，以官仓平抑粮价与饮荒。"
+school_id = &"agrarian"
+rarity = 2
+rarity_weight = 60
+national_spirit_min_level = 1
+class_stances = Array[Resource]([SubResource("StanceEverNormalGranaryFarmer"), SubResource("StanceEverNormalGranaryGeneral"), SubResource("StanceEverNormalGranaryTechnology")])
+adopt_threshold_q16 = 8192
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 20480
+levels = Array[Resource]([SubResource("LevelEverNormalGranaryL1"), SubResource("LevelEverNormalGranaryL2"), SubResource("LevelEverNormalGranaryL3")])
+
+[sub_resource type="Resource" id="EffectMilitaryFarmingL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.military_farming"
+
+[sub_resource type="Resource" id="LevelMilitaryFarmingL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectMilitaryFarmingL1")])
+
+[sub_resource type="Resource" id="EffectMilitaryFarmingL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.military_farming"
+
+[sub_resource type="Resource" id="LevelMilitaryFarmingL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectMilitaryFarmingL2")])
+
+[sub_resource type="Resource" id="EffectMilitaryFarmingL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.military_farming"
+
+[sub_resource type="Resource" id="LevelMilitaryFarmingL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectMilitaryFarmingL3")])
+
+[sub_resource type="Resource" id="StanceMilitaryFarmingFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = 40960
+repeal_stance_q16 = -32768
+promote_stance_q16 = 32768
+
+[sub_resource type="Resource" id="StanceMilitaryFarmingGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 16384
+repeal_stance_q16 = -8192
+promote_stance_q16 = 16384
+
+[sub_resource type="Resource" id="StanceMilitaryFarmingTechnology"]
+script = ExtResource("5_stance")
+class_id = &"technology"
+adopt_stance_q16 = -8192
+repeal_stance_q16 = 8192
+promote_stance_q16 = 0
+
+[sub_resource type="Resource" id="RequireMilitaryFarming"]
+script = ExtResource("8_requirement")
+kind = 1
+key = &"tech.kingdom_administration"
+
+[sub_resource type="Resource" id="IdeaMilitaryFarming"]
+script = ExtResource("3_definition")
+id = &"idea.military_farming"
+icon_key = &"country.economy"
+name_key = &"屯田"
+detail_key = "编户屯垦，兵农合一，边地与荒地都能迅速开发。"
+school_id = &"agrarian"
+rarity = 2
+rarity_weight = 60
+national_spirit_min_level = 1
+draw_requirements = Array[Resource]([SubResource("RequireMilitaryFarming")])
+class_stances = Array[Resource]([SubResource("StanceMilitaryFarmingFarmer"), SubResource("StanceMilitaryFarmingGeneral"), SubResource("StanceMilitaryFarmingTechnology")])
+adopt_threshold_q16 = 8192
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 20480
+exclusion_group = &"land_order"
+levels = Array[Resource]([SubResource("LevelMilitaryFarmingL1"), SubResource("LevelMilitaryFarmingL2"), SubResource("LevelMilitaryFarmingL3")])
+
+[sub_resource type="Resource" id="EffectVillageCompactL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.village_compact"
+
+[sub_resource type="Resource" id="LevelVillageCompactL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectVillageCompactL1")])
+
+[sub_resource type="Resource" id="EffectVillageCompactL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.village_compact"
+
+[sub_resource type="Resource" id="LevelVillageCompactL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectVillageCompactL2")])
+
+[sub_resource type="Resource" id="EffectVillageCompactL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.village_compact"
+
+[sub_resource type="Resource" id="LevelVillageCompactL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectVillageCompactL3")])
+
+[sub_resource type="Resource" id="StanceVillageCompactFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = 40960
+repeal_stance_q16 = -32768
+promote_stance_q16 = 32768
+
+[sub_resource type="Resource" id="StanceVillageCompactGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 16384
+repeal_stance_q16 = -8192
+promote_stance_q16 = 16384
+
+[sub_resource type="Resource" id="StanceVillageCompactTechnology"]
+script = ExtResource("5_stance")
+class_id = &"technology"
+adopt_stance_q16 = -8192
+repeal_stance_q16 = 8192
+promote_stance_q16 = 0
+
+[sub_resource type="Resource" id="RequireVillageCompact"]
+script = ExtResource("8_requirement")
+kind = 1
+key = &"tech.imperial_integration"
+
+[sub_resource type="Resource" id="IdeaVillageCompact"]
+script = ExtResource("3_definition")
+id = &"idea.village_compact"
+icon_key = &"country.economy"
+name_key = &"乡约自治"
+detail_key = "以乡约、社仓与家族共治维系基层秩序，民心即是国本。"
+school_id = &"agrarian"
+rarity = 3
+rarity_weight = 20
+national_spirit_min_level = 1
+draw_requirements = Array[Resource]([SubResource("RequireVillageCompact")])
+class_stances = Array[Resource]([SubResource("StanceVillageCompactFarmer"), SubResource("StanceVillageCompactGeneral"), SubResource("StanceVillageCompactTechnology")])
+adopt_threshold_q16 = 12288
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 24576
+levels = Array[Resource]([SubResource("LevelVillageCompactL1"), SubResource("LevelVillageCompactL2"), SubResource("LevelVillageCompactL3")])
+
+[sub_resource type="Resource" id="EffectFreeExchangeL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -51,19 +512,465 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.free_exchange"
 
-[sub_resource type="Resource" id="ExchangeHigh"]
+[sub_resource type="Resource" id="LevelFreeExchangeL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectFreeExchangeL1")])
+
+[sub_resource type="Resource" id="EffectFreeExchangeL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 131072
+value_q16 = 104858
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.free_exchange"
 
-[sub_resource type="Resource" id="ScholarLow"]
+[sub_resource type="Resource" id="LevelFreeExchangeL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectFreeExchangeL2")])
+
+[sub_resource type="Resource" id="EffectFreeExchangeL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.free_exchange"
+
+[sub_resource type="Resource" id="LevelFreeExchangeL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectFreeExchangeL3")])
+
+[sub_resource type="Resource" id="StanceFreeExchangeFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = -16384
+repeal_stance_q16 = 16384
+promote_stance_q16 = -8192
+adopt_min_support_q16 = -8192
+
+[sub_resource type="Resource" id="StanceFreeExchangeGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 16384
+repeal_stance_q16 = 0
+promote_stance_q16 = 12288
+
+[sub_resource type="Resource" id="StanceFreeExchangeTechnology"]
+script = ExtResource("5_stance")
+class_id = &"technology"
+adopt_stance_q16 = 32768
+repeal_stance_q16 = -16384
+promote_stance_q16 = 24576
+
+[sub_resource type="Resource" id="IdeaFreeExchange"]
+script = ExtResource("3_definition")
+id = &"idea.free_exchange"
+icon_key = &"country.trade"
+name_key = &"自由交换"
+detail_key = "以契约、流通和分散决策鼓励资源重新配置。"
+school_id = &"commerce"
+rarity = 1
+rarity_weight = 120
+national_spirit_min_level = 1
+class_stances = Array[Resource]([SubResource("StanceFreeExchangeFarmer"), SubResource("StanceFreeExchangeGeneral"), SubResource("StanceFreeExchangeTechnology")])
+adopt_threshold_q16 = 4096
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 16384
+exclusion_group = &"economic_order"
+levels = Array[Resource]([SubResource("LevelFreeExchangeL1"), SubResource("LevelFreeExchangeL2"), SubResource("LevelFreeExchangeL3")])
+
+[sub_resource type="Resource" id="EffectOpenPortsL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.open_ports"
+
+[sub_resource type="Resource" id="LevelOpenPortsL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectOpenPortsL1")])
+
+[sub_resource type="Resource" id="EffectOpenPortsL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.open_ports"
+
+[sub_resource type="Resource" id="LevelOpenPortsL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectOpenPortsL2")])
+
+[sub_resource type="Resource" id="EffectOpenPortsL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.open_ports"
+
+[sub_resource type="Resource" id="LevelOpenPortsL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectOpenPortsL3")])
+
+[sub_resource type="Resource" id="StanceOpenPortsFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = -16384
+repeal_stance_q16 = 16384
+promote_stance_q16 = -8192
+
+[sub_resource type="Resource" id="StanceOpenPortsGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 16384
+repeal_stance_q16 = 0
+promote_stance_q16 = 12288
+
+[sub_resource type="Resource" id="StanceOpenPortsTechnology"]
+script = ExtResource("5_stance")
+class_id = &"technology"
+adopt_stance_q16 = 32768
+repeal_stance_q16 = -16384
+promote_stance_q16 = 24576
+
+[sub_resource type="Resource" id="IdeaOpenPorts"]
+script = ExtResource("3_definition")
+id = &"idea.open_ports"
+icon_key = &"country.trade"
+name_key = &"市舶开港"
+detail_key = "设市舶司、开海口通商，货物周转加快，民间消费也随之抬头。"
+school_id = &"commerce"
+rarity = 1
+rarity_weight = 120
+national_spirit_min_level = 1
+class_stances = Array[Resource]([SubResource("StanceOpenPortsFarmer"), SubResource("StanceOpenPortsGeneral"), SubResource("StanceOpenPortsTechnology")])
+adopt_threshold_q16 = 4096
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 16384
+levels = Array[Resource]([SubResource("LevelOpenPortsL1"), SubResource("LevelOpenPortsL2"), SubResource("LevelOpenPortsL3")])
+
+[sub_resource type="Resource" id="EffectGuildChartersL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.guild_charters"
+
+[sub_resource type="Resource" id="LevelGuildChartersL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectGuildChartersL1")])
+
+[sub_resource type="Resource" id="EffectGuildChartersL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.guild_charters"
+
+[sub_resource type="Resource" id="LevelGuildChartersL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectGuildChartersL2")])
+
+[sub_resource type="Resource" id="EffectGuildChartersL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.guild_charters"
+
+[sub_resource type="Resource" id="LevelGuildChartersL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectGuildChartersL3")])
+
+[sub_resource type="Resource" id="StanceGuildChartersFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = -16384
+repeal_stance_q16 = 16384
+promote_stance_q16 = -8192
+
+[sub_resource type="Resource" id="StanceGuildChartersGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 16384
+repeal_stance_q16 = 0
+promote_stance_q16 = 12288
+
+[sub_resource type="Resource" id="StanceGuildChartersTechnology"]
+script = ExtResource("5_stance")
+class_id = &"technology"
+adopt_stance_q16 = 32768
+repeal_stance_q16 = -16384
+promote_stance_q16 = 24576
+
+[sub_resource type="Resource" id="IdeaGuildCharters"]
+script = ExtResource("3_definition")
+id = &"idea.guild_charters"
+icon_key = &"country.trade"
+name_key = &"行会特许"
+detail_key = "以特许状给予行会定价与学徒制度，品质稳定而新建更贵。"
+school_id = &"commerce"
+rarity = 2
+rarity_weight = 60
+national_spirit_min_level = 1
+class_stances = Array[Resource]([SubResource("StanceGuildChartersFarmer"), SubResource("StanceGuildChartersGeneral"), SubResource("StanceGuildChartersTechnology")])
+adopt_threshold_q16 = 8192
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 20480
+exclusion_group = &"labor_order"
+levels = Array[Resource]([SubResource("LevelGuildChartersL1"), SubResource("LevelGuildChartersL2"), SubResource("LevelGuildChartersL3")])
+
+[sub_resource type="Resource" id="EffectDoubleEntryL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.double_entry"
+
+[sub_resource type="Resource" id="LevelDoubleEntryL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectDoubleEntryL1")])
+
+[sub_resource type="Resource" id="EffectDoubleEntryL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.double_entry"
+
+[sub_resource type="Resource" id="LevelDoubleEntryL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectDoubleEntryL2")])
+
+[sub_resource type="Resource" id="EffectDoubleEntryL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.double_entry"
+
+[sub_resource type="Resource" id="LevelDoubleEntryL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectDoubleEntryL3")])
+
+[sub_resource type="Resource" id="StanceDoubleEntryFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = -16384
+repeal_stance_q16 = 16384
+promote_stance_q16 = -8192
+
+[sub_resource type="Resource" id="StanceDoubleEntryGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 16384
+repeal_stance_q16 = 0
+promote_stance_q16 = 12288
+
+[sub_resource type="Resource" id="StanceDoubleEntryTechnology"]
+script = ExtResource("5_stance")
+class_id = &"technology"
+adopt_stance_q16 = 32768
+repeal_stance_q16 = -16384
+promote_stance_q16 = 24576
+
+[sub_resource type="Resource" id="RequireDoubleEntry"]
+script = ExtResource("8_requirement")
+kind = 1
+key = &"tech.kingdom_administration"
+
+[sub_resource type="Resource" id="IdeaDoubleEntry"]
+script = ExtResource("3_definition")
+id = &"idea.double_entry"
+icon_key = &"country.trade"
+name_key = &"复式簿记"
+detail_key = "借贷必相等，账目透明让工坊与商号都能精打细算。"
+school_id = &"commerce"
+rarity = 2
+rarity_weight = 60
+national_spirit_min_level = 1
+draw_requirements = Array[Resource]([SubResource("RequireDoubleEntry")])
+class_stances = Array[Resource]([SubResource("StanceDoubleEntryFarmer"), SubResource("StanceDoubleEntryGeneral"), SubResource("StanceDoubleEntryTechnology")])
+adopt_threshold_q16 = 8192
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 20480
+levels = Array[Resource]([SubResource("LevelDoubleEntryL1"), SubResource("LevelDoubleEntryL2"), SubResource("LevelDoubleEntryL3")])
+
+[sub_resource type="Resource" id="EffectOceanCompanyL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.ocean_company"
+
+[sub_resource type="Resource" id="LevelOceanCompanyL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectOceanCompanyL1")])
+
+[sub_resource type="Resource" id="EffectOceanCompanyL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.ocean_company"
+
+[sub_resource type="Resource" id="LevelOceanCompanyL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectOceanCompanyL2")])
+
+[sub_resource type="Resource" id="EffectOceanCompanyL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.ocean_company"
+
+[sub_resource type="Resource" id="LevelOceanCompanyL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectOceanCompanyL3")])
+
+[sub_resource type="Resource" id="StanceOceanCompanyFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = -16384
+repeal_stance_q16 = 16384
+promote_stance_q16 = -8192
+
+[sub_resource type="Resource" id="StanceOceanCompanyGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 16384
+repeal_stance_q16 = 0
+promote_stance_q16 = 12288
+
+[sub_resource type="Resource" id="StanceOceanCompanyTechnology"]
+script = ExtResource("5_stance")
+class_id = &"technology"
+adopt_stance_q16 = 32768
+repeal_stance_q16 = -16384
+promote_stance_q16 = 24576
+
+[sub_resource type="Resource" id="RequireOceanCompany"]
+script = ExtResource("8_requirement")
+kind = 1
+key = &"tech.global_exchange"
+
+[sub_resource type="Resource" id="IdeaOceanCompany"]
+script = ExtResource("3_definition")
+id = &"idea.ocean_company"
+icon_key = &"country.trade"
+name_key = &"远洋公司"
+detail_key = "以股份与特许组织远洋贸易，财富涌入也加速资源耗用。"
+school_id = &"commerce"
+rarity = 3
+rarity_weight = 20
+national_spirit_min_level = 1
+draw_requirements = Array[Resource]([SubResource("RequireOceanCompany")])
+class_stances = Array[Resource]([SubResource("StanceOceanCompanyFarmer"), SubResource("StanceOceanCompanyGeneral"), SubResource("StanceOceanCompanyTechnology")])
+adopt_threshold_q16 = 12288
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 24576
+levels = Array[Resource]([SubResource("LevelOceanCompanyL1"), SubResource("LevelOceanCompanyL2"), SubResource("LevelOceanCompanyL3")])
+
+[sub_resource type="Resource" id="EffectScholarOfficeL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -75,19 +982,434 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.scholar_office"
 
-[sub_resource type="Resource" id="ScholarHigh"]
+[sub_resource type="Resource" id="LevelScholarOfficeL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectScholarOfficeL1")])
+
+[sub_resource type="Resource" id="EffectScholarOfficeL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 131072
+value_q16 = 104858
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.scholar_office"
 
-[sub_resource type="Resource" id="CivicLow"]
+[sub_resource type="Resource" id="LevelScholarOfficeL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectScholarOfficeL2")])
+
+[sub_resource type="Resource" id="EffectScholarOfficeL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.scholar_office"
+
+[sub_resource type="Resource" id="LevelScholarOfficeL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectScholarOfficeL3")])
+
+[sub_resource type="Resource" id="StanceScholarOfficeGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 8192
+repeal_stance_q16 = 0
+promote_stance_q16 = 12288
+
+[sub_resource type="Resource" id="StanceScholarOfficeTechnology"]
+script = ExtResource("5_stance")
+class_id = &"technology"
+adopt_stance_q16 = 49152
+repeal_stance_q16 = -32768
+promote_stance_q16 = 40960
+promote_min_support_q16 = 32768
+
+[sub_resource type="Resource" id="IdeaScholarOffice"]
+script = ExtResource("3_definition")
+id = &"idea.scholar_office"
+icon_key = &"country.technology"
+name_key = &"学识官署"
+detail_key = "让记录、测量与专业知识成为公共决策的正式依据。"
+school_id = &"learning"
+rarity = 1
+rarity_weight = 120
+national_spirit_min_level = 1
+class_stances = Array[Resource]([SubResource("StanceScholarOfficeGeneral"), SubResource("StanceScholarOfficeTechnology")])
+adopt_threshold_q16 = 4096
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 16384
+levels = Array[Resource]([SubResource("LevelScholarOfficeL1"), SubResource("LevelScholarOfficeL2"), SubResource("LevelScholarOfficeL3")])
+
+[sub_resource type="Resource" id="EffectAcademyLecturesL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.academy_lectures"
+
+[sub_resource type="Resource" id="LevelAcademyLecturesL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectAcademyLecturesL1")])
+
+[sub_resource type="Resource" id="EffectAcademyLecturesL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.academy_lectures"
+
+[sub_resource type="Resource" id="LevelAcademyLecturesL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectAcademyLecturesL2")])
+
+[sub_resource type="Resource" id="EffectAcademyLecturesL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.academy_lectures"
+
+[sub_resource type="Resource" id="LevelAcademyLecturesL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectAcademyLecturesL3")])
+
+[sub_resource type="Resource" id="StanceAcademyLecturesGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 8192
+repeal_stance_q16 = 0
+promote_stance_q16 = 12288
+
+[sub_resource type="Resource" id="StanceAcademyLecturesTechnology"]
+script = ExtResource("5_stance")
+class_id = &"technology"
+adopt_stance_q16 = 49152
+repeal_stance_q16 = -32768
+promote_stance_q16 = 40960
+
+[sub_resource type="Resource" id="IdeaAcademyLectures"]
+script = ExtResource("3_definition")
+id = &"idea.academy_lectures"
+icon_key = &"country.technology"
+name_key = &"书院讲学"
+detail_key = "书院讲会，辞辩争鸣，民间对国家道路的理解更加深入。"
+school_id = &"learning"
+rarity = 1
+rarity_weight = 120
+national_spirit_min_level = 1
+class_stances = Array[Resource]([SubResource("StanceAcademyLecturesGeneral"), SubResource("StanceAcademyLecturesTechnology")])
+adopt_threshold_q16 = 4096
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 16384
+levels = Array[Resource]([SubResource("LevelAcademyLecturesL1"), SubResource("LevelAcademyLecturesL2"), SubResource("LevelAcademyLecturesL3")])
+
+[sub_resource type="Resource" id="EffectExperimentalMethodL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.experimental_method"
+
+[sub_resource type="Resource" id="LevelExperimentalMethodL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectExperimentalMethodL1")])
+
+[sub_resource type="Resource" id="EffectExperimentalMethodL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.experimental_method"
+
+[sub_resource type="Resource" id="LevelExperimentalMethodL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectExperimentalMethodL2")])
+
+[sub_resource type="Resource" id="EffectExperimentalMethodL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.experimental_method"
+
+[sub_resource type="Resource" id="LevelExperimentalMethodL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectExperimentalMethodL3")])
+
+[sub_resource type="Resource" id="StanceExperimentalMethodGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 8192
+repeal_stance_q16 = 0
+promote_stance_q16 = 12288
+
+[sub_resource type="Resource" id="StanceExperimentalMethodTechnology"]
+script = ExtResource("5_stance")
+class_id = &"technology"
+adopt_stance_q16 = 49152
+repeal_stance_q16 = -32768
+promote_stance_q16 = 40960
+
+[sub_resource type="Resource" id="RequireExperimentalMethod"]
+script = ExtResource("8_requirement")
+kind = 1
+key = &"tech.enlightenment_institutions"
+
+[sub_resource type="Resource" id="IdeaExperimentalMethod"]
+script = ExtResource("3_definition")
+id = &"idea.experimental_method"
+icon_key = &"country.technology"
+name_key = &"实验之法"
+detail_key = "以可重复的实验代替权威，工程与自然研究同步大进。"
+school_id = &"learning"
+rarity = 2
+rarity_weight = 60
+national_spirit_min_level = 1
+draw_requirements = Array[Resource]([SubResource("RequireExperimentalMethod")])
+class_stances = Array[Resource]([SubResource("StanceExperimentalMethodGeneral"), SubResource("StanceExperimentalMethodTechnology")])
+adopt_threshold_q16 = 8192
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 20480
+levels = Array[Resource]([SubResource("LevelExperimentalMethodL1"), SubResource("LevelExperimentalMethodL2"), SubResource("LevelExperimentalMethodL3")])
+
+[sub_resource type="Resource" id="EffectCivilExaminationL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.civil_examination"
+
+[sub_resource type="Resource" id="LevelCivilExaminationL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectCivilExaminationL1")])
+
+[sub_resource type="Resource" id="EffectCivilExaminationL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.civil_examination"
+
+[sub_resource type="Resource" id="LevelCivilExaminationL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectCivilExaminationL2")])
+
+[sub_resource type="Resource" id="EffectCivilExaminationL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.civil_examination"
+
+[sub_resource type="Resource" id="LevelCivilExaminationL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectCivilExaminationL3")])
+
+[sub_resource type="Resource" id="StanceCivilExaminationGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 8192
+repeal_stance_q16 = 0
+promote_stance_q16 = 12288
+
+[sub_resource type="Resource" id="StanceCivilExaminationTechnology"]
+script = ExtResource("5_stance")
+class_id = &"technology"
+adopt_stance_q16 = 49152
+repeal_stance_q16 = -32768
+promote_stance_q16 = 40960
+
+[sub_resource type="Resource" id="RequireCivilExamination"]
+script = ExtResource("8_requirement")
+kind = 1
+key = &"tech.kingdom_administration"
+
+[sub_resource type="Resource" id="IdeaCivilExamination"]
+script = ExtResource("3_definition")
+id = &"idea.civil_examination"
+icon_key = &"country.technology"
+name_key = &"科举取士"
+detail_key = "以考试选拔官员，学风大盛，家庭也更愿意为教育花钱。"
+school_id = &"learning"
+rarity = 2
+rarity_weight = 60
+national_spirit_min_level = 1
+draw_requirements = Array[Resource]([SubResource("RequireCivilExamination")])
+class_stances = Array[Resource]([SubResource("StanceCivilExaminationGeneral"), SubResource("StanceCivilExaminationTechnology")])
+adopt_threshold_q16 = 8192
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 20480
+levels = Array[Resource]([SubResource("LevelCivilExaminationL1"), SubResource("LevelCivilExaminationL2"), SubResource("LevelCivilExaminationL3")])
+
+[sub_resource type="Resource" id="EffectEncyclopediaL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.encyclopedia"
+
+[sub_resource type="Resource" id="LevelEncyclopediaL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectEncyclopediaL1")])
+
+[sub_resource type="Resource" id="EffectEncyclopediaL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.encyclopedia"
+
+[sub_resource type="Resource" id="LevelEncyclopediaL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectEncyclopediaL2")])
+
+[sub_resource type="Resource" id="EffectEncyclopediaL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.encyclopedia"
+
+[sub_resource type="Resource" id="LevelEncyclopediaL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectEncyclopediaL3")])
+
+[sub_resource type="Resource" id="StanceEncyclopediaGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 8192
+repeal_stance_q16 = 0
+promote_stance_q16 = 12288
+
+[sub_resource type="Resource" id="StanceEncyclopediaTechnology"]
+script = ExtResource("5_stance")
+class_id = &"technology"
+adopt_stance_q16 = 49152
+repeal_stance_q16 = -32768
+promote_stance_q16 = 40960
+
+[sub_resource type="Resource" id="RequireEncyclopedia"]
+script = ExtResource("8_requirement")
+kind = 1
+key = &"tech.enlightenment_institutions"
+
+[sub_resource type="Resource" id="IdeaEncyclopedia"]
+script = ExtResource("3_definition")
+id = &"idea.encyclopedia"
+icon_key = &"country.technology"
+name_key = &"百科全书"
+detail_key = "把天下之学编为一部可查可证的书，知识的流通从此不可逆。"
+school_id = &"learning"
+rarity = 3
+rarity_weight = 20
+national_spirit_min_level = 1
+draw_requirements = Array[Resource]([SubResource("RequireEncyclopedia")])
+class_stances = Array[Resource]([SubResource("StanceEncyclopediaGeneral"), SubResource("StanceEncyclopediaTechnology")])
+adopt_threshold_q16 = 12288
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 24576
+levels = Array[Resource]([SubResource("LevelEncyclopediaL1"), SubResource("LevelEncyclopediaL2"), SubResource("LevelEncyclopediaL3")])
+
+[sub_resource type="Resource" id="EffectCivicMusterL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -99,19 +1421,1407 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.civic_muster"
 
-[sub_resource type="Resource" id="CivicHigh"]
+[sub_resource type="Resource" id="LevelCivicMusterL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectCivicMusterL1")])
+
+[sub_resource type="Resource" id="EffectCivicMusterL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 131072
+value_q16 = 104858
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.civic_muster"
 
-[sub_resource type="Resource" id="EffectGranaries"]
+[sub_resource type="Resource" id="LevelCivicMusterL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectCivicMusterL2")])
+
+[sub_resource type="Resource" id="EffectCivicMusterL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.civic_muster"
+
+[sub_resource type="Resource" id="LevelCivicMusterL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectCivicMusterL3")])
+
+[sub_resource type="Resource" id="StanceCivicMusterFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = 8192
+repeal_stance_q16 = 8192
+promote_stance_q16 = 8192
+
+[sub_resource type="Resource" id="StanceCivicMusterGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 16384
+repeal_stance_q16 = -8192
+promote_stance_q16 = 20480
+
+[sub_resource type="Resource" id="StanceCivicMusterWorker"]
+script = ExtResource("5_stance")
+class_id = &"worker"
+adopt_stance_q16 = 40960
+repeal_stance_q16 = -24576
+promote_stance_q16 = 32768
+
+[sub_resource type="Resource" id="IdeaCivicMuster"]
+script = ExtResource("3_definition")
+id = &"idea.civic_muster"
+icon_key = &"country.military"
+name_key = &"公民动员"
+detail_key = "以普遍义务和基层组织换取危机中的快速协同。"
+school_id = &"mobilization"
+rarity = 1
+rarity_weight = 120
+national_spirit_min_level = 1
+class_stances = Array[Resource]([SubResource("StanceCivicMusterFarmer"), SubResource("StanceCivicMusterGeneral"), SubResource("StanceCivicMusterWorker")])
+adopt_threshold_q16 = 4096
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 16384
+exclusion_group = &"labor_order"
+levels = Array[Resource]([SubResource("LevelCivicMusterL1"), SubResource("LevelCivicMusterL2"), SubResource("LevelCivicMusterL3")])
+
+[sub_resource type="Resource" id="EffectCorveeLawL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.corvee_law"
+
+[sub_resource type="Resource" id="LevelCorveeLawL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectCorveeLawL1")])
+
+[sub_resource type="Resource" id="EffectCorveeLawL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.corvee_law"
+
+[sub_resource type="Resource" id="LevelCorveeLawL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectCorveeLawL2")])
+
+[sub_resource type="Resource" id="EffectCorveeLawL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.corvee_law"
+
+[sub_resource type="Resource" id="LevelCorveeLawL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectCorveeLawL3")])
+
+[sub_resource type="Resource" id="StanceCorveeLawFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = 8192
+repeal_stance_q16 = 8192
+promote_stance_q16 = 8192
+
+[sub_resource type="Resource" id="StanceCorveeLawGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 16384
+repeal_stance_q16 = -8192
+promote_stance_q16 = 20480
+
+[sub_resource type="Resource" id="StanceCorveeLawWorker"]
+script = ExtResource("5_stance")
+class_id = &"worker"
+adopt_stance_q16 = 40960
+repeal_stance_q16 = -24576
+promote_stance_q16 = 32768
+
+[sub_resource type="Resource" id="IdeaCorveeLaw"]
+script = ExtResource("3_definition")
+id = &"idea.corvee_law"
+icon_key = &"country.military"
+name_key = &"劳役法"
+detail_key = "以法定役期征发民力兴修工程，工程更省，民力却更疲。"
+school_id = &"mobilization"
+rarity = 1
+rarity_weight = 120
+national_spirit_min_level = 1
+class_stances = Array[Resource]([SubResource("StanceCorveeLawFarmer"), SubResource("StanceCorveeLawGeneral"), SubResource("StanceCorveeLawWorker")])
+adopt_threshold_q16 = 4096
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 16384
+exclusion_group = &"labor_order"
+levels = Array[Resource]([SubResource("LevelCorveeLawL1"), SubResource("LevelCorveeLawL2"), SubResource("LevelCorveeLawL3")])
+
+[sub_resource type="Resource" id="EffectPublicHygieneL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.public_hygiene"
+
+[sub_resource type="Resource" id="LevelPublicHygieneL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectPublicHygieneL1")])
+
+[sub_resource type="Resource" id="EffectPublicHygieneL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.public_hygiene"
+
+[sub_resource type="Resource" id="LevelPublicHygieneL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectPublicHygieneL2")])
+
+[sub_resource type="Resource" id="EffectPublicHygieneL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.public_hygiene"
+
+[sub_resource type="Resource" id="LevelPublicHygieneL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectPublicHygieneL3")])
+
+[sub_resource type="Resource" id="StancePublicHygieneFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = 8192
+repeal_stance_q16 = 8192
+promote_stance_q16 = 8192
+
+[sub_resource type="Resource" id="StancePublicHygieneGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 16384
+repeal_stance_q16 = -8192
+promote_stance_q16 = 20480
+
+[sub_resource type="Resource" id="StancePublicHygieneWorker"]
+script = ExtResource("5_stance")
+class_id = &"worker"
+adopt_stance_q16 = 40960
+repeal_stance_q16 = -24576
+promote_stance_q16 = 32768
+
+[sub_resource type="Resource" id="RequirePublicHygiene"]
+script = ExtResource("8_requirement")
+kind = 1
+key = &"tech.imperial_integration"
+
+[sub_resource type="Resource" id="IdeaPublicHygiene"]
+script = ExtResource("3_definition")
+id = &"idea.public_hygiene"
+icon_key = &"country.military"
+name_key = &"公共卫生"
+detail_key = "清渠、隔离与种痘，把健康变成可以组织的公共事务。"
+school_id = &"mobilization"
+rarity = 2
+rarity_weight = 60
+national_spirit_min_level = 1
+draw_requirements = Array[Resource]([SubResource("RequirePublicHygiene")])
+class_stances = Array[Resource]([SubResource("StancePublicHygieneFarmer"), SubResource("StancePublicHygieneGeneral"), SubResource("StancePublicHygieneWorker")])
+adopt_threshold_q16 = 8192
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 20480
+levels = Array[Resource]([SubResource("LevelPublicHygieneL1"), SubResource("LevelPublicHygieneL2"), SubResource("LevelPublicHygieneL3")])
+
+[sub_resource type="Resource" id="EffectNationalEducationL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.national_education"
+
+[sub_resource type="Resource" id="LevelNationalEducationL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectNationalEducationL1")])
+
+[sub_resource type="Resource" id="EffectNationalEducationL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.national_education"
+
+[sub_resource type="Resource" id="LevelNationalEducationL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectNationalEducationL2")])
+
+[sub_resource type="Resource" id="EffectNationalEducationL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.national_education"
+
+[sub_resource type="Resource" id="LevelNationalEducationL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectNationalEducationL3")])
+
+[sub_resource type="Resource" id="StanceNationalEducationFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = 8192
+repeal_stance_q16 = 8192
+promote_stance_q16 = 8192
+
+[sub_resource type="Resource" id="StanceNationalEducationGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 16384
+repeal_stance_q16 = -8192
+promote_stance_q16 = 20480
+
+[sub_resource type="Resource" id="StanceNationalEducationWorker"]
+script = ExtResource("5_stance")
+class_id = &"worker"
+adopt_stance_q16 = 40960
+repeal_stance_q16 = -24576
+promote_stance_q16 = 32768
+
+[sub_resource type="Resource" id="RequireNationalEducation"]
+script = ExtResource("8_requirement")
+kind = 1
+key = &"tech.enlightenment_institutions"
+
+[sub_resource type="Resource" id="IdeaNationalEducation"]
+script = ExtResource("3_definition")
+id = &"idea.national_education"
+icon_key = &"country.military"
+name_key = &"国民教育"
+detail_key = "义务教育塑造统一语言与技艺，工程与社会研究受益。"
+school_id = &"mobilization"
+rarity = 2
+rarity_weight = 60
+national_spirit_min_level = 1
+draw_requirements = Array[Resource]([SubResource("RequireNationalEducation")])
+class_stances = Array[Resource]([SubResource("StanceNationalEducationFarmer"), SubResource("StanceNationalEducationGeneral"), SubResource("StanceNationalEducationWorker")])
+adopt_threshold_q16 = 8192
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 20480
+levels = Array[Resource]([SubResource("LevelNationalEducationL1"), SubResource("LevelNationalEducationL2"), SubResource("LevelNationalEducationL3")])
+
+[sub_resource type="Resource" id="EffectTotalMobilizationL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.total_mobilization"
+
+[sub_resource type="Resource" id="LevelTotalMobilizationL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectTotalMobilizationL1")])
+
+[sub_resource type="Resource" id="EffectTotalMobilizationL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.total_mobilization"
+
+[sub_resource type="Resource" id="LevelTotalMobilizationL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectTotalMobilizationL2")])
+
+[sub_resource type="Resource" id="EffectTotalMobilizationL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.total_mobilization"
+
+[sub_resource type="Resource" id="LevelTotalMobilizationL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectTotalMobilizationL3")])
+
+[sub_resource type="Resource" id="StanceTotalMobilizationFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = 8192
+repeal_stance_q16 = 8192
+promote_stance_q16 = 8192
+
+[sub_resource type="Resource" id="StanceTotalMobilizationGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 16384
+repeal_stance_q16 = -8192
+promote_stance_q16 = 20480
+
+[sub_resource type="Resource" id="StanceTotalMobilizationWorker"]
+script = ExtResource("5_stance")
+class_id = &"worker"
+adopt_stance_q16 = 40960
+repeal_stance_q16 = -24576
+promote_stance_q16 = 32768
+adopt_min_support_q16 = 0
+
+[sub_resource type="Resource" id="RequireTotalMobilization"]
+script = ExtResource("8_requirement")
+kind = 1
+key = &"tech.industrialization"
+
+[sub_resource type="Resource" id="IdeaTotalMobilization"]
+script = ExtResource("3_definition")
+id = &"idea.total_mobilization"
+icon_key = &"country.military"
+name_key = &"总体动员"
+detail_key = "把全部社会资源编入一张计划表，生产与建设都在口号声中提速。"
+school_id = &"mobilization"
+rarity = 3
+rarity_weight = 20
+national_spirit_min_level = 1
+draw_requirements = Array[Resource]([SubResource("RequireTotalMobilization")])
+class_stances = Array[Resource]([SubResource("StanceTotalMobilizationFarmer"), SubResource("StanceTotalMobilizationGeneral"), SubResource("StanceTotalMobilizationWorker")])
+adopt_threshold_q16 = 12288
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 24576
+levels = Array[Resource]([SubResource("LevelTotalMobilizationL1"), SubResource("LevelTotalMobilizationL2"), SubResource("LevelTotalMobilizationL3")])
+
+[sub_resource type="Resource" id="EffectWorkshopSystemL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.workshop_system"
+
+[sub_resource type="Resource" id="LevelWorkshopSystemL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectWorkshopSystemL1")])
+
+[sub_resource type="Resource" id="EffectWorkshopSystemL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.workshop_system"
+
+[sub_resource type="Resource" id="LevelWorkshopSystemL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectWorkshopSystemL2")])
+
+[sub_resource type="Resource" id="EffectWorkshopSystemL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.workshop_system"
+
+[sub_resource type="Resource" id="LevelWorkshopSystemL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectWorkshopSystemL3")])
+
+[sub_resource type="Resource" id="StanceWorkshopSystemFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = -16384
+repeal_stance_q16 = 16384
+promote_stance_q16 = -8192
+
+[sub_resource type="Resource" id="StanceWorkshopSystemGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 8192
+repeal_stance_q16 = 0
+promote_stance_q16 = 12288
+
+[sub_resource type="Resource" id="StanceWorkshopSystemWorker"]
+script = ExtResource("5_stance")
+class_id = &"worker"
+adopt_stance_q16 = 32768
+repeal_stance_q16 = -16384
+promote_stance_q16 = 24576
+
+[sub_resource type="Resource" id="IdeaWorkshopSystem"]
+script = ExtResource("3_definition")
+id = &"idea.workshop_system"
+icon_key = &"country.industry"
+name_key = &"工场制度"
+detail_key = "把分散的手工业集中到工场，产量上升，物料消耗也更大。"
+school_id = &"industry"
+rarity = 1
+rarity_weight = 120
+national_spirit_min_level = 1
+class_stances = Array[Resource]([SubResource("StanceWorkshopSystemFarmer"), SubResource("StanceWorkshopSystemGeneral"), SubResource("StanceWorkshopSystemWorker")])
+adopt_threshold_q16 = 4096
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 16384
+levels = Array[Resource]([SubResource("LevelWorkshopSystemL1"), SubResource("LevelWorkshopSystemL2"), SubResource("LevelWorkshopSystemL3")])
+
+[sub_resource type="Resource" id="EffectStandardizationL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.standardization"
+
+[sub_resource type="Resource" id="LevelStandardizationL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectStandardizationL1")])
+
+[sub_resource type="Resource" id="EffectStandardizationL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.standardization"
+
+[sub_resource type="Resource" id="LevelStandardizationL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectStandardizationL2")])
+
+[sub_resource type="Resource" id="EffectStandardizationL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.standardization"
+
+[sub_resource type="Resource" id="LevelStandardizationL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectStandardizationL3")])
+
+[sub_resource type="Resource" id="StanceStandardizationFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = -16384
+repeal_stance_q16 = 16384
+promote_stance_q16 = -8192
+
+[sub_resource type="Resource" id="StanceStandardizationGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 8192
+repeal_stance_q16 = 0
+promote_stance_q16 = 12288
+
+[sub_resource type="Resource" id="StanceStandardizationWorker"]
+script = ExtResource("5_stance")
+class_id = &"worker"
+adopt_stance_q16 = 32768
+repeal_stance_q16 = -16384
+promote_stance_q16 = 24576
+
+[sub_resource type="Resource" id="IdeaStandardization"]
+script = ExtResource("3_definition")
+id = &"idea.standardization"
+icon_key = &"country.industry"
+name_key = &"标准化"
+detail_key = "统一度量、规格与零件，生产与建造都更省料。"
+school_id = &"industry"
+rarity = 1
+rarity_weight = 120
+national_spirit_min_level = 1
+class_stances = Array[Resource]([SubResource("StanceStandardizationFarmer"), SubResource("StanceStandardizationGeneral"), SubResource("StanceStandardizationWorker")])
+adopt_threshold_q16 = 4096
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 16384
+levels = Array[Resource]([SubResource("LevelStandardizationL1"), SubResource("LevelStandardizationL2"), SubResource("LevelStandardizationL3")])
+
+[sub_resource type="Resource" id="EffectMiningMonopolyL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.mining_monopoly"
+
+[sub_resource type="Resource" id="LevelMiningMonopolyL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectMiningMonopolyL1")])
+
+[sub_resource type="Resource" id="EffectMiningMonopolyL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.mining_monopoly"
+
+[sub_resource type="Resource" id="LevelMiningMonopolyL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectMiningMonopolyL2")])
+
+[sub_resource type="Resource" id="EffectMiningMonopolyL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.mining_monopoly"
+
+[sub_resource type="Resource" id="LevelMiningMonopolyL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectMiningMonopolyL3")])
+
+[sub_resource type="Resource" id="StanceMiningMonopolyFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = -16384
+repeal_stance_q16 = 16384
+promote_stance_q16 = -8192
+
+[sub_resource type="Resource" id="StanceMiningMonopolyGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 8192
+repeal_stance_q16 = 0
+promote_stance_q16 = 12288
+
+[sub_resource type="Resource" id="StanceMiningMonopolyWorker"]
+script = ExtResource("5_stance")
+class_id = &"worker"
+adopt_stance_q16 = 32768
+repeal_stance_q16 = -16384
+promote_stance_q16 = 24576
+
+[sub_resource type="Resource" id="IdeaMiningMonopoly"]
+script = ExtResource("3_definition")
+id = &"idea.mining_monopoly"
+icon_key = &"country.industry"
+name_key = &"矿冶专营"
+detail_key = "国家专营盐铁矿冶，采掘大兴，山林矿藏也消耗更快。"
+school_id = &"industry"
+rarity = 2
+rarity_weight = 60
+national_spirit_min_level = 1
+class_stances = Array[Resource]([SubResource("StanceMiningMonopolyFarmer"), SubResource("StanceMiningMonopolyGeneral"), SubResource("StanceMiningMonopolyWorker")])
+adopt_threshold_q16 = 8192
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 20480
+exclusion_group = &"economic_order"
+levels = Array[Resource]([SubResource("LevelMiningMonopolyL1"), SubResource("LevelMiningMonopolyL2"), SubResource("LevelMiningMonopolyL3")])
+
+[sub_resource type="Resource" id="EffectSteamPowerL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.steam_power"
+
+[sub_resource type="Resource" id="LevelSteamPowerL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectSteamPowerL1")])
+
+[sub_resource type="Resource" id="EffectSteamPowerL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.steam_power"
+
+[sub_resource type="Resource" id="LevelSteamPowerL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectSteamPowerL2")])
+
+[sub_resource type="Resource" id="EffectSteamPowerL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.steam_power"
+
+[sub_resource type="Resource" id="LevelSteamPowerL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectSteamPowerL3")])
+
+[sub_resource type="Resource" id="StanceSteamPowerFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = -16384
+repeal_stance_q16 = 16384
+promote_stance_q16 = -8192
+
+[sub_resource type="Resource" id="StanceSteamPowerGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 8192
+repeal_stance_q16 = 0
+promote_stance_q16 = 12288
+
+[sub_resource type="Resource" id="StanceSteamPowerWorker"]
+script = ExtResource("5_stance")
+class_id = &"worker"
+adopt_stance_q16 = 32768
+repeal_stance_q16 = -16384
+promote_stance_q16 = 24576
+
+[sub_resource type="Resource" id="RequireSteamPower"]
+script = ExtResource("8_requirement")
+kind = 1
+key = &"tech.industrialization"
+
+[sub_resource type="Resource" id="IdeaSteamPower"]
+script = ExtResource("3_definition")
+id = &"idea.steam_power"
+icon_key = &"country.industry"
+name_key = &"蒸汽动力"
+detail_key = "以蒸汽机取代水力与畜力，能源与制造同时跃进。"
+school_id = &"industry"
+rarity = 2
+rarity_weight = 60
+national_spirit_min_level = 1
+draw_requirements = Array[Resource]([SubResource("RequireSteamPower")])
+class_stances = Array[Resource]([SubResource("StanceSteamPowerFarmer"), SubResource("StanceSteamPowerGeneral"), SubResource("StanceSteamPowerWorker")])
+adopt_threshold_q16 = 8192
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 20480
+levels = Array[Resource]([SubResource("LevelSteamPowerL1"), SubResource("LevelSteamPowerL2"), SubResource("LevelSteamPowerL3")])
+
+[sub_resource type="Resource" id="EffectAssemblyLineL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.assembly_line"
+
+[sub_resource type="Resource" id="LevelAssemblyLineL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectAssemblyLineL1")])
+
+[sub_resource type="Resource" id="EffectAssemblyLineL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.assembly_line"
+
+[sub_resource type="Resource" id="LevelAssemblyLineL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectAssemblyLineL2")])
+
+[sub_resource type="Resource" id="EffectAssemblyLineL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.assembly_line"
+
+[sub_resource type="Resource" id="LevelAssemblyLineL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectAssemblyLineL3")])
+
+[sub_resource type="Resource" id="StanceAssemblyLineFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = -16384
+repeal_stance_q16 = 16384
+promote_stance_q16 = -8192
+
+[sub_resource type="Resource" id="StanceAssemblyLineGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 8192
+repeal_stance_q16 = 0
+promote_stance_q16 = 12288
+
+[sub_resource type="Resource" id="StanceAssemblyLineWorker"]
+script = ExtResource("5_stance")
+class_id = &"worker"
+adopt_stance_q16 = 32768
+repeal_stance_q16 = -16384
+promote_stance_q16 = 24576
+
+[sub_resource type="Resource" id="RequireAssemblyLine"]
+script = ExtResource("8_requirement")
+kind = 1
+key = &"tech.electrical_society"
+
+[sub_resource type="Resource" id="IdeaAssemblyLine"]
+script = ExtResource("3_definition")
+id = &"idea.assembly_line"
+icon_key = &"country.industry"
+name_key = &"流水线"
+detail_key = "以传送带与工序分解组织大规模生产，工业节奏从此改写。"
+school_id = &"industry"
+rarity = 3
+rarity_weight = 20
+national_spirit_min_level = 1
+draw_requirements = Array[Resource]([SubResource("RequireAssemblyLine")])
+class_stances = Array[Resource]([SubResource("StanceAssemblyLineFarmer"), SubResource("StanceAssemblyLineGeneral"), SubResource("StanceAssemblyLineWorker")])
+adopt_threshold_q16 = 12288
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 24576
+levels = Array[Resource]([SubResource("LevelAssemblyLineL1"), SubResource("LevelAssemblyLineL2"), SubResource("LevelAssemblyLineL3")])
+
+[sub_resource type="Resource" id="EffectForestMarshBanL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.forest_marsh_ban"
+
+[sub_resource type="Resource" id="LevelForestMarshBanL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectForestMarshBanL1")])
+
+[sub_resource type="Resource" id="EffectForestMarshBanL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.forest_marsh_ban"
+
+[sub_resource type="Resource" id="LevelForestMarshBanL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectForestMarshBanL2")])
+
+[sub_resource type="Resource" id="EffectForestMarshBanL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.forest_marsh_ban"
+
+[sub_resource type="Resource" id="LevelForestMarshBanL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectForestMarshBanL3")])
+
+[sub_resource type="Resource" id="StanceForestMarshBanFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = 24576
+repeal_stance_q16 = -16384
+promote_stance_q16 = 20480
+
+[sub_resource type="Resource" id="StanceForestMarshBanGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 16384
+repeal_stance_q16 = -8192
+promote_stance_q16 = 16384
+
+[sub_resource type="Resource" id="StanceForestMarshBanWorker"]
+script = ExtResource("5_stance")
+class_id = &"worker"
+adopt_stance_q16 = -8192
+repeal_stance_q16 = 8192
+promote_stance_q16 = 0
+
+[sub_resource type="Resource" id="IdeaForestMarshBan"]
+script = ExtResource("3_definition")
+id = &"idea.forest_marsh_ban"
+icon_key = &"country.climate"
+name_key = &"林泽禁令"
+detail_key = "按时入山林、禁竭泽而渔，资源得以休养，采掘稍受限制。"
+school_id = &"harmony"
+rarity = 1
+rarity_weight = 120
+national_spirit_min_level = 1
+class_stances = Array[Resource]([SubResource("StanceForestMarshBanFarmer"), SubResource("StanceForestMarshBanGeneral"), SubResource("StanceForestMarshBanWorker")])
+adopt_threshold_q16 = 4096
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 16384
+exclusion_group = &"land_order"
+levels = Array[Resource]([SubResource("LevelForestMarshBanL1"), SubResource("LevelForestMarshBanL2"), SubResource("LevelForestMarshBanL3")])
+
+[sub_resource type="Resource" id="EffectWaterWorksL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.water_works"
+
+[sub_resource type="Resource" id="LevelWaterWorksL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectWaterWorksL1")])
+
+[sub_resource type="Resource" id="EffectWaterWorksL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.water_works"
+
+[sub_resource type="Resource" id="LevelWaterWorksL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectWaterWorksL2")])
+
+[sub_resource type="Resource" id="EffectWaterWorksL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.water_works"
+
+[sub_resource type="Resource" id="LevelWaterWorksL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectWaterWorksL3")])
+
+[sub_resource type="Resource" id="StanceWaterWorksFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = 24576
+repeal_stance_q16 = -16384
+promote_stance_q16 = 20480
+
+[sub_resource type="Resource" id="StanceWaterWorksGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 16384
+repeal_stance_q16 = -8192
+promote_stance_q16 = 16384
+
+[sub_resource type="Resource" id="StanceWaterWorksWorker"]
+script = ExtResource("5_stance")
+class_id = &"worker"
+adopt_stance_q16 = -8192
+repeal_stance_q16 = 8192
+promote_stance_q16 = 0
+
+[sub_resource type="Resource" id="IdeaWaterWorks"]
+script = ExtResource("3_definition")
+id = &"idea.water_works"
+icon_key = &"country.climate"
+name_key = &"治水营田"
+detail_key = "修堤疏渠、引水灌田，把洪水变成可用的水利。"
+school_id = &"harmony"
+rarity = 1
+rarity_weight = 120
+national_spirit_min_level = 1
+class_stances = Array[Resource]([SubResource("StanceWaterWorksFarmer"), SubResource("StanceWaterWorksGeneral"), SubResource("StanceWaterWorksWorker")])
+adopt_threshold_q16 = 4096
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 16384
+levels = Array[Resource]([SubResource("LevelWaterWorksL1"), SubResource("LevelWaterWorksL2"), SubResource("LevelWaterWorksL3")])
+
+[sub_resource type="Resource" id="EffectSeasonalCalendarL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.seasonal_calendar"
+
+[sub_resource type="Resource" id="LevelSeasonalCalendarL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectSeasonalCalendarL1")])
+
+[sub_resource type="Resource" id="EffectSeasonalCalendarL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.seasonal_calendar"
+
+[sub_resource type="Resource" id="LevelSeasonalCalendarL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectSeasonalCalendarL2")])
+
+[sub_resource type="Resource" id="EffectSeasonalCalendarL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.seasonal_calendar"
+
+[sub_resource type="Resource" id="LevelSeasonalCalendarL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectSeasonalCalendarL3")])
+
+[sub_resource type="Resource" id="StanceSeasonalCalendarFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = 24576
+repeal_stance_q16 = -16384
+promote_stance_q16 = 20480
+
+[sub_resource type="Resource" id="StanceSeasonalCalendarGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 16384
+repeal_stance_q16 = -8192
+promote_stance_q16 = 16384
+
+[sub_resource type="Resource" id="StanceSeasonalCalendarWorker"]
+script = ExtResource("5_stance")
+class_id = &"worker"
+adopt_stance_q16 = -8192
+repeal_stance_q16 = 8192
+promote_stance_q16 = 0
+
+[sub_resource type="Resource" id="IdeaSeasonalCalendar"]
+script = ExtResource("3_definition")
+id = &"idea.seasonal_calendar"
+icon_key = &"country.climate"
+name_key = &"寒暑历法"
+detail_key = "以节气指导农时与役使，寒暑异常的危害大大减轻。"
+school_id = &"harmony"
+rarity = 2
+rarity_weight = 60
+national_spirit_min_level = 1
+class_stances = Array[Resource]([SubResource("StanceSeasonalCalendarFarmer"), SubResource("StanceSeasonalCalendarGeneral"), SubResource("StanceSeasonalCalendarWorker")])
+adopt_threshold_q16 = 8192
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 20480
+levels = Array[Resource]([SubResource("LevelSeasonalCalendarL1"), SubResource("LevelSeasonalCalendarL2"), SubResource("LevelSeasonalCalendarL3")])
+
+[sub_resource type="Resource" id="EffectHeavenHumanL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.heaven_human"
+
+[sub_resource type="Resource" id="LevelHeavenHumanL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectHeavenHumanL1")])
+
+[sub_resource type="Resource" id="EffectHeavenHumanL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.heaven_human"
+
+[sub_resource type="Resource" id="LevelHeavenHumanL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectHeavenHumanL2")])
+
+[sub_resource type="Resource" id="EffectHeavenHumanL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.heaven_human"
+
+[sub_resource type="Resource" id="LevelHeavenHumanL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectHeavenHumanL3")])
+
+[sub_resource type="Resource" id="StanceHeavenHumanFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = 24576
+repeal_stance_q16 = -16384
+promote_stance_q16 = 20480
+
+[sub_resource type="Resource" id="StanceHeavenHumanGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 16384
+repeal_stance_q16 = -8192
+promote_stance_q16 = 16384
+
+[sub_resource type="Resource" id="StanceHeavenHumanWorker"]
+script = ExtResource("5_stance")
+class_id = &"worker"
+adopt_stance_q16 = -8192
+repeal_stance_q16 = 8192
+promote_stance_q16 = 0
+
+[sub_resource type="Resource" id="RequireHeavenHuman"]
+script = ExtResource("8_requirement")
+kind = 1
+key = &"tech.imperial_integration"
+
+[sub_resource type="Resource" id="IdeaHeavenHuman"]
+script = ExtResource("3_definition")
+id = &"idea.heaven_human"
+icon_key = &"country.climate"
+name_key = &"天人相参"
+detail_key = "观天察地以定政令，对旱涝与农业规律的理解更加系统。"
+school_id = &"harmony"
+rarity = 2
+rarity_weight = 60
+national_spirit_min_level = 1
+draw_requirements = Array[Resource]([SubResource("RequireHeavenHuman")])
+class_stances = Array[Resource]([SubResource("StanceHeavenHumanFarmer"), SubResource("StanceHeavenHumanGeneral"), SubResource("StanceHeavenHumanWorker")])
+adopt_threshold_q16 = 8192
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 20480
+levels = Array[Resource]([SubResource("LevelHeavenHumanL1"), SubResource("LevelHeavenHumanL2"), SubResource("LevelHeavenHumanL3")])
+
+[sub_resource type="Resource" id="EffectEcologicalBalanceL1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.ecological_balance"
+
+[sub_resource type="Resource" id="LevelEcologicalBalanceL1"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectEcologicalBalanceL1")])
+
+[sub_resource type="Resource" id="EffectEcologicalBalanceL2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 104858
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.ecological_balance"
+
+[sub_resource type="Resource" id="LevelEcologicalBalanceL2"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 262144
+daily_understanding_q16 = 4096
+persistent_effects = Array[Resource]([SubResource("EffectEcologicalBalanceL2")])
+
+[sub_resource type="Resource" id="EffectEcologicalBalanceL3"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 144179
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.ecological_balance"
+
+[sub_resource type="Resource" id="LevelEcologicalBalanceL3"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 786432
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectEcologicalBalanceL3")])
+
+[sub_resource type="Resource" id="StanceEcologicalBalanceFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = 24576
+repeal_stance_q16 = -16384
+promote_stance_q16 = 20480
+
+[sub_resource type="Resource" id="StanceEcologicalBalanceGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 16384
+repeal_stance_q16 = -8192
+promote_stance_q16 = 16384
+
+[sub_resource type="Resource" id="StanceEcologicalBalanceWorker"]
+script = ExtResource("5_stance")
+class_id = &"worker"
+adopt_stance_q16 = -8192
+repeal_stance_q16 = 8192
+promote_stance_q16 = 0
+
+[sub_resource type="Resource" id="RequireEcologicalBalance"]
+script = ExtResource("8_requirement")
+kind = 1
+key = &"tech.electrical_society"
+
+[sub_resource type="Resource" id="IdeaEcologicalBalance"]
+script = ExtResource("3_definition")
+id = &"idea.ecological_balance"
+icon_key = &"country.climate"
+name_key = &"生态均衡"
+detail_key = "以循环与修复约束工业增长，资源、人口与能源得到长期平衡。"
+school_id = &"harmony"
+rarity = 3
+rarity_weight = 20
+national_spirit_min_level = 1
+draw_requirements = Array[Resource]([SubResource("RequireEcologicalBalance")])
+class_stances = Array[Resource]([SubResource("StanceEcologicalBalanceFarmer"), SubResource("StanceEcologicalBalanceGeneral"), SubResource("StanceEcologicalBalanceWorker")])
+adopt_threshold_q16 = 12288
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 24576
+levels = Array[Resource]([SubResource("LevelEcologicalBalanceL1"), SubResource("LevelEcologicalBalanceL2"), SubResource("LevelEcologicalBalanceL3")])
+
+[sub_resource type="Resource" id="EffectSynergyPlannedGranaries"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -123,7 +2833,16 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.synergy.planned_granaries"
 
-[sub_resource type="Resource" id="EffectCharter"]
+[sub_resource type="Resource" id="SynergyPlannedGranaries"]
+script = ExtResource("6_synergy")
+id = &"synergy.planned_granaries"
+display_name = "计划仓廩"
+required_ideology_ids = PackedStringArray("idea.collective_stewardship", "idea.scholar_office")
+minimum_levels = PackedInt32Array(0, 0)
+location_masks = PackedByteArray(6, 6)
+persistent_effects = Array[Resource]([SubResource("EffectSynergyPlannedGranaries")])
+
+[sub_resource type="Resource" id="EffectSynergyCharteredFrontier"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -135,225 +2854,389 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.synergy.chartered_frontier"
 
-[sub_resource type="Resource" id="LevelCollectiveLow"]
-script = ExtResource("4_level")
-understanding_threshold_q16 = 0
-daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("CollectiveLow")])
-
-[sub_resource type="Resource" id="LevelCollectiveHigh"]
-script = ExtResource("4_level")
-understanding_threshold_q16 = 196608
-daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("CollectiveHigh")])
-
-[sub_resource type="Resource" id="LevelExchangeLow"]
-script = ExtResource("4_level")
-understanding_threshold_q16 = 0
-daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("ExchangeLow")])
-
-[sub_resource type="Resource" id="LevelExchangeHigh"]
-script = ExtResource("4_level")
-understanding_threshold_q16 = 196608
-daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("ExchangeHigh")])
-
-[sub_resource type="Resource" id="LevelScholarLow"]
-script = ExtResource("4_level")
-understanding_threshold_q16 = 0
-daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("ScholarLow")])
-
-[sub_resource type="Resource" id="LevelScholarHigh"]
-script = ExtResource("4_level")
-understanding_threshold_q16 = 196608
-daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("ScholarHigh")])
-
-[sub_resource type="Resource" id="LevelCivicLow"]
-script = ExtResource("4_level")
-understanding_threshold_q16 = 0
-daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("CivicLow")])
-
-[sub_resource type="Resource" id="LevelCivicHigh"]
-script = ExtResource("4_level")
-understanding_threshold_q16 = 196608
-daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("CivicHigh")])
-
-[sub_resource type="Resource" id="CollectiveGeneral"]
-script = ExtResource("5_stance")
-class_id = &"general"
-adopt_stance_q16 = 24576
-repeal_stance_q16 = -16384
-promote_stance_q16 = 16384
-
-[sub_resource type="Resource" id="CollectiveFarmer"]
-script = ExtResource("5_stance")
-class_id = &"farmer"
-adopt_stance_q16 = 49152
-repeal_stance_q16 = -32768
-promote_stance_q16 = 32768
-
-[sub_resource type="Resource" id="CollectiveWorker"]
-script = ExtResource("5_stance")
-class_id = &"worker"
-adopt_stance_q16 = 32768
-repeal_stance_q16 = -24576
-promote_stance_q16 = 24576
-
-[sub_resource type="Resource" id="CollectiveTechnology"]
-script = ExtResource("5_stance")
-class_id = &"technology"
-adopt_stance_q16 = 8192
-repeal_stance_q16 = 8192
-promote_stance_q16 = 12288
-
-[sub_resource type="Resource" id="Collective"]
-script = ExtResource("3_definition")
-id = &"idea.collective_stewardship"
-icon_key = &"country.economy"
-name_key = &"共同体治理"
-detail_key = "以共同仓储、互助义务和长期土地责任组织生产。"
-rarity_weight = 120
-national_spirit_min_level = 1
-class_stances = Array[Resource]([SubResource("CollectiveGeneral"), SubResource("CollectiveFarmer"), SubResource("CollectiveWorker"), SubResource("CollectiveTechnology")])
-adopt_threshold_q16 = 8192
-repeal_threshold_q16 = 0
-promote_threshold_q16 = 16384
-exclusion_group = &"economic_order"
-levels = Array[Resource]([SubResource("LevelCollectiveLow"), SubResource("LevelCollectiveHigh")])
-
-[sub_resource type="Resource" id="ExchangeGeneral"]
-script = ExtResource("5_stance")
-class_id = &"general"
-adopt_stance_q16 = 16384
-repeal_stance_q16 = 8192
-promote_stance_q16 = 12288
-
-[sub_resource type="Resource" id="ExchangeFarmer"]
-script = ExtResource("5_stance")
-class_id = &"farmer"
-adopt_stance_q16 = -32768
-repeal_stance_q16 = 32768
-promote_stance_q16 = -24576
-adopt_min_support_q16 = -16384
-
-[sub_resource type="Resource" id="ExchangeWorker"]
-script = ExtResource("5_stance")
-class_id = &"worker"
-adopt_stance_q16 = -16384
-repeal_stance_q16 = 24576
-promote_stance_q16 = -8192
-
-[sub_resource type="Resource" id="ExchangeTechnology"]
-script = ExtResource("5_stance")
-class_id = &"technology"
-adopt_stance_q16 = 32768
-repeal_stance_q16 = -8192
-promote_stance_q16 = 24576
-
-[sub_resource type="Resource" id="Exchange"]
-script = ExtResource("3_definition")
-id = &"idea.free_exchange"
-icon_key = &"country.trade"
-name_key = &"自由交换"
-detail_key = "以契约、流通和分散决策鼓励资源重新配置。"
-rarity_weight = 100
-national_spirit_min_level = 1
-class_stances = Array[Resource]([SubResource("ExchangeGeneral"), SubResource("ExchangeFarmer"), SubResource("ExchangeWorker"), SubResource("ExchangeTechnology")])
-adopt_threshold_q16 = 4096
-repeal_threshold_q16 = 8192
-promote_threshold_q16 = 20480
-exclusion_group = &"economic_order"
-levels = Array[Resource]([SubResource("LevelExchangeLow"), SubResource("LevelExchangeHigh")])
-
-[sub_resource type="Resource" id="ScholarGeneral"]
-script = ExtResource("5_stance")
-class_id = &"general"
-adopt_stance_q16 = 8192
-repeal_stance_q16 = 0
-promote_stance_q16 = 12288
-
-[sub_resource type="Resource" id="ScholarTechnology"]
-script = ExtResource("5_stance")
-class_id = &"technology"
-adopt_stance_q16 = 65536
-repeal_stance_q16 = -32768
-promote_stance_q16 = 49152
-promote_min_support_q16 = 32768
-
-[sub_resource type="Resource" id="Scholar"]
-script = ExtResource("3_definition")
-id = &"idea.scholar_office"
-icon_key = &"country.technology"
-name_key = &"学识官署"
-detail_key = "让记录、测量与专业知识成为公共决策的正式依据。"
-rarity_weight = 80
-national_spirit_min_level = 1
-class_stances = Array[Resource]([SubResource("ScholarGeneral"), SubResource("ScholarTechnology")])
-adopt_threshold_q16 = 8192
-repeal_threshold_q16 = 0
-promote_threshold_q16 = 24576
-levels = Array[Resource]([SubResource("LevelScholarLow"), SubResource("LevelScholarHigh")])
-
-[sub_resource type="Resource" id="CivicGeneral"]
-script = ExtResource("5_stance")
-class_id = &"general"
-adopt_stance_q16 = 24576
-repeal_stance_q16 = -8192
-promote_stance_q16 = 24576
-
-[sub_resource type="Resource" id="CivicWorker"]
-script = ExtResource("5_stance")
-class_id = &"worker"
-adopt_stance_q16 = 49152
-repeal_stance_q16 = -24576
-promote_stance_q16 = 32768
-
-[sub_resource type="Resource" id="CivicFarmer"]
-script = ExtResource("5_stance")
-class_id = &"farmer"
-adopt_stance_q16 = 16384
-repeal_stance_q16 = 8192
-promote_stance_q16 = 12288
-
-[sub_resource type="Resource" id="Civic"]
-script = ExtResource("3_definition")
-id = &"idea.civic_muster"
-icon_key = &"country.military"
-name_key = &"公民动员"
-detail_key = "以普遍义务和基层组织换取危机中的快速协同。"
-rarity_weight = 100
-national_spirit_min_level = 1
-class_stances = Array[Resource]([SubResource("CivicGeneral"), SubResource("CivicWorker"), SubResource("CivicFarmer")])
-adopt_threshold_q16 = 12288
-repeal_threshold_q16 = 0
-promote_threshold_q16 = 20480
-levels = Array[Resource]([SubResource("LevelCivicLow"), SubResource("LevelCivicHigh")])
-
-[sub_resource type="Resource" id="SynergyGranaries"]
-script = ExtResource("6_synergy")
-id = &"synergy.planned_granaries"
-display_name = "计划仓廪"
-required_ideology_ids = PackedStringArray("idea.collective_stewardship", "idea.scholar_office")
-minimum_levels = PackedInt32Array(0, 0)
-location_masks = PackedByteArray(6, 6)
-persistent_effects = Array[Resource]([SubResource("EffectGranaries")])
-
-[sub_resource type="Resource" id="SynergyCharter"]
+[sub_resource type="Resource" id="SynergyCharteredFrontier"]
 script = ExtResource("6_synergy")
 id = &"synergy.chartered_frontier"
 display_name = "特许开拓"
 required_ideology_ids = PackedStringArray("idea.free_exchange", "idea.civic_muster")
 minimum_levels = PackedInt32Array(0, 0)
 location_masks = PackedByteArray(6, 6)
-persistent_effects = Array[Resource]([SubResource("EffectCharter")])
+persistent_effects = Array[Resource]([SubResource("EffectSynergyCharteredFrontier")])
+
+[sub_resource type="Resource" id="EffectSynergyMaritimeLedger"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.synergy.maritime_ledger"
+
+[sub_resource type="Resource" id="SynergyMaritimeLedger"]
+script = ExtResource("6_synergy")
+id = &"synergy.maritime_ledger"
+display_name = "海商账簿"
+required_ideology_ids = PackedStringArray("idea.ocean_company", "idea.double_entry")
+minimum_levels = PackedInt32Array(0, 0)
+location_masks = PackedByteArray(6, 6)
+persistent_effects = Array[Resource]([SubResource("EffectSynergyMaritimeLedger")])
+
+[sub_resource type="Resource" id="EffectSynergyEngineeringCorps"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.synergy.engineering_corps"
+
+[sub_resource type="Resource" id="SynergyEngineeringCorps"]
+script = ExtResource("6_synergy")
+id = &"synergy.engineering_corps"
+display_name = "工役营造"
+required_ideology_ids = PackedStringArray("idea.standardization", "idea.corvee_law")
+minimum_levels = PackedInt32Array(0, 0)
+location_masks = PackedByteArray(6, 6)
+persistent_effects = Array[Resource]([SubResource("EffectSynergyEngineeringCorps")])
+
+[sub_resource type="Resource" id="EffectSynergyIndustrialScience"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.synergy.industrial_science"
+
+[sub_resource type="Resource" id="SynergyIndustrialScience"]
+script = ExtResource("6_synergy")
+id = &"synergy.industrial_science"
+display_name = "工业科学"
+required_ideology_ids = PackedStringArray("idea.experimental_method", "idea.steam_power")
+minimum_levels = PackedInt32Array(0, 0)
+location_masks = PackedByteArray(6, 6)
+persistent_effects = Array[Resource]([SubResource("EffectSynergyIndustrialScience")])
+
+[sub_resource type="Resource" id="EffectSynergyRiverCommune"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.synergy.river_commune"
+
+[sub_resource type="Resource" id="SynergyRiverCommune"]
+script = ExtResource("6_synergy")
+id = &"synergy.river_commune"
+display_name = "河渠公社"
+required_ideology_ids = PackedStringArray("idea.water_works", "idea.military_farming")
+minimum_levels = PackedInt32Array(0, 0)
+location_masks = PackedByteArray(6, 6)
+persistent_effects = Array[Resource]([SubResource("EffectSynergyRiverCommune")])
+
+[sub_resource type="Resource" id="EffectResonanceAgrarian2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.resonance.agrarian.2"
+
+[sub_resource type="Resource" id="SynergyResonanceAgrarian2"]
+script = ExtResource("6_synergy")
+id = &"resonance.agrarian.2"
+display_name = "农本共鸣·一"
+required_ideology_ids = PackedStringArray("idea.collective_stewardship", "idea.intensive_tillage", "idea.ever_normal_granary", "idea.military_farming", "idea.village_compact")
+minimum_levels = PackedInt32Array(0, 0, 0, 0, 0)
+location_masks = PackedByteArray(6, 6, 6, 6, 6)
+min_count = 2
+school_id = &"agrarian"
+resonance_tier = 1
+persistent_effects = Array[Resource]([SubResource("EffectResonanceAgrarian2")])
+
+[sub_resource type="Resource" id="EffectResonanceAgrarian4"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.resonance.agrarian.4"
+
+[sub_resource type="Resource" id="SynergyResonanceAgrarian4"]
+script = ExtResource("6_synergy")
+id = &"resonance.agrarian.4"
+display_name = "农本共鸣·二"
+required_ideology_ids = PackedStringArray("idea.collective_stewardship", "idea.intensive_tillage", "idea.ever_normal_granary", "idea.military_farming", "idea.village_compact")
+minimum_levels = PackedInt32Array(0, 0, 0, 0, 0)
+location_masks = PackedByteArray(6, 6, 6, 6, 6)
+min_count = 4
+school_id = &"agrarian"
+resonance_tier = 2
+persistent_effects = Array[Resource]([SubResource("EffectResonanceAgrarian4")])
+
+[sub_resource type="Resource" id="EffectResonanceCommerce2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.resonance.commerce.2"
+
+[sub_resource type="Resource" id="SynergyResonanceCommerce2"]
+script = ExtResource("6_synergy")
+id = &"resonance.commerce.2"
+display_name = "商贸共鸣·一"
+required_ideology_ids = PackedStringArray("idea.free_exchange", "idea.open_ports", "idea.guild_charters", "idea.double_entry", "idea.ocean_company")
+minimum_levels = PackedInt32Array(0, 0, 0, 0, 0)
+location_masks = PackedByteArray(6, 6, 6, 6, 6)
+min_count = 2
+school_id = &"commerce"
+resonance_tier = 1
+persistent_effects = Array[Resource]([SubResource("EffectResonanceCommerce2")])
+
+[sub_resource type="Resource" id="EffectResonanceCommerce4"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.resonance.commerce.4"
+
+[sub_resource type="Resource" id="SynergyResonanceCommerce4"]
+script = ExtResource("6_synergy")
+id = &"resonance.commerce.4"
+display_name = "商贸共鸣·二"
+required_ideology_ids = PackedStringArray("idea.free_exchange", "idea.open_ports", "idea.guild_charters", "idea.double_entry", "idea.ocean_company")
+minimum_levels = PackedInt32Array(0, 0, 0, 0, 0)
+location_masks = PackedByteArray(6, 6, 6, 6, 6)
+min_count = 4
+school_id = &"commerce"
+resonance_tier = 2
+persistent_effects = Array[Resource]([SubResource("EffectResonanceCommerce4")])
+
+[sub_resource type="Resource" id="EffectResonanceLearning2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.resonance.learning.2"
+
+[sub_resource type="Resource" id="SynergyResonanceLearning2"]
+script = ExtResource("6_synergy")
+id = &"resonance.learning.2"
+display_name = "学识共鸣·一"
+required_ideology_ids = PackedStringArray("idea.scholar_office", "idea.academy_lectures", "idea.experimental_method", "idea.civil_examination", "idea.encyclopedia")
+minimum_levels = PackedInt32Array(0, 0, 0, 0, 0)
+location_masks = PackedByteArray(6, 6, 6, 6, 6)
+min_count = 2
+school_id = &"learning"
+resonance_tier = 1
+persistent_effects = Array[Resource]([SubResource("EffectResonanceLearning2")])
+
+[sub_resource type="Resource" id="EffectResonanceLearning4"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.resonance.learning.4"
+
+[sub_resource type="Resource" id="SynergyResonanceLearning4"]
+script = ExtResource("6_synergy")
+id = &"resonance.learning.4"
+display_name = "学识共鸣·二"
+required_ideology_ids = PackedStringArray("idea.scholar_office", "idea.academy_lectures", "idea.experimental_method", "idea.civil_examination", "idea.encyclopedia")
+minimum_levels = PackedInt32Array(0, 0, 0, 0, 0)
+location_masks = PackedByteArray(6, 6, 6, 6, 6)
+min_count = 4
+school_id = &"learning"
+resonance_tier = 2
+persistent_effects = Array[Resource]([SubResource("EffectResonanceLearning4")])
+
+[sub_resource type="Resource" id="EffectResonanceMobilization2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.resonance.mobilization.2"
+
+[sub_resource type="Resource" id="SynergyResonanceMobilization2"]
+script = ExtResource("6_synergy")
+id = &"resonance.mobilization.2"
+display_name = "动员共鸣·一"
+required_ideology_ids = PackedStringArray("idea.civic_muster", "idea.corvee_law", "idea.public_hygiene", "idea.national_education", "idea.total_mobilization")
+minimum_levels = PackedInt32Array(0, 0, 0, 0, 0)
+location_masks = PackedByteArray(6, 6, 6, 6, 6)
+min_count = 2
+school_id = &"mobilization"
+resonance_tier = 1
+persistent_effects = Array[Resource]([SubResource("EffectResonanceMobilization2")])
+
+[sub_resource type="Resource" id="EffectResonanceMobilization4"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.resonance.mobilization.4"
+
+[sub_resource type="Resource" id="SynergyResonanceMobilization4"]
+script = ExtResource("6_synergy")
+id = &"resonance.mobilization.4"
+display_name = "动员共鸣·二"
+required_ideology_ids = PackedStringArray("idea.civic_muster", "idea.corvee_law", "idea.public_hygiene", "idea.national_education", "idea.total_mobilization")
+minimum_levels = PackedInt32Array(0, 0, 0, 0, 0)
+location_masks = PackedByteArray(6, 6, 6, 6, 6)
+min_count = 4
+school_id = &"mobilization"
+resonance_tier = 2
+persistent_effects = Array[Resource]([SubResource("EffectResonanceMobilization4")])
+
+[sub_resource type="Resource" id="EffectResonanceIndustry2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.resonance.industry.2"
+
+[sub_resource type="Resource" id="SynergyResonanceIndustry2"]
+script = ExtResource("6_synergy")
+id = &"resonance.industry.2"
+display_name = "工造共鸣·一"
+required_ideology_ids = PackedStringArray("idea.workshop_system", "idea.standardization", "idea.mining_monopoly", "idea.steam_power", "idea.assembly_line")
+minimum_levels = PackedInt32Array(0, 0, 0, 0, 0)
+location_masks = PackedByteArray(6, 6, 6, 6, 6)
+min_count = 2
+school_id = &"industry"
+resonance_tier = 1
+persistent_effects = Array[Resource]([SubResource("EffectResonanceIndustry2")])
+
+[sub_resource type="Resource" id="EffectResonanceIndustry4"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.resonance.industry.4"
+
+[sub_resource type="Resource" id="SynergyResonanceIndustry4"]
+script = ExtResource("6_synergy")
+id = &"resonance.industry.4"
+display_name = "工造共鸣·二"
+required_ideology_ids = PackedStringArray("idea.workshop_system", "idea.standardization", "idea.mining_monopoly", "idea.steam_power", "idea.assembly_line")
+minimum_levels = PackedInt32Array(0, 0, 0, 0, 0)
+location_masks = PackedByteArray(6, 6, 6, 6, 6)
+min_count = 4
+school_id = &"industry"
+resonance_tier = 2
+persistent_effects = Array[Resource]([SubResource("EffectResonanceIndustry4")])
+
+[sub_resource type="Resource" id="EffectResonanceHarmony2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.resonance.harmony.2"
+
+[sub_resource type="Resource" id="SynergyResonanceHarmony2"]
+script = ExtResource("6_synergy")
+id = &"resonance.harmony.2"
+display_name = "调和共鸣·一"
+required_ideology_ids = PackedStringArray("idea.forest_marsh_ban", "idea.water_works", "idea.seasonal_calendar", "idea.heaven_human", "idea.ecological_balance")
+minimum_levels = PackedInt32Array(0, 0, 0, 0, 0)
+location_masks = PackedByteArray(6, 6, 6, 6, 6)
+min_count = 2
+school_id = &"harmony"
+resonance_tier = 1
+persistent_effects = Array[Resource]([SubResource("EffectResonanceHarmony2")])
+
+[sub_resource type="Resource" id="EffectResonanceHarmony4"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.resonance.harmony.4"
+
+[sub_resource type="Resource" id="SynergyResonanceHarmony4"]
+script = ExtResource("6_synergy")
+id = &"resonance.harmony.4"
+display_name = "调和共鸣·二"
+required_ideology_ids = PackedStringArray("idea.forest_marsh_ban", "idea.water_works", "idea.seasonal_calendar", "idea.heaven_human", "idea.ecological_balance")
+minimum_levels = PackedInt32Array(0, 0, 0, 0, 0)
+location_masks = PackedByteArray(6, 6, 6, 6, 6)
+min_count = 4
+school_id = &"harmony"
+resonance_tier = 2
+persistent_effects = Array[Resource]([SubResource("EffectResonanceHarmony4")])
 
 [resource]
 script = ExtResource("1_catalog")
 profile = SubResource("Profile")
-definitions = Array[Resource]([SubResource("Collective"), SubResource("Exchange"), SubResource("Scholar"), SubResource("Civic")])
-synergies = Array[Resource]([SubResource("SynergyGranaries"), SubResource("SynergyCharter")])
+definitions = Array[Resource]([SubResource("IdeaCollectiveStewardship"), SubResource("IdeaIntensiveTillage"), SubResource("IdeaEverNormalGranary"), SubResource("IdeaMilitaryFarming"), SubResource("IdeaVillageCompact"), SubResource("IdeaFreeExchange"), SubResource("IdeaOpenPorts"), SubResource("IdeaGuildCharters"), SubResource("IdeaDoubleEntry"), SubResource("IdeaOceanCompany"), SubResource("IdeaScholarOffice"), SubResource("IdeaAcademyLectures"), SubResource("IdeaExperimentalMethod"), SubResource("IdeaCivilExamination"), SubResource("IdeaEncyclopedia"), SubResource("IdeaCivicMuster"), SubResource("IdeaCorveeLaw"), SubResource("IdeaPublicHygiene"), SubResource("IdeaNationalEducation"), SubResource("IdeaTotalMobilization"), SubResource("IdeaWorkshopSystem"), SubResource("IdeaStandardization"), SubResource("IdeaMiningMonopoly"), SubResource("IdeaSteamPower"), SubResource("IdeaAssemblyLine"), SubResource("IdeaForestMarshBan"), SubResource("IdeaWaterWorks"), SubResource("IdeaSeasonalCalendar"), SubResource("IdeaHeavenHuman"), SubResource("IdeaEcologicalBalance")])
+synergies = Array[Resource]([SubResource("SynergyPlannedGranaries"), SubResource("SynergyCharteredFrontier"), SubResource("SynergyMaritimeLedger"), SubResource("SynergyEngineeringCorps"), SubResource("SynergyIndustrialScience"), SubResource("SynergyRiverCommune"), SubResource("SynergyResonanceAgrarian2"), SubResource("SynergyResonanceAgrarian4"), SubResource("SynergyResonanceCommerce2"), SubResource("SynergyResonanceCommerce4"), SubResource("SynergyResonanceLearning2"), SubResource("SynergyResonanceLearning4"), SubResource("SynergyResonanceMobilization2"), SubResource("SynergyResonanceMobilization4"), SubResource("SynergyResonanceIndustry2"), SubResource("SynergyResonanceIndustry4"), SubResource("SynergyResonanceHarmony2"), SubResource("SynergyResonanceHarmony4")])

@@ -1,0 +1,220 @@
+[gd_scene format=3 uid="uid://dhf6euvov4vx"]
+
+[ext_resource type="Script" uid="uid://cujqwbvltqej5" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="Script" uid="uid://cr8rfj8egdakv" path="res://scripts/rendering/hex_renderer.gd" id="2_renderer"]
+[ext_resource type="Script" uid="uid://cv6opgqbl5anq" path="res://scripts/rendering/map_camera.gd" id="3_camera"]
+[ext_resource type="Script" uid="uid://6x4pu0j1xdr2" path="res://scripts/geography/world_clock.gd" id="4_clock"]
+[ext_resource type="Script" uid="uid://cdia5pxf0v0uh" path="res://scripts/rendering/cell_highlight.gd" id="5_highlight"]
+[ext_resource type="Script" uid="uid://doewiqfv0iv3t" path="res://scripts/rendering/data_overlay_layer.gd" id="6_overlay"]
+[ext_resource type="Script" uid="uid://cw5wodk76aaby" path="res://scripts/ui/debug_console.gd" id="7_console"]
+[ext_resource type="Script" uid="uid://bbdihyphoivd7" path="res://scripts/ui/overlay_legend.gd" id="8_legend"]
+
+[node name="Main" type="Node2D" unique_id=1962249106]
+script = ExtResource("1_main")
+
+[node name="WorldRoot" type="Node2D" parent="." unique_id=1656162754]
+
+[node name="HexRenderer" type="Node2D" parent="WorldRoot" unique_id=973441645]
+show_behind_parent = true
+top_level = true
+script = ExtResource("2_renderer")
+river_width_factor = 0.14
+
+[node name="DataOverlayLayer" type="Node2D" parent="WorldRoot" unique_id=56384315]
+visible = false
+top_level = true
+z_index = 5
+script = ExtResource("6_overlay")
+
+[node name="CellHighlight" type="Node2D" parent="WorldRoot" unique_id=56384314]
+top_level = true
+z_index = 10
+script = ExtResource("5_highlight")
+
+[node name="MapCamera" type="Camera2D" parent="." unique_id=1551784150]
+script = ExtResource("3_camera")
+
+[node name="WorldClock" type="Node" parent="." unique_id=458831802]
+script = ExtResource("4_clock")
+
+[node name="UI" type="CanvasLayer" parent="." unique_id=1054790244]
+
+[node name="TopBar" type="PanelContainer" parent="UI" unique_id=1870776621]
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 36.0
+grow_horizontal = 2
+
+[node name="HBox" type="HBoxContainer" parent="UI/TopBar" unique_id=616807326]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="InfoLabel" type="Label" parent="UI/TopBar/HBox" unique_id=104320421]
+layout_mode = 2
+text = "Generating..."
+
+[node name="Spacer" type="Control" parent="UI/TopBar/HBox" unique_id=44016093]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TimeLabel" type="Label" parent="UI/TopBar/HBox" unique_id=325549538]
+layout_mode = 2
+text = "Y0 D0 Spring"
+
+[node name="ClimateLabel" type="Label" parent="UI/TopBar/HBox" unique_id=1146948776]
+layout_mode = 2
+text = "Climate +0.00"
+
+[node name="PauseBtn" type="Button" parent="UI/TopBar/HBox" unique_id=728768769]
+layout_mode = 2
+toggle_mode = true
+text = "Pause"
+
+[node name="X1Btn" type="Button" parent="UI/TopBar/HBox" unique_id=855651539]
+layout_mode = 2
+text = "x1"
+
+[node name="X5Btn" type="Button" parent="UI/TopBar/HBox" unique_id=1638302080]
+layout_mode = 2
+text = "x5"
+
+[node name="X20Btn" type="Button" parent="UI/TopBar/HBox" unique_id=793094469]
+layout_mode = 2
+text = "x20"
+
+[node name="RightPanel" type="PanelContainer" parent="UI" unique_id=1399491324]
+visible = false
+custom_minimum_size = Vector2(360, 0)
+anchors_preset = 11
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -360.0
+offset_top = 40.0
+grow_horizontal = 0
+grow_vertical = 2
+
+[node name="Margin" type="MarginContainer" parent="UI/RightPanel" unique_id=218692824]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="Scroll" type="ScrollContainer" parent="UI/RightPanel/Margin" unique_id=1399491325]
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="VBox" type="VBoxContainer" parent="UI/RightPanel/Margin/Scroll" unique_id=448926946]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="Header" type="HBoxContainer" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=809952859]
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox/Header" unique_id=980659450]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "地块信息"
+
+[node name="HeaderSpacer" type="Control" parent="UI/RightPanel/Margin/Scroll/VBox/Header" unique_id=1640038239]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CloseBtn" type="Button" parent="UI/RightPanel/Margin/Scroll/VBox/Header" unique_id=1050497517]
+layout_mode = 2
+text = "X"
+
+[node name="Sep1" type="HSeparator" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=812857328]
+layout_mode = 2
+
+[node name="PosLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=381183620]
+layout_mode = 2
+text = "位置：—"
+autowrap_mode = 2
+
+[node name="ElevLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=2094508880]
+layout_mode = 2
+text = "海拔：—"
+autowrap_mode = 2
+
+[node name="ClimateZoneLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=684809780]
+layout_mode = 2
+text = "气候带：—"
+autowrap_mode = 2
+
+[node name="TempLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=803768264]
+layout_mode = 2
+text = "当前温度：—"
+autowrap_mode = 2
+
+[node name="MoistLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=784830940]
+layout_mode = 2
+text = "当前湿度：—"
+autowrap_mode = 2
+
+[node name="PrecipLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=2026345711]
+layout_mode = 2
+text = "当季降水：—"
+autowrap_mode = 2
+
+[node name="LandformLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=973485122]
+layout_mode = 2
+text = "地形：—"
+autowrap_mode = 2
+
+[node name="VegetationLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=764785917]
+layout_mode = 2
+text = "植被：—"
+autowrap_mode = 2
+
+[node name="VitalityLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=1765494938]
+layout_mode = 2
+text = "生命值：—"
+autowrap_mode = 2
+
+[node name="CoverLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=470153271]
+layout_mode = 2
+text = "覆盖：—"
+autowrap_mode = 2
+
+[node name="WeatherLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=464816704]
+layout_mode = 2
+text = "天气：晴朗"
+autowrap_mode = 2
+
+[node name="FeatureLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=1127830009]
+layout_mode = 2
+text = "地理特征：—"
+autowrap_mode = 2
+
+[node name="MobilityLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=1294116818]
+layout_mode = 2
+text = "通行：—"
+autowrap_mode = 2
+
+[node name="HistoryLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=1661774610]
+layout_mode = 2
+text = "近期生态：—"
+autowrap_mode = 2
+
+[node name="DebugConsole" type="PanelContainer" parent="UI" unique_id=-193630295]
+visible = false
+offset_left = 8.0
+offset_top = 44.0
+offset_right = 368.0
+offset_bottom = 620.0
+script = ExtResource("7_console")
+
+[node name="OverlayLegend" type="PanelContainer" parent="UI" unique_id=-193630294]
+visible = false
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = -180.0
+offset_right = 240.0
+offset_bottom = -8.0
+mouse_filter = 2
+script = ExtResource("8_legend")

@@ -26,21 +26,48 @@ func _init() -> void:
 		_expect("default ideology catalog compiles",
 			bool(ideology_ir.get("ok", false)))
 		if bool(ideology_ir.get("ok", false)):
-			_expect("minimum playable ideology set exists",
-				(ideology_ir.ideology_ids as PackedStringArray).size() >= 4)
+			_expect("deep ideology pool has at least thirty cards",
+				(ideology_ir.ideology_ids as PackedStringArray).size() >= 30)
 			_expect("directional stances compile to sparse rows",
 				(ideology_ir.stance_class_indices as PackedInt32Array).size() >= 8)
 			_expect("exclusive ideology pair is compiled",
 				_count_nonnegative(ideology_ir.exclusion_group_ids) >= 2)
-			_expect("two synergies and reverse CSR are compiled",
-				(ideology_ir.synergy_ids as PackedStringArray).size() >= 2
-				and (ideology_ir.ideology_synergy_ids as PackedInt32Array).size() >= 4)
-			_expect("two-level persistent effects are authored",
-				(ideology_ir.persistent_actions as PackedInt32Array).size() >= 8)
-			_expect("production catalog endows starting ideology points",
-				int(ideology_ir.get("starting_points_q16", 0)) >= 65536)
+			_expect("six named synergies plus twelve school resonances compile",
+				(ideology_ir.synergy_ids as PackedStringArray).size() == 18
+				and (ideology_ir.ideology_synergy_ids as PackedInt32Array).size() >= 12)
+			var min_counts: PackedInt32Array = ideology_ir.get("synergy_min_counts", PackedInt32Array())
+			var two_tier := 0
+			var four_tier := 0
+			for value in min_counts:
+				two_tier += 1 if int(value) == 2 else 0
+				four_tier += 1 if int(value) == 4 else 0
+			_expect("resonances compile as 2- and 4-card school count rows",
+				two_tier == 6 and four_tier == 6)
+			var level_offsets: PackedInt32Array = ideology_ir.level_offsets
+			var three_levels := level_offsets.size() == (ideology_ir.ideology_ids as PackedStringArray).size() + 1
+			for index in range(1, level_offsets.size()):
+				three_levels = three_levels and int(level_offsets[index]) - int(level_offsets[index - 1]) == 3
+			_expect("every card authors three understanding levels", three_levels)
+			_expect("levels gate at 0 / 4 / 12 understanding",
+				int(ideology_ir.level_thresholds_q16[0]) == 0
+				and int(ideology_ir.level_thresholds_q16[1]) == 262144
+				and int(ideology_ir.level_thresholds_q16[2]) == 786432)
+			_expect("ideology points start at zero and only accrue from growth",
+				int(ideology_ir.get("starting_points_q16", -1)) == 0
+				and int(ideology_ir.get("point_gain_cap_q16", 0)) > 0)
+			_expect("every draw costs 6.0, +20% per draw, and reroll is half price",
+				int(ideology_ir.get("offer_cost_q16", 0)) == 393216
+				and int(ideology_ir.get("offer_cost_growth_percent", 0)) == 120
+				and int(ideology_ir.get("offer_cost_max_q16", 0)) == 2147483647
+				and int(ideology_ir.get("reroll_cost_percent", 0)) == 50)
+			_expect("slot capacity grows through five technology milestones",
+				int(ideology_ir.get("ideology_capacity", 0)) == 2
+				and int(ideology_ir.get("national_spirit_capacity", 0)) == 1
+				and int(ideology_ir.get("ideology_capacity_max", 0)) == 6
+				and int(ideology_ir.get("national_spirit_capacity_max", 0)) == 3
+				and (ideology_ir.get("capacity_unlock_technology_ids", PackedInt32Array()) as PackedInt32Array).size() == 5)
 			_expect("each idea uses a dedicated country modifier",
-				_unique_count(ideology_ir.persistent_definition_keys) >= 4)
+				_unique_count(ideology_ir.persistent_definition_keys) >= 30)
 			_expect("production ideas are not a shared mobilization stub",
 				not (ideology_ir.persistent_definition_keys as PackedStringArray).has(
 					"country.economic_mobilization"))
@@ -49,6 +76,24 @@ func _init() -> void:
 			_expect("catalog view exposes player-facing effect lines",
 				bool(ideology_view.get("ok", false)))
 			if bool(ideology_view.get("ok", false)):
+				var school_counts := {}
+				var rarities := {}
+				var effects_ok := true
+				for row_value in ideology_view.get("ideologies", []):
+					var card_row: Dictionary = row_value
+					var school := String(card_row.get("school_id", ""))
+					school_counts[school] = int(school_counts.get(school, 0)) + 1
+					rarities[int(card_row.get("rarity", 0))] = true
+					for lines in card_row.get("level_effect_lines", []) as Array:
+						effects_ok = effects_ok and not (lines as PackedStringArray).is_empty()
+				_expect("six schools of five cards each",
+					school_counts.size() == 6 and not school_counts.has("")
+					and school_counts.values().all(func(count) -> bool: return int(count) == 5))
+				_expect("common, rare and legendary rarities are all present",
+					rarities.has(1) and rarities.has(2) and rarities.has(3))
+				_expect("every level of every card presents effect text", effects_ok)
+				_expect("slot unlock milestones carry technology display names",
+					(ideology_view.get("capacity_unlock_technology_names", PackedStringArray()) as PackedStringArray).has("王国体系"))
 				var by_name := {}
 				for row_value in ideology_view.get("ideologies", []):
 					var row: Dictionary = row_value
@@ -79,11 +124,25 @@ func _init() -> void:
 			bool(modifier_ir.get("ok", false))
 			and (modifier_ir.definition_keys as PackedStringArray).has(
 				"ideology.collective_stewardship"))
+		if ideology_catalog != null and bool(economy_ir.get("ok", false)) \
+				and bool(modifier_ir.get("ok", false)):
+			var keys_ir: Dictionary = ideology_catalog.compile_native_catalog(economy_ir, economy_ir)
+			var known_keys: PackedStringArray = modifier_ir.definition_keys
+			var missing := PackedStringArray()
+			for key in keys_ir.get("persistent_definition_keys", PackedStringArray()) as PackedStringArray:
+				if not known_keys.has(String(key)):
+					missing.append(String(key))
+			_expect("every ideology/synergy/resonance definition exists in the modifier catalog",
+				missing.is_empty())
+			_expect("point gain stat is a registered country stat",
+				(modifier_ir.get("stat_keys", PackedStringArray()) as PackedStringArray).has(
+					"country.ideology.point_gain_factor")
+				or String(keys_ir.get("point_gain_stat_key", "")) == "country.ideology.point_gain_factor")
 		var collective_lines: PackedStringArray = modifier_catalog.present_definition(
 			&"ideology.collective_stewardship", 65536)
 		_expect("modifier presenter formats stewardship at full magnitude",
 			collective_lines.size() >= 2
-			and String(collective_lines[0]).contains("+6%"))
+			and String(collective_lines[0]).contains("+5%"))
 	var effect_catalog: Resource = EffectDomainCatalogScript.build()
 	_expect("shared Effect catalog includes ideology templates",
 		effect_catalog != null)
@@ -113,15 +172,36 @@ func _init() -> void:
 		"ok": true,
 		"ideology_capacity": 3,
 		"national_spirit_capacity": 2,
-		"offer_cost_q16": 65536,
-		"starting_points_q16": 196608,
+		"offer_cost_q16": 131072,
+		"starting_points_q16": 0,
 	})
 	_expect("presentation falls back to catalog slot capacity",
 		int(presented.get("slots_capacity", 0)) == 3
 		and int(presented.get("spirits_capacity", 0)) == 2)
-	_expect("presentation previews starting ideology points",
-		String(presented.get("points_text", "")) == "3.00"
-		and bool(presented.get("can_open_offer", false)))
+	_expect("presentation no longer invents starting points",
+		String(presented.get("points_text", "")) == "0.00"
+		and not bool(presented.get("can_open_offer", false))
+		and String(presented.get("offer_hint", "")).contains("2.00"))
+	var escalated: Dictionary = CountryViewModel.present_ideology({
+		"ok": true, "materialized": true, "ideology_points_q16": 196608,
+		"next_offer_cost_q16": 163840, "reroll_cost_q16": 81920,
+		"offer_active": true, "ideology_slots_capacity": 3,
+		"national_spirit_slots_capacity": 1,
+		"capacity_unlock_owned": PackedByteArray([1, 0]),
+	}, {"ok": true, "ideology_capacity": 2, "national_spirit_capacity": 1,
+		"ideology_capacity_max": 6, "national_spirit_capacity_max": 3,
+		"capacity_unlock_technology_names": PackedStringArray(["王国体系", "帝国整合"]),
+		"capacity_unlock_ideology_deltas": PackedInt32Array([1, 1]),
+		"capacity_unlock_spirit_deltas": PackedInt32Array([0, 1])})
+	_expect("presentation uses the escalating draw cost and reroll price",
+		int(escalated.get("offer_cost_q16", 0)) == 163840
+		and int(escalated.get("reroll_cost_q16", 0)) == 81920
+		and bool(escalated.get("can_reroll", false))
+		and int(escalated.get("slots_max", 0)) == 6)
+	var unlock_rows: Array = escalated.get("capacity_unlocks", [])
+	_expect("presentation lists slot milestones with ownership",
+		unlock_rows.size() == 2 and bool((unlock_rows[0] as Dictionary).get("owned", false))
+		and not bool((unlock_rows[1] as Dictionary).get("owned", true)))
 	workspace.set_model({
 		"country_handle": 1,
 		"current_day": 0,
@@ -131,7 +211,7 @@ func _init() -> void:
 				"ok": true,
 				"materialized": false,
 				"ideology_points_q16": 196608,
-				"offer_cost_q16": 65536,
+				"next_offer_cost_q16": 131072,
 				"ideology_slots_used": 0,
 				"ideology_slots_capacity": 3,
 				"national_spirit_slots_used": 0,
@@ -140,7 +220,6 @@ func _init() -> void:
 				"offer_active": false,
 			},
 			"catalog": {"ok": true, "ideologies": []},
-			"presentation": presented,
 		},
 	})
 	_expect("playable empty collection shows the draw action",
@@ -148,10 +227,14 @@ func _init() -> void:
 		and bool(workspace.call("empty_state_visible"))
 		and int(workspace.call("slots_capacity")) == 3
 		and not String(workspace.call("hint_text")).contains("暂不可用"))
+	_expect("deck table renders open plus locked niches",
+		int(workspace.call("niche_count", 1)) == 3
+		and int(workspace.call("niche_count", 2)) == 2)
 	var offer_card := CountryViewModel.present_ideology_card({
 		"display_name": "共同体治理",
 		"detail_key": "以共同仓储组织生产。",
 		"icon_key": "country.economy",
+		"level_labels": PackedStringArray(["初识", "通晓", "化育"]),
 		"level_effect_lines": [
 			PackedStringArray(["农业部门产出 +6%", "旱灾损失 -8%"]),
 			PackedStringArray(["农业部门产出 +12%", "旱灾损失 -16%"]),
@@ -162,6 +245,12 @@ func _init() -> void:
 	_expect("choice presentation lists mechanical effects",
 		String(offer_card.get("summary", "")).contains("农业部门产出 +6%")
 		and (offer_card.get("effects", []) as Array).size() >= 2)
+	var badge_texts := PackedStringArray()
+	for badge in offer_card.get("badges", []) as Array:
+		badge_texts.append(String((badge as Dictionary).get("text", "")))
+	_expect("card badges name the next level instead of doubling",
+		"、".join(badge_texts).contains("通晓")
+		and not "、".join(badge_texts).contains("翻倍"))
 	workspace.set_model({
 		"country_handle": 1,
 		"current_day": 0,

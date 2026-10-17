@@ -26,6 +26,11 @@
 `consume_country_visual_era_dirty_slots()` 只报告提交后的变化。镜像不写 PKEC、不进入
 经济 state hash；生产、工资和库存变化不会触发视觉 generation。
 
+ACTIVE（worker 权威）模式下，`get_building_visual_snapshot` 的时代必须读
+`country_query_runtime()`（已提交读视图），不能读冻结的同步 Country；
+`apply_committed_read_snapshot` 逐 slot 重算 `visual_era_index_for_slot`，变化时写入
+visual-era 脏 slot 并递增 generation，`consume_country_visual_era_dirty_slots()` 才能驱动重绘。
+
 `EconomyFacade.building_visual_catalog()` 是唯一类别入口。启动时审计全部作者建筑，
 六大类（archetype）由视觉族决定。**视觉族**共 22 个（顺序即 C++ `Family` 枚举）：
 `field paddy plantation pasture forage fishery mine quarry forestry saltworks wells

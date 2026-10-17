@@ -1,0 +1,226 @@
+{
+ "version": 2,
+ "generated": "2026-10-17",
+ "provenance": "AI generated with the Codex built-in image generator; post-processed by tools/resource_art/build.py",
+ "common_prompt": "Seamless tileable texture, strictly orthographic top-down aerial view, realistic, natural, slightly desaturated muted colours like a painted strategy-game map, soft diffuse overcast light, very soft short shadows, gaps fully transparent, no soil, no rows, no text, no border, no perspective.",
+ "cover": {
+  "tile": 512,
+  "albedo": "cover_albedo.png",
+  "normal": "cover_normal.png",
+  "layers": [
+   {
+    "id": "bio.wheat",
+    "prompt": "wild emmer / einkorn wheat grass clumps with nodding golden-tan seed heads",
+    "tall": 0.55,
+    "edge_error": 1.22,
+    "coverage": 0.622,
+    "luma": 0.386
+   },
+   {
+    "id": "bio.maize",
+    "prompt": "teosinte / wild maize: tall broad-leaved star-shaped clumps with small tassels",
+    "tall": 0.85,
+    "edge_error": 1.04,
+    "coverage": 0.7,
+    "luma": 0.388
+   },
+   {
+    "id": "bio.rice",
+    "prompt": "wild rice marsh tussocks with drooping slender panicles",
+    "tall": 0.5,
+    "edge_error": 1.3,
+    "coverage": 0.806,
+    "luma": 0.382
+   },
+   {
+    "id": "bio.potato",
+    "prompt": "wild potato mounds of compound leaves with small lilac star flowers",
+    "tall": 0.4,
+    "edge_error": 1.037,
+    "coverage": 0.761,
+    "luma": 0.4
+   },
+   {
+    "id": "bio.cotton",
+    "prompt": "wild cotton shrubs with lobed leaves and open white bolls",
+    "tall": 0.6,
+    "edge_error": 1.216,
+    "coverage": 0.56,
+    "luma": 0.364
+   },
+   {
+    "id": "bio.flax",
+    "prompt": "wild flax tufts, fine grey-green stems with small sky-blue flowers",
+    "tall": 0.35,
+    "edge_error": 1.186,
+    "coverage": 0.48,
+    "luma": 0.396
+   },
+   {
+    "id": "bio.spice",
+    "prompt": "tropical pepper vine and ginger understory with red spikes",
+    "tall": 0.65,
+    "edge_error": 1.397,
+    "coverage": 0.75,
+    "luma": 0.393
+   },
+   {
+    "id": "bio.rubber",
+    "prompt": "wild Hevea rubber tree canopy, rounded trifoliate crowns",
+    "tall": 1.0,
+    "edge_error": 1.132,
+    "coverage": 0.884,
+    "luma": 0.382
+   },
+   {
+    "id": "bio.silkworm",
+    "prompt": "wild mulberry crowns with dark fruit and pale silk cocoons",
+    "tall": 0.8,
+    "edge_error": 1.443,
+    "coverage": 0.777,
+    "luma": 0.386
+   },
+   {
+    "id": "bio.reed",
+    "prompt": "dense Phragmites reed bed with buff plume heads",
+    "tall": 0.75,
+    "edge_error": 1.322,
+    "coverage": 0.839,
+    "luma": 0.393
+   },
+   {
+    "id": "bio.bast_fiber",
+    "prompt": "wild hemp and ramie thicket, palmate and heart leaves",
+    "tall": 0.7,
+    "edge_error": 1.148,
+    "coverage": 0.792,
+    "luma": 0.392
+   },
+   {
+    "id": "bio.dye_plant",
+    "prompt": "woad, indigo and madder with yellow woad flowers",
+    "tall": 0.45,
+    "edge_error": 1.245,
+    "coverage": 0.74,
+    "luma": 0.389
+   },
+   {
+    "id": "bio.medicinal_herb",
+    "prompt": "mixed wild herbs: sage, mint, chamomile, yarrow",
+    "tall": 0.3,
+    "edge_error": 1.288,
+    "coverage": 0.644,
+    "luma": 0.375
+   },
+   {
+    "id": "trace.pasture",
+    "prompt": "trampled animal paths, cropped grass, hoof-trodden dusty spots",
+    "tall": 0.05,
+    "edge_error": 1.554,
+    "coverage": 0.285,
+    "luma": 0.441
+   },
+   {
+    "id": "trace.mud",
+    "prompt": "wild boar rooting: churned mud, small wallow puddles",
+    "tall": 0.05,
+    "edge_error": 1.037,
+    "coverage": 0.465,
+    "luma": 0.432
+   },
+   {
+    "id": "trace.sand",
+    "prompt": "camel caravan hoof-print trails on sand",
+    "tall": 0.02,
+    "edge_error": 0.832,
+    "coverage": 0.27,
+    "luma": 0.453
+   }
+  ]
+ },
+ "fauna": {
+  "file": "fauna_atlas.png",
+  "cell": 128,
+  "cols": 4,
+  "rows": 2,
+  "count": 8,
+  "layers": [
+   {
+    "id": "bio.horse",
+    "prompt": "wild horses, bay and dun coats",
+    "trace": "trace.pasture"
+   },
+   {
+    "id": "bio.sheep",
+    "prompt": "sheep, cream and grey-brown wool",
+    "trace": "trace.pasture"
+   },
+   {
+    "id": "bio.goat",
+    "prompt": "wild goats (ibex-like), tawny and grey-brown",
+    "trace": "trace.pasture"
+   },
+   {
+    "id": "bio.cattle",
+    "prompt": "wild cattle (aurochs-like), red-brown and fawn/black",
+    "trace": "trace.pasture"
+   },
+   {
+    "id": "bio.pig",
+    "prompt": "wild boars and spotted pigs",
+    "trace": "trace.mud"
+   },
+   {
+    "id": "bio.camel",
+    "prompt": "dromedary and bactrian camels",
+    "trace": "trace.sand"
+   },
+   {
+    "id": "bio.yak",
+    "prompt": "shaggy wild yaks",
+    "trace": "trace.pasture"
+   },
+   {
+    "id": "freshwater_fish",
+    "prompt": "carp, trout, pike, perch (dorsal view)",
+    "trace": ""
+   },
+   {
+    "id": "marine_fish",
+    "prompt": "herring, sardine, mackerel, tuna (dorsal view)",
+    "trace": ""
+   }
+  ]
+ },
+ "crown": {
+  "file": "crown_atlas.png",
+  "normal": "crown_normal.png",
+  "cell": 256,
+  "cols": 4,
+  "rows": 2,
+  "count": 8,
+  "prompt": "Sprite sheet: 8 individual tree crowns seen strictly from directly above, orthographic, 4x2 grid with wide spacing, realistic photographic detail, soft diffuse overcast light, no ground, no cast shadows, transparent background",
+  "layers": [
+   {
+    "id": "broadleaf",
+    "prompt": "8 temperate broadleaf crowns (oak, beech, maple, linden), lumpy leaf clusters",
+    "tall": 0.85
+   },
+   {
+    "id": "conifer",
+    "prompt": "8 conifer crowns (spruce, fir, pine), star of layered needle boughs",
+    "tall": 1.0
+   },
+   {
+    "id": "palm",
+    "prompt": "8 palm crowns (coconut, date, fan palm), radiating fronds",
+    "tall": 0.55
+   },
+   {
+    "id": "shrub",
+    "prompt": "8 wild shrubs (hazel, juniper, gorse, myrtle), twiggy leaf clumps",
+    "tall": 0.6
+   }
+  ]
+ }
+}

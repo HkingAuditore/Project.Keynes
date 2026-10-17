@@ -10,6 +10,7 @@
 #include "runtime_economy_pod.h"
 #include "economy_graph_kernels.h"
 #include "effect_runtime.h"
+#include "ideology_runtime.h"
 
 #include <algorithm>
 #include <chrono>
@@ -742,6 +743,10 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
     // A restore start is granted immediately; make the main-thread peers see
     // that grant now rather than on a runtime-graph pulse that may not run.
     sync_runtime_domain_ownership();
+    // Every worker lifetime numbers its Ideology snapshots from 1 again.
+    if (_ideology_runtime != nullptr)
+        static_cast<NativeIdeologyRuntime *>(_ideology_runtime)
+            ->reset_pod_snapshot_cursor();
     out["ok"] = true;
     out["pending"] = mode != RuntimeSimulationMode::OFF;
     out["code"] = "ok";

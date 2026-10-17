@@ -59,6 +59,7 @@ struct VegSurf {
 	float elem;      // per-element hash for colour variety
 	float floor_a;   // ground darkening alpha where cov is 0
 	float snow_hold; // how readily snow settles on this surface
+	vec4 art;        // crown bitmap hue (rgb at luma 0.5) and its weight vs the climate palette
 };
 
 VegSurf vf_empty() {
@@ -73,6 +74,7 @@ VegSurf vf_empty() {
 	s.elem = 0.0;
 	s.floor_a = 0.0;
 	s.snow_hold = 1.0;
+	s.art = vec4(0.5, 0.5, 0.5, 0.0);
 	return s;
 }
 
@@ -395,6 +397,72 @@ float vf_floor_patch(vec2 p, float strength) {
 	return strength * (1.0 - smoothstep(0.62, 0.92, length(p)));
 }
 
+// ── Crown bitmaps (resource_art/crown_atlas: 4 layers x 4x2 crowns, alpha) ─────
+// Only the vegetation body shader defines VF_CROWN_ART; other includers keep the
+// procedural crowns and pay no samplers.
+#ifdef VF_CROWN_ART
+uniform sampler2DArray crown_art : filter_linear_mipmap, repeat_disable;
+uniform sampler2DArray crown_normal_art : filter_linear_mipmap, repeat_disable;
+uniform bool crown_art_bound = false;
+uniform float crown_art_palette = 0.55;
+uniform float crown_art_normal = 1.0;
+
+// Samples element e's crown sprite (variant + rotation from its id). Writes tone,
+// hue and, when want_normal, the relief normal / AO; returns sprite coverage.
+float vf_crown_sample(inout VegSurf s, VfElem e, vec2 p, float layer, float px, bool want_normal) {
+	vec2 q = (p - e.c) / max(e.r, 1e-4);
+	float ang = e.id * VF_TAU * 3.0;
+	float ca = cos(ang);
+	float sa = sin(ang);
+	mat2 rot = mat2(vec2(ca, sa), vec2(-sa, ca));
+	vec2 qr = rot * q;
+	if (max(abs(qr.x), abs(qr.y)) >= 1.0) {
+		return 0.0;
+	}
+	float variant = floor(fract(e.id * 5.731 + 0.13) * 8.0);
+	vec2 cell = vec2(mod(variant, 4.0), floor(variant / 4.0));
+	vec2 uv = (cell + vec2(qr.x, -qr.y) * 0.5 + 0.5) / vec2(4.0, 2.0);
+	// Explicit gradients: texel footprint of one screen pixel (px is ~0.75 * fwidth).
+	float k = px / 0.75 / (2.0 * max(e.r, 1e-4));
+	vec2 gx = vec2(k * 0.25, 0.0);
+	vec2 gy = vec2(0.0, k * 0.5);
+	vec4 c = textureGrad(crown_art, vec3(uv, layer), gx, gy);
+	float l = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+	s.tone = clamp(l * 2.0, 0.12, 1.9) * (0.92 + 0.16 * e.id);
+	s.art = vec4(c.rgb / max(2.0 * l, 0.04), crown_art_palette);
+	s.elem = e.id;
+	if (want_normal) {
+		vec4 nm = textureGrad(crown_normal_art, vec3(uv, layer), gx, gy);
+		// Stored in sprite space (x right, y up); back-rotate into the instance frame.
+		vec2 nxy = (nm.rg * 2.0 - 1.0) * crown_art_normal;
+		nxy = vec2(ca * nxy.x + sa * nxy.y, -sa * nxy.x + ca * nxy.y);
+		// Keep the crown dome so the sun still models the whole tree.
+		vec2 dome = q * 0.55;
+		s.n = normalize(vec3(nxy + dome, max(sqrt(max(1.0 - dot(nxy, nxy), 0.0)), 0.35)));
+		s.ao = mix(0.55, 1.0, nm.a) * mix(0.78, 1.0, smoothstep(0.0, 0.6, e.z));
+	}
+	return c.a;
+}
+
+// Overlapping crowns: deep inside the union another crown is underneath, so the
+// winning sprite's transparent texels must not punch holes to the ground.
+float vf_crown_fill(VfElem e) {
+	return smoothstep(0.10, 0.38, -e.edge / max(e.r, 1e-4)) * step(0.5, e.hit);
+}
+
+// Crown coverage from the sprite; negative = art unavailable (use procedural).
+float vf_crown_cov(inout VegSurf s, VfElem e, vec2 p, float layer, VegCtx ctx, bool cheap) {
+	if (!crown_art_bound) {
+		return -1.0;
+	}
+	if (e.edge > e.r * 0.25) {
+		return 0.0;
+	}
+	float a = vf_crown_sample(s, e, p, layer, ctx.px, !cheap);
+	return max(a, vf_crown_fill(e));
+}
+#endif
+
 // ── Canopy ─────────────────────────────────────────────────────────────────
 
 VegSurf vf_broadleaf(vec2 p, VegCtx ctx, bool cheap, bool deciduous_skeleton) {
@@ -408,7 +476,7 @@ VegSurf vf_broadleaf(vec2 p, VegCtx ctx, bool cheap, bool deciduous_skeleton) {
 	VfElem e = vf_elements(p, ctx, 1.0, 0.32 * det, en, keep, VF_BROADLEAF, false);
 	float union_cov = vf_cov(e.edge, ctx.px);
 	s.floor_a = vf_canopy_floor(e, p, ctx.count);
-	if (union_cov <= 0.0) {
+	if (union_cov <= 0.0 && e.edge > e.r * 0.25) {
 		return s;
 	}
 	vec2 q = (p - e.c) / e.r;
@@ -425,22 +493,33 @@ VegSurf vf_broadleaf(vec2 p, VegCtx ctx, bool cheap, bool deciduous_skeleton) {
 		haze = 0.40 * (1.0 - smoothstep(0.55, 1.0, length(q)) * 0.5);
 	}
 	float wood = max(br, haze);
-	s.cov = union_cov * max(lm, wood);
+	float art_cov = -1.0;
+#ifdef VF_CROWN_ART
+	art_cov = vf_crown_cov(s, e, p, 0.0, ctx, cheap);
+#endif
+	bool art = art_cov >= 0.0;
+	s.cov = art ? max(art_cov * lm, union_cov * wood) : union_cov * max(lm, wood);
 	s.h = e.z * mix(0.55, 1.0, lm);
 	if (cheap || s.cov <= 0.0) {
 		return s;
 	}
-	vf_crown_shade(s, e, p, 3.4 + e.id * 1.4, 0.40, ctx.px);
-	s.leaf_w = lm / max(max(lm, wood), 1e-4);
+	if (!art) {
+		vf_crown_shade(s, e, p, 3.4 + e.id * 1.4, 0.40, ctx.px);
+	}
+	float leaf_part = art ? art_cov * lm : lm;
+	s.leaf_w = leaf_part / max(max(leaf_part, wood), 1e-4);
 	float bark_w = 1.0 - s.leaf_w;
 	s.tint = mix(vec3(0.47, 0.41, 0.35), vec3(0.30, 0.25, 0.20), br);
 	if (s.leaf_w < 0.5) {
 		s.n = normalize(vec3(q * 0.35, 1.0));
 		s.ao = 0.84;
+		s.tone = 1.0;
 	}
-	// Fine leaf speckle where the crown is large enough on screen.
-	float sp = vf_vnoise(p * fe * 6.0 + so * 1.7);
-	s.tone *= 1.0 + (sp - 0.5) * 0.16 * vf_detail(fe * 6.0, ctx.px);
+	if (!art) {
+		// Fine leaf speckle where the crown is large enough on screen.
+		float sp = vf_vnoise(p * fe * 6.0 + so * 1.7);
+		s.tone *= 1.0 + (sp - 0.5) * 0.16 * vf_detail(fe * 6.0, ctx.px);
+	}
 	s.snow_hold = mix(0.85, 0.55, bark_w);
 	return s;
 }
@@ -451,6 +530,18 @@ VegSurf vf_conifer(vec2 p, VegCtx ctx, bool cheap) {
 	VfElem e = vf_elements(p, ctx, 1.0, 0.0, 0.5, keep, VF_CONIFER, true);
 	s.floor_a = vf_canopy_floor(e, p, ctx.count);
 	float union_cov = vf_cov(e.edge, ctx.px);
+#ifdef VF_CROWN_ART
+	if (crown_art_bound) {
+		float art_cov = vf_crown_cov(s, e, p, 1.0, ctx, cheap);
+		s.cov = art_cov * mix(0.55, 1.0, ctx.vigor);
+		s.h = e.z;
+		if (!cheap) {
+			vec2 qa = (p - e.c) / e.r;
+			s.snow_hold = 0.6 + 0.4 * smoothstep(0.2, 0.8, length(qa));
+		}
+		return s;
+	}
+#endif
 	if (union_cov <= 0.0) {
 		return s;
 	}
@@ -496,6 +587,17 @@ VegSurf vf_palm(vec2 p, VegCtx ctx, bool cheap) {
 	float keep = mix(0.45, 1.0, ctx.vigor);
 	VfElem e = vf_elements(p, ctx, 1.0, 0.0, 0.5, keep, VF_PALM, false);
 	s.floor_a = exp(-max(e.edge, 0.0) * 7.0) * 0.12;
+#ifdef VF_CROWN_ART
+	if (crown_art_bound) {
+		float art_cov = vf_crown_cov(s, e, p, 2.0, ctx, cheap);
+		// Fronds drop as the palm dries out; the hub stays.
+		float rho_a = length(p - e.c) / max(e.r, 1e-4);
+		s.cov = art_cov * max(smoothstep(0.05, 0.35, ctx.leaf + 0.25), 1.0 - smoothstep(0.10, 0.18, rho_a));
+		s.h = e.z * (1.0 - rho_a * 0.45);
+		s.snow_hold = 0.5;
+		return s;
+	}
+#endif
 	if (e.edge > ctx.px) {
 		return s;
 	}
@@ -591,7 +693,7 @@ VegSurf vf_shrub(vec2 p, VegCtx ctx, bool cheap) {
 	VfElem e = vf_elements(p, ctx, 0.55, 0.40 * det, en, keep, VF_SHRUB, false);
 	s.floor_a = exp(-max(e.edge, 0.0) * 8.0) * 0.16;
 	float union_cov = vf_cov(e.edge, ctx.px);
-	if (union_cov <= 0.0) {
+	if (union_cov <= 0.0 && e.edge > e.r * 0.25) {
 		return s;
 	}
 	vec2 q = (p - e.c) / e.r;
@@ -600,17 +702,25 @@ VegSurf vf_shrub(vec2 p, VegCtx ctx, bool cheap) {
 	float lm = smoothstep(stip - 0.10, stip + 0.10, ctx.leaf * 1.05 + 0.10);
 	lm = mix(smoothstep(0.0, 0.75, ctx.leaf), lm, vf_detail(stip_f, ctx.px));
 	float br = lm < 0.999 ? vf_branches(q, e.id, ctx.px / e.r, 6.0, 0.9) : 0.0;
-	s.cov = union_cov * max(lm, br * 0.9);
+	float art_cov = -1.0;
+#ifdef VF_CROWN_ART
+	art_cov = vf_crown_cov(s, e, p, 3.0, ctx, cheap);
+#endif
+	bool art = art_cov >= 0.0;
+	s.cov = art ? max(art_cov * lm, union_cov * br * 0.9) : union_cov * max(lm, br * 0.9);
 	s.h = e.z;
 	if (cheap || s.cov <= 0.0) {
 		return s;
 	}
-	vf_crown_shade(s, e, p, 4.6 + e.id * 2.0, 0.50, ctx.px);
-	s.tone *= 0.94;
-	s.leaf_w = lm / max(max(lm, br * 0.9), 1e-4);
+	if (!art) {
+		vf_crown_shade(s, e, p, 4.6 + e.id * 2.0, 0.50, ctx.px);
+		s.tone *= 0.94;
+	}
+	float leaf_part = art ? art_cov * lm : lm;
+	s.leaf_w = leaf_part / max(max(leaf_part, br * 0.9), 1e-4);
 	s.tint = vec3(0.36, 0.30, 0.24);
 	// Berries / blossom dots.
-	if (ctx.bloom > 0.01) {
+	if (ctx.bloom > 0.01 && !art) {
 		vec2 g = q * 4.5 + e.id * 9.0;
 		vec2 gi = floor(g);
 		float pick = vf_hash12(gi + 3.3);

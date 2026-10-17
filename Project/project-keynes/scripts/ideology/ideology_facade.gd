@@ -7,7 +7,8 @@ const IdeologyCatalogScript = preload("res://scripts/ideology/ideology_catalog.g
 
 enum Opcode { DISCOVER_IDEOLOGY = 1, GRANT_IDEOLOGY_POINTS = 2, OPEN_IDEOLOGY_OFFER = 3,
 	CHOOSE_IDEOLOGY_OFFER = 4, EQUIP_IDEOLOGY = 5, UNEQUIP_IDEOLOGY = 6,
-	PROMOTE_NATIONAL_SPIRIT = 7, ADD_UNDERSTANDING = 8, SET_IDEOLOGY_GATE = 9 }
+	PROMOTE_NATIONAL_SPIRIT = 7, ADD_UNDERSTANDING = 8, SET_IDEOLOGY_GATE = 9,
+	REROLL_IDEOLOGY_OFFER = 10 }
 
 var _world_ext: Object
 var _catalog: Resource
@@ -97,6 +98,17 @@ func choose_offer(handle: int, offer_generation: int, choice_index: int, effecti
 	return submit([{ "opcode": Opcode.CHOOSE_IDEOLOGY_OFFER, "country_handle": handle,
 		"offer_generation": offer_generation, "choice_index": choice_index,
 		"effective_day": effective_day, "sequence": sequence }])
+func reroll_offer(handle: int, offer_generation: int, effective_day: int, sequence: int) -> Dictionary:
+	return submit([{ "opcode": Opcode.REROLL_IDEOLOGY_OFFER, "country_handle": handle,
+		"offer_generation": offer_generation,
+		"effective_day": effective_day, "sequence": sequence }])
+## Read-only draw gate: can_draw/can_reroll, cost_q16, reroll_cost_q16,
+## pool_size, points_q16 and a stable reason key. Never mutates state.
+func preview_offer_eligibility(handle: int) -> Dictionary:
+	if not _configured or not _world_ext.has_method("preview_ideology_offer_eligibility"):
+		return {"ok": false, "can_draw": false, "can_reroll": false,
+			"reason": "ideology_runtime_unconfigured"}
+	return _world_ext.preview_ideology_offer_eligibility(handle)
 func equip(handle: int, ideology_id, effective_day: int, sequence: int) -> Dictionary:
 	return _idea_command(Opcode.EQUIP_IDEOLOGY, handle, ideology_id, 0, effective_day, sequence)
 func unequip(handle: int, ideology_id, effective_day: int, sequence: int) -> Dictionary:

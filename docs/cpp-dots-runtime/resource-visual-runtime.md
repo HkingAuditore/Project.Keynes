@@ -25,7 +25,9 @@ shader 保留最后观测并冻结动作；旧存档不以当前隐藏状态补�
 
 每种资源的视觉计划由 `visual_plan()` 决定：
 
-- 陆生植物/动物：小型主体；植物只绘制独立叶冠、穗丛，空隙直接露出原地表。
+- 陆生植物（family 0，木材除外）：世界视图不再生成实例，由 `ResourceGroundCover`
+  全屏地被群落表达（见文末 2026-10-17 节）；实例层只保留透镜徽章（PLAN_BADGE）。
+- 陆生动物：真实比例位图兽群（3–9 头），见文末 2026-10-17 节。
 - 岩石/矿脉/结晶：低覆盖率碎矿砂贴花加小型露头；盐、硝石和硫磺不带封闭底盘。
 - 土地容量、黏土、沙、踪迹、陆地油气：柔和贴地痕迹。可耕容量不画已经耕作的田垄。
 - 木材：森林本身表达木材，世界视图不叠原木，仅保留透镜徽章。
@@ -103,7 +105,8 @@ v1–v3 可加载，资源记忆为空，重新可见时补齐。
 
 ## 验证入口
 
-- `tests/resource_visual_layer_test.gd`：56 项目录、观测/存档、分布、预算、绘制契约检查。
+- `tests/resource_visual_layer_test.gd`：60 项目录、观测/存档、分布、预算、绘制契约检查。
+- `tests/resource_ground_cover_test.gd`：23 项地被 LUT 编码、优先级、上传节流、包裹 quad 检查。
 - `tests/resource_visual_render_regression.gd`：17 项真 GPU 检查，覆盖植株/晶体空隙、
   植物/动物动态、静态矿石、隐藏冻结、horizon 明暗、中性回退、Legacy/tiled 一致性、
   HexRenderer 同父级下的树冠遮挡、地力活力/积雪响应、扩大群落河岸裁切、透镜完整轮廓。图像在 tmp/resource_visual_qa/integration/。
@@ -136,3 +139,108 @@ v1–v3 可加载，资源记忆为空，重新可见时补齐。
 40×28、seed 20260727、RTX 4080 / D3D12 Mobile / 1440×1000 的同流程实景对照中，
 资源实例由 549 降至 226，近景活跃植被实例由 845 增至 1127；这是该样本的渲染数量，
 不是全图生态数量或一般性能保证。前后图位于 tmp/vegetation_density_qa/before 和 after。
+
+## 2026-10-17 植物群落地被与真实比例兽群
+
+目标：植物物种（小麦、玉米等）以大片野生群落融入地表，而不是孤立标志物；
+动物以写实、小比例的位图兽群表达。精确识别仍由透镜徽章承担。
+
+### 地被（ResourceGroundCover）
+
+- `scripts/rendering/resource_ground_cover.gd` + `shaders/resource_ground_cover.gdshader`：
+  一张覆盖世界（含东西包裹副本）的 quad，是资源层第 0 个子节点，绘在资源实例与树冠之下。
+  零逐格几何；像素按与 FogOfWar/data overlay 相同的 map index → cell 解码查 `cover_lut`。
+- `cover_lut`（RGBA8，nearest，每格一像素）：R = 主层×16 + 副层，G/B = 主/副丰度，
+  A = 踪迹种类×64 + 强度。主副层取观测中档位最高的两个植物物种；丰度 `0.62 + 0.14×band`，
+  聚落 core 按 `ground_cover_settlement_clear` 清空。仅在资源观测变化、`notify_cells`、存档恢复/
+  `set_context` 时写入，按 `ground_cover_upload_hz`（默认 4Hz）节流整张上传。
+  LUT 只来自观测（雾战记忆），未探索格永远为空。
+- 纹理按世界坐标平铺（`ground_cover_tile_hex`），周期量对齐包裹周期，相邻同种格连成一片；
+  格边由噪声扭曲（`edge_warp_hex`）、簇状噪声（`clump_*`）和高质量下 3 点邻格采样软化。
+  副种按噪声斑块混入；风向/阵风轻微摇曳；放牧物种在地被下画踩踏小径/拱土/驼蹄印踪迹层。
+- 气候：可见格读实时 `dyn_lut`（与实例 shader 相同 `enum_lut.a ≥ 0.88` 规则），隐藏格读
+  `memory_lut` 最后观测。干旱转黄、活力低时变疏、积雪掩埋（最多压低 85% 覆盖）。
+- 光照：同 `earth_daylight` 日照/天空 SH/terrain horizon；`cover_saturation/cover_gain/cover_grade/
+  light_gain/light_neutralize` 把中性位图对齐地形调色板（取景内 HSV 与地形差 <0.03）。
+  q≥1 采样法线/AO，q2 加反平铺采样与冠层自阴影；移动端在编译期去掉这些分支。
+  使用 height 贴图裁掉水面与河道；远景降不透明度，透镜开启时按 `lens_dim` 变暗。
+
+### 兽群
+
+`rv_herd` 从 `fauna_atlas` （4×2 姿态/毛色）取位图，每群 `herd_size_min..max`（3–9）头，
+黄金角螺旋分布、共享朝向，带接地影。体长 `animal_length_hex`（0.055 hex），实例半径
+`clamp(animal_length×4, 0.12, 0.45)` hex；单头低于 `animal_min_pixels` 时整群淡出。
+鱼群体长 0.035 hex。GPU 回归的 48px 夹具中动物仅 1px，故测试内放大体长以测量动作。
+
+### 美术管线
+
+- 来源：Codex 内置图像生成（prompt 记录在 `tools/resource_art/build.py` 与 `manifest.json`），
+  原图在 `assets/textures/resource_art/source/`（`.gdignore`，不入包）。
+- `python tools/resource_art/build.py [--check]`：方形裁切→半偏移交叉无缝化→亮度对齐地形→
+  透明区颜色外扩（避免 mip/VRAM 压缩把灰色渗进叶片）→推导法线/高度/AO。
+  输出 `cover_albedo.png`（16 层 512²：13 植物 + 3 踪迹）、`cover_normal.png`、
+  `fauna_atlas.png`（9 层 512×256）。层序是与 shader LUT 的稳定契约。
+- 导入：`2d_array_texture`，albedo/fauna 为 VRAM 压缩，法线无损。`ResourceArtLibrary`
+  在导入缺失时运行时切片 PNG 回退。更换某物种：替换 source 原图并重跑 build.py。
+
+### 性能（RTX 4080 / Vulkan Mobile / 1440×1000，40×28 seed 20260727）
+
+- 整帧 GPU：资源层关 ≈ 1.0–1.14ms，开 ≈ 1.10ms（噪声内，增量 ≤ 0.1ms）。
+- CPU（8000 格 perf 夹具）：地被开/关 p50 1.08/1.07ms；上传 ≤ 0.3ms、每秒最多 4 次。
+  该夹具 p95 ≈ 2.2ms 由 `observation_budget_ms = 1.0`（资源 tres，早于本次改动）决定，
+  超过测试的 1.0ms 阈值；与地被无关。
+- 植物不再占用实例预算（同场景实例数 ≈ 259）。
+
+Profile 字段：`ground_cover_enabled/opacity/tile_hex/edge_warp_hex/clump_scale_hex/clump_strength/taps/
+normal_strength/shadow/lens_dim/far_opacity/settlement_clear/upload_hz`，
+`herd_size_min/max`、`animal_length_hex`、`animal_min_pixels`、`animal_trace_opacity`。
+QA 截图：`tests/resource_visual_world_qa.gd`（非 headless）输出 `tmp/resource_visual_qa/plants_*`、
+`cover_{lens,drought,snow,night,zoom_*}`、`animals_*`。
+
+## 2026-10-17 第二轮：单树树冠位图、可见兽群与地被体积感
+
+### 单树树冠位图（crown_atlas）
+
+- 原图：`assets/textures/resource_art/source/crown/{broadleaf,conifer,palm,shrub}.png`，每张是图像生成的
+  4×2 透明底单树树冠精灵表（不是无缝林冠贴图）。`build.py` 中 `CROWNS` 列表定义层序
+  （0 阔叶、1 针叶、2 棕榈、3 灌丛），每格 `CROWN_CELL = 256`。
+- `build.py` 生成 `crown_atlas.png`（1024×2048，4 层，VRAM 压缩）与 `crown_normal.png`（无损，
+  RG = 法线、B = 高度、A = AO；由距离场穹顶 + 簇团浮雕推导）。`crown_tone()` 把不透明像素平均亮度
+  归一到 0.5，让气候调色板决定最终明度；`bleed_alpha()` 也用于地被与兽群图层，避免 mip 渗灰。
+- shader：`vegetation_forms.gdshaderinc` 的 `#ifdef VF_CROWN_ART` 块（只有 `ShrubLayer` 主体 shader
+  定义该宏，阴影等其他 includer 不增加采样器）。`vf_crown_sample` 用元素 id 选变体与旋转，
+  `textureGrad` 显式梯度，回旋法线并叠加穹顶法线；`vf_crown_fill` 在树冠重叠区内填实，避免透明像素
+  打穿到地面。阔叶/灌丛保留枝干骨架与落叶期行为，针叶/棕榈直接走位图路径。
+- 着色：`vegetation_impostor.gdshaderinc` 中 `s.art.a > 0` 时取位图色相、保留气候调色板明度
+  （`crown_art_palette` 混合），因此物候、干旱、积雪仍然生效。
+- 绑定：`ShrubLayer._bind_crown_art()` 在 `_ensure_resources` 中执行；family 材质由 `duplicate(true)`
+  继承。位图缺失时 `crown_art_bound = false`，回退到原程序化树冠。
+- 远景：元素小于 3px 时仍退化为 `vf_far`，位图采样只在近景发生。
+
+### 兽群
+
+- 体长 `animal_length_hex` 0.055 → 0.11，`animal_motion` 1.0；`herd_radius_hex()` 上限放宽到 0.55 hex。
+- `rv_herd` 每头动物独立“吃草—走动”循环（`u = wt - sin(wt)` 产生走停节奏）：行走时朝向跟随位移
+  方向，吃草时回到群体朝向；步态拉伸/摆动 + 低头吃草的身体下沉。
+
+### 地被体积感与假 GI（resource_ground_cover.gdshader）
+
+- q≥1 粗略投影（零额外采样，同树木 blob 阴影思路）：法线图即模糊株丛高度的坡度，空隙处法线
+  背向太阳即表示太阳一侧有株丛，据此在空隙画暗影（低太阳时更长）。已移除早期的向太阳高度
+  探测（`sun_occ`，2 次法线采样）与模糊覆盖投影（1 次 albedo 采样）。
+- 假 GI：高度 AO `depth_ao = mix(0.80, 1.12, pow(h, 0.6))`、terrain horizon 弯曲法线与天空可见度
+  （强度 `gi_ao_strength × 0.6`）、薄叶透射、地形谷地投影下限。
+- 亮度校准：`cover_grade = (1.05, 1.0, 0.72)`，`light_gain = 1.62`；QA 取景内覆盖像素 HSV 明度
+  0.403 vs 裸地形 0.423（差 ≤ 0.02）。
+- 气候：可见格读实时 `dyn_lut`（`enum_lut` 雾战规则），积雪压低最多 85% 覆盖。
+- 温度物候：地被读 `climate.r`（温度），阈值与 `vegetation_climate.gdshaderinc` 一致——温和湿润→嫩绿，
+  降温过渡（0.16–0.58）→秋金，寒冷（<0.38）→冬枯并变疏（最多 −35%），冷色去饱和，酷热计入干旱。
+  变色保留位图亮度；世界空间噪声抖动 ±0.04 让相邻格不同时翻转。强度由 `climate_response` 控制。
+- 树冠位图色相权重随气候调色板的“绿度”衰减（最低 15%）：秋金/红叶/枯黄/寒冷灰完整显示，
+  叶片细节仍由 `s.tone` 保留。
+  `ResourceGroundCover.memory_climate_only` 仅供 QA 截取干旱/积雪对照图。
+
+### 性能（RTX 4080 / Vulkan Mobile / 1440×1000）
+
+- world QA 整帧 GPU：资源层关 ≈ 0.80–1.00ms，开 ≈ 0.90–1.12ms（增量约 0.1ms）。
+- 树冠位图的成本计入植被层，尚未单独 A/B；可切换 `crown_art_bound` 对比。

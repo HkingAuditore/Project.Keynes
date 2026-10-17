@@ -8,11 +8,15 @@ const CONTROL_TYPES := ["Control", "PanelContainer", "VBoxContainer", "HBoxConta
 	"OptionButton", "CheckBox", "HSlider", "VSlider", "SpinBox",
 	"TabContainer", "CenterContainer", "AspectRatioContainer", "RichTextLabel"]
 # These screens intentionally materialize bounded, data-shaped rows at runtime:
-# expedition entries and the optional .pkmap path field. All other player UI
-# scripts remain covered by the static-scene rule.
+# expedition entries and the optional .pkmap path field. The ideology deck
+# materializes one papercut card per known idea (bounded by the 30-card pool)
+# plus transient FX sprites. All other player UI scripts remain covered by the
+# static-scene rule.
 const SCRIPT_EXCLUSIONS := ["debug_console.gd", "info_panel_controller.gd",
 	"perf_mini_hud.gd", "perf_recorder.gd", "tile_data_recorder.gd",
-	"colonization_planner_panel.gd", "world_setup.gd"]
+	"colonization_planner_panel.gd", "world_setup.gd",
+	"ideology_art.gd", "ideology_card.gd", "ideology_point_scroll.gd",
+	"ideology_slot_niche.gd", "ideology_workspace.gd"]
 
 var _failures := PackedStringArray()
 

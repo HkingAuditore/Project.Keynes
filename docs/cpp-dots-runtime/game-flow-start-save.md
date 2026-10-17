@@ -203,7 +203,7 @@ and load preparation reject a missing or mismatched provider before rebuilding
 the world. The current restore registry order is dynamic world, environment,
 PKCM, clock, PKCN, PKEF, PKEC, PKGP, PKFG, journal, PKTR, PKID, then player
 session/view/preview. PKEF precedes PKEC so Economy can cross-check every settling
-cross-domain transaction against authoritative Effect state. `PKID v3` follows
+cross-domain transaction against authoritative Effect state. `PKID v4` follows
 `PKEF v11`: every active ideology must match its
 durable external binding by identity, generation, level, location, template
 signature, and Effect program hash. Missing/mismatched bindings or unknown
@@ -215,10 +215,10 @@ PKID v1 is accepted only when every ideology is inactive. Save capture waits for
 Country/Economy/Gameplay Effect ingress to be idle, so no cross-section snapshot
 can span a preflight/commit/ACK boundary.
 
-The background worker ideology mirror is an additional PKSR `IDP1` section,
+The background worker ideology mirror is an additional PKSR `IDP2` section,
 restored transactionally only after the worker is stopped and its immutable
-catalog/bootstrap are ready. `IDP1` has an independent ABI, catalog/state hash,
-length limit, and checksum. Missing `IDP1` means bootstrap/default worker
+catalog/bootstrap are ready. `IDP2` has an independent ABI, catalog/state hash,
+length limit, and checksum. Missing `IDP2` means bootstrap/default worker
 ideology state; it is never inferred from synchronous `PKID`, and legacy
 composite `PDP3` remains diagnostic-only for this purpose.
 PKCM v1 saves Climate modifiers. PKCN v11 embeds Country modifiers, research,
@@ -285,7 +285,7 @@ Restore order is strict:
    the load when fog is enabled but the player country slot cannot be rebound;
    a silently unexplored map would be persisted by the next autosave.
    Then restore `pkai` (Country AI memory, player exclusion, pending colonization).
-8. Restore journal v4 and PKTR v6, then PKID v3
+8. Restore journal v4 and PKTR v6, then PKID v4
    ideology state. PKID verifies its active PKEF bindings before the session is
    allowed to resume.
 9. Rebuild derived views/render resources and scheduler topology.
@@ -385,7 +385,7 @@ after the load.
 
 **Load side**
 
-- PKSR's IDP1 ideology section was dry-run against a catalog that only exists
+- PKSR's IDP2 ideology section was dry-run against a catalog that only exists
   after PKCN. `restore_bundle` still checks checksum and marker, and defers the
   catalog-dependent check to worker start (which faults before any day on
   failure, with `ideology_pod_catalog_missing_at_worker_start`).

@@ -32,6 +32,8 @@ const TECHNOLOGY_STATS := [
 	["country.climate.flood_loss_factor", 0.20, 1.0],
 	["country.climate.cold_stress_factor", 0.20, 1.0],
 	["country.climate.heat_stress_factor", 0.20, 1.0],
+	# Frozen by the Country epoch snapshot; ideology accrual reads it read-only.
+	["country.ideology.point_gain_factor", 0.0, 4.0],
 ]
 const Q16_ONE := 65536
 const STAT_DISPLAY_NAMES := {
@@ -54,6 +56,10 @@ const STAT_DISPLAY_NAMES := {
 	"country.research.engineering_efficiency": "工程领域研究效率",
 	"country.research.science_efficiency": "科学领域研究效率",
 	"country.research.society_efficiency": "社会领域研究效率",
+	"country.research.agriculture_efficiency": "农业领域研究效率",
+	"country.research.cost_factor": "研究成本",
+	"country.research.institution_output_factor": "研究机构产出",
+	"country.ideology.point_gain_factor": "理念点获取",
 	"country.trade.capacity_factor": "国内贸易容量",
 	"country.trade.speed_factor": "贸易速度",
 }

@@ -307,7 +307,7 @@ range 推进 persistence/introduction、diffusion、merge、publish 四个 phase
 
 PKSV persistence is a snapshot boundary, not a new owner. GDScript coordinates
 section capture while each native authority emits its own versioned state:
-PKCN v13, PKEF v11, PKTR v6, PKID v3, PKEC v41, PKCM v1, PKGP v1, and
+PKCN v13, PKEF v11, PKTR v6, PKID v4, PKEC v41, PKCM v1, PKGP v1, and
 `PKEnvironmentRuntime v1`. Environment export includes the
 resident core vectors, weather ping-pong buffers, topology, dirty/active sets,
 round flags, stage cursors, and snapshot generations. Restore validates schema
@@ -1557,7 +1557,7 @@ against catalog shape plus exact handle/generation rows. Worker snapshots are
 immutable publication objects; worker Effect intents are typed numeric records
 with `DEFERRED | REQUIRES_ACK`, and the bridge must return a real Effect ACK
 before the worker applies the retained ideology transition. The worker-side
-`IDP1` save section is independent from synchronous `PKID` and composite `PDP3`.
+`IDP2` save section is independent from synchronous `PKID` and composite `PDP3`.
 
 `EffectFacade` is an adapter transport boundary. For each transaction it asks
 adapters to preflight without mutation, marks the native transaction

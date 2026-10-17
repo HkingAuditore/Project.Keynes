@@ -5,6 +5,7 @@ const Catalog = preload("res://scripts/rendering/resource_visual_catalog.gd")
 const Profile = preload("res://scripts/data/resource_visual_profile.gd")
 const DEFAULT_PROFILE = preload("res://data/visual/resource_default.tres")
 const RESOURCE_SHADER = preload("res://shaders/resource_impostor.gdshader")
+const GroundCover = preload("res://scripts/rendering/resource_ground_cover.gd")
 const FAMILY_COUNT := 4
 # Batches 0..3 = prop subjects per family (3 = submerged cues); 4 = ground decals,
 # drawn first so props always sit on top of their own scar/soil patch.
@@ -71,6 +72,10 @@ var _max_style_scale := 1.0
 var _last_profile_enabled := true
 var _configured := false
 var _last_intel: Object
+# Wild plant communities + grazing traces: one full-world quad drawn under all props.
+var _cover: ResourceGroundCover
+var _cover_pending: Array[int] = []
+var _cover_pending_cursor := 0
 var _stats := {"observed_cells": 0, "rebuilt_chunks": 0, "uploads": 0,
 	"last_observe_ms": 0.0, "last_build_ms": 0.0, "last_upload_ms": 0.0,
 	"max_upload_ms": 0.0, "stale_jobs": 0}
@@ -82,6 +87,10 @@ func _ready() -> void:
 	_material.shader = RESOURCE_SHADER
 	_mesh = QuadMesh.new()
 	_mesh.size = Vector2(2.0, 2.0)
+	_cover = GroundCover.new()
+	_cover.name = "ResourceGroundCover"
+	add_child(_cover)
+	move_child(_cover, 0)
 
 func configure(map: MapData, world: WorldData, hex_size: float,
 		intel: BuildingVisualIntelCache) -> Dictionary:
@@ -122,6 +131,14 @@ func configure(map: MapData, world: WorldData, hex_size: float,
 	_material.set_shader_parameter("wrap_period_x", _world.wrap_period_x if _world != null else 0.0)
 	_sync_terrain_textures()
 	_build_style_texture()
+	if _cover != null:
+		var tiles = _world.visual_tiles if _world != null else null
+		_cover.configure(_styles, _hex, dims,
+			_world.world_bounds if _world != null else Rect2(),
+			_world.wrap_period_x if _world != null else 0.0,
+			_world.enum_atlas_tex if _world != null else null, tiles)
+		_cover.material().set_shader_parameter("memory_lut", _memory_texture)
+		_sync_terrain_textures()
 	_refresh_filter_style()
 	_apply_profile()
 	_last_intel = null
@@ -140,27 +157,37 @@ func _sync_terrain_textures() -> void:
 		var shader := Shader.new()
 		shader.code = ("#define MAP_VISUAL_TILED\n" if tiled else "") + RESOURCE_SHADER.code
 		_material.shader = shader
+	for material in _materials():
+		_bind_terrain_textures(material, tiles, tiled)
+
+func _materials() -> Array[ShaderMaterial]:
+	var out: Array[ShaderMaterial] = [_material]
+	if _cover != null:
+		out.append(_cover.material())
+	return out
+
+func _bind_terrain_textures(target: ShaderMaterial, tiles, tiled: bool) -> void:
 	if tiled:
-		_material.set_shader_parameter("visual_horizon_tiles", tiles.horizon)
-		_material.set_shader_parameter("visual_terrain_normal_tiles", tiles.terrain_normal)
-		_material.set_shader_parameter("visual_height_tiles", tiles.height)
+		target.set_shader_parameter("visual_horizon_tiles", tiles.horizon)
+		target.set_shader_parameter("visual_terrain_normal_tiles", tiles.terrain_normal)
+		target.set_shader_parameter("visual_height_tiles", tiles.height)
 		var layout = tiles.layout
-		_material.set_shader_parameter("visual_domain_origin", layout.visual_domain.position)
-		_material.set_shader_parameter("visual_domain_size", layout.visual_domain.size)
+		target.set_shader_parameter("visual_domain_origin", layout.visual_domain.position)
+		target.set_shader_parameter("visual_domain_size", layout.visual_domain.size)
 		for pair in [["visual_grid_size", layout.grid_size], ["visual_interior_size", layout.interior_size],
 			["visual_layer_size", layout.layer_size], ["visual_logical_resolution", layout.logical_size]]:
-			_material.set_shader_parameter(pair[0], Vector2(pair[1]))
-		_material.set_shader_parameter("visual_gutter_px", float(layout.gutter_px))
+			target.set_shader_parameter(pair[0], Vector2(pair[1]))
+		target.set_shader_parameter("visual_gutter_px", float(layout.gutter_px))
 	else:
-		_material.set_shader_parameter("terrain_horizon_tex", _world.terrain_horizon_tex)
-		_material.set_shader_parameter("terrain_normal_tex", _world.terrain_normal_tex)
-		_material.set_shader_parameter("height_tex", _world.height_tex)
+		target.set_shader_parameter("terrain_horizon_tex", _world.terrain_horizon_tex)
+		target.set_shader_parameter("terrain_normal_tex", _world.terrain_normal_tex)
+		target.set_shader_parameter("height_tex", _world.height_tex)
 	var height_bound := tiles.height != null if tiled else _world.height_tex != null
-	_material.set_shader_parameter("has_height_tex", height_bound)
-	_material.set_shader_parameter("has_flow_tex", height_bound and not _world.flow_buffer.is_empty())
-	_material.set_shader_parameter("sea_level", _world.sea_level)
-	_material.set_shader_parameter("terrain_horizon_tex_bound", bool(tiles.horizon_ready) if tiled else _world.terrain_horizon_tex != null)
-	_material.set_shader_parameter("terrain_normal_tex_bound", tiles.terrain_normal != null if tiled else _world.terrain_normal_tex != null)
+	target.set_shader_parameter("has_height_tex", height_bound)
+	target.set_shader_parameter("has_flow_tex", height_bound and not _world.flow_buffer.is_empty())
+	target.set_shader_parameter("sea_level", _world.sea_level)
+	target.set_shader_parameter("terrain_horizon_tex_bound", bool(tiles.horizon_ready) if tiled else _world.terrain_horizon_tex != null)
+	target.set_shader_parameter("terrain_normal_tex_bound", tiles.terrain_normal != null if tiled else _world.terrain_normal_tex != null)
 
 # 复用地形/树木的参数；同时覆盖异步 horizon bake 完成后的重新绑定。
 func set_terrain_lighting(source: ShaderMaterial) -> void:
@@ -172,7 +199,8 @@ func set_terrain_lighting(source: ShaderMaterial) -> void:
 		"gi_ao_strength", "gi_ao_floor", "gi_ao_smoothing", "gi_bent_strength", "gi_normal_floor"]:
 		var value = source.get_shader_parameter(name)
 		if value != null:
-			_material.set_shader_parameter(name, value)
+			for material in _materials():
+				material.set_shader_parameter(name, value)
 
 func _apply_profile() -> void:
 	for name in ["vitality_dead_threshold", "vitality_power", "climate_response", "snow_response",
@@ -181,8 +209,18 @@ func _apply_profile() -> void:
 		"outline_strength", "contact_shadow", "cast_shadow", "luma_compress", "luma_range",
 		"area_feather", "area_edge_noise", "plant_cluster_density", "river_clear_threshold"]:
 		_material.set_shader_parameter(name, profile.get(name))
+	for name in ["herd_size_min", "herd_size_max", "animal_length_hex", "animal_min_pixels"]:
+		_material.set_shader_parameter(name, profile.get(name))
+	_material.set_shader_parameter("herd_radius_hex", herd_radius_hex())
 	_material.set_shader_parameter("visual_quality", quality())
 	_material.set_shader_parameter("filter_style", _filter_style)
+	if _cover != null:
+		_cover.apply_profile(profile)
+		_cover.set_quality(quality(), _mobile_tier)
+
+## Herd instance radius in hexes: room for herd_size_max animals of animal_length_hex.
+func herd_radius_hex() -> float:
+	return clampf(float(profile.animal_length_hex) * 4.0, 0.12, 0.55)
 
 func set_context(fog_enabled: bool, seed_value: int = 0) -> void:
 	if _context_ready and _fog == fog_enabled and _layout_seed == seed_value:
@@ -195,6 +233,8 @@ func set_context(fog_enabled: bool, seed_value: int = 0) -> void:
 	if _material != null:
 		_material.set_shader_parameter("fog_enabled", _fog)
 	_scan_cursor = 0
+	# Herd traces follow world presence, which depends on the layout seed.
+	_queue_cover_rewrite()
 	_invalidate()
 
 func set_filter(stable_id: String) -> void:
@@ -239,6 +279,8 @@ func _update_lens() -> void:
 	var was_hidden := _lens_amount <= 0.001
 	_lens_amount = move_toward(_lens_amount, target, delta / maxf(0.01, float(profile.lens_fade_seconds)))
 	_material.set_shader_parameter("lens_amount", _lens_amount)
+	if _cover != null:
+		_cover.set_lens_amount(_lens_amount)
 	if was_hidden != (_lens_amount <= 0.001):
 		# Lens visibility bypasses the zoom-based detail cull; refresh node visibility.
 		for key in _resident:
@@ -267,6 +309,8 @@ func set_camera_view(rect: Rect2, center: Vector2, zoom_value: float) -> void:
 	if _material == null:
 		return
 	_material.set_shader_parameter("camera_zoom", _zoom)
+	if _cover != null:
+		_cover.set_zoom(_zoom)
 	if rect.size.x <= 0.0 or _map == null:
 		return
 	var next := {}
@@ -320,6 +364,8 @@ func prepare_frame(time: float, sun: Vector3, state: Dictionary) -> void:
 		_last_profile_enabled = bool(profile.enabled)
 		for key in _resident:
 			_sync_wrap_visibility(key)
+	if _cover != null:
+		_cover.set_enabled(bool(profile.enabled) and bool(profile.ground_cover_enabled) and _configured and _context_ready)
 	if not _configured or _map == null or _intel == null or not profile.enabled or not _context_ready:
 		return
 	_material.set_shader_parameter("world_time", time)
@@ -333,10 +379,22 @@ func prepare_frame(time: float, sun: Vector3, state: Dictionary) -> void:
 		_material.set_shader_parameter("eco_lut", _world.eco_lut_tex)
 		_material.set_shader_parameter("has_ecology_lut", _world.eco_lut_tex != null)
 		_material.set_shader_parameter("enum_lut", _world.enum_lut_tex)
+	if _cover != null:
+		var cover_state := state.duplicate()
+		cover_state["tod_sun_dir"] = sun
+		cover_state["fog_enabled"] = _fog
+		if _world != null:
+			cover_state["dyn_lut"] = _world.dyn_lut_tex
+			cover_state["has_dynamic_lut"] = _world.dyn_lut_tex != null
+			cover_state["enum_lut"] = _world.enum_lut_tex
+		_cover.set_frame_state(time, cover_state, _memory_texture)
 	_sync_restored_memory()
 	var begin := Time.get_ticks_usec()
 	_observe_until(begin + int(float(profile.observation_budget_ms) * 1000.0))
+	_drain_cover_pending(begin + int(float(profile.observation_budget_ms) * 1000.0) + 200)
 	_stats.last_observe_ms = float(Time.get_ticks_usec() - begin) / 1000.0
+	if _cover != null:
+		_cover.flush()
 	begin = Time.get_ticks_usec()
 	_build_until(begin + int(float(profile.build_budget_ms) * 1000.0))
 	_stats.last_build_ms = float(Time.get_ticks_usec() - begin) / 1000.0
@@ -364,6 +422,7 @@ func _observe_until(deadline: int) -> void:
 		_write_memory_pixel(cell, row.get("climate", Color(0.5, 0.5, 0, 1)))
 		_stats.observed_cells = int(_stats.observed_cells) + 1
 		if changed:
+			_write_cover(cell)
 			_dirty[_cell_chunk[cell]] = true
 			# Only cancel work for this chunk, without starving other chunks.
 			if not _job.is_empty() and _job.key == _cell_chunk[cell]:
@@ -380,7 +439,42 @@ func _sync_restored_memory() -> void:
 	_memory_dirty = true
 	for cell in _last_intel.rows:
 		_write_memory_pixel(int(cell), _last_intel.rows[cell].climate)
+	if _cover != null:
+		_cover.clear_cells()
+	_queue_cover_rewrite()
 	_invalidate()
+
+## Re-encode every remembered cell over several frames (load, restore, new seed).
+func _queue_cover_rewrite() -> void:
+	_cover_pending.clear()
+	_cover_pending_cursor = 0
+	if _intel == null or _cover == null:
+		return
+	for cell in _intel.resource_observations.rows:
+		_cover_pending.append(int(cell))
+
+func _drain_cover_pending(deadline: int) -> void:
+	while _cover_pending_cursor < _cover_pending.size() and Time.get_ticks_usec() < deadline:
+		_write_cover(_cover_pending[_cover_pending_cursor])
+		_cover_pending_cursor += 1
+	if _cover_pending_cursor >= _cover_pending.size() and not _cover_pending.is_empty():
+		_cover_pending.clear()
+		_cover_pending_cursor = 0
+
+## Ground cover texel for one cell, from remembered observations only.
+func _write_cover(cell: int) -> void:
+	if _cover == null or _map == null or cell < 0 or cell >= _map.cell_count():
+		return
+	var row: Dictionary = _intel.resource_observations.rows.get(cell, {})
+	var bands: PackedByteArray = row.get("bands", PackedByteArray())
+	var water := cell < _map.is_water_arr.size() and _map.is_water_arr[cell] != 0
+	var cores := _intel.settlement_core_buckets()
+	var core := int(cores[cell]) if cell < cores.size() else 0
+	_cover.write_cell(cell, _cover.encode_cell(bands, water, core,
+		func(style: int, band: int) -> bool: return world_presence_allowed(cell, style, band)))
+
+func ground_cover() -> ResourceGroundCover:
+	return _cover
 
 func _write_memory_pixel(cell: int, value: Color) -> void:
 	value = Color8(roundi(value.r * 255.0), roundi(value.g * 255.0), roundi(value.b * 255.0), roundi(value.a * 255.0))
@@ -394,6 +488,9 @@ func notify_cells(cells: PackedInt32Array) -> void:
 	for cell in cells:
 		if cell >= 0 and cell < _cell_chunk.size():
 			_dirty[_cell_chunk[cell]] = true
+			# Settlement cores clear wild cover; re-encode the changed cells.
+			if _intel != null and _intel.resource_observations.rows.has(cell):
+				_write_cover(cell)
 
 func _invalidate() -> void:
 	_revision += 1
@@ -477,7 +574,8 @@ func world_presence_allowed(cell: int, style: int, band: int) -> bool:
 	return _hash(cell, style * 211 + _layout_seed + 4217) < probability
 
 # 世界实景只做美术点缀：土地类是软边地面贴花，矿床是“裸露矿斑贴花 + 小件碎石”，
-# 动植物是小件主体，水产与水下油气是水下贴花。确切种类交给资源透镜徽章。
+# 动物是真实比例的小兽群，水产与水下油气是水下贴花。植物不再是实例：它们是
+# ResourceGroundCover 里跨格连续的野生群落，这里只保留透镜徽章。
 static func visual_plan(entry: Dictionary, source_water: bool) -> int:
 	var family := int(entry.family)
 	var form := int(entry.form)
@@ -487,6 +585,8 @@ static func visual_plan(entry: Dictionary, source_water: bool) -> int:
 		return PLAN_SUBMERGED # River fish: only where the river body itself passes.
 	if form == 26:
 		return PLAN_BADGE # 木材：森林本身就是木材，世界里不再叠原木，只保留透镜徽章。
+	if family == 0:
+		return PLAN_BADGE # 植物群落由地被层绘制。
 	if form in GROUND_FORMS:
 		return PLAN_DECAL
 	if form in DEPOSIT_FORMS:
@@ -516,7 +616,10 @@ func _append_cell(cell: int, buffers: Array) -> void:
 		var size_scale := float(override.get("size_scale", 1.0))
 		var prop_diameter := float(profile.plant_diameter_hex) if render_family == 0 and int(e.form) != 26 else float(profile.patch_diameter_hex)
 		var ground_diameter := float(profile.fertility_diameter_hex) if int(e.form) == 22 else float(profile.decal_diameter_hex)
-		var prop_radius := _hex * prop_diameter * 0.5 * size_scale * (1.15 if render_family == 1 else 1.0)
+		var prop_radius := _hex * prop_diameter * 0.5 * size_scale
+		if render_family == 1:
+			# Real-scale herd: the quad only has to contain herd_size_max animals.
+			prop_radius = _hex * herd_radius_hex() * size_scale
 		var decal_radius := _hex * ground_diameter * 0.5 * size_scale
 		var submerged := (plan & PLAN_SUBMERGED) != 0
 		var has_prop := (plan & (PLAN_PROP | PLAN_BADGE)) != 0
@@ -763,13 +866,27 @@ func _build_style_texture() -> void:
 		image.set_pixel(1, i, color_val)
 		# X=0.75采样（像素3）：元数据(form, family, sub_style, metallic)
 		image.set_pixel(3, i, Color(float(e.form), float(e.family), float(e.get("sub_style", i % 4)), float(e.get("metallic", 0.0))))
+		# X=0.625采样（像素2）：动物/鱼位图（-, 图集层+1, 图集精灵数, -）；0 = 无位图。
+		# 植物位图由 ResourceGroundCover 自己的 LUT 映射。
+		var art := ResourceArtLibrary.shared()
+		var fauna_layer := art.fauna_layer(e.id)
+		image.set_pixel(2, i, Color(0.0, float(fauna_layer + 1),
+			float(art.fauna_count) if fauna_layer >= 0 else 0.0, 0.0))
 	_material.set_shader_parameter("style_lut", ImageTexture.create_from_image(image))
+	_bind_art()
+
+func _bind_art() -> void:
+	var art := ResourceArtLibrary.shared()
+	_material.set_shader_parameter("art_fauna_bound", art.fauna != null)
+	if art.fauna != null:
+		_material.set_shader_parameter("art_fauna", art.fauna)
 
 func diagnostics() -> Dictionary:
 	var result := _stats.duplicate()
 	result.merge({"instances": _instance_count, "resident_chunks": _resident.size(),
 		"pending_uploads": _uploads.size(), "dirty_chunks": _dirty.size(),
 		"known_cells": _intel.resource_observations.rows.size() if _intel != null else 0,
+		"ground_cover": _cover.diagnostics() if _cover != null else {},
 		"quality": quality(), "mobile": _mobile_tier >= 0, "catalog": Catalog.audit(_styles)})
 	return result
 

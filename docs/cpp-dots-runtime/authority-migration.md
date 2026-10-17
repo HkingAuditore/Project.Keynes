@@ -1396,14 +1396,14 @@ Technology 的里程碑都靠它的 ACK 完成。迁移它等于同时改动这�
 - [x] G5 immutable worker snapshot：捕获 Country technology/discovered/pending/research
       signal 与上一份已提交的 Economy class-opinion snapshot，并校验 catalog、class hash、revision、
       lane shape、country handle/generation 和 state generation。
-- [x] G6 独立 `IDP1` ideology worker section：ABI、catalog/state hash、长度和 checksum
+- [x] G6 独立 `IDP2` ideology worker section：ABI、catalog/state hash、长度和 checksum
       原子校验；只恢复 worker ideology state，不从 `PDP3` 或同步 `PKID` 推导。
 - [x] G7 接入 `NativeSimulationHost` SHADOW stage：Country 之后、Effect 之前执行，
       snapshot/intent/ACK 通过现有 publication contract 暴露；legacy ideology runtime 仍为
       生产参考 authority。
 - [x] G8 放行（`0x876`；Host ACTIVE 唯一写者；snapshot 回灌 `NativeIdeologyRuntime`；
       抑制 `run_ideology_daily` / `ideology_should_run`；Ideology 的 EFFECT-targeted transition
-      intent 在 Effect stage 之后于 worker 内 ACK，并保留主线程 pump 作为协议路径）
+      intent 经真实 Modifier batch 结果 ACK（G9），并保留主线程 pump 作为协议路径）
 
 **当前边界（G8）**：`implemented`/`request` 均为
 `CLIMATE|COUNTRY|TRIGGER_INPUT|IDEOLOGY|MODIFIER|EFFECT|EVENTS|COMMIT = 0xFFF`。ACTIVE 下 stage loop 里的
@@ -1413,8 +1413,11 @@ UI/存档仍只读一个 runtime；`submit_ideology_commands` 在 worker 权威�
 legacy 队列。Ideology 仍使用上一份已提交的 Economy opinion snapshot，避免当日
 Ideology↔Economy 循环依赖。SHADOW 模式的 G7 诊断 stage 原样保留。
 
-**已知后续（G8 遗留）**：POD catalog 不携带 effect template，因此 UniqueSource Modifier template
-replay 无法从 POD intent 重放——与 F8 Effect ACTIVE 下 Ideology 的同类缺口一致，不是 G8 的回归。
+**G9（理念深化）**：Ideology POD ABI 3 的 catalog 携带各级/各联动 Modifier template 行；
+IDEOLOGY+MODIFIER 同时授权时 `stage_ideology_modifier_commands` 把每个 transition 作为原子
+Modifier POD batch 提交，`settle_ideology_modifier_acks` 用真实 batch 结果生成 EFFECT ACK；
+旧的自动 `OK` 的 `ack_ideology_intents_in_worker` 已删除。存档 section 升为 `IDP2`（含理念点
+基线/账本/历史/抽卡计数），`IDP1` fail-closed。
 soak / C2 证据待 `Invoke-RuntimeTests.ps1` 补齐（见
 `artifacts/runtime/authority-ideology-g8-20260913/EVIDENCE.md`）。
 
@@ -1650,7 +1653,7 @@ authority；Modifier、Ideology 和 Trigger 的 plan/replay、ACK、snapshot 与
 | COUNTRY | 有（worker CountryCore + read-view） | **worker 走 `country_core_apply_command`；ACTIVE 下 Host worker 负责生产** | 20 个均已编码/core apply；staged SoA 保留为同步回退 | Effect/Modifier adapter 已验证；M1 fiscal 已有 Economy-owned peer journal，其余 D7 coordinator 仍为同步生产 peer；Host transport 与 D7T1 journal 已接线 | immutable ReadView 与稀疏 patch 已验证 | CPD2 v2 / PKCN v13；D7T1 Host transaction journal + PKEC v52 fiscal peer journal 已实现，非 fiscal peer recovery 尚未完成 | D10 handoff+unique-writer；D12 ACTIVE | **在（0x004）** |
 | MODIFIER | 有（四域隔离） | **真实 SHADOW 双缓冲 plan/replay** | 固定 POD payload；legacy 5 已迁移 | **真实 Effect→Modifier ACK barrier** | immutable ring | **MDF2**（PDP4 不重复写） | **SHADOW 完整 stage** | 不在 |
 | EFFECT | 有 | **独立真实 POD；Host SHADOW 日 stage（F7）** | 6 类 action | 真实多 adapter 状态机 | 独立 immutable | EFP1 | **SHADOW 完整日 stage**（Ideology 后、Modifier 前；fixture Effect→Modifier 在 POD catalog 非空时停用） | 不在 |
-| IDEOLOGY | 有 | **真实双缓冲 plan/replay；ACTIVE 唯一写者** | 固定 POD payload；legacy 9 已迁移 | **真实 Effect ACK barrier；无 synthetic ACK**；ACTIVE 下 Effect stage 后 worker 内 ACK + 主线程 pump | immutable snapshot ring，回灌 legacy `NativeIdeologyRuntime`（Country/Economy 输入校验） | **IDP1**（`1 << 8`，不从 PDP3/PKID 恢复） | **ACTIVE 真 stage**（Country 之后、Effect 之前）；SHADOW 诊断 stage 保留 | **在（0x010）** |
+| IDEOLOGY | 有 | **真实双缓冲 plan/replay；ACTIVE 唯一写者** | 固定 POD payload；legacy 9 已迁移 | **真实 Effect ACK barrier；无 synthetic ACK**；ACTIVE 下 Effect stage 后 worker 内 ACK + 主线程 pump | immutable snapshot ring，回灌 legacy `NativeIdeologyRuntime`（Country/Economy 输入校验） | **IDP2**（`1 << 8`，不从 PDP3/PKID 恢复） | **ACTIVE 真 stage**（Country 之后、Effect 之前）；SHADOW 诊断 stage 保留 | **在（0x010）** |
 | TRIGGER_INPUT | 有 | **真实 SHADOW plan/replay** | 6 个固定 opcode；legacy Action `1,2,3,4,10,11,12,13,14,15` 保留 | required ACK + 真实 receipt barrier | immutable POD snapshot | **TPD1**（独立 section，`1 << 4`） | **SHADOW parity bridge** | 不在 |
 | ECONOMY | 有（committed cohort/market mirror） | ACTIVE compact-slice + SHADOW StageOps；全 stage reference + named kernel TU 桩 | legacy 23；POD 准入 1..23 | Host POD receipt + commit_pending_commands | ring header + 业务摘要（ACTIVE/`commit_epoch`） | **ECP1 ABI4：gate + 摘要 + committed ledger；完整 PKEC 业务态未迁** | ACTIVE compact-slice + SHADOW `execute_economy_worker_stage` | **在（0x100 / 0xFFF）** |
 | EVENTS | 有 | **真实 ACTIVE deterministic plan/replay** | APPEND_BATCH、ACK_CONSUMER、CONFIGURE_CAPACITY、CLEAR_RESET | **worker-owned cursor** | **immutable snapshot ring** | **EVT1** | **ACTIVE fail-closed stage** | **在（0x200）** |
@@ -1852,7 +1855,7 @@ Godot 可执行文件由 `GODOT_BIN` 或 `tools/runtime/Resolve-GodotBin.ps1` �
 | `ideology_runtime_test.gd` | Ideology G2-G4 | `failures=0` |
 | `ideology_opinion_synergy_test.gd` | Ideology G5 | `failures=0` |
 | `ideology_runtime_stress_test.gd` | Ideology G2-G5 stress | `failures=0` |
-| `runtime_ideology_save_roundtrip_test.gd` | Ideology G6/G7：IDP1 | `failures=0` |
+| `runtime_ideology_save_roundtrip_test.gd` | Ideology G6/G7：IDP2 | `failures=0` |
 | `runtime_effect_pod_test.gd` | Effect F2-F7 self-test（统一 suite 已收录；含 Host stage smoke） | `failures=0` |
 | `dots_completion/dots_completion_gate.gd` | 当前静态门禁：D12 mask/request、D7 journal、flag registry；旧巨石行数与 map_generator bake-time 直写只输出 `LEGACY` 警告 | `ALL GATES PASSED` |
 
@@ -1937,7 +1940,7 @@ Trigger 与 Events 已随 H8/I8 进入 `implemented_domain_mask`；Economy 专�
   `NativeCountryRuntime::export_pod_snapshot()` 成功才会调
   `configure_ideology_pod()`；读档时 country 处于
   `[save/restore] country configured without bootstrap; awaiting PKCN`，导出失败 →
-  `_ideology_pod_configured=false` → 之后 PKSR 恢复撞上 IDP1 section 就拒绝
+  `_ideology_pod_configured=false` → 之后 PKSR 恢复撞上 IDP2 section 就拒绝
   （`native_simulation_host.cpp:10911`）。**这是恢复次序契约的缺陷**：PKSR 里带
   ideology POD section，但它的 catalog 要等 PKCN 之后才配得出来。修法需要定次序
   （PKCN → 配 ideology catalog → 恢复 PKSR ideology section，或让
@@ -2118,15 +2121,15 @@ STOPPED/FAULTED、`newest_state_day` 有推进。
 
 | 文件 | 内容 |
 | --- | --- |
-| `gdext/src/runtime_ideology_pod.{h,cpp}` | numeric catalog、9 个 legacy opcode、确定性排序、copy-on-write plan/replay、head cursor、bounded slice、same-day continuation、Country/Economy 输入校验、deferred typed intent、真实 Effect ACK barrier、immutable snapshot、`RuntimeIdeologySnapshotRing`、IDP1 序列化/恢复 |
-| `gdext/src/native_simulation_host.{h,cpp}` | Ideology bootstrap、Country 之后/Effect 之前的日阶段（ACTIVE stage loop + SHADOW 诊断）、ACK 收集、`ack_ideology_intents_in_worker` 桥、snapshot ring publication、IDP1 section；不把 deferred intent 视为完成 |
+| `gdext/src/runtime_ideology_pod.{h,cpp}` | numeric catalog、9 个 legacy opcode、确定性排序、copy-on-write plan/replay、head cursor、bounded slice、same-day continuation、Country/Economy 输入校验、deferred typed intent、真实 Effect ACK barrier、immutable snapshot、`RuntimeIdeologySnapshotRing`、IDP2 序列化/恢复 |
+| `gdext/src/native_simulation_host.{h,cpp}` | Ideology bootstrap、Country 之后/Effect 之前的日阶段（ACTIVE stage loop + SHADOW 诊断）、ACK 收集、`stage_ideology_modifier_commands`/`settle_ideology_modifier_acks` 真实 Modifier batch 桥、snapshot ring publication、IDP2 section；不把 deferred intent 视为完成 |
 | `gdext/src/world_ext_ideology.cpp` | 主线程 catalog/snapshot capture、worker command ingress（worker 权威下只入 POD 队列）、typed intent/ACK polling、`apply_runtime_ideology_snapshot` 回灌、`run_ideology_daily` / `ideology_should_run` 抑制 |
 | `gdext/src/ideology_runtime.{h,cpp}` | legacy `NativeIdeologyRuntime`：ACTIVE 下改为 snapshot 回灌目标（`apply_pod_snapshot`）与 POD catalog export；`PKID` 仍只属于同步 runtime |
 | `gdext/src/runtime_pod_protocol.h` | `RuntimeIdeologyPodOpcode`/ACK wire contract、Ideology stage report、`RUNTIME_SAVE_SECTION_IDEOLOGY = 1 << 8` |
 | `Project/.../tests/ideology_runtime_test.gd` | 9 opcode parity、排序、generation、receipt、真实 Effect ACK 和 legacy reference 回归；failures=0 |
 | `Project/.../tests/ideology_opinion_synergy_test.gd` | class opinion gate、exclusion、reverse-CSR synergy、revision/hash/generation rejection；failures=0 |
 | `Project/.../tests/ideology_runtime_stress_test.gd` | 大规模 country/idea、slice continuation、same-day retry、pending transition 和 stress replay；failures=0 |
-| `Project/.../tests/runtime_ideology_save_roundtrip_test.gd` | 独立 `IDP1` section、checksum/完整性失败的事务性拒绝，以及不从 `PDP3`/`PKID` 推导 worker state；failures=0 |
+| `Project/.../tests/runtime_ideology_save_roundtrip_test.gd` | 独立 `IDP2` section、checksum/完整性失败的事务性拒绝，以及不从 `PDP3`/`PKID` 推导 worker state；failures=0 |
 
 ## Modifier（E2–E7，SHADOW-only）
 

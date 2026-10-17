@@ -821,12 +821,16 @@ private:
     bool execute_ideology_worker_stage(int64_t day,
                                        RuntimeDayCommit &commit,
                                        std::string &error);
-    // G8 in-worker bridge: Ideology transition intents target EFFECT, and under
-    // ACTIVE the worker owns both domains. Draining them here lets a pending
-    // transition settle on the next Ideology visit instead of waiting a frame
-    // for the main-thread pump. The main-thread pump stays as the protocol
-    // path for sessions that grant IDEOLOGY without EFFECT.
-    uint32_t ack_ideology_intents_in_worker(int64_t day);
+    // Real Ideology -> Modifier bridge (replaced the synthetic OK ACK; used when the
+    // worker also owns MODIFIER). Transition rows are resolved against the
+    // Modifier catalog up front (all-or-nothing), submitted as one atomic
+    // Modifier batch, and the Ideology ACK is derived from the committed
+    // Modifier batch result.
+    void stage_ideology_modifier_commands(int64_t day,
+                                          uint64_t input_generation);
+    void settle_ideology_modifier_acks(
+        const std::vector<uint8_t> &batch_ok, bool committed);
+    bool ideology_modifier_bridge_active() const;
     bool execute_trigger_worker_stage(int64_t day, uint64_t input_generation,
                                       RuntimeDayCommit &commit,
                                       std::string &error);
@@ -1468,6 +1472,17 @@ private:
     std::deque<RuntimeIdeologyPodCommand> _ideology_commands;
     std::deque<RuntimeDomainIntent> _ideology_intents;
     std::deque<RuntimeDomainAck> _ideology_acks;
+    // Worker-thread only: Ideology transitions waiting for Modifier results.
+    struct IdeologyModifierInflight {
+        RuntimeDomainIntent intent;
+        std::vector<RuntimeIdeologyPodModifierRow> rows;
+        int32_t batch_index = -1;
+        uint8_t submitted = 0;
+    };
+    std::vector<IdeologyModifierInflight> _ideology_modifier_inflight;
+    std::vector<RuntimeIdeologyPodModifierRow> _ideology_loose_modifier_rows;
+    std::vector<std::vector<RuntimeModifierPodCommand>> _ideology_day_modifier_batches;
+    uint64_t _ideology_modifier_sequence = 1;
     std::atomic<bool> _ideology_pod_ready{false};
     std::atomic<double> _ideology_pod_plan_ms{0.0};
     std::atomic<double> _ideology_pod_replay_ms{0.0};

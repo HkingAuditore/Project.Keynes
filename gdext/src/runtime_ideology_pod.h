@@ -11,11 +11,29 @@
 
 namespace pk {
 
-constexpr uint32_t RUNTIME_IDEOLOGY_POD_ABI_VERSION = 2u;
+constexpr uint32_t RUNTIME_IDEOLOGY_POD_ABI_VERSION = 3u;
 constexpr uint32_t RUNTIME_IDEOLOGY_POD_MAX_COUNTRIES = 1u << 20;
 constexpr uint32_t RUNTIME_IDEOLOGY_POD_MAX_IDEAS = 65536u;
 constexpr uint32_t RUNTIME_IDEOLOGY_POD_MAX_COMMANDS = 1u << 20;
 constexpr uint32_t RUNTIME_IDEOLOGY_POD_MAX_TRANSITIONS = 1u << 20;
+constexpr uint32_t RUNTIME_IDEOLOGY_POD_HISTORY = 32u;
+constexpr uint64_t RUNTIME_IDEOLOGY_MODIFIER_SOURCE_TYPE = 0x4944454full; // IDEO
+
+// Geometric draw cost shared by the main and worker runtimes:
+// cost(0) = base, cost(n + 1) = round(cost(n) * growth_percent / 100), capped.
+inline int64_t runtime_ideology_offer_cost_q16(
+        int64_t base_q16, int64_t growth_percent, int64_t max_q16, uint64_t draw_sequence) {
+    int64_t cost = base_q16 < 0 ? 0 : base_q16;
+    const int64_t cap = max_q16 < cost ? cost : max_q16;
+    if (growth_percent <= 100) return cost;
+    for (uint64_t step = 0; step < draw_sequence && cost < cap; ++step) {
+        if (cost > INT64_MAX / growth_percent) return cap;
+        const int64_t next = (cost * growth_percent + 50) / 100;
+        if (next == cost) break;  // tiny costs can stall under rounding
+        cost = next;
+    }
+    return cost < cap ? cost : cap;
+}
 
 enum class RuntimeIdeologyPodOpcode : uint16_t {
     DISCOVER = 1,
@@ -27,6 +45,7 @@ enum class RuntimeIdeologyPodOpcode : uint16_t {
     PROMOTE = 7,
     ADD_UNDERSTANDING = 8,
     SET_GATE = 9,
+    REROLL_OFFER = 10,
 };
 
 enum class RuntimeIdeologyPodLocation : uint8_t {
@@ -50,6 +69,22 @@ enum class RuntimeIdeologyPodReceiptStatus : uint8_t {
 struct RuntimeIdeologyPodLevel {
     int64_t threshold_q16 = 0;
     int64_t daily_understanding_q16 = 0;
+    uint32_t modifier_begin = 0;
+    uint32_t modifier_count = 0;
+};
+
+// Reversible UniqueSource Modifier template row. The worker resolves the
+// definition key hash against the Modifier POD catalog at stage time.
+struct RuntimeIdeologyPodModifierTemplate {
+    uint64_t definition_key_hash = 0;
+    int32_t domain = 0;
+    int32_t magnitude_q16 = 65536;
+};
+
+struct RuntimeIdeologyPodCapacityUnlock {
+    int32_t technology_id = -1;
+    int32_t ideology_delta = 0;
+    int32_t spirit_delta = 0;
 };
 
 struct RuntimeIdeologyPodDefinition {
@@ -89,6 +124,11 @@ struct RuntimeIdeologyPodSynergyRequirement {
 struct RuntimeIdeologyPodSynergy {
     uint32_t requirement_begin = 0;
     uint32_t requirement_count = 0;
+    // Active when at least min_count requirement rows hold. Named synergies
+    // use requirement_count; school resonances use 2 or 4 of the school.
+    uint32_t min_count = 0;
+    uint32_t modifier_begin = 0;
+    uint32_t modifier_count = 0;
 };
 
 struct RuntimeIdeologyPodCatalog {
@@ -102,8 +142,20 @@ struct RuntimeIdeologyPodCatalog {
     uint32_t gate_count = 0;
     int32_t ideology_capacity = 6;
     int32_t spirit_capacity = 3;
+    int32_t ideology_capacity_max = 6;
+    int32_t spirit_capacity_max = 3;
     int64_t offer_cost_q16 = 65536;
+    int64_t offer_cost_growth_percent = 100;
+    int64_t offer_cost_max_q16 = 65536;
+    int32_t reroll_cost_percent = 50;
     int64_t starting_points_q16 = 0;
+    // Increment-only ideology point accrual (Q16 per unit).
+    int64_t point_population_weight_q16 = 0;
+    int64_t point_building_weight_q16 = 0;
+    int64_t point_trade_weight_q16 = 0;
+    int64_t point_gain_cap_q16 = 0;
+    // Modifier POD stat id of country.ideology.point_gain_factor (-1 = 1.0).
+    int32_t point_gain_stat_id = -1;
     int32_t owner_influence_weight = 2;
     int64_t funds_per_influence = 1000000;
     uint32_t max_commands_per_slice = 4096;
@@ -120,6 +172,9 @@ struct RuntimeIdeologyPodCatalog {
     std::vector<RuntimeIdeologyPodSynergy> synergies;
     std::vector<uint32_t> ideology_synergy_offsets;
     std::vector<int32_t> ideology_synergy_ids;
+    std::vector<RuntimeIdeologyPodModifierTemplate> level_modifiers;
+    std::vector<RuntimeIdeologyPodModifierTemplate> synergy_modifiers;
+    std::vector<RuntimeIdeologyPodCapacityUnlock> capacity_unlocks;
 };
 
 struct RuntimeIdeologyOpinionSnapshot {
@@ -135,6 +190,13 @@ struct RuntimeIdeologyOpinionSnapshot {
     std::vector<int64_t> owner_employed;
     std::vector<int64_t> satisfaction_weighted;
     std::vector<int32_t> satisfaction_q16;
+    // Per-country development lanes (optional; empty disables accrual).
+    std::vector<int64_t> country_population;
+    std::vector<int64_t> country_buildings_installed;
+    std::vector<int64_t> country_trade_base_value;
+    int64_t period_days = 1;
+    // Frozen country.ideology.point_gain_factor (Q16); empty means 1.0.
+    std::vector<int32_t> point_gain_factor_q16;
 };
 
 struct RuntimeIdeologyPodCommand {
@@ -171,10 +233,30 @@ struct RuntimeIdeologyPodOffer {
     uint8_t reserved[3]{};
 };
 
+struct RuntimeIdeologyPodPointLedger {
+    int64_t population_q16 = 0;
+    int64_t building_q16 = 0;
+    int64_t trade_q16 = 0;
+    int32_t opinion_factor_q16 = 65536;
+    int32_t gain_factor_q16 = 65536;
+    int64_t gain_q16 = 0;
+    int64_t day = -1;
+};
+
 struct RuntimeIdeologyPodCountryState {
     uint64_t handle = 0;
     uint32_t generation = 0;
     int64_t ideology_points_q16 = 0;
+    uint64_t points_revision = 0;
+    uint8_t baseline_ready = 0;
+    uint8_t history_count = 0;
+    uint8_t history_head = 0;
+    uint8_t reserved_points = 0;
+    int64_t baseline_population = 0;
+    int64_t baseline_buildings = 0;
+    int64_t lifetime_points_q16 = 0;
+    RuntimeIdeologyPodPointLedger ledger;
+    std::array<int64_t, RUNTIME_IDEOLOGY_POD_HISTORY> history_q16{};
     uint64_t rng_state = 0;
     uint64_t draw_sequence = 0;
     int32_t ideology_slots_used = 0;
@@ -245,9 +327,26 @@ struct RuntimeIdeologyPodSnapshot {
     std::vector<RuntimeIdeologyPodReceipt> receipts;
 };
 
+// One Modifier row of an Ideology transition batch. All rows of a transition
+// share transition_id; the worker settles the transition only after every row
+// is ACKed by the Modifier POD.
+struct RuntimeIdeologyPodModifierRow {
+    uint64_t transition_id = 0;
+    uint64_t country_handle = 0;
+    uint32_t country_generation = 0;
+    uint16_t opcode = 1; // Modifier APPLY=1, REMOVE=2
+    uint16_t domain = 0;
+    uint64_t definition_key_hash = 0;
+    uint64_t source_id = 0;
+    int32_t magnitude_q16 = 65536;
+    uint32_t ordinal = 0;
+    int64_t effective_day = 0;
+};
+
 struct RuntimeIdeologyPodPlan {
     RuntimeIdeologyPodSnapshot next_snapshot;
     std::vector<RuntimeDomainIntent> intents;
+    std::vector<RuntimeIdeologyPodModifierRow> modifier_rows;
     uint64_t base_generation = 0;
     uint64_t input_generation = 0;
     uint64_t plan_hash = 0;
@@ -288,7 +387,17 @@ public:
     uint64_t catalog_hash() const noexcept { return _catalog.catalog_hash; }
     void serialize(std::vector<uint8_t> &out) const;
     bool restore(const uint8_t *data, size_t size, std::string &error);
+    // Worker in-flight Modifier batches are not persisted; after a restore the
+    // pending transitions re-emit (APPLY upserts / REMOVE-missing are idempotent).
+    void rearm_pending_transitions();
     static bool self_test(std::string &error);
+    // Derived per-country rules shared with the main-thread facade.
+    int32_t ideology_capacity_for(const RuntimeCountryPodSnapshot &country,
+                                  uint32_t slot) const;
+    int32_t spirit_capacity_for(const RuntimeCountryPodSnapshot &country,
+                                uint32_t slot) const;
+    int64_t offer_cost_for(uint64_t draw_sequence) const;
+    int64_t reroll_cost_for(uint64_t draw_sequence) const;
 
 private:
     static bool command_less(const RuntimeIdeologyPodCommand &a,
@@ -314,11 +423,22 @@ private:
                           const RuntimeIdeologyPodCommand *command,
                           int64_t day, RuntimeIdeologyPodPlan &plan,
                           std::string &error) const;
-    void emit_transition(RuntimeIdeologyPodTransition &transition,
+    void emit_transition(const RuntimeIdeologyPodSnapshot &state,
+                         RuntimeIdeologyPodTransition &transition,
                          RuntimeIdeologyPodPlan &plan) const;
+    void accrue_points(RuntimeIdeologyPodSnapshot &state,
+                       const RuntimeIdeologyOpinionSnapshot &opinion,
+                       int64_t day) const;
+    bool draw_offer(RuntimeIdeologyPodSnapshot &state,
+                    const RuntimeCountryPodSnapshot &country, uint32_t slot,
+                    std::string &error) const;
     bool apply_ack(RuntimeIdeologyPodSnapshot &state,
                    const RuntimeDomainAck &ack, int64_t day,
+                   RuntimeIdeologyPodPlan &plan,
                    std::string &error) const;
+    void settle_synergies(RuntimeIdeologyPodCountryState &country,
+                          uint32_t country_slot, int32_t ideology_id,
+                          int64_t day, RuntimeIdeologyPodPlan &plan) const;
     bool support_allows(const RuntimeIdeologyPodSnapshot &state,
                         const RuntimeIdeologyOpinionSnapshot &opinion,
                         uint32_t country_slot, int32_t ideology_id,

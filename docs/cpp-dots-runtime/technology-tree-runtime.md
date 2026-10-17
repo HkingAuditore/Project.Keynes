@@ -425,6 +425,12 @@ section tab；section 切换只由底栏 `CountryActionBar` 驱动。经济 sect
 在固定宽度内换行并纵向滚动，不允许横向裁切。搜索框保持紧凑固定宽度，工具栏剩余空间由 Spacer
 吸收。
 
+科技树与总览画布使用剪纸 / 卷轴位图（`assets/ui/technology_tree_v1/`，经
+`TechnologyTreeArt` 缓存访问）：宣纸平铺底纹、时代手卷标题、领域燕尾签与纸章、知识卡底板
+（已知 / 未知折纸 / 选中朱砂 / 里程碑铜框）及状态印章。全部在既有 `_draw()` 中即时绘制，
+不新增节点、着色器或重绘触发；贴图缺失时回退原 StyleBoxFlat / 图标字体。未知与已揭示未可研究
+节点只使用未知底板与印章，不泄露语义。
+
 工作区不持有 `CountryFacade`、玩家国家句柄或命令序列。权重、预算和队列操作只发出结构化玩家意图，由 `PlayerController` 解析正式会话、分配下一日生效日与单调 sequence，再委托 `NativeCountryRuntime`。
 
 打开科技 section 时只装配拓扑（`TechnologyTreeLayout.build_topology`）与 soft-edge 索引，

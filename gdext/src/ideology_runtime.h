@@ -17,6 +17,7 @@ namespace pk {
 
 class NativeCountryRuntime;
 class NativeEconomyRuntime;
+class ModifierRuntime;
 
 // Country-scoped ideology authority.  It deliberately owns only ideology
 // collection/progression state; Country, Effect and Modifier retain their
@@ -24,8 +25,9 @@ class NativeEconomyRuntime;
 class NativeIdeologyRuntime {
 public:
     static constexpr int32_t PROTOCOL_VERSION = 1;
-    static constexpr int32_t SAVE_SCHEMA_VERSION = 3;
+    static constexpr int32_t SAVE_SCHEMA_VERSION = 4;
     static constexpr int64_t Q16_ONE = 65536;
+    static constexpr int32_t POINT_HISTORY = 32;
 
     enum Acquisition : uint8_t { DISCOVER = 1, DRAW = 2 };
     enum CommandOpcode : int32_t {
@@ -38,6 +40,7 @@ public:
         PROMOTE_NATIONAL_SPIRIT = 7,
         ADD_UNDERSTANDING = 8,
         SET_IDEOLOGY_GATE = 9,
+        REROLL_IDEOLOGY_OFFER = 10,
     };
     enum Location : uint8_t { INACTIVE = 0, IDEOLOGY = 1, NATIONAL_SPIRIT = 2 };
     enum ReceiptStatus : int32_t {
@@ -54,6 +57,7 @@ public:
     void attach_country_runtime(NativeCountryRuntime *runtime) { _country_runtime = runtime; }
     void attach_economy_runtime(NativeEconomyRuntime *runtime) { _economy_runtime = runtime; }
     void attach_effect_runtime(EffectRuntime *runtime) { _effect_runtime = runtime; }
+    void attach_modifier_runtime(ModifierRuntime *runtime) { _modifier_runtime = runtime; }
 
     godot::Dictionary configure(const godot::Dictionary &catalog);
     godot::Dictionary submit_commands(const godot::Dictionary &batch);
@@ -69,6 +73,9 @@ public:
     godot::Dictionary run_daily(int64_t day_index);
     bool should_run(int64_t day_index) const;
     godot::Dictionary snapshot(int64_t country_handle) const;
+    // Read-only draw preflight for PlayerController: can_draw, cost, pool size
+    // and a stable reason code. Never mutates state or advances RNG.
+    godot::Dictionary preview_offer_eligibility(int64_t country_handle) const;
     godot::Dictionary explain(int64_t country_handle, int32_t ideology_id);
     godot::Dictionary explain_batch(
         int64_t country_handle,
@@ -87,6 +94,10 @@ public:
     bool apply_pod_snapshot(const RuntimeIdeologyPodSnapshot &snapshot,
                             std::string &error);
     uint64_t pod_snapshot_generation() const { return _pod_snapshot_generation; }
+    // A new worker lifetime restarts snapshot generations at 1. Without this
+    // reset every snapshot of a restarted worker would be rejected as a
+    // generation regression and the facade would freeze on stale state.
+    void reset_pod_snapshot_cursor() { _pod_snapshot_generation = 0; }
 
 private:
     struct Level {
@@ -144,6 +155,14 @@ private:
         int32_t requirement_count = 0;
         int32_t effect_begin = 0;
         int32_t effect_count = 0;
+        // Active when at least min_count requirement rows hold (school
+        // resonances); equals requirement_count for named synergies.
+        int32_t min_count = 0;
+    };
+    struct CapacityUnlock {
+        int32_t technology_id = -1;
+        int32_t ideology_delta = 0;
+        int32_t spirit_delta = 0;
     };
     struct SupportResult {
         int32_t support_q16 = 0;
@@ -192,6 +211,16 @@ private:
         int64_t ideology_points_q16 = 0;
         uint64_t rng_state = 0;
         uint64_t draw_sequence = 0;
+        // Increment-only point accrual (PKID v4).
+        uint64_t points_revision = 0;
+        uint8_t baseline_ready = 0;
+        uint8_t history_count = 0;
+        uint8_t history_head = 0;
+        int64_t baseline_population = 0;
+        int64_t baseline_buildings = 0;
+        int64_t lifetime_points_q16 = 0;
+        RuntimeIdeologyPodPointLedger ledger;
+        std::array<int64_t, POINT_HISTORY> history_q16{};
         std::vector<uint64_t> known_bits;
         std::vector<uint64_t> gate_bits;
         std::vector<uint64_t> active_bits;
@@ -274,6 +303,16 @@ private:
     void rebuild_synergies(CountryState &country);
     bool apply_command(const Command &command, int64_t day, std::string &error);
     bool open_offer(CountryState &country, int32_t country_slot, std::string &error);
+    bool reroll_offer(CountryState &country, int32_t country_slot,
+                      const Command &command, std::string &error);
+    bool draw_offer(CountryState &country, int32_t country_slot, std::string &error);
+    int32_t draw_pool_size(const CountryState &country, int32_t country_slot) const;
+    int32_t ideology_capacity_for(int32_t country_slot) const;
+    int32_t spirit_capacity_for(int32_t country_slot) const;
+    int64_t offer_cost_for(uint64_t draw_sequence) const;
+    int64_t reroll_cost_for(uint64_t draw_sequence) const;
+    void accrue_points(int64_t day);
+    void init_country_state(CountryState &state, uint64_t handle) const;
     bool choose_offer(CountryState &country, const Command &command, std::string &error);
     bool equip(CountryState &country, int32_t ideology_id, int64_t day, std::string &error);
     bool unequip(CountryState &country, int32_t ideology_id, int64_t day, std::string &error);
@@ -336,6 +375,21 @@ private:
     int32_t _draw_count = 3;
     int64_t _offer_cost_q16 = Q16_ONE;
     int64_t _starting_points_q16 = 0;
+    int32_t _ideology_capacity_max = 6;
+    int32_t _spirit_capacity_max = 3;
+    int64_t _offer_cost_growth_percent = 100;
+    int64_t _offer_cost_max_q16 = Q16_ONE;
+    int32_t _reroll_cost_percent = 50;
+    int64_t _point_population_weight_q16 = 0;
+    int64_t _point_building_weight_q16 = 0;
+    int64_t _point_trade_weight_q16 = 0;
+    int64_t _point_gain_cap_q16 = 0;
+    std::string _point_gain_stat_key;
+    std::vector<CapacityUnlock> _capacity_unlocks;
+    uint64_t _points_revision_seen = 0;
+    // True once a worker snapshot wrote this facade. Worker transitions bind
+    // through Modifier UniqueSource rows (PKCM + IDP2), not PKEF bindings.
+    bool _worker_origin = false;
     int32_t _max_commands_per_slice = 4096;
     int32_t _max_transition_commands = 256;
     int32_t _max_transition_polls_per_slice = 4096;
@@ -409,6 +463,7 @@ private:
     NativeCountryRuntime *_country_runtime = nullptr;
     NativeEconomyRuntime *_economy_runtime = nullptr;
     EffectRuntime *_effect_runtime = nullptr;
+    ModifierRuntime *_modifier_runtime = nullptr;
 };
 
 } // namespace pk

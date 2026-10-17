@@ -111,7 +111,16 @@ func run() -> void:
 	_expect("deposits become scar decal plus small prop", Layer.visual_plan(deposit, false) == (Layer.PLAN_DECAL | Layer.PLAN_PROP))
 	_expect("land qualities are pure ground decals", Layer.visual_plan(soil, false) == Layer.PLAN_DECAL)
 	_expect("timber only keeps its lens badge", Layer.visual_plan({"family": 0, "form": 26}, false) == Layer.PLAN_BADGE)
-	_expect("props are decoration-sized", float(layer.profile.patch_diameter_hex) <= 0.4 and float(layer.profile.outline_strength) == 0.0 and float(layer.profile.cast_shadow) == 0.0)
+	_expect("plant species are ground cover, not instances", Layer.visual_plan(styles[wheat], false) == Layer.PLAN_BADGE and Layer.visual_plan(styles[_index(styles, "bio.maize")], false) == Layer.PLAN_BADGE)
+	var plant_props := 0
+	for buffer in buffers:
+		for base in range(0, buffer.size(), 16):
+			if int(styles[int(buffer[base + 13])].family) == 0 and floorf(float(buffer[base + 11]) + 0.01) != Layer.KIND_BADGE_ONLY:
+				plant_props += 1
+	_expect("plants emit no visible world instances", plant_props == 0)
+	_expect("props are decoration-sized", float(layer.profile.patch_diameter_hex) <= 0.4 and float(layer.profile.outline_strength) <= 0.2 and float(layer.profile.cast_shadow) == 0.0)
+	_expect("herd quad is small and real-scale", layer.herd_radius_hex() <= 0.55 and float(layer.profile.animal_length_hex) <= 0.15 and int(layer.profile.herd_size_min) <= int(layer.profile.herd_size_max))
+	_expect("ground cover is the first child, drawn under all props", layer.get_child(0) == layer.ground_cover())
 	var upright := true
 	for buffer in buffers:
 		for base in range(0, buffer.size(), 16):
@@ -218,7 +227,10 @@ func _test_world_density(styles: Array[Dictionary]) -> void:
 		plants += 1 if layer.world_presence_allowed(cell, wheat, 2) else 0
 		fertile += 1 if layer.world_presence_allowed(cell, soil, 1) else 0
 		stable = stable and present == layer.world_presence_allowed(cell, gold, 4)
-	_expect("object scenery is sparse while plants and fertility remain available", minerals > 200 and minerals < 440 and animals > 280 and animals < 540 and plants == 1024 and fertile == 1024)
+	# Presence follows the profile probabilities (hash-sampled, +-8%).
+	var pm := float(layer.profile.mineral_presence) * 1024.0
+	var pa := float(layer.profile.animal_presence) * 1024.0
+	_expect("object scenery follows profile presence while plants and fertility remain available", absf(minerals - pm) <= 82.0 and absf(animals - pa) <= 82.0 and plants == 1024 and fertile == 1024)
 	_expect("scenery sampling is stable across repeated queries", stable)
 	_expect("low-abundance mineral does not create scenery", not layer.world_presence_allowed(0, gold, 2))
 	var bands := PackedByteArray()

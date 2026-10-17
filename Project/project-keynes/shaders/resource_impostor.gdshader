@@ -55,6 +55,18 @@ uniform vec2 luma_range = vec2(0.24, 0.64);
 uniform float area_feather = 0.55;
 uniform float area_edge_noise = 0.35;
 uniform float plant_cluster_density = 1.30;
+// Generated bitmap fauna (tools/resource_art): 4x2 top-down sprites per species, drawn
+// as small realistic herds/shoals. Plants are NOT drawn here: they are continuous wild
+// communities in ResourceGroundCover. Style LUT texel 2 = (unused, fauna layer+1, count).
+uniform sampler2DArray art_fauna : filter_linear_mipmap, repeat_disable;
+uniform bool art_fauna_bound = false;
+uniform float art_animal_shadow = 0.35;
+uniform int herd_size_min = 3;
+uniform int herd_size_max = 9;
+// Body length of one animal, in hexes; herds fade out below animal_min_pixels.
+uniform float animal_length_hex = 0.11;
+uniform float animal_min_pixels = 3.0;
+uniform float fish_length_hex = 0.035;
 #define VT_USE_HORIZON
 #define VT_USE_TERRAIN_NORMAL
 #define VT_USE_HEIGHT
@@ -86,6 +98,7 @@ vec2 wrap_map_uv(vec2 uv) { return visual_static_wrap_uv(uv); }
 varying flat vec4 v_style;
 varying flat vec4 v_climate;
 varying flat vec4 v_data;
+varying flat vec4 v_art;
 varying flat vec2 v_sub;
 varying flat vec2 v_ecology;
 varying flat vec3 v_light;
@@ -103,6 +116,8 @@ varying vec2 v_world_position;
 varying flat vec2 v_kind;
 // Light transmission through water for submerged cues (1 on land).
 varying flat float v_transmission;
+// World-space radius of the instance quad (for real-scale sprites).
+varying flat float v_radius_world;
 
 float rv_hash(float n) {
 	return fract(sin(n * 12.9898 + 78.233) * 43758.5453);
@@ -142,7 +157,9 @@ void vertex() {
 	float style = INSTANCE_CUSTOM.g;
 	v_style = texture(style_lut, vec2(0.25, (style + 0.5) / 64.0));
 	vec4 meta = texture(style_lut, vec2(0.75, (style + 0.5) / 64.0));
+	v_art = texture(style_lut, vec2(0.625, (style + 0.5) / 64.0));
 	float radius_px_world = length(MODEL_MATRIX[0].xy) * camera_zoom;
+	v_radius_world = length(MODEL_MATRIX[0].xy);
 	float radius_px = mix(radius_px_world, badge_px * 0.5, clamp(lens_amount, 0.0, 1.0));
 	v_data = vec4(meta.r, meta.g, INSTANCE_CUSTOM.b, live);
 	v_transmission = COLOR.g;
@@ -181,6 +198,12 @@ void vertex() {
 	float lens = clamp(lens_amount, 0.0, 1.0);
 	float lod = smoothstep(fade_pixels, simple_pixels, radius_px_world);
 	float rank_alpha = mix(step(COLOR.r, 0.1), 1.0, smoothstep(simple_pixels, detailed_pixels, radius_px_world));
+	if (meta.g > 0.5 && meta.g < 1.5 && v_art.y > 0.5 && art_fauna_bound) {
+		// Herds read at real scale: fade by the on-screen length of one animal.
+		float body_px = animal_length_hex * hex_size * camera_zoom;
+		lod = smoothstep(animal_min_pixels * 0.6, animal_min_pixels, body_px);
+		rank_alpha = 1.0;
+	}
 	float world_vis = lod * rank_alpha * step(kind, 3.5);
 	// Lens badges: only each cell's primary resource (or the filtered one), thinned
 	// by on-screen cell density so zoomed-out badges never pile into a blob. A
@@ -199,6 +222,88 @@ void vertex() {
 #include "res://shaders/include/resource_solid_forms.gdshaderinc"
 #include "res://shaders/include/resource_topdown_forms.gdshaderinc"
 #include "res://shaders/include/resource_decal_forms.gdshaderinc"
+
+float rv_h1(float x) {
+	return fract(sin(x * 127.1 + 311.7) * 43758.5453);
+}
+
+// A realistic herd/shoal of bitmap animals inside the instance quad, at true scale:
+// `body_hex` is one animal's length in hexes. Animals graze in a loose spiral cluster
+// facing roughly the same way. Straight RGB + coverage; `sh` = soft contact shadow.
+vec4 rv_herd(vec2 p, float layer, float count, float seed, float band, float t, float motion_amp,
+		float body_hex, float spread_scale, out float sh) {
+	float hmin = float(clamp(herd_size_min, 1, 9));
+	float hmax = float(clamp(herd_size_max, herd_size_min, 9));
+	float pick = clamp(band / 4.0, 0.0, 1.0) * 0.5 + rv_h1(seed * 31.0) * 0.5;
+	int n = int(clamp(hmin + floor(pick * (hmax - hmin + 1.0)), hmin, hmax));
+	float cnt = clamp(count, 1.0, 8.0);
+	// Sprite cell spans 2*sc in p units; the animal fills ~94% of its 128px cell.
+	float sc = body_hex * hex_size / max(v_radius_world, 0.001) * 0.535;
+	float spread = clamp(sc * 1.45 * sqrt(float(n)) * spread_scale, sc, 1.0 - sc);
+	float lod = clamp(log2(128.0 / max(2.0 * sc * v_rank.y, 1.0)), 0.0, 5.0);
+	vec2 sun_away = -normalize(v_sun.xy + vec2(0.0001));
+	float herd_heading = rv_h1(seed * 11.3) * 6.2832;
+	vec3 pm = vec3(0.0);
+	float pa = 0.0;
+	sh = 0.0;
+	for (int i = 0; i < 9; i++) {
+		if (i >= n) {
+			break;
+		}
+		float fi = float(i);
+		float h1 = rv_h1(seed * 91.7 + fi * 13.1 + 1.0);
+		float h2 = rv_h1(seed * 53.3 + fi * 7.7 + 2.0);
+		float h3 = rv_h1(seed * 17.9 + fi * 3.3 + 3.0);
+		float h4 = rv_h1(seed * 29.1 + fi * 5.9 + 4.0);
+		// Golden-angle spiral with jitter: a loose herd, no two animals on one spot.
+		float ang = fi * 2.39996 + seed * 6.0 + (h1 - 0.5) * 0.9;
+		vec2 c = vec2(cos(ang), sin(ang)) * spread * sqrt((fi + 0.5 + (h2 - 0.5) * 0.6) / float(n));
+		float s_i = sc * (0.88 + 0.22 * h3);
+		// Graze-and-walk: each animal loops a small path around its spot. u(t) = wt - sin(wt)
+		// has speed w(1 - cos wt), so it periodically stops to graze, then ambles on.
+		float w = (0.22 + 0.16 * h2) * motion_amp;
+		float ph = h1 * 6.2832;
+		float u = t * w - sin(t * w + ph) + ph;
+		float speed = 1.0 - cos(t * w + ph);
+		float loop_r = sc * (0.55 + 0.45 * h3) * step(0.001, motion_amp);
+		float dir_sign = h4 < 0.5 ? -1.0 : 1.0;
+		vec2 lp = vec2(cos(u * dir_sign), sin(u * dir_sign) * 0.55);
+		vec2 lt = vec2(-sin(u * dir_sign), cos(u * dir_sign) * 0.55) * dir_sign;
+		mat2 hr = rs_rot(herd_heading);
+		c += hr * lp * loop_r;
+		// Face the direction of travel; while grazing, drift back to the herd heading.
+		vec2 tang = hr * lt;
+		float travel = atan(tang.x, tang.y);
+		float idle = herd_heading + (h4 - 0.5) * 1.2;
+		float walk = smoothstep(0.25, 0.9, speed) * step(0.001, motion_amp);
+		float dh = mod(travel - idle + 3.14159, 6.28318) - 3.14159;
+		float heading = idle + dh * walk;
+		// Stride: a gentle fore-aft stretch and sway while walking; head-down dip while grazing.
+		float stride = sin(t * 7.0 + ph * 3.0) * walk;
+		float graze = (1.0 - walk) * step(0.001, motion_amp) * (0.5 + 0.5 * sin(t * 0.9 + ph * 2.0));
+		vec2 body_scale = vec2(1.0 + 0.03 * stride, 1.0 - 0.04 * abs(stride) - 0.06 * graze);
+		mat2 rot = rs_rot(heading);
+		vec2 q = rot * (p - c) / s_i / body_scale;
+		q.x += 0.025 * stride * q.y;
+		int idx = min(int(floor(rv_h1(seed * 7.3 + fi * 2.1 + 5.0) * cnt)), int(cnt) - 1);
+		vec2 cell_origin = vec2(float(idx % 4), float(idx / 4));
+		vec2 suv = vec2(q.x, -q.y) * 0.5 + 0.5;
+		vec2 qs = rot * (p - c - sun_away * s_i * 0.22) / s_i;
+		vec2 suv_s = vec2(qs.x, -qs.y) * 0.5 + 0.5;
+		if (all(greaterThanEqual(suv_s, vec2(0.0))) && all(lessThanEqual(suv_s, vec2(1.0)))) {
+			float sa = textureLod(art_fauna, vec3((cell_origin + suv_s) / vec2(4.0, 2.0), layer), lod + 1.0).a;
+			sh = max(sh, sa);
+		}
+		if (any(lessThan(suv, vec2(0.0))) || any(greaterThan(suv, vec2(1.0)))) {
+			continue;
+		}
+		vec4 tex = textureLod(art_fauna, vec3((cell_origin + suv) / vec2(4.0, 2.0), layer), lod);
+		float a = tex.a;
+		pm = pm * (1.0 - a) + tex.rgb * a;
+		pa = pa * (1.0 - a) + a;
+	}
+	return vec4(pm / max(pa, 0.0001), pa);
+}
 
 void fragment() {
 	int form = int(v_data.x + 0.5);
@@ -227,7 +332,9 @@ void fragment() {
 	vec3 subj_rgb = vec3(0.0);
 	float subj_alpha = 0.0;
 	float subj_combined = 0.0;
-	if (kind == 1 || lens > 0.001) {
+	bool art_animal = lens < 0.001 && kind == 1 && family == 1 && art_fauna_bound && v_art.y > 0.5;
+	bool art_fish = lens < 0.001 && kind == 3 && family == 3 && art_fauna_bound && v_art.y > 0.5;
+	if ((kind == 1 && !art_animal) || lens > 0.001) {
 		float form_zoom = mix(1.0, 1.02, lens);
 		vec2 pf = p * form_zoom;
 		float px = px_px * form_zoom;
@@ -369,6 +476,29 @@ void fragment() {
 			// 地力以健康草被表达，干旱/低活力转黄、退隐，积雪下不铺绿色地毯。
 			world_a *= smoothstep(vitality_dead_threshold, 0.65, v_climate.a) * (1.0 - snow * 0.80);
 		}
+	} else if (art_animal) {
+		float sh = 0.0;
+		vec4 herd = rv_herd(p, v_art.y - 1.0, v_art.z, seed, v_rank.x, motion, animal_motion * live, animal_length_hex, 1.0, sh);
+		vec3 col = herd.rgb;
+		float grey_albedo = dot(col, vec3(0.299, 0.587, 0.114));
+		col = mix(vec3(grey_albedo), col, palette_saturation);
+		col = mix(col, rv_compress_luma(col), 0.35);
+		col = mix(col, vec3(0.84, 0.88, 0.92), snow * 0.18);
+		col *= flat_light;
+		float grey = dot(col, vec3(0.299, 0.587, 0.114));
+		col = mix(vec3(grey) * 0.85, col, mix(0.25, 1.0, live));
+		float shadow = sh * art_animal_shadow * (1.0 - herd.a);
+		vec3 shadow_tint = vec3(0.09, 0.10, 0.08) * flat_light;
+		float combined = herd.a + shadow;
+		world_rgb = mix(shadow_tint, col, herd.a / max(combined, 0.0001));
+		world_a = combined;
+	} else if (art_fish) {
+		float sh = 0.0;
+		vec4 shoal = rv_herd(p, v_art.y - 1.0, v_art.z, seed, v_rank.x, motion * 1.6, 1.8 * live, fish_length_hex, 0.8, sh);
+		vec3 col = mix(shoal.rgb, vec3(0.16, 0.30, 0.36), 0.40) * flat_light;
+		float strength = clamp(0.55 + v_rank.x * 0.15, 0.55, 1.0);
+		world_rgb = col;
+		world_a = shoal.a * clamp(submerged_opacity * 1.5, 0.0, 0.85) * strength * mix(0.6, 1.0, live) * clamp(v_transmission, 0.0, 1.0);
 	} else if (kind == 3) {
 		vec4 w = rd_submerged(p, form, family, sub_style, seed, motion);
 		world_rgb = w.rgb * flat_light;
