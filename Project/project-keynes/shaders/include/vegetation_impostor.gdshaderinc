@@ -3,9 +3,10 @@
 // family batches built by VegetationFamilyLayer).
 //
 // The instance mesh is a single quad. Everything that only depends on the
-// instance (cell climate, phenology palette, sun, terrain normal, horizon and
+// instance (cell climate, phenology palette, sun, horizon and
 // sky visibility) is evaluated in the vertex stage and passed flat; the
 // fragment stage draws the top-down form from vegetation_forms and lights it.
+// 高档贴地植被按片元世界位置采样地表法线；树冠及其他档位保留簇中心法线。
 //
 // custom.a packs sub_form + (count - 0.5) / 32 (see ShrubLayer.pack_form).
 // Family batches add style_id * 4 and read per-style shading from the style
@@ -13,6 +14,11 @@
 
 uniform sampler2D dyn_lut : filter_nearest, repeat_disable;
 uniform sampler2D eco_lut : filter_nearest, repeat_disable;
+
+// 移动高档也执行法线着色；只恢复植被这条路径，不改变 horizon 或其他移动特效开关。
+#if !defined(PK_SKIP_VEGETATION_SHADING) || defined(PK_QUALITY_HIGH)
+#define VEG_TERRAIN_SHADING
+#endif
 
 uniform vec2 lut_dims = vec2(1.0, 1.0);
 uniform vec2 world_origin = vec2(0.0);
@@ -125,6 +131,9 @@ varying flat vec4 v_g;  // instance x axis, terrain normal xy
 varying flat vec4 v_h;  // sun direction, valley ao
 varying flat vec4 v_i;  // local day, sun high, moon, horizon visibility
 varying flat vec4 v_j;  // bent normal, sky visibility
+#ifdef VEG_TERRAIN_SHADING
+varying vec2 v_ground_uv; // 不在顶点 wrap，避免跨地图接缝时插值穿过整张图。
+#endif
 
 float shrub_decode_height(vec2 uv) {
 	vec2 rg = visual_sample_height(uv).rg;
@@ -299,6 +308,11 @@ bool veg_form_is_canopy(int form) {
 	return form == VF_BROADLEAF || form == VF_CONIFER || form == VF_PALM || form == VF_SNAG;
 }
 
+bool veg_form_follows_ground(int form) {
+	return form == VF_GRASS || form == VF_LICHEN || form == VF_PEAT_TUFT
+		|| form == VF_FLOWER || form == VF_SHRUB;
+}
+
 void vertex() {
 	float form_f = float(detail_form);
 	float wind_s = wind_strength;
@@ -387,6 +401,10 @@ void vertex() {
 	scale *= 1.0 - bury * 0.36;
 	bool hidden = body_alpha < disappear_alpha_threshold;
 	VERTEX *= hidden ? 0.0 : scale;
+#ifdef VEG_TERRAIN_SHADING
+	v_ground_uv = ((MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy - world_origin)
+		/ max(world_size, vec2(0.00001));
+#endif
 
 	vec2 wdir = normalize(wind_dir + vec2(0.0001, 0.0));
 	vec2 wdir_local = vec2(dot(wdir, bx), dot(wdir, by));
@@ -408,11 +426,16 @@ void vertex() {
 
 	vec2 terrain_n = vec2(0.0);
 	float valley_ao = 0.0;
-#ifndef PK_SKIP_VEGETATION_SHADING
-	if (terrain_normal_tex_bound) {
+#ifdef VEG_TERRAIN_SHADING
+	bool pixel_terrain = veg_shade_quality >= 2 && veg_form_follows_ground(form);
+	bool terrain_shading = true;
+#ifdef PK_SKIP_VEGETATION_SHADING
+	terrain_shading = pixel_terrain;
+#endif
+	if (terrain_shading && terrain_normal_tex_bound && !pixel_terrain) {
 		terrain_n = (visual_sample_terrain_normal(uv).rg * 2.0 - 1.0) * terrain_normal_influence;
 	}
-	if (veg_shade_quality >= 2 && terrain_valley_ao_strength > 0.0 && !gi_lut_bound) {
+	if (terrain_shading && veg_shade_quality >= 2 && terrain_valley_ao_strength > 0.0 && !gi_lut_bound) {
 		vec2 texel = 3.0 / hm_resolution;
 		float hc = shrub_decode_height(uv);
 		float hn = (shrub_decode_height(uv + vec2(texel.x, 0.0))
@@ -489,7 +512,13 @@ void fragment() {
 	}
 
 	vec3 n_loc = s.n;
-	vec3 N = normalize(vec3(n_loc.x * bx + n_loc.y * by + v_g.zw * n_loc.z, n_loc.z));
+	vec2 terrain_n = v_g.zw;
+#ifdef VEG_TERRAIN_SHADING
+	if (veg_shade_quality >= 2 && veg_form_follows_ground(form) && terrain_normal_tex_bound) {
+		terrain_n = (visual_sample_terrain_normal(v_ground_uv).rg * 2.0 - 1.0) * terrain_normal_influence;
+	}
+#endif
+	vec3 N = normalize(vec3(n_loc.x * bx + n_loc.y * by + terrain_n * n_loc.z, n_loc.z));
 	vec3 leaf = v_e.rgb;
 	leaf *= 0.90 + 0.20 * fract(s.elem * 13.7 + ctx.seed);
 	float red_pick = smoothstep(0.40, 0.70, fract(s.elem * 7.31 + ctx.seed * 3.3));
@@ -516,8 +545,10 @@ void fragment() {
 	}
 	vec3 rgb;
 	bool use_shading = shading_enabled > 0.5;
-#ifdef PK_SKIP_VEGETATION_SHADING
+#ifndef VEG_TERRAIN_SHADING
 	use_shading = false;
+#elif defined(PK_SKIP_VEGETATION_SHADING)
+	use_shading = use_shading && veg_shade_quality >= 2 && veg_form_follows_ground(form);
 #endif
 	if (use_shading) {
 		float wrap = 0.30 * s.leaf_w;

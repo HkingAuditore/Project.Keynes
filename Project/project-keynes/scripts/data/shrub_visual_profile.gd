@@ -311,7 +311,7 @@ func resolved_visual_form() -> int:
 # ─────────────────────────────────────────────────────────────────────────
 @export_group("Shading (Normal-assisted)")
 @export var shading_enabled: bool = true
-# 地形宏观法线对整株倾斜的影响（让站在坡上的植被随坡面受光），未烘焙法线时自动退化。
+# 地表坡度的受光影响：树冠共享中心法线，高档贴地植被逐像素采样；未烘焙时退回自身法线。
 @export_range(0.0, 1.5, 0.01) var terrain_normal_influence: float = 0.65
 # billboard 伪法线强度：越大左右/上下的体积明暗越强（迎光面亮、背光面暗）。
 @export_range(0.0, 2.0, 0.01) var pseudo_normal_strength: float = 0.85
