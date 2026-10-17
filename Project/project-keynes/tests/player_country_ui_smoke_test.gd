@@ -106,9 +106,17 @@ func _run() -> void:
 	_expect("ideology empty state explains the first draw",
 		ideology_workspace != null and bool(ideology_workspace.call("empty_state_visible"))
 		and not String(ideology_workspace.call("hint_text")).contains("暂不可用"))
-	_expect("ideology draw action is enabled with starting points",
-		ideology_workspace != null and not bool(ideology_workspace.call(
-			"offer_button_disabled")))
+	# Ideology points start at zero and only accrue from growth, so a fresh
+	# session shows a disabled draw with the cost explained, plus open niches.
+	_expect("ideology draw waits for accrued points on a fresh session",
+		ideology_workspace != null and bool(ideology_workspace.call(
+			"offer_button_disabled"))
+		and String(ideology_workspace.call("points_text")) == "0.00"
+		and String(ideology_workspace.call("hint_text")).contains("理念点"))
+	_expect("ideology deck table shows open and technology-locked niches",
+		ideology_workspace != null
+		and int(ideology_workspace.call("niche_count", 1)) >= 2
+		and int(ideology_workspace.call("niche_count", 2)) >= 1)
 
 	ui.open_country_section("economy")
 	await process_frame

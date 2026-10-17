@@ -291,6 +291,42 @@ void country_core_refresh_discovery(
     }
 }
 
+void country_core_mark_research_active(
+        RuntimeCountryPodSnapshot &state, int32_t slot) {
+    if (!state.research_active_index_valid || slot < 0 ||
+        slot >= static_cast<int32_t>(state.country_count) ||
+        static_cast<size_t>(slot) >= state.country_active.size() ||
+        state.country_active[static_cast<size_t>(slot)] == 0)
+        return;
+    auto &slots = state.research_active_country_slots;
+    const auto it = std::lower_bound(slots.begin(), slots.end(), slot);
+    if (it == slots.end() || *it != slot) slots.insert(it, slot);
+}
+
+void country_core_repair_research_active_index(
+        RuntimeCountryPodSnapshot &state) {
+    if (!state.research_active_index_valid) return;
+    for (uint32_t slot = 0; slot < state.country_count; ++slot) {
+        bool has_work = false;
+        const size_t queue_base = static_cast<size_t>(slot) *
+            RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT;
+        for (uint32_t domain = 0;
+             domain < RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT && !has_work; ++domain) {
+            const size_t lane = queue_base + domain;
+            has_work = lane < state.research_queue_lengths.size() &&
+                state.research_queue_lengths[lane] != 0;
+        }
+        const size_t word_base = static_cast<size_t>(slot) * state.technology_words;
+        for (uint32_t word = 0; word < state.technology_words && !has_work; ++word) {
+            const size_t index = word_base + word;
+            has_work = index < state.country_pending_technologies.size() &&
+                state.country_pending_technologies[index] != 0;
+        }
+        if (has_work)
+            country_core_mark_research_active(state, static_cast<int32_t>(slot));
+    }
+}
+
 bool country_core_apply_command(
         RuntimeCountryPodSnapshot &state,
         const RuntimeCountryPodCatalog &catalog,
@@ -499,6 +535,7 @@ bool country_core_apply_command(
             const uint64_t bit = uint64_t{1} << (command.aux % 64);
             if ((state.country_technologies[word] & bit) == 0) {
                 state.country_pending_technologies[word] |= bit;
+                country_core_mark_research_active(state, slot);
                 ++state.country_state_version[static_cast<size_t>(slot)];
                 RuntimeDomainIntent intent;
                 intent.source_domain = static_cast<uint16_t>(RuntimeDomainId::COUNTRY);
@@ -612,6 +649,7 @@ bool country_core_apply_command(
                 state.research_queues[base + static_cast<size_t>(i - 1)];
         state.research_queues[base + static_cast<size_t>(insert_at)] = command.aux;
         ++length;
+        country_core_mark_research_active(state, slot);
         state.research_deferred_points[static_cast<size_t>(slot)] = 0;
         ++state.country_state_version[static_cast<size_t>(slot)];
         plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_STATE;

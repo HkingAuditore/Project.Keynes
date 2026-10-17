@@ -45,6 +45,8 @@ $required = @(
     'Project\project-keynes\tests\ideology_runtime_test.gd',
     'Project\project-keynes\tests\ideology_opinion_synergy_test.gd',
     'Project\project-keynes\tests\ideology_content_test.gd',
+    'Project\project-keynes\tests\ideology_draw_flow_test.gd',
+    'Project\project-keynes\tools\ideology\generate_ideology_catalog.py',
     'docs\cpp-dots-runtime\native-ideology-runtime.md'
 )
 foreach ($relative in $required) {
@@ -61,7 +63,7 @@ try {
 
     if (Get-Command rg -ErrorAction SilentlyContinue) {
         Write-Host '[ideology] contract symbol check'
-        & rg -n 'enqueue_external_effect_batch_pod|CountryClassOpinionSnapshot|SAVE_SCHEMA_VERSION|explain_ideologies|economic_order' `
+        & rg -n 'enqueue_external_effect_batch_pod|CountryClassOpinionSnapshot|SAVE_SCHEMA_VERSION|explain_ideologies|economic_order|point_gain_factor|REROLL' `
             'gdext/src/ideology_runtime.cpp' `
             'gdext/src/ideology_runtime.h' `
             'Project/project-keynes/scripts/ideology/ideology_catalog.gd' `
@@ -98,7 +100,10 @@ if ($Godot) {
     $tests = @(
         'res://tests/ideology_content_test.gd',
         'res://tests/ideology_runtime_test.gd',
-        'res://tests/ideology_opinion_synergy_test.gd'
+        'res://tests/ideology_opinion_synergy_test.gd',
+        'res://tests/ideology_draw_flow_test.gd',
+        'res://tests/ideology_progression_test.gd',
+        'res://tests/runtime_ideology_save_roundtrip_test.gd'
     )
     foreach ($script in $tests) {
         Write-Host "[ideology] $script"

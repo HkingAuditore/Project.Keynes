@@ -1,0 +1,30 @@
+[remap]
+
+importer="2d_array_texture"
+type="CompressedTexture2DArray"
+uid="uid://ddsdt2jkihf7l"
+path.s3tc="res://.godot/imported/cover_albedo.png-8a7464eff23edea0582f5bd5fcfeb59d.s3tc.ctexarray"
+path.etc2="res://.godot/imported/cover_albedo.png-8a7464eff23edea0582f5bd5fcfeb59d.etc2.ctexarray"
+metadata={
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
+}
+
+[deps]
+
+source_file="res://assets/textures/resource_art/cover_albedo.png"
+dest_files=["res://.godot/imported/cover_albedo.png-8a7464eff23edea0582f5bd5fcfeb59d.s3tc.ctexarray", "res://.godot/imported/cover_albedo.png-8a7464eff23edea0582f5bd5fcfeb59d.etc2.ctexarray"]
+
+[params]
+
+compress/mode=2
+compress/high_quality=false
+compress/lossy_quality=0.7
+compress/uastc_level=0
+compress/rdo_quality_loss=0.0
+compress/hdr_compression=1
+compress/channel_pack=0
+mipmaps/generate=true
+mipmaps/limit=-1
+slices/horizontal=1
+slices/vertical=16

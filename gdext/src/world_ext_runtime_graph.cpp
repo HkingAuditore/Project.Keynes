@@ -335,6 +335,18 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
         }
     }
 
+    // Hand every new committed Economy opinion revision to the worker before
+    // the budgeted loop. The Economy capture above can spend the whole pulse
+    // budget; a publish placed only inside the loop then never runs and the
+    // worker Ideology stage stays parked on ideology_opinion_snapshot_missing.
+    if (_ideology_runtime != nullptr && _economy_runtime != nullptr &&
+        _runtime_host != nullptr &&
+        static_cast<NativeEconomyRuntime *>(_economy_runtime)
+                ->country_class_opinion_snapshot().revision !=
+            _ideology_opinion_published_revision) {
+        publish_ideology_worker_inputs();
+    }
+
     // Stable order mirrors the existing GDScript ACK chain and scheduler
     // priorities. Each runtime owns its own persistent range cursor.
     while (iterations++ < 64 && !over_budget()) {

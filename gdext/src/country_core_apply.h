@@ -26,6 +26,15 @@ void country_core_refresh_discovery(
     RuntimeCountryPodSnapshot &state,
     const RuntimeCountryPodCatalog &catalog, int32_t slot);
 
+// Keeps the sorted POD research index aligned with commands that create work.
+void country_core_mark_research_active(
+    RuntimeCountryPodSnapshot &state, int32_t slot);
+
+// Repairs captures/saves whose index omitted countries with queued or pending
+// research. The index is a scheduling cache and is not part of business hash.
+void country_core_repair_research_active_index(
+    RuntimeCountryPodSnapshot &state);
+
 // Shared worker command formula. NativeCountryRuntime keeps a staged SoA
 // apply for large territory batches; Host/POD plan_day must call this.
 bool country_core_apply_command(

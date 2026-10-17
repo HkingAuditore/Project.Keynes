@@ -73,6 +73,7 @@ shader_type canvas_item;
 render_mode blend_mix, unshaded;
 
 #include "res://shaders/include/shader_quality.gdshaderinc"
+#define VF_CROWN_ART
 #include "res://shaders/include/vegetation_impostor.gdshaderinc"
 """
 
@@ -1391,6 +1392,7 @@ func _ensure_resources() -> void:
 		_material.set_shader_parameter("day_phase", 0.25)
 		_material.set_shader_parameter("axial_tilt_rad", 0.41)
 		_material.set_shader_parameter("day_night_enabled", true)
+		_bind_crown_art(_material)
 		_mmi.material = _material
 	if _shadow_material == null:
 		var shadow_shader := _compiled_shader(_shader_quality_define_prefix() + _SHADOW_SHADER_CODE)
@@ -4632,6 +4634,16 @@ static func _compiled_shader(code: String) -> Shader:
 	shader.code = code
 	_compiled_shader_variants[code] = shader
 	return shader
+
+# Generated single-tree crown sprites (resource_art/crown_atlas); the body shader
+# falls back to procedural crowns when the art is missing.
+static func _bind_crown_art(mat: ShaderMaterial) -> void:
+	var art := ResourceArtLibrary.shared()
+	var bound := art.crown != null and art.crown_normal != null
+	mat.set_shader_parameter("crown_art_bound", bound)
+	if bound:
+		mat.set_shader_parameter("crown_art", art.crown)
+		mat.set_shader_parameter("crown_normal_art", art.crown_normal)
 
 func setup_cooperative(map: MapData, world: WorldData, bounds: Rect2, hex_size: float, visual_quality: int = 1) -> void:
 	_map = map

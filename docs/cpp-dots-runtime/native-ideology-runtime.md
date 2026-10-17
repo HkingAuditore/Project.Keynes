@@ -22,17 +22,34 @@ stage is the **sole Ideology writer**:
   `NativeIdeologyRuntime::apply_pod_snapshot`, so UI, `explain`, receipts and
   `PKID` keep reading one runtime. The apply is non-blocking and generation
   gated, so intermediate generations may be skipped.
-- Transition intents address `EFFECT`. With EFFECT granted in the same session
-  the worker ACKs them in-worker right after the Effect stage
-  (`ack_ideology_intents_in_worker`); the main-thread
+- Transition intents address `EFFECT`. The POD catalog (ABI 3) carries the
+  per-level and per-synergy Modifier template rows (definition key hash,
+  magnitude, reversible flag). When IDEOLOGY and MODIFIER are both granted in
+  ACTIVE mode, `stage_ideology_modifier_commands` turns each transition into one
+  atomic Modifier POD batch: every row is resolved first, and one unresolved
+  definition rejects the whole batch with zero submission. After the Modifier
+  stage `settle_ideology_modifier_acks` derives the `EFFECT`-tagged ACK from the
+  real batch result (`OK` only when the batch committed; a failed Modifier day
+  resubmits next day; a rejected batch rolls the ideology state back through the
+  existing contract). The old auto-`OK` `ack_ideology_intents_in_worker` bridge
+  is gone. Without the Modifier grant the main-thread
   `poll_ideology_worker_intent` / `submit_ideology_worker_ack` pump remains the
-  protocol path and covers an IDEOLOGY-only grant. Either way the ACK carries
-  the `EFFECT` domain tag, which is the only domain the authority accepts.
-
-**Known follow-up**: the POD catalog does not carry effect templates, so
-UniqueSource Modifier template replay cannot be reconstructed from POD intents.
-This is the same class of gap Ideology already had under F8 Effect ACTIVE, not a
-G8 regression.
+  protocol path.
+- The worker freezes `country.ideology.point_gain_factor` from the last
+  committed Modifier snapshot into the opinion input; Ideology never reads a
+  live Modifier value.
+- Opinion hand-off: the worker stage cannot plan without a published Economy
+  class-opinion snapshot. `DCWorldExt` remembers the last published revision
+  and republishes whenever Economy's committed revision differs, both before
+  the budgeted runtime-graph loop and in `apply_runtime_ideology_snapshot`
+  (under the economy boundary lock). A publish placed only inside the graph
+  loop starves when the Economy capture consumes the pulse budget, leaving the
+  stage parked on `ideology_opinion_snapshot_missing` for the whole session.
+- Generation cursor: each worker lifetime numbers snapshots from 1.
+  `start_runtime_worker` calls `reset_pod_snapshot_cursor()` and
+  `WorldRuntimeHost` resets `_ideology_worker_snapshot_generation`, otherwise a
+  restarted worker's snapshots are rejected as
+  `ideology_pod_snapshot_generation_regression`.
 
 ## Worker shadow authority (G2-G7)
 
@@ -104,9 +121,14 @@ transition is cleared.
 ## Catalog and facade
 
 `IdeologyCatalog` compiles stable Resource keys to dense ideology/level rows,
+school id / rarity / level labels, rarity draw weights,
 requirement CSR columns, effect templates, directional class-stance CSR,
 exclusion groups, synergy requirement rows, and the
-`ideology_id -> affected synergy_ids` reverse CSR. Adoption, repeal, and
+`ideology_id -> affected synergy_ids` reverse CSR. A school resonance is a
+synergy whose requirement rows list every card of that school and whose
+`min_count` is 2 or 4 (named synergies use `min_count == requirement_count`),
+so the same reverse CSR only visits the resonances of the school touched by a
+mutation. Adoption, repeal, and
 promotion have independent support thresholds and optional critical-class
 floors. Runtime support is
 `Σ(class_influence × directional_stance) / Σ(class_influence)`; absent stance
@@ -119,30 +141,88 @@ Definitions remain limited to 64 levels because entry confirmation is a packed
 Player writes enter through `PlayerController`, with producer/sequence
 high-water idempotency and bounded per-command receipts. GDScript reads only
 through `IdeologyFacade`. `get_ideology_snapshot()` always returns the same
-column set, including `ideology_slots_capacity`, `national_spirit_slots_capacity`,
-`offer_cost_q16`, and `starting_points_q16`. A country that has not yet received
-an ideology command is `materialized=false` and previews catalog starting points
-without creating a country row. The first command materializes that row and
-endows `starting_points_q16` from the catalog profile. `explain_ideologies()`
+column set, including per-country `ideology_slots_capacity` /
+`national_spirit_slots_capacity` (plus `*_capacity_max`), `next_offer_cost_q16`,
+`reroll_cost_q16`, `draw_sequence`, `point_ledger_*`, `point_baseline_ready`,
+`lifetime_points_q16`, `point_history_q16` (32-entry ring), `active_synergy_ids`,
+and `capacity_unlock_*` rows (technology key, deltas, owned). A country that has
+not yet received an ideology command is `materialized=false`; the catalog now
+starts every country at 0 points. `preview_ideology_offer_eligibility(handle)`
+is a read-only native query returning `can_draw`, current cost, eligible pool
+size and a reason code, used by `PlayerController` before it advances time.
+`explain_ideologies()`
 returns packed support, threshold, blocker, class-contribution, eligibility, and
 hypothetical synergy columns for all visible ideas in one native call. Static
 catalog metadata is separate and UI reuses live explain data while support
 revision and structural snapshot signature are unchanged.
 
-The production catalog authors four distinct UniqueSource Country modifiers
-instead of a shared `country.economic_mobilization` stub. Equipping applies
-full Q16 magnitude (`65536`); understanding the second level replaces the
-same definition at double magnitude (`131072`). Synergies add a third
-modifier while both required ideas remain equipped or promoted:
+## Content (default catalog)
 
-| 道路 / 联动 | 装备后（1 级） | 满级（2 级） |
-| --- | --- | --- |
-| 共同体治理 | 农业部门产出 +6%；旱灾损失 −8% | 效果翻倍 |
-| 自由交换 | 国内贸易容量 +8%；贸易速度 +6% | 效果翻倍 |
-| 学识官署 | 知识部门产出 +6%；科学领域研究效率 +8% | 效果翻倍 |
-| 公民动员 | 国家建设耗时 −6%；全社会经济产出 +3% | 效果翻倍 |
-| 计划仓廪（治理+学识） | 旱灾损失 −10%；农业部门产出 +4% | — |
-| 特许开拓（交换+动员） | 国内贸易容量 +5%；国家建设耗时 −4% | — |
+The default catalog is generated by
+`Project/project-keynes/tools/ideology/generate_ideology_catalog.py`, which
+writes both `data/ideologies/default_ideology_catalog.tres` and the ideology
+rows of `data/modifiers/default_modifier_catalog.tres`. Edit the generator, not
+the `.tres` files.
+
+- 30 cards, 6 schools × 5: 农本 (agrarian), 商贸 (commerce), 学识 (learning),
+  动员 (mobilization), 工造 (industry), 调和 (harmony). Every card has its own
+  UniqueSource Country definition `ideology.<key>` built from existing country
+  stats; some cards carry a cost term (consumption, construction cost, resource
+  use).
+- Rarity common/rare/legendary with draw weights 120/60/20. Legendary and some
+  rare cards require an era technology. Exclusion groups: `economic_order`,
+  `labor_order`, `land_order`.
+- Three levels: understanding thresholds 0 / 4.0 / 12.0, daily understanding
+  0.125 / 0.0625 / 0. Each level replaces the same definition at Q16 magnitude
+  `65536` / `104858` / `144179` (1.0x / 1.6x / 2.2x).
+- 12 resonances `ideology.resonance.<school>.<2|4>` and 6 named cross-school
+  synergies `ideology.synergy.*` (计划仓廪, 特许开拓, 海商账簿, 工役营造, 工业科学,
+  河渠公社). Learning tier 4 raises `country.ideology.point_gain_factor`.
+- Slots start at 2 ideology / 1 national spirit. `capacity_unlocks` (technology
+  key + deltas) add ideology slots at Kingdom, Imperial, Enlightenment and
+  Industrial era technologies (max 6) and spirit slots at Imperial and Electric
+  (max 3). Capacity is cached per country from Country technology facts and is
+  rebuilt after restore.
+
+## Points, offers and reroll
+
+Ideology points accrue only from growth. Economy's committed class-opinion
+snapshot carries four extra per-country lanes collected in the existing
+`publish_country_development_facts` scan: population, installed buildings,
+period trade base value and period length (days). When the opinion revision
+advances, Ideology settles each country once (O(countries), no idea scan):
+
+```
+raw  = max(0, Δpopulation) × w_pop + max(0, Δbuildings) × w_build
+     + trade_value / period_days × w_trade
+gain = min(cap, raw × opinion_factor × point_gain_factor)
+```
+
+`opinion_factor = 0.5 + influence-weighted satisfaction`, clamped to
+[0.5, 1.5]. Weights and cap live in the profile (`point_*_weight_q16`,
+`point_gain_cap_q16`; default 0.02/resident, 0.25/building, 0.002/money of
+daily trade, cap 2.0 per period). The first observation only establishes the
+per-country baseline and yields nothing. The last source breakdown and a 32-gain
+history ring are kept per country for the UI ledger. Main (`NativeIdeologyRuntime`)
+and worker (`RuntimeIdeologyPodAuthority`) implement the same integer formula;
+`copy_opinion_snapshot` copies the new lanes.
+
+Every draw is paid. The first draw costs 6.0 and each later draw costs 20% more than the previous one (`offer_cost_growth_percent = 120`, Q16 rounded per step by the shared `runtime_ideology_offer_cost_q16` helper; `offer_cost_max_q16` is only a saturation guard). `REROLL_IDEOLOGY_OFFER`
+(opcode 10) replaces the active offer for 50% of the cost paid for that offer, is
+unlimited, and uses the same offer RNG stream.
+
+## Player draw flow
+
+`PlayerController` first calls `preview_offer_eligibility`; an ineligible draw
+reports the reason without advancing time. Otherwise it submits the command,
+records whether the clock was running and at what speed, locks player commands
+other than ideology choice and era reward, runs at 1x, and pauses as soon as a
+new `offer_active` generation appears (`ideology_offer_ready`). Choose and
+reroll use the same single-step flow; afterwards the previous clock state is
+restored. A rejected command or no settlement within 3 days unlocks, restores
+the clock and reports `ideology_draw_timeout`. The draw state is saved in
+`player_view`. Equip, unequip and promote stay next-day and the UI marks them
+as pending.
 
 `共同体治理` and `自由交换` remain exclusive via `economic_order`.
 `IdeologyCatalog.catalog_view()` joins those modifier terms into
@@ -153,19 +233,23 @@ hashes; existing PKCM/PKEF saves fail closed.
 
 ## Save and restore
 
-The worker mirror has an independent `IDP1` section and ABI. It is restored
+The worker mirror has an independent `IDP2` section and ABI. It is restored
 only after worker stop and catalog/bootstrap validation; checksum, catalog hash,
 state hash, shape, and version failures reject the complete worker state. The
 legacy composite diagnostic `PDP3` and synchronous `PKID` remain separate;
-absence of `IDP1` bootstraps default worker state and never derives it from
+absence of `IDP2` bootstraps default worker state and never derives it from
 `PKID`.
 
-`PKID v3` persists known/gate bitsets, sparse authoritative idea state,
-entered-level bits, points, offer and RNG state, producer high-water marks,
+`PKID v4` persists known/gate bitsets, sparse authoritative idea state,
+entered-level bits, points, offer and RNG state, draw count, point baselines,
+the last ledger breakdown and 32-entry history, producer high-water marks,
 queued commands, and pending Effect transaction IDs, plus each active idea's
 durable Effect binding ID/generation, level/location, template signature and
 program hash. Active/pending indices, slot caches, normalized class influence,
-and the Economy opinion snapshot are derived and rebuilt after restore. Settled
+technology-driven slot capacity, and the Economy opinion snapshot are derived
+and rebuilt after restore. `IDP2` mirrors the same new fields. PKID v3 and IDP1
+are rejected (fail-closed); the catalog hash change also rejects older PKCM and
+PKEF saves. Settled
 UI receipt history is not persisted. PKID is restored after `PKTR` and `PKEF`.
 A save without PKID
 migrates to empty ideology state; a present PKID must match its catalog hash and
@@ -189,10 +273,15 @@ workflow; this document remains the current-state contract.
 Run `tests/ideology_runtime_test.gd`,
 `tests/ideology_opinion_synergy_test.gd`,
 `tests/ideology_runtime_stress_test.gd`, and
-`tests/ideology_content_test.gd` plus Trigger/PlayerController fixtures and
+`tests/ideology_content_test.gd`, `tests/ideology_progression_test.gd`, `tests/ideology_draw_flow_test.gd`, and
+`tests/player_country_ui_smoke_test.gd` plus Trigger/PlayerController fixtures and
 `git diff --check`. Headless CSV exposes ideology phase timings and deterministic
 work counters, Effect ACK state, and class-opinion scan rows/time. The target
 gates are 64 countries × 12 active at ideology p95 ≤ 0.35 ms, each 512-country
 continuation slice p95 ≤ 0.42 ms with no native call above 1 ms, and a 6400-cell
 class-opinion median below 1 ms. Timing claims require same-machine, same debug
 DLL, fixed-seed evidence.
+
+`tests/ideology_workspace_screenshot_qa.gd` (rendered, without `--headless`)
+drives a real session through the worker path: grant, draw, present, choose,
+and writes 1280x720 / 1920x1080 PNGs to `res://tmp/ideology_workspace_qa/`.

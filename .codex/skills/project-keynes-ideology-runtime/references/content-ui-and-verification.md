@@ -13,25 +13,33 @@
 
 Default resources:
 
+- Generator (single source of truth):
+  `Project/project-keynes/tools/ideology/generate_ideology_catalog.py`
 - `Project/project-keynes/data/ideologies/default_ideology_catalog.tres`
 - UniqueSource Country modifiers in `data/modifiers/default_modifier_catalog.tres`
 - Shared Effect templates consumed by `EffectDomainCatalog` / `EffectCatalog`
 
-Four roads, one exclusion group, two synergies:
+30 cards in 6 schools of 5 (agrarian 农本, commerce 商贸, learning 学识,
+mobilization 动员, industry 工造, harmony 调和). The four original roads
+(`idea.collective_stewardship`, `idea.free_exchange`, `idea.scholar_office`,
+`idea.civic_muster`) remain. Each card: rarity 1..3 (weights 120/60/20), 3
+levels (thresholds 0/4.0/12.0, magnitudes `65536/104858/144179`), its own
+`ideology.<key>` definition, optional era technology and cost terms.
+Exclusion groups: `economic_order`, `labor_order`, `land_order`.
 
-| Stable ID | Display | Modifier key | Notes |
-|---|---|---|---|
-| `idea.collective_stewardship` | 共同体治理 | `ideology.collective_stewardship` | Exclusive `economic_order` |
-| `idea.free_exchange` | 自由交换 | `ideology.free_exchange` | Exclusive `economic_order` |
-| `idea.scholar_office` | 学识官署 | `ideology.scholar_office` | Forms 计划仓廪 with stewardship |
-| `idea.civic_muster` | 公民动员 | `ideology.civic_muster` | Forms 特许开拓 with free exchange |
-| `synergy.planned_granaries` | 计划仓廪 | `ideology.synergy.*` | Both members equipped or promoted |
-| `synergy.chartered_frontier` | 特许开拓 | `ideology.synergy.*` | Both members equipped or promoted |
+Synergies: 6 named cross-school pairs (计划仓廪, 特许开拓, 海商账簿, 工役营造,
+工业科学, 河渠公社 → `ideology.synergy.*`) and 12 school resonances
+(`ideology.resonance.<school>.<2|4>`). Learning tier 4 raises
+`country.ideology.point_gain_factor`. The generator also pins
+`CRITICAL_FLOORS` (critical-class floors) for selected cards.
 
-Level 1 applies Q16 `65536`. Level 2 replaces the same definition at `131072`.
-Synergies add a third UniqueSource while both requirements remain satisfied.
+Profile: 2/1 base slots growing to 6/3 through `capacity_unlocks`, 0 starting
+points, draw cost 6.0 then +20% per draw (geometric), reroll 50% of the paid draw, point weights
+0.02/resident, 0.25/building, 0.002/money of daily trade, cap 2.0 per period.
+
 `IdeologyCatalog.catalog_view()` joins Modifier presenter lines into
-`level_effect_lines` and synergy tooltips so the panel never reads Modifier
+`level_effect_lines`, `required_technology_names`, and synergy tooltips, and
+exposes `capacity_unlock_technology_names`, so the panel never reads Modifier
 stores.
 
 Do not restore a shared `country.economic_mobilization` stub. Changing
@@ -42,6 +50,8 @@ existing PKCM/PKEF saves fail closed on purpose.
 
 When adding or retuning an ideology:
 
+0. Edit `generate_ideology_catalog.py` and regenerate; do not hand-edit the
+   generated `.tres` rows.
 1. Author `IdeologyDefinition` with stable `idea.*` ID, 1–64 monotonic Q16
    levels, acquisition flags, slot costs, optional `exclusion_group`, and
    sparse `IdeologyClassStance` rows whose `class_id` exists in the economy
@@ -70,6 +80,7 @@ runtime bits flipped by `SET_IDEOLOGY_GATE`; they are not Country technology.
 Player opcodes enter only through `PlayerController`:
 
 - `ideology.offer`
+- `ideology.reroll`
 - `ideology.choose`
 - `ideology.equip`
 - `ideology.unequip`
@@ -79,11 +90,31 @@ Player opcodes enter only through `PlayerController`:
 `command_settled` for producer 1. GM/discover/grant/gate helpers exist on the
 facade for tests; do not wire them as unmarked player cheats in release UI.
 
-`IdeologyWorkspace` is Facade-only. It rebuilds rows when the compact native
-snapshot or support/explain signature changes. It must:
+Draw flow (`PlayerController`): preview eligibility first (no time advance
+when ineligible) → submit → remember clock running/speed → lock other player
+commands except ideology choice and era reward → run 1x → pause on the new
+`offer_active` generation and emit `ideology_offer_ready`. Choose and reroll
+reuse the flow, then restore the clock. Rejection or a 3-day timeout
+(`IDEOLOGY_DRAW_TIMEOUT_DAYS`) unlocks with a message. The state is saved in
+`player_view`; `ideology_draw_state_changed(phase, detail)` drives the UI.
+Equip/unequip/promote remain next-day with a pending stamp.
 
-- Show catalog slot capacities and starting-point preview for
-  `materialized=false` countries instead of `0/0` gauges.
+`IdeologyWorkspace` is Facade-only. It rebuilds rows when the compact native
+snapshot or support/explain signature changes. Layout: point scroll (points,
+next cost, last gain, ledger popup with source breakdown, multipliers and a
+32-strip history), offer stage (3 `IdeologyCard`s, reroll, dismiss), deck
+table (ideology niches, lacquer spirit niches, locked niches naming the
+required technology, resonance bar with 6 emblems and tier pips, red threads
+for active named synergies, dashed preview during drag), and a collection grid
+with school tabs and sort. Drag into a niche equips, drag out unequips, drag
+onto a spirit niche promotes after confirmation; buttons and focus navigation
+remain. Motion: unroll shader, 120 ms staggered drop + flip, rare gloss,
+legendary ink and seal, stamp punch + 4px shake on choose, fold and fly to the
+collection, torn-paper reroll; a reduce-motion toggle disables it. Art lives in
+`assets/ui/ideology_v1/` (see its README). It must:
+
+- Show catalog slot capacities for `materialized=false` countries instead of
+  `0/0` gauges.
 - Show `level_effect_lines` on offer cards and collection rows.
 - Confirm national-spirit promotion as irreversible.
 - Call `explain_ideologies()` once per revision, never per row.
@@ -101,8 +132,13 @@ Required focused fixtures:
 |---|---|
 | `tests/ideology_runtime_test.gd` | Discover/offer/equip ACK, promotion slot release, PKID/PKEF binding audit, late Effect attach, native-only transactions |
 | `tests/ideology_opinion_synergy_test.gd` | Committed class snapshot, directional/critical floors, exclusion, reverse-CSR synergy in one transaction |
-| `tests/ideology_content_test.gd` | Four unique modifier keys, presenter lines, empty-cabinet UI, offer effect text |
+| `tests/ideology_content_test.gd` | 30 cards / 6 schools / 3 levels / rarities, 18 synergy rows (2/4 resonances), thresholds, start=0, cost curve, slot unlocks, modifier keys, presenter lines |
+| `tests/ideology_draw_flow_test.gd` | Pause/step-one-day draw, offer-ready signal, clock restore, reject/timeout unlock, player_view restore |
+| `tests/player_country_ui_smoke_test.gd` | Fresh session: 0 points, draw disabled, niches present |
+| `tests/ideology_progression_test.gd` | Zero start, baseline-only first observation, preview gate, technology slot capacity, cost curve and cap, reroll cost, school resonance at 2 cards |
+| `tests/runtime_ideology_save_roundtrip_test.gd` | IDP2 roundtrip and transactional rejection |
 | `tests/ideology_runtime_stress_test.gd` | 512 countries × 12 active, zero dormant/sparse scans, continuation p95, no GDScript fallback poll |
+| `tests/ideology_workspace_screenshot_qa.gd` | Rendered (no `--headless`) real-session worker path: grant → draw → present → choose; PNGs at 1280x720 / 1920x1080 in `res://tmp/ideology_workspace_qa/`. Run it several times: a flaky "points stay 0 / offer never presented" means the worker opinion hand-off or snapshot generation cursor regressed |
 
 Run from the repository root:
 
@@ -160,3 +196,5 @@ Intentional non-goals until separately designed: ideology diplomacy, AI
 adoption policy, per-cell ideology, ideology as a conserved ledger, player
 drafting of Modifier formulas at runtime, and GDScript evaluation in the
 daily graph.
+
+UI text stays minimal: numbers on the point scroll (points / cost, last gain), short button labels (抽取 · X, 重抽 · X), hint line hidden unless blocked, detail only in tooltips. A paid draw floats a -X on the scroll.

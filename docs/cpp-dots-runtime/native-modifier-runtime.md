@@ -84,10 +84,15 @@ Country store 发布国家产出因子，Economy 再与 Building factor 组合�
 catalog，Economy 仍由 consumer helper 显式做 Q16 转换。`persistable=false` 当前也未改变
 序列化行为。新增依赖这两个字段的 stat 前必须先补 native packed contract、hash 和测试。
 
-理念持久效果使用作者化 UniqueSource Country 定义（`ideology.collective_stewardship`、
-`ideology.free_exchange`、`ideology.scholar_office`、`ideology.civic_muster` 以及
-`ideology.synergy.*`）。它们复用已有 country 部门/贸易/研究/建设/旱灾 stat，不新增
-跨域 ledger。幅度由 Effect `value_q16` 插值：`1.0 + (term.factor - 1.0) * magnitude`。
+理念持久效果使用作者化 UniqueSource Country 定义：30 张卡各自的 `ideology.<key>`、
+6 条具名联动 `ideology.synergy.*` 与 12 条流派共鸣 `ideology.resonance.<school>.<2|4>`，
+均由 `tools/ideology/generate_ideology_catalog.py` 生成。它们复用已有 country
+部门/贸易/研究/建设/消费/资源/灾害 stat，不新增跨域 ledger；唯一新增 stat 是
+`country.ideology.point_gain_factor`（范围 `[0,4]`，默认 1.0），由 Country epoch
+快照冻结后供 Ideology 理念点结算读取。幅度由 Effect `value_q16` 插值：
+`1.0 + (term.factor - 1.0) * magnitude`，三级分别为 `65536/104858/144179`。
+worker 路径下理念转换由 `stage_ideology_modifier_commands` 作为原子 Modifier POD
+batch 提交（整批预解析，任一定义缺失则零提交），ACK 来自真实 batch 结果。
 玩家可读百分比由 `ModifierCatalog.present_definition()` 生成。新增或改写这些
 definition 会改变 Modifier catalog hash；旧 PKCM 按现有规则 fail-closed。
 

@@ -23,3 +23,6 @@ __pycache__/
 /tmp/price_*/
 *.tmp
 *.TMP
+
+# 资源美术工具链的中间产物（预览图、抠图中间件），可由 sources/ 重新生成
+/tools/resource_art/work/

@@ -2962,6 +2962,7 @@ Chunked MultiMesh 路径：
   - quad 外：投影 pass `vegetation_shadow.gdshaderinc` 每实例一枚椭圆，长度 `clamp(cot(elev), 0, shadow_max_len=3.6)*length_scale*height`，约 15.5° 仰角封顶；更低的太阳由 `local_day` 晨昏淡出接管。`shadow_soft = proj/(2.5*foot)` 控制半影内缘、远端横向扩散（最多 ×1.45）和整体变淡（×0.85）。
   - family batch 的 shadow 材质是 configure 时 duplicate 的，`VegetationFamilyLayer.sync_dynamic_materials()` 必须同步 `season_phase/day_phase/axial_tilt_rad/day_night_enabled/tod_sun_dir/tod_debug_sun_*`，否则 family 阴影不随太阳变化。
 - 性能约束：气候调色板、日照、地平线可见性、天空 GI、地形法线和谷地 AO 都在 vertex 阶段算成 flat varying；片元只做 3×3 元素场与上述椭圆软阴影循环。元素小于 3px（移动端 6px）时退化到 `vf_far` 单噪声斑块。隐藏实例在 vertex 阶段塌缩为零面积。
+- 树冠位图（2026-10-17）：`ShrubLayer` 主体 shader 定义 `VF_CROWN_ART`，阔叶/针叶/棕榈/灌丛元素从 `resource_art/crown_atlas`（4 层 × 4×2 透明底单树精灵 + 法线/AO）取样，色相来自位图、明度仍由气候调色板决定；位图缺失时回退程序化树冠。详见 `resource-visual-runtime.md` 第二轮。
 - 验证：`tests/vegetation_form_scatter_test.gd`（打包往返、确定性、冠径守恒、密度→林团单调、同格互斥、GDScript 回退与 native 逐实例一致）；`tests/vegetation_family_layer_test.gd`（`style*4` 打包与 style LUT 的 form/物候列）。
 
 ## 后续迁移优先级

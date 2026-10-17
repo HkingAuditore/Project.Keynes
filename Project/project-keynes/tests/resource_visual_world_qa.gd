@@ -1,6 +1,7 @@
 extends SceneTree
 
 const ResourceCatalog = preload("res://scripts/rendering/resource_visual_catalog.gd")
+const TerrainType = preload("res://scripts/geography/terrain_type.gd")
 
 # Production new-game path: resources, existing trees and existing settlement
 # geometry in one render. Does not write the player's saves or settings.
@@ -61,6 +62,103 @@ func run() -> void:
 	await process_frame
 	await RenderingServer.frame_post_draw
 	root.get_texture().get_image().save_png(output + "/world_baseline.png")
+	# 植物田地特写：挑世界里真有作物的草地格，对比开/关资源层
+	var plant_cell := -1
+	var plant_id := ""
+	var plant_score := INF
+	for entry in ResourceCatalog.entries():
+		if String(entry.id) not in ["bio.wheat", "bio.maize", "bio.rice", "bio.cotton", "bio.potato"]:
+			continue
+		for cell in map.cell_count():
+			if map.is_water_arr[cell] != 0 or (int(map.bio_occupancy_bits_arr[cell]) & (1 << int(entry.bit))) == 0:
+				continue
+			var pt := Vector2(map.cell_pos_x_arr[cell], map.cell_pos_y_arr[cell]) * renderer.hex_size
+			var sc := camera.position.distance_squared_to(pt) + float(map.snow_cover_arr[cell]) * 10000000.0
+			if sc < plant_score:
+				plant_score = sc
+				plant_cell = cell
+				plant_id = String(entry.id)
+	print("plant QA: cell=", plant_cell, " species=", plant_id)
+	if plant_cell >= 0:
+		camera.position = Vector2(map.cell_pos_x_arr[plant_cell], map.cell_pos_y_arr[plant_cell]) * renderer.hex_size
+	camera.zoom = Vector2(6.0, 6.0)
+	camera.set("_target_zoom", Vector2(6.0, 6.0))
+	for frame in 120:
+		await process_frame
+	await RenderingServer.frame_post_draw
+	root.get_texture().get_image().save_png(output + "/plants_baseline.png")
+	renderer._resource_visual_layer.visible = true
+	await process_frame
+	await RenderingServer.frame_post_draw
+	root.get_texture().get_image().save_png(output + "/plants_world.png")
+	# Ground-cover states at the same spot: lens dimming, drought, snow, night, mid/far zoom.
+	var layer = renderer._resource_visual_layer
+	var cover_mat: ShaderMaterial = layer.ground_cover().material()
+	layer.set_lens(true)
+	for frame in 30:
+		await process_frame
+	await RenderingServer.frame_post_draw
+	root.get_texture().get_image().save_png(output + "/cover_lens.png")
+	layer.set_lens(false)
+	var memory_backup: Image = layer._memory_image.duplicate()
+	layer.ground_cover().memory_climate_only = true
+	for state in [["cover_drought", Color(0.7, 0.05, 0.0, 0.35)], ["cover_snow", Color(0.1, 0.6, 1.0, 0.8)]]:
+		layer._memory_image.fill(state[1])
+		layer._memory_texture.update(layer._memory_image)
+		for frame in 30:
+			await process_frame
+		await RenderingServer.frame_post_draw
+		root.get_texture().get_image().save_png(output + "/%s.png" % state[0])
+	layer._memory_image.copy_from(memory_backup)
+	layer._memory_texture.update(layer._memory_image)
+	layer.ground_cover().memory_climate_only = false
+	renderer.set_day_night_enabled(true)
+	renderer.set_day_phase(fposmod(cover_mat.get_shader_parameter("day_phase") + 0.5, 1.0) if cover_mat.get_shader_parameter("day_phase") != null else 0.75)
+	for frame in 30:
+		await process_frame
+	await RenderingServer.frame_post_draw
+	root.get_texture().get_image().save_png(output + "/cover_night.png")
+	renderer.set_day_night_enabled(false)
+	for zoom in [2.0, 0.9]:
+		camera.zoom = Vector2(zoom, zoom)
+		camera.set("_target_zoom", Vector2(zoom, zoom))
+		for frame in 60:
+			await process_frame
+		await RenderingServer.frame_post_draw
+		root.get_texture().get_image().save_png(output + "/cover_zoom_%s.png" % str(zoom))
+	camera.zoom = Vector2(3.0, 3.0)
+	camera.set("_target_zoom", Vector2(3.0, 3.0))
+	for frame in 60:
+		await process_frame
+	# Tree close-up: forest cell nearest the start, zoom 10 (crown bitmaps should read).
+	var tree_cell := -1
+	var tree_score := INF
+	for cell in map.cell_count():
+		if map.is_water_arr[cell] != 0 or float(map.snow_cover_arr[cell]) > 0.2:
+			continue
+		var terrain := int(map.terrain_arr[cell])
+		if terrain != TerrainType.TERRAIN.FOREST:
+			continue
+		var tp := Vector2(map.cell_pos_x_arr[cell], map.cell_pos_y_arr[cell]) * renderer.hex_size
+		var ts := camera.position.distance_squared_to(tp)
+		if ts < tree_score:
+			tree_score = ts
+			tree_cell = cell
+	if tree_cell >= 0:
+		var back := camera.position
+		camera.position = Vector2(map.cell_pos_x_arr[tree_cell], map.cell_pos_y_arr[tree_cell]) * renderer.hex_size
+		for zoom in [10.0, 5.0]:
+			camera.zoom = Vector2(zoom, zoom)
+			camera.set("_target_zoom", Vector2(zoom, zoom))
+			for frame in 90:
+				await process_frame
+			await RenderingServer.frame_post_draw
+			root.get_texture().get_image().save_png(output + "/trees_zoom_%s.png" % str(zoom))
+		camera.position = back
+		camera.zoom = Vector2(3.0, 3.0)
+		camera.set("_target_zoom", Vector2(3.0, 3.0))
+		for frame in 60:
+			await process_frame
 	renderer._resource_visual_layer.visible = true
 	RenderingServer.viewport_set_measure_render_time(root.get_viewport_rid(), true)
 	var timings := {}
@@ -122,20 +220,36 @@ func run() -> void:
 				continue
 			var point := Vector2(map.cell_pos_x_arr[cell], map.cell_pos_y_arr[cell]) * renderer.hex_size
 			var score := camera.position.distance_squared_to(point) + float(map.snow_cover_arr[cell]) * 10000000.0
+			# 树冠会盖住小件动物：优先挑草地格，避免用被遮挡的画面判断动物可读性。
+			var terrain := int(map.terrain_arr[cell])
+			if terrain != TerrainType.TERRAIN.GRASSLAND:
+				score += 1.0e12
 			if score < animal_distance:
 				animal_distance = score
 				animal_cell = cell
 				animal_id = String(entry.id)
 	if animal_cell >= 0:
 		renderer._resource_visual_layer.visible = true
-		renderer.set_resource_visual_filter(animal_id)
 		camera.position = Vector2(map.cell_pos_x_arr[animal_cell], map.cell_pos_y_arr[animal_cell]) * renderer.hex_size
 		camera.zoom = Vector2(6.0, 6.0)
 		camera.set("_target_zoom", Vector2(6.0, 6.0))
+		# 世界实景（不开透镜/滤镜）：位图动物只在 lens==0 时绘制。
 		for frame in 180:
 			await process_frame
 		await RenderingServer.frame_post_draw
 		root.get_texture().get_image().save_png(output + "/animals_world.png")
+		renderer._resource_visual_layer.visible = false
+		for frame in 3:
+			await process_frame
+		await RenderingServer.frame_post_draw
+		root.get_texture().get_image().save_png(output + "/animals_baseline.png")
+		renderer._resource_visual_layer.visible = true
+		# 透镜视图：徽章，单独留档，不再冒充世界实景。
+		renderer.set_resource_visual_filter(animal_id)
+		for frame in 120:
+			await process_frame
+		await RenderingServer.frame_post_draw
+		root.get_texture().get_image().save_png(output + "/animals_lens.png")
 		print("animal QA: cell=", animal_cell, " species=", animal_id)
 	else:
 		print("animal QA: no matching species in this production fixture")

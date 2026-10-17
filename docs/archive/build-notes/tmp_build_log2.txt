@@ -1,0 +1,16 @@
+﻿scons: Reading SConscript files ...
+Building for architecture x86_64 on platform windows
+scons: done reading SConscript files.
+scons: Building targets ...
+scons: `godot-cpp\bin\libgodot-cpp.windows.template_debug.x86_64.lib' is up to date.
+Linking Shared Library D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows\dots_ext.windows.template_debug.x86_64.dll ...
+scons :   正在创建库 D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows\dots_ext.windo
+ws.template_debug.x86_64.lib 和对象 D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windo
+ws\dots_ext.windows.template_debug.x86_64.exp
+所在位置 C:\Users\hkinghuang\AppData\Local\Temp\ps-script-9d8ec16c-ad0d-4b8b-8071-17d454945b02.ps1:92 字符: 25
++ ... -Seconds 3; scons platform=windows target=template_debug dev_build=no ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (  正在创建库 D:\Godo...ebug.x86_64.exp:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+scons: done building targets.

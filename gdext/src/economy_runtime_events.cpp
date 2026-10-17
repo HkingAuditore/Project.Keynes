@@ -478,6 +478,12 @@ void NativeEconomyRuntime::publish_country_development_facts() {
     class_snapshot.owner_employed.assign(class_row_count, 0);
     class_snapshot.satisfaction_weighted.assign(class_row_count, 0);
     class_snapshot.satisfaction_q16.assign(class_row_count, 0);
+    const size_t opinion_country_count =
+        static_cast<size_t>(std::max(0, _epoch_country_count));
+    class_snapshot.country_population.assign(opinion_country_count, 0);
+    class_snapshot.country_buildings_installed.assign(opinion_country_count, 0);
+    class_snapshot.country_trade_base_value.assign(opinion_country_count, 0);
+    class_snapshot.period_days = std::max<int64_t>(1, _epoch_days.get());
     uint64_t cells_scanned = 0;
     uint64_t slots_scanned = 0;
     auto finalize_class_snapshot = [&]() {
@@ -665,6 +671,10 @@ void NativeEconomyRuntime::publish_country_development_facts() {
             satisfaction_weighted[static_cast<size_t>(country)] =
                 saturating_add(satisfaction_weighted[static_cast<size_t>(country)],
                                cell_satisfaction, _saturation_count);
+            class_snapshot.country_population[static_cast<size_t>(country)] =
+                saturating_add(class_snapshot.country_population[
+                    static_cast<size_t>(country)], cell_population,
+                    _saturation_count);
 
             const int64_t tier = cell < static_cast<int32_t>(_settlements.tier.size())
                 ? static_cast<int64_t>(_settlements.tier[static_cast<size_t>(cell)]) : 0;
@@ -685,6 +695,33 @@ void NativeEconomyRuntime::publish_country_development_facts() {
                 }
             }
         }
+    }
+    // Ideology development lanes: installed buildings and the period's
+    // import+export base value. Sparse building groups and trade rows only.
+    for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
+        const auto group = building_view(pk_row);
+        if (group.count <= 0 || group.cell < 0 ||
+            group.cell >= static_cast<int32_t>(_epoch_cell_country.size()))
+            continue;
+        const int32_t country = _epoch_cell_country[static_cast<size_t>(group.cell)];
+        if (country < 0 || country >= _epoch_country_count) continue;
+        class_snapshot.country_buildings_installed[static_cast<size_t>(country)] =
+            saturating_add(class_snapshot.country_buildings_installed[
+                static_cast<size_t>(country)], group.count, _saturation_count);
+    }
+    for (size_t row = 0; row < _country_good_trade.countries.size(); ++row) {
+        const int32_t country = _country_good_trade.countries[row];
+        if (country < 0 || country >= _epoch_country_count ||
+            row >= _country_good_trade.import_base.size() ||
+            row >= _country_good_trade.export_base.size())
+            continue;
+        const int64_t base_value = saturating_add(
+            std::max<int64_t>(0, _country_good_trade.import_base[row]),
+            std::max<int64_t>(0, _country_good_trade.export_base[row]),
+            _saturation_count);
+        class_snapshot.country_trade_base_value[static_cast<size_t>(country)] =
+            saturating_add(class_snapshot.country_trade_base_value[
+                static_cast<size_t>(country)], base_value, _saturation_count);
     }
     finalize_class_snapshot();
     if (!publish_development) return;

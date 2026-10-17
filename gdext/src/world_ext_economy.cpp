@@ -1481,8 +1481,9 @@ Dictionary DCWorldExt::get_building_visual_snapshot(
     country_slots.resize(cells.size());
     era_indices.resize(cells.size());
     uint64_t era_generation = 0;
+    // Worker mode freezes the sync Country store; use the committed query view.
     NativeCountryRuntime *countries = _country_runtime == nullptr
-        ? nullptr : static_cast<NativeCountryRuntime *>(_country_runtime);
+        ? nullptr : country_query_runtime();
     if (countries != nullptr) era_generation = countries->visual_era_generation();
     for (int64_t i = 0; i < cells.size(); ++i) {
         const int32_t slot = countries == nullptr

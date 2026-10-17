@@ -19,7 +19,7 @@ generation, bootstrap, PKSV, and restore contract is documented in
 Saving does not introduce a second simulation authority. It freezes new clock
 advancement, drains existing country/economy continuations across render frames,
 then snapshots `DCWorld`, native environment state, PKCM, WorldClock, PKCN v11, PKEF v11,
-PKEC v41, PKGP, PKFG, journal, PKTR v6, PKID v3, and player view. Restore regenerates static geography and applies
+PKEC v41, PKGP, PKFG, journal, PKTR v6, PKID v4, and player view. Restore regenerates static geography and applies
 PKCM after environment, PKCN before PKEC, PKGP after PKEC, and PKTR after Economy/domain state.
 PKFG carries only the monotonic `cell_explored` progress;
 current visibility and fog knowledge are derived and are recomputed on restore.

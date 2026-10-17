@@ -248,6 +248,14 @@ func notify_committed_day() -> void:
 	if _country_panel != null and _country_panel.is_panel_open() \
 			and _country_panel.current_section() == "economy":
 		_mark_country_panel_dirty(COUNTRY_DIRTY_ECONOMY, "economy_day")
+	# Ideology points accrue daily and, under worker authority, arrive through
+	# snapshot write-back without a command receipt. Invalidate the cached
+	# section every day so reopening never shows a stale point scroll.
+	elif _country_panel != null and _country_panel.is_panel_open() \
+			and _country_panel.current_section() == "ideology":
+		_mark_country_panel_dirty(COUNTRY_DIRTY_IDEOLOGY, "ideology_day")
+	elif _country_view_model != null:
+		_country_view_model.invalidate_cache(COUNTRY_DIRTY_IDEOLOGY)
 
 
 func _on_ideology_runtime_settled(_result: Dictionary) -> void:

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Project.Keynes 经济运行时 v7 / cell1166 复诊报告</title>
+<style>
+:root { color-scheme: dark; --bg:#0f1117; --panel:#171b24; --panel2:#1f2531; --text:#e7eaf0; --muted:#a7b0c0; --line:#303849; --good:#45c98f; --warn:#f5b84b; --bad:#f06a6a; --blue:#72a7ff; --purple:#b28cff; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--text); font-family:"Microsoft YaHei", "Segoe UI", sans-serif; line-height:1.65; }
+main { max-width:1180px; margin:0 auto; padding:34px 28px 60px; }
+h1 { margin:0 0 8px; font-size:30px; letter-spacing:.2px; }
+h2 { margin:34px 0 14px; padding-top:8px; border-top:1px solid var(--line); font-size:22px; }
+h3 { margin:22px 0 8px; font-size:17px; color:#dce6ff; }
+p { margin:8px 0; }
+small, .muted { color:var(--muted); }
+.card { background:linear-gradient(180deg,var(--panel),#141822); border:1px solid var(--line); border-radius:14px; padding:18px; margin:16px 0; box-shadow:0 12px 30px rgba(0,0,0,.22); }
+.grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+.grid3 { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.metric { background:var(--panel2); border:1px solid var(--line); border-radius:12px; padding:13px 14px; }
+.metric b { display:block; font-size:22px; margin-top:4px; }
+.metric span { color:var(--muted); font-size:13px; }
+.good { color:var(--good); } .warn { color:var(--warn); } .bad { color:var(--bad); } .blue { color:var(--blue); } .purple { color:var(--purple); }
+table { width:100%; border-collapse:collapse; margin:12px 0 18px; overflow:hidden; border-radius:12px; }
+th,td { border:1px solid var(--line); padding:9px 10px; vertical-align:top; }
+th { background:#202737; color:#dce6ff; text-align:left; }
+td { background:#151a23; }
+code { background:#202637; color:#cfe1ff; border:1px solid #334057; padding:1px 5px; border-radius:5px; }
+ul { margin-top:6px; }
+.bar { height:10px; background:#242b38; border-radius:999px; overflow:hidden; margin-top:6px; }
+.bar > i { display:block; height:100%; border-radius:999px; }
+.row { display:grid; grid-template-columns:220px 1fr 90px; gap:12px; align-items:center; margin:10px 0; }
+.tag { display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid var(--line); background:#202737; color:#cdd7e8; font-size:12px; }
+.note { border-left:4px solid var(--blue); padding:10px 14px; background:#151b27; border-radius:8px; }
+</style>
+<main>
+  <h1>经济运行时 v7 / cell1166 复诊报告</h1>
+  <p class="muted">记录前缀：<code>economy_record_20260717_152531_v7_cell1166_q17_r19</code>；selected cell：<code>cell_idx=1166, q=17, r=19, s=-36</code>。全局口径来自 <code>summary.csv</code>，其余四表为 selected-cell recorder 口径。</p>
+
+  <section class="card">
+    <h2 style="margin-top:0;border-top:0;padding-top:0">一页结论</h2>
+    <p><b>这批数据比上一批 v7/cell1060 明显更好，但仍不是健康经济。</b>改善集中在基础直接供给：<span class="good">采集植物、鱼、布、本地失业</span>；未解决问题集中在系统性生命线：<span class="bad">出生为 0、贸易为 0、processed_food/logs 永久短缺、猎人 cohort 被淘汰、石器/狩猎/火塘链末期停摆</span>。</p>
+    <div class="grid">
+      <div class="metric"><span>本地人口</span><b class="warn">130 → 81</b><small>-37.7%，仍衰退</small></div>
+      <div class="metric"><span>本地失业峰值</span><b class="good">1</b><small>上一批 cell1060 峰值 46</small></div>
+      <div class="metric"><span>全局 births 累计</span><b class="bad">0</b><small>人口只死不生</small></div>
+      <div class="metric"><span>贸易成交/候选</span><b class="bad">0 / 0</b><small>拓扑 ready 但成交链未运行</small></div>
+    </div>
+  </section>
+
+  <h2>1. 与前两批相比：哪些已经变好</h2>
+  <table>
+    <tr><th>指标</th><th>v5 / cell1031</th><th>v7 / cell1060</th><th>v7 / cell1166</th><th>判断</th></tr>
+    <tr><td>本地人口</td><td>133 → 78</td><td>133 → 78</td><td>130 → 81</td><td class="warn">仍下降，但 cell1166 的局部表现略好</td></tr>
+    <tr><td>本地失业峰值</td><td>0</td><td>46</td><td>1</td><td class="good">cell1060 的失业潮基本消失</td></tr>
+    <tr><td>采集植物短缺日</td><td>4 / 384</td><td>353 / 364</td><td>0 / 741</td><td class="good">cell1060 的 gathered_plants 异常已消失</td></tr>
+    <tr><td>鱼短缺日</td><td>34 / 384</td><td>未作为核心短缺</td><td>0 / 741</td><td class="good">渔业在本格非常稳定</td></tr>
+    <tr><td>布短缺日</td><td>224 / 384</td><td>长期短缺</td><td>0 / 741</td><td class="good">织造链明显恢复</td></tr>
+    <tr><td>wild_game</td><td>-92.48%</td><td>-89.85%</td><td>+269.12%</td><td class="good">本次狩猎崩溃不应再归因于野兽耗尽</td></tr>
+    <tr><td>全局失业峰值</td><td>332</td><td>4482</td><td>2949</td><td class="warn">比 cell1060 低，但全局仍有早期失业波</td></tr>
+    <tr><td>loss_suspended_building_groups 末期</td><td>无字段</td><td>2206</td><td>674</td><td class="good">亏损停摆建筑显著减少</td></tr>
+  </table>
+
+  <h2>2. 当前经济运行体现出的特点</h2>
+  <div class="grid3">
+    <div class="card"><h3>直接生存品变充足</h3><p><code>gathered_plants</code> 末期库存 3,102,023，<code>fish</code> 末期库存 1,252,480，<code>cloth</code> 末期库存 13,646；三者短缺日均为 0。</p></div>
+    <div class="card"><h3>深加工与能源仍断链</h3><p><code>processed_food</code> 和 <code>logs</code> 741/741 天全程短缺，末期价格分别为 160,000、100,000，<code>shortage_q16=65535</code>。</p></div>
+    <div class="card"><h3>职业结构出现选择性灭绝</h3><p>采集者、渔民、商人、部分矿工存活良好；工匠贫血；猎人从 48 人下降到 1 人，是本格人口下降的主因。</p></div>
+  </div>
+
+  <h2>3. 健康性判断</h2>
+  <p><b>守恒是健康的，经济不是健康的。</b>全局 <code>population_error=0</code>、<code>money_error=0</code>、<code>goods_error=0</code>，所以这不是账本坏账，而是模型按当前规则稳定地把部分职业推向死亡。</p>
+  <table>
+    <tr><th>健康项</th><th>证据</th><th>结论</th></tr>
+    <tr><td>守恒审计</td><td>三类最大误差全为 0</td><td class="good">运行时账本可信</td></tr>
+    <tr><td>直接食物供给</td><td>采集植物、鱼库存充足，且价格低于短缺品</td><td class="good">基础供给已有改善</td></tr>
+    <tr><td>人口再生产</td><td>741 个 epoch 内 births 累计 0；全局 deaths 累计 29,198</td><td class="bad">不可持续</td></tr>
+    <tr><td>贸易</td><td><code>trade_candidates_generated</code>、<code>trade_orders_arrived</code>、<code>trade_capacity_used</code> 累计均为 0</td><td class="bad">跨格互济完全未发生</td></tr>
+    <tr><td>产业链韧性</td><td>石器、狩猎、火塘末期均 <code>last_capacity=0</code></td><td class="bad">关键链条仍脆弱</td></tr>
+  </table>
+
+  <h2>4. 为什么本地不失业，却仍人口下降</h2>
+  <p>这次不能再把问题解释为“大量失业者饿死”。selected cell 的失业峰值只有 1，且发生在 day 5；末期 unemployed=0。真正的死亡路径更像是：<b>特定 owner cohort 的现金流与必需品满足度崩溃 → 长期低满意度 → 死亡 → 其持有的建筑 owner slot 失填 → 对应产业链末期停摆</b>。</p>
+  <table>
+    <tr><th>cohort</th><th>早期崩溃信号</th><th>人口变化</th><th>末期状态</th></tr>
+    <tr><td>工匠 artisan</td><td>day210 资金接近 0；day220 满意度 0，worst_need=staple_food</td><td>3 → 2</td><td>资金 17,092；石器工坊 owner=0，产能 0</td></tr>
+    <tr><td>猎人 hunter</td><td>day220 资金降至 181,957；day450 满意度低于半值，worst_need=produce</td><td class="bad">48 → 1</td><td>资金 2,250；狩猎营地 owner=0，产能 0</td></tr>
+    <tr><td>采集者 forager</td><td>未出现持续崩溃</td><td>末期 51</td><td>资金 21,632,945，满意度满值</td></tr>
+    <tr><td>渔民 fisher</td><td>未出现持续崩溃</td><td>末期 24</td><td>资金 150,872,185，满意度满值</td></tr>
+  </table>
+  <p class="note">关键变化：本次 <code>wild_game</code> 从 12,755 增至 47,081，最低值也就是起点。因此猎人灭绝不再是“野兽资源被打光”，而更可能是 <code>chipped_stone_tools</code> 断供、猎人现金流/消费排序、狩猎产出进入市场后的收入回流、以及死亡后 owner slot 不被其他人口承接的问题。</p>
+
+  <h2>5. 建筑原材料与产出设计是否科学</h2>
+  <table>
+    <tr><th>建筑</th><th>本次运行</th><th>设计判断</th><th>建议</th></tr>
+    <tr><td><code>gathering_ground</code></td><td>avg_capacity 0.694，末期 0.575，产出 431,800,306</td><td class="good">基本科学；能支撑早期植物供给</td><td>无需优先改动，观察不同地貌样本</td></tr>
+    <tr><td><code>marine_fish_collector</code></td><td>avg_capacity 0.953，末期 0.930，产出 169,537,066</td><td class="good">本样本非常健康</td><td>核对 marine_fish 资源 bridge：资源表可能为 0 但仍高产，应确认口径</td></tr>
+    <tr><td><code>household_weaving_shelter</code></td><td>avg_capacity 0.495，末期 0.381，布不再短缺</td><td class="good">较上一批明显修复</td><td>可暂缓</td></tr>
+    <tr><td><code>communal_hearth</code></td><td>avg_capacity 0.449，有产出 3,003,943，但末期产能 0</td><td class="warn">比 cell1060 的零产出改善，但双输入 AND 仍脆弱</td><td>把 <code>game_meat</code> 从硬输入改为可选增益，或允许 fish/gathered_plants 替代</td></tr>
+    <tr><td><code>stone_age_hunting_camp</code></td><td>avg_capacity 0.190，末期 owner=0/48，产能 0</td><td class="bad">不是资源不足，而是职业/工具链/现金流断裂</td><td>降低工具硬依赖，或加入徒手狩猎 probe floor；修正 hunter 收入与消费韧性</td></tr>
+    <tr><td><code>knapping_workshop</code></td><td>avg_capacity 0.178，末期 owner=0/1，产能 0；flint 稳定</td><td class="bad">原料不是瓶颈，artisan 生计/owner 承接是瓶颈</td><td>给石器工坊早期保底 owner/公共生产/低资本维护机制</td></tr>
+    <tr><td><code>flint_quarry</code></td><td>末期仍产出 613，flint 资源稳定</td><td class="warn">上游采矿不是主因</td><td>重点不在燧石资源，而在 flint→tools→hunt 的中下游现金流</td></tr>
+  </table>
+
+  <h2>6. 市场与物价机制判断</h2>
+  <p>价格机制能识别短缺：processed_food、logs、game_meat、fur、chipped_stone_tools 都打到或接近价格上限。但目前价格信号没有自动修复供给，因为缺少三类反应：</p>
+  <ul>
+    <li><b>生产替代反应不足：</b><code>communal_hearth</code> 必须同时拿到 <code>gathered_plants + game_meat</code>，高价无法让它改用鱼或纯植物产出低级熟食。</li>
+    <li><b>职业/owner 承接不足：</b>工匠和猎人死亡后，对应建筑仍要求原职业 owner，末期 owner=0，价格再高也没人恢复生产。</li>
+    <li><b>空间互济缺失：</b>全局 trade runtime mode 显示 ACTIVE，topology_ready 为 true，但扫描/候选/订单/到达/容量使用全为 0。</li>
+  </ul>
+
+  <h2>7. 阶层流动、消费、存款变化是否科学</h2>
+  <p>财富分配比 v5 更不荒诞，但仍暴露“幸存者偏差”。末期非商人资金 298,236,353，商人资金 144,922,787；看起来居民有钱，但这是采集者、渔民、矿工等幸存职业的聚合结果。猎人和工匠本身已经接近破产或死亡。</p>
+  <table>
+    <tr><th>阶层/职业</th><th>表现</th><th>问题</th></tr>
+    <tr><td>商人</td><td>3 → 2 人，资金 49,393,955 → 144,922,787</td><td>仍能积累财富，但贸易空转，商人还只是本地库存/资金节点</td></tr>
+    <tr><td>采集者/渔民</td><td>满意度满值、资金充裕</td><td>基础食物职业稳定</td></tr>
+    <tr><td>工匠</td><td>早期资金归零，末期只剩 2 人</td><td>工具链战略重要，但职业抗冲击能力太低</td></tr>
+    <tr><td>猎人</td><td>48 → 1，末期几乎灭绝</td><td>狩猎并非缺资源，而是无法在当前消费/输入/收入规则下维持职业再生产</td></tr>
+  </table>
+
+  <h2>8. 优先改进清单</h2>
+  <h3>P0：先修“只死不生”和“贸易为 0”</h3>
+  <ul>
+    <li>接通出生机制：至少让稳定高满意度、资金充足、基础需求满足的 cohort 有正 births；否则任何死亡都会导致长期衰退。</li>
+    <li>修通贸易候选生成：当前 <code>trade_topology_ready=true</code> 但 <code>trade_candidates_generated=0</code>，应优先检查 trade scan 是否被 selected era、good trade_enabled、market topology filter、容量或调度 gate 短路。</li>
+  </ul>
+  <h3>P1：把火塘和狩猎从“硬断链”改为“退化运行”</h3>
+  <ul>
+    <li><code>communal_hearth</code>：不要让 <code>game_meat</code> 成为 processed_food 的硬门槛。建议支持 <code>gathered_plants</code> 单独产低效熟食，<code>fish/game_meat</code> 作为蛋白增益或替代输入。</li>
+    <li><code>stone_age_hunting_camp</code>：将 <code>chipped_stone_tools</code> 改为效率倍增而非绝对输入，或者设置低产能徒手狩猎 floor；否则工具链一断，猎人 cohort 会被连锁消灭。</li>
+    <li><code>knapping_workshop</code>：artisan 破产会锁死工具链。建议给关键工具建筑公共保底 owner、低资本维护、或按需求价格自动吸引 owner 重分配。</li>
+  </ul>
+  <h3>P2：让价格信号能改变生产结构</h3>
+  <ul>
+    <li>对 survival goods 建立“高短缺优先生产/优先采购”权重，而不是只把价格推到上限。</li>
+    <li>为关键早期职业加入最低消费保障，避免一个短缺 need 触发战略职业灭绝。</li>
+    <li>新增针对 owner slot 空置的调试字段：死亡前后 owner_signature、可替代 profession、建筑是否可被 forager/fisher 接管。</li>
+  </ul>
+
+  <h2>9. 最终判断</h2>
+  <p><b>v7/cell1166 说明前一轮修改方向是对的：</b>采集、渔业、织造、本地失业、野兽资源耗竭都明显改善。<b>但经济仍缺少闭环：</b>人口没有出生，贸易没有流动，关键产业链没有退化运行路径，职业死亡后建筑 owner slot 不会自愈。下一步不应再优先调 gathered_plants/fish/cloth，而应集中查出生、贸易候选生成、火塘双输入、石器工具硬依赖、猎人/工匠 cohort 的资金与 owner 承接。</p>
+
+  <p class="muted">辅助分析文件：<code>tmp/economy_record_20260717_152531_v7_cell1166_q17_r19_analysis.html</code> 与 <code>tmp/economy_record_20260717_152531_v7_cell1166_q17_r19_analysis_summary.json</code>。</p>
+</main>

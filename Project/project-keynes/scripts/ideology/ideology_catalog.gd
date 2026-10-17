@@ -11,6 +11,17 @@ const EffectCommandScript = preload("res://scripts/effect/effect_command.gd")
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 
 const PROTOCOL_VERSION := 1
+## Display order and labels of the six schools (流派). Resonance rows and the
+## collection tabs follow this order.
+const SCHOOLS := [
+	{"id": "agrarian", "name": "农本", "motto": "重农固本，仓廩实而知礼节"},
+	{"id": "commerce", "name": "商贸", "motto": "通有无，兴市舶，以财养国"},
+	{"id": "learning", "name": "学识", "motto": "格物致知，以学立政"},
+	{"id": "mobilization", "name": "动员", "motto": "聚众成城，万人一心"},
+	{"id": "industry", "name": "工造", "motto": "利器善事，百工居胆"},
+	{"id": "harmony", "name": "调和", "motto": "顺天应时，山泽有度"},
+]
+const LEVEL_LABELS := ["初识", "通晓", "化育"]
 
 @export var profile: Resource
 @export var definitions: Array[Resource] = []
@@ -82,6 +93,23 @@ func compile_native_catalog(country_catalog: Dictionary,
 		"max_active_visits_per_slice": effective_profile.max_active_visits_per_slice,
 		"opinion_owner_influence_weight": effective_profile.opinion_owner_influence_weight,
 		"opinion_funds_per_influence": effective_profile.opinion_funds_per_influence,
+		"ideology_capacity_max": maxi(effective_profile.ideology_capacity,
+			effective_profile.ideology_capacity_max),
+		"national_spirit_capacity_max": maxi(effective_profile.national_spirit_capacity,
+			effective_profile.national_spirit_capacity_max),
+		"offer_cost_growth_percent": effective_profile.offer_cost_growth_percent,
+		"offer_cost_max_q16": maxi(effective_profile.offer_cost_q16,
+			effective_profile.offer_cost_max_q16),
+		"reroll_cost_percent": effective_profile.reroll_cost_percent,
+		"point_population_weight_q16": effective_profile.point_population_weight_q16,
+		"point_building_weight_q16": effective_profile.point_building_weight_q16,
+		"point_trade_weight_q16": effective_profile.point_trade_weight_q16,
+		"point_gain_cap_q16": effective_profile.point_gain_cap_q16,
+		"point_gain_stat_key": String(effective_profile.point_gain_stat_key),
+		"capacity_unlock_technology_ids": PackedInt32Array(),
+		"capacity_unlock_ideology_deltas": PackedInt32Array(),
+		"capacity_unlock_spirit_deltas": PackedInt32Array(),
+		"synergy_min_counts": PackedInt32Array(),
 		"political_class_ids": PackedStringArray(political_class_ids),
 		"ideology_ids": PackedStringArray(), "acquisition_flags": PackedByteArray(),
 		"rarity_weights": PackedInt32Array(), "ideology_slot_costs": PackedInt32Array(),
@@ -141,6 +169,21 @@ func compile_native_catalog(country_catalog: Dictionary,
 		"ideology_synergy_offsets": PackedInt32Array([0]),
 		"ideology_synergy_ids": PackedInt32Array(),
 	}
+	var unlock_keys: PackedStringArray = effective_profile.capacity_unlock_technology_keys
+	if unlock_keys.size() != effective_profile.capacity_unlock_ideology_deltas.size() \
+			or unlock_keys.size() != effective_profile.capacity_unlock_spirit_deltas.size():
+		return {"ok": false, "reason": "ideology_capacity_unlocks_invalid"}
+	for index in unlock_keys.size():
+		var tech_key := String(unlock_keys[index])
+		if not technology_index.has(tech_key):
+			return {"ok": false, "reason": "ideology_capacity_unlock_technology_unknown"}
+		var ideology_delta := int(effective_profile.capacity_unlock_ideology_deltas[index])
+		var spirit_delta := int(effective_profile.capacity_unlock_spirit_deltas[index])
+		if ideology_delta < 0 or spirit_delta < 0:
+			return {"ok": false, "reason": "ideology_capacity_unlocks_invalid"}
+		out.capacity_unlock_technology_ids.append(int(technology_index[tech_key]))
+		out.capacity_unlock_ideology_deltas.append(ideology_delta)
+		out.capacity_unlock_spirit_deltas.append(spirit_delta)
 	var seen := {}
 	for definition in ordered:
 		var key := String(definition.id)
@@ -219,6 +262,7 @@ func compile_native_catalog(country_catalog: Dictionary,
 			return {"ok": false, "reason": "ideology_synergy_id_duplicate"}
 		var synergy_id: int = out.synergy_ids.size()
 		out.synergy_ids.append(String(synergy.id))
+		out.synergy_min_counts.append(int(synergy.min_count))
 		for requirement in synergy.required_ideology_ids.size():
 			var required_id := String(synergy.required_ideology_ids[requirement])
 			if not ideology_index.has(required_id):
@@ -364,10 +408,28 @@ func catalog_view(country_catalog: Dictionary = {},
 			level_thresholds.append(level.understanding_threshold_q16)
 			level_effect_lines.append(_present_effect_lines(
 				modifier_catalog, level.persistent_effects))
+		var level_labels := PackedStringArray()
+		for level_index in definition.levels.size():
+			level_labels.append(LEVEL_LABELS[level_index] if level_index < LEVEL_LABELS.size()
+				else "%d级" % (level_index + 1))
+		var required_technologies := PackedStringArray()
+		var required_technology_names := PackedStringArray()
+		for requirement in definition.draw_requirements:
+			if requirement != null and requirement.kind == IdeologyRequirementScript.Kind.TECHNOLOGY:
+				required_technologies.append(String(requirement.key))
+				required_technology_names.append(technology_display_name(String(requirement.key)))
 		rows.append({"id": String(definition.id), "dense_id": i, "icon_key": String(definition.icon_key),
 			"name_key": String(definition.name_key),
 			"display_name": _display_name(definition),
 			"detail_key": String(definition.detail_key),
+			"school_id": String(definition.school_id),
+			"school_name": school_name(String(definition.school_id)),
+			"rarity": int(definition.rarity),
+			"rarity_label": String(IdeologyDefinitionScript.RARITY_LABELS.get(
+				int(definition.rarity), "")),
+			"level_labels": level_labels,
+			"required_technologies": required_technologies,
+			"required_technology_names": required_technology_names,
 			"rarity_weight": definition.rarity_weight, "ideology_slot_cost": definition.ideology_slot_cost,
 			"national_spirit_slot_cost": definition.national_spirit_slot_cost,
 			"acquisition_flags": definition.acquisition_flags,
@@ -393,18 +455,26 @@ func catalog_view(country_catalog: Dictionary = {},
 		var effect_lines := _present_effect_lines(
 			modifier_catalog, synergy.persistent_effects)
 		var display := _synergy_display_name(synergy)
-		var tooltip := "同时装备%s：%s" % [
-			"与".join(required_names),
-			"、".join(effect_lines) if not effect_lines.is_empty() else "额外国家修正",
-		]
+		var effect_text := "、".join(effect_lines) if not effect_lines.is_empty() else "额外国家修正"
+		var tooltip := "同时装备%s：%s" % ["与".join(required_names), effect_text]
+		var resonance_school := String(synergy.school_id)
+		if not resonance_school.is_empty():
+			tooltip = "%s共鸣·%d张：%s" % [school_name(resonance_school),
+				int(synergy.min_count), effect_text]
 		synergy_rows.append({
 			"dense_id": i,
 			"id": String(compiled.synergy_ids[i]),
 			"display_name": display,
 			"effect_lines": effect_lines,
 			"required_names": required_names,
+			"required_ids": PackedStringArray(synergy.required_ideology_ids),
+			"min_count": int(synergy.min_count),
+			"school_id": resonance_school,
+			"resonance_tier": int(synergy.resonance_tier),
 			"tooltip": tooltip,
 		})
+		if not resonance_school.is_empty():
+			continue
 		for required_id in synergy.required_ideology_ids:
 			var key := String(required_id)
 			var attached: Array = synergy_by_ideology.get(key, [])
@@ -419,13 +489,51 @@ func catalog_view(country_catalog: Dictionary = {},
 			tooltips.append(String((item as Dictionary).get("tooltip", "")))
 		row["synergy_names"] = names
 		row["synergy_tooltip"] = "\n".join(tooltips)
+	var unlock_keys := PackedStringArray(
+		profile.capacity_unlock_technology_keys if profile != null else PackedStringArray())
+	var unlock_names := PackedStringArray()
+	for key in unlock_keys:
+		unlock_names.append(technology_display_name(String(key)))
 	return {"ok": true, "ideologies": rows, "synergies": synergy_rows,
+		"schools": SCHOOLS.duplicate(true),
 		"political_class_ids": compiled.political_class_ids,
 		"gate_keys": compiled.gate_keys,
 		"ideology_capacity": int(compiled.get("ideology_capacity", 0)),
 		"national_spirit_capacity": int(compiled.get("national_spirit_capacity", 0)),
+		"ideology_capacity_max": int(compiled.get("ideology_capacity_max", 0)),
+		"national_spirit_capacity_max": int(compiled.get("national_spirit_capacity_max", 0)),
+		"capacity_unlock_technology_keys": unlock_keys,
+		"capacity_unlock_technology_names": unlock_names,
+		"capacity_unlock_ideology_deltas": compiled.get("capacity_unlock_ideology_deltas", PackedInt32Array()),
+		"capacity_unlock_spirit_deltas": compiled.get("capacity_unlock_spirit_deltas", PackedInt32Array()),
 		"offer_cost_q16": int(compiled.get("offer_cost_q16", 65536)),
+		"offer_cost_growth_percent": int(compiled.get("offer_cost_growth_percent", 100)),
 		"starting_points_q16": int(compiled.get("starting_points_q16", 0))}
+
+
+static func school_name(school_id: String) -> String:
+	for school in SCHOOLS:
+		if String(school.id) == school_id:
+			return String(school.name)
+	return school_id
+
+
+static var _technology_names := {}
+
+
+## Cold-path display name for a technology key (slot unlock captions and draw
+## requirements). Reads the cached authoring network once.
+static func technology_display_name(technology_key: String) -> String:
+	if _technology_names.is_empty():
+		var technology_script = load("res://scripts/economy/technology_catalog.gd")
+		var payload: Dictionary = technology_script._network_payload() \
+			if technology_script != null else {}
+		for node in payload.get("nodes", []) as Array:
+			if node is Dictionary:
+				_technology_names[String(node.get("id", ""))] = String(
+					node.get("display_name", node.get("id", "")))
+		_technology_names[""] = ""
+	return String(_technology_names.get(technology_key, technology_key))
 
 
 func _display_name(definition) -> String:

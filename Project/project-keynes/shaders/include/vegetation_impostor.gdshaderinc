@@ -494,6 +494,15 @@ void fragment() {
 	leaf *= 0.90 + 0.20 * fract(s.elem * 13.7 + ctx.seed);
 	float red_pick = smoothstep(0.40, 0.70, fract(s.elem * 7.31 + ctx.seed * 3.3));
 	leaf = mix(leaf, v_d.rgb, red_pick * v_d.a);
+	if (s.art.a > 0.0) {
+		// Crown bitmap hue at the climate palette's brightness: drought/autumn/snow still
+		// drive the colour, the sprite keeps its own species tint and leaf detail.
+		// The sprites are summer green, so their hue weight fades as the palette leaves
+		// green (autumn gold/red, drought straw, cold grey); s.tone keeps the leaf detail.
+		float leaf_l = dot(leaf, vec3(0.299, 0.587, 0.114));
+		float greenness = smoothstep(0.08, 0.35, (leaf.g - max(leaf.r, leaf.b)) / max(leaf.g, 0.01));
+		leaf = mix(leaf, s.art.rgb * 2.0 * leaf_l, s.art.a * mix(0.15, 1.0, greenness));
+	}
 	vec3 albedo = mix(s.tint, leaf, s.leaf_w) * s.tone;
 	float cap = smoothstep(0.35, 0.85, n_loc.z + (fract(s.elem * 5.3 + p.x * 3.1) - 0.5) * 0.16);
 	float local_snow = v_f.x * s.snow_hold * mix(1.0, cap, max(v_f.y, 0.55));

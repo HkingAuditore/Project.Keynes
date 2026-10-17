@@ -32,7 +32,7 @@ SoA staging、稀疏 cell delta、事件和 cursor 保留在 C++，通过真实�
 `TRANSFER_TERRITORY` 批次，使用直接稀疏发布快路径；混合命令或重复 cell 仍走通用 staging
 delta 的完整预检。纯领土批次不会复制其不可能修改的科技和国库矩阵。
 
-## PKCN v11 / PKEF v11 / PKTR v6 / PKID v3 / PKEC v41
+## PKCN v11 / PKEF v11 / PKTR v6 / PKID v4 / PKEC v41
 
 PKCN v11 保存时代奖励的最小 plan 引用和状态，完整 Alternative Offer Plan 位于
 PKEF v11。恢复先 PKCN 后 PKEF，并执行双向一致性审计；旧 PKCN 不做迁移。

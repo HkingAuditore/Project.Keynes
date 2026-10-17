@@ -12,7 +12,7 @@
 
 - [科技树、科技值与科研经济运行时](./technology-tree-runtime.md)：180 项权威目录、环境/资源
   研究条件、实践突破、全内容绑定、科技值市场与国家采购、Effect/Modifier ACK，以及
-  PKCN v11/PKEF v11/PKTR v6/PKID v3/PKEC v41 存档契约。
+  PKCN v11/PKEF v11/PKTR v6/PKID v4/PKEC v41 存档契约。
 
 - [环境驱动的科技路线差异化](./technology-route-differentiation.md)：把地理、气候、植被、
   资源、社会发展、Trigger、Effect 和经济内容组织成可分化、可重放、可审计的科技路线。
@@ -75,7 +75,7 @@ cohort 与家族分支的八维度综合满意度、阶层权重、生存闸门�
 ## Native Ideology Runtime
 
 - [Native Ideology Runtime](./native-ideology-runtime.md)：国家范围理念收藏、槽位、三选一、
-  理解度/等级、阶层民意门、互斥组、联动、ACK 门控 Effect/Modifier 事务与 PKID v3。
+  理解度/等级、阶层民意门、互斥组、联动、ACK 门控 Effect/Modifier 事务与 PKID v4。
 - 修改理念目录、命令、民意公式、联动、Effect 绑定、存档或理念面板时，必须先读并同步
   这份主说明与 `project-keynes-ideology-runtime` Skill。
 
@@ -132,7 +132,7 @@ cohort 与家族分支的八维度综合满意度、阶层权重、生存闸门�
     - 冻结国家 epoch、科技门控、国家资产转移、货币/商品联合守恒与 hash 边界。
 
 12. [Country Scheduling / Save](./country-scheduling-save.md)
-   - `country_daily`、命令屏障、PKCN v11 + PKEF v11 + PKTR v6 + PKID v3 + PKEC v41 顺序与兼容性拒绝。
+   - `country_daily`、命令屏障、PKCN v11 + PKEF v11 + PKTR v6 + PKID v4 + PKEC v41 顺序与兼容性拒绝。
    - 外国 AI 的规划/提交时机与 `pkai` 见 [Country AI 运行时](./country-ai-runtime.md)。
 
 13. [Economy Fixed Point / Ledger / Formula](./economy-fixed-point-ledger-formulas.md)
@@ -171,7 +171,7 @@ Codex 工作流。修改经济运行时文档或默认机制时，必须同步�
 
 理念专项 Skill 位于
 [`project-keynes-ideology-runtime`](../../.codex/skills/project-keynes-ideology-runtime/SKILL.md)，
-约束 `NativeIdeologyRuntime`、阶层民意快照、互斥/联动、Effect ACK、PKID v3 和理念面板。
+约束 `NativeIdeologyRuntime`、阶层民意快照、互斥/联动、Effect ACK、PKID v4 和理念面板。
 修改理念内容、命令、民意门、联动、存档或 UI 时必须同时使用并同步该 Skill。
 
 ## 与现有文档的关系

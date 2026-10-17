@@ -1,6 +1,6 @@
 ---
 name: project-keynes-ideology-runtime
-description: Guide Project.Keynes native ideology-system development and review across IdeologyCatalog compilation, NativeIdeologyRuntime collection/slots/offers/understanding/levels, class-opinion support gates, exclusion groups, synergies, ACK-gated Effect/Modifier transitions, PKID v3 persistence, IdeologyFacade/PlayerController/UI, and verification. Use whenever the user mentions 理念, ideology, national spirit, 民族精神, three-card offer, 三选一抽卡, ideology slots, class opinion, 阶层民意, ideology synergy, PKID, ideology_runtime, ideology workspace, or wants to add/change/debug an ideology, its UniqueSource Country modifiers, or the ideology panel.
+description: Guide Project.Keynes native ideology-system development and review across IdeologyCatalog compilation and the generated 30-card/6-school catalog, NativeIdeologyRuntime and the worker RuntimeIdeologyPodAuthority (collection/slots/offers/reroll/understanding/levels/increment-based points), class-opinion support gates, exclusion groups, named synergies and school resonances, technology slot unlocks, ACK-gated Effect/Modifier transitions, PKID v4 and IDP2 persistence, IdeologyFacade/PlayerController pause-and-step draw flow, the papercut ideology workspace, and verification. Use whenever the user mentions 理念, 理念点, ideology, national spirit, 民族精神, three-card offer, 三选一抽卡, 重抽, 流派共鸣, ideology slots, class opinion, 阶层民意, ideology synergy, PKID, IDP2, ideology_runtime, ideology workspace, or wants to add/change/debug an ideology, its UniqueSource Country modifiers, or the ideology panel.
 ---
 
 # Project.Keynes Ideology Runtime
@@ -36,8 +36,15 @@ Inspect current source before editing:
 - `gdext/src/world_ext_ideology.cpp`, `world_ext.h`, `world_ext_bind_methods.cpp`
 - `Project/project-keynes/scripts/ideology/`
 - `Project/project-keynes/scripts/simulation/systems/ideology_runtime_system.gd`
-- `Project/project-keynes/data/ideologies/default_ideology_catalog.tres`
+- `gdext/src/runtime_ideology_pod.{h,cpp}` and the ideology bridge in
+  `native_simulation_host.cpp` (`stage_ideology_modifier_commands`,
+  `settle_ideology_modifier_acks`) for the production worker path
+- `Project/project-keynes/tools/ideology/generate_ideology_catalog.py` (source
+  of `default_ideology_catalog.tres` and the ideology rows of
+  `default_modifier_catalog.tres`; edit the generator, not the `.tres`)
 - `Project/project-keynes/scripts/ui/components/ideology_workspace.gd`
+  plus `ideology_card.gd`, `ideology_slot_niche.gd`, `ideology_point_scroll.gd`,
+  `ideology_art.gd`, and `assets/ui/ideology_v1/`
 - `Project/project-keynes/scripts/ui/country_view_model.gd`
 - `Project/project-keynes/scripts/game/player_controller.gd`
 - `Project/project-keynes/tests/ideology_*.gd`
@@ -88,7 +95,18 @@ or a second Modifier writer for equipped ideas.
   rows contribute zero. Optional critical-class floors (`>= -65536`) block even
   when the weighted average passes. Empty stances bypass the gate.
 - Visit only reverse-CSR synergy candidates after equip/unequip/level/promotion.
-  Do not scan the synergy catalog.
+  Do not scan the synergy catalog. School resonances are synergies whose rows
+  list the whole school with `min_count` 2 or 4.
+- Ideology points accrue only from growth deltas (population, installed
+  buildings, trade value per day) carried on the committed class-opinion
+  snapshot, scaled by the opinion factor `[0.5,1.5]` and the frozen
+  `country.ideology.point_gain_factor`, capped per period. First observation
+  only sets the baseline. Settle once per country per opinion revision; never
+  scan ideas for points. Main and worker paths must use the same integer
+  formula.
+- The worker path must apply real Modifiers: one atomic Modifier POD batch per
+  transition, ACK derived from the committed batch result. Never reintroduce a
+  synthesized `OK` ACK.
 - Keep daily work on pending ACK refs, ideology-ID-sorted `active_state_indices`,
   and a head-cursor command merge. Quiescent evidence is
   `sparse_idea_scan_count=0`, `dormant_scan_count=0`,
@@ -97,10 +115,12 @@ or a second Modifier writer for equipped ideas.
 - Resolve stable IDs in `IdeologyCatalog` / `IdeologyFacade`. Native hot loops
   use dense IDs, Q16, bitsets, and bounded scratch. No Dictionary, String,
   Variant, Godot Object, or unbounded output in evaluation.
-- Persist PKID v3 authoritative idea state, points, offer/RNG, producer
-  high-water, queued commands, pending Effect transaction IDs, and durable
-  binding identity. Rebuild derived indices, slot caches, and class-influence
-  after restore. Settled UI receipts are not saved.
+- Persist PKID v4 (and the worker `IDP2` mirror) authoritative idea state,
+  points, offer/RNG, draw count, point baselines, ledger and 32-entry history,
+  producer high-water, queued commands, pending Effect transaction IDs, and
+  durable binding identity. Rebuild derived indices, slot caches,
+  technology-driven capacity, and class-influence after restore. Settled UI
+  receipts are not saved. PKID v3 / IDP1 fail closed.
 - Restore PKTR then PKEF then PKID. A present PKID must match catalog hash and
   payload exactly. Every active idea must resolve its PKEF v10 external binding;
   pending ideology transactions are audited both ways. Never repair a missing
@@ -131,22 +151,27 @@ or a second Modifier writer for equipped ideas.
 
 ## Current production content
 
-The default catalog authors four roads and two synergies. Do not collapse them
-onto a shared `country.economic_mobilization` stub:
+The default catalog is generated by
+`tools/ideology/generate_ideology_catalog.py`:
 
-| Road / synergy | Equipped (level 1) | Mastered (level 2) |
-| --- | --- | --- |
-| 共同体治理 `idea.collective_stewardship` | agriculture output +6%; drought loss −8% | double |
-| 自由交换 `idea.free_exchange` | domestic trade capacity +8%; trade speed +6% | double |
-| 学识官署 `idea.scholar_office` | knowledge output +6%; science research +8% | double |
-| 公民动员 `idea.civic_muster` | national construction time −6%; economy-wide output +3% | double |
-| 计划仓廪 `synergy.planned_granaries` | drought loss −10%; agriculture output +4% | — |
-| 特许开拓 `synergy.chartered_frontier` | domestic trade capacity +5%; construction time −4% | — |
+- 30 cards, 6 schools × 5 (农本 agrarian, 商贸 commerce, 学识 learning, 动员
+  mobilization, 工造 industry, 调和 harmony); each card owns a UniqueSource
+  Country definition `ideology.<key>`. Never collapse them onto a shared stub.
+- Rarity common/rare/legendary, weights 120/60/20; legendary and some rare
+  cards need era technology. Exclusion groups `economic_order`, `labor_order`,
+  `land_order`. Some cards carry a cost term.
+- 3 levels: thresholds 0 / 4.0 / 12.0, daily understanding 0.125 / 0.0625 / 0,
+  magnitudes `65536` / `104858` / `144179`.
+- 6 named synergies `ideology.synergy.*` and 12 resonances
+  `ideology.resonance.<school>.<2|4>`.
+- Slots 2 ideology / 1 spirit, growing via `capacity_unlocks` to 6 / 3.
+- Points start at 0. Every draw is paid: 6.0 first, then x1.2 per draw (`offer_cost_growth_percent`); reroll
+  (`REROLL_IDEOLOGY_OFFER = 10`, `ideology.reroll`) costs 50% of the cost paid for the active offer.
 
-`共同体治理` and `自由交换` remain exclusive through `economic_order`.
-Equipping applies Q16 magnitude `65536`; understanding the second level
-replaces the same definition at `131072`. The ideology panel must show
-`level_effect_lines` on three-card offers and collection rows.
+The ideology panel must show `level_effect_lines` on offer cards and the
+collection. Player draws pause the clock, step one day at 1x until the new
+offer appears, and restore the clock after choose/reroll; failures or a 3-day
+timeout unlock and report.
 
 ## Verify
 
@@ -162,6 +187,11 @@ headless fixtures. At minimum run:
 - `tests/ideology_runtime_test.gd`
 - `tests/ideology_opinion_synergy_test.gd`
 - `tests/ideology_content_test.gd`
+- `tests/ideology_progression_test.gd` (points, cost curve, reroll, slots, resonance)
+- `tests/ideology_draw_flow_test.gd` and `tests/player_country_ui_smoke_test.gd`
+  when PlayerController, the facade, or the workspace changes
+- `tests/runtime_ideology_save_roundtrip_test.gd` and
+  `tests/runtime_domain_pod_test.gd` when the worker POD or IDP2 changes
 - `tests/ideology_runtime_stress_test.gd` when the hot path, slice budget, or
   512-country continuation changes
 - affected Trigger/PlayerController/Modifier/Effect/save fixtures

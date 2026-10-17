@@ -794,6 +794,7 @@ bool RuntimeCountryPodAuthority::bootstrap(
         return false;
     }
     _state = snapshot;
+    country_core_repair_research_active_index(_state);
     // Older diagnostic captures did not carry a transport session. They are
     // safe to normalize at the authority boundary; a persisted ABI-2 section
     // must always contain the explicit non-zero session value.
@@ -1750,6 +1751,7 @@ bool RuntimeCountryPodAuthority::restore_save(
     // Commit only after every header, vector shape, checksum, and state hash
     // has validated. A failed restore leaves the previous worker state intact.
     _state = std::move(restored);
+    country_core_repair_research_active_index(_state);
     _catalog = catalog;
     _pending = std::move(restored_pending);
     _plan_active = false;

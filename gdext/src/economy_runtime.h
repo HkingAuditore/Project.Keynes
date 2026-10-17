@@ -1008,6 +1008,13 @@ public:
         std::vector<int64_t> owner_employed;
         std::vector<int64_t> satisfaction_weighted;
         std::vector<int32_t> satisfaction_q16;
+        // Per-country development lanes consumed by ideology point accrual.
+        // They are collected in the same publish pass and frozen with the
+        // class rows, so ideology never samples live Economy stores.
+        std::vector<int64_t> country_population;
+        std::vector<int64_t> country_buildings_installed;
+        std::vector<int64_t> country_trade_base_value;
+        int64_t period_days = 1;
     };
     const CountryClassOpinionSnapshot &country_class_opinion_snapshot() const {
         return _class_opinion_buffers[

@@ -666,6 +666,7 @@ public:
     bool ideology_should_run(int64_t day_index) const;
     godot::Dictionary apply_runtime_ideology_snapshot(int64_t after_generation);
     godot::Dictionary get_ideology_snapshot(int64_t country_handle) const;
+    godot::Dictionary preview_ideology_offer_eligibility(int64_t country_handle) const;
     godot::Dictionary explain_ideology(int64_t country_handle, int32_t ideology_id);
     godot::Dictionary explain_ideologies(
         int64_t country_handle,
@@ -3077,6 +3078,8 @@ private:
     std::string                               _runtime_graph_country_peer_fault_reason;
     uint64_t                                  _runtime_graph_trigger_blocked_pulses = 0;
     std::string                               _runtime_graph_trigger_blocked_reason;
+    // Last Economy class-opinion revision handed to the worker Ideology stage.
+    uint64_t                                  _ideology_opinion_published_revision = 0;
     uint32_t                                  _runtime_graph_last_elapsed_us = 0;
     uint32_t                                  _runtime_graph_last_status = 0;
     double                                    _runtime_graph_post_pulse_flush_ms = 0.0;

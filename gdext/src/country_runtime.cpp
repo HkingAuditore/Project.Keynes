@@ -4824,7 +4824,18 @@ bool NativeCountryRuntime::apply_committed_read_snapshot(
     _tax_policy_version = repaired.generation;
     _territory_generation = repaired.generation;
     _research_generation = repaired.generation;
-    _visual_era_generation = repaired.generation;
+    // Worker snapshots do not carry the visual-era cache. Derive it from the
+    // committed milestone bits so building visuals refresh in ACTIVE mode.
+    if (_current_visual_era.size() < _countries.active.size())
+        _current_visual_era.resize(_countries.active.size(), -1);
+    for (int32_t slot = 0;
+         slot < static_cast<int32_t>(_countries.active.size()); ++slot) {
+        const int32_t era = visual_era_index_for_slot(slot);
+        if (_current_visual_era[static_cast<size_t>(slot)] == era) continue;
+        _current_visual_era[static_cast<size_t>(slot)] = era;
+        _visual_era_dirty_slots.push_back(slot);
+        ++_visual_era_generation;
+    }
     _country_research_progress.assign(repaired.country_count, {});
     _country_research_signal_cells.assign(repaired.country_count, {});
     _country_research_signal_evidence.assign(repaired.country_count, {});

@@ -4,6 +4,7 @@
 #include "economy_runtime.h"
 #include "effect_runtime.h"
 #include "ideology_runtime.h"
+#include "modifier_runtime.h"
 #include "native_simulation_host.h"
 
 #include <algorithm>
@@ -54,6 +55,10 @@ RuntimeIdeologyOpinionSnapshot copy_opinion_snapshot(
     out.owner_employed = source.owner_employed;
     out.satisfaction_weighted = source.satisfaction_weighted;
     out.satisfaction_q16 = source.satisfaction_q16;
+    out.country_population = source.country_population;
+    out.country_buildings_installed = source.country_buildings_installed;
+    out.country_trade_base_value = source.country_trade_base_value;
+    out.period_days = std::max<int64_t>(1, source.period_days);
     return out;
 }
 } // namespace
@@ -66,6 +71,8 @@ Dictionary DCWorldExt::configure_ideologies(const Dictionary &catalog) {
         static_cast<NativeEconomyRuntime *>(_economy_runtime));
     ideology_runtime_from(_ideology_runtime)->attach_effect_runtime(
         static_cast<EffectRuntime *>(_effect_runtime));
+    ideology_runtime_from(_ideology_runtime)->attach_modifier_runtime(
+        static_cast<ModifierRuntime *>(_modifier_runtime));
     Dictionary result = ideology_runtime_from(_ideology_runtime)->configure(catalog);
     if (!bool(result.get("ok", false)) || _country_runtime == nullptr)
         return result;
@@ -187,6 +194,7 @@ Dictionary DCWorldExt::publish_ideology_worker_inputs() {
     std::string error;
     const bool ok = _runtime_host->publish_ideology_opinion_snapshot(
         snapshot, error);
+    if (ok) _ideology_opinion_published_revision = snapshot.revision;
     out["ok"] = ok;
     out["code"] = ok ? "ok" : String(error.c_str());
     out["revision"] = static_cast<int64_t>(snapshot.revision);
@@ -283,6 +291,15 @@ Dictionary DCWorldExt::apply_runtime_ideology_snapshot(int64_t after_generation)
         out["code"] = "economy_day_inflight";
         return out;
     }
+    // The worker Ideology stage cannot run before it has an opinion snapshot.
+    // The runtime graph pulse publishes one too, but it may be disabled or out
+    // of budget; this per-tick write-back path is the guaranteed hand-off.
+    if (_economy_runtime != nullptr &&
+        static_cast<NativeEconomyRuntime *>(_economy_runtime)
+                ->country_class_opinion_snapshot().revision !=
+            _ideology_opinion_published_revision) {
+        publish_ideology_worker_inputs();
+    }
     const uint64_t cursor = after_generation < 0
         ? std::numeric_limits<uint64_t>::max()
         : static_cast<uint64_t>(after_generation);
@@ -311,6 +328,11 @@ Dictionary DCWorldExt::apply_runtime_ideology_snapshot(int64_t after_generation)
 Dictionary DCWorldExt::get_ideology_snapshot(int64_t country_handle) const {
     return _ideology_runtime == nullptr ? unavailable()
         : ideology_runtime_from(_ideology_runtime)->snapshot(country_handle);
+}
+
+Dictionary DCWorldExt::preview_ideology_offer_eligibility(int64_t country_handle) const {
+    return _ideology_runtime == nullptr ? unavailable()
+        : ideology_runtime_from(_ideology_runtime)->preview_offer_eligibility(country_handle);
 }
 
 Dictionary DCWorldExt::explain_ideology(int64_t country_handle, int32_t ideology_id) {

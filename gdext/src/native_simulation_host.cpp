@@ -1501,6 +1501,9 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     }
     if (ideology_candidate_ready) {
         _ideology_pod_authority = std::move(ideology_candidate);
+        _ideology_modifier_inflight.clear();
+        _ideology_loose_modifier_rows.clear();
+        _ideology_day_modifier_batches.clear();
         const RuntimeIdeologyPodSnapshot &initial =
             _ideology_pod_authority.snapshot();
         if (!initial.countries.empty()) {
@@ -6800,6 +6803,9 @@ bool NativeSimulationHost::configure_ideology_pod(
     _ideology_commands.clear();
     _ideology_intents.clear();
     _ideology_acks.clear();
+    _ideology_modifier_inflight.clear();
+    _ideology_loose_modifier_rows.clear();
+    _ideology_day_modifier_batches.clear();
     return true;
 }
 
@@ -6890,6 +6896,10 @@ bool NativeSimulationHost::restore_ideology_pod_save(
     if (!candidate.configure(_ideology_pod_catalog, error) ||
         !candidate.restore(bytes, size, error)) return false;
     _ideology_pod_authority = std::move(candidate);
+    _ideology_modifier_inflight.clear();
+    _ideology_loose_modifier_rows.clear();
+    _ideology_day_modifier_batches.clear();
+    _ideology_pod_authority.rearm_pending_transitions();
     return true;
 }
 
@@ -8647,12 +8657,35 @@ bool NativeSimulationHost::execute_ideology_worker_stage(
     }
     const auto country = std::atomic_load_explicit(
         &_country_snapshot, std::memory_order_acquire);
-    const auto opinion = std::atomic_load_explicit(
+    auto opinion = std::atomic_load_explicit(
         &_ideology_opinion_snapshot, std::memory_order_acquire);
     if (country == nullptr || opinion == nullptr) {
         error = country == nullptr ? "ideology_country_snapshot_missing" :
             "ideology_opinion_snapshot_missing";
         return false;
+    }
+    // Freeze country.ideology.point_gain_factor from the last committed
+    // Modifier snapshot (Modifier runs after Ideology, so this is the previous
+    // day's value). Only the opinion copy changes; the published input stays.
+    if (_ideology_pod_catalog.point_gain_stat_id >= 0 && _modifier_pod_configured &&
+        opinion->country_population.size() == opinion->country_count) {
+        auto with_factor = std::make_shared<RuntimeIdeologyOpinionSnapshot>(*opinion);
+        with_factor->point_gain_factor_q16.assign(opinion->country_count, 65536);
+        const auto &buckets = _modifier_pod_authority.snapshot().buckets;
+        for (const RuntimeModifierPodBucket &bucket : buckets) {
+            if (bucket.domain != 1 || bucket.scope != 2 ||
+                bucket.stat_id != static_cast<uint32_t>(
+                    _ideology_pod_catalog.point_gain_stat_id)) continue;
+            const uint32_t slot = static_cast<uint32_t>(bucket.scope_id & 0xffffffffull);
+            if (slot >= opinion->country_count ||
+                opinion->country_handles[slot] != bucket.scope_id) continue;
+            double value = (1.0 + bucket.sum_add) * bucket.product_factor;
+            if (!std::isfinite(value)) value = 1.0;
+            value = std::clamp(value, 0.0, 4.0);
+            with_factor->point_gain_factor_q16[slot] =
+                static_cast<int32_t>(std::lround(value * 65536.0));
+        }
+        opinion = std::move(with_factor);
     }
     if (_ideology_pod_authority.snapshot().countries.empty()) {
         if (!_ideology_pod_authority.bootstrap(*country, *opinion, error))
@@ -8694,7 +8727,31 @@ bool NativeSimulationHost::execute_ideology_worker_stage(
             _ideology_pod_authority.discard_plan();
             return false;
         }
-        {
+        if (ideology_modifier_bridge_active()) {
+            // Worker owns MODIFIER: keep the transition in-worker until the
+            // Modifier POD has really applied its rows.
+            for (const RuntimeDomainIntent &intent : plan.intents) {
+                IdeologyModifierInflight inflight;
+                inflight.intent = intent;
+                for (const auto &row : plan.modifier_rows)
+                    if (row.transition_id == intent.source_id)
+                        inflight.rows.push_back(row);
+                auto existing = std::find_if(
+                    _ideology_modifier_inflight.begin(),
+                    _ideology_modifier_inflight.end(),
+                    [&](const IdeologyModifierInflight &item) {
+                        return item.intent.source_id == intent.source_id;
+                    });
+                if (existing != _ideology_modifier_inflight.end())
+                    *existing = std::move(inflight);
+                else
+                    _ideology_modifier_inflight.push_back(std::move(inflight));
+                ++emitted;
+            }
+            for (const auto &row : plan.modifier_rows)
+                if (row.transition_id == 0)
+                    _ideology_loose_modifier_rows.push_back(row);
+        } else {
             std::lock_guard<std::mutex> lock(_ideology_transport_mutex);
             for (const RuntimeDomainIntent &intent : plan.intents) {
                 if (_ideology_intents.size() >= RUNTIME_DOMAIN_INTENT_CAPACITY) {
@@ -8744,32 +8801,131 @@ bool NativeSimulationHost::execute_ideology_worker_stage(
     return true;
 }
 
-uint32_t NativeSimulationHost::ack_ideology_intents_in_worker(int64_t day) {
-    std::lock_guard<std::mutex> lock(_ideology_transport_mutex);
-    uint32_t acked = 0;
-    while (!_ideology_intents.empty()) {
-        if (_ideology_acks.size() >= RUNTIME_DOMAIN_INTENT_CAPACITY) break;
-        const RuntimeDomainIntent intent = _ideology_intents.front();
-        _ideology_intents.pop_front();
-        RuntimeDomainAck ack;
-        // Ideology transitions address EFFECT, so the ACK must carry the
-        // EFFECT domain tag even though no Effect instance is involved:
-        // RuntimeIdeologyPodAuthority::apply_ack ignores every other domain.
-        ack.domain = static_cast<uint16_t>(RuntimeDomainId::EFFECT);
-        ack.code = RuntimeDomainAckCode::OK;
-        ack.request_id = intent.request_id != 0 ? intent.request_id
-                                                : intent.source_id;
-        ack.transaction_id = intent.source_id;
-        ack.target_handle = intent.target_handle;
-        ack.target_generation = intent.target_generation;
-        ack.effective_day = intent.effective_day;
-        ack.producer_id = intent.producer_id;
-        ack.sequence = intent.sequence;
-        _ideology_acks.push_back(ack);
-        ++acked;
+bool NativeSimulationHost::ideology_modifier_bridge_active() const {
+    const uint32_t requested =
+        _requested_authority_mask.load(std::memory_order_acquire);
+    return _mode.load(std::memory_order_acquire) ==
+               RuntimeSimulationMode::ACTIVE &&
+        _modifier_pod_configured &&
+        (requested & runtime_domain_mask(RuntimeDomainId::IDEOLOGY)) != 0u &&
+        (requested & runtime_domain_mask(RuntimeDomainId::MODIFIER)) != 0u;
+}
+
+void NativeSimulationHost::stage_ideology_modifier_commands(
+        int64_t day, uint64_t input_generation) {
+    _ideology_day_modifier_batches.clear();
+    if (_ideology_modifier_inflight.empty() &&
+        _ideology_loose_modifier_rows.empty()) return;
+    auto resolve = [this](const RuntimeIdeologyPodModifierRow &row) {
+        const auto found = _modifier_definition_id_by_key_hash.find(
+            row.definition_key_hash);
+        return found == _modifier_definition_id_by_key_hash.end()
+            ? -1 : found->second;
+    };
+    auto make_command = [&](const RuntimeIdeologyPodModifierRow &row,
+                            int32_t definition_id) {
+        RuntimeModifierPodCommand command;
+        uint64_t hash = 1469598103934665603ull;
+        for (uint64_t value : {row.transition_id, row.source_id,
+                               row.definition_key_hash,
+                               static_cast<uint64_t>(row.ordinal),
+                               static_cast<uint64_t>(row.opcode),
+                               _ideology_modifier_sequence}) {
+            hash ^= value; hash *= 1099511628211ull;
+        }
+        command.request_id = hash == 0 ? 1 : hash;
+        command.producer_id = 0x49444530u; // IDE0
+        command.sequence = _ideology_modifier_sequence++;
+        command.requested_day = day;
+        command.effective_day = day;
+        command.opcode = row.opcode;
+        command.domain = row.domain;
+        command.definition_id = definition_id;
+        command.scope = 2; // ENTITY: the country handle
+        command.entity_handle = row.country_handle;
+        command.target_generation = row.country_generation;
+        command.source_type = RUNTIME_IDEOLOGY_MODIFIER_SOURCE_TYPE;
+        command.source_id = row.source_id;
+        command.duration_days = -1;
+        command.stacks = 1;
+        command.magnitude_q16 = row.magnitude_q16;
+        command.input_generation = input_generation;
+        return command;
+    };
+    for (auto &inflight : _ideology_modifier_inflight) {
+        if (inflight.submitted != 0) continue;
+        // Preflight the whole batch: one unresolved row means zero submission.
+        bool resolved = true;
+        for (const auto &row : inflight.rows)
+            if (resolve(row) < 0) { resolved = false; break; }
+        inflight.batch_index = -1;
+        if (!resolved) {
+            // Settled as REJECTED after this day's Modifier stage.
+            inflight.submitted = 2;
+            continue;
+        }
+        std::vector<RuntimeModifierPodCommand> batch;
+        batch.reserve(inflight.rows.size());
+        for (const auto &row : inflight.rows) {
+            batch.push_back(make_command(row, resolve(row)));
+        }
+        inflight.batch_index =
+            static_cast<int32_t>(_ideology_day_modifier_batches.size());
+        _ideology_day_modifier_batches.push_back(std::move(batch));
+        inflight.submitted = 1;
     }
-    (void)day;
-    return acked;
+    // Loose synergy rows: each synergy add/remove pair is its own batch.
+    for (const auto &row : _ideology_loose_modifier_rows) {
+        const int32_t definition_id = resolve(row);
+        if (definition_id >= 0)
+            _ideology_day_modifier_batches.push_back({make_command(row, definition_id)});
+    }
+}
+
+void NativeSimulationHost::settle_ideology_modifier_acks(
+        const std::vector<uint8_t> &batch_ok, bool committed) {
+    // Loose synergy rows stay queued until a Modifier day commits them.
+    if (committed) _ideology_loose_modifier_rows.clear();
+    std::vector<RuntimeDomainAck> settled;
+    for (auto it = _ideology_modifier_inflight.begin();
+         it != _ideology_modifier_inflight.end();) {
+        auto &inflight = *it;
+        if (inflight.submitted == 0) { ++it; continue; }
+        RuntimeDomainAckCode code = RuntimeDomainAckCode::OK;
+        bool done = false;
+        if (inflight.submitted == 2) {
+            code = RuntimeDomainAckCode::REJECTED;
+            done = true;
+        } else if (!committed) {
+            // Modifier day failed atomically: resubmit the batch next day.
+            inflight.submitted = 0;
+            ++it;
+            continue;
+        } else {
+            done = true;
+            if (inflight.batch_index < 0 ||
+                static_cast<size_t>(inflight.batch_index) >= batch_ok.size() ||
+                batch_ok[static_cast<size_t>(inflight.batch_index)] == 0u)
+                code = RuntimeDomainAckCode::REJECTED;
+        }
+        if (!done) { ++it; continue; }
+        RuntimeDomainAck ack;
+        ack.domain = static_cast<uint16_t>(RuntimeDomainId::EFFECT);
+        ack.code = code;
+        ack.request_id = inflight.intent.request_id != 0
+            ? inflight.intent.request_id : inflight.intent.source_id;
+        ack.transaction_id = inflight.intent.source_id;
+        ack.target_handle = inflight.intent.target_handle;
+        ack.target_generation = inflight.intent.target_generation;
+        ack.effective_day = inflight.intent.effective_day;
+        ack.producer_id = inflight.intent.producer_id;
+        ack.sequence = inflight.intent.sequence;
+        settled.push_back(ack);
+        it = _ideology_modifier_inflight.erase(it);
+    }
+    if (settled.empty()) return;
+    std::lock_guard<std::mutex> lock(_ideology_transport_mutex);
+    for (const auto &ack : settled) _ideology_acks.push_back(ack);
 }
 
 bool NativeSimulationHost::execute_modifier_worker_stage(
@@ -8913,10 +9069,17 @@ bool NativeSimulationHost::execute_modifier_worker_stage(
     RuntimeModifierPodReport modifier_report;
     std::vector<RuntimeDomainAck> modifier_acks;
     double modifier_plan_ms = 0.0;
+    const bool ideology_bridge = ideology_modifier_bridge_active();
+    std::vector<uint8_t> ideology_batch_ok;
+    if (ideology_bridge)
+        stage_ideology_modifier_commands(day, input_generation);
     const auto plan_started = std::chrono::steady_clock::now();
     modifier_ok = _modifier_pod_authority.plan_day(
         day, input_generation, modifier_commands, modifier_intents,
-        modifier_snapshot, modifier_acks, modifier_report, modifier_error);
+        modifier_snapshot, modifier_acks, modifier_report, modifier_error,
+        ideology_bridge && !_ideology_day_modifier_batches.empty()
+            ? &_ideology_day_modifier_batches : nullptr,
+        &ideology_batch_ok);
     modifier_plan_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - plan_started).count();
     if (!modifier_ok) {
@@ -9011,6 +9174,8 @@ bool NativeSimulationHost::execute_modifier_worker_stage(
         (modifier_error.empty() ? "modifier_pod_plan_failed"
                                 : modifier_error.c_str());
     publish_fallback(reason);
+    if (ideology_bridge)
+        settle_ideology_modifier_acks(ideology_batch_ok, modifier_committed);
     if (!modifier_committed) {
         error = reason;
         return false;
@@ -10942,15 +11107,9 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                         runtime_domain_mask(RuntimeDomainId::EFFECT),
                         std::memory_order_release);
                 }
-                // G8: when the worker also owns IDEOLOGY, the Effect side of an
-                // Ideology transition is this stage. ACK in-worker so the
-                // transition settles on the next Ideology visit without a
-                // main-thread round trip. The pump stays for IDEOLOGY-only
-                // grants and for anything this drain missed.
-                if ((_requested_authority_mask.load(std::memory_order_acquire) &
-                     runtime_domain_mask(RuntimeDomainId::IDEOLOGY)) != 0u) {
-                    ack_ideology_intents_in_worker(plan.context.day);
-                }
+                // Ideology transitions no longer receive a synthetic OK here:
+                // under IDEOLOGY|MODIFIER the Modifier stage applies their rows
+                // as atomic batches and derives the ACK from that result.
                 // H8: same bridge for Trigger. Its effect intents are delivered
                 // by this stage under a joint TRIGGER|EFFECT grant, so ACK them
                 // here and let the next Trigger visit clear its barrier.
@@ -12891,7 +13050,7 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
         }
     }
     if ((parsed.section_mask & RUNTIME_SAVE_SECTION_IDEOLOGY) != 0) {
-        constexpr uint32_t IDEOLOGY_SECTION_MARKER = 0x31504449u; // IDP1
+        constexpr uint32_t IDEOLOGY_SECTION_MARKER = 0x32504449u; // IDP2
         uint32_t ideology_marker = 0;
         uint32_t ideology_size = 0;
         if (cursor > payload_end || payload_end - cursor < 16u ||
@@ -12922,7 +13081,7 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
         }
         cursor += 8u;
         if (parsed.ideology_bytes.size() < 4u ||
-            std::memcmp(parsed.ideology_bytes.data(), "IDP1", 4u) != 0) {
+            std::memcmp(parsed.ideology_bytes.data(), "IDP2", 4u) != 0) {
             error = "runtime_bundle_ideology_section_marker_invalid";
             return false;
         }
@@ -12930,7 +13089,7 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
         // so it can only be configured after PKCN restores — and PKSR restores
         // before PKCN. When the catalog is not configured yet, the checksum and
         // marker above still reject corrupt bytes; the catalog-dependent dry
-        // run is deferred to worker start, which restores IDP1 against the
+        // run is deferred to worker start, which restores IDP2 against the
         // then-configured catalog and faults before any day runs if it fails.
         if (_ideology_pod_configured) {
             RuntimeIdeologyPodAuthority candidate;
@@ -13612,7 +13771,7 @@ void NativeSimulationHost::build_save_bundle(
     }
 
     if (!bundle->ideology_bytes.empty()) {
-        constexpr uint32_t IDEOLOGY_SECTION_MARKER = 0x31504449u; // IDP1
+        constexpr uint32_t IDEOLOGY_SECTION_MARKER = 0x32504449u; // IDP2
         append_u32_le(IDEOLOGY_SECTION_MARKER);
         const uint32_t ideology_section_size = static_cast<uint32_t>(
             std::min<size_t>(bundle->ideology_bytes.size(),

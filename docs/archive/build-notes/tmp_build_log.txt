@@ -1,0 +1,14 @@
+﻿scons: Reading SConscript files ...
+Building for architecture x86_64 on platform windows
+scons: done reading SConscript files.
+scons: Building targets ...
+scons: `godot-cpp\bin\libgodot-cpp.windows.template_debug.x86_64.lib' is up to date.
+scons : scons: *** [src\economy_runtime.windows.template_debug.x86_64.obj] D:\Godot\ProjectKeynes\Project.Keynes\gdext\
+src\economy_runtime.windows.template_debug.x86_64.obj: 另一个程序正在使用此文件，进程无法访问。
+所在位置 C:\Users\hkinghuang\AppData\Local\Temp\ps-script-84ed8393-27e5-4cc1-9bfd-c60178548c0a.ps1:92 字符: 1
++ scons platform=windows target=template_debug dev_build=no -j8 2>&1 |  ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (scons: *** [src...正在使用此文件，进程无法访问。:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+scons: building terminated because of errors.

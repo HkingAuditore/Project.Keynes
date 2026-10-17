@@ -7,6 +7,11 @@
 使国家留在集合中；队列为空且无 pending/ACK 时立即退出。集合及 membership bitset 是
 可重建的 transient index，不进入 PKCN、state hash 或事件顺序。
 
+所有入队路径（enqueue/move、grant 产生 pending）必须调用
+`country_core_mark_research_active` 把国家插入集合；Worker POD 在 bootstrap 与
+restore_save 后调用 `country_core_repair_research_active_index`，按队列/pending 重建遗漏
+成员。否则只要其他国家让集合非空，新入队国家的研究会永远不推进（2026-10 玩家科技树锁死）。
+
 科技目录配置时构建 discovery 反向 CSR。技术完成后只刷新该技术可能影响的 prerequisite、
 milestone、reveal/unlock frontier；FULL 诊断模式额外执行旧全扫描做 parity，若旧扫描还能
 新增节点则递增 `research_discovery_frontier_mismatches`。这条诊断路径只用于发现索引漏边，

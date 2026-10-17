@@ -621,6 +621,8 @@ void DCWorldExt::_bind_methods() {
                          DEFVAL(-1));
     ClassDB::bind_method(D_METHOD("get_ideology_snapshot", "country_handle"),
                          &DCWorldExt::get_ideology_snapshot);
+    ClassDB::bind_method(D_METHOD("preview_ideology_offer_eligibility", "country_handle"),
+                         &DCWorldExt::preview_ideology_offer_eligibility);
     ClassDB::bind_method(D_METHOD("explain_ideology", "country_handle", "ideology_id"),
                          &DCWorldExt::explain_ideology);
     ClassDB::bind_method(D_METHOD("explain_ideologies",

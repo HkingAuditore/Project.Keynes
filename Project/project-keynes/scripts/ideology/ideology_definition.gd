@@ -6,11 +6,17 @@ const IdeologyRequirementScript = preload("res://scripts/ideology/ideology_requi
 const IdeologyClassStanceScript = preload("res://scripts/ideology/ideology_class_stance.gd")
 
 enum Acquisition { DISCOVER = 1, DRAW = 2 }
+enum Rarity { COMMON = 1, RARE = 2, LEGENDARY = 3 }
+
+const RARITY_LABELS := {1: "寻常", 2: "珍稀", 3: "传世"}
 
 @export var id: StringName = &""
 @export var icon_key: StringName = &""
 @export var name_key: StringName = &""
 @export_multiline var detail_key: String = ""
+## School (流派) used by resonance synergies and the collection tabs.
+@export var school_id: StringName = &""
+@export_enum("Common:1", "Rare:2", "Legendary:3") var rarity: int = Rarity.COMMON
 @export_range(1, 1000000, 1) var rarity_weight: int = 100
 @export_range(1, 64, 1) var ideology_slot_cost: int = 1
 @export_range(1, 64, 1) var national_spirit_slot_cost: int = 1
@@ -26,7 +32,8 @@ enum Acquisition { DISCOVER = 1, DRAW = 2 }
 
 func validate() -> String:
 	if id == &"" or rarity_weight <= 0 or ideology_slot_cost <= 0 \
-			or national_spirit_slot_cost <= 0 or acquisition_flags == 0:
+			or national_spirit_slot_cost <= 0 or acquisition_flags == 0 \
+			or rarity < Rarity.COMMON or rarity > Rarity.LEGENDARY:
 		return "ideology_definition_invalid"
 	if levels.is_empty() or levels.size() > 64:
 		return "ideology_level_count_invalid"

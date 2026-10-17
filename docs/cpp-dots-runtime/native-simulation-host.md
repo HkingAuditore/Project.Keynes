@@ -139,9 +139,9 @@ PKSR v1 runtime envelope 同样明确拒绝，v2 必须携带
 `runtime_domain_abi_version`、`section_mask`、pending command tail 和 producer
 cursor；checksum 校验通过后才允许进入下一次 worker start。
 
-When present, the worker ideology state is encoded as an independent `IDP1`
+When present, the worker ideology state is encoded as an independent `IDP2`
 section with its own ABI, catalog/state hash, bounded length, and checksum.
-`IDP1` is restored transactionally after worker stop and catalog/bootstrap
+`IDP2` is restored transactionally after worker stop and catalog/bootstrap
 completion. It is never reconstructed from `PDP3` or synchronous `PKID`.
 
 ## 后续迁移顺序
@@ -215,10 +215,11 @@ G8 在 Country 之后、Effect 之前跑独立 ACTIVE Ideology stage：
 
 1. grant `0x010` 后 `submit_ideology_commands` 只入 Host POD 队列（sole-writer），不再先改 legacy 队列。
 2. Worker：drain commands/acks → plan_day/commit_day 的 same-day continuation → intents → `_ideology_snapshots` ring。
-3. Ideology 的 transition intent 目标域是 EFFECT：同日 Effect ACTIVE stage 成功后由
-   `ack_ideology_intents_in_worker()` 在 worker 内 ACK；主线程
-   `poll_ideology_worker_intent` / `submit_ideology_worker_ack` pump 保留为协议路径，
-   也覆盖只授予 IDEOLOGY 的会话。
+3. Ideology 的 transition intent 目标域是 EFFECT：IDEOLOGY+MODIFIER 同时授权时，
+   `stage_ideology_modifier_commands()` 把每个 transition 的 Modifier template 行作为原子
+   batch 交给 Modifier POD（整批预解析，缺定义即零提交），`settle_ideology_modifier_acks()`
+   用真实 batch 结果生成 EFFECT ACK（Modifier 日失败则次日重交）。不再有自动 `OK`。
+   主线程 `poll_ideology_worker_intent` / `submit_ideology_worker_ack` pump 保留为协议路径。
 4. Climate park 日与 Country/Effect/Modifier 一起跳过；失败隔离，不回滚当日已提交的 Climate/Country。
 5. 主线程回灌 `NativeIdeologyRuntime`（`apply_runtime_ideology_snapshot`）；graph/SUS 抑制
    `run_ideology_daily` 与 `ideology_should_run`。

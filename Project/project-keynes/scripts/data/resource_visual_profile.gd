@@ -55,6 +55,37 @@ extends Resource
 @export_range(0.2, 1.0) var palette_saturation := 0.80
 @export var badge_px := 34.0
 @export var lens_fade_seconds := 0.25
+# 野生植物群落地被（ResourceGroundCover）：植物不再是单个小件，而是跨格连续的
+# 世界空间位图群落。尺度单位为格（hex 半径）。
+@export var ground_cover_enabled := true
+@export_range(0.0, 1.0) var ground_cover_opacity := 0.85
+# 世界空间贴图平铺周期：一张 512px 群落图覆盖的格数（越小植株越小）。
+@export_range(0.3, 6.0) var ground_cover_tile_hex := 1.6
+# 群落边界的噪声扭曲幅度，避免六边形硬边。
+@export_range(0.0, 1.0) var ground_cover_edge_warp_hex := 0.35
+# 群落内部成丛/空隙的噪声尺度与强度（0 = 均匀铺满）。
+@export_range(0.5, 10.0) var ground_cover_clump_scale_hex := 2.5
+@export_range(0.0, 1.0) var ground_cover_clump_strength := 0.45
+# 每档质量的边缘采样数（1 = 无软边，3 = 桌面高档软边）。
+@export var ground_cover_taps := PackedInt32Array([1, 1, 3])
+# 桌面高档：群落法线与冠层自阴影。
+@export_range(0.0, 2.0) var ground_cover_normal_strength := 0.8
+@export_range(0.0, 1.0) var ground_cover_shadow := 0.45
+# 资源透镜开启时群落保留的不透明度（徽章承担识别）。
+@export_range(0.0, 1.0) var ground_cover_lens_dim := 0.35
+# 远景（每格屏幕像素 < 8）时的不透明度倍率，远看只留色块分布。
+@export_range(0.0, 1.0) var ground_cover_far_opacity := 0.65
+# 聚落核心对野生地被的清除程度。
+@export_range(0.0, 1.0) var ground_cover_settlement_clear := 0.7
+# 地被 LUT 的 GPU 上传频率上限（仅在观测变化时上传）。
+@export_range(0.5, 30.0) var ground_cover_upload_hz := 4.0
+# 写实、小比例动物：每群只数，单只体长（格），低于此像素数淡出。
+@export_range(1, 9) var herd_size_min := 3
+@export_range(1, 9) var herd_size_max := 9
+@export_range(0.02, 0.3) var animal_length_hex := 0.11
+@export_range(0.5, 12.0) var animal_min_pixels := 3.0
+# 兽群踩踏痕迹（牧场小径/野猪拱土/驼队蹄印）的不透明度。
+@export_range(0.0, 1.0) var animal_trace_opacity := 0.45
 # Stable resource/signal IDs, never catalog indices. Supported keys: color,
 # priority, size_scale. This table is presentation only.
 @export var style_overrides: Dictionary = {}

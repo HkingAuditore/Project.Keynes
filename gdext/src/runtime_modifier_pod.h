@@ -152,7 +152,9 @@ public:
                   RuntimeModifierPodSnapshot &planned_snapshot,
                   std::vector<RuntimeDomainAck> &acks,
                   RuntimeModifierPodReport &report,
-                  std::string &error);
+                  std::string &error,
+                  const std::vector<std::vector<RuntimeModifierPodCommand>> *atomic_batches = nullptr,
+                  std::vector<uint8_t> *atomic_batch_ok = nullptr);
     bool commit_day(RuntimeModifierPodSnapshot &planned_snapshot,
                     std::string &error);
     void discard_plan();
