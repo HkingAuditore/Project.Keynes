@@ -2963,7 +2963,8 @@ Chunked MultiMesh 路径：
   - family batch 的 shadow 材质是 configure 时 duplicate 的，`VegetationFamilyLayer.sync_dynamic_materials()` 必须同步 `season_phase/day_phase/axial_tilt_rad/day_night_enabled/tod_sun_dir/tod_debug_sun_*`，否则 family 阴影不随太阳变化。
 - 性能约束：气候调色板、日照、地平线可见性、天空 GI 和谷地 AO 在 vertex 阶段算成 flat varying。地表法线按形态/画质分流：树冠始终共享实例中心法线；草丛、地衣、泥炭草丛、低矮花草和灌丛仅在高档（`veg_shade_quality >= 2`）按片元实际世界位置采样。中低档沿用中心法线。片元采样在透明区 discard 后执行，复用原有 terrain_normal sampler，不增加纹理槽。元素小于 3px（移动端 6px）时退化到 `vf_far` 单噪声斑块。隐藏实例在 vertex 阶段塌缩为零面积。
 - 2026-10-17 高档贴地法线：`vegetation_impostor.gdshaderinc::veg_form_follows_ground()` 明确限定上述五类形态；`v_ground_uv` 在气候缩放后的 quad 顶点由 MODEL_MATRIX 计算并连续插值，不在顶点 wrap，片元由既有 `visual_sample_terrain_normal()` 处理 Legacy、tiled 与地图环绕。地表坡度与植被自身造型/贴图法线继续沿用原合成公式。移动 HIGH 只恢复这些贴地形态的法线着色；树冠和其他形态的移动简化策略，以及 horizon 开关均保持原样。
-- `tests/vegetation_pixel_normal_render_test.gd`：29 项真 GPU 检查覆盖贴地植被高/中档、树冠共享中心法线、树冠原平台策略、普通/合批/tiled、地图环绕和缺失纹理回退；输出 `tmp/vegetation_pixel_normal_qa/<backend>/`。
+- 2026-10-17 贴地 TOD 对齐：高档上述五类贴地形态的太阳方向、晨昏系数、月光、horizon 直射遮蔽、sky visibility/bent normal 与法线共用片元世界 UV，气候/物候仍按实例锚点；避免一片草的坡向已变化，光照却仍取簇中心。对应顶点不再重复读取 horizon/GI。树冠保留原中心日照/法线/GI，移动 horizon 宏门控不变；贴地接触阴影/积雪缝隙颜色也随本地昼夜及曝光变化。
+- `tests/vegetation_pixel_normal_render_test.gd`：真 GPU 检查覆盖贴地植被高/中档、树冠共享中心法线和 TOD、树冠原平台策略、普通/合批/tiled、地图环绕和缺失纹理回退，以及跨晨昏线、夜色、逐像素 horizon；输出 `tmp/vegetation_pixel_normal_qa/<backend>/`。
 - 树冠位图（2026-10-17）：`ShrubLayer` 主体 shader 定义 `VF_CROWN_ART`，阔叶/针叶/棕榈/灌丛元素从 `resource_art/crown_atlas`（4 层 × 4×2 透明底单树精灵 + 法线/AO）取样，色相来自位图、明度仍由气候调色板决定；位图缺失时回退程序化树冠。详见 `resource-visual-runtime.md` 第二轮。
 - 验证：`tests/vegetation_form_scatter_test.gd`（打包往返、确定性、冠径守恒、密度→林团单调、同格互斥、GDScript 回退与 native 逐实例一致）；`tests/vegetation_family_layer_test.gd`（`style*4` 打包与 style LUT 的 form/物候列）。
 

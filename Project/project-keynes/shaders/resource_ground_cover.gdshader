@@ -298,26 +298,14 @@ void fragment() {
 
 		// Lighting: same astronomical daylight as terrain; per-pixel sun direction.
 		vec2 map_uv = visual_static_wrap_uv(gc_map_uv(wp));
-		vec3 sun;
-		vec3 amb_c;
-		vec3 sun_c;
-		float day;
-		float moon;
-		if (tod_debug_sun_position_enabled) {
-			sun = normalize(tod_sun_dir);
-			day = smoothstep(-0.08, 0.22, sun.z);
-			float dusk = smoothstep(-0.06, 0.14, sun.z) * (1.0 - smoothstep(0.14, 0.42, sun.z));
-			sun_c = mix(EARTH_DAYLIGHT_NOON, EARTH_DAYLIGHT_DUSK, dusk);
-			amb_c = mix(EARTH_NIGHT_AMBIENT, EARTH_DAY_AMBIENT, day);
-			moon = (1.0 - day) * 0.72;
-		} else {
-			EarthDaylight ed = eval_earth_daylight(map_uv, clamp(map_uv.y, 0.0, 1.0) * 2.0 - 1.0, day_night_enabled);
-			sun = ed.sun_dir;
-			sun_c = ed.sun_col;
-			amb_c = ed.amb_col;
-			day = ed.local_day;
-			moon = ed.moon_strength;
-		}
+		// 调试覆盖的是太阳直射点经纬度，仍须逐像素求昼夜；只有关闭昼夜时，
+		// 共享 evaluator 才把 tod_sun_dir 当作调试平行光，不能在这里绕开它。
+		EarthDaylight ed = eval_earth_daylight(map_uv, clamp(map_uv.y, 0.0, 1.0) * 2.0 - 1.0, day_night_enabled);
+		vec3 sun = ed.sun_dir;
+		vec3 amb_c = ed.amb_col;
+		vec3 sun_c = ed.sun_col;
+		float day = ed.local_day;
+		float moon = ed.moon_strength;
 		vec2 terrain_xy = terrain_normal_tex_bound ? (visual_sample_terrain_normal(map_uv).rg * 2.0 - 1.0) * 0.65 : vec2(0.0);
 		vec3 n = normalize(vec3(terrain_xy, 1.0));
 		float ao = 1.0;
