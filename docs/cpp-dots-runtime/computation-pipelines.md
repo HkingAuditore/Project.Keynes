@@ -2961,7 +2961,9 @@ Chunked MultiMesh 路径：
   - quad 内（q2 桌面、`hs>0.1`）：`vf_soft_shadow` 复用 `vf_ring_slot` / `vf_grid_slot` 的元素布局，每个元素一枚解析椭圆。椭圆沿 `-L.xy/max(L.z,0.28)*hs*top` 拉长，长度上限 `r0*1.1`；半影宽度和变淡程度都随遮挡物到地面的距离 `len/(2.5r)` 增大，所以正午短而锐、黄昏长而软。返回 `(ground, crown)`：ground 作为地面阴影（×0.70，quad 边缘 0.72–0.98 淡出，避免直线截断）；crown 作为冠间遮光（`sun_vis -= crown*0.5`）。这里只用解析循环，不再做第二次完整 `vf_eval`。
   - quad 外：投影 pass `vegetation_shadow.gdshaderinc` 每实例一枚椭圆，长度 `clamp(cot(elev), 0, shadow_max_len=3.6)*length_scale*height`，约 15.5° 仰角封顶；更低的太阳由 `local_day` 晨昏淡出接管。`shadow_soft = proj/(2.5*foot)` 控制半影内缘、远端横向扩散（最多 ×1.45）和整体变淡（×0.85）。
   - family batch 的 shadow 材质是 configure 时 duplicate 的，`VegetationFamilyLayer.sync_dynamic_materials()` 必须同步 `season_phase/day_phase/axial_tilt_rad/day_night_enabled/tod_sun_dir/tod_debug_sun_*`，否则 family 阴影不随太阳变化。
-- 性能约束：气候调色板、日照、地平线可见性、天空 GI、地形法线和谷地 AO 都在 vertex 阶段算成 flat varying；片元只做 3×3 元素场与上述椭圆软阴影循环。元素小于 3px（移动端 6px）时退化到 `vf_far` 单噪声斑块。隐藏实例在 vertex 阶段塌缩为零面积。
+- 性能约束：气候调色板、日照、地平线可见性、天空 GI 和谷地 AO 在 vertex 阶段算成 flat varying。地表法线按形态/画质分流：树冠始终共享实例中心法线；草丛、地衣、泥炭草丛、低矮花草和灌丛仅在高档（`veg_shade_quality >= 2`）按片元实际世界位置采样。中低档沿用中心法线。片元采样在透明区 discard 后执行，复用原有 terrain_normal sampler，不增加纹理槽。元素小于 3px（移动端 6px）时退化到 `vf_far` 单噪声斑块。隐藏实例在 vertex 阶段塌缩为零面积。
+- 2026-10-17 高档贴地法线：`vegetation_impostor.gdshaderinc::veg_form_follows_ground()` 明确限定上述五类形态；`v_ground_uv` 在气候缩放后的 quad 顶点由 MODEL_MATRIX 计算并连续插值，不在顶点 wrap，片元由既有 `visual_sample_terrain_normal()` 处理 Legacy、tiled 与地图环绕。地表坡度与植被自身造型/贴图法线继续沿用原合成公式。移动 HIGH 只恢复这些贴地形态的法线着色；树冠和其他形态的移动简化策略，以及 horizon 开关均保持原样。
+- `tests/vegetation_pixel_normal_render_test.gd`：29 项真 GPU 检查覆盖贴地植被高/中档、树冠共享中心法线、树冠原平台策略、普通/合批/tiled、地图环绕和缺失纹理回退；输出 `tmp/vegetation_pixel_normal_qa/<backend>/`。
 - 树冠位图（2026-10-17）：`ShrubLayer` 主体 shader 定义 `VF_CROWN_ART`，阔叶/针叶/棕榈/灌丛元素从 `resource_art/crown_atlas`（4 层 × 4×2 透明底单树精灵 + 法线/AO）取样，色相来自位图、明度仍由气候调色板决定；位图缺失时回退程序化树冠。详见 `resource-visual-runtime.md` 第二轮。
 - 验证：`tests/vegetation_form_scatter_test.gd`（打包往返、确定性、冠径守恒、密度→林团单调、同格互斥、GDScript 回退与 native 逐实例一致）；`tests/vegetation_family_layer_test.gd`（`style*4` 打包与 style LUT 的 form/物候列）。
 
