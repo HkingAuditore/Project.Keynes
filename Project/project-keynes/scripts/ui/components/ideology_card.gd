@@ -4,22 +4,37 @@ extends Control
 ## One papercut ideology card. Pure presentation: the workspace feeds it a
 ## card dictionary and listens to `activated`; drag-and-drop carries
 ## {"ideology_card": id, "location": loc} to slot niches.
+##
+## Three size tiers keep the card legible without breaking the panel:
+## `stage` for the three-card offer, `CARD_SIZE` for slots/collection, and the
+## compact variants used below 900x520 logical pixels.
 
 signal activated(ideology_id: int)
 signal drag_started(ideology_id: int)
 
 const ArtScript = preload("res://scripts/ui/components/ideology_art.gd")
-const CARD_SIZE := Vector2(150.0, 206.0)
-const CARD_SIZE_COMPACT := Vector2(124.0, 170.0)
+const CARD_SIZE := Vector2(196.0, 260.0)
+const CARD_SIZE_COMPACT := Vector2(146.0, 194.0)
+## Fallback offer size until the tray reports its own height.
+const CARD_SIZE_STAGE := Vector2(208.0, 276.0)
+const CARD_ASPECT := 0.754
 
 var ideology_id := -1
 var location := 0
 var draggable := true
+## Offer cards take a plain left click; slots and collection rows keep the
+## deliberate double click so browsing never equips by accident.
+var activate_on_single_click := false
 var _data: Dictionary = {}
 var _face_up := true
 var _compact := false
+var _stage := false
+var _stage_size := Vector2.ZERO
 var _hover := 0.0
 var _hover_tween: Tween
+var _level := 0
+var _level_count := 3
+var _pip_size := Vector2(15, 5)
 
 var _pivot: Control
 var _frame: TextureRect
@@ -36,11 +51,11 @@ var _gloss: ColorRect
 
 
 func _init() -> void:
-	custom_minimum_size = CARD_SIZE
 	focus_mode = Control.FOCUS_ALL
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	_build()
+	_apply_metrics()
 
 
 func _build() -> void:
@@ -57,13 +72,9 @@ func _build() -> void:
 	_face = VBoxContainer.new()
 	_face.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_face.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_face.offset_left = 14
-	_face.offset_right = -14
-	_face.offset_top = 14
-	_face.offset_bottom = -12
 	(_face as VBoxContainer).add_theme_constant_override("separation", 2)
 	_pivot.add_child(_face)
-	_rarity = ArtScript.label("", 10, ArtScript.INK_MUTED)
+	_rarity = ArtScript.label("", 11, ArtScript.INK_MUTED)
 	_face.add_child(_rarity)
 	_emblem = TextureRect.new()
 	_emblem.custom_minimum_size = Vector2(0, 52)
@@ -71,12 +82,12 @@ func _build() -> void:
 	_emblem.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_emblem.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_face.add_child(_emblem)
-	_name = ArtScript.label("", 15, ArtScript.INK)
+	_name = ArtScript.label("", 17, ArtScript.INK)
 	_name.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
 	_face.add_child(_name)
-	_school = ArtScript.label("", 10, ArtScript.INK_MUTED)
+	_school = ArtScript.label("", 11, ArtScript.INK_MUTED)
 	_face.add_child(_school)
-	_effects = ArtScript.label("", 10, ArtScript.INK)
+	_effects = ArtScript.label("", 12, ArtScript.INK)
 	_effects.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_effects.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_effects.vertical_alignment = VERTICAL_ALIGNMENT_TOP
@@ -108,8 +119,6 @@ func _build() -> void:
 	_stamp.visible = false
 	_stamp.add_theme_constant_override("outline_size", 3)
 	_stamp.add_theme_color_override("font_outline_color", ArtScript.VERMILION)
-	_stamp.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	_stamp.position = Vector2(0, 6)
 	add_child(_stamp)
 	resized.connect(_on_resized)
 	mouse_entered.connect(_set_hover.bind(true))
@@ -119,10 +128,88 @@ func _build() -> void:
 
 
 func set_compact(compact: bool) -> void:
+	if _compact == compact:
+		return
 	_compact = compact
-	custom_minimum_size = CARD_SIZE_COMPACT if compact else CARD_SIZE
-	_emblem.custom_minimum_size.y = 38 if compact else 52
-	_name.add_theme_font_size_override("font_size", 13 if compact else 15)
+	_apply_metrics()
+
+
+## Offer cards are drawn larger so the mechanical effect lines stay readable.
+func set_stage(stage: bool) -> void:
+	if _stage == stage:
+		return
+	_stage = stage
+	_apply_metrics()
+
+
+## The offer tray sizes its cards from the panel height; text scales with it.
+func set_stage_size(card_size: Vector2) -> void:
+	if _stage and _stage_size.is_equal_approx(card_size):
+		return
+	_stage = true
+	_stage_size = card_size
+	_apply_metrics()
+
+
+func is_stage() -> bool:
+	return _stage
+
+
+func _apply_metrics() -> void:
+	var stage_fonts := _stage
+	var card_size := CARD_SIZE
+	if _stage:
+		card_size = _stage_size if _stage_size.y > 0.0 else CARD_SIZE_STAGE
+	var pad_x := 13
+	var pad_top := 13
+	var pad_bottom := 11
+	var rarity_font := 11
+	var name_font := 18
+	var meta_font := 11
+	var effect_font := 13
+	var emblem_height := 56
+	var stamp_font := 13
+	_pip_size = Vector2(16, 5)
+	if _compact:
+		if not _stage:
+			card_size = CARD_SIZE_COMPACT
+		pad_x = 9
+		pad_top = 9
+		pad_bottom = 8
+		rarity_font = 10
+		name_font = 15
+		meta_font = 10
+		effect_font = 11
+		emblem_height = 40
+		stamp_font = 11
+		_pip_size = Vector2(12, 4)
+	if stage_fonts:
+		# Stage cards are metered by the tray: every glyph follows card height so
+		# 720p stays legible and 1080p reads like a real card, not a thumbnail.
+		var height := card_size.y
+		pad_x = clampi(int(round(card_size.x * 0.068)), 9, 22)
+		pad_top = pad_x
+		pad_bottom = maxi(8, pad_x - 2)
+		rarity_font = clampi(int(round(height * 0.042)), 10, 15)
+		name_font = clampi(int(round(height * 0.070)), 16, 27)
+		meta_font = clampi(int(round(height * 0.040)), 10, 14)
+		effect_font = clampi(int(round(height * 0.047)), 11, 17)
+		emblem_height = clampi(int(round(height * 0.225)), 40, 96)
+		stamp_font = clampi(int(round(height * 0.052)), 11, 19)
+		_pip_size = Vector2(clampi(int(round(card_size.x * 0.08)), 12, 24), 5)
+	custom_minimum_size = card_size
+	_face.offset_left = pad_x
+	_face.offset_right = -pad_x
+	_face.offset_top = pad_top
+	_face.offset_bottom = -pad_bottom
+	_rarity.add_theme_font_size_override("font_size", rarity_font)
+	_name.add_theme_font_size_override("font_size", name_font)
+	_school.add_theme_font_size_override("font_size", meta_font)
+	_effects.add_theme_font_size_override("font_size", effect_font)
+	_emblem.custom_minimum_size.y = emblem_height
+	_stamp.add_theme_font_size_override("font_size", stamp_font)
+	_gloss.size.y = card_size.y * 1.6
+	_rebuild_level_pips()
 
 
 ## data keys: ideology_id, display_name, school_id, rarity, rarity_label,
@@ -144,10 +231,13 @@ func set_card(data: Dictionary) -> void:
 	_school.add_theme_color_override("font_color", ArtScript.school_color(school_id))
 	var effects: PackedStringArray = data.get("effects", PackedStringArray())
 	_effects.text = "\n".join(effects)
-	_rebuild_level_pips(int(data.get("level", 0)), int(data.get("level_count", 3)))
+	_level = int(data.get("level", 0))
+	_level_count = int(data.get("level_count", 3))
+	_rebuild_level_pips()
 	var stamp := String(data.get("stamp_text", ""))
 	_stamp.visible = not stamp.is_empty()
 	_stamp.text = stamp
+	_place_stamp()
 	tooltip_text = String(data.get("tooltip", ""))
 	modulate = Color(1, 1, 1, 0.72) if bool(data.get("dimmed", false)) else Color.WHITE
 
@@ -160,14 +250,15 @@ func summary_text() -> String:
 	return "%s：%s" % [_name.text, _effects.text.replace("\n", "、")]
 
 
-func _rebuild_level_pips(level: int, count: int) -> void:
+func _rebuild_level_pips() -> void:
 	for child in _level_row.get_children():
+		_level_row.remove_child(child)
 		child.queue_free()
-	for index in maxi(1, count):
+	for index in maxi(1, _level_count):
 		var pip := ColorRect.new()
-		pip.custom_minimum_size = Vector2(14, 5)
+		pip.custom_minimum_size = _pip_size
 		pip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		pip.color = ArtScript.VERMILION if index <= level else Color(0.45, 0.36, 0.26, 0.35)
+		pip.color = ArtScript.VERMILION if index <= _level else Color(0.45, 0.36, 0.26, 0.35)
 		_level_row.add_child(pip)
 
 
@@ -183,7 +274,7 @@ func is_face_up() -> bool:
 
 
 ## Horizontal squash flip: back -> face. Returns the tween for chaining.
-func flip_to_face(duration := 0.28) -> Tween:
+func flip_to_face(duration := 0.24) -> Tween:
 	var tween := create_tween()
 	tween.tween_property(_pivot, "scale:x", 0.0, duration * 0.5) \
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
@@ -199,25 +290,25 @@ func play_gloss(times := 1) -> void:
 	for _i in times:
 		tween.tween_property(_gloss, "color:a", 0.55, 0.0)
 		tween.tween_property(_gloss, "position:x", -60.0, 0.0)
-		tween.tween_property(_gloss, "position:x", size.x + 40.0, 0.55) \
+		tween.tween_property(_gloss, "position:x", size.x + 40.0, 0.5) \
 			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 		tween.tween_property(_gloss, "color:a", 0.0, 0.08)
 
 
 ## Card falls onto the table from above after `delay` seconds.
-func play_drop(delay: float, height := 72.0) -> Tween:
+func play_drop(delay: float, height := 64.0) -> Tween:
 	_pivot.position.y = -height
 	_pivot.modulate.a = 0.0
 	var tween := create_tween()
 	tween.tween_interval(maxf(0.0, delay))
-	tween.tween_property(_pivot, "modulate:a", 1.0, 0.10)
-	tween.parallel().tween_property(_pivot, "position:y", 0.0, 0.34) \
+	tween.tween_property(_pivot, "modulate:a", 1.0, 0.09)
+	tween.parallel().tween_property(_pivot, "position:y", 0.0, 0.3) \
 		.set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
 	return tween
 
 
 ## Unchosen offer cards fold vertically and fade out.
-func fold_away(duration := 0.26) -> Tween:
+func fold_away(duration := 0.22) -> Tween:
 	var tween := create_tween()
 	tween.tween_property(_pivot, "scale:y", 0.04, duration) \
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
@@ -228,9 +319,9 @@ func fold_away(duration := 0.26) -> Tween:
 ## Seal impact: brief overscale that settles back with a springy ease.
 func stamp_punch() -> Tween:
 	var tween := create_tween()
-	tween.tween_property(_pivot, "scale", Vector2(1.14, 1.14), 0.07) \
+	tween.tween_property(_pivot, "scale", Vector2(1.1, 1.1), 0.07) \
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tween.tween_property(_pivot, "scale", Vector2.ONE, 0.22) \
+	tween.tween_property(_pivot, "scale", Vector2.ONE, 0.2) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	return tween
 
@@ -251,6 +342,16 @@ func _on_resized() -> void:
 	_pivot.pivot_offset = size * 0.5
 	pivot_offset = size * 0.5
 	_gloss.size.y = size.y * 1.6
+	_place_stamp()
+
+
+## The state stamp is a free-standing label, so it owns its own size: a preset
+## anchor alone left it 0x0 and therefore invisible.
+func _place_stamp() -> void:
+	if _stamp == null:
+		return
+	_stamp.reset_size()
+	_stamp.position = Vector2(roundf((size.x - _stamp.size.x) * 0.5), 8.0)
 
 
 func _set_hover(on: bool) -> void:
@@ -264,8 +365,15 @@ func _set_hover(on: bool) -> void:
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mouse := event as InputEventMouseButton
-		if mouse.button_index == MOUSE_BUTTON_LEFT and mouse.pressed \
-				and mouse.double_click:
+		if mouse.button_index != MOUSE_BUTTON_LEFT:
+			return
+		if activate_on_single_click:
+			# Offer cards: one press-release selects the road.
+			if not mouse.pressed and not mouse.double_click:
+				grab_focus()
+				activated.emit(ideology_id)
+				accept_event()
+		elif mouse.pressed and mouse.double_click:
 			activated.emit(ideology_id)
 			accept_event()
 	elif event.is_action_pressed(&"ui_accept"):

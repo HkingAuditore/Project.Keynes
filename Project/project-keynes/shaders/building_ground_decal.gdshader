@@ -30,7 +30,28 @@ uniform float tod_exposure = 1.0;
 const float GROUND_AMBIENT_GAIN = 0.66;
 const float GROUND_SUN_GAIN = 0.72;
 
+// [building-terrain-light 2026-10-18] 聚落地面就是地形本身：高画质下坡度直接进法线
+// （vertex 每实例一次），直射遮蔽 / 天空可见度在 fragment 按像素采样，与 world_map 同源。
+// 低/中画质取中性值，v_amb + v_sun_l 与接入前的单块 v_light 数值等价。
+#define VT_USE_HORIZON
+#define VT_USE_TERRAIN_NORMAL
+#include "res://shaders/include/visual_tile_sampling.gdshaderinc"
+uniform bool terrain_normal_tex_bound = false;
+uniform bool terrain_horizon_tex_bound = false;
+uniform float terrain_horizon_max_angle = 1.309;
+uniform float terrain_horizon_softness = 0.30;
+uniform float terrain_horizon_strength = 0.90;
+uniform float terrain_normal_influence = 0.65;
+uniform bool gi_lut_bound = false;
+uniform vec3 gi_horizon_lut[16];
+uniform float gi_ao_strength = 0.90;
+uniform float gi_ao_floor = 0.38;
+uniform float gi_ao_smoothing = 0.75;
+uniform float gi_bent_strength = 0.35;
+uniform float gi_normal_floor = 0.85;
 #include "res://shaders/include/earth_daylight.gdshaderinc"
+vec2 wrap_map_uv(vec2 uv) { return visual_static_wrap_uv(uv); }
+#include "res://shaders/include/terrain_horizon.gdshaderinc"
 #include "res://shaders/include/building_form.gdshaderinc"
 
 varying vec2 v_p;
@@ -38,8 +59,13 @@ varying flat vec2 v_half;
 varying flat vec4 v_ids;      // kind, era, archetype, seed
 varying flat vec2 v_param;    // param, flag
 varying flat float v_cell;
+varying flat vec2 v_map_uv;   // 实例中心的 map uv，供逐像素重建地面位置
+varying flat vec2 v_ux;       // 实例 x 轴单位向量（y 轴为其法向）
+varying flat vec3 v_ground_n; // 地形法线（shader 空间，+z=天顶）
+varying flat vec3 v_sun_dir;
+varying flat vec3 v_amb;      // 天光 + 月光（已含 tod_exposure）
+varying flat vec3 v_sun_l;    // 直射（已含 tod_exposure）
 varying flat float v_season;  // hemisphere-corrected season, 0 spring .. 3 winter
-varying flat vec3 v_light;
 varying flat float v_night;
 
 vec2 lut_uv(float cell_value) {
@@ -51,9 +77,11 @@ vec2 lut_uv(float cell_value) {
 }
 
 void vertex() {
-	float hl = max(length(MODEL_MATRIX[0].xy), 1e-4);
+	vec2 ax = MODEL_MATRIX[0].xy;
+	float hl = max(length(ax), 1e-4);
 	float hw = max(length(MODEL_MATRIX[1].xy), 1e-4);
 	v_half = vec2(hl, hw);
+	v_ux = ax / hl;
 	float style = floor(INSTANCE_CUSTOM.r * 65.0 + 0.5);
 	v_ids = vec4(floor(INSTANCE_CUSTOM.a * 16.0), floor(style / 6.0), mod(style, 6.0),
 		INSTANCE_CUSTOM.g);
@@ -65,14 +93,24 @@ void vertex() {
 
 	vec2 world_center = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xy;
 	vec2 map_uv = (world_center - world_origin) / max(world_size, vec2(0.0001));
+	v_map_uv = map_uv;
 	float lat_signed = clamp(map_uv.y, 0.0, 1.0) * 2.0 - 1.0;
 	v_season = mod(season_phase + (lat_signed < 0.0 ? 2.0 : 0.0), 4.0);
 	EarthDaylight ed = eval_earth_daylight(map_uv, lat_signed, day_night_enabled);
-	vec3 up = vec3(0.0, 0.0, 1.0);
-	v_light = (earth_sky_sh(ed.amb_col, ed.sun_col, ed.sun_dir, ed.local_day, up)
-		* GROUND_AMBIENT_GAIN
-		+ ed.sun_col * max(ed.sun_dir.z, 0.0) * ed.local_day * GROUND_SUN_GAIN
-		+ EARTH_MOONLIGHT * ed.moon_strength * 0.20) * tod_exposure;
+	v_sun_dir = ed.sun_dir;
+	// 铺装跟地形同坡：坡度直接进法线；低/中画质保持 +z，与接入前逐位一致。
+	vec2 ground_slope = vec2(0.0);
+	if (visual_quality >= 2 && terrain_normal_tex_bound) {
+		ground_slope = (visual_sample_terrain_normal(map_uv).rg * 2.0 - 1.0)
+			* terrain_normal_influence;
+	}
+	v_ground_n = normalize(vec3(ground_slope, 1.0));
+	vec3 sun_term = ed.sun_col * max(dot(v_ground_n, ed.sun_dir), 0.0)
+		* ed.local_day * GROUND_SUN_GAIN;
+	vec3 amb_term = earth_sky_sh(ed.amb_col, ed.sun_col, ed.sun_dir, ed.local_day, v_ground_n)
+		* GROUND_AMBIENT_GAIN + EARTH_MOONLIGHT * ed.moon_strength * 0.20;
+	v_amb = amb_term * tod_exposure;
+	v_sun_l = sun_term * tod_exposure;
 	v_night = smoothstep(0.18, 0.62, ed.pixel_night);
 }
 
@@ -403,7 +441,19 @@ void fragment() {
 		c *= 1.0 - wet * 0.22;
 		c = mix(c, vec3(0.86, 0.89, 0.93), clamp(dyn.b * 1.2, 0.0, 1.0) * snow_hold * 0.9);
 	}
-	c *= v_light;
+	// 逐像素地面位置：只有跨过一条山脊的铺装才会在内部出现明暗过渡。
+	vec2 uy = vec2(-v_ux.y, v_ux.x);
+	vec2 map_uv = v_map_uv + (v_ux * p.x + uy * p.y) / max(world_size, vec2(0.0001));
+	float direct = 1.0;
+	float sky = 1.0;
+	if (visual_quality >= 2 && terrain_horizon_strength > 0.0) {
+		TerrainHorizonSample hs = terrain_horizon_evaluate(map_uv, v_sun_dir);
+		if (hs.has_data) {
+			direct = hs.direct_visibility;
+			sky = terrain_horizon_apply_normal(hs.sky_visibility, v_ground_n, hs.bent_normal);
+		}
+	}
+	c *= v_amb * sky + v_sun_l * direct;
 	if (live) c += emit * tod_exposure;
 	if (!live) {
 		float gray = dot(c, vec3(0.299, 0.587, 0.114));

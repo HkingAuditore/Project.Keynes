@@ -14,6 +14,10 @@ const NicheScript = preload("res://scripts/ui/components/ideology_slot_niche.gd"
 const PointScrollScript = preload("res://scripts/ui/components/ideology_point_scroll.gd")
 const DROP_STAGGER := 0.12
 const HINT_HOLD_MSEC := 4500
+## Height of the offer tray chrome (title, actions, margins) around the cards.
+const STAGE_CHROME_HEIGHT := 148.0
+const STAGE_CARD_MIN_HEIGHT := 168.0
+const STAGE_CARD_MAX_HEIGHT := 380.0
 const SORT_LABELS := ["收录顺序", "稀有度", "流派", "境界"]
 ## Scroll-unroll mask: paper covers the stage and recedes from the centre out,
 ## leaving a darker rod edge at the reveal front.
@@ -31,8 +35,10 @@ void fragment() {
 }
 """
 
-## Session-wide accessibility preference shared by every workspace instance.
-static var reduce_motion := false
+## Motion follows the shared game setting (main menu / pause menu) so this
+## panel never grows a second switch. Read it on demand; it is a dict lookup.
+static func motion_reduced() -> bool:
+	return UIAnimation.reduced_motion()
 
 var _facade = null
 var _player_controller = null
@@ -44,7 +50,6 @@ var _presentation: Dictionary = {}
 var _live_explain: Dictionary = {}
 var _live_by_id := {}
 var _metadata := {}
-var _dense_by_stable := {}
 var _states := {}
 var _signature := ""
 var _explain_signature := ""
@@ -65,10 +70,12 @@ var _hover_id := -1
 var _progress_by_id := {}
 
 var _root: VBoxContainer
+var _draw_stack: DrawStack
+var _stage_card_applied := Vector2.ZERO
 var _point_scroll: Control
 var _hint: Label
 var _offer_button: Button
-var _motion_toggle: CheckBox
+var _offer_layer: Control
 var _offer: PanelContainer
 var _offer_title: Label
 var _choice_0: Control
@@ -78,14 +85,10 @@ var _reroll_button: Button
 var _dismiss_button: Button
 var _unroll_mask: ColorRect
 var _tear: TornPaper
-var _deck: PanelContainer
-var _link_layer: LinkLayer
-var _deck_caption: Label
-var _ideology_label: Label
-var _spirit_label: Label
-var _ideology_slots: HFlowContainer
-var _spirit_slots: HFlowContainer
-var _resonance_bar: HBoxContainer
+var _slot_counts: Label
+var _ideology_slots: VBoxContainer
+var _spirit_slots: VBoxContainer
+var _resonance_bar: HFlowContainer
 var _resonance_views := {}
 var _tabs: TabBar
 var _sort: OptionButton
@@ -115,7 +118,7 @@ func _bind_nodes() -> void:
 	_point_scroll = %PointScroll
 	_hint = %Hint
 	_offer_button = %OpenOffer
-	_motion_toggle = %ReduceMotion
+	_offer_layer = %OfferLayer
 	_offer = %Offer
 	_offer_title = %OfferTitle
 	_choice_0 = %Choice0
@@ -123,10 +126,7 @@ func _bind_nodes() -> void:
 	_choice_2 = %Choice2
 	_reroll_button = %Reroll
 	_dismiss_button = %Dismiss
-	_deck = %DeckTable
-	_deck_caption = %DeckCaption
-	_ideology_label = %IdeologyLabel
-	_spirit_label = %SpiritLabel
+	_slot_counts = %SlotCounts
 	_ideology_slots = %IdeologySlots
 	_spirit_slots = %SpiritSlots
 	_resonance_bar = %ResonanceBar
@@ -134,7 +134,7 @@ func _bind_nodes() -> void:
 	_sort = %SortMode
 	_collection_drop = %CollectionDrop
 	_collection = %Collection
-	_scroll = get_node_or_null("Root/Scroll") as ScrollContainer
+	_scroll = %CollectionScroll
 	_empty = %EmptyState
 	_empty_icon = %EmptyIcon
 	_empty_title = %EmptyTitle
@@ -161,31 +161,48 @@ func _build_dynamic_parts() -> void:
 	_offer.add_child(_unroll_mask)
 	_tear = TornPaper.new()
 	_offer.add_child(_tear)
-	_link_layer = LinkLayer.new()
-	_deck.add_child(_link_layer)
-	_deck.resized.connect(_queue_links)
 	for index in 3:
 		var card := _choice(index)
 		card.set("draggable", false)
+		# One click on an offer card selects the road; the collection keeps the
+		# deliberate double click because browsing must never equip by accident.
+		card.set("activate_on_single_click", true)
+		card.call("set_stage", true)
 		card.connect("activated", _on_choice_activated.bind(index))
 		card.gui_input.connect(_on_choice_input.bind(index))
-	_point_scroll.connect("ledger_requested", _open_ledger)
-	_motion_toggle.button_pressed = reduce_motion
-	_motion_toggle.toggled.connect(_on_motion_toggled)
-	_tabs.add_tab("全部")
-	for school_id in ArtScript.SCHOOL_ORDER:
-		_tabs.add_tab(ArtScript.school_name(String(school_id)))
-	_tabs.tab_changed.connect(_on_tab_changed)
-	for label in SORT_LABELS:
-		_sort.add_item(String(label))
-	_sort.item_selected.connect(_on_sort_selected)
-	_collection_drop.set_drag_forwarding(Callable(), _can_drop_collection,
-		_drop_collection)
-	for school_id in ArtScript.SCHOOL_ORDER:
-		var view := ResonanceEmblem.new()
-		view.configure(String(school_id))
-		_resonance_bar.add_child(view)
-		_resonance_views[String(school_id)] = view
+	# The waiting stage shows a shuffled deck instead of three blank card backs,
+	# so no placeholder frame is ever visible before the reveal plays.
+	_draw_stack = DrawStack.new()
+	var offer_cards := _choice_0.get_parent() as Control
+	if offer_cards != null and offer_cards.get_parent() != null:
+		var column := offer_cards.get_parent()
+		column.add_child(_draw_stack)
+		column.move_child(_draw_stack, offer_cards.get_index())
+	_draw_stack.visible = false
+	_apply_stage_metrics()
+	resized.connect(_on_workspace_resized)
+	if _point_scroll != null and _point_scroll.has_signal("ledger_requested"):
+		_point_scroll.connect("ledger_requested", _open_ledger)
+	# Everything below is optional chrome: a missing node must never abort the
+	# builder and leave the tabs, sort menu or resonance row unbuilt.
+	if _tabs != null:
+		_tabs.add_tab("全部")
+		for school_id in ArtScript.SCHOOL_ORDER:
+			_tabs.add_tab(ArtScript.school_name(String(school_id)))
+		_tabs.tab_changed.connect(_on_tab_changed)
+	if _sort != null:
+		for label in SORT_LABELS:
+			_sort.add_item(String(label))
+		_sort.item_selected.connect(_on_sort_selected)
+	if _collection_drop != null:
+		_collection_drop.set_drag_forwarding(Callable(), _can_drop_collection,
+			_drop_collection)
+	if _resonance_bar != null:
+		for school_id in ArtScript.SCHOOL_ORDER:
+			var view := ResonanceEmblem.new()
+			view.configure(String(school_id))
+			_resonance_bar.add_child(view)
+			_resonance_views[String(school_id)] = view
 
 
 func set_model(model: Dictionary) -> void:
@@ -200,27 +217,69 @@ func refresh_model(model: Dictionary) -> void:
 
 func set_compact(compact: bool) -> void:
 	_bind_nodes()
-	if _compact == compact and not _signature.is_empty():
-		return
+	var changed := compact != _compact
 	_compact = compact
+	# Card glyph sizes are cheap to reapply, so they never wait for a signature
+	# change; only the container rebuild below is gated.
+	_apply_stage_metrics()
+	if not changed and not _signature.is_empty():
+		return
 	_point_scroll.custom_minimum_size = Vector2(300, 58) if compact else Vector2(380, 64)
 	_empty.custom_minimum_size = Vector2(360, 150) if compact else Vector2(520, 170)
-	# 720p keeps the three offer cards and their actions inside one viewport.
-	var offer_cards := _choice_0.get_parent() as HBoxContainer
-	if offer_cards != null:
-		offer_cards.add_theme_constant_override("separation", 16 if compact else 26)
-	var offer_column := offer_cards.get_parent() as VBoxContainer if offer_cards != null else null
-	if offer_column != null:
-		offer_column.add_theme_constant_override("separation", 6 if compact else 10)
-	_offer_title.add_theme_font_size_override("font_size", 15 if compact else 18)
-	for index in 3:
-		_choice(index).call("set_compact", compact)
 	for view in _resonance_views.values():
 		(view as ResonanceEmblem).set_compact(compact)
-	_deck_caption.visible = false
 	_signature = ""
 	if not _snapshot.is_empty() and not _presentation.is_empty():
 		_rebuild_board()
+
+
+func _stage_card_size() -> Vector2:
+	# The tray floats over the whole workspace, so it can spend nearly all of that
+	# height on the three cards. Width is capped so three cards plus gaps always
+	# fit the tray on narrow windows.
+	var available := (size.y if size.y > 0.0 else 340.0) - STAGE_CHROME_HEIGHT
+	var height := clampf(available, STAGE_CARD_MIN_HEIGHT, STAGE_CARD_MAX_HEIGHT)
+	if size.x > 0.0:
+		height = minf(height, ((size.x - 110.0) / 3.0) / CardScript.CARD_ASPECT)
+	height = maxf(height, 140.0)
+	return Vector2(roundf(height * CardScript.CARD_ASPECT), roundf(height))
+
+
+func _apply_stage_metrics() -> void:
+	var cards: HBoxContainer = null
+	if _choice_0 != null:
+		cards = _choice_0.get_parent() as HBoxContainer
+	var separation := 16 if _compact else 26
+	var card_size := _stage_card_size()
+	_stage_card_applied = card_size
+	if cards != null:
+		# 720p keeps the three offer cards and their actions inside one viewport.
+		cards.add_theme_constant_override("separation", separation)
+		var column := cards.get_parent() as VBoxContainer
+		if column != null:
+			column.add_theme_constant_override("separation", 6 if _compact else 8)
+		# Reserve the three-card row even while the deck shuffles, so the tray does
+		# not jump in size when the offer lands.
+		cards.custom_minimum_size.x = card_size.x * 3.0 + separation * 2.0
+	if _offer_title != null:
+		_offer_title.add_theme_font_size_override("font_size", 16 if _compact else 19)
+	for index in 3:
+		var card := _choice(index)
+		if card == null:
+			continue
+		card.call("set_compact", _compact)
+		card.call("set_stage_size", card_size)
+	if _draw_stack != null:
+		_draw_stack.set_card_size(card_size)
+
+
+func _on_workspace_resized() -> void:
+	if _choice_0 == null:
+		return
+	var target := _stage_card_size()
+	if absf(target.y - _stage_card_applied.y) < 6.0:
+		return
+	_apply_stage_metrics()
 
 
 func set_player_controller(controller) -> void:
@@ -302,12 +361,9 @@ func _index_catalog() -> void:
 	if rows.size() == _metadata.size() and not _metadata.is_empty():
 		return
 	_metadata.clear()
-	_dense_by_stable.clear()
 	for row_value in rows:
 		var row := row_value as Dictionary
-		var dense_id := int(row.get("dense_id", -1))
-		_metadata[dense_id] = row
-		_dense_by_stable[String(row.get("id", ""))] = dense_id
+		_metadata[int(row.get("dense_id", -1))] = row
 
 
 func _index_states() -> void:
@@ -334,7 +390,7 @@ func _render_top() -> void:
 	var points_signature := "%d|%d|%d|%s" % [points, cost, gain, ready]
 	if points_signature != _points_signature:
 		_points_signature = points_signature
-		_point_scroll.call("set_points", points, cost, gain, ready, reduce_motion)
+		_point_scroll.call("set_points", points, cost, gain, ready, motion_reduced())
 	_point_scroll.tooltip_text = "理念点 %s / 抽取 %s\n累计 %s" % [
 		_q16(points), _q16(cost), _q16(int(_presentation.get("lifetime_points_q16", 0)))]
 	var offer_active := bool(_presentation.get("offer_active", false))
@@ -360,9 +416,12 @@ func _render_top() -> void:
 		_hint.visible = not _hint.text.is_empty()
 	var used := int(_presentation.get("slots_used", 0))
 	var capacity := int(_presentation.get("slots_capacity", 0))
-	_ideology_label.text = "意识形态  %d / %d" % [used, capacity]
-	_spirit_label.text = "民族精神  %d / %d" % [int(_presentation.get("spirits_used", 0)),
-		int(_presentation.get("spirits_capacity", 0))]
+	var spirits_used := int(_presentation.get("spirits_used", 0))
+	var spirits_capacity := int(_presentation.get("spirits_capacity", 0))
+	# One heading line keeps the board inside a 720p pane; spirit rows carry a
+	# 「精神」badge so the two groups stay tellable apart.
+	_slot_counts.text = "意识形态  %d / %d　·　民族精神  %d / %d" % [
+		used, capacity, spirits_used, spirits_capacity]
 
 
 func _draw_waiting() -> bool:
@@ -434,44 +493,108 @@ func _rebuild_board() -> void:
 			equipped.append(int(value))
 		elif location == 2:
 			spirits.append(int(value))
-	_fill_niches(_ideology_slots, 1, equipped,
-		int(_presentation.get("slots_capacity", 0)),
-		int(_presentation.get("slots_max", 0)))
-	_fill_niches(_spirit_slots, 2, spirits,
-		int(_presentation.get("spirits_capacity", 0)),
-		int(_presentation.get("spirits_max", 0)))
+	_fill_slots(_ideology_slots, 1, equipped, int(_presentation.get("slots_capacity", 0)))
+	_fill_slots(_spirit_slots, 2, spirits, int(_presentation.get("spirits_capacity", 0)))
 	_update_resonance(null, -1)
 	_rebuild_collection(known)
-	_queue_links()
 	if _scroll != null:
 		_scroll.set_deferred("scroll_vertical", saved_scroll)
 
 
-func _fill_niches(host: HFlowContainer, kind: int, hosted: Array[int], capacity: int,
-		capacity_max: int) -> void:
+## One compact row per equipped idea, plus a single collapsed row for whatever
+## empty slots remain. Future technology milestones are a caption, not alcoves.
+func _fill_slots(host: VBoxContainer, kind: int, hosted: Array[int], capacity: int) -> void:
+	if host == null:
+		return
 	for child in host.get_children():
 		host.remove_child(child)
 		child.queue_free()
+	for ideology_id in hosted:
+		var row := NicheScript.new()
+		row.configure(kind, false, _compact)
+		row.set_row(_slot_row_data(ideology_id, kind))
+		row.command_requested.connect(_on_slot_command)
+		row.promote_requested.connect(_request_promotion)
+		host.add_child(row)
+	var empty_count := maxi(0, capacity - hosted.size())
+	if empty_count > 0:
+		var empty_row := NicheScript.new()
+		empty_row.configure(kind, true, _compact)
+		# The next technology milestone belongs on the empty slot itself: the
+		# hint only exists while a slot is still missing, so it never costs
+		# vertical space in a full board.
+		empty_row.set_empty_count(empty_count, _next_milestone(kind))
+		empty_row.card_dropped.connect(_on_niche_drop)
+		empty_row.drag_hovered.connect(_on_niche_hover.bind(empty_row))
+		host.add_child(empty_row)
+
+
+func _slot_row_data(ideology_id: int, kind: int) -> Dictionary:
+	var meta: Dictionary = _metadata.get(ideology_id, {})
+	var state: Dictionary = _states.get(ideology_id, {})
+	var live: Dictionary = _live_by_id.get(ideology_id, {})
+	var level := maxi(0, int(state.get("level", 0)))
+	var location := int(state.get("location", 0))
+	var pending := bool(state.get("pending", false))
+	var view := CountryViewModel.present_ideology_card(meta, level)
+	var thresholds: PackedInt64Array = meta.get("level_thresholds_q16", PackedInt64Array())
+	var amount := int(state.get("understanding", 0))
+	var tooltip := PackedStringArray([String(view.get("tooltip", ""))])
+	if level + 1 < thresholds.size():
+		tooltip.append("理解度 %s / %s" % [_q16(amount), _q16(int(thresholds[level + 1]))])
+	elif not thresholds.is_empty():
+		tooltip.append("已至最高境界")
+	var direction := 1 if location == 1 else 2
+	tooltip.append(_support_tooltip(live, direction))
+	var min_spirit_level := int(meta.get("min_spirit_level", 99))
+	var can_promote := location == 1 and level >= min_spirit_level \
+		and bool(live.get("promote_allowed", true)) and not pending
+	var promote_tooltip := "晋升为民族精神（不可逆）"
+	if location == 1 and level < min_spirit_level:
+		promote_tooltip = "需达到境界 %d 才能晋升" % (min_spirit_level + 1)
+	# A chip keeps the row to two text lines; the number stays in the tooltip.
+	var chip := "民意 …"
+	var chip_color: Color = ArtScript.INK_MUTED
+	var support_rows: Array = live.get("support", [])
+	if direction < support_rows.size():
+		var support: Dictionary = support_rows[direction]
+		if bool(support.get("available", false)):
+			var allowed := bool(support.get("allowed", false))
+			chip = "民意 ✓" if allowed else "民意 ✗"
+			chip_color = UITokens.GOOD if allowed else UITokens.RISK
+	return {
+		"ideology_id": ideology_id,
+		"display_name": _display_name(meta, ideology_id),
+		"school_id": String(meta.get("school_id", "")),
+		"rarity": int(meta.get("rarity", 1)),
+		"level": level,
+		"level_count": int(view.get("level_count", 3)),
+		"level_label": String(view.get("level_label", "")),
+		"effects": view.get("effect_lines", PackedStringArray()),
+		"pending": pending,
+		"can_unequip": bool(live.get("unequip_allowed", true)),
+		"can_promote": can_promote,
+		"unequip_tooltip": "%s\n%s" % ["撤回这条道路", _support_summary(live, 1)],
+		"promote_tooltip": "%s\n%s" % [promote_tooltip, _support_summary(live, 2)],
+		"support_chip": chip,
+		"support_color": chip_color,
+		"tooltip": "\n".join(tooltip).strip_edges(),
+		"kind": kind,
+	}
+
+
+## The next technology milestone gating another slot of this kind, or "".
+func _next_milestone(kind: int) -> String:
+	var capacity := int(_presentation.get(
+		"slots_capacity" if kind == 1 else "spirits_capacity", 0))
+	var capacity_max := int(_presentation.get(
+		"slots_max" if kind == 1 else "spirits_max", capacity))
+	if capacity >= capacity_max:
+		return ""
 	var captions := _locked_captions(kind)
-	var total := maxi(maxi(capacity, capacity_max), hosted.size())
-	for index in total:
-		var niche := NicheScript.new()
-		var locked := index >= maxi(capacity, hosted.size())
-		var caption := ""
-		if locked:
-			var locked_index := index - maxi(capacity, hosted.size())
-			caption = captions[locked_index] \
-				if locked_index < captions.size() else "未开放"
-		else:
-			caption = ""
-		niche.configure(kind, locked, caption, _compact)
-		niche.card_dropped.connect(_on_niche_drop)
-		niche.drag_hovered.connect(_on_niche_hover.bind(niche))
-		host.add_child(niche)
-		if index < hosted.size():
-			var card := _make_card(hosted[index], false)
-			card.set("draggable", kind == 1)
-			niche.host_card(card)
+	if captions.is_empty():
+		return ""
+	return "下一格 %s" % String(captions[0])
 
 
 func _locked_captions(kind: int) -> PackedStringArray:
@@ -681,7 +804,7 @@ func _update_resonance(_niche: Control, preview_id: int) -> void:
 	var had_any := not _active_resonances.is_empty()
 	_active_resonances = active.duplicate()
 	_active_resonances[-999] = true  # sentinel: first sync never celebrates
-	if had_any and not reduce_motion:
+	if had_any and not motion_reduced():
 		for school_id in newly_active:
 			var view := _resonance_views[school_id] as ResonanceEmblem
 			view.celebrate()
@@ -692,68 +815,12 @@ static func _tier_less(a: Dictionary, b: Dictionary) -> bool:
 	return int(a.get("min_count", 0)) < int(b.get("min_count", 0))
 
 
-func _on_motion_toggled(on: bool) -> void:
-	reduce_motion = on
-
-
-func _queue_links() -> void:
-	if is_inside_tree():
-		call_deferred("_update_links")
-
-
-func _update_links() -> void:
-	if _link_layer == null or not is_instance_valid(_link_layer):
-		return
-	var niches := _niches_by_id()
-	var active_ids: PackedInt32Array = _snapshot.get("active_synergy_ids", PackedInt32Array())
-	var segments: Array = []
-	for row_value in _catalog.get("synergies", []) as Array:
-		var row := row_value as Dictionary
-		if not String(row.get("school_id", "")).is_empty():
-			continue
-		var dense_id := int(row.get("dense_id", -1))
-		var members: Array[Control] = []
-		for stable in row.get("required_ids", PackedStringArray()) as PackedStringArray:
-			var niche: Control = niches.get(int(_dense_by_stable.get(String(stable), -1)))
-			if niche != null:
-				members.append(niche)
-		if active_ids.has(dense_id):
-			for index in range(1, members.size()):
-				segments.append([_layer_point(members[index - 1]), _layer_point(members[index]),
-					false, String(row.get("display_name", ""))])
-		elif _hover_niche != null and _hover_id >= 0:
-			# Drag preview: dashed thread when the hovered card would complete it.
-			var required: PackedStringArray = row.get("required_ids", PackedStringArray())
-			var hover_stable := String((_metadata.get(_hover_id, {}) as Dictionary).get("id", ""))
-			if required.has(hover_stable) and members.size() == required.size() - 1:
-				for member in members:
-					segments.append([_layer_point(_hover_niche), _layer_point(member), true,
-						String(row.get("display_name", ""))])
-	_link_layer.segments = segments
-	_link_layer.queue_redraw()
-
-
-func _niches_by_id() -> Dictionary:
-	var out := {}
-	for host in [_ideology_slots, _spirit_slots]:
-		for child in (host as Node).get_children():
-			var occupied := int(child.get("occupied_id"))
-			if occupied >= 0:
-				out[occupied] = child
-	return out
-
-
-func _layer_point(niche: Control) -> Vector2:
-	return niche.get_global_rect().get_center() - _link_layer.get_global_rect().position
-
-
 # --- drag and drop --------------------------------------------------------
 
 func _on_niche_drop(ideology_id: int, from_location: int, kind: int) -> void:
 	_hover_niche = null
 	_hover_id = -1
 	_update_resonance(null, -1)
-	_queue_links()
 	if kind == 1:
 		if from_location == 0:
 			_command("equip", ideology_id)
@@ -774,7 +841,6 @@ func _on_niche_hover(ideology_id: int, kind: int, entered: bool, niche: Control)
 		_hover_niche = null
 		_hover_id = -1
 		_update_resonance(null, -1)
-	_update_links()
 
 
 func _can_drop_collection(_at_position: Vector2, data: Variant) -> bool:
@@ -791,7 +857,10 @@ func _notification(what: int) -> void:
 		_hover_niche = null
 		_hover_id = -1
 		_update_resonance(null, -1)
-		_queue_links()
+
+
+func _on_slot_command(op: String, ideology_id: int) -> void:
+	_command(op, ideology_id)
 
 
 func _on_card_activated(ideology_id: int) -> void:
@@ -805,12 +874,16 @@ func _on_card_activated(ideology_id: int) -> void:
 
 func _on_tab_changed(tab: int) -> void:
 	_tab_school = "" if tab <= 0 else String(ArtScript.SCHOOL_ORDER[tab - 1])
+	if _snapshot.is_empty():
+		return
 	_signature = ""
 	_rebuild_board()
 
 
 func _on_sort_selected(index: int) -> void:
 	_sort_mode = index
+	if _snapshot.is_empty():
+		return
 	_signature = ""
 	_rebuild_board()
 
@@ -958,28 +1031,27 @@ func _rebuild_offer() -> void:
 	var chosen := active and generation == _chosen_generation
 	var dismissed := active and generation == _dismissed_generation and not waiting
 	if (not active and not waiting) or chosen or dismissed:
-		_offer.visible = false
+		_set_stage_visible(false)
+		_set_draw_stack(false)
 		for index in 3:
 			_choice(index).visible = false
 		if not active:
 			_chosen_generation = -1
+		# The stage is closed: never leave the paper cover or a face-down card
+		# armed for the next reveal.
+		_open_stage_cover()
 		return
-	_offer.visible = true
+	_set_stage_visible(true)
 	var ids: PackedInt32Array = _snapshot.get("offer_ids", PackedInt32Array())
 	var fresh := active and generation > _revealed_generation and not waiting
 	if waiting and not fresh:
-		# Draw submitted; the one-day settlement has not published yet.
-		_offer_title.text = "抽取中…"
-		for index in 3:
-			var card := _choice(index)
-			card.visible = true
-			if ids.size() <= index:
-				card.call("set_card", {"ideology_id": -1, "display_name": ""})
-			card.call("set_face_up", false)
-		_reroll_button.disabled = true
-		_dismiss_button.disabled = true
+		# Draw submitted; the one-day settlement has not published yet. Showing
+		# three face-down frames here is what read as a placeholder image before
+		# the reveal, so only the shuffled deck is on stage.
+		_render_draw_waiting()
 		return
-	_offer_title.text = "选择一条道路"
+	_set_draw_stack(false)
+	_offer_title.text = "选择一条道路 · 单击卡面选定"
 	for index in 3:
 		var card := _choice(index)
 		var show := index < ids.size()
@@ -1006,46 +1078,106 @@ func _rebuild_offer() -> void:
 	_dismiss_button.disabled = false
 	if fresh:
 		_revealed_generation = generation
-		# The offer stage sits above the deck table; bring it into view so a
-		# scrolled-down collection never hides the reveal.
-		if _scroll != null:
-			_scroll.set_deferred("scroll_vertical", 0)
 		_play_reveal(ids.size())
 	else:
+		_open_stage_cover()
 		for index in 3:
 			_choice(index).call("set_face_up", true)
+
+
+func _render_draw_waiting() -> void:
+	_offer_title.text = "正在抽取…"
+	for index in 3:
+		var card := _choice(index)
+		card.visible = false
+		card.call("reset_motion")
+	_reroll_button.disabled = true
+	_dismiss_button.disabled = true
+	_set_draw_stack(true)
+
+
+func _set_draw_stack(show: bool) -> void:
+	if _draw_stack == null:
+		return
+	if show:
+		_draw_stack.set_card_size(_stage_card_size())
+		_draw_stack.visible = true
+		_draw_stack.play(not motion_reduced())
+	else:
+		_draw_stack.stop()
+		_draw_stack.visible = false
+
+
+## The offer tray is a modal layer over the workspace: a scrim plus the centred
+## paper stage. Showing it fades in; hiding is instant so the closing beat of the
+## choose animation is never covered by a lingering scrim.
+func _set_stage_visible(show: bool) -> void:
+	if _offer != null:
+		_offer.visible = show
+	if _offer_layer == null:
+		return
+	if not show:
+		if _offer_layer.visible:
+			_offer_layer.visible = false
+			_offer_layer.modulate.a = 1.0
+		return
+	if _offer_layer.visible:
+		return
+	_offer_layer.visible = true
+	if motion_reduced():
+		_offer_layer.modulate.a = 1.0
+		return
+	_offer_layer.modulate.a = 0.0
+	var tween := _offer_layer.create_tween()
+	tween.tween_property(_offer_layer, "modulate:a", 1.0, UITokens.ANIM_FAST)
+
+
+## Fully open the unroll mask and lift the torn paper. Used whenever the stage
+## is shown without a reveal, so a previous cover can never linger.
+func _open_stage_cover() -> void:
+	if _unroll_mask != null and _unroll_mask.material is ShaderMaterial:
+		(_unroll_mask.material as ShaderMaterial).set_shader_parameter("reveal", 1.0)
+	if _tear != null and _tear.coverage > 0.0:
+		_tear.coverage = 0.0
+		_tear.queue_redraw()
 
 
 func _play_reveal(count: int) -> void:
 	var mask := _unroll_mask.material as ShaderMaterial
 	var had_tear := _tear.coverage > 0.0
-	if reduce_motion or not is_visible_in_tree():
-		mask.set_shader_parameter("reveal", 1.0)
-		_tear.coverage = 0.0
-		_tear.queue_redraw()
+	if motion_reduced() or not is_visible_in_tree():
+		_open_stage_cover()
 		for index in 3:
 			var card := _choice(index)
 			card.call("reset_motion")
 			card.call("set_face_up", true)
 		return
 	_offer_anim_busy = true
+	# Cover the stage before it can draw a single uncovered frame, then play the
+	# reveal on top of that cover.
+	if had_tear:
+		# A reroll left the torn sheet on stage: it is the cover, so the unroll
+		# mask must be open underneath it.
+		if mask != null:
+			mask.set_shader_parameter("reveal", 1.0)
+	elif mask != null:
+		mask.set_shader_parameter("reveal", 0.0)
 	for index in 3:
 		_choice(index).call("reset_motion")
 		_choice(index).call("set_face_up", false)
 	var tween := create_tween()
 	if had_tear:
-		tween.tween_method(_set_tear, 1.0, 0.0, 0.32).set_trans(Tween.TRANS_QUAD) \
-			.set_ease(Tween.EASE_IN)
+		tween.tween_method(_set_tear, _tear.coverage, 0.0, 0.3) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	else:
-		mask.set_shader_parameter("reveal", 0.0)
-		tween.tween_method(_set_unroll, 0.0, 1.0, 0.45) \
+		tween.tween_method(_set_unroll, 0.0, 1.0, 0.42) \
 			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	tween.tween_callback(_drop_cards.bind(count))
-	tween.tween_interval(count * DROP_STAGGER + 0.36)
+	tween.tween_interval(count * DROP_STAGGER + 0.32)
 	for index in count:
 		tween.tween_callback(_reveal_card.bind(index))
-		tween.tween_interval(0.16)
-	tween.tween_interval(0.3)
+		tween.tween_interval(0.14)
+	tween.tween_interval(0.18)
 	tween.tween_callback(_finish_offer_animation)
 
 
@@ -1059,14 +1191,21 @@ func _reveal_card(index: int) -> void:
 
 
 ## Rare cards get a gold-leaf sweep; legendary ones add ink, seal and confetti.
+## The splash sits low and faint so the card name stays readable while it burns
+## off; the stamp lingers a beat longer, then both fade.
 func _reveal_flourish(card: Control, rarity: int) -> void:
 	card.call("play_gloss", 2 if rarity >= 3 else 1)
 	if rarity < 3:
 		return
 	var rect := card.get_global_rect()
-	_spawn_sprite(ArtScript.INK_SPLASH, rect.get_center(), Vector2(220, 220), 0.9, -0.2)
-	_spawn_sprite(ArtScript.WAX_SEAL, rect.position + Vector2(rect.size.x - 22, 24),
-		Vector2(52, 52), 1.4, 0.3, true)
+	var splash := maxf(150.0, rect.size.y * 0.5)
+	_spawn_sprite(ArtScript.INK_SPLASH,
+		rect.get_center() + Vector2(0.0, rect.size.y * 0.16),
+		Vector2(splash, splash * 0.87), 0.3, -0.2, false, 0.55)
+	var seal := maxf(40.0, rect.size.x * 0.22)
+	_spawn_sprite(ArtScript.WAX_SEAL,
+		rect.position + Vector2(rect.size.x - seal * 0.7, seal * 0.5),
+		Vector2(seal, seal), 0.7, 0.3, true)
 	_spawn_burst(rect.get_center(), true)
 
 
@@ -1088,8 +1227,8 @@ func _finish_offer_animation() -> void:
 
 
 func _on_choice_input(event: InputEvent, index: int) -> void:
-	# Single click selects the card for keyboard confirm; double click/accept
-	# arrives through `activated`.
+	# Press moves keyboard/gamepad focus onto the card; the selection itself
+	# arrives through `activated` on release.
 	if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
 		_choice(index).grab_focus()
 
@@ -1116,7 +1255,7 @@ func _choose_offer(choice_index: int) -> void:
 
 
 func _play_choose(choice_index: int) -> void:
-	if reduce_motion or not is_visible_in_tree():
+	if motion_reduced() or not is_visible_in_tree():
 		_rebuild_offer()
 		return
 	_offer_anim_busy = true
@@ -1171,7 +1310,7 @@ func _fly_to_collection(card: Control) -> void:
 
 
 func _play_tear_in() -> void:
-	if reduce_motion or not is_visible_in_tree():
+	if motion_reduced() or not is_visible_in_tree():
 		return
 	_tear.seed_edges()
 	var tween := create_tween()
@@ -1191,18 +1330,21 @@ func _set_tear(value: float) -> void:
 
 # --- effects --------------------------------------------------------------
 
+## Short impact shake on the visible stage (the tray when open, else the page).
+## Offsets stay relative to the container-owned base position.
 func _shake(amplitude: float) -> void:
-	if _root == null:
+	var target: Control = _offer if _offer != null and _offer.visible else _root
+	if target == null:
 		return
-	var base := Vector2.ZERO
+	var base := target.position
 	var tween := create_tween()
 	for offset in [Vector2(amplitude, 0), Vector2(-amplitude, 1), Vector2(amplitude * 0.6, -1),
-			Vector2(-amplitude * 0.3, 0), base]:
-		tween.tween_property(_root, "position", offset, 0.035)
+			Vector2(-amplitude * 0.3, 0), Vector2.ZERO]:
+		tween.tween_property(target, "position", base + offset, 0.035)
 
 
 func _spawn_sprite(path: String, global_center: Vector2, sprite_size: Vector2,
-		life: float, rotation_rad: float, slam := false) -> void:
+		life: float, rotation_rad: float, slam := false, alpha := 0.85) -> void:
 	var texture := ArtScript.texture(path)
 	if texture == null or _fx == null:
 		return
@@ -1225,16 +1367,16 @@ func _spawn_sprite(path: String, global_center: Vector2, sprite_size: Vector2,
 		tween.parallel().tween_property(sprite, "modulate:a", 1.0, 0.1)
 	else:
 		sprite.scale = Vector2(0.4, 0.4)
-		sprite.modulate.a = 0.85
+		sprite.modulate.a = alpha
 		tween.tween_property(sprite, "scale", Vector2.ONE, 0.22) \
 			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tween.tween_interval(life)
-	tween.tween_property(sprite, "modulate:a", 0.0, 0.35)
+	tween.tween_property(sprite, "modulate:a", 0.0, 0.3)
 	tween.tween_callback(sprite.queue_free)
 
 
 func _spawn_burst(global_center: Vector2, large: bool) -> void:
-	if _fx == null or reduce_motion:
+	if _fx == null or motion_reduced():
 		return
 	var particles := CPUParticles2D.new()
 	particles.texture = ArtScript.texture(ArtScript.PAPER_CONFETTI)
@@ -1268,7 +1410,7 @@ func _toast(text: String) -> void:
 	_fx.add_child(panel)
 	panel.reset_size()
 	panel.position = Vector2((_fx.size.x - panel.size.x) * 0.5, 84.0)
-	if reduce_motion:
+	if motion_reduced():
 		get_tree().create_timer(2.4).timeout.connect(panel.queue_free)
 		return
 	panel.modulate.a = 0.0
@@ -1350,7 +1492,8 @@ func _show_shell(reason: String, loading: bool) -> void:
 	_hint.text = "载入中…" if loading and reason.is_empty() else (
 		reason if not reason.is_empty() else "暂不可用")
 	_hint.visible = true
-	_offer.visible = false
+	_set_stage_visible(false)
+	_set_draw_stack(false)
 	_point_scroll.call("set_points", 0, 65536, 0, false, true)
 	_show_empty_state(true, {
 		"empty_title": "载入中…" if loading else "暂不可用",
@@ -1362,6 +1505,9 @@ func _show_empty_state(visible_state: bool, presentation: Dictionary) -> void:
 	if _empty == null:
 		return
 	_empty.visible = visible_state
+	# The cabinet card and the collection panel compete for the same column.
+	if _collection_drop != null:
+		_collection_drop.visible = not visible_state
 	if not visible_state:
 		return
 	_empty_icon.set_semantic(&"country.politics", UITokens.ACCENT)
@@ -1405,16 +1551,13 @@ func offer_choice_summaries() -> PackedStringArray:
 
 
 func niche_count(kind: int) -> int:
-	var host := _ideology_slots if kind == 1 else _spirit_slots
-	return 0 if host == null else host.get_child_count()
+	# Logical slot count, not rendered rows: empty slots collapse into one drop
+	# row, so the child count would under-report the board.
+	return int(_presentation.get("slots_capacity" if kind == 1 else "spirits_capacity", 0))
 
 
 func collection_count() -> int:
 	return 0 if _collection == null else _collection.get_child_count()
-
-
-func link_segment_count() -> int:
-	return 0 if _link_layer == null else _link_layer.segments.size()
 
 
 ## Test hook: simulate a card drop onto a niche kind without a real drag.
@@ -1424,35 +1567,80 @@ func simulate_drop(ideology_id: int, from_location: int, kind: int) -> void:
 
 # --- inner drawing helpers --------------------------------------------------
 
-## Red silk threads between equipped cards of an active named synergy; dashed
-## while a drag would complete one.
-class LinkLayer:
+## Face-down deck stack shown while a draw settles. It deliberately renders no
+## card frame, so the reveal always starts from a clean covered stage instead of
+## a placeholder that snaps into place before the animation.
+class DrawStack:
 	extends Control
-	var segments: Array = []
+	const BACK_COUNT := 4
+	var _backs: Array[TextureRect] = []
+	var _card_size := Vector2(208.0, 276.0)
+	var _tween: Tween
+	var _shuffling := false
 
 	func _init() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		# Inside the stage column a plain-sized Control would stretch full width;
+		# shrink-centre keeps the deck stack on the axis of the three cards.
+		size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		for index in BACK_COUNT:
+			var back := TextureRect.new()
+			back.texture = IdeologyArt.texture(IdeologyArt.CARD_BACK)
+			back.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			back.stretch_mode = TextureRect.STRETCH_SCALE
+			back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			add_child(back)
+			_backs.append(back)
+		_layout()
 
-	func _draw() -> void:
-		var thread := Color(0.66, 0.15, 0.09, 0.85)
-		for segment in segments:
-			var a: Vector2 = segment[0]
-			var b: Vector2 = segment[1]
-			var sag := Vector2(0, 18)
-			var points := PackedVector2Array()
-			for step in 13:
-				var t := float(step) / 12.0
-				points.append(a.lerp(b, t) + sag * sin(t * PI))
-			if bool(segment[2]):
-				for index in range(0, points.size() - 1, 2):
-					draw_line(points[index], points[index + 1], Color(thread, 0.6), 2.0, true)
-			else:
-				draw_polyline(points, thread, 2.5, true)
-				var mid := points[6]
-				draw_circle(mid, 5.0, thread)
-				var font := ThemeDB.fallback_font
-				draw_string(font, mid + Vector2(-40, -9), String(segment[3]),
-					HORIZONTAL_ALIGNMENT_CENTER, 80, 11, Color(0.45, 0.10, 0.06))
+	func set_card_size(card_size: Vector2) -> void:
+		_card_size = card_size
+		custom_minimum_size = card_size
+		_layout()
+
+	func play(animate: bool) -> void:
+		stop()
+		if not animate:
+			return
+		var top := _backs[_backs.size() - 1]
+		var rest_x := top.position.x
+		var rest_rotation := top.rotation
+		var lift := _card_size.x * 0.16
+		_shuffling = true
+		_tween = create_tween()
+		_tween.set_loops()
+		_tween.tween_property(top, "position:x", rest_x + lift, 0.5) \
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		_tween.parallel().tween_property(top, "rotation", rest_rotation + 0.2, 0.5)
+		_tween.tween_property(top, "modulate:a", 0.0, 0.16)
+		_tween.tween_callback(_reset_top.bind(rest_x, rest_rotation))
+		_tween.tween_property(top, "modulate:a", 1.0, 0.16)
+		_tween.tween_interval(0.4)
+
+	func stop() -> void:
+		_shuffling = false
+		if _tween != null and _tween.is_valid():
+			_tween.kill()
+		_tween = null
+		_layout()
+
+	func is_shuffling() -> bool:
+		return _shuffling
+
+	func _reset_top(rest_x: float, rest_rotation: float) -> void:
+		var top := _backs[_backs.size() - 1]
+		top.position.x = rest_x
+		top.rotation = rest_rotation
+
+	func _layout() -> void:
+		for index in _backs.size():
+			var back := _backs[index]
+			back.size = _card_size * 0.9
+			back.pivot_offset = back.size * 0.5
+			back.position = (_card_size - back.size) * 0.5 \
+				+ Vector2(float(index) * 1.6, -float(index) * 3.2)
+			back.rotation = deg_to_rad(-3.0 + float(index) * 1.8)
+			back.modulate.a = 1.0 if index == _backs.size() - 1 else 0.82
 
 
 ## Torn paper sheet that sweeps across the offer stage during a reroll.
@@ -1503,15 +1691,15 @@ class ResonanceEmblem:
 		school_id = school
 		alignment = BoxContainer.ALIGNMENT_CENTER
 		add_theme_constant_override("separation", 1)
-		custom_minimum_size = Vector2(78, 0)
+		custom_minimum_size = Vector2(46, 0)
 		_icon = TextureRect.new()
 		_icon.texture = IdeologyArt.emblem_for(school)
 		_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		_icon.custom_minimum_size = Vector2(40, 40)
+		_icon.custom_minimum_size = Vector2(22, 22)
 		_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(_icon)
-		_count = IdeologyArt.label(IdeologyArt.school_name(school), 11,
+		_count = IdeologyArt.label(IdeologyArt.school_name(school), 10,
 			IdeologyArt.school_color(school))
 		add_child(_count)
 		_pips = HBoxContainer.new()
@@ -1521,8 +1709,8 @@ class ResonanceEmblem:
 		add_child(_pips)
 
 	func set_compact(compact: bool) -> void:
-		_icon.custom_minimum_size = Vector2(30, 30) if compact else Vector2(40, 40)
-		custom_minimum_size.x = 64 if compact else 78
+		_icon.custom_minimum_size = Vector2(20, 20) if compact else Vector2(22, 22)
+		custom_minimum_size.x = 42 if compact else 46
 
 	func set_state(count: int, preview_count: int, tiers: Array[Dictionary]) -> void:
 		var school_label := IdeologyArt.school_name(school_id)
@@ -1537,8 +1725,10 @@ class ResonanceEmblem:
 		var any_active := false
 		for tier in tiers:
 			var pip := ColorRect.new()
-			pip.custom_minimum_size = Vector2(12, 12)
-			pip.rotation = 0.0
+			pip.custom_minimum_size = Vector2(9, 9)
+			pip.pivot_offset = Vector2(4.5, 4.5)
+			# Diamonds read as inked seals; flat squares read as debug swatches.
+			pip.rotation = PI * 0.25
 			pip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			var active := bool(tier.get("active", false))
 			var reach := preview_count >= int(tier.get("min_count", 99)) and not active

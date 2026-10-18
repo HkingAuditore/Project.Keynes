@@ -12,6 +12,8 @@ signal enqueue_requested(index: int)
 signal remove_requested(index: int)
 
 const POINT_SCALE := 1000.0
+const Art := preload("res://scripts/ui/components/technology_tree_art.gd")
+const EffectsLayer := preload("res://scripts/ui/components/technology_effects_layer.gd")
 const CARD_HEIGHT := 60.0
 const CARD_GAP := 8.0
 const MIN_CARD_WIDTH := 300.0
@@ -44,6 +46,13 @@ var _hover_item := -1
 var _hover_part := ""
 var _card_style := StyleBoxFlat.new()
 var _button_style := StyleBoxFlat.new()
+var _effects: Control
+
+
+func _ready() -> void:
+	_effects = EffectsLayer.new()
+	_effects.name = "ResearchEffects"
+	add_child(_effects)
 
 
 func _init() -> void:
@@ -304,6 +313,7 @@ func _visible_rect() -> Rect2:
 
 
 func _draw() -> void:
+	_sync_effects()
 	if _sections.is_empty():
 		_draw_empty()
 		return
@@ -343,6 +353,33 @@ func _draw() -> void:
 		_draw_card(item_index, int(item.index), rect)
 
 
+func _sync_effects() -> void:
+	if _effects == null:
+		return
+	var items: Array = []
+	var view := _visible_rect()
+	for value in _items:
+		var item: Dictionary = value
+		var rect: Rect2 = item.rect
+		if not view.grow(CARD_HEIGHT).intersects(rect):
+			continue
+		var index := int(item.index)
+		var definition: Dictionary = _definitions[index]
+		var state := int(_states[index]) if index < _states.size() else 0
+		items.append({"index": index, "rect": rect,
+			"accent": _domain_accent(_domain_index(definition)),
+			"fraction": _fraction(index, definition),
+			"active": state == 3 and int(_queue_order.get(index, 0)) == 0,
+			"track": Rect2(rect.position.x + 14.0, rect.end.y - 6.5,
+				rect.size.x - 26.0, 3.0)})
+	_effects.view_rect = view
+	_effects.set_items(items)
+	_effects.patch_states(_states)
+	var hover := int((_items[_hover_item] as Dictionary).index) \
+		if _hover_item >= 0 and _hover_item < _items.size() else -1
+	_effects.set_interaction(_selected, hover)
+
+
 func _draw_card(item_index: int, technology: int, rect: Rect2) -> void:
 	var definition: Dictionary = _definitions[technology]
 	var state := int(_states[technology]) if technology < _states.size() else 0
@@ -356,7 +393,12 @@ func _draw_card(item_index: int, technology: int, rect: Rect2) -> void:
 		_card_style.bg_color = Color(1.0, 0.985, 0.94, 0.85)
 	_card_style.border_color = UITokens.DOSSIER_OXBLOOD if selected \
 		else (UITokens.DOSSIER_BRASS if hovered else UITokens.DOSSIER_RULE)
-	draw_style_box(_card_style, rect)
+	# Reuse the generated paper plates from the atlas for tactile list cards too.
+	if not Art.draw_plate(self, Art.CARD_KNOWN, rect,
+			Color(1.0, 0.99, 0.94) if hovered or selected else Color.WHITE):
+		draw_style_box(_card_style, rect)
+	if selected or hovered:
+		draw_rect(rect.grow(-1.0), _card_style.border_color, false, 1.0)
 	draw_rect(Rect2(rect.position + Vector2(1.0, 1.0), Vector2(3.0, rect.size.y - 2.0)),
 		accent.lerp(UITokens.DOSSIER_INK, 0.15))
 	var text_left := rect.position.x + 14.0

@@ -34,6 +34,7 @@
 #include "runtime_pod_protocol.h"
 #include "country_ai_core.h"
 #include "natural_resource_kernel.h"
+#include "trade_visual_cache.h"
 
 namespace pk {
 
@@ -667,8 +668,12 @@ public:
                                                 float weather_intensity,
                                                 bool environment_ready) const;
     godot::Dictionary market_cell_snapshot(int32_t cell_idx) const;
+    // Read-only bounded order page. `good_index` >= 0 keeps only orders that
+    // carry that good line and emits only its lines; -1 keeps every line.
+    // Rows are stably ordered by (arrival_day, order id) before paging.
     godot::Dictionary trade_orders_for_cell(int32_t cell_idx, int32_t offset,
-                                             int32_t limit) const;
+                                             int32_t limit,
+                                             int32_t good_index = -1) const;
     godot::Dictionary country_trade_snapshot(int64_t country_handle,
                                               const godot::String &view,
                                               int32_t offset, int32_t limit) const;
@@ -1148,8 +1153,10 @@ public:
     godot::PackedInt32Array drain_building_visual_outbox();
     void read_view_reset();
     godot::Dictionary read_view_status() const;
+    TradeVisualCache trade_visual_cache;
 
 private:
+    friend class TradeVisualCache;
     friend class EconomyCsvRecorder;
     // The Country worker gate must not be represented by a bool: callers need
     // to distinguish an operation that is not routed through the worker from
@@ -4531,14 +4538,11 @@ private:
     std::array<int32_t, SAT_DIM_COUNT> _satisfaction_default_weights_q16 = {
         65536, 45875, 26214, 13107, 19661, 19661, 16384, 13107};
     int32_t _satisfaction_subsistence_gate_slack_q16 = 6554;
+    int32_t _satisfaction_basic_gate_slack_q16 = 13107;
     int32_t _satisfaction_income_growth_floor_q16 = 58982;
     int32_t _satisfaction_income_growth_ceiling_q16 = 78643;
     int32_t _satisfaction_income_baseline_alpha_q16 = 1024;
     int64_t _satisfaction_savings_target_months_q16 = 393216;
-    int64_t _satisfaction_comfort_floor_months_q16 = 65536;
-    int64_t _satisfaction_comfort_ceiling_months_q16 = 196608;
-    int64_t _satisfaction_luxury_floor_months_q16 = 196608;
-    int64_t _satisfaction_luxury_ceiling_months_q16 = 655360;
     int32_t _satisfaction_tax_tolerance_q16 = 22938;
     std::array<int32_t, SAT_DEVELOPMENT_INPUT_COUNT>
         _satisfaction_development_weights_q16 = {26214, 26214, 13107};
@@ -7010,6 +7014,13 @@ private:
         return signature_for_profession_ethnicity(_unemployed_profession_id, ethnicity_id);
     }
     void configure_satisfaction_profile(const godot::Dictionary &profile);
+    bool satisfaction_need_available(const Need &need, int32_t cell) const;
+    uint8_t satisfaction_applicable_mask(int32_t slot) const;
+    std::array<int64_t, SAT_DIM_COUNT> satisfaction_effective_weights(
+        const Signature &signature, uint8_t applicable_mask) const;
+    int64_t satisfaction_ceiling(const int64_t *dims, uint8_t applicable_mask,
+                                int64_t &sat) const;
+    int32_t consumption_living_standard_level(int32_t slot) const;
     bool capture_country_epoch(std::string &error);
     void refresh_epoch_development();
     // Writes the authoritative composite/dimension columns for one cohort and

@@ -35,10 +35,17 @@ Total ~1 MB on disk, lossless import, no mipmaps.
 
 - Plates are drawn as three horizontal slices whose caps scale with height
   (`TechnologyTreeArt.CAPS`), so notches, curls and rollers never stretch.
-- Everything is immediate-mode `_draw()` on the existing canvases: no new nodes,
-  shaders or per-frame texture work. Plates for one view share a few textures,
-  so the canvas renderer batches them. Redraw triggers are unchanged (state
-  patch, hover, selection, pan).
+- Plates remain immediate-mode `_draw()` on the existing canvases. The research
+  desk now reuses the known-paper plate too. No card spawns its own nodes.
+- `TechnologyEffectsLayer` adds one shared, input-transparent canvas per tree or
+  desk, with 30Hz redraws independent of the cached labels. It draws brass route
+  trails, research track heads, focus corners, discovery motes and completion
+  seal impressions using the cached bitmaps plus one 64px radial gradient.
+- A temporary `technology_page_reveal.gdshader` material exposes the atlas from
+  top to bottom on chapter/era changes. It is removed after 0.52 seconds. There
+  is no continuous full-page shader or full-page redraw for ambient effects.
+- Hidden views stop processing and discard transient effects. Reduce-motion
+  settings retain static selection corners and disable trails, motes and reveal.
 - Domain colour is still supplemental: state is carried by the seal bitmap plus
   the existing tooltip/text. Unknown and revealed-but-locked nodes use the
   unknown plate and seal only, so no semantic content leaks.

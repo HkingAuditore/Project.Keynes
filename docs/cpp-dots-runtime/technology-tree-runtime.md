@@ -23,6 +23,32 @@
 - **摘要去重**：物资解锁若已由硬前置链或更早时代的科技许可，内容效果带 `summary_visible: false`，
   仍参与绑定与生产许可，但不再出现在 `effect_summary`；“作为必要支撑”只列一个时代内的直接下游。
 
+## 已达成条件的科研证据交付与未知节点详情（2026-10-18）
+
+完整 `0xFFF` ACTIVE 路径跳过旧的 `advance_runtime_pulse()`，但 Trigger 的效果交付游标仍在
+主线程。`WorldRuntimeHost` 因此在既有 Trigger transport pump 中，每次最多交付 64 条连续的
+科研信号命令或通知，复用 Trigger → Effect → Country 命令与真实 Country receipt。交付在暂停时
+不主动启动；在途命令继续收取 receipt。Effect worker 快照暂缓覆盖正在交付的 facade 事务，
+直到 Country receipt 完成且 Trigger 游标确认成功入队；确认队列背压时重试，不能把 admission
+失败当作已完成。Trigger admission 为 ACK_EFFECTS 保留一个位置，同日、同 observed generation
+的确认只保留最大游标；普通事件仍按既有背压协议重试，不丢弃已接收事件。
+
+科研交付不得与 Economy worker 写共享 Effect 事务 arena 并发。`handoff_trigger_effects()`
+非阻塞获取既有 Economy boundary；忙时复用 `service_economy_boundary_inbox()` 在下一次输入
+capture 的持锁区执行，并把结果交回同一调用入口。等待期间同样保护 Effect facade。
+连续高速模拟下，worker 在完整模拟日之间响应显式的主线程边界服务请求，释放边界后等待
+主线程完成收件箱服务；主线程始终使用非阻塞加锁。暂停后不新交付科研效果，避免存档边界
+排入需要下一模拟日才能确认的新 Country 命令。
+这没有新增模拟权威、存档字段、目录身份或科技门槛；旧存档的未交付效果可以继续交付。
+
+科技树前沿节点仍遮罩名称、成本和效果，但点击未知或已揭示未就绪的节点时，详情展示发现
+条件、缺失证据、核心前置状态和匿名可选路线。逻辑组合明确标注全部／任一／至少 N 项；
+未知前置不泄露名称，未知路线不显示含目标名称的作者说明。时代节点同时展示候选完成数和
+上一时代门槛。`pending` 不算已掌握，只有状态 5 能在详情中满足 TECH_COMPLETED。
+
+回归入口：`technology_signal_delivery_test.gd`、`technology_workspace_smoke_test.gd`，以及
+`runtime_trigger_pod_test.gd` / `runtime_trigger_save_roundtrip_test.gd` 中的满队列确认与存取回归。
+
 ## 首座科研机构的建材启动（2026-09-20）
 
 有冻结的、国库现金支持的科研采购需求且当地没有科研建筑时，Economy 在建筑计划的

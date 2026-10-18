@@ -1,5 +1,15 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V6）
 
+## 2026-10-18 实际消费满意度
+
+舒适和奢侈改读各自 need tier 的实际消费 / 生活目标量；目标不随本轮财富、价格缩量、预算或缺货消失。
+正式 need 内容显式分为基本、舒适与奢侈。没有适用需求的消费维度在查询返回 -1，界面显示“不适用”，
+人口均值只使用该维度适用的人口。职业偏好在消费70%、财务20%、税负5%、发展5%四类预算内归一，
+缺少奢侈需求不再放大财务权重。存款只直接影响储蓄，缺少估价也不再自动给储蓄满分。
+综合分同时受温饱10%松弛与基本生活20%松弛约束，短板诊断会指出实际限制总分的维度。
+cohort 的生活档位改按实际消费判定。原生 C++ 权威、购买和资金划转、N/P/I、PKEC v56 字节布局不变；
+需求分档改变 catalog hash。公式、UI/查询契约与后续未实现项见[综合满意度运行时](./satisfaction-runtime.md)。
+
 ## 2026-10-16 投资组合现金预检
 
 内生投资冻结整批建材发票后，先在本格临时账户上预演整组资金顺序：全部迁人、
@@ -471,12 +481,12 @@ variant 替代分数，再影响 Need 总量；财富提高不会降低同一阶
 
 cohort 满意度不再是单一的生存指标。`_population.composite_satisfaction` 是权威的
 八维度综合指数（温饱/基本/舒适/奢侈/收入增长/储蓄/税负/社会发展），按 profession
-数据驱动权重加权平均后经生存闸门封顶，接管出生率、同格就业流动排序与家族分支晋升评审，
+数据驱动权重在类别预算内归一后加权，并经温饱与基本生活约束封顶，接管出生率、同格就业流动排序与家族分支晋升评审，
 并按等级跨越发布 `EVENT_ECONOMY_SOCIAL_PRESSURE`。`needs_satisfaction`
 （`SAT_DIM_SUBSISTENCE`）保留原语义但**只**驱动饥饿死亡。
 
-2026-10-16 起舒适/奢侈取本轮剩余存款相对 30 天本地基础生活成本的购买力，
-分别在 1～3 / 3～10 倍区间线性评分，成本不可估价时两项为 0；职业权重不再因空需求档剔除。
+2026-10-18 起基本/舒适/奢侈取实际消费相对生活目标的满足率，目标不随财富与价格缩量。
+未适用消费档不参与评分，权重在消费类别内部重分配；存款购买力只用于储蓄。
 
 维度定义、数据驱动权重契约、合成公式、溯源 API、事件 payload、PKEC v30 列布局与
 性能验收数据是[综合满意度运行时](./satisfaction-runtime.md)的职责，本文件不重复。
@@ -843,7 +853,12 @@ Country worker ACTIVE 时，epoch 外的 live `building_available(..., false)`�
 
 贸易另提供 `capture_economy_trade_topology()` 粗粒度地图输入、
 `capture_economy_trade_visibility()` 测试夹具，以及分页
-`get_trade_orders_for_cell(cell, offset, limit)` 冷查询；禁止跨桥返回全局路线/订单矩阵。
+`get_trade_orders_for_cell(cell, offset, limit, good_index = -1)` 冷查询：`good_index >= 0`
+只返回含该物资行的订单并裁剪物资行 CSR，行按 `(arrival_day, order_id)` 升序，响应带
+`page_begin`、`economy_generation`（committed generation）与 `sample_day`；省略第 4 参保持
+既有三参全量语义。单页 `limit` 仍 clamp 1..256、总量受 `trade_max_orders` 约束，只读且不
+进入 PKEC/state hash；禁止跨桥返回全局路线/订单矩阵。`get_market_cell_snapshot()` 额外返回
+`economy_generation`（最近 committed generation），供 UI 以 generation 做缓存键，不是模拟状态。
 正式地图由 `MapGenerator._setup_economy_runtime()` 在 economy configure 后、bootstrap 前
 捕获一次静态邻接、terrain passability 与 move-cost LUT。`fog_solved` 之后每个 market-cycle
 sample 再冻结 `visible_arr`：玩家开局国参与的贸易两端必须当前可见。默认 `trade_runtime_mode=ACTIVE`；

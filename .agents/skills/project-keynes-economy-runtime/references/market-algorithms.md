@@ -99,10 +99,14 @@ Distribute merchant revenue once per market, not per order. Compute total and wo
 in one linear pass over need states; do not scan all need states once per cohort.
 
 That same pass keeps the four data-driven need-tier accumulators for detail attribution.
-Basic consumption uses the basic-tier fill average; subsistence uses the survival figure.
-Comfort and luxury use post-consumption cash / (population × local basic daily cost × 30),
-normalized over 1..3 and 3..10 Q16 months. A missing cost basis scores both at zero;
-empty comfort/luxury need tiers never remove their authored profession weights.
+Basic, comfort and luxury use realized consumption / normative living target
+(population × base quantity × elapsed days × environment × ethnicity), independent
+of wealth, price-elastic shrinkage and budget. Missing shelves retain the target;
+technology-inapplicable tiers return -1 in queries. Group budgets are consumption
+70%, finance 20%, tax 5%, development 5%; missing consumption tiers redistribute
+only within consumption. Subsistence uses the existing survival figure. Savings
+alone uses cash purchasing power, with missing cost basis scored zero. Composite
+is capped by survival (10% slack) and applicable basic living (20% slack).
 Income growth, savings, tax burden,
 and social development come from cohort ledgers and the epoch-boundary
 `_epoch_cell_development_q16` cache, so the hot loop only does multiply-add plus one

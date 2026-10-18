@@ -323,12 +323,29 @@ func cell_satisfaction_attractiveness(cell_idx: int) -> Dictionary:
 	return attractiveness
 
 
-func trade_orders_for_cell(cell_idx: int, offset: int = 0, limit: int = 64) -> Dictionary:
+func trade_orders_for_cell(cell_idx: int, offset: int = 0, limit: int = 64,
+		good_index: int = -1) -> Dictionary:
 	if not _configured or not _world_ext.has_method("get_trade_orders_for_cell"):
 		return {"ok": false, "reason": "trade order API unavailable", "total": 0}
-	var page: Dictionary = _world_ext.get_trade_orders_for_cell(cell_idx, offset, limit)
+	var page: Dictionary = _world_ext.get_trade_orders_for_cell(
+		cell_idx, offset, limit, good_index)
 	page["good_ids"] = _catalog.get("good_ids", PackedStringArray())
 	return page
+
+
+## Optional, bounded visual observer. The native bridge never waits for a worker.
+func trade_visual_snapshot(cells: PackedInt32Array, visible: PackedByteArray,
+        vision_revision: int, selected_cell: int = -1, enabled: bool = true) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_trade_visual_snapshot"):
+		return {"ok": false, "reason": "trade_visual_unavailable"}
+	return _world_ext.get_trade_visual_snapshot(cells, visible,
+		vision_revision, selected_cell, enabled)
+
+
+func bake_trade_visual_paths(snapshot: Dictionary, map_width: int, hex_size: float) -> Dictionary:
+	if not _configured or not _world_ext.has_method("bake_trade_visual_paths"):
+		return {"ok": false}
+	return _world_ext.bake_trade_visual_paths(snapshot, map_width, hex_size)
 
 
 func country_trade_snapshot(country_handle: int, view: String = "summary",

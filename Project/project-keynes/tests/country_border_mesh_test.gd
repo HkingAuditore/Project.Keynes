@@ -20,6 +20,7 @@ func _init() -> void:
 	_test_unowned_map_is_empty()
 	_test_wrap_tiling()
 	_test_country_colors()
+	_test_material_and_local_pulse()
 	print("country border mesh: %d checks, %d failures" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
 
@@ -140,6 +141,21 @@ func _test_country_colors() -> void:
 
 
 # --- 测试夹具 -------------------------------------------------
+
+func _test_material_and_local_pulse() -> void:
+	var layer = BorderLayerScript.new()
+	layer.set_hex_size(22.0)
+	layer.set_horizontal_wrap(600.0)
+	layer.rebuild(_make_map())
+	_expect("frontier uses the generated bitmap material",
+		layer._shader_mat.get_shader_parameter("frontier_grain") != null)
+	_expect("frontier pulse shares the cylindrical wrap period",
+		is_equal_approx(float(layer._shader_mat.get_shader_parameter("frontier_wrap_period")), 600.0))
+	layer.celebrate_cell(Vector2(22, 33))
+	_expect("landing catch-light is local to the committed cell",
+		layer._shader_mat.get_shader_parameter("frontier_pulse_center") == Vector2(22, 33)
+		and is_zero_approx(float(layer._shader_mat.get_shader_parameter("frontier_pulse_age"))))
+	layer.free()
 
 func _rebuild(map: MapData, wrap_period_x: float) -> Dictionary:
 	var layer = BorderLayerScript.new()

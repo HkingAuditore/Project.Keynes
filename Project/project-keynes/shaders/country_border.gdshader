@@ -37,8 +37,13 @@ uniform float ribbon_world_width = 13.6;
 // 当前期望的世界线宽，由 GDScript 每帧按 zoom 推送。
 uniform float border_world_width = 3.6;
 // 深色外套在总线宽里的占比（靠国界线一侧）。
-uniform float outline_ratio : hint_range(0.0, 0.9) = 0.42;
-uniform vec4 outline_color : source_color = vec4(0.05, 0.05, 0.08, 1.0);
+uniform float outline_ratio : hint_range(0.0, 0.9) = 0.24;
+uniform vec4 outline_color : source_color = vec4(0.075, 0.052, 0.029, 1.0);
+uniform sampler2D frontier_grain : repeat_enable, filter_linear_mipmap;
+uniform vec2 frontier_pulse_center = vec2(-100000.0);
+uniform float frontier_pulse_age = 2.0;
+uniform float frontier_pulse_radius = 44.0;
+uniform float frontier_wrap_period = 0.0;
 uniform float overall_alpha : hint_range(0.0, 1.0) = 1.0;
 // 国色带向内侧渐隐的残留强度（1 = 不渐隐）。
 uniform float inner_fade : hint_range(0.0, 1.0) = 0.0;
@@ -51,6 +56,7 @@ uniform float noise_scale : hint_range(0.005, 0.5) = 0.055;
 
 varying vec2 v_data;
 varying vec4 v_color;
+varying vec2 v_world;
 
 float hash21(vec2 p) {
 	p = fract(p * vec2(234.34, 435.345));
@@ -72,6 +78,7 @@ float value_noise(vec2 p) {
 void vertex() {
 	v_data = UV;
 	v_color = COLOR;
+	v_world = VERTEX;
 }
 
 void fragment() {
@@ -101,11 +108,50 @@ void fragment() {
 	float inside = outer * inner;
 	float is_casing = 1.0 - smoothstep(casing_w - aa, casing_w + aa, dn);
 
-	vec3 col = mix(v_color.rgb * band_gain, outline_color.rgb, is_casing);
-	// 国色带向内柔化收尾，避免整块领土被描边糊住。
-	float t_in = clamp((dn - casing_w) / max(w - casing_w, 0.0001), 0.0, 1.0);
-	float band = mix(1.0, inner_fade, smoothstep(0.55, 1.0, t_in));
-	float alpha = inside * mix(band, outline_color.a, is_casing) * overall_alpha;
+	// Material extends inland as a dry pigment wash; the true boundary stays
+	// a precise ink seam. Texture coordinates are edge local, so wrapped copies
+	// use identical grain and do not shimmer when the camera crosses the seam.
+	float grain = 0.5;
+#ifndef PK_QUALITY_LOW
+	grain = texture(frontier_grain, vec2(v_data.x * 0.045 + seed * 13.0,
+		v_data.y * 0.11 + seed * 7.0)).r;
+#endif
+	float profile = clamp((dn - casing_w) / max(w - casing_w, 0.0001), 0.0, 1.0);
+	float ridge = exp(-pow((profile - 0.26) * 7.0, 2.0));
+	float bevel = 0.72 + ridge * 0.42 + (grain - 0.5) * 0.45;
+	vec3 pigment = v_color.rgb * band_gain * bevel;
+	vec3 col = mix(pigment, outline_color.rgb, is_casing);
+	// A fine warm crest and a darker inner groove make this read as an atlas
+	// inlay instead of an unlit geometric stroke, on both snow and green terrain.
+	col = mix(col, mix(v_color.rgb, vec3(1.0, 0.94, 0.76), 0.48), ridge * (1.0 - is_casing) * 0.5);
+	float band = mix(1.0, inner_fade, smoothstep(0.65, 1.0, profile));
+	float alpha = inside * mix(band, outline_color.a, is_casing);
+	float wash_width = min(ribbon_world_width * 0.94, w * 3.2);
+	float wash_distance = dn + (grain - 0.5) * w * 1.4;
+	float wash = outer * (1.0 - smoothstep(w * 0.6, wash_width, wash_distance));
+	float wash_alpha = wash * (0.09 + grain * 0.16);
+	float material_mix = alpha / max(alpha + wash_alpha * (1.0 - alpha), 0.001);
+	col = mix(v_color.rgb * (0.65 + grain * 0.3), col, material_mix);
+	alpha = alpha + wash_alpha * (1.0 - alpha);
+	// Sparse cartographer's inner hatching, worn into the pigment rather than
+	// a second luminous outline. Derivatives keep it quiet at distant zoom.
+	float detail_lod = 1.0 - smoothstep(w * 0.20, w * 0.45, aa);
+	float hatch = 1.0 - smoothstep(w * 0.09, w * 0.09 + aa, abs(dn - w * 1.9));
+	float dash = smoothstep(0.35, 0.65, sin(v_data.x / w * 1.8 + seed * 6.0));
+	float hatch_alpha = hatch * dash * detail_lod * 0.34 * (0.6 + grain * 0.4);
+	col = mix(col, v_color.rgb * 0.70, hatch_alpha / max(alpha + hatch_alpha, 0.001));
+	alpha = max(alpha, hatch_alpha);
+
+	// One short, local frontier catch-light after an authoritative landing.
+	vec2 delta = v_world - frontier_pulse_center;
+	if (frontier_wrap_period > 0.001) {
+		delta.x = mod(delta.x + frontier_wrap_period * 0.5, frontier_wrap_period) - frontier_wrap_period * 0.5;
+	}
+	float pulse_time = clamp(frontier_pulse_age / 1.8, 0.0, 1.0);
+	float local_mask = 1.0 - smoothstep(frontier_pulse_radius * 0.3, frontier_pulse_radius, length(delta));
+	float catchlight = sin(pulse_time * 3.14159265) * local_mask;
+	col = mix(col, vec3(1.0, 0.91, 0.60), catchlight * 0.72);
+	alpha *= overall_alpha;
 
 	COLOR = vec4(clamp(col, vec3(0.0), vec3(1.0)), clamp(alpha, 0.0, 1.0));
 }

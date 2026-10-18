@@ -5,3 +5,4 @@ script = ExtResource("1")
 id = &"household_goods"
 display_name = "家庭用品"
 living_cost_weight_q16 = 32768
+satisfaction_tier = 2

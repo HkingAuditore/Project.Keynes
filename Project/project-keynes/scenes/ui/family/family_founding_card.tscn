@@ -49,11 +49,13 @@ unique_name_in_owner = true
 autowrap_mode = 3
 theme_type_variation = &"PKDossierBody"
 
-[node name="EffectPreview" type="Label" parent="Margin/Column"]
+[node name="EffectPreview" type="RichTextLabel" parent="Margin/Column"]
 layout_mode = 2
 unique_name_in_owner = true
 autowrap_mode = 3
-theme_type_variation = &"PKDossierBody"
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
 
 [node name="Actions" type="HBoxContainer" parent="Margin/Column"]
 layout_mode = 2
@@ -103,11 +105,34 @@ layout_mode = 2
 unique_name_in_owner = true
 theme_override_constants/separation = 8
 
-[node name="EffectTitle" type="Label" parent="Margin/Column/DetailsClip/DetailsContent"]
+[node name="EffectHeader" type="HBoxContainer" parent="Margin/Column/DetailsClip/DetailsContent"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="EffectIcon" parent="Margin/Column/DetailsClip/DetailsContent/EffectHeader" instance=ExtResource("2_icon")]
 layout_mode = 2
 unique_name_in_owner = true
+custom_minimum_size = Vector2(28, 28)
+
+[node name="EffectTitle" type="Label" parent="Margin/Column/DetailsClip/DetailsContent/EffectHeader"]
+layout_mode = 2
+unique_name_in_owner = true
+size_flags_horizontal = 3
 autowrap_mode = 3
 theme_type_variation = &"PKDossierSectionTitle"
+
+[node name="EffectHint" type="Label" parent="Margin/Column/DetailsClip/DetailsContent"]
+layout_mode = 2
+text = "威望晋升后生效 · 各级效果如下"
+autowrap_mode = 3
+theme_type_variation = &"PKDossierBody"
+
+[node name="EffectContext" type="RichTextLabel" parent="Margin/Column/DetailsClip/DetailsContent"]
+layout_mode = 2
+unique_name_in_owner = true
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
 
 [node name="EffectTiersBox" type="VBoxContainer" parent="Margin/Column/DetailsClip/DetailsContent"]
 layout_mode = 2

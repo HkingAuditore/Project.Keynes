@@ -102,7 +102,7 @@ func _refresh_detail(selected: Dictionary, national: PackedFloat32Array) -> void
 	var tier_rows: Array = []
 	for i in range(mini(EconomyDossierViewModel.CONSUMPTION_TIER_COUNT, dims.size())):
 		tier_rows.append({"id": i, "label": EconomyDossierViewModel.SATISFACTION_DIMENSIONS[i],
-			"value": dims[i], "text": percent(dims[i]), "color": satisfaction_color(dims[i]),
+			"value": maxf(0.0, dims[i]), "text": percent(dims[i]) if dims[i] >= 0.0 else "不适用", "color": satisfaction_color(dims[i]),
 			"marker": national[i] if i < national.size() else -1.0,
 			"tooltip": "%s需求满足率 %s（竖线为全国平均 %s）" % [
 				EconomyDossierViewModel.SATISFACTION_DIMENSIONS[i], percent(dims[i]),

@@ -282,6 +282,88 @@ func _run() -> void:
 		await process_frame
 		if panel._object_detail_dialog.get_node("Center/Dialog/Body/Scroll/Content").get_child_count() != good_node_count:
 			failures.append("good detail live patches rebuilt content nodes")
+		# 逐单商路：表格初始化、翻页/定位信号、同 signature 补丁不重建节点。
+		var trade_pages := [0]
+		var trade_locates := [0]
+		var trade_panel_pages := [0]
+		var trade_panel_locates := [0]
+		var trade_dialog := panel._object_detail_dialog
+		trade_dialog.trade_orders_page_requested.connect(
+			func(offset: int) -> void: trade_pages[0] = offset)
+		trade_dialog.trade_order_locate_requested.connect(
+			func(cell_idx: int) -> void: trade_locates[0] = cell_idx)
+		panel.trade_orders_page_requested.connect(
+			func(offset: int) -> void: trade_panel_pages[0] = offset)
+		panel.trade_order_locate_requested.connect(
+			func(cell_idx: int) -> void: trade_panel_locates[0] = cell_idx)
+		var orders_model := _trade_orders_model()
+		panel.show_object_detail({
+			"kind": "good", "name": "熟制主食", "subtitle": "物资 · 区域 1, 1",
+			"icon": "resource", "accent": UITokens.RESOURCE,
+			"row": good_data, "trade_orders": orders_model,
+		})
+		await process_frame
+		await process_frame
+		if trade_dialog.trade_orders_row_count() != 2 \
+				or not trade_dialog.trade_orders_hint_text().contains("最近到达") \
+				or trade_dialog.trade_orders_page_text() != "1-12 / 25":
+			failures.append("good detail did not render the trade order page")
+		var orders_button := trade_dialog._section_buttons.get("operations") as Button
+		if orders_button != null:
+			orders_button.pressed.emit()
+			await process_frame
+			await process_frame
+		var orders_table := trade_dialog._good_refs.get("orders_table") as DossierLedgerTable
+		var orders_footer := trade_dialog._good_refs.get("orders_footer") as Control
+		var orders_next := trade_dialog._good_refs.get("orders_next") as Button
+		if orders_table == null or orders_footer == null or orders_next == null \
+				or not orders_footer.visible or orders_next.disabled \
+				or trade_dialog.current_chapter() != "operations":
+			failures.append("trade order paging footer is not usable")
+		if orders_next != null:
+			orders_next.pressed.emit()
+		if int(trade_pages[0]) != 12 or int(trade_panel_pages[0]) != 12:
+			failures.append("trade order next page did not relay offset 12")
+		if orders_table != null:
+			orders_table.row_selected.emit("trade_order_101")
+		if int(trade_locates[0]) != 5 or int(trade_panel_locates[0]) != 5:
+			failures.append("trade order row did not relay counterpart locate")
+		var orders_node_count := trade_dialog.get_node(
+			"Center/Dialog/Body/Scroll/Content").get_child_count()
+		for step_idx in range(30):
+			panel.refresh_object_detail({
+				"kind": "good", "name": "熟制主食", "subtitle": "物资 · 区域 1, 1",
+				"icon": "resource", "accent": UITokens.RESOURCE,
+				"row": good_data, "trade_orders": orders_model,
+			})
+		await process_frame
+		if trade_dialog.get_node("Center/Dialog/Body/Scroll/Content").get_child_count() \
+				!= orders_node_count \
+				or trade_dialog.trade_orders_row_count() != 2:
+			failures.append("trade order live patches rebuilt rows or nodes")
+		var changed_orders := _trade_orders_model()
+		changed_orders["signature"] = "sig-b"
+		changed_orders["rows"] = (changed_orders["rows"] as Array).slice(0, 1)
+		changed_orders["total"] = 1
+		changed_orders["has_more"] = false
+		changed_orders["page_label"] = "1-1 / 1"
+		panel.refresh_object_detail({
+			"kind": "good", "name": "熟制主食", "subtitle": "物资 · 区域 1, 1",
+			"icon": "resource", "accent": UITokens.RESOURCE,
+			"row": good_data, "trade_orders": changed_orders,
+		})
+		await process_frame
+		if trade_dialog.trade_orders_row_count() != 1:
+			failures.append("trade order live patch did not replace changed page rows")
+		# 同身份整卷宗重建（refresh_details 回退路径）后必须重新填表。
+		trade_dialog.show_details({
+			"kind": "good", "name": "熟制主食", "subtitle": "物资 · 区域 1, 1",
+			"icon": "resource", "accent": UITokens.RESOURCE,
+			"row": good_data, "trade_orders": orders_model,
+		})
+		await process_frame
+		if trade_dialog.trade_orders_row_count() != 2:
+			failures.append("same-identity detail rebuild dropped trade order rows")
 		# 验证建筑详情卷宗双分页与实时补丁节点稳定性。
 		var building_data: Dictionary = _building_category(0.0).building_rows[0]
 		panel.show_object_detail({
@@ -415,6 +497,45 @@ func _make_model() -> Dictionary:
 			"market": _market_category(0.0),
 			"buildings": _building_category(0.0),
 		},
+	}
+
+
+func _trade_orders_model() -> Dictionary:
+	var rows := [
+		{"id": "trade_order_101", "tooltip": "订单 #101 · 运入",
+			"muted": false, "locate_cell": 5,
+			"cells": {
+				"dir": {"text": "运入", "color": UITokens.DOSSIER_VERDIGRIS},
+				"counterpart": {"text": "洛阳", "sub": "区域 2, 1"},
+				"quantity": {"text": "3 单位", "value": 3.0, "sort": 3000},
+				"price": {"text": "1 → 1.5", "sort": 15000},
+				"route": {"text": "剩 2 日", "value": 0.67, "sort": 2,
+					"bar_color": UITokens.DOSSIER_BRASS},
+				"status": {"text": "在途", "color": UITokens.DOSSIER_BRASS},
+			}},
+		{"id": "trade_order_102", "tooltip": "订单 #102 · 运出",
+			"muted": true, "locate_cell": -1,
+			"cells": {
+				"dir": {"text": "运出", "color": UITokens.DOSSIER_OXBLOOD},
+				"counterpart": {"text": "视野外", "sub": ""},
+				"quantity": {"text": "4 单位", "value": 4.0, "sort": 4000},
+				"price": {"text": "—", "sort": 0},
+				"route": {"text": "今日到达", "value": 1.0, "sort": 0,
+					"bar_color": UITokens.DOSSIER_VERDIGRIS},
+				"status": {"text": "待收款", "color": UITokens.DOSSIER_INK_MUTED},
+			}},
+	]
+	var rows_by_id := {}
+	for row in rows:
+		rows_by_id[String(row.id)] = row
+	return {
+		"ok": true, "pending": false,
+		"rows": rows, "rows_by_id": rows_by_id,
+		"total": 25, "offset": 0, "limit": 12, "has_more": true,
+		"page_label": "1-12 / 25",
+		"hint": "2 笔 · 7 单位 · 最近到达 第 12 天",
+		"empty_text": "本地目前没有该物资的在途商队。",
+		"signature": "sig-a", "sample_day": 10, "economy_generation": 7,
 	}
 
 

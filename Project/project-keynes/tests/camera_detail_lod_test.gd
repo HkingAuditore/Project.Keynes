@@ -64,6 +64,27 @@ func _run() -> void:
 	_expect(is_equal_approx(float(layer.get("_zoom_visible_fraction")), 1.0),
 		"canopy near LOD reveals the full deterministic prefix")
 	_expect(layer.instance_count() == count_before, "zoom LOD never rebuilds or redistributes instances")
+	# [shadow-zoom-fade 2026-10-18] 投影按 zoom 淡入而不是在 1.10 上硬关：门槛只决定
+	# 开始淡入的位置，之后 0.20 zoom 内升到全强度。
+	var min_zoom := float(layer.call("_shadow_min_zoom"))
+	_expect(min_zoom <= 1.05, "tree shadow fade-in starts well before the old 1.10 hard cut")
+	layer.set_camera_zoom(min_zoom - 0.05)
+	_expect(is_equal_approx(float(layer.call("_shadow_zoom_gain")), 0.0),
+		"shadows are off below their fade-in threshold")
+	layer.set_camera_zoom(min_zoom + 0.10)
+	var shadow_ramp := float(layer.call("_shadow_zoom_gain"))
+	_expect(shadow_ramp > 0.0 and shadow_ramp < 1.0,
+		"shadows ramp in across the threshold instead of popping")
+	layer.set_camera_zoom(min_zoom + 0.30)
+	_expect(is_equal_approx(float(layer.call("_shadow_zoom_gain")), 1.0),
+		"shadows reach full strength above the ramp")
+	# [veg-lod-high 2026-10-18] 高画质两件事：树影在总览 zoom 仍然存在，远景树密度接近满值。
+	layer.set_visual_quality(2)
+	_expect(is_equal_approx(float(layer.call("_shadow_min_zoom")), 0.45),
+		"high quality keeps tree shadows down to overview zoom")
+	_expect(is_equal_approx(float(layer.call("_resolved_lod_near_density_multiplier")), 1.12),
+		"high quality keeps the far tree prefix near full density")
+	layer.set_visual_quality(1)
 	var synthetic_cells := PackedInt32Array([10, 10, 10, 20, 20, 30])
 	var synthetic_buffer := PackedFloat32Array()
 	synthetic_buffer.resize(synthetic_cells.size() * 16)

@@ -198,7 +198,9 @@ the queue head of the highest-weight non-empty domain, otherwise the deepest ava
 Fog clips focus drawing to the researchable set plus its immediate unknown frontier. Revealed-but-locked
 nodes stay unnamed like undiscovered ones. Overview omits
 undiscovered route names and future era columns, so neither the catalog size nor the remaining era count
-is observable. Unknown nodes must not leak semantic content through any visible or assistive channel.
+is observable. Unknown names and effects stay masked in visible and assistive channels. Selected
+frontier details explain missing discovery/research gates, logical grouping, and anonymous routes;
+unknown prerequisite names and authored route names/descriptions remain masked.
 Domain color is only supplemental; pair states with icon, border, and text.
 
 All revealed technology names, effect summaries, route badges, prerequisite names, and research-signal

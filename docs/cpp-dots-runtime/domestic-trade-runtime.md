@@ -1,5 +1,12 @@
 # 国内跨地块市场与运输运行时（Trade V1）
 
+## 可选地图载具观察者
+
+地图载具通过独立 `TradeVisualCache` 读取已提交在途订单，每片检查最多 512 单、
+独立路径展开最多 256 节点。只发布受视野约束的有界端点/路径摘要；不调用逐格订单
+分页，不复制物资或商人明细，不改变规划缓存、权威状态、ETA、PKEC 或 hash。
+见[贸易载具运行时](trade-visual-runtime.md)与[验证记录](trade-visual-validation.md)。
+
 当前拓扑同时保存 `cell_count*6` 方向边成本；互反运河边将贸易和殖民成本减半，运河 mask
 进入 topology hash，提交/恢复才失效路线 cache。见 [运河运行时](./canal-runtime.md)。
 
@@ -129,9 +136,33 @@ PKEJ economy journal，但不逐笔灌入通用 gameplay event ring。
 
 ## 查询与报告
 
-`get_market_cell_snapshot(cell)` 增加逐 good 的贸易启用/负载、进出口 EMA、入境/出境在途量，
-以及地块级托管金额和下一到达日。`get_trade_orders_for_cell(cell, offset, limit)` 只返回与一个
-地块相关的分页订单和物资行 CSR；禁止 UI 请求全局订单矩阵。
+`get_market_cell_snapshot(cell)` 增加逐 good 的贸易启用/负载、进出口 EMA、入境/出境在途量、
+地块级托管金额和下一到达日，并返回 `economy_generation`（最近 committed generation；仅作
+UI 缓存键，不是模拟状态）。
+
+`get_trade_orders_for_cell(cell, offset, limit, good_index = -1)` 只返回与一个地块相关的分页
+订单和物资行 CSR。`good_index >= 0` 时只保留含该物资行的订单，且响应中的物资行 CSR 只包含
+该物资；`good_index = -1`（或省略第 4 参）保持既有三参调用的全量语义。订单行统一按
+`(arrival_day, order_id)` 稳定升序，使翻页与 `total/has_more` 在同一 generation 内可重复。
+响应额外携带：
+
+- `page_begin`：本页首行在过滤结果集中的下标（`offset` 越界时夹到 `total`），供 UI 校正分页游标；
+- `economy_generation`：响应所属的 committed generation；
+- `sample_day`：当前经济采样日。
+
+查询是只读冷路径：单页 `limit` 仍 clamp 到 1..256，结果总量受全局 `trade_max_orders` 约束；
+不构造全局订单矩阵，不修改经济状态。该查询与逐单 UI 均不新增 PKEC、state hash、economy
+report 或 CSV schema 字段。
+
+UI 契约：物资卷宗「贸易与税率」章的**逐单商路**卡按
+`(cell, good, economy_generation, offset, limit)` 缓存分页查询，行模型再叠加
+`sample_day/视野 revision` 缓存，同一 committed generation 内的 200ms live patch 不重复查询
+native；每页最多 12 行。对端地块只有处于 `FOG_VISIBLE` 时才用既有的选中地块人口摘要冷查询
+（`population_cell_summary`）解析其定居点名称；不可见对端整行遮罩——隐藏名称、坐标与价格并
+禁用「定位」，且不新增地图图层。
+
+`TradeOrderStore` 不持久化路径（路线缓存是 transient），因此逐单视图不画路线折线，只提供
+可定位的对端地块。
 
 `get_economy_report()` 提供规划 phase、scan/route cursor 与 total、source/destination 信号数、
 当前 source 身份、route search active、单 source expansion cursor、每片 expansion 配额、

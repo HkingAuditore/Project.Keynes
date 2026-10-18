@@ -1,5 +1,32 @@
 # Formal Game Flow, Player Start, and PKSV
 
+## Large ECP2 checkpoint persistence (2026-10-19)
+
+PKSR v2 writes the complete ECP2 section using its uint32 length; it must never
+clamp a frozen checkpoint to 64 MiB. Other sections retain their 64 MiB limit,
+but an oversized section now rejects the save with `save_runtime_section_too_large`
+before assembly instead of publishing a truncated bundle. Provider schemas,
+ordering and authority are unchanged.
+
+For saves from the old writer, `GameSaveCoordinator` passes the separately
+SHA256-verified PKSV `ecp2` section through `MapGenerator.restore_runtime_bundle`
+to native validation. Recovery requires the original PKSR and nested-section
+checksums to pass, the nested ECP2 to fail specifically with
+`ecp2_content_hash_mismatch` at exactly 64 MiB, and the complete duplicate to be
+larger with a byte-identical prefix. The complete ECP2 must still pass its content
+hash, ABI/schema/domain validation and normal authority restore. Missing,
+different or corrupt duplicates remain rejected. Recovery is in memory, reports
+`recovered_truncated_ecp2=true`, and never rewrites the player's original file.
+The next normal save writes a complete PKSR section. Regression coverage is
+`tests/runtime_large_ecp2_save_test.gd` plus production save replay/round-trip.
+
+Economy restore also distinguishes an allocated cohort handle from a living
+population: committed structural/cash-peer state may retain active zero-person
+lanes. Preserve those lanes, generations and funds exactly. Negative population
+is invalid; the existing employment validation still prohibits jobs on an empty
+lane. `tests/economy_empty_cohort_restore_test.gd` covers exact ECP2 re-save/restore
+and both invalid cases without deleting handles or changing conservation totals.
+
 Modifier catalog identity explicitly encodes term fields and the existing
 zero reserved word. It never hashes C++ padding; this preserves original x64
 PKCM/PKCN/PKEC/PKGP compatibility under MSVC cross-file optimization. Catalog

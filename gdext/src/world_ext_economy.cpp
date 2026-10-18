@@ -604,7 +604,8 @@ Dictionary DCWorldExt::flush_runtime_economy_resource_writeback() {
 
 Dictionary DCWorldExt::capture_economy_day_inputs(int64_t day_index) {
     if (_runtime_host != nullptr &&
-        (_runtime_host->domain_is_worker_authoritative(RuntimeDomainId::ECONOMY) ||
+        (_trigger_handoff_retry_limit > 0 ||
+         _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::ECONOMY) ||
          _runtime_host->economy_input_requested_day() >= 0)) {
         auto boundary = _runtime_host->try_lock_economy_input_capture();
         Dictionary pending;
@@ -1322,12 +1323,42 @@ Dictionary DCWorldExt::get_country_economy_overview(
 }
 
 Dictionary DCWorldExt::get_trade_orders_for_cell(
-        int cell_idx, int offset, int limit) const {
+        int cell_idx, int offset, int limit, int good_index) const {
     if (_economy_runtime == nullptr) return unavailable();
     NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
     return committed_read(_runtime_host.get(), runtime,
-        read_key(ReadQuery::TRADE_ORDERS_FOR_CELL, {cell_idx, offset, limit}),
-        [&] { return runtime->trade_orders_for_cell(cell_idx, offset, limit); });
+        read_key(ReadQuery::TRADE_ORDERS_FOR_CELL,
+                 {cell_idx, offset, limit, good_index}),
+        [&] { return runtime->trade_orders_for_cell(
+            cell_idx, offset, limit, good_index); });
+}
+
+Dictionary DCWorldExt::get_trade_visual_snapshot(
+        const PackedInt32Array &cells, const PackedByteArray &visible,
+        int64_t vision_revision, int selected_cell, bool enabled) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    auto *runtime = runtime_from(_economy_runtime);
+    runtime->trade_visual_cache.request(cells, visible, vision_revision, selected_cell, enabled);
+    if (enabled) {
+        if (_runtime_host == nullptr || !_runtime_host->economy_worker_owns_execution()) {
+            runtime->trade_visual_cache.step(*runtime);
+        } else {
+            std::unique_lock<std::mutex> boundary;
+            if (economy_live_readable(_runtime_host.get(), runtime, boundary))
+                runtime->trade_visual_cache.step(*runtime);
+        }
+    }
+    Dictionary out = runtime->trade_visual_cache.snapshot();
+    if (!static_cast<bool>(out.get("ok", false))) return out;
+    const PackedInt32Array slots = out["country_slots"];
+    PackedInt32Array eras;
+    eras.resize(slots.size());
+    // Same immutable Country query view as the building visual bridge.
+    NativeCountryRuntime *countries = _country_runtime == nullptr ? nullptr : country_query_runtime();
+    for (int64_t i = 0; i < slots.size(); ++i)
+        eras.set(i, countries ? std::max(0, countries->visual_era_index_for_slot(slots[i])) : 0);
+    out["era_indices"] = eras;
+    return out;
 }
 
 Dictionary DCWorldExt::capture_economy_trade_topology(
@@ -1662,6 +1693,11 @@ Dictionary DCWorldExt::get_family_colonization_quote_detail(
 }
 
 void DCWorldExt::service_economy_boundary_inbox() {
+    if (_trigger_handoff_retry_limit > 0) {
+        const int limit = _trigger_handoff_retry_limit;
+        _trigger_handoff_retry_limit = 0;
+        _trigger_handoff_completed = handoff_trigger_effects_unlocked(limit);
+    }
     if (!_economy_effect_adapter_retry || _effect_runtime == nullptr ||
         _economy_runtime == nullptr) return;
     _economy_effect_adapter_retry = false;

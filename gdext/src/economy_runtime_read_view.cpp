@@ -84,7 +84,8 @@ Dictionary NativeEconomyRuntime::evaluate_read_query(const ReadKey &key) {
     case ReadQuery::COUNTRY_TRADE_SNAPSHOT:
         return country_trade_snapshot(a[0], key.text, i32(a[1]), i32(a[2]));
     case ReadQuery::TRADE_ORDERS_FOR_CELL:
-        return trade_orders_for_cell(i32(a[0]), i32(a[1]), i32(a[2]));
+        return trade_orders_for_cell(i32(a[0]), i32(a[1]), i32(a[2]),
+                                     i32(a[3]));
     case ReadQuery::BUILDING_CELL_SNAPSHOT:
         return building_cell_snapshot(i32(a[0]));
     case ReadQuery::TREASURY_CONSTRUCTION_QUOTES:
@@ -171,6 +172,7 @@ void NativeEconomyRuntime::serve_read_view() {
     if (!_bootstrapped || _epoch_active || _fatal || _save.active || _restore.active)
         return;
     publish_building_visual_view();
+    trade_visual_cache.step(*this);
     if (_read_subscription_count.load(std::memory_order_acquire) == 0) return;
     const uint64_t now_us = steady_now_us();
     const auto previous = read_view();
@@ -342,6 +344,7 @@ PackedInt32Array NativeEconomyRuntime::drain_building_visual_outbox() {
 }
 
 void NativeEconomyRuntime::read_view_reset() {
+    trade_visual_cache.reset();
     {
         std::lock_guard<std::mutex> lock(_read_subscription_mutex);
         _read_subscriptions.clear();

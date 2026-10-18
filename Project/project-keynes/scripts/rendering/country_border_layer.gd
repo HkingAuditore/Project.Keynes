@@ -29,6 +29,7 @@ class_name CountryBorderLayer
 extends Node2D
 
 const SHADER_PATH: String = "res://shaders/country_border.gdshader"
+const FRONTIER_GRAIN: Texture2D = preload("res://assets/vfx/frontier_grain.png")
 
 ## ribbon 的世界宽度 = 本比例 × hex_size。要能容纳最大 zoom-out 时的期望线宽
 ## （见 _push_border_width 的换算）。
@@ -51,7 +52,7 @@ const OUTER_BLEED_RATIO: float = 0.18
 ## 屏幕线宽的上下限（像素），避免极端 zoom 下过细或糊成色块。
 @export var border_screen_width_min: float = 2.0
 @export var border_screen_width_max: float = 9.0
-@export var player_color: Color = Color(1.0, 0.86, 0.42)
+@export var player_color: Color = Color(0.90, 0.73, 0.38)
 
 var _mesh_inst: MeshInstance2D
 var _shader_mat: ShaderMaterial
@@ -64,6 +65,7 @@ var _wrap_period_x: float = 0.0
 var _ribbon_width: float = 11.0
 var _player_slot: int = -1
 var _last_pushed_world_width: float = -1.0
+var _pulse_age := 2.0
 
 static var _white_tex: ImageTexture = null
 
@@ -84,7 +86,7 @@ static func country_color(slot: int, player_slot: int, player_col: Color) -> Col
 	if slot == player_slot:
 		return player_col
 	var h := fposmod(float(slot) * 0.61803398875 + 0.137, 1.0)
-	return Color.from_hsv(h, 0.66, 0.94)
+	return Color.from_hsv(h, 0.46, 0.82)
 
 
 func _ready() -> void:
@@ -95,10 +97,24 @@ func _ready() -> void:
 	set_process(true)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if not visible or _shader_mat == null:
 		return
 	_push_border_width()
+	if _pulse_age < 1.8:
+		_pulse_age = minf(1.8, _pulse_age + delta)
+		_shader_mat.set_shader_parameter("frontier_pulse_age",
+			2.0 if UIAnimation.reduced_motion() else _pulse_age)
+
+
+## Purely visual, local response to the committed colony receipt.
+func celebrate_cell(center: Vector2) -> void:
+	if _shader_mat == null or UIAnimation.reduced_motion():
+		return
+	_pulse_age = 0.0
+	_shader_mat.set_shader_parameter("frontier_pulse_center", center)
+	_shader_mat.set_shader_parameter("frontier_pulse_radius", _hex_size * 2.1)
+	_shader_mat.set_shader_parameter("frontier_pulse_age", 0.0)
 
 
 func _ensure_nodes() -> void:
@@ -118,6 +134,8 @@ func _ensure_nodes() -> void:
 		return
 	_shader_mat = ShaderMaterial.new()
 	_shader_mat.shader = sh
+	_shader_mat.set_shader_parameter("frontier_grain", FRONTIER_GRAIN)
+	_shader_mat.set_shader_parameter("frontier_wrap_period", _wrap_period_x)
 	_shader_mat.set_shader_parameter("ribbon_world_width", _ribbon_width)
 	_shader_mat.set_shader_parameter("border_world_width", border_screen_width)
 	_mesh_inst.material = _shader_mat
@@ -133,6 +151,8 @@ func set_hex_size(size: float) -> void:
 
 func set_horizontal_wrap(period_x: float) -> void:
 	_wrap_period_x = maxf(0.0, period_x)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("frontier_wrap_period", _wrap_period_x)
 
 
 ## 玩家国家的 slot，用于给玩家边界固定配色。-1 表示未知。

@@ -85,6 +85,119 @@ class ProfessionUnlockGenerator extends RefCounted:
 		return ProfessionUnlockFacade.new()
 
 
+class TradeOrderTestFacade extends RefCounted:
+	var orders_calls := 0
+	var summary_calls: Array[int] = []
+	var good_ids_value := PackedStringArray(["gathered_plants", "cloth"])
+	var order_generation := 7
+	var order_sample_day := 10
+	var order_total := 2
+
+	func good_ids() -> PackedStringArray:
+		return good_ids_value
+
+	func population_cell_summary(cell_idx: int) -> Dictionary:
+		summary_calls.append(cell_idx)
+		return {"ok": true, "population": 50, "cohort_count": 1,
+			"settlement_name_active": true,
+			"settlement_name": "洛阳" if cell_idx == 1 else "长安"}
+
+	func market_cell_snapshot(_cell_idx: int) -> Dictionary:
+		return {
+			"ok": true, "market_id": 0,
+			"good_ids": good_ids_value,
+			"good_technology_available": PackedByteArray([1, 1]),
+			"good_trade_enabled": PackedByteArray([1, 1]),
+			"stock": PackedInt64Array([1000, 0]),
+			"price": PackedInt32Array([10000, 10000]),
+			"demand_ema": PackedInt64Array([0, 0]),
+			"business_demand_ema": PackedInt64Array([0, 0]),
+			"offered_supply_ema": PackedInt64Array([0, 0]),
+			"cost_anchor_price": PackedInt32Array([0, 0]),
+			"shortage_q16": PackedInt32Array([0, 0]),
+			"trade_inbound": PackedInt64Array([0, 0]),
+			"trade_outbound": PackedInt64Array([0, 0]),
+			"trade_import_ema": PackedInt64Array([0, 0]),
+			"trade_export_ema": PackedInt64Array([0, 0]),
+			"merchant_cash": 0,
+			"merchant_trade_sale_cash": 0,
+			"merchant_trade_purchase_cash": 0,
+			"economy_generation": order_generation,
+			"sample_day": order_sample_day,
+		}
+
+	func trade_orders_for_cell(_cell_idx: int, offset: int, limit: int,
+			good_index: int = -1) -> Dictionary:
+		orders_calls += 1
+		if good_index < 0:
+			return {"ok": false, "reason": "good_out_of_range", "total": 0}
+		var total := order_total
+		var begin := mini(offset, total)
+		var ids := PackedInt64Array()
+		var directions := PackedInt32Array()
+		var sources := PackedInt32Array()
+		var destinations := PackedInt32Array()
+		var departures := PackedInt64Array()
+		var arrivals := PackedInt64Array()
+		var cash := PackedInt64Array()
+		var capacity := PackedInt64Array()
+		var states := PackedByteArray()
+		var delivered := PackedByteArray()
+		var flags := PackedByteArray()
+		var line_offsets := PackedInt32Array([0])
+		var line_goods := PackedInt32Array()
+		var line_quantities := PackedInt64Array()
+		var line_prices := PackedInt32Array()
+		var line_dest_prices := PackedInt32Array()
+		var line_base := PackedInt64Array()
+		var line_flags := PackedByteArray()
+		if begin == 0 and limit >= 2:
+			ids = PackedInt64Array([101, 102])
+			directions = PackedInt32Array([1, -1])
+			sources = PackedInt32Array([1, 0])
+			destinations = PackedInt32Array([0, 1])
+			departures = PackedInt64Array([8, 8])
+			arrivals = PackedInt64Array([12, 11])
+			cash = PackedInt64Array([10000, 20000])
+			capacity = PackedInt64Array([3, 5])
+			states = PackedByteArray([0, 0])
+			delivered = PackedByteArray([0, 0])
+			flags = PackedByteArray([0, 1])
+			line_offsets = PackedInt32Array([0, 1, 2])
+			line_goods = PackedInt32Array([good_index, good_index])
+			line_quantities = PackedInt64Array([3000, 4000])
+			line_prices = PackedInt32Array([10000, 20000])
+			line_dest_prices = PackedInt32Array([15000, 25000])
+			line_base = PackedInt64Array([30000, 80000])
+			line_flags = PackedByteArray([0, 1])
+		return {
+			"ok": true, "total": total, "page_begin": begin,
+			"offset": offset, "limit": limit,
+			"has_more": begin + ids.size() < total,
+			"sample_day": order_sample_day,
+			"economy_generation": order_generation,
+			"good_index": good_index,
+			"order_ids": ids, "directions": directions,
+			"source_cells": sources, "destination_cells": destinations,
+			"departure_days": departures, "arrival_days": arrivals,
+			"cash_escrow": cash, "capacity_work": capacity,
+			"states": states, "cargo_delivered": delivered,
+			"order_flags": flags, "line_offsets": line_offsets,
+			"line_good_ids": line_goods,
+			"line_quantities": line_quantities,
+			"line_unit_prices": line_prices,
+			"line_destination_prices": line_dest_prices,
+			"line_base_values": line_base, "line_flags": line_flags,
+		}
+
+
+class TradeOrderTestGenerator extends RefCounted:
+	var facade := TradeOrderTestFacade.new()
+
+	func get_economy_facade():
+		return facade
+
+
 class PlayerDiscoveryCountryFacade extends RefCounted:
 	var owned_cells := {}
 	var countries := {}
@@ -936,6 +1049,95 @@ func _initialize() -> void:
 			or not later_input_name.contains("金属工具") \
 			or later_input_name.contains("精密工具"):
 		failures.append("unlocked logging input substitutes were not listed by current technology")
+
+	# ── 逐单商路：generation 缓存、迷雾遮蔽与 ETA 行文本 ──────────────────
+	var trade_map := MapData.new(2, 1)
+	trade_map.visible_arr = PackedByteArray([1, 0])
+	trade_map.explored_arr = PackedByteArray([1, 1])
+	trade_map.fog_solved = true
+	trade_map.vision_revision = 3
+	var trade_generator := TradeOrderTestGenerator.new()
+	var trade_vm := CellInspectorViewModel.new()
+	trade_vm.set_context(trade_map, trade_generator, null, null, 0.42, 22.0)
+	var trade_facade := trade_generator.facade
+	var page_model: Dictionary = trade_vm.trade_orders_model(
+		0, "gathered_plants", 0, 12, 7, 10)
+	var order_rows: Array = page_model.get("rows", [])
+	if not bool(page_model.get("ok", false)) or order_rows.size() != 2 \
+			or trade_facade.orders_calls != 1:
+		failures.append("trade order page did not build from one native query")
+	var inbound: Dictionary = order_rows[0] if not order_rows.is_empty() else {}
+	var inbound_cells: Dictionary = inbound.get("cells", {})
+	if String((inbound_cells.get("dir", {}) as Dictionary).get("text", "")) != "运入" \
+			or String((inbound_cells.get("counterpart", {}) as Dictionary).get(
+				"text", "")) != "视野外" \
+			or int(inbound.get("locate_cell", 1)) != -1 \
+			or String((inbound_cells.get("price", {}) as Dictionary).get(
+				"text", "")) != "—" \
+			or not String(inbound.get("tooltip", "")).contains("视野外"):
+		failures.append("hidden counterpart was not masked in trade order row")
+	if not trade_facade.summary_calls.is_empty():
+		failures.append("hidden counterpart settlement name was queried")
+	if String((inbound_cells.get("route", {}) as Dictionary).get(
+			"text", "")) != "剩 2 日":
+		failures.append("trade order ETA was not derived from the sample day")
+	# 同 generation 下 200 次日刷新（含 sample_day 变化）不应再查询原生。
+	for step in range(200):
+		trade_vm.trade_orders_model(0, "gathered_plants", 0, 12, 7,
+			10 + (step % 3) - 1)
+	if trade_facade.orders_calls != 1:
+		failures.append("trade order live refresh re-queried native")
+	# 订单页的 native sample_day 是 committed 边界；UI 倒计时应跟随当前
+	# 世界日（本用例以入参 sample_day 表达），因此 ETA 行文本必须随之刷新。
+	var eta_model: Dictionary = trade_vm.trade_orders_model(
+		0, "gathered_plants", 0, 12, 7, 12)
+	var eta_rows: Array = eta_model.get("rows", [])
+	var eta_route := String((((eta_rows[0] as Dictionary).get("cells", {})
+		as Dictionary).get("route", {}) as Dictionary).get("text", "")) \
+		if not eta_rows.is_empty() else ""
+	if eta_route != "今日到达":
+		failures.append("trade order route did not refresh with sample day")
+	if trade_facade.orders_calls != 1:
+		failures.append("sample-day ETA refresh re-queried native order page")
+	# generation 变化：只失效订单页；隐藏对端仍不查询结算名。
+	var next_generation: Dictionary = trade_vm.trade_orders_model(
+		0, "gathered_plants", 0, 12, 8, 10)
+	if trade_facade.orders_calls != 2 or not trade_facade.summary_calls.is_empty():
+		failures.append("generation change did not invalidate only the order page")
+	# 视野变化：订单页不重查，只对刚可见的对端取一次结算名。
+	trade_map.visible_arr[1] = 1
+	trade_map.vision_revision = 4
+	var visible_model: Dictionary = trade_vm.trade_orders_model(
+		0, "gathered_plants", 0, 12, 8, 10)
+	var visible_rows: Array = visible_model.get("rows", [])
+	var visible_inbound: Dictionary = visible_rows[0] if not visible_rows.is_empty() else {}
+	var visible_cells: Dictionary = visible_inbound.get("cells", {})
+	var visible_counterpart: Dictionary = visible_cells.get("counterpart", {})
+	if trade_facade.orders_calls != 2 \
+			or trade_facade.summary_calls.size() != 1 \
+			or int(trade_facade.summary_calls[0]) != 1 \
+			or String(visible_counterpart.get("text", "")) != "洛阳" \
+			or int(visible_inbound.get("locate_cell", -1)) != 1:
+		failures.append("vision refresh did not reveal counterpart without re-querying orders")
+	var price_text := String((visible_cells.get("price", {}) as Dictionary).get("text", ""))
+	if price_text == "—" or not price_text.contains("→"):
+		failures.append("visible counterpart price was not displayed")
+	var unknown_order: Dictionary = trade_vm.trade_orders_model(
+		0, "missing_good", 0, 12, 8, 10)
+	if bool(unknown_order.get("ok", true)) or trade_facade.orders_calls != 2:
+		failures.append("unknown good still queried trade orders")
+	# build_object_detail 必须把逐单模型挂到物资详情 payload 上。
+	var detail_cell := HexCell.new(0, 0)
+	detail_cell.index = 0
+	var good_detail := trade_vm.build_object_detail(
+		detail_cell, {"kind": "good", "row_id": "market_gathered_plants"})
+	var detail_orders: Dictionary = good_detail.get("trade_orders", {})
+	if good_detail.is_empty() or not bool(detail_orders.get("ok", false)) \
+			or (detail_orders.get("rows", []) as Array).size() != 2:
+		failures.append("good detail payload did not carry the trade order page")
+	if String(next_generation.get("signature", "")) == \
+			String(visible_model.get("signature", "")):
+		failures.append("trade order signature ignored vision revision")
 
 	if failures.is_empty():
 		print("[player-ui-view-model] PASS")

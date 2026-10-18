@@ -743,6 +743,29 @@ func _locate_cell_from_country_panel(cell_index: int) -> void:
 		_player_controller.select_cell(cell)
 
 
+## 物资详情逐单商路翻页：只更新请求 offset，再走既有对象详情 payload 通道重建。
+## ViewModel 按 committed generation 缓存，翻页也是一次有界页查询。
+func _on_trade_orders_page_requested(offset: int) -> void:
+	if _object_detail_context.is_empty() \
+			or String(_object_detail_context.get("kind", "")) != "good":
+		return
+	var request: Dictionary = _object_detail_context.get("request", {})
+	request["orders_offset"] = maxi(0, offset)
+	_object_detail_context["request"] = request
+	_refresh_object_detail(true)
+
+
+## 点击逐单行的可见对端：关闭当前详情并选中该地块（与 country panel 定位语义一致）。
+func _on_trade_order_locate_requested(cell_index: int) -> void:
+	if _player_controller == null or _map == null:
+		return
+	var cell := _map.cell_at(cell_index)
+	if cell == null:
+		return
+	_close_object_detail_dialog()
+	_player_controller.select_cell(cell)
+
+
 func close_country_panel() -> void:
 	_country_open_generation += 1
 	_country_refresh_queued = false
@@ -1312,6 +1335,10 @@ func _bind_ui() -> void:
 	_right_panel.construction_page_requested.connect(_on_construction_page_requested)
 	_right_panel.construction_requested.connect(_on_construction_requested)
 	_right_panel.colonization_requested.connect(_on_colonization_requested)
+	_right_panel.trade_orders_page_requested.connect(
+		_on_trade_orders_page_requested)
+	_right_panel.trade_order_locate_requested.connect(
+		_on_trade_order_locate_requested)
 	_layout_right_panel()
 
 	_colonization_panel = get_node(

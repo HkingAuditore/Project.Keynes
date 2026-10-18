@@ -975,8 +975,12 @@ Dictionary NativeEconomyRuntime::end_restore() {
         for (int32_t lane = 0; lane < COHORT_PAGE_SIZE; ++lane) {
             const int32_t slot = base + lane;
             if (population_store().active[slot] == 0) continue;
+            // Active means an allocated stable handle, not necessarily a
+            // living population. Structural/cash-peer work may retain a
+            // drained lane at a committed boundary. Preserve it exactly;
+            // the employment check below still requires zero jobs on it.
             if (cell < 0 || population_store().signature_id[slot] >= _signatures.size() ||
-                population_store().generation[slot] == 0 || population_store().population[slot] <= 0 ||
+                population_store().generation[slot] == 0 || population_store().population[slot] < 0 ||
                 population_store().funds[slot] < 0) {
                 out["ok"] = false;
                 out["reason"] = "restore_cohort_record_invalid";

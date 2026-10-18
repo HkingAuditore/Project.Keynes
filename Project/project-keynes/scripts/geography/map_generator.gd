@@ -2911,10 +2911,11 @@ func poll_runtime_save(request_id: int) -> Dictionary:
 	return _data_core_world_ext.poll_runtime_save(request_id)
 
 
-func restore_runtime_bundle(bytes: PackedByteArray) -> Dictionary:
+func restore_runtime_bundle(bytes: PackedByteArray,
+		external_ecp2: PackedByteArray = PackedByteArray()) -> Dictionary:
 	if _data_core_world_ext == null or not _data_core_world_ext.has_method("restore_runtime_bundle"):
 		return {"ok": false, "code": "runtime_worker_api_missing"}
-	return _data_core_world_ext.restore_runtime_bundle(bytes)
+	return _data_core_world_ext.restore_runtime_bundle(bytes, external_ecp2)
 
 
 func request_runtime_stop() -> Dictionary:

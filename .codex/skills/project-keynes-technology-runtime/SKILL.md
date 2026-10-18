@@ -71,7 +71,9 @@ Also use `civ-grounded-development` for repository changes. Add
 - Do not use Modifiers to directly create/delete cash, inventory, or technology points.
 - Resolve exact-building technology stats at catalog/configuration time and freeze their country×type
   Q16 factors at the economy epoch boundary; never look up `building_id` strings in production loops.
-- Do not reveal unknown technology names, effects, prerequisites, connection labels, tooltips, search
+- Unknown frontier details may explain discovery/research conditions at the player's request,
+  masking unknown prerequisite names and authored route names/descriptions.
+- Do not reveal unknown technology names, effects, connection labels, tooltips, search
   text, or accessibility text.
 - Keep player-facing Chinese names, effect summaries, and route labels in the
   `public_definitions()` presentation layer. Translation-only edits must not change stable `tech.*`
@@ -111,6 +113,13 @@ be treated as goods inventory or cross-country technology transfer. `pending` te
 activation remains unchanged and must not re-check a gate.
 
 ## Verify
+
+Full-graph ACTIVE still needs the host Trigger transport pump to hand research signals through
+Effect to Country. Bound delivery, protect in-flight Effect facade transactions from worker
+write-back, retry rejected cursor admission, and service deferred handoff in the existing Economy
+boundary inbox. Trigger admission reserves one slot for coalesced delivery ACKs. Catalog identity
+and save layout stay unchanged. Cover congestion/restore with `runtime_trigger_pod_test.gd` and
+`technology_signal_delivery_test.gd`.
 
 From the repository root run:
 

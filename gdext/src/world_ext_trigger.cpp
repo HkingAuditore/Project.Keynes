@@ -337,6 +337,41 @@ Dictionary DCWorldExt::ack_trigger_effects(int64_t up_to_effect_id) {
 Dictionary DCWorldExt::handoff_trigger_effects(int limit) {
     if (_trigger_runtime == nullptr || _effect_runtime == nullptr)
         return unavailable();
+    if (!_trigger_handoff_completed.is_empty()) {
+        Dictionary completed = _trigger_handoff_completed;
+        _trigger_handoff_completed = Dictionary();
+        return completed;
+    }
+    if (_runtime_host != nullptr && _runtime_host->economy_worker_owns_execution() &&
+        _runtime_host->state() == RuntimeWorkerState::PAUSED) {
+        Dictionary out;
+        out["ok"] = true;
+        out["native_supported"] = true;
+        out["handed_off"] = 0;
+        return out;
+    }
+    // Economy may append builtin transactions to the same EffectRuntime from
+    // its worker day. Delivery is main-thread transport, so defer rather than
+    // mutating the transaction arena concurrently or waiting for that day.
+    std::unique_lock<std::mutex> boundary;
+    if (_runtime_host != nullptr && _runtime_host->economy_worker_owns_execution()) {
+        boundary = _runtime_host->try_lock_economy_input_capture();
+        if (!boundary.owns_lock()) {
+            _trigger_handoff_retry_limit = std::max(_trigger_handoff_retry_limit, limit);
+            _runtime_host->request_main_boundary_service();
+            Dictionary out;
+            out["ok"] = true;
+            out["native_supported"] = true;
+            out["handed_off"] = 0;
+            out["deferred"] = true;
+            return out;
+        }
+    }
+    _trigger_handoff_retry_limit = 0;
+    return handoff_trigger_effects_unlocked(limit);
+}
+
+Dictionary DCWorldExt::handoff_trigger_effects_unlocked(int limit) {
     Dictionary out = runtime_from(_trigger_runtime)->handoff_effects(
         static_cast<EffectRuntime *>(_effect_runtime),
         static_cast<NativeIdeologyRuntime *>(_ideology_runtime),
@@ -354,6 +389,7 @@ Dictionary DCWorldExt::handoff_trigger_effects(int limit) {
             static_cast<int64_t>(out.get("last_effect_id", 0));
         publish_trigger_command(this, command, out);
     }
+    if (_runtime_host != nullptr) _runtime_host->complete_main_boundary_service();
     return out;
 }
 

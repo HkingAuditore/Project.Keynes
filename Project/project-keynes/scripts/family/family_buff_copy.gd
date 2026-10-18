@@ -105,6 +105,32 @@ static func extract_trait_badges(description: String) -> Array[Dictionary]:
 	return out
 
 
+## 展示层去重：仅在各级的完整前缀一致时提取共同条件；不同条件完整保留。
+static func founding_effect_rows(statements: PackedStringArray) -> Dictionary:
+	var rows: Array[Dictionary] = []
+	var shared := ""
+	var same := statements.size() > 1
+	for index in statements.size():
+		var original := statements[index].strip_edges()
+		var body := original
+		var label_end := body.find("：")
+		if body.begins_with("威望") and label_end >= 0:
+			body = body.substr(label_end + 1).strip_edges()
+		var split := body.find("：")
+		var context := body.substr(0, split + 1) if split >= 0 else ""
+		if index == 0:
+			shared = context
+		elif context != shared:
+			same = false
+		rows.append({"level": index + 1, "body": body, "original": original})
+	if not same or shared.is_empty():
+		shared = ""
+	else:
+		for row in rows:
+			row["body"] = String(row["body"]).trim_prefix(shared).strip_edges()
+	return {"context": shared.trim_suffix("："), "rows": rows}
+
+
 static func trait_factor_percent(description: String,
 		strength_ratio: float = 0.65) -> float:
 	var badges := extract_trait_badges(description)

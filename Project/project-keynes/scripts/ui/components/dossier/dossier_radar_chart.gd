@@ -26,8 +26,8 @@ func set_values(p_axes: PackedStringArray, values: PackedFloat32Array,
 	accent = p_accent
 	var tips := PackedStringArray()
 	for i in range(mini(axes.size(), values.size())):
-		var line := "%s %.0f%%" % [axes[i], values[i] * 100.0]
-		if i < reference.size():
+		var line := "%s %.0f%%" % [axes[i], values[i] * 100.0] if values[i] >= 0.0 else "%s：不适用" % axes[i]
+		if i < reference.size() and reference[i] >= 0.0:
 			line += "（全国 %.0f%%）" % (reference[i] * 100.0)
 		tips.append(line)
 	tooltip_text = "\n".join(tips)
@@ -66,16 +66,23 @@ func _draw() -> void:
 		var ref := _polygon(center, radius, _reference, count, 1.0)
 		ref.append(ref[0])
 		for i in range(ref.size() - 1):
-			_dashed(ref[i], ref[i + 1], UITokens.DOSSIER_INK_MUTED)
+			if _reference[i] >= 0.0 and _reference[(i + 1) % count] >= 0.0:
+				_dashed(ref[i], ref[i + 1], UITokens.DOSSIER_INK_MUTED)
 	var values := _blend_arrays(_from, _values, _blend)
 	if values.size() == count:
 		var poly := _polygon(center, radius, values, count, _grow)
-		draw_colored_polygon(poly, Color(accent, 0.20))
-		var outline := poly.duplicate()
-		outline.append(poly[0])
-		draw_polyline(outline, accent, 2.0, true)
-		for point in poly:
-			draw_circle(point, 2.6, accent)
+		var complete := true
+		for value in _values:
+			complete = complete and value >= 0.0
+		if complete:
+			draw_colored_polygon(poly, Color(accent, 0.20))
+		for i in range(count):
+			if _values[i] < 0.0:
+				continue
+			draw_circle(poly[i], 2.6, accent)
+			var next := (i + 1) % count
+			if _values[next] >= 0.0:
+				draw_line(poly[i], poly[next], accent, 2.0, true)
 
 
 func _polygon(center: Vector2, radius: float, values: PackedFloat32Array, count: int,

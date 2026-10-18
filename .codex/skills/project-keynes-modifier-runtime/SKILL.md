@@ -97,12 +97,16 @@ the 3 percent median / 5 percent p95 target without same-machine baseline and af
 Run `quick_validate.py` after editing this skill. Forward-test in isolated context when agent
 delegation is available; otherwise report that gate as not executed.
 
-## Satisfaction purchasing power (2026-10-16)
+## Satisfaction realized consumption (2026-10-18)
 
-Comfort and luxury are native cash-purchasing-power dimensions, not need-tier fill rates.
-Use post-consumption cohort funds divided by population × local basic daily living cost × 30.
-The Q16-month ramps default to 1..3 for comfort and 3..10 for luxury; missing/zero cost
-scores both at zero. Keep the authored profession weights even when those need tiers are
-empty (explicit zero weights remain zero). Basic consumption and survival keep their
-existing inputs. See `docs/cpp-dots-runtime/satisfaction-runtime.md` for profile keys,
-diagnostics, current-market basket limitations and save semantics. No new wallet or state lane.
+Basic, comfort and luxury score realized consumption against an authored living
+target (population × base quantity × elapsed days × environment × ethnicity),
+independent of wealth, price-elastic request shrinkage and budget. Missing stock
+keeps the target; technology-inapplicable tiers return -1 in queries (internal
+stored value 0). Native group budgets are consumption 70%, finance 20%, tax 5%,
+development 5%; redistribute missing tiers inside consumption only. Savings alone
+uses cash purchasing power. Missing cost basis scores savings zero, never full.
+Composite is capped by both subsistence (10% slack) and applicable basic living
+(20% slack). Cohort living-standard display uses actual consumption. See
+`docs/cpp-dots-runtime/satisfaction-runtime.md`. No new persistent lane or save
+layout; updated need tiers change the content catalog hash.

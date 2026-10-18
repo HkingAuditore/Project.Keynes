@@ -23,7 +23,7 @@ func set_living_state(level: int, wealth_text: String, sat_text: String = "") ->
 	_wealth_text = wealth_text
 	_sat_text = sat_text
 	var tier_label := TIER_NAMES[_level] if _level >= 0 and _level < TIER_NAMES.size() else "待评估"
-	tooltip_text = "当前生活水平：%s（第 %d / 7 档）\n人均存款：%s" % [
+	tooltip_text = "实际消费生活水平：%s（第 %d / 7 档）\n人均存款：%s\n生活档位按温饱、基本、舒适和奢侈消费判定；存款不直接提升档位。" % [
 		tier_label, maxi(0, _level + 1), _wealth_text
 	]
 	_start_animation()

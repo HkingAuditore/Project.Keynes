@@ -72,7 +72,10 @@ GPU 上按实时太阳、季节积雪和 11 个时代的材质程序化生成，
 `BuildingVisualLayer` 使用 16×16 cell render chunk。远景 Macro 层是一个世界 quad，读取
 RGBA8 `building_macro_lut`（密度、主类别、时代、occupied）和共享 glyph 语法。原有
 `enum_atlas` 只有 16 位 cell ID，因此建筑层额外生成 R8 high-byte atlas，宏观 shader
-组合 24 位索引，覆盖 500×400 桌面压力地图而不回绕。
+组合 24 位索引，覆盖 500×400 桌面压力地图而不回绕。Macro 的照明与 Body 同一套公式
+（L1 天光 + 方向光 × horizon 直射遮蔽 + 月光，增益同为 0.62/0.78/0.40），法线由字形屋面坡度
+叠加地表坡度给出，投影像素沿 `-sun.xy` 拉长，因此 0.46–0.78 的交叉淡入区不再有亮度跳变；
+`camera_zoom >= 0.78` 时整层直接 discard，不为不可见像素付地图索引/LUT/horizon 采样。
 
 近景每 chunk 至多三个 MultiMesh 节点；Body 与 GroundDecal 共享单位 quad，Shadow 用凸包扇形网格：
 
@@ -84,7 +87,10 @@ RGBA8 `building_macro_lut`（密度、主类别、时代、occupied）和共享 
 
 q0 与 Web 不生成 GroundDecal；Web 不生成 Shadow。LOD 是 Body 与 Shadow 材质上的同一个
 `lod_fraction` uniform：缩放 < 0.82 为 0.28，< 1.30 为 0.62，否则 1.0；< 0.46 整体清空，
-由 Macro 接管。每个 body 在 color.a 里带它在本格重要度序（公共核心优先）中的名次
+由 Macro 接管。Body 的淡出、投影的淡出与 Macro 的淡入共用同一组 zoom 阈值：
+body `smoothstep(0.36, 0.54)`、shadow 同区间（再乘 `SHADOW_STRENGTH[quality]`）、
+macro `smoothstep(0.78, 0.40)`，所以远景是"近景变淡 + 投影变淡 + 字形接手"的连续过渡，
+不存在某一档突然失去光影。每个 body 在 color.a 里带它在本格重要度序（公共核心优先）中的名次
 `(n+0.5)/N`，vertex 阶段把名次超过阈值的实例乘 0 塌成零面积，因此每个聚落都从外围小屋
 开始变稀，换 LOD 只改一个 uniform，不碰 buffer、不逐 chunk 设置。
 
@@ -134,6 +140,20 @@ garden、log_yard、salt_pan、quay）。
   `season_phase/day_phase/axial_tilt/day_night/TODProfile/debug sun`，所有变化只更新
   共享材质 uniform，不改实例 buffer。白天环境光增益 0.62、太阳 0.78、月光 0.40；夜侧
   环境光增益回到 1.0，使屋顶与地形同亮。
+- [building-terrain-light 2026-10-18] **高画质（`visual_quality >= 2`）下 Body、Decal 与 Macro
+  接入地形光照**，不再自成一套：地表法线在 vertex 按实例中心 map uv 采一次（flat varying，
+  每实例 1 次 fetch；Macro 是整图 quad，没有实例可用，只能逐像素采），8 方向 horizon 在
+  fragment 用逐像素重建的地图坐标调 `terrain_horizon_evaluate`，一次拿直射遮蔽 / 天空可见度 /
+  bent normal。直射乘 `direct_visibility`，天光乘 `sky_visibility` 且方向改用 bent normal
+  （`gi_bent_strength`），Decal 直接用坡面法线做 NdotL，Body 的屋面/墙面法线仍来自自身高度场
+  的解析差分，只按 `building_terrain_tilt` 加上地形坡度（加而非插值，否则屋面彼此的夹角会被
+  压平），Macro 用字形屋面坡度 + 地表坡度。亮度参数（`terrain_horizon_*` / `gi_*` /
+  `gi_horizon_lut`）由 `HexRenderer` 从地形材质整组拷到建筑材质；legacy 绑
+  `terrain_horizon_tex` / `terrain_normal_tex`，tiled 绑
+  `visual_horizon_tiles` / `visual_terrain_normal_tiles` + 图块寻址 uniform 并换 shader
+  代码（与 `ResourceVisualLayer` 同处理）。代价是每像素 4 次 horizon tap，只在高画质开启；
+  低/中画质走中性值，与接入前逐位一致。Shadow pass 不参与：它没有直射项可遮，只有足印
+  距离和接触 AO。
 - 隐藏地块 shader 只使用缓存的记忆材质，去饱和并关闭实时雪雨。
 
 ## 聚落规划

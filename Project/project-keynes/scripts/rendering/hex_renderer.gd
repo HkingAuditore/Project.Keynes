@@ -670,6 +670,7 @@ var _last_detail_encode_ms: float = 0.0
 var _last_detail_cache_update_ms: float = 0.0
 var _last_detail_assemble_ms: float = 0.0
 var _last_detail_upload_ms: float = 0.0
+var _trade_visual_layer: TradeActivityLayer = null
 var _building_visual_layer: BuildingVisualLayer = null
 
 
@@ -948,7 +949,28 @@ func _for_each_vegetation_layer(callable: Callable) -> void:
 			callable.call(layer)
 
 
-func _sync_family_materials_from_sources() -> void:
+## Player scene assembly supplies the independent read-only trade layer.
+func configure_trade_visuals(layer: TradeActivityLayer) -> void:
+	_trade_visual_layer = layer
+	if is_instance_valid(layer):
+		layer.set_terrain_lighting(_world, _shader_mat)
+		_sync_trade_daylight()
+
+
+func _sync_trade_daylight() -> void:
+	if not is_instance_valid(_trade_visual_layer):
+		return
+	_trade_visual_layer.set_daylight_parameters({
+		"season_phase": _season_phase, "day_phase": _day_phase,
+		"axial_tilt_rad": deg_to_rad(axial_tilt_deg), "day_night_enabled": day_night_enabled,
+		"tod_debug_sun_position_enabled": _tod_debug_sun_position_enabled,
+		"tod_debug_sun_uv": _tod_debug_sun_uv,
+		"tod_debug_sun_height_scale": _tod_debug_sun_height_scale,
+		"tod_sun_dir": _tod_sun_dir, "tod_exposure": _tod_exposure})
+
+
+func _sync_detail_and_activity_materials() -> void:
+	_sync_trade_daylight()
 	if detail_scatter_family_renderer_enabled and _detail_family_layer != null \
 			and is_instance_valid(_detail_family_layer):
 		_detail_family_layer.sync_dynamic_materials()
@@ -2141,7 +2163,11 @@ func configure_building_visuals(catalog: Dictionary,
 		_resource_visual_layer.set_terrain_lighting(_shader_mat)
 		if not bool(resource_result.get("ok", false)):
 			push_error("Resource visual catalog: %s" % str(resource_result))
-	return _building_visual_layer.configure(_map, _world, hex_size, catalog, intel)
+	var building_result: Dictionary = _building_visual_layer.configure(
+		_map, _world, hex_size, catalog, intel)
+	# [building-terrain-light 2026-10-18] 高画质建筑与地形共用 horizon/GI 与地表法线。
+	_building_visual_layer.set_terrain_lighting(_shader_mat)
+	return building_result
 
 
 func set_resource_visual_context(fog_enabled: bool, seed_value: int = 0) -> void:
@@ -2290,7 +2316,7 @@ func set_season_phase(phase: float) -> void:
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_season_phase(_season_phase)
 	)
-	_sync_family_materials_from_sources()
+	_sync_detail_and_activity_materials()
 
 func set_climate_anomaly(v: float) -> void:
 	_climate_anomaly = v
@@ -2320,7 +2346,7 @@ func set_day_phase(v: float) -> void:
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_day_phase(_day_phase)
 	)
-	_sync_family_materials_from_sources()
+	_sync_detail_and_activity_materials()
 
 
 func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
@@ -2340,7 +2366,7 @@ func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
 		if layer.has_method("set_tod_debug_sun_position"):
 			layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
 	)
-	_sync_family_materials_from_sources()
+	_sync_detail_and_activity_materials()
 
 
 func set_tod_debug_sun_height_scale(v: float) -> void:
@@ -2358,7 +2384,7 @@ func set_tod_debug_sun_height_scale(v: float) -> void:
 		if layer.has_method("set_tod_debug_sun_height_scale"):
 			layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)
 	)
-	_sync_family_materials_from_sources()
+	_sync_detail_and_activity_materials()
 
 # ─── 任务 1：视觉总开关 setter ─────────────────────────────────────────
 #   2) 把对应 uniform 推到 shader（名字与后续任务 shader 分支匹配）；
@@ -2572,9 +2598,13 @@ func _push_terrain_horizon_uniforms() -> void:
 		layer.set_terrain_gi_inputs(build_gi_horizon_lut(terrain_horizon_max_angle),
 			gi_ao_strength, gi_ao_floor, gi_bent_strength, gi_normal_floor)
 	)
-	_sync_family_materials_from_sources()
+	_sync_detail_and_activity_materials()
 	if _resource_visual_layer != null:
 		_resource_visual_layer.set_terrain_lighting(_shader_mat)
+	if _building_visual_layer != null:
+		_building_visual_layer.set_terrain_lighting(_shader_mat)
+	if is_instance_valid(_trade_visual_layer):
+		_trade_visual_layer.set_terrain_lighting(_world, _shader_mat)
 
 
 # [terrain-gi 2026-07-31] 4-bit 量化角的解码查表。shader 里 h_n = n/15·max_angle 只有 16 个
@@ -3081,7 +3111,7 @@ func set_day_night_enabled(v: bool) -> void:
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_day_night_enabled(day_night_enabled)
 	)
-	_sync_family_materials_from_sources()
+	_sync_detail_and_activity_materials()
 
 func set_water_effect_enabled(v: bool) -> void:
 	water_effect_enabled = v
@@ -3180,7 +3210,7 @@ func apply_tod(profile: TODProfile) -> void:
 		if layer.has_method("set_tod_sun_dir"):
 			layer.set_tod_sun_dir(_tod_sun_dir)
 	)
-	_sync_family_materials_from_sources()
+	_sync_detail_and_activity_materials()
 
 func set_water_sparkle_enabled(v: bool) -> void:
 	water_sparkle_enabled = v
@@ -3766,7 +3796,7 @@ func _apply_uniforms() -> void:
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_world_material_inputs(_world, bounds, _indirect_ready)
 	)
-	_sync_family_materials_from_sources()
+	_sync_detail_and_activity_materials()
 
 	sm.set_shader_parameter("world_origin", bounds.position)
 	sm.set_shader_parameter("world_size", bounds.size)

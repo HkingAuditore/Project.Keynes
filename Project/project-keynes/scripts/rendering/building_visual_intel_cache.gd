@@ -1,6 +1,10 @@
 class_name BuildingVisualIntelCache
 extends RefCounted
 
+## Notification only after a successful, visibility-filtered live refresh.
+## Restore/apply_snapshot deliberately does not emit gameplay presentation events.
+signal visible_rows_updated(cells: PackedInt32Array)
+
 ## Player-owned, last-seen building intelligence. Native economy/technology
 ## remain authoritative; this cache is the only source the renderer may read.
 
@@ -87,7 +91,10 @@ func refresh_visible_cells(world_ext: Object, requested_cells: PackedInt32Array,
 	var snapshot: Dictionary = world_ext.get_building_visual_snapshot(filtered)
 	if not bool(snapshot.get("ok", false)):
 		return snapshot
-	return apply_snapshot(snapshot)
+	var applied := apply_snapshot(snapshot)
+	if bool(applied.get("ok", false)):
+		visible_rows_updated.emit(filtered)
+	return applied
 
 
 func apply_snapshot(snapshot: Dictionary) -> Dictionary:

@@ -53,14 +53,14 @@ theme_override_constants/separation = 8
 [node name="Title" type="Label" parent="OverviewPage/LivingCard/Box/Header"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "满意度八维诊断"
+text = "满意度"
 clip_text = true
 text_overrun_behavior = 3
 theme_type_variation = &"PKDossierSectionTitle"
 
 [node name="Hint" type="Label" parent="OverviewPage/LivingCard/Box/Header"]
 layout_mode = 2
-text = "虚线为均值 · 朱砂为短板"
+text = "-"
 theme_type_variation = &"PKDossierMuted"
 
 [node name="RadarSplit" type="GridContainer" parent="OverviewPage/LivingCard/Box"]

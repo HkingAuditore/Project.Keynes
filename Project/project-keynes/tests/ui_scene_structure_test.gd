@@ -195,6 +195,7 @@ func _check_component_scenes() -> void:
 		"res://scenes/ui/technology_workspace.tscn": "Root/Main/DetailHost/Body/Detail",
 		"res://scenes/ui/technology_overview_view.tscn": "",
 		"res://scenes/ui/object_detail_dialog.tscn": "Center/Dialog/Body/Scroll/Content",
+		"res://scenes/ui/object_good_dossier.tscn": "OperationsPage/OrdersCard/Box/TradeOrdersTable",
 		"res://scenes/ui/family_workspace.tscn": "SafeMargin/Main/PageArea/PageViewport/PageScroll/PageHost",
 		"res://scenes/ui/archival_surface.tscn": "Frame/Margin/Column/Body",
 		"res://scenes/ui/era_reward_dialog.tscn": "ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid",

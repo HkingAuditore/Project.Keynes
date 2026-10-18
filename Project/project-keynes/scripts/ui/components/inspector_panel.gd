@@ -33,6 +33,8 @@ signal family_colonization_requested(family_handle: int, source_cell: int)
 signal construction_page_requested(search: String, offset: int)
 signal construction_requested(request: Dictionary)
 signal colonization_requested(request: Dictionary)
+signal trade_orders_page_requested(offset: int)
+signal trade_order_locate_requested(cell_idx: int)
 
 var _model: Dictionary = {}
 var _current_tab := "geography"
@@ -149,6 +151,10 @@ func _ready() -> void:
 	_object_detail_dialog.tax_reset_requested.connect(_on_tax_reset_requested)
 	_object_detail_dialog.tax_editing_finished.connect(
 		_on_object_tax_editing_finished)
+	_object_detail_dialog.trade_orders_page_requested.connect(
+		func(offset: int) -> void: trade_orders_page_requested.emit(offset))
+	_object_detail_dialog.trade_order_locate_requested.connect(
+		func(cell_idx: int) -> void: trade_order_locate_requested.emit(cell_idx))
 	_family_workspace.closed.connect(_on_detail_closed)
 	_family_workspace.colonization_requested.connect(
 		func(family_handle: int, source_cell: int) -> void:

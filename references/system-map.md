@@ -1,5 +1,16 @@
 # Project.Keynes System Map
 
+大经济存档：`GameSaveCoordinator` → `MapGenerator.restore_runtime_bundle(bytes,
+external_ecp2=[])` → `NativeSimulationHost`。PKSR 完整保存超过 64 MiB 的 ECP2；
+旧截断段可从同档完整副本严格校验恢复，返回 `recovered_truncated_ecp2`，不改写原档。
+回归入口：`tests/runtime_large_ecp2_save_test.gd`、`tools/runtime/Invoke-SaveReplay.ps1`。
+见 [game-flow-start-save.md](../docs/cpp-dots-runtime/game-flow-start-save.md#large-ecp2-checkpoint-persistence-2026-10-19)。
+
+地图贸易载具：`TradeActivityLayer` → `EconomyFacade.trade_visual_snapshot` →
+原生 `TradeVisualCache` 已提交观察视图。路径与上传缓存独立于贸易模拟；
+`HexRenderer.configure_trade_visuals` 同步 TOD 和地形纹理，高画质中心采法线/Horizon GI 并投影；
+见 [trade-visual-runtime.md](../docs/cpp-dots-runtime/trade-visual-runtime.md)。
+
 Source-file ownership and decomposition rules live in
 [`docs/architecture/module-boundaries.md`](../docs/architecture/module-boundaries.md).
 
@@ -56,6 +67,7 @@ sliced Bio 每次固定 2048 cells，`bio_occupancy_day_barrier` 在最终 publi
 - 气候/天气/海洋：读 `Project/project-keynes/scripts/simulation/systems/climate_daily_system.gd`、`Project/project-keynes/scripts/weather/weather_system.gd`、`Project/project-keynes/scripts/weather/field_solver.gd`、`Project/project-keynes/scripts/simulation/sus/jobs/ocean_currents_job.gd`、`docs/cpp-dots-runtime/computation-pipelines.md`。
 - 渲染和视觉：读 `Project/project-keynes/scripts/rendering/map_baker.gd`、`Project/project-keynes/scripts/rendering/hex_renderer.gd`、`Project/project-keynes/scripts/rendering/weather_layer.gd`、`Project/project-keynes/scripts/rendering/shrub_layer.gd`、`Project/project-keynes/shaders/world_map.gdshader`。
 - 视野迷雾与国界：读 `docs/cpp-dots-runtime/vision-fog-and-borders.md`、`Project/project-keynes/scripts/geography/vision_solver.gd`、`Project/project-keynes/scripts/rendering/fog_of_war_layer.gd`、`Project/project-keynes/scripts/rendering/country_border_layer.gd`。
+- 开拓、人口及扩建视觉反馈：读 `docs/map-activity-art.md`、`scripts/rendering/map_activity_layer.gd` 与 `colonization_route_layer.gd`；正式回执驱动开拓，近景的有界人口摘要与建筑情报观察驱动日常反馈，不进入模拟或存档。
 - 外国 AI（科研/时代、默认税、立族偏好、开拓）：读 `docs/cpp-dots-runtime/country-ai-runtime.md`、`gdext/src/country_ai_core.*`、`gdext/src/country_ai_runtime.*`、`gdext/src/economy_runtime_country_ai.cpp`、`gdext/src/world_ext_country_ai.cpp`、`Project/project-keynes/scripts/country/country_ai_*.gd`、`data/country/default_country_ai.tres`，以及仓库 Skill `project-keynes-country-ai-runtime`。AI 只经 `COUNTRY_AI_PRODUCER_ID` 提交玩家同款命令；开拓意图在经济周期开启时转成普通远征命令；记忆随 PKSV `pkai` 保存。
 - 调试、记录和验收：读 `Project/project-keynes/scripts/ui/debug_console.gd`、`Project/project-keynes/scripts/ui/tile_data_recorder.gd`、`Project/project-keynes/scripts/ui/perf_recorder.gd`、`docs/cpp-dots-runtime/performance-diagnostics-playbook.md`、`Project/project-keynes/tests/*.gd`。
 - 阶层、市场、财政、建筑、就业、投资、资源、显赫家族与重要人物：读 `gdext/src/economy_runtime.{h,cpp}`、`gdext/src/economy_runtime_storage.cpp`、`gdext/src/economy_runtime_math.cpp`、`gdext/src/economy_runtime_fiscal.cpp`、`gdext/src/economy_runtime_building_storage.cpp`、`gdext/src/economy_runtime_building_employment.cpp`、`gdext/src/economy_runtime_building_resources.cpp`、`gdext/src/economy_runtime_building_production.cpp`、`gdext/src/economy_runtime_building_investment.cpp`、`gdext/src/economy_runtime_building_construction.cpp`、`gdext/src/economy_runtime_building_commit.cpp`、`gdext/src/economy_runtime_market.cpp`、`Project/project-keynes/scripts/economy/`、`Project/project-keynes/scripts/simulation/systems/economy_daily_system.gd`、`docs/cpp-dots-runtime/native-economy-runtime.md`、`docs/cpp-dots-runtime/tax-fiscal-runtime.md`、`docs/cpp-dots-runtime/notable-family-runtime.md` 和 `docs/cpp-dots-runtime/notable-person-runtime.md`。拆分依赖矩阵见 `docs/architecture/economy-runtime-split.md`。
@@ -320,7 +332,7 @@ visuals continue through the existing WeatherFront/LUT boundary.
 - `ui/components/country_action_bar.gd` / `country_panel.gd` / `ui/country_view_model.gd`：底部国家事务入口与全屏 section shell。玩家国家固定由 `gameplay_start_report().cell` 解析，模型经 `CountryFacade.cell_summary()`、`research_snapshot()` 与只读 `treasury_snapshot()` 读取已提交状态；`CountryPanel` 自身只有 section 标题条与内容区，不再叠加国家档案 header、摘要卡或 section tab，section 切换只由底栏驱动。经济 section 使用 `economy_workspace.gd` 展示国家现金与全部非零国库物资，每日只修补可见值；政治/军事/外交暂用 `section_placeholder_screen.gd`，不创建任何状态或命令。`IconBadge` 继续以 Font Awesome 为默认族，并为国家事务集中提供 Lucide 导航图标与 Tabler 摘要图标。
 - `ui/technology_tree_layout.gd` / `ui/components/technology_workspace.gd` / `technology_available_view.gd` / `technology_tree_view.gd` / `research_toast.gd` / `research_allocation_bars.gd` / `technology_available_list.gd` / `technology_overview_view.gd` / `procurement_budget_slider.gd` / `technology_detail_card.gd` / `technology_queue_row.gd`：全屏科技界面。打开时只建拓扑与 soft-edge 索引，完整全图 bake 按需延迟；默认中央是「可研究」清单，科技树/总览按需展开；树视图单 `Control` 自绘聚焦窗口，按「已揭示 ∪ 直接未知后继」裁剪迷雾并把可平移范围限制在可见集包围盒内，永远 1:1 绘制、滚轮只平移不缩放；四大领域同图四条垂直泳道、列宽随中央画布均分且不横向溢出，左右研究管理/科技详情常驻列；聚焦布局按依赖深度分层，同领域兄弟在泳道内叠放，每个可见时代带显示时代里程碑关隘；已揭示详情显示路线标签、研究阻塞、证据数/首次日/来源格，未知节点不读取语义；研究进入待生效时 HUD `ResearchToast` 提示；四行份额条与采购滑块拖动即预览、松手即通过 `PlayerController.request_command()` 提交，界面无任何提交按钮，工作区不持有 CountryFacade/玩家句柄/命令序列；日 tick 只修补状态数组与可见文本。
 - `ui/components/map_overlay_toolbar.gd` / `ui/overlay_legend.gd`：左侧纯图标双列信息菜单与非交互图例。资源按钮来自 `ResourceProfileRegistry`，按钮无可见文字，名称和说明通过 Tooltip/图例呈现。图例停靠右下角，Inspector 打开时自动左移避让；连续资源使用固定 profile 参考值与低值扩展的高色差色带，海拔使用同时改变色相和亮度的高对比科学色带。
-- `ui/components/player_top_bar.gd` / `world_loading_overlay.gd` / `inspector_panel.gd`：正式局内顶栏、生成档案遮罩和右侧地块档案。地理页在已探索/可见格读取本格 CSR 的 `Kind.BIO` 目击（玉米、小麦等），用徽章展示中文名，不与可采集储量混列；自然资源页读取选中 cell 的权威 reserve；“本格存在”与“当前建筑可开采”是两个状态，不能因没有 extractor 而隐藏库存。人口页显示上次提交周期的人均收支与稀疏来源；市场使用可展开紧凑账簿行；建筑详情按岗位/生产/财务分组。所有列表在 460px Inspector 内无横向溢出，跨日采样只更新值并保留标签、展开与滚动状态。
+- `ui/components/player_top_bar.gd` / `world_loading_overlay.gd` / `inspector_panel.gd`：正式局内顶栏、生成档案遮罩和右侧地块档案。地理页在已探索/可见格读取本格 CSR 的 `Kind.BIO` 目击（玉米、小麦等），用徽章展示中文名，不与可采集储量混列；自然资源页读取选中 cell 的权威 reserve；“本格存在”与“当前建筑可开采”是两个状态，不能因没有 extractor 而隐藏库存。人口页显示上次提交周期的人均收支与稀疏来源；市场使用可展开紧凑账簿行；建筑详情按岗位/生产/财务分组。所有列表在 460px Inspector 内无横向溢出，跨日采样只更新值并保留标签、展开与滚动状态。市场行打开物资卷宗后，「贸易与税率」章的**逐单商路**卡分页列出该物资的在途订单（方向、对端、数量、行程、状态），可翻页并定位当前可见对端；不可见对端遮罩名称、坐标与价格，且不画路线折线。
 - `world_runtime_host.gd`：玩家场景的地图 runtime facade，封装 `MapGenerator.generate()`、renderer/camera 绑定和每日 `sus_tick_daily()` 桥接。
 - `player_controller.gd`：正式玩家输入、选中态、时间控制、镜头转发和玩家命令网关；不拥有模拟状态。`construction.build` 从选中玩家领土地块进入 `EconomyFacade`，报价只读当前页，实际结算由原生经济边界按国库物资→本格市场→国库现金原子处理，并以 sequence 对应的瞬态 receipt 回传。
 - `main.gd`：debug TopBar、时间、速度、overlay、快捷键、splash、状态推送。
@@ -390,7 +402,9 @@ PKEC v44 存档全部在 C++。生产 cadence
 只生成当前 rolling/review phase 的升序正人口 cell 列表，相关 scratch 不进存档/hash。
 Inspector 的人口/市场/家族/人物页只查询选中 cell 的 committed 或切片间完整 snapshot；
 人口页的预计单位/人/日由 C++ 复用正式需求内核生成 cohort-major CSR，不保存全局
-cohort×good 矩阵。
+cohort×good 矩阵。物资卷宗的逐单商路页同样只查选中 cell 的贸易订单：按 committed
+`economy_generation` 缓存分页，generation 变更清空缓存，行模型只在翻页、`sample_day` 或
+视野 revision 变化时重建，只对 `FOG_VISIBLE` 对端解析名称，其余对端遮罩；不保存全局订单矩阵。
 
 当前内容目录为 135 goods、356 buildings、20 needs、11 plans。居民消费由同一 native
 `Need -> variant -> component` CSR 处理；八项主食替代覆盖所有计划。Good/阶层财富弹性、

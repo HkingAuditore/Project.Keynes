@@ -98,28 +98,30 @@ func show_empty() -> void:
 	_action.visible = false
 
 
-func show_unknown() -> void:
+func show_unknown(condition_items: Array = [], state: int = 0) -> void:
 	if _body == null:
 		_ready()
 	_index = -1
 	_state = 0
 	_submitted = false
 	_header_icon.set_semantic(&"technology.state.unknown", UITokens.DOSSIER_INK_MUTED)
+	_header_icon.tooltip_text = ""
 	_name.text = "未知科技"
-	_state_label.text = STATE_NAMES[0]
+	_state_label.text = STATE_NAMES[clampi(state, 0, 1)]
 	_state_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
 	_placeholder.visible = true
-	_placeholder.text = "这个节点在可研究之前不会显示名称、成本与效果。"
-	_detail_block.visible = false
+	_placeholder.text = "按以下条件发现并解锁研究。名称、成本与效果将在可研究时显示。"
+	_detail_block.visible = true
+	for child in _detail_block.get_children():
+		child.visible = child == _condition_title or child == _conditions
+	_condition_title.text = "发现与研究条件"
+	_conditions.set_items(condition_items)
 	_action.visible = false
 
 
-func show_milestone_locked(era_name: String, completed: int, required: int) -> void:
-	if _body == null:
-		_ready()
-	_index = -1
-	_state = 0
-	_submitted = false
+func show_milestone_locked(era_name: String, completed: int, required: int,
+		condition_items: Array = []) -> void:
+	show_unknown(condition_items)
 	_header_icon.set_semantic(&"technology.milestone", UITokens.DOSSIER_BRASS)
 	_name.text = "时代里程碑"
 	_state_label.text = era_name
@@ -127,7 +129,6 @@ func show_milestone_locked(era_name: String, completed: int, required: int) -> v
 	_placeholder.visible = true
 	_placeholder.text = "完成本时代 %d / %d 项后可研究此关隘。可研究后显示名称与效果。" \
 		% [completed, maxi(1, required)]
-	_detail_block.visible = false
 	_action.visible = false
 
 
@@ -139,11 +140,15 @@ func show_technology(index: int, definition: Dictionary, state: int, fraction: f
 	var saved_scroll := Vector2i.ZERO
 	if _scroll != null:
 		saved_scroll = Vector2i(_scroll.scroll_horizontal, _scroll.scroll_vertical)
+	var selection_changed := _index != index
 	_index = index
 	_state = state
 	_accent = accent
 	_placeholder.visible = false
 	_detail_block.visible = true
+	_chips.visible = true
+	for host in [_prerequisites, _hard_successors, _branch_successors, _applications]:
+		host.visible = true
 	_submitted = false
 	_header_icon.set_semantic(IconCatalog.technology_domain_semantic(
 		String(definition.get("domain_id", ""))), accent)
@@ -200,6 +205,8 @@ func show_technology(index: int, definition: Dictionary, state: int, fraction: f
 	else:
 		_apply_action(state)
 	_restore_scroll.call_deferred(saved_scroll)
+	if selection_changed and not UIAnimation.reduced_motion():
+		UIAnimation.crossfade(_detail_block, UITokens.ANIM_MED)
 
 
 # Daily ticks take this path: gauge value, state text and the action button only.

@@ -626,6 +626,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         int64_t desired_units = 0;
         int64_t filled_units = 0;
         int64_t spent_money = 0;
+        int64_t living_target_units = 0;
     };
     struct ComponentRef {
         int32_t order = -1;
@@ -684,6 +685,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     thread_local std::vector<int64_t> need_score_sum_cache;
     thread_local std::vector<int64_t> need_composite_cache;
     thread_local std::vector<int64_t> need_environment_cache;
+    thread_local std::vector<int8_t> satisfaction_need_available_cache;
     thread_local std::vector<int64_t> cohort_worst_q16;
     thread_local std::vector<uint16_t> cohort_worst_need;
     // Need-tier reduction, strided by SAT_TIER_COUNT per local cohort. A tier the
@@ -885,6 +887,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     // Price and environment are frozen for the whole market tick. Compile the
     // variant side once per market instead of repeating it for every cohort.
     const EnvironmentSample market_environment = environment_sample_for_cell(market);
+    satisfaction_need_available_cache.assign(_needs.size(), -1);
     build_demand_basis_cached(market, market, market_environment,
                        variant_score_cache, variant_price_cache,
                        need_score_sum_cache, need_composite_cache,
@@ -1359,7 +1362,30 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 score_sum = saturating_add(
                     score_sum, cohort_variant_scores[v], sat);
             }
-            if (score_sum <= 0) continue;
+            // A normative target is independent of wealth, shelf stock,
+            // price elasticity and savings-gated variant preferences. Keep an
+            // unlocked need in welfare even when it creates no purchase order.
+            int64_t living_target = 0;
+            int8_t &living_available = satisfaction_need_available_cache[need_index];
+            if (living_available < 0)
+                living_available = satisfaction_need_available(need, market) ? 1 : 0;
+            if (living_available != 0) {
+                const int64_t ethnicity_factor = _ethnicity_need_factor_q16[
+                    static_cast<size_t>(signature.ethnicity_id) * _need_ids.size() + need.stable_id];
+                if (ethnicity_factor > 0) {
+                    living_target = saturating_mul(saturating_mul(
+                        population, need.base_qty_per_person, sat), std::max(1, _epoch_days.get()), sat);
+                    living_target = mul_div_sat(living_target,
+                        std::max<int64_t>(1, need_environment_cache[need_index]), Q16_ONE, sat);
+                    living_target = std::max<int64_t>(1, mul_div_sat(
+                        living_target, ethnicity_factor, Q16_ONE, sat));
+                }
+            }
+            if (score_sum <= 0) {
+                if (living_target > 0)
+                    need_states.push_back({local, need_index, 0, 0, 0, living_target});
+                continue;
+            }
             int64_t ordinary_desired = desired_need_units(
                 slot, need_index, _epoch_days.get(), need_environment_cache[need_index],
                 need_composite_cache[need_index], sat);
@@ -1382,9 +1408,13 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 }
             }
             const int64_t desired = std::max(ordinary_desired, survival_floor);
-            if (desired <= 0) continue;
+            if (desired <= 0) {
+                if (living_target > 0)
+                    need_states.push_back({local, need_index, 0, 0, 0, living_target});
+                continue;
+            }
             const int32_t state_index = static_cast<int32_t>(need_states.size());
-            need_states.push_back({local, need_index, desired, 0, 0});
+            need_states.push_back({local, need_index, desired, 0, 0, living_target});
             cohort_desired[local] = saturating_add(cohort_desired[local], desired, sat);
             int64_t prefix_score = 0;
             int64_t allocated = 0;
@@ -2178,7 +2208,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 cohort_clothing_filled[local], state.filled_units, sat);
         }
         const int64_t satisfaction = state.desired_units <= 0
-            ? Q16_ONE - 1
+            ? 0
             : std::clamp<int64_t>(mul_div_sat(state.filled_units, Q16_ONE,
                                               state.desired_units, sat), 0, Q16_ONE - 1);
         if (stable_need >= 0 &&
@@ -2191,20 +2221,23 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 cohort_best_food_q16[local], satisfaction);
         }
         const Need &need = _needs[state.need_index];
+        const int64_t living_satisfaction = state.living_target_units > 0
+            ? std::clamp<int64_t>(mul_div_sat(state.filled_units, Q16_ONE,
+                state.living_target_units, sat), 0, Q16_ONE - 1) : 0;
         const int64_t tier_weight = need.satisfaction_weight_q16;
-        if (tier_weight > 0) {
+        if (tier_weight > 0 && state.living_target_units > 0) {
             const size_t tier_index = static_cast<size_t>(local) * SAT_TIER_COUNT +
                 static_cast<size_t>(need.satisfaction_tier);
             cohort_tier_weighted_q16[tier_index] = saturating_add(
                 cohort_tier_weighted_q16[tier_index],
-                saturating_mul(satisfaction, tier_weight, sat), sat);
+                saturating_mul(living_satisfaction, tier_weight, sat), sat);
             cohort_tier_weight_q16[tier_index] = saturating_add(
                 cohort_tier_weight_q16[tier_index], tier_weight, sat);
         }
         if (trace_detail) {
             CohortWelfareEntry &entry = result.welfare_entries[local];
             entry.need_ids.push_back(stable_need);
-            entry.need_satisfaction_q16.push_back(static_cast<int32_t>(satisfaction));
+            entry.need_satisfaction_q16.push_back(static_cast<int32_t>(living_satisfaction));
             entry.need_weight_q16.push_back(static_cast<int32_t>(tier_weight));
             entry.need_tiers.push_back(static_cast<int32_t>(need.satisfaction_tier));
         }
@@ -2369,7 +2402,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 result.welfare_entries.size())) {
             CohortWelfareEntry &entry = result.welfare_entries[local];
             entry.overall_satisfaction_q16 = static_cast<int32_t>(composite_q16);
-            entry.living_standard_level = living_standard_level_for(composite_q16);
+            entry.living_standard_level = consumption_living_standard_level(slot);
             entry.worst_dimension_id = population_store().worst_dimension_id[slot] ==
                     std::numeric_limits<uint8_t>::max()
                 ? -1 : static_cast<int32_t>(population_store().worst_dimension_id[slot]);

@@ -53,237 +53,164 @@ layout_mode = 2
 text = "抽取"
 theme_type_variation = &"PKSealPrimaryButton"
 
-[node name="ReduceMotion" type="CheckBox" parent="Root/TopBar/Row/Buttons"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 8
-theme_override_font_sizes/font_size = 11
-text = "减弱动效"
-
 [node name="Hint" type="Label" parent="Root"]
 unique_name_in_owner = true
 layout_mode = 2
 autowrap_mode = 3
 theme_type_variation = &"PKWorkspaceLabel"
 
-[node name="Scroll" type="ScrollContainer" parent="Root"]
+[node name="Body" type="HBoxContainer" parent="Root"]
 layout_mode = 2
-size_flags_vertical = 3
-horizontal_scroll_mode = 0
-
-[node name="Content" type="VBoxContainer" parent="Root/Scroll"]
-layout_mode = 2
-size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 14
 
-[node name="Offer" type="PanelContainer" parent="Root/Scroll/Content"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_type_variation = &"PKIdeologyStage"
-
-[node name="OfferBody" type="MarginContainer" parent="Root/Scroll/Content/Offer"]
-layout_mode = 2
-theme_override_constants/margin_left = 14
-theme_override_constants/margin_top = 12
-theme_override_constants/margin_right = 14
-theme_override_constants/margin_bottom = 12
-
-[node name="Column" type="VBoxContainer" parent="Root/Scroll/Content/Offer/OfferBody"]
-layout_mode = 2
-theme_override_constants/separation = 10
-
-[node name="OfferTitle" type="Label" parent="Root/Scroll/Content/Offer/OfferBody/Column"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "选择一条道路"
-horizontal_alignment = 1
-theme_type_variation = &"PKWorkspaceTitle"
-
-[node name="OfferCards" type="HBoxContainer" parent="Root/Scroll/Content/Offer/OfferBody/Column"]
-unique_name_in_owner = true
-layout_mode = 2
-alignment = 1
-theme_override_constants/separation = 26
-
-[node name="Choice0" type="Control" parent="Root/Scroll/Content/Offer/OfferBody/Column/OfferCards"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(150, 206)
-layout_mode = 2
-script = ExtResource("5_card")
-
-[node name="Choice1" type="Control" parent="Root/Scroll/Content/Offer/OfferBody/Column/OfferCards"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(150, 206)
-layout_mode = 2
-script = ExtResource("5_card")
-
-[node name="Choice2" type="Control" parent="Root/Scroll/Content/Offer/OfferBody/Column/OfferCards"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(150, 206)
-layout_mode = 2
-script = ExtResource("5_card")
-
-[node name="OfferActions" type="HBoxContainer" parent="Root/Scroll/Content/Offer/OfferBody/Column"]
-layout_mode = 2
-alignment = 1
-theme_override_constants/separation = 12
-
-[node name="Reroll" type="Button" parent="Root/Scroll/Content/Offer/OfferBody/Column/OfferActions"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(170, 32)
-layout_mode = 2
-text = "重抽"
-theme_type_variation = &"PKPrimaryButton"
-
-[node name="Dismiss" type="Button" parent="Root/Scroll/Content/Offer/OfferBody/Column/OfferActions"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(120, 32)
-layout_mode = 2
-text = "收起"
-
-[node name="DeckTable" type="PanelContainer" parent="Root/Scroll/Content"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"PKIdeologyStage"
-
-[node name="DeckBody" type="MarginContainer" parent="Root/Scroll/Content/DeckTable"]
-layout_mode = 2
-theme_override_constants/margin_left = 14
-theme_override_constants/margin_top = 10
-theme_override_constants/margin_right = 14
-theme_override_constants/margin_bottom = 12
-
-[node name="DeckColumn" type="VBoxContainer" parent="Root/Scroll/Content/DeckTable/DeckBody"]
+[node name="SlotColumn" type="VBoxContainer" parent="Root/Body"]
+custom_minimum_size = Vector2(400, 0)
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="DeckHeading" type="HBoxContainer" parent="Root/Scroll/Content/DeckTable/DeckBody/DeckColumn"]
-layout_mode = 2
-theme_override_constants/separation = 12
-
-[node name="DeckTitle" type="Label" parent="Root/Scroll/Content/DeckTable/DeckBody/DeckColumn/DeckHeading"]
-layout_mode = 2
-text = "理念槽"
-theme_type_variation = &"PKWorkspaceTitle"
-
-[node name="DeckCaption" type="Label" parent="Root/Scroll/Content/DeckTable/DeckBody/DeckColumn/DeckHeading"]
+[node name="DeckTable" type="PanelContainer" parent="Root/Body/SlotColumn"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 8
-text = ""
-autowrap_mode = 3
-theme_type_variation = &"PKWorkspaceLabel"
+size_flags_vertical = 3
+theme_type_variation = &"PKIdeologyStage"
 
-[node name="DeckRow" type="HBoxContainer" parent="Root/Scroll/Content/DeckTable/DeckBody/DeckColumn"]
+[node name="DeckBody" type="MarginContainer" parent="Root/Body/SlotColumn/DeckTable"]
 layout_mode = 2
-theme_override_constants/separation = 18
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 8
 
-[node name="IdeologyColumn" type="VBoxContainer" parent="Root/Scroll/Content/DeckTable/DeckBody/DeckColumn/DeckRow"]
+[node name="DeckScroll" type="ScrollContainer" parent="Root/Body/SlotColumn/DeckTable/DeckBody"]
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="DeckColumn" type="VBoxContainer" parent="Root/Body/SlotColumn/DeckTable/DeckBody/DeckScroll"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="IdeologyLabel" type="Label" parent="Root/Scroll/Content/DeckTable/DeckBody/DeckColumn/DeckRow/IdeologyColumn"]
+[node name="SlotCounts" type="Label" parent="Root/Body/SlotColumn/DeckTable/DeckBody/DeckScroll/DeckColumn"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 0
 text = "意识形态"
-theme_type_variation = &"PKWorkspaceLabel"
+theme_type_variation = &"PKPaperTag"
 
-[node name="IdeologySlots" type="HFlowContainer" parent="Root/Scroll/Content/DeckTable/DeckBody/DeckColumn/DeckRow/IdeologyColumn"]
+[node name="IdeologySlots" type="VBoxContainer" parent="Root/Body/SlotColumn/DeckTable/DeckBody/DeckScroll/DeckColumn"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_constants/h_separation = 10
-theme_override_constants/v_separation = 10
-
-[node name="Divider" type="VSeparator" parent="Root/Scroll/Content/DeckTable/DeckBody/DeckColumn/DeckRow"]
-layout_mode = 2
-
-[node name="SpiritColumn" type="VBoxContainer" parent="Root/Scroll/Content/DeckTable/DeckBody/DeckColumn/DeckRow"]
-layout_mode = 2
-theme_override_constants/separation = 4
-
-[node name="SpiritLabel" type="Label" parent="Root/Scroll/Content/DeckTable/DeckBody/DeckColumn/DeckRow/SpiritColumn"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "民族精神"
-theme_type_variation = &"PKWorkspaceLabel"
-
-[node name="SpiritSlots" type="HFlowContainer" parent="Root/Scroll/Content/DeckTable/DeckBody/DeckColumn/DeckRow/SpiritColumn"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/h_separation = 10
-theme_override_constants/v_separation = 10
-
-[node name="ResonanceBar" type="HBoxContainer" parent="Root/Scroll/Content/DeckTable/DeckBody/DeckColumn"]
-unique_name_in_owner = true
-layout_mode = 2
-alignment = 1
 theme_override_constants/separation = 6
 
-[node name="CollectionHeading" type="HBoxContainer" parent="Root/Scroll/Content"]
+[node name="SpiritSlots" type="VBoxContainer" parent="Root/Body/SlotColumn/DeckTable/DeckBody/DeckScroll/DeckColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="ResonancePanel" type="PanelContainer" parent="Root/Body/SlotColumn"]
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+theme_type_variation = &"PKPaperCard"
+
+[node name="ResonanceMargin" type="MarginContainer" parent="Root/Body/SlotColumn/ResonancePanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 2
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 2
+
+[node name="ResonanceRow" type="HBoxContainer" parent="Root/Body/SlotColumn/ResonancePanel/ResonanceMargin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ResonanceTag" type="Label" parent="Root/Body/SlotColumn/ResonancePanel/ResonanceMargin/ResonanceRow"]
+layout_mode = 2
+size_flags_vertical = 4
+text = "共鸣"
+theme_type_variation = &"PKPaperTag"
+
+[node name="ResonanceBar" type="HFlowContainer" parent="Root/Body/SlotColumn/ResonancePanel/ResonanceMargin/ResonanceRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+theme_override_constants/h_separation = 2
+theme_override_constants/v_separation = 2
+
+[node name="CollectionColumn" type="VBoxContainer" parent="Root/Body"]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="CollectionHeading" type="VBoxContainer" parent="Root/Body/CollectionColumn"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="HeadingTop" type="HBoxContainer" parent="Root/Body/CollectionColumn/CollectionHeading"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="CollectionTitle" type="Label" parent="Root/Scroll/Content/CollectionHeading"]
+[node name="CollectionTitle" type="Label" parent="Root/Body/CollectionColumn/CollectionHeading/HeadingTop"]
 layout_mode = 2
+size_flags_vertical = 4
 text = "收藏"
-theme_type_variation = &"PKWorkspaceTitle"
+theme_type_variation = &"PKPaperTag"
 
-[node name="SchoolTabs" type="TabBar" parent="Root/Scroll/Content/CollectionHeading"]
+[node name="HeadingSpacer" type="Control" parent="Root/Body/CollectionColumn/CollectionHeading/HeadingTop"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SortMode" type="OptionButton" parent="Root/Body/CollectionColumn/CollectionHeading/HeadingTop"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(116, 0)
+layout_mode = 2
+
+[node name="TabsScroll" type="ScrollContainer" parent="Root/Body/CollectionColumn/CollectionHeading"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+vertical_scroll_mode = 0
+
+[node name="SchoolTabs" type="TabBar" parent="Root/Body/CollectionColumn/CollectionHeading/TabsScroll"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 clip_tabs = false
 
-[node name="SortMode" type="OptionButton" parent="Root/Scroll/Content/CollectionHeading"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(116, 0)
-layout_mode = 2
-
-[node name="EmptyRow" type="HBoxContainer" parent="Root/Scroll/Content"]
-layout_mode = 2
-
-[node name="LeftSpace" type="Control" parent="Root/Scroll/Content/EmptyRow"]
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="EmptyState" type="PanelContainer" parent="Root/Scroll/Content/EmptyRow"]
+[node name="EmptyState" type="PanelContainer" parent="Root/Body/CollectionColumn"]
 unique_name_in_owner = true
 visible = false
-custom_minimum_size = Vector2(520, 170)
+custom_minimum_size = Vector2(0, 150)
 layout_mode = 2
-size_flags_vertical = 4
 theme_type_variation = &"PKIdeologyStage"
 
-[node name="Body" type="MarginContainer" parent="Root/Scroll/Content/EmptyRow/EmptyState"]
+[node name="Body" type="MarginContainer" parent="Root/Body/CollectionColumn/EmptyState"]
 layout_mode = 2
 theme_override_constants/margin_left = 16
 theme_override_constants/margin_top = 12
 theme_override_constants/margin_right = 16
 theme_override_constants/margin_bottom = 12
 
-[node name="Column" type="VBoxContainer" parent="Root/Scroll/Content/EmptyRow/EmptyState/Body"]
+[node name="Column" type="VBoxContainer" parent="Root/Body/CollectionColumn/EmptyState/Body"]
 layout_mode = 2
 alignment = 1
 theme_override_constants/separation = 6
 
-[node name="EmptyIcon" parent="Root/Scroll/Content/EmptyRow/EmptyState/Body/Column" instance=ExtResource("3_icon")]
+[node name="EmptyIcon" parent="Root/Body/CollectionColumn/EmptyState/Body/Column" instance=ExtResource("3_icon")]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(44, 46)
 layout_mode = 2
 size_flags_horizontal = 4
 
-[node name="EmptyTitle" type="Label" parent="Root/Scroll/Content/EmptyRow/EmptyState/Body/Column"]
+[node name="EmptyTitle" type="Label" parent="Root/Body/CollectionColumn/EmptyState/Body/Column"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "尚未形成国家理念"
 horizontal_alignment = 1
 theme_type_variation = &"PKWorkspaceTitle"
 
-[node name="EmptyDetail" type="Label" parent="Root/Scroll/Content/EmptyRow/EmptyState/Body/Column"]
+[node name="EmptyDetail" type="Label" parent="Root/Body/CollectionColumn/EmptyState/Body/Column"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "积累理念点后抽取。"
@@ -291,33 +218,130 @@ horizontal_alignment = 1
 autowrap_mode = 3
 theme_type_variation = &"PKWorkspaceLabel"
 
-[node name="EmptyInsights" parent="Root/Scroll/Content/EmptyRow/EmptyState/Body/Column" instance=ExtResource("4_insights")]
+[node name="EmptyInsights" parent="Root/Body/CollectionColumn/EmptyState/Body/Column" instance=ExtResource("4_insights")]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 
-[node name="RightSpace" type="Control" parent="Root/Scroll/Content/EmptyRow"]
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="CollectionDrop" type="PanelContainer" parent="Root/Scroll/Content"]
+[node name="CollectionDrop" type="PanelContainer" parent="Root/Body/CollectionColumn"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 120)
 layout_mode = 2
+size_flags_vertical = 3
 theme_type_variation = &"PKInsetPanel"
 
-[node name="CollectionMargin" type="MarginContainer" parent="Root/Scroll/Content/CollectionDrop"]
+[node name="CollectionMargin" type="MarginContainer" parent="Root/Body/CollectionColumn/CollectionDrop"]
 layout_mode = 2
 theme_override_constants/margin_left = 10
 theme_override_constants/margin_top = 10
 theme_override_constants/margin_right = 10
 theme_override_constants/margin_bottom = 10
 
-[node name="Collection" type="HFlowContainer" parent="Root/Scroll/Content/CollectionDrop/CollectionMargin"]
+[node name="CollectionScroll" type="ScrollContainer" parent="Root/Body/CollectionColumn/CollectionDrop/CollectionMargin"]
 unique_name_in_owner = true
 layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="Collection" type="HFlowContainer" parent="Root/Body/CollectionColumn/CollectionDrop/CollectionMargin/CollectionScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_constants/h_separation = 12
 theme_override_constants/v_separation = 12
+
+[node name="OfferLayer" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+mouse_filter = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Scrim" type="ColorRect" parent="OfferLayer"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.0745, 0.047, 0.0275, 0.615)
+
+[node name="TrayCenter" type="CenterContainer" parent="OfferLayer"]
+mouse_filter = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Offer" type="PanelContainer" parent="OfferLayer/TrayCenter"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKIdeologyStage"
+
+[node name="OfferBody" type="MarginContainer" parent="OfferLayer/TrayCenter/Offer"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 10
+
+[node name="Column" type="VBoxContainer" parent="OfferLayer/TrayCenter/Offer/OfferBody"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="OfferTitle" type="Label" parent="OfferLayer/TrayCenter/Offer/OfferBody/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 4
+text = "选择一条道路"
+theme_type_variation = &"PKPaperTag"
+theme_override_font_sizes/font_size = 17
+
+[node name="OfferCards" type="HBoxContainer" parent="OfferLayer/TrayCenter/Offer/OfferBody/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 26
+
+[node name="Choice0" type="Control" parent="OfferLayer/TrayCenter/Offer/OfferBody/Column/OfferCards"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(208, 276)
+layout_mode = 2
+script = ExtResource("5_card")
+
+[node name="Choice1" type="Control" parent="OfferLayer/TrayCenter/Offer/OfferBody/Column/OfferCards"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(208, 276)
+layout_mode = 2
+script = ExtResource("5_card")
+
+[node name="Choice2" type="Control" parent="OfferLayer/TrayCenter/Offer/OfferBody/Column/OfferCards"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(208, 276)
+layout_mode = 2
+script = ExtResource("5_card")
+
+[node name="OfferActions" type="HBoxContainer" parent="OfferLayer/TrayCenter/Offer/OfferBody/Column"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 12
+
+[node name="Reroll" type="Button" parent="OfferLayer/TrayCenter/Offer/OfferBody/Column/OfferActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(170, 32)
+layout_mode = 2
+text = "重抽"
+theme_type_variation = &"PKPrimaryButton"
+
+[node name="Dismiss" type="Button" parent="OfferLayer/TrayCenter/Offer/OfferBody/Column/OfferActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 32)
+layout_mode = 2
+text = "收起"
 
 [node name="Fx" type="Control" parent="."]
 unique_name_in_owner = true
@@ -339,6 +363,6 @@ dialog_text = "晋升不可逆。"
 unique_name_in_owner = true
 
 [connection signal="pressed" from="Root/TopBar/Row/Buttons/OpenOffer" to="." method="_open_offer"]
-[connection signal="pressed" from="Root/Scroll/Content/Offer/OfferBody/Column/OfferActions/Reroll" to="." method="_reroll_offer"]
-[connection signal="pressed" from="Root/Scroll/Content/Offer/OfferBody/Column/OfferActions/Dismiss" to="." method="_dismiss_offer"]
+[connection signal="pressed" from="OfferLayer/TrayCenter/Offer/OfferBody/Column/OfferActions/Reroll" to="." method="_reroll_offer"]
+[connection signal="pressed" from="OfferLayer/TrayCenter/Offer/OfferBody/Column/OfferActions/Dismiss" to="." method="_dismiss_offer"]
 [connection signal="confirmed" from="PromotionDialog" to="." method="_confirm_promotion"]

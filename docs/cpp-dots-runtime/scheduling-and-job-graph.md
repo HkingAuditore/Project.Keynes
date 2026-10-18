@@ -1,5 +1,16 @@
 # Scheduling and Job Graph
 
+## Main-thread research delivery boundary (2026-10-18)
+
+Full-graph ACTIVE retains a bounded main-thread Trigger → Effect → Country research-signal
+delivery cursor. A deferred handoff joins the existing Economy boundary inbox. The worker observes
+an explicit transient service request between complete semantic days and yields before taking the
+boundary again; the main thread acquires it non-blockingly and completes the request after inbox
+service. The worker waits without holding the authority boundary, checks stop requests, and uses
+a bounded condition-variable wait so an atomic completion notification cannot strand it. This
+changes transport fairness, not domain formulas, day ordering, authority, or save schema. Paused
+workers do not start new research deliveries. See [technology runtime](./technology-tree-runtime.md).
+
 ## Economy projection placement (2026-09-20)
 
 In ACTIVE_ONLY StageOps, AGGREGATE_PUBLISH still drains business publication and
@@ -1450,3 +1461,11 @@ wall times before the completed-epoch snapshot. The existing cadence policy cons
 these metrics with its original bounds; no cycle is forced for performance. Building
 plan uses the same existing parallel range implementation as compact slices and replays
 result diagnostics in deterministic task order.
+## 可选贸易载具观察（2026-10-19）
+
+`TradeVisualCache` 是视觉观察者，不注册每日模拟节点，也不申请日期屏障。
+它在 Economy 已提交读取边界运行：订单轮转每片最多 512，独立寻路每片最多
+256 heap pop。主线程只非阻塞尝试安全边界；生产 worker 的 `serve_read_view()`
+也服务最新请求。停止请求两秒后不再做观察工作，既有模拟任务优先。
+显示与 GPU 上传由 `TradeActivityLayer` 按墙钟 2Hz/1Hz 节流；相同路径不重复上传。
+见 [trade-visual-runtime.md](trade-visual-runtime.md)。

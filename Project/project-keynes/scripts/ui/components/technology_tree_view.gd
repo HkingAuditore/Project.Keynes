@@ -19,6 +19,7 @@ const CARD_PAPER_DIM := Color(0.89, 0.83, 0.70, 0.96)
 const CARD_PAPER_UNKNOWN := Color(0.80, 0.75, 0.65, 0.96)
 const SELECTED_WALNUT := Color(0.20, 0.105, 0.052, 0.985)
 const Art = preload("res://scripts/ui/components/technology_tree_art.gd")
+const EffectsLayer := preload("res://scripts/ui/components/technology_effects_layer.gd")
 const EMBLEM_DIAMETER := 22.0
 const SEAL_DIAMETER := 20.0
 const ERA_SCROLL_HEIGHT := 28.0
@@ -65,6 +66,8 @@ var _visibility_signature := 0
 var _portal_slots: Dictionary = {}
 var _canvas_key := Vector2i.ZERO
 var _focus_active := false
+var _effects: Control
+var _effect_routes_dirty := true
 
 
 func _ready() -> void:
@@ -73,6 +76,9 @@ func _ready() -> void:
 	focus_mode = Control.FOCUS_CLICK
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_effects = EffectsLayer.new()
+	_effects.name = "ResearchEffects"
+	add_child(_effects)
 
 
 func set_catalog(definitions: Array, eras: Array, domains: Array,
@@ -121,6 +127,8 @@ func activate_focus_drawing() -> void:
 
 func patch_states(states: PackedInt32Array, progress: PackedInt64Array) -> void:
 	var state_changed := states != _states
+	if state_changed:
+		_effect_routes_dirty = true
 	var old_progress := _progress
 	_states = states
 	_progress = progress
@@ -143,6 +151,7 @@ func patch_states(states: PackedInt32Array, progress: PackedInt64Array) -> void:
 
 
 func set_focus(domain_id: String, era_index: int, preferred_index: int = -1) -> void:
+	var turn_page := domain_id != _domain_id or era_index != _focus_era
 	_focus_active = true
 	if not domain_id.is_empty():
 		_domain_id = domain_id
@@ -152,6 +161,8 @@ func set_focus(domain_id: String, era_index: int, preferred_index: int = -1) -> 
 		select_technology(preferred_index)
 	_center_content()
 	queue_redraw()
+	if turn_page:
+		UIAnimation.reveal_technology_page(self)
 
 
 func focus_domain() -> String:
@@ -183,6 +194,7 @@ func select_technology(index: int) -> void:
 		return
 	_selected = index
 	_rebuild_chains(index)
+	_effect_routes_dirty = true
 	if _focus_active:
 		queue_redraw()
 
@@ -291,6 +303,7 @@ func _rebuild_focus(recenter: bool = true) -> void:
 		_offset = previous_offset
 		_clamp_offset()
 	queue_redraw()
+	_effect_routes_dirty = true
 
 
 func _center_content() -> void:
@@ -494,6 +507,7 @@ func _notification(what: int) -> void:
 func _draw() -> void:
 	if not _focus_active or _focus_layout.is_empty():
 		return
+	_sync_effects()
 	draw_set_transform(_offset, 0.0, Vector2.ONE)
 	# Rice paper covers the visible viewport and is anchored to content space so
 	# it pans with the tree. ~6-9 quads of one texture; batched by the renderer.
@@ -508,6 +522,43 @@ func _draw() -> void:
 		_draw_node(node_value as Dictionary)
 	_draw_milestone_progress()
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+func _sync_effects() -> void:
+	if _effects == null:
+		return
+	var items: Array = []
+	for value in _focus_layout.get("nodes", []) as Array:
+		var node: Dictionary = value
+		var index := int(node.index)
+		var rect: Rect2 = node.rect
+		var definition: Dictionary = _definitions[index]
+		var cost := maxf(1.0, float(definition.get("cost_points_scaled",
+			int(definition.get("cost_points", 1)) * 1000)))
+		items.append({"index": index, "rect": rect, "accent": _accent_for(int(node.domain)),
+			"active": _state_of(index) == 3,
+			"fraction": float(_progress[index]) / cost if index < _progress.size() else 0.0,
+			"track": Rect2(rect.position + Vector2(12.0, rect.size.y - 9.0),
+				Vector2(rect.size.x - 24.0, 3.0))})
+	_effects.content_offset = _offset
+	_effects.view_rect = Rect2(-_offset, size)
+	_effects.set_items(items)
+	_effects.patch_states(_states)
+	_effects.set_interaction(_selected, _hovered)
+	if _effect_routes_dirty:
+		var routes: Array = []
+		for value in _focus_layout.get("edges", []) as Array:
+			var edge: Dictionary = value
+			var from := int(edge.from)
+			var to := int(edge.to)
+			# Hidden/fogged names and their routes never gain animated emphasis.
+			if _selected >= 0 and _is_known(from) and _is_known(to) and (
+				from == _selected or to == _selected
+				or (_chain_up.has(from) and _chain_up.has(to))
+				or (_chain_down.has(from) and _chain_down.has(to))):
+				routes.append(edge)
+		_effects.set_routes(routes)
+		_effect_routes_dirty = false
 
 
 func _draw_bands() -> void:

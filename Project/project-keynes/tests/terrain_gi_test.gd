@@ -12,6 +12,10 @@ const TerrainTypeScript = preload("res://scripts/geography/terrain_type.gd")
 const ShrubLayerScript = preload("res://scripts/rendering/shrub_layer.gd")
 
 const WORLD_SHADER_PATH := "res://shaders/world_map.gdshader"
+const BODY_SHADER_PATH := "res://shaders/building_compound.gdshader"
+const DECAL_SHADER_PATH := "res://shaders/building_ground_decal.gdshader"
+const MACRO_SHADER_PATH := "res://shaders/building_macro.gdshader"
+const GROUND_COVER_SHADER_PATH := "res://shaders/resource_ground_cover.gdshader"
 const QUALITY_VARIANTS := {
 	"desktop": "",
 	"mobile_low": "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n",
@@ -40,6 +44,7 @@ func _init() -> void:
 	_test_bounce_albedo_table(failures)
 	_test_shader_variants(failures)
 	_test_shrub_shader_variants(failures)
+	_test_building_shader_variants(failures)
 	if failures.is_empty():
 		print("terrain_gi_test: PASS")
 		quit(0)
@@ -320,6 +325,45 @@ func _test_shrub_shader_variants(failures: Array[String]) -> void:
 				"gi_ao_floor", "gi_bent_strength", "gi_normal_floor"]:
 			_expect(names.has(required),
 				"shrub %s variant does not expose %s" % [label, required], failures)
+
+
+func _test_building_shader_variants(failures: Array[String]) -> void:
+	# [building-terrain-light 2026-10-18] 建筑 Body/Decal 与地形共用 horizon/GI 与地表法线。
+	# 少一个 uniform，HexRenderer 推给建筑材质的参数就会被静默丢弃，同一格屋顶与脚下地形
+	# 会对山体阴影给出不同结论；采样器类型又随 tiled/legacy 寻址切换，两种形态都要编译通过。
+	for entry in [[BODY_SHADER_PATH, "body"], [DECAL_SHADER_PATH, "decal"],
+			[MACRO_SHADER_PATH, "macro"], [GROUND_COVER_SHADER_PATH, "ground_cover"]]:
+		var source := FileAccess.get_file_as_string(String(entry[0]))
+		_expect(not source.is_empty(), "building %s shader source is missing" % entry[1],
+			failures)
+		if source.is_empty():
+			continue
+		for label in ["legacy", "tiled"]:
+			var prefix := "#define MAP_VISUAL_TILED\n" if label == "tiled" else ""
+			var names := _uniform_names(prefix + source)
+			_expect(not names.is_empty(),
+				"building %s %s variant failed to compile" % [entry[1], label], failures)
+			if names.is_empty():
+				continue
+			for required in ["terrain_horizon_tex_bound", "terrain_normal_tex_bound",
+					"terrain_horizon_strength", "terrain_horizon_softness",
+					"terrain_horizon_max_angle", "terrain_normal_influence",
+					"gi_horizon_lut", "gi_lut_bound", "gi_ao_strength", "gi_ao_floor",
+					"gi_ao_smoothing", "gi_bent_strength", "gi_normal_floor"]:
+				_expect(names.has(required),
+					"building %s %s variant does not expose %s"
+						% [entry[1], label, required], failures)
+			# 采样器类型随寻址形态切换，两条路径不能同时声明。
+			if label == "tiled":
+				_expect(names.has("visual_horizon_tiles")
+						and not names.has("terrain_horizon_tex"),
+					"building %s tiled variant must read horizon from the tile array only"
+						% entry[1], failures)
+			else:
+				_expect(names.has("terrain_horizon_tex")
+						and not names.has("visual_horizon_tiles"),
+					"building %s legacy variant must read the global horizon texture only"
+						% entry[1], failures)
 
 
 func _expect(condition: bool, message: String, failures: Array[String]) -> void:

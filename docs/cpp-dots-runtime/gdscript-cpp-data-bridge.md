@@ -387,7 +387,7 @@ configure 成功后、population/market/building bootstrap 前执行该捕获；
 `PROBE/ACTIVE` 若 API 缺失或捕获失败则中止本次经济初始化，禁止出现“模式已开启但拓扑
 未就绪”的静默状态。地图只提供输入，不持有路线、信号、订单或托管。
 
-Economy bridge 是粗粒度 packet ABI：bootstrap/commands 使用平行 PackedArrays；hot loop 不出现 Dictionary、Callable 或 Object。每个 ACTIVE market cycle 的 sample day 由 `world_ext_economy.cpp` 从 temp/moisture/snow/weather raw slots 捕获一次 Q16 snapshot；若 `MapData.fog_solved`，同边界再冻结 `visible_arr` 供玩家参与的贸易端点检查。周期内不重复跨界。gameplay 与 save 只观察 committed boundary；选中地块 Inspector 是有界冷查询例外。首屏摘要只调用不生成需求预览的 `get_population_cell_summary`；人口页每日 live patch 调用 `get_population_cell_snapshot(cell, include_details=false)`，只带阶层人数/财富/就业/综合满意度，不生成需求预览。对象详情、首次打开人口页以及市场/建筑标签仍按当前可见标签惰性调用完整 `get_population_cell_snapshot` / `get_market_cell_snapshot` / `get_building_cell_snapshot`。贸易单使用 `get_trade_orders_for_cell(cell, offset, limit)` 分页查询并返回物资行 CSR，禁止全局订单矩阵。完整查询在 native slice 之间同步返回最新数组，in-flight 标记 `snapshot_source=live_slice, committed=false`，边界标记 `snapshot_source=committed`。查询不复制全图、不修改经济状态，也不进入 state hash/存档。人口预计需求另取选中 cell 当前环境 slot，复用同一原生需求内核生成 cohort-major CSR。详见 [Native Economy Runtime](./native-economy-runtime.md) 与 [Domestic Trade Runtime](./domestic-trade-runtime.md)。
+Economy bridge 是粗粒度 packet ABI：bootstrap/commands 使用平行 PackedArrays；hot loop 不出现 Dictionary、Callable 或 Object。每个 ACTIVE market cycle 的 sample day 由 `world_ext_economy.cpp` 从 temp/moisture/snow/weather raw slots 捕获一次 Q16 snapshot；若 `MapData.fog_solved`，同边界再冻结 `visible_arr` 供玩家参与的贸易端点检查。周期内不重复跨界。gameplay 与 save 只观察 committed boundary；选中地块 Inspector 是有界冷查询例外。首屏摘要只调用不生成需求预览的 `get_population_cell_summary`；人口页每日 live patch 调用 `get_population_cell_snapshot(cell, include_details=false)`，只带阶层人数/财富/就业/综合满意度，不生成需求预览。对象详情、首次打开人口页以及市场/建筑标签仍按当前可见标签惰性调用完整 `get_population_cell_snapshot` / `get_market_cell_snapshot` / `get_building_cell_snapshot`。贸易单使用 `get_trade_orders_for_cell(cell, offset, limit, good_index = -1)` 的按物资过滤有界分页查询并返回裁剪后的物资行 CSR，响应带 `page_begin/economy_generation/sample_day`；UI 按 committed `economy_generation` 缓存分页与行模型，同一 generation 内的 200ms live patch 不重复查询 native，始终禁止全局订单矩阵。完整查询在 native slice 之间同步返回最新数组，in-flight 标记 `snapshot_source=live_slice, committed=false`，边界标记 `snapshot_source=committed`。查询不复制全图、不修改经济状态，也不进入 state hash/存档。人口预计需求另取选中 cell 当前环境 slot，复用同一原生需求内核生成 cohort-major CSR。详见 [Native Economy Runtime](./native-economy-runtime.md) 与 [Domestic Trade Runtime](./domestic-trade-runtime.md)。
 
 同日经济 continuation 使用绑定方法 `run_economy_slice_compact(ctx)`；它和
 `run_economy_slice(ctx)` 进入同一个 `DCWorldExt::run_economy_slice_internal`，因此环境/建筑上下文
@@ -1693,3 +1693,12 @@ not enter the visible snapshot or CLM2 ABI. Host freezes and seals the complete 
 input hash before publishing the immutable environment copy; independent/reference
 kernel calls still recompute it. Resource wire-hash reuse follows tracked column
 mutation revisions and preserves the original FNV value across identical copies.
+## 贸易视觉附加读取边界（2026-10-19）
+
+`get_trade_visual_snapshot(cells, visible, vision_revision, selected_cell, enabled)`
+走专用的最新请求与不可变视图，不创建每格 read subscription。
+主线程只尝试取得 Economy read boundary；没有锁时不等待，在 worker 提交后的
+`serve_read_view()` 服务有界观察工作。时代由既有 Country committed query view 补齐。
+`bake_trade_visual_paths()` 仅将有界 CSR 路径转换为 RGBAF GPU 数据，不读取模拟。
+没有新 DataCore slot、dirty 消费者或存档段。
+完整契约见 [trade-visual-runtime.md](trade-visual-runtime.md)。

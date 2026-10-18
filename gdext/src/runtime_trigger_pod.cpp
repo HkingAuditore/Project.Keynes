@@ -840,7 +840,21 @@ bool RuntimeTriggerPodAuthority::queue_command(const RuntimeTriggerCommand &comm
     error.clear();
     if (!_bootstrapped) { error = "trigger_pod_not_bootstrapped"; return false; }
     if (!validate_command_shape(command, _catalog, error)) return false;
-    if (_pending_commands.size() >= RUNTIME_COMMAND_QUEUE_CAPACITY) {
+    const bool delivery_ack = command.opcode == RuntimeTriggerCommandOpcode::ACK_EFFECTS;
+    if (delivery_ack) {
+        // A busy event producer must not starve delivery acknowledgments. One
+        // monotonic cursor covers every older ACK, so retain only the maximum.
+        for (RuntimeTriggerCommand &pending : _pending_commands) {
+            if (pending.opcode != RuntimeTriggerCommandOpcode::ACK_EFFECTS ||
+                pending.effective_day != command.effective_day ||
+                pending.observed_generation != command.observed_generation) continue;
+            pending.ack_up_to_effect_id = std::max(pending.ack_up_to_effect_id,
+                                                   command.ack_up_to_effect_id);
+            return true;
+        }
+    }
+    const size_t capacity = RUNTIME_COMMAND_QUEUE_CAPACITY - (delivery_ack ? 0u : 1u);
+    if (_pending_commands.size() >= capacity) {
         error = "trigger_command_capacity_exhausted";
         return false;
     }
@@ -1535,6 +1549,43 @@ bool RuntimeTriggerPodAuthority::self_test(std::string &error) {
     RuntimeTriggerPodPlan plan; if(!authority.plan_day(0,1,plan,error) || plan.intents.size()!=1 || !authority.commit_day(plan,plan.acks,error)) return false;
     RuntimeTriggerPodSaveSection save; if(!authority.encode_save(save,error)) return false; RuntimeTriggerPodAuthority restored; if(!restored.restore_save(save,catalog,error)) return false;
     if (restored.state_hash() != authority.state_hash()) { error = "trigger_self_test_save_roundtrip_failed"; return false; }
+    {
+        RuntimeTriggerPodAuthority congested;
+        RuntimeTriggerSnapshot empty;
+        empty.next_effect_id = 100;
+        if (!congested.bootstrap(empty, catalog, error)) return false;
+        RuntimeTriggerCommand control;
+        control.opcode = RuntimeTriggerCommandOpcode::SET_ENABLED;
+        control.trigger_id = 0;
+        for (uint32_t i = 1; i < RUNTIME_COMMAND_QUEUE_CAPACITY; ++i) {
+            control.request_id = control.sequence = i;
+            if (!congested.queue_command(control, error)) return false;
+        }
+        if (congested.queue_command(control, error) ||
+            error != "trigger_command_capacity_exhausted") {
+            error = "trigger_delivery_ack_slot_not_reserved";
+            return false;
+        }
+        RuntimeTriggerCommand ack;
+        ack.request_id = ack.sequence = RUNTIME_COMMAND_QUEUE_CAPACITY;
+        ack.opcode = RuntimeTriggerCommandOpcode::ACK_EFFECTS;
+        ack.ack_up_to_effect_id = 7;
+        if (!congested.queue_command(ack, error)) return false;
+        ack.ack_up_to_effect_id = 9;
+        if (!congested.queue_command(ack, error)) return false;
+        RuntimeTriggerPodSaveSection queued;
+        RuntimeTriggerPodAuthority resumed;
+        if (!congested.encode_save(queued, error) ||
+            !resumed.restore_save(queued, catalog, error)) return false;
+        RuntimeTriggerPodPlan drained;
+        if (!resumed.plan_day(0, 1, drained, error) ||
+            drained.consumed_commands.size() != RUNTIME_COMMAND_QUEUE_CAPACITY ||
+            drained.next_state.acked_effect_id != 9 ||
+            !resumed.commit_day(drained, {}, error)) {
+            error = "trigger_delivery_ack_congestion_roundtrip_failed";
+            return false;
+        }
+    }
     {
         RuntimeTriggerPodAuthority ordering;
         if (!ordering.bootstrap(initial, catalog, error)) return false;

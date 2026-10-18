@@ -66,7 +66,10 @@ if (-not [string]::IsNullOrWhiteSpace($GodotExe)) {
         "technology_procurement_runtime_test.gd",
         "technology_modifier_activation_test.gd",
         "technology_pending_activation_scheduler_test.gd",
-        "technology_workspace_smoke_test.gd"
+        "technology_workspace_smoke_test.gd",
+        "technology_signal_delivery_test.gd",
+        "runtime_trigger_pod_test.gd",
+        "runtime_trigger_save_roundtrip_test.gd"
     )
     foreach ($test in $tests) {
         Write-Host "[technology-runtime] running $test"

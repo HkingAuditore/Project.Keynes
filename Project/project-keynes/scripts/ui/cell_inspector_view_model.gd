@@ -43,6 +43,10 @@ const TAX_DEFAULT_LABELS := {"income": "此地所得税", "consumption": "此地
 	"business": "此地营业税", "import": "此地进口税", "export": "此地出口税"}
 const TAX_KIND_ACCENTS := {"income": UITokens.ACCENT, "consumption": UITokens.GOOD,
 	"business": UITokens.CLIMATE, "import": UITokens.WATER, "export": UITokens.WATER}
+const TRADE_ORDER_PAGE_SIZE := 12
+const TRADE_ORDER_PAGE_CACHE_LIMIT := 8
+const TRADE_ORDER_MODEL_CACHE_LIMIT := 16
+const TRADE_ORDER_NAME_CACHE_LIMIT := 256
 
 var _map: MapData
 var _generator
@@ -72,6 +76,13 @@ var _player_country_resolved := false
 var _player_country_handle_cache := -1
 var _research_signal_catalog: Dictionary = {}
 var _technology_catalog: Dictionary = {}
+## 物资详情逐单商路：页缓存按 committed generation，行缓存再叠加 sample_day/视野 revision。
+var _trade_order_generation := -1
+var _trade_order_pages: Dictionary = {}
+var _trade_order_models: Dictionary = {}
+var _trade_order_names: Dictionary = {}
+var _trade_order_good_indices: Dictionary = {}
+var _trade_order_query_count := 0
 
 
 func set_context(map: MapData, generator, view_adapter: DCViewAdapter, world_clock: WorldClock, sea_level: float, hex_size: float) -> void:
@@ -97,6 +108,12 @@ func set_context(map: MapData, generator, view_adapter: DCViewAdapter, world_clo
 	_building_history.clear()
 	_player_country_resolved = false
 	_player_country_handle_cache = -1
+	_trade_order_generation = -1
+	_trade_order_pages.clear()
+	_trade_order_models.clear()
+	_trade_order_names.clear()
+	_trade_order_good_indices.clear()
+	_trade_order_query_count = 0
 
 
 func observe_temperature(cell: HexCell, day_idx: int = -1) -> void:
@@ -488,7 +505,7 @@ func build_object_detail(cell: HexCell, request: Dictionary) -> Dictionary:
 	var item_id := _object_tax_item_id(kind, row)
 	var country := _country_summary(idx)
 	var off := HexUtils.cube_to_offset(cell.q, cell.r)
-	return {
+	var payload := {
 		"kind": kind,
 		"row_id": String(row.get("id", row_id)),
 		"item_id": item_id,
@@ -501,6 +518,17 @@ func build_object_detail(cell: HexCell, request: Dictionary) -> Dictionary:
 		"tax_context": category.get("tax_context", {}),
 		"row": row,
 	}
+	if kind == "good":
+		# 逐单商路页：只在物资详情打开时按需构建；ViewModel 按 generation 缓存，
+		# 日 tick 与 200ms live patch 只会命中模型缓存。
+		payload["trade_orders"] = trade_orders_model(
+			idx,
+			String(row.get("good_id", "")),
+			int(request.get("orders_offset", 0)),
+			TRADE_ORDER_PAGE_SIZE,
+			int(category.get("economy_generation", -1)),
+			int(category.get("sample_day", _current_sample_day())))
+	return payload
 
 
 ## 家族专用档案册契约。保留 build_object_detail() 作为现有 facade、迷雾门控
@@ -1146,7 +1174,7 @@ static func cohort_dossier_model(row: Dictionary) -> Dictionary:
 			var sval_text := String(sdict.get("value", "0%"))
 			var sval := clampf(_parse_leading_float(sval_text, 0.0) / 100.0, 0.0, 1.0)
 			var is_worst := bool(sdict.get("worst", sname == worst_dim_name))
-			var marker := ref_dims_float[idx] if idx < ref_dims_float.size() else -1.0
+			var marker := ref_dims_float[idx] if idx < ref_dims_float.size() and bool(sdict.get("applicable", true)) else -1.0
 			var color := UITokens.DOSSIER_OXBLOOD if (is_worst or sval < 0.45) \
 				else (UITokens.DOSSIER_BRASS if sval < 0.72 else UITokens.DOSSIER_VERDIGRIS)
 			dimension_bars.append({
@@ -1155,9 +1183,9 @@ static func cohort_dossier_model(row: Dictionary) -> Dictionary:
 				"value": sval,
 				"marker": marker,
 				"text": sval_text,
-				"color": color,
-				"text_color": UITokens.DOSSIER_OXBLOOD if is_worst else UITokens.DOSSIER_INK,
-				"tooltip": "%s满意度 %s%s%s" % [
+				"color": color if bool(sdict.get("applicable", true)) else UITokens.DOSSIER_RULE,
+				"text_color": UITokens.DOSSIER_INK_MUTED if not bool(sdict.get("applicable", true)) else (UITokens.DOSSIER_OXBLOOD if is_worst else UITokens.DOSSIER_INK),
+				"tooltip": String(sdict.get("tooltip", "")) + "\n" + "%s满意度 %s%s%s" % [
 					sname, sval_text,
 					"（当前最短板）" if is_worst else "",
 					("（本地均值 %.0f%%）" % (marker * 100.0)) if marker >= 0.0 else ""],
@@ -3763,18 +3791,19 @@ func _compute_cell_avg_satisfaction_dims(populations: PackedInt64Array,
 	if dimension_count <= 0 or populations.is_empty():
 		return avg
 	avg.resize(dimension_count)
-	var total_pop := 0
+	var dim_pop := PackedInt64Array()
+	dim_pop.resize(dimension_count)
 	for i in range(populations.size()):
 		var pop := maxi(0, int(populations[i]))
 		var begin := i * dimension_count
 		if pop <= 0 or begin < 0 or begin + dimension_count > dims.size():
 			continue
-		total_pop += pop
 		for d in range(dimension_count):
-			avg[d] += (float(dims[begin + d]) / 65536.0) * float(pop)
-	if total_pop > 0:
-		for d in range(dimension_count):
-			avg[d] = clampf(avg[d] / float(total_pop), 0.0, 1.0)
+			if dims[begin + d] >= 0:
+				avg[d] += (float(dims[begin + d]) / 65536.0) * float(pop)
+				dim_pop[d] += pop
+	for d in range(dimension_count):
+		avg[d] = clampf(avg[d] / float(dim_pop[d]), 0.0, 1.0) if dim_pop[d] > 0 else -1.0
 	return avg
 
 
@@ -3788,7 +3817,7 @@ func _cohort_satisfaction_dims_float(dims: PackedInt32Array, dimension_count: in
 		return out
 	out.resize(dimension_count)
 	for d in range(dimension_count):
-		out[d] = clampf(float(dims[begin + d]) / 65536.0, 0.0, 1.0)
+		out[d] = clampf(float(dims[begin + d]) / 65536.0, 0.0, 1.0) if dims[begin + d] >= 0 else -1.0
 	return out
 
 
@@ -3814,6 +3843,17 @@ func _living_standard_accent(level: int) -> Color:
 
 
 ## 与原生 SAT_DIM_* 枚举同序。
+const SATISFACTION_DIMENSION_EXPLANATIONS := [
+	"热量与御寒的生理满足率；不足会限制综合满意度。",
+	"基本生活实际消费相对生活目标的满足率；目标不随本轮预算和物价缩减。",
+	"实际享受到的舒适消费相对生活目标的满足率；存款不直接加分。",
+	"实际享受到的奢侈与身份消费相对生活目标的满足率；存款不直接加分。",
+	"近期收入相对长期收入基线的变化。",
+	"剩余存款可支撑的基础生活月数；六个月达到满分。",
+	"本期净税负相对毛收入的压力，税负越轻分数越高。",
+	"本地聚落等级、国家技术进度和建成产业种类。",
+]
+
 const SATISFACTION_DIMENSION_NAMES := [
 	"温饱", "基本生活", "舒适", "奢侈", "收入增长", "储蓄", "税负", "社会发展",
 ]
@@ -3834,13 +3874,16 @@ func _satisfaction_dimension_rows(dims: PackedInt32Array, dimension_count: int,
 	if begin < 0 or begin + dimension_count > dims.size():
 		return rows
 	for dimension in range(dimension_count):
+		var applicable := dims[begin + dimension] >= 0
 		var value := float(dims[begin + dimension]) / 65536.0
-		var is_worst := dimension == worst_dimension
+		var is_worst := applicable and dimension == worst_dimension
 		rows.append({
 			"id": "satisfaction_dim_%d" % dimension,
 			"name": _satisfaction_dimension_name(dimension),
-			"value": "%.1f%%" % (value * 100.0),
-			"accent": UITokens.RISK if is_worst else _satisfaction_accent(value),
+			"value": "%.1f%%" % (value * 100.0) if applicable else "不适用",
+			"applicable": applicable,
+			"tooltip": String(SATISFACTION_DIMENSION_EXPLANATIONS[dimension]) if applicable else "当前阶层尚无此档已解锁的生活需求；不参与综合满意度。",
+			"accent": UITokens.DOSSIER_INK_MUTED if not applicable else (UITokens.RISK if is_worst else _satisfaction_accent(value)),
 			"worst": is_worst,
 			"visible": true,
 		})
@@ -4116,7 +4159,357 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 		"market_rows": rows,
 		"list_header": {"lead": "商品 · 库存", "indent": 39.0, "columns": [
 			{"text": "价格", "width": 84.0}]},
+		# 物资详情逐单商路用：订单页只会在 committed generation 变化后失效。
+		"economy_generation": int(snapshot.get("economy_generation", -1)),
+		"sample_day": sample_day,
 	}
+
+
+# ─── 物资详情 · 逐单商路 ──────────────────────────────────────────────────
+# 对象详情打开后按需查询；页缓存按 committed generation，行缓存再叠加
+# sample_day 与视野 revision，因此日 tick / 200ms live patch 不会重复查询原生。
+# 对端名称只为 FOG_VISIBLE 的格子读取；不可见对端在本层遮蔽，不查询名称。
+
+func trade_orders_model(cell_idx: int, good_id: String, offset: int = 0,
+		limit: int = TRADE_ORDER_PAGE_SIZE, generation: int = -1,
+		sample_day: int = -1) -> Dictionary:
+	if _map == null or cell_idx < 0:
+		return _trade_orders_failure("此地暂无可读贸易流水。", "trade_orders_map_unavailable")
+	if VisionSolver.fog_state(_map, cell_idx) != VisionSolver.FOG_VISIBLE:
+		return _trade_orders_failure("此地不在当前视野内。", "cell_not_visible")
+	var facade = _economy_facade()
+	if facade == null or not facade.has_method("trade_orders_for_cell"):
+		return _trade_orders_failure("贸易数据暂不可用。", "trade_order_api_unavailable")
+	var good_index := _trade_order_good_index(facade, good_id)
+	if good_index < 0:
+		return _trade_orders_failure("物资不在当前目录中。", "unknown_good")
+	var page_limit := clampi(limit, 1, 64)
+	var page_offset := maxi(0, offset)
+	var resolved_sample_day := sample_day if sample_day >= 0 else _current_sample_day()
+	if generation >= 0 and generation != _trade_order_generation:
+		_trade_order_generation = generation
+		_trade_order_pages.clear()
+		_trade_order_models.clear()
+		_trade_order_names.clear()
+	if generation >= 0:
+		var page_key := _trade_order_page_key(
+			cell_idx, good_index, generation, page_offset, page_limit)
+		var page: Dictionary = _trade_order_pages.get(page_key, {})
+		if page.is_empty():
+			page = _query_trade_order_page(
+				facade, cell_idx, good_index, page_offset, page_limit)
+			if bool(page.get("pending", false)):
+				return _trade_orders_pending_model(
+					page, page_offset, page_limit, resolved_sample_day, generation)
+			if not bool(page.get("ok", false)):
+				return _trade_orders_failure("贸易流水暂不可用。",
+					String(page.get("reason", "trade_order_query_failed")))
+			_trade_order_pages[page_key] = page
+			_trim_dictionary(_trade_order_pages, TRADE_ORDER_PAGE_CACHE_LIMIT)
+			# 总数缩小导致请求 offset 越界时，把原生钳制后的末页别名回请求 key，
+			# 避免之后每次刷新都重新查询一次。
+			var effective := int(page.get("page_begin", page_offset))
+			if effective != page_offset:
+				_trade_order_pages[_trade_order_page_key(
+					cell_idx, good_index, generation, effective, page_limit)] = page
+		var model_key := "%s|%d|%d" % [page_key, resolved_sample_day,
+			int(_map.vision_revision)]
+		var cached_model: Dictionary = _trade_order_models.get(model_key, {})
+		if not cached_model.is_empty():
+			return cached_model
+		var built := _build_trade_orders_model(page, resolved_sample_day, generation)
+		_trade_order_models[model_key] = built
+		_trim_dictionary(_trade_order_models, TRADE_ORDER_MODEL_CACHE_LIMIT)
+		return built
+	# generation 缺失只可能出现在旧桥/异常路径：退化为每次有界查询，不保留页缓存。
+	var uncached_page := _query_trade_order_page(
+		facade, cell_idx, good_index, page_offset, page_limit)
+	if bool(uncached_page.get("pending", false)):
+		return _trade_orders_pending_model(
+			uncached_page, page_offset, page_limit, resolved_sample_day, generation)
+	if not bool(uncached_page.get("ok", false)):
+		return _trade_orders_failure("贸易流水暂不可用。",
+			String(uncached_page.get("reason", "trade_order_query_failed")))
+	return _build_trade_orders_model(
+		uncached_page, resolved_sample_day, generation)
+
+
+func _trade_order_page_key(cell_idx: int, good_index: int, generation: int,
+		offset: int, limit: int) -> String:
+	return "%d|%d|%d|%d|%d" % [cell_idx, good_index, generation, offset, limit]
+
+
+func _query_trade_order_page(facade, cell_idx: int, good_index: int,
+		offset: int, limit: int) -> Dictionary:
+	var page: Dictionary = facade.trade_orders_for_cell(
+		cell_idx, offset, limit, good_index)
+	_trade_order_query_count += 1
+	if _snapshot_pending(page) or String(page.get("reason", "")) == "economy_read_view_pending":
+		page["pending"] = true
+	return page
+
+
+func _trade_order_good_index(facade, good_id: String) -> int:
+	var stable_id := good_id.strip_edges()
+	if stable_id.is_empty():
+		return -1
+	if _trade_order_good_indices.is_empty():
+		var ids: PackedStringArray = facade.good_ids() \
+			if facade.has_method("good_ids") else PackedStringArray()
+		for index in range(ids.size()):
+			_trade_order_good_indices[String(ids[index])] = index
+	return int(_trade_order_good_indices.get(stable_id, -1))
+
+
+func _economy_facade():
+	if _generator == null or not _generator.has_method("get_economy_facade"):
+		return null
+	return _generator.get_economy_facade()
+
+
+func _trade_orders_failure(text: String, reason: String) -> Dictionary:
+	return {"ok": false, "pending": false, "reason": reason,
+		"rows": [], "rows_by_id": {}, "total": 0, "offset": 0,
+		"limit": TRADE_ORDER_PAGE_SIZE, "has_more": false,
+		"page_label": "", "hint": text, "empty_text": text,
+		"signature": "", "sample_day": -1, "economy_generation": -1}
+
+
+func _trade_orders_pending_model(page: Dictionary, offset: int, limit: int,
+		sample_day: int, generation: int) -> Dictionary:
+	return {"ok": false, "pending": true,
+		"reason": String(page.get("reason", "economy_read_view_pending")),
+		"rows": [], "rows_by_id": {}, "total": 0, "offset": offset,
+		"limit": limit, "has_more": false, "page_label": "",
+		"hint": "经济结算中，沿用上次结果。",
+		"empty_text": "经济结算中，暂无可读订单。",
+		"signature": "", "sample_day": sample_day,
+		"economy_generation": generation}
+
+
+static func _trim_dictionary(cache: Dictionary, limit: int) -> void:
+	while cache.size() > limit:
+		cache.erase(cache.keys()[0])
+
+
+func _build_trade_orders_model(page: Dictionary,
+		sample_day: int, generation: int) -> Dictionary:
+	# 倒计时按 UI 当前世界日计算：订单页的 native sample_day 是上一次 committed
+	# 边界，若拿它当“今天”，快进期间剩余天数会一直卡住。generation 只用于缓存。
+	var day := sample_day
+	if day < 0:
+		day = _current_sample_day()
+	var order_ids: PackedInt64Array = page.get("order_ids", PackedInt64Array())
+	var directions: PackedInt32Array = page.get("directions", PackedInt32Array())
+	var sources: PackedInt32Array = page.get("source_cells", PackedInt32Array())
+	var destinations: PackedInt32Array = page.get(
+		"destination_cells", PackedInt32Array())
+	var departure_days: PackedInt64Array = page.get(
+		"departure_days", PackedInt64Array())
+	var arrival_days: PackedInt64Array = page.get(
+		"arrival_days", PackedInt64Array())
+	var cash_escrows: PackedInt64Array = page.get(
+		"cash_escrow", PackedInt64Array())
+	var capacity_works: PackedInt64Array = page.get(
+		"capacity_work", PackedInt64Array())
+	var cargo_delivered: PackedByteArray = page.get(
+		"cargo_delivered", PackedByteArray())
+	var order_flags: PackedByteArray = page.get("order_flags", PackedByteArray())
+	var line_offsets: PackedInt32Array = page.get("line_offsets", PackedInt32Array())
+	var line_quantities: PackedInt64Array = page.get(
+		"line_quantities", PackedInt64Array())
+	var line_unit_prices: PackedInt32Array = page.get(
+		"line_unit_prices", PackedInt32Array())
+	var line_destination_prices: PackedInt32Array = page.get(
+		"line_destination_prices", PackedInt32Array())
+	var line_base_values: PackedInt64Array = page.get(
+		"line_base_values", PackedInt64Array())
+	var rows: Array = []
+	var rows_by_id: Dictionary = {}
+	var page_units := 0
+	var waiting_receivers := 0
+	var first_arrival := -1
+	for i in range(order_ids.size()):
+		var order_id := int(order_ids[i])
+		var direction := int(directions[i]) if i < directions.size() else 0
+		var source_cell := int(sources[i]) if i < sources.size() else -1
+		var destination_cell := int(destinations[i]) if i < destinations.size() else -1
+		var counterpart := source_cell if direction > 0 else destination_cell
+		var departure := int(departure_days[i]) if i < departure_days.size() else day
+		var arrival := int(arrival_days[i]) if i < arrival_days.size() else day
+		var line_begin := int(line_offsets[i]) if i < line_offsets.size() else 0
+		var line_end := int(line_offsets[i + 1]) if i + 1 < line_offsets.size() \
+			else line_begin
+		var quantity := 0
+		var base_value := 0
+		var source_price := 0
+		var destination_price := 0
+		for line in range(line_begin, line_end):
+			quantity += int(line_quantities[line]) if line < line_quantities.size() else 0
+			base_value += int(line_base_values[line]) if line < line_base_values.size() else 0
+			if line < line_unit_prices.size() and source_price <= 0:
+				source_price = int(line_unit_prices[line])
+			if line < line_destination_prices.size() and destination_price <= 0:
+				destination_price = int(line_destination_prices[line])
+		var delivered := int(cargo_delivered[i]) if i < cargo_delivered.size() else 0
+		var flags := int(order_flags[i]) if i < order_flags.size() else 0
+		var counterpart_visible: bool = counterpart >= 0 and VisionSolver.fog_state(
+			_map, counterpart) == VisionSolver.FOG_VISIBLE
+		var counterpart_name := "视野外"
+		var counterpart_sub := ""
+		if counterpart_visible:
+			counterpart_name = _trade_counterpart_name(counterpart)
+			var coord := _trade_counterpart_coord(counterpart)
+			if counterpart_name.is_empty():
+				counterpart_name = coord
+			elif not coord.is_empty():
+				counterpart_sub = coord
+			if (flags & 1) != 0:
+				counterpart_sub = "跨国" if counterpart_sub.is_empty() \
+					else "跨国 · %s" % counterpart_sub
+		var remaining := maxi(0, arrival - day)
+		var span := maxi(1, arrival - departure)
+		var progress := clampf(float(day - departure) / float(span), 0.0, 1.0)
+		var route_text := "今日到达" if remaining <= 0 else "剩 %d 日" % remaining
+		var status_text := "待收款" if delivered != 0 else "在途"
+		if delivered != 0:
+			waiting_receivers += 1
+		var price_text := "—"
+		if counterpart_visible and source_price > 0 and destination_price > 0:
+			price_text = "%s → %s" % [
+				_money_text(source_price), _money_text(destination_price)]
+		page_units += quantity
+		if first_arrival < 0 or arrival < first_arrival:
+			first_arrival = arrival
+		var escrow := int(cash_escrows[i]) if i < cash_escrows.size() else 0
+		var capacity := int(capacity_works[i]) if i < capacity_works.size() else 0
+		var row_id := "trade_order_%d" % order_id
+		var row := {
+			"id": row_id,
+			"tooltip": _trade_order_tooltip(order_id, direction, counterpart_name,
+				counterpart_visible, quantity, source_price, destination_price,
+				base_value, escrow, capacity, departure, arrival, remaining,
+				delivered, flags),
+			"muted": delivered != 0,
+			"locate_cell": counterpart if counterpart_visible else -1,
+			"cells": {
+				"dir": {"text": "运入" if direction > 0 else "运出",
+					"color": UITokens.DOSSIER_VERDIGRIS if direction > 0
+						else UITokens.DOSSIER_OXBLOOD},
+				"counterpart": {"text": counterpart_name,
+					"sub": counterpart_sub},
+				"quantity": {"text": _goods_unit_text(quantity),
+					"value": float(quantity) / 1000.0, "sort": quantity},
+				"price": {"text": price_text,
+					"sort": destination_price if counterpart_visible else 0},
+				"route": {"text": route_text, "value": progress,
+					"sort": remaining,
+					"bar_color": UITokens.DOSSIER_BRASS if remaining > 0
+						else UITokens.DOSSIER_VERDIGRIS},
+				"status": {"text": status_text,
+					"color": UITokens.DOSSIER_INK_MUTED if delivered != 0
+						else UITokens.DOSSIER_BRASS},
+			},
+		}
+		rows.append(row)
+		rows_by_id[row_id] = row
+	var total := int(page.get("total", rows.size()))
+	var page_begin := int(page.get("page_begin", 0))
+	var page_label := ""
+	if total > rows.size() or page_begin > 0:
+		page_label = "%d-%d / %d" % [
+			page_begin + 1, page_begin + rows.size(), total]
+	var page_text := "%d 笔 · %s 单位" % [rows.size(),
+		UITokens.format_compact_number_cn(float(page_units) / 1000.0, 2)]
+	if waiting_receivers > 0:
+		page_text += " · 待收款 %d 笔" % waiting_receivers
+	if first_arrival >= 0 and not rows.is_empty():
+		page_text += " · 最近到达 第 %d 天" % (first_arrival + 1)
+	var ids := PackedStringArray()
+	for value in order_ids:
+		ids.append(str(int(value)))
+	return {
+		"ok": true,
+		"pending": false,
+		"reason": "",
+		"rows": rows,
+		"rows_by_id": rows_by_id,
+		"total": total,
+		"offset": page_begin,
+		"limit": int(page.get("limit", rows.size())),
+		"has_more": bool(page.get("has_more", false)),
+		"page_label": page_label,
+		"hint": page_text,
+		"empty_text": "本地目前没有该物资的在途商队。",
+		"signature": "%d|%d|%d|%d|%d|%s" % [generation, day, page_begin,
+			total, int(_map.vision_revision), ",".join(ids)],
+		"sample_day": day,
+		"economy_generation": generation,
+	}
+
+
+func _trade_counterpart_name(cell_idx: int) -> String:
+	if _trade_order_names.has(cell_idx):
+		return String(_trade_order_names[cell_idx])
+	var summary := _population_summary(cell_idx)
+	if not bool(summary.get("ok", false)):
+		return ""
+	var name := String(summary.get("settlement_name", "")).strip_edges()
+	if _trade_order_names.size() > TRADE_ORDER_NAME_CACHE_LIMIT:
+		_trade_order_names.clear()
+	_trade_order_names[cell_idx] = name
+	return name
+
+
+func _trade_counterpart_coord(cell_idx: int) -> String:
+	var cell: HexCell = _map.cell_at(cell_idx) if _map != null else null
+	if cell == null:
+		return "地块 %d" % (cell_idx + 1)
+	var off := HexUtils.cube_to_offset(cell.q, cell.r)
+	return "区域 %d, %d" % [off.x + 1, off.y + 1]
+
+
+func _trade_order_tooltip(order_id: int, direction: int, counterpart_name: String,
+		counterpart_visible: bool, quantity: int, source_price: int,
+		destination_price: int, base_value: int, escrow: int, capacity: int,
+		departure: int, arrival: int, remaining: int, delivered: int,
+		flags: int) -> String:
+	var lines := PackedStringArray()
+	lines.append("订单 #%d · %s" % [order_id,
+		"运入" if direction > 0 else "运出"])
+	if counterpart_visible:
+		lines.append("对端：%s" % counterpart_name)
+	else:
+		lines.append("对端：视野外（仅显示本地订单事实）")
+	lines.append("货物：%s · 货值 %s" % [
+		_goods_unit_text(quantity), _money_text(base_value)])
+	if counterpart_visible and source_price > 0 and destination_price > 0:
+		lines.append("单价：%s → %s" % [
+			_money_text(source_price), _money_text(destination_price)])
+	lines.append("出发 第 %d 天 → 到达 第 %d 天（%s）" % [
+		departure + 1, arrival + 1,
+		"今日到达" if remaining <= 0 else "剩余 %d 日" % remaining])
+	lines.append("托管现金 %s · 运力 %s" % [
+		_money_text(escrow),
+		UITokens.format_compact_number_cn(float(capacity), 1)])
+	if delivered != 0:
+		lines.append("货物已交付，卖方现金待收款。")
+	var notes := PackedStringArray()
+	if (flags & 1) != 0:
+		notes.append("跨国贸易")
+	if (flags & 2) != 0:
+		notes.append("救济运输")
+	if (flags & 4) != 0:
+		notes.append("进口补贴")
+	if (flags & 8) != 0:
+		notes.append("出口补贴")
+	if (flags & 16) != 0:
+		notes.append("进口税")
+	if (flags & 32) != 0:
+		notes.append("出口税")
+	if not notes.is_empty():
+		lines.append(" · ".join(notes))
+	return "\n".join(lines)
 
 
 func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:

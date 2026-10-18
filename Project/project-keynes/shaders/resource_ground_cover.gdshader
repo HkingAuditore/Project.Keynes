@@ -64,7 +64,13 @@ uniform float cover_gain = 1.22;
 uniform vec3 cover_grade = vec3(1.05, 1.0, 0.72);
 // Calibrates this SH + Lambert + fake-GI model to the terrain BRDF at noon (QA: mean HSV
 // value of covered pixels within 0.02 of the bare terrain).
-uniform float light_gain = 1.62;
+// [ground-cover-contrast 2026-10-18] 1.62 → 1.32。这一档配合下面的天光/直射分增益：受光面
+// 亮度基本持平，被遮处只剩天光，因此谷地与山影真正压下去，而不是整体一起变灰。
+uniform float light_gain = 1.32;
+// 天光 / 直射的分离增益。地形的 BRDF 同样把天光压到 0.6 一档；地被之前给天光全额、
+// 直射 0.78，结果几乎没有方向感。
+const float GROUND_COVER_SKY_GAIN = 0.62;
+const float GROUND_COVER_SUN_GAIN = 1.00;
 // 0 = full sky colour in the ambient (bluish), 1 = neutral grey ambient.
 uniform float light_neutralize = 0.55;
 uniform float trace_layer_base = 13.0;
@@ -80,6 +86,7 @@ uniform bool has_flow_tex = false;
 uniform float sea_level = 0.42;
 uniform float river_clear_threshold = 0.54;
 uniform bool terrain_normal_tex_bound = false;
+uniform float terrain_normal_influence = 0.65;
 uniform bool terrain_horizon_tex_bound = false;
 uniform float terrain_horizon_max_angle = 1.309;
 uniform float terrain_horizon_softness = 0.30;
@@ -306,7 +313,7 @@ void fragment() {
 		vec3 sun_c = ed.sun_col;
 		float day = ed.local_day;
 		float moon = ed.moon_strength;
-		vec2 terrain_xy = terrain_normal_tex_bound ? (visual_sample_terrain_normal(map_uv).rg * 2.0 - 1.0) * 0.65 : vec2(0.0);
+		vec2 terrain_xy = terrain_normal_tex_bound ? (visual_sample_terrain_normal(map_uv).rg * 2.0 - 1.0) * terrain_normal_influence : vec2(0.0);
 		vec3 n = normalize(vec3(terrain_xy, 1.0));
 		float ao = 1.0;
 		float self_shadow = 0.0;
@@ -331,21 +338,27 @@ void fragment() {
 		// Fake GI: deep foliage sees less sky (height AO), terrain sky visibility and bent
 		// normal from the shared horizon bake, exactly like the vegetation impostors.
 		// Mean-preserving: tops brighten as much as the deep foliage darkens.
-		float depth_ao = mix(0.80, 1.12, pow(clamp(hgt, 0.0, 1.0), 0.6));
+		float depth_ao = mix(0.78, 1.08, pow(clamp(hgt, 0.0, 1.0), 0.6));
 		vec3 amb_n = n;
 		float sky_vis = 1.0;
 		if (horizon.has_data) {
 			vec3 mixed_n = mix(n, horizon.bent_normal, gi_bent_strength);
 			amb_n = dot(mixed_n, mixed_n) > 1e-6 ? normalize(mixed_n) : n;
 			sky_vis = terrain_horizon_apply_normal(horizon.sky_visibility, n, horizon.bent_normal);
-			sky_vis = mix(1.0, sky_vis, (gi_lut_bound ? gi_ao_strength : 0.6) * 0.6);
+			// [ground-cover-contrast 2026-10-18] 全强度吃地形 AO：谷底草甸原先只拿到六成
+			// 天空遮蔽，与脚下地形比永远"浮"一层。
+			sky_vis = mix(1.0, sky_vis, gi_lut_bound ? gi_ao_strength : 0.6);
 		}
 		vec3 sky = earth_sky_sh(amb_c, sun_c, sun, day, amb_n);
 		sky = mix(sky, vec3(dot(sky, vec3(0.333))), light_neutralize * day) * ao * depth_ao * sky_vis;
 		float direct = day * horizon.direct_visibility;
 		// Leaf tips glow a little when backlit/side-lit (thin-leaf transmission).
 		float transmit = day * pow(clamp(hgt, 0.0, 1.0), 2.0) * (1.0 - sun.z * 0.6) * 0.22;
-		vec3 light = (sky + sun_c * direct * max(dot(n, sun), 0.0) * 0.78
+		// [ground-cover-contrast 2026-10-18] 天光与直射分开增益：天光 0.62、直射 1.00。
+		// 原先直射只占 0.78 而天光是全额，于是整片地被几乎无方向感、山体阴影里也不变暗。
+		// 现在受光面亮度基本不变（总增益下调补回），被遮处只剩天光 → 谷地/山影明显压暗。
+		vec3 light = (sky * GROUND_COVER_SKY_GAIN
+			+ sun_c * direct * max(dot(n, sun), 0.0) * GROUND_COVER_SUN_GAIN
 			+ sun_c * transmit * horizon.direct_visibility
 			+ EARTH_MOONLIGHT * moon * max(n.z, 0.0) * 0.30) * tod_exposure * light_gain;
 		// Shadowed valleys of the terrain dim the meadow like the rest of the ground.
