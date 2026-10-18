@@ -1141,6 +1141,45 @@ Dictionary TriggerRuntime::ack_effects(int64_t up_to_effect_id) {
     return out;
 }
 
+Dictionary TriggerRuntime::ack_effect_ids(const PackedInt64Array &effect_ids) {
+    std::unordered_set<int64_t> delivered;
+    for (int64_t i = 0; i < effect_ids.size(); ++i) delivered.insert(effect_ids[i]);
+    _effects.erase(std::remove_if(_effects.begin(), _effects.end(),
+        [&delivered](const Effect &effect) { return delivered.count(effect.id) != 0; }),
+        _effects.end());
+    // IDs are allocated in ingress order, not canonical delivery order. Only
+    // the gap-free numeric prefix may advance the legacy high-water cursor.
+    int64_t frontier = _next_effect_id - 1;
+    for (const Effect &effect : _effects) frontier = std::min(frontier, effect.id - 1);
+    _acked_effect_id = std::max(_acked_effect_id, frontier);
+    Dictionary out;
+    out["ok"] = true;
+    out["acked_effect_id"] = _acked_effect_id;
+    out["pending_effects"] = static_cast<int64_t>(_effects.size());
+    return out;
+}
+
+Dictionary TriggerRuntime::replay_completed_research_signal(int32_t trigger_id,
+        uint64_t target, int32_t cell, int64_t day) {
+    RuntimeTriggerPodCatalog catalog;
+    RuntimeTriggerSnapshot snapshot;
+    std::string error;
+    bool enqueued = false;
+    if (!export_pod_catalog(catalog, error) || !export_pod_snapshot(snapshot, error) ||
+        !RuntimeTriggerKernel::replay_completed_research_signal(
+            catalog, snapshot, trigger_id, target, cell, day, error, &enqueued))
+        return failure(error.empty() ? "trigger_research_replay_failed" : error.c_str());
+    if (!adopt_pod_state(snapshot, _current_day, error))
+        return failure(error.empty() ? "trigger_research_replay_apply_failed" : error.c_str());
+    Dictionary out;
+    out["ok"] = true;
+    out["enqueued"] = enqueued;
+    out["trigger_id"] = trigger_id;
+    out["target_handle"] = static_cast<int64_t>(target);
+    out["pending_effects"] = static_cast<int64_t>(_effects.size());
+    return out;
+}
+
 Dictionary TriggerRuntime::handoff_effects(EffectRuntime *effect_runtime,
                                            NativeIdeologyRuntime *ideology_runtime,
                                            NativeSimulationHost *ideology_pod_host,
@@ -1149,6 +1188,7 @@ Dictionary TriggerRuntime::handoff_effects(EffectRuntime *effect_runtime,
     const int32_t max_count = std::max(1, std::min(limit, 4096));
     int32_t handed_off = 0;
     int64_t last_effect_id = _acked_effect_id;
+    PackedInt64Array handed_off_ids;
     std::string blocked_reason;
     std::string blocked_command_key;
     std::string blocked_definition_key;
@@ -1214,6 +1254,7 @@ Dictionary TriggerRuntime::handoff_effects(EffectRuntime *effect_runtime,
                 }
             }
             last_effect_id = effect.id;
+            handed_off_ids.push_back(effect.id);
             ++handed_off;
             continue;
         }
@@ -1231,6 +1272,7 @@ Dictionary TriggerRuntime::handoff_effects(EffectRuntime *effect_runtime,
             effect.action == CUSTOM_DOMAIN_COMMAND ||
             effect.action == IDEOLOGY_COMMAND) {
             last_effect_id = effect.id;
+            handed_off_ids.push_back(effect.id);
             ++handed_off;
             continue;
         }
@@ -1277,14 +1319,17 @@ Dictionary TriggerRuntime::handoff_effects(EffectRuntime *effect_runtime,
             break;
         }
         last_effect_id = effect.id;
+        handed_off_ids.push_back(effect.id);
         ++handed_off;
     }
-    if (handed_off > 0) ack_effects(last_effect_id);
+    if (handed_off > 0) ack_effect_ids(handed_off_ids);
     Dictionary out;
     out["ok"] = blocked_reason.empty();
     out["native_supported"] = true;
     out["handed_off"] = handed_off;
     out["last_effect_id"] = last_effect_id;
+    out["effect_ids"] = handed_off_ids;
+    out["acked_effect_id"] = _acked_effect_id;
     out["blocked"] = !blocked_reason.empty();
     if (!blocked_reason.empty()) {
         out["reason"] = String(blocked_reason.c_str());

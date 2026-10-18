@@ -25,13 +25,19 @@
 
 ## 已达成条件的科研证据交付与未知节点详情（2026-10-18）
 
-完整 `0xFFF` ACTIVE 路径跳过旧的 `advance_runtime_pulse()`，但 Trigger 的效果交付游标仍在
-主线程。`WorldRuntimeHost` 因此在既有 Trigger transport pump 中，每次最多交付 64 条连续的
+完整 `0xFFF` ACTIVE 路径跳过旧的 `advance_runtime_pulse()`，但 Trigger 的效果交付仍由
+主线程负责。`WorldRuntimeHost` 因此在既有 Trigger transport pump 中，每次最多交付 64 条连续的
 科研信号命令或通知，复用 Trigger → Effect → Country 命令与真实 Country receipt。交付在暂停时
 不主动启动；在途命令继续收取 receipt。Effect worker 快照暂缓覆盖正在交付的 facade 事务，
-直到 Country receipt 完成且 Trigger 游标确认成功入队；确认队列背压时重试，不能把 admission
-失败当作已完成。Trigger admission 为 ACK_EFFECTS 保留一个位置，同日、同 observed generation
-的确认只保留最大游标；普通事件仍按既有背压协议重试，不丢弃已接收事件。
+直到 Country receipt 完成且 Trigger 确认成功入队；确认队列背压时重试，不能把 admission
+失败当作已完成。效果 ID 在 ingress 分配、交付顺序是业务规范序，因此交付确认按
+`handoff_trigger_effects()` 返回的 `effect_ids` 逐 ID 发送 `ACK_EFFECT_IDS`（仅旧 DLL 回退
+`last_effect_id` 游标）；Trigger admission 为确认命令保留一个位置，同日、同 observed
+generation 的 `ACK_EFFECT_IDS` 合并去重，普通事件仍按既有背压协议重试，不丢弃已接收事件。
+历史丢失证据可用 `replay_completed_research_signal(trigger_id, target, cell, day)` 补发：
+只接受 `ONE_SHOT` + `development_metric_id >= 0` + 单条 opcode14/domain1/constant4 的成就，
+事件日回填 `day-1`、`payload_i0 = (signal_index << 32) | cell`，重复调用由 Country 的
+`(signal, cell)` 观测去重保证幂等。
 
 科研交付不得与 Economy worker 写共享 Effect 事务 arena 并发。`handoff_trigger_effects()`
 非阻塞获取既有 Economy boundary；忙时复用 `service_economy_boundary_inbox()` 在下一次输入
@@ -46,8 +52,12 @@ capture 的持锁区执行，并把结果交回同一调用入口。等待期间
 未知前置不泄露名称，未知路线不显示含目标名称的作者说明。时代节点同时展示候选完成数和
 上一时代门槛。`pending` 不算已掌握，只有状态 5 能在详情中满足 TECH_COMPLETED。
 
-回归入口：`technology_signal_delivery_test.gd`、`technology_workspace_smoke_test.gd`，以及
+回归入口：`technology_signal_delivery_test.gd`（按 ID 确认 + 旧 DLL 游标回退）、
+`trigger_effect_id_ack_test.gd`（乱序部分交付 / PKTR 往返）、
+`trigger_research_replay_test.gd`（补发语义与 pending 去重）、
+`technology_workspace_smoke_test.gd`，以及
 `runtime_trigger_pod_test.gd` / `runtime_trigger_save_roundtrip_test.gd` 中的满队列确认与存取回归。
+manual_2 历史补发证据：`trigger_replay_manual2_audit.gd` → `tmp/trigger_replay_manual2_*.json`。
 
 ## 首座科研机构的建材启动（2026-09-20）
 

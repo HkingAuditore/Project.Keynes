@@ -354,6 +354,66 @@ void emit_effects(const RuntimeTriggerPodCatalog &catalog,
 
 } // namespace
 
+bool RuntimeTriggerKernel::replay_completed_research_signal(
+        const RuntimeTriggerPodCatalog &catalog, RuntimeTriggerSnapshot &state,
+        int32_t trigger_id, uint64_t target, int32_t cell, int64_t day,
+        std::string &error, bool *enqueued) {
+    error.clear();
+    if (enqueued != nullptr) *enqueued = false;
+    if (trigger_id < 0 || trigger_id >= static_cast<int32_t>(catalog.definitions.size()) ||
+        target == 0 || cell < 0 || day < 1) {
+        error = "trigger_research_replay_invalid";
+        return false;
+    }
+    const auto &definition = catalog.definitions[trigger_id];
+    if (definition.development_metric_id < 0 ||
+        definition.mode != static_cast<int32_t>(RuntimeTriggerMode::ONE_SHOT) ||
+        definition.effect_count != 1 || definition.effect_begin >= catalog.effects.size()) {
+        error = "trigger_research_replay_not_achievement";
+        return false;
+    }
+    const auto &effect = catalog.effects[definition.effect_begin];
+    if (effect.action != static_cast<int32_t>(RuntimeTriggerAction::COUNTRY_COMMAND) ||
+        effect.opcode != 14 || effect.domain != 1 ||
+        effect.value_mode != static_cast<int32_t>(RuntimeTriggerValueMode::CONSTANT) ||
+        effect.value != 4) {
+        error = "trigger_research_replay_not_signal";
+        return false;
+    }
+    auto completed = std::find_if(state.states.begin(), state.states.end(),
+        [trigger_id, target](const RuntimeTriggerPodSnapshotState &entry) {
+            return entry.trigger_id == trigger_id && entry.target_handle == target &&
+                entry.target_generation == static_cast<uint32_t>(target >> 32u) &&
+                entry.completed != 0;
+        });
+    if (completed == state.states.end()) return true;
+    for (const auto &pending : state.pending_effects)
+        if (pending.trigger_id == trigger_id && pending.target_handle == target &&
+            pending.action == effect.action && pending.opcode == effect.opcode) return true;
+    if (state.pending_effects.size() >= RUNTIME_TRIGGER_MAX_PENDING_EFFECTS) {
+        error = "trigger_effect_capacity_exhausted";
+        return false;
+    }
+    RuntimeTriggerEvent event;
+    // Recovery is recorded at this boundary, never backdated as a new sample.
+    event.day = day - 1;
+    event.entity_handle = target;
+    event.group_handle = static_cast<uint64_t>(cell);
+    std::vector<RuntimeTriggerEffectIntent> emitted;
+    emit_effects(catalog, state, trigger_id, *completed, event, 1, 0, 0, emitted, error);
+    if (!error.empty()) return false;
+    state.pending_effects.insert(state.pending_effects.end(), emitted.begin(), emitted.end());
+    if (enqueued != nullptr) *enqueued = !emitted.empty();
+    std::stable_sort(state.pending_effects.begin(), state.pending_effects.end(),
+        [](const RuntimeTriggerEffectIntent &a, const RuntimeTriggerEffectIntent &b) {
+            return std::tie(a.effective_day, a.source_priority, a.trigger_id,
+                           a.target_handle, a.fire_sequence, a.id) <
+                   std::tie(b.effective_day, b.source_priority, b.trigger_id,
+                           b.target_handle, b.fire_sequence, b.id);
+        });
+    return true;
+}
+
 bool RuntimeTriggerKernel::evaluate_day(const RuntimeTriggerPodCatalog &catalog,
                                         RuntimeTriggerSnapshot &state,
                                         int64_t day,

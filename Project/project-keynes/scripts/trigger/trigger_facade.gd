@@ -114,23 +114,31 @@ func ingest_committed_events(day_index: int, max_events: int = 512) -> Dictionar
 func dispatch_effects(max_effects: int = 512) -> Dictionary:
 	if not _configured: return {"ok": false, "reason": "trigger_runtime_not_configured"}
 	# Native Modifier effects are handed to EffectRuntime first. TriggerRuntime
-	# remains the cursor owner; the native call ACKs only the contiguous prefix.
+	# remains the state owner; the handoff already ACKs exactly the ids it
+	# delivered, so nothing below may replay that numeric cursor.
 	if _world_ext.has_method("handoff_trigger_effects"):
 		var native_handoff: Dictionary = _world_ext.handoff_trigger_effects(max_effects)
 		if bool(native_handoff.get("native_supported", false)):
 			var native_last := int(native_handoff.get("last_effect_id", _last_effect_id))
 			_last_effect_id = maxi(_last_effect_id, native_last)
-	var batch: Dictionary = _world_ext.poll_trigger_effects(_last_effect_id, max_effects)
+	# Ids are ingress-allocated but delivery is canonical, so the numeric cursor
+	# is not a valid poll offset: poll every still-pending effect instead.
+	var batch: Dictionary = _world_ext.poll_trigger_effects(0, max_effects)
 	var ids: PackedInt64Array = batch.get("effect_ids", PackedInt64Array())
 	if ids.is_empty(): return {"ok": true, "dispatched": 0, "pending": int(batch.get("count", 0))}
 	var dispatched := 0
+	var dispatched_ids := PackedInt64Array()
 	for i in ids.size():
 		var effect := _effect_at(batch, i)
 		if not _dispatch_one(effect): break
 		dispatched += 1
-		_last_effect_id = int(ids[i])
+		dispatched_ids.append(int(ids[i]))
+		_last_effect_id = maxi(_last_effect_id, int(ids[i]))
 	if dispatched > 0:
-		_world_ext.ack_trigger_effects(_last_effect_id)
+		if _world_ext.has_method("ack_trigger_effect_ids"):
+			_world_ext.ack_trigger_effect_ids(dispatched_ids)
+		else:
+			_world_ext.ack_trigger_effects(_last_effect_id)
 	var out := {"ok": dispatched == ids.size(), "dispatched": dispatched, "pending": ids.size() - dispatched}
 	effects_available.emit(batch)
 	return out

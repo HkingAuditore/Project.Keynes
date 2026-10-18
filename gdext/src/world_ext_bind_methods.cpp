@@ -510,6 +510,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::poll_trigger_effects, DEFVAL(128));
     ClassDB::bind_method(D_METHOD("ack_trigger_effects", "up_to_effect_id"),
                          &DCWorldExt::ack_trigger_effects);
+    ClassDB::bind_method(D_METHOD("ack_trigger_effect_ids", "effect_ids"),
+                         &DCWorldExt::ack_trigger_effect_ids);
     ClassDB::bind_method(D_METHOD("handoff_trigger_effects", "limit"),
                          &DCWorldExt::handoff_trigger_effects, DEFVAL(128));
     ClassDB::bind_method(D_METHOD("set_trigger_enabled", "batch"),
@@ -530,6 +532,9 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::restore_trigger_state);
     ClassDB::bind_method(D_METHOD("clear_trigger_state"),
                          &DCWorldExt::clear_trigger_state);
+    ClassDB::bind_method(D_METHOD("replay_completed_research_signal",
+                         "trigger_id", "target", "cell", "day"),
+                         &DCWorldExt::replay_completed_research_signal);
     ClassDB::bind_method(D_METHOD("configure_effects", "catalog"),
                          &DCWorldExt::configure_effects);
     ClassDB::bind_method(D_METHOD("submit_effect_instances", "batch"),

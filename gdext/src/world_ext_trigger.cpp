@@ -49,6 +49,29 @@ bool publish_trigger_command(DCWorldExt *world,
     return true;
 }
 
+// Delivery ACK transport. Effect ids are allocated at ingress, so a batch ACK
+// must ship the exact id set the facade handed off — never a numeric cursor.
+// The resync payload is reused as a dense id vector and is capacity-bounded, so
+// large batches are split into several commands.
+bool publish_trigger_ack_ids(DCWorldExt *world, const PackedInt64Array &effect_ids,
+                             Dictionary &result) {
+    if (world == nullptr || world->trigger_pod_host() == nullptr) return true;
+    for (int64_t offset = 0; offset < effect_ids.size();
+         offset += static_cast<int64_t>(RUNTIME_TRIGGER_RESYNC_CAPACITY)) {
+        RuntimeTriggerCommand command;
+        command.opcode = RuntimeTriggerCommandOpcode::ACK_EFFECT_IDS;
+        command.effective_day = 0;
+        command.requested_day = 0;
+        const int64_t end = std::min<int64_t>(effect_ids.size(),
+            offset + static_cast<int64_t>(RUNTIME_TRIGGER_RESYNC_CAPACITY));
+        command.resync_count = static_cast<uint32_t>(end - offset);
+        for (uint32_t i = 0; i < command.resync_count; ++i)
+            command.resync_values[i] = effect_ids[offset + static_cast<int64_t>(i)];
+        if (!publish_trigger_command(world, command, result)) return false;
+    }
+    return true;
+}
+
 void publish_trigger_event_batch(DCWorldExt *world, const Dictionary &batch,
                                  bool snapshot, Dictionary &result) {
     if (world == nullptr || world->trigger_pod_host() == nullptr) return;
@@ -334,6 +357,16 @@ Dictionary DCWorldExt::ack_trigger_effects(int64_t up_to_effect_id) {
     return out;
 }
 
+Dictionary DCWorldExt::ack_trigger_effect_ids(const PackedInt64Array &effect_ids) {
+    if (_trigger_runtime == nullptr) return unavailable();
+    Dictionary out = runtime_from(_trigger_runtime)->ack_effect_ids(effect_ids);
+    if (static_cast<bool>(out.get("ok", false))) {
+        out["acked"] = static_cast<int64_t>(effect_ids.size());
+        publish_trigger_ack_ids(this, effect_ids, out);
+    }
+    return out;
+}
+
 Dictionary DCWorldExt::handoff_trigger_effects(int limit) {
     if (_trigger_runtime == nullptr || _effect_runtime == nullptr)
         return unavailable();
@@ -376,18 +409,15 @@ Dictionary DCWorldExt::handoff_trigger_effects_unlocked(int limit) {
         static_cast<EffectRuntime *>(_effect_runtime),
         static_cast<NativeIdeologyRuntime *>(_ideology_runtime),
         _runtime_host.get(), limit);
-    // H8: handoff_effects ACKs the facade cursor internally but does not talk to
-    // the worker. Under authority the worker holds the same pending effects, so
-    // without this the worker's queue would never drain.
+    // H8: handoff_effects ACKs the facade by explicit effect id but does not
+    // talk to the worker. Under authority the worker holds the same pending
+    // effects, so without this the worker's queue would never drain. The id set
+    // (not a numeric cursor) is forwarded because delivery order is canonical
+    // while ids are ingress-allocated.
     const int64_t handed_off = static_cast<int64_t>(out.get("handed_off", 0));
     if (handed_off > 0 && trigger_worker_authoritative()) {
-        RuntimeTriggerCommand command;
-        command.opcode = RuntimeTriggerCommandOpcode::ACK_EFFECTS;
-        command.effective_day = 0;
-        command.requested_day = 0;
-        command.ack_up_to_effect_id =
-            static_cast<int64_t>(out.get("last_effect_id", 0));
-        publish_trigger_command(this, command, out);
+        const PackedInt64Array handed_off_ids = out.get("effect_ids", PackedInt64Array());
+        publish_trigger_ack_ids(this, handed_off_ids, out);
     }
     if (_runtime_host != nullptr) _runtime_host->complete_main_boundary_service();
     return out;
@@ -553,6 +583,48 @@ Dictionary DCWorldExt::restore_trigger_state(const PackedByteArray &bytes) {
 Dictionary DCWorldExt::clear_trigger_state() {
     return _trigger_runtime == nullptr ? unavailable()
         : runtime_from(_trigger_runtime)->clear_state();
+}
+
+Dictionary DCWorldExt::replay_completed_research_signal(int64_t trigger_id,
+        int64_t target, int64_t cell, int64_t day) {
+    if (_trigger_runtime == nullptr) return unavailable();
+    if (trigger_id < 0 || trigger_id > std::numeric_limits<int32_t>::max() ||
+        target <= 0 || cell < 0 || cell > std::numeric_limits<int32_t>::max() ||
+        day < 1) {
+        Dictionary invalid;
+        invalid["ok"] = false;
+        invalid["reason"] = "trigger_research_replay_invalid";
+        return invalid;
+    }
+    Dictionary out;
+    if (trigger_worker_authoritative()) {
+        // The worker is the sole writer of Trigger state. Mutating the facade
+        // here would only create a second copy that the next snapshot write-back
+        // discards, so the replay travels as a POD command and the resulting
+        // pending effect arrives with the worker snapshot.
+        out["ok"] = true;
+        out["enqueued"] = true;
+        out["path"] = "TRIGGER_WORKER";
+    } else {
+        out = runtime_from(_trigger_runtime)->replay_completed_research_signal(
+            static_cast<int32_t>(trigger_id), static_cast<uint64_t>(target),
+            static_cast<int32_t>(cell), day);
+        if (!static_cast<bool>(out.get("ok", false))) return out;
+    }
+    if (trigger_pod_host() != nullptr) {
+        RuntimeTriggerCommand command;
+        command.opcode = RuntimeTriggerCommandOpcode::REPLAY_COMPLETED_RESEARCH_SIGNAL;
+        command.effective_day = day;
+        command.requested_day = day;
+        command.trigger_id = static_cast<int32_t>(trigger_id);
+        command.event.entity_handle = static_cast<uint64_t>(target);
+        command.event.group_handle = static_cast<uint64_t>(cell);
+        if (!publish_trigger_command(this, command, out)) {
+            out["ok"] = false;
+            out["reason"] = "trigger_research_replay_transport_failed";
+        }
+    }
+    return out;
 }
 
 } // namespace pk

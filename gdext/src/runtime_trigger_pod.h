@@ -86,6 +86,8 @@ enum class RuntimeTriggerCommandOpcode : uint16_t {
     RECONCILE_BRANCH_BINDING = 4,
     RESYNC_SOURCE = 5,
     ACK_EFFECTS = 6,
+    ACK_EFFECT_IDS = 7,
+    REPLAY_COMPLETED_RESEARCH_SIGNAL = 8,
 };
 
 struct RuntimeTriggerEvent {

@@ -291,7 +291,7 @@ RuntimeTriggerSnapshot canonicalize_snapshot(const RuntimeTriggerSnapshot &sourc
 bool valid_command_opcode(RuntimeTriggerCommandOpcode opcode) noexcept {
     const uint16_t value = static_cast<uint16_t>(opcode);
     return value >= static_cast<uint16_t>(RuntimeTriggerCommandOpcode::INGEST_EVENT) &&
-        value <= static_cast<uint16_t>(RuntimeTriggerCommandOpcode::ACK_EFFECTS);
+        value <= static_cast<uint16_t>(RuntimeTriggerCommandOpcode::REPLAY_COMPLETED_RESEARCH_SIGNAL);
 }
 
 int32_t find_or_create_state(RuntimeTriggerSnapshot &state,
@@ -375,6 +375,22 @@ bool validate_command_shape(const RuntimeTriggerCommand &command,
             if (command.ack_up_to_effect_id < 0 || command.resync_count != 0) {
                 error = "trigger_ack_invalid";
                 return false;
+            }
+            break;
+        case RuntimeTriggerCommandOpcode::ACK_EFFECT_IDS:
+            if (command.resync_count == 0 || command.resync_count > RUNTIME_TRIGGER_RESYNC_CAPACITY) {
+                error = "trigger_ack_ids_invalid"; return false;
+            }
+            for (uint32_t i = 0; i < command.resync_count; ++i)
+                if (command.resync_values[i] <= 0) {
+                    error = "trigger_ack_ids_invalid"; return false;
+                }
+            break;
+        case RuntimeTriggerCommandOpcode::REPLAY_COMPLETED_RESEARCH_SIGNAL:
+            if (command.trigger_id < 0 || command.trigger_id >= static_cast<int32_t>(catalog.definitions.size()) ||
+                command.event.entity_handle == 0 || command.event.group_handle > INT32_MAX ||
+                command.effective_day < 1 || command.resync_count != 0) {
+                error = "trigger_research_replay_invalid"; return false;
             }
             break;
         default:
@@ -840,14 +856,27 @@ bool RuntimeTriggerPodAuthority::queue_command(const RuntimeTriggerCommand &comm
     error.clear();
     if (!_bootstrapped) { error = "trigger_pod_not_bootstrapped"; return false; }
     if (!validate_command_shape(command, _catalog, error)) return false;
-    const bool delivery_ack = command.opcode == RuntimeTriggerCommandOpcode::ACK_EFFECTS;
+    const bool delivery_ack = command.opcode == RuntimeTriggerCommandOpcode::ACK_EFFECTS ||
+        command.opcode == RuntimeTriggerCommandOpcode::ACK_EFFECT_IDS;
     if (delivery_ack) {
         // A busy event producer must not starve delivery acknowledgments. One
         // monotonic cursor covers every older ACK, so retain only the maximum.
         for (RuntimeTriggerCommand &pending : _pending_commands) {
-            if (pending.opcode != RuntimeTriggerCommandOpcode::ACK_EFFECTS ||
+            if (pending.opcode != command.opcode ||
                 pending.effective_day != command.effective_day ||
                 pending.observed_generation != command.observed_generation) continue;
+            if (command.opcode == RuntimeTriggerCommandOpcode::ACK_EFFECT_IDS) {
+                std::vector<int64_t> ids(pending.resync_values.begin(),
+                    pending.resync_values.begin() + pending.resync_count);
+                ids.insert(ids.end(), command.resync_values.begin(),
+                    command.resync_values.begin() + command.resync_count);
+                std::sort(ids.begin(), ids.end());
+                ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+                if (ids.size() > RUNTIME_TRIGGER_RESYNC_CAPACITY) continue;
+                pending.resync_count = static_cast<uint32_t>(ids.size());
+                std::copy(ids.begin(), ids.end(), pending.resync_values.begin());
+                return true;
+            }
             pending.ack_up_to_effect_id = std::max(pending.ack_up_to_effect_id,
                                                    command.ack_up_to_effect_id);
             return true;
@@ -991,6 +1020,25 @@ bool RuntimeTriggerPodAuthority::apply_command(RuntimeTriggerSnapshot &state,
                     return effect.id <= state.acked_effect_id;
                 }), state.pending_effects.end());
             return true;
+        case RuntimeTriggerCommandOpcode::ACK_EFFECT_IDS: {
+            std::vector<int64_t> ids(command.resync_values.begin(),
+                command.resync_values.begin() + command.resync_count);
+            std::sort(ids.begin(), ids.end());
+            state.pending_effects.erase(std::remove_if(state.pending_effects.begin(),
+                state.pending_effects.end(), [&ids](const RuntimeTriggerEffectIntent &effect) {
+                    return std::binary_search(ids.begin(), ids.end(), effect.id);
+                }), state.pending_effects.end());
+            int64_t frontier = state.next_effect_id - 1;
+            for (const auto &effect : state.pending_effects)
+                frontier = std::min(frontier, effect.id - 1);
+            state.acked_effect_id = std::max(state.acked_effect_id, frontier);
+            return true;
+        }
+        case RuntimeTriggerCommandOpcode::REPLAY_COMPLETED_RESEARCH_SIGNAL:
+            return RuntimeTriggerKernel::replay_completed_research_signal(_catalog,
+                state, command.trigger_id, command.event.entity_handle,
+                static_cast<int32_t>(command.event.group_handle),
+                command.effective_day, error);
         default:
             error = "trigger_command_opcode_invalid";
             return false;
@@ -1626,6 +1674,163 @@ bool RuntimeTriggerPodAuthority::self_test(std::string &error) {
             ordered_plan.next_state.enabled[0] != 0 ||
             !ordering.commit_day(ordered_plan, {}, error)) {
             error = "trigger_command_retained_replay_failed";
+            return false;
+        }
+    }
+    {
+        // Delivery ACK by explicit effect id. Canonical order is trigger 0 (id 2)
+        // then trigger 1 (id 1); acking the delivered id 2 must not delete id 1.
+        RuntimeTriggerPodCatalog ack_catalog = catalog;
+        RuntimeTriggerDefinition second_definition = catalog.definitions[0];
+        second_definition.event_type = 2;
+        ack_catalog.definitions.push_back(second_definition);
+        const uint64_t ack_target = (uint64_t{1} << 32u) | 7u;
+        RuntimeTriggerEffectIntent canonical_first;
+        canonical_first.id = 2;
+        canonical_first.effective_day = 1;
+        canonical_first.trigger_id = 0;
+        canonical_first.effect_definition_id = 0;
+        canonical_first.target_handle = ack_target;
+        canonical_first.target_generation = 1;
+        canonical_first.action = catalog.effects[0].action;
+        canonical_first.domain = catalog.effects[0].domain;
+        canonical_first.opcode = catalog.effects[0].opcode;
+        RuntimeTriggerEffectIntent canonical_second = canonical_first;
+        canonical_second.id = 1;
+        canonical_second.trigger_id = 1;
+        RuntimeTriggerSnapshot seeded;
+        seeded.next_effect_id = 3;
+        seeded.acked_effect_id = 0;
+        seeded.pending_effects.push_back(canonical_first);
+        seeded.pending_effects.push_back(canonical_second);
+        RuntimeTriggerPodAuthority ack_authority;
+        if (!ack_authority.bootstrap(seeded, ack_catalog, error)) return false;
+        auto queue_ack_ids = [&](int64_t id) {
+            RuntimeTriggerCommand command;
+            command.request_id = command.sequence = static_cast<uint64_t>(id + 100);
+            command.effective_day = 0;
+            command.requested_day = 0;
+            command.opcode = RuntimeTriggerCommandOpcode::ACK_EFFECT_IDS;
+            command.resync_count = 1;
+            command.resync_values[0] = id;
+            return ack_authority.queue_command(command, error);
+        };
+        // Two same-day ACKs merge into one bounded id union.
+        if (!queue_ack_ids(2) || !queue_ack_ids(1) ||
+            ack_authority.pending_command_count() != 1) {
+            error = "trigger_ack_ids_merge_failed";
+            return false;
+        }
+        RuntimeTriggerPodPlan ack_plan;
+        if (!ack_authority.plan_day(1, 1, ack_plan, error) ||
+            !ack_plan.next_state.pending_effects.empty() ||
+            ack_plan.next_state.acked_effect_id != 2 ||
+            ack_plan.consumed_commands.size() != 1 ||
+            !ack_authority.commit_day(ack_plan, {}, error)) {
+            error = "trigger_ack_ids_apply_failed";
+            return false;
+        }
+        // TPD1 round trip keeps the ACK_EFFECT_IDS command serializable.
+        if (!queue_ack_ids(1)) { error = "trigger_ack_ids_requeue_failed"; return false; }
+        RuntimeTriggerPodSaveSection ack_save;
+        RuntimeTriggerPodAuthority ack_resumed;
+        if (!ack_authority.encode_save(ack_save, error) ||
+            !ack_resumed.restore_save(ack_save, ack_catalog, error)) return false;
+        RuntimeTriggerPodPlan resumed_plan;
+        if (!ack_resumed.plan_day(1, 1, resumed_plan, error) ||
+            resumed_plan.consumed_commands.size() != 1 ||
+            resumed_plan.next_state.acked_effect_id != 2) {
+            error = "trigger_ack_ids_roundtrip_failed";
+            return false;
+        }
+    }
+    {
+        // Recovery replay command: only a completed ONE_SHOT achievement with a
+        // single COUNTRY_COMMAND(opcode 14 / domain 1 / CONSTANT 4) effect is
+        // accepted; the event day is backfilled to day-1 and payload_i0 packs
+        // (signal_index << 32) | cell. A pending replay is not duplicated.
+        RuntimeTriggerPodCatalog replay_catalog = catalog;
+        RuntimeTriggerDefinition achievement = catalog.definitions[0];
+        achievement.event_type = 2;
+        achievement.mode = static_cast<int32_t>(RuntimeTriggerMode::ONE_SHOT);
+        achievement.development_metric_id = 0;
+        achievement.condition_begin = 0;
+        achievement.condition_count = 0;
+        achievement.effect_begin = 1;
+        achievement.effect_count = 1;
+        replay_catalog.definitions.push_back(achievement);
+        RuntimeTriggerEffectDefinition signal_effect;
+        signal_effect.action = static_cast<int32_t>(RuntimeTriggerAction::COUNTRY_COMMAND);
+        signal_effect.domain = 1;
+        signal_effect.opcode = 14;
+        signal_effect.target_resolver = static_cast<int32_t>(
+            RuntimeTriggerTargetResolver::EVENT_ENTITY);
+        signal_effect.value_mode = static_cast<int32_t>(RuntimeTriggerValueMode::CONSTANT);
+        signal_effect.value = 4;
+        signal_effect.payload = {42, 0, 0, 1};
+        replay_catalog.effects.push_back(signal_effect);
+        const uint64_t replay_target = (uint64_t{1} << 32u) | 7u;
+        RuntimeTriggerSnapshot seeded;
+        seeded.next_effect_id = 1;
+        seeded.acked_effect_id = 0;
+        RuntimeTriggerPodSnapshotState completed_state;
+        completed_state.trigger_id = 1;
+        completed_state.target_handle = replay_target;
+        completed_state.target_generation = 1;
+        completed_state.completed = 1;
+        completed_state.initialized = 1;
+        completed_state.distinct_keys.assign(replay_catalog.distinct_capacity,
+            std::numeric_limits<int64_t>::min());
+        seeded.states.push_back(completed_state);
+        auto queue_replay = [&](RuntimeTriggerPodAuthority &authority, int64_t day) {
+            RuntimeTriggerCommand command;
+            command.request_id = command.sequence = static_cast<uint64_t>(day + 500);
+            command.effective_day = day;
+            command.requested_day = day;
+            command.opcode = RuntimeTriggerCommandOpcode::REPLAY_COMPLETED_RESEARCH_SIGNAL;
+            command.trigger_id = 1;
+            command.event.entity_handle = replay_target;
+            command.event.group_handle = 5;
+            return authority.queue_command(command, error);
+        };
+        RuntimeTriggerPodAuthority replay_authority;
+        if (!replay_authority.bootstrap(seeded, replay_catalog, error) ||
+            !queue_replay(replay_authority, 3)) return false;
+        RuntimeTriggerPodPlan replay_plan;
+        if (!replay_authority.plan_day(3, 1, replay_plan, error) ||
+            replay_plan.next_state.pending_effects.size() != 1) {
+            error = "trigger_research_replay_missing_effect";
+            return false;
+        }
+        const RuntimeTriggerEffectIntent &replayed = replay_plan.next_state.pending_effects[0];
+        if (replayed.effective_day != 3 || replayed.target_handle != replay_target ||
+            replayed.target_generation != 1 ||
+            replayed.payload[0] != static_cast<int64_t>((uint64_t{42} << 32u) | 5u) ||
+            !replay_authority.commit_day(replay_plan, {}, error)) {
+            error = "trigger_research_replay_effect_invalid";
+            return false;
+        }
+        if (!queue_replay(replay_authority, 4)) return false;
+        RuntimeTriggerPodPlan duplicate_plan;
+        if (!replay_authority.plan_day(4, 1, duplicate_plan, error) ||
+            duplicate_plan.next_state.pending_effects.size() != 1 ||
+            !replay_authority.commit_day(duplicate_plan, {}, error)) {
+            error = "trigger_research_replay_not_deduplicated";
+            return false;
+        }
+        // TPD1 round trip: a queued replay survives encode/restore and applies.
+        RuntimeTriggerPodAuthority save_authority;
+        if (!save_authority.bootstrap(seeded, replay_catalog, error) ||
+            !queue_replay(save_authority, 3)) return false;
+        RuntimeTriggerPodSaveSection replay_save;
+        RuntimeTriggerPodAuthority replay_resumed;
+        if (!save_authority.encode_save(replay_save, error) ||
+            !replay_resumed.restore_save(replay_save, replay_catalog, error)) return false;
+        RuntimeTriggerPodPlan resumed_replay;
+        if (!replay_resumed.plan_day(3, 1, resumed_replay, error) ||
+            resumed_replay.consumed_commands.size() != 1 ||
+            resumed_replay.next_state.pending_effects.size() != 1) {
+            error = "trigger_research_replay_roundtrip_failed";
             return false;
         }
     }

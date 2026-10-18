@@ -275,8 +275,12 @@ var _effect_worker_snapshot_generation: int = 0
 var _ideology_worker_snapshot_generation: int = 0
 var _trigger_worker_snapshot_generation: int = 0
 # Trigger delivery still uses Effect's native domain adapters. Keep its facade
-# transaction alive until Country acknowledges and the worker admits its cursor.
+# transaction alive until Country acknowledges and the worker admits its ACK.
+# Effect ids are ingress-allocated while delivery is canonical, so the exact id
+# set from handoff_effects() is retained; the legacy max-id cursor below is kept
+# only for old-DLL fallback and reporting.
 var _trigger_country_delivery_id: int = 0
+var _trigger_country_delivery_ids: PackedInt64Array = PackedInt64Array()
 var _trigger_country_delivery_ack_sent := false
 var _trigger_country_delivery_waiting := false
 var _country_worker_read_generation: int = 0
@@ -1249,7 +1253,8 @@ func _consume_modifier_worker_snapshot_if_authoritative() -> void:
 func _consume_effect_worker_snapshot_if_authoritative() -> void:
 	if not _runtime_ready_for_ticks or _generator == null:
 		return
-	if _trigger_country_delivery_id > 0 or _trigger_country_delivery_waiting:
+	if _trigger_country_delivery_id > 0 or not _trigger_country_delivery_ids.is_empty() \
+			or _trigger_country_delivery_waiting:
 		return
 	if not _generator.has_method("apply_runtime_effect_snapshot"):
 		return
@@ -1454,14 +1459,15 @@ func _service_trigger_worker_intents_if_authoritative() -> void:
 
 
 func _service_trigger_country_delivery(ext: Object, _report: Dictionary) -> void:
-	if _trigger_country_delivery_id > 0:
+	if _trigger_country_delivery_id > 0 or not _trigger_country_delivery_ids.is_empty():
 		ext.ack_effect_native_country()
 		if not _trigger_country_delivery_ack_sent:
-			var retried: Dictionary = ext.ack_trigger_effects(_trigger_country_delivery_id)
+			var retried: Dictionary = _ack_trigger_delivery_ids(ext)
 			_trigger_country_delivery_ack_sent = bool(retried.get("pod_shadow_ok", false))
 		var adapter: Dictionary = ext.get_effect_native_adapter_report()
 		if _trigger_country_delivery_ack_sent and not bool(adapter.get("country_pending", false)):
 			_trigger_country_delivery_id = 0
+			_trigger_country_delivery_ids = PackedInt64Array()
 		return
 	if not _trigger_country_delivery_waiting and _world_clock != null and _world_clock.paused:
 		return
@@ -1483,15 +1489,30 @@ func _service_trigger_country_delivery(ext: Object, _report: Dictionary) -> void
 	_trigger_country_delivery_waiting = bool(handoff.get("deferred", false))
 	if int(handoff.get("handed_off", 0)) <= 0:
 		return
+	# Delivery order is canonical while effect ids are ingress-allocated: ACK
+	# exactly the ids that were handed off, never a numeric high-water cursor.
+	var delivered_ids: PackedInt64Array = handoff.get("effect_ids", PackedInt64Array())
 	_trigger_country_delivery_id = int(handoff.get("last_effect_id", 0))
-	# Explicitly forward the delivery cursor as well as acknowledging the facade.
+	if delivered_ids.is_empty() and _trigger_country_delivery_id > 0:
+		delivered_ids = PackedInt64Array([_trigger_country_delivery_id])
+	_trigger_country_delivery_ids = delivered_ids
+	# Explicitly forward the delivery ACK as well as acknowledging the facade.
 	# This is idempotent when handoff_trigger_effects already forwarded it.
-	var delivery_ack: Dictionary = ext.ack_trigger_effects(_trigger_country_delivery_id)
+	var delivery_ack: Dictionary = _ack_trigger_delivery_ids(ext)
 	_trigger_country_delivery_ack_sent = bool(delivery_ack.get("pod_shadow_ok", false))
 	if OS.get_environment("PK_TECH_DELIVERY_DIAG") == "1":
-		print("[tech-delivery] handoff=", handoff, " cursor_ack=", delivery_ack)
+		print("[tech-delivery] handoff=", handoff, " ids_ack=", delivery_ack)
 	ext.dispatch_effect_native_country()
 	ext.ack_effect_native_country()
+
+
+## ACK a delivery batch by the exact effect ids the handoff returned. Old DLLs
+## without ack_trigger_effect_ids() fall back to the numeric cursor lane.
+func _ack_trigger_delivery_ids(ext: Object) -> Dictionary:
+	if not _trigger_country_delivery_ids.is_empty() \
+			and ext.has_method("ack_trigger_effect_ids"):
+		return ext.ack_trigger_effect_ids(_trigger_country_delivery_ids)
+	return ext.ack_trigger_effects(_trigger_country_delivery_id)
 
 
 func _consume_country_worker_read_view_if_authoritative() -> void:

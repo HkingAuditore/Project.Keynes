@@ -90,14 +90,31 @@ multiple interleaved sources. A gap or ring overflow marks affected state
 `needs_resync`; effects pause until a committed snapshot rebuild succeeds.
 Effects are sorted by `(effective_day, source_priority, trigger_id, target_handle,
 fire_sequence)` and carry idempotency `(trigger_id, target_generation, fire_sequence)`.
-Adapters ACK only the contiguous prefix they applied successfully.
+Effect ids are allocated at ingress (`next_effect_id`) while that delivery order is
+canonical, so the two orders diverge after any re-sort or PKTR restore and a numeric
+high-water cursor would delete an effect that was never handed off (`ONE_SHOT`
+achievements are completed, so they never re-emit). Delivery therefore ACKs the
+explicit id set returned in `handoff_effects()["effect_ids"]` through
+`ACK_EFFECT_IDS`; the legacy `ACK_EFFECTS` high-water cursor is retained only for old
+peers and only advances over the gap-free numeric prefix. Adapters still ACK only the
+contiguous prefix they applied successfully.
 
 Supported Modifier actions are handed to EffectRuntime as one contiguous native
 prefix through `handoff_trigger_effects()`. EffectRuntime owns the ensuing
-transaction and native Modifier ACK; TriggerRuntime advances its effect cursor
-only for that accepted prefix, preserving PKTR as the authority for unhanded or
-unsupported actions. Remaining actions continue through the GDScript
-compatibility adapter and cannot be skipped by the native handoff.
+transaction and native Modifier ACK; TriggerRuntime removes exactly the handed-off
+effect ids, preserving PKTR as the authority for unhanded or unsupported actions.
+Remaining actions continue through the GDScript compatibility adapter and cannot be
+skipped by the native handoff.
+
+`replay_completed_research_signal(trigger_id, target, cell, day)` is the recovery
+backfill for the completed-record-without-signal failure. It accepts only `ONE_SHOT`
+definitions with `development_metric_id >= 0` and exactly one
+`COUNTRY_COMMAND(opcode 14 / domain 1 / CONSTANT value 4)` effect, re-emits it with
+the event day backfilled to `day - 1` (so it delivers at `day`), and packs
+`payload_i0 = (signal_index << 32) | cell`. `target` is the packed country handle
+`(generation << 32) | slot`. The trigger layer does not dedupe a replay after the
+effect was delivered; idempotence is owned by Country's
+`DISCOVER_COUNTRY_SIGNAL`, which ignores an already-observed `(signal, cell)` pair.
 
 `IDEOLOGY_COMMAND` is also a typed native handoff. Its opcode is an ideology
 command; target is the country handle; payload slots carry ideology dense ID,
