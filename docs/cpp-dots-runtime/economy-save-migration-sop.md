@@ -21,6 +21,13 @@
 不释放句柄、不改 generation、不丢弃资金，避免修改恢复后的账本 hash 和引用关系。
 回归：`tests/economy_empty_cohort_restore_test.gd`。
 
+同次收尾：建筑岗位 fills 的恢复上限从 `count × 每栋岗位数` 改为「同格同职业已持久化的
+cohort `employee_employed` 合计」，并逐组扣减。原因：拆除/投资步骤可能先减少建筑数量，
+上一次就业分配会保留到下一次就业结算，因此存档中出现 `fills > count × slots` 是合法状态；
+恢复器不应据此拒绝整份存档。负 fills、或超过同格同职业雇员合计的 fills 仍返回
+`restore_building_employee_job_invalid`。恢复只做一致性校验，不增删员工、不改岗位分配；
+下一次就业结算再按正常裁员/clamp 流程收敛。回归：`tests/economy_building_job_restore_test.gd`。
+
 `encode_ecp2` / `decode_ecp2`（`runtime_economy_ecp2.{h,cpp}`）使用 marker
 `0x32504345`（"ECP2"）。PKSR 段位 `RUNTIME_SAVE_SECTION_ECONOMY_ECP2 = 1<<11`。
 

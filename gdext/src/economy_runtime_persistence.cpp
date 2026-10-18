@@ -1132,6 +1132,20 @@ Dictionary NativeEconomyRuntime::end_restore() {
             return out;
         }
     }
+    // Committed group fills describe the last employment allocation. A later
+    // demolition/investment step may reduce lot counts before the next labor
+    // period; reconciliation caps those fills by the remaining workforce, not
+    // by the new lot count. Restore the same state, bounded by the persisted
+    // cohort employment so historical fills cannot invent employees.
+    std::unordered_map<uint64_t, int64_t> remaining_employee_jobs;
+    for (size_t slot = 0; slot < population_store().active.size(); ++slot) {
+        if (population_store().active[slot] == 0) continue;
+        const int32_t cell = population_store().page_cell[slot / COHORT_PAGE_SIZE];
+        const int32_t profession = _signatures[population_store().signature_id[slot]].profession_id;
+        const uint64_t key = trade_key(cell, profession);
+        remaining_employee_jobs[key] = saturating_add(remaining_employee_jobs[key],
+            std::max<int64_t>(0, population_store().employee_employed[slot]), _saturation_count);
+    }
     for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
         const auto group = building_at(pk_row);
         if (_signatures[group.owner_signature_id].profession_id !=
@@ -1195,13 +1209,14 @@ Dictionary NativeEconomyRuntime::end_restore() {
                 return out;
             }
             const int64_t filled = _building_employee_filled[role_index];
-            const int64_t required = group.count *
-                _building_employee_roles[type.employee_begin + r].slots_per_building;
-            if (filled < 0 || filled > required) {
+            const int32_t profession = _building_employee_roles[type.employee_begin + r].profession_id;
+            int64_t &remaining = remaining_employee_jobs[trade_key(group.cell, profession)];
+            if (filled < 0 || filled > remaining) {
                 out["ok"] = false;
                 out["reason"] = "restore_building_employee_job_invalid";
                 return out;
             }
+            remaining -= filled;
         }
     }
     for (size_t slot = 0; slot < population_store().active.size(); ++slot) {

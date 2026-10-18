@@ -27,6 +27,18 @@ is invalid; the existing employment validation still prohibits jobs on an empty
 lane. `tests/economy_empty_cohort_restore_test.gd` covers exact ECP2 re-save/restore
 and both invalid cases without deleting handles or changing conservation totals.
 
+Building-role fills restore against the persisted workforce, not the current lot
+count. A committed checkpoint may hold `filled > count * slots_per_building`
+because demolition or investment reduced lot counts after the last employment
+settlement; the runtime keeps that allocation until the next labor period.
+`end_restore` therefore bounds each role by the persisted same-cell,
+same-profession cohort `employee_employed` total (subtracting earlier groups)
+instead of the post-change lot capacity, and still rejects negative fills or
+fills beyond that total with `restore_building_employee_job_invalid`. The next
+employment settlement performs the normal layoff/clamp; restore does not invent,
+delete or reassign employees. `tests/economy_building_job_restore_test.gd`
+covers the accepted over-capacity checkpoint and both rejections.
+
 Modifier catalog identity explicitly encodes term fields and the existing
 zero reserved word. It never hashes C++ padding; this preserves original x64
 PKCM/PKCN/PKEC/PKGP compatibility under MSVC cross-file optimization. Catalog
