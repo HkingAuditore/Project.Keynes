@@ -1451,10 +1451,13 @@ soak / C2 证据待 `Invoke-RuntimeTests.ps1` 补齐（见
       在权威下只写 POD 队列）
 
 **当前边界（H8）**：`implemented`/`request` 含 `TRIGGER_INPUT(0x008)`。worker 拥有聚合与
-effect 发射；主线程仍是 **Trigger→Effect 投递游标** 的所有者——`handoff_trigger_effects()`
-读回灌后的 facade，成功投递后额外发一条 `ACK_EFFECTS` POD 命令让 worker 的 pending effect
-队列同步收缩，`apply_pod_snapshot()` 用 `std::max` 夹住 `_acked_effect_id`/`_next_effect_id`
-防止回灌把游标退回去造成重复派发。Trigger 的 effect intents 指向 EFFECT 且需要 ACK：
+effect 发射；主线程仍是 **Trigger→Effect 投递** 的所有者——`handoff_trigger_effects()`
+读回灌后的 facade，成功投递后按返回的 `effect_ids` 额外发 `ACK_EFFECT_IDS` POD 命令
+（`resync_values` 复用为有界 ID 向量，按 `RUNTIME_TRIGGER_RESYNC_CAPACITY` 分片），让 worker 的
+pending effect 队列按显式 ID 收缩；旧的 `ACK_EFFECTS` 数字游标只用于旧 peer 回退。不能再用
+`last_effect_id` 当游标：ID 在 ingress 分配而交付按业务规范序，游标会删掉未交付的低 ID 效果。
+`apply_pod_snapshot()` 用 `std::max` 夹住 `_acked_effect_id`/`_next_effect_id`，防止回灌把
+游标退回去造成重复派发。`trigger_id` 的 effect intents 指向 EFFECT 且需要 ACK：
 同一 session 里 EFFECT 也被授予时 Effect stage 之后由 `ack_trigger_intents_in_worker()`
 在 worker 内 ACK，另有 `poll_trigger_worker_intent` / `submit_trigger_worker_ack` 主线程
 pump 作为协议路径。触发日第一次访问必然 `ack_barrier_incomplete`（Trigger 排在 Effect

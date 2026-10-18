@@ -107,6 +107,13 @@ public:
     godot::Dictionary run_daily(int64_t day_index);
     godot::Dictionary poll_effects(int64_t after_effect_id, int32_t limit) const;
     godot::Dictionary ack_effects(int64_t up_to_effect_id);
+    godot::Dictionary ack_effect_ids(const godot::PackedInt64Array &effect_ids);
+    // Recovery backfill: re-enqueues an already-completed achievement's single
+    // research-signal effect. Returns ok/enqueued; enqueued=false when the
+    // effect is already pending, the achievement has no completed state, or the
+    // definition is not a one-shot signal achievement.
+    godot::Dictionary replay_completed_research_signal(int32_t trigger_id,
+        uint64_t target, int32_t cell, int64_t day);
     // Transfers the contiguous supported prefix to EffectRuntime. Trigger
     // state/cursors remain owned here; EffectRuntime owns the resulting ACK.
     godot::Dictionary handoff_effects(EffectRuntime *effect_runtime,

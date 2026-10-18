@@ -573,6 +573,11 @@ public:
     godot::Dictionary poll_trigger_effects(int64_t after_effect_id,
                                             int limit = 128) const;
     godot::Dictionary ack_trigger_effects(int64_t up_to_effect_id);
+    // Delivery ACK by explicit effect id. Effect ids are allocated at ingress
+    // while delivery order is canonical (effective_day/source_priority/...), so
+    // a numeric high-water cursor can delete an effect that was never handed
+    // off. Callers must ack exactly the id set returned by handoff_effects().
+    godot::Dictionary ack_trigger_effect_ids(const godot::PackedInt64Array &effect_ids);
     godot::Dictionary handoff_trigger_effects(int limit = 128);
     godot::Dictionary set_trigger_enabled(const godot::Dictionary &batch);
     godot::Dictionary reconcile_trigger_branch_bindings(const godot::Dictionary &batch);
@@ -584,6 +589,13 @@ public:
     godot::PackedByteArray capture_trigger_state() const;
     godot::Dictionary restore_trigger_state(const godot::PackedByteArray &bytes);
     godot::Dictionary clear_trigger_state();
+    // Recovery backfill for ONE_SHOT development achievements whose completed
+    // record survived a load but whose permanent Country research signal did
+    // not. Re-enqueues the single COUNTRY_COMMAND signal effect at day-1 so it
+    // delivers at `day`; the Country DISCOVER_SIGNAL command dedupes by
+    // (signal, cell), which makes repeated replay idempotent.
+    godot::Dictionary replay_completed_research_signal(int64_t trigger_id,
+        int64_t target, int64_t cell, int64_t day);
     NativeSimulationHost *trigger_pod_host() const { return _runtime_host.get(); }
 
     // Generic Effect Runtime. It owns immutable effect programs, active
