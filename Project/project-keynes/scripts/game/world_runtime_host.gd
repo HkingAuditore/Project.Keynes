@@ -29,6 +29,9 @@ const MAP_OVERLAY_REFRESH_INTERVAL_MSEC: int = 100
 # 模拟成本的六倍）。改为按实测成本反推间隔，把占空比压到 MAP_OVERLAY_DUTY 以内。
 const MAP_OVERLAY_MAX_REFRESH_INTERVAL_MSEC: int = 750
 const MAP_OVERLAY_DUTY: float = 0.05
+const TRIGGER_COUNTRY_COMMAND := 10
+const TRIGGER_PUBLISH_EVENT := 13
+const COUNTRY_DISCOVER_SIGNAL := 14
 const SettlementLabelLayerScript = preload(
 	"res://scripts/rendering/settlement_label_layer.gd")
 const PkmapIOScript = preload("res://scripts/geography/pkmap_io.gd")
@@ -271,6 +274,11 @@ var _modifier_worker_snapshot_generation: int = 0
 var _effect_worker_snapshot_generation: int = 0
 var _ideology_worker_snapshot_generation: int = 0
 var _trigger_worker_snapshot_generation: int = 0
+# Trigger delivery still uses Effect's native domain adapters. Keep its facade
+# transaction alive until Country acknowledges and the worker admits its cursor.
+var _trigger_country_delivery_id: int = 0
+var _trigger_country_delivery_ack_sent := false
+var _trigger_country_delivery_waiting := false
 var _country_worker_read_generation: int = 0
 var _country_worker_read_last_day: int = -1
 var _country_worker_read_last_result: Dictionary = {}
@@ -1241,6 +1249,8 @@ func _consume_modifier_worker_snapshot_if_authoritative() -> void:
 func _consume_effect_worker_snapshot_if_authoritative() -> void:
 	if not _runtime_ready_for_ticks or _generator == null:
 		return
+	if _trigger_country_delivery_id > 0 or _trigger_country_delivery_waiting:
+		return
 	if not _generator.has_method("apply_runtime_effect_snapshot"):
 		return
 	var report: Dictionary = _generator.get_runtime_thread_report() \
@@ -1421,6 +1431,7 @@ func _service_trigger_worker_intents_if_authoritative() -> void:
 		if _generator.has_method("get_data_core_world_ext") else null
 	if ext == null or not ext.has_method("poll_trigger_worker_intent"):
 		return
+	_service_trigger_country_delivery(ext, report)
 	if not ext.has_method("submit_trigger_worker_ack"):
 		return
 	# Bounded pump: never block the sim on an unbounded intent backlog.
@@ -1440,6 +1451,47 @@ func _service_trigger_worker_intents_if_authoritative() -> void:
 			"code": 0,
 			"effective_day": int(intent.get("effective_day", 0)),
 		})
+
+
+func _service_trigger_country_delivery(ext: Object, _report: Dictionary) -> void:
+	if _trigger_country_delivery_id > 0:
+		ext.ack_effect_native_country()
+		if not _trigger_country_delivery_ack_sent:
+			var retried: Dictionary = ext.ack_trigger_effects(_trigger_country_delivery_id)
+			_trigger_country_delivery_ack_sent = bool(retried.get("pod_shadow_ok", false))
+		var adapter: Dictionary = ext.get_effect_native_adapter_report()
+		if _trigger_country_delivery_ack_sent and not bool(adapter.get("country_pending", false)):
+			_trigger_country_delivery_id = 0
+		return
+	if not _trigger_country_delivery_waiting and _world_clock != null and _world_clock.paused:
+		return
+	# Full-graph ACTIVE skips advance_runtime_pulse(), which used to own this
+	# handoff. Drain a bounded prefix through the existing Effect -> Country
+	# adapter, including restored effects whose effective day is in the past.
+	var batch: Dictionary = ext.poll_trigger_effects(0, 64)
+	var actions: PackedInt32Array = batch.get("actions", PackedInt32Array())
+	var opcodes: PackedInt32Array = batch.get("opcodes", PackedInt32Array())
+	var count := 0
+	for i in actions.size():
+		if actions[i] != TRIGGER_PUBLISH_EVENT and not (
+				actions[i] == TRIGGER_COUNTRY_COMMAND and opcodes[i] == COUNTRY_DISCOVER_SIGNAL):
+			break
+		count += 1
+	if count == 0 and not _trigger_country_delivery_waiting:
+		return
+	var handoff: Dictionary = ext.handoff_trigger_effects(maxi(1, count))
+	_trigger_country_delivery_waiting = bool(handoff.get("deferred", false))
+	if int(handoff.get("handed_off", 0)) <= 0:
+		return
+	_trigger_country_delivery_id = int(handoff.get("last_effect_id", 0))
+	# Explicitly forward the delivery cursor as well as acknowledging the facade.
+	# This is idempotent when handoff_trigger_effects already forwarded it.
+	var delivery_ack: Dictionary = ext.ack_trigger_effects(_trigger_country_delivery_id)
+	_trigger_country_delivery_ack_sent = bool(delivery_ack.get("pod_shadow_ok", false))
+	if OS.get_environment("PK_TECH_DELIVERY_DIAG") == "1":
+		print("[tech-delivery] handoff=", handoff, " cursor_ack=", delivery_ack)
+	ext.dispatch_effect_native_country()
+	ext.ack_effect_native_country()
 
 
 func _consume_country_worker_read_view_if_authoritative() -> void:

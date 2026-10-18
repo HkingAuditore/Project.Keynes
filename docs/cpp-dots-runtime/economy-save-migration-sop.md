@@ -8,14 +8,27 @@
 
 ## ECP2（Economy full-authority section，P0–E10 / M0–M4 scaffold）
 
+2026-10-19：PKSR 中的 ECP2 使用完整 uint32 长度，不再将超过 64 MiB 的数据截断。
+旧 writer 生成的截断 bundle 只允许从同一 PKSV 的完整 `ecp2` section 恢复：
+原 PKSR/段 checksum 有效、截断长度精确为 64 MiB、完整副本前缀逐字节一致，
+且完整副本的 ECP2 content hash、ABI/schema/domain 校验全部通过。
+`restore_runtime_bundle(bytes, external_ecp2=[])` 返回
+`recovered_truncated_ecp2` 诊断；不跳过校验、不补默认值、不改写原档。
+其他 PKSR 段超过既有上限时直接拒绝保存，报 `save_runtime_section_too_large`。
+
+同次修复保留已分配但人口为零的 cohort lane（例如等待结构/现金 peer 收尾的空句柄）；
+`active` 表示句柄已分配，不保证人口大于零。人口仍必须非负，空 lane 不允许持有岗位；
+不释放句柄、不改 generation、不丢弃资金，避免修改恢复后的账本 hash 和引用关系。
+回归：`tests/economy_empty_cohort_restore_test.gd`。
+
 `encode_ecp2` / `decode_ecp2`（`runtime_economy_ecp2.{h,cpp}`）使用 marker
 `0x32504345`（"ECP2"）。PKSR 段位 `RUNTIME_SAVE_SECTION_ECONOMY_ECP2 = 1<<11`。
 
 Wire 布局（little-endian）：
 
 - `u32 marker` ECP2
-- `u32 abi_version`（当前 1 = envelope + opaque domain blobs）
-- `u32 schema_version`（52，与 PKEC 对齐）
+- `u32 abi_version`（当前 3 = envelope + hash_version + opaque domain blobs）
+- `u32 schema_version`（54，ECP2 envelope schema）
 - `u32 authority_domain_mask`
 - `u64 content_hash` — FNV-1a over **hash 字段之后的全部字节**（envelope +
   各 domain payload）
@@ -303,11 +316,12 @@ restore 校验每个维度值与 `worst_dimension_id` 的取值范围，越界�
 是历史 reader 行为；当前 provider/reader 只接受 v41。
 列语义见[综合满意度运行时](./satisfaction-runtime.md)。
 
-2026-10-16 舒适/奢侈从 need tier 满足率改为存款购买力评分，沿用现有
-`satisfaction_dims` / `composite_satisfaction` / `worst_dimension_id` 列；PKEC v55
-字节布局与 hash 字段集合不变，无需 bump schema。恢复保持已存的维度值，下一次市场结算
-按新公式刷新；同一新版运行时保存/恢复及后续重放应保持 hash 一致。四个购买力门槛由
-`EconomyProfile.to_native_profile()` 提供，与其他满意度旋钮一样在配置期冻结。
+2026-10-18 满意度改为实际生活消费与分组权重、温饱/基本双约束，沿用当前 PKEC v56
+全部列与字节布局。`living_target_units` 为调用内临时量；适用性从职业计划、族群与冻结科技
+派生，无新增持久化状态。对外-1不适用编码不写入uint16存储列。需求资源分档进入catalog hash，
+因此旧内容目录存档仍按既有目录兼容校验处理，不能承诺旧档无需重开。
+同一目录与新版运行时的满意度列应在边界保存/恢复及下一次结算重放中一致。
+整世界下一期hash的既有差异见购买力历史验证记录；本轮专项验收仍单独检查满意度重放。
 
 ## PKEC v29（历史 writer）
 

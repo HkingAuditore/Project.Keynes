@@ -66,6 +66,7 @@ struct PopulationBucket {
     int64_t composite_weighted = 0;
     int64_t survival_weighted = 0;
     std::array<int64_t, NativeEconomyRuntime::SAT_DIM_COUNT> dims_weighted{};
+    std::array<int64_t, NativeEconomyRuntime::SAT_DIM_COUNT> dims_population{};
 };
 
 // Building-side totals for one aggregation bucket, all normalized per day.
@@ -191,7 +192,10 @@ Dictionary NativeEconomyRuntime::country_economy_overview(
         weigh(bucket.survival_weighted,
               static_cast<int64_t>(store.needs_satisfaction[s]), people);
         const size_t dims_base = s * static_cast<size_t>(SAT_DIM_COUNT);
+        const uint8_t mask = satisfaction_applicable_mask(slot);
         for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim) {
+            if (!(mask & (1U << dim))) continue;
+            add(bucket.dims_population[dim], people);
             weigh(bucket.dims_weighted[static_cast<size_t>(dim)],
                   static_cast<int64_t>(store.satisfaction_dims[
                       dims_base + static_cast<size_t>(dim)]), people);
@@ -260,10 +264,14 @@ Dictionary NativeEconomyRuntime::country_economy_overview(
         target["survival_satisfaction_q16"] =
             clamp_q16(bucket.survival_weighted, bucket.population);
         PackedInt32Array dims;
+        PackedInt64Array dims_population;
         for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
-            dims.push_back(clamp_q16(bucket.dims_weighted[static_cast<size_t>(dim)],
-                                     bucket.population));
+            dims_population.push_back(bucket.dims_population[dim]);
+        for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
+            dims.push_back(bucket.dims_population[dim] > 0 ? clamp_q16(bucket.dims_weighted[dim],
+                                     bucket.dims_population[dim]) : -1);
         target["satisfaction_dims_q16"] = dims;
+        target["satisfaction_dims_population"] = dims_population;
     };
     const auto finish = [&](Dictionary &target) {
         target["ok"] = true;
@@ -448,6 +456,7 @@ Dictionary NativeEconomyRuntime::country_economy_overview(
             unemployed, funds, epoch_income, epoch_expense, income, expense, tax,
             subsidy, in_kind, worst_need_population;
         PackedInt32Array satisfaction, survival, dims;
+        PackedInt64Array dims_population;
         for (int32_t profession = 0; profession < profession_count; ++profession) {
             const PopulationBucket &bucket = buckets[static_cast<size_t>(profession)];
             if (bucket.cohorts <= 0) continue;
@@ -470,8 +479,10 @@ Dictionary NativeEconomyRuntime::country_economy_overview(
             satisfaction.push_back(clamp_q16(bucket.composite_weighted, bucket.population));
             survival.push_back(clamp_q16(bucket.survival_weighted, bucket.population));
             for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
-                dims.push_back(clamp_q16(bucket.dims_weighted[static_cast<size_t>(dim)],
-                                         bucket.population));
+                dims_population.push_back(bucket.dims_population[dim]);
+            for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
+                dims.push_back(bucket.dims_population[dim] > 0 ? clamp_q16(bucket.dims_weighted[dim],
+                                         bucket.dims_population[dim]) : -1);
             for (int32_t need = 0; need < need_count; ++need)
                 worst_need_population.push_back(worst_needs[
                     static_cast<size_t>(profession) * static_cast<size_t>(need_count) +
@@ -499,6 +510,7 @@ Dictionary NativeEconomyRuntime::country_economy_overview(
         out["survival_satisfaction_q16"] = survival;
         out["satisfaction_dimension_count"] = SAT_DIM_COUNT;
         out["satisfaction_dims_q16"] = dims;
+        out["satisfaction_dims_population"] = dims_population;
         out["need_ids"] = need_ids;
         out["need_count"] = need_count;
         out["worst_need_population"] = worst_need_population;

@@ -262,8 +262,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::request_runtime_save);
     ClassDB::bind_method(D_METHOD("poll_runtime_save", "request_id"),
                          &DCWorldExt::poll_runtime_save);
-    ClassDB::bind_method(D_METHOD("restore_runtime_bundle", "bytes"),
-                         &DCWorldExt::restore_runtime_bundle);
+    ClassDB::bind_method(D_METHOD("restore_runtime_bundle", "bytes", "external_ecp2"),
+                         &DCWorldExt::restore_runtime_bundle, DEFVAL(PackedByteArray()));
     ClassDB::bind_method(D_METHOD("request_runtime_stop"),
                          &DCWorldExt::request_runtime_stop);
     ClassDB::bind_method(D_METHOD("climate_worker_authoritative"),
@@ -711,8 +711,15 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_country_economy_overview,
                          DEFVAL("summary"), DEFVAL(-1), DEFVAL(-1), DEFVAL(0),
                          DEFVAL(0));
-    ClassDB::bind_method(D_METHOD("get_trade_orders_for_cell", "cell_idx", "offset", "limit"),
-                         &DCWorldExt::get_trade_orders_for_cell, DEFVAL(0), DEFVAL(64));
+    ClassDB::bind_method(D_METHOD("get_trade_orders_for_cell", "cell_idx", "offset",
+                                  "limit", "good_index"),
+                         &DCWorldExt::get_trade_orders_for_cell,
+                         DEFVAL(0), DEFVAL(64), DEFVAL(-1));
+    ClassDB::bind_method(D_METHOD("get_trade_visual_snapshot", "cells", "visible",
+        "vision_revision", "selected_cell", "enabled"),
+        &DCWorldExt::get_trade_visual_snapshot, DEFVAL(-1), DEFVAL(true));
+    ClassDB::bind_method(D_METHOD("bake_trade_visual_paths", "snapshot", "map_width", "hex_size"),
+        &DCWorldExt::bake_trade_visual_paths);
     ClassDB::bind_method(D_METHOD("capture_economy_trade_topology", "neighbor_indices",
                                   "terrain", "trade_passable_lut",
                                   "trade_move_cost_lut", "generation",

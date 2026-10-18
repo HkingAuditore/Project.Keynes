@@ -688,12 +688,17 @@ func _restore_simulation_runtime_provider(sections: Dictionary, context: Diction
 		if generator == null or not generator.has_method("restore_runtime_bundle"):
 			return _result(false, "simulation_runtime_restore_missing",
 				"地图运行时缺少 PKSR 后台恢复接口。")
-		var restored: Dictionary = generator.restore_runtime_bundle(runtime)
+		# SaveRepository has already verified both PKSV section SHA-256 hashes.
+		# Native restore accepts this duplicate only for the exact legacy 64 MiB truncation.
+		var restored: Dictionary = generator.restore_runtime_bundle(runtime,
+			sections.get("ecp2", PackedByteArray()))
 		if not bool(restored.get("ok", false)):
 			return _result(false, String(restored.get("code",
 				"simulation_runtime_restore_failed")),
 				"PKSR runtime bundle 恢复失败：%s" % String(
 					restored.get("code", "unknown")))
+		if bool(restored.get("recovered_truncated_ecp2", false)):
+			print("[save/restore] recovered legacy 64 MiB ECP2 truncation from verified PKSV section")
 		return restored
 	if runtime.is_empty():
 		return _result(true, "ok", "")

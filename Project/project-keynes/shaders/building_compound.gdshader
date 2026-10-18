@@ -45,7 +45,34 @@ const float BUILDING_WINDOW_HALO_GAIN = 0.34;
 const float BUILDING_AMBIENT_GAIN = 0.62;
 const float BUILDING_SUN_GAIN = 0.78;
 const float BUILDING_MOON_GAIN = 0.40;
+
+// [building-terrain-light 2026-10-18] 高画质（visual_quality >= 2）下建筑不再自成一套光照：
+//   地形法线：vertex 按实例中心 map uv 采一次，flat varying 带进 fragment（每栋建筑一次 fetch）；
+//   horizon GI：fragment 用逐像素重建的 map uv 采样，一次拿直射遮蔽 / 天空可见度 / bent normal。
+// 与 world_map、植被共用 visual_tile_sampling + terrain_horizon 的解码与强度参数，所以
+// 同一格里的屋顶、田地和地形不会各算一套光。低/中画质取中性值，与接入前逐位一致。
+#define VT_USE_HORIZON
+#define VT_USE_TERRAIN_NORMAL
+#include "res://shaders/include/visual_tile_sampling.gdshaderinc"
+uniform bool terrain_normal_tex_bound = false;
+uniform bool terrain_horizon_tex_bound = false;
+uniform float terrain_horizon_max_angle = 1.309;
+uniform float terrain_horizon_softness = 0.30;
+uniform float terrain_horizon_strength = 0.90;
+uniform float terrain_normal_influence = 0.65;
+// 建筑体量跟随地形坡向的比例。坡度是**加**到自身法线上的（不是插值），否则屋面彼此的
+// 夹角会被压平；这样整栋建筑随坡面偏明暗，屋顶的坡面层次仍然保留。
+uniform float building_terrain_tilt = 0.55;
+uniform bool gi_lut_bound = false;
+uniform vec3 gi_horizon_lut[16];
+uniform float gi_ao_strength = 0.90;
+uniform float gi_ao_floor = 0.38;
+uniform float gi_ao_smoothing = 0.75;
+uniform float gi_bent_strength = 0.35;
+uniform float gi_normal_floor = 0.85;
 #include "res://shaders/include/earth_daylight.gdshaderinc"
+vec2 wrap_map_uv(vec2 uv) { return visual_static_wrap_uv(uv); }
+#include "res://shaders/include/terrain_horizon.gdshaderinc"
 #include "res://shaders/include/building_form.gdshaderinc"
 
 varying vec2 v_p;
@@ -56,6 +83,7 @@ varying flat vec2 v_lift;
 varying flat vec4 v_ids;      // form, material, era, archetype
 varying flat vec2 v_seed_cell;
 varying flat vec2 v_map_uv;
+varying flat vec3 v_ground_n;  // 实例中心的地形法线（shader 空间，+z=天顶）
 varying flat vec3 v_sun_dir;
 varying flat vec3 v_sun_col;
 varying flat vec3 v_amb_col;
@@ -108,6 +136,15 @@ void vertex() {
 	v_sun_col = ed.sun_col;
 	v_amb_col = ed.amb_col;
 	v_day = vec3(ed.local_day, ed.pixel_night, ed.moon_strength);
+
+	// 地形法线每实例只采一次：坡度在 fragment 里作为整栋建筑的基面倾角，
+	// 不随像素变化（建筑是刚体，屋面起伏由自身高度场给出）。
+	vec2 ground_slope = vec2(0.0);
+	if (visual_quality >= 2 && terrain_normal_tex_bound) {
+		ground_slope = (visual_sample_terrain_normal(v_map_uv).rg * 2.0 - 1.0)
+			* terrain_normal_influence;
+	}
+	v_ground_n = normalize(vec3(ground_slope, 1.0));
 }
 
 float footprint(vec2 p) {
@@ -123,14 +160,55 @@ vec3 to_world(vec3 n) {
 	return normalize(vec3(v_ux * n.x + uy * n.y, n.z));
 }
 
-vec3 light_at(vec3 n) {
-	float ndl = max(dot(n, v_sun_dir), 0.0) * v_day.x;
+// 建筑体量的基面倾角：把地形坡度加到自身法线的水平分量上，再归一化。
+// v_ground_n 在低/中画质或未绑定法线纹理时恒为 +z，这里精确退化为原法线。
+vec3 tilt_to_ground(vec3 n) {
+	if (v_ground_n.z >= 0.9999) {
+		return n;
+	}
+	return normalize(vec3(n.xy + v_ground_n.xy * building_terrain_tilt, n.z));
+}
+
+// 逐像素 map uv：quad 在实例局部平面 v_p 上展开，实例中心 uv 加上局部偏移除以世界尺寸。
+// 地图是 top-down 投影，倾斜量（v_lift）只移动屏幕位置，不改变地面落点，所以不参与换算。
+vec2 pixel_map_uv(vec2 s) {
+	vec2 uy = vec2(-v_ux.y, v_ux.x);
+	return v_map_uv + (v_ux * s.x + uy * s.y) / max(world_size, vec2(0.0001));
+}
+
+// 只有高画质付 horizon 的 4 次采样；其余情况返回精确中性值，不碰纹理。
+// covered=false 是 quad 的留白区（比足印大一圈，含倾斜量），那里不会写任何颜色。
+TerrainHorizonSample building_horizon(vec2 map_uv, bool covered) {
+	TerrainHorizonSample neutral;
+	neutral.direct_visibility = 1.0;
+	neutral.sky_visibility = 1.0;
+	neutral.bent_normal = vec3(0.0, 0.0, 1.0);
+	neutral.nearest_packed = vec4(0.0);
+	neutral.has_data = false;
+	if (!covered || visual_quality < 2 || terrain_horizon_strength <= 0.0) {
+		return neutral;
+	}
+	return terrain_horizon_evaluate(map_uv, v_sun_dir);
+}
+
+// 一个 fragment 里最多会叠 3 层（屋面 + 墙面 + 窗/内院），但地面位置相同，所以 horizon
+// 采样在 fragment 顶部做一次、按值传进来——每多一次调用就多 4 次 tap。
+vec3 light_at(vec3 n, TerrainHorizonSample hs) {
+	float ndl = max(dot(n, v_sun_dir), 0.0) * v_day.x * hs.direct_visibility;
 	float mdl = max(dot(n, -v_sun_dir), 0.0) * v_day.z;
-	vec3 amb = earth_sky_sh(v_amb_col, v_sun_col, v_sun_dir, v_day.x, n);
+	vec3 amb_n = n;
+	float sky = 1.0;
+	if (hs.has_data) {
+		// 与 brdf.gi_ambient_normal / gi_ambient_occlusion 同源：bent normal 只改天光方向，
+		// sky visibility 乘在天光强度上，两者来自同一次 horizon 采样。
+		amb_n = normalize(mix(n, hs.bent_normal, gi_bent_strength));
+		sky = terrain_horizon_apply_normal(hs.sky_visibility, n, hs.bent_normal);
+	}
+	vec3 amb = earth_sky_sh(v_amb_col, v_sun_col, v_sun_dir, v_day.x, amb_n);
 	// The reduced ambient gain balances roofs against direct sun; at night the
 	// sky is the only light the terrain gets, so roofs must match it.
 	float amb_gain = mix(1.0, BUILDING_AMBIENT_GAIN, v_day.x);
-	return (amb * amb_gain + v_sun_col * ndl * BUILDING_SUN_GAIN
+	return (amb * amb_gain * sky + v_sun_col * ndl * BUILDING_SUN_GAIN
 		+ EARTH_MOONLIGHT * mdl * BUILDING_MOON_GAIN) * tod_exposure;
 }
 
@@ -255,6 +333,8 @@ void fragment() {
 	float hr = v_height.y;
 	vec2 s = v_p;
 	float px = max(length(fwidth(v_p)) * 0.7, 1e-4);
+	// 逐像素地面位置：horizon 图按真实世界坐标采样，跨山脊的建筑才会在脊线处分开。
+	vec2 map_uv = pixel_map_uv(s);
 
 	vec2 cell_uv = lut_uv(v_seed_cell.y);
 	vec4 dyn = texture(dyn_lut, cell_uv);
@@ -289,6 +369,11 @@ void fragment() {
 
 	vec3 col = vec3(0.0);
 	float alpha = 0.0;
+	// 留白区的 fragment 不付 horizon 的 4 次 tap；内院与风车自己会画地面/叶片，
+	// 没有足印覆盖率也必须算。
+	bool covered = roof_cov > 0.0 || wall_cov > 0.0
+		|| form == BF_COURTYARD || form == BF_WINDMILL;
+	TerrainHorizonSample hs = building_horizon(map_uv, covered);
 
 	if (roof_cov > 0.0) {
 		float e = max(0.025, px * 0.5);
@@ -306,7 +391,7 @@ void fragment() {
 		float spec_amt;
 		float snow_hold;
 		vec3 albedo = roof_albedo(mat, P, along, across, px, seed, era, spec_amt, snow_hold);
-		vec3 n = to_world(n_loc);
+		vec3 n = tilt_to_ground(to_world(n_loc));
 
 		if (form == BF_CHIMNEY || form == BF_COOLING) {
 			float r = length(P) / max(v_half.y, 0.001);
@@ -339,7 +424,7 @@ void fragment() {
 		albedo *= 1.0 - wet * 0.18;
 		spec_amt = spec_amt * (1.0 - snow_amt) + wet * 0.30;
 
-		vec3 c = albedo * light_at(n);
+		vec3 c = albedo * light_at(n, hs);
 		vec3 h = normalize(v_sun_dir + vec3(0.0, 0.0, 1.0));
 		c += v_sun_col * pow(max(dot(n, h), 0.0), 28.0) * spec_amt * v_day.x * 0.6 * tod_exposure;
 
@@ -362,7 +447,7 @@ void fragment() {
 
 	if (wall_cov > 0.0) {
 		vec2 n2 = bf_wall_normal(form, wall_B, v_half);
-		vec3 n = to_world(normalize(vec3(n2, 0.12)));
+		vec3 n = tilt_to_ground(to_world(normalize(vec3(n2, 0.12))));
 		float face = dot(wall_B, vec2(-n2.y, n2.x));
 		float hf = clamp(wall_t / max(he, 0.05), 0.0, 1.0);
 		vec3 albedo;
@@ -377,7 +462,7 @@ void fragment() {
 		// Contact darkening near the ground and a darker gable band above the eave.
 		albedo *= mix(0.62, 1.0, smoothstep(0.0, 0.45, wall_t));
 		albedo *= wall_t > he + 0.02 ? 0.88 : 1.0;
-		vec3 c = albedo * light_at(n);
+		vec3 c = albedo * light_at(n, hs);
 
 		bool windows = era >= 1.5 && form != BF_MOUND && form != BF_CHIMNEY
 			&& form != BF_COOLING && form != BF_DOME && form != BF_TANK
@@ -392,7 +477,7 @@ void fragment() {
 				* step(0.25, wall_t) * win_detail;
 			if (mat == BM_GLASS) in_win = 0.6;
 			float lit = step(0.35, bf_hash12(vec2(floor(face / spacing), floor(wall_t / floor_h)) + seed * 17.0));
-			c = mix(c, vec3(0.10, 0.11, 0.13) * light_at(n) * 1.6, in_win * 0.8);
+			c = mix(c, vec3(0.10, 0.11, 0.13) * light_at(n, hs) * 1.6, in_win * 0.8);
 			if (live) {
 				// Once individual windows are below pixel size their average
 				// glow keeps lit facades readable at night.
@@ -416,7 +501,7 @@ void fragment() {
 				bf_detail(3.0, px) * (era < 3.5 ? 1.0 : 0.3));
 			ground = mix(ground, vec3(0.88, 0.91, 0.95), snow * 0.9);
 			float court_ao = mix(0.55, 1.0, smoothstep(0.0, 0.7, -d_inner));
-			vec3 c = ground * light_at(vec3(0.0, 0.0, 1.0)) * court_ao;
+			vec3 c = ground * light_at(tilt_to_ground(vec3(0.0, 0.0, 1.0)), hs) * court_ao;
 			float a = yard * (1.0 - alpha);
 			col += c * a;
 			alpha += a;
@@ -429,7 +514,7 @@ void fragment() {
 		float angle = seed * 6.2831853 + TIME * (turbine ? 1.1 : 0.35);
 		float sail = bf_sails(hub, mat, v_half.y, angle, px);
 		vec3 sail_col = turbine ? vec3(0.86, 0.87, 0.88) : vec3(0.74, 0.69, 0.58);
-		vec3 lit_sail = sail_col * light_at(vec3(0.0, 0.0, 1.0));
+		vec3 lit_sail = sail_col * light_at(vec3(0.0, 0.0, 1.0), hs);
 		col = col * (1.0 - sail) + lit_sail * sail;
 		alpha = alpha + sail * (1.0 - alpha);
 	}

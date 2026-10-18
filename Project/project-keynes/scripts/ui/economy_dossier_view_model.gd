@@ -37,7 +37,7 @@ const SECTORS: Array[Dictionary] = [
 
 const SATISFACTION_DIMENSIONS: Array[String] = [
 	"温饱", "基本生活", "舒适", "奢侈", "收入增长", "储蓄", "税负", "社会发展"]
-## 前四维是按需求档的满足率，后四维是生活水平。
+## 前四维是实际生活消费，后四维是财务与社会感受。-1 表示不适用。
 const CONSUMPTION_TIER_COUNT := 4
 
 const BOTTLENECK_ORDER: Array[String] = [
@@ -429,19 +429,22 @@ static func aggregate_strata(professions: Dictionary, table: SocialStrataTable) 
 		var entry := table.stratum(index)
 		var dims := PackedFloat32Array()
 		dims.resize(dim_count)
+		var dims_population := PackedFloat32Array()
+		dims_population.resize(dim_count)
 		rows.append({"index": index, "id": String(entry.get("id", "")),
 			"name": String(entry.get("name", "")), "icon": StringName(entry.get("icon", "")),
 			"color": entry.get("color", UITokens.FAMILY_BRASS), "population": 0.0,
 			"cohort_count": 0, "funds": 0.0, "income_per_day": 0.0, "expense_per_day": 0.0,
 			"tax_per_day": 0.0, "subsidy_per_day": 0.0, "in_kind_per_day": 0.0,
 			"employed": 0.0, "unemployed": 0.0, "satisfaction": 0.0, "survival": 0.0,
-			"dims": dims, "professions": [], "need_population": {}})
+			"dims": dims, "dims_population": dims_population, "professions": [], "need_population": {}})
 	var stable_ids = professions.get("profession_stable_ids", PackedStringArray())
 	var names = professions.get("profession_display_names", stable_ids)
 	var population = professions.get("population", PackedInt64Array())
 	var satisfaction = professions.get("satisfaction_q16", PackedInt32Array())
 	var survival = professions.get("survival_satisfaction_q16", PackedInt32Array())
 	var dims_flat = professions.get("satisfaction_dims_q16", PackedInt32Array())
+	var dims_people = professions.get("satisfaction_dims_population", PackedInt64Array())
 	var worst = professions.get("worst_need_population", PackedInt64Array())
 	var need_names = professions.get("need_display_names", professions.get("need_ids", PackedStringArray()))
 	for row in range(stable_ids.size()):
@@ -466,7 +469,11 @@ static func aggregate_strata(professions: Dictionary, table: SocialStrataTable) 
 		bucket.survival += _at(survival, row) * people
 		var dims: PackedFloat32Array = bucket.dims
 		for d in range(dim_count):
-			dims[d] += _at(dims_flat, row * dim_count + d) * people
+			var value := _at(dims_flat, row * dim_count + d)
+			if value >= 0.0:
+				var applicable_people := _at(dims_people, row * dim_count + d) if row * dim_count + d < dims_people.size() else people
+				dims[d] += value * applicable_people
+				bucket.dims_population[d] += applicable_people
 		bucket.dims = dims
 		var needs: Dictionary = bucket.need_population
 		for n in range(need_count):
@@ -489,7 +496,7 @@ static func aggregate_strata(professions: Dictionary, table: SocialStrataTable) 
 			bucket.survival = float(bucket.survival) / people / Q16
 			var dims: PackedFloat32Array = bucket.dims
 			for d in range(dims.size()):
-				dims[d] = dims[d] / people / Q16
+				dims[d] = dims[d] / float(bucket.dims_population[d]) / Q16 if bucket.dims_population[d] > 0.0 else -1.0
 			bucket.dims = dims
 		bucket.income_per_capita = _per_capita(float(bucket.income_per_day), people) / MONEY_SCALE
 		bucket.expense_per_capita = _per_capita(float(bucket.expense_per_day), people) / MONEY_SCALE
@@ -522,14 +529,16 @@ func strata_model(selected_index: int) -> Dictionary:
 		index = int(populated[0].index)
 	var national := PackedFloat32Array()
 	national.resize(SATISFACTION_DIMENSIONS.size())
-	var total := 0.0
+	var national_population := PackedFloat32Array()
+	national_population.resize(national.size())
 	for row in populated:
-		var people := float(row.population)
-		total += people
 		for d in range(national.size()):
-			national[d] += float((row.dims as PackedFloat32Array)[d]) * people
+			if row.dims[d] >= 0.0:
+				var applicable_people := float(row.dims_population[d])
+				national[d] += float(row.dims[d]) * applicable_people
+				national_population[d] += applicable_people
 	for d in range(national.size()):
-		national[d] = national[d] / total if total > 0.0 else 0.0
+		national[d] = national[d] / national_population[d] if national_population[d] > 0.0 else -1.0
 	var selected: Dictionary = rows[index]
 	selected["cities"] = _stratum_cities(index)
 	if _history != null and scope_cell < 0:

@@ -2641,7 +2641,8 @@ Dictionary DCWorldExt::poll_runtime_save(int64_t request_id) {
     return out;
 }
 
-Dictionary DCWorldExt::restore_runtime_bundle(const PackedByteArray &bytes) {
+Dictionary DCWorldExt::restore_runtime_bundle(const PackedByteArray &bytes,
+                                              const PackedByteArray &external_ecp2) {
     Dictionary out;
     if (!_runtime_host) _runtime_host = std::make_unique<NativeSimulationHost>();
     if (bytes.is_empty()) {
@@ -2651,8 +2652,11 @@ Dictionary DCWorldExt::restore_runtime_bundle(const PackedByteArray &bytes) {
         return out;
     }
     std::string error;
+    bool recovered_truncated_ecp2 = false;
     if (!_runtime_host->restore_bundle(bytes.ptr(),
-                                       static_cast<size_t>(bytes.size()), error)) {
+                                       static_cast<size_t>(bytes.size()), error,
+                                       external_ecp2.ptr(), static_cast<size_t>(external_ecp2.size()),
+                                       &recovered_truncated_ecp2)) {
         out["ok"] = false;
         out["code"] = String(error.c_str());
         out["state"] = runtime_state_name(_runtime_host->state());
@@ -2668,6 +2672,7 @@ Dictionary DCWorldExt::restore_runtime_bundle(const PackedByteArray &bytes) {
     out["ok"] = true;
     out["pending"] = true;
     out["restored"] = true;
+    out["recovered_truncated_ecp2"] = recovered_truncated_ecp2;
     out["code"] = "ok";
     out["state"] = runtime_state_name(_runtime_host->state());
     return out;

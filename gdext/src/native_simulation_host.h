@@ -298,6 +298,13 @@ public:
         return std::unique_lock<std::mutex>(
             _economy_authority_boundary_mutex, std::try_to_lock);
     }
+    void request_main_boundary_service() noexcept {
+        _main_boundary_service_requested.store(true, std::memory_order_release);
+    }
+    void complete_main_boundary_service() noexcept {
+        _main_boundary_service_requested.store(false, std::memory_order_release);
+        _control_cv.notify_all();
+    }
     std::unique_lock<std::mutex> try_lock_economy_read_boundary() const {
         return std::unique_lock<std::mutex>(
             _economy_authority_boundary_mutex, std::try_to_lock);
@@ -628,7 +635,9 @@ public:
             _save_failed_request_id.load(std::memory_order_acquire) == request_id;
     }
     std::string save_failure_reason() const;
-    bool restore_bundle(const uint8_t *bytes, size_t size, std::string &error);
+    bool restore_bundle(const uint8_t *bytes, size_t size, std::string &error,
+                        const uint8_t *external_ecp2 = nullptr, size_t external_ecp2_size = 0,
+                        bool *recovered_truncated_ecp2 = nullptr);
 
     // Main-thread visual instrumentation is an atomic write-only feedback
     // path. It never touches worker-owned stores and never waits for the
@@ -1263,6 +1272,7 @@ private:
     // mutex is the actual epoch-boundary gate that prevents a switch from
     // passing an idle check while the worker starts the next day.
     mutable std::mutex _economy_authority_boundary_mutex;
+    std::atomic<bool> _main_boundary_service_requested{false};
     std::atomic<int64_t> _economy_input_requested_day{-1};
     // Sticky peer/fiscal stall bits (OR). Climate-capacity is derived live.
     std::atomic<uint32_t> _day_stall_reason_mask{0};

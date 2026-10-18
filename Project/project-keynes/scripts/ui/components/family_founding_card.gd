@@ -3,6 +3,7 @@ class_name FamilyFoundingCard
 
 const FamilyBuffCopyScript = preload("res://scripts/family/family_buff_copy.gd")
 const TextRowScene = preload("res://scenes/ui/family/family_founding_text_row.tscn")
+const IconScene = preload("res://scenes/ui/icon_badge.tscn")
 
 signal selected()
 signal details_requested()
@@ -11,10 +12,11 @@ signal details_requested()
 @onready var _title: Label = %Title
 @onready var _origin: Label = %Origin
 @onready var _trait_summary: Label = %TraitSummary
-@onready var _effect_preview: Label = %EffectPreview
+@onready var _effect_preview: RichTextLabel = %EffectPreview
 @onready var _traits_list: VBoxContainer = %TraitsList
 @onready var _effect_title: Label = %EffectTitle
 @onready var _effect_tiers_box: VBoxContainer = %EffectTiersBox
+@onready var _effect_context: RichTextLabel = %EffectContext
 @onready var _details_clip: Control = %DetailsClip
 @onready var _details_content: VBoxContainer = %DetailsContent
 @onready var _details_toggle: Button = %DetailsToggle
@@ -26,9 +28,15 @@ var _details_revision := 0
 var _details_preparing := false
 var _normal_style: StyleBox
 var _hover_style: StyleBox
+var _bold_font: FontVariation
 
 
 func _ready() -> void:
+	_bold_font = UITokens.font_with_weight(760)
+	_bold_font.variation_embolden = 0.6
+	_style_copy(_effect_preview)
+	_style_copy(_effect_context)
+	(%EffectIcon as IconBadge).set_semantic(&"family.workspace.effects", UITokens.DOSSIER_OXBLOOD)
 	_normal_style = get_theme_stylebox("panel", &"PKDossierNote").duplicate()
 	_hover_style = _normal_style.duplicate()
 	if _hover_style is StyleBoxTexture:
@@ -95,12 +103,16 @@ func set_candidate(candidate: Dictionary) -> void:
 		tiers = FamilyBuffCopyScript.prestige_statements(raw_description)
 	var preview := FamilyBuffCopyScript.founding_effect_preview(tiers, raw_description)
 	preview = preview.replace("该家族分支所在的本地块会持续获得以下效果：", "本地")
-	_effect_preview.text = "家族效果：无" if effect_name.is_empty() else "%s · %s" % [effect_name, preview]
-	_effect_title.text = "家族效果 · %s（威望晋升后生效）" % effect_name if not effect_name.is_empty() else "家族效果：无"
+	_effect_preview.text = "家族效果：无" if effect_name.is_empty() else "[b]%s[/b]  ·  %s" % [_escape_copy(effect_name), _emphasize(preview)]
+	_effect_title.text = "家族效果 · %s" % effect_name if not effect_name.is_empty() else "家族效果：无"
 	_clear_rows(_effect_tiers_box)
-	for statement in tiers:
-		if not statement.strip_edges().is_empty():
-			_add_copy(_effect_tiers_box, statement)
+	var presentation := FamilyBuffCopyScript.founding_effect_rows(tiers)
+	var context := String(presentation.get("context", ""))
+	_effect_context.visible = not context.is_empty()
+	_effect_context.text = "[b]生效条件[/b]  %s" % _escape_copy(context)
+	for row in presentation.get("rows", []):
+		if not String(row.get("body", "")).is_empty():
+			_add_effect_row(row)
 	if _effect_tiers_box.get_child_count() == 0:
 		_add_copy(_effect_tiers_box, raw_description if not raw_description.is_empty() else "不携带额外家族效果。")
 	_effect_preview.tooltip_text = String(candidate.get("effect_full_description", ""))
@@ -119,16 +131,103 @@ func _clear_rows(container: Container) -> void:
 
 
 func _add_trait_row(trait_name: String, description: String) -> void:
-	var row := TextRowScene.instantiate() as VBoxContainer
+	var row := VBoxContainer.new()
+	row.add_theme_constant_override("separation", UITokens.SPACE_XS)
 	_traits_list.add_child(row)
-	var heading := row.get_node("Heading") as Label
-	heading.text = trait_name
-	heading.visible = true
-	heading.add_theme_font_size_override("font_size", UITokens.FONT_BODY)
-	var copy := row.get_node("Copy") as Label
-	copy.text = description
+	var heading := HBoxContainer.new()
+	heading.add_theme_constant_override("separation", UITokens.SPACE_XS)
+	row.add_child(heading)
+	_add_icon(heading, &"family.workspace.preferences", UITokens.DOSSIER_SLATE)
+	var title := _rich_copy()
+	title.text = "[b]%s[/b]" % _escape_copy(trait_name)
+	heading.add_child(title)
+	var copy := _rich_copy()
+	copy.text = _emphasize(description)
 	copy.visible = not description.strip_edges().is_empty()
-	copy.add_theme_font_size_override("font_size", UITokens.FONT_BODY)
+	row.add_child(copy)
+	row.add_child(HSeparator.new())
+
+
+func _add_effect_row(data: Dictionary) -> void:
+	var band := PanelContainer.new()
+	var paper := StyleBoxFlat.new()
+	paper.bg_color = UITokens.DOSSIER_PAPER_SHADE
+	paper.border_color = UITokens.DOSSIER_RULE
+	paper.border_width_bottom = 1
+	paper.content_margin_left = UITokens.SPACE_SM
+	paper.content_margin_right = UITokens.SPACE_SM
+	paper.content_margin_top = UITokens.SPACE_SM
+	paper.content_margin_bottom = UITokens.SPACE_SM
+	band.add_theme_stylebox_override("panel", paper)
+	band.tooltip_text = String(data.get("original", ""))
+	_effect_tiers_box.add_child(band)
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", UITokens.SPACE_MD)
+	band.add_child(line)
+	var level := int(data.get("level", 1))
+	var rank := VBoxContainer.new()
+	rank.custom_minimum_size.x = 62
+	line.add_child(rank)
+	var label := Label.new()
+	label.text = "威望 %s" % ["Ⅰ", "Ⅱ", "Ⅲ", "Ⅳ", "Ⅴ"][clampi(level - 1, 0, 4)]
+	label.add_theme_color_override("font_color", UITokens.DOSSIER_OXBLOOD)
+	label.add_theme_font_override("font", _bold_font)
+	label.add_theme_font_size_override("font_size", UITokens.FONT_BODY)
+	rank.add_child(label)
+	var marks := HBoxContainer.new()
+	marks.add_theme_constant_override("separation", 3)
+	rank.add_child(marks)
+	for index in 5:
+		var mark := ColorRect.new()
+		mark.custom_minimum_size = Vector2(9, 3)
+		mark.color = UITokens.DOSSIER_BRASS if index < level else UITokens.DOSSIER_TRACK
+		mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		marks.add_child(mark)
+	var copy := _rich_copy()
+	copy.text = _emphasize(String(data.get("body", "")))
+	line.add_child(copy)
+
+
+func _add_icon(parent: Node, key: StringName, color: Color) -> void:
+	var icon := IconScene.instantiate() as IconBadge
+	icon.custom_minimum_size = Vector2(24, 24)
+	parent.add_child(icon)
+	icon.set_semantic(key, color)
+
+
+func _rich_copy() -> RichTextLabel:
+	var copy := RichTextLabel.new()
+	_style_copy(copy)
+	return copy
+
+
+func _style_copy(copy: RichTextLabel) -> void:
+	copy.bbcode_enabled = true
+	copy.fit_content = true
+	copy.scroll_active = false
+	copy.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	copy.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	copy.add_theme_font_override("normal_font", UITokens.dossier_font("sans"))
+	copy.add_theme_font_override("bold_font", _bold_font)
+	copy.add_theme_font_size_override("normal_font_size", UITokens.FONT_BODY)
+	copy.add_theme_font_size_override("bold_font_size", UITokens.FONT_BODY)
+	copy.add_theme_color_override("default_color", UITokens.DOSSIER_INK_SOFT)
+
+
+func _escape_copy(value: String) -> String:
+	return value.replace("[", "[lb]")
+
+
+func _emphasize(value: String) -> String:
+	var safe := _escape_copy(value)
+	var regex := RegEx.new()
+	regex.compile("[+-]?[0-9]+(?:\\.[0-9]+)?%?")
+	var matches := regex.search_all(safe)
+	for index in range(matches.size() - 1, -1, -1):
+		var found := matches[index]
+		var highlighted := "[b][color=#%s]%s[/color][/b]" % [UITokens.DOSSIER_OXBLOOD.to_html(false), found.get_string()]
+		safe = safe.substr(0, found.get_start()) + highlighted + safe.substr(found.get_end())
+	return safe
 
 
 func _add_copy(container: Container, text: String, variation: StringName = &"PKDossierBody") -> void:

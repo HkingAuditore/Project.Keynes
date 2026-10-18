@@ -84,6 +84,7 @@ func _init() -> void:
 	_expect("technology detail explains independent research routes",
 		_items_contain(route_items, "研究条件 · 土地制度路线") and
 		not _items_contain(route_items, "替代研究条件"))
+	_audit_unknown_conditions(workspace, definitions, maize, plantation)
 	var development_title := workspace.get_node(
 		"Root/Main/PolicyPanel/Scroll/Body/DevelopmentTitle") as Label
 	var development_list := workspace.get_node(
@@ -97,8 +98,8 @@ func _init() -> void:
 	if tree == null:
 		_finish()
 		return
-	_expect("tree view draws itself instead of spawning nodes",
-		tree.get_child_count() == 0)
+	_expect("tree draws cards with one shared effects canvas",
+		tree.get_child_count() == 1 and tree.get_node_or_null("ResearchEffects") != null)
 	var available: Control = workspace.available_view()
 	_expect("available research desk exists", available != null)
 	_expect("opening the technology section defaults to the available desk",
@@ -118,6 +119,36 @@ func _init() -> void:
 	_audit_navigation(workspace, tree, definitions)
 	_audit_application_card(definitions, eras, domains)
 	_finish()
+
+
+func _audit_unknown_conditions(workspace: Control, definitions: Array,
+		maize: int, plantation: int) -> void:
+	var states := PackedInt32Array()
+	states.resize(definitions.size())
+	var items: Array = workspace._condition_items(maize, states)
+	_expect("unknown nodes show missing discovery evidence and logical alternatives",
+		_items_contain(items, "发现条件") and _items_contain(items, "阻塞")
+		and _items_contain(items, "任意满足一项"))
+	var route_items: Array = workspace._condition_items(plantation, states)
+	_expect("unknown routes explain gates without revealing authored names",
+		_items_contain(route_items, "路线 1") and _items_contain(route_items, "任意一条")
+		and not _items_contain(route_items, "种植园")
+		and not _items_contain(route_items, "土地制度路线"))
+	var card = workspace.get("_detail")
+	card.show_unknown(items, 1)
+	_expect("locked details render conditions while concealing cost and effects",
+		card.get_node("%DetailBlock").visible and card.get_node("%Conditions").visible
+		and not card.get_node("%Gauge").visible and not card.get_node("%Chips").visible
+		and not card.get_node("%Effects").visible and not card.get_node("%Action").visible)
+	card.show_technology(maize, definitions[maize], 2, 0.0, Color.WHITE, "石器时代", "农业",
+		{"condition_items": items})
+	_expect("selecting a researchable node restores its cost and progress",
+		card.get_node("%Gauge").visible and card.get_node("%Chips").visible)
+	# A pending Effect has not exposed the completed tag yet.
+	states[maize] = 4
+	var pending: Dictionary = workspace._evaluate_condition(
+		{"kind": 0, "id": String(definitions[maize].id)}, states, {})
+	_expect("pending activation does not display a completed prerequisite", not pending.met)
 
 
 func _audit_application_card(definitions: Array, eras: Array, domains: Array) -> void:
@@ -348,8 +379,8 @@ func _audit_fog(tree: Control, layout: Dictionary) -> void:
 func _audit_desk(workspace: Control) -> void:
 	var available := workspace.available_view() as TechnologyAvailableView
 	var list := available.list_canvas()
-	_expect("available desk draws its cards instead of spawning rows",
-		list != null and list.get_child_count() == 0)
+	_expect("available desk draws cards with one shared effects canvas",
+		list != null and list.get_child_count() == 1 and list.get_node_or_null("ResearchEffects") != null)
 	var report: Dictionary = available.available_report()
 	_expect("available desk separates queued work from researchable work",
 		int(report.get("queued_count", 0)) == 1 and int(report.get("count", 0)) == 3)
@@ -640,7 +671,7 @@ func _audit_refresh(workspace: Control, tree: Control, definitions: Array,
 	var refreshed: Array = workspace.get("_queue_rows")
 	_expect("daily refresh reuses queue rows instead of rebuilding them",
 		((refreshed[0] as Array)[0] as Node).get_instance_id() == row_id)
-	_expect("tree view still owns no child nodes", tree.get_child_count() == 0)
+	_expect("daily refresh keeps one shared effects canvas", tree.get_child_count() == 1)
 	_audit_refresh_cost(workspace, definitions, eras, domains)
 	var user_offset: Vector2 = tree.get("_offset") + Vector2(-8.0, -8.0)
 	tree.set("_offset", user_offset)

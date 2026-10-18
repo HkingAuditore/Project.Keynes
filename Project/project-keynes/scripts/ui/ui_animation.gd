@@ -1,6 +1,46 @@
 extends RefCounted
 class_name UIAnimation
 
+const TechnologyRevealShader := preload("res://shaders/ui/technology_page_reveal.gdshader")
+
+
+## 材质扫描只在切页/切时代时运行；不移动 Container 管理的坐标。
+static func reveal_technology_page(control: Control, page_top: float = 0.0,
+		page_height: float = -1.0) -> void:
+	if control == null or not control.is_inside_tree():
+		return
+	var old_tween = control.get_meta("_technology_reveal_tween") \
+		if control.has_meta("_technology_reveal_tween") else null
+	if old_tween is Tween and old_tween.is_valid():
+		old_tween.kill()
+	var shader_material = control.get_meta("_technology_reveal_material") \
+		if control.has_meta("_technology_reveal_material") else null
+	if shader_material == null:
+		# Preserve a feature's own material instead of replacing it.
+		if control.material != null:
+			return
+		shader_material = ShaderMaterial.new()
+		shader_material.shader = TechnologyRevealShader
+		control.set_meta("_technology_reveal_material", shader_material)
+	if reduced_motion():
+		control.material = null
+		return
+	control.material = shader_material
+	var scale_y := control.get_global_transform().get_scale().y
+	shader_material.set_shader_parameter("page_top", control.global_position.y + page_top * scale_y)
+	shader_material.set_shader_parameter("page_height",
+		(control.size.y if page_height < 0.0 else page_height) * scale_y)
+	shader_material.set_shader_parameter("brass", UITokens.TECH_EFFECT_BRASS)
+	shader_material.set_shader_parameter("reveal", 0.0)
+	var tween := control.create_tween()
+	control.set_meta("_technology_reveal_tween", tween)
+	tween.tween_method(func(value: float) -> void:
+		shader_material.set_shader_parameter("reveal", value), 0.0, 1.0,
+		UITokens.TECH_PAGE_REVEAL).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_callback(func() -> void:
+		control.material = null
+		control.remove_meta("_technology_reveal_tween"))
+
 static func reduced_motion() -> bool:
 	var tree := Engine.get_main_loop() as SceneTree
 	var settings := tree.root.get_node_or_null("GameSettings") if tree != null else null

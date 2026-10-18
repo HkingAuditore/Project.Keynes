@@ -824,6 +824,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _economy_pod_parity_ready_mask.store(0, std::memory_order_release);
     _economy_sync_writes_forbidden.store(false, std::memory_order_release);
     _economy_input_requested_day.store(-1, std::memory_order_release);
+    _main_boundary_service_requested.store(false, std::memory_order_release);
     _economy_input_signal.store(0, std::memory_order_release);
     _economy_shadow_stage_invocations.store(0, std::memory_order_release);
     _economy_shadow_stage_cache_hits.store(0, std::memory_order_release);
@@ -12449,7 +12450,10 @@ NativeSimulationHost::poll_save(uint64_t request_id) const {
 }
 
 bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
-                                          std::string &error) {
+                                          std::string &error,
+                                          const uint8_t *external_ecp2, size_t external_ecp2_size,
+                                          bool *recovered_truncated_ecp2) {
+    if (recovered_truncated_ecp2) *recovered_truncated_ecp2 = false;
     if (try_fault_injection("restore.decode.before")) {
         error = "restore_decode_fault_injected_before";
         return false;
@@ -13162,7 +13166,6 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
             !read_u32(cursor, economy_marker) ||
             !read_u32(cursor + 4u, economy_size) ||
             economy_marker != ECONOMY_ECP2_SECTION_MARKER ||
-            economy_size > 64u * 1024u * 1024u ||
             economy_size > payload_end - cursor - 16u) {
             error = "runtime_bundle_economy_ecp2_section_invalid";
             return false;
@@ -13193,10 +13196,29 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
         if (!decode_ecp2(parsed.economy_ecp2_bytes.data(),
                          parsed.economy_ecp2_bytes.size(), candidate_ecp2,
                          economy_ecp2_restore_error)) {
-            error = economy_ecp2_restore_error.empty()
-                ? "runtime_bundle_economy_ecp2_restore_invalid"
-                : economy_ecp2_restore_error;
-            return false;
+            // Old writers silently capped this section at 64 MiB, but PKSV
+            // retained the complete frozen checkpoint as its separate ecp2
+            // section. Recover only that exact prefix, after the original
+            // bundle/section checksums and the complete ECP2 hash validate.
+            constexpr size_t legacy_limit = 64u * 1024u * 1024u;
+            if (economy_ecp2_restore_error != "ecp2_content_hash_mismatch" ||
+                parsed.economy_ecp2_bytes.size() != legacy_limit ||
+                external_ecp2 == nullptr || external_ecp2_size <= legacy_limit ||
+                external_ecp2_size > std::numeric_limits<uint32_t>::max() ||
+                std::memcmp(parsed.economy_ecp2_bytes.data(), external_ecp2,
+                            legacy_limit) != 0) {
+                error = economy_ecp2_restore_error.empty()
+                    ? "runtime_bundle_economy_ecp2_restore_invalid"
+                    : economy_ecp2_restore_error;
+                return false;
+            }
+            if (!decode_ecp2(external_ecp2, external_ecp2_size, candidate_ecp2,
+                             economy_ecp2_restore_error)) {
+                error = economy_ecp2_restore_error;
+                return false;
+            }
+            parsed.economy_ecp2_bytes.assign(external_ecp2, external_ecp2 + external_ecp2_size);
+            if (recovered_truncated_ecp2) *recovered_truncated_ecp2 = true;
         }
         if (!ecp2_has_required_domains(candidate_ecp2.authority_domain_mask,
                                        ECP2_DOMAIN_CORE_AUTHORITY)) {
@@ -13553,7 +13575,13 @@ void NativeSimulationHost::build_save_bundle(
             &bundle->gameplay_effect_bytes, &bundle->effect_bytes,
             &bundle->ideology_bytes, &bundle->economy_pod_bytes,
             &bundle->economy_ecp2_bytes}) {
-        wire_reserve += 16u + std::min<size_t>(section->size(), 64u * 1024u * 1024u);
+        const size_t limit = section == &bundle->economy_ecp2_bytes
+            ? std::numeric_limits<uint32_t>::max() : 64u * 1024u * 1024u;
+        if (section->size() > limit) {
+            record_save_failure("save_runtime_section_too_large");
+            return;
+        }
+        wire_reserve += 16u + section->size();
     }
     bundle->bytes.reserve(wire_reserve);
     const auto append_bytes = [&bundle](const void *data, size_t size) {
@@ -13639,10 +13667,8 @@ void NativeSimulationHost::build_save_bundle(
     append_u64_le(bundle->fallback_producer_sequence);
     constexpr uint32_t DOMAIN_SECTION_MARKER = 0x32445044u; // "DPD2"
     append_u32_le(DOMAIN_SECTION_MARKER);
-    append_u32_le(static_cast<uint32_t>(std::min<size_t>(
-        bundle->domain_pod_bytes.size(), 64u * 1024u * 1024u)));
-    const uint32_t domain_section_size = static_cast<uint32_t>(std::min<size_t>(
-        bundle->domain_pod_bytes.size(), 64u * 1024u * 1024u));
+    append_u32_le(static_cast<uint32_t>(bundle->domain_pod_bytes.size()));
+    const uint32_t domain_section_size = static_cast<uint32_t>(bundle->domain_pod_bytes.size());
     if (domain_section_size > 0) {
         append_bytes(bundle->domain_pod_bytes.data(), domain_section_size);
     }
@@ -13653,8 +13679,7 @@ void NativeSimulationHost::build_save_bundle(
     if (include_climate) {
         constexpr uint32_t CLIMATE_SECTION_MARKER = 0x324d4c43u; // "CLM2"
         append_u32_le(CLIMATE_SECTION_MARKER);
-        const uint32_t climate_section_size = static_cast<uint32_t>(std::min<size_t>(
-            bundle->climate_bytes.size(), 64u * 1024u * 1024u));
+        const uint32_t climate_section_size = static_cast<uint32_t>(bundle->climate_bytes.size());
         append_u32_le(climate_section_size);
         if (climate_section_size > 0)
             append_bytes(bundle->climate_bytes.data(), climate_section_size);
@@ -13670,8 +13695,7 @@ void NativeSimulationHost::build_save_bundle(
         constexpr uint32_t COUNTRY_SECTION_MARKER = 0x32445043u; // CPD2
         append_u32_le(COUNTRY_SECTION_MARKER);
         const uint32_t country_section_size = static_cast<uint32_t>(
-            std::min<size_t>(bundle->country_bytes.size(),
-                             64u * 1024u * 1024u));
+            bundle->country_bytes.size());
         append_u32_le(country_section_size);
         if (country_section_size > 0)
             append_bytes(bundle->country_bytes.data(), country_section_size);
@@ -13682,8 +13706,7 @@ void NativeSimulationHost::build_save_bundle(
     if (!bundle->economy_asset_bytes.empty()) {
         constexpr uint32_t D7_SECTION_MARKER = 0x31543744u; // D7T1
         append_u32_le(D7_SECTION_MARKER);
-        const uint32_t d7_section_size = static_cast<uint32_t>(std::min<size_t>(
-            bundle->economy_asset_bytes.size(), 64u * 1024u * 1024u));
+        const uint32_t d7_section_size = static_cast<uint32_t>(bundle->economy_asset_bytes.size());
         append_u32_le(d7_section_size);
         append_bytes(bundle->economy_asset_bytes.data(), d7_section_size);
         const uint64_t d7_checksum = economy_save_hash_bytes(
@@ -13694,8 +13717,7 @@ void NativeSimulationHost::build_save_bundle(
     if (!bundle->trigger_bytes.empty()) {
         constexpr uint32_t TRIGGER_SECTION_MARKER = 0x31445054u; // TPD1
         append_u32_le(TRIGGER_SECTION_MARKER);
-        const uint32_t trigger_section_size = static_cast<uint32_t>(std::min<size_t>(
-            bundle->trigger_bytes.size(), 64u * 1024u * 1024u));
+        const uint32_t trigger_section_size = static_cast<uint32_t>(bundle->trigger_bytes.size());
         append_u32_le(trigger_section_size);
         append_bytes(bundle->trigger_bytes.data(), trigger_section_size);
         uint64_t trigger_checksum = 1469598103934665603ull;
@@ -13710,8 +13732,7 @@ void NativeSimulationHost::build_save_bundle(
         constexpr uint32_t MODIFIER_SECTION_MARKER = 0x3246444Du; // MDF2
         append_u32_le(MODIFIER_SECTION_MARKER);
         const uint32_t modifier_section_size = static_cast<uint32_t>(
-            std::min<size_t>(bundle->modifier_bytes.size(),
-                             64u * 1024u * 1024u));
+            bundle->modifier_bytes.size());
         append_u32_le(modifier_section_size);
         append_bytes(bundle->modifier_bytes.data(), modifier_section_size);
         uint64_t modifier_checksum = 1469598103934665603ull;
@@ -13726,7 +13747,7 @@ void NativeSimulationHost::build_save_bundle(
         constexpr uint32_t EVENTS_SECTION_MARKER = 0x31545645u; // EVT1
         append_u32_le(EVENTS_SECTION_MARKER);
         const uint32_t events_section_size = static_cast<uint32_t>(
-            std::min<size_t>(bundle->events_bytes.size(), 64u * 1024u * 1024u));
+            bundle->events_bytes.size());
         append_u32_le(events_section_size);
         append_bytes(bundle->events_bytes.data(), events_section_size);
         uint64_t events_checksum = 1469598103934665603ull;
@@ -13741,8 +13762,7 @@ void NativeSimulationHost::build_save_bundle(
         constexpr uint32_t GAMEPLAY_EFFECT_SECTION_MARKER = 0x31504d47u; // GMP1
         append_u32_le(GAMEPLAY_EFFECT_SECTION_MARKER);
         const uint32_t gameplay_effect_section_size = static_cast<uint32_t>(
-            std::min<size_t>(bundle->gameplay_effect_bytes.size(),
-                             64u * 1024u * 1024u));
+            bundle->gameplay_effect_bytes.size());
         append_u32_le(gameplay_effect_section_size);
         append_bytes(bundle->gameplay_effect_bytes.data(),
                      gameplay_effect_section_size);
@@ -13759,7 +13779,7 @@ void NativeSimulationHost::build_save_bundle(
         constexpr uint32_t EFFECT_SECTION_MARKER = 0x31504645u; // EFP1
         append_u32_le(EFFECT_SECTION_MARKER);
         const uint32_t effect_section_size = static_cast<uint32_t>(
-            std::min<size_t>(bundle->effect_bytes.size(), 64u * 1024u * 1024u));
+            bundle->effect_bytes.size());
         append_u32_le(effect_section_size);
         append_bytes(bundle->effect_bytes.data(), effect_section_size);
         uint64_t effect_checksum = 1469598103934665603ull;
@@ -13774,8 +13794,7 @@ void NativeSimulationHost::build_save_bundle(
         constexpr uint32_t IDEOLOGY_SECTION_MARKER = 0x32504449u; // IDP2
         append_u32_le(IDEOLOGY_SECTION_MARKER);
         const uint32_t ideology_section_size = static_cast<uint32_t>(
-            std::min<size_t>(bundle->ideology_bytes.size(),
-                             64u * 1024u * 1024u));
+            bundle->ideology_bytes.size());
         append_u32_le(ideology_section_size);
         append_bytes(bundle->ideology_bytes.data(), ideology_section_size);
         uint64_t ideology_checksum = 1469598103934665603ull;
@@ -13790,8 +13809,7 @@ void NativeSimulationHost::build_save_bundle(
         constexpr uint32_t ECONOMY_POD_SECTION_MARKER = 0x31504345u; // ECP1
         append_u32_le(ECONOMY_POD_SECTION_MARKER);
         const uint32_t economy_section_size = static_cast<uint32_t>(
-            std::min<size_t>(bundle->economy_pod_bytes.size(),
-                             64u * 1024u * 1024u));
+            bundle->economy_pod_bytes.size());
         append_u32_le(economy_section_size);
         append_bytes(bundle->economy_pod_bytes.data(), economy_section_size);
         const uint64_t economy_checksum = economy_save_hash_bytes(
@@ -13803,8 +13821,7 @@ void NativeSimulationHost::build_save_bundle(
         constexpr uint32_t ECONOMY_ECP2_SECTION_MARKER = 0x32504345u; // ECP2
         append_u32_le(ECONOMY_ECP2_SECTION_MARKER);
         const uint32_t ecp2_section_size = static_cast<uint32_t>(
-            std::min<size_t>(bundle->economy_ecp2_bytes.size(),
-                             64u * 1024u * 1024u));
+            bundle->economy_ecp2_bytes.size());
         append_u32_le(ecp2_section_size);
         append_bytes(bundle->economy_ecp2_bytes.data(), ecp2_section_size);
         const uint64_t ecp2_checksum = economy_save_hash_bytes(
@@ -14033,6 +14050,21 @@ void NativeSimulationHost::worker_main() {
                 if (_stop_requested.load(std::memory_order_acquire)) break;
                 const int64_t from_day = _committed_day.load(std::memory_order_acquire);
                 const int64_t day = from_day + 1;
+                // A continuous climate-driven worker can otherwise re-take
+                // this mutex before the main thread ever gets a turn. Yield
+                // only between semantic days for an explicitly queued inbox
+                // service; never wait with the authority boundary held.
+                if (_main_boundary_service_requested.load(std::memory_order_acquire)) {
+                    std::unique_lock<std::mutex> control_lock(_control_mutex);
+                    while (_main_boundary_service_requested.load(std::memory_order_acquire) &&
+                           !_stop_requested.load(std::memory_order_acquire)) {
+                        // Completion is an atomic transport signal. Bound the
+                        // sleep so a notify between predicate and wait cannot
+                        // strand the worker after the main thread completed.
+                        _control_cv.wait_for(control_lock, std::chrono::milliseconds(5));
+                    }
+                    if (_stop_requested.load(std::memory_order_acquire)) break;
+                }
                 // Keep the authority switch closed across the whole semantic
                 // day transaction, including publish_day() and generation
                 // release. Counting only execute_day_plan() leaves a small

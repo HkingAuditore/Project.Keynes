@@ -152,6 +152,105 @@ func _run() -> void:
 		(orders.line_offsets as PackedInt32Array).size() ==
 			(orders.order_ids as PackedInt64Array).size() + 1 and
 		(orders.line_good_ids as PackedInt32Array).size() >= 2)
+	var hash_before_trade_queries: int = int(ext.get_economy_state_hash())
+	var market_for_trade_query: Dictionary = ext.get_market_cell_snapshot(0)
+	var report_sample_day := int(ext.get_economy_report().get("sample_day", -2))
+	var default_orders_again: Dictionary = ext.get_trade_orders_for_cell(0, 0, 64)
+	var explicit_default_orders: Dictionary = ext.get_trade_orders_for_cell(0, 0, 64, -1)
+	_expect("default trade order query keeps its three-argument contract",
+		bool(default_orders_again.get("ok", false)) and
+		int(default_orders_again.get("total", -1)) == int(orders.get("total", -2)) and
+		int(default_orders_again.get("page_begin", -1)) == 0 and
+		int(default_orders_again.get("good_index", 0)) == -1 and
+		int(default_orders_again.get("sample_day", -1)) == report_sample_day and
+		int(default_orders_again.get("economy_generation", -1)) == int(
+			market_for_trade_query.get("economy_generation", -2)) and
+		int(explicit_default_orders.get("total", -1)) ==
+			int(default_orders_again.get("total", -2)) and
+		(explicit_default_orders.order_ids as PackedInt64Array).size() ==
+			(default_orders_again.order_ids as PackedInt64Array).size())
+	var unfiltered_line_goods: PackedInt32Array = orders.line_good_ids
+	var unfiltered_line_quantities: PackedInt64Array = orders.line_quantities
+	var unfiltered_line_offsets: PackedInt32Array = orders.line_offsets
+	var filtered_orders: Dictionary = ext.get_trade_orders_for_cell(0, 0, 64, gathered)
+	var filtered_line_goods: PackedInt32Array = filtered_orders.get(
+		"line_good_ids", PackedInt32Array())
+	var filtered_line_quantities: PackedInt64Array = filtered_orders.get(
+		"line_quantities", PackedInt64Array())
+	var filtered_all_gathered := true
+	var filtered_quantity := 0
+	for filtered_line in range(filtered_line_goods.size()):
+		if int(filtered_line_goods[filtered_line]) != gathered:
+			filtered_all_gathered = false
+		filtered_quantity += int(filtered_line_quantities[filtered_line])
+	var unfiltered_gathered_quantity := 0
+	var unfiltered_gathered_orders := 0
+	var unfiltered_gathered_by_order: Array[int] = []
+	var line_cursor := 0
+	for order_index in range((orders.order_ids as PackedInt64Array).size()):
+		var order_gathered_quantity := 0
+		var order_line_end := int(unfiltered_line_offsets[order_index + 1])
+		while line_cursor < order_line_end:
+			if int(unfiltered_line_goods[line_cursor]) == gathered:
+				order_gathered_quantity += int(
+					unfiltered_line_quantities[line_cursor])
+			line_cursor += 1
+		if order_gathered_quantity > 0:
+			unfiltered_gathered_orders += 1
+			unfiltered_gathered_quantity += order_gathered_quantity
+			unfiltered_gathered_by_order.append(order_gathered_quantity)
+	var filtered_gathered_by_order: Array[int] = []
+	var filtered_line_cursor := 0
+	for filtered_order_index in range(
+			(filtered_orders.order_ids as PackedInt64Array).size()):
+		var filtered_order_quantity := 0
+		var filtered_order_line_end := int(
+			(filtered_orders.line_offsets as PackedInt32Array)[filtered_order_index + 1])
+		while filtered_line_cursor < filtered_order_line_end:
+			filtered_order_quantity += int(
+				filtered_line_quantities[filtered_line_cursor])
+			filtered_line_cursor += 1
+		filtered_gathered_by_order.append(filtered_order_quantity)
+	_expect("trade order query filters to one good with equal quantities",
+		int(orders.get("total", 0)) <= 64 and
+		bool(filtered_orders.get("ok", false)) and
+		int(filtered_orders.get("total", -1)) == unfiltered_gathered_orders and
+		filtered_line_goods.size() > 0 and filtered_all_gathered and
+		filtered_quantity == unfiltered_gathered_quantity and
+		filtered_gathered_by_order == unfiltered_gathered_by_order and
+		int(filtered_orders.get("good_index", 0)) == gathered and
+		(filtered_orders.line_offsets as PackedInt32Array).size() ==
+			(filtered_orders.order_ids as PackedInt64Array).size() + 1)
+	var first_filtered_page: Dictionary = ext.get_trade_orders_for_cell(0, 0, 1, gathered)
+	var second_filtered_page: Dictionary = ext.get_trade_orders_for_cell(0, 1, 1, gathered)
+	var filtered_total := int(filtered_orders.get("total", 0))
+	_expect("trade order query pages the filtered order stream",
+		bool(first_filtered_page.get("ok", false)) and
+		int(first_filtered_page.get("page_begin", -1)) == 0 and
+		(first_filtered_page.order_ids as PackedInt64Array).size() == mini(
+			filtered_total, 1) and
+		bool(first_filtered_page.get("has_more", true)) == (filtered_total > 1) and
+		int(second_filtered_page.get("page_begin", -1)) == mini(1, filtered_total))
+	var unknown_good := -1
+	for candidate_good in range((compiled.good_ids as PackedStringArray).size()):
+		if candidate_good != gathered and not unfiltered_line_goods.has(candidate_good):
+			unknown_good = candidate_good
+			break
+	var unknown_orders: Dictionary = ext.get_trade_orders_for_cell(0, 0, 64, unknown_good)
+	_expect("trade order query reports an empty page for an absent good",
+		unknown_good >= 0 and bool(unknown_orders.get("ok", false)) and
+		int(unknown_orders.get("total", 0)) == 0 and
+		(unknown_orders.line_offsets as PackedInt32Array).size() == 1)
+	var out_of_range_orders: Dictionary = ext.get_trade_orders_for_cell(
+		0, 0, 64, (compiled.good_ids as PackedStringArray).size())
+	var negative_good_orders: Dictionary = ext.get_trade_orders_for_cell(0, 0, 64, -2)
+	_expect("trade order query rejects out-of-range good indices",
+		not bool(out_of_range_orders.get("ok", true)) and
+		String(out_of_range_orders.get("reason", "")) == "good_out_of_range" and
+		not bool(negative_good_orders.get("ok", true)) and
+		String(negative_good_orders.get("reason", "")) == "good_out_of_range")
+	_expect("trade order queries stay read-only",
+		int(ext.get_economy_state_hash()) == hash_before_trade_queries)
 	var destination_after_dispatch: Dictionary = ext.get_market_cell_snapshot(1)
 	var trade_purchase_cash := int(
 		destination_after_dispatch.get("merchant_trade_purchase_cash", 0))

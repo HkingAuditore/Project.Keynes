@@ -449,7 +449,11 @@ func _set_mode(mode: int) -> void:
 			_presentation_progress(_research.get("technology_progress", PackedInt64Array())))
 	var canvas := _available if _mode == MODE_AVAILABLE \
 		else (_tree if _mode == MODE_FOCUS else _overview)
-	UIAnimation.crossfade(canvas, UITokens.ANIM_FAST)
+	if _mode == MODE_AVAILABLE:
+		var scroll_top := float(_available.scroll_vertical)
+		UIAnimation.reveal_technology_page(_available.list_canvas(), scroll_top, _available.size.y)
+	else:
+		UIAnimation.reveal_technology_page(canvas)
 
 
 func _on_mode_chapter_selected(chapter_id: String) -> void:
@@ -1400,9 +1404,10 @@ func _refresh_detail(refresh_relations: bool = true) -> void:
 			_detail.show_milestone_locked(
 				String(_era_names.get(String(definition.get("era_id", "")), "")),
 				_milestone_completed_count(definition, states),
-				int(definition.get("milestone_required_count", 5)))
+				int(definition.get("milestone_required_count", 5)),
+				_condition_items(index, states))
 		else:
-			_detail.show_unknown()
+			_detail.show_unknown(_condition_items(index, states), state)
 		return
 	var progress: PackedInt64Array = _research.get(
 		"technology_progress", PackedInt64Array())
@@ -1553,7 +1558,7 @@ func _condition_items(index: int, states: PackedInt32Array) -> Array:
 	if not entry_id.is_empty() and bool(definition.get("is_milestone", false)):
 		var entry_index := int(_technology_indices.get(entry_id, -1))
 		var entry_met := entry_index >= 0 and entry_index < states.size() \
-			and int(states[entry_index]) >= 4
+			and int(states[entry_index]) >= 5
 		var entry_name := entry_id
 		if entry_index >= 0 and entry_index < _definitions.size():
 			entry_name = String((_definitions[entry_index] as Dictionary).get(
@@ -1564,15 +1569,24 @@ func _condition_items(index: int, states: PackedInt32Array) -> Array:
 			"accent": UITokens.GOOD if entry_met else UITokens.WARN,
 			"met": entry_met,
 		})
+	var milestone_required := int(definition.get("milestone_required_count", 0))
+	if milestone_required > 0:
+		var completed := _milestone_completed_count(definition, states)
+		items.append({"text": "里程碑候选：已完成 %d / %d 项" % [completed, milestone_required],
+			"met": completed >= milestone_required, "icon": &"technology.milestone"})
 	var evidence := _signal_evidence()
 	var reveal_spec: Dictionary = definition.get("reveal_condition", {})
 	if not reveal_spec.is_empty():
 		var reveal_result := _evaluate_condition(reveal_spec, states, evidence)
+		var reveal_met := bool(reveal_result.get("met", false))
+		items.append({
+			"text": "发现条件 · %s" % ("已满足" if reveal_met else "未满足"),
+			"icon": &"technology.state.completed" if reveal_met else &"technology.state.locked",
+			"accent": UITokens.GOOD if reveal_met else UITokens.WARN,
+			"met": reveal_met,
+		})
 		for item_value in reveal_result.get("items", []) as Array:
 			var item: Dictionary = item_value
-			if String(item.get("source_kind", "")) != "signal" \
-					or not bool(item.get("met", false)):
-				continue
 			var inspiration := item.duplicate()
 			inspiration["text"] = "发现：%s" % String(item.get("text", ""))
 			items.append(inspiration)
@@ -1590,13 +1604,18 @@ func _condition_items(index: int, states: PackedInt32Array) -> Array:
 			"accent": UITokens.GOOD if hard_met else UITokens.WARN,
 			"met": hard_met,
 		})
-	for route_value in definition.get("research_routes", []) as Array:
+	var routes: Array = definition.get("research_routes", [])
+	if not routes.is_empty():
+		items.append({"text": "研究路线：完成以下任意一条路线", "icon": &"metric.technology"})
+	for route_value in routes:
 		var route: Dictionary = route_value
 		var route_result := _evaluate_condition(route.get("condition", {}) as Dictionary,
 			states, evidence)
 		var route_met := bool(route_result.get("met", false))
-		var route_name := String(route.get("display_name", "研究条件"))
-		var route_description := String(route.get("description", ""))
+		var presented := TechnologyTreeView.presents_state(int(states[index]) if index < states.size() else 0)
+		var route_name := String(route.get("display_name", "研究条件")) if presented \
+			else "路线 %d" % (routes.find(route_value) + 1)
+		var route_description := String(route.get("description", "")) if presented else ""
 		var route_text := "研究条件 · %s" % route_name
 		if not route_description.is_empty():
 			route_text += "：%s" % route_description
@@ -1667,6 +1686,17 @@ func _evaluate_condition(spec: Dictionary, states: PackedInt32Array,
 		ResearchConditionScript.Operator.NOT:
 			met = child_results.size() == 1 and not bool(
 				(child_results[0] as Dictionary).get("met", false))
+	var rule := ""
+	match operator:
+		ResearchConditionScript.Operator.ALL_OF: rule = "以下条件全部满足"
+		ResearchConditionScript.Operator.ANY_OF: rule = "以下条件任意满足一项"
+		ResearchConditionScript.Operator.AT_LEAST:
+			rule = "以下条件至少满足 %d 项" % int(spec.get("required_count", 1))
+		ResearchConditionScript.Operator.NOT: rule = "以下条件不成立"
+	if not rule.is_empty():
+		items.push_front({"text": "%s（%s）" % [rule, "已满足" if met else "未满足"],
+			"met": met, "icon": &"technology.state.completed" if met else &"technology.state.locked",
+			"accent": UITokens.GOOD if met else UITokens.WARN})
 	return {"met": met, "items": items}
 
 
@@ -1679,7 +1709,7 @@ func _evaluate_condition_atom(atom: Dictionary, states: PackedInt32Array,
 		var technology_index := int(_technology_indices.get(stable_id, -1))
 		var technology_state := int(states[technology_index]) \
 			if technology_index >= 0 and technology_index < states.size() else 0
-		var met := technology_state >= 4
+		var met := technology_state >= 5
 		var technology_name := "未知科技"
 		if TechnologyTreeView.presents_state(technology_state) \
 				and technology_index < _definitions.size():
@@ -1710,7 +1740,7 @@ func _evaluate_condition_atom(atom: Dictionary, states: PackedInt32Array,
 		var target_days := maxi(1, int(development.get("target_days",
 			definition.get("duration_days", 1))))
 		var consecutive := int(development.get("consecutive_days", 0))
-		var met := int(development.get("completed", 0)) > 0 \
+		var met := int(row.get("count", 0)) > 0 or int(development.get("completed", 0)) > 0 \
 			or (current >= qualifier and consecutive >= target_days)
 		var name := String(_signal_names.get(stable_id, stable_id))
 		return {

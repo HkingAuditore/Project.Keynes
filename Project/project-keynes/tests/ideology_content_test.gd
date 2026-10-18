@@ -227,7 +227,7 @@ func _init() -> void:
 		and bool(workspace.call("empty_state_visible"))
 		and int(workspace.call("slots_capacity")) == 3
 		and not String(workspace.call("hint_text")).contains("暂不可用"))
-	_expect("deck table renders open plus locked niches",
+	_expect("deck table reports catalog slot capacity",
 		int(workspace.call("niche_count", 1)) == 3
 		and int(workspace.call("niche_count", 2)) == 2)
 	var offer_card := CountryViewModel.present_ideology_card({

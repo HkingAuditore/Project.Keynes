@@ -1,5 +1,8 @@
 # C++/DOTS Runtime 开发文档索引
 
+- [贸易载具运行时](./trade-visual-runtime.md)：真实在途订单的有界已提交观察、独立分片寻路、
+  正俯视时代图集、MultiMesh、视野约束与中心 TOD/法线/Horizon GI/投影；[验证记录](./trade-visual-validation.md)。
+
 - [建筑视觉运行时](./building-visual-runtime.md)：科技时代驱动的 2.5D 建筑复合体；产业视觉族、人口骨架与贫富分区；迷雾情报、天气、阴影、植被协调和性能闸门。
 
 - [运河运行时](./canal-runtime.md)：API-ready 的权威边状态、经济施工、Effect 原子提交、

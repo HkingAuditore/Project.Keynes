@@ -227,7 +227,12 @@ as pending.
 `共同体治理` and `自由交换` remain exclusive via `economic_order`.
 `IdeologyCatalog.catalog_view()` joins those modifier terms into
 player-facing `level_effect_lines`; the ideology panel must show them on
-three-card offers and collection rows. Changing authored ideology
+three-card offers, slot rows and collection cards. The panel is a two-column
+board: the left column lists one compact row per equipped idea plus a single
+collapsed drop row for the remaining capacity, with the next technology
+milestone as a caption instead of an empty alcove; the right column scrolls the
+owned collection beside it. A three-card offer opens in a centred tray over a
+scrim and is selected with one left click. Changing authored ideology
 modifier keys or term values changes the Modifier and Effect catalog
 hashes; existing PKCM/PKEF saves fail closed.
 

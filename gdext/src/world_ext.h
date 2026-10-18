@@ -361,7 +361,8 @@ public:
                                                     int cursor, int max_items);
     godot::Dictionary request_runtime_save(int64_t request_id);
     godot::Dictionary poll_runtime_save(int64_t request_id);
-    godot::Dictionary restore_runtime_bundle(const godot::PackedByteArray &bytes);
+    godot::Dictionary restore_runtime_bundle(const godot::PackedByteArray &bytes,
+                                             const godot::PackedByteArray &external_ecp2 = godot::PackedByteArray());
     godot::Dictionary request_runtime_stop();
     // True while the worker holds ACTIVE authority over the Climate domain, so
     // the main-thread Climate schedule must not run. Read straight off the host
@@ -736,7 +737,8 @@ public:
     godot::Dictionary explain_cohort_satisfaction(int64_t cohort_handle) const;
     godot::Dictionary get_cell_satisfaction_attractiveness(int cell_idx) const;
     godot::Dictionary get_trade_orders_for_cell(int cell_idx, int offset = 0,
-                                                int limit = 64) const;
+                                                int limit = 64,
+                                                int good_index = -1) const;
     godot::Dictionary capture_economy_trade_topology(
         const godot::PackedInt32Array &neighbor_indices,
         const godot::PackedByteArray &terrain,
@@ -745,6 +747,12 @@ public:
         int64_t generation = 0,
         const godot::PackedByteArray &landform = godot::PackedByteArray(),
         const godot::PackedByteArray &has_river = godot::PackedByteArray());
+    godot::Dictionary get_trade_visual_snapshot(
+        const godot::PackedInt32Array &cells,
+        const godot::PackedByteArray &visible, int64_t vision_revision,
+        int selected_cell = -1, bool enabled = true) const;
+    godot::Dictionary bake_trade_visual_paths(const godot::Dictionary &snapshot,
+                                              int map_width, double hex_size) const;
     godot::Dictionary capture_economy_trade_visibility(
         const godot::PackedByteArray &visible, bool fog_solved);
     godot::Dictionary get_building_cell_snapshot(int cell_idx) const;
@@ -3169,6 +3177,9 @@ private:
     // capture, so a deferred Economy effect adapter call is replayed by the
     // next capture that already holds the boundary.
     bool                                     _economy_effect_adapter_retry = false;
+    int                                      _trigger_handoff_retry_limit = 0;
+    godot::Dictionary                        _trigger_handoff_completed;
+    godot::Dictionary handoff_trigger_effects_unlocked(int limit);
     void service_economy_boundary_inbox();
     godot::Dictionary dispatch_effect_native_economy_unlocked();
     godot::Dictionary ack_effect_native_economy_unlocked();

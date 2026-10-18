@@ -18,6 +18,8 @@ var day_night_enabled: bool = DEFAULT_DAY_NIGHT_ENABLED
 @onready var _highlight: CellHighlight = $WorldRoot/CellHighlight
 @onready var _map_overlay: DataOverlayLayer = $WorldRoot/DataOverlayLayer
 @onready var _colonization_route: ColonizationRouteLayer = $WorldRoot/ColonizationRouteLayer
+@onready var _map_activity = $WorldRoot/MapActivityLayer
+@onready var _trade_activity = $WorldRoot/TradeActivityLayer
 @onready var _world_clock: WorldClock = $WorldClock
 @onready var _runtime_host: WorldRuntimeHost = $RuntimeHost
 @onready var _ui_manager: GameUIManager = $UI
@@ -137,6 +139,13 @@ func _on_world_ready(
 	var ready_t0 := Time.get_ticks_usec()
 	_player_controller.refresh_country_binding()
 	_player_controller.clear_selection()
+	_map_activity.configure(map, _camera, _runtime_host, _player_controller,
+		generator.get_economy_facade(), _world_clock, _colonization_route,
+		_renderer.country_border_layer())
+	_trade_activity.configure(map, _camera, _runtime_host, _player_controller,
+		generator.get_economy_facade(), _world_clock)
+	_trade_activity.set_quality(visual_quality)
+	_renderer.configure_trade_visuals(_trade_activity)
 	_ui_manager.set_world_context(
 		map,
 		generator,
@@ -248,6 +257,8 @@ func _push_visual_toggles() -> void:
 		_renderer.set_mobile_quality_tier(_shader_quality_define_from_setting(quality_setting))
 	if _renderer.has_method("set_visual_quality"):
 		_renderer.set_visual_quality(visual_quality)
+	if _trade_activity != null:
+		_trade_activity.set_quality(visual_quality)
 	if _renderer.has_method("set_perf_sampler_enabled"):
 		_renderer.set_perf_sampler_enabled(perf_sampler_enabled)
 	_runtime_host.set_day_night_enabled(day_night_enabled)

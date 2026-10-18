@@ -22,10 +22,41 @@ uniform vec2 tod_debug_sun_uv = vec2(0.25, 0.5);
 uniform float tod_debug_sun_height_scale = 1.0;
 uniform vec3 tod_sun_dir = vec3(0.4, -0.7, 0.6);
 uniform float tod_exposure = 1.0;
+uniform int visual_quality = 1;
 const float BUILDING_MACRO_WINDOW_NIGHT_START = 0.18;
 const float BUILDING_MACRO_WINDOW_NIGHT_FULL = 0.62;
 const float BUILDING_MACRO_WINDOW_LIGHT_GAIN = 1.18;
+// Same gains as the body pass: the 0.46–0.78 cross-fade must not change brightness,
+// otherwise the whole settlement pops the moment the macro layer takes over.
+const float BUILDING_MACRO_AMBIENT_GAIN = 0.62;
+const float BUILDING_MACRO_SUN_GAIN = 0.78;
+const float BUILDING_MACRO_MOON_GAIN = 0.40;
+
+// [macro-terrain-light 2026-10-18] 远景字形不再是平光贴片：
+//   法线 = 字形自身屋面坡度 + 地表坡度（vertex 不可用，macro 是整张地图一个 quad，
+//          所以地表法线也只能逐像素采一次）；
+//   光照 = 与 body 同一公式（L1 天光 + 方向光 × horizon 直射遮蔽 + 月光），
+//   投影方向随太阳方位转，不再写死朝东南。
+// horizon 采样放在各 discard 之后，只对真正画出聚落的像素付费。
+#define VT_USE_HORIZON
+#define VT_USE_TERRAIN_NORMAL
+#include "res://shaders/include/visual_tile_sampling.gdshaderinc"
+uniform bool terrain_normal_tex_bound = false;
+uniform bool terrain_horizon_tex_bound = false;
+uniform float terrain_horizon_max_angle = 1.309;
+uniform float terrain_horizon_softness = 0.30;
+uniform float terrain_horizon_strength = 0.90;
+uniform float terrain_normal_influence = 0.65;
+uniform bool gi_lut_bound = false;
+uniform vec3 gi_horizon_lut[16];
+uniform float gi_ao_strength = 0.90;
+uniform float gi_ao_floor = 0.38;
+uniform float gi_ao_smoothing = 0.75;
+uniform float gi_bent_strength = 0.35;
+uniform float gi_normal_floor = 0.85;
 #include "res://shaders/include/earth_daylight.gdshaderinc"
+vec2 wrap_map_uv(vec2 uv) { return visual_static_wrap_uv(uv); }
+#include "res://shaders/include/terrain_horizon.gdshaderinc"
 
 vec2 lut_uv(float cell) {
 	float x = mod(cell, max(lut_dims.x, 1.0));
@@ -33,7 +64,27 @@ vec2 lut_uv(float cell) {
 	return (vec2(x, y) + 0.5) / max(lut_dims, vec2(1.0));
 }
 
+// 只有高画质付 horizon 的 4 次采样；其余档位返回精确中性值，与接入前一致。
+TerrainHorizonSample macro_horizon(vec2 map_uv, vec3 sun_dir) {
+	TerrainHorizonSample neutral;
+	neutral.direct_visibility = 1.0;
+	neutral.sky_visibility = 1.0;
+	neutral.bent_normal = vec3(0.0, 0.0, 1.0);
+	neutral.nearest_packed = vec4(0.0);
+	neutral.has_data = false;
+	if (visual_quality < 2 || terrain_horizon_strength <= 0.0) {
+		return neutral;
+	}
+	return terrain_horizon_evaluate(map_uv, sun_dir);
+}
+
 void fragment() {
+	// High zoom is body territory; every macro pixel is fully transparent there, so
+	// bail out before the map index / LUT / horizon fetches.
+	float macro_fade = smoothstep(0.78, 0.40, camera_zoom);
+	if (macro_fade <= 0.001) {
+		discard;
+	}
 	vec4 index_sample = texture(map_index_atlas, UV);
 	float cell = floor(index_sample.g * 255.0 + 0.5)
 		+ 256.0 * floor(index_sample.b * 255.0 + 0.5)
@@ -48,8 +99,22 @@ void fragment() {
 	float density = data.r;
 	float archetype = floor(data.g * 255.0 + 0.5);
 	float era = floor(data.b * 255.0 + 0.5);
+
+	float lat_signed = clamp(UV.y, 0.0, 1.0) * 2.0 - 1.0;
+	EarthDaylight ed = eval_earth_daylight(UV, lat_signed, day_night_enabled);
+
+	// Terrain slope under the cell, then the horizon/GI sample for this pixel. Both are
+	// per pixel because the macro layer is one world-sized quad, not one instance per cell.
+	vec2 terrain_xy = vec2(0.0);
+	if (visual_quality >= 2 && terrain_normal_tex_bound) {
+		terrain_xy = (visual_sample_terrain_normal(UV).rg * 2.0 - 1.0)
+			* terrain_normal_influence;
+	}
+	TerrainHorizonSample hs = macro_horizon(UV, ed.sun_dir);
+
 	// The macro mark is a tiny house glyph rather than a flat occupancy blob:
-	// dark foundation, warm wall band, pitched roof and a short southeast shadow.
+	// dark foundation, warm wall band, pitched roof and a cast shadow that follows
+	// the sun instead of a fixed southeast smudge.
 	vec2 p = fract(UV * world_size / max(hex_size * 0.92, 1.0));
 	vec2 q = p - vec2(0.5, 0.53);
 	float body = (1.0 - smoothstep(0.31 + density * 0.08,
@@ -73,8 +138,19 @@ void fragment() {
 	float window_r = (1.0 - smoothstep(0.040, 0.060, abs(q.x - 0.13)))
 		* (1.0 - smoothstep(0.045, 0.065, abs(q.y - 0.075)));
 	float windows = max(window_l, window_r) * body;
-	float shadow = (1.0 - smoothstep(0.20, 0.24, abs(q.x - 0.16)))
-		* (1.0 - smoothstep(0.055, 0.075, abs(q.y - 0.24)));
+	// Shadow capsule from the house base along -sun.xy: lengths grow as the sun drops,
+	// so dawn/dusk gives long smears and noon a short patch under the eaves.
+	vec2 sun_h = ed.sun_dir.xy;
+	float sun_h_len = max(length(sun_h), 1e-4);
+	vec2 cast_dir = -sun_h / sun_h_len;
+	float cast_len = 0.10 + 0.17 * (1.0 - clamp(ed.sun_dir.z, 0.0, 1.0));
+	vec2 rel = q - vec2(0.0, 0.13);
+	float along = dot(rel, cast_dir);
+	float across = abs(dot(rel, vec2(-cast_dir.y, cast_dir.x)));
+	float shadow = (1.0 - smoothstep(0.045, 0.075, across))
+		* smoothstep(-0.02, 0.03, along)
+		* (1.0 - smoothstep(cast_len * 0.70, cast_len, along));
+	shadow *= clamp(ed.local_day, 0.0, 1.0) * hs.direct_visibility;
 	float glyph = max(max(body, roof), max(foundation, door));
 	if (archetype < 1.5) glyph *= step(length(q * vec2(1.0, 1.15)), 0.46);
 	if (archetype > 1.5 && archetype < 3.5) glyph *= step(abs(q.x), 0.43 + density * 0.08);
@@ -87,12 +163,26 @@ void fragment() {
 	color = mix(color, vec3(0.10, 0.075, 0.05), door * 0.80);
 	color = mix(color, vec3(0.16, 0.19, 0.20), shadow * 0.38);
 	color *= mix(0.86, 1.12, step(0.0, q.y));
-	float lat_signed = clamp(UV.y, 0.0, 1.0) * 2.0 - 1.0;
-	EarthDaylight ed = eval_earth_daylight(UV, lat_signed, day_night_enabled);
-	vec3 building_light = ed.amb_col
-		+ ed.sun_col * ed.local_day * 0.24 * max(ed.sun_dir.z, 0.0)
-		+ ed.moon_col * ed.moon_strength * 0.08;
-	color *= max(building_light, vec3(0.08)) * tod_exposure;
+
+	// Glyph normal: the two roof halves lean away from the ridge, the walls read as up.
+	// Terrain slope is added on top, so a settlement on a north-facing hillside is
+	// darker than its neighbour in the valley even at overview zoom.
+	vec2 roof_slope = vec2(q.x < 0.0 ? -0.40 : 0.40, 0.0) * roof;
+	vec3 N = normalize(vec3(terrain_xy + roof_slope, 1.0));
+	vec3 amb_n = N;
+	float sky = 1.0;
+	if (hs.has_data) {
+		amb_n = normalize(mix(N, hs.bent_normal, gi_bent_strength));
+		sky = terrain_horizon_apply_normal(hs.sky_visibility, N, hs.bent_normal);
+	}
+	vec3 amb = earth_sky_sh(ed.amb_col, ed.sun_col, ed.sun_dir, ed.local_day, amb_n);
+	float amb_gain = mix(1.0, BUILDING_MACRO_AMBIENT_GAIN, ed.local_day);
+	float ndl = max(dot(N, ed.sun_dir), 0.0) * ed.local_day * hs.direct_visibility;
+	float mdl = max(dot(N, -ed.sun_dir), 0.0) * ed.moon_strength;
+	vec3 building_light = (amb * amb_gain * sky
+		+ ed.sun_col * ndl * BUILDING_MACRO_SUN_GAIN
+		+ EARTH_MOONLIGHT * mdl * BUILDING_MACRO_MOON_GAIN) * tod_exposure;
+	color *= max(building_light, vec3(0.05));
 	// The macro layer used to lose all emissive information, making most
 	// settlements become black blocks as soon as this LOD took over.
 	if (knowledge > 0.88) {
@@ -106,6 +196,6 @@ void fragment() {
 		color = mix(vec3(gray), color, 0.35) * 0.72;
 	}
 	float memory_alpha = mix(0.66, 1.0, step(0.04, knowledge));
-	float alpha = glyph * smoothstep(0.78, 0.40, camera_zoom) * memory_alpha;
+	float alpha = glyph * macro_fade * memory_alpha;
 	COLOR = vec4(color, alpha * 0.94);
 }

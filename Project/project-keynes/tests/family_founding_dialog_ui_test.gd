@@ -88,6 +88,20 @@ func _card(name: String, building: String, effect: String) -> Dictionary:
 
 
 func _run() -> void:
+	var shared := FamilyBuffCopy.founding_effect_rows(PackedStringArray([
+		"威望Ⅰ：成功开拓时，新地块会获得以下效果：初始人口直接增加20。",
+		"威望Ⅱ：成功开拓时，新地块会获得以下效果：初始人口直接增加30。",
+	]))
+	_expect("identical triggers are shown once without losing tier quantities",
+		shared.context == "成功开拓时，新地块会获得以下效果"
+		and shared.rows[0].body == "初始人口直接增加20。"
+		and shared.rows[1].body == "初始人口直接增加30。")
+	var distinct := FamilyBuffCopy.founding_effect_rows(PackedStringArray([
+		"威望Ⅰ：夏季：产出增加2%。", "威望Ⅱ：冬季：产出增加4%。",
+	]))
+	_expect("different tier conditions are retained in full", distinct.context == ""
+		and distinct.rows[0].body == "夏季：产出增加2%。"
+		and distinct.rows[1].body == "冬季：产出增加4%。")
 	var dialog := (load("res://scenes/ui/family/family_founding_dialog.tscn")
 		as PackedScene).instantiate() as FamilyFoundingDialog
 	root.add_child(dialog)
@@ -123,14 +137,14 @@ func _run() -> void:
 		and String((first.get_node("%Origin") as Label).text).contains("采集营地")
 		and String((first.get_node("%Origin") as Label).text).contains("42")
 		and String((first.get_node("%TraitSummary") as Label).text).contains("节俭")
-		and String((first.get_node("%EffectPreview") as Label).text).contains("专精产业"))
+		and String((first.get_node("%EffectPreview") as RichTextLabel).get_parsed_text()).contains("专精产业"))
 	_expect("all details start collapsed, all three summaries remain in one column",
 		not first.is_details_expanded() and not third.is_details_expanded()
 		and (cards as GridContainer).columns == 1)
 	_expect("buff copy has no progress bars or duplicate numeric pills",
 		first.find_children("*", "ProgressBar", true, false).is_empty()
 		and (first.get_node("%TraitsList") as VBoxContainer).get_child_count() == 2)
-	var effect_preview := String((first.get_node("%EffectPreview") as Label).text)
+	var effect_preview := String((first.get_node("%EffectPreview") as RichTextLabel).get_parsed_text())
 	_expect("effect preview shows Prestige I statement instead of unreached-prestige placeholder",
 		effect_preview.contains("威望Ⅰ：本地块产出提高 2%")
 		and not effect_preview.contains("当前未达威望"))
@@ -371,7 +385,7 @@ func _capture_visual_qa() -> void:
 		"founders": 50,
 		"trait_keys": PackedStringArray(["c001_gluttony", "c003_vegetarian"]),
 		"trait_strength_q16": PackedInt32Array([20000, 18000]),
-		"effect_key": "birth_plenty",
+		"effect_key": "expansionism",
 	}
 	var c1 := {
 		"surname": "王",
@@ -486,17 +500,27 @@ func _capture_visual_qa() -> void:
 		if img != null and not img.is_empty():
 			img.save_png(out_path)
 			print("[founding-qa] %s" % ProjectSettings.globalize_path(out_path))
+		var card0 := dlg.get_node("ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid/Card0") as FamilyFoundingCard
+		if card0 != null:
+			card0.details_button().emit_signal("pressed")
+			await create_timer(0.25).timeout
+			var tiers := card0.get_node("%EffectTiersBox") as Control
+			var cards_scroll := dlg.get_node("%CardsScroll") as ScrollContainer
+			cards_scroll.ensure_control_visible(tiers.get_child(-1) as Control)
+			await process_frame
+			await RenderingServer.frame_post_draw
+			var img_tiers := vp.get_texture().get_image()
+			var tiers_path := "%s/founding_%dx%d_tiers_open.png" % [out_dir, viewport_size.x, viewport_size.y]
+			if img_tiers != null and not img_tiers.is_empty():
+				img_tiers.save_png(tiers_path)
+				print("[founding-qa] %s" % ProjectSettings.globalize_path(tiers_path))
+			_expect("last prestige tier is reachable above bottom frame at %dx%d" % [viewport_size.x, viewport_size.y],
+				(tiers.get_child(-1) as Control).get_global_rect().end.y <= cards_scroll.get_global_rect().end.y + 1.0)
+			for band in tiers.get_children():
+				for copy in band.find_children("*", "RichTextLabel", true, false):
+					_expect("effect column stays within paper at %dx%d" % [viewport_size.x, viewport_size.y],
+						(copy as Control).get_global_rect().end.x <= card0.get_global_rect().end.x)
 		if viewport_size == Vector2i(1920, 1080):
-			var card0 := dlg.get_node("ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid/Card0") as FamilyFoundingCard
-			if card0 != null:
-				card0.details_button().emit_signal("pressed")
-				await create_timer(0.25).timeout
-				await RenderingServer.frame_post_draw
-				var img_tiers := vp.get_texture().get_image()
-				var tiers_path := "%s/founding_1920x1080_tiers_open.png" % out_dir
-				if img_tiers != null and not img_tiers.is_empty():
-					img_tiers.save_png(tiers_path)
-					print("[founding-qa] %s" % ProjectSettings.globalize_path(tiers_path))
 			dlg.set_collapsed(true, false)
 			for _i in 4:
 				await process_frame

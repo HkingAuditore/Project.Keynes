@@ -331,11 +331,12 @@ expected_births_q32 = population × effective_birth_rate_q32 × epoch_days
 `composite_sat` 的八维度定义、权重契约与生存闸门见
 [综合满意度运行时](./satisfaction-runtime.md)。
 
-舒适/奢侈购买力（2026-10-16）：`months_q16 = max(0, funds) × 65536 /
-(population × local_basic_daily_cost × 30)`，分别归一到 `[1,3]` / `[3,10]` Q16 月区间。
-使用本轮消费后 funds 和已有基础方案的本地成本缓存，除数不随财富弹性需求量变化。
-成本不大于 0 时两维为 0；保留职业原定权重（包括显式 0）。全部运算使用饱和定点整数，
-不转移货币、不新增商品需求。现有储蓄维度及生存闸门保持原公式。
+实际生活消费（2026-10-18）：basic/comfort/luxury 使用 `actual_filled / living_target`。
+`living_target = population × base_qty × elapsed_days × environment × ethnicity`，不随财富、
+价格弹性和预算缩减；库存短缺不删除分母。类别权重预算为消费70%、财务20%、税负5%、
+发展5%，职业权重在类别内部归一。综合分额外受 `basic + (1-basic)×0.20` 限制。
+存款月数只评分储蓄，缺少成本估价不再自动给满分。未适用消费维度对外为-1，存储为0。
+完整契约见[综合满意度运行时](./satisfaction-runtime.md)。
 
 周期开始时仍存活人口先就业和生产，不用上周期满足度削减劳动力。
 职业默认出生率为每日 Q32 `2353407`（约 20.0%/年），基础自然死亡率为 `882528`（约 7.5%/年）。

@@ -200,6 +200,7 @@ var _shadow_chunk_wrap_nodes: Dictionary = {}
 var _single_shadow_wrap_nodes: Array[MultiMeshInstance2D] = []
 var _shadow_built_total: int = 0   # 单节点回退模式：上次镜像的实例数（用于按需重建）
 var _shadow_fraction: float = 1.0
+var _shadow_strength_base: float = 0.32
 var _camera_zoom: float = 1.0
 var _camera_zoom_initialized: bool = false
 var _camera_lod_hidden: bool = false
@@ -497,6 +498,8 @@ func set_camera_zoom(value: float) -> void:
 	_camera_lod_hidden = _family_batch_suppressed and _zoom_visible_fraction <= 0.0001
 	_active_instance_count_valid = false
 	apply_visible_instance_fraction(_shadow_fraction)
+	# Shadows fade with zoom instead of switching off at one threshold.
+	_push_shadow_strength()
 
 
 func _family_far_fraction() -> float:
@@ -511,6 +514,16 @@ func _family_far_fraction() -> float:
 
 
 func _family_lod_fraction(zoom_value: float) -> float:
+	var base := _family_lod_fraction_base(zoom_value)
+	# [veg-lod-high 2026-10-18] 高画质的远景密度不再掉到个位数：树冠/灌木在总览 zoom 也
+	# 保留 60%，否则拉远后森林只剩几撮、和地形与建筑接不上。贴地/水生 family 走原曲线
+	# （连续地被由 ResourceGroundCover 绘制，不需要实例补密度）。
+	if _active_quality_tier() >= 2 and detail_render_family() in [2, 3, 4]:
+		return clampf(maxf(base, 0.60), 0.0, 1.0)
+	return base
+
+
+func _family_lod_fraction_base(zoom_value: float) -> float:
 	# 每个切换点用 0.10 zoom 交叉带；稳定前缀保证密度变化时不会整格消失。
 	match detail_render_family():
 		3: # Canopy: 8% overview -> 40% mid -> 100% near.
@@ -828,6 +841,10 @@ func _resolved_lod_near_density_multiplier() -> float:
 		var configured_multiplier := float(configured)
 		if configured_multiplier >= 1.0:
 			return clampf(configured_multiplier, 1.0, 3.0)
+	# [veg-lod-high 2026-10-18] 高画质不再按 1.75 把远景砍到 57%：拉远后整片森林只剩零散
+	# 几撮，和地形/建筑的自然过渡断掉。高画质远景保留 ≈89%，中/低保持原密度以守住实例预算。
+	if _active_quality_tier() >= 2:
+		return 1.12
 	if _spawn_domain() == SPAWN_WATER:
 		return 1.30
 	match _detail_kind():
@@ -1758,22 +1775,42 @@ func _shadow_resources_enabled() -> bool:
 	return _archetype_casts_shadow()
 
 
+func _shadow_min_zoom() -> float:
+	var cfg := _profile()
+	var configured_min = cfg.get("shadow_min_zoom")
+	# Profiles default shadow_min_zoom to a negative value meaning "use the tier default".
+	if (configured_min is float or configured_min is int) and float(configured_min) > 0.0:
+		return float(configured_min)
+	if OS.has_feature("mobile"):
+		return 1.25
+	# [veg-lod-high 2026-10-18] 高画质在总览 zoom 也保留树影：树木在 0.45 以上仍有 89% 密度，
+	# 影子却到 0.80 才出现，拉远后整片森林没有投影，画面立刻变平。
+	return 0.45 if _active_quality_tier() >= 2 else 0.70
+
+
+# [shadow-zoom-fade 2026-10-18] 投影不在某个 zoom 上硬开关：门槛就是开始淡入的位置，
+# 之后 0.15 zoom 内升到全强度。拉远时影子变淡而不是整片消失——原先 1.10 的硬门控会让
+# 森林投影在一步之内全部消失，画面立刻变平。
+func _shadow_zoom_gain() -> float:
+	var min_zoom := _shadow_min_zoom()
+	if min_zoom <= 0.0:
+		return 1.0
+	return smoothstep(min_zoom, min_zoom + 0.15, _camera_zoom)
+
+
+func _push_shadow_strength() -> void:
+	if _shadow_material == null:
+		return
+	_shadow_material.set_shader_parameter(
+		"shadow_strength", _shadow_strength_base * _shadow_zoom_gain())
+
+
 func _shadow_should_render() -> bool:
 	if not _shadow_resources_enabled() or _camera_lod_hidden:
 		return false
-	if _camera_zoom < 1.10:
-		return false
-	var cfg := _profile()
-	var configured_min = cfg.get("shadow_min_zoom")
-	var min_zoom := float(configured_min) if configured_min is float or configured_min is int else -1.0
-	if min_zoom < 0.0:
-		if OS.has_feature("mobile"):
-			min_zoom = 2.00
-		else:
-			min_zoom = 1.10 if _active_quality_tier() >= 2 else 1.35
-	if _camera_zoom < min_zoom:
-		return false
-	return true
+	# Node visibility follows the same ramp as strength: no draw calls for shadows
+	# that would be multiplied down to nothing anyway.
+	return _shadow_zoom_gain() > 0.001
 
 
 const _SHADOW_BUFFER_STRIDE := 16  # 2D transform(8) + color(4) + custom(4)
@@ -2699,7 +2736,8 @@ func _apply_profile_uniforms() -> void:
 		var shadow_strength := _profile_float(&"shadow_strength", 0.32)
 		if DCFeatureFlags.uses_shader_quality_tier() and _active_quality_tier() >= 2:
 			shadow_strength *= 0.5
-		_shadow_material.set_shader_parameter("shadow_strength", shadow_strength)
+		_shadow_strength_base = shadow_strength
+		_push_shadow_strength()
 		_shadow_material.set_shader_parameter("lod_alpha", _lod_alpha)
 		_shadow_material.set_shader_parameter("shadow_length_scale", _profile_float(&"shadow_length_scale", 1.0))
 		_shadow_material.set_shader_parameter("shadow_max_len", _profile_float(&"shadow_max_length", 3.6))

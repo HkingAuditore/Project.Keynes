@@ -5,3 +5,4 @@ script = ExtResource("1")
 id = &"seasoning"
 display_name = "调味品"
 living_cost_weight_q16 = 32768
+satisfaction_tier = 2

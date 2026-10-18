@@ -201,6 +201,33 @@ func _run() -> void:
 		and Vector2(layer._body_material.get_shader_parameter("tod_debug_sun_uv"))
 			.is_equal_approx(Vector2(0.61, 0.42))
 		and is_equal_approx(float(layer._body_material.get_shader_parameter("tod_exposure")), 1.15))
+	# [building-terrain-light 2026-10-18] 高画质建筑共享地形光照。弱绑定失败不会报错，
+	# 只会让 shader 静默退回中性值（屋顶与脚下地形对山体阴影给出不同结论），所以这里
+	# 同时锁 uniform 存在性与参数到底有没有落到材质上；这个 fixture 没有地形贴图，
+	# bound 必须是 false（中性回退），否则测试就成了假通过。
+	var uniform_names := {}
+	for entry in layer._body_material.shader.get_shader_uniform_list():
+		uniform_names[String(entry.get("name", ""))] = true
+	_expect("body shader exposes the terrain horizon inputs",
+		uniform_names.has("terrain_horizon_tex_bound")
+		and uniform_names.has("terrain_normal_tex_bound")
+		and uniform_names.has("gi_horizon_lut")
+		and uniform_names.has("gi_bent_strength"))
+	var terrain_source := ShaderMaterial.new()
+	terrain_source.set_shader_parameter("terrain_horizon_strength", 0.37)
+	terrain_source.set_shader_parameter("gi_lut_bound", true)
+	layer.set_terrain_lighting(terrain_source)
+	_expect("terrain lighting parameters reach the building materials",
+		is_equal_approx(float(layer._body_material.get_shader_parameter(
+			"terrain_horizon_strength")), 0.37)
+		and is_equal_approx(float(layer._decal_material.get_shader_parameter(
+			"terrain_horizon_strength")), 0.37)
+		and bool(layer._body_material.get_shader_parameter("gi_lut_bound"))
+		and bool(layer._decal_material.get_shader_parameter("gi_lut_bound")))
+	_expect("a world without terrain textures keeps the passes neutral",
+		not bool(layer._body_material.get_shader_parameter("terrain_horizon_tex_bound"))
+		and not bool(layer._body_material.get_shader_parameter("terrain_normal_tex_bound"))
+		and not layer._shader_tiled)
 	var first := PackedInt32Array()
 	var counts := PackedInt32Array()
 	first.resize(65537)

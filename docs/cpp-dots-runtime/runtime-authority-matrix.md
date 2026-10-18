@@ -1,5 +1,16 @@
 # Runtime Authority Matrix
 
+PKSR ECP2 大段持久化修复（2026-10-19）：NativeSimulationHost 完整编码 uint32
+长度的 ECP2；其他段超限则拒绝保存。旧 64 MiB 截断只从同一 PKSV 的完整、
+校验有效且前缀一致的 ECP2 副本恢复，仍由原生 decoder/authority 验证和应用。
+没有迁移权威、provider schema 或恢复顺序；见
+[game-flow-start-save.md](game-flow-start-save.md#large-ecp2-checkpoint-persistence-2026-10-19)。
+
+贸易载具是可选视觉观察者：`TradeVisualCache` 只在 Economy 已提交读取边界采样，
+发布不可变有界视图；`TradeActivityLayer` 拥有 Godot 纹理与批量绘制。
+订单、运输能力和结算权威仍在原生经济/国家运行时，没有新增 DataCore 或持久化权威。
+见 [贸易载具运行时](trade-visual-runtime.md)。
+
 运河覆盖：DataCore 的 `cell.canal_edge_mask/canal_water` 是地理权威；Economy 的
 InfrastructureProjectStore 是施工/路线权威；Effect 仅负责跨域事务；Godot Visual Tile
 只消费脏层。完整契约见 [运河运行时](./canal-runtime.md)。

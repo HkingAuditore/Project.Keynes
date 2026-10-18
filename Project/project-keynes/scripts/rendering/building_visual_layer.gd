@@ -27,6 +27,17 @@ const LOD_FRACTION_FAR := 0.28
 const LOD_FRACTION_MID := 0.62
 const UPLOADS_PER_FRAME := 4
 const UPLOAD_BUDGET_USEC := 1500
+const BODY_SHADER_PATH := "res://shaders/building_compound.gdshader"
+const DECAL_SHADER_PATH := "res://shaders/building_ground_decal.gdshader"
+# Strength parameters copied from the terrain material. Both shaders decode the
+# same packed 4-bit horizon, so the numbers must be identical or a roof and the
+# ground it stands on disagree about where the mountain shadow ends.
+const TERRAIN_LIGHTING_PARAMS := [
+	"terrain_horizon_strength", "terrain_horizon_softness",
+	"terrain_horizon_max_angle", "gi_horizon_lut", "gi_lut_bound",
+	"gi_ao_strength", "gi_ao_floor", "gi_ao_smoothing", "gi_bent_strength",
+	"gi_normal_floor",
+]
 
 # Settlement layout (lots, streets, plaza, era-specific building volumes) is
 # planned per cell by NativeBuildingVisualCache on its own worker thread. Only
@@ -70,6 +81,12 @@ var _body_material: ShaderMaterial
 var _shadow_material: ShaderMaterial
 var _decal_material: ShaderMaterial
 var _macro_material: ShaderMaterial
+# Original (unprefixed) shader resources for the passes that sample terrain
+# lighting; the tiled raster variant is a duplicate with MAP_VISUAL_TILED prepended.
+var _body_shader_source: Shader
+var _decal_shader_source: Shader
+var _macro_shader_source: Shader
+var _shader_tiled := false
 var _macro_quad: MeshInstance2D
 var _macro_image: Image
 var _macro_texture: ImageTexture
@@ -102,10 +119,13 @@ func _ready() -> void:
 	z_index = 3
 	_quad_mesh = _make_quad_mesh()
 	_shadow_hull_mesh = _make_shadow_hull_mesh()
-	_body_material = _shader_material("res://shaders/building_compound.gdshader")
+	_body_material = _shader_material(BODY_SHADER_PATH)
+	_body_shader_source = _body_material.shader
 	_shadow_material = _shader_material("res://shaders/building_shadow.gdshader")
-	_decal_material = _shader_material("res://shaders/building_ground_decal.gdshader")
+	_decal_material = _shader_material(DECAL_SHADER_PATH)
+	_decal_shader_source = _decal_material.shader
 	_macro_material = _shader_material("res://shaders/building_macro.gdshader")
+	_macro_shader_source = _macro_material.shader
 	_macro_quad = MeshInstance2D.new()
 	_macro_quad.name = "BuildingMacro"
 	_macro_quad.z_as_relative = false
@@ -822,6 +842,7 @@ func _rebind_world_textures() -> void:
 			maxf(bounds.size.x, 0.0001), maxf(bounds.size.y, 0.0001)))
 		material.set_shader_parameter("wrap_origin_x", 0.0)
 		material.set_shader_parameter("wrap_period_x", _world.wrap_period_x)
+	_sync_terrain_textures()
 	_push_material_state()
 
 
@@ -835,6 +856,8 @@ func _push_material_state() -> void:
 			0.0 if OS.has_feature("web") else float(SHADOW_STRENGTH[_visual_quality]))
 	if _macro_material != null:
 		_macro_material.set_shader_parameter("camera_zoom", _camera_zoom)
+		# The macro pass now gates its terrain lighting on the same quality tier.
+		_macro_material.set_shader_parameter("visual_quality", _visual_quality)
 	_push_lod_fraction()
 	_set_tod_parameter("season_phase", _season_phase)
 	_set_tod_parameter("day_phase", _day_phase)
@@ -847,6 +870,78 @@ func _push_material_state() -> void:
 		_tod_debug_sun_height_scale)
 	_set_tod_parameter("tod_sun_dir", _tod_sun_dir)
 	_set_tod_parameter("tod_exposure", _tod_exposure, false)
+
+
+## [building-terrain-light 2026-10-18] 高画质建筑共享地形光照：地表法线（body/decal 在
+## vertex 每实例一次；macro 是整图 quad，只能逐像素）与 8 方向 horizon GI（fragment 逐像素）。
+## 这里只做纹理绑定与参数同步，档位门控在 shader 里按 visual_quality >= 2 短路，所以低/中
+## 画质的材质与接入前完全一致。数据源与 ShrubLayer / ResourceVisualLayer 是同一个 world +
+## 同一个地形材质，避免出现"屋顶按一套 horizon 算、脚下地形按另一套算"。
+func set_terrain_lighting(source: ShaderMaterial) -> void:
+	_sync_terrain_textures()
+	if source == null:
+		return
+	for name in TERRAIN_LIGHTING_PARAMS:
+		var value: Variant = source.get_shader_parameter(name)
+		if value == null:
+			continue
+		for material in [_body_material, _decal_material, _macro_material]:
+			if material != null:
+				material.set_shader_parameter(name, value)
+
+
+func _sync_terrain_textures() -> void:
+	if _world == null:
+		return
+	var tiles: Variant = _world.visual_tiles
+	var tiled := tiles != null and bool(tiles.ready) \
+		and String(tiles.layout.mode) == "tiled"
+	if tiled != _shader_tiled:
+		_shader_tiled = tiled
+		_apply_terrain_shader_variants()
+	for material in [_body_material, _decal_material, _macro_material]:
+		if material == null:
+			continue
+		if tiled:
+			material.set_shader_parameter("visual_horizon_tiles", tiles.horizon)
+			material.set_shader_parameter("visual_terrain_normal_tiles", tiles.terrain_normal)
+			var layout: Variant = tiles.layout
+			material.set_shader_parameter("visual_domain_origin",
+				layout.visual_domain.position)
+			material.set_shader_parameter("visual_domain_size",
+				layout.visual_domain.size)
+			for pair in [["visual_grid_size", layout.grid_size],
+					["visual_interior_size", layout.interior_size],
+					["visual_layer_size", layout.layer_size],
+					["visual_logical_resolution", layout.logical_size]]:
+				material.set_shader_parameter(pair[0], Vector2(pair[1]))
+			material.set_shader_parameter("visual_gutter_px", float(layout.gutter_px))
+		else:
+			material.set_shader_parameter("terrain_horizon_tex",
+				_world.terrain_horizon_tex)
+			material.set_shader_parameter("terrain_normal_tex",
+				_world.terrain_normal_tex)
+		material.set_shader_parameter("terrain_horizon_tex_bound",
+			bool(tiles.horizon_ready) if tiled else _world.terrain_horizon_tex != null)
+		material.set_shader_parameter("terrain_normal_tex_bound",
+			tiles.terrain_normal != null if tiled else _world.terrain_normal_tex != null)
+
+
+## tiled 与 legacy 的地表寻址由 #ifdef 选一套：legacy 声明 sampler2D，tiled 声明
+## sampler2DArray + 图块寻址 uniform。形态切换必须换 shader 代码，否则采样器类型与
+## 绑定不匹配（与 ResourceVisualLayer 同处理）。body / decal / macro 都要换。
+func _apply_terrain_shader_variants() -> void:
+	var prefix := "#define MAP_VISUAL_TILED\n" if _shader_tiled else ""
+	for entry in [[_body_material, _body_shader_source],
+			[_decal_material, _decal_shader_source],
+			[_macro_material, _macro_shader_source]]:
+		var material: ShaderMaterial = entry[0]
+		var source: Shader = entry[1]
+		if material == null or source == null:
+			continue
+		var variant := Shader.new()
+		variant.code = prefix + source.code
+		material.shader = variant
 
 
 func _chunk_in_prefetch(chunk_id: int) -> bool:

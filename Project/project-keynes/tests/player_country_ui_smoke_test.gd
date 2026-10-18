@@ -113,7 +113,7 @@ func _run() -> void:
 			"offer_button_disabled"))
 		and String(ideology_workspace.call("points_text")) == "0.00"
 		and String(ideology_workspace.call("hint_text")).contains("理念点"))
-	_expect("ideology deck table shows open and technology-locked niches",
+	_expect("ideology deck table reports open slot capacity",
 		ideology_workspace != null
 		and int(ideology_workspace.call("niche_count", 1)) >= 2
 		and int(ideology_workspace.call("niche_count", 2)) >= 1)

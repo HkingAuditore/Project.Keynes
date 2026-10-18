@@ -19,6 +19,10 @@ signal colonization_requested(family_handle: int, source_cell: int)
 signal tax_override_requested(scope: String, kind: String, item_id: String, rate: int, mode: int)
 signal tax_reset_requested(scope: String, kind: String, item_id: String)
 signal tax_editing_finished()
+## 物资详情「逐单商路」翻页与对端定位。翻页只改请求 offset，由 GameUIManager
+## 重建 payload；定位由上层关闭详情并选中对端地块。
+signal trade_orders_page_requested(offset: int)
+signal trade_order_locate_requested(cell_idx: int)
 
 const PANEL_MIN_SIZE := Vector2(620.0, 520.0)
 const DENSE_KPI_MAX_HEIGHT := 500.0
@@ -50,6 +54,8 @@ var _scroll_by_chapter: Dictionary = {}
 var _good_refs: Dictionary = {}
 var _cohort_refs: Dictionary = {}
 var _building_refs: Dictionary = {}
+var _trade_orders_model: Dictionary = {}
+var _trade_orders_signature := ""
 
 
 func _ready() -> void:
@@ -108,6 +114,8 @@ func show_details(payload: Dictionary) -> void:
 	if next_identity != _detail_identity:
 		_current_chapter = "overview"
 		_scroll_by_chapter.clear()
+		_trade_orders_model = {}
+		_trade_orders_signature = ""
 	_section_targets.clear()
 	_fact_columns.clear()
 	_fact_grids.clear()
@@ -149,6 +157,8 @@ func show_details(payload: Dictionary) -> void:
 			_build_resource_details(row)
 		"family":
 			_build_family_details(row)
+	if kind == "good":
+		_apply_trade_orders(payload.get("trade_orders", {}))
 	_configure_section_nav(kind)
 	if is_dossier_kind:
 		_apply_dossier_chapter(_current_chapter, false)
@@ -251,6 +261,8 @@ func _patch_details(payload: Dictionary) -> bool:
 		_patch_building_dossier(row)
 	else:
 		_patch_fact_values(_facts_for_row(kind, row))
+	if kind == "good":
+		_apply_trade_orders(payload.get("trade_orders", {}))
 	_detail_identity = _detail_identity_of(payload)
 	return true
 
@@ -580,6 +592,10 @@ func _clear_content() -> void:
 # ─── 物资与阶层卷宗构建与实时补丁 ──────────────────────────────────────
 
 func _build_good_details(row: Dictionary, tax_context: Variant) -> void:
+	# show_details 会重建整个卷宗节点；签名/模型必须清空，否则同身份重建后
+	# _apply_trade_orders 会误判“数据未变”而跳过填表。
+	_trade_orders_signature = ""
+	_trade_orders_model = {}
 	var root := GoodDossierScene.instantiate() as VBoxContainer
 	_content.add_child(root)
 	var overview_page := root.get_node("%OverviewPage") as VBoxContainer
@@ -591,6 +607,12 @@ func _build_good_details(row: Dictionary, tax_context: Variant) -> void:
 	var trade_flow_bar := root.get_node("%TradeFlowBar") as DossierDivergingBar
 	var trade_bars := root.get_node("%TradeBars") as DossierBarList
 	var trade_empty_note := root.get_node("%TradeEmptyNote") as Label
+	var orders_table := root.get_node("%TradeOrdersTable") as DossierLedgerTable
+	var orders_hint := root.get_node("%TradeOrdersHint") as Label
+	var orders_footer := root.get_node("%TradeOrdersFooter") as Control
+	var orders_page_label := root.get_node("%TradeOrdersPage") as Label
+	var orders_prev := root.get_node("%TradeOrdersPrev") as Button
+	var orders_next := root.get_node("%TradeOrdersNext") as Button
 
 	demand_supply_bars.label_width = 96.0
 	demand_supply_bars.value_width = 76.0
@@ -598,6 +620,19 @@ func _build_good_details(row: Dictionary, tax_context: Variant) -> void:
 	price_stock_bars.value_width = 76.0
 	trade_bars.label_width = 96.0
 	trade_bars.value_width = 76.0
+	orders_table.set_columns(_trade_order_columns(), "", true)
+	orders_table.row_height = 28.0
+	orders_table.focus_mode = Control.FOCUS_NONE
+	orders_table.empty_text = "本地目前没有该物资的在途商队。"
+	orders_table.row_selected.connect(_on_trade_order_row_selected)
+	IconButton.apply(orders_prev, &"action.back", IconButton.MEDIUM, "上一页")
+	IconButton.apply(orders_next, &"action.chevron_right", IconButton.MEDIUM, "下一页")
+	orders_prev.focus_mode = Control.FOCUS_NONE
+	orders_next.focus_mode = Control.FOCUS_NONE
+	orders_prev.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	orders_next.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	orders_prev.pressed.connect(_request_trade_orders_page.bind(-1))
+	orders_next.pressed.connect(_request_trade_orders_page.bind(1))
 
 	_fact_columns = [2]
 	_good_refs = {
@@ -611,6 +646,12 @@ func _build_good_details(row: Dictionary, tax_context: Variant) -> void:
 		"trade_flow_bar": trade_flow_bar,
 		"trade_bars": trade_bars,
 		"trade_empty_note": trade_empty_note,
+		"orders_table": orders_table,
+		"orders_hint": orders_hint,
+		"orders_footer": orders_footer,
+		"orders_page": orders_page_label,
+		"orders_prev": orders_prev,
+		"orders_next": orders_next,
 	}
 	_section_targets["overview"] = overview_page
 	_section_targets["operations"] = operations_page
@@ -667,6 +708,124 @@ func _apply_good_dossier_data(row: Dictionary, live_patch: bool) -> void:
 			or float(tf.get("right_value", 0.0)) > 0.0001
 		empty_note.text = "当前无在途商队与跨区贸易流水。"
 		empty_note.visible = not has_trade
+
+
+# ─── 物资详情 · 逐单商路 ──────────────────────────────────────────────
+# 数据由 CellInspectorViewModel.trade_orders_model 生成；这里只做控件 patch，
+# 不重建节点树，也不在日 tick 里自行查询/计算。
+
+func _trade_order_columns() -> Array:
+	return [
+		{"id": "dir", "label": "方向", "width": 42.0},
+		{"id": "counterpart", "label": "对端", "expand": true, "min_width": 78.0},
+		{"id": "quantity", "label": "数量", "width": 52.0, "kind": "number"},
+		{"id": "price", "label": "单价", "width": 78.0, "optional": true},
+		{"id": "route", "label": "行程", "width": 82.0, "kind": "bar"},
+		{"id": "status", "label": "状态", "width": 44.0, "optional": true},
+	]
+
+
+func _apply_trade_orders(model_value: Variant) -> void:
+	var table := _good_refs.get("orders_table") as DossierLedgerTable
+	if table == null:
+		return
+	var hint := _good_refs.get("orders_hint") as Label
+	var footer := _good_refs.get("orders_footer") as Control
+	var page_label := _good_refs.get("orders_page") as Label
+	var prev := _good_refs.get("orders_prev") as Button
+	var next := _good_refs.get("orders_next") as Button
+	var model: Dictionary = model_value if model_value is Dictionary else {}
+	if model.is_empty():
+		_trade_orders_signature = ""
+		_trade_orders_model = {}
+		table.empty_text = "本地目前没有该物资的在途商队。"
+		table.set_rows([])
+		if hint != null:
+			hint.text = "暂无贸易流水"
+		if footer != null:
+			footer.visible = false
+		return
+	if bool(model.get("pending", false)):
+		# 结算中：保留上一页；现有 200ms 重试会在 committed 后拿到新页。
+		if hint != null:
+			hint.text = String(model.get("hint", "经济结算中，沿用上次结果。"))
+		return
+	if not bool(model.get("ok", false)):
+		_trade_orders_signature = ""
+		_trade_orders_model = {}
+		table.empty_text = String(model.get("empty_text", "贸易流水暂不可用。"))
+		table.set_rows([])
+		if hint != null:
+			hint.text = String(model.get("hint", "贸易流水暂不可用。"))
+		if footer != null:
+			footer.visible = false
+		return
+	var signature := String(model.get("signature", ""))
+	if signature == _trade_orders_signature:
+		return
+	_trade_orders_signature = signature
+	_trade_orders_model = model
+	table.empty_text = String(model.get("empty_text", "本地目前没有该物资的在途商队。"))
+	table.set_rows(model.get("rows", []))
+	if hint != null:
+		hint.text = String(model.get("hint", ""))
+	if page_label != null:
+		page_label.text = String(model.get("page_label", ""))
+	var limit := maxi(1, int(model.get("limit", 12)))
+	var total := maxi(0, int(model.get("total", 0)))
+	if footer != null:
+		footer.visible = total > limit
+	if prev != null:
+		prev.disabled = int(model.get("offset", 0)) <= 0
+	if next != null:
+		next.disabled = not bool(model.get("has_more", false))
+
+
+func _request_trade_orders_page(step: int) -> void:
+	if _trade_orders_model.is_empty():
+		return
+	var limit := maxi(1, int(_trade_orders_model.get("limit", 12)))
+	var total := maxi(0, int(_trade_orders_model.get("total", 0)))
+	var offset := int(_trade_orders_model.get("offset", 0))
+	var target := offset + step * limit
+	var max_offset := maxi(0, ((maxi(total, 1) - 1) / limit) * limit)
+	target = clampi(target, 0, max_offset)
+	if target == offset and step != 0:
+		return
+	trade_orders_page_requested.emit(target)
+
+
+func _on_trade_order_row_selected(row_id: Variant) -> void:
+	var rows_by_id: Dictionary = _trade_orders_model.get("rows_by_id", {})
+	var row: Dictionary = rows_by_id.get(row_id, {})
+	var cell := int(row.get("locate_cell", -1))
+	if cell >= 0:
+		trade_order_locate_requested.emit(cell)
+
+
+# ─── 测试钩子（逐单商路） ─────────────────────────────────────────────
+
+func trade_orders_row_count() -> int:
+	var table := _good_refs.get("orders_table") as DossierLedgerTable
+	return table.row_count() if table != null else 0
+
+
+func trade_orders_hint_text() -> String:
+	var hint := _good_refs.get("orders_hint") as Label
+	return hint.text if hint != null else ""
+
+
+func trade_orders_offset() -> int:
+	return int(_trade_orders_model.get("offset", 0))
+
+
+func trade_orders_page_text() -> String:
+	var label := _good_refs.get("orders_page") as Label
+	return label.text if label != null else ""
+
+
+func current_trade_orders_model() -> Dictionary:
+	return _trade_orders_model
 
 
 func _build_cohort_details(row: Dictionary, tax_context: Variant) -> void:

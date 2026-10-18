@@ -7,6 +7,12 @@ extends Control
 signal ledger_requested()
 
 const ArtScript = preload("res://scripts/ui/components/ideology_art.gd")
+# Source pixels: keep the wooden ends proportional to the bar height and only
+# stretch the paper. The last 13 rows contain a fragment of a neighbouring decal.
+const SCROLL_SOURCE_HEIGHT := 118.0
+const SCROLL_CAP_WIDTH := 90.0
+const PAPER_TOP := 34.0
+const PAPER_BOTTOM := 92.0
 
 var _ratio := 0.0
 var _shown_ratio := 0.0
@@ -55,11 +61,10 @@ func _init() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED and _row != null:
-		# The scroll art's wooden rods and finials take ~14% of the width on each
-		# side; keep the labels on the paper body so text never sits under a rod.
-		var inset := maxf(46.0, size.x * 0.145)
+		var inset := _cap_width() + 12.0
 		_row.offset_left = inset
 		_row.offset_right = -inset
+		queue_redraw()
 		var narrow := size.x < 520.0
 		_points_label.add_theme_font_size_override("font_size", 17 if narrow else 20)
 		_gain_label.add_theme_font_size_override("font_size", 11 if narrow else 12)
@@ -116,23 +121,40 @@ func _set_shown_ratio(value: float) -> void:
 
 func _draw() -> void:
 	var rect := Rect2(Vector2.ZERO, size)
+	var cap := _cap_width()
 	if _scroll_tex != null:
-		draw_texture_rect(_scroll_tex, rect, false)
+		var source_width := float(_scroll_tex.get_width())
+		draw_texture_rect_region(_scroll_tex, Rect2(0, 0, cap, size.y),
+			Rect2(0, 0, SCROLL_CAP_WIDTH, SCROLL_SOURCE_HEIGHT))
+		draw_texture_rect_region(_scroll_tex, Rect2(cap, 0, size.x - cap * 2.0, size.y),
+			Rect2(SCROLL_CAP_WIDTH, 0, source_width - SCROLL_CAP_WIDTH * 2.0,
+				SCROLL_SOURCE_HEIGHT))
+		draw_texture_rect_region(_scroll_tex, Rect2(size.x - cap, 0, cap, size.y),
+			Rect2(source_width - SCROLL_CAP_WIDTH, 0, SCROLL_CAP_WIDTH,
+				SCROLL_SOURCE_HEIGHT))
 	else:
 		draw_rect(rect, ArtScript.PAPER)
 	# Ink wash fills the paper body between the wooden rods.
-	var body := Rect2(Vector2(size.x * 0.06, size.y * 0.30),
-		Vector2(size.x * 0.88, size.y * 0.40))
+	var body := Rect2(Vector2(cap, size.y * PAPER_TOP / SCROLL_SOURCE_HEIGHT),
+		Vector2(maxf(0.0, size.x - cap * 2.0),
+			size.y * (PAPER_BOTTOM - PAPER_TOP) / SCROLL_SOURCE_HEIGHT))
 	var filled := Rect2(body.position, Vector2(body.size.x * _shown_ratio, body.size.y))
 	var ink := Color(0.62, 0.16, 0.10, 0.22) if _shown_ratio < 1.0 \
 		else Color(0.70, 0.18, 0.10, 0.34)
 	draw_rect(filled, ink)
-	if _shown_ratio > 0.0:
+	if _shown_ratio > 0.0 and _shown_ratio < 1.0:
 		# Feathered brush tip at the leading edge.
 		var tip_x := filled.position.x + filled.size.x
 		for i in 4:
-			draw_rect(Rect2(Vector2(tip_x + i * 2.0, body.position.y + i),
-				Vector2(2.0, body.size.y - i * 2.0)), Color(ink, ink.a * (0.7 - i * 0.16)))
+			var tip_width := minf(2.0, body.end.x - tip_x - i * 2.0)
+			if tip_width > 0.0:
+				draw_rect(Rect2(Vector2(tip_x + i * 2.0, body.position.y + i),
+					Vector2(tip_width, body.size.y - i * 2.0)),
+					Color(ink, ink.a * (0.7 - i * 0.16)))
+
+
+func _cap_width() -> float:
+	return minf(size.x * 0.5, size.y * SCROLL_CAP_WIDTH / SCROLL_SOURCE_HEIGHT)
 
 
 static func build_ledger(snapshot: Dictionary) -> Control:

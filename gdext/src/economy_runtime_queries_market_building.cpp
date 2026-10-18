@@ -27,6 +27,7 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
     out["committed"] = !_epoch_active && !_fatal;
     out["busy"] = _epoch_active;
     out["snapshot_source"] = "rolling_committed";
+    out["economy_generation"] = static_cast<int64_t>(_committed_generation);
     if (!_bootstrapped || cell_idx < 0 || cell_idx >= _cell_count.get()) {
         out["ok"] = false;
         out["reason"] = !_bootstrapped ? "economy_not_bootstrapped" : "cell_out_of_range";
@@ -417,13 +418,16 @@ Dictionary NativeEconomyRuntime::explain_cohort_satisfaction(
     int64_t weighted_total = 0;
     int64_t weight_total = 0;
     int64_t diagnostic_sat = 0;
+    const uint8_t applicable_mask = satisfaction_applicable_mask(slot);
+    const auto effective_weights = satisfaction_effective_weights(signature, applicable_mask);
+    std::array<int64_t, SAT_DIM_COUNT> stored_dims{};
     for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim) {
         const int64_t value = population_store().satisfaction_dims[
             base + static_cast<size_t>(dim)];
-        const int64_t weight =
-            signature.satisfaction_weights_q16[static_cast<size_t>(dim)];
+        stored_dims[dim] = value;
+        const int64_t weight = effective_weights[dim];
         dim_ids.push_back(dim);
-        dim_values.push_back(static_cast<int32_t>(value));
+        dim_values.push_back((applicable_mask & (1U << dim)) ? static_cast<int32_t>(value) : -1);
         dim_weights.push_back(static_cast<int32_t>(weight));
         // The shortfall each dimension contributes to the composite, which is
         // what makes one of them the worst.
@@ -435,15 +439,10 @@ Dictionary NativeEconomyRuntime::explain_cohort_satisfaction(
             saturating_mul(value, weight, diagnostic_sat), diagnostic_sat);
         weight_total = saturating_add(weight_total, weight, diagnostic_sat);
     }
-    const int64_t subsistence_q16 = population_store().satisfaction_dims[
-        base + static_cast<size_t>(SAT_DIM_SUBSISTENCE)];
     const int64_t raw_q16 = weight_total > 0
         ? std::clamp<int64_t>(weighted_total / weight_total, 0, Q16_ONE - 1)
         : Q16_ONE - 1;
-    const int64_t ceiling_q16 = saturating_add(subsistence_q16,
-        mul_div_sat(Q16_ONE - 1 - subsistence_q16,
-                    _satisfaction_subsistence_gate_slack_q16, Q16_ONE,
-                    diagnostic_sat), diagnostic_sat);
+    const int64_t ceiling_q16 = satisfaction_ceiling(stored_dims.data(), applicable_mask, diagnostic_sat);
     out["ok"] = true;
     out["cohort_handle"] = cohort_handle;
     out["cell_index"] = cell;
@@ -454,6 +453,8 @@ Dictionary NativeEconomyRuntime::explain_cohort_satisfaction(
     out["dim_values_q16"] = dim_values;
     out["dim_weights_q16"] = dim_weights;
     out["dim_contributions_q16"] = dim_contributions;
+    out["applicable_mask"] = applicable_mask;
+    out["consumption_semantics"] = "realized_over_living_target_v1";
     out["raw_q16"] = raw_q16;
     out["ceiling_q16"] = ceiling_q16;
     out["composite_q16"] =
@@ -464,8 +465,7 @@ Dictionary NativeEconomyRuntime::explain_cohort_satisfaction(
     out["worst_need_id"] = population_store().worst_need_id[slot] ==
             std::numeric_limits<uint16_t>::max()
         ? -1 : static_cast<int32_t>(population_store().worst_need_id[slot]);
-    out["living_standard_level"] = living_standard_level_for(
-        population_store().composite_satisfaction[slot]);
+    out["living_standard_level"] = consumption_living_standard_level(slot);
     out["social_pressure_level"] = social_pressure_level_for(
         population_store().composite_satisfaction[slot]);
     // Raw dimension inputs, so a designer can see why a dimension scored badly
@@ -497,10 +497,7 @@ Dictionary NativeEconomyRuntime::explain_cohort_satisfaction(
         std::max<int64_t>(0, population_store().funds[slot]), Q16_ONE,
         monthly_cost, diagnostic_sat) : 0;
     out["purchasing_power_reference_days"] = 30;
-    out["comfort_floor_months_q16"] = _satisfaction_comfort_floor_months_q16;
-    out["comfort_ceiling_months_q16"] = _satisfaction_comfort_ceiling_months_q16;
-    out["luxury_floor_months_q16"] = _satisfaction_luxury_floor_months_q16;
-    out["luxury_ceiling_months_q16"] = _satisfaction_luxury_ceiling_months_q16;
+    out["basic_gate_slack_q16"] = _satisfaction_basic_gate_slack_q16;
     out["tax_tolerance_q16"] = _satisfaction_tax_tolerance_q16;
     out["subsistence_gate_slack_q16"] =
         _satisfaction_subsistence_gate_slack_q16;
@@ -519,6 +516,7 @@ Dictionary NativeEconomyRuntime::cell_satisfaction_attractiveness(
     int64_t population = 0;
     int64_t weighted = 0;
     std::array<int64_t, SAT_DIM_COUNT> dim_weighted{};
+    std::array<int64_t, SAT_DIM_COUNT> dim_population{};
     int32_t cohort_count = 0;
     population_store().for_each_in_cell(cell_idx, [&](int32_t slot) {
         const int64_t people = std::max<int64_t>(0, population_store().population[slot]);
@@ -531,23 +529,25 @@ Dictionary NativeEconomyRuntime::cell_satisfaction_attractiveness(
             diagnostic_sat);
         const size_t base = static_cast<size_t>(slot) *
             static_cast<size_t>(SAT_DIM_COUNT);
-        for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
+        const uint8_t mask = satisfaction_applicable_mask(slot);
+        for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim) {
+            if (!(mask & (1U << dim))) continue;
+            dim_population[dim] += people;
             dim_weighted[static_cast<size_t>(dim)] = saturating_add(
                 dim_weighted[static_cast<size_t>(dim)],
                 saturating_mul(population_store().satisfaction_dims[
                     base + static_cast<size_t>(dim)], people, diagnostic_sat),
                 diagnostic_sat);
+        }
     });
     const int64_t composite_q16 = population > 0
         ? std::clamp<int64_t>(weighted / population, 0, Q16_ONE - 1)
         : Q16_ONE - 1;
     PackedInt32Array dims;
     for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
-        dims.push_back(static_cast<int32_t>(population > 0
-            ? std::clamp<int64_t>(
-                  dim_weighted[static_cast<size_t>(dim)] / population, 0,
-                  Q16_ONE - 1)
-            : Q16_ONE - 1));
+        dims.push_back(static_cast<int32_t>(dim_population[dim] > 0
+            ? std::clamp<int64_t>(dim_weighted[dim] / dim_population[dim], 0, Q16_ONE - 1)
+            : -1));
     out["ok"] = true;
     out["cell_index"] = cell_idx;
     out["population"] = population;
@@ -2780,7 +2780,8 @@ Dictionary NativeEconomyRuntime::building_notable_people(
 
 
 Dictionary NativeEconomyRuntime::trade_orders_for_cell(
-        int32_t cell_idx, int32_t offset, int32_t limit) const {
+        int32_t cell_idx, int32_t offset, int32_t limit,
+        int32_t good_index) const {
     Dictionary out;
     out["cell_idx"] = cell_idx;
     if (!_bootstrapped || cell_idx < 0 || cell_idx >= _cell_count.get()) {
@@ -2788,9 +2789,46 @@ Dictionary NativeEconomyRuntime::trade_orders_for_cell(
         out["reason"] = !_bootstrapped ? "economy_not_bootstrapped" : "cell_out_of_range";
         return out;
     }
+    const int32_t good_count = market_store().good_count.get();
+    if (good_index < -1 || good_index >= good_count) {
+        out["ok"] = false;
+        out["reason"] = "good_out_of_range";
+        return out;
+    }
     offset = std::max(0, offset);
     limit = std::clamp(limit, 1, 256);
-    int32_t total = 0;
+    // The order store is bounded by EconomyProfile.trade_max_orders. Collect
+    // matching indices once, then page the stable (arrival_day, id) ordering so
+    // repeated and filtered queries stay deterministic and bounded.
+    std::vector<int32_t> matches;
+    matches.reserve(static_cast<size_t>(std::max(0, trade_orders_store().size())));
+    for (int32_t order = 0; order < trade_orders_store().size(); ++order) {
+        const bool outbound = trade_orders_store().sources[order] == cell_idx;
+        const bool inbound = trade_orders_store().destinations[order] == cell_idx;
+        if (!outbound && !inbound) continue;
+        if (good_index >= 0) {
+            bool has_good = false;
+            for (int32_t line = trade_orders_store().line_offsets[order];
+                 line < trade_orders_store().line_offsets[order + 1]; ++line) {
+                if (trade_orders_store().line_goods[line] == good_index) {
+                    has_good = true;
+                    break;
+                }
+            }
+            if (!has_good) continue;
+        }
+        matches.push_back(order);
+    }
+    std::stable_sort(matches.begin(), matches.end(),
+        [this](int32_t lhs, int32_t rhs) {
+            const int64_t lhs_arrival = trade_orders_store().arrival_days[lhs];
+            const int64_t rhs_arrival = trade_orders_store().arrival_days[rhs];
+            if (lhs_arrival != rhs_arrival) return lhs_arrival < rhs_arrival;
+            return trade_orders_store().ids[lhs] < trade_orders_store().ids[rhs];
+        });
+    const int32_t total = static_cast<int32_t>(matches.size());
+    const int32_t page_begin = std::min(offset, total);
+    const int32_t end = std::min(total, page_begin + limit);
     PackedInt64Array order_ids;
     PackedInt32Array directions;
     PackedInt32Array sources;
@@ -2820,11 +2858,9 @@ Dictionary NativeEconomyRuntime::trade_orders_for_cell(
     PackedInt64Array line_transaction_transfers;
     PackedByteArray line_flags;
     line_offsets.push_back(0);
-    for (int32_t order = 0; order < trade_orders_store().size(); ++order) {
+    for (int32_t position = page_begin; position < end; ++position) {
+        const int32_t order = matches[static_cast<size_t>(position)];
         const bool outbound = trade_orders_store().sources[order] == cell_idx;
-        const bool inbound = trade_orders_store().destinations[order] == cell_idx;
-        if (!outbound && !inbound) continue;
-        if (total++ < offset || order_ids.size() >= limit) continue;
         order_ids.push_back(trade_orders_store().ids[order]);
         directions.push_back(outbound ? -1 : 1);
         sources.push_back(trade_orders_store().sources[order]);
@@ -2848,6 +2884,8 @@ Dictionary NativeEconomyRuntime::trade_orders_for_cell(
         cargo_delivered.push_back(trade_orders_store().cargo_delivered[order]);
         for (int32_t line = trade_orders_store().line_offsets[order];
              line < trade_orders_store().line_offsets[order + 1]; ++line) {
+            if (good_index >= 0 &&
+                trade_orders_store().line_goods[line] != good_index) continue;
             line_goods.push_back(trade_orders_store().line_goods[line]);
             line_quantities.push_back(trade_orders_store().line_quantities[line]);
             line_unit_prices.push_back(trade_orders_store().line_unit_prices[line]);
@@ -2873,8 +2911,12 @@ Dictionary NativeEconomyRuntime::trade_orders_for_cell(
     out["ok"] = true;
     out["offset"] = offset;
     out["limit"] = limit;
+    out["page_begin"] = page_begin;
     out["total"] = total;
-    out["has_more"] = offset + order_ids.size() < total;
+    out["has_more"] = end < total;
+    out["economy_generation"] = static_cast<int64_t>(_committed_generation);
+    out["sample_day"] = static_cast<int64_t>(_sample_day);
+    out["good_index"] = good_index;
     out["order_ids"] = order_ids;
     out["directions"] = directions;
     out["source_cells"] = sources;

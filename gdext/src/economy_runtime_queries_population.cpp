@@ -453,7 +453,7 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     for (int32_t slot : slots) {
         const int64_t composite_q16 = population_store().composite_satisfaction[slot];
         overall_satisfaction.push_back(static_cast<int32_t>(composite_q16));
-        living_standard_levels.push_back(living_standard_level_for(composite_q16));
+        living_standard_levels.push_back(consumption_living_standard_level(slot));
         if (!include_details)
             continue;
         const uint64_t handle = population_store().handle_for_slot(slot);
@@ -472,9 +472,10 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
         // traced settlement batch.
         const size_t dims_base = static_cast<size_t>(slot) *
             static_cast<size_t>(SAT_DIM_COUNT);
+        const uint8_t applicable_mask = satisfaction_applicable_mask(slot);
         for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
-            satisfaction_dims.push_back(static_cast<int32_t>(
-                population_store().satisfaction_dims[dims_base + static_cast<size_t>(dim)]));
+            satisfaction_dims.push_back((applicable_mask & (1U << dim))
+                ? static_cast<int32_t>(population_store().satisfaction_dims[dims_base + dim]) : -1);
         worst_dimensions.push_back(
             population_store().worst_dimension_id[slot] ==
                     std::numeric_limits<uint8_t>::max()
