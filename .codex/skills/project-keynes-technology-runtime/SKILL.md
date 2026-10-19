@@ -130,3 +130,20 @@ From the repository root run:
 Add `-Build` to compile the debug GDExtension first. Run the 50-day headless performance workflow for
 changes to research or procurement hot loops and compare country/economy/modifier timing plus
 population, money, goods, and technology conservation.
+
+## Research evidence delivery and recovery (2026-10-19)
+
+Effect IDs follow ingress order, while delivery follows canonical business order. ACK the exact
+`handoff_trigger_effects().effect_ids` via `ACK_EFFECT_IDS`; never use a batch's maximum ID as a
+successful-delivery cursor. Merge exact ACKs as a bounded ID union and preserve pending commands
+through save/restore. Keep the gap-free legacy cursor below every pending effect ID.
+
+On the first unpaused session delivery, reconcile completed ONE_SHOT development achievements
+against `country_query_runtime()` permanent signals. Missing evidence is replayed through the
+existing Trigger -> Effect -> Country boundary, with valid country generation and no duplicate
+pending effect. Do not reset achievement completion or grant technology. Record recovery at the
+current boundary with a representative owned cell, without fabricating historical provenance.
+Run `technology_development_delivery_test.gd`, `trigger_effect_id_ack_test.gd`,
+`trigger_research_replay_test.gd`, `runtime_trigger_pod_test.gd`, and
+`runtime_trigger_save_roundtrip_test.gd`; the isolated `trigger_replay_manual2_audit.gd` validates
+the eight historical missing signals and four recovered research opportunities.

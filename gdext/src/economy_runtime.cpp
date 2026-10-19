@@ -10884,12 +10884,25 @@ NativeEconomyRuntime::owner_opportunity_quote(
         return owner_opportunity_quote_uncached(group, owner_fillability_q16, employee_fillability_q16, sat);
     const auto &type = _building_types[group.type_id];
     const int32_t owner = find_cohort_slot(group.cell, group.owner_signature_id);
-    std::vector<int64_t> key{group.cell, group.type_id, group.owner_signature_id,
-        group.count, group.filled_owner, group.operating_state,
-        group.last_climate_capacity_q16, group.last_observed_capacity_days_q16,
-        group.output_factor_q16, owner_fillability_q16, employee_fillability_q16,
-        owner, owner >= 0 ? population_store().funds[owner] : 0,
-        owner >= 0 ? population_store().population[owner] : 0};
+    // Reuse one thread-local key vector: constructing a fresh std::vector per
+    // call was a heap allocation on every quote probe (hit or miss).
+    thread_local std::vector<int64_t> key;
+    key.clear();
+    key.reserve(static_cast<size_t>(32 + type.employee_count * 3));
+    key.push_back(group.cell);
+    key.push_back(group.type_id);
+    key.push_back(group.owner_signature_id);
+    key.push_back(group.count);
+    key.push_back(group.filled_owner);
+    key.push_back(group.operating_state);
+    key.push_back(group.last_climate_capacity_q16);
+    key.push_back(group.last_observed_capacity_days_q16);
+    key.push_back(group.output_factor_q16);
+    key.push_back(owner_fillability_q16);
+    key.push_back(employee_fillability_q16);
+    key.push_back(owner);
+    key.push_back(owner >= 0 ? population_store().funds[owner] : 0);
+    key.push_back(owner >= 0 ? population_store().population[owner] : 0);
     for (int32_t role = 0; role < type.employee_count; ++role) {
         const int32_t index = group.employee_fill_begin + role;
         key.push_back(index);
@@ -10928,7 +10941,9 @@ NativeEconomyRuntime::owner_opportunity_quote(
     const int64_t before = sat;
     EconomyCostProbe::record("owner_quote.memo_miss", _current_day.get(), 0.0, 1);
     auto result = owner_opportunity_quote_uncached(group, owner_fillability_q16, employee_fillability_q16, sat);
-    memo.quotes.emplace(std::move(key), std::make_pair(std::make_shared<const OwnerOpportunityQuote>(result), sat - before));
+    memo.quotes.emplace(std::vector<int64_t>(key),
+        std::make_pair(std::make_shared<const OwnerOpportunityQuote>(result),
+                       sat - before));
     return result;
 }
 
@@ -11585,6 +11600,8 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
     if (has_soft_partial_input ||
         soft_efficiency_bare_q16 < Q16_ONE ||
         soft_efficiency_tooled_q16 < Q16_ONE) {
+        EconomyCostProbe::record("owner_quote.double_eval", _current_day.get(),
+                                 0.0, 1);
         OwnerOpportunityQuote bare = finalize_at_scale(
             clamp_scale_to_owner_funds(activity_scale, false), false);
         // Prefer the scale production would choose: higher disposable first.

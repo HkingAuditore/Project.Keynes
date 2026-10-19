@@ -18,6 +18,31 @@ using Clock = std::chrono::steady_clock;
 double elapsed_ms(const Clock::time_point &start) {
     return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
 }
+
+// Derived business demand refresh scratch. One queue entry never outlives a
+// single cell; one cell result is produced by a pure-read compute phase and
+// merged serially afterwards so the parallel pass cannot mutate shared state.
+struct DerivedQueueEntry {
+    int32_t good = -1;
+    int64_t needed = 0;
+};
+
+struct DerivedCellWork {
+    std::vector<int32_t> goods;
+    std::vector<int64_t> quantities;
+    int64_t edges = 0;
+    uint64_t startup_calls = 0;
+    uint64_t enqueued_goods = 0;
+    bool seeded = false;
+    void reset() {
+        goods.clear();
+        quantities.clear();
+        edges = 0;
+        startup_calls = 0;
+        enqueued_goods = 0;
+        seeded = false;
+    }
+};
 } // namespace
 
 bool NativeEconomyRuntime::investment_portfolio_funds_feasible(
@@ -1370,6 +1395,10 @@ void NativeEconomyRuntime::credit_input_substitute_demand(
 }
 
 void NativeEconomyRuntime::refresh_derived_business_demand() {
+    // Coarse attribution for the once-per-epoch full pass. Per-call probes
+    // under this function are aggregated by EconomyCostProbe; this one stays
+    // a plain stage wall so the waterfall can be reconciled with epoch_vectors.
+    EconomyCostProbe pass_cost("derived.pass", _current_day.get());
     _derived_business_demand_total = 0;
     _derived_business_demand_lanes = 0;
     _derived_business_demand_edges = 0;
@@ -1379,20 +1408,6 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
         _economy_live_cells.empty()) return;
     if (_investment_good_stamp.size() != _good_ids.size())
         _investment_good_stamp.assign(_good_ids.size(), 0);
-    struct QueueEntry {
-        int32_t good = -1;
-        int64_t needed = 0;
-    };
-    thread_local std::vector<QueueEntry> queue;
-    thread_local std::vector<uint32_t> seeded_good_stamp;
-    if (seeded_good_stamp.size() < _good_ids.size()) {
-        seeded_good_stamp.assign(_good_ids.size(), 0);
-    }
-    // The scratch is thread-local, while visit generations belong to one
-    // runtime. A second world (or restore) can reuse those generations and
-    // silently skip its real procurement/household seeds. Reset once per
-    // propagation call; keep generation stamping within the cell traversal.
-    std::fill(seeded_good_stamp.begin(), seeded_good_stamp.end(), 0);
     const char *workset_disabled = std::getenv("PK_ECONOMY_ACTIVE_WORKSET_DISABLE");
     const bool use_snapshot = !(workset_disabled && std::strcmp(workset_disabled, "1") == 0);
     // capture_country_epoch 已完成，后面的派生传播不修改国家科技。这里可在
@@ -1400,241 +1415,255 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
     LivingCostMemoScope memo(*this, false, use_snapshot);
     StartupProducerMemoScope startup_memo(*this);
     const int32_t cells = static_cast<int32_t>(_economy_live_cells.size());
-    const int32_t preview_tasks = use_snapshot && _worker_enabled && cells >= 2 &&
-            parallel_has_real_worker_threads()
-        ? std::min({cells, _worker_task_cap, _worker_tasks_hint > 0 ? _worker_tasks_hint : 8}) : 1;
-    auto &previews = _derived_household_preview_scratch;
-    if (preview_tasks > 1) {
-        previews.resize(static_cast<size_t>(cells));
-        for (auto &preview : previews) preview.ready = false;
-        const auto prepare = [&](int32_t first, int32_t last) {
-            LivingCostMemoScope worker_memo(*this, false, true);
-            thread_local std::vector<int64_t> actor_preview;
-            for (int32_t relative = first; relative < last; ++relative) {
-                const int32_t cell = _economy_live_cells[relative];
-                if (cell < 0 || cell >= _cell_count.get()) continue;
-                const int32_t market = market_store().cell_to_market[cell];
-                if (market < 0) continue;
-                bool has_seed = _market_signals.cell_offsets.size() ==
-                        static_cast<size_t>(_cell_count.get() + 1) &&
-                    _market_signals.cell_offsets[cell] < _market_signals.cell_offsets[cell + 1];
-                if (!has_seed) {
-                    const uint64_t first_key = static_cast<uint64_t>(static_cast<uint32_t>(cell)) << 32;
-                    const auto key = std::lower_bound(_trade_active_keys.begin(), _trade_active_keys.end(), first_key);
-                    has_seed = key != _trade_active_keys.end() && (*key >> 32) == static_cast<uint32_t>(cell);
-                }
-                if (!has_seed) continue;
-                auto &out = previews[relative];
-                out.goods.assign(market_store().good_count.get(), 0);
-                out.saturations = 0;
-                const EnvironmentSample environment = environment_sample_for_cell(cell);
-                population_store().for_each_in_cell(cell, [&](int32_t slot) {
-                    if (slot < 0 || slot >= static_cast<int32_t>(population_store().population.size()) ||
-                            population_store().population[slot] <= 0) return;
-                    int64_t actor_sat = 0;
-                    compute_cohort_demand_preview(slot, market, environment, nullptr,
-                        population_store().funds[slot], actor_preview, actor_sat);
-                    for (size_t lane = 0; lane < actor_preview.size(); ++lane)
-                        out.goods[lane] = saturating_add(out.goods[lane], saturating_mul(
-                            std::max<int64_t>(0, actor_preview[lane]), population_store().population[slot],
-                            out.saturations), out.saturations);
-                });
-                out.ready = true;
-            }
-        };
-        EconomyCostProbe probe("derived.household_prepare", _current_day.get(), cells);
-        parallel_for_range("pk_economy_derived_household", cells, preview_tasks, 2, prepare);
-    }
-    // 只并行只读预估；生产者选择、稀疏信号插入与所有累计仍按原 cell 顺序重放。
-    for (int32_t relative = 0; relative < cells; ++relative) {
-        const int32_t cell = _economy_live_cells[relative];
-        if (cell < 0 || cell >= _cell_count.get()) continue;
-        ++_investment_review_stamp_generation;
-        if (_investment_review_stamp_generation == 0) {
-            std::fill(_investment_good_stamp.begin(),
-                      _investment_good_stamp.end(), 0);
-            std::fill(seeded_good_stamp.begin(),
-                      seeded_good_stamp.end(), 0);
-            _investment_review_stamp_generation = 1;
-        }
-        const uint32_t visit = _investment_review_stamp_generation;
-        queue.clear();
-        auto enqueue = [&](int32_t good, int64_t needed) {
-            if (good < 0 || good >= market_store().good_count.get() || needed <= 0) return;
-            queue.push_back({good, needed});
-        };
-        int64_t sat = 0;
-        // 同一冻结地块的完整需求预览只计算一次，各商品保持原 cohort 汇总顺序。
+    // Derived refresh is per-cell independent: household preview, seed scan and
+    // the one-hop producer propagation only read frozen epoch inputs. Missing
+    // market-signal lanes are deferred to the ordered merge below, so the
+    // parallel pass never mutates shared state.
+    static const bool derived_parallel_disabled = [] {
+        const char *value = std::getenv("PK_ECONOMY_DERIVED_PARALLEL");
+        return value && std::strcmp(value, "0") == 0;
+    }();
+    const int32_t good_count = market_store().good_count.get();
+    const int32_t tasks = (!derived_parallel_disabled && use_snapshot &&
+            _worker_enabled && cells >= 2 && parallel_has_real_worker_threads())
+        ? std::min({cells, _worker_task_cap,
+                    _worker_tasks_hint > 0 ? _worker_tasks_hint : 8})
+        : 1;
+    // Plain local: parallel tasks write disjoint elements of one vector.
+    // A thread_local here would be resolved per executing thread inside the
+    // lambda and the worker tasks would index an empty vector (crash seen
+    // 2026-10-19). The caller frame stays alive across parallel_for_range.
+    std::vector<DerivedCellWork> cell_work;
+    cell_work.resize(static_cast<size_t>(cells));
+    for (auto &work_item : cell_work) work_item.reset();
+    auto compute_range = [&](int32_t first, int32_t last) {
+        LivingCostMemoScope worker_memo(*this, false, use_snapshot);
+        StartupProducerMemoScope worker_startup_memo(*this);
+        thread_local std::vector<int64_t> actor_preview;
         thread_local std::vector<int64_t> household_demand_by_good;
-        household_demand_by_good.assign(market_store().good_count.get(), 0);
-        const DerivedHouseholdPreview *prepared = preview_tasks > 1 && previews[relative].ready
-            ? &previews[relative] : nullptr;
-        bool household_preview_ready = false;
-        auto seed_good = [&](int32_t good) {
-            if (good >= 0 && good < static_cast<int32_t>(seeded_good_stamp.size())) {
-                if (seeded_good_stamp[good] == visit) return;
-                seeded_good_stamp[good] = visit;
-            }
+        thread_local std::vector<uint32_t> seed_stamp;
+        thread_local std::vector<uint32_t> visit_stamp;
+        thread_local std::vector<DerivedQueueEntry> queue;
+        if (static_cast<int32_t>(household_demand_by_good.size()) != good_count)
+            household_demand_by_good.assign(static_cast<size_t>(good_count), 0);
+        if (static_cast<int32_t>(seed_stamp.size()) != good_count)
+            seed_stamp.assign(static_cast<size_t>(good_count), 0);
+        if (static_cast<int32_t>(visit_stamp.size()) != good_count)
+            visit_stamp.assign(static_cast<size_t>(good_count), 0);
+        // Stamps are generation based; this task owns its arrays, so a single
+        // zero fill per task keeps generations local and collision free.
+        std::fill(seed_stamp.begin(), seed_stamp.end(), 0);
+        std::fill(visit_stamp.begin(), visit_stamp.end(), 0);
+        uint32_t visit = 0;
+        for (int32_t relative = first; relative < last; ++relative) {
+            DerivedCellWork &out = cell_work[relative];
+            const int32_t cell = _economy_live_cells[relative];
+            if (cell < 0 || cell >= _cell_count.get()) continue;
             const int32_t market = market_store().cell_to_market[cell];
-            if (!household_preview_ready && market >= 0 && good >= 0) {
-                household_preview_ready = true;
-                if (prepared != nullptr) {
-                    sat += prepared->saturations;
-                } else {
-                thread_local std::vector<int64_t> preview;
-                population_store().for_each_in_cell(cell, [&](int32_t slot) {
-                    if (slot < 0 || slot >= static_cast<int32_t>(
-                            population_store().population.size()) ||
-                        population_store().population[slot] <= 0) return;
-                    preview.clear();
-                    int64_t preview_sat = 0;
-                    compute_cohort_demand_preview(
-                        slot, market, environment_sample_for_cell(cell),
-                        nullptr, population_store().funds[slot], preview,
-                        preview_sat);
-                    for (size_t lane = 0; lane < preview.size(); ++lane) {
-                        household_demand_by_good[lane] = saturating_add(
-                            household_demand_by_good[lane],
-                            saturating_mul(
-                                std::max<int64_t>(0, preview[lane]),
-                                population_store().population[slot], sat), sat);
-                    }
-                });
+            if (market < 0) continue;
+            bool has_seed = _market_signals.cell_offsets.size() ==
+                    static_cast<size_t>(_cell_count.get() + 1) &&
+                _market_signals.cell_offsets[cell] < _market_signals.cell_offsets[cell + 1];
+            if (!has_seed) {
+                const uint64_t first_key =
+                    static_cast<uint64_t>(static_cast<uint32_t>(cell)) << 32;
+                const auto key = std::lower_bound(
+                    _trade_active_keys.begin(), _trade_active_keys.end(), first_key);
+                has_seed = key != _trade_active_keys.end() &&
+                    (*key >> 32) == static_cast<uint32_t>(cell);
+            }
+            if (!has_seed) continue;
+            // Same arithmetic as the retired parallel household prepare:
+            // per-capita previews weighted by cohort population.
+            std::fill(household_demand_by_good.begin(),
+                      household_demand_by_good.end(), 0);
+            int64_t preview_saturations = 0;
+            const EnvironmentSample environment = environment_sample_for_cell(cell);
+            population_store().for_each_in_cell(cell, [&](int32_t slot) {
+                if (slot < 0 || slot >= static_cast<int32_t>(
+                        population_store().population.size()) ||
+                    population_store().population[slot] <= 0) return;
+                int64_t actor_sat = 0;
+                compute_cohort_demand_preview(slot, market, environment, nullptr,
+                    population_store().funds[slot], actor_preview, actor_sat);
+                for (size_t lane = 0; lane < actor_preview.size(); ++lane)
+                    household_demand_by_good[lane] = saturating_add(
+                        household_demand_by_good[lane],
+                        saturating_mul(std::max<int64_t>(0, actor_preview[lane]),
+                            population_store().population[slot],
+                            preview_saturations),
+                        preview_saturations);
+            });
+            int64_t sat = preview_saturations;
+            ++visit;
+            if (visit == 0) {
+                std::fill(seed_stamp.begin(), seed_stamp.end(), 0);
+                std::fill(visit_stamp.begin(), visit_stamp.end(), 0);
+                visit = 1;
+            }
+            queue.clear();
+            auto enqueue = [&](int32_t good, int64_t needed) {
+                if (good < 0 || good >= good_count || needed <= 0) return;
+                queue.push_back({good, needed});
+            };
+            auto seed_good = [&](int32_t good) {
+                if (good >= 0 && good < good_count) {
+                    if (seed_stamp[good] == visit) return;
+                    seed_stamp[good] = visit;
+                }
+                const int64_t household_demand = good >= 0 && good < good_count
+                    ? household_demand_by_good[good] : 0;
+                const int64_t index = market >= 0
+                    ? market_store().index(market, good) : -1;
+                const int64_t stored_demand = index >= 0 && index <
+                        static_cast<int64_t>(market_store().demand_ema.size())
+                    ? std::max<int64_t>(0, market_store().demand_ema[index]) : 0;
+                const int64_t preview_deficit = household_demand > stored_demand
+                    ? household_demand - stored_demand : household_demand;
+                const int64_t deficit = std::max<int64_t>(
+                    market_flow_deficit_daily(cell, good, false, sat),
+                    preview_deficit);
+                if (deficit > 0) enqueue(good, deficit);
+            };
+            if (_market_signals.cell_offsets.size() ==
+                    static_cast<size_t>(_cell_count.get() + 1)) {
+                for (int32_t signal = _market_signals.cell_offsets[cell];
+                     signal < _market_signals.cell_offsets[cell + 1]; ++signal) {
+                    seed_good(_market_signals.good_ids[signal]);
                 }
             }
-            const auto &household = prepared != nullptr ? prepared->goods : household_demand_by_good;
-            const int64_t household_demand = good >= 0 && good < static_cast<int32_t>(household.size())
-                ? household[good] : 0;
-            const int64_t index = market >= 0
-                ? market_store().index(market, good) : -1;
-            const int64_t stored_demand = index >= 0 && index <
-                    static_cast<int64_t>(market_store().demand_ema.size())
-                ? std::max<int64_t>(0, market_store().demand_ema[index]) : 0;
-            // The opening snapshot may precede the first household clearing
-            // of a cold-start fixture, so demand_ema can still be zero even
-            // though the frozen cohort preview contains a real buyer.  Seed
-            // the shadow propagation from that factual preview; it remains
-            // derived-only and never becomes a stock-flow purchase.
-            const int64_t preview_deficit = household_demand > stored_demand
-                ? household_demand - stored_demand : household_demand;
-            const int64_t deficit = std::max<int64_t>(
-                market_flow_deficit_daily(cell, good, false, sat),
-                preview_deficit);
-            if (deficit > 0) enqueue(good, deficit);
-        };
-        if (_market_signals.cell_offsets.size() ==
-                static_cast<size_t>(_cell_count.get() + 1)) {
-            for (int32_t signal = _market_signals.cell_offsets[cell];
-                 signal < _market_signals.cell_offsets[cell + 1]; ++signal) {
-                seed_good(_market_signals.good_ids[signal]);
+            const uint64_t key_begin =
+                static_cast<uint64_t>(static_cast<uint32_t>(cell)) << 32;
+            const uint64_t key_end = key_begin | 0xffffffffULL;
+            auto active = std::lower_bound(
+                _trade_active_keys.begin(), _trade_active_keys.end(), key_begin);
+            for (; active != _trade_active_keys.end() && *active <= key_end;
+                 ++active) {
+                seed_good(static_cast<int32_t>(*active & 0xffffffffULL));
             }
-        }
-        const uint64_t key_begin =
-            static_cast<uint64_t>(static_cast<uint32_t>(cell)) << 32;
-        const uint64_t key_end = key_begin | 0xffffffffULL;
-        auto active = std::lower_bound(
-            _trade_active_keys.begin(), _trade_active_keys.end(), key_begin);
-        for (; active != _trade_active_keys.end() && *active <= key_end;
-             ++active) {
-            seed_good(static_cast<int32_t>(*active & 0xffffffffULL));
-        }
-        if (_epoch_research_good_id >= 0) {
-            const int64_t research = epoch_research_demand_daily(
-                cell, _epoch_research_good_id);
-            if (research > 0) enqueue(_epoch_research_good_id, research);
-        }
-        size_t cursor = 0;
-        while (cursor < queue.size()) {
-            const QueueEntry entry = queue[cursor++];
-            if (entry.good < 0 || entry.good >= market_store().good_count.get() ||
-                entry.needed <= 0) continue;
-            if (_investment_good_stamp[entry.good] == visit) continue;
-            _investment_good_stamp[entry.good] = visit;
-            _derived_business_demand_edges = saturating_add(
-                _derived_business_demand_edges,
-                _investment_good_type_offsets[entry.good + 1] -
-                    _investment_good_type_offsets[entry.good],
-                _saturation_count);
-            InvestmentCandidatePlan producer_plan;
-            const int32_t type_id = select_startup_producer(
-                cell, entry.good, &producer_plan);
-            if (type_id < 0) continue;
-            const BuildingType &type = _building_types[type_id];
-            const int32_t market = market_store().cell_to_market[cell];
-            const int64_t output_qty = producer_plan.planned_output_quantity;
-            if (output_qty <= 0) continue;
-            for (int32_t edge = 0; edge < type.input_count; ++edge) {
-                const ProductionInput &input =
-                    _building_inputs[type.input_begin + edge];
-                ++_derived_business_demand_edges;
-                if (input.required_q16 <= 0) continue;
-                int64_t physical = edge < static_cast<int32_t>(
-                        producer_plan.input_quantities.size())
-                    ? producer_plan.input_quantities[edge] : 0;
-                const int32_t input_good = edge < static_cast<int32_t>(
-                        producer_plan.input_good_ids.size())
-                    ? producer_plan.input_good_ids[edge] : -1;
-                int32_t derived_input_good = input_good;
-                // Shadow propagation must still expose the authored upstream
-                // requirement when the physical input lane is empty.  The
-                // missing stock is precisely what the derived signal is
-                // meant to price; requiring current stock here made the
-                // one-hop Leontief lane disappear in cold-start fixtures.
-                if (derived_input_good < 0 || physical <= 0) {
-                    int64_t fallback_price = std::numeric_limits<int64_t>::max();
-                    int64_t fallback_physical = 0;
-                    for (int32_t candidate_index = input.candidate_begin;
-                         candidate_index < input.candidate_begin + input.candidate_count;
-                         ++candidate_index) {
-                        const InputCandidate &candidate =
-                            _building_input_candidates[candidate_index];
-                        if (!good_input_candidate_available(cell, candidate.good_id, true))
-                            continue;
-                        const int64_t candidate_physical = mul_div_sat(
-                            input.quantity, Q16_ONE,
-                            std::max<int32_t>(1, candidate.efficiency_q16), sat);
-                        const int64_t candidate_price = market_store().price[
-                            market_store().index(market, candidate.good_id)];
-                        if (candidate_price < fallback_price) {
-                            fallback_price = candidate_price;
-                            derived_input_good = candidate.good_id;
-                            fallback_physical = std::max<int64_t>(
-                                1, candidate_physical);
+            if (_epoch_research_good_id >= 0) {
+                const int64_t research = epoch_research_demand_daily(
+                    cell, _epoch_research_good_id);
+                if (research > 0) enqueue(_epoch_research_good_id, research);
+            }
+            if (queue.empty()) continue;
+            out.seeded = true;
+            out.enqueued_goods = queue.size();
+            size_t cursor = 0;
+            while (cursor < queue.size()) {
+                const DerivedQueueEntry entry = queue[cursor++];
+                if (entry.good < 0 || entry.good >= good_count ||
+                    entry.needed <= 0) continue;
+                if (visit_stamp[entry.good] == visit) continue;
+                visit_stamp[entry.good] = visit;
+                out.edges += static_cast<int64_t>(
+                    _investment_good_type_offsets[entry.good + 1] -
+                    _investment_good_type_offsets[entry.good]);
+                InvestmentCandidatePlan producer_plan;
+                ++out.startup_calls;
+                const int32_t type_id = select_startup_producer(
+                    cell, entry.good, &producer_plan);
+                if (type_id < 0) continue;
+                const BuildingType &type = _building_types[type_id];
+                const int64_t output_qty = producer_plan.planned_output_quantity;
+                if (output_qty <= 0) continue;
+                for (int32_t edge = 0; edge < type.input_count; ++edge) {
+                    const ProductionInput &input =
+                        _building_inputs[type.input_begin + edge];
+                    ++out.edges;
+                    if (input.required_q16 <= 0) continue;
+                    int64_t physical = edge < static_cast<int32_t>(
+                            producer_plan.input_quantities.size())
+                        ? producer_plan.input_quantities[edge] : 0;
+                    const int32_t input_good = edge < static_cast<int32_t>(
+                            producer_plan.input_good_ids.size())
+                        ? producer_plan.input_good_ids[edge] : -1;
+                    int32_t derived_input_good = input_good;
+                    // Shadow propagation must still expose the authored upstream
+                    // requirement when the physical input lane is empty.
+                    if (derived_input_good < 0 || physical <= 0) {
+                        int64_t fallback_price = std::numeric_limits<int64_t>::max();
+                        int64_t fallback_physical = 0;
+                        for (int32_t candidate_index = input.candidate_begin;
+                             candidate_index < input.candidate_begin +
+                                 input.candidate_count;
+                             ++candidate_index) {
+                            const InputCandidate &candidate =
+                                _building_input_candidates[candidate_index];
+                            if (!good_input_candidate_available(
+                                    cell, candidate.good_id, true)) continue;
+                            const int64_t candidate_physical = mul_div_sat(
+                                input.quantity, Q16_ONE,
+                                std::max<int32_t>(1, candidate.efficiency_q16), sat);
+                            const int64_t candidate_price = market_store().price[
+                                market_store().index(market, candidate.good_id)];
+                            if (candidate_price < fallback_price) {
+                                fallback_price = candidate_price;
+                                derived_input_good = candidate.good_id;
+                                fallback_physical = std::max<int64_t>(
+                                    1, candidate_physical);
+                            }
                         }
+                        physical = fallback_physical;
                     }
-                    physical = fallback_physical;
+                    if (derived_input_good < 0 || physical <= 0) continue;
+                    int64_t derived = mul_div_sat(
+                        entry.needed, physical, output_qty, sat);
+                    derived = mul_div_sat(derived,
+                        std::clamp<int64_t>(input.required_q16, 0, Q16_ONE),
+                        Q16_ONE, sat);
+                    if (derived <= 0) continue;
+                    out.goods.push_back(derived_input_good);
+                    out.quantities.push_back(derived);
                 }
-                if (derived_input_good < 0 || physical <= 0) continue;
-                int64_t derived = mul_div_sat(
-                    entry.needed, physical, output_qty, sat);
-                derived = mul_div_sat(derived,
-                    std::clamp<int64_t>(input.required_q16, 0, Q16_ONE),
-                    Q16_ONE, sat);
-                if (derived <= 0) continue;
+            }
+        }
+    };
+    if (tasks > 1) {
+        EconomyCostProbe parallel_probe("derived.parallel", _current_day.get(), cells);
+        parallel_for_range("pk_economy_derived_refresh", cells, tasks, 2,
+                           compute_range);
+    } else {
+        EconomyCostProbe replay_probe("derived.replay", _current_day.get(), cells);
+        compute_range(0, cells);
+    }
+    uint64_t derived_seed_cells = 0;
+    uint64_t derived_enqueued_goods = 0;
+    uint64_t derived_startup_calls = 0;
+    {
+        // Ordered merge: same cell order, same per-cell BFS order and the same
+        // deferred ensure_market_signal_index call sequence as the serial
+        // implementation, so the derived vector, lanes/total counters and the
+        // appended signal lanes are bit-identical.
+        EconomyCostProbe merge_probe("derived.merge", _current_day.get(), cells);
+        for (int32_t relative = 0; relative < cells; ++relative) {
+            const DerivedCellWork &out = cell_work[relative];
+            if (!out.seeded) continue;
+            ++derived_seed_cells;
+            derived_enqueued_goods += out.enqueued_goods;
+            derived_startup_calls += out.startup_calls;
+            _derived_business_demand_edges = saturating_add(
+                _derived_business_demand_edges, out.edges, _saturation_count);
+            const int32_t cell = _economy_live_cells[relative];
+            for (size_t index = 0; index < out.goods.size(); ++index) {
                 const int32_t signal = ensure_market_signal_index(
-                    cell, derived_input_good);
+                    cell, out.goods[index]);
                 if (signal < 0) continue;
                 if (signal >= static_cast<int32_t>(
                         _epoch_derived_business_demand.size())) {
                     _epoch_derived_business_demand.resize(
                         _market_signals.good_ids.size(), 0);
                 }
-                const int64_t before =
-                    _epoch_derived_business_demand[signal];
+                const int64_t before = _epoch_derived_business_demand[signal];
                 _epoch_derived_business_demand[signal] = saturating_add(
-                    before, derived, _saturation_count);
+                    before, out.quantities[index], _saturation_count);
                 if (before <= 0 &&
                     _epoch_derived_business_demand[signal] > 0) {
                     ++_derived_business_demand_lanes;
                 }
                 _derived_business_demand_total = saturating_add(
-                    _derived_business_demand_total, derived,
+                    _derived_business_demand_total, out.quantities[index],
                     _saturation_count);
-                // Derived business demand is deliberately one hop.  It is a
-                // shadow price/investment signal, never a recursive purchase
-                // request.  Enqueuing the input here used to let a purely
-                // derived shortage walk the graph again and create a vacant
-                // upstream producer (notably knapping).
             }
         }
     }
@@ -1653,6 +1682,14 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
         mix(static_cast<uint64_t>(_epoch_derived_business_demand[i]));
     }
     _derived_snapshot_hash = derived_hash;
+    // Deterministic work counters for the optimization gates. Aggregated by
+    // EconomyCostProbe into one row per day, so this is cheap.
+    EconomyCostProbe::record("derived.seed_cells", _current_day.get(), 0.0,
+        derived_seed_cells);
+    EconomyCostProbe::record("derived.enqueued_goods", _current_day.get(), 0.0,
+        derived_enqueued_goods);
+    EconomyCostProbe::record("derived.startup_calls", _current_day.get(), 0.0,
+        derived_startup_calls);
 }
 
 void NativeEconomyRuntime::propagate_startup_demand_for_cell(int32_t cell) {

@@ -19,6 +19,13 @@ func _init() -> void:
 		"treasury_quantities": PackedInt64Array(),
 	}).get("ok", false)), "bootstrap Country")
 	var handle := int(facade.cell_summary(0).country_handle)
+	var original_country := PackedByteArray()
+	_expect(bool(facade.begin_save().get("ok", false)), "capture Country before evidence")
+	while true:
+		var chunk := facade.read_save_chunk()
+		if chunk.is_empty(): break
+		original_country.append_array(chunk)
+	_expect(bool(facade.end_save().get("ok", false)), "finish Country checkpoint")
 	var effects := preload("res://scripts/effect/effect_domain_catalog.gd").build()
 	_expect(bool(ext.configure_effects(effects.compile_native_catalog()).get("ok", false)), "configure Effect")
 	var triggers := preload("res://scripts/trigger/trigger_catalog.gd").load_default()
@@ -58,6 +65,25 @@ func _init() -> void:
 	var signal_ids: PackedInt32Array = evidence.signal_ids
 	for metric in [agriculture, manufacturing]:
 		_expect(signal_ids.has(metrics.development_metric_signal_indices[metric]), "completed achievement has permanent evidence: %s" % metrics.development_metric_ids[metric])
+	_expect(int(ext.reconcile_completed_research_signals().get("submitted", -1)) == 0,
+		"already recorded achievements need no recovery")
+	# Restore only the old Country checkpoint to reproduce the historical split:
+	# the two Trigger achievements remain completed, but their evidence is gone.
+	_expect(bool(facade.restore_bytes(original_country).get("ok", false)), "restore missing-evidence checkpoint")
+	var recovered: Dictionary = ext.reconcile_completed_research_signals()
+	_expect(bool(recovered.get("complete", false)) and int(recovered.get("submitted", 0)) == 2,
+		"automatic reconciliation replays exactly the two completed missing signals")
+	_expect(int(ext.reconcile_completed_research_signals().get("submitted", -1)) == 0,
+		"pending recovery effects are not duplicated")
+	_expect(int(ext.handoff_trigger_effects(8).get("handed_off", 0)) == 2, "recovery follows normal Trigger handoff")
+	_expect(int(ext.dispatch_effect_native_country().get("submitted_commands", 0)) == 2, "recovery follows normal Effect dispatch")
+	_expect(bool(ext.run_country_slice({"day_index": 1}).get("ok", false)), "recovery commits at Country boundary")
+	_expect(int(ext.ack_effect_native_country().get("acknowledged", 0)) == 2, "recovery has real Country receipts")
+	var repaired: Dictionary = facade.research_signal_snapshot(handle)
+	for metric in [agriculture, manufacturing]:
+		_expect((repaired.signal_ids as PackedInt32Array).has(metrics.development_metric_signal_indices[metric]), "automatic recovery restores permanent evidence")
+	_expect(int(ext.reconcile_completed_research_signals().get("submitted", -1)) == 0,
+		"a second session reconciliation is idempotent")
 	print("technology_development_delivery_test: %s" % ("PASS" if _failures == 0 else "FAIL"))
 	quit(0 if _failures == 0 else 1)
 

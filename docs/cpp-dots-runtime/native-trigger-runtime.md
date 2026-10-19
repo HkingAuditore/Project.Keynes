@@ -65,6 +65,15 @@ every main-thread suppression reads.
 
 ## Packed contract
 
+Session recovery additionally compares completed one-shot development achievements with the current
+Country query replica through `DCWorldExt::reconcile_completed_research_signals()`. The first unpaused
+Trigger transport service performs this bounded cold scan; successful admission ends the scan for
+the session, while backpressure is retried. Existing permanent signals and pending effects are skipped.
+Only the Trigger replay command may create the missing effect, and normal Effect/Country dispatch and
+Country receipts still complete it. Recovery preserves completed flags and country generations; it
+records the current recovery boundary and a representative owned cell rather than inventing historical
+observations. This is adapter repair, not a transfer of Country or Trigger authority.
+
 当前 packed protocol 为 v3，PKTR save schema 为 v5。Gameplay event 同时携带兼容
 `entity_id` 和 64 位 generation-safe `entity_handle`。
 

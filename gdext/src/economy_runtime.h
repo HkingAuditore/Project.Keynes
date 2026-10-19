@@ -1366,6 +1366,19 @@ private:
     mutable bool _fiscal_words_dirty = true;
     mutable size_t _fiscal_hash_dirty_from_word = 0;
     struct OwnerOpportunityQuote;
+    // FNV-1a over the packed key words. Owner-opportunity keys are small
+    // integer vectors; hashing keeps the hot lookup off the tree-compare path
+    // while the exact key remains the collision check.
+    struct LivingCostVectorKeyHash {
+        size_t operator()(const std::vector<int64_t> &key) const noexcept {
+            uint64_t hash = 14695981039346656037ull;
+            for (const int64_t value : key) {
+                hash ^= static_cast<uint64_t>(value);
+                hash *= 1099511628211ull;
+            }
+            return static_cast<size_t>(hash);
+        }
+    };
     struct LivingCostMemoState {
         const NativeEconomyRuntime *owner = nullptr;
         int32_t depth = 0;
@@ -1381,7 +1394,9 @@ private:
         bool quote_enabled = false;
         bool frozen_country_preview = false;
         bool frozen_price_overrides = false;
-        std::map<std::vector<int64_t>, std::pair<std::shared_ptr<const OwnerOpportunityQuote>, int64_t>> quotes;
+        std::unordered_map<std::vector<int64_t>,
+            std::pair<std::shared_ptr<const OwnerOpportunityQuote>, int64_t>,
+            LivingCostVectorKeyHash> quotes;
     };
     static LivingCostMemoState &living_cost_memo_state() {
         thread_local LivingCostMemoState state;
@@ -2541,8 +2556,6 @@ private:
         std::vector<uint32_t> construction_stamp;
         std::vector<int32_t> construction_good;
         std::vector<int64_t> construction_physical;
-        std::map<std::array<int32_t, 3>,
-            std::pair<int32_t, InvestmentCandidatePlan>> entries;
 
         void ensure_cell(int32_t cell, size_t good_count, size_t bom_count) {
             const size_t prod_slots = good_count * 4u;
@@ -2578,7 +2591,6 @@ private:
                 std::fill(construction_stamp.begin(), construction_stamp.end(), 0);
                 fast_gen = 1;
             }
-            entries.clear();
         }
     };
     static StartupProducerMemoState &startup_producer_memo_state() {

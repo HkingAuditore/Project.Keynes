@@ -59,6 +59,21 @@ capture 的持锁区执行，并把结果交回同一调用入口。等待期间
 `runtime_trigger_pod_test.gd` / `runtime_trigger_save_roundtrip_test.gd` 中的满队列确认与存取回归。
 manual_2 历史补发证据：`trigger_replay_manual2_audit.gd` → `tmp/trigger_replay_manual2_*.json`。
 
+## 历史成就证据的会话对账（2026-10-19）
+
+首次解除暂停后，既有 Trigger 交付泵调用 `reconcile_completed_research_signals()`，对账
+Trigger 的已完成一次性发展成就与 `country_query_runtime()` 的当前国家永久证据。只对有效
+国家 handle、已完成成就、缺失信号且无待交付效果的条目补发；分批上限 256，队列背压时
+保留未完成标记重试，完成扫描后该会话不再逐日扫描。暂停时不启动对账。
+
+补发使用现有 `REPLAY_COMPLETED_RESEARCH_SIGNAL` POD 命令与 Trigger → Effect → Country
+边界，不直接设置发现位或授予科技。完成标记不重置，不要求历史条件在当前仍满足；当前
+所属地块仅作恢复边界的代表性来源，不伪造原始观测日期和位置。已存在证据或在途效果不重复
+补发，失效代次的国家不恢复。目录身份、科技门槛和存档字段保持不变。
+
+`technology_development_delivery_test.gd` 同时验证逆序 ID 分批交付及自动对账；
+`trigger_replay_manual2_audit.gd` 用隔离的 manual_2 验证历史 8 条漏记证据恢复。
+
 ## 首座科研机构的建材启动（2026-09-20）
 
 有冻结的、国库现金支持的科研采购需求且当地没有科研建筑时，Economy 在建筑计划的

@@ -59,6 +59,9 @@ if (-not [string]::IsNullOrWhiteSpace($GodotExe)) {
     $projectRoot = Join-Path $RepoRoot "Project\project-keynes"
     $tests = @(
         "technology_catalog_test.gd",
+        "trigger_effect_id_ack_test.gd",
+        "trigger_research_replay_test.gd",
+        "technology_development_delivery_test.gd",
         "technology_network_design_test.gd",
         "technology_content_binding_audit_test.gd",
         "technology_research_runtime_test.gd",

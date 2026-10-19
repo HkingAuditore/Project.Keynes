@@ -742,6 +742,73 @@ void NativeEconomyRuntime::capture_completed_perf_snapshot() {
     snapshot.building_structure_labor_cache_ms =
         _building_structure_labor_cache_ms;
     _last_completed_perf = snapshot;
+    // Phase-timer attribution for the optimization gates: one aggregated
+    // PK_ECONOMY_COST_CSV row per (epoch, phase). These values already exist for
+    // the diagnostics report; recording them costs one map insert per epoch and
+    // never touches simulation state.
+    const int64_t perf_day = _current_day.get();
+    const auto record_epoch_ms = [perf_day](const char *name, double ms) {
+        if (ms > 0.0) EconomyCostProbe::record(name, perf_day, ms);
+    };
+    record_epoch_ms("epoch_perf.building_production", snapshot.building_production_ms);
+    record_epoch_ms("epoch_perf.building_production_worker_cpu",
+                    snapshot.production_worker_cpu_ms);
+    record_epoch_ms("epoch_perf.building_employment", snapshot.building_employment_ms);
+    record_epoch_ms("epoch_perf.labor_signal", _labor_signal_ms);
+    record_epoch_ms("epoch_perf.building_plan", snapshot.building_plan_ms);
+    record_epoch_ms("epoch_perf.building_plan_evaluate", _building_plan_evaluate_ms);
+    record_epoch_ms("epoch_perf.building_plan_worker_cpu",
+                    snapshot.building_plan_worker_cpu_ms);
+    record_epoch_ms("epoch_perf.market_signal", _market_signal_ms);
+    record_epoch_ms("epoch_perf.investment", snapshot.building_investment_ms);
+    record_epoch_ms("epoch_perf.investment_evaluate", snapshot.investment_evaluate_ms);
+    record_epoch_ms("epoch_perf.investment_allocate", snapshot.investment_allocate_ms);
+    record_epoch_ms("epoch_perf.startup_demand_prepare",
+                    snapshot.startup_demand_prepare_ms);
+    record_epoch_ms("epoch_perf.finalize_construction",
+                    snapshot.finalize_construction_ms);
+    record_epoch_ms("epoch_perf.finalize_reconcile", snapshot.finalize_reconcile_ms);
+    record_epoch_ms("epoch_perf.building_factor_refresh",
+                    snapshot.building_factor_refresh_ms);
+    record_epoch_ms("epoch_perf.building_role_storage",
+                    snapshot.building_role_storage_ms);
+    record_epoch_ms("epoch_perf.publish", snapshot.aggregate_publish_ms);
+    record_epoch_ms("epoch_perf.audit", snapshot.aggregate_audit_ms);
+    record_epoch_ms("epoch_perf.household_prepare",
+                    snapshot.household_market_prepare_ms);
+    record_epoch_ms("epoch_perf.household_worker", snapshot.household_market_worker_ms);
+    record_epoch_ms("epoch_perf.household_merge_aggregate",
+                    snapshot.household_market_merge_aggregate_ms);
+    record_epoch_ms("epoch_perf.household_merge_trade",
+                    snapshot.household_market_merge_trade_ms);
+    record_epoch_ms("epoch_perf.family_commit_normalize", _family_commit_normalize_ms);
+    record_epoch_ms("epoch_perf.family_commit_attribution",
+                    _family_commit_attribution_ms);
+    record_epoch_ms("epoch_perf.family_behavior_cache", _family_behavior_cache_ms);
+    record_epoch_ms("epoch_perf.person_commit_retire", _person_commit_retire_ms);
+    record_epoch_ms("epoch_perf.epoch_begin", _epoch_begin_ms);
+    record_epoch_ms("epoch_perf.epoch_begin_vector_init", _epoch_begin_vector_init_ms);
+    record_epoch_ms("epoch_perf.epoch_begin_reset", _epoch_begin_reset_ms);
+    record_epoch_ms("epoch_perf.epoch_begin_country", _epoch_begin_country_ms);
+    record_epoch_ms("epoch_perf.epoch_begin_workset", _epoch_begin_workset_ms);
+    record_epoch_ms("epoch_perf.epoch_begin_resource_lane",
+                    _epoch_begin_resource_lane_ms);
+    record_epoch_ms("epoch_perf.epoch_begin_fiscal", _epoch_begin_fiscal_ms);
+    record_epoch_ms("epoch_perf.epoch_begin_construction_csr",
+                    _epoch_begin_construction_csr_ms);
+    record_epoch_ms("epoch_perf.epoch_begin_recovery_apply",
+                    _epoch_begin_recovery_apply_ms);
+    record_epoch_ms("epoch_perf.epoch_begin_commands", _epoch_begin_commands_ms);
+    record_epoch_ms("epoch_perf.prepare", _prepare_ms);
+    record_epoch_ms("epoch_perf.price", _price_ms);
+    record_epoch_ms("epoch_perf.formula", _formula_ms);
+    record_epoch_ms("epoch_perf.clear", _clear_ms);
+    EconomyCostProbe::record("epoch_perf.building_factor_cache_hits", perf_day, 0.0,
+        static_cast<uint64_t>(std::max<int64_t>(0,
+            snapshot.building_factor_cache_hits)));
+    EconomyCostProbe::record("epoch_perf.building_factor_cache_misses", perf_day, 0.0,
+        static_cast<uint64_t>(std::max<int64_t>(0,
+            snapshot.building_factor_cache_misses)));
 }
 
 bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
