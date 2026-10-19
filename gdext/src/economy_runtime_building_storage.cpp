@@ -127,18 +127,33 @@ size_t NativeEconomyRuntime::building_group_memory_bytes() const {
 void NativeEconomyRuntime::refresh_building_store_role_lanes() const {
     RuntimeEconomyBuildingStore &store = mutable_buildings_store();
     const size_t groups = store.cell.size();
-    store.role_count.assign(groups, 0);
-    store.role_begin.assign(groups, 0);
-    store.role_filled.clear();
-    store.role_contract_wage.clear();
-    store.role_base_living_cost.clear();
-    store.role_living_cost.clear();
-    store.role_local_average_wage.clear();
-    store.role_base_wage_due.clear();
-    store.role_base_wage_paid.clear();
-    store.role_bonus_due.clear();
-    store.role_bonus_paid.clear();
-    store.role_filled.reserve(_building_employee_filled.size());
+    // Build the packed projection in plain scratch vectors and publish each
+    // column with one bulk assign: the previous per-lane push_back path paid a
+    // tracked resize/encode for every role column of every lane, which made the
+    // day-end mirror projection the third-largest economy CPU item.
+    thread_local std::vector<int32_t> scratch_role_count;
+    thread_local std::vector<int32_t> scratch_role_begin;
+    thread_local std::vector<int64_t> scratch_role_filled;
+    thread_local std::vector<int64_t> scratch_role_contract_wage;
+    thread_local std::vector<int64_t> scratch_role_base_living_cost;
+    thread_local std::vector<int64_t> scratch_role_living_cost;
+    thread_local std::vector<int64_t> scratch_role_local_average_wage;
+    thread_local std::vector<int64_t> scratch_role_base_wage_due;
+    thread_local std::vector<int64_t> scratch_role_base_wage_paid;
+    thread_local std::vector<int64_t> scratch_role_bonus_due;
+    thread_local std::vector<int64_t> scratch_role_bonus_paid;
+    scratch_role_count.assign(groups, 0);
+    scratch_role_begin.assign(groups, 0);
+    scratch_role_filled.clear();
+    scratch_role_contract_wage.clear();
+    scratch_role_base_living_cost.clear();
+    scratch_role_living_cost.clear();
+    scratch_role_local_average_wage.clear();
+    scratch_role_base_wage_due.clear();
+    scratch_role_base_wage_paid.clear();
+    scratch_role_bonus_due.clear();
+    scratch_role_bonus_paid.clear();
+    scratch_role_filled.reserve(_building_employee_filled.size());
     for (size_t g = 0; g < groups; ++g) {
         const int32_t type_id = store.type_id[g];
         const int32_t roles =
@@ -146,41 +161,52 @@ void NativeEconomyRuntime::refresh_building_store_role_lanes() const {
              type_id < static_cast<int32_t>(_building_types.size()))
                 ? _building_types[static_cast<size_t>(type_id)].employee_count
                 : 0;
-        store.role_count.write_scalar(g, roles);
-        store.role_begin.write_scalar(g, static_cast<int32_t>(store.role_filled.size()));
+        scratch_role_count[g] = roles;
+        scratch_role_begin[g] = static_cast<int32_t>(scratch_role_filled.size());
         const int32_t begin = store.employee_fill_begin[g];
         for (int32_t r = 0; r < roles; ++r) {
             const int32_t lane = begin + r;
             if (begin < 0 || lane < 0 ||
                 lane >= static_cast<int32_t>(_building_employee_filled.size())) {
-                store.role_filled.push_back(0);
-                store.role_contract_wage.push_back(0);
-                store.role_base_living_cost.push_back(0);
-                store.role_living_cost.push_back(0);
-                store.role_local_average_wage.push_back(0);
-                store.role_base_wage_due.push_back(0);
-                store.role_base_wage_paid.push_back(0);
-                store.role_bonus_due.push_back(0);
-                store.role_bonus_paid.push_back(0);
+                scratch_role_filled.push_back(0);
+                scratch_role_contract_wage.push_back(0);
+                scratch_role_base_living_cost.push_back(0);
+                scratch_role_living_cost.push_back(0);
+                scratch_role_local_average_wage.push_back(0);
+                scratch_role_base_wage_due.push_back(0);
+                scratch_role_base_wage_paid.push_back(0);
+                scratch_role_bonus_due.push_back(0);
+                scratch_role_bonus_paid.push_back(0);
                 continue;
             }
             const size_t index = static_cast<size_t>(lane);
-            store.role_filled.push_back(_building_employee_filled[index]);
-            store.role_contract_wage.push_back(
+            scratch_role_filled.push_back(_building_employee_filled[index]);
+            scratch_role_contract_wage.push_back(
                 _building_role_contract_wage[index]);
-            store.role_base_living_cost.push_back(
+            scratch_role_base_living_cost.push_back(
                 _building_role_base_living_cost[index]);
-            store.role_living_cost.push_back(_building_role_living_cost[index]);
-            store.role_local_average_wage.push_back(
+            scratch_role_living_cost.push_back(_building_role_living_cost[index]);
+            scratch_role_local_average_wage.push_back(
                 _building_role_local_average_wage[index]);
-            store.role_base_wage_due.push_back(
+            scratch_role_base_wage_due.push_back(
                 _building_role_base_wage_due[index]);
-            store.role_base_wage_paid.push_back(
+            scratch_role_base_wage_paid.push_back(
                 _building_role_base_wage_paid[index]);
-            store.role_bonus_due.push_back(_building_role_bonus_due[index]);
-            store.role_bonus_paid.push_back(_building_role_bonus_paid[index]);
+            scratch_role_bonus_due.push_back(_building_role_bonus_due[index]);
+            scratch_role_bonus_paid.push_back(_building_role_bonus_paid[index]);
         }
     }
+    store.role_count.assign(scratch_role_count);
+    store.role_begin.assign(scratch_role_begin);
+    store.role_filled.assign(scratch_role_filled);
+    store.role_contract_wage.assign(scratch_role_contract_wage);
+    store.role_base_living_cost.assign(scratch_role_base_living_cost);
+    store.role_living_cost.assign(scratch_role_living_cost);
+    store.role_local_average_wage.assign(scratch_role_local_average_wage);
+    store.role_base_wage_due.assign(scratch_role_base_wage_due);
+    store.role_base_wage_paid.assign(scratch_role_base_wage_paid);
+    store.role_bonus_due.assign(scratch_role_bonus_due);
+    store.role_bonus_paid.assign(scratch_role_bonus_paid);
 }
 
 size_t NativeEconomyRuntime::append_pending_construction(

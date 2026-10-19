@@ -332,6 +332,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _family_behavior_cache_last_reasons = 0;
     _family_behavior_cache_rebuilds = 0;
     _family_behavior_cache_skips = 0;
+    _track_b_family_cache_last_day = std::numeric_limits<int64_t>::min();
     _family_behavior_metric_contexts_built = 0;
     _family_behavior_condition_edges_evaluated = 0;
     _family_behavior_cache_ms = 0.0;
@@ -449,6 +450,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _investment_output_signals_scratch.reserve(max_building_outputs);
     _investment_employment_cells.clear();
     _investment_review_cell_indices.clear();
+    _track_b_investment_cells_pending.clear();
     _investment_active_goods_scratch.clear();
     _startup_demand_values.clear();
     _startup_demand_stamps.clear();
@@ -615,6 +617,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     _investment_outstanding_credit_by_cell.clear();
     _investment_employment_cells.clear();
     _investment_review_cell_indices.clear();
+    _track_b_investment_cells_pending.clear();
     _investment_active_goods_scratch.clear();
     _startup_demand_touched_keys.clear();
     _startup_remote_lanes.clear();

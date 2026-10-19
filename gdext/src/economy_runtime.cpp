@@ -229,8 +229,11 @@ void NativeEconomyRuntime::rebuild_incremental_audit_shadow() {
 }
 
 bool NativeEconomyRuntime::audit_shadow_reuse_enabled() {
-    const char *reuse = std::getenv("PK_ECONOMY_AUDIT_SHADOW_REUSE");
-    return !(reuse && std::strcmp(reuse, "0") == 0);
+    static const bool disabled = [] {
+        const char *value = std::getenv("PK_ECONOMY_AUDIT_SHADOW_REUSE");
+        return value && std::strcmp(value, "0") == 0;
+    }();
+    return !disabled;
 }
 
 void NativeEconomyRuntime::begin_incremental_audit_epoch() {
@@ -2430,9 +2433,15 @@ void NativeEconomyRuntime::sync_owned_building_store(
     // A+Y N2/N8: group and pending columns are already the sole live storage.
     // Only the packed role CSR still needs repacking, and only a foreign
     // destination gets a copy.
+    const auto role_lane_started = Clock::now();
     refresh_building_store_role_lanes();
+    EconomyCostProbe::record("domain_projection.role_lanes", _current_day.get(),
+                             elapsed_ms(role_lane_started));
+    const auto store_copy_started = Clock::now();
     const RuntimeEconomyBuildingStore &live = buildings_store();
     if (&out != &live) out = live;
+    EconomyCostProbe::record("domain_projection.building_copy", _current_day.get(),
+                             elapsed_ms(store_copy_started));
 }
 
 void NativeEconomyRuntime::sync_owned_trade_escrow_store(
@@ -2793,9 +2802,15 @@ void NativeEconomyRuntime::fill_ledger_building_from_store(
     block.captured = true;
     block.catalog_hash =
         static_cast<uint64_t>(std::max<int64_t>(0, _building_catalog_hash.get()));
+    const auto block_copy_started = Clock::now();
     block.store = store;
+    EconomyCostProbe::record("domain_projection.building_block_copy",
+                             _current_day.get(), elapsed_ms(block_copy_started));
     block.sync_counts_from_store();
+    const auto block_hash_started = Clock::now();
     block.recompute_content_hash();
+    EconomyCostProbe::record("domain_projection.building_block_hash",
+                             _current_day.get(), elapsed_ms(block_hash_started));
 }
 
 void NativeEconomyRuntime::fill_ledger_trade_escrow_from_store(
@@ -2884,22 +2899,37 @@ void NativeEconomyRuntime::fill_ledger_epoch_cursor(
 void NativeEconomyRuntime::flush_formula_owned_domain_mirrors() {
     EconomyCostProbe probe("domain_projection", _current_day.get());
     if (_formula_owned == nullptr) return;
+    const auto domain_building_started = Clock::now();
     sync_owned_building_store(_formula_owned->buildings);
     // N10: the Owned committed blocks are the day-end export source, so every
     // domain block (not just trade/family/resource) has to be refreshed here.
     fill_ledger_building_from_store(_formula_owned->building,
                                     _formula_owned->buildings);
+    EconomyCostProbe::record("domain_projection.building", _current_day.get(),
+                             elapsed_ms(domain_building_started));
+    const auto domain_trade_started = Clock::now();
     sync_owned_trade_escrow_store(_formula_owned->trade_orders);
     fill_ledger_trade_escrow_from_store(_formula_owned->trade_escrow,
                                         _formula_owned->trade_orders);
+    EconomyCostProbe::record("domain_projection.trade", _current_day.get(),
+                             elapsed_ms(domain_trade_started));
+    const auto domain_family_started = Clock::now();
     sync_owned_family_store(_formula_owned->families);
     fill_ledger_family_from_store(_formula_owned->family,
                                   _formula_owned->families);
+    EconomyCostProbe::record("domain_projection.family", _current_day.get(),
+                             elapsed_ms(domain_family_started));
+    const auto domain_resource_started = Clock::now();
     sync_owned_resource_store(_formula_owned->resources);
     fill_ledger_resource_from_store(_formula_owned->resource,
                                     _formula_owned->resources);
+    EconomyCostProbe::record("domain_projection.resource", _current_day.get(),
+                             elapsed_ms(domain_resource_started));
+    const auto domain_cursor_started = Clock::now();
     fill_ledger_epoch_cursor(_formula_owned->epoch_cursor);
     _formula_owned->epoch_cursors = _formula_owned->epoch_cursor.store;
+    EconomyCostProbe::record("domain_projection.cursor", _current_day.get(),
+                             elapsed_ms(domain_cursor_started));
 }
 
 EconomyTrackedColumn<int64_t> &NativeEconomyRuntime::resource_stock_lanes() noexcept {
@@ -7785,11 +7815,16 @@ int64_t NativeEconomyRuntime::living_cost_for_signature(
     const std::array<int32_t, 3> memo_key{cell, plan_id, signature.ethnicity_id};
     auto &memo = living_cost_memo_state();
     const bool memo_active = memo.depth > 0 && memo.owner == this;
+    // Cached once: getenv scans the process environment per call and the
+    // memo-hit path runs thousands of times per simulated day.
+    static const bool verify_living_cost_memo = [] {
+        const char *value = std::getenv("PK_ECONOMY_MEMO_VERIFY");
+        return value && std::strcmp(value, "1") == 0;
+    }();
     if (memo_active) {
         const auto found = memo.values.find(memo_key);
         if (found != memo.values.end()) {
-            const char *verify = std::getenv("PK_ECONOMY_MEMO_VERIFY");
-            if (verify && std::strcmp(verify, "1") == 0) {
+            if (verify_living_cost_memo) {
                 const auto *previous_owner = memo.owner;
                 memo.owner = nullptr;
                 int64_t reference_sat = sat;
@@ -9341,6 +9376,8 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
             // same recovery decision; do not create a food-only exception.
             if (executable) {
                 int64_t quote_sat = 0;
+                EconomyCostProbe::record("owner_quote.call.plan_recovery",
+                                          _current_day.get(), 0.0, 1);
                 const OwnerOpportunityQuote recovery_quote =
                     owner_opportunity_quote(group, Q16_ONE, Q16_ONE, quote_sat);
                 const int64_t recovery_cash_profit = mul_div_sat(
@@ -9591,6 +9628,8 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                     in_kind_cache_values.size())) {
                 const size_t cache_index = static_cast<size_t>(group.index);
                 if (in_kind_cache_valid[cache_index] == 0) {
+                    EconomyCostProbe::record("owner_quote.call.plan_inkind",
+                                              _current_day.get(), 0.0, 1);
                     const OwnerOpportunityQuote opportunity = owner_opportunity_quote(
                         group, Q16_ONE, Q16_ONE, _saturation_count);
                     in_kind_cache_values[cache_index] = std::max<int64_t>(0,
@@ -10923,8 +10962,11 @@ NativeEconomyRuntime::owner_opportunity_quote(
     const auto found = memo.quotes.find(key);
     if (found != memo.quotes.end()) {
         EconomyCostProbe::record("owner_quote.memo_hit", _current_day.get(), 0.0, 1);
-        const char *verify = std::getenv("PK_ECONOMY_MEMO_VERIFY");
-        if (verify && std::strcmp(verify, "1") == 0) {
+        static const bool verify_owner_quote_memo = [] {
+            const char *value = std::getenv("PK_ECONOMY_MEMO_VERIFY");
+            return value && std::strcmp(value, "1") == 0;
+        }();
+        if (verify_owner_quote_memo) {
             const auto *previous_owner = memo.owner;
             memo.owner = nullptr;
             int64_t reference_sat = sat;
@@ -11024,6 +11066,94 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
     // Workforce is a separate outer scale. Natural capacity below is formed
     // independently, so owner attendance is multiplied exactly once instead
     // of competing with climate/resource factors through a global min().
+    static const bool quote_trace = [] {
+        const char *value = std::getenv("PK_ECONOMY_OWNER_QUOTE_TRACE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    // Section timing uses a thread-local accumulator: a per-call probe record
+    // (mutex + CSV row) would cost more than the sections it measures and
+    // would be booked outside the measured spans, hiding ~30% of the quote.
+    struct QuoteSectionTrace {
+        int64_t day = -9223372036854775807LL;
+        double setup_ms = 0.0;
+        double setup_res_ms = 0.0;
+        double setup_living_ms = 0.0;
+        uint64_t setup_living_hits = 0;
+        uint64_t setup_living_misses = 0;
+        double clamp_headroom_ms = 0.0;
+        double setup_wages_ms = 0.0;
+        double setup_maint_ms = 0.0;
+        double setup_env_ms = 0.0;
+        double input_scan_ms = 0.0;
+        double funds_clamp_ms = 0.0;
+        double funds_clamp_bare_ms = 0.0;
+        double finalize_tooled_ms = 0.0;
+        double finalize_bare_ms = 0.0;
+        double fin_pre_ms = 0.0;
+        double fin_natural_ms = 0.0;
+        double fin_input_cost_ms = 0.0;
+        double fin_outputs_ms = 0.0;
+        double fin_income_ms = 0.0;
+        double fin_proj_ms = 0.0;
+        uint64_t calls = 0;
+    };
+    thread_local QuoteSectionTrace quote_sections;
+    const auto add_quote_section = [](double &slot,
+                                      const Clock::time_point &started) {
+        slot += elapsed_ms(started);
+    };
+    const auto reset_quote_sections = [](int64_t day) {
+        quote_sections = QuoteSectionTrace{};
+        quote_sections.day = day;
+    };
+    if (quote_trace && quote_sections.day != _current_day.get()) {
+        const int64_t trace_day = quote_sections.day;
+        if (quote_sections.calls > 0) {
+            EconomyCostProbe::record("owner_quote.tl_setup", trace_day,
+                                     quote_sections.setup_ms,
+                                     quote_sections.calls);
+            EconomyCostProbe::record("owner_quote.tl_setup_res", trace_day,
+                                     quote_sections.setup_res_ms);
+            EconomyCostProbe::record("owner_quote.tl_setup_living", trace_day,
+                                     quote_sections.setup_living_ms);
+            EconomyCostProbe::record("owner_quote.tl_setup_living_hits", trace_day,
+                                     0.0, quote_sections.setup_living_hits);
+            EconomyCostProbe::record("owner_quote.tl_setup_living_misses", trace_day,
+                                     0.0, quote_sections.setup_living_misses);
+            EconomyCostProbe::record("owner_quote.tl_clamp_headroom", trace_day,
+                                     quote_sections.clamp_headroom_ms);
+            EconomyCostProbe::record("owner_quote.tl_setup_wages", trace_day,
+                                     quote_sections.setup_wages_ms);
+            EconomyCostProbe::record("owner_quote.tl_setup_maint", trace_day,
+                                     quote_sections.setup_maint_ms);
+            EconomyCostProbe::record("owner_quote.tl_setup_env", trace_day,
+                                     quote_sections.setup_env_ms);
+            EconomyCostProbe::record("owner_quote.tl_input_scan", trace_day,
+                                     quote_sections.input_scan_ms);
+            EconomyCostProbe::record("owner_quote.tl_funds_clamp", trace_day,
+                                     quote_sections.funds_clamp_ms);
+            EconomyCostProbe::record("owner_quote.tl_funds_clamp_bare", trace_day,
+                                     quote_sections.funds_clamp_bare_ms);
+            EconomyCostProbe::record("owner_quote.tl_finalize_tooled", trace_day,
+                                     quote_sections.finalize_tooled_ms);
+            EconomyCostProbe::record("owner_quote.tl_finalize_bare", trace_day,
+                                     quote_sections.finalize_bare_ms);
+            EconomyCostProbe::record("owner_quote.tl_fin_pre", trace_day,
+                                     quote_sections.fin_pre_ms);
+            EconomyCostProbe::record("owner_quote.tl_fin_natural", trace_day,
+                                     quote_sections.fin_natural_ms);
+            EconomyCostProbe::record("owner_quote.tl_fin_input_cost", trace_day,
+                                     quote_sections.fin_input_cost_ms);
+            EconomyCostProbe::record("owner_quote.tl_fin_outputs", trace_day,
+                                     quote_sections.fin_outputs_ms);
+            EconomyCostProbe::record("owner_quote.tl_fin_income", trace_day,
+                                     quote_sections.fin_income_ms);
+            EconomyCostProbe::record("owner_quote.tl_fin_proj", trace_day,
+                                     quote_sections.fin_proj_ms);
+        }
+        reset_quote_sections(_current_day.get());
+    }
+    const auto quote_setup_started = Clock::now();
     const int64_t owner_scale_q16 = std::clamp<int64_t>(
         owner_fillability_q16, 0, Q16_ONE);
     const int64_t employee_scale_q16 = type.employee_count > 0
@@ -11050,6 +11180,7 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
     // Resource capacity is part of the opportunity, even when the installed
     // group is currently empty. This keeps a quote executable rather than a
     // nameplate-only accounting value.
+    const auto setup_res_started = Clock::now();
     const int64_t building_days = saturating_mul(
         group.count, std::max<int64_t>(1, _epoch_days.get()), sat);
     for (int32_t i = 0; i < type.resource_count; ++i) {
@@ -11078,6 +11209,8 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
         resource_factor_q16 = mul_div_sat(resource_factor_q16,
             availability_factor_q16, Q16_ONE, sat);
     }
+    if (quote_trace)
+        add_quote_section(quote_sections.setup_res_ms, setup_res_started);
     quote.owner_run_q16 = owner_scale_q16;
     quote.climate_factor_q16 = group.last_observed_capacity_days_q16 > 0
         ? std::clamp<int64_t>(group.last_climate_capacity_q16, 0, Q16_ONE)
@@ -11095,9 +11228,27 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
     int64_t owner_slots = saturating_mul(group.count,
         type.owner_slots_per_building, sat);
     owner_slots = std::max<int64_t>(1, owner_slots);
+    const auto setup_living_started = Clock::now();
+    uint64_t living_hits_before = 0;
+    uint64_t living_misses_before = 0;
+    if (quote_trace) {
+        const auto &living_memo = living_cost_memo_state();
+        living_hits_before = living_memo.hits;
+        living_misses_before = living_memo.misses;
+    }
     quote.owner_living_cost = saturating_mul(
         living_cost_for_signature(group.cell, group.owner_signature_id,
             _living_cost_base_plan_id, sat), owner_slots, sat);
+    if (quote_trace) {
+        const auto &living_memo = living_cost_memo_state();
+        quote_sections.setup_living_hits +=
+            living_memo.hits - living_hits_before;
+        quote_sections.setup_living_misses +=
+            living_memo.misses - living_misses_before;
+    }
+    if (quote_trace)
+        add_quote_section(quote_sections.setup_living_ms, setup_living_started);
+    const auto setup_wages_started = Clock::now();
     int64_t wages_at_full_scale = 0;
     for (int32_t r = 0; r < type.employee_count; ++r) {
         const JobRole &role = _building_employee_roles[type.employee_begin + r];
@@ -11117,6 +11268,9 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
         wages_at_full_scale = saturating_add(wages_at_full_scale, saturating_mul(
             group.count, saturating_mul(role.slots_per_building, effective_wage, sat), sat), sat);
     }
+    if (quote_trace)
+        add_quote_section(quote_sections.setup_wages_ms, setup_wages_started);
+    const auto setup_maint_started = Clock::now();
     int64_t maintenance_at_full_scale = daily_maintenance_cost_for_type(
         group.cell, type, sat);
     if (maintenance_at_full_scale == std::numeric_limits<int64_t>::max())
@@ -11124,10 +11278,15 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
     maintenance_at_full_scale = mul_div_sat(maintenance_at_full_scale,
         group.count, 1, sat);
 
+    if (quote_trace)
+        add_quote_section(quote_sections.setup_maint_ms, setup_maint_started);
+    const auto setup_env_started = Clock::now();
     const int32_t owner_plan_id = group.owner_signature_id >= 0 &&
             group.owner_signature_id < static_cast<int32_t>(_signatures.size())
         ? _signatures[group.owner_signature_id].plan_id : -1;
     const EnvironmentSample owner_environment = environment_sample_for_cell(group.cell);
+    if (quote_trace)
+        add_quote_section(quote_sections.setup_env_ms, setup_env_started);
     // Quote the quantity this owner cohort could consume from its own output.
     // This is deliberately plan-based, so non-food workshops receive the same
     // in-kind treatment as farms when their goods are in the owner's basket.
@@ -11211,9 +11370,17 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
         EconomyCostProbe::record("owner_retention.computed", _current_day.get(), 0.0, 1);
         return target;
     };
+    if (quote_trace) add_quote_section(quote_sections.setup_ms, quote_setup_started);
     thread_local std::vector<int32_t> quoted_input_candidates;
     quoted_input_candidates.clear();
     quoted_input_candidates.reserve(static_cast<size_t>(std::max(0, type.input_count)));
+    // The first output pass already evaluates the per-output quantity at this
+    // throughput scale; the fundable-output pass reuses it instead of running
+    // the same climate/count math a second time.
+    thread_local std::vector<int64_t> quoted_output_quantities;
+    quoted_output_quantities.assign(
+        static_cast<size_t>(std::max(0, type.output_count)), 0);
+    const auto quote_input_scan_started = Clock::now();
     // Soft inputs are optional productivity at the objective activity scale.
     // Track bare (stock coverage) and tooled (buy soft) efficiencies.
     int64_t soft_efficiency_bare_q16 = Q16_ONE;
@@ -11277,6 +11444,8 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
         }
         quoted_input_candidates.push_back(best_candidate);
     }
+    if (quote_trace)
+        add_quote_section(quote_sections.input_scan_ms, quote_input_scan_started);
     auto purchase_input_cost_at_scale = [&](int64_t eval_scale,
                                             bool buy_soft) -> int64_t {
         int64_t total = 0;
@@ -11315,29 +11484,118 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
     };
     // Existing owners must fund the inputs production would actually buy at
     // the evaluated scale. Vacant lots skip this: employment/investment
-    // validates sponsor capital on transfer.
+    // validates sponsor capital on transfer. The owner cash headroom does not
+    // depend on buy_soft/eval_scale, so it is resolved once per quote and
+    // shared by the tooled and bare clamps instead of re-running
+    // living_cost_for_signature for the same cell/signature twice.
+    int64_t owner_cash_headroom = 0;
+    bool owner_cash_headroom_ready = false;
+    const auto owner_available_cash = [&]() -> int64_t {
+        if (!owner_cash_headroom_ready) {
+            owner_cash_headroom_ready = true;
+            if (group.filled_owner > 0 && owner_slot >= 0) {
+                const int64_t funds = std::max<int64_t>(0,
+                    population_store().funds[owner_slot]);
+                const int64_t people = std::max<int64_t>(1,
+                    population_store().population[owner_slot]);
+                const int64_t reserve = saturating_mul(saturating_mul(
+                    living_cost_for_signature(group.cell,
+                        group.owner_signature_id, -1, sat), people, sat), 30,
+                    sat);
+                owner_cash_headroom = std::max<int64_t>(0, funds - reserve);
+            }
+        }
+        return owner_cash_headroom;
+    };
     auto clamp_scale_to_owner_funds = [&](int64_t eval_scale,
                                           bool buy_soft) -> int64_t {
         if (group.filled_owner <= 0) return eval_scale;
         const int64_t purchase_bill = purchase_input_cost_at_scale(
             eval_scale, buy_soft);
         if (purchase_bill <= 0) return eval_scale;
-        const int32_t owner_slot_for_cap = find_cohort_slot(
-            group.cell, group.owner_signature_id);
-        if (owner_slot_for_cap < 0) return eval_scale;
-        const int64_t funds = std::max<int64_t>(0,
-            population_store().funds[owner_slot_for_cap]);
-        const int64_t people = std::max<int64_t>(1,
-            population_store().population[owner_slot_for_cap]);
-        const int64_t reserve = saturating_mul(saturating_mul(
-            living_cost_for_signature(group.cell, group.owner_signature_id,
-                -1, sat), people, sat), 30, sat);
-        const int64_t available = std::max<int64_t>(0, funds - reserve);
+        if (owner_slot < 0) return eval_scale;
+        const auto clamp_headroom_started = Clock::now();
+        const int64_t available = owner_available_cash();
+        if (quote_trace)
+            add_quote_section(quote_sections.clamp_headroom_ms,
+                              clamp_headroom_started);
         return std::min(eval_scale, std::clamp<int64_t>(mul_div_sat(
             available, Q16_ONE, purchase_bill, sat), 0, Q16_ONE));
     };
+    // Scale-independent output quote inputs shared by the tooled and bare
+    // finalize passes. Nothing mutates between the two passes, so hoisting the
+    // market lookups, retention targets and prior sell/share lanes removes the
+    // duplicated work from the second pass while per-pass arithmetic order is
+    // unchanged.
+    const int32_t hoisted_output_count = type.output_count;
+    thread_local std::vector<int32_t> hoisted_signal;
+    thread_local std::vector<int32_t> hoisted_lane;
+    thread_local std::vector<int64_t> hoisted_issue_value;
+    thread_local std::vector<int64_t> hoisted_retention_target;
+    thread_local std::vector<int64_t> hoisted_prior_sellable;
+    thread_local std::vector<int64_t> hoisted_prior_merchant_sold;
+    thread_local std::vector<int64_t> hoisted_price;
+    thread_local std::vector<int64_t> hoisted_floor_unit;
+    if (hoisted_output_count > 0) {
+        const size_t hoisted_size = static_cast<size_t>(hoisted_output_count);
+        hoisted_signal.assign(hoisted_size, -1);
+        hoisted_lane.assign(hoisted_size, -1);
+        hoisted_issue_value.assign(hoisted_size, 0);
+        hoisted_retention_target.assign(hoisted_size, 0);
+        hoisted_prior_sellable.assign(hoisted_size, 0);
+        hoisted_prior_merchant_sold.assign(hoisted_size, 0);
+        hoisted_price.assign(hoisted_size, 0);
+        hoisted_floor_unit.assign(hoisted_size, 0);
+        for (int32_t hoisted = 0; hoisted < hoisted_output_count; ++hoisted) {
+            const size_t slot = static_cast<size_t>(hoisted);
+            const GoodAmount &output =
+                _building_outputs[type.output_begin + hoisted];
+            const int32_t signal = market_signal_index(group.cell, output.good_id);
+            hoisted_signal[slot] = signal;
+            hoisted_lane[slot] = market_store().index(market, output.good_id);
+            hoisted_issue_value[slot] = output.good_id >= 0 && output.good_id <
+                    static_cast<int32_t>(_good_monetary_issue_values.size())
+                ? _good_monetary_issue_values[output.good_id] : 0;
+            hoisted_retention_target[slot] =
+                output_retention_target(output.good_id);
+            hoisted_price[slot] = std::max<int64_t>(0,
+                market_store().price[hoisted_lane[slot]]);
+            hoisted_prior_sellable[slot] = signal >= 0 && signal <
+                    static_cast<int32_t>(_epoch_previous_producer_sellable.size())
+                ? std::max<int64_t>(0, _epoch_previous_producer_sellable[signal]) : 0;
+            hoisted_prior_merchant_sold[slot] = signal >= 0 && signal <
+                    static_cast<int32_t>(_epoch_previous_producer_merchant_sold.size())
+                ? std::clamp<int64_t>(
+                    _epoch_previous_producer_merchant_sold[signal], 0,
+                    hoisted_prior_sellable[slot]) : 0;
+            const int64_t retention = hoisted_retention_target[slot];
+            if (retention > 0 && output.good_id >= 0 && output.good_id <
+                    static_cast<int32_t>(_survival_food_good_mask.size()) &&
+                _survival_food_good_mask[output.good_id] != 0 &&
+                output.good_id < static_cast<int32_t>(
+                    _good_food_equivalent_q16.size())) {
+                const int64_t food_eq_coeff = std::max<int64_t>(0,
+                    _good_food_equivalent_q16[static_cast<size_t>(output.good_id)]);
+                const int64_t living = group.cell >= 0 &&
+                        group.cell < static_cast<int32_t>(
+                            _cell_living_cost_per_capita.size())
+                    ? std::max<int64_t>(0,
+                        _cell_living_cost_per_capita[group.cell]) : 0;
+                const int64_t survival_ration = std::max<int64_t>(
+                    1, _carrying_survival_food_per_person);
+                if (food_eq_coeff > 0 && living > 0) {
+                    hoisted_floor_unit[slot] = mul_div_sat(
+                        saturating_mul(living, food_eq_coeff, sat),
+                        GOODS_SCALE,
+                        saturating_mul(Q16_ONE, survival_ration, sat),
+                        sat);
+                }
+            }
+        }
+    }
     auto finalize_at_scale = [&](int64_t activity_scale,
                                   bool buy_soft) -> OwnerOpportunityQuote {
+        const auto fin_pre_started = Clock::now();
         OwnerOpportunityQuote result = quote;
         result.cell = group.cell;
         result.type_id = group.type_id;
@@ -11366,6 +11624,8 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
         result.climate_factor_q16 = quote.climate_factor_q16;
         result.resource_factor_q16 = quote.resource_factor_q16;
         result.natural_max_output = 0;
+        if (quote_trace) add_quote_section(quote_sections.fin_pre_ms, fin_pre_started);
+        const auto fin_natural_started = Clock::now();
         const int64_t natural_throughput_q16 = mul_div_sat(
             quote.natural_capacity_q16, soft_eff, Q16_ONE, sat);
         for (int32_t ni = 0; ni < type.output_count; ++ni) {
@@ -11378,10 +11638,13 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
                     natural_throughput_q16, std::max<int64_t>(1, group.count), sat),
                 sat);
         }
+        if (quote_trace) add_quote_section(quote_sections.fin_natural_ms, fin_natural_started);
         result.wages = mul_div_sat(wages_at_full_scale, throughput_scale, Q16_ONE, sat);
         result.maintenance = mul_div_sat(
             maintenance_at_full_scale, throughput_scale, Q16_ONE, sat);
+        const auto fin_input_cost_started = Clock::now();
         result.input_cost = purchase_input_cost_at_scale(activity_scale, buy_soft);
+        if (quote_trace) add_quote_section(quote_sections.fin_input_cost_ms, fin_input_cost_started);
         result.cash_receipt = 0;
         int64_t merchant_cash_receipt = 0;
         int64_t producer_support_cash_receipt = 0;
@@ -11394,20 +11657,22 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
         result.disposable_survival_power_per_day = 0;
         result.feasible = false;
         result.survival_priority = false;
+        const auto fin_outputs_started = Clock::now();
         for (int32_t i = 0; i < type.output_count; ++i) {
             const GoodAmount &output = _building_outputs[type.output_begin + i];
             // Group-level daily quote: per-building recipe × installed count.
             const int64_t quantity = effective_building_output_quantity(
                 group, output.good_id, output.quantity, throughput_scale,
                 std::max<int64_t>(1, group.count), sat);
+            if (i < static_cast<int32_t>(quoted_output_quantities.size()))
+                quoted_output_quantities[static_cast<size_t>(i)] = quantity;
             if (quantity <= 0) continue;
-            const int32_t output_signal = market_signal_index(group.cell,
-                output.good_id);
-            const int32_t live_owner_slot = find_cohort_slot(
-                group.cell, group.owner_signature_id);
-            const bool has_owner_cohort = live_owner_slot >= 0 && live_owner_slot <
-                static_cast<int32_t>(population_store().population.size()) &&
-                population_store().population[live_owner_slot] > 0;
+            const size_t output_slot = static_cast<size_t>(i);
+            const int32_t output_signal = hoisted_signal[output_slot];
+            const int32_t output_lane = hoisted_lane[output_slot];
+            // The owner cohort was resolved once at function entry; reuse the
+            // verdict instead of scanning the cell pages again for every
+            // output and both quote variants.
             // Shadow-only derived demand must not invent a cold-start owner
             // for vacant lots when no real business EMA exists yet.
             if (!has_owner_cohort &&
@@ -11423,11 +11688,9 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
             // Counterfactual quotes still value sellable output at market
             // prices even when the lane is empty — otherwise vacant workshops
             // bill inputs with zero revenue and look permanently loss-making.
-            const int64_t issue_value = output.good_id >= 0 && output.good_id <
-                    static_cast<int32_t>(_good_monetary_issue_values.size())
-                ? _good_monetary_issue_values[output.good_id] : 0;
+            const int64_t issue_value = hoisted_issue_value[output_slot];
             const int64_t retained = std::min(quantity,
-                output_retention_target(output.good_id));
+                hoisted_retention_target[output_slot]);
             const int64_t sellable = std::max<int64_t>(0, quantity - retained);
             int64_t merchant_quantity = sellable;
             int64_t support_quantity = 0;
@@ -11440,25 +11703,20 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
                 result.monetary_quote_capped = false;
                 result.monetary_quota_absorption_q16 = sellable > 0 ? Q16_ONE : 0;
             } else {
-                const int32_t signal = market_signal_index(group.cell,
-                    output.good_id);
+                const int32_t signal = output_signal;
                 const int64_t target = merchant_inventory_target(market,
                     output.good_id, signal, signal >= 0 ?
                     _market_signals.realized_withdrawal_ema[signal] : 0, 0,
                     quantity, sat);
                 const int32_t buy_factor = effective_merchant_buy_factor_q16(
                     market, output.good_id, target,
-                    market_store().stock[market_store().index(market, output.good_id)], sat);
+                    market_store().stock[output_lane], sat);
                 merchant_unit_price = mul_div_sat(
-                    market_store().price[market_store().index(market,
-                        output.good_id)], buy_factor, Q16_ONE, sat);
-                const int64_t prior_sellable = signal >= 0 && signal <
-                        static_cast<int32_t>(_epoch_previous_producer_sellable.size())
-                    ? std::max<int64_t>(0, _epoch_previous_producer_sellable[signal]) : 0;
-                const int64_t prior_merchant_sold = signal >= 0 && signal <
-                        static_cast<int32_t>(_epoch_previous_producer_merchant_sold.size())
-                    ? std::clamp<int64_t>(_epoch_previous_producer_merchant_sold[signal],
-                        0, prior_sellable) : 0;
+                    market_store().price[output_lane], buy_factor, Q16_ONE, sat);
+                const int64_t prior_sellable =
+                    hoisted_prior_sellable[output_slot];
+                const int64_t prior_merchant_sold =
+                    hoisted_prior_merchant_sold[output_slot];
                 if (prior_sellable > 0) {
                     const int64_t merchant_share_q16 = std::clamp<int64_t>(
                         mul_div_sat(prior_merchant_sold, Q16_ONE,
@@ -11476,44 +11734,18 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
                 producer_support_cash_receipt,
                 producer_support_receipt_value(group.cell, output.good_id,
                     support_quantity, sat), sat);
-            int64_t unit_price = std::max<int64_t>(0,
-                market_store().price[market_store().index(market, output.good_id)]);
             // Self-provisioned survival food is livelihood, not a thin market
-            // scrap. Floor its mobility/quote value at living-cost calories so
-            // a collapsed local price cannot make foraging look worthless.
-            if (retained > 0 &&
-                output.good_id >= 0 &&
-                output.good_id < static_cast<int32_t>(
-                    _survival_food_good_mask.size()) &&
-                _survival_food_good_mask[output.good_id] != 0 &&
-                output.good_id < static_cast<int32_t>(
-                    _good_food_equivalent_q16.size())) {
-                const int64_t food_eq_coeff = std::max<int64_t>(0,
-                    _good_food_equivalent_q16[
-                        static_cast<size_t>(output.good_id)]);
-                const int64_t living = group.cell >= 0 &&
-                        group.cell < static_cast<int32_t>(
-                            _cell_living_cost_per_capita.size())
-                    ? std::max<int64_t>(0,
-                        _cell_living_cost_per_capita[group.cell])
-                    : 0;
-                const int64_t survival_ration = std::max<int64_t>(
-                    1, _carrying_survival_food_per_person);
-                if (food_eq_coeff > 0 && living > 0) {
-                    const int64_t living_unit = mul_div_sat(
-                        saturating_mul(living, food_eq_coeff, sat),
-                        GOODS_SCALE,
-                        saturating_mul(Q16_ONE, survival_ration, sat),
-                        sat);
-                    unit_price = std::max(unit_price, living_unit);
-                }
-            }
+            // scrap; its living-cost floor is scale-independent and was hoisted.
+            const int64_t unit_price = std::max<int64_t>(
+                hoisted_price[output_slot], hoisted_floor_unit[output_slot]);
             result.in_kind_retail_value = saturating_add(
                 result.in_kind_retail_value,
                 mul_div_sat(retained, unit_price, GOODS_SCALE, sat), sat);
         }
         result.cash_receipt = saturating_add(merchant_cash_receipt,
             producer_support_cash_receipt, sat);
+        if (quote_trace) add_quote_section(quote_sections.fin_outputs_ms, fin_outputs_started);
+        const auto fin_income_started = Clock::now();
         const int64_t operating_cost = saturating_add(
             saturating_add(result.input_cost, result.wages, sat),
             result.maintenance, sat);
@@ -11556,6 +11788,8 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
         // Normalized economic decomposition.  These fields are projections of
         // the same quote used by employment; investment and diagnostics must
         // consume this result instead of recomputing a second receipt path.
+        if (quote_trace) add_quote_section(quote_sections.fin_income_ms, fin_income_started);
+        const auto fin_proj_started = Clock::now();
         result.utilization_q16 = result.executable_capacity_q16;
         result.owner_use_value_per_day = result.in_kind_retail_value;
         result.merchant_revenue_per_day = merchant_cash_receipt;
@@ -11573,10 +11807,9 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
         result.fundable_output = 0;
         result.actual_output = 0;
         for (int32_t oi = 0; oi < type.output_count; ++oi) {
-            const GoodAmount &output = _building_outputs[type.output_begin + oi];
-            const int64_t quantity = effective_building_output_quantity(
-                group, output.good_id, output.quantity, throughput_scale,
-                std::max<int64_t>(1, group.count), sat);
+            const size_t cache_index = static_cast<size_t>(oi);
+            const int64_t quantity = cache_index < quoted_output_quantities.size()
+                ? quoted_output_quantities[cache_index] : 0;
             result.fundable_output = saturating_add(result.fundable_output,
                 quantity, sat);
         }
@@ -11590,20 +11823,50 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
                     result.input_cost, sat), result.maintenance, sat)) /
                 result.employee_slots
             : 0;
+        if (quote_trace) add_quote_section(quote_sections.fin_proj_ms, fin_proj_started);
         return result;
     };
 
     const int64_t activity_scale = scale;
-    OwnerOpportunityQuote tooled = finalize_at_scale(
-        clamp_scale_to_owner_funds(activity_scale, true), true);
+    const auto quote_finalize_started = Clock::now();
+    const auto quote_clamp_tooled_started = Clock::now();
+    const int64_t tooled_scale =
+        clamp_scale_to_owner_funds(activity_scale, true);
+    if (quote_trace)
+        add_quote_section(quote_sections.funds_clamp_ms, quote_clamp_tooled_started);
+    OwnerOpportunityQuote tooled = finalize_at_scale(tooled_scale, true);
+    if (quote_trace)
+        add_quote_section(quote_sections.finalize_tooled_ms,
+                          quote_finalize_started);
     OwnerOpportunityQuote best = tooled;
     if (has_soft_partial_input ||
         soft_efficiency_bare_q16 < Q16_ONE ||
         soft_efficiency_tooled_q16 < Q16_ONE) {
         EconomyCostProbe::record("owner_quote.double_eval", _current_day.get(),
                                  0.0, 1);
-        OwnerOpportunityQuote bare = finalize_at_scale(
-            clamp_scale_to_owner_funds(activity_scale, false), false);
+        if (has_soft_partial_input) {
+            EconomyCostProbe::record("owner_quote.de_soft_partial",
+                                     _current_day.get(), 0.0, 1);
+        }
+        if (soft_efficiency_bare_q16 < Q16_ONE) {
+            EconomyCostProbe::record("owner_quote.de_bare_lt1",
+                                     _current_day.get(), 0.0, 1);
+        }
+        if (soft_efficiency_tooled_q16 < Q16_ONE) {
+            EconomyCostProbe::record("owner_quote.de_tooled_lt1",
+                                     _current_day.get(), 0.0, 1);
+        }
+        const auto quote_bare_started = Clock::now();
+        const auto quote_clamp_bare_started = Clock::now();
+        const int64_t bare_scale =
+            clamp_scale_to_owner_funds(activity_scale, false);
+        if (quote_trace)
+            add_quote_section(quote_sections.funds_clamp_bare_ms,
+                              quote_clamp_bare_started);
+        OwnerOpportunityQuote bare = finalize_at_scale(bare_scale, false);
+        if (quote_trace)
+            add_quote_section(quote_sections.finalize_bare_ms,
+                              quote_bare_started);
         // Prefer the scale production would choose: higher disposable first.
         if (bare.owner_income_per_day > best.owner_income_per_day ||
             (bare.owner_income_per_day == best.owner_income_per_day &&
@@ -11611,6 +11874,7 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
             best = bare;
         }
     }
+    if (quote_trace) ++quote_sections.calls;
     return best;
 }
 
@@ -13825,26 +14089,35 @@ int64_t NativeEconomyRuntime::production_reserve_shortfall_cell(
 
 void NativeEconomyRuntime::review_recovery_building_group(int32_t g) {
     if (g < 0 || g >= static_cast<int32_t>(building_count())) return;
-    auto group = building_at(static_cast<size_t>(g));
-    if (group.count <= 0 || group.operating_state != 1 ||
-        group.cell < 0 || group.cell >= _cell_count.get() ||
-        group.type_id < 0 ||
-        group.type_id >= static_cast<int32_t>(_building_types.size())) return;
-    const BuildingType &type = _building_types[group.type_id];
+    // Read-only prefilter: most reviewed groups are live, non-liquidatable or
+    // debt-free and only need a conditional diagnostic reset. Borrowing every
+    // mutable column for them dominated this phase.
+    {
+        const auto view = building_view(static_cast<size_t>(g));
+        if (view.count <= 0 || view.operating_state != 1 ||
+            view.cell < 0 || view.cell >= _cell_count.get() ||
+            view.type_id < 0 ||
+            view.type_id >= static_cast<int32_t>(_building_types.size())) return;
+    }
     const bool liquidation_eligible = g < static_cast<int32_t>(
             _building_recovery_liquidation_eligible.size()) &&
         _building_recovery_liquidation_eligible[g] != 0;
     if (!liquidation_eligible) {
-        group.recovery_failed_reviews = 0;
+        if (building_view(static_cast<size_t>(g)).recovery_failed_reviews != 0)
+            building_at(static_cast<size_t>(g)).recovery_failed_reviews = 0;
         return;
     }
     // Recovery liquidation is debt recovery. An owner-financed building with
     // no merchant principal/premium remains addressable while suspended so
     // owner release and a later restart can inspect the same group.
-    if (group.merchant_debt_principal <= 0 && group.merchant_debt_premium <= 0) {
-        group.recovery_failed_reviews = 0;
+    if (building_view(static_cast<size_t>(g)).merchant_debt_principal <= 0 &&
+        building_view(static_cast<size_t>(g)).merchant_debt_premium <= 0) {
+        if (building_view(static_cast<size_t>(g)).recovery_failed_reviews != 0)
+            building_at(static_cast<size_t>(g)).recovery_failed_reviews = 0;
         return;
     }
+    auto group = building_at(static_cast<size_t>(g));
+    const BuildingType &type = _building_types[group.type_id];
     // The lifecycle decision is already expressed in monetary terms by the
     // restart-cost and expected-profit gate. Keep one diagnostic marker for
     // compatibility, but do not delay liquidation behind an arbitrary review
@@ -14514,7 +14787,13 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                 disjoint_markets = disjoint_markets &&
                     market_store().cell_to_market[cell] == cell;
             }
-            const int32_t production_default_tasks = _worker_task_cap <= 1
+            static const int32_t production_tasks_env = [] {
+                const char *value = std::getenv("PK_ECONOMY_PRODUCTION_TASKS");
+                return value != nullptr && *value != '\0' ? std::atoi(value) : 0;
+            }();
+            const int32_t production_default_tasks = production_tasks_env > 0
+                ? std::min(cell_count, production_tasks_env)
+                : _worker_task_cap <= 1
                 ? 1
                 : static_cast<int32_t>(std::clamp<int64_t>(
                     (estimated_work + 1023) / 1024, 2,
@@ -14523,9 +14802,11 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                     cell_count >= 2 &&
                     estimated_work >= 256 &&
                     parallel_has_real_worker_threads()
-                ? std::min({cell_count, _worker_task_cap,
-                    _worker_tasks_hint > 0
-                    ? _worker_tasks_hint : production_default_tasks})
+                ? (production_tasks_env > 0
+                    ? std::min(cell_count, production_tasks_env)
+                    : std::min({cell_count, _worker_task_cap,
+                        _worker_tasks_hint > 0
+                        ? _worker_tasks_hint : production_default_tasks}))
                 : 1;
             _production_worker_tasks_max = std::max(
                 _production_worker_tasks_max, _production_worker_tasks);
@@ -15175,6 +15456,41 @@ int32_t NativeEconomyRuntime::roll_core_family_traits(
     return static_cast<int32_t>(selected.size());
 }
 
+bool NativeEconomyRuntime::track_b_aggregate_hash_reuse(int64_t day,
+                                                       uint64_t &cached_hash) {
+    static const bool track_b_enabled = [] {
+        const char *value = std::getenv("PK_ECONOMY_TRACK_B");
+        return !(value && std::strcmp(value, "0") == 0);
+    }();
+    static const int32_t hash_cadence = [] {
+        const char *value = std::getenv("PK_ECONOMY_TRACK_B_HASH_CADENCE");
+        const int32_t parsed = value ? std::atoi(value) : 0;
+        return parsed > 0 ? std::min<int32_t>(parsed, 30) : 8;
+    }();
+    static const int32_t hash_offset = [] {
+        const char *value = std::getenv("PK_ECONOMY_TRACK_B_HASH_OFFSET");
+        const int32_t parsed = value ? std::atoi(value) : 0;
+        return parsed != 0 ? std::abs(parsed) : 2;
+    }();
+    if (!track_b_enabled || hash_cadence <= 1) return false;
+    if (_track_b_hash_last_day != day - 1) return false;
+    if (_track_b_hash_last_value == 0) return false;
+    const int32_t hash_phase =
+        static_cast<int32_t>(((day - hash_offset) % hash_cadence +
+            hash_cadence) % hash_cadence);
+    if (hash_phase == 0) return false;
+    cached_hash = _track_b_hash_last_value;
+    _track_b_hash_last_day = day;
+    EconomyCostProbe::record("dispatch.track_b_hash_reuse", day, 0.0, 1u);
+    return true;
+}
+
+void NativeEconomyRuntime::track_b_aggregate_hash_store(int64_t day,
+                                                        uint64_t hash) {
+    _track_b_hash_last_day = day;
+    _track_b_hash_last_value = hash;
+}
+
 void NativeEconomyRuntime::mark_family_behavior_cache_dirty(uint32_t reason) {
     _family_behavior_cache_dirty = true;
     _family_behavior_cache_dirty_reasons |= reason;
@@ -15185,6 +15501,38 @@ bool NativeEconomyRuntime::rebuild_family_behavior_cache() {
         ++_family_behavior_cache_skips;
         return false;
     }
+    // Track B (user-approved): the behavior cache is a slow-moving planning
+    // input; keep the previous rebuild for up to N days. The dirty flag stays
+    // set so the next due day rebuilds with current state.
+    static const bool track_b_enabled = [] {
+        const char *value = std::getenv("PK_ECONOMY_TRACK_B");
+        return !(value && std::strcmp(value, "0") == 0);
+    }();
+    static const int32_t track_b_family_cache_cadence = [] {
+        const char *value = std::getenv("PK_ECONOMY_TRACK_B_FAMILY_CACHE_CADENCE");
+        const int32_t parsed = value ? std::atoi(value) : 0;
+        return parsed > 0 ? std::min<int32_t>(parsed, 30) : 5;
+    }();
+    static const int32_t track_b_family_cache_offset = [] {
+        const char *value = std::getenv("PK_ECONOMY_TRACK_B_FAMILY_CACHE_OFFSET");
+        const int32_t parsed = value ? std::atoi(value) : 0;
+        return parsed != 0 ? std::abs(parsed) : 1;
+    }();
+    const int64_t family_cache_day = _current_day.get();
+    const int32_t family_cache_phase =
+        static_cast<int32_t>(((family_cache_day - track_b_family_cache_offset) %
+            track_b_family_cache_cadence + track_b_family_cache_cadence) %
+            track_b_family_cache_cadence);
+    if (track_b_enabled && track_b_family_cache_cadence > 1 &&
+        _track_b_family_cache_last_day !=
+            std::numeric_limits<int64_t>::min() &&
+        family_cache_phase != 0) {
+        ++_family_behavior_cache_skips;
+        EconomyCostProbe::record("family.track_b_cache_skip",
+                                 _current_day.get(), 0.0, 1u);
+        return false;
+    }
+    _track_b_family_cache_last_day = family_cache_day;
     const auto cache_started = Clock::now();
     EconomyCostProbe behavior_cost("family.behavior_cache", _current_day.get());
     static const bool full_metrics = [] {
@@ -15208,9 +15556,14 @@ bool NativeEconomyRuntime::rebuild_family_behavior_cache() {
     // Freeze the branch lookup together with the family cell workset. Looking
     // up a branch by rescanning the entire influence store for every
     // conditioned trait edge turns this rebuild into O(edges * branches).
-    std::vector<std::vector<FamilyCellContext>> family_cells(
-        families_store().active.size());
-    std::vector<uint64_t> family_metric_masks(family_cells.size(), 0);
+    // Reuse per-thread scratch across daily rebuilds: the tagged-row and
+    // per-family cell lists are recreated every epoch and their allocations
+    // (plus ~1 MB of row storage) were a steady daily cost.
+    static thread_local std::vector<std::vector<FamilyCellContext>> family_cells;
+    family_cells.resize(families_store().active.size());
+    for (auto &cells : family_cells) cells.clear();
+    static thread_local std::vector<uint64_t> family_metric_masks;
+    family_metric_masks.assign(family_cells.size(), 0);
     for (const FamilyTraitRoll &roll : family_trait_rolls()) {
         int32_t family = -1;
         if (families_store().valid_handle(roll.family_handle, family) &&
@@ -15247,8 +15600,10 @@ bool NativeEconomyRuntime::rebuild_family_behavior_cache() {
             [](const auto &a, const auto &b) { return a.cell == b.cell; }),
             cells.end());
     }
-    std::vector<TaggedRow> expanded;
-    expanded.reserve(family_trait_rolls().size() * 2);
+    static thread_local std::vector<TaggedRow> expanded;
+    expanded.clear();
+    expanded.reserve(std::max<size_t>(expanded.capacity(),
+        family_trait_rolls().size() * 2));
     for (const FamilyTraitRoll &roll : family_trait_rolls()) {
         int32_t family_index = -1;
         if (!families_store().valid_handle(roll.family_handle, family_index) ||
@@ -15386,8 +15741,9 @@ bool NativeEconomyRuntime::rebuild_family_behavior_cache() {
                std::tie(b.family_index, b.row.cell, b.row.score_term, b.row.axis,
                         b.row.selector_kind, b.row.selector_id);
     });
-    std::vector<TaggedRow> merged;
-    merged.reserve(expanded.size());
+    static thread_local std::vector<TaggedRow> merged;
+    merged.clear();
+    merged.reserve(std::max<size_t>(merged.capacity(), expanded.size()));
     for (const TaggedRow &entry : expanded) {
         if (!merged.empty() &&
             merged.back().family_index == entry.family_index &&
@@ -17422,6 +17778,7 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
 
 void NativeEconomyRuntime::rebuild_family_indices(bool rebuild_derived) {
     const auto membership_started = Clock::now();
+    const auto membership_erase_started = Clock::now();
     family_memberships().erase_if(
         [&](const FamilyMembershipEdge &edge) {
             int32_t family = -1, slot = -1;
@@ -17429,32 +17786,55 @@ void NativeEconomyRuntime::rebuild_family_indices(bool rebuild_derived) {
                 !families_store().valid_handle(edge.family_handle, family) ||
                 !population_store().valid_handle(edge.cohort_handle, slot);
         });
-    family_memberships().sort(
-        [](const FamilyMembershipEdge &a, const FamilyMembershipEdge &b) {
-            return std::tie(a.cohort_handle, a.family_handle) <
-                std::tie(b.cohort_handle, b.family_handle);
-        });
-    std::vector<FamilyMembershipEdge> merged_memberships;
-    merged_memberships.reserve(family_memberships().size());
-    for (const FamilyMembershipEdge &edge : family_memberships()) {
-        if (!merged_memberships.empty() &&
-            merged_memberships.back().cohort_handle == edge.cohort_handle &&
-            merged_memberships.back().family_handle == edge.family_handle) {
-            FamilyMembershipEdge &dst = merged_memberships.back();
-            dst.people += edge.people;
-            dst.cash_claim += edge.cash_claim;
-            dst.population_basis = std::max(dst.population_basis,
-                                            edge.population_basis);
-            dst.funds_basis = std::max(dst.funds_basis, edge.funds_basis);
-            // Employment is recomputed later; keep merge-only edges basis-valid.
-            dst.owner_employed = 0;
-            dst.employee_employed = 0;
-            sanitize_family_membership_edge(dst);
-        } else {
-            merged_memberships.push_back(edge);
+    EconomyCostProbe::record("family.rebuild.membership_erase", _current_day.get(),
+                             elapsed_ms(membership_erase_started));
+    const auto membership_before = family_memberships().begin();
+    const auto membership_after = family_memberships().end();
+    const auto membership_less = [](const FamilyMembershipEdge &a,
+                                    const FamilyMembershipEdge &b) {
+        return std::tie(a.cohort_handle, a.family_handle) <
+            std::tie(b.cohort_handle, b.family_handle);
+    };
+    // Steady-state rebuilds see an already sorted, duplicate-free ledger. The
+    // container's sort()/swap() re-encode every row through the audited column,
+    // so skip them when the order and keys are unchanged.
+    if (!std::is_sorted(membership_before, membership_after, membership_less))
+        family_memberships().sort(membership_less);
+    bool membership_has_duplicates = false;
+    for (size_t i = 1; i < family_memberships().size(); ++i) {
+        if (family_memberships()[i - 1].cohort_handle ==
+                family_memberships()[i].cohort_handle &&
+            family_memberships()[i - 1].family_handle ==
+                family_memberships()[i].family_handle) {
+            membership_has_duplicates = true;
+            break;
         }
     }
-    family_memberships().swap(merged_memberships);
+    if (membership_has_duplicates) {
+        std::vector<FamilyMembershipEdge> merged_memberships;
+        merged_memberships.reserve(family_memberships().size());
+        for (const FamilyMembershipEdge &edge : family_memberships()) {
+            if (!merged_memberships.empty() &&
+                merged_memberships.back().cohort_handle == edge.cohort_handle &&
+                merged_memberships.back().family_handle == edge.family_handle) {
+                FamilyMembershipEdge &dst = merged_memberships.back();
+                dst.people += edge.people;
+                dst.cash_claim += edge.cash_claim;
+                dst.population_basis = std::max(dst.population_basis,
+                                                edge.population_basis);
+                dst.funds_basis = std::max(dst.funds_basis, edge.funds_basis);
+                // Employment is recomputed later; keep merge-only edges basis-valid.
+                dst.owner_employed = 0;
+                dst.employee_employed = 0;
+                sanitize_family_membership_edge(dst);
+            } else {
+                merged_memberships.push_back(edge);
+            }
+        }
+        family_memberships().swap(merged_memberships);
+    }
+    EconomyCostProbe::record("family.rebuild.membership_merge", _current_day.get(),
+                             elapsed_ms(membership_erase_started));
 
     _family_member_offsets.assign(families_store().active.size() + 1, 0);
     for (const FamilyMembershipEdge &edge : family_memberships()) {
@@ -17473,6 +17853,8 @@ void NativeEconomyRuntime::rebuild_family_indices(bool rebuild_derived) {
             _family_member_edge_indices[family_member_cursor[family]++] = i;
     }
 
+    EconomyCostProbe::record("family.rebuild.membership_csr", _current_day.get(),
+                             elapsed_ms(membership_started));
     _rebuild_family_membership_ms += elapsed_ms(membership_started);
     const auto ownership_started = Clock::now();
     // Nothing below mutates the group lane, so the shared handle index stays valid
@@ -17487,26 +17869,43 @@ void NativeEconomyRuntime::rebuild_family_indices(bool rebuild_derived) {
                 building_by_handle.find(edge.building_handle) ==
                     building_by_handle.end();
         });
-    family_ownerships().sort(
-        [](const FamilyBuildingOwnership &a,
-           const FamilyBuildingOwnership &b) {
-            return std::tie(a.building_handle, a.family_handle) <
-                std::tie(b.building_handle, b.family_handle);
-        });
-    std::vector<FamilyBuildingOwnership> merged_ownerships;
-    merged_ownerships.reserve(family_ownerships().size());
-    for (const FamilyBuildingOwnership &edge : family_ownerships()) {
-        if (!merged_ownerships.empty() &&
-            merged_ownerships.back().building_handle == edge.building_handle &&
-            merged_ownerships.back().family_handle == edge.family_handle) {
-            merged_ownerships.back().owned_count += edge.owned_count;
-            merged_ownerships.back().filled_owner += edge.filled_owner;
-        } else {
-            merged_ownerships.push_back(edge);
+    const auto ownership_less = [](const FamilyBuildingOwnership &a,
+                                   const FamilyBuildingOwnership &b) {
+        return std::tie(a.building_handle, a.family_handle) <
+            std::tie(b.building_handle, b.family_handle);
+    };
+    if (!std::is_sorted(family_ownerships().begin(), family_ownerships().end(),
+                        ownership_less))
+        family_ownerships().sort(ownership_less);
+    bool ownership_has_duplicates = false;
+    for (size_t i = 1; i < family_ownerships().size(); ++i) {
+        if (family_ownerships()[i - 1].building_handle ==
+                family_ownerships()[i].building_handle &&
+            family_ownerships()[i - 1].family_handle ==
+                family_ownerships()[i].family_handle) {
+            ownership_has_duplicates = true;
+            break;
         }
     }
-    family_ownerships().swap(merged_ownerships);
+    if (ownership_has_duplicates) {
+        std::vector<FamilyBuildingOwnership> merged_ownerships;
+        merged_ownerships.reserve(family_ownerships().size());
+        for (const FamilyBuildingOwnership &edge : family_ownerships()) {
+            if (!merged_ownerships.empty() &&
+                merged_ownerships.back().building_handle == edge.building_handle &&
+                merged_ownerships.back().family_handle == edge.family_handle) {
+                merged_ownerships.back().owned_count += edge.owned_count;
+                merged_ownerships.back().filled_owner += edge.filled_owner;
+            } else {
+                merged_ownerships.push_back(edge);
+            }
+        }
+        family_ownerships().swap(merged_ownerships);
+    }
+    const auto ownership_sanitize_started = Clock::now();
     sanitize_family_ownership_edges();
+    EconomyCostProbe::record("family.rebuild.ownership_sanitize", _current_day.get(),
+                             elapsed_ms(ownership_sanitize_started));
 
     _family_owned_offsets.assign(families_store().active.size() + 1, 0);
     for (const FamilyBuildingOwnership &edge : family_ownerships()) {
@@ -17525,6 +17924,8 @@ void NativeEconomyRuntime::rebuild_family_indices(bool rebuild_derived) {
             _family_owned_edge_indices[family_owned_cursor[family]++] = i;
     }
 
+    EconomyCostProbe::record("family.rebuild.ownership_block", _current_day.get(),
+                             elapsed_ms(ownership_started));
     _rebuild_family_ownership_ms += elapsed_ms(ownership_started);
     const auto csr_started = Clock::now();
     _family_cohort_offsets.assign(population_store().active.size() + 1, 0);
@@ -17606,12 +18007,18 @@ void NativeEconomyRuntime::normalize_family_memberships(bool rebuild_derived,
     // population and building changes for the epoch, so it is what prunes
     // edges orphaned by cohort release or building demolition. The later
     // rebuilds in the commit are gated on the dirty flag and rely on it.
+    const auto family_normalize_started = Clock::now();
     rebuild_family_indices(rebuild_derived);
+    const double family_normalize_rebuild_ms =
+        elapsed_ms(family_normalize_started);
     // Membership counts are attributed event by event (births, deaths,
     // moves), so this pass only enforces the down-caps. The claim ledger
     // settles once per commit: business profit by staffed owner posts, the
     // remaining cohort cash delta per capita.
+    const auto family_normalize_ledger_started = Clock::now();
     if (commit_ledger) settle_family_claim_ledger();
+    const double family_normalize_ledger_ms =
+        elapsed_ms(family_normalize_ledger_started);
     const bool has_business = commit_ledger &&
         _family_ledger_business_by_edge.size() == family_memberships().size();
     bool rescale_emptied_edge = false;
@@ -17648,18 +18055,25 @@ void NativeEconomyRuntime::normalize_family_memberships(bool rebuild_derived,
         }
         int64_t people_prefix = 0, people_done = 0, claim_total = 0;
         for (size_t i = begin; i < end; ++i) {
-            auto edge_write = family_memberships().edit_row(i, market_mutation_sink());
-            FamilyMembershipEdge &edge = edge_write[0];
-            const int64_t people_before = std::max<int64_t>(0, edge.people);
+            // Compute against the read-only row first and only take the mutable
+            // lease when a field actually changes: on a steady day most edges
+            // keep identical claim/basis values, and the per-column audit
+            // preimage borrow dominated this pass.
+            const FamilyMembershipEdge &edge_view = family_memberships()[i];
+            const int64_t people_before = std::max<int64_t>(0, edge_view.people);
+            int64_t next_people = people_before;
             if (cap_people) {
                 people_prefix += people_before;
-                const int64_t next_people = mul_div_sat(current_pop, people_prefix,
+                const int64_t next_target = mul_div_sat(current_pop, people_prefix,
                     old_people, _saturation_count);
-                edge.people = std::max<int64_t>(0, next_people - people_done);
-                people_done = next_people;
+                next_people = std::max<int64_t>(0, next_target - people_done);
+                people_done = next_target;
             }
+            int64_t next_claim = edge_view.cash_claim;
+            int64_t next_funds_basis = edge_view.funds_basis;
+            int64_t next_population_basis = edge_view.population_basis;
             if (commit_ledger) {
-                int64_t claim = std::max<int64_t>(0, edge.cash_claim);
+                int64_t claim = std::max<int64_t>(0, edge_view.cash_claim);
                 if (has_business)
                     claim = saturating_add(claim, _family_ledger_business_by_edge[i],
                                            _saturation_count);
@@ -17667,16 +18081,31 @@ void NativeEconomyRuntime::normalize_family_memberships(bool rebuild_derived,
                     claim = saturating_add(claim, mul_div_sat(remainder,
                         people_before, current_pop, _saturation_count),
                         _saturation_count);
-                edge.cash_claim = claim;
-                edge.funds_basis = current_funds;
-                edge.population_basis = current_pop;
+                next_claim = claim;
+                next_funds_basis = current_funds;
+                next_population_basis = current_pop;
             }
-            edge.cash_claim = edge.people > 0
-                ? std::max<int64_t>(0, edge.cash_claim) : 0;
-            claim_total = saturating_add(claim_total, edge.cash_claim, _saturation_count);
-            edge.owner_employed = 0;
-            edge.employee_employed = 0;
-            if (people_before > 0 && edge.people <= 0) rescale_emptied_edge = true;
+            next_claim = next_people > 0
+                ? std::max<int64_t>(0, next_claim) : 0;
+            claim_total = saturating_add(claim_total, next_claim, _saturation_count);
+            const bool changed = next_people != edge_view.people ||
+                next_claim != edge_view.cash_claim ||
+                next_funds_basis != edge_view.funds_basis ||
+                next_population_basis != edge_view.population_basis ||
+                edge_view.owner_employed != 0 ||
+                edge_view.employee_employed != 0;
+            if (changed) {
+                auto edge_write = family_memberships().edit_row(i,
+                    market_mutation_sink());
+                FamilyMembershipEdge &edge = edge_write[0];
+                edge.people = next_people;
+                edge.cash_claim = next_claim;
+                edge.funds_basis = next_funds_basis;
+                edge.population_basis = next_population_basis;
+                edge.owner_employed = 0;
+                edge.employee_employed = 0;
+            }
+            if (people_before > 0 && next_people <= 0) rescale_emptied_edge = true;
         }
         if (claim_total > current_funds) {
             ++_family_ledger_clamps;
@@ -17697,6 +18126,14 @@ void NativeEconomyRuntime::normalize_family_memberships(bool rebuild_derived,
         if (static_cast<size_t>(slot) < _family_ledger_business_by_slot.size())
             _family_ledger_business_by_slot[slot] = 0;
     _family_ledger_touched_slots.clear();
+    EconomyCostProbe::record("family.normalize.rebuild_ms", _current_day.get(),
+                             family_normalize_rebuild_ms);
+    EconomyCostProbe::record("family.normalize.ledger_ms", _current_day.get(),
+                             family_normalize_ledger_ms);
+    EconomyCostProbe::record("family.normalize.caps_ms", _current_day.get(),
+                             elapsed_ms(family_normalize_started) -
+                                 family_normalize_rebuild_ms -
+                                 family_normalize_ledger_ms);
     // Capping never adds, removes or reorders edges, so the CSR built above
     // stays exact unless an edge was emptied and now has to be pruned.
     if (rescale_emptied_edge) {
@@ -17943,8 +18380,11 @@ void NativeEconomyRuntime::attribute_family_owner_employment_for_cell(
     thread_local std::vector<std::pair<int32_t, int64_t>> member_seats;
     member_seats.clear();
     for (int32_t g = first; g < last; ++g) {
+        {
+            const auto view = building_view(static_cast<size_t>(g));
+            if (view.count <= 0 || view.owner_signature_id < 0) continue;
+        }
         auto group = building_at(static_cast<size_t>(g));
-        if (group.count <= 0 || group.owner_signature_id < 0) continue;
         const int32_t ob = _family_building_offsets[g];
         const int32_t oe = _family_building_offsets[g + 1];
         const int32_t owner_slot = find_cohort_slot(cell, group.owner_signature_id);
@@ -18050,28 +18490,35 @@ void NativeEconomyRuntime::sanitize_family_ownership_edges() {
         building_handle_index();
     std::vector<int64_t> claimed(building_count(), 0);
     for (size_t edge_row = 0; edge_row < family_ownerships().size(); ++edge_row) {
-        auto edge_write = family_ownerships().edit_row(edge_row, market_mutation_sink());
-        FamilyBuildingOwnership &edge = edge_write[0];
-        const auto found = building_by_handle.find(edge.building_handle);
+        const FamilyBuildingOwnership &edge_view = family_ownerships()[edge_row];
+        int64_t next_owned = edge_view.owned_count;
+        int64_t next_filled = edge_view.filled_owner;
+        const auto found = building_by_handle.find(edge_view.building_handle);
         if (found == building_by_handle.end()) {
-            edge.owned_count = 0;
-            edge.filled_owner = 0;
-            continue;
+            next_owned = 0;
+            next_filled = 0;
+        } else {
+            const size_t group = static_cast<size_t>(found->second);
+            const auto building = building_view(static_cast<size_t>(group));
+            next_owned = std::clamp<int64_t>(edge_view.owned_count, 0,
+                std::max<int64_t>(0, building.count - claimed[group]));
+            claimed[group] += next_owned;
+            int64_t capacity_sat = 0;
+            const int64_t owner_capacity = building.type_id >= 0 &&
+                building.type_id < static_cast<int32_t>(_building_types.size())
+                ? saturating_mul(next_owned, std::max<int64_t>(0,
+                    _building_types[static_cast<size_t>(building.type_id)]
+                        .owner_slots_per_building), capacity_sat)
+                : 0;
+            next_filled = std::clamp<int64_t>(edge_view.filled_owner, 0,
+                capacity_sat != 0 ? 0 : owner_capacity);
         }
-        const size_t group = static_cast<size_t>(found->second);
-        const auto building = building_view(static_cast<size_t>(group));
-        edge.owned_count = std::clamp<int64_t>(edge.owned_count, 0,
-            std::max<int64_t>(0, building.count - claimed[group]));
-        claimed[group] += edge.owned_count;
-        int64_t capacity_sat = 0;
-        const int64_t owner_capacity = building.type_id >= 0 &&
-            building.type_id < static_cast<int32_t>(_building_types.size())
-            ? saturating_mul(edge.owned_count, std::max<int64_t>(0,
-                _building_types[static_cast<size_t>(building.type_id)]
-                    .owner_slots_per_building), capacity_sat)
-            : 0;
-        edge.filled_owner = std::clamp<int64_t>(edge.filled_owner, 0,
-            capacity_sat != 0 ? 0 : owner_capacity);
+        if (next_owned == edge_view.owned_count &&
+            next_filled == edge_view.filled_owner) continue;
+        auto edge_write = family_ownerships().edit_row(edge_row,
+            market_mutation_sink());
+        edge_write[0].owned_count = next_owned;
+        edge_write[0].filled_owner = next_filled;
     }
     family_ownerships().erase_if( [](const FamilyBuildingOwnership &edge) {
             return edge.owned_count <= 0;
@@ -18080,10 +18527,13 @@ void NativeEconomyRuntime::sanitize_family_ownership_edges() {
 
 void NativeEconomyRuntime::update_family_employment_attribution() {
     for (size_t edge_row = 0; edge_row < family_memberships().size(); ++edge_row) {
-        auto edge_write = family_memberships().edit_row(edge_row, market_mutation_sink());
-        FamilyMembershipEdge &edge = edge_write[0];
-        edge.owner_employed = 0;
-        edge.employee_employed = 0;
+        const FamilyMembershipEdge &edge_view = family_memberships()[edge_row];
+        if (edge_view.owner_employed == 0 && edge_view.employee_employed == 0)
+            continue;
+        auto edge_write = family_memberships().edit_row(edge_row,
+            market_mutation_sink());
+        edge_write[0].owner_employed = 0;
+        edge_write[0].employee_employed = 0;
     }
     if (_family_building_offsets.size() != building_count() + 1 ||
         _family_cohort_offsets.size() != population_store().active.size() + 1)
@@ -19128,10 +19578,11 @@ NativeEconomyRuntime::advance_building_commit_chunk(
             if (g < 0 || g >= static_cast<int32_t>(building_count())) {
                 continue;
             }
-            auto group = building_at(static_cast<size_t>(g));
-            if (group.count <= 0 || group.operating_state != 1) {
-                continue;
+            {
+                const auto view = building_view(static_cast<size_t>(g));
+                if (view.count <= 0 || view.operating_state != 1) continue;
             }
+            auto group = building_at(static_cast<size_t>(g));
             group.operating_state = 0;
             group.pending_operating_state = 255;
             group.recovery_cooldown_cycles = 0;
@@ -19155,9 +19606,35 @@ NativeEconomyRuntime::advance_building_commit_chunk(
     }
     if (_building_commit_phase == 2) {
         _executed_substage = "recovery_review";
+        // Track B (user-approved): recovery review is a slow-moving lifecycle
+        // pass; review groups every N days and skip the scan in between.
+        static const bool commit_track_b_enabled = [] {
+            const char *value = std::getenv("PK_ECONOMY_TRACK_B");
+            return !(value && std::strcmp(value, "0") == 0);
+        }();
+        static const int32_t commit_track_b_cadence = [] {
+            const char *value = std::getenv("PK_ECONOMY_TRACK_B_COMMIT_CADENCE");
+            const int32_t parsed = value ? std::atoi(value) : 0;
+            return parsed > 0 ? std::min<int32_t>(parsed, 30) : 4;
+        }();
+        static const int32_t commit_track_b_offset = [] {
+            const char *value = std::getenv("PK_ECONOMY_TRACK_B_RECOVERY_OFFSET");
+            const int32_t parsed = value ? std::atoi(value) : 0;
+            return parsed != 0 ? std::abs(parsed) : 1;
+        }();
+        const bool commit_due = ((_current_day.get() - commit_track_b_offset) %
+            commit_track_b_cadence + commit_track_b_cadence) %
+            commit_track_b_cadence == 0;
         const int32_t phase_end = _building_review_phase_offsets.size() >= 2
                                       ? _building_review_phase_offsets[1]
                                       : 0;
+        const bool skip_throttled_commit = commit_track_b_enabled &&
+            commit_track_b_cadence > 1 && !commit_due;
+        if (skip_throttled_commit) {
+            EconomyCostProbe::record("building_commit.track_b_recovery_skip",
+                                     _current_day.get(), 0.0, 1u);
+            _building_commit_cursor = phase_end;
+        }
         cursor_start = _building_commit_cursor;
         const int32_t end = std::min(
             phase_end,
@@ -19196,12 +19673,80 @@ NativeEconomyRuntime::advance_building_commit_chunk(
     }
     if (_building_commit_phase == 4) {
         _executed_substage = "investment_prepare";
+        static const bool commit_track_b_enabled4 = [] {
+            const char *value = std::getenv("PK_ECONOMY_TRACK_B");
+            return !(value && std::strcmp(value, "0") == 0);
+        }();
+        static const int32_t commit_track_b_cadence4 = [] {
+            const char *value = std::getenv("PK_ECONOMY_TRACK_B_COMMIT_CADENCE");
+            const int32_t parsed = value ? std::atoi(value) : 0;
+            return parsed > 0 ? std::min<int32_t>(parsed, 30) : 4;
+        }();
+        static const int32_t commit_track_b_offset4 = [] {
+            const char *value = std::getenv("PK_ECONOMY_TRACK_B_INVESTMENT_OFFSET");
+            const int32_t parsed = value ? std::atoi(value) : 0;
+            return parsed != 0 ? std::abs(parsed) : 3;
+        }();
+        static const int32_t commit_track_b_spread4 = [] {
+            const char *value = std::getenv("PK_ECONOMY_TRACK_B_COMMIT_SPREAD");
+            const int32_t parsed = value ? std::atoi(value) : 0;
+            return parsed > 0 ? std::min<int32_t>(parsed, 32) : 4;
+        }();
+        const bool commit_spread_active = commit_track_b_enabled4 &&
+            commit_track_b_spread4 > 1;
+        const bool investment_due = commit_track_b_enabled4 &&
+            commit_track_b_cadence4 > 1 &&
+            (((_current_day.get() - commit_track_b_offset4) %
+              commit_track_b_cadence4 + commit_track_b_cadence4) %
+             commit_track_b_cadence4) == 0;
+        if (commit_spread_active) {
+            if (!_track_b_investment_cells_pending.empty()) {
+                // Continue the carried review list instead of preparing a new one.
+                _investment_review_cell_indices =
+                    _track_b_investment_cells_pending;
+                _building_cell_cursor = 0;
+                _building_commit_phase = 5;
+                record_commit_phase(0);
+                if (finish_chunk_and_should_yield()) {
+                    return BuildingCommitChunkResult::StopSlice;
+                }
+                ++_budgeted_building_commit_phase_fusions;
+                return BuildingCommitChunkResult::ContinueFusing;
+            }
+            if (!investment_due) {
+                EconomyCostProbe::record(
+                    "building_commit.track_b_investment_skip",
+                    _current_day.get(), 0.0, 1u);
+                _building_commit_phase = 5;
+                record_commit_phase(0);
+                if (finish_chunk_and_should_yield()) {
+                    return BuildingCommitChunkResult::StopSlice;
+                }
+                ++_budgeted_building_commit_phase_fusions;
+                return BuildingCommitChunkResult::ContinueFusing;
+            }
+        } else if (!investment_due) {
+            EconomyCostProbe::record("building_commit.track_b_investment_skip",
+                                     _current_day.get(), 0.0, 1u);
+            _building_commit_phase = 5;
+            record_commit_phase(0);
+            if (finish_chunk_and_should_yield()) {
+                return BuildingCommitChunkResult::StopSlice;
+            }
+            ++_budgeted_building_commit_phase_fusions;
+            return BuildingCommitChunkResult::ContinueFusing;
+        }
         bool population_changed = false;
         if (!run_endogenous_building_investment(0, 0, true, population_changed,
                                                 error)) {
             fail(error.empty() ? "building_investment_prepare_failed" : error);
             record_commit_phase(0);
             return BuildingCommitChunkResult::Fatal;
+        }
+        if (commit_spread_active) {
+            _track_b_investment_cells_pending =
+                _investment_review_cell_indices;
+            _building_cell_cursor = 0;
         }
         _building_commit_phase = 5;
         record_commit_phase(1);
@@ -19213,16 +19758,66 @@ NativeEconomyRuntime::advance_building_commit_chunk(
     }
     if (_building_commit_phase == 5) {
         _executed_substage = "investment";
+        static const bool commit_track_b_enabled5 = [] {
+            const char *value = std::getenv("PK_ECONOMY_TRACK_B");
+            return !(value && std::strcmp(value, "0") == 0);
+        }();
+        static const int32_t commit_track_b_cadence5 = [] {
+            const char *value = std::getenv("PK_ECONOMY_TRACK_B_COMMIT_CADENCE");
+            const int32_t parsed = value ? std::atoi(value) : 0;
+            return parsed > 0 ? std::min<int32_t>(parsed, 30) : 4;
+        }();
+        static const int32_t commit_track_b_offset5 = [] {
+            const char *value = std::getenv("PK_ECONOMY_TRACK_B_INVESTMENT_OFFSET");
+            const int32_t parsed = value ? std::atoi(value) : 0;
+            return parsed != 0 ? std::abs(parsed) : 3;
+        }();
+        static const int32_t commit_track_b_spread5 = [] {
+            const char *value = std::getenv("PK_ECONOMY_TRACK_B_COMMIT_SPREAD");
+            const int32_t parsed = value ? std::atoi(value) : 0;
+            return parsed > 0 ? std::min<int32_t>(parsed, 32) : 4;
+        }();
+        const bool commit_spread_active5 = commit_track_b_enabled5 &&
+            commit_track_b_spread5 > 1;
+        const bool skip_commit_investment5 = !commit_spread_active5 &&
+            commit_track_b_enabled5 && commit_track_b_cadence5 > 1 &&
+            (((_current_day.get() - commit_track_b_offset5) %
+              commit_track_b_cadence5 + commit_track_b_cadence5) %
+             commit_track_b_cadence5) != 0;
+        if (skip_commit_investment5) {
+            if (!flush_market_signal_overflow(error)) {
+                fail(error.empty() ? "market_signal_overflow_flush_failed" : error);
+                record_commit_phase(0);
+                return BuildingCommitChunkResult::Fatal;
+            }
+            _building_cell_cursor = 0;
+            _building_commit_phase = 6;
+            record_commit_phase(1);
+            if (finish_chunk_and_should_yield()) {
+                return BuildingCommitChunkResult::StopSlice;
+            }
+            ++_budgeted_building_commit_phase_fusions;
+            return BuildingCommitChunkResult::ContinueFusing;
+        }
         const int32_t investment_cell_count =
             static_cast<int32_t>(_investment_review_cell_indices.size());
+        // Spread mode: process only ~1/N of the carried review list per epoch so
+        // the investment spike is flattened; the remaining ordinals are carried
+        // to the next epoch. Exact/cadence modes keep processing the full list.
+        int32_t daily_target = investment_cell_count;
+        if (commit_spread_active5 && investment_cell_count > 0) {
+            daily_target = std::max<int32_t>(1,
+                (investment_cell_count + commit_track_b_spread5 - 1) /
+                commit_track_b_spread5);
+        }
         cursor_start = _building_cell_cursor;
-        const int32_t end = std::min<int32_t>(
+        int32_t end = std::min<int32_t>(
             investment_cell_count,
             _building_cell_cursor + _investment_cells_per_slice);
+        if (commit_spread_active5) end = std::min(end, daily_target);
         bool population_changed = false;
-        if (!run_endogenous_building_investment(_building_cell_cursor, end,
-                                                false, population_changed,
-                                                error)) {
+        if (end > _building_cell_cursor && !run_endogenous_building_investment(
+                _building_cell_cursor, end, false, population_changed, error)) {
             fail(error.empty() ? "building_investment_failed" : error);
             record_commit_phase(0);
             return BuildingCommitChunkResult::Fatal;
@@ -19232,9 +19827,31 @@ NativeEconomyRuntime::advance_building_commit_chunk(
         cursor_end = _building_cell_cursor;
         building_range_used = true;
         if (_building_cell_cursor < investment_cell_count) {
+            if (commit_spread_active5 &&
+                _building_cell_cursor >= daily_target) {
+                _track_b_investment_cells_pending.assign(
+                    _investment_review_cell_indices.begin() +
+                        _building_cell_cursor,
+                    _investment_review_cell_indices.end());
+                if (!flush_market_signal_overflow(error)) {
+                    fail(error.empty()
+                        ? "market_signal_overflow_flush_failed" : error);
+                    record_commit_phase(0);
+                    return BuildingCommitChunkResult::Fatal;
+                }
+                _building_cell_cursor = 0;
+                _building_commit_phase = 6;
+                record_commit_phase(1);
+                if (finish_chunk_and_should_yield()) {
+                    return BuildingCommitChunkResult::StopSlice;
+                }
+                ++_budgeted_building_commit_phase_fusions;
+                return BuildingCommitChunkResult::ContinueFusing;
+            }
             record_commit_phase(0);
             return BuildingCommitChunkResult::StopSlice;
         }
+        if (commit_spread_active5) _track_b_investment_cells_pending.clear();
         if (!flush_market_signal_overflow(error)) {
             fail(error.empty() ? "market_signal_overflow_flush_failed" : error);
             record_commit_phase(0);
@@ -21199,7 +21816,13 @@ bool NativeEconomyRuntime::run_building_production_drain(int64_t &work_done,
             disjoint_markets = disjoint_markets &&
                 market_store().cell_to_market[cell] == cell;
         }
-        const int32_t production_default_tasks = _worker_task_cap <= 1
+        static const int32_t production_tasks_env = [] {
+            const char *value = std::getenv("PK_ECONOMY_PRODUCTION_TASKS");
+            return value != nullptr && *value != '\0' ? std::atoi(value) : 0;
+        }();
+        const int32_t production_default_tasks = production_tasks_env > 0
+            ? std::min(total_cells, production_tasks_env)
+            : _worker_task_cap <= 1
             ? 1
             : static_cast<int32_t>(std::clamp<int64_t>(
                 (estimated_work + 1023) / 1024, 2, _worker_task_cap));
@@ -21207,9 +21830,11 @@ bool NativeEconomyRuntime::run_building_production_drain(int64_t &work_done,
                 total_cells >= 2 &&
                 estimated_work >= 256 &&
                 parallel_has_real_worker_threads()
-            ? std::min({total_cells, _worker_task_cap,
-                _worker_tasks_hint > 0
-                ? _worker_tasks_hint : production_default_tasks})
+            ? (production_tasks_env > 0
+                ? std::min(total_cells, production_tasks_env)
+                : std::min({total_cells, _worker_task_cap,
+                    _worker_tasks_hint > 0
+                    ? _worker_tasks_hint : production_default_tasks}))
             : 1;
         _production_worker_tasks = worker_tasks;
         _production_worker_tasks_max = std::max(_production_worker_tasks_max, worker_tasks);

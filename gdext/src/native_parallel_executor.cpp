@@ -46,6 +46,19 @@ bool NativeParallelExecutor::has_workers() const {
 
 void NativeParallelExecutor::set_interactive(bool interactive) {
     _interactive.store(interactive, std::memory_order_release);
+#if defined(_WIN32)
+    // Interactive sessions keep workers below normal so the render/main threads
+    // stay responsive. Headless replay/benchmark runs are not interactive and
+    // must not be starved by desktop processes: normal priority lets the
+    // derived-demand parallel tasks actually use their cores.
+    const int priority = interactive ? THREAD_PRIORITY_BELOW_NORMAL
+                                     : THREAD_PRIORITY_NORMAL;
+    for (std::thread &worker : _workers) {
+        if (!worker.joinable()) continue;
+        HANDLE handle = worker.native_handle();
+        if (handle != nullptr) SetThreadPriority(handle, priority);
+    }
+#endif
 }
 
 uint32_t NativeParallelExecutor::active_worker_limit() const {
@@ -110,7 +123,9 @@ void NativeParallelExecutor::run_group(uint32_t task_count, TaskFn fn,
 
 void NativeParallelExecutor::worker_loop(uint32_t worker_index) {
 #if defined(_WIN32)
-    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+    if (_interactive.load(std::memory_order_acquire)) {
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+    }
 #endif
     uint64_t observed_generation = 0;
     while (true) {

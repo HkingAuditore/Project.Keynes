@@ -2501,6 +2501,32 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         _building_input_candidates[i] = {
             input_candidate_goods[i], input_candidate_efficiencies[i]};
     }
+    // Physical daily quantity per candidate row is catalogue-static; precompute
+    // it once so the startup selection hot path does not redo the two
+    // saturating divisions for every (cell, input row) evaluation.
+    _building_input_candidate_physical_daily.assign(
+        _building_input_candidates.size(), 0);
+    for (size_t i = 0; i < _building_inputs.size(); ++i) {
+        const ProductionInput &input = _building_inputs[i];
+        for (int32_t cursor = input.candidate_begin;
+             cursor < input.candidate_begin + input.candidate_count &&
+             cursor >= 0 &&
+             cursor < static_cast<int32_t>(
+                 _building_input_candidate_physical_daily.size());
+             ++cursor) {
+            int64_t sat = 0;
+            const int32_t efficiency = std::max<int32_t>(
+                1, _building_input_candidates[static_cast<size_t>(cursor)]
+                       .efficiency_q16);
+            int64_t physical = mul_div_sat(input.quantity, Q16_ONE, efficiency, sat);
+            if (mul_div_sat(physical, efficiency, Q16_ONE, sat) <
+                input.quantity) {
+                ++physical;
+            }
+            _building_input_candidate_physical_daily[static_cast<size_t>(cursor)] =
+                physical;
+        }
+    }
     _building_resources.resize(resource_ids.size());
     for (size_t i = 0; i < resource_ids.size(); ++i) {
         if (resource_ids[i] < 0 || resource_ids[i] >= static_cast<int32_t>(_resource_ids.size()) ||

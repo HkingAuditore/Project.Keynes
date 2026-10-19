@@ -586,6 +586,28 @@ void NativeEconomyRuntime::publish_country_development_facts() {
         if (value >= 0 && std::find(items.begin(), items.end(), value) == items.end())
             items.push_back(value);
     };
+    // metric_matches_group() only depends on the building type, so evaluate it
+    // once per type rather than once per (group row, metric): the development
+    // scan visits every building group each committed day and the subject scans
+    // inside metric_matches_group() dominated that loop.
+    thread_local std::vector<uint32_t> type_metric_mask;
+    thread_local int32_t type_metric_mask_config = -1;
+    const int32_t metric_config_token = static_cast<int32_t>(metric_count) * 7919 +
+        (development_columns_invalid ? 1 : 0);
+    if (type_metric_mask_config != metric_config_token ||
+        type_metric_mask.size() != _building_types.size()) {
+        type_metric_mask_config = metric_config_token;
+        type_metric_mask.assign(_building_types.size(), 0u);
+        for (size_t type_id = 0; type_id < _building_types.size(); ++type_id) {
+            uint32_t mask = 0u;
+            for (size_t metric = 0; metric < metric_count; ++metric) {
+                if (metric_matches_group(metric, static_cast<int32_t>(type_id),
+                                         _building_types[type_id]))
+                    mask |= 1u << metric;
+            }
+            type_metric_mask[type_id] = mask;
+        }
+    }
 
     // `_market_cells` is the existing stable market/settlement CSR. Only cells
     // with a committed population are evidence-bearing settlements; empty map
@@ -740,20 +762,13 @@ void NativeEconomyRuntime::publish_country_development_facts() {
         const BuildingType &type = _building_types[static_cast<size_t>(group.type_id)];
         const bool active = group.count > 0 && group.last_output > 0 &&
             group.last_capacity_q16 > 0;
-        int64_t employment = std::max<int64_t>(0, group.filled_owner);
-        if (group.employee_fill_begin >= 0 && group.type_id >= 0) {
-            for (int32_t role = 0; role < type.employee_count; ++role) {
-                const int32_t index = group.employee_fill_begin + role;
-                if (index >= 0 && index < static_cast<int32_t>(
-                        _building_employee_filled.size()))
-                    employment = saturating_add(employment,
-                        std::max<int64_t>(0, _building_employee_filled[
-                            static_cast<size_t>(index)]), _saturation_count);
-            }
-        }
+        const uint32_t metric_mask =
+            type_metric_mask[static_cast<size_t>(group.type_id)];
+        if (metric_mask == 0u) continue;
+        int64_t employment = -1;
         for (size_t metric = 0; metric < metric_count; ++metric) {
+            if ((metric_mask & (1u << metric)) == 0u) continue;
             const int32_t metric_type = _development_metric_types[metric];
-            if (!metric_matches_group(metric, group.type_id, type)) continue;
             if (metric_type == METRIC_BUILDING_INSTALLED) {
                 metric_at(country, metric).value = saturating_add(
                     metric_at(country, metric).value, group.count, _saturation_count);
@@ -761,6 +776,22 @@ void NativeEconomyRuntime::publish_country_development_facts() {
                 metric_at(country, metric).value = saturating_add(
                     metric_at(country, metric).value, group.count, _saturation_count);
             } else if (metric_type == METRIC_INDUSTRY_EMPLOYMENT) {
+                if (employment < 0) {
+                    employment = std::max<int64_t>(0, group.filled_owner);
+                    if (group.employee_fill_begin < 0)
+                        metric_at(country, metric).value = saturating_add(
+                            metric_at(country, metric).value, employment,
+                            _saturation_count);
+                    for (int32_t role = 0; group.employee_fill_begin >= 0 &&
+                         role < type.employee_count; ++role) {
+                        const int32_t index = group.employee_fill_begin + role;
+                        if (index >= 0 && index < static_cast<int32_t>(
+                                _building_employee_filled.size()))
+                            employment = saturating_add(employment,
+                                std::max<int64_t>(0, _building_employee_filled[
+                                    static_cast<size_t>(index)]), _saturation_count);
+                    }
+                }
                 metric_at(country, metric).value = saturating_add(
                     metric_at(country, metric).value, employment, _saturation_count);
             } else if (metric_type == METRIC_INDUSTRY_OUTPUT) {

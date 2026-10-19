@@ -154,6 +154,8 @@ func _ensure_batch() -> void:
 	_set_parameter("shadow_color", UITokens.TRADE_SHADOW_COLOR)
 	_set_parameter("vehicle_height", UITokens.TRADE_VEHICLE_HEIGHT)
 	_set_parameter("shadow_max_length", UITokens.TRADE_SHADOW_MAX_LENGTH)
+	_set_parameter("shadow_footprint", UITokens.TRADE_SHADOW_FOOTPRINT)
+	_set_parameter("shadow_edge_softness", UITokens.TRADE_SHADOW_EDGE_SOFTNESS)
 	_set_parameter("vehicle_atlas", VEHICLES)
 	_set_parameter("travel_speed", UITokens.TRADE_SPEED)
 	_set_parameter("stale_fade_seconds", UITokens.TRADE_FADE_SECONDS)

@@ -4,8 +4,11 @@
 #include "economy_runtime.h"
 
 #include <algorithm>
-#include <cstdio>
 #include <chrono>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 namespace pk {
 namespace {
@@ -14,9 +17,21 @@ void finish_ok(EconomyStageResult &result, const RuntimeEconomyEpochInput &input
                NativeEconomyRuntime *runtime, RuntimeEconomyGraphStage stage) {
     result.work_units = input.cell_count;
     // 中间状态哈希仅服务对拍；最终状态和提交账本仍完整校验。
-    result.state_hash = input.stage_hashes_enabled ||
-        stage == RuntimeEconomyGraphStage::AGGREGATE_PUBLISH
-        ? static_cast<uint64_t>(std::max<int64_t>(0, runtime->state_hash())) : 0;
+    if (stage == RuntimeEconomyGraphStage::AGGREGATE_PUBLISH) {
+        uint64_t cached_hash = 0;
+        if (runtime->track_b_aggregate_hash_reuse(input.sample_day,
+                                                  cached_hash)) {
+            result.state_hash = cached_hash;
+        } else {
+            result.state_hash = static_cast<uint64_t>(
+                std::max<int64_t>(0, runtime->state_hash()));
+            runtime->track_b_aggregate_hash_store(input.sample_day,
+                                                  result.state_hash);
+        }
+    } else {
+        result.state_hash = input.stage_hashes_enabled
+            ? static_cast<uint64_t>(std::max<int64_t>(0, runtime->state_hash())) : 0;
+    }
     result.ok = true;
     result.fatal = false;
 }

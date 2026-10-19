@@ -2,6 +2,7 @@
 #include "economy_owned_column.h"
 #include <array>
 #include <atomic>
+#include <cstring>
 
 namespace pk {
 // A record codec visits explicit persisted fields. Padding and transient
@@ -217,7 +218,19 @@ public:
             synchronize(first);
             _bytes.registry().reorder(_bytes.field_id(), _offsets[first], _offsets[first + count] - _offsets[first]);
         } else {
-            for (size_t row = first; row < first + count; ++row) encode_row(row);
+            // Sorting usually moves a small suffix (fresh edges are appended
+            // near the end). Compare canonical bytes first and only re-encode
+            // from the first row that actually moved; writing unchanged rows
+            // cost one audited write_values call each and dominated rebuilds.
+            size_t changed_from = first;
+            for (size_t row = first; row < first + count; ++row) {
+                const auto encoded = Codec::encode(_rows[row]);
+                if (std::memcmp(_bytes.data() + row * _width,
+                                encoded.data.data(), _width) != 0) break;
+                changed_from = row + 1;
+            }
+            for (size_t row = changed_from; row < first + count; ++row)
+                encode_row(row);
             _bytes.registry().reorder(_bytes.field_id(), first * _width, count * _width);
         }
     }

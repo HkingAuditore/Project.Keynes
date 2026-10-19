@@ -103,14 +103,21 @@ func _run() -> void:
 		layer.set_quality(2)
 		context = Lighting.bind(layer, 40, 24, true, Color(0.5, 0.5, 0, 1), 0)
 		var shadow := _metrics(await _image("cast_shadow"))
+		layer._batch.visible = false
+		var ellipse := await _image("ellipse_only")
+		var ellipse_metrics := _metrics(ellipse)
+		expect("shadow is one continuous soft ellipse without repeated silhouettes", _single_ellipse(ellipse))
+		layer._batch.visible = true
 		layer._shadow_batch.visible = false
 		var no_shadow := _metrics(await _image("no_shadow"))
-		expect("high quality shadow adds projected silhouette coverage", shadow.pixels > no_shadow.pixels + 20)
+		expect("high quality shadow adds soft ellipse coverage", shadow.pixels > no_shadow.pixels + 20)
 		layer._shadow_batch.visible = true
 		layer.set_daylight_parameters({"tod_sun_dir": Vector3(-0.75, -0.25, 0.61).normalized()})
-		var opposite_shadow := _metrics(await _image("opposite_sun_shadow"))
-		expect("cast shadow follows sun azimuth", float(shadow.center_x) < float(no_shadow.center_x) - 1.0
-			and float(opposite_shadow.center_x) > float(no_shadow.center_x) + 1.0)
+		await _image("opposite_sun_shadow")
+		layer._batch.visible = false
+		var opposite_ellipse := _metrics(await _image("opposite_ellipse_only"))
+		layer._batch.visible = true
+		expect("ellipse shadow follows sun azimuth", float(opposite_ellipse.center_x) - float(ellipse_metrics.center_x) > 5.0)
 		layer.set_daylight_parameters({"day_night_enabled": true, "day_phase": 0.95, "tod_debug_sun_position_enabled": false})
 		var night_shadow := _metrics(await _image("night_with_shadow"))
 		layer._shadow_batch.visible = false
@@ -129,6 +136,13 @@ func _run() -> void:
 		print("[trade-lighting-pixels] ", {"day": day, "night": night, "toward": toward,
 			"away": away, "blocked": blocked, "gi_off": no_gi, "gi_on": gi,
 			"tiled": tiled, "shadow": shadow, "no_shadow": no_shadow})
+		# Ground-colour art preview, captured after all alpha-based pixel checks.
+		root.transparent_bg = false
+		RenderingServer.set_default_clear_color(Color(0.50, 0.54, 0.33))
+		layer.set_daylight_parameters({"day_night_enabled": false, "tod_debug_sun_position_enabled": true,
+			"tod_sun_dir": Vector3(0.75, -0.25, 0.61).normalized()})
+		layer._shadow_batch.visible = true
+		await _image("ellipse_preview")
 	layer.clear()
 	expect("clear releases previous map lighting fields", not bool(layer._material.get_shader_parameter("terrain_normal_tex_bound"))
 		and layer._shadow_material.get_shader_parameter("visual_horizon_tiles") == null)
@@ -181,3 +195,21 @@ func _metrics(image: Image) -> Dictionary:
 			opaque += 1
 	return {"luma": total / maxf(1.0, opaque), "pixels": pixels, "opaque": opaque,
 		"width": bounds.size.x, "height": bounds.size.y, "center_x": bounds.get_center().x}
+
+
+# A convex ellipse has one connected interval on every horizontal scan line;
+# its alpha increases to one peak/plateau then decreases (no ghost copies).
+func _single_ellipse(image: Image) -> bool:
+	var seen := false
+	for y in image.get_height():
+		var descending := false
+		var previous := 0.0
+		for x in image.get_width():
+			var alpha := image.get_pixel(x, y).a
+			seen = seen or alpha > 0.05
+			if alpha < previous - 0.005:
+				descending = true
+			if descending and alpha > previous + 0.005:
+				return false
+			previous = alpha
+	return seen

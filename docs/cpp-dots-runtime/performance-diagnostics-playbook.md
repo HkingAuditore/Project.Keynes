@@ -1,5 +1,97 @@
 # Performance Diagnostics Playbook
 
+## Track B (approved approximation) doctrine (2026-10-19)
+
+Approximation/cadence changes are allowed only with the user-approved Track B switch
+(`PK_ECONOMY_TRACK_B`, default on). Rules:
+- keep exact mode runnable: every cadence/approximation must be bypassed by
+  `PK_ECONOMY_TRACK_B=0`, and gates (pod, parity, authority soak, conservation audit,
+  40-day replay) must pass in BOTH modes;
+- preserve conservation and save-critical hashes: money/goods/population audits must stay
+  0/0/0, and wire content hashes (`recompute_content_hash`) must remain exact every day;
+  only diagnostics/provenance values (e.g. AGGREGATE_PUBLISH state hash) may be cadenced;
+- judge gains with interleaved A/B (pristine HEAD DLL vs new DLL, alternating runs) because
+  absolute wall drifts with the CPU thermal/boost state; `process_cpu` from the replay
+  runner is the drift-robust secondary metric;
+- cadence knobs and their defaults: `PK_ECONOMY_TRACK_B_DERIVED_CADENCE`,
+  `_HASH_CADENCE`, `_MOBILITY_CADENCE`, `_FAMILY_ATTRIBUTION_CADENCE`,
+  `_FAMILY_CACHE_CADENCE`, `_COMMIT_CADENCE`; value 1 restores daily exact behavior for
+  that item.
+
+## Never capture thread_local into executor-thread lambdas (2026-10-19)
+
+A lambda captured with `[&]` and invoked by the parallel executor resolves a `thread_local`
+variable to the **executing worker thread's own instance**, not the caller's. Two crashes
+(derived-refresh result buffers, weighted task-partition boundaries) came from exactly this:
+worker tasks indexed an empty thread_local vector. Shared read-only data must be a plain local
+(or passed by argument); per-thread scratch that tasks may write must stay inside the task body.
+
+## Hot paths must not allocate per call (2026-10-19)
+
+Per-call `std::vector`/`std::map` churn in the native economy shows up as hot-loop cost and, worse,
+as worker-thread blocking: `select_startup_producer` used to build and copy an
+`InvestmentCandidatePlan` (four vectors) for every candidate; at ~8k calls/day the derived refresh
+spent ~19 ms/day and parallel tasks stalled on the process heap. Rules:
+
+- Reuse per-call scratch via `thread_local` (or a depth-indexed pool when the call can recurse);
+  keep vector capacity across calls instead of constructing fresh objects.
+- Most callers of a selector only need the chosen id: give them a type-only fast path that skips
+  building the full plan, and only materialize the plan for callers that pass a plan pointer.
+- When a memo stores a plan, do not write an entry from a type-only call (a later plan request
+  would hit an empty plan); cache only complete results.
+- Verify with `PK_ECONOMY_STARTUP_TRACE=1` section timings plus end-to-end probe-free replay, and
+  keep `state_hash` equality for every optimization.
+
+## getenv is not free: cache environment switches (2026-10-19)
+
+On Windows, `std::getenv` scans the process environment per call and measured **~8 us/call** on the
+current dev box. A single diagnostic `getenv("PK_ECONOMY_MEMO_VERIFY")` on a memo-hit path therefore
+cost 10+ ms per simulated day (living-cost memo: 4174 hits/day; owner quote setup alone: 12 ms/day).
+Rules:
+
+- Read any workflow-environment switch exactly once into `static const bool` (or a cached value)
+  inside the function that needs it; environment variables must be treated as immutable for the
+  process lifetime. This is behavior-preserving for production runs.
+- Never put a raw `std::getenv` inside an inner loop, a per-item scan, or a cache-hit fast path.
+- Verify with `PK_ECONOMY_OWNER_QUOTE_TRACE=1` (thread-local section counters, one flush per day) or
+  aggregated `PK_ECONOMY_COST_CSV` before/after; a 8 us/call switch disappears from the section that
+  owns it.
+
+## Aggregated economy probes and replay baselines (2026-10-19)
+
+`PK_ECONOMY_COST_CSV` now defaults to **one aggregated row per (day, phase)** (`work` = summed
+units, `ms` = summed time; rows flush on day rollover and process exit). High-frequency phases
+(`cohort_demand_preview`, `startup_producer_select`, `owner_opportunity_quote`, memo counters) used
+to pay one fprintf+mutex per call, and that probe tax was billed to the parent stage (measured
+~20-30 ms/day on a late save). Keep the default for attribution; `PK_ECONOMY_COST_CSV_FULL=1`
+restores per-call rows for spot investigations, never for throughput evidence.
+
+Two throughput bodies must not be mixed:
+
+1. **probe-free replay** (`-NoProbes` in `tools/perf/run_replay_probe.ps1`) is the production-facing
+   worker `execute` ms/day and days/s;
+2. **low-frequency probe run** is attribution only (it still adds ~4-5 ms/day and under parallel
+   sections the global probe mutex serializes tasks).
+
+Reusable tooling (fixtures under `tmp/perf_fixtures/`, analyses in `tools/perf/`):
+
+```powershell
+# fixture replay: 10-day warmup + 40 measured days, speed 50, state hash in result/forensics
+.\tools\perf\run_replay_probe.ps1 -OutDir tmp\perf_runs\probe
+.\tools\perf\run_replay_probe.ps1 -OutDir tmp\perf_runs\noprobe -NoProbes
+python tools\perf\analyze_waterfall.py tmp\perf_runs\probe\waterfall.csv
+python tools\perf\analyze_economy_cost.py tmp\perf_runs\probe\economy_cost.csv
+```
+
+Late-game fixture findings: the daily epoch tail is `epoch.finish` ⊃ `epoch_vectors`, whose body is
+the full-live-cell `refresh_derived_business_demand` (not sharded by N/P/I); `epoch_perf.*` rows
+expose the existing stage timers per epoch. `startup_producer` memo hit rate is 0% by construction;
+`owner_opportunity_quote` misses ~97% and runs the second `finalize_at_scale` on almost every miss
+(counter `owner_quote.double_eval`, callers via `owner_quote.call.*`). Derived-refresh parallelism is
+OPT-IN (`PK_ECONOMY_DERIVED_PARALLEL=1`): it is bit-equal, but concurrent tasks burned ~10x the
+serial task wall time, so the serial ordered replay is the default. See
+`runtime-perf-findings-2026-10-19.md` for numbers and the next-step list.
+
 ## Construction portfolio funds drift (2026-10-16)
 
 `building_construction_preflight_funds_drift` in `building_commit/investment`

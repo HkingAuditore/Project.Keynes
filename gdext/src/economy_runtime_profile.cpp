@@ -2,6 +2,7 @@
 #include "economy_runtime_variant_helpers.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <limits>
 
 namespace pk {
@@ -116,6 +117,15 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
     _worker_task_cap = std::clamp(
         dict_num<int32_t>(profile, "economy_worker_task_cap", 6),
         1, 16);
+    // Diagnostic-only override for worker task-count sweeps; task count never
+    // changes simulation results (parallel paths are bit-identical to serial).
+    static const int32_t worker_cap_env = [] {
+        const char *value = std::getenv("PK_ECONOMY_WORKER_TASK_CAP");
+        if (value == nullptr || *value == '\0') return 0;
+        return std::atoi(value);
+    }();
+    if (worker_cap_env > 0)
+        _worker_task_cap = std::clamp(worker_cap_env, 1, 16);
     _high_speed_batching_enabled = dict_num<bool>(
         profile, "economy_high_speed_batching_enabled", true);
     _full_audit_verify_interval_days = std::clamp(

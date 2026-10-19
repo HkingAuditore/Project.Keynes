@@ -115,8 +115,15 @@ try {
             $executeUs = [double]$json.measurement_worker_time_us.execute
         }
         $measuredDays = [Math]::Max(1, $Days)
-        Write-Host ('RESULT days_per_sec={0:N3} worker_execute={1:N2} ms/day ok={2} failures={3}' -f `
-            [double]$json.days_per_sec, ($executeUs / 1000.0 / $measuredDays), $json.ok, ($json.failures -join '|'))
+        # Process CPU (all threads) is frequency-invariant; wall clock drifts with
+        # the CPU thermal/boost state, so prefer process_cpu for cross-build A/B.
+        $processCpuUs = 0.0
+        if ($null -ne $json.measurement_process_cpu_us) {
+            $processCpuUs = [double]$json.measurement_process_cpu_us
+        }
+        Write-Host ('RESULT days_per_sec={0:N3} worker_execute={1:N2} ms/day process_cpu={2:N2} ms/day ok={3} failures={4}' -f `
+            [double]$json.days_per_sec, ($executeUs / 1000.0 / $measuredDays),
+            ($processCpuUs / 1000.0 / $measuredDays), $json.ok, ($json.failures -join '|'))
         $json | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $OutDir 'result.json')
     } else {
         Write-Host 'RESULT line missing from replay log'

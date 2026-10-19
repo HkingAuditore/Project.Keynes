@@ -20,8 +20,36 @@ namespace pk {
 
 using namespace godot;
 
+#if defined(_WIN32)
+#include <windows.h>
+#endif
+
 namespace {
 using Clock = std::chrono::steady_clock;
+
+// Frequency-invariant measurement support: process CPU time (all threads).
+// The fixture probe is used for cross-build A/B; sustained load changes the
+// CPU's thermal/boost state and skews wall-clock comparisons by several
+// percent, while process CPU time stays comparable.
+int64_t process_cpu_us_now() {
+#if defined(_WIN32)
+    FILETIME creation{};
+    FILETIME exit{};
+    FILETIME kernel{};
+    FILETIME user{};
+    if (!GetProcessTimes(GetCurrentProcess(), &creation, &exit, &kernel, &user))
+        return 0;
+    const auto to_us = [](const FILETIME &time) {
+        ULARGE_INTEGER value;
+        value.LowPart = time.dwLowDateTime;
+        value.HighPart = time.dwHighDateTime;
+        return static_cast<int64_t>(value.QuadPart / 10);
+    };
+    return to_us(kernel) + to_us(user);
+#else
+    return 0;
+#endif
+}
 
 enum RuntimeDirtyFamily : uint32_t {
     DIRTY_CLOCK = 1u << 0,
@@ -644,6 +672,7 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
     const NativeParallelExecutor::Report report =
         NativeParallelExecutor::instance().report();
     Dictionary out;
+    out["process_cpu_us"] = process_cpu_us_now();
     if (_runtime_host) {
         const RuntimeThreadReport host = _runtime_host->report();
         out["runtime_domain_abi_version"] = static_cast<int>(host.domain_abi_version);
@@ -718,6 +747,7 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
             timing_total += host.worker_time_us[i];
         }
         out["worker_time_total_us"] = static_cast<int64_t>(timing_total);
+        out["process_cpu_us"] = process_cpu_us_now();
         out["economy_yield_reason"] = String(host.economy_yield_reason);
         out["economy_stage_name"] = String(host.economy_stage_name);
         out["economy_substage_name"] = String(host.economy_substage_name);
@@ -1245,6 +1275,7 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
             timing_total += host.worker_time_us[i];
         }
         out["worker_time_total_us"] = static_cast<int64_t>(timing_total);
+        out["process_cpu_us"] = process_cpu_us_now();
         out["economy_yield_reason"] = String(host.economy_yield_reason);
         out["economy_stage_name"] = String(host.economy_stage_name);
         out["economy_substage_name"] = String(host.economy_substage_name);

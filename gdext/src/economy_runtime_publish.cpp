@@ -687,10 +687,25 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         } else {
         const auto commit_finalize_started = Clock::now();
         publish_social_pressure_facts();
+        EconomyCostProbe::record("publish.commit.social", _current_day.get(),
+                                 elapsed_ms(commit_finalize_started));
+        const auto finalize_t1 = Clock::now();
         publish_technology_practice_facts();
+        EconomyCostProbe::record("publish.commit.technology", _current_day.get(),
+                                 elapsed_ms(finalize_t1));
+        const auto finalize_t2 = Clock::now();
         publish_country_development_facts();
+        EconomyCostProbe::record("publish.commit.development", _current_day.get(),
+                                 elapsed_ms(finalize_t2));
+        const auto finalize_t3 = Clock::now();
         publish_country_ai_digest();
+        EconomyCostProbe::record("publish.commit.ai_digest", _current_day.get(),
+                                 elapsed_ms(finalize_t3));
+        const auto finalize_t4 = Clock::now();
         commit_food_flow_snapshot();
+        EconomyCostProbe::record("publish.commit.food_flow", _current_day.get(),
+                                 elapsed_ms(finalize_t4));
+        const auto finalize_t5 = Clock::now();
         _rolling_processed_cells = static_cast<int32_t>(_epoch_settlement_cells.size());
         _rolling_deferred_cells = std::max(
             0, _rolling_due_cells - _rolling_processed_cells);
@@ -721,6 +736,8 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         _publish_phase = PublishPhase::DONE;
         _publish_commit_initialized = false;
         _publish_cursor = 0;
+        EconomyCostProbe::record("publish.commit.finalize_tail", _current_day.get(),
+                                 elapsed_ms(finalize_t5));
         const double commit_finalize_ms = elapsed_ms(commit_finalize_started);
         _publish_commit_finalize_ms += commit_finalize_ms;
         _publish_commit_finalize_slice_ms += commit_finalize_ms;

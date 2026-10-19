@@ -199,18 +199,47 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
         priority_income.assign(static_cast<size_t>(last - first), 0);
         priority_survival.assign(static_cast<size_t>(last - first), 0);
         for (int32_t g = first; g < last; ++g) {
-            auto group = building_at(static_cast<size_t>(g));
-            if (group.cell != cell || group.count <= 0 ||
-                !building_available(cell, group.type_id, true)) {
-                group.filled_owner = 0;
-                if (group.type_id >= 0 &&
-                    group.type_id < static_cast<int32_t>(_building_types.size())) {
-                    const BuildingType &type = _building_types[group.type_id];
-                    for (int32_t r = 0; r < type.employee_count; ++r)
-                        _building_employee_filled.write_scalar(group.employee_fill_begin + r, 0, market_mutation_sink());
+            {
+                // Groups that will be skipped must still be zeroed, but when
+                // they are already empty the mutable column borrow is pure
+                // waste; check the read-only view first.
+                const auto view = building_view(static_cast<size_t>(g));
+                if (view.cell != cell || view.count <= 0 ||
+                    !building_available(cell, view.type_id, true)) {
+                    bool already_zero = view.filled_owner == 0;
+                    if (already_zero && view.type_id >= 0 &&
+                        view.type_id < static_cast<int32_t>(
+                            _building_types.size())) {
+                        const BuildingType &type = _building_types[view.type_id];
+                        for (int32_t r = 0; r < type.employee_count; ++r) {
+                            const int32_t role_index =
+                                view.employee_fill_begin + r;
+                            if (role_index >= 0 &&
+                                role_index < static_cast<int32_t>(
+                                    _building_employee_filled.size()) &&
+                                _building_employee_filled[role_index] != 0) {
+                                already_zero = false;
+                                break;
+                            }
+                        }
+                    }
+                    if (!already_zero) {
+                        auto group = building_at(static_cast<size_t>(g));
+                        group.filled_owner = 0;
+                        if (group.type_id >= 0 && group.type_id <
+                                static_cast<int32_t>(_building_types.size())) {
+                            const BuildingType &type =
+                                _building_types[group.type_id];
+                            for (int32_t r = 0; r < type.employee_count; ++r)
+                                _building_employee_filled.write_scalar(
+                                    group.employee_fill_begin + r, 0,
+                                    market_mutation_sink());
+                        }
+                    }
+                    continue;
                 }
-                continue;
             }
+            auto group = building_at(static_cast<size_t>(g));
             int64_t priority_sat = 0;
             const BuildingType &type = _building_types[group.type_id];
             const int32_t owner_profession = group.owner_signature_id >= 0 &&
@@ -238,6 +267,8 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
                         saturating_add(filled, available, priority_sat), Q16_ONE,
                         slots, priority_sat), 0, Q16_ONE) : Q16_ONE);
             }
+            EconomyCostProbe::record("owner_quote.call.emp_priority",
+                                      _current_day.get(), 0.0, 1);
             const OwnerOpportunityQuote quote = owner_opportunity_quote(
                 group, owner_fillability, employee_fillability, priority_sat);
             priority_income[static_cast<size_t>(g - first)] =
@@ -844,30 +875,45 @@ void NativeEconomyRuntime::update_cell_labor_signals(int32_t cell) {
     const int64_t alpha = std::min<int64_t>(
         Q16_ONE, saturating_mul(_wage_ema_alpha_q16,
                                 std::max(1, _epoch_days.get()), _saturation_count));
-    for (int32_t signal = _labor_signals.cell_offsets[cell];
-         signal < _labor_signals.cell_offsets[cell + 1]; ++signal) {
-        const int32_t profession = _labor_signals.profession_ids[signal];
-        int64_t jobs = 0;
-        int64_t due = 0;
-        int64_t paid = 0;
+    const int32_t signal_begin = _labor_signals.cell_offsets[cell];
+    const int32_t signal_end = _labor_signals.cell_offsets[cell + 1];
+    const int32_t signal_count = signal_end - signal_begin;
+    if (signal_count > 0) {
+        // Group-major accumulation: the old signal-major loop re-scanned every
+        // building role for each profession signal. Per-signal sums keep the
+        // same group order, so the aggregated EMA inputs are unchanged.
+        thread_local std::vector<int64_t> signal_jobs;
+        thread_local std::vector<int64_t> signal_due;
+        thread_local std::vector<int64_t> signal_paid;
+        signal_jobs.assign(static_cast<size_t>(signal_count), 0);
+        signal_due.assign(static_cast<size_t>(signal_count), 0);
+        signal_paid.assign(static_cast<size_t>(signal_count), 0);
+        const int64_t day_scale = std::max(1, _epoch_days.get());
         for (int32_t g = _building_cell_offsets[cell];
              g < _building_cell_offsets[cell + 1]; ++g) {
             const auto group = building_view(static_cast<size_t>(g));
             const BuildingType &type = _building_types[group.type_id];
             for (int32_t r = 0; r < type.employee_count; ++r) {
                 const JobRole &role = _building_employee_roles[type.employee_begin + r];
-                if (role.profession_id != profession) continue;
+                const int32_t signal = labor_signal_index(cell, role.profession_id);
+                if (signal < signal_begin || signal >= signal_end) continue;
+                const size_t local = static_cast<size_t>(signal - signal_begin);
                 const int32_t index = group.employee_fill_begin + r;
-                jobs = saturating_add(jobs, saturating_mul(
-                    _building_employee_filled[index], std::max(1, _epoch_days.get()),
-                    _saturation_count), _saturation_count);
-                due = saturating_add(due, _building_role_base_wage_due[index],
-                                     _saturation_count);
-                paid = saturating_add(paid, _building_role_base_wage_paid[index],
-                                      _saturation_count);
+                signal_jobs[local] = saturating_add(signal_jobs[local],
+                    saturating_mul(_building_employee_filled[index], day_scale,
+                                   _saturation_count), _saturation_count);
+                signal_due[local] = saturating_add(signal_due[local],
+                    _building_role_base_wage_due[index], _saturation_count);
+                signal_paid[local] = saturating_add(signal_paid[local],
+                    _building_role_base_wage_paid[index], _saturation_count);
             }
         }
-        if (jobs > 0) {
+        for (int32_t local = 0; local < signal_count; ++local) {
+            const int32_t signal = signal_begin + local;
+            const int64_t jobs = signal_jobs[static_cast<size_t>(local)];
+            if (jobs <= 0) continue;
+            const int64_t due = signal_due[static_cast<size_t>(local)];
+            const int64_t paid = signal_paid[static_cast<size_t>(local)];
             const int64_t observed_contract = due / jobs;
             const int64_t observed_paid = paid / jobs;
             auto ema = [&](int64_t previous, int64_t observed) {
@@ -894,7 +940,16 @@ bool NativeEconomyRuntime::run_building_employment_cell(
     // This scope mutates cohorts and role fills, which are explicit quote keys;
     // market prices, stock, environment and frozen modifiers stay unchanged.
     LivingCostMemoScope memo(*this, true);
+    const auto employment_cell_started = Clock::now();
+    Clock::time_point employment_hire_started{};
+    Clock::time_point employment_mobility_started{};
+    Clock::time_point employment_ownerjob_started{};
+    int64_t employment_candidate_scans = 0;
+    int64_t employment_pool_lookups = 0;
     if (!prepare_cell_wages(cell, error)) return false;
+    EconomyCostProbe::record("employment.cell_prepare", _current_day.get(),
+                             elapsed_ms(employment_cell_started));
+    const auto employment_targets_started = Clock::now();
     // demand[p] = profession p 鏈懆鏈?employee 鐩爣涔嬪拰锛沠ill[p] = 澶圭揣鍚庡湪宀?
     // employee 涔嬪拰銆備簩鑰呭湪 A1 涓ゆ閫昏緫涓 std::fill 閲嶇疆澶嶇敤锛堣涓嬶級銆?
     thread_local std::vector<int64_t> demand;
@@ -1001,7 +1056,45 @@ bool NativeEconomyRuntime::run_building_employment_cell(
     int64_t stay_q16 = Q16_ONE;
     const int64_t daily_mobility_q16 = std::clamp<int64_t>(
         _employment_mobility_daily_q16.get(), 0, Q16_ONE);
-    for (int32_t d = 0; d < std::max(1, _epoch_days.get()); ++d) {
+    // Track B (user-approved): job mobility lanes are cadence-limited. Skip days
+    // run no mobility at all; refresh days apply the accumulated multi-day
+    // probability, keeping the long-run transition rate close to exact mode.
+    static const bool track_b_enabled = [] {
+        const char *value = std::getenv("PK_ECONOMY_TRACK_B");
+        return !(value && std::strcmp(value, "0") == 0);
+    }();
+    static const int32_t track_b_mobility_cadence = [] {
+        const char *value = std::getenv("PK_ECONOMY_TRACK_B_MOBILITY_CADENCE");
+        const int32_t parsed = value ? std::atoi(value) : 0;
+        return parsed > 0 ? std::min<int32_t>(parsed, 30) : 5;
+    }();
+    static const int32_t track_b_mobility_spread = [] {
+        const char *value = std::getenv("PK_ECONOMY_TRACK_B_MOBILITY_SPREAD");
+        const int32_t parsed = value ? std::atoi(value) : 0;
+        return parsed > 0 ? std::min<int32_t>(parsed, 32) : 1;
+    }();
+    int64_t mobility_days = std::max(1, _epoch_days.get());
+    if (track_b_enabled && track_b_mobility_spread > 1) {
+        const int32_t mobility_phase = static_cast<int32_t>(
+            ((_current_day.get() % track_b_mobility_spread) +
+             track_b_mobility_spread) % track_b_mobility_spread);
+        if (cell >= 0 && (cell % track_b_mobility_spread) == mobility_phase) {
+            mobility_days *= track_b_mobility_spread;
+        } else {
+            mobility_days = 0;
+            EconomyCostProbe::record("employment.track_b_mobility_skip",
+                                     _current_day.get(), 0.0, 1u);
+        }
+    } else if (track_b_enabled && track_b_mobility_cadence > 1) {
+        if ((_current_day.get() % track_b_mobility_cadence) != 0) {
+            mobility_days = 0;
+            EconomyCostProbe::record("employment.track_b_mobility_skip",
+                                     _current_day.get(), 0.0, 1u);
+        } else {
+            mobility_days *= track_b_mobility_cadence;
+        }
+    }
+    for (int32_t d = 0; d < mobility_days; ++d) {
         stay_q16 = mul_div_sat(stay_q16,
             Q16_ONE - daily_mobility_q16, Q16_ONE, _saturation_count);
     }
@@ -1111,6 +1204,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 group.last_input_cost > 0 || group.last_base_wages_paid > 0;
             if (!has_settled || group.operating_state == 1) {
                 int64_t quote_sat = 0;
+                EconomyCostProbe::record("owner_quote.call.emp_settle_gate",
+                                          _current_day.get(), 0.0, 1);
                 const OwnerOpportunityQuote quote = owner_opportunity_quote(
                     group, Q16_ONE, Q16_ONE, quote_sat);
                 sat = saturating_add(sat, quote_sat, sat);
@@ -1413,6 +1508,9 @@ bool NativeEconomyRuntime::run_building_employment_cell(
 
         // ---- 鐩爣璁＄畻锛氭湰鍛ㄦ湡鍚?group 鏈熸湜鐨?owner / 鍚?role employee ----
         // 鐢?thread_local 缂撳啿閬垮厤姣?cell 鍒嗛厤銆?
+        EconomyCostProbe::record("employment.cell_pre", _current_day.get(),
+                                 elapsed_ms(employment_targets_started));
+        const auto employment_migrate_started = Clock::now();
         thread_local std::vector<int64_t> group_owner_target;      // 姣?group owner 鐩爣
         group_owner_target.assign(static_cast<size_t>(last - first), 0);
         // profession 绾?employee 鐩爣 / 鍦ㄥ矖锛堣法 eth 鑱氬悎锛屾部鐢ㄦ棫 employee 璇箟锛夈€?
@@ -1548,6 +1646,23 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         thread_local std::vector<int32_t> hire_order;
         thread_local std::vector<int64_t> labor_expected_employee_income;
         thread_local std::vector<int64_t> labor_expected_owner_income;
+        // The hire-order pass already evaluates every candidate role's hiring
+        // gross and after-tax net for this cell. Cache them per role lane so the
+        // hire loop below does not recompute the same tax formula per vacancy.
+        thread_local std::vector<int64_t> hire_role_gross_cache;
+        thread_local std::vector<int64_t> hire_role_net_cache;
+        thread_local std::vector<uint32_t> hire_role_stamp;
+        thread_local uint32_t hire_role_generation = 0;
+        const size_t hire_role_lane_count = _building_employee_filled.size();
+        if (hire_role_stamp.size() < hire_role_lane_count) {
+            hire_role_stamp.assign(hire_role_lane_count, 0);
+            hire_role_gross_cache.resize(hire_role_lane_count, 0);
+            hire_role_net_cache.resize(hire_role_lane_count, 0);
+        }
+        if (++hire_role_generation == 0) {
+            std::fill(hire_role_stamp.begin(), hire_role_stamp.end(), 0);
+            hire_role_generation = 1;
+        }
         hire_order.clear();
         labor_expected_employee_income.assign(static_cast<size_t>(last - first), 0);
         labor_expected_owner_income.assign(static_cast<size_t>(last - first), 0);
@@ -1570,6 +1685,13 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 const int64_t net = expected_after_tax_income(
                     cell, role.profession_id, gross, score_sat);
                 const int64_t slots = std::max<int64_t>(0, role.slots_per_building);
+                if (role_index >= 0 && static_cast<size_t>(role_index) <
+                        hire_role_stamp.size()) {
+                    hire_role_stamp[static_cast<size_t>(role_index)] =
+                        hire_role_generation;
+                    hire_role_gross_cache[static_cast<size_t>(role_index)] = gross;
+                    hire_role_net_cache[static_cast<size_t>(role_index)] = net;
+                }
                 weighted_net = saturating_add(weighted_net,
                     saturating_mul(net, slots, score_sat), score_sat);
                 weighted_slots = saturating_add(weighted_slots, slots, score_sat);
@@ -1700,6 +1822,9 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         //     population - retained 杩佸線 unemployed|eth銆?
         //
         // owner 渚уす绱э紙寤虹瓚椹卞姩锛氭瘡 group 鐙珛鎸夎嚜韬?filled-target 瑁侊級銆?
+        EconomyCostProbe::record("employment.cell_targets", _current_day.get(),
+                                 elapsed_ms(employment_migrate_started));
+        employment_hire_started = Clock::now();
         const bool trace_employment = cell == _inspector_trace_cell;
         thread_local std::vector<int64_t> trace_filled_before_clamp;
         thread_local std::vector<int64_t> trace_filled_after_profession;
@@ -1761,7 +1886,40 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         // Family ownership is a sparse attribution overlay on the aggregated
         // building group, not an admission rule: it records which families the
         // seated proprietors belong to, and never reduces the fill.
-        attribute_family_owner_employment_for_cell(cell);
+        // Track B (user-approved): refresh this slow-moving attribution overlay
+        // every N days; stale shares are carried in between.
+        static const bool attribution_track_b_enabled = [] {
+            const char *value = std::getenv("PK_ECONOMY_TRACK_B");
+            return !(value && std::strcmp(value, "0") == 0);
+        }();
+        static const int32_t attribution_cadence = [] {
+            const char *value = std::getenv(
+                "PK_ECONOMY_TRACK_B_FAMILY_ATTRIBUTION_CADENCE");
+            const int32_t parsed = value ? std::atoi(value) : 0;
+            return parsed > 0 ? std::min<int32_t>(parsed, 30) : 5;
+        }();
+        static const int32_t attribution_spread = [] {
+            const char *value = std::getenv(
+                "PK_ECONOMY_TRACK_B_FAMILY_ATTRIBUTION_SPREAD");
+            const int32_t parsed = value ? std::atoi(value) : 0;
+            return parsed > 0 ? std::min<int32_t>(parsed, 32) : 1;
+        }();
+        bool attribution_due = true;
+        if (attribution_track_b_enabled && attribution_spread > 1) {
+            const int32_t attribution_phase = static_cast<int32_t>(
+                ((_current_day.get() % attribution_spread) +
+                 attribution_spread) % attribution_spread);
+            attribution_due = cell >= 0 && (cell % attribution_spread) ==
+                attribution_phase;
+        } else if (attribution_track_b_enabled && attribution_cadence > 1) {
+            attribution_due = (_current_day.get() % attribution_cadence) == 0;
+        }
+        if (attribution_due) {
+            attribute_family_owner_employment_for_cell(cell);
+        } else {
+            EconomyCostProbe::record("family.track_b_attribution_skip",
+                                     _current_day.get(), 0.0, 1u);
+        }
         // employee 渚уす绱э細profession p 鑻?危filled > 危target锛屾寜 group 绋冲畾搴?
         // 浠庡悗寰€鍓嶅墛鍑忓悇 role fill 鍒?demand銆傜敤 remaining[p] 杩借釜璇?profession
         // 鍏佽淇濈暀鐨勬€诲湪宀楁暟锛岄€?group 鍒嗛厤 min(role_filled, remaining)銆?
@@ -2021,7 +2179,10 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         // 鎷?owner 闇€绮剧‘ eth锛坓roup.owner_signature 鐨?eth锛夛紱鎷?employee 鍙法 eth
         // 锛堟寜 eth 鍗囧簭鍙栨睜锛屼繚纭畾锛夈€傛嫑浜哄湪閬嶅巻澶栭€?group 鎵ц杩佺Щ锛屾瘡娆¤縼绉诲悗
         // 閲嶆柊瀹氫綅姹?slot锛堝彲鑳借 drain 閲婃斁锛夈€?
+        EconomyCostProbe::record("employment.cell_migrate", _current_day.get(),
+                                 elapsed_ms(employment_hire_started));
         auto pool_slot_for_eth = [&](int32_t eth) -> int32_t {
+            ++employment_pool_lookups;
             const int32_t sig = unemployed_signature_for_ethnicity(eth);
             if (sig < 0) return -1;
             return population_store().find_signature(cell, static_cast<uint32_t>(sig));
@@ -2484,6 +2645,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             if (eth < 0 || eth >= n_eth) return 0;
             const int32_t begin = candidate_eth_offsets[static_cast<size_t>(eth)];
             const int32_t end = candidate_eth_offsets[static_cast<size_t>(eth) + 1];
+            employment_candidate_scans += end - begin;
             for (int32_t cursor = begin; cursor < end; ++cursor) {
                 const int32_t index = candidate_eth_indices[static_cast<size_t>(cursor)];
                 const EmploymentJobOption &candidate =
@@ -2620,10 +2782,18 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     continue;
                 }
                 const int32_t fi = group.employee_fill_begin + r;
-                const int64_t gross_wage =
-                    expected_employee_hiring_gross(role, fi);
-                const int64_t expected_wage = expected_after_tax_income(
-                    cell, p, gross_wage, _saturation_count);
+                int64_t gross_wage = 0;
+                int64_t expected_wage = 0;
+                if (fi >= 0 && static_cast<size_t>(fi) < hire_role_stamp.size() &&
+                    hire_role_stamp[static_cast<size_t>(fi)] ==
+                        hire_role_generation) {
+                    gross_wage = hire_role_gross_cache[static_cast<size_t>(fi)];
+                    expected_wage = hire_role_net_cache[static_cast<size_t>(fi)];
+                } else {
+                    gross_wage = expected_employee_hiring_gross(role, fi);
+                    expected_wage = expected_after_tax_income(
+                        cell, p, gross_wage, _saturation_count);
+                }
                 const int64_t role_target = planned_role_demand(
                     group, role, fi);
                 int64_t need = std::max<int64_t>(0,
@@ -2716,6 +2886,9 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             }
         }
 
+        EconomyCostProbe::record("employment.hire_main", _current_day.get(),
+                                 elapsed_ms(employment_hire_started));
+        employment_mobility_started = Clock::now();
         // Zero-unemployment job-to-job mobility. Role fills are already
         // aggregate SoA counters, so pair the lowest collectible-pay source
         // roles with the highest collectible-pay vacancies. A cross-profession
@@ -3044,6 +3217,9 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                              return a.role < b.role;
                          });
 
+        EconomyCostProbe::record("employment.hire_mobility", _current_day.get(),
+                                 elapsed_ms(employment_mobility_started));
+        employment_ownerjob_started = Clock::now();
         // A cell can have no unemployed people while still having a profitable
         // employee vacancy.  Let one incumbent owner from a lower-opportunity
         // lot cross that boundary.  This is deliberately a separate lane from
@@ -3265,6 +3441,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 const bool source_full = source_group.filled_owner >=
                     group_owner_target[candidate - first];
                 if (!target_quote_ready) {
+                    EconomyCostProbe::record("owner_quote.call.emp_target_priority",
+                                              _current_day.get(), 0.0, 1);
                     target_survival_priority_cached = owner_opportunity_quote(
                         target_group, Q16_ONE, Q16_ONE,
                         target_survival_sat).survival_priority;
@@ -3349,6 +3527,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 schedule_suspended_survival_restart(target_group);
                 {
                     int64_t realloc_sat = 0;
+                    EconomyCostProbe::record("owner_quote.call.emp_realloc_owner",
+                                              _current_day.get(), 0.0, 1);
                     if (owner_opportunity_quote(target_group, Q16_ONE, Q16_ONE,
                             realloc_sat).survival_priority)
                         ++_building_owner_survival_reallocations;
@@ -3460,6 +3640,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 schedule_suspended_survival_restart(target_group);
                 {
                     int64_t realloc_sat = 0;
+                    EconomyCostProbe::record("owner_quote.call.emp_realloc_employee",
+                                              _current_day.get(), 0.0, 1);
                     if (owner_opportunity_quote(target_group, Q16_ONE, Q16_ONE,
                             realloc_sat).survival_priority)
                         ++_building_owner_survival_reallocations;
@@ -3548,6 +3730,18 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                  SUBJECT_BUILDING_GROUP, cell, first, last - first,
                  local_owner, local_employee, local_unemployed, last - first,
                  event_legs.empty() ? nullptr : &event_legs);
+    EconomyCostProbe::record("employment.cell_hire", _current_day.get(),
+                             elapsed_ms(employment_hire_started));
+    EconomyCostProbe::record("employment.hire_ownerjob", _current_day.get(),
+                             elapsed_ms(employment_ownerjob_started));
+    EconomyCostProbe::record("employment.cell_total", _current_day.get(),
+                             elapsed_ms(employment_cell_started));
+    EconomyCostProbe::record("employment.candidate_scans", _current_day.get(),
+                             0.0, static_cast<uint64_t>(
+                                 std::max<int64_t>(0, employment_candidate_scans)));
+    EconomyCostProbe::record("employment.pool_lookups", _current_day.get(),
+                             0.0, static_cast<uint64_t>(
+                                 std::max<int64_t>(0, employment_pool_lookups)));
     return true;
 }
 

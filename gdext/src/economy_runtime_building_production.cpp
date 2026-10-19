@@ -1,4 +1,5 @@
 #include "economy_runtime.h"
+#include "economy_cost_probe.h"
 #include "country_runtime.h"
 
 #include <algorithm>
@@ -309,6 +310,26 @@ bool NativeEconomyRuntime::run_building_production_cell(
     result.cell = cell;
     ProductionResult *previous_sink = _production_result_sink;
     _production_result_sink = &result;
+    const auto production_cell_started = Clock::now();
+    Clock::time_point production_prepare_mark = production_cell_started;
+    // production_climate_capacity_q16() is a pure function of (cell, type) and
+    // also yields the temperature/water fit outputs. Groups of the same type in
+    // one cell therefore share the result; cache per type within the cell call.
+    thread_local std::vector<uint32_t> climate_type_stamp;
+    thread_local std::vector<int64_t> climate_type_capacity;
+    thread_local std::vector<int64_t> climate_type_temperature_fit;
+    thread_local std::vector<int64_t> climate_type_water_fit;
+    thread_local uint32_t climate_type_generation = 0;
+    if (climate_type_stamp.size() < _building_types.size()) {
+        climate_type_stamp.assign(_building_types.size(), 0);
+        climate_type_capacity.resize(_building_types.size(), 0);
+        climate_type_temperature_fit.resize(_building_types.size(), Q16_ONE);
+        climate_type_water_fit.resize(_building_types.size(), Q16_ONE);
+    }
+    if (++climate_type_generation == 0) {
+        std::fill(climate_type_stamp.begin(), climate_type_stamp.end(), 0);
+        climate_type_generation = 1;
+    }
     int64_t &_saturation_count = result.saturation_count;
     int64_t &_processed_building_groups = result.processed_building_groups;
     int64_t &_climate_profiled_building_groups =
@@ -522,8 +543,11 @@ bool NativeEconomyRuntime::run_building_production_cell(
         return false;
     };
     for (int32_t g = begin; g < end; ++g) {
+        {
+            const auto group_view = building_view(static_cast<size_t>(g));
+            if (group_view.cell != cell || group_view.count <= 0) continue;
+        }
         auto group = building_at(static_cast<size_t>(g));
-        if (group.cell != cell || group.count <= 0) continue;
         group.last_capacity_q16 = 0;
         group.last_input = group.last_output = group.last_sold = group.last_discarded = 0;
         group.last_resource = group.last_revenue = 0;
@@ -546,7 +570,37 @@ bool NativeEconomyRuntime::run_building_production_cell(
         group.last_bonus_paid = group.last_bonus_due = 0;
         group.wage_suspended = 0;
         const BuildingType &type = _building_types[group.type_id];
-        prepare_group_climate_capacity(group, type);
+        {
+            const int32_t climate_type_id = group.type_id;
+            const bool climate_cacheable = climate_type_id >= 0 &&
+                static_cast<size_t>(climate_type_id) < climate_type_stamp.size();
+            int64_t capacity = 0;
+            int64_t temperature_fit = Q16_ONE;
+            int64_t water_fit = Q16_ONE;
+            if (climate_cacheable &&
+                climate_type_stamp[static_cast<size_t>(climate_type_id)] ==
+                    climate_type_generation) {
+                const size_t slot = static_cast<size_t>(climate_type_id);
+                capacity = climate_type_capacity[slot];
+                temperature_fit = climate_type_temperature_fit[slot];
+                water_fit = climate_type_water_fit[slot];
+            } else {
+                capacity = production_climate_capacity_q16(
+                    type, group.cell, &temperature_fit, &water_fit,
+                    _saturation_count);
+                if (climate_cacheable) {
+                    const size_t slot = static_cast<size_t>(climate_type_id);
+                    climate_type_stamp[slot] = climate_type_generation;
+                    climate_type_capacity[slot] = capacity;
+                    climate_type_temperature_fit[slot] = temperature_fit;
+                    climate_type_water_fit[slot] = water_fit;
+                }
+            }
+            group.last_climate_capacity_q16 = capacity;
+            group.last_temperature_fit_q16 = temperature_fit;
+            group.last_water_fit_q16 = water_fit;
+            group.last_climate_lost_output = 0;
+        }
         for (int32_t input = 0; input < type.input_count; ++input) {
             _building_last_input_selected_goods[
                 group.last_input_selection_begin + input] = -1;
@@ -652,6 +706,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 owner_groups[static_cast<size_t>(fill_cursor[static_cast<size_t>(owner)]++)] = g;
         }
     }
+    EconomyCostProbe::record("production.prepare.owners", _current_day.get(),
+                             elapsed_ms(production_prepare_mark));
+    production_prepare_mark = Clock::now();
     auto retention_lane = [&](size_t owner, int32_t good) -> int32_t {
         if (owner >= payroll_owners.size() || good < 0 || good >= market_store().good_count.get())
             return -1;
@@ -698,11 +755,17 @@ bool NativeEconomyRuntime::run_building_production_cell(
             }
         }
     }
+    EconomyCostProbe::record("production.prepare.retention_setup", _current_day.get(),
+                             elapsed_ms(production_prepare_mark));
+    production_prepare_mark = Clock::now();
     const EnvironmentSample retention_environment = environment_sample_for_cell(cell);
     build_demand_basis_cached(cell, market, retention_environment,
                        retention_variant_scores, retention_variant_prices,
                        retention_need_score_sums, retention_need_composites,
                        retention_need_environment, _saturation_count);
+    EconomyCostProbe::record("production.prepare.basis", _current_day.get(),
+                             elapsed_ms(production_prepare_mark));
+    production_prepare_mark = Clock::now();
     thread_local std::vector<int32_t> retention_family_factors;
     for (size_t owner = 0; owner < payroll_owners.size(); ++owner) {
         retention_family_factors.assign(_good_ids.size(), -1);
@@ -853,6 +916,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
         ? _market_signals.cell_offsets[cell + 1] : 0;
     const size_t cell_signal_count = static_cast<size_t>(
         std::max(0, cell_signal_end - cell_signal_begin));
+    EconomyCostProbe::record("production.prepare.retention_plan", _current_day.get(),
+                             elapsed_ms(production_prepare_mark));
+    production_prepare_mark = Clock::now();
     auto physical_input_quantity = [&](int64_t effective,
                                        const InputCandidate &candidate) -> int64_t {
         int64_t physical = mul_div_sat(
@@ -1311,9 +1377,13 @@ bool NativeEconomyRuntime::run_building_production_cell(
         for (int32_t gi = owner_group_offsets[owner_index];
              gi < owner_group_offsets[owner_index + 1]; ++gi) {
             const int32_t g = owner_groups[static_cast<size_t>(gi)];
+            {
+                const auto group_view = building_view(static_cast<size_t>(g));
+                if (group_view.owner_signature_id != owner_signature ||
+                    group_view.count <= 0 || group_view.operating_state == 1 ||
+                    !building_available(cell, group_view.type_id, true)) continue;
+            }
             auto group = building_at(static_cast<size_t>(g));
-            if (group.owner_signature_id != owner_signature || group.count <= 0 ||
-                group.operating_state == 1 || !building_available(cell, group.type_id, true)) continue;
             const BuildingType &type = _building_types[group.type_id];
             wage_commitment = saturating_add(
                 wage_commitment, group.last_base_wages_due, _saturation_count);
@@ -1484,15 +1554,24 @@ bool NativeEconomyRuntime::run_building_production_cell(
             allocate(candidate, candidate.desired_cost);
         }
     }
+    EconomyCostProbe::record("production.prepare.working_capital", _current_day.get(),
+                             elapsed_ms(production_prepare_mark));
+    EconomyCostProbe::record("production.sec_prepare", _current_day.get(),
+                             elapsed_ms(production_cell_started));
+    const auto production_phases_started = Clock::now();
     auto process_phase = [&](bool cycle_flow_phase) -> bool {
         offers.clear();
         for (int32_t g = begin; g < end; ++g) {
+            {
+                const auto group_view = building_view(static_cast<size_t>(g));
+                if (group_view.cell != cell || group_view.count <= 0 ||
+                    !building_available(cell, group_view.type_id, true)) continue;
+                if (group_view.operating_state == 1) continue;
+                if (produces_cycle_flow(
+                        _building_types[group_view.type_id]) != cycle_flow_phase) continue;
+            }
             auto group = building_at(static_cast<size_t>(g));
-            if (group.cell != cell || group.count <= 0 ||
-                !building_available(cell, group.type_id, true)) continue;
-            if (group.operating_state == 1) continue;
             const BuildingType &type = _building_types[group.type_id];
-            if (produces_cycle_flow(type) != cycle_flow_phase) continue;
             ++_processed_building_groups;
             if (type.production_climate_profile_id >= 0) {
                 ++_climate_profiled_building_groups;
@@ -2723,6 +2802,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
         _production_result_sink = previous_sink;
         return false;
     }
+    EconomyCostProbe::record("production.sec_phases", _current_day.get(),
+                             elapsed_ms(production_phases_started));
+    const auto production_rest_started = Clock::now();
 
     // Production first spends only on physical inputs. Base wages are income
     // distribution and settle after the producer has sold this cycle's output.
@@ -2749,9 +2831,12 @@ bool NativeEconomyRuntime::run_building_production_cell(
         int64_t owner_paid = 0;
         for (int32_t gi = owner_groups_begin; gi < owner_groups_end; ++gi) {
             const int32_t g = owner_groups[static_cast<size_t>(gi)];
+            {
+                const auto group_view = building_view(static_cast<size_t>(g));
+                if (group_view.owner_signature_id != owner_signature ||
+                    !building_available(cell, group_view.type_id, true)) continue;
+            }
             auto group = building_at(static_cast<size_t>(g));
-            if (group.owner_signature_id != owner_signature ||
-                !building_available(cell, group.type_id, true)) continue;
             const BuildingType &type = _building_types[group.type_id];
             for (int32_t r = 0; r < type.employee_count; ++r) {
                 const int32_t role_index = group.employee_fill_begin + r;
@@ -2785,9 +2870,12 @@ bool NativeEconomyRuntime::run_building_production_cell(
             _building_wages_unpaid, total_due - owner_paid, _saturation_count);
         for (int32_t gi = owner_groups_begin; gi < owner_groups_end; ++gi) {
             const int32_t g = owner_groups[static_cast<size_t>(gi)];
+            {
+                const auto group_view = building_view(static_cast<size_t>(g));
+                if (group_view.owner_signature_id != owner_signature ||
+                    !building_available(cell, group_view.type_id, true)) continue;
+            }
             auto group = building_at(static_cast<size_t>(g));
-            if (group.owner_signature_id != owner_signature ||
-                !building_available(cell, group.type_id, true)) continue;
             group.last_wages_paid = group.last_base_wages_paid;
             group.last_operating_cost = saturating_add(
                 group.last_input_cost, group.last_base_wages_due, _saturation_count);
@@ -2799,9 +2887,12 @@ bool NativeEconomyRuntime::run_building_production_cell(
     // Merchant debt is serviced after base wages and before discretionary
     // bonuses. Principal is retired before the one-time premium.
     for (int32_t g = begin; g < end; ++g) {
+        {
+            const auto group_view = building_view(static_cast<size_t>(g));
+            if (group_view.merchant_debt_principal <= 0 &&
+                group_view.merchant_debt_premium <= 0) continue;
+        }
         auto group = building_at(static_cast<size_t>(g));
-        if (group.merchant_debt_principal <= 0 && group.merchant_debt_premium <= 0)
-            continue;
         const int32_t owner_slot = find_cohort_slot(cell, group.owner_signature_id);
         int64_t due_sat = 0;
         const int64_t due = building_debt_due(group, due_sat);
@@ -2834,8 +2925,12 @@ bool NativeEconomyRuntime::run_building_production_cell(
     // Profit bonuses are settled after sales. They cannot retroactively stop
     // production and are excluded from the local regular-wage anchor.
     for (int32_t g = begin; g < end; ++g) {
+        {
+            const auto group_view = building_view(static_cast<size_t>(g));
+            if (group_view.wage_suspended != 0 ||
+                group_view.last_base_wages_due <= 0) continue;
+        }
         auto group = building_at(static_cast<size_t>(g));
-        if (group.wage_suspended != 0 || group.last_base_wages_due <= 0) continue;
         const BuildingType &type = _building_types[group.type_id];
         const int64_t base_cost = saturating_add(
             group.last_input_cost, group.last_base_wages_due, _saturation_count);
@@ -3556,6 +3651,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
             std::max<int64_t>(0, result.merchant_credit_drawn -
                 cell_credit_drawn_before), _saturation_count);
     }
+    EconomyCostProbe::record("production.sec_rest", _current_day.get(),
+                             elapsed_ms(production_rest_started));
     _production_result_sink = previous_sink;
     return true;
 }
