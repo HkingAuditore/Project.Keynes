@@ -11,7 +11,7 @@
 
 namespace pk {
 
-constexpr uint32_t RUNTIME_IDEOLOGY_POD_ABI_VERSION = 3u;
+constexpr uint32_t RUNTIME_IDEOLOGY_POD_ABI_VERSION = 4u;
 constexpr uint32_t RUNTIME_IDEOLOGY_POD_MAX_COUNTRIES = 1u << 20;
 constexpr uint32_t RUNTIME_IDEOLOGY_POD_MAX_IDEAS = 65536u;
 constexpr uint32_t RUNTIME_IDEOLOGY_POD_MAX_COMMANDS = 1u << 20;
@@ -106,6 +106,9 @@ struct RuntimeIdeologyPodDefinition {
     uint32_t stance_count = 0;
     std::array<int32_t, 3> support_threshold_q16{};
     int32_t exclusion_group_id = -1;
+    // Era the idea belongs to; drives the draw-weight decay curve. Appended last
+    // so the field order of every earlier member stays put.
+    int32_t era_index = 0;
 };
 
 struct RuntimeIdeologyPodClassStance {
@@ -167,6 +170,12 @@ struct RuntimeIdeologyPodCatalog {
     std::vector<int32_t> technology_requirements;
     std::vector<int32_t> signal_requirements;
     std::vector<int32_t> gate_requirements;
+    // Draw-weight decay by (unlocked_era - idea.era_index); empty means no decay.
+    std::vector<int32_t> era_decay_bp;
+    // Dense technology index of each era's milestone; -1 marks an era with none.
+    // The worker derives the country's unlocked era from these bits, exactly like
+    // the main runtime, so no extra command has to cross the domain boundary.
+    std::vector<int32_t> era_milestone_technologies;
     std::vector<RuntimeIdeologyPodClassStance> class_stances;
     std::vector<RuntimeIdeologyPodSynergyRequirement> synergy_requirements;
     std::vector<RuntimeIdeologyPodSynergy> synergies;
@@ -261,6 +270,10 @@ struct RuntimeIdeologyPodCountryState {
     uint64_t draw_sequence = 0;
     int32_t ideology_slots_used = 0;
     int32_t spirit_slots_used = 0;
+    // Pushed by the content layer through SET_ERA before that day's draw. Kept on
+    // the row (not derived at draw time) so the main runtime and the worker read
+    // the same number and the value survives save/restore.
+    int32_t unlocked_era = 0;
     uint64_t opinion_revision = 0;
     RuntimeIdeologyPodOffer offer;
     std::vector<uint64_t> known_bits;
@@ -432,6 +445,10 @@ private:
     bool draw_offer(RuntimeIdeologyPodSnapshot &state,
                     const RuntimeCountryPodSnapshot &country, uint32_t slot,
                     std::string &error) const;
+    // Deepest era whose milestone technology this country holds. Derived from the
+    // same catalog rows the main runtime uses so both agree without a round trip.
+    int32_t unlocked_era_for(const RuntimeCountryPodSnapshot &country,
+                             uint32_t slot) const;
     bool apply_ack(RuntimeIdeologyPodSnapshot &state,
                    const RuntimeDomainAck &ack, int64_t day,
                    RuntimeIdeologyPodPlan &plan,

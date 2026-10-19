@@ -19,6 +19,7 @@ var _section_cache: Dictionary = {}
 var _section_cache_revisions: Dictionary = {}
 var _static_catalog_cache: Dictionary = {}
 var _economy_history := EconomyHistoryBuffer.new()
+var _gdp_ledger: EconomyGdpLedger = null
 var _strata_table: SocialStrataTable
 
 
@@ -27,6 +28,15 @@ func set_context(generator) -> void:
 	_section_cache.clear()
 	_section_cache_revisions.clear()
 	_economy_history.reset()
+
+
+## 年度产值账本由 GameUIManager 持有并推进；这里只持有引用，供卷宗横幅读取。
+func set_gdp_ledger(ledger: EconomyGdpLedger) -> void:
+	_gdp_ledger = ledger
+
+
+func gdp_ledger() -> EconomyGdpLedger:
+	return _gdp_ledger
 
 
 func economy_history() -> EconomyHistoryBuffer:
@@ -501,6 +511,7 @@ func build(section_id: String = "technology") -> Dictionary:
 	model["economy_facade"] = economy_facade
 	if normalized_section == "economy":
 		model["economy_history"] = _economy_history
+		model["gdp_ledger"] = _gdp_ledger
 		model["strata_table"] = strata_table()
 	model.merge(section_snapshot, true)
 	if normalized_section == "technology":

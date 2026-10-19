@@ -222,6 +222,13 @@ func _check_component_scenes() -> void:
 					scene.has_node("PageViewport/PageColumn/PageStack/%s" % page_name))
 			_expect("economy dossier KPI strip scrolls with the chapter",
 				scene.has_node("PageViewport/PageColumn/KpiStrip/KpiRow/Kpi4"))
+			_expect("economy dossier carries the annual GDP band",
+				scene.has_node("PageViewport/PageColumn/GdpBand/GdpCanvas"))
+			# 横幅是页头第一块：排在 KPI 条之前，打开卷宗第一眼就看得到。
+			var page_column := scene.get_node("PageViewport/PageColumn")
+			_expect("annual GDP band precedes the KPI strip",
+				page_column.get_node("GdpBand").get_index()
+					< page_column.get_node("KpiStrip").get_index())
 		if scene_path.ends_with("economy_workspace.tscn"):
 			_expect("economy workspace has tax sub-tabs", scene.has_node("Column/TaxTabs"))
 			_expect("economy workspace has treasury insights", scene.has_node("Column/Insights"))

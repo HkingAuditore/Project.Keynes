@@ -221,6 +221,21 @@ struct RuntimeEffectPodDefinition {
         {65536, 65536, 65536, 65536, 65536, 65536}};
 };
 
+// Native Modifier adapter kinds. Mirrors EffectRuntime's private
+// NativeModifierAdapterKind (effect_runtime.h). Duplicated here because the
+// worker Modifier stage must read them without pulling in effect_runtime.h;
+// effect_runtime.cpp carries static_asserts pinning the two enumerations
+// together so they cannot drift.
+enum RuntimeEffectModifierAdapter : int32_t {
+    EFFECT_MODIFIER_GENERIC = 0,
+    EFFECT_MODIFIER_TECHNOLOGY = 1,
+    EFFECT_MODIFIER_FAMILY = 2,
+    EFFECT_MODIFIER_PERSON = 3,
+    EFFECT_MODIFIER_TRIGGER = 4,
+    EFFECT_MODIFIER_FAMILY_EFFECT = 5,
+    EFFECT_MODIFIER_IDEOLOGY = 6,
+};
+
 struct RuntimeEffectPodCatalog {
     uint32_t abi_version = RUNTIME_EFFECT_POD_ABI_VERSION;
     uint32_t catalog_version = RUNTIME_EFFECT_POD_CATALOG_VERSION;
@@ -235,6 +250,13 @@ struct RuntimeEffectPodCatalog {
     std::vector<RuntimeEffectPodCondition> conditions;
     std::vector<RuntimeEffectPodInstruction> instructions;
     std::vector<RuntimeEffectPodCommandDefinition> commands;
+    // Transport-only metadata: one entry per `commands` row, carrying the
+    // EffectRuntime native Modifier adapter the command was compiled with.
+    // Deliberately NOT part of catalog_hash() and NOT serialized, so the POD
+    // ABI, the catalog hash and existing PKEF saves are all unaffected.
+    // Empty means "not supplied"; build_intents then leaves the adapter at
+    // GENERIC and the Modifier stage falls back to its domain heuristic.
+    std::vector<int32_t> command_native_adapters;
 };
 
 struct RuntimeEffectPodInstanceInput {
@@ -428,6 +450,33 @@ public:
     static uint16_t adapter_domain(RuntimeEffectPodAction action) noexcept;
     static bool self_test(std::string &error);
 
+    // ── Cross-thread capability ceiling ─────────────────────────────────────
+    // Not policy knobs. The POD never resolves a target selector (the main
+    // thread resolves cells and hands over a target_handle) and reads state
+    // through one shared switch, so its ceiling must track the main thread's.
+    // When these numbers sat below main thread (7 / 3), one advanced card made
+    // the whole catalog fail validation, which left the EFFECT bit of the
+    // completed-mask unset and stopped the entire twelve-domain authority graph
+    // from ever being granted. scripts/effect/effect_catalog.gd mirrors both.
+    static constexpr int32_t MAX_SELECTOR_KIND = 11;  // DISTANCE_N
+    static constexpr int32_t MAX_STATE_ID = 4;        // STATE_STACK_COUNT
+
+    // ── Cross-thread value contract ─────────────────────────────────────────
+    // state_value and scaled_command_stacks are the only two places the worker
+    // derives a number the main thread also derives. They are free-standing so
+    // EffectRuntime::pod_state_parity_self_test can diff them against the main
+    // thread's own formulas. Two hand-written copies of the state switch is
+    // exactly how they drifted: the worker answered 0=level(raw) 1=fire(raw)
+    // 2=stack 3=revision while the main thread answered 0=level*Q16
+    // 1=fire*Q16 2=revision 3=remaining*Q16 4=stack*Q16, so every Q16-authored
+    // state threshold was permanently false on the worker and true on the main
+    // thread.
+    static int64_t state_value(const RuntimeEffectPodInstance &instance,
+                               int32_t state_id, int64_t day) noexcept;
+    static int32_t scaled_command_stacks(int32_t base_stacks,
+                                         int32_t stack_count,
+                                         int32_t max_stacks) noexcept;
+
 private:
     struct State {
         uint64_t generation = 0;
@@ -464,7 +513,7 @@ private:
                            std::string &error) const;
     bool evaluate_conditions(const RuntimeEffectPodDefinition &definition,
                              const RuntimeEffectPodInstance &instance,
-                             const State &state) const;
+                             const State &state, int64_t day) const;
     bool execute_program(const RuntimeEffectPodDefinition &definition,
                          const RuntimeEffectPodInstance &instance,
                          const State &state, int64_t day,

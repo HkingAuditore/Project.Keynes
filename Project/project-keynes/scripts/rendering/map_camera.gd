@@ -480,6 +480,30 @@ func _world_to_screen(world: Vector2) -> Vector2:
 	var vp_center := get_viewport_rect().size * 0.5
 	return vp_center + (world - position) * zoom.x
 
+## 屏幕 → 世界的公开入口。悬停取格必须走这里，不能在 UI 侧复制公式：
+## 坐标系一旦改锚点模式，复制的副本会静默偏移。
+func safe_screen_to_world(screen: Vector2) -> Vector2:
+	return _screen_to_world(screen, zoom.x)
+
+
+## 世界 → 屏幕的公开入口，与 safe_screen_to_world 严格互逆（同一套锚点公式）。
+func safe_world_to_screen(world: Vector2) -> Vector2:
+	return _world_to_screen(world)
+
+
+## 视野是否正在移动（拖拽 / 捏合 / 聚焦动画 / 惯性滑动）。
+## 悬停卡据此在视野运动中退场，避免"卡片指向的格子已经不是脚下这格"。
+func is_panning() -> bool:
+	if _pan_active or _pinching or _pan_anim_active:
+		return true
+	return _pan_velocity.length() > pan_inertia_min_speed
+
+
+## 是否正在向目标缩放插值（滚轮 / 键盘 / 双击）。
+func is_zooming() -> bool:
+	return not zoom.is_equal_approx(_target_zoom)
+
+
 func _touch_distance() -> float:
 	var pts := _touches.values()
 	if pts.size() < 2:

@@ -114,6 +114,7 @@ func configure(world_ext: Object, cell_count: int, seed: int, profile = null) ->
 		_need_display_names = EconomyCatalogScript.need_display_names()
 		_good_display_names = _load_display_names(GOOD_PROFILE_DIR)
 		_load_family_effect_displays()
+	_register_modifier_display_names()
 	var native_profile: Dictionary = _profile.to_native_profile()
 	_apply_forced_cadence_env(native_profile)
 	var result: Dictionary = _world_ext.configure_economy(
@@ -1654,6 +1655,17 @@ func _attach_population_display_metadata(snapshot: Dictionary) -> void:
 			String(stable_id), String(stable_id))))
 	snapshot["profession_display_names"] = profession_names
 	snapshot["ethnicity_display_names"] = ethnicity_names
+
+
+func _register_modifier_display_names() -> void:
+	# Modifier lines on idea cards are rendered from selector-addressable stat keys
+	# such as country.output.building.iron_tool_workshop_factor. The card formatter
+	# resolves the trailing stable id through this registry, so it always matches
+	# the name the economy UI shows instead of leaking the raw slug.
+	ModifierCatalogScript.register_display_names(&"building", _building_display_names)
+	ModifierCatalogScript.register_display_names(&"good", _good_display_names)
+	ModifierCatalogScript.register_display_names(&"profession", _profession_display_names)
+	ModifierCatalogScript.register_display_names(&"need", _need_display_names)
 
 
 func _load_family_effect_displays() -> void:

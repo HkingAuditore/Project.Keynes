@@ -750,33 +750,257 @@ void NativeEconomyRuntime::notify_era_milestone_activated(uint64_t country_handl
 void NativeEconomyRuntime::collect_family_effect_target_cells(
         int32_t source_cell, int32_t selector_kind,
         std::vector<int32_t> &out_cells) const {
+    // Family rows never carried selector params, so 0 means "runtime default".
+    collect_effect_target_cells(source_cell, selector_kind, 0, 0, out_cells);
+}
+
+int32_t NativeEconomyRuntime::dominant_resource_at(int32_t cell) const {
+    const int32_t cells = _cell_count.get();
+    if (cell < 0 || cell >= cells) return -1;
+    const auto &stock = resource_stock_lanes();
+    const size_t stride = static_cast<size_t>(cells);
+    const size_t resource_count = stock.size() / stride;
+    int32_t best = -1;
+    int64_t best_value = 0;
+    for (size_t resource = 0; resource < resource_count; ++resource) {
+        const size_t index = resource * stride + static_cast<size_t>(cell);
+        const int64_t value = stock[index];
+        // Strict '>' keeps ties on the lowest resource id, so the answer does
+        // not depend on iteration order.
+        if (value <= 0 || value <= best_value) continue;
+        best_value = value;
+        best = static_cast<int32_t>(resource);
+    }
+    return best;
+}
+
+int32_t NativeEconomyRuntime::dominant_resource_stock_share_q16(int32_t cell) const {
+    const int32_t cells = _cell_count.get();
+    if (cell < 0 || cell >= cells) return 0;
+    const auto &stock = resource_stock_lanes();
+    const size_t stride = static_cast<size_t>(cells);
+    const size_t resource_count = stock.size() / stride;
+    int64_t total = 0;
+    int64_t best = 0;
+    for (size_t resource = 0; resource < resource_count; ++resource) {
+        const int64_t value = stock[resource * stride + static_cast<size_t>(cell)];
+        if (value <= 0) continue;
+        total += value;
+        if (value > best) best = value;
+    }
+    if (total <= 0 || best <= 0) return 0;
+    return static_cast<int32_t>(std::clamp<int64_t>(
+        best * Q16_ONE / total, 0, Q16_ONE));
+}
+
+int32_t NativeEconomyRuntime::dominant_output_good_at(
+        int32_t cell, int32_t &out_share_q16) const {
+    out_share_q16 = 0;
+    const int32_t cells = _cell_count.get();
+    if (cell < 0 || cell >= cells) return -1;
+    if (_building_cell_offsets.size() != static_cast<size_t>(cells) + 1) return -1;
+    // last_output is already net of output_factor_q16 (see
+    // effective_building_output_quantity_at), so spreading it across the
+    // authored mix yields a genuine output share -- injecting the sector
+    // coefficient again here would square it and break the feedback loop.
+    std::unordered_map<int32_t, int64_t> good_output;
+    int64_t total = 0;
+    for (int32_t group_index = _building_cell_offsets[static_cast<size_t>(cell)];
+         group_index < _building_cell_offsets[static_cast<size_t>(cell) + 1];
+         ++group_index) {
+        const auto group = building_view(static_cast<size_t>(group_index));
+        if (group.count <= 0 || group.last_output <= 0) continue;
+        if (group.type_id < 0 ||
+            group.type_id >= static_cast<int32_t>(_building_types.size()))
+            continue;
+        const BuildingType &type = _building_types[static_cast<size_t>(group.type_id)];
+        if (type.output_count <= 0) continue;
+        int64_t mix_total = 0;
+        for (int32_t output = type.output_begin;
+             output < type.output_begin + type.output_count; ++output) {
+            if (output < 0 || output >= static_cast<int32_t>(_building_outputs.size()))
+                continue;
+            const int64_t quantity =
+                _building_outputs[static_cast<size_t>(output)].quantity;
+            if (quantity > 0) mix_total += quantity;
+        }
+        if (mix_total <= 0) continue;
+        for (int32_t output = type.output_begin;
+             output < type.output_begin + type.output_count; ++output) {
+            if (output < 0 || output >= static_cast<int32_t>(_building_outputs.size()))
+                continue;
+            const GoodAmount &item = _building_outputs[static_cast<size_t>(output)];
+            if (item.good_id < 0 || item.quantity <= 0) continue;
+            const int64_t share = group.last_output * item.quantity / mix_total;
+            if (share <= 0) continue;
+            good_output[item.good_id] += share;
+            total += share;
+        }
+    }
+    if (total <= 0) return -1;
+    int32_t best_good = -1;
+    int64_t best = 0;
+    // unordered_map iteration order is unspecified, so the tie-break on the
+    // lowest good id is what makes the answer deterministic.
+    for (const auto &entry : good_output) {
+        if (entry.second <= 0) continue;
+        if (entry.second > best ||
+            (entry.second == best && (best_good < 0 || entry.first < best_good))) {
+            best = entry.second;
+            best_good = entry.first;
+        }
+    }
+    if (best_good < 0) return -1;
+    out_share_q16 = static_cast<int32_t>(std::clamp<int64_t>(
+        best * Q16_ONE / total, 0, Q16_ONE));
+    return best_good;
+}
+
+int32_t NativeEconomyRuntime::cell_country_slot(int32_t cell) const {    if (cell < 0) return -1;
+    if (_epoch_cell_country.size() != static_cast<size_t>(_cell_count.get()))
+        return -1;
+    if (cell >= static_cast<int32_t>(_epoch_cell_country.size())) return -1;
+    return _epoch_cell_country[static_cast<size_t>(cell)];
+}
+
+int32_t NativeEconomyRuntime::country_anchor_cell(int32_t country_slot) const {
+    if (country_slot < 0) return -1;
+    const int32_t cells = _cell_count.get();
+    if (_epoch_cell_country.size() != static_cast<size_t>(cells)) return -1;
+    for (int32_t cell = 0; cell < cells; ++cell) {
+        if (_epoch_cell_country[static_cast<size_t>(cell)] == country_slot)
+            return cell;
+    }
+    return -1;
+}
+
+void NativeEconomyRuntime::collect_effect_target_cells(
+        int32_t source_cell, int32_t selector_kind, int32_t param0, int32_t param1,
+        std::vector<int32_t> &out_cells) const {
     out_cells.clear();
-    if (source_cell < 0 || source_cell >= _cell_count.get()) return;
-    if (selector_kind != kSelectorNeighborsR1 && selector_kind != kSelectorNeighborsR2) {
+    const int32_t cells = _cell_count.get();
+    if (source_cell < 0 || source_cell >= cells) return;
+    // Anything that is not a generalised selector resolves to the anchor only,
+    // which is exactly what the pre-existing 0..5 kinds meant.
+    if (selector_kind < EffectRuntime::SELECTOR_NEIGHBORS_R1 ||
+        selector_kind > EffectRuntime::SELECTOR_MAX_KIND) {
         out_cells.push_back(source_cell);
         return;
     }
-    if (_building_neighbors.size() != static_cast<size_t>(_cell_count.get()) * 6)
+    if (_building_neighbors.size() != static_cast<size_t>(cells) * 6) return;
+    // The generalised kinds read per-cell columns that share the neighbour
+    // snapshot's lifetime. A half-populated snapshot must degrade to "no
+    // targets" rather than index past the end of a shorter column.
+    const size_t cells_size = static_cast<size_t>(cells);
+    if (_building_terrain.size() != cells_size ||
+        _building_is_water.size() != cells_size ||
+        _building_has_river.size() != cells_size)
         return;
-    std::unordered_set<int32_t> unique;
-    auto push_ring = [&](int32_t cell) {
-        for (int32_t dir = 0; dir < 6; ++dir) {
-            const int32_t neighbor = _building_neighbors[
-                static_cast<size_t>(cell) * 6 + dir];
-            if (neighbor < 0 || neighbor >= _cell_count.get() || neighbor == source_cell)
-                continue;
-            unique.insert(neighbor);
+
+    // R1/R2 keep their historical 18-cell ceiling so existing family effect
+    // numbers do not move; the generalised kinds default to a smaller fan-out
+    // because they fan out instances rather than one aggregated binding.
+    const int32_t default_cap =
+        selector_kind <= EffectRuntime::SELECTOR_NEIGHBORS_R2
+        ? 18 : EffectRuntime::SELECTOR_DEFAULT_CELLS;
+    const int32_t cap = param0 > 0
+        ? std::min(param0, EffectRuntime::SELECTOR_MAX_CELLS)
+        : default_cap;
+    // Kinds 6/7 keep the family contract of never returning the anchor itself.
+    // The generalised kinds include it, because a "component" or "within N"
+    // that silently excludes its own anchor makes a lone cell behave as if the
+    // effect did not exist.
+    const bool include_anchor =
+        selector_kind >= EffectRuntime::SELECTOR_SAME_TERRAIN_COMPONENT;
+    // param0 is always the fan-out cap; param1 carries the kind-specific
+    // argument (predicate id, or hop count for SELECTOR_DISTANCE_N). Reusing
+    // param0 as the hop count would silently couple "reach 2 hops" with
+    // "return at most 2 cells", which is never what an author means.
+    int32_t max_depth = 0;
+    switch (selector_kind) {
+        case EffectRuntime::SELECTOR_NEIGHBORS_R1: max_depth = 1; break;
+        case EffectRuntime::SELECTOR_NEIGHBORS_R2: max_depth = 2; break;
+        case EffectRuntime::SELECTOR_DISTANCE_N:
+            max_depth = param1 > 0
+                ? std::min(param1, EffectRuntime::SELECTOR_MAX_CELLS) : 3;
+            break;
+        default: max_depth = cells; break;
+    }
+
+    // Predicate ids for SELECTOR_PREDICATE_ANY_CELL. Only per-cell columns that
+    // already exist are exposed here; output-share predicates arrive with the
+    // metric write-back milestone.
+    auto matches_predicate = [&](int32_t cell) {
+        switch (param1) {
+            case 1: return _building_has_river[static_cast<size_t>(cell)] != 0;
+            case 2: return _building_is_water[static_cast<size_t>(cell)] != 0;
+            case 3: return _building_is_water[static_cast<size_t>(cell)] == 0;
+            default: return false;
         }
     };
-    push_ring(source_cell);
-    if (selector_kind == kSelectorNeighborsR2) {
-        const std::vector<int32_t> ring1(unique.begin(), unique.end());
-        for (int32_t cell : ring1) push_ring(cell);
+    const int32_t anchor_terrain = _building_terrain[static_cast<size_t>(source_cell)];
+    const int32_t anchor_resource = dominant_resource_at(source_cell);
+    auto accepts = [&](int32_t cell) {
+        switch (selector_kind) {
+            case EffectRuntime::SELECTOR_SAME_TERRAIN_COMPONENT:
+                return _building_terrain[static_cast<size_t>(cell)] == anchor_terrain;
+            case EffectRuntime::SELECTOR_SAME_RESOURCE_COMPONENT:
+                return anchor_resource >= 0 &&
+                    dominant_resource_at(cell) == anchor_resource;
+            case EffectRuntime::SELECTOR_PREDICATE_ANY_CELL:
+                return matches_predicate(cell);
+            default:
+                return true;
+        }
+    };
+
+    // A predicate selector is grid-wide by definition: the author asks for
+    // "every cell with a river", not "the river cells reachable from here".
+    // Walking it with the component BFS below would silently confine the answer
+    // to cells bordering the anchor, because that walk only expands through
+    // cells that already passed the predicate.
+    if (selector_kind == EffectRuntime::SELECTOR_PREDICATE_ANY_CELL) {
+        for (int32_t cell = 0; cell < cells; ++cell) {
+            if (static_cast<int32_t>(out_cells.size()) >= cap) break;
+            if (matches_predicate(cell)) out_cells.push_back(cell);
+        }
+        std::sort(out_cells.begin(), out_cells.end());
+        out_cells.erase(std::unique(out_cells.begin(), out_cells.end()), out_cells.end());
+        if (static_cast<int32_t>(out_cells.size()) > cap) out_cells.resize(cap);
+        return;
     }
-    out_cells.assign(unique.begin(), unique.end());
+
+    std::vector<uint8_t> seen(static_cast<size_t>(cells), 0);
+    seen[static_cast<size_t>(source_cell)] = 1;
+    if (include_anchor && accepts(source_cell)) out_cells.push_back(source_cell);
+    if (include_anchor && static_cast<int32_t>(out_cells.size()) >= cap) return;
+    // Breadth-first so the cap keeps the *nearest* cells and the order is a
+    // pure function of the grid, never of hash iteration.
+    std::vector<int32_t> frontier;
+    frontier.push_back(source_cell);
+    std::vector<int32_t> next;
+    for (int32_t depth = 0; depth < max_depth && !frontier.empty(); ++depth) {
+        next.clear();
+        for (const int32_t cell : frontier) {
+            for (int32_t dir = 0; dir < 6; ++dir) {
+                const int32_t neighbor = _building_neighbors[
+                    static_cast<size_t>(cell) * 6 + dir];
+                if (neighbor < 0 || neighbor >= cells) continue;
+                if (seen[static_cast<size_t>(neighbor)] != 0) continue;
+                seen[static_cast<size_t>(neighbor)] = 1;
+                if (!accepts(neighbor)) continue;
+                next.push_back(neighbor);
+                out_cells.push_back(neighbor);
+                if (static_cast<int32_t>(out_cells.size()) >= cap) break;
+            }
+            if (static_cast<int32_t>(out_cells.size()) >= cap) break;
+        }
+        if (static_cast<int32_t>(out_cells.size()) >= cap) break;
+        frontier.swap(next);
+    }
     std::sort(out_cells.begin(), out_cells.end());
-    if (static_cast<int32_t>(out_cells.size()) > 18)
-        out_cells.resize(18);
+    out_cells.erase(std::unique(out_cells.begin(), out_cells.end()), out_cells.end());
+    if (static_cast<int32_t>(out_cells.size()) > cap) out_cells.resize(cap);
 }
 
 void NativeEconomyRuntime::fire_family_event_once_effect(int32_t family_index,

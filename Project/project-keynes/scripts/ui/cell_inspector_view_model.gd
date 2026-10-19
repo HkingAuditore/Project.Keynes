@@ -50,6 +50,7 @@ const TRADE_ORDER_NAME_CACHE_LIMIT := 256
 
 var _map: MapData
 var _generator
+var _gdp_ledger: EconomyGdpLedger = null
 var _view_adapter: DCViewAdapter
 var _world_clock: WorldClock
 var _sea_level: float = 0.42
@@ -74,6 +75,9 @@ var _need_display_names: Dictionary = {}
 var _need_display_names_loaded := false
 var _player_country_resolved := false
 var _player_country_handle_cache := -1
+## 悬停卡与侧栏共用「玩家已掌握科技」口径：按模拟日缓存一次，避免每格重查。
+var _technology_day := -999
+var _technology_ids_cache := PackedStringArray()
 var _research_signal_catalog: Dictionary = {}
 var _technology_catalog: Dictionary = {}
 ## 物资详情逐单商路：页缓存按 committed generation，行缓存再叠加 sample_day/视野 revision。
@@ -108,12 +112,41 @@ func set_context(map: MapData, generator, view_adapter: DCViewAdapter, world_clo
 	_building_history.clear()
 	_player_country_resolved = false
 	_player_country_handle_cache = -1
+	_technology_day = -999
+	_technology_ids_cache = PackedStringArray()
 	_trade_order_generation = -1
 	_trade_order_pages.clear()
 	_trade_order_models.clear()
 	_trade_order_names.clear()
 	_trade_order_good_indices.clear()
 	_trade_order_query_count = 0
+
+
+## 年度产值账本由 GameUIManager 持有并推进；地块档案只读它的逐格累计值。
+func set_gdp_ledger(ledger: EconomyGdpLedger) -> void:
+	_gdp_ledger = ledger
+
+
+## 本地年度产值快照。纯内存读取，不触发任何原生查询；未跟踪的格返回空字典，
+## 调用方据此决定是否渲染这两格（他国 / 无主 / 无人聚落都不给）。
+func _local_gdp(cell_idx: int) -> Dictionary:
+	if _gdp_ledger == null or not _gdp_ledger.ready():
+		return {}
+	if not _gdp_ledger.tracks_cell(cell_idx):
+		return {}
+	var population := _gdp_ledger.cell_population(cell_idx)
+	if population <= 0:
+		return {}
+	return {
+		"ytd": _gdp_ledger.cell_ytd(cell_idx),
+		"per_day": _gdp_ledger.cell_per_day(cell_idx),
+		"population": population,
+		"per_capita": _gdp_ledger.cell_per_capita(cell_idx),
+		"national_per_capita": _gdp_ledger.national_per_capita(),
+		"days_counted": _gdp_ledger.days_counted(),
+		"days_per_year": _gdp_ledger.days_per_year(),
+		"year_index": _gdp_ledger.year_index(),
+	}
 
 
 func observe_temperature(cell: HexCell, day_idx: int = -1) -> void:
@@ -314,7 +347,7 @@ func build_live_patch(
 			# 列表 live patch 不拉需求预览和市场价；对象详情仍走完整 snapshot。
 			population_summary = _population_snapshot(idx, include_details)
 			var market := _market_snapshot(idx) if include_details else {}
-			category = _population_category(population_summary, market)
+			category = _population_category(population_summary, market, idx)
 			category = _decorate_category_with_tax(idx, tab_id, category)
 			if bool(category.get("data_pending", false)):
 				population_summary = _population_summary(idx)
@@ -380,7 +413,7 @@ func _build_tab_category(cell: HexCell, tab_id: String) -> Dictionary:
 	match tab_id:
 		"population":
 			return _decorate_category_with_tax(idx, tab_id,
-				_population_category(_population_snapshot(idx), _market_snapshot(idx)))
+				_population_category(_population_snapshot(idx), _market_snapshot(idx), idx))
 		"families":
 			return _family_category(_family_cell_snapshot(idx))
 		"market":
@@ -2500,7 +2533,7 @@ func _resources_category(resource_state: Array, visibility: Dictionary = {}) -> 
 			continue
 		var reserve := float(item.get("reserve", 0.0))
 		var delta := float(item.get("delta", 0.0))
-		var density := _resource_density_band(float(item.get("density_ratio", 0.0)))
+		var density := resource_density_band(float(item.get("density_ratio", 0.0)))
 		rows.append({
 			"id": String(item.get("id", item.get("name", "resource"))),
 			"name": String(item.get("name", "资源")),
@@ -2579,6 +2612,19 @@ func _country_summary(cell_idx: int) -> Dictionary:
 		return {"country_name": "无主之地"}
 	var summary: Dictionary = facade.cell_summary(cell_idx)
 	return summary if bool(summary.get("ok", false)) else {"country_name": "无主之地"}
+
+
+## 悬停卡复用的公开入口：「无主之地」文案与 pending 回退只允许一份实现。
+func population_summary(cell_idx: int) -> Dictionary:
+	return _population_summary(cell_idx)
+
+
+func country_summary(cell_idx: int) -> Dictionary:
+	return _country_summary(cell_idx)
+
+
+func sample_day() -> int:
+	return _current_sample_day()
 
 
 func _market_snapshot(cell_idx: int) -> Dictionary:
@@ -3313,7 +3359,49 @@ func _family_notable_person_rows(facade, family_handle: int) -> Array:
 	return rows
 
 
-func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}) -> Dictionary:
+## 本地年度产值与人均年度产值。数据全在内存账本里，不发起任何原生查询；
+## 未跟踪的格返回空数组，调用方不会多出两格空白指标。
+## 金额格式沿用本页邻居（居民存款 / 粮食产出）的 _money_text 约定，不额外加货币符号。
+func _gdp_metrics(cell_idx: int) -> Array:
+	var gdp := _local_gdp(cell_idx)
+	if gdp.is_empty():
+		return []
+	var ytd := float(gdp.get("ytd", 0.0))
+	var per_day := float(gdp.get("per_day", 0.0))
+	var days := int(gdp.get("days_counted", 0))
+	var days_per_year := maxi(1, int(gdp.get("days_per_year", 365)))
+	# 事实表单行只有 44px，副行留给「年度走到哪一天」——累计值最容易被误读成
+	# 全年完成额，日均产值挪进 tooltip，不占可见宽度。
+	var metrics := [{
+		"id": "population_gdp", "title": "本地年度产值",
+		"value": _money_text(int(round(ytd))),
+		"subtitle": "已计 %d/%d 天" % [days, days_per_year],
+		"accent": UITokens.ECO, "icon": "metric.treasury",
+		"tooltip": "收入法：建筑营收 − 中间投入 − 维护（= 工资 + 营业盈余，不含营业税）。本年度逐经济周期累计，与全国口径一致。\n日均产值 %s。" % _money_text(int(round(per_day))),
+	}]
+	var per_capita := float(gdp.get("per_capita", NAN))
+	var national_per_capita := float(gdp.get("national_per_capita", NAN))
+	if is_nan(per_capita):
+		return metrics
+	var subtitle := ""
+	# 标题已写明「人均」，副行不再重复这两个字，省下的宽度留给大额数字。
+	if not is_nan(national_per_capita) and national_per_capita > 0.0:
+		var gap := (per_capita - national_per_capita) / national_per_capita * 100.0
+		subtitle = "全国 %s（%s%.0f%%）" % [
+			_money_text(int(round(national_per_capita))),
+			"+" if gap >= 0.0 else "", gap]
+	metrics.append({
+		"id": "population_gdp_per_capita", "title": "人均年度产值",
+		"value": _money_text(int(round(per_capita))),
+		"subtitle": subtitle, "accent": UITokens.ACCENT,
+		"icon": "family.metric.wealth",
+		"tooltip": "本地产值 ÷ 本地人口。括号内是与全国人均的差距，正为高于全国。",
+	})
+	return metrics
+
+
+func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {},
+		cell_idx: int = -1) -> Dictionary:
 	if _snapshot_pending(snapshot):
 		return _pending_category()
 	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
@@ -3666,13 +3754,16 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 	if not mixed_identity:
 		for row in rows:
 			(row as Dictionary)["cohort_identity"] = ""
+	var local_metrics := [
+		{"id": "population_funds", "title": "居民存款", "value": _money_text(int(snapshot.get("funds", 0))), "subtitle": "本期%s %s" % ["结余" if epoch_net >= 0 else "亏空", _money_text(absi(epoch_net))], "accent": UITokens.ACCENT if epoch_net >= 0 else UITokens.RISK, "icon": "resource"},
+		_food_output_metric(snapshot, local_food_daily, effective_food_daily),
+	]
+	# 产值两格只在账本已跟踪该格时出现；他国 / 无主 / 无人聚落不加，指标行不会空转。
+	local_metrics.append_array(_gdp_metrics(cell_idx))
 	return {
 		"insights": insights,
 		"gauges": gauges,
-		"metrics": [
-			{"id": "population_funds", "title": "居民存款", "value": _money_text(int(snapshot.get("funds", 0))), "subtitle": "本期%s %s" % ["结余" if epoch_net >= 0 else "亏空", _money_text(absi(epoch_net))], "accent": UITokens.ACCENT if epoch_net >= 0 else UITokens.RISK, "icon": "resource"},
-			_food_output_metric(snapshot, local_food_daily, effective_food_daily),
-		],
+		"metrics": local_metrics,
 		"cohort_rows": rows,
 		"list_header": {"lead": "阶层 · 族群 · 生活" if mixed_identity else "阶层 · 生活",
 			"indent": 41.0, "columns": [
@@ -5481,6 +5572,23 @@ func _completed_technology_ids(country_facade, handle: int) -> Dictionary:
 	}
 
 
+## 悬停卡认矿用：玩家视角、按模拟日缓存。夜里一天只查一次；
+## 与经济/科技提交无关的重复悬停不再触发国家快照。
+func player_technology_ids() -> PackedStringArray:
+	var day := _current_sample_day()
+	if day == _technology_day:
+		return _technology_ids_cache
+	_technology_day = day
+	_technology_ids_cache = PackedStringArray()
+	if _generator == null or not _generator.has_method("get_country_facade"):
+		return _technology_ids_cache
+	var viewer := _completed_technology_ids(
+		_generator.get_country_facade(), _player_country_handle())
+	if bool(viewer.get("ok", false)):
+		_technology_ids_cache = viewer.get("technology_ids", PackedStringArray())
+	return _technology_ids_cache
+
+
 func _extractable_resource_ids(snapshot: Dictionary) -> Dictionary:
 	if not bool(snapshot.get("ok", false)):
 		return {"ok": false}
@@ -5821,12 +5929,17 @@ func _stress_band(v: float) -> String:
 	return "极高"
 
 
-func _resource_density_band(v: float) -> String:
-	if v < 0.05: return "贫乏"
-	if v < 0.25: return "稀少"
-	if v < 0.55: return "可采"
-	if v < 0.80: return "富集"
-	return "丰饶"
+## 资源丰度 5 档。侧栏与悬停卡共用；返回 1..5 供密度点阵直接使用。
+static func resource_density_level(v: float) -> int:
+	if v < 0.05: return 1
+	if v < 0.25: return 2
+	if v < 0.55: return 3
+	if v < 0.80: return 4
+	return 5
+
+
+static func resource_density_band(v: float) -> String:
+	return ["贫乏", "稀少", "可采", "富集", "丰饶"][resource_density_level(v) - 1]
 
 
 func _history_badges(cell: HexCell) -> Array:
@@ -5882,7 +5995,8 @@ func _elevation_band(elev: float, sea: float) -> String:
 	return "雪线以上"
 
 
-func _temperature_band(t: float) -> String:
+## 温度 8 档。悬停卡与侧栏同源，避免两处阈值各自漂移。
+static func temperature_band(t: float) -> String:
 	if t < 0.06: return "极寒"
 	if t < 0.20: return "严寒"
 	if t < 0.30: return "寒冷"
@@ -5891,6 +6005,10 @@ func _temperature_band(t: float) -> String:
 	if t < 0.75: return "温暖"
 	if t < 0.90: return "炎热"
 	return "酷热"
+
+
+func _temperature_band(t: float) -> String:
+	return temperature_band(t)
 
 
 func _moisture_band(m: float) -> String:

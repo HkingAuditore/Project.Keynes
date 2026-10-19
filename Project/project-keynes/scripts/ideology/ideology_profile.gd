@@ -8,6 +8,15 @@ extends Resource
 @export_range(0, 2147483647, 1) var starting_points_q16: int = 0
 @export_range(1, 1000000, 1) var max_commands_per_slice: int = 4096
 @export_range(1, 4096, 1) var max_transition_commands: int = 256
+## Upload of card effect rows that route through a declared
+## `ideology.effect.*` program. Measured over the WHOLE catalog at compile time
+## (one per card level, not per live instance), so it must cover
+## card_count * level_count: 85 cards x 3 levels = 255 today, and the refactor
+## target is 85 program-backed cards. 512 leaves headroom for a fourth level or
+## a few `on_enter` rows without turning into an unbounded budget.
+## Live per-country concurrency is bounded elsewhere: slots (ideology_capacity +
+## national_spirit_capacity) times SELECTOR_MAX_CELLS per card level.
+@export_range(0, 4096, 1) var max_effect_instances: int = 512
 @export_range(1, 1000000, 1) var max_transition_polls_per_slice: int = 4096
 @export_range(1, 1000000, 1) var max_active_visits_per_slice: int = 1024
 @export_range(0, 64, 1) var opinion_owner_influence_weight: int = 2
@@ -30,3 +39,8 @@ extends Resource
 @export_range(0, 2147483647, 1) var point_trade_weight_q16: int = 0
 @export_range(0, 2147483647, 1) var point_gain_cap_q16: int = 0
 @export var point_gain_stat_key: StringName = &"country.ideology.point_gain_factor"
+## Draw-weight decay indexed by (current_era - idea.era_index). Index 0 is the
+## card's own era (10000 = full weight); the last entry is reused for anything
+## older. 0 removes the card from the draw pool entirely, so the default table
+## gives one to two eras of grace and retires the card in the third.
+@export var era_decay_bp: PackedInt32Array = PackedInt32Array([10000, 6000, 2500, 0])

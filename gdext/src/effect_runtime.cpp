@@ -35,6 +35,15 @@ constexpr int32_t MAX_INSTRUCTIONS = 1048576;
 constexpr int32_t MAX_COMMANDS = 1048576;
 constexpr int32_t MAX_STACK = 256;
 
+// Managed ownership is declared by the catalog (`managed_flags`). The only
+// surviving meaning of the legacy "family.effect." prefix is *which* managed
+// owner a declared program belongs to -- never whether it is managed at all.
+// Anything using this helper to gate lifecycle/target/stack behaviour is a
+// regression back to the prefix-inference era.
+bool is_family_owned_key(const std::string &key) {
+    return key.rfind("family.effect.", 0) == 0;
+}
+
 // Native Effect ABI registration.  These are deliberately fixed at startup
 // rather than discovered from strings in the daily path.  Country/Economy
 // opcodes mirror their authoritative runtime enums; gameplay/custom rows are
@@ -736,6 +745,14 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
     const PackedInt32Array priorities = get_i32(catalog, "priorities");
     const PackedInt32Array target_selector_kinds = get_i32(catalog, "target_selector_kinds");
     const PackedStringArray target_selector_ids = get_strings(catalog, "target_selector_ids");
+    // Optional: two ints per definition, [0] cell cap / [1] terrain-resource-
+    // predicate id. Absent keeps every pre-existing catalog byte-identical.
+    const PackedInt32Array target_selector_params = get_i32(
+        catalog, "target_selector_params");
+    // Optional: declarations of managed ownership. Absent (or empty) keeps the
+    // legacy "family.effect." prefix inference so old catalogs and fixtures
+    // compile untouched.
+    const PackedByteArray managed_flags = get_u8(catalog, "managed_flags");
     const PackedInt32Array condition_offsets = get_i32(catalog, "condition_offsets");
     const PackedInt32Array condition_ops = get_i32(catalog, "condition_ops");
     const PackedInt32Array condition_arg0 = get_i32(catalog, "condition_arg0");
@@ -769,6 +786,9 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
         stack_policies.size() != count || stack_keys.size() != count ||
         max_stacks.size() != count || priorities.size() != count ||
         target_selector_kinds.size() != count || target_selector_ids.size() != count ||
+        (!target_selector_params.is_empty() &&
+         target_selector_params.size() != count * 2) ||
+        (!managed_flags.is_empty() && managed_flags.size() != count) ||
         instruction_offsets.size() != count + 1 ||
         command_offsets.size() != count + 1 ||
         condition_ops.size() != condition_arg0.size() ||
@@ -870,10 +890,18 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
         definition.duration_days = i32_at(definition_duration_days, i, -1);
         definition.stack_policy = i32_at(stack_policies, i, 0);
         definition.stack_key = string_at(stack_keys, i);
-        definition.max_stacks = std::max(1, i32_at(max_stacks, i, 1));
+        definition.max_stacks = std::clamp(
+            i32_at(max_stacks, i, 1), 1, MAX_AUTHORED_STACKS);
         definition.priority = i32_at(priorities, i, 0);
         definition.target_selector_kind = i32_at(target_selector_kinds, i, 0);
         definition.target_selector_id = string_at(target_selector_ids, i);
+        definition.target_selector_param[0] = target_selector_params.size() == count * 2
+            ? i32_at(target_selector_params, i * 2, 0) : 0;
+        definition.target_selector_param[1] = target_selector_params.size() == count * 2
+            ? i32_at(target_selector_params, i * 2 + 1, 0) : 0;
+        definition.managed_declared = managed_flags.is_empty()
+            ? is_family_owned_key(definition.key)
+            : managed_flags[i] != 0;
         const PackedInt32Array prestige_magnitudes = get_i32(
             catalog, "magnitude_by_prestige_q16");
         for (int32_t tier = 0; tier < 6; ++tier) {
@@ -894,7 +922,9 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
             (definition.lifecycle == 1 && definition.duration_days < 1) ||
             (definition.lifecycle != 1 && definition.duration_days == 0) ||
             definition.max_stacks <= 0 || definition.target_selector_kind < 0 ||
-            definition.target_selector_kind > 7 ||
+            definition.target_selector_kind > SELECTOR_MAX_KIND ||
+            definition.target_selector_param[0] < 0 ||
+            definition.target_selector_param[0] > SELECTOR_MAX_CELLS ||
             (definition.lifecycle == 1 && definition.command_count == 0))
             return failure("effect_family_metadata_invalid");
         if (definition.condition_begin < 0 || definition.condition_count < 0 ||
@@ -919,7 +949,8 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
              condition.op == METRIC_EQ) &&
             (condition.arg0 < 0 || condition.arg0 >= _metric_count))
             return failure("effect_condition_metric_invalid");
-        if (condition.op == STATE_GTE && (condition.arg0 < 0 || condition.arg0 > 3))
+        if (condition.op == STATE_GTE &&
+            (condition.arg0 < 0 || condition.arg0 > STATE_STACK_COUNT))
             return failure("effect_condition_state_invalid");
         _conditions.push_back(condition);
     }
@@ -949,7 +980,7 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
             return failure("effect_instruction_opcode_invalid");
         if (row.op == READ_METRIC && (row.arg0 < 0 || row.arg0 >= _metric_count))
             return failure("effect_instruction_metric_invalid");
-        if (row.op == READ_STATE && (row.arg0 < 0 || row.arg0 > 3))
+        if (row.op == READ_STATE && (row.arg0 < 0 || row.arg0 > STATE_STACK_COUNT))
             return failure("effect_instruction_state_invalid");
         if (row.op == CLAMP && row.value > static_cast<int64_t>(row.arg0))
             return failure("effect_instruction_clamp_invalid");
@@ -978,10 +1009,15 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
                 command.native_modifier_adapter = NATIVE_MODIFIER_PERSON;
             else if (command.command_key == "trigger.modifier")
                 command.native_modifier_adapter = NATIVE_MODIFIER_TRIGGER;
-            else if (command.owner_program_id >= 0 &&
-                     _definitions[static_cast<size_t>(command.owner_program_id)]
-                         .key.rfind("family.effect.", 0) == 0)
-                command.native_modifier_adapter = NATIVE_MODIFIER_FAMILY_EFFECT;
+            else if (command.owner_program_id >= 0) {
+                const Definition &owner = _definitions[
+                    static_cast<size_t>(command.owner_program_id)];
+                if (owner.managed_declared)
+                    command.native_modifier_adapter =
+                        is_family_owned_key(owner.key)
+                            ? NATIVE_MODIFIER_FAMILY_EFFECT
+                            : NATIVE_MODIFIER_IDEOLOGY;
+            }
         }
         command.payload = {command_payload_i0[i], command_payload_i1[i],
                            command_payload_i2[i], command_payload_i3[i]};
@@ -1035,7 +1071,7 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
             if (!has_modifier_command)
                 return failure("effect_duration_requires_modifier_command");
         }
-        if (definition.key.rfind("family.effect.", 0) == 0) {
+        if (definition.managed_declared) {
             const int32_t expected_modifier_domain =
                 definition.target_domain == 3 ? ModifierRuntime::COUNTRY
                 : definition.target_domain == 4 ? ModifierRuntime::CLIMATE
@@ -1062,6 +1098,27 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
             }
             if (definition.operation == 4 && !has_event_command)
                 return failure("effect_event_command_missing");
+            // metric_mask is a single uint64. A condition or instruction that
+            // reads beyond it would be dropped by family_effect_metadata_pod,
+            // so the publisher would never write the value and the condition
+            // would stay permanently false. Fail loudly instead of silently.
+            for (int32_t row = definition.condition_begin;
+                 row < definition.condition_begin + definition.condition_count;
+                 ++row) {
+                const Condition &condition =
+                    _conditions[static_cast<size_t>(row)];
+                if ((condition.op == METRIC_GTE || condition.op == METRIC_LTE ||
+                     condition.op == METRIC_EQ) && condition.arg0 >= 64)
+                    return failure("effect_metric_mask_overflow");
+            }
+            for (int32_t row = definition.instruction_begin;
+                 row < definition.instruction_begin + definition.instruction_count;
+                 ++row) {
+                const InstructionRow &instruction =
+                    _instructions[static_cast<size_t>(row)];
+                if (instruction.op == READ_METRIC && instruction.arg0 >= 64)
+                    return failure("effect_metric_mask_overflow");
+            }
         }
 
         int32_t value_depth = 0;
@@ -1098,7 +1155,7 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
          ++definition_index) {
         const Definition &definition = _definitions[
             static_cast<size_t>(definition_index)];
-        if (definition.key.rfind("family.effect.", 0) != 0) continue;
+        if (!definition.managed_declared) continue;
         const std::string resolved_stack_key = definition.stack_key.empty()
             ? definition.key : definition.stack_key;
         const uint64_t resolved_stack_hash = fnv_string(
@@ -1136,6 +1193,8 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
             reference.max_stacks != definition.max_stacks ||
             reference.target_selector_kind != definition.target_selector_kind ||
             reference.target_selector_id != definition.target_selector_id ||
+            reference.target_selector_param[0] != definition.target_selector_param[0] ||
+            reference.target_selector_param[1] != definition.target_selector_param[1] ||
             reference.command_count != definition.command_count)
             return failure("effect_family_stack_contract_mismatch");
         for (int32_t ordinal = 0; ordinal < definition.command_count; ++ordinal) {
@@ -1191,6 +1250,8 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
         hash = fnv_value(hash, definition.priority);
         hash = fnv_value(hash, definition.target_selector_kind);
         hash = fnv_string(hash, definition.target_selector_id);
+        hash = fnv_value(hash, definition.target_selector_param[0]);
+        hash = fnv_value(hash, definition.target_selector_param[1]);
         for (int32_t tier = 0; tier < 6; ++tier)
             hash = fnv_value(hash, definition.magnitude_by_prestige_q16[tier]);
     }
@@ -2648,7 +2709,7 @@ bool EffectRuntime::family_effect_metadata_pod(
         return false;
     const Definition &definition = _definitions[
         static_cast<size_t>(definition_id)];
-    if (definition.key.rfind("family.effect.", 0) != 0) return false;
+    if (!definition.managed_declared) return false;
     out = FamilyEffectMetadataPod{};
     out.source_kind = definition.source_kind;
     out.target_domain = definition.target_domain;
@@ -2660,6 +2721,8 @@ bool EffectRuntime::family_effect_metadata_pod(
     out.priority = definition.priority;
     out.target_selector_kind = definition.target_selector_kind;
     out.target_selector_id = definition.target_selector_id;
+    out.target_selector_param[0] = definition.target_selector_param[0];
+    out.target_selector_param[1] = definition.target_selector_param[1];
     out.stack_key_hash = fnv_string(1469598103934665603ULL,
         definition.stack_key.empty() ? definition.key : definition.stack_key);
     for (int32_t tier = 0; tier < 6; ++tier)
@@ -2705,8 +2768,7 @@ bool EffectRuntime::refresh_managed_duration_pod(int64_t instance_id,
 }
 
 bool EffectRuntime::uses_managed_lifecycle(const Definition &definition) {
-    return definition.lifecycle != 0 ||
-        definition.key.rfind("family.effect.", 0) == 0;
+    return definition.lifecycle != 0 || definition.managed_declared;
 }
 
 bool EffectRuntime::is_family_effect_instance(const Instance &instance) const {
@@ -2714,7 +2776,7 @@ bool EffectRuntime::is_family_effect_instance(const Instance &instance) const {
         instance.program_id < static_cast<int32_t>(_definitions.size()) &&
         instance.operation != 4 &&
         _definitions[static_cast<size_t>(instance.program_id)]
-            .key.rfind("family.effect.", 0) == 0;
+            .managed_declared;
 }
 
 EffectRuntime::FamilyEffectGroupKey EffectRuntime::family_effect_group_key(
@@ -3634,20 +3696,21 @@ Dictionary EffectRuntime::submit_instances(const Dictionary &batch) {
         }
         const uint32_t generation = static_cast<uint32_t>(std::max(1, i32_at(generations, i, 1)));
         const Definition &definition = _definitions[static_cast<size_t>(program_id)];
-        if (definition.key.rfind("family.effect.", 0) == 0 &&
-            (declared_source_kinds.is_empty() ||
-             declared_source_kinds[i] != definition.source_kind)) {
+        // Shared with the worker transport path via effect_declarative_validation.h.
+        // The batch columns are sparse, so read them only when the row exists.
+        EffectDeclarativeFacts facts;
+        facts.source_kind = definition.source_kind;
+        facts.managed_declared = definition.managed_declared;
+        const EffectDeclarativeReject declarative = validate_effect_declarative_row(
+            facts, id, generation, !declared_source_kinds.is_empty(),
+            i < declared_source_kinds.size() ? declared_source_kinds[i] : 0,
+            u8_at(active, i, 1) != 0);
+        if (declarative != EffectDeclarativeReject::NONE) {
             ++rejected;
-            _last_error = "effect_family_source_kind_mismatch";
+            _last_error = effect_declarative_reject_token(declarative);
             continue;
         }
         const bool requested_active = u8_at(active, i, 1) != 0;
-        if (definition.key.rfind("family.effect.", 0) == 0 &&
-            !requested_active) {
-            ++rejected;
-            _last_error = "effect_family_deactivation_requires_retire";
-            continue;
-        }
         const int32_t previous_index = instance_index_for_id(id);
         const bool was_active = previous_index >= 0 &&
             _instances[static_cast<size_t>(previous_index)].active != 0;
@@ -3775,12 +3838,62 @@ int64_t EffectRuntime::metric_value(const Instance &instance, int32_t metric_id)
     return metric != nullptr ? *metric : 0;
 }
 
+int32_t EffectRuntime::native_command_definition_count() const {
+    return static_cast<int32_t>(_command_definitions.size());
+}
+
+int32_t EffectRuntime::native_modifier_adapter_for_command(
+        int32_t command_index) const {
+    // The worker Modifier stage reads adapters out of runtime_effect_pod.h
+    // because it cannot include this header without a cycle. Pin the two
+    // enumerations together here (member scope, where the private enum is
+    // visible) so a new adapter on one side fails the build instead of
+    // silently mislabelling commands on the other.
+    static_assert(NATIVE_MODIFIER_GENERIC == EFFECT_MODIFIER_GENERIC,
+                  "adapter kinds drifted between EffectRuntime and the POD");
+    static_assert(NATIVE_MODIFIER_TECHNOLOGY == EFFECT_MODIFIER_TECHNOLOGY,
+                  "adapter kinds drifted between EffectRuntime and the POD");
+    static_assert(NATIVE_MODIFIER_FAMILY == EFFECT_MODIFIER_FAMILY,
+                  "adapter kinds drifted between EffectRuntime and the POD");
+    static_assert(NATIVE_MODIFIER_PERSON == EFFECT_MODIFIER_PERSON,
+                  "adapter kinds drifted between EffectRuntime and the POD");
+    static_assert(NATIVE_MODIFIER_TRIGGER == EFFECT_MODIFIER_TRIGGER,
+                  "adapter kinds drifted between EffectRuntime and the POD");
+    static_assert(NATIVE_MODIFIER_FAMILY_EFFECT ==
+                      EFFECT_MODIFIER_FAMILY_EFFECT,
+                  "adapter kinds drifted between EffectRuntime and the POD");
+    static_assert(NATIVE_MODIFIER_IDEOLOGY == EFFECT_MODIFIER_IDEOLOGY,
+                  "adapter kinds drifted between EffectRuntime and the POD");
+    if (command_index < 0 ||
+        command_index >= static_cast<int32_t>(_command_definitions.size()))
+        return EFFECT_MODIFIER_GENERIC;
+    return _command_definitions[static_cast<size_t>(command_index)]
+        .native_modifier_adapter;
+}
+
+bool EffectRuntime::declarative_facts_for_key(
+        const std::string &key, int32_t &program_id, int32_t &source_kind,
+        bool &managed_declared) const {
+    program_id = -1;
+    source_kind = 0;
+    managed_declared = false;
+    if (!_configured) return false;
+    const int32_t index = definition_id_for_key(key);
+    if (index < 0 || index >= static_cast<int32_t>(_definitions.size()))
+        return false;
+    const Definition &definition = _definitions[static_cast<size_t>(index)];
+    program_id = index;
+    source_kind = definition.source_kind;
+    managed_declared = definition.managed_declared;
+    return true;
+}
+
 int64_t EffectRuntime::state_value(const Instance &instance, int32_t state_id) const {
     switch (state_id) {
-        case 0: return static_cast<int64_t>(instance.level) * Q16_ONE;
-        case 1: return static_cast<int64_t>(instance.fire_sequence) * Q16_ONE;
-        case 2: return instance.input_revision;
-        case 3: {
+        case STATE_LEVEL: return static_cast<int64_t>(instance.level) * Q16_ONE;
+        case STATE_FIRE_SEQUENCE: return static_cast<int64_t>(instance.fire_sequence) * Q16_ONE;
+        case STATE_INPUT_REVISION: return instance.input_revision;
+        case STATE_REMAINING_DAYS: {
             if (instance.expires_day < 0) return 0;
             const int64_t remaining = std::max<int64_t>(0,
                 instance.expires_day - _current_day);
@@ -3788,6 +3901,10 @@ int64_t EffectRuntime::state_value(const Instance &instance, int32_t state_id) c
                 return std::numeric_limits<int64_t>::max();
             return remaining * Q16_ONE;
         }
+        // The instance's own depth. Reported in Q16 like level/fire_sequence so
+        // one condition unit means "one stack" everywhere.
+        case STATE_STACK_COUNT:
+            return static_cast<int64_t>(std::max(0, instance.stack_count)) * Q16_ONE;
         default: return 0;
     }
 }
@@ -4415,10 +4532,12 @@ bool EffectRuntime::execute_program_plan(const Definition &definition,
                 command.domain = definition_command.domain;
                 command.opcode = definition_command.opcode;
                 command.duration_days = definition_command.duration_days;
-                command.stacks = static_cast<int32_t>(std::min<int64_t>(
-                    definition.max_stacks,
-                    static_cast<int64_t>(definition_command.stacks) *
-                        std::max(1, instance.stack_count)));
+                // Same helper as the worker POD (RuntimeEffectPodAuthority::
+                // scaled_command_stacks), so a stacked instance emits identical
+                // weight on both threads instead of two formulas that drift.
+                command.stacks = RuntimeEffectPodAuthority::scaled_command_stacks(
+                    definition_command.stacks, instance.stack_count,
+                    definition.max_stacks);
                 command.payload = definition_command.payload;
                 command.value_q16 = definition_command.value_mode == VALUE_STACK_TOP
                     ? (sp > 0 ? stack[sp - 1] : 0) : definition_command.value;
@@ -5212,6 +5331,36 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
                         break;
                 }
                 if (!supported) break;
+            } else if (adapter_kind == NATIVE_MODIFIER_IDEOLOGY) {
+                native.producer = 162;
+                native.domain = command->domain;
+                native.source_type = 0x4944454fULL; // IDEO
+                native.source_id = static_cast<uint64_t>(source_instance->id);
+                native.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
+                    command->value_q16, 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+                // Same target_domain convention as the family adapter, except
+                // that ideology never binds to a family/branch handle: 0 and 1
+                // fall through to ENTITY so a mis-authored program fails the
+                // Modifier target check instead of silently hitting a country.
+                switch (source_instance->target_domain) {
+                    case 2: // Settlement cell.
+                    case 5: // Building/resource selector within the cell.
+                        native.scope = ModifierRuntime::GROUP;
+                        break;
+                    default:
+                        native.scope = ModifierRuntime::ENTITY;
+                        break;
+                }
+                // Both handles carry the resolved target: scope_id_for() picks
+                // the one matching the final scope, so a payload[2] override
+                // below never leaves the chosen handle empty.
+                native.entity_handle = command->target_handle;
+                native.group_handle = command->target_handle;
+                // Command-level scope override. payload[2] == 0 means "unset",
+                // never GLOBAL -- GLOBAL is also 0, so defaulting would silently
+                // widen a cell effect to the whole country.
+                if (command->payload[2] >= 1 && command->payload[2] <= 2)
+                    native.scope = static_cast<int32_t>(command->payload[2]);
             } else if (command->action == MODIFIER_COMMAND) {
                 // Generic declarative Modifier command. Complex target/source
                 // resolvers stay on the adapter path until declared natively.
@@ -6559,6 +6708,109 @@ bool EffectRuntime::pod_snapshot_persistence_self_test(std::string &error) const
     return true;
 }
 
+// ── M1 acceptance gate ─────────────────────────────────────────────────────
+// The worker Effect POD used to derive state through its own hand-written
+// switch ordered 0=level(raw) 1=fire(raw) 2=stack 3=input_revision, while this
+// runtime answers 0=level*Q16 1=fire*Q16 2=input_revision(raw) 3=remaining*Q16
+// 4=stack*Q16. Authored content writes thresholds in Q16 ("level >= 2" is
+// 131072), so the mismatch made every state-gated card permanently false on
+// the worker and true here - a silent split brain, not a crash. Nothing caught
+// it because nothing compared the two.
+//
+// This test walks the full input matrix through both implementations and
+// requires bit-identical answers, then pins the POD's capability ceilings to be
+// no narrower than this runtime's. That second check is what the catalog-wide
+// POD validator needed: one card above the ceiling rejects the entire catalog,
+// which costs the whole twelve-domain authority graph, not just that card.
+bool EffectRuntime::pod_state_parity_self_test(std::string &error) const {
+    auto fail = [&](const std::string &reason) { error = reason; return false; };
+
+    if (RuntimeEffectPodAuthority::MAX_STATE_ID < STATE_STACK_COUNT)
+        return fail("effect_pod_state_ceiling_below_main_thread");
+    // DISTANCE_N is the widest selector kind the main thread resolves. The POD
+    // forwards whatever the main thread resolved, so it must not narrower.
+    constexpr int32_t MAIN_THREAD_MAX_SELECTOR_KIND = 11;
+    if (RuntimeEffectPodAuthority::MAX_SELECTOR_KIND < MAIN_THREAD_MAX_SELECTOR_KIND)
+        return fail("effect_pod_selector_ceiling_below_main_thread");
+
+    // state_value() reads _current_day through a const method, so evaluate the
+    // main-thread answers on a copy that is pinned to the day under test.
+    const int64_t day = 1000;
+    EffectRuntime main_thread = *this;
+    main_thread._current_day = day;
+
+    const int32_t levels[] = {0, 1, 2, 7};
+    const uint64_t fires[] = {0, 1, 5};
+    const int32_t stacks[] = {0, 1, 3, 9};
+    const int64_t expires[] = {-1, 0, 2, 30};
+    for (const int32_t level : levels) {
+        for (const uint64_t fire : fires) {
+            for (const int32_t stack : stacks) {
+                for (const int64_t expiry : expires) {
+                    const int64_t revision = 7 + stack;
+                    Instance instance;
+                    instance.level = level;
+                    instance.fire_sequence = fire;
+                    instance.stack_count = stack;
+                    instance.input_revision = revision;
+                    instance.expires_day = expiry;
+                    RuntimeEffectPodInstance pod_instance;
+                    pod_instance.level = level;
+                    pod_instance.fire_sequence = fire;
+                    pod_instance.stack_count = stack;
+                    pod_instance.input_revision = revision;
+                    pod_instance.expires_day = expiry;
+                    for (int32_t id = 0;
+                         id <= RuntimeEffectPodAuthority::MAX_STATE_ID; ++id) {
+                        const int64_t main_value =
+                            main_thread.state_value(instance, id);
+                        const int64_t pod_value =
+                            RuntimeEffectPodAuthority::state_value(
+                                pod_instance, id, day);
+                        if (main_value == pod_value) continue;
+                        return fail("effect_pod_state_parity_mismatch id=" +
+                            std::to_string(id) + " level=" +
+                            std::to_string(level) + " fire=" +
+                            std::to_string(fire) + " stack=" +
+                            std::to_string(stack) + " expires=" +
+                            std::to_string(expiry) + " main=" +
+                            std::to_string(main_value) + " pod=" +
+                            std::to_string(pod_value));
+                    }
+                }
+            }
+        }
+    }
+
+    // Ids 0/1/3/4 are Q16-scaled, id 2 is a raw token. Pinning that split
+    // explicitly means a future "unify the scaling" cleanup fails loudly here
+    // instead of silently re-breaking every authored threshold.
+    Instance probe;
+    probe.level = 3;
+    probe.fire_sequence = 2;
+    probe.stack_count = 5;
+    probe.input_revision = 9;
+    probe.expires_day = day + 4;
+    const int64_t expected[] = {3 * Q16_ONE, 2 * Q16_ONE, 9, 4 * Q16_ONE,
+                                5 * Q16_ONE};
+    for (int32_t id = 0; id <= STATE_STACK_COUNT; ++id) {
+        if (main_thread.state_value(probe, id) != expected[id])
+            return fail("effect_state_id_scaling_changed id=" +
+                std::to_string(id));
+    }
+
+    // Depth scaling of an emitted command must be identical on both threads.
+    // main_thread's path calls the same helper, so a divergence can only come
+    // from the constant "one depth unit multiplies the command by one" rule
+    // changing on one side; assert the shape contract directly.
+    if (RuntimeEffectPodAuthority::scaled_command_stacks(1, 4, 3) != 3 ||
+        RuntimeEffectPodAuthority::scaled_command_stacks(2, 0, 8) != 2 ||
+        RuntimeEffectPodAuthority::scaled_command_stacks(2, 3, 8) != 6 ||
+        RuntimeEffectPodAuthority::scaled_command_stacks(5, 2, 0) != 1)
+        return fail("effect_command_stack_scaling_changed");
+    return true;
+}
+
 uint64_t EffectRuntime::persisted_plan_hash(const Transaction &tx,
         const std::vector<Command> &arena) const {
     uint64_t hash = 1469598103934665603ULL;
@@ -6854,7 +7106,9 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
             instance.operation < 0 || instance.operation > 4 ||
             instance.lifecycle < 0 || instance.lifecycle > 2 ||
             instance.stack_policy < 0 || instance.stack_policy > 4 ||
-            instance.max_stacks <= 0 || instance.stack_count <= 0 ||
+            instance.max_stacks <= 0 ||
+            instance.max_stacks > MAX_AUTHORED_STACKS ||
+            instance.stack_count <= 0 ||
             instance.stack_count > instance.max_stacks ||
             instance.applied_stack_count < 0 ||
             instance.applied_stack_count > instance.max_stacks ||
@@ -7094,8 +7348,7 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
                     definition.owner_program_id < static_cast<int32_t>(
                         _definitions.size()) &&
                     _definitions[static_cast<size_t>(
-                        definition.owner_program_id)].key.rfind(
-                            "family.effect.", 0) == 0 &&
+                        definition.owner_program_id)].managed_declared &&
                     definition.stacks == 1 && command.stacks >= 1 &&
                     command.stacks <= _definitions[static_cast<size_t>(
                         definition.owner_program_id)].max_stacks;

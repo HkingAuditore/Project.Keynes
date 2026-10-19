@@ -48,6 +48,7 @@
 namespace pk {
 
 class NativeSimulationHost;
+class EffectInstanceForwarder;
 class NativeCountryRuntime;
 struct RuntimeClimateStore;
 
@@ -423,11 +424,17 @@ public:
     bool runtime_trigger_pod_self_test() const;
     bool runtime_effect_pod_self_test() const;
     bool runtime_effect_host_stage_self_test();
+    // M2b G-1: pins the Effect-intent -> Modifier-POD adapter mapping (TRIGGER,
+    // FAMILY_EFFECT, GENERIC) against EffectRuntime::dispatch_native_modifier.
+    bool runtime_effect_adapter_parity_self_test();
     bool runtime_ideology_pod_self_test() const;
     bool runtime_events_authority_self_test() const;
     bool runtime_economy_pod_self_test() const;
     godot::Dictionary switch_economy_authority(const godot::String &mode);
     bool runtime_economy_authority_fault_gate_self_test() const;
+    // Exercises the shared effect target selector on a synthetic hex grid so
+    // target selection is verifiable without a live map_data / epoch run.
+    bool runtime_economy_target_selector_self_test() const;
     bool arm_runtime_fault_injection(const godot::String &point);
     void clear_runtime_fault_injection();
     godot::Dictionary runtime_economy_stage_order_contract_test() const;
@@ -606,6 +613,11 @@ public:
     godot::Dictionary submit_effect_instances(const godot::Dictionary &batch);
     godot::Dictionary retire_effect_instance(int64_t instance_id, int64_t generation,
                                              int64_t effective_day);
+    // Test seam for the M2a effect-authority split. mode: -1 = live host
+    // authority (production), 0 = force legacy EffectRuntime writes,
+    // 1 = force the worker transport. See EffectInstanceForwarder's declaration
+    // for why the real grant cannot be produced by a headless fixture.
+    godot::Dictionary set_effect_forwarder_authority_for_test(int32_t mode);
     godot::Dictionary queue_effect_pod_instance(const godot::Dictionary &input);
     godot::Dictionary queue_effect_pod_metric(const godot::Dictionary &input);
     godot::Dictionary queue_effect_pod_remove(int64_t instance_id, int64_t generation);
@@ -680,6 +692,22 @@ public:
     bool ideology_should_run(int64_t day_index) const;
     godot::Dictionary apply_runtime_ideology_snapshot(int64_t after_generation);
     godot::Dictionary get_ideology_snapshot(int64_t country_handle) const;
+    // Diagnostic: reconciled Effect instances owned by each held idea, with a
+    // `present` flag proving the EffectRuntime still holds them. Read-only.
+    godot::Dictionary get_ideology_effect_instance_report(int64_t country_handle) const;
+    // Read-only query over the shared target-cell resolver. Content tooling and
+    // tests use it to prove a selector is deterministic and bounded before a
+    // card is authored against it. Never mutates state.
+    godot::PackedInt32Array query_effect_target_cells(
+        int32_t source_cell, int32_t selector_kind, int32_t param0,
+        int32_t param1) const;
+    // Lowest cell owned by `country_slot`, or -1. Anchors cell-scoped ideology
+    // effects until a capital/city concept exists.
+    int32_t query_country_anchor_cell(int32_t country_slot) const;
+    // True when the compiled Effect catalog declares `program_key` as a managed
+    // program. Lets tests and tooling assert that a card row is routed through
+    // the reconciliation path instead of the legacy Modifier batch.
+    bool effect_program_is_managed(const godot::String &program_key) const;
     godot::Dictionary preview_ideology_offer_eligibility(int64_t country_handle) const;
     godot::Dictionary explain_ideology(int64_t country_handle, int32_t ideology_id);
     godot::Dictionary explain_ideologies(
@@ -3224,6 +3252,12 @@ private:
     void                                     *_modifier_runtime       = nullptr;
     void                                     *_trigger_runtime         = nullptr;
     void                                     *_effect_runtime          = nullptr;
+    // M2a: single write path for declarative Effect instances. Declared here as
+    // a unique_ptr so the header stays free of the forwarder's own includes.
+    std::unique_ptr<EffectInstanceForwarder>   _effect_forwarder;
+    // Re-applied whenever configure_effects rebuilds/re-attaches the forwarder,
+    // so a test can set the seam before the catalog exists.
+    int32_t                                    _effect_forwarder_authority_override = -1;
     // Host-committed era-reward selection under worker Effect authority.
     // Session-only: a restored pending selection is re-submitted, which the
     // UNIQUE_SOURCE Modifier policy makes idempotent.

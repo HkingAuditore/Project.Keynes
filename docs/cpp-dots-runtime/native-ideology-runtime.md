@@ -51,6 +51,50 @@ stage is the **sole Ideology writer**:
   restarted worker's snapshots are rejected as
   `ideology_pod_snapshot_generation_regression`.
 
+### Effect instance reroute (M2a-5) and its gate (M2a-6)
+
+Ideology stays on the main thread while `EFFECT` may already belong to the
+worker. In that split the ideology runtime must not write Effect instances
+straight into `EffectRuntime`: `EffectInstanceForwarder` owns the decision and
+queues to the worker transport when the worker holds `EFFECT`, mirroring into
+`EffectRuntime` only on the legacy path. The report surface keeps one truth
+either way — `get_ideology_effect_instance_report()` still resolves instance ids
+and target handles from the runtime, and only the writer changes.
+
+`tests/ideology_effect_worker_forward_test.gd` is the gate. Two things make it
+non-obvious:
+
+- **Real authority is unreachable in a headless fixture.** A fresh `ACTIVE`
+  start only earns its domain grant after the worker commits one fully committed
+  day, and a catalog fixture has no Climate trace to complete it. Even if it
+  could, granting `IDEOLOGY` to the worker suppresses `run_ideology_daily` — the
+  exact reconcile under test. So the test drives authority through
+  `set_effect_forwarder_authority_for_test()`, the same style of explicit seam
+  the host already exposes for Country sync writes and Climate parity forcing.
+  The seam changes only what the forwarder believes, and re-baselines so a flip
+  costs no authority epoch.
+- **The observable must be the writer, not the outcome.** Asserting "the card
+  applied" cannot distinguish the two paths. The test reads
+  `get_ideology_effect_instance_report().present`, which reports
+  `EffectRuntime::has_instance_pod`: legacy → `1` (instances `EffectRuntime`
+  owns), worker → `0` (queued to the worker, `EffectRuntime` never saw them).
+  Both authorities must also produce identical `instance_ids` and
+  `target_handles`, and the ownership bit is re-checked after a level promotion
+  (days 1–4) so a writer that silently reverts later cannot pass on day 0.
+
+`runtime_effect_adapter_parity_self_test()` covers the other half: the worker's
+Effect-intent → Modifier POD mapping must reproduce
+`EffectRuntime::dispatch_native_modifier` field for field. The fixture lives in
+C++ because the worker TU may not include `modifier_runtime.h`, so the expected
+values are transcribed per adapter branch with the mirrored `effect_runtime.cpp`
+line numbers, not computed. It runs in two stages — the mapping is asserted on
+the returned `RuntimeModifierPodCommand`, then the mapped commands are planned
+through the Modifier POD so an adapter cannot "pass" by emitting something the
+POD discards. Both stages bypass `execute_modifier_worker_stage`: planning a day
+there feeds Modifier ACKs back into the Effect authority, and a pure mapping
+fixture has no Effect transactions for those ACKs to settle against (it used to
+fail with `effect_pod_ack_transaction_unknown` before any assertion ran).
+
 ## Worker shadow authority (G2-G7)
 
 The section below describes the SHADOW diagnostic stage, which is retained for

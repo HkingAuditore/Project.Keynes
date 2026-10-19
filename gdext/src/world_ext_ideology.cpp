@@ -3,6 +3,7 @@
 #include "country_runtime.h"
 #include "economy_runtime.h"
 #include "effect_runtime.h"
+#include "effect_instance_forwarder.h"
 #include "ideology_runtime.h"
 #include "modifier_runtime.h"
 #include "native_simulation_host.h"
@@ -71,6 +72,12 @@ Dictionary DCWorldExt::configure_ideologies(const Dictionary &catalog) {
         static_cast<NativeEconomyRuntime *>(_economy_runtime));
     ideology_runtime_from(_ideology_runtime)->attach_effect_runtime(
         static_cast<EffectRuntime *>(_effect_runtime));
+    // M2a: equipping a card is a declarative Effect instance write, so it has to
+    // go through the same forwarder DCWorldExt uses. Without this the card lands
+    // on the main-thread EffectRuntime while the worker owns EFFECT, and the
+    // next worker snapshot erases it.
+    ideology_runtime_from(_ideology_runtime)->attach_effect_forwarder(
+        _effect_forwarder.get());
     ideology_runtime_from(_ideology_runtime)->attach_modifier_runtime(
         static_cast<ModifierRuntime *>(_modifier_runtime));
     Dictionary result = ideology_runtime_from(_ideology_runtime)->configure(catalog);
@@ -330,8 +337,41 @@ Dictionary DCWorldExt::get_ideology_snapshot(int64_t country_handle) const {
         : ideology_runtime_from(_ideology_runtime)->snapshot(country_handle);
 }
 
-Dictionary DCWorldExt::preview_ideology_offer_eligibility(int64_t country_handle) const {
+Dictionary DCWorldExt::get_ideology_effect_instance_report(int64_t country_handle) const {
     return _ideology_runtime == nullptr ? unavailable()
+        : ideology_runtime_from(_ideology_runtime)->effect_instance_report(country_handle);
+}
+
+PackedInt32Array DCWorldExt::query_effect_target_cells(
+        int32_t source_cell, int32_t selector_kind, int32_t param0,
+        int32_t param1) const {
+    PackedInt32Array out;
+    if (_economy_runtime == nullptr) return out;
+    std::vector<int32_t> cells;
+    static_cast<const NativeEconomyRuntime *>(_economy_runtime)
+        ->collect_effect_target_cells(source_cell, selector_kind, param0, param1,
+            cells);
+    out.resize(static_cast<int64_t>(cells.size()));
+    for (size_t i = 0; i < cells.size(); ++i)
+        out[static_cast<int64_t>(i)] = cells[i];
+    return out;
+}
+
+int32_t DCWorldExt::query_country_anchor_cell(int32_t country_slot) const {
+    if (_economy_runtime == nullptr) return -1;
+    return static_cast<const NativeEconomyRuntime *>(_economy_runtime)
+        ->country_anchor_cell(country_slot);
+}
+
+bool DCWorldExt::effect_program_is_managed(const String &program_key) const {
+    if (_effect_runtime == nullptr) return false;
+    EffectRuntime::FamilyEffectMetadataPod metadata;
+    return static_cast<const EffectRuntime *>(_effect_runtime)
+        ->family_effect_metadata_pod(
+            std::string(program_key.utf8().get_data()), metadata);
+}
+
+Dictionary DCWorldExt::preview_ideology_offer_eligibility(int64_t country_handle) const {    return _ideology_runtime == nullptr ? unavailable()
         : ideology_runtime_from(_ideology_runtime)->preview_offer_eligibility(country_handle);
 }
 

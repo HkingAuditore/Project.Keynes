@@ -14,6 +14,8 @@ signal remove_requested(index: int)
 const POINT_SCALE := 1000.0
 const Art := preload("res://scripts/ui/components/technology_tree_art.gd")
 const EffectsLayer := preload("res://scripts/ui/components/technology_effects_layer.gd")
+const TechnologyEffectTextScript := preload(
+	"res://scripts/ui/components/technology_effect_text.gd")
 const CARD_HEIGHT := 60.0
 const CARD_GAP := 8.0
 const MIN_CARD_WIDTH := 300.0
@@ -298,7 +300,9 @@ func _tooltip_for(item_index: int, part: String) -> String:
 		"tree":
 			return "在科技树中定位"
 	var definition: Dictionary = _definitions[technology]
-	var summary := String(definition.get("effect_summary", ""))
+	# 摘要走共用模块：effect_summary 为空时由结构化效果拼出来，否则
+	# 「天文导航」这类只靠运行时航道的科技在列表里悬停时是一片空白。
+	var summary := TechnologyEffectTextScript.summary_text(definition)
 	var hint := "单击查看详情 · 双击%s" % ("加入队列" if state == 2 else "移出队列") \
 		if state in [2, 3] else "单击查看详情"
 	return "%s\n%s\n%s" % [String(definition.get("display_name", "")), summary, hint] \

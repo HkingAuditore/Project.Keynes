@@ -105,6 +105,9 @@ func to_effect_definition() -> Resource:
 	definition.priority = priority
 	definition.target_selector_kind = target_selector_kind
 	definition.target_selector_id = target_selector_id
+	# Declared rather than inferred from the "family.effect." key prefix, so a
+	# mixed catalog (family + ideology) can carry both owners unambiguously.
+	definition.managed = true
 	definition.magnitude_by_prestige_q16 = magnitude_by_prestige_q16.duplicate()
 	return definition
 
