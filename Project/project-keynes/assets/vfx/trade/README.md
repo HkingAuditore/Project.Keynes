@@ -17,5 +17,5 @@
 flat diffuse albedo, no cast shadows, transparent background, no text/grid/scenery/glow。
 
 光照由 `earth_daylight.gdshaderinc` 计算；高画质在每个载具中心采地形法线和 Horizon GI，
-独立固定批次生成随太阳方向变化的投影。时代映射由 `TradeActivityLayer.ERA_ROWS`
+独立固定批次用单个柔边椭圆表现随太阳方向变化的阴影，不重复采样载具轮廓。时代映射由 `TradeActivityLayer.ERA_ROWS`
 统一管理；位图只改变外观，不授予通行科技。

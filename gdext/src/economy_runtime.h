@@ -38,6 +38,24 @@
 
 namespace pk {
 
+// Track B spread mode per-live-cell derived work cache entry.
+struct TrackBDerivedCellWork {
+    std::vector<int32_t> goods;
+    std::vector<int64_t> quantities;
+    int64_t edges = 0;
+    uint64_t startup_calls = 0;
+    uint64_t enqueued_goods = 0;
+    bool seeded = false;
+    void reset() {
+        goods.clear();
+        quantities.clear();
+        edges = 0;
+        startup_calls = 0;
+        enqueued_goods = 0;
+        seeded = false;
+    }
+};
+
 struct RuntimeEconomyEcp2State;
 
 class EffectRuntime;
@@ -1411,11 +1429,17 @@ private:
         explicit LivingCostMemoScope(NativeEconomyRuntime &owner, bool allow_quotes = false,
                 bool frozen_country_preview = false, bool frozen_price_overrides = false) : runtime(owner) {
             auto &state = living_cost_memo_state();
-            const char *disabled = std::getenv("PK_ECONOMY_MEMO_DISABLE");
-            if (disabled && std::strcmp(disabled, "1") == 0) return;
+            static const bool memo_disabled = [] {
+                const char *value = std::getenv("PK_ECONOMY_MEMO_DISABLE");
+                return value && std::strcmp(value, "1") == 0;
+            }();
+            if (memo_disabled) return;
             if (frozen_price_overrides) {
-                const char *attribution_disabled = std::getenv("PK_ECONOMY_ATTRIBUTION_MEMO_DISABLE");
-                if (attribution_disabled && std::strcmp(attribution_disabled, "1") == 0) return;
+                static const bool attribution_disabled = [] {
+                    const char *value = std::getenv("PK_ECONOMY_ATTRIBUTION_MEMO_DISABLE");
+                    return value && std::strcmp(value, "1") == 0;
+                }();
+                if (attribution_disabled) return;
             }
             if (state.depth != 0 && state.owner != &owner) return;
             if (state.depth++ == 0) {
@@ -2556,8 +2580,24 @@ private:
         std::vector<uint32_t> construction_stamp;
         std::vector<int32_t> construction_good;
         std::vector<int64_t> construction_physical;
+        std::vector<uint32_t> input_stamp;
+        std::vector<int32_t> input_good;
+        std::vector<int64_t> input_physical;
+        std::vector<uint32_t> type_cond_stamp;
+        std::vector<uint8_t> type_cond_ok;
+        std::vector<uint32_t> type_climate_stamp;
+        std::vector<int64_t> type_climate_q16;
+        std::vector<uint32_t> type_wage_stamp;
+        std::vector<int64_t> type_wage_cost;
+        std::vector<int64_t> type_employee_slots;
+        std::vector<uint32_t> type_construct_stamp;
+        std::vector<int64_t> type_construct_cost;
+        std::vector<int32_t> type_construct_count;
+        std::vector<int32_t> type_construct_goods;
+        std::vector<int64_t> type_construct_physical;
 
-        void ensure_cell(int32_t cell, size_t good_count, size_t bom_count) {
+        void ensure_cell(int32_t cell, size_t good_count, size_t bom_count,
+                         size_t input_count, size_t type_count) {
             const size_t prod_slots = good_count * 4u;
             const size_t bom_slots = bom_count * 4u;
             if (producer_stamp.size() < prod_slots) {
@@ -2573,12 +2613,37 @@ private:
                 construction_good.resize(bom_slots, -1);
                 construction_physical.resize(bom_slots, 0);
             }
+            if (input_stamp.size() < input_count) {
+                input_stamp.assign(input_count, 0);
+                input_good.resize(input_count, -1);
+                input_physical.resize(input_count, 0);
+            }
+            if (type_cond_stamp.size() < type_count) {
+                type_cond_stamp.assign(type_count, 0);
+                type_cond_ok.assign(type_count, 0);
+                type_climate_stamp.assign(type_count, 0);
+                type_climate_q16.assign(type_count, 0);
+                type_wage_stamp.assign(type_count, 0);
+                type_wage_cost.assign(type_count, 0);
+                type_employee_slots.assign(type_count, 0);
+                type_construct_stamp.assign(type_count, 0);
+                type_construct_cost.assign(type_count, 0);
+                type_construct_count.assign(type_count, 0);
+                type_construct_goods.assign(static_cast<size_t>(type_count) * 4u, -1);
+                type_construct_physical.assign(
+                    static_cast<size_t>(type_count) * 4u, 0);
+            }
             if (fast_cell != cell) {
                 fast_cell = cell;
                 if (++fast_gen == 0) {
                     std::fill(producer_stamp.begin(), producer_stamp.end(), 0);
                     std::fill(cover_stamp.begin(), cover_stamp.end(), 0);
                     std::fill(construction_stamp.begin(), construction_stamp.end(), 0);
+                    std::fill(input_stamp.begin(), input_stamp.end(), 0);
+                    std::fill(type_cond_stamp.begin(), type_cond_stamp.end(), 0);
+                    std::fill(type_climate_stamp.begin(), type_climate_stamp.end(), 0);
+                    std::fill(type_wage_stamp.begin(), type_wage_stamp.end(), 0);
+                    std::fill(type_construct_stamp.begin(), type_construct_stamp.end(), 0);
                     fast_gen = 1;
                 }
             }
@@ -5233,6 +5298,9 @@ private:
         FAMILY_BEHAVIOR_DIRTY_INITIAL;
     uint32_t _family_behavior_cache_last_reasons = 0;
     bool _family_behavior_cache_dirty = true;
+    // Track B: last day the family behavior cache was actually rebuilt.
+    int64_t _track_b_family_cache_last_day =
+        std::numeric_limits<int64_t>::min();
     double _person_retire_call_ms = 0.0;
     int64_t _person_retire_calls = 0;
     double _rebuild_person_needs_ms = 0.0;
@@ -5524,6 +5592,23 @@ private:
     // Leontief shadow derived demand from unmet final/business deficits through
     // preferred producer BOMs. Recomputed each sample; excluded from PKEC/hash.
     std::vector<int64_t> _epoch_derived_business_demand;
+    // Track B (user-approved approximation): carry the last computed derived
+    // business demand so every N-th day can reuse it instead of running the
+    // full BFS/preview pass. Exact mode is restored with PK_ECONOMY_TRACK_B=0.
+    std::vector<int64_t> _track_b_derived_carry;
+    // Track B commit spread: investment review cells still waiting for their
+    // turn (processed incrementally across epochs, 1/N per day).
+    std::vector<int32_t> _track_b_investment_cells_pending;
+    // Track B: per-runtime carry for the cadenced AGGREGATE_PUBLISH state hash.
+    // Must be per-runtime (not file-static): parity tests boot two runtimes in
+    // one process and interleave their days.
+    int64_t _track_b_hash_last_day = -1000000;
+    uint64_t _track_b_hash_last_value = 0;
+    // Track B spread mode: per-live-cell derived work cache so each day only a
+    // 1/N slice of cells is recomputed and the ordered merge covers all cells.
+    std::vector<TrackBDerivedCellWork> _track_b_derived_cell_cache;
+    int64_t _track_b_derived_cell_cache_day = -1000000;
+    int32_t _track_b_derived_cell_cache_cells = -1;
     struct DerivedHouseholdPreview {
         std::vector<int64_t> goods;
         int64_t saturations = 0;
@@ -6462,6 +6547,10 @@ private:
     std::vector<GoodAmount> _building_maintenance_author_goods;
     std::vector<GoodAmount> _building_maintenance_goods;
     std::vector<ProductionInput> _building_inputs;
+    // Catalogue-static physical quantity for each input candidate row
+    // (input quantity / candidate efficiency, rounded up). Recomputed by the
+    // selection hot path before; only depends on catalogue data.
+    std::vector<int64_t> _building_input_candidate_physical_daily;
     std::vector<InputCandidate> _building_input_candidates;
     std::vector<GoodAmount> _building_outputs;
     std::vector<int32_t> _building_output_cost_shares_q16;
@@ -7605,6 +7694,11 @@ private:
     void rebuild_family_owned_output_csr();
     bool rebuild_family_behavior_cache();
     void mark_family_behavior_cache_dirty(uint32_t reason);
+    // Track B cadenced AGGREGATE_PUBLISH state hash carry (per runtime).
+public:
+    bool track_b_aggregate_hash_reuse(int64_t day, uint64_t &cached_hash);
+    void track_b_aggregate_hash_store(int64_t day, uint64_t hash);
+private:
     void rebuild_family_policy_scalars();
     void grant_random_pool_family_effect(int32_t family_index,
                                          bool submit_changes);

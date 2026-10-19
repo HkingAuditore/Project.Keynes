@@ -35,6 +35,8 @@ uniform bool shadow_pass = false;
 uniform float shadow_strength = 0.32;
 uniform float vehicle_height = 3.0;
 uniform float shadow_max_length = 15.0;
+uniform vec2 shadow_footprint = vec2(0.9, 0.65);
+uniform float shadow_edge_softness = 0.35;
 uniform vec4 shadow_color : source_color = vec4(0.11, 0.13, 0.17, 1.0);
 #define VT_USE_HORIZON
 #define VT_USE_TERRAIN_NORMAL
@@ -59,7 +61,6 @@ vec2 wrap_map_uv(vec2 uv) { return visual_static_wrap_uv(uv); }
 varying flat float sprite_row;
 varying flat float vehicle_alpha;
 varying flat vec3 vehicle_light;
-varying flat vec2 shadow_uv_offset;
 varying vec2 sprite_uv;
 
 // One canonical east-facing TRUE vertical view per vehicle. Rotating the quad
@@ -139,18 +140,19 @@ void vertex() {
 	vec2 scale = vec2(vehicle_size, vehicle_size * 0.5);
 	vec2 expanded = vec2(1.0);
 	vec2 shift = vec2(0.0);
-	shadow_uv_offset = vec2(0.0);
 	if (shadow_pass) {
+		// A single soft ground ellipse, like vegetation; no sprite silhouettes.
+		scale *= shadow_footprint;
 		float height = vehicle_height * (mode == 1 ? 0.45 : 1.0);
 		shift = -ed.sun_dir.xy / max(ed.sun_dir.z, 0.15) * height;
 		shift *= min(1.0, shadow_max_length / max(length(shift), 0.001));
-		shadow_uv_offset = vec2(dot(shift, direction), dot(shift, across)) / scale;
-		expanded += abs(shadow_uv_offset);
+		vec2 offset_local = vec2(dot(shift, direction), dot(shift, across)) / scale;
+		expanded += abs(offset_local);
 		vehicle_alpha *= shadow_strength * ed.local_day * hs.direct_visibility
 			* smoothstep(0.0, 0.15, ed.sun_dir.z) * (visual_quality >= 2 ? 1.0 : 0.0);
 	}
 	// QuadMesh UV.y is inverted; vertex local XY already has image-down Y.
-	sprite_uv = VERTEX * expanded + vec2(0.5) + shadow_uv_offset * 0.5;
+	sprite_uv = VERTEX + vec2(0.5);
 	vec2 local = VERTEX * expanded * scale;
 	VERTEX = center + direction * local.x + across * local.y + shift * 0.5;
 }
@@ -158,12 +160,9 @@ void vertex() {
 void fragment() {
 	if (vehicle_alpha <= 0.001) { discard; }
 	if (shadow_pass) {
-		// Bounded silhouette sweep fills the cast volume, including its contact.
-		float coverage = 0.0;
-		for (int i = 0; i < 4; i++) {
-			coverage = max(coverage, atlas_sample(sprite_uv - shadow_uv_offset * (float(i) / 3.0)).a);
-		}
-		if (coverage < 0.025) { discard; }
+		float radius = length((sprite_uv - vec2(0.5)) * 2.0);
+		float coverage = 1.0 - smoothstep(1.0 - shadow_edge_softness, 1.0, radius);
+		if (coverage * vehicle_alpha < 0.003) { discard; }
 		COLOR = vec4(shadow_color.rgb, coverage * vehicle_alpha * shadow_color.a);
 	} else {
 		vec4 paint = atlas_sample(sprite_uv);

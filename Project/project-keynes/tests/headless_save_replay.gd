@@ -201,6 +201,11 @@ func _advance(host: WorldRuntimeHost, clock: WorldClock, generator,
 		var key := "worker_time_%s_us" % category
 		timing_deltas[category] = int(final_progress.get(key, 0)) - int(thread_start.get(key, 0))
 	_result["measurement_worker_time_us"] = timing_deltas
+	# Process CPU (all threads) is frequency-invariant; wall-clock drifts with the
+	# CPU thermal/boost state and is not reliable for cross-build A/B.
+	var process_cpu_delta := int(final_progress.get("process_cpu_us", 0)) - int(
+		thread_start.get("process_cpu_us", 0))
+	_result["measurement_process_cpu_us"] = process_cpu_delta
 	# The compatibility bridge deliberately returns its last safe report while
 	# the worker owns mutable arrays. A final assertion must wait for a fresh
 	# boundary report, rather than interpret a marked cached revision as final.

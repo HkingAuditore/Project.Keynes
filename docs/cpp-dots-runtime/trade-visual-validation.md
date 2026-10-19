@@ -111,3 +111,18 @@ Vulkan 同一静止货车的平均像素亮度：白昼约 0.344、夜间 0.115�
 & $godot --path Project/project-keynes --rendering-method mobile --rendering-driver vulkan --script tests/trade_activity_lighting_test.gd -- capture_dir=res://tmp/trade_activity_qa/lighting_vulkan
 & $godot --path Project/project-keynes --rendering-method gl_compatibility --script tests/trade_activity_lighting_test.gd -- capture_dir=res://tmp/trade_activity_qa/lighting_opengl
 ```
+
+## 椭圆阴影修正（2026-10-20）
+
+用户实机反馈商队出现多重轮廓。原因是此前阴影 fragment 对载具图集做四次错位轮廓采样，
+相邻投影之间仍留下离散轮廓；实际绘制批次一直是本体一次、阴影一次。
+现改为每辆载具一个解析柔边椭圆，参照植被的粗略阴影表现，不再读取阴影图集或叠加轮廓。
+太阳偏移与长度上限、Horizon 遮挡、夜间消隐及载具中心的 TOD/法线/GI 保持原有边界。
+
+Vulkan Mobile、OpenGL Compatibility 各 16 项图形检查通过；新增仅绘制阴影的 GPU 截图，
+验证每条扫描线透明度只有一个连续峰／平台，避免再出现重复轮廓。
+方向检查改为比较隔离后的椭圆位置，避免把载具美术轮廓的包围盒误作阴影中心。
+原渲染层 26 项回归通过。未重新测量性能，上面的历史计时不代表此次椭圆版实测。
+
+截图在 `Project/project-keynes/tmp/trade_activity_qa/ellipse_vulkan/` 与 `ellipse_opengl/`；
+`ellipse_only.png` 为隔离的单个阴影，`ellipse_preview.png` 为色块地面上的放大预览。

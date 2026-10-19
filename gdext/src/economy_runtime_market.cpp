@@ -342,12 +342,16 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
     const int64_t saturation_before = sat;
     std::vector<int64_t> need_saturations(_needs.size(), 0);
     int64_t reused_needs = 0;
-    const char *basis_disabled = std::getenv("PK_ECONOMY_PREVIEW_BASIS_DISABLE");
-    const bool reuse_basis = memo_active &&
-        !(basis_disabled && std::strcmp(basis_disabled, "1") == 0);
-    const char *workset_disabled = std::getenv("PK_ECONOMY_ACTIVE_WORKSET_DISABLE");
-    const bool filter_locked = memo_active &&
-        !(workset_disabled && std::strcmp(workset_disabled, "1") == 0);
+    static const bool basis_disabled = [] {
+        const char *value = std::getenv("PK_ECONOMY_PREVIEW_BASIS_DISABLE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    const bool reuse_basis = memo_active && !basis_disabled;
+    static const bool workset_disabled = [] {
+        const char *value = std::getenv("PK_ECONOMY_ACTIVE_WORKSET_DISABLE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    const bool filter_locked = memo_active && !workset_disabled;
     static const bool price_basis_disabled = [] {
         const char *value = std::getenv("PK_ECONOMY_VARIANT_PRICE_BASIS_DISABLE");
         return value && std::strcmp(value, "1") == 0;
@@ -565,8 +569,11 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
         good_per_capita_daily[good] /= population;
     // Validate the complete actor-specific result, including saturation events,
     // against a fresh basis. This diagnostic does not change production cadence.
-    const char *verify = std::getenv("PK_ECONOMY_MEMO_VERIFY");
-    if (memo_active && verify && std::strcmp(verify, "1") == 0) {
+    static const bool verify_preview_memo = [] {
+        const char *value = std::getenv("PK_ECONOMY_MEMO_VERIFY");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    if (memo_active && verify_preview_memo) {
         const auto *previous_owner = memo.owner;
         memo.owner = nullptr;
         std::vector<int64_t> reference;

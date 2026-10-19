@@ -7,13 +7,54 @@
 #include <array>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
 #include <limits>
 #include <tuple>
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 
 namespace pk {
 
 namespace {
 using Clock = std::chrono::steady_clock;
+
+#if defined(_WIN32)
+int64_t startup_probe_thread_cpu_us() {
+    FILETIME creation{}, exit{}, kernel{}, user{};
+    if (!GetThreadTimes(GetCurrentThread(), &creation, &exit, &kernel, &user))
+        return 0;
+    ULARGE_INTEGER k{}, u{};
+    k.LowPart = kernel.dwLowDateTime;
+    k.HighPart = kernel.dwHighDateTime;
+    u.LowPart = user.dwLowDateTime;
+    u.HighPart = user.dwHighDateTime;
+    return static_cast<int64_t>((k.QuadPart + u.QuadPart) / 10);
+}
+int64_t startup_probe_process_cpu_us() {
+    FILETIME creation{}, exit{}, kernel{}, user{};
+    if (!GetProcessTimes(GetCurrentProcess(), &creation, &exit, &kernel, &user))
+        return 0;
+    ULARGE_INTEGER k{}, u{};
+    k.LowPart = kernel.dwLowDateTime;
+    k.HighPart = kernel.dwHighDateTime;
+    u.LowPart = user.dwLowDateTime;
+    u.HighPart = user.dwHighDateTime;
+    return static_cast<int64_t>((k.QuadPart + u.QuadPart) / 10);
+}
+#else
+int64_t startup_probe_thread_cpu_us() { return 0; }
+int64_t startup_probe_process_cpu_us() { return 0; }
+#endif
 
 double elapsed_ms(const Clock::time_point &start) {
     return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
@@ -27,22 +68,7 @@ struct DerivedQueueEntry {
     int64_t needed = 0;
 };
 
-struct DerivedCellWork {
-    std::vector<int32_t> goods;
-    std::vector<int64_t> quantities;
-    int64_t edges = 0;
-    uint64_t startup_calls = 0;
-    uint64_t enqueued_goods = 0;
-    bool seeded = false;
-    void reset() {
-        goods.clear();
-        quantities.clear();
-        edges = 0;
-        startup_calls = 0;
-        enqueued_goods = 0;
-        seeded = false;
-    }
-};
+using DerivedCellWork = TrackBDerivedCellWork;
 } // namespace
 
 bool NativeEconomyRuntime::investment_portfolio_funds_feasible(
@@ -347,7 +373,8 @@ int64_t NativeEconomyRuntime::startup_producer_hard_input_cover_q16(
         static_cast<size_t>(depth & 3);
     if (memo_active) {
         memo.ensure_cell(cell, _good_ids.size(),
-                         _building_construction_goods.size());
+                         _building_construction_goods.size(),
+                         _building_inputs.size(), _building_types.size());
         if (memo.cover_stamp[slot_idx] == memo.fast_gen) {
             sat += memo.cover_sat_delta[slot_idx];
             return memo.cover_value[slot_idx];
@@ -446,6 +473,25 @@ int32_t NativeEconomyRuntime::select_startup_input_candidate(
         int64_t &physical_daily) const {
     physical_daily = 0;
     if (cell < 0 || cell >= _cell_count.get()) return -1;
+    // Startup selection re-evaluates the same input rows across many candidate
+    // producer types and BFS depths within one cell. The result only depends on
+    // current cell state (memo scope is a read-only phase), so cache it per
+    // input row like the producer/construction selections above.
+    const int32_t input_index = static_cast<int32_t>(
+        &input - _building_inputs.data());
+    auto &memo = startup_producer_memo_state();
+    const bool memo_active = memo.depth > 0 && memo.owner == this &&
+        input_index >= 0 &&
+        input_index < static_cast<int32_t>(_building_inputs.size());
+    if (memo_active) {
+        memo.ensure_cell(cell, _good_ids.size(),
+                         _building_construction_goods.size(),
+                         _building_inputs.size(), _building_types.size());
+        if (memo.input_stamp[static_cast<size_t>(input_index)] == memo.fast_gen) {
+            physical_daily = memo.input_physical[static_cast<size_t>(input_index)];
+            return memo.input_good[static_cast<size_t>(input_index)];
+        }
+    }
     const int32_t market = market_store().cell_to_market[cell];
     int32_t best_good = -1;
     int64_t best_coverage = -1;
@@ -457,10 +503,17 @@ int32_t NativeEconomyRuntime::select_startup_input_candidate(
          cursor < input.candidate_begin + input.candidate_count; ++cursor) {
         const InputCandidate &candidate = _building_input_candidates[cursor];
         if (!good_input_candidate_available(cell, candidate.good_id, true)) continue;
-        int64_t physical = mul_div_sat(input.quantity, Q16_ONE,
-            std::max<int32_t>(1, candidate.efficiency_q16), sat);
-        if (mul_div_sat(physical, candidate.efficiency_q16,
-                Q16_ONE, sat) < input.quantity) ++physical;
+        int64_t physical = cursor >= 0 && cursor < static_cast<int32_t>(
+                _building_input_candidate_physical_daily.size())
+            ? _building_input_candidate_physical_daily[
+                  static_cast<size_t>(cursor)]
+            : 0;
+        if (physical <= 0) {
+            physical = mul_div_sat(input.quantity, Q16_ONE,
+                std::max<int32_t>(1, candidate.efficiency_q16), sat);
+            if (mul_div_sat(physical, candidate.efficiency_q16,
+                    Q16_ONE, sat) < input.quantity) ++physical;
+        }
         const int32_t signal = market_signal_index(cell, candidate.good_id);
         const int64_t stock = std::max<int64_t>(0,
             market_store().stock[market_store().index(market, candidate.good_id)]);
@@ -494,6 +547,12 @@ int32_t NativeEconomyRuntime::select_startup_input_candidate(
         }
     }
     physical_daily = best_physical;
+    if (memo_active && memo.fast_cell == cell) {
+        const size_t slot = static_cast<size_t>(input_index);
+        memo.input_stamp[slot] = memo.fast_gen;
+        memo.input_good[slot] = best_good;
+        memo.input_physical[slot] = best_physical;
+    }
     return best_good;
 }
 
@@ -512,7 +571,8 @@ int32_t NativeEconomyRuntime::select_startup_construction_candidate(
         static_cast<size_t>(group) * 4u + static_cast<size_t>(cur_depth & 3);
     if (memo_active) {
         memo.ensure_cell(cell, _good_ids.size(),
-                         _building_construction_goods.size());
+                         _building_construction_goods.size(),
+                         _building_inputs.size(), _building_types.size());
         if (memo.construction_stamp[slot_idx] == memo.fast_gen) {
             physical_quantity = memo.construction_physical[slot_idx];
             return memo.construction_good[slot_idx];
@@ -572,8 +632,11 @@ int32_t NativeEconomyRuntime::select_startup_producer(
 NativeEconomyRuntime::StartupProducerMemoScope::StartupProducerMemoScope(
         const NativeEconomyRuntime &owner) : runtime(owner) {
     auto &state = startup_producer_memo_state();
-    const char *disabled = std::getenv("PK_ECONOMY_MEMO_DISABLE");
-    if (disabled && std::strcmp(disabled, "1") == 0) return;
+    static const bool memo_disabled = [] {
+        const char *value = std::getenv("PK_ECONOMY_MEMO_DISABLE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    if (memo_disabled) return;
     if (state.depth != 0 && state.owner != &owner) return;
     if (state.depth++ == 0) {
         state.owner = &owner;
@@ -632,10 +695,14 @@ int32_t NativeEconomyRuntime::select_startup_producer(
         static_cast<size_t>(good_id) * 4u + static_cast<size_t>(cur_depth & 3);
     if (memo_active) {
         memo.ensure_cell(cell, _good_ids.size(),
-                         _building_construction_goods.size());
+                         _building_construction_goods.size(),
+                         _building_inputs.size(), _building_types.size());
         if (memo.producer_stamp[slot_idx] == memo.fast_gen) {
-            const char *verify = std::getenv("PK_ECONOMY_MEMO_VERIFY");
-            if (verify && std::strcmp(verify, "1") == 0) {
+            static const bool verify_startup_memo = [] {
+                const char *value = std::getenv("PK_ECONOMY_MEMO_VERIFY");
+                return value && std::strcmp(value, "1") == 0;
+            }();
+            if (verify_startup_memo) {
                 const auto *previous_owner = memo.owner;
                 memo.owner = nullptr;
                 InvestmentCandidatePlan reference_plan;
@@ -660,19 +727,55 @@ int32_t NativeEconomyRuntime::select_startup_producer(
         ++memo.misses;
     }
     EconomyCostProbe cost("startup_producer_select", _current_day.get(), 1);
+    static const bool startup_trace = [] {
+        const char *value = std::getenv("PK_ECONOMY_STARTUP_TRACE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    double trace_cond_ms = 0.0;
+    double trace_climate_ms = 0.0;
+    double trace_inputs_ms = 0.0;
+    double trace_tail_ms = 0.0;
+    // Most callers only need the selected type id (cover/construction probes).
+    // Skip the plan vectors and the best-plan copy for them: the copies were
+    // allocating per call inside the derived-refresh hot loop.
+    const bool need_plan = selected_plan != nullptr;
     int32_t best_type = -1;
     int64_t best_return = std::numeric_limits<int64_t>::min();
     int64_t best_unit_cost = std::numeric_limits<int64_t>::max();
     int64_t best_output = 0;
-    InvestmentCandidatePlan best_plan;
-    InvestmentCandidatePlan candidate_plan;
+    // Reuse one candidate plan per recursion depth instead of constructing
+    // (and heap-allocating) a fresh plan for every select call. Depth-indexing
+    // keeps the recursive cover->select path safe; the vectors keep their
+    // capacity across calls so the steady state performs no allocation.
+    static thread_local std::array<InvestmentCandidatePlan, 4>
+        candidate_plan_pool;
+    InvestmentCandidatePlan &candidate_plan =
+        candidate_plan_pool[static_cast<size_t>(
+            std::clamp(cur_depth, 0, 3))];
     const int32_t market = market_store().cell_to_market[cell];
     int64_t sat = 0;
     for (int32_t cursor = _investment_good_type_offsets[good_id];
          cursor < _investment_good_type_offsets[good_id + 1]; ++cursor) {
         const int32_t type_id = _investment_good_type_indices[cursor];
-        if (!building_available(cell, type_id, true) ||
-            !evaluate_building_conditions(type_id, cell)) continue;
+        const auto trace_cond_started = startup_trace ? Clock::now()
+            : Clock::time_point{};
+        bool conditions_ok = false;
+        if (memo_active && type_id >= 0 &&
+            type_id < static_cast<int32_t>(memo.type_cond_stamp.size()) &&
+            memo.type_cond_stamp[static_cast<size_t>(type_id)] == memo.fast_gen) {
+            conditions_ok = memo.type_cond_ok[static_cast<size_t>(type_id)] != 0;
+        } else {
+            conditions_ok = building_available(cell, type_id, true) &&
+                evaluate_building_conditions(type_id, cell);
+            if (memo_active && memo.fast_cell == cell && type_id >= 0 &&
+                type_id < static_cast<int32_t>(memo.type_cond_stamp.size())) {
+                const size_t slot = static_cast<size_t>(type_id);
+                memo.type_cond_stamp[slot] = memo.fast_gen;
+                memo.type_cond_ok[slot] = conditions_ok ? 1 : 0;
+            }
+        }
+        if (startup_trace) trace_cond_ms += elapsed_ms(trace_cond_started);
+        if (!conditions_ok) continue;
         const BuildingType &type = _building_types[type_id];
         // Startup selection writes the same candidate record used by ordinary
         // investment.  The selector may still return a type id for legacy
@@ -687,10 +790,12 @@ int32_t NativeEconomyRuntime::select_startup_producer(
         candidate_plan.owner_slots = std::max<int64_t>(1,
             type.owner_slots_per_building);
         candidate_plan.employee_slots = 0;
-        candidate_plan.input_good_ids.clear();
-        candidate_plan.input_quantities.clear();
-        candidate_plan.material_good_ids.clear();
-        candidate_plan.material_quantities.clear();
+        if (need_plan) {
+            candidate_plan.input_good_ids.clear();
+            candidate_plan.input_quantities.clear();
+            candidate_plan.material_good_ids.clear();
+            candidate_plan.material_quantities.clear();
+        }
         int64_t output_quantity = 0;
         for (int32_t edge = 0; edge < type.output_count; ++edge) {
             const GoodAmount &output = _building_outputs[type.output_begin + edge];
@@ -700,12 +805,32 @@ int32_t NativeEconomyRuntime::select_startup_producer(
         }
         output_quantity = mul_div_sat(output_quantity,
             _building_output_efficiency_q16, Q16_ONE, sat);
-        const int64_t climate_cap = production_climate_capacity_q16(
-            type, cell, nullptr, nullptr, sat);
+        const auto trace_climate_started = startup_trace ? Clock::now()
+            : Clock::time_point{};
+        int64_t climate_cap = 0;
+        const size_t climate_slot = static_cast<size_t>(type_id);
+        if (memo_active &&
+            climate_slot < memo.type_climate_stamp.size() &&
+            memo.type_climate_stamp[climate_slot] == memo.fast_gen) {
+            climate_cap = memo.type_climate_q16[climate_slot];
+        } else {
+            climate_cap = production_climate_capacity_q16(
+                type, cell, nullptr, nullptr, sat);
+            if (memo_active && memo.fast_cell == cell &&
+                climate_slot < memo.type_climate_stamp.size()) {
+                memo.type_climate_stamp[climate_slot] = memo.fast_gen;
+                memo.type_climate_q16[climate_slot] = climate_cap;
+            }
+        }
+        if (startup_trace) trace_climate_ms += elapsed_ms(trace_climate_started);
         output_quantity = mul_div_sat(output_quantity,
             climate_cap, Q16_ONE, sat);
         if (output_quantity <= 0) continue;
         candidate_plan.utilization_q16 = climate_cap;
+        const auto trace_inputs_started = startup_trace ? Clock::now()
+            : Clock::time_point{};
+        const auto trace_edges_started = startup_trace ? Clock::now()
+            : Clock::time_point{};
         int64_t operating_cost = 0;
         int64_t input_cost = 0;
         for (int32_t edge = 0; edge < type.input_count; ++edge) {
@@ -717,53 +842,120 @@ int32_t NativeEconomyRuntime::select_startup_producer(
                 operating_cost = std::numeric_limits<int64_t>::max();
                 break;
             }
-            candidate_plan.input_good_ids.push_back(input_good);
-            candidate_plan.input_quantities.push_back(physical);
+            if (need_plan) {
+                candidate_plan.input_good_ids.push_back(input_good);
+                candidate_plan.input_quantities.push_back(physical);
+            }
             const int64_t edge_cost = goods_cost(physical,
                 market_store().price[market_store().index(market, input_good)], sat);
             input_cost = saturating_add(input_cost, edge_cost, sat);
             operating_cost = saturating_add(operating_cost, edge_cost, sat);
         }
         if (operating_cost == std::numeric_limits<int64_t>::max()) continue;
+        const auto trace_wages_started = startup_trace ? Clock::now()
+            : Clock::time_point{};
         int64_t wage_cost = 0;
-        for (int32_t role = 0; role < type.employee_count; ++role) {
-            candidate_plan.employee_slots = saturating_add(
-                candidate_plan.employee_slots,
-                std::max<int64_t>(0, _building_employee_roles[
-                    type.employee_begin + role].slots_per_building), sat);
-        }
-        for (int32_t role = 0; role < type.employee_count; ++role) {
-            const JobRole &job = _building_employee_roles[type.employee_begin + role];
-            const int32_t signal = labor_signal_index(cell, job.profession_id);
-            const int64_t living_floor = signal >= 0
-                ? std::max(_labor_signals.base_living_cost[signal],
-                    _labor_signals.role_living_cost[signal]) : 0;
-            const int64_t market_quote = signal >= 0 && signal <
-                    static_cast<int32_t>(_labor_signals.contract_wage_ema.size())
-                ? std::max(_labor_signals.contract_wage_ema[signal],
-                    _labor_signals.paid_wage_ema[signal]) : 0;
-            const int64_t role_cost = saturating_mul(job.slots_per_building,
-                std::max(living_floor, market_quote), sat);
-            wage_cost = saturating_add(wage_cost, role_cost, sat);
-            operating_cost = saturating_add(operating_cost, role_cost, sat);
-        }
-        int64_t construction_cost = 0;
-        for (int32_t edge = 0; edge < type.construction_count; ++edge) {
-            int64_t physical = 0;
-            const int32_t material = select_startup_construction_candidate(
-                cell, type.construction_begin + edge, physical);
-            if (material < 0) {
-                construction_cost = std::numeric_limits<int64_t>::max();
-                break;
+        const size_t wage_slot = static_cast<size_t>(type_id);
+        const bool wage_cached = memo_active &&
+            wage_slot < memo.type_wage_stamp.size() &&
+            memo.type_wage_stamp[wage_slot] == memo.fast_gen;
+        if (wage_cached) {
+            wage_cost = memo.type_wage_cost[wage_slot];
+            candidate_plan.employee_slots =
+                memo.type_employee_slots[wage_slot];
+        } else {
+            for (int32_t role = 0; role < type.employee_count; ++role) {
+                candidate_plan.employee_slots = saturating_add(
+                    candidate_plan.employee_slots,
+                    std::max<int64_t>(0, _building_employee_roles[
+                        type.employee_begin + role].slots_per_building), sat);
             }
-            const int64_t material_cost = goods_cost(physical,
-                market_store().price[market_store().index(market, material)], sat);
-            construction_cost = saturating_add(construction_cost,
-                material_cost, sat);
-            candidate_plan.material_good_ids.push_back(material);
-            candidate_plan.material_quantities.push_back(physical);
+            for (int32_t role = 0; role < type.employee_count; ++role) {
+                const JobRole &job = _building_employee_roles[type.employee_begin + role];
+                const int32_t signal = labor_signal_index(cell, job.profession_id);
+                const int64_t living_floor = signal >= 0
+                    ? std::max(_labor_signals.base_living_cost[signal],
+                        _labor_signals.role_living_cost[signal]) : 0;
+                const int64_t market_quote = signal >= 0 && signal <
+                        static_cast<int32_t>(_labor_signals.contract_wage_ema.size())
+                    ? std::max(_labor_signals.contract_wage_ema[signal],
+                        _labor_signals.paid_wage_ema[signal]) : 0;
+                const int64_t role_cost = saturating_mul(job.slots_per_building,
+                    std::max(living_floor, market_quote), sat);
+                wage_cost = saturating_add(wage_cost, role_cost, sat);
+            }
+            if (memo_active && memo.fast_cell == cell &&
+                wage_slot < memo.type_wage_stamp.size()) {
+                memo.type_wage_stamp[wage_slot] = memo.fast_gen;
+                memo.type_wage_cost[wage_slot] = wage_cost;
+                memo.type_employee_slots[wage_slot] =
+                    candidate_plan.employee_slots;
+            }
+        }
+        operating_cost = saturating_add(operating_cost, wage_cost, sat);
+        const auto trace_construct_started = startup_trace ? Clock::now()
+            : Clock::time_point{};
+        int64_t construction_cost = 0;
+        const size_t construct_slot = static_cast<size_t>(type_id);
+        const bool construct_cacheable = memo_active &&
+            construct_slot < memo.type_construct_stamp.size() &&
+            type.construction_count <= 4;
+        if (construct_cacheable &&
+            memo.type_construct_stamp[construct_slot] == memo.fast_gen) {
+            construction_cost = memo.type_construct_cost[construct_slot];
+            if (need_plan) {
+                const int32_t cached_count =
+                    memo.type_construct_count[construct_slot];
+                for (int32_t e = 0; e < cached_count; ++e) {
+                    candidate_plan.material_good_ids.push_back(
+                        memo.type_construct_goods[construct_slot * 4u + e]);
+                    candidate_plan.material_quantities.push_back(
+                        memo.type_construct_physical[construct_slot * 4u + e]);
+                }
+            }
+        } else {
+            for (int32_t edge = 0; edge < type.construction_count; ++edge) {
+                int64_t physical = 0;
+                const int32_t material = select_startup_construction_candidate(
+                    cell, type.construction_begin + edge, physical);
+                if (material < 0) {
+                    construction_cost = std::numeric_limits<int64_t>::max();
+                    break;
+                }
+                const int64_t material_cost = goods_cost(physical,
+                    market_store().price[market_store().index(market, material)], sat);
+                construction_cost = saturating_add(construction_cost,
+                    material_cost, sat);
+                if (construct_cacheable && memo.fast_cell == cell) {
+                    memo.type_construct_goods[construct_slot * 4u + edge] = material;
+                    memo.type_construct_physical[construct_slot * 4u + edge] =
+                        physical;
+                }
+                if (need_plan) {
+                    candidate_plan.material_good_ids.push_back(material);
+                    candidate_plan.material_quantities.push_back(physical);
+                }
+            }
+            if (construct_cacheable && memo.fast_cell == cell &&
+                construction_cost != std::numeric_limits<int64_t>::max()) {
+                memo.type_construct_stamp[construct_slot] = memo.fast_gen;
+                memo.type_construct_cost[construct_slot] = construction_cost;
+                memo.type_construct_count[construct_slot] =
+                    type.construction_count;
+            }
         }
         if (construction_cost == std::numeric_limits<int64_t>::max()) continue;
+        if (startup_trace) {
+            trace_inputs_ms += elapsed_ms(trace_inputs_started);
+            EconomyCostProbe::record("startup.in_edges", _current_day.get(),
+                                     elapsed_ms(trace_edges_started));
+            EconomyCostProbe::record("startup.in_wages", _current_day.get(),
+                                     elapsed_ms(trace_wages_started));
+            EconomyCostProbe::record("startup.in_construct", _current_day.get(),
+                                     elapsed_ms(trace_construct_started));
+        }
+        const auto trace_tail_started = startup_trace ? Clock::now()
+            : Clock::time_point{};
         const int64_t revenue = mul_div_sat(output_quantity,
             mul_div_sat(market_store().price[market_store().index(market, good_id)],
                 _good_merchant_buy_factor_q16[good_id], Q16_ONE, sat),
@@ -791,6 +983,7 @@ int32_t NativeEconomyRuntime::select_startup_producer(
             return_q16, candidate_plan.owner_slots,
             candidate_plan.employee_slots, candidate_quote);
         candidate_plan.planned_output_quantity = output_quantity;
+        if (startup_trace) trace_tail_ms += elapsed_ms(trace_tail_started);
         if (best_type < 0 || return_q16 > best_return ||
             (candidate_plan.target_return_on_capital_q16 == best_return && unit_cost < best_unit_cost) ||
             (candidate_plan.target_return_on_capital_q16 == best_return && unit_cost == best_unit_cost &&
@@ -801,15 +994,27 @@ int32_t NativeEconomyRuntime::select_startup_producer(
             best_return = candidate_plan.target_return_on_capital_q16;
             best_unit_cost = unit_cost;
             best_output = output_quantity;
-            best_plan = candidate_plan;
+            if (need_plan) *selected_plan = candidate_plan;
         }
     }
-    if (memo_active && memo.fast_cell == cell) {
+    if (startup_trace) {
+        EconomyCostProbe::record("startup.sec_cond", _current_day.get(),
+                                 trace_cond_ms);
+        EconomyCostProbe::record("startup.sec_climate", _current_day.get(),
+                                 trace_climate_ms);
+        EconomyCostProbe::record("startup.sec_inputs", _current_day.get(),
+                                 trace_inputs_ms);
+        EconomyCostProbe::record("startup.sec_tail", _current_day.get(),
+                                 trace_tail_ms);
+    }
+    if (selected_plan != nullptr && best_type < 0) {
+        *selected_plan = InvestmentCandidatePlan{};
+    }
+    if (memo_active && memo.fast_cell == cell && need_plan) {
         memo.producer_stamp[slot_idx] = memo.fast_gen;
         memo.producer_type[slot_idx] = best_type;
-        memo.producer_plan[slot_idx] = best_plan;
+        memo.producer_plan[slot_idx] = *selected_plan;
     }
-    if (selected_plan != nullptr) *selected_plan = best_plan;
     return best_type;
 }
 
@@ -1172,82 +1377,146 @@ void NativeEconomyRuntime::prepare_startup_demand() {
                        std::max<int64_t>(0, demand),
                        std::max<int64_t>(0, available)});
     };
-    for (const uint64_t key : _trade_active_keys) {
-        const int32_t cell = static_cast<int32_t>(key >> 32);
-        const int32_t good = static_cast<int32_t>(key & 0xffffffffULL);
-        if (cell < 0 || cell >= _cell_count.get() || good < 0 ||
-            good >= market_store().good_count.get() || _good_trade_enabled[good] == 0 ||
-            _good_storage_modes[good] != 0) continue;
-        const int64_t deficit = actual_deficit(cell, good);
-        int64_t available = 0;
-        const int32_t market = market_store().cell_to_market[cell];
-        const int64_t stock = std::max<int64_t>(0,
-            market_store().stock[market_store().index(market, good)]);
-        if (stock > 0) {
-            const int64_t floor = trade_export_floor(cell, good,
-                _saturation_count);
-            available = std::max<int64_t>(0, stock - floor) /
-                std::max(1, _epoch_days.get());
+    // Active keys are sorted by (cell, good). Process one cell run at a time
+    // so the cell's pending-construction and building-group lanes are scanned
+    // once instead of once per good key. Per (cell, good) contribution order is
+    // unchanged; the saturation counter is diagnostics-only, so the derived
+    // availability values stay bit-identical to the per-key scan.
+    thread_local std::vector<uint32_t> cell_goods;
+    thread_local std::vector<uint8_t> cell_active;
+    thread_local std::vector<int64_t> cell_available;
+    thread_local std::vector<int64_t> cell_deficit;
+    size_t key_pos = 0;
+    const size_t active_key_count = _trade_active_keys.size();
+    while (key_pos < active_key_count) {
+        const int32_t cell = static_cast<int32_t>(
+            _trade_active_keys[key_pos] >> 32);
+        size_t run_end = key_pos + 1;
+        while (run_end < active_key_count &&
+               static_cast<int32_t>(_trade_active_keys[run_end] >> 32) == cell) {
+            ++run_end;
         }
-        if (_pending_construction_cell_offsets.size() ==
-                static_cast<size_t>(_cell_count.get() + 1)) {
-            for (int32_t cursor = _pending_construction_cell_offsets[cell];
-                 cursor < _pending_construction_cell_offsets[cell + 1]; ++cursor) {
-                const int32_t pending_index =
-                    _pending_construction_cell_indices[cursor];
-                if (pending_index < 0 || pending_index >= static_cast<int32_t>(
-                        pending_construction_count())) continue;
-                const auto pending =
-                    pending_construction()[static_cast<size_t>(pending_index)];
-                if (pending.count <= 0 || pending.type_id < 0 ||
-                    pending.type_id >= static_cast<int32_t>(
-                        _building_types.size())) continue;
-                const BuildingType &type = _building_types[pending.type_id];
-                for (int32_t edge = 0; edge < type.output_count; ++edge) {
-                    const GoodAmount &output =
-                        _building_outputs[type.output_begin + edge];
-                    if (output.good_id != good) continue;
-                    const int64_t climate = production_climate_capacity_q16(
-                        type, cell, nullptr, nullptr, _saturation_count);
-                    int64_t daily = mul_div_sat(output.quantity,
-                        _building_output_efficiency_q16, Q16_ONE,
+        const size_t run_size = run_end - key_pos;
+        cell_goods.resize(run_size);
+        cell_active.assign(run_size, 0);
+        cell_available.assign(run_size, 0);
+        cell_deficit.assign(run_size, 0);
+        size_t active_begin = run_size;
+        size_t active_end = 0;
+        for (size_t i = 0; i < run_size; ++i) {
+            const int32_t good = static_cast<int32_t>(
+                _trade_active_keys[key_pos + i] & 0xffffffffULL);
+            cell_goods[i] = static_cast<uint32_t>(good);
+            const bool active = cell >= 0 && cell < _cell_count.get() &&
+                good >= 0 && good < market_store().good_count.get() &&
+                _good_trade_enabled[good] != 0 && _good_storage_modes[good] == 0;
+            cell_active[i] = active ? 1 : 0;
+            if (active) {
+                active_begin = std::min(active_begin, i);
+                active_end = std::max(active_end, i + 1);
+            }
+        }
+        if (active_end > active_begin) {
+            const auto find_slot = [&](int32_t good, size_t &slot) -> bool {
+                const auto begin = cell_goods.begin() +
+                    static_cast<ptrdiff_t>(active_begin);
+                const auto end = cell_goods.begin() +
+                    static_cast<ptrdiff_t>(active_end);
+                const auto it = std::lower_bound(begin, end,
+                    static_cast<uint32_t>(good));
+                if (it == end || *it != static_cast<uint32_t>(good)) return false;
+                slot = static_cast<size_t>(it - cell_goods.begin());
+                return cell_active[slot] != 0;
+            };
+            // Base stock headroom per key (same expression as before).
+            for (size_t i = active_begin; i < active_end; ++i) {
+                if (cell_active[i] == 0) continue;
+                const int32_t good = static_cast<int32_t>(cell_goods[i]);
+                const int32_t market = market_store().cell_to_market[cell];
+                const int64_t stock = std::max<int64_t>(0,
+                    market_store().stock[market_store().index(market, good)]);
+                if (stock > 0) {
+                    const int64_t floor = trade_export_floor(cell, good,
                         _saturation_count);
-                    daily = mul_div_sat(daily, climate, Q16_ONE,
-                        _saturation_count);
-                    available = saturating_add(available,
-                        saturating_mul(daily, pending.count,
-                            _saturation_count), _saturation_count);
+                    cell_available[i] = std::max<int64_t>(0, stock - floor) /
+                        std::max(1, _epoch_days.get());
+                }
+            }
+            // Pending construction lanes, once per cell.
+            if (_pending_construction_cell_offsets.size() ==
+                    static_cast<size_t>(_cell_count.get() + 1)) {
+                for (int32_t cursor = _pending_construction_cell_offsets[cell];
+                     cursor < _pending_construction_cell_offsets[cell + 1];
+                     ++cursor) {
+                    const int32_t pending_index =
+                        _pending_construction_cell_indices[cursor];
+                    if (pending_index < 0 || pending_index >= static_cast<int32_t>(
+                            pending_construction_count())) continue;
+                    const auto pending =
+                        pending_construction()[static_cast<size_t>(pending_index)];
+                    if (pending.count <= 0 || pending.type_id < 0 ||
+                        pending.type_id >= static_cast<int32_t>(
+                            _building_types.size())) continue;
+                    const BuildingType &type = _building_types[pending.type_id];
+                    for (int32_t edge = 0; edge < type.output_count; ++edge) {
+                        const GoodAmount &output =
+                            _building_outputs[type.output_begin + edge];
+                        size_t slot = 0;
+                        if (!find_slot(output.good_id, slot)) continue;
+                        const int64_t climate = production_climate_capacity_q16(
+                            type, cell, nullptr, nullptr, _saturation_count);
+                        int64_t daily = mul_div_sat(output.quantity,
+                            _building_output_efficiency_q16, Q16_ONE,
+                            _saturation_count);
+                        daily = mul_div_sat(daily, climate, Q16_ONE,
+                            _saturation_count);
+                        cell_available[slot] = saturating_add(cell_available[slot],
+                            saturating_mul(daily, pending.count,
+                                _saturation_count), _saturation_count);
+                    }
+                }
+            }
+            // Idle building capacity, once per cell.
+            if (_building_cell_offsets.size() ==
+                    static_cast<size_t>(_cell_count.get() + 1)) {
+                for (int32_t group_index = _building_cell_offsets[cell];
+                     group_index < _building_cell_offsets[cell + 1];
+                     ++group_index) {
+                    const auto group = building_view(
+                        static_cast<size_t>(group_index));
+                    if (group.count <= 0 || group.operating_state == 1 ||
+                        group.type_id < 0 || group.type_id >=
+                            static_cast<int32_t>(_building_types.size())) continue;
+                    const int64_t idle_q16 = std::max<int64_t>(0,
+                        std::clamp<int64_t>(group.last_capacity_q16, 0, Q16_ONE) -
+                        std::clamp<int64_t>(group.planned_utilization_q16,
+                            0, Q16_ONE));
+                    if (idle_q16 <= 0) continue;
+                    const BuildingType &type = _building_types[group.type_id];
+                    for (int32_t edge = 0; edge < type.output_count; ++edge) {
+                        const GoodAmount &output =
+                            _building_outputs[type.output_begin + edge];
+                        size_t slot = 0;
+                        if (!find_slot(output.good_id, slot)) continue;
+                        cell_available[slot] = saturating_add(cell_available[slot],
+                            effective_building_output_quantity(
+                                group, output.good_id, output.quantity, idle_q16,
+                                group.count, _saturation_count),
+                            _saturation_count);
+                    }
+                }
+            }
+            // Deficit and remote accumulation per key.
+            for (size_t i = active_begin; i < active_end; ++i) {
+                if (cell_active[i] == 0) continue;
+                const int32_t good = static_cast<int32_t>(cell_goods[i]);
+                cell_deficit[i] = actual_deficit(cell, good);
+                if (cell_deficit[i] > 0 || cell_available[i] > 0) {
+                    add_remote(cell, good, cell_deficit[i], cell_available[i]);
                 }
             }
         }
-        if (_building_cell_offsets.size() ==
-                static_cast<size_t>(_cell_count.get() + 1)) {
-            for (int32_t group_index = _building_cell_offsets[cell];
-                 group_index < _building_cell_offsets[cell + 1]; ++group_index) {
-                const auto group = building_view(static_cast<size_t>(group_index));
-                if (group.count <= 0 || group.operating_state == 1 ||
-                    group.type_id < 0 || group.type_id >= static_cast<int32_t>(
-                        _building_types.size())) continue;
-                const int64_t idle_q16 = std::max<int64_t>(0,
-                    std::clamp<int64_t>(group.last_capacity_q16, 0, Q16_ONE) -
-                    std::clamp<int64_t>(group.planned_utilization_q16,
-                        0, Q16_ONE));
-                if (idle_q16 <= 0) continue;
-                const BuildingType &type = _building_types[group.type_id];
-                for (int32_t edge = 0; edge < type.output_count; ++edge) {
-                    const GoodAmount &output =
-                        _building_outputs[type.output_begin + edge];
-                    if (output.good_id != good) continue;
-                    available = saturating_add(available,
-                        effective_building_output_quantity(
-                            group, good, output.quantity, idle_q16,
-                            group.count, _saturation_count),
-                        _saturation_count);
-                }
-            }
-        }
-        if (deficit > 0 || available > 0)
-            add_remote(cell, good, deficit, available);
+        key_pos = run_end;
     }
     std::sort(raw.begin(), raw.end(), [](const StartupRemoteAccumulator &a,
                                          const StartupRemoteAccumulator &b) {
@@ -1395,6 +1664,28 @@ void NativeEconomyRuntime::credit_input_substitute_demand(
 }
 
 void NativeEconomyRuntime::refresh_derived_business_demand() {
+    // Track B (user-approved): cadence-limited approximation. The derived
+    // business demand is a slow-moving planning input; on non-refresh days it
+    // reuses the previous computed vector instead of re-running the full
+    // per-cell preview/BFS pass. PK_ECONOMY_TRACK_B=0 restores exact mode.
+    static const bool track_b_enabled = [] {
+        const char *value = std::getenv("PK_ECONOMY_TRACK_B");
+        return !(value && std::strcmp(value, "0") == 0);
+    }();
+    static const int32_t track_b_derived_cadence = [] {
+        const char *value = std::getenv("PK_ECONOMY_TRACK_B_DERIVED_CADENCE");
+        const int32_t parsed = value ? std::atoi(value) : 0;
+        return parsed > 0 ? std::min<int32_t>(parsed, 30) : 5;
+    }();
+    // Spread mode (default): instead of one heavy full pass every N days,
+    // recompute 1/N of the live cells each day and merge cached results for the
+    // rest, flattening the per-day cost. Set to 1 to fall back to whole-pass
+    // cadence; PK_ECONOMY_TRACK_B=0 restores the exact daily pass.
+    static const int32_t track_b_derived_spread = [] {
+        const char *value = std::getenv("PK_ECONOMY_TRACK_B_DERIVED_SPREAD");
+        const int32_t parsed = value ? std::atoi(value) : 0;
+        return parsed > 0 ? std::min<int32_t>(parsed, 32) : 4;
+    }();
     // Coarse attribution for the once-per-epoch full pass. Per-call probes
     // under this function are aggregated by EconomyCostProbe; this one stays
     // a plain stage wall so the waterfall can be reconciled with epoch_vectors.
@@ -1403,6 +1694,42 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
     _derived_business_demand_lanes = 0;
     _derived_business_demand_edges = 0;
     _epoch_derived_business_demand.assign(_market_signals.good_ids.size(), 0);
+    if (track_b_enabled && track_b_derived_spread <= 1 &&
+        track_b_derived_cadence > 1 &&
+        !_track_b_derived_carry.empty() &&
+        _track_b_derived_carry.size() <=
+            _market_signals.good_ids.size() &&
+        (_current_day.get() % track_b_derived_cadence) != 0) {
+        std::copy(_track_b_derived_carry.begin(),
+                  _track_b_derived_carry.end(),
+                  _epoch_derived_business_demand.begin());
+        int64_t lane_count = 0;
+        for (const int64_t quantity : _epoch_derived_business_demand) {
+            if (quantity <= 0) continue;
+            ++lane_count;
+            _derived_business_demand_total = saturating_add(
+                _derived_business_demand_total, quantity, _saturation_count);
+        }
+        _derived_business_demand_lanes = lane_count;
+        ++_derived_snapshot_generation;
+        uint64_t derived_hash = 14695981039346656037ull;
+        auto mix = [&](uint64_t value) {
+            derived_hash ^= value;
+            derived_hash *= 1099511628211ull;
+        };
+        mix(static_cast<uint64_t>(_derived_snapshot_generation));
+        mix(static_cast<uint64_t>(_derived_business_demand_total));
+        mix(static_cast<uint64_t>(_derived_business_demand_lanes));
+        for (size_t i = 0; i < _epoch_derived_business_demand.size(); ++i) {
+            if (_epoch_derived_business_demand[i] == 0) continue;
+            mix(static_cast<uint64_t>(i));
+            mix(static_cast<uint64_t>(_epoch_derived_business_demand[i]));
+        }
+        _derived_snapshot_hash = derived_hash;
+        EconomyCostProbe::record("derived.track_b_skip", _current_day.get(), 0.0,
+                                 static_cast<uint64_t>(lane_count));
+        return;
+    }
     if (market_store().good_count.get() <= 0 || _cell_count.get() <= 0 ||
         _investment_good_type_offsets.size() != _good_ids.size() + 1 ||
         _economy_live_cells.empty()) return;
@@ -1419,15 +1746,30 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
     // the one-hop producer propagation only read frozen epoch inputs. Missing
     // market-signal lanes are deferred to the ordered merge below, so the
     // parallel pass never mutates shared state.
-    static const bool derived_parallel_disabled = [] {
+    //
+    // Parallel is the default production path with a hard task cap of two:
+    // the 2026-10-19 task sweeps show per-cell slowdown under concurrency grows
+    // faster than the extra workers help (T2 beats T3/T4 on wall clock), while
+    // the ordered merge stays bit-identical regardless of task count.
+    // PK_ECONOMY_DERIVED_PARALLEL=0 restores the serial reference path.
+    static const bool derived_parallel_enabled = [] {
         const char *value = std::getenv("PK_ECONOMY_DERIVED_PARALLEL");
-        return value && std::strcmp(value, "0") == 0;
+        return !(value && std::strcmp(value, "0") == 0);
+    }();
+    // Diagnostic-only override for task-count sweeps; task count never changes
+    // simulation results (parallel and serial outputs are bit-identical).
+    static const int32_t derived_forced_tasks = [] {
+        const char *value = std::getenv("PK_ECONOMY_DERIVED_TASKS");
+        if (value == nullptr || *value == '\0') return 0;
+        const int32_t parsed = std::atoi(value);
+        return parsed > 0 ? std::min<int32_t>(parsed, 32) : 0;
     }();
     const int32_t good_count = market_store().good_count.get();
-    const int32_t tasks = (!derived_parallel_disabled && use_snapshot &&
+    const int32_t tasks = (derived_parallel_enabled && use_snapshot &&
             _worker_enabled && cells >= 2 && parallel_has_real_worker_threads())
-        ? std::min({cells, _worker_task_cap,
-                    _worker_tasks_hint > 0 ? _worker_tasks_hint : 8})
+        ? (derived_forced_tasks > 0
+            ? std::min({cells, derived_forced_tasks, _worker_task_cap})
+            : std::min({cells, static_cast<int32_t>(2), _worker_task_cap}))
         : 1;
     // Plain local: parallel tasks write disjoint elements of one vector.
     // A thread_local here would be resolved per executing thread inside the
@@ -1436,7 +1778,71 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
     std::vector<DerivedCellWork> cell_work;
     cell_work.resize(static_cast<size_t>(cells));
     for (auto &work_item : cell_work) work_item.reset();
+    // Spread mode: compute a deterministic 1/N slice of cells this day and seed
+    // the rest from the previous day's cached per-cell results.
+    const bool derived_spread_active =
+        track_b_enabled && track_b_derived_spread > 1;
+    int32_t derived_spread_phase = 0;
+    bool derived_spread_refresh_all = false;
+    if (derived_spread_active) {
+        if (_track_b_derived_cell_cache_cells != cells ||
+            _track_b_derived_cell_cache.size() != static_cast<size_t>(cells)) {
+            _track_b_derived_cell_cache.assign(static_cast<size_t>(cells), {});
+            _track_b_derived_cell_cache_cells = cells;
+            _track_b_derived_cell_cache_day = -1000000;
+        }
+        derived_spread_refresh_all =
+            _track_b_derived_cell_cache_day != _current_day.get() - 1;
+        derived_spread_phase = static_cast<int32_t>(
+            ((_current_day.get() % track_b_derived_spread) +
+             track_b_derived_spread) % track_b_derived_spread);
+
+    }
+    // Diagnostics only: prove whether the parallel group really runs more than
+    // one task at a time. Never feeds simulation state.
+    static std::atomic<int32_t> derived_task_active{0};
+    static std::atomic<int32_t> derived_task_max{0};
+    // When PK_ECONOMY_DERIVED_TRACE=1, print one line per epoch to stderr so
+    // probe-free runs (no PK_ECONOMY_COST_CSV) can still compare the derived
+    // section wall clock against the sum of task wall clocks.
+    static const bool derived_trace = [] {
+        const char *value = std::getenv("PK_ECONOMY_DERIVED_TRACE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    static std::atomic<int64_t> derived_trace_task_us{0};
+    static std::atomic<int64_t> derived_trace_task_cpu_us{0};
+    static std::atomic<int32_t> derived_trace_max_conc{0};
+    static std::atomic<int64_t> derived_trace_start_ns{0};
+    static std::atomic<int64_t> derived_trace_start_max_ns{0};
+    static std::atomic<int64_t> derived_trace_end_max_ns{0};
+    const auto trace_now_ns = []() {
+        return std::chrono::duration_cast<std::chrono::nanoseconds>(
+            Clock::now().time_since_epoch()).count();
+    };
     auto compute_range = [&](int32_t first, int32_t last) {
+        const auto task_started = Clock::now();
+        const int64_t task_cpu_started =
+            derived_trace ? startup_probe_thread_cpu_us() : 0;
+        if (derived_trace) {
+            const int64_t start_ns = trace_now_ns();
+            int64_t previous = derived_trace_start_ns.load();
+            while ((previous == 0 || start_ns < previous) &&
+                   !derived_trace_start_ns.compare_exchange_weak(
+                       previous, start_ns)) {
+            }
+            previous = derived_trace_start_max_ns.load();
+            while (start_ns > previous &&
+                   !derived_trace_start_max_ns.compare_exchange_weak(
+                       previous, start_ns)) {
+            }
+        }
+        const int32_t task_active =
+            derived_task_active.fetch_add(1, std::memory_order_relaxed) + 1;
+        int32_t observed_max = derived_task_max.load(std::memory_order_relaxed);
+        while (task_active > observed_max &&
+               !derived_task_max.compare_exchange_weak(
+                   observed_max, task_active, std::memory_order_relaxed)) {
+        }
         LivingCostMemoScope worker_memo(*this, false, use_snapshot);
         StartupProducerMemoScope worker_startup_memo(*this);
         thread_local std::vector<int64_t> actor_preview;
@@ -1444,6 +1850,7 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
         thread_local std::vector<uint32_t> seed_stamp;
         thread_local std::vector<uint32_t> visit_stamp;
         thread_local std::vector<DerivedQueueEntry> queue;
+        thread_local InvestmentCandidatePlan producer_plan;
         if (static_cast<int32_t>(household_demand_by_good.size()) != good_count)
             household_demand_by_good.assign(static_cast<size_t>(good_count), 0);
         if (static_cast<int32_t>(seed_stamp.size()) != good_count)
@@ -1456,6 +1863,9 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
         std::fill(visit_stamp.begin(), visit_stamp.end(), 0);
         uint32_t visit = 0;
         for (int32_t relative = first; relative < last; ++relative) {
+            if (derived_spread_active && !derived_spread_refresh_all &&
+                (relative % track_b_derived_spread) != derived_spread_phase)
+                continue;
             DerivedCellWork &out = cell_work[relative];
             const int32_t cell = _economy_live_cells[relative];
             if (cell < 0 || cell >= _cell_count.get()) continue;
@@ -1559,7 +1969,24 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
                 out.edges += static_cast<int64_t>(
                     _investment_good_type_offsets[entry.good + 1] -
                     _investment_good_type_offsets[entry.good]);
-                InvestmentCandidatePlan producer_plan;
+                // A good whose every candidate producer has no input edges can
+                // never propagate derived demand upstream; the full startup
+                // selection ranking is irrelevant then, so skip it.
+                bool any_candidate_inputs = false;
+                for (int32_t candidate_cursor =
+                         _investment_good_type_offsets[entry.good];
+                     candidate_cursor < _investment_good_type_offsets[entry.good + 1];
+                     ++candidate_cursor) {
+                    const int32_t candidate_type =
+                        _investment_good_type_indices[candidate_cursor];
+                    if (candidate_type >= 0 && candidate_type <
+                            static_cast<int32_t>(_building_types.size()) &&
+                        _building_types[candidate_type].input_count > 0) {
+                        any_candidate_inputs = true;
+                        break;
+                    }
+                }
+                if (!any_candidate_inputs) continue;
                 ++out.startup_calls;
                 const int32_t type_id = select_startup_producer(
                     cell, entry.good, &producer_plan);
@@ -1618,14 +2045,108 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
                 }
             }
         }
+        EconomyCostProbe::record("derived.task_ms", _current_day.get(),
+                                 elapsed_ms(task_started));
+        if (derived_trace) {
+            const int64_t end_ns = trace_now_ns();
+            int64_t previous_end = derived_trace_end_max_ns.load();
+            while (end_ns > previous_end &&
+                   !derived_trace_end_max_ns.compare_exchange_weak(
+                       previous_end, end_ns)) {
+            }
+            const auto task_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                Clock::now() - task_started).count();
+            derived_trace_task_us.fetch_add(task_us, std::memory_order_relaxed);
+            derived_trace_task_cpu_us.fetch_add(
+                startup_probe_thread_cpu_us() - task_cpu_started,
+                std::memory_order_relaxed);
+            int32_t trace_max =
+                derived_trace_max_conc.load(std::memory_order_relaxed);
+            while (task_active > trace_max &&
+                   !derived_trace_max_conc.compare_exchange_weak(
+                       trace_max, task_active, std::memory_order_relaxed)) {
+            }
+        }
+        derived_task_active.fetch_sub(1, std::memory_order_relaxed);
     };
+    const auto derived_dispatch_started = Clock::now();
+    const std::clock_t derived_trace_cpu_begin =
+        derived_trace ? std::clock() : 0;
+    if (derived_trace) {
+        derived_trace_start_ns.store(0);
+        derived_trace_start_max_ns.store(0);
+        derived_trace_end_max_ns.store(0);
+    }
+    const int64_t derived_trace_pcpu_begin =
+        derived_trace ? startup_probe_process_cpu_us() : 0;
     if (tasks > 1) {
         EconomyCostProbe parallel_probe("derived.parallel", _current_day.get(), cells);
+        // Equal cell-count split measured best in the 2026-10-19 task sweeps
+        // (weighted partitioning showed no reliable gain and was reverted).
         parallel_for_range("pk_economy_derived_refresh", cells, tasks, 2,
                            compute_range);
+        EconomyCostProbe::record("derived.task_max_concurrency",
+                                 _current_day.get(), 0.0,
+                                 static_cast<uint64_t>(derived_task_max.load()));
     } else {
         EconomyCostProbe replay_probe("derived.replay", _current_day.get(), cells);
         compute_range(0, cells);
+    }
+    if (derived_trace) {
+        const auto wall_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            Clock::now() - derived_dispatch_started).count();
+        const double cpu_ms = static_cast<double>(
+            std::clock() - derived_trace_cpu_begin) * 1000.0 /
+            static_cast<double>(CLOCKS_PER_SEC);
+        const double pcpu_ms = static_cast<double>(
+            startup_probe_process_cpu_us() - derived_trace_pcpu_begin) / 1000.0;
+        const double tcpu_ms = static_cast<double>(
+            derived_trace_task_cpu_us.load(std::memory_order_relaxed)) / 1000.0;
+        std::fprintf(stderr,
+            "[derived-pass] day=%lld tasks=%d cells=%d max_conc=%d "
+            "wall_us=%lld task_us=%lld cpu_ms=%.2f pcpu_ms=%.2f tcpu_ms=%.2f\n",
+            static_cast<long long>(_current_day.get()), tasks, cells,
+            derived_trace_max_conc.load(std::memory_order_relaxed),
+            static_cast<long long>(wall_us),
+            static_cast<long long>(derived_trace_task_us.load(
+                std::memory_order_relaxed)),
+            cpu_ms, pcpu_ms, tcpu_ms);
+        const int64_t base_ns = derived_trace_start_ns.load();
+        if (base_ns > 0) {
+            std::fprintf(stderr,
+                "[derived-timeline] day=%lld start_max_us=%lld end_max_us=%lld\\n",
+                static_cast<long long>(_current_day.get()),
+                static_cast<long long>(
+                    (derived_trace_start_max_ns.load() - base_ns) / 1000),
+                static_cast<long long>(
+                    (derived_trace_end_max_ns.load() - base_ns) / 1000));
+            std::fflush(stderr);
+        }
+        derived_trace_task_us.store(0, std::memory_order_relaxed);
+        derived_trace_task_cpu_us.store(0, std::memory_order_relaxed);
+        derived_trace_max_conc.store(0, std::memory_order_relaxed);
+    }
+    if (derived_spread_active) {
+        int32_t refreshed_cells = 0;
+        for (int32_t relative = 0; relative < cells; ++relative) {
+            if (!derived_spread_refresh_all &&
+                (relative % track_b_derived_spread) != derived_spread_phase)
+                continue;
+            const DerivedCellWork &work_item = cell_work[static_cast<size_t>(relative)];
+            TrackBDerivedCellWork &cached =
+                _track_b_derived_cell_cache[static_cast<size_t>(relative)];
+            cached.goods = work_item.goods;
+            cached.quantities = work_item.quantities;
+            cached.edges = work_item.edges;
+            cached.startup_calls = work_item.startup_calls;
+            cached.enqueued_goods = work_item.enqueued_goods;
+            cached.seeded = work_item.seeded;
+            ++refreshed_cells;
+        }
+        _track_b_derived_cell_cache_day = _current_day.get();
+        EconomyCostProbe::record("derived.track_b_spread_cells",
+                                 _current_day.get(), 0.0,
+                                 static_cast<uint64_t>(refreshed_cells));
     }
     uint64_t derived_seed_cells = 0;
     uint64_t derived_enqueued_goods = 0;
@@ -1637,7 +2158,12 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
         // appended signal lanes are bit-identical.
         EconomyCostProbe merge_probe("derived.merge", _current_day.get(), cells);
         for (int32_t relative = 0; relative < cells; ++relative) {
-            const DerivedCellWork &out = cell_work[relative];
+            const bool use_cached = derived_spread_active &&
+                !derived_spread_refresh_all &&
+                (relative % track_b_derived_spread) != derived_spread_phase;
+            const DerivedCellWork &out = use_cached
+                ? _track_b_derived_cell_cache[static_cast<size_t>(relative)]
+                : cell_work[relative];
             if (!out.seeded) continue;
             ++derived_seed_cells;
             derived_enqueued_goods += out.enqueued_goods;
@@ -1682,6 +2208,9 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
         mix(static_cast<uint64_t>(_epoch_derived_business_demand[i]));
     }
     _derived_snapshot_hash = derived_hash;
+    if (track_b_enabled && track_b_derived_spread <= 1 &&
+        track_b_derived_cadence > 1)
+        _track_b_derived_carry = _epoch_derived_business_demand;
     // Deterministic work counters for the optimization gates. Aggregated by
     // EconomyCostProbe into one row per day, so this is cheap.
     EconomyCostProbe::record("derived.seed_cells", _current_day.get(), 0.0,
