@@ -404,6 +404,10 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
         report.effect_pod_snapshot_generation);
     out["effect_pod_ack_count"] = static_cast<int>(report.effect_pod_ack_count);
     out["effect_pod_intent_count"] = static_cast<int>(report.effect_pod_intent_count);
+    out["effect_retire_absent_count"] = static_cast<int64_t>(
+        report.effect_retire_absent_count);
+    out["effect_retire_stale_count"] = static_cast<int64_t>(
+        report.effect_retire_stale_count);
     out["effect_pod_fallback_reason"] = String(report.effect_pod_fallback_reason);
     out["ideology_pod_ready"] = report.ideology_pod_ready;
     out["ideology_pod_plan_ms"] = report.ideology_pod_plan_ms;
@@ -2754,7 +2758,9 @@ bool DCWorldExt::runtime_effect_pod_self_test() const {
     std::string error;
     const bool ok = RuntimeEffectPodAuthority::self_test(error) &&
         (_effect_runtime == nullptr ||
-         static_cast<const EffectRuntime *>(_effect_runtime)->pod_snapshot_persistence_self_test(error));
+         static_cast<const EffectRuntime *>(_effect_runtime)->pod_snapshot_persistence_self_test(error)) &&
+        (_effect_runtime == nullptr ||
+         static_cast<const EffectRuntime *>(_effect_runtime)->pod_state_parity_self_test(error));
     if (!ok) {
         godot::UtilityFunctions::printerr(
             godot::String("runtime_effect_pod_self_test: ") +
@@ -2766,10 +2772,23 @@ bool DCWorldExt::runtime_effect_pod_self_test() const {
 bool DCWorldExt::runtime_effect_host_stage_self_test() {
     if (!_runtime_host) _runtime_host = std::make_unique<NativeSimulationHost>();
     std::string error;
-    const bool ok = _runtime_host->effect_pod_host_stage_self_test(&error);
+    const bool ok = _runtime_host->effect_pod_host_stage_self_test(&error) &&
+        _runtime_host->effect_pod_transport_queue_self_test(&error);
     if (!ok) {
         godot::UtilityFunctions::printerr(
             godot::String("runtime_effect_host_stage_self_test: ") +
+            godot::String(error.c_str()));
+    }
+    return ok;
+}
+
+bool DCWorldExt::runtime_effect_adapter_parity_self_test() {
+    if (!_runtime_host) _runtime_host = std::make_unique<NativeSimulationHost>();
+    std::string error;
+    const bool ok = _runtime_host->modifier_effect_adapter_self_test(&error);
+    if (!ok) {
+        godot::UtilityFunctions::printerr(
+            godot::String("runtime_effect_adapter_parity_self_test: ") +
             godot::String(error.c_str()));
     }
     return ok;
@@ -2897,6 +2916,17 @@ bool DCWorldExt::runtime_economy_authority_fault_gate_self_test() const {
     if (!ok) {
         godot::UtilityFunctions::printerr(
             godot::String("runtime_economy_authority_fault_gate_self_test: ") +
+            godot::String(error.c_str()));
+    }
+    return ok;
+}
+
+bool DCWorldExt::runtime_economy_target_selector_self_test() const {
+    std::string error;
+    const bool ok = EconomyTargetSelectorTests::run(error);
+    if (!ok) {
+        godot::UtilityFunctions::printerr(
+            godot::String("runtime_economy_target_selector_self_test: ") +
             godot::String(error.c_str()));
     }
     return ok;

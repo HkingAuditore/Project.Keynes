@@ -549,6 +549,8 @@ NativeSimulationHost::NativeSimulationHost() {
     _effect_pod_snapshot_generation.store(0, std::memory_order_release);
     _effect_pod_ack_count.store(0, std::memory_order_release);
     _effect_pod_intent_count.store(0, std::memory_order_release);
+    _effect_retire_absent_count.store(0, std::memory_order_release);
+    _effect_retire_stale_count.store(0, std::memory_order_release);
     _effect_day_stage_ok = false;
     _effect_day_modifier_intents.clear();
     _effect_day_intents.clear();
@@ -6518,6 +6520,427 @@ bool NativeSimulationHost::effect_pod_host_stage_self_test(std::string *out_erro
     return true;
 }
 
+bool NativeSimulationHost::effect_pod_transport_queue_self_test(
+        std::string *out_error) {
+    const auto fail = [out_error](const char *reason) {
+        if (out_error != nullptr) *out_error = reason;
+        return false;
+    };
+    const RuntimeWorkerState worker_state = state();
+    if (worker_state != RuntimeWorkerState::STOPPED &&
+        worker_state != RuntimeWorkerState::FAULTED) {
+        return fail("effect_transport_requires_stopped");
+    }
+
+    // Minimal fixture: identities and levels only, no commands emitted. The
+    // contract under test lives in the transport queues, not in planning.
+    RuntimeEffectPodCatalog catalog;
+    catalog.metric_key_hashes = {RuntimeEffectPodAuthority::hash_text("metric")};
+    RuntimeEffectPodDefinition definition;
+    definition.key_hash = RuntimeEffectPodAuthority::hash_text("f7.transport");
+    definition.cadence_days = 1;
+    definition.max_work = 64;
+    definition.instruction_begin = 0;
+    definition.instruction_count = 0;
+    definition.command_begin = 0;
+    definition.command_count = 0;
+    catalog.definitions.push_back(definition);
+
+    std::string error;
+    const auto reset = [&]() { return configure_effect_pod(catalog, error); };
+    const auto make_input = [](int64_t instance_id, uint32_t generation,
+                               int32_t level) {
+        RuntimeEffectPodInstanceInput input;
+        input.instance_id = instance_id;
+        input.generation = generation;
+        input.program_id = 0;
+        input.source_handle = 7;
+        input.target_handle = 99;
+        input.target_generation = 3;
+        input.next_due_day = 0;
+        input.level = level;
+        input.active = true;
+        return input;
+    };
+    const auto find_instance = [this](int64_t instance_id, uint32_t generation) {
+        const auto &known = _effect_pod_authority.snapshot().instances;
+        for (const auto &instance : known) {
+            if (instance.instance_id == instance_id &&
+                instance.generation == generation) {
+                return &instance;
+            }
+        }
+        return static_cast<const RuntimeEffectPodInstance *>(nullptr);
+    };
+    const auto absent_count = [this]() {
+        return _effect_retire_absent_count.load(std::memory_order_acquire);
+    };
+    const auto stale_count = [this]() {
+        return _effect_retire_stale_count.load(std::memory_order_acquire);
+    };
+
+    // A. Re-ENSURE of the same (id, generation) carries the newest payload.
+    // A stale level here is the "present=0, queued>0" class of bug: the Effect
+    // stage keeps re-queueing the same identity and the old payload wins.
+    if (!reset()) return fail("effect_transport_configure_failed");
+    if (!queue_effect_pod_instance(make_input(11, 1, 1), error) ||
+        !queue_effect_pod_instance(make_input(11, 1, 4), error)) {
+        return fail("effect_transport_upsert_queue_failed");
+    }
+    if (!drain_effect_transport_queues(error))
+        return fail("effect_transport_upsert_drain_failed");
+    {
+        const RuntimeEffectPodInstance *instance = find_instance(11, 1);
+        if (instance == nullptr) return fail("effect_transport_upsert_missing");
+        if (instance->level != 4) return fail("effect_transport_upsert_stale_level");
+        if (instance->active == 0) return fail("effect_transport_upsert_not_active");
+        if (_effect_pod_authority.snapshot().instances.size() != 1u)
+            return fail("effect_transport_upsert_duplicated");
+    }
+
+    // B. Upsert followed by retire must net retired. Draining the retire queue
+    // first would upsert again after the retire and resurrect the instance.
+    if (!reset()) return fail("effect_transport_configure_failed");
+    if (!queue_effect_pod_instance(make_input(21, 1, 2), error) ||
+        !queue_effect_pod_remove(21, 1, error)) {
+        return fail("effect_transport_retire_queue_failed");
+    }
+    if (!drain_effect_transport_queues(error))
+        return fail("effect_transport_retire_drain_failed");
+    {
+        const RuntimeEffectPodInstance *instance = find_instance(21, 1);
+        if (instance == nullptr) return fail("effect_transport_retire_missing");
+        if (instance->active != 0) return fail("effect_transport_retire_resurrected");
+        if (instance->retire_requested == 0)
+            return fail("effect_transport_retire_not_requested");
+    }
+
+    // C. Retire/upsert/upsert ordering: the trailing upsert must not be folded
+    // into the head entry, otherwise retire wins and the card never installs.
+    if (!reset()) return fail("effect_transport_configure_failed");
+    if (!queue_effect_pod_instance(make_input(31, 1, 1), error) ||
+        !queue_effect_pod_remove(31, 1, error) ||
+        !queue_effect_pod_instance(make_input(31, 1, 7), error)) {
+        return fail("effect_transport_reinstall_queue_failed");
+    }
+    if (!drain_effect_transport_queues(error))
+        return fail("effect_transport_reinstall_drain_failed");
+    {
+        const RuntimeEffectPodInstance *instance = find_instance(31, 1);
+        if (instance == nullptr) return fail("effect_transport_reinstall_missing");
+        if (instance->active == 0) return fail("effect_transport_reinstall_retired");
+        if (instance->level != 7) return fail("effect_transport_reinstall_stale_level");
+    }
+
+    // D. Retiring an identity that was never installed is a benign no-op, the
+    // same way EffectRuntime::retire_instance_pod returns true for it.
+    if (!reset()) return fail("effect_transport_configure_failed");
+    {
+        const uint64_t absent_before = absent_count();
+        const uint64_t stale_before = stale_count();
+        if (!queue_effect_pod_remove(41, 1, error))
+            return fail("effect_transport_absent_queue_failed");
+        if (!drain_effect_transport_queues(error))
+            return fail("effect_transport_absent_drain_failed");
+        if (absent_count() != absent_before + 1u)
+            return fail("effect_transport_absent_not_counted");
+        if (stale_count() != stale_before)
+            return fail("effect_transport_absent_counted_as_stale");
+        if (!_effect_pod_authority.snapshot().instances.empty())
+            return fail("effect_transport_absent_created_instance");
+    }
+
+    // E. Retiring a superseded generation must leave the live generation alone
+    // and be reported separately, so a raced install stays visible.
+    if (!reset()) return fail("effect_transport_configure_failed");
+    {
+        const uint64_t absent_before = absent_count();
+        const uint64_t stale_before = stale_count();
+        if (!queue_effect_pod_instance(make_input(51, 2, 3), error) ||
+            !queue_effect_pod_remove(51, 1, error)) {
+            return fail("effect_transport_stale_queue_failed");
+        }
+        if (!drain_effect_transport_queues(error))
+            return fail("effect_transport_stale_drain_failed");
+        if (stale_count() != stale_before + 1u)
+            return fail("effect_transport_stale_not_counted");
+        if (absent_count() != absent_before)
+            return fail("effect_transport_stale_counted_as_absent");
+        const RuntimeEffectPodInstance *instance = find_instance(51, 2);
+        if (instance == nullptr) return fail("effect_transport_stale_lost_newer");
+        if (instance->active == 0) return fail("effect_transport_stale_retired_newer");
+    }
+
+    return true;
+}
+
+bool NativeSimulationHost::modifier_effect_adapter_self_test(
+        std::string *out_error) {
+    const auto fail = [out_error](const char *reason) {
+        if (out_error != nullptr) *out_error = reason;
+        return false;
+    };
+    const RuntimeWorkerState worker_state = state();
+    if (worker_state != RuntimeWorkerState::STOPPED &&
+        worker_state != RuntimeWorkerState::FAULTED) {
+        return fail("modifier_adapter_requires_stopped");
+    }
+
+    // --- Modifier fixture -------------------------------------------------
+    // Four domains, one APPLY definition each, POLICY_INDEPENDENT so every
+    // command materialises its own entry and no case can be masked by a
+    // stack refresh. Definitions are addressed through intent.payload[0], the
+    // legacy dense-id lane, because that keeps this fixture free of Effect
+    // transaction plumbing. payload[0] == 0 means "unset", so definition 0 is
+    // unreachable and index i carries domain i-1.
+    // 0 = POLICY_INDEPENDENT (runtime_modifier_pod.cpp:24); that constant is
+    // file-local there, so the value is spelled out like the tag constants
+    // below rather than widening the pod header's surface.
+    constexpr int32_t kPolicyIndependent = 0;
+    RuntimeModifierPodCatalog modifier_catalog;
+    for (int32_t domain = 0; domain < 4; ++domain)
+        modifier_catalog.stats.push_back(
+            {domain, -100000.0, 100000.0, static_cast<uint8_t>(1)});
+    for (int32_t domain = 0; domain < 4; ++domain)
+        modifier_catalog.terms.push_back({domain, 1.0, 1.0});
+    for (int32_t domain = -1; domain < 4; ++domain) {
+        RuntimeModifierPodDefinition definition;
+        definition.version = 1;
+        // The spare at index 0 reuses domain 0; it is never referenced.
+        definition.domain = domain < 0 ? 0 : domain;
+        definition.policy = kPolicyIndependent;
+        definition.max_stacks = 4;
+        definition.default_duration = -1;
+        definition.term_begin = static_cast<uint32_t>(
+            definition.domain);
+        definition.term_count = 1;
+        modifier_catalog.definitions.push_back(definition);
+    }
+
+    std::string error;
+    if (!configure_modifier_pod(modifier_catalog, error)) {
+        if (out_error != nullptr)
+            *out_error = error.empty() ? "modifier_adapter_configure_failed" : error;
+        return false;
+    }
+
+    // --- Effect instance for the GENERIC adapter ---------------------------
+    // GENERIC is the only branch that reads the instance row instead of the
+    // intent, so it needs one committed instance with a distinctive identity.
+    constexpr int64_t kGenericInstanceId = 42;
+    constexpr int64_t kGenericSourceType = 0x1234;
+    constexpr int64_t kGenericSourceId = 0x5678;
+    {
+        RuntimeEffectPodCatalog effect_catalog;
+        RuntimeEffectPodDefinition definition;
+        definition.key_hash = RuntimeEffectPodAuthority::hash_text(
+            "m2b.adapter.fixture");
+        definition.cadence_days = 1;
+        definition.max_work = 64;
+        definition.instruction_begin = 0;
+        definition.instruction_count = 0;
+        definition.command_begin = 0;
+        definition.command_count = 0;
+        effect_catalog.definitions.push_back(definition);
+        if (!configure_effect_pod(effect_catalog, error))
+            return fail("modifier_adapter_effect_configure_failed");
+        RuntimeEffectPodInstanceInput input;
+        input.instance_id = kGenericInstanceId;
+        input.generation = 1;
+        input.program_id = 0;
+        input.source_type = static_cast<int32_t>(kGenericSourceType);
+        input.source_id = kGenericSourceId;
+        input.source_handle = 7;
+        input.target_handle = 9001;
+        input.target_generation = 1;
+        input.next_due_day = 0;
+        input.active = true;
+        if (!queue_effect_pod_instance(input, error))
+            return fail("modifier_adapter_effect_queue_failed");
+        if (!drain_effect_transport_queues(error))
+            return fail("modifier_adapter_effect_drain_failed");
+    }
+    constexpr int32_t kAdapterGeneric = 0;
+    constexpr int32_t kAdapterTechnology = 1;
+    constexpr int32_t kAdapterFamily = 2;
+    constexpr int32_t kAdapterPerson = 3;
+    constexpr int32_t kAdapterTrigger = 4;
+    constexpr int32_t kAdapterFamilyEffect = 5;
+    constexpr int32_t kAdapterIdeology = 6;
+    constexpr int32_t kMagnitude = 200000;  // < MAX_MAGNITUDE_Q16 (262144)
+    constexpr uint64_t kTagTech = 0x54454348ULL;         // "TECH"
+    constexpr uint64_t kTagFamily = 0x46414d494c59ULL;   // "FAMILY"
+    constexpr uint64_t kTagPerson = 0x504552534f4eULL;   // "PERSON"
+    constexpr uint64_t kTagTrigger = 0x54524947474552ULL;      // "TRIGGER"
+    constexpr uint64_t kTagFamilyEffect = 0x46414d4546464543ULL; // "FAMEFFEC"
+    constexpr uint64_t kTagIdeology = 0x4944454fULL;           // "IDEO"
+
+    struct AdapterCase {
+        int32_t adapter;
+        int32_t program_target_domain;
+        int32_t modifier_domain;
+        int64_t payload2;
+        uint64_t source_id;
+        uint64_t target_handle;
+        uint32_t target_generation;
+        // Expected entry. scope == -1 means "the command must be dropped".
+        int32_t scope;
+        uint64_t entity_handle;
+        uint64_t group_handle;
+        uint64_t source_type;
+        uint64_t expected_source_id;
+        int32_t magnitude_q16;
+        const char *failure;
+    };
+    const AdapterCase cases[] = {
+        // effect_runtime.cpp GENERIC branch: ENTITY on the command target,
+        // tagged with the INSTANCE's own source_type / source_id.
+        {kAdapterGeneric, 0, 0, 0, kGenericInstanceId, 1001, 1,
+         /*scope=*/2, /*entity=*/1001, /*group=*/0,
+         static_cast<uint64_t>(kGenericSourceType),
+         static_cast<uint64_t>(kGenericSourceId), kMagnitude,
+         "modifier_adapter_generic"},
+        // TECHNOLOGY: magnitude is pinned to Q16_ONE and source_id is the low
+        // 16 bits of the instance id.
+        {kAdapterTechnology, 0, 1, 0, 5001, 1002, 1,
+         /*scope=*/2, /*entity=*/1002, /*group=*/0, kTagTech,
+         /*source_id=*/5001, 65536, "modifier_adapter_technology"},
+        // FAMILY: GROUP on target_generation, source_id is the target handle.
+        {kAdapterFamily, 0, 2, 0, 1003, 1003, 77,
+         /*scope=*/1, /*entity=*/1003, /*group=*/77, kTagFamily,
+         /*source_id=*/1003, kMagnitude, "modifier_adapter_family"},
+        // PERSON: ENTITY, magnitude has a floor of 1 (unreachable through this
+        // path because the intent translation already substitutes 65536).
+        {kAdapterPerson, 0, 3, 0, 5003, 1004, 1,
+         /*scope=*/2, /*entity=*/1004, /*group=*/0, kTagPerson,
+         /*source_id=*/5003, kMagnitude, "modifier_adapter_person"},
+        // TRIGGER: always ENTITY, always tagged TRIGGER.
+        {kAdapterTrigger, 0, 0, 0, 5004, 1005, 1,
+         /*scope=*/2, /*entity=*/1005, /*group=*/0, kTagTrigger,
+         /*source_id=*/5004, kMagnitude, "modifier_adapter_trigger"},
+        // FAMILY_EFFECT with a cell target_domain binds GROUP.
+        {kAdapterFamilyEffect, 2, 0, 0, 5005, 1006, 1,
+         /*scope=*/1, /*entity=*/1006, /*group=*/1006, kTagFamilyEffect,
+         /*source_id=*/5005, kMagnitude, "modifier_adapter_family_effect_group"},
+        // FAMILY_EFFECT with an unknown target_domain must be dropped, not
+        // defaulted to ENTITY like the ideology adapter does.
+        {kAdapterFamilyEffect, 9, 0, 0, 5009, 1009, 1,
+         /*scope=*/-1, 0, 0, 0, 0, 0,
+         "modifier_adapter_family_effect_unknown"},
+        // IDEOLOGY with a cell target_domain binds GROUP.
+        {kAdapterIdeology, 2, 0, 0, 5006, 1007, 1,
+         /*scope=*/1, /*entity=*/1007, /*group=*/1007, kTagIdeology,
+         /*source_id=*/5006, kMagnitude, "modifier_adapter_ideology_group"},
+        // IDEOLOGY defaults to ENTITY for a country target_domain...
+        {kAdapterIdeology, 3, 0, 0, 5007, 1008, 1,
+         /*scope=*/2, /*entity=*/1008, /*group=*/1008, kTagIdeology,
+         /*source_id=*/5007, kMagnitude, "modifier_adapter_ideology_entity"},
+        // ...and payload[2] overrides it afterwards (1 == GROUP).
+        {kAdapterIdeology, 3, 0, 1, 5008, 1010, 1,
+         /*scope=*/1, /*entity=*/1010, /*group=*/1010, kTagIdeology,
+         /*source_id=*/5008, kMagnitude, "modifier_adapter_ideology_override"},
+    };
+
+    std::vector<RuntimeDomainIntent> intents;
+    intents.reserve(sizeof(cases) / sizeof(cases[0]));
+    uint64_t sequence = 1;
+    for (const AdapterCase &test : cases) {
+        RuntimeDomainIntent intent;
+        intent.source_domain = static_cast<uint16_t>(RuntimeDomainId::EFFECT);
+        intent.target_domain = static_cast<uint16_t>(RuntimeDomainId::MODIFIER);
+        intent.opcode = 1;  // APPLY
+        intent.effect_action = 2;  // MODIFIER_COMMAND
+        // request_id stays 0 so the definition resolves through payload[0]
+        // instead of a live Effect transaction this fixture does not have.
+        intent.source_id = test.source_id;
+        intent.target_handle = test.target_handle;
+        intent.target_generation = test.target_generation;
+        intent.effective_day = 3;
+        intent.sequence = sequence++;
+        intent.idempotency_key = sequence;
+        intent.duration_days = -1;
+        intent.stacks = 1;
+        intent.magnitude_q16 = kMagnitude;
+        intent.payload[0] = static_cast<int64_t>(test.modifier_domain) + 1;
+        intent.payload[1] = test.modifier_domain;
+        intent.payload[2] = test.payload2;
+        intent.reserved = test.adapter | ((test.program_target_domain & 0xFF) << 8);
+        intents.push_back(intent);
+    }
+
+    // --- Stage 1: adapter mapping, no POD involved -------------------------
+    // "Adapter parity" means every field EffectRuntime's
+    // dispatch_native_modifier would have written comes out identical. This is
+    // executed without planning a day because planning one feeds Modifier ACKs
+    // back into the Effect authority (the effect_upstream_ok branch below), and
+    // a pure mapping fixture has no Effect transactions for those ACKs to
+    // settle against — it used to fail with
+    // effect_pod_ack_transaction_unknown before the assertions ran.
+    std::vector<RuntimeModifierPodCommand> mapped;
+    mapped.reserve(intents.size());
+    for (size_t index = 0; index < intents.size(); ++index) {
+        const AdapterCase &test = cases[index];
+        RuntimeModifierPodCommand command;
+        const bool applied =
+            map_effect_intent_to_modifier_command(intents[index], 1, command);
+        if (test.scope < 0) {
+            if (applied) return fail(test.failure);
+            continue;
+        }
+        if (!applied) return fail(test.failure);
+        if (command.scope != test.scope) return fail(test.failure);
+        if (command.entity_handle != test.entity_handle)
+            return fail(test.failure);
+        if (test.scope == 1 && command.group_handle != test.group_handle)
+            return fail(test.failure);
+        if (command.source_type != test.source_type) return fail(test.failure);
+        if (command.source_id != test.expected_source_id)
+            return fail(test.failure);
+        if (command.magnitude_q16 != test.magnitude_q16)
+            return fail(test.failure);
+        mapped.push_back(command);
+    }
+
+    // --- Stage 2: the mapped commands must survive the POD -----------------
+    // Stage 1 only proves the translation. This proves the translated command
+    // is actually accepted and materialises the same scope / handle / weight,
+    // so an adapter cannot "pass" by emitting something the POD discards.
+    RuntimeModifierPodSnapshot planned_snapshot;
+    RuntimeModifierPodReport plan_report;
+    std::vector<RuntimeDomainAck> plan_acks;
+    if (!_modifier_pod_authority.plan_day(
+            3, 1, {}, mapped, planned_snapshot, plan_acks, plan_report, error)) {
+        if (out_error != nullptr)
+            *out_error = error.empty() ? "modifier_adapter_plan_failed" : error;
+        return false;
+    }
+    for (const AdapterCase &test : cases) {
+        if (test.scope < 0) continue;
+        const RuntimeModifierPodEntry *entry = nullptr;
+        for (const RuntimeModifierPodEntry &candidate : planned_snapshot.entries) {
+            if (candidate.source_id == test.expected_source_id) {
+                entry = &candidate;
+                break;
+            }
+        }
+        if (entry == nullptr) return fail(test.failure);
+        if (entry->scope != test.scope) return fail(test.failure);
+        if (entry->entity_handle != test.entity_handle)
+            return fail(test.failure);
+        if (test.scope == 1 && entry->group_handle != test.group_handle)
+            return fail(test.failure);
+        if (entry->source_type != test.source_type) return fail(test.failure);
+        if (entry->magnitude_q16 != test.magnitude_q16)
+            return fail(test.failure);
+    }
+    if (!_modifier_pod_authority.commit_day(planned_snapshot, error)) {
+        if (out_error != nullptr)
+            *out_error = error.empty() ? "modifier_adapter_commit_failed" : error;
+        return false;
+    }
+    return true;
+}
+
 bool NativeSimulationHost::queue_effect_pod_instance(
         const RuntimeEffectPodInstanceInput &input, std::string &error) {
     if (!_effect_pod_configured) {
@@ -6525,17 +6948,30 @@ bool NativeSimulationHost::queue_effect_pod_instance(
         return false;
     }
     std::lock_guard<std::mutex> lock(_effect_transport_mutex);
-    for (const RuntimeEffectPodInstanceInput &queued : _effect_instance_queue) {
-        if (queued.instance_id == input.instance_id &&
-            queued.generation == input.generation) {
-            return true; // already waiting for the Effect stage
+    // Coalesce only with the queue tail, and only when that tail is still the
+    // newest arrival. Re-ENSUREing the same identity several times per frame
+    // must keep the newest payload (a stale level / next_due_day here is exactly
+    // the "present=0, queued>0" class of bug). But if a retire landed after the
+    // tail -- it lives in the *other* deque, so the tail alone cannot tell --
+    // folding this upsert into the tail would replay it before the retire and
+    // the instance would never come back.
+    if (!_effect_instance_queue.empty()) {
+        EffectPodInstanceQueueItem &tail = _effect_instance_queue.back();
+        if (tail.sequence == _effect_transport_sequence &&
+            tail.input.instance_id == input.instance_id &&
+            tail.input.generation == input.generation) {
+            tail.input = input;
+            return true;
         }
     }
     if (_effect_instance_queue.size() >= RUNTIME_COMMAND_QUEUE_CAPACITY) {
         error = "effect_instance_capacity_exceeded";
         return false;
     }
-    _effect_instance_queue.push_back(input);
+    EffectPodInstanceQueueItem item;
+    item.sequence = ++_effect_transport_sequence;
+    item.input = input;
+    _effect_instance_queue.push_back(item);
     return true;
 }
 
@@ -6573,6 +7009,7 @@ bool NativeSimulationHost::queue_effect_pod_remove(
         return false;
     }
     EffectPodRemoveQueueItem item;
+    item.sequence = ++_effect_transport_sequence;
     item.instance_id = instance_id;
     item.generation = generation;
     _effect_remove_queue.push_back(item);
@@ -8928,6 +9365,184 @@ void NativeSimulationHost::settle_ideology_modifier_acks(
     std::lock_guard<std::mutex> lock(_ideology_transport_mutex);
     for (const auto &ack : settled) _ideology_acks.push_back(ack);
 }
+bool NativeSimulationHost::map_effect_intent_to_modifier_command(
+        const RuntimeDomainIntent &intent, uint64_t input_generation,
+        RuntimeModifierPodCommand &command) {
+    // Single place that turns an Effect-produced intent into the Modifier
+    // POD command. Extracted from execute_modifier_worker_stage so the
+    // adapter mapping can be asserted without planning a day (planning one
+    // feeds ACKs back into the Effect authority, which a mapping fixture has
+    // no transactions for).
+    // Returns false when the intent must be dropped instead of mapped.
+    command.request_id =
+        intent.request_id != 0 ? intent.request_id : intent.source_id;
+    command.producer_id = intent.producer_id;
+    command.sequence = intent.sequence;
+    command.effective_day = intent.effective_day;
+    command.requested_day = intent.effective_day;
+    command.opcode = intent.opcode;
+    command.domain = intent.payload[1] >= 0 && intent.payload[1] < 4
+        ? static_cast<uint16_t>(intent.payload[1]) : 0;
+    // Effect catalogs store the Modifier definition_key, not a dense id, in
+    // command metadata. Resolve via key hash (with legacy payload[0] fallback).
+    command.definition_id =
+        resolve_modifier_definition_id_for_effect_intent(intent);
+    command.entity_handle = intent.target_handle;
+    command.target_generation = intent.target_generation;
+    command.group_handle = intent.group_handle;
+    command.modifier_handle = intent.modifier_handle;
+    command.duration_days = intent.duration_days;
+    command.stacks = intent.stacks > 0 ? intent.stacks : 1;
+    command.magnitude_q16 = intent.magnitude_q16 > 0
+        ? intent.magnitude_q16 : 65536;
+    command.input_generation = input_generation;
+    // The POD carries the adapter EffectRuntime compiled for this command
+    // in intent.reserved (low byte = adapter, next byte = the program's
+    // target_domain). Guessing the adapter from the Modifier domain marked
+    // ideology commands as TECHNOLOGY and clamped their magnitude to 1.0, so
+    // an equipped card "worked" with the wrong weight.
+    //
+    // TECHNOLOGY / FAMILY / PERSON are still resolved from the Modifier
+    // domain below: those three were already field-for-field equivalent to
+    // their EffectRuntime branches, and re-routing them would rewrite a live
+    // production path without new evidence. TRIGGER, FAMILY_EFFECT and
+    // GENERIC were NOT equivalent and are handled explicitly.
+    //
+    // Only Effect-produced intents carry the adapter: runtime_effect_pod.cpp
+    // stamps intent.reserved for every MODIFIER_COMMAND it emits, and the
+    // Effect POD lists GENERIC as 0, so an ungated read would send every
+    // non-Effect intent (the authority_plan path, whose reserved is always
+    // zero) into the GENERIC branch and silently retire the domain
+    // heuristic below. adapter_kind == -1 means "not an Effect intent".
+    const int32_t adapter_kind =
+        intent.source_domain == static_cast<uint16_t>(RuntimeDomainId::EFFECT)
+        ? (intent.reserved & 0xFF) : -1;
+    const int32_t adapter_target_domain = (intent.reserved >> 8) & 0xFF;
+    // 262144 = ModifierRuntime::MAX_MAGNITUDE_Q16 (modifier_runtime.h:33);
+    // this TU deliberately does not include modifier_runtime.h, matching how
+    // the sibling branches spell their type tags inline. The bound is spelled
+    // inside the lambda on purpose: std::clamp binds its arguments by
+    // reference, so a local constexpr would be odr-used and would have to be
+    // captured, which MSVC rejects for a capture-less lambda (C3493).
+    const auto clamp_magnitude = [](int64_t value) {
+        return static_cast<int32_t>(std::clamp<int64_t>(value, 0, 262144));
+    };
+    // EffectRuntime's GENERIC adapter reads the instance row (its own
+    // source_type / source_id), but the intent only carries the instance id
+    // in source_id. Look the row up in the snapshot the Effect stage just
+    // committed on this same thread.
+    const auto effect_instance_for = [this](uint64_t instance_id)
+            -> const RuntimeEffectPodInstance * {
+        for (const auto &instance :
+             _effect_pod_authority.snapshot().instances) {
+            if (static_cast<uint64_t>(instance.instance_id) == instance_id)
+                return &instance;
+        }
+        return nullptr;
+    };
+    // Match EffectRuntime native adapter semantics (technology/family/person).
+    // payload[2]==0 means "unset", not GLOBAL — defaulting to GLOBAL made
+    // has_technology_effect miss ENTITY+TECH unique keys after a successful
+    // apply, and wrong source_type blocked UNIQUE_SOURCE identity.
+    if (adapter_kind == EFFECT_MODIFIER_IDEOLOGY) {
+        // Mirrors EffectRuntime's NATIVE_MODIFIER_IDEOLOGY branch:
+        // effect_runtime.cpp:5317-5363.
+        command.source_type = 0x4944454fULL; // IDEO
+        command.source_id = intent.source_id;
+        command.magnitude_q16 = clamp_magnitude(intent.magnitude_q16);
+        // Cell-scoped programs (settlement cell = 2, building/resource in a
+        // cell = 5) bind GROUP; everything else binds ENTITY so a
+        // mis-authored program fails the Modifier target check instead of
+        // silently hitting a country.
+        command.scope = 1; // GROUP
+        if (adapter_target_domain != 2 && adapter_target_domain != 5)
+            command.scope = 2; // ENTITY
+        // Both handles carry the resolved target; scope_id_for() picks the
+        // one matching the final scope.
+        command.entity_handle = intent.target_handle;
+        command.group_handle = intent.target_handle;
+        if (intent.payload[2] >= 1 && intent.payload[2] <= 2)
+            command.scope = static_cast<int32_t>(intent.payload[2]);
+    } else if (adapter_kind == EFFECT_MODIFIER_TRIGGER) {
+        // effect_runtime.cpp:5279-5288. Binds ENTITY on the command's own
+        // target handle and always tags TRIGGER. The old fallthrough tagged
+        // these as EFFECT, which never matched a trigger-owned row.
+        command.scope = 2; // ENTITY
+        command.entity_handle = intent.target_handle;
+        command.source_type = 0x54524947474552ULL; // TRIGGER
+        command.source_id = intent.source_id;
+        command.magnitude_q16 = clamp_magnitude(intent.magnitude_q16);
+    } else if (adapter_kind == EFFECT_MODIFIER_FAMILY_EFFECT) {
+        // effect_runtime.cpp:5289-5316. Same target_domain split as the
+        // ideology adapter, except EffectRuntime refuses an unknown
+        // target_domain outright (supported=false) instead of defaulting to
+        // ENTITY. Drop the command rather than invent a scope.
+        int32_t scope = 0; // 0 = unsupported
+        switch (adapter_target_domain) {
+            case 0: // Family.
+            case 1: // Branch.
+            case 3: // Country.
+            case 4: // Climate cell.
+                scope = 2; // ENTITY
+                break;
+            case 2: // Settlement cell.
+            case 5: // Building/resource selector within the cell.
+                scope = 1; // GROUP
+                break;
+            default:
+                break;
+        }
+        if (scope == 0) return false;
+        command.scope = scope;
+        command.entity_handle = intent.target_handle;
+        command.group_handle = intent.target_handle;
+        command.source_type = 0x46414d4546464543ULL; // FAMEFFEC
+        command.source_id = intent.source_id;
+        command.magnitude_q16 = clamp_magnitude(intent.magnitude_q16);
+    } else if (adapter_kind == EFFECT_MODIFIER_GENERIC) {
+        // effect_runtime.cpp:5364-5374. This is the branch the old domain
+        // heuristic got wrong: an ordinary declarative MODIFIER_COMMAND is
+        // GENERIC, and EffectRuntime tags it with the INSTANCE's own
+        // source_type / source_id -- not with RuntimeDomainId::EFFECT. A
+        // generic program whose domain happened to be 1 was also being
+        // relabelled TECH and pinned to magnitude 1.0.
+        const RuntimeEffectPodInstance *source =
+            effect_instance_for(intent.source_id);
+        command.scope = 2; // ENTITY
+        command.entity_handle = intent.target_handle;
+        command.source_type = source != nullptr
+            ? static_cast<uint64_t>(source->source_type)
+            : static_cast<uint64_t>(RuntimeDomainId::EFFECT);
+        command.source_id = source != nullptr
+            ? static_cast<uint64_t>(source->source_id)
+            : intent.source_id;
+        command.magnitude_q16 = clamp_magnitude(intent.magnitude_q16);
+    } else if (command.domain == 1) {
+        command.scope = 2; // ENTITY
+        command.source_type = 0x54454348ULL; // TECH
+        command.source_id = intent.source_id & 0xffffULL;
+        command.magnitude_q16 = 65536;
+    } else if (command.domain == 2) {
+        command.scope = 1; // GROUP
+        command.group_handle = intent.target_generation;
+        command.source_type = 0x46414d494c59ULL; // FAMILY
+        command.source_id = intent.target_handle;
+    } else if (command.domain == 3) {
+        command.scope = 2; // ENTITY
+        command.source_type = 0x504552534f4eULL; // PERSON
+        command.source_id = intent.source_id;
+    } else if (intent.payload[2] >= 1 && intent.payload[2] <= 2) {
+        command.scope = static_cast<int32_t>(intent.payload[2]);
+        command.source_type = static_cast<uint64_t>(RuntimeDomainId::EFFECT);
+        command.source_id = intent.source_id;
+    } else {
+        command.scope = 2;
+        command.source_type = static_cast<uint64_t>(RuntimeDomainId::EFFECT);
+        command.source_id = intent.source_id;
+    }
+    return true;
+}
+
 
 bool NativeSimulationHost::execute_modifier_worker_stage(
         int64_t day, uint64_t input_generation,
@@ -8962,54 +9577,9 @@ bool NativeSimulationHost::execute_modifier_worker_stage(
             continue;
         }
         RuntimeModifierPodCommand command;
-        command.request_id =
-            intent.request_id != 0 ? intent.request_id : intent.source_id;
-        command.producer_id = intent.producer_id;
-        command.sequence = intent.sequence;
-        command.effective_day = intent.effective_day;
-        command.requested_day = intent.effective_day;
-        command.opcode = intent.opcode;
-        command.domain = intent.payload[1] >= 0 && intent.payload[1] < 4
-            ? static_cast<uint16_t>(intent.payload[1]) : 0;
-        // Effect catalogs store the Modifier definition_key, not a dense id, in
-        // command metadata. Resolve via key hash (with legacy payload[0] fallback).
-        command.definition_id =
-            resolve_modifier_definition_id_for_effect_intent(intent);
-        command.entity_handle = intent.target_handle;
-        command.target_generation = intent.target_generation;
-        command.group_handle = intent.group_handle;
-        command.modifier_handle = intent.modifier_handle;
-        command.duration_days = intent.duration_days;
-        command.stacks = intent.stacks > 0 ? intent.stacks : 1;
-        command.magnitude_q16 = intent.magnitude_q16 > 0
-            ? intent.magnitude_q16 : 65536;
-        command.input_generation = input_generation;
-        // Match EffectRuntime native adapter semantics (technology/family/person).
-        // payload[2]==0 means "unset", not GLOBAL — defaulting to GLOBAL made
-        // has_technology_effect miss ENTITY+TECH unique keys after a successful
-        // apply, and wrong source_type blocked UNIQUE_SOURCE identity.
-        if (command.domain == 1) {
-            command.scope = 2; // ENTITY
-            command.source_type = 0x54454348ULL; // TECH
-            command.source_id = intent.source_id & 0xffffULL;
-            command.magnitude_q16 = 65536;
-        } else if (command.domain == 2) {
-            command.scope = 1; // GROUP
-            command.group_handle = intent.target_generation;
-            command.source_type = 0x46414d494c59ULL; // FAMILY
-            command.source_id = intent.target_handle;
-        } else if (command.domain == 3) {
-            command.scope = 2; // ENTITY
-            command.source_type = 0x504552534f4eULL; // PERSON
-            command.source_id = intent.source_id;
-        } else if (intent.payload[2] >= 1 && intent.payload[2] <= 2) {
-            command.scope = static_cast<int32_t>(intent.payload[2]);
-            command.source_type = static_cast<uint64_t>(RuntimeDomainId::EFFECT);
-            command.source_id = intent.source_id;
-        } else {
-            command.scope = 2;
-            command.source_type = static_cast<uint64_t>(RuntimeDomainId::EFFECT);
-            command.source_id = intent.source_id;
+        if (!map_effect_intent_to_modifier_command(intent, input_generation,
+                                                   command)) {
+            continue;
         }
         if (command.definition_id < 0) {
             static int s_def_left = 12;
@@ -9315,7 +9885,7 @@ bool NativeSimulationHost::drain_effect_transport_queues(std::string &error) {
         error = "effect_pod_not_configured";
         return false;
     }
-    std::deque<RuntimeEffectPodInstanceInput> instances;
+    std::deque<EffectPodInstanceQueueItem> instances;
     std::deque<EffectPodMetricQueueItem> metrics;
     std::deque<EffectPodRemoveQueueItem> removes;
     std::vector<RuntimeDomainAck> acks;
@@ -9329,7 +9899,7 @@ bool NativeSimulationHost::drain_effect_transport_queues(std::string &error) {
     }
 
     auto restore_remaining =
-        [this](std::deque<RuntimeEffectPodInstanceInput> &left,
+        [this](std::deque<EffectPodInstanceQueueItem> &left,
                std::deque<EffectPodMetricQueueItem> &metrics_left,
                std::deque<EffectPodRemoveQueueItem> &removes_left) {
             std::lock_guard<std::mutex> lock(_effect_transport_mutex);
@@ -9347,19 +9917,49 @@ bool NativeSimulationHost::drain_effect_transport_queues(std::string &error) {
             }
         };
 
-    while (!removes.empty()) {
-        const EffectPodRemoveQueueItem item = removes.front();
-        removes.pop_front();
-        if (!_effect_pod_authority.remove_instance(item.instance_id,
-                                                   item.generation, error)) {
+    // Replay retires and upserts strictly in arrival order. Draining either
+    // deque wholesale reorders "submit then retire" into "retire then submit",
+    // and the retired instance comes back on the next plan.
+    while (!removes.empty() || !instances.empty()) {
+        const bool take_remove =
+            !removes.empty() &&
+            (instances.empty() ||
+             removes.front().sequence < instances.front().sequence);
+        if (take_remove) {
+            const EffectPodRemoveQueueItem item = removes.front();
+            removes.pop_front();
+            if (_effect_pod_authority.remove_instance(item.instance_id,
+                                                       item.generation, error)) {
+                continue;
+            }
+            // EffectRuntime::retire_instance_pod returns true when no instance
+            // matches: nothing was ever installed, so nothing Effect-owned can
+            // be left behind. The worker authority reports "absent" and
+            // "generation superseded" through the same token, and both are
+            // benign here -- the queued retire simply has nothing to retire.
+            if (error == "effect_pod_instance_stale_generation") {
+                const auto &known = _effect_pod_authority.snapshot().instances;
+                const bool id_present = std::any_of(
+                    known.begin(), known.end(),
+                    [&item](const RuntimeEffectPodInstance &instance) {
+                        return instance.instance_id == item.instance_id;
+                    });
+                if (id_present)
+                    _effect_retire_stale_count.fetch_add(
+                        1, std::memory_order_release);
+                else
+                    _effect_retire_absent_count.fetch_add(
+                        1, std::memory_order_release);
+                error.clear();
+                continue;
+            }
             removes.push_front(item);
             restore_remaining(instances, metrics, removes);
             return false;
         }
-    }
-    while (!instances.empty()) {
-        RuntimeEffectPodInstanceInput input = instances.front();
+        const EffectPodInstanceQueueItem queued = instances.front();
         instances.pop_front();
+        RuntimeEffectPodInstanceInput input = queued.input;
         // Queue may have waited across Effect soft-skips / climate parks.
         // Never-fired technology installs must land on the next plan day.
         const int64_t committed = _effect_pod_authority.snapshot().committed_day;
@@ -9368,7 +9968,9 @@ bool NativeSimulationHost::drain_effect_transport_queues(std::string &error) {
             input.next_due_day = committed + 1;
         }
         if (!_effect_pod_authority.upsert_instance(input, error)) {
-            instances.push_front(input);
+            EffectPodInstanceQueueItem retry = queued;
+            retry.input = input;
+            instances.push_front(retry);
             restore_remaining(instances, metrics, removes);
             return false;
         }
@@ -15129,6 +15731,10 @@ RuntimeThreadReport NativeSimulationHost::report() const {
         std::memory_order_acquire);
     out.effect_pod_ack_count = _effect_pod_ack_count.load(std::memory_order_acquire);
     out.effect_pod_intent_count = _effect_pod_intent_count.load(
+        std::memory_order_acquire);
+    out.effect_retire_absent_count = _effect_retire_absent_count.load(
+        std::memory_order_acquire);
+    out.effect_retire_stale_count = _effect_retire_stale_count.load(
         std::memory_order_acquire);
     for (size_t i = 0; i + 1 < sizeof(out.effect_pod_fallback_reason); ++i) {
         const char value = _effect_pod_fallback_reason[i].load(

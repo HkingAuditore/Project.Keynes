@@ -311,6 +311,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::runtime_effect_pod_self_test);
     ClassDB::bind_method(D_METHOD("runtime_effect_host_stage_self_test"),
                          &DCWorldExt::runtime_effect_host_stage_self_test);
+    ClassDB::bind_method(D_METHOD("runtime_effect_adapter_parity_self_test"),
+                         &DCWorldExt::runtime_effect_adapter_parity_self_test);
     ClassDB::bind_method(D_METHOD("runtime_ideology_pod_self_test"),
                          &DCWorldExt::runtime_ideology_pod_self_test);
     ClassDB::bind_method(D_METHOD("runtime_events_authority_self_test"),
@@ -321,6 +323,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::switch_economy_authority);
     ClassDB::bind_method(D_METHOD("runtime_economy_authority_fault_gate_self_test"),
                          &DCWorldExt::runtime_economy_authority_fault_gate_self_test);
+    ClassDB::bind_method(D_METHOD("runtime_economy_target_selector_self_test"),
+                         &DCWorldExt::runtime_economy_target_selector_self_test);
     ClassDB::bind_method(D_METHOD("arm_runtime_fault_injection", "point"),
                          &DCWorldExt::arm_runtime_fault_injection);
     ClassDB::bind_method(D_METHOD("clear_runtime_fault_injection"),
@@ -543,6 +547,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::submit_effect_instances);
     ClassDB::bind_method(D_METHOD("retire_effect_instance", "instance_id", "generation", "effective_day"),
                          &DCWorldExt::retire_effect_instance);
+    ClassDB::bind_method(D_METHOD("set_effect_forwarder_authority_for_test", "mode"),
+                         &DCWorldExt::set_effect_forwarder_authority_for_test);
     ClassDB::bind_method(D_METHOD("queue_effect_pod_instance", "input"),
                          &DCWorldExt::queue_effect_pod_instance);
     ClassDB::bind_method(D_METHOD("queue_effect_pod_metric", "input"),
@@ -628,6 +634,15 @@ void DCWorldExt::_bind_methods() {
                          DEFVAL(-1));
     ClassDB::bind_method(D_METHOD("get_ideology_snapshot", "country_handle"),
                          &DCWorldExt::get_ideology_snapshot);
+    ClassDB::bind_method(D_METHOD("get_ideology_effect_instance_report", "country_handle"),
+                         &DCWorldExt::get_ideology_effect_instance_report);
+    ClassDB::bind_method(D_METHOD("effect_program_is_managed", "program_key"),
+                         &DCWorldExt::effect_program_is_managed);
+    ClassDB::bind_method(D_METHOD("query_effect_target_cells",
+                         "source_cell", "selector_kind", "param0", "param1"),
+                         &DCWorldExt::query_effect_target_cells);
+    ClassDB::bind_method(D_METHOD("query_country_anchor_cell", "country_slot"),
+                         &DCWorldExt::query_country_anchor_cell);
     ClassDB::bind_method(D_METHOD("preview_ideology_offer_eligibility", "country_handle"),
                          &DCWorldExt::preview_ideology_offer_eligibility);
     ClassDB::bind_method(D_METHOD("explain_ideology", "country_handle", "ideology_id"),

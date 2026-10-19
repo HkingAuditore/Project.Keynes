@@ -1,0 +1,500 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/cell_hover_card.gd" id="1_card"]
+[ext_resource type="Theme" uid="uid://cnjby7mpvii16" path="res://assets/themes/player_session_theme.tres" id="2_theme"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="3_badge"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_aux_v1/torn_note_v1.tres" id="4_note"]
+
+[sub_resource type="StyleBoxTexture" id="CardPaper"]
+content_margin_left = 18.0
+content_margin_top = 10.0
+content_margin_right = 34.0
+content_margin_bottom = 12.0
+texture = ExtResource("4_note")
+texture_margin_left = 32.0
+texture_margin_top = 32.0
+texture_margin_right = 32.0
+texture_margin_bottom = 32.0
+expand_margin_left = 8.0
+expand_margin_top = 8.0
+expand_margin_right = 8.0
+expand_margin_bottom = 10.0
+
+[sub_resource type="StyleBoxFlat" id="TierBadge"]
+content_margin_left = 7.0
+content_margin_top = 2.0
+content_margin_right = 7.0
+content_margin_bottom = 2.0
+bg_color = Color(0.94, 0.88, 0.74, 0.92)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.42, 0.29, 0.16, 0.32)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="ResourceChip"]
+content_margin_left = 5.0
+content_margin_top = 2.0
+content_margin_right = 5.0
+content_margin_bottom = 2.0
+bg_color = Color(0.94, 0.88, 0.74, 0.55)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.42, 0.29, 0.16, 0.22)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[node name="CellHoverCard" type="Control"]
+custom_minimum_size = Vector2(320, 184)
+offset_right = 320.0
+offset_bottom = 184.0
+mouse_filter = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_card")
+
+[node name="Shadow" type="PanelContainer" parent="."]
+offset_left = 8.0
+offset_top = 11.0
+offset_right = 312.0
+offset_bottom = 177.0
+mouse_filter = 2
+theme_type_variation = &"PKPaperPopup"
+
+[node name="Paper" type="PanelContainer" parent="."]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 312.0
+offset_bottom = 174.0
+mouse_filter = 2
+theme_type_variation = &"PKPaperPopup"
+theme_override_styles/panel = SubResource("CardPaper")
+
+[node name="Body" type="VBoxContainer" parent="Paper"]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Header" type="HBoxContainer" parent="Paper/Body"]
+custom_minimum_size = Vector2(0, 42)
+layout_mode = 2
+theme_override_constants/separation = 7
+
+[node name="IndexStripe" type="ColorRect" parent="Paper/Body/Header"]
+custom_minimum_size = Vector2(3, 26)
+layout_mode = 2
+size_flags_vertical = 4
+color = Color(0.55, 0.19, 0.13, 0.9)
+
+[node name="Text" type="VBoxContainer" parent="Paper/Body/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+
+[node name="Title" type="Label" parent="Paper/Body/Header/Text"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+theme_type_variation = &"PKDossierHeading"
+theme_override_font_sizes/font_size = 18
+text = "地块"
+vertical_alignment = 1
+clip_text = true
+text_overrun_behavior = 3
+
+[node name="CountryRow" type="HBoxContainer" parent="Paper/Body/Header/Text"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Icon" parent="Paper/Body/Header/Text/CountryRow" instance=ExtResource("3_badge")]
+custom_minimum_size = Vector2(12, 12)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="Name" type="Label" parent="Paper/Body/Header/Text/CountryRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierCaption"
+theme_override_colors/font_color = Color(0.27, 0.19, 0.12, 1)
+text = "无主之地"
+vertical_alignment = 1
+clip_text = true
+text_overrun_behavior = 3
+
+[node name="Region" type="Label" parent="Paper/Body/Header"]
+layout_mode = 2
+size_flags_horizontal = 8
+size_flags_vertical = 0
+theme_type_variation = &"PKDossierKicker"
+theme_override_colors/font_color = Color(0.55, 0.4, 0.2, 0.95)
+theme_override_font_sizes/font_size = 9
+text = "区域 1, 1"
+vertical_alignment = 0
+
+[node name="Rule1" type="Control" parent="Paper/Body"]
+custom_minimum_size = Vector2(0, 4)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="Line" type="ColorRect" parent="Paper/Body/Rule1"]
+layout_mode = 1
+anchor_right = 1.0
+offset_top = 1.0
+offset_bottom = 2.0
+mouse_filter = 2
+color = Color(0.42, 0.29, 0.16, 0.38)
+
+[node name="Lead" type="ColorRect" parent="Paper/Body/Rule1"]
+layout_mode = 1
+offset_right = 26.0
+offset_top = 1.0
+offset_bottom = 2.0
+mouse_filter = 2
+color = Color(0.69, 0.49, 0.24, 0.75)
+
+[node name="TagRow" type="HBoxContainer" parent="Paper/Body"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Tag1" type="Label" parent="Paper/Body/TagRow"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"PKPaperTag"
+theme_override_font_sizes/font_size = 10
+text = "平原"
+vertical_alignment = 1
+
+[node name="Tick" type="ColorRect" parent="Paper/Body/TagRow/Tag1"]
+layout_mode = 1
+offset_left = 3.0
+offset_top = 7.0
+offset_right = 5.0
+offset_bottom = 17.0
+mouse_filter = 2
+color = Color(0.47, 0.37, 0.27, 1)
+
+[node name="Tag2" type="Label" parent="Paper/Body/TagRow"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"PKPaperTag"
+theme_override_font_sizes/font_size = 10
+text = "温带草原"
+vertical_alignment = 1
+
+[node name="Tick" type="ColorRect" parent="Paper/Body/TagRow/Tag2"]
+layout_mode = 1
+offset_left = 3.0
+offset_top = 7.0
+offset_right = 5.0
+offset_bottom = 17.0
+mouse_filter = 2
+color = Color(0.37, 0.56, 0.34, 1)
+
+[node name="Tag3" type="Label" parent="Paper/Body/TagRow"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"PKPaperTag"
+theme_override_font_sizes/font_size = 10
+text = "温带"
+vertical_alignment = 1
+
+[node name="Tick" type="ColorRect" parent="Paper/Body/TagRow/Tag3"]
+layout_mode = 1
+offset_left = 3.0
+offset_top = 7.0
+offset_right = 5.0
+offset_bottom = 17.0
+mouse_filter = 2
+color = Color(0.75, 0.43, 0.25, 1)
+
+[node name="PopRow" type="HBoxContainer" parent="Paper/Body"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="PopLabel" type="Label" parent="Paper/Body/PopRow"]
+layout_mode = 2
+size_flags_vertical = 8
+theme_type_variation = &"PKDossierMuted"
+theme_override_colors/font_color = Color(0.34, 0.25, 0.16, 1)
+text = "人口"
+vertical_alignment = 2
+
+[node name="Value" type="Label" parent="Paper/Body/PopRow"]
+layout_mode = 2
+size_flags_vertical = 8
+theme_type_variation = &"PKDossierValue"
+theme_override_font_sizes/font_size = 20
+text = "—"
+vertical_alignment = 2
+
+[node name="Unit" type="Label" parent="Paper/Body/PopRow"]
+layout_mode = 2
+size_flags_vertical = 8
+theme_type_variation = &"PKDossierMuted"
+theme_override_colors/font_color = Color(0.34, 0.25, 0.16, 1)
+theme_override_font_sizes/font_size = 10
+text = "人"
+vertical_alignment = 2
+
+[node name="Spacer" type="Control" parent="Paper/Body/PopRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+
+[node name="TierBadge" type="PanelContainer" parent="Paper/Body/PopRow"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_styles/panel = SubResource("TierBadge")
+
+[node name="Text" type="Label" parent="Paper/Body/PopRow/TierBadge"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.55, 0.19, 0.13, 1)
+theme_override_font_sizes/font_size = 10
+text = "乡村"
+vertical_alignment = 1
+
+[node name="Rule2" type="Control" parent="Paper/Body"]
+custom_minimum_size = Vector2(0, 4)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="Line" type="ColorRect" parent="Paper/Body/Rule2"]
+layout_mode = 1
+anchor_right = 1.0
+offset_top = 1.0
+offset_bottom = 2.0
+mouse_filter = 2
+color = Color(0.42, 0.29, 0.16, 0.38)
+
+[node name="Lead" type="ColorRect" parent="Paper/Body/Rule2"]
+layout_mode = 1
+offset_right = 26.0
+offset_top = 1.0
+offset_bottom = 2.0
+mouse_filter = 2
+color = Color(0.69, 0.49, 0.24, 0.75)
+
+[node name="ResourceRow" type="HBoxContainer" parent="Paper/Body"]
+custom_minimum_size = Vector2(0, 34)
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Chip1" type="PanelContainer" parent="Paper/Body/ResourceRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("ResourceChip")
+
+[node name="Line" type="HBoxContainer" parent="Paper/Body/ResourceRow/Chip1"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Icon" parent="Paper/Body/ResourceRow/Chip1/Line" instance=ExtResource("3_badge")]
+custom_minimum_size = Vector2(15, 15)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="Info" type="VBoxContainer" parent="Paper/Body/ResourceRow/Chip1/Line"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+
+[node name="Name" type="Label" parent="Paper/Body/ResourceRow/Chip1/Line/Info"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.12, 0.075, 0.04, 1)
+theme_override_font_sizes/font_size = 11
+text = "木材"
+clip_text = true
+text_overrun_behavior = 3
+
+[node name="DensityRow" type="HBoxContainer" parent="Paper/Body/ResourceRow/Chip1/Line/Info"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Density" type="Label" parent="Paper/Body/ResourceRow/Chip1/Line/Info/DensityRow"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_colors/font_color = Color(0.32, 0.23, 0.15, 1)
+theme_override_font_sizes/font_size = 9
+text = "贫乏"
+
+[node name="Pips" type="HBoxContainer" parent="Paper/Body/ResourceRow/Chip1/Line/Info/DensityRow"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_constants/separation = 2
+
+[node name="Pip1" type="ColorRect" parent="Paper/Body/ResourceRow/Chip1/Line/Info/DensityRow/Pips"]
+custom_minimum_size = Vector2(4, 4)
+layout_mode = 2
+color = Color(0.4, 0.29, 0.17, 0.15)
+
+[node name="Pip2" type="ColorRect" parent="Paper/Body/ResourceRow/Chip1/Line/Info/DensityRow/Pips"]
+custom_minimum_size = Vector2(4, 4)
+layout_mode = 2
+color = Color(0.4, 0.29, 0.17, 0.15)
+
+[node name="Pip3" type="ColorRect" parent="Paper/Body/ResourceRow/Chip1/Line/Info/DensityRow/Pips"]
+custom_minimum_size = Vector2(4, 4)
+layout_mode = 2
+color = Color(0.4, 0.29, 0.17, 0.15)
+
+[node name="Pip4" type="ColorRect" parent="Paper/Body/ResourceRow/Chip1/Line/Info/DensityRow/Pips"]
+custom_minimum_size = Vector2(4, 4)
+layout_mode = 2
+color = Color(0.4, 0.29, 0.17, 0.15)
+
+[node name="Pip5" type="ColorRect" parent="Paper/Body/ResourceRow/Chip1/Line/Info/DensityRow/Pips"]
+custom_minimum_size = Vector2(4, 4)
+layout_mode = 2
+color = Color(0.4, 0.29, 0.17, 0.15)
+
+[node name="Chip2" type="PanelContainer" parent="Paper/Body/ResourceRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("ResourceChip")
+
+[node name="Line" type="HBoxContainer" parent="Paper/Body/ResourceRow/Chip2"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Icon" parent="Paper/Body/ResourceRow/Chip2/Line" instance=ExtResource("3_badge")]
+custom_minimum_size = Vector2(15, 15)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="Info" type="VBoxContainer" parent="Paper/Body/ResourceRow/Chip2/Line"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+
+[node name="Name" type="Label" parent="Paper/Body/ResourceRow/Chip2/Line/Info"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.12, 0.075, 0.04, 1)
+theme_override_font_sizes/font_size = 11
+text = "铁矿"
+clip_text = true
+text_overrun_behavior = 3
+
+[node name="DensityRow" type="HBoxContainer" parent="Paper/Body/ResourceRow/Chip2/Line/Info"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Density" type="Label" parent="Paper/Body/ResourceRow/Chip2/Line/Info/DensityRow"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_colors/font_color = Color(0.32, 0.23, 0.15, 1)
+theme_override_font_sizes/font_size = 9
+text = "贫乏"
+
+[node name="Pips" type="HBoxContainer" parent="Paper/Body/ResourceRow/Chip2/Line/Info/DensityRow"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_constants/separation = 2
+
+[node name="Pip1" type="ColorRect" parent="Paper/Body/ResourceRow/Chip2/Line/Info/DensityRow/Pips"]
+custom_minimum_size = Vector2(4, 4)
+layout_mode = 2
+color = Color(0.4, 0.29, 0.17, 0.15)
+
+[node name="Pip2" type="ColorRect" parent="Paper/Body/ResourceRow/Chip2/Line/Info/DensityRow/Pips"]
+custom_minimum_size = Vector2(4, 4)
+layout_mode = 2
+color = Color(0.4, 0.29, 0.17, 0.15)
+
+[node name="Pip3" type="ColorRect" parent="Paper/Body/ResourceRow/Chip2/Line/Info/DensityRow/Pips"]
+custom_minimum_size = Vector2(4, 4)
+layout_mode = 2
+color = Color(0.4, 0.29, 0.17, 0.15)
+
+[node name="Pip4" type="ColorRect" parent="Paper/Body/ResourceRow/Chip2/Line/Info/DensityRow/Pips"]
+custom_minimum_size = Vector2(4, 4)
+layout_mode = 2
+color = Color(0.4, 0.29, 0.17, 0.15)
+
+[node name="Pip5" type="ColorRect" parent="Paper/Body/ResourceRow/Chip2/Line/Info/DensityRow/Pips"]
+custom_minimum_size = Vector2(4, 4)
+layout_mode = 2
+color = Color(0.4, 0.29, 0.17, 0.15)
+
+[node name="Chip3" type="PanelContainer" parent="Paper/Body/ResourceRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("ResourceChip")
+
+[node name="Line" type="HBoxContainer" parent="Paper/Body/ResourceRow/Chip3"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Icon" parent="Paper/Body/ResourceRow/Chip3/Line" instance=ExtResource("3_badge")]
+custom_minimum_size = Vector2(15, 15)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="Info" type="VBoxContainer" parent="Paper/Body/ResourceRow/Chip3/Line"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+
+[node name="Name" type="Label" parent="Paper/Body/ResourceRow/Chip3/Line/Info"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.12, 0.075, 0.04, 1)
+theme_override_font_sizes/font_size = 11
+text = "石料"
+clip_text = true
+text_overrun_behavior = 3
+
+[node name="DensityRow" type="HBoxContainer" parent="Paper/Body/ResourceRow/Chip3/Line/Info"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Density" type="Label" parent="Paper/Body/ResourceRow/Chip3/Line/Info/DensityRow"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_colors/font_color = Color(0.32, 0.23, 0.15, 1)
+theme_override_font_sizes/font_size = 9
+text = "贫乏"
+
+[node name="Pips" type="HBoxContainer" parent="Paper/Body/ResourceRow/Chip3/Line/Info/DensityRow"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_constants/separation = 2
+
+[node name="Pip1" type="ColorRect" parent="Paper/Body/ResourceRow/Chip3/Line/Info/DensityRow/Pips"]
+custom_minimum_size = Vector2(4, 4)
+layout_mode = 2
+color = Color(0.4, 0.29, 0.17, 0.15)
+
+[node name="Pip2" type="ColorRect" parent="Paper/Body/ResourceRow/Chip3/Line/Info/DensityRow/Pips"]
+custom_minimum_size = Vector2(4, 4)
+layout_mode = 2
+color = Color(0.4, 0.29, 0.17, 0.15)
+
+[node name="Pip3" type="ColorRect" parent="Paper/Body/ResourceRow/Chip3/Line/Info/DensityRow/Pips"]
+custom_minimum_size = Vector2(4, 4)
+layout_mode = 2
+color = Color(0.4, 0.29, 0.17, 0.15)
+
+[node name="Pip4" type="ColorRect" parent="Paper/Body/ResourceRow/Chip3/Line/Info/DensityRow/Pips"]
+custom_minimum_size = Vector2(4, 4)
+layout_mode = 2
+color = Color(0.4, 0.29, 0.17, 0.15)
+
+[node name="Pip5" type="ColorRect" parent="Paper/Body/ResourceRow/Chip3/Line/Info/DensityRow/Pips"]
+custom_minimum_size = Vector2(4, 4)
+layout_mode = 2
+color = Color(0.4, 0.29, 0.17, 0.15)
+
+[node name="Note" type="Label" parent="Paper/Body/ResourceRow"]
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.32, 0.23, 0.15, 1)
+theme_override_font_sizes/font_size = 10
+text = "此地无明显自然资源"
+vertical_alignment = 1

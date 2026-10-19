@@ -15847,6 +15847,12 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
         metrics[FAMILY_METRIC_CELL_RESOURCE_CLASS_COUNT] = count_q16(resource_classes);
     }
     int64_t sector_count[5] = {0, 0, 0, 0, 0};
+    // Output-flow twin of sector_count. last_output is already net of
+    // output_factor_q16, so this is the only sector aggregate that reacts when a
+    // sector coefficient changes -- which is what lets an output-share
+    // condition feed back on the effect that raised the coefficient.
+    int64_t sector_output[5] = {0, 0, 0, 0, 0};
+    int64_t total_output = 0;
     int64_t total_buildings = 0;
     int32_t manufacturing_groups = 0;
     int32_t knowledge_groups = 0;
@@ -15861,6 +15867,12 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
         requested(FAMILY_METRIC_CELL_DISTINCT_SECTOR_COUNT) ||
         requested(FAMILY_METRIC_CELL_DOMINANT_SECTOR_ID) ||
         requested(FAMILY_METRIC_CELL_DOMINANT_SECTOR_SHARE_Q16) ||
+        requested(FAMILY_METRIC_CELL_SECTOR_OUTPUT_SHARE_AGRICULTURE_Q16) ||
+        requested(FAMILY_METRIC_CELL_SECTOR_OUTPUT_SHARE_EXTRACTIVE_Q16) ||
+        requested(FAMILY_METRIC_CELL_SECTOR_OUTPUT_SHARE_MANUFACTURING_Q16) ||
+        requested(FAMILY_METRIC_CELL_SECTOR_OUTPUT_SHARE_ENERGY_Q16) ||
+        requested(FAMILY_METRIC_CELL_SECTOR_OUTPUT_SHARE_KNOWLEDGE_Q16) ||
+        requested(FAMILY_METRIC_CELL_DOMINANT_SECTOR_OUTPUT_SHARE_Q16) ||
         requested(FAMILY_METRIC_CELL_HAS_EXTRACTIVE_RESOURCE) ||
         requested(FAMILY_METRIC_CELL_VACANT_PROFESSION_COUNT) ||
         requested(FAMILY_METRIC_CELL_KNOWLEDGE_BUILDING_CLASS_COUNT) ||
@@ -15880,6 +15892,10 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
             if (sector >= 0 && sector < 5) {
                 sector_count[sector] += group.count;
                 total_buildings += group.count;
+                if (group.last_output > 0) {
+                    sector_output[sector] += group.last_output;
+                    total_output += group.last_output;
+                }
             }
             if (sector == 2) ++manufacturing_groups;
             if (sector == 4) ++knowledge_groups;
@@ -15942,6 +15958,80 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
         metrics[FAMILY_METRIC_CELL_DOMINANT_SECTOR_SHARE_Q16] = total_buildings > 0
             ? static_cast<int32_t>(std::clamp<int64_t>(
                 dominant_owned * Q16_ONE / total_buildings, 0, Q16_ONE)) : 0;
+    {
+        // Output-share rows. Same bucket layout as sector_count above, but
+        // weighted by last_output so a sector coefficient actually moves them.
+        const int32_t sector_output_metric_ids[5] = {
+            FAMILY_METRIC_CELL_SECTOR_OUTPUT_SHARE_AGRICULTURE_Q16,
+            FAMILY_METRIC_CELL_SECTOR_OUTPUT_SHARE_EXTRACTIVE_Q16,
+            FAMILY_METRIC_CELL_SECTOR_OUTPUT_SHARE_MANUFACTURING_Q16,
+            FAMILY_METRIC_CELL_SECTOR_OUTPUT_SHARE_ENERGY_Q16,
+            FAMILY_METRIC_CELL_SECTOR_OUTPUT_SHARE_KNOWLEDGE_Q16,
+        };
+        int64_t dominant_output = 0;
+        for (int32_t sector = 0; sector < 5; ++sector) {
+            const int32_t share = total_output > 0
+                ? static_cast<int32_t>(std::clamp<int64_t>(
+                    sector_output[sector] * Q16_ONE / total_output, 0, Q16_ONE))
+                : 0;
+            if (requested(sector_output_metric_ids[sector]))
+                metrics[sector_output_metric_ids[sector]] = share;
+            if (sector_output[sector] > dominant_output)
+                dominant_output = sector_output[sector];
+        }
+        if (requested(FAMILY_METRIC_CELL_DOMINANT_SECTOR_OUTPUT_SHARE_Q16))
+            metrics[FAMILY_METRIC_CELL_DOMINANT_SECTOR_OUTPUT_SHARE_Q16] =
+                total_output > 0
+                    ? static_cast<int32_t>(std::clamp<int64_t>(
+                        dominant_output * Q16_ONE / total_output, 0, Q16_ONE))
+                    : 0;
+    }
+    if (requested(FAMILY_METRIC_CELL_DOMINANT_RESOURCE_ID)) {
+        const int32_t resource = dominant_resource_at(cell);
+        metrics[FAMILY_METRIC_CELL_DOMINANT_RESOURCE_ID] =
+            resource < 0 ? -Q16_ONE : count_q16(resource);
+    }
+    if (requested(FAMILY_METRIC_CELL_DOMINANT_RESOURCE_STOCK_SHARE_Q16))
+        metrics[FAMILY_METRIC_CELL_DOMINANT_RESOURCE_STOCK_SHARE_Q16] =
+            dominant_resource_stock_share_q16(cell);
+    if (requested(FAMILY_METRIC_CELL_DOMINANT_OUTPUT_GOOD_ID) ||
+        requested(FAMILY_METRIC_CELL_TOP_OUTPUT_GOOD_SHARE_Q16)) {
+        int32_t output_share = 0;
+        const int32_t good = dominant_output_good_at(cell, output_share);
+        if (requested(FAMILY_METRIC_CELL_DOMINANT_OUTPUT_GOOD_ID))
+            metrics[FAMILY_METRIC_CELL_DOMINANT_OUTPUT_GOOD_ID] =
+                good < 0 ? -Q16_ONE : count_q16(good);
+        if (requested(FAMILY_METRIC_CELL_TOP_OUTPUT_GOOD_SHARE_Q16))
+            metrics[FAMILY_METRIC_CELL_TOP_OUTPUT_GOOD_SHARE_Q16] = output_share;
+    }
+    if (requested(FAMILY_METRIC_COUNTRY_POPULATION_Q16) ||
+        requested(FAMILY_METRIC_COUNTRY_BUILDINGS_INSTALLED) ||
+        requested(FAMILY_METRIC_COUNTRY_TRADE_BASE_VALUE_Q16)) {
+        // Published from the frozen per-publish snapshot, never from live
+        // Economy stores: ideology conditions must not sample a country that is
+        // still being written this pass.
+        const int32_t country_slot = cell_country_slot(cell);
+        const CountryClassOpinionSnapshot &opinion = country_class_opinion_snapshot();
+        const size_t slot = static_cast<size_t>(std::max(0, country_slot));
+        const bool in_range = country_slot >= 0 &&
+            slot < opinion.country_population.size() &&
+            slot < opinion.country_buildings_installed.size() &&
+            slot < opinion.country_trade_base_value.size();
+        // Local saturation counter: this reader is const, so the member counter
+        // is not writable here and a saturation would be silently swallowed.
+        int64_t sat = 0;
+        if (requested(FAMILY_METRIC_COUNTRY_POPULATION_Q16))
+            metrics[FAMILY_METRIC_COUNTRY_POPULATION_Q16] = in_range
+                ? saturating_mul(std::max<int64_t>(0, opinion.country_population[slot]),
+                    Q16_ONE, sat) : 0;
+        if (requested(FAMILY_METRIC_COUNTRY_BUILDINGS_INSTALLED))
+            metrics[FAMILY_METRIC_COUNTRY_BUILDINGS_INSTALLED] = in_range
+                ? std::max<int64_t>(0, opinion.country_buildings_installed[slot]) : 0;
+        if (requested(FAMILY_METRIC_COUNTRY_TRADE_BASE_VALUE_Q16))
+            metrics[FAMILY_METRIC_COUNTRY_TRADE_BASE_VALUE_Q16] = in_range
+                ? saturating_mul(std::max<int64_t>(0, opinion.country_trade_base_value[slot]),
+                    Q16_ONE, sat) : 0;
+    }
     if (requested(FAMILY_METRIC_CELL_COMPLETE_CHAIN_COUNT)) {
         int32_t complete = 0;
         if (building_csr) {

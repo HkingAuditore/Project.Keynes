@@ -2,8 +2,8 @@ extends PanelContainer
 class_name TechnologyDetailCard
 
 const RelationRowScene := preload("res://scenes/ui/technology_relation_row.tscn")
-const TechnologyNetworkValidatorScript := preload(
-	"res://scripts/technology/technology_network_validator.gd")
+const TechnologyEffectTextScript := preload(
+	"res://scripts/ui/components/technology_effect_text.gd")
 
 signal enqueue_requested(index: int)
 signal remove_requested(index: int)
@@ -333,59 +333,10 @@ func _progression_role_name(role: String) -> String:
 	return role
 
 
+## 效果行的唯一实现在 TechnologyEffectText：可研究清单的悬停提示共用同一份，
+## 否则两边会各自漏掉不同的效果类别。
 func _effect_items(definition: Dictionary) -> Array:
-	var items: Array = []
-	for effect_value in definition.get("content_effects", []):
-		var effect: Dictionary = effect_value
-		var kind := String(effect.get("kind", ""))
-		var id := String(effect.get("id", ""))
-		var display_name := String(effect.get("display_name", id))
-		var attribute := String(effect.get("attribute", ""))
-		var text := ""
-		match kind:
-			"building": text = "解锁建筑 · %s" % display_name
-			"good":
-				text = ("解锁物资 · %s" if attribute == "production_access" \
-					else "生产配方关联 · %s") % display_name
-			"resource": text = "可利用资源 · %s" % display_name
-			"class": text = "阶层岗位 · %s" % display_name
-			"terrain": text = "地形专长 · %s" % display_name
-			"landform": text = "地貌专长 · %s" % display_name
-			"climate": text = "气候专长 · %s" % display_name
-			"tile": text = "地块条件 · %s" % display_name
-		if not text.is_empty():
-			items.append({
-				"text": text,
-				"icon": &"economy.building" if kind == "building" else &"metric.technology",
-				"accent": UITokens.RESOURCE,
-			})
-	var modifier_texts := {}
-	for term_value in definition.get("modifier_terms", []):
-		var term: Dictionary = term_value
-		var value := int(round(float(term.get("value", 0.0)) * 100.0))
-		var delta := "%+d%%" % value
-		var subject := TechnologyNetworkValidatorScript.modifier_effect_subject(term)
-		var text := ""
-		if not subject.is_empty():
-			text = "%s %s" % [subject, delta]
-		if not text.is_empty() and not modifier_texts.has(text):
-			modifier_texts[text] = true
-			items.append({"text": text, "icon": &"metric.technology", "accent": UITokens.CLIMATE})
-	if not items.is_empty():
-		return items
-	var summary := String(definition.get("effect_summary", ""))
-	for chunk in summary.replace("，", "、").split("、", false):
-		var text := String(chunk).strip_edges()
-		if text.is_empty():
-			continue
-		var unlocks := text.begins_with("解锁") or text.begins_with("开启") \
-			or text.begins_with("完成")
-		items.append({
-			"text": text,
-			"icon": &"economy.building" if unlocks else &"metric.technology",
-			"accent": UITokens.RESOURCE if unlocks else UITokens.CLIMATE,
-		})
-	return items
+	return TechnologyEffectTextScript.effect_items(definition)
 
 
 func _fill_relation_rows(host: VBoxContainer, entries: Array) -> void:

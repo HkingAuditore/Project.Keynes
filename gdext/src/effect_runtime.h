@@ -12,6 +12,8 @@
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
 
+#include "effect_declarative_validation.h"
+
 namespace pk {
 
 class ModifierRuntime;
@@ -56,6 +58,22 @@ public:
         BOOL_OR = 7,
         BOOL_NOT = 8,
     };
+    // Ids accepted as ConditionOp::STATE_GTE's arg0. One source of truth shared
+    // by state_value(), the catalog validator and the authored content layer.
+    enum StateId : int32_t {
+        STATE_LEVEL = 0,
+        STATE_FIRE_SEQUENCE = 1,
+        STATE_INPUT_REVISION = 2,
+        STATE_REMAINING_DAYS = 3,
+        // This instance's own stack count. Without it a program cannot express
+        // "once this effect has 3 stacks, also do X", which is the backbone of
+        // stacking builds.
+        STATE_STACK_COUNT = 4,
+    };
+    // Guardrail for authored max_stacks. state_value() multiplies the stack
+    // count by Q16_ONE and downstream terms raise factors to that power, so an
+    // unbounded author value overflows int64 instead of failing loudly.
+    static constexpr int32_t MAX_AUTHORED_STACKS = 256;
     enum Action : int32_t {
         MODIFIER_COMMAND = 1,
         COUNTRY_COMMAND = 2,
@@ -88,6 +106,30 @@ public:
         TRANSITION_DEACTIVATE = 3,
         TRANSITION_RETIRE = 4,
     };
+
+    // Target-selector kinds. Values 6 and 7 predate this enum and are shared
+    // with the Economy family-buff path, so the numbering is frozen. 8..11 are
+    // generalised selectors that turn "which cells does this effect touch" into
+    // a function of world state instead of a fixed handle.
+    enum TargetSelectorKind : int32_t {
+        SELECTOR_OWNER = 0,
+        SELECTOR_SOURCE_CELL = 2,
+        SELECTOR_SOURCE_COUNTRY = 3,
+        SELECTOR_STATIC_HANDLE = 4,
+        SELECTOR_ID = 5,
+        SELECTOR_NEIGHBORS_R1 = 6,
+        SELECTOR_NEIGHBORS_R2 = 7,
+        SELECTOR_SAME_TERRAIN_COMPONENT = 8,
+        SELECTOR_SAME_RESOURCE_COMPONENT = 9,
+        SELECTOR_PREDICATE_ANY_CELL = 10,
+        SELECTOR_DISTANCE_N = 11,
+        SELECTOR_MAX_KIND = SELECTOR_DISTANCE_N,
+    };
+    // Hard cap on cells a single selector may return. The cap is what keeps
+    // "one instance per cell" bounded: 32 cells x a handful of cards stays well
+    // inside the instance table, while an uncapped whole-map predicate would not.
+    static constexpr int32_t SELECTOR_MAX_CELLS = 32;
+    static constexpr int32_t SELECTOR_DEFAULT_CELLS = 8;
 
     struct BehaviorCommand {
         int32_t action = CUSTOM_DOMAIN_COMMAND;
@@ -129,6 +171,7 @@ public:
         int32_t priority = 0;
         int32_t target_selector_kind = 0;
         std::string target_selector_id;
+        int32_t target_selector_param[2] = {0, 0};
         uint64_t stack_key_hash = 0;
         uint64_t metric_mask = 0;
         int32_t magnitude_by_prestige_q16[6] = {
@@ -197,6 +240,14 @@ public:
 
     godot::Dictionary configure(const godot::Dictionary &catalog);
     bool pod_snapshot_persistence_self_test(std::string &error) const;
+    // M1 acceptance gate: proves the worker POD and this runtime answer every
+    // StateId identically. The worker used to carry a second, hand-written
+    // state switch that was ordered differently, which made every Q16-authored
+    // state threshold permanently false on the worker while it passed here.
+    // Runs the full (level, fire_sequence, stack_count, remaining_days) matrix
+    // and also pins the POD's capability ceilings to be no narrower than this
+    // runtime's, because a narrower ceiling rejects the whole catalog at once.
+    bool pod_state_parity_self_test(std::string &error) const;
     // Native domain runtimes use this POD entry point at structural commit
     // boundaries. It avoids constructing Godot Dictionaries in hot loops while
     // keeping EffectRuntime as the sole owner of instance lifecycle.
@@ -209,6 +260,24 @@ public:
     bool has_instance_pod(int64_t instance_id, uint32_t generation) const;
     bool family_effect_metadata_pod(const std::string &program_key,
                                     FamilyEffectMetadataPod &out) const;
+    // Native Modifier adapter of a compiled command definition, indexed the
+    // same way the compiled catalog indexes commands. The worker POD must hand
+    // the Modifier stage the same adapter the main thread would have used;
+    // guessing it from the Modifier domain instead marked ideology cards as
+    // TECHNOLOGY and clamped their magnitude to 1.0. Exposed rather than
+    // re-derived so the rule has exactly one home (effect_runtime.cpp:1003).
+    int32_t native_command_definition_count() const;
+    int32_t native_modifier_adapter_for_command(int32_t command_index) const;
+    // M2a: the declarative facts EffectRuntime::submit_instances validates with
+    // (effect_declarative_validation.h). The worker transport path must reject
+    // exactly the rows this returns facts for, so the facts are read here
+    // instead of being re-derived from the godot Dictionary columns.
+    // Returns false when the program key is unknown or the runtime is
+    // unconfigured; `program_id` then stays -1 and callers treat the row as
+    // UNKNOWN_PROGRAM.
+    bool declarative_facts_for_key(const std::string &key, int32_t &program_id,
+                                   int32_t &source_kind,
+                                   bool &managed_declared) const;
     bool refresh_managed_duration_pod(int64_t instance_id, uint32_t generation,
                                       int64_t day_index);
     bool upsert_external_binding_pod(int64_t binding_id, uint32_t generation,
@@ -416,6 +485,10 @@ private:
         NATIVE_MODIFIER_PERSON = 3,
         NATIVE_MODIFIER_TRIGGER = 4,
         NATIVE_MODIFIER_FAMILY_EFFECT = 5,
+        // Declarative managed programs owned by a domain that is not family
+        // (ideology today). Same lifecycle / stack / target semantics, but the
+        // modifier producer and source_type stay with the owning domain.
+        NATIVE_MODIFIER_IDEOLOGY = 6,
     };
     struct CommandDefinition {
         int32_t action = CUSTOM_DOMAIN_COMMAND;
@@ -457,6 +530,15 @@ private:
         int32_t priority = 0;
         int32_t target_selector_kind = 0;
         std::string target_selector_id;
+        // [0] = cell cap for the generalised selectors, [1] = terrain id /
+        // resource id / predicate id. Both default to 0, which every consumer
+        // reads as "unset" rather than "first terrain".
+        int32_t target_selector_param[2] = {0, 0};
+        // Declared ownership of the managed lifecycle instead of inferring it
+        // from a "family.effect." key prefix. Catalog column `managed_flags`
+        // wins when present; otherwise the legacy prefix rule applies so every
+        // pre-existing catalog and test fixture keeps its behaviour.
+        bool managed_declared = false;
         int32_t magnitude_by_prestige_q16[6] = {
             Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE};
     };

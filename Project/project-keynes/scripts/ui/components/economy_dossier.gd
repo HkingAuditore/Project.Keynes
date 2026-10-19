@@ -29,6 +29,7 @@ var _player_controller = null
 @onready var _scope_option: OptionButton = %ScopeOption
 @onready var _scope_reset: Button = %ScopeReset
 @onready var _kpi_row: HBoxContainer = %KpiRow
+@onready var _gdp_band: DossierGdpBand = %GdpCanvas
 @onready var _filter_bar: HBoxContainer = %FilterBar
 @onready var _filter_label: Label = %FilterLabel
 @onready var _status_label: Label = %StatusLabel
@@ -189,6 +190,7 @@ func _refresh_now() -> void:
 	_vm.configure(_model, _model.get("economy_history", null))
 	_vm.begin_refresh()
 	_refresh_scope_options()
+	_refresh_gdp_band()
 	_refresh_kpis()
 	_refresh_filters()
 	_refresh_page()
@@ -236,6 +238,13 @@ func _show_status(text: String, blocking: bool = true) -> void:
 	_status_label.text = text
 	_status_label.visible = true
 	_status_label.theme_type_variation = &"PKDangerText" if blocking else &"PKDossierCaption"
+
+
+## 页头年度产值横幅。账本未就绪时也刷新，让横幅显示"待结算"而不是留空。
+func _refresh_gdp_band() -> void:
+	if _gdp_band == null:
+		return
+	_gdp_band.set_headline(_vm.gdp_headline())
 
 
 func _refresh_kpis() -> void:

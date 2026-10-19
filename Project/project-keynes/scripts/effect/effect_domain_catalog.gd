@@ -11,6 +11,8 @@ const FamilyTraitCatalogScript = preload("res://scripts/family/family_trait_cata
 const FamilyEffectCatalogScript = preload("res://scripts/family/family_effect_catalog.gd")
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 const IdeologyCatalogScript = preload("res://scripts/ideology/ideology_catalog.gd")
+const IdeologyEffectCatalogScript = preload("res://scripts/ideology/ideology_effect_catalog.gd")
+const IdeologyEffectDefinitionScript = preload("res://scripts/ideology/ideology_effect_definition.gd")
 const EraRewardCatalogScript = preload("res://scripts/effect/era_reward_catalog.gd")
 const TriggerCatalogScript = preload("res://scripts/trigger/trigger_catalog.gd")
 
@@ -69,6 +71,36 @@ static func build(family_effect_catalog_override: Resource = null) -> Resource:
 		"family.cash_per_capita_vs_cell_q16",
 		"cell.knowledge_building_class_count",
 		"cell.can_produce_corn",
+		# --- Output-share metrics (ids 37..46) -----------------------------
+		# The *_SECTOR_SHARE_Q16 rows above count BUILDINGS, so raising a sector
+		# output coefficient leaves them unmoved. These are aggregated from
+		# group.last_output (already net of the output factor), so an
+		# "industry share >= X -> boost" condition actually closes the loop.
+		# Index order below MUST match the C++ FamilyEffectMetricId enum, since
+		# the array index is the metric id.
+		"cell.sector_output_share.agriculture_q16",
+		"cell.sector_output_share.extractive_q16",
+		"cell.sector_output_share.manufacturing_q16",
+		"cell.sector_output_share.energy_q16",
+		"cell.sector_output_share.knowledge_q16",
+		"cell.dominant_sector_output_share_q16",
+		# Resources (building_resource_ids: iron, corn, ...) and goods
+		# (building_outputs[].good_id) are separate id spaces. The stock rows
+		# answer "this cell is rich in iron"; the output rows answer "this cell
+		# mostly produces X".
+		"cell.dominant_resource_id",
+		"cell.dominant_resource_stock_share_q16",
+		"cell.dominant_output_good_id",
+		"cell.top_output_good_share_q16",
+		# --- Country scalars (ids 47..49) -----------------------------------
+		# Read from the frozen CountryClassOpinionSnapshot, the same source
+		# ideology point accrual uses, so a condition never samples a country
+		# mid-write. research_speed / build_speed are intentionally absent: the
+		# project models neither, and a metric that always reads 0 would make
+		# such a card silently inert.
+		"country.population_q16",
+		"country.buildings_installed",
+		"country.trade_base_value_q16",
 	])
 	catalog.behavior_command_keys = PackedStringArray()
 	var definitions: Array[Resource] = []
@@ -232,6 +264,20 @@ static func build(family_effect_catalog_override: Resource = null) -> Resource:
 		if not bool(ideology_ir.get("ok", false)):
 			return null
 		definitions.append(_ideology_command_definition(ideology_ir))
+	# Ideology declarative programs. A card effect row whose definition_key
+	# matches one of these keys is owned by the reconciliation path (conditions,
+	# target selector, lifecycle) instead of the one-shot command batch above.
+	var ideology_effects: Resource = IdeologyEffectCatalogScript.load_default()
+	if ideology_effects != null:
+		for effect in ideology_effects.effects:
+			if effect == null or not effect is IdeologyEffectDefinitionScript:
+				continue
+			var program: Resource = effect.to_effect_definition()
+			var program_key := String(program.key)
+			if program_key.is_empty() or definition_seen.has(program_key):
+				continue
+			definition_seen[program_key] = true
+			definitions.append(program)
 	definitions.sort_custom(func(a, b) -> bool: return String(a.key) < String(b.key))
 	catalog.definitions = definitions
 	return catalog

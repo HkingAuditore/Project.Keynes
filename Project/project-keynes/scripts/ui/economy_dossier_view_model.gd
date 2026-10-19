@@ -88,6 +88,7 @@ var _model: Dictionary = {}
 var _facade = null
 var _country_handle := 0
 var _history: EconomyHistoryBuffer = null
+var _gdp_ledger: EconomyGdpLedger = null
 var _strata: SocialStrataTable = null
 var _memo: Dictionary = {}
 var _last_good: Dictionary = {}
@@ -108,6 +109,8 @@ func configure(model: Dictionary, history: EconomyHistoryBuffer = null) -> void:
 	_country_handle = handle
 	if history != null:
 		_history = history
+	var ledger = model.get("gdp_ledger", null)
+	_gdp_ledger = ledger if ledger is EconomyGdpLedger else null
 	_memo.clear()
 
 
@@ -196,6 +199,40 @@ func scope_options() -> Array:
 
 
 # ── 页头 KPI ────────────────────────────────────────────────────────────
+
+## 页头「年度累计产值」横幅数据。与 kpis() 分开：横幅不是 KPI 卡，
+## 增删它不应改变 KPI 条的张数（结构测试锁定 5 张）。
+## 读数全部来自内存账本，本方法不发起任何原生查询。
+func gdp_headline() -> Dictionary:
+	var title := "本年度累计产值" if scope_cell < 0 else "本城年度累计产值"
+	if _gdp_ledger == null:
+		return {"ok": false, "title": title, "reason": "经济账本尚未接入"}
+	if not _gdp_ledger.ready():
+		return {"ok": false, "title": title, "reason": "经济账本尚未就绪"}
+	var national := scope_cell < 0
+	if not national and not _gdp_ledger.tracks_cell(scope_cell):
+		return {"ok": false, "title": title, "reason": "此地暂无可统计的产值"}
+	var ytd := _gdp_ledger.national_ytd() if national \
+		else _gdp_ledger.cell_ytd(scope_cell)
+	var per_day := _gdp_ledger.national_per_day() if national \
+		else _gdp_ledger.cell_per_day(scope_cell)
+	var per_capita := _gdp_ledger.national_per_capita() if national \
+		else _gdp_ledger.cell_per_capita(scope_cell)
+	return {
+		"ok": true,
+		"title": title,
+		"value": ytd / MONEY_SCALE,
+		"per_day": per_day / MONEY_SCALE,
+		"per_capita": per_capita / MONEY_SCALE if not is_nan(per_capita) else NAN,
+		"population": _gdp_ledger.national_population() if national \
+			else _gdp_ledger.cell_population(scope_cell),
+		"days_counted": _gdp_ledger.days_counted(),
+		"days_per_year": _gdp_ledger.days_per_year(),
+		"year_index": _gdp_ledger.year_index(),
+		"backfilled": _gdp_ledger.backfilled(),
+		"partial": national and _gdp_ledger.partial(),
+	}
+
 
 func kpis() -> Array:
 	var summary := query("summary")

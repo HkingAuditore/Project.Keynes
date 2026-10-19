@@ -325,7 +325,7 @@ bool RuntimeEffectPodAuthority::validate_catalog(
                          catalog.commands.size()) ||
             definition.max_stacks <= 0 || definition.duration_days == 0 ||
             definition.target_selector_kind < 0 ||
-            definition.target_selector_kind > 7) {
+            definition.target_selector_kind > MAX_SELECTOR_KIND) {
             error = "effect_pod_definition_invalid";
             return false;
         }
@@ -356,7 +356,7 @@ bool RuntimeEffectPodAuthority::validate_catalog(
              (condition.arg0 < 0 ||
               condition.arg0 >= static_cast<int32_t>(catalog.metric_key_hashes.size()))) ||
             (condition.op == RuntimeEffectPodConditionOp::STATE_GTE &&
-             (condition.arg0 < 0 || condition.arg0 > 3))) {
+             (condition.arg0 < 0 || condition.arg0 > MAX_STATE_ID))) {
             error = "effect_pod_condition_invalid";
             return false;
         }
@@ -367,7 +367,7 @@ bool RuntimeEffectPodAuthority::validate_catalog(
              (instruction.arg0 < 0 ||
               instruction.arg0 >= static_cast<int32_t>(catalog.metric_key_hashes.size()))) ||
             (instruction.op == RuntimeEffectPodInstructionOp::READ_STATE &&
-             (instruction.arg0 < 0 || instruction.arg0 > 3))) {
+             (instruction.arg0 < 0 || instruction.arg0 > MAX_STATE_ID))) {
             error = "effect_pod_instruction_invalid";
             return false;
         }
@@ -383,6 +383,10 @@ bool RuntimeEffectPodAuthority::validate_catalog(
         }
         switch (command.action) {
             case RuntimeEffectPodAction::MODIFIER_COMMAND:
+                // ModifierRuntime::Domain is {CLIMATE=0, COUNTRY=1, ECONOMY=2,
+                // GAMEPLAY=3}, so CLIMATE is 0 and `> 3` already admits every
+                // modifier domain. Do not widen this to 5 chasing a "CLIMATE=4"
+                // that belongs to the ideology target_domain enum, not this one.
                 if (command.domain > 3 || (command.opcode != 1 && command.opcode != 2)) {
                     error = "effect_pod_modifier_command_invalid";
                     return false;
@@ -648,7 +652,7 @@ uint32_t RuntimeEffectPodAuthority::catchup_fire_never_fired_instances(
             instance.next_due_day = fire_day + 1;
             continue;
         }
-        if (!evaluate_conditions(definition, instance, _current)) {
+        if (!evaluate_conditions(definition, instance, _current, fire_day)) {
             instance.last_evaluated_input_revision = instance.input_revision;
             instance.next_due_day = fire_day + 1;
             continue;
@@ -721,6 +725,26 @@ uint32_t RuntimeEffectPodAuthority::catchup_fire_never_fired_instances(
                 command.domain < 4) {
                 intent.payload[1] = command.domain;
             }
+            if (command.action == RuntimeEffectPodAction::MODIFIER_COMMAND) {
+                // Hand the Modifier stage the adapter the main thread compiled
+                // for this command. Without it the stage guesses from the
+                // Modifier domain, which labels ideology commands TECHNOLOGY
+                // and clamps their magnitude to 1.0 -- a silent wrong-value
+                // failure that looks like success.
+                //
+                // Layout: low byte = EffectRuntime adapter kind, next byte =
+                // the program's target_domain (FAMILY_EFFECT / IDEOLOGY pick
+                // GROUP vs ENTITY from it). intent.flags is NOT usable here:
+                // bits 0..1 are RUNTIME_DOMAIN_INTENT_DEFERRED / _REQUIRES_ACK.
+                int32_t adapter = 0;
+                if (command.command_definition_id <
+                    _catalog.command_native_adapters.size()) {
+                    adapter = _catalog
+                        .command_native_adapters[command.command_definition_id];
+                }
+                intent.reserved = adapter |
+                    ((definition.target_domain & 0xFF) << 8);
+            }
             out_intents.push_back(intent);
         }
         ++fired;
@@ -733,9 +757,50 @@ uint32_t RuntimeEffectPodAuthority::catchup_fire_never_fired_instances(
     return fired;
 }
 
+int64_t RuntimeEffectPodAuthority::state_value(
+        const RuntimeEffectPodInstance &instance, int32_t state_id,
+        int64_t day) noexcept {
+    // Ids and scaling mirror EffectRuntime::state_value (effect_runtime.cpp:3840).
+    // The Q16 factor is not cosmetic: authored content writes thresholds in Q16
+    // ("level >= 2" is 131072), so returning a raw count here makes every such
+    // condition permanently false on the worker while passing on the main thread.
+    switch (state_id) {
+        case 0:  // STATE_LEVEL
+            return static_cast<int64_t>(instance.level) * Q16_ONE;
+        case 1:  // STATE_FIRE_SEQUENCE
+            return static_cast<int64_t>(instance.fire_sequence) * Q16_ONE;
+        case 2:  // STATE_INPUT_REVISION - deliberately raw, it is a token.
+            return instance.input_revision;
+        case 3: {  // STATE_REMAINING_DAYS
+            if (instance.expires_day < 0) return 0;
+            const int64_t remaining =
+                std::max<int64_t>(0, instance.expires_day - day);
+            if (remaining > std::numeric_limits<int64_t>::max() / Q16_ONE)
+                return std::numeric_limits<int64_t>::max();
+            return remaining * Q16_ONE;
+        }
+        case 4:  // STATE_STACK_COUNT
+            return static_cast<int64_t>(std::max(0, instance.stack_count)) * Q16_ONE;
+        default:
+            return 0;
+    }
+}
+
+int32_t RuntimeEffectPodAuthority::scaled_command_stacks(
+        int32_t base_stacks, int32_t stack_count, int32_t max_stacks) noexcept {
+    // Shared with EffectRuntime so a stacked instance emits the same weight on
+    // both threads. Shape mirrors the original main-thread formula:
+    // base * max(1, depth), clamped to the program's max_stacks.
+    return static_cast<int32_t>(std::min<int64_t>(
+        std::max(1, max_stacks),
+        static_cast<int64_t>(base_stacks) *
+            static_cast<int64_t>(std::max(1, stack_count))));
+}
+
 bool RuntimeEffectPodAuthority::evaluate_conditions(
         const RuntimeEffectPodDefinition &definition,
-        const RuntimeEffectPodInstance &instance, const State &state) const {
+        const RuntimeEffectPodInstance &instance, const State &state,
+        int64_t day) const {
     if (definition.condition_count == 0) return true;
     std::array<uint8_t, 256> stack{};
     uint32_t depth = 0;
@@ -744,14 +809,8 @@ bool RuntimeEffectPodAuthority::evaluate_conditions(
             static_cast<size_t>(id);
         return offset < state.metric_values.size() ? state.metric_values[offset] : 0;
     };
-    const auto state_value = [&](int32_t id) -> int64_t {
-        switch (id) {
-            case 0: return instance.level;
-            case 1: return static_cast<int64_t>(instance.fire_sequence);
-            case 2: return instance.stack_count;
-            case 3: return instance.input_revision;
-        }
-        return 0;
+    const auto read_state = [&](int32_t id) -> int64_t {
+        return RuntimeEffectPodAuthority::state_value(instance, id, day);
     };
     for (uint32_t i = 0; i < definition.condition_count; ++i) {
         const auto &condition = _catalog.conditions[definition.condition_begin + i];
@@ -773,7 +832,7 @@ bool RuntimeEffectPodAuthority::evaluate_conditions(
             }
             case RuntimeEffectPodConditionOp::STATE_GTE:
                 if (depth >= stack.size()) return false;
-                stack[depth++] = state_value(condition.arg0) >= condition.value;
+                stack[depth++] = read_state(condition.arg0) >= condition.value;
                 break;
             case RuntimeEffectPodConditionOp::BOOL_AND:
             case RuntimeEffectPodConditionOp::BOOL_OR:
@@ -812,7 +871,11 @@ bool RuntimeEffectPodAuthority::compile_command(
     out.value = definition.value_mode == RuntimeEffectPodValueMode::CONSTANT
         ? definition.value : value;
     out.duration_days = definition.duration_days;
-    out.stacks = definition.stacks;
+    // Depth multiplies the command exactly like the main thread. instance
+    // .max_stacks is seeded from the program definition at :555, so it is the
+    // same ceiling the main thread uses.
+    out.stacks = scaled_command_stacks(
+        definition.stacks, instance.stack_count, instance.max_stacks);
     out.command_definition_id = static_cast<uint32_t>(
         &definition - _catalog.commands.data());
     out.command_key_hash = definition.command_key_hash;
@@ -927,14 +990,8 @@ bool RuntimeEffectPodAuthority::execute_program(
             static_cast<size_t>(id);
         return offset < state.metric_values.size() ? state.metric_values[offset] : 0;
     };
-    const auto state_value = [&](int32_t id) -> int64_t {
-        switch (id) {
-            case 0: return instance.level;
-            case 1: return static_cast<int64_t>(instance.fire_sequence);
-            case 2: return instance.stack_count;
-            case 3: return instance.input_revision;
-        }
-        return 0;
+    const auto read_state = [&](int32_t id) -> int64_t {
+        return RuntimeEffectPodAuthority::state_value(instance, id, day);
     };
     for (uint32_t i = 0; i < definition.instruction_count; ++i) {
         const auto &instruction = _catalog.instructions[definition.instruction_begin + i];
@@ -949,7 +1006,7 @@ bool RuntimeEffectPodAuthority::execute_program(
                 break;
             case RuntimeEffectPodInstructionOp::READ_STATE:
                 if (depth >= stack.size()) { error = "effect_value_stack_overflow"; return false; }
-                stack[depth++] = state_value(instruction.arg0);
+                stack[depth++] = read_state(instruction.arg0);
                 break;
             case RuntimeEffectPodInstructionOp::ADD:
             case RuntimeEffectPodInstructionOp::SUB:
@@ -1320,7 +1377,7 @@ bool RuntimeEffectPodAuthority::plan_day(int64_t day, uint64_t input_generation,
             instance.next_due_day = retry_due;
             continue;
         }
-        if (!evaluate_conditions(definition, instance, _current)) {
+        if (!evaluate_conditions(definition, instance, _current, day)) {
             instance.last_evaluated_input_revision = instance.input_revision;
             instance.next_due_day = retry_due;
             continue;

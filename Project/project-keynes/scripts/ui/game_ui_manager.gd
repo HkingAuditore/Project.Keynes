@@ -58,6 +58,9 @@ var _inspector_retry_generation := 0
 var _inspector_retry_queued := false
 var _inspector_view_model: CellInspectorViewModel
 var _map: MapData
+var _world_clock: WorldClock
+## 年度累计产值账本：国家卷宗与地块档案共用同一份，随已提交经济日推进。
+var _gdp_ledger := EconomyGdpLedger.new()
 var _selected_cell: HexCell
 var _selected_fog_state := VisionSolver.FOG_VISIBLE
 var _last_cached_panel_ms: int = 0
@@ -110,9 +113,14 @@ const NATIVE_DIRTY_COUNTRY_TERRITORY := 1 << 2
 const NATIVE_DIRTY_COUNTRY_VISUAL_ERA := 1 << 3
 
 const ResearchToastScene = preload("res://scenes/ui/research_toast.tscn")
+const CellHoverCardScene = preload("res://scenes/ui/cell_hover_card.tscn")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 
 var _research_toast: ResearchToast
+var _cell_hover_card: CellHoverCard
+var _cell_hover_view_model: CellHoverViewModel
+var _player_camera: MapCamera
+var _hover_hex_size: float = 22.0
 var _last_research_toast_states := PackedInt32Array()
 var _research_toast_bootstrapped := false
 var _next_research_toast_poll_ms := 0
@@ -146,18 +154,29 @@ func set_world_context(
 		_inspector_view_model = CellInspectorViewModel.new()
 	_cancel_inspector_retry()
 	_map = map
+	_world_clock = world_clock
+	_gdp_ledger.configure(generator, world_clock, map)
 	if _colonization_route != null:
 		var wrap_period := float(_diagnostics_source.map_wrap_period_x()) \
 			if _diagnostics_source != null and _diagnostics_source.has_method(
 				"map_wrap_period_x") else 0.0
 		_colonization_route.set_context(map, world_clock, hex_size, wrap_period)
 	_inspector_view_model.set_context(map, generator, view_adapter, world_clock, sea_level, hex_size)
+	_inspector_view_model.set_gdp_ledger(_gdp_ledger)
+	_hover_hex_size = hex_size
+	if _cell_hover_view_model == null:
+		_cell_hover_view_model = CellHoverViewModel.new()
+	_cell_hover_view_model.set_context(map, generator, _inspector_view_model, world_clock)
+	if _cell_hover_card != null:
+		_cell_hover_card.reset_for_world()
+		_configure_cell_hover_card()
 	_object_detail_context.clear()
 	_selection_context = ""
 	_invalidate_live_revision()
 	if _country_view_model == null:
 		_country_view_model = CountryViewModel.new()
 	_country_view_model.set_context(generator)
+	_country_view_model.set_gdp_ledger(_gdp_ledger)
 	_bind_country_runtime_events(generator)
 	_refresh_player_discovery_context()
 	if _right_panel != null:
@@ -245,6 +264,9 @@ func _on_economy_event_batch_available(_meta: Dictionary) -> void:
 ## 经济事件批次只在有事件的日子发布，开局常连续数日没有；经济卷宗打开时
 ## 每个已提交日都要推进一次，否则数据停在打开那天。刷新仍走墙钟节流。
 func notify_committed_day() -> void:
+	# 年度产值账本必须在面板关闭时也继续累计，否则中途打开会缺少年初到此刻的流量。
+	# sample() 自带 sample_day 去重与墙钟合流，重复调用无额外开销。
+	_gdp_ledger.sample(int(_world_clock.day_index()) if _world_clock != null else -1)
 	if _country_panel != null and _country_panel.is_panel_open() \
 			and _country_panel.current_section() == "economy":
 		_mark_country_panel_dirty(COUNTRY_DIRTY_ECONOMY, "economy_day")
@@ -366,6 +388,20 @@ func bind_gm_sun_camera(camera: MapCamera) -> void:
 		_gm_sun_camera.view_changed.connect(_on_gm_sun_camera_moved)
 
 
+## 悬停卡需要读玩家相机的屏幕→世界换算与平移/缩放状态。
+## PlayerGame 在建图前就会调用，所以这里必须容忍 _map 尚未就绪。
+func bind_player_camera(camera: MapCamera) -> void:
+	_player_camera = camera
+	_configure_cell_hover_card()
+
+
+func _configure_cell_hover_card() -> void:
+	if _cell_hover_card == null or _map == null or _cell_hover_view_model == null:
+		return
+	_cell_hover_card.configure(_map, _player_camera, _hover_hex_size,
+		_cell_hover_view_model, _hover_blocked, map_safe_area)
+
+
 func _on_gm_sun_camera_moved(_world_rect: Rect2, _center: Vector2, _zoom_value: float) -> void:
 	_position_gm_sun_handle()
 
@@ -480,15 +516,17 @@ func toggle_perf_hud() -> void:
 
 func show_cell_panel(cell: HexCell) -> void:
 	if _colonization_panel != null and _colonization_panel.visible:
-		if cell != null and _colonization_panel.is_source_picking():
-			if _colonization_panel.try_source_cell(int(cell.index)):
-				_colonization_targeting.clear()
-			return
-		if cell != null and _colonization_panel.is_target_picking():
-			if _colonization_panel.try_target_cell(int(cell.index)):
-				_colonization_targeting.clear()
+		# 派发界面开着时，地图左键一律交给它：先出发城、后目的地，
+		# 不再需要玩家先按面板上的“选点”按钮进入模式。
+		if cell != null:
+			_colonization_panel.handle_map_cell(int(cell.index))
+		_colonization_targeting.clear()
 		return
 	_cancel_inspector_retry()
+	# 地块档案一开，悬停卡就是纯噪音。这里确定性收起，不依赖 visibility_changed：
+	# 面板已可见时再选另一格不会发出该信号。
+	if _cell_hover_card != null:
+		_cell_hover_card.dismiss(true)
 	if _right_panel != null:
 		_right_panel.close_detail(false)
 	_object_detail_context.clear()
@@ -1439,6 +1477,46 @@ func _bind_ui() -> void:
 				_right_panel.close_detail())
 		_family_founding_dialog.collapsed_changed.connect(_on_founding_collapsed_changed)
 		_layout_family_founding_dialog()
+	_ensure_cell_hover_card()
+
+
+func _ensure_cell_hover_card() -> void:
+	if _cell_hover_card != null:
+		return
+	var hud := get_node_or_null("UIRoot/HUDLayer") as Control
+	if hud == null:
+		return
+	var card := CellHoverCardScene.instantiate() as CellHoverCard
+	if card == null:
+		return
+	card.name = "CellHoverCard"
+	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.add_child(card)
+	_cell_hover_card = card
+	_configure_cell_hover_card()
+
+
+## 悬停卡的抑制策略集中在这里：任何"地图不该被打扰"的状态都返回 true。
+func _hover_blocked() -> bool:
+	if _map == null or _inspector_view_model == null or _player_camera == null:
+		return true
+	if _loading_overlay != null and _loading_overlay.visible:
+		return true
+	if _right_panel != null and _right_panel.visible:
+		return true
+	if _country_panel != null and _country_panel.is_panel_open():
+		return true
+	if _pause_menu != null and _pause_menu.visible:
+		return true
+	if is_era_reward_modal_open() or is_family_founding_modal_open():
+		return true
+	if _colonization_panel != null and _colonization_panel.visible:
+		return true
+	if bool(_colonization_targeting.get("active", false)):
+		return true
+	if _gm_console != null and _gm_console.is_panel_open():
+		return true
+	return false
 
 
 func _locate_cell_from_family_founding(cell_index: int) -> void:
@@ -1495,12 +1573,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _colonization_panel == null or not (_colonization_panel.is_source_picking() \
 			or _colonization_panel.is_target_picking()):
 		return
+	# 只有 Esc 退出显式选点。右键是地图平移键，吃掉它等于废掉拖动视角。
 	if event is InputEventKey and event.pressed and not event.echo \
 			and event.keycode == KEY_ESCAPE:
-		_cancel_colonization_targeting()
-		get_viewport().set_input_as_handled()
-	elif event is InputEventMouseButton and event.pressed \
-			and event.button_index == MOUSE_BUTTON_RIGHT:
 		_cancel_colonization_targeting()
 		get_viewport().set_input_as_handled()
 
@@ -1540,6 +1615,9 @@ func _on_map_overlay_cleared() -> void:
 
 
 func _on_inspector_visibility_changed() -> void:
+	# 地块档案一开，悬停卡就是纯噪音；确定性关掉，不等下一帧轮询。
+	if _right_panel != null and _right_panel.visible and _cell_hover_card != null:
+		_cell_hover_card.dismiss(true)
 	_layout_right_panel()
 	_layout_overlay_legend()
 	_layout_country_action_bar()

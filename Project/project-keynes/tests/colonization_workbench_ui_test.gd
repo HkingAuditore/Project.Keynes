@@ -9,12 +9,14 @@ class DispatchStub extends RefCounted:
 	var revision := 0
 	var removed := false
 	var modern_unlocked := false
+	var single_source := false
+	var expedition_count := 0
 
 	func dispatch_cell_display_name(cell: int) -> String:
 		return {3: "长安", 8: "洛阳", 22: "临海新城", 24: "北方谷地"}.get(cell, "目的地")
 
 	func get_family_expeditions(_offset: int, _limit: int) -> Dictionary:
-		return {"ok": true, "total": 0, "busy": busy}
+		return {"ok": true, "total": expedition_count, "busy": busy}
 
 	func get_family_dispatch_candidates(source: int, offset: int, limit: int) -> Dictionary:
 		var handles := PackedInt64Array()
@@ -67,7 +69,8 @@ class DispatchStub extends RefCounted:
 		var source_names := PackedStringArray()
 		var surnames := PackedStringArray()
 		var all: Array = []
-		for cell in ([3, 8] if source < 0 else [source]):
+		var source_cells: Array = [source] if source >= 0 else ([3] if single_source else [3, 8])
+		for cell in source_cells:
 			for i in range(count):
 				if (family > 0 and family != 11 + i) or (removed and i == 0):
 					continue
@@ -179,6 +182,19 @@ func _run() -> void:
 	_expect("invalid map targets preserve the chosen origin and family",
 		not panel.try_target_cell(999) and not panel.try_target_cell(55)
 		and panel.is_target_picking() and panel._selected_quote.family_handle == 11 and panel._target_cell == -1)
+	# 水域在拓扑里不是可走地块，缺航道科技时整片水都表现为「没有城市能到达」。
+	# 反馈栏必须点出缺的是哪一档科技，否则玩家只会以为目标非法。
+	_expect("a target cut off by water names the missing navigation technology",
+		panel._feedback.text.contains("水域")
+		and panel._feedback.tooltip_text.contains("河运")
+		and panel._feedback.tooltip_text.contains("天文导航")
+		and panel._feedback.tooltip_text.contains("远洋船舶设计"))
+	_expect("a native route failure message is translated instead of leaking its code",
+		not ColonizationPlannerPanel._diagnostic_message("colonization_requote_required",
+			"colonization_route_unreachable").begins_with("colonization_")
+		and ColonizationPlannerPanel._diagnostic_message(
+			"colonization_requote_required",
+			"colonization_route_unreachable").contains("水域"))
 	_expect("valid target continues directly to dispatch with the chosen population",
 		panel.try_target_cell(22) and not panel.is_target_picking() and not panel._start.disabled
 		and panel._selected_quote.family_handle == 11 and panel._source_filter == 3
@@ -247,8 +263,94 @@ func _run() -> void:
 	await _run_manager_entrypoints()
 	_run_roster_entrypoint()
 	_run_controller_guard()
+	await _run_live_map_picking()
 	print("=== colonization workbench: %d failures ===" % _failures)
 	quit(0 if _failures == 0 else 1)
+
+func _hex_cell(index: int) -> HexCell:
+	var cell := HexCell.new()
+	cell.index = index
+	return cell
+
+
+## 派发界面开着时，地图左键必须直接生效，不需要先按面板里的“选点”按钮。
+func _run_live_map_picking() -> void:
+	var stub := DispatchStub.new()
+	var panel := _make_panel(stub)
+	var manager := ManagerStub.new()
+	root.add_child(manager)
+	manager._colonization_panel = panel
+	panel.open_target(22)
+	_expect("destination entry starts on the origin step",
+		panel.map_stage() == &"source" and panel._source_filter == -1 and not panel.is_source_picking())
+	manager.show_cell_panel(_hex_cell(3))
+	_expect("clicking a ringed city on the map sets the origin with no pick button",
+		panel._source_filter == 3 and panel._target_cell == 22 and panel.map_stage() == &"target")
+	var row := panel._quote_row_refs.get(11) as Button
+	row.pressed.emit()
+	_expect("origin click refreshes the local family list",
+		panel._selected_quote.family_handle == 11 and not panel._start.disabled)
+	manager.show_cell_panel(_hex_cell(24))
+	_expect("clicking any tile after choosing a family moves the destination with no pick button",
+		panel._target_cell == 24 and not panel.is_target_picking()
+		and panel._selected_quote.family_handle == 11 and not panel._start.disabled)
+	panel.close_panel()
+	panel.queue_free()
+	await process_frame
+
+	# 还没定出发城时，点到非候选地块应改为“改目的地”，而不是静默失败。
+	var retarget_panel := _make_panel(stub)
+	var retarget_manager := ManagerStub.new()
+	root.add_child(retarget_manager)
+	retarget_manager._colonization_panel = retarget_panel
+	retarget_panel.open_target(22)
+	retarget_manager.show_cell_panel(_hex_cell(24))
+	_expect("a non-city click before choosing an origin retargets instead of failing silently",
+		retarget_panel._target_cell == 24 and retarget_panel._source_filter == -1)
+	retarget_panel.close_panel()
+	retarget_panel.queue_free()
+	await process_frame
+
+	# 唯一可派遣城市直接锁定，少一次点击。
+	var single := DispatchStub.new()
+	single.single_source = true
+	var single_panel := _make_panel(single)
+	single_panel.open_target(22)
+	_expect("a single reachable city is locked without asking for a click",
+		single_panel._source_filter == 3 and single_panel.map_stage() == &"target"
+		and not single_panel._quote_row_refs.is_empty())
+	var right := InputEventMouseButton.new()
+	right.button_index = MOUSE_BUTTON_RIGHT
+	right.pressed = true
+	single_panel._unhandled_input(right)
+	_expect("right click no longer closes the workbench because it is the map pan button",
+		single_panel.visible)
+	single_panel.close_panel()
+	single_panel.queue_free()
+	await process_frame
+
+	# 从家族档案进来时，在途队伍不能把工作区顶到「在途」页签，否则被锁的家族根本不在列表里。
+	var busy_stub := DispatchStub.new()
+	busy_stub.expedition_count = 2
+	var family_panel := _make_panel(busy_stub)
+	var family_manager := ManagerStub.new()
+	root.add_child(family_manager)
+	family_manager._colonization_panel = family_panel
+	family_panel.open_source(3, 11)
+	_expect("family entry pins the family even while other expeditions are in flight",
+		family_panel._current_tab == "quotes" and family_panel._selected_quote.family_handle == 11
+		and family_panel.is_target_picking())
+	family_manager.show_cell_panel(_hex_cell(22))
+	_expect("family entry reaches a ready dispatch with one map click",
+		family_panel._target_cell == 22 and family_panel._selected_quote.family_handle == 11
+		and not family_panel._start.disabled)
+	family_panel.close_panel()
+	family_panel.queue_free()
+	await process_frame
+	manager.free()
+	retarget_manager.free()
+	family_manager.free()
+
 
 func _run_density_and_layout() -> void:
 	for count in [8, 40, 100]:

@@ -32,9 +32,17 @@ func _init() -> void:
 				(ideology_ir.stance_class_indices as PackedInt32Array).size() >= 8)
 			_expect("exclusive ideology pair is compiled",
 				_count_nonnegative(ideology_ir.exclusion_group_ids) >= 2)
-			_expect("six named synergies plus twelve school resonances compile",
-				(ideology_ir.synergy_ids as PackedStringArray).size() == 18
-				and (ideology_ir.ideology_synergy_ids as PackedInt32Array).size() >= 12)
+			_expect("named synergies plus twelve school resonances compile",
+				(ideology_ir.synergy_ids as PackedStringArray).size() >= 24
+				and (ideology_ir.ideology_synergy_ids as PackedInt32Array).size() >= 14)
+			# Geography gates are the whole point of the conditional rewrite: a card
+			# gated on a discovered resource / biome / landform can only enter the
+			# pool for a player whose territory actually provides it.
+			_expect("a third of the pool is gated on discovered geography",
+				(ideology_ir.signal_requirements as PackedInt32Array).size() >= 30)
+			var gate_offsets: PackedInt32Array = ideology_ir.gate_requirement_offsets
+			_expect("geography gates compile as per-card requirement spans",
+				gate_offsets.size() >= (ideology_ir.ideology_ids as PackedStringArray).size())
 			var min_counts: PackedInt32Array = ideology_ir.get("synergy_min_counts", PackedInt32Array())
 			var two_tier := 0
 			var four_tier := 0
@@ -78,17 +86,26 @@ func _init() -> void:
 			if bool(ideology_view.get("ok", false)):
 				var school_counts := {}
 				var rarities := {}
+				var eras := {}
+				var total_cards := 0
 				var effects_ok := true
 				for row_value in ideology_view.get("ideologies", []):
 					var card_row: Dictionary = row_value
 					var school := String(card_row.get("school_id", ""))
 					school_counts[school] = int(school_counts.get(school, 0)) + 1
 					rarities[int(card_row.get("rarity", 0))] = true
+					eras[int(card_row.get("era_index", 0))] = true
+					total_cards += 1
 					for lines in card_row.get("level_effect_lines", []) as Array:
 						effects_ok = effects_ok and not (lines as PackedStringArray).is_empty()
-				_expect("six schools of five cards each",
+				# The pool depth is what keeps a late-game player from exhausting the
+				# draw, so the floor matters more than the exact count.
+				_expect("six schools carry at least five cards each and the pool holds 60+",
 					school_counts.size() == 6 and not school_counts.has("")
-					and school_counts.values().all(func(count) -> bool: return int(count) == 5))
+					and school_counts.values().all(func(count) -> bool: return int(count) >= 5)
+					and total_cards >= 60)
+				_expect("cards are spread across every era instead of clustering at the start",
+					eras.size() >= 9 and eras.has(0) and eras.has(10))
 				_expect("common, rare and legendary rarities are all present",
 					rarities.has(1) and rarities.has(2) and rarities.has(3))
 				_expect("every level of every card presents effect text", effects_ok)
@@ -108,8 +125,12 @@ func _init() -> void:
 					String(by_name.get("自由交换", "")).contains("贸易"))
 				_expect("scholar office names science research",
 					String(by_name.get("学识官署", "")).contains("科学"))
-				_expect("civic muster names construction time",
-					String(by_name.get("公民动员", "")).contains("建设"))
+				# The card table is now conditional: 冶铁 must read as an input-side
+				# effect on a specific good rather than a flat national multiplier.
+				_expect("iron smelting names a good-level input effect",
+					String(by_name.get("冶铁", "")).contains("全国投入"))
+				_expect("terrace farming names the terrain it targets",
+					String(by_name.get("梯田", "")).contains("丘陵"))
 				_expect("the four roads do not share one effect line",
 					String(by_name.get("共同体治理", "")) \
 						!= String(by_name.get("自由交换", ""))
