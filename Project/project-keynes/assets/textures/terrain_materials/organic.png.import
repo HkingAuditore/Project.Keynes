@@ -3,15 +3,11 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bh1wmo53tg577"
-path="res://.godot/imported/organic.png-735ceaa7739833b564d7c845f5bb533e.ctex"
-metadata={
-"vram_texture": false
-}
+valid=false
 
 [deps]
 
 source_file="res://assets/textures/terrain_materials/organic.png"
-dest_files=["res://.godot/imported/organic.png-735ceaa7739833b564d7c845f5bb533e.ctex"]
 
 [params]
 

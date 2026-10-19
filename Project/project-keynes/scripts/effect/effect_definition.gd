@@ -26,4 +26,13 @@ extends Resource
 @export var priority: int = 0
 @export var target_selector_kind: int = 0
 @export var target_selector_id: StringName = &""
+## [0] = cell cap for the generalised selectors (0 means "use the runtime
+## default"), [1] = terrain id / resource id / predicate id. Only read when
+## target_selector_kind >= 8; otherwise both stay 0 and cost nothing.
+@export var target_selector_param: PackedInt32Array = PackedInt32Array()
+## Declares that this program owns a reconciled Effect instance (conditions,
+## lifecycle, stack policy, per-target fan-out). Compiled into `managed_flags`.
+## Family and ideology effects set it; technology/trigger/person programs leave
+## it false and keep the one-shot command path.
+@export var managed: bool = false
 @export var magnitude_by_prestige_q16: PackedInt32Array = PackedInt32Array()

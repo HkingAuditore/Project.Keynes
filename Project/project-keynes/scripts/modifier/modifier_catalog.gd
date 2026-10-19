@@ -7,6 +7,8 @@ const DefinitionScript = preload("res://scripts/modifier/modifier_definition.gd"
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const EraRewardCatalogScript = preload("res://scripts/effect/era_reward_catalog.gd")
+const TerrainTypeScript = preload("res://scripts/geography/terrain_type.gd")
+const LandformTypeScript = preload("res://scripts/geography/landform_type.gd")
 
 const TECHNOLOGY_STATS := [
 	["country.research.agriculture_efficiency", 0.0, 6.0],
@@ -63,6 +65,34 @@ const STAT_DISPLAY_NAMES := {
 	"country.trade.capacity_factor": "国内贸易容量",
 	"country.trade.speed_factor": "贸易速度",
 }
+
+# Selector-addressable stat keys (see compile_native_catalog() below) are expanded
+# from stable IDs, so there are thousands of them and they cannot be enumerated in
+# STAT_DISPLAY_NAMES. They are rendered as "<family label><dimension display name>"
+# instead. Dimension display names come from two places:
+#   * EconomyFacade registers the ids it already loads for the UI (building/good/
+#     profession/need) through register_display_names() at configure time;
+#   * terrain/landform/sector/hazard resolve statically here.
+# Anything not registered falls back to the raw stable id, so headless tests and
+# editor previews keep working without any economy bootstrap.
+const UNIT_FACTOR := 0
+const UNIT_RATE_BP := 1
+
+const SECTOR_DISPLAY_NAMES := {
+	"agriculture": "农业",
+	"extractive": "采掘",
+	"manufacturing": "制造",
+	"energy": "能源",
+	"knowledge": "知识",
+}
+const HAZARD_DISPLAY_NAMES := {
+	"drought": "旱灾",
+	"flood": "洪灾",
+	"cold_stress": "寒害",
+	"heat_stress": "热害",
+}
+
+static var _dimension_display_names: Dictionary = {}
 
 @export var stats: Array[Resource] = []
 @export var definitions: Array[Resource] = []
@@ -371,10 +401,176 @@ func compile_native_catalog() -> Dictionary:
 	return out
 
 
+## Registers stable-id to display-name mappings for selector dimensions.
+## Callers pass the same dictionaries the UI already uses, so a modifier line and
+## the tooltip that explains it never disagree. Safe to call repeatedly; only
+## changed entries invalidate anything, and nothing is cached downstream.
+static func register_display_names(kind: StringName, names: Dictionary) -> void:
+	if names.is_empty():
+		return
+	var bucket: Dictionary = _dimension_display_names.get(kind, {})
+	for key in names:
+		bucket[String(key)] = String(names[key])
+	_dimension_display_names[kind] = bucket
+
+
+## Drops every registered dimension name (tests only).
+static func reset_display_names() -> void:
+	_dimension_display_names.clear()
+
+
+static func display_name_of(kind: StringName, stable_id: String) -> String:
+	var bucket: Dictionary = _dimension_display_names.get(kind, {})
+	return String(bucket.get(stable_id, stable_id))
+
+
+static func _terrain_display_name(stable_id: String) -> String:
+	var terrain: int = int(TerrainTypeScript.TERRAIN.get(stable_id.to_upper(), -1))
+	if terrain < 0:
+		return stable_id
+	return TerrainTypeScript.terrain_name_cn(terrain)
+
+
+static func _landform_display_name(stable_id: String) -> String:
+	var landform: int = int(LandformTypeScript.LF.get(stable_id.to_upper(), -1))
+	if landform < 0:
+		return stable_id
+	return LandformTypeScript.name_cn(landform)
+
+
+static func _strip_suffix(value: String, suffix: String) -> String:
+	if not value.ends_with(suffix):
+		return ""
+	return value.substr(0, value.length() - suffix.length())
+
+
+## Resolves a selector-addressable stat key into {"label", "unit"}.
+## Returns {} for keys this formatter does not understand.
+static func _describe_stat_key(stat_key: String) -> Dictionary:
+	var parts := stat_key.split(".")
+	var count := parts.size()
+	if count == 4:
+		# country.output.<family|good|building>.<stable_id>_factor
+		if parts[0] == "country" and parts[1] == "output":
+			var tail := _strip_suffix(parts[3], "_factor")
+			if tail.is_empty():
+				return {}
+			match parts[2]:
+				"building":
+					return {"label": "%s 产出" % display_name_of(&"building", tail),
+						"unit": UNIT_FACTOR}
+				"good":
+					return {"label": "%s 全国产出" % display_name_of(&"good", tail),
+						"unit": UNIT_FACTOR}
+				"family":
+					return {"label": "%s 建筑系产出" % display_name_of(&"family", tail),
+						"unit": UNIT_FACTOR}
+			return {}
+		# country.input|consumption.good.<stable_id>_factor
+		if parts[0] == "country" and parts[2] == "good":
+			var good_tail := _strip_suffix(parts[3], "_factor")
+			if good_tail.is_empty():
+				return {}
+			match parts[1]:
+				"input":
+					return {"label": "%s 全国投入" % display_name_of(&"good", good_tail),
+						"unit": UNIT_FACTOR}
+				"consumption":
+					return {"label": "%s 全国消费" % display_name_of(&"good", good_tail),
+						"unit": UNIT_FACTOR}
+			return {}
+		# country.resource.<stable_id>.<use_factor|managed_generation_factor>
+		if parts[0] == "country" and parts[1] == "resource":
+			var resource_name := display_name_of(&"resource", parts[2])
+			match parts[3]:
+				"use_factor":
+					return {"label": "%s 耗用" % resource_name, "unit": UNIT_FACTOR}
+				"managed_generation_factor":
+					return {"label": "%s 管护再生" % resource_name, "unit": UNIT_FACTOR}
+			return {}
+		return {}
+	if count == 5:
+		# country.output.<terrain|landform>.<geography_id>.<sector>_factor
+		if parts[0] == "country" and parts[1] == "output" \
+				and (parts[2] == "terrain" or parts[2] == "landform"):
+			var sector := _strip_suffix(parts[4], "_factor")
+			if sector.is_empty():
+				return {}
+			var geography_name := _landform_display_name(parts[3])
+			if parts[2] == "terrain":
+				geography_name = _terrain_display_name(parts[3])
+			var sector_name := String(SECTOR_DISPLAY_NAMES.get(sector, sector))
+			return {"label": "%s·%s 产出" % [geography_name, sector_name],
+				"unit": UNIT_FACTOR}
+		# country.climate.profile.<profile_id>.<hazard>_loss_factor
+		if parts[0] == "country" and parts[1] == "climate" and parts[2] == "profile":
+			var hazard := _strip_suffix(parts[4], "_loss_factor")
+			if hazard.is_empty():
+				return {}
+			return {"label": "%s %s损失" % [parts[3],
+				String(HAZARD_DISPLAY_NAMES.get(hazard, hazard))], "unit": UNIT_FACTOR}
+		# country.tax.<kind>.<stable_id>.rate_bp
+		if parts[0] == "country" and parts[1] == "tax" and parts[4] == "rate_bp":
+			var target := parts[3]
+			var target_name := target
+			match parts[2]:
+				"income":
+					target_name = display_name_of(&"profession", target)
+					return {"label": "%s 所得税率" % target_name, "unit": UNIT_RATE_BP}
+				"consumption":
+					target_name = display_name_of(&"good", target)
+					return {"label": "%s 消费税" % target_name, "unit": UNIT_RATE_BP}
+				"business":
+					target_name = display_name_of(&"building", target)
+					return {"label": "%s 营业税率" % target_name, "unit": UNIT_RATE_BP}
+				"import":
+					target_name = display_name_of(&"good", target)
+					return {"label": "%s 进口税率" % target_name, "unit": UNIT_RATE_BP}
+				"export":
+					target_name = display_name_of(&"good", target)
+					return {"label": "%s 出口税率" % target_name, "unit": UNIT_RATE_BP}
+			return {}
+		# economy.city.<need|good|building|resource>.<stable_id>.<suffix>
+		if parts[0] == "economy" and parts[1] == "city":
+			var city_id := parts[3]
+			match parts[2]:
+				"building":
+					if parts[4] == "output_factor":
+						return {"label": "%s 城市产出" % display_name_of(&"building", city_id),
+							"unit": UNIT_FACTOR}
+				"good":
+					match parts[4]:
+						"output_factor":
+							return {"label": "%s 城市产出" % display_name_of(&"good", city_id),
+								"unit": UNIT_FACTOR}
+						"consumption_factor":
+							return {"label": "%s 城市消费" % display_name_of(&"good", city_id),
+								"unit": UNIT_FACTOR}
+				"need":
+					if parts[4] == "consumption_factor":
+						return {"label": "%s 需求消费" % display_name_of(&"need", city_id),
+							"unit": UNIT_FACTOR}
+				"resource":
+					if parts[4] == "regen_factor":
+						return {"label": "%s 城市再生" % display_name_of(&"resource", city_id),
+							"unit": UNIT_FACTOR}
+			return {}
+	return {}
+
+
 static func present_stat_delta(stat_key: String, operation: int, value: float,
 		magnitude_q16: int = Q16_ONE) -> String:
-	var name := String(STAT_DISPLAY_NAMES.get(stat_key, ""))
-	if name.is_empty() or not is_finite(value):
+	if not is_finite(value):
+		return ""
+	var label := String(STAT_DISPLAY_NAMES.get(stat_key, ""))
+	var unit := UNIT_FACTOR
+	if label.is_empty():
+		var described := _describe_stat_key(stat_key)
+		if described.is_empty():
+			return ""
+		label = String(described.get("label", ""))
+		unit = int(described.get("unit", UNIT_FACTOR))
+	if label.is_empty():
 		return ""
 	var magnitude := float(magnitude_q16) / float(Q16_ONE)
 	var delta := 0.0
@@ -391,10 +587,16 @@ static func present_stat_delta(stat_key: String, operation: int, value: float,
 			delta = ((1.0 / value) - 1.0) * magnitude
 		_:
 			return ""
+	if unit == UNIT_RATE_BP and (operation == 0 or operation == 1):
+		# Rate stats are authored in basis points, so additive terms never fit the
+		# whole-percent formatting below (a 15 bp change would render as +0%).
+		if absf(delta) < 0.5:
+			return ""
+		return "%s %+.2f%%" % [label, delta * 0.01]
 	var percent := int(round(delta * 100.0))
 	if percent == 0:
 		return ""
-	return "%s %+d%%" % [name, percent]
+	return "%s %+d%%" % [label, percent]
 
 
 func present_definition(definition_key: StringName,

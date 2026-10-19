@@ -1,5 +1,7 @@
 #include "runtime_ideology_pod.h"
 
+#include "runtime_ideology_draw_kernel.h"
+
 #include <algorithm>
 #include <cstring>
 #include <limits>
@@ -14,6 +16,9 @@ constexpr uint64_t FNV_PRIME = 1099511628211ull;
 constexpr uint32_t SAVE_MAGIC = 0x32504449u; // IDP2
 constexpr uint32_t SAVE_END = 0x21444e45u;
 constexpr uint32_t MAX_SAVE_BYTES = 64u * 1024u * 1024u;
+// Matches NativeIdeologyRuntime::MAX_ERA_INDEX so a command accepted by the
+// main runtime can never be rejected by the worker (or vice versa).
+constexpr int32_t kMaxEraIndex = 63;
 constexpr uint8_t ACQUIRE_DISCOVER = 1u;
 constexpr uint8_t ACQUIRE_DRAW = 2u;
 constexpr uint16_t EFFECT_TRANSITION_OPCODE = 1u;
@@ -247,6 +252,7 @@ uint64_t RuntimeIdeologyPodAuthority::compute_catalog_hash(
         hash = hash_value(hash, d.stance_count);
         for (int32_t value : d.support_threshold_q16) hash = hash_value(hash, value);
         hash = hash_value(hash, d.exclusion_group_id);
+        hash = hash_value(hash, d.era_index);
     }
     for (const auto &level : catalog.levels) {
         hash = hash_value(hash, level.threshold_q16);
@@ -257,6 +263,10 @@ uint64_t RuntimeIdeologyPodAuthority::compute_catalog_hash(
     hash = hash_vector(hash, catalog.technology_requirements);
     hash = hash_vector(hash, catalog.signal_requirements);
     hash = hash_vector(hash, catalog.gate_requirements);
+    // Peers that disagree on the decay curve would draw different cards from the
+    // same seed, so the curve is part of the catalog contract.
+    hash = hash_vector(hash, catalog.era_decay_bp);
+    hash = hash_vector(hash, catalog.era_milestone_technologies);
     for (const auto &stance : catalog.class_stances) {
         hash = hash_value(hash, stance.class_index);
         for (int32_t value : stance.stance_q16) hash = hash_value(hash, value);
@@ -321,7 +331,8 @@ uint64_t RuntimeIdeologyPodAuthority::compute_state_hash(
         hash = hash_value(hash, country.ledger.day);
         for (int64_t value : country.history_q16) hash = hash_value(hash, value);
         hash = hash_value(hash, country.draw_sequence); hash = hash_value(hash, country.ideology_slots_used);
-        hash = hash_value(hash, country.spirit_slots_used); hash = hash_value(hash, country.opinion_revision);
+        hash = hash_value(hash, country.spirit_slots_used); hash = hash_value(hash, country.unlocked_era);
+        hash = hash_value(hash, country.opinion_revision);
         hash = hash_value(hash, country.offer.generation); hash = hash_value(hash, country.offer.active);
         for (int32_t id : country.offer.ideology_ids) hash = hash_value(hash, id);
         hash = hash_vector(hash, country.known_bits); hash = hash_vector(hash, country.gate_bits);
@@ -407,6 +418,14 @@ bool RuntimeIdeologyPodAuthority::validate_catalog(
         if (id < 0 || id >= static_cast<int32_t>(catalog.research_signal_count)) { error = "ideology_pod_signal_requirement_invalid"; return false; }
     for (int32_t id : catalog.gate_requirements)
         if (id < 0 || id >= static_cast<int32_t>(catalog.gate_count)) { error = "ideology_pod_gate_requirement_invalid"; return false; }
+    // 0..10000 basis points per row; an out-of-range row would silently invert a
+    // weight into a negative and poison the modulo below.
+    for (int32_t decay : catalog.era_decay_bp)
+        if (decay < 0 || decay > 10000) { error = "ideology_pod_era_decay_invalid"; return false; }
+    for (int32_t technology : catalog.era_milestone_technologies)
+        if (technology < -1 || technology >= static_cast<int32_t>(catalog.technology_count)) { error = "ideology_pod_era_milestone_invalid"; return false; }
+    for (const auto &d : catalog.definitions)
+        if (d.era_index < 0) { error = "ideology_pod_era_index_invalid"; return false; }
     for (const auto &stance : catalog.class_stances)
         if (stance.class_index < 0 || stance.class_index >= static_cast<int32_t>(catalog.class_count)) { error = "ideology_pod_class_stance_invalid"; return false; }
     for (const auto &requirement : catalog.synergy_requirements)
@@ -975,30 +994,61 @@ int64_t RuntimeIdeologyPodAuthority::reroll_cost_for(uint64_t draw_sequence) con
     return mul_sat(paid, _catalog.reroll_cost_percent) / 100;
 }
 
+int32_t RuntimeIdeologyPodAuthority::unlocked_era_for(
+        const RuntimeCountryPodSnapshot &country, uint32_t slot) const {
+    int32_t reached = 0;
+    for (int32_t era = 0;
+            era < static_cast<int32_t>(_catalog.era_milestone_technologies.size()); ++era) {
+        const int32_t technology = _catalog.era_milestone_technologies[static_cast<size_t>(era)];
+        if (technology < 0 || era <= reached) continue;
+        const size_t index =
+            static_cast<size_t>(slot) * country.technology_words + technology / 64;
+        if ((country.country_technologies[index] & (1ull << (technology % 64))) != 0)
+            reached = era;
+    }
+    return reached;
+}
+
 bool RuntimeIdeologyPodAuthority::draw_offer(
         RuntimeIdeologyPodSnapshot &state, const RuntimeCountryPodSnapshot &country,
         uint32_t slot, std::string &error) const {
     auto &row = state.countries[slot];
-    std::vector<int32_t> pool;
-    for (int32_t id = 0; id < static_cast<int32_t>(_catalog.definitions.size()); ++id)
-        if (!bit_get(row.known_bits, id) && (_catalog.definitions[id].acquisition & ACQUIRE_DRAW) != 0 &&
-            requirements_met(state, country, slot, id)) pool.push_back(id);
-    if (pool.empty()) { error = "ideology_offer_pool_insufficient"; return false; }
-    row.offer.ideology_ids = {{-1, -1, -1}};
-    const int32_t draws = static_cast<int32_t>(std::min<size_t>(3u, pool.size()));
-    for (int32_t draw = 0; draw < draws; ++draw) {
-        int64_t total = 0;
-        for (int32_t id : pool) total += _catalog.definitions[id].rarity_weight;
-        uint64_t roll = next_random(row.rng_state) % static_cast<uint64_t>(total);
-        size_t selected = 0;
-        for (; selected + 1 < pool.size(); ++selected) {
-            const uint64_t weight = static_cast<uint64_t>(_catalog.definitions[pool[selected]].rarity_weight);
-            if (roll < weight) break;
-            roll -= weight;
-        }
-        row.offer.ideology_ids[draw] = pool[selected];
-        pool.erase(pool.begin() + static_cast<std::ptrdiff_t>(selected));
+    // Must stay step-for-step identical to NativeIdeologyRuntime::draw_offer.
+    row.unlocked_era = unlocked_era_for(country, slot);
+    std::vector<IdeologyDrawCandidate> eligible;
+    for (int32_t id = 0; id < static_cast<int32_t>(_catalog.definitions.size()); ++id) {
+        if (bit_get(row.known_bits, id) || (_catalog.definitions[id].acquisition & ACQUIRE_DRAW) == 0 ||
+            !requirements_met(state, country, slot, id)) continue;
+        IdeologyDrawCandidate candidate;
+        candidate.id = id;
+        candidate.weight = ideology_draw_weight(_catalog.definitions[id].rarity_weight,
+            _catalog.era_decay_bp.data(), _catalog.era_decay_bp.size(),
+            row.unlocked_era, _catalog.definitions[id].era_index);
+        eligible.push_back(candidate);
     }
+    if (eligible.empty()) { error = "ideology_offer_pool_insufficient"; return false; }
+    std::vector<IdeologyDrawCandidate> weighted;
+    weighted.reserve(eligible.size());
+    for (const IdeologyDrawCandidate &candidate : eligible)
+        if (candidate.weight > 0) weighted.push_back(candidate);
+    // Late eras only carry a handful of ideas, so once they are all known the
+    // decayed pool empties permanently. Fall back to raw rarity weight; the
+    // branch is a pure function of `eligible`, so both authorities agree.
+    if (weighted.empty()) {
+        for (const IdeologyDrawCandidate &candidate : eligible) {
+            IdeologyDrawCandidate fallback = candidate;
+            fallback.weight = static_cast<int64_t>(
+                _catalog.definitions[static_cast<size_t>(candidate.id)].rarity_weight) * 10000;
+            weighted.push_back(fallback);
+        }
+    }
+    row.offer.ideology_ids = {{-1, -1, -1}};
+    int32_t drawn_ids[3] = {-1, -1, -1};
+    const int32_t drawn = ideology_weighted_draw(weighted,
+        std::min<int32_t>(3, static_cast<int32_t>(weighted.size())),
+        [&row]() { return next_random(row.rng_state); }, drawn_ids);
+    if (drawn <= 0) { error = "ideology_offer_weight_invalid"; return false; }
+    for (int32_t n = 0; n < drawn; ++n) row.offer.ideology_ids[static_cast<size_t>(n)] = drawn_ids[n];
     row.offer.active = 1;
     row.offer.generation = std::max<uint32_t>(1, row.offer.generation + 1u);
     return true;
@@ -1330,7 +1380,8 @@ void RuntimeIdeologyPodAuthority::serialize(std::vector<uint8_t> &out) const {
         append_le<int64_t>(out, country.ledger.day);
         for (int64_t value : country.history_q16) append_le<int64_t>(out, value);
         append_le<uint64_t>(out, country.draw_sequence); append_le<int32_t>(out, country.ideology_slots_used);
-        append_le<int32_t>(out, country.spirit_slots_used); append_le<uint64_t>(out, country.opinion_revision);
+        append_le<int32_t>(out, country.spirit_slots_used); append_le<int32_t>(out, country.unlocked_era);
+        append_le<uint64_t>(out, country.opinion_revision);
         append_le<uint32_t>(out, country.offer.generation); for (int32_t id : country.offer.ideology_ids) append_le<int32_t>(out, id);
         append_le<uint8_t>(out, country.offer.active); append_vector(out, country.known_bits);
         append_vector(out, country.gate_bits); append_vector(out, country.synergy_bits);
@@ -1427,7 +1478,8 @@ bool RuntimeIdeologyPodAuthority::restore(
             !read_le(data,end,cursor,country.ledger.day) ||
             !std::all_of(country.history_q16.begin(), country.history_q16.end(), [&](int64_t &value) { return read_le(data,end,cursor,value); }) ||
             !read_le(data,end,cursor,country.draw_sequence) || !read_le(data,end,cursor,country.ideology_slots_used) ||
-            !read_le(data,end,cursor,country.spirit_slots_used) || !read_le(data,end,cursor,country.opinion_revision) ||
+            !read_le(data,end,cursor,country.spirit_slots_used) || !read_le(data,end,cursor,country.unlocked_era) ||
+            !read_le(data,end,cursor,country.opinion_revision) ||
             !read_le(data,end,cursor,country.offer.generation) || !read_le(data,end,cursor,country.offer.ideology_ids[0]) ||
             !read_le(data,end,cursor,country.offer.ideology_ids[1]) || !read_le(data,end,cursor,country.offer.ideology_ids[2]) ||
             !read_le(data,end,cursor,country.offer.active) ||
@@ -1440,6 +1492,7 @@ bool RuntimeIdeologyPodAuthority::restore(
             if (!read_le(data,end,cursor,idea.understanding_q16) || !read_le(data,end,cursor,idea.level) ||
                 !read_le(data,end,cursor,idea.entered_levels) || !read_le(data,end,cursor,idea.generation) ||
                 !read_le(data,end,cursor,idea.location) || idea.level < -1 || idea.level >= 64) { error = "ideology_pod_idea_truncated"; return false; }
+        if (country.unlocked_era < 0 || country.unlocked_era > kMaxEraIndex) { error = "ideology_pod_era_invalid"; return false; }
         rebuild_active_idea_ids(country);
     }
     if (!read_le(data,end,cursor,count) || count > RUNTIME_IDEOLOGY_POD_MAX_COMMANDS) { error = "ideology_pod_command_count_invalid"; return false; }

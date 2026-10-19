@@ -126,7 +126,8 @@ godot --headless --path Project/project-keynes
 聚落显示名；EconomyFacade 的 `settlement_display_name` 只补显示文本。
 
 面板未选目的地时保存未报价的 UI 意图，不能提交 token=0；有效选点后绑定原生 token。
-悬停预览与确认选择分开。GameUIManager 仅在面板主动选点时消费地图选择，不打开普通
+悬停预览与确认选择分开。GameUIManager 在派发工作区可见时始终消费地图选择，并按当前步骤
+解释（未定出发城→出发城，已定→目的地），不要求先按面板按钮进入选点模式，也不打开普通
 Inspector；工作区覆盖计入地图安全区，关闭恢复原来 Inspector／工具栏可见状态。
 回归入口：`colonization_workbench_ui_test.gd`、`colonization_planner_context_test.gd`、
 `player_controller_contract_test.gd`。原生领域权威、资金归属与 PKSV 保存顺序不变。

@@ -1722,6 +1722,12 @@ struct RuntimeThreadReport {
     uint64_t effect_pod_snapshot_generation = 0;
     uint32_t effect_pod_ack_count = 0;
     uint32_t effect_pod_intent_count = 0;
+    // Retire requests that found nothing to retire (absent instance) versus
+    // ones whose generation had already been superseded. Both are benign
+    // no-ops that mirror EffectRuntime::retire_instance_pod, but a non-zero
+    // stale count means an install raced a retire and is worth investigating.
+    uint64_t effect_retire_absent_count = 0;
+    uint64_t effect_retire_stale_count = 0;
     char effect_pod_fallback_reason[64]{};
     bool ideology_pod_ready = false;
     double ideology_pod_plan_ms = 0.0;

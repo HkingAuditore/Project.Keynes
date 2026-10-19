@@ -5,6 +5,15 @@ const FamilyRowScene := preload("res://scenes/ui/colonization_family_row.tscn")
 const TraitMeterScene := preload("res://scenes/ui/inspector_meter_list.tscn")
 const EffectNoteScene := preload("res://scenes/ui/inspector_note_list.tscn")
 
+# 路线失败时玩家看到的说明。原生只回 `colonization_route_*` 错误码（或把它塞进
+# message），不解释原因；水面在拓扑里是 `passable=0` 的走廊而不是可走地块，
+# 所以「跨不过水」在 UI 上表现为「没有城市能到达」，必须在这里把科技门槛讲清楚。
+const ROUTE_BLOCKED_SHORT := "路线被水域或不可通行地形隔断，本国没有城市能连通此地。"
+const ROUTE_WATER_HINT := "跨水需要「河运」（湖泊）、「天文导航」（浅海）、「远洋航海」（远海）或「远洋船舶设计」（深海）。"
+# 城市列表为空时无法区分「水域隔断」与「本国没有可外派家族」——两种都只会
+# 返回 total=0，所以这一档的文案两个原因都要留，别把玩家指向错误方向。
+const ROUTE_UNREACHABLE_NOTE := "没有城市能到达此地：路线可能被水域或不可通行地形隔断，也可能本国暂无可外派家族。" + ROUTE_WATER_HINT
+
 signal target_selection_requested()
 signal source_selection_requested()
 signal planning_context_changed(context: Dictionary)
@@ -73,7 +82,6 @@ var _city_cards_box: VBoxContainer
 var _city_cards_identity := ""
 var _city_card_buttons: Array[Button] = []
 var _source_picking := false
-var _source_pick_armed := true
 var _guide_card: Control
 var _guide_icon: IconBadge
 var _guide_title: Label
@@ -175,7 +183,6 @@ func open_target(target_cell: int, family_filter: int = 0,
 	_target_cell = target_cell
 	_target_picking = false
 	_source_picking = false
-	_source_pick_armed = true
 	_source_first = target_cell < 0
 	_detail_valid = false
 	_preview_cache.clear()
@@ -206,7 +213,10 @@ func open_target(target_cell: int, family_filter: int = 0,
 	if is_inside_tree():
 		_layout_left_panel()
 		UIAnimation.crossfade(self)
-	if _controller != null:
+	# 从家族档案进来时已经锁定了出发城与家族，玩家的意图就是派遣：
+	# 不能因为本国还有在途队伍就先把「在途」页签顶上来，否则被锁的家族行还不存在，
+	# 面板会停在选不了任何东西的状态。
+	if _controller != null and source_filter < 0:
 		var page := _filter_expedition_page(_controller.get_family_expeditions(0, 128))
 		if bool(page.get("ok", false)) and int(page.get("total", 0)) > 0:
 			_show_expeditions()
@@ -253,9 +263,7 @@ func set_feedback(message: String, ok: bool) -> void:
 func set_command_result(result: Dictionary) -> void:
 	var ok := bool(result.get("ok", false))
 	var code := String(result.get("code", ""))
-	var message := String(result.get("message", "")).strip_edges()
-	if message.is_empty():
-		message = _reason_text(code) if not code.is_empty() else ""
+	var message := _diagnostic_message(code, String(result.get("message", "")).strip_edges())
 	_feedback.text = message
 	_feedback.visible = not message.is_empty()
 	_feedback.tooltip_text = message
@@ -350,6 +358,11 @@ func _load_source_cities() -> Dictionary:
 			_source_city.select(selected)
 			return _get_source_quotes()
 		_source_filter = -1
+	# 只有一座城能派人时没有可选项，直接锁定它，别让玩家再点一次。
+	if cells.size() == 1:
+		_source_filter = int(cells[0])
+		_source_city.select(1)
+		return _get_source_quotes()
 	_source_city.select(0)
 	return page
 
@@ -426,6 +439,10 @@ func _show_quotes() -> void:
 		elif _economy_busy:
 			_sources_loaded = false
 			_add_note("经济正在结算，提交后刷新可派遣的城市与家族。", UITokens.ARCHIVE_INK_MUTED)
+		elif int(page.get("total", 0)) <= 0:
+			# 城市列表为空不是「没有家族」，而是没有城市能连通这个目标：
+			# 水面在拓扑里不可走，只能靠航道门户跳跃，缺科技时整片水就是墙。
+			_add_note(ROUTE_UNREACHABLE_NOTE, UITokens.WARN)
 		else:
 			_add_note("没有可向此地派遣家族的城市。", UITokens.WARN)
 		_update_start_enabled()
@@ -453,6 +470,9 @@ func _show_quotes() -> void:
 		if _economy_busy:
 			_add_note("经济正在结算。家族列表将在提交后刷新，也可先查看在途队伍。",
 				UITokens.ARCHIVE_INK_MUTED)
+		elif int(page.get("total", 0)) <= 0 and _source_city.item_count <= 1:
+			# 全国都没城市能到达：换出发城市没有意义，直接点出航道门槛。
+			_add_note(ROUTE_UNREACHABLE_NOTE, UITokens.WARN)
 		else:
 			_add_note("该城没有可向此地派遣的家族，请更换出发城市。", UITokens.WARN)
 	if restored:
@@ -805,25 +825,45 @@ func _add_note(text: String, color: Color) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not visible:
 		return
-	var cancel: bool = event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE
-	cancel = cancel or (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT)
-	if cancel:
-		if _source_picking:
-			cancel_source_selection()
-		elif _target_picking:
-			cancel_target_selection()
-		else:
-			close_panel()
-		get_viewport().set_input_as_handled()
+	# 右键是地图平移键（MapCamera.pan_button），这里绝不能吃它，
+	# 否则一边看选点一遍拖视角就会把面板关掉。
+	if not (event is InputEventKey) or not event.pressed or event.echo \
+			or event.keycode != KEY_ESCAPE:
+		return
+	if _source_picking:
+		cancel_source_selection()
+	elif _target_picking:
+		cancel_target_selection()
+	else:
+		close_panel()
+	get_viewport().set_input_as_handled()
 
 
 static func _state_text(state: int) -> String:
 	return {1: "前往中", 2: "落地结算中", 3: "返程中", 4: "筹备中"}.get(state, "未知")
 
 
+## 原生有些失败会把具体原因写进 `message` 而不是 `code`
+## （`colonization_requote_required` + `message="colonization_route_unreachable"`）。
+## 把裸错误码贴进反馈栏比不给理由更糟，这里统一先按错误码翻一遍。
+static func _diagnostic_message(code: String, raw_message: String) -> String:
+	var raw := raw_message.strip_edges()
+	if raw.begins_with("colonization_") or raw.begins_with("PREPARING_"):
+		return _reason_text(raw)
+	if not raw.is_empty():
+		return raw
+	return _reason_text(code) if not code.is_empty() else ""
+
+
 static func _reason_text(code: String) -> String:
 	return {
 		"colonization_target_invalid": "目标必须是当前可见、可通行的无主或本国陆地。",
+		"colonization_route_unreachable": ROUTE_BLOCKED_SHORT + ROUTE_WATER_HINT,
+		"colonization_route_not_passable": "目标或途经地块不可通行：" + ROUTE_WATER_HINT,
+		"colonization_route_not_visible": "路线经过尚未探索的地块，请先扩大视野。",
+		"colonization_route_territory_invalid": "路线会经过他国领土，无法通行。",
+		"colonization_route_water_invalid": "水域航道无法还原，请重新选择目的地。",
+		"colonization_route_expansion_limit": "目标过远，路线搜索超出预算，请选择更近的目的地。",
 		"colonization_population_insufficient": "源分支人口不足，必须至少留下一人。",
 		"colonization_duplicate_target": "本国已有一支开拓队前往该目标。",
 		"colonization_requote_required": "地图、视野或领土已经变化，请重新确认报价。",
@@ -1328,14 +1368,12 @@ func begin_source_selection() -> void:
 		return
 	_target_picking = false
 	_source_picking = true
-	_source_pick_armed = true
 	_update_start_enabled()
 	source_selection_requested.emit()
 
 
 func cancel_source_selection() -> void:
 	_source_picking = false
-	_source_pick_armed = false
 	_update_start_enabled()
 
 
@@ -1343,15 +1381,47 @@ func is_source_picking() -> bool:
 	return visible and _source_picking
 
 
-func try_source_cell(cell: int) -> bool:
-	if not _source_picking or _source_city == null:
+## 当前这次地图点按该落到哪一步。派发界面不再要求玩家先按“选点按钮”进入模式：
+## 没定出发城就落到出发城，定了出发城就落到目的地。
+func map_stage() -> StringName:
+	if _target_picking:
+		return &"target"
+	if _source_picking:
+		return &"source"
+	if _source_first:
+		return &"target"
+	return &"source" if _source_filter < 0 else &"target"
+
+
+## 地图左键点选的唯一入口：面板可见时每一步都直接吃地图点击。
+## 返回 true 表示这次点按已被派发界面消费（调用方不应再打开地块档案）。
+func handle_map_cell(cell: int) -> bool:
+	if not visible or cell < 0 or _current_tab != "quotes":
+		return false
+	if map_stage() == &"source":
+		if _select_source_cell(cell):
+			return true
+		# 不是可派遣城市：把这次点按当成“改目的地”，
+		# 省掉“先按按钮才能在地图上选点”的往返。
+		if try_target_cell(cell, true):
+			return true
+		_set_feedback_line("点地图上的青绿环换出发城；点可见空地改目的地。", UITokens.RISK)
+		return false
+	if try_target_cell(cell):
+		return true
+	# 目的地不合法，但这格本身是另一个候选出发城 —— 玩家要点的是出发地。
+	if not _source_first and cell != _source_filter and _select_source_cell(cell):
+		_set_feedback_line("已把出发城改为 %s。" % _cell_name(_source_filter),
+			UITokens.ARCHIVE_INK_MUTED)
+		return true
+	return false
+
+
+func _select_source_cell(cell: int) -> bool:
+	if _source_city == null or cell < 0:
 		return false
 	var index := _source_city.get_item_index(cell)
 	if index <= 0:
-		_feedback.text = "请点选带青绿环的可派遣城市。"
-		_feedback.visible = true
-		_feedback.tooltip_text = _feedback.text
-		_feedback.add_theme_color_override("font_color", UITokens.RISK)
 		return false
 	_source_picking = false
 	_source_city.select(index)
@@ -1360,16 +1430,27 @@ func try_source_cell(cell: int) -> bool:
 	return true
 
 
-func try_target_cell(cell: int) -> bool:
+func try_target_cell(cell: int, quiet: bool = false) -> bool:
 	if _controller == null or cell < 0:
 		return false
 	var family := int(_selected_quote.get("family_handle", 0))
 	var page: Dictionary = _controller.get_family_colonization_quotes(cell, family, _source_filter, 0, 256)
-	if not bool(page.get("ok", false)) or (family > 0 and int(page.get("total", 0)) <= 0):
-		_feedback.text = _reason_text(String(page.get("code", "colonization_target_invalid"))) \
-			if not bool(page.get("ok", false)) else "该家族当前无法从此城前往此地，请选择其他目的地。"
-		_feedback.visible = true
-		_feedback.tooltip_text = _feedback.text
+	if not bool(page.get("ok", false)):
+		if not quiet:
+			_set_feedback_line(_reason_text(String(page.get("code", "colonization_target_invalid"))),
+				UITokens.RISK)
+		return false
+	if family > 0 and int(page.get("total", 0)) <= 0:
+		if not quiet:
+			# total 为 0 有两种完全不同的原因：全国无路可达（水域或不可通行
+			# 地形隔断），或这条路线不收这个家族。补一条「不限城市、不限家族」
+			# 的报价就能分开；只有失败路径才会多发这一次查询。
+			if _any_source_reaches(cell):
+				_set_feedback_line("该家族当前无法从此城前往此地，请选择其他目的地。",
+					UITokens.RISK)
+			else:
+				_set_feedback_line(ROUTE_BLOCKED_SHORT, UITokens.RISK,
+					_reason_text("colonization_route_unreachable"))
 		return false
 	_target_cell = cell
 	_target_picking = false
@@ -1379,6 +1460,22 @@ func try_target_cell(cell: int) -> bool:
 	_show_quotes()
 	_update_start_enabled()
 	return true
+
+
+func _any_source_reaches(cell: int) -> bool:
+	var probe: Dictionary = _controller.get_family_colonization_quotes(cell, 0, -1, 0, 1)
+	# 查询本身失败（结算中、快照未就绪）时不要断言「无路可走」，
+	# 回退到不指明原因的家族文案。
+	if not bool(probe.get("ok", true)):
+		return true
+	return int(probe.get("total", 0)) > 0
+
+
+func _set_feedback_line(message: String, color: Color, tooltip: String = "") -> void:
+	_feedback.text = message
+	_feedback.visible = not message.is_empty()
+	_feedback.tooltip_text = tooltip if not tooltip.is_empty() else message
+	_feedback.add_theme_color_override("font_color", color)
 
 
 func _cell_name(cell: int) -> String:
@@ -1396,18 +1493,34 @@ func _update_workflow() -> void:
 	var family := String(_selected_quote.get("display_name", "待选家族"))
 	_workflow.text = "%s → %s → %s" % [source, family, _cell_name(_target_cell)]
 	_footer_selection.text = "已选：%s" % family if not _selected_quote.is_empty() else "点击家族确定派遣对象"
-	if _source_picking:
-		_subtitle.text = "请在地图上点选出发城市 · Esc 退出选点"
-	elif _target_picking:
-		_subtitle.text = "请在地图上选择目的地 · Esc 退出选点"
-	else:
-		_subtitle.text = "先选出发家族，再选目的地" if _source_first else "先在地图上点选出发城市，再选家族与目的地"
-	_subtitle.visible = _source_picking or _target_picking
+	_subtitle.text = _stage_hint()
+	_subtitle.visible = _current_tab == "quotes"
+	# 目的地这一格显示真实地名：点地图能改，但玩家首先要能确认「现在打的是哪」。
 	_target_button.text = "正在选点" if _target_picking else (
-		"重新选点" if _target_cell >= 0 else "选择目的地")
+		_cell_name(_target_cell) if _target_cell >= 0 else "点地图选目的地")
+	_target_button.tooltip_text = "正在选点：点地图上的任意地块，Esc 退出" \
+		if _target_picking else "点地图上的任意地块即可改目的地"
 	_refresh_route_stepper(source, family)
 	_refresh_city_cards()
 	_publish_planning_context()
+
+
+## 地图当前在听哪一步，就用一句话说清楚，玩家不必猜“要不要先按按钮”。
+func _stage_hint() -> String:
+	if _current_tab != "quotes":
+		return ""
+	if _source_picking:
+		return "点地图上的青绿环换出发城 · Esc 退出选点"
+	if _target_picking:
+		return "点地图上任意地块选目的地 · Esc 退出选点"
+	if _source_first:
+		return "直接点地图上任意地块选目的地"
+	if _source_filter < 0:
+		return "直接点地图上的青绿环选出发城，点其他地块改目的地"
+	if _selected_quote.is_empty():
+		return "直接点地图上任意地块改目的地，再从左侧挑选家族"
+	return "出发城与家族已就绪：直接点地图上任意地块改目的地"
+
 
 
 func _load_local_families() -> Dictionary:
@@ -1712,7 +1825,6 @@ func _on_source_pick_pressed() -> void:
 	if _source_picking:
 		cancel_source_selection()
 		return
-	_source_pick_armed = true
 	begin_source_selection()
 
 
@@ -1739,22 +1851,24 @@ func _sync_population_slider() -> void:
 func _refresh_route_stepper(source_name: String, family_name: String) -> void:
 	if _source_pick_button == null:
 		return
+	var stage := map_stage()
 	_source_pick_button.disabled = _source_first
 	if _source_first or _source_filter >= 0:
 		_source_pick_button.text = source_name
 	elif _source_picking:
 		_source_pick_button.text = "正在选出发城"
 	else:
-		_source_pick_button.text = "地图点选出发城"
+		_source_pick_button.text = "点地图选出发城"
 	_source_pick_button.tooltip_text = "出发城已由家族档案锁定" if _source_first \
-		else "在地图上点选青绿环，或点击城市卡片"
+		else "不必先按此键：直接点地图上的青绿环就会换出发城"
 	if _family_step_label != null:
 		var waiting_family := _selected_quote.is_empty()
 		_family_step_label.text = "待选世家" if waiting_family else family_name
 		_family_step_label.add_theme_color_override("font_color",
 			UITokens.ARCHIVE_INK_MUTED if waiting_family else UITokens.DOSSIER_OXBLOOD)
-	_tint_step(_source_pick_button, _source_picking, _source_filter >= 0)
-	_tint_step(_target_button, _target_picking, _target_cell >= 0)
+	# 高亮当前这一步：地图点击就落在这里，玩家一眼能看出“现在点地图会发生什么”。
+	_tint_step(_source_pick_button, stage == &"source", _source_filter >= 0)
+	_tint_step(_target_button, stage == &"target", _target_cell >= 0)
 	_set_shell_icon(_source_step_icon, &"metric.territory",
 		UITokens.DOSSIER_BRASS if _source_filter >= 0 else UITokens.DOSSIER_VERDIGRIS)
 	_set_shell_icon(_family_step_icon, &"family.house",
@@ -1785,7 +1899,7 @@ func _refresh_city_cards() -> void:
 	var prompt := get_node_or_null("%CityPromptLabel") as Label
 	if prompt != null:
 		prompt.text = "正在地图上点选出发城，也可点击卡片" if _source_picking \
-			else "地图点选出发城市，或点击下方城市卡片"
+			else "直接点地图上的青绿环，或点击下方城市卡片"
 	if _city_cards_identity != _source_cities_identity:
 		_city_cards_identity = _source_cities_identity
 		for child in _city_cards_box.get_children():
@@ -1816,14 +1930,6 @@ func _refresh_city_cards() -> void:
 			continue
 		var index := int(card.get_meta("source_index", -1))
 		card.set_pressed_no_signal(index >= 0 and _source_city.get_item_id(index) == _source_filter)
-	if _source_filter < 0:
-		_maybe_arm_source_pick()
-
-
-func _maybe_arm_source_pick() -> void:
-	if _target_picking or _source_picking or not _source_pick_armed or _source_first or _source_filter >= 0:
-		return
-	begin_source_selection()
 
 
 func _on_city_card_pressed(card: Button) -> void:

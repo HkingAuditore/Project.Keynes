@@ -9,8 +9,16 @@ const IdeologyClassStanceScript = preload("res://scripts/ideology/ideology_class
 const IdeologySynergyDefinitionScript = preload("res://scripts/ideology/ideology_synergy_definition.gd")
 const EffectCommandScript = preload("res://scripts/effect/effect_command.gd")
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
+const IdeologyEffectCatalogScript = preload("res://scripts/ideology/ideology_effect_catalog.gd")
 
 const PROTOCOL_VERSION := 1
+## Card effect rows name a program by its BARE key (`v1_granary_belt`); the
+## compiler and the runtime both store it prefixed (`ideology.effect.<key>`,
+## see IdeologyEffectDefinition.program_key and
+## NativeIdeologyRuntime::effect_program_key). Comparing a row key against the
+## declared set without this prefix silently reports zero owned programs, which
+## left the instance budget unenforced.
+const PROGRAM_KEY_PREFIX := "ideology.effect."
 ## Display order and labels of the six schools (流派). Resonance rows and the
 ## collection tabs follow this order.
 const SCHOOLS := [
@@ -26,6 +34,10 @@ const LEVEL_LABELS := ["初识", "通晓", "化育"]
 @export var profile: Resource
 @export var definitions: Array[Resource] = []
 @export var synergies: Array[Resource] = []
+## Declarative effect programs (`ideology.effect.<definition_key>`) that replace
+## the legacy "one-shot Modifier per effect row" path. Null falls back to the
+## default catalog, so a project without authored programs keeps the old shape.
+@export var effect_programs: Resource
 
 static func load_default() -> Resource:
 	var loaded := ResourceLoader.load(DEFAULT_PATH, "Resource")
@@ -36,12 +48,28 @@ func compile_native_catalog(country_catalog: Dictionary,
 	var effective_profile = profile if profile != null else IdeologyProfileScript.new()
 	if not effective_profile is IdeologyProfileScript:
 		return {"ok": false, "reason": "ideology_profile_invalid"}
+	if effective_profile.era_decay_bp.is_empty():
+		return {"ok": false, "reason": "ideology_era_decay_invalid"}
+	for decay_bp in effective_profile.era_decay_bp:
+		if decay_bp < 0 or decay_bp > 10000:
+			return {"ok": false, "reason": "ideology_era_decay_invalid"}
 	var technology_ids: PackedStringArray = country_catalog.get("technology_ids", PackedStringArray())
 	var signal_ids: PackedStringArray = country_catalog.get("research_signal_ids", PackedStringArray())
 	var technology_index := {}
 	var signal_index := {}
 	for i in technology_ids.size(): technology_index[String(technology_ids[i])] = i
 	for i in signal_ids.size(): signal_index[String(signal_ids[i])] = i
+	# Era milestones are exported once so the main-thread runtime and the worker
+	# pod derive `current_era` from the same table. Neither side is allowed to
+	# walk CountryRuntime's private era cache on its own.
+	var era_milestone_technologies := PackedInt32Array()
+	for era in era_rows():
+		var milestone_key := String(era.get("milestone_id", ""))
+		if not technology_index.has(milestone_key):
+			return {"ok": false, "reason": "ideology_era_milestone_unknown"}
+		era_milestone_technologies.append(int(technology_index[milestone_key]))
+	if era_milestone_technologies.is_empty():
+		return {"ok": false, "reason": "ideology_era_milestone_unknown"}
 	var political_class_ids: Array[String] = []
 	for value in economy_catalog.get("profession_class_ids", PackedStringArray()):
 		var class_id := String(value).strip_edges()
@@ -55,6 +83,31 @@ func compile_native_catalog(country_catalog: Dictionary,
 	var political_class_index := {}
 	for i in political_class_ids.size():
 		political_class_index[political_class_ids[i]] = i
+	# Effect rows whose definition_key resolves to a declared program are owned by
+	# the reconciled Effect-instance path, not by ModifierRuntime. They are allowed
+	# to carry any domain/opcode/selector because the program itself is what
+	# validates; the row only marks "this card has an effect at this level".
+	var declared_programs := {}
+	var program_resource: Resource = effect_programs
+	if program_resource == null:
+		program_resource = IdeologyEffectCatalogScript.load_default()
+	if program_resource != null:
+		if not program_resource is IdeologyEffectCatalogScript:
+			return {"ok": false, "reason": "ideology_effect_catalog_invalid"}
+		var program_error: String = program_resource.validate()
+		if not program_error.is_empty():
+			return {"ok": false, "reason": program_error}
+		declared_programs = program_resource.program_key_set()
+	# Rows owned by a program become reconciled instances: one per (card, level,
+	# target). The bound keeps a pathological catalog from overflowing the
+	# EffectRuntime instance table before the runtime ever sees it.
+	var tally := {"owned": 0, "persistent": 0, "enter": 0}
+	# Per-level owned row counts, aligned with `level_persistent_offsets` /
+	# `level_on_enter_offsets`. Those rows never reach the legacy command scratch
+	# buffer (emit_templates skips them), so the transition-command budget below
+	# must subtract them or a program-heavy catalog fails to compile.
+	var owned_persistent_per_level := PackedInt32Array()
+	var owned_enter_per_level := PackedInt32Array()
 	var ordered: Array[Resource] = definitions.duplicate()
 	ordered.sort_custom(func(a, b) -> bool:
 		return String(a.id) < String(b.id) if a != null and b != null else a != null)
@@ -67,6 +120,13 @@ func compile_native_catalog(country_catalog: Dictionary,
 		for requirement in definition.draw_requirements:
 			if requirement.kind == IdeologyRequirementScript.Kind.GATE:
 				gates[String(requirement.key)] = true
+		# Affinity gates are context keys written only by IdeologyContextService.
+		# They must be registered here or IdeologyFacade._gate_id() resolves them
+		# to -1 and set_gate() is silently dropped by the native runtime.
+		for affinity in definition.era_affinities:
+			var affinity_gate := String(affinity.gate_key).strip_edges()
+			if not affinity_gate.is_empty():
+				gates[affinity_gate] = true
 	var gate_keys: Array = gates.keys()
 	gate_keys.sort()
 	var gate_index := {}
@@ -89,6 +149,7 @@ func compile_native_catalog(country_catalog: Dictionary,
 		"starting_points_q16": effective_profile.starting_points_q16,
 		"max_commands_per_slice": effective_profile.max_commands_per_slice,
 		"max_transition_commands": effective_profile.max_transition_commands,
+		"max_effect_instances": effective_profile.max_effect_instances,
 		"max_transition_polls_per_slice": effective_profile.max_transition_polls_per_slice,
 		"max_active_visits_per_slice": effective_profile.max_active_visits_per_slice,
 		"opinion_owner_influence_weight": effective_profile.opinion_owner_influence_weight,
@@ -168,6 +229,15 @@ func compile_native_catalog(country_catalog: Dictionary,
 		"synergy_effect_payload_i3": PackedInt64Array(),
 		"ideology_synergy_offsets": PackedInt32Array([0]),
 		"ideology_synergy_ids": PackedInt32Array(),
+		# Era decay + context affinity. `ideology_era_indices` is one entry per
+		# definition; the affinity tables are a flat CSR addressed by
+		# `ideology_affinity_offsets`.
+		"era_decay_bp": effective_profile.era_decay_bp.duplicate(),
+		"ideology_era_milestone_technologies": era_milestone_technologies,
+		"ideology_era_indices": PackedInt32Array(),
+		"ideology_affinity_offsets": PackedInt32Array([0]),
+		"ideology_affinity_gate_ids": PackedInt32Array(),
+		"ideology_affinity_multipliers_bp": PackedInt32Array(),
 	}
 	var unlock_keys: PackedStringArray = effective_profile.capacity_unlock_technology_keys
 	if unlock_keys.size() != effective_profile.capacity_unlock_ideology_deltas.size() \
@@ -190,6 +260,12 @@ func compile_native_catalog(country_catalog: Dictionary,
 		if seen.has(key): return {"ok": false, "reason": "ideology_id_duplicate"}
 		seen[key] = true
 		out.ideology_ids.append(key)
+		out.ideology_era_indices.append(int(definition.era_index))
+		for affinity in definition.era_affinities:
+			out.ideology_affinity_gate_ids.append(
+				int(gate_index[String(affinity.gate_key).strip_edges()]))
+			out.ideology_affinity_multipliers_bp.append(int(affinity.multiplier_bp))
+		out.ideology_affinity_offsets.append(out.ideology_affinity_gate_ids.size())
 		out.acquisition_flags.append(definition.acquisition_flags)
 		out.rarity_weights.append(definition.rarity_weight)
 		out.ideology_slot_costs.append(definition.ideology_slot_cost)
@@ -220,10 +296,16 @@ func compile_native_catalog(country_catalog: Dictionary,
 		for level in definition.levels:
 			out.level_thresholds_q16.append(level.understanding_threshold_q16)
 			out.level_daily_understanding_q16.append(level.daily_understanding_q16)
-			var effect_error := _append_effect_rows(out, level.persistent_effects, true)
+			tally["persistent"] = 0
+			tally["enter"] = 0
+			var effect_error := _append_effect_rows(out, level.persistent_effects, true,
+				declared_programs, tally)
 			if not effect_error.is_empty(): return {"ok": false, "reason": effect_error}
-			effect_error = _append_effect_rows(out, level.on_enter_effects, false)
+			effect_error = _append_effect_rows(out, level.on_enter_effects, false,
+				declared_programs, tally)
 			if not effect_error.is_empty(): return {"ok": false, "reason": effect_error}
+			owned_persistent_per_level.append(int(tally["persistent"]))
+			owned_enter_per_level.append(int(tally["enter"]))
 		out.level_offsets.append(out.level_thresholds_q16.size())
 		for requirement in definition.draw_requirements:
 			match requirement.kind:
@@ -291,8 +373,11 @@ func compile_native_catalog(country_catalog: Dictionary,
 			- int(out.level_persistent_offsets[level])
 		var enter_count := int(out.level_on_enter_offsets[level + 1]) \
 			- int(out.level_on_enter_offsets[level])
+		if level < owned_persistent_per_level.size():
+			persistent_count -= int(owned_persistent_per_level[level])
+			enter_count -= int(owned_enter_per_level[level])
 		base_transition_commands = maxi(base_transition_commands,
-			persistent_count * 2 + enter_count)
+			maxi(0, persistent_count) * 2 + maxi(0, enter_count))
 	var max_transition_commands := base_transition_commands
 	for ideology_id in out.ideology_ids.size():
 		var synergy_effect_count := 0
@@ -305,19 +390,44 @@ func compile_native_catalog(country_catalog: Dictionary,
 			base_transition_commands + synergy_effect_count)
 	if max_transition_commands > effective_profile.max_transition_commands:
 		return {"ok": false, "reason": "ideology_transition_command_limit_exceeded"}
+	if int(tally["owned"]) > effective_profile.max_effect_instances:
+		return {"ok": false, "reason": "ideology_effect_instance_limit_exceeded"}
 	out.ok = true
 	return out
 
-func _append_effect_rows(out: Dictionary, effects: Array[Resource], persistent: bool) -> String:
+func _append_effect_rows(out: Dictionary, effects: Array[Resource], persistent: bool,
+		declared_programs: Dictionary, tally: Dictionary) -> String:
 	var prefix := "persistent" if persistent else "on_enter"
 	for effect in effects:
 		if effect == null or not effect is EffectCommandScript:
 			return "ideology_effect_resource_invalid"
+		if effect.command_key == &"" or effect.definition_key == &"":
+			return "ideology_effect_invalid"
+		# A row that names a declared program is a routing marker: the program
+		# (compiled into EffectRuntime) owns conditions, cadence, target selector
+		# and magnitude, so the row's own domain/opcode/selector are not used.
+		# Emitting the row keeps level_persistent_offsets aligned.
+		if declared_programs.has(PROGRAM_KEY_PREFIX + String(effect.definition_key)):
+			tally["owned"] = int(tally["owned"]) + 1
+			var bucket := "persistent" if persistent else "enter"
+			tally[bucket] = int(tally[bucket]) + 1
+			out["%s_actions" % prefix].append(effect.action)
+			out["%s_domains" % prefix].append(effect.domain)
+			out["%s_opcodes" % prefix].append(effect.opcode)
+			out["%s_values_q16" % prefix].append(effect.value_q16)
+			out["%s_duration_days" % prefix].append(effect.duration_days)
+			out["%s_stacks" % prefix].append(effect.stacks)
+			out["%s_command_keys" % prefix].append(String(effect.command_key))
+			out["%s_definition_keys" % prefix].append(String(effect.definition_key))
+			out["%s_payload_i0" % prefix].append(effect.payload_i0)
+			out["%s_payload_i1" % prefix].append(effect.payload_i1)
+			out["%s_payload_i2" % prefix].append(effect.payload_i2)
+			out["%s_payload_i3" % prefix].append(effect.payload_i3)
+			continue
 		if effect.action < 1 or effect.action > 6 or effect.domain < 0 or effect.domain >= 32 \
 				or effect.stacks <= 0 or effect.duration_days < -1 \
 				or effect.target_resolver < 0 or effect.target_resolver > 2 \
-				or effect.value_mode < 0 or effect.value_mode > 1 \
-				or effect.command_key == &"" or effect.definition_key == &"":
+				or effect.value_mode < 0 or effect.value_mode > 1:
 			return "ideology_effect_invalid"
 		if effect.target_resolver == 0 and effect.static_target == 0:
 			return "ideology_effect_static_target_invalid"
@@ -414,16 +524,25 @@ func catalog_view(country_catalog: Dictionary = {},
 				else "%d级" % (level_index + 1))
 		var required_technologies := PackedStringArray()
 		var required_technology_names := PackedStringArray()
+		var required_gates := PackedStringArray()
 		for requirement in definition.draw_requirements:
-			if requirement != null and requirement.kind == IdeologyRequirementScript.Kind.TECHNOLOGY:
+			if requirement == null:
+				continue
+			if requirement.kind == IdeologyRequirementScript.Kind.TECHNOLOGY:
 				required_technologies.append(String(requirement.key))
 				required_technology_names.append(technology_display_name(String(requirement.key)))
+			elif requirement.kind == IdeologyRequirementScript.Kind.GATE:
+				required_gates.append(String(requirement.key))
 		rows.append({"id": String(definition.id), "dense_id": i, "icon_key": String(definition.icon_key),
 			"name_key": String(definition.name_key),
 			"display_name": _display_name(definition),
 			"detail_key": String(definition.detail_key),
 			"school_id": String(definition.school_id),
 			"school_name": school_name(String(definition.school_id)),
+			"era_index": int(definition.era_index),
+			"era_name": era_display_name(int(definition.era_index)),
+			"route_tag": String(definition.route_tag),
+			"required_gates": required_gates,
 			"rarity": int(definition.rarity),
 			"rarity_label": String(IdeologyDefinitionScript.RARITY_LABELS.get(
 				int(definition.rarity), "")),
@@ -534,6 +653,40 @@ static func technology_display_name(technology_key: String) -> String:
 					node.get("display_name", node.get("id", "")))
 		_technology_names[""] = ""
 	return String(_technology_names.get(technology_key, technology_key))
+
+
+static var _era_rows_cache: Array = []
+
+
+## Ordered era table read from the authoring network once. Era index -> entry
+## milestone, display name and decay display all resolve through here so the
+## ideology layer never depends on TechnologyCatalog being compiled first.
+static func era_rows() -> Array:
+	if _era_rows_cache.is_empty():
+		var technology_script = load("res://scripts/economy/technology_catalog.gd")
+		var payload: Dictionary = technology_script._network_payload() \
+			if technology_script != null else {}
+		var rows: Array = (payload.get("eras", []) as Array).duplicate()
+		rows.sort_custom(func(a, b) -> bool:
+			return float(a.get("sort_order", 0)) < float(b.get("sort_order", 0)))
+		_era_rows_cache = rows
+	return _era_rows_cache
+
+
+static func era_display_name(era_index: int) -> String:
+	var rows := era_rows()
+	if era_index < 0 or era_index >= rows.size():
+		return ""
+	return String((rows[era_index] as Dictionary).get("display_name", ""))
+
+
+## Technology that must be completed before the player counts as "in" this era,
+## i.e. the era's own entry gate. Empty for era 0 (no gate).
+static func era_entry_technology_key(era_index: int) -> String:
+	var rows := era_rows()
+	if era_index <= 0 or era_index >= rows.size():
+		return ""
+	return String((rows[era_index] as Dictionary).get("entry_milestone_id", ""))
 
 
 func _display_name(definition) -> String:

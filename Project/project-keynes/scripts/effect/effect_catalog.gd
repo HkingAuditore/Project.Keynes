@@ -10,6 +10,23 @@ const EffectCommandScript = preload("res://scripts/effect/effect_command.gd")
 const PROTOCOL_VERSION := 1
 const Q16_ONE := 65536
 
+## The worker Effect POD is a restricted subset of the main-thread EffectRuntime
+## (gdext/src/runtime_effect_pod.cpp:300-400). Its validation is catalog-wide:
+## one unsupported program makes the whole POD catalog refuse to configure,
+## which in turn leaves the EFFECT bit incomplete and stops the entire
+## twelve-domain authority graph from ever being granted. So a definition the
+## POD cannot express must be excluded from the POD payload instead of
+## poisoning it. The main thread keeps every definition either way.
+## Mirrors POD_MAX_SELECTOR_KIND / POD_MAX_STATE_ID in
+## gdext/src/runtime_effect_pod.cpp. The POD never resolves a selector itself
+## (the main thread resolves cells and passes a target_handle) and reads state
+## through one shared switch, so both ceilings track the main thread's, not a
+## narrower subset. Keep the two files in step.
+const POD_MAX_SELECTOR_KIND := 11
+const POD_MAX_STATE_ID := 4
+const POD_CONDITION_STATE_GTE := 5
+const POD_INSTRUCTION_READ_STATE := 3
+
 @export var metric_keys: PackedStringArray = PackedStringArray()
 @export var behavior_command_keys: PackedStringArray = PackedStringArray()
 @export var definitions: Array[Resource] = []
@@ -48,6 +65,7 @@ func compile_native_catalog() -> Dictionary:
 		"max_stacks": PackedInt32Array(), "priorities": PackedInt32Array(),
 		"target_selector_kinds": PackedInt32Array(),
 		"target_selector_ids": PackedStringArray(),
+		"target_selector_params": PackedInt32Array(),
 		"magnitude_by_prestige_q16": PackedInt32Array(),
 		"condition_offsets": PackedInt32Array([0]), "condition_ops": PackedInt32Array(),
 		"condition_arg0": PackedInt32Array(), "condition_values": PackedInt64Array(),
@@ -62,6 +80,8 @@ func compile_native_catalog() -> Dictionary:
 		"command_definition_keys": PackedStringArray(), "command_payload_i0": PackedInt64Array(),
 		"command_payload_i1": PackedInt64Array(), "command_payload_i2": PackedInt64Array(),
 		"command_payload_i3": PackedInt64Array(),
+		"managed_flags": PackedByteArray(),
+		"pod_expressible": PackedByteArray(),
 	}
 	var metric_seen := {}
 	for metric_key in metric_keys:
@@ -70,6 +90,16 @@ func compile_native_catalog() -> Dictionary:
 			return {"ok": false, "reason": "effect_metric_key_invalid_or_duplicate"}
 		metric_seen[key] = true
 	var definition_seen := {}
+	var any_managed := false
+	var any_selector_params := false
+	for definition in definitions:
+		if definition != null and definition is EffectDefinitionScript:
+			if bool(definition.managed):
+				any_managed = true
+			if not definition.target_selector_param.is_empty():
+				any_selector_params = true
+			if any_managed and any_selector_params:
+				break
 	for definition in definitions:
 		if definition == null or not definition is EffectDefinitionScript:
 			return {"ok": false, "reason": "effect_definition_resource_invalid"}
@@ -79,6 +109,7 @@ func compile_native_catalog() -> Dictionary:
 				or (definition.behavior_id == &"" and definition.instructions.is_empty()):
 			return {"ok": false, "reason": "effect_definition_invalid_or_duplicate"}
 		definition_seen[definition.key] = true
+		out.pod_expressible.append(1 if _pod_expressible(definition) else 0)
 		out.effect_keys.append(String(definition.key))
 		out.versions.append(definition.version)
 		out.cadence_days.append(definition.cadence_days)
@@ -96,6 +127,13 @@ func compile_native_catalog() -> Dictionary:
 		out.priorities.append(int(definition.priority))
 		out.target_selector_kinds.append(int(definition.target_selector_kind))
 		out.target_selector_ids.append(String(definition.target_selector_id))
+		if any_selector_params:
+			var params := PackedInt32Array(definition.target_selector_param)
+			for slot in range(2):
+				out.target_selector_params.append(
+					int(params[slot]) if slot < params.size() else 0)
+		if any_managed:
+			out.managed_flags.append(1 if bool(definition.managed) else 0)
 		var prestige := PackedInt32Array(definition.magnitude_by_prestige_q16)
 		if prestige.size() == 0:
 			prestige = PackedInt32Array([Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE])
@@ -163,6 +201,34 @@ func compile_native_catalog() -> Dictionary:
 			return {"ok": false, "reason": "effect_native_extension_key_collision"}
 		out[extension_key] = native_extensions[extension_key]
 	return out
+
+## Mirrors the POD compiler's capability limits. Keep in lockstep with
+## gdext/src/runtime_effect_pod.cpp:
+##   target_selector_kind   MAX_SELECTOR_KIND   (0..11)
+##   condition STATE_GTE    MAX_STATE_ID        (arg0 0..4)
+##   instruction READ_STATE MAX_STATE_ID        (arg0 0..4)
+## Both ceilings equal the main thread's, not a narrower subset. They were
+## 7 / 3 once, and because POD catalog validation is all-or-nothing a single
+## card above the ceiling took the whole worker authority graph down.
+## MODIFIER command domain/opcode are already pinned tighter here by
+## _native_command_error(), so they need no separate POD check.
+static func _pod_expressible(definition: Resource) -> bool:
+	if int(definition.target_selector_kind) > POD_MAX_SELECTOR_KIND:
+		return false
+	for condition in definition.conditions:
+		if condition == null or not condition is EffectConditionScript:
+			return false
+		if int(condition.op) == POD_CONDITION_STATE_GTE \
+				and int(condition.arg0) > POD_MAX_STATE_ID:
+			return false
+	for instruction in definition.instructions:
+		if instruction == null or not instruction is EffectInstructionScript:
+			return false
+		if int(instruction.op) == POD_INSTRUCTION_READ_STATE \
+				and int(instruction.arg0) > POD_MAX_STATE_ID:
+			return false
+	return true
+
 
 static func _native_command_error(command: Resource) -> String:
 	match int(command.action):

@@ -1372,6 +1372,15 @@ legacy `ModifierRuntime`（非 MapData）；主线程仅抑制 `modifier_daily`�
       legacy `EffectRuntime` 仍是生产权威。空冷启动 catalog 不启用 stage，以免关掉
       Modifier E7 fixture 上游。
 - [x] F8 放行（`0x866`；Host ACTIVE 唯一写者；snapshot 回灌 `EffectRuntime`；抑制 `run_effect_daily`；跨域 intent 主线程 pump）
+- [x] F9 Effect→Modifier 适配器对拍（2026-10-19）：intent→command 的映射抽成
+      `map_effect_intent_to_modifier_command`，按 `intent.reserved` 的适配器字节分派
+      GENERIC/TECHNOLOGY/FAMILY/PERSON/TRIGGER/FAMILY_EFFECT/IDEOLOGY 七条分支，逐字段
+      复刻 `EffectRuntime::dispatch_native_modifier`（`effect_runtime.cpp:5279-5374`）。
+      `runtime_effect_adapter_parity_self_test()` 用 10 条 case 断言 scope/handle/
+      source_type/source_id/magnitude，再把映射结果真正 plan 进 Modifier POD，防止
+      "映射对了但 POD 丢弃"的假通过。**只有 Effect 产出的 intent 才读适配器字节**：
+      `EFFECT_MODIFIER_GENERIC = 0` 且非 Effect 产出的 `reserved` 恒为 0，不加
+      `source_domain == EFFECT` 门控会把 `authority_plan` 路径全部劫持进 GENERIC 分支。
 
 **特有难点**：它是**跨域原子事务的枢纽**。Country 的 grant tech、Ideology 的三选一、
 Technology 的里程碑都靠它的 ACK 完成。迁移它等于同时改动这几个域的提交路径，需要
@@ -1420,6 +1429,18 @@ Modifier POD batch 提交，`settle_ideology_modifier_acks` 用真实 batch 结�
 基线/账本/历史/抽卡计数），`IDP1` fail-closed。
 soak / C2 证据待 `Invoke-RuntimeTests.ps1` 补齐（见
 `artifacts/runtime/authority-ideology-g8-20260913/EVIDENCE.md`）。
+
+**G10（Effect 实例改道）**：Ideology 留在主线程、EFFECT 已归 worker 的中间态下，理念 runtime
+不得直接写 `EffectRuntime`。`EffectInstanceForwarder` 成为 Effect 实例写入的唯一决策点，
+worker 持 EFFECT 时排队给 transport，仅在 legacy 路径镜像进 `EffectRuntime`。gate 是
+`tests/ideology_effect_worker_forward_test.gd`（64 checks）。它的判别量不是"卡生效了"——
+两条路径都会生效——而是 `get_ideology_effect_instance_report().present`（内部
+`EffectRuntime::has_instance_pod`）：legacy → `1`，worker → `0`，且两者 `instance_ids` /
+`target_handles` 必须相同、升阶（第 1–4 天）后写入方不得漂移。真实授权在无头夹具里不可达
+（ACTIVE 要 worker 先提交一个完整日；而一旦把 IDEOLOGY 也授给 worker，
+`run_ideology_daily` 直接 suppressed，正好跳过被测的 reconcile），所以授权由
+`set_effect_forwarder_authority_for_test()` 显式驱动——与本仓既有的 Country sync 写入禁令、
+Climate parity forcing 是同一类测试缝，且翻转不消耗 authority epoch。
 
 ## 阶段 H：TRIGGER_INPUT ✅（H2–H8 完成；生产 ACTIVE）
 

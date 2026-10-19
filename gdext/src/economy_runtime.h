@@ -105,6 +105,10 @@ public:
     friend class NativeEconomyBuildingPlanExecutor;
     friend class NativeEconomyGraphStageOps;
     friend class NativeSimulationHost;
+    // Builds a synthetic per-cell snapshot (neighbour grid + terrain columns)
+    // so the shared effect target selector can be exercised without a live
+    // map_data, matching the economy_authority_fault_gate_self_test pattern.
+    friend struct EconomyTargetSelectorTests;
     friend bool economy_dispatch_mutate_stage(EconomySoAView &view,
                                               RuntimeEconomyGraphStage stage,
                                               EconomyStageCursor &cursor,
@@ -366,7 +370,38 @@ public:
         FAMILY_METRIC_FAMILY_CASH_PER_CAPITA_VS_CELL_Q16 = 34,
         FAMILY_METRIC_CELL_KNOWLEDGE_BUILDING_CLASS_COUNT = 35,
         FAMILY_METRIC_CELL_CAN_PRODUCE_CORN = 36,
-        FAMILY_METRIC_COUNT = 37,
+        // Output-share metrics. The pre-existing *_SECTOR_SHARE_Q16 rows above
+        // count buildings, so they do not move when an output coefficient
+        // changes -- gating "mine 60% -> boost industry" on them would never
+        // close the loop. These are aggregated from group.last_output, which is
+        // already net of output_factor_q16, so raising a sector coefficient
+        // moves the share and the condition can feed back into itself.
+        FAMILY_METRIC_CELL_SECTOR_OUTPUT_SHARE_AGRICULTURE_Q16 = 37,
+        FAMILY_METRIC_CELL_SECTOR_OUTPUT_SHARE_EXTRACTIVE_Q16 = 38,
+        FAMILY_METRIC_CELL_SECTOR_OUTPUT_SHARE_MANUFACTURING_Q16 = 39,
+        FAMILY_METRIC_CELL_SECTOR_OUTPUT_SHARE_ENERGY_Q16 = 40,
+        FAMILY_METRIC_CELL_SECTOR_OUTPUT_SHARE_KNOWLEDGE_Q16 = 41,
+        FAMILY_METRIC_CELL_DOMINANT_SECTOR_OUTPUT_SHARE_Q16 = 42,
+        // Resource side. Resources (building_resource_ids: iron, corn, ...) and
+        // goods (building_outputs[].good_id) are two separate id spaces, so
+        // both readings get a metric: "this cell is rich in iron" is a stock
+        // question, "this cell mostly produces X" is an output question.
+        FAMILY_METRIC_CELL_DOMINANT_RESOURCE_ID = 43,
+        FAMILY_METRIC_CELL_DOMINANT_RESOURCE_STOCK_SHARE_Q16 = 44,
+        FAMILY_METRIC_CELL_DOMINANT_OUTPUT_GOOD_ID = 45,
+        FAMILY_METRIC_CELL_TOP_OUTPUT_GOOD_SHARE_Q16 = 46,
+        // Country scalars, read from CountryClassOpinionSnapshot rather than
+        // live Economy stores: that snapshot is already frozen once per publish
+        // pass and is the same source ideology point accrual reads, so a
+        // condition can never observe a half-updated country.
+        // research_speed / build_speed are deliberately absent -- the project
+        // models neither, and inventing a metric that always reads 0 would make
+        // a card silently inert.
+        FAMILY_METRIC_COUNTRY_POPULATION_Q16 = 47,
+        FAMILY_METRIC_COUNTRY_BUILDINGS_INSTALLED = 48,
+        FAMILY_METRIC_COUNTRY_TRADE_BASE_VALUE_Q16 = 49,
+        // metric_mask is a uint64_t, so this count must never exceed 64.
+        FAMILY_METRIC_COUNT = 50,
     };
 
     enum FamilyBehaviorDirtyReason : uint32_t {
@@ -7858,6 +7893,41 @@ private:
     void collect_family_effect_target_cells(
         int32_t source_cell, int32_t selector_kind,
         std::vector<int32_t> &out_cells) const;
+public:
+    // Declared here (not with the other family-effect helpers, which are
+    // private) because NativeIdeologyRuntime resolves cell-scoped ideology
+    // effects through the same selector.
+    //
+    // Generalised target-cell resolver shared by family and ideology effects.
+    // `param0` is always the cell cap (0 = EffectRuntime::SELECTOR_DEFAULT_CELLS,
+    // hard-clamped to SELECTOR_MAX_CELLS). `param1` is the kind-specific
+    // argument: predicate id for SELECTOR_PREDICATE_ANY_CELL, hop count for
+    // SELECTOR_DISTANCE_N, unused for the component kinds (they follow the
+    // anchor's terrain / dominant resource). Output is always sorted,
+    // deduplicated and capped, so two identical calls produce the same vector --
+    // which is what makes "one instance per cell" replayable.
+    void collect_effect_target_cells(
+        int32_t source_cell, int32_t selector_kind, int32_t param0, int32_t param1,
+        std::vector<int32_t> &out_cells) const;
+    // Resource id with the largest stock at `cell`, or -1 when the cell holds
+    // no resource. Ties resolve to the lowest id so the answer is stable.
+    int32_t dominant_resource_at(int32_t cell) const;
+    // Stock share of dominant_resource_at(cell) in Q16, or 0 when the cell holds
+    // no resource.
+    int32_t dominant_resource_stock_share_q16(int32_t cell) const;
+    // Good id with the largest *output* at `cell`, or -1 when the cell produces
+    // nothing. Unlike dominant_resource_at() this is a flow reading: it weights
+    // each building group's last_output (already net of output_factor_q16) by
+    // the group's authored output mix.
+    int32_t dominant_output_good_at(int32_t cell, int32_t &out_share_q16) const;
+    // Country slot owning `cell` in the current epoch, or -1 when the epoch
+    // index has not been rebuilt (call after an epoch has run).
+    int32_t cell_country_slot(int32_t cell) const;
+    // Lowest cell index owned by `country_slot`, or -1. TODO: replace with a
+    // real capital / city-cell anchor once the game models one -- until then a
+    // cell-targeted ideology effect is anchored on the country's first cell.
+    int32_t country_anchor_cell(int32_t country_slot) const;
+private:
     void fire_family_event_once_effect(int32_t family_index,
                                        const std::string &program_key);
     void apply_pending_family_split_gifts();
@@ -8498,6 +8568,16 @@ inline int64_t NativeEconomyRuntime::goods_cost(
                             (price % GOODS_SCALE)) % GOODS_SCALE != 0;
     return saturating_add(whole, fractional ? 1 : 0, sat);
 }
+
+// Synthetic-grid self check for NativeEconomyRuntime::collect_effect_target_cells().
+// Lives outside the runtime so the production class keeps a single friend line
+// instead of an in-class test surface. Defined in
+// economy_runtime_effect_selector_tests.cpp.
+struct EconomyTargetSelectorTests {
+    // Returns true when every selector assertion holds. On failure `error`
+    // names the exact assertion that broke.
+    static bool run(std::string &error);
+};
 
 } // namespace pk
 
