@@ -1,0 +1,318 @@
+[gd_resource type="Resource" script_class="IdeologyEffectCatalog" load_steps=31 format=3]
+
+[ext_resource type="Script" path="res://scripts/ideology/ideology_effect_catalog.gd" id="1_catalog"]
+[ext_resource type="Script" path="res://scripts/ideology/ideology_effect_definition.gd" id="2_effect"]
+[ext_resource type="Script" path="res://scripts/effect/effect_condition.gd" id="3_condition"]
+[ext_resource type="Script" path="res://scripts/effect/effect_instruction.gd" id="4_instruction"]
+[ext_resource type="Script" path="res://scripts/effect/effect_command.gd" id="5_command"]
+
+; ─────────────────────────────────────────────────────────────────────────────
+; V1..V6 是「目标对象随条件变」的机制验证卡，不是平衡内容。
+; 每张卡验证一种不同的形态：
+;   V1 条件 -> 幅度（全国标量）        V2 无条件 -> 邻域 R1
+;   V3 产出占比 -> R1                  V4 资源专精 -> R2
+;   V5 层数 -> 同地形连通块            V6 双条件 AND -> 距离 N
+;
+; 关键口径（metric id 见 effect_domain_catalog.gd，数组下标即 id）：
+;   38 cell.sector_output_share.extractive_q16       按**产出**算的矿业占比
+;   42 cell.dominant_sector_output_share_q16         按**产出**算的主导部门占比
+;   44 cell.dominant_resource_stock_share_q16        主导资源存量占比
+;    4 STATE_STACK_COUNT                             本实例层数（Q16）
+;
+; 用 38/42 而不是 27(cell.dominant_sector_share_q16)：后者数的是建筑**数量**，
+; 给它加多少产出系数都不动，拿它当条件闭环永远合不上。
+;
+; 命令复用 family.city.* 系列 modifier key：它们同样作用于
+; economy.city.building.<sector>_output_factor，功能等价。理念专属 key 留到
+; 内容正式化时再拆分。
+; value_q16 是「强度倍数」（Q16），最终系数 = 1 + (term.value - 1) * 强度，
+; 上限 MAX_MAGNITUDE_Q16 = 4.0。
+; ─────────────────────────────────────────────────────────────────────────────
+
+[sub_resource type="Resource" id="CondGranaryBeltLevelTwo"]
+script = ExtResource("3_condition")
+op = 5
+arg0 = 0
+value_q16 = 131072
+
+[sub_resource type="Resource" id="InstrGranaryBeltMagnitude"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 104858
+
+[sub_resource type="Resource" id="InstrGranaryBeltEmit"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="CmdGranaryBelt"]
+script = ExtResource("5_command")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 104858
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.agrarian_reform"
+
+[sub_resource type="Resource" id="EffectGranaryBelt"]
+script = ExtResource("2_effect")
+definition_key = &"v1_granary_belt"
+target_domain = 3
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"v1_granary_belt"
+max_stacks = 1
+priority = 0
+target_selector_kind = 0
+target_selector_id = &""
+cadence_days = 1
+conditions = Array[Resource]([SubResource("CondGranaryBeltLevelTwo")])
+instructions = Array[Resource]([SubResource("InstrGranaryBeltMagnitude"), SubResource("InstrGranaryBeltEmit")])
+commands = Array[Resource]([SubResource("CmdGranaryBelt")])
+
+[sub_resource type="Resource" id="CmdForgeRing"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"family.city.manufacturing_output_boost"
+
+[sub_resource type="Resource" id="EffectForgeRing"]
+script = ExtResource("2_effect")
+definition_key = &"v2_forge_ring"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"v2_forge_ring"
+max_stacks = 1
+priority = 0
+target_selector_kind = 6
+target_selector_id = &""
+target_selector_param = PackedInt32Array(8, 0)
+cadence_days = 1
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("InstrGranaryBeltMagnitude"), SubResource("InstrGranaryBeltEmit")])
+commands = Array[Resource]([SubResource("CmdForgeRing")])
+
+; ── V3 矿脉支配 ───────────────────────────────────────────────────────────────
+; 条件：本格矿业产出占比 >= 60%（metric 38）。
+; 目标：邻域 R1 的 8 格，制造业产出 +20%。
+; 闭环：玩家给矿业堆产出系数 -> 矿场 last_output 升高 -> 占比升过 60% ->
+; 周边工业开始加成。这是「效果作用对象跟着条件变」的核心验证。
+[sub_resource type="Resource" id="InstrVeinDominance"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 262144
+
+[sub_resource type="Resource" id="CondVeinDominance"]
+script = ExtResource("3_condition")
+op = 2
+arg0 = 38
+value_q16 = 39322
+
+[sub_resource type="Resource" id="CmdVeinDominance"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 262144
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"family.city.manufacturing_output_boost"
+
+[sub_resource type="Resource" id="EffectVeinDominance"]
+script = ExtResource("2_effect")
+definition_key = &"v3_vein_dominance"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"v3_vein_dominance"
+max_stacks = 1
+priority = 0
+target_selector_kind = 6
+target_selector_id = &""
+target_selector_param = PackedInt32Array(8, 0)
+cadence_days = 1
+conditions = Array[Resource]([SubResource("CondVeinDominance")])
+instructions = Array[Resource]([SubResource("InstrVeinDominance"), SubResource("InstrGranaryBeltEmit")])
+commands = Array[Resource]([SubResource("CmdVeinDominance")])
+
+; ── V4 铁王座 ─────────────────────────────────────────────────────────────────
+; 条件：主导资源存量占比 >= 50%（metric 44），即这块地专精某一种资源。
+; 目标：自身格 + R2 的 18 格，全城产出 +8%。
+; 说明：要锁死「就是铁」需把 op 换成 METRIC_EQ(4) 并把 arg0 指向 metric 43
+; (cell.dominant_resource_id)、value_q16 填 building_resource_ids 里铁的下标。
+; 那是内容期的事，这里先验证「资源专精 -> 目标扩张」这条形态。
+[sub_resource type="Resource" id="InstrIronThrone"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 262144
+
+[sub_resource type="Resource" id="CondIronThrone"]
+script = ExtResource("3_condition")
+op = 2
+arg0 = 44
+value_q16 = 32768
+
+[sub_resource type="Resource" id="CmdIronThrone"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 262144
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"family.city.production_boost"
+
+[sub_resource type="Resource" id="EffectIronThrone"]
+script = ExtResource("2_effect")
+definition_key = &"v4_iron_throne"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"v4_iron_throne"
+max_stacks = 1
+priority = 0
+target_selector_kind = 7
+target_selector_id = &""
+target_selector_param = PackedInt32Array(18, 0)
+cadence_days = 1
+conditions = Array[Resource]([SubResource("CondIronThrone")])
+instructions = Array[Resource]([SubResource("InstrIronThrone"), SubResource("InstrGranaryBeltEmit")])
+commands = Array[Resource]([SubResource("CmdIronThrone")])
+
+; ── V5 层叠工坊 ───────────────────────────────────────────────────────────────
+; 条件：本实例层数 >= 3（STATE_STACK_COUNT = 4）。
+; 目标：同地形连通块内 8 格，制造业 +20%。
+; 这是 STATE_STACK_COUNT 的唯一用途证明：在此之前「层数 >= N 时生效」写不出来。
+; stack_policy = ADD_STACK(2) + max_stacks = 5，层数由 submit_instances 的
+; stack_counts 驱动，存档零新增字段。
+[sub_resource type="Resource" id="InstrStackedWorkshop"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 262144
+
+[sub_resource type="Resource" id="CondStackedWorkshop"]
+script = ExtResource("3_condition")
+op = 5
+arg0 = 4
+value_q16 = 196608
+
+[sub_resource type="Resource" id="CmdStackedWorkshop"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 262144
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"family.city.manufacturing_output_boost"
+
+[sub_resource type="Resource" id="EffectStackedWorkshop"]
+script = ExtResource("2_effect")
+definition_key = &"v5_stacked_workshop"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 2
+stack_key = &"v5_stacked_workshop"
+max_stacks = 5
+priority = 0
+target_selector_kind = 8
+target_selector_id = &""
+target_selector_param = PackedInt32Array(8, 0)
+cadence_days = 1
+conditions = Array[Resource]([SubResource("CondStackedWorkshop")])
+instructions = Array[Resource]([SubResource("InstrStackedWorkshop"), SubResource("InstrGranaryBeltEmit")])
+commands = Array[Resource]([SubResource("CmdStackedWorkshop")])
+
+; ── V6 行会垄断 ───────────────────────────────────────────────────────────────
+; 条件：主导部门产出占比 >= 50% **且** 层数 >= 2。
+; 目标：距离 3 跳内的 8 格，能源产出 +15%。
+; 注意 conditions 是后缀求值栈，两个条件直接并列只有最后一个生效，
+; 必须显式追加 BOOL_AND(6) 才会真正取交集（A, B, AND 的顺序）。
+; 同时验证 param0=cap、param1=跳数 的新分工。
+[sub_resource type="Resource" id="InstrGuildMonopoly"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 196608
+
+[sub_resource type="Resource" id="CondGuildMonopolyA"]
+script = ExtResource("3_condition")
+op = 2
+arg0 = 42
+value_q16 = 32768
+
+[sub_resource type="Resource" id="CondGuildMonopolyB"]
+script = ExtResource("3_condition")
+op = 5
+arg0 = 4
+value_q16 = 131072
+
+[sub_resource type="Resource" id="CondGuildMonopolyAnd"]
+script = ExtResource("3_condition")
+op = 6
+
+[sub_resource type="Resource" id="CmdGuildMonopoly"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 196608
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"family.city.energy_output_boost"
+
+[sub_resource type="Resource" id="EffectGuildMonopoly"]
+script = ExtResource("2_effect")
+definition_key = &"v6_guild_monopoly"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 2
+stack_key = &"v6_guild_monopoly"
+max_stacks = 4
+priority = 0
+target_selector_kind = 11
+target_selector_id = &""
+target_selector_param = PackedInt32Array(8, 3)
+cadence_days = 1
+conditions = Array[Resource]([SubResource("CondGuildMonopolyA"), SubResource("CondGuildMonopolyB"), SubResource("CondGuildMonopolyAnd")])
+instructions = Array[Resource]([SubResource("InstrGuildMonopoly"), SubResource("InstrGranaryBeltEmit")])
+commands = Array[Resource]([SubResource("CmdGuildMonopoly")])
+
+[resource]
+script = ExtResource("1_catalog")
+effects = Array[Resource]([SubResource("EffectGranaryBelt"), SubResource("EffectForgeRing"), SubResource("EffectVeinDominance"), SubResource("EffectIronThrone"), SubResource("EffectStackedWorkshop"), SubResource("EffectGuildMonopoly")])

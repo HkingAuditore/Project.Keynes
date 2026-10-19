@@ -1143,6 +1143,10 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
             host.effect_pod_ack_count);
         out["effect_pod_intent_count"] = static_cast<int>(
             host.effect_pod_intent_count);
+        out["effect_retire_absent_count"] = static_cast<int64_t>(
+            host.effect_retire_absent_count);
+        out["effect_retire_stale_count"] = static_cast<int64_t>(
+            host.effect_retire_stale_count);
         out["effect_pod_fallback_reason"] = String(
             host.effect_pod_fallback_reason);
         out["ideology_pod_ready"] = host.ideology_pod_ready;

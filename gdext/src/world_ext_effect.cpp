@@ -1,6 +1,7 @@
 #include "world_ext.h"
 
 #include "effect_runtime.h"
+#include "effect_instance_forwarder.h"
 #include "country_runtime.h"
 #include "economy_runtime.h"
 #include "ideology_runtime.h"
@@ -80,6 +81,7 @@ godot::PackedStringArray packed_strings(const godot::Dictionary &catalog,
 }
 
 bool compile_effect_pod_catalog(const Dictionary &catalog,
+                               const EffectRuntime *effect,
                                RuntimeEffectPodCatalog &out,
                                std::string &error) {
     error.clear();
@@ -108,6 +110,13 @@ bool compile_effect_pod_catalog(const Dictionary &catalog,
     const auto cadence_days = packed_i32(catalog, "cadence_days");
     const auto max_work = packed_i32(catalog, "max_work");
     const auto enabled = packed_u8(catalog, "enabled");
+    // Optional per-definition capability flag from EffectCatalog. Definitions
+    // the POD subset cannot express (selectors 8..11, StateId > 3) are dropped
+    // here instead of being handed to a validator that rejects the catalog as a
+    // whole. Absent column => treat every definition as expressible, preserving
+    // the pre-filter contract. Offsets stay valid because conditions /
+    // instructions / commands are copied globally above, not per definition.
+    const auto pod_expressible = packed_u8(catalog, "pod_expressible");
     const auto source_kinds = packed_i32(catalog, "source_kinds");
     const auto target_domains = packed_i32(catalog, "target_domains");
     const auto operations = packed_i32(catalog, "operations");
@@ -168,19 +177,48 @@ bool compile_effect_pod_catalog(const Dictionary &catalog,
         error = "effect_pod_program_columns_invalid";
         return false;
     }
-    for (int i = 0; i < condition_ops.size(); ++i) {
-        RuntimeEffectPodCondition value;
-        value.op = static_cast<RuntimeEffectPodConditionOp>(condition_ops[i]);
-        value.arg0 = condition_arg0[i]; value.value = condition_values[i];
-        out.conditions.push_back(value);
+    // The POD validates its payload as a whole, so a definition it cannot
+    // express must not contribute *any* condition, instruction or command.
+    // Skipping only the definition entry left its payload behind in the shared
+    // side tables, and one out-of-range condition there still rejected the
+    // whole catalog. Compact the three side tables and rebuild every
+    // definition's offsets against the compacted index space.
+    std::vector<uint8_t> include(static_cast<size_t>(count), 1);
+    for (int i = 0; i < count; ++i) {
+        if (i < pod_expressible.size())
+            include[static_cast<size_t>(i)] = pod_expressible[i] != 0 ? 1 : 0;
     }
-    for (int i = 0; i < instruction_ops.size(); ++i) {
-        RuntimeEffectPodInstruction value;
-        value.op = static_cast<RuntimeEffectPodInstructionOp>(instruction_ops[i]);
-        value.arg0 = instruction_arg0[i]; value.arg1 = instruction_arg1[i];
-        value.value = instruction_values[i];
-        out.instructions.push_back(value);
+
+    std::vector<int32_t> pod_condition_offsets(static_cast<size_t>(count) + 1, 0);
+    for (int i = 0; i < count; ++i) {
+        pod_condition_offsets[static_cast<size_t>(i)] =
+            static_cast<int32_t>(out.conditions.size());
+        if (include[static_cast<size_t>(i)] == 0) continue;
+        for (int c = condition_offsets[i]; c < condition_offsets[i + 1]; ++c) {
+            RuntimeEffectPodCondition value;
+            value.op = static_cast<RuntimeEffectPodConditionOp>(condition_ops[c]);
+            value.arg0 = condition_arg0[c]; value.value = condition_values[c];
+            out.conditions.push_back(value);
+        }
     }
+    pod_condition_offsets[static_cast<size_t>(count)] =
+        static_cast<int32_t>(out.conditions.size());
+
+    std::vector<int32_t> pod_instruction_offsets(static_cast<size_t>(count) + 1, 0);
+    for (int i = 0; i < count; ++i) {
+        pod_instruction_offsets[static_cast<size_t>(i)] =
+            static_cast<int32_t>(out.instructions.size());
+        if (include[static_cast<size_t>(i)] == 0) continue;
+        for (int c = instruction_offsets[i]; c < instruction_offsets[i + 1]; ++c) {
+            RuntimeEffectPodInstruction value;
+            value.op = static_cast<RuntimeEffectPodInstructionOp>(instruction_ops[c]);
+            value.arg0 = instruction_arg0[c]; value.arg1 = instruction_arg1[c];
+            value.value = instruction_values[c];
+            out.instructions.push_back(value);
+        }
+    }
+    pod_instruction_offsets[static_cast<size_t>(count)] =
+        static_cast<int32_t>(out.instructions.size());
     if (command_actions.size() != command_domains.size() ||
         command_actions.size() != command_opcodes.size() ||
         command_actions.size() != command_resolvers.size() ||
@@ -194,26 +232,41 @@ bool compile_effect_pod_catalog(const Dictionary &catalog,
         error = "effect_pod_command_columns_invalid";
         return false;
     }
-    for (int i = 0; i < command_actions.size(); ++i) {
-        if (command_keys[i].is_empty()) { error = "effect_pod_command_key_empty"; return false; }
-        RuntimeEffectPodCommandDefinition value;
-        value.action = static_cast<RuntimeEffectPodAction>(command_actions[i]);
-        value.domain = command_domains[i]; value.opcode = command_opcodes[i];
-        value.target_resolver = static_cast<RuntimeEffectPodTargetResolver>(command_resolvers[i]);
-        value.static_target = static_cast<uint64_t>(command_targets[i]);
-        value.value_mode = static_cast<RuntimeEffectPodValueMode>(command_value_modes[i]);
-        value.value = command_values[i]; value.duration_days = command_durations[i];
-        value.stacks = command_stacks[i];
-        value.command_key_hash = RuntimeEffectPodAuthority::hash_text(
-            command_keys[i].utf8().get_data());
-        value.definition_key_hash = command_definition_keys[i].is_empty() ? 0 :
-            RuntimeEffectPodAuthority::hash_text(command_definition_keys[i].utf8().get_data());
-        value.payload = {i < payload_i0.size() ? payload_i0[i] : 0,
-                         i < payload_i1.size() ? payload_i1[i] : 0,
-                         i < payload_i2.size() ? payload_i2[i] : 0,
-                         i < payload_i3.size() ? payload_i3[i] : 0};
-        out.commands.push_back(value);
+    std::vector<int32_t> pod_command_offsets(static_cast<size_t>(count) + 1, 0);
+    for (int i = 0; i < count; ++i) {
+        pod_command_offsets[static_cast<size_t>(i)] =
+            static_cast<int32_t>(out.commands.size());
+        if (include[static_cast<size_t>(i)] == 0) continue;
+        for (int c = command_offsets[i]; c < command_offsets[i + 1]; ++c) {
+            if (command_keys[c].is_empty()) { error = "effect_pod_command_key_empty"; return false; }
+            RuntimeEffectPodCommandDefinition value;
+            value.action = static_cast<RuntimeEffectPodAction>(command_actions[c]);
+            value.domain = command_domains[c]; value.opcode = command_opcodes[c];
+            value.target_resolver = static_cast<RuntimeEffectPodTargetResolver>(command_resolvers[c]);
+            value.static_target = static_cast<uint64_t>(command_targets[c]);
+            value.value_mode = static_cast<RuntimeEffectPodValueMode>(command_value_modes[c]);
+            value.value = command_values[c]; value.duration_days = command_durations[c];
+            value.stacks = command_stacks[c];
+            value.command_key_hash = RuntimeEffectPodAuthority::hash_text(
+                command_keys[c].utf8().get_data());
+            value.definition_key_hash = command_definition_keys[c].is_empty() ? 0 :
+                RuntimeEffectPodAuthority::hash_text(command_definition_keys[c].utf8().get_data());
+            value.payload = {c < payload_i0.size() ? payload_i0[c] : 0,
+                             c < payload_i1.size() ? payload_i1[c] : 0,
+                             c < payload_i2.size() ? payload_i2[c] : 0,
+                             c < payload_i3.size() ? payload_i3[c] : 0};
+            // The adapter is a per-command property EffectRuntime already
+            // compiled (effect_runtime.cpp:1003). Copy it across instead of
+            // re-deriving it here, so the two can never disagree.
+            out.command_native_adapters.push_back(
+                effect != nullptr
+                    ? effect->native_modifier_adapter_for_command(c)
+                    : 0);
+            out.commands.push_back(value);
+        }
     }
+    pod_command_offsets[static_cast<size_t>(count)] =
+        static_cast<int32_t>(out.commands.size());
     // F8: resolve open-ended behaviors from EffectRuntime registry into POD
     // metadata. Missing implementations hard-fail (no silent legacy fallback).
     std::unordered_map<uint64_t, size_t> behavior_index_by_hash;
@@ -238,6 +291,7 @@ bool compile_effect_pod_catalog(const Dictionary &catalog,
         out.behaviors.push_back(meta);
     }
     for (int i = 0; i < count; ++i) {
+        if (include[static_cast<size_t>(i)] == 0) continue;
         if (effect_keys[i].is_empty()) {
             error = "effect_pod_definition_key_empty";
             return false;
@@ -259,12 +313,15 @@ bool compile_effect_pod_catalog(const Dictionary &catalog,
             value.behavior_id_hash = RuntimeEffectPodAuthority::hash_text(
                 behavior_keys[i].utf8().get_data());
         }
-        value.condition_begin = condition_offsets[i];
-        value.condition_count = condition_offsets[i + 1] - condition_offsets[i];
-        value.instruction_begin = instruction_offsets[i];
-        value.instruction_count = instruction_offsets[i + 1] - instruction_offsets[i];
-        value.command_begin = command_offsets[i];
-        value.command_count = command_offsets[i + 1] - command_offsets[i];
+        value.condition_begin = pod_condition_offsets[static_cast<size_t>(i)];
+        value.condition_count = pod_condition_offsets[static_cast<size_t>(i) + 1] -
+            pod_condition_offsets[static_cast<size_t>(i)];
+        value.instruction_begin = pod_instruction_offsets[static_cast<size_t>(i)];
+        value.instruction_count = pod_instruction_offsets[static_cast<size_t>(i) + 1] -
+            pod_instruction_offsets[static_cast<size_t>(i)];
+        value.command_begin = pod_command_offsets[static_cast<size_t>(i)];
+        value.command_count = pod_command_offsets[static_cast<size_t>(i) + 1] -
+            pod_command_offsets[static_cast<size_t>(i)];
         value.source_kind = source_kinds[i]; value.target_domain = target_domains[i];
         value.operation = operations[i];
         value.lifecycle = static_cast<RuntimeEffectPodLifecycle>(lifecycles[i]);
@@ -289,6 +346,16 @@ bool compile_effect_pod_catalog(const Dictionary &catalog,
 
 Dictionary DCWorldExt::configure_effects(const Dictionary &catalog) {
     if (_effect_runtime == nullptr) _effect_runtime = new EffectRuntime();
+    // The forwarder is the single write path for declarative instances. Create
+    // it here, next to the runtime it fronts, so `_effect_forwarder != nullptr`
+    // means exactly what `_effect_runtime != nullptr` used to mean.
+    if (_effect_forwarder == nullptr)
+        _effect_forwarder = std::make_unique<EffectInstanceForwarder>();
+    _effect_forwarder->attach(runtime_from(_effect_runtime), _runtime_host.get());
+    // attach() re-baselines the epoch from live host authority, so a seam set
+    // before the catalog existed has to be re-applied after every attach.
+    _effect_forwarder->set_authority_override_for_test(
+        _effect_forwarder_authority_override);
     runtime_effect_pod_set_behavior_resolver(
         [](uint64_t behavior_id_hash,
            const RuntimeEffectPodBehaviorInput &input,
@@ -302,12 +369,20 @@ Dictionary DCWorldExt::configure_effects(const Dictionary &catalog) {
         if (!_runtime_host) _runtime_host = std::make_unique<NativeSimulationHost>();
         RuntimeEffectPodCatalog pod_catalog;
         std::string pod_error;
-        const bool pod_ok = compile_effect_pod_catalog(catalog, pod_catalog, pod_error) &&
+        const bool pod_ok = compile_effect_pod_catalog(catalog, runtime_from(_effect_runtime), pod_catalog, pod_error) &&
             _runtime_host->configure_effect_pod(pod_catalog, pod_error);
         result["effect_pod_ready"] = pod_ok;
         result["effect_pod_fallback_reason"] = String(pod_error.c_str());
         result["effect_pod_catalog_hash"] = pod_ok
             ? static_cast<int64_t>(_runtime_host->effect_pod_report().catalog_hash) : 0;
+        // A reloaded catalog changes program ids, so drop the cached
+        // program_key -> program_id facts and re-read the new authority state.
+        if (_effect_forwarder != nullptr) {
+            _effect_forwarder->attach(runtime_from(_effect_runtime),
+                                      _runtime_host.get());
+            _effect_forwarder->set_authority_override_for_test(
+                _effect_forwarder_authority_override);
+        }
         if (_country_runtime != nullptr) {
             runtime_from(_effect_runtime)->attach_country_runtime(
                 static_cast<NativeCountryRuntime *>(_country_runtime));
@@ -326,6 +401,11 @@ Dictionary DCWorldExt::configure_effects(const Dictionary &catalog) {
         if (_ideology_runtime != nullptr)
             static_cast<NativeIdeologyRuntime *>(_ideology_runtime)->attach_effect_runtime(
                 runtime_from(_effect_runtime));
+        // Re-attach on every configure: the forwarder's program facts are keyed
+        // by the catalog this call just replaced.
+        if (_ideology_runtime != nullptr)
+            static_cast<NativeIdeologyRuntime *>(_ideology_runtime)
+                ->attach_effect_forwarder(_effect_forwarder.get());
     }
     return result;
 }
@@ -496,178 +576,34 @@ String DCWorldExt::service_era_reward_host_selection(int64_t effective_day) {
 }
 
 Dictionary DCWorldExt::submit_effect_instances(const Dictionary &batch) {
-    if (_effect_runtime == nullptr) return unavailable();
-    const bool worker_authoritative = _runtime_host != nullptr &&
-        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT);
-    // F8 ACTIVE: Host transport is the sole writer. Never mutate legacy first.
-    if (worker_authoritative) {
-        Dictionary result;
-        if (_runtime_host == nullptr) {
-            result["ok"] = false;
-            result["reason"] = "effect_worker_host_unavailable";
-            return result;
-        }
-        const PackedInt64Array ids = batch.get("instance_ids", PackedInt64Array());
-        const PackedStringArray program_keys = batch.get("program_keys",
-                                                          PackedStringArray());
-        const PackedInt32Array generations = batch.get("generations",
-                                                        PackedInt32Array());
-        const PackedInt32Array source_types = batch.get("source_types",
-                                                         PackedInt32Array());
-        const PackedInt64Array source_ids = batch.get("source_ids",
-                                                       PackedInt64Array());
-        const PackedInt64Array source_handles = batch.get("source_handles",
-                                                           PackedInt64Array());
-        const PackedInt64Array target_handles = batch.get("target_handles",
-                                                           PackedInt64Array());
-        const PackedInt32Array target_generations = batch.get(
-            "target_generations", PackedInt32Array());
-        const PackedInt32Array levels = batch.get("levels", PackedInt32Array());
-        const PackedInt64Array next_due_days = batch.get("next_due_days",
-                                                          PackedInt64Array());
-        const PackedByteArray active = batch.get("active", PackedByteArray());
-        PackedInt64Array accepted_ids;
-        int32_t rejected = 0;
-        for (int i = 0; i < ids.size() && i < program_keys.size(); ++i) {
-            const int32_t program_id = _runtime_host->effect_pod_program_id_for_key(
-                program_keys[i].utf8().get_data());
-            if (program_id < 0) {
-                ++rejected;
-                continue;
-            }
-            RuntimeEffectPodInstanceInput input;
-            input.instance_id = ids[i];
-            input.generation = static_cast<uint32_t>(std::max(
-                1, i < generations.size() ? generations[i] : 1));
-            input.program_id = program_id;
-            input.source_type = i < source_types.size() ? source_types[i] : 0;
-            input.source_id = i < source_ids.size() ? source_ids[i] : 0;
-            input.source_handle = static_cast<uint64_t>(
-                i < source_handles.size() ? source_handles[i] : 0);
-            input.target_handle = static_cast<uint64_t>(
-                i < target_handles.size() ? target_handles[i] : 0);
-            input.target_generation = static_cast<uint32_t>(std::max(
-                0, i < target_generations.size() ? target_generations[i] : 0));
-            input.level = i < levels.size() ? levels[i] : 0;
-            input.next_due_day = i < next_due_days.size() ? next_due_days[i] : 0;
-            input.active = i >= active.size() || active[i] != 0;
-            std::string queue_error;
-            if (_runtime_host->queue_effect_pod_instance(input, queue_error)) {
-                accepted_ids.push_back(ids[i]);
-            } else {
-                ++rejected;
-                result["reason"] = String(queue_error.c_str());
-            }
-        }
-        result["ok"] = rejected == 0 && accepted_ids.size() == ids.size();
-        result["instance_ids"] = accepted_ids;
-        result["path"] = "EFFECT_WORKER";
-        result["effect_pod_queued"] = accepted_ids.size();
-        result["effect_pod_rejected"] = rejected;
-        return result;
-    }
-    Dictionary result = runtime_from(_effect_runtime)->submit_instances(batch);
-    // F7 SHADOW mirror: best-effort queue of accepted declarative instances.
-    // Failures here never roll back the production EffectRuntime write.
-    if (bool(result.get("ok", false)) && _runtime_host != nullptr) {
-        const PackedInt64Array accepted_ids = result.get("instance_ids",
-                                                         PackedInt64Array());
-        const PackedInt64Array ids = batch.get("instance_ids", PackedInt64Array());
-        const PackedStringArray program_keys = batch.get("program_keys",
-                                                          PackedStringArray());
-        const PackedInt32Array generations = batch.get("generations",
-                                                        PackedInt32Array());
-        const PackedInt32Array source_types = batch.get("source_types",
-                                                         PackedInt32Array());
-        const PackedInt64Array source_ids = batch.get("source_ids",
-                                                       PackedInt64Array());
-        const PackedInt64Array source_handles = batch.get("source_handles",
-                                                           PackedInt64Array());
-        const PackedInt64Array target_handles = batch.get("target_handles",
-                                                           PackedInt64Array());
-        const PackedInt32Array target_generations = batch.get(
-            "target_generations", PackedInt32Array());
-        const PackedInt32Array levels = batch.get("levels", PackedInt32Array());
-        const PackedInt64Array next_due_days = batch.get("next_due_days",
-                                                          PackedInt64Array());
-        const PackedByteArray active = batch.get("active", PackedByteArray());
-        int32_t mirrored = 0;
-        int32_t mirror_rejected = 0;
-        for (int i = 0; i < ids.size() && i < program_keys.size(); ++i) {
-            const int64_t id = ids[i];
-            bool accepted = false;
-            for (int a = 0; a < accepted_ids.size(); ++a) {
-                if (accepted_ids[a] == id) { accepted = true; break; }
-            }
-            if (!accepted) continue;
-            const int32_t program_id = _runtime_host->effect_pod_program_id_for_key(
-                program_keys[i].utf8().get_data());
-            if (program_id < 0) {
-                ++mirror_rejected;
-                continue;
-            }
-            RuntimeEffectPodInstanceInput input;
-            input.instance_id = id;
-            input.generation = static_cast<uint32_t>(std::max(
-                1, i < generations.size() ? generations[i] : 1));
-            input.program_id = program_id;
-            input.source_type = i < source_types.size() ? source_types[i] : 0;
-            input.source_id = i < source_ids.size() ? source_ids[i] : 0;
-            input.source_handle = static_cast<uint64_t>(
-                i < source_handles.size() ? source_handles[i] : 0);
-            input.target_handle = static_cast<uint64_t>(
-                i < target_handles.size() ? target_handles[i] : 0);
-            input.target_generation = static_cast<uint32_t>(std::max(
-                0, i < target_generations.size() ? target_generations[i] : 0));
-            input.level = i < levels.size() ? levels[i] : 0;
-            input.next_due_day = i < next_due_days.size() ? next_due_days[i] : 0;
-            input.active = i >= active.size() || active[i] != 0;
-            std::string mirror_error;
-            if (_runtime_host->queue_effect_pod_instance(input, mirror_error))
-                ++mirrored;
-            else
-                ++mirror_rejected;
-        }
-        result["effect_pod_mirrored"] = mirrored;
-        result["effect_pod_mirror_rejected"] = mirror_rejected;
-    }
-    return result;
+    if (_effect_forwarder == nullptr) return unavailable();
+    return _effect_forwarder->submit_batch(batch);
 }
 
 Dictionary DCWorldExt::retire_effect_instance(int64_t instance_id,
                                               int64_t generation,
                                               int64_t effective_day) {
-    if (_effect_runtime == nullptr) return unavailable();
+    if (_effect_forwarder == nullptr) return unavailable();
+    return _effect_forwarder->retire(instance_id, generation, effective_day);
+}
+
+Dictionary DCWorldExt::set_effect_forwarder_authority_for_test(int32_t mode) {
+    const int32_t normalized = mode < 0 ? -1 : (mode != 0 ? 1 : 0);
+    _effect_forwarder_authority_override = normalized;
+    // Applied to the live forwarder as well, so a test can flip authority
+    // between two submissions of one fixture instead of rebuilding the world.
+    // configure_effects re-applies the stored value on every rebuild.
+    if (_effect_forwarder != nullptr)
+        _effect_forwarder->set_authority_override_for_test(normalized);
     Dictionary out;
-    const bool worker_authoritative = _runtime_host != nullptr &&
-        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT);
-    if (worker_authoritative) {
-        if (generation <= 0 || _runtime_host == nullptr) {
-            out["ok"] = false;
-            out["reason"] = "effect_worker_retire_invalid";
-            return out;
-        }
-        std::string queue_error;
-        const bool ok = _runtime_host->queue_effect_pod_remove(
-            instance_id, static_cast<uint32_t>(generation), queue_error);
-        out["ok"] = ok;
-        out["path"] = "EFFECT_WORKER";
-        if (!ok) out["reason"] = String(queue_error.c_str());
-        (void)effective_day;
-        return out;
-    }
-    std::string error;
-    const bool ok = generation > 0 && runtime_from(_effect_runtime)->retire_instance_pod(
-        instance_id, static_cast<uint32_t>(generation), effective_day, error);
-    out["ok"] = ok;
-    if (!ok) out["reason"] = String(error.c_str());
-    if (ok && _runtime_host != nullptr) {
-        std::string mirror_error;
-        out["effect_pod_mirrored"] = _runtime_host->queue_effect_pod_remove(
-            instance_id, static_cast<uint32_t>(generation), mirror_error);
-        if (!bool(out["effect_pod_mirrored"]))
-            out["effect_pod_mirror_reason"] = String(mirror_error.c_str());
-    }
+    out["ok"] = _effect_forwarder != nullptr;
+    out["reason"] = _effect_forwarder != nullptr
+        ? "ok" : "effect_forwarder_not_attached";
+    out["override"] = normalized;
+    out["worker_authoritative"] = _effect_forwarder != nullptr &&
+        _effect_forwarder->worker_authoritative();
+    out["authority_epoch"] = _effect_forwarder != nullptr
+        ? static_cast<int64_t>(_effect_forwarder->authority_epoch()) : 0;
     return out;
 }
 

@@ -180,6 +180,37 @@ func _run() -> void:
 			await process_frame
 	if panel.visible_node_count() != cohort_count:
 		failures.append("120 population patches changed inspector node count")
+	# 年度产值两格：逐次补丁只换数值，格数恒为 4，高度按两行算。
+	var facts := panel._metric_controls.get("_root") as InspectorFactGrid
+	if facts == null:
+		failures.append("population block has no fact grid")
+	else:
+		if facts.fact_count() != 4:
+			failures.append("population fact grid should carry 4 facts, got %d"
+				% facts.fact_count())
+		var gdp_fact: Dictionary = facts._facts[2]
+		var per_capita_fact: Dictionary = facts._facts[3]
+		if String(gdp_fact.get("id", "")) != "population_gdp" \
+				or String(per_capita_fact.get("id", "")) != "population_gdp_per_capita":
+			failures.append("annual output facts drifted out of the population grid")
+		if String(gdp_fact.get("value", "")) != "%.2f万" % (1.24 + 119.0 * 0.01):
+			failures.append("annual output fact did not track the latest patch: %s"
+				% String(gdp_fact.get("value", "")))
+		if absf(facts.custom_minimum_size.y - InspectorFactGrid.ROW_HEIGHT * 2.0) > 0.5:
+			failures.append("4 facts should lay out as two rows, height=%s"
+				% facts.custom_minimum_size.y)
+		# 账本退化为未跟踪（metrics 少两格）时只换内容，不重建节点。
+		# 必须提交完整 category —— 只给 metrics 会把 cohort_rows 一起抹掉，
+		# 结构指纹一变就走整体重建，那不是本断言要考察的路径。
+		panel.apply_live_patch({
+			"tab_id": "population",
+			"category": _population_category(1.0, false),
+		})
+		if facts.fact_count() != 2 or panel.visible_node_count() != cohort_count:
+			failures.append("dropping the annual output facts rebuilt inspector nodes")
+		panel.apply_live_patch(_make_patch("population", 2.0))
+		if facts.fact_count() != 4 or panel.visible_node_count() != cohort_count:
+			failures.append("restoring the annual output facts rebuilt inspector nodes")
 	if cohort_list.get_combined_minimum_size().x > panel._scroll.size.x + 0.5:
 		failures.append("population list exceeds the inspector scroll width: list=%s scroll=%s" % [
 			cohort_list.get_combined_minimum_size(), panel._scroll.size])
@@ -675,13 +706,42 @@ func _market_category(step: float) -> Dictionary:
 	return {"market_rows": rows}
 
 
-func _population_category(step: float) -> Dictionary:
+func _population_category(step: float, with_gdp: bool = true) -> Dictionary:
 	return {
+		"metrics": _population_metrics(step, with_gdp),
 		"cohort_rows": [
 			{"id": "cohort_1", "name": "工人", "cohort_identity": "本地人口", "living_standard": "小康", "satisfaction": "82.0%", "worst_dimension": "储蓄", "satisfaction_rows": _satisfaction_rows(step), "population": "1000 人", "wealth": "人均 40", "income": "+12", "expense": "−8", "net": "+4", "status": "本地人口 · 满意度 82.0%", "accent": UITokens.ACCENT, "icon": "profession.worker", "living_icon": "living_comfortable", "living_accent": UITokens.GOOD, "visible": true, "income_rows": [{"id": "income_wages", "name": "工资", "value": "+12/人"}], "expense_rows": [{"id": "expense_goods", "name": "生活消费", "value": "−8/人"}], "demand_rows": _demand_rows(step), "demand_groups": _demand_groups(step), "demand_summary": {"value": "1 项用途 · 2 种商品", "subtitle": "主要：谷物、布料", "total_quantity": "0.840", "total_daily_cost": "1.1"}},
 			{"id": "cohort_2", "name": "商人", "cohort_identity": "本地人口", "living_standard": "富裕", "satisfaction": "90.0%", "worst_dimension": "税负", "satisfaction_rows": _satisfaction_rows(step), "population": "10 人", "wealth": "人均 200", "income": "+30", "expense": "−10", "net": "+20", "status": "本地人口 · 满意度 90.0%", "accent": UITokens.RESOURCE, "icon": "profession.merchant", "living_icon": "living_affluent", "living_accent": UITokens.RESOURCE, "visible": true, "income_rows": [{"id": "income_sales", "name": "居民销售", "value": "+30/人"}], "expense_rows": [{"id": "expense_goods", "name": "生活消费", "value": "−10/人"}], "demand_rows": _demand_rows(step), "demand_groups": _demand_groups(step), "demand_summary": {"value": "1 项用途 · 2 种商品", "subtitle": "主要：谷物、布料", "total_quantity": "0.840", "total_daily_cost": "1.1"}},
 		],
 	}
+
+
+## 人口页事实表：两格存量指标 + 两格本年度产值。产值两格由账本提供，
+## 逐次补丁只改数值，必须走同 id 原地更新，不能增减节点。
+func _population_metrics(step: float, with_gdp: bool = true) -> Array:
+	var metrics := [
+		{"id": "population_funds", "title": "居民存款",
+			"value": "%d" % int(2400 + step), "subtitle": "本期结余 0",
+			"accent": UITokens.ACCENT, "icon": "resource"},
+		{"id": "population_food", "title": "本地口粮", "value": "够 128 人",
+			"subtitle": "", "accent": UITokens.GOOD, "icon": "economy.crop"},
+	]
+	if not with_gdp:
+		return metrics
+	metrics.append({
+		"id": "population_gdp", "title": "本地年度产值",
+		"value": "%.2f万" % (1.24 + step * 0.01),
+		"subtitle": "已计 %d/365 天" % mini(365, 132 + int(step)),
+		"accent": UITokens.ECO, "icon": "metric.treasury",
+		"tooltip": "收入法：营收 − 中间投入 − 维护。",
+	})
+	metrics.append({
+		"id": "population_gdp_per_capita", "title": "人均年度产值",
+		"value": "%d" % int(615 + step),
+		"subtitle": "全国 480（+28%）", "accent": UITokens.ACCENT,
+		"icon": "family.metric.wealth",
+	})
+	return metrics
 
 
 func _satisfaction_rows(step: float) -> Array:

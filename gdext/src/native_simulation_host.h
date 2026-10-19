@@ -542,6 +542,18 @@ public:
     // F7 host-stage smoke: plan/commit + MODIFIER intent emission + ACK
     // round-trip. Does not grant EFFECT ACTIVE authority.
     bool effect_pod_host_stage_self_test(std::string *error = nullptr);
+    // Pins the transport-queue contract the ideology forwarder relies on:
+    // upsert/retire replay in arrival order, re-ENSURE keeps the newest
+    // payload, and a retire with nothing to retire is a counted no-op.
+    bool effect_pod_transport_queue_self_test(std::string *error = nullptr);
+    // Pins the Effect-intent -> Modifier-POD adapter mapping, which used to
+    // guess the adapter from the Modifier domain for every command. The
+    // reference implementation is EffectRuntime::dispatch_native_modifier
+    // (effect_runtime.cpp); this TU cannot call it (it must not include
+    // modifier_runtime.h, whose NativeCommand is the legacy output type), so
+    // the expected field values below are transcribed from those branches and
+    // each case names the lines it mirrors.
+    bool modifier_effect_adapter_self_test(std::string *error = nullptr);
     // F7 SHADOW transport. Main-thread EffectRuntime remains production
     // authority; these queues only mirror declarative POD-expressible state
     // and expose worker intents/ACKs for diagnostics and Modifier E7.
@@ -555,6 +567,11 @@ public:
     bool poll_effect_pod_intent(RuntimeDomainIntent &intent);
     bool submit_effect_pod_ack(const RuntimeDomainAck &ack, std::string &error);
     int32_t effect_pod_program_id_for_key(const char *key) const;
+    // M2a: true once a compiled Effect POD catalog is installed. The forwarder
+    // must report WORKER_TRANSPORT_NOT_READY rather than "ok" while EFFECT is
+    // already worker-authoritative but this is still false -- otherwise every
+    // queued instance fails and the batch looks partially accepted.
+    bool effect_pod_transport_ready() const { return _effect_pod_configured; }
     // Country ACTIVE peer adapter: technology.<id> instances live on the Effect
     // POD unique-writer. Sync EffectRuntime is writeback-only under F8.
     bool ensure_effect_pod_technology_instance(
@@ -875,6 +892,14 @@ private:
     // Resolve Effect MODIFIER intent → Modifier definition_id via key hash.
     int32_t resolve_modifier_definition_id_for_effect_intent(
             const RuntimeDomainIntent &intent) const;
+    // Single place that turns an Effect-produced intent into a Modifier POD
+    // command. Split out of execute_modifier_worker_stage so the adapter
+    // mapping can be asserted without planning a day (planning one feeds ACKs
+    // back into the Effect authority, which a mapping fixture has no
+    // transactions for). Returns false when the intent must be dropped.
+    bool map_effect_intent_to_modifier_command(
+            const RuntimeDomainIntent &intent, uint64_t input_generation,
+            RuntimeModifierPodCommand &command);
     // Rebuild day-local Effect intents for COMMITTED transactions still missing
     // ACKs (day-lane retry soft-skip must not drop the Modifier handoff).
     void reemit_effect_committed_pending_intents(int64_t day);
@@ -1447,12 +1472,24 @@ private:
         int64_t revision = 0;
         int64_t value = 0;
     };
+    // Upserts and retires share ONE arrival sequence. The drain replays them in
+    // arrival order: an Effect soft-skip can leave "submit on day N" and
+    // "retire on day N+1" sitting in the queue together, and draining either
+    // deque wholesale would swap that pair into "retire, submit" -- which
+    // silently resurrects the very instance the caller retired.
+    struct EffectPodInstanceQueueItem {
+        uint64_t sequence = 0;
+        RuntimeEffectPodInstanceInput input;
+    };
     struct EffectPodRemoveQueueItem {
+        uint64_t sequence = 0;
         int64_t instance_id = 0;
         uint32_t generation = 0;
     };
     mutable std::mutex _effect_transport_mutex;
-    std::deque<RuntimeEffectPodInstanceInput> _effect_instance_queue;
+    // Guarded by `_effect_transport_mutex`.
+    uint64_t _effect_transport_sequence = 0;
+    std::deque<EffectPodInstanceQueueItem> _effect_instance_queue;
     std::deque<EffectPodMetricQueueItem> _effect_metric_queue;
     std::deque<EffectPodRemoveQueueItem> _effect_remove_queue;
     std::deque<RuntimeDomainIntent> _effect_intents;
@@ -1469,6 +1506,13 @@ private:
     std::atomic<uint64_t> _effect_pod_snapshot_generation{0};
     std::atomic<uint32_t> _effect_pod_ack_count{0};
     std::atomic<uint32_t> _effect_pod_intent_count{0};
+    // Retire requests that found nothing to retire. The main-thread contract
+    // (EffectRuntime::retire_instance_pod) treats a missing instance as success
+    // -- "no Effect instance means no Effect-owned Modifier was committed" --
+    // so the worker must not hard-fail these. Split in two so a superseded
+    // generation stays visible instead of hiding inside the benign case.
+    std::atomic<uint64_t> _effect_retire_absent_count{0};
+    std::atomic<uint64_t> _effect_retire_stale_count{0};
     std::array<std::atomic<char>, 64> _effect_pod_fallback_reason{};
     mutable std::mutex _ideology_transport_mutex;
     RuntimeIdeologyPodAuthority _ideology_pod_authority;

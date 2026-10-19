@@ -693,9 +693,14 @@ bool ModifierRuntime::validate_target(const Command &command, std::string &error
             error = "modifier_country_handle_stale";
             return false;
         }
+        // Producer 161 = declared FamilyEffect, 162 = declared Ideology effect.
+        // Both address the economy domain by a domain-owned entity handle
+        // instead of a building identity, so the building check must not apply.
         const bool family_effect_entity = command.domain == ECONOMY &&
-            command.producer == 161 && command.entity_handle != 0;
-        if (family_effect_entity && _economy_runtime != nullptr &&
+            (command.producer == 161 || command.producer == 162) &&
+            command.entity_handle != 0;
+        if (command.domain == ECONOMY && command.producer == 161 &&
+            family_effect_entity && _economy_runtime != nullptr &&
             !_economy_runtime->valid_family_effect_entity_handle(
                 command.entity_handle)) {
             error = "modifier_family_effect_handle_stale";

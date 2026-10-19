@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="ModifierCatalog" load_steps=260 format=3]
+[gd_resource type="Resource" script_class="ModifierCatalog" load_steps=524 format=3]
 
 [ext_resource type="Script" path="res://scripts/modifier/modifier_catalog.gd" id="1_catalog"]
 [ext_resource type="Script" path="res://scripts/modifier/modifier_stat_definition.gd" id="2_stat"]
@@ -674,6 +674,224 @@ domain = 1
 stack_policy = 1
 terms = Array[Resource]([SubResource("TermFamilyCountryTradeCapacity")])
 
+[sub_resource type="Resource" id="TermIdeologyForagerBand0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.forest.agriculture_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyForagerBand1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.jungle.agriculture_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyForagerBand2"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.wild_game.use_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefIdeologyForagerBand"]
+script = ExtResource("3_definition")
+key = &"ideology.forager_band"
+display_name = "采集游群"
+description = "按季节轮换营地，林下的坚果、块根与浆果养活了整个部族。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyForagerBand0"), SubResource("TermIdeologyForagerBand1"), SubResource("TermIdeologyForagerBand2")])
+
+[sub_resource type="Resource" id="TermIdeologyHuntingTradition0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.game_meat_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyHuntingTradition1"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.wild_game.use_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="DefIdeologyHuntingTradition"]
+script = ExtResource("3_definition")
+key = &"ideology.hunting_tradition"
+display_name = "狩猎传统"
+description = "以围猎、陷阱与分工分配肉食，青壮年在协作中学会统一号令。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyHuntingTradition0"), SubResource("TermIdeologyHuntingTradition1")])
+
+[sub_resource type="Resource" id="TermIdeologyFlintKnapping0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.chipped_stone_tools_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="TermIdeologyFlintKnapping1"]
+script = ExtResource("4_term")
+stat_key = &"country.production.input_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="TermIdeologyFlintKnapping2"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.flint.use_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="DefIdeologyFlintKnapping"]
+script = ExtResource("3_definition")
+key = &"ideology.flint_knapping"
+display_name = "打制石器"
+description = "打击石核取刃，形状统一的石器让各项劳作都更省力。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyFlintKnapping0"), SubResource("TermIdeologyFlintKnapping1"), SubResource("TermIdeologyFlintKnapping2")])
+
+[sub_resource type="Resource" id="TermIdeologyFireKeeping0"]
+script = ExtResource("4_term")
+stat_key = &"country.climate.cold_stress_factor"
+operation = 2
+value = 0.92
+
+[sub_resource type="Resource" id="TermIdeologyFireKeeping1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.tundra.agriculture_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyFireKeeping2"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.timber.use_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="DefIdeologyFireKeeping"]
+script = ExtResource("3_definition")
+key = &"ideology.fire_keeping"
+display_name = "火种守护"
+description = "专人看守长明火堆，寒夜的冻害与恐惧同时退去，柴薪消耗也随之上升。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyFireKeeping0"), SubResource("TermIdeologyFireKeeping1"), SubResource("TermIdeologyFireKeeping2")])
+
+[sub_resource type="Resource" id="TermIdeologyRiversideCamp0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.landform.delta.agriculture_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyRiversideCamp1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.floodplain.agriculture_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyRiversideCamp2"]
+script = ExtResource("4_term")
+stat_key = &"country.climate.flood_loss_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="DefIdeologyRiversideCamp"]
+script = ExtResource("3_definition")
+key = &"ideology.riverside_camp"
+display_name = "逐水而居"
+description = "营地紧贴河岸与湖湾，取水捕鱼极便，洪水却始终是威胁。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyRiversideCamp0"), SubResource("TermIdeologyRiversideCamp1"), SubResource("TermIdeologyRiversideCamp2")])
+
+[sub_resource type="Resource" id="TermIdeologyAnimistRitual0"]
+script = ExtResource("4_term")
+stat_key = &"country.research.society_efficiency"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyAnimistRitual1"]
+script = ExtResource("4_term")
+stat_key = &"country.ideology.point_gain_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyAnimistRitual2"]
+script = ExtResource("4_term")
+stat_key = &"country.research.science_efficiency"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologyAnimistRitual"]
+script = ExtResource("3_definition")
+key = &"ideology.animist_ritual"
+display_name = "万物有灵"
+description = "把山川鸟兽都视作有意志的存在，解释世界的方式由此开始。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyAnimistRitual0"), SubResource("TermIdeologyAnimistRitual1"), SubResource("TermIdeologyAnimistRitual2")])
+
+[sub_resource type="Resource" id="TermIdeologyGiftExchange0"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyGiftExchange1"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.speed_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologyGiftExchange2"]
+script = ExtResource("4_term")
+stat_key = &"country.production.input_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefIdeologyGiftExchange"]
+script = ExtResource("3_definition")
+key = &"ideology.gift_exchange"
+display_name = "馈赠交换"
+description = "以礼物与回礼代替买卖，熟人之间的物流从不间断，礼物本身却要耗料。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyGiftExchange0"), SubResource("TermIdeologyGiftExchange1"), SubResource("TermIdeologyGiftExchange2")])
+
+[sub_resource type="Resource" id="TermIdeologyPitDwelling0"]
+script = ExtResource("4_term")
+stat_key = &"country.climate.cold_stress_factor"
+operation = 2
+value = 0.94
+
+[sub_resource type="Resource" id="TermIdeologyPitDwelling1"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="TermIdeologyPitDwelling2"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.hill.agriculture_factor"
+operation = 2
+value = 0.98
+
+[sub_resource type="Resource" id="DefIdeologyPitDwelling"]
+script = ExtResource("3_definition")
+key = &"ideology.pit_dwelling"
+display_name = "穴居聚落"
+description = "掘地为屋、聚族而居，御寒与省工两得，可耕的地面却让了出去。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyPitDwelling0"), SubResource("TermIdeologyPitDwelling1"), SubResource("TermIdeologyPitDwelling2")])
+
 [sub_resource type="Resource" id="TermIdeologyCollectiveStewardship0"]
 script = ExtResource("4_term")
 stat_key = &"country.output.agriculture_factor"
@@ -682,131 +900,127 @@ value = 1.05
 
 [sub_resource type="Resource" id="TermIdeologyCollectiveStewardship1"]
 script = ExtResource("4_term")
+stat_key = &"country.output.terrain.plain.agriculture_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologyCollectiveStewardship2"]
+script = ExtResource("4_term")
 stat_key = &"country.climate.drought_loss_factor"
 operation = 2
 value = 0.95
+
+[sub_resource type="Resource" id="TermIdeologyCollectiveStewardship3"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 0.97
 
 [sub_resource type="Resource" id="DefIdeologyCollectiveStewardship"]
 script = ExtResource("3_definition")
 key = &"ideology.collective_stewardship"
 display_name = "共同体治理"
-description = "以共同仓储、互助义务和长期土地责任组织生产。"
+description = "以共同仓储、互助义务和长期土地责任组织生产，灵活交易被牺牲。"
 domain = 1
 stack_policy = 1
 default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyCollectiveStewardship0"), SubResource("TermIdeologyCollectiveStewardship1")])
+terms = Array[Resource]([SubResource("TermIdeologyCollectiveStewardship0"), SubResource("TermIdeologyCollectiveStewardship1"), SubResource("TermIdeologyCollectiveStewardship2"), SubResource("TermIdeologyCollectiveStewardship3")])
 
-[sub_resource type="Resource" id="TermIdeologyIntensiveTillage0"]
+[sub_resource type="Resource" id="TermIdeologyTerraceFarming0"]
 script = ExtResource("4_term")
-stat_key = &"country.output.agriculture_factor"
+stat_key = &"country.output.terrain.hill.agriculture_factor"
 operation = 2
-value = 1.07
+value = 1.1
 
-[sub_resource type="Resource" id="TermIdeologyIntensiveTillage1"]
+[sub_resource type="Resource" id="TermIdeologyTerraceFarming1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.mountain.agriculture_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="TermIdeologyTerraceFarming2"]
 script = ExtResource("4_term")
 stat_key = &"country.production.input_factor"
 operation = 2
-value = 1.02
+value = 1.03
 
-[sub_resource type="Resource" id="DefIdeologyIntensiveTillage"]
+[sub_resource type="Resource" id="DefIdeologyTerraceFarming"]
 script = ExtResource("3_definition")
-key = &"ideology.intensive_tillage"
-display_name = "精耕细作"
-description = "深耕、轮作与精细田管提高地力，但要投入更多耕作物资。"
+key = &"ideology.terrace_farming"
+display_name = "梯田"
+description = "顺山势砌石成田，坡地上的每一寸土都被用上，工料耗费极大。"
 domain = 1
 stack_policy = 1
 default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyIntensiveTillage0"), SubResource("TermIdeologyIntensiveTillage1")])
+terms = Array[Resource]([SubResource("TermIdeologyTerraceFarming0"), SubResource("TermIdeologyTerraceFarming1"), SubResource("TermIdeologyTerraceFarming2")])
 
-[sub_resource type="Resource" id="TermIdeologyEverNormalGranary0"]
+[sub_resource type="Resource" id="TermIdeologyPaddyCultivation0"]
 script = ExtResource("4_term")
-stat_key = &"country.population.death_factor"
+stat_key = &"country.output.good.rice_grain_factor"
 operation = 2
-value = 0.96
+value = 1.1
 
-[sub_resource type="Resource" id="TermIdeologyEverNormalGranary1"]
+[sub_resource type="Resource" id="TermIdeologyPaddyCultivation1"]
 script = ExtResource("4_term")
-stat_key = &"country.climate.drought_loss_factor"
+stat_key = &"country.output.terrain.swamp.agriculture_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyPaddyCultivation2"]
+script = ExtResource("4_term")
+stat_key = &"country.output.landform.delta.agriculture_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyPaddyCultivation3"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.wheat_grain_factor"
 operation = 2
 value = 0.95
 
-[sub_resource type="Resource" id="TermIdeologyEverNormalGranary2"]
+[sub_resource type="Resource" id="DefIdeologyPaddyCultivation"]
+script = ExtResource("3_definition")
+key = &"ideology.paddy_cultivation"
+display_name = "稻作"
+description = "筑埂蓄水、育秧移栽，水田的单产远高于旱地，却挤占麦作。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyPaddyCultivation0"), SubResource("TermIdeologyPaddyCultivation1"), SubResource("TermIdeologyPaddyCultivation2"), SubResource("TermIdeologyPaddyCultivation3")])
+
+[sub_resource type="Resource" id="TermIdeologyThreeFieldRotation0"]
 script = ExtResource("4_term")
-stat_key = &"country.climate.flood_loss_factor"
+stat_key = &"country.output.good.wheat_grain_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyThreeFieldRotation1"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.fertile_soil.managed_generation_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="TermIdeologyThreeFieldRotation2"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.fertile_soil.use_factor"
+operation = 2
+value = 0.94
+
+[sub_resource type="Resource" id="TermIdeologyThreeFieldRotation3"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.grassland.agriculture_factor"
 operation = 2
 value = 0.97
 
-[sub_resource type="Resource" id="DefIdeologyEverNormalGranary"]
+[sub_resource type="Resource" id="DefIdeologyThreeFieldRotation"]
 script = ExtResource("3_definition")
-key = &"ideology.ever_normal_granary"
-display_name = "常平仓"
-description = "丰年籴入、歉年粜出，以官仓平抑粮价与饮荒。"
+key = &"ideology.three_field_rotation"
+display_name = "三圃轮作"
+description = "把耕地分为三片轮换休耕，地力得以恢复，牧草地相应让出。"
 domain = 1
 stack_policy = 1
 default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyEverNormalGranary0"), SubResource("TermIdeologyEverNormalGranary1"), SubResource("TermIdeologyEverNormalGranary2")])
-
-[sub_resource type="Resource" id="TermIdeologyMilitaryFarming0"]
-script = ExtResource("4_term")
-stat_key = &"country.output.agriculture_factor"
-operation = 2
-value = 1.04
-
-[sub_resource type="Resource" id="TermIdeologyMilitaryFarming1"]
-script = ExtResource("4_term")
-stat_key = &"country.construction.time_factor"
-operation = 2
-value = 0.95
-
-[sub_resource type="Resource" id="TermIdeologyMilitaryFarming2"]
-script = ExtResource("4_term")
-stat_key = &"country.household.consumption_factor"
-operation = 2
-value = 1.02
-
-[sub_resource type="Resource" id="DefIdeologyMilitaryFarming"]
-script = ExtResource("3_definition")
-key = &"ideology.military_farming"
-display_name = "屯田"
-description = "编户屯垦，兵农合一，边地与荒地都能迅速开发。"
-domain = 1
-stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyMilitaryFarming0"), SubResource("TermIdeologyMilitaryFarming1"), SubResource("TermIdeologyMilitaryFarming2")])
-
-[sub_resource type="Resource" id="TermIdeologyVillageCompact0"]
-script = ExtResource("4_term")
-stat_key = &"country.output.agriculture_factor"
-operation = 2
-value = 1.05
-
-[sub_resource type="Resource" id="TermIdeologyVillageCompact1"]
-script = ExtResource("4_term")
-stat_key = &"country.research.society_efficiency"
-operation = 2
-value = 1.05
-
-[sub_resource type="Resource" id="TermIdeologyVillageCompact2"]
-script = ExtResource("4_term")
-stat_key = &"country.population.death_factor"
-operation = 2
-value = 0.97
-
-[sub_resource type="Resource" id="TermIdeologyVillageCompact3"]
-script = ExtResource("4_term")
-stat_key = &"country.ideology.point_gain_factor"
-operation = 2
-value = 1.05
-
-[sub_resource type="Resource" id="DefIdeologyVillageCompact"]
-script = ExtResource("3_definition")
-key = &"ideology.village_compact"
-display_name = "乡约自治"
-description = "以乡约、社仓与家族共治维系基层秩序，民心即是国本。"
-domain = 1
-stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyVillageCompact0"), SubResource("TermIdeologyVillageCompact1"), SubResource("TermIdeologyVillageCompact2"), SubResource("TermIdeologyVillageCompact3")])
+terms = Array[Resource]([SubResource("TermIdeologyThreeFieldRotation0"), SubResource("TermIdeologyThreeFieldRotation1"), SubResource("TermIdeologyThreeFieldRotation2"), SubResource("TermIdeologyThreeFieldRotation3")])
 
 [sub_resource type="Resource" id="TermIdeologyFreeExchange0"]
 script = ExtResource("4_term")
@@ -820,15 +1034,257 @@ stat_key = &"country.trade.speed_factor"
 operation = 2
 value = 1.04
 
+[sub_resource type="Resource" id="TermIdeologyFreeExchange2"]
+script = ExtResource("4_term")
+stat_key = &"country.household.consumption_factor"
+operation = 2
+value = 1.02
+
 [sub_resource type="Resource" id="DefIdeologyFreeExchange"]
 script = ExtResource("3_definition")
 key = &"ideology.free_exchange"
 display_name = "自由交换"
-description = "以契约、流通和分散决策鼓励资源重新配置。"
+description = "以契约、流通和分散决策鼓励资源重新配置，家庭消费随之抬头。"
 domain = 1
 stack_policy = 1
 default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyFreeExchange0"), SubResource("TermIdeologyFreeExchange1")])
+terms = Array[Resource]([SubResource("TermIdeologyFreeExchange0"), SubResource("TermIdeologyFreeExchange1"), SubResource("TermIdeologyFreeExchange2")])
+
+[sub_resource type="Resource" id="TermIdeologyScholarOffice0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.knowledge_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyScholarOffice1"]
+script = ExtResource("4_term")
+stat_key = &"country.research.science_efficiency"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologyScholarOffice2"]
+script = ExtResource("4_term")
+stat_key = &"country.production.input_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefIdeologyScholarOffice"]
+script = ExtResource("3_definition")
+key = &"ideology.scholar_office"
+display_name = "学识官署"
+description = "让记录、测量与专业知识成为公共决策的正式依据，行政耗费上升。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyScholarOffice0"), SubResource("TermIdeologyScholarOffice1"), SubResource("TermIdeologyScholarOffice2")])
+
+[sub_resource type="Resource" id="TermIdeologyStandardization0"]
+script = ExtResource("4_term")
+stat_key = &"country.production.input_factor"
+operation = 2
+value = 0.96
+
+[sub_resource type="Resource" id="TermIdeologyStandardization1"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 0.96
+
+[sub_resource type="Resource" id="TermIdeologyStandardization2"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.speed_factor"
+operation = 2
+value = 0.98
+
+[sub_resource type="Resource" id="DefIdeologyStandardization"]
+script = ExtResource("3_definition")
+key = &"ideology.standardization"
+display_name = "标准化"
+description = "统一度量、规格与零件，生产与建造都更省料，流通节奏却被规矩拖慢。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyStandardization0"), SubResource("TermIdeologyStandardization1"), SubResource("TermIdeologyStandardization2")])
+
+[sub_resource type="Resource" id="TermIdeologyHouseholdWeaving0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.cloth_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyHouseholdWeaving1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.plain.manufacturing_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologyHouseholdWeaving2"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.plain.agriculture_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologyHouseholdWeaving"]
+script = ExtResource("3_definition")
+key = &"ideology.household_weaving"
+display_name = "家内纺织"
+description = "农妇在农隙纺麻织布，家庭收支多了一条底线，麻田与粮田开始争地。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyHouseholdWeaving0"), SubResource("TermIdeologyHouseholdWeaving1"), SubResource("TermIdeologyHouseholdWeaving2")])
+
+[sub_resource type="Resource" id="TermIdeologyCoppiceRotation0"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.timber.managed_generation_factor"
+operation = 2
+value = 1.2
+
+[sub_resource type="Resource" id="TermIdeologyCoppiceRotation1"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.timber.use_factor"
+operation = 2
+value = 0.94
+
+[sub_resource type="Resource" id="TermIdeologyCoppiceRotation2"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.logs_factor"
+operation = 2
+value = 0.94
+
+[sub_resource type="Resource" id="DefIdeologyCoppiceRotation"]
+script = ExtResource("3_definition")
+key = &"ideology.coppice_rotation"
+display_name = "轮伐"
+description = "分区伐取、留桩待萌，林木再生率大涨，短期木材产量却要退一步。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyCoppiceRotation0"), SubResource("TermIdeologyCoppiceRotation1"), SubResource("TermIdeologyCoppiceRotation2")])
+
+[sub_resource type="Resource" id="TermIdeologyWaterWorks0"]
+script = ExtResource("4_term")
+stat_key = &"country.climate.flood_loss_factor"
+operation = 2
+value = 0.93
+
+[sub_resource type="Resource" id="TermIdeologyWaterWorks1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.floodplain.agriculture_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyWaterWorks2"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="DefIdeologyWaterWorks"]
+script = ExtResource("3_definition")
+key = &"ideology.water_works"
+display_name = "治水营田"
+description = "修堤疏渠、引水灌田，把洪水变成可用的水利，工役耗费不轻。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyWaterWorks0"), SubResource("TermIdeologyWaterWorks1"), SubResource("TermIdeologyWaterWorks2")])
+
+[sub_resource type="Resource" id="TermIdeologySeasonalCalendar0"]
+script = ExtResource("4_term")
+stat_key = &"country.climate.cold_stress_factor"
+operation = 2
+value = 0.94
+
+[sub_resource type="Resource" id="TermIdeologySeasonalCalendar1"]
+script = ExtResource("4_term")
+stat_key = &"country.climate.heat_stress_factor"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="TermIdeologySeasonalCalendar2"]
+script = ExtResource("4_term")
+stat_key = &"country.climate.profile.dryland_crop.drought_loss_factor"
+operation = 2
+value = 0.94
+
+[sub_resource type="Resource" id="TermIdeologySeasonalCalendar3"]
+script = ExtResource("4_term")
+stat_key = &"country.ideology.point_gain_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologySeasonalCalendar"]
+script = ExtResource("3_definition")
+key = &"ideology.seasonal_calendar"
+display_name = "寒暑历法"
+description = "以节气指导农时与役使，寒暑异常的危害大为减轻，思辨的锐气稍减。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologySeasonalCalendar0"), SubResource("TermIdeologySeasonalCalendar1"), SubResource("TermIdeologySeasonalCalendar2"), SubResource("TermIdeologySeasonalCalendar3")])
+
+[sub_resource type="Resource" id="TermIdeologyEverNormalGranary0"]
+script = ExtResource("4_term")
+stat_key = &"country.population.death_factor"
+operation = 2
+value = 0.96
+
+[sub_resource type="Resource" id="TermIdeologyEverNormalGranary1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.plain.agriculture_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologyEverNormalGranary2"]
+script = ExtResource("4_term")
+stat_key = &"country.climate.drought_loss_factor"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="TermIdeologyEverNormalGranary3"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologyEverNormalGranary"]
+script = ExtResource("3_definition")
+key = &"ideology.ever_normal_granary"
+display_name = "常平仓"
+description = "丰年籴入、歉年粜出，以官仓平抑粮价与饥荒，市面流通被官仓压住。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyEverNormalGranary0"), SubResource("TermIdeologyEverNormalGranary1"), SubResource("TermIdeologyEverNormalGranary2"), SubResource("TermIdeologyEverNormalGranary3")])
+
+[sub_resource type="Resource" id="TermIdeologySettleAndFarm0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.plain.agriculture_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologySettleAndFarm1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.steppe.agriculture_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologySettleAndFarm2"]
+script = ExtResource("4_term")
+stat_key = &"country.production.input_factor"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="DefIdeologySettleAndFarm"]
+script = ExtResource("3_definition")
+key = &"ideology.settle_and_farm"
+display_name = "屯垦"
+description = "编户屯垦，把荒原与边地一并开成田，投入的农具与口粮同样惊人。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologySettleAndFarm0"), SubResource("TermIdeologySettleAndFarm1"), SubResource("TermIdeologySettleAndFarm2")])
 
 [sub_resource type="Resource" id="TermIdeologyOpenPorts0"]
 script = ExtResource("4_term")
@@ -844,15 +1300,15 @@ value = 1.03
 
 [sub_resource type="Resource" id="TermIdeologyOpenPorts2"]
 script = ExtResource("4_term")
-stat_key = &"country.household.consumption_factor"
+stat_key = &"country.resource.timber.use_factor"
 operation = 2
-value = 1.02
+value = 1.03
 
 [sub_resource type="Resource" id="DefIdeologyOpenPorts"]
 script = ExtResource("3_definition")
 key = &"ideology.open_ports"
 display_name = "市舶开港"
-description = "设市舶司、开海口通商，货物周转加快，民间消费也随之抬头。"
+description = "设市舶司、开海口通商，货物周转加快，船料把林地消耗推高。"
 domain = 1
 stack_policy = 1
 default_duration_days = -1
@@ -890,7 +1346,7 @@ terms = Array[Resource]([SubResource("TermIdeologyGuildCharters0"), SubResource(
 script = ExtResource("4_term")
 stat_key = &"country.production.input_factor"
 operation = 2
-value = 0.96
+value = 0.95
 
 [sub_resource type="Resource" id="TermIdeologyDoubleEntry1"]
 script = ExtResource("4_term")
@@ -900,75 +1356,19 @@ value = 1.03
 
 [sub_resource type="Resource" id="TermIdeologyDoubleEntry2"]
 script = ExtResource("4_term")
-stat_key = &"country.economy_output_factor"
+stat_key = &"country.ideology.point_gain_factor"
 operation = 2
-value = 1.02
+value = 0.97
 
 [sub_resource type="Resource" id="DefIdeologyDoubleEntry"]
 script = ExtResource("3_definition")
 key = &"ideology.double_entry"
 display_name = "复式簿记"
-description = "借贷必相等，账目透明让工坊与商号都能精打细算。"
+description = "借贷必相等，账目透明让工坊与商号都能精打细算，算计压过了理想。"
 domain = 1
 stack_policy = 1
 default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyDoubleEntry0"), SubResource("TermIdeologyDoubleEntry1"), SubResource("TermIdeologyDoubleEntry2")])
-
-[sub_resource type="Resource" id="TermIdeologyOceanCompany0"]
-script = ExtResource("4_term")
-stat_key = &"country.trade.capacity_factor"
-operation = 2
-value = 1.07
-
-[sub_resource type="Resource" id="TermIdeologyOceanCompany1"]
-script = ExtResource("4_term")
-stat_key = &"country.trade.speed_factor"
-operation = 2
-value = 1.05
-
-[sub_resource type="Resource" id="TermIdeologyOceanCompany2"]
-script = ExtResource("4_term")
-stat_key = &"country.economy_output_factor"
-operation = 2
-value = 1.03
-
-[sub_resource type="Resource" id="TermIdeologyOceanCompany3"]
-script = ExtResource("4_term")
-stat_key = &"country.resource.use_factor"
-operation = 2
-value = 1.03
-
-[sub_resource type="Resource" id="DefIdeologyOceanCompany"]
-script = ExtResource("3_definition")
-key = &"ideology.ocean_company"
-display_name = "远洋公司"
-description = "以股份与特许组织远洋贸易，财富涌入也加速资源耗用。"
-domain = 1
-stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyOceanCompany0"), SubResource("TermIdeologyOceanCompany1"), SubResource("TermIdeologyOceanCompany2"), SubResource("TermIdeologyOceanCompany3")])
-
-[sub_resource type="Resource" id="TermIdeologyScholarOffice0"]
-script = ExtResource("4_term")
-stat_key = &"country.output.knowledge_factor"
-operation = 2
-value = 1.05
-
-[sub_resource type="Resource" id="TermIdeologyScholarOffice1"]
-script = ExtResource("4_term")
-stat_key = &"country.research.science_efficiency"
-operation = 2
-value = 1.04
-
-[sub_resource type="Resource" id="DefIdeologyScholarOffice"]
-script = ExtResource("3_definition")
-key = &"ideology.scholar_office"
-display_name = "学识官署"
-description = "让记录、测量与专业知识成为公共决策的正式依据。"
-domain = 1
-stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyScholarOffice0"), SubResource("TermIdeologyScholarOffice1")])
 
 [sub_resource type="Resource" id="TermIdeologyAcademyLectures0"]
 script = ExtResource("4_term")
@@ -988,43 +1388,27 @@ stat_key = &"country.ideology.point_gain_factor"
 operation = 2
 value = 1.06
 
+[sub_resource type="Resource" id="TermIdeologyAcademyLectures3"]
+script = ExtResource("4_term")
+stat_key = &"country.production.input_factor"
+operation = 2
+value = 1.02
+
 [sub_resource type="Resource" id="DefIdeologyAcademyLectures"]
 script = ExtResource("3_definition")
 key = &"ideology.academy_lectures"
 display_name = "书院讲学"
-description = "书院讲会，辞辩争鸣，民间对国家道路的理解更加深入。"
+description = "书院讲会、辞辩争鸣，民间对国家道路的理解更加深入，耗用于是增加。"
 domain = 1
 stack_policy = 1
 default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyAcademyLectures0"), SubResource("TermIdeologyAcademyLectures1"), SubResource("TermIdeologyAcademyLectures2")])
-
-[sub_resource type="Resource" id="TermIdeologyExperimentalMethod0"]
-script = ExtResource("4_term")
-stat_key = &"country.research.science_efficiency"
-operation = 2
-value = 1.06
-
-[sub_resource type="Resource" id="TermIdeologyExperimentalMethod1"]
-script = ExtResource("4_term")
-stat_key = &"country.research.engineering_efficiency"
-operation = 2
-value = 1.05
-
-[sub_resource type="Resource" id="DefIdeologyExperimentalMethod"]
-script = ExtResource("3_definition")
-key = &"ideology.experimental_method"
-display_name = "实验之法"
-description = "以可重复的实验代替权威，工程与自然研究同步大进。"
-domain = 1
-stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyExperimentalMethod0"), SubResource("TermIdeologyExperimentalMethod1")])
+terms = Array[Resource]([SubResource("TermIdeologyAcademyLectures0"), SubResource("TermIdeologyAcademyLectures1"), SubResource("TermIdeologyAcademyLectures2"), SubResource("TermIdeologyAcademyLectures3")])
 
 [sub_resource type="Resource" id="TermIdeologyCivilExamination0"]
 script = ExtResource("4_term")
 stat_key = &"country.research.cost_factor"
 operation = 2
-value = 0.96
+value = 0.95
 
 [sub_resource type="Resource" id="TermIdeologyCivilExamination1"]
 script = ExtResource("4_term")
@@ -1034,103 +1418,267 @@ value = 1.03
 
 [sub_resource type="Resource" id="TermIdeologyCivilExamination2"]
 script = ExtResource("4_term")
-stat_key = &"country.household.consumption_factor"
+stat_key = &"country.output.terrain.plain.manufacturing_factor"
 operation = 2
-value = 1.02
+value = 0.98
 
 [sub_resource type="Resource" id="DefIdeologyCivilExamination"]
 script = ExtResource("3_definition")
 key = &"ideology.civil_examination"
 display_name = "科举取士"
-description = "以考试选拔官员，学风大盛，家庭也更愿意为教育花钱。"
+description = "以考试选拔官员，学风大盛，最好的头脑都去读经，工技反受冷落。"
 domain = 1
 stack_policy = 1
 default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCivilExamination0"), SubResource("TermIdeologyCivilExamination1"), SubResource("TermIdeologyCivilExamination2")])
 
-[sub_resource type="Resource" id="TermIdeologyEncyclopedia0"]
+[sub_resource type="Resource" id="TermIdeologyIronSmelting0"]
 script = ExtResource("4_term")
-stat_key = &"country.research.institution_output_factor"
+stat_key = &"country.input.good.iron_ore_factor"
+operation = 2
+value = 0.9
+
+[sub_resource type="Resource" id="TermIdeologyIronSmelting1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.tools_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyIronSmelting2"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.iron_ore.use_factor"
 operation = 2
 value = 1.06
 
-[sub_resource type="Resource" id="TermIdeologyEncyclopedia1"]
+[sub_resource type="Resource" id="DefIdeologyIronSmelting"]
+script = ExtResource("3_definition")
+key = &"ideology.iron_smelting"
+display_name = "冶铁"
+description = "就地开炉鼓风，铁矿运距归零让铁料便宜，矿脉也消耗得飞快。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyIronSmelting0"), SubResource("TermIdeologyIronSmelting1"), SubResource("TermIdeologyIronSmelting2")])
+
+[sub_resource type="Resource" id="TermIdeologyPostalHorse0"]
 script = ExtResource("4_term")
-stat_key = &"country.output.knowledge_factor"
+stat_key = &"country.trade.speed_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyPostalHorse1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.horses_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyPostalHorse2"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.wheat_grain_factor"
+operation = 2
+value = 0.96
+
+[sub_resource type="Resource" id="DefIdeologyPostalHorse"]
+script = ExtResource("3_definition")
+key = &"ideology.postal_horse"
+display_name = "驿传"
+description = "沿官道设驿换马，政令与商旅同时提速，牧草挤掉了口粮田。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyPostalHorse0"), SubResource("TermIdeologyPostalHorse1"), SubResource("TermIdeologyPostalHorse2")])
+
+[sub_resource type="Resource" id="TermIdeologyMonsoonFarming0"]
+script = ExtResource("4_term")
+stat_key = &"country.climate.profile.paddy_crop.flood_loss_factor"
+operation = 2
+value = 0.88
+
+[sub_resource type="Resource" id="TermIdeologyMonsoonFarming1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.landform.delta.agriculture_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyMonsoonFarming2"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.desert.agriculture_factor"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="DefIdeologyMonsoonFarming"]
+script = ExtResource("3_definition")
+key = &"ideology.monsoon_farming"
+display_name = "汛期农法"
+description = "按季风起落安排浸种与排水，水田的洪灾损失被压到最低，旱地却学不来。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyMonsoonFarming0"), SubResource("TermIdeologyMonsoonFarming1"), SubResource("TermIdeologyMonsoonFarming2")])
+
+[sub_resource type="Resource" id="TermIdeologyRiverTransport0"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.speed_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyRiverTransport1"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologyRiverTransport2"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.floodplain.manufacturing_factor"
 operation = 2
 value = 1.05
 
-[sub_resource type="Resource" id="TermIdeologyEncyclopedia2"]
+[sub_resource type="Resource" id="TermIdeologyRiverTransport3"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="DefIdeologyRiverTransport"]
+script = ExtResource("3_definition")
+key = &"ideology.river_transport"
+display_name = "漕运"
+description = "沿河设闸、分段转运，粮货逆流而上，沿岸谷地的工坊随之兴旺，河工岁修是一笔长期账。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyRiverTransport0"), SubResource("TermIdeologyRiverTransport1"), SubResource("TermIdeologyRiverTransport2"), SubResource("TermIdeologyRiverTransport3")])
+
+[sub_resource type="Resource" id="TermIdeologyVillageCompact0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.agriculture_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyVillageCompact1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.plain.agriculture_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologyVillageCompact2"]
+script = ExtResource("4_term")
+stat_key = &"country.research.society_efficiency"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologyVillageCompact3"]
+script = ExtResource("4_term")
+stat_key = &"country.population.death_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="TermIdeologyVillageCompact4"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologyVillageCompact"]
+script = ExtResource("3_definition")
+key = &"ideology.village_compact"
+display_name = "乡约自治"
+description = "以乡约、社仓与家族共治维系基层秩序，民心即是国本，流通却少了弹性。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyVillageCompact0"), SubResource("TermIdeologyVillageCompact1"), SubResource("TermIdeologyVillageCompact2"), SubResource("TermIdeologyVillageCompact3"), SubResource("TermIdeologyVillageCompact4")])
+
+[sub_resource type="Resource" id="TermIdeologyLandReclamation0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.floodplain.agriculture_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyLandReclamation1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.oasis.agriculture_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyLandReclamation2"]
+script = ExtResource("4_term")
+stat_key = &"country.climate.flood_loss_factor"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="DefIdeologyLandReclamation"]
+script = ExtResource("3_definition")
+key = &"ideology.land_reclamation"
+display_name = "垦荒令"
+description = "招民开垦河漫与绿洲，田亩既增，水土也开始吃紧。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyLandReclamation0"), SubResource("TermIdeologyLandReclamation1"), SubResource("TermIdeologyLandReclamation2")])
+
+[sub_resource type="Resource" id="TermIdeologyGranaryRoad0"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.speed_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyGranaryRoad1"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="TermIdeologyGranaryRoad2"]
+script = ExtResource("4_term")
+stat_key = &"country.population.death_factor"
+operation = 2
+value = 0.98
+
+[sub_resource type="Resource" id="TermIdeologyGranaryRoad3"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.timber.use_factor"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="DefIdeologyGranaryRoad"]
+script = ExtResource("3_definition")
+key = &"ideology.granary_road"
+display_name = "漕运仓法"
+description = "以运河与官仓串起粮道，丰歉在千里之间互相调剂，船料取于山林。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyGranaryRoad0"), SubResource("TermIdeologyGranaryRoad1"), SubResource("TermIdeologyGranaryRoad2"), SubResource("TermIdeologyGranaryRoad3")])
+
+[sub_resource type="Resource" id="TermIdeologyImperialAcademy0"]
+script = ExtResource("4_term")
+stat_key = &"country.research.institution_output_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyImperialAcademy1"]
 script = ExtResource("4_term")
 stat_key = &"country.research.cost_factor"
 operation = 2
 value = 0.97
 
-[sub_resource type="Resource" id="TermIdeologyEncyclopedia3"]
+[sub_resource type="Resource" id="TermIdeologyImperialAcademy2"]
 script = ExtResource("4_term")
 stat_key = &"country.ideology.point_gain_factor"
 operation = 2
-value = 1.08
-
-[sub_resource type="Resource" id="DefIdeologyEncyclopedia"]
-script = ExtResource("3_definition")
-key = &"ideology.encyclopedia"
-display_name = "百科全书"
-description = "把天下之学编为一部可查可证的书，知识的流通从此不可逆。"
-domain = 1
-stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyEncyclopedia0"), SubResource("TermIdeologyEncyclopedia1"), SubResource("TermIdeologyEncyclopedia2"), SubResource("TermIdeologyEncyclopedia3")])
-
-[sub_resource type="Resource" id="TermIdeologyCivicMuster0"]
-script = ExtResource("4_term")
-stat_key = &"country.construction.time_factor"
-operation = 2
-value = 0.95
-
-[sub_resource type="Resource" id="TermIdeologyCivicMuster1"]
-script = ExtResource("4_term")
-stat_key = &"country.output.manufacturing_factor"
-operation = 2
-value = 1.03
-
-[sub_resource type="Resource" id="DefIdeologyCivicMuster"]
-script = ExtResource("3_definition")
-key = &"ideology.civic_muster"
-display_name = "公民动员"
-description = "以普遍义务和基层组织换取危机中的快速协同。"
-domain = 1
-stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyCivicMuster0"), SubResource("TermIdeologyCivicMuster1")])
-
-[sub_resource type="Resource" id="TermIdeologyCorveeLaw0"]
-script = ExtResource("4_term")
-stat_key = &"country.construction.cost_factor"
-operation = 2
-value = 0.94
-
-[sub_resource type="Resource" id="TermIdeologyCorveeLaw1"]
-script = ExtResource("4_term")
-stat_key = &"country.construction.time_factor"
-operation = 2
 value = 0.97
 
-[sub_resource type="Resource" id="TermIdeologyCorveeLaw2"]
-script = ExtResource("4_term")
-stat_key = &"country.population.death_factor"
-operation = 2
-value = 1.02
-
-[sub_resource type="Resource" id="DefIdeologyCorveeLaw"]
+[sub_resource type="Resource" id="DefIdeologyImperialAcademy"]
 script = ExtResource("3_definition")
-key = &"ideology.corvee_law"
-display_name = "劳役法"
-description = "以法定役期征发民力兴修工程，工程更省，民力却更疲。"
+key = &"ideology.imperial_academy"
+display_name = "太学"
+description = "国家设学养士，注疏与考据成为可积累的公共知识，正统压住异说。"
 domain = 1
 stack_policy = 1
 default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyCorveeLaw0"), SubResource("TermIdeologyCorveeLaw1"), SubResource("TermIdeologyCorveeLaw2")])
+terms = Array[Resource]([SubResource("TermIdeologyImperialAcademy0"), SubResource("TermIdeologyImperialAcademy1"), SubResource("TermIdeologyImperialAcademy2")])
 
 [sub_resource type="Resource" id="TermIdeologyPublicHygiene0"]
 script = ExtResource("4_term")
@@ -1140,287 +1688,25 @@ value = 0.94
 
 [sub_resource type="Resource" id="TermIdeologyPublicHygiene1"]
 script = ExtResource("4_term")
-stat_key = &"country.climate.heat_stress_factor"
+stat_key = &"country.climate.profile.dryland_crop.heat_stress_loss_factor"
 operation = 2
 value = 0.96
 
 [sub_resource type="Resource" id="TermIdeologyPublicHygiene2"]
 script = ExtResource("4_term")
-stat_key = &"country.climate.cold_stress_factor"
+stat_key = &"country.construction.cost_factor"
 operation = 2
-value = 0.97
+value = 1.03
 
 [sub_resource type="Resource" id="DefIdeologyPublicHygiene"]
 script = ExtResource("3_definition")
 key = &"ideology.public_hygiene"
 display_name = "公共卫生"
-description = "清渠、隔离与种痘，把健康变成可以组织的公共事务。"
+description = "清渠、隔离与种痘，把健康变成可以组织的公共事务，宅第造价随之上浮。"
 domain = 1
 stack_policy = 1
 default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyPublicHygiene0"), SubResource("TermIdeologyPublicHygiene1"), SubResource("TermIdeologyPublicHygiene2")])
-
-[sub_resource type="Resource" id="TermIdeologyNationalEducation0"]
-script = ExtResource("4_term")
-stat_key = &"country.research.society_efficiency"
-operation = 2
-value = 1.05
-
-[sub_resource type="Resource" id="TermIdeologyNationalEducation1"]
-script = ExtResource("4_term")
-stat_key = &"country.research.engineering_efficiency"
-operation = 2
-value = 1.03
-
-[sub_resource type="Resource" id="TermIdeologyNationalEducation2"]
-script = ExtResource("4_term")
-stat_key = &"country.household.consumption_factor"
-operation = 2
-value = 1.02
-
-[sub_resource type="Resource" id="TermIdeologyNationalEducation3"]
-script = ExtResource("4_term")
-stat_key = &"country.ideology.point_gain_factor"
-operation = 2
-value = 1.04
-
-[sub_resource type="Resource" id="DefIdeologyNationalEducation"]
-script = ExtResource("3_definition")
-key = &"ideology.national_education"
-display_name = "国民教育"
-description = "义务教育塑造统一语言与技艺，工程与社会研究受益。"
-domain = 1
-stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyNationalEducation0"), SubResource("TermIdeologyNationalEducation1"), SubResource("TermIdeologyNationalEducation2"), SubResource("TermIdeologyNationalEducation3")])
-
-[sub_resource type="Resource" id="TermIdeologyTotalMobilization0"]
-script = ExtResource("4_term")
-stat_key = &"country.output.manufacturing_factor"
-operation = 2
-value = 1.06
-
-[sub_resource type="Resource" id="TermIdeologyTotalMobilization1"]
-script = ExtResource("4_term")
-stat_key = &"country.construction.time_factor"
-operation = 2
-value = 0.93
-
-[sub_resource type="Resource" id="TermIdeologyTotalMobilization2"]
-script = ExtResource("4_term")
-stat_key = &"country.household.consumption_factor"
-operation = 2
-value = 0.96
-
-[sub_resource type="Resource" id="TermIdeologyTotalMobilization3"]
-script = ExtResource("4_term")
-stat_key = &"country.population.death_factor"
-operation = 2
-value = 1.02
-
-[sub_resource type="Resource" id="DefIdeologyTotalMobilization"]
-script = ExtResource("3_definition")
-key = &"ideology.total_mobilization"
-display_name = "总体动员"
-description = "把全部社会资源编入一张计划表，生产与建设都在口号声中提速。"
-domain = 1
-stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyTotalMobilization0"), SubResource("TermIdeologyTotalMobilization1"), SubResource("TermIdeologyTotalMobilization2"), SubResource("TermIdeologyTotalMobilization3")])
-
-[sub_resource type="Resource" id="TermIdeologyWorkshopSystem0"]
-script = ExtResource("4_term")
-stat_key = &"country.output.manufacturing_factor"
-operation = 2
-value = 1.06
-
-[sub_resource type="Resource" id="TermIdeologyWorkshopSystem1"]
-script = ExtResource("4_term")
-stat_key = &"country.production.input_factor"
-operation = 2
-value = 1.02
-
-[sub_resource type="Resource" id="DefIdeologyWorkshopSystem"]
-script = ExtResource("3_definition")
-key = &"ideology.workshop_system"
-display_name = "工场制度"
-description = "把分散的手工业集中到工场，产量上升，物料消耗也更大。"
-domain = 1
-stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyWorkshopSystem0"), SubResource("TermIdeologyWorkshopSystem1")])
-
-[sub_resource type="Resource" id="TermIdeologyStandardization0"]
-script = ExtResource("4_term")
-stat_key = &"country.production.input_factor"
-operation = 2
-value = 0.97
-
-[sub_resource type="Resource" id="TermIdeologyStandardization1"]
-script = ExtResource("4_term")
-stat_key = &"country.construction.cost_factor"
-operation = 2
-value = 0.97
-
-[sub_resource type="Resource" id="DefIdeologyStandardization"]
-script = ExtResource("3_definition")
-key = &"ideology.standardization"
-display_name = "标准化"
-description = "统一度量、规格与零件，生产与建造都更省料。"
-domain = 1
-stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyStandardization0"), SubResource("TermIdeologyStandardization1")])
-
-[sub_resource type="Resource" id="TermIdeologyMiningMonopoly0"]
-script = ExtResource("4_term")
-stat_key = &"country.output.extractive_factor"
-operation = 2
-value = 1.07
-
-[sub_resource type="Resource" id="TermIdeologyMiningMonopoly1"]
-script = ExtResource("4_term")
-stat_key = &"country.economy_output_factor"
-operation = 2
-value = 1.02
-
-[sub_resource type="Resource" id="TermIdeologyMiningMonopoly2"]
-script = ExtResource("4_term")
-stat_key = &"country.resource.use_factor"
-operation = 2
-value = 1.03
-
-[sub_resource type="Resource" id="DefIdeologyMiningMonopoly"]
-script = ExtResource("3_definition")
-key = &"ideology.mining_monopoly"
-display_name = "矿冶专营"
-description = "国家专营盐铁矿冶，采掘大兴，山林矿藏也消耗更快。"
-domain = 1
-stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyMiningMonopoly0"), SubResource("TermIdeologyMiningMonopoly1"), SubResource("TermIdeologyMiningMonopoly2")])
-
-[sub_resource type="Resource" id="TermIdeologySteamPower0"]
-script = ExtResource("4_term")
-stat_key = &"country.output.energy_factor"
-operation = 2
-value = 1.06
-
-[sub_resource type="Resource" id="TermIdeologySteamPower1"]
-script = ExtResource("4_term")
-stat_key = &"country.output.manufacturing_factor"
-operation = 2
-value = 1.03
-
-[sub_resource type="Resource" id="TermIdeologySteamPower2"]
-script = ExtResource("4_term")
-stat_key = &"country.resource.use_factor"
-operation = 2
-value = 1.02
-
-[sub_resource type="Resource" id="DefIdeologySteamPower"]
-script = ExtResource("3_definition")
-key = &"ideology.steam_power"
-display_name = "蒸汽动力"
-description = "以蒸汽机取代水力与畜力，能源与制造同时跃进。"
-domain = 1
-stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologySteamPower0"), SubResource("TermIdeologySteamPower1"), SubResource("TermIdeologySteamPower2")])
-
-[sub_resource type="Resource" id="TermIdeologyAssemblyLine0"]
-script = ExtResource("4_term")
-stat_key = &"country.output.manufacturing_factor"
-operation = 2
-value = 1.07
-
-[sub_resource type="Resource" id="TermIdeologyAssemblyLine1"]
-script = ExtResource("4_term")
-stat_key = &"country.construction.time_factor"
-operation = 2
-value = 0.95
-
-[sub_resource type="Resource" id="TermIdeologyAssemblyLine2"]
-script = ExtResource("4_term")
-stat_key = &"country.production.input_factor"
-operation = 2
-value = 0.97
-
-[sub_resource type="Resource" id="DefIdeologyAssemblyLine"]
-script = ExtResource("3_definition")
-key = &"ideology.assembly_line"
-display_name = "流水线"
-description = "以传送带与工序分解组织大规模生产，工业节奏从此改写。"
-domain = 1
-stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyAssemblyLine0"), SubResource("TermIdeologyAssemblyLine1"), SubResource("TermIdeologyAssemblyLine2")])
-
-[sub_resource type="Resource" id="TermIdeologyForestMarshBan0"]
-script = ExtResource("4_term")
-stat_key = &"country.resource.use_factor"
-operation = 2
-value = 0.95
-
-[sub_resource type="Resource" id="TermIdeologyForestMarshBan1"]
-script = ExtResource("4_term")
-stat_key = &"country.output.extractive_factor"
-operation = 2
-value = 0.98
-
-[sub_resource type="Resource" id="DefIdeologyForestMarshBan"]
-script = ExtResource("3_definition")
-key = &"ideology.forest_marsh_ban"
-display_name = "林泽禁令"
-description = "按时入山林、禁竭泽而渔，资源得以休养，采掘稍受限制。"
-domain = 1
-stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyForestMarshBan0"), SubResource("TermIdeologyForestMarshBan1")])
-
-[sub_resource type="Resource" id="TermIdeologyWaterWorks0"]
-script = ExtResource("4_term")
-stat_key = &"country.climate.flood_loss_factor"
-operation = 2
-value = 0.94
-
-[sub_resource type="Resource" id="TermIdeologyWaterWorks1"]
-script = ExtResource("4_term")
-stat_key = &"country.output.agriculture_factor"
-operation = 2
-value = 1.03
-
-[sub_resource type="Resource" id="DefIdeologyWaterWorks"]
-script = ExtResource("3_definition")
-key = &"ideology.water_works"
-display_name = "治水营田"
-description = "修堤疏渠、引水灌田，把洪水变成可用的水利。"
-domain = 1
-stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyWaterWorks0"), SubResource("TermIdeologyWaterWorks1")])
-
-[sub_resource type="Resource" id="TermIdeologySeasonalCalendar0"]
-script = ExtResource("4_term")
-stat_key = &"country.climate.cold_stress_factor"
-operation = 2
-value = 0.94
-
-[sub_resource type="Resource" id="TermIdeologySeasonalCalendar1"]
-script = ExtResource("4_term")
-stat_key = &"country.climate.heat_stress_factor"
-operation = 2
-value = 0.95
-
-[sub_resource type="Resource" id="DefIdeologySeasonalCalendar"]
-script = ExtResource("3_definition")
-key = &"ideology.seasonal_calendar"
-display_name = "寒暑历法"
-description = "以节气指导农时与役使，寒暑异常的危害大大减轻。"
-domain = 1
-stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologySeasonalCalendar0"), SubResource("TermIdeologySeasonalCalendar1")])
 
 [sub_resource type="Resource" id="TermIdeologyHeavenHuman0"]
 script = ExtResource("4_term")
@@ -1440,15 +1726,823 @@ stat_key = &"country.research.agriculture_efficiency"
 operation = 2
 value = 1.05
 
+[sub_resource type="Resource" id="TermIdeologyHeavenHuman3"]
+script = ExtResource("4_term")
+stat_key = &"country.research.science_efficiency"
+operation = 2
+value = 0.97
+
 [sub_resource type="Resource" id="DefIdeologyHeavenHuman"]
 script = ExtResource("3_definition")
 key = &"ideology.heaven_human"
 display_name = "天人相参"
-description = "观天察地以定政令，对旱涝与农业规律的理解更加系统。"
+description = "观天察地以定政令，对旱涝与农业规律的理解更加系统，实测精神被压制。"
 domain = 1
 stack_policy = 1
 default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyHeavenHuman0"), SubResource("TermIdeologyHeavenHuman1"), SubResource("TermIdeologyHeavenHuman2")])
+terms = Array[Resource]([SubResource("TermIdeologyHeavenHuman0"), SubResource("TermIdeologyHeavenHuman1"), SubResource("TermIdeologyHeavenHuman2"), SubResource("TermIdeologyHeavenHuman3")])
+
+[sub_resource type="Resource" id="TermIdeologySaltMonopoly0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.salt_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="TermIdeologySaltMonopoly1"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.salt.use_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologySaltMonopoly2"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologySaltMonopoly"]
+script = ExtResource("3_definition")
+key = &"ideology.salt_monopoly"
+display_name = "盐铁专营"
+description = "国家专营盐池与铁冶，盐利充盈国库，私商与盐脉同受挤压。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologySaltMonopoly0"), SubResource("TermIdeologySaltMonopoly1"), SubResource("TermIdeologySaltMonopoly2")])
+
+[sub_resource type="Resource" id="TermIdeologySericulture0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.cloth_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologySericulture1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.fine_clothing_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologySericulture2"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.plain.agriculture_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologySericulture"]
+script = ExtResource("3_definition")
+key = &"ideology.sericulture"
+display_name = "蚕桑"
+description = "植桑养蚕、缫丝织锦，绢帛成了硬通货，桑田与粮田争地。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologySericulture0"), SubResource("TermIdeologySericulture1"), SubResource("TermIdeologySericulture2")])
+
+[sub_resource type="Resource" id="TermIdeologyOceanCompany0"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 1.07
+
+[sub_resource type="Resource" id="TermIdeologyOceanCompany1"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.speed_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyOceanCompany2"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.timber.use_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="DefIdeologyOceanCompany"]
+script = ExtResource("3_definition")
+key = &"ideology.ocean_company"
+display_name = "远洋公司"
+description = "以股份与特许组织远洋贸易，财富涌入也加速了船料与木林的消耗。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyOceanCompany0"), SubResource("TermIdeologyOceanCompany1"), SubResource("TermIdeologyOceanCompany2")])
+
+[sub_resource type="Resource" id="TermIdeologyCharteredRoute0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.spices_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyCharteredRoute1"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologyCharteredRoute2"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.salt_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologyCharteredRoute"]
+script = ExtResource("3_definition")
+key = &"ideology.chartered_route"
+display_name = "特许航路"
+description = "把航线、港口与补给点连成一张特许网络，香料与糖源源而来，盐业受挤。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyCharteredRoute0"), SubResource("TermIdeologyCharteredRoute1"), SubResource("TermIdeologyCharteredRoute2")])
+
+[sub_resource type="Resource" id="TermIdeologyCartography0"]
+script = ExtResource("4_term")
+stat_key = &"country.research.science_efficiency"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologyCartography1"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.speed_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyCartography2"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefIdeologyCartography"]
+script = ExtResource("3_definition")
+key = &"ideology.cartography"
+display_name = "舆图测绘"
+description = "以经纬、罗盘与实测修订海图，远航代价下降，测绘本身也是开销。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyCartography0"), SubResource("TermIdeologyCartography1"), SubResource("TermIdeologyCartography2")])
+
+[sub_resource type="Resource" id="TermIdeologyColonialPlantation0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.jungle.agriculture_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="TermIdeologyColonialPlantation1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.cotton_fiber_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyColonialPlantation2"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.fertile_soil.use_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyColonialPlantation3"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.fertile_soil.managed_generation_factor"
+operation = 2
+value = 0.92
+
+[sub_resource type="Resource" id="DefIdeologyColonialPlantation"]
+script = ExtResource("3_definition")
+key = &"ideology.colonial_plantation"
+display_name = "殖民种植园"
+description = "以单一作物大规模开垦，产量惊人，地力与林地迅速被抽干。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyColonialPlantation0"), SubResource("TermIdeologyColonialPlantation1"), SubResource("TermIdeologyColonialPlantation2"), SubResource("TermIdeologyColonialPlantation3")])
+
+[sub_resource type="Resource" id="TermIdeologySilverFlow0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.silver_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologySilverFlow1"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.silver_ore.use_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="DefIdeologySilverFlow"]
+script = ExtResource("3_definition")
+key = &"ideology.silver_flow"
+display_name = "白银流入"
+description = "海外白银持续涌入，物价与交易规模一起被推高，银矿被疯狂开采。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologySilverFlow0"), SubResource("TermIdeologySilverFlow1")])
+
+[sub_resource type="Resource" id="TermIdeologyNaturalHistory0"]
+script = ExtResource("4_term")
+stat_key = &"country.research.science_efficiency"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyNaturalHistory1"]
+script = ExtResource("4_term")
+stat_key = &"country.research.agriculture_efficiency"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologyNaturalHistory2"]
+script = ExtResource("4_term")
+stat_key = &"country.output.knowledge_factor"
+operation = 2
+value = 0.98
+
+[sub_resource type="Resource" id="DefIdeologyNaturalHistory"]
+script = ExtResource("3_definition")
+key = &"ideology.natural_history"
+display_name = "博物志"
+description = "标本、分类与田野记录并行，农业与科学的边界开始相接，纯粹思辨退场。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyNaturalHistory0"), SubResource("TermIdeologyNaturalHistory1"), SubResource("TermIdeologyNaturalHistory2")])
+
+[sub_resource type="Resource" id="TermIdeologyManufactoryRegulation0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.metal_housewares_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyManufactoryRegulation1"]
+script = ExtResource("4_term")
+stat_key = &"country.production.input_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="TermIdeologyManufactoryRegulation2"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.speed_factor"
+operation = 2
+value = 0.98
+
+[sub_resource type="Resource" id="DefIdeologyManufactoryRegulation"]
+script = ExtResource("3_definition")
+key = &"ideology.manufactory_regulation"
+display_name = "工场规程"
+description = "以工序章程约束手工工场，用料被重新安排，周转反被规矩拖慢。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyManufactoryRegulation0"), SubResource("TermIdeologyManufactoryRegulation1"), SubResource("TermIdeologyManufactoryRegulation2")])
+
+[sub_resource type="Resource" id="TermIdeologyMaritimeInsurance0"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyMaritimeInsurance1"]
+script = ExtResource("4_term")
+stat_key = &"country.household.consumption_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefIdeologyMaritimeInsurance"]
+script = ExtResource("3_definition")
+key = &"ideology.maritime_insurance"
+display_name = "海事保险"
+description = "分摊海难风险，远洋船队敢走更远的航线，保费最终摊到每一户的消费上。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyMaritimeInsurance0"), SubResource("TermIdeologyMaritimeInsurance1")])
+
+[sub_resource type="Resource" id="TermIdeologyExperimentalMethod0"]
+script = ExtResource("4_term")
+stat_key = &"country.research.science_efficiency"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyExperimentalMethod1"]
+script = ExtResource("4_term")
+stat_key = &"country.research.engineering_efficiency"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyExperimentalMethod2"]
+script = ExtResource("4_term")
+stat_key = &"country.research.society_efficiency"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologyExperimentalMethod"]
+script = ExtResource("3_definition")
+key = &"ideology.experimental_method"
+display_name = "实验之法"
+description = "以可重复的实验代替权威，工程与自然研究同步大进，经世之学受冷落。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyExperimentalMethod0"), SubResource("TermIdeologyExperimentalMethod1"), SubResource("TermIdeologyExperimentalMethod2")])
+
+[sub_resource type="Resource" id="TermIdeologyEncyclopedia0"]
+script = ExtResource("4_term")
+stat_key = &"country.research.institution_output_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyEncyclopedia1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.knowledge_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyEncyclopedia2"]
+script = ExtResource("4_term")
+stat_key = &"country.ideology.point_gain_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyEncyclopedia3"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="DefIdeologyEncyclopedia"]
+script = ExtResource("3_definition")
+key = &"ideology.encyclopedia"
+display_name = "百科全书"
+description = "把天下之学编为一部可查可证的书，知识流通不可逆，编纂耗费巨大。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyEncyclopedia0"), SubResource("TermIdeologyEncyclopedia1"), SubResource("TermIdeologyEncyclopedia2"), SubResource("TermIdeologyEncyclopedia3")])
+
+[sub_resource type="Resource" id="TermIdeologyNationalEducation0"]
+script = ExtResource("4_term")
+stat_key = &"country.research.society_efficiency"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyNationalEducation1"]
+script = ExtResource("4_term")
+stat_key = &"country.research.engineering_efficiency"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="TermIdeologyNationalEducation2"]
+script = ExtResource("4_term")
+stat_key = &"country.ideology.point_gain_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologyNationalEducation3"]
+script = ExtResource("4_term")
+stat_key = &"country.household.consumption_factor"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="DefIdeologyNationalEducation"]
+script = ExtResource("3_definition")
+key = &"ideology.national_education"
+display_name = "国民教育"
+description = "义务教育塑造统一语言与技艺，研究与理念同时受益，家计负担上升。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyNationalEducation0"), SubResource("TermIdeologyNationalEducation1"), SubResource("TermIdeologyNationalEducation2"), SubResource("TermIdeologyNationalEducation3")])
+
+[sub_resource type="Resource" id="TermIdeologyAgrarianReform0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.wheat_grain_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyAgrarianReform1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.plain.agriculture_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyAgrarianReform2"]
+script = ExtResource("4_term")
+stat_key = &"country.research.society_efficiency"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologyAgrarianReform"]
+script = ExtResource("3_definition")
+key = &"ideology.agrarian_reform"
+display_name = "农政改革"
+description = "清丈田亩、整顿租佃，粮产与地权都更清楚，旧有乡约秩序被削弱。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyAgrarianReform0"), SubResource("TermIdeologyAgrarianReform1"), SubResource("TermIdeologyAgrarianReform2")])
+
+[sub_resource type="Resource" id="TermIdeologyCoalBasin0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.coal_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="TermIdeologyCoalBasin1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.hill.extractive_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologyCoalBasin2"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.coal.use_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="DefIdeologyCoalBasin"]
+script = ExtResource("3_definition")
+key = &"ideology.coal_basin"
+display_name = "煤田开发"
+description = "沿煤层开凿矿井与洗煤厂，能源充裕而矿脉消耗极快。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyCoalBasin0"), SubResource("TermIdeologyCoalBasin1"), SubResource("TermIdeologyCoalBasin2")])
+
+[sub_resource type="Resource" id="TermIdeologyCottonGin0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.cotton_fiber_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="TermIdeologyCottonGin1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.plain.manufacturing_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologyCottonGin2"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.plain.agriculture_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologyCottonGin"]
+script = ExtResource("3_definition")
+key = &"ideology.cotton_gin"
+display_name = "轧棉"
+description = "以机械脱籽代替手工，棉花纤维的可用量大增，棉田挤占了粮田。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyCottonGin0"), SubResource("TermIdeologyCottonGin1"), SubResource("TermIdeologyCottonGin2")])
+
+[sub_resource type="Resource" id="TermIdeologyEnclosure0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.grassland.agriculture_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyEnclosure1"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.pasture.managed_generation_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="TermIdeologyEnclosure2"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.plain.agriculture_factor"
+operation = 2
+value = 0.96
+
+[sub_resource type="Resource" id="TermIdeologyEnclosure3"]
+script = ExtResource("4_term")
+stat_key = &"country.research.society_efficiency"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologyEnclosure"]
+script = ExtResource("3_definition")
+key = &"ideology.enclosure"
+display_name = "圈地"
+description = "以篱界并小块为牧场，畜产与牧草再生大增，小农与谷物让位。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyEnclosure0"), SubResource("TermIdeologyEnclosure1"), SubResource("TermIdeologyEnclosure2"), SubResource("TermIdeologyEnclosure3")])
+
+[sub_resource type="Resource" id="TermIdeologyLearnedSociety0"]
+script = ExtResource("4_term")
+stat_key = &"country.research.institution_output_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyLearnedSociety1"]
+script = ExtResource("4_term")
+stat_key = &"country.ideology.point_gain_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyLearnedSociety2"]
+script = ExtResource("4_term")
+stat_key = &"country.production.input_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefIdeologyLearnedSociety"]
+script = ExtResource("3_definition")
+key = &"ideology.learned_society"
+display_name = "学会"
+description = "以通信、期刊与同行评议组织学问，研究效率上升，会务与出版耗费不轻。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyLearnedSociety0"), SubResource("TermIdeologyLearnedSociety1"), SubResource("TermIdeologyLearnedSociety2")])
+
+[sub_resource type="Resource" id="TermIdeologySteamPower0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.energy_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologySteamPower1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.manufacturing_factor"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="TermIdeologySteamPower2"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.coal.use_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefIdeologySteamPower"]
+script = ExtResource("3_definition")
+key = &"ideology.steam_power"
+display_name = "蒸汽动力"
+description = "以蒸汽机取代水力与畜力，能源与制造同时跃进，煤耗随之暴涨。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologySteamPower0"), SubResource("TermIdeologySteamPower1"), SubResource("TermIdeologySteamPower2")])
+
+[sub_resource type="Resource" id="TermIdeologyRailwayNetwork0"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.speed_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyRailwayNetwork1"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologyRailwayNetwork2"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.plain.manufacturing_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyRailwayNetwork3"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="DefIdeologyRailwayNetwork"]
+script = ExtResource("3_definition")
+key = &"ideology.railway_network"
+display_name = "铁路网"
+description = "钢轨把内陆与港口缝在一起，货运速度从此改换量级，平原沿线的工坊先被点亮，路基造价高昂。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyRailwayNetwork0"), SubResource("TermIdeologyRailwayNetwork1"), SubResource("TermIdeologyRailwayNetwork2"), SubResource("TermIdeologyRailwayNetwork3")])
+
+[sub_resource type="Resource" id="TermIdeologyUrbanSanitation0"]
+script = ExtResource("4_term")
+stat_key = &"country.population.death_factor"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="TermIdeologyUrbanSanitation1"]
+script = ExtResource("4_term")
+stat_key = &"country.climate.profile.dryland_crop.flood_loss_factor"
+operation = 2
+value = 0.96
+
+[sub_resource type="Resource" id="TermIdeologyUrbanSanitation2"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="DefIdeologyUrbanSanitation"]
+script = ExtResource("3_definition")
+key = &"ideology.urban_sanitation"
+display_name = "城市卫生"
+description = "下水道、自来水与皂厂让拥挤的城市不再自我毒害，管网投资巨大。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyUrbanSanitation0"), SubResource("TermIdeologyUrbanSanitation1"), SubResource("TermIdeologyUrbanSanitation2")])
+
+[sub_resource type="Resource" id="TermIdeologySteamShipping0"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologySteamShipping1"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.speed_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologySteamShipping2"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.coal.use_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="DefIdeologySteamShipping"]
+script = ExtResource("3_definition")
+key = &"ideology.steam_shipping"
+display_name = "汽船航运"
+description = "定期汽船班轮取代风帆，贸易容量与速度同步上升，锅炉张着嘴烧煤。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologySteamShipping0"), SubResource("TermIdeologySteamShipping1"), SubResource("TermIdeologySteamShipping2")])
+
+[sub_resource type="Resource" id="TermIdeologyLabourLegislation0"]
+script = ExtResource("4_term")
+stat_key = &"country.tax.income.industrial_worker.rate_bp"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="TermIdeologyLabourLegislation1"]
+script = ExtResource("4_term")
+stat_key = &"country.household.consumption_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="TermIdeologyLabourLegislation2"]
+script = ExtResource("4_term")
+stat_key = &"country.production.input_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefIdeologyLabourLegislation"]
+script = ExtResource("3_definition")
+key = &"ideology.labour_legislation"
+display_name = "劳动立法"
+description = "限定工时、承认工会，工人税负与生活压力一并减轻，用工成本上升。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyLabourLegislation0"), SubResource("TermIdeologyLabourLegislation1"), SubResource("TermIdeologyLabourLegislation2")])
+
+[sub_resource type="Resource" id="TermIdeologyFreeTrade0"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 1.07
+
+[sub_resource type="Resource" id="TermIdeologyFreeTrade1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.plain.manufacturing_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologyFreeTrade"]
+script = ExtResource("3_definition")
+key = &"ideology.free_trade"
+display_name = "自由贸易"
+description = "撤除关税壁垒，贸易容量大涨，本国制造在进口货面前没有遮拦。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyFreeTrade0"), SubResource("TermIdeologyFreeTrade1")])
+
+[sub_resource type="Resource" id="TermIdeologyAgriculturalChemistry0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.plain.agriculture_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyAgriculturalChemistry1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.fertilizer_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyAgriculturalChemistry2"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.phosphate_rock.use_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyAgriculturalChemistry3"]
+script = ExtResource("4_term")
+stat_key = &"country.climate.flood_loss_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefIdeologyAgriculturalChemistry"]
+script = ExtResource("3_definition")
+key = &"ideology.agricultural_chemistry"
+display_name = "农业化学"
+description = "以磷矿与硝酸盐造肥，旱地单产大涨，矿源与水体同时承压。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyAgriculturalChemistry0"), SubResource("TermIdeologyAgriculturalChemistry1"), SubResource("TermIdeologyAgriculturalChemistry2"), SubResource("TermIdeologyAgriculturalChemistry3")])
+
+[sub_resource type="Resource" id="TermIdeologyTelegraph0"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.speed_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyTelegraph1"]
+script = ExtResource("4_term")
+stat_key = &"country.research.society_efficiency"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="TermIdeologyTelegraph2"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefIdeologyTelegraph"]
+script = ExtResource("3_definition")
+key = &"ideology.telegraph"
+display_name = "电报"
+description = "以电线传递消息，商情与政令同时提速，线路维护是一笔常年开销。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyTelegraph0"), SubResource("TermIdeologyTelegraph1"), SubResource("TermIdeologyTelegraph2")])
+
+[sub_resource type="Resource" id="TermIdeologyAssemblyLine0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.manufacturing_factor"
+operation = 2
+value = 1.07
+
+[sub_resource type="Resource" id="TermIdeologyAssemblyLine1"]
+script = ExtResource("4_term")
+stat_key = &"country.production.input_factor"
+operation = 2
+value = 0.96
+
+[sub_resource type="Resource" id="TermIdeologyAssemblyLine2"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.use_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="DefIdeologyAssemblyLine"]
+script = ExtResource("3_definition")
+key = &"ideology.assembly_line"
+display_name = "流水线"
+description = "以传送带与工序分解组织大规模生产，物料极省而原料吞吐陡增。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyAssemblyLine0"), SubResource("TermIdeologyAssemblyLine1"), SubResource("TermIdeologyAssemblyLine2")])
+
+[sub_resource type="Resource" id="TermIdeologyElectrification0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.electricity_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="TermIdeologyElectrification1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.energy_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyElectrification2"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.coal.use_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefIdeologyElectrification"]
+script = ExtResource("3_definition")
+key = &"ideology.electrification"
+display_name = "电气化"
+description = "以电网覆盖城乡，动力可以远距离输送到每一台机器，发电仍靠烧煤。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyElectrification0"), SubResource("TermIdeologyElectrification1"), SubResource("TermIdeologyElectrification2")])
 
 [sub_resource type="Resource" id="TermIdeologyEcologicalBalance0"]
 script = ExtResource("4_term")
@@ -1464,157 +2558,903 @@ value = 0.97
 
 [sub_resource type="Resource" id="TermIdeologyEcologicalBalance2"]
 script = ExtResource("4_term")
-stat_key = &"country.output.energy_factor"
+stat_key = &"country.output.manufacturing_factor"
 operation = 2
-value = 1.03
-
-[sub_resource type="Resource" id="TermIdeologyEcologicalBalance3"]
-script = ExtResource("4_term")
-stat_key = &"country.climate.drought_loss_factor"
-operation = 2
-value = 0.96
+value = 0.97
 
 [sub_resource type="Resource" id="DefIdeologyEcologicalBalance"]
 script = ExtResource("3_definition")
 key = &"ideology.ecological_balance"
 display_name = "生态均衡"
-description = "以循环与修复约束工业增长，资源、人口与能源得到长期平衡。"
+description = "以循环与修复约束工业增长，资源与人口得到长期平衡，产能让步。"
 domain = 1
 stack_policy = 1
 default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyEcologicalBalance0"), SubResource("TermIdeologyEcologicalBalance1"), SubResource("TermIdeologyEcologicalBalance2"), SubResource("TermIdeologyEcologicalBalance3")])
+terms = Array[Resource]([SubResource("TermIdeologyEcologicalBalance0"), SubResource("TermIdeologyEcologicalBalance1"), SubResource("TermIdeologyEcologicalBalance2")])
 
-[sub_resource type="Resource" id="TermIdeologySynergyPlannedGranaries0"]
+[sub_resource type="Resource" id="TermIdeologyMassMedia0"]
 script = ExtResource("4_term")
-stat_key = &"country.climate.drought_loss_factor"
+stat_key = &"country.research.society_efficiency"
 operation = 2
-value = 0.95
+value = 1.05
 
-[sub_resource type="Resource" id="TermIdeologySynergyPlannedGranaries1"]
+[sub_resource type="Resource" id="TermIdeologyMassMedia1"]
 script = ExtResource("4_term")
-stat_key = &"country.output.agriculture_factor"
+stat_key = &"country.ideology.point_gain_factor"
 operation = 2
-value = 1.03
+value = 1.04
 
-[sub_resource type="Resource" id="DefIdeologySynergyPlannedGranaries"]
+[sub_resource type="Resource" id="TermIdeologyMassMedia2"]
+script = ExtResource("4_term")
+stat_key = &"country.output.knowledge_factor"
+operation = 2
+value = 0.98
+
+[sub_resource type="Resource" id="DefIdeologyMassMedia"]
 script = ExtResource("3_definition")
-key = &"ideology.synergy.planned_granaries"
-display_name = "计划仓廩"
-description = "计划仓廩联动修正。"
+key = &"ideology.mass_media"
+display_name = "大众传媒"
+description = "报纸、广播与电影把同一套叙事送进每一个家庭，深度学问被稀释。"
 domain = 1
 stack_policy = 1
 default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologySynergyPlannedGranaries0"), SubResource("TermIdeologySynergyPlannedGranaries1")])
+terms = Array[Resource]([SubResource("TermIdeologyMassMedia0"), SubResource("TermIdeologyMassMedia1"), SubResource("TermIdeologyMassMedia2")])
 
-[sub_resource type="Resource" id="TermIdeologySynergyCharteredFrontier0"]
+[sub_resource type="Resource" id="TermIdeologyChemicalIndustry0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.industrial_chemicals_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyChemicalIndustry1"]
+script = ExtResource("4_term")
+stat_key = &"country.input.good.salt_factor"
+operation = 2
+value = 0.94
+
+[sub_resource type="Resource" id="TermIdeologyChemicalIndustry2"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.salt.use_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="DefIdeologyChemicalIndustry"]
+script = ExtResource("3_definition")
+key = &"ideology.chemical_industry"
+display_name = "化学工业"
+description = "以电解与合成改写原料来源，盐卤变成化工之母，副产物污染水土。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyChemicalIndustry0"), SubResource("TermIdeologyChemicalIndustry1"), SubResource("TermIdeologyChemicalIndustry2")])
+
+[sub_resource type="Resource" id="TermIdeologyHydroelectric0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.energy_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyHydroelectric1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.landform.rift_valley.energy_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyHydroelectric2"]
+script = ExtResource("4_term")
+stat_key = &"country.climate.flood_loss_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefIdeologyHydroelectric"]
+script = ExtResource("3_definition")
+key = &"ideology.hydroelectric"
+display_name = "水电"
+description = "筑坝蓄水发电，谷地能源充沛，坝下平原的洪水风险反而上升。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyHydroelectric0"), SubResource("TermIdeologyHydroelectric1"), SubResource("TermIdeologyHydroelectric2")])
+
+[sub_resource type="Resource" id="TermIdeologyAntitrust0"]
 script = ExtResource("4_term")
 stat_key = &"country.trade.capacity_factor"
 operation = 2
 value = 1.04
 
-[sub_resource type="Resource" id="TermIdeologySynergyCharteredFrontier1"]
+[sub_resource type="Resource" id="TermIdeologyAntitrust1"]
 script = ExtResource("4_term")
-stat_key = &"country.construction.time_factor"
+stat_key = &"country.household.consumption_factor"
 operation = 2
-value = 0.96
+value = 0.98
 
-[sub_resource type="Resource" id="DefIdeologySynergyCharteredFrontier"]
+[sub_resource type="Resource" id="TermIdeologyAntitrust2"]
+script = ExtResource("4_term")
+stat_key = &"country.output.manufacturing_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologyAntitrust"]
 script = ExtResource("3_definition")
-key = &"ideology.synergy.chartered_frontier"
-display_name = "特许开拓"
-description = "特许开拓联动修正。"
+key = &"ideology.antitrust"
+display_name = "反垄断"
+description = "拆分托拉斯、恢复竞争，物价与流通受益，规模效率被牺牲。"
 domain = 1
 stack_policy = 1
 default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologySynergyCharteredFrontier0"), SubResource("TermIdeologySynergyCharteredFrontier1")])
+terms = Array[Resource]([SubResource("TermIdeologyAntitrust0"), SubResource("TermIdeologyAntitrust1"), SubResource("TermIdeologyAntitrust2")])
 
-[sub_resource type="Resource" id="TermIdeologySynergyMaritimeLedger0"]
+[sub_resource type="Resource" id="TermIdeologyNuclearPower0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.energy_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyNuclearPower1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.electricity_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyNuclearPower2"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.rare_earth.use_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="DefIdeologyNuclearPower"]
+script = ExtResource("3_definition")
+key = &"ideology.nuclear_power"
+display_name = "核电计划"
+description = "以核裂变集中供能，能源产出跃升，稀有矿料成为长期负担。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyNuclearPower0"), SubResource("TermIdeologyNuclearPower1"), SubResource("TermIdeologyNuclearPower2")])
+
+[sub_resource type="Resource" id="TermIdeologyAntibiotics0"]
+script = ExtResource("4_term")
+stat_key = &"country.population.death_factor"
+operation = 2
+value = 0.92
+
+[sub_resource type="Resource" id="TermIdeologyAntibiotics1"]
+script = ExtResource("4_term")
+stat_key = &"country.production.input_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefIdeologyAntibiotics"]
+script = ExtResource("3_definition")
+key = &"ideology.antibiotics"
+display_name = "抗生素"
+description = "感染不再是绝症，人口的死亡水平被永久压低，医疗投入随之常态化。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyAntibiotics0"), SubResource("TermIdeologyAntibiotics1")])
+
+[sub_resource type="Resource" id="TermIdeologyMotorization0"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.speed_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyMotorization1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.automobiles_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyMotorization2"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.oil.use_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="DefIdeologyMotorization"]
+script = ExtResource("3_definition")
+key = &"ideology.motorization"
+display_name = "汽车社会"
+description = "公路与私家车重构了城市与市场的距离，燃油消耗同步飙升。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyMotorization0"), SubResource("TermIdeologyMotorization1"), SubResource("TermIdeologyMotorization2")])
+
+[sub_resource type="Resource" id="TermIdeologyGreenRevolution0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.plain.agriculture_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="TermIdeologyGreenRevolution1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.fertilizer_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyGreenRevolution2"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.natural_gas.use_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyGreenRevolution3"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.phosphate_rock.use_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="DefIdeologyGreenRevolution"]
+script = ExtResource("3_definition")
+key = &"ideology.green_revolution"
+display_name = "绿色革命"
+description = "以合成氮肥、良种与灌溉把旱地单产推上台阶，天然气与磷矿被大量吃掉。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyGreenRevolution0"), SubResource("TermIdeologyGreenRevolution1"), SubResource("TermIdeologyGreenRevolution2"), SubResource("TermIdeologyGreenRevolution3")])
+
+[sub_resource type="Resource" id="TermIdeologyPetrochemical0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.plastics_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyPetrochemical1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.synthetic_fiber_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyPetrochemical2"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.oil.use_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="DefIdeologyPetrochemical"]
+script = ExtResource("3_definition")
+key = &"ideology.petrochemical"
+display_name = "石化"
+description = "以石油为原料生产塑料与合成纤维，原料端成本归零，油田压力加大。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyPetrochemical0"), SubResource("TermIdeologyPetrochemical1"), SubResource("TermIdeologyPetrochemical2")])
+
+[sub_resource type="Resource" id="TermIdeologyContainerPort0"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyContainerPort1"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.speed_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyContainerPort2"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.coast.manufacturing_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyContainerPort3"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="DefIdeologyContainerPort"]
+script = ExtResource("3_definition")
+key = &"ideology.container_port"
+display_name = "集装箱港"
+description = "标准箱与枢纽港把装卸成本压到接近为零，海岸带工厂直接贴上码头，深水泊位造价极高。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyContainerPort0"), SubResource("TermIdeologyContainerPort1"), SubResource("TermIdeologyContainerPort2"), SubResource("TermIdeologyContainerPort3")])
+
+[sub_resource type="Resource" id="TermIdeologyComputingNetworks0"]
+script = ExtResource("4_term")
+stat_key = &"country.research.science_efficiency"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyComputingNetworks1"]
+script = ExtResource("4_term")
+stat_key = &"country.research.engineering_efficiency"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyComputingNetworks2"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefIdeologyComputingNetworks"]
+script = ExtResource("3_definition")
+key = &"ideology.computing_networks"
+display_name = "计算网络"
+description = "算力与网络成为公共基础设施，研究周期被整体压缩，机房耗电可观。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyComputingNetworks0"), SubResource("TermIdeologyComputingNetworks1"), SubResource("TermIdeologyComputingNetworks2")])
+
+[sub_resource type="Resource" id="TermIdeologySemiconductor0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.semiconductors_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="TermIdeologySemiconductor1"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.silica_sand.use_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="DefIdeologySemiconductor"]
+script = ExtResource("3_definition")
+key = &"ideology.semiconductor"
+display_name = "半导体"
+description = "以高纯硅与精密光刻重塑制造业，硅砂被纯化成稀缺料。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologySemiconductor0"), SubResource("TermIdeologySemiconductor1")])
+
+[sub_resource type="Resource" id="TermIdeologyPrecisionAgriculture0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.plain.agriculture_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyPrecisionAgriculture1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.landform.plateau.agriculture_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyPrecisionAgriculture2"]
+script = ExtResource("4_term")
+stat_key = &"country.production.input_factor"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="DefIdeologyPrecisionAgriculture"]
+script = ExtResource("3_definition")
+key = &"ideology.precision_agriculture"
+display_name = "精准农业"
+description = "遥感、滴灌与变量施肥让每一块田都按需供给，前期设备投入不小。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyPrecisionAgriculture0"), SubResource("TermIdeologyPrecisionAgriculture1"), SubResource("TermIdeologyPrecisionAgriculture2")])
+
+[sub_resource type="Resource" id="TermIdeologyFinancialization0"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyFinancialization1"]
+script = ExtResource("4_term")
+stat_key = &"country.research.cost_factor"
+operation = 2
+value = 0.96
+
+[sub_resource type="Resource" id="TermIdeologyFinancialization2"]
+script = ExtResource("4_term")
+stat_key = &"country.output.manufacturing_factor"
+operation = 2
+value = 0.96
+
+[sub_resource type="Resource" id="DefIdeologyFinancialization"]
+script = ExtResource("3_definition")
+key = &"ideology.financialization"
+display_name = "金融化"
+description = "以资本运作而非生产获取利润，融资成本极低，实业根基被抽薄。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyFinancialization0"), SubResource("TermIdeologyFinancialization1"), SubResource("TermIdeologyFinancialization2")])
+
+[sub_resource type="Resource" id="TermIdeologyAutomationLine0"]
+script = ExtResource("4_term")
+stat_key = &"country.production.input_factor"
+operation = 2
+value = 0.94
+
+[sub_resource type="Resource" id="TermIdeologyAutomationLine1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.manufacturing_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyAutomationLine2"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="DefIdeologyAutomationLine"]
+script = ExtResource("3_definition")
+key = &"ideology.automation_line"
+display_name = "自动化产线"
+description = "以程序控制代替人手，单位产出的物料大幅下降，设备投资却高得惊人。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyAutomationLine0"), SubResource("TermIdeologyAutomationLine1"), SubResource("TermIdeologyAutomationLine2")])
+
+[sub_resource type="Resource" id="TermIdeologyAlgorithmicGovernance0"]
+script = ExtResource("4_term")
+stat_key = &"country.research.society_efficiency"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyAlgorithmicGovernance1"]
+script = ExtResource("4_term")
+stat_key = &"country.ideology.point_gain_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyAlgorithmicGovernance2"]
+script = ExtResource("4_term")
+stat_key = &"country.research.science_efficiency"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologyAlgorithmicGovernance"]
+script = ExtResource("3_definition")
+key = &"ideology.algorithmic_governance"
+display_name = "算法治理"
+description = "以模型分配资源与名额，效率极高，解释权集中，基础科学被挤压。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyAlgorithmicGovernance0"), SubResource("TermIdeologyAlgorithmicGovernance1"), SubResource("TermIdeologyAlgorithmicGovernance2")])
+
+[sub_resource type="Resource" id="TermIdeologyAutonomousLogistics0"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.speed_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyAutonomousLogistics1"]
 script = ExtResource("4_term")
 stat_key = &"country.trade.capacity_factor"
 operation = 2
 value = 1.05
 
-[sub_resource type="Resource" id="TermIdeologySynergyMaritimeLedger1"]
-script = ExtResource("4_term")
-stat_key = &"country.research.cost_factor"
-operation = 2
-value = 0.98
-
-[sub_resource type="Resource" id="DefIdeologySynergyMaritimeLedger"]
-script = ExtResource("3_definition")
-key = &"ideology.synergy.maritime_ledger"
-display_name = "海商账簿"
-description = "海商账簿联动修正。"
-domain = 1
-stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologySynergyMaritimeLedger0"), SubResource("TermIdeologySynergyMaritimeLedger1")])
-
-[sub_resource type="Resource" id="TermIdeologySynergyEngineeringCorps0"]
+[sub_resource type="Resource" id="TermIdeologyAutonomousLogistics2"]
 script = ExtResource("4_term")
 stat_key = &"country.construction.cost_factor"
 operation = 2
-value = 0.95
+value = 1.03
 
-[sub_resource type="Resource" id="TermIdeologySynergyEngineeringCorps1"]
-script = ExtResource("4_term")
-stat_key = &"country.construction.time_factor"
-operation = 2
-value = 0.97
-
-[sub_resource type="Resource" id="DefIdeologySynergyEngineeringCorps"]
+[sub_resource type="Resource" id="DefIdeologyAutonomousLogistics"]
 script = ExtResource("3_definition")
-key = &"ideology.synergy.engineering_corps"
-display_name = "工役营造"
-description = "工役营造联动修正。"
+key = &"ideology.autonomous_logistics"
+display_name = "无人运输"
+description = "无人车与自动调度把运力从人力约束中解放出来，车队与系统投资极高。"
 domain = 1
 stack_policy = 1
 default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologySynergyEngineeringCorps0"), SubResource("TermIdeologySynergyEngineeringCorps1")])
+terms = Array[Resource]([SubResource("TermIdeologyAutonomousLogistics0"), SubResource("TermIdeologyAutonomousLogistics1"), SubResource("TermIdeologyAutonomousLogistics2")])
 
-[sub_resource type="Resource" id="TermIdeologySynergyIndustrialScience0"]
+[sub_resource type="Resource" id="TermIdeologyCarbonMarket0"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.use_factor"
+operation = 2
+value = 0.92
+
+[sub_resource type="Resource" id="TermIdeologyCarbonMarket1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.manufacturing_factor"
+operation = 2
+value = 0.96
+
+[sub_resource type="Resource" id="DefIdeologyCarbonMarket"]
+script = ExtResource("3_definition")
+key = &"ideology.carbon_market"
+display_name = "碳市场"
+description = "给排放定价，资源耗用被系统性压低，高耗能制造随之收缩。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyCarbonMarket0"), SubResource("TermIdeologyCarbonMarket1")])
+
+[sub_resource type="Resource" id="TermIdeologyGeneEditing0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.plain.agriculture_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="TermIdeologyGeneEditing1"]
+script = ExtResource("4_term")
+stat_key = &"country.population.death_factor"
+operation = 2
+value = 0.98
+
+[sub_resource type="Resource" id="TermIdeologyGeneEditing2"]
+script = ExtResource("4_term")
+stat_key = &"country.research.society_efficiency"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologyGeneEditing"]
+script = ExtResource("3_definition")
+key = &"ideology.gene_editing"
+display_name = "基因编辑"
+description = "定向改造作物性状，主粮单产再上台阶，伦理争议削弱社会共识。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyGeneEditing0"), SubResource("TermIdeologyGeneEditing1"), SubResource("TermIdeologyGeneEditing2")])
+
+[sub_resource type="Resource" id="TermIdeologyDesalination0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.coast.agriculture_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyDesalination1"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.freshwater_fish.managed_generation_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyDesalination2"]
+script = ExtResource("4_term")
+stat_key = &"country.production.input_factor"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="DefIdeologyDesalination"]
+script = ExtResource("3_definition")
+key = &"ideology.desalination"
+display_name = "海水淡化"
+description = "以反渗透取得淡水，海岸带可以耕种，耗电与浓盐水排放是代价。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyDesalination0"), SubResource("TermIdeologyDesalination1"), SubResource("TermIdeologyDesalination2")])
+
+[sub_resource type="Resource" id="TermIdeologySynergyGranaryRecords0"]
+script = ExtResource("4_term")
+stat_key = &"country.climate.drought_loss_factor"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="TermIdeologySynergyGranaryRecords1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.plain.agriculture_factor"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="DefIdeologySynergyGranaryRecords"]
+script = ExtResource("3_definition")
+key = &"ideology.synergy.granary_records"
+display_name = "仓廪簿籍"
+description = "仓廪簿籍联动修正。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologySynergyGranaryRecords0"), SubResource("TermIdeologySynergyGranaryRecords1")])
+
+[sub_resource type="Resource" id="TermIdeologySynergyPolderFarming0"]
+script = ExtResource("4_term")
+stat_key = &"country.climate.profile.paddy_crop.flood_loss_factor"
+operation = 2
+value = 0.92
+
+[sub_resource type="Resource" id="TermIdeologySynergyPolderFarming1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.landform.delta.agriculture_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="DefIdeologySynergyPolderFarming"]
+script = ExtResource("3_definition")
+key = &"ideology.synergy.polder_farming"
+display_name = "圩田"
+description = "圩田联动修正。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologySynergyPolderFarming0"), SubResource("TermIdeologySynergyPolderFarming1")])
+
+[sub_resource type="Resource" id="TermIdeologySynergyMixedHusbandry0"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.pasture.managed_generation_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologySynergyMixedHusbandry1"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.fertile_soil.use_factor"
+operation = 2
+value = 0.94
+
+[sub_resource type="Resource" id="DefIdeologySynergyMixedHusbandry"]
+script = ExtResource("3_definition")
+key = &"ideology.synergy.mixed_husbandry"
+display_name = "农牧轮转"
+description = "农牧轮转联动修正。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologySynergyMixedHusbandry0"), SubResource("TermIdeologySynergyMixedHusbandry1")])
+
+[sub_resource type="Resource" id="TermIdeologySynergyCoalIronComplex0"]
 script = ExtResource("4_term")
 stat_key = &"country.output.energy_factor"
 operation = 2
 value = 1.04
 
-[sub_resource type="Resource" id="TermIdeologySynergyIndustrialScience1"]
+[sub_resource type="Resource" id="TermIdeologySynergyCoalIronComplex1"]
 script = ExtResource("4_term")
-stat_key = &"country.research.engineering_efficiency"
+stat_key = &"country.input.good.coal_factor"
 operation = 2
-value = 1.04
+value = 0.94
 
-[sub_resource type="Resource" id="DefIdeologySynergyIndustrialScience"]
+[sub_resource type="Resource" id="DefIdeologySynergyCoalIronComplex"]
 script = ExtResource("3_definition")
-key = &"ideology.synergy.industrial_science"
-display_name = "工业科学"
-description = "工业科学联动修正。"
+key = &"ideology.synergy.coal_iron_complex"
+display_name = "煤铁复合体"
+description = "煤铁复合体联动修正。"
 domain = 1
 stack_policy = 1
 default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologySynergyIndustrialScience0"), SubResource("TermIdeologySynergyIndustrialScience1")])
+terms = Array[Resource]([SubResource("TermIdeologySynergyCoalIronComplex0"), SubResource("TermIdeologySynergyCoalIronComplex1")])
 
-[sub_resource type="Resource" id="TermIdeologySynergyRiverCommune0"]
+[sub_resource type="Resource" id="TermIdeologySynergyPostalCanalGrid0"]
 script = ExtResource("4_term")
-stat_key = &"country.climate.flood_loss_factor"
+stat_key = &"country.trade.speed_factor"
 operation = 2
-value = 0.95
+value = 1.06
 
-[sub_resource type="Resource" id="TermIdeologySynergyRiverCommune1"]
+[sub_resource type="Resource" id="TermIdeologySynergyPostalCanalGrid1"]
 script = ExtResource("4_term")
-stat_key = &"country.output.agriculture_factor"
+stat_key = &"country.trade.capacity_factor"
 operation = 2
 value = 1.03
 
-[sub_resource type="Resource" id="DefIdeologySynergyRiverCommune"]
+[sub_resource type="Resource" id="DefIdeologySynergyPostalCanalGrid"]
 script = ExtResource("3_definition")
-key = &"ideology.synergy.river_commune"
-display_name = "河渠公社"
-description = "河渠公社联动修正。"
+key = &"ideology.synergy.postal_canal_grid"
+display_name = "驿漕并网"
+description = "驿漕并网联动修正。"
 domain = 1
 stack_policy = 1
 default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologySynergyRiverCommune0"), SubResource("TermIdeologySynergyRiverCommune1")])
+terms = Array[Resource]([SubResource("TermIdeologySynergyPostalCanalGrid0"), SubResource("TermIdeologySynergyPostalCanalGrid1")])
+
+[sub_resource type="Resource" id="TermIdeologySynergyJointStockAccounting0"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologySynergyJointStockAccounting1"]
+script = ExtResource("4_term")
+stat_key = &"country.research.cost_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologySynergyJointStockAccounting"]
+script = ExtResource("3_definition")
+key = &"ideology.synergy.joint_stock_accounting"
+display_name = "股份会计"
+description = "股份会计联动修正。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologySynergyJointStockAccounting0"), SubResource("TermIdeologySynergyJointStockAccounting1")])
+
+[sub_resource type="Resource" id="TermIdeologySynergySteamRailComplex0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.manufacturing_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologySynergySteamRailComplex1"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.speed_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="DefIdeologySynergySteamRailComplex"]
+script = ExtResource("3_definition")
+key = &"ideology.synergy.steam_rail_complex"
+display_name = "铁汽联动"
+description = "铁汽联动联动修正。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologySynergySteamRailComplex0"), SubResource("TermIdeologySynergySteamRailComplex1")])
+
+[sub_resource type="Resource" id="TermIdeologySynergyChemicalAgriculture0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.terrain.plain.agriculture_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologySynergyChemicalAgriculture1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.fertilizer_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="DefIdeologySynergyChemicalAgriculture"]
+script = ExtResource("3_definition")
+key = &"ideology.synergy.chemical_agriculture"
+display_name = "化肥农业"
+description = "化肥农业联动修正。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologySynergyChemicalAgriculture0"), SubResource("TermIdeologySynergyChemicalAgriculture1")])
+
+[sub_resource type="Resource" id="TermIdeologySynergyElectricAssembly0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.manufacturing_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologySynergyElectricAssembly1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.energy_factor"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="DefIdeologySynergyElectricAssembly"]
+script = ExtResource("3_definition")
+key = &"ideology.synergy.electric_assembly"
+display_name = "电气流水线"
+description = "电气流水线联动修正。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologySynergyElectricAssembly0"), SubResource("TermIdeologySynergyElectricAssembly1")])
+
+[sub_resource type="Resource" id="TermIdeologySynergyDigitalAutomation0"]
+script = ExtResource("4_term")
+stat_key = &"country.production.input_factor"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="TermIdeologySynergyDigitalAutomation1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.manufacturing_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="DefIdeologySynergyDigitalAutomation"]
+script = ExtResource("3_definition")
+key = &"ideology.synergy.digital_automation"
+display_name = "数字自动化"
+description = "数字自动化联动修正。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologySynergyDigitalAutomation0"), SubResource("TermIdeologySynergyDigitalAutomation1")])
+
+[sub_resource type="Resource" id="TermIdeologySynergyDoubleConstraint0"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.use_factor"
+operation = 2
+value = 0.94
+
+[sub_resource type="Resource" id="TermIdeologySynergyDoubleConstraint1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.manufacturing_factor"
+operation = 2
+value = 0.96
+
+[sub_resource type="Resource" id="DefIdeologySynergyDoubleConstraint"]
+script = ExtResource("3_definition")
+key = &"ideology.synergy.double_constraint"
+display_name = "双重约束"
+description = "双重约束联动修正。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologySynergyDoubleConstraint0"), SubResource("TermIdeologySynergyDoubleConstraint1")])
+
+[sub_resource type="Resource" id="TermIdeologySynergyEpidemicDefence0"]
+script = ExtResource("4_term")
+stat_key = &"country.population.death_factor"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="TermIdeologySynergyEpidemicDefence1"]
+script = ExtResource("4_term")
+stat_key = &"country.climate.profile.dryland_crop.flood_loss_factor"
+operation = 2
+value = 0.96
+
+[sub_resource type="Resource" id="DefIdeologySynergyEpidemicDefence"]
+script = ExtResource("3_definition")
+key = &"ideology.synergy.epidemic_defence"
+display_name = "防疫体系"
+description = "防疫体系联动修正。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologySynergyEpidemicDefence0"), SubResource("TermIdeologySynergyEpidemicDefence1")])
+
+[sub_resource type="Resource" id="TermIdeologySynergyOceanicFinance0"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologySynergyOceanicFinance1"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.speed_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="DefIdeologySynergyOceanicFinance"]
+script = ExtResource("3_definition")
+key = &"ideology.synergy.oceanic_finance"
+display_name = "远洋金融"
+description = "远洋金融联动修正。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologySynergyOceanicFinance0"), SubResource("TermIdeologySynergyOceanicFinance1")])
+
+[sub_resource type="Resource" id="TermIdeologySynergySilkWeavingChain0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.cloth_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologySynergySilkWeavingChain1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.good.fine_clothing_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="DefIdeologySynergySilkWeavingChain"]
+script = ExtResource("3_definition")
+key = &"ideology.synergy.silk_weaving_chain"
+display_name = "丝织体系"
+description = "丝织体系联动修正。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologySynergySilkWeavingChain0"), SubResource("TermIdeologySynergySilkWeavingChain1")])
+
+[sub_resource type="Resource" id="TermIdeologySynergyExperimentalNaturalHistory0"]
+script = ExtResource("4_term")
+stat_key = &"country.research.science_efficiency"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologySynergyExperimentalNaturalHistory1"]
+script = ExtResource("4_term")
+stat_key = &"country.research.agriculture_efficiency"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="DefIdeologySynergyExperimentalNaturalHistory"]
+script = ExtResource("3_definition")
+key = &"ideology.synergy.experimental_natural_history"
+display_name = "实验博物"
+description = "实验博物联动修正。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologySynergyExperimentalNaturalHistory0"), SubResource("TermIdeologySynergyExperimentalNaturalHistory1")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceAgrarian20"]
 script = ExtResource("4_term")
@@ -1640,9 +3480,9 @@ value = 1.04
 
 [sub_resource type="Resource" id="TermIdeologyResonanceAgrarian41"]
 script = ExtResource("4_term")
-stat_key = &"country.population.death_factor"
+stat_key = &"country.resource.fertile_soil.use_factor"
 operation = 2
-value = 0.97
+value = 0.95
 
 [sub_resource type="Resource" id="DefIdeologyResonanceAgrarian4"]
 script = ExtResource("3_definition")
@@ -1678,9 +3518,9 @@ value = 1.05
 
 [sub_resource type="Resource" id="TermIdeologyResonanceCommerce41"]
 script = ExtResource("4_term")
-stat_key = &"country.economy_output_factor"
+stat_key = &"country.trade.capacity_factor"
 operation = 2
-value = 1.02
+value = 1.03
 
 [sub_resource type="Resource" id="DefIdeologyResonanceCommerce4"]
 script = ExtResource("3_definition")
@@ -1738,7 +3578,7 @@ terms = Array[Resource]([SubResource("TermIdeologyResonanceLearning40"), SubReso
 
 [sub_resource type="Resource" id="TermIdeologyResonanceMobilization20"]
 script = ExtResource("4_term")
-stat_key = &"country.construction.time_factor"
+stat_key = &"country.construction.cost_factor"
 operation = 2
 value = 0.97
 
@@ -1754,15 +3594,15 @@ terms = Array[Resource]([SubResource("TermIdeologyResonanceMobilization20")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceMobilization40"]
 script = ExtResource("4_term")
-stat_key = &"country.construction.cost_factor"
+stat_key = &"country.population.death_factor"
 operation = 2
-value = 0.95
+value = 0.97
 
 [sub_resource type="Resource" id="TermIdeologyResonanceMobilization41"]
 script = ExtResource("4_term")
-stat_key = &"country.population.death_factor"
+stat_key = &"country.research.society_efficiency"
 operation = 2
-value = 0.98
+value = 1.03
 
 [sub_resource type="Resource" id="DefIdeologyResonanceMobilization4"]
 script = ExtResource("3_definition")
@@ -1865,4 +3705,4 @@ terms = Array[Resource]([SubResource("TermIdeologyResonanceHarmony40"), SubResou
 [resource]
 script = ExtResource("1_catalog")
 stats = Array[Resource]([SubResource("StatClimate"), SubResource("StatCountry"), SubResource("StatBuilding"), SubResource("StatGameplay"), SubResource("StatCityOutput"), SubResource("StatCityAgricultureOutput"), SubResource("StatCityExtractiveOutput"), SubResource("StatCityManufacturingOutput"), SubResource("StatCityEnergyOutput"), SubResource("StatCityKnowledgeOutput"), SubResource("StatCityBirth"), SubResource("StatCityTradeOutput"), SubResource("StatCityConsumption"), SubResource("StatCityResourceRegen")])
-definitions = Array[Resource]([SubResource("DefClimate"), SubResource("DefCountry"), SubResource("DefBuilding"), SubResource("DefGameplay"), SubResource("DefFamilyCityOutput"), SubResource("DefFamilyHuntingOutput"), SubResource("DefFamilyAgricultureOutput"), SubResource("DefFamilyExtractiveOutput"), SubResource("DefFamilyManufacturingOutput"), SubResource("DefFamilyEnergyOutput"), SubResource("DefFamilyKnowledgeOutput"), SubResource("DefFamilyBirth"), SubResource("DefFamilyTradeOutput"), SubResource("DefFamilyFoodConsumption"), SubResource("DefFamilyProteinConsumption"), SubResource("DefFamilyClothingConsumption"), SubResource("DefFamilyHousingConsumption"), SubResource("DefFamilyHouseholdGoodsConsumption"), SubResource("DefFamilyHomeEnergyConsumption"), SubResource("DefFamilyEducationConsumption"), SubResource("DefFamilyWorkEquipmentConsumption"), SubResource("DefFamilyLuxuryConsumption"), SubResource("DefFamilyStatusConsumption"), SubResource("DefFamilyAustereConsumption"), SubResource("DefFamilyWildGameRegen"), SubResource("DefFamilyFreshwaterFishRegen"), SubResource("DefFamilyMarineFishRegen"), SubResource("DefFamilyPastureRegen"), SubResource("DefFamilyTimberRegen"), SubResource("DefFamilyBirthCut"), SubResource("DefFamilyHedonism"), SubResource("DefFamilyCornOutput"), SubResource("DefFamilyStapleConsumptionCut"), SubResource("DefFamilyResourceRegenCut"), SubResource("DefFamilyOwnedBuildingOutput"), SubResource("DefFamilyCountryTradeCapacity"), SubResource("DefIdeologyCollectiveStewardship"), SubResource("DefIdeologyIntensiveTillage"), SubResource("DefIdeologyEverNormalGranary"), SubResource("DefIdeologyMilitaryFarming"), SubResource("DefIdeologyVillageCompact"), SubResource("DefIdeologyFreeExchange"), SubResource("DefIdeologyOpenPorts"), SubResource("DefIdeologyGuildCharters"), SubResource("DefIdeologyDoubleEntry"), SubResource("DefIdeologyOceanCompany"), SubResource("DefIdeologyScholarOffice"), SubResource("DefIdeologyAcademyLectures"), SubResource("DefIdeologyExperimentalMethod"), SubResource("DefIdeologyCivilExamination"), SubResource("DefIdeologyEncyclopedia"), SubResource("DefIdeologyCivicMuster"), SubResource("DefIdeologyCorveeLaw"), SubResource("DefIdeologyPublicHygiene"), SubResource("DefIdeologyNationalEducation"), SubResource("DefIdeologyTotalMobilization"), SubResource("DefIdeologyWorkshopSystem"), SubResource("DefIdeologyStandardization"), SubResource("DefIdeologyMiningMonopoly"), SubResource("DefIdeologySteamPower"), SubResource("DefIdeologyAssemblyLine"), SubResource("DefIdeologyForestMarshBan"), SubResource("DefIdeologyWaterWorks"), SubResource("DefIdeologySeasonalCalendar"), SubResource("DefIdeologyHeavenHuman"), SubResource("DefIdeologyEcologicalBalance"), SubResource("DefIdeologySynergyPlannedGranaries"), SubResource("DefIdeologySynergyCharteredFrontier"), SubResource("DefIdeologySynergyMaritimeLedger"), SubResource("DefIdeologySynergyEngineeringCorps"), SubResource("DefIdeologySynergyIndustrialScience"), SubResource("DefIdeologySynergyRiverCommune"), SubResource("DefIdeologyResonanceAgrarian2"), SubResource("DefIdeologyResonanceAgrarian4"), SubResource("DefIdeologyResonanceCommerce2"), SubResource("DefIdeologyResonanceCommerce4"), SubResource("DefIdeologyResonanceLearning2"), SubResource("DefIdeologyResonanceLearning4"), SubResource("DefIdeologyResonanceMobilization2"), SubResource("DefIdeologyResonanceMobilization4"), SubResource("DefIdeologyResonanceIndustry2"), SubResource("DefIdeologyResonanceIndustry4"), SubResource("DefIdeologyResonanceHarmony2"), SubResource("DefIdeologyResonanceHarmony4")])
+definitions = Array[Resource]([SubResource("DefClimate"), SubResource("DefCountry"), SubResource("DefBuilding"), SubResource("DefGameplay"), SubResource("DefFamilyCityOutput"), SubResource("DefFamilyHuntingOutput"), SubResource("DefFamilyAgricultureOutput"), SubResource("DefFamilyExtractiveOutput"), SubResource("DefFamilyManufacturingOutput"), SubResource("DefFamilyEnergyOutput"), SubResource("DefFamilyKnowledgeOutput"), SubResource("DefFamilyBirth"), SubResource("DefFamilyTradeOutput"), SubResource("DefFamilyFoodConsumption"), SubResource("DefFamilyProteinConsumption"), SubResource("DefFamilyClothingConsumption"), SubResource("DefFamilyHousingConsumption"), SubResource("DefFamilyHouseholdGoodsConsumption"), SubResource("DefFamilyHomeEnergyConsumption"), SubResource("DefFamilyEducationConsumption"), SubResource("DefFamilyWorkEquipmentConsumption"), SubResource("DefFamilyLuxuryConsumption"), SubResource("DefFamilyStatusConsumption"), SubResource("DefFamilyAustereConsumption"), SubResource("DefFamilyWildGameRegen"), SubResource("DefFamilyFreshwaterFishRegen"), SubResource("DefFamilyMarineFishRegen"), SubResource("DefFamilyPastureRegen"), SubResource("DefFamilyTimberRegen"), SubResource("DefFamilyBirthCut"), SubResource("DefFamilyHedonism"), SubResource("DefFamilyCornOutput"), SubResource("DefFamilyStapleConsumptionCut"), SubResource("DefFamilyResourceRegenCut"), SubResource("DefFamilyOwnedBuildingOutput"), SubResource("DefFamilyCountryTradeCapacity"), SubResource("DefIdeologyForagerBand"), SubResource("DefIdeologyHuntingTradition"), SubResource("DefIdeologyFlintKnapping"), SubResource("DefIdeologyFireKeeping"), SubResource("DefIdeologyRiversideCamp"), SubResource("DefIdeologyAnimistRitual"), SubResource("DefIdeologyGiftExchange"), SubResource("DefIdeologyPitDwelling"), SubResource("DefIdeologyCollectiveStewardship"), SubResource("DefIdeologyTerraceFarming"), SubResource("DefIdeologyPaddyCultivation"), SubResource("DefIdeologyThreeFieldRotation"), SubResource("DefIdeologyFreeExchange"), SubResource("DefIdeologyScholarOffice"), SubResource("DefIdeologyStandardization"), SubResource("DefIdeologyHouseholdWeaving"), SubResource("DefIdeologyCoppiceRotation"), SubResource("DefIdeologyWaterWorks"), SubResource("DefIdeologySeasonalCalendar"), SubResource("DefIdeologyEverNormalGranary"), SubResource("DefIdeologySettleAndFarm"), SubResource("DefIdeologyOpenPorts"), SubResource("DefIdeologyGuildCharters"), SubResource("DefIdeologyDoubleEntry"), SubResource("DefIdeologyAcademyLectures"), SubResource("DefIdeologyCivilExamination"), SubResource("DefIdeologyIronSmelting"), SubResource("DefIdeologyPostalHorse"), SubResource("DefIdeologyMonsoonFarming"), SubResource("DefIdeologyRiverTransport"), SubResource("DefIdeologyVillageCompact"), SubResource("DefIdeologyLandReclamation"), SubResource("DefIdeologyGranaryRoad"), SubResource("DefIdeologyImperialAcademy"), SubResource("DefIdeologyPublicHygiene"), SubResource("DefIdeologyHeavenHuman"), SubResource("DefIdeologySaltMonopoly"), SubResource("DefIdeologySericulture"), SubResource("DefIdeologyOceanCompany"), SubResource("DefIdeologyCharteredRoute"), SubResource("DefIdeologyCartography"), SubResource("DefIdeologyColonialPlantation"), SubResource("DefIdeologySilverFlow"), SubResource("DefIdeologyNaturalHistory"), SubResource("DefIdeologyManufactoryRegulation"), SubResource("DefIdeologyMaritimeInsurance"), SubResource("DefIdeologyExperimentalMethod"), SubResource("DefIdeologyEncyclopedia"), SubResource("DefIdeologyNationalEducation"), SubResource("DefIdeologyAgrarianReform"), SubResource("DefIdeologyCoalBasin"), SubResource("DefIdeologyCottonGin"), SubResource("DefIdeologyEnclosure"), SubResource("DefIdeologyLearnedSociety"), SubResource("DefIdeologySteamPower"), SubResource("DefIdeologyRailwayNetwork"), SubResource("DefIdeologyUrbanSanitation"), SubResource("DefIdeologySteamShipping"), SubResource("DefIdeologyLabourLegislation"), SubResource("DefIdeologyFreeTrade"), SubResource("DefIdeologyAgriculturalChemistry"), SubResource("DefIdeologyTelegraph"), SubResource("DefIdeologyAssemblyLine"), SubResource("DefIdeologyElectrification"), SubResource("DefIdeologyEcologicalBalance"), SubResource("DefIdeologyMassMedia"), SubResource("DefIdeologyChemicalIndustry"), SubResource("DefIdeologyHydroelectric"), SubResource("DefIdeologyAntitrust"), SubResource("DefIdeologyNuclearPower"), SubResource("DefIdeologyAntibiotics"), SubResource("DefIdeologyMotorization"), SubResource("DefIdeologyGreenRevolution"), SubResource("DefIdeologyPetrochemical"), SubResource("DefIdeologyContainerPort"), SubResource("DefIdeologyComputingNetworks"), SubResource("DefIdeologySemiconductor"), SubResource("DefIdeologyPrecisionAgriculture"), SubResource("DefIdeologyFinancialization"), SubResource("DefIdeologyAutomationLine"), SubResource("DefIdeologyAlgorithmicGovernance"), SubResource("DefIdeologyAutonomousLogistics"), SubResource("DefIdeologyCarbonMarket"), SubResource("DefIdeologyGeneEditing"), SubResource("DefIdeologyDesalination"), SubResource("DefIdeologySynergyGranaryRecords"), SubResource("DefIdeologySynergyPolderFarming"), SubResource("DefIdeologySynergyMixedHusbandry"), SubResource("DefIdeologySynergyCoalIronComplex"), SubResource("DefIdeologySynergyPostalCanalGrid"), SubResource("DefIdeologySynergyJointStockAccounting"), SubResource("DefIdeologySynergySteamRailComplex"), SubResource("DefIdeologySynergyChemicalAgriculture"), SubResource("DefIdeologySynergyElectricAssembly"), SubResource("DefIdeologySynergyDigitalAutomation"), SubResource("DefIdeologySynergyDoubleConstraint"), SubResource("DefIdeologySynergyEpidemicDefence"), SubResource("DefIdeologySynergyOceanicFinance"), SubResource("DefIdeologySynergySilkWeavingChain"), SubResource("DefIdeologySynergyExperimentalNaturalHistory"), SubResource("DefIdeologyResonanceAgrarian2"), SubResource("DefIdeologyResonanceAgrarian4"), SubResource("DefIdeologyResonanceCommerce2"), SubResource("DefIdeologyResonanceCommerce4"), SubResource("DefIdeologyResonanceLearning2"), SubResource("DefIdeologyResonanceLearning4"), SubResource("DefIdeologyResonanceMobilization2"), SubResource("DefIdeologyResonanceMobilization4"), SubResource("DefIdeologyResonanceIndustry2"), SubResource("DefIdeologyResonanceIndustry4"), SubResource("DefIdeologyResonanceHarmony2"), SubResource("DefIdeologyResonanceHarmony4")])

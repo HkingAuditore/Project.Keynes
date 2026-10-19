@@ -9,6 +9,7 @@
 #include "modifier_runtime.h"          // Shared four-domain Modifier authority
 #include "trigger_runtime.h"           // Generic event-to-effect trigger authority
 #include "effect_runtime.h"            // Generic effect plan/transaction authority
+#include "effect_instance_forwarder.h" // M2a: single declarative Effect write path
 #include "ideology_runtime.h"          // Country-scoped ideology authority
 
 // MSVC 默认不定义 M_PI；必须在引入 <cmath> 之前打开 _USE_MATH_DEFINES。
@@ -88,6 +89,8 @@ DCWorldExt::~DCWorldExt() {
         _trigger_runtime = nullptr;
     }
     if (_effect_runtime != nullptr) {
+        // Drop the forwarder first: it holds a borrowed EffectRuntime pointer.
+        _effect_forwarder.reset();
         delete static_cast<EffectRuntime *>(_effect_runtime);
         _effect_runtime = nullptr;
     }

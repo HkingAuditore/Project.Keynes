@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -18,6 +19,7 @@ namespace pk {
 class NativeCountryRuntime;
 class NativeEconomyRuntime;
 class ModifierRuntime;
+class EffectInstanceForwarder;
 
 // Country-scoped ideology authority.  It deliberately owns only ideology
 // collection/progression state; Country, Effect and Modifier retain their
@@ -25,9 +27,15 @@ class ModifierRuntime;
 class NativeIdeologyRuntime {
 public:
     static constexpr int32_t PROTOCOL_VERSION = 1;
-    static constexpr int32_t SAVE_SCHEMA_VERSION = 4;
+    // v5 adds per-country `unlocked_era` (era-aware draw weighting) and widens
+    // gate_bits to the full registered gate-key list, so v4 saves are rejected
+    // rather than silently misread.
+    // v6 adds per-idea reconciled Effect instance references, so a load can
+    // verify that the EffectRuntime still owns every instance the card created.
+    static constexpr int32_t SAVE_SCHEMA_VERSION = 6;
     static constexpr int64_t Q16_ONE = 65536;
     static constexpr int32_t POINT_HISTORY = 32;
+    static constexpr int32_t MAX_ERA_INDEX = 63;
 
     enum Acquisition : uint8_t { DISCOVER = 1, DRAW = 2 };
     enum CommandOpcode : int32_t {
@@ -57,6 +65,13 @@ public:
     void attach_country_runtime(NativeCountryRuntime *runtime) { _country_runtime = runtime; }
     void attach_economy_runtime(NativeEconomyRuntime *runtime) { _economy_runtime = runtime; }
     void attach_effect_runtime(EffectRuntime *runtime) { _effect_runtime = runtime; }
+    // M2a: declarative effect instances must be written through the same single
+    // path DCWorldExt uses, otherwise an equipped card lands on the main thread
+    // while the worker owns EFFECT (and the next snapshot erases it). Null keeps
+    // the pre-M2a direct EffectRuntime path for tests and fixtures.
+    void attach_effect_forwarder(EffectInstanceForwarder *forwarder) {
+        _effect_forwarder = forwarder;
+    }
     void attach_modifier_runtime(ModifierRuntime *runtime) { _modifier_runtime = runtime; }
 
     godot::Dictionary configure(const godot::Dictionary &catalog);
@@ -83,6 +98,10 @@ public:
     godot::Dictionary report() const;
     godot::PackedByteArray capture() const;
     godot::Dictionary restore(const godot::PackedByteArray &bytes);
+    // Read-only view of the reconciled Effect instances each held idea owns,
+    // annotated with whether the EffectRuntime still holds them. Used by the
+    // effect-instance tests and by save diagnostics; never mutates state.
+    godot::Dictionary effect_instance_report(int64_t country_handle) const;
     godot::Dictionary clear_state();
     bool export_pod_catalog(const RuntimeCountryPodSnapshot &country,
                             RuntimeIdeologyPodCatalog &out,
@@ -138,6 +157,9 @@ private:
         int32_t stance_count = 0;
         std::array<int32_t, 3> support_threshold_q16{};
         int32_t exclusion_group_id = -1;
+        // Era this idea belongs to. Combined with the country's unlocked era it
+        // drives the draw-weight decay curve in the profile.
+        int32_t era_index = 0;
     };
     struct ClassStance {
         int32_t class_index = -1;
@@ -173,6 +195,17 @@ private:
         bool allowed = false;
     };
     struct IdeaState {
+        // One reconciled Effect instance owned by this idea. The list is the
+        // previous desired set, so reconciliation can retire exactly the rows
+        // that left the set, and a restored save can prove that PKEF still
+        // holds every instance this idea claims to own.
+        struct EffectInstanceRef {
+            uint64_t program_hash = 0;
+            uint64_t target_handle = 0;
+            uint32_t target_generation = 0;
+            int64_t instance_id = 0;
+            uint32_t generation = 0;
+        };
         int32_t ideology_id = -1;
         int64_t understanding_q16 = 0;
         int32_t level = -1;
@@ -200,6 +233,17 @@ private:
             std::vector<int32_t> changed_synergy_ids;
             std::vector<uint8_t> previous_synergy_active;
         } transition;
+        std::vector<EffectInstanceRef> effect_instances;
+    };
+    // A desired instance plus the program key needed to submit it. The key is
+    // not persisted (the hash is), so it is rebuilt from the catalog on demand.
+    struct EffectActivation {
+        IdeaState::EffectInstanceRef ref;
+        std::string program;
+        // Declared source_kind of the program. submit_instances rejects a
+        // managed submission whose source_kind column is absent or mismatched,
+        // so every activation has to carry its own.
+        int32_t source_kind = 0;
     };
     struct Offer {
         uint32_t generation = 0;
@@ -235,6 +279,10 @@ private:
         int32_t pending_transition_count = 0;
         uint64_t opinion_revision = 0;
         std::vector<int64_t> class_influence;
+        // Derived, not authoritative: refreshed from the country's completed era
+        // milestones at the start of every draw and carried in the save purely so
+        // a replay can be diffed. Nothing reads it before refreshing it.
+        int32_t unlocked_era = 0;
         Offer offer;
     };
     struct Command {
@@ -306,6 +354,9 @@ private:
     bool reroll_offer(CountryState &country, int32_t country_slot,
                       const Command &command, std::string &error);
     bool draw_offer(CountryState &country, int32_t country_slot, std::string &error);
+    // Deepest era whose milestone technology the country already holds. Both
+    // authorities derive this the same way so the decay inputs agree.
+    int32_t unlocked_era_for(int32_t country_slot) const;
     int32_t draw_pool_size(const CountryState &country, int32_t country_slot) const;
     int32_t ideology_capacity_for(int32_t country_slot) const;
     int32_t spirit_capacity_for(int32_t country_slot) const;
@@ -335,6 +386,34 @@ private:
                         bool remove, int64_t day, uint64_t salt,
                         std::vector<EffectRuntime::ExternalEffectCommandPod> &commands,
                         std::string &error);
+    // Declarative effect programs. A card row whose definition_key resolves to
+    // a managed `ideology.effect.*` program is driven as a reconciled Effect
+    // instance instead of a one-shot external batch, so it can carry
+    // conditions, targets and lifecycle. Rows without a program keep the
+    // legacy batch path unchanged.
+    static std::string effect_program_key(const std::string &definition_key);
+    static int64_t effect_instance_id(uint64_t country_handle,
+                                      int32_t ideology_id, uint8_t location,
+                                      int32_t level, const std::string &program,
+                                      uint64_t target_handle);
+    // Expands one declared program into its concrete targets. Country-scoped
+    // programs resolve to the country handle; cell-scoped programs resolve the
+    // anchor cell and then run the shared target selector, producing one entry
+    // per cell. Fails closed (empty) when the domain cannot be resolved, so a
+    // mis-authored program never silently widens to the whole country.
+    bool resolve_effect_targets(
+        const CountryState &country, const IdeaState &state,
+        const EffectRuntime::FamilyEffectMetadataPod &metadata,
+        std::vector<std::pair<uint64_t, uint32_t>> &out) const;
+    bool collect_effect_activations(
+        const CountryState &country, const IdeaState &state,
+        std::vector<EffectActivation> &out) const;
+    bool reconcile_effect_activations(const CountryState &country,
+                                      IdeaState &state, int64_t day,
+                                      std::string &error);
+    void retire_effect_activations(IdeaState &state, int64_t day);
+    void reconcile_country_effect_activations(CountryState &country,
+                                              int64_t day);
     bool start_next_level_transition(CountryState &country, IdeaState &state,
                                      int64_t day, std::string &error);
     uint64_t unentered_level_mask(const IdeaState &state, int32_t through_level) const;
@@ -397,6 +476,12 @@ private:
     int32_t _gate_count = 0;
     int32_t _idea_words = 0;
     int32_t _gate_words = 0;
+    // Draw-weight decay by (unlocked_era - idea.era_index). Index 0 is the card's
+    // own era; the last row is reused for anything older; 0 retires the card.
+    std::vector<int32_t> _era_decay_bp;
+    // Dense technology index of each era's milestone. Index i answers "has this
+    // country reached era i"; -1 means the era has no milestone and is skipped.
+    std::vector<int32_t> _era_milestone_technologies;
     std::vector<Definition> _definitions;
     std::vector<Level> _levels;
     std::vector<EffectTemplate> _persistent_templates;
@@ -463,6 +548,13 @@ private:
     NativeCountryRuntime *_country_runtime = nullptr;
     NativeEconomyRuntime *_economy_runtime = nullptr;
     EffectRuntime *_effect_runtime = nullptr;
+    EffectInstanceForwarder *_effect_forwarder = nullptr;
+    // Last EFFECT authority epoch observed by the reconcile entry point.
+    // AUTHORITY_EPOCH_UNSET means "never observed": adopt the current value
+    // without wiping held refs, so a fresh runtime does not force a resubmit.
+    static constexpr uint64_t AUTHORITY_EPOCH_UNSET =
+        std::numeric_limits<uint64_t>::max();
+    uint64_t _effect_authority_epoch = AUTHORITY_EPOCH_UNSET;
     ModifierRuntime *_modifier_runtime = nullptr;
 };
 

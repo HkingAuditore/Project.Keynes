@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3]
+[gd_scene load_steps=15 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/components/economy_dossier.gd" id="1_script"]
 [ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_chapter_nav.gd" id="2_nav"]
@@ -11,6 +11,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/economy_dossier/market_page.tscn" id="9_market"]
 [ext_resource type="PackedScene" path="res://scenes/ui/economy_dossier/trade_page.tscn" id="10_trade"]
 [ext_resource type="PackedScene" path="res://scenes/ui/economy_dossier/cities_page.tscn" id="11_cities"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_gdp_band.gd" id="12_gdp"]
 
 [node name="EconomyDossier" type="VBoxContainer"]
 anchors_preset = 15
@@ -139,6 +140,16 @@ horizontal_scroll_mode = 0
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 6
+
+[node name="GdpBand" type="PanelContainer" parent="PageViewport/PageColumn"]
+layout_mode = 2
+theme_type_variation = &"PKDossierBand"
+
+[node name="GdpCanvas" type="Control" parent="PageViewport/PageColumn/GdpBand"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 82)
+layout_mode = 2
+script = ExtResource("12_gdp")
 
 [node name="KpiStrip" type="PanelContainer" parent="PageViewport/PageColumn"]
 unique_name_in_owner = true
