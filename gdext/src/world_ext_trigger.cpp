@@ -5,12 +5,14 @@
 #include "economy_runtime.h"
 #include "ideology_runtime.h"
 #include "native_simulation_host.h"
+#include "country_runtime.h"
 
 #include <algorithm>
 #include <cstring>
 #include <atomic>
 #include <limits>
 #include <vector>
+#include <unordered_map>
 
 namespace pk {
 
@@ -364,6 +366,74 @@ Dictionary DCWorldExt::ack_trigger_effect_ids(const PackedInt64Array &effect_ids
         out["acked"] = static_cast<int64_t>(effect_ids.size());
         publish_trigger_ack_ids(this, effect_ids, out);
     }
+    return out;
+}
+
+Dictionary DCWorldExt::reconcile_completed_research_signals(int limit) {
+    if (_trigger_runtime == nullptr || _country_runtime == nullptr) return unavailable();
+    RuntimeTriggerPodCatalog catalog;
+    RuntimeTriggerSnapshot snapshot;
+    std::string error;
+    auto *trigger = runtime_from(_trigger_runtime);
+    Dictionary out;
+    out["ok"] = false;
+    out["complete"] = false;
+    if (!trigger->export_pod_catalog(catalog, error) ||
+        !trigger->export_pod_snapshot(snapshot, error)) {
+        out["reason"] = String(error.c_str());
+        return out;
+    }
+    NativeCountryRuntime *country = country_query_runtime();
+    if (country == nullptr || !country->economy_available()) return unavailable();
+    std::unordered_map<uint64_t, Dictionary> countries;
+    int32_t submitted = 0;
+    const int64_t day = std::max<int64_t>(1, snapshot.committed_day + 1);
+    for (const auto &state : snapshot.states) {
+        if (!state.completed || state.trigger_id < 0 ||
+            state.trigger_id >= static_cast<int32_t>(catalog.definitions.size())) continue;
+        const auto &definition = catalog.definitions[state.trigger_id];
+        if (definition.development_metric_id < 0 || definition.effect_count != 1 ||
+            definition.mode != static_cast<int32_t>(RuntimeTriggerMode::ONE_SHOT)) continue;
+        const auto &effect = catalog.effects[definition.effect_begin];
+        if (effect.action != static_cast<int32_t>(RuntimeTriggerAction::COUNTRY_COMMAND) ||
+            effect.opcode != NativeCountryRuntime::COMMAND_DISCOVER_COUNTRY_SIGNAL) continue;
+        auto found = countries.find(state.target_handle);
+        if (found == countries.end())
+            found = countries.emplace(state.target_handle,
+                country->country_snapshot(static_cast<int64_t>(state.target_handle))).first;
+        const Dictionary &owner = found->second;
+        if (!static_cast<bool>(owner.get("ok", false))) continue;
+        const int32_t signal = static_cast<int32_t>(effect.payload[0]);
+        if (country->has_research_signal(static_cast<int32_t>(state.target_handle), signal)) continue;
+        const int32_t cell = static_cast<int32_t>(owner.get("cell", -1));
+        if (cell < 0) continue;
+        const bool already_pending = std::any_of(snapshot.pending_effects.begin(),
+            snapshot.pending_effects.end(), [&state](const RuntimeTriggerEffectIntent &pending) {
+                return pending.trigger_id == state.trigger_id &&
+                    pending.target_handle == state.target_handle;
+            });
+        if (already_pending) continue;
+        if (submitted >= std::max(1, std::min(limit, 256))) {
+            out["ok"] = true;
+            out["submitted"] = submitted;
+            return out;
+        }
+        // This is an adapter reconciliation, not a second writer: Trigger
+        // replays its durable completion through Effect and Country's normal
+        // boundary. The representative owned cell is recorded as recovery
+        // provenance at this boundary, not as the original sample location.
+        const Dictionary replay = replay_completed_research_signal(
+            state.trigger_id, static_cast<int64_t>(state.target_handle), cell, day);
+        if (!static_cast<bool>(replay.get("ok", false))) {
+            out["reason"] = replay.get("reason", "trigger_research_replay_failed");
+            out["submitted"] = submitted;
+            return out;
+        }
+        ++submitted;
+    }
+    out["ok"] = true;
+    out["complete"] = true;
+    out["submitted"] = submitted;
     return out;
 }
 

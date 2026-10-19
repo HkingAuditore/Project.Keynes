@@ -578,6 +578,7 @@ public:
     // a numeric high-water cursor can delete an effect that was never handed
     // off. Callers must ack exactly the id set returned by handoff_effects().
     godot::Dictionary ack_trigger_effect_ids(const godot::PackedInt64Array &effect_ids);
+    godot::Dictionary reconcile_completed_research_signals(int limit = 64);
     godot::Dictionary handoff_trigger_effects(int limit = 128);
     godot::Dictionary set_trigger_enabled(const godot::Dictionary &batch);
     godot::Dictionary reconcile_trigger_branch_bindings(const godot::Dictionary &batch);

@@ -25,6 +25,8 @@ func _run() -> void:
 	var start := clock.day_index()
 	var days := int(OS.get_environment("PK_TECH_REPLAY_DAYS")) if OS.has_environment("PK_TECH_REPLAY_DAYS") else 120
 	var report := {"before": _snapshot(ext, handle), "start": start}
+	var worker_start := int(report.before.thread.get("simulation_committed_day", start - 1))
+	report["worker_start"] = worker_start
 	var research_index := -1
 	if OS.get_environment("PK_TECH_REPLAY_ENQUEUE") == "1":
 		var facade = host.generator().get_country_facade()
@@ -43,12 +45,25 @@ func _run() -> void:
 	clock.set_speed(20.0)
 	clock.pause(false)
 	deadline = Time.get_ticks_msec() + 120000
-	while (clock.day_index() < start + days or host.get("_trigger_country_delivery_id") > 0 \
+	while (int(ext.get_runtime_thread_report().get("simulation_committed_day", -1)) < worker_start + days \
+			or host.get("_trigger_country_delivery_id") > 0 \
 			or host.get("_trigger_country_delivery_waiting")) and Time.get_ticks_msec() < deadline:
 		await create_timer(0.05).timeout
 	clock.pause(true)
 	await create_timer(0.5).timeout
 	report["after"] = _snapshot(ext, handle)
+	var final_economy: Dictionary = host.generator().get_economy_report()
+	deadline = Time.get_ticks_msec() + 5000
+	while bool(final_economy.get("report_boundary_pending", false)) and Time.get_ticks_msec() < deadline:
+		await create_timer(0.02).timeout
+		final_economy = host.generator().get_economy_report()
+	report.after["economy"] = final_economy
+	report["committed_audit"] = ext.get_economy_committed_audit_report()
+	report["worker_end"] = int(ext.get_runtime_thread_report().get("simulation_committed_day", -1))
+	report["ok"] = report.worker_end >= worker_start + days \
+		and not bool(final_economy.get("fatal", true)) \
+		and int(report.after.thread.get("worker_fault_count", 1)) == 0 \
+		and bool(report.committed_audit.get("available", false))
 	if research_index >= 0:
 		report.research_check["after_state"] = report.after.research.technology_states[research_index]
 		report.research_check["progress"] = report.after.research.technology_progress[research_index]
@@ -62,7 +77,9 @@ func _run() -> void:
 	print("[delivery] before=", report.before.totals, " after=", report.after.totals,
 		" signals=", report.after.signals.signal_ids.size(), " cursor=", report.delivery_id,
 		" pending=", report.after.trigger.pending_effects)
-	quit(0)
+	print("[delivery] worker_days=", report.worker_start, " -> ", report.worker_end, " ok=", report.ok,
+		" committed_audit=", report.committed_audit)
+	quit(0 if report.ok else 1)
 
 func _snapshot(ext: Object, handle: int) -> Dictionary:
 	var research: Dictionary = ext.get_country_research_snapshot(handle)

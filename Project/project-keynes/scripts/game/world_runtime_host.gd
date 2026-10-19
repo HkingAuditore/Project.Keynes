@@ -283,6 +283,7 @@ var _trigger_country_delivery_id: int = 0
 var _trigger_country_delivery_ids: PackedInt64Array = PackedInt64Array()
 var _trigger_country_delivery_ack_sent := false
 var _trigger_country_delivery_waiting := false
+var _completed_research_signals_reconciled := false
 var _country_worker_read_generation: int = 0
 var _country_worker_read_last_day: int = -1
 var _country_worker_read_last_result: Dictionary = {}
@@ -1471,6 +1472,13 @@ func _service_trigger_country_delivery(ext: Object, _report: Dictionary) -> void
 		return
 	if not _trigger_country_delivery_waiting and _world_clock != null and _world_clock.paused:
 		return
+	if not _completed_research_signals_reconciled \
+			and ext.has_method("reconcile_completed_research_signals"):
+		var recovery: Dictionary = ext.reconcile_completed_research_signals(64)
+		_completed_research_signals_reconciled = bool(recovery.get("ok", false)) \
+			and bool(recovery.get("complete", false))
+		if int(recovery.get("submitted", 0)) > 0:
+			print("[research-evidence-recovery] ", recovery)
 	# Full-graph ACTIVE skips advance_runtime_pulse(), which used to own this
 	# handoff. Drain a bounded prefix through the existing Effect -> Country
 	# adapter, including restored effects whose effective day is in the past.

@@ -512,6 +512,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::ack_trigger_effects);
     ClassDB::bind_method(D_METHOD("ack_trigger_effect_ids", "effect_ids"),
                          &DCWorldExt::ack_trigger_effect_ids);
+    ClassDB::bind_method(D_METHOD("reconcile_completed_research_signals", "limit"),
+                         &DCWorldExt::reconcile_completed_research_signals, DEFVAL(64));
     ClassDB::bind_method(D_METHOD("handoff_trigger_effects", "limit"),
                          &DCWorldExt::handoff_trigger_effects, DEFVAL(128));
     ClassDB::bind_method(D_METHOD("set_trigger_enabled", "batch"),

@@ -3,8 +3,8 @@ extends SceneTree
 # manual_2 recovery audit: replay the 8 completed-but-missing development
 # achievement signals through the real Trigger -> Effect -> Country path and
 # prove that (a) the permanent Country research signals appear, (b) the four
-# projected technologies become revealed/eligible, and (c) a second replay does
-# not grow the signal evidence because Country dedupes by (signal, cell).
+# projected technologies become revealed/eligible, and (c) a second automatic
+# reconciliation does not resubmit already recorded country-wide evidence.
 #
 # Run:
 #   $env:PK_SAVE_DIR='F:\...\tmp\manual2_research_20261019'
@@ -132,6 +132,11 @@ func _run() -> void:
 
 	var trigger_keys: PackedStringArray = compiled_triggers.trigger_keys
 	var replay_results := []
+	var automatic_recovery: Dictionary = ext.reconcile_completed_research_signals(256)
+	_require(bool(automatic_recovery.get("ok", false)) and bool(automatic_recovery.get("complete", false)),
+		"automatic recovery admits all completed missing signals: %s" % str(automatic_recovery))
+	# The explicit replay probes below must now see the same pending effects;
+	# automatic session repair is the producer, not a hand-authored list.
 	for entry in missing_before:
 		var signal_id := String(entry.id)
 		var trigger_key := "development.achievement.%s" % signal_id.trim_prefix("development.")
@@ -177,16 +182,13 @@ func _run() -> void:
 	_require(after_missing.is_empty(),
 		"achievements still missing evidence after replay: %s" % str(after_missing.size()))
 
-	# Idempotence: replay + deliver again; Country must not add evidence.
-	var second_replay := []
-	for entry in missing_before:
-		var signal_id := String(entry.id)
-		var trigger_key := "development.achievement.%s" % signal_id.trim_prefix("development.")
-		var trigger_id := trigger_keys.find(trigger_key)
-		if trigger_id < 0:
-			continue
-		second_replay.append(ext.replay_completed_research_signal(
-			trigger_id, handle, start_cell, day))
+	# Recovery is country-wide. Once the signal exists, a later session must not
+	# add another provenance cell, even if the representative territory changes.
+	var second_reconciliation: Dictionary = ext.reconcile_completed_research_signals(256)
+	var second_replay := [second_reconciliation]
+	_require(bool(second_reconciliation.get("ok", false)) and
+		int(second_reconciliation.get("submitted", -1)) == 0,
+		"automatic recovery is idempotent after Country has the signals")
 	var second_cycle := _deliver_pending(ext, day)
 	var known_second := _signal_counts(ext, handle)
 	var evidence_growth := []
@@ -228,6 +230,7 @@ func _run() -> void:
 		"catalog_hash": int(compiled_triggers.get("catalog_hash", 0)),
 		"missing_before": missing_before,
 		"replay_results": replay_results,
+		"automatic_recovery": automatic_recovery,
 		"first_cycle": first_cycle,
 		"second_cycle": second_cycle,
 		"second_replay": second_replay,
