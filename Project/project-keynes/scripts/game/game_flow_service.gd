@@ -14,15 +14,15 @@ var _transition_layer: CanvasLayer
 
 func _ready() -> void:
 	_attach_headless_runner("PK_GAME_SAVE_ROUNDTRIP_TEST",
-		"res://tests/game_save_roundtrip_test.gd")
+		"res://tests/game/game_save_roundtrip_test.gd")
 	# 存档回放复现入口。见 tests/headless_save_replay.gd 与
 	# tools/runtime/Invoke-SaveReplay.ps1。
 	_attach_headless_runner("PK_SAVE_REPLAY",
-		"res://tests/headless_save_replay.gd")
+		"res://tests/game/headless_save_replay.gd")
 	_attach_headless_runner("PK_FAMILY_PROBE",
-		"res://tests/family_economy_probe.gd")
+		"res://tests/family/family_economy_probe.gd")
 	_attach_headless_runner("PK_COLONIZATION_PROBE",
-		"res://tests/colonization_probe.gd")
+		"res://tests/country/colonization_probe.gd")
 
 
 func _attach_headless_runner(env_name: String, script_path: String) -> void:

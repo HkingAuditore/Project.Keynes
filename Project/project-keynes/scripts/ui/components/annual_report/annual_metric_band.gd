@@ -4,21 +4,30 @@ class_name AnnualMetricBand
 ## 章节的关键数字带：两到四个巨数，共享一条基线。
 ## 旧版的统计行是「18px 标签 + 20px 数值，中间隔八百像素」，
 ## 数值完全不占主导；这里把数字推到 96px，标签降到 13px，一眼看到量级。
+##
+## 窄版心不再一列堆到底：一列四个数字要吃掉整屏，密度正是这样丢的。
+## 这里改成两列网格，数字缩到 56px，四个数从 472px 压到 184px。
 
 var _figures: Array = []
 var _compact := false
+var _hint := 0.0
 var _accent: Color = UITokens.CHRONICLE_RED
 var _ink: Color = UITokens.CHRONICLE_INK
 var _muted: Color = UITokens.CHRONICLE_MUTED
 var _brass: Color = UITokens.CHRONICLE_BRASS
+
+const COMPACT_ROW := 92.0
+const COMPACT_GAP := 14.0
+const WIDE_HEIGHT := 136.0
 
 
 func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
-func set_compact(value: bool) -> void:
+func set_compact(value: bool, width: float = 0.0) -> void:
 	_compact = value
+	_hint = width
 	_refresh_height()
 	queue_redraw()
 
@@ -33,17 +42,31 @@ func _refresh_height() -> void:
 	if _figures.is_empty():
 		custom_minimum_size.y = 0.0
 	elif _compact:
-		custom_minimum_size.y = 118.0 * float(_figures.size())
+		custom_minimum_size.y = COMPACT_ROW * float(_compact_rows())
 	else:
-		custom_minimum_size.y = 150.0
+		custom_minimum_size.y = WIDE_HEIGHT
+
+
+func _compact_columns() -> int:
+	# 版心 ≥600 时三列：六个数只占两行，比两列三行更省一屏。
+	var columns: int = 3 if _hint >= 600.0 else 2
+	return maxi(1, mini(columns, _figures.size()))
+
+
+func _compact_rows() -> int:
+	return int(ceil(float(_figures.size()) / float(_compact_columns())))
 
 
 func _draw() -> void:
 	if _figures.is_empty():
 		return
 	if _compact:
+		var columns: int = _compact_columns()
+		var cell: float = (size.x - COMPACT_GAP * float(columns - 1)) / float(columns)
 		for i in _figures.size():
-			_draw_item(_figures[i], Rect2(0.0, 118.0 * float(i), size.x, 118.0))
+			var column: int = i % columns
+			var row: int = i / columns
+			_draw_item(_figures[i], Rect2(float(column) * (cell + COMPACT_GAP), COMPACT_ROW * float(row), cell, COMPACT_ROW), true)
 		return
 	var count: int = _figures.size()
 	var gap: float = 28.0
@@ -52,7 +75,7 @@ func _draw() -> void:
 		_draw_item(_figures[i], Rect2(float(i) * (item_width + gap), 0.0, item_width, size.y))
 
 
-func _draw_item(figure: Dictionary, rect: Rect2) -> void:
+func _draw_item(figure: Dictionary, rect: Rect2, compact: bool = false) -> void:
 	var tone: String = String(figure.get("tone", "plain"))
 	var color: Color = _accent if tone == "accent" else _ink
 	var text: String = String(figure.get("text", "—"))
@@ -62,7 +85,7 @@ func _draw_item(figure: Dictionary, rect: Rect2) -> void:
 	_text(Vector2(rect.position.x, rect.position.y + 16.0), label, 13, _muted, "label")
 
 	# 数字自适应：宁可缩小也不换行，因为换行会破坏整条基线。
-	var desired := 96 if not _compact else 72
+	var desired := 56 if compact else 96
 	var size_px := _fit_size(text, desired, rect.size.x - 4.0, "numeral")
 	var baseline: float = rect.position.y + 18.0 + float(size_px) * 0.94
 	_text(Vector2(rect.position.x, baseline), text, size_px, color, "numeral")
@@ -75,7 +98,7 @@ func _draw_item(figure: Dictionary, rect: Rect2) -> void:
 	if delta != "—" and not delta.is_empty():
 		var direction: int = int(figure.get("direction", 0))
 		var delta_color: Color = _brass if direction > 0 else (_accent if direction < 0 else _muted)
-		_text(Vector2(rect.position.x, baseline + 22.0), delta, 15, delta_color, "label")
+		_text(Vector2(rect.position.x, baseline + (17.0 if compact else 22.0)), delta, 14 if compact else 15, delta_color, "label")
 
 
 func _text(at: Vector2, text: String, size_px: int, color: Color, kind: String) -> void:

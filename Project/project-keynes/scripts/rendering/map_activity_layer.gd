@@ -339,6 +339,31 @@ func _on_screen(cell: int) -> bool:
 		get_viewport().get_canvas_transform() * _position_for(cell))
 
 
+## GameAudio 缓存：活动检测每秒最多 ~1.5 次，实测开销可忽略，
+## 但没必要每次都做一次 `/root/GameAudio` 的节点查找。
+var _audio_cache: Node = null
+
+## 视觉与听觉共用同一套过滤（视野 + 屏幕内 + 缩放 + 每格冷却），
+## 所以玩家看不到的活动也不会响，省掉了音频层再做一次节流。
+## 人口的增量检测目前只有这里有（引擎侧没有人口变化事件），
+## 代价是只覆盖采样到的可见格 —— 对音效来说正好。
+func _play_activity_audio(kind: StringName, cell: int) -> void:
+	var cue: StringName = {
+		&"build": &"building_complete",
+	# growth（人口增长）不在这里发声：已改由原生市场级人口事件驱动，
+	# 两处都接会对同一次增长响两声。飘字仍然保留。
+		&"colony": &"territory_expand",
+		&"departure": &"territory_expand",
+	}.get(kind, &"")
+	if cue.is_empty():
+		return
+	if _audio_cache == null or not is_instance_valid(_audio_cache):
+		_audio_cache = get_node_or_null("/root/GameAudio")
+	# 传地块世界坐标 —— GameAudio 开了空间化时按这个位置做 3D 衰减，
+	# 没开则是普通 2D 播放，坐标被忽略。
+	if _audio_cache != null and _audio_cache.has_method("play_event_cue"):
+		_audio_cache.play_event_cue(cue, _position_for(cell))
+
 func play_activity(cell: int, kind: StringName, caption: String = "") -> bool:
 	if not _can_show(cell) or not _on_screen(cell):
 		return false
@@ -348,6 +373,7 @@ func play_activity(cell: int, kind: StringName, caption: String = "") -> bool:
 	var key := "%d:%s" % [cell, kind]
 	if _time < float(_cooldowns.get(key, -1.0)):
 		return false
+	_play_activity_audio(kind, cell)
 	var count := 0
 	var replace_index := -1
 	var selected := _selected_cell_index()

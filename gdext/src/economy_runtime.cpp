@@ -16132,6 +16132,15 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
                 _building_landform.size()) ? _building_landform[cell] : 0;
         metrics[FAMILY_METRIC_CELL_LANDFORM] = count_q16(landform);
     }
+    if (requested(FAMILY_METRIC_CELL_TERRAIN)) {
+        // uint8_t widened before the ternary so a missing cell and a genuine
+        // terrain id 0 stay distinguishable in the expression, not just in the
+        // comment.
+        const int32_t terrain = cell < static_cast<int32_t>(
+                _building_terrain.size())
+            ? static_cast<int32_t>(_building_terrain[cell]) : 0;
+        metrics[FAMILY_METRIC_CELL_TERRAIN] = count_q16(terrain);
+    }
     if (requested(FAMILY_METRIC_CELL_ESSENTIALS_SHORTAGE_Q16))
         metrics[FAMILY_METRIC_CELL_ESSENTIALS_SHORTAGE_Q16] =
             cell < static_cast<int32_t>(_cell_essentials_shortage_q16.size())
@@ -20818,6 +20827,15 @@ NativeEconomyRuntime::advance_household_market_chunk(
             _building_owner_livelihood_credit[credit.building_group] = saturating_add(
                 _building_owner_livelihood_credit[credit.building_group],
                 credit.frozen_value, _saturation_count);
+        }
+        if (market_result.births != 0 || market_result.deaths != 0) {
+            const int32_t change_cell =
+                _market_cell_offsets[market] < _market_cell_offsets[market + 1]
+                ? _market_cells[_market_cell_offsets[market]] : -1;
+            trace_append(EVENT_POPULATION_CHANGED,
+                static_cast<int32_t>(Stage::HOUSEHOLD_MARKET), change_cell,
+                SUBJECT_MARKET, static_cast<int64_t>(market), 0, 0,
+                market_result.births, market_result.deaths, 0, 0);
         }
         _births = saturating_add(_births, market_result.births, _saturation_count);
         _deaths = saturating_add(_deaths, market_result.deaths, _saturation_count);

@@ -778,8 +778,8 @@ P1 完成前，A 级 7 张可以先用新数值上线；其余卡在本版本中
 
 | # | 项 | 规模 | 现状与缺口 | 解锁 |
 |---|---|---|---|---|
-| 4 | 标签反向索引（每格 tag 位图）+ 遍历式目标解析 | L | `resolve_effect_targets`（`ideology_runtime.cpp:1280-1312`）用 `country_anchor_cell()`（`economy_runtime_family_buff.cpp:884`，返回该国**最小 cell 序号**的自有地块）作唯一锚点，再按 selector 展开。不是「一格」，但确实是「某个固定角落周围一小片」。**遍历式目标解析已落地（§25）：领土 CSR + `SELECTOR_OWN_TERRITORY`，锚点查询 O(1)；tag 位图仍待做** | B/C 级 65 张 |
-| 5 | 选择器后的条件过滤 | M | `SELECTOR_PREDICATE_ANY_CELL` 只有 3 个硬编码谓词（有河 / 是水 / 不是水）。metric 比较发生在实例建好后的 condition 阶段，无法用来筛目标 | 「只对满足条件的地块生效」 |
+| 4 | 标签反向索引（每格 tag 位图）+ 遍历式目标解析 | L | `resolve_effect_targets`（`ideology_runtime.cpp:1280-1312`）用 `country_anchor_cell()`（`economy_runtime_family_buff.cpp:884`，返回该国**最小 cell 序号**的自有地块）作唯一锚点，再按 selector 展开。不是「一格」，但确实是「某个固定角落周围一小片」。**已完成（§25、§26）：领土 CSR + `SELECTOR_OWN_TERRITORY`（锚点 O(1)）+ DNF 标签谓词表 + 每格 tag 位图；剩阈值标定属内容工作** | B/C 级 65 张 |
+| 5 | 选择器后的条件过滤 | M | `SELECTOR_PREDICATE_ANY_CELL` 只有 3 个硬编码谓词（有河 / 是水 / 不是水）。metric 比较发生在实例建好后的 condition 阶段，无法用来筛目标。**已完成（§28）：标签成为唯一的谓词语言，新增 `SELECTOR_TAG_ANY_CELL`（全图 × 标签）；剩「3 个以上标签 AND」未做** | 「只对满足条件的地块生效」 |
 | 6 | 多源聚合语义 | L | `ModifierRuntime::effective_value`（`modifier_runtime.cpp:1304`）= `(base + Σadd) × Πfactor`，同一 `(stat, scope)` 只有一个桶，多来源只能连乘 | 多源取最大 / 每来源上限 / 同格 ×3 软上限 |
 | 7 | 滞回锁存位 | S | 条件是无状态比较；`STATE_*` 只有 level / fire_sequence / input_revision / remaining_days / stack_count | 第 1 节的 5 个百分点滞回 |
 
@@ -801,22 +801,24 @@ P1 完成前，A 级 7 张可以先用新数值上线；其余卡在本版本中
 
 | # | 项 | 规模 | 现状与缺口 | 解锁 |
 |---|---|---|---|---|
-| 10 | 4 个理念 stat 及其读取点 | M | 理解度增长只读每级静态 `daily_understanding_q16`（`ideology_runtime.cpp:2386`）；重抽费 `reroll_cost_percent` 是静态 profile 值；`offer_choice_count` 被 `@export_range(3,3,1)` 锁死 3；`era_decay_bp` 是全局静态表且第 3 个时代起权重 0 = 不进池。全库理念 stat 只有 `country.ideology.point_gain_factor` 一个 | X6 全部、X15 的「史馆」 |
+| 10 | 4 个理念 stat 及其读取点 | M | 理解度增长只读每级静态 `daily_understanding_q16`（`ideology_runtime.cpp:2386`）；重抽费 `reroll_cost_percent` 是静态 profile 值；`offer_choice_count` 被 `@export_range(3,3,1)` 锁死 3；`era_decay_bp` 是全局静态表且第 3 个时代起权重 0 = 不进池。全库理念 stat 只有 `country.ideology.point_gain_factor` 一个。**理解度增长与重抽费已做完（§30，L4-10a）**，剩 `offer_choice_count` 与 `era_decay_bp` 两个结构型的 | X6 全部、X15 的「史馆」 |
+| **10a 两个倍率型理念 stat** | **已完成（§30）** | `country.ideology.understanding_gain_factor` / `reroll_cost_factor` + 共享内核三个函数 + 主线程直读 / worker 冻结 | `RuntimeIdeologyPodAuthority::self_test` 新增 13 条算术断言 + 1 天端到端重抽用例 |
+| 10b 两个结构型理念 stat | 待做 | `offer_choice_count` 锁死 3 且牵动 offer 存档形状；`era_decay_bp` 进共享的 `ideology_draw_weight` | — |
 | 11 | 卡池机制 | M | 保底 / 精进 / 封存全无；封存要新增存档字段 | X15 |
-| 12 | 运行时可读的体系标签 | S | `IdeologyDefinition.route_tag` 注释明写 "The runtime never reads it"，只能把 N 张卡 id 全枚举进 synergy 行 | 9 个体系羁绊 |
+| 12 | 运行时可读的体系标签 | **已完成（§33.2）** | 原注释明写 "The runtime never reads it"，synergy 行只能枚举 card id。现改为编译期展开 `route_tag` → 需求行，原生零改动 | 9 个体系羁绊（还差 85 张卡填 route） |
 
 ### L5 数据供给（第 8 节「改生成器即可」被低估的部分）
 
 | # | 项 | 规模 | 现状与缺口 | 解锁 |
 |---|---|---|---|---|
-| 13 | stat key 批量化生成 | M（纯机械、量大） | `country.output.landform.*` **仅 3 条**（delta.agriculture / plateau.agriculture / rift_valley.energy）；`country.tax.*` **仅 1 条**；`economy.city.good.*` **仅 1 个**（corn_grain）；`economy.city.resource.*.regen_factor` **仅 5 个**（无肥沃土壤）；`country.output.terrain.*` 分布极不均（plain 20 条、mountain 1 条） | 第 5 节 A 级 7 张中的水电、梯田、摊丁入亩、消费税制、累进税 |
-| 14 | 编译期符号解析 + 死键校验 | S | 只有 `DEAD_STAT_KEYS` 手工黑名单；物资/地貌/职业/家族/宗族 id 无统一符号表 | 内容期可维护性 |
+| 13 | stat key 批量化生成 | **已完成（实测确认，§33.3）** | 上述「仅 N 条」描述的是 85 张卡**引用到的条数**，不是生成器的产出。实测生成端已是满产：tax.income 45 / tax.consumption 134 / tax.business 400 / tax.import 134 / tax.export 134 / output.landform 80 / output.terrain 155，全表 2778 键。族完整性已由测试钉住 | 第 5 节 A 级 7 张中的水电、梯田、摊丁入亩、消费税制、累进税 |
+| 14 | 编译期符号解析 + 死键校验 | **已完成（§33.4）** | 原文提到的 `DEAD_STAT_KEYS` 在仓库里并不存在，死键实际无校验。现由 `stat_key_families.gd` 的族表 + `classify`/`format` 双向解析承担，逐键校验 | 内容期可维护性 |
 
 ### L6 可观测（不做则前五层无法验收）
 
 | # | 项 | 规模 | 现状与缺口 | 解锁 |
 |---|---|---|---|---|
-| 15 | 命中集显示链路 | M | 原生已有 `effect_instance_report`（`ideology_runtime.cpp:2546`），**零 GDScript 消费者**；卡面文案还是静态 `detail_key` | 第 8 节 P0 第 3 条、「命中 N 块地」 |
+| 15 | 命中集显示链路 | M | 原生已有 `effect_instance_report`，**零 GDScript 消费者**；卡面文案还是静态 `detail_key`。**卡面计数已完成（§31）**，**命中格上地图已完成第一段（§32）**：报告带 `target_domains`、GDScript 拆出 `cells`、`CellHighlightSet` 多格绘制、右键卡面触发。剩「已装备槽位的右键」与「跨面板常驻高亮」 | 第 8 节 P0 第 3 条、「命中 N 块地」 |
 | 16 | 地图叠加 | M | 命中的地块在图上不可见 | 设计目标 2「布局即 build」 |
 
 ## 21. 与第 8 节不一致的三处实测结论
@@ -826,14 +828,14 @@ P1 完成前，A 级 7 张可以先用新数值上线；其余卡在本版本中
 1. **生产代码里目前一张地块级理念卡都没有**。`generate_ideology_catalog.py` 全文
    0 处 `economy.city.*`，85 张全是国家级（地形/地貌只作限定条件）。
 2. 地块级路径只存在于 `data/ideologies/default_ideology_effects.tres` 的 6 张 V1–V6，
-   **只被 `tests/ideology_mechanism_matrix_test.gd` 引用**，无任何真实卡片挂它们。
+   **只被 `tests/ideology/ideology_mechanism_matrix_test.gd` 引用**，无任何真实卡片挂它们。
 3. 不是「一格」：单锚点 + selector 展开（R1 = 7 格 / R2 = 19 格 / 同地形·同资源
    连通块 / 距离 N，硬上限 32 格）。
 
 **21.2 这 6 张验证卡目前不可能正确工作**
 
 `METRIC_GTE` 恒读 0 —— 因为理念实例的 metric 从未发布（见 L0-2）。
-`tests/ideology_mechanism_matrix_test.gd` 开头自己写着 "does not simulate the
+`tests/ideology/ideology_mechanism_matrix_test.gd` 开头自己写着 "does not simulate the
 economy"，只校验声明层，因此「闭环已验证」的说法不成立。
 
 **21.3 「max_effect_instances = 512 不够」的理由需要更正**
@@ -863,14 +865,22 @@ L0-1 (metric mask) ─┬─→ L0-2 (指标发布) ─→ L1-4 (标签索引) �
 | 项 | 状态 | 落点 | 验收证据 |
 |---|---|---|---|
 | 19–22 本文档章节 | 已写入 | 本节 | — |
-| **L0-1 metric id 上限 64 → 256** | **已完成（机制侧）** | `metric_mask.h` 新增 `MetricMask` + 7 文件改型 + 容量契约 | `tests/metric_mask_capacity_test.gd`（12 checks）+ `metric_mask_tests.cpp`（9 组断言） |
-| **L0-2 指标发布** | **已完成** | `economy_runtime.*` 公开采样接口 + `ideology_runtime.cpp` 按目标格发布 + `effect_runtime.*` 读回接口 + `world_ext*` 绑定 | `tests/ideology_effect_metric_publish_test.gd`，66 checks |
+| **L0-1 metric id 上限 64 → 256** | **已完成（机制侧）** | `metric_mask.h` 新增 `MetricMask` + 7 文件改型 + 容量契约 | `tests/effect/metric_mask_capacity_test.gd`（12 checks）+ `metric_mask_tests.cpp`（9 组断言） |
+| **L0-2 指标发布** | **已完成** | `economy_runtime.*` 公开采样接口 + `ideology_runtime.cpp` 按目标格发布 + `effect_runtime.*` 读回接口 + `world_ext*` 绑定 | `tests/ideology/ideology_effect_metric_publish_test.gd`，66 checks |
 | **L0-3 预算改口径** | **已完成（声明侧）** | `generate_ideology_catalog.py` / `ideology_profile.gd`：512 → 2048 | 179 × 3 级 = 537 行不再撑爆 |
 | L0-1 指标表扩容 50 → N | 待做（内容侧，随 X9–X14） | 须同步 `FamilyEffectMetricId` 枚举 + `FAMILY_METRIC_COUNT` + `effect_domain_catalog.gd:metric_keys` | 契约已把它变成硬约束，见 §24 |
-| L0-3 并发侧预算 | 待做（新字段） | 需新增独立并发预算，不能复用声明预算 | — |
-| **L1-4a 领土索引 + `SELECTOR_OWN_TERRITORY`** | **已完成** | `economy_runtime_family_buff.cpp` 领土 CSR + 新选择器 12 | `economy_runtime_effect_selector_tests.cpp` 扩到 26 段（约 60 条断言）+ `tests/ideology_target_selector_test.gd` |
-| L1-4b 标签反向索引（每格 tag 位图） | 待做 | 见 §25.5 的三条硬约束 | — |
-| L1-5 ~ L6-16 | 待做 | 见上表 | — |
+| **L0-3 并发侧预算** | **已完成（§33.1）** | `IdeologyProfile.max_concurrent_instances`（新字段 4096）+ 编译器算最坏并发（`_program_live_target_cap` × 最宽一级 × 成长槽位） | `tests/ideology/ideology_instance_budget_test.gd` 25 checks（两个预算各自独立失败） |
+| **L4-12 运行时可读体系标签** | **已完成（机制侧，§33.2）** | `secondary_route_tags` + `route_tags()` + `IdeologySynergyDefinition.route_tag` 编译期展开 + `catalog_view` 的 `route_tags`/`route_names` | `tests/ideology/ideology_route_tag_test.gd` 49 checks |
+| **L5-13 stat key 批量化** | **已完成（本轮实测确认）** | 全表 2778 键；tax/landform/terrain/good 各族已按维度表满产 | `tests/effect/stat_key_family_test.gd` 的族完整性断言（52 checks 内） |
+| **L5-14b 符号表 + 死键校验** | **已完成（§33.4）** | `scripts/modifier/stat_key_families.gd`：族表 + `classify`/`format` 双向解析 + `arity_errors` | `tests/effect/stat_key_family_test.gd` 52 checks（逐键分类 + 往返 + 无空族） |
+| **L1-4a 领土索引 + `SELECTOR_OWN_TERRITORY`** | **已完成** | `economy_runtime_family_buff.cpp` 领土 CSR + 新选择器 12 | `economy_runtime_effect_selector_tests.cpp` 扩到 26 段（约 60 条断言）+ `tests/ideology/ideology_target_selector_test.gd` |
+| **L1-4b 标签谓词表 + 每格位图** | **已完成（机制侧）** | `target_tag.h` + `EffectRuntime` 解析 + 经济侧懒建位图 + `param1` 改 1-based 标签 id | `tests/effect/target_tag_catalog_test.gd` 30 checks + 自检第 30–35 段 |
+| **L1-4c 标签词典** | **已完成（内容侧）** | `target_tag_dictionary.gd` 239 标签 / 337 行 + `effect_domain_catalog.gd` 接线 + `economy_catalog.gd` 发布 `good_ids`/`resource_ids` | `tests/effect/target_tag_dictionary_test.gd` 52 checks（含生产目录端到端原生接受） |
+| **L1-5 选择器后的条件过滤** | **已完成（单标签）** | `SELECTOR_TAG_ANY_CELL = 13`（全图 × 标签，`param1` = 1-based 标签 id）+ 四处上限同步（新增 `TargetSelectorKind.SELECTOR_MAX_KIND`） | 原生自检新增 15 条 `tag_any_cell_*` 断言 + `target_tag_dictionary_test` 扩到 61 checks（标签 id 契约） |
+| **L5-14 名字→id 编译期解析** | **已完成** | `IdeologyEffectDefinition.target_selector_tag`（StringName）+ `_apply_selector_tag()` 编译期解析 + `build(…, ideology_effect_catalog_override)` 测试注入点 | `tests/effect/effect_selector_tag_resolution_test.gd` 27 checks |
+| **L6-15 命中集显示链路（第一段）** | **已完成（卡面计数）** | `IdeologyEffectReport.summarize()` + `IdeologyFacade.effect_instances()` + 卡面 `效果 N 处` 徽章 | `tests/ideology/ideology_effect_report_test.gd` 35 checks |
+| **L6-16 命中集上地图（第一段）** | **已完成（数据列 + 多格组件 + 右键入口）** | 原生 `target_domains` 列（派生，不进存档）+ `card_row.cells` + `CellHighlightSet` + `WorldRuntimeHost.cell_display_centers()` + `PlayerController.highlight_cells()` | `ideology_effect_instance_test` 51 checks + `ideology_effect_report_test` 35 checks |
+| L1-6 ~ L6-16（其余） | 待做 | 见上表 | — |
 
 ### 23.2 L0-2 的实际落地路径（含两处 §20 没写、不写就不成立的地方）
 
@@ -901,7 +911,7 @@ L0-1 (metric mask) ─┬─→ L0-2 (指标发布) ─→ L1-4 (标签索引) �
 
 ### 23.3 验收测试的构造要点（踩过的坑，后来者不用再踩）
 
-`tests/ideology_effect_metric_publish_test.gd` 有三条前置是老的意识形态测试从没
+`tests/ideology/ideology_effect_metric_publish_test.gd` 有三条前置是老的意识形态测试从没
 覆盖过的，缺任何一条 fixture 都建不起来：
 
 1. **`configure_economy` 必须调**。`country_anchor_cell()` 读 `_epoch_cell_country`，
@@ -1144,7 +1154,7 @@ std::vector<int32_t> _epoch_country_cells;         // 按格号升序的所有�
 
 **一个易踩的坑**：`ideology_target_selector_test.gd` 从来不在
 `tools/runtime/Invoke-RuntimeTests.ps1` 的测试数组里（全仓无任何脚本引用它），
-CI 扫描不会覆盖，必须手动 `-s res://tests/ideology_target_selector_test.gd` 跑。
+CI 扫描不会覆盖，必须手动 `-s res://tests/ideology/ideology_target_selector_test.gd` 跑。
 
 ### 25.5 还没做的：真正的「标签反向索引」，以及它为什么不能顺手做
 
@@ -1184,3 +1194,1549 @@ CI 扫描不会覆盖，必须手动 `-s res://tests/ideology_target_selector_te
 需要国别的卡一律改用 `SELECTOR_OWN_TERRITORY`。真正该做的是给 `PREDICATE_ANY_CELL`
 加一个显式的 scope 参数，那属于 L1-5（选择器后的条件过滤）的形状，与标签位图一起做更合适。
 
+## 26. L1-4b 落地记录：标签谓词表 + 每格位图
+
+### 26.1 形状：平行表，不是把 param 扩到 4
+
+§25.5 已经论证过 `target_selector_param[2]` 不能扩成 4。这次按那条结论走，
+新增的是一个**平行的可选表**（`gdext/src/target_tag.h`，`TargetTagTable`）：
+
+| catalog 键 | 形状 | 含义 |
+|---|---|---|
+| `target_tags` | `PackedStringArray` | 标签名，顺序即标签 id |
+| `tag_offsets` | `PackedInt32Array` | `tag_count + 1` 的 CSR，切 `tag_metric_*` |
+| `tag_metric_ids` | `PackedInt32Array` | 每行的 metric id |
+| `tag_metric_ops` | `PackedInt32Array` | 0 `>=` / 1 `<=` / 2 `==` / 3 `!=` |
+| `tag_metric_thresholds_q16` | `PackedInt64Array` | 阈值，**全部 Q16** |
+| `tag_metric_clauses` | `PackedInt32Array` | 行所属的 clause id |
+
+**语义是 DNF：一个标签 = 若干 clause 的 OR；一个 clause = 若干行的 AND。**
+`clause` 在同一个标签内必须非递减，`matches()` 才能一趟前向扫描读完全部行。
+
+**阈值统一 Q16 包括 id 和计数。** 因为 `fill_family_behavior_metrics()` 对每个计数
+和 id 型指标都过 `count_q16()`（例如 metric 45 = `count_q16(good_id)`，无产出时是
+`-Q16_ONE`），所以「地貌 = plain」写成 `EQ(metric 10, 0)`，「地块内 ≥3 个部门」写成
+`GTE(metric 25, 3 << 16)`。一套刻度，作者不必逐个记哪个指标是哪种。
+
+**为什么需要 AND**：设计第 1 节的「富藏〔R〕」= 主导资源是 R **且** 存量占比 ≥50%。
+只做 OR 的话这类标签表达不出来。加一个 `clause` 列就够，不必引入新算子。
+
+### 26.2 三处不写就错的地方
+
+**① 位图必须懒建。** 构建成本是 `格数 × 1 次指标采样`，在 `capture_country_epoch`
+里提前建，等于**每个存档、每天**都付一次，而多数局面一张用标签的卡都没有。
+所以改为首次查询时构建：`ensure_epoch_tag_bits()`（`economy_runtime_family_buff.cpp:1004`）
+是 `const`，位图成员是 `mutable`。它是**已冻结 epoch 状态的派生视图**，不可能与
+`_epoch_cell_country` 不一致，所以 const 语义没有被破坏。失效点有两处：
+`capture_country_epoch`（新 epoch）与 `set_target_tags`（换了表）。
+
+**② `metric_seen` 存的是 `true`，不是 id。** `effect_catalog.gd` 里 `metric_seen`
+原本只做重名检测，值是 `true`。第一版标签发射写成 `int(metric_seen[metric_key])`，
+`int(true) == 1`，于是**每一行都指向 metric id 1**——`tag metric ids resolve against
+metric_keys` 这条断言把它钉住了（期望 `[1,0,1]`，实际 `[1,1,1]`）。改成存稠密 id 后
+重名检测（`.has()`）不受影响。这类错误不报错、不崩溃，只是让所有标签悄悄读同一个指标。
+
+**③ 上一轮留了一个真的会炸的缺口：POD 选择器上限。**
+`runtime_effect_pod.h` 的 `MAX_SELECTOR_KIND` 停在了 **11**，而 L1-4a 把主线程的
+`SELECTOR_MAX_KIND` 提到了 12。两者的守卫（`effect_runtime.cpp` 的
+`pod_state_parity_self_test`）当时写的是**硬编码的 11 对比 11**，所以守卫生效地沉默了。
+
+后果不是「kind 12 不生效」，而是**一张卡用 kind 12 就整份 POD 目录校验失败** →
+EFFECT 位不置 → 十二域权威图永远拿不到。这正是文件里那段注释反复警告的
+「一张卡高于上限，全目录一起死」，也是 7/3 那次回归的形状。修法：
+
+- `MAX_SELECTOR_KIND` → 12；
+- 守卫改为对 `SELECTOR_MAX_KIND` 求值，不再硬编码，杜绝下次漂移；
+- `effect_catalog.gd:POD_MAX_SELECTOR_KIND` 同步 12（GDScript 侧镜像）。
+
+### 26.3 改了什么
+
+| 文件 | 改动 |
+|---|---|
+| `gdext/src/target_tag.h`（新） | `TargetTagRow` / `TargetTagTable`：`valid()` 全量结构校验（每条不变量一个 reason）、`collect_metric_mask()`、`matches()`（单趟 DNF 求值） |
+| `effect_runtime.h/.cpp` | catalog 解析 → `_target_tags`；`target_tags()` 只读访问器；行 metric id 超出 `metric_keys.size()` 时 `target_tag_metric_not_declared` |
+| `economy_runtime.h/.cpp` | `_target_tags` 拷贝 + `set_target_tags()`；`mutable` 位图三件套；`ensure_epoch_tag_bits()`；`cell_has_target_tag()` 探针 |
+| `economy_runtime_family_buff.cpp` | `SELECTOR_OWN_TERRITORY` 的 `param1` 从「3 个占位谓词」改为**1-based 标签 id**（0 仍表示不筛）。未知标签返回空，不再退化成「全领土」 |
+| `world_ext_effect.cpp` / `world_ext_economy.cpp` | 两条 attach 路径都推一次标签表（两个运行时可按任意顺序配置） |
+| `effect_catalog.gd` | `@export var target_tags: Array[Dictionary]` + 发射 + 作者侧校验（带标签名的 reason） |
+| `runtime_effect_pod.h` | `MAX_SELECTOR_KIND` 11 → 12 |
+
+位图布局：`tag-major`，`bits[tag * ceil(cells/64) + cell/64]`，`(cell % 64)` 取位。
+2400 格 × 20 个标签 ≈ 6 KB，可以忽略；换来的是**查询期零指标采样**。
+
+### 26.4 验证
+
+**原生（`economy_runtime_effect_selector_tests.cpp`，第 30–35 段）**
+
+- **表校验 9 条反例**：offsets 形状 / offsets 尾部越界 / 无行标签 / clause 递减 /
+  负 metric / op 越界 / 重名 / 有行无表。每条同时断言**具体 reason**，
+  避免「反正是失败了」把不变量改名也放过。
+- **真采样端到端**：fixture 的左半是铁、右半是玉米（`resource_stock_lanes` 已布置），
+  再把 `landform` 播成左 0 右 1，于是四个标签分别覆盖两条正交轴：
+  `iron`（EQ 43,0）、`landform_one`（GTE 10,1）、`either`（两 clause → OR）、
+  `impossible`（同 clause 两行 → AND，在这张图上不可满足）。
+  **AND 用「不可满足的交集」来测**，比「可满足的交集」更难作弊：把 AND 写成 OR 会立刻命中全图。
+- **领土作用域**：同一个 `iron` 标签，从左格查得 15 格全是左半，从右格查得空。
+- **位图与选择器同源**：逐格断言 `cell_has_target_tag` 与选择器结果一致。
+- **换表必须失效缓存**：把 tag 0 重写成 `landform >= 1` 后，左格立刻变 false、右格变 true。
+  这条挡的是「位图没有跟着 `set_target_tags` 失效」。
+- **cap 与标签叠加**：只给 4 格时保留最小的 4 个命中格，且仍升序。
+- 100 次确定性。
+
+**GDScript（新增 `tests/effect/target_tag_catalog_test.gd`，30 checks）**
+
+- 无标签目录：发射空数组 **且仍能 configure**。这是今天所有既有目录走的路径，
+  一旦「可选表」变成必须，这条先断。
+- 良构表：`names / offsets / ids / ops / clauses / thresholds` 六个数组逐个断言，
+  证明 GD 发射与原生读取是同一套布局。
+- 5 类作者错误在 GD 侧就被挡住，reason 里**带着标签名**（`target_tag_metric_not_declared:cell.does_not_exist`），
+  比原生那条通用 reason 更好定位。
+- 3 类「没走发射器」的脏载荷（offset 尾部错、列长不一致、metric id 越界）由原生拒绝。
+
+**回归**（17 条绿 + 2 条既有失败）
+
+| 测试 | 结果 |
+|---|---|
+| `target_tag_catalog`（新） / `metric_mask_capacity` | 30 / 12，0 失败 |
+| `ideology_target_selector` | 2 checks（内含约 90 条原生断言），0 失败 |
+| `ideology_effect_metric_publish` / `ideology_effect_instance` | 66 / 48，0 失败 |
+| `ideology_runtime` / `ideology_content` / `ideology_progression` | 63 / 49 / 21，0 失败 |
+| `ideology_mechanism_matrix` / `ideology_effect_worker_forward` | 107 / 74，0 失败 |
+| `family_effect_worker_forward` / `family_effect_restore_forward` | 25 / 46，0 失败 |
+| `technology_effect_worker_forward` / `runtime_effect_pod` | 19 / 20，0 失败 |
+| `effect_runtime` / `effect_native_opcode_catalog` | exit 0 / 7 checks，0 失败 |
+| `family_behavior_effect_runtime` | 9 失败，既有基线 |
+| `family_buff_runtime_test` | 4 失败，与上一轮**逐行相同**（`economy_legacy_ingress_disabled`），非本次回归 |
+
+`ideology_target_selector_test` 与 `target_tag_catalog_test` 都已加入
+`tools/runtime/Invoke-RuntimeTests.ps1`。前者此前**从未**在清单里，等于那约 90 条
+原生断言一直没进 CI。
+
+### 26.5 与 §25.5 的预测有两处不同
+
+1. **§25.5 说 粮作 需要 `op = IN_GROUP` 和物资分组进 catalog（依赖 L5-14）。实测不需要。**
+   「主产物 ∈ {小麦,稻米,玉米,马铃薯,谷物}」写成**五个单行 clause** 就成立——
+   同标签不同 clause 是 OR，正好是集合成员语义。于是 L1-4b **不再被 L5-14 阻塞**。
+2. **§25.5 只列了四个表，漏了 `clause`。** 没有它就只能做纯 OR，富藏类标签表达不出来。
+
+这也说明「先按最小形状落地、把不变量写进 `valid()`」比先设计一套通用表达式语言更划算：
+真正的形状是被标签词典逼出来的，不是预先想清楚的。
+
+### 26.6 还没做的
+
+- **15 个标签的阈值标定**。机制已就绪，但 P0/P1/P2/T（边地 30 分位、聚落 70 分位、
+  大邑 90 分位、繁市 75 分位）要按「开局后 50 年存档的自有地块分布」算，
+  属于数据工作，且和 X9–X14 的指标扩容一起做更省事。
+- **标签的运行时读取点**。现在只有 `SELECTOR_OWN_TERRITORY` 吃标签；
+  `SELECTOR_PREDICATE_ANY_CELL` 要加显式 scope（见 §25.6），和 L1-5 一起做。
+- **位图的性能护栏**。构建是 `格数 × 1 次采样`，2400 格下尚可，但如果地图到万格级、
+  标签到 40+ 个，需要复用 `_economy_live_cells` 或按国家分片。当前没有任何测量，
+  不做优化是对的——但没有护栏这一点要记住。
+
+## 27. L1-4c 落地记录：标签词典（§1 那张表变成可执行数据）
+
+§26 把**机制**做完了：一张 `TargetTagTable` + 每格位图。但 `effect_catalog.target_tags`
+一直是空的——机制在，内容不在，于是 65 张 B/C 卡连一个可引用的标签名都没有。
+本节只填内容，**一行 C++ 都没改**。
+
+### 27.1 关键发现：复合标签不需要扩机制，用分配律就出来了
+
+§26 定的匹配语义是「**同一 clause 内的行 AND，不同 clause 之间 OR**」。把这条对
+两个标签做分配律：
+
+```
+(A 的 clause 集合) × (B 的 clause 集合) 两两求并
+```
+
+因为并起来的每一组都成了**一个 clause 里的若干行**，而 clause 内是 AND——
+所以 clause 积恰好等于逻辑与。于是「边地的农业地块」可以是一个普通标签：
+
+| 标签 | clause | 行 |
+|---|---|---|
+| `cell.frontier.agriculture` | 0 | `cell.population ≤ P0*Q16-1`、`cell.sector_output_share.agriculture_q16 ≥ 50%` |
+
+零机制改动、零新算子，只要生成时做对乘法。
+
+反过来，如果偷懒把两个标签的行**首尾相接**（A 的 clause 0..n 后面接 B 的 clause 0..m，
+重新编号），得到的是 **OR**：只要「是边地」就命中，农业条件等于没写。
+这个错误不会报错、不会崩溃，只是让效果悄悄作用到全部领土上。§27.5 专门有一条断言盯它：
+`cell.frontier.grain` 必须是 **10 行 5 clause**，不是 6 行。
+
+### 27.2 新的东西只有一个文件
+
+`Project/project-keynes/scripts/effect/target_tag_dictionary.gd`（`TargetTagDictionary`）：
+纯生成器，产物是 `[{name, rows:[{metric, op, threshold_q16, clause}]}]`，判据仍在原生侧。
+
+生产规模（`good_ids` 134 项、`resource_ids` 31 项）：
+
+| 组 | 标签数 | 说明 |
+|---|---|---|
+| 规模档 | 4 | `cell.frontier` / `cell.settlement` / `cell.metropolis` / `cell.market` |
+| 产出结构 | 2 + 1 + 134 + 5 | `specialized` / `specialized_high` / `grain` / `produces.<物资>` / `sector.<部门>` |
+| 资源存量 | 31 | `cell.rich.<资源>` = 主导资源 **且** 存量占比 ≥50%（同 clause 两行） |
+| 结构与状态 | 7 | `diversified` / `chained` / `unemployed` / `shortage` / `abundant` / `depleted` / `rain` |
+| 地貌 | 16 | `cell.landform.<LF 小写名>`，枚举直接取自 `LandformType.LF`，尾部新增自动带上 |
+| 复合 | 39 | 3 规模 × 5 部门 + 5 繁市 × 部门 + 16 繁市 × 地貌 + 3 规模 × 粮作 |
+| **合计** | **239 标签 / 337 行** | 上限是 512 / 8192（`TargetTagTable`） |
+
+`cell.produces.<物资>` 是按 `good_ids` 全量生成的，不做挑选：卡面写「主产木材」时
+不该出现「这个物资恰好没生成标签」这种坑，缺一个就等于那张卡永远选不到目标。
+
+接线两处：
+
+1. `effect_domain_catalog.gd` 末尾（`catalog.definitions` 之后）调 `TargetTagDictionary.build()`，
+   失败即 `_reject()` 硬失败——和这份文件里其它编译期错误同口径。
+2. `economy_catalog.gd` 把 `good_ids` / `resource_ids` 加进 `catalog` 的发布列表。
+   这两个数组本来就已经编好了（`content_binding_summary`，用于技术绑定哈希），
+   只是没往外发；再写一次"从 CSV 重新推导 id 顺序"才是真正会漂移的镜像。
+
+### 27.3 三处不写就错的地方
+
+1. **人口和计数值都是 `count_q16`**。整数人口 `p` 采样成 `p * Q16_ONE`，所以
+   「人口 < P0」必须写 `≤ P0*Q16 - 1`。写成 `≤ P0*Q16` 会把恰好等于 P0 的格算进边地——
+   差一格，且只在阈值上出现，几乎不可能在玩的时候发现。
+2. **`target_tags` 是 `Array[Dictionary]`**。赋一个无类型 `Array` 会在运行时抛
+   SCRIPT ERROR，而 SCRIPT ERROR **不会冒泡成错误**，它只是让 `build()` 返回 null。
+   现象是「目录构建失败但没有任何 reason」，和 §26 里 `metric_seen` 存 `true`
+   那次是同一类陷阱。绕法是显式 `Array[Dictionary]` 转换一次，只在那一个跨界点做。
+3. **clause 积不能退化成拼接**（见 §27.1）。
+
+顺带把 `EffectDomainCatalog.build()` 里 10 处裸 `return null` 全部换成
+`_reject("<reason>")`。原来是静默的，于是「目录坏了」和「目录没建」在日志里完全同形——
+这次正是靠它才定位到第 2 点。
+
+### 27.4 阈值是临时的，而且必须显式承认
+
+§1 要求 P0/P1/P2/T 按「开局后 50 年存档的自有地块分布」的分位数标定（30 / 70 / 90 /
+贸易事件 75 分位）。**仓内既没有 50 年存档，也没有长期经济模拟探针**（只有存档往返
+测试产物和临时 UI 探针；世界时钟是 `_process` 驱动的实时循环，不是批量推进器）。
+
+所以四个常量当前是**临时值**，锚点是既有测试夹具里「地块人口量级约百人」
+（`tests/world/map_activity_layer_test.gd` 用 `population = 108`）：
+
+| 常量 | 值 | 目标分位 |
+|---|---|---|
+| `FRONTIER_POPULATION` | 120 | 30 |
+| `SETTLEMENT_POPULATION` | 400 | 70 |
+| `METROPOLIS_POPULATION` | 1200 | 90 |
+| `MARKET_TRADE_EVENTS` | 24 | 75 |
+
+`CALIBRATION_IS_PROVISIONAL = true` 就是为了让这件事在代码里也留痕。标定有两条路：
+
+- **改常量**：`target_tag_dictionary.gd` 顶部四个数，词典与卡面定义都不用动，重烤一次目录即可。
+- **改数据**：运行时覆盖 `effect_catalog.target_tags` 里的 `threshold_q16`，
+  再 `set_target_tags()` 推给经济侧，**不必重新编译原生库**——这条路是为"存档侧标定器"
+  留的：拿到 50 年存档后，扫描自有地块 -> 算分位数 -> 直接写回阈值。
+
+### 27.5 验证
+
+`tests/effect/target_tag_dictionary_test.gd`，**52 checks**，分两层：
+
+- **合成经济夹具**（6 物资 / 2 资源，跑得快）：逐个断言 atoms 的形状。边地阈值必须是
+  `P0*Q16-1` 而不是 `P0*Q16`；粮作必须 5 个 clause（OR）而不是 1 个 clause 5 行（AND）；
+  富藏必须 2 行同 clause；op 全在 0..3；clause 非降；名字唯一；标签数与行数在 512/8192 内。
+- **生产目录端到端**：`EffectDomainCatalog.build()` -> `target_tags` 非空（239 个）
+  -> `compile_native_catalog()` 通过 -> `configure_effects()` 原生接受。
+  这是唯一能抓到 metric key 拼错的一层：`compile_native_catalog` 会报
+  `target_tag_metric_not_declared`，原生 `configure()` 会因一行越界拒掉**整张表**。
+
+`economy_runtime_effect_selector_tests.cpp` 的约 35 段合成网格断言（含
+`tag_and_within_clause`、`tag_table_swap_invalidates_bits`、`tag_deterministic`）
+仍然是「标签到底选没选对格」的唯一证据——词典只保证形状对不对。
+
+### 27.6 还没做的
+
+- **「河谷 / 泛滥平原」这类地貌表达不出来**。metric 10 是 **landform 轴**
+  （`LandformType.LF`：平原/低地/丘陵/山地/高峰/三角洲/荒原/盐滩/火山/高原/裂谷/峡谷…），
+  「河谷」是 **terrain 轴**（`data/terrain/floodplain.tres`）。§1 的表把两者混在
+  「地貌〔L〕」一行里，实测不是一个 id 空间。要补得加 metric 50 `cell.terrain`
+  ——追加枚举 + 一行采样 + `metric_keys` 同步，改动很小，但会动 `FAMILY_METRIC_COUNT`，
+  留到和 X9–X14 的指标扩容一起做。好消息是引用「河谷」的卡（漕运、灌溉网）
+  本来就被 X2 连通块挡着，不急。
+- **三个及以上标签的 AND**。clause 积会膨胀（5 clause 的粮作 × 16 地貌 × …），
+  目前只生成了两谓词的组合。要更多层，要么等 L1-5 的 scope 参数，
+  要么给选择器加第二个标签槽——都属机制改动，不做在词典里。
+- **X2 / X3 / X4 那几类标签**（计邻、连片、矿区、职业占比、新增）本来就不在
+  metric 表里，随各自基建项做。
+- **位图构建成本**。239 个标签 × 2400 格 ≈ 57 万次 `matches()`，懒建一次尚可接受，
+  但 §26.6 那条「没有护栏」现在更值得记一笔：标签数从 0 涨到 239，
+  万格级地图上这就是 240 万次。真要优化，先测，再按国家分片。
+
+§26.6 的第一条（「15 个标签的阈值标定」）被本节部分消化：**标签定义与形状已完成，
+只剩阈值数值待标定**。
+
+## 28. L1-5 落地记录：选择器后的条件过滤（`SELECTOR_TAG_ANY_CELL`）
+
+§20 给 L1-5 的问题陈述是：「`SELECTOR_PREDICATE_ANY_CELL` 只有 3 个硬编码谓词
+（有河 / 是水 / 不是水）。metric 比较发生在实例建好后的 condition 阶段，无法用来筛目标」。
+
+§27 把 metric 比较做成了**标签**，标签成了唯一能筛目标的谓词语言。缺的最后一块是：
+**「全图上所有满足标签 T 的格」这个组合表达不出来。**
+
+### 28.1 缺口是一个 2×2 矩阵的第四象限
+
+| | 旧谓词（河/水/陆） | 标签 |
+|---|---|---|
+| 全图 | `PREDICATE_ANY_CELL`（10）✓ | **无** ✗ |
+| 本国领土 | —（10 是全图，会打到敌国） | `OWN_TERRITORY`（12）✓ |
+
+具体后果：「所有海岸地块贸易 +15%」（市舶开港）**此前根本无法表达**。
+`PREDICATE_ANY_CELL` 不认识「海岸」，两个 component 类选择器又只能沿锚点自身的地貌走，
+无法反向说「地貌为 X 的格」。
+
+### 28.2 方案：新增 kind 13，不是给 `param1` 加 scope
+
+§25.6 当时的预测是「给 `PREDICATE_ANY_CELL` 加一个显式的 scope 参数」。**实测走了另一条路**：
+新增 `SELECTOR_TAG_ANY_CELL = 13`，`param1` 仍然是 1-based 标签 id（0 = 全图）。
+
+理由是 id 空间冲突，不是审美：
+
+- `PREDICATE_ANY_CELL` 的 `param1 = 1/2/3` 已经**在既有内容里**，意思是河 / 水 / 陆；
+- 标签 id 也从 1 开始（`cell.frontier` 就是 1）。
+
+所以「同一个 `param1` 槽位按 scope 解释成两套 id」会让**每一张既有卡静默改义**——
+`param1 = 1` 从「有河」变成「边地」。这和不给 `target_selector_param[2]` 扩宽是同一条理由
+（§26.1）：宁可多一个 kind，不改既有数字。
+
+于是矩阵闭合为三个 kind，每个 kind 的 `param1` 只有一种含义：
+
+| kind | 值 | 范围 | `param1` |
+|---|---|---|---|
+| `SELECTOR_PREDICATE_ANY_CELL` | 10 | 全图 | 旧谓词 id（1 河 / 2 水 / 3 陆），**冻结** |
+| `SELECTOR_OWN_TERRITORY` | 12 | 本国领土 | 1-based 标签 id，0 = 全部自有格 |
+| `SELECTOR_TAG_ANY_CELL` | 13 | 全图 | 1-based 标签 id，0 = 全图 |
+
+实现在 `economy_runtime_family_buff.cpp`，与领土分支并列放在
+**building-snapshot 守卫之前**：标签是一次 metric 采样，不是邻居图遍历，
+所以在「epoch 已捕获、建筑列还没刷新」的窗口里也必须能用（和领土分支同一条理由）。
+未知标签 id 返回空，不退化成全图——与 `OWN_TERRITORY` 的 fail-closed 一致。
+
+cap 取 `SELECTOR_MAX_CELLS = 32`（`param0 = 0` 时），因为它的用途是**限制实例表规模**
+（9 槽 × 32 = 288，表容量 4096），不是给格子排序。匹配多于 cap 时保留**最小格号**：
+地理上任意，但可复现；「离锚点最近的 32 个」对一个本来就无锚点意义的全图卡反而更没道理。
+
+### 28.3 又踩到一处镜像常量：创作层把 12 和 13 一起拒了
+
+`ideology_effect_definition.gd` 的校验写的是：
+
+```gdscript
+if target_selector_kind < 0 or target_selector_kind > TargetSelectorKind.DISTANCE_N:
+    return "ideology_effect_selector_invalid"
+```
+
+**`DISTANCE_N` 是 11。** 也就是说 L1-4a 加进原生的 `OWN_TERRITORY = 12`
+**从来没能从 `.tres` 里写出来过**——原生接受、POD 接受、`effect_catalog.gd` 也接受，
+只有创作层默默拒绝。这不是本轮新引入的 bug，是上两轮没查到的地方：
+我上一轮记的「三处必须同步的上限」漏了它。
+
+修法不是把 11 改成 13，而是**在枚举里定义上限并对上限求值**：
+
+```gdscript
+enum TargetSelectorKind {
+    ...
+    TAG_ANY_CELL = 13,
+    SELECTOR_MAX_KIND = 13,
+}
+...
+if target_selector_kind < 0 or target_selector_kind > TargetSelectorKind.SELECTOR_MAX_KIND:
+```
+
+现在上限一共**四处**，全部是 13：
+
+| 位置 | 常量 |
+|---|---|
+| `gdext/src/effect_runtime.h` | `EffectRuntime::SELECTOR_MAX_KIND` |
+| `gdext/src/runtime_effect_pod.h` | `RuntimeEffectPodAuthority::MAX_SELECTOR_KIND` |
+| `scripts/effect/effect_catalog.gd` | `POD_MAX_SELECTOR_KIND` |
+| `scripts/ideology/ideology_effect_definition.gd` | `TargetSelectorKind.SELECTOR_MAX_KIND` |
+
+另有一处**刻意更窄**、不属于这一组：`family_effect_catalog.gd` 把家族效果限制在
+`NEIGHBORS_R2`（7）以内——那是家族域的既有契约，不是镜像。
+
+### 28.4 顺带钉死一件事：标签 id 是契约
+
+`param[1]` 直接写标签 id，而 id 是**数组下标**。重排标签会让所有卡的 `param[1]`
+整体错位，且不报错、不崩溃，只是安静地作用到别的地块上。所以：
+
+- `TargetTagDictionary.tag_index(tags, name)` 是唯一的名字→id 入口（1-based，0 = 找不到）；
+- `target_tag_dictionary_test` 把**前七个 id** 钉成契约：
+
+  | id | 标签 |
+  |---|---|
+  | 1 | `cell.frontier` |
+  | 2 | `cell.settlement` |
+  | 3 | `cell.metropolis` |
+  | 4 | `cell.market` |
+  | 5 | `cell.specialized` |
+  | 6 | `cell.specialized_high` |
+  | 7 | `cell.grain` |
+
+- 同一条断言顺手当**重名检测器**：遍历全部 239 个标签，要求
+  `tag_index(name) == 下标 + 1`；重名时返回的是第一次出现的下标，对不上就红。
+
+规矩和 `FamilyEffectMetricId` 一样：**新标签只能追加，不能插入**。
+真正的名字→id 编译期解析留给 L5-14（现在卡面还是得写数字）。
+
+### 28.5 验证
+
+原生 `economy_runtime_effect_selector_tests.cpp` 新增 15 条断言，全部在既有网格夹具上
+（左半 iron 标签、右半 landform≥1 标签，两国分治）：
+
+| 断言 | 想钉住的东西 |
+|---|---|
+| `tag_any_cell_ignores_owner` | 决定性的一条：同一个调用在 `OWN_TERRITORY` 下是**空**（敌国锚点），在这里必须返回**整套**匹配格 |
+| `tag_any_cell_iron_half` / `_landform_half` | 命中集只跟标签走，不跟锚点走 |
+| `tag_any_cell_either_covers_grid` | 跨 clause 的 OR 在全图范围仍然是 OR |
+| `tag_any_cell_impossible_empty` | 同 clause 的 AND 仍然是 AND |
+| `tag_any_cell_no_filter_whole_grid` | `param1 = 0` = 全图无筛（「所有海岸格」就是这个形态） |
+| `tag_any_cell_without_table` | 没有标签表时**返回空**，不退化成全图 |
+| `tag_any_cell_unfiltered_no_table` | 但没有标签表时 `param1 = 0` 仍然给全图——它根本没问标签问题 |
+| `tag_any_cell_unknown_id` | 未知 id（5/77/4096）返回空 |
+| `tag_any_cell_cap_*` / `_hard_clamp` | cap 保留最小格号、有序、不越上限 32 |
+| `tag_any_cell_anchor_independent` | 换 4 个不同锚点，结果逐格相同 |
+
+GDScript 侧：`target_tag_dictionary_test` 52 → **61 checks**（含 §28.4 的 id 契约），
+`target_tag_catalog_test` 30、`metric_mask_capacity_test` 12 不变；
+`ideology_target_selector_test` 2 项全绿（其内核是上面那 ~110 条原生断言）。
+
+其余回归全绿：`runtime_effect_pod` 20、`ideology_runtime` 63、`ideology_effect_instance` 48、
+`ideology_mechanism_matrix` 107、`ideology_content` 49、`ideology_progression` 21、
+`effect_runtime` exit 0。
+
+### 28.6 还没做的
+
+- ~~**名字→id 的编译期解析**（L5-14）。现在卡面写 `target_selector_param = [32, 4]`，
+  4 是 magic number，只能靠 §28.4 的契约测试兜着。理想形态是 `.tres` 里写
+  `target_selector_tag = &"cell.market"`，编译期解析成 id。~~
+  **已完成，见 §29。** 卡面现在可以写 `target_selector_tag = &"cell.market"`，
+  编译期解析成 `param[1]`，未知名直接让整次构建失败。
+- **tag 版本选择器与条件过滤的交互**。现在「3 个以上标签 AND」仍要 clause 积展开；
+  `SELECTOR_TAG_ANY_CELL` 只解决单标签。多标签 AND 的正解仍然是 L1-5 的另一半
+  （选择器后的二次过滤），本轮没做。
+- **`PREDICATE_ANY_CELL` 的旧谓词没有迁到标签**。它的 1/2/3 保持冻结，
+  新内容应改用 `TAG_ANY_CELL` + `cell.landform.coast` 一类标签。
+
+
+## 29. L5-14 落地记录：名字 → id 的编译期解析
+
+§28.6 第一条留下的尾巴：卡面写 `target_selector_param = [32, 4]`，那个 4 是
+`cell.market` 在标签词典里的**数组下标**。
+
+### 29.1 这个数字为什么必须消失
+
+`cell.market` = 4 这句话今天是真的。它明天还真的前提是「`cell.market` 前面
+一个标签都没被插入」——而 §28.4 的契约测试只钉住了**前七个**不许动。
+第八个之后插一个，`cell.market` 变 5，所有写着 4 的卡：
+
+- 不报错（4 仍是合法 id）；
+- 不崩溃（选择器照跑）；
+- 不失效（效果照加）。
+
+**只是作用于 `cell.specialized` 了。** 这是本项目里最难查的一类失败：三层
+护栏（GDScript 校验 / POD 校验 / 原生校验）全都看不出问题，因为它们校验的
+是「id 在范围内」，而错误恰恰发生在范围内。
+
+所以名字不是糖。它把「作者必须记住一个下标」换成「作者必须写对一个名字」，
+后者在编译期可验、错了会红。
+
+### 29.2 三处改动
+
+1. **卡面**（`ideology_effect_definition.gd`）
+
+   ```gdscript
+   @export var target_selector_tag: StringName = &""
+   ```
+
+   与 `param[1]` **互斥**，两条校验：
+
+   | 拒因 | 含义 |
+   |---|---|
+   | `ideology_effect_selector_tag_kind_invalid` | 名字只对 `OWN_TERRITORY` / `TAG_ANY_CELL` 有意义 |
+   | `ideology_effect_selector_tag_conflicts_with_param` | 名字与 `param[1]` 同时非零 = 一个槽两个真相 |
+
+2. **词典侧**（`target_tag_dictionary.gd`）
+
+   新增 `tag_id_map(tags) -> Dictionary`：一次摊平、多次查。
+   `tag_index()` 保留（线性查，测试在用它逐条对账），两者必须一致——
+   `target_tag_dictionary_test` 的 239 条遍历断言同时就是对账。
+
+3. **编译期**（`effect_domain_catalog.gd`）
+
+   解析逻辑抽成 `_apply_selector_tag(program, tag_name, tag_ids) -> String`，
+   返回 `""` 或**完整拒因**。抽出来的理由不是强迫症：这段逻辑的正确性
+   全在边界上（空名、未知名、空词典、`param` 数组短于两格），而这些边界
+   在 `.tres` 里布置起来极贵，在函数里布置是一行。
+
+   标签词典的构建也因此**前移**到 `economy_catalog` 之后、理念效果循环之前
+   （原本在函数末尾），否则解析时手里没有映射。
+
+### 29.3 三种「未知」必须长得不一样
+
+`param[1] = 0` 这个值**已经有主了**：它表示「不按标签筛」。所以未知的名字
+绝不能退化成 0。四条分支，四种后果：
+
+| 输入 | 结果 |
+|---|---|
+| `tag == &""` | 不改 `param`，`""`（每张既有卡的形态） |
+| 名字在表里 | `param[1] = id` |
+| 名字不在表里，表非空 | `effect_catalog_target_selector_tag_unknown:<key>:<name>` |
+| 名字在表里但映射到 0 | 同上 —— **0 不是 id** |
+| 表根本没有（经济目录没编出来） | `effect_catalog_target_selector_tag_no_dictionary:<key>:<name>` |
+
+最后两条值得单说：
+
+- **`0` 被拒绝而不是被接受成「不筛」**。一个映射到 0 的标签等于「筛个寂寞」，
+  效果会作用到全图——正是最该拦住的那种「看起来在工作」。
+- **「没词典」与「名字写错」分开报**。经济目录编译失败时，**每个**名字都会
+  看起来像写错了。两者混在一起报，下一个查问题的人会去翻一张根本没问题的卡。
+  这个区分是拿两次真实排障时间换来的（§27 里那个 `SCRIPT ERROR` 让空指针
+  和空结果同形的坑）。
+
+### 29.4 一处规则，到处调用
+
+编译循环里现在先调 `effect.validate()`，再解析名字：
+
+```gdscript
+var card_error: String = effect.validate()
+if not card_error.is_empty():
+    return _reject("effect_catalog_%s" % card_error)
+```
+
+不是重写一份「kind 必须是 12/13」的判断。理由见 §28.3：**两份规则 = 一个
+上限**，`DISTANCE_N` 那个 bug 就是这么来的（校验层看着 11，原生层看着 13，
+中间静静躺了两轮）。`IdeologyCatalog` 也调 `validate()`，但它只在经济侧
+编译成功时才走到；编译循环无条件调用，两边同一个规则本。
+
+代价是每张卡多一次廉价校验，179 张卡可以忽略。
+
+### 29.5 解析必须发生在去重短路**之前**
+
+```gdscript
+_apply_selector_tag(...)            # ← 先
+if definition_seen.has(program_key): continue   # ← 后
+```
+
+反过来（先查重再解析）会造成一个很难发现的洞：**第一张抢占 key 的卡把那之后
+同 key 的所有卡的拼写错误全遮住了**。构建通过的日志看着一切正常，错的标签
+连同那张卡一起被安静丢掉。测试里专门有一条 `_test_compile_loop_resolves_before_dedupe`
+钉这个顺序。
+
+### 29.6 为了能测，加了一个注入点
+
+`build()` 现在是：
+
+```gdscript
+static func build(family_effect_catalog_override: Resource = null,
+        ideology_effect_catalog_override: Resource = null) -> Resource
+```
+
+第二个参数是这次加的，理由写在注释里：**今天仓库里没有任何一张卡用
+`target_selector_tag`**（`default_ideology_effects.tres` 里 6 张卡，
+一张 `SELECTOR_ID`、一张 `DISTANCE_N`、其余 `OWNER`）。没有注入点的话，
+「编译循环真的会把名字解析成 id」这句话只能靠读代码相信，而不能靠测试证明——
+`_apply_selector_tag` 单测绿了，也不能排除调用点传错参数。
+
+顺带修了一个必然会踩的坑：`LoadingCatalogCache.effect_catalog()` 的快路径
+原本只看 `family_effect_catalog_override == null`，只传理念覆盖时会被缓存
+直接吃掉、覆盖形同虚设。现在两个覆盖都为 null 才走缓存。
+
+### 29.7 验证
+
+新增 `tests/effect/effect_selector_tag_resolution_test.gd`，**27 checks**，四组：
+
+| 组 | 钉住的东西 |
+|---|---|
+| 解析器单测（16 条） | 空名 no-op / 已知名落 `param[1]` 且**不动 `param[0]`** / id=1 不被当成「未设置」/ 未知名带 key 与名字 / id 0 被拒 / 空词典单独报 / 空数组与单元素数组都会被补到两格 |
+| 卡面规则（5 条） | 错 kind、名字与 `param[1]` 冲突、kind 越过上限被拒；两种 tag-scoped kind 被接受 |
+| 编译端到端（5 条） | 注入一张写 `&"cell.market"` 的卡 → 目录编出来 → 定义表里找到 `param[1]`，且**与本次构建发布的词典里 `tag_index` 求出的值相等**（不硬编码 4，避免测试自己变成第二个真相） |
+| 去重顺序（1 条） | 同 key 的第二张卡写错标签名，仍然让整次构建失败 |
+
+`Invoke-RuntimeTests.ps1` 已登记。生产目录端到端由 `target_tag_dictionary_test`
+第 5 段继续兜着（它会真的调一次 `build()`，因此新增的 `validate()` 闸门
+和 `catalog.target_tags` 发布时间点都被覆盖）。
+
+### 29.8 还没做的
+
+- **卡池里还没有一张卡用它**。机制通了、测试通了，但真正的集成验收是
+  第一张用 `target_selector_tag` 的生产卡——那要等内容侧把「沿海」「产粮」
+  这类卡写出来，属于 X 系列。
+- **`.tres` 编辑器没有下拉/补全**。`target_selector_tag` 仍是裸 `StringName`，
+  编辑期拼错要等到编译才红。要更好的体验得给 `ideology_effect_definition.gd`
+  加 `@tool` 校验或自定义 inspector，本轮没做。
+- **名字只解决「哪个标签」**，不解决「多个标签 AND」。`TAG_ANY_CELL` 依然
+  只吃一个标签 id，多标签 AND 仍要靠 clause 积或选择器后的二次过滤（§28.6）。
+
+
+
+
+## 30. L4-10a 落地记录：两个倍率型理念 stat
+
+§20 的第 10 项一次列了四个 stat。实际动手时它们分成两类，成本差一个量级：
+
+| stat | 类型 | 消费点的形状 |
+|---|---|---|
+| 理解度增长 | **倍率** | `understanding += daily * factor` |
+| 重抽费 | **倍率** | `cost = paid * (percent * factor) / 100` |
+| 选卡数量 | **结构** | offer 数组长度，牵动存档与 `choice_index >= 3` 的硬编码 |
+| 时代衰减 | **结构** | 抽卡权重表，牵动 `draw_weight` 与卡池成员判定 |
+
+所以先做两个倍率的（L4-10a），结构型的留给 L4-10b。**本轮完成后，「读书更快」
+和「重抽更便宜」两类卡可以写了**——在此之前理解度增长是卡牌完全够不到的一个数。
+
+### 30.1 一条链路五处，和 `point_gain` 一模一样
+
+`country.ideology.point_gain_factor` 是唯一的先例，直接照抄：
+
+1. `modifier_catalog.gd` 的 `TECHNOLOGY_STATS` 声明键与值域（**追加在末尾**，
+   前面所有 stat 的稠密 id 一个都没动）；
+2. `STAT_DISPLAY_NAMES` 给中文名，否则 UI 显示裸 id；
+3. `ideology_profile.gd` 加 `*_stat_key` 字段，空串 = 不启用 = 1.0；
+4. `ideology_catalog.gd` 把 key 编进 IR；
+5. 运行时消费（下面 30.2 是唯一有分歧的一处）。
+
+生成器里 `build_ideology_catalog()` 也补了两行显式写出 key。理由是**生成的
+`.tres` 是数据文件**：只存在于 GDScript 默认值里的字段，读数据文件的人看不见，
+也就不知道一份存档依赖了什么。重跑生成器后 `default_ideology_catalog.tres`
+的差异是 **+3 行**，其余零漂移（顺带证明生成器与已提交数据是同步的）。
+
+### 30.2 主线程直读，worker 冻结——这不是重复，是信息不对称
+
+两套理念运行时读同一个 stat 的方式**必须不同**：
+
+- `NativeIdeologyRuntime`（主线程）手里有 `ModifierRuntime`，直接
+  `effective_value(COUNTRY, key, handle, 0, 1.0)`；
+- `RuntimeIdeologyPodAuthority`（worker）**碰不到 ModifierRuntime**——那是有主之
+  物。它的值只能由 `native_simulation_host` 在 `execute_ideology_worker_stage`
+  里从 modifer POD 的 buckets 冻结进 `RuntimeIdeologyOpinionSnapshot`。
+
+所以链路是：**同一个 stat，两条读取路径，一份算术**。第三条是绝不能有的：
+两份算术。历史教训见 §28.3（`DISTANCE_N` 的两份上限）。
+
+主线程侧还多了一层缓存：`_understanding_gain_stat_id` / `_reroll_cost_stat_id`
+是 `mutable int32_t`，首次使用时由 `stat_id_for_key` 解析并缓存，`configure()`
+里清零。理由是 `effective_value(domain, const char *key, ...)` 每次调用都要做一次
+字符串查找，而这个函数在「每个国家 × 每张已装备卡 × 每天」的内循环里。
+
+### 30.3 三个函数搬进共享内核
+
+`runtime_ideology_draw_kernel.h` 本来就是为「两套运行时必须算出同一个数」而
+存在的（它的注释第一句就是这个）。这次往里加了三个：
+
+```cpp
+int32_t ideology_frozen_factor(const std::vector<int32_t> &values, uint32_t slot);
+int64_t ideology_scaled_daily(int64_t daily, int32_t factor_q16);
+int64_t ideology_reroll_percent(int32_t base_percent, int32_t factor_q16);
+```
+
+- **`ideology_frozen_factor`**：数组比国家数短时返回 1.0。这一条让「新增一个
+  因子」对既有快照是 no-op——不需要 host 和 worker 同步改循环，也不会因为漏填
+  一个国家就把它变成 0。同时负责把值夹在 `[0, 4]`。
+- **`ideology_scaled_daily`**：因子恰好 1.0 时**原样返回 `daily`**，不做乘除。
+  这不是优化，是**存档兼容**：1.0 走乘法再除会引入零，逐日累积就是几十天后
+  的可见差异。已有存档必须逐位重现。
+- **`ideology_reroll_percent`**：缩放后夹在 400%。400 是 worker 校验
+  `reroll_cost_percent` 的上限，两边必须用同一个天花板，否则一张满配卡能把两个
+  权威推到不同的数上。
+
+### 30.4 三处刻意的边界
+
+1. **`daily == 0` 直接短路**，连因子都不读。这个循环是「每国 × 每卡 × 每日」，
+   而多数等级行本来就是 0 增长。
+2. **重抽因子只缩放「重抽那一份」，不缩放底价**。重抽费 = 已付抽卡费的
+   `reroll_cost_percent`%。如果因子作用在 `paid` 上，「重抽便宜」的卡会连带变成
+   「抽卡也便宜」——那是另一张卡的语义。
+3. **`param[1] = 0` 式的「空 = 默认」贯穿到底**：`*_stat_key` 空串、`stat_id = -1`、
+   冻结数组为空，三者都读作 1.0，且都不改变既有行为。
+
+### 30.5 验证
+
+- **纯算术**（`RuntimeIdeologyPodAuthority::self_test` 开头，12 条）：
+  短数组=1.0 / 2x / 越界夹到 4x / 0 率 / 1.0 原样返回 / 400% 上限。
+- **端到端**（同一自测，+1 天）：同一笔重抽，冻结数组为空时扣 `Q16_ONE/2`，
+  置为 2x 后扣 `Q16_ONE`。这一条是**唯一**能证明 `apply_command` 真的读了那个
+  数组的断言——纯算术全绿也排除不了「数组根本没接上」。
+- `runtime_domain_pod_test` 13 checks 全绿（内含上面那次自测调用）。
+
+全套 **33/36**，失败的永远是同样三条、与本轮无关：
+`runtime_country_host_protocol_test` / `runtime_country_parity_test` /
+`runtime_worker_source_scan_test`。理念相关全绿：`ideology_runtime` 63、
+`ideology_effect_instance` 48、`ideology_mechanism_matrix` 107、
+`ideology_content` 49、`ideology_progression` 21、`ideology_effect_worker_forward`、
+`ideology_effect_metric_publish`、`ideology_target_selector`。
+
+### 30.6 还没做的
+
+- **理解度因子的端到端断言**。目前只有共享算术被钉住，加上两处消费点用的是
+  同一个函数。「数组接错了」这种错在 understanding 这条路上**测试抓不到**：
+  既有自测的等级行 `daily_understanding_q16` 是 0（它用 `ADD_UNDERSTANDING`
+  命令驱动理解度），给它一个非零日率会移动该自测里每一次晋级的时点。要补就得
+  另起一套最小目录的权威，成本比这两条断言高得多，留到 L4-10b 一起做。
+- **选卡数量 `offer_choice_count`**：`@export_range(3,3,1)` 锁死 + 两处
+  `choice_index >= 3` 硬编码 + `ideology_ids` 的 `{{-1,-1,-1}}` 定长数组 +
+  offer 的序列化。要动的是存档形状，得单独一轮。
+- **时代衰减 `era_decay_bp`**：全局静态表，进 `ideology_draw_weight`。改成
+  per-country 需要把权重计算的输入从「表」换成「冻结数组」，`draw_kernel` 的
+  签名要变，而它是主线程与 worker 共享的——改动会同时触碰确定性契约。
+- **卡片内容还没用**。生成器现在允许发这两个 key，但 85 张卡里还没有一张发
+  （§21.1 的老问题：内容侧还没跟上机制侧）。
+
+## 31. L6-15 落地记录：命中集显示链路（第一段）
+
+§20 第 15 项的原话是「原生已有 `effect_instance_report`，**零 GDScript 消费者**」。
+本轮把它接进了卡面。
+
+### 31.1 一个绑定了很久、从没人调用的方法
+
+`get_ideology_effect_instance_report(country_handle)` 从对账路径落地那天起就在
+`world_ext_bind_methods.cpp:650` 注册了，`world_ext_ideology.cpp:349` 也有实现，
+唯一调用它的是三个测试。也就是说：**玩家装备一张卡之后，屏幕上没有任何东西能
+告诉他这张卡到底投影了什么**。
+
+这一段的产出很小——一个纯函数 + 一个徽章——但它把 §25–§30 做的那些机制
+第一次变成**玩家能看见的**东西。
+
+### 31.2 一行 = 一个实例，不是一个格子
+
+`effect_instance_report` 的每一行是
+`(card, level, program, target)` 的一个实例，而 `resolve_effect_targets` 是
+**每个解析出的 target 一个实例**。所以：
+
+- 地块级选择器 → 一张卡的实例数**就是**命中格数（受 `SELECTOR_MAX_CELLS = 32`
+  封顶）；
+- 国家级程序 → target 是国家 handle，实例数恒为 1。
+
+两者同一个数字。所以徽章写 **「效果 N 处」**而不是「命中 N 块地」：
+后者对国家级卡是错的，而 UI 无法从报告里分辨域（`EffectInstanceRef` 不存
+`target_domain`，加它要动存档字段，为一句文案不值得）。
+
+### 31.3 `present` 是**归属位**，不是「生效」
+
+这是这一段最危险的一处。`effect_instance_report` 的 `present` 列，原生注释写得很
+清楚：
+
+> Deliberately NOT authority-aware: this column is the *ownership* bit ("did the
+> main thread own this instance, or was it handed to the worker").
+
+所以 **worker 权威下，一张完全正常工作的卡的 `present` 全是 0**。把它渲染成
+「已生效 0 处」会是对玩家说的假话。
+
+处理方式：`summarize()` 仍然统计它，但字段名叫 `main_thread_owned`，
+并且**卡面永不读取**。测试里专门有一条
+（`the ownership bit never reaches the card face`）钉这个约定——因为
+「这个字段看起来像什么」的误读，正是它会在半年后被人重新捡起来的理由。
+
+### 31.4 「没看」和「0 处」不能同形
+
+`present_ideology_card(metadata, level, effect_row := {})` 的第三个参数：
+
+- 传**空字典** → 不画徽章（调用方没有报告：未拥有的卡、收藏列表、facade 不可用）；
+- 传 `{"instances": 0}` → **也不画**徽章。
+
+两者视觉一致是**故意的**：玩家不需要知道"我们查了但结果是 0"和"我们没查"的区别，
+而 UI 更不能把后者显示成「0 处」——那会让人以为卡坏了。
+
+只有 `instances > 0` 才出徽章（`UITokens.GOOD`），tooltip 追加
+`效果实例 N 处，覆盖 M 个目标`。
+
+### 31.5 刷新时机
+
+`_refresh_effect_report()` 在**每次 `_apply_model`** 调用，而不是跟着
+`_explain_signature` 走。理由是那个签名只看 level / location / pending，
+而**实例集合还会因为选择器目标变化（一块地易主）而变**，此时签名不变。
+代价是一次原生遍历（最多几百行），相对一次 UI 重建可以忽略。
+
+### 31.6 验证
+
+新增 `tests/ideology/ideology_effect_report_test.gd`，**27 checks**，六组：
+
+| 组 | 钉住的东西 |
+|---|---|
+| 形状拒绝 | `ok = false` 的报告里一行都不许捞 |
+| 逐卡汇总 | 实例数 / 去重目标 / 去重等级 / 归属位求和（不是 OR） |
+| 短列容错 | `target_handles` 比 `idea_ids` 短时不丢行，只是目标为空 |
+| `card_row` | 未知卡返回**空**字典，而不是 `{"instances": 0}` |
+| 徽章 | 有报告才出徽章；文案不写「命中 N 块地」；显式 0 不出徽章 |
+| 归属位 | 全 0 的报告仍报「效果 3 处」，且 tooltip 不含「已生效」 |
+
+全套 **34/37**，失败的仍是同样三条既有问题（`runtime_country_host_protocol_test` /
+`runtime_country_parity_test` / `runtime_worker_source_scan_test`）。
+
+### 31.7 还没做的
+
+- **地图叠加（L6-16）**。命中格现在只有数字，没有位置。要真正「布局即 build」，
+  得把 `targets` 里的格子在图上着色——那是 L6-16 的事，本轮只保证数据到了 GDScript 层。
+- **点开看具体地块**。`card_row` 里已经有 `levels` 和去重后的 `targets`，但卡面
+  只用了计数。要做「点卡高亮」需要 UI 侧拿到 cell 索引并与地图视图连通。
+- **facade → native 的端到端断言**。本轮测的是 `summarize()` 与卡面两个纯函数，
+  `IdeologyFacade.effect_instances()` 是一行透传。原生报告本身由
+  `ideology_effect_instance_test` 覆盖（它直接用 `DCWorldExt`）。中间那一跳没有
+  测试，因为要跑它就得起整个世界。
+
+---
+
+## 32. L6-16 落地记录：命中格从数字到位置（第一段）
+
+§31.7 留了一个岔口没解决：卡面已经有了「效果 N 处」，但**N 处是哪里**不知道该画。
+本轮把它拆开——先把「哪个 target 是格子」变成报告的一个列，再做多格绘制与触发入口。
+
+### 32.1 上一轮那个岔口：`target_domain` 不在存档里
+
+`EffectInstanceRef` 只存 `{program_hash, target_handle, target_generation,
+instance_id, generation}`。`target_handle` 的**含义随域而变**：
+
+| `target_domain` | `target_handle` 是什么 |
+|---|---|
+| 2（settlement cell） | **cell 索引**，一个程序展开成多行 |
+| 5（building/resource in cell） | **cell 索引**，同样多行 |
+| 3（country） | **国家 handle**（64 位大数），一行 |
+
+所以把 `target_handles` 直接当 cell 用，国家级卡会把国家 handle 当索引去画——
+画出来是某个毫不相干的格子。§31.2 当时记的「UI 无法从报告里分辨域」就是这件事。
+
+「加一个字段到 `EffectInstanceRef`」看似最直接，但那个结构体**写进 PKID 存档**
+（`schema >= 6` 的 `effect_instances` 段）。为一个显示位动存档布局，等于给每一份
+存档加一次迁移，不划算。
+
+### 32.2 派生，而不是持久化
+
+`target_domain` 是**程序的静态属性**，不是实例的状态：同一个 `program_hash` 永远
+对应同一个域。所以它可以在 report 时反查，不必存：
+
+```
+idea → 当前 level 的 persistent templates → effect_program_key() → FamilyEffectMetadataPod.target_domain
+```
+
+`collect_idea_program_domains()` 就是这么写的——它和 `collect_effect_activations()`
+遍历的是**同一批** (definition, level row, persistent template)，只是不解析目标。
+反查结果建 `program_hash → target_domain`，report 里每条 ref 用自己的
+`program_hash` 去查。
+
+零存档改动、零 schema 迁移、零新增状态。
+
+### 32.3 唯一会错的地方是「hash 对不上」，所以哈希只有一份实现
+
+反查要按 `program_hash` 匹配，而这个 hash 原本是在 `collect_effect_activations()`
+里**内联**算的：
+
+```cpp
+activation.ref.program_hash = mix(1469598103934665603ULL, program.data(), program.size());
+```
+
+如果 report 侧再抄一遍这行，两边就会在**某次有人改常量**时静默分叉——而且分叉的
+表现是「域全是 -1」，看起来像功能没做完，不像 bug。
+
+所以抽成：
+
+```cpp
+uint64_t effect_program_hash(const std::string &program) {
+    return mix(1469598103934665603ULL, program.data(), program.size());
+}
+```
+
+两个调用点改成调它。数值一位不变（`mix` 就是原来那个 FNV），ref 里的旧 hash
+继续匹配得上。
+
+### 32.4 `-1` 不是「域 0」，是「不知道」
+
+反查失败（`_effect_runtime` 为空、某个 program 没注册、level 在 reconcile 之后
+又动过）时填 `-1`，**不是 0**。域 0 是 economy，不是 cell，但两者在
+`if domain in [2, 5]` 这种判断里都会落到「不画」，所以数值本身不致命——
+真正的要求是 GDScript 侧**不得把 -1 之外的未知值当格子**。
+
+`CELL_TARGET_DOMAINS := [2, 5]` 是白名单，不是黑名单：
+
+```gdscript
+if index < domains.size() and CELL_TARGET_DOMAINS.has(int(domains[index])) \
+        and target >= 0:
+```
+
+宁可少画一格，不可多画一格。多画的那一格是**错误信息**——玩家会以为那张卡影响了
+一块其实无关的地。
+
+### 32.5 地图侧：为什么新建组件，而不是塞进 `DataOverlayLayer`
+
+现有 overlay 链路（`MapOverlayToolbar` → `WorldRuntimeHost.set_map_overlay` →
+`DataOverlayBaker.bake_cell_lut` → `DataOverlayLayer`）能整图着色，看似可以直接复用。
+但它有两条性质与本需求冲突：
+
+1. **overlay 是模式**。同一时刻只有一个 mode 生效，切到「理念命中」会挤掉玩家正在
+   看的资源/人口分布。
+2. **overlay 是持久的**。它是玩家主动打开的图层，不是一次点击的瞬时结果。
+
+命中高亮要的是「临时的、可叠加的、由一次点击产生的」。所以新建
+`scripts/rendering/cell_highlight_set.gd`（`CellHighlightSet`）：
+
+- 与 `CellHighlight`（单格选中）**同构但互不通信**：前者暖金 + 脉冲，后者朱红
+  （`IdeologyArt.VERMILION`）+ 无脉冲。
+- 两者 z 序：`CellHighlightSet = 9` < `CellHighlight = 10`。选中格的暖金永远压在上面
+  ——「我点的这块地」比「卡影响的范围」更需要被一眼认出。
+- 只画，不查地图。cell 索引 → 世界坐标的换算留在 `WorldRuntimeHost.cell_display_centers()`
+  ——它才知道 `hex_size`、环绕周期和相机位置。
+
+「点中的格子恰好也在命中集里」会同时画出两层轮廓。这是**有意的**：它正是
+「我选的这块地被这张卡影响了」的表达。
+
+### 32.6 触发点是右键，不是 hover
+
+考虑过 hover 高亮，否掉了。理由是 `CountryPanel` 的实现注释写得很清楚：
+
+> Each country affair is a standalone **full-bleed** screen.
+
+理念面板是全屏的。hover 高亮发生时地图**被完全盖住**，玩家什么也看不到。
+所以唯一有意义的交互是「**点击 → 关面板 → 地图高亮 + 相机对焦**」——
+这也正是 `economy_dossier` 的 `locate_cell_requested` 已有的语义（`_locate_cell_from_country_panel`
+第一件事就是 `close_country_panel()`）。
+
+按钮位置也排除了：卡面是 196×260 的纸片，加按钮会破坏现有版式。而左键已经是
+装备/卸下、双击是它的「确信版」。**第三个动词用第三个键**：
+
+```gdscript
+if mouse.button_index == MOUSE_BUTTON_RIGHT:
+    if mouse.pressed:          # press + release 都会到，只在 press 应答
+        locate_requested.emit(ideology_id)
+        accept_event()
+    return
+```
+
+链路上每一跳都只做一件事：
+
+```
+IdeologyCard.locate_requested
+  → IdeologyWorkspace._on_card_locate_requested   # 查报告，取 cells
+  → IdeologyWorkspace.target_cells_requested       # 非空才发
+  → CountryPanel.target_cells_requested            # 纯转发
+  → GameUIManager._on_target_cells_from_country_panel  # 关面板
+  → PlayerController.highlight_cells()             # 查地图 + 画
+  → CellHighlightSet.set_cells()
+```
+
+`target_cells_requested` **只在非空时发**：空列表意味着「这张卡没有地块级目标」，
+此时清掉上一张卡的高亮会看起来像点击丢了。
+
+### 32.7 选中即清除
+
+`PlayerController.select_cell()` 开头加了 `clear_cell_highlights()`。
+
+理由不是整洁，是**歧义**：命中高亮挂在屏幕上、同时玩家选了一块**不在**命中集里的
+地，两者并置会被读成「这块地也在其中」。而 UI 没有任何位置可以说明「这只是残留」。
+换卡会覆盖、点地图会清除，剩下的只有「关掉游戏」——那不是交互。
+
+### 32.8 验证
+
+**原生侧**（`tests/ideology/ideology_effect_instance_test.gd`，48 → **51 checks**）：
+
+| 新增断言 | 钉住的东西 |
+|---|---|
+| 一行一个域 | `target_domains.size() == count` |
+| 国家卡报 3 | `v1_granary_belt` 是 `target_domain = 3`，反查必须得 3 |
+| 国家 handle 就是 handle | `target_handles[0] == handle`，证明域 3 的 target 不是 cell |
+
+**GDScript 侧**（`tests/ideology/ideology_effect_report_test.gd`，27 → **35 checks**）：
+
+| 新增断言 | 钉住的东西 |
+|---|---|
+| 域 2 / 5 都算格子 | 混合域里只留 11/12/13，`target_count` 仍是 4 |
+| 国家 handle 不进 cells | 77（域 3）不出现 |
+| 去重 | 同一格出现两次只留一次 |
+| `-1` 不画 | 未标注行贡献 0 格，但仍计入实例数 |
+| 缺列不画 | 旧原生没有 `target_domains` → cells 全空、`target_count` 不变 |
+
+**场景实例化**：临时探针确认 `player_game.tscn` 能实例化，`WorldRoot/CellHighlightSet`
+存在、`z_index = 9`、`set_cells` / `clear` / `cell_count` 可调用（探针已删）。
+
+全套 **34/37**，失败的仍是那三条既有问题（`runtime_country_host_protocol_test` /
+`runtime_country_parity_test` / `runtime_worker_source_scan_test`），与 §31 基线一致。
+
+### 32.9 还没做的
+
+- **已装备槽位的右键**。本轮只给 `IdeologyCard` 接了右键，而**已装备的卡在槽位里
+  是 `IdeologySlotNiche`**（另一个组件，没有 `_gui_input`，只有内部按钮）。
+  偏偏已装备的卡才最可能有命中格。下一段要么给 niche 加右键，要么把「定位」做成
+  niche 动作行里的一颗按钮。
+- **高亮常驻**。目前关面板 → 看高亮 → 点任意格就清。要「一边看面板一边看地图」，
+  得让面板支持非全屏（收起/侧栏）形态，那是面板布局的活，不是高亮的。
+- **域 2 的真实 fixture 断言**。本轮原生侧用的是域 3 的卡（`v1_granary_belt`），
+  只证明了「不误判」。要证明「域 2 多行 target 全是 cell 索引」，得另起一套
+  含 `v2_forge_ring` 之类程序的最小目录——和 §30.6 提到的理解度端到端是同一类活。
+- **`cells` 的规模上限**。`SELECTOR_MAX_CELLS = 32` 是**每个程序行**的上限，
+  一张卡有多个 persistent 时理论上能到 32×N。目前 `PackedInt32Array` 无上限，
+  绘制循环也未分帧。N 小时无所谓，等卡池扩大再看。
+
+---
+
+## 33. L0-3 / L4-12 / L5-13 / L5-14b 落地记录（四项基建收口）
+
+这一节记四件事。它们规模都不大，但共同点是：**机制早就有一半，缺的那一半没人报错**。
+
+### 33.1 L0-3 预算拆成两套：声明 vs 并发
+
+§21.3 的结论是「`max_effect_instances = 512` 不够」这个说法口径错了。本轮把它彻底拆开：
+
+| 口径 | 量纲 | 计算点 | 字段 |
+|---|---|---|---|
+| 声明预算 | 行 | 全目录 card × level × row | `max_effect_instances`（2048） |
+| 并发预算 | 实例 | 槽位 × 每卡最坏同时存活数 | `max_concurrent_instances`（4096，新） |
+
+并发侧的乘数**不是**估计值，是编译器算出来的：
+
+1. 每个程序行能同时开几个实例 —— `_program_live_target_cap()`：
+   - 目标域不是格（国家/气候/资源）→ 1；
+   - 格域 + 单目标选择器（`OWNER` / `SOURCE_CELL` / `SOURCE_COUNTRY` /
+     `STATIC_HANDLE` / `SELECTOR_ID`）→ 1；
+   - 格域 + 展开型选择器 → 程序自己声明的 `param[0]`，没声明就用
+     `IdeologyEffectDefinition.SELECTOR_MAX_CELLS`。
+2. 一张卡的最坏值取它的**最宽那一级**，不是三级求和 —— 只有一级是活的。
+   求全会把上限报高三倍，预算就没意义了。
+3. 槽位用**成长后**的容量（`*_capacity_max`），因为预算要能扛住解锁了两个槽位科技的存档。
+
+失败信息带分解：`ideology_concurrent_instance_limit_exceeded:288>287:9x32`。
+两个预算可以各自独立失败，`tests/ideology/ideology_instance_budget_test.gd`（25 checks）
+两个方向都钉了。
+
+**为什么值得单列**：调大行预算去装 179 张卡，对「9 槽 × 32 格装不装得进内存」
+一个字都没说。过去这两件事共用一个字段名。
+
+### 33.2 L4-12 运行时可读的体系标签
+
+`IdeologyDefinition.route_tag` 的注释原来写的是 "the runtime never reads it"。
+后果不是报错，是**加了卡不会进羁绊**：synergy 行只能把 N 张卡的 id 全枚举，
+新卡加入体系时那一行悄悄还是老名单。
+
+做法是**编译期展开**，原生零改动：
+
+1. 卡面：`route_tag` 仍是主体系（单值），新增 `secondary_route_tags`
+   （≤2 个）。第二体系是设计明确要的（§13 注），但做成数组会让「主体系是哪个」
+   变成一个需要记顺序的规则，所以拆成两个字段。
+2. `route_tags()` 是唯一出口：主体系在前、去重、去空白。
+   `validate()` 对**重复**报 `ideology_route_tag_duplicate` 而不是折叠 ——
+   `A` 与 `A` 语义上永远相等，所以它只能是复制粘贴错误，静默折叠就把唯一的线索抹了。
+3. `IdeologySynergyDefinition` 新增 `route_tag` / `route_tag_min_level` /
+   `route_tag_location_mask`，与 `required_ideology_ids` **互斥**
+   （`ideology_synergy_route_tag_conflicts_with_ids`）。两种形式若并存，
+   需求集就取决于编译器走了哪个分支。
+4. 编译器建 `route_index`，把 route 展开成普通需求行，`min_count` 保持作者写的
+   「2 张 / 4 张」——**不从名单大小推导**：12 张卡的体系，第一档仍然 2 张开。
+5. 三种失败各报各的：`_unknown`（拼错）/ `_no_members`（拼对了但还没卡）/
+   `_min_count_exceeds_members`（档位高于名单，永远开不了）。
+   三者的修法分别是改 id / 补内容 / 降档，混在一起会把下一个排查的人送去错的文件。
+6. `catalog_view` 补 `route_tags` / `route_names`，并改成**从编译好的需求表回读**
+   成员，命名协同与 route 协同在 UI 侧同一个形状。
+
+`ROUTE_DISPLAY_NAMES` 给了 14 个体系的中文名，未登记的回退成 id —— 内容可以先走。
+
+`tests/ideology/ideology_route_tag_test.gd`（49 checks，含端到端编译 + 视图 + 拼错必然红）。
+
+**还没做的**：85 张生产卡**仍然一条 route 都没填**。机制通了，内容是 §14 卡表的活。
+
+### 33.3 L5-13 stat key 批量化：文档的「仅 1 条」已经过期
+
+文档里写 `country.tax.*` 仅 1 条、`country.output.landform.*` 仅 3 条。本轮实测
+（`tests/effect/stat_key_family_test.gd`，52 checks）：
+
+| 族 | 键数 | 来源 |
+|---|---|---|
+| `country.tax.income` | 45 | 每个职业一条 |
+| `country.tax.consumption` | 134 | 每种物资一条 |
+| `country.tax.business` | 400 | 每种建筑一条 |
+| `country.tax.import` / `export` | 134 + 134 | 每种物资一条 |
+| `country.output.landform.*` | 80 | 16 地貌 × 5 部门 |
+| `country.output.terrain.*` | 155 | 31 地形 × 5 部门 |
+| 全表 | **2778** | — |
+
+所以**批量化生成已经是完成态**，「仅 N 条」说的是 85 张卡里实际引用到的条数，
+不是生成器产出的条数。缺的是内容，不是基建。测试现在钉住的是
+**每个族的键数 == 它的维度表大小**（差一 = 漏了一个 id，差倍数 = 命名空间搞串了），
+这一条以后不会再靠人工数。
+
+### 33.4 L5-14b 符号表 + 死键校验
+
+原来的说法是「只有 `DEAD_STAT_KEYS` 手工黑名单」——这个常量在仓库里并不存在，
+所以死键其实**完全没有校验**。
+
+真正的失效模式：编译期按 id 表循环生成 stat key，新加一个循环**毫无声音**。
+键是合法的、目录编得过、卡能引用、修正生效，就是没人读。
+
+新增 `scripts/modifier/stat_key_families.gd`：
+
+- `FAMILIES`：一个生成循环一行 —— `pattern` / `dimensions`（`%s` 的符号命名空间）/
+  `consumer`（读它冻结表的位置）。加循环要加一行，这一行就是全部记账成本。
+- `classify(key)` → 族 + 符号值；`format(family, values)` → 键。
+  这就是「符号 ⇄ 键」的双向解析：内容可以写
+  `format(&"output_good", ["tools"])` 而不是字面量。
+- `arity_errors()`：`%s` 个数与 `dimensions` 个数不一致即失败 ——
+  一张不能往返的表比没有表更坏，因为它看起来权威。
+
+`tests/effect/stat_key_family_test.gd` 对真实编译表逐键跑：
+每个生成的键必须落在**恰好一个**族里（或属于 `ModifierCatalog.stats` +
+`TECHNOLOGY_STATS` 的显式声明），`format(classify(k)) == k`，且没有空产的族。
+另有 9 条手工探针专门打同段数的近似形状（`output.building` vs `output.family`、
+`output.landform` vs `output.terrain`、5 种 `tax.<kind>`）。
+
+**没做的那一半**：`consumer` 是文档，不是被机器验证的事实。要验证「这个族的键真的
+被 C++ 读了」，得让原生侧也引用同一张表；那是 L5-14c 量级的活，不在本轮。
+
+### 33.5 两张便条
+
+- **`route_tag` 与 `secondary_route_tags` 是两份真相吗**：不是。`route_tags()`
+  是唯一出口，`validate()` 保证两份不重叠、不超限。`target_selector_tag` /
+  `target_selector_tags` 当年也是这个结构，理由相同。
+- **RNG 无关**：四项改动都不碰抽取顺序、不碰存档字节，所以 replay 确定性不变。
+
+---
+
+## 34. 剩余五项的实施要点（摸过一遍，写下来省下一轮）
+
+这五项都动原生 C++ 或存档字节，不是 GDScript 能收口的。按依赖与风险排序，
+每条只写「改哪、为什么、坑在哪」。
+
+### 34.1 L4-10b 两个结构型 stat
+
+**(a) `era_decay_bp` 加下限（无存档改动，可先做）**
+
+现状：`ideology_draw_weight(rarity_weight, decay_bp, count, unlocked_era, era_index)`
+在 `gdext/src/runtime_ideology_draw_kernel.h:30`，两个调用点
+（`ideology_runtime.cpp:1986` 主线程 / `runtime_ideology_pod.cpp:1033` worker）。
+`era_decay_bp = [10000, 6000, 2500, 0]`，第 4 行是 0 —— 但
+`draw_offer` 里已有「全部退化到 0 时回落原始稀有度权」的兜底
+（`ideology_runtime.cpp:1986` 之后），所以真正的问题不是「全池空」，
+而是**只要还有一张新卡有正权，所有老卡就永远不出现**。
+
+改法：
+
+1. 核函数加第 6 个参数 `int32_t decay_floor_bp`，
+   `const int64_t decay = std::max<int64_t>(decay_bp[row], decay_floor_bp);`
+   放在 `if (decay <= 0) return 0;` 之前，且**不动 `age < 0` 那条早退**（未来卡不能靠下限偷渡）。
+2. 新 stat `country.ideology.era_decay_floor_bp`，Q16 之外的 bp 值，
+   `ModifierCatalog.TECHNOLOGY_STATS` 追加 `[key, 0.0, 10000.0]`。
+3. `IdeologyProfile` 加 `era_decay_floor_stat_key`，`ideology_catalog.gd` 照
+   `understanding_gain_stat_key` 的样子发出去。
+4. 主线程在 `draw_offer` 里用既有的 `resolve_ideology_stat_id()` +
+   `effective_value()` 读；**worker 侧必须逐国家冻结**（照
+   `RuntimeIdeologyPodOpinion::understanding_gain_q16` 的形状，空数组 = 0），
+   否则两侧权重不一致、`pod_state_parity_self_test` 会红。
+5. `catalog_hash` 里要混进 stat id —— 否则改了 key 而 hash 不变，worker 会用旧目录。
+
+**(b) `offer_choice_count` 解锁（动存档，风险高）**
+
+现状是硬编码，不是配置：`Offer::ideology_ids` 是 `std::array<int32_t, 3>`
+（`ideology_runtime.h:264`），`draw_offer` 里 `std::array<int32_t,3> draw` +
+`std::min<int32_t>(3, ...)`（`ideology_runtime.cpp:2008`），`choose_offer` 校验
+`choice_index >= 3`（`:2122`）。`_draw_count` 读了、校验成 3、**再没被用过**。
+
+改法：`std::array<int32_t, kOfferChoiceCapacity>`（建议 5）+ `uint8_t choice_count`，
+存档写 `choice_count` 再写固定 capacity 个 int32 —— **必须升存档版本**，
+因为老的 3 个 int32 后面紧跟的是 `ideas.size()`，多读会错位。
+`choose_offer` 的上下界改成 `choice_count`。
+`@export_range(3,3,1)` 同时放开到 `1..5`。
+
+### 34.2 L4-11 卡池机制（保底 / 精进 / 封存）
+
+三个机制里两个要新存档字段：
+
+- **保底**：`CountryState` 加 `uint64_t draws_since_rare`，每次 `draw_offer` 里
+  若未出 `Rarity.RARE` 以上则 +1，超过阈值时把候选池按稀有度过滤。
+  与抽卡 RNG **不能共用** `rng_state` 的推进次数，否则 replay 会变 ——
+  保底是「过滤候选」不是「多掷一次」。
+- **封存**：`CountryState` 加 `known_bits` 之外的 `banned_bits`，
+  `draw_offer` 的资格判定加 `bit_get(row.banned_bits, id)`；存档新增一段位图。
+  封存与 `known` 必须是两个位图 —— 合成一个会让「取消封存」变成「已拥有」。
+- **精进**：纯权重重排，不需存档。在 `ideology_draw_weight` 之外乘一个
+  「已升级卡」因子即可，但要与 worker 同步。
+
+### 34.3 L2-8 层序号进实例身份
+
+`effect_instance_id` 的构造在 `ideology_runtime.cpp:1263` 附近，是
+`(country, ideology, location, level, program, target)` 的纯函数。
+加层号意味着**所有既有实例 id 变化** → 老存档里的实例引用全部失配。
+
+两种走法：
+
+1. 只在 `stack_policy == ADD_STACK` 的实例上加层号（其余保持旧 id），
+   存档兼容，代价是 id 空间里两种编码并存。
+2. 全量加层号 + 存档升版 + 一次性迁移。
+
+建议走 1：改动面小，且「每层独立 `duration_days`」的需求本来就只对叠层实例成立。
+
+### 34.4 L1-6 多源聚合语义（最贵）
+
+`ModifierRuntime::effective_value`（`gdext/src/modifier_runtime.cpp:1304`）只有
+`sum_add` 与连乘 `factor`，**桶里没有「来源」这个概念**，所以
+「多源取最大 / 每来源上限 / 同格 ×3 软上限」三条都无从下手。
+
+真正的成本在数据结构：`Store::buckets` 要从「聚合值」改成「按来源的稀疏行」，
+而 `effective_value` 是热路径（每格每次经济 tick 都被调）。可选路线：
+
+1. 桶内保留 top-N 来源（N 小，如 4），聚合策略枚举化 —— 内存不炸，语义近似；
+2. 只对声明了 `aggregate_policy != SUM` 的 stat 走慢路径 ——
+   绝大多数 stat 仍是 `sum_add`，只有少数新卡吃新语义。
+
+建议 2：`ModifierStatDefinition` 加 `aggregate_policy`，默认 SUM。
+它是唯一能既不动热路径、又能让新卡拿到新语义的做法。
+
+### 34.5 L3-9 参数化 program + override 层（最贵，且最后做）
+
+`FamilyEffectMetadataPod` 是编译期固化的纯数据，没有任何 override 入口。
+要做的三件事按依赖排：
+
+1. **program 参数化**：`IdeologyEffectDefinition` 增加 `parameters`
+   （名字 → Q16），编译进模板；`instructions` 里能引用参数。
+   这一步只动编译期，可独立验收。
+2. **override 层**：运行时按 `(program, 层号)` 存一张 override 表，
+   覆盖参数值。存档新增一段，需升版。
+3. **卡改卡**：synergy 首次能写别人的参数 —— 这是 §6.2 那 14 条命名协同的前提。
+
+**顺序不能倒**：override 层没有参数化就没有可覆盖的对象；
+卡改卡没有 override 层就只能改自己的，那不是「改卡」。
+
+---
+
+## 35. 本轮之后的真实状态（2026-10-20 晚更新，以本节为准）
+
+**代码基建（“能不能写出来”）已经全部到位**，只剩 L3-9 的第二、三段：
+
+| 项 | 状态 |
+|---|---|
+| L0-1 / L0-2 / L0-3 / L1-4a / L1-4b / L1-4c / L1-5 / L1-7 | 完成（机制侧） |
+| L4-10a / **L4-10b** / **L4-11** / **L1-6** / **L2-8** / L4-12 / L5-13 / L5-14 / L5-14b / L6-15 / L6-16 | 完成（§33 / §36） |
+| **L3-9 第一段**（编译期 override 层） | 完成（§36.6） |
+| **L3-9 第二段**（运行时 `(program, 层号)` override 表） | **未做** |
+| **L3-9 第三段**（卡改卡：synergy 改别的卡参数） | **未做**，依赖第二段 |
+
+剩下的全部是**内容**与**既有红灯**，不是新机制：
+
+| 项 | 状态 |
+|---|---|
+| 85 张生产卡填 `route_tag` | 未做（机制已通，§33.2） |
+| B 组 44 张地块级卡 | 未做 |
+| 15 个标签阈值标定 | 未做（现被 D 挡住，D 已定位为一行修复） |
+| §22 第一道闸门（V3 端到端可演示） | **未点亮** |
+| 六条既有红灯 | 未修；2026-10-20 晚逐条实测，见下 |
+
+**D 已修（2026-10-20 晚）**：`runtime_country_parity_test.gd` 与
+`climate_authority_test.gd` 在 `add_child(host)` 之后补了一行 `await process_frame`。
+根因不是 `world_runtime_host.gd:667` 的设计问题——那行守卫是对的——而是
+`extends SceneTree` 的脚本在 `_init()` 期就把 host 加进树，此时
+`is_inside_tree()` 仍为 false，`generate_world()` 静默返回。
+
+修完的实测变化：
+
+| 测试 | 修前 | 修后 |
+|---|---|---|
+| `runtime_country_parity_test` | 23 checks / 1 失败（generation succeeded 红） | **33 checks / 3 失败**（生成通过，暴露出 3 项真实 parity 发散） |
+| `climate_authority_test` | 生成即失败，5 项断言根本没跑到 | 生成通过，暴露出 5 项真实 authority 失败 |
+
+也就是说：D 是**遮罩**，不是根因。**无头世界生成现在可用了**（15 个阈值标定可以开始），
+但 country/climate 两条 parity 各有真实的、此前完全看不见的问题。
+
+绿灯/红灯的实测（不是文档旧账，2026-10-20 深夜复查）：
+
+| | 状态 | 备注 |
+|---|---|---|
+| **C1** worker 源码纯度 | **已修，PASS** | 见下 |
+| C2 host protocol | 42/1 未变 | `country_receipt_self_test_terminal_missing:1:0` |
+| C3 country parity | **33/3** | D 修好后第一次真正被测到（原 23/1 是被遮罩） |
+| C4 family behavior | 10 项 | 不起始于 `economy_legacy_ingress_disabled`（该串只 1 次） |
+| C5 economy soak parity | 未跑 | 耗时长，需单独归因 |
+| C6 UI 结构 | 37 项 | 主体是 annual_report 在代码里 new Control |
+
+**C1 的做法（2026-10-20 晚）**：新增 `gdext/src/pk_log.h`（Godot-free：
+`vsnprintf` + 互斥 + `log_info/log_error/log_format/log_line`），把
+`native_simulation_host.cpp` 里 **19 条日志语句 / 35 处 `godot::`** 全部替换，
+并移除 `#include <godot_cpp/variant/utility_functions.hpp>`。该文件现在
+`godot::` 计数为 **0**，扫描测试 `PASS`。
+
+顺带修掉一个真实缺陷：这些调用点写的是 **printf 风格**（`%d`/`%s`/`%x`），
+而 `godot::vformat` 只认 `{}` —— 也就是说这些诊断行**一直在打印字面量 `%d`**。
+换成 `vsnprintf` 之后才真的替换成数值。
+
+抽样 10 个跨域套件（country/effect/family/pod/metric/tag）全绿，
+C1 改完后再跑 `runtime_modifier_pod` 13/0、`runtime_ideology_save_roundtrip` 22/0、
+`ideology_runtime` 63/0，与改前一致。
+
+**最关键的一件事仍然没变**：85 张生产理念卡里 **0 张**引用托管程序、
+**0 张**有 `target_selector_kind`、**0 张**写标签、**0 张**写 route。
+机制侧的护栏这一轮又厚了一层，但 §22 的第一道闸门（把 V3 那张测试卡做成
+端到端可演示）**依然没点**。
+
+---
+
+## 36. 剩余五项落地记录（L1-6 / L2-8 / L3-9 / L4-10b / L4-11）
+
+这一节记 §34 那五项的实际做法、验证到哪、以及刻意没做的部分。
+与 §33 不同，这五项都动了原生 C++ 或存档字节，所以每条都要写清「谁读这个值」。
+
+### 36.1 L4-10b(a) 时代衰减下限
+
+`ideology_draw_weight()`（`runtime_ideology_draw_kernel.h`）新增第 6 个参数
+`decay_floor_bp`，取 `max(decay_bp[row], floor)`，位置在 `age < 0` 早退**之后**
+——下限绝不能把玩家还没到达的时代的卡复活。
+
+- 新 stat `country.ideology.era_decay_floor_bp`（0..10000，加性，缺席读 0）。
+- 主线程：`ideology_stat_bp()` 逐国读；worker：宿主把值冻进
+  `RuntimeIdeologyOpinionSnapshot::era_decay_floor_bp`（照 `understanding_gain_q16`
+  的形状，空数组 = 0）。
+- `compute_catalog_hash` 与 POD 目录 hash 都混进了 key/id，改 key 而 hash 不变
+  会让 worker 用旧目录。
+
+**为什么必须做**：`draw_offer` 只在**全池**退化到 0 时才回落到稀有度权。
+只要还有一张新卡有正权，所有老卡就永远不出现——表尾那个 0 是「永久退役」，
+不是「权重很低」。
+
+### 36.2 L4-10b(b) 抽卡行数解锁
+
+`_draw_count` 读出来了、校验成 3、**然后从来没被用过**：`draw_offer` 里写死
+`std::array<int32_t,3>` + `min(3, …)`，`choose_offer` 写死 `>= 3`，存档写死 3 个 int32。
+
+- `OFFER_CHOICE_CAPACITY = 5` / `OFFER_CHOICE_BASE = 3` 定义在
+  **draw kernel 头**里，`CountryState::Offer`、POD 的
+  `RuntimeIdeologyPodOffer`、存档长度、`choose_offer` 上界全部引用它——
+  一处字面量，两个权威。
+- `Offer` 变成定容 + `choice_count`：存档写 `choice_count` 再写**满容量**个 int32。
+  变长会让后面所有字段错位，所以宁可多写几个 -1。
+- 行数 = `_draw_count + 国别加成`，加成来自新 stat
+  `country.ideology.offer_choice_bonus`（0..2，加性）。
+- 存档 schema 6 → **7**，POD ABI 4 → **5**（fail-closed，老档报
+  `ideology_save_schema_unsupported`）。
+- 对外快照的 `offer_ids` 只发**有效行**，另发 `offer_choice_count`：
+  五格全发会让 UI 多渲染两个「未知」。
+
+### 36.3 L4-11 卡池机制：保底 / 精进 / 封存
+
+- **当期保底**：`ideology_weighted_draw_recent_first()`——先从「当前或前一时代」
+  的那一片里抽 1 张，再从全池抽剩下的。**不是重掷**：重掷会让 RNG 推进次数
+  随分支变化，两边权威立刻不同步。
+- **精进**：已拥有但未满级的卡以 `refine_weight_bp` 的权重回到池中；选中它
+  只加 `refine_understanding_q16`（默认 4.0，约一级）并 `reconcile_level`。
+  满级卡**不进池**——这样就不需要给「满级还抽到」定价退款，也避免出现无法
+  生效的一行。这点与 §16 的「满级返还 50%」不同，是本轮的有意取舍。
+- **封存**：`CountryState::banned_bits`（**独立于 `known_bits`** 的位图）+
+  新命令 `BAN_IDEOLOGY_CARD = 11`，花费 = 一次抽卡费用。拒绝两种状态：
+  已拥有（`ideology_ban_known`）、已封存（`ideology_ban_already_banned`）。
+  单独一张位图而不是复用 `known_bits`，是因为「取消封存」必须仍可能，
+  而 `known` 同时驱动槽位、转移归属和目录 UI。
+- 两处 `draw_pool_size` / `draw_offer` 都跳过被封存的卡，保底与稀有度回落也不许选中它。
+
+`tests/ideology/ideology_pool_mechanics_test.gd`（20 checks）钉住：3 行与 5 行两种基数、
+封存把池抽干、封已拥有的卡不改变池、精进在「新卡池为空」时仍给出唯一一行、
+选它加理解度。
+
+**没验证到的那一条**：保底需要有国家真的到达过时代里程碑，本 fixture 没有
+科技进度。代码路径与两个权威一致（同一份 kernel），但没有行为断言——这是
+本轮最明确的测试缺口。
+
+### 36.4 L2-8 层序号进实例身份
+
+`effect_instance_id()` 新增 `layer` 参数，**只在 `layer != 0` 时参与哈希**：
+混入 0 会把游戏里每一个实例重新编号，等于让所有存档的实例引用失效。
+
+只有 `stack_policy == ADD_STACK` 的程序按 `min(stacks, max_stacks)` 展开成多层，
+每层一个实例（各自一份 `duration_days`）。其它策略仍然一个实例，id 不变。
+
+并发预算同步改了：`ideology_catalog.gd:_program_live_target_cap()` 对 ADD_STACK
+乘层数，否则三层卡的真实扇出会被低估三倍。
+
+### 36.5 L1-6 多源聚合语义
+
+`ModifierStatDefinition` 新增 `aggregate_policy`（Sum / MaxSource / TopNSources）
+与 `source_cap`，原生 `StatDefinition` 同步，目录多两列
+`stat_aggregate_policies` / `stat_source_caps`（可缺省，缺省即旧行为）。
+
+- 来源身份 = `(source_type, source_id)`。同一格自己的多张卡算**一个**来源，
+  这正是「同格 ×N」想要的口径。
+- `rebuild_bucket()` 在建立 `sum_add` 时按策略折叠；`add/remove_instance_to_buckets`
+  对非 SUM 的 stat **立即重建**，因为 MAX/TOP_N 无法用增量维护。
+- POD 侧同一套逻辑（`runtime_modifier_pod.cpp` 的桶构建），两侧都做，
+  否则 worker 快照会把主线程算好的值覆盖成旧语义。
+
+原生自测（`RuntimeModifierPodAuthority::self_test`）新增 4 组断言：
+两行 0.25 的贡献在 SUM/MaxSource/TopN(1)/TopN(2) 下分别是 0.5 / 0.25 / 0.25 / 0.5。
+
+### 36.6 L3-9 参数化 program + override 层（第一段）
+
+§34.5 说这一步分三段：参数化 → override 层 → 卡改卡。本轮完成**编译期的
+override 层**，形式是 `IdeologyEffectParameter`（目标程序 + 字段 + 值 + 备注）。
+
+- 作用点：`EffectDomainCatalog.build()` 在 `to_effect_definition()` 之后、
+  标签解析与去重之前。放在去重之前，理由与 §29.5 相同：指向一个永远进不了表的
+  程序的 override 也必须报出来。
+- 可覆盖字段：`duration_days` / `max_stacks` / `cadence_days` / `priority`。
+  这四个都是 `FamilyEffectMetadataPod` 真的读的字段。
+- 规则：目标必须存在（`..._override_target_unknown:<key>`）、同一程序同一字段
+  只能一条（`..._override_duplicate:<key>.<field>`）、值必须落在程序自身校验
+  的范围内。`apply_overrides()` 会**再校验一次**：`build()` 不调
+  `validate()`，少了这一层，999 层上限会绕过作者规则直达原生。
+
+`tests/ideology/ideology_effect_override_test.gd`（25 checks）：行规则、目录规则、
+应用落点（改到的字段变、没改的字段不变、指向别的程序是空操作）、
+端到端 build 后成品带覆盖值、非法覆盖让 build 直接返回 null。
+
+**没做的**：运行时按国家/条件生效的 override（`(program, 层号)` 表），以及
+「卡改卡」——那需要把 override 作为一列穿到 `EffectRuntime::submit_instances`
+与 POD 传输里，是 §34.5 第二段的活。本轮先把「覆盖谁、覆盖什么、怎么校验」定死，
+第二段就只剩一条通路。
+
+### 36.7 回归
+
+新增：`ideology_pool_mechanics_test` 20/0、`ideology_effect_override_test` 25/0。
+既有全绿：`ideology_content` 49、`ideology_mechanism_matrix` 110、`ideology_runtime` 63、
+`ideology_draw_flow` 16、`ideology_progression` 21、`ideology_opinion_synergy` 24、
+`ideology_effect_instance` 51、`ideology_effect_report` 35、`ideology_effect_metric_publish` 105、
+`ideology_effect_worker_forward` 74、`runtime_ideology_save_roundtrip` 22、
+`ideology_target_selector` 2、`runtime_modifier_pod` 13、`modifier_runtime`。
+
+**存档兼容**：PKID schema 6 → 7、IDP2 ABI 4 → 5 均为 fail-closed，
+老存档会明确报「schema unsupported」，不会静默错读。
+
+---
+
+## 37. A 第二段实施计划：运行时单实例倍率覆盖（X5 的「效果翻倍」那一类）
+
+### 37.1 范围（先说清楚不做什么）
+
+X5「规则改写」有五种形态：范围 +1 / 门槛降低 / 上限翻倍 / 条件替换 / 效果翻倍。
+前四种都是**编译期形态**——它们改的是程序模板本身（选择器参数、条件阈值、
+`max_stacks`），而程序模板是全目录共享、每国一份实例。要在运行时按国家改它们，
+等于把整个程序模板降级成逐实例数据，那不是一段，是一次重构。
+
+**本段只做第五种：效果倍率**。理由不是偷懒，是它恰好是唯一天然属于实例的量：
+实例触发时 `EffectRuntime` 用编译进程序的 `command->value_q16` 生成 modifier 行，
+在这个位置乘一个逐实例系数，语义清楚、落点唯一。
+
+X5 的挂载方式也一并定下：**协同（synergy）激活时生效**。因为
+`active_synergy_bits` 是逐国状态，正好提供"按国家生效"；且 §6.2 那 14 条命名协同
+全是"两张卡同时在场时 A 改写 B"，形态完全吻合。
+
+### 37.2 数据流与落点（改前）
+
+```
+卡等级行 ──(指向托管程序)→ reconcile_effect_activations()   ideology_runtime.cpp:1344
+                                   ↓ EffectActivation
+                          submit_instances 批量列            ideology_runtime.cpp:1500
+                                   ↓
+                          EffectRuntime::Instance             effect_runtime.h:614
+                                   ↓ 实例触发
+                    native.magnitude_q16 = command->value_q16  effect_runtime.cpp:5358+ 等 6 个分支
+```
+
+关键事实（已核实）：**POD 不参与实例 reconcile**——`runtime_ideology_pod.cpp` 里
+`activation` 出现 0 次，实例只由主线程 `NativeIdeologyRuntime` 产生。所以本段
+**不需要动 POD 目录、POD ABI、worker 平价**。
+
+### 37.3 改动清单
+
+| # | 文件 | 改动 |
+|---|---|---|
+| 1 | `effect_runtime.h` | `Instance` 加 `int32_t magnitude_scale_q16 = Q16_ONE`；`SAVE_SCHEMA_VERSION` 11 → **12**（实例进存档，见 `effect_runtime.cpp:6972/7152`） |
+| 2 | `effect_runtime.cpp` | `submit_instances` 读可选列 `magnitude_scales`（缺省 = 全 1.0，长度不符即拒）；存进实例；在 6 个 adapter 分支**之前**算出 `scaled_value = value_q16 * scale / Q16`，各分支统一用 `scaled_value`；写/读存档各加一个 int32 |
+| 3 | `ideology_runtime.h` | `EffectActivation` 加 `int32_t magnitude_scale_q16`；新增 `int32_t magnitude_scale_for(const CountryState&, const std::string &program) const;`；成员 `_synergy_override_offsets / _synergy_override_program_keys / _synergy_override_scales` |
+| 4 | `ideology_runtime.cpp` | `validate_catalog` 解三列并校验（程序键非空、scale ∈ [Q16/4, 4×Q16]、offset 单调）；`compute_catalog_hash` 混入；`collect_effect_activations` 里按 `synergy_active(country, s)` 叠乘；`submit_instances` 批次加 `magnitude_scales` 列 |
+| 5 | `ideology_effect_parameter.gd` | `Field` 加 `MAGNITUDE_SCALE = 4`；`validate()` 加 `[16384, 262144]`（0.25×–4×）约束 |
+| 6 | `ideology_synergy_definition.gd` | 新增 `@export var overrides: Array[Resource]`；`validate()` 要求每行 `field == MAGNITUDE_SCALE`、目标键非空、同目标不重复 |
+| 7 | `ideology_catalog.gd` | 编译时把每个协同的 overrides 摊平成三列（行偏移 / 程序键 / 倍率） |
+| 8 | `tests/ideology/ideology_effect_scale_override_test.gd` | 新测试：编译期三列正确；原生侧**激活/未激活**两种状态下同一程序的实例倍率不同；倍率叠乘与上限 |
+
+### 37.4 语义约定（避免以后扯皮）
+
+1. **叠乘，不是取最大**：多张协同同时改写同一程序时，倍率相乘（`1.5 × 2 = 3`）。
+   理由：X5 的语义是"改写"，两次改写叠加本来就该相乘；取最大会让第二张卡永远无效。
+2. **夹在 [0.25×, 4×]**：与 `MAX_MAGNITUDE_Q16` 同一量级，防止一张卡把效果放大到荒谬。
+   逐次乘完再夹，不是每次夹——否则 1.5×1.5×1.5 会被截成 1.5×1.5。
+3. **只乘效果，不乘时长/叠层**：时长与叠层是 lifecycle，属第三段（卡改卡）的另一列。
+4. **未激活协同不贡献**：`synergy_active()` 是唯一判据，不用"是否装备"近似。
+5. **POD 不动**：实例只在主线程产生；worker 侧没有这条路径，也就不存在平价问题。
+
+### 37.5 验收标准
+
+- `ideology_runtime_test` / `ideology_effect_instance_test` / `ideology_effect_report_test`
+  / `runtime_ideology_save_roundtrip_test` 全绿（回归）。
+- 新测试覆盖：三列编译正确；激活前 scale=1.0、激活后 = 卡片写的值；两张协同叠乘；
+  超上限被夹到 4×；存档往返后 scale 不变。
+- `EffectRuntime` 存档 schema 11→12 为 fail-closed，旧档明确报错。
+
+### 37.6 分步落地顺序（每步可独立编译验证）
+
+1. `effect_runtime`：列 + 存储 + 应用 + 存档（此时没有任何调用方传列，行为不变）。
+2. `ideology_runtime`：解析三列 + `magnitude_scale_for` + 批次加列（此时目录没有 override，恒为 1.0）。
+3. GDScript 授权面（3 个文件）。
+4. 新测试 + 全量回归。
+
+### 37.7 落地结果（2026-10-20 深夜）
+
+**已完成**（按 §37.3 的 8 项）：
+
+| # | 落点 | 说明 |
+|---|---|---|
+| 1 | `effect_runtime.h` | `Instance.magnitude_scale_q16`；`SAVE_SCHEMA_VERSION` 11 → **12** |
+| 2 | `effect_runtime.cpp` | 批次可选列 `magnitude_scales`（缺省 1.0，长度不符即拒）；夹 `[0.25x, 4x]`；scale 变化清 `effect_applied` 强制重发；6 处幅度计算统一走 `scaled_magnitude()`；存档写/读各加一个 int32 并校验范围 |
+| 3 | `ideology_runtime.h` | `EffectActivation.magnitude_scale_q16`、`Synergy.override_begin/count`、`magnitude_scale_for()`、两个成员数组 |
+| 4 | `ideology_runtime.cpp` | 三列解析 + 校验（偏移单调、键非空、scale 区间）+ 目录 hash + 激活时按 `synergy_active()` 叠乘 + 批次加列 |
+| 5 | `ideology_effect_parameter.gd` | `Field.MAGNITUDE_SCALE = 4`，`MAGNITUDE_SCALE_MIN/MAX` 常量，校验区间 |
+| 6 | `ideology_synergy_definition.gd` | `overrides: Array[Resource]`，只接受 `MAGNITUDE_SCALE`、目标不重复 |
+| 7 | `ideology_catalog.gd` | 摊平成三列，**发前缀键** `ideology.effect.<key>`，目标不在 `declared_programs` 里即拒 |
+| 8 | `tests/ideology/ideology_effect_scale_override_test.gd` | 20 checks / 0 failures |
+
+**验证到哪**：行规则与区间端点、协同规则（错字段/重复目标/空目标）、编译三列（前缀键、
+值、offsets = 协同数+1）、未知目标让 build 失败、原生 `configure_ideologies`
+接受合法列并**按名拒绝**越界 scale。回归：`ideology_content` 49/0、
+`ideology_runtime` 63/0、`ideology_effect_instance` 51/0、`runtime_ideology_save_roundtrip` 22/0。
+
+**没验证到的那一条**：协同激活后实例上实际观测到的倍率变化。它需要一个
+「两张卡装备 + 协同激活 + 一个命中的实例」的夹具，而这正是 §22 第一道闸门要做的事。
+路径全部接通、两侧都有断言，但**端到端的数值差没有断言**。
+
+**没跑完的**：`effect_runtime_test` 超过 500s 未结束（属长测，非本次改动引入的挂起）。
+它没有给出绿/红结论，不能当作通过。
+
+**两个踩到的坑**：
+1. GDScript 的 `@export var xs: Array[Resource]` 不能赋无类型 `Array`——`persistent_effects = [cmd]`
+   会**静默失败**，随后 `compile_native_catalog` 在 null 上调用，表现为「测试通过但检查数偏少」。
+2. 链接 DLL 报「拒绝访问」时，`taskkill` 杀完仍被占；此时 `mv` 掉旧 DLL 再编译即可
+   （旧 inode 的锁不再挡新文件名）。
+
+---
+
+## 38. 性能记账（2026-10-21 复查）
+
+问题：本轮加的东西会不会拖慢运行时。结论：**今天的实际风险 ≈ 0**，因为最贵的那条
+路径一次都没跑过；但复查中查出两处自己写出来的复杂度问题，已修。
+
+### 38.1 今天为什么是 0 成本
+
+`ModifierRuntime` 的聚合分支只在 `aggregate_policy != AGGREGATE_SUM` 时进入。
+全库 `grep "aggregate_policy = [1-9]"` = **0 条**，`source_cap` 也是 0 条。
+也就是说 §36.5 加的那套逻辑目前是**死代码**，等到真有卡用它才开始付费。
+
+### 38.2 已修的两处
+
+| 位置 | 原写法 | 改后 |
+|---|---|---|
+| `rebuild_bucket` 来源分组 | 每个 member 线性扫 `by_source` → **O(m·s)**；200 来源的格域桶 ≈ 4 万次比较 | 全部收集后按 identity 排序 + 折叠相邻 → **O(m log m)** |
+| `collect_effect_activations` 倍率解析 | `magnitude_scale_for()` 在「目标 × 层」双重循环内 → 同一答案算 32×3=96 次 | 提到循环外，每程序行一次 |
+
+验证：`runtime/runtime_modifier_pod_test` 13/0（覆盖 SUM/MAX/TOP1/TOP2 =
+0.5/0.25/0.25/0.5）、`ideology/ideology_effect_scale_override_test` 20/0、
+`ideology/ideology_effect_instance_test` 51/0。
+
+### 38.3 仍然存在、但现在不该修的一条
+
+非 SUM 的桶在**每次 add/remove 时全量重建**（O(m)），n 次变更 → O(n²)。
+今天无 stat 启用，成本为 0。若将来有**热门且宽**的 stat 用 TOP_N，
+正解是增量维护 top-N（小顶堆），但那等于为还不存在的数据结构付复杂度，
+不在现在做。
+
+### 38.4 其余各项
+
+- **A 第二段倍率**：每实例多 1 个 int32 列；触发时 1 次乘法；`scale == 1.0` 走原路径，
+  逐位不变。存档每实例 +4 字节（schema 12）。
+- **L4-11 抽卡**：保底在抽卡时复制一份池，O(n)，n ≈ 180，玩家手动触发；
+  封存是位图 O(1)。
+- **C1 日志**：`vsnprintf` + 互斥 + **每行 fflush**。所有调用点都有次数上限
+  （`s_*_left` 12/16 次），不会进热路径；但 `fflush` 比 `godot::print` 慢，
+  将来若要高频诊断需要加缓冲。
+- **编译期的东西**（stat 族表、预算校验、route 展开、override 校验）不在运行时路径上。
+
+### 38.5 这张表没有的东西
+
+**没有做过基准测量**。以上全部是复杂度分析 + 「这条路径是否真的被执行」的推断，
+不是实测数字。真要下结论，应该跑 `economy/hardware_bench` 与
+`runtime/runtime_*_soak` 一类；本轮没跑。

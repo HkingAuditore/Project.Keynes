@@ -6,12 +6,20 @@ class_name IdeologyWorkspace
 # the compact native snapshot signature changes. Animation state never feeds
 # back into gameplay state.
 
+## "This card acts on these cells — show them on the map." Emitted only with a
+## non-empty list, so a listener never has to distinguish "no cells" from
+## "please clear". The workspace cannot paint anything itself: the map lives
+## outside this panel, and the panel is full-bleed, so the receiver is expected
+## to close it first.
+signal target_cells_requested(cells: PackedInt32Array)
+
 const Q16_ONE := 65536.0
 const PlayerControllerScript = preload("res://scripts/game/player_controller.gd")
 const ArtScript = preload("res://scripts/ui/components/ideology_art.gd")
 const CardScript = preload("res://scripts/ui/components/ideology_card.gd")
 const NicheScript = preload("res://scripts/ui/components/ideology_slot_niche.gd")
 const PointScrollScript = preload("res://scripts/ui/components/ideology_point_scroll.gd")
+const IdeologyEffectReportScript = preload("res://scripts/ideology/ideology_effect_report.gd")
 const DROP_STAGGER := 0.12
 const HINT_HOLD_MSEC := 4500
 ## Height of the offer tray chrome (title, actions, margins) around the cards.
@@ -49,6 +57,8 @@ var _snapshot: Dictionary = {}
 var _presentation: Dictionary = {}
 var _live_explain: Dictionary = {}
 var _live_by_id := {}
+# Per-card effect-instance totals, see IdeologyEffectReport.
+var _effect_summary: Dictionary = {}
 var _metadata := {}
 var _states := {}
 var _signature := ""
@@ -328,6 +338,7 @@ func _apply_model(model: Dictionary) -> void:
 		_draw_phase = String(_player_controller.ideology_draw_phase())
 	_index_catalog()
 	_index_states()
+	_refresh_effect_report()
 	_render_top()
 	var known: PackedInt32Array = _snapshot.get("known_ids", PackedInt32Array())
 	var explain_signature := "%d|%d|%s|%s|%s|%s" % [
@@ -428,6 +439,20 @@ func _draw_waiting() -> bool:
 	return _draw_phase == "offer" or _draw_phase == "reroll"
 
 
+## Per-card effect-instance totals for the card face.
+##
+## Refreshed on every model application, not on the explain signature: the
+## instance set also moves when a selector's targets change (a cell changes
+## hands) without any level or location changing, and the call is one native
+## pass over at most a few hundred rows.
+func _refresh_effect_report() -> void:
+	if _facade == null or _country_handle == 0:
+		_effect_summary = {}
+		return
+	_effect_summary = IdeologyEffectReportScript.summarize(
+		_facade.effect_instances(_country_handle))
+
+
 func _refresh_live_explain(known: PackedInt32Array) -> void:
 	_live_explain = _facade.explain_ideologies(_country_handle, known) \
 		if _facade != null and _facade.has_method("explain_ideologies") else {}
@@ -515,6 +540,9 @@ func _fill_slots(host: VBoxContainer, kind: int, hosted: Array[int], capacity: i
 		row.set_row(_slot_row_data(ideology_id, kind))
 		row.command_requested.connect(_on_slot_command)
 		row.promote_requested.connect(_request_promotion)
+		# Same handler as the card grid: "where does this act" does not depend on
+		# whether the caller was a 196x260 card or a 60px row.
+		row.locate_requested.connect(_on_card_locate_requested)
 		host.add_child(row)
 	var empty_count := maxi(0, capacity - hosted.size())
 	if empty_count > 0:
@@ -536,7 +564,8 @@ func _slot_row_data(ideology_id: int, kind: int) -> Dictionary:
 	var level := maxi(0, int(state.get("level", 0)))
 	var location := int(state.get("location", 0))
 	var pending := bool(state.get("pending", false))
-	var view := CountryViewModel.present_ideology_card(meta, level)
+	var view := CountryViewModel.present_ideology_card(meta, level,
+		IdeologyEffectReportScript.card_row(_effect_summary, ideology_id))
 	var thresholds: PackedInt64Array = meta.get("level_thresholds_q16", PackedInt64Array())
 	var amount := int(state.get("understanding", 0))
 	var tooltip := PackedStringArray([String(view.get("tooltip", ""))])
@@ -704,7 +733,25 @@ func _make_card(ideology_id: int, in_collection: bool) -> Control:
 	card.set_compact(_compact)
 	card.set_card(_card_data(ideology_id, in_collection))
 	card.activated.connect(_on_card_activated)
+	card.locate_requested.connect(_on_card_locate_requested)
 	return card
+
+
+## Right click on a card face: hand the receiver the cells this card resolved to.
+##
+## The list comes from the same report the badge is built from, so the number on
+## the card and the hexes on the map can never disagree. A card with no cell
+## targets emits nothing at all rather than an empty list — there is nothing to
+## show, and silently clearing the previous card's highlight would look like a
+## dropped click.
+func _on_card_locate_requested(ideology_id: int) -> void:
+	var row: Dictionary = IdeologyEffectReportScript.card_row(_effect_summary, ideology_id)
+	if row.is_empty():
+		return
+	var cells: PackedInt32Array = row.get("cells", PackedInt32Array())
+	if cells.is_empty():
+		return
+	target_cells_requested.emit(cells)
 
 
 func _card_data(ideology_id: int, in_collection: bool) -> Dictionary:
@@ -714,7 +761,8 @@ func _card_data(ideology_id: int, in_collection: bool) -> Dictionary:
 	var level := maxi(0, int(state.get("level", 0)))
 	var location := int(state.get("location", 0))
 	var pending := bool(state.get("pending", false))
-	var view := CountryViewModel.present_ideology_card(meta, level)
+	var view := CountryViewModel.present_ideology_card(meta, level,
+		IdeologyEffectReportScript.card_row(_effect_summary, ideology_id))
 	var stamp := ""
 	if pending:
 		stamp = "待生效"

@@ -6,6 +6,10 @@ class_name CountryPanel
 signal close_requested()
 signal section_selected(section_id: String)
 signal locate_cell_requested(cell: int)
+## Same intent as `locate_cell_requested`, but for "these N cells", which is what
+## a card with a per-cell selector resolves to. Kept separate because the two
+## receivers differ: one selects a hex, the other paints a set.
+signal target_cells_requested(cells: PackedInt32Array)
 
 const SECTION_DEFINITIONS := [
 	{"id": "technology", "label": "科技研究", "subtitle": "编排研究投入，浏览技术网络与时代前沿", "icon": &"country.technology", "hud_icon": &"hud.country.technology", "accent": UITokens.CLIMATE, "available": true},
@@ -15,6 +19,12 @@ const SECTION_DEFINITIONS := [
 	{"id": "diplomacy", "label": "外交", "subtitle": "尚未开放", "icon": &"country.diplomacy", "hud_icon": &"hud.country.diplomacy", "accent": UITokens.WATER, "available": false},
 ]
 const HEADER_HEIGHT := 30.0
+## Fraction of the viewport the docked shell leaves to the map. The shell is
+## full-bleed by default; docking is the one state where it must not be, because
+## 「定位到地块」 is only a useful answer if the player can see the hexes it
+## answers with. 0.48 keeps the map readable on a 1280-wide window (~614 px)
+## while the shell still fits its compact chrome.
+const DOCK_MAP_SHARE := 0.48
 
 var _dialog: Control
 var _center: MarginContainer
@@ -40,6 +50,7 @@ var _ideology_workspace: Control
 var _model: Dictionary = {}
 var _section_id := ""
 var _compact := false
+var _docked := false
 var _player_controller = null
 
 
@@ -87,6 +98,9 @@ func _ready() -> void:
 	compact_close.pressed.connect(close_panel)
 	UIAnimation.bind_tactile_button(compact_close)
 	_economy_dossier.locate_cell_requested.connect(func(cell): locate_cell_requested.emit(cell))
+	if _ideology_workspace.has_signal("target_cells_requested"):
+		_ideology_workspace.target_cells_requested.connect(
+			func(cells: PackedInt32Array): target_cells_requested.emit(cells))
 	_dialog.resized.connect(_place_hinges)
 	call_deferred("_update_responsive_layout")
 
@@ -137,6 +151,41 @@ func current_section() -> String:
 	return _section_id
 
 
+## Dock the shell beside the map instead of over it.
+##
+## Only 「定位」 turns this on, and it exists for exactly one reason: a card's
+## hit set is a thing you look at on the map, so closing the shell to reveal it
+## threw away the card the player was reading. Docked, the map stays visible on
+## the left, the highlight persists, and clicking another card repaints it
+## without ever leaving the workspace.
+##
+## Docking also forces the compact chrome, because the shell is now narrower
+## than the responsive breakpoint assumes. `_update_responsive_layout` derives
+## that from the same `DOCK_MAP_SHARE`, so there is one place that decides what
+## "docked is too narrow" means.
+func set_docked(enabled: bool) -> void:
+	if _docked == enabled:
+		return
+	_docked = enabled
+	if is_inside_tree():
+		call_deferred("_update_responsive_layout")
+	else:
+		_update_responsive_layout()
+
+
+func is_docked() -> bool:
+	return _docked
+
+
+## Pure geometry, so the dock can be asserted without a live viewport: the
+## shell's left edge, in viewport pixels, with `anchors_preset = 15` on the
+## dialog. Split out because `_dialog.offset_left` cannot be read before
+## `_ready` has run, and a layout rule that can only be checked by eye is a
+## layout rule that drifts.
+static func docked_offset_left(viewport_width: float) -> float:
+	return maxf(16.0, viewport_width * (1.0 - DOCK_MAP_SHARE))
+
+
 # Daily ticks only patch the visible workspace; long-lived controls stay alive
 # so fast-forward never destroys a button or treasury row mid-read.
 func refresh_summary(model: Dictionary) -> void:
@@ -158,8 +207,9 @@ func refresh_summary(model: Dictionary) -> void:
 func layout_diagnostics() -> Dictionary:
 	return {
 		"visible": visible,
+		"docked": _docked,
 		"dialog_rect": Rect2(_dialog.global_position, _dialog.size) if _dialog != null else Rect2(),
-		"viewport_rect": get_viewport().get_visible_rect(),
+		"viewport_rect": get_viewport().get_visible_rect() if is_inside_tree() else Rect2(),
 		"window_size": get_window().size if get_window() != null else Vector2i.ZERO,
 	}
 
@@ -300,8 +350,19 @@ func _update_responsive_layout() -> void:
 	var viewport_size := get_viewport_rect().size
 	var available_height := viewport_size.y - PlayerTopBar.BAR_HEIGHT \
 		- CountryActionBar.BAR_HEIGHT - UITokens.ARCHIVE_EDGE_INSET * 2.0
+	# Docking narrows the shell, so the responsive decision has to be made
+	# against the width the shell actually gets — not the window's.
+	var shell_width := viewport_size.x
+	if _docked:
+		shell_width = viewport_size.x - docked_offset_left(viewport_size.x)
+		# The 16/80/-16/-90 offsets live on `Center`, not on `Dialog`: Center is
+		# the full-rect margin row that positions the shell, and Dialog simply
+		# fills it. Writing the offset on Dialog does nothing at all.
+		_center.offset_left = docked_offset_left(viewport_size.x)
+	else:
+		_center.offset_left = 16.0
 	# 字号缩放后的逻辑高度不足时折叠书脊，避免其最小高度把窗口顶进 HUD。
-	_compact = viewport_size.x < 900.0 or available_height < 520.0
+	_compact = shell_width < 900.0 or available_height < 520.0
 	_dialog.custom_minimum_size = Vector2.ZERO
 	_nav_rail.visible = not _compact
 	_mobile_nav.visible = _compact

@@ -637,7 +637,13 @@ static func compile_native_catalog(
 			"building_dependency_branch_technology_offsets",
 			"building_dependency_branch_group_offsets", "building_dependency_kinds",
 			"building_dependency_ids", "building_dependency_tag_offsets",
-			"building_dependency_tags"]:
+			"building_dependency_tags",
+			# Id spaces the effect catalog needs to turn a stable id into the
+			# dense index a metric reads (TargetTagDictionary). They were
+			# already compiled here for the technology binding hash, just not
+			# published; a second compiler pass to re-derive the same order
+			# would be the kind of mirror that drifts.
+			"good_ids", "resource_ids"]:
 		catalog[key] = content_binding_summary[key]
 	var trigger_catalog_resource: Resource = TriggerCatalogScript.load_default()
 	var trigger_catalog: Dictionary = trigger_catalog_resource.compile_native_catalog() \

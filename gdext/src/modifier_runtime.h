@@ -211,12 +211,28 @@ public:
     bool configured() const { return _configured; }
 
 private:
+    // How the additive part of a bucket is folded when one stat is contributed
+    // to from several sources.
+    //
+    // The bucket already keeps a `members` list, so the policy is evaluated at
+    // rebuild time from the rows it needs anyway -- no per-source map has to be
+    // stored, and a mutation on a non-SUM stat simply forces a rebuild instead of
+    // maintaining an aggregate that would be wrong for one frame.
+    enum AggregatePolicy : int32_t {
+        AGGREGATE_SUM = 0,          // every row adds (the pre-L1-6 behaviour)
+        AGGREGATE_MAX_SOURCE = 1,   // sum within a source, then the largest source
+        AGGREGATE_TOP_N_SOURCES = 2 // sum of the N largest sources
+    };
     struct StatDefinition {
         std::string key;
         int32_t domain = CLIMATE;
         double min_value = 0.0;
         double max_value = 1.0;
         bool persistable = true;
+        int32_t aggregate_policy = AGGREGATE_SUM;
+        // Only read by TOP_N_SOURCES. 0 means "no cap", which is why AGGREGATE_SUM
+        // can leave it alone.
+        int32_t source_cap = 0;
     };
     struct TermDefinition { int32_t stat_id = -1; double add = 0.0; double factor = 1.0; };
     struct Definition {

@@ -41,3 +41,15 @@ __pycache__/
 
 # 损坏/备份的原生调试符号，不作为运行资源提交。
 *.pdb.bad_*
+
+# Godot 编辑器运行日志与 headless 测试输出：每次启动都会生成，不进版本库。
+/Project/project-keynes/Godot_v*.log
+/Project/project-keynes/test_out.log
+/Project/project-keynes/test_err.log
+
+# 编辑器临时脚本（评审用过即弃，命名以 tmp_ 开头且位于项目根）
+/Project/project-keynes/tmp_*.gd
+/Project/project-keynes/tmp_*.gd.uid
+
+# 构建/编辑器写入过程中的「~ 前缀」临时备份（如重编 GDExtension 时对 dll 做的副本）
+~*

@@ -16,6 +16,7 @@ var day_night_enabled: bool = DEFAULT_DAY_NIGHT_ENABLED
 @onready var _renderer: HexRenderer = $WorldRoot/HexRenderer
 @onready var _camera: MapCamera = $MapCamera
 @onready var _highlight: CellHighlight = $WorldRoot/CellHighlight
+@onready var _cell_highlight_set = $WorldRoot/CellHighlightSet
 @onready var _map_overlay: DataOverlayLayer = $WorldRoot/DataOverlayLayer
 @onready var _colonization_route: ColonizationRouteLayer = $WorldRoot/ColonizationRouteLayer
 @onready var _map_activity = $WorldRoot/MapActivityLayer
@@ -103,6 +104,10 @@ func _configure_runtime() -> void:
 	_ui_manager.bind_gm_sun_camera(_camera)
 	_ui_manager.bind_player_camera(_camera)
 	_player_controller.configure(_camera, _highlight, _runtime_host, _world_clock, _ui_manager)
+	# Injected after configure so the single-cell selection highlight and the
+	# many-cell card overlay stay independent: selecting a hex must not wipe the
+	# card's hits, and showing a card's hits must not move the selection.
+	_player_controller.set_cell_highlight_set(_cell_highlight_set)
 	_ui_manager.set_colonization_route_layer(_colonization_route)
 	var save: Node = _game_save()
 	if save != null:

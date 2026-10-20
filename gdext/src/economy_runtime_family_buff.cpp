@@ -1105,6 +1105,34 @@ void NativeEconomyRuntime::collect_effect_target_cells(
         out_cells.erase(std::unique(out_cells.begin(), out_cells.end()), out_cells.end());
         return;
     }
+    // Grid-wide tag selector: the ownership-free twin of the branch above.
+    // Same 1-based tag ids, same "unknown tag yields nothing" rule, but the
+    // candidate set is the whole grid instead of one country. Handled before
+    // the building-snapshot guards for the same reason as territory: a tag is
+    // a metric reading, not a neighbour-graph walk, so it must keep working
+    // when the building columns have not been captured yet.
+    if (selector_kind == EffectRuntime::SELECTOR_TAG_ANY_CELL) {
+        const int32_t tag = param1 > 0 ? param1 - 1 : -1;
+        if (tag >= _target_tags.count()) return;
+        // param0 == 0 means "as many as the budget allows", matching territory.
+        const int32_t tag_cap = param0 > 0
+            ? std::min(param0, EffectRuntime::SELECTOR_MAX_CELLS)
+            : EffectRuntime::SELECTOR_MAX_CELLS;
+        for (int32_t cell = 0; cell < cells; ++cell) {
+            if (static_cast<int32_t>(out_cells.size()) >= tag_cap) break;
+            if (tag >= 0 && !cell_has_target_tag(cell, tag)) continue;
+            out_cells.push_back(cell);
+        }
+        // Ascending cell id, so with more matches than the cap the kept subset
+        // is a pure function of the grid. It is geographically arbitrary on a
+        // large map -- the cap exists to bound the instance table (9 slots x 32
+        // = 288 of 4096), not to rank cells -- but "the 32 lowest ids" is at
+        // least replayable, which "the 32 nearest the anchor" would not be for
+        // a grid-wide card that has no meaningful anchor.
+        std::sort(out_cells.begin(), out_cells.end());
+        out_cells.erase(std::unique(out_cells.begin(), out_cells.end()), out_cells.end());
+        return;
+    }
     if (_building_neighbors.size() != static_cast<size_t>(cells) * 6) return;
     // The generalised kinds read per-cell columns that share the neighbour
     // snapshot's lifetime. A half-populated snapshot must degrade to "no

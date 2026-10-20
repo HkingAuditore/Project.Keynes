@@ -5,6 +5,15 @@ rejected as ugly. One authoritative silhouette now lives in this PNG and is cons
 by three places -- the paper field shader (alpha + edge shading), the sheet shadow
 shader (outer falloff) and the running-head/footer veil (alpha).
 
+FOUR torn edges, one silhouette. The source sheet is torn on all four sides, so the
+texture bakes all four:
+  rows [0, CAP_ROWS)            the real top tear, one period across the width
+  rows [CAP_ROWS, H-CAP_ROWS)   the side tears, made periodic so they can be
+                                mirror-tiled down an arbitrarily long sheet
+  rows [H-CAP_ROWS, H)          the real bottom tear
+The shader samples the two ends 1:1 and mirror-tiles only the middle band, so the
+sheet's head and tail are the photographed deckle, not a noise function.
+
 Channel packing. RGB here is DATA, not colour: never resample, re-compress or run
 "fix alpha border" over this file, or the distance fields collapse and the drop shadow
 turns into a hard-edged rectangle.
@@ -46,6 +55,19 @@ FAR_PX = 64.0  # G channel range: shadow falloff reach, must stay >= shadow_spre
 SUPERSAMPLE = 4  # silhouette is rasterised at 4x then box-filtered -> ~1px AA
 VERTICAL_BAND = 0.62  # middle fraction of source rows kept; corners are discarded
 VERTICAL_TRIM = 0.06  # drop this fraction of rows at each end of the valid span
+
+# 上下两端的撕口。源纸张的四边都是手撕的，但两端只有 0.5% 纸宽的细毛边
+# （实测崖差 4–5 纹理像素），而左右两边带大豁口。直接照搬会让"纸头/纸尾"
+# 看起来像一条机切线，所以按 CAP_GAIN 放大到与左右同一量级 —— 形状、纤维的
+# 粗糙度、逐列抖动全都是原图的数据，放大的只是振幅。
+CAP_BAND = 0.60  # 上下剖面只取中间这段列：两头是圆角，取进去会在四角抠出大缺口
+CAP_FAR = 72.0  # 撕口之外必须留出的纸外行数，>= FAR_PX 才能让 G 饱和
+CAP_PAD = 8.0  # 撕口最深点之外再留的抗锯齿余量
+CAP_GAIN = 2.6  # 上下撕口的振幅放大倍数
+CAP_DETREND = 64  # 去掉多少列以内的长波漂移（纹理像素）
+# 上下两端各占多少行。定成常数而不是按实测值算，是为了让 GDScript 能直接写同一个
+# 数（AnnualReportTokens.MASK_CAP_ROWS）—— 着色器要按行号切段，这个数两边必须一致。
+CAP_ROWS = 96
 
 BITE_MAX = 10.0  # deeper nicks are clipped, matches the "restrained" budget
 PROTRUDE_MAX = 5.0  # outward fibres saturate smoothly at this depth
@@ -192,6 +214,64 @@ def valid_band(left: np.ndarray, right: np.ndarray) -> tuple:
     return top, bottom
 
 
+def cap_span(foreground: np.ndarray) -> tuple:
+    """Columns the top/bottom profile may be read from: the middle CAP_BAND.
+
+    The sheet's four corners are rounded, so the outermost columns' first/last
+    foreground row dives hundreds of pixels. Reading the tear there would punch two
+    craters into the sheet's corners; the middle band is the genuine torn edge.
+    """
+    columns = np.nonzero(foreground.any(axis=0))[0]
+    if columns.size < 64:
+        raise SystemExit("foreground has too few columns")
+    first, last = int(columns[0]), int(columns[-1])
+    half = (last - first) * (1.0 - CAP_BAND) * 0.5
+    return int(round(first + half)), int(round(last - half))
+
+
+def column_edges(soft: np.ndarray, foreground: np.ndarray, x0: int, x1: int) -> tuple:
+    """Sub-pixel top/bottom silhouette per column, same 0.5-crossing trick as rows."""
+    height = foreground.shape[0]
+    top = np.full(x1 - x0 + 1, np.nan)
+    bottom = np.full(x1 - x0 + 1, np.nan)
+    for index, x in enumerate(range(x0, x1 + 1)):
+        rows = np.nonzero(foreground[:, x])[0]
+        if rows.size < 16:
+            continue
+        outer = int(rows[0])
+        inner = int(rows[-1])
+        above = soft[outer, x]
+        below = soft[outer - 1, x] if outer > 0 else 0.0
+        top[index] = (outer - 1) + (0.5 - below) / max(above - below, 1e-3) if outer > 0 else 0.0
+        lower = soft[inner, x]
+        upper = soft[inner + 1, x] if inner + 1 < height else 0.0
+        bottom[index] = inner + (lower - 0.5) / max(lower - upper, 1e-3) if inner + 1 < height else float(height)
+    return top, bottom
+
+
+def cap_profile(profile: np.ndarray, texture_w: int, direction: float, scale: float) -> np.ndarray:
+    """Middle-band column profile -> one period across the texture width, in pixels.
+
+    `direction` = +1 for the top edge (deeper = larger row) and -1 for the bottom.
+    A sparse middle band is stretched to the full width, which is why the profile is
+    resampled rather than tiled: one sheet, one head, one tail -- there is nothing to
+    repeat.
+    """
+    band = profile[~np.isnan(profile)]
+    if band.size < 32:
+        raise SystemExit("cap profile has too few columns")
+    source = np.linspace(0.0, 1.0, band.size)
+    target = np.linspace(0.0, 1.0, texture_w)
+    stretched = np.interp(target, source, band)
+    # 先扣掉长波漂移，再放大。源纸的上沿整体有十几像素的缓慢起伏（拍平之后的
+    # 残余不平），照搬再乘增益就成了一条懒洋洋的河堤 —— 看上去像撕歪了，不像撕开了。
+    # 扣掉一个窗口的移动平均之后，留下的正是逐列的纤维起伏与豁口，那是左右两边
+    # 一模一样的质感来源。
+    drift = ndimage.uniform_filter1d(stretched, CAP_DETREND, mode="nearest")
+    deviation = (stretched - drift) * scale * direction * CAP_GAIN
+    return saturate_bite(deviation)
+
+
 def periodic_resample(profile: np.ndarray, height: int) -> np.ndarray:
     """Fill the texture height without clamping, which would leave a straight run."""
     k = max(16, profile.size // 12)
@@ -271,6 +351,19 @@ def audit(rgb: np.ndarray, foreground: np.ndarray, soft: np.ndarray,
     gate("no contact shadow", halo_lum <= bg_lum + 0.08,
          f"halo {halo_lum:.3f} vs bg {bg_lum:.3f}")
 
+    # 9-10. 上下两端的撕口。以前这两条边被 VERTICAL_BAND 当圆角裁掉了；纸变成
+    # 有限高的一件实物之后它们直接出现在读者眼前，所以必须和左右一样粗、一样不直。
+    x0, x1 = cap_span(foreground)
+    cap_top_values, cap_bot_values = column_edges(soft, foreground, x0, x1)
+    for name, values in (("top", cap_top_values), ("bottom", cap_bot_values)):
+        present = values[~np.isnan(values)]
+        rough = float(np.diff(present).std()) * scale
+        gate(f"{name} fringe std", 0.2 <= rough <= 4.0, f"{rough:.3f} texture px/col")
+        # 去趋势之后才是"撕口本身"的振幅：长波漂移会被 cap_profile 扣掉。
+        detail = present - ndimage.uniform_filter1d(present, 40, mode="nearest")
+        reach = float(np.percentile(detail, 95) - np.percentile(detail, 5)) * scale * CAP_GAIN
+        gate(f"{name} wander after gain", 3.0 <= reach <= 20.0, f"{reach:.1f} texture px")
+
     print("\n=== geometry ===")
     print(f"  source          {width} x {height}")
     print(f"  paper columns   {np.median(left[~np.isnan(left)]):.1f} .. "
@@ -322,28 +415,51 @@ def build(rgb: np.ndarray, foreground: np.ndarray, soft: np.ndarray, texture_w: 
     bite_l = saturate_bite(bite_l)
     bite_r = saturate_bite(bite_r)
 
+    # 上下两端的撕口：取中间这段列的真实剖面，拉到整幅纸宽。
+    # 这是源图的第四条与第三条边 —— 之前被 VERTICAL_BAND 当圆角裁掉了。
+    x0, x1 = cap_span(foreground)
+    col_top, col_bot = column_edges(soft, foreground, x0, x1)
+    cap_top = cap_profile(col_top, texture_w, 1.0, scale)
+    cap_bot = cap_profile(col_bot, texture_w, -1.0, scale)
+    needed = max(cap_top.max(), cap_bot.max()) + CAP_FAR + CAP_PAD
+    if needed > CAP_ROWS:
+        raise SystemExit(f"cap needs {needed:.0f} rows, budget is {CAP_ROWS}")
+    if CAP_ROWS * 2 >= texture_h - 128:
+        raise SystemExit(f"cap rows {CAP_ROWS} leave no room for the side tears")
+    print(f"\n  cap band    cols {x0}..{x1}   rows {CAP_ROWS} (needs {needed:.0f})   "
+          f"bite p95 {np.percentile(np.abs(cap_top), 95):.2f}/"
+          f"{np.percentile(np.abs(cap_bot), 95):.2f} px")
+
     left_edge = margin + bite_l
     right_edge = (texture_w - margin) - bite_r
     if left_edge.max() >= right_edge.min():
         raise SystemExit("tear profile inverted: left edge crossed the right edge")
+    top_edge = CAP_FAR + cap_top
+    bottom_edge = (texture_h - CAP_FAR) - cap_bot
 
     # 4x supersample then box filter -> coverage, i.e. free ~1px anti-aliasing. The
-    # profile is interpolated to ss*rows as well, otherwise the per-row step between
-    # adjacent rows stays a hard staircase and only the vertical edges get smoothed.
+    # profile is interpolated on BOTH axes now: interpolating rows only would leave the
+    # top/bottom tears quantised to whole rows, i.e. a staircase instead of a tear.
     ss = SUPERSAMPLE
     rows_hi = texture_h * ss
+    cols_hi = texture_w * ss
     row_positions = np.arange(rows_hi) / float(ss)
-    left_hi = np.interp(row_positions, np.arange(texture_h), left_edge)
-    right_hi = np.interp(row_positions, np.arange(texture_h), right_edge)
-    columns = np.arange(texture_w * ss)[None, :]
-    high = ((columns >= left_hi[:, None] * ss) & (columns < right_hi[:, None] * ss))
+    col_positions = np.arange(cols_hi) / float(ss)
+    left_hi = np.interp(row_positions, np.arange(texture_h), left_edge)[:, None] * ss
+    right_hi = np.interp(row_positions, np.arange(texture_h), right_edge)[:, None] * ss
+    top_hi = np.interp(col_positions, np.arange(texture_w), top_edge)[None, :] * ss
+    bottom_hi = np.interp(col_positions, np.arange(texture_w), bottom_edge)[None, :] * ss
+    columns = np.arange(cols_hi)[None, :]
+    rows = np.arange(rows_hi)[:, None]
+    high = ((columns >= left_hi) & (columns < right_hi)
+            & (rows >= top_hi) & (rows <= bottom_hi))
     coverage = high.reshape(texture_h, ss, texture_w, ss).mean(axis=(1, 3))
 
+    # 不给距离场做 edge 填充：上下两端现在是真的边界，纸外留了几行由 CAP_FAR 保证，
+    # 所以 G 在纹理最上一行刚好饱和。填充反而会在纸外造出一片假纸。
     solid = coverage > 0.5
-    pad = int(FAR_PX + NEAR_PX)
-    padded = np.pad(solid, ((pad, pad), (0, 0)), mode="edge")
-    d_in = ndimage.distance_transform_edt(padded)[pad:-pad]
-    d_out = ndimage.distance_transform_edt(~padded)[pad:-pad]
+    d_in = ndimage.distance_transform_edt(solid)
+    d_out = ndimage.distance_transform_edt(~solid)
 
     rgba = np.empty((texture_h, texture_w, 4), np.uint8)
     rgba[..., 0] = np.clip(d_in / NEAR_PX * 255.0, 0, 255).astype(np.uint8)
@@ -358,6 +474,10 @@ def build(rgb: np.ndarray, foreground: np.ndarray, soft: np.ndarray, texture_w: 
           f"{np.percentile(bite_r, 95):.2f}  max {bite_r.max():.2f}")
     print(f"  protrusion  min {min(bite_l.min(), bite_r.min()):.2f}  "
           f"(hard-clipped at {BITE_MAX:.0f}: {clamped} rows)")
+    print(f"  cap rows    {CAP_ROWS}  (paper edge at row {CAP_FAR:.0f} / "
+          f"{texture_h - CAP_FAR:.0f}; gain x{CAP_GAIN:.1f})")
+    print(f"  cap clearance  top {top_edge.min():.2f}  "
+          f"bottom {texture_h - bottom_edge.max():.2f}  (needs >= 0)")
     print(f"  asymmetry   {abs(np.median(bite_l) - np.median(bite_r)):.2f}px")
     print(f"  visible width {np.median(right_edge - left_edge):.2f}px "
           f"(want {texture_w - 2 * margin:.2f})")

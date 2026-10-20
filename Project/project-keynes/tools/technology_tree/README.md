@@ -68,6 +68,6 @@ node tools/technology_tree/rebalance_industry_closure.mjs
 node tools/technology_tree/rebalance_industry_closure.mjs --write
 ```
 
-迁移后必须运行 `tests/technology_unlock_closure_audit_test.gd` 的普通与 `--construction` 模式，
-以及 `tests/technology_industry_chain_balance_test.gd`。后者系统检查所有商品的首个有效需求时差与
+迁移后必须运行 `tests/technology/technology_unlock_closure_audit_test.gd` 的普通与 `--construction` 模式，
+以及 `tests/technology/technology_industry_chain_balance_test.gd`。后者系统检查所有商品的首个有效需求时差与
 所有知识的首个真实应用时差，并包含缺失前置、时代超配和无生产者三类负面夹具。

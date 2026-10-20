@@ -14,6 +14,11 @@ signal card_dropped(ideology_id: int, from_location: int, kind: int)
 signal drag_hovered(ideology_id: int, kind: int, entered: bool)
 signal command_requested(op: String, ideology_id: int)
 signal promote_requested(ideology_id: int)
+## "Show me where this card acts." Right click, mirroring IdeologyCard: the
+## equipped rows are where a card is most likely to have resolved cells at all
+## (an unequipped card owns no effect instances), so this is the entry point
+## that actually matters — the card grid one was the easy half.
+signal locate_requested(ideology_id: int)
 
 const ArtScript = preload("res://scripts/ui/components/ideology_art.gd")
 
@@ -63,6 +68,20 @@ func _ready() -> void:
 		else:
 			_note_style = style
 	_apply_surface()
+
+
+func _gui_input(event: InputEvent) -> void:
+	# `mouse_filter` is PASS here (the row is a layout surface, not a button), so
+	# this still fires; accept_event() then keeps the right click from bubbling
+	# into whatever hosts the slot.
+	var mouse := event as InputEventMouseButton
+	if mouse == null or mouse.button_index != MOUSE_BUTTON_RIGHT or not mouse.pressed:
+		return
+	# An empty row stands for `_empty_count` placeholders, not for a card.
+	if empty or occupied_id < 0:
+		return
+	locate_requested.emit(occupied_id)
+	accept_event()
 
 
 func _init() -> void:

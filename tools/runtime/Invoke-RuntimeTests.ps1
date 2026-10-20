@@ -57,7 +57,20 @@ $tests = @(
     'tests/runtime_effect_pod_test.gd',
     'tests/ideology_effect_worker_forward_test.gd',
     'tests/ideology_effect_metric_publish_test.gd',
+    # The effect-instance report had zero GDScript consumers until the card face
+    # read it; this pins the summariser and the badge, both pure functions.
+    'tests/ideology_effect_report_test.gd',
     'tests/metric_mask_capacity_test.gd',
+    'tests/target_tag_catalog_test.gd',
+    'tests/target_tag_dictionary_test.gd',
+    # Tag ids are 1-based dictionary indices, so a card that hardcodes one is
+    # one insertion away from silently matching different cells. This pins the
+    # name -> id resolution that replaced those hardcoded numbers (L5-14).
+    'tests/effect_selector_tag_resolution_test.gd',
+    # Orphaned until now: nothing referenced this script, so every target-selector
+    # assertion it gates (the native synthetic-grid self check) was invisible to
+    # the suite even though it was passing.
+    'tests/ideology_target_selector_test.gd',
     'tests/family_effect_worker_forward_test.gd',
     'tests/family_effect_restore_forward_test.gd',
     'tests/technology_effect_worker_forward_test.gd',

@@ -910,6 +910,13 @@ def build_ideology_catalog() -> str:
     profile_lines.append("capacity_unlock_spirit_deltas = PackedInt32Array(%s)" %
                          ", ".join(str(delta) for _, _, delta in CAPACITY_UNLOCKS))
     profile_lines.append('point_gain_stat_key = &"country.ideology.point_gain_factor"')
+    # Written explicitly rather than left to the script defaults: the .tres is a
+    # generated artefact, and a field that only exists as a GDScript default is
+    # invisible to anyone reading the data file to find out what a save depends on.
+    profile_lines.append(
+        'understanding_gain_stat_key = &"country.ideology.understanding_gain_factor"')
+    profile_lines.append(
+        'reroll_cost_stat_key = &"country.ideology.reroll_cost_factor"')
     blocks.append("\n".join(profile_lines) + "\n")
     definition_ids: list[str] = []
     for key, name, school, rarity, era, exclusion, tech, signals, detail, _terms in CARDS:

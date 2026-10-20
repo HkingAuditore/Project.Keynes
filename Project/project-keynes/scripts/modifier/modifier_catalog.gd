@@ -36,6 +36,20 @@ const TECHNOLOGY_STATS := [
 	["country.climate.heat_stress_factor", 0.20, 1.0],
 	# Frozen by the Country epoch snapshot; ideology accrual reads it read-only.
 	["country.ideology.point_gain_factor", 0.0, 4.0],
+	# Same freeze path, different consumption points. Appended rather than
+	# grouped with the line above so the dense stat ids of everything already
+	# declared do not move: ids are assigned in this order at every compile, and
+	# a shipped save's modifier rows are keyed by definition, not by stat id, but
+	# keeping the existing ids stable makes any diff of a compiled catalog readable.
+	["country.ideology.understanding_gain_factor", 0.0, 4.0],
+	["country.ideology.reroll_cost_factor", 0.0, 4.0],
+	# Draw-side, and the only two ideology stats that are ADDITIVE rather than
+	# multiplicative. `era_decay_floor_bp` is a floor under the era decay curve
+	# (0 = no floor, 10000 = no decay at all); `offer_choice_bonus` adds rows to
+	# the draw offer (0..2, because the native array caps at 5). Both read 0 when
+	# absent, which is why they are ranged from 0 rather than from 1.
+	["country.ideology.era_decay_floor_bp", 0.0, 10000.0],
+	["country.ideology.offer_choice_bonus", 0.0, 2.0],
 ]
 const Q16_ONE := 65536
 const STAT_DISPLAY_NAMES := {
@@ -62,6 +76,8 @@ const STAT_DISPLAY_NAMES := {
 	"country.research.cost_factor": "研究成本",
 	"country.research.institution_output_factor": "研究机构产出",
 	"country.ideology.point_gain_factor": "理念点获取",
+	"country.ideology.understanding_gain_factor": "理念理解速度",
+	"country.ideology.reroll_cost_factor": "理念重抽费用",
 	"country.trade.capacity_factor": "国内贸易容量",
 	"country.trade.speed_factor": "贸易速度",
 }
@@ -109,6 +125,12 @@ func compile_native_catalog() -> Dictionary:
 		"stat_min_values": PackedFloat64Array(),
 		"stat_max_values": PackedFloat64Array(),
 		"stat_persistable": PackedByteArray(),
+		# L1-6: aggregation policy per stat. Emitted for every stat so the native
+		# parser never has to special-case "the resource declared it but a
+		# generated stat did not" -- generated stats are Sum, which is what the
+		# column default says anyway.
+		"stat_aggregate_policies": PackedInt32Array(),
+		"stat_source_caps": PackedInt32Array(),
 		"definition_keys": PackedStringArray(),
 		"definition_versions": PackedInt32Array(),
 		"definition_domains": PackedInt32Array(),
@@ -304,6 +326,25 @@ func compile_native_catalog() -> Dictionary:
 			out.stat_persistable.append(1)
 			stat_domains_by_id.append(1)
 			stat_allowed_operations_by_id.append(15)
+	# Fill the two aggregate columns in one pass, at the end, in `stat_keys` order.
+	# Doing it here instead of at the eight append sites is deliberate: a stat can
+	# be declared by the resource, by a constant table, by an economy-derived loop
+	# or by a tax loop, and one missed `append` would misalign the column against
+	# `stat_keys` -- a silent off-by-one that only shows up as the wrong stat
+	# taking the wrong policy.
+	if out.stat_aggregate_policies.size() != out.stat_keys.size():
+		out.stat_aggregate_policies = PackedInt32Array()
+		out.stat_source_caps = PackedInt32Array()
+		for index in out.stat_keys.size():
+			var policy := 0
+			var cap := 0
+			for stat in stats:
+				if stat != null and String(stat.key) == String(out.stat_keys[index]):
+					policy = int(stat.aggregate_policy)
+					cap = int(stat.source_cap)
+					break
+			out.stat_aggregate_policies.append(policy)
+			out.stat_source_caps.append(cap)
 	var definition_keys := {}
 	for definition in definitions:
 		if definition == null or definition.key == &"" \

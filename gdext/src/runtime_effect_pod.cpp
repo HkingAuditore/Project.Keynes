@@ -690,7 +690,13 @@ uint32_t RuntimeEffectPodAuthority::catchup_fire_never_fired_instances(
             instance.next_due_day = fire_day + 1;
             continue;
         }
-        if (!evaluate_conditions(definition, instance, _current, fire_day)) {
+        const bool condition_passed =
+            evaluate_conditions(definition, instance, _current, fire_day);
+        // Latch the raw result before any stack arbitration, exactly like the
+        // main thread. A hysteresis band describes the metric, not the outcome
+        // of this tick's stack fight.
+        instance.latched = condition_passed ? 1 : 0;
+        if (!condition_passed) {
             instance.last_evaluated_input_revision = instance.input_revision;
             instance.next_due_day = fire_day + 1;
             continue;
@@ -819,6 +825,8 @@ int64_t RuntimeEffectPodAuthority::state_value(
         }
         case 4:  // STATE_STACK_COUNT
             return static_cast<int64_t>(std::max(0, instance.stack_count)) * Q16_ONE;
+        case 5:  // STATE_LATCHED - 0 or Q16_ONE, same as the main thread.
+            return instance.latched != 0 ? Q16_ONE : 0;
         default:
             return 0;
     }
@@ -1432,7 +1440,10 @@ bool RuntimeEffectPodAuthority::plan_day(int64_t day, uint64_t input_generation,
             instance.next_due_day = retry_due;
             continue;
         }
-        if (!evaluate_conditions(definition, instance, _current, day)) {
+        const bool condition_passed =
+            evaluate_conditions(definition, instance, _current, day);
+        instance.latched = condition_passed ? 1 : 0;
+        if (!condition_passed) {
             instance.last_evaluated_input_revision = instance.input_revision;
             instance.next_due_day = retry_due;
             continue;
@@ -1972,6 +1983,7 @@ bool RuntimeEffectPodAuthority::self_test(std::string &error) {
     // as its own fixture because this one pins exact plan hashes and adding a
     // second program to its catalog would move all of them.
     if (!cell_target_self_test(error)) return false;
+    if (!latch_self_test(error)) return false;
     error.clear();
     const auto fail = [&error](const char *reason) {
         error = reason;
@@ -2239,6 +2251,98 @@ bool RuntimeEffectPodAuthority::cell_target_self_test(std::string &error) {
         if (authority.configure(static_catalog, error))
             return fail("effect_cell_target_static_zero_catalog_accepted");
         if (error != "effect_pod_command_invalid") return false;
+    }
+    return true;
+}
+
+bool RuntimeEffectPodAuthority::latch_self_test(std::string &error) {
+    const auto fail = [&error](const char *reason) {
+        error = reason;
+        return false;
+    };
+    // NOT(STATE_GTE(LATCHED, Q16_ONE)): "last time did NOT pass".
+    // Day 0 latched=0 -> not(false)=true  -> pass, latch 1
+    // Day 1 latched=1 -> not(true) =false -> fail, latch 0
+    // Day 2 latched=0 -> not(false)=true  -> pass, latch 1
+    // Alternating is the point: a one-shot assertion cannot tell "the latch was
+    // written" from "the condition happened to be true".
+    RuntimeEffectPodCatalog catalog;
+    catalog.metric_key_hashes = {};
+    RuntimeEffectPodDefinition definition;
+    definition.key_hash = hash_text("latch.program");
+    definition.cadence_days = 1;
+    definition.max_work = 8;
+    definition.condition_begin = 0;
+    definition.condition_count = 2;
+    // No instructions and no commands, deliberately. A firing instance would
+    // otherwise open a transaction, and a transaction that is not acked parks
+    // the instance on `pending_transaction_id` -- day 1 would then emit nothing
+    // for a reason that has nothing to do with the latch, and the fixture would
+    // pass while proving the opposite of what it claims. A commandless program
+    // still records pass/fail: see the fire_sequence assertions below.
+    definition.instruction_begin = 0;
+    definition.instruction_count = 0;
+    definition.command_begin = 0;
+    definition.command_count = 0;
+    catalog.definitions.push_back(definition);
+
+    RuntimeEffectPodCondition read_latch;
+    read_latch.op = RuntimeEffectPodConditionOp::STATE_GTE;
+    read_latch.arg0 = 5;  // STATE_LATCHED
+    read_latch.value = Q16_ONE;
+    catalog.conditions.push_back(read_latch);
+    RuntimeEffectPodCondition negate;
+    negate.op = RuntimeEffectPodConditionOp::BOOL_NOT;
+    catalog.conditions.push_back(negate);
+
+    RuntimeEffectPodAuthority authority;
+    if (!authority.configure(catalog, error)) return false;
+    RuntimeEffectPodInstanceInput input;
+    input.instance_id = 7;
+    input.generation = 1;
+    input.program_id = 0;
+    input.source_handle = 3;
+    input.target_handle = 4;
+    input.target_generation = 1;
+    input.next_due_day = 0;
+    if (!authority.upsert_instance(input, error))
+        return fail("effect_latch_instance_rejected");
+
+    // day 0: latched 0 -> NOT(false) = pass. latching 1.  fire_sequence 0 -> 1
+    // day 1: latched 1 -> NOT(true)  = fail. latching 0.  fire_sequence stays 1
+    // day 2: latched 0 -> NOT(false) = pass. latching 1.  fire_sequence 1 -> 2
+    //
+    // Both columns matter, and they catch different bugs:
+    //   * write-back missing  -> latched stays 0, so every day passes and
+    //     fire_sequence climbs 1/2/3. Caught by the latched column.
+    //   * read path missing   -> STATE_GTE(LATCHED) answers 0 forever, so
+    //     again every day passes. Caught by day 1 of either column.
+    const uint8_t expected_latched[3] = {1, 0, 1};
+    const uint64_t expected_fire_sequence[3] = {1, 1, 2};
+    for (int64_t day = 0; day < 3; ++day) {
+        RuntimeEffectPodPlan plan;
+        // A fresh input_generation per day: the authority rejects a repeat plan
+        // for the same generation, and this fixture is about the latch, not
+        // about idempotent replanning. Sequential days also require committing,
+        // since plan_day refuses to skip ahead of `committed_day`.
+        if (!authority.plan_day(day, static_cast<uint64_t>(day + 1u), plan,
+                                error))
+            return fail("effect_latch_plan_failed");
+        if (plan.next_snapshot.instances.empty())
+            return fail("effect_latch_instance_missing_from_snapshot");
+        const RuntimeEffectPodInstance &after = plan.next_snapshot.instances.front();
+        if (after.latched != expected_latched[day] ||
+                after.fire_sequence != expected_fire_sequence[day]) {
+            error = std::string("effect_latch_oscillation_broken day=") +
+                std::to_string(day) + " latched=" +
+                std::to_string(after.latched) + " expected=" +
+                std::to_string(expected_latched[day]) + " fire_sequence=" +
+                std::to_string(after.fire_sequence) + " expected=" +
+                std::to_string(expected_fire_sequence[day]);
+            return false;
+        }
+        if (!authority.commit_day(plan, error))
+            return fail("effect_latch_commit_failed");
     }
     return true;
 }

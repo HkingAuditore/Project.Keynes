@@ -152,10 +152,18 @@ bool ModifierRuntime::compile_catalog(const Dictionary &catalog,
     const PackedFloat64Array stat_min = catalog.get("stat_min_values", PackedFloat64Array());
     const PackedFloat64Array stat_max = catalog.get("stat_max_values", PackedFloat64Array());
     const PackedByteArray stat_persistable = catalog.get("stat_persistable", PackedByteArray());
+    // Optional columns: a catalog that predates L1-6 has neither, and every stat
+    // then behaves exactly as before (SUM, no cap). Required-shape checks below
+    // deliberately do not mention them for that reason.
+    const PackedInt32Array stat_policies = catalog.get(
+        "stat_aggregate_policies", PackedInt32Array());
+    const PackedInt32Array stat_caps = catalog.get("stat_source_caps", PackedInt32Array());
     const int32_t stat_count = stat_keys.size();
     if (stat_count <= 0 || stat_domains.size() != stat_count ||
         stat_min.size() != stat_count || stat_max.size() != stat_count ||
-        stat_persistable.size() != stat_count) {
+        stat_persistable.size() != stat_count ||
+        (!stat_policies.is_empty() && stat_policies.size() != stat_count) ||
+        (!stat_caps.is_empty() && stat_caps.size() != stat_count)) {
         error = "modifier_stat_catalog_shape_invalid";
         return false;
     }
@@ -173,7 +181,13 @@ bool ModifierRuntime::compile_catalog(const Dictionary &catalog,
             error = "modifier_stat_catalog_entry_invalid";
             return false;
         }
-        stats.push_back({key, domain, lo, hi, stat_persistable[i] != 0});
+        const int32_t policy = stat_policies.is_empty() ? AGGREGATE_SUM : stat_policies[i];
+        const int32_t cap = stat_caps.is_empty() ? 0 : stat_caps[i];
+        if (policy < AGGREGATE_SUM || policy > AGGREGATE_TOP_N_SOURCES || cap < 0) {
+            error = "modifier_stat_aggregate_invalid";
+            return false;
+        }
+        stats.push_back({key, domain, lo, hi, stat_persistable[i] != 0, policy, cap});
     }
 
     const PackedStringArray definition_keys = catalog.get(
@@ -365,6 +379,8 @@ bool ModifierRuntime::export_pod_catalog(RuntimeModifierPodCatalog &out,
         pod.min_value = stat.min_value;
         pod.max_value = stat.max_value;
         pod.persistable = stat.persistable ? 1u : 0u;
+        pod.aggregate_policy = stat.aggregate_policy;
+        pod.source_cap = stat.source_cap;
         out.stats.push_back(pod);
     }
     for (const Definition &definition : _definitions) {
@@ -764,6 +780,14 @@ void ModifierRuntime::rebuild_bucket(int32_t domain, const BucketKey &key,
     bucket.sum_add = 0.0;
     bucket.product_nonzero = 1.0;
     bucket.zero_factor_count = 0;
+    const StatDefinition &stat = _stats[static_cast<size_t>(key.stat_id)];
+    // Per-source accumulation, only for the two non-SUM policies. Kept local
+    // rather than in the bucket: the map is rebuilt from `members` anyway, and a
+    // stored copy would have to be kept coherent with three separate mutation
+    // paths for no read-side benefit.
+    std::vector<std::pair<uint64_t, double>> by_source;
+    if (stat.aggregate_policy != AGGREGATE_SUM)
+        by_source.reserve(bucket.members.size());
     std::vector<Contribution> live;
     live.reserve(bucket.members.size());
     for (const Contribution contribution : bucket.members) {
@@ -775,11 +799,67 @@ void ModifierRuntime::rebuild_bucket(int32_t domain, const BucketKey &key,
         if (term.stat_id != key.stat_id) continue;
         const int32_t stacks = store.stacks[contribution.instance];
         const int32_t magnitude = store.magnitude_q16[contribution.instance];
-        bucket.sum_add += scaled_add(term, stacks, magnitude);
+        const double add = scaled_add(term, stacks, magnitude);
+        if (stat.aggregate_policy == AGGREGATE_SUM) {
+            bucket.sum_add += add;
+        } else {
+            // Source identity is (source_type, source_id), which is what the
+            // caller supplied when it applied the row. Two rows from the same
+            // cell collapse into one source, which is exactly the "同格 ×N" the
+            // design asks for: a cell that qualifies through three of its own
+            // cards is one source, not three.
+            const uint64_t source_type = store.source_type[contribution.instance];
+            const uint64_t source_id = store.source_id[contribution.instance];
+            const uint64_t identity = source_type * 0x9e3779b97f4a7c15ULL ^ source_id;
+            // Collected flat and merged after the sweep. A linear scan here would
+            // be O(members x sources) -- on a wide cell-scope bucket that is the
+            // difference between 40k and 400 comparisons per rebuild.
+            by_source.emplace_back(identity, add);
+        }
         const double factor = scaled_factor(term, stacks, magnitude);
         if (factor == 0.0) ++bucket.zero_factor_count;
         else bucket.product_nonzero *= factor;
         live.push_back(contribution);
+    }
+    if (stat.aggregate_policy != AGGREGATE_SUM) {
+        // Merge equal sources: sort by identity, then fold adjacent runs. O(m log
+        // m) instead of the O(m x sources) the per-member linear scan would cost.
+        std::sort(by_source.begin(), by_source.end(),
+            [](const std::pair<uint64_t, double> &lhs,
+               const std::pair<uint64_t, double> &rhs) {
+                return lhs.first < rhs.first;
+            });
+        size_t merged = 0;
+        for (size_t index = 0; index < by_source.size(); ++index) {
+            if (merged > 0 && by_source[merged - 1].first == by_source[index].first) {
+                by_source[merged - 1].second += by_source[index].second;
+                continue;
+            }
+            by_source[merged++] = by_source[index];
+        }
+        by_source.resize(merged);
+        if (stat.aggregate_policy == AGGREGATE_MAX_SOURCE) {
+            double best = 0.0;
+            bool has_best = false;
+            for (const auto &entry : by_source) {
+                if (!has_best || entry.second > best) { best = entry.second; has_best = true; }
+            }
+            bucket.sum_add = has_best ? best : 0.0;
+        } else {
+            // TOP_N: keep the N largest source contributions and drop the rest.
+            // Sorting descending is the definition, not an optimisation -- "the
+            // largest three" must not depend on insertion order.
+            std::sort(by_source.begin(), by_source.end(),
+                [](const std::pair<uint64_t, double> &lhs,
+                   const std::pair<uint64_t, double> &rhs) {
+                    return lhs.second > rhs.second;
+                });
+            const size_t keep = stat.source_cap <= 0
+                ? by_source.size()
+                : std::min(by_source.size(), static_cast<size_t>(stat.source_cap));
+            for (size_t index = 0; index < keep; ++index)
+                bucket.sum_add += by_source[index].second;
+        }
     }
     bucket.members.swap(live);
     bucket.mutations_since_rebuild = 0;
@@ -813,6 +893,14 @@ void ModifierRuntime::add_instance_to_buckets(int32_t domain, uint32_t index) {
                                             store.magnitude_q16[index]);
         if (factor == 0.0) ++bucket.zero_factor_count;
         else bucket.product_nonzero *= factor;
+        // A MAX / TOP_N bucket cannot be maintained by adding one row: the new
+        // row may displace a larger one and change the aggregate in a way no
+        // delta can express. Rebuilding here is O(members) on a bucket that is
+        // about to be read anyway, and only for the stats that opted in.
+        if (_stats[static_cast<size_t>(term.stat_id)].aggregate_policy != AGGREGATE_SUM) {
+            rebuild_bucket(domain, key, bucket);
+            continue;
+        }
         if (++bucket.mutations_since_rebuild >= BUCKET_REBUILD_INTERVAL ||
             !std::isfinite(bucket.sum_add) || !std::isfinite(bucket.product_nonzero)) {
             rebuild_bucket(domain, key, bucket);
@@ -846,6 +934,8 @@ void ModifierRuntime::remove_instance_from_buckets(int32_t domain, uint32_t inde
                 return entry.instance == index && entry.term == term_offset;
             }), bucket.members.end());
         if (bucket.members.empty()) store.buckets.erase(it);
+        else if (_stats[static_cast<size_t>(term.stat_id)].aggregate_policy != AGGREGATE_SUM)
+            rebuild_bucket(domain, key, bucket);
         else if (++bucket.mutations_since_rebuild >= BUCKET_REBUILD_INTERVAL ||
                  !std::isfinite(bucket.sum_add) || !std::isfinite(bucket.product_nonzero))
             rebuild_bucket(domain, key, bucket);

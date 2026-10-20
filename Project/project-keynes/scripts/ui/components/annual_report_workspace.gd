@@ -8,8 +8,8 @@ class_name AnnualReportWorkspace
 ## 这里一个像素都不算 —— 除了"纸"本身：
 ##
 ##   Desk / DeskGrain  桌面（深色），纸落在上面
-##   Sheet/Shadow      纸在桌面上的软投影（只有左右两道）
-##   Sheet/Paper       那张比屏幕长得多的纸
+##   Sheet/Shadow      纸在桌面上的软投影（四边都出影，跟着纸一起走）
+##   Sheet/Paper       那张有限高、会随滚动上下移动的纸
 ##   Book              Reader（唯一滚动面，封面是它第一屏）
 ##   Transition        合卷遮罩
 ##   Toast             复制反馈
@@ -44,6 +44,7 @@ var _scroll: ScrollContainer
 var _settle_tween: Tween
 var _open_tween: Tween
 var _toast_tween: Tween
+var _sheet_height := -1.0
 
 
 func _ready() -> void:
@@ -101,50 +102,110 @@ func _load_paper_mask() -> void:
 
 func _bind_mask() -> void:
 	var has_mask: float = 1.0 if _paper_mask != null else 0.0
+	# 蒙版在位时 seed 只影响纸面的纤维噪声（撕口轮廓全在 PNG 里）；蒙版缺席时
+	# 纸场与投影会退回程序化撕边，那时两者必须同源 —— 否则影子会和纸错开一道缝。
+	var raw_seed: Variant = _paper_material.get_shader_parameter("seed") if _paper_material != null else null
+	var tear_seed: float = float(raw_seed) if raw_seed != null else 0.0
 	for material: ShaderMaterial in [_paper_material, _shadow_material]:
 		if material == null:
 			continue
 		material.set_shader_parameter("paper_mask_tex", _paper_mask)
 		material.set_shader_parameter("has_mask", has_mask)
+		material.set_shader_parameter("seed", tear_seed)
 
 
-## 纸是这份报告的第一性事实：水平居中、上下出血、左右各一道软投影。
+## 纸是这份报告的第一性事实：水平居中、上下各留一段桌面、四边撕口、四边出影。
 ##
-## 三个矩形的关系见 AnnualReportTokens：
-##   paper_rect    可见纸面
-##   paper_layer   纸层，左右各扩 tear_pad（撕口余量）
-##   mask_rect     蒙版，纸层再各扩 shadow_spread（投影衰减带）
+## 四个矩形的关系见 AnnualReportTokens：
+##   paper_column  纸的竖列（只有 x / 宽有意义）
+##   sheet_rect    可见纸面，高度随正文增长（正文是一章一章长出来的）
+##   layer_rect    纸层，左右各扩 tear_pad、上下各扩 cap_pad（撕口余量）
+##   shadow_rect   投影层，纸层再各扩 shadow_spread（投影衰减带）
 ##
-## 投影矩形刻意等于 mask_rect、UV 恒等：纹理外缘的 G 值已经饱和，alpha 恒为 0，
-## 所以阴影矩形的边界天然看不见。只铺到纸层那么宽的话，撕口外面会露出一圈方形灰影。
+## 关键的一点：纸层**不是**铺满视口的背景板，它是会动的那一件实物。
+## 这里只算与滚动无关的量（宽度、撕口预算、着色器常量），位移交给 _move_sheet()，
+## 每帧按当前滚动重设 —— 卷首看得见纸的上沿，卷末看得见纸的下沿。
 func _layout_paper() -> void:
 	if _paper_layer == null:
 		return
 	var viewport: Vector2 = get_viewport_rect().size
-	var paper: Rect2 = AnnualReportTokens.paper_rect(viewport)
+	_sheet_height = _reader.sheet_height() if _reader != null else 0.0
+	# 正文还没排版时（present 刚进来、size 仍是 0）先按一屏算，
+	# 免得第一帧闪出一张只有几十像素高的纸片；下一帧就会被真实高度替换。
+	if _sheet_height <= 2.0:
+		_sheet_height = viewport.y
+	var layer: Rect2 = AnnualReportTokens.layer_rect(viewport, _sheet_height)
+	var shadow: Rect2 = AnnualReportTokens.shadow_rect(viewport, _sheet_height)
 	var tear: float = AnnualReportTokens.tear_pad(viewport)
+	var cap: float = AnnualReportTokens.cap_pad(viewport)
+	var cap_depth: float = AnnualReportTokens.cap_depth(viewport)
 	var spread: float = AnnualReportTokens.shadow_spread(viewport)
 	var mask: Rect2 = AnnualReportTokens.mask_rect(viewport)
+	var mapping: Vector4 = AnnualReportTokens.mask_mapping(layer, mask)
+	# 投影矩形的左右边缘与蒙版列完全重合，所以它自己的映射就是"整幅"。
+	var shadow_mapping: Vector4 = AnnualReportTokens.mask_mapping(shadow, mask)
+	# 蒙版的纵向几何。行数直接问纹理，两个切段常数来自构建脚本（见令牌里的
+	# MASK_CAP_ROWS / MASK_EDGE_ROWS），着色器靠它们把纸层行号切成头/中/尾。
+	var mask_rows: float = _paper_mask.get_size().y if _paper_mask != null else 1080.0
 
-	_paper_layer.position = Vector2(paper.position.x - tear, 0.0)
-	_paper_layer.size = Vector2(paper.size.x + tear * 2.0, viewport.y)
+	_paper_layer.position.x = layer.position.x
+	_paper_layer.size = layer.size
+	_shadow.position.x = shadow.position.x
+	_shadow.size = shadow.size
+
 	if _paper_material != null:
-		_paper_material.set_shader_parameter("rect_px", _paper_layer.size)
+		_paper_material.set_shader_parameter("rect_px", layer.size)
 		_paper_material.set_shader_parameter("tear_pad", tear)
 		# 咬进去的深度必须小于留白，否则撕口会撞到纸层矩形被硬切。
 		_paper_material.set_shader_parameter("tear_depth", tear * 0.72)
-		_paper_material.set_shader_parameter("mask_uv_rect",
-			AnnualReportTokens.mask_mapping(
-				Rect2(_paper_layer.position, _paper_layer.size), mask))
+		_paper_material.set_shader_parameter("cap_pad_px", cap)
+		_paper_material.set_shader_parameter("cap_depth_px", cap_depth)
+		_paper_material.set_shader_parameter("mask_tex_px", mask_rows)
+		_paper_material.set_shader_parameter("mask_cap_rows", AnnualReportTokens.MASK_CAP_ROWS)
+		_paper_material.set_shader_parameter("mask_edge_rows", AnnualReportTokens.MASK_EDGE_ROWS)
+		_paper_material.set_shader_parameter("mask_uv_rect", mapping)
 
-	_shadow.position = mask.position
-	_shadow.size = mask.size
 	if _shadow_material != null:
-		_shadow_material.set_shader_parameter("inset", spread / maxf(1.0, mask.size.x))
+		_shadow_material.set_shader_parameter("inset", spread / maxf(1.0, shadow.size.x))
 		_shadow_material.set_shader_parameter("spread_px", spread)
+		_shadow_material.set_shader_parameter("layer_size", layer.size)
+		_shadow_material.set_shader_parameter("cap_pad_px", cap)
+		_shadow_material.set_shader_parameter("mask_far_px", AnnualReportTokens.MASK_FAR_PX)
+		_shadow_material.set_shader_parameter("mask_tex_px", mask_rows)
+		_shadow_material.set_shader_parameter("mask_cap_rows", AnnualReportTokens.MASK_CAP_ROWS)
+		_shadow_material.set_shader_parameter("mask_edge_rows", AnnualReportTokens.MASK_EDGE_ROWS)
+		_shadow_material.set_shader_parameter("mask_uv_rect", shadow_mapping)
 
 	if _reader != null:
-		_reader.set_paper_mask_mapping(paper, mask)
+		_reader.set_paper_mask_mapping(AnnualReportTokens.paper_column(viewport))
+	_move_sheet()
+
+
+## 位移：纸的上沿 = 卷首留白 - 滚动位移。这就是"纸在动"的全部实现。
+## 投影跟着纸走，纸头和纸尾才看得出是同一件东西在桌面上移动。
+func _move_sheet() -> void:
+	if _paper_layer == null or _reader == null:
+		return
+	var viewport: Vector2 = get_viewport_rect().size
+	var top: float = _reader.sheet_top() - AnnualReportTokens.cap_pad(viewport)
+	_paper_layer.position.y = top
+	_shadow.position.y = top - AnnualReportTokens.shadow_spread(viewport)
+
+
+## 每帧校准。高度只在正文变长时变（着色器常量跟着它），位移每帧都要跟 ——
+## 滚轮、触摸板、手柄、跳章 tween 全都直接改 scroll_vertical，没有统一信号。
+func _sync_sheet() -> void:
+	if _reader == null or _paper_layer == null:
+		return
+	var height: float = _reader.sheet_height()
+	if absf(height - _sheet_height) > 0.5:
+		_layout_paper()
+		return
+	var viewport: Vector2 = get_viewport_rect().size
+	var top: float = _reader.sheet_top() - AnnualReportTokens.cap_pad(viewport)
+	if absf(top - _paper_layer.position.y) < 0.01:
+		return
+	_move_sheet()
 
 
 # ── 对外 API（名字与语义都对旧调用方保持兼容） ──────────────────────────────
@@ -317,10 +378,9 @@ func _settle_paper() -> void:
 func _empty_chapter() -> Dictionary:
 	return {
 		"title": "国家年度发展报告", "number": 1,
-		"lead": "第一份国家年度发展报告将在下一年初编成。",
-		"paragraphs": ["尚无年度报告。\n\n这里将按年份保存国家的经济、人口、建设、城市和文明发展记录。"],
+		"lead": "尚无数据",
 		"rows": [], "details": [], "figures": [], "visuals": [], "margin_notes": [],
-		"has_previous": false, "truncated": {},
+		"has_previous": false,
 	}
 
 
@@ -349,6 +409,7 @@ func _input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	if not visible or _reader == null:
 		return
+	_sync_sheet()
 	for device in Input.get_connected_joypads():
 		var axis := Input.get_joy_axis(device, JOY_AXIS_RIGHT_Y)
 		if absf(axis) > 0.2:

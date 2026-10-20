@@ -26,6 +26,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/era_reward_dialog.tscn" id="26_era_reward"]
 [ext_resource type="Theme" path="res://assets/themes/player_ui_theme.tres" id="27_legacy_theme"]
 [ext_resource type="PackedScene" path="res://scenes/ui/family/family_founding_dialog.tscn" id="28_family_founding"]
+[ext_resource type="Script" path="res://scripts/rendering/cell_highlight_set.gd" id="31_cell_highlight_set"]
 
 [node name="PlayerGame" type="Node2D" unique_id=198229795]
 script = ExtResource("1_player")
@@ -43,6 +44,11 @@ terrain_material_roughness_strength = 0.69
 terrain_material_world_size = 384.0
 terrain_horizon_max_angle = 1.5708
 terrain_horizon_cast_floor = 0.41
+
+[node name="CellHighlightSet" type="Node2D" parent="WorldRoot"]
+top_level = true
+z_index = 9
+script = ExtResource("31_cell_highlight_set")
 
 [node name="CellHighlight" type="Node2D" parent="WorldRoot" unique_id=2013937119]
 top_level = true

@@ -11,6 +11,10 @@
 
 namespace pk {
 
+// The struct grew (aggregate_policy / source_cap) but the wire format did not:
+// both sides are the same binary, and the version is embedded in the save blob,
+// so bumping it would invalidate every existing save for a field that is
+// carried in the catalog, not in the save.
 constexpr uint32_t RUNTIME_MODIFIER_POD_ABI_VERSION = 1u;
 constexpr uint32_t RUNTIME_MODIFIER_POD_WIRE_ABI_VERSION = 1u;
 // ABI 1 payload: abi(4), domain/scope(2+2), definition(4),
@@ -32,6 +36,11 @@ struct RuntimeModifierPodStat {
     double min_value = 0.0;
     double max_value = 1.0;
     uint8_t persistable = 1;
+    // L1-6 aggregation. Values match ModifierRuntime::AggregatePolicy; 0 (SUM)
+    // with cap 0 reproduces the pre-L1-6 behaviour exactly, so a catalog that
+    // predates the fields decodes as before.
+    int32_t aggregate_policy = 0;
+    int32_t source_cap = 0;
 };
 
 struct RuntimeModifierPodDefinition {

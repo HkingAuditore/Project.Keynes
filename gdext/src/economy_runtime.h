@@ -404,12 +404,19 @@ public:
         FAMILY_METRIC_COUNTRY_POPULATION_Q16 = 47,
         FAMILY_METRIC_COUNTRY_BUILDINGS_INSTALLED = 48,
         FAMILY_METRIC_COUNTRY_TRADE_BASE_VALUE_Q16 = 49,
+        // Terrain is a *different id space* from landform (metric 10): landform
+        // is the LF axis (plain / hills / delta / ...), terrain is the
+        // TerrainType axis (grassland / floodplain / ...). The tag dictionary
+        // mixes the two under one「地貌」heading, so「河谷」— a floodplain —
+        // could not be expressed at all until this row existed. Count_q16, like
+        // landform, because it is a category id compared for equality.
+        FAMILY_METRIC_CELL_TERRAIN = 50,
         // The selection set is a MetricMask (256 ids), so this count may grow
         // past 64 -- it just must not exceed MetricMask::CAPACITY, which the
         // static_assert below pins at compile time. Ids are the array index, so
         // new rows MUST be appended; reordering silently changes what every
         // existing card measures.
-        FAMILY_METRIC_COUNT = 50,
+        FAMILY_METRIC_COUNT = 51,
     };
     static_assert(FAMILY_METRIC_COUNT <= MetricMask::CAPACITY,
         "FAMILY_METRIC_COUNT exceeds MetricMask::CAPACITY; widen the mask "
@@ -3836,6 +3843,9 @@ private:
         EVENT_TRADE_ARRIVED = 13,
         EVENT_POPULATION_SOURCE = 14,
         EVENT_TARIFF_SUBSIDY_INTENT = 15,
+        // 市场级人口变化（births/deaths 汇总）。逐格出生分摊在 market 结算内部，
+        // 这里只发市场级 delta，够表现层做音效/特效，且不进热路径。
+        EVENT_POPULATION_CHANGED = 16,
     };
 
     enum EventFlags : int32_t {
@@ -7975,7 +7985,8 @@ public:
     // `param0` is always the cell cap (0 = EffectRuntime::SELECTOR_DEFAULT_CELLS,
     // hard-clamped to SELECTOR_MAX_CELLS). `param1` is the kind-specific
     // argument: predicate id for SELECTOR_PREDICATE_ANY_CELL, hop count for
-    // SELECTOR_DISTANCE_N, unused for the component kinds (they follow the
+    // SELECTOR_DISTANCE_N, 1-based tag id for SELECTOR_OWN_TERRITORY and
+    // SELECTOR_TAG_ANY_CELL, unused for the component kinds (they follow the
     // anchor's terrain / dominant resource). Output is always sorted,
     // deduplicated and capped, so two identical calls produce the same vector --
     // which is what makes "one instance per cell" replayable.

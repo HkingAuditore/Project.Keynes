@@ -4,6 +4,8 @@ Windows 音频基础：`GameSettings -> GameAudio -> FMOD Studio Bank/事件`。
 `GameAudio` 仅属于表现层，不运行每日模拟、不拥有时代或局势权威状态。
 Studio 源工程位于 `Audio/ProjectKeynes/`；构建、试听及平台导出边界见
 [`docs/audio/fmod-integration.md`](../docs/audio/fmod-integration.md)。
+现有 UI 的点击、翻页、开合与确认通过 `ui_audio_feedback.gd -> GameAudio.play_ui`
+播放 CC0 纸张/轻敲音；动态控件只连接激活信号，参见 [UI 音效](../docs/audio/ui-feedback.md)。
 
 国家年度报告：`NativeSimulationHost -> AnnualDevelopmentLedger -> PKAR -> AnnualReportViewModel`。玩家点击左上角日期打开年度纪事；年度评价与奖励只在 native 提交。见 [年度报告运行时](../docs/cpp-dots-runtime/annual-development-report.md)。
 

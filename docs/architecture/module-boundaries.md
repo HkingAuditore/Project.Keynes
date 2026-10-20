@@ -16,6 +16,8 @@ maintenance rule, not a proposal for a second runtime architecture.
 | Audio presentation | `GameAudio` | `scripts/audio/game_audio_service.gd`, `addons/keynes_audio_export` | simulation authority, era or political-state inference |
 
 `GameAudio` observes `GameSettings` and explicitly loads the Windows FMOD backend.
+It owns `scripts/ui/ui_audio_feedback.gd`, a signal-only adapter for UI activation
+and semantic paper cues; this adapter never reads simulation state.
 Studio source content lives outside the Godot resource root under `Audio/ProjectKeynes`.
 Other platforms do not load this backend. See
 [`../audio/fmod-integration.md`](../audio/fmod-integration.md) for validation and limitations.

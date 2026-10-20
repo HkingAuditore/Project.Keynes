@@ -47,6 +47,7 @@ var _seal_material: ShaderMaterial
 var _wash_material: ShaderMaterial
 var _opening: Tween
 var _page_height := 0.0
+var _page_cap := 0.0
 
 
 func _ready() -> void:
@@ -202,6 +203,14 @@ func present(model: Dictionary) -> void:
 	_relayout()
 
 
+## 封面这一屏的可用高度。纸的上沿之上要留一段桌面（"这张纸从哪里开始"的
+## 唯一证据），封面必须让开它 —— 否则最后一行提示会被顶到屏幕外。
+## 0 或负数表示按整屏算。
+func set_page_cap(value: float) -> void:
+	_page_cap = maxf(0.0, value)
+	_relayout()
+
+
 func _apply_model() -> void:
 	if _title == null:
 		return
@@ -213,12 +222,11 @@ func _apply_model() -> void:
 	_grade.text = String(_model.get("grade", "—"))
 	_score.text = "%.2f" % float(_model.get("score", 0.0))
 	_score_unit.text = "综合得分 / 100"
+	_score_unit.visible = complete
 	_reward.text = "理念嘉奖  +%s 点" % String(_model.get("reward_text", "0"))
 	_reward.visible = complete and available
 	if not complete:
 		_score.text = "—"
-		_score_unit.text = "统计未满一年，本年不评级"
-		_reward.text = "本年不发年度奖励"
 	_art.texture = _cover_texture()
 	var items: Array = _model.get("kpis", [])
 	for i in _numerals.size():
@@ -281,7 +289,8 @@ func _relayout() -> void:
 	var country_height: float = float(country_size) * 1.34 * float(_country_lines(_country.text, country_size, inner))
 	var figure_height: float = float(figure_size) * 1.20 + 36.0
 	# 封面就是纸的第一屏：一屏之外的东西读者看不到，等于没有。
-	var cap: float = viewport.y
+	# "一屏"现在是纸的可见高度（整屏减去卷首那段桌面），由编排名给。
+	var cap: float = _page_cap if _page_cap > 8.0 else viewport.y
 
 	# 主脉只有五块：眉题 · 报头 · 短线 · 国名 · 印章，末尾一行提示。
 	var plan: Dictionary = _plan(art_height, title_height, country_height, seal, figure_height, false, bottom_pad)
@@ -295,10 +304,12 @@ func _relayout() -> void:
 		plan = with_figures
 		required = float(plan.fixed) + MIN_GAP * float(plan.units)
 
-	# 主脉本身就放不下时：先收版画，再压报头，最后才允许版画再矮一档。
-	var art_floor: float = maxf(132.0, viewport.y * 0.24)
+	# 主脉本身就放不下时：先把版画收到底，再动报头。
+	# 报头是这一页唯一的焦点，它能不动就不动 —— 缺的几十像素从插画上扣，
+	# 读者不会去数插画有多高，但一眼就能看出标题小了一档。
+	var art_floor: float = maxf(112.0, viewport.y * 0.185)
 	var stage := 0
-	while required > cap and stage <= 2:
+	while required > cap and stage <= 1:
 		var acted := false
 		if stage == 0:
 			if art_height > art_floor:
@@ -306,25 +317,19 @@ func _relayout() -> void:
 				acted = true
 			else:
 				stage = 1
-		elif stage == 1:
+		else:
 			if title_size > 72:
 				title_size -= 6
 				title_height = _measure_title(title_size)
 				acted = true
 			else:
 				stage = 2
-		else:
-			if art_height > 112.0:
-				art_height = maxf(112.0, art_height - 12.0)
-				acted = true
-			else:
-				stage = 3
 		if not acted:
 			continue
 		plan = _plan(art_height, title_height, country_height, seal, figure_height, figures_shown, bottom_pad)
 		required = float(plan.fixed) + MIN_GAP * float(plan.units)
 
-	var page_height: float = maxf(viewport.y, required)
+	var page_height: float = maxf(cap, required)
 	_page_height = page_height
 	custom_minimum_size = Vector2(0.0, page_height)
 	var gap: float = clampf((page_height - float(plan.fixed)) / maxf(1.0, float(plan.units)), MIN_GAP, MAX_GAP)
@@ -629,10 +634,12 @@ func _gather_reward_motes() -> void:
 
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		preload("res://scripts/ui/ui_audio_feedback.gd").play_for(self, &"page")
 		begin_requested.emit()
 		accept_event()
 	elif event is InputEventJoypadButton and event.pressed:
 		if event.button_index in [JOY_BUTTON_A, JOY_BUTTON_DPAD_DOWN]:
+			preload("res://scripts/ui/ui_audio_feedback.gd").play_for(self, &"page")
 			begin_requested.emit()
 			accept_event()
 

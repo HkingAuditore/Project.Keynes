@@ -15,7 +15,7 @@ DCWorld 序列化 dict 跨版本迁移的中央目录。每个 `vN_to_vN_plus_1.
 1. 把 [`world.gd::SAVE_VERSION`](../../scripts/data_core/world.gd) 升 1（例如 1 → 2）；
 2. 在本目录新增 `vN_to_vN_plus_1.gd`，参考 [`_schema_migrations.gd`](./_schema_migrations.gd) 顶部注释的 SOP；
 3. 在 `_schema_migrations.gd::_MIGRATIONS` 数组追加该 script 的 preload；
-4. 在 `tests/schema_migration_test.gd` 加单测。
+4. 在 `tests/technology/schema_migration_test.gd` 加单测。
 
 ## 三种迁移类型
 

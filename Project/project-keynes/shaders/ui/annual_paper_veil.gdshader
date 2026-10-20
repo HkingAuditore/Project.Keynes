@@ -19,16 +19,24 @@ uniform float ramp_pow : hint_range(0.5, 4.0) = 1.6;
 uniform float flip : hint_range(0.0, 1.0) = 0.0;
 
 // 撕口蒙版：只取 A 通道做轮廓裁切。mask_uv_rect 是本节点在蒙版里的子矩形
-// （xy = 原点，zw = 缩放）。
+// （xy = 原点，zw = 缩放），但**只用 x / z** —— 纵向固定在 mask_v。
+//
+// 为什么纵向不能跟着算：蒙版烘的是四边撕开的纸，上下各有一段（CAP_FAR 行）
+// 完全是纸外，A = 0。而页眉页脚是钉在屏幕上下沿的浮层，它们要的从来只是
+// "这一列是不是纸"（横向轮廓），不是"这个高度是不是纸"。按 rect 缩放纵向
+// 会一头扎进纸外区，整条遮罩直接变透明，正文就从页眉下面直着穿过去。
+// 取蒙版正中那一行（永远在纸内）才是这句话的准确翻译。
 uniform sampler2D paper_mask_tex : filter_linear, repeat_disable;
 uniform float has_mask : hint_range(0.0, 1.0) = 0.0;
 uniform vec4 mask_uv_rect = vec4(0.0, 0.0, 1.0, 1.0);
+uniform float mask_v : hint_range(0.0, 1.0) = 0.5;
 
 void fragment() {
 	float t = mix(UV.y, 1.0 - UV.y, step(0.5, flip));
 	float alpha = pow(1.0 - t, ramp_pow);
 	// 无条件采样：未绑定 sampler 时拿到白图，has_mask = 0 时靠 mix 忽略它。
-	vec4 tear_mask = texture(paper_mask_tex, mask_uv_rect.xy + UV * mask_uv_rect.zw);
+	vec4 tear_mask = texture(paper_mask_tex,
+		vec2(mask_uv_rect.x + UV.x * mask_uv_rect.z, mask_v));
 	alpha *= mix(1.0, tear_mask.a, step(0.5, has_mask));
 	COLOR = vec4(paper_color.rgb, alpha * COLOR.a);
 }

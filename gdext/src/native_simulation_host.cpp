@@ -13,7 +13,7 @@
 #include "native_parallel_executor.h"
 #include "runtime_climate_parity.h"
 
-#include <godot_cpp/variant/utility_functions.hpp>
+#include "pk_log.h"
 
 #include <algorithm>
 #include <chrono>
@@ -2693,14 +2693,14 @@ bool NativeSimulationHost::fault_if_peer_stall_timed_out(
     const uint64_t elapsed_ms = (now_us() - since) / 1000u;
     if (elapsed_ms < RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS) return false;
     const uint32_t mask = day_stall_reason_mask();
-    const godot::String fault_line = godot::vformat(
+    const std::string fault_line = pk::log_format(
         "[day-stall-fault] day=%d stall=0x%x peer_ms=%d code=%s ring=%d",
         day, static_cast<int64_t>(mask), static_cast<int64_t>(elapsed_ms),
-        godot::String(fault_code != nullptr ? fault_code : "peer_stall_timeout"),
+        std::string(fault_code != nullptr ? fault_code : "peer_stall_timeout").c_str(),
         static_cast<int64_t>(_environment_ring.size()));
     // print + printerr: Godot console may hide stderr-only lines.
-    godot::UtilityFunctions::print(fault_line);
-    godot::UtilityFunctions::printerr(fault_line);
+    pk::log_line(fault_line);
+    pk::log_line(fault_line, true);
     set_fault(fault_code != nullptr && fault_code[0] != '\0'
                   ? fault_code
                   : "peer_stall_timeout");
@@ -7242,10 +7242,10 @@ uint32_t NativeSimulationHost::resolve_pending_country_effect_peers() {
         _control_cv.notify_all();
         static int s_promote_left = 16;
         if (s_promote_left-- > 0) {
-            godot::UtilityFunctions::print(godot::vformat(
+            pk::log_info(
                 "[tech-ack-diag/promote] pending→READY count=%d stall=0x%x",
                 static_cast<int64_t>(promoted),
-                static_cast<int64_t>(day_stall_reason_mask())));
+                static_cast<int64_t>(day_stall_reason_mask()));
         }
     }
     return promoted;
@@ -8560,12 +8560,12 @@ bool NativeSimulationHost::execute_country_worker_stage(
                 static std::atomic<int> s_late_fold_left{8};
                 if (s_late_fold_left.fetch_sub(
                         1, std::memory_order_relaxed) > 0) {
-                    godot::UtilityFunctions::print(godot::vformat(
+                    pk::log_info(
                         "[country][active] late-fold rejected day=%d "
                         "request=%d reason=%s",
                         day,
                         static_cast<int64_t>(packet.envelope.request_id),
-                        command_error.c_str()));
+                        command_error.c_str());
                 }
                 continue;
             }
@@ -8586,10 +8586,10 @@ bool NativeSimulationHost::execute_country_worker_stage(
                     static std::atomic<int> s_late_research_left{8};
                     if (s_late_research_left.fetch_sub(
                             1, std::memory_order_relaxed) > 0) {
-                        godot::UtilityFunctions::print(godot::vformat(
+                        pk::log_info(
                             "[country][active] late-fold research catch-up "
                             "failed day=%d reason=%s",
-                            day, research_error.c_str()));
+                            day, research_error.c_str());
                     }
                 }
             }
@@ -8598,12 +8598,12 @@ bool NativeSimulationHost::execute_country_worker_stage(
             static std::atomic<int> s_late_fold_ok_left{8};
             if (s_late_fold_ok_left.fetch_sub(
                     1, std::memory_order_relaxed) > 0) {
-                godot::UtilityFunctions::print(godot::vformat(
+                pk::log_info(
                     "[country][active] late-fold ok day=%d request=%d "
                     "opcode=%d",
                     day,
                     static_cast<int64_t>(packet.envelope.request_id),
-                    static_cast<int64_t>(command.opcode)));
+                    static_cast<int64_t>(command.opcode));
             }
         }
     }
@@ -8813,11 +8813,11 @@ bool NativeSimulationHost::execute_country_worker_stage(
                                      _country_pod_plan.commands.size()),
                                  _country_pod_plan.header.dirty_families);
                     std::fflush(stderr);
-                    godot::UtilityFunctions::print(godot::vformat(
+                    pk::log_info(
                         "[country][active] peer-wait preview day=%d "
                         "commands=%d",
                         day,
-                        static_cast<int64_t>(_country_pod_plan.commands.size())));
+                        static_cast<int64_t>(_country_pod_plan.commands.size()));
                 }
             }
         }
@@ -9130,28 +9130,73 @@ bool NativeSimulationHost::execute_ideology_worker_stage(
             "ideology_opinion_snapshot_missing";
         return false;
     }
-    // Freeze country.ideology.point_gain_factor from the last committed
-    // Modifier snapshot (Modifier runs after Ideology, so this is the previous
-    // day's value). Only the opinion copy changes; the published input stays.
-    if (_ideology_pod_catalog.point_gain_stat_id >= 0 && _modifier_pod_configured &&
-        opinion->country_population.size() == opinion->country_count) {
-        auto with_factor = std::make_shared<RuntimeIdeologyOpinionSnapshot>(*opinion);
-        with_factor->point_gain_factor_q16.assign(opinion->country_count, 65536);
+    // Freeze the country.ideology.* multipliers from the last committed Modifier
+    // snapshot (Modifier runs after Ideology, so this is the previous day's
+    // value). Only the opinion copy changes; the published input stays.
+    //
+    // One loop per stat rather than one pass bucketing all three: buckets are
+    // sorted by (domain, scope, stat), so a single pass could collect all three
+    // in one sweep, but the sweep runs once per day per country and the three
+    // passes keep the "which array does this bucket belong to" question inside
+    // the lambda instead of in a switch nobody tests.
+    if (_modifier_pod_configured &&
+        opinion->country_population.size() == opinion->country_count &&
+        (_ideology_pod_catalog.point_gain_stat_id >= 0 ||
+         _ideology_pod_catalog.understanding_gain_stat_id >= 0 ||
+         _ideology_pod_catalog.reroll_cost_stat_id >= 0 ||
+         _ideology_pod_catalog.era_decay_floor_stat_id >= 0 ||
+         _ideology_pod_catalog.offer_choice_bonus_stat_id >= 0)) {
+        auto with_factors = std::make_shared<RuntimeIdeologyOpinionSnapshot>(*opinion);
         const auto &buckets = _modifier_pod_authority.snapshot().buckets;
-        for (const RuntimeModifierPodBucket &bucket : buckets) {
-            if (bucket.domain != 1 || bucket.scope != 2 ||
-                bucket.stat_id != static_cast<uint32_t>(
-                    _ideology_pod_catalog.point_gain_stat_id)) continue;
-            const uint32_t slot = static_cast<uint32_t>(bucket.scope_id & 0xffffffffull);
-            if (slot >= opinion->country_count ||
-                opinion->country_handles[slot] != bucket.scope_id) continue;
-            double value = (1.0 + bucket.sum_add) * bucket.product_factor;
-            if (!std::isfinite(value)) value = 1.0;
-            value = std::clamp(value, 0.0, 4.0);
-            with_factor->point_gain_factor_q16[slot] =
-                static_cast<int32_t>(std::lround(value * 65536.0));
-        }
-        opinion = std::move(with_factor);
+        auto freeze = [&](int32_t stat_id, std::vector<int32_t> &out) {
+            if (stat_id < 0) return;
+            out.assign(opinion->country_count, 65536);
+            for (const RuntimeModifierPodBucket &bucket : buckets) {
+                if (bucket.domain != 1 || bucket.scope != 2 ||
+                    bucket.stat_id != static_cast<uint32_t>(stat_id)) continue;
+                const uint32_t slot =
+                    static_cast<uint32_t>(bucket.scope_id & 0xffffffffull);
+                if (slot >= opinion->country_count ||
+                    opinion->country_handles[slot] != bucket.scope_id) continue;
+                double value = (1.0 + bucket.sum_add) * bucket.product_factor;
+                if (!std::isfinite(value)) value = 1.0;
+                value = std::clamp(value, 0.0, 4.0);
+                out[slot] = static_cast<int32_t>(std::lround(value * 65536.0));
+            }
+        };
+        freeze(_ideology_pod_catalog.point_gain_stat_id,
+               with_factors->point_gain_factor_q16);
+        freeze(_ideology_pod_catalog.understanding_gain_stat_id,
+               with_factors->understanding_gain_q16);
+        freeze(_ideology_pod_catalog.reroll_cost_stat_id,
+               with_factors->reroll_cost_q16);
+        // The two draw-side values are ADDITIVE, not multipliers: an empty array
+        // has to read as 0 (no floor, no extra rows), while `freeze` seeds 65536
+        // because 1.0 is the identity for a factor. Sharing `freeze` here would
+        // silently give every country a 65536 bp floor and 65536 extra rows.
+        auto freeze_additive = [&](int32_t stat_id, std::vector<int32_t> &out,
+                                   int32_t ceiling) {
+            if (stat_id < 0) return;
+            out.assign(opinion->country_count, 0);
+            for (const RuntimeModifierPodBucket &bucket : buckets) {
+                if (bucket.domain != 1 || bucket.scope != 2 ||
+                    bucket.stat_id != static_cast<uint32_t>(stat_id)) continue;
+                const uint32_t slot =
+                    static_cast<uint32_t>(bucket.scope_id & 0xffffffffull);
+                if (slot >= opinion->country_count ||
+                    opinion->country_handles[slot] != bucket.scope_id) continue;
+                double value = bucket.sum_add;
+                if (!std::isfinite(value)) value = 0.0;
+                out[slot] = static_cast<int32_t>(std::lround(
+                    std::clamp(value, 0.0, static_cast<double>(ceiling))));
+            }
+        };
+        freeze_additive(_ideology_pod_catalog.era_decay_floor_stat_id,
+                        with_factors->era_decay_floor_bp, 10000);
+        freeze_additive(_ideology_pod_catalog.offer_choice_bonus_stat_id,
+                        with_factors->offer_choice_bonus,
+                        IDEOLOGY_OFFER_CHOICE_CAPACITY - IDEOLOGY_OFFER_CHOICE_BASE);
+        opinion = std::move(with_factors);
     }
     if (_ideology_pod_authority.snapshot().countries.empty()) {
         if (!_ideology_pod_authority.bootstrap(*country, *opinion, error))
@@ -9616,7 +9661,7 @@ bool NativeSimulationHost::execute_modifier_worker_stage(
         if (command.definition_id < 0) {
             static int s_def_left = 12;
             if (s_def_left-- > 0) {
-                godot::UtilityFunctions::print(godot::vformat(
+                pk::log_info(
                     "[tech-ack-diag/modifier] definition_id unresolved "
                     "request=%d seq=%d domain=%d payload0=%d hashes=%d",
                     static_cast<int64_t>(command.request_id),
@@ -9624,7 +9669,7 @@ bool NativeSimulationHost::execute_modifier_worker_stage(
                     static_cast<int64_t>(command.domain),
                     static_cast<int64_t>(intent.payload[0]),
                     static_cast<int64_t>(
-                        _modifier_definition_id_by_key_hash.size())));
+                        _modifier_definition_id_by_key_hash.size()));
             }
         }
         modifier_intents.push_back(command);
@@ -9688,14 +9733,14 @@ bool NativeSimulationHost::execute_modifier_worker_stage(
     if (!modifier_ok) {
         static int s_mod_fail_left = 12;
         if (s_mod_fail_left-- > 0 && !modifier_intents.empty()) {
-            godot::UtilityFunctions::print(godot::vformat(
+            pk::log_info(
                 "[tech-ack-diag/modifier] plan_day FAILED day=%d intents=%d "
                 "reason=%s def0=%d scope0=%d src_type0=%d",
                 day, static_cast<int64_t>(modifier_intents.size()),
-                godot::String(modifier_error.c_str()),
+                std::string(modifier_error.c_str()).c_str(),
                 static_cast<int64_t>(modifier_intents.front().definition_id),
                 static_cast<int64_t>(modifier_intents.front().scope),
-                static_cast<int64_t>(modifier_intents.front().source_type)));
+                static_cast<int64_t>(modifier_intents.front().source_type));
         }
         _modifier_pod_authority.discard_plan();
     }
@@ -10301,10 +10346,10 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                                                  std::memory_order_relaxed);
             static std::atomic<int> s_events_reject_logs_left{16};
             if (s_events_reject_logs_left.fetch_sub(1, std::memory_order_relaxed) > 0) {
-                godot::UtilityFunctions::print(godot::vformat(
+                pk::log_info(
                     "[runtime-events] day=%d rejected=%d reason=%s",
                     event_day, static_cast<int64_t>(events_report.rejected_commands),
-                    godot::String(events_report.fallback_reason)));
+                    std::string(events_report.fallback_reason).c_str());
             }
         }
         const bool events_authoritative =
@@ -11663,7 +11708,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     if ((queued_before > 0 || unfired_due > 0 || nudged > 0 ||
                          catchup_fired > 0) &&
                         s_drain_left-- > 0) {
-                        godot::UtilityFunctions::print(godot::vformat(
+                        pk::log_info(
                             "[tech-ack-diag/soft-skip] day=%d committed=%d "
                             "queued_before=%d instances=%d unfired_due=%d "
                             "nudged=%d catchup=%d drain_err=%s catchup_err=%s",
@@ -11672,8 +11717,8 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                             static_cast<int64_t>(snap.instances.size()),
                             unfired_due, static_cast<int64_t>(nudged),
                             static_cast<int64_t>(catchup_fired),
-                            godot::String(drain_error.c_str()),
-                            godot::String(catchup_error.c_str())));
+                            std::string(drain_error.c_str()).c_str(),
+                            std::string(catchup_error.c_str()).c_str());
                     }
                 }
                 ack_effect_events_intents_in_worker(_effect_day_intents);
@@ -11681,12 +11726,12 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 if (catchup_fired > 0 && promoted == 0u) {
                     static int s_no_promote_left = 8;
                     if (s_no_promote_left-- > 0) {
-                        godot::UtilityFunctions::print(godot::vformat(
+                        pk::log_info(
                             "[tech-ack-diag/soft-skip-no-promote] day=%d "
                             "catchup=%d promoted=0 (Modifier ACK may still be "
                             "pending; Country stage runs before Effect)",
                             plan.context.day,
-                            static_cast<int64_t>(catchup_fired)));
+                            static_cast<int64_t>(catchup_fired));
                     }
                 }
                 _effect_day_stage_ok = true;
@@ -11850,12 +11895,12 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 {
                     static int s_econ_climate_gate_left = 8;
                     if (s_econ_climate_gate_left-- > 0) {
-                        godot::UtilityFunctions::print(godot::vformat(
+                        pk::log_info(
                             "[economy-climate-gate] day=%d climate_ok=0 "
                             "stall=0x%x ring=%d",
                             plan.context.day,
                             static_cast<int64_t>(day_stall_reason_mask()),
-                            static_cast<int64_t>(_environment_ring.size())));
+                            static_cast<int64_t>(_environment_ring.size()));
                     }
                 }
                 stage.completed = 0;
@@ -12101,15 +12146,15 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     {
                         static int s_fiscal_stall_left = 12;
                         if (s_fiscal_stall_left-- > 0) {
-                            godot::UtilityFunctions::print(godot::vformat(
+                            pk::log_info(
                                 "[economy-fiscal-stall] day=%d reason=%s "
                                 "stall=0x%x work=%d ring=%d climate_committed=%d",
                                 plan.context.day,
-                                godot::String(economy_error.c_str()),
+                                std::string(economy_error.c_str()).c_str(),
                                 static_cast<int64_t>(day_stall_reason_mask()),
                                 static_cast<int64_t>(economy_work),
                                 static_cast<int64_t>(_environment_ring.size()),
-                                climate_committed));
+                                climate_committed);
                         }
                     }
                     commit.continuation_pending = 1;
@@ -12125,16 +12170,16 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 {
                     static int s_unknown_pending_left = 12;
                     if (s_unknown_pending_left-- > 0) {
-                        godot::UtilityFunctions::print(godot::vformat(
+                        pk::log_info(
                             "[economy-pending-stall] day=%d reason=%s "
                             "stall=0x%x work=%d ring=%d",
                             plan.context.day,
-                            godot::String(economy_error.empty()
+                            std::string(economy_error.empty()
                                               ? "pending_input"
-                                              : economy_error.c_str()),
+                                              : economy_error.c_str()).c_str(),
                             static_cast<int64_t>(day_stall_reason_mask()),
                             static_cast<int64_t>(economy_work),
-                            static_cast<int64_t>(_environment_ring.size())));
+                            static_cast<int64_t>(_environment_ring.size()));
                     }
                 }
                 if (fault_if_peer_stall_timed_out(
@@ -12989,13 +13034,13 @@ void NativeSimulationHost::set_fault(const char *code) {
     _economy_authority_last_committed_hash.store(
         _economy_pod_authority.state_hash(), std::memory_order_release);
     // Godot console often drops stderr-only; always surface the code.
-    const godot::String fault_line = godot::vformat(
+    const std::string fault_line = pk::log_format(
         "[runtime-worker-fault] code=%s day=%d ring=%d",
-        godot::String(value),
+        std::string(value).c_str(),
         _committed_day.load(std::memory_order_relaxed),
         static_cast<int64_t>(_environment_ring.size()));
-    godot::UtilityFunctions::print(fault_line);
-    godot::UtilityFunctions::printerr(fault_line);
+    pk::log_line(fault_line);
+    pk::log_line(fault_line, true);
 }
 
 bool NativeSimulationHost::arm_fault_injection(const char *point) noexcept {
@@ -14905,7 +14950,7 @@ void NativeSimulationHost::worker_main() {
                             _climate_authority.store().committed_day;
                         if (s_full_mask_preflight_left.fetch_sub(
                                 1, std::memory_order_relaxed) > 0) {
-                            godot::UtilityFunctions::print(godot::vformat(
+                            pk::log_info(
                                 "[runtime-day-wait] day=%d missing=0x0 "
                                 "forcing advance (spurious preflight_ok=0) "
                                 "ring=%d climate_committed=%d continuation=%d "
@@ -14914,7 +14959,7 @@ void NativeSimulationHost::worker_main() {
                                 static_cast<int64_t>(_environment_ring.size()),
                                 climate_committed,
                                 static_cast<int64_t>(day_commit.continuation_pending),
-                                static_cast<int64_t>(day_stall_reason_mask())));
+                                static_cast<int64_t>(day_stall_reason_mask()));
                         }
                         // Only drop envs for this worker day (and earlier).
                         // Never drain through climate_committed when it is
@@ -14950,7 +14995,7 @@ void NativeSimulationHost::worker_main() {
                             if (country_fallback[fb] == '\0') break;
                         }
                         country_fallback[fb] = '\0';
-                        godot::UtilityFunctions::print(godot::vformat(
+                        pk::log_info(
                             "[runtime-day-wait] day=%d env_day=%d missing=0x%x "
                             "stall=0x%x economy_input=%d ring=%d country=%s",
                             day,
@@ -14959,7 +15004,7 @@ void NativeSimulationHost::worker_main() {
                             static_cast<int64_t>(day_stall_reason_mask()),
                             economy_input_requested_day(),
                             static_cast<int64_t>(_environment_ring.size()),
-                            country_fallback));
+                            country_fallback);
                         // Economy incomplete with no stall bit has no CV wake
                         // source once Climate capacity fills. Arm a peer stall
                         // so the timeout fault surfaces instead of a silent hang.
@@ -14990,14 +15035,14 @@ void NativeSimulationHost::worker_main() {
                                 if (yield_reason[yi] == '\0') break;
                             }
                             yield_reason[yi] = '\0';
-                            godot::UtilityFunctions::print(godot::vformat(
+                            pk::log_info(
                                 "[runtime-day-wait] day=%d armed fiscal stall "
                                 "for economy-missing-without-stall ring=%d "
                                 "yield=%s climate_committed=%d",
                                 day,
                                 static_cast<int64_t>(_environment_ring.size()),
-                                godot::String(yield_reason),
-                                climate_committed));
+                                std::string(yield_reason).c_str(),
+                                climate_committed);
                         }
                     }
                     // Events 硬失败不设任何 stall 位，peer 超时永不触发；
@@ -15018,13 +15063,13 @@ void NativeSimulationHost::worker_main() {
                                 if (events_reason[er] == '\0') break;
                             }
                             events_reason[er] = '\0';
-                            const godot::String fault_line = godot::vformat(
+                            const std::string fault_line = pk::log_format(
                                 "[day-stall-fault] day=%d events_day_failed reason=%s "
                                 "ring=%d",
-                                day, godot::String(events_reason),
+                                day, std::string(events_reason).c_str(),
                                 static_cast<int64_t>(_environment_ring.size()));
-                            godot::UtilityFunctions::print(fault_line);
-                            godot::UtilityFunctions::printerr(fault_line);
+                            pk::log_line(fault_line);
+                            pk::log_line(fault_line, true);
                             set_fault("events_day_failed");
                             break;
                         }

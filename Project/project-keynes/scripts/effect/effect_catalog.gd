@@ -22,12 +22,26 @@ const Q16_ONE := 65536
 ## (the main thread resolves cells and passes a target_handle) and reads state
 ## through one shared switch, so both ceilings track the main thread's, not a
 ## narrower subset. Keep the two files in step.
-const POD_MAX_SELECTOR_KIND := 12
-const POD_MAX_STATE_ID := 4
+const POD_MAX_SELECTOR_KIND := 13
+## 5 = STATE_LATCHED (previous evaluation's condition result). Ids are
+## append-only on both sides; bumping this without the matching case in
+## RuntimeEffectPodAuthority::state_value trips
+## `effect_pod_state_parity_self_test` rather than failing silently.
+const POD_MAX_STATE_ID := 5
 const POD_CONDITION_STATE_GTE := 5
 const POD_INSTRUCTION_READ_STATE := 3
 
 @export var metric_keys: PackedStringArray = PackedStringArray()
+## Optional cell-tag predicates (see gdext/src/target_tag.h). One entry per tag:
+##   {"name": String, "rows": [{"metric": String, "op": int,
+##                              "threshold_q16": int, "clause": int}, ...]}
+## `op`: 0 >=  1 <=  2 ==  3 !=. Rows in one tag with the same `clause` are
+## ANDed; distinct clause ids are ORed, and clause ids must not decrease. That
+## covers both shapes the tag dictionary needs ("grain" = output is wheat OR
+## rice OR ...; "rich in iron" = resource is iron AND share >= 50%).
+## Empty by default: a catalog without tags keeps byte-identical output, and the
+## territory selector then has no tag to filter on.
+@export var target_tags: Array[Dictionary] = []
 @export var behavior_command_keys: PackedStringArray = PackedStringArray()
 @export var definitions: Array[Resource] = []
 @export_range(1, 16000000, 1) var max_instances: int = 4096
@@ -82,13 +96,23 @@ func compile_native_catalog() -> Dictionary:
 		"command_payload_i3": PackedInt64Array(),
 		"managed_flags": PackedByteArray(),
 		"pod_expressible": PackedByteArray(),
+		"target_tags": PackedStringArray(),
+		"tag_offsets": PackedInt32Array(),
+		"tag_metric_ids": PackedInt32Array(),
+		"tag_metric_ops": PackedInt32Array(),
+		"tag_metric_clauses": PackedInt32Array(),
+		"tag_metric_thresholds_q16": PackedInt64Array(),
 	}
+	# Maps metric key -> dense id, which is also the duplicate guard. Tag rows
+	# resolve their metric through this map, so it must hold the id rather than a
+	# plain `true`: storing a boolean here silently made every tag row read
+	# metric id 1 (int(true)) instead of the id the author named.
 	var metric_seen := {}
-	for metric_key in metric_keys:
-		var key := String(metric_key)
+	for metric_index in range(metric_keys.size()):
+		var key := String(metric_keys[metric_index])
 		if key.is_empty() or metric_seen.has(key):
 			return {"ok": false, "reason": "effect_metric_key_invalid_or_duplicate"}
-		metric_seen[key] = true
+		metric_seen[key] = metric_index
 	var definition_seen := {}
 	var any_managed := false
 	var any_selector_params := false
@@ -195,6 +219,37 @@ func compile_native_catalog() -> Dictionary:
 			out.command_payload_i2.append(command.payload_i2)
 			out.command_payload_i3.append(command.payload_i3)
 		out.command_offsets.append(out.command_actions.size())
+	# Tag predicates, emitted only when authored. The native side treats an
+	# absent table as "no tags", so leaving these arrays empty is what keeps
+	# every pre-tag catalog byte-identical.
+	if not target_tags.is_empty():
+		out.tag_offsets = PackedInt32Array([0])
+		for tag in target_tags:
+			var tag_name := String(tag.get("name", ""))
+			if tag_name.is_empty():
+				return {"ok": false, "reason": "target_tag_name_empty"}
+			var sees: Array = tag.get("rows", [])
+			if sees.is_empty():
+				return {"ok": false, "reason": "target_tag_has_no_rows"}
+			out.target_tags.append(tag_name)
+			var previous_clause := -1
+			for row in sees:
+				var metric_key := String(row.get("metric", ""))
+				if not metric_seen.has(metric_key):
+					return {"ok": false,
+						"reason": "target_tag_metric_not_declared:" + metric_key}
+				var op := int(row.get("op", 0))
+				if op < 0 or op >= 4:
+					return {"ok": false, "reason": "target_tag_op_invalid"}
+				var clause := int(row.get("clause", 0))
+				if clause < previous_clause:
+					return {"ok": false, "reason": "target_tag_clause_not_sorted"}
+				previous_clause = clause
+				out.tag_metric_ids.append(int(metric_seen[metric_key]))
+				out.tag_metric_ops.append(op)
+				out.tag_metric_clauses.append(clause)
+				out.tag_metric_thresholds_q16.append(int(row.get("threshold_q16", 0)))
+			out.tag_offsets.append(out.tag_metric_ids.size())
 	out.ok = true
 	for extension_key in native_extensions:
 		if out.has(extension_key):
@@ -204,9 +259,10 @@ func compile_native_catalog() -> Dictionary:
 
 ## Mirrors the POD compiler's capability limits. Keep in lockstep with
 ## gdext/src/runtime_effect_pod.cpp:
-##   target_selector_kind   MAX_SELECTOR_KIND   (0..11)
-##   condition STATE_GTE    MAX_STATE_ID        (arg0 0..4)
-##   instruction READ_STATE MAX_STATE_ID        (arg0 0..4)
+##   target_selector_kind   MAX_SELECTOR_KIND   (0..13, 12 = OWN_TERRITORY,
+##                                                13 = TAG_ANY_CELL)
+##   condition STATE_GTE    MAX_STATE_ID        (arg0 0..5, 5 = STATE_LATCHED)
+##   instruction READ_STATE MAX_STATE_ID        (arg0 0..5)
 ## Both ceilings equal the main thread's, not a narrower subset. They were
 ## 7 / 3 once, and because POD catalog validation is all-or-nothing a single
 ## card above the ceiling took the whole worker authority graph down.

@@ -33,7 +33,8 @@ struct RuntimeEffectPodSnapshot;
 class EffectRuntime {
 public:
     static constexpr int32_t PROTOCOL_VERSION = 1;
-    static constexpr int32_t SAVE_SCHEMA_VERSION = 11;
+    // 12: Effect instances carry the per-instance magnitude scale (L3-9).
+    static constexpr int32_t SAVE_SCHEMA_VERSION = 12;
     static constexpr int64_t Q16_ONE = 65536;
 
     enum Instruction : int32_t {
@@ -71,6 +72,21 @@ public:
         // "once this effect has 3 stacks, also do X", which is the backbone of
         // stacking builds.
         STATE_STACK_COUNT = 4,
+        // Last evaluation's condition result for THIS instance (0 or Q16_ONE).
+        // Exists so a program can express a hysteresis band without a new
+        // comparison operator:
+        //
+        //   OR( AND(STATE_GTE(LATCHED, 1), METRIC_GTE(m, low)),
+        //       METRIC_GTE(m, high) )
+        //
+        // enters at `high` and stays in until `m` falls below `low`. The whole
+        // band lives in the authored condition graph; the runtime only supplies
+        // the one bit it cannot compute from the present.
+        //
+        // Deliberately NOT persisted: it is derived state, and a save/load reset
+        // to 0 just means the card must re-cross `high` once. Persisting it
+        // would force a schema bump for a value that self-heals in one cadence.
+        STATE_LATCHED = 5,
     };
     // Guardrail for authored max_stacks. state_value() multiplies the stack
     // count by Q16_ONE and downstream terms raise factors to that power, so an
@@ -126,9 +142,8 @@ public:
         SELECTOR_PREDICATE_ANY_CELL = 10,
         SELECTOR_DISTANCE_N = 11,
         // 12: the source cell's *owner's* territory, walked through the country
-        // territory index instead of the neighbour graph. param1 is a predicate
-        // id (0 = every owned cell, otherwise the same ids as
-        // SELECTOR_PREDICATE_ANY_CELL).
+        // territory index instead of the neighbour graph. param1 is a 1-based
+        // tag id (0 = every owned cell). See target_tag.h for the tag table.
         //
         // Two things this kind fixes that no existing kind could:
         //   - a hex walk from the anchor can never reach the far side of a
@@ -139,7 +154,20 @@ public:
         //     the grid-wide kind intact (existing content depends on it) and
         //     offers the scoped answer as an explicit opt-in.
         SELECTOR_OWN_TERRITORY = 12,
-        SELECTOR_MAX_KIND = SELECTOR_OWN_TERRITORY,
+        // 13: grid-wide cells matching a tag, param1 = 1-based tag id
+        // (0 = every cell on the grid).
+        //
+        // This is the missing quadrant of the 2x2 the two other kinds form on
+        // their own. Before it, "every coastal cell anywhere" was not
+        // expressible at all: PREDICATE_ANY_CELL only knows river / water /
+        // land, and the component kinds follow the anchor's own terrain, so
+        // they can never say "cells whose terrain is X" without first being
+        // anchored on one. Deliberately a new kind rather than a wider param1
+        // on PREDICATE_ANY_CELL: that kind's 1..3 ids are already in shipped
+        // content and mean river / water / land, and tag ids start at 1 too,
+        // so re-using the slot would silently rewrite existing cards.
+        SELECTOR_TAG_ANY_CELL = 13,
+        SELECTOR_MAX_KIND = SELECTOR_TAG_ANY_CELL,
     };
     // Hard cap on cells a single selector may return. The cap is what keeps
     // "one instance per cell" bounded: 32 cells x a handful of cards stays well
@@ -619,9 +647,23 @@ private:
         int32_t stack_count = 1;
         int32_t applied_stack_count = 0;
         int32_t priority = 0;
+        // Per-instance magnitude multiplier (L3-9 second slice). The program's
+        // compiled `value_q16` is the base; this scales it for THIS instance
+        // only, which is the one thing a card can rewrite about another card's
+        // program without turning the shared program template into per-instance
+        // data. 1.0 means "no override" and is what every pre-existing caller
+        // gets, because the batch column is optional.
+        int32_t magnitude_scale_q16 = Q16_ONE;
         uint64_t activation_sequence = 0;
         int64_t expires_day = -1;
         uint64_t stack_key_hash = 0;
+        // Last evaluation's raw condition result, exposed as STATE_LATCHED.
+        // Written wherever a condition is actually evaluated: the day pass on
+        // this side, plan_day / set_metric on the worker. The one place that
+        // deliberately does NOT write is build_planned_candidate -- it is a dry
+        // run whose result may be discarded, so advancing the latch there would
+        // let a plan that never executed move the hysteresis band.
+        uint8_t latched = 0;
         // Domain-ACKed application state. Managed definitions only emit when
         // this state or the frozen input revision changes.
         uint8_t effect_applied = 0;
