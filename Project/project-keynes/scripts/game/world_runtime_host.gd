@@ -5158,9 +5158,41 @@ func annual_report_catalogs() -> Dictionary:
 	var goods := PackedStringArray()
 	for index in economy.good_ids().size():
 		goods.append(economy.good_display_name(index))
+	# 资源名与「认没认出来」走同一个循环、同一个下标：报表里的 resource id 就是
+	# ResourceProfileRegistry.ordered() 的下标，两个数组必须等长同序。
+	var viewer: Dictionary = _player_completed_technology_ids()
+	var know_discovery: bool = bool(viewer.get("ok", false))
+	var known: PackedStringArray = viewer.get("ids", PackedStringArray())
 	var resources := PackedStringArray()
+	var discovered := PackedByteArray()
 	for profile in ResourceProfileRegistry.ordered():
 		resources.append(String(profile.display_name))
-	return {"profession_names": professions, "building_names": buildings,
+		if know_discovery:
+			discovered.append(1 if ResourceProfileRegistry.discovery_visible(profile, known) else 0)
+	var out: Dictionary = {"profession_names": professions, "building_names": buildings,
 		"resource_names": resources, "good_names": goods,
 		"technology_names": country.get("technology_display_names", PackedStringArray())}
+	# 拿不到玩家科技快照时**不带这个键**：调用方"没报告"与"查了是 0"是两件事，
+	# 缺省必须表现为"不过滤"，否则一次读档期的查询失败会把整栏资源吞掉。
+	if know_discovery:
+		out["resource_discovered"] = discovered
+	return out
+
+
+## 玩家已完成科技 id。年报"资源"栏要据此藏掉还没认出来的矿种。
+## 认矿门控（ResourceProfile.discovery_technology_tags）本来就在 GDScript 侧，
+## 原生只管"能不能采"，所以这条过滤只能在这里做 —— 与地图覆盖层、悬停卡同一套判定。
+func _player_completed_technology_ids() -> Dictionary:
+	if _generator == null or not _generator.has_method("get_country_facade"):
+		return {"ok": false}
+	var facade = _generator.get_country_facade()
+	if facade == null or not facade.has_method("snapshot"):
+		return {"ok": false}
+	if _player_country_handle == 0:
+		_player_country_handle = _resolve_player_country_handle()
+	if _player_country_handle == 0:
+		return {"ok": false}
+	var snapshot: Dictionary = facade.snapshot(_player_country_handle)
+	if not bool(snapshot.get("ok", false)):
+		return {"ok": false}
+	return {"ok": true, "ids": snapshot.get("technology_ids", PackedStringArray())}

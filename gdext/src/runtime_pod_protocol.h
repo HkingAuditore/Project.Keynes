@@ -1647,6 +1647,24 @@ struct RuntimeThreadReport {
     uint32_t day_stall_reason_mask = 0;
     int64_t day_stall_day = -1;
     uint64_t day_stall_peer_ms = 0;
+    // 最后一个卡住 worker 的日计划缺口（`requested_authority_mask &
+    // ~day_commit.completed_domain_mask`）。day_stall_reason_mask 只说「在等什么
+    // 外部输入」，缺一个 stall 位时它恒为 0；这张 mask 才点名「哪个域的阶段还没
+    // 完成」。注意与上面的 missing_domain_mask 不是一回事：那个是「handler 没实现」，
+    // 这个是「今天这个阶段没跑完」。worker 侧只写不改，主线程只读。
+    int64_t day_wait_day = -1;
+    uint32_t day_wait_missing_mask = 0;
+    int64_t day_wait_env_day = -1;
+    uint32_t day_wait_ring = 0;
+    // 哪个域、因为哪一行而放弃今天。有些 park 分支只 `stage.completed = 0`
+    // 就 continue，不设 stall 位也不写 fallback reason；没有这两个字段，
+    // 「日历推不动」在日志里就完全没有归因。
+    uint32_t day_park_domain_mask = 0;
+    char day_park_reason[48]{};
+    // 被永久拒绝并丢弃的 Effect 实例（见 drain_effect_transport_queues）。计数非零
+    // 说明有内容级缺陷，但日历不会再因此冻结。
+    uint64_t effect_instance_rejected_count = 0;
+    char effect_instance_reject_detail[96]{};
     uint64_t climate_wait_total_ms = 0;
     uint64_t climate_wait_last_ms = 0;
     uint64_t climate_wait_max_ms = 0;

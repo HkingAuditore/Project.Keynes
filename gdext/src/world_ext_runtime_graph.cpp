@@ -987,6 +987,21 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["day_stall_reason_mask"] =
             static_cast<int64_t>(host.day_stall_reason_mask);
         out["day_stall_day"] = host.day_stall_day;
+        // Day-plan gap: which domain stage is still unfinished for the worker's
+        // current day. Reported separately from day_stall_* because a missing
+        // stage with no stall bit produces no diagnostic anywhere else.
+        out["day_wait_day"] = host.day_wait_day;
+        out["day_wait_missing_mask"] = static_cast<int64_t>(host.day_wait_missing_mask);
+        out["day_wait_env_day"] = host.day_wait_env_day;
+        out["day_wait_ring"] = static_cast<int64_t>(host.day_wait_ring);
+        // Which domain parked the day and on which line. The park branches are
+        // deliberately non-fatal, so this is the only attribution they have.
+        out["day_park_domain_mask"] = static_cast<int64_t>(host.day_park_domain_mask);
+        out["day_park_reason"] = String(host.day_park_reason);
+        out["effect_instance_rejected_count"] =
+            static_cast<int64_t>(host.effect_instance_rejected_count);
+        out["effect_instance_reject_detail"] = String(
+            host.effect_instance_reject_detail);
         out["day_stall_peer_ms"] =
             static_cast<int64_t>(host.day_stall_peer_ms);
         out["climate_wait_total_ms"] =

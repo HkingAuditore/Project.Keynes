@@ -2642,6 +2642,19 @@ void NativeSimulationHost::note_day_stall(uint32_t bits, int64_t day) {
         expected, started, std::memory_order_acq_rel, std::memory_order_acquire);
 }
 
+void NativeSimulationHost::note_day_park(uint32_t domain_mask,
+                                        const char *reason) {
+    _day_park_domain_mask.store(domain_mask, std::memory_order_release);
+    const char *text = reason != nullptr ? reason : "";
+    size_t index = 0;
+    for (; index + 1 < _day_park_reason.size() && text[index] != '\0'; ++index) {
+        _day_park_reason[index].store(text[index], std::memory_order_release);
+    }
+    for (; index < _day_park_reason.size(); ++index) {
+        _day_park_reason[index].store('\0', std::memory_order_release);
+    }
+}
+
 void NativeSimulationHost::clear_day_stall_bits(uint32_t bits) {
     if (bits == 0u) return;
     uint32_t current = _day_stall_reason_mask.load(std::memory_order_acquire);
@@ -10040,11 +10053,47 @@ bool NativeSimulationHost::drain_effect_transport_queues(std::string &error) {
         // Queue may have waited across Effect soft-skips / climate parks.
         // Never-fired technology installs must land on the next plan day.
         const int64_t committed = _effect_pod_authority.snapshot().committed_day;
-        if (committed >= 0 && input.next_due_day >= 0 &&
-            input.next_due_day <= committed) {
+        // 负数 due day 是「还没排期」，不是非法值：声明式注册在地图生成阶段就跑过
+        // 一遍，那时主线程时钟还是 day -1，于是整批 ENSURE 带着 next_due_day=-1
+        // 进队。validate_instance 只能拒绝它，而这个拒绝又会把 host 日钉死
+        // （新开局冻在 day 2 的直接原因）。这里和其它「已过期」的情形一起归一到
+        // 下一个计划日。
+        if (input.next_due_day < 0) {
+            input.next_due_day = std::max<int64_t>(0, committed + 1);
+        } else if (committed >= 0 && input.next_due_day <= committed) {
             input.next_due_day = committed + 1;
         }
         if (!_effect_pod_authority.upsert_instance(input, error)) {
+            // `effect_pod_instance_invalid` 是队列行自身的属性（program 越界 /
+            // target_generation 为 0 / next_due_day 为负 / id 非正），排队再久也
+            // 不会变合法。以前这里一律回插 + 返回 false：Effect 阶段每天在同一行
+            // 失败，host 日再也提交不了，十二域 grant 一个都不授，新开局就冻在
+            // 第 2 天。丢弃 + 记账 + 留字段快照，让游戏继续跑到能修产生端。
+            // capacity / not_configured 仍然是暂态，保留回插。
+            if (error == "effect_pod_instance_invalid") {
+                _effect_instance_rejected_count.fetch_add(
+                    1, std::memory_order_release);
+                char detail[96];
+                std::snprintf(detail, sizeof(detail),
+                    "id=%lld gen=%u prog=%d th=%llu tg=%u due=%lld",
+                    static_cast<long long>(input.instance_id),
+                    static_cast<unsigned>(input.generation),
+                    static_cast<int>(input.program_id),
+                    static_cast<unsigned long long>(input.target_handle),
+                    static_cast<unsigned>(input.target_generation),
+                    static_cast<long long>(input.next_due_day));
+                for (size_t i = 0; i + 1 < _effect_instance_reject_detail.size(); ++i) {
+                    const char value = detail[i];
+                    _effect_instance_reject_detail[i].store(
+                        value, std::memory_order_release);
+                    if (value == '\0') break;
+                }
+                _effect_instance_reject_detail[
+                    _effect_instance_reject_detail.size() - 1].store(
+                        '\0', std::memory_order_release);
+                error.clear();
+                continue;
+            }
             EffectPodInstanceQueueItem retry = queued;
             retry.input = input;
             instances.push_front(retry);
@@ -10058,6 +10107,15 @@ bool NativeSimulationHost::drain_effect_transport_queues(std::string &error) {
         if (!_effect_pod_authority.set_metric(
                 item.instance_id, item.generation, item.metric_id,
                 item.revision, item.value, error)) {
+            // 实例已被换掉/丢弃，这条指标永远落不上去。回插会让 Effect 阶段
+            // 每天同一处失败，与 ENSURE 的 effect_pod_instance_invalid 是同一类
+            // 毒丸；丢弃并计数。
+            if (error == "effect_pod_metric_stale_generation") {
+                _effect_instance_rejected_count.fetch_add(
+                    1, std::memory_order_release);
+                error.clear();
+                continue;
+            }
             metrics.push_front(item);
             restore_remaining(instances, metrics, removes);
             return false;
@@ -11648,6 +11706,8 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 // present when Climate unblocks the Effect plan lane.
                 std::string drain_error;
                 drain_effect_transport_queues(drain_error);
+                note_day_park(runtime_domain_mask(RuntimeDomainId::EFFECT),
+                              "effect_parked_climate_input");
                 stage.completed = 0;
                 continue;
             }
@@ -11657,6 +11717,10 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             if (!effect_stage_enabled) {
                 _effect_day_modifier_intents.clear();
                 _effect_day_stage_ok = false;
+                note_day_park(runtime_domain_mask(RuntimeDomainId::EFFECT),
+                              _effect_pod_configured
+                                  ? "effect_catalog_empty"
+                                  : "effect_stage_not_configured");
                 stage.completed = 0;
                 continue;
             }
@@ -14976,6 +15040,16 @@ void NativeSimulationHost::worker_main() {
                         active_environment.reset();
                         // Fall through to the success path below.
                     } else {
+                    // 主线程唯一能读到「今天缺哪个域」的地方。stall 位只描述外部
+                    // 等待（环满 / peer / 经济输入），缺口既不设位也不发 CV 时它恒
+                    // 为 0x0，日志里只剩一句无声的冻结；这四个值把缺口钉住。
+                    _day_wait_day.store(day, std::memory_order_release);
+                    _day_wait_missing_mask.store(missing, std::memory_order_release);
+                    _day_wait_env_day.store(
+                        environment != nullptr ? environment->day : int64_t{-1},
+                        std::memory_order_release);
+                    _day_wait_ring.store(static_cast<uint32_t>(_environment_ring.size()),
+                                         std::memory_order_release);
                     if (logged_pending_day != day || logged_pending_mask != missing) {
                         logged_pending_day = day;
                         logged_pending_mask = missing;
@@ -15635,6 +15709,23 @@ RuntimeThreadReport NativeSimulationHost::report() const {
         static_cast<uint64_t>(_environment_ring.size());
     out.day_stall_reason_mask = day_stall_reason_mask();
     out.day_stall_day = _day_stall_day.load(std::memory_order_acquire);
+    out.day_wait_day = _day_wait_day.load(std::memory_order_acquire);
+    out.day_wait_missing_mask = _day_wait_missing_mask.load(std::memory_order_acquire);
+    out.day_wait_env_day = _day_wait_env_day.load(std::memory_order_acquire);
+    out.day_wait_ring = _day_wait_ring.load(std::memory_order_acquire);
+    out.day_park_domain_mask = _day_park_domain_mask.load(std::memory_order_acquire);
+    for (size_t i = 0; i + 1 < sizeof(out.day_park_reason); ++i) {
+        out.day_park_reason[i] = _day_park_reason[i].load(std::memory_order_acquire);
+    }
+    out.day_park_reason[sizeof(out.day_park_reason) - 1] = '\0';
+    out.effect_instance_rejected_count =
+        _effect_instance_rejected_count.load(std::memory_order_acquire);
+    for (size_t i = 0; i + 1 < sizeof(out.effect_instance_reject_detail); ++i) {
+        out.effect_instance_reject_detail[i] =
+            _effect_instance_reject_detail[i].load(std::memory_order_acquire);
+    }
+    out.effect_instance_reject_detail[
+        sizeof(out.effect_instance_reject_detail) - 1] = '\0';
     {
         const uint64_t since =
             _day_stall_peer_since_us.load(std::memory_order_acquire);

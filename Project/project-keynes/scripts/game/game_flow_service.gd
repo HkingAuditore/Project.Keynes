@@ -23,6 +23,10 @@ func _ready() -> void:
 		"res://tests/family/family_economy_probe.gd")
 	_attach_headless_runner("PK_COLONIZATION_PROBE",
 		"res://tests/country/colonization_probe.gd")
+	# 新开局日历冻结的复现入口：走真实 begin_new_game + 泵帧，见
+	# tests/probes/_tmp_autoplay.gd（PK_AUTOPLAY_PROBE=1）。
+	_attach_headless_runner("PK_AUTOPLAY_PROBE",
+		"res://tests/probes/_tmp_autoplay.gd")
 
 
 func _attach_headless_runner(env_name: String, script_path: String) -> void:
