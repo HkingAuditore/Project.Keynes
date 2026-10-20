@@ -53,8 +53,8 @@
 
 | 检测项 | 状态 |
 |--------|------|
-| DCWorld serialize / deserialize round-trip bit-equal | ✅ tests/world_serialize_test.gd |
-| Schema migration add/rename/delete + 单测 | ✅ tests/schema_migration_test.gd |
+| DCWorld serialize / deserialize round-trip bit-equal | ✅ tests/world/world_serialize_test.gd |
+| Schema migration add/rename/delete + 单测 | ✅ tests/technology/schema_migration_test.gd |
 | DCSoakDump 标准夹具 | ✅ tools/migration_harness/template_soak_test.gd |
 | DCFlagBus hot-reload signal + DCWorld unbind/rebind | ✅ main.gd._on_dcflag_changed |
 
@@ -77,14 +77,14 @@
 
 ```bash
 # 全自动 headless 验收（应零退出码）
-godot --headless --script tests/world_write_indexed_test.gd --quit
-godot --headless --script tests/world_serialize_test.gd --quit
-godot --headless --script tests/schema_migration_test.gd --quit
-godot --headless --script tests/dc_system_test.gd --quit
-godot --headless --script tests/view_adapter_test.gd --quit
-godot --headless --script tests/weather_field_solver_test.gd --quit
-godot --headless --script tests/weather_front_shape_test.gd --quit
-godot --headless --script tests/weather_profile_regression_test.gd --quit
+godot --headless --script tests/world/world_write_indexed_test.gd --quit
+godot --headless --script tests/world/world_serialize_test.gd --quit
+godot --headless --script tests/technology/schema_migration_test.gd --quit
+godot --headless --script tests/runtime/dc_system_test.gd --quit
+godot --headless --script tests/ui/view_adapter_test.gd --quit
+godot --headless --script tests/world/weather_field_solver_test.gd --quit
+godot --headless --script tests/world/weather_front_shape_test.gd --quit
+godot --headless --script tests/world/weather_profile_regression_test.gd --quit
 ```
 
 **SAME_SOURCE A/B in-engine**：F3 触发 DCSoakABRunner.SAME_SOURCE，30 tick 跑两段，

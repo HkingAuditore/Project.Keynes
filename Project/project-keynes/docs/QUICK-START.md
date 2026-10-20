@@ -23,7 +23,7 @@
 参数调优的效果如何？资源是否更"跳"出地表？
 
 ```bash
-godot --headless -s Project/project-keynes/tests/resource_visual_art_review.gd
+godot --headless -s Project/project-keynes/tests/economy/resource_visual_art_review.gd
 ```
 
 输出文件：`tmp/resource_visual_qa/art_review_45.png`
@@ -60,7 +60,7 @@ godot Project/project-keynes/project.godot
 ### Step 3: 性能验证（确保在预算内）
 
 ```bash
-godot -s Project/project-keynes/tests/resource_visual_perf_test.gd -- --large
+godot -s Project/project-keynes/tests/economy/resource_visual_perf_test.gd -- --large
 
 # 查看输出中的 P95 帧时
 # 应该看到：
@@ -125,7 +125,7 @@ A: 几个可能的原因：
 **调试**：
 ```bash
 # 运行性能测试，看具体耗时
-godot -s tests/resource_visual_perf_test.gd -- --large
+godot -s tests/economy/resource_visual_perf_test.gd -- --large
 
 # 查看输出中是否有资源层单独的耗时报告
 ```

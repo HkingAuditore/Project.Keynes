@@ -55,7 +55,7 @@ Create a production Godot nine-slice SELECTED/PRESSED button texture. Single bla
 
 ## Verification
 
-Run tests/archive_material_screenshot_qa.gd with rendering to capture the actual
+Run tests/qa/archive_material_screenshot_qa.gd with rendering to capture the actual
 game at 1280×720, 1366×768, 1920×1080 and 2560×1080, three fog presentations,
 material states and the country economy shell. It also checks 460px layout width,
 16px logical inset and stable panel/navigation/scroll instances over ten days

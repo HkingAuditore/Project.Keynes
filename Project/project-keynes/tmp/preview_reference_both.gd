@@ -1,4 +1,4 @@
-extends "res://tests/economy_performance_parity_test.gd"
+extends "res://tests/economy/economy_performance_parity_test.gd"
 
 ## Original preview basis versus catalog-equivalent reuse on the same scheduler,
 ## with frozen cadence. Also compare each actor's goods and saturation delta.
