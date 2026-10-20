@@ -42,6 +42,19 @@ func _busy() -> bool:
 		or not String(_controller.ideology_draw_phase()).is_empty() \
 		or (_ui != null and _ui.has_method("annual_other_modal_open") and _ui.annual_other_modal_open())
 
+## 暂停时钟，并且**把暂停推出去**。
+##
+## `WorldClock.paused` 只关掉主线程那一台日历。worker 权威下日历跑在原生线程里，
+## 它只听 `set_runtime_clock_threaded`，而那条线的唯一上游是
+## `PlayerController.sync_ui()` → `WorldRuntimeHost.on_clock_running_changed`。
+## 别的暂停入口（暂停键、暂停菜单、调速）都顺路调了 sync_ui，只有这里原本
+## 只改了标志位 —— 于是年鉴摊开了、画面静止了，年份还在背后往前走。
+func _pause_clock() -> void:
+	_clock.pause(true)
+	if _controller != null and _controller.has_method("sync_ui"):
+		# 重入是安全的：此时 _open 已经是 true，sync_ui 里那次 try_present 会立刻返回。
+		_controller.sync_ui()
+
 func try_present() -> void:
 	if _host == null or not _host.has_method("annual_report_status") or _clock == null or _ui == null:
 		return
@@ -52,7 +65,7 @@ func try_present() -> void:
 			return
 		_reopen_pending = false
 		_open = true
-		_clock.pause(true)
+		_pause_clock()
 		_select_report(_report_id)
 		_load_history(0)
 		return
@@ -76,7 +89,7 @@ func _show(id: int, ceremonial: bool) -> void:
 		_was_paused = _clock.paused
 		_speed = _clock.speed_multiplier
 		_open = true
-	_clock.pause(true)
+	_pause_clock()
 	_report_id = id
 	_history_offset = 0
 	_select_report(id, ceremonial)
@@ -88,8 +101,10 @@ func _select_report(id: int, ceremonial: bool = false) -> void:
 	var previous: Dictionary = _host.annual_report_snapshot(id - 1) if id > 1 else {}
 	if bool(report.get("ok", false)) and not _viewed.has(id):
 		_viewed.append(id)
-	if _catalogs.is_empty():
-		_catalogs = _host.annual_report_catalogs()
+	# 目录里现在带「这一矿种认出来了没有」，而认矿会跨年发生 —— 缓存住就会在
+	# 第一次开卷那一刻把资源栏永久钉死。这里不是热路径（开卷一次、换年一次），
+	# 每次重取。
+	_catalogs = _host.annual_report_catalogs()
 	_ui.show_annual_report(ViewModel.build(report, previous, _catalogs), ceremonial)
 
 func _load_history(offset: int) -> void:

@@ -13,10 +13,11 @@ class ClockStub:
 
 class ControllerStub:
 	var locked := false
+	var synced := 0
 	func era_reward_locked() -> bool: return locked
 	func family_founding_locked() -> bool: return false
 	func ideology_draw_phase() -> String: return ""
-	func sync_ui() -> void: pass
+	func sync_ui() -> void: synced += 1
 
 class HostStub:
 	signal annual_report_ready(id: int)
@@ -231,6 +232,10 @@ func _run() -> void:
 	controller.locked = false
 	flow.try_present()
 	_expect("annual pauses after the other modal ends", ui.opened == 1 and clock.paused)
+	# 只把 WorldClock.paused 置真停不住游戏：worker 权威下日历跑在原生线程里，
+	# 唯一的暂停通道是 sync_ui() → WorldRuntimeHost.on_clock_running_changed
+	# → set_runtime_clock_threaded。开卷必须顺路把它推出去。
+	_expect("annual open pushes the pause into the runtime", controller.synced > 0)
 	var state: Dictionary = flow.capture()
 	ui.annual_report_closed.emit(1)
 	_expect("close restores previous 50x state", not clock.paused and clock.speed_multiplier == 50.0 and host.marked == 1)

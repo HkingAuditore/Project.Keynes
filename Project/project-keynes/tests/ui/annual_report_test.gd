@@ -68,6 +68,36 @@ func _run() -> void:
 	var prior: Dictionary = {"totals": {"gdp": 100000000}, "closing": {}}
 	var compared: Dictionary = ViewModel.build(with_previous, prior)
 	_expect("comparable year keeps baseline columns", compared.get("has_previous") == true and compared.chapters[1].rows[0].get("has_baseline") == true)
+	# ── 资源栏不得替玩家提前翻牌 ────────────────────────────────────────────
+	# 原生按"领土上有这份储量"出行，所以没认出来的矿种也会带着剩余量进来。
+	# 认矿门控在 GDScript 侧（ResourceProfile.discovery_technology_tags），
+	# 目录里带着逐项可见性，年报必须照它过滤。
+	var gated: Dictionary = raw.duplicate(true)
+	gated.resource_totals = [
+		{"id": 0, "count": 9000, "value": 3000},
+		{"id": 1, "count": 4000, "value": 0},
+		{"id": 2, "count": 2000, "value": 1000},
+	]
+	var names := PackedStringArray(["褐煤", "石油", "铁矿"])
+	var gated_model: Dictionary = ViewModel.build(gated, {}, {
+		"resource_names": names, "resource_discovered": PackedByteArray([1, 0, 1])})
+	var kept: Array = gated_model.chapters[7].get("visuals", [])[0].get("rows", [])
+	_expect("annual resource bars skip undiscovered deposits",
+		kept.size() == 2 and int(kept[0].get("id", -1)) == 0 and int(kept[1].get("id", -1)) == 2)
+	_expect("undiscovered resource is not narrated",
+		not String(gated_model.get("full_text", "")).contains("石油")
+		and String(gated_model.get("full_text", "")).contains("褐煤"))
+	# 目录里没有这份可见性（旧存档、只给了名字的调用方）时一律不隐藏 ——
+	# "没报告"与"查了是 0"是两件事，缺省不能当成"全部没解锁"。
+	var ungated: Dictionary = ViewModel.build(gated, {}, {"resource_names": names})
+	_expect("resource filter only applies when the catalog reports it",
+		ungated.chapters[7].get("visuals", [])[0].get("rows", []).size() == 3)
+	# 一个都没认出来时不能留一张空图：图被跳掉，账簿里要有一句说明。
+	var all_locked: Dictionary = ViewModel.build(gated, {}, {
+		"resource_names": names, "resource_discovered": PackedByteArray([0, 0, 0])})
+	_expect("no undiscovered resource leaves a data line, not a blank chart",
+		all_locked.chapters[7].get("visuals", [])[0].get("rows", []).is_empty()
+		and String(all_locked.chapters[7].get("details", []).back()).contains("尚无已掌握"))
 	print("annual_report_test: %d failures" % failures)
 	quit(0 if failures == 0 else 1)
 

@@ -3685,6 +3685,121 @@ func _log_stalled_runtime_graph(day: int) -> void:
 				str(effect_report.get("native_country_acks", -1)),
 				str(effect_report.get("native_economy_acks", -1)),
 				str(effect_report.get("native_modifier_acks", -1))])
+	_log_stalled_runtime_graph_authority(day)
+
+
+## worker 的 RUNTIME_DAY_STALL_* 位（runtime_pod_protocol.h）。日历被钉住时这一位
+## 直接点名「这一天在等什么」，比在 pinned 列表里猜快得多。0 = 当天自由，不是「没诊断」。
+func _day_stall_reason_name(mask: int) -> String:
+	if mask == 0:
+		return "none"
+	var parts := PackedStringArray()
+	const NAMES := [
+		"climate_capacity", "country_peer", "effect_ack", "ideology_ack",
+		"fiscal_peer", "economy_input",
+	]
+	for bit in NAMES.size():
+		if (mask & (1 << bit)) != 0:
+			parts.append(String(NAMES[bit]))
+	if parts.is_empty():
+		return "0x%x" % mask
+	return "|".join(parts)
+
+
+## 12 个原生阶段的位名（runtime_pod_protocol.h 的 RuntimeDomainId，位序 = id-1）。
+## 日历被 worker 钉住时，这张 mask 直接点名「哪个域的阶段今天还没跑完」。
+func _domain_mask_names(mask: int) -> String:
+	if mask == 0:
+		return "none"
+	const NAMES := [
+		"input_capture", "climate", "country", "trigger", "ideology", "effect",
+		"modifier", "gameplay_effect", "economy", "events", "visual", "commit",
+	]
+	var parts := PackedStringArray()
+	for bit in NAMES.size():
+		if (mask & (1 << bit)) != 0:
+			parts.append(String(NAMES[bit]))
+	return "|".join(parts) if not parts.is_empty() else "0x%x" % mask
+
+
+## [sim/graph-barrier] 只说「哪个域 pinned」，对经济自锁的两种成因是同形的：
+## economy_slices 每 pulse +64、economy_commits 恒 0、last_us 只有几百微秒（每次
+## slice 都是空转）。两种成因都长这样：
+##   1) 主线程 slice 被 `run_economy_slice_internal` 开头的 economy_worker_execution_owned
+##      短路——worker 已经 requested ECONOMY、但 authoritative_domain_mask 里还没有那一位，
+##      而 worker 自己也没在推进这一天；
+##   2) worker 自己的 host 日提交不上，主线程又因为 (1) 不许接手。
+## 分辨靠三样东西：requested/granted 的差、worker 停在哪个 economy stage/yield reason，
+## 以及 `day_wait` 那行的日计划缺口——stall 位只描述外部等待，缺口不设位时它恒为 none，
+## 那正是「日历推不动却一个错都不报」的形态。
+func _log_stalled_runtime_graph_authority(day: int) -> void:
+	var host: Dictionary = get_runtime_thread_report()
+	if not host.is_empty():
+		# ECONOMY 的 runtime_domain_mask 是 0x100。这里只打「请求了 / 授了没有」，
+		# 不打整张 mask —— 十二域一起看反而读不出结论。
+		var econ_mask := 1 << 8
+		var requested := (int(host.get("requested_authority_mask", 0)) & econ_mask) != 0
+		var granted := (int(host.get("authoritative_domain_mask", 0)) & econ_mask) != 0
+		print("[sim/graph-barrier/host] day=%d state=%s econ_requested=%s econ_granted=%s inflight=%s stall=%s@%s sim_committed_day=%s sim_env_day=%s econ_input_day=%s econ_stage=%s/%s econ_yield=%s attempt_slices=%s wait_input_us=%s wait_boundary_us=%s"
+			% [day,
+				str(host.get("simulation_host_state", host.get("state", "?"))),
+				str(requested), str(granted),
+				str(host.get("worker_day_inflight", -1)),
+				_day_stall_reason_name(int(host.get("day_stall_reason_mask", 0))),
+				str(host.get("day_stall_day", -1)),
+				str(host.get("simulation_committed_day", -1)),
+				str(host.get("simulation_environment_day", -1)),
+				str(host.get("economy_input_requested_day", -1)),
+				str(host.get("economy_stage_name", "")),
+				str(host.get("economy_substage_name", "")),
+				str(host.get("economy_yield_reason", "")),
+				str(host.get("economy_attempt_slices", -1)),
+				str(host.get("worker_time_input_wait_us", -1)),
+				str(host.get("worker_time_boundary_wait_us", -1))])
+		# worker 的日计划缺口：`missing` 是 requested & ~completed 的域位，
+		# stall 位为 none 时它是唯一能说明「今天卡在哪个阶段」的东西。
+		# park 那一栏是「那一行为什么放弃」，有些分支只 stage.completed=0 就
+		# continue，不设 stall 位也不写 fallback reason，只能靠它归因。
+		print("[sim/graph-barrier/day] day=%d waiting_day=%s missing=%s env_day=%s ring=%s stall=%s park=%s:%s"
+			% [day,
+				str(host.get("day_wait_day", -1)),
+				_domain_mask_names(int(host.get("day_wait_missing_mask", 0))),
+				str(host.get("day_wait_env_day", -1)),
+				str(host.get("day_wait_ring", -1)),
+				_day_stall_reason_name(int(host.get("day_stall_reason_mask", 0))),
+				_domain_mask_names(int(host.get("day_park_domain_mask", 0))),
+				str(host.get("day_park_reason", ""))])
+		# 每个域的 POD 阶段各自的 ready / fallback reason。「阶段没跑完」的最后
+		# 一层归因：park 只说放弃的位置，这里说该域自己的状态机是什么结局。
+		print("[sim/graph-barrier/pods] effect ready=%s gen=%s reason=%s inst_rejected=%s reject_detail=%s | modifier ready=%s reason=%s | ideology ready=%s reason=%s | events ready=%s failed_day=%s reason=%s | country_blocker=%s"
+			% [str(host.get("effect_pod_ready", "?")),
+				str(host.get("effect_pod_snapshot_generation", "?")),
+				str(host.get("effect_pod_fallback_reason", "")),
+				str(host.get("effect_instance_rejected_count", 0)),
+				str(host.get("effect_instance_reject_detail", "")),
+				str(host.get("modifier_pod_ready", "?")),
+				str(host.get("modifier_pod_fallback_reason", "")),
+				str(host.get("ideology_pod_ready", "?")),
+				str(host.get("ideology_pod_fallback_reason", "")),
+				str(host.get("events_pod_ready", "?")),
+				str(host.get("events_failed_day", "?")),
+				str(host.get("events_pod_fallback_reason", "")),
+				str(host.get("country_pod_blocker", ""))])
+	if _economy_facade != null and _economy_facade.has_method("report"):
+		var economy: Dictionary = _economy_facade.report()
+		print("[sim/graph-barrier/econ] day=%d fatal=%s stage=%s exec=%s substage=%s epoch_active=%s current_day=%s last_committed_day=%s env_day=%s trade_plan=%s sample_day=%s last_completed_sample_day=%s"
+			% [day,
+				str(economy.get("fatal", "?")),
+				str(economy.get("stage", "?")),
+				str(economy.get("executed_stage", "?")),
+				str(economy.get("substage", "?")),
+				str(economy.get("epoch_active", "?")),
+				str(economy.get("current_day", "?")),
+				str(economy.get("last_committed_day", "?")),
+				str(economy.get("environment_day", "?")),
+				str(economy.get("trade_plan_phase", "?")),
+				str(economy.get("sample_day", "?")),
+				str(economy.get("last_completed_sample_day", "?"))])
 
 
 func _native_daily_slice_available() -> bool:
@@ -3921,6 +4036,15 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 			var effect_configured: Dictionary = effect_facade.configure(
 				_data_core_world_ext, _world_clock_ref, effect_catalog)
 			if bool(effect_configured.get("ok", false)):
+				# `ok` 只代表主线程 EffectRuntime 吃下了目录。worker 侧还有第二份
+				# POD 目录：编译失败时 `_effect_pod_catalog` 保持空，Effect 阶段就
+				# 在 `effect_stage_enabled == false` 那一行无条件放弃、不设 stall 位、
+				# 不写日志，于是整局只表现为「日历推不动」。这里必须响。
+				if not bool(effect_configured.get("effect_pod_ready", true)):
+					push_error(
+						"[effect] native POD catalog not ready (%s) — worker Effect stage will park every day" % [
+							String(effect_configured.get(
+								"effect_pod_fallback_reason", "unknown"))])
 				_effect_facade = effect_facade
 				_effect_daily_job = EffectRuntimeSystemScript.new(_effect_facade)
 				_sus.configure_job_from_profile(

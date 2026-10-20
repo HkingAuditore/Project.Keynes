@@ -169,12 +169,22 @@ static func build(report: Dictionary, previous: Dictionary = {}, catalogs: Dicti
 		chapters[6].details.append("%s：年末市场库存 %s，现价库存估值 %s，本国市场最大缺货比例 %s。" % [label, format_value(row.get("count", 0), "goods"), format_value(row.get("value", 0), "money"), format_value(row.get("secondary", 0), "ratio")])
 
 	var resource_names: PackedStringArray = catalogs.get("resource_names", PackedStringArray())
+	# 「认没认出来」由目录给（下标同 resource_names）。缺省表示调用方没报告，
+	# 那时不过滤 —— 与效果徽章同一条纪律：没报告 ≠ 是 0。
+	var resource_discovered: PackedByteArray = catalogs.get("resource_discovered", PackedByteArray())
 	var resource_rows: Array = []
 	for row in report.get("resource_totals", []):
 		var id: int = int(row.get("id", -1))
+		# 原生是按"领土上有这份储量"出行的，所以还没认出来的矿种也会带着剩余量出现。
+		# 年报不该替玩家提前翻牌：认矿门控（ResourceProfile.discovery_technology_tags）
+		# 与地图覆盖层、悬停卡完全一致，没认出来就不列。
+		if id >= 0 and id < resource_discovered.size() and resource_discovered[id] == 0:
+			continue
 		var label: String = resource_names[id] if id >= 0 and id < resource_names.size() else "资源 %d" % (id + 1)
 		resource_rows.append({"id": id, "label": label, "value": _normalized(row.get("value", 0), "goods"), "remaining": _normalized(row.get("count", 0), "goods")})
 		chapters[7].details.append("%s：本年提取 %s，最近记录剩余 %s。" % [label, format_value(row.get("value", 0), "goods"), format_value(row.get("count", 0), "goods")])
+	if resource_rows.is_empty():
+		chapters[7].details.append("本年尚无已掌握的资源。")
 
 	var parts: PackedInt64Array = report.get("score_parts", PackedInt64Array())
 	for i in mini(parts.size(), SCORE_LABELS.size()):

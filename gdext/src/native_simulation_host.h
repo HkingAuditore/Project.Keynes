@@ -112,6 +112,8 @@ public:
     uint32_t day_stall_reason_mask() const;
     // Worker parks: OR sticky peer bits and arm the peer-stall timeout clock.
     void note_day_stall(uint32_t bits, int64_t day);
+    // 无声 park 的点名器。只写「哪个域 + 哪一行放弃的」，不参与任何调度判断。
+    void note_day_park(uint32_t domain_mask, const char *reason);
     // Clear a subset of sticky stall bits. Prefer this over wiping every peer
     // bit — Country commit must not erase Economy fiscal/input stalls.
     void clear_day_stall_bits(uint32_t bits);
@@ -1353,6 +1355,24 @@ private:
     std::atomic<uint32_t> _day_stall_reason_mask{0};
     std::atomic<int64_t> _day_stall_day{-1};
     std::atomic<uint64_t> _day_stall_peer_since_us{0};
+    // Last day-plan gap seen by the retry loop. Written by the worker, read by
+    // the main-thread report; monotonically overwritten, never cleared -- a
+    // stale value still names the last stage that held the calendar, which is
+    // what a post-mortem needs (day_stall_reason_mask can be 0 the whole time).
+    std::atomic<int64_t> _day_wait_day{-1};
+    std::atomic<uint32_t> _day_wait_missing_mask{0};
+    std::atomic<int64_t> _day_wait_env_day{-1};
+    std::atomic<uint32_t> _day_wait_ring{0};
+    // 为什么某个域的阶段今天没完成。有些 park 分支（Effect 等 Climate、Effect
+    // 目录未就绪）只是 `stage.completed = 0; continue;`，既不设 stall 位也不写
+    // fallback reason，日志里完全无痕；这一对字段把它们点名。
+    std::atomic<uint32_t> _day_park_domain_mask{0};
+    std::array<std::atomic<char>, 48> _day_park_reason{};
+    // 被永久拒绝的 Effect 实例（validate_instance 不通过）。这些行会被丢弃而不是
+    // 回队，否则 Effect 阶段永远在同一行失败、把日历钉死；计数与字段快照是为了
+    // 回头修产生端。
+    std::atomic<uint64_t> _effect_instance_rejected_count{0};
+    std::array<std::atomic<char>, 96> _effect_instance_reject_detail{};
     std::atomic<uint64_t> _economy_input_signal{0};
     std::atomic<uint64_t> _economy_pod_command_recapture_count{0};
     std::atomic<uint64_t> _economy_pod_command_verify_count{0};
