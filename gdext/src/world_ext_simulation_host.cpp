@@ -11,6 +11,7 @@
 #include "economy_graph_kernels.h"
 #include "effect_runtime.h"
 #include "ideology_runtime.h"
+#include "metric_mask_tests.h"
 
 #include <algorithm>
 #include <chrono>
@@ -2927,6 +2928,17 @@ bool DCWorldExt::runtime_economy_target_selector_self_test() const {
     if (!ok) {
         godot::UtilityFunctions::printerr(
             godot::String("runtime_economy_target_selector_self_test: ") +
+            godot::String(error.c_str()));
+    }
+    return ok;
+}
+
+bool DCWorldExt::runtime_metric_mask_self_test() const {
+    std::string error;
+    const bool ok = MetricMaskTests::run(error);
+    if (!ok) {
+        godot::UtilityFunctions::printerr(
+            godot::String("runtime_metric_mask_self_test: ") +
             godot::String(error.c_str()));
     }
     return ok;

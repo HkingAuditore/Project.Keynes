@@ -90,6 +90,7 @@ bool NativeEconomyRuntime::commit_ready_construction(
         const int32_t existing = find_for_commit(
             pending.cell, pending.type_id, pending.owner_signature_id);
         const int64_t before_count = existing >= 0 ? buildings_store().group_units[existing] : 0;
+        record_annual_event(pending.cell, AnnualMetric::BUILT, pending.count);
         int32_t group_index = existing;
         if (existing >= 0) {
             ++_building_structure_count_only_updates;

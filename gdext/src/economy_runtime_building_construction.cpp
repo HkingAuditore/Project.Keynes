@@ -700,6 +700,7 @@ bool NativeEconomyRuntime::apply_demolish_command(const Command &cmd, int32_t ow
         return true;
     }
     const int64_t before = buildings_store().group_units[group_id];
+    record_annual_event(cell, AnnualMetric::REMOVED, count);
     buildings_store().group_units.write_scalar(group_id, buildings_store().group_units[group_id] - (count));
     _building_handle_index_clean = false;
     std::vector<EventLeg> event_legs;

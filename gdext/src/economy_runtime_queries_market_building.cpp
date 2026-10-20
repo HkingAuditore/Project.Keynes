@@ -1,6 +1,7 @@
 #include "economy_runtime.h"
 #include "country_runtime.h"
 #include "economy_runtime_variant_helpers.h"
+#include "effect_runtime.h"
 #include "trigger_runtime.h"
 
 #include <algorithm>
@@ -2366,13 +2367,35 @@ Dictionary NativeEconomyRuntime::family_branch_effects(
     out["modifier_magnitude_q16"] = magnitudes;
     PackedStringArray effect_keys;
     PackedInt32Array effect_magnitudes;
+    // M2b ownership columns. `effect_present` is EffectRuntime::has_instance_pod
+    // for each held ref, the same bit the ideology report exposes: 1 means the
+    // main thread owns the instance, 0 means it was handed to the Effect worker
+    // (or vanished). Without it a reroute cannot be told apart from a drop.
+    PackedInt64Array effect_instance_ids;
+    PackedInt64Array effect_generations;
+    PackedInt64Array effect_target_handles;
+    PackedInt32Array effect_target_generations;
+    PackedByteArray effect_present;
     for (const FamilyEffectBinding &binding : _family_effect_bindings) {
         if (binding.branch_handle != branch_handle) continue;
         effect_keys.push_back(from_utf8(binding.definition_key));
         effect_magnitudes.push_back(binding.strength_q16);
+        effect_instance_ids.push_back(binding.instance_id);
+        effect_generations.push_back(static_cast<int64_t>(binding.generation));
+        effect_target_handles.push_back(static_cast<int64_t>(binding.target_handle));
+        effect_target_generations.push_back(
+            static_cast<int32_t>(binding.target_generation));
+        effect_present.push_back(_effect_runtime != nullptr &&
+            _effect_runtime->has_instance_pod(
+                binding.instance_id, binding.generation) ? 1 : 0);
     }
     out["effect_definition_keys"] = effect_keys;
     out["effect_magnitude_q16"] = effect_magnitudes;
+    out["effect_instance_ids"] = effect_instance_ids;
+    out["effect_generations"] = effect_generations;
+    out["effect_target_handles"] = effect_target_handles;
+    out["effect_target_generations"] = effect_target_generations;
+    out["effect_present"] = effect_present;
     if (_trigger_runtime != nullptr) {
         const Dictionary progress = _trigger_runtime->branch_progress(
             branch_handle);

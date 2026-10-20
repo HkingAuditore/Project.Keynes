@@ -8,6 +8,7 @@ var min_value: float = NAN
 var max_value: float = NAN
 var window_size: int = 0
 var value_text: String = ""
+var paper_mode: bool = false
 
 var _title_label: Label
 var _value_label: Label
@@ -45,12 +46,16 @@ func set_data(
 		_ready()
 	_title_label.text = title
 	_value_label.text = value_text
+	if paper_mode:
+		_title_label.add_theme_color_override("font_color", UITokens.CHRONICLE_INK)
+		_value_label.add_theme_color_override("font_color", UITokens.CHRONICLE_INK)
 	queue_redraw()
 
 
 func _draw() -> void:
 	var rect := Rect2(Vector2(0.0, 28.0), Vector2(size.x, maxf(size.y - 32.0, 20.0)))
-	draw_rect(rect, Color(0.027, 0.026, 0.023, 0.88), true)
+	if not paper_mode:
+		draw_rect(rect, Color(0.027, 0.026, 0.023, 0.88), true)
 	for i in range(1, 4):
 		var grid_y := rect.position.y + rect.size.y * (float(i) / 4.0)
 		draw_line(Vector2(rect.position.x, grid_y), Vector2(rect.end.x, grid_y), Color(0.70, 0.55, 0.31, 0.10), 1.0)
@@ -88,6 +93,7 @@ func _draw() -> void:
 	fill_pts.append(Vector2(pts[pts.size() - 1].x, rect.end.y))
 	fill_pts.append(Vector2(pts[0].x, rect.end.y))
 	draw_colored_polygon(fill_pts, Color(accent.r, accent.g, accent.b, 0.10))
-	draw_polyline(pts, Color(0.0, 0.0, 0.0, 0.52), 4.0, true)
+	if not paper_mode:
+		draw_polyline(pts, Color(0.0, 0.0, 0.0, 0.52), 4.0, true)
 	draw_polyline(pts, accent, 2.0, true)
 	draw_circle(pts[pts.size() - 1], 3.0, Color(accent.r, accent.g, accent.b, 0.96))

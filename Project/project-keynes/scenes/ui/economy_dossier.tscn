@@ -1,4 +1,4 @@
-[gd_scene load_steps=15 format=3]
+[gd_scene load_steps=11 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/components/economy_dossier.gd" id="1_script"]
 [ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_chapter_nav.gd" id="2_nav"]
@@ -7,9 +7,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/economy_dossier/overview_page.tscn" id="5_overview"]
 [ext_resource type="PackedScene" path="res://scenes/ui/economy_dossier/strata_page.tscn" id="6_strata"]
 [ext_resource type="PackedScene" path="res://scenes/ui/economy_dossier/industry_page.tscn" id="7_industry"]
-[ext_resource type="PackedScene" path="res://scenes/ui/economy_dossier/investment_page.tscn" id="8_investment"]
 [ext_resource type="PackedScene" path="res://scenes/ui/economy_dossier/market_page.tscn" id="9_market"]
-[ext_resource type="PackedScene" path="res://scenes/ui/economy_dossier/trade_page.tscn" id="10_trade"]
 [ext_resource type="PackedScene" path="res://scenes/ui/economy_dossier/cities_page.tscn" id="11_cities"]
 [ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_gdp_band.gd" id="12_gdp"]
 
@@ -142,6 +140,7 @@ size_flags_horizontal = 3
 theme_override_constants/separation = 6
 
 [node name="GdpBand" type="PanelContainer" parent="PageViewport/PageColumn"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"PKDossierBand"
 
@@ -211,15 +210,7 @@ layout_mode = 2
 visible = false
 layout_mode = 2
 
-[node name="InvestmentPage" parent="PageViewport/PageColumn/PageStack" instance=ExtResource("8_investment")]
-visible = false
-layout_mode = 2
-
 [node name="MarketPage" parent="PageViewport/PageColumn/PageStack" instance=ExtResource("9_market")]
-visible = false
-layout_mode = 2
-
-[node name="TradePage" parent="PageViewport/PageColumn/PageStack" instance=ExtResource("10_trade")]
 visible = false
 layout_mode = 2
 

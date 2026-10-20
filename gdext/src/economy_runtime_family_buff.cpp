@@ -1,4 +1,5 @@
 #include "economy_runtime.h"
+#include "economy_effect_forward.h"
 #include "country_runtime.h"
 #include "effect_runtime.h"
 
@@ -44,6 +45,10 @@ const char *kEffectOneIndustry = "family.effect.one_industry_city";
 const char *kEffectCityFounder = "family.effect.city_founder";
 const char *kEffectNewNobility = "family.effect.new_nobility";
 constexpr int32_t kLifecycleEventOnce = 2;
+// Frozen numbering shared with EffectRuntime::TargetSelectorKind. R1 (6) is the
+// first fan-out kind, which is what every "does this kind resolve to a list of
+// cells" test below keys off; R2 (7) is kept only to document that 7 is a real,
+// already-shipped kind and must never be reused.
 constexpr int32_t kSelectorNeighborsR1 = 6;
 constexpr int32_t kSelectorNeighborsR2 = 7;
 constexpr int32_t kOneIndustryShareFloorQ16 = NativeEconomyRuntime::Q16_ONE * 70 / 100;
@@ -625,6 +630,10 @@ void NativeEconomyRuntime::grant_family_effect_to_branches(
             if (metadata.target_domain == 1) {
                 target_handle = branch_handle;
                 target_generation = static_cast<uint32_t>(branch_handle >> 32U);
+                // Same rule the reconcile resolver enforces: a Branch-domain row
+                // with generation 0 is rejected by the pod, so decline the target
+                // here instead of queueing a row that can never land.
+                if (target_generation == 0) return;
             } else if (metadata.target_domain == 0) {
                 target_handle = family_handle;
                 target_generation = static_cast<uint32_t>(family_handle >> 32U);
@@ -642,14 +651,16 @@ void NativeEconomyRuntime::grant_family_effect_to_branches(
             }
             if (!event_once) {
                 std::string error;
-                if (!_effect_runtime->upsert_instance_pod(instance_id, key,
+                if (!effect_pod_upsert(_effect_runtime, _effect_forwarder,
+                        instance_id, key,
                         static_cast<uint32_t>(branch_handle >> 32U), 0x46414d50,
                         static_cast<int64_t>(family_influences().stable_id[branch]),
                         branch_handle, target_handle, target_generation, prestige,
-                        _current_day.get(), true, error))
+                        _current_day.get(), -1, true, error))
                     return;
-                if (!_effect_runtime->set_metric_pod(instance_id, 0,
-                        family_effect_metric_revision(1), magnitude, error))
+                if (!effect_pod_metric(_effect_runtime, _effect_forwarder,
+                        instance_id, static_cast<uint32_t>(branch_handle >> 32U),
+                        0, family_effect_metric_revision(1), magnitude, error))
                     return;
             }
             add_family_effect_binding({branch_handle, key, magnitude, instance_id,
@@ -661,11 +672,13 @@ void NativeEconomyRuntime::grant_family_effect_to_branches(
                     publish_family_effect_metrics(
                         _family_effect_bindings[indexed->second],
                         family_effect_metric_revision(1),
-                        std::numeric_limits<uint64_t>::max());
+                        MetricMask::all_declared(FAMILY_METRIC_COUNT));
             }
         };
-        if (metadata.target_selector_kind == kSelectorNeighborsR1 ||
-            metadata.target_selector_kind == kSelectorNeighborsR2) {
+        // Every fan-out kind (6 and above) resolves to a list, so every entry
+        // gets its own binding. Restricting this to R1/R2 meant kinds 8..12
+        // resolved a whole territory and then bound a single anchor cell.
+        if (metadata.target_selector_kind >= kSelectorNeighborsR1) {
             for (int32_t target_cell : target_cells) bind_one(target_cell);
         } else {
             bind_one(source_cell);
@@ -713,20 +726,31 @@ void NativeEconomyRuntime::grant_ancestral_precept_for_country(
             if (metadata.target_domain == 1) {
                 target_handle = branch_handle;
                 target_generation = static_cast<uint32_t>(branch_handle >> 32U);
+                if (target_generation == 0) continue;
             } else if (metadata.target_domain == 2 || metadata.target_domain == 5) {
                 target_handle = static_cast<uint64_t>(family_influences().cell[branch]);
                 target_generation = 1;
             }
             std::string error;
-            if (!_effect_runtime->upsert_instance_pod(instance_id, kEffectAncestral,
+            // Managed-duration instances must carry their expiry from creation.
+            // The pod derives expires_day only inside evaluate(), so an
+            // instance whose trigger never fires would live forever. Both
+            // authorities now read the same absolute day out of the metadata the
+            // caller already resolved.
+            const int64_t expires_day =
+                metadata.lifecycle == 1 && metadata.stack_policy == 1
+                    ? std::max<int64_t>(0, _current_day.get()) +
+                        static_cast<int64_t>(metadata.duration_days)
+                    : -1;
+            if (!effect_pod_upsert(_effect_runtime, _effect_forwarder,
+                    instance_id, kEffectAncestral,
                     static_cast<uint32_t>(branch_handle >> 32U), 0x46414d43,
                     static_cast<int64_t>(family_influences().stable_id[branch]),
                     branch_handle, target_handle, target_generation, prestige,
-                    _current_day.get(), true, error))
+                    _current_day.get(), expires_day, true, error))
                 continue;
-            _effect_runtime->refresh_managed_duration_pod(instance_id,
-                static_cast<uint32_t>(branch_handle >> 32U), _current_day.get());
-            if (!_effect_runtime->set_metric_pod(instance_id, 0,
+            if (!effect_pod_metric(_effect_runtime, _effect_forwarder,
+                    instance_id, static_cast<uint32_t>(branch_handle >> 32U), 0,
                     family_effect_metric_revision(1), magnitude, error))
                 continue;
             add_family_effect_binding({branch_handle, kEffectAncestral, magnitude,
@@ -738,7 +762,7 @@ void NativeEconomyRuntime::grant_ancestral_precept_for_country(
                 publish_family_effect_metrics(
                     _family_effect_bindings[indexed->second],
                     family_effect_metric_revision(1),
-                    std::numeric_limits<uint64_t>::max());
+                    MetricMask::all_declared(FAMILY_METRIC_COUNT));
         }
     }
 }
@@ -863,15 +887,163 @@ int32_t NativeEconomyRuntime::cell_country_slot(int32_t cell) const {    if (cel
     return _epoch_cell_country[static_cast<size_t>(cell)];
 }
 
+void NativeEconomyRuntime::rebuild_country_territory_index() {
+    _epoch_country_cell_offsets.clear();
+    _epoch_country_cells.clear();
+    const int32_t cells = _cell_count.get();
+    const int32_t countries = std::max(0, _epoch_country_count);
+    // Unowned cells are represented as negative slots and simply never enter the
+    // CSR, so the index answers "owned by a real country", not "slot value".
+    if (cells <= 0 || countries <= 0 ||
+        _epoch_cell_country.size() != static_cast<size_t>(cells))
+        return;
+    _epoch_country_cell_offsets.assign(static_cast<size_t>(countries) + 1u, 0);
+    int32_t owned = 0;
+    for (const int32_t owner : _epoch_cell_country) {
+        if (owner < 0 || owner >= countries) continue;
+        ++_epoch_country_cell_offsets[static_cast<size_t>(owner) + 1u];
+        ++owned;
+    }
+    for (size_t i = 1; i < _epoch_country_cell_offsets.size(); ++i)
+        _epoch_country_cell_offsets[i] += _epoch_country_cell_offsets[i - 1u];
+    _epoch_country_cells.assign(static_cast<size_t>(owned), -1);
+    std::vector<int32_t> cursor = _epoch_country_cell_offsets;
+    // Ascending scatter order is load bearing: it makes every slice ascending, so
+    // a cell cap keeps the lowest cell ids and the selector stays replayable.
+    for (int32_t cell = 0; cell < cells; ++cell) {
+        const int32_t owner = _epoch_cell_country[static_cast<size_t>(cell)];
+        if (owner < 0 || owner >= countries) continue;
+        _epoch_country_cells[static_cast<size_t>(
+            cursor[static_cast<size_t>(owner)]++)] = cell;
+    }
+}
+
+bool NativeEconomyRuntime::country_territory_index_ready() const {
+    if (_epoch_country_cell_offsets.empty()) return false;
+    if (_epoch_country_cell_offsets.size() !=
+        static_cast<size_t>(std::max(0, _epoch_country_count)) + 1u)
+        return false;
+    return _epoch_country_cell_offsets.back() ==
+        static_cast<int32_t>(_epoch_country_cells.size());
+}
+
+int32_t NativeEconomyRuntime::country_cell_count(int32_t country_slot) const {
+    if (country_slot < 0) return 0;
+    if (country_territory_index_ready()) {
+        if (country_slot + 1 >=
+            static_cast<int32_t>(_epoch_country_cell_offsets.size()))
+            return 0;
+        return _epoch_country_cell_offsets[static_cast<size_t>(country_slot) + 1u] -
+            _epoch_country_cell_offsets[static_cast<size_t>(country_slot)];
+    }
+    const int32_t cells = _cell_count.get();
+    if (cells <= 0 || _epoch_cell_country.size() != static_cast<size_t>(cells))
+        return 0;
+    int32_t count = 0;
+    for (const int32_t owner : _epoch_cell_country)
+        if (owner == country_slot) ++count;
+    return count;
+}
+
+int32_t NativeEconomyRuntime::country_cell_at(
+        int32_t country_slot, int32_t index) const {
+    if (country_slot < 0 || index < 0) return -1;
+    if (country_territory_index_ready()) {
+        if (country_slot + 1 >=
+            static_cast<int32_t>(_epoch_country_cell_offsets.size()))
+            return -1;
+        const int32_t begin = _epoch_country_cell_offsets[static_cast<size_t>(country_slot)];
+        const int32_t end = _epoch_country_cell_offsets[static_cast<size_t>(country_slot) + 1u];
+        if (index >= end - begin) return -1;
+        return _epoch_country_cells[static_cast<size_t>(begin) + static_cast<size_t>(index)];
+    }
+    // Fallback: walk the ownership column in cell order, which is exactly the
+    // order the index would have produced.
+    const int32_t cells = _cell_count.get();
+    if (cells <= 0 || _epoch_cell_country.size() != static_cast<size_t>(cells))
+        return -1;
+    int32_t seen = 0;
+    for (int32_t cell = 0; cell < cells; ++cell) {
+        if (_epoch_cell_country[static_cast<size_t>(cell)] != country_slot) continue;
+        if (seen == index) return cell;
+        ++seen;
+    }
+    return -1;
+}
+
 int32_t NativeEconomyRuntime::country_anchor_cell(int32_t country_slot) const {
     if (country_slot < 0) return -1;
     const int32_t cells = _cell_count.get();
     if (_epoch_cell_country.size() != static_cast<size_t>(cells)) return -1;
+    // Fast path: the index was scattered in ascending cell order, so its first
+    // slice entry is by construction the lowest owned cell -- the exact value the
+    // linear scan below returns. Once the index is consistent it is the
+    // authoritative answer, including "this slot owns nothing".
+    if (country_territory_index_ready()) {
+        if (country_slot + 1 >=
+            static_cast<int32_t>(_epoch_country_cell_offsets.size()))
+            return -1;
+        return country_cell_at(country_slot, 0);
+    }
     for (int32_t cell = 0; cell < cells; ++cell) {
         if (_epoch_cell_country[static_cast<size_t>(cell)] == country_slot)
             return cell;
     }
     return -1;
+}
+
+void NativeEconomyRuntime::set_target_tags(const TargetTagTable &tags) {
+    _target_tags = tags;
+    // Any cached bitset was derived from the previous table, so it is stale even
+    // if the cell columns have not moved.
+    _epoch_tag_bits_valid = false;
+    _epoch_tag_bits.clear();
+    _epoch_tag_words = 0;
+}
+
+void NativeEconomyRuntime::ensure_epoch_tag_bits() const {
+    if (_epoch_tag_bits_valid) return;
+    // Set first: a trivial or failed build must not be retried on every query.
+    _epoch_tag_bits_valid = true;
+    _epoch_tag_bits.clear();
+    _epoch_tag_words = 0;
+    const int32_t tags = _target_tags.count();
+    const int32_t cells = _cell_count.get();
+    if (tags <= 0 || cells <= 0) return;
+    const int32_t words = (cells + 63) / 64;
+    _epoch_tag_words = words;
+    _epoch_tag_bits.assign(
+        static_cast<size_t>(tags) * static_cast<size_t>(words), uint64_t{0});
+    // One sample per cell covers every tag: the mask is the union of the ids the
+    // table reads, so the sampler skips the other ~40 metrics entirely. This is
+    // the whole reason a bitset exists instead of per-query sampling -- the
+    // per-cell metric row is the expensive part, and paying it once per epoch is
+    // what makes the tag filter usable inside reconcile.
+    MetricMask mask;
+    _target_tags.collect_metric_mask(mask);
+    const int32_t metric_count = static_cast<int32_t>(FAMILY_METRIC_COUNT);
+    std::vector<int64_t> values(static_cast<size_t>(metric_count), 0);
+    for (int32_t cell = 0; cell < cells; ++cell) {
+        sample_effect_metrics(cell, metric_count, values.data(), mask);
+        const size_t word = static_cast<size_t>(cell / 64);
+        const uint64_t bit = uint64_t{1} << (cell % 64);
+        for (int32_t tag = 0; tag < tags; ++tag) {
+            if (!_target_tags.matches(tag, values.data(), metric_count)) continue;
+            _epoch_tag_bits[static_cast<size_t>(tag) * static_cast<size_t>(words) +
+                             word] |= bit;
+        }
+    }
+}
+
+bool NativeEconomyRuntime::cell_has_target_tag(int32_t cell, int32_t tag) const {
+    if (cell < 0 || tag < 0) return false;
+    ensure_epoch_tag_bits();
+    if (_epoch_tag_words <= 0) return false;
+    if (cell >= _cell_count.get()) return false;
+    const size_t index = static_cast<size_t>(tag) *
+        static_cast<size_t>(_epoch_tag_words) + static_cast<size_t>(cell / 64);
+    if (index >= _epoch_tag_bits.size()) return false;
+    return (_epoch_tag_bits[index] & (uint64_t{1} << (cell % 64))) != 0;
 }
 
 void NativeEconomyRuntime::collect_effect_target_cells(
@@ -885,6 +1057,52 @@ void NativeEconomyRuntime::collect_effect_target_cells(
     if (selector_kind < EffectRuntime::SELECTOR_NEIGHBORS_R1 ||
         selector_kind > EffectRuntime::SELECTOR_MAX_KIND) {
         out_cells.push_back(source_cell);
+        return;
+    }
+    // Territory selector: walk the ownership index instead of the neighbour
+    // graph. Handled before the building-snapshot guards below because "every
+    // cell my country owns" is an ownership question -- it must keep working
+    // when the building snapshot has not been captured (for example between an
+    // epoch capture and the first building refresh).
+    if (selector_kind == EffectRuntime::SELECTOR_OWN_TERRITORY) {
+        // param1 == 0 -> every owned cell. param1 >= 1 -> 1-based tag id into
+        // the catalog's tag table (target_tag.h). The tag filter replaced the
+        // three hard-coded river/water predicates this kind shipped with: those
+        // were placeholders for exactly this, and nothing in content uses kind
+        // 12 yet, so there is no shipped number to move.
+        const int32_t tag = param1 > 0 ? param1 - 1 : -1;
+        if (tag >= _target_tags.count()) {
+            // An unknown tag must not degrade to "match everything": a card
+            // whose tag was renamed would quietly start hitting the whole
+            // country instead of failing visibly.
+            return;
+        }
+        const int32_t country = cell_country_slot(source_cell);
+        if (country < 0) {
+            out_cells.push_back(source_cell);
+            return;
+        }
+        // The whole point of this kind is "as many as the instance budget
+        // allows", so a missing param0 defaults to the hard ceiling rather than
+        // the 8-cell fan-out of the radial kinds.
+        const int32_t cap = param0 > 0
+            ? std::min(param0, EffectRuntime::SELECTOR_MAX_CELLS)
+            : EffectRuntime::SELECTOR_MAX_CELLS;
+        const int32_t owned = country_cell_count(country);
+        out_cells.reserve(static_cast<size_t>(
+            std::min(cap, std::max(0, owned))));
+        for (int32_t index = 0; index < owned; ++index) {
+            if (static_cast<int32_t>(out_cells.size()) >= cap) break;
+            const int32_t cell = country_cell_at(country, index);
+            if (cell < 0) continue;
+            if (tag >= 0 && !cell_has_target_tag(cell, tag)) continue;
+            out_cells.push_back(cell);
+        }
+        // A country that owns nothing (or whose territory matches no tag)
+        // yields nothing on purpose: falling back to the anchor would apply a
+        // "only on matching cells" card to a cell that does not match.
+        std::sort(out_cells.begin(), out_cells.end());
+        out_cells.erase(std::unique(out_cells.begin(), out_cells.end()), out_cells.end());
         return;
     }
     if (_building_neighbors.size() != static_cast<size_t>(cells) * 6) return;
@@ -1028,17 +1246,20 @@ void NativeEconomyRuntime::fire_family_event_once_effect(int32_t family_index,
             ? family_effect_prestige_magnitude_q16(effect_id, prestige)
             : binding.strength_q16;
         std::string error;
-        if (!_effect_runtime->upsert_instance_pod(binding.instance_id, program_key,
-                binding.generation, 0x46414d45,
+        if (!effect_pod_upsert(_effect_runtime, _effect_forwarder,
+                binding.instance_id, program_key, binding.generation, 0x46414d45,
                 static_cast<int64_t>(family_influences().stable_id[branch]),
                 binding.branch_handle, binding.target_handle,
-                binding.target_generation, prestige, _current_day.get(), true, error))
+                binding.target_generation, prestige, _current_day.get(), -1, true,
+                error))
             continue;
-        _effect_runtime->set_metric_pod(binding.instance_id, 0,
-            family_effect_metric_revision(1), magnitude, error);
+        if (!effect_pod_metric(_effect_runtime, _effect_forwarder,
+                binding.instance_id, binding.generation, 0,
+                family_effect_metric_revision(1), magnitude, error))
+            continue;
         binding.strength_q16 = magnitude;
         publish_family_effect_metrics(binding, family_effect_metric_revision(1),
-            std::numeric_limits<uint64_t>::max());
+            MetricMask::all_declared(FAMILY_METRIC_COUNT));
     }
 }
 
@@ -1148,16 +1369,17 @@ void NativeEconomyRuntime::rebuild_family_policy_scalars() {
         const int32_t magnitude = clamp_factor_q16(binding.strength_q16);
         // Direct policies consume only these five signals. Most bindings have
         // no metric condition and need no population/building/resource scans.
-        uint64_t mask = 0;
+        MetricMask mask;
         if (binding.definition_key == kEffectWorkRelief)
-            mask = uint64_t{1} << FAMILY_METRIC_CELL_UNEMPLOYMENT_Q16;
+            mask.set(FAMILY_METRIC_CELL_UNEMPLOYMENT_Q16);
         else if (binding.definition_key == kEffectRemoteKin)
-            mask = uint64_t{1} << FAMILY_METRIC_FAMILY_REMOTE_BRANCH_COUNT;
+            mask.set(FAMILY_METRIC_FAMILY_REMOTE_BRANCH_COUNT);
         else if (binding.definition_key == kEffectWealthyFew)
-            mask = uint64_t{1} << FAMILY_METRIC_FAMILY_CASH_PER_CAPITA_VS_CELL_Q16;
-        else if (binding.definition_key == kEffectOneIndustry)
-            mask = (uint64_t{1} << FAMILY_METRIC_CELL_DOMINANT_SECTOR_ID) |
-                (uint64_t{1} << FAMILY_METRIC_CELL_DOMINANT_SECTOR_SHARE_Q16);
+            mask.set(FAMILY_METRIC_FAMILY_CASH_PER_CAPITA_VS_CELL_Q16);
+        else if (binding.definition_key == kEffectOneIndustry) {
+            mask.set(FAMILY_METRIC_CELL_DOMINANT_SECTOR_ID);
+            mask.set(FAMILY_METRIC_CELL_DOMINANT_SECTOR_SHARE_Q16);
+        }
         fill_family_behavior_metrics(family, branch, cell, metrics.data(),
             FAMILY_METRIC_COUNT, mask);
         if (binding.definition_key == kEffectWorkRelief) {

@@ -12,6 +12,10 @@ signal generation_progress(stage: String, fraction: float)
 signal gm_toggle_changed(toggle_id: String, enabled: bool)
 signal gm_tod_preview_changed(active: bool)
 signal gm_action_completed(action_id: String, result: Dictionary)
+signal annual_report_ready(report_id: int)
+
+const AnnualReportSessionScript = preload("res://scripts/annual/annual_report_session.gd")
+var _annual_reports = AnnualReportSessionScript.new()
 
 const RuntimeForensics = preload("res://scripts/game/runtime_forensics.gd")
 const WORLD_SETUP_META := &"world_setup_config"
@@ -376,6 +380,7 @@ func _on_clock_day_changed(day_idx: int) -> void:
 			_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
 			return
 	_clear_climate_capacity_pending()
+	_annual_reports.before_day(day_idx)
 	# Whole-graph only. `authority_ready` stays false until every domain has a
 	# POD handler; a per-domain promotion (Climate) must NOT skip the tick,
 	# because the other eleven domains are still computed right here. Reading
@@ -776,6 +781,13 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 	await get_tree().process_frame
 	if not is_inside_tree():
 		return
+	var annual_handle: int = _resolve_player_country_handle()
+	if annual_handle != 0:
+		var annual_result: Dictionary = _annual_reports.configure(_generator, _world_clock, annual_handle)
+		if not bool(annual_result.get("ok", false)):
+			push_error("年度报告初始化失败：%s" % String(annual_result.get("reason", "未知原因")))
+		if not _annual_reports.report_ready.is_connected(_on_annual_report_ready):
+			_annual_reports.report_ready.connect(_on_annual_report_ready)
 	_start_production_shadow_worker()
 	var initial_visible_building_cells := PackedInt32Array()
 	for cell in _current_map.cell_count():
@@ -957,6 +969,7 @@ func run_daily_tick(day_idx: int, season_phase: float) -> Dictionary:
 	# 不能把同日 climate/economy job 误标成“整日未刷新”。
 	_pending_tick_skipped_day = false
 	_last_tick_report = report.duplicate()
+	_annual_reports.poll()
 	daily_tick_completed.emit(_last_tick_report)
 	mark_map_overlay_dirty(&"authoritative_daily_flush")
 	return _last_tick_report
@@ -1031,6 +1044,7 @@ func _process(_delta: float) -> void:
 	var capacity_pending := (
 		_climate_capacity_pending_day >= 0 and not _runtime_worker_fault_paused)
 	_service_runtime_liveness(frame_usec, capacity_pending)
+	_annual_reports.poll()
 	if capacity_pending:
 		_note_climate_capacity_pending_stall()
 		# Worker may have force-advanced past the day that armed capacity.
@@ -5079,3 +5093,49 @@ func _loading_visual_step(label: String) -> void:
 		print("[loading-visual-substep] %s %.1fms" % [_loading_visual_name,float(now-_loading_visual_usec)/1000.0])
 	_loading_visual_usec=now
 	_loading_visual_name=label
+
+
+func _on_annual_report_ready(report_id: int) -> void:
+	annual_report_ready.emit(report_id)
+
+
+func annual_report_status() -> Dictionary:
+	return _annual_reports.status()
+
+
+func annual_report_snapshot(report_id: int) -> Dictionary:
+	return _annual_reports.snapshot(report_id)
+
+
+func annual_report_history(offset: int = 0, limit: int = 64) -> Dictionary:
+	return _annual_reports.history(offset, limit)
+
+
+func mark_annual_report_presented(report_id: int) -> void:
+	_annual_reports.mark_presented(report_id)
+
+
+func annual_reports_waiting_for_year(year: int) -> bool:
+	return _annual_reports.waiting_for_year(year)
+
+
+func annual_report_catalogs() -> Dictionary:
+	if _generator == null:
+		return {}
+	var economy = _generator.get_economy_facade()
+	var country: Dictionary = _generator.get_country_facade().native_catalog()
+	var professions := PackedStringArray()
+	for id in economy.profession_ids():
+		professions.append(economy.profession_display_name(StringName(id)))
+	var buildings := PackedStringArray()
+	for index in economy.building_type_ids().size():
+		buildings.append(economy.building_display_name(index))
+	var goods := PackedStringArray()
+	for index in economy.good_ids().size():
+		goods.append(economy.good_display_name(index))
+	var resources := PackedStringArray()
+	for profile in ResourceProfileRegistry.ordered():
+		resources.append(String(profile.display_name))
+	return {"profession_names": professions, "building_names": buildings,
+		"resource_names": resources, "good_names": goods,
+		"technology_names": country.get("technology_display_names", PackedStringArray())}

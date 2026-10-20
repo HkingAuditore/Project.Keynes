@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[node name="RewardMote" type="ColorRect"]
+offset_right = 2.0
+offset_bottom = 2.0
+mouse_filter = 2

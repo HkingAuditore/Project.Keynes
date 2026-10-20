@@ -15,6 +15,13 @@ signal return_main_menu_requested()
 signal exit_game_requested()
 signal era_reward_choice_requested(offer_generation: int, choice_index: int)
 signal family_founding_choice_requested(offer_id: int, generation: int, choice_index: int)
+signal annual_history_requested()
+signal annual_report_closed(report_id: int)
+signal annual_report_selected(report_id: int)
+signal annual_history_page_requested(offset: int)
+
+const AnnualReportWorkspaceScene = preload("res://scenes/ui/annual_report_workspace.tscn")
+var _annual_report_workspace: Control
 
 const RIGHT_PANEL_WIDTH := 460.0
 const DETAIL_LAYOUT_BREAKPOINT := UITokens.DETAIL_BREAKPOINT_COMPACT + UITokens.ARCHIVE_EDGE_INSET * 2.0
@@ -720,6 +727,10 @@ func _on_country_committed(report: Dictionary) -> void:
 
 
 func open_country_section(section_id: String) -> void:
+	if section_id == "annual":
+		close_country_panel()
+		annual_history_requested.emit()
+		return
 	if _country_panel == null or _country_view_model == null:
 		return
 	# Opening a section is an explicit player action and should never inherit a
@@ -1205,6 +1216,9 @@ func _base_map_safe_area() -> Rect2:
 
 
 func dismiss_overlay_menu() -> bool:
+	if is_annual_report_open():
+		_annual_report_workspace.call("_close")
+		return true
 	if is_era_reward_modal_open():
 		return true
 	if is_family_founding_modal_open():
@@ -1357,6 +1371,7 @@ func _bind_ui() -> void:
 		func(enabled: bool) -> void: day_night_toggled.emit(enabled))
 	_top_bar.setup_requested.connect(toggle_pause_menu)
 	_top_bar.gm_requested.connect(toggle_gm_panel)
+	_top_bar.annual_history_requested.connect(func() -> void: annual_history_requested.emit())
 	_top_bar.set_gm_available(false)
 	_layout_top_bar()
 
@@ -1454,6 +1469,11 @@ func _bind_ui() -> void:
 
 	_loading_overlay = get_node("UIRoot/ModalLayer/WorldLoadingOverlay") as WorldLoadingOverlay
 
+	_annual_report_workspace = AnnualReportWorkspaceScene.instantiate()
+	get_node("UIRoot/ModalLayer").add_child(_annual_report_workspace)
+	_annual_report_workspace.closed.connect(func(id: int) -> void: annual_report_closed.emit(id))
+	_annual_report_workspace.report_selected.connect(func(id: int) -> void: annual_report_selected.emit(id))
+	_annual_report_workspace.history_page_requested.connect(func(offset: int) -> void: annual_history_page_requested.emit(offset))
 	_pause_menu = get_node("UIRoot/ModalLayer/PauseMenu") as PauseMenu
 	_pause_menu.visibility_requested.connect(
 		func(open: bool) -> void: pause_menu_visibility_changed.emit(open))
@@ -1906,3 +1926,22 @@ func _set_local_gm_toggle(toggle_id: String, enabled: bool) -> Dictionary:
 func _on_runtime_gm_toggle_changed(toggle_id: String, enabled: bool) -> void:
 	if toggle_id == "visual.day_night":
 		set_day_night_enabled(enabled)
+
+
+func show_annual_report(model: Dictionary, ceremonial: bool) -> void:
+	if _annual_report_workspace != null:
+		_annual_report_workspace.present(model, ceremonial)
+
+
+func set_annual_history(rows: Array, offset: int, has_more: bool) -> void:
+	if _annual_report_workspace != null:
+		_annual_report_workspace.set_history(rows, offset, has_more)
+
+
+func is_annual_report_open() -> bool:
+	return _annual_report_workspace != null and _annual_report_workspace.visible
+
+
+func annual_other_modal_open() -> bool:
+	return is_era_reward_modal_open() or is_family_founding_modal_open() \
+		or (_pause_menu != null and _pause_menu.visible)

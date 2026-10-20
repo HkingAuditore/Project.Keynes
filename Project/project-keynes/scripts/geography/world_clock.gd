@@ -235,7 +235,7 @@ func _process(delta: float) -> void:
 	# → 一个完整 SUS tick，所以这里的墙钟测量天然涵盖当日全部模拟 + 渲染同步成本。
 	var t0_us: int = Time.get_ticks_usec()
 	var ran: int = 0
-	while not blocked and _day_carry >= 1.0 and ran < max_sim_days_per_frame:
+	while not paused and not blocked and _day_carry >= 1.0 and ran < max_sim_days_per_frame:
 		# 时间盒从 continuation pulse 之前开始计时；无 pulse 的普通帧仍保证至少推进
 		# 一天，保持低倍速/轻负载吞吐行为不变。
 		if ran > 0 and float(Time.get_ticks_usec() - simulation_budget_start_us) / 1000.0 \
@@ -586,12 +586,16 @@ func request_simulation_backpressure(source: StringName, active: bool) -> void:
 
 func _has_hard_day_barrier() -> bool:
 	return _simulation_backpressure_sources.has(&"climate_input_capacity_day_barrier") \
+		or _simulation_backpressure_sources.has(&"annual_report_day_barrier") \
+		or _simulation_backpressure_sources.has(&"annual_report_commit_barrier") \
 		or needs_continuation_pulse()
 
 
 ## Barriers that need same-day MapGenerator / SUS continuation catchup.
 ## climate_input_capacity is intentionally excluded: Host capacity retry owns it.
 func needs_continuation_pulse() -> bool:
+	if _simulation_backpressure_sources.has(&"annual_report_commit_barrier"):
+		return true
 	return _simulation_backpressure_sources.has(&"economy_day_barrier") \
 		or _simulation_backpressure_sources.has(&"country_day_barrier") \
 		or _simulation_backpressure_sources.has(&"ideology_day_barrier") \

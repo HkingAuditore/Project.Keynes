@@ -56,6 +56,11 @@ $tests = @(
     'tests/runtime_trigger_save_roundtrip_test.gd',
     'tests/runtime_effect_pod_test.gd',
     'tests/ideology_effect_worker_forward_test.gd',
+    'tests/ideology_effect_metric_publish_test.gd',
+    'tests/metric_mask_capacity_test.gd',
+    'tests/family_effect_worker_forward_test.gd',
+    'tests/family_effect_restore_forward_test.gd',
+    'tests/technology_effect_worker_forward_test.gd',
     'tests/runtime_authority_m5_m6_gate_test.gd',
     'tests/dots_completion/dots_completion_gate.gd'
 )

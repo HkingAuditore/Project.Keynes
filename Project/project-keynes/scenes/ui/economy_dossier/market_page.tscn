@@ -5,6 +5,7 @@
 [ext_resource type="Script" uid="uid://ctit4vqjpihge" path="res://scripts/ui/components/dossier/dossier_diverging_bar.gd" id="3_diverging"]
 [ext_resource type="Script" uid="uid://04tee67qohrt" path="res://scripts/ui/components/dossier/dossier_bar_list.gd" id="4_bars"]
 [ext_resource type="Script" uid="uid://byp8erwuf3moa" path="res://scripts/ui/components/dossier/dossier_kpi_card.gd" id="5_kpi"]
+[ext_resource type="PackedScene" uid="uid://bh3oevdk34bgc" path="res://scenes/ui/economy_dossier/trade_page.tscn" id="6_trade"]
 
 [node name="MarketPage" type="VBoxContainer" unique_id=646360126]
 size_flags_horizontal = 3
@@ -98,3 +99,14 @@ script = ExtResource("3_diverging")
 unique_name_in_owner = true
 layout_mode = 2
 script = ExtResource("5_kpi")
+
+[node name="TradeSectionKicker" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierKicker"
+text = "全国进出口"
+
+[node name="TradeSection" parent="." instance=ExtResource("6_trade")]
+unique_name_in_owner = true
+layout_mode = 2
+chapter_id = "market"

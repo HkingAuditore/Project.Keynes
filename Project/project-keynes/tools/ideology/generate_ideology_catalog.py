@@ -678,11 +678,19 @@ PROFILE = {
     "reroll_cost_percent": 50,
     "starting_points_q16": 0,
     "max_transition_commands": 256,
-    # Upload of card effect rows routed through a declared ideology.effect.*
-    # program, counted over the whole catalog (one per card level). 85 cards x 3
-    # levels = 255, so the old 128 could never hold a program-backed catalog.
-    # Live concurrency is bounded by slots x SELECTOR_MAX_CELLS instead.
-    "max_effect_instances": 512,
+    # Catalog declaration budget -- NOT a concurrency budget.
+    #
+    # Counted once per card effect row that routes through a declared
+    # `ideology.effect.*` program, over the whole catalog (card x level x row).
+    # The old 128 could not hold a program-backed catalog; 512 then looked
+    # sufficient for 85 cards x 3 levels = 255, but the v0.2 target is 179 cards,
+    # and two rows per level is already 1074. Live concurrency is a different
+    # number entirely: it is bounded by
+    #   (ideology_capacity + national_spirit_capacity) x SELECTOR_MAX_CELLS
+    # = 9 x 32 = 288 instances, and by EffectRuntime's own `max_instances` (4096).
+    # Per-cell fan-out is meant to be aggregated by cell, not by one instance per
+    # (card, cell) pair, so this budget must not be used to size that product.
+    "max_effect_instances": 2048,
     # 0.02 point per new resident, 0.25 point per new installed building,
     # 0.002 point per money unit of daily trade base value, capped at 2 per period.
     "point_population_weight_q16": 1311,

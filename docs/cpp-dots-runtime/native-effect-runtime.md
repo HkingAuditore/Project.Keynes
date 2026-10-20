@@ -242,6 +242,199 @@ second Modifier-definition copy.
   point for future authored definitions. Neither path can write population,
   cash, needs, employment, or other person authority.
 
+### Family instance writes route through the forwarder (M2b)
+
+Declarative batches reach the worker through `submit_effect_instances`, but the
+family path drives Effect instances one row at a time from six different places,
+and those used to call `EffectRuntime::upsert_instance_pod` / `set_metric_pod` /
+`retire_instance_pod` directly. Under EFFECT worker authority that wrote
+instances the worker's next snapshot would erase — the effect looked created and
+then silently never applied.
+
+All six now funnel through `effect_pod_upsert` / `effect_pod_metric` /
+`effect_pod_retire` in `gdext/src/economy_effect_forward.h`, which make the same
+worker/legacy decision the batch path makes. The header exists because the call
+sites are split across `economy_runtime.cpp` and
+`economy_runtime_family_buff.cpp`.
+
+| Site | Trigger |
+|---|---|
+| `reconcile_family_branch_effects` | trait/effect/prestige change |
+| `clear_family_branch_effects` | branch or family released |
+| `publish_family_effect_metrics` | metric revision bump |
+| `grant_family_effect_to_branches` | founding random-pool grant |
+| `grant_ancestral_precept_for_country` | era change |
+| `fire_family_event_once_effect` | `EVENT_ONCE` lifecycle fire |
+| `register_person_effect` | person creation |
+
+The routing decision is **`forwarder != nullptr && forwarder->attached()`**, not
+merely a non-null pointer. `DCWorldExt` creates the forwarder lazily and
+`attach()`es it inside `configure_effects`, so a pointer-only check would hand
+family writes to a forwarder whose `upsert_instance()` can only answer
+`effect_forwarder_not_attached` and drop every effect created in that window.
+
+`expires_day` joined `RuntimeEffectPodInstanceInput` in the same step. A
+managed-duration instance (`lifecycle == DURATION && stack_policy == 1`, e.g.
+`family.effect.ancestral_precept`) must carry its absolute expiry from creation:
+the pod only derives `expires_day` inside `evaluate()`, so an instance whose
+trigger never fires would otherwise live forever on the worker side.
+`EffectRuntime::refresh_managed_duration_pod` was replaced by
+`set_instance_expiry_pod(instance_id, generation, expires_day)` — the family path
+already resolved `FamilyEffectMetadataPod`, so it passes the absolute day and
+both authorities receive the identical value.
+
+`get_family_branch_effects()` gained `effect_instance_ids`, `effect_generations`,
+`effect_target_handles`, `effect_target_generations` and `effect_present` (the
+`EffectRuntime::has_instance_pod` bit per held ref), mirroring the ideology
+report. Without that ownership column a reroute cannot be told apart from a drop.
+
+`tests/family_effect_worker_forward_test.gd` is the gate: same fixture, same
+founding roll, authority driven through `set_effect_forwarder_authority_for_test`
+(a headless fixture cannot earn the EFFECT grant — no Climate trace completes the
+day). Legacy → `effect_present == 1`, worker → `0`, with identical instance ids
+and target handles. Reverting `grant_family_effect_to_branches` to the direct
+write makes exactly one assertion fail (`worker: ownership bit is 0`), which is
+how the gate was shown to be non-vacuous.
+
+Still on the direct path: `country_runtime.cpp` technology instances
+(`:1310`, `:8229`). Country installs them from its own peer bridge, which predates
+this routing and has to keep `try_lock_economy_input_capture` semantics; moving
+it is a separate step.
+
+### Restore rebuild asks the authority, not the facade (M2b-4)
+
+`reconcile_family_branch_effects(branch, submit_changes = false)` is the restore
+entry. Economy persists family influence rows but not their Effect bindings, so
+after `restore_economy_ecp2` it walks the desired set and re-binds only the
+instances that still exist. It asked `_effect_runtime->has_instance_pod`, which
+only answers for the legacy authority: under F8 ACTIVE the main-thread
+`EffectRuntime` is a writeback mirror refreshed by its own pump, so every
+worker-owned instance read as absent and the binding was dropped — which then also
+leaked the instance, because `clear_family_branch_effects` retires by binding.
+
+Existence now goes through `effect_pod_instance_exists` →
+`EffectInstanceForwarder::instance_exists` → `NativeSimulationHost::effect_pod_instance_exists`,
+all mirroring `has_instance_pod` (presence + matching generation, ignoring the
+`active` flag). "Cannot answer" is reported separately from "absent", so a
+transport that is not ready is never mistaken for a missing instance.
+
+The restore walk also had an identity-shape bug. Two shapes coexist:
+
+| Shape | Mixed in | Used by |
+|---|---|---|
+| `stable_effect_instance_id(key)` | `stable_id, source_cell, definition_hash` | `grant_ancestral_precept_for_country`, sibling-independent path |
+| `shaped_effect_instance_id(key, target_cell)` | the above **+ target_cell** | trait path, founding random-pool grant |
+
+`grant_family_effect_to_branches` builds its founding pool from the shaped form
+(one instance per target cell), but the `_family_effect_keys` sweep only computed
+the stable form, so even on the legacy authority the restore could miss a live
+instance. Restore now probes the shaped id per
+`collect_family_effect_target_cells` and falls back to the stable id, and
+`selector_kind` 6/7 rows get their `target_handle`/`target_generation` rewritten
+from the resolved cell.
+
+`tests/family_effect_restore_forward_test.gd` covers legacy in-place, legacy
+fresh-ext and worker fresh-ext restore: 46 checks. Before the change all three
+lost the binding (`before=["family.effect.pool_probe"] after=[]`), which is also
+why the bug was not worker-only.
+
+### Country technology instances take the same door (M2b-5)
+
+Technology instances are Effect instances, and Country installed them by calling
+`EffectRuntime::upsert_instance_pod` directly at two sites:
+
+| Site | Trigger |
+|---|---|
+| `bootstrap()` technology loop | `bootstrap_country` over restored technologies |
+| peer adapter `ENSURE_TECHNOLOGY_EFFECT` | country peer intent |
+
+Both now go through `effect_pod_upsert`, with the forwarder attached from
+`configure_country`, `configure_effects` and `bootstrap_economy`. The peer
+adapter's worker branch already existed and is untouched; the legacy branch keeps
+calling the same `upsert_instance_pod` through the forwarder, plus the shadow
+mirror the direct call skipped — that mirror is what keeps a technology instance
+alive across an authority flip.
+
+`bootstrap()` used to discard the upsert result entirely, so a technology whose
+Effect program did not resolve restored as "country knows the technology, Effect
+has nothing" with no trace. The count now surfaces as
+`bootstrap_effect_rejected` in the bootstrap report. Note that starting
+technologies deliberately get no Effect program
+(`effect_domain_catalog.gd`: `FLAG_STARTING` rows are skipped), so the loop is
+only meaningful for technologies acquired later.
+
+`tests/technology_effect_worker_forward_test.gd` is the gate: one cell, one
+non-starting technology, authority driven through
+`set_effect_forwarder_authority_for_test`. Legacy →
+`get_effect_report().instances == 1`, worker → `0`, both with
+`bootstrap_effect_rejected == 0`. Passing `nullptr` instead of the forwarder
+makes the worker case read `1` — the writeback-only facade took the row that the
+worker snapshot would erase — and exactly that one assertion fails.
+
+Known remaining read-side gap (reporting only, no writes): `research_peer_flags`
+and `country_peer_report`'s `technology_states` still derive
+`COUNTRY_PEER_EFFECT_EXISTS` / `COUNTRY_PEER_EFFECT_FIRE_ACKED` from
+`EffectRuntime::has_instance_pod` / `instance_fire_acked_pod`
+(`country_runtime.cpp:2455`, `:7422`). Under worker authority those read false,
+which makes the report pessimistic and can make the adapter re-issue `ENSURE`
+(itself idempotent) instead of `NUDGE`. No instance is created or lost by it.
+
+### The read side is the same bug (M2b-6)
+
+Every main-thread owner reads Effect state back out after writing it, and those
+reads had the identical failure mode: under EFFECT worker authority
+`EffectRuntime` is writeback-only, so a worker-owned instance answers "does not
+exist, never fired". Existence-shaped queries now go through
+`effect_pod_instance_exists` / `effect_pod_instance_fire_acked`:
+
+| Site | Question | Consequence of the old answer |
+|---|---|---|
+| `country_runtime.cpp` `export_pod_snapshot` | peer `EXISTS` / `FIRE_ACKED` flags | report claimed the technology had no Effect at all |
+| `country_runtime.cpp` `capture_peer_context` | same, per `technology_states` | peer pinned at PENDING; adapter re-issued `ENSURE` |
+| `economy_runtime.cpp` `register_person_effect` | already registered? | re-upserted on every call, each time with a fresh `next_due_day`, so the fire kept being postponed |
+| `ideology_runtime.cpp` restore | is every bound instance alive? | **rejected a healthy save** with `ideology_effect_instance_missing`, taking the whole ideology domain down on load |
+
+The last one is why this was not left as a reporting nit: it is a hard `fail()`
+inside the restore transaction, and it fires during load.
+
+Two things stay deliberately *not* authority-aware:
+
+* `ideology_runtime.cpp`'s `present` column and
+  `family_branch_effects.effect_present` are **ownership** bits (1 = the main
+  thread owns it, 0 = it was handed to the worker). They are how a reroute is
+  told apart from a drop, so routing them through the worker snapshot would make
+  both authorities report 1 and destroy the signal.
+* `EffectInstanceForwarder`'s writer entry points keep their authority-epoch
+  check; queries do not participate in the epoch, because a one-tick-stale answer
+  is harmless while a spurious "retry" is not.
+
+`NativeSimulationHost::effect_pod_instance_exists` also counts a row the
+transport has **accepted but not yet installed**, because otherwise every reader
+races the drain: the ideology restore used to fail for instances that were
+merely queued. A queued *retire* needs no special case -- until it drains the
+instance really does still exist, which is what the committed snapshot reports.
+
+`tests/ideology_effect_worker_forward_test.gd` gained
+`_test_worker_save_restore` (74 checks total): adopt a card under the worker
+authority, capture PKID, restore it. Passing `nullptr` for the forwarder in that
+check reproduces `ideology_effect_instance_missing` exactly, which is how the
+gate was shown to be non-vacuous.
+
+Also fixed in the same sweep: ideology's three routing sites
+(`retire_effect_activations`, `reconcile_effect_activations`, and the batch
+submit) tested `_effect_forwarder != nullptr` instead of `->attached()`. An
+unattached forwarder answers `unavailable()` rather than falling back, so a
+retire or submit issued in the window between forwarder creation and
+`configure_effects` was silently dropped.
+
+Still facade-only on purpose: `DCWorldExt::effect_instance_fire_acked`
+(`world_ext_effect.cpp`), the GDScript-facing debug query. It has no production
+caller -- only fixtures pinning "just created, not yet fired" -- and the legacy
+answer there is the correct one. Country's own peer branch
+(`country_runtime.cpp` `execute_peer_intent_main_thread`) also keeps the direct
+`instance_fire_acked_pod` calls, because that code only runs after the
+worker-authority early return, so EffectRuntime *is* the writer of record.
+
 ## Scheduling
 
 `EffectRuntimeSystem` is registered in `DCSystemScheduler` at priority 85:

@@ -329,8 +329,7 @@ Dictionary EffectInstanceForwarder::submit_batch(const Dictionary &batch) {
 }
 
 Dictionary EffectInstanceForwarder::retire(int64_t instance_id, int64_t generation,
-                                           int64_t effective_day) {
-    if (_effect == nullptr) return unavailable();
+                                           int64_t effective_day) {    if (_effect == nullptr) return unavailable();
     const bool worker_path = worker_authoritative();
     if (worker_path && _host == nullptr)
         return forwarder_failure(result_token(Result::WORKER_TRANSPORT_NOT_READY));
@@ -375,6 +374,200 @@ Dictionary EffectInstanceForwarder::retire(int64_t instance_id, int64_t generati
             out["effect_pod_mirror_reason"] = String(mirror_error.c_str());
     }
     return out;
+}
+
+bool EffectInstanceForwarder::upsert_instance(const InstanceRow &row,
+                                              std::string &error) {
+    error.clear();
+    if (_effect == nullptr) {
+        error = result_token(Result::NOT_ATTACHED);
+        return false;
+    }
+    if (row.instance_id <= 0 || row.generation == 0) {
+        error = result_token(Result::INVALID_IDENTITY);
+        return false;
+    }
+    const bool worker_path = worker_authoritative();
+    if (worker_path) {
+        // Rule 2: never fall back across paths. A legacy write here would be
+        // erased by the next worker snapshot, which reads as "looked fine, then
+        // vanished".
+        if (_host == nullptr || !_host->effect_pod_transport_ready()) {
+            error = result_token(Result::WORKER_TRANSPORT_NOT_READY);
+            return false;
+        }
+        const ProgramFacts *facts = facts_for(row.program_key);
+        if (facts == nullptr || !facts->resolved) {
+            error = result_token(Result::UNKNOWN_PROGRAM);
+            return false;
+        }
+        RuntimeEffectPodInstanceInput input;
+        input.instance_id = row.instance_id;
+        input.generation = row.generation;
+        input.program_id = facts->program_id;
+        input.source_type = row.source_type;
+        input.source_id = row.source_id;
+        input.source_handle = row.source_handle;
+        input.target_handle = row.target_handle;
+        input.target_generation = row.target_generation;
+        input.level = row.level;
+        input.next_due_day = row.next_due_day;
+        input.expires_day = row.expires_day;
+        input.active = row.active;
+        if (!_host->queue_effect_pod_instance(input, error)) return false;
+    } else {
+        if (!_effect->upsert_instance_pod(
+                row.instance_id, row.program_key, row.generation,
+                row.source_type, row.source_id, row.source_handle,
+                row.target_handle, row.target_generation, row.level,
+                row.next_due_day, row.active, error)) {
+            return false;
+        }
+        if (row.expires_day >= 0 &&
+            !_effect->set_instance_expiry_pod(row.instance_id, row.generation,
+                                              row.expires_day)) {
+            // The row landed but its expiry did not. Reporting success here
+            // would leave a managed-duration instance alive forever, which is
+            // exactly the divergence expires_day exists to prevent.
+            error = "effect_instance_expiry_write_failed";
+            return false;
+        }
+        if (_host != nullptr) {
+            // SHADOW mirror, same best-effort rule as submit_batch: a failure
+            // here never rolls back the production write.
+            const ProgramFacts *facts = facts_for(row.program_key);
+            if (facts != nullptr && facts->resolved) {
+                RuntimeEffectPodInstanceInput input;
+                input.instance_id = row.instance_id;
+                input.generation = row.generation;
+                input.program_id = facts->program_id;
+                input.source_type = row.source_type;
+                input.source_id = row.source_id;
+                input.source_handle = row.source_handle;
+                input.target_handle = row.target_handle;
+                input.target_generation = row.target_generation;
+                input.level = row.level;
+                input.next_due_day = row.next_due_day;
+                input.expires_day = row.expires_day;
+                input.active = row.active;
+                std::string mirror_error;
+                _host->queue_effect_pod_instance(input, mirror_error);
+            }
+        }
+    }
+    // Rule 1: a flip mid-call must not look like success. The row landed on one
+    // path, but the other side is now the writer of record, so the caller has to
+    // resubmit next tick instead of believing it.
+    std::string authority_code;
+    if (note_authority_change(authority_code)) {
+        error = authority_code;
+        return false;
+    }
+    return true;
+}
+
+bool EffectInstanceForwarder::set_metric(int64_t instance_id, uint32_t generation,
+                                         int32_t metric_id, int64_t revision,
+                                         int64_t value, std::string &error) {
+    error.clear();
+    if (_effect == nullptr) {
+        error = result_token(Result::NOT_ATTACHED);
+        return false;
+    }
+    if (worker_authoritative()) {
+        if (_host == nullptr || !_host->effect_pod_transport_ready()) {
+            error = result_token(Result::WORKER_TRANSPORT_NOT_READY);
+            return false;
+        }
+        if (!_host->queue_effect_pod_metric(instance_id, generation, metric_id,
+                                            revision, value, error)) {
+            return false;
+        }
+    } else {
+        if (!_effect->set_metric_pod(instance_id, metric_id, revision, value,
+                                     error)) {
+            return false;
+        }
+        if (_host != nullptr) {
+            std::string mirror_error;
+            _host->queue_effect_pod_metric(instance_id, generation, metric_id,
+                                           revision, value, mirror_error);
+        }
+    }
+    std::string authority_code;
+    if (note_authority_change(authority_code)) {
+        error = authority_code;
+        return false;
+    }
+    return true;
+}
+
+bool EffectInstanceForwarder::instance_exists(int64_t instance_id,
+                                              uint32_t generation,
+                                              bool &exists,
+                                              std::string &error) {
+    error.clear();
+    exists = false;
+    if (_effect == nullptr) {
+        error = result_token(Result::NOT_ATTACHED);
+        return false;
+    }
+    if (worker_authoritative()) {
+        // The worker owns the instance list; EffectRuntime is writeback-only and
+        // refreshes on its own pump, so it must not be asked here.
+        if (_host == nullptr || !_host->effect_pod_transport_ready()) {
+            error = result_token(Result::WORKER_TRANSPORT_NOT_READY);
+            return false;
+        }
+        exists = _host->effect_pod_instance_exists(instance_id, generation);
+        return true;
+    }
+    exists = _effect->has_instance_pod(instance_id, generation);
+    return true;
+}
+
+bool EffectInstanceForwarder::instance_fire_acked(int64_t instance_id,
+                                                  uint32_t generation,
+                                                  bool &acked,
+                                                  std::string &error) {
+    error.clear();
+    acked = false;
+    if (_effect == nullptr) {
+        error = result_token(Result::NOT_ATTACHED);
+        return false;
+    }
+    if (worker_authoritative()) {
+        // Same rule as instance_exists: the worker owns fire_seq/ack, and the
+        // main thread's copy only catches up on its own writeback pump.
+        if (_host == nullptr || !_host->effect_pod_transport_ready()) {
+            error = result_token(Result::WORKER_TRANSPORT_NOT_READY);
+            return false;
+        }
+        acked = _host->effect_pod_instance_fire_acked(instance_id, generation);
+        return true;
+    }
+    acked = _effect->instance_fire_acked_pod(instance_id, generation);
+    return true;
+}
+
+bool EffectInstanceForwarder::retire_instance(int64_t instance_id,
+                                              uint32_t generation,
+                                              int64_t effective_day,
+                                              std::string &error) {
+    error.clear();
+    // Delegates so both entry points share one routing decision and the same
+    // authority-flip handling.
+    const Dictionary out = retire(instance_id, static_cast<int64_t>(generation),
+                                  effective_day);
+    if (bool(out.get("ok", false))) return true;
+    const String reason = out.get("reason", String());
+    if (reason.is_empty()) {
+        error = result_token(Result::QUEUE_REJECTED);
+    } else {
+        error = reason.utf8().get_data();
+        if (error.empty()) error = result_token(Result::QUEUE_REJECTED);
+    }
+    return false;
 }
 
 } // namespace pk

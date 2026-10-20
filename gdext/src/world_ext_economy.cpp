@@ -241,6 +241,10 @@ Dictionary DCWorldExt::configure_economy(const Dictionary &catalog,
         if (_effect_runtime != nullptr)
             static_cast<NativeCountryRuntime *>(_country_runtime)->attach_effect_runtime(
                 static_cast<EffectRuntime *>(_effect_runtime));
+        // bootstrap() installs the restored technology Effect instances, so the
+        // forwarder has to be in place before that call, not after it.
+        static_cast<NativeCountryRuntime *>(_country_runtime)->attach_effect_forwarder(
+            _effect_forwarder.get());
         PackedByteArray all_land;
         all_land.resize(cell_count);
         all_land.fill(0);
@@ -266,6 +270,18 @@ Dictionary DCWorldExt::configure_economy(const Dictionary &catalog,
     if (_effect_runtime != nullptr)
         runtime_from(_economy_runtime)->attach_effect_runtime(
             static_cast<EffectRuntime *>(_effect_runtime));
+    // Tag predicates are effect-catalog data read by the economy's target
+    // selector. Pushed on both attach paths because the two runtimes can be
+    // configured in either order; an empty table here is overwritten by the
+    // effect configure path once the catalog lands.
+    if (_effect_runtime != nullptr)
+        runtime_from(_economy_runtime)->set_target_tags(
+            static_cast<EffectRuntime *>(_effect_runtime)->target_tags());
+    // Economy can be configured before or after the Effect catalog; attach the
+    // forwarder here as well as in the Effect configure path so the family
+    // write path never runs without it once both exist.
+    runtime_from(_economy_runtime)->attach_effect_forwarder(
+        _effect_forwarder.get());
     _economy_last_notified_event_id = 0;
     invalidate_economy_read_view();
     return runtime_from(_economy_runtime)->configure(catalog, profile, cell_count, seed);

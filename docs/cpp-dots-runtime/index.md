@@ -1,5 +1,7 @@
 # C++/DOTS Runtime 开发文档索引
 
+国家年度报告：`NativeSimulationHost -> AnnualDevelopmentLedger -> PKAR -> AnnualReportViewModel`。玩家点击左上角日期打开年度纪事；年度评价与奖励只在 native 提交。见 [年度报告运行时](./annual-development-report.md)。
+
 - [贸易载具运行时](./trade-visual-runtime.md)：真实在途订单的有界已提交观察、独立分片寻路、
   正俯视时代图集、MultiMesh、视野约束与中心 TOD/法线/Horizon GI/投影；[验证记录](./trade-visual-validation.md)。
 

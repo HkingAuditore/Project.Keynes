@@ -11,6 +11,9 @@ const LIVE_REFRESH_INTERVAL_MSEC := 200
 const PENDING_RETRY_SECONDS := 0.25
 const COMPACT_WIDTH := 760.0
 const FILTER_CHAPTERS := {"industry": "sector", "market": "group"}
+## 页内锚点落位时在区段小标题上方留的空隙。不留会把小标题顶到视口上沿，
+## 看起来像被裁掉了半个字。
+const SECTION_SCROLL_PAD := 12
 
 var _vm := EconomyDossierViewModel.new()
 var _model: Dictionary = {}
@@ -18,6 +21,9 @@ var _chapter := "overview"
 var _compact := false
 var _filters := {"sector": -1, "group": ""}
 var _scroll_by_chapter: Dictionary = {}
+## 合并篇章后的页内锚点（如「利润」卡点落在产业章的「投资风向」一段）。
+## 等布局稳定后再滚，避免拿旧高度算出来的偏移。
+var _pending_section := ""
 var _scope_signature := ""
 var _last_refresh_ms := -LIVE_REFRESH_INTERVAL_MSEC
 var _refresh_pending := false
@@ -29,7 +35,9 @@ var _player_controller = null
 @onready var _scope_option: OptionButton = %ScopeOption
 @onready var _scope_reset: Button = %ScopeReset
 @onready var _kpi_row: HBoxContainer = %KpiRow
+@onready var _kpi_strip: PanelContainer = %KpiStrip
 @onready var _gdp_band: DossierGdpBand = %GdpCanvas
+@onready var _gdp_band_panel: PanelContainer = %GdpBand
 @onready var _filter_bar: HBoxContainer = %FilterBar
 @onready var _filter_label: Label = %FilterLabel
 @onready var _status_label: Label = %StatusLabel
@@ -143,6 +151,15 @@ func kpi_texts() -> PackedStringArray:
 
 func scroll_value() -> int:
 	return _viewport.scroll_vertical
+
+
+## 页头（产值横幅 / KPI 条）只在总览章出现，这里给出可断言的读法。
+func gdp_band_visible() -> bool:
+	return _gdp_band_panel != null and _gdp_band_panel.visible
+
+
+func kpi_strip_visible() -> bool:
+	return _kpi_strip != null and _kpi_strip.visible
 
 
 func set_scroll_for_test(value: int) -> void:
@@ -329,9 +346,15 @@ func _on_page_navigate(chapter_id: String, payload: Dictionary) -> void:
 	var target = _pages.get(chapter_id, null)
 	if target != null and target.has_method("focus_item") and payload.has("focus"):
 		target.focus_item(payload.focus)
+	# 页内锚点：合并章里同一页装着两段内容，光换章看不到目标那一段。
+	_pending_section = String(payload.get("section", ""))
 	if chapter_id == _chapter:
 		_refresh_filters()
 		_refresh_page()
+		# 同章跳转不走 select_chapter，滚动要自己补一次（且只在带锚点时才补，
+		# 否则点表格行会把视口拽回上次保存的位置）。
+		if not _pending_section.is_empty():
+			call_deferred("_apply_pending_section")
 	else:
 		select_chapter(chapter_id)
 		_refresh_filters()
@@ -352,6 +375,12 @@ func _is_known_chapter(chapter_id: String) -> bool:
 
 func _apply_chapter_visibility() -> void:
 	var finance := _chapter == "finance"
+	# 页头是总览专属：产值横幅与 KPI 条都是全国/全城快照，放在阶层、产业这类
+	# 逐项表格上方只会挤掉首屏，不提供对照价值。财政章本来就把 _viewport 整体隐藏，
+	# 这个判断对它冗余但无害。
+	var overview := _chapter == "overview"
+	_gdp_band_panel.visible = overview
+	_kpi_strip.visible = overview
 	_viewport.visible = not finance
 	_finance_host.visible = finance
 	for chapter_id in _pages:
@@ -363,8 +392,29 @@ func _apply_chapter_visibility() -> void:
 
 
 func _restore_scroll(chapter_id: String) -> void:
-	if chapter_id == _chapter:
-		_viewport.scroll_vertical = int(_scroll_by_chapter.get(chapter_id, 0))
+	if chapter_id != _chapter:
+		return
+	if not _pending_section.is_empty():
+		_apply_pending_section()
+		return
+	_viewport.scroll_vertical = int(_scroll_by_chapter.get(chapter_id, 0))
+
+
+## 把视口滚到当前章的某个页内区段。页面用 section_offset(id) 报告区段相对自身的高度。
+## 等一帧再算：切章会改页头可见性，容器要重排，早一帧拿到的是旧高度。
+func _apply_pending_section() -> void:
+	var section := _pending_section
+	_pending_section = ""
+	var page = _pages.get(_chapter, null)
+	if section.is_empty() or page == null or not page.has_method("section_offset"):
+		return
+	await get_tree().process_frame
+	var offset := float(page.call("section_offset", section))
+	if offset <= 0.0:
+		return
+	# 滚动量以 PageColumn 为坐标原点：PageStack 的自身偏移 + 页在该容器内的位置 + 区段偏移。
+	_viewport.scroll_vertical = maxi(0,
+		int(_page_stack.position.y + (page as Control).position.y + offset) - SECTION_SCROLL_PAD)
 
 
 func _update_layout_mode() -> void:

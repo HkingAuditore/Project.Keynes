@@ -73,6 +73,44 @@ func _run() -> void:
 	_test_forwarder_seam(country_ir, defined[0])
 	_test_ideology_reroute(country_ir, defined[0])
 	_test_adapter_parity(country_ir, defined[0])
+	_test_worker_save_restore(country_ir, defined[0])
+
+
+## The ideology restore proves that every bound instance still exists before it
+## accepts a save (`ideology_effect_instance_missing`). Under EFFECT worker
+## authority EffectRuntime is writeback-only, so that check used to reject a
+## perfectly healthy save -- and it fires during load, which took the whole
+## ideology domain down with it. This is the query half of M2b: the reader has to
+## ask whichever side owns EFFECT.
+##
+## The instance is queued, not installed (no worker runs in this fixture), which
+## is exactly the race that also had to be closed: a row the transport accepted
+## counts as present.
+func _test_worker_save_restore(country_ir: Dictionary, program: Resource) -> void:
+	var ext: Object = _configured_ext(country_ir, program)
+	ext.set_effect_forwarder_authority_for_test(1)
+	var handle := int(ext.get_country_cell_summary(0).get("country_handle", 0))
+	_expect("restore/worker: country handle is generation safe", handle != 0)
+	if handle == 0:
+		return
+	ext.submit_ideology_commands(_commands([
+		{"op": 1, "day": 0, "handle": handle, "idea": 0},
+		{"op": 5, "day": 0, "handle": handle, "idea": 0},
+	]))
+	ext.run_ideology_daily(0)
+	var report: Dictionary = ext.get_ideology_effect_instance_report(handle)
+	_expect("restore/worker: reconcile holds exactly one instance",
+		int(report.get("count", -1)) == 1)
+	var captured: PackedByteArray = ext.capture_ideology_state()
+	_expect("restore/worker: ideology state captures", captured.size() > 0)
+	if captured.is_empty():
+		return
+	var restored: Dictionary = ext.restore_ideology_state(captured)
+	_expect("restore/worker: restore accepts a queued worker instance",
+		bool(restored.get("ok", false)))
+	if not bool(restored.get("ok", false)):
+		print("  restore/worker: reason=%s" % String(
+			restored.get("reason", "unknown")))
 
 
 ## M2b G-1: the worker's Effect-intent -> Modifier-POD mapping must reproduce

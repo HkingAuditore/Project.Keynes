@@ -11,7 +11,7 @@ extends SceneTree
 # 「全部 worker 权威静默退回主线程」。这个探针把那条边界显式量出来。
 #
 # pod 能力子集（与 runtime_effect_pod.cpp 一一对应）：
-#   target_selector_kind <= 11       :POD_MAX_SELECTOR_KIND
+#   target_selector_kind <= 12       :POD_MAX_SELECTOR_KIND
 #   STATE_GTE arg0 <= 4              :POD_MAX_STATE_ID
 #   READ_STATE arg0 <= 4             :POD_MAX_STATE_ID
 # 两个上限都取自 gdext/src/runtime_effect_pod.cpp 的同名常量。它们曾低于主线程

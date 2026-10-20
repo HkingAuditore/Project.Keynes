@@ -1,6 +1,7 @@
 extends DossierPage
 
-## 产业建筑：选中建筑的营收去向与运营诊断 + 全部建筑类型账簿（按部门筛选）。
+## 产业：选中建筑的营收去向与运营诊断 + 全部建筑类型账簿（按部门筛选），
+## 下方接投资风向（资本流向 / 受阻原因 / 在建项目）——两者共用同一份经济快照。
 
 const COLUMNS := [
 	{"id": "name", "label": "建筑", "kind": "text", "expand": true, "min_width": 128.0},
@@ -27,6 +28,8 @@ var _selected := -1
 @onready var _count_label: Label = %CountLabel
 @onready var _table: DossierLedgerTable = %BuildingTable
 @onready var _empty: Label = %EmptyLabel
+@onready var _invest: DossierPage = %InvestmentSection
+@onready var _invest_kicker: Label = %InvestmentKicker
 
 
 func _ready() -> void:
@@ -36,10 +39,30 @@ func _ready() -> void:
 
 
 func focus_item(item) -> void:
+	# 合并章：建筑 id 是整数，投资风向的卡点类别是字符串，按类型分流。
+	if item is String and _invest != null:
+		_invest.focus_item(item)
+		return
 	_selected = int(item)
 
 
+## 共用的页内锚点：卡点跳转落到「资本与在建」这一段时，外壳拿这个偏移去滚动视口。
+## 锚在小标题而不是区段本体上，否则跳过去第一眼是内容、看不到自己落在哪一段。
+func section_offset(section: String) -> float:
+	if section == "investment" and _invest_kicker != null:
+		return _invest_kicker.position.y
+	return 0.0
+
+
 func refresh(vm: EconomyDossierViewModel, filter = null) -> void:
+	_refresh_industry(vm, filter)
+	# 投资风向与建筑台账共用同一份经济快照，这里只是把模型再喂一遍，
+	# investment_model() 走的是同一轮 memo，不产生额外原生查询。
+	if _invest != null:
+		_invest.refresh(vm, filter)
+
+
+func _refresh_industry(vm: EconomyDossierViewModel, filter = null) -> void:
 	var model := vm.industry_model(int(filter) if filter != null else -1)
 	if not bool(model.get("ok", false)):
 		_show_empty(_empty, null, String(model.get("reason", "")))
@@ -154,3 +177,5 @@ func _on_row_selected(id) -> void:
 
 func _apply_narrow() -> void:
 	_detail_grid.columns = 1 if _narrow else 3
+	if _invest != null:
+		_invest.set_narrow(_narrow, _layout_width)

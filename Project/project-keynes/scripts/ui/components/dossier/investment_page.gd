@@ -2,6 +2,8 @@ extends DossierPage
 
 ## 投资风向：资本正在流向哪些部门（在建）、什么挡住了扩产（受阻原因）、
 ## 哪些物资的需求压力最可能吸引下一轮投资。
+## 已作为「产业」章的下半段（industry_page.tscn 里的 InvestmentSection）嵌入，
+## chapter_id 由宿主指定，本场景不自带。
 
 const PENDING_COLUMNS := [
 	{"id": "name", "label": "在建建筑", "kind": "text", "expand": true, "min_width": 120.0},

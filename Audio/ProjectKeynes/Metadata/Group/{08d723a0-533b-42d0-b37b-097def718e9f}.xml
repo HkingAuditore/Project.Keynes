@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<objects serializationModel="Studio.02.03.00">
+	<object class="MixerGroup" id="{08d723a0-533b-42d0-b37b-097def718e9f}">
+		<property name="name">
+			<value>Haptic</value>
+		</property>
+		<relationship name="effectChain">
+			<destination>{7ae18f12-d3a7-428c-8dad-79c589b9df19}</destination>
+		</relationship>
+		<relationship name="panner">
+			<destination>{116a2243-1ca4-4e23-9f50-80f992bab8ff}</destination>
+		</relationship>
+		<relationship name="output">
+			<destination>{af9d027a-3a1f-49a8-a9ef-4cbe20673632}</destination>
+		</relationship>
+	</object>
+	<object class="MixerBusEffectChain" id="{7ae18f12-d3a7-428c-8dad-79c589b9df19}">
+		<relationship name="effects">
+			<destination>{ec77450f-1054-4a42-86af-92b0d4e875d6}</destination>
+		</relationship>
+	</object>
+	<object class="MixerBusPanner" id="{116a2243-1ca4-4e23-9f50-80f992bab8ff}" />
+	<object class="MixerBusFader" id="{ec77450f-1054-4a42-86af-92b0d4e875d6}" />
+</objects>

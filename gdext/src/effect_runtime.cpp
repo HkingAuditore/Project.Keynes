@@ -836,6 +836,51 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
         _max_work_per_slice > 1000000 || _max_native_modifier_commands > 4000000)
         return failure("effect_runtime_capacity_invalid");
 
+    // Optional tag predicate table (target_tag.h). A catalog without
+    // `target_tags` keeps zero tags, which is what makes this additive: every
+    // pre-tag catalog -- including the fixtures -- configures untouched, and
+    // the territory selector falls back to its built-in predicate ids.
+    _target_tags.clear();
+    {
+        const PackedStringArray tag_names = get_strings(catalog, "target_tags");
+        if (!tag_names.is_empty()) {
+            const PackedInt32Array tag_offsets = get_i32(catalog, "tag_offsets");
+            const PackedInt32Array tag_metric_ids = get_i32(catalog, "tag_metric_ids");
+            const PackedInt32Array tag_metric_ops = get_i32(catalog, "tag_metric_ops");
+            const PackedInt32Array tag_metric_clauses =
+                get_i32(catalog, "tag_metric_clauses");
+            const PackedInt64Array tag_thresholds =
+                get_i64(catalog, "tag_metric_thresholds_q16");
+            if (tag_offsets.size() != tag_names.size() + 1 ||
+                tag_metric_ids.size() != tag_metric_ops.size() ||
+                tag_metric_ids.size() != tag_metric_clauses.size() ||
+                tag_metric_ids.size() != tag_thresholds.size())
+                return failure("target_tag_columns_invalid");
+            _target_tags.names.reserve(static_cast<size_t>(tag_names.size()));
+            for (int32_t i = 0; i < tag_names.size(); ++i)
+                _target_tags.names.push_back(string_at(tag_names, i));
+            _target_tags.offsets.assign(tag_offsets.size(), 0);
+            for (int32_t i = 0; i < tag_offsets.size(); ++i)
+                _target_tags.offsets[static_cast<size_t>(i)] = tag_offsets[i];
+            _target_tags.rows.resize(static_cast<size_t>(tag_metric_ids.size()));
+            for (int32_t i = 0; i < tag_metric_ids.size(); ++i) {
+                TargetTagRow &row = _target_tags.rows[static_cast<size_t>(i)];
+                row.metric_id = tag_metric_ids[i];
+                row.op = tag_metric_ops[i];
+                row.clause = tag_metric_clauses[i];
+                row.threshold_q16 = tag_thresholds[i];
+                // The sampler walks metric_keys only, so a row pointing past
+                // the declared table would read 0 forever and silently turn a
+                // ">= 60%" card into "never fires". Reject at compile time.
+                if (row.metric_id >= metric_keys.size())
+                    return failure("target_tag_metric_not_declared");
+            }
+            std::string tag_error;
+            if (!_target_tags.valid(tag_error))
+                return failure(tag_error.c_str());
+        }
+    }
+
     _metric_keys.clear();
     _metric_ids.clear();
     for (int32_t i = 0; i < metric_keys.size(); ++i) {
@@ -1098,17 +1143,21 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
             }
             if (definition.operation == 4 && !has_event_command)
                 return failure("effect_event_command_missing");
-            // metric_mask is a single uint64. A condition or instruction that
-            // reads beyond it would be dropped by family_effect_metadata_pod,
-            // so the publisher would never write the value and the condition
-            // would stay permanently false. Fail loudly instead of silently.
+            // A program that reads a metric the selection set cannot address
+            // would be dropped by family_effect_metadata_pod, so the publisher
+            // would never write the value and the condition would stay
+            // permanently false. Fail loudly instead of silently. The ceiling
+            // is now MetricMask::CAPACITY (256) rather than 64; the tighter and
+            // more useful limit -- "the catalogue must actually declare this
+            // id" -- is already enforced above via `_metric_count`.
             for (int32_t row = definition.condition_begin;
                  row < definition.condition_begin + definition.condition_count;
                  ++row) {
                 const Condition &condition =
                     _conditions[static_cast<size_t>(row)];
                 if ((condition.op == METRIC_GTE || condition.op == METRIC_LTE ||
-                     condition.op == METRIC_EQ) && condition.arg0 >= 64)
+                     condition.op == METRIC_EQ) &&
+                    !MetricMask::valid(condition.arg0))
                     return failure("effect_metric_mask_overflow");
             }
             for (int32_t row = definition.instruction_begin;
@@ -1116,7 +1165,8 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
                  ++row) {
                 const InstructionRow &instruction =
                     _instructions[static_cast<size_t>(row)];
-                if (instruction.op == READ_METRIC && instruction.arg0 >= 64)
+                if (instruction.op == READ_METRIC &&
+                    !MetricMask::valid(instruction.arg0))
                     return failure("effect_metric_mask_overflow");
             }
         }
@@ -2701,6 +2751,24 @@ bool EffectRuntime::set_metric_pod(int64_t instance_id, int32_t metric_id,
     return true;
 }
 
+bool EffectRuntime::instance_metric_pod(int64_t instance_id, int32_t metric_id,
+                                       int64_t &out_value, bool &out_present) const {
+    out_value = 0;
+    out_present = false;
+    if (!_configured) return false;
+    const int32_t index = instance_index_for_id(instance_id);
+    if (index < 0) return false;
+    if (metric_id < 0 || metric_id >= _metric_count) return false;
+    const Instance &instance = _instances[static_cast<size_t>(index)];
+    const int64_t *value = metric_ptr(instance, metric_id);
+    if (value == nullptr) return false;
+    out_value = *value;
+    const size_t offset = static_cast<size_t>(instance.metric_base) +
+        static_cast<size_t>(metric_id);
+    out_present = offset < _metric_present.size() && _metric_present[offset] != 0;
+    return true;
+}
+
 bool EffectRuntime::family_effect_metadata_pod(
         const std::string &program_key, FamilyEffectMetadataPod &out) const {
     const int32_t definition_id = definition_id_for_key(program_key);
@@ -2729,8 +2797,11 @@ bool EffectRuntime::family_effect_metadata_pod(
         out.magnitude_by_prestige_q16[tier] =
             definition.magnitude_by_prestige_q16[tier];
     auto include_metric = [&](int32_t metric_id) {
-        if (metric_id >= 0 && metric_id < 64)
-            out.metric_mask |= 1ULL << static_cast<uint32_t>(metric_id);
+        // MetricMask::set() ignores out-of-range ids, which the compile-time
+        // guard above already rejected; keeping the check here too means a
+        // program that somehow bypassed it publishes nothing rather than
+        // publishing the wrong column.
+        out.metric_mask.set(metric_id);
     };
     for (int32_t row = definition.condition_begin;
          row < definition.condition_begin + definition.condition_count; ++row) {
@@ -2747,22 +2818,16 @@ bool EffectRuntime::family_effect_metadata_pod(
     return true;
 }
 
-bool EffectRuntime::refresh_managed_duration_pod(int64_t instance_id,
-                                                 uint32_t generation,
-                                                 int64_t day_index) {
+bool EffectRuntime::set_instance_expiry_pod(int64_t instance_id,
+                                            uint32_t generation,
+                                            int64_t expires_day) {
     const int32_t index = instance_index_for_id(instance_id);
-    if (index < 0 || index >= static_cast<int32_t>(_instances.size()))
-        return false;
+    if (index < 0 || index >= static_cast<int32_t>(_instances.size())) return false;
     Instance &instance = _instances[static_cast<size_t>(index)];
-    if (instance.generation != generation || instance.program_id < 0 ||
-        instance.program_id >= static_cast<int32_t>(_definitions.size()))
-        return false;
-    const Definition &definition = _definitions[
-        static_cast<size_t>(instance.program_id)];
-    if (definition.lifecycle != 1 || definition.stack_policy != 1)
-        return false;
-    instance.expires_day = std::max<int64_t>(0, day_index) +
-        static_cast<int64_t>(definition.duration_days);
+    // A stale generation must not retarget the live instance's expiry: the
+    // caller resolved this row against a different incarnation.
+    if (instance.generation != generation) return false;
+    instance.expires_day = expires_day;
     advance_committed_generation();
     return true;
 }
@@ -6727,10 +6792,13 @@ bool EffectRuntime::pod_state_parity_self_test(std::string &error) const {
 
     if (RuntimeEffectPodAuthority::MAX_STATE_ID < STATE_STACK_COUNT)
         return fail("effect_pod_state_ceiling_below_main_thread");
-    // DISTANCE_N is the widest selector kind the main thread resolves. The POD
-    // forwards whatever the main thread resolved, so it must not narrower.
-    constexpr int32_t MAIN_THREAD_MAX_SELECTOR_KIND = 11;
-    if (RuntimeEffectPodAuthority::MAX_SELECTOR_KIND < MAIN_THREAD_MAX_SELECTOR_KIND)
+    // OWN_TERRITORY is the widest selector kind the main thread resolves. The
+    // POD forwards whatever the main thread resolved, so it must not be
+    // narrower. Derived from SELECTOR_MAX_KIND instead of a hand-copied 11:
+    // adding a kind used to require remembering this line, and forgetting it
+    // rejects the *entire* POD catalog (one card above the ceiling poisons
+    // all of them), which is how the 7/3 regression shipped.
+    if (RuntimeEffectPodAuthority::MAX_SELECTOR_KIND < SELECTOR_MAX_KIND)
         return fail("effect_pod_selector_ceiling_below_main_thread");
 
     // state_value() reads _current_day through a const method, so evaluate the

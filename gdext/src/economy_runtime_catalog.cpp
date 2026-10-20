@@ -396,9 +396,9 @@ bool NativeEconomyRuntime::compile_family_trait_catalog(
             return false;
         }
     }
-    _family_trait_behavior_metric_masks.assign(count, 0);
+    _family_trait_behavior_metric_masks.assign(count, MetricMask{});
     for (size_t trait = 0; trait < count; ++trait) {
-        uint64_t mask = 0;
+        MetricMask mask;
         for (int32_t edge = _family_trait_behavior_offsets[trait];
              edge < _family_trait_behavior_offsets[trait + 1]; ++edge) {
             for (int32_t op_index = _family_trait_behavior_condition_offsets[edge];
@@ -407,7 +407,7 @@ bool NativeEconomyRuntime::compile_family_trait_catalog(
                 const int32_t op = _family_trait_behavior_condition_ops[op_index];
                 const int32_t metric = _family_trait_behavior_condition_arg0[op_index];
                 if (op >= 2 && op <= 4 && metric >= 0 && metric < FAMILY_METRIC_COUNT)
-                    mask |= uint64_t{1} << metric;
+                    mask.set(metric);
             }
         }
         _family_trait_behavior_metric_masks[trait] = mask;

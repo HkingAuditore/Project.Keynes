@@ -18,6 +18,7 @@
 #include "runtime_ideology_pod.h"
 #include "runtime_economy_pod.h"
 #include "economy_graph_kernels.h"
+#include "annual_development_ledger.h"
 
 #include <array>
 #include <atomic>
@@ -45,6 +46,32 @@ public:
 
     NativeSimulationHost(const NativeSimulationHost &) = delete;
     NativeSimulationHost &operator=(const NativeSimulationHost &) = delete;
+
+    bool configure_annual_development(uint64_t handle, int64_t length, int64_t day,
+        const AnnualDevelopmentProfile &profile, const AnnualEconomyFacts &baseline,
+        const AnnualCountryFacts &country, std::string &error);
+    bool annual_development_enabled() const { return _annual_enabled.load(std::memory_order_acquire); }
+    bool annual_worker_managed() const {
+        const auto required = runtime_domain_mask(RuntimeDomainId::COUNTRY) | runtime_domain_mask(RuntimeDomainId::IDEOLOGY);
+        return state() != RuntimeWorkerState::STOPPED &&
+            _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
+            (_requested_authority_mask.load(std::memory_order_acquire) & required) == required;
+    }
+    uint64_t annual_country_handle() const { return _annual_country.load(std::memory_order_acquire); }
+    void publish_annual_economy(const AnnualEconomyFacts &facts);
+    void commit_annual_day(int64_t day, const AnnualCountryFacts &country, uint64_t draws);
+    void commit_annual_worker_day(int64_t day);
+    void queue_annual_worker_reward(int64_t day);
+    void settle_annual_worker_reward(const RuntimeIdeologyPodSnapshot &snapshot);
+    bool annual_pending_reward(AnnualDevelopmentReport &out) const;
+    void settle_annual_reward(uint64_t sequence);
+    void annual_status(uint64_t &revision, int64_t &last_day, uint64_t &ready,
+                       bool &reward_pending, size_t &count) const;
+    bool annual_report(uint64_t id, AnnualDevelopmentReport &out) const;
+    std::vector<AnnualDevelopmentReport> annual_history(uint32_t offset, uint32_t limit) const;
+    bool mark_annual_presented(uint64_t id);
+    std::vector<uint8_t> encode_annual_save() const;
+    bool restore_annual_save(const uint8_t *bytes, size_t size, std::string &error);
 
     // `requested_authority_mask` names the domains this worker is asked to own
     // in ACTIVE. It must be a subset of implemented_domain_mask(); requesting a
@@ -578,6 +605,24 @@ public:
             int64_t instance_id, uint32_t generation, int32_t program_id,
             uint64_t target_handle, uint32_t target_generation, int64_t day,
             std::string &error);
+    // "Is this instance still in the Effect POD unique-writer's state?"
+    //
+    // Main-thread owners that keep their own bindings (Economy's family
+    // effects) have to rebuild them after a load, and they cannot ask
+    // EffectRuntime for this: under F8 ACTIVE it is writeback-only and only
+    // refreshes on the main-thread pump, so it answers "absent" for every
+    // instance the worker owns. Semantics mirror
+    // EffectRuntime::has_instance_pod -- presence plus matching generation,
+    // regardless of the active flag -- with one addition: a row the transport
+    // has accepted but not yet installed also counts as present, because
+    // otherwise every reader races the queue and reports a live instance as
+    // missing.
+    //
+    // Reads the same committed snapshot ensure_effect_pod_technology_instance
+    // reads, plus the pending upsert queue; it is a query only and never mutates
+    // the authority.
+    bool effect_pod_instance_exists(int64_t instance_id,
+                                    uint32_t generation) const;
     bool effect_pod_instance_fire_acked(int64_t instance_id,
                                         uint32_t generation) const;
     // After Effect soft-skip/catchup/ACK, PENDING Country ENSURE/NUDGE peers
@@ -965,6 +1010,11 @@ private:
     };
 
     std::atomic<RuntimeWorkerState> _state{RuntimeWorkerState::STOPPED};
+    mutable std::mutex _annual_mutex;
+    AnnualDevelopmentLedger _annual_ledger;
+    std::atomic<bool> _annual_enabled{false};
+    std::atomic<uint64_t> _annual_country{0};
+    uint64_t _annual_queued_reward = 0;
     std::atomic<RuntimeSimulationMode> _mode{RuntimeSimulationMode::OFF};
     std::atomic<bool> _stop_requested{false};
     std::atomic<bool> _paused{true};

@@ -7104,6 +7104,34 @@ bool NativeSimulationHost::ensure_effect_pod_technology_instance(
     return true;
 }
 
+bool NativeSimulationHost::effect_pod_instance_exists(int64_t instance_id,
+                                                     uint32_t generation) const {
+    if (!_effect_pod_configured || instance_id == 0 || generation == 0)
+        return false;
+    const auto &snapshot = _effect_pod_authority.snapshot();
+    for (const auto &instance : snapshot.instances) {
+        if (instance.instance_id != instance_id) continue;
+        // Same rule as EffectRuntime::has_instance_pod: an inactive instance is
+        // still a known identity, the generation is what makes it stale.
+        return instance.generation == generation;
+    }
+    // Not installed yet, but a queued upsert is already a live identity: the
+    // transport accepted the row and the worker will install it. Answering
+    // "absent" here made every main-thread reader race the transport --
+    // the ideology restore rejected a save whose instances were merely queued,
+    // and register_person_effect re-upserted (each time with a fresh
+    // next_due_day) on every call. A queued *retire* needs no special case: until
+    // it drains the instance genuinely still exists, which is what the snapshot
+    // branch above already reports.
+    std::lock_guard<std::mutex> lock(_effect_transport_mutex);
+    for (const EffectPodInstanceQueueItem &item : _effect_instance_queue) {
+        if (item.input.instance_id == instance_id &&
+            item.input.generation == generation)
+            return true;
+    }
+    return false;
+}
+
 std::string NativeSimulationHost::describe_effect_pod_technology_state(
         int64_t instance_id, uint32_t generation, int32_t program_id,
         int32_t technology) const {
@@ -9129,6 +9157,8 @@ bool NativeSimulationHost::execute_ideology_worker_stage(
         if (!_ideology_pod_authority.bootstrap(*country, *opinion, error))
             return false;
     }
+    if (domain_is_worker_authoritative(RuntimeDomainId::IDEOLOGY))
+        queue_annual_worker_reward(day);
     std::deque<RuntimeIdeologyPodCommand> commands;
     std::vector<RuntimeDomainAck> acks;
     {
@@ -9213,6 +9243,8 @@ bool NativeSimulationHost::execute_ideology_worker_stage(
     }
     const RuntimeIdeologyPodSnapshot &snapshot =
         _ideology_pod_authority.snapshot();
+    if (domain_is_worker_authoritative(RuntimeDomainId::IDEOLOGY))
+        settle_annual_worker_reward(snapshot);
     auto copy = std::make_shared<RuntimeIdeologyPodSnapshot>(snapshot);
     std::atomic_store_explicit(&_ideology_snapshot,
         std::shared_ptr<const RuntimeIdeologyPodSnapshot>(std::move(copy)),
@@ -12754,6 +12786,7 @@ void NativeSimulationHost::publish_day(
     if (try_fault_injection("day.commit.before")) {
         return;
     }
+    commit_annual_worker_day(day);
     const uint64_t next_hash = mix_hash(
         _state_hash.load(std::memory_order_relaxed), static_cast<uint64_t>(day));
     _state_hash.store(next_hash, std::memory_order_release);

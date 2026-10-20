@@ -153,6 +153,7 @@ func prepare_load(slot_id: String) -> Dictionary:
 	decoded["pktr"] = bytes_by_id.pktr
 	decoded["pkef"] = bytes_by_id.pkef
 	decoded["pkid"] = bytes_by_id.pkid
+	decoded["pkar"] = bytes_by_id.get("pkar", PackedByteArray())
 	decoded["pkai"] = bytes_by_id.pkai
 	decoded["preview"] = bytes_by_id.preview
 	_pending_load = {
@@ -359,7 +360,8 @@ func _can_save() -> Dictionary:
 			return _result(false, "worker_faulted", "后台模拟线程发生故障（%s），无法保存。" %
 				String(thread.get("fault_code", "unknown")))
 		if String(thread.get("simulation_host_state", "STOPPED")) in ["STARTING", "RUNNING", "SAVE_PENDING"] \
-				or int(thread.get("environment_ring_pending", 0)) > 0 \
+				or (String(thread.get("simulation_host_state", "STOPPED")) != "STOPPED" \
+					and int(thread.get("environment_ring_pending", 0)) > 0) \
 				or int(thread.get("worker_day_inflight", 0)) > 0:
 			return _result(false, "save_requires_idle_worker", "等待后台 worker 排空已接收的模拟输入。")
 	var country = generator.get_country_facade()
@@ -538,6 +540,8 @@ func _register_providers() -> void:
 		_make_provider(&"pkid", 2, PackedStringArray(["pkid"]),
 			"_can_ideology_provider", "_write_ideology_provider",
 			"_restore_ideology_provider"),
+		_make_provider(&"pkar", 1, PackedStringArray(["pkar"]),
+			"_can_annual_provider", "_write_annual_provider", "_restore_annual_provider"),
 		_make_provider(&"player_session", 1,
 			PackedStringArray(["player_context", "player_view", "preview"]),
 			"_can_player_provider", "_write_player_provider", "_restore_player_provider"),
@@ -578,7 +582,7 @@ func _manifest_compatible(raw_manifest) -> bool:
 	for provider in _providers:
 		var provider_id := String(provider.provider_id())
 		if not by_id.has(provider_id):
-			if provider_id in ["pkcm", "pkgp", "pkef", "pkid", "pkai"]:
+			if provider_id in ["pkcm", "pkgp", "pkef", "pkid", "pkai", "pkar"]:
 				continue
 			return false
 		var entry: Dictionary = by_id[provider_id]
@@ -1286,6 +1290,13 @@ func _on_year_changed(year: int) -> void:
 
 
 func _autosave_year(year: int) -> void:
+	# The annual grant is part of this checkpoint, including an unread report.
+	var deadline: int = Time.get_ticks_msec() + 30000
+	while _runtime_host != null and _runtime_host.annual_reports_waiting_for_year(year):
+		if Time.get_ticks_msec() >= deadline or _runtime_host.is_runtime_fault_paused():
+			_last_autosave_year = year - 1
+			return
+		await get_tree().process_frame
 	var result := await request_autosave("year_%d" % year)
 	if not bool(result.get("ok", false)):
 		# A busy boundary is retried on the next committed day through the player
@@ -1295,3 +1306,26 @@ func _autosave_year(year: int) -> void:
 
 static func _result(ok: bool, code: String, message: String) -> Dictionary:
 	return {"ok": ok, "code": code, "message": message}
+
+
+func _can_annual_provider(context: Dictionary) -> Dictionary:
+	var generator = context.get("generator")
+	var ext = generator.get_data_core_world_ext() if generator != null else null
+	return _result(ext != null and ext.has_method("capture_annual_report_state"),
+		"ok" if ext != null else "annual_provider_missing", "")
+
+
+func _write_annual_provider(context: Dictionary) -> Dictionary:
+	var ext = context.generator.get_data_core_world_ext()
+	var bytes: PackedByteArray = ext.capture_annual_report_state()
+	if bytes.is_empty() and bool(ext.get_annual_report_status().get("ok", false)):
+		return _result(false, "annual_capture_failed", "年度报告存档失败。")
+	return {"ok": true, "sections": {"pkar": bytes}}
+
+
+func _restore_annual_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
+	var bytes: PackedByteArray = sections.get("pkar", PackedByteArray())
+	if bytes.is_empty():
+		return {"ok": true}
+	var ext = context.generator.get_data_core_world_ext()
+	return ext.restore_annual_report_state(bytes)

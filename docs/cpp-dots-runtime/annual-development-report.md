@@ -1,0 +1,62 @@
+# 国家年度发展报告 / 文明编年史
+
+## 权威与提交
+
+`NativeSimulationHost` 独占 `AnnualDevelopmentLedger`。Economy 在正式经济 publish 边界提交 `AnnualEconomyFacts`；生产金额在生产结果 merge 时截取，避免结构裁剪后遗失已退出行业的产值。只观察玩家国家，按 epoch revision 去重。Country 提供已提交的领土、国库、科技和科研累计数。
+
+GDP = 经营收入 − 中间投入 − 维护支出 = 工资实付 + 经营盈余，金额以 1/10000 游戏货币存储。商品数量单位为 1/1000，比例 Q16。周期金额按逻辑结算日归属年份，不按 UI 帧率、期末日产值或动画计算。资源增减只读取当前 generation 的正式资源 lane，避免重复计算上期提取量。
+
+人口、建筑、产业、聚落等级、职业分布、商品库存/短缺、自然资源余量保留期初与期末快照；流量累计；出生死亡、竣工、拆除和聚落升降级使用 native 正式提交事件。每年保留固定 12 个月摘要。满意度八个维度按适用人口和持续天数加权，非适用维度保留缺失。
+
+同步路径在当日 Country/Economy 完成后提交年度观察，并通过 `annual_report_commit_barrier` 保留同日 continuation；worker 路径在 `publish_day`、公布日提交前提交年度观察。年界使用独立 `annual_report_day_barrier` 等待旧年和奖励，而不以 `year_changed` 采样为准。普通驱动输入采用 day − 1；年界旧年封存后可显式冻结第一日输入，完成已固定的年度奖励而不推进可见日历。
+
+## 评分 v1
+
+配置为 `data/annual/default_annual_report.tres`，编译为纯 native profile，配置和历史评分结果随 PKAR 冻结。规模本身不加分。
+
+| 发展质量 | 权重 | 满分目标 |
+|---|---:|---:|
+| 综合满意度 | 20 | 95% |
+| 基本需求满足 | 20 | 98% |
+| 就业率 | 15 | 95% |
+| 产业有效运转 | 15 | 产能利用率 85%、正常运营建筑 95%，各半 |
+
+质量使用全年人口与时间加权观察。年度改善 30 分：GDP 8（10%）、人均 GDP 6（5%）、人口 5（5%）、建筑 3（10%）、聚落等级加权总量 3（5%）、科技 5（两项所属时代中位基础成本等价）。零增长取该项 80%，正向目标满分，负向同幅目标零分，两侧分别线性截断。全部科技完成时科技满分。
+
+等级门槛 SS/S/A/B/C/D/E = 94/86/75/60/45/30/0。基本需求全年平均低于 80% 最高 B，低于 60% 最高 D。
+
+年度额外奖励分别是未来 6/4/3/2/1 次连续抽取的逐次价格之和；D 为下一次价格一半；E 为零。复用 `runtime_ideology_offer_cost_q16` 的真实递增价格曲线，在封账时按 draw sequence 固定。保留日常人口、建筑、贸易增长奖励；年度奖励直接 grant，不乘日常增长加成。
+
+worker 复用 `GRANT_POINTS` 原生命令，reserved producer `0x415250`、稳定报告 id = year + 1 和同值单调 sequence；只有 SETTLED 收据才将报告标为已支付。同步原生 grant 复用相同 watermark 去重。界面没有发奖能力。
+
+新开局第一个完整年份正常评分；缺少可比 GDP 时，首末各 30 天已提交日均产值比较，压缩年历窗口为四分之一年、最少一天。旧档没有 PKAR 时从加载日建立账本，首个不完整年度不评级、不奖励，不补造历史。
+
+## 存档与界面
+
+PKSV provider `pkar` schema 1 使用 native `PKAR` 二进制、LE 明确字段序列与 checksum，保存本年、基线、历史、profile、奖励/已阅读状态。与 PKID 在同一安全检查点冻结；旧 manifest 可缺少 pkar。待展示报告通过 native unread id 恢复；正在阅读的界面与原暂停/速度意图记录在 player_view。损坏的 PKAR 拒绝恢复，不静默修复。
+
+`WorldRuntimeHost` 提供只读 status/history/snapshot；`AnnualReportSession` 仅协调提交屏障。`AnnualReportFlow` 负责暂停、与时代/理念/家族选择排序、读取和关闭后的速度恢复。`AnnualReportViewModel` 从冻结快照生成十章、附表和全文。关闭/重看/跳过动效均不触发奖励。报告节点只在主动切年、切章时重建。
+
+玩家入口为**左上角日期按钮**，点击查看年度纪事；下方国家事务栏保持原五项。自动报告在年初结算完成后打开。键鼠、原生文本选择、Ctrl+Shift+C 复制全文，PageUp/Down 或手柄肩键切章，右摇杆滚动，Esc/返回合卷。全文包含全部章节、表格、评分、口径和原始定点账目。
+
+美术为无矩形底框的透明剪纸拼贴，画面与毛边报告纸页自然交叠。卷首采用暗地图背景、手绘时代意象与朱红印记；正文回到象牙纸、宋体标题与黑体正文。详见资产目录 README。首次动效约 1.5 秒：背景收暗、开卷、落印、高等级短掠光与奖励粒子收束；可随时跳过。减少动态效果只做短淡入，历史重看默认短淡入。
+
+正文是一张水平居中、上下出血、比屏幕长得多的纸，所有内容排在纸的内侧连续滚动；封面是这张纸的第一屏。纸的左右两道撕口来自 `assets/ui/annual_chronicle/paper_tear_mask.png` 这一张蒙版位图，纸面、投影、页眉与页脚遮罩共用它，轮廓只有一个权威来源。该图的 RGB 是距离场数据而非颜色（A 轮廓、R 内侧距离 /12px、G 外侧距离 /64px），因此导入时破例关闭 `fix_alpha_border` 与 3D 压缩，禁止二次压缩或重采样。着色器保留 `has_mask = 0` 的程序化撕裂作为回退。三个矩形的坐标契约（可见纸面 / 纸层 / 蒙版）收在 `AnnualReportTokens` 里。
+
+## 验证入口
+
+- `tests/annual_report_test.gd`：native 自检、七级阈值两侧、递增奖励、重复提交、PKAR checksum、partial checkpoint、文案/基数。
+- `tests/annual_report_ui_test.gd`：日期入口、底部五项、无矩形插画背景、阅读选择、紧凑页脚、阻塞弹窗与暂停/恢复/读档。
+- `tests/annual_report_screenshot_qa.gd`：1280/1366/1920/超宽、100%/125%、11 时代和全部评级真实渲染。
+- `tests/annual_report_runtime_test.tscn`：正式玩家开局、压缩年历、50x、同步或 worker、年度奖励/PKAR/保存。须指定独立 `PK_SAVE_DIR`；`-- sync` 为同步对照。
+- Windows 使用 `dots_ext_annual_v1` debug/release DLL，与 SConstruct 默认 basename 一致，避免覆盖正在使用的旧 DLL。
+
+## 2026-10-20 验证记录
+
+已完成 debug/release 原生构建。年度单元检查 13 项、界面检查 15 项通过；理念抽取、理念成长、理念存档及玩家控制器契约回归通过。截图驱动覆盖 36 张实际渲染图：四种分辨率及两档缩放、11 时代、七评级、长国名、减少动态效果。1280×720 的 125% 缩放封面已人工检查，关键数值及操作按钮完整显示。插图采用透明轮廓与纸页交叠，所有标题、统计及印章评级仍由引擎绘制。
+
+静态场景检查中的年度界面已通过；整个仓库检查仍存在其他界面的 19 项既有失败。测试退出时仍有全局字体/纹理资源未释放的诊断，未将它们归为验收通过项。
+
+完整玩家流程尚未验收：正式 worker 开局在 Effect POD 出现 `effect_pod_instance_invalid`，禁用年度功能的对照开局同样复现（`tmp/annual_disabled_baseline.log`）。同步 12 天压缩年度已走通封账、奖励去重、复制、暂停恢复及 PKAR 往返，但 PKSV 保存等待 `save_requires_idle_country` 超时（`tmp/annual_runtime_sync12.log`）。50 倍速连续多年、完整存档各阶段、正式 worker 跨年仍需在这些运行时阻塞解决后复验。
+
+工作区截图：`Project/project-keynes/tmp/annual_report_qa/`。布局采用静态场景及章节语义预制件，日更新不会重建正文节点。封面书签使用浅色文字以确保暗背景对比，正文目录使用深墨文字。

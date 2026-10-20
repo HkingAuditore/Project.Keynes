@@ -6,6 +6,7 @@ signal speed_selected(speed: float)
 signal day_night_toggled(enabled: bool)
 signal setup_requested()
 signal gm_requested()
+signal annual_history_requested()
 
 const BAR_HEIGHT := 64.0
 const SPEED_PRESETS: Array[float] = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
@@ -13,6 +14,7 @@ const HUD_ICON_SIZE := 28
 
 var _calendar_icon: TextureRect
 var _date_label: Label
+var _date_button: Button
 var _pause_button: Button
 var _speed_button: Button
 var _day_night_button: Button
@@ -35,6 +37,13 @@ func _ready() -> void:
 
 	_calendar_icon = %CalendarIcon
 	_date_label = %DateLabel
+	_date_button = $Margin/Row/DateBlock as Button
+	_date_button.tooltip_text = "年度纪事 · 查阅国家历年发展报告"
+	_date_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	_date_button.focus_mode = Control.FOCUS_ALL
+	_date_button.pressed.connect(func() -> void: annual_history_requested.emit())
+	_date_button.mouse_entered.connect(func() -> void: _date_label.add_theme_color_override("font_color", UITokens.CHRONICLE_RED))
+	_date_button.mouse_exited.connect(func() -> void: _date_label.add_theme_color_override("font_color", UITokens.HUD_INK))
 	_pause_button = %PauseButton
 	_speed_button = %SpeedCycleButton
 	_day_night_button = %DayNightButton
@@ -95,6 +104,7 @@ func update_time_state(
 	if _date_label == null:
 		_ready()
 	_date_label.text = "第%d年 · %d月%d日" % [year_idx + 1, month, day_of_month]
+	_date_button.custom_minimum_size.x = maxf(176.0, _date_label.get_minimum_size().x + 52.0)
 	_apply_clock_controls(paused, speed)
 
 

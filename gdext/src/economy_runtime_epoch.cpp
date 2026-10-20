@@ -503,6 +503,8 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _country_research_goods_consumed = 0;
     _consumed_goods = 0;
     _births = 0;
+    _annual_epoch_events = {};
+    _annual_epoch_industries.clear();
     _deaths = 0;
     _cell_births.assign(static_cast<size_t>(std::max(0, _cell_count.get())), 0);
     _cell_deaths.assign(static_cast<size_t>(std::max(0, _cell_count.get())), 0);

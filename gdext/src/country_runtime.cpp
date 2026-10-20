@@ -1,6 +1,9 @@
 #include "country_runtime.h"
 #include "country_core_apply.h"
 #include "effect_runtime.h"
+// The shared authority-aware instance write. Technology instances are Effect
+// instances, so they take the same worker/legacy door as the family ones.
+#include "economy_effect_forward.h"
 #include "modifier_runtime.h"
 #include "economy_runtime.h"
 #include "native_simulation_host.h"
@@ -1298,6 +1301,7 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
     _research_generation = 1;
     _pending_activation_index_dirty = true;
     rebuild_research_active_index();
+    int32_t bootstrap_effect_rejected = 0;
     if (_effect_runtime_enabled && _effect_runtime != nullptr) {
         for (int32_t slot = 0; slot < static_cast<int32_t>(_countries.active.size()); ++slot) {
             const uint64_t handle = make_handle(slot);
@@ -1307,13 +1311,28 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
                     _technology_modifier_definition_keys[static_cast<size_t>(technology)].empty())
                     continue;
                 std::string effect_error;
-                _effect_runtime->upsert_instance_pod(
+                // Restored technologies own one Effect instance per (country,
+                // technology). Route the install through the forwarder so the
+                // authority that actually runs the Effect domain receives it:
+                // under F8 ACTIVE the sync facade is writeback-only and the row
+                // written into it here disappeared at the next worker snapshot.
+                // `next_due_day` stays 0 -- restore keeps the historical
+                // "available immediately" semantics, unlike the peer adapter
+                // which schedules committed_day + 1.
+                const bool installed = effect_pod_upsert(
+                    _effect_runtime, _effect_forwarder,
                     static_cast<int64_t>(((handle & 0x00007fffffffffffULL) << 16U) |
                         static_cast<uint64_t>(technology + 1)),
                     std::string("technology.") + _technology_ids[static_cast<size_t>(technology)],
                     static_cast<uint32_t>(handle >> 32U), 0x54454348, technology + 1,
                     handle, handle, static_cast<uint32_t>(handle >> 32U), 0,
-                    0, true, effect_error);
+                    0, -1, true, effect_error);
+                // The old code dropped this result on the floor, so a technology
+                // whose program key failed to resolve restored as "country has
+                // the technology, Effect has nothing". Count it instead: the
+                // bootstrap report carries the number and it is the only signal
+                // that the new door refuses a row the sync facade accepted.
+                if (!installed || !effect_error.empty()) ++bootstrap_effect_rejected;
             }
         }
     }
@@ -1332,6 +1351,7 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
     Dictionary out = report();
     out["ok"] = true;
     out["default_bootstrap"] = ids.empty();
+    out["bootstrap_effect_rejected"] = bootstrap_effect_rejected;
     return out;
 }
 
@@ -2441,12 +2461,19 @@ bool NativeCountryRuntime::export_pod_snapshot(
                 const uint64_t effect_id = ((target & 0x00007fffffffffffULL) << 16U) +
                     static_cast<uint64_t>(technology + 1u);
                 const uint32_t effect_generation = static_cast<uint32_t>(target >> 32U);
-                if (_effect_runtime->has_instance_pod(
-                        static_cast<int64_t>(effect_id), effect_generation))
-                    flags |= COUNTRY_PEER_EFFECT_EXISTS;
-                if (_effect_runtime->instance_fire_acked_pod(
-                        static_cast<int64_t>(effect_id), effect_generation))
-                    flags |= COUNTRY_PEER_EFFECT_FIRE_ACKED;
+                // Ask whichever side owns EFFECT. The old unconditional
+                // EffectRuntime query read false for every worker-owned instance,
+                // so the report claimed the technology had no Effect at all.
+                bool effect_exists = false;
+                effect_pod_instance_exists(_effect_runtime, _effect_forwarder,
+                    static_cast<int64_t>(effect_id), effect_generation,
+                    effect_exists);
+                if (effect_exists) flags |= COUNTRY_PEER_EFFECT_EXISTS;
+                bool effect_acked = false;
+                effect_pod_instance_fire_acked(_effect_runtime, _effect_forwarder,
+                    static_cast<int64_t>(effect_id), effect_generation,
+                    effect_acked);
+                if (effect_acked) flags |= COUNTRY_PEER_EFFECT_FIRE_ACKED;
             }
             if (_modifier_runtime != nullptr && _modifier_runtime->configured() &&
                 technology < _technology_modifier_definition_keys.size() &&
@@ -7408,14 +7435,20 @@ bool NativeCountryRuntime::capture_peer_context(
                 state.target_handle >> 32U);
             if (out.effect_enabled != 0 &&
                 state.effect_instance_id > 0 && state.effect_generation != 0) {
-                if (_effect_runtime->has_instance_pod(
-                        static_cast<int64_t>(state.effect_instance_id),
-                        state.effect_generation))
-                    state.flags |= COUNTRY_PEER_EFFECT_EXISTS;
-                if (_effect_runtime->instance_fire_acked_pod(
-                        static_cast<int64_t>(state.effect_instance_id),
-                        state.effect_generation))
-                    state.flags |= COUNTRY_PEER_EFFECT_FIRE_ACKED;
+                // Authority-aware: see the note in export_pod_snapshot. A
+                // pessimistic EXISTS makes the adapter re-issue ENSURE (idempotent
+                // but wasteful); a pessimistic FIRE_ACKED would keep the peer at
+                // PENDING forever, so it is the one that actually has to be right.
+                bool effect_exists = false;
+                effect_pod_instance_exists(_effect_runtime, _effect_forwarder,
+                    static_cast<int64_t>(state.effect_instance_id),
+                    state.effect_generation, effect_exists);
+                if (effect_exists) state.flags |= COUNTRY_PEER_EFFECT_EXISTS;
+                bool effect_acked = false;
+                effect_pod_instance_fire_acked(_effect_runtime, _effect_forwarder,
+                    static_cast<int64_t>(state.effect_instance_id),
+                    state.effect_generation, effect_acked);
+                if (effect_acked) state.flags |= COUNTRY_PEER_EFFECT_FIRE_ACKED;
             }
             if (out.modifier_enabled != 0 &&
                 technology < _technology_modifier_definition_keys.size() &&
@@ -8219,21 +8252,33 @@ CountryPeerResult NativeCountryRuntime::execute_peer_intent_main_thread(
                 intent.target_handle >> 32U) ||
             intent.effect_instance_id == 0)
             return reject("country_peer_effect_generation_invalid");
-        const bool exists = _effect_runtime->has_instance_pod(
+        // Ask whichever side owns EFFECT. The helper reports "unknown" through
+        // its return value; unknown is treated as absent, which is what the old
+        // unconditional `has_instance_pod` effectively did on every path and
+        // keeps NUDGE's rejection token unchanged.
+        bool exists = false;
+        effect_pod_instance_exists(
+            _effect_runtime, _effect_forwarder,
             static_cast<int64_t>(intent.effect_instance_id),
-            intent.effect_generation);
+            intent.effect_generation, exists);
         if (!exists) {
             if (intent.opcode == CountryPeerIntentCode::NUDGE_TECHNOLOGY_EFFECT)
                 return reject("country_peer_effect_instance_missing");
             std::string peer_error;
-            if (!_effect_runtime->upsert_instance_pod(
+            // Same door as the bootstrap install. On the legacy authority the
+            // forwarder delegates to upsert_instance_pod (and shadow-mirrors to
+            // the worker); if EFFECT flipped to the worker between the guard
+            // above and here, the row still lands on the side that owns it
+            // instead of being erased by the next snapshot.
+            if (!effect_pod_upsert(
+                    _effect_runtime, _effect_forwarder,
                     static_cast<int64_t>(intent.effect_instance_id),
                     std::string("technology.") +
                         _technology_ids[static_cast<size_t>(intent.technology)],
                     intent.effect_generation, 0x54454348,
                     intent.technology + 1, intent.target_handle,
                     intent.target_handle, intent.effect_generation, 0,
-                    intent.day, true, peer_error))
+                    intent.day, -1, true, peer_error))
                 return reject(peer_error.empty()
                     ? "country_peer_effect_upsert_rejected"
                     : peer_error.c_str());

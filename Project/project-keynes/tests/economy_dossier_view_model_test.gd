@@ -207,6 +207,12 @@ func _check_dossier_scene(model: Dictionary, city_cell: int) -> void:
 		var chapter_id := String(chapter.id)
 		dossier.select_chapter(chapter_id)
 		_expect("chapter %s selected" % chapter_id, dossier.current_chapter() == chapter_id)
+		# 页头（产值横幅 + KPI 条）是总览专属，不该跟着章节跑到阶层/产业里去。
+		var overview := chapter_id == "overview"
+		_expect("chapter %s GDP band visibility" % chapter_id,
+			dossier.gdp_band_visible() == overview)
+		_expect("chapter %s KPI strip visibility" % chapter_id,
+			dossier.kpi_strip_visible() == overview)
 		if chapter_id != "finance":
 			var page := dossier.page(chapter_id)
 			_expect("chapter %s page exists" % chapter_id, page != null and page.visible)
@@ -215,19 +221,55 @@ func _check_dossier_scene(model: Dictionary, city_cell: int) -> void:
 	var strata_table := dossier.page("strata").get_node("%StrataTable") as DossierLedgerTable
 	_expect("strata ledger has 8 rows", strata_table != null and strata_table.row_count() == 8)
 	dossier.select_chapter("industry")
-	var building_table := dossier.page("industry").get_node("%BuildingTable") as DossierLedgerTable
+	# 位置要等容器重排完才有意义（页面刚从隐藏转为可见）。
+	await process_frame
+	await process_frame
+	var industry_page := dossier.page("industry")
+	var building_table := industry_page.get_node("%BuildingTable") as DossierLedgerTable
 	var industry_units := float(dossier.view_model().query("summary").get("building_units", 0))
 	_expect("industry ledger rows follow building units", building_table != null
 		and (building_table.row_count() > 0) == (industry_units > 0.0))
+	# 投资风向折进产业页：区段在页内、可被锚点定位，且不自成一个章节。
+	var invest := industry_page.get_node_or_null("%InvestmentSection")
+	_expect("industry chapter carries the investment section", invest != null)
+	_expect("investment section is anchored below the building table",
+		invest != null and industry_page.call("section_offset", "investment")
+			> building_table.position.y)
 	dossier.select_chapter("market")
-	var heat := dossier.page("market").get_node("%HeatGrid") as DossierHeatGrid
+	await process_frame
+	await process_frame
+	var market_page := dossier.page("market")
+	var heat := market_page.get_node("%HeatGrid") as DossierHeatGrid
 	_expect("market heat grid cells", heat != null and heat.cell_count() > 0)
+	var trade := market_page.get_node_or_null("%TradeSection")
+	_expect("market chapter carries the trade section", trade != null)
+	_expect("trade section is anchored below the heat grid",
+		trade != null and market_page.call("section_offset", "trade") > heat.position.y)
+	# 合并后这两个 id 不该再被当成章节：外壳应当拒绝它们。
+	_expect("merged chapter ids are no longer chapters",
+		not dossier.call("_is_known_chapter", "investment")
+			and not dossier.call("_is_known_chapter", "trade"))
+	# 页内锚点：同章跳转要把视口滚到区段，而不是停在页顶。
+	dossier.set_scroll_for_test(0)
+	market_page.navigate_requested.emit("market", {"section": "trade"})
+	for i in range(3):
+		await process_frame
+	_expect("same-chapter section navigation scrolls to the trade block",
+		dossier.scroll_value() > 100)
 	dossier.select_chapter("cities")
 	var city_table := dossier.page("cities").get_node("%CityTable") as DossierLedgerTable
 	_expect("cities ledger rows", city_table != null and city_table.row_count() > 0)
 	dossier.set_scope(city_cell)
 	_expect("scope switch leaves cities chapter", dossier.current_chapter() == "overview"
 		and dossier.scope_cell() == city_cell)
+	# 跨章锚点：总览点「利润过低」卡点，要直接落到产业章的投资风向一段。
+	dossier.set_scroll_for_test(0)
+	dossier.page("overview").navigate_requested.emit("industry", {"section": "investment"})
+	for i in range(3):
+		await process_frame
+	_expect("cross-chapter section navigation lands in the investment block",
+		dossier.current_chapter() == "industry" and dossier.scroll_value() > 100)
+	dossier.select_chapter("overview")
 	for i in range(20):
 		dossier.set_model(model)
 	for chapter_id in nodes:
@@ -236,6 +278,8 @@ func _check_dossier_scene(model: Dictionary, city_cell: int) -> void:
 	dossier.set_scope(-1)
 	dossier.set_compact(true)
 	dossier.select_chapter("overview")
+	_expect("returning to overview restores the page header",
+		dossier.gdp_band_visible() and dossier.kpi_strip_visible())
 	_expect("overview narrows to one column",
 		(dossier.page("overview").get_node("%Columns") as GridContainer).columns == 1)
 	dossier.queue_free()
@@ -328,6 +372,18 @@ func _check_runtime_models() -> void:
 		is_equal_approx(city_population, float(summary.get("population", 0))))
 	var trade := vm.trade_model()
 	_expect("trade model degrades gracefully", not bool(trade.get("ok", true)))
+	# 合并后「利润过低」不再指向已消失的 investment 章，而是产业章的页内区段。
+	var margin_meta: Dictionary = EconomyDossierViewModel.BOTTLENECK_META["margin"]
+	_expect("margin bottleneck targets the merged industry chapter",
+		String(margin_meta.get("chapter", "")) == "industry"
+			and String(margin_meta.get("section", "")) == "investment")
+	var chapter_ids := {}
+	for chapter in EconomyDossierViewModel.CHAPTERS:
+		chapter_ids[String(chapter.id)] = true
+	for category in EconomyDossierViewModel.BOTTLENECK_ORDER:
+		var meta: Dictionary = EconomyDossierViewModel.BOTTLENECK_META[category]
+		_expect("bottleneck %s targets a live chapter" % category,
+			chapter_ids.has(String(meta.get("chapter", ""))))
 	var options := vm.scope_options()
 	_expect("scope options start with nation", int(options[0].cell) == -1)
 	var first_cell := int((vm.query("settlements").get("cell_indices", PackedInt32Array()) as PackedInt32Array)[0])

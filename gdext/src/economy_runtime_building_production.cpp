@@ -3657,6 +3657,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
     return true;
 }
 void NativeEconomyRuntime::merge_building_production_result(ProductionResult &result) {
+    if (result.ok) record_annual_production(result.cell);
     for (const size_t lane : result.audit_population_lanes)
         audit_touch_population_lane(static_cast<int32_t>(lane));
     for (const size_t lane : result.audit_market_lanes)

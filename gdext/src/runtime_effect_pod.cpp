@@ -17,6 +17,36 @@ constexpr uint32_t SAVE_MAGIC = 0x31504645u; // EFP1
 constexpr uint32_t SAVE_END = 0x21444e45u; // END!
 constexpr int32_t Q16_ONE = 65536;
 
+// Which target fields may legitimately be zero, per compiled target_domain.
+//
+// Both conventions are about cell 0 being a real target, but the family runtime
+// puts the cell index in a different field depending on which path created the
+// instance, and the main thread accepts both:
+//
+// - Cell-domain programs (settlement cell 2, climate cell 4, in-cell selector 5)
+//   address a raw cell index in `target_handle` -- this is the family.effect.*
+//   path, where target_generation is the literal 1.
+// - Family-domain programs (0) carry the cell in `target_generation` -- this is
+//   the family.modifier.* path, and EffectRuntime's FAMILY adapter hands that
+//   field to the Modifier POD as the GROUP handle. ModifierRuntime accepts
+//   group_handle 0 for ECONOMY (validate_target), so cell 0 is legal there too.
+//
+// Neither value is validated on the main thread (upsert_instance_pod only checks
+// instance_id and generation), so a "zero means unset" rule here would make a
+// cell-0 family effect work on the main thread and fail on the worker.
+struct InstanceZeroPolicy {
+    bool handle_allowed = false;
+    bool generation_allowed = false;
+};
+
+InstanceZeroPolicy instance_zero_policy(int32_t target_domain) {
+    InstanceZeroPolicy policy;
+    policy.handle_allowed =
+        target_domain == 2 || target_domain == 4 || target_domain == 5;
+    policy.generation_allowed = target_domain == 0;
+    return policy;
+}
+
 template <typename T, bool = std::is_enum_v<std::remove_cv_t<T>>>
 struct le_raw_type {
     using type = std::remove_cv_t<T>;
@@ -459,8 +489,15 @@ bool RuntimeEffectPodAuthority::validate_instance(
     if (!_configured) { error = "effect_pod_not_configured"; return false; }
     if (input.instance_id <= 0 || input.generation == 0 || input.program_id < 0 ||
         input.program_id >= static_cast<int32_t>(_catalog.definitions.size()) ||
-        input.next_due_day < 0 || input.target_handle == 0 ||
-        input.target_generation == 0) {
+        input.next_due_day < 0) {
+        error = "effect_pod_instance_invalid";
+        return false;
+    }
+    // The program_id range is already proven, so the domain is readable.
+    const InstanceZeroPolicy policy = instance_zero_policy(
+        _catalog.definitions[static_cast<size_t>(input.program_id)].target_domain);
+    if ((input.target_handle == 0 && !policy.handle_allowed) ||
+        (input.target_generation == 0 && !policy.generation_allowed)) {
         error = "effect_pod_instance_invalid";
         return false;
     }
@@ -539,6 +576,7 @@ bool RuntimeEffectPodAuthority::upsert_instance(
     instance.metric_base = metric_base;
     instance.input_revision = keep_revision;
     instance.next_due_day = input.next_due_day;
+    instance.expires_day = input.expires_day;
     instance.cadence_days = definition.cadence_days;
     instance.lifecycle = definition.lifecycle;
     instance.stack_policy = definition.stack_policy;
@@ -891,7 +929,24 @@ bool RuntimeEffectPodAuthority::compile_command(
     key = mix_value(key, out.domain);
     key = mix_value(key, out.opcode);
     out.idempotency_key = key;
-    return out.target_handle != 0 && out.target_generation != 0;
+    const int32_t program = instance.program_id;
+    const InstanceZeroPolicy policy =
+        program >= 0 &&
+        program < static_cast<int32_t>(_catalog.definitions.size())
+        ? instance_zero_policy(
+              _catalog.definitions[static_cast<size_t>(program)].target_domain)
+        : InstanceZeroPolicy{};
+    // target_generation is copied from the instance whatever the resolver is, so
+    // a policy-exempt zero survives; an unexempt zero still means "unset".
+    if (out.target_generation == 0 && !policy.generation_allowed) return false;
+    if (out.target_handle != 0) return true;
+    // A zero handle is real only when the command resolves to the instance's own
+    // target. A STATIC 0 or a SOURCE 0 carries no cell index. Returning false
+    // here is not a dropped command: execute_program turns it into
+    // effect_command_target_invalid and fails the whole transaction, so a cell-0
+    // family effect used to make the Effect stage fail every single day.
+    return policy.handle_allowed &&
+        definition.target_resolver == RuntimeEffectPodTargetResolver::INSTANCE;
 }
 
 bool RuntimeEffectPodAuthority::invoke_behavior(
@@ -1778,7 +1833,12 @@ bool RuntimeEffectPodAuthority::restore(const uint8_t *data, size_t size,
             instance.instance_id <= 0 || instance.generation == 0 ||
             instance.program_id < 0 ||
             instance.program_id >= static_cast<int32_t>(_catalog.definitions.size()) ||
-            instance.target_handle == 0 || instance.target_generation == 0 ||
+            (instance.target_handle == 0 && !instance_zero_policy(
+                _catalog.definitions[static_cast<size_t>(
+                    instance.program_id)].target_domain).handle_allowed) ||
+            (instance.target_generation == 0 && !instance_zero_policy(
+                _catalog.definitions[static_cast<size_t>(
+                    instance.program_id)].target_domain).generation_allowed) ||
             instance.metric_base > restored.metric_values.size()) {
             error = "effect_pod_instance_truncated_or_invalid"; return false;
         }
@@ -1791,6 +1851,29 @@ bool RuntimeEffectPodAuthority::restore(const uint8_t *data, size_t size,
         error = "effect_pod_command_count_invalid"; return false;
     }
     restored.command_arena.resize(count);
+    // A command emitted for a cell-0 instance carries a zero in one of its two
+    // target fields (which one depends on the program's domain -- see
+    // instance_zero_policy). The instance table is already parsed, so the domain
+    // is readable through source_instance_id. An unknown source instance keeps
+    // the strict reading, and a STATIC 0 can never be saved in the first place
+    // because compile_command refuses to emit it.
+    const auto command_zero_fields_allowed =
+            [this, &restored](const RuntimeEffectPodCommand &command) {
+        InstanceZeroPolicy policy;
+        for (const auto &instance : restored.instances) {
+            if (static_cast<uint64_t>(instance.instance_id) !=
+                command.source_instance_id) continue;
+            const int32_t program = instance.program_id;
+            if (program >= 0 &&
+                program < static_cast<int32_t>(_catalog.definitions.size())) {
+                policy = instance_zero_policy(_catalog.definitions[
+                    static_cast<size_t>(program)].target_domain);
+            }
+            break;
+        }
+        return (command.target_handle != 0 || policy.handle_allowed) &&
+            (command.target_generation != 0 || policy.generation_allowed);
+    };
     for (auto &command : restored.command_arena) {
         if (!read_le(data,payload_end,cursor,command.action) ||
             !read_le(data,payload_end,cursor,command.domain) ||
@@ -1812,8 +1895,9 @@ bool RuntimeEffectPodAuthority::restore(const uint8_t *data, size_t size,
             !read_le(data,payload_end,cursor,command.payload[1]) ||
             !read_le(data,payload_end,cursor,command.payload[2]) ||
             !read_le(data,payload_end,cursor,command.payload[3]) ||
-            !is_action_valid(command.action) || command.target_handle == 0 ||
-            command.target_generation == 0 || command.idempotency_key == 0 ||
+            !is_action_valid(command.action) ||
+            !command_zero_fields_allowed(command) ||
+            command.idempotency_key == 0 ||
             command.command_definition_id >= _catalog.commands.size()) {
             error = "effect_pod_command_truncated_or_invalid"; return false;
         }
@@ -1884,6 +1968,10 @@ bool RuntimeEffectPodAuthority::restore(const uint8_t *data, size_t size,
 }
 
 bool RuntimeEffectPodAuthority::self_test(std::string &error) {
+    // Cell 0 is a real target on the main thread, so the pod has to agree. Kept
+    // as its own fixture because this one pins exact plan hashes and adding a
+    // second program to its catalog would move all of them.
+    if (!cell_target_self_test(error)) return false;
     error.clear();
     const auto fail = [&error](const char *reason) {
         error = reason;
@@ -1996,6 +2084,162 @@ bool RuntimeEffectPodAuthority::self_test(std::string &error) {
     if (restored.restore(bytes.data(), bytes.size(), error) ||
         restored.snapshot().deterministic_state_hash != before)
         return fail("effect_self_test_corrupt_restore_mutated_state");
+    return true;
+}
+
+bool RuntimeEffectPodAuthority::cell_target_self_test(std::string &error) {
+    const auto fail = [&error](const char *reason) {
+        error = reason;
+        return false;
+    };
+    RuntimeEffectPodCatalog catalog;
+    catalog.metric_key_hashes = {hash_text("metric")};
+    // Definition 0 addresses a settlement cell, definition 1 a family. They
+    // differ in nothing but target_domain, so a guard that ignores that field
+    // fails one of the cases below instead of passing both.
+    for (int32_t program = 0; program < 2; ++program) {
+        RuntimeEffectPodDefinition definition;
+        definition.key_hash = hash_text(program == 0 ? "cell.program"
+                                                     : "family.program");
+        definition.cadence_days = 1;
+        definition.max_work = 8;
+        definition.instruction_begin = 0;
+        definition.instruction_count = 2;
+        definition.command_begin = 0;
+        definition.command_count = 1;
+        definition.target_domain = program == 0 ? 2 : 0;
+        catalog.definitions.push_back(definition);
+    }
+    RuntimeEffectPodCommandDefinition command_definition;
+    command_definition.action = RuntimeEffectPodAction::MODIFIER_COMMAND;
+    command_definition.domain = 0;
+    command_definition.opcode = 1;
+    command_definition.target_resolver = RuntimeEffectPodTargetResolver::INSTANCE;
+    command_definition.value_mode = RuntimeEffectPodValueMode::CONSTANT;
+    command_definition.value = Q16_ONE;
+    command_definition.command_key_hash = hash_text("cell.modifier");
+    catalog.commands.push_back(command_definition);
+    RuntimeEffectPodInstruction constant;
+    constant.op = RuntimeEffectPodInstructionOp::CONST;
+    constant.value = Q16_ONE;
+    catalog.instructions.push_back(constant);
+    RuntimeEffectPodInstruction emit;
+    emit.op = RuntimeEffectPodInstructionOp::EMIT_COMMAND;
+    emit.arg0 = 0;
+    catalog.instructions.push_back(emit);
+
+    const auto install = [&error](RuntimeEffectPodAuthority &authority,
+                                  int32_t program, uint64_t target_handle,
+                                  int64_t instance_id,
+                                  uint32_t target_generation = 1) {
+        RuntimeEffectPodInstanceInput input;
+        input.instance_id = instance_id;
+        input.generation = 1;
+        input.program_id = program;
+        input.source_handle = 11;
+        input.target_handle = target_handle;
+        input.target_generation = target_generation;
+        input.next_due_day = 0;
+        return authority.upsert_instance(input, error);
+    };
+
+    // Cell 0: the case the main thread has always supported and the pod used to
+    // read as "unset". Covers validation, command compilation and the EFP1 round
+    // trip, because all three carried their own handle != 0 check.
+    {
+        RuntimeEffectPodAuthority authority;
+        if (!authority.configure(catalog, error)) return false;
+        if (!install(authority, 0, 0, 1))
+            return fail("effect_cell_target_zero_instance_rejected");
+        RuntimeEffectPodPlan plan;
+        if (!authority.plan_day(0, 1, plan, error) || plan.intents.empty())
+            return fail("effect_cell_target_zero_plan_failed");
+        if (plan.intents.front().target_handle != 0 ||
+            plan.intents.front().target_generation != 1)
+            return fail("effect_cell_target_zero_handle_changed");
+        if (!authority.commit_day(plan, error)) return false;
+        std::vector<uint8_t> bytes;
+        authority.serialize(bytes);
+        RuntimeEffectPodAuthority restored;
+        if (!restored.configure(catalog, error) ||
+            !restored.restore(bytes.data(), bytes.size(), error))
+            return fail("effect_cell_target_zero_restore_failed");
+        if (restored.snapshot().instances.empty() ||
+            restored.snapshot().instances.front().target_handle != 0)
+            return fail("effect_cell_target_zero_restore_changed");
+    }
+
+    // A non-cell program still reads handle 0 as "unset".
+    {
+        RuntimeEffectPodAuthority authority;
+        if (!authority.configure(catalog, error)) return false;
+        if (install(authority, 1, 0, 2))
+            return fail("effect_family_target_zero_accepted");
+        if (error != "effect_pod_instance_invalid") return false;
+    }
+
+    // family.modifier.* puts the cell in target_generation, and EffectRuntime's
+    // FAMILY adapter hands that field to the Modifier as the GROUP handle, where
+    // ModifierRuntime accepts 0 for ECONOMY. So generation 0 is a real cell-0
+    // target on this path -- and compile_command copies it straight through.
+    {
+        RuntimeEffectPodAuthority authority;
+        if (!authority.configure(catalog, error)) return false;
+        if (!install(authority, 1, 11, 5, 0))
+            return fail("effect_family_target_generation_zero_rejected");
+        RuntimeEffectPodPlan plan;
+        if (!authority.plan_day(0, 1, plan, error) || plan.intents.empty())
+            return fail("effect_family_target_generation_zero_plan_failed");
+        if (plan.intents.front().target_generation != 0 ||
+            plan.intents.front().target_handle != 11)
+            return fail("effect_family_target_generation_zero_changed");
+        if (!authority.commit_day(plan, error)) return false;
+        std::vector<uint8_t> bytes;
+        authority.serialize(bytes);
+        RuntimeEffectPodAuthority restored;
+        if (!restored.configure(catalog, error) ||
+            !restored.restore(bytes.data(), bytes.size(), error))
+            return fail("effect_family_target_generation_zero_restore_failed");
+    }
+
+    // The two exemptions are per field, not "any zero goes": a cell-domain
+    // program still needs a real generation, and a family program still needs a
+    // real handle.
+    {
+        RuntimeEffectPodAuthority authority;
+        if (!authority.configure(catalog, error)) return false;
+        if (install(authority, 0, 5, 6, 0))
+            return fail("effect_cell_target_generation_zero_accepted");
+        if (error != "effect_pod_instance_invalid") return false;
+    }
+
+    // A real cell index still works: the exemption is about which domain, not
+    // about "zero is always fine".
+    {
+        RuntimeEffectPodAuthority authority;
+        if (!authority.configure(catalog, error)) return false;
+        if (!install(authority, 0, 5, 3))
+            return fail("effect_cell_target_nonzero_rejected");
+        RuntimeEffectPodPlan plan;
+        if (!authority.plan_day(0, 1, plan, error) || plan.intents.empty() ||
+            plan.intents.front().target_handle != 5)
+            return fail("effect_cell_target_nonzero_plan_failed");
+    }
+
+    // STATIC 0 on a cell program is still unset -- neither STATIC nor SOURCE
+    // carries a cell index, so the exemption must not leak to them. It is
+    // already refused at catalog level, which this pins so the guarantee cannot
+    // quietly move into (or out of) compile_command later.
+    {
+        RuntimeEffectPodCatalog static_catalog = catalog;
+        static_catalog.commands[0].target_resolver =
+            RuntimeEffectPodTargetResolver::STATIC;
+        static_catalog.commands[0].static_target = 0;
+        RuntimeEffectPodAuthority authority;
+        if (authority.configure(static_catalog, error))
+            return fail("effect_cell_target_static_zero_catalog_accepted");
+        if (error != "effect_pod_command_invalid") return false;
+    }
     return true;
 }
 

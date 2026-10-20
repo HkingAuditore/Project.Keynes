@@ -23,6 +23,7 @@
 namespace pk {
 
 class EffectRuntime;
+class EffectInstanceForwarder;
 
 class ModifierRuntime;
 class NativeEconomyRuntime;
@@ -221,6 +222,9 @@ public:
                                    bool &ok, std::string &reason) const;
     bool has_pending_effect_commands() const;
     bool should_run(int64_t day_index) const;
+    // Pending future technology activations are not a half-applied Country
+    // command. Annual snapshots must wait for the actual batch/seal only.
+    bool annual_snapshot_ready() const { return !_command_batch.active && !_boundary_seal_active; }
     // Godot-free execution adapter. It shares the exact command/research core
     // used by run_slice(); peer-backed research still requires the explicit
     // cross-domain bridge before a worker may invoke it.
@@ -580,6 +584,15 @@ public:
     void attach_effect_runtime(EffectRuntime *runtime) {
         _effect_runtime = runtime;
         _effect_runtime_enabled = runtime != nullptr;
+    }
+    // Technology instances are Effect instances like any other, so installing
+    // one has to make the same worker/legacy decision every other instance
+    // write makes. Without this the bootstrap restore wrote straight into the
+    // sync facade, which under F8 ACTIVE is writeback-only: the next worker
+    // snapshot erased the row and the restored country silently lost every
+    // technology effect.
+    void attach_effect_forwarder(EffectInstanceForwarder *forwarder) {
+        _effect_forwarder = forwarder;
     }
     void set_effect_runtime_enabled(bool enabled) { _effect_runtime_enabled = enabled; }
 
@@ -961,6 +974,7 @@ private:
     ModifierRuntime *_modifier_runtime = nullptr;
     NativeEconomyRuntime *_economy_runtime = nullptr;
     EffectRuntime *_effect_runtime = nullptr;
+    EffectInstanceForwarder *_effect_forwarder = nullptr;
     bool _effect_runtime_enabled = false;
     int32_t _starting_country_slot = -1;
     uint64_t _generation = 0;

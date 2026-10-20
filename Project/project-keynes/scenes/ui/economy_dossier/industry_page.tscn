@@ -3,6 +3,7 @@
 [ext_resource type="Script" uid="uid://dyj3svswvs6c" path="res://scripts/ui/components/dossier/industry_page.gd" id="1_script"]
 [ext_resource type="Script" uid="uid://d0g2n3dvxeevs" path="res://scripts/ui/components/dossier/dossier_stacked_bar.gd" id="2_stacked"]
 [ext_resource type="Script" uid="uid://bxx5ywbnw2x5g" path="res://scripts/ui/components/dossier/dossier_ledger_table.gd" id="3_ledger"]
+[ext_resource type="PackedScene" uid="uid://peoe6jjum5vj" path="res://scenes/ui/economy_dossier/investment_page.tscn" id="4_investment"]
 
 [node name="IndustryPage" type="VBoxContainer" unique_id=816720221]
 size_flags_horizontal = 3
@@ -94,3 +95,14 @@ visible = false
 layout_mode = 2
 theme_type_variation = &"PKDossierCaption"
 autowrap_mode = 3
+
+[node name="InvestmentKicker" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierKicker"
+text = "资本与在建"
+
+[node name="InvestmentSection" parent="." instance=ExtResource("4_investment")]
+unique_name_in_owner = true
+layout_mode = 2
+chapter_id = "industry"

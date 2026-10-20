@@ -13,6 +13,8 @@
 #include <godot_cpp/variant/packed_byte_array.hpp>
 
 #include "effect_declarative_validation.h"
+#include "metric_mask.h"
+#include "target_tag.h"
 
 namespace pk {
 
@@ -123,7 +125,21 @@ public:
         SELECTOR_SAME_RESOURCE_COMPONENT = 9,
         SELECTOR_PREDICATE_ANY_CELL = 10,
         SELECTOR_DISTANCE_N = 11,
-        SELECTOR_MAX_KIND = SELECTOR_DISTANCE_N,
+        // 12: the source cell's *owner's* territory, walked through the country
+        // territory index instead of the neighbour graph. param1 is a predicate
+        // id (0 = every owned cell, otherwise the same ids as
+        // SELECTOR_PREDICATE_ANY_CELL).
+        //
+        // Two things this kind fixes that no existing kind could:
+        //   - a hex walk from the anchor can never reach the far side of a
+        //     country inside the cell cap, so "which cells does my country
+        //     own" was previously unanswerable;
+        //   - SELECTOR_PREDICATE_ANY_CELL is grid-wide by definition, so a
+        //     country-scoped card using it hit foreign cells. This kind keeps
+        //     the grid-wide kind intact (existing content depends on it) and
+        //     offers the scoped answer as an explicit opt-in.
+        SELECTOR_OWN_TERRITORY = 12,
+        SELECTOR_MAX_KIND = SELECTOR_OWN_TERRITORY,
     };
     // Hard cap on cells a single selector may return. The cap is what keeps
     // "one instance per cell" bounded: 32 cells x a handful of cards stays well
@@ -173,7 +189,11 @@ public:
         std::string target_selector_id;
         int32_t target_selector_param[2] = {0, 0};
         uint64_t stack_key_hash = 0;
-        uint64_t metric_mask = 0;
+        // Which catalog metrics this program reads. Computed from the program's
+        // METRIC_* conditions and READ_METRIC instructions on every request, so
+        // it can never go stale against a reloaded catalog. Empty means "this
+        // program reads no metrics" and lets the economy skip the cell outright.
+        MetricMask metric_mask;
         int32_t magnitude_by_prestige_q16[6] = {
             Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE};
     };
@@ -260,6 +280,10 @@ public:
     bool has_instance_pod(int64_t instance_id, uint32_t generation) const;
     bool family_effect_metadata_pod(const std::string &program_key,
                                     FamilyEffectMetadataPod &out) const;
+    // Catalog-declared cell tags. Empty when the catalog predates the tag
+    // tables, which is the normal state for every catalog today. The economy
+    // copies this at attach time; nothing here is mutated at runtime.
+    const TargetTagTable &target_tags() const { return _target_tags; }
     // Native Modifier adapter of a compiled command definition, indexed the
     // same way the compiled catalog indexes commands. The worker POD must hand
     // the Modifier stage the same adapter the main thread would have used;
@@ -278,8 +302,13 @@ public:
     bool declarative_facts_for_key(const std::string &key, int32_t &program_id,
                                    int32_t &source_kind,
                                    bool &managed_declared) const;
-    bool refresh_managed_duration_pod(int64_t instance_id, uint32_t generation,
-                                      int64_t day_index);
+    // Absolute expiry write. The previous refresh_managed_duration_pod recomputed
+    // the day from the definition; callers that already resolved the definition
+    // (the family path reads FamilyEffectMetadataPod) pass the absolute day
+    // instead, so the main thread and the worker receive the exact same value
+    // through EffectInstanceForwarder::InstanceRow::expires_day.
+    bool set_instance_expiry_pod(int64_t instance_id, uint32_t generation,
+                                 int64_t expires_day);
     bool upsert_external_binding_pod(int64_t binding_id, uint32_t generation,
                                      int32_t source_type, int64_t source_id,
                                      uint64_t target_handle,
@@ -311,6 +340,19 @@ public:
     bool set_metric_pod(int64_t instance_id, int32_t metric_id,
                         int64_t revision, int64_t value_q16,
                         std::string &error);
+    // Read back one published metric of one instance.
+    //
+    // `present` distinguishes "the publisher wrote 0" from "nobody ever wrote".
+    // That distinction is the whole point: a METRIC_GTE condition reading a
+    // column that was never published is permanently false, and without a
+    // presence bit a test cannot tell a correct 0 from a missing pipeline.
+    //
+    // Returns false when the instance or metric id is unknown. Like
+    // instance_fire_acked_pod, this answers from the legacy authority: under
+    // EFFECT worker ownership this EffectRuntime is writeback-only and the
+    // instance reads as absent, which is why the callers are diagnostics/tests.
+    bool instance_metric_pod(int64_t instance_id, int32_t metric_id,
+                             int64_t &out_value, bool &out_present) const;
     // Emits the final native Modifier removal. The instance is reclaimed only
     // after its transaction receives the domain ACK.
     bool retire_instance_pod(int64_t instance_id, uint32_t generation,
@@ -872,6 +914,11 @@ private:
     std::vector<std::string> _metric_keys;
     std::vector<std::string> _behavior_command_keys;
     std::unordered_map<std::string, int32_t> _metric_ids;
+    // Optional tag predicate table (see target_tag.h). Owned here because it is
+    // catalog data and shares the catalog's lifecycle; consumed by the economy's
+    // territory selector, which copies it once instead of reaching through this
+    // pointer from a const query path.
+    TargetTagTable _target_tags;
     std::vector<Definition> _definitions;
     std::unordered_map<std::string, int32_t> _definition_ids;
     std::vector<Condition> _conditions;

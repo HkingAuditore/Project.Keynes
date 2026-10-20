@@ -4,6 +4,9 @@ class_name PlayerController
 ## Formal player-session boundary. It translates Godot/UI intent into the
 ## existing runtime and country facades; it never owns simulation state.
 
+const AnnualReportFlowScript = preload("res://scripts/annual/annual_report_flow.gd")
+var _annual_report_flow = AnnualReportFlowScript.new()
+
 signal selection_changed(cell)
 signal command_completed(id: StringName, result: Dictionary)
 signal command_settled(id: StringName, result: Dictionary)
@@ -119,6 +122,7 @@ func configure(
 	_ui_manager = ui_manager
 	_connect_runtime()
 	_connect_ui()
+	_annual_report_flow.configure(self, _runtime_host, _world_clock, _ui_manager)
 	sync_ui()
 
 
@@ -162,6 +166,7 @@ func clear_selection() -> void:
 func sync_ui() -> void:
 	_sync_clock_visual_state()
 	_sync_time_ui()
+	_annual_report_flow.try_present()
 
 
 func refresh_country_binding() -> void:
@@ -230,6 +235,7 @@ func capture_view_state() -> Dictionary:
 		"camera_position": _camera.global_position if _camera != null else Vector2.ZERO,
 		"camera_zoom": _camera.zoom if _camera != null else Vector2.ONE,
 		"next_command_sequence": _command_sequence,
+		"annual_report_view": _annual_report_flow.capture(),
 		"era_reward_locked": _era_reward_locked,
 		"era_reward_resume_running": _era_reward_resume_running,
 		"era_reward_previous_speed": _era_reward_previous_speed,
@@ -248,6 +254,7 @@ func capture_view_state() -> Dictionary:
 
 
 func restore_view_state(map, state: Dictionary) -> void:
+	_annual_report_flow.restore(state.get("annual_report_view", {}))
 	_command_sequence = maxi(1, int(state.get("next_command_sequence", 1)))
 	_era_reward_resume_running = bool(state.get("era_reward_resume_running", false))
 	_era_reward_previous_speed = float(state.get("era_reward_previous_speed", 1.0))
@@ -291,9 +298,12 @@ func restore_view_state(map, state: Dictionary) -> void:
 	_sync_era_reward_offer()
 	_sync_family_founding_offer()
 	_sync_ideology_draw()
+	_annual_report_flow.try_present()
 
 
 func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
+	if _annual_report_flow.is_open():
+		return _complete_command(id, _result(false, "annual_report_open", "请先合卷，再处理国家事务。"))
 	if _era_reward_locked and id != COMMAND_ERA_REWARD_CHOOSE:
 		return _complete_command(id, _result(false,
 			"era_reward_choice_required", "必须先完成时代奖励选择。"))
@@ -610,6 +620,11 @@ func handle_input(event: InputEvent) -> void:
 
 
 func _dispatch_player_input(event: InputEvent) -> void:
+	if _annual_report_flow.is_open():
+		if event.is_action_pressed(&"player_cancel") or event.is_action_pressed(&"ui_cancel"):
+			_ui_manager.dismiss_overlay_menu()
+		get_viewport().set_input_as_handled()
+		return
 	if _camera != null and _camera.handle_player_input(event):
 		get_viewport().set_input_as_handled()
 		return
@@ -618,7 +633,9 @@ func _dispatch_player_input(event: InputEvent) -> void:
 	var key := event as InputEventKey
 	var debug_hotkeys_enabled := OS.is_debug_build()
 	if key.is_action_pressed(&"player_pause"):
-		if _family_founding_locked:
+		if _annual_report_flow.is_open():
+			get_viewport().set_input_as_handled()
+		elif _family_founding_locked:
 			get_viewport().set_input_as_handled()
 		elif ideology_draw_locked():
 			get_viewport().set_input_as_handled()
@@ -694,6 +711,7 @@ func _on_simulation_committed(_from_day: int, to_day: int, _generation: int) -> 
 	_sync_family_founding_offer()
 	# ACTIVE worker days settle here before Godot's own day signal.
 	_sync_ideology_draw()
+	_annual_report_flow.try_present()
 
 
 func _on_country_peer_serviced(report: Dictionary) -> void:
@@ -850,6 +868,8 @@ func _on_speed_changed(speed: float) -> void:
 
 
 func _on_pause_toggled(paused: bool) -> void:
+	if _annual_report_flow.is_open():
+		return
 	if _world_clock == null:
 		return
 	if _runtime_host != null and _runtime_host.has_method("is_runtime_fault_paused") \
