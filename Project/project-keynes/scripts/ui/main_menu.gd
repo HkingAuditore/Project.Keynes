@@ -60,6 +60,26 @@ var _pkmap_pick_syncing := false
 var _current_page_key := "home"
 
 
+## 主菜单背景音乐。GameAudio 是 autoload，bank 可能还没加载完，
+## 所以轮询 status 直到 ready 再播；始终不就绪就静默放弃（大厅静音不影响功能）。
+func _start_hall_music() -> void:
+	var audio := get_node_or_null("/root/GameAudio")
+	if audio == null or not audio.has_method("play_music"):
+		return
+	for _attempt in range(30):
+		if String(audio.status) == "ready":
+			audio.play_music(&"hall")
+			return
+		await get_tree().process_frame
+
+
+## 离开大厅时停掉，交给游戏内时代音乐接管。
+func _exit_tree() -> void:
+	var audio := get_node_or_null("/root/GameAudio")
+	if audio != null and audio.has_method("stop_music"):
+		audio.stop_music()
+
+
 func _ready() -> void:
 	if OS.get_cmdline_user_args().has("--editor-tech-tree") or OS.get_cmdline_args().has("--editor-tech-tree"):
 		call_deferred("_open_technology_authoring_editor")
@@ -71,6 +91,7 @@ func _ready() -> void:
 	_apply_responsive_layout()
 	_show_home(false)
 	call_deferred("_apply_responsive_layout")
+	call_deferred("_start_hall_music")
 
 
 func _open_technology_authoring_editor() -> void:
@@ -143,6 +164,13 @@ func _bind_settings_controls() -> void:
 
 
 func _connect_static_actions() -> void:
+	for button in [%NewGameButton, %LoadGameButton, %SettingsButton, %BrowsePkmapButton]:
+		button.set_meta(&"ui_sound", &"open")
+	for button in [%NewBackButton, %LoadBackButton, %SettingsBackButton, %QuitButton]:
+		button.set_meta(&"ui_sound", &"close")
+	for button in [%StartButton, %ApplySettingsButton]:
+		button.set_meta(&"ui_sound", &"confirm")
+	%AdvancedButton.set_meta(&"ui_sound", &"fold")
 	%NewGameButton.pressed.connect(_show_new_game)
 	%LoadGameButton.pressed.connect(_show_load_game)
 	%SettingsButton.pressed.connect(_show_settings)

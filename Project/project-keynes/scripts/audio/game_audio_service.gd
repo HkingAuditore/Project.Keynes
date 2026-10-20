@@ -13,6 +13,10 @@ const UI_EVENTS := {
 const UI_COOLDOWN_MS := {&"click": 45, &"page": 90, &"open": 120, &"close": 120,
 	&"confirm": 100, &"toggle_on": 45, &"toggle_off": 45, &"tick": 65}
 const MusicCatalog := preload("res://scripts/audio/music_event_catalog.gd")
+## 前四个时代（石器/农耕/王国/帝国）到探索音乐档位的映射。
+const ERA_MUSIC := [&"dark", &"feudal", &"castle", &"imperial"]
+## 参数化探索事件：一个事件内用全局参数 Era 选档，12 段音频完全复用。
+const PARAM_EXPLORE_EVENT := "event:/Music/Library/Explore_Param"
 signal ui_sound_played(cue: StringName)
 
 var status := "not_initialized"
@@ -24,6 +28,8 @@ var _ui_descriptions: Dictionary = {}
 var _ui_next_ms: Dictionary = {}
 var _music_key := &""
 var _music_descriptions: Dictionary = {}
+var _era_index := -1
+var _music_parameterized := false
 
 
 func _ready() -> void:
@@ -147,6 +153,68 @@ func play_music(key: StringName) -> bool:
 	return true
 
 
+## 参数化探索音乐：单个事件 + 参数 Era 选档。
+## 与 play_explore 的区别：只有一条事件路径，切换靠参数，音频在 bank 里完全复用。
+func play_explore_parameterized(era_index: int) -> bool:
+	if status != "ready":
+		return false
+	var clamped := clampi(era_index, 0, ERA_MUSIC.size() - 1)
+	var description := _music_description(PARAM_EXPLORE_EVENT)
+	if description == 0:
+		return false
+	if _music != 0 and _music_parameterized:
+		return set_era_parameter(clamped)
+	stop_music()
+	_music = int(ClassDB.class_call_static("StudioEventDescription", "create_instance", description))
+	if _music == 0:
+		return false
+	_music_parameterized = true
+	_music_key = &"__param_explore"
+	var applied := set_era_parameter(clamped)
+	if int(ClassDB.class_call_static("StudioEventInstance", "start", _music)) != 0:
+		stop_music()
+		return false
+	return applied
+
+
+## 设置参数化事件的 Era 档位（0=黑暗 1=封建 2=城堡 3=帝王）。
+func set_era_parameter(era_index: int) -> bool:
+	if _music == 0 or not _music_parameterized:
+		return false
+	return int(ClassDB.class_call_static("StudioEventInstance", "set_parameter_by_name",
+		_music, "Era", float(clampi(era_index, 0, ERA_MUSIC.size() - 1)), false)) == 0
+
+
+## 时代推进驱动音乐。只接前四个时代（石器/农耕/王国/帝国），
+## 更靠后的时代沿用"帝国"这一档 —— 素材只有 AoE4 的四套探索曲。
+func set_era(era_index: int) -> bool:
+	if era_index < 0:
+		return false
+	var clamped := mini(era_index, ERA_MUSIC.size() - 1)
+	if clamped == _era_index and _music != 0:
+		return true
+	var advancing := _era_index >= 0
+	_era_index = clamped
+	if advancing:
+		var transition := _era_transition_key(clamped)
+		if not transition.is_empty():
+			play_transition(transition)
+	return play_explore(ERA_MUSIC[clamped])
+
+
+## 当前音乐对应的时代索引；未接入时为 -1。
+func era_index() -> int:
+	return _era_index
+
+
+func _era_transition_key(era_index: int) -> StringName:
+	match era_index:
+		1: return &"trans_explore_feudal"
+		2: return &"trans_explore_castle"
+		3: return &"trans_explore_imperial"
+	return &""
+
+
 ## 按时代播放探索音乐。pick_random 时在同代多段里随机挑一首。
 func play_explore(era: StringName, pick_random: bool = true) -> bool:
 	var tracks := MusicCatalog.tracks_for(era)
@@ -195,6 +263,7 @@ func stop_music() -> void:
 		ClassDB.class_call_static("StudioEventInstance", "stop", _music, 1)
 		ClassDB.class_call_static("StudioEventInstance", "release", _music)
 		_music = 0
+	_music_parameterized = false
 
 
 func diagnostics() -> Dictionary:

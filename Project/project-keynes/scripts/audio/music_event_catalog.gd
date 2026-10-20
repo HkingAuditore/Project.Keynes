@@ -25,6 +25,9 @@ const MUSIC := {
 	&"explore_imperial_01": "event:/Music/Era/Explore/explore_imperial_01",
 	&"explore_imperial_02": "event:/Music/Era/Explore/explore_imperial_02",
 	&"explore_imperial_03": "event:/Music/Era/Explore/explore_imperial_03",
+
+	## 大厅 / 主菜单背景音乐。不属于任何时代的轮播池，单独播放。
+	&"hall": "event:/Music/Hall/hall",
 }
 
 ## 一次性过渡：时代升级
