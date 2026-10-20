@@ -163,6 +163,7 @@ func _title(text_value: String) -> void:
 
 func _add_button(text_value: String, icon: String, callback: Callable) -> Button:
 	var button := MenuButtonScene.instantiate() as Button
+	preload("res://scripts/ui/ui_audio_feedback.gd").tag_icon(button, StringName(icon))
 	button.tooltip_text = text_value
 	var icon_label := button.get_node("Row/Icon") as Label
 	IconButton.apply_to_label(icon_label, StringName(icon), 15)

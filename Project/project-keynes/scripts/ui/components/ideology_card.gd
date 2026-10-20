@@ -10,6 +10,12 @@ extends Control
 ## compact variants used below 900x520 logical pixels.
 
 signal activated(ideology_id: int)
+## "Show me where this card acts." Right click, because the left button is
+## already the equip/unequip verb and double click is its deliberate variant —
+## a third verb needs a third button, not another modifier on the first one.
+## The workspace decides what to do: it owns the effect-instance report, so it
+## is the only place that knows which cells this card resolved to.
+signal locate_requested(ideology_id: int)
 signal drag_started(ideology_id: int)
 
 const ArtScript = preload("res://scripts/ui/components/ideology_art.gd")
@@ -365,6 +371,13 @@ func _set_hover(on: bool) -> void:
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mouse := event as InputEventMouseButton
+		if mouse.button_index == MOUSE_BUTTON_RIGHT:
+			# Press and release both arrive here; answering once on press keeps
+			# the map from being re-framed twice for one click.
+			if mouse.pressed:
+				locate_requested.emit(ideology_id)
+				accept_event()
+			return
 		if mouse.button_index != MOUSE_BUTTON_LEFT:
 			return
 		if activate_on_single_click:

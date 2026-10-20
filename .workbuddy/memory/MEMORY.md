@@ -61,3 +61,49 @@
 - 62% 物资仅 1 个生产者（单点故障）
 - review 报告：`C:\Users\hkinghuang\.workbuddy\plans\toasty-cascade-darwin.md`（720 行，未实施任何 .tres 改动）
 - 4 类物资 category 拼写重复待清理：`textile`(11) / `textiles`(1) / `raw_materials`(1)
+
+## GDScript / 工具链的四个固定坑（2026-10-20 实测）
+
+1. **typed array 赋值**：`@export var xs: Array[Resource]` 不能赋无类型 `Array`，
+   报 `Invalid assignment of property ... with value of type 'Array'`。
+   必须先 `var tmp: Array[Resource] = [...]`。
+2. **参数先于函数体求值**：把夹具的惰性初始化写在被调函数里，第一个 caller
+   拿到 null。测试夹具要在 `_run()`/`_init()` 顶部就建好。
+3. **`String.replace("%s", v, true)` 替换全部**，多占位符模板必须
+   `find("%s")` + `substr` 手工换一个。
+4. **Grep/ripgrep 在本仓会退出码 2**：`assets/textures/terrain_materials/*.png`
+   拒绝访问、`m7ect/` 是悬空路径。要么把 `path` 限定到 `scripts/`、`gdext/src/`，
+   要么用 bash `grep -rn --include=*.gd`。
+
+## 理念层：预算与 stat key 的两个口径（易混）
+
+- `max_effect_instances` = **声明预算**（全目录 card × level × 行数）。
+  `max_concurrent_instances` = **并发预算**（槽位 × 每卡最宽一级 × 每程序目标上限）。
+  两者可各自独立失败，别用前者推断后者。
+- 编译期 stat key 是**族**生成的：一个循环一族。加循环必须同时在
+  `scripts/modifier/stat_key_families.gd` 的 `FAMILIES` 加一行，
+  否则 `tests/stat_key_family_test.gd` 会红（这是唯一能发现「键生成了但没人读」的地方）。
+- 文档里提的 `DEAD_STAT_KEYS` 常量**不存在**，别去找。
+
+## 原生自测的 `fail()` 陷阱（2026-10-20 实测，花了一轮编译才找到）
+
+`RuntimeModifierPodAuthority::self_test` 里的 `fail` 是
+`if (error.empty()) error = reason; return false;` —— **只在 error 为空时才写消息**。
+而该函数中段有一次「故意损坏存档」的探测，它会**留下**一条错误串。于是：
+
+- 在它之后追加的任何断言，失败时 `fail()` 全部静默；
+- 外部只看到 `ok=false` + 上一条旧消息，指错方向。
+
+**在自己新增的断言段开头先 `error.clear()`**。同理 `RuntimeIdeologyPodAuthority::self_test`。
+
+## 编译判据（再强调一次）
+
+scons 的后台任务状态**恒为 failed**——沙箱拦 `reg.exe`，与编译无关。
+唯一判据是 stdout 里有没有 **`scons: done building targets.`**。
+本仓编译约 60–90 秒。
+
+## 原生 opcode 速查（易写错）
+
+- `RuntimeModifierPodOpcode`: APPLY=1, REMOVE=2, REFRESH=3, SET_STACKS=4, SET_MAGNITUDE=5
+- `NativeIdeologyRuntime::CommandOpcode`: … REROLL=10, **BAN_IDEOLOGY_CARD=11**（本轮新增）
+- `RuntimeIdeologyPodOpcode`: … REROLL_OFFER=10, **BAN_CARD=11**

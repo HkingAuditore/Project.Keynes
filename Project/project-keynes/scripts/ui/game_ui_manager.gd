@@ -792,6 +792,21 @@ func _locate_cell_from_country_panel(cell_index: int) -> void:
 		_player_controller.select_cell(cell)
 
 
+## "A card acts here." Same shape as the single-cell locate above — close the
+## panel first, because it is full-bleed and would cover the very hexes we are
+## about to paint — but the map side receives a set instead of a selection.
+func _on_target_cells_from_country_panel(cells: PackedInt32Array) -> void:
+	if _player_controller == null:
+		return
+	# Dock the shell beside the map instead of closing it. Closing was the old
+	# behaviour and it threw away the card the player was reading at the exact
+	# moment they asked "where does this act?" — the highlight outlived the
+	# panel, but so did the question of which card had painted it.
+	if _country_panel != null and _country_panel.is_panel_open():
+		_country_panel.set_docked(true)
+	_player_controller.highlight_cells(cells)
+
+
 ## 物资详情逐单商路翻页：只更新请求 offset，再走既有对象详情 payload 通道重建。
 ## ViewModel 按 committed generation 缓存，翻页也是一次有界页查询。
 func _on_trade_orders_page_requested(offset: int) -> void:
@@ -821,6 +836,9 @@ func close_country_panel() -> void:
 	_country_refresh_timer_active = false
 	_country_next_refresh_ms = 0
 	if _country_panel != null and _country_panel.is_panel_open():
+		# Undock before closing: the next open is a full-bleed screen again, and
+		# a dock left set would silently shrink it with no way to tell why.
+		_country_panel.set_docked(false)
 		_country_panel.close_panel()
 	# A closed panel never needs a fresh Native query. Drop only dynamic section
 	# models so the next open starts from a committed shell and loads details
@@ -1466,6 +1484,7 @@ func _bind_ui() -> void:
 	)
 	_country_panel.section_selected.connect(open_country_section)
 	_country_panel.locate_cell_requested.connect(_locate_cell_from_country_panel)
+	_country_panel.target_cells_requested.connect(_on_target_cells_from_country_panel)
 
 	_loading_overlay = get_node("UIRoot/ModalLayer/WorldLoadingOverlay") as WorldLoadingOverlay
 

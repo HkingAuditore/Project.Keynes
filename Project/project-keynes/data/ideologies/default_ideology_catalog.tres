@@ -21,6 +21,7 @@ offer_cost_max_q16 = 2147483647
 reroll_cost_percent = 50
 starting_points_q16 = 0
 max_transition_commands = 256
+max_effect_instances = 2048
 point_population_weight_q16 = 1311
 point_building_weight_q16 = 16384
 point_trade_weight_q16 = 131
@@ -29,6 +30,8 @@ capacity_unlock_technology_keys = PackedStringArray("tech.kingdom_administration
 capacity_unlock_ideology_deltas = PackedInt32Array(1, 1, 1, 1, 0)
 capacity_unlock_spirit_deltas = PackedInt32Array(0, 1, 0, 0, 1)
 point_gain_stat_key = &"country.ideology.point_gain_factor"
+understanding_gain_stat_key = &"country.ideology.understanding_gain_factor"
+reroll_cost_stat_key = &"country.ideology.reroll_cost_factor"
 
 [sub_resource type="Resource" id="EffectForagerBandL1"]
 script = ExtResource("7_effect")

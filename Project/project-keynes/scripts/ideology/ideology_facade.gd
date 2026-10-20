@@ -131,6 +131,16 @@ func explain_ideologies(handle: int, ideology_ids: PackedInt32Array = PackedInt3
 		if _configured and _world_ext.has_method("explain_ideologies") \
 		else {"ok": false, "reason": "ideology_batch_explain_unavailable"}
 func report() -> Dictionary: return _world_ext.get_ideology_report() if _configured else {"configured": false}
+## Raw per-instance rows of this country's reconciled effect instances.
+##
+## Native has exposed this since the reconciliation path landed, but nothing in
+## GDScript ever asked for it, so the board could not say whether an equipped
+## card was projecting anything. `IdeologyEffectReport.summarize()` turns the
+## columns into per-card totals; nothing else should read the raw shape.
+func effect_instances(handle: int) -> Dictionary:
+	return _world_ext.get_ideology_effect_instance_report(handle) \
+		if _configured and _world_ext.has_method("get_ideology_effect_instance_report") \
+		else {"ok": false, "reason": "ideology_effect_instance_report_unavailable"}
 func catalog_view() -> Dictionary: return _catalog.catalog_view(_country_catalog, _economy_catalog) if _catalog != null else {"ok": false}
 func native_catalog() -> Dictionary: return _native_catalog.duplicate(false)
 func world_ext() -> Object: return _world_ext

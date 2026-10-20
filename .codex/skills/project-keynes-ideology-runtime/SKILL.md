@@ -1,6 +1,6 @@
 ---
 name: project-keynes-ideology-runtime
-description: Guide Project.Keynes native ideology-system development and review across IdeologyCatalog compilation and the generated 30-card/6-school catalog, NativeIdeologyRuntime and the worker RuntimeIdeologyPodAuthority (collection/slots/offers/reroll/understanding/levels/increment-based points), class-opinion support gates, exclusion groups, named synergies and school resonances, technology slot unlocks, ACK-gated Effect/Modifier transitions, PKID v4 and IDP2 persistence, IdeologyFacade/PlayerController pause-and-step draw flow, the papercut ideology workspace, and verification. Use whenever the user mentions 理念, 理念点, ideology, national spirit, 民族精神, three-card offer, 三选一抽卡, 重抽, 流派共鸣, ideology slots, class opinion, 阶层民意, ideology synergy, PKID, IDP2, ideology_runtime, ideology workspace, or wants to add/change/debug an ideology, its UniqueSource Country modifiers, or the ideology panel.
+description: Guide Project.Keynes native ideology-system development and review: IdeologyCatalog compilation (cards, synergies, route tags 体系, target selectors and DNF tag predicates, declarative effect programs), NativeIdeologyRuntime (collection, slots, offers with pity/refine/ban, era decay, understanding, levels, gates, synergies, runtime magnitude overrides 卡改卡), class-opinion support gates, exclusion groups, ACK-gated Effect/Modifier transitions, PKID schema 7 persistence, IdeologyFacade/PlayerController/UI, and verification. Use whenever the user mentions 理念, ideology, 民族精神, national spirit, 三选一抽卡, 抽卡保底, 精进, 封存, ideology slots, 阶层民意, class opinion, ideology synergy, 体系羁绊, route_tag, 地块级理念, 目标标签, 选择器, 卡改卡, override, PKID, ideology_runtime, ideology workspace, or wants to add/change/debug an ideology card, its cell-level effect, its synergy, or the ideology panel.
 ---
 
 # Project.Keynes Ideology Runtime
@@ -29,6 +29,14 @@ the bundled reference that matches the task:
   [runtime-contract.md](references/runtime-contract.md)
 - Authored catalog, UI, tests, performance, extension SOP:
   [content-ui-and-verification.md](references/content-ui-and-verification.md)
+- **Build traps, GDScript silent aborts, storage ordering, and the architecture
+  facts that are easy to get wrong:**
+  [pitfalls-and-build.md](references/pitfalls-and-build.md) — read this before
+  the first rebuild, not after the third.
+
+For current status start at §35 of `docs/plans/ideology-build-redesign.md`.
+§24–§32 are records written at the time; most of their "还没做的" items have since
+been done, so do not quote them as state.
 
 Inspect current source before editing:
 
@@ -36,18 +44,11 @@ Inspect current source before editing:
 - `gdext/src/world_ext_ideology.cpp`, `world_ext.h`, `world_ext_bind_methods.cpp`
 - `Project/project-keynes/scripts/ideology/`
 - `Project/project-keynes/scripts/simulation/systems/ideology_runtime_system.gd`
-- `gdext/src/runtime_ideology_pod.{h,cpp}` and the ideology bridge in
-  `native_simulation_host.cpp` (`stage_ideology_modifier_commands`,
-  `settle_ideology_modifier_acks`) for the production worker path
-- `Project/project-keynes/tools/ideology/generate_ideology_catalog.py` (source
-  of `default_ideology_catalog.tres` and the ideology rows of
-  `default_modifier_catalog.tres`; edit the generator, not the `.tres`)
+- `Project/project-keynes/data/ideologies/default_ideology_catalog.tres`
 - `Project/project-keynes/scripts/ui/components/ideology_workspace.gd`
-  plus `ideology_card.gd`, `ideology_slot_niche.gd`, `ideology_point_scroll.gd`,
-  `ideology_art.gd`, and `assets/ui/ideology_v1/`
 - `Project/project-keynes/scripts/ui/country_view_model.gd`
 - `Project/project-keynes/scripts/game/player_controller.gd`
-- `Project/project-keynes/tests/ideology_*.gd`
+- `Project/project-keynes/tests/ideology/` (per-domain layout, see tests/README.md)
 
 Treat current C++ and the repository document as final truth. Do not infer the
 contract from chat, a roadmap, or a previous ideology prototype.
@@ -95,18 +96,7 @@ or a second Modifier writer for equipped ideas.
   rows contribute zero. Optional critical-class floors (`>= -65536`) block even
   when the weighted average passes. Empty stances bypass the gate.
 - Visit only reverse-CSR synergy candidates after equip/unequip/level/promotion.
-  Do not scan the synergy catalog. School resonances are synergies whose rows
-  list the whole school with `min_count` 2 or 4.
-- Ideology points accrue only from growth deltas (population, installed
-  buildings, trade value per day) carried on the committed class-opinion
-  snapshot, scaled by the opinion factor `[0.5,1.5]` and the frozen
-  `country.ideology.point_gain_factor`, capped per period. First observation
-  only sets the baseline. Settle once per country per opinion revision; never
-  scan ideas for points. Main and worker paths must use the same integer
-  formula.
-- The worker path must apply real Modifiers: one atomic Modifier POD batch per
-  transition, ACK derived from the committed batch result. Never reintroduce a
-  synthesized `OK` ACK.
+  Do not scan the synergy catalog.
 - Keep daily work on pending ACK refs, ideology-ID-sorted `active_state_indices`,
   and a head-cursor command merge. Quiescent evidence is
   `sparse_idea_scan_count=0`, `dormant_scan_count=0`,
@@ -115,18 +105,46 @@ or a second Modifier writer for equipped ideas.
 - Resolve stable IDs in `IdeologyCatalog` / `IdeologyFacade`. Native hot loops
   use dense IDs, Q16, bitsets, and bounded scratch. No Dictionary, String,
   Variant, Godot Object, or unbounded output in evaluation.
-- Persist PKID v4 (and the worker `IDP2` mirror) authoritative idea state,
-  points, offer/RNG, draw count, point baselines, ledger and 32-entry history,
-  producer high-water, queued commands, pending Effect transaction IDs, and
-  durable binding identity. Rebuild derived indices, slot caches,
-  technology-driven capacity, and class-influence after restore. Settled UI
-  receipts are not saved. PKID v3 / IDP1 fail closed.
+- Persist PKID schema 7 authoritative idea state, points, offer/RNG, producer
+  high-water, queued commands, pending Effect transaction IDs, and durable
+  binding identity. Rebuild derived indices, slot caches, and class-influence
+  after restore. Settled UI receipts are not saved.
 - Restore PKTR then PKEF then PKID. A present PKID must match catalog hash and
   payload exactly. Every active idea must resolve its PKEF v10 external binding;
   pending ideology transactions are audited both ways. Never repair a missing
   binding by replaying effects.
 - Changing authored ideology Modifier keys or term values changes Modifier and
   Effect catalog hashes; existing PKCM/PKEF saves fail closed.
+- **A field must be read exactly where it was written**, and size/range checks
+  must follow the read. Fixed-layout rows stay fixed length (capacity + count),
+  never variable. Versions in play: PKID **7**, IDP2 pod ABI **5**, PKEF **12**,
+  Modifier **3** — all fail-closed.
+
+### Invariants added by the infrastructure layers
+
+- **The ideology worker POD does no instance reconciliation** (`activation` is
+  absent from `runtime_ideology_pod.cpp`). Per-instance payload changes stay on
+  the main thread and need no POD catalogue/ABI/parity work.
+- **Three mirrors of the selector ceiling** must move together:
+  `EffectRuntime::SELECTOR_MAX_KIND`, `RuntimeEffectPodAuthority::MAX_SELECTOR_KIND`,
+  `effect_catalog.gd:POD_MAX_SELECTOR_KIND`. One card past the ceiling fails the
+  whole POD catalogue and drops the EFFECT bit, which takes the twelve-domain
+  authority graph with it.
+- **`effect_instance_id()` stays a pure function**; the layer index participates
+  only when non-zero, otherwise every existing save's instance ids change.
+- **Draw weight is computed once, in the shared kernel**, and the pity guarantee
+  is a pool partition, never a re-roll — a re-roll advances the RNG a variable
+  number of times and desynchronises the two authorities.
+- **Two budgets, not one**: `max_effect_instances` counts declared rows across
+  the catalog; `max_concurrent_instances` counts live instances
+  (slots × widest level × per-program fan-out, stacks included). They fail
+  independently.
+- **A synergy may rewrite another program's magnitude** via `overrides` →
+  `magnitude_scale_for`: product over *active* synergies, clamped once at the
+  end to [0.25×, 4×], delivered as the optional `magnitude_scales` column.
+- **Generated stat-key families** need a matching row in
+  `scripts/modifier/stat_key_families.gd`; `tests/effect/stat_key_family_test.gd`
+  is the only thing that notices a missing one.
 
 ## Implement in the required order
 
@@ -151,51 +169,62 @@ or a second Modifier writer for equipped ideas.
 
 ## Current production content
 
-The default catalog is generated by
-`tools/ideology/generate_ideology_catalog.py`:
+`data/ideologies/default_ideology_catalog.tres` is **generated** by
+`tools/ideology/generate_ideology_catalog.py` and currently holds **85 cards**
+(plus synergies and school resonances). Never hand-edit the `.tres`; change the
+generator and re-run it.
 
-- 30 cards, 6 schools × 5 (农本 agrarian, 商贸 commerce, 学识 learning, 动员
-  mobilization, 工造 industry, 调和 harmony); each card owns a UniqueSource
-  Country definition `ideology.<key>`. Never collapse them onto a shared stub.
-- Rarity common/rare/legendary, weights 120/60/20; legendary and some rare
-  cards need era technology. Exclusion groups `economic_order`, `labor_order`,
-  `land_order`. Some cards carry a cost term.
-- 3 levels: thresholds 0 / 4.0 / 12.0, daily understanding 0.125 / 0.0625 / 0,
-  magnitudes `65536` / `104858` / `144179`.
-- 6 named synergies `ideology.synergy.*` and 12 resonances
-  `ideology.resonance.<school>.<2|4>`.
-- Slots 2 ideology / 1 spirit, growing via `capacity_unlocks` to 6 / 3.
-- Points start at 0. Every draw is paid: 6.0 first, then x1.2 per draw (`offer_cost_growth_percent`); reroll
-  (`REROLL_IDEOLOGY_OFFER = 10`, `ideology.reroll`) costs 50% of the cost paid for the active offer.
+The four original roads still exist and remain exclusive through
+`economic_order` — `idea.collective_stewardship` (共同体治理),
+`idea.free_exchange` (自由交换), `idea.scholar_office` (学识官署),
+`idea.civic_muster` (公民动员) — with the two original synergies
+`synergy.planned_granaries` and `synergy.chartered_frontier`. They are no longer
+the whole catalog, so do not reason about balance from them alone.
 
-The ideology panel must show `level_effect_lines` on offer cards and the
-collection. Player draws pause the clock, step one day at 1x until the new
-offer appears, and restore the clock after choose/reroll; failures or a 3-day
-timeout unlock and report.
+**What the 85 cards do NOT do yet, and it matters:**
+
+- **0 cards** set `route_tag` / `secondary_route_tags`, so no 体系羁绊 counts them
+  even though the mechanism (§33.2) is finished.
+- **0 cards** set `target_selector_kind` or any selector tag, and **0 cards**
+  reference a managed `ideology.effect.*` program. The declarative effect path is
+  exercised only by the six V1–V6 programs in
+  `data/ideologies/default_ideology_effects.tres`, which no production card uses.
+
+Until §22's first gate is lit — one real card demonstrating "condition changes →
+hit set changes → panel shows N cells" — no cell-level card is trustworthy, no
+matter how green the unit tests are.
 
 ## Verify
 
-From the repository root:
+Tests are grouped by domain under `Project/project-keynes/tests/`. Invoke one at a
+time; a batch of long fixtures can exceed a shell timeout and be killed mid-run,
+which reads like a failure.
 
-```powershell
-& .\.codex\skills\project-keynes-ideology-runtime\scripts\verify_ideology_runtime.ps1
+```bash
+godot --headless --path Project/project-keynes \
+  -s tests/ideology/ideology_runtime_test.gd
 ```
 
-Add `-Build` for debug/release GDExtension builds and `-Godot` for focused
-headless fixtures. At minimum run:
+Core set for any ideology change:
 
-- `tests/ideology_runtime_test.gd`
-- `tests/ideology_opinion_synergy_test.gd`
-- `tests/ideology_content_test.gd`
-- `tests/ideology_progression_test.gd` (points, cost curve, reroll, slots, resonance)
-- `tests/ideology_draw_flow_test.gd` and `tests/player_country_ui_smoke_test.gd`
-  when PlayerController, the facade, or the workspace changes
-- `tests/runtime_ideology_save_roundtrip_test.gd` and
-  `tests/runtime_domain_pod_test.gd` when the worker POD or IDP2 changes
-- `tests/ideology_runtime_stress_test.gd` when the hot path, slice budget, or
-  512-country continuation changes
+- `tests/ideology/ideology_runtime_test.gd`
+- `tests/ideology/ideology_opinion_synergy_test.gd`
+- `tests/ideology/ideology_content_test.gd`
+- `tests/ideology/ideology_effect_instance_test.gd`
+- `tests/ideology/ideology_effect_override_test.gd`
+- `tests/runtime/runtime_ideology_save_roundtrip_test.gd` when PKID changes
+- `tests/runtime/runtime_modifier_pod_test.gd` when Modifier or aggregation changes
+- `tests/ideology/ideology_runtime_stress_test.gd` when the hot path, slice
+  budget, or 512-country continuation changes
+- `tests/runtime/runtime_worker_source_scan_test.gd` after touching any file on
+  its purity list (`native_simulation_host.cpp` and friends must stay `godot::`-free)
 - affected Trigger/PlayerController/Modifier/Effect/save fixtures
 - `git diff --check`
+
+Build with scons directly (`gdext/rebuild.bat` hangs — see
+`references/pitfalls-and-build.md`). **A build counts as successful only when
+stdout contains `scons: done building targets.`**; the background task status is
+always `failed` because the sandbox blocks `reg.exe`.
 
 Do not claim the 64-country × 12-active ideology p95 ≤ 0.35 ms, 512-country
 continuation p95 ≤ 0.42 ms, native call ≤ 1 ms, or 6400-cell class-opinion
@@ -210,5 +239,9 @@ Include:
 - PKID/PKEF compatibility and whether existing saves fail closed.
 - UI snapshot/explain/catalog-view behavior.
 - Test, build, and (if claimed) performance evidence.
-- Remaining blockers and intentional non-goals (diplomacy, AI ideology policy,
-  per-cell ideology, conserved-ledger writes).
+- Remaining blockers and intentional non-goals. As of the infrastructure
+  round: diplomacy and AI ideology policy remain out of scope, and ideology still
+  never writes a conserved ledger. Per-cell ideology is **implemented at the
+  mechanism level** but has **no production card** using it, and the §22 first
+  gate is unlit. X5 "card rewrites another card" is implemented only for
+  **effect magnitude**; range/threshold/cap/condition forms are not.

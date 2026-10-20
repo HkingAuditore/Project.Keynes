@@ -10,6 +10,11 @@ const IdeologySynergyDefinitionScript = preload("res://scripts/ideology/ideology
 const EffectCommandScript = preload("res://scripts/effect/effect_command.gd")
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 const IdeologyEffectCatalogScript = preload("res://scripts/ideology/ideology_effect_catalog.gd")
+## Only for `SELECTOR_MAX_CELLS`: the concurrency budget must use the same cell
+## cap the runtime enforces, and a second literal here is exactly the mirror
+## constant that drifted the last three times this project tried it.
+const IdeologyEffectDefinitionScript = preload(
+	"res://scripts/ideology/ideology_effect_definition.gd")
 
 const PROTOCOL_VERSION := 1
 ## Card effect rows name a program by its BARE key (`v1_granary_belt`); the
@@ -98,6 +103,23 @@ func compile_native_catalog(country_catalog: Dictionary,
 		if not program_error.is_empty():
 			return {"ok": false, "reason": program_error}
 		declared_programs = program_resource.program_key_set()
+	# Two budgets, two quantities. `tally["owned"]` below counts DECLARED rows
+	# across the whole catalog; this table answers the different question the
+	# runtime asks -- how many instances one card can have alive right now, per
+	# program, which is a function of the program's target cap and not of how
+	# many rows exist. Keeping them apart is the whole of L0-3: a catalog that
+	# passes one and fails the other is normal, not a contradiction.
+	var program_target_caps: Dictionary = {}
+	if program_resource != null:
+		for effect in program_resource.effects:
+			if effect == null:
+				continue
+			program_target_caps[String(effect.program_key())] = \
+				_program_live_target_cap(effect)
+	# Widest single card in the catalog, in live instances. Accumulated while
+	# walking definitions so a per-card disaster is caught even when the catalog
+	# total stays small.
+	var widest_card_instances := 0
 	# Rows owned by a program become reconciled instances: one per (card, level,
 	# target). The bound keeps a pathological catalog from overflowing the
 	# EffectRuntime instance table before the runtime ever sees it.
@@ -167,10 +189,31 @@ func compile_native_catalog(country_catalog: Dictionary,
 		"point_trade_weight_q16": effective_profile.point_trade_weight_q16,
 		"point_gain_cap_q16": effective_profile.point_gain_cap_q16,
 		"point_gain_stat_key": String(effective_profile.point_gain_stat_key),
+		# Ideology-facing multipliers. Same contract as point_gain_stat_key: an
+		# empty string means "no stat", which every consumer reads as 1.0. Kept
+		# as separate keys rather than one packed field so a catalog can enable
+		# one without the other.
+		"understanding_gain_stat_key": String(
+			effective_profile.understanding_gain_stat_key),
+		"reroll_cost_stat_key": String(effective_profile.reroll_cost_stat_key),
+		# Draw-side knobs. `era_decay_floor_bp` / `offer_choice_bonus` are the two
+		# ADDITIVE ideology stats; the two refine fields are catalog constants the
+		# worker needs because it cannot read ModifierRuntime or the profile.
+		"era_decay_floor_stat_key": String(effective_profile.era_decay_floor_stat_key),
+		"offer_choice_bonus_stat_key": String(
+			effective_profile.offer_choice_bonus_stat_key),
+		"refine_weight_bp": effective_profile.refine_weight_bp,
+		"refine_understanding_q16": effective_profile.refine_understanding_q16,
 		"capacity_unlock_technology_ids": PackedInt32Array(),
 		"capacity_unlock_ideology_deltas": PackedInt32Array(),
 		"capacity_unlock_spirit_deltas": PackedInt32Array(),
 		"synergy_min_counts": PackedInt32Array(),
+		# L3-9 runtime magnitude overrides, flattened in synergy order. Optional as
+		# a set: a catalog with no synergy overrides emits an empty offsets array
+		# and the native side keeps every scale at 1.0.
+		"synergy_override_offsets": PackedInt32Array([0]),
+		"synergy_override_programs": PackedStringArray(),
+		"synergy_override_scales": PackedInt32Array(),
 		"political_class_ids": PackedStringArray(political_class_ids),
 		"ideology_ids": PackedStringArray(), "acquisition_flags": PackedByteArray(),
 		"rarity_weights": PackedInt32Array(), "ideology_slot_costs": PackedInt32Array(),
@@ -306,6 +349,18 @@ func compile_native_catalog(country_catalog: Dictionary,
 			if not effect_error.is_empty(): return {"ok": false, "reason": effect_error}
 			owned_persistent_per_level.append(int(tally["persistent"]))
 			owned_enter_per_level.append(int(tally["enter"]))
+			# Only the ACTIVE level's rows are live at once, so a card's worst
+			# case is its widest level -- not the sum over all three. Summing
+			# levels here would report a ceiling three times too high and make
+			# the budget meaningless.
+			var level_live := 0
+			for effect in level.persistent_effects:
+				if effect == null:
+					continue
+				var owned_key := PROGRAM_KEY_PREFIX + String(effect.definition_key)
+				if declared_programs.has(owned_key):
+					level_live += int(program_target_caps.get(owned_key, 1))
+			widest_card_instances = maxi(widest_card_instances, level_live)
 		out.level_offsets.append(out.level_thresholds_q16.size())
 		for requirement in definition.draw_requirements:
 			match requirement.kind:
@@ -327,6 +382,19 @@ func compile_native_catalog(country_catalog: Dictionary,
 	var ideology_index := {}
 	for index in out.ideology_ids.size():
 		ideology_index[String(out.ideology_ids[index])] = index
+	# Route (体系) index: tag -> dense card ids, in dense order. Built once so a
+	# route-tag synergy expands in O(1) lookups instead of rescanning the card
+	# table per row. Dense order (not authored order) is what the native side
+	# sees, which keeps two builds of the same content byte-identical.
+	var route_index := {}
+	for definition in ordered:
+		var definition_dense := int(ideology_index[String(definition.id)])
+		for route in definition.route_tags():
+			if not route_index.has(route):
+				route_index[route] = PackedInt32Array()
+			var bucket: PackedInt32Array = route_index[route]
+			bucket.append(definition_dense)
+			route_index[route] = bucket
 	var ordered_synergies: Array[Resource] = synergies.duplicate()
 	ordered_synergies.sort_custom(func(a, b) -> bool:
 		return String(a.id) < String(b.id) if a != null and b != null else a != null)
@@ -345,17 +413,50 @@ func compile_native_catalog(country_catalog: Dictionary,
 		var synergy_id: int = out.synergy_ids.size()
 		out.synergy_ids.append(String(synergy.id))
 		out.synergy_min_counts.append(int(synergy.min_count))
-		for requirement in synergy.required_ideology_ids.size():
-			var required_id := String(synergy.required_ideology_ids[requirement])
-			if not ideology_index.has(required_id):
-				return {"ok": false, "reason": "ideology_synergy_ideology_unknown"}
-			var dense_id := int(ideology_index[required_id])
-			out.synergy_requirement_ideology_ids.append(dense_id)
-			out.synergy_requirement_min_levels.append(
-				int(synergy.minimum_levels[requirement]))
-			out.synergy_requirement_location_masks.append(
-				int(synergy.location_masks[requirement]))
-			reverse[dense_id].append(synergy_id)
+		# The native side compares against the PREFIXED program key, because that
+		# is what `effect_program_key()` produces when an instance is activated.
+		# Emitting the bare key here would make every override silently miss.
+		for override in synergy.overrides:
+			if override == null:
+				continue
+			var override_error: String = override.validate()
+			if not override_error.is_empty():
+				return {"ok": false, "reason": override_error}
+			var target_key: String = IdeologyEffectDefinitionScript.definition_key_of(
+				override.target_definition_key)
+			if target_key.is_empty() or not declared_programs.has(target_key):
+				return {"ok": false, "reason":
+					"ideology_synergy_override_target_unknown:%s" % String(
+						override.target_definition_key)}
+			out.synergy_override_programs.append(target_key)
+			out.synergy_override_scales.append(int(override.value))
+		out.synergy_override_offsets.append(out.synergy_override_programs.size())
+		if synergy.uses_route_tag():
+			var expanded: Dictionary = _expand_route_synergy_members(
+				String(synergy.route_tag), route_index, int(synergy.min_count))
+			if not bool(expanded.get("ok", false)):
+				return {"ok": false, "reason": String(expanded.get("reason", ""))}
+			var members: PackedInt32Array = expanded.get(
+				"members", PackedInt32Array())
+			for dense_id in members:
+				out.synergy_requirement_ideology_ids.append(int(dense_id))
+				out.synergy_requirement_min_levels.append(
+					int(synergy.route_tag_min_level))
+				out.synergy_requirement_location_masks.append(
+					int(synergy.route_tag_location_mask))
+				reverse[int(dense_id)].append(synergy_id)
+		else:
+			for requirement in synergy.required_ideology_ids.size():
+				var required_id := String(synergy.required_ideology_ids[requirement])
+				if not ideology_index.has(required_id):
+					return {"ok": false, "reason": "ideology_synergy_ideology_unknown"}
+				var dense_id := int(ideology_index[required_id])
+				out.synergy_requirement_ideology_ids.append(dense_id)
+				out.synergy_requirement_min_levels.append(
+					int(synergy.minimum_levels[requirement]))
+				out.synergy_requirement_location_masks.append(
+					int(synergy.location_masks[requirement]))
+				reverse[dense_id].append(synergy_id)
 		out.synergy_requirement_offsets.append(
 			out.synergy_requirement_ideology_ids.size())
 		synergy_error = _append_synergy_effect_rows(
@@ -392,6 +493,27 @@ func compile_native_catalog(country_catalog: Dictionary,
 		return {"ok": false, "reason": "ideology_transition_command_limit_exceeded"}
 	if int(tally["owned"]) > effective_profile.max_effect_instances:
 		return {"ok": false, "reason": "ideology_effect_instance_limit_exceeded"}
+	# Concurrency budget. Slots are the GROWN capacities: a save that unlocked
+	# both slot technologies is the state this has to survive, and the base
+	# capacities would let a catalog through that dies on a late-game loadout.
+	var concurrency_slots := maxi(effective_profile.ideology_capacity,
+		effective_profile.ideology_capacity_max) + maxi(
+		effective_profile.national_spirit_capacity,
+		effective_profile.national_spirit_capacity_max)
+	var worst_live_instances := concurrency_slots * widest_card_instances
+	if worst_live_instances > effective_profile.max_concurrent_instances:
+		# Names both numbers and the slot count: "which of the two budgets did I
+		# blow" is the first question, and a bare `false` cannot answer it.
+		return {"ok": false, "reason":
+			"ideology_concurrent_instance_limit_exceeded:%d>%d:%dx%d" % [
+				worst_live_instances,
+				effective_profile.max_concurrent_instances,
+				concurrency_slots, widest_card_instances]}
+	out["declared_effect_instances"] = int(tally["owned"])
+	out["max_concurrent_instances"] = effective_profile.max_concurrent_instances
+	out["concurrency_slots"] = concurrency_slots
+	out["max_instances_per_card"] = widest_card_instances
+	out["worst_case_concurrent_instances"] = worst_live_instances
 	out.ok = true
 	return out
 
@@ -560,6 +682,8 @@ func catalog_view(country_catalog: Dictionary = {},
 			"promote_threshold_q16": definition.promote_threshold_q16,
 			"exclusion_group": String(definition.exclusion_group),
 			"exclusion_rivals": _exclusion_rivals(definition),
+			"route_tags": definition.route_tags(),
+			"route_names": _route_display_names(definition.route_tags()),
 			"synergy_names": PackedStringArray(),
 			"synergy_tooltip": ""})
 	var synergy_rows: Array[Dictionary] = []
@@ -568,14 +692,28 @@ func catalog_view(country_catalog: Dictionary = {},
 		var synergy = _synergy_resource(String(compiled.synergy_ids[i]))
 		if synergy == null:
 			continue
-		var required_names := PackedStringArray()
-		for required_id in synergy.required_ideology_ids:
-			required_names.append(_display_name_for_id(String(required_id)))
+		# Requirement rows are read back from the compiled table, not re-derived
+		# from the resource. A named synergy and an expanded route synergy both
+		# land here as the same thing, so the UI has exactly one shape to handle
+		# and cannot disagree with what the runtime will actually check.
+		var member_ids := PackedStringArray()
+		var member_names := PackedStringArray()
+		var requirement_begin := int(compiled.synergy_requirement_offsets[i])
+		var requirement_end := int(compiled.synergy_requirement_offsets[i + 1])
+		for cursor in range(requirement_begin, requirement_end):
+			var dense := int(compiled.synergy_requirement_ideology_ids[cursor])
+			member_ids.append(String(compiled.ideology_ids[dense]))
+			member_names.append(_display_name_for_id(
+				String(compiled.ideology_ids[dense])))
 		var effect_lines := _present_effect_lines(
 			modifier_catalog, synergy.persistent_effects)
 		var display := _synergy_display_name(synergy)
 		var effect_text := "、".join(effect_lines) if not effect_lines.is_empty() else "额外国家修正"
-		var tooltip := "同时装备%s：%s" % ["与".join(required_names), effect_text]
+		var route_key := String(synergy.route_tag).strip_edges()
+		var tooltip := "同时装备%s：%s" % ["与".join(member_names), effect_text]
+		if synergy.uses_route_tag():
+			tooltip = "%s体系·%d张：%s" % [route_display_name(route_key),
+				int(synergy.min_count), effect_text]
 		var resonance_school := String(synergy.school_id)
 		if not resonance_school.is_empty():
 			tooltip = "%s共鸣·%d张：%s" % [school_name(resonance_school),
@@ -585,8 +723,11 @@ func catalog_view(country_catalog: Dictionary = {},
 			"id": String(compiled.synergy_ids[i]),
 			"display_name": display,
 			"effect_lines": effect_lines,
-			"required_names": required_names,
-			"required_ids": PackedStringArray(synergy.required_ideology_ids),
+			"required_names": member_names,
+			"required_ids": member_ids,
+			"route_tag": route_key,
+			"minimum_levels": synergy.minimum_levels if not synergy.uses_route_tag() \
+				else PackedInt32Array(),
 			"min_count": int(synergy.min_count),
 			"school_id": resonance_school,
 			"resonance_tier": int(synergy.resonance_tier),
@@ -594,7 +735,7 @@ func catalog_view(country_catalog: Dictionary = {},
 		})
 		if not resonance_school.is_empty():
 			continue
-		for required_id in synergy.required_ideology_ids:
+		for required_id in member_ids:
 			var key := String(required_id)
 			var attached: Array = synergy_by_ideology.get(key, [])
 			attached.append({"display_name": display, "tooltip": tooltip})
@@ -630,11 +771,114 @@ func catalog_view(country_catalog: Dictionary = {},
 		"starting_points_q16": int(compiled.get("starting_points_q16", 0))}
 
 
+## Expands a route-tag synergy selector into the concrete dense card ids it
+## covers. Pure: it takes the already-built route index and returns either the
+## member list or a rejection that names the route and the numbers involved.
+##
+## Split out of `compile_native_catalog` because every interesting case here is
+## a boundary -- an unknown route, a tier taller than its route, an empty
+## bucket -- and those cost a whole compiled catalog to stage inline while
+## costing one line to stage here.
+static func _expand_route_synergy_members(route_tag: String,
+		route_index: Dictionary, min_count: int) -> Dictionary:
+	var route_key := route_tag.strip_edges()
+	if route_key.is_empty():
+		return {"ok": false, "reason": "ideology_synergy_route_tag_empty"}
+	if not route_index.has(route_key):
+		return {"ok": false, "reason":
+			"ideology_synergy_route_tag_unknown:%s" % route_key}
+	var members: PackedInt32Array = route_index[route_key]
+	# An empty bucket is a *different* failure from an unknown tag: the tag is
+	# spelled right and n cards carry it -- there are just no cards yet. Kept
+	# apart because the fix differs (author cards vs fix the id), and a shared
+	# message would send the next reader to the wrong file.
+	if members.is_empty():
+		return {"ok": false, "reason":
+			"ideology_synergy_route_tag_no_members:%s" % route_key}
+	# A tier that can never open is worse than a missing tier: it reads as an
+	# implemented bond in the UI and never fires.
+	if min_count > members.size():
+		return {"ok": false, "reason":
+			"ideology_synergy_route_tag_min_count_exceeds_members:%s:%d>%d" % [
+				route_key, min_count, members.size()]}
+	return {"ok": true, "members": members, "route_tag": route_key}
+
+
+## How many live Effect instances one program row can own at once.
+##
+## This is the multiplicand the concurrency budget was missing. Three tiers:
+##
+##  * Not a per-cell domain -> exactly one instance (a country/climate/resource
+##    program is one instance per card no matter what its selector says).
+##  * A per-cell domain with a single-target selector -> one instance.
+##  * A per-cell domain with a fan-out selector -> the program's own cell cap,
+##    or `SELECTOR_MAX_CELLS` when it leaves the cap at the runtime default.
+##
+## Deliberately an upper bound rather than a measurement: the point is to fail
+## on a catalog that CAN exceed the budget, and a real map may legitimately be
+## smaller. Under-counting here would be the same silent pass this change
+## exists to remove.
+static func _program_live_target_cap(program: Resource) -> int:
+	const SINGLE_TARGET_KINDS := [0, 2, 3, 4, 5]
+	const STACK_POLICY_ADD_STACK := 2
+	# L2-8: an ADD_STACK program owns one instance PER LAYER, because each layer
+	# carries its own duration. The budget has to count them: a 3-stack program
+	# fans out 3x, not 1x, and the whole point of the concurrency check is that a
+	# catalog which cannot fit is rejected at build time.
+	var layers := 1
+	if int(program.stack_policy) == STACK_POLICY_ADD_STACK:
+		layers = maxi(1, mini(int(program.max_stacks), 64))
+	if int(program.target_domain) != 2:
+		return layers
+	if int(program.target_selector_kind) in SINGLE_TARGET_KINDS:
+		return layers
+	var params: PackedInt32Array = program.target_selector_param
+	var cells := IdeologyEffectDefinitionScript.SELECTOR_MAX_CELLS
+	if params.size() > 0:
+		var declared_cap := int(params[0])
+		if declared_cap >= 1:
+			cells = mini(declared_cap, IdeologyEffectDefinitionScript.SELECTOR_MAX_CELLS)
+	return layers * cells
+
+
 static func school_name(school_id: String) -> String:
 	for school in SCHOOLS:
 		if String(school.id) == school_id:
 			return String(school.name)
 	return school_id
+
+
+## Display names for the build routes (体系) that route-tag synergies are keyed
+## by. Ids are the contract; these strings are presentation only and falling
+## back to the raw id is a supported outcome, so adding a route to the content
+## never requires touching this table before it can be referenced.
+const ROUTE_DISPLAY_NAMES := {
+	"cropland": "田垄",
+	"granary": "仓廪",
+	"mining": "矿冶",
+	"workshop": "工坊",
+	"market": "市易",
+	"thoroughfare": "通衢",
+	"learning": "学识",
+	"labor": "劳作",
+	"livelihood": "生灵",
+	"clan": "宗族",
+	"era": "纪元",
+	"fiscal": "度支",
+	"season": "天时",
+	"terrain": "山河",
+}
+
+
+static func route_display_name(route_tag: String) -> String:
+	return String(ROUTE_DISPLAY_NAMES.get(route_tag, route_tag))
+
+
+static func _route_display_names(tags: PackedStringArray) -> PackedStringArray:
+	var names := PackedStringArray()
+	for tag in tags:
+		names.append(route_display_name(String(tag)))
+	return names
 
 
 static var _technology_names := {}

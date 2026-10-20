@@ -3,7 +3,7 @@ class_name AnnualReaderView
 
 ## 长卷。
 ##
-## 一块滚动面，纸的第一屏是封面，往下接十章，**一直滚**。
+## 一块滚动面，纸的第一屏是封面，往下接九章，**一直滚**。
 ## 封面与正文不是"两页"，而是同一张纸上先后出现的两段 —— 这正是旧版翻页式
 ## 版面读起来像 PPT 的原因：每一屏都在"换幻灯片"，而不是"继续读下去"。
 ##
@@ -20,6 +20,8 @@ var _body: VBoxContainer
 var _cover: AnnualCoverView
 var _head: AnnualRunningHead
 var _foot_veil: AnnualRunningHead
+var _head_gap: Control
+var _foot_gap: Control
 var _paper_mask: Texture2D
 var _rail: AnnualProgressRail
 var _footer: HBoxContainer
@@ -27,9 +29,12 @@ var _page_label: Label
 var _progress_track: ColorRect
 var _progress_fill: ColorRect
 var _history: OptionButton
+var _links: Array[Button] = []
 var _newer: Button
 var _older: Button
 var _history_ids: Array[int] = []
+## 页脚配色当前站在哪一边：0 = 桌面上（纸没盖住），1 = 纸面上。
+var _desk_ink := -1.0
 
 var _model: Dictionary = {}
 var _sections: Array[AnnualSection] = []
@@ -128,14 +133,15 @@ func _build_chrome() -> void:
 	_newer.tooltip_text = "载入较新的年度报告"
 	_older = _link_button("更早", func() -> void: history_page_requested.emit(int(_history.get_meta("offset", 0)) + 64))
 	_older.tooltip_text = "载入更早的年度报告"
-	var copy := _link_button("复制全文", func() -> void: copy_requested.emit())
+	var copy := _link_button("复制全文", func() -> void: copy_requested.emit(), &"confirm")
 	copy.tooltip_text = "把完整报告复制到剪贴板（Ctrl+Shift+C）"
-	var close := _link_button("合卷", func() -> void: close_requested.emit())
+	var close := _link_button("合卷", func() -> void: close_requested.emit(), &"close")
 	close.tooltip_text = "关闭报告并恢复此前的时间状态"
 
 
-func _link_button(text: String, callback: Callable) -> Button:
+func _link_button(text: String, callback: Callable, cue: StringName = &"page") -> Button:
 	var button := Button.new()
+	button.set_meta(&"ui_sound", cue)
 	button.text = text
 	button.focus_mode = Control.FOCUS_ALL
 	button.custom_minimum_size.y = 26.0
@@ -156,6 +162,7 @@ func _label(text: String, size_px: int, color: Color) -> Label:
 
 
 ## 无底文本链：常态透明，hover 转朱红，focus 只加 2px 底边。
+## 记进 _links：卷末纸走完之后它们会落到桌面上，那时墨色必须反过来。
 func _link_style(button: Button) -> void:
 	button.add_theme_font_override("font", UITokens.annual_font("label"))
 	button.add_theme_font_size_override("font_size", 13)
@@ -165,6 +172,8 @@ func _link_style(button: Button) -> void:
 		button.add_theme_color_override("font_color", UITokens.CHRONICLE_INK)
 	button.add_theme_color_override("font_hover_color", UITokens.CHRONICLE_RED)
 	button.add_theme_color_override("font_disabled_color", Color(UITokens.CHRONICLE_MUTED.r, UITokens.CHRONICLE_MUTED.g, UITokens.CHRONICLE_MUTED.b, 0.45))
+	if not _links.has(button):
+		_links.append(button)
 
 
 # ── 构卷 ────────────────────────────────────────────────────────────────────
@@ -185,9 +194,15 @@ func present(model: Dictionary) -> void:
 	_apply_paper_rects()
 
 	var chapters: Array = _model.get("chapters", [])
+	# 卷首桌面：纸的上沿之上露出来的那段桌。它不是"多余的空白"——
+	# 它是"这张纸从哪里开始"的唯一证据。
+	_head_gap = _desk_gap("DeskGapTop", float(_layout.get("head_gap", 0.0)))
+	_body.add_child(_head_gap)
+
 	_cover = AnnualCoverView.new()
 	_cover.name = "Cover"
 	_cover.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	_cover.set_page_cap(float(_layout.get("cover_height", 0.0)))
 	_cover.begin_requested.connect(func() -> void: chapter_entered.emit(0))
 	_body.add_child(_cover)
 	_cover.present(_model)
@@ -203,56 +218,98 @@ func present(model: Dictionary) -> void:
 	_scroll.scroll_vertical = 0
 	_refresh_page_label()
 	_progress_fill.offset_right = 0.0
+	# 卷末桌面：必须永远排在最末 —— 章节是后面一帧一章补上来的，
+	# 每次补完都要把它挪回队尾（见 _append_section）。
+	_foot_gap = _desk_gap("DeskGapBottom", float(_layout.get("foot_gap", 0.0)))
+	_body.add_child(_foot_gap)
 	for i in mini(2, chapters.size()):
 		_append_section(i)
+
+
+## 桌面留白：一段透明的空档，露出底下那张桌子。
+func _desk_gap(node_name: String, height: float) -> Control:
+	var gap := Control.new()
+	gap.name = node_name
+	gap.custom_minimum_size.y = height
+	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return gap
 
 
 func _compute_layout() -> Dictionary:
 	var viewport: Vector2 = get_viewport_rect().size
 	if viewport.y < 8.0:
 		viewport = Vector2(1920.0, 1080.0)
-	var paper: Rect2 = AnnualReportTokens.paper_rect(viewport)
+	var head_gap: float = AnnualReportTokens.sheet_head_gap(viewport)
+	var foot_gap: float = AnnualReportTokens.sheet_foot_gap(viewport)
 	return {
-		"viewport": viewport, "paper": paper,
+		"viewport": viewport,
+		"column": AnnualReportTokens.paper_column(viewport),
 		"pad": AnnualReportTokens.paper_padding(viewport),
 		"measure": AnnualReportTokens.measure(viewport),
 		"chart": AnnualReportTokens.chart_width(viewport),
 		"narrow": AnnualReportTokens.is_narrow(viewport),
 		"gap": AnnualReportTokens.chapter_gap(viewport),
-		"cover_height": viewport.y,
+		# 纸的上沿之下才是封面：封面这一屏要让出卷首那段桌面，否则最后一行
+		# （"向下卷动"提示）会被推到屏幕外，纸的上沿也永远看不见。
+		"head_gap": head_gap,
+		"foot_gap": foot_gap,
+		"cover_height": viewport.y - head_gap,
 	}
 
 
-## 滚动面 = 纸本身（上下出血），正文靠 Section 的内边距落进版心。
+## 纸在内容坐标系里的高度 = 正文总高 - 卷首桌面 - 卷末桌面。
+## 内容是一章一章长出来的，所以这个值在构建过程中会变；纸层每帧跟着它重排。
+func sheet_height() -> float:
+	if _body == null:
+		return 0.0
+	var head_gap: float = float(_layout.get("head_gap", 0.0))
+	var foot_gap: float = float(_layout.get("foot_gap", 0.0))
+	return maxf(1.0, _body.size.y - head_gap - foot_gap)
+
+
+## 纸的上沿在**屏幕坐标**里的 y。负值 = 已经滚过去了。
+## 这一条就是"纸是实物"的全部：它不是常量，它等于卷首留白减去滚动位移。
+func sheet_top() -> float:
+	if _scroll == null:
+		return 0.0
+	return float(_layout.get("head_gap", 0.0)) - float(_scroll.scroll_vertical)
+
+
+## 纸的下沿在屏幕坐标里的 y。
+func sheet_bottom() -> float:
+	return sheet_top() + sheet_height()
+
+
+## 滚动面 = 纸的竖列；正文靠 Section 的内边距落进版心。
+## 纸层的上下两端由编排层按 sheet_height 定位，这里只管横向与浮层。
 func _apply_paper_rects() -> void:
 	var viewport: Vector2 = _layout.get("viewport", Vector2(1920.0, 1080.0))
-	var paper: Rect2 = _layout.get("paper", AnnualReportTokens.paper_rect(viewport))
+	var column: Rect2 = _layout.get("column", AnnualReportTokens.paper_column(viewport))
 	var pad: float = float(_layout.get("pad", 72.0))
-	_scroll.offset_left = paper.position.x
-	_scroll.offset_right = paper.end.x - viewport.x
+	_scroll.offset_left = column.position.x
+	_scroll.offset_right = column.end.x - viewport.x
 	_scroll.offset_top = 0.0
 	_scroll.offset_bottom = 0.0
 	# 滚动内容定死在纸宽上：ScrollContainer 只按子节点最小宽度摆放，
 	# 正文里最宽的那一项（图表/账本）会把整列挤窄，纸右缘就少几像素。
-	_body.custom_minimum_size.x = paper.size.x
+	_body.custom_minimum_size.x = column.size.x
 
-	_head.offset_left = paper.position.x
-	_head.offset_right = paper.end.x - viewport.x
+	_head.offset_left = column.position.x
+	_head.offset_right = column.end.x - viewport.x
 	_head.set_inset(pad)
-	_foot_veil.offset_left = paper.position.x
-	_foot_veil.offset_right = paper.end.x - viewport.x
-	set_paper_mask_mapping(paper,
-		AnnualReportTokens.mask_rect(viewport))
+	_foot_veil.offset_left = column.position.x
+	_foot_veil.offset_right = column.end.x - viewport.x
+	set_paper_mask_mapping(column)
 
-	_footer.offset_left = paper.position.x + pad
-	_footer.offset_right = paper.end.x - pad - viewport.x
+	_footer.offset_left = column.position.x + pad
+	_footer.offset_right = column.end.x - pad - viewport.x
 	_footer.offset_top = -AnnualReportTokens.FOOTER_HEIGHT
 	_footer.offset_bottom = 0.0
 
 	# 刻度轨浮在长纸右侧的桌面上 —— 它不属于纸，属于你翻纸的手。
-	var desk_space: float = viewport.x - paper.end.x
+	var desk_space: float = viewport.x - column.end.x
 	_rail.visible = desk_space >= 150.0
-	_rail.offset_left = paper.end.x + 24.0
+	_rail.offset_left = column.end.x + 24.0
 	_rail.offset_top = 0.0
 	_rail.offset_right = AnnualReportTokens.RAIL_WIDTH
 	_rail.offset_bottom = viewport.y
@@ -269,24 +326,29 @@ func set_paper_mask(texture: Texture2D) -> void:
 
 
 ## 页眉 / 页脚各自在蒙版里的 UV 子矩形。两者都按整纸宽算，只有高度不同。
-func set_paper_mask_mapping(paper: Rect2, mask: Rect2) -> void:
+## 纵向那一段只是"落在蒙版的实心行上"—— 蒙版上下两端 alpha 恒为 1，
+## 这里唯一要的是左右两端跟着纸缘收边。
+func set_paper_mask_mapping(column: Rect2) -> void:
 	if _head == null or _foot_veil == null:
 		return
 	var viewport: Vector2 = _layout.get("viewport", Vector2(1920.0, 1080.0))
+	var mask: Rect2 = AnnualReportTokens.mask_rect(viewport)
 	var head_height: float = AnnualReportTokens.RUNNING_HEAD_HEIGHT
 	var foot_height: float = AnnualReportTokens.FOOTER_HEIGHT
 	_head.set_mask(AnnualReportTokens.mask_mapping(
-		Rect2(paper.position, Vector2(paper.size.x, head_height)), mask))
+		Rect2(Vector2(column.position.x, 0.0), Vector2(column.size.x, head_height)), mask))
 	_foot_veil.set_mask(AnnualReportTokens.mask_mapping(
-		Rect2(Vector2(paper.position.x, viewport.y - foot_height),
-			Vector2(paper.size.x, foot_height)), mask))
+		Rect2(Vector2(column.position.x, viewport.y - foot_height),
+			Vector2(column.size.x, foot_height)), mask))
 
 
 func _append_section(index: int) -> void:
 	var chapters: Array = _model.get("chapters", [])
 	if index >= chapters.size():
 		return
-	if _built > 0 or _body.get_child_count() > 1:
+	# 章间距只插在章与章之间。用 _sections 判空而不是数 _body 的孩子 ——
+	# 卷首/卷末那两段桌面留白也算孩子，数出来会把第一章前面也塞一道间距。
+	if not _sections.is_empty():
 		var lead := Control.new()
 		lead.custom_minimum_size.y = float(_layout.get("gap", AnnualReportTokens.GAP_CHAPTER))
 		lead.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -296,6 +358,9 @@ func _append_section(index: int) -> void:
 	_body.add_child(section)
 	_sections.append(section)
 	_built = _sections.size()
+	# 卷末桌面挪回队尾：它必须在全部章节之后，纸的下沿才有地方露出来。
+	if _foot_gap != null and _foot_gap.get_index() != _body.get_child_count() - 1:
+		_body.move_child(_foot_gap, _body.get_child_count() - 1)
 
 
 func flush_build() -> void:
@@ -397,7 +462,9 @@ func _apply_pending_chapter() -> void:
 		return
 	_pending_chapter = -1
 	var section := _sections[index]
-	_tween_scroll(maxf(0.0, section.position.y - 8.0), _pending_animate)
+	# 让章顶落在页眉下沿，而不是被页眉盖住：页眉是浮在纸上的固定条，
+	# 直接对齐 section.position.y 会把章首那行眉标压到页眉底下。
+	_tween_scroll(maxf(0.0, section.position.y - AnnualReportTokens.RUNNING_HEAD_HEIGHT - 8.0), _pending_animate)
 	_update_chapter(section.index, true)
 
 
@@ -433,6 +500,9 @@ func _process(delta: float) -> void:
 	if _built < chapters.size():
 		_append_section(_built)
 	_apply_pending_chapter()
+	# 浮层要跟着纸走。滚轮、触摸板、手柄、跳章 tween 都会直接改 scroll_vertical，
+	# 没有哪一个信号能一次盖全，所以每帧同步 —— 它只做几次比较和一次颜色插值。
+	_sync_chrome()
 
 	_visit_accum += delta
 	if _visit_accum < AnnualReportTokens.VISIT_INTERVAL:
@@ -455,15 +525,71 @@ func _process(delta: float) -> void:
 	if _progress_track != null:
 		_progress_fill.offset_right = _progress_track.size.x * progress_ratio()
 
-	# 封面占了第一屏：滚过六成才算进入第一章。
-	var cover_height: float = float(_layout.get("cover_height", 0.0))
+	# 封面占了纸的第一屏：滚过六成才算进入第一章。
+	# 封面现在从纸的上沿开始，所以要减掉卷首那段桌面，不能拿整屏当基准。
+	var cover_bottom: float = float(_layout.get("head_gap", 0.0)) \
+		+ float(_layout.get("cover_height", 0.0))
 	var active := -1
-	if top > cover_height * 0.6:
+	if top > cover_bottom * 0.6:
 		var cursor: float = top + height * 0.30
 		for i in _sections.size():
 			if _sections[i].position.y <= cursor:
 				active = i
 	_update_chapter(active)
+
+
+## 页眉 / 页脚是浮在纸上的固定条，纸却是会走的那一件实物。两者一旦错位，
+## 表现为"深色桌面上浮着一条纸色横带、字号还是纸上的墨色"—— 一眼假。
+##
+## 所以这条渐变不按"屏幕第几行"开关，按**纸盖没盖住它**开关：
+##   页眉落点 = 屏幕 0..RUNNING_HEAD_HEIGHT，纸顶走到 0 以上时才算盖住；
+##   页脚落点 = 屏幕底部 FOOTER_HEIGHT，纸底走到屏幕底部时才算盖住。
+func _sync_chrome() -> void:
+	if _head == null or _foot_veil == null:
+		return
+	var viewport: Vector2 = _layout.get("viewport", Vector2(1920.0, 1080.0))
+	var top: float = sheet_top()
+	var bottom: float = top + sheet_height()
+	var head_height: float = AnnualReportTokens.RUNNING_HEAD_HEIGHT
+	var foot_height: float = AnnualReportTokens.FOOTER_HEIGHT
+	# 只在纸真的盖住这条带时才浮现。纸的上沿一旦进到带里，带子的上半段就是桌面，
+	# 这时还铺一层纸色渐变，会在屏幕顶部两角留下一片纸上才有的暖雾 ——
+	# 所以衰减窗口只给半个带高：纸缘一进来，渐变就退。
+	var head_fade: float = clampf(1.0 - top / maxf(head_height * 0.5, 1.0), 0.0, 1.0)
+	var foot_fade: float = clampf(
+		1.0 - (viewport.y - bottom) / maxf(foot_height * 0.5, 1.0), 0.0, 1.0)
+	# 只在真的变了才写：这两个是每帧都过的热路径，无谓的赋值会连带触发
+	# 画布的变换通知。
+	if absf(_head.modulate.a - head_fade) > 0.004:
+		_head.modulate.a = head_fade
+	if absf(_foot_veil.modulate.a - foot_fade) > 0.004:
+		_foot_veil.modulate.a = foot_fade
+	_apply_footer_ink(foot_fade)
+
+
+## 页脚配色：t = 0 站在桌面上（浅墨），t = 1 压在纸上（深墨）。
+func _apply_footer_ink(t: float) -> void:
+	if absf(t - _desk_ink) < 0.02:
+		return
+	_desk_ink = t
+	var ink: Color = UITokens.CHRONICLE_LIGHT_MUTED.lerp(UITokens.CHRONICLE_INK, t)
+	var hot: Color = UITokens.CHRONICLE_LIGHT_INK.lerp(UITokens.CHRONICLE_RED, t)
+	for button in _links:
+		if not is_instance_valid(button):
+			continue
+		for state in ["font_color", "font_pressed_color", "font_focus_color", "font_hover_pressed_color"]:
+			button.add_theme_color_override("font_color", ink)
+		button.add_theme_color_override("font_hover_color", hot)
+		button.add_theme_color_override("font_disabled_color",
+			Color(ink.r, ink.g, ink.b, 0.45))
+	if _page_label != null:
+		_page_label.add_theme_color_override("font_color", ink)
+	if _progress_track != null:
+		_progress_track.color = Color(ink.r, ink.g, ink.b, 0.16)
+	if _progress_fill != null:
+		var accent: Color = UITokens.CHRONICLE_BRASS.lerp(
+			Color(UITokens.CHRONICLE_RED.r, UITokens.CHRONICLE_RED.g, UITokens.CHRONICLE_RED.b, 0.9), t)
+		_progress_fill.color = accent
 
 
 func _gui_input(event: InputEvent) -> void:

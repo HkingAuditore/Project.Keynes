@@ -57,10 +57,26 @@ enum TargetSelectorKind {
 	PREDICATE_ANY_CELL = 10,
 	## Every cell within `param[0]` hex steps of the anchor.
 	DISTANCE_N = 11,
+	## The anchor's owner's whole territory, filtered by `param[1]` = 1-based
+	## tag id (0 = every owned cell). See TargetTagDictionary.
+	OWN_TERRITORY = 12,
+	## Every cell on the grid matching `param[1]` = 1-based tag id (0 = the
+	## whole grid). The ownership-free twin of OWN_TERRITORY.
+	TAG_ANY_CELL = 13,
+	## Authoring ceiling. Validate against this, never against a named kind:
+	## the previous check compared with DISTANCE_N, so kinds 12 and 13 were
+	## rejected by the authoring layer long after the runtime accepted them.
+	SELECTOR_MAX_KIND = 13,
 }
 
 ## Hard cap mirrored from EffectRuntime::SELECTOR_MAX_CELLS.
 const SELECTOR_MAX_CELLS := 32
+
+## How many names `target_selector_tags` may hold. Not a runtime limit — the
+## runtime sees one id either way. It is an authoring guard: the compiler folds
+## the names into their DNF clause *product*, so each extra name multiplies the
+## clause count, and a 6-tag card would blow the row budget on its own.
+const MAX_SELECTOR_TAGS := 4
 
 ## Matches an IdeologyCatalog card-effect `definition_key`.
 @export var definition_key: StringName = &""
@@ -75,18 +91,48 @@ const SELECTOR_MAX_CELLS := 32
 @export var target_selector_kind: int = TargetSelectorKind.OWNER
 @export var target_selector_id: StringName = &""
 ## [0] = cell cap (0 = runtime default, hard cap 32), [1] = terrain id /
-## resource id / predicate id, depending on the selector.
+## resource id / predicate id / 1-based tag id, depending on the selector.
 @export var target_selector_param: PackedInt32Array = PackedInt32Array([0, 0])
+## Tag name for OWN_TERRITORY / TAG_ANY_CELL, e.g. &"cell.market".
+##
+## Written instead of `target_selector_param[1]` because that slot is a raw
+## 1-based array index into the tag dictionary: an author who types 4 there is
+## correct only until someone appends a tag above it, and the failure is silent
+## (the card keeps working, on different cells). The catalog compiler resolves
+## this name once, at build time, and hard-fails on an unknown name.
+@export var target_selector_tag: StringName = &""
+## Two or more tags that must ALL hold — the authoring form of a 3+-tag AND.
+##
+## The dictionary only ships pairwise composites (`cell.metropolis.manufacturing`
+## and friends), because pre-baking every triple would be a combinatorial menu.
+## This field intersects them at build time instead: the compiler folds the
+## tags' DNF clause lists into one synthetic tag and appends it to the
+## dictionary, so the runtime still reads a single `param[1]` id and needs no
+## change at all.
+##
+## Use this OR `target_selector_tag`, never both — one slot, one source of truth.
+## Order does not matter: names are sorted before folding, so two cards that
+## list the same tags in different orders share one dictionary entry.
+@export var target_selector_tags: PackedStringArray = PackedStringArray()
 @export_range(1, 3650, 1) var cadence_days: int = 1
 @export var conditions: Array[Resource] = []
 @export var instructions: Array[Resource] = []
 @export var commands: Array[Resource] = []
 
 
+## Key an EffectDefinition is registered under. Static twin of `program_key()`,
+## so a table of override rows can resolve a target without instantiating the
+## program resource it is describing.
+static func definition_key_of(bare_key: StringName) -> String:
+	if bare_key == &"":
+		return ""
+	return "ideology.effect.%s" % String(bare_key)
+
+
 func program_key() -> StringName:
 	if definition_key == &"":
 		return &""
-	return StringName("ideology.effect.%s" % String(definition_key))
+	return StringName(definition_key_of(definition_key))
 
 
 func to_effect_definition() -> Resource:
@@ -137,12 +183,46 @@ func validate() -> String:
 		return "ideology_effect_stack_policy_invalid"
 	if max_stacks < 1 or max_stacks > 256:
 		return "ideology_effect_max_stacks_invalid"
-	if target_selector_kind < 0 or target_selector_kind > TargetSelectorKind.DISTANCE_N:
+	if target_selector_kind < 0 or target_selector_kind > TargetSelectorKind.SELECTOR_MAX_KIND:
 		return "ideology_effect_selector_invalid"
 	if target_selector_param.size() > 0 \
 			and (int(target_selector_param[0]) < 0 \
 			or int(target_selector_param[0]) > SELECTOR_MAX_CELLS):
 		return "ideology_effect_selector_cap_invalid"
+	# A tag name is only meaningful for the two tag-scoped kinds, and it must
+	# not compete with a raw param[1]: two sources of truth for one slot is how
+	# a card ends up filtering on a tag its author cannot see.
+	if target_selector_tag != &"" and not target_selector_tags.is_empty():
+		# Both forms write `param[1]`. Accepting both would mean picking a
+		# winner and silently discarding the other one's intent.
+		return "ideology_effect_selector_tag_conflicts_with_tags"
+	var tag_names := PackedStringArray()
+	if not target_selector_tags.is_empty():
+		tag_names = target_selector_tags
+	elif target_selector_tag != &"":
+		tag_names = PackedStringArray([String(target_selector_tag)])
+	if not tag_names.is_empty():
+		if target_selector_kind not in [
+				TargetSelectorKind.OWN_TERRITORY,
+				TargetSelectorKind.TAG_ANY_CELL]:
+			return "ideology_effect_selector_tag_kind_invalid"
+		if target_selector_param.size() > 1 \
+				and int(target_selector_param[1]) != 0:
+			return "ideology_effect_selector_tag_conflicts_with_param"
+		if tag_names.size() > MAX_SELECTOR_TAGS:
+			return "ideology_effect_selector_tag_count_invalid"
+		var seen_tag_names := {}
+		for tag_name in tag_names:
+			var trimmed := String(tag_name).strip_edges()
+			if trimmed.is_empty():
+				return "ideology_effect_selector_tag_name_empty"
+			# `A AND A` is `A`, so a repeat is never a contradiction — which is
+			# exactly why it has to fail: it is always a copy-paste slip, and
+			# collapsing it quietly would leave the card saying something its
+			# author did not write.
+			if seen_tag_names.has(trimmed):
+				return "ideology_effect_selector_tag_name_duplicate"
+			seen_tag_names[trimmed] = true
 	if instructions.is_empty():
 		return "ideology_effect_program_missing"
 	if commands.is_empty():

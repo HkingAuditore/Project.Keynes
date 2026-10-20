@@ -15,6 +15,7 @@ const IdeologyEffectCatalogScript = preload("res://scripts/ideology/ideology_eff
 const IdeologyEffectDefinitionScript = preload("res://scripts/ideology/ideology_effect_definition.gd")
 const EraRewardCatalogScript = preload("res://scripts/effect/era_reward_catalog.gd")
 const TriggerCatalogScript = preload("res://scripts/trigger/trigger_catalog.gd")
+const TargetTagDictionaryScript = preload("res://scripts/effect/target_tag_dictionary.gd")
 
 const Q16_ONE := 65536
 
@@ -22,8 +23,14 @@ const Q16_ONE := 65536
 ## Domain catalogs remain the source of truth; this only creates executable
 ## programs and never duplicates domain state. Tests may inject a FamilyEffect
 ## catalog fixture; production callers omit the override and load the default.
-static func build(family_effect_catalog_override: Resource = null) -> Resource:
-	if family_effect_catalog_override == null:
+## `ideology_effect_catalog_override` exists for the same reason and one more:
+## the tag-name resolution (L5-14) only runs on authored cards, and there is no
+## shipped card using it yet, so without an injection point the compiler path
+## would be dead code that only the helper's unit test ever touches.
+static func build(family_effect_catalog_override: Resource = null,
+		ideology_effect_catalog_override: Resource = null) -> Resource:
+	if family_effect_catalog_override == null \
+			and ideology_effect_catalog_override == null:
 		var precompiled := LoadingCatalogCache.effect_catalog()
 		if precompiled != null:
 			return precompiled
@@ -101,13 +108,19 @@ static func build(family_effect_catalog_override: Resource = null) -> Resource:
 		"country.population_q16",
 		"country.buildings_installed",
 		"country.trade_base_value_q16",
+		# --- Terrain axis (id 50) -------------------------------------------
+		# NOT the same id space as `cell.landform` (id 10): that one is the
+		# LandformType axis (plain / hills / delta / ...), this one is
+		# TerrainType (grassland / floodplain / ...). 「河谷」is a floodplain
+		# TERRAIN, so it could not be tagged at all while only landform existed.
+		"cell.terrain",
 	])
 	catalog.behavior_command_keys = PackedStringArray()
 	var definitions: Array[Resource] = []
 
 	var technology_catalog := TechnologyCatalogScript.compile_native_catalog()
 	if not bool(technology_catalog.get("ok", false)):
-		return null
+		return _reject("effect_catalog_technology_unavailable")
 	var technology_ids: PackedStringArray = technology_catalog.get(
 		"technology_ids", PackedStringArray())
 	var technology_modifiers: PackedStringArray = technology_catalog.get(
@@ -121,7 +134,7 @@ static func build(family_effect_catalog_override: Resource = null) -> Resource:
 	var definition_seen := {}
 	if technology_recipes.size() != technology_ids.size() \
 			or technology_recipe_versions.size() != technology_ids.size():
-		return null
+		return _reject("effect_catalog_technology_recipe_shape_invalid")
 	for i in range(mini(technology_ids.size(), technology_modifiers.size())):
 		if i < technology_flags.size() and (int(technology_flags[i]) & TechnologyCatalogScript.FLAG_STARTING) != 0:
 			continue
@@ -136,18 +149,18 @@ static func build(family_effect_catalog_override: Resource = null) -> Resource:
 	for row in TriggerCatalogScript.breakthrough_effect_rows():
 		var program_key := "trigger.country.%s" % String(row.signal_id)
 		if definition_seen.has(program_key):
-			return null
+			return _reject("effect_catalog_trigger_country_key_duplicate")
 		definition_seen[program_key] = true
 		definitions.append(_trigger_country_signal_definition(
 			String(row.signal_id), int(row.signal_index),
 			StringName(row.command_key)))
 	var era_reward_ir := EraRewardCatalogScript.compile_native_catalog(technology_catalog)
 	if not bool(era_reward_ir.get("ok", false)):
-		return null
+		return _reject("effect_catalog_era_reward_unavailable")
 	for reward_definition in EraRewardCatalogScript.effect_definitions():
 		var reward_key := String(reward_definition.key)
 		if definition_seen.has(reward_key):
-			return null
+			return _reject("effect_catalog_era_reward_key_duplicate")
 		definition_seen[reward_key] = true
 		definitions.append(reward_definition)
 	era_reward_ir.erase("ok")
@@ -165,12 +178,12 @@ static func build(family_effect_catalog_override: Resource = null) -> Resource:
 		family_effect_ir = family_effect_catalog.compile_native_catalog(
 			technology_ids)
 		if not bool(family_effect_ir.get("ok", false)):
-			return null
+			return _reject("effect_catalog_family_effect_unavailable")
 		var family_definitions: Array = family_effect_ir.get("definitions", [])
 		for definition in family_definitions:
 			var family_key := String(definition.key)
 			if definition_seen.has(family_key):
-				return null
+				return _reject("effect_catalog_family_effect_key_duplicate")
 			definition_seen[family_key] = true
 			definitions.append(definition)
 		family_effect_ir.erase("ok")
@@ -180,6 +193,25 @@ static func build(family_effect_catalog_override: Resource = null) -> Resource:
 
 	var economy_catalog := EconomyCatalogScript.compile_native_catalog(
 		family_effect_catalog)
+	# 标签词典（设计文档 §1 / §27）必须建在**理念效果编译之前**：卡面写的
+	# `target_selector_tag` 要在 to_effect_definition() 之后、入表之前解析成
+	# `param[1]` 的 1-based id（L5-14）。空表等于「没有标签」，原生侧据此
+	# 跳过整张谓词表。
+	var tag_list: Array[Dictionary] = []
+	var tag_ids := {}
+	if bool(economy_catalog.get("ok", false)):
+		var tag_dictionary: Dictionary = TargetTagDictionaryScript.build(economy_catalog)
+		if not bool(tag_dictionary.get("ok", false)):
+			return _reject("effect_catalog_target_tag_dictionary_invalid:%s" % String(
+				tag_dictionary.get("reason", "")))
+		# `target_tags` is Array[Dictionary]; a plain Array raises at runtime and
+		# the exception silently aborts build() (a SCRIPT ERROR does not propagate
+		# as an error, it just returns null). The dictionary layer is deliberately
+		# untyped so callers can build it cheaply, so the conversion happens once
+		# here — the single place that crosses the typed boundary.
+		for tag in tag_dictionary.get("tags", []):
+			tag_list.append(tag)
+		tag_ids = TargetTagDictionaryScript.tag_id_map(tag_list)
 	if bool(economy_catalog.get("ok", false)):
 		var trait_catalog = FamilyTraitCatalogScript.load_default()
 		if trait_catalog != null:
@@ -215,7 +247,8 @@ static func build(family_effect_catalog_override: Resource = null) -> Resource:
 			family_effect_catalog.validate_domain_bindings(
 				economy_catalog, modifier_catalog)
 		if not bool(family_domain_validation.get("ok", false)):
-			return null
+			return _reject("effect_catalog_family_domain_binding_invalid:%s" % String(
+				family_domain_validation.get("reason", "")))
 	if bool(modifier_catalog.get("ok", false)):
 		var modifier_keys: PackedStringArray = modifier_catalog.get(
 			"definition_keys", PackedStringArray())
@@ -262,17 +295,52 @@ static func build(family_effect_catalog_override: Resource = null) -> Resource:
 		var ideology_ir: Dictionary = ideology_catalog.compile_native_catalog(
 			ideology_country_catalog, ideology_country_catalog)
 		if not bool(ideology_ir.get("ok", false)):
-			return null
+			return _reject("effect_catalog_ideology_command_unavailable:%s" % String(
+				ideology_ir.get("reason", "")))
 		definitions.append(_ideology_command_definition(ideology_ir))
 	# Ideology declarative programs. A card effect row whose definition_key
 	# matches one of these keys is owned by the reconciliation path (conditions,
 	# target selector, lifecycle) instead of the one-shot command batch above.
-	var ideology_effects: Resource = IdeologyEffectCatalogScript.load_default()
+	var ideology_effects: Resource = ideology_effect_catalog_override
+	if ideology_effects == null:
+		ideology_effects = IdeologyEffectCatalogScript.load_default()
 	if ideology_effects != null:
 		for effect in ideology_effects.effects:
 			if effect == null or not effect is IdeologyEffectDefinitionScript:
 				continue
+			# Re-run the card's own rulebook rather than re-deriving it here.
+			# IdeologyCatalog also validates, but only when the economy side
+			# compiled; a second, weaker copy of those rules in this file is how
+			# the DISTANCE_N ceiling stayed wrong for two rounds. One rulebook,
+			# called from every gate.
+			var card_error: String = effect.validate()
+			if not card_error.is_empty():
+				return _reject("effect_catalog_%s" % card_error)
 			var program: Resource = effect.to_effect_definition()
+			# L3-9 override layer. Applied BEFORE the tag resolution and the
+			# duplicate-key short-circuit, for the same reason the tag name is:
+			# an override targeting a program that never reaches the table must
+			# still be reported. `IdeologyEffectCatalog.validate()` has already
+			# rejected unknown targets and duplicate rows, so this loop only has
+			# to translate.
+			var override_error: String = ideology_effects.apply_overrides(
+				program, effect.definition_key)
+			if not override_error.is_empty():
+				return _reject("effect_catalog_%s" % override_error)
+			# L5-14: resolve the authored tag *name* into the 1-based dictionary
+			# index that param[1] has always meant. Done before the duplicate-key
+			# short-circuit below on purpose: a misspelled tag must fail the build
+			# even on a card whose program key never reaches the table, otherwise
+			# the first card to claim a key hides every later card's typo.
+			var tag_names := PackedStringArray()
+			if not effect.target_selector_tags.is_empty():
+				tag_names = effect.target_selector_tags
+			elif effect.target_selector_tag != &"":
+				tag_names = PackedStringArray([String(effect.target_selector_tag)])
+			var tag_error: String = _apply_selector_tags(
+				program, tag_names, tag_list, tag_ids)
+			if not tag_error.is_empty():
+				return _reject(tag_error)
 			var program_key := String(program.key)
 			if program_key.is_empty() or definition_seen.has(program_key):
 				continue
@@ -280,7 +348,97 @@ static func build(family_effect_catalog_override: Resource = null) -> Resource:
 			definitions.append(program)
 	definitions.sort_custom(func(a, b) -> bool: return String(a.key) < String(b.key))
 	catalog.definitions = definitions
+	# Published last so a rejection above leaves the catalog free of a tag table
+	# whose ids no compiled program refers to.
+	catalog.target_tags = tag_list
 	return catalog
+
+
+## A null return here used to be silent, which made a broken catalog
+## indistinguishable from a missing one. Every rejection now names itself.
+static func _reject(reason: String) -> Resource:
+	push_error("[effect-catalog] %s" % reason)
+	return null
+
+
+## Resolve a card's authored tag name into the raw 1-based id stored in
+## `target_selector_param[1]`, in place on `program`.
+##
+## Returns "" on success, or a fully-qualified rejection reason. Split out of
+## the compile loop so the id contract can be tested without a card file: the
+## interesting cases (unknown name, empty dictionary, param array shorter than
+## two slots) are all cheap to stage here and expensive to stage in .tres.
+static func _apply_selector_tag(program: Resource, tag_name: StringName,
+		tag_ids: Dictionary) -> String:
+	if tag_name == &"":
+		return ""
+	var resolved := int(tag_ids.get(String(tag_name), 0))
+	if resolved <= 0:
+		# Distinguish "no dictionary at all" from "typo": when the economy
+		# catalog failed to compile, every name looks unknown and the error
+		# would send the next reader hunting for a bad tag.
+		var reason := "effect_catalog_target_selector_tag_unknown" \
+			if not tag_ids.is_empty() \
+			else "effect_catalog_target_selector_tag_no_dictionary"
+		return "%s:%s:%s" % [reason, String(program.key), String(tag_name)]
+	return _write_selector_tag_id(program, resolved)
+
+
+## The multi-name form of the above: fold N tag names into one synthetic tag
+## and point `param[1]` at it.
+##
+## This is what makes a 3+-tag AND authorable at all. The dictionary ships a
+## fixed menu of *pairwise* composites (`build()` pre-bakes scale × sector,
+## market × landform, ...), so without this a card wanting "边地的粮作农业地块"
+## would need a hand-written dictionary entry. Here the card just lists the
+## three names and the compiler assembles the clause product.
+##
+## `tag_list` / `tag_ids` are the build's own tables and are mutated: a new
+## synthetic tag is **appended**, because tag ids are array indexes — inserting
+## would shift every id below it and silently retarget cards that never changed.
+static func _apply_selector_tags(program: Resource, names: PackedStringArray,
+		tag_list: Array, tag_ids: Dictionary) -> String:
+	if names.is_empty():
+		return ""
+	if names.size() == 1:
+		return _apply_selector_tag(program, StringName(names[0]), tag_ids)
+	if tag_ids.is_empty():
+		return "effect_catalog_target_selector_tag_no_dictionary:%s:%s" % [
+			String(program.key), "&".join(names)]
+	# Check membership before folding so an unknown name reports the same
+	# `tag_unknown` invariant the single-name path reports, rather than a
+	# budget/duplicate reason that points the reader at the wrong thing.
+	for name in names:
+		if int(tag_ids.get(String(name), 0)) <= 0:
+			return "effect_catalog_target_selector_tag_unknown:%s:%s" % [
+				String(program.key), String(name)]
+	var merged: Dictionary = TargetTagDictionaryScript.intersection(names, tag_list)
+	if not bool(merged.get("ok", false)):
+		return "effect_catalog_target_selector_intersection:%s:%s" % [
+			String(program.key), String(merged.get("reason", ""))]
+	var composite := String(merged["name"])
+	var resolved := int(tag_ids.get(composite, 0))
+	if resolved <= 0:
+		if tag_list.size() >= TargetTagDictionaryScript.MAX_TAGS:
+			return "effect_catalog_target_tag_table_over_capacity:%s:%d" % [
+				String(program.key), tag_list.size() + 1]
+		tag_list.append({"name": composite, "rows": merged["rows"]})
+		resolved = tag_list.size()
+		tag_ids[composite] = resolved
+	return _write_selector_tag_id(program, resolved)
+
+
+## Single writer for `param[1]`, shared by both forms. Keeping it in one place
+## is the point: `param[0]` is the cell cap and must survive untouched, and a
+## second copy of this resize dance is how it stops surviving.
+static func _write_selector_tag_id(program: Resource, resolved: int) -> String:
+	var params: PackedInt32Array = program.target_selector_param
+	if params.size() < 2:
+		# param[0] is the cell cap and stays 0 (= take the runtime default).
+		params.resize(2)
+	params[1] = resolved
+	program.target_selector_param = params
+	return ""
 
 
 static func _technology_definition(recipe_id: String, recipe_version: int,

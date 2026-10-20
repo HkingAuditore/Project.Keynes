@@ -995,7 +995,7 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
             (condition.arg0 < 0 || condition.arg0 >= _metric_count))
             return failure("effect_condition_metric_invalid");
         if (condition.op == STATE_GTE &&
-            (condition.arg0 < 0 || condition.arg0 > STATE_STACK_COUNT))
+            (condition.arg0 < 0 || condition.arg0 > STATE_LATCHED))
             return failure("effect_condition_state_invalid");
         _conditions.push_back(condition);
     }
@@ -1025,7 +1025,7 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
             return failure("effect_instruction_opcode_invalid");
         if (row.op == READ_METRIC && (row.arg0 < 0 || row.arg0 >= _metric_count))
             return failure("effect_instruction_metric_invalid");
-        if (row.op == READ_STATE && (row.arg0 < 0 || row.arg0 > STATE_STACK_COUNT))
+        if (row.op == READ_STATE && (row.arg0 < 0 || row.arg0 > STATE_LATCHED))
             return failure("effect_instruction_state_invalid");
         if (row.op == CLAMP && row.value > static_cast<int64_t>(row.arg0))
             return failure("effect_instruction_clamp_invalid");
@@ -3738,6 +3738,10 @@ Dictionary EffectRuntime::submit_instances(const Dictionary &batch) {
     const PackedInt64Array target_handles = get_i64(batch, "target_handles");
     const PackedInt32Array target_generations = get_i32(batch, "target_generations");
     const PackedInt32Array levels = get_i32(batch, "levels");
+    // Optional per-instance magnitude multiplier (L3-9). Absent means 1.0 for
+    // every row, which is exactly the pre-L3-9 behaviour, so no existing caller
+    // has to change.
+    const PackedInt32Array magnitude_scales = get_i32(batch, "magnitude_scales");
     const PackedInt32Array submitted_stack_counts = get_i32(batch, "stack_counts");
     const PackedInt64Array activation_sequences = get_i64(
         batch, "activation_sequences");
@@ -3746,7 +3750,8 @@ Dictionary EffectRuntime::submit_instances(const Dictionary &batch) {
     if (count <= 0 || count > _max_instances || program_keys.size() != count ||
         (!submitted_stack_counts.is_empty() && submitted_stack_counts.size() != count) ||
         (!activation_sequences.is_empty() && activation_sequences.size() != count) ||
-        (!declared_source_kinds.is_empty() && declared_source_kinds.size() != count))
+        (!declared_source_kinds.is_empty() && declared_source_kinds.size() != count) ||
+        (!magnitude_scales.is_empty() && magnitude_scales.size() != count))
         return failure("effect_instance_columns_invalid");
     int32_t accepted = 0;
     int32_t rejected = 0;
@@ -3811,6 +3816,19 @@ Dictionary EffectRuntime::submit_instances(const Dictionary &batch) {
             arbitration_changed = arbitration_changed ||
                 requested_stacks != instance.stack_count;
             instance.stack_count = requested_stacks;
+        }
+        if (!magnitude_scales.is_empty()) {
+            // Clamped to the same [0.25x, 4x] band the authoring layer enforces.
+            // A scale change has to force a re-emit: the instance is already
+            // `effect_applied`, and without clearing that flag the new
+            // multiplier would sit unused until something else touched the row.
+            const int32_t requested_scale = std::clamp<int32_t>(
+                magnitude_scales[i], static_cast<int32_t>(Q16_ONE / 4),
+                static_cast<int32_t>(4 * Q16_ONE));
+            if (requested_scale != instance.magnitude_scale_q16) {
+                instance.magnitude_scale_q16 = requested_scale;
+                instance.effect_applied = 0;
+            }
         }
         const uint64_t submitted_activation = activation_sequences.is_empty()
             ? 0 : static_cast<uint64_t>(std::max<int64_t>(
@@ -3970,6 +3988,10 @@ int64_t EffectRuntime::state_value(const Instance &instance, int32_t state_id) c
         // one condition unit means "one stack" everywhere.
         case STATE_STACK_COUNT:
             return static_cast<int64_t>(std::max(0, instance.stack_count)) * Q16_ONE;
+        // Previous day's condition result. 0 before the first evaluation, so a
+        // fresh instance always has to cross the upper threshold once.
+        case STATE_LATCHED:
+            return instance.latched != 0 ? Q16_ONE : 0;
         default: return 0;
     }
 }
@@ -4998,6 +5020,11 @@ Dictionary EffectRuntime::run_daily(int64_t day_index) {
             continue;
         }
         bool passes = evaluate_condition(definition, instance);
+        // Latch the RAW condition result, before group arbitration. A hysteresis
+        // band is a statement about the metric, not about whether the effect won
+        // a stack fight this tick -- folding the arbitration in would make the
+        // band release and re-enter every time another source took the slot.
+        instance.latched = passes ? 1 : 0;
         if (passes && is_family_effect_instance(instance)) {
             std::string arbitration_error;
             if (!resolve_family_effect_group(instance_index, day_index,
@@ -5285,6 +5312,21 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
             source_instance->generation != transaction.source_generation)
             continue;
 
+        // L3-9: the program's compiled magnitude is the base; this instance may
+        // carry a multiplier written by another card's synergy. Applied here, on
+        // the single path that turns a program command into a modifier row, so
+        // there is exactly one place where "how strong is this row" is decided.
+        // A scale of exactly 1.0 takes the old path bit-for-bit.
+        const int32_t magnitude_scale_q16 = source_instance->magnitude_scale_q16;
+        const auto scaled_magnitude = [magnitude_scale_q16](int64_t value) -> int32_t {
+            if (magnitude_scale_q16 == Q16_ONE)
+                return static_cast<int32_t>(std::clamp<int64_t>(
+                    value, 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+            return static_cast<int32_t>(std::clamp<int64_t>(
+                value * magnitude_scale_q16 / Q16_ONE, 0,
+                ModifierRuntime::MAX_MAGNITUDE_Q16));
+        };
+
         const uint32_t request_offset = static_cast<uint32_t>(native_commands.size());
         bool supported = true;
         uint32_t domain_mask = 0;
@@ -5347,7 +5389,7 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
                 native.source_type = 0x46414d494c59ULL; // FAMILY
                 native.source_id = command->target_handle;
                 native.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-                    command->value_q16, 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+                    scaled_magnitude(command->value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
             } else if (adapter_kind == NATIVE_MODIFIER_PERSON) {
                 native.producer = 170;
                 native.domain = command->domain;
@@ -5356,7 +5398,7 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
                 native.source_type = 0x504552534f4eULL; // PERSON
                 native.source_id = static_cast<uint64_t>(transaction.source_instance_id);
                 native.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-                    std::max<int64_t>(1, command->value_q16), 0,
+                    std::max<int64_t>(1, scaled_magnitude(command->value_q16)), 0,
                     ModifierRuntime::MAX_MAGNITUDE_Q16));
             } else if (adapter_kind == NATIVE_MODIFIER_TRIGGER) {
                 native.producer = 175;
@@ -5367,14 +5409,14 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
                 native.source_id = static_cast<uint64_t>(
                     transaction.source_instance_id);
                 native.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-                    command->value_q16, 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+                    scaled_magnitude(command->value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
             } else if (adapter_kind == NATIVE_MODIFIER_FAMILY_EFFECT) {
                 native.producer = 161;
                 native.domain = command->domain;
                 native.source_type = 0x46414d4546464543ULL; // FAMEFFEC
                 native.source_id = static_cast<uint64_t>(source_instance->id);
                 native.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-                    command->value_q16, 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+                    scaled_magnitude(command->value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
                 switch (source_instance->target_domain) {
                     case 0: // Family.
                     case 1: // Branch.
@@ -5402,7 +5444,7 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
                 native.source_type = 0x4944454fULL; // IDEO
                 native.source_id = static_cast<uint64_t>(source_instance->id);
                 native.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-                    command->value_q16, 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+                    scaled_magnitude(command->value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
                 // Same target_domain convention as the family adapter, except
                 // that ideology never binds to a family/branch handle: 0 and 1
                 // fall through to ENTITY so a mis-authored program fails the
@@ -5436,7 +5478,7 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
                 native.source_type = static_cast<uint64_t>(source_instance->source_type);
                 native.source_id = static_cast<uint64_t>(source_instance->source_id);
                 native.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-                    command->value_q16, 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+                    scaled_magnitude(command->value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
             } else {
                 supported = false;
                 break;
@@ -6790,7 +6832,7 @@ bool EffectRuntime::pod_snapshot_persistence_self_test(std::string &error) const
 bool EffectRuntime::pod_state_parity_self_test(std::string &error) const {
     auto fail = [&](const std::string &reason) { error = reason; return false; };
 
-    if (RuntimeEffectPodAuthority::MAX_STATE_ID < STATE_STACK_COUNT)
+    if (RuntimeEffectPodAuthority::MAX_STATE_ID < STATE_LATCHED)
         return fail("effect_pod_state_ceiling_below_main_thread");
     // OWN_TERRITORY is the widest selector kind the main thread resolves. The
     // POD forwards whatever the main thread resolved, so it must not be
@@ -6822,12 +6864,19 @@ bool EffectRuntime::pod_state_parity_self_test(std::string &error) const {
                     instance.stack_count = stack;
                     instance.input_revision = revision;
                     instance.expires_day = expiry;
+                    // Set the latch on both sides: if the worker's switch is
+                    // missing the STATE_LATCHED case it answers 0 here while the
+                    // main thread answers Q16_ONE, and the mismatch surfaces as
+                    // a named failure instead of a card that behaves differently
+                    // on the two authorities.
+                    instance.latched = 1;
                     RuntimeEffectPodInstance pod_instance;
                     pod_instance.level = level;
                     pod_instance.fire_sequence = fire;
                     pod_instance.stack_count = stack;
                     pod_instance.input_revision = revision;
                     pod_instance.expires_day = expiry;
+                    pod_instance.latched = 1;
                     for (int32_t id = 0;
                          id <= RuntimeEffectPodAuthority::MAX_STATE_ID; ++id) {
                         const int64_t main_value =
@@ -6850,22 +6899,28 @@ bool EffectRuntime::pod_state_parity_self_test(std::string &error) const {
         }
     }
 
-    // Ids 0/1/3/4 are Q16-scaled, id 2 is a raw token. Pinning that split
-    // explicitly means a future "unify the scaling" cleanup fails loudly here
-    // instead of silently re-breaking every authored threshold.
+    // Ids 0/1/3/4 are Q16-scaled, id 2 is a raw token, id 5 is Q16 but strictly
+    // 0 or Q16_ONE. Pinning that split explicitly means a future "unify the
+    // scaling" cleanup fails loudly here instead of silently re-breaking every
+    // authored threshold.
     Instance probe;
     probe.level = 3;
     probe.fire_sequence = 2;
     probe.stack_count = 5;
     probe.input_revision = 9;
     probe.expires_day = day + 4;
+    probe.latched = 1;
     const int64_t expected[] = {3 * Q16_ONE, 2 * Q16_ONE, 9, 4 * Q16_ONE,
-                                5 * Q16_ONE};
-    for (int32_t id = 0; id <= STATE_STACK_COUNT; ++id) {
+                                5 * Q16_ONE, Q16_ONE};
+    for (int32_t id = 0; id <= STATE_LATCHED; ++id) {
         if (main_thread.state_value(probe, id) != expected[id])
             return fail("effect_state_id_scaling_changed id=" +
                 std::to_string(id));
     }
+    // And the cleared side: an unlatched instance must read 0, not "absent".
+    probe.latched = 0;
+    if (main_thread.state_value(probe, STATE_LATCHED) != 0)
+        return fail("effect_state_latched_clear_is_not_zero");
 
     // Depth scaling of an emitted command must be identical on both threads.
     // main_thread's path calls the same helper, so a divergence can only come
@@ -6948,6 +7003,7 @@ PackedByteArray EffectRuntime::capture() const {
         append_le<uint64_t>(bytes, instance.target_handle);
         append_le<uint32_t>(bytes, instance.target_generation);
         append_le<int32_t>(bytes, instance.level);
+        append_le<int32_t>(bytes, instance.magnitude_scale_q16);
         append_le<int64_t>(bytes, instance.next_due_day);
         append_le<int64_t>(bytes, instance.input_revision);
         append_le<int64_t>(bytes, instance.last_evaluated_input_revision);
@@ -7127,7 +7183,11 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
             !read_le(bytes, size, cursor, instance.program_id) || !read_le(bytes, size, cursor, instance.source_type) ||
             !read_le(bytes, size, cursor, instance.source_id) || !read_le(bytes, size, cursor, instance.source_handle) ||
             !read_le(bytes, size, cursor, instance.target_handle) || !read_le(bytes, size, cursor, instance.target_generation) ||
-            !read_le(bytes, size, cursor, instance.level) || !read_le(bytes, size, cursor, instance.next_due_day) ||
+            !read_le(bytes, size, cursor, instance.level) ||
+            !read_le(bytes, size, cursor, instance.magnitude_scale_q16) ||
+            instance.magnitude_scale_q16 < Q16_ONE / 4 ||
+            instance.magnitude_scale_q16 > 4 * Q16_ONE ||
+            !read_le(bytes, size, cursor, instance.next_due_day) ||
             !read_le(bytes, size, cursor, instance.input_revision) ||
             !read_le(bytes, size, cursor, instance.last_evaluated_input_revision) ||
             !read_le(bytes, size, cursor, instance.fire_sequence) ||

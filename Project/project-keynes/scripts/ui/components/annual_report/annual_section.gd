@@ -46,8 +46,7 @@ func build(p_index: int, chapter: Dictionary, model: Dictionary, layout: Diction
 	add_child(_column)
 
 	_build_header()
-	_spacer(26.0)
-	_build_paragraphs()
+	_spacer(16.0)
 	_build_figures()
 	_build_visuals()
 	_build_ledger()
@@ -77,19 +76,29 @@ func play_in(instant: bool = false) -> void:
 # ── 章首 ────────────────────────────────────────────────────────────────────
 
 func _build_header() -> void:
-	# 章节序号退到 14% 墨色、占满版心右侧 30%，和眉题同处一条基线上。
-	# 它不再是"溢到页边外的巨型数字"——纸只有这么宽，硬塞会撞到纸缘。
+	# 版式：眉标 → 标题 → 一行数据标签，三行贴紧；巨型章号是 14% 墨色的背景水印，
+	# 靠右摆放，尺寸由这三行的高度反推。旧版让章号的高度决定章首留白，一章开头
+	# 就要吃掉近一屏——密度全丢在这里。
 	var display: Font = UITokens.annual_font("display")
+	var soft: Font = UITokens.annual_font("display_soft")
 	var title_size: int = 40 if _narrow else UITokens.CHRONICLE_H1
 	var lead_size: int = 17 if _narrow else UITokens.CHRONICLE_LEAD
-	var number_size: int = maxi(40, mini(AnnualReportTokens.chapter_number_size(_viewport), int(_measure * 0.30)))
-	var number_height: float = display.get_height(number_size)
-	var baseline: float = number_height * 0.82
-	var title_top: float = number_height + 4.0
+	var kicker_height: float = 18.0
+	var title_top: float = kicker_height + 6.0
 	var title_height: float = display.get_height(title_size) * 1.14
-	var lead_top: float = title_top + title_height + 14.0
-	var lead_height: float = float(lead_size) * 1.52 * 3.0 + 6.0
-	var height: float = lead_top + lead_height + 6.0
+	# 章首那行现在只交代「这是什么数据」，恒为一行。高度按字体实测行数给，
+	# 不再恒留三行——恒留会在每章开头压出近百像素的纯白空洞。空串则整块不建。
+	var lead_text: String = String(_chapter.get("lead", ""))
+	var lead_top: float = title_top + title_height + 12.0
+	var lead_height: float = 0.0
+	if not lead_text.is_empty():
+		var measured: float = soft.get_multiline_string_size(lead_text, HORIZONTAL_ALIGNMENT_LEFT, _measure, lead_size).y
+		lead_height = minf(measured, float(lead_size) * 1.52 * 2.0) + 4.0
+	var height: float = (lead_top + lead_height + 4.0) if lead_height > 0.0 else (title_top + title_height + 4.0)
+	# 水印字号由内容高度反推：数字底边压在导语基线上，不再向下压正文。
+	var number_size: int = clampi(int(height * 1.05), 56,
+		mini(AnnualReportTokens.chapter_number_size(_viewport), int(_measure * 0.30)))
+	var baseline: float = height - 6.0
 
 	_header = Control.new()
 	_header.custom_minimum_size = Vector2(0.0, height)
@@ -104,20 +113,21 @@ func _build_header() -> void:
 	_header.add_child(mark)
 
 	var kicker := _text_label("第 %02d 章  /  %s" % [int(_chapter.get("number", index + 1)), String(_chapter.get("title", ""))], 13, UITokens.CHRONICLE_RED, true)
-	_place(kicker, Vector2(0.0, baseline - 16.0), Vector2(_measure, 20.0))
+	_place(kicker, Vector2(0.0, 0.0), Vector2(_measure, kicker_height))
 	_header.add_child(kicker)
 
 	var title := _text_label(String(_chapter.get("title", "")), title_size, UITokens.CHRONICLE_INK, false)
 	_place(title, Vector2(0.0, title_top), Vector2(_measure, title_height + 4.0))
 	_header.add_child(title)
 
-	var lead := _text_label(String(_chapter.get("lead", "")), lead_size, UITokens.CHRONICLE_MUTED, false)
-	lead.add_theme_font_override("font", UITokens.annual_font("display_soft"))
-	lead.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	lead.max_lines_visible = 3
-	lead.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	_place(lead, Vector2(0.0, lead_top), Vector2(_measure, lead_height))
-	_header.add_child(lead)
+	if lead_height > 0.0:
+		var lead := _text_label(lead_text, lead_size, UITokens.CHRONICLE_MUTED, false)
+		lead.add_theme_font_override("font", soft)
+		lead.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		lead.max_lines_visible = 2
+		lead.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		_place(lead, Vector2(0.0, lead_top), Vector2(_measure, lead_height))
+		_header.add_child(lead)
 	_column.add_child(_header)
 
 
@@ -129,26 +139,10 @@ func _spacer(height: float) -> void:
 
 
 # ── 正文 ────────────────────────────────────────────────────────────────────
+# 这一层已经没有多段正文了：每章唯一的说明文字是章首那行 lead。段落通道拆掉，
+# 是为了让「再来一段解释」没有地方可塞——它过去正是口径说明涌入的入口。
 
-func _build_paragraphs() -> void:
-	for paragraph in _chapter.get("paragraphs", []):
-		var label := RichTextLabel.new()
-		label.bbcode_enabled = false
-		label.fit_content = true
-		label.scroll_active = false
-		label.selection_enabled = true
-		label.mouse_filter = Control.MOUSE_FILTER_PASS
-		label.custom_minimum_size = Vector2(_measure, 0.0)
-		label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-		label.text = String(paragraph)
-		label.add_theme_font_override("normal_font", UITokens.annual_font("body"))
-		label.add_theme_font_size_override("normal_font_size", 18)
-		label.add_theme_color_override("default_color", UITokens.CHRONICLE_INK)
-		label.add_theme_constant_override("line_separation", UITokens.CHRONICLE_LEADING_BODY)
-		_column.add_child(label)
-		_spacer(AnnualReportTokens.GAP_PARAGRAPH)
-
-
+# ── 关键数字带 ──────────────────────────────────────────────────────────────
 # ── 关键数字带 ──────────────────────────────────────────────────────────────
 
 func _build_figures() -> void:
@@ -156,12 +150,12 @@ func _build_figures() -> void:
 	if figures.is_empty():
 		return
 	_figures = AnnualMetricBand.new()
-	_figures.set_compact(_narrow or int(_chart_width) < 720)
+	_figures.set_compact(_narrow or int(_chart_width) < 720, _chart_width)
 	_figures.set_figures(figures)
 	_figures.custom_minimum_size.x = _chart_width
 	_figures.size_flags_horizontal = Control.SIZE_FILL
 	_column.add_child(_figures)
-	_spacer(24.0)
+	_spacer(20.0)
 
 
 # ── 图表 ────────────────────────────────────────────────────────────────────
@@ -202,7 +196,7 @@ func _add_chart(title: String, node: Control) -> void:
 	var caption := _text_label(title, 13, UITokens.CHRONICLE_MUTED, true)
 	caption.custom_minimum_size = Vector2(_chart_width, 0.0)
 	_column.add_child(caption)
-	_spacer(12.0)
+	_spacer(9.0)
 	node.custom_minimum_size.x = _chart_width
 	node.size_flags_horizontal = Control.SIZE_FILL
 	_column.add_child(node)
@@ -218,9 +212,9 @@ func _month_chart(visual: Dictionary) -> Control:
 		return null
 	var area := AnnualMonthChart.new()
 	area.set_reveal_enabled(not UIAnimation.reduced_motion())
-	area.custom_minimum_size = Vector2(_chart_width, 240.0)
+	area.custom_minimum_size = Vector2(_chart_width, 210.0)
 	if _narrow:
-		area.custom_minimum_size.y = 180.0
+		area.custom_minimum_size.y = 160.0
 	_binds.append(func() -> void:
 		if not area.set_data(gdp, observed):
 			area.visible = false)
@@ -360,14 +354,6 @@ func _build_tail() -> void:
 	var details: Array = _chapter.get("details", [])
 	if details.is_empty():
 		return
-	var truncated: Dictionary = _chapter.get("truncated", {})
-	for key in truncated:
-		var label := _text_label("另有 %d 项未列入，完整清单见「复制全文」。" % int(truncated[key]), 13, UITokens.CHRONICLE_MUTED, true)
-		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		label.custom_minimum_size = Vector2(_measure, 0.0)
-		label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-		_column.add_child(label)
-		_spacer(12.0)
 	for detail in details:
 		var label := RichTextLabel.new()
 		label.bbcode_enabled = false
@@ -379,11 +365,11 @@ func _build_tail() -> void:
 		label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		label.text = String(detail)
 		label.add_theme_font_override("normal_font", UITokens.annual_font("body_soft"))
-		label.add_theme_font_size_override("normal_font_size", 16)
+		label.add_theme_font_size_override("normal_font_size", 15)
 		label.add_theme_color_override("default_color", Color(UITokens.CHRONICLE_MUTED.r, UITokens.CHRONICLE_MUTED.g, UITokens.CHRONICLE_MUTED.b, 1.0))
-		label.add_theme_constant_override("line_separation", 6)
+		label.add_theme_constant_override("line_separation", 5)
 		_column.add_child(label)
-		_spacer(10.0)
+		_spacer(6.0)
 	var tail := ColorRect.new()
 	tail.color = Color(UITokens.CHRONICLE_INK.r, UITokens.CHRONICLE_INK.g, UITokens.CHRONICLE_INK.b, 0.28)
 	tail.custom_minimum_size = Vector2(48.0, 1.0)

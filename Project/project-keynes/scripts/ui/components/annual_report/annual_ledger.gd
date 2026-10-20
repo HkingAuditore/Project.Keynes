@@ -18,8 +18,8 @@ var _muted: Color = UITokens.CHRONICLE_MUTED
 var _accent: Color = UITokens.CHRONICLE_RED
 var _brass: Color = UITokens.CHRONICLE_BRASS
 
-const ROW_HEIGHT := 46.0
-const HEADER_HEIGHT := 26.0
+const ROW_HEIGHT := 38.0
+const HEADER_HEIGHT := 22.0
 
 
 func _init() -> void:
@@ -45,7 +45,7 @@ func _draw() -> void:
 		previous_right = w - 150.0
 
 	# 表头只在有可比数据时出现，并且是一次性的列名，不是每行重复的句子。
-	var header_y: float = 8.0
+	var header_y: float = 6.0
 	_caption(Vector2(0.0, header_y + 8.0), "指标")
 	if _show_previous:
 		_right_text(previous_right, header_y + 8.0, "上年", 13, Color(_muted.r, _muted.g, _muted.b, 0.8))
@@ -55,11 +55,11 @@ func _draw() -> void:
 	for i in _rows.size():
 		var row: Dictionary = _rows[i]
 		var top: float = HEADER_HEIGHT + ROW_HEIGHT * float(i)
-		var baseline: float = top + 26.0
-		_text(Vector2(0.0, baseline), String(row.get("label", "")), 18, _ink, "body")
+		var baseline: float = top + 22.0
+		_text(Vector2(0.0, baseline), String(row.get("label", "")), 17, _ink, "body")
 		var note: String = String(row.get("note", ""))
 		if not note.is_empty():
-			_caption(Vector2(0.0, baseline + 17.0), note)
+			_caption(Vector2(0.0, baseline + 13.0), note)
 
 		var current: String = String(row.get("current", "—"))
 		var size_px := 24
@@ -74,17 +74,17 @@ func _draw() -> void:
 
 		if _show_previous:
 			var previous: String = String(row.get("previous", "—"))
-			_right_text(previous_right, baseline - 2.0, previous, 15, Color(_muted.r, _muted.g, _muted.b, 0.85), "body")
+			_right_text(previous_right, baseline - 1.0, previous, 15, Color(_muted.r, _muted.g, _muted.b, 0.85), "body")
 			var delta: String = String(row.get("delta", "—"))
 			var rate: String = String(row.get("rate", ""))
 			if delta == "—" or delta.is_empty():
-				_right_text(delta_right, baseline - 2.0, "—", 15, Color(_muted.r, _muted.g, _muted.b, 0.55), "body")
+				_right_text(delta_right, baseline - 1.0, "—", 15, Color(_muted.r, _muted.g, _muted.b, 0.55), "body")
 			else:
 				var direction: int = int(row.get("direction", 0))
 				var tone: Color = _brass if direction > 0 else (_accent if direction < 0 else _muted)
-				_right_text(delta_right, baseline - 2.0, delta, 15, tone, "body")
+				_right_text(delta_right, baseline - 1.0, delta, 15, tone, "body")
 				if not rate.is_empty() and rate != "无可比数据":
-					_right_text(delta_right, baseline + 15.0, rate, 13, Color(tone.r, tone.g, tone.b, 0.8))
+					_right_text(delta_right, baseline + 12.0, rate, 12, Color(tone.r, tone.g, tone.b, 0.8))
 
 		draw_line(Vector2(0.0, top + ROW_HEIGHT - 1.0), Vector2(w, top + ROW_HEIGHT - 1.0), Color(_ink.r, _ink.g, _ink.b, 0.10), 1.0, true)
 

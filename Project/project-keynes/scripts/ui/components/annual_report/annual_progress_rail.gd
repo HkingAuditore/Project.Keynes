@@ -86,6 +86,7 @@ func _gui_input(event: InputEvent) -> void:
 		return
 	var index := _index_at(event.position.y)
 	if index >= 0:
+		preload("res://scripts/ui/ui_audio_feedback.gd").play_for(self, &"page")
 		chapter_requested.emit(index)
 		accept_event()
 

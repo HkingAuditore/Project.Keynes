@@ -308,6 +308,11 @@ struct RuntimeEffectPodInstance {
     uint8_t active = 1;
     uint8_t retire_requested = 0;
     uint8_t needs_resync = 0;
+    // Last evaluation's raw condition result, mirroring
+    // EffectRuntime::Instance::latched. Not part of any wire format: the worker
+    // owns its own latch and a resync simply resets it, which costs one cadence
+    // of "must re-cross the upper threshold".
+    uint8_t latched = 0;
     uint8_t reserved = 0;
 };
 
@@ -460,6 +465,14 @@ public:
     // instance validation, the EFP1 restore and compile_command against drifting
     // back to "handle 0 means unset" for those three domains.
     static bool cell_target_self_test(std::string &error);
+    // STATE_LATCHED is derived state with no wire representation, so nothing
+    // else would notice if the write-back went missing and the id fell through
+    // to the `default: return 0` arm -- the card would simply never leave the
+    // hysteresis band it entered. This fixture is an oscillator:
+    //   condition = NOT(STATE_GTE(LATCHED, Q16_ONE))
+    // which must alternate pass/fail/pass across three days. It needs no metric
+    // table at all, which is why it can be a static self check.
+    static bool latch_self_test(std::string &error);
 
     // ── Cross-thread capability ceiling ─────────────────────────────────────
     // Not policy knobs. The POD never resolves a target selector (the main
@@ -469,8 +482,8 @@ public:
     // the whole catalog fail validation, which left the EFFECT bit of the
     // completed-mask unset and stopped the entire twelve-domain authority graph
     // from ever being granted. scripts/effect/effect_catalog.gd mirrors both.
-    static constexpr int32_t MAX_SELECTOR_KIND = 12;  // OWN_TERRITORY
-    static constexpr int32_t MAX_STATE_ID = 4;        // STATE_STACK_COUNT
+    static constexpr int32_t MAX_SELECTOR_KIND = 13;  // TAG_ANY_CELL
+    static constexpr int32_t MAX_STATE_ID = 5;        // STATE_LATCHED
 
     // ── Cross-thread value contract ─────────────────────────────────────────
     // state_value and scaled_command_stacks are the only two places the worker

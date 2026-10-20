@@ -28,6 +28,7 @@ mouse_filter = 2
 theme_override_constants/separation = 8
 
 [node name="DateBlock" type="Button" parent="Margin/Row"]
+metadata/ui_sound = &"open"
 custom_minimum_size = Vector2(200, 36)
 layout_mode = 2
 mouse_filter = 0

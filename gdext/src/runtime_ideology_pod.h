@@ -1,5 +1,6 @@
 #pragma once
 
+#include "runtime_ideology_draw_kernel.h"
 #include "runtime_pod_protocol.h"
 
 #include <array>
@@ -11,7 +12,10 @@
 
 namespace pk {
 
-constexpr uint32_t RUNTIME_IDEOLOGY_POD_ABI_VERSION = 4u;
+// 5: the offer row grew to IDEOLOGY_OFFER_CHOICE_CAPACITY and gained
+// choice_count, the country row gained banned_bits, and the opinion
+// snapshot gained the two draw-side per-country values.
+constexpr uint32_t RUNTIME_IDEOLOGY_POD_ABI_VERSION = 5u;
 constexpr uint32_t RUNTIME_IDEOLOGY_POD_MAX_COUNTRIES = 1u << 20;
 constexpr uint32_t RUNTIME_IDEOLOGY_POD_MAX_IDEAS = 65536u;
 constexpr uint32_t RUNTIME_IDEOLOGY_POD_MAX_COMMANDS = 1u << 20;
@@ -46,6 +50,7 @@ enum class RuntimeIdeologyPodOpcode : uint16_t {
     ADD_UNDERSTANDING = 8,
     SET_GATE = 9,
     REROLL_OFFER = 10,
+    BAN_CARD = 11,
 };
 
 enum class RuntimeIdeologyPodLocation : uint8_t {
@@ -147,6 +152,10 @@ struct RuntimeIdeologyPodCatalog {
     int32_t spirit_capacity = 3;
     int32_t ideology_capacity_max = 6;
     int32_t spirit_capacity_max = 3;
+    // Rows the offer holds before the per-country bonus. The main runtime reads
+    // the same number from `offer_choice_count`; the worker gets it here because
+    // it has no profile.
+    int32_t draw_count = 3;
     int64_t offer_cost_q16 = 65536;
     int64_t offer_cost_growth_percent = 100;
     int64_t offer_cost_max_q16 = 65536;
@@ -159,6 +168,22 @@ struct RuntimeIdeologyPodCatalog {
     int64_t point_gain_cap_q16 = 0;
     // Modifier POD stat id of country.ideology.point_gain_factor (-1 = 1.0).
     int32_t point_gain_stat_id = -1;
+    // Same, for the two other ideology-facing multipliers. Their *values* are
+    // frozen per country into RuntimeIdeologyOpinionSnapshot below, because the
+    // worker cannot read ModifierRuntime; the id here only tells the host which
+    // index to freeze.
+    int32_t understanding_gain_stat_id = -1;
+    int32_t reroll_cost_stat_id = -1;
+    // Same, for the two DRAW-side per-country values. Only the host uses these
+    // ids (to pick which bucket to freeze); the worker reads the frozen arrays
+    // in the opinion snapshot.
+    int32_t era_decay_floor_stat_id = -1;
+    int32_t offer_choice_bonus_stat_id = -1;
+    // Frozen catalog knobs for 精进 (owned cards returning to the pool). They
+    // travel in the catalog rather than the opinion snapshot because they are
+    // the same for every country, unlike the two stats above.
+    int32_t refine_weight_bp = 0;
+    int64_t refine_understanding_q16 = 4 * 65536;
     int32_t owner_influence_weight = 2;
     int64_t funds_per_influence = 1000000;
     uint32_t max_commands_per_slice = 4096;
@@ -206,6 +231,18 @@ struct RuntimeIdeologyOpinionSnapshot {
     int64_t period_days = 1;
     // Frozen country.ideology.point_gain_factor (Q16); empty means 1.0.
     std::vector<int32_t> point_gain_factor_q16;
+    // Frozen country.ideology.understanding_gain_factor / reroll_cost_factor.
+    // Empty means 1.0 for every country, which is why adding them is a no-op
+    // for every existing caller: the worker only looks when the array has the
+    // right length.
+    std::vector<int32_t> understanding_gain_q16;
+    std::vector<int32_t> reroll_cost_q16;
+    // Draw-side per-country values. The worker cannot read ModifierRuntime, so
+    // the host freezes them here every period, exactly like the two factors
+    // above. Empty means 0 -- the identity element for both: no decay floor and
+    // no extra offer rows.
+    std::vector<int32_t> era_decay_floor_bp;
+    std::vector<int32_t> offer_choice_bonus;
 };
 
 struct RuntimeIdeologyPodCommand {
@@ -237,9 +274,13 @@ struct RuntimeIdeologyPodIdeaState {
 
 struct RuntimeIdeologyPodOffer {
     uint32_t generation = 0;
-    std::array<int32_t, 3> ideology_ids{{-1, -1, -1}};
+    std::array<int32_t, IDEOLOGY_OFFER_CHOICE_CAPACITY> ideology_ids;
+    uint8_t choice_count = 0;
     uint8_t active = 0;
-    uint8_t reserved[3]{};
+    uint8_t reserved[2]{};
+
+    RuntimeIdeologyPodOffer() { ideology_ids.fill(-1); }
+    void clear() { ideology_ids.fill(-1); choice_count = 0; active = 0; }
 };
 
 struct RuntimeIdeologyPodPointLedger {
@@ -277,6 +318,8 @@ struct RuntimeIdeologyPodCountryState {
     uint64_t opinion_revision = 0;
     RuntimeIdeologyPodOffer offer;
     std::vector<uint64_t> known_bits;
+    // 封存: a second bitmap, never a reuse of known_bits (see CountryState).
+    std::vector<uint64_t> banned_bits;
     std::vector<uint64_t> gate_bits;
     std::vector<uint64_t> synergy_bits;
     std::vector<RuntimeIdeologyPodIdeaState> ideas;
@@ -410,7 +453,10 @@ public:
     int32_t spirit_capacity_for(const RuntimeCountryPodSnapshot &country,
                                 uint32_t slot) const;
     int64_t offer_cost_for(uint64_t draw_sequence) const;
-    int64_t reroll_cost_for(uint64_t draw_sequence) const;
+    // `factor_q16` is the country's frozen reroll multiplier. Passed in rather
+    // than looked up because the opinion snapshot is a per-stage argument, not
+    // authority state — the worker never owns modifier values.
+    int64_t reroll_cost_for(uint64_t draw_sequence, int32_t factor_q16) const;
 
 private:
     static bool command_less(const RuntimeIdeologyPodCommand &a,
@@ -442,8 +488,13 @@ private:
     void accrue_points(RuntimeIdeologyPodSnapshot &state,
                        const RuntimeIdeologyOpinionSnapshot &opinion,
                        int64_t day) const;
+    // `opinion` is needed for the two per-country draw knobs (decay floor and
+    // offer-row bonus). Passing the whole snapshot rather than the two arrays
+    // keeps the call sites identical to the main-thread `draw_offer`, which is
+    // the property that keeps the two authorities in step.
     bool draw_offer(RuntimeIdeologyPodSnapshot &state,
                     const RuntimeCountryPodSnapshot &country, uint32_t slot,
+                    const RuntimeIdeologyOpinionSnapshot &opinion,
                     std::string &error) const;
     // Deepest era whose milestone technology this country holds. Derived from the
     // same catalog rows the main runtime uses so both agree without a round trip.

@@ -17,6 +17,29 @@ const MusicCatalog := preload("res://scripts/audio/music_event_catalog.gd")
 const ERA_MUSIC := [&"dark", &"feudal", &"castle", &"imperial"]
 ## 参数化探索事件：一个事件内用全局参数 Era 选档，12 段音频完全复用。
 const PARAM_EXPLORE_EVENT := "event:/Music/Library/Explore_Param"
+
+## 游戏事件音效（UI bank）。素材为 CC0，源文件在 Audio/Sources/UI/events/。
+const EVENT_CUES := {
+	&"tech_research": "event:/UI/Event/tech_research",
+	&"territory_expand": "event:/UI/Event/territory_expand",
+	&"ideology_draw": "event:/UI/Event/ideology_draw",
+	&"ideology_use": "event:/UI/Event/ideology_use",
+	&"building_complete": "event:/UI/Event/building_complete",
+	&"population_grow": "event:/UI/Event/population_grow",
+	&"trade": "event:/UI/Event/trade",
+}
+
+## 每个 cue 的最小间隔（毫秒）。高频事件必须稀疏，否则会糊成噪音墙：
+## 贸易单次结算上限 32768 条信号，人口是 cell 级，逐个播没有意义。
+const EVENT_COOLDOWN_MS := {
+	&"tech_research": 0,
+	&"territory_expand": 0,
+	&"ideology_draw": 0,
+	&"ideology_use": 0,
+	&"building_complete": 150,
+	&"population_grow": 2500,
+	&"trade": 2500,
+}
 signal ui_sound_played(cue: StringName)
 
 var status := "not_initialized"
@@ -30,6 +53,12 @@ var _music_key := &""
 var _music_descriptions: Dictionary = {}
 var _era_index := -1
 var _music_parameterized := false
+var _event_descriptions: Dictionary = {}
+var _event_next_ms: Dictionary = {}
+
+## 3D 空间化开关：事件在 Studio 里必须有 Spatialiser 才生效，
+## 否则 set_3d_attributes 是空操作。默认关闭，不影响现有 2D 行为。
+var _spatial_enabled := false
 
 
 func _ready() -> void:
@@ -99,6 +128,66 @@ func set_tension(value: float) -> bool:
 		return false
 	return int(ClassDB.class_call_static("StudioEventInstance", "set_parameter_by_name", _music,
 		"Tension", clampf(value, 0.0, 1.0), false)) == 0
+
+
+## 启用 3D 监听（相机位置驱动）。调用前请确认事件已在 Studio 里加了 Spatialiser，
+## 可以用哪个事件试：print(ClassDB.class_call_static("StudioEventDescription", "is3D", desc))
+func enable_spatial_listener() -> bool:
+	if status != "ready":
+		return false
+	var r := int(ClassDB.class_call_static("StudioSystem", "set_num_listeners", _system, 1))
+	_spatial_enabled = r == 0
+	if _spatial_enabled:
+		set_process(true)
+		_update_listener()
+	return _spatial_enabled
+
+
+func spatial_enabled() -> bool:
+	return _spatial_enabled
+
+
+## 2D 地图坐标映射到 3D 平面（z=0）。相机朝向固定，因为地图是俯视 2D。
+func _update_listener() -> void:
+	if not _spatial_enabled or _system == 0:
+		return
+	var camera := get_viewport().get_camera_2d()
+	if camera == null:
+		return
+	var pos := camera.global_position
+	ClassDB.class_call_static("StudioSystem", "set_listener_attributes", _system, 0,
+		Transform3D(Basis(), Vector3(pos.x, pos.y, 0.0)), Vector3.ZERO)
+
+
+func _process(_delta: float) -> void:
+	_update_listener()
+
+
+## 播放一次游戏事件音效。按 cue 冷却，高频事件不会刷屏。
+## 返回 false 表示被冷却挡下或事件不在 bank 里 —— 调用方不需要处理。
+func play_event_cue(cue: StringName, world_pos: Vector2 = Vector2.INF) -> bool:
+	if status != "ready" or not EVENT_CUES.has(cue):
+		return false
+	var now := Time.get_ticks_msec()
+	if now < int(_event_next_ms.get(cue, 0)):
+		return false
+	var description := int(_event_descriptions.get(cue, 0))
+	if description == 0:
+		description = int(ClassDB.class_call_static("StudioSystem", "get_event", _system, EVENT_CUES[cue]))
+		if description == 0:
+			return false
+		_event_descriptions[cue] = description
+	var instance := int(ClassDB.class_call_static("StudioEventDescription", "create_instance", description))
+	if instance == 0:
+		return false
+	if _spatial_enabled and world_pos != Vector2.INF:
+		ClassDB.class_call_static("StudioEventInstance", "set_3d_attributes", instance,
+			Transform3D(Basis(), Vector3(world_pos.x, world_pos.y, 0.0)), Vector3.ZERO)
+	var result := int(ClassDB.class_call_static("StudioEventInstance", "start", instance))
+	ClassDB.class_call_static("StudioEventInstance", "release", instance)
+	if result == 0:
+		_event_next_ms[cue] = now + int(EVENT_COOLDOWN_MS.get(cue, 0))
+	return result == 0
 
 
 func play_ui_click() -> bool:
@@ -275,6 +364,7 @@ func diagnostics() -> Dictionary:
 		ui_voices += int(ClassDB.class_call_static("StudioEventDescription", "get_instance_count", description))
 	return {"status": status, "banks": _banks.size(), "music_playing": _music != 0,
 		"ui_voices": ui_voices,
+		"spatial": _spatial_enabled,
 		"master_volume": ClassDB.class_call_static("StudioBus", "get_volume", _master),
 		"master_muted": ClassDB.class_call_static("StudioBus", "get_mute", _master),
 		"tension": ClassDB.class_call_static("StudioEventInstance", "get_parameter_by_name", _music, "Tension") if _music != 0 else 0.0,

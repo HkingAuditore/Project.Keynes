@@ -761,7 +761,13 @@ static func present_ideology(snapshot: Dictionary, catalog: Dictionary) -> Dicti
 	}
 
 
-static func present_ideology_card(metadata: Dictionary, level: int = 0) -> Dictionary:
+## `effect_row` is `IdeologyEffectReport.card_row()` for this card: how many
+## reconciled effect instances it currently owns, and over how many targets.
+## Empty when the caller has no report — an unowned card, or a facade without
+## the native report. An empty row renders no badge at all, which is deliberate:
+## "0 处" and "we did not look" must not look the same to the player.
+static func present_ideology_card(metadata: Dictionary, level: int = 0,
+		effect_row: Dictionary = {}) -> Dictionary:
 	var effect_sets: Array = metadata.get("level_effect_lines", [])
 	var current_lines := PackedStringArray()
 	if level >= 0 and level < effect_sets.size():
@@ -806,6 +812,22 @@ static func present_ideology_card(metadata: Dictionary, level: int = 0) -> Dicti
 			"accent": UITokens.CLIMATE,
 			"tooltip": String(metadata.get("synergy_tooltip", "")),
 		})
+	# "效果 N 处" rather than "命中 N 块地": one instance is one resolved target,
+	# which is a cell for a cell-domain program and a country handle for a
+	# country-domain one. The count is the same number either way; only the noun
+	# would be a lie.
+	var effect_tooltip := ""
+	var instances := int(effect_row.get("instances", 0))
+	if instances > 0:
+		var targets := int(effect_row.get("target_count", 0))
+		effect_tooltip = "效果实例 %d 处" % instances
+		if targets > 0:
+			effect_tooltip += "，覆盖 %d 个目标" % targets
+		badges.append({
+			"text": "效果 %d 处" % instances,
+			"accent": UITokens.GOOD,
+			"tooltip": effect_tooltip,
+		})
 	var requirement_names: PackedStringArray = metadata.get(
 		"required_technology_names", PackedStringArray())
 	var level_label := String(level_labels[level]) \
@@ -824,6 +846,8 @@ static func present_ideology_card(metadata: Dictionary, level: int = 0) -> Dicti
 		tooltip_lines.append("与%s互斥" % "、".join(rivals))
 	if not synergy_names.is_empty():
 		tooltip_lines.append(String(metadata.get("synergy_tooltip", "")))
+	if not effect_tooltip.is_empty():
+		tooltip_lines.append(effect_tooltip)
 	return {
 		"display_name": String(metadata.get("display_name",
 			metadata.get("name_key", ""))),

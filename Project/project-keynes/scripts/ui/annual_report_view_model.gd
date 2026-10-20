@@ -11,19 +11,20 @@ class_name AnnualReportViewModel
 const ERA_IDS := ["stone", "agrarian", "kingdom", "empire", "exploration", "enlightenment", "steam", "electrical", "atomic", "information", "intelligent"]
 const ERA_NAMES := ["石器时代", "农耕时代", "王国时代", "帝国时代", "探索时代", "启蒙时代", "蒸汽时代", "电气时代", "原子时代", "信息时代", "智能时代"]
 const TIERS := ["无人区", "聚落", "乡村", "小镇", "县城", "城市", "都市", "特大都市"]
-const CHAPTER_TITLES := ["年度总述", "国民经济", "人口与民生", "产业与建设", "城乡与国土", "科技与文明", "市场与财政", "资源与年度问题", "发展考核", "统计说明"]
-const CHAPTER_ICONS := [&"country.economy", &"country.economy", &"family.house", &"economy.building", &"country.politics", &"country.technology", &"economy.building.transport", &"geo", &"technology.milestone", &"country.technology"]
+const CHAPTER_TITLES := ["年度总述", "国民经济", "人口与民生", "产业与建设", "城乡与国土", "科技与文明", "市场与财政", "资源与年度问题", "发展考核"]
+const CHAPTER_ICONS := [&"country.economy", &"country.economy", &"family.house", &"economy.building", &"country.politics", &"country.technology", &"economy.building.transport", &"geo", &"technology.milestone"]
+## 每章唯一的一句话说明位：只交代「这一章是什么数据」，不解释口径、不给建议。
+## 渲染器按实际行数给高度（一行），写长了会被截断，这是刻意的上限。
 const CHAPTER_LEADS := [
-	"一年之内，人口、产出与秩序各自移动了一格。这份报告只记录已经封账的事实。",
-	"增加值由经营收入扣除中间投入与维护支出得到，不按年末日产值外推全年。",
-	"人口按年末归属统计，满意度按居民人数加权；平均数看趋势，年末值看现状。",
-	"存量看年末，流量看本年实际提交。竣工与拆除都计入建筑总量的变化。",
-	"聚落等级沿用全国统一的繁荣刻度，迁移与领土调整都会改变年末归属。",
-	"只列已正式完成的科技，排队与在研项目不计入本年成果。",
-	"贸易只统计已完成成交，计划与在途订单不算实绩；国库净变化不等于财政盈亏。",
-	"资源按本年实际提取量计，气候损失只统计已确认的产量缺口。",
-	"发展质量占七十分，年度改善占三十分；基本需求不足会压低评级上限。",
-	"以下七条为报告口径。数值均取自正式提交的记录，不由界面推算。",
+	"本年总量与上年对照",
+	"全年经营流量与年末居民资金",
+	"年末人口、全年平均满意度与职业分布",
+	"年末建筑存量与本年竣工、拆除",
+	"年末聚落等级与地块归属",
+	"年末文明阶段与本年新增科技",
+	"本年跨国成交、税种收入与年末国库",
+	"本年资源提取与气候损失",
+	"十项评分分解与最终评级",
 ]
 const SCORE_LABELS := ["综合满意度", "基本需求满足", "就业状况", "产业有效运转", "GDP 增长", "人均 GDP 增长", "人口增长", "建筑增长", "聚落发展", "科技进步"]
 const SCORE_WEIGHTS := [20.0, 20.0, 15.0, 15.0, 8.0, 6.0, 5.0, 3.0, 3.0, 5.0]
@@ -41,7 +42,6 @@ const TAX_KEYS := [
 	["income_tax", "所得税"], ["consumption_tax", "消费税"], ["business_tax", "营业税"],
 	["import_tax", "进口关税"], ["export_tax", "出口关税"],
 ]
-const DETAIL_LIMIT := 12
 const METRICS := [
 	["gdp", "全年国内生产总值（GDP）", "money", 1], ["revenue", "生产经营收入", "money", 1],
 	["input_cost", "中间投入", "money", 1], ["maintenance", "维护支出", "money", 1],
@@ -75,7 +75,7 @@ const STOCKS := ["funds", "population", "employed", "satisfaction", "survival", 
 
 static func build(report: Dictionary, previous: Dictionary = {}, catalogs: Dictionary = {}) -> Dictionary:
 	if not bool(report.get("ok", false)):
-		return {"available": false, "title": "国家年度发展报告", "chapters": [], "full_text": "尚无年度报告。第一份报告将在下一年初编成。"}
+		return {"available": false, "title": "国家年度发展报告", "chapters": [], "full_text": "尚无年度报告。"}
 	var totals: Dictionary = report.get("totals", {})
 	var before: Dictionary = previous.get("totals", {})
 	var opening: Dictionary = report.get("opening", {})
@@ -88,9 +88,8 @@ static func build(report: Dictionary, previous: Dictionary = {}, catalogs: Dicti
 	for i in CHAPTER_TITLES.size():
 		chapters.append({
 			"title": CHAPTER_TITLES[i], "icon": CHAPTER_ICONS[i], "number": i + 1,
-			"lead": CHAPTER_LEADS[i], "paragraphs": [], "rows": [], "details": [],
+			"lead": CHAPTER_LEADS[i], "rows": [], "details": [],
 			"figures": [], "visuals": [], "margin_notes": [], "has_previous": false,
-			"truncated": {},
 		})
 	var gdp: int = int(totals.get("gdp", 0))
 	var population: int = int(totals.get("population", 0))
@@ -103,27 +102,9 @@ static func build(report: Dictionary, previous: Dictionary = {}, catalogs: Dicti
 	var previous_pc: Variant = float(before.get("gdp", 0)) / previous_population if previous_population > 0 else null
 
 	# ── 01 年度总述 ────────────────────────────────────────────────────────
-	chapters[0].paragraphs.append("第 %d 年，%s文明处于%s。全年已结算 GDP 为%s，年末人口为%s，本年新增掌握科技 %d 项。" % [year, String(report.get("country_name", "本国")), ERA_NAMES[era], format_value(gdp, "money"), format_value(population, "people"), new_tech.size()])
-	chapters[0].paragraphs.append("全年人口加权平均综合满意度为%s，基本需求满足为%s。各项成绩与问题依据已提交的国家、经济和民生记录编列，分项数据与考核结果见后文。" % [format_value(avg_sat, "ratio"), format_value(avg_survival, "ratio")])
-	if not complete:
-		chapters[0].paragraphs.append("本报告统计未满一年，仅记录已观测期间的实际变化。本年度不评级，不发放年度理念奖励。")
-
-	# ── 风险 ───────────────────────────────────────────────────────────────
-	var risks: Array[String] = []
-	if avg_survival < 52429:
-		risks.append("基本需求满足仍有明显缺口，应优先保障居民生计与基础商品供给。")
-	if int(totals.get("suspended", 0)) > 0:
-		risks.append("年末有 %s 处建筑停产，应结合原料、岗位与销路检查经营条件。" % format_value(totals.suspended, "number"))
-	if int(totals.get("wages_due", 0)) > int(totals.get("wages", 0)):
-		risks.append("本年工资实付低于应付，需关注企业支付能力和居民收入保障。")
-	if previous_population > 0 and population < previous_population:
-		risks.append("年末人口较上年下降，应结合出生、死亡及迁移与领土变化核查原因。")
-	if gdp < 0:
-		risks.append("本年已结算增加值为负，应审查中间投入和维护支出与经营收入的关系。")
-	if risks.is_empty():
-		risks.append("年度主要指标未触发基本生计、停产、欠薪或人口下降提示。来年应继续保持供给、就业与科研的连续性。")
-	chapters[7].paragraphs.assign(risks)
-	chapters[0].details.append("年度关注：" + risks[0])
+	# 本章不放正文：四个总量已由数字带逐项列示（并带同比），章首那行 lead 交代了
+	# 「这是本年总量与上年对照」。此前的叙述句、风险提示句与「见后文」都是解释性文字，
+	# 已按「只说这是什么数据」的口径删除。
 
 	# ── 指标行（沿用原口径，附加原始量） ────────────────────────────────────
 	for spec in METRICS:
@@ -133,12 +114,10 @@ static func build(report: Dictionary, previous: Dictionary = {}, catalogs: Dicti
 		chapters[int(spec[3])].rows.append(_row(String(spec[1]), totals.get(spec[0], null), baseline, String(spec[2])))
 	chapters[1].rows.insert(1, _row("人均年度 GDP（按年末人口）", per_capita, previous_pc, "money"))
 
-	chapters[1].paragraphs.append("本章列示全年已结算生产经营流量及年末居民资金。GDP 沿用本游戏的经营增加值口径；资金存量变化与经营流量分别列示。")
-	chapters[2].paragraphs.append("人口规模按年末实际归属统计；满意度以居民人数加权。全年平均值用于发展考核，年末值用于观察最新状态。")
 	var births: int = int(totals.get("births", 0))
 	var deaths: int = int(totals.get("deaths", 0))
 	var migration: int = population - int(opening.get("population", 0)) - births + deaths
-	chapters[2].details.append("自然增长 %s；迁移及领土调整的净影响 %s。后者按人口净变化扣除出生与死亡计算，不据此推定具体迁移原因。" % [_signed(births - deaths, "people"), _signed(migration, "people")])
+	chapters[2].details.append("自然增长 %s；迁移及领土调整的净影响 %s。" % [_signed(births - deaths, "people"), _signed(migration, "people")])
 	chapters[2].rows.append(_row("全年平均综合满意度", avg_sat, _previous_quality(previous, 0), "ratio"))
 	chapters[2].rows.append(_row("全年平均基本需求满足", avg_survival, _previous_quality(previous, 1), "ratio"))
 	chapters[2].rows.append(_row("年末失业人口", maxi(0, population - int(totals.get("employed", 0))), null, "people"))
@@ -153,7 +132,6 @@ static func build(report: Dictionary, previous: Dictionary = {}, catalogs: Dicti
 		var label: String = profession_names[id] if id >= 0 and id < profession_names.size() else "职业 %d" % (id + 1)
 		chapters[2].details.append("%s：人口 %s，综合满意度 %s，资金 %s。" % [label, format_value(row.get("count", 0), "people"), format_value(row.get("value", 0), "ratio"), format_value(row.get("secondary", 0), "money")])
 
-	chapters[3].paragraphs.append("建筑总量、在建与停产为年末存量；竣工、主动拆除与生产金额为本年实际提交记录。行业附表列示建筑类型的全年增加值与工资实付。")
 	var building_names: PackedStringArray = catalogs.get("building_names", PackedStringArray())
 	var industry_rows: Array = []
 	for row in report.get("industry_totals", []):
@@ -162,7 +140,6 @@ static func build(report: Dictionary, previous: Dictionary = {}, catalogs: Dicti
 		industry_rows.append({"id": id, "label": label, "value": _normalized(row.get("value", 0), "money"), "secondary": _normalized(row.get("secondary", 0), "money")})
 		chapters[3].details.append("%s：增加值 %s，实付工资 %s。" % [label, format_value(row.get("value", 0), "money"), format_value(row.get("secondary", 0), "money")])
 
-	chapters[4].paragraphs.append("聚落等级沿用全国统一的繁荣等级。人口迁移或领土调整会改变本国年末归属和规模；升级、降级记录分别统计。")
 	var tiers: PackedInt64Array = closing.get("tiers", PackedInt64Array())
 	var previous_closing: Dictionary = previous.get("closing", opening)
 	var old_tiers: PackedInt64Array = previous_closing.get("tiers", PackedInt64Array())
@@ -178,14 +155,12 @@ static func build(report: Dictionary, previous: Dictionary = {}, catalogs: Dicti
 		var change := "本年新增归属记录" if prior.is_empty() else "人口增减 %s，建筑增减 %s，等级 %s → %s" % [_signed(int(town.get("population", 0)) - int(prior.get("population", 0)), "people"), _signed(int(town.get("buildings", 0)) - int(prior.get("buildings", 0)), "count"), TIERS[clampi(int(prior.get("tier", 0)), 0, 7)], TIERS[clampi(int(town.get("tier", 0)), 0, 7)]]
 		chapters[4].details.append("地块 %d · %s：人口 %s，建筑 %s。%s。" % [int(town.get("cell", 0)), TIERS[clampi(int(town.get("tier", 0)), 0, 7)], format_value(town.get("population", 0), "people"), format_value(town.get("buildings", 0), "count"), change])
 
-	chapters[5].paragraphs.append("年末文明处于%s。本年新掌握科技 %d 项；仅列已正式完成的科技，不将排队研究计作成果。" % [ERA_NAMES[era], new_tech.size()])
 	var technology_names: PackedStringArray = catalogs.get("technology_names", PackedStringArray())
 	for id in new_tech:
 		chapters[5].details.append(technology_names[id] if id >= 0 and id < technology_names.size() else "科技 %d" % (id + 1))
 	if new_tech.is_empty():
 		chapters[5].details.append("本年未新增完成科技。")
 
-	chapters[6].paragraphs.append("贸易仅统计已完成的跨国成交，不将计划与在途订单计为实绩。税收、财政补贴、生产扶持和国库资金分项列示，国库净变化不直接等同财政盈亏。")
 	var good_names: PackedStringArray = catalogs.get("good_names", PackedStringArray())
 	var good_rows: Array = closing.get("goods", [])
 	for row in good_rows:
@@ -206,21 +181,7 @@ static func build(report: Dictionary, previous: Dictionary = {}, catalogs: Dicti
 		chapters[8].details.append("%s：%.2f / %.0f 分" % [SCORE_LABELS[i], float(parts[i]) / 100.0, SCORE_WEIGHTS[i]])
 	var cap: int = int(report.get("grade_cap", -1))
 	if cap >= 0:
-		chapters[8].paragraphs.append("基本需求满足未达到民生底线，本年度评级上限为 %s。" % ("D" if cap == 5 else "B"))
-	chapters[8].paragraphs.append("发展质量占 70 分，年度改善占 30 分。零增长取得改善项的 80%；正向达到目标取得满分，负向达到同等幅度则为零。改善项在两侧分别线性计算，并截断于零至满分。")
-	chapters[8].details.append("质量满分目标：综合满意度 95%、基本需求满足 98%、就业率 95%；产业有效运转中，产能利用率 85%、正常运营建筑比例 95%，两者各占一半。")
-	chapters[8].details.append("改善满分目标：GDP 增长 10%、人均 GDP 增长 5%、人口增长 5%、建筑增长 10%、聚落等级加权总量增长 5%；科技按完成科技的基础研究成本折算，完成两项当时代中位成本科技达满分，全部科技完成时满分。")
-	chapters[8].details.append("等级门槛：SS ≥94，S ≥86，A ≥75，B ≥60，C ≥45，D ≥30，E ＜30。全年基本需求满足低于 80%% 时最高 B，低于 60%% 时最高 D。评分规则版本：%d。" % int(report.get("scoring_version", 1)))
-	chapters[8].paragraphs.append("年度综合得分：%s；等级：%s。额外理念奖励：%s 点。" % [("%.2f / 100" % (float(report.get("score_bp", 0)) / 100.0)) if complete else "统计未满一年", String(report.get("grade", "—")), points_text(int(report.get("reward_q16", 0)))])
-	chapters[9].paragraphs.assign([
-		"一、报告按游戏年历编列，回顾已结束的一年。全年流量按已提交经济周期的逻辑结算日入账；不同生产周期在结算时确认金额，不以年末日产值乘全年天数。",
-		"二、GDP＝生产经营收入－中间投入－维护支出＝工资实付＋经营盈余。沿用游戏现价经营口径，未另加生产税，不宣称为实际价格指数调整后的 GDP。",
-		"三、存量比较年末状态，首年以期初为基准。流量无完整上年数据时不计算同比；零或负基数不显示误导性的百分比。满意度变化使用百分点。",
-		"四、全年满意度与就业考核按人口和持续天数加权。首个完整年份的经济改善比较首末各 30 天的已结算日均产值；压缩年历取四分之一年，至少一天。",
-		"五、首年及不完整历史不补造数据。缺少年度账本的旧档从加载日开始统计；首个不足整年的报告不评级、不发奖励。",
-		"六、年度奖励按封账时的抽取次数和价格曲线冻结。SS／S／A／B／C 分别折算未来连续 6／4／3／2／1 次抽取，D 为下次价格的一半，E 无奖励；不再乘日常增长点数加成。",
-		"七、时代题图为剪纸手绘的文明意象；报告中的数值、图表及文字依据本国正式记录。",
-	])
+		chapters[8].details.append("评级上限：%s" % ("D" if cap == 5 else "B"))
 
 	# 每章是否真有可比行：决定账簿要不要保留「上年/增减」两列。
 	# 首年所有章都没有基线，这两列整列删掉，而不是逐行刷「无可比数据」。
@@ -232,16 +193,16 @@ static func build(report: Dictionary, previous: Dictionary = {}, catalogs: Dicti
 				break
 		chapter["has_previous"] = any_baseline
 	var score_value: float = build_score(report)
-	_attach_figures(chapters, totals, before, opening, avg_sat, new_tech, gdp, population, births, deaths, score_value, String(report.get("grade", "—")))
+	var reward_text: String = points_text(int(report.get("reward_q16", 0)))
+	_attach_figures(chapters, totals, before, opening, avg_sat, avg_survival, new_tech, gdp, population, births, deaths, score_value, String(report.get("grade", "—")), reward_text)
 	_attach_visuals(chapters, report, tiers, old_tiers, dimensions, old_dimensions, industry_rows, resource_rows, parts, score_value)
-	_attach_notes(chapters, totals, has_previous, risks, town_rows, good_rows)
+	_attach_notes(chapters, totals, has_previous)
 
 	var title: String = "第 %d 年 · 国家年度发展报告" % year
 	var full_lines: Array[String] = [String(report.get("country_name", "本国")), title, "文明阶段：" + ERA_NAMES[era], ""]
 	for chapter in chapters:
 		full_lines.append("%s\n" % String(chapter.title))
-		for paragraph in chapter.paragraphs:
-			full_lines.append(String(paragraph))
+		full_lines.append(String(chapter.lead))
 		if not chapter.rows.is_empty():
 			full_lines.append("指标｜本年｜上年（首年为期初）｜增减｜增幅")
 		for row in chapter.rows:
@@ -260,8 +221,6 @@ static func build(report: Dictionary, previous: Dictionary = {}, catalogs: Dicti
 		full_lines.append("月度统计附表：月份｜已结算 GDP 原值（1/10000 游戏货币）｜月末人口")
 		for month in mini(months_gdp.size(), months_population.size()):
 			full_lines.append("%d｜%d｜%d" % [month + 1, months_gdp[month], months_population[month]])
-	elif not complete:
-		full_lines.append("统计未满一年，未编制完整月度趋势附表，未覆盖月份不补造数据。")
 
 	var tax_parts: Array = []
 	for spec in TAX_KEYS:
@@ -299,17 +258,23 @@ static func build(report: Dictionary, previous: Dictionary = {}, catalogs: Dicti
 		"tax_parts": tax_parts, "tax_total": tax_total,
 		"trade": {"value": _normalized(totals.get("trade_value", 0), "money"), "quantity": _normalized(totals.get("trade_quantity", 0), "goods"), "orders": _normalized(totals.get("trade_orders", 0), "count")},
 		"population_flow": {"births": births, "deaths": deaths, "net": births - deaths, "migration": migration},
-		"risk_count": risks.size(),
 	}
 
 
 # ── 数字带（每章 2–4 个巨数） ────────────────────────────────────────────────
 
-static func _attach_figures(chapters: Array[Dictionary], totals: Dictionary, before: Dictionary, opening: Dictionary, avg_sat: int, new_tech: PackedInt64Array, gdp: int, population: int, births: int, deaths: int, score: float, grade: String) -> void:
+static func _attach_figures(chapters: Array[Dictionary], totals: Dictionary, before: Dictionary, opening: Dictionary, avg_sat: int, avg_survival: int, new_tech: PackedInt64Array, gdp: int, population: int, births: int, deaths: int, score: float, grade: String, reward_text: String) -> void:
+	# 总述页放满六个关键量：四项总量之外补人均 GDP 与基本需求满足，
+	# 让这一屏本身就是一个 2×3 的指标网格，而不是四个数加一整片白。
+	var per_capita: Variant = float(gdp) / float(population) if population > 0 else null
+	var previous_population: int = int(before.get("population", 0))
+	var previous_per_capita: Variant = float(before.get("gdp", 0)) / float(previous_population) if previous_population > 0 else null
 	chapters[0].figures = [
 		_figure("全年 GDP", gdp, before.get("gdp", null), "money", "accent"),
+		_figure("人均 GDP", per_capita, previous_per_capita, "money"),
 		_figure("年末人口", population, before.get("population", opening.get("population", null)), "people"),
 		_figure("平均满意度", avg_sat, null, "ratio"),
+		_figure("基本需求满足", avg_survival, null, "ratio"),
 		_figure("新增科技", new_tech.size(), null, "count"),
 	]
 	chapters[1].figures = [
@@ -350,6 +315,7 @@ static func _attach_figures(chapters: Array[Dictionary], totals: Dictionary, bef
 	chapters[8].figures = [
 		{"label": "综合得分", "text": "%.2f" % score, "raw": score, "unit": "", "delta": "—", "direction": 0, "tone": "accent"},
 		{"label": "评级", "text": grade, "raw": null, "unit": "", "delta": "—", "direction": 0, "tone": "plain"},
+		{"label": "理念奖励", "text": reward_text, "raw": null, "unit": "点", "delta": "—", "direction": 0, "tone": "plain"},
 	]
 
 
@@ -378,7 +344,7 @@ static func _attach_visuals(chapters: Array[Dictionary], report: Dictionary, tie
 
 # ── 边注（短句，只在真正有话说时才出现） ────────────────────────────────────
 
-static func _attach_notes(chapters: Array[Dictionary], totals: Dictionary, has_previous: bool, risks: Array[String], towns: Array, goods: Array) -> void:
+static func _attach_notes(chapters: Array[Dictionary], totals: Dictionary, has_previous: bool) -> void:
 	if not has_previous:
 		chapters[0].margin_notes.append("首年：以年初为期初基准，不列同比。")
 		chapters[1].margin_notes.append("首年：期初即基准，增减栏留空。")
@@ -389,12 +355,6 @@ static func _attach_notes(chapters: Array[Dictionary], totals: Dictionary, has_p
 	var gdp: float = float(totals.get("gdp", 0))
 	if gdp > 0.0:
 		chapters[6].margin_notes.append("五项税收合计相当于增加值的 %.1f%%。" % [(float(totals.get("income_tax", 0)) + float(totals.get("consumption_tax", 0)) + float(totals.get("business_tax", 0)) + float(totals.get("import_tax", 0)) + float(totals.get("export_tax", 0))) * 100.0 / gdp])
-	if towns.size() > DETAIL_LIMIT:
-		chapters[4].truncated["towns"] = towns.size()
-	if goods.size() > DETAIL_LIMIT:
-		chapters[6].truncated["goods"] = goods.size()
-	if chapters[7].figures.size() > 0:
-		chapters[7].margin_notes.append("风险提示共 %d 条，见本章首段。" % risks.size())
 
 
 # ── 派生工具 ────────────────────────────────────────────────────────────────
@@ -451,10 +411,9 @@ static func build_score(report: Dictionary) -> float:
 
 
 static func unit_suffix(kind: String) -> String:
-	match kind:
-		"ratio": return "%"
-		"people": return "人"
-		_: return ""
+	# 单位只留一处。format_value 已经把「%」写进比例、「人」写进人口，
+	# 这里再返回一次会让数字带把单位排两遍，读作「91.6%%」「46 人人」。
+	return ""
 
 
 static func _previous_quality(previous: Dictionary, index: int) -> Variant:

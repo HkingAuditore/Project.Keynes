@@ -161,7 +161,7 @@ CPU 端（Godot GDScript）把 hex 内恒定的动态状态打包成 cell-index 
 - **这类失效在 GDScript 侧完全看不出来**：`Texture2D.get_size()`、`get_format()`、
   `has_*` 标志、CPU 侧字节统计全部正常，唯一能证伪的是 shader 里的 `textureSize()` ——
   兜底发生时它报 `4×4`。诊断档 `terrain_surface_debug_view = 16` 就是把这个尺寸按 12 位
-  二进制条画出来的（配 `tests/_tmp_decode_texsize_view.gd` 从截图解码）。
+  二进制条画出来的（配 `tests/probes/_tmp_decode_texsize_view.gd` 从截图解码）。
 - **可选纹理一律配一个 `has_*` bool，不要靠"没绑就采样得 0"降级。** 兜底纹理是白而非黑，
   所以"缺省=无效果"的写法在 Web 上会整体翻转成"缺省=效果拉满"——2026-08 Web 端整图发蓝
   就是 `flow` 恒为 1.0（判定全图是河心）导致的。

@@ -133,7 +133,8 @@ bool RuntimeModifierPodAuthority::configure(const RuntimeModifierPodCatalog &cat
     }
     for (const RuntimeModifierPodStat &stat : catalog.stats) {
         if (stat.domain < 0 || stat.domain >= 4 || !std::isfinite(stat.min_value) ||
-            !std::isfinite(stat.max_value) || stat.min_value > stat.max_value) {
+            !std::isfinite(stat.max_value) || stat.min_value > stat.max_value ||
+            stat.aggregate_policy < 0 || stat.aggregate_policy > 2 || stat.source_cap < 0) {
             error = "modifier_pod_stat_invalid";
             return false;
         }
@@ -144,6 +145,8 @@ bool RuntimeModifierPodAuthority::configure(const RuntimeModifierPodCatalog &cat
         expected_hash = hash_value(expected_hash, stat.min_value);
         expected_hash = hash_value(expected_hash, stat.max_value);
         expected_hash = hash_value(expected_hash, stat.persistable);
+        expected_hash = hash_value(expected_hash, stat.aggregate_policy);
+        expected_hash = hash_value(expected_hash, stat.source_cap);
     }
     for (const RuntimeModifierPodDefinition &definition : catalog.definitions) {
         if (definition.version <= 0 || definition.domain < 0 || definition.domain >= 4 ||
@@ -471,6 +474,9 @@ void RuntimeModifierPodAuthority::rebuild_buckets(
         }
     };
     std::unordered_map<Key, RuntimeModifierPodBucket, KeyHash> map;
+    // Per-(bucket, source) add, only for the non-SUM policies. Keyed off the same
+    // identity the main runtime uses, so the two aggregate identically.
+    std::unordered_map<Key, std::vector<std::pair<uint64_t, double>>, KeyHash> by_source;
     for (size_t d = 0; d < state.domains.size(); ++d) {
         const DomainState &domain = state.domains[d];
         for (const auto &entry : domain.entries) {
@@ -488,13 +494,54 @@ void RuntimeModifierPodAuthority::rebuild_buckets(
                 bucket.scope = key.scope;
                 bucket.stat_id = key.stat;
                 bucket.scope_id = key.id;
-                bucket.sum_add += term.add * entry.stacks * magnitude;
+                const double add = term.add * entry.stacks * magnitude;
+                const int32_t policy = term.stat_id >= 0 &&
+                        term.stat_id < static_cast<int32_t>(_catalog.stats.size())
+                    ? _catalog.stats[static_cast<size_t>(term.stat_id)].aggregate_policy : 0;
+                if (policy == 0) {
+                    bucket.sum_add += add;
+                } else {
+                    const uint64_t identity =
+                        entry.source_type * 0x9e3779b97f4a7c15ULL ^ entry.source_id;
+                    auto &rows = by_source[key];
+                    bool merged = false;
+                    for (auto &row : rows) {
+                        if (row.first == identity) { row.second += add; merged = true; break; }
+                    }
+                    if (!merged) rows.emplace_back(identity, add);
+                }
                 const double factor = std::pow(1.0 + (term.factor - 1.0) * magnitude,
                                                static_cast<double>(entry.stacks));
                 bucket.product_factor *= factor;
                 ++bucket.active_count;
             }
         }
+    }
+    // Fold the per-source rows into sum_add. Done after the sweep so the map is
+    // not mutated while it is being iterated for insertion.
+    for (const auto &pair : by_source) {
+        auto bucket_it = map.find(pair.first);
+        if (bucket_it == map.end()) continue;
+        const int32_t stat_id = static_cast<int32_t>(pair.first.stat);
+        const auto &stat = _catalog.stats[static_cast<size_t>(stat_id)];
+        std::vector<std::pair<uint64_t, double>> rows = pair.second;
+        double total = 0.0;
+        if (stat.aggregate_policy == 1) {
+            bool has_best = false;
+            for (const auto &row : rows) {
+                if (!has_best || row.second > total) { total = row.second; has_best = true; }
+            }
+        } else {
+            std::sort(rows.begin(), rows.end(),
+                [](const std::pair<uint64_t, double> &lhs,
+                   const std::pair<uint64_t, double> &rhs) {
+                    return lhs.second > rhs.second;
+                });
+            const size_t keep = stat.source_cap <= 0
+                ? rows.size() : std::min(rows.size(), static_cast<size_t>(stat.source_cap));
+            for (size_t index = 0; index < keep; ++index) total += rows[index].second;
+        }
+        bucket_it->second.sum_add = total;
     }
     out.reserve(map.size());
     for (const auto &pair : map) out.push_back(pair.second);
@@ -1350,6 +1397,91 @@ bool RuntimeModifierPodAuthority::self_test(std::string &error) {
     if (restored.restore(bytes.data(), bytes.size(), error) ||
         restored.snapshot().state_hash != restored_hash)
         return fail("modifier_pod_mdf2_transaction_self_test_failed");
+
+    // L1-6: aggregation policy. Same two rows applied from two different source
+    // ids; SUM adds them, MAX_SOURCE keeps the larger one, TOP_N with cap 1 does
+    // the same as MAX here and cap 2 the same as SUM. The point is that the
+    // policy is read from the stat and that the source identity is the pair
+    // (source_type, source_id), not the instance row.
+    {
+        // `fail` above only writes when `error` is empty, and the corrupted-save
+        // probe immediately before this block deliberately leaves a message
+        // behind. Clearing here is what lets a real failure in this block be
+        // visible instead of echoing the previous one.
+        error.clear();
+        auto make_catalog = [](int32_t policy, int32_t cap) {
+            RuntimeModifierPodCatalog pod_catalog;
+            RuntimeModifierPodStat stat;
+            stat.domain = 1; stat.min_value = -100.0; stat.max_value = 100.0;
+            stat.persistable = 1; stat.aggregate_policy = policy; stat.source_cap = cap;
+            pod_catalog.stats.push_back(stat);
+            RuntimeModifierPodDefinition pod_definition;
+            pod_definition.version = 1; pod_definition.domain = 1;
+            pod_definition.policy = 0; pod_definition.max_stacks = 8;
+            pod_definition.default_duration = -1;
+            pod_definition.term_begin = 0; pod_definition.term_count = 1;
+            pod_catalog.definitions.push_back(pod_definition);
+            RuntimeModifierPodTerm pod_term;
+            pod_term.stat_id = 0; pod_term.add = 1.0; pod_term.factor = 1.0;
+            pod_catalog.terms.push_back(pod_term);
+            return pod_catalog;
+        };
+        std::string aggregate_error;
+        auto total_add = [&make_catalog, &aggregate_error](int32_t policy, int32_t cap, double &out) {
+            RuntimeModifierPodAuthority authority;
+            RuntimeModifierPodCatalog pod_catalog = make_catalog(policy, cap);
+            if (!authority.configure(pod_catalog, aggregate_error)) {
+                if (aggregate_error.empty()) aggregate_error = "modifier_pod_aggregate_configure_failed";
+                return false;
+            }
+            std::vector<RuntimeModifierPodCommand> rows;
+            // magnitude 0.25 against an add of 1.0 gives 0.25 per row.
+            for (uint64_t source = 1; source <= 2; ++source) {
+                RuntimeModifierPodCommand row;
+                row.request_id = 100 + source; row.producer_id = 1;
+                row.sequence = 100 + source; row.effective_day = 0;
+                // APPLY is 1; 2 is REMOVE, which would leave no bucket at all.
+                row.opcode = static_cast<uint16_t>(RuntimeModifierPodOpcode::APPLY);
+                row.domain = 1; row.definition_id = 0; row.scope = 2;
+                row.entity_handle = 0; row.group_handle = 7;
+                row.source_type = 0x4full; row.source_id = source;
+                row.duration_days = -1; row.stacks = 1;
+                row.magnitude_q16 = Q16_ONE / 4;
+                rows.push_back(row);
+            }
+            RuntimeModifierPodSnapshot aggregate_snapshot;
+            std::vector<RuntimeDomainAck> aggregate_acks;
+            RuntimeModifierPodReport aggregate_report;
+            if (!authority.plan_day(0, 1, rows, {}, aggregate_snapshot,
+                                    aggregate_acks, aggregate_report, aggregate_error) ||
+                !authority.commit_day(aggregate_snapshot, aggregate_error)) {
+                if (aggregate_error.empty()) aggregate_error = "modifier_pod_aggregate_plan_failed";
+                return false;
+            }
+            const RuntimeModifierPodSnapshot applied = authority.snapshot();
+            if (applied.buckets.size() != 1) {
+                aggregate_error = "modifier_pod_aggregate_bucket_count_failed";
+                return false;
+            }
+            out = applied.buckets[0].sum_add;
+            return true;
+        };
+        double sum = 0.0, max_source = 0.0, top1 = 0.0, top2 = 0.0;
+        if (!total_add(0, 0, sum) || !total_add(1, 0, max_source) ||
+            !total_add(2, 1, top1) || !total_add(2, 2, top2))
+            return fail(aggregate_error.empty()
+                ? "modifier_pod_aggregate_plan_self_test_failed"
+                : aggregate_error.c_str());
+        if (std::abs(sum - 0.5) > 1e-9)
+            return fail("modifier_pod_aggregate_sum_self_test_failed");
+        if (std::abs(max_source - 0.25) > 1e-9)
+            return fail("modifier_pod_aggregate_max_self_test_failed");
+        if (std::abs(top1 - 0.25) > 1e-9)
+            return fail("modifier_pod_aggregate_top1_self_test_failed");
+        if (std::abs(top2 - 0.5) > 1e-9)
+            return fail("modifier_pod_aggregate_top2_self_test_failed");
+    }
+
     error.clear();
     return true;
 }

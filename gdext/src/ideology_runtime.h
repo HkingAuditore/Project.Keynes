@@ -33,10 +33,17 @@ public:
     // rather than silently misread.
     // v6 adds per-idea reconciled Effect instance references, so a load can
     // verify that the EffectRuntime still owns every instance the card created.
-    static constexpr int32_t SAVE_SCHEMA_VERSION = 6;
+    static constexpr int32_t SAVE_SCHEMA_VERSION = 7;
     static constexpr int64_t Q16_ONE = 65536;
     static constexpr int32_t POINT_HISTORY = 32;
     static constexpr int32_t MAX_ERA_INDEX = 63;
+    // Upper bound of the offer row. 5 covers the authored 3 plus the two a
+    // `country.ideology.offer_choice_bonus` stat can add; the save, the pod
+    // struct and `choose_offer` all read this one constant so the array can
+    // never be sized differently in two places. Aliased from the shared draw
+    // kernel, which the worker also includes -- one literal, two authorities.
+    static constexpr int32_t OFFER_CHOICE_CAPACITY = IDEOLOGY_OFFER_CHOICE_CAPACITY;
+    static constexpr int32_t OFFER_CHOICE_BASE = IDEOLOGY_OFFER_CHOICE_BASE;
 
     enum Acquisition : uint8_t { DISCOVER = 1, DRAW = 2 };
     enum CommandOpcode : int32_t {
@@ -50,6 +57,7 @@ public:
         ADD_UNDERSTANDING = 8,
         SET_IDEOLOGY_GATE = 9,
         REROLL_IDEOLOGY_OFFER = 10,
+        BAN_IDEOLOGY_CARD = 11,
     };
     enum Location : uint8_t { INACTIVE = 0, IDEOLOGY = 1, NATIONAL_SPIRIT = 2 };
     enum ReceiptStatus : int32_t {
@@ -184,6 +192,11 @@ private:
         // Active when at least min_count requirement rows hold (school
         // resonances); equals requirement_count for named synergies.
         int32_t min_count = 0;
+        // L3-9: rows in `_synergy_override_program_keys/_scales` this synergy
+        // applies while active. 0 means "this synergy rewrites nothing", which
+        // is every synergy that predates the feature.
+        int32_t override_begin = 0;
+        int32_t override_count = 0;
     };
     struct CapacityUnlock {
         int32_t technology_id = -1;
@@ -258,11 +271,24 @@ private:
         // FamilyEffectMetadataPod. Empty means "this program conditions on
         // nothing", so the publisher does no work for it at all.
         MetricMask metric_mask;
+        // L3-9: per-instance multiplier derived from the country's ACTIVE
+        // synergies, not from the catalog alone -- two countries running the same
+        // program can hold different values.
+        int32_t magnitude_scale_q16 = static_cast<int32_t>(Q16_ONE);
     };
     struct Offer {
         uint32_t generation = 0;
-        std::array<int32_t, 3> ideology_ids{{-1, -1, -1}};
+        // Fixed-capacity, variable-length. `choice_count` is what the draw
+        // actually produced and what `choose_offer` validates against; the tail
+        // stays -1. A fixed array is kept because the offer crosses the pod /
+        // save boundary as plain bytes, and a std::vector there would add an
+        // allocation to a struct that is memcpy-friendly today.
+        std::array<int32_t, OFFER_CHOICE_CAPACITY> ideology_ids;
+        uint8_t choice_count = 0;
         uint8_t active = 0;
+
+        Offer() { ideology_ids.fill(-1); }
+        void clear() { ideology_ids.fill(-1); choice_count = 0; active = 0; }
     };
     struct CountryState {
         uint64_t handle = 0;
@@ -280,6 +306,11 @@ private:
         RuntimeIdeologyPodPointLedger ledger;
         std::array<int64_t, POINT_HISTORY> history_q16{};
         std::vector<uint64_t> known_bits;
+        // Permanently retired cards (封存). Deliberately a second bitmap rather
+        // than another meaning for known_bits: un-banning has to stay possible,
+        // and "known" drives slot availability, transition ownership and the
+        // catalog UI. Folding them together would make a banned card look owned.
+        std::vector<uint64_t> banned_bits;
         std::vector<uint64_t> gate_bits;
         std::vector<uint64_t> active_bits;
         std::vector<uint64_t> active_synergy_bits;
@@ -375,10 +406,41 @@ private:
     int32_t ideology_capacity_for(int32_t country_slot) const;
     int32_t spirit_capacity_for(int32_t country_slot) const;
     int64_t offer_cost_for(uint64_t draw_sequence) const;
-    int64_t reroll_cost_for(uint64_t draw_sequence) const;
+    // `handle` is needed from here on: the reroll share is per-country now, so
+    // the caller must say whose modifiers to read. There is no useful default —
+    // 0 is not a valid handle and would silently read the global bucket.
+    int64_t reroll_cost_for(uint64_t draw_sequence, uint64_t handle) const;
+    // Resolve `country.ideology.*` stat ids once and cache them. -1 means "not
+    // resolvable": either no key is authored or the modifier runtime is not
+    // configured yet. Both read as 1.0, so a catalog without these keys behaves
+    // byte-identically to before they existed.
+    int32_t resolve_ideology_stat_id(const std::string &key, int32_t &cache) const;
+    // Q16 multiplier for one country, clamped to [0, 4] like every other
+    // ideology-facing factor. Returns Q16_ONE when the key is absent.
+    int32_t ideology_stat_factor_q16(const std::string &key, int32_t &cache,
+                                     uint64_t handle) const;
+    // Basis points (0..10000) for one country. Unlike the Q16 factor this is an
+    // additive-shaped value, so "absent" reads as 0 rather than 1.0 -- 0 is the
+    // era-decay floor's identity element.
+    int32_t ideology_stat_bp(const std::string &key, int32_t &cache,
+                             uint64_t handle) const;
+    // Additive non-negative count for one country, pre-clamped to `cap`.
+    int32_t ideology_stat_count(const std::string &key, int32_t &cache,
+                                uint64_t handle, int32_t cap) const;
+    // Rows this country's next offer may hold, already clamped to the array.
+    int32_t offer_choice_count_for(const CountryState &country) const;
+    // Product of every ACTIVE synergy override that targets `program`, clamped
+    // to [0.25x, 4x]. Returns 1.0 when nothing rewrites it.
+    int32_t magnitude_scale_for(const CountryState &country,
+                                const std::string &program) const;
+    bool banned(const CountryState &country, int32_t ideology_id) const;
+    void set_banned(CountryState &country, int32_t ideology_id);
     void accrue_points(int64_t day);
     void init_country_state(CountryState &state, uint64_t handle) const;
     bool choose_offer(CountryState &country, const Command &command, std::string &error);
+    // 封存: permanently retires one card from this country's draw pool for the
+    // price of one draw.
+    bool ban_card(CountryState &country, const Command &command, std::string &error);
     bool equip(CountryState &country, int32_t ideology_id, int64_t day, std::string &error);
     bool unequip(CountryState &country, int32_t ideology_id, int64_t day, std::string &error);
     bool promote(CountryState &country, int32_t ideology_id, int64_t day, std::string &error);
@@ -406,10 +468,15 @@ private:
     // conditions, targets and lifecycle. Rows without a program keep the
     // legacy batch path unchanged.
     static std::string effect_program_key(const std::string &definition_key);
+    // `layer` distinguishes the per-stack instances of an ADD_STACK program. It
+    // is mixed in ONLY when non-zero, so layer 0 hashes exactly like the pre-L2-8
+    // id: every instance that is not a stack keeps its old identity and existing
+    // saves stay valid. A layer that took part in the hash as 0 would renumber
+    // every instance in the game.
     static int64_t effect_instance_id(uint64_t country_handle,
                                       int32_t ideology_id, uint8_t location,
                                       int32_t level, const std::string &program,
-                                      uint64_t target_handle);
+                                      uint64_t target_handle, int32_t layer = 0);
     // Expands one declared program into its concrete targets. Country-scoped
     // programs resolve to the country handle; cell-scoped programs resolve the
     // anchor cell and then run the shared target selector, producing one entry
@@ -422,6 +489,19 @@ private:
     bool collect_effect_activations(
         const CountryState &country, const IdeaState &state,
         std::vector<EffectActivation> &out) const;
+    // program_hash -> declared target_domain, for the programs this idea's
+    // *current* level expands into. The reconciler derives the same hashes in
+    // collect_effect_activations, so a report row can be labelled with its
+    // domain without persisting one: EffectInstanceRef intentionally stores no
+    // domain, and widening the save layout for a display bit would force a
+    // schema bump on every existing campaign.
+    //
+    // A miss is reported as absent, never guessed. If the level moved between
+    // reconciliation and this call the refs are stale and will be rebuilt on
+    // the next tick anyway; labelling a country handle as a cell index in that
+    // window would paint the wrong hex.
+    void collect_idea_program_domains(const IdeaState &state,
+        std::unordered_map<uint64_t, int32_t> &out) const;
     bool reconcile_effect_activations(const CountryState &country,
                                       IdeaState &state, int64_t day,
                                       std::string &error);
@@ -478,6 +558,29 @@ private:
     int64_t _point_trade_weight_q16 = 0;
     int64_t _point_gain_cap_q16 = 0;
     std::string _point_gain_stat_key;
+    // Same shape as _point_gain_stat_key, separate consumption points. Kept as
+    // three keys rather than one table because each is optional independently:
+    // a catalog that only wants faster studying leaves reroll alone.
+    std::string _understanding_gain_stat_key;
+    std::string _reroll_cost_stat_key;
+    // Per-country floor under the era decay table (史馆-type cards), and the
+    // additive offer-row bonus. Both optional: an empty key means the stat does
+    // not exist and the pre-existing behaviour is preserved exactly.
+    std::string _era_decay_floor_stat_key;
+    std::string _offer_choice_bonus_stat_key;
+    // Filled on first use, reset by configure(). Mutable because the accessors
+    // are const and the hot path must not repeat the string lookup.
+    mutable int32_t _understanding_gain_stat_id = -1;
+    mutable int32_t _reroll_cost_stat_id = -1;
+    mutable int32_t _era_decay_floor_stat_id = -1;
+    mutable int32_t _offer_choice_bonus_stat_id = -1;
+    // Weight of an owned-but-not-maxed card offered again as 精进, on the same
+    // x10000 scale as rarity weight. 0 keeps every owned card out of the pool,
+    // which is the pre-L4-11 behaviour.
+    int32_t _refine_weight_bp = 0;
+    // Understanding granted when a 精进 row is picked. Authored in Q16; the
+    // default of 4.0 units matches the design note "约等于直接升一级".
+    int64_t _refine_understanding_q16 = 4 * Q16_ONE;
     std::vector<CapacityUnlock> _capacity_unlocks;
     uint64_t _points_revision_seen = 0;
     // True once a worker snapshot wrote this facade. Worker transitions bind
@@ -503,6 +606,11 @@ private:
     std::vector<EffectTemplate> _synergy_templates;
     std::vector<ClassStance> _class_stances;
     std::vector<SynergyRequirement> _synergy_requirements;
+    // L3-9 synergy magnitude overrides, flattened. Kept as three parallel arrays
+    // (program key, scale, per-synergy span on Synergy) rather than a map so the
+    // catalog hash is a straight walk and the order is whatever the catalog says.
+    std::vector<std::string> _synergy_override_programs;
+    std::vector<int32_t> _synergy_override_scales;
     std::vector<Synergy> _synergies;
     std::vector<int32_t> _ideology_synergy_offsets;
     std::vector<int32_t> _ideology_synergy_ids;

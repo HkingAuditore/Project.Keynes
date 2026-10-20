@@ -847,7 +847,13 @@ func _on_ideology_command_settled(result: Dictionary) -> void:
 		else:
 			_sync_ideology_draw()
 	command_settled.emit(command_id, result)
+	_play_ideology_cue(command_id, result)
 
+
+
+## 事件音效用的增量快照
+var _tech_state_snapshot := PackedInt32Array()
+var _territory_snapshot := -1
 
 ## 时代推进后切换音乐。只在玩家国家、且时代索引真的变化时才动作。
 func _sync_era_music() -> void:
@@ -863,6 +869,72 @@ func _sync_era_music() -> void:
 		audio.set_era(era_index)
 
 
+
+## 理念音效：抽（offer/choose/reroll）与用（equip/unequip/promote）分开。
+## 只在成功时发声，被拒绝的命令不响。
+func _play_ideology_cue(command_id: StringName, result: Dictionary) -> void:
+	if not bool(result.get("ok", false)):
+		return
+	var audio := get_node_or_null("/root/GameAudio")
+	if audio == null or not audio.has_method("play_event_cue"):
+		return
+	match command_id:
+		COMMAND_IDEOLOGY_OFFER, COMMAND_IDEOLOGY_CHOOSE, COMMAND_IDEOLOGY_REROLL:
+			audio.play_event_cue(&"ideology_draw")
+		COMMAND_IDEOLOGY_EQUIP, COMMAND_IDEOLOGY_UNEQUIP, COMMAND_IDEOLOGY_PROMOTE:
+			audio.play_event_cue(&"ideology_use")
+
+
+## 游戏事件音效。四个数据源都是「增量」，每天一次调用成本可控：
+##   建筑 / 贸易 → 经济 trace 流（consumer 游标自带去重，不遍历全图）
+##   科技      → diff technology_states（<5 变 >=5 视为完成）
+##   开拓      → diff territory_cells.size()
+## 人口没有增量接口：引擎侧只在 cell 级提供当前值，逐个 diff 太贵，暂不接。
+func _sync_event_audio() -> void:
+	if _player_country_handle == 0:
+		return
+	var audio := get_node_or_null("/root/GameAudio")
+	if audio == null or not audio.has_method("play_event_cue"):
+		return
+
+	# 贸易：经济事件流 kind 13 = TRADE_ARRIVED。
+	# 建筑不走这里 —— map_activity_layer 的 build 活动已经带屏幕过滤，
+	# 两处都接会在同一栋建筑落成时响两声。
+	if _economy_facade != null and _economy_facade.has_method("poll_events"):
+		var trade: Dictionary = _economy_facade.poll_events(&"pk_sfx_trade", 32, 13)
+		if int(trade.get("count", 0)) > 0:
+			audio.play_event_cue(&"trade")
+		# 人口：原生市场级 births/deaths 事件（EVENT_POPULATION_CHANGED = 16）。
+		# 逐格出生分摊在 market 结算内部，这里拿到市场级汇总，配 2.5s 冷却足够。
+		var pop: Dictionary = _economy_facade.poll_events(&"pk_sfx_pop", 32, 16)
+		if int(pop.get("count", 0)) > 0:
+			audio.play_event_cue(&"population_grow")
+	# _player_controller_build_removed
+
+	# 科技：diff 已生效状态
+	if _country_facade != null and _country_facade.has_method("research_snapshot"):
+		var research: Dictionary = _country_facade.research_snapshot(_player_country_handle)
+		var states: PackedInt32Array = research.get("technology_states", PackedInt32Array())
+		if not states.is_empty():
+			if not _tech_state_snapshot.is_empty():
+				var completed := 0
+				for index in range(mini(states.size(), _tech_state_snapshot.size())):
+					if int(_tech_state_snapshot[index]) < 5 and int(states[index]) >= 5:
+						completed += 1
+				if completed > 0:
+					audio.play_event_cue(&"tech_research")
+			_tech_state_snapshot = states.duplicate()
+
+	# 开拓：领土格数变多
+	if _country_facade != null and _country_facade.has_method("snapshot"):
+		var snapshot: Dictionary = _country_facade.snapshot(_player_country_handle)
+		var cells: PackedInt32Array = snapshot.get("territory_cells", PackedInt32Array())
+		if not cells.is_empty():
+			if _territory_snapshot >= 0 and cells.size() > _territory_snapshot:
+				audio.play_event_cue(&"territory_expand")
+			_territory_snapshot = cells.size()
+
+
 func _on_day_changed(day_idx: int) -> void:
 	if _runtime_host == null or _world_clock == null:
 		return
@@ -874,6 +946,7 @@ func _on_day_changed(day_idx: int) -> void:
 	_sync_family_founding_offer()
 	_sync_ideology_draw()
 	_sync_era_music()
+	_sync_event_audio()
 	if _economy_facade != null and _player_country_handle != 0 and \
 			_economy_facade.has_method("dispatch_family_colonization_receipts"):
 		_economy_facade.dispatch_family_colonization_receipts(

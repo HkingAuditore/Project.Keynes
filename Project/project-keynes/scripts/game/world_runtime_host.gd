@@ -4359,6 +4359,31 @@ func map_wrap_period_x() -> float:
 	return HexUtils.wrap_period_x(_current_map.width, hex_size)
 
 
+## Map cell indices to the world position the player actually sees.
+##
+## `ref_x` is the camera's x, which picks the copy on the correct side of a
+## wrapped map — the same role it plays in PlayerController._cell_display_world.
+## Out-of-range indices are dropped rather than clamped: a stale index must
+## paint nothing, not paint the closest valid hex.
+func cell_display_centers(cells: PackedInt32Array, ref_x: float) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	if _current_map == null or cells.is_empty():
+		return out
+	var wrap_period := map_wrap_period_x()
+	out.resize(cells.size())
+	var kept := 0
+	for index in range(cells.size()):
+		var cell := _current_map.cell_at(int(cells[index]))
+		if cell == null:
+			continue
+		var canonical := HexUtils.cube_to_world(cell.q, cell.r, hex_size)
+		out[kept] = HexUtils.nearest_display_world(canonical, ref_x, wrap_period)
+		kept += 1
+	if kept != out.size():
+		out.resize(kept)
+	return out
+
+
 func _bind_renderer_and_camera(safe_area: Rect2) -> void:
 	if _renderer == null or _current_map == null or _world_data == null:
 		return

@@ -30,9 +30,19 @@
 
 ## paper_tear_mask.png（撕口蒙版）
 
-长纸左右两道撕口的**唯一权威来源**，由 `tools/ui/build_paper_tear_mask.py` 从一张 ImageGen 手撕纸（848×1264，纯黑底，`background=opaque`）派生，输出 996×1080。
+长纸**四道**撕口的唯一权威来源，由 `tools/ui/build_paper_tear_mask.py` 从一张 ImageGen 手撕纸（848×1264，纯黑底，`background=opaque`）派生，输出 996×1080。
 
 纸张、投影、页眉遮罩、页脚遮罩四处共用这张图，撕口轮廓因此只有一份，不会各自跑偏。
+
+源纸四边都是手撕的，蒙版就烘四边：
+
+| 行段 | 内容 |
+|---|---|
+| `[0, 96)` | 源图真实的上撕口，横跨整幅纸宽一遍 |
+| `[96, 984)` | 左右两道撕口，做了周期化，可以纵向镜像平铺 |
+| `[984, 1080)` | 源图真实的下撕口 |
+
+纸面名义上沿落在第 72 行（`CAP_FAR`），名义下沿落在第 1008 行。着色器按纸层行号在这三段之间切换（`annual_sheet_mask_v`）：头尾 1:1、中段镜像平铺。这三个数（`CAP_ROWS` / `CAP_FAR` / `FAR_PX`）在构建脚本和 `AnnualReportTokens` 里各有一份，改一个必须改另一个 —— `annual_report_ui_test` 的 `mask geometry contract` 会从像素反推着守它们。
 
 **RGB 是数据不是颜色**，四个通道各管一件事：
 
@@ -47,4 +57,6 @@
 
 用距离场而不是模糊：纸缘吸光要 1.4px / 7px 两个窄带，投影要 ~47px 衰减，同一条模糊通道跨不了 30 倍，而且模糊值是距离的 erf 函数，喂进 `pow()` 得到的是错的 S 形。距离场是线性的，`d = 通道值 × range` 就是像素。
 
-重建：`py -3.13 tools/ui/build_paper_tear_mask.py --source <图> [--preview <预览.png>]`。加 `--audit` 只跑八条门禁不写文件（前景不触边、面积占比、行宽一致性、斜率、一阶差分 std 与超额峰度、背景纯度、无接触阴影）。
+重建：`py -3.13 tools/ui/build_paper_tear_mask.py --source <图> [--preview <预览.png>]`。加 `--audit` 只跑门禁不写文件（前景不触边、面积占比、行宽一致性、斜率、一阶差分 std 与超额峰度、背景纯度、无接触阴影，外加纸头纸尾两条毛边 std 与放大后的游走量）。
+
+重建之后**必须**让引擎重新导入：`godot --headless --path . --import`。`--headless --script` 不扫改动过的资源，会拿旧 `.ctex` 跑出一片"全绿"。

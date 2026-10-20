@@ -235,6 +235,8 @@ uint64_t RuntimeIdeologyPodAuthority::compute_catalog_hash(
     hash = hash_value(hash, catalog.point_trade_weight_q16);
     hash = hash_value(hash, catalog.point_gain_cap_q16);
     hash = hash_value(hash, catalog.point_gain_stat_id);
+    hash = hash_value(hash, catalog.understanding_gain_stat_id);
+    hash = hash_value(hash, catalog.reroll_cost_stat_id);
     hash = hash_value(hash, catalog.owner_influence_weight);
     hash = hash_value(hash, catalog.funds_per_influence);
     hash = hash_value(hash, catalog.max_commands_per_slice);
@@ -267,6 +269,11 @@ uint64_t RuntimeIdeologyPodAuthority::compute_catalog_hash(
     // same seed, so the curve is part of the catalog contract.
     hash = hash_vector(hash, catalog.era_decay_bp);
     hash = hash_vector(hash, catalog.era_milestone_technologies);
+    // 精进 changes which cards may appear at all, so it belongs in the contract
+    // for the same reason the decay curve does.
+    hash = hash_value(hash, catalog.refine_weight_bp);
+    hash = hash_value(hash, catalog.refine_understanding_q16);
+    hash = hash_value(hash, catalog.draw_count);
     for (const auto &stance : catalog.class_stances) {
         hash = hash_value(hash, stance.class_index);
         for (int32_t value : stance.stance_q16) hash = hash_value(hash, value);
@@ -334,8 +341,10 @@ uint64_t RuntimeIdeologyPodAuthority::compute_state_hash(
         hash = hash_value(hash, country.spirit_slots_used); hash = hash_value(hash, country.unlocked_era);
         hash = hash_value(hash, country.opinion_revision);
         hash = hash_value(hash, country.offer.generation); hash = hash_value(hash, country.offer.active);
+        hash = hash_value(hash, country.offer.choice_count);
         for (int32_t id : country.offer.ideology_ids) hash = hash_value(hash, id);
-        hash = hash_vector(hash, country.known_bits); hash = hash_vector(hash, country.gate_bits);
+        hash = hash_vector(hash, country.known_bits); hash = hash_vector(hash, country.banned_bits);
+        hash = hash_vector(hash, country.gate_bits);
         hash = hash_vector(hash, country.synergy_bits);
         hash = hash_vector(hash, country.active_idea_ids);
         hash = hash_value(hash, static_cast<uint64_t>(country.ideas.size()));
@@ -393,6 +402,8 @@ bool RuntimeIdeologyPodAuthority::validate_catalog(
         catalog.point_population_weight_q16 < 0 || catalog.point_building_weight_q16 < 0 ||
         catalog.point_trade_weight_q16 < 0 || catalog.point_gain_cap_q16 < 0 ||
         catalog.owner_influence_weight < 0 || catalog.funds_per_influence <= 0 ||
+        catalog.understanding_gain_stat_id < -1 ||
+        catalog.reroll_cost_stat_id < -1 ||
         catalog.max_commands_per_slice == 0 || catalog.max_transition_commands == 0 ||
         catalog.max_transition_polls_per_slice == 0 || catalog.max_active_visits_per_slice == 0) {
         error = "ideology_pod_catalog_shape_invalid"; return false;
@@ -422,6 +433,10 @@ bool RuntimeIdeologyPodAuthority::validate_catalog(
     // weight into a negative and poison the modulo below.
     for (int32_t decay : catalog.era_decay_bp)
         if (decay < 0 || decay > 10000) { error = "ideology_pod_era_decay_invalid"; return false; }
+    if (catalog.refine_weight_bp < 0 || catalog.refine_weight_bp > 10000 ||
+        catalog.refine_understanding_q16 < 0) {
+        error = "ideology_pod_refine_invalid"; return false;
+    }
     for (int32_t technology : catalog.era_milestone_technologies)
         if (technology < -1 || technology >= static_cast<int32_t>(catalog.technology_count)) { error = "ideology_pod_era_milestone_invalid"; return false; }
     for (const auto &d : catalog.definitions)
@@ -576,6 +591,7 @@ bool RuntimeIdeologyPodAuthority::bootstrap(
         out.rng_state = out.handle ^ (_catalog.catalog_hash + 0x9e3779b97f4a7c15ull);
         out.opinion_revision = opinion.revision;
         out.known_bits.assign(idea_words, 0);
+        out.banned_bits.assign(idea_words, 0);
         out.gate_bits.assign(gate_words, 0);
         out.synergy_bits.assign(synergy_words, 0);
         out.ideas.resize(_catalog.definitions.size());
@@ -592,7 +608,7 @@ bool RuntimeIdeologyPodAuthority::bootstrap(
 bool RuntimeIdeologyPodAuthority::validate_command(
         const RuntimeIdeologyPodCommand &command, std::string &error) const {
     const auto opcode = static_cast<uint16_t>(command.opcode);
-    if (opcode < 1 || opcode > 10 || command.request_id == 0 ||
+    if (opcode < 1 || opcode > 11 || command.request_id == 0 ||
         command.producer_id == 0 || command.country_handle == 0 ||
         command.effective_day < 0 || command.requested_day < 0) {
         error = "ideology_command_invalid"; return false;
@@ -601,6 +617,7 @@ bool RuntimeIdeologyPodAuthority::validate_command(
          command.opcode == RuntimeIdeologyPodOpcode::EQUIP ||
          command.opcode == RuntimeIdeologyPodOpcode::UNEQUIP ||
          command.opcode == RuntimeIdeologyPodOpcode::PROMOTE ||
+         command.opcode == RuntimeIdeologyPodOpcode::BAN_CARD ||
          command.opcode == RuntimeIdeologyPodOpcode::ADD_UNDERSTANDING) &&
         (command.ideology_id < 0 || command.ideology_id >= static_cast<int32_t>(_catalog.definitions.size()))) {
         error = "ideology_id_invalid"; return false;
@@ -988,10 +1005,15 @@ int64_t RuntimeIdeologyPodAuthority::offer_cost_for(uint64_t draw_sequence) cons
         _catalog.offer_cost_growth_percent, _catalog.offer_cost_max_q16, draw_sequence);
 }
 
-int64_t RuntimeIdeologyPodAuthority::reroll_cost_for(uint64_t draw_sequence) const {
+int64_t RuntimeIdeologyPodAuthority::reroll_cost_for(
+        uint64_t draw_sequence, int32_t factor_q16) const {
     // The open offer was paid at draw_sequence - 1; rerolls cost a share of it.
     const int64_t paid = offer_cost_for(draw_sequence == 0 ? 0 : draw_sequence - 1u);
-    return mul_sat(paid, _catalog.reroll_cost_percent) / 100;
+    // Scale the share, never the base draw: a discount card must not turn into
+    // a blanket discount on the whole draw economy. ideology_reroll_percent owns
+    // the cap so the main thread cannot cap it differently.
+    return mul_sat(paid, ideology_reroll_percent(
+        _catalog.reroll_cost_percent, factor_q16)) / 100;
 }
 
 int32_t RuntimeIdeologyPodAuthority::unlocked_era_for(
@@ -1011,46 +1033,91 @@ int32_t RuntimeIdeologyPodAuthority::unlocked_era_for(
 
 bool RuntimeIdeologyPodAuthority::draw_offer(
         RuntimeIdeologyPodSnapshot &state, const RuntimeCountryPodSnapshot &country,
-        uint32_t slot, std::string &error) const {
+        uint32_t slot, const RuntimeIdeologyOpinionSnapshot &opinion,
+        std::string &error) const {
     auto &row = state.countries[slot];
     // Must stay step-for-step identical to NativeIdeologyRuntime::draw_offer.
     row.unlocked_era = unlocked_era_for(country, slot);
-    std::vector<IdeologyDrawCandidate> eligible;
+    const int32_t decay_floor_bp = ideology_frozen_bp(opinion.era_decay_floor_bp, slot);
+    std::vector<IdeologyDrawCandidate> pool;
+    std::vector<uint8_t> pool_recent;
+    std::vector<IdeologyDrawCandidate> fallback_rows;
     for (int32_t id = 0; id < static_cast<int32_t>(_catalog.definitions.size()); ++id) {
-        if (bit_get(row.known_bits, id) || (_catalog.definitions[id].acquisition & ACQUIRE_DRAW) == 0 ||
+        const RuntimeIdeologyPodDefinition &definition = _catalog.definitions[static_cast<size_t>(id)];
+        if (bit_get(row.banned_bits, id) || (definition.acquisition & ACQUIRE_DRAW) == 0 ||
             !requirements_met(state, country, slot, id)) continue;
+        const uint8_t recent = definition.era_index >= row.unlocked_era - 1 ? 1u : 0u;
+        const int32_t weight = ideology_draw_weight(definition.rarity_weight,
+            _catalog.era_decay_bp.data(), _catalog.era_decay_bp.size(),
+            row.unlocked_era, definition.era_index, decay_floor_bp);
         IdeologyDrawCandidate candidate;
         candidate.id = id;
-        candidate.weight = ideology_draw_weight(_catalog.definitions[id].rarity_weight,
-            _catalog.era_decay_bp.data(), _catalog.era_decay_bp.size(),
-            row.unlocked_era, _catalog.definitions[id].era_index);
-        eligible.push_back(candidate);
+        if (!bit_get(row.known_bits, id)) {
+            candidate.weight = weight;
+            pool.push_back(candidate);
+            pool_recent.push_back(recent);
+            fallback_rows.push_back(candidate);
+        } else if (_catalog.refine_weight_bp > 0) {
+            const RuntimeIdeologyPodIdeaState &idea = row.ideas[static_cast<size_t>(id)];
+            if (definition.level_count == 0 ||
+                idea.level >= static_cast<int32_t>(definition.level_count) - 1) continue;
+            candidate.weight = static_cast<int64_t>(definition.rarity_weight) *
+                static_cast<int64_t>(_catalog.refine_weight_bp);
+            pool.push_back(candidate);
+            pool_recent.push_back(recent);
+        }
     }
-    if (eligible.empty()) { error = "ideology_offer_pool_insufficient"; return false; }
+    if (pool.empty()) { error = "ideology_offer_pool_insufficient"; return false; }
     std::vector<IdeologyDrawCandidate> weighted;
-    weighted.reserve(eligible.size());
-    for (const IdeologyDrawCandidate &candidate : eligible)
-        if (candidate.weight > 0) weighted.push_back(candidate);
+    std::vector<uint8_t> weighted_recent;
+    weighted.reserve(pool.size());
+    weighted_recent.reserve(pool.size());
+    for (size_t index = 0; index < pool.size(); ++index) {
+        if (pool[index].weight > 0) {
+            weighted.push_back(pool[index]);
+            weighted_recent.push_back(pool_recent[index]);
+        }
+    }
     // Late eras only carry a handful of ideas, so once they are all known the
     // decayed pool empties permanently. Fall back to raw rarity weight; the
-    // branch is a pure function of `eligible`, so both authorities agree.
+    // branch is a pure function of `fallback_rows`, so both authorities agree.
     if (weighted.empty()) {
-        for (const IdeologyDrawCandidate &candidate : eligible) {
+        for (const IdeologyDrawCandidate &candidate : fallback_rows) {
             IdeologyDrawCandidate fallback = candidate;
             fallback.weight = static_cast<int64_t>(
                 _catalog.definitions[static_cast<size_t>(candidate.id)].rarity_weight) * 10000;
             weighted.push_back(fallback);
+            weighted_recent.push_back(
+                _catalog.definitions[static_cast<size_t>(candidate.id)].era_index
+                    >= row.unlocked_era - 1 ? 1u : 0u);
         }
     }
-    row.offer.ideology_ids = {{-1, -1, -1}};
-    int32_t drawn_ids[3] = {-1, -1, -1};
-    const int32_t drawn = ideology_weighted_draw(weighted,
-        std::min<int32_t>(3, static_cast<int32_t>(weighted.size())),
+    if (weighted.empty()) { error = "ideology_offer_weight_invalid"; return false; }
+    // Row count: the frozen bonus, on top of the base, clamped to the array. The
+    // main thread reads the same bonus from ModifierRuntime; the host freezes it
+    // into `opinion.offer_choice_bonus` so the two never disagree.
+    const int32_t bonus = slot < opinion.offer_choice_bonus.size()
+        ? std::clamp<int32_t>(opinion.offer_choice_bonus[slot], 0,
+            IDEOLOGY_OFFER_CHOICE_CAPACITY - IDEOLOGY_OFFER_CHOICE_BASE) : 0;
+    // The catalog's row count is the base; the stat adds on top. `IDEOLOGY_OFFER_
+    // CHOICE_BASE` is only the fallback when the catalog omits the field, which
+    // `configure()` already resolved into `draw_count`.
+    const int32_t base_rows = std::clamp(static_cast<int32_t>(_catalog.draw_count),
+        1, IDEOLOGY_OFFER_CHOICE_CAPACITY);
+    const int32_t want = std::min(base_rows + bonus,
+        static_cast<int32_t>(weighted.size()));
+    int32_t drawn_ids[IDEOLOGY_OFFER_CHOICE_CAPACITY] = {-1, -1, -1, -1, -1};
+    const int32_t drawn = ideology_weighted_draw_recent_first(weighted,
+        weighted_recent, std::clamp(want, 1, IDEOLOGY_OFFER_CHOICE_CAPACITY),
         [&row]() { return next_random(row.rng_state); }, drawn_ids);
     if (drawn <= 0) { error = "ideology_offer_weight_invalid"; return false; }
-    for (int32_t n = 0; n < drawn; ++n) row.offer.ideology_ids[static_cast<size_t>(n)] = drawn_ids[n];
+    const uint32_t generation = std::max<uint32_t>(1, row.offer.generation + 1u);
+    row.offer.clear();
     row.offer.active = 1;
-    row.offer.generation = std::max<uint32_t>(1, row.offer.generation + 1u);
+    row.offer.generation = generation;
+    for (int32_t n = 0; n < drawn; ++n)
+        row.offer.ideology_ids[static_cast<size_t>(n)] = drawn_ids[static_cast<size_t>(n)];
+    row.offer.choice_count = static_cast<uint8_t>(drawn);
     return true;
 }
 
@@ -1140,23 +1207,53 @@ bool RuntimeIdeologyPodAuthority::apply_command(
             const int64_t cost = offer_cost_for(row.draw_sequence);
             if (row.offer.active != 0) { error = "ideology_offer_pending"; return false; }
             if (row.ideology_points_q16 < cost) { error = "ideology_points_insufficient"; return false; }
-            if (!draw_offer(state, country, slot, error)) return false;
+            if (!draw_offer(state, country, slot, opinion, error)) return false;
             row.ideology_points_q16 -= cost;
             ++row.draw_sequence; return true;
         }
         case RuntimeIdeologyPodOpcode::REROLL_OFFER: {
-            const int64_t cost = reroll_cost_for(row.draw_sequence);
+            const int64_t cost = reroll_cost_for(row.draw_sequence,
+                ideology_frozen_factor(opinion.reroll_cost_q16, slot));
             if (row.offer.active == 0) { error = "ideology_offer_not_active"; return false; }
             if (command.offer_generation != 0 && command.offer_generation != row.offer.generation) { error = "ideology_offer_generation_stale"; return false; }
             if (row.ideology_points_q16 < cost) { error = "ideology_points_insufficient"; return false; }
-            if (!draw_offer(state, country, slot, error)) return false;
+            if (!draw_offer(state, country, slot, opinion, error)) return false;
             row.ideology_points_q16 -= cost; return true;
         }
-        case RuntimeIdeologyPodOpcode::CHOOSE_OFFER:
-            if (row.offer.active == 0 || row.offer.generation != command.offer_generation || command.choice_index < 0 || command.choice_index >= 3) { error = "ideology_offer_generation_stale"; return false; }
-            if (row.offer.ideology_ids[command.choice_index] < 0 || bit_get(row.known_bits, row.offer.ideology_ids[command.choice_index])) { error = "ideology_offer_choice_invalid"; return false; }
-            bit_set(row.known_bits, row.offer.ideology_ids[command.choice_index], true);
-            row.offer.active = 0; row.offer.ideology_ids = {{-1, -1, -1}}; return true;
+        case RuntimeIdeologyPodOpcode::CHOOSE_OFFER: {
+            if (row.offer.active == 0 || row.offer.generation != command.offer_generation ||
+                command.choice_index < 0 ||
+                command.choice_index >= static_cast<int32_t>(row.offer.choice_count)) {
+                error = "ideology_offer_generation_stale"; return false;
+            }
+            const int32_t chosen = row.offer.ideology_ids[static_cast<size_t>(command.choice_index)];
+            if (chosen < 0 || bit_get(row.banned_bits, chosen)) { error = "ideology_offer_choice_invalid"; return false; }
+            if (bit_get(row.known_bits, chosen)) {
+                // 精进: the row only exists because the card is owned and not
+                // maxed, so the pick pays understanding and may raise the level.
+                auto &idea = row.ideas[static_cast<size_t>(chosen)];
+                idea.understanding_q16 = add_sat(idea.understanding_q16,
+                    _catalog.refine_understanding_q16);
+                const int32_t unlocked = unlocked_level(idea, chosen);
+                if (unlocked > idea.level) { idea.level = unlocked; ++idea.generation; }
+            } else {
+                bit_set(row.known_bits, chosen, true);
+            }
+            row.offer.clear();
+            return true;
+        }
+        case RuntimeIdeologyPodOpcode::BAN_CARD: {
+            if (idea_id < 0 || idea_id >= static_cast<int32_t>(_catalog.definitions.size())) {
+                error = "ideology_ideology_invalid"; return false;
+            }
+            if (bit_get(row.known_bits, idea_id)) { error = "ideology_ban_known"; return false; }
+            if (bit_get(row.banned_bits, idea_id)) { error = "ideology_ban_already_banned"; return false; }
+            const int64_t ban_cost = offer_cost_for(row.draw_sequence);
+            if (row.ideology_points_q16 < ban_cost) { error = "ideology_points_insufficient"; return false; }
+            row.ideology_points_q16 -= ban_cost;
+            bit_set(row.banned_bits, idea_id, true);
+            return true;
+        }
         case RuntimeIdeologyPodOpcode::EQUIP: {
             if (!bit_get(row.known_bits, idea_id)) { error = "ideology_unknown"; return false; }
             auto &idea = row.ideas[idea_id];
@@ -1299,9 +1396,18 @@ bool RuntimeIdeologyPodAuthority::plan_day(
             if (idea.location == RuntimeIdeologyPodLocation::INACTIVE) continue;
             ++visits;
             const auto &definition = _catalog.definitions[idea_id];
-            if (idea.level >= 0 && idea.level < static_cast<int32_t>(definition.level_count))
-                idea.understanding_q16 = add_sat(idea.understanding_q16,
-                    _catalog.levels[definition.level_begin + static_cast<uint32_t>(idea.level)].daily_understanding_q16);
+            if (idea.level >= 0 && idea.level < static_cast<int32_t>(definition.level_count)) {
+                const int64_t daily = _catalog.levels[
+                    definition.level_begin + static_cast<uint32_t>(idea.level)]
+                    .daily_understanding_q16;
+                // A zero-rate level skips the read entirely: the loop runs once
+                // per active idea per day and most levels accrue nothing.
+                if (daily != 0)
+                    idea.understanding_q16 = add_sat(idea.understanding_q16,
+                        ideology_scaled_daily(daily, ideology_frozen_factor(
+                            opinion.understanding_gain_q16,
+                            state.active_country_cursor)));
+            }
             bool pending = false;
             for (const auto &transition : state.pending_transitions)
                 if (transition.country_slot == state.active_country_cursor && transition.ideology_id == idea_id) { pending = true; break; }
@@ -1383,7 +1489,8 @@ void RuntimeIdeologyPodAuthority::serialize(std::vector<uint8_t> &out) const {
         append_le<int32_t>(out, country.spirit_slots_used); append_le<int32_t>(out, country.unlocked_era);
         append_le<uint64_t>(out, country.opinion_revision);
         append_le<uint32_t>(out, country.offer.generation); for (int32_t id : country.offer.ideology_ids) append_le<int32_t>(out, id);
-        append_le<uint8_t>(out, country.offer.active); append_vector(out, country.known_bits);
+        append_le<uint8_t>(out, country.offer.active); append_le<uint8_t>(out, country.offer.choice_count);
+        append_vector(out, country.known_bits); append_vector(out, country.banned_bits);
         append_vector(out, country.gate_bits); append_vector(out, country.synergy_bits);
         append_le<uint32_t>(out, static_cast<uint32_t>(country.ideas.size()));
         for (const auto &idea : country.ideas) {
@@ -1480,10 +1587,20 @@ bool RuntimeIdeologyPodAuthority::restore(
             !read_le(data,end,cursor,country.draw_sequence) || !read_le(data,end,cursor,country.ideology_slots_used) ||
             !read_le(data,end,cursor,country.spirit_slots_used) || !read_le(data,end,cursor,country.unlocked_era) ||
             !read_le(data,end,cursor,country.opinion_revision) ||
-            !read_le(data,end,cursor,country.offer.generation) || !read_le(data,end,cursor,country.offer.ideology_ids[0]) ||
-            !read_le(data,end,cursor,country.offer.ideology_ids[1]) || !read_le(data,end,cursor,country.offer.ideology_ids[2]) ||
+            !read_le(data,end,cursor,country.offer.generation) ||
+            // The full capacity, always: the save writes a fixed-size row so a
+            // build with a different capacity is rejected by the ABI version
+            // instead of silently consuming the next field.
+            !read_le(data,end,cursor,country.offer.ideology_ids[0]) ||
+            !read_le(data,end,cursor,country.offer.ideology_ids[1]) ||
+            !read_le(data,end,cursor,country.offer.ideology_ids[2]) ||
+            !read_le(data,end,cursor,country.offer.ideology_ids[3]) ||
+            !read_le(data,end,cursor,country.offer.ideology_ids[4]) ||
             !read_le(data,end,cursor,country.offer.active) ||
+            !read_le(data,end,cursor,country.offer.choice_count) ||
+            country.offer.choice_count > IDEOLOGY_OFFER_CHOICE_CAPACITY ||
             !read_vector(data,end,cursor,country.known_bits,bit_limit) ||
+            !read_vector(data,end,cursor,country.banned_bits,bit_limit) ||
             !read_vector(data,end,cursor,country.gate_bits,static_cast<uint32_t>((_catalog.gate_count + 63u) / 64u)) ||
             !read_vector(data,end,cursor,country.synergy_bits,bit_limit) ||
             !read_le(data,end,cursor,count) || count != _catalog.definitions.size()) { error = "ideology_pod_country_truncated"; return false; }
@@ -1554,6 +1671,30 @@ void RuntimeIdeologyPodAuthority::rearm_pending_transitions() {
 
 bool RuntimeIdeologyPodAuthority::self_test(std::string &error) {
     error.clear();
+    // Shared multiplier maths first: both authorities read these, and a rounding
+    // difference between them shows up as a replay mismatch weeks later rather
+    // than as a wrong number here.
+    {
+        const int32_t one = static_cast<int32_t>(Q16_ONE);
+        if (ideology_frozen_factor({}, 0) != one ||
+            ideology_frozen_factor({static_cast<int32_t>(2 * Q16_ONE)}, 0) != 2 * one ||
+            ideology_frozen_factor({one}, 3) != one ||
+            ideology_frozen_factor({static_cast<int32_t>(100 * Q16_ONE)}, 0) != 4 * one) {
+            error = "ideology_self_test_frozen_factor_failed"; return false;
+        }
+        if (ideology_scaled_daily(1000, one) != 1000 ||
+            ideology_scaled_daily(1000, 2 * one) != 2000 ||
+            ideology_scaled_daily(1000, 0) != 0 ||
+            ideology_scaled_daily(0, 2 * one) != 0) {
+            error = "ideology_self_test_scaled_daily_failed"; return false;
+        }
+        if (ideology_reroll_percent(50, one) != 50 ||
+            ideology_reroll_percent(50, 2 * one) != 100 ||
+            ideology_reroll_percent(50, 0) != 0 ||
+            ideology_reroll_percent(400, 4 * one) != 400) {
+            error = "ideology_self_test_reroll_percent_failed"; return false;
+        }
+    }
     RuntimeIdeologyPodCatalog catalog;
     catalog.country_catalog_hash = 77; catalog.class_hash = 88; catalog.class_count = 1;
     catalog.technology_count = 1; catalog.research_signal_count = 1; catalog.gate_count = 1;
@@ -1695,6 +1836,28 @@ bool RuntimeIdeologyPodAuthority::self_test(std::string &error) {
         authority.snapshot().countries[0].offer.generation != offer_generation + 1u ||
         before_reroll - authority.snapshot().countries[0].ideology_points_q16 != Q16_ONE / 2) {
         error = "ideology_self_test_reroll_failed"; return false;
+    }
+    // Same reroll, but with the frozen reroll factor at 2x: the charge has to
+    // double. This is the only place the factor is observed end to end — the
+    // kernel facts above only prove the arithmetic, not that apply_command
+    // reads the array at all.
+    {
+        RuntimeIdeologyOpinionSnapshot costly = grow;
+        costly.reroll_cost_q16 = {static_cast<int32_t>(2 * Q16_ONE)};
+        const int64_t before_costly =
+            authority.snapshot().countries[0].ideology_points_q16;
+        auto reroll_costly = command(12, RuntimeIdeologyPodOpcode::REROLL_OFFER, -1, 0, 0);
+        reroll_costly.effective_day = reroll_costly.requested_day = 12;
+        reroll_costly.offer_generation =
+            authority.snapshot().countries[0].offer.generation;
+        if (!authority.queue_command(reroll_costly, error)) return false;
+        do { if (!authority.plan_day(12, country, costly, {}, plan, error) ||
+                   !authority.commit_day(plan, error)) return false; } while (!plan.completed_day);
+        if (authority.snapshot().countries[0].offer.active == 0 ||
+            before_costly - authority.snapshot().countries[0].ideology_points_q16
+                != Q16_ONE) {
+            error = "ideology_self_test_reroll_factor_failed"; return false;
+        }
     }
     std::vector<uint8_t> bytes; authority.serialize(bytes);
     RuntimeIdeologyPodAuthority restored;

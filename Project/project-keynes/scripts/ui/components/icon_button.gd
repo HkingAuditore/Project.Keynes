@@ -18,6 +18,7 @@ static func apply(
 	if button == null:
 		return
 	configure(button, tooltip, toggle, active)
+	preload("res://scripts/ui/ui_audio_feedback.gd").tag_icon(button, semantic_key)
 	var texture := IconCatalog.texture_for_key(semantic_key)
 	var label := IconCatalog.label_for_key(semantic_key)
 	button.icon = texture
@@ -52,6 +53,7 @@ static func apply_with_text(
 	if button == null:
 		return
 	configure(button, tooltip, toggle, active)
+	preload("res://scripts/ui/ui_audio_feedback.gd").tag_icon(button, semantic_key)
 	var texture := IconCatalog.texture_for_key(semantic_key)
 	button.icon = texture
 	button.expand_icon = false
