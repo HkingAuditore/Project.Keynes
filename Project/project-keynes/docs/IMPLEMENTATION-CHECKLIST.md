@@ -31,7 +31,7 @@
 
 ### Phase 1: 参数优化验证
 ```bash
-godot --headless -s Project/project-keynes/tests/resource_visual_art_review.gd
+godot --headless -s Project/project-keynes/tests/economy/resource_visual_art_review.gd
 ```
 - [ ] 运行美术审查
 - [ ] 检查 tmp/resource_visual_qa/art_review_45.png
@@ -75,7 +75,7 @@ godot Project/project-keynes/project.godot
 
 ### Phase 3: 性能验证
 ```bash
-godot -s Project/project-keynes/tests/resource_visual_perf_test.gd -- --large
+godot -s Project/project-keynes/tests/economy/resource_visual_perf_test.gd -- --large
 ```
 - [ ] 检查编译是否成功
 - [ ] 查看 P95 帧时
@@ -85,7 +85,7 @@ godot -s Project/project-keynes/tests/resource_visual_perf_test.gd -- --large
 
 ### Phase 4: 回归测试
 ```bash
-godot -s Project/project-keynes/tests/resource_visual_render_regression.gd
+godot -s Project/project-keynes/tests/economy/resource_visual_render_regression.gd
 ```
 - [ ] 17 项 GPU 测试全部通过？
 - [ ] 是否有视觉回归？

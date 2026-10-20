@@ -35,11 +35,11 @@ processing when empty.
 
 ## Validation
 
-tests/paper_aux_visual_qa.gd checks the theme variations, long tag bounds, wrapped
+tests/ui/paper_aux_visual_qa.gd checks the theme variations, long tag bounds, wrapped
 annotation insets and stable badge nodes, and renders the mixed materials at
 1280×720, 1366×768, 1920×1080 and 2560×1080. Existing inspector patch/layout and
 technology workspace tests cover the update and notice contracts.
-tests/paper_aux_game_screenshot_qa.gd uses formal overlay button signals to
+tests/qa/paper_aux_game_screenshot_qa.gd uses formal overlay button signals to
 capture the actual game with the cut-paper submenu, legend and notice. It also
 inherits the fog, 50× and rapid reopen checks from the archive capture suite.
 
