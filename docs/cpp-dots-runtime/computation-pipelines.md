@@ -1,5 +1,13 @@
 # Simulation Computation Pipelines
 
+## Rolling food observations (2026-10-20)
+
+Economy COMMIT retains each cell's last complete production/household food observation when that
+cell is outside today's settlement bucket. Published flows use daily equivalents so another bucket's
+epoch duration cannot rescale retained food access. Global trade observations keep their existing
+epoch cadence. No new stage, schema or authority; see
+[native economy runtime](./native-economy-runtime.md#2026-10-20-错峰结算下的口粮快照).
+
 ## Colonization procurement demand (2026-10-17)
 
 Economy epoch begin derives sparse, cash-capped PREPARING procurement balances

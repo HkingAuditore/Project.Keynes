@@ -1,0 +1,33 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+Vulkan 1.4.341 - Forward Mobile - Using Device #0: NVIDIA - NVIDIA GeForce RTX 3070 Ti
+
+[PASS] both passes share geometry, paths and visibility
+[PASS] legacy terrain fields are bound
+[PASS] local TOD darkens the same stationary vehicle at night
+[PASS] center terrain normal responds to sun direction
+[PASS] terrain horizon occludes direct sun and sky
+[PASS] Horizon GI reduces sky light independently of direct sun
+[PASS] tiled shader matches legacy horizon decoding
+[PASS] tiled shader and both materials use the map arrays
+[PASS] medium quality skips terrain normal and GI sampling
+[PASS] medium quality disables the shadow batch
+[PASS] shadow is one continuous soft ellipse without repeated silhouettes
+[PASS] high quality shadow adds soft ellipse coverage
+[PASS] ellipse shadow follows sun azimuth
+[PASS] sun cast shadows vanish at night
+[PASS] porters ellipse fits the actual art without transparent padding
+[PASS] porters low sun still stretches the shadow
+[trade-footprint] { "style": "porters", "body": { "luma": 0.41827618102465, "pixels": 1761, "opaque": 1495, "width": 97, "height": 30, "center_x": 633 }, "footprint": { "luma": 0.0, "pixels": 1532, "opaque": 0, "width": 83, "height": 23, "center_x": 633 }, "low_sun": { "luma": 0.0, "pixels": 1958, "opaque": 0, "width": 106, "height": 23, "center_x": 621 } }
+[PASS] horse_cart ellipse fits the actual art without transparent padding
+[PASS] horse_cart low sun still stretches the shadow
+[trade-footprint] { "style": "horse_cart", "body": { "luma": 0.35860005964835, "pixels": 2694, "opaque": 2280, "width": 112, "height": 38, "center_x": 634 }, "footprint": { "luma": 0.0, "pixels": 2256, "opaque": 0, "width": 96, "height": 30, "center_x": 634 }, "low_sun": { "luma": 0.0, "pixels": 2970, "opaque": 0, "width": 127, "height": 30, "center_x": 617 } }
+[PASS] covered_wagon ellipse fits the actual art without transparent padding
+[PASS] covered_wagon low sun still stretches the shadow
+[trade-footprint] { "style": "covered_wagon", "body": { "luma": 0.62351677929238, "pixels": 4271, "opaque": 3815, "width": 125, "height": 45, "center_x": 631 }, "footprint": { "luma": 0.0, "pixels": 2982, "opaque": 0, "width": 107, "height": 36, "center_x": 631 }, "low_sun": { "luma": 0.0, "pixels": 4048, "opaque": 0, "width": 144, "height": 36, "center_x": 611 } }
+[PASS] truck ellipse fits the actual art without transparent padding
+[PASS] truck low sun still stretches the shadow
+[trade-footprint] { "style": "truck", "body": { "luma": 0.46484546371503, "pixels": 3793, "opaque": 3474, "width": 129, "height": 36, "center_x": 634 }, "footprint": { "luma": 0.0, "pixels": 2374, "opaque": 0, "width": 105, "height": 29, "center_x": 631 }, "low_sun": { "luma": 0.0, "pixels": 3520, "opaque": 0, "width": 156, "height": 29, "center_x": 603 } }
+[PASS] top-down vehicle rotates with the route without stretching
+[trade-lighting-pixels] { "day": { "luma": 0.34416425731794, "pixels": 3793, "opaque": 3474, "width": 129, "height": 36, "center_x": 634 }, "night": { "luma": 0.11487920665829, "pixels": 3793, "opaque": 3474, "width": 129, "height": 36, "center_x": 634 }, "toward": { "luma": 0.44099774874991, "pixels": 3793, "opaque": 3474, "width": 129, "height": 36, "center_x": 634 }, "away": { "luma": 0.1840470842674, "pixels": 3793, "opaque": 3474, "width": 129, "height": 36, "center_x": 634 }, "blocked": { "luma": 0.0976833125215, "pixels": 3793, "opaque": 3474, "width": 129, "height": 36, "center_x": 634 }, "gi_off": { "luma": 0.46484546371503, "pixels": 3793, "opaque": 3474, "width": 129, "height": 36, "center_x": 634 }, "gi_on": { "luma": 0.40783517622423, "pixels": 3793, "opaque": 3474, "width": 129, "height": 36, "center_x": 634 }, "tiled": { "luma": 0.0976833125215, "pixels": 3793, "opaque": 3474, "width": 129, "height": 36, "center_x": 634 }, "shadow": { "luma": 0.34322352384003, "pixels": 4302, "opaque": 3502, "width": 140, "height": 39, "center_x": 629 }, "no_shadow": { "luma": 0.34416425731794, "pixels": 3793, "opaque": 3474, "width": 129, "height": 36, "center_x": 634 } }
+[PASS] clear releases previous map lighting fields
+=== trade lighting: 24 checks, 0 failures ===

@@ -1,0 +1,21 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+OpenGL API 3.3.0 NVIDIA 610.74 - Compatibility - Using Device: NVIDIA - NVIDIA GeForce RTX 3070 Ti
+
+[PASS] both passes share geometry, paths and visibility
+[PASS] legacy terrain fields are bound
+[PASS] local TOD darkens the same stationary vehicle at night
+[PASS] center terrain normal responds to sun direction
+[PASS] terrain horizon occludes direct sun and sky
+[PASS] Horizon GI reduces sky light independently of direct sun
+[PASS] tiled shader matches legacy horizon decoding
+[PASS] tiled shader and both materials use the map arrays
+[PASS] medium quality skips terrain normal and GI sampling
+[PASS] medium quality disables the shadow batch
+[PASS] shadow is one continuous soft ellipse without repeated silhouettes
+[PASS] high quality shadow adds soft ellipse coverage
+[PASS] ellipse shadow follows sun azimuth
+[PASS] sun cast shadows vanish at night
+[PASS] top-down vehicle rotates with the route without stretching
+[trade-lighting-pixels] { "day": { "luma": 0.34383452185268, "pixels": 3799, "opaque": 3477, "width": 129, "height": 36, "center_x": 634 }, "night": { "luma": 0.11475806597161, "pixels": 3799, "opaque": 3477, "width": 129, "height": 36, "center_x": 634 }, "toward": { "luma": 0.44059720262778, "pixels": 3799, "opaque": 3477, "width": 129, "height": 36, "center_x": 634 }, "away": { "luma": 0.18387750083426, "pixels": 3799, "opaque": 3477, "width": 129, "height": 36, "center_x": 634 }, "blocked": { "luma": 0.09757995758466, "pixels": 3799, "opaque": 3477, "width": 129, "height": 36, "center_x": 634 }, "gi_off": { "luma": 0.4644172160399, "pixels": 3799, "opaque": 3477, "width": 129, "height": 36, "center_x": 634 }, "gi_on": { "luma": 0.40747029318236, "pixels": 3799, "opaque": 3477, "width": 129, "height": 36, "center_x": 634 }, "tiled": { "luma": 0.09757995758466, "pixels": 3799, "opaque": 3477, "width": 129, "height": 36, "center_x": 634 }, "shadow": { "luma": 0.34266022279153, "pixels": 4157, "opaque": 3504, "width": 129, "height": 39, "center_x": 634 }, "no_shadow": { "luma": 0.34383452185268, "pixels": 3799, "opaque": 3477, "width": 129, "height": 36, "center_x": 634 } }
+[PASS] clear releases previous map lighting fields
+=== trade lighting: 16 checks, 0 failures ===

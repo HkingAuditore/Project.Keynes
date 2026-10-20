@@ -52,8 +52,6 @@ func _run() -> void:
 		"tod_sun_dir": Vector3(0.75, -0.25, 0.61).normalized(), "tod_exposure": 1.0})
 	layer._set_parameter("reduced_motion", true)
 	layer._set_parameter("vehicle_size", 180.0) # Enlarged art QA only.
-	layer._set_parameter("vehicle_height", 12.0)
-	layer._set_parameter("shadow_max_length", 45.0)
 	layer.apply_snapshot(_snapshot(true))
 	expect("both passes share geometry, paths and visibility", layer._batch.multimesh == layer._shadow_batch.multimesh
 		and layer._material.get_shader_parameter("path_texture") == layer._shadow_material.get_shader_parameter("path_texture"))
@@ -123,6 +121,10 @@ func _run() -> void:
 		layer._shadow_batch.visible = false
 		var night_no_shadow := _metrics(await _image("night_without_shadow"))
 		expect("sun cast shadows vanish at night", absi(int(night_shadow.pixels) - int(night_no_shadow.pixels)) < 3)
+		# Calibrate against people and carts, separately from trucks. Zenith sun
+		# isolates footprint size; low-sun stretching is checked independently.
+		for style in [0, 2, 4, 10]:
+			await _check_style_footprint(style)
 		# A north/south route must rotate the canonical east-facing asset.
 		var vertical := _snapshot(false)
 		vertical.serial = 3
@@ -143,6 +145,12 @@ func _run() -> void:
 			"tod_sun_dir": Vector3(0.75, -0.25, 0.61).normalized()})
 		layer._shadow_batch.visible = true
 		await _image("ellipse_preview")
+		var overview := _snapshot(true)
+		overview.serial = 900
+		layer.apply_snapshot(overview)
+		layer._wall_time += 3.0
+		layer._expire_records()
+		await _image("all_objects_preview")
 	layer.clear()
 	expect("clear releases previous map lighting fields", not bool(layer._material.get_shader_parameter("terrain_normal_tex_bound"))
 		and layer._shadow_material.get_shader_parameter("visual_horizon_tiles") == null)
@@ -213,3 +221,32 @@ func _single_ellipse(image: Image) -> bool:
 				return false
 			previous = alpha
 	return seen
+
+
+func _check_style_footprint(style: int) -> void:
+	var name: String = {0: "porters", 2: "horse_cart", 4: "covered_wagon", 10: "truck"}[style]
+	var sample := _snapshot(false)
+	sample.serial = 100 + style
+	sample.era_indices[0] = {0: 0, 2: 1, 4: 4, 10: 8}[style]
+	layer.apply_snapshot(sample)
+	layer.set_daylight_parameters({"day_night_enabled": false, "tod_debug_sun_position_enabled": true,
+		"tod_sun_dir": Vector3(0, 0, 1)})
+	layer._batch.visible = true
+	layer._shadow_batch.visible = false
+	var body := _metrics(await _image(name + "_body"))
+	layer._batch.visible = false
+	layer._shadow_batch.visible = true
+	var footprint := _metrics(await _image(name + "_footprint"))
+	expect(name + " ellipse fits the actual art without transparent padding", footprint.width <= body.width * 1.10
+		and footprint.height <= body.height * 1.10 and footprint.width >= body.width * 0.55
+		and footprint.height >= body.height * 0.55)
+	layer.set_daylight_parameters({"tod_sun_dir": Vector3(0.96, 0.0, 0.28).normalized()})
+	var low_sun := _metrics(await _image(name + "_low_sun"))
+	expect(name + " low sun still stretches the shadow", low_sun.width > footprint.width * 1.15)
+	layer._batch.visible = true
+	layer.set_daylight_parameters({"tod_sun_dir": Vector3(0, 0, 1)})
+	root.transparent_bg = false
+	RenderingServer.set_default_clear_color(Color(0.50, 0.54, 0.33))
+	await _image(name + "_preview")
+	root.transparent_bg = true
+	print("[trade-footprint] ", {"style": name, "body": body, "footprint": footprint, "low_sun": low_sun})

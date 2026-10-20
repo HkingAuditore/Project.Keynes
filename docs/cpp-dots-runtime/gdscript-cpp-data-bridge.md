@@ -1,5 +1,10 @@
 # GDScript / C++ Data Bridge
 
+口粮快照（2026-10-20）：人口 summary/detail 的 `food_access_q16` 都读取本格最近完成结算的
+原生食物取得量；其他市场桶的 COMMIT 不再将其清零。内部已发布食物流量统一为每日当量，
+不新增字段、绑定或 DataCore slot；UI 只格式化，tooltip 明确观察时间与自产自用口径。
+迁移和公式见 [native economy runtime](./native-economy-runtime.md#2026-10-20-错峰结算下的口粮快照)。
+
 Colonization market diagnostics (2026-10-17): selected-cell market snapshots
 add `colonization_pending_demand` and `colonization_demand_daily`, aligned with
 `good_ids`. They are frozen native Economy forecasts, not completed orders or
