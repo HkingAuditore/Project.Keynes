@@ -2165,7 +2165,7 @@ func _kpis(
 			"超出承载 %s" % UITokens.format_compact_number_cn(float(carrying), 1)
 			if over_capacity else ""),
 		"tone": "risk" if over_capacity or food_access < 0.8 else "",
-		"tooltip": "实际取得的口粮占所需口粮的比例；承载力为本地粮食可养活的人口。",
+		"tooltip": "最近一次本地结算中，居民实际取得的食物当量占最低生存口粮的比例（含购买与自产自用）。两次本地结算之间保留上次结果；承载力为本地粮食可养活的人口。",
 	}, {
 		"id": "kpi_jobs", "title": "就业", "icon": &"economy.building",
 		"kind": "percent" if jobs_capacity > 0 else "text",
@@ -3724,7 +3724,7 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 			"value_text": "%.0f%%" % (food_access * 100.0),
 			"status_label": "充足" if food_access >= 0.95 else (
 				"偏紧" if food_access >= 0.8 else "不足"),
-			"tooltip": "居民实际取得的口粮占所需口粮的比例。"})
+			"tooltip": "最近一次本地结算中，居民实际取得的食物当量占最低生存口粮的比例（含购买与自产自用）。两次本地结算之间保留上次结果。"})
 	if carrying_k_eff > 0:
 		var load := float(population_total) / float(carrying_k_eff)
 		gauges.append({"id": "population_carrying_gauge", "label": "承载占用",

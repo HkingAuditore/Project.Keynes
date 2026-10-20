@@ -30,6 +30,136 @@ func _run() -> void:
 	_test_sparse_live_workset(compiled)
 	_test_save_restore_keeps_buckets(compiled)
 	_test_ecp2_owned_state_roundtrip(compiled)
+	_test_food_access_between_settlements(compiled)
+	_test_food_shortage_and_cadence_change(compiled)
+	_test_food_production_between_settlements(compiled)
+
+func _test_food_access_between_settlements(compiled: Dictionary) -> void:
+	# Every cell can afford ample food. A cell outside today's market bucket
+	# must keep its last completed observation, including across N changes.
+	const CELLS := 10
+	var stock := PackedInt64Array()
+	stock.resize(CELLS * (compiled.good_ids as PackedStringArray).size())
+	stock.fill(1000000000)
+	for n in [1, 3, 5]:
+		var options := {"economy_cadence_force_market_days": n,
+			"starvation_death_rate_q32": 0}
+		var scalar := _boot(compiled, CELLS, 0.01, 0.01, 811 + n,
+			options.merged({"worker_enabled": false}), {"stock": stock})
+		var worker := _boot(compiled, CELLS, 0.01, 0.01, 811 + n,
+			options.merged({"worker_enabled": true, "worker_market_threshold": 1,
+				"worker_tasks_hint": 4}), {"stock": stock})
+		var minimum_access := 65536
+		var snapshots_agree := true
+		var conserved := true
+		for day in range(n * 3):
+			var report := _run_day(scalar, day)
+			var worker_report := _run_day(worker, day)
+			for result in [report, worker_report]:
+				conserved = conserved and bool(result.get("done", false)) \
+					and not bool(result.get("fatal", false)) \
+					and int(result.get("locked_market_cycle_days", 0)) == n \
+					and int(result.get("population_error", 1)) == 0 \
+					and int(result.get("money_error", 1)) == 0 \
+					and int(result.get("goods_error", 1)) == 0
+			for cell in range(CELLS):
+				var summary: Dictionary = scalar.get_population_cell_summary(cell)
+				var snapshot: Dictionary = scalar.get_population_cell_snapshot(cell, false)
+				var access := int(summary.get("food_access_q16", 0))
+				snapshots_agree = snapshots_agree and access == int(
+					snapshot.get("food_access_q16", -1))
+				if day >= n:
+					minimum_access = mini(minimum_access, access)
+		_expect("N=%d funded food access persists between cell settlements (min=%d)" %
+			[n, minimum_access], minimum_access >= 62259)
+		_expect("N=%d summary/detail food access agree and ledgers conserve" % n,
+			snapshots_agree and conserved)
+		_expect("N=%d food snapshots preserve scalar/worker hash parity" % n,
+			scalar.get_economy_state_hash() == worker.get_economy_state_hash())
+		var captured: Dictionary = scalar.capture_economy_ecp2(0)
+		var restored := _boot(compiled, CELLS, 0.01, 0.01, 811 + n,
+			options.merged({"worker_enabled": false}), {"stock": stock})
+		_run_day(restored, 0)
+		var restored_result: Dictionary = restored.restore_economy_ecp2(
+			captured.get("bytes", PackedByteArray()))
+		if not bool(restored_result.get("ok", false)):
+			print("  [info] food ECP2 restore failed: ", restored_result)
+		_expect("N=%d food snapshots survive ECP2 roundtrip" % n,
+			bool(captured.get("ok", false)) and bool(restored_result.get("ok", false))
+			and restored.get_economy_state_hash() == scalar.get_economy_state_hash()
+			and int(restored.get_population_cell_summary(0).get("food_access_q16", 0)) >= 62259)
+
+func _test_food_shortage_and_cadence_change(compiled: Dictionary) -> void:
+	var empty := _boot(compiled, 10, 0.01, 0.01, 821,
+		{"economy_cadence_force_market_days": 5, "starvation_death_rate_q32": 0})
+	var shortage_correct := true
+	for day in range(10):
+		_run_day(empty, day)
+		for cell in range(10):
+			var access := int(empty.get_population_cell_summary(cell).get("food_access_q16", -1))
+			# An unobserved cell keeps the bootstrap default. Once observed,
+			# genuine zero consumption must stay zero, even between settlements.
+			shortage_correct = shortage_correct and access == (65536 if cell % 5 > day else 0)
+	_expect("unsettled cells stay unobserved and real food shortage remains zero", shortage_correct)
+	var stock := PackedInt64Array()
+	stock.resize(10 * (compiled.good_ids as PackedStringArray).size())
+	stock.fill(1000000000)
+	var changing := _boot(compiled, 10, 1000000.0, 1000000.0, 822, {}, {"stock": stock})
+	var stable := true
+	var saw_daily := false
+	var saw_five := false
+	for day in range(15):
+		if day == 4:
+			changing.inject_economy_cadence_timing(0.01, 0.01)
+		var report := _run_day(changing, day)
+		var n := int(report.get("locked_market_cycle_days", 0))
+		saw_daily = saw_daily or n == 1
+		saw_five = saw_five or n == 5
+		if day >= 5:
+			for cell in range(10):
+				stable = stable and int(changing.get_population_cell_summary(cell).get(
+					"food_access_q16", 0)) >= 62259
+	_expect("food access stays correct when cadence relocks from N=5 to N=1",
+		stable and saw_daily and saw_five)
+
+func _test_food_production_between_settlements(compiled: Dictionary) -> void:
+	# A workshop with ample inputs emits food so this test isolates snapshot
+	# publication from natural-resource supply.
+	var catalog := compiled.duplicate(true)
+	var workshop := (catalog.building_type_ids as PackedStringArray).find("knapping_workshop")
+	var signature := (catalog.signature_keys as PackedStringArray).find("artisan|default")
+	var food := (catalog.good_ids as PackedStringArray).find("gathered_plants")
+	var output_offsets: PackedInt32Array = catalog.building_output_offsets
+	var goods: PackedInt32Array = catalog.building_output_good_ids
+	var quantities: PackedInt64Array = catalog.building_output_quantities
+	for i in range(output_offsets[workshop], output_offsets[workshop + 1]):
+		goods[i] = food
+		quantities[i] = 100000
+	catalog.building_output_good_ids = goods
+	catalog.building_output_quantities = quantities
+	var stock := PackedInt64Array()
+	stock.resize(5 * (catalog.good_ids as PackedStringArray).size())
+	stock.fill(1000000000)
+	var ext := _boot(catalog, 5, 0.01, 0.01, 823,
+		{"economy_cadence_force_market_days": 5, "starvation_death_rate_q32": 0}, {
+		"stock": stock, "building_cells": PackedInt32Array([0, 1, 2, 3, 4]),
+		"building_type_ids": PackedInt32Array([workshop, workshop, workshop, workshop, workshop]),
+		"building_owner_signature_ids": PackedInt32Array([signature, signature, signature, signature, signature]),
+		"building_counts": PackedInt64Array([1, 1, 1, 1, 1])}, "artisan|default")
+	var previous := {}
+	var preserved := true
+	for day in range(10):
+		_run_day(ext, day)
+		for cell in range(5):
+			var summary: Dictionary = ext.get_population_cell_summary(cell)
+			var output := int(summary.get("local_food_output_eq_per_day", 0))
+			if cell == day % 5:
+				preserved = preserved and output > 0
+				previous[cell] = output
+			elif previous.has(cell):
+				preserved = preserved and output == int(previous[cell])
+	_expect("local food production persists outside the settled bucket", preserved)
+
 
 func _test_opening_daily(compiled: Dictionary) -> void:
 	var ext := _boot(compiled, 1, 0.01, 0.01, 11)
@@ -272,7 +402,8 @@ func _restore_country(ext: Object, chunks: Array) -> bool:
 	return bool(ext.end_country_restore().get("ok", false))
 
 func _boot(compiled: Dictionary, cells: int, market_ms: float, slow_ms: float,
-		seed: int, extra: Dictionary = {}) -> Object:
+		seed: int, extra: Dictionary = {}, market_data: Dictionary = {},
+		signature_key: String = "merchant|default") -> Object:
 	var ext := _new_ext(cells)
 	var catalog := compiled.duplicate(true)
 	catalog.erase("ok")
@@ -281,11 +412,13 @@ func _boot(compiled: Dictionary, cells: int, market_ms: float, slow_ms: float,
 		profile[key] = extra[key]
 	_expect("cadence fixture country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, cells, seed))
-	_expect("cadence fixture configures",
-		bool(ext.configure_economy(catalog, profile, cells, seed).get("ok", false)))
+	var configured: Dictionary = ext.configure_economy(catalog, profile, cells, seed)
+	if not bool(configured.get("ok", false)):
+		print("  [info] cadence configuration failed: ", configured)
+	_expect("cadence fixture configures", bool(configured.get("ok", false)))
 	ext.inject_economy_cadence_timing(market_ms, slow_ms)
 	var signature: int = (compiled.signature_keys as PackedStringArray).find(
-		"merchant|default")
+		signature_key)
 	var cell_indices := PackedInt32Array()
 	var signatures := PackedInt32Array()
 	var populations := PackedInt64Array()
@@ -300,7 +433,7 @@ func _boot(compiled: Dictionary, cells: int, market_ms: float, slow_ms: float,
 		"signature_ids": signatures,
 		"population": populations,
 		"funds": funds,
-	}, {})
+	}, market_data)
 	_expect("cadence fixture bootstraps", bool(boot.get("ok", false)))
 	return ext
 

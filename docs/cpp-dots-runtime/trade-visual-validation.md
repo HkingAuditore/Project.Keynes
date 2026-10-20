@@ -126,3 +126,27 @@ Vulkan Mobile、OpenGL Compatibility 各 16 项图形检查通过；新增仅绘
 
 截图在 `Project/project-keynes/tmp/trade_activity_qa/ellipse_vulkan/` 与 `ellipse_opengl/`；
 `ellipse_only.png` 为隔离的单个阴影，`ellipse_preview.png` 为色块地面上的放大预览。
+
+同日按实机反馈继续收紧阴影：占地系数由 (0.90, 0.65) 改为 (0.86, 0.48)，
+取消低太阳高度下对椭圆本身的伸长；投影向量同时受 1.5 世界单位和载具长度 6% 限制。
+OpenGL 16 项图形检查通过，放大货车样本的本体包围盒为 129×36 像素，
+加入阴影后为 129×39 像素。截图在 `ellipse_compact/ellipse_preview.png`。
+
+### 按对象校准基础阴影（2026-10-20，最终修正）
+
+实际问题是不同对象共用整格比例，未排除透明留白和位置偏移。
+撤销上文 compact 方案对低角度伸长的限制，恢复正常太阳投影；新增 12 类图像的
+静态占地、中心与相对高度，分别匹配搬运队、马车、篷车和货车等外观。
+不新增图集采样或运行期图片分析，仍是单个解析椭圆。
+
+Vulkan 与 OpenGL 图形专项各 24 项通过，分别检查搬运队、马车、篷车及货车的本体／纯阴影，
+正上方太阳隔离基础尺寸，低角度太阳另行验证伸长。OpenGL 放大样本：
+
+| 对象 | 本体像素范围 | 基础阴影像素范围 | 低角度阴影像素范围 |
+| --- | --- | --- | --- |
+| 搬运队 | 97×30 | 83×23 | 106×23 |
+| 马车 | 113×38 | 97×30 | 127×30 |
+| 篷车 | 125×45 | 107×36 | 144×36 |
+
+截图为 `per_style_opengl/porters_preview.png`、`horse_cart_preview.png`、
+`covered_wagon_preview.png` 和 `all_objects_preview.png`；Vulkan 对应 `per_style_vulkan/`。

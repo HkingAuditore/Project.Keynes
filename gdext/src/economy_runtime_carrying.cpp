@@ -73,19 +73,46 @@ void NativeEconomyRuntime::commit_food_flow_snapshot() {
         _cell_food_import_eq_period.size() != cells ||
         _cell_food_export_eq_period.size() != cells ||
         _cell_food_access_eq_period.size() != cells) return;
-    _cell_food_output_eq_previous.swap(_cell_food_output_eq_period);
-    _cell_food_input_eq_previous.swap(_cell_food_input_eq_period);
-    _cell_food_import_eq_previous.swap(_cell_food_import_eq_period);
-    _cell_food_export_eq_previous.swap(_cell_food_export_eq_period);
-    _cell_food_access_eq_previous.swap(_cell_food_access_eq_period);
     if (_cell_food_flow_valid.size() != cells)
         _cell_food_flow_valid.resize(cells, 0);
-    _cell_food_flow_valid.fill_range(0, _cell_food_flow_valid.size(), 1, market_mutation_sink());
-    _food_flow_previous_period_days = std::max(1, _epoch_days.get());
-    const int64_t denominator = saturating_mul(
-        _food_flow_previous_period_days.get(),
-        std::max<int64_t>(1, _carrying_survival_food_per_person),
-        _saturation_count);
+    // An epoch contains only today's rolling market bucket. Zero scratch for
+    // another cell means "not settled", not "no food". Keep that cell's last
+    // complete production/consumption observation until it settles again.
+    // Store daily equivalents so a later bucket with a different epoch length
+    // cannot reinterpret an untouched cell's numerator using the new duration.
+    // Old saves already carry their common duration; normalize them once here.
+    const int32_t previous_days = std::max(1, _food_flow_previous_period_days.get());
+    if (previous_days != 1) {
+        for (size_t cell = 0; cell < cells; ++cell) {
+            for (auto *column : {&_cell_food_output_eq_previous,
+                     &_cell_food_input_eq_previous, &_cell_food_import_eq_previous,
+                     &_cell_food_export_eq_previous, &_cell_food_access_eq_previous}) {
+                column->write_scalar(cell, (*column)[cell] / previous_days,
+                    market_mutation_sink());
+            }
+        }
+    }
+    const int32_t days = std::max(1, _epoch_days.get());
+    for (const int32_t cell : _epoch_settlement_cells) {
+        if (cell < 0 || static_cast<size_t>(cell) >= cells) continue;
+        _cell_food_output_eq_previous.write_scalar(cell,
+            _cell_food_output_eq_period[cell] / days, market_mutation_sink());
+        _cell_food_input_eq_previous.write_scalar(cell,
+            _cell_food_input_eq_period[cell] / days, market_mutation_sink());
+        _cell_food_access_eq_previous.write_scalar(cell,
+            _cell_food_access_eq_period[cell] / days, market_mutation_sink());
+        _cell_food_flow_valid.write_scalar(cell, 1, market_mutation_sink());
+    }
+    // Trade settles globally, including arrivals outside today's market bucket.
+    // Keep its existing epoch observation cadence and account for each event
+    // once, independently of the retained household/production observations.
+    for (size_t cell = 0; cell < cells; ++cell) {
+        _cell_food_import_eq_previous.write_scalar(cell,
+            _cell_food_import_eq_period[cell] / days, market_mutation_sink());
+        _cell_food_export_eq_previous.write_scalar(cell,
+            _cell_food_export_eq_period[cell] / days, market_mutation_sink());
+    }
+    _food_flow_previous_period_days = 1;
     static const bool serial_cells = [] {
         const char *value = std::getenv("PK_ECONOMY_FOOD_CAPACITY_SERIAL");
         return value && std::strcmp(value, "1") == 0;

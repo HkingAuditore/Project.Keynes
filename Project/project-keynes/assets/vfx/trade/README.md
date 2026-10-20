@@ -19,3 +19,7 @@ flat diffuse albedo, no cast shadows, transparent background, no text/grid/scene
 光照由 `earth_daylight.gdshaderinc` 计算；高画质在每个载具中心采地形法线和 Horizon GI，
 独立固定批次用单个柔边椭圆表现随太阳方向变化的阴影，不重复采样载具轮廓。时代映射由 `TradeActivityLayer.ERA_ROWS`
 统一管理；位图只改变外观，不授予通行科技。
+
+阴影基础形状使用 `UITokens.TRADE_SHADOW_SHAPES` 中每类图像的 UV 中心和实际范围，
+排除透明留白；高度使用 `TRADE_SHADOW_HEIGHTS`，不以货车的整格阴影套用人物或马车。
+替换图集或改变布局时同步校准这两个表。低角度阳光的伸长保留。

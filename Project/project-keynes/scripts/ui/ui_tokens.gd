@@ -58,10 +58,30 @@ const TRADE_VEHICLE_SCREEN_CAP := 36.0
 const TRADE_SPEED := 11.0
 const TRADE_SHADOW_STRENGTH := 0.32
 const TRADE_SHADOW_COLOR := Color(0.11, 0.13, 0.17, 1.0)
-const TRADE_VEHICLE_HEIGHT := 3.0
-const TRADE_SHADOW_MAX_LENGTH := 15.0
-const TRADE_SHADOW_FOOTPRINT := Vector2(0.9, 0.65)
+const TRADE_SHADOW_HEIGHT_RATIO := 0.12
+const TRADE_SHADOW_MAX_LENGTH_RATIO := 0.60
+const TRADE_SHADOW_FOOTPRINT := Vector2(0.95, 0.90)
 const TRADE_SHADOW_EDGE_SOFTNESS := 0.35
+# 图集各格中实际图像的 UV 中心与范围，排除透明留白；与 12 种陆/水外观一一对应。
+# 固定美术元数据，只在装配时上传，不在运行时扫描图片。
+const TRADE_SHADOW_SHAPES := [
+	Vector4(0.513672, 0.552734, 0.707031, 0.425781), # 搬运队
+	Vector4(0.500977, 0.548828, 0.873047, 0.464844), # 独木舟
+	Vector4(0.516602, 0.458984, 0.826172, 0.535156), # 马车
+	Vector4(0.505859, 0.453125, 0.863281, 0.500000), # 木船
+	Vector4(0.500977, 0.437500, 0.912109, 0.640625), # 篷车
+	Vector4(0.486328, 0.414062, 0.968750, 0.828125), # 帆船
+	Vector4(0.494141, 0.429688, 0.890625, 0.640625), # 蒸汽时代货队
+	Vector4(0.492188, 0.427734, 0.953125, 0.535156), # 蒸汽船
+	Vector4(0.500977, 0.458984, 0.767578, 0.597656), # 早期货车
+	Vector4(0.486328, 0.445312, 0.960938, 0.601562), # 机动货船
+	Vector4(0.495117, 0.427734, 0.896484, 0.519531), # 现代货车
+	Vector4(0.485352, 0.412109, 0.970703, 0.582031), # 货轮
+
+]
+# 相对高度：人、车与船各自缩放投影长度，避免小对象继承现代货车的高度。
+const TRADE_SHADOW_HEIGHTS := [0.45, 0.20, 0.60, 0.35, 0.75, 0.55, 0.65, 0.65, 0.80, 0.65, 1.0, 0.80]
+
 
 const FAMILY_FOUNDING_WIDTH := 480.0
 const FAMILY_FOUNDING_WIDE_WIDTH := 520.0

@@ -33,9 +33,11 @@ uniform float tod_exposure = 1.0;
 uniform int visual_quality = 2;
 uniform bool shadow_pass = false;
 uniform float shadow_strength = 0.32;
-uniform float vehicle_height = 3.0;
-uniform float shadow_max_length = 15.0;
-uniform vec2 shadow_footprint = vec2(0.9, 0.65);
+uniform float shadow_height_ratio = 0.12;
+uniform vec4 shadow_shapes[12]; // occupied UV center.xy and size.zw, from UITokens
+uniform float shadow_heights[12];
+uniform float shadow_max_length_ratio = 0.60;
+uniform vec2 shadow_footprint = vec2(0.95, 0.90);
 uniform float shadow_edge_softness = 0.35;
 uniform vec4 shadow_color : source_color = vec4(0.11, 0.13, 0.17, 1.0);
 #define VT_USE_HORIZON
@@ -141,11 +143,18 @@ void vertex() {
 	vec2 expanded = vec2(1.0);
 	vec2 shift = vec2(0.0);
 	if (shadow_pass) {
-		// A single soft ground ellipse, like vegetation; no sprite silhouettes.
-		scale *= shadow_footprint;
-		float height = vehicle_height * (mode == 1 ? 0.45 : 1.0);
+		// Fit THIS sprite's occupied art, not its transparent atlas cell.
+		int style = clamp(int(sprite_row), 0, 11);
+		vec4 shape = shadow_shapes[style];
+		vec2 foot_offset = (shape.xy - vec2(0.5)) * scale;
+		center += direction * foot_offset.x + across * foot_offset.y;
+		scale *= max(shape.zw * shadow_footprint, vec2(0.01));
+		float relative_height = shadow_heights[style];
+		float height = vehicle_size * shadow_height_ratio * relative_height;
 		shift = -ed.sun_dir.xy / max(ed.sun_dir.z, 0.15) * height;
-		shift *= min(1.0, shadow_max_length / max(length(shift), 0.001));
+		float max_shift = vehicle_size * shadow_max_length_ratio * relative_height;
+		shift *= min(1.0, max_shift / max(length(shift), 0.001));
+		// Low sun still lengthens the ellipse, starting from the fitted footprint.
 		vec2 offset_local = vec2(dot(shift, direction), dot(shift, across)) / scale;
 		expanded += abs(offset_local);
 		vehicle_alpha *= shadow_strength * ed.local_day * hs.direct_visibility

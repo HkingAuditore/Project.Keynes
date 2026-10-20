@@ -493,13 +493,37 @@ cohort 满意度不再是单一的生存指标。`_population.composite_satisfac
 
 ## 2026-08 真实物流承载力（PKEC v45 历史段）
 
-承载力只读取上一完整经济周期已结算的食物流量，不扫描自然资源或寻找最佳建筑。
+承载力只读取本格最近完整结算的食物流量，不扫描自然资源或寻找最佳建筑。
 本地净食物当量为实际产出减生产投入；有效供给再加已送达进口并减已发出出口。
 `local_food_capacity_persons = local_net / days / per_person_food`，
 `effective_food_capacity_persons = effective_supply / days / per_person_food`。
 家庭购买是所有权转移，不重复计入产出；加工链按输出当量减输入当量。
 `food_access_q16` 仅记录家庭实际购买与生产者自留消费，生育仍由综合满意度和有效供养负载共同决定。
 首个尚无完整物流周期时不施加密度约束。查询字段见 `carrying_schema_version=2`。
+
+### 2026-10-20 错峰结算下的口粮快照
+
+`food_access_q16 = clamp(已取得食物当量 / (人口 × 统计天数 × 每人每日生存口粮), 0, 1) × 65536`。
+食物当量通过目录的 `good_food_equivalent_q16` 折算；当前每人每日生存口粮为基础生存计划中
+食品需求的 `base_qty_per_person` 合计。购买和生产者自产自用计入取得量；仓库库存和在途货物不计入。
+它反映食物取得量，不等于饮食多样性、综合满意度或本地产量。
+
+每天只结算 `_epoch_settlement_cells` 中的市场桶。`commit_food_flow_snapshot()` 只替换这些格的
+生产、投入、口粮取得量，其他格保留最近一次完整观察；禁止将未结算格的零 scratch 发布为缺粮。
+尚未观察的格保持原有 bootstrap 默认值，不提前标为已观察。真实结算取得量为零时仍报告零。
+已发布流量统一保存为每日当量，`food_flow_previous_period_days=1`，避免下一桶的账期或 N 重锁
+改变未结算格分母。使用实际计算本批生产/消费的 `_epoch_days` 归一，整数误差小于一个食物当量子单位/日。
+贸易仍按原全局 epoch 观察更新进口/出口，包括非本日市场桶的到货；不更改贸易调度或账本。
+承载力仍在既有 COMMIT 内重算，并可响应现有可用库存变化。
+
+PKEC/ECP2 字节布局、字段 ID、schema、N/P/I 和经济权威不变。旧档保留其原统计天数；
+第一次新 COMMIT 将旧流量除以所存天数，之后按每日口径写入。原先被清零的旧观察须等本格
+下一次结算恢复（最多一个当前市场周期）。UI 不做插值或平滑。
+专项入口 `tests/economy_food_snapshot_test.gd` 复用 `economy_cadence_runtime_test.gd` 的夹具：
+N=1/3/5、未结算/真实缺粮、N 重锁、
+本地产量保留、summary/detail 一致、worker/scalar hash 和 ECP2 往返。
+Windows 构建默认库名为 `dots_ext_food_snapshot_v56_r7`，与 `.gdextension` 保持一致，
+避免覆盖仍被运行中游戏占用的旧库；重启后加载新库。
 
 Economy configure 会把职业的稳定 `profession_class_id` 独立 intern 为政治阶层
 slot，不复用承载力权重。在 `aggregate_publish` 的 committed swap 之后，

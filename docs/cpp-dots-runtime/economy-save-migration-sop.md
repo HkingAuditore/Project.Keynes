@@ -1,5 +1,10 @@
 # 经济存档、catalog migration 与内容扩展 SOP
 
+2026-10-20 口粮快照修复不改变 PKEC/ECP2 布局和字段 ID。已发布食物流量以每日当量保存，
+既有 `food_flow_previous_period_days` 写 1；旧档仍按所存天数解释，第一次 COMMIT 再原位归一。
+非当日市场桶保留最近完整的生产/消费观察，真实贸易流仍按既有全局 epoch 观察更新。
+详见 [native economy runtime](./native-economy-runtime.md#2026-10-20-错峰结算下的口粮快照)。
+
 ## 当前存档语义覆盖说明（2026-09）
 
 当前 writer 不再使用 bullion quota 作为经济状态。历史章节中关于 cell-level monetary shared quota、冻结发行上限、配额消耗和超额贵金属无回执的描述仅用于解释旧版本迁移；现行运行时将这些 quota report 字段置零，贵金属 producer support 按面值结算。
