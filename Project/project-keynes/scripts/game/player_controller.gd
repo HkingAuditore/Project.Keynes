@@ -77,6 +77,7 @@ const SUPPORTED_COMMANDS := {
 
 var _camera = null
 var _highlight = null
+var _cell_highlight_set = null
 var _runtime_host = null
 var _world_clock = null
 var _ui_manager = null
@@ -130,6 +131,45 @@ func selected_cell():
 	return _selected_cell
 
 
+## The many-cell overlay that answers "where does this card act?". Injected
+## separately from `configure` so every existing caller keeps working, and so a
+## headless session (which builds no WorldRoot children) can simply not set it.
+func set_cell_highlight_set(node) -> void:
+	if _cell_highlight_set == node:
+		return
+	_cell_highlight_set = node
+	clear_cell_highlights()
+
+
+## Paint the cells a card's effect instances resolved to. Returns how many were
+## actually painted, so the caller can tell "nothing to show" from "the map
+## refused every index" without re-querying the map. An empty input clears.
+func highlight_cells(cells: PackedInt32Array) -> int:
+	if _cell_highlight_set == null:
+		return 0
+	if cells.is_empty():
+		_cell_highlight_set.clear()
+		return 0
+	var ref_x: float = _camera.position.x if _camera != null else 0.0
+	var centers: PackedVector2Array = _runtime_host.cell_display_centers(cells, ref_x) \
+		if _runtime_host != null and _runtime_host.has_method("cell_display_centers") \
+		else PackedVector2Array()
+	_cell_highlight_set.set_cells(centers,
+		_runtime_host.hex_size if _runtime_host != null else 22.0,
+		_runtime_host.map_wrap_period_x() if _runtime_host != null else 0.0)
+	if centers.is_empty():
+		return 0
+	# Frame the first hit, the way select_cell frames the cell the player picked.
+	if _camera != null and _ui_manager != null:
+		_camera.ensure_point_visible(centers[0], _ui_manager.map_safe_area())
+	return centers.size()
+
+
+func clear_cell_highlights() -> void:
+	if _cell_highlight_set != null:
+		_cell_highlight_set.clear()
+
+
 func ensure_selected_visible() -> void:
 	if _selected_cell == null or _camera == null or _ui_manager == null:
 		return
@@ -138,6 +178,10 @@ func ensure_selected_visible() -> void:
 
 
 func select_cell(cell) -> void:
+	# Picking a hex ends whatever card-level question the player was asking:
+	# leaving a card's hit set on screen while a different hex is selected reads
+	# as "this hex is one of them" and there is no way to tell otherwise.
+	clear_cell_highlights()
 	if cell == null:
 		clear_selection()
 		return
@@ -805,6 +849,20 @@ func _on_ideology_command_settled(result: Dictionary) -> void:
 	command_settled.emit(command_id, result)
 
 
+## 时代推进后切换音乐。只在玩家国家、且时代索引真的变化时才动作。
+func _sync_era_music() -> void:
+	if _player_country_handle == 0 or _country_facade == null:
+		return
+	if not _country_facade.has_method("current_era_index"):
+		return
+	var audio := get_node_or_null("/root/GameAudio")
+	if audio == null or not audio.has_method("set_era"):
+		return
+	var era_index: int = _country_facade.current_era_index(_player_country_handle)
+	if era_index >= 0:
+		audio.set_era(era_index)
+
+
 func _on_day_changed(day_idx: int) -> void:
 	if _runtime_host == null or _world_clock == null:
 		return
@@ -815,6 +873,7 @@ func _on_day_changed(day_idx: int) -> void:
 	_sync_era_reward_offer()
 	_sync_family_founding_offer()
 	_sync_ideology_draw()
+	_sync_era_music()
 	if _economy_facade != null and _player_country_handle != 0 and \
 			_economy_facade.has_method("dispatch_family_colonization_receipts"):
 		_economy_facade.dispatch_family_colonization_receipts(

@@ -6,11 +6,14 @@ const Catalog := preload("res://scripts/audio/music_event_catalog.gd")
 const ERA_LABELS := {
 	&"dark": "黑暗", &"feudal": "封建", &"castle": "城堡", &"imperial": "帝王",
 }
+## 与 game_audio_service.ERA_MUSIC 顺序一致，用于参数化事件的档位索引。
+const ERA_ORDER := [&"dark", &"feudal", &"castle", &"imperial"]
 
 var _audio: Node
 var _status: Label
 var _current := ""
 var _last := ""
+var _use_param := false
 
 
 func _ready() -> void:
@@ -87,6 +90,14 @@ func _ready() -> void:
 		_refresh())
 	box.add_child(mute)
 
+	var param_mode := CheckButton.new()
+	param_mode.text = "用参数化事件（单事件 + Era 参数，音频完全复用）"
+	param_mode.toggled.connect(func(value: bool) -> void:
+		_use_param = value
+		_last = "参数化模式：%s" % ("开" if value else "关")
+		_refresh())
+	box.add_child(param_mode)
+
 	await get_tree().process_frame
 	_refresh()
 
@@ -107,12 +118,17 @@ func _button(text: String) -> Button:
 
 
 func _on_era(era: StringName) -> void:
-	var tracks := Catalog.tracks_for(era)
-	if tracks.is_empty():
-		return
-	var key: StringName = tracks[randi() % tracks.size()]
-	var ok: bool = _audio.play_music(key)
-	_current = ("探索 · %s · %s" % [String(ERA_LABELS.get(era, era)), String(key)]) if ok else "播放失败"
+	var ok := false
+	if _use_param:
+		ok = _audio.play_explore_parameterized(ERA_ORDER.find(era))
+		_current = ("参数化 · %s" % String(ERA_LABELS.get(era, era))) if ok else "播放失败"
+	else:
+		var tracks := Catalog.tracks_for(era)
+		if tracks.is_empty():
+			return
+		var key: StringName = tracks[randi() % tracks.size()]
+		ok = _audio.play_music(key)
+		_current = ("探索 · %s · %s" % [String(ERA_LABELS.get(era, era)), String(key)]) if ok else "播放失败"
 	_last = ""
 	_refresh()
 

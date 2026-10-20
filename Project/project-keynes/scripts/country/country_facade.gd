@@ -2,11 +2,15 @@ class_name CountryFacade
 extends RefCounted
 
 signal country_committed(report: Dictionary)
+
+## 11 个时代的里程碑科技索引，与 technology_network.json 的 eras 顺序一致。
+static var _era_milestone_indices := PackedInt32Array()
 signal research_signal_discovered(event: Dictionary)
 
 const DEFAULT_PROFILE_PATH := "res://data/country/default_country.tres"
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const CountryProfileScript = preload("res://scripts/data/country_profile.gd")
+const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 const TAX_RATE_MIN_BP := -100000
 const TAX_RATE_MAX_BP := 10000
 const TAX_ABSOLUTE_MIN := -1000000000
@@ -488,6 +492,41 @@ func _tax_item_index(kind: int, item_id: StringName) -> int:
 
 func research_snapshot(handle: int) -> Dictionary:
 	return _world_ext.get_country_research_snapshot(handle) if _configured else {}
+
+## 当前时代索引（0-based，对应 technology_network.json 的 eras 顺序）。
+## 与原生 visual_era_index_for_slot 同语义：**只认已生效（state == 5）的里程碑科技**。
+## 不要改用 country_view_model 的 _development_model —— 那套把"已发现"（state 1-4）
+## 也算进最高时代，会超前于真实时代。
+func current_era_index(handle: int) -> int:
+	if not _configured:
+		return -1
+	var research := research_snapshot(handle)
+	if research.is_empty():
+		return -1
+	var states: PackedInt32Array = research.get("technology_states", PackedInt32Array())
+	if states.is_empty():
+		return -1
+	var milestones := era_milestone_indices()
+	if milestones.is_empty():
+		return -1
+	var reached := 0
+	for era_index in range(milestones.size()):
+		var technology := int(milestones[era_index])
+		if technology >= 0 and technology < states.size() and int(states[technology]) >= 5:
+			reached = era_index
+	return reached
+
+
+## 11 个时代的里程碑科技索引，顺序与 eras 数组一致。首次调用后缓存。
+static func era_milestone_indices() -> PackedInt32Array:
+	if not _era_milestone_indices.is_empty():
+		return _era_milestone_indices
+	var catalog := TechnologyCatalogScript.compile_native_catalog()
+	if not bool(catalog.get("ok", false)):
+		return PackedInt32Array()
+	_era_milestone_indices = catalog.get("technology_era_milestone_indices", PackedInt32Array())
+	return _era_milestone_indices
+
 
 func research_signal_snapshot(handle: int) -> Dictionary:
 	return _world_ext.get_country_research_signal_snapshot(handle) if _configured \
