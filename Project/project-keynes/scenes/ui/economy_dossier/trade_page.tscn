@@ -9,7 +9,6 @@
 size_flags_horizontal = 3
 theme_override_constants/separation = 12
 script = ExtResource("1_script")
-chapter_id = "trade"
 
 [node name="EmptyLabel" type="Label" parent="." unique_id=547106692]
 unique_name_in_owner = true

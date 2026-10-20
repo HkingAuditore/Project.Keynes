@@ -8,15 +8,20 @@ extends Resource
 @export_range(0, 2147483647, 1) var starting_points_q16: int = 0
 @export_range(1, 1000000, 1) var max_commands_per_slice: int = 4096
 @export_range(1, 4096, 1) var max_transition_commands: int = 256
-## Upload of card effect rows that route through a declared
-## `ideology.effect.*` program. Measured over the WHOLE catalog at compile time
-## (one per card level, not per live instance), so it must cover
-## card_count * level_count: 85 cards x 3 levels = 255 today, and the refactor
-## target is 85 program-backed cards. 512 leaves headroom for a fourth level or
-## a few `on_enter` rows without turning into an unbounded budget.
-## Live per-country concurrency is bounded elsewhere: slots (ideology_capacity +
-## national_spirit_capacity) times SELECTOR_MAX_CELLS per card level.
-@export_range(0, 4096, 1) var max_effect_instances: int = 512
+## CATALOG DECLARATION BUDGET, not a concurrency budget.
+##
+## Counted once per card effect row routed through a declared
+## `ideology.effect.*` program, over the WHOLE catalog: card x level x row.
+## 85 cards x 3 levels = 255 covered the pre-v0.2 pool; the redesign targets 179
+## cards, and two rows per level is already 1074, so 512 was too tight and is
+## being retired in favour of 2048.
+##
+## Live per-country concurrency is a different number: it is
+## (ideology_capacity + national_spirit_capacity) x SELECTOR_MAX_CELLS
+## = 9 x 32 = 288 instances, separately capped by EffectRuntime's `max_instances`
+## (4096). Per-cell fan-out is meant to be aggregated by cell, never sized as
+## "one instance per (card, cell)" off this field.
+@export_range(0, 8192, 1) var max_effect_instances: int = 2048
 @export_range(1, 1000000, 1) var max_transition_polls_per_slice: int = 4096
 @export_range(1, 1000000, 1) var max_active_visits_per_slice: int = 1024
 @export_range(0, 64, 1) var opinion_owner_influence_weight: int = 2

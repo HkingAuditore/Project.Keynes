@@ -13,6 +13,12 @@ maintenance rule, not a proposal for a second runtime architecture.
 | Diagnostics | `DCDiagnosticsBus` | domain systems recording reports | simulation authority or slot writes |
 | DataCore bridge | `DCWorld` / `DCWorldExt` | slot and pass implementation units | UI policy |
 | Economy | `NativeEconomyRuntime` public API | economy domain translation units | per-cell gameplay mirrors in GDScript |
+| Audio presentation | `GameAudio` | `scripts/audio/game_audio_service.gd`, `addons/keynes_audio_export` | simulation authority, era or political-state inference |
+
+`GameAudio` observes `GameSettings` and explicitly loads the Windows FMOD backend.
+Studio source content lives outside the Godot resource root under `Audio/ProjectKeynes`.
+Other platforms do not load this backend. See
+[`../audio/fmod-integration.md`](../audio/fmod-integration.md) for validation and limitations.
 
 The economy decomposition contract and migration order live in
 [`economy-runtime-split.md`](economy-runtime-split.md). It is the required

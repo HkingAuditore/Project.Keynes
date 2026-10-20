@@ -270,6 +270,12 @@ struct RuntimeEffectPodInstanceInput {
     uint32_t target_generation = 0;
     int32_t level = 0;
     int64_t next_due_day = 0;
+    // Absolute last live day. -1 means "no scheduled expiry", which is both the
+    // pre-existing default and what a caller that does not care about lifecycles
+    // should pass. A managed-duration instance has to carry this from creation:
+    // the pod only derives it inside evaluate(), so an instance whose trigger
+    // never fires would otherwise stay alive forever.
+    int64_t expires_day = -1;
     bool active = true;
 };
 
@@ -449,6 +455,11 @@ public:
     static uint32_t adapter_ack_bit(RuntimeEffectPodAction action) noexcept;
     static uint16_t adapter_domain(RuntimeEffectPodAction action) noexcept;
     static bool self_test(std::string &error);
+    // Cell 0 is a real target: a cell-domain program addresses a raw cell index,
+    // and the main thread has always accepted handle 0 there. Guards the
+    // instance validation, the EFP1 restore and compile_command against drifting
+    // back to "handle 0 means unset" for those three domains.
+    static bool cell_target_self_test(std::string &error);
 
     // ── Cross-thread capability ceiling ─────────────────────────────────────
     // Not policy knobs. The POD never resolves a target selector (the main
@@ -458,7 +469,7 @@ public:
     // the whole catalog fail validation, which left the EFFECT bit of the
     // completed-mask unset and stopped the entire twelve-domain authority graph
     // from ever being granted. scripts/effect/effect_catalog.gd mirrors both.
-    static constexpr int32_t MAX_SELECTOR_KIND = 11;  // DISTANCE_N
+    static constexpr int32_t MAX_SELECTOR_KIND = 12;  // OWN_TERRITORY
     static constexpr int32_t MAX_STATE_ID = 4;        // STATE_STACK_COUNT
 
     // ── Cross-thread value contract ─────────────────────────────────────────

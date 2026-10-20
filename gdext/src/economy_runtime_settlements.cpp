@@ -220,6 +220,10 @@ void NativeEconomyRuntime::update_settlements_for_changed_cells() {
         const uint8_t after = prosperity_tier_for_population(
             population_total_for_cell(cell), before);
         if (after == before) continue;
+        record_annual_event(cell, after > before ? AnnualMetric::SETTLEMENTS_UPGRADED
+                                                : AnnualMetric::SETTLEMENTS_DOWNGRADED, 1);
+        if (before == 0 && after > 0) record_annual_event(cell, AnnualMetric::SETTLEMENTS_FOUNDED, 1);
+        if (before > 0 && after == 0) record_annual_event(cell, AnnualMetric::SETTLEMENTS_LOST, 1);
         _settlements.tier.write_scalar(cell, after, market_mutation_sink());
         _settlements.prosperity_generation.write_scalar(cell, _settlements.prosperity_generation[cell] + 1, market_mutation_sink());
         mark_building_visual_cell(cell);

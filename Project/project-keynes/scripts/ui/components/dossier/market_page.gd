@@ -1,6 +1,7 @@
 extends DossierPage
 
-## 物资市场：按类别排列的供需热力网格 + 选中物资的供需、库存、价格与外贸。
+## 市场：按类别排列的供需热力网格 + 选中物资的供需、库存、价格与外贸，
+## 下方接全国进出口（贸易差额 / 伙伴 / 物资账簿）——市场按范围取数，贸易恒为全国口径。
 ## 价格走势只在本页打开期间按结算日采样，保存在页面本地，不进存档。
 
 const PRICE_CAPACITY := 120
@@ -20,6 +21,8 @@ var _history_day := -1
 @onready var _stats: DossierBarList = %StatsList
 @onready var _trade_bar: DossierDivergingBar = %TradeBar
 @onready var _price_card: DossierKpiCard = %PriceCard
+@onready var _trade: DossierPage = %TradeSection
+@onready var _trade_kicker: Label = %TradeSectionKicker
 
 
 func _ready() -> void:
@@ -33,7 +36,22 @@ func focus_item(item) -> void:
 	_selected = String(item)
 
 
+## 共用的页内锚点：卡点跳转落到「全国进出口」一段时，外壳拿这个偏移去滚动视口。
+## 锚在小标题而不是区段本体上，否则跳过去第一眼是内容、看不到自己落在哪一段。
+func section_offset(section: String) -> float:
+	if section == "trade" and _trade_kicker != null:
+		return _trade_kicker.position.y
+	return 0.0
+
+
 func refresh(vm: EconomyDossierViewModel, filter = null) -> void:
+	_refresh_market(vm, filter)
+	# 贸易不响应范围与类别筛选，这里只是顺带把它的账簿刷新一次。
+	if _trade != null:
+		_trade.refresh(vm, filter)
+
+
+func _refresh_market(vm: EconomyDossierViewModel, filter = null) -> void:
 	var model := vm.market_model(String(filter) if filter != null else "")
 	if not bool(model.get("ok", false)):
 		_show_empty(_empty, _grid, String(model.get("reason", "")))
@@ -151,3 +169,5 @@ func _on_cell_selected(id: String) -> void:
 
 func _apply_narrow() -> void:
 	_body.columns = 1 if _narrow else 2
+	if _trade != null:
+		_trade.set_narrow(_narrow, _layout_width)

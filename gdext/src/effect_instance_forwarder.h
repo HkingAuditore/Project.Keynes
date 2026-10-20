@@ -94,6 +94,60 @@ public:
     godot::Dictionary retire(int64_t instance_id, int64_t generation,
                              int64_t effective_day);
 
+    // ── Instance-level entry points ─────────────────────────────────────────
+    // submit_batch covers declarative program rows, but the Economy family path
+    // drives Effect instances one row at a time through upsert_instance_pod /
+    // set_metric_pod / retire_instance_pod. Those need the same routing
+    // decision without a Dictionary batch in between, otherwise family effects
+    // keep writing EffectRuntime after EFFECT moved to the worker and get erased
+    // by the next worker snapshot.
+    struct InstanceRow {
+        int64_t instance_id = 0;
+        std::string program_key;
+        uint32_t generation = 0;
+        int32_t source_type = 0;
+        int64_t source_id = 0;
+        uint64_t source_handle = 0;
+        uint64_t target_handle = 0;
+        uint32_t target_generation = 0;
+        int32_t level = 0;
+        int64_t next_due_day = 0;
+        // Absolute last live day, or -1 for "no scheduled expiry". Managed
+        // duration instances must carry this on creation: the pod only derives
+        // expires_day inside evaluate(), so an instance whose trigger never
+        // fires would otherwise never expire on the worker side.
+        int64_t expires_day = -1;
+        bool active = true;
+    };
+    bool upsert_instance(const InstanceRow &row, std::string &error);
+    bool set_metric(int64_t instance_id, uint32_t generation, int32_t metric_id,
+                    int64_t revision, int64_t value, std::string &error);
+    bool retire_instance(int64_t instance_id, uint32_t generation,
+                         int64_t effective_day, std::string &error);
+    // Presence probe with the same authority split the writers use.
+    //
+    // Economy keeps its own family-effect bindings and rebuilds them after a
+    // load, which needs "is this instance still alive". Asking EffectRuntime
+    // directly only answers for the legacy authority: under EFFECT worker
+    // authority it is writeback-only, so every worker-owned instance reads as
+    // absent and the binding was dropped -- which then also leaked the instance,
+    // because clear_family_branch_effects retires by binding.
+    //
+    // A query cannot invalidate anything, so unlike the writers this does not
+    // consult or advance the authority epoch: a mid-call flip only makes the
+    // answer one tick stale, and the next reconcile overwrites it.
+    bool instance_exists(int64_t instance_id, uint32_t generation, bool &exists,
+                         std::string &error);
+    // The other half of the same question: has this instance fired yet?
+    //
+    // Country's peer report, the ideology card report and the ideology restore
+    // all gate on it. Same failure mode as instance_exists -- EffectRuntime only
+    // answers for the legacy authority, so under EFFECT worker authority every
+    // worker-owned instance reads as "never fired", which pins the country peer
+    // at PENDING and (in the ideology restore) rejects a perfectly good save.
+    bool instance_fire_acked(int64_t instance_id, uint32_t generation,
+                             bool &acked, std::string &error);
+
     static const char *result_token(Result result);
 
 private:

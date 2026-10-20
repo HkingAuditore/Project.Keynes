@@ -9,6 +9,15 @@ using namespace godot;
 
 void DCWorldExt::_bind_methods() {
     using namespace godot;
+    ClassDB::bind_method(D_METHOD("configure_annual_reports", "country_handle", "days_per_year", "initial_day", "profile"), &DCWorldExt::configure_annual_reports);
+    ClassDB::bind_method(D_METHOD("commit_annual_reports", "day"), &DCWorldExt::commit_annual_reports);
+    ClassDB::bind_method(D_METHOD("get_annual_report_status"), &DCWorldExt::get_annual_report_status);
+    ClassDB::bind_method(D_METHOD("get_annual_report_snapshot", "report_id"), &DCWorldExt::get_annual_report_snapshot);
+    ClassDB::bind_method(D_METHOD("get_annual_report_history", "offset", "limit"), &DCWorldExt::get_annual_report_history, DEFVAL(0), DEFVAL(32));
+    ClassDB::bind_method(D_METHOD("mark_annual_report_presented", "report_id"), &DCWorldExt::mark_annual_report_presented);
+    ClassDB::bind_method(D_METHOD("capture_annual_report_state"), &DCWorldExt::capture_annual_report_state);
+    ClassDB::bind_method(D_METHOD("restore_annual_report_state", "bytes"), &DCWorldExt::restore_annual_report_state);
+    ClassDB::bind_method(D_METHOD("annual_report_self_test"), &DCWorldExt::annual_report_self_test);
     ClassDB::bind_method(D_METHOD("begin_loading_task", "operation", "input"), &DCWorldExt::begin_loading_task);
     ClassDB::bind_method(D_METHOD("poll_loading_task", "handle"), &DCWorldExt::poll_loading_task);
     ClassDB::bind_method(D_METHOD("take_loading_task", "handle"), &DCWorldExt::take_loading_task);
@@ -325,6 +334,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::runtime_economy_authority_fault_gate_self_test);
     ClassDB::bind_method(D_METHOD("runtime_economy_target_selector_self_test"),
                          &DCWorldExt::runtime_economy_target_selector_self_test);
+    ClassDB::bind_method(D_METHOD("runtime_metric_mask_self_test"),
+                         &DCWorldExt::runtime_metric_mask_self_test);
     ClassDB::bind_method(D_METHOD("arm_runtime_fault_injection", "point"),
                          &DCWorldExt::arm_runtime_fault_injection);
     ClassDB::bind_method(D_METHOD("clear_runtime_fault_injection"),
@@ -561,6 +572,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::submit_effect_worker_ack);
     ClassDB::bind_method(D_METHOD("effect_instance_fire_acked", "instance_id", "generation"),
                          &DCWorldExt::effect_instance_fire_acked);
+    ClassDB::bind_method(D_METHOD("query_effect_instance_metric", "instance_id", "metric_id"),
+                         &DCWorldExt::query_effect_instance_metric);
     ClassDB::bind_method(D_METHOD("submit_effect_snapshots", "batch"),
                          &DCWorldExt::submit_effect_snapshots);
     ClassDB::bind_method(D_METHOD("run_effect_daily", "day_index"),

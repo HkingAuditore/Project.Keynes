@@ -1,5 +1,12 @@
 # Project.Keynes System Map
 
+Windows 音频基础：`GameSettings -> GameAudio -> FMOD Studio Bank/事件`。
+`GameAudio` 仅属于表现层，不运行每日模拟、不拥有时代或局势权威状态。
+Studio 源工程位于 `Audio/ProjectKeynes/`；构建、试听及平台导出边界见
+[`docs/audio/fmod-integration.md`](../docs/audio/fmod-integration.md)。
+
+国家年度报告：`NativeSimulationHost -> AnnualDevelopmentLedger -> PKAR -> AnnualReportViewModel`。玩家点击左上角日期打开年度纪事；年度评价与奖励只在 native 提交。见 [年度报告运行时](../docs/cpp-dots-runtime/annual-development-report.md)。
+
 大经济存档：`GameSaveCoordinator` → `MapGenerator.restore_runtime_bundle(bytes,
 external_ecp2=[])` → `NativeSimulationHost`。PKSR 完整保存超过 64 MiB 的 ECP2；
 旧截断段可从同档完整副本严格校验恢复，返回 `recovered_truncated_ecp2`，不改写原档。

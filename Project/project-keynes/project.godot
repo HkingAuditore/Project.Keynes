@@ -18,6 +18,7 @@ config/icon="res://icon.svg"
 [autoload]
 
 GameSettings="*res://scripts/game/game_settings_service.gd"
+GameAudio="*res://scripts/audio/game_audio_service.gd"
 GameSave="*res://scripts/game/game_save_coordinator.gd"
 GameFlow="*res://scripts/game/game_flow_service.gd"
 
@@ -39,7 +40,7 @@ run/main_run_args="--use_data_core --use_data_core_weather"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/climate_profile_inspector/plugin.cfg", "res://addons/loading_prebake/plugin.cfg")
+enabled=PackedStringArray("res://addons/climate_profile_inspector/plugin.cfg", "res://addons/loading_prebake/plugin.cfg", "res://addons/keynes_audio_export/plugin.cfg")
 
 [input]
 

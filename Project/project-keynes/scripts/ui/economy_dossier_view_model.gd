@@ -13,14 +13,10 @@ const CHAPTERS: Array[Dictionary] = [
 		"question": "经济是否健康？哪里在出问题？"},
 	{"id": "strata", "label": "阶层民生", "icon": &"population.heart",
 		"question": "谁过得好、谁过得差，为什么？"},
-	{"id": "industry", "label": "产业建筑", "icon": &"economy.building.factory",
-		"question": "哪些产业在赚钱、哪些在停工？"},
-	{"id": "investment", "label": "投资风向", "icon": &"trend.up",
-		"question": "资本正流向哪里，又被什么挡住了？"},
-	{"id": "market", "label": "物资市场", "icon": &"metric.goods",
-		"question": "什么东西缺、什么东西过剩？"},
-	{"id": "trade", "label": "贸易", "icon": &"tax.tariff",
-		"question": "靠什么进口、靠什么出口？"},
+	{"id": "industry", "label": "产业", "icon": &"economy.building.factory",
+		"question": "哪些产业在赚钱、哪些在停工，资本又流向哪里？"},
+	{"id": "market", "label": "市场", "icon": &"metric.goods",
+		"question": "什么东西缺、什么东西过剩，靠什么进出口？"},
 	{"id": "cities", "label": "城市", "icon": &"metric.territory",
 		"question": "各城市之间差距多大？"},
 	{"id": "finance", "label": "财政", "icon": &"metric.treasury",
@@ -53,8 +49,10 @@ const BOTTLENECK_META := {
 		"advice": "岗位空缺无人填补"},
 	"resource": {"label": "资源 / 气候受限", "icon": &"economy.resource", "chapter": "industry",
 		"advice": "资源条件不足或气候损失产出"},
-	"margin": {"label": "利润过低", "icon": &"trend.flat", "chapter": "investment",
-		"advice": "营收不抵成本，资本不愿进入"},
+	## 利润卡点落在产业章的「资本与在建」一段：合并后它在同页下方，需要滚过去，
+	## 否则点卡点只换章、看不到任何对应内容。
+	"margin": {"label": "利润过低", "icon": &"trend.flat", "chapter": "industry",
+		"section": "investment", "advice": "营收不抵成本，资本不愿进入"},
 }
 ## INVESTMENT_REJECTION_* 下标 → 卡点类别；空串表示不是卡点（在建、产能已足够、随机未中等）。
 const REJECTION_CATEGORY: Array[String] = [
@@ -446,7 +444,8 @@ static func classify_bottlenecks(summary: Dictionary, investment: Dictionary,
 			continue
 		var meta: Dictionary = BOTTLENECK_META[category]
 		result.append({"id": category, "label": meta.label, "icon": meta.icon,
-			"chapter": meta.chapter, "advice": meta.advice, "severity": clampf(score, 0.0, 1.0),
+			"chapter": meta.chapter, "section": String(meta.get("section", "")),
+			"advice": meta.advice, "severity": clampf(score, 0.0, 1.0),
 			"details": details[category]})
 	result.sort_custom(func(a, b): return float(a.severity) > float(b.severity))
 	return result.slice(0, MAX_BOTTLENECKS)

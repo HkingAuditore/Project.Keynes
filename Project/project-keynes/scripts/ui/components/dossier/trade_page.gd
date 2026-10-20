@@ -2,6 +2,8 @@ extends DossierPage
 
 ## 贸易：上一结算日进出口对冲、贸易伙伴净额、逐物资进出口账簿。
 ## 贸易是国家口径，单城市范围下仍显示全国数据并给出提示。
+## 已作为「市场」章的下半段（market_page.tscn 里的 TradeSection）嵌入，
+## chapter_id 由宿主指定，本场景不自带。
 
 const GOODS_COLUMNS := [
 	{"id": "name", "label": "物资", "kind": "text", "expand": true, "min_width": 110.0},

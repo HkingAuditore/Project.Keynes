@@ -364,6 +364,33 @@ Dictionary DCWorldExt::configure_effects(const Dictionary &catalog) {
             return EffectRuntime::invoke_pod_behavior(
                 behavior_id_hash, input, output, error);
         });
+    // Metric capacity contract.
+    //
+    // The catalog declares the metric table (`metric_keys`, one entry per id)
+    // and NativeEconomyRuntime is the only sampler: its FAMILY_METRIC_COUNT
+    // bounds what can actually be computed. A catalog that declares more ids
+    // than the economy computes would leave every program referencing one of the
+    // surplus ids permanently inert -- the condition would compare against a
+    // column nobody ever publishes, with no error anywhere. That is the exact
+    // failure mode the metric-publish work removed, so refuse the catalog
+    // instead of reintroducing it.
+    //
+    // Checked here rather than in configure_economy because this is where the
+    // declared count becomes known, and because FAMILY_METRIC_COUNT is a
+    // compile-time constant -- no economy instance is needed. Done before
+    // configure() so a rejected catalog leaves the runtime untouched rather
+    // than half-configured with a facade that believes it failed.
+    const int32_t declared_metrics =
+        static_cast<int32_t>(packed_strings(catalog, "metric_keys").size());
+    if (declared_metrics > NativeEconomyRuntime::FAMILY_METRIC_COUNT) {
+        Dictionary rejected;
+        rejected["ok"] = false;
+        rejected["reason"] = String("effect_metric_count_exceeds_economy");
+        rejected["declared_metrics"] = declared_metrics;
+        rejected["computed_metrics"] =
+            static_cast<int64_t>(NativeEconomyRuntime::FAMILY_METRIC_COUNT);
+        return rejected;
+    }
     Dictionary result = runtime_from(_effect_runtime)->configure(catalog);
     if (bool(result.get("ok", false))) {
         if (!_runtime_host) _runtime_host = std::make_unique<NativeSimulationHost>();
@@ -388,10 +415,28 @@ Dictionary DCWorldExt::configure_effects(const Dictionary &catalog) {
                 static_cast<NativeCountryRuntime *>(_country_runtime));
             static_cast<NativeCountryRuntime *>(_country_runtime)->attach_effect_runtime(
                 runtime_from(_effect_runtime));
+            // Country installs one technology instance per (country, tech) both
+            // at bootstrap and from the peer adapter. Those are ordinary Effect
+            // instances, so they take the same authority-aware door as the
+            // family writes; attach here, where the forwarder was just rebuilt.
+            static_cast<NativeCountryRuntime *>(_country_runtime)
+                ->attach_effect_forwarder(_effect_forwarder.get());
         }
         if (_economy_runtime != nullptr)
             static_cast<NativeEconomyRuntime *>(_economy_runtime)->attach_effect_runtime(
                 runtime_from(_effect_runtime));
+        // Tag predicates live in the effect catalog but are evaluated by the
+        // economy's target selector, so hand over the compiled table here --
+        // after configure(), so it is already populated.
+        if (_economy_runtime != nullptr)
+            static_cast<NativeEconomyRuntime *>(_economy_runtime)->set_target_tags(
+                runtime_from(_effect_runtime)->target_tags());
+        // M2b: the family path writes Effect instances one row at a time and must
+        // make the same worker/legacy decision the declarative batch path makes.
+        // Re-attached here because this call also rebuilt the forwarder.
+        if (_economy_runtime != nullptr)
+            static_cast<NativeEconomyRuntime *>(_economy_runtime)
+                ->attach_effect_forwarder(_effect_forwarder.get());
         // Country runtime is configured before EffectRuntime during normal
         // startup, and ideology is intentionally configured with the country
         // catalog at that same early boundary.  Keep the peer link symmetric:
@@ -759,6 +804,21 @@ bool DCWorldExt::effect_instance_fire_acked(int64_t instance_id,
 Dictionary DCWorldExt::submit_effect_snapshots(const Dictionary &batch) {
     return _effect_runtime == nullptr ? unavailable()
         : runtime_from(_effect_runtime)->submit_snapshots(batch);
+}
+
+Dictionary DCWorldExt::query_effect_instance_metric(int64_t instance_id,
+                                                    int32_t metric_id) const {
+    if (_effect_runtime == nullptr) return unavailable();
+    int64_t value = 0;
+    bool present = false;
+    const bool ok = runtime_from(_effect_runtime)->instance_metric_pod(
+        instance_id, metric_id, value, present);
+    Dictionary out;
+    out["ok"] = ok;
+    out["reason"] = ok ? "ok" : "effect_instance_metric_unavailable";
+    out["value"] = value;
+    out["present"] = present;
+    return out;
 }
 
 Dictionary DCWorldExt::run_effect_daily(int64_t day_index) {

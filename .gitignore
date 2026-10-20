@@ -11,6 +11,12 @@ __pycache__/
 # 属于本机环境而非项目源码。版本要求见 gdext/build_web.bat。
 /emsdk/
 
+# FMOD Studio 本地工具目录：可随工作目录手工复制，不提交到 Git 或 LFS。
+/tools/fmod-studio/
+
+# FMOD 下载、验证工程、发布包和日志均为本地中间文件。
+/tmp/fmod-*
+
 # 嵌入式 godot-cpp 备份/临时仓库，不纳入版本管理
 /gdext/godot-cpp.bak-20260830/
 /gdext/godot-cpp.tmpfix/
@@ -26,3 +32,12 @@ __pycache__/
 
 # 资源美术工具链的中间产物（预览图、抠图中间件），可由 sources/ 重新生成
 /tools/resource_art/work/
+
+# 本地验证输出、测试工程副本和崩溃快照；已跟踪的验证资料仍保留。
+/tmp/
+/Project/project-keynes/tmp/
+/.pytest_cache/
+/unreal_mcp.log
+
+# 损坏/备份的原生调试符号，不作为运行资源提交。
+*.pdb.bad_*

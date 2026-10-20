@@ -9,7 +9,6 @@
 size_flags_horizontal = 3
 theme_override_constants/separation = 20
 script = ExtResource("1_script")
-chapter_id = "investment"
 
 [node name="Top" type="GridContainer" parent="." unique_id=433564317]
 unique_name_in_owner = true

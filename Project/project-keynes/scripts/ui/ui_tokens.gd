@@ -2,6 +2,127 @@ extends RefCounted
 class_name UITokens
 
 const UI_FONT: FontFile = preload("res://assets/fonts/source_han/SourceHanSansCN-VF.woff2")
+const CHRONICLE_SERIF: FontFile = preload("res://assets/fonts/source_han_serif/SourceHanSerifCN-Regular.otf")
+const CHRONICLE_INK := Color(0.19, 0.15, 0.12)
+const CHRONICLE_MUTED := Color(0.39, 0.32, 0.25)
+const CHRONICLE_PAPER := Color(0.94, 0.89, 0.78)
+const CHRONICLE_RED := Color(0.46, 0.16, 0.13)
+const CHRONICLE_BRASS := Color(0.65, 0.44, 0.18)
+const CHRONICLE_RULE := Color(0.36, 0.25, 0.13, 0.22)
+const CHRONICLE_LIGHT_INK := Color(0.96, 0.91, 0.80)
+const CHRONICLE_LIGHT_MUTED := Color(0.74, 0.72, 0.62)
+const CHRONICLE_BODY_SIZE := 18
+const CHRONICLE_NOTE_SIZE := 14
+const CHRONICLE_CHAPTER_SECONDS := 0.15
+const CHRONICLE_OPEN_SECONDS := 0.40
+
+# ── 年度报告「纸本长卷」字阶 ───────────────────────────────────────────────
+# 旧版最大字号 36px，与 14px 注释只差 2.6 倍；纸本编辑风需要 8–12 倍的尺度对比，
+# 否则封面永远没有气势。display 级一律走真正的 SemiBold 字重，不再用伪粗。
+const CHRONICLE_DISPLAY_MAX := 168
+const CHRONICLE_DISPLAY_COVER := 132
+const CHRONICLE_DISPLAY_COVER_WIDE := 156
+const CHRONICLE_DISPLAY_COVER_SMALL := 88
+const CHRONICLE_NUMERAL_XL := 96
+const CHRONICLE_NUMERAL_LG := 56
+const CHRONICLE_NUMERAL_MD := 40
+const CHRONICLE_H1 := 48
+const CHRONICLE_LEAD := 19
+const CHRONICLE_LABEL := 13
+const CHRONICLE_LEADING_BODY := 8
+const CHRONICLE_LEADING_LEAD := 14
+
+# 纸面与墨色（比 CHRONICLE_PAPER 更亮一档，用于全幅纸场）
+const CHRONICLE_SHEET_LIGHT := Color(0.965, 0.925, 0.835)
+const CHRONICLE_SHEET_DEEP := Color(0.905, 0.845, 0.720)
+const CHRONICLE_SHEET_EDGE := Color(0.855, 0.780, 0.640)
+
+# 展示级衬线：与现有 SourceHanSerifCN-Regular 同族（Noto Serif CJK = 思源宋体），
+# 只为拿到真正的 SemiBold 笔画，避免 132px 伪粗糊成一团。
+const ANNUAL_DISPLAY_SERIF: FontFile = preload("res://assets/fonts/noto_serif_sc/NotoSerifSC-SemiBold.otf")
+
+static var _annual_fonts: Dictionary = {}
+
+
+## 年度报告字体族。kind ∈ display / display_soft / numeral / label / body / body_soft。
+static func annual_font(kind: String) -> Font:
+	if _annual_fonts.has(kind):
+		return _annual_fonts[kind]
+	var font: Font
+	match kind:
+		"display":
+			font = ANNUAL_DISPLAY_SERIF
+		"display_soft":
+			var soft := FontVariation.new()
+			soft.base_font = CHRONICLE_SERIF
+			soft.variation_embolden = 0.12
+			font = soft
+		"numeral":
+			var numeral := FontVariation.new()
+			numeral.base_font = ANNUAL_DISPLAY_SERIF
+			numeral.spacing_glyph = -1
+			font = numeral
+		"label":
+			var label := FontVariation.new()
+			label.base_font = UI_FONT
+			label.variation_opentype = {&"wght": 620.0}
+			label.spacing_glyph = 1.2
+			font = label
+		"body_soft":
+			font = font_with_weight(480)
+		_:
+			font = font_with_weight(540)
+	_annual_fonts[kind] = font
+	return font
+
+
+## 无底文本链：常态完全透明（纸本编辑风不允许按钮盒），只有底部朱红细线随焦点出现。
+static func chronicle_link_style(state: String) -> StyleBox:
+	var box := StyleBoxFlat.new()
+	box.bg_color = Color(0, 0, 0, 0)
+	box.content_margin_left = 2
+	box.content_margin_right = 2
+	box.content_margin_top = 4
+	box.content_margin_bottom = 4
+	if state == "focus":
+		box.border_width_bottom = 2
+		box.border_color = CHRONICLE_RED
+	return box
+
+
+static func chronicle_button_style(state: String, rail: bool = false) -> StyleBox:
+	if state == "focus":
+		var focus := StyleBoxFlat.new()
+		focus.bg_color = Color(0, 0, 0, 0)
+		focus.set_border_width_all(2)
+		focus.border_color = CHRONICLE_RED
+		return focus
+	if rail:
+		var ink := StyleBoxFlat.new()
+		ink.bg_color = Color(0, 0, 0, 0)
+		ink.content_margin_left = 12
+		ink.content_margin_right = 12
+		ink.content_margin_top = 6
+		ink.content_margin_bottom = 6
+		if state in ["pressed", "focus", "hover"]:
+			ink.border_width_left = 3 if state == "pressed" else 1
+			ink.border_color = CHRONICLE_RED if state != "hover" else CHRONICLE_RULE
+		return ink
+	var paper := StyleBoxTexture.new()
+	paper.texture = preload("res://assets/ui/archive_material_v1/button_pressed_v1.tres") if state == "pressed" else preload("res://assets/ui/archive_material_v1/button_normal_v1.tres")
+	paper.texture_margin_left = 12
+	paper.texture_margin_right = 12
+	paper.texture_margin_top = 12
+	paper.texture_margin_bottom = 12
+	paper.content_margin_left = 14
+	paper.content_margin_right = 14
+	paper.content_margin_top = 5
+	paper.content_margin_bottom = 5
+	if state in ["hover", "focus"]:
+		paper.modulate_color = ARCHIVE_BUTTON_HOVER
+	elif state == "disabled":
+		paper.modulate_color = ARCHIVE_BUTTON_DISABLED
+	return paper
 
 const SPACE_XS := 4
 const SPACE_SM := 8

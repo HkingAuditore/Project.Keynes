@@ -110,7 +110,13 @@ func _refresh_bottlenecks(bottlenecks: Array) -> void:
 func _on_bottleneck_selected(id) -> void:
 	for entry in _bottleneck_rows:
 		if String(entry.id) == String(id):
-			navigate_requested.emit(String(entry.chapter), {"bottleneck": String(id)})
+			# section 是合并篇章后的页内锚点（如「利润」落在产业章的投资风向一段），
+			# 由外壳负责把视口滚过去。
+			var payload := {"bottleneck": String(id)}
+			var section := String(entry.get("section", ""))
+			if not section.is_empty():
+				payload["section"] = section
+			navigate_requested.emit(String(entry.chapter), payload)
 			return
 
 

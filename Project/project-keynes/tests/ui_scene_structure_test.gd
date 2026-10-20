@@ -216,10 +216,18 @@ func _check_component_scenes() -> void:
 		if scene_path.ends_with("country_panel.tscn"):
 			_expect("country shell has seam hinges", scene.has_node("Center/Dialog/Hinges/HingeMiddle"))
 		if scene_path.ends_with("economy_dossier.tscn"):
-			for page_name in ["OverviewPage", "StrataPage", "IndustryPage", "InvestmentPage",
-					"MarketPage", "TradePage", "CitiesPage"]:
+			for page_name in ["OverviewPage", "StrataPage", "IndustryPage", "MarketPage",
+					"CitiesPage"]:
 				_expect("economy dossier has %s" % page_name,
 					scene.has_node("PageViewport/PageColumn/PageStack/%s" % page_name))
+			# 合并章：投资风向折进产业页、贸易折进市场页，不再各自占一个章节节点。
+			_expect("investment section is folded into the industry chapter",
+				scene.has_node("PageViewport/PageColumn/PageStack/IndustryPage/InvestmentSection"))
+			_expect("trade section is folded into the market chapter",
+				scene.has_node("PageViewport/PageColumn/PageStack/MarketPage/TradeSection"))
+			var page_stack := scene.get_node("PageViewport/PageColumn/PageStack")
+			_expect("economy dossier keeps five chapter pages",
+				page_stack.get_child_count() == 5)
 			_expect("economy dossier KPI strip scrolls with the chapter",
 				scene.has_node("PageViewport/PageColumn/KpiStrip/KpiRow/Kpi4"))
 			_expect("economy dossier carries the annual GDP band",

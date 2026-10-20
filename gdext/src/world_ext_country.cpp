@@ -217,6 +217,12 @@ Dictionary DCWorldExt::configure_country(const Dictionary &catalog,
         country_runtime_from(_country_runtime)->attach_effect_runtime(
             static_cast<EffectRuntime *>(_effect_runtime));
     }
+    // Attach unconditionally: configure_country can run before the Effect
+    // catalog exists (bootstrap_economy creates the country runtime first), and
+    // a null forwarder simply leaves the legacy door in charge. The Effect
+    // configure path re-attaches once the forwarder is real.
+    country_runtime_from(_country_runtime)->attach_effect_forwarder(
+        _effect_forwarder.get());
     country_runtime_from(_country_runtime)->attach_modifier_runtime(
         static_cast<ModifierRuntime *>(_modifier_runtime));
     Dictionary out = country_runtime_from(_country_runtime)->configure(catalog, profile, cell_count, seed);

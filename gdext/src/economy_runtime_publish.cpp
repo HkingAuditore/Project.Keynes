@@ -671,11 +671,17 @@ bool NativeEconomyRuntime::publish_epoch_slice(
                     counted > 0 ? static_cast<int32_t>(std::clamp<int64_t>(
                         total / counted, 0, Q16_ONE)) : Q16_ONE;
             }
-            constexpr uint64_t AGGREGATE_EFFECT_METRICS =
-                (1ULL << 7U) | (1ULL << 8U) | (1ULL << 9U) |
-                (1ULL << 11U) | (1ULL << 14U);
+            // Cell-aggregate readings: shortage, trade events, essentials
+            // shortage, rain and resource abundance. Built as a MetricMask so
+            // the selection stays expressible once the table passes id 63.
+            MetricMask aggregate_effect_metrics;
+            aggregate_effect_metrics.set(FAMILY_METRIC_CELL_RESOURCE_SHORTAGE_Q16);
+            aggregate_effect_metrics.set(FAMILY_METRIC_CELL_TRADE_EVENTS);
+            aggregate_effect_metrics.set(FAMILY_METRIC_CELL_POPULATION);
+            aggregate_effect_metrics.set(FAMILY_METRIC_CELL_ESSENTIALS_SHORTAGE_Q16);
+            aggregate_effect_metrics.set(FAMILY_METRIC_CELL_RESOURCE_ABUNDANCE_Q16);
             refresh_family_effect_metrics_for_cell(cell,
-                family_effect_metric_revision(2), AGGREGATE_EFFECT_METRICS);
+                family_effect_metric_revision(2), aggregate_effect_metrics);
         }
         const double commit_cells_ms = elapsed_ms(commit_cells_started);
         _publish_commit_cells_ms += commit_cells_ms;
@@ -699,6 +705,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
                                  elapsed_ms(finalize_t2));
         const auto finalize_t3 = Clock::now();
         publish_country_ai_digest();
+        publish_annual_development_facts();
         EconomyCostProbe::record("publish.commit.ai_digest", _current_day.get(),
                                  elapsed_ms(finalize_t3));
         const auto finalize_t4 = Clock::now();

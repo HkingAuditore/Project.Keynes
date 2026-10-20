@@ -22,7 +22,7 @@ const Q16_ONE := 65536
 ## (the main thread resolves cells and passes a target_handle) and reads state
 ## through one shared switch, so both ceilings track the main thread's, not a
 ## narrower subset. Keep the two files in step.
-const POD_MAX_SELECTOR_KIND := 11
+const POD_MAX_SELECTOR_KIND := 12
 const POD_MAX_STATE_ID := 4
 const POD_CONDITION_STATE_GTE := 5
 const POD_INSTRUCTION_READ_STATE := 3

@@ -27,13 +27,24 @@ layout_mode = 2
 mouse_filter = 2
 theme_override_constants/separation = 8
 
-[node name="DateBlock" type="PanelContainer" parent="Margin/Row"]
+[node name="DateBlock" type="Button" parent="Margin/Row"]
+custom_minimum_size = Vector2(200, 36)
 layout_mode = 2
 mouse_filter = 0
-theme_type_variation = &"PKHUDInset"
+theme_type_variation = &"PKHUDButton"
+tooltip_text = "年度纪事 · 查阅国家历年发展报告"
 
 [node name="DateRow" type="HBoxContainer" parent="Margin/Row/DateBlock"]
-layout_mode = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 10.0
+offset_top = 4.0
+offset_right = -10.0
+offset_bottom = -4.0
+grow_horizontal = 2
+grow_vertical = 2
 mouse_filter = 2
 theme_override_constants/separation = 8
 
@@ -49,6 +60,7 @@ stretch_mode = 5
 [node name="DateLabel" type="Label" parent="Margin/Row/DateBlock/DateRow"]
 unique_name_in_owner = true
 layout_mode = 2
+mouse_filter = 2
 text = "第1年 · 第1日"
 theme_type_variation = &"PKHUDLabel"
 

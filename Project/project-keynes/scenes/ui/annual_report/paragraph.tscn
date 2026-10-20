@@ -1,0 +1,7 @@
+[gd_scene format=3]
+
+[node name="ReportParagraph" type="RichTextLabel"]
+layout_mode = 2
+fit_content = true
+scroll_active = false
+selection_enabled = true

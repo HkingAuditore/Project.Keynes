@@ -1,4 +1,5 @@
 #include "economy_cost_probe.h"
+#include "economy_effect_forward.h"
 #include "economy_runtime.h"
 #include "economy_hash.h"
 
@@ -7,6 +8,7 @@
 #include "economy_graph_stage_dispatch.h"
 #include "runtime_economy_pod.h"
 #include "effect_runtime.h"
+#include "effect_instance_forwarder.h"
 #include "country_runtime.h"
 #include "native_simulation_host.h"
 #include "economy_runtime_variant_helpers.h"
@@ -86,6 +88,11 @@ int32_t modifier_factor_q16(double factor) {
 namespace {
 
 using Clock = std::chrono::steady_clock;
+
+// effect_pod_upsert / effect_pod_metric / effect_pod_retire now live in
+// economy_effect_forward.h: the family write points are split across
+// economy_runtime.cpp and economy_runtime_family_buff.cpp, and both translation
+// units have to funnel through the same routing decision.
 
 constexpr int64_t price_adjustment_reference(
         int64_t current_price, int64_t adjustment_anchor_price,
@@ -4754,6 +4761,17 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
     _epoch_player_country_slot = _country_runtime->starting_country_slot();
     _epoch_country_technologies = std::move(snapshot.country_technologies);
     _epoch_country_count = snapshot.country_count;
+    // Must run right after _epoch_country_count so the CSR slice count matches
+    // the ownership column it was derived from. Landing here (instead of at the
+    // end of the capture) means a later capture failure leaves a territory index
+    // that is stale in exactly the same way as the rest of the epoch state.
+    rebuild_country_territory_index();
+    // The tag bitset reads per-cell metrics, so it is only valid for the epoch
+    // that produced them. Dropping it here (rather than rebuilding eagerly)
+    // keeps save/load free for the many games whose cards use no tags at all.
+    _epoch_tag_bits_valid = false;
+    _epoch_tag_bits.clear();
+    _epoch_tag_words = 0;
     _epoch_country_technology_words = snapshot.technology_words;
     _epoch_country_generation = snapshot.generation;
     _epoch_country_hash = snapshot.state_hash;
@@ -15562,8 +15580,8 @@ bool NativeEconomyRuntime::rebuild_family_behavior_cache() {
     static thread_local std::vector<std::vector<FamilyCellContext>> family_cells;
     family_cells.resize(families_store().active.size());
     for (auto &cells : family_cells) cells.clear();
-    static thread_local std::vector<uint64_t> family_metric_masks;
-    family_metric_masks.assign(family_cells.size(), 0);
+    static thread_local std::vector<MetricMask> family_metric_masks;
+    family_metric_masks.assign(family_cells.size(), MetricMask{});
     for (const FamilyTraitRoll &roll : family_trait_rolls()) {
         int32_t family = -1;
         if (families_store().valid_handle(roll.family_handle, family) &&
@@ -15641,7 +15659,7 @@ bool NativeEconomyRuntime::rebuild_family_behavior_cache() {
                 family_cells[static_cast<size_t>(family_index)];
             for (FamilyCellContext &context : cells) {
                 if (!context.metrics_ready) {
-                    const uint64_t mask = full_metrics ? UINT64_MAX
+                    const MetricMask mask = full_metrics ? MetricMask::all()
                         : family_metric_masks[static_cast<size_t>(family_index)];
                     fill_family_behavior_metrics(family_index, context.branch,
                         context.cell, context.metrics.data(), FAMILY_METRIC_COUNT, mask);
@@ -15649,7 +15667,7 @@ bool NativeEconomyRuntime::rebuild_family_behavior_cache() {
                         fill_family_behavior_metrics(family_index, context.branch,
                             context.cell, context.reference_metrics.data(), FAMILY_METRIC_COUNT);
                         for (int32_t metric = 0; metric < FAMILY_METRIC_COUNT; ++metric) {
-                            if ((mask & (uint64_t{1} << metric)) != 0 &&
+                            if (mask.test(metric) &&
                                 context.metrics[metric] != context.reference_metrics[metric]) {
                                 std::fprintf(stderr, "[family-metric-mask-mismatch] day=%lld family=%d cell=%d metric=%d\n",
                                     static_cast<long long>(_current_day.get()), family_index,
@@ -15658,9 +15676,7 @@ bool NativeEconomyRuntime::rebuild_family_behavior_cache() {
                             }
                         }
                     }
-                    int32_t computed = 0;
-                    for (int32_t metric = 0; metric < FAMILY_METRIC_COUNT; ++metric)
-                        computed += (mask & (uint64_t{1} << metric)) != 0;
+                    const int32_t computed = mask.count(FAMILY_METRIC_COUNT);
                     EconomyCostProbe::record("family.behavior_metrics", _current_day.get(), 0.0, computed);
                     context.metrics_ready = true;
                     ++_family_behavior_metric_contexts_built;
@@ -16027,15 +16043,17 @@ bool NativeEconomyRuntime::family_trait_context_allows(
 
 void NativeEconomyRuntime::fill_family_behavior_metrics(
         int32_t family_index, int32_t branch, int32_t cell, int64_t *metrics,
-        int32_t metric_count, uint64_t metric_mask) const {
+        int32_t metric_count, const MetricMask &metric_mask) const {
     if (metrics == nullptr || metric_count <= 0) return;
+    // Escape hatch: force every declared metric, so a wrong mask shows up as a
+    // parity failure instead of a silently-zero reading.
     static const bool full_metrics = [] {
         const char *value = std::getenv("PK_ECONOMY_FAMILY_METRIC_MASK_DISABLE");
         return value && std::strcmp(value, "1") == 0;
     }();
-    if (full_metrics) metric_mask = UINT64_MAX;
     auto requested = [&](int32_t metric) {
-        return metric < metric_count && (metric_mask & (uint64_t{1} << metric)) != 0;
+        if (metric < 0 || metric >= metric_count) return false;
+        return full_metrics || metric_mask.test(metric);
     };
     std::fill(metrics, metrics + metric_count, 0);
     auto count_q16 = [](int64_t value) -> int64_t {
@@ -16128,8 +16146,15 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
             cell < static_cast<int32_t>(_cell_resource_abundance_q16.size())
                 ? std::clamp<int64_t>(_cell_resource_abundance_q16[cell], 0,
                     Q16_ONE) : 0;
-    constexpr uint64_t industry_mask = ((uint64_t{1} << 22) - 1) ^ ((uint64_t{1} << 15) - 1);
-    const FamilyIndustryStats *stats = (metric_mask & industry_mask) != 0
+    // Ids 15..21 are the industry-family rows. Scanning the industry stats is
+    // the expensive part of this function, so it only happens when one of them
+    // is actually requested.
+    MetricMask industry_mask;
+    for (int32_t industry_metric = 15; industry_metric <= 21; ++industry_metric)
+        industry_mask.set(industry_metric);
+    const bool wants_industry = full_metrics ||
+        !(metric_mask & industry_mask).is_none();
+    const FamilyIndustryStats *stats = wants_industry
         ? family_industry_stats_for(family_index, cell) : nullptr;
     if (requested(FAMILY_METRIC_HAS_OWNED_MANUFACTURING))
         metrics[FAMILY_METRIC_HAS_OWNED_MANUFACTURING] =
@@ -16500,7 +16525,8 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
         const char *value = std::getenv("PK_ECONOMY_MEMO_VERIFY");
         return value && std::strcmp(value, "1") == 0;
     }();
-    if (verify_metrics && metric_mask != UINT64_MAX && metric_count <= FAMILY_METRIC_COUNT) {
+    if (verify_metrics && !metric_mask.is_all() &&
+        metric_count <= FAMILY_METRIC_COUNT) {
         std::array<int64_t, FAMILY_METRIC_COUNT> reference{};
         fill_family_behavior_metrics(family_index, branch, cell, reference.data(), metric_count);
         for (int32_t metric = 0; metric < metric_count; ++metric) {
@@ -16512,6 +16538,16 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
         }
     }
 
+}
+
+void NativeEconomyRuntime::sample_effect_metrics(
+        int32_t cell, int32_t metric_count, int64_t *out_metrics,
+        const MetricMask &metric_mask) const {
+    // family_index / branch are -1 by construction: an ideology card is not
+    // attached to a family, so a metric that only exists in a family context
+    // must read 0 rather than inherit whatever family happened to be nearby.
+    fill_family_behavior_metrics(-1, -1, cell, out_metrics, metric_count,
+                                 metric_mask);
 }
 
 bool NativeEconomyRuntime::evaluate_family_behavior_conditions(
@@ -17199,14 +17235,14 @@ int64_t NativeEconomyRuntime::family_effect_metric_revision(int32_t phase) const
 
 bool NativeEconomyRuntime::publish_family_effect_metrics(
         const FamilyEffectBinding &binding, int64_t revision,
-        uint64_t requested_mask) {
+        const MetricMask &requested_mask) {
     if (_effect_runtime == nullptr || binding.instance_id <= 0) return false;
     int32_t branch = -1, family = -1;
     if (!family_influences().valid_handle(binding.branch_handle, branch) ||
         !families_store().valid_handle(family_influences().family_handle[branch], family))
         return false;
-    const uint64_t mask = binding.metric_mask & requested_mask;
-    if (mask == 0) return true;
+    const MetricMask mask = binding.metric_mask & requested_mask;
+    if (mask.is_none()) return true;
     const int32_t cell = family_influences().cell[branch];
     std::array<int64_t, FAMILY_METRIC_COUNT> metrics{};
     fill_family_behavior_metrics(family, branch, cell, metrics.data(),
@@ -17214,16 +17250,17 @@ bool NativeEconomyRuntime::publish_family_effect_metrics(
     metrics[FAMILY_METRIC_MAGNITUDE_Q16] = binding.strength_q16;
     std::string error;
     for (int32_t metric_id = 0; metric_id < FAMILY_METRIC_COUNT; ++metric_id) {
-        if ((mask & (1ULL << static_cast<uint32_t>(metric_id))) == 0) continue;
-        if (!_effect_runtime->set_metric_pod(binding.instance_id, metric_id,
-                revision, metrics[static_cast<size_t>(metric_id)], error))
+        if (!mask.test(metric_id)) continue;
+        if (!effect_pod_metric(_effect_runtime, _effect_forwarder,
+                binding.instance_id, binding.generation, metric_id, revision,
+                metrics[static_cast<size_t>(metric_id)], error))
             return false;
     }
     return true;
 }
 
 void NativeEconomyRuntime::refresh_family_effect_metrics_for_branch(
-        uint64_t branch_handle, int64_t revision, uint64_t requested_mask) {
+        uint64_t branch_handle, int64_t revision, const MetricMask &requested_mask) {
     const auto found = _family_effect_instances_by_branch.find(branch_handle);
     if (found == _family_effect_instances_by_branch.end()) return;
     const std::vector<int64_t> instance_ids = found->second;
@@ -17236,7 +17273,7 @@ void NativeEconomyRuntime::refresh_family_effect_metrics_for_branch(
 }
 
 void NativeEconomyRuntime::refresh_family_effect_metrics_for_cell(
-        int32_t cell, int64_t revision, uint64_t requested_mask) {
+        int32_t cell, int64_t revision, const MetricMask &requested_mask) {
     const auto found = _family_effect_instances_by_cell.find(cell);
     if (found == _family_effect_instances_by_cell.end()) return;
     const std::vector<int64_t> instance_ids = found->second;
@@ -17275,8 +17312,10 @@ void NativeEconomyRuntime::clear_family_branch_effects(uint64_t branch_handle) {
             const size_t binding_index = indexed->second;
             const FamilyEffectBinding &binding = _family_effect_bindings[binding_index];
             std::string error;
-            if (_effect_runtime->retire_instance_pod(binding.instance_id,
-                    binding.generation, _current_day.get(), error)) {
+            const bool retired = effect_pod_retire(_effect_runtime,
+                _effect_forwarder, binding.instance_id, binding.generation,
+                _current_day.get(), error);
+            if (retired) {
                 remove_family_effect_binding(binding_index);
             }
         }
@@ -17295,8 +17334,9 @@ void NativeEconomyRuntime::clear_family_branch_effects(uint64_t branch_handle) {
             identity = trace_hash_mix(identity, definition_hash);
             const int64_t instance_id = static_cast<int64_t>(identity &
                 0x7fffffffffffffffULL);
-            const bool retired = _effect_runtime->retire_instance_pod(
-                instance_id, generation, _current_day.get(), error);
+            const bool retired = effect_pod_retire(_effect_runtime,
+                _effect_forwarder, instance_id, generation, _current_day.get(),
+                error);
             // Keep a non-zero binding when the bounded Effect queue is full or
             // the definition is temporarily unavailable. The next branch
             // reconciliation can retry retirement instead of silently losing
@@ -17345,6 +17385,38 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
         identity = trace_hash_mix(identity, definition_hash);
         return static_cast<int64_t>(identity & 0x7fffffffffffffffULL);
     };
+    // The other identity shape in this file. The founding random-pool grant
+    // (grant_family_effect_to_branches) and the trait path above mix the target
+    // cell in, because a neighbour-targeted effect owns one instance per target.
+    // grant_ancestral_precept_for_country does not, so a (branch, key) pair can
+    // legitimately exist under either shape.
+    auto shaped_effect_instance_id = [&](const std::string &definition_key,
+                                         int32_t target_cell) {
+        uint64_t identity = trace_hash_mix(1469598103934665603ULL,
+            branch_stable_id);
+        identity = trace_hash_mix(identity, static_cast<uint32_t>(
+            family_influences().cell[branch]));
+        identity = trace_hash_mix(identity, static_cast<uint32_t>(
+            std::max(0, target_cell)));
+        uint64_t definition_hash = 1469598103934665603ULL;
+        for (unsigned char ch : definition_key)
+            definition_hash = trace_hash_mix(definition_hash, ch);
+        identity = trace_hash_mix(identity, definition_hash);
+        return static_cast<int64_t>(identity & 0x7fffffffffffffffLL);
+    };
+    // Restore rebuild asks "is this instance still alive", and that question has
+    // to go to whichever side owns EFFECT. EffectRuntime::has_instance_pod only
+    // answers for the legacy authority: under EFFECT worker authority the main
+    // thread is a writeback mirror, so every worker-owned instance read as absent
+    // and the binding was dropped -- which then also leaked the instance, because
+    // clear_family_branch_effects retires by binding.
+    auto instance_alive = [&](int64_t instance_id) {
+        bool exists = false;
+        if (!effect_pod_instance_exists(_effect_runtime, _effect_forwarder,
+                instance_id, branch_generation, exists))
+            return false;
+        return exists;
+    };
     auto resolve_effect_target = [&](const std::string &definition_key,
                                      uint64_t &target_handle,
                                      uint32_t &target_generation,
@@ -17367,7 +17439,12 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
             if (metadata.target_domain != 1) return false;
             target_handle = branch_handle;
             target_generation = branch_generation;
-            return true;
+            // Every other branch of this resolver rejects a zero generation; so
+            // must this one. A domain-1 (Branch) row with generation 0 passes
+            // the forwarder and is then rejected by the pod's own identity
+            // check, which surfaces as a family effect that silently never
+            // exists instead of a resolver that declined the target.
+            return target_generation != 0;
         }
         if (metadata.target_selector_kind == 2) { // SOURCE_CELL.
             if (metadata.target_domain != 2 && metadata.target_domain != 4 &&
@@ -17446,15 +17523,16 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
             0x7fffffffffffffffULL);
         const uint32_t generation = static_cast<uint32_t>(branch_handle >> 32U);
         std::string error;
-        if (!_effect_runtime->upsert_instance_pod(
-                instance_id, std::string("family.modifier.") + definition_key,
-                generation, 0x46414d494c59, static_cast<int64_t>(stable_id),
-                branch_handle, stable_id,
+        if (!effect_pod_upsert(_effect_runtime, _effect_forwarder, instance_id,
+                std::string("family.modifier.") + definition_key, generation,
+                0x46414d494c59, static_cast<int64_t>(stable_id), branch_handle,
+                stable_id,
                 static_cast<uint32_t>(family_influences().cell[branch]), 0,
-                _current_day.get(), true, error))
+                _current_day.get(), -1, true, error))
             return false;
-        if (!_effect_runtime->set_metric_pod(instance_id, 0,
-                family_effect_metric_revision(1), magnitude_q16, error))
+        if (!effect_pod_metric(_effect_runtime, _effect_forwarder, instance_id,
+                generation, 0, family_effect_metric_revision(1), magnitude_q16,
+                error))
             return false;
         return true;
     };
@@ -17563,7 +17641,8 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
                     static_cast<int32_t>(4 * Q16_ONE));
                 if (submit_changes && magnitude != binding.strength_q16) {
                     std::string error;
-                    if (_effect_runtime->set_metric_pod(binding.instance_id, 0,
+                    if (effect_pod_metric(_effect_runtime, _effect_forwarder,
+                            binding.instance_id, binding.generation, 0,
                             family_effect_metric_revision(1), magnitude, error)) {
                         binding.strength_q16 = magnitude;
                         mark_family_behavior_cache_dirty(
@@ -17572,7 +17651,7 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
                 }
                 publish_family_effect_metrics(binding,
                     family_effect_metric_revision(1),
-                    std::numeric_limits<uint64_t>::max());
+                    MetricMask::all_declared(FAMILY_METRIC_COUNT));
                 return false;
             }
             const auto found = desired_effects.find(definition_key);
@@ -17581,25 +17660,27 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
             if (submit_changes && strength != binding.strength_q16) {
                 std::string error;
                 if (strength == 0) {
-                    if (_effect_runtime->retire_instance_pod(binding.instance_id,
-                            binding.generation, _current_day.get(), error)) {
+                    if (effect_pod_retire(_effect_runtime, _effect_forwarder,
+                            binding.instance_id, binding.generation,
+                            _current_day.get(), error)) {
                         desired_effects.erase(definition_key);
                         return true;
                     }
-                } else if (_effect_runtime->upsert_instance_pod(binding.instance_id,
-                        binding.definition_key, binding.generation, 0x46414d54,
+                } else if (effect_pod_upsert(_effect_runtime, _effect_forwarder,
+                        binding.instance_id, binding.definition_key,
+                        binding.generation, 0x46414d54,
                         static_cast<int64_t>(branch_stable_id), branch_handle,
                         binding.target_handle, binding.target_generation, level,
-                        _current_day.get(), true, error) && _effect_runtime->set_metric_pod(
-                            binding.instance_id, 0,
-                            family_effect_metric_revision(1),
-                            strength, error)) {
+                        _current_day.get(), -1, true, error) &&
+                        effect_pod_metric(_effect_runtime, _effect_forwarder,
+                            binding.instance_id, binding.generation, 0,
+                            family_effect_metric_revision(1), strength, error)) {
                     binding.strength_q16 = strength;
                     mark_family_behavior_cache_dirty(
                         FAMILY_BEHAVIOR_DIRTY_EFFECT_BINDINGS);
                     publish_family_effect_metrics(binding,
                         family_effect_metric_revision(1),
-                        std::numeric_limits<uint64_t>::max());
+                        MetricMask::all_declared(FAMILY_METRIC_COUNT));
                     consumed = true;
                 }
             }
@@ -17642,15 +17723,22 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
                     0x7fffffffffffffffULL);
                 uint64_t target_handle = base_target_handle;
                 uint32_t target_generation = base_target_generation;
-                if (metadata.target_selector_kind == 6 ||
-                    metadata.target_selector_kind == 7) {
+                // Every fan-out kind (6 and above) creates one instance per
+                // resolved cell, so each instance must carry its own cell
+                // handle. The old 6/7 test meant kinds 8..11 fanned out into N
+                // instances that all still pointed at the anchor, which made
+                // "component" and "within N" behave as N copies of one cell.
+                // No shipped family program uses 8..12 (family_official_buffs
+                // only declares 0/2/3/5/6), so widening this cannot move an
+                // existing family number.
+                if (metadata.target_selector_kind >=
+                    EffectRuntime::SELECTOR_NEIGHBORS_R1) {
                     if (target_cell < 0 || target_cell >= _cell_count.get()) continue;
                     target_handle = static_cast<uint64_t>(target_cell);
                     target_generation = 1;
                 }
                 if (!submit_changes) {
-                    if (event_once || _effect_runtime->has_instance_pod(
-                            instance_id, branch_generation)) {
+                    if (event_once || instance_alive(instance_id)) {
                         add_family_effect_binding({branch_handle,
                             item.first, item.second, instance_id, branch_generation,
                             metadata.target_domain, target_handle,
@@ -17666,12 +17754,14 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
                     continue;
                 }
                 std::string error;
-                if (!_effect_runtime->upsert_instance_pod(instance_id,
-                        item.first, branch_generation, 0x46414d54,
+                if (!effect_pod_upsert(_effect_runtime, _effect_forwarder,
+                        instance_id, item.first, branch_generation, 0x46414d54,
                         static_cast<int64_t>(branch_stable_id), branch_handle,
                         target_handle, target_generation, level, _current_day.get(),
-                        true, error) || !_effect_runtime->set_metric_pod(instance_id,
-                        0, family_effect_metric_revision(1), item.second, error))
+                        -1, true, error) ||
+                    !effect_pod_metric(_effect_runtime, _effect_forwarder,
+                        instance_id, branch_generation, 0,
+                        family_effect_metric_revision(1), item.second, error))
                     continue;
                 add_family_effect_binding({branch_handle, item.first,
                     item.second, instance_id, branch_generation,
@@ -17682,7 +17772,7 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
                     publish_family_effect_metrics(
                         _family_effect_bindings[indexed->second],
                         family_effect_metric_revision(1),
-                        std::numeric_limits<uint64_t>::max());
+                        MetricMask::all_declared(FAMILY_METRIC_COUNT));
             }
         }
         std::vector<std::string> sibling_independent;
@@ -17728,21 +17818,32 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
             const int32_t magnitude = family_effect_prestige_magnitude_q16(
                 family_effect_id_for_key(key), level);
             if (!submit_changes) {
-                if (_effect_runtime->has_instance_pod(instance_id,
-                        branch_generation)) {
+                // A sibling's instance may have been created by the founding
+                // random-pool grant, which mixes the target cell into the
+                // identity. Probe both shapes and bind the one that is alive.
+                int64_t alive_id = 0;
+                if (instance_alive(instance_id)) {
+                    alive_id = instance_id;
+                } else {
+                    const int64_t shaped = shaped_effect_instance_id(
+                        key, family_influences().cell[branch]);
+                    if (instance_alive(shaped)) alive_id = shaped;
+                }
+                if (alive_id != 0) {
                     add_family_effect_binding({branch_handle, key, magnitude,
-                        instance_id, branch_generation, metadata.target_domain,
+                        alive_id, branch_generation, metadata.target_domain,
                         target_handle, target_generation, metadata.metric_mask});
                 }
                 continue;
             }
             std::string error;
-            if (!_effect_runtime->upsert_instance_pod(instance_id, key,
-                    branch_generation, 0x46414d54,
+            if (!effect_pod_upsert(_effect_runtime, _effect_forwarder,
+                    instance_id, key, branch_generation, 0x46414d54,
                     static_cast<int64_t>(branch_stable_id), branch_handle,
-                    target_handle, target_generation, level, _current_day.get(), true,
-                    error) ||
-                !_effect_runtime->set_metric_pod(instance_id, 0,
+                    target_handle, target_generation, level, _current_day.get(),
+                    -1, true, error) ||
+                !effect_pod_metric(_effect_runtime, _effect_forwarder,
+                    instance_id, branch_generation, 0,
                     family_effect_metric_revision(1), magnitude, error))
                 continue;
             add_family_effect_binding({branch_handle, key, magnitude, instance_id,
@@ -17753,38 +17854,55 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
                 publish_family_effect_metrics(
                     _family_effect_bindings[indexed->second],
                     family_effect_metric_revision(1),
-                    std::numeric_limits<uint64_t>::max());
+                    MetricMask::all_declared(FAMILY_METRIC_COUNT));
         }
         grant_random_pool_family_effect(family, submit_changes);
         if (!submit_changes) {
+            const int32_t source_cell = family_influences().cell[branch];
             for (const std::string &key : _family_effect_keys) {
                 EffectRuntime::FamilyEffectMetadataPod metadata;
                 if (!_effect_runtime->family_effect_metadata_pod(key, metadata) ||
                     metadata.source_kind == 0)
                     continue;
-                bool already = false;
-                for (const FamilyEffectBinding &mine : _family_effect_bindings) {
-                    if (mine.branch_handle == branch_handle &&
-                        mine.definition_key == key) {
-                        already = true;
-                        break;
-                    }
-                }
-                if (already) continue;
-                const int64_t instance_id = stable_effect_instance_id(key);
-                if (!_effect_runtime->has_instance_pod(instance_id,
-                        branch_generation))
-                    continue;
-                uint64_t target_handle = 0;
-                uint32_t target_generation = 0;
-                if (!resolve_effect_target(key, target_handle, target_generation,
-                        metadata))
+                uint64_t base_target_handle = 0;
+                uint32_t base_target_generation = 0;
+                if (!resolve_effect_target(key, base_target_handle,
+                        base_target_generation, metadata))
                     continue;
                 const int32_t magnitude = family_effect_prestige_magnitude_q16(
                     family_effect_id_for_key(key), level);
-                add_family_effect_binding({branch_handle, key, magnitude,
-                    instance_id, branch_generation, metadata.target_domain,
-                    target_handle, target_generation, metadata.metric_mask});
+                std::vector<int32_t> target_cells;
+                collect_family_effect_target_cells(source_cell,
+                    metadata.target_selector_kind, target_cells);
+                if (target_cells.empty()) target_cells.push_back(source_cell);
+                for (int32_t target_cell : target_cells) {
+                    // The founding random-pool grant owns one instance per target
+                    // cell under the shaped identity, so that is the first shape
+                    // to probe. The branch-scope shape stays as the fallback for
+                    // creators that do not mix the target cell
+                    // (grant_ancestral_precept_for_country). Missing both is the
+                    // original "the instance is gone" outcome.
+                    int64_t instance_id = shaped_effect_instance_id(key, target_cell);
+                    if (!instance_alive(instance_id)) {
+                        instance_id = stable_effect_instance_id(key);
+                        if (!instance_alive(instance_id)) continue;
+                    }
+                    uint64_t target_handle = base_target_handle;
+                    uint32_t target_generation = base_target_generation;
+                    // Same rule as the apply path above: a fan-out kind means
+                    // one instance per cell, so the handle has to follow the
+                    // cell rather than stay on the anchor.
+                    if (metadata.target_selector_kind >=
+                        EffectRuntime::SELECTOR_NEIGHBORS_R1) {
+                        if (target_cell < 0 || target_cell >= _cell_count.get())
+                            continue;
+                        target_handle = static_cast<uint64_t>(target_cell);
+                        target_generation = 1;
+                    }
+                    add_family_effect_binding({branch_handle, key, magnitude,
+                        instance_id, branch_generation, metadata.target_domain,
+                        target_handle, target_generation, metadata.metric_mask});
+                }
             }
         }
     }
@@ -19415,8 +19533,13 @@ void NativeEconomyRuntime::rebuild_family_influences(bool rebuild_derived) {
         }
         const uint64_t branch_handle =
             family_influences().handle_for_index(branch);
-        constexpr uint64_t FAMILY_COMMIT_METRICS =
-            ((1ULL << FAMILY_METRIC_COUNT) - 1ULL) ^ 1ULL;
+        // Every declared metric except id 0 (the branch magnitude, which the
+        // binding supplies as strength_q16 rather than a sample).
+        const MetricMask FAMILY_COMMIT_METRICS = [] {
+            MetricMask mask = MetricMask::all_declared(FAMILY_METRIC_COUNT);
+            mask.unset(FAMILY_METRIC_MAGNITUDE_Q16);
+            return mask;
+        }();
         refresh_family_effect_metrics_for_branch(branch_handle,
             family_effect_metric_revision(1), FAMILY_COMMIT_METRICS);
         if (changed) reconcile_family_branch_effects(branch_handle, true);
@@ -20698,6 +20821,11 @@ NativeEconomyRuntime::advance_household_market_chunk(
         }
         _births = saturating_add(_births, market_result.births, _saturation_count);
         _deaths = saturating_add(_deaths, market_result.deaths, _saturation_count);
+        if (_market_cell_offsets[market] < _market_cell_offsets[market + 1]) {
+            const int32_t annual_cell = _market_cells[_market_cell_offsets[market]];
+            record_annual_event(annual_cell, AnnualMetric::BIRTHS, market_result.births);
+            record_annual_event(annual_cell, AnnualMetric::DEATHS, market_result.deaths);
+        }
         for (const PersonMarketAttribution &attribution :
                 market_result.person_attributions) {
             int32_t person = -1;
@@ -22307,9 +22435,11 @@ void NativeEconomyRuntime::retire_person(int32_t person_index) {
             static_cast<uint64_t>(persons_store().stable_id[person_index]));
         hash = trace_hash_mix(hash, 0x504552534f4eULL);
         std::string error;
-        _effect_runtime->retire_instance_pod(
-            static_cast<int64_t>(hash & 0x7fffffffffffffffULL),
-            static_cast<uint32_t>(person_handle >> 32U), _current_day.get(), error);
+        const int64_t instance_id = static_cast<int64_t>(
+            hash & 0x7fffffffffffffffULL);
+        const uint32_t generation = static_cast<uint32_t>(person_handle >> 32U);
+        effect_pod_retire(_effect_runtime, _effect_forwarder, instance_id,
+                          generation, _current_day.get(), error);
     }
     if (_modifier_runtime != nullptr)
         _modifier_runtime->unregister_person_target(person_handle);
@@ -22334,15 +22464,21 @@ void NativeEconomyRuntime::register_person_effect(int32_t person_index) {
     hash = trace_hash_mix(hash, 0x504552534f4eULL);
     const int64_t instance_id = static_cast<int64_t>(
         hash & 0x7fffffffffffffffULL);
-    if (_effect_runtime->has_instance_pod(instance_id,
-            static_cast<uint32_t>(person_handle >> 32U))) return;
+    // Authority-aware dedup. EffectRuntime is writeback-only under worker
+    // authority, so the old query was always false there and every call
+    // re-upserted the row -- and each re-upsert carries a fresh next_due_day,
+    // which kept postponing the fire instead of being a no-op.
+    bool already_registered = false;
+    effect_pod_instance_exists(_effect_runtime, _effect_forwarder, instance_id,
+        static_cast<uint32_t>(person_handle >> 32U), already_registered);
+    if (already_registered) return;
     std::string error;
-    _effect_runtime->upsert_instance_pod(
-        instance_id,
+    effect_pod_upsert(_effect_runtime, _effect_forwarder, instance_id,
         "person.modifier.gameplay.generic.bonus",
         static_cast<uint32_t>(person_handle >> 32U), 0x50455253,
         persons_store().stable_id[person_index], person_handle, person_handle,
-        static_cast<uint32_t>(person_handle >> 32U), 0, _current_day.get(), true, error);
+        static_cast<uint32_t>(person_handle >> 32U), 0, _current_day.get(), -1,
+        true, error);
 }
 
 void NativeEconomyRuntime::promote_person_for_family(int32_t family_index) {
@@ -24233,6 +24369,11 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _resource_current_generation = 0;
     _last_published_resource_deltas.clear();
     _epoch_cell_country.clear();
+    _epoch_country_cell_offsets.clear();
+    _epoch_country_cells.clear();
+    _epoch_tag_bits.clear();
+    _epoch_tag_words = 0;
+    _epoch_tag_bits_valid = false;
     _epoch_cell_visible.clear();
     _epoch_player_country_slot = -1;
     _epoch_trade_vision_gated = false;

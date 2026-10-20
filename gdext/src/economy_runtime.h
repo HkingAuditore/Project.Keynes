@@ -35,6 +35,9 @@
 #include "country_ai_core.h"
 #include "natural_resource_kernel.h"
 #include "trade_visual_cache.h"
+#include "annual_development_ledger.h"
+#include "metric_mask.h"
+#include "target_tag.h"
 
 namespace pk {
 
@@ -59,6 +62,7 @@ struct TrackBDerivedCellWork {
 struct RuntimeEconomyEcp2State;
 
 class EffectRuntime;
+class EffectInstanceForwarder;
 
 class NativeCountryRuntime;
 class NativeSimulationHost;
@@ -400,9 +404,16 @@ public:
         FAMILY_METRIC_COUNTRY_POPULATION_Q16 = 47,
         FAMILY_METRIC_COUNTRY_BUILDINGS_INSTALLED = 48,
         FAMILY_METRIC_COUNTRY_TRADE_BASE_VALUE_Q16 = 49,
-        // metric_mask is a uint64_t, so this count must never exceed 64.
+        // The selection set is a MetricMask (256 ids), so this count may grow
+        // past 64 -- it just must not exceed MetricMask::CAPACITY, which the
+        // static_assert below pins at compile time. Ids are the array index, so
+        // new rows MUST be appended; reordering silently changes what every
+        // existing card measures.
         FAMILY_METRIC_COUNT = 50,
     };
+    static_assert(FAMILY_METRIC_COUNT <= MetricMask::CAPACITY,
+        "FAMILY_METRIC_COUNT exceeds MetricMask::CAPACITY; widen the mask "
+        "before appending metric ids");
 
     enum FamilyBehaviorDirtyReason : uint32_t {
         FAMILY_BEHAVIOR_DIRTY_INITIAL = 1u << 0u,
@@ -441,6 +452,11 @@ public:
     ~NativeEconomyRuntime();
     void attach_country_runtime(NativeCountryRuntime *runtime) { _country_runtime = runtime; }
     void attach_simulation_host(NativeSimulationHost *host) { _simulation_host = host; }
+    AnnualEconomyFacts capture_annual_facts(uint64_t country_handle, bool flows) const;
+    void publish_annual_development_facts();
+    bool annual_observes_cell(int32_t cell) const;
+    void record_annual_event(int32_t cell, AnnualMetric metric, int64_t value);
+    void record_annual_production(int32_t cell);
     uint64_t asset_peer_request_high_watermark() const noexcept;
     void attach_csv_recorder(EconomyCsvRecorder *recorder) { _csv_recorder = recorder; }
     void set_sync_writes_forbidden(bool forbidden) {
@@ -590,6 +606,12 @@ public:
         EconomyStageResult &result, std::string &error);
     void attach_modifier_runtime(ModifierRuntime *runtime) { _modifier_runtime = runtime; }
     void attach_effect_runtime(EffectRuntime *runtime) { _effect_runtime = runtime; }
+    // M2b: the family path writes Effect instances one row at a time, so it has
+    // to route through the same forwarder the declarative batch path uses.
+    // Null keeps the pre-M2b behaviour of writing EffectRuntime directly.
+    void attach_effect_forwarder(EffectInstanceForwarder *forwarder) {
+        _effect_forwarder = forwarder;
+    }
     void attach_trigger_runtime(TriggerRuntime *runtime) { _trigger_runtime = runtime; }
     bool valid_family_effect_entity_handle(uint64_t handle) const;
     void notify_era_milestone_activated(uint64_t country_handle);
@@ -2399,7 +2421,9 @@ private:
         int32_t target_domain = 0;
         uint64_t target_handle = 0;
         uint32_t target_generation = 0;
-        uint64_t metric_mask = 0;
+        // Which metrics this binding's program reads, copied from
+        // FamilyEffectMetadataPod when the binding is created.
+        MetricMask metric_mask;
         template<class Visitor> void visit_persisted(Visitor &visit) const {
             visit(branch_handle);
             visit(definition_key);
@@ -6284,13 +6308,39 @@ private:
     int32_t _technology_words = 0;
     NativeCountryRuntime *_country_runtime = nullptr;
     NativeSimulationHost *_simulation_host = nullptr;
+    std::array<int64_t, ANNUAL_METRIC_COUNT> _annual_epoch_events{};
+    std::vector<AnnualBreakdown> _annual_epoch_industries;
     EconomyCsvRecorder *_csv_recorder = nullptr; // facade-owned; destroyed after worker joins
     bool _sync_writes_forbidden = false;
     uint32_t _d7_operation_gate_mask = RUNTIME_ECONOMY_D7_FISCAL_GATE_MASK;
     ModifierRuntime *_modifier_runtime = nullptr;
     EffectRuntime *_effect_runtime = nullptr;
+    EffectInstanceForwarder *_effect_forwarder = nullptr;
     TriggerRuntime *_trigger_runtime = nullptr;
     std::vector<int32_t> _epoch_cell_country;
+    // Country territory CSR, rebuilt from _epoch_cell_country by
+    // rebuild_country_territory_index() at the same moment the ownership column
+    // is taken. Derived: never persisted, never hashed.
+    //
+    // Why a copy on this side instead of reading the country pod's own CSR: the
+    // pod rebuilds on its own schedule, and a target set that disagrees with the
+    // ownership column the economy already trusts is worse than no target set at
+    // all. Building from _epoch_cell_country makes "anchor cell" and "territory"
+    // true statements about the same bytes by construction.
+    //
+    // When _epoch_country_cell_offsets is empty the consumers fall back to a
+    // linear scan of _epoch_cell_country, so hand-built fixtures and the pre-index
+    // path keep the old semantics.
+    std::vector<int32_t> _epoch_country_cell_offsets;
+    std::vector<int32_t> _epoch_country_cells;
+    // Tag predicate table, copied from EffectRuntime at attach time.
+    TargetTagTable _target_tags;
+    // Per-epoch tag bitset: tag_count words-runs of ceil(cell_count/64) words,
+    // tag-major. Derived from _target_tags + the epoch's metric columns, so it
+    // is never persisted, never hashed and never restored.
+    mutable std::vector<uint64_t> _epoch_tag_bits;
+    mutable int32_t _epoch_tag_words = 0;
+    mutable bool _epoch_tag_bits_valid = false;
     std::vector<uint8_t> _epoch_cell_visible;
     int32_t _epoch_player_country_slot = -1;
     bool _epoch_trade_vision_gated = false;
@@ -6722,7 +6772,7 @@ private:
     std::vector<int32_t> _family_trait_behavior_condition_arg0;
     std::vector<int64_t> _family_trait_behavior_condition_values;
     // Catalog-derived union of metric operands; never persisted or hashed.
-    std::vector<uint64_t> _family_trait_behavior_metric_masks;
+    std::vector<MetricMask> _family_trait_behavior_metric_masks;
     std::vector<int32_t> _family_trait_modifier_offsets;
     std::vector<std::string> _family_trait_modifier_definition_keys;
     std::vector<int32_t> _family_trait_modifier_targets;
@@ -7158,6 +7208,28 @@ private:
                                 int64_t &sat) const;
     int32_t consumption_living_standard_level(int32_t slot) const;
     bool capture_country_epoch(std::string &error);
+    // Rebuilds _epoch_country_cell_offsets / _epoch_country_cells from
+    // _epoch_cell_country. Counting sort in three linear passes, called once per
+    // epoch capture rather than per selector query. Clears both columns when the
+    // ownership column is absent or no country count is known, which is what
+    // makes the consumers' linear-scan fallback kick in.
+    void rebuild_country_territory_index();
+    // Builds the per-epoch tag bitset on first use. Lazy on purpose: building it
+    // eagerly in capture_country_epoch() would make every save pay a per-cell
+    // metric sample even when no card uses a tag, and the sample is the whole
+    // cost of the feature (cells x 1 sample, then tag tests are integer work).
+    //
+    // const because the bitset is a memoised *derived* view of state that is
+    // already frozen for the epoch -- it can never disagree with
+    // _epoch_cell_country. Reentrancy is not a concern here for the same reason
+    // the rest of the epoch columns are not: one writer, readers gated by the
+    // epoch, same as _merchant_nonempty_cells.
+    void ensure_epoch_tag_bits() const;
+    // True when the CSR is self-consistent with _epoch_country_count, i.e. its
+    // slice table covers every slot and its last offset equals the cell list
+    // length. Consumers use this to decide between O(1) index reads and the
+    // linear-scan fallback, so a half-built index can never be read.
+    bool country_territory_index_ready() const;
     void refresh_epoch_development();
     // Writes the authoritative composite/dimension columns for one cohort and
     // returns the composite. `tier_*_q16` point at the SAT_TIER_COUNT-wide slice
@@ -7858,13 +7930,13 @@ private:
     int64_t family_effect_metric_revision(int32_t phase) const;
     bool publish_family_effect_metrics(const FamilyEffectBinding &binding,
                                        int64_t revision,
-                                       uint64_t requested_mask);
+                                       const MetricMask &requested_mask);
     void refresh_family_effect_metrics_for_branch(uint64_t branch_handle,
                                                   int64_t revision,
-                                                  uint64_t requested_mask);
+                                                  const MetricMask &requested_mask);
     void refresh_family_effect_metrics_for_cell(int32_t cell,
                                                 int64_t revision,
-                                                uint64_t requested_mask);
+                                                const MetricMask &requested_mask);
     int32_t family_trait_behavior_factor_q16(uint64_t family_handle,
                                              int32_t axis,
                                              int32_t selector_kind,
@@ -7878,7 +7950,8 @@ private:
     void fill_family_behavior_metrics(int32_t family_index, int32_t branch,
                                       int32_t cell, int64_t *metrics,
                                       int32_t metric_count,
-                                      uint64_t metric_mask = UINT64_MAX) const;
+                                      const MetricMask &metric_mask =
+                                          MetricMask::all()) const;
     bool evaluate_family_behavior_conditions(int32_t edge,
                                              const int64_t *metrics,
                                              int32_t metric_count) const;
@@ -7927,6 +8000,40 @@ public:
     // real capital / city-cell anchor once the game models one -- until then a
     // cell-targeted ideology effect is anchored on the country's first cell.
     int32_t country_anchor_cell(int32_t country_slot) const;
+    // How many cells `country_slot` owns in the current epoch. Returns 0 when
+    // the epoch index has not been rebuilt or the slot owns nothing.
+    int32_t country_cell_count(int32_t country_slot) const;
+    // `index`-th cell owned by `country_slot`, ascending by cell id, or -1.
+    // Ascending order is what makes SELECTOR_OWN_TERRITORY replayable: a cap
+    // always keeps the lowest cell ids.
+    int32_t country_cell_at(int32_t country_slot, int32_t index) const;
+    // Catalog-declared tag table (see target_tag.h). Called once where the
+    // effect runtime is attached, so the selector never has to reach through a
+    // possibly-null pointer from a const query path. Assigning here also
+    // invalidates the per-epoch tag bitset, so ordering against
+    // capture_country_epoch() does not matter.
+    void set_target_tags(const TargetTagTable &tags);
+    int32_t target_tag_count() const { return _target_tags.count(); }
+    // True when `cell` satisfies `tag` in the current epoch. O(1) after the
+    // first call of an epoch builds the bitset; out-of-range inputs are false.
+    bool cell_has_target_tag(int32_t cell, int32_t tag) const;
+    // Per-cell metric sampling for programs that have NO family behind them
+    // (ideology cards today, technology effects later).
+    //
+    // fill_family_behavior_metrics() is family-relative, so it cannot be opened
+    // to other domains as-is: it is private and every existing caller passes a
+    // real family/branch. This door pins both to -1, which makes every
+    // family-relative metric (ids 1..4, 15..21, 32..34) read 0 -- the correct
+    // answer for "this cell has no family behind the card", not a bug.
+    //
+    // `out_metrics` is fully zeroed first, then only the ids selected by
+    // `metric_mask` are computed, so a caller can pass the program's declared
+    // mask straight from FamilyEffectMetadataPod and publish exactly the ids it
+    // asked for. Metrics outside the mask stay 0.
+    void sample_effect_metrics(int32_t cell, int32_t metric_count,
+                               int64_t *out_metrics,
+                               const MetricMask &metric_mask =
+                                   MetricMask::all()) const;
 private:
     void fire_family_event_once_effect(int32_t family_index,
                                        const std::string &program_key);

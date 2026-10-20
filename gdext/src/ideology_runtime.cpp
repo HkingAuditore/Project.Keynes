@@ -4,6 +4,9 @@
 #include "economy_runtime.h"
 #include "effect_runtime.h"
 #include "effect_instance_forwarder.h"
+// Authority-aware instance queries: the ideology report and the ideology restore
+// both ask whether an instance still exists / has fired.
+#include "economy_effect_forward.h"
 #include "modifier_runtime.h"
 #include "runtime_effect_pod.h"
 #include "runtime_ideology_draw_kernel.h"
@@ -21,6 +24,7 @@
 #include <limits>
 #include <numeric>
 #include <tuple>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -1342,6 +1346,8 @@ bool NativeIdeologyRuntime::collect_effect_activations(
             EffectActivation activation;
             activation.program = program;
             activation.source_kind = metadata.source_kind;
+            activation.target_domain = metadata.target_domain;
+            activation.metric_mask = metadata.metric_mask;
             activation.ref.program_hash = mix(
                 1469598103934665603ULL, program.data(), program.size());
             activation.ref.target_handle = target.first;
@@ -1369,7 +1375,11 @@ void NativeIdeologyRuntime::retire_effect_activations(IdeaState &state,
         return;
     }
     for (const IdeaState::EffectInstanceRef &ref : state.effect_instances) {
-        if (_effect_forwarder != nullptr) {
+        // `attached()`, not just non-null: DCWorldExt creates the forwarder with
+        // the world and only attach()es it once the Effect catalog exists, and an
+        // unattached forwarder answers retire() with unavailable() -- dropping the
+        // retire instead of falling back to the legacy authority.
+        if (_effect_forwarder != nullptr && _effect_forwarder->attached()) {
             _effect_forwarder->retire(ref.instance_id, ref.generation, day);
             continue;
         }
@@ -1399,7 +1409,8 @@ bool NativeIdeologyRuntime::reconcile_effect_activations(
             }
         }
         if (keep) continue;
-        if (_effect_forwarder != nullptr) {
+        // Same attached() rule as retire_effect_activations above.
+        if (_effect_forwarder != nullptr && _effect_forwarder->attached()) {
             _effect_forwarder->retire(held.instance_id, held.generation, day);
             continue;
         }
@@ -1476,7 +1487,12 @@ bool NativeIdeologyRuntime::reconcile_effect_activations(
         batch["levels"] = levels;
         batch["next_due_days"] = next_due_days;
         batch["active"] = active;
-        const Dictionary result = _effect_forwarder != nullptr
+        // Same attached() rule as the retires: submit_batch on an unattached
+        // forwarder can only answer effect_runtime_unavailable, which would read
+        // as a rejected card instead of "use the legacy authority".
+        const bool forward =
+            _effect_forwarder != nullptr && _effect_forwarder->attached();
+        const Dictionary result = forward
             ? _effect_forwarder->submit_batch(batch)
             : _effect_runtime->submit_instances(batch);
         if (!static_cast<bool>(result.get("ok", false))) {
@@ -1489,6 +1505,62 @@ bool NativeIdeologyRuntime::reconcile_effect_activations(
         if (int32_t(result.get("rejected", 0)) > 0) {
             error = "ideology_effect_instance_submit_rejected";
             return false;
+        }
+    }
+
+    // ── Metric snapshots ────────────────────────────────────────────────────
+    // A managed ideology program that conditions on a metric reads whatever was
+    // last written for its instance. Nothing used to write, so every METRIC_GTE
+    // compared `0 >= threshold` and was permanently false while METRIC_LTE was
+    // permanently true -- which is why the V1..V6 mechanism cards could only be
+    // asserted as declarations, never observed firing.
+    //
+    // Published every reconcile, not only on creation: a condition has to see
+    // the world move, and the world moves every day.
+    //
+    // Sampled at the instance's own target cell (not at the country anchor), so
+    // "this cell's extractive share >= 60%" means the cell the effect lands on.
+    // One sample per distinct cell per reconcile: nine cards pointing at the
+    // same cell cost one building scan, not nine.
+    if (_economy_runtime != nullptr && !desired.empty()) {
+        constexpr int32_t metric_count = NativeEconomyRuntime::FAMILY_METRIC_COUNT;
+        const int64_t revision = day > (std::numeric_limits<int64_t>::max() - 1) / 4
+            ? std::numeric_limits<int64_t>::max() : day * 4 + 1;
+        std::unordered_map<int32_t, std::vector<int64_t>> sampled_by_cell;
+        for (const EffectActivation &activation : desired) {
+            if (activation.metric_mask.is_none()) continue;
+            // COUNTRY-domain programs carry a country handle in target_handle;
+            // sampling it as a cell index would read an unrelated column.
+            if (activation.target_domain != 2 && activation.target_domain != 5)
+                continue;
+            const int64_t raw = static_cast<int64_t>(activation.ref.target_handle);
+            if (raw < 0 || raw > std::numeric_limits<int32_t>::max()) continue;
+            const int32_t cell = static_cast<int32_t>(raw);
+            auto found = sampled_by_cell.find(cell);
+            if (found == sampled_by_cell.end()) {
+                std::vector<int64_t> values(static_cast<size_t>(metric_count), 0);
+                // `all_declared` rather than the activation's own mask: the
+                // cache is keyed on the cell and shared by every card that
+                // targets it, each with a different mask.
+                _economy_runtime->sample_effect_metrics(cell, metric_count,
+                    values.data(), MetricMask::all_declared(metric_count));
+                found = sampled_by_cell.emplace(cell, std::move(values)).first;
+            }
+            std::string metric_error;
+            for (int32_t metric_id = 0; metric_id < metric_count; ++metric_id) {
+                // MetricMask covers 256 ids (infra item L0-1), so this is a
+                // plain membership test rather than a shift that would be
+                // undefined past 63.
+                if (!activation.metric_mask.test(metric_id)) continue;
+                // A rejected metric (stale instance raced by a retire) must not
+                // fail the reconcile: the instance set is already correct.
+                if (!effect_pod_metric(_effect_runtime, _effect_forwarder,
+                        activation.ref.instance_id, activation.ref.generation,
+                        metric_id, revision,
+                        found->second[static_cast<size_t>(metric_id)],
+                        metric_error))
+                    break;
+            }
         }
     }
 
@@ -2547,6 +2619,12 @@ Dictionary NativeIdeologyRuntime::effect_instance_report(int64_t handle) const {
             program_hashes.append(static_cast<int64_t>(ref.program_hash));
             target_handles.append(static_cast<int64_t>(ref.target_handle));
             target_generations.append(static_cast<int32_t>(ref.target_generation));
+            // Deliberately NOT authority-aware: this column is the *ownership*
+            // bit ("did the main thread own this instance, or was it handed to
+            // the worker"), the same signal family_branch_effects.effect_present
+            // carries. Routing it through the worker snapshot would make both
+            // authorities report 1 and destroy the only way a reroute can be
+            // told apart from a drop.
             present.append(_effect_runtime != nullptr &&
                 _effect_runtime->has_instance_pod(
                     ref.instance_id, ref.generation) ? 1 : 0);
@@ -3562,16 +3640,26 @@ Dictionary NativeIdeologyRuntime::restore(const PackedByteArray &packed) {
     };
     if (compute_state_hash() != state_hash) { rollback(); return fail("ideology_save_state_hash_mismatch"); }
     // A card whose effect lives on a reconciled instance is only half-restored by
-    // PKID. If the EffectRuntime lost that instance the card would silently stop
+    // PKID. If the Effect domain lost that instance the card would silently stop
     // producing anything, so prove ownership here instead. PKEF restores first
     // (game_save_coordinator), which makes this an ordering assertion as well.
-    if (_effect_runtime != nullptr) {
+    //
+    // The check has to ask whichever side owns EFFECT: under worker authority
+    // EffectRuntime is writeback-only, so the old unconditional query failed every
+    // worker-owned instance and rejected a perfectly good save with
+    // ideology_effect_instance_missing. "Cannot answer" is deliberately NOT a
+    // failure -- a transport that is not ready yet must not fail a restore.
+    if (_effect_runtime != nullptr || _effect_forwarder != nullptr) {
         for (const CountryState &country : _countries) {
             for (const IdeaState &state : country.ideas) {
                 for (const IdeaState::EffectInstanceRef &ref :
                         state.effect_instances) {
-                    if (!_effect_runtime->has_instance_pod(
-                            ref.instance_id, ref.generation)) {
+                    bool ref_exists = false;
+                    if (!effect_pod_instance_exists(_effect_runtime,
+                            _effect_forwarder, ref.instance_id, ref.generation,
+                            ref_exists))
+                        continue;
+                    if (!ref_exists) {
                         rollback();
                         return fail("ideology_effect_instance_missing");
                     }

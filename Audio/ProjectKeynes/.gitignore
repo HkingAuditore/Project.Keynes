@@ -1,0 +1,7 @@
+.cache/
+.unsaved/
+.user/
+.restore/
+Build/
+*.user
+*.fspro.user

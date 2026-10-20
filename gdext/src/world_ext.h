@@ -435,6 +435,10 @@ public:
     // Exercises the shared effect target selector on a synthetic hex grid so
     // target selection is verifiable without a live map_data / epoch run.
     bool runtime_economy_target_selector_self_test() const;
+    // MetricMask (infra item L0-1) capacity self check: proves ids past the
+    // old 64 ceiling are addressable. Pure value-type assertions, no world
+    // state, so it can run before any catalog is configured.
+    bool runtime_metric_mask_self_test() const;
     bool arm_runtime_fault_injection(const godot::String &point);
     void clear_runtime_fault_injection();
     godot::Dictionary runtime_economy_stage_order_contract_test() const;
@@ -478,6 +482,16 @@ public:
     int64_t get_country_state_hash() const;
     godot::Dictionary get_country_cell_summary(int cell_idx) const;
     godot::Dictionary get_country_snapshot(int64_t handle) const;
+    godot::Dictionary configure_annual_reports(int64_t handle, int64_t days_per_year,
+        int64_t initial_day, const godot::Dictionary &profile);
+    godot::Dictionary commit_annual_reports(int64_t day);
+    godot::Dictionary get_annual_report_status() const;
+    godot::Dictionary get_annual_report_snapshot(int64_t report_id) const;
+    godot::Dictionary get_annual_report_history(int32_t offset, int32_t limit) const;
+    godot::Dictionary mark_annual_report_presented(int64_t report_id);
+    godot::PackedByteArray capture_annual_report_state() const;
+    godot::Dictionary restore_annual_report_state(const godot::PackedByteArray &bytes);
+    godot::Dictionary annual_report_self_test() const;
     godot::Dictionary get_country_treasury_snapshot(int64_t handle) const;
     godot::Dictionary get_country_research_snapshot(int64_t handle) const;
     godot::Dictionary get_country_research_signal_snapshot(int64_t handle) const;
@@ -624,6 +638,11 @@ public:
     godot::Dictionary poll_effect_worker_intent();
     godot::Dictionary submit_effect_worker_ack(const godot::Dictionary &ack);
     bool effect_instance_fire_acked(int64_t instance_id, int64_t generation) const;
+    // `{ok, value, present}` for one published Effect metric. Presence is
+    // reported separately from the value so "published 0" and "never published"
+    // stay distinguishable -- the whole point of the ideology metric publisher.
+    godot::Dictionary query_effect_instance_metric(int64_t instance_id,
+                                                   int32_t metric_id) const;
     godot::Dictionary submit_effect_snapshots(const godot::Dictionary &batch);
     godot::Dictionary run_effect_daily(int64_t day_index);
     godot::Dictionary dispatch_effect_native_modifier();

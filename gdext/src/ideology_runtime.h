@@ -12,6 +12,7 @@
 #include <godot_cpp/variant/packed_int32_array.hpp>
 
 #include "effect_runtime.h"
+#include "metric_mask.h"
 #include "runtime_ideology_pod.h"
 
 namespace pk {
@@ -106,6 +107,9 @@ public:
     bool export_pod_catalog(const RuntimeCountryPodSnapshot &country,
                             RuntimeIdeologyPodCatalog &out,
                             std::string &error) const;
+    uint64_t annual_draw_sequence(uint64_t handle) const;
+    bool grant_annual_points(uint64_t handle, int64_t points_q16,
+        uint64_t sequence, int64_t day, std::string &error);
     // G8 ACTIVE write-back. The worker is the sole Ideology writer; this
     // rebuilds the facade-visible state from an immutable worker snapshot so
     // UI/save keep reading one runtime. Never call it while the main thread
@@ -244,6 +248,16 @@ private:
         // managed submission whose source_kind column is absent or mismatched,
         // so every activation has to carry its own.
         int32_t source_kind = 0;
+        // Declared target domain (2 = settlement cell, 3 = country, 5 =
+        // building/resource inside a cell). Only the cell-targeted domains get
+        // metric snapshots published per tick; a COUNTRY program's target handle
+        // is a country handle, and sampling it as a cell would read the wrong
+        // column entirely.
+        int32_t target_domain = 3;
+        // The program's declared metric mask, copied out of
+        // FamilyEffectMetadataPod. Empty means "this program conditions on
+        // nothing", so the publisher does no work for it at all.
+        MetricMask metric_mask;
     };
     struct Offer {
         uint32_t generation = 0;

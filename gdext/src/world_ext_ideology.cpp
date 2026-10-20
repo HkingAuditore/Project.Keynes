@@ -264,6 +264,15 @@ Dictionary DCWorldExt::run_ideology_daily(int64_t day_index) {
         out["day"] = day_index;
         return out;
     }
+    if (_runtime_host && _runtime_host->annual_development_enabled()) {
+        AnnualDevelopmentReport pending;
+        std::string error;
+        if (_runtime_host->annual_pending_reward(pending) &&
+            ideology_runtime_from(_ideology_runtime)->grant_annual_points(
+                pending.country_handle, pending.reward_q16,
+                pending.reward_sequence, day_index, error))
+            _runtime_host->settle_annual_reward(pending.reward_sequence);
+    }
     return ideology_runtime_from(_ideology_runtime)->run_daily(day_index);
 }
 
