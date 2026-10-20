@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version='1.0' encoding='utf-8'?>
 <objects serializationModel="Studio.02.03.00">
 	<object class="Event" id="{3f620070-7dfa-46c0-867f-1db2529591eb}">
 		<property name="name">
@@ -90,10 +90,10 @@
 	<object class="MixerBusPanner" id="{2c28c591-6dfa-41aa-b319-4053236ea562}" />
 	<object class="SingleSound" id="{f7962408-9f20-45e1-8511-cb5a3c2553f9}">
 		<property name="length">
-			<value>0.070000000000000007</value>
+			<value>0.03283333333333333</value>
 		</property>
 		<relationship name="audioFile">
-			<destination>{4fafb0be-3e81-4918-bd57-f8fe95280d7c}</destination>
+			<destination>{115d61a1-e14d-5c5c-bd37-7ddd6326b242}</destination>
 		</relationship>
 	</object>
 	<object class="EventMixerGroup" id="{da99d541-1661-419a-b8ae-cb3d4922c230}">

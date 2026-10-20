@@ -2,7 +2,10 @@
 
 Open `../Open-FMOD-Studio.cmd` to edit `ProjectKeynes/ProjectKeynes.fspro` in Studio 2.03.15.
 Run `../Build-FMOD-Banks.cmd` after saving to build and synchronize the four Desktop banks.
-Run `../Run-FMOD-Demo.cmd` to audition the layered music and UI click in Godot 4.6.2.
+Run `../Run-FMOD-Demo.cmd` to audition the layered music and eight UI cues in Godot 4.6.2.
+
+The current menu and in-game UI use the CC0 paper palette under `ProjectKeynes/Assets/UI/`.
+See [source licenses](Sources/UI/README.md) and [UI feedback](../docs/audio/ui-feedback.md).
 
 `ProjectKeynes/Assets/Prototype/` contains original synthesized test audio produced by
 `tools/audio/generate_prototype_audio.py`. These are integration fixtures, not the final
