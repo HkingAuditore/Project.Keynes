@@ -5,11 +5,25 @@ const EXTENSION := "res://addons/FmodGodot/FmodGodot.gdextension"
 const BANK_ROOT := "res://assets/audio/banks/Desktop/"
 const MUSIC_EVENT := "event:/Music/Prototype"
 const CLICK_EVENT := "event:/UI/Click"
+const UIFeedback := preload("res://scripts/ui/ui_audio_feedback.gd")
+const UI_EVENTS := {
+	&"click": "Click", &"page": "Page", &"open": "Open", &"close": "Close",
+	&"confirm": "Confirm", &"toggle_on": "ToggleOn", &"toggle_off": "ToggleOff", &"tick": "Tick",
+}
+const UI_COOLDOWN_MS := {&"click": 45, &"page": 90, &"open": 120, &"close": 120,
+	&"confirm": 100, &"toggle_on": 45, &"toggle_off": 45, &"tick": 65}
+const MusicCatalog := preload("res://scripts/audio/music_event_catalog.gd")
+signal ui_sound_played(cue: StringName)
+
 var status := "not_initialized"
 var _system := 0
 var _master := 0
 var _music := 0
 var _banks: Array[int] = []
+var _ui_descriptions: Dictionary = {}
+var _ui_next_ms: Dictionary = {}
+var _music_key := &""
+var _music_descriptions: Dictionary = {}
 
 
 func _ready() -> void:
@@ -45,6 +59,10 @@ func _ready() -> void:
 	if settings != null:
 		settings.settings_changed.connect(apply_settings)
 		apply_settings(settings.values())
+	var feedback := UIFeedback.new()
+	feedback.name = "UIFeedback"
+	feedback.audio = self
+	add_child(feedback)
 
 
 func apply_settings(values: Dictionary) -> void:
@@ -66,6 +84,7 @@ func play_prototype(tension: float = 0.0) -> bool:
 		if int(ClassDB.class_call_static("StudioEventInstance", "start", _music)) != 0:
 			stop_music()
 			return false
+	_music_key = &"__prototype"
 	return set_tension(tension)
 
 
@@ -77,15 +96,98 @@ func set_tension(value: float) -> bool:
 
 
 func play_ui_click() -> bool:
+	return play_ui(&"click")
+
+
+## Semantic one-shots share the FMOD Master bus with music and settings.
+func play_ui(cue: StringName = &"click") -> bool:
+	if status != "ready" or not UI_EVENTS.has(cue):
+		return false
+	var now := Time.get_ticks_msec()
+	if now < int(_ui_next_ms.get(cue, 0)):
+		return false
+	var description := int(_ui_descriptions.get(cue, 0))
+	if description == 0:
+		description = int(ClassDB.class_call_static("StudioSystem", "get_event", _system,
+			"event:/UI/" + String(UI_EVENTS[cue])))
+		if description == 0:
+			return false
+		_ui_descriptions[cue] = description
+	var instance := int(ClassDB.class_call_static("StudioEventDescription", "create_instance", description))
+	if instance == 0:
+		return false
+	var result := int(ClassDB.class_call_static("StudioEventInstance", "start", instance))
+	ClassDB.class_call_static("StudioEventInstance", "release", instance)
+	if result == 0:
+		_ui_next_ms[cue] = now + int(UI_COOLDOWN_MS[cue])
+		ui_sound_played.emit(cue)
+	return result == 0
+
+
+## 按 key 切换循环音乐。同一首重复调用不会重启。
+func play_music(key: StringName) -> bool:
 	if status != "ready":
 		return false
-	var description := int(ClassDB.class_call_static("StudioSystem", "get_event", _system, CLICK_EVENT))
+	var event_path := MusicCatalog.path(key)
+	if event_path.is_empty():
+		return false
+	if _music != 0 and _music_key == key:
+		return true
+	stop_music()
+	var description := _music_description(event_path)
+	if description == 0:
+		return false
+	_music = int(ClassDB.class_call_static("StudioEventDescription", "create_instance", description))
+	if _music == 0:
+		return false
+	if int(ClassDB.class_call_static("StudioEventInstance", "start", _music)) != 0:
+		stop_music()
+		return false
+	_music_key = key
+	return true
+
+
+## 按时代播放探索音乐。pick_random 时在同代多段里随机挑一首。
+func play_explore(era: StringName, pick_random: bool = true) -> bool:
+	var tracks := MusicCatalog.tracks_for(era)
+	if tracks.is_empty():
+		return false
+	var key: StringName = tracks[randi() % tracks.size()] if pick_random else tracks[0]
+	return play_music(key)
+
+
+## 时代升级过渡：单次播放，叠加在当前音乐上，不打断它。
+func play_transition(key: StringName) -> bool:
+	return _play_one_shot(MusicCatalog.transition_path(key))
+
+
+## 胜利 stinger：单次播放，叠加在当前音乐上，不打断它。
+func play_stinger(key: StringName) -> bool:
+	return _play_one_shot(MusicCatalog.stinger_path(key))
+
+
+func _play_one_shot(event_path: String) -> bool:
+	if status != "ready" or event_path.is_empty():
+		return false
+	var description := _music_description(event_path)
+	if description == 0:
+		return false
 	var instance := int(ClassDB.class_call_static("StudioEventDescription", "create_instance", description))
 	if instance == 0:
 		return false
 	var result := int(ClassDB.class_call_static("StudioEventInstance", "start", instance))
 	ClassDB.class_call_static("StudioEventInstance", "release", instance)
 	return result == 0
+
+
+func _music_description(event_path: String) -> int:
+	var cached := int(_music_descriptions.get(event_path, 0))
+	if cached != 0:
+		return cached
+	var description := int(ClassDB.class_call_static("StudioSystem", "get_event", _system, event_path))
+	if description != 0:
+		_music_descriptions[event_path] = description
+	return description
 
 
 func stop_music() -> void:
@@ -99,7 +201,11 @@ func diagnostics() -> Dictionary:
 	if status != "ready":
 		return {"status": status}
 	ClassDB.class_call_static("StudioSystem", "flush_commands", _system)
+	var ui_voices := 0
+	for description in _ui_descriptions.values():
+		ui_voices += int(ClassDB.class_call_static("StudioEventDescription", "get_instance_count", description))
 	return {"status": status, "banks": _banks.size(), "music_playing": _music != 0,
+		"ui_voices": ui_voices,
 		"master_volume": ClassDB.class_call_static("StudioBus", "get_volume", _master),
 		"master_muted": ClassDB.class_call_static("StudioBus", "get_mute", _master),
 		"tension": ClassDB.class_call_static("StudioEventInstance", "get_parameter_by_name", _music, "Tension") if _music != 0 else 0.0,
