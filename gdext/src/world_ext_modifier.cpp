@@ -236,6 +236,26 @@ Dictionary DCWorldExt::explain_modifier_stat(int domain, int64_t entity_handle,
             stat_key, base_value);
 }
 
+Dictionary DCWorldExt::resolve_modifier_definition_terms(
+        const String &definition_key) const {
+    if (_modifier_runtime == nullptr) return unavailable();
+    std::vector<ModifierRuntime::ResolvedTerm> terms;
+    const bool found = runtime_from(_modifier_runtime)->resolve_definition_terms(
+        std::string(definition_key.utf8().get_data()), terms);
+    Dictionary out;
+    out["ok"] = found;
+    Array rows;
+    for (const ModifierRuntime::ResolvedTerm &term : terms) {
+        Dictionary row;
+        row["stat_id"] = term.stat_id;
+        row["operation"] = term.operation;
+        row["value"] = term.value;
+        rows.push_back(row);
+    }
+    out["terms"] = rows;
+    return out;
+}
+
 Dictionary DCWorldExt::get_modifier_report() const {
     return _modifier_runtime == nullptr ? unavailable()
         : runtime_from(_modifier_runtime)->report();
@@ -321,7 +341,15 @@ Dictionary DCWorldExt::restore_modifier_domain(int domain,
     std::vector<uint8_t> native(static_cast<size_t>(bytes.size()));
     if (!native.empty()) std::memcpy(native.data(), bytes.ptr(), native.size());
     std::string error;
-    const bool ok = runtime_from(_modifier_runtime)->restore_domain(domain, native, error);
+    // `allow_tax_catalog_extension = true`: the legacy hash only matches when the
+    // current catalog is exactly the saved one plus `country.tax.*` stats -- an
+    // append no existing instance can reference, so accepting it is safe. The
+    // country/economy paths gate the same flag on their own save version; this
+    // GDScript-facing entry point has no version to consult, and leaving it
+    // defaulted to false made `_legacy_catalog_hash_without_tax` unreachable
+    // here, so every tax-stat addition rejected every PKCM/PKGP section.
+    const bool ok = runtime_from(_modifier_runtime)->restore_domain(
+        domain, native, error, true);
     Dictionary out;
     out["ok"] = ok;
     out["reason"] = String(error.c_str());

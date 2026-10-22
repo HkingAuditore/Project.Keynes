@@ -3150,6 +3150,20 @@ Dictionary DCWorldExt::get_climate_physics_read_view() const {
     return out;
 }
 
+Dictionary DCWorldExt::set_runtime_ideology_parity_enabled(bool enabled) {
+    Dictionary out;
+    if (!_runtime_host) {
+        out["ok"] = false;
+        out["code"] = "runtime_worker_not_started";
+        return out;
+    }
+    _runtime_host->set_ideology_parity_enabled(enabled);
+    out["ok"] = true;
+    out["code"] = "ok";
+    out["enabled"] = _runtime_host->ideology_parity_enabled();
+    return out;
+}
+
 Dictionary DCWorldExt::set_runtime_climate_parity_forcing(bool enabled) {
     Dictionary out;
     if (!_runtime_host) {

@@ -4,6 +4,7 @@ const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const EconomyFacadeScript = preload("res://scripts/economy/economy_facade.gd")
 const EffectDomainCatalogScript = preload("res://scripts/effect/effect_domain_catalog.gd")
 const IdeologyCatalogScript = preload("res://scripts/ideology/ideology_catalog.gd")
+const IdeologyEffectCatalogScript = preload("res://scripts/ideology/ideology_effect_catalog.gd")
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 const WorkspaceScene = preload("res://scenes/ui/ideology_workspace.tscn")
 
@@ -18,6 +19,11 @@ func _init() -> void:
 	var economy_ir: Dictionary = EconomyCatalogScript.compile_native_catalog()
 	_expect("economy catalog compiles for ideology classes",
 		bool(economy_ir.get("ok", false)))
+	# Built once, early: both the definition-closure check below and the shared
+	# IR check at the end need it, and a second `build()` would double-load every
+	# domain catalog for no benefit.
+	_test_card_definitions_resolve()
+	var effect_catalog: Resource = EffectDomainCatalogScript.build()
 	var ideology_catalog: Resource = IdeologyCatalogScript.load_default()
 	_expect("default ideology catalog loads", ideology_catalog != null)
 	if ideology_catalog != null and bool(economy_ir.get("ok", false)):
@@ -49,8 +55,11 @@ func _init() -> void:
 			for value in min_counts:
 				two_tier += 1 if int(value) == 2 else 0
 				four_tier += 1 if int(value) == 4 else 0
-			_expect("resonances compile as 2- and 4-card school count rows",
-				two_tier == 6 and four_tier == 6)
+			# 6 school resonances + 8 route bonds at "2 cards"; 6 resonances +
+			# 5 route bonds at "4 cards" (market / learning / thoroughfare have
+			# fewer than four members, so they only ship the first tier).
+			_expect("resonances and route bonds compile as 2- and 4-card count rows",
+				two_tier == 14 and four_tier == 11)
 			var level_offsets: PackedInt32Array = ideology_ir.level_offsets
 			var three_levels := level_offsets.size() == (ideology_ir.ideology_ids as PackedStringArray).size() + 1
 			for index in range(1, level_offsets.size()):
@@ -118,17 +127,24 @@ func _init() -> void:
 					var low := PackedStringArray(levels[0]) if not levels.is_empty() \
 						else PackedStringArray()
 					by_name[String(row.get("display_name", ""))] = "、".join(low)
-				_expect("collective stewardship names agriculture and drought",
-					String(by_name.get("共同体治理", "")).contains("农业")
-					and String(by_name.get("共同体治理", "")).contains("旱灾"))
-				_expect("free exchange names trade capacity",
-					String(by_name.get("自由交换", "")).contains("贸易"))
+				# 共同体治理 is now an X1 spillover card: its face line says which
+				# cells it radiates from, not which national stats it moves.
+				_expect("collective stewardship names its agricultural source ring",
+					String(by_name.get("共同体治理", "")).contains("农业支柱")
+					and String(by_name.get("共同体治理", "")).contains("周围"))
+				# 自由交换 moved to a cell-level program this round: its card face
+				# line is the program summary, not a Modifier presenter line. This
+				# is the assertion that notices if the summary chain breaks and the
+				# card would render its cost and nothing else.
+				_expect("free exchange names all-output on diversified cells",
+					String(by_name.get("自由交换", "")).contains("全部产出"))
 				_expect("scholar office names science research",
 					String(by_name.get("学识官署", "")).contains("科学"))
 				# The card table is now conditional: 冶铁 must read as an input-side
 				# effect on a specific good rather than a flat national multiplier.
-				_expect("iron smelting names a good-level input effect",
-					String(by_name.get("冶铁", "")).contains("全国投入"))
+				_expect("iron smelting names the ring around iron cells",
+					String(by_name.get("冶铁", "")).contains("工业产出")
+					and String(by_name.get("冶铁", "")).contains("铁矿石"))
 				_expect("terrace farming names the terrain it targets",
 					String(by_name.get("梯田", "")).contains("丘陵"))
 				_expect("the four roads do not share one effect line",
@@ -149,8 +165,18 @@ func _init() -> void:
 				and bool(modifier_ir.get("ok", false)):
 			var keys_ir: Dictionary = ideology_catalog.compile_native_catalog(economy_ir, economy_ir)
 			var known_keys: PackedStringArray = modifier_ir.definition_keys
+			# A row that routes to a managed program names the *program*, not a
+			# Modifier definition. Those keys are owned by the effect catalog and
+			# are checked by `ideology_gate_chain_test` end to end; what must hold
+			# here is that every NON-program row still resolves to a Modifier.
+			var declared_programs: Dictionary = {}
+			var program_catalog: Resource = IdeologyEffectCatalogScript.load_default()
+			if program_catalog != null and program_catalog.has_method("program_key_set"):
+				declared_programs = program_catalog.program_key_set()
 			var missing := PackedStringArray()
 			for key in keys_ir.get("persistent_definition_keys", PackedStringArray()) as PackedStringArray:
+				if declared_programs.has("ideology.effect." + String(key)):
+					continue
 				if not known_keys.has(String(key)):
 					missing.append(String(key))
 			_expect("every ideology/synergy/resonance definition exists in the modifier catalog",
@@ -161,15 +187,17 @@ func _init() -> void:
 				or String(keys_ir.get("point_gain_stat_key", "")) == "country.ideology.point_gain_factor")
 		var collective_lines: PackedStringArray = modifier_catalog.present_definition(
 			&"ideology.collective_stewardship", 65536)
-		_expect("modifier presenter formats stewardship at full magnitude",
-			collective_lines.size() >= 2
-			and String(collective_lines[0]).contains("+5%"))
-	var effect_catalog: Resource = EffectDomainCatalogScript.build()
+		# The benefit moved into the program; the definition that is left is the
+		# cost, so the presenter must still render one line for it.
+		_expect("modifier presenter formats stewardship cost line",
+			collective_lines.size() >= 1
+			and String(collective_lines[0]).contains("-3%"))
+	var effect_catalog_built: Resource = effect_catalog
 	_expect("shared Effect catalog includes ideology templates",
-		effect_catalog != null)
-	if effect_catalog != null:
+		effect_catalog_built != null)
+	if effect_catalog_built != null:
 		_expect("shared Effect IR compiles",
-			bool(effect_catalog.compile_native_catalog().get("ok", false)))
+			bool(effect_catalog_built.compile_native_catalog().get("ok", false)))
 	var workspace := WorkspaceScene.instantiate()
 	root.add_child(workspace)
 	workspace.set_model({"country_handle": 0, "current_day": 0,
@@ -336,6 +364,40 @@ func _init() -> void:
 	quit(0 if _failures == 0 else 1)
 
 
+## Every definition a real card names has to exist in the modifier catalog.
+##
+## This is the link the migration to `economy.city.*` could silently break: the
+## per-good / per-building / per-need definitions are GENERATED at runtime by
+## modifier_catalog.gd, so a typo or a missing family member yields a card that
+## compiles, applies, and does nothing -- the exact failure mode that hid the
+## write-only `ideology.city.*` family for weeks.
+func _test_card_definitions_resolve() -> void:
+	var effects: Resource = load("res://data/ideologies/default_ideology_effects.tres")
+	if not _require("default ideology effects load", effects != null):
+		return
+	var effects_ir: Dictionary = effects.compile_native_catalog()
+	if not _require("default ideology effects compile",
+			bool(effects_ir.get("ok", false)), str(effects_ir.get("reason", ""))):
+		return
+	var modifier_ir: Dictionary = ModifierCatalogScript.load_default().compile_native_catalog()
+	if not _require("modifier catalog compiles", bool(modifier_ir.get("ok", false))):
+		return
+	var known := {}
+	for key in modifier_ir.get("definition_keys", PackedStringArray()):
+		known[String(key)] = true
+	var missing := {}
+	var actions: PackedInt32Array = effects_ir.get("command_actions", PackedInt32Array())
+	var keys: PackedStringArray = effects_ir.get("command_definition_keys", PackedStringArray())
+	for index in mini(actions.size(), keys.size()):
+		if int(actions[index]) != 1:  # MODIFIER_COMMAND
+			continue
+		var key := String(keys[index])
+		if key.is_empty() or not known.has(key):
+			missing[key] = true
+	_expect("every card modifier definition resolves (%d missing)" % missing.size(),
+		missing.is_empty())
+
+
 func _count_nonnegative(values: PackedInt32Array) -> int:
 	var count := 0
 	for value in values:
@@ -349,6 +411,14 @@ func _unique_count(values: PackedStringArray) -> int:
 	for value in values:
 		seen[String(value)] = true
 	return seen.size()
+
+
+## `_expect` plus the condition, so a helper can bail out early. This file's
+## `_expect` returns nothing; the newer tests' `_require` does -- keeping the two
+## names distinct avoids a silent no-op if the older file ever gains one.
+func _require(label: String, condition: bool, detail: String = "") -> bool:
+	_expect(label if detail.is_empty() else "%s: %s" % [label, detail], condition)
+	return condition
 
 
 func _expect(label: String, condition: bool) -> void:

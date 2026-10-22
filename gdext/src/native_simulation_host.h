@@ -101,6 +101,17 @@ public:
     bool climate_parity_forcing() const {
         return _climate_parity_forcing.load(std::memory_order_acquire);
     }
+    // Ideology parity reference capture. OFF by default and gated separately
+    // from `climate_parity_forcing`: publishing a reference exports and hashes a
+    // whole `RuntimeIdeologyPodSnapshot` every day, and a production session
+    // must pay nothing for a diagnostic it is not running (03 idle-zero-cost).
+    // Only a parity harness turns this on.
+    void set_ideology_parity_enabled(bool enabled) {
+        _ideology_parity_enabled.store(enabled, std::memory_order_release);
+    }
+    bool ideology_parity_enabled() const {
+        return _ideology_parity_enabled.load(std::memory_order_acquire);
+    }
     bool publish_environment(const RuntimeEnvironmentSnapshot &snapshot,
                              std::string &error);
     // worker：ring 内仍有未评估输入（有活可干）。
@@ -327,12 +338,67 @@ public:
         return std::unique_lock<std::mutex>(
             _economy_authority_boundary_mutex, std::try_to_lock);
     }
-    void request_main_boundary_service() noexcept {
-        _main_boundary_service_requested.store(true, std::memory_order_release);
+    // Deferred-boundary handshake: a main-thread caller that lost
+    // `try_lock_economy_input_capture` asks the worker to park between semantic
+    // days until that caller has had its turn ("come back to the boundary").
+    //
+    // COUNTED PER REQUESTER, not one shared bool. The flag shipped as a bool and
+    // that shape cannot express "two subsystems both want a turn":
+    //   * `world_ext_trigger.cpp` requests on a failed handoff and clears on the
+    //     next handoff that wins the lock;
+    //   * `world_ext_ideology.cpp` requests on a failed instance refresh.
+    // With one bool, whichever cleared FIRST spoke for both -- a trigger
+    // completion released a worker that ideology was still waiting on. And the
+    // ideology path requested without ever completing, so the worker parked in
+    // the `_control_cv` loop (`native_simulation_host.cpp`, the
+    // `_main_boundary_service_requested != 0` wait between semantic days) forever:
+    // that is the observed "worker_committed_day 2 -> 2" and the empty receipts.
+    //
+    // Each requester owns one bit. Request/complete must be paired BY THE SAME
+    // CLIENT, and cannot be paired by accident: completing a bit this client does
+    // not hold is a no-op, so one subsystem can never release another's turn.
+    enum class MainBoundaryClient : uint32_t {
+        TRIGGER = 0,
+        IDEOLOGY = 1,
+        CLIENT_COUNT = 2,
+    };
+    static constexpr uint32_t main_boundary_client_bit(MainBoundaryClient client) {
+        return uint32_t{1} << static_cast<uint32_t>(client);
     }
-    void complete_main_boundary_service() noexcept {
-        _main_boundary_service_requested.store(false, std::memory_order_release);
+    void request_main_boundary_service(MainBoundaryClient client) noexcept {
+        const uint32_t bit = main_boundary_client_bit(client);
+        _main_boundary_service_requested.fetch_or(bit, std::memory_order_acq_rel);
+    }
+    // Clears ONE client's turn (its own). Idempotent: a client that never asked,
+    // or that already completed, changes nothing. When the last client completes
+    // the worker's wait predicate goes false and `notify_all` releases it.
+    void complete_main_boundary_service(MainBoundaryClient client) noexcept {
+        const uint32_t bit = main_boundary_client_bit(client);
+        uint32_t observed = _main_boundary_service_requested.load(
+            std::memory_order_acquire);
+        while ((observed & bit) != 0) {
+            if (_main_boundary_service_requested.compare_exchange_weak(observed,
+                    observed & ~bit, std::memory_order_acq_rel,
+                    std::memory_order_acquire))
+                break;
+        }
         _control_cv.notify_all();
+    }
+    // Diagnostic: outstanding requesters, as a count. Exported so a parked worker
+    // can be told apart from one subsystem starving on another's bit.
+    uint32_t main_boundary_service_requests() const noexcept {
+        uint32_t mask = _main_boundary_service_requested.load(
+            std::memory_order_acquire);
+        uint32_t count = 0;
+        while (mask != 0) {
+            mask &= mask - 1u;
+            ++count;
+        }
+        return count;
+    }
+    bool main_boundary_service_requested_by(MainBoundaryClient client) const noexcept {
+        return (_main_boundary_service_requested.load(std::memory_order_acquire) &
+                main_boundary_client_bit(client)) != 0;
     }
     std::unique_lock<std::mutex> try_lock_economy_read_boundary() const {
         return std::unique_lock<std::mutex>(
@@ -354,6 +420,94 @@ public:
     bool country_pod_configured() const {
         return _country_pod_configured.load(std::memory_order_acquire);
     }
+    // Ideology parity, mirroring the country pair above: the main thread publishes
+    // its hash for a day, the worker's own state hash is compared against it.
+    bool publish_ideology_reference(int64_t day,
+                                    const RuntimeIdeologyPodSnapshot &state);
+    struct IdeologyParityReport {
+        bool compared = false;
+        bool matched = false;
+        int64_t compared_count = 0;
+        int64_t matched_count = 0;
+        uint64_t reference_hash = 0;
+        uint64_t worker_hash = 0;
+        int64_t first_mismatch_day = -1;
+        // R8-4: worker days dropped because no reference exists on the same
+        // calendar day. Reported so the gate can tell "the calendars do not
+        // line up" apart from "the two sides agree".
+        int64_t uncompared_day_offset = 0;
+        int64_t last_uncompared_distance = -1;
+        char field[48]{};
+        const char *status = "none";
+        // Raw numbers behind a `points*` field, so a failure is readable without
+        // re-running under a debugger. Zeroed until a points mismatch happens.
+        bool points_diff_valid = false;
+        int64_t points_diff_day = -1;
+        int64_t points_diff_slot = -1;
+        int64_t points_diff_reference_countries = 0;
+        int64_t points_diff_worker_countries = 0;
+        int64_t points_diff_handle = 0;
+        int64_t points_diff_reference_handle = 0;
+        int64_t points_diff_worker_handle = 0;
+        int64_t points_diff_reference_points_q16 = 0;
+        int64_t points_diff_worker_points_q16 = 0;
+        int64_t points_diff_reference_lifetime_q16 = 0;
+        int64_t points_diff_worker_lifetime_q16 = 0;
+        int64_t points_diff_reference_revision = 0;
+        int64_t points_diff_worker_revision = 0;
+        int32_t points_diff_reference_baseline_ready = 0;
+        int32_t points_diff_worker_baseline_ready = 0;
+        int64_t points_diff_reference_baseline_population = 0;
+        int64_t points_diff_worker_baseline_population = 0;
+        int64_t points_diff_reference_baseline_buildings = 0;
+        int64_t points_diff_worker_baseline_buildings = 0;
+        int32_t points_diff_reference_history_count = 0;
+        int32_t points_diff_worker_history_count = 0;
+        int32_t points_diff_reference_history_head = 0;
+        int32_t points_diff_worker_history_head = 0;
+        std::array<int64_t, 8> points_diff_reference_history_q16{};
+        std::array<int64_t, 8> points_diff_worker_history_q16{};
+        int64_t points_diff_reference_last_day = -1;
+        int64_t points_diff_worker_round_day = -1;
+        int64_t points_diff_worker_committed_day = -1;
+        int64_t points_diff_reference_catalog_hash = 0;
+        int64_t points_diff_worker_catalog_hash = 0;
+        int64_t reference_publish_count = 0;
+        int64_t reference_published_day = -1;
+        int64_t reference_published_countries = 0;
+        int32_t reference_published_with_points_revision = 0;
+        int64_t reference_skipped_count = 0;
+        char reference_skip_reason[48]{};
+        // Catalog agreement is a PRECONDITION for comparison, not a business
+        // field: the two sides compute `catalog_hash` with different functions,
+        // so equality is never expected and a mismatch must never be counted as
+        // a business divergence. Reported for diagnosis only.
+        int64_t catalog_mismatch_count = 0;
+        int64_t last_reference_catalog_hash = 0;
+        int64_t last_worker_catalog_hash = 0;
+        // The Economy opinion revision the worker last accrued from. Compared
+        // against the reference's own `points_revision` in `points_diff`: equal
+        // means both sides saw the same input, so a remaining divergence is a
+        // real business one rather than a driver alignment artefact.
+        int64_t worker_opinion_revision = 0;
+        // A1: what the worker actually consumed. A driver binds the main thread
+        // to these so both sides settle the SAME opinion for the same day.
+        int64_t worker_opinion_period_index = -1;
+        int64_t worker_opinion_committed_day = -1;
+        // Day the worker last committed Ideology for. -1 means it never ran.
+        int64_t worker_committed_ideology_day = -1;
+        // The (reference day, worker day) pair the comparison actually used.
+        int64_t paired_reference_day = -1;
+        int64_t paired_worker_day = -1;
+        // First row whose points differ (recomputed row by row).
+        int64_t row_mismatch_slot = -1;
+        int64_t row_mismatch_reference_handle = 0;
+        int64_t row_mismatch_worker_handle = 0;
+        int64_t row_mismatch_reference_points = 0;
+        int64_t row_mismatch_worker_points = 0;
+    };
+    IdeologyParityReport ideology_parity_report() const;
+
     bool publish_country_reference(int64_t day, uint64_t reference_state_hash,
                                    std::string &error,
                                    const RuntimeCountryPodSnapshot *snapshot = nullptr);
@@ -642,6 +796,23 @@ public:
                                 std::string &error);
     bool publish_ideology_opinion_snapshot(
         const RuntimeIdeologyOpinionSnapshot &snapshot, std::string &error);
+    // R9-1: the opinion the WORKER actually consumed when it planned `day`.
+    //
+    // This is the only correct parity binding. Both sides used to read "the
+    // newest Economy state", which worker-side concurrency advances, so which
+    // version each side saw depended on thread scheduling and five runs produced
+    // different results. Handing the main thread the exact shared_ptr the worker
+    // settled makes "same day" mean "same input" by construction.
+    //
+    // Returns null when the worker never planned that day; the caller must then
+    // publish NO reference (the day is uncompared), never fall back to a
+    // re-derived opinion.
+    std::shared_ptr<const RuntimeIdeologyOpinionSnapshot>
+        worker_opinion_snapshot_for_day(int64_t day) const;
+    // (removed) latest_worker_opinion_day / debug_ideology_worker_opinion_ring:
+    // the "bind to the newest recorded day" rule published 1278 references for 24
+    // distinct days and never compared anything. The reader above stays; the join
+    // is still open (05 §2.7).
     bool queue_ideology_pod_command(const RuntimeIdeologyPodCommand &command,
                                     std::string &error);
     bool poll_ideology_pod_intent(RuntimeDomainIntent &intent);
@@ -1147,6 +1318,138 @@ private:
     // left queue without soft-committing the Country calendar boundary.
     bool _country_peer_wait_preview_published = false;
     std::map<int64_t, RuntimeCountryPodSnapshot> _country_references;
+    // day -> reference snapshot. The country pair keeps whole snapshots for the
+    // same reason: a hash says "different", only the snapshot says "which row,
+    // which field". Bounded to 128 days exactly like the country map.
+    // R9-1: the day-keyed `std::map<int64_t, RuntimeIdeologyPodSnapshot>
+    // _ideology_references` was removed. Nothing ever read it -- comparisons
+    // consume `_ideology_reference_fifo` by exact day -- so it was a second full
+    // copy of every reference snapshot kept purely for memory growth.
+    // Published references in publish order. The worker consumes them FIFO: the
+    // main thread keys by driver tick and the worker by its own calendar, so a
+    // raw day lookup never matched (observed ref_day=5 vs worker_day=2).
+    std::deque<RuntimeIdeologyPodSnapshot> _ideology_reference_fifo;
+    // Day pairing actually used for the last comparison. Diagnostic only: it makes
+    // a calendar-offset bug visible instead of looking like a business divergence.
+    int64_t _ideology_last_reference_day = -1;
+    int64_t _ideology_last_worker_day = -1;
+    // First country row whose points differ, recomputed row by row. A section
+    // hash is a running mix, so this is the only way to name the row.
+    int64_t _ideology_points_row_mismatch_slot = -1;
+    uint64_t _ideology_points_row_mismatch_reference_handle = 0;
+    uint64_t _ideology_points_row_mismatch_worker_handle = 0;
+    int64_t _ideology_points_row_mismatch_reference_points = 0;
+    int64_t _ideology_points_row_mismatch_worker_points = 0;
+    // Publish ledger: which days the main thread actually handed a reference for,
+    // and how many country rows it carried. A reference with zero rows is not a
+    // reference -- it makes every later comparison fail for a reason that has
+    // nothing to do with the worker.
+    struct IdeologyReferenceRecord {
+        int64_t day = -1;
+        int64_t countries = 0;
+        int32_t with_points_revision = 0;
+        uint64_t catalog_hash = 0;
+    };
+    IdeologyReferenceRecord _ideology_last_published;
+    int64_t _ideology_reference_publish_count = 0;
+    // References refused because the main thread had not produced a single
+    // country row yet. Publishing one of those is worse than publishing
+    // nothing: the worker always has rows, so every later comparison fails and
+    // the reported `field` blames whichever section happens to differ first.
+    int64_t _ideology_reference_skipped_count = 0;
+    std::array<std::atomic<char>, 48> _ideology_reference_skip_reason{};
+    // Catalog-hash disagreement is recorded, never counted as a comparison.
+    int64_t _ideology_catalog_mismatch_count = 0;
+    uint64_t _ideology_last_reference_catalog_hash = 0;
+    uint64_t _ideology_last_worker_catalog_hash = 0;
+    std::atomic<uint64_t> _ideology_worker_opinion_revision{0};
+    // R9-1: which opinion the worker consumed for which day, as ONE record.
+    //
+    // Three independent atomics cannot express this: a reader can see plan_day
+    // from day 5 next to the opinion of day 4, and then bind the main thread to an
+    // input the worker never used on that day -- the same class of defect as
+    // comparing two calendars, only intermittent. The day and the opinion are
+    // published together under this mutex as a small ring, and readers copy a
+    // consistent (day, opinion) pair.
+    struct IdeologyWorkerOpinionUse {
+        int64_t plan_day = -1;
+        int64_t committed_day = -1;
+        int64_t period_index = -1;
+        uint64_t revision = 0;
+        std::shared_ptr<const RuntimeIdeologyOpinionSnapshot> opinion;
+    };
+    static constexpr size_t IDEOLOGY_WORKER_OPINION_RING = 16;
+    mutable std::mutex _ideology_worker_opinion_mutex;
+    std::array<IdeologyWorkerOpinionUse, IDEOLOGY_WORKER_OPINION_RING>
+        _ideology_worker_opinion_ring{};
+    size_t _ideology_worker_opinion_count = 0;
+    void record_ideology_worker_opinion_use(
+        int64_t plan_day,
+        const RuntimeIdeologyOpinionSnapshot &opinion,
+        std::shared_ptr<const RuntimeIdeologyOpinionSnapshot> owner);
+    std::atomic<int64_t> _ideology_pod_committed_day{-1};
+    // First diverging country row, kept once per run (not per day) so a failing
+    // parity can be read as numbers instead of "somewhere in `points`".
+    struct IdeologyPointsDiff {
+        bool valid = false;
+        int64_t day = -1;
+        int64_t slot = -1;
+        int64_t reference_countries = 0;
+        int64_t worker_countries = 0;
+        uint64_t handle = 0;
+        uint64_t reference_handle = 0;
+        uint64_t worker_handle = 0;
+        int64_t reference_points_q16 = 0;
+        int64_t worker_points_q16 = 0;
+        int64_t reference_lifetime_q16 = 0;
+        int64_t worker_lifetime_q16 = 0;
+        uint64_t reference_revision = 0;
+        uint64_t worker_revision = 0;
+        int32_t reference_baseline_ready = 0;
+        int32_t worker_baseline_ready = 0;
+        int64_t reference_baseline_population = 0;
+        int64_t worker_baseline_population = 0;
+        int64_t reference_baseline_buildings = 0;
+        int64_t worker_baseline_buildings = 0;
+        int32_t reference_history_count = 0;
+        int32_t worker_history_count = 0;
+        int32_t reference_history_head = 0;
+        int32_t worker_history_head = 0;
+        std::array<int64_t, 8> reference_history_q16{};
+        std::array<int64_t, 8> worker_history_q16{};
+        // Why the reference side is missing rows at all. The first version of
+        // this diff reported all-zero values for a real mismatch, because the
+        // reference snapshot had no country rows to compare against.
+        int64_t reference_last_day = -1;
+        int64_t worker_round_day = -1;
+        int64_t worker_committed_day = -1;
+        int64_t reference_catalog_hash = 0;
+        int64_t worker_catalog_hash = 0;
+    };
+    IdeologyPointsDiff _ideology_points_diff;
+    void capture_ideology_points_diff(
+        const RuntimeIdeologyPodSnapshot &reference,
+        const RuntimeIdeologyPodSnapshot &worker);
+    // Same atomic-char trick the country field uses: written on the economy thread
+    // while the main thread may be formatting a report.
+    std::array<std::atomic<char>, 48> _ideology_parity_field{};
+    // `_ideology_transport_mutex` already exists for the snapshot ring; this one
+    // only guards the reference map so the two cannot deadlock on each other.
+    mutable std::mutex _ideology_parity_mutex;
+    void record_ideology_parity_locked(const RuntimeIdeologyPodSnapshot &worker);
+    std::atomic<bool> _ideology_parity_compared{false};
+    std::atomic<bool> _ideology_parity_matched{false};
+    std::atomic<int64_t> _ideology_parity_compared_count{0};
+    std::atomic<int64_t> _ideology_parity_matched_count{0};
+    std::atomic<uint64_t> _ideology_parity_reference_hash{0};
+    std::atomic<uint64_t> _ideology_parity_worker_hash{0};
+    std::atomic<int64_t> _ideology_parity_first_mismatch_day{-1};
+    // R8-4: a worker day with no reference on the SAME calendar day. Counted
+    // separately so "we could not compare" is never folded into "compared and
+    // matched"; the gate asserts compared == matched, so a silently-dropped day
+    // must not look like a pass.
+    int64_t _ideology_parity_uncompared_day_offset = 0;
+    int64_t _ideology_last_uncompared_distance = -1;
     std::deque<CountryPeerResult> _country_shadow_peer_mirrors;
     std::atomic<uint8_t> _country_parity_compared{0};
     std::atomic<uint8_t> _country_parity_matched{0};
@@ -1349,7 +1652,11 @@ private:
     // mutex is the actual epoch-boundary gate that prevents a switch from
     // passing an idle check while the worker starts the next day.
     mutable std::mutex _economy_authority_boundary_mutex;
-    std::atomic<bool> _main_boundary_service_requested{false};
+    // Outstanding requesters behind `_main_boundary_service_requested`, as a bit
+    // set (one bit per `MainBoundaryClient`). Written only through
+    // `request_main_boundary_service` / `complete_main_boundary_service`. See those
+    // two for why one shared bool parked the worker permanently.
+    std::atomic<uint32_t> _main_boundary_service_requested{0};
     std::atomic<int64_t> _economy_input_requested_day{-1};
     // Sticky peer/fiscal stall bits (OR). Climate-capacity is derived live.
     std::atomic<uint32_t> _day_stall_reason_mask{0};
@@ -1458,6 +1765,7 @@ private:
     std::array<ClimateParityFieldAccumulator, RUNTIME_CLIMATE_PARITY_MAX_FIELDS>
         _climate_parity_field_stats{};
     std::atomic<bool> _climate_parity_forcing{false};
+    std::atomic<bool> _ideology_parity_enabled{false};
     std::atomic<uint64_t> _climate_parity_forced_days{0};
     std::array<std::atomic<char>, 64> _climate_pod_fallback_reason{};
     // 1 << RuntimeClimateStage。见 RuntimeThreadReport::climate_production_stage_mask。
@@ -1589,6 +1897,11 @@ private:
     RuntimeIdeologyPodCatalog _ideology_pod_catalog;
     bool _ideology_pod_configured = false;
     std::shared_ptr<const RuntimeIdeologyOpinionSnapshot> _ideology_opinion_snapshot;
+    // The day-keyed opinion ring was removed with `select_ideology_opinion_for_day`
+    // (R9-1). Keying opinions by DAY never worked: Economy's `commit_day` and the
+    // worker's plan day are different scales, so the rule either found nothing or
+    // picked a future commit. Parity binds to the opinion the worker recorded
+    // USING (`_ideology_worker_opinion_ring`), which needs no day arithmetic.
     std::shared_ptr<const RuntimeIdeologyPodSnapshot> _ideology_snapshot;
     // G8 ACTIVE write-back boundary. The shared_ptr above stays for SHADOW
     // consumers; the ring is the immutable main-thread apply path.

@@ -22,7 +22,7 @@ const Q16_ONE := 65536
 ## (the main thread resolves cells and passes a target_handle) and reads state
 ## through one shared switch, so both ceilings track the main thread's, not a
 ## narrower subset. Keep the two files in step.
-const POD_MAX_SELECTOR_KIND := 13
+const POD_MAX_SELECTOR_KIND := 15
 ## 5 = STATE_LATCHED (previous evaluation's condition result). Ids are
 ## append-only on both sides; bumping this without the matching case in
 ## RuntimeEffectPodAuthority::state_value trips
@@ -30,6 +30,13 @@ const POD_MAX_SELECTOR_KIND := 13
 const POD_MAX_STATE_ID := 5
 const POD_CONDITION_STATE_GTE := 5
 const POD_INSTRUCTION_READ_STATE := 3
+## Metric-reading opcodes, mirrored from gdext/src/effect_runtime.h. Only these
+## carry a metric id in arg0; every other opcode's arg0 means something else, so
+## scanning opcodes blindly would invent metric reads that do not exist.
+const CONDITION_METRIC_GTE := 2
+const CONDITION_METRIC_LTE := 3
+const CONDITION_METRIC_EQ := 4
+const INSTRUCTION_READ_METRIC := 2
 
 @export var metric_keys: PackedStringArray = PackedStringArray()
 ## Optional cell-tag predicates (see gdext/src/target_tag.h). One entry per tag:
@@ -250,6 +257,38 @@ func compile_native_catalog() -> Dictionary:
 				out.tag_metric_clauses.append(clause)
 				out.tag_metric_thresholds_q16.append(int(row.get("threshold_q16", 0)))
 			out.tag_offsets.append(out.tag_metric_ids.size())
+	# P2-D: metric scope has to match program scope. Both mistakes compile and
+	# then lie at runtime: a `city.*` metric read by a COUNTRY-domain program
+	# samples one cell and presents it as a national number, and a `cell.*`
+	# metric read by a COUNTRY program returns whatever the anchor cell happens
+	# to hold. The native validator cannot see this at all -- it only knows ids.
+	for definition in definitions:
+		if definition == null or not definition is EffectDefinitionScript:
+			continue
+		var domain := int(definition.target_domain)
+		var used := {}
+		for condition in definition.conditions:
+			if condition == null:
+				continue
+			var op := int(condition.op)
+			if op == CONDITION_METRIC_GTE or op == CONDITION_METRIC_LTE \
+					or op == CONDITION_METRIC_EQ:
+				used[int(condition.arg0)] = true
+		for instruction in definition.instructions:
+			if instruction == null:
+				continue
+			if int(instruction.op) == INSTRUCTION_READ_METRIC:
+				used[int(instruction.arg0)] = true
+		for metric_id in used:
+			if metric_id < 0 or metric_id >= metric_keys.size():
+				continue
+			var metric_key := String(metric_keys[metric_id])
+			if metric_key.begins_with("city.") and domain != 2 and domain != 5:
+				return {"ok": false,
+					"reason": "effect_city_metric_requires_cell_domain:" + metric_key}
+			if metric_key.begins_with("cell.") and domain == 3:
+				return {"ok": false,
+					"reason": "effect_cell_metric_on_country_domain:" + metric_key}
 	out.ok = true
 	for extension_key in native_extensions:
 		if out.has(extension_key):

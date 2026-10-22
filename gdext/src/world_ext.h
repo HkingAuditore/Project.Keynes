@@ -263,6 +263,9 @@ public:
     // Diagnostic only: keeps a divergent SHADOW day advancing by adopting the
     // production reference, so more than one day can be measured.
     godot::Dictionary set_runtime_climate_parity_forcing(bool enabled);
+    // Ideology parity reference capture. Off by default: it exports and stores a
+    // full ideological snapshot per day, which production must not pay for.
+    godot::Dictionary set_runtime_ideology_parity_enabled(bool enabled);
     godot::Dictionary capture_country_runtime_snapshot();
     godot::Dictionary capture_country_pod_catalog();
     godot::Dictionary get_country_worker_protocol_status() const;
@@ -551,6 +554,11 @@ public:
                                             const godot::String &stat_key,
                                             double base_value) const;
     godot::Dictionary get_modifier_report() const;
+    // P3 step 1: what one authored modifier definition does, as
+    // [{stat_id, operation, value}]. Read-only; the coefficient plane uses it to
+    // turn "card -> definition" into a per-cell stat delta.
+    godot::Dictionary resolve_modifier_definition_terms(
+        const godot::String &definition_key) const;
     godot::Dictionary poll_modifier_events(int64_t after_event_id,
                                            int limit = 128) const;
     double evaluate_modifier_stat(int domain, int64_t entity_handle,
@@ -709,11 +717,34 @@ public:
                                              int32_t limit) const;
     godot::Dictionary run_ideology_daily(int64_t day_index);
     bool ideology_should_run(int64_t day_index) const;
+    godot::Dictionary step_ideology_instance_refresh(int64_t day_index);
     godot::Dictionary apply_runtime_ideology_snapshot(int64_t after_generation);
     godot::Dictionary get_ideology_snapshot(int64_t country_handle) const;
     // Diagnostic: reconciled Effect instances owned by each held idea, with a
     // `present` flag proving the EffectRuntime still holds them. Read-only.
     godot::Dictionary get_ideology_effect_instance_report(int64_t country_handle) const;
+    godot::Dictionary get_ideology_cell_program_summary();
+    // Per-cell output factor after the Modifier rows AND the Ideology plane have
+    // been folded in. Test/diagnostic seam for the coefficient plane.
+    godot::Dictionary get_city_output_factor_q16(int32_t cell, int32_t good_id) const;
+    // §2.0 of the round-1 review: the plane is OFF by default. Until generation,
+    // double-application, selector semantics, coefficient semantics and thread
+    // ownership are fixed, it must not touch shipped numbers. Tests turn it on
+    // explicitly (or call publish_ideology_cell_programs themselves).
+    void set_ideology_cell_plane_enabled(bool enabled) {
+        _ideology_cell_plane_enabled = enabled;
+    }
+    void publish_ideology_cell_programs();
+    // Inject a table directly. The generator has no DSL for columns yet, so the
+    // only way to exercise `NEIGHBOR_COUNT` is to hand-build one.
+    bool set_ideology_cell_program_entry_for_test(
+        int32_t stat_id, int32_t filter_tag, int32_t operation,
+        int32_t coef_q16, int32_t column_kind, int32_t column_tag,
+        int32_t cap_units);
+    godot::Dictionary resolve_effect_program_modifier_commands(
+        const godot::String &program_key) const;
+    godot::Dictionary reconcile_ideology_effects_for_test(int64_t country_handle);
+    godot::Dictionary apply_ideology_self_snapshot_for_test(int64_t generation);
     // Read-only query over the shared target-cell resolver. Content tooling and
     // tests use it to prove a selector is deterministic and bounded before a
     // card is authored against it. Never mutates state.
@@ -733,6 +764,11 @@ public:
         int64_t country_handle,
         const godot::PackedInt32Array &ideology_ids);
     godot::Dictionary get_ideology_report() const;
+    // Business-only state (no transport fields), for comparing two worlds or a
+    // main thread against a worker. Same sections and hash the parity report uses.
+    godot::Dictionary get_ideology_business_state() const;
+    int64_t compute_idea_activation_signature_for_test(int64_t handle,
+                                                      int32_t ideology_id);
     godot::PackedByteArray capture_ideology_state() const;
     godot::Dictionary restore_ideology_state(const godot::PackedByteArray &bytes);
     godot::Dictionary clear_ideology_state();
@@ -786,6 +822,22 @@ public:
     bool economy_deadline_critical(int64_t day_index) const;
     godot::PackedInt32Array get_economy_live_cells();
     godot::Dictionary get_economy_report() const;
+    // Review §3: the effect-input digest buckets each metric by this quantum, so
+    // sub-quantum drift stops re-signing every card. 0 keeps the old exact
+    // behaviour, which is the default until the numbers are chosen.
+    // The three-way split from review §3, as numbers: global (union), territory,
+    // tag, and the per-metric array. A test can then assert that a metric no card
+    // reads stays at 0, which is the whole point of splitting.
+    godot::Dictionary get_effect_input_revisions() const;
+    // Force one digest pass. Without this the gate tests can pass vacuously when
+    // the fixture never commits a day.
+    godot::Dictionary refresh_effect_input_digest_for_test();
+    // Forces one metric to a chosen value for every cell; `has_value == false`
+    // clears it. See the member comment: this exists so threshold crossings can be
+    // tested exactly instead of approximated through the simulation.
+    godot::Dictionary set_effect_metric_override_for_test(int32_t metric,
+                                                          int64_t value,
+                                                          bool has_value);
     godot::Dictionary get_economy_committed_audit_report() const;
     godot::Dictionary get_country_class_opinion_snapshot() const;
     godot::Dictionary get_population_cell_summary(int cell_idx) const;
@@ -3214,6 +3266,14 @@ private:
     // economy_runtime.{h,cpp}; opaque here so the existing world header does
     // not expose the large chunk/market implementation to every pass TU.
     void                                     *_economy_runtime        = nullptr;
+    bool                                      _ideology_cell_plane_enabled = false;
+    // R-3: refresh ticks that could not take the economy input boundary lock.
+    // `skips` is the lifetime total, `max_consecutive` the longest run of skipped
+    // ticks, which is what tells "the worker is briefly busy" apart from "the refresh
+    // is starved and never runs". Derived, never saved.
+    uint64_t                                  _instance_refresh_lock_skips = 0;
+    uint64_t                                  _instance_refresh_consecutive_skips = 0;
+    uint64_t                                  _instance_refresh_max_consecutive_skips = 0;
     // Frozen economy input capture is immutable for a sample day.  Reuse the
     // boundary report across compact slices instead of rebuilding bridge
     // dictionaries and rescanning MapData on every slice.

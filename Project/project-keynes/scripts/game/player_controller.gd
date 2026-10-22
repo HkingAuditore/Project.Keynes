@@ -270,6 +270,7 @@ func refresh_country_binding() -> void:
 	if _country_facade != null:
 		_resolve_player_country()
 		_sync_era_reward_offer()
+		_sync_era_music(true)
 	_sync_family_founding_offer()
 
 
@@ -342,6 +343,7 @@ func restore_view_state(map, state: Dictionary) -> void:
 	_sync_era_reward_offer()
 	_sync_family_founding_offer()
 	_sync_ideology_draw()
+	_sync_era_music(true)
 	_annual_report_flow.try_present()
 
 
@@ -721,6 +723,9 @@ func _dispatch_player_input(event: InputEvent) -> void:
 func _connect_runtime() -> void:
 	if _camera != null and not _camera.tile_tapped.is_connected(_on_tile_tapped):
 		_camera.tile_tapped.connect(_on_tile_tapped)
+	if _camera != null and _camera.has_signal("zoom_changed") \
+			and not _camera.zoom_changed.is_connected(_on_camera_zoom_changed):
+		_camera.zoom_changed.connect(_on_camera_zoom_changed)
 	if _runtime_host != null and _runtime_host.has_signal("simulation_committed") \
 			and not _runtime_host.simulation_committed.is_connected(_on_simulation_committed):
 		_runtime_host.simulation_committed.connect(_on_simulation_committed)
@@ -755,6 +760,8 @@ func _on_simulation_committed(_from_day: int, to_day: int, _generation: int) -> 
 	_sync_family_founding_offer()
 	# ACTIVE worker days settle here before Godot's own day signal.
 	_sync_ideology_draw()
+	_sync_era_music()
+	_sync_event_audio()
 	_annual_report_flow.try_present()
 
 
@@ -814,6 +821,7 @@ func _on_country_committed(report: Dictionary) -> void:
 	country_committed.emit(report)
 	_sync_era_reward_offer()
 	_sync_family_founding_offer()
+	_sync_era_music()
 
 
 func _on_construction_command_settled(result: Dictionary) -> void:
@@ -851,12 +859,16 @@ func _on_ideology_command_settled(result: Dictionary) -> void:
 
 
 
-## 事件音效用的增量快照
+## 事件音效与交互式音乐用的增量状态
 var _tech_state_snapshot := PackedInt32Array()
 var _territory_snapshot := -1
+var _last_music_pop_sample_ms := 0
+var _camera_zoom_baseline := -1.0
+var _camera_zoom_user_engaged := false
+const MUSIC_POP_SAMPLE_INTERVAL_MS := 500
 
-## 时代推进后切换音乐。只在玩家国家、且时代索引真的变化时才动作。
-func _sync_era_music() -> void:
+## 时代推进与国家人口驱动交互式配乐组曲（石器/农耕/王国/帝国）。
+func _sync_era_music(force_population_sync: bool = false) -> void:
 	if _player_country_handle == 0 or _country_facade == null:
 		return
 	if not _country_facade.has_method("current_era_index"):
@@ -864,9 +876,71 @@ func _sync_era_music() -> void:
 	var audio := get_node_or_null("/root/GameAudio")
 	if audio == null or not audio.has_method("set_era"):
 		return
+	var prev_era: int = int(audio.era_index()) if audio.has_method("era_index") else -1
 	var era_index: int = _country_facade.current_era_index(_player_country_handle)
 	if era_index >= 0:
 		audio.set_era(era_index)
+	var era_changed := era_index >= 0 and era_index != prev_era
+	if (force_population_sync or era_changed) and _camera != null:
+		_sync_camera_zoom_audio(force_population_sync and prev_era < 0)
+	if _economy_facade != null and _economy_facade.has_method("country_economy_overview") \
+			and audio.has_method("update_active_suite_population_count"):
+		var now_ms := Time.get_ticks_msec()
+		if force_population_sync or era_changed \
+				or _last_music_pop_sample_ms == 0 \
+				or now_ms - _last_music_pop_sample_ms >= MUSIC_POP_SAMPLE_INTERVAL_MS:
+			var summary: Dictionary = _economy_facade.country_economy_overview(
+				_player_country_handle, "summary")
+			if bool(summary.get("ok", false)):
+				_last_music_pop_sample_ms = now_ms
+				audio.update_active_suite_population_count(int(summary.get("population", 0)))
+
+
+func _sync_camera_zoom_audio(reset_baseline: bool = false) -> void:
+	if _camera == null:
+		return
+	var zoom_val: float = float(_camera.zoom.x) if "zoom" in _camera else 1.0
+	if reset_baseline:
+		_camera_zoom_baseline = zoom_val
+		_camera_zoom_user_engaged = false
+		var audio := get_node_or_null("/root/GameAudio")
+		if audio != null and audio.has_method("set_active_suite_camera_zoom"):
+			audio.set_active_suite_camera_zoom(0.5, true)
+		return
+	_on_camera_zoom_changed(zoom_val)
+
+
+func _on_camera_zoom_changed(zoom_val: float) -> void:
+	var audio := get_node_or_null("/root/GameAudio")
+	if audio == null or not audio.has_method("set_active_suite_camera_zoom"):
+		return
+	if not _camera_zoom_user_engaged:
+		if _camera_zoom_baseline < 0.0:
+			_camera_zoom_baseline = zoom_val
+		if absf(zoom_val - _camera_zoom_baseline) <= 0.02:
+			return
+		_camera_zoom_user_engaged = true
+	var min_z := 0.55
+	var max_z := 3.6
+	if _camera != null:
+		if _camera.has_method("_minimum_zoom"):
+			min_z = clampf(float(_camera._minimum_zoom()), 0.25, 1.2)
+		elif "zoom_min" in _camera:
+			min_z = maxf(0.35, float(_camera.zoom_min))
+		if "zoom_max" in _camera:
+			max_z = maxf(min_z + 0.6, minf(float(_camera.zoom_max), 4.0))
+	audio.set_active_suite_camera_zoom(
+		camera_zoom_to_audio_ratio(zoom_val, min_z, max_z), false)
+
+
+## 将 Camera2D 的缩放倍率（越大越近、越小越远）映射为 FMOD CameraZoom 参数（0.0=拉近近景 .. 1.0=拉远苍穹）。
+static func camera_zoom_to_audio_ratio(zoom_val: float,
+		min_zoom: float = 0.55, max_zoom: float = 3.6) -> float:
+	var lo := maxf(0.1, min_zoom)
+	var hi := maxf(lo + 0.2, max_zoom)
+	var clamped := clampf(zoom_val, lo, hi)
+	var t := inverse_lerp(log(lo), log(hi), log(clamped))
+	return clampf(1.0 - t, 0.0, 1.0)
 
 
 

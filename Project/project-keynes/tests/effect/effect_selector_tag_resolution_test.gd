@@ -167,7 +167,8 @@ func _test_card_rulebook() -> void:
 		},
 		{
 			"label": "a tag outside the selector ceiling",
-			"kind": 14, "tag": &"", "params": PackedInt32Array([0, 0]),
+			# 14/15 are TAG_SOURCE_R1/R2 now, so the first illegal kind is 16.
+			"kind": 16, "tag": &"", "params": PackedInt32Array([0, 0]),
 			"reason": "ideology_effect_selector_invalid",
 		},
 	]

@@ -1,4 +1,5 @@
 #include "runtime_effect_pod.h"
+#include "effect_magnitude.h"
 
 #include <algorithm>
 #include <array>
@@ -563,6 +564,10 @@ bool RuntimeEffectPodAuthority::upsert_instance(
     const uint64_t keep_pending_key =
         same_identity ? instance.pending_idempotency_key : 0;
     const int64_t keep_revision = instance.input_revision;
+    // The latch belongs to whoever is evaluating. A same-identity re-ENSURE
+    // (Country soft-skip) must not wipe it; a new generation is a new card tier
+    // and starts the band over, so it takes the wire value.
+    const uint8_t keep_latched = same_identity ? instance.latched : input.latched;
     instance = RuntimeEffectPodInstance{};
     instance.instance_id = input.instance_id;
     instance.generation = input.generation;
@@ -573,6 +578,8 @@ bool RuntimeEffectPodAuthority::upsert_instance(
     instance.target_handle = input.target_handle;
     instance.target_generation = input.target_generation;
     instance.level = input.level;
+    instance.magnitude_scale_q16 = input.magnitude_scale_q16;
+    instance.latched = keep_latched;
     instance.metric_base = metric_base;
     instance.input_revision = keep_revision;
     instance.next_due_day = input.next_due_day;
@@ -627,6 +634,14 @@ bool RuntimeEffectPodAuthority::set_metric(int64_t instance_id, uint32_t generat
         return false;
     }
     if (revision < _current.metric_revisions[offset]) return true;
+    // `metric_revisions` is the per-column CHANGE watermark, not "highest
+    // revision seen": it feeds deterministic_state_hash and the EFP1 payload,
+    // so advancing it for an unchanged value would republish the snapshot and
+    // read downstream as a real input change. Revision 0 means "never
+    // observed" -- every producer starts at day * 4 + 1.
+    if (_current.metric_revisions[offset] != 0 &&
+            _current.metric_values[offset] == value)
+        return true;
     _current.metric_revisions[offset] = revision;
     _current.metric_values[offset] = value;
     instance.input_revision = std::max(instance.input_revision, revision);
@@ -762,8 +777,12 @@ uint32_t RuntimeEffectPodAuthority::catchup_fire_never_fired_instances(
             intent.idempotency_key = command.idempotency_key;
             intent.duration_days = command.duration_days;
             intent.stacks = command.stacks;
-            intent.magnitude_q16 = command.value != 0
-                ? static_cast<int32_t>(command.value) : 65536;
+            // L3-9: the worker is the ONLY place this multiplier can take
+            // effect under its own authority -- the main thread's
+            // dispatch_native_modifier is suppressed for a worker-owned domain.
+            intent.magnitude_q16 = effect_scaled_magnitude_q16(
+                command.value != 0 ? command.value : 65536,
+                instance.magnitude_scale_q16);
             if (command.action == RuntimeEffectPodAction::MODIFIER_COMMAND &&
                 intent.payload[1] == 0 && command.domain >= 0 &&
                 command.domain < 4) {
@@ -1234,6 +1253,8 @@ uint64_t RuntimeEffectPodAuthority::state_hash(const State &state) noexcept {
         hash = mix_value(hash, instance.target_handle);
         hash = mix_value(hash, instance.target_generation);
         hash = mix_value(hash, instance.level);
+        hash = mix_value(hash, instance.magnitude_scale_q16);
+        hash = mix_value(hash, instance.latched);
         hash = mix_value(hash, instance.metric_base);
         hash = mix_value(hash, instance.input_revision);
         hash = mix_value(hash, instance.last_evaluated_input_revision);
@@ -1408,8 +1429,9 @@ bool RuntimeEffectPodAuthority::plan_day(int64_t day, uint64_t input_generation,
                     intent.idempotency_key = command.idempotency_key;
                     intent.duration_days = command.duration_days;
                     intent.stacks = command.stacks;
-                    intent.magnitude_q16 = command.value != 0
-                        ? static_cast<int32_t>(command.value) : 65536;
+                    intent.magnitude_q16 = effect_scaled_magnitude_q16(
+                        command.value != 0 ? command.value : 65536,
+                        instance.magnitude_scale_q16);
                     if (command.action == RuntimeEffectPodAction::MODIFIER_COMMAND &&
                         intent.payload[1] == 0 && command.domain >= 0 &&
                         command.domain < 4) {
@@ -1501,8 +1523,12 @@ bool RuntimeEffectPodAuthority::plan_day(int64_t day, uint64_t input_generation,
             intent.idempotency_key = command.idempotency_key;
             intent.duration_days = command.duration_days;
             intent.stacks = command.stacks;
-            intent.magnitude_q16 = command.value != 0
-                ? static_cast<int32_t>(command.value) : 65536;
+            // L3-9: the worker is the ONLY place this multiplier can take
+            // effect under its own authority -- the main thread's
+            // dispatch_native_modifier is suppressed for a worker-owned domain.
+            intent.magnitude_q16 = effect_scaled_magnitude_q16(
+                command.value != 0 ? command.value : 65536,
+                instance.magnitude_scale_q16);
             if (command.action == RuntimeEffectPodAction::MODIFIER_COMMAND &&
                 intent.payload[1] == 0 && command.domain >= 0 &&
                 command.domain < 4) {
@@ -1702,6 +1728,8 @@ void RuntimeEffectPodAuthority::serialize(std::vector<uint8_t> &out) const {
         append_le<int64_t>(out, instance.pending_transaction_id);
         append_le<uint64_t>(out, instance.pending_idempotency_key);
         append_le<uint64_t>(out, instance.last_acked_fire_sequence);
+        append_le<int32_t>(out, instance.magnitude_scale_q16);
+        append_le<uint8_t>(out, instance.latched);
         append_le<uint8_t>(out, instance.active);
         append_le<uint8_t>(out, instance.retire_requested);
         append_le<uint8_t>(out, instance.needs_resync);
@@ -1838,6 +1866,8 @@ bool RuntimeEffectPodAuthority::restore(const uint8_t *data, size_t size,
             !read_le(data,payload_end,cursor,instance.pending_transaction_id) ||
             !read_le(data,payload_end,cursor,instance.pending_idempotency_key) ||
             !read_le(data,payload_end,cursor,instance.last_acked_fire_sequence) ||
+            !read_le(data,payload_end,cursor,instance.magnitude_scale_q16) ||
+            !read_le(data,payload_end,cursor,instance.latched) ||
             !read_le(data,payload_end,cursor,instance.active) ||
             !read_le(data,payload_end,cursor,instance.retire_requested) ||
             !read_le(data,payload_end,cursor,instance.needs_resync) ||
@@ -1850,7 +1880,10 @@ bool RuntimeEffectPodAuthority::restore(const uint8_t *data, size_t size,
             (instance.target_generation == 0 && !instance_zero_policy(
                 _catalog.definitions[static_cast<size_t>(
                     instance.program_id)].target_domain).generation_allowed) ||
-            instance.metric_base > restored.metric_values.size()) {
+            instance.metric_base > restored.metric_values.size() ||
+            instance.magnitude_scale_q16 < 65536 / 4 ||
+            instance.magnitude_scale_q16 > 65536 * 4 ||
+            instance.latched > 1) {
             error = "effect_pod_instance_truncated_or_invalid"; return false;
         }
         if (instance.metric_base + _catalog.metric_key_hashes.size() >
@@ -1978,12 +2011,81 @@ bool RuntimeEffectPodAuthority::restore(const uint8_t *data, size_t size,
     return true;
 }
 
+bool RuntimeEffectPodAuthority::magnitude_scale_self_test(std::string &error) {
+    const auto fail = [&error](const char *reason) {
+        error = reason;
+        return false;
+    };
+    // One MODIFIER command whose compiled value is 1.0, armed with a 2x scale.
+    // Under worker authority the main thread's dispatch_native_modifier is
+    // suppressed, so this intent is the ONLY place the multiplier can land: a
+    // pod that ignored `magnitude_scale_q16` would emit 1.0 and every synergy
+    // would silently be a no-op on the worker.
+    RuntimeEffectPodCatalog catalog;
+    catalog.metric_key_hashes = {};
+    RuntimeEffectPodDefinition definition;
+    definition.key_hash = hash_text("scale.fixture");
+    definition.cadence_days = 1;
+    definition.max_work = 8;
+    definition.instruction_begin = 0;
+    definition.instruction_count = 2;
+    definition.command_begin = 0;
+    definition.command_count = 1;
+    catalog.definitions.push_back(definition);
+    catalog.commands.push_back(RuntimeEffectPodCommandDefinition{
+        RuntimeEffectPodAction::MODIFIER_COMMAND, 0, 1,
+        RuntimeEffectPodTargetResolver::INSTANCE, 0,
+        RuntimeEffectPodValueMode::STACK_TOP, 0, -1, 1,
+        hash_text("modifier"), 0, {}});
+    RuntimeEffectPodInstruction constant;
+    constant.op = RuntimeEffectPodInstructionOp::CONST;
+    constant.value = Q16_ONE;
+    catalog.instructions.push_back(constant);
+    RuntimeEffectPodInstruction emit;
+    emit.op = RuntimeEffectPodInstructionOp::EMIT_COMMAND;
+    emit.arg0 = 0;
+    catalog.instructions.push_back(emit);
+
+    RuntimeEffectPodAuthority authority;
+    if (!authority.configure(catalog, error)) return false;
+    RuntimeEffectPodInstanceInput input;
+    input.instance_id = 11;
+    input.generation = 1;
+    input.program_id = 0;
+    input.source_handle = 5;
+    input.target_handle = 6;
+    input.target_generation = 1;
+    input.magnitude_scale_q16 = Q16_ONE * 2;
+    if (!authority.upsert_instance(input, error))
+        return fail("effect_scale_instance_rejected");
+    RuntimeEffectPodPlan plan;
+    if (!authority.plan_day(0, 1, plan, error) || plan.intents.size() != 1u)
+        return fail("effect_scale_plan_failed");
+    if (plan.intents.front().magnitude_q16 != static_cast<int32_t>(Q16_ONE * 2))
+        return fail("effect_scale_not_applied_on_worker");
+    // Unscaled control: the same program with the default 1.0 must come out at
+    // exactly the compiled value, otherwise "2x" could be an off-by-one clamp.
+    RuntimeEffectPodAuthority plain;
+    if (!plain.configure(catalog, error)) return false;
+    input.instance_id = 12;
+    input.magnitude_scale_q16 = Q16_ONE;
+    if (!plain.upsert_instance(input, error))
+        return fail("effect_scale_control_rejected");
+    RuntimeEffectPodPlan plain_plan;
+    if (!plain.plan_day(0, 1, plain_plan, error) || plain_plan.intents.size() != 1u)
+        return fail("effect_scale_control_plan_failed");
+    if (plain_plan.intents.front().magnitude_q16 != static_cast<int32_t>(Q16_ONE))
+        return fail("effect_scale_control_changed");
+    return true;
+}
+
 bool RuntimeEffectPodAuthority::self_test(std::string &error) {
     // Cell 0 is a real target on the main thread, so the pod has to agree. Kept
     // as its own fixture because this one pins exact plan hashes and adding a
     // second program to its catalog would move all of them.
     if (!cell_target_self_test(error)) return false;
     if (!latch_self_test(error)) return false;
+    if (!magnitude_scale_self_test(error)) return false;
     error.clear();
     const auto fail = [&error](const char *reason) {
         error = reason;
@@ -2096,6 +2198,73 @@ bool RuntimeEffectPodAuthority::self_test(std::string &error) {
     if (restored.restore(bytes.data(), bytes.size(), error) ||
         restored.snapshot().deterministic_state_hash != before)
         return fail("effect_self_test_corrupt_restore_mutated_state");
+
+    // R-2: the latch must survive the worker's own save/restore.
+    //
+    // `latched` is evaluated state the worker owns (STATE_LATCHED reads it), and it
+    // was already in the snapshot layout. What this pins is that a LATCHED instance
+    // stays latched across serialize -> restore: without it, a restored day re-passes
+    // a condition that had already latched, so a "hold while the condition is still
+    // true" card silently re-fires on every load.
+    //
+    // Seeded through `upsert_instance` with a NEW identity, which is the one path
+    // that takes `latched` from the input (a same-identity re-ensure deliberately
+    // keeps the local latch, so it could not seed this).
+    {
+        error.clear();
+        RuntimeEffectPodInstanceInput seed;
+        seed.instance_id = 990001;
+        seed.generation = 1;
+        seed.program_id = 0;
+        seed.latched = 1;
+        seed.active = true;
+        // The catalog's definition 0 targets a settlement cell, whose zero policy
+        // requires a real handle and generation. Passing 0 fails
+        // `validate_instance` with `effect_pod_instance_invalid`, which is why the
+        // first attempt could not seed this instance at all.
+        seed.target_handle = 1;
+        seed.target_generation = 1;
+        seed.source_handle = 1;
+        std::string seed_error;
+        if (!authority.upsert_instance(seed, seed_error)) {
+            error = "effect_self_test_latched_setup_failed:" + seed_error;
+            return false;
+        }
+        bool seeded = false;
+        for (const auto &instance : authority.snapshot().instances) {
+            if (instance.instance_id != seed.instance_id) continue;
+            if (instance.latched != 1) {
+                error = "effect_self_test_latched_not_set"; return false;
+            }
+            seeded = true;
+        }
+        if (!seeded) { error = "effect_self_test_latched_missing"; return false; }
+        std::vector<uint8_t> latched_bytes;
+        authority.serialize(latched_bytes);
+        RuntimeEffectPodAuthority latched_restored;
+        if (!latched_restored.configure(catalog, error) ||
+            !latched_restored.restore(latched_bytes.data(), latched_bytes.size(),
+                                      error)) {
+            error = "effect_self_test_latched_restore_failed"; return false;
+        }
+        bool restored_latched = false;
+        for (const auto &instance : latched_restored.snapshot().instances) {
+            if (instance.instance_id != seed.instance_id) continue;
+            if (instance.latched != 1) {
+                error = "effect_self_test_latched_not_preserved_by_restore";
+                return false;
+            }
+            // And the answer STATE_LATCHED reads must survive with it, not just
+            // the byte.
+            if (RuntimeEffectPodAuthority::state_value(instance, 5, 0) != Q16_ONE) {
+                error = "effect_self_test_latched_state_value_lost"; return false;
+            }
+            restored_latched = true;
+        }
+        if (!restored_latched) {
+            error = "effect_self_test_latched_lost_by_restore"; return false;
+        }
+    }
     return true;
 }
 

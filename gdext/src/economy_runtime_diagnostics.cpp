@@ -701,6 +701,18 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     out["epoch_active"] = _epoch_active;
     out["epoch_id"] = _epoch_id.get();
     out["committed_generation"] = static_cast<int64_t>(_committed_generation);
+    out["effect_input_revision"] = static_cast<int64_t>(effect_input_revision());
+    out["effect_input_digest_computations"] =
+        static_cast<int64_t>(_effect_input_digest_computations);
+    out["effect_input_digest_ms"] = _effect_input_digest_ms;
+    // One atomic load: reading the shared_ptr directly raced the writer and could
+    // dereference a just-released object.
+    const std::shared_ptr<const EffectInputConsumers> consumers =
+        std::atomic_load_explicit(&_effect_input_consumers,
+            std::memory_order_acquire);
+    out["effect_input_consumer_columns"] =
+        static_cast<int64_t>(consumers == nullptr ? 0 : consumers->metric_mask.count());
+    out["effect_input_uses_tags"] = consumers != nullptr && consumers->tags_needed;
     out["sample_day"] = _sample_day;
     out["current_day"] = _current_day.get();
     out["commit_day"] = _commit_day;
@@ -1266,6 +1278,18 @@ Dictionary NativeEconomyRuntime::report() const {
     out["epoch_active"] = _epoch_active;
     out["epoch_id"] = _epoch_id.get();
     out["committed_generation"] = static_cast<int64_t>(_committed_generation);
+    out["effect_input_revision"] = static_cast<int64_t>(effect_input_revision());
+    out["effect_input_digest_computations"] =
+        static_cast<int64_t>(_effect_input_digest_computations);
+    out["effect_input_digest_ms"] = _effect_input_digest_ms;
+    // One atomic load: reading the shared_ptr directly raced the writer and could
+    // dereference a just-released object.
+    const std::shared_ptr<const EffectInputConsumers> consumers =
+        std::atomic_load_explicit(&_effect_input_consumers,
+            std::memory_order_acquire);
+    out["effect_input_consumer_columns"] =
+        static_cast<int64_t>(consumers == nullptr ? 0 : consumers->metric_mask.count());
+    out["effect_input_uses_tags"] = consumers != nullptr && consumers->tags_needed;
     write_cadence_report(out);
     out["sample_day"] = _sample_day;
     out["current_day"] = _current_day.get();
@@ -1359,6 +1383,28 @@ Dictionary NativeEconomyRuntime::report() const {
         country_class_opinion_snapshot();
     out["class_opinion_revision"] =
         static_cast<int64_t>(class_opinion.revision);
+    // P3-B: readers that found the epoch tag snapshot unbuilt. The snapshot is now
+    // built at commit, so this must stay 0 on any world that has committed once; a
+    // non-zero value means a reader is running before the first commit (or the
+    // rebuild was skipped), which used to be invisible.
+    out["tag_snapshot_miss_count"] = last_tag_snapshot_miss_count();
+    // R-3b (item 4): every `tag_snapshot()` load in the epoch. A tag selector that
+    // loads once per SCAN keeps this proportional to the number of scans; the pre-fix
+    // shape called it once per CELL, so a 6400-cell country cost 6400 loads per query.
+    out["tag_snapshot_loads"] = tag_snapshot_loads();
+    // R-3b: proof that an epoch nobody reads costs nothing. `tag_snapshot_builds`
+    // rises only when a consumer declared tags or metric 67; `tag_snapshot_skips`
+    // rises once per epoch where both halves were skipped. A world whose catalog
+    // declares neither must show builds == 0 and skips == committed epochs.
+    out["tag_snapshot_builds"] = static_cast<int64_t>(tag_snapshot_builds());
+    out["tag_snapshot_skips"] = static_cast<int64_t>(tag_snapshot_skips());
+    out["tag_snapshot_needed"] = tag_snapshot_needed();
+    out["tag_bits_needed"] = tag_bits_needed();
+    out["specialized_good_count_needed"] = specialized_good_count_needed();
+    // Must stay 0: a non-zero value means `set_target_tags` ran outside the config
+    // phase without the boundary lock (see the log line it also emits).
+    out["tag_snapshot_concurrent_writes"] =
+        static_cast<int64_t>(tag_snapshot_concurrent_writes());
     out["class_opinion_class_hash"] =
         static_cast<int64_t>(class_opinion.class_hash);
     out["class_opinion_country_count"] = class_opinion.country_count;

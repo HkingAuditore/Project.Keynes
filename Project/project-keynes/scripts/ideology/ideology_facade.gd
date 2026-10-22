@@ -13,13 +13,16 @@ enum Opcode { DISCOVER_IDEOLOGY = 1, GRANT_IDEOLOGY_POINTS = 2, OPEN_IDEOLOGY_OF
 var _world_ext: Object
 var _catalog: Resource
 var _native_catalog: Dictionary = {}
+var _world_seed := 0
 var _country_catalog: Dictionary = {}
 var _economy_catalog: Dictionary = {}
 var _configured := false
 var _receipt_cursor := 0
 
 func configure(world_ext: Object, country_catalog: Dictionary,
-		catalog: Resource = null, economy_catalog: Dictionary = {}) -> Dictionary:
+		catalog: Resource = null, economy_catalog: Dictionary = {},
+		world_seed: int = 0) -> Dictionary:
+	_world_seed = world_seed
 	_world_ext = world_ext
 	_country_catalog = country_catalog.duplicate(false)
 	_economy_catalog = economy_catalog.duplicate(false)
@@ -33,9 +36,17 @@ func configure(world_ext: Object, country_catalog: Dictionary,
 	if not bool(_native_catalog.get("ok", false)): return _native_catalog
 	var native := _native_catalog.duplicate(false)
 	native.erase("ok")
+	# R8-3: the country RNG seed is `handle` mixed with the WORLD seed, so two
+	# games of the same map no longer draw the same cards for the same country.
+	# The native runtime reads this key at `configure` and threads it into the
+	# worker catalog too, which keeps both authorities on one seed. Omitting it
+	# (older callers) leaves the previous all-zero behaviour.
+	native["world_seed"] = int(world_seed)
 	var result: Dictionary = _world_ext.configure_ideologies(native)
 	_configured = bool(result.get("ok", false))
 	return result
+
+func world_seed() -> int: return _world_seed
 
 func submit(commands: Array[Dictionary]) -> Dictionary:
 	if not _configured: return {"ok": false, "reason": "ideology_runtime_unconfigured"}

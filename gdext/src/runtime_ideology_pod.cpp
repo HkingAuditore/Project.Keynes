@@ -216,6 +216,9 @@ uint64_t RuntimeIdeologyPodAuthority::compute_catalog_hash(
     uint64_t hash = FNV_OFFSET;
     hash = hash_value(hash, catalog.abi_version);
     hash = hash_value(hash, catalog.country_catalog_hash);
+    // The offer RNG depends on it, so a peer with a different world seed draws a
+    // different card from the same sequence and must be rejected up front.
+    hash = hash_value(hash, catalog.world_seed);
     hash = hash_value(hash, catalog.class_hash);
     hash = hash_value(hash, catalog.class_count);
     hash = hash_value(hash, catalog.technology_count);
@@ -332,6 +335,7 @@ uint64_t RuntimeIdeologyPodAuthority::compute_state_hash(
         hash = hash_value(hash, country.history_count); hash = hash_value(hash, country.history_head);
         hash = hash_value(hash, country.baseline_population); hash = hash_value(hash, country.baseline_buildings);
         hash = hash_value(hash, country.lifetime_points_q16);
+    hash = hash_value(hash, country.trade_paid_day);
         hash = hash_value(hash, country.ledger.population_q16); hash = hash_value(hash, country.ledger.building_q16);
         hash = hash_value(hash, country.ledger.trade_q16); hash = hash_value(hash, country.ledger.opinion_factor_q16);
         hash = hash_value(hash, country.ledger.gain_factor_q16); hash = hash_value(hash, country.ledger.gain_q16);
@@ -527,6 +531,10 @@ bool RuntimeIdeologyPodAuthority::validate_inputs(
         error = "ideology_country_snapshot_shape_invalid"; return false;
     }
     const size_t lanes = static_cast<size_t>(country.country_count) * _catalog.class_count;
+    // Revision 0 stays REJECTED. It was briefly relaxed for the A1 day-binding
+    // experiment ("no opinion for this day" handed over as revision 0), but that
+    // binding is not landed (05 §2.6) and the rejection is a real invariant:
+    // `ideology_self_test_revision_rejection_failed` asserts it.
     if (opinion.revision == 0 || opinion.class_hash != _catalog.class_hash ||
         opinion.class_count != _catalog.class_count || opinion.country_count != country.country_count ||
         opinion.country_handles.size() != country.country_count ||
@@ -588,7 +596,12 @@ bool RuntimeIdeologyPodAuthority::bootstrap(
         out.handle = country_handle(country, slot);
         out.generation = country.country_generation[slot];
         out.ideology_points_q16 = _catalog.starting_points_q16;
-        out.rng_state = out.handle ^ (_catalog.catalog_hash + 0x9e3779b97f4a7c15ull);
+        // Seed from the handle and the SHARED constant only. Seeding from
+        // `_catalog.catalog_hash` made the two sides disagree by construction,
+        // because the main thread and the worker hash their catalogs with
+        // different functions.
+        out.rng_state = runtime_ideology_country_rng_seed(out.handle,
+                                                         _catalog.world_seed);
         out.opinion_revision = opinion.revision;
         out.known_bits.assign(idea_words, 0);
         out.banned_bits.assign(idea_words, 0);
@@ -1129,10 +1142,23 @@ void RuntimeIdeologyPodAuthority::accrue_points(
         opinion.country_buildings_installed.size() != countries ||
         opinion.country_trade_base_value.size() != countries) return;
     const int64_t period = std::max<int64_t>(1, opinion.period_days);
+    // R9-2: settle once per COMMITTED DAY, never per publish and never per
+    // `period_index`.
+    //
+    // `period_index` was `commit_day / period_days`, and `period_days` comes from
+    // `_epoch_days`, which the workset recalculates. With period 5 day 10 is
+    // period 2, and after the epoch widens to 6 day 12 is ALSO period 2, so a
+    // genuinely new commit was skipped as "already settled" (and the reverse split
+    // one period into two). `commit_day` is monotone and independent of how many
+    // times Economy publishes, so it is the only safe key on both sides.
+    // `period_index` remains in the snapshot for diagnostics only.
+    const uint64_t settle_key = opinion.committed_day >= 0
+        ? static_cast<uint64_t>(opinion.committed_day) + 1u
+        : opinion.revision;
     for (uint32_t slot = 0; slot < countries; ++slot) {
         auto &row = state.countries[slot];
-        if (row.handle == 0 || row.points_revision == opinion.revision) continue;
-        row.points_revision = opinion.revision;
+        if (row.handle == 0 || row.points_revision == settle_key) continue;
+        row.points_revision = settle_key;
         const int64_t population = std::max<int64_t>(0, opinion.country_population[slot]);
         const int64_t buildings = std::max<int64_t>(0, opinion.country_buildings_installed[slot]);
         if (row.baseline_ready == 0) {
@@ -1140,6 +1166,10 @@ void RuntimeIdeologyPodAuthority::accrue_points(
             row.baseline_population = population;
             row.baseline_buildings = buildings;
             row.baseline_ready = 1;
+            // R9-5: seed the trade marker HERE, mirroring the main thread. Left at
+            // INT64_MIN, the kernel's first call did the seeding one settlement
+            // later, so the whole first period's trade flow was silently dropped.
+            if (row.trade_paid_day == INT64_MIN) row.trade_paid_day = day;
             continue;
         }
         // High-water baselines: only new peaks pay, so decline/recovery loops
@@ -1153,7 +1183,19 @@ void RuntimeIdeologyPodAuthority::accrue_points(
         ledger.day = day;
         ledger.population_q16 = mul_sat(population_gain, _catalog.point_population_weight_q16);
         ledger.building_q16 = mul_sat(building_gain, _catalog.point_building_weight_q16);
-        ledger.trade_q16 = mul_sat(trade_per_day, _catalog.point_trade_weight_q16) / TRADE_MONEY_SCALE;
+        // Trade is a flow: pay for the days that elapsed since this row last
+        // paid. Clamping the span to `period` was removed: it broke "total depends
+        // only on elapsed days" (1 settlement paid 5000 where 30 settled paid
+        // 29000 over the same 30 days). Settling once, thirty times, or a random
+        // number of times over the same span now pays the same total.
+        //
+        // `ledger_span_days` is the same span and feeds the per-day cap (R9-3).
+        const int64_t trade_paid_before = row.trade_paid_day;
+        const int64_t trade_days_q16 = ideology_trade_flow_q16(
+            trade_per_day, day, period, row.trade_paid_day);
+        const int64_t ledger_span_days = trade_paid_before == INT64_MIN
+            ? 1 : std::max<int64_t>(1, day - trade_paid_before);
+        ledger.trade_q16 = mul_sat(trade_days_q16, _catalog.point_trade_weight_q16) / TRADE_MONEY_SCALE;
         int64_t total_influence = 0;
         int64_t weighted = 0;
         for (uint32_t class_index = 0; class_index < _catalog.class_count; ++class_index) {
@@ -1171,7 +1213,16 @@ void RuntimeIdeologyPodAuthority::accrue_points(
         const int64_t raw = add_sat(add_sat(ledger.population_q16, ledger.building_q16), ledger.trade_q16);
         int64_t gain = mul_sat(raw, ledger.opinion_factor_q16) / Q16_ONE;
         gain = mul_sat(gain, ledger.gain_factor_q16) / Q16_ONE;
-        if (_catalog.point_gain_cap_q16 > 0) gain = std::min(gain, _catalog.point_gain_cap_q16);
+        // R9-3: the cap is authored PER DAY, so a settlement that covers a span
+        // of days must be allowed `cap x span`. Applying the raw per-day cap to
+        // the whole settlement made a rare settler (large span) lose to a daily
+        // settler: "1 settlement == 30 settlements" held in the kernel and broke
+        // here. Mirrors the main thread exactly.
+        const int64_t covered_days = std::max<int64_t>(1, ledger_span_days);
+        if (_catalog.point_gain_cap_q16 > 0) {
+            gain = std::min(gain,
+                mul_sat(_catalog.point_gain_cap_q16, covered_days * Q16_ONE) / Q16_ONE);
+        }
         ledger.gain_q16 = std::max<int64_t>(0, gain);
         row.ideology_points_q16 = add_sat(row.ideology_points_q16, ledger.gain_q16);
         row.lifetime_points_q16 = add_sat(row.lifetime_points_q16, ledger.gain_q16);
@@ -1324,7 +1375,9 @@ bool RuntimeIdeologyPodAuthority::plan_day(
         state.pending_cursor = state.command_cursor = 0;
         state.active_country_cursor = state.active_idea_cursor = 0;
         state.input_generation = country.generation;
-        accrue_points(state, opinion, day);
+        // Revision 0 cannot reach here (validate_inputs rejects it); the guard
+        // documents why accrual is skipped rather than booked for a non-opinion.
+        if (opinion.revision != 0) accrue_points(state, opinion, day);
     } else if (state.round_day != day || state.input_generation != country.generation) {
         error = "ideology_same_day_continuation_input_changed"; return false;
     } else if (state.opinion_revision != opinion.revision) {
@@ -1480,6 +1533,9 @@ void RuntimeIdeologyPodAuthority::serialize(std::vector<uint8_t> &out) const {
         append_le<uint8_t>(out, country.history_count); append_le<uint8_t>(out, country.history_head);
         append_le<int64_t>(out, country.baseline_population); append_le<int64_t>(out, country.baseline_buildings);
         append_le<int64_t>(out, country.lifetime_points_q16);
+        // Ring/day markers that gate the trade flow. Omitting one would let a
+        // restored session pay trade again for a day it already paid.
+        append_le<int64_t>(out, country.trade_paid_day);
         append_le<int64_t>(out, country.ledger.population_q16); append_le<int64_t>(out, country.ledger.building_q16);
         append_le<int64_t>(out, country.ledger.trade_q16); append_le<int32_t>(out, country.ledger.opinion_factor_q16);
         append_le<int32_t>(out, country.ledger.gain_factor_q16); append_le<int64_t>(out, country.ledger.gain_q16);
@@ -1579,6 +1635,7 @@ bool RuntimeIdeologyPodAuthority::restore(
             country.history_count > RUNTIME_IDEOLOGY_POD_HISTORY || country.history_head >= RUNTIME_IDEOLOGY_POD_HISTORY ||
             !read_le(data,end,cursor,country.baseline_population) || !read_le(data,end,cursor,country.baseline_buildings) ||
             !read_le(data,end,cursor,country.lifetime_points_q16) ||
+            !read_le(data,end,cursor,country.trade_paid_day) ||
             !read_le(data,end,cursor,country.ledger.population_q16) || !read_le(data,end,cursor,country.ledger.building_q16) ||
             !read_le(data,end,cursor,country.ledger.trade_q16) || !read_le(data,end,cursor,country.ledger.opinion_factor_q16) ||
             !read_le(data,end,cursor,country.ledger.gain_factor_q16) || !read_le(data,end,cursor,country.ledger.gain_q16) ||
@@ -1693,6 +1750,21 @@ bool RuntimeIdeologyPodAuthority::self_test(std::string &error) {
             ideology_reroll_percent(50, 0) != 0 ||
             ideology_reroll_percent(400, 4 * one) != 400) {
             error = "ideology_self_test_reroll_percent_failed"; return false;
+        }
+    }
+    // R8-3: the country RNG seed must depend on the WORLD, not only on the
+    // handle. Before this the same country drew the same card sequence in every
+    // game of the same map, which is a content defect rather than a parity one
+    // (both authorities shared the bug, so parity could not see it).
+    {
+        constexpr uint64_t kHandle = 0x1ull << 32u;
+        const uint64_t zero = runtime_ideology_country_rng_seed(kHandle, 0);
+        const uint64_t a = runtime_ideology_country_rng_seed(kHandle, 1);
+        const uint64_t b = runtime_ideology_country_rng_seed(kHandle, 2);
+        if (a == b || a == zero || b == zero ||
+            runtime_ideology_country_rng_seed(kHandle, 1) != a ||
+            runtime_ideology_country_rng_seed(kHandle ^ 1u, 1) == a) {
+            error = "ideology_self_test_world_seed_failed"; return false;
         }
     }
     RuntimeIdeologyPodCatalog catalog;
@@ -1859,12 +1931,134 @@ bool RuntimeIdeologyPodAuthority::self_test(std::string &error) {
             error = "ideology_self_test_reroll_factor_failed"; return false;
         }
     }
+    // A1 / 6b: settlement-count invariance.
+    //
+    // The property that makes parity possible: over the same 30 days, settling
+    // once, thirty times, or a random number of times must pay the SAME trade
+    // total. Previously trade paid `trade_per_day` on every settlement and then
+    // suppressed a second settlement in the same day, which made the total a
+    // function of the settlement count -- 46859 vs 67969 in the field.
+    {
+        constexpr int64_t kDays = 30;
+        constexpr int64_t kTradePerDay = 1000;     // already weight-scaled
+        constexpr int64_t kPeriod = 5;             // opinion period, < kDays
+        // EVERY schedule starts with day 1, because the first observation SEEDS
+        // the marker and pays nothing. A schedule that begins at day 30 would
+        // seed there and pay zero, which is correct behaviour but not the same
+        // experiment: what is under test is "the same elapsed span, settled a
+        // different number of times", so all schedules share the seed day.
+        auto settle_total = [&](const std::vector<int64_t> &later_settlements) {
+            int64_t paid = INT64_MIN;
+            int64_t total = ideology_trade_flow_q16(kTradePerDay, 1, kPeriod, paid);
+            for (int64_t day : later_settlements)
+                total += ideology_trade_flow_q16(kTradePerDay, day, kPeriod, paid);
+            return total;
+        };
+        // 1) once, at the end
+        // 2) every day
+        // 3) every `kPeriod` days (the production case: period-aligned commits)
+        // 4) an irregular deterministic subset, including same-day repeats
+        std::vector<int64_t> once = {kDays};
+        std::vector<int64_t> daily;
+        std::vector<int64_t> periodic;
+        std::vector<int64_t> ragged;
+        for (int64_t day = 2; day <= kDays; ++day) {
+            daily.push_back(day);
+            if (day % kPeriod == 0) periodic.push_back(day);
+            // Deterministic pattern with irregular gaps, including repeats.
+            if ((day * 7 + 3) % 5 != 0) ragged.push_back(day);
+            if (day % 11 == 0) ragged.push_back(day);
+        }
+        const int64_t once_total = settle_total(once);
+        const int64_t daily_total = settle_total(daily);
+        const int64_t periodic_total = settle_total(periodic);
+        const int64_t ragged_total = settle_total(ragged);
+        if (once_total != daily_total || once_total != periodic_total ||
+            once_total != ragged_total) {
+            error = "ideology_self_test_trade_settlement_invariance_failed";
+            return false;
+        }
+        // And the amount itself must be right, not merely equal: day 1 seeds, so
+        // 29 elapsed days at 1000/day is 29000.
+        const int64_t expected = kTradePerDay * (kDays - 1);
+        if (once_total != expected) {
+            error = "ideology_self_test_trade_settlement_amount_failed";
+            return false;
+        }
+        // A gap longer than the period pays the WHOLE gap, not one period. This
+        // is the assertion that pins the decision not to clamp: the clamp read
+        // "total depends only on elapsed days" while paying `period` for a
+        // 99-day gap, which made a single settlement pay less than daily ones.
+        int64_t wide_paid = INT64_MIN;
+        if (ideology_trade_flow_q16(kTradePerDay, 1, kPeriod, wide_paid) != 0 ||
+            ideology_trade_flow_q16(kTradePerDay, 100, kPeriod, wide_paid)
+                != kTradePerDay * 99) {
+            error = "ideology_self_test_trade_settlement_gap_failed";
+            return false;
+        }
+        // Repeats in the same day pay once.
+        int64_t repeat_paid = INT64_MIN;
+        if (ideology_trade_flow_q16(kTradePerDay, 1, kPeriod, repeat_paid) != 0 ||
+            ideology_trade_flow_q16(kTradePerDay, 1, kPeriod, repeat_paid) != 0 ||
+            ideology_trade_flow_q16(kTradePerDay, 2, kPeriod, repeat_paid)
+                != kTradePerDay) {
+            error = "ideology_self_test_trade_settlement_repeat_failed";
+            return false;
+        }
+    }
     std::vector<uint8_t> bytes; authority.serialize(bytes);
     RuntimeIdeologyPodAuthority restored;
     if (!restored.configure(catalog, error) || !restored.restore(bytes.data(), bytes.size(), error) ||
         restored.snapshot().state_hash != authority.snapshot().state_hash) { error = "ideology_self_test_save_roundtrip_failed"; return false; }
     const uint64_t before = restored.snapshot().state_hash; bytes.back() ^= 0x40u;
     if (restored.restore(bytes.data(), bytes.size(), error) || restored.snapshot().state_hash != before) { error = "ideology_self_test_transactional_restore_failed"; return false; }
+    error.clear();
+    // R8-1: an OLDER payload must be refused by VERSION, and refused before the
+    // body is decoded.
+    //
+    // The defect this pins: `trade_paid_day` (and then the accrual markers) were
+    // appended to the country row while the ABI stayed 5, so a v5 file was
+    // decoded with the v6 field layout and came out as a late, wrong error
+    // (truncation or state-hash mismatch). Rebuild the header with the previous
+    // ABI and a matching checksum, keeping every other byte: the catalog hash
+    // and state hash are the ones this authority just wrote, so a reader that
+    // skipped the version gate WOULD accept the payload. Only the version can
+    // reject it, which is exactly the property being asserted.
+    {
+        constexpr uint32_t stale_abi = RUNTIME_IDEOLOGY_POD_ABI_VERSION - 1u;
+        std::vector<uint8_t> stale;
+        stale.reserve(bytes.size());
+        append_le<uint32_t>(stale, SAVE_MAGIC);
+        append_le<uint32_t>(stale, stale_abi);
+        // Everything from the catalog hash to the last body byte, verbatim.
+        constexpr size_t header_size = sizeof(uint32_t) * 2u;
+        if (bytes.size() <= header_size + sizeof(uint64_t) ||
+            stale.size() != header_size) {
+            error = "ideology_self_test_stale_abi_setup_failed"; return false;
+        }
+        stale.insert(stale.end(), bytes.begin() + header_size,
+                     bytes.end() - sizeof(uint64_t));
+        append_le<uint64_t>(stale, hash_bytes(FNV_OFFSET, stale.data(), stale.size()));
+        RuntimeIdeologyPodAuthority guard;
+        if (!guard.configure(catalog, error)) {
+            error = "ideology_self_test_stale_abi_setup_failed"; return false;
+        }
+        std::string stale_error;
+        if (guard.restore(stale.data(), stale.size(), stale_error) ||
+            stale_error != "ideology_pod_save_header_invalid") {
+            error = "ideology_self_test_stale_abi_rejection_failed"; return false;
+        }
+        // And the current ABI still round-trips, so the gate rejects the old
+        // version rather than everything.
+        std::vector<uint8_t> fresh;
+        authority.serialize(fresh);
+        RuntimeIdeologyPodAuthority control;
+        if (!control.configure(catalog, error) ||
+            !control.restore(fresh.data(), fresh.size(), error) ||
+            control.snapshot().state_hash != authority.snapshot().state_hash) {
+            error = "ideology_self_test_stale_abi_control_failed"; return false;
+        }
+    }
     error.clear(); return true;
 }
 
@@ -1963,6 +2157,158 @@ bool RuntimeIdeologySnapshotRing::self_test() {
     if (ring.read_buffer(acquired).generation != 7) return false;
     ring.release(acquired);
     return true;
+}
+
+namespace {
+inline uint64_t business_mix(uint64_t hash, uint64_t value) {
+    hash ^= value;
+    hash *= 1099511628211ULL;
+    return hash;
+}
+inline uint64_t business_seed() { return 1469598103934665603ULL; }
+} // namespace
+
+void ideology_business_sections(const RuntimeIdeologyPodSnapshot &state,
+                                IdeologyBusinessSections &out) {
+    out = IdeologyBusinessSections{};
+    // `catalog_hash` is deliberately NOT mixed in. The main thread and the worker
+    // compute it with two different functions over two different structures:
+    //   main   -> NativeIdeologyRuntime::compute_catalog_hash()
+    //   worker -> RuntimeIdeologyPodAuthority::compute_catalog_hash()
+    // so the two values differ by construction. Folding it into `points` made
+    // that section permanently unequal and made every real parity comparison
+    // report `field=points`. Catalog agreement is a PRECONDITION, checked
+    // separately (see `ideology_catalog_mismatch`), never a business field.
+    out.points = business_seed();
+    out.baseline = business_seed();
+    out.history = business_seed();
+    out.draw = business_seed();
+    out.bits = business_seed();
+    out.offer = business_seed();
+    out.ideas = business_seed();
+    out.points_balance = business_seed();
+    out.points_lifetime = business_seed();
+    out.points_revision = business_seed();
+    out.history_cursor = business_seed();
+    for (const RuntimeIdeologyPodCountryState &country : state.countries) {
+        // Empty slots depend on the array length, not on state.
+        if (country.handle == 0) continue;
+        const uint64_t handle = country.handle;
+        // `points` is the business section: balances only. `points_revision` is a
+        // per-side Economy cadence counter (see the sub-hash comment below) and
+        // must not be mixed in here, or this section can never be equal.
+        out.points = business_mix(business_mix(out.points, handle),
+            static_cast<uint64_t>(country.ideology_points_q16));
+        out.points = business_mix(out.points,
+            static_cast<uint64_t>(country.lifetime_points_q16));
+        // Same rows, split by field, so `field=` can say which one moved.
+        out.points_balance = business_mix(
+            business_mix(out.points_balance, handle),
+            static_cast<uint64_t>(country.ideology_points_q16));
+        out.points_lifetime = business_mix(
+            business_mix(out.points_lifetime, handle),
+            static_cast<uint64_t>(country.lifetime_points_q16));
+        // `points_revision` is deliberately NOT part of `points`.
+        //
+        // It is not "how many times this row accrued"; it is the external
+        // Economy opinion revision the row last settled against:
+        //     row->points_revision = opinion.revision;
+        // That counter increments once per Economy development publish, and the
+        // two sides publish on different cadences -- the worker on its own
+        // clock, the main thread on cooperative slices. So the two numbers
+        // differ by construction even when every business value is identical
+        // (observed: reference_revision=1 vs worker_revision=3 while
+        // ideology_points_q16 and lifetime_points_q16 matched exactly).
+        //
+        // It is kept as its own diagnostic sub-hash so a real divergence in
+        // accrual cadence is still visible, but it cannot make `points` unequal.
+        out.points_revision = business_mix(
+            business_mix(out.points_revision, handle),
+            static_cast<uint64_t>(country.points_revision));
+        out.baseline = business_mix(business_mix(out.baseline, handle),
+            static_cast<uint64_t>(country.baseline_ready));
+        out.baseline = business_mix(business_mix(out.baseline,
+            static_cast<uint64_t>(country.baseline_population)),
+            static_cast<uint64_t>(country.baseline_buildings));
+        // History is compared by CONTENT, normalised for ring cadence.
+        //
+        // `history_count` / `history_head` are positions in a fixed-size ring:
+        // they count how many accruals wrote into it. Two sides that accrued a
+        // different NUMBER of times (the worker settles against a higher Economy
+        // revision because it publishes on its own clock) therefore carry
+        // different cursors even when every stored gain is identical. Observed:
+        // reference_history_count=0 vs worker_history_count=2 while both
+        // `reference_history_q16` and `worker_history_q16` were all zero.
+        //
+        // So: mix every NON-ZERO stored gain in ring order. "No gains" then
+        // hashes the same no matter how many empty notches the ring took, while
+        // any real gain still differs. The raw cursors go to a separate
+        // diagnostic sub-hash that cannot make `history` unequal.
+        //
+        // This does not weaken the section: a genuine accrual difference changes
+        // `ideology_points_q16` / `lifetime_points_q16` (in `points`) and the
+        // non-zero entries here.
+        out.history = business_mix(out.history, handle);
+        for (int64_t value : country.history_q16) {
+            if (value == 0) continue;
+            out.history = business_mix(out.history,
+                static_cast<uint64_t>(value));
+        }
+        out.history_cursor = business_mix(
+            business_mix(out.history_cursor, handle),
+            static_cast<uint64_t>(country.history_count) << 32 |
+            static_cast<uint64_t>(country.history_head));
+        out.draw = business_mix(business_mix(out.draw, handle),
+            country.rng_state);
+        out.draw = business_mix(out.draw,
+            static_cast<uint64_t>(country.draw_sequence));
+        out.draw = business_mix(out.draw,
+            static_cast<uint64_t>(country.unlocked_era));
+        out.bits = business_mix(business_mix(out.bits, handle),
+            static_cast<uint64_t>(country.known_bits.size()));
+        for (uint64_t word : country.known_bits)
+            out.bits = business_mix(out.bits, word);
+        for (uint64_t word : country.banned_bits)
+            out.bits = business_mix(out.bits, word);
+        for (uint64_t word : country.gate_bits)
+            out.bits = business_mix(out.bits, word);
+        for (uint64_t word : country.synergy_bits)
+            out.bits = business_mix(out.bits, word);
+        out.offer = business_mix(business_mix(out.offer, handle),
+            country.offer.generation);
+        out.offer = business_mix(out.offer,
+            static_cast<uint64_t>(country.offer.active) << 32 |
+            static_cast<uint64_t>(country.offer.choice_count));
+        for (int32_t id : country.offer.ideology_ids)
+            out.offer = business_mix(out.offer,
+                static_cast<uint64_t>(static_cast<int64_t>(id)));
+        out.ideas = business_mix(business_mix(out.ideas, handle),
+            static_cast<uint64_t>(country.ideas.size()));
+        for (const RuntimeIdeologyPodIdeaState &idea : country.ideas) {
+            out.ideas = business_mix(out.ideas,
+                static_cast<uint64_t>(idea.understanding_q16));
+            out.ideas = business_mix(out.ideas,
+                static_cast<uint64_t>(static_cast<int64_t>(idea.level)) << 32 |
+                static_cast<uint64_t>(idea.generation));
+            out.ideas = business_mix(out.ideas, idea.entered_levels);
+            out.ideas = business_mix(out.ideas,
+                static_cast<uint64_t>(static_cast<int32_t>(idea.location)));
+        }
+    }
+}
+
+uint64_t ideology_business_hash(const RuntimeIdeologyPodSnapshot &state) {
+    IdeologyBusinessSections sections;
+    ideology_business_sections(state, sections);
+    uint64_t hash = business_mix(business_seed(), state.committed_day);
+    hash = business_mix(hash, sections.points);
+    hash = business_mix(hash, sections.baseline);
+    hash = business_mix(hash, sections.history);
+    hash = business_mix(hash, sections.draw);
+    hash = business_mix(hash, sections.bits);
+    hash = business_mix(hash, sections.offer);
+    hash = business_mix(hash, sections.ideas);
+    return hash;
 }
 
 } // namespace pk

@@ -746,8 +746,22 @@ bool NativeEconomyRuntime::route_trade_source(
         record_trade_signal_attempt(
             destination.cell, source.good, TRADE_SIGNAL_DIAG_NONE);
         int64_t sat = 0;
+        // P2-A: the trade factor is a VOLUME factor, applied to what this source
+        // offers. It used to be folded into the merchant capacity pool only, so
+        // a country with idle capacity -- the normal state, since capacity is
+        // sized from merchant population -- saw no effect at all from a card
+        // that promises "this country trades 50% more".
+        int32_t trade_factor_q16 = Q16_ONE;
+        if (source.country >= 0 && source.country < static_cast<int32_t>(
+                _epoch_country_trade_capacity_factor_q16.size())) {
+            trade_factor_q16 = _epoch_country_trade_capacity_factor_q16[
+                static_cast<size_t>(source.country)];
+        }
+        const int64_t offered_quantity = trade_factor_q16 == Q16_ONE
+            ? source.quantity
+            : mul_div_sat(source.quantity, trade_factor_q16, Q16_ONE, sat);
         const int64_t requested_quantity = std::min(
-            source.quantity, destination.quantity);
+            offered_quantity, destination.quantity);
         if (requested_quantity <= 0 || route_cost <= 0) return false;
         const int64_t relief_q16 = trade_relief_pressure_q16(
             destination.cell, source.good, sat);
@@ -1920,13 +1934,11 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
         const int64_t base_capacity = saturating_mul(
             merchant_population, _trade_capacity_per_merchant_q16.get(),
             _saturation_count);
-        const int32_t capacity_factor = country <
-                static_cast<int32_t>(_epoch_country_trade_capacity_factor_q16.size())
-            ? _epoch_country_trade_capacity_factor_q16[country] : Q16_ONE;
+        // The factor deliberately does NOT scale the pool any more. Applying it
+        // in both places would multiply twice: a 2x card would mean 2x per
+        // order AND 2x the capacity to carry them.
         country_capacity[static_cast<size_t>(country)] = saturating_add(
-            country_capacity[static_cast<size_t>(country)],
-            mul_div_sat(base_capacity, capacity_factor, Q16_ONE,
-                        _saturation_count),
+            country_capacity[static_cast<size_t>(country)], base_capacity,
             _saturation_count);
     }
     _trade_capacity_available = std::accumulate(

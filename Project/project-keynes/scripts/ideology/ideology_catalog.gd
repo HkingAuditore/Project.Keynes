@@ -976,13 +976,47 @@ func _synergy_display_name(synergy) -> String:
 
 func _present_effect_lines(modifier_catalog, effects: Array[Resource]) -> PackedStringArray:
 	var lines := PackedStringArray()
-	if modifier_catalog == null or not modifier_catalog.has_method("present_definition"):
-		return lines
+	if modifier_catalog != null and modifier_catalog.has_method("present_definition"):
+		for effect in effects:
+			if effect == null or not effect is EffectCommandScript:
+				continue
+			for line in modifier_catalog.present_definition(
+					effect.definition_key, int(effect.value_q16)):
+				if not lines.has(line):
+					lines.append(line)
+	# A managed program row names a program, not a Modifier definition, so the
+	# presenter above returns nothing for it. Falling back to the program's own
+	# summary is the only thing standing between a cell-level card and a card
+	# face that lists its cost and nothing else.
 	for effect in effects:
 		if effect == null or not effect is EffectCommandScript:
 			continue
-		for line in modifier_catalog.present_definition(
-				effect.definition_key, int(effect.value_q16)):
-			if not lines.has(line):
-				lines.append(line)
+		var summary := _program_summary(String(effect.definition_key))
+		if not summary.is_empty() and not lines.has(summary):
+			lines.append(summary)
 	return lines
+
+
+## Player-facing summary of the managed program named by `definition_key`.
+##
+## `effect_programs` is optional: a catalog that declares no programs (every
+## fixture before this round, and any save-less test) simply yields "".
+func _program_summary(definition_key: String) -> String:
+	if definition_key.is_empty():
+		return ""
+	var catalog: Resource = effect_programs
+	if catalog == null:
+		return ""
+	var rows: Variant = catalog.get("effects")
+	if rows == null:
+		return ""
+	for program in rows:
+		if program == null:
+			continue
+		if String(program.get("definition_key")) != definition_key:
+			continue
+		var summary: Variant = program.get("summary")
+		if summary == null:
+			return ""
+		return String(summary).strip_edges()
+	return ""

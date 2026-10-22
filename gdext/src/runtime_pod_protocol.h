@@ -1722,6 +1722,76 @@ struct RuntimeThreadReport {
     int32_t country_parity_index = -1;
     char country_parity_status[64]{};
     char country_parity_field[48]{};
+    // Ideology parity, mirroring the country pair.
+    bool ideology_parity_compared = false;
+    bool ideology_parity_matched = false;
+    int64_t ideology_parity_compared_count = 0;
+    int64_t ideology_parity_matched_count = 0;
+    uint64_t ideology_parity_reference_hash = 0;
+    uint64_t ideology_parity_worker_hash = 0;
+    int64_t ideology_parity_first_mismatch_day = -1;
+    // R8-4: worker days with no reference on the same calendar day. A run whose
+    // calendars disagree must be visible as uncompared, never as matched.
+    int64_t ideology_parity_uncompared_day_offset = 0;
+    char ideology_parity_field[48]{};
+    // Raw numbers behind a `points*` parity field. Empty until a mismatch lands,
+    // then it keeps the FIRST differing country row so a failure is readable
+    // from the report alone instead of requiring a debugger rerun. Plain POD:
+    // this header is deliberately free of any godot dependency.
+    bool ideology_parity_points_diff_valid = false;
+    int64_t ideology_parity_points_diff_day = -1;
+    int64_t ideology_parity_points_diff_slot = -1;
+    int64_t ideology_parity_points_diff_reference_countries = 0;
+    int64_t ideology_parity_points_diff_worker_countries = 0;
+    int64_t ideology_parity_points_diff_handle = 0;
+    int64_t ideology_parity_points_diff_reference_handle = 0;
+    int64_t ideology_parity_points_diff_worker_handle = 0;
+    int64_t ideology_parity_points_diff_reference_points_q16 = 0;
+    int64_t ideology_parity_points_diff_worker_points_q16 = 0;
+    int64_t ideology_parity_points_diff_reference_lifetime_q16 = 0;
+    int64_t ideology_parity_points_diff_worker_lifetime_q16 = 0;
+    int64_t ideology_parity_points_diff_reference_revision = 0;
+    int64_t ideology_parity_points_diff_worker_revision = 0;
+    int32_t ideology_parity_points_diff_reference_baseline_ready = 0;
+    int32_t ideology_parity_points_diff_worker_baseline_ready = 0;
+    int64_t ideology_parity_points_diff_reference_baseline_population = 0;
+    int64_t ideology_parity_points_diff_worker_baseline_population = 0;
+    int64_t ideology_parity_points_diff_reference_baseline_buildings = 0;
+    int64_t ideology_parity_points_diff_worker_baseline_buildings = 0;
+    int32_t ideology_parity_points_diff_reference_history_count = 0;
+    int32_t ideology_parity_points_diff_worker_history_count = 0;
+    int32_t ideology_parity_points_diff_reference_history_head = 0;
+    int32_t ideology_parity_points_diff_worker_history_head = 0;
+    std::array<int64_t, 8> ideology_parity_points_diff_reference_history_q16{};
+    std::array<int64_t, 8> ideology_parity_points_diff_worker_history_q16{};
+    int64_t ideology_parity_points_diff_reference_last_day = -1;
+    int64_t ideology_parity_points_diff_worker_round_day = -1;
+    int64_t ideology_parity_points_diff_worker_committed_day = -1;
+    int64_t ideology_parity_points_diff_reference_catalog_hash = 0;
+    int64_t ideology_parity_points_diff_worker_catalog_hash = 0;
+    int64_t ideology_parity_reference_publish_count = 0;
+    int64_t ideology_parity_reference_published_day = -1;
+    int64_t ideology_parity_reference_published_countries = 0;
+    int32_t ideology_parity_reference_published_with_points_revision = 0;
+    int64_t ideology_parity_reference_skipped_count = 0;
+    char ideology_parity_reference_skip_reason[48]{};
+    // Catalog agreement is a comparison precondition, not a business field.
+    int64_t ideology_parity_catalog_mismatch_count = 0;
+    int64_t ideology_parity_last_reference_catalog_hash = 0;
+    int64_t ideology_parity_last_worker_catalog_hash = 0;
+    int64_t ideology_parity_worker_opinion_revision = 0;
+    // A1: the period the worker actually consumed, and the commit day of that
+    // opinion. A driver uses these to bind the main thread to the SAME input.
+    int64_t ideology_parity_worker_opinion_period_index = -1;
+    int64_t ideology_parity_worker_opinion_committed_day = -1;
+    int64_t ideology_parity_worker_committed_day = -1;
+    int64_t ideology_parity_paired_reference_day = -1;
+    int64_t ideology_parity_paired_worker_day = -1;
+    int64_t ideology_parity_row_mismatch_slot = -1;
+    int64_t ideology_parity_row_mismatch_reference_handle = 0;
+    int64_t ideology_parity_row_mismatch_worker_handle = 0;
+    int64_t ideology_parity_row_mismatch_reference_points = 0;
+    int64_t ideology_parity_row_mismatch_worker_points = 0;
     bool modifier_pod_ready = false;
     double modifier_pod_plan_ms = 0.0;
     double modifier_pod_replay_ms = 0.0;

@@ -130,6 +130,15 @@ func _run() -> void:
 	var ideology_report: Dictionary = _ext.get_ideology_report()
 	var effect_report: Dictionary = _ext.get_effect_report()
 	var journal_report: Dictionary = _ext.get_gameplay_event_bus_report()
+	# Doc 03 §6.2 asks for these by name; they were already asserted below but
+	# never printed, so a run left no record of their values.
+	var counter_keys := ["dormant_scan_count", "sparse_idea_scan_count",
+		"command_queue_resorts", "command_queue_shift_steps",
+		"instance_refresh_visits", "metric_publishes", "cell_plane_rebuilds"]
+	var counter_parts := PackedStringArray()
+	for key in counter_keys:
+		counter_parts.append("%s=%d" % [key, int(ideology_report.get(key, -1))])
+	print("stress counters: " + " ".join(counter_parts))
 	var visits_delta := int(ideology_report.get("active_visits", 0)) - baseline_visits
 	_expect("active dense traversal matches 50 days x 15 x 512", visits_delta == MEASURED_DAYS * ACTIVE_PER_COUNTRY * COUNTRY_COUNT)
 	_expect("dormant ideology scan count is zero", int(ideology_report.get("dormant_scan_count", -1)) == 0)

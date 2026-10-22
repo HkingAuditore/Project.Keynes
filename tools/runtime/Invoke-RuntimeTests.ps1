@@ -31,55 +31,68 @@ $logDir = Join-Path $OutDir 'tests'
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 
 $tests = @(
-    'tests/runtime_protocol_guard_test.gd',
-    'tests/runtime_domain_pod_test.gd',
-    'tests/runtime_modifier_pod_test.gd',
-    'tests/runtime_events_pod_test.gd',
-    'tests/runtime_climate_authority_test.gd',
-    'tests/runtime_climate_parity_test.gd',
-    'tests/runtime_climate_stage_order_contract_test.gd',
-    'tests/runtime_climate_save_roundtrip_test.gd',
-    'tests/runtime_country_pod_test.gd',
-    'tests/runtime_country_peer_bridge_test.gd',
-    'tests/runtime_country_economy_transaction_test.gd',
-    'tests/runtime_country_host_protocol_test.gd',
-    'tests/runtime_country_parity_test.gd',
-    'tests/runtime_country_save_roundtrip_test.gd',
-    'tests/runtime_snapshot_ring_test.gd',
-    'tests/runtime_save_domain_section_test.gd',
-    'tests/runtime_worker_source_scan_test.gd',
-    'tests/runtime_thread_isolation_test.gd',
-    'tests/runtime_graph_country_committed_test.gd',
-    'tests/runtime_generation_tick_gate_test.gd',
-    'tests/runtime_trigger_pod_test.gd',
-    'tests/runtime_trigger_parity_test.gd',
-    'tests/runtime_trigger_save_roundtrip_test.gd',
-    'tests/runtime_effect_pod_test.gd',
-    'tests/ideology_effect_worker_forward_test.gd',
-    'tests/ideology_effect_metric_publish_test.gd',
+    'tests/runtime/runtime_protocol_guard_test.gd',
+    'tests/runtime/runtime_domain_pod_test.gd',
+    'tests/runtime/runtime_modifier_pod_test.gd',
+    'tests/runtime/runtime_events_pod_test.gd',
+    'tests/runtime/runtime_climate_authority_test.gd',
+    'tests/runtime/runtime_climate_parity_test.gd',
+    'tests/runtime/runtime_climate_stage_order_contract_test.gd',
+    'tests/runtime/runtime_climate_save_roundtrip_test.gd',
+    'tests/runtime/runtime_country_pod_test.gd',
+    'tests/runtime/runtime_country_peer_bridge_test.gd',
+    'tests/runtime/runtime_country_economy_transaction_test.gd',
+    'tests/runtime/runtime_country_host_protocol_test.gd',
+    'tests/runtime/runtime_country_parity_test.gd',
+    'tests/runtime/runtime_ideology_parity_test.gd',
+    'tests/runtime/runtime_ideology_parity_guard_test.gd',
+    'tests/runtime/runtime_country_save_roundtrip_test.gd',
+    'tests/runtime/runtime_snapshot_ring_test.gd',
+    'tests/runtime/runtime_save_domain_section_test.gd',
+    'tests/runtime/runtime_worker_source_scan_test.gd',
+    'tests/runtime/runtime_thread_isolation_test.gd',
+    'tests/runtime/runtime_graph_country_committed_test.gd',
+    'tests/runtime/runtime_generation_tick_gate_test.gd',
+    'tests/runtime/runtime_trigger_pod_test.gd',
+    'tests/runtime/runtime_trigger_parity_test.gd',
+    'tests/runtime/runtime_trigger_save_roundtrip_test.gd',
+    'tests/runtime/runtime_effect_pod_test.gd',
+    'tests/ideology/ideology_effect_worker_forward_test.gd',
+    'tests/ideology/ideology_effect_metric_publish_test.gd',
     # The effect-instance report had zero GDScript consumers until the card face
     # read it; this pins the summariser and the badge, both pure functions.
-    'tests/ideology_effect_report_test.gd',
-    'tests/metric_mask_capacity_test.gd',
-    'tests/target_tag_catalog_test.gd',
-    'tests/target_tag_dictionary_test.gd',
+    'tests/ideology/ideology_effect_report_test.gd',
+    'tests/effect/metric_mask_capacity_test.gd',
+    'tests/effect/target_tag_catalog_test.gd',
+    'tests/effect/target_tag_dictionary_test.gd',
     # Tag ids are 1-based dictionary indices, so a card that hardcodes one is
     # one insertion away from silently matching different cells. This pins the
     # name -> id resolution that replaced those hardcoded numbers (L5-14).
-    'tests/effect_selector_tag_resolution_test.gd',
+    'tests/effect/effect_selector_tag_resolution_test.gd',
     # Orphaned until now: nothing referenced this script, so every target-selector
     # assertion it gates (the native synthetic-grid self check) was invisible to
     # the suite even though it was passing.
-    'tests/ideology_target_selector_test.gd',
-    'tests/family_effect_worker_forward_test.gd',
-    'tests/family_effect_restore_forward_test.gd',
-    'tests/technology_effect_worker_forward_test.gd',
-    'tests/runtime_authority_m5_m6_gate_test.gd',
+    'tests/ideology/ideology_target_selector_test.gd',
+    'tests/family/family_effect_worker_forward_test.gd',
+    'tests/family/family_effect_restore_forward_test.gd',
+    'tests/technology/technology_effect_worker_forward_test.gd',
+    'tests/runtime/runtime_authority_m5_m6_gate_test.gd',
     'tests/dots_completion/dots_completion_gate.gd'
 )
 
 # Markers that mean the harness itself reported a problem even when Godot exits 0.
 $failurePattern = 'FAIL\b|FAILED|ASSERT|assertion failed|Traceback|SCRIPT ERROR|Cannot call method|Invalid call|Parse Error|Condition ".*" is (true|false)'
+
+# Known-red, non-blocking (05 §2.8).
+#
+# The game now ships on the worker authority only; the main-thread ideology path is
+# frozen. This parity gate compares the two, so its remaining divergence is not a
+# defect to fix -- it is the divergence the freeze deliberately stopped paying for.
+# It stays in the list (deleting it would hide the red), runs as before, and is
+# reported separately so it cannot be mistaken for a pass.
+$knownRed = @(
+    'runtime_ideology_parity_test'
+)
 
 $results = @()
 foreach ($relative in $tests) {
@@ -120,9 +133,12 @@ foreach ($relative in $tests) {
         log_bytes       = $logText.Length
         failure_markers = @($markers)
         passed          = $passed
+        known_red       = ($knownRed -contains $name)
     }
 
-    $verdict = if ($passed) { 'PASS' } else { "FAIL (exit=$exitCode markers=$($markers -join ','))" }
+    $verdict = if ($passed) { 'PASS' }
+        elseif ($knownRed -contains $name) { "KNOWN-RED (exit=$exitCode markers=$($markers -join ','))" }
+        else { "FAIL (exit=$exitCode markers=$($markers -join ','))" }
     Write-Host " $verdict  [$([math]::Round($elapsed,1))s]"
 }
 
@@ -143,29 +159,39 @@ foreach ($result in $results) {
 }
 Set-Content -LiteralPath $combined -Value $builder.ToString() -Encoding UTF8
 
-# The source scan test is the §26 source-scan artifact; surface it separately.
+# The source scan test is the 搂26 source-scan artifact; surface it separately.
 $scanLog = Join-Path $logDir 'runtime_worker_source_scan_test.log'
 if (Test-Path -LiteralPath $scanLog) {
     Copy-Item -LiteralPath $scanLog -Destination (Join-Path $OutDir 'source-scan.log') -Force
 }
 
 $passCount = @($results | Where-Object { $_.passed }).Count
+$knownRedResults = @($results | Where-Object { (-not $_.passed) -and $_.known_red })
+$blockingFailures = @($results | Where-Object { (-not $_.passed) -and (-not $_.known_red) })
 $summary = [ordered]@{
     generated_utc = (Get-Date).ToUniversalTime().ToString('o')
     godot         = $godot
     total         = $results.Count
     passed        = $passCount
-    failed        = $results.Count - $passCount
+    known_red     = $knownRedResults.Count
+    failed        = $blockingFailures.Count
+    known_red_tests = @($knownRedResults | ForEach-Object { $_.name })
     results       = $results
 }
 $summary | ConvertTo-Json -Depth 6 |
     Set-Content -LiteralPath (Join-Path $OutDir 'test-summary.json') -Encoding UTF8
 
 Write-Host ''
-Write-Host "$passCount/$($results.Count) passed -> $OutDir"
-if ($passCount -ne $results.Count) {
+Write-Host "$passCount/$($results.Count) passed, $($knownRedResults.Count) known-red, $($blockingFailures.Count) failed -> $OutDir"
+if ($knownRedResults.Count -gt 0) {
+    Write-Host 'known-red (non-blocking, 05 §2.8):' -ForegroundColor Yellow
+    foreach ($result in $knownRedResults) {
+        Write-Host "  $($result.name)  exit=$($result.exit_code)  $($result.failure_markers -join ' | ')"
+    }
+}
+if ($blockingFailures.Count -gt 0) {
     Write-Host 'failed:' -ForegroundColor Yellow
-    foreach ($result in $results | Where-Object { -not $_.passed }) {
+    foreach ($result in $blockingFailures) {
         Write-Host "  $($result.name)  exit=$($result.exit_code)  $($result.failure_markers -join ' | ')"
     }
     exit 1

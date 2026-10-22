@@ -1180,6 +1180,61 @@ Dictionary DCWorldExt::get_economy_committed_audit_report() const {
     return runtime_from(_economy_runtime)->committed_audit_report();
 }
 
+Dictionary DCWorldExt::refresh_effect_input_digest_for_test() {
+    Dictionary out;
+    if (_economy_runtime == nullptr) {
+        out["ok"] = false;
+        out["code"] = "economy_runtime_unavailable";
+        return out;
+    }
+    static_cast<NativeEconomyRuntime *>(_economy_runtime)
+        ->refresh_effect_input_digest();
+    out["ok"] = true;
+    return out;
+}
+
+Dictionary DCWorldExt::set_effect_metric_override_for_test(int32_t metric,
+        int64_t value, bool has_value) {
+    Dictionary out;
+    if (_economy_runtime == nullptr) {
+        out["ok"] = false;
+        out["code"] = "economy_runtime_unavailable";
+        return out;
+    }
+    static_cast<NativeEconomyRuntime *>(_economy_runtime)
+        ->set_effect_metric_override(metric, value, has_value);
+    out["ok"] = true;
+    return out;
+}
+
+Dictionary DCWorldExt::get_effect_input_revisions() const {
+    Dictionary out;
+    if (_economy_runtime == nullptr) {
+        out["ok"] = false;
+        out["code"] = "economy_runtime_unavailable";
+        return out;
+    }
+    const NativeEconomyRuntime *runtime =
+        static_cast<const NativeEconomyRuntime *>(_economy_runtime);
+    out["ok"] = true;
+    out["global"] = static_cast<int64_t>(runtime->effect_input_revision());
+    out["territory"] = static_cast<int64_t>(runtime->effect_territory_revision());
+    out["tag"] = static_cast<int64_t>(runtime->effect_tag_revision());
+    const auto snapshot = runtime->effect_input_snapshot();
+    out["generation"] = snapshot == nullptr
+        ? static_cast<int64_t>(0)
+        : static_cast<int64_t>(snapshot->generation);
+    PackedInt64Array metrics;
+    metrics.resize(static_cast<int64_t>(NativeEconomyRuntime::FAMILY_METRIC_COUNT));
+    for (int32_t metric = 0;
+            metric < static_cast<int32_t>(NativeEconomyRuntime::FAMILY_METRIC_COUNT);
+            ++metric)
+        metrics.set(metric,
+            static_cast<int64_t>(runtime->effect_metric_revision(metric)));
+    out["metrics"] = metrics;
+    return out;
+}
+
 Dictionary DCWorldExt::get_economy_report() const {
     if (_economy_runtime == nullptr) {
         Dictionary out;

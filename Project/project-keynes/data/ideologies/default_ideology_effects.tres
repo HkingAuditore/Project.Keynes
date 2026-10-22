@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="IdeologyEffectCatalog" load_steps=31 format=3]
+[gd_resource type="Resource" script_class="IdeologyEffectCatalog" load_steps=540 format=3]
 
 [ext_resource type="Script" path="res://scripts/ideology/ideology_effect_catalog.gd" id="1_catalog"]
 [ext_resource type="Script" path="res://scripts/ideology/ideology_effect_definition.gd" id="2_effect"]
@@ -6,46 +6,23 @@
 [ext_resource type="Script" path="res://scripts/effect/effect_instruction.gd" id="4_instruction"]
 [ext_resource type="Script" path="res://scripts/effect/effect_command.gd" id="5_command"]
 
-; ─────────────────────────────────────────────────────────────────────────────
-; V1..V6 是「目标对象随条件变」的机制验证卡，不是平衡内容。
-; 每张卡验证一种不同的形态：
-;   V1 条件 -> 幅度（全国标量）        V2 无条件 -> 邻域 R1
-;   V3 产出占比 -> R1                  V4 资源专精 -> R2
-;   V5 层数 -> 同地形连通块            V6 双条件 AND -> 距离 N
-;
-; 关键口径（metric id 见 effect_domain_catalog.gd，数组下标即 id）：
-;   38 cell.sector_output_share.extractive_q16       按**产出**算的矿业占比
-;   42 cell.dominant_sector_output_share_q16         按**产出**算的主导部门占比
-;   44 cell.dominant_resource_stock_share_q16        主导资源存量占比
-;    4 STATE_STACK_COUNT                             本实例层数（Q16）
-;
-; 用 38/42 而不是 27(cell.dominant_sector_share_q16)：后者数的是建筑**数量**，
-; 给它加多少产出系数都不动，拿它当条件闭环永远合不上。
-;
-; 命令复用 family.city.* 系列 modifier key：它们同样作用于
-; economy.city.building.<sector>_output_factor，功能等价。理念专属 key 留到
-; 内容正式化时再拆分。
-; value_q16 是「强度倍数」（Q16），最终系数 = 1 + (term.value - 1) * 强度，
-; 上限 MAX_MAGNITUDE_Q16 = 4.0。
-; ─────────────────────────────────────────────────────────────────────────────
-
-[sub_resource type="Resource" id="CondGranaryBeltLevelTwo"]
+[sub_resource type="Resource" id="ProgV1GranaryBeltCond0"]
 script = ExtResource("3_condition")
 op = 5
 arg0 = 0
 value_q16 = 131072
 
-[sub_resource type="Resource" id="InstrGranaryBeltMagnitude"]
+[sub_resource type="Resource" id="ProgV1GranaryBeltConst0"]
 script = ExtResource("4_instruction")
 op = 1
 value_q16 = 104858
 
-[sub_resource type="Resource" id="InstrGranaryBeltEmit"]
+[sub_resource type="Resource" id="ProgV1GranaryBeltEmit0"]
 script = ExtResource("4_instruction")
 op = 11
 arg0 = 0
 
-[sub_resource type="Resource" id="CmdGranaryBelt"]
+[sub_resource type="Resource" id="ProgV1GranaryBeltCmd0"]
 script = ExtResource("5_command")
 action = 1
 domain = 1
@@ -58,9 +35,10 @@ stacks = 1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.agrarian_reform"
 
-[sub_resource type="Resource" id="EffectGranaryBelt"]
+[sub_resource type="Resource" id="ProgV1GranaryBelt"]
 script = ExtResource("2_effect")
 definition_key = &"v1_granary_belt"
+summary = "诊断：理解度二级时全国农业 +60%"
 target_domain = 3
 operation = 1
 lifecycle = 0
@@ -71,12 +49,23 @@ max_stacks = 1
 priority = 0
 target_selector_kind = 0
 target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
 cadence_days = 1
-conditions = Array[Resource]([SubResource("CondGranaryBeltLevelTwo")])
-instructions = Array[Resource]([SubResource("InstrGranaryBeltMagnitude"), SubResource("InstrGranaryBeltEmit")])
-commands = Array[Resource]([SubResource("CmdGranaryBelt")])
+conditions = Array[Resource]([SubResource("ProgV1GranaryBeltCond0")])
+instructions = Array[Resource]([SubResource("ProgV1GranaryBeltConst0"), SubResource("ProgV1GranaryBeltEmit0")])
+commands = Array[Resource]([SubResource("ProgV1GranaryBeltCmd0")])
 
-[sub_resource type="Resource" id="CmdForgeRing"]
+[sub_resource type="Resource" id="ProgV2ForgeRingConst0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 65536
+
+[sub_resource type="Resource" id="ProgV2ForgeRingEmit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgV2ForgeRingCmd0"]
 script = ExtResource("5_command")
 action = 1
 domain = 2
@@ -89,9 +78,10 @@ stacks = 1
 command_key = &"ideology.persistent"
 definition_key = &"family.city.manufacturing_output_boost"
 
-[sub_resource type="Resource" id="EffectForgeRing"]
+[sub_resource type="Resource" id="ProgV2ForgeRing"]
 script = ExtResource("2_effect")
 definition_key = &"v2_forge_ring"
+summary = "诊断：邻域 R1 制造业 +0%"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -105,26 +95,26 @@ target_selector_id = &""
 target_selector_param = PackedInt32Array(8, 0)
 cadence_days = 1
 conditions = Array[Resource]([])
-instructions = Array[Resource]([SubResource("InstrGranaryBeltMagnitude"), SubResource("InstrGranaryBeltEmit")])
-commands = Array[Resource]([SubResource("CmdForgeRing")])
+instructions = Array[Resource]([SubResource("ProgV2ForgeRingConst0"), SubResource("ProgV2ForgeRingEmit0")])
+commands = Array[Resource]([SubResource("ProgV2ForgeRingCmd0")])
 
-; ── V3 矿脉支配 ───────────────────────────────────────────────────────────────
-; 条件：本格矿业产出占比 >= 60%（metric 38）。
-; 目标：邻域 R1 的 8 格，制造业产出 +20%。
-; 闭环：玩家给矿业堆产出系数 -> 矿场 last_output 升高 -> 占比升过 60% ->
-; 周边工业开始加成。这是「效果作用对象跟着条件变」的核心验证。
-[sub_resource type="Resource" id="InstrVeinDominance"]
-script = ExtResource("4_instruction")
-op = 1
-value_q16 = 262144
-
-[sub_resource type="Resource" id="CondVeinDominance"]
+[sub_resource type="Resource" id="ProgV3VeinDominanceCond0"]
 script = ExtResource("3_condition")
 op = 2
 arg0 = 38
 value_q16 = 39322
 
-[sub_resource type="Resource" id="CmdVeinDominance"]
+[sub_resource type="Resource" id="ProgV3VeinDominanceConst0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 262144
+
+[sub_resource type="Resource" id="ProgV3VeinDominanceEmit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgV3VeinDominanceCmd0"]
 script = ExtResource("5_command")
 action = 1
 domain = 2
@@ -137,9 +127,10 @@ stacks = 1
 command_key = &"ideology.persistent"
 definition_key = &"family.city.manufacturing_output_boost"
 
-[sub_resource type="Resource" id="EffectVeinDominance"]
+[sub_resource type="Resource" id="ProgV3VeinDominance"]
 script = ExtResource("2_effect")
 definition_key = &"v3_vein_dominance"
+summary = "诊断：矿业产出占比 ≥60% 时邻域制造业 +300%"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -152,28 +143,27 @@ target_selector_kind = 6
 target_selector_id = &""
 target_selector_param = PackedInt32Array(8, 0)
 cadence_days = 1
-conditions = Array[Resource]([SubResource("CondVeinDominance")])
-instructions = Array[Resource]([SubResource("InstrVeinDominance"), SubResource("InstrGranaryBeltEmit")])
-commands = Array[Resource]([SubResource("CmdVeinDominance")])
+conditions = Array[Resource]([SubResource("ProgV3VeinDominanceCond0")])
+instructions = Array[Resource]([SubResource("ProgV3VeinDominanceConst0"), SubResource("ProgV3VeinDominanceEmit0")])
+commands = Array[Resource]([SubResource("ProgV3VeinDominanceCmd0")])
 
-; ── V4 铁王座 ─────────────────────────────────────────────────────────────────
-; 条件：主导资源存量占比 >= 50%（metric 44），即这块地专精某一种资源。
-; 目标：自身格 + R2 的 18 格，全城产出 +8%。
-; 说明：要锁死「就是铁」需把 op 换成 METRIC_EQ(4) 并把 arg0 指向 metric 43
-; (cell.dominant_resource_id)、value_q16 填 building_resource_ids 里铁的下标。
-; 那是内容期的事，这里先验证「资源专精 -> 目标扩张」这条形态。
-[sub_resource type="Resource" id="InstrIronThrone"]
-script = ExtResource("4_instruction")
-op = 1
-value_q16 = 262144
-
-[sub_resource type="Resource" id="CondIronThrone"]
+[sub_resource type="Resource" id="ProgV4IronThroneCond0"]
 script = ExtResource("3_condition")
 op = 2
 arg0 = 44
 value_q16 = 32768
 
-[sub_resource type="Resource" id="CmdIronThrone"]
+[sub_resource type="Resource" id="ProgV4IronThroneConst0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 262144
+
+[sub_resource type="Resource" id="ProgV4IronThroneEmit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgV4IronThroneCmd0"]
 script = ExtResource("5_command")
 action = 1
 domain = 2
@@ -186,9 +176,10 @@ stacks = 1
 command_key = &"ideology.persistent"
 definition_key = &"family.city.production_boost"
 
-[sub_resource type="Resource" id="EffectIronThrone"]
+[sub_resource type="Resource" id="ProgV4IronThrone"]
 script = ExtResource("2_effect")
 definition_key = &"v4_iron_throne"
+summary = "诊断：资源专精地块 R2 内全城产出 +300%"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -201,28 +192,27 @@ target_selector_kind = 7
 target_selector_id = &""
 target_selector_param = PackedInt32Array(18, 0)
 cadence_days = 1
-conditions = Array[Resource]([SubResource("CondIronThrone")])
-instructions = Array[Resource]([SubResource("InstrIronThrone"), SubResource("InstrGranaryBeltEmit")])
-commands = Array[Resource]([SubResource("CmdIronThrone")])
+conditions = Array[Resource]([SubResource("ProgV4IronThroneCond0")])
+instructions = Array[Resource]([SubResource("ProgV4IronThroneConst0"), SubResource("ProgV4IronThroneEmit0")])
+commands = Array[Resource]([SubResource("ProgV4IronThroneCmd0")])
 
-; ── V5 层叠工坊 ───────────────────────────────────────────────────────────────
-; 条件：本实例层数 >= 3（STATE_STACK_COUNT = 4）。
-; 目标：同地形连通块内 8 格，制造业 +20%。
-; 这是 STATE_STACK_COUNT 的唯一用途证明：在此之前「层数 >= N 时生效」写不出来。
-; stack_policy = ADD_STACK(2) + max_stacks = 5，层数由 submit_instances 的
-; stack_counts 驱动，存档零新增字段。
-[sub_resource type="Resource" id="InstrStackedWorkshop"]
-script = ExtResource("4_instruction")
-op = 1
-value_q16 = 262144
-
-[sub_resource type="Resource" id="CondStackedWorkshop"]
+[sub_resource type="Resource" id="ProgV5StackedWorkshopCond0"]
 script = ExtResource("3_condition")
 op = 5
 arg0 = 4
 value_q16 = 196608
 
-[sub_resource type="Resource" id="CmdStackedWorkshop"]
+[sub_resource type="Resource" id="ProgV5StackedWorkshopConst0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 262144
+
+[sub_resource type="Resource" id="ProgV5StackedWorkshopEmit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgV5StackedWorkshopCmd0"]
 script = ExtResource("5_command")
 action = 1
 domain = 2
@@ -235,9 +225,10 @@ stacks = 1
 command_key = &"ideology.persistent"
 definition_key = &"family.city.manufacturing_output_boost"
 
-[sub_resource type="Resource" id="EffectStackedWorkshop"]
+[sub_resource type="Resource" id="ProgV5StackedWorkshop"]
 script = ExtResource("2_effect")
 definition_key = &"v5_stacked_workshop"
+summary = "诊断：同地形连通块 8 格制造业 +300%"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -250,38 +241,37 @@ target_selector_kind = 8
 target_selector_id = &""
 target_selector_param = PackedInt32Array(8, 0)
 cadence_days = 1
-conditions = Array[Resource]([SubResource("CondStackedWorkshop")])
-instructions = Array[Resource]([SubResource("InstrStackedWorkshop"), SubResource("InstrGranaryBeltEmit")])
-commands = Array[Resource]([SubResource("CmdStackedWorkshop")])
+conditions = Array[Resource]([SubResource("ProgV5StackedWorkshopCond0")])
+instructions = Array[Resource]([SubResource("ProgV5StackedWorkshopConst0"), SubResource("ProgV5StackedWorkshopEmit0")])
+commands = Array[Resource]([SubResource("ProgV5StackedWorkshopCmd0")])
 
-; ── V6 行会垄断 ───────────────────────────────────────────────────────────────
-; 条件：主导部门产出占比 >= 50% **且** 层数 >= 2。
-; 目标：距离 3 跳内的 8 格，能源产出 +15%。
-; 注意 conditions 是后缀求值栈，两个条件直接并列只有最后一个生效，
-; 必须显式追加 BOOL_AND(6) 才会真正取交集（A, B, AND 的顺序）。
-; 同时验证 param0=cap、param1=跳数 的新分工。
-[sub_resource type="Resource" id="InstrGuildMonopoly"]
-script = ExtResource("4_instruction")
-op = 1
-value_q16 = 196608
-
-[sub_resource type="Resource" id="CondGuildMonopolyA"]
+[sub_resource type="Resource" id="ProgV6GuildMonopolyCond0"]
 script = ExtResource("3_condition")
 op = 2
 arg0 = 42
 value_q16 = 32768
 
-[sub_resource type="Resource" id="CondGuildMonopolyB"]
+[sub_resource type="Resource" id="ProgV6GuildMonopolyCond1"]
 script = ExtResource("3_condition")
 op = 5
 arg0 = 4
 value_q16 = 131072
 
-[sub_resource type="Resource" id="CondGuildMonopolyAnd"]
+[sub_resource type="Resource" id="ProgV6GuildMonopolyCondAnd0"]
 script = ExtResource("3_condition")
 op = 6
 
-[sub_resource type="Resource" id="CmdGuildMonopoly"]
+[sub_resource type="Resource" id="ProgV6GuildMonopolyConst0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 196608
+
+[sub_resource type="Resource" id="ProgV6GuildMonopolyEmit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgV6GuildMonopolyCmd0"]
 script = ExtResource("5_command")
 action = 1
 domain = 2
@@ -294,9 +284,10 @@ stacks = 1
 command_key = &"ideology.persistent"
 definition_key = &"family.city.energy_output_boost"
 
-[sub_resource type="Resource" id="EffectGuildMonopoly"]
+[sub_resource type="Resource" id="ProgV6GuildMonopoly"]
 script = ExtResource("2_effect")
 definition_key = &"v6_guild_monopoly"
+summary = "诊断：双条件 AND 时距离 3 的 8 格能源 +200%"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -309,10 +300,5036 @@ target_selector_kind = 11
 target_selector_id = &""
 target_selector_param = PackedInt32Array(8, 3)
 cadence_days = 1
-conditions = Array[Resource]([SubResource("CondGuildMonopolyA"), SubResource("CondGuildMonopolyB"), SubResource("CondGuildMonopolyAnd")])
-instructions = Array[Resource]([SubResource("InstrGuildMonopoly"), SubResource("InstrGranaryBeltEmit")])
-commands = Array[Resource]([SubResource("CmdGuildMonopoly")])
+conditions = Array[Resource]([SubResource("ProgV6GuildMonopolyCond0"), SubResource("ProgV6GuildMonopolyCond1"), SubResource("ProgV6GuildMonopolyCondAnd0")])
+instructions = Array[Resource]([SubResource("ProgV6GuildMonopolyConst0"), SubResource("ProgV6GuildMonopolyEmit0")])
+commands = Array[Resource]([SubResource("ProgV6GuildMonopolyCmd0")])
+
+[sub_resource type="Resource" id="ProgHuntingTraditionL1Cond0"]
+script = ExtResource("3_condition")
+op = 2
+arg0 = 52
+value_q16 = 39322
+
+[sub_resource type="Resource" id="ProgHuntingTraditionL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 7864
+
+[sub_resource type="Resource" id="ProgHuntingTraditionL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgHuntingTraditionL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 7864
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.game_meat.output_factor"
+
+[sub_resource type="Resource" id="ProgHuntingTraditionL1"]
+script = ExtResource("2_effect")
+definition_key = &"hunting_tradition_l1"
+summary = "主产野味、且单一职业占比 ≥60% 的地块：野味产出 +12%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"hunting_tradition_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.game_meat"
+conditions = Array[Resource]([SubResource("ProgHuntingTraditionL1Cond0")])
+instructions = Array[Resource]([SubResource("ProgHuntingTraditionL1Const0"), SubResource("ProgHuntingTraditionL1Emit0")])
+commands = Array[Resource]([SubResource("ProgHuntingTraditionL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgHuntingTraditionL2Cond0"]
+script = ExtResource("3_condition")
+op = 2
+arg0 = 52
+value_q16 = 39322
+
+[sub_resource type="Resource" id="ProgHuntingTraditionL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 10486
+
+[sub_resource type="Resource" id="ProgHuntingTraditionL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgHuntingTraditionL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 10486
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.game_meat.output_factor"
+
+[sub_resource type="Resource" id="ProgHuntingTraditionL2"]
+script = ExtResource("2_effect")
+definition_key = &"hunting_tradition_l2"
+summary = "主产野味、且单一职业占比 ≥60% 的地块：野味产出 +16%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"hunting_tradition_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.game_meat"
+conditions = Array[Resource]([SubResource("ProgHuntingTraditionL2Cond0")])
+instructions = Array[Resource]([SubResource("ProgHuntingTraditionL2Const0"), SubResource("ProgHuntingTraditionL2Emit0")])
+commands = Array[Resource]([SubResource("ProgHuntingTraditionL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgHuntingTraditionL3Cond0"]
+script = ExtResource("3_condition")
+op = 2
+arg0 = 52
+value_q16 = 39322
+
+[sub_resource type="Resource" id="ProgHuntingTraditionL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 13107
+
+[sub_resource type="Resource" id="ProgHuntingTraditionL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgHuntingTraditionL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 13107
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.game_meat.output_factor"
+
+[sub_resource type="Resource" id="ProgHuntingTraditionL3"]
+script = ExtResource("2_effect")
+definition_key = &"hunting_tradition_l3"
+summary = "主产野味、且单一职业占比 ≥60% 的地块：野味产出 +20%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"hunting_tradition_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.game_meat"
+conditions = Array[Resource]([SubResource("ProgHuntingTraditionL3Cond0")])
+instructions = Array[Resource]([SubResource("ProgHuntingTraditionL3Const0"), SubResource("ProgHuntingTraditionL3Emit0")])
+commands = Array[Resource]([SubResource("ProgHuntingTraditionL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgFlintKnappingL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 2621
+
+[sub_resource type="Resource" id="ProgFlintKnappingL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgFlintKnappingL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 2621
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgFlintKnappingL1"]
+script = ExtResource("2_effect")
+definition_key = &"flint_knapping_l1"
+summary = "主产燧石的地块周围 1 格（最多 32 格）：全部产出 +4%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"flint_knapping_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 14
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.flint"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgFlintKnappingL1Const0"), SubResource("ProgFlintKnappingL1Emit0")])
+commands = Array[Resource]([SubResource("ProgFlintKnappingL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgFlintKnappingL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 3932
+
+[sub_resource type="Resource" id="ProgFlintKnappingL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgFlintKnappingL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 3932
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgFlintKnappingL2"]
+script = ExtResource("2_effect")
+definition_key = &"flint_knapping_l2"
+summary = "主产燧石的地块周围 1 格（最多 32 格）：全部产出 +6%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"flint_knapping_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 14
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.flint"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgFlintKnappingL2Const0"), SubResource("ProgFlintKnappingL2Emit0")])
+commands = Array[Resource]([SubResource("ProgFlintKnappingL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgFlintKnappingL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 5243
+
+[sub_resource type="Resource" id="ProgFlintKnappingL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgFlintKnappingL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 5243
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgFlintKnappingL3"]
+script = ExtResource("2_effect")
+definition_key = &"flint_knapping_l3"
+summary = "主产燧石的地块周围 1 格（最多 32 格）：全部产出 +8%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"flint_knapping_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 14
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.flint"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgFlintKnappingL3Const0"), SubResource("ProgFlintKnappingL3Emit0")])
+commands = Array[Resource]([SubResource("ProgFlintKnappingL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgRiversideCampL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 1966
+
+[sub_resource type="Resource" id="ProgRiversideCampL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgRiversideCampL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 1966
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.agriculture_output_factor"
+
+[sub_resource type="Resource" id="ProgRiversideCampL3"]
+script = ExtResource("2_effect")
+definition_key = &"riverside_camp_l3"
+summary = "三角洲、泛滥平原地块周围 1 格（最多 32 格）：农业产出 +3%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"riverside_camp_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 14
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.landform.delta"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgRiversideCampL3Const0"), SubResource("ProgRiversideCampL3Emit0")])
+commands = Array[Resource]([SubResource("ProgRiversideCampL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgPitDwellingL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 3277
+
+[sub_resource type="Resource" id="ProgPitDwellingL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgPitDwellingL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 3277
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.birth_factor"
+
+[sub_resource type="Resource" id="ProgPitDwellingL3"]
+script = ExtResource("2_effect")
+definition_key = &"pit_dwelling_l3"
+summary = "聚落地块（最多 32 格）：出生率 +5%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"pit_dwelling_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.settlement"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgPitDwellingL3Const0"), SubResource("ProgPitDwellingL3Emit0")])
+commands = Array[Resource]([SubResource("ProgPitDwellingL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgCollectiveStewardshipL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 1966
+
+[sub_resource type="Resource" id="ProgCollectiveStewardshipL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgCollectiveStewardshipL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 1966
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgCollectiveStewardshipL1"]
+script = ExtResource("2_effect")
+definition_key = &"collective_stewardship_l1"
+summary = "农业支柱地块周围 1 格（最多 32 格）：全部产出 +3%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"collective_stewardship_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 14
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.agriculture"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgCollectiveStewardshipL1Const0"), SubResource("ProgCollectiveStewardshipL1Emit0")])
+commands = Array[Resource]([SubResource("ProgCollectiveStewardshipL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgCollectiveStewardshipL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 3277
+
+[sub_resource type="Resource" id="ProgCollectiveStewardshipL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgCollectiveStewardshipL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 3277
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgCollectiveStewardshipL2"]
+script = ExtResource("2_effect")
+definition_key = &"collective_stewardship_l2"
+summary = "农业支柱地块周围 1 格（最多 32 格）：全部产出 +5%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"collective_stewardship_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 14
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.agriculture"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgCollectiveStewardshipL2Const0"), SubResource("ProgCollectiveStewardshipL2Emit0")])
+commands = Array[Resource]([SubResource("ProgCollectiveStewardshipL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgCollectiveStewardshipL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 4588
+
+[sub_resource type="Resource" id="ProgCollectiveStewardshipL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgCollectiveStewardshipL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 4588
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgCollectiveStewardshipL3"]
+script = ExtResource("2_effect")
+definition_key = &"collective_stewardship_l3"
+summary = "农业支柱地块周围 1 格（最多 32 格）：全部产出 +7%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"collective_stewardship_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 14
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.agriculture"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgCollectiveStewardshipL3Const0"), SubResource("ProgCollectiveStewardshipL3Emit0")])
+commands = Array[Resource]([SubResource("ProgCollectiveStewardshipL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgTerraceFarmingL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 3932
+
+[sub_resource type="Resource" id="ProgTerraceFarmingL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgTerraceFarmingL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 3932
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.agriculture_output_factor"
+
+[sub_resource type="Resource" id="ProgTerraceFarmingL3"]
+script = ExtResource("2_effect")
+definition_key = &"terrace_farming_l3"
+summary = "丘陵地块（最多 32 格）：农业产出 +6%（L3 子句；相邻计数需 X2，当前按丘陵地块计）"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"terrace_farming_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.terrain.hill"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgTerraceFarmingL3Const0"), SubResource("ProgTerraceFarmingL3Emit0")])
+commands = Array[Resource]([SubResource("ProgTerraceFarmingL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgThreeFieldRotationL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 13107
+
+[sub_resource type="Resource" id="ProgThreeFieldRotationL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgThreeFieldRotationL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 13107
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.resource.fertile_soil.regen_factor"
+
+[sub_resource type="Resource" id="ProgThreeFieldRotationL1"]
+script = ExtResource("2_effect")
+definition_key = &"three_field_rotation_l1"
+summary = "农业支柱地块（最多 32 格）：肥沃土壤再生 +20%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"three_field_rotation_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.agriculture"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgThreeFieldRotationL1Const0"), SubResource("ProgThreeFieldRotationL1Emit0")])
+commands = Array[Resource]([SubResource("ProgThreeFieldRotationL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgThreeFieldRotationL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 19661
+
+[sub_resource type="Resource" id="ProgThreeFieldRotationL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgThreeFieldRotationL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 19661
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.resource.fertile_soil.regen_factor"
+
+[sub_resource type="Resource" id="ProgThreeFieldRotationL2"]
+script = ExtResource("2_effect")
+definition_key = &"three_field_rotation_l2"
+summary = "农业支柱地块（最多 32 格）：肥沃土壤再生 +30%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"three_field_rotation_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.agriculture"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgThreeFieldRotationL2Const0"), SubResource("ProgThreeFieldRotationL2Emit0")])
+commands = Array[Resource]([SubResource("ProgThreeFieldRotationL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgThreeFieldRotationL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 22938
+
+[sub_resource type="Resource" id="ProgThreeFieldRotationL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgThreeFieldRotationL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 22938
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.resource.fertile_soil.regen_factor"
+
+[sub_resource type="Resource" id="ProgThreeFieldRotationL3"]
+script = ExtResource("2_effect")
+definition_key = &"three_field_rotation_l3"
+summary = "农业支柱地块（最多 32 格）：肥沃土壤再生 +35%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"three_field_rotation_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.agriculture"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgThreeFieldRotationL3Const0"), SubResource("ProgThreeFieldRotationL3Emit0")])
+commands = Array[Resource]([SubResource("ProgThreeFieldRotationL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgFreeExchangeL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 3932
+
+[sub_resource type="Resource" id="ProgFreeExchangeL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgFreeExchangeL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 3932
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgFreeExchangeL1"]
+script = ExtResource("2_effect")
+definition_key = &"free_exchange_l1"
+summary = "多元地块（最多 32 格）：全部产出 +6%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"free_exchange_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.diversified"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgFreeExchangeL1Const0"), SubResource("ProgFreeExchangeL1Emit0")])
+commands = Array[Resource]([SubResource("ProgFreeExchangeL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgFreeExchangeL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 5898
+
+[sub_resource type="Resource" id="ProgFreeExchangeL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgFreeExchangeL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 5898
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgFreeExchangeL2"]
+script = ExtResource("2_effect")
+definition_key = &"free_exchange_l2"
+summary = "多元地块（最多 32 格）：全部产出 +9%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"free_exchange_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.diversified"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgFreeExchangeL2Const0"), SubResource("ProgFreeExchangeL2Emit0")])
+commands = Array[Resource]([SubResource("ProgFreeExchangeL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgFreeExchangeL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 7864
+
+[sub_resource type="Resource" id="ProgFreeExchangeL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgFreeExchangeL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 7864
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgFreeExchangeL3"]
+script = ExtResource("2_effect")
+definition_key = &"free_exchange_l3"
+summary = "多元地块（最多 32 格）：全部产出 +12%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"free_exchange_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.diversified"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgFreeExchangeL3Const0"), SubResource("ProgFreeExchangeL3Emit0")])
+commands = Array[Resource]([SubResource("ProgFreeExchangeL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgStandardizationL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 5243
+
+[sub_resource type="Resource" id="ProgStandardizationL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgStandardizationL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 5243
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.manufacturing_output_factor"
+
+[sub_resource type="Resource" id="ProgStandardizationL1"]
+script = ExtResource("2_effect")
+definition_key = &"standardization_l1"
+summary = "成链地块（最多 32 格）：工业产出 +8%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"standardization_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.chained"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgStandardizationL1Const0"), SubResource("ProgStandardizationL1Emit0")])
+commands = Array[Resource]([SubResource("ProgStandardizationL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgStandardizationL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 7864
+
+[sub_resource type="Resource" id="ProgStandardizationL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgStandardizationL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 7864
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.manufacturing_output_factor"
+
+[sub_resource type="Resource" id="ProgStandardizationL2"]
+script = ExtResource("2_effect")
+definition_key = &"standardization_l2"
+summary = "成链地块（最多 32 格）：工业产出 +12%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"standardization_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.chained"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgStandardizationL2Const0"), SubResource("ProgStandardizationL2Emit0")])
+commands = Array[Resource]([SubResource("ProgStandardizationL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgStandardizationL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 10486
+
+[sub_resource type="Resource" id="ProgStandardizationL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgStandardizationL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 10486
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.manufacturing_output_factor"
+
+[sub_resource type="Resource" id="ProgStandardizationL3"]
+script = ExtResource("2_effect")
+definition_key = &"standardization_l3"
+summary = "成链地块（最多 32 格）：工业产出 +16%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"standardization_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.chained"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgStandardizationL3Const0"), SubResource("ProgStandardizationL3Emit0")])
+commands = Array[Resource]([SubResource("ProgStandardizationL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgHouseholdWeavingL1Cond0"]
+script = ExtResource("3_condition")
+op = 2
+arg0 = 53
+value_q16 = 131072
+
+[sub_resource type="Resource" id="ProgHouseholdWeavingL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 7864
+
+[sub_resource type="Resource" id="ProgHouseholdWeavingL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgHouseholdWeavingL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 7864
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.cloth.output_factor"
+
+[sub_resource type="Resource" id="ProgHouseholdWeavingL1"]
+script = ExtResource("2_effect")
+definition_key = &"household_weaving_l1"
+summary = "主产韧皮纤维、且职业 ≥2 种的地块：布产出 +12%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"household_weaving_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.bast_fiber"
+conditions = Array[Resource]([SubResource("ProgHouseholdWeavingL1Cond0")])
+instructions = Array[Resource]([SubResource("ProgHouseholdWeavingL1Const0"), SubResource("ProgHouseholdWeavingL1Emit0")])
+commands = Array[Resource]([SubResource("ProgHouseholdWeavingL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgHouseholdWeavingL2Cond0"]
+script = ExtResource("3_condition")
+op = 2
+arg0 = 53
+value_q16 = 131072
+
+[sub_resource type="Resource" id="ProgHouseholdWeavingL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 9830
+
+[sub_resource type="Resource" id="ProgHouseholdWeavingL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgHouseholdWeavingL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 9830
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.cloth.output_factor"
+
+[sub_resource type="Resource" id="ProgHouseholdWeavingL2"]
+script = ExtResource("2_effect")
+definition_key = &"household_weaving_l2"
+summary = "主产韧皮纤维、且职业 ≥2 种的地块：布产出 +15%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"household_weaving_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.bast_fiber"
+conditions = Array[Resource]([SubResource("ProgHouseholdWeavingL2Cond0")])
+instructions = Array[Resource]([SubResource("ProgHouseholdWeavingL2Const0"), SubResource("ProgHouseholdWeavingL2Emit0")])
+commands = Array[Resource]([SubResource("ProgHouseholdWeavingL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgHouseholdWeavingL3Cond0"]
+script = ExtResource("3_condition")
+op = 2
+arg0 = 53
+value_q16 = 131072
+
+[sub_resource type="Resource" id="ProgHouseholdWeavingL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 11796
+
+[sub_resource type="Resource" id="ProgHouseholdWeavingL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgHouseholdWeavingL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 11796
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.cloth.output_factor"
+
+[sub_resource type="Resource" id="ProgHouseholdWeavingL3"]
+script = ExtResource("2_effect")
+definition_key = &"household_weaving_l3"
+summary = "主产韧皮纤维、且职业 ≥2 种的地块：布产出 +18%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"household_weaving_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.bast_fiber"
+conditions = Array[Resource]([SubResource("ProgHouseholdWeavingL3Cond0")])
+instructions = Array[Resource]([SubResource("ProgHouseholdWeavingL3Const0"), SubResource("ProgHouseholdWeavingL3Emit0")])
+commands = Array[Resource]([SubResource("ProgHouseholdWeavingL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgCoppiceRotationL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 13107
+
+[sub_resource type="Resource" id="ProgCoppiceRotationL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgCoppiceRotationL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 13107
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.resource.timber.regen_factor"
+
+[sub_resource type="Resource" id="ProgCoppiceRotationL1Const1"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 3932
+
+[sub_resource type="Resource" id="ProgCoppiceRotationL1Emit1"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 1
+
+[sub_resource type="Resource" id="ProgCoppiceRotationL1Cmd1"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 3932
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.lumber.output_factor.cut"
+
+[sub_resource type="Resource" id="ProgCoppiceRotationL1"]
+script = ExtResource("2_effect")
+definition_key = &"coppice_rotation_l1"
+summary = "主产原木的地块（最多 32 格）：木材再生 +20%，原木产出 -6%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"coppice_rotation_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.lumber"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgCoppiceRotationL1Const0"), SubResource("ProgCoppiceRotationL1Emit0"), SubResource("ProgCoppiceRotationL1Const1"), SubResource("ProgCoppiceRotationL1Emit1")])
+commands = Array[Resource]([SubResource("ProgCoppiceRotationL1Cmd0"), SubResource("ProgCoppiceRotationL1Cmd1")])
+
+[sub_resource type="Resource" id="ProgCoppiceRotationL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 19661
+
+[sub_resource type="Resource" id="ProgCoppiceRotationL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgCoppiceRotationL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 19661
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.resource.timber.regen_factor"
+
+[sub_resource type="Resource" id="ProgCoppiceRotationL2Const1"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 3932
+
+[sub_resource type="Resource" id="ProgCoppiceRotationL2Emit1"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 1
+
+[sub_resource type="Resource" id="ProgCoppiceRotationL2Cmd1"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 3932
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.lumber.output_factor.cut"
+
+[sub_resource type="Resource" id="ProgCoppiceRotationL2"]
+script = ExtResource("2_effect")
+definition_key = &"coppice_rotation_l2"
+summary = "主产原木的地块（最多 32 格）：木材再生 +30%，原木产出 -6%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"coppice_rotation_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.lumber"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgCoppiceRotationL2Const0"), SubResource("ProgCoppiceRotationL2Emit0"), SubResource("ProgCoppiceRotationL2Const1"), SubResource("ProgCoppiceRotationL2Emit1")])
+commands = Array[Resource]([SubResource("ProgCoppiceRotationL2Cmd0"), SubResource("ProgCoppiceRotationL2Cmd1")])
+
+[sub_resource type="Resource" id="ProgCoppiceRotationL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 19661
+
+[sub_resource type="Resource" id="ProgCoppiceRotationL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgCoppiceRotationL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 19661
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.resource.timber.regen_factor"
+
+[sub_resource type="Resource" id="ProgCoppiceRotationL3Const1"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 1966
+
+[sub_resource type="Resource" id="ProgCoppiceRotationL3Emit1"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 1
+
+[sub_resource type="Resource" id="ProgCoppiceRotationL3Cmd1"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 1966
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.lumber.output_factor.cut"
+
+[sub_resource type="Resource" id="ProgCoppiceRotationL3"]
+script = ExtResource("2_effect")
+definition_key = &"coppice_rotation_l3"
+summary = "主产原木的地块（最多 32 格）：木材再生 +30%，原木产出 -3%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"coppice_rotation_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.lumber"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgCoppiceRotationL3Const0"), SubResource("ProgCoppiceRotationL3Emit0"), SubResource("ProgCoppiceRotationL3Const1"), SubResource("ProgCoppiceRotationL3Emit1")])
+commands = Array[Resource]([SubResource("ProgCoppiceRotationL3Cmd0"), SubResource("ProgCoppiceRotationL3Cmd1")])
+
+[sub_resource type="Resource" id="ProgWaterWorksL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 2621
+
+[sub_resource type="Resource" id="ProgWaterWorksL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgWaterWorksL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 2621
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.agriculture_output_factor"
+
+[sub_resource type="Resource" id="ProgWaterWorksL3"]
+script = ExtResource("2_effect")
+definition_key = &"water_works_l3"
+summary = "泛滥平原、三角洲地块周围 1 格（最多 32 格）：农业产出 +4%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"water_works_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 14
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.terrain.floodplain"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgWaterWorksL3Const0"), SubResource("ProgWaterWorksL3Emit0")])
+commands = Array[Resource]([SubResource("ProgWaterWorksL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgSeasonalCalendarL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 3277
+
+[sub_resource type="Resource" id="ProgSeasonalCalendarL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgSeasonalCalendarL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 3277
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.agriculture_output_factor"
+
+[sub_resource type="Resource" id="ProgSeasonalCalendarL3"]
+script = ExtResource("2_effect")
+definition_key = &"seasonal_calendar_l3"
+summary = "降雨日的农业支柱地块（最多 32 格）：农业产出 +5%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"seasonal_calendar_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tags = PackedStringArray("cell.rain", "cell.sector.agriculture")
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgSeasonalCalendarL3Const0"), SubResource("ProgSeasonalCalendarL3Emit0")])
+commands = Array[Resource]([SubResource("ProgSeasonalCalendarL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgEverNormalGranaryL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 9830
+
+[sub_resource type="Resource" id="ProgEverNormalGranaryL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgEverNormalGranaryL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 9830
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.need.staple_food.consumption_factor.cut"
+
+[sub_resource type="Resource" id="ProgEverNormalGranaryL1"]
+script = ExtResource("2_effect")
+definition_key = &"ever_normal_granary_l1"
+summary = "短缺地块（最多 32 格）：主食需求 -15%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"ever_normal_granary_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.shortage"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgEverNormalGranaryL1Const0"), SubResource("ProgEverNormalGranaryL1Emit0")])
+commands = Array[Resource]([SubResource("ProgEverNormalGranaryL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgEverNormalGranaryL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 13107
+
+[sub_resource type="Resource" id="ProgEverNormalGranaryL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgEverNormalGranaryL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 13107
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.need.staple_food.consumption_factor.cut"
+
+[sub_resource type="Resource" id="ProgEverNormalGranaryL2"]
+script = ExtResource("2_effect")
+definition_key = &"ever_normal_granary_l2"
+summary = "短缺地块（最多 32 格）：主食需求 -20%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"ever_normal_granary_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.shortage"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgEverNormalGranaryL2Const0"), SubResource("ProgEverNormalGranaryL2Emit0")])
+commands = Array[Resource]([SubResource("ProgEverNormalGranaryL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgEverNormalGranaryL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 14418
+
+[sub_resource type="Resource" id="ProgEverNormalGranaryL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgEverNormalGranaryL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 14418
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.need.staple_food.consumption_factor.cut"
+
+[sub_resource type="Resource" id="ProgEverNormalGranaryL3"]
+script = ExtResource("2_effect")
+definition_key = &"ever_normal_granary_l3"
+summary = "短缺地块（最多 32 格）：主食需求 -22%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"ever_normal_granary_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.shortage"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgEverNormalGranaryL3Const0"), SubResource("ProgEverNormalGranaryL3Emit0")])
+commands = Array[Resource]([SubResource("ProgEverNormalGranaryL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgSettleAndFarmL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 9830
+
+[sub_resource type="Resource" id="ProgSettleAndFarmL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgSettleAndFarmL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 9830
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.agriculture_output_factor"
+
+[sub_resource type="Resource" id="ProgSettleAndFarmL1Const1"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 5243
+
+[sub_resource type="Resource" id="ProgSettleAndFarmL1Emit1"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 1
+
+[sub_resource type="Resource" id="ProgSettleAndFarmL1Cmd1"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 5243
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.birth_factor"
+
+[sub_resource type="Resource" id="ProgSettleAndFarmL1"]
+script = ExtResource("2_effect")
+definition_key = &"settle_and_farm_l1"
+summary = "边地农业地块（最多 32 格）：农业 +15%，出生率 +8%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"settle_and_farm_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tags = PackedStringArray("cell.frontier", "cell.sector.agriculture")
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgSettleAndFarmL1Const0"), SubResource("ProgSettleAndFarmL1Emit0"), SubResource("ProgSettleAndFarmL1Const1"), SubResource("ProgSettleAndFarmL1Emit1")])
+commands = Array[Resource]([SubResource("ProgSettleAndFarmL1Cmd0"), SubResource("ProgSettleAndFarmL1Cmd1")])
+
+[sub_resource type="Resource" id="ProgSettleAndFarmL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 13107
+
+[sub_resource type="Resource" id="ProgSettleAndFarmL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgSettleAndFarmL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 13107
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.agriculture_output_factor"
+
+[sub_resource type="Resource" id="ProgSettleAndFarmL2Const1"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 6554
+
+[sub_resource type="Resource" id="ProgSettleAndFarmL2Emit1"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 1
+
+[sub_resource type="Resource" id="ProgSettleAndFarmL2Cmd1"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 6554
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.birth_factor"
+
+[sub_resource type="Resource" id="ProgSettleAndFarmL2"]
+script = ExtResource("2_effect")
+definition_key = &"settle_and_farm_l2"
+summary = "边地农业地块（最多 32 格）：农业 +20%，出生率 +10%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"settle_and_farm_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tags = PackedStringArray("cell.frontier", "cell.sector.agriculture")
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgSettleAndFarmL2Const0"), SubResource("ProgSettleAndFarmL2Emit0"), SubResource("ProgSettleAndFarmL2Const1"), SubResource("ProgSettleAndFarmL2Emit1")])
+commands = Array[Resource]([SubResource("ProgSettleAndFarmL2Cmd0"), SubResource("ProgSettleAndFarmL2Cmd1")])
+
+[sub_resource type="Resource" id="ProgSettleAndFarmL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 14418
+
+[sub_resource type="Resource" id="ProgSettleAndFarmL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgSettleAndFarmL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 14418
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.agriculture_output_factor"
+
+[sub_resource type="Resource" id="ProgSettleAndFarmL3Const1"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 7209
+
+[sub_resource type="Resource" id="ProgSettleAndFarmL3Emit1"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 1
+
+[sub_resource type="Resource" id="ProgSettleAndFarmL3Cmd1"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 7209
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.birth_factor"
+
+[sub_resource type="Resource" id="ProgSettleAndFarmL3"]
+script = ExtResource("2_effect")
+definition_key = &"settle_and_farm_l3"
+summary = "边地农业地块（最多 32 格）：农业 +22%，出生率 +11%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"settle_and_farm_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tags = PackedStringArray("cell.frontier", "cell.sector.agriculture")
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgSettleAndFarmL3Const0"), SubResource("ProgSettleAndFarmL3Emit0"), SubResource("ProgSettleAndFarmL3Const1"), SubResource("ProgSettleAndFarmL3Emit1")])
+commands = Array[Resource]([SubResource("ProgSettleAndFarmL3Cmd0"), SubResource("ProgSettleAndFarmL3Cmd1")])
+
+[sub_resource type="Resource" id="ProgGuildChartersL1Cond0"]
+script = ExtResource("3_condition")
+op = 2
+arg0 = 52
+value_q16 = 39322
+
+[sub_resource type="Resource" id="ProgGuildChartersL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 6554
+
+[sub_resource type="Resource" id="ProgGuildChartersL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgGuildChartersL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 6554
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.manufacturing_output_factor"
+
+[sub_resource type="Resource" id="ProgGuildChartersL1"]
+script = ExtResource("2_effect")
+definition_key = &"guild_charters_l1"
+summary = "工业支柱、且单一职业占比 ≥60% 的地块：工业产出 +10%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"guild_charters_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.manufacturing"
+conditions = Array[Resource]([SubResource("ProgGuildChartersL1Cond0")])
+instructions = Array[Resource]([SubResource("ProgGuildChartersL1Const0"), SubResource("ProgGuildChartersL1Emit0")])
+commands = Array[Resource]([SubResource("ProgGuildChartersL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgGuildChartersL2Cond0"]
+script = ExtResource("3_condition")
+op = 2
+arg0 = 52
+value_q16 = 39322
+
+[sub_resource type="Resource" id="ProgGuildChartersL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 9175
+
+[sub_resource type="Resource" id="ProgGuildChartersL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgGuildChartersL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 9175
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.manufacturing_output_factor"
+
+[sub_resource type="Resource" id="ProgGuildChartersL2"]
+script = ExtResource("2_effect")
+definition_key = &"guild_charters_l2"
+summary = "工业支柱、且单一职业占比 ≥60% 的地块：工业产出 +14%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"guild_charters_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.manufacturing"
+conditions = Array[Resource]([SubResource("ProgGuildChartersL2Cond0")])
+instructions = Array[Resource]([SubResource("ProgGuildChartersL2Const0"), SubResource("ProgGuildChartersL2Emit0")])
+commands = Array[Resource]([SubResource("ProgGuildChartersL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgGuildChartersL3Cond0"]
+script = ExtResource("3_condition")
+op = 2
+arg0 = 52
+value_q16 = 39322
+
+[sub_resource type="Resource" id="ProgGuildChartersL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 11796
+
+[sub_resource type="Resource" id="ProgGuildChartersL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgGuildChartersL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 11796
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.manufacturing_output_factor"
+
+[sub_resource type="Resource" id="ProgGuildChartersL3"]
+script = ExtResource("2_effect")
+definition_key = &"guild_charters_l3"
+summary = "工业支柱、且单一职业占比 ≥60% 的地块：工业产出 +18%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"guild_charters_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.manufacturing"
+conditions = Array[Resource]([SubResource("ProgGuildChartersL3Cond0")])
+instructions = Array[Resource]([SubResource("ProgGuildChartersL3Const0"), SubResource("ProgGuildChartersL3Emit0")])
+commands = Array[Resource]([SubResource("ProgGuildChartersL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgIronSmeltingL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 6554
+
+[sub_resource type="Resource" id="ProgIronSmeltingL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgIronSmeltingL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 6554
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.manufacturing_output_factor"
+
+[sub_resource type="Resource" id="ProgIronSmeltingL1"]
+script = ExtResource("2_effect")
+definition_key = &"iron_smelting_l1"
+summary = "主产铁矿石的地块周围 1 格（最多 32 格）：工业产出 +10%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"iron_smelting_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 14
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.iron_ore"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgIronSmeltingL1Const0"), SubResource("ProgIronSmeltingL1Emit0")])
+commands = Array[Resource]([SubResource("ProgIronSmeltingL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgIronSmeltingL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 9175
+
+[sub_resource type="Resource" id="ProgIronSmeltingL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgIronSmeltingL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 9175
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.manufacturing_output_factor"
+
+[sub_resource type="Resource" id="ProgIronSmeltingL2"]
+script = ExtResource("2_effect")
+definition_key = &"iron_smelting_l2"
+summary = "主产铁矿石的地块周围 1 格（最多 32 格）：工业产出 +14%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"iron_smelting_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 14
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.iron_ore"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgIronSmeltingL2Const0"), SubResource("ProgIronSmeltingL2Emit0")])
+commands = Array[Resource]([SubResource("ProgIronSmeltingL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgIronSmeltingL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 11796
+
+[sub_resource type="Resource" id="ProgIronSmeltingL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgIronSmeltingL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 11796
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.manufacturing_output_factor"
+
+[sub_resource type="Resource" id="ProgIronSmeltingL3"]
+script = ExtResource("2_effect")
+definition_key = &"iron_smelting_l3"
+summary = "主产铁矿石的地块周围 1 格（最多 32 格）：工业产出 +18%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"iron_smelting_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 14
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.iron_ore"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgIronSmeltingL3Const0"), SubResource("ProgIronSmeltingL3Emit0")])
+commands = Array[Resource]([SubResource("ProgIronSmeltingL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgVillageCompactL1Cond0"]
+script = ExtResource("3_condition")
+op = 2
+arg0 = 54
+value_q16 = 52428800
+
+[sub_resource type="Resource" id="ProgVillageCompactL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 5243
+
+[sub_resource type="Resource" id="ProgVillageCompactL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgVillageCompactL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 5243
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.agriculture_output_factor"
+
+[sub_resource type="Resource" id="ProgVillageCompactL1"]
+script = ExtResource("2_effect")
+definition_key = &"village_compact_l1"
+summary = "农业支柱、且相邻人口 ≥800 的地块：农业产出 +8%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"village_compact_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.agriculture"
+conditions = Array[Resource]([SubResource("ProgVillageCompactL1Cond0")])
+instructions = Array[Resource]([SubResource("ProgVillageCompactL1Const0"), SubResource("ProgVillageCompactL1Emit0")])
+commands = Array[Resource]([SubResource("ProgVillageCompactL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgVillageCompactL2Cond0"]
+script = ExtResource("3_condition")
+op = 2
+arg0 = 54
+value_q16 = 52428800
+
+[sub_resource type="Resource" id="ProgVillageCompactL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 7209
+
+[sub_resource type="Resource" id="ProgVillageCompactL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgVillageCompactL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 7209
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.agriculture_output_factor"
+
+[sub_resource type="Resource" id="ProgVillageCompactL2"]
+script = ExtResource("2_effect")
+definition_key = &"village_compact_l2"
+summary = "农业支柱、且相邻人口 ≥800 的地块：农业产出 +11%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"village_compact_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.agriculture"
+conditions = Array[Resource]([SubResource("ProgVillageCompactL2Cond0")])
+instructions = Array[Resource]([SubResource("ProgVillageCompactL2Const0"), SubResource("ProgVillageCompactL2Emit0")])
+commands = Array[Resource]([SubResource("ProgVillageCompactL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgVillageCompactL3Cond0"]
+script = ExtResource("3_condition")
+op = 2
+arg0 = 54
+value_q16 = 52428800
+
+[sub_resource type="Resource" id="ProgVillageCompactL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 9175
+
+[sub_resource type="Resource" id="ProgVillageCompactL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgVillageCompactL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 9175
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.agriculture_output_factor"
+
+[sub_resource type="Resource" id="ProgVillageCompactL3"]
+script = ExtResource("2_effect")
+definition_key = &"village_compact_l3"
+summary = "农业支柱、且相邻人口 ≥800 的地块：农业产出 +14%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"village_compact_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.agriculture"
+conditions = Array[Resource]([SubResource("ProgVillageCompactL3Cond0")])
+instructions = Array[Resource]([SubResource("ProgVillageCompactL3Const0"), SubResource("ProgVillageCompactL3Emit0")])
+commands = Array[Resource]([SubResource("ProgVillageCompactL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgLandReclamationL1Cond0"]
+script = ExtResource("3_condition")
+op = 3
+arg0 = 54
+value_q16 = 26214400
+
+[sub_resource type="Resource" id="ProgLandReclamationL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 6554
+
+[sub_resource type="Resource" id="ProgLandReclamationL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgLandReclamationL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 6554
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.agriculture_output_factor"
+
+[sub_resource type="Resource" id="ProgLandReclamationL1"]
+script = ExtResource("2_effect")
+definition_key = &"land_reclamation_l1"
+summary = "边地农业、且相邻人口 ≤400 的地块：农业产出 +10%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"land_reclamation_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tags = PackedStringArray("cell.frontier", "cell.sector.agriculture")
+conditions = Array[Resource]([SubResource("ProgLandReclamationL1Cond0")])
+instructions = Array[Resource]([SubResource("ProgLandReclamationL1Const0"), SubResource("ProgLandReclamationL1Emit0")])
+commands = Array[Resource]([SubResource("ProgLandReclamationL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgLandReclamationL2Cond0"]
+script = ExtResource("3_condition")
+op = 3
+arg0 = 54
+value_q16 = 26214400
+
+[sub_resource type="Resource" id="ProgLandReclamationL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 8520
+
+[sub_resource type="Resource" id="ProgLandReclamationL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgLandReclamationL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 8520
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.agriculture_output_factor"
+
+[sub_resource type="Resource" id="ProgLandReclamationL2"]
+script = ExtResource("2_effect")
+definition_key = &"land_reclamation_l2"
+summary = "边地农业、且相邻人口 ≤400 的地块：农业产出 +13%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"land_reclamation_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tags = PackedStringArray("cell.frontier", "cell.sector.agriculture")
+conditions = Array[Resource]([SubResource("ProgLandReclamationL2Cond0")])
+instructions = Array[Resource]([SubResource("ProgLandReclamationL2Const0"), SubResource("ProgLandReclamationL2Emit0")])
+commands = Array[Resource]([SubResource("ProgLandReclamationL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgLandReclamationL3Cond0"]
+script = ExtResource("3_condition")
+op = 3
+arg0 = 54
+value_q16 = 26214400
+
+[sub_resource type="Resource" id="ProgLandReclamationL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 10486
+
+[sub_resource type="Resource" id="ProgLandReclamationL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgLandReclamationL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 10486
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.agriculture_output_factor"
+
+[sub_resource type="Resource" id="ProgLandReclamationL3"]
+script = ExtResource("2_effect")
+definition_key = &"land_reclamation_l3"
+summary = "边地农业、且相邻人口 ≤400 的地块：农业产出 +16%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"land_reclamation_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tags = PackedStringArray("cell.frontier", "cell.sector.agriculture")
+conditions = Array[Resource]([SubResource("ProgLandReclamationL3Cond0")])
+instructions = Array[Resource]([SubResource("ProgLandReclamationL3Const0"), SubResource("ProgLandReclamationL3Emit0")])
+commands = Array[Resource]([SubResource("ProgLandReclamationL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgPublicHygieneL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 3277
+
+[sub_resource type="Resource" id="ProgPublicHygieneL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgPublicHygieneL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 3277
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.birth_factor"
+
+[sub_resource type="Resource" id="ProgPublicHygieneL1Const1"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 5243
+
+[sub_resource type="Resource" id="ProgPublicHygieneL1Emit1"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 1
+
+[sub_resource type="Resource" id="ProgPublicHygieneL1Cmd1"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 5243
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.need.housing.consumption_factor.cut"
+
+[sub_resource type="Resource" id="ProgPublicHygieneL1"]
+script = ExtResource("2_effect")
+definition_key = &"public_hygiene_l1"
+summary = "聚落地块（最多 32 格）：出生率 +5%，住房需求 -8%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"public_hygiene_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.settlement"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgPublicHygieneL1Const0"), SubResource("ProgPublicHygieneL1Emit0"), SubResource("ProgPublicHygieneL1Const1"), SubResource("ProgPublicHygieneL1Emit1")])
+commands = Array[Resource]([SubResource("ProgPublicHygieneL1Cmd0"), SubResource("ProgPublicHygieneL1Cmd1")])
+
+[sub_resource type="Resource" id="ProgPublicHygieneL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 5243
+
+[sub_resource type="Resource" id="ProgPublicHygieneL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgPublicHygieneL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 5243
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.birth_factor"
+
+[sub_resource type="Resource" id="ProgPublicHygieneL2Const1"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 6554
+
+[sub_resource type="Resource" id="ProgPublicHygieneL2Emit1"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 1
+
+[sub_resource type="Resource" id="ProgPublicHygieneL2Cmd1"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 6554
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.need.housing.consumption_factor.cut"
+
+[sub_resource type="Resource" id="ProgPublicHygieneL2"]
+script = ExtResource("2_effect")
+definition_key = &"public_hygiene_l2"
+summary = "聚落地块（最多 32 格）：出生率 +8%，住房需求 -10%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"public_hygiene_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.settlement"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgPublicHygieneL2Const0"), SubResource("ProgPublicHygieneL2Emit0"), SubResource("ProgPublicHygieneL2Const1"), SubResource("ProgPublicHygieneL2Emit1")])
+commands = Array[Resource]([SubResource("ProgPublicHygieneL2Cmd0"), SubResource("ProgPublicHygieneL2Cmd1")])
+
+[sub_resource type="Resource" id="ProgPublicHygieneL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 5898
+
+[sub_resource type="Resource" id="ProgPublicHygieneL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgPublicHygieneL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 5898
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.birth_factor"
+
+[sub_resource type="Resource" id="ProgPublicHygieneL3Const1"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 7209
+
+[sub_resource type="Resource" id="ProgPublicHygieneL3Emit1"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 1
+
+[sub_resource type="Resource" id="ProgPublicHygieneL3Cmd1"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 7209
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.need.housing.consumption_factor.cut"
+
+[sub_resource type="Resource" id="ProgPublicHygieneL3"]
+script = ExtResource("2_effect")
+definition_key = &"public_hygiene_l3"
+summary = "聚落地块（最多 32 格）：出生率 +9%，住房需求 -11%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"public_hygiene_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.settlement"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgPublicHygieneL3Const0"), SubResource("ProgPublicHygieneL3Emit0"), SubResource("ProgPublicHygieneL3Const1"), SubResource("ProgPublicHygieneL3Emit1")])
+commands = Array[Resource]([SubResource("ProgPublicHygieneL3Cmd0"), SubResource("ProgPublicHygieneL3Cmd1")])
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL1Ramp0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 655
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL1Ramp1"]
+script = ExtResource("4_instruction")
+op = 2
+arg0 = 57
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL1Ramp2"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 983040
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL1Ramp3"]
+script = ExtResource("4_instruction")
+op = 8
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL1Ramp4"]
+script = ExtResource("4_instruction")
+op = 6
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 655
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.extractive_output_factor"
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL1"]
+script = ExtResource("2_effect")
+definition_key = &"salt_monopoly_l1"
+summary = "每个矿业支柱地块使矿业支柱地块产出 +1%（上限 +15%）"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"salt_monopoly_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.extractive"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgSaltMonopolyL1Ramp0"), SubResource("ProgSaltMonopolyL1Ramp1"), SubResource("ProgSaltMonopolyL1Ramp2"), SubResource("ProgSaltMonopolyL1Ramp3"), SubResource("ProgSaltMonopolyL1Ramp4"), SubResource("ProgSaltMonopolyL1Emit0")])
+commands = Array[Resource]([SubResource("ProgSaltMonopolyL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL2Ramp0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 983
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL2Ramp1"]
+script = ExtResource("4_instruction")
+op = 2
+arg0 = 57
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL2Ramp2"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 983040
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL2Ramp3"]
+script = ExtResource("4_instruction")
+op = 8
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL2Ramp4"]
+script = ExtResource("4_instruction")
+op = 6
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 983
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.extractive_output_factor"
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL2"]
+script = ExtResource("2_effect")
+definition_key = &"salt_monopoly_l2"
+summary = "每个矿业支柱地块使矿业支柱地块产出 +1.5%（上限 +15%）"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"salt_monopoly_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.extractive"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgSaltMonopolyL2Ramp0"), SubResource("ProgSaltMonopolyL2Ramp1"), SubResource("ProgSaltMonopolyL2Ramp2"), SubResource("ProgSaltMonopolyL2Ramp3"), SubResource("ProgSaltMonopolyL2Ramp4"), SubResource("ProgSaltMonopolyL2Emit0")])
+commands = Array[Resource]([SubResource("ProgSaltMonopolyL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL3Ramp0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 1311
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL3Ramp1"]
+script = ExtResource("4_instruction")
+op = 2
+arg0 = 57
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL3Ramp2"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 983040
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL3Ramp3"]
+script = ExtResource("4_instruction")
+op = 8
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL3Ramp4"]
+script = ExtResource("4_instruction")
+op = 6
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 1311
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.extractive_output_factor"
+
+[sub_resource type="Resource" id="ProgSaltMonopolyL3"]
+script = ExtResource("2_effect")
+definition_key = &"salt_monopoly_l3"
+summary = "每个矿业支柱地块使矿业支柱地块产出 +2%（上限 +15%）"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"salt_monopoly_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.extractive"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgSaltMonopolyL3Ramp0"), SubResource("ProgSaltMonopolyL3Ramp1"), SubResource("ProgSaltMonopolyL3Ramp2"), SubResource("ProgSaltMonopolyL3Ramp3"), SubResource("ProgSaltMonopolyL3Ramp4"), SubResource("ProgSaltMonopolyL3Emit0")])
+commands = Array[Resource]([SubResource("ProgSaltMonopolyL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgSericultureL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 7864
+
+[sub_resource type="Resource" id="ProgSericultureL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgSericultureL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 7864
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.fine_clothing.output_factor"
+
+[sub_resource type="Resource" id="ProgSericultureL1"]
+script = ExtResource("2_effect")
+definition_key = &"sericulture_l1"
+summary = "主产布的地块周围 1 格（最多 32 格）：精致服装产出 +12%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"sericulture_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 14
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.cloth"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgSericultureL1Const0"), SubResource("ProgSericultureL1Emit0")])
+commands = Array[Resource]([SubResource("ProgSericultureL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgSericultureL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 10486
+
+[sub_resource type="Resource" id="ProgSericultureL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgSericultureL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 10486
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.fine_clothing.output_factor"
+
+[sub_resource type="Resource" id="ProgSericultureL2"]
+script = ExtResource("2_effect")
+definition_key = &"sericulture_l2"
+summary = "主产布的地块周围 1 格（最多 32 格）：精致服装产出 +16%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"sericulture_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 14
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.cloth"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgSericultureL2Const0"), SubResource("ProgSericultureL2Emit0")])
+commands = Array[Resource]([SubResource("ProgSericultureL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgSericultureL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 13107
+
+[sub_resource type="Resource" id="ProgSericultureL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgSericultureL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 13107
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.fine_clothing.output_factor"
+
+[sub_resource type="Resource" id="ProgSericultureL3"]
+script = ExtResource("2_effect")
+definition_key = &"sericulture_l3"
+summary = "主产布的地块周围 1 格（最多 32 格）：精致服装产出 +20%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"sericulture_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 14
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.cloth"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgSericultureL3Const0"), SubResource("ProgSericultureL3Emit0")])
+commands = Array[Resource]([SubResource("ProgSericultureL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgCharteredRouteL1Ramp0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 655
+
+[sub_resource type="Resource" id="ProgCharteredRouteL1Ramp1"]
+script = ExtResource("4_instruction")
+op = 2
+arg0 = 67
+
+[sub_resource type="Resource" id="ProgCharteredRouteL1Ramp2"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 983040
+
+[sub_resource type="Resource" id="ProgCharteredRouteL1Ramp3"]
+script = ExtResource("4_instruction")
+op = 8
+
+[sub_resource type="Resource" id="ProgCharteredRouteL1Ramp4"]
+script = ExtResource("4_instruction")
+op = 6
+
+[sub_resource type="Resource" id="ProgCharteredRouteL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgCharteredRouteL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 655
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgCharteredRouteL1"]
+script = ExtResource("2_effect")
+definition_key = &"chartered_route_l1"
+summary = "每种专精物资使繁市地块产出 +1%（上限 +15%）"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"chartered_route_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.market"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgCharteredRouteL1Ramp0"), SubResource("ProgCharteredRouteL1Ramp1"), SubResource("ProgCharteredRouteL1Ramp2"), SubResource("ProgCharteredRouteL1Ramp3"), SubResource("ProgCharteredRouteL1Ramp4"), SubResource("ProgCharteredRouteL1Emit0")])
+commands = Array[Resource]([SubResource("ProgCharteredRouteL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgCharteredRouteL2Ramp0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 983
+
+[sub_resource type="Resource" id="ProgCharteredRouteL2Ramp1"]
+script = ExtResource("4_instruction")
+op = 2
+arg0 = 67
+
+[sub_resource type="Resource" id="ProgCharteredRouteL2Ramp2"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 983040
+
+[sub_resource type="Resource" id="ProgCharteredRouteL2Ramp3"]
+script = ExtResource("4_instruction")
+op = 8
+
+[sub_resource type="Resource" id="ProgCharteredRouteL2Ramp4"]
+script = ExtResource("4_instruction")
+op = 6
+
+[sub_resource type="Resource" id="ProgCharteredRouteL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgCharteredRouteL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 983
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgCharteredRouteL2"]
+script = ExtResource("2_effect")
+definition_key = &"chartered_route_l2"
+summary = "每种专精物资使繁市地块产出 +1.5%（上限 +15%）"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"chartered_route_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.market"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgCharteredRouteL2Ramp0"), SubResource("ProgCharteredRouteL2Ramp1"), SubResource("ProgCharteredRouteL2Ramp2"), SubResource("ProgCharteredRouteL2Ramp3"), SubResource("ProgCharteredRouteL2Ramp4"), SubResource("ProgCharteredRouteL2Emit0")])
+commands = Array[Resource]([SubResource("ProgCharteredRouteL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgCharteredRouteL3Ramp0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 1311
+
+[sub_resource type="Resource" id="ProgCharteredRouteL3Ramp1"]
+script = ExtResource("4_instruction")
+op = 2
+arg0 = 67
+
+[sub_resource type="Resource" id="ProgCharteredRouteL3Ramp2"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 983040
+
+[sub_resource type="Resource" id="ProgCharteredRouteL3Ramp3"]
+script = ExtResource("4_instruction")
+op = 8
+
+[sub_resource type="Resource" id="ProgCharteredRouteL3Ramp4"]
+script = ExtResource("4_instruction")
+op = 6
+
+[sub_resource type="Resource" id="ProgCharteredRouteL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgCharteredRouteL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 1311
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgCharteredRouteL3"]
+script = ExtResource("2_effect")
+definition_key = &"chartered_route_l3"
+summary = "每种专精物资使繁市地块产出 +2%（上限 +15%）"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"chartered_route_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.market"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgCharteredRouteL3Ramp0"), SubResource("ProgCharteredRouteL3Ramp1"), SubResource("ProgCharteredRouteL3Ramp2"), SubResource("ProgCharteredRouteL3Ramp3"), SubResource("ProgCharteredRouteL3Ramp4"), SubResource("ProgCharteredRouteL3Emit0")])
+commands = Array[Resource]([SubResource("ProgCharteredRouteL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgSilverFlowL1Ramp0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 1966
+
+[sub_resource type="Resource" id="ProgSilverFlowL1Ramp1"]
+script = ExtResource("4_instruction")
+op = 2
+arg0 = 63
+
+[sub_resource type="Resource" id="ProgSilverFlowL1Ramp2"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 327680
+
+[sub_resource type="Resource" id="ProgSilverFlowL1Ramp3"]
+script = ExtResource("4_instruction")
+op = 8
+
+[sub_resource type="Resource" id="ProgSilverFlowL1Ramp4"]
+script = ExtResource("4_instruction")
+op = 6
+
+[sub_resource type="Resource" id="ProgSilverFlowL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgSilverFlowL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 1966
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgSilverFlowL1"]
+script = ExtResource("2_effect")
+definition_key = &"silver_flow_l1"
+summary = "每个主产白银地块使白银地块产出 +3%（上限 +15%）"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"silver_flow_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.silver"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgSilverFlowL1Ramp0"), SubResource("ProgSilverFlowL1Ramp1"), SubResource("ProgSilverFlowL1Ramp2"), SubResource("ProgSilverFlowL1Ramp3"), SubResource("ProgSilverFlowL1Ramp4"), SubResource("ProgSilverFlowL1Emit0")])
+commands = Array[Resource]([SubResource("ProgSilverFlowL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgSilverFlowL2Ramp0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 1966
+
+[sub_resource type="Resource" id="ProgSilverFlowL2Ramp1"]
+script = ExtResource("4_instruction")
+op = 2
+arg0 = 63
+
+[sub_resource type="Resource" id="ProgSilverFlowL2Ramp2"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 458752
+
+[sub_resource type="Resource" id="ProgSilverFlowL2Ramp3"]
+script = ExtResource("4_instruction")
+op = 8
+
+[sub_resource type="Resource" id="ProgSilverFlowL2Ramp4"]
+script = ExtResource("4_instruction")
+op = 6
+
+[sub_resource type="Resource" id="ProgSilverFlowL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgSilverFlowL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 1966
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgSilverFlowL2"]
+script = ExtResource("2_effect")
+definition_key = &"silver_flow_l2"
+summary = "每个主产白银地块使白银地块产出 +3%（上限 +21%）"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"silver_flow_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.silver"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgSilverFlowL2Ramp0"), SubResource("ProgSilverFlowL2Ramp1"), SubResource("ProgSilverFlowL2Ramp2"), SubResource("ProgSilverFlowL2Ramp3"), SubResource("ProgSilverFlowL2Ramp4"), SubResource("ProgSilverFlowL2Emit0")])
+commands = Array[Resource]([SubResource("ProgSilverFlowL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgSilverFlowL3Ramp0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 1966
+
+[sub_resource type="Resource" id="ProgSilverFlowL3Ramp1"]
+script = ExtResource("4_instruction")
+op = 2
+arg0 = 63
+
+[sub_resource type="Resource" id="ProgSilverFlowL3Ramp2"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 589824
+
+[sub_resource type="Resource" id="ProgSilverFlowL3Ramp3"]
+script = ExtResource("4_instruction")
+op = 8
+
+[sub_resource type="Resource" id="ProgSilverFlowL3Ramp4"]
+script = ExtResource("4_instruction")
+op = 6
+
+[sub_resource type="Resource" id="ProgSilverFlowL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgSilverFlowL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 1966
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgSilverFlowL3"]
+script = ExtResource("2_effect")
+definition_key = &"silver_flow_l3"
+summary = "每个主产白银地块使白银地块产出 +3%（上限 +27%）"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"silver_flow_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.silver"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgSilverFlowL3Ramp0"), SubResource("ProgSilverFlowL3Ramp1"), SubResource("ProgSilverFlowL3Ramp2"), SubResource("ProgSilverFlowL3Ramp3"), SubResource("ProgSilverFlowL3Ramp4"), SubResource("ProgSilverFlowL3Emit0")])
+commands = Array[Resource]([SubResource("ProgSilverFlowL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgCoalBasinL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 13107
+
+[sub_resource type="Resource" id="ProgCoalBasinL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgCoalBasinL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 13107
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.extractive_output_factor"
+
+[sub_resource type="Resource" id="ProgCoalBasinL1"]
+script = ExtResource("2_effect")
+definition_key = &"coal_basin_l1"
+summary = "矿业支柱地块（最多 32 格）：矿业产出 +20%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"coal_basin_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.extractive"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgCoalBasinL1Const0"), SubResource("ProgCoalBasinL1Emit0")])
+commands = Array[Resource]([SubResource("ProgCoalBasinL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgCoalBasinL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 18350
+
+[sub_resource type="Resource" id="ProgCoalBasinL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgCoalBasinL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 18350
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.extractive_output_factor"
+
+[sub_resource type="Resource" id="ProgCoalBasinL2"]
+script = ExtResource("2_effect")
+definition_key = &"coal_basin_l2"
+summary = "矿业支柱地块（最多 32 格）：矿业产出 +28%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"coal_basin_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.extractive"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgCoalBasinL2Const0"), SubResource("ProgCoalBasinL2Emit0")])
+commands = Array[Resource]([SubResource("ProgCoalBasinL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgCoalBasinL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 20972
+
+[sub_resource type="Resource" id="ProgCoalBasinL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgCoalBasinL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 20972
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.extractive_output_factor"
+
+[sub_resource type="Resource" id="ProgCoalBasinL3"]
+script = ExtResource("2_effect")
+definition_key = &"coal_basin_l3"
+summary = "矿业支柱地块（最多 32 格）：矿业产出 +32%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"coal_basin_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.extractive"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgCoalBasinL3Const0"), SubResource("ProgCoalBasinL3Emit0")])
+commands = Array[Resource]([SubResource("ProgCoalBasinL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgCottonGinL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 6554
+
+[sub_resource type="Resource" id="ProgCottonGinL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgCottonGinL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 6554
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.cloth.output_factor"
+
+[sub_resource type="Resource" id="ProgCottonGinL1"]
+script = ExtResource("2_effect")
+definition_key = &"cotton_gin_l1"
+summary = "主产棉纤维的地块周围 2 格（最多 32 格）：布产出 +10%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"cotton_gin_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 15
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.cotton_fiber"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgCottonGinL1Const0"), SubResource("ProgCottonGinL1Emit0")])
+commands = Array[Resource]([SubResource("ProgCottonGinL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgCottonGinL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 9175
+
+[sub_resource type="Resource" id="ProgCottonGinL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgCottonGinL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 9175
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.cloth.output_factor"
+
+[sub_resource type="Resource" id="ProgCottonGinL2"]
+script = ExtResource("2_effect")
+definition_key = &"cotton_gin_l2"
+summary = "主产棉纤维的地块周围 2 格（最多 32 格）：布产出 +14%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"cotton_gin_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 15
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.cotton_fiber"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgCottonGinL2Const0"), SubResource("ProgCottonGinL2Emit0")])
+commands = Array[Resource]([SubResource("ProgCottonGinL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgCottonGinL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 11796
+
+[sub_resource type="Resource" id="ProgCottonGinL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgCottonGinL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 11796
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.cloth.output_factor"
+
+[sub_resource type="Resource" id="ProgCottonGinL3"]
+script = ExtResource("2_effect")
+definition_key = &"cotton_gin_l3"
+summary = "主产棉纤维的地块周围 2 格（最多 32 格）：布产出 +18%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"cotton_gin_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 15
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.cotton_fiber"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgCottonGinL3Const0"), SubResource("ProgCottonGinL3Emit0")])
+commands = Array[Resource]([SubResource("ProgCottonGinL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgUrbanSanitationL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 5243
+
+[sub_resource type="Resource" id="ProgUrbanSanitationL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgUrbanSanitationL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 5243
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgUrbanSanitationL1"]
+script = ExtResource("2_effect")
+definition_key = &"urban_sanitation_l1"
+summary = "大邑地块（最多 32 格）：全部产出 +8%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"urban_sanitation_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.metropolis"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgUrbanSanitationL1Const0"), SubResource("ProgUrbanSanitationL1Emit0")])
+commands = Array[Resource]([SubResource("ProgUrbanSanitationL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgUrbanSanitationL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 7864
+
+[sub_resource type="Resource" id="ProgUrbanSanitationL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgUrbanSanitationL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 7864
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgUrbanSanitationL2"]
+script = ExtResource("2_effect")
+definition_key = &"urban_sanitation_l2"
+summary = "大邑地块（最多 32 格）：全部产出 +12%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"urban_sanitation_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.metropolis"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgUrbanSanitationL2Const0"), SubResource("ProgUrbanSanitationL2Emit0")])
+commands = Array[Resource]([SubResource("ProgUrbanSanitationL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgUrbanSanitationL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 9175
+
+[sub_resource type="Resource" id="ProgUrbanSanitationL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgUrbanSanitationL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 9175
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgUrbanSanitationL3"]
+script = ExtResource("2_effect")
+definition_key = &"urban_sanitation_l3"
+summary = "大邑地块（最多 32 格）：全部产出 +14%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"urban_sanitation_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.metropolis"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgUrbanSanitationL3Const0"), SubResource("ProgUrbanSanitationL3Emit0")])
+commands = Array[Resource]([SubResource("ProgUrbanSanitationL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgAgriculturalChemistryL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 5243
+
+[sub_resource type="Resource" id="ProgAgriculturalChemistryL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgAgriculturalChemistryL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 5243
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.agriculture_output_factor"
+
+[sub_resource type="Resource" id="ProgAgriculturalChemistryL1"]
+script = ExtResource("2_effect")
+definition_key = &"agricultural_chemistry_l1"
+summary = "主产化肥的地块周围 2 格（最多 32 格）：农业产出 +8%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"agricultural_chemistry_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 15
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.fertilizer"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgAgriculturalChemistryL1Const0"), SubResource("ProgAgriculturalChemistryL1Emit0")])
+commands = Array[Resource]([SubResource("ProgAgriculturalChemistryL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgAgriculturalChemistryL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 7209
+
+[sub_resource type="Resource" id="ProgAgriculturalChemistryL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgAgriculturalChemistryL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 7209
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.agriculture_output_factor"
+
+[sub_resource type="Resource" id="ProgAgriculturalChemistryL2"]
+script = ExtResource("2_effect")
+definition_key = &"agricultural_chemistry_l2"
+summary = "主产化肥的地块周围 2 格（最多 32 格）：农业产出 +11%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"agricultural_chemistry_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 15
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.fertilizer"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgAgriculturalChemistryL2Const0"), SubResource("ProgAgriculturalChemistryL2Emit0")])
+commands = Array[Resource]([SubResource("ProgAgriculturalChemistryL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgAgriculturalChemistryL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 9175
+
+[sub_resource type="Resource" id="ProgAgriculturalChemistryL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgAgriculturalChemistryL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 9175
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.agriculture_output_factor"
+
+[sub_resource type="Resource" id="ProgAgriculturalChemistryL3"]
+script = ExtResource("2_effect")
+definition_key = &"agricultural_chemistry_l3"
+summary = "主产化肥的地块周围 2 格（最多 32 格）：农业产出 +14%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"agricultural_chemistry_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 15
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.fertilizer"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgAgriculturalChemistryL3Const0"), SubResource("ProgAgriculturalChemistryL3Emit0")])
+commands = Array[Resource]([SubResource("ProgAgriculturalChemistryL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgElectrificationL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 5243
+
+[sub_resource type="Resource" id="ProgElectrificationL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgElectrificationL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 5243
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.manufacturing_output_factor"
+
+[sub_resource type="Resource" id="ProgElectrificationL1"]
+script = ExtResource("2_effect")
+definition_key = &"electrification_l1"
+summary = "能源支柱地块周围 2 格（最多 32 格）：工业产出 +8%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"electrification_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 15
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.energy"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgElectrificationL1Const0"), SubResource("ProgElectrificationL1Emit0")])
+commands = Array[Resource]([SubResource("ProgElectrificationL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgElectrificationL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 7864
+
+[sub_resource type="Resource" id="ProgElectrificationL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgElectrificationL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 7864
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.manufacturing_output_factor"
+
+[sub_resource type="Resource" id="ProgElectrificationL2"]
+script = ExtResource("2_effect")
+definition_key = &"electrification_l2"
+summary = "能源支柱地块周围 2 格（最多 32 格）：工业产出 +12%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"electrification_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 15
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.energy"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgElectrificationL2Const0"), SubResource("ProgElectrificationL2Emit0")])
+commands = Array[Resource]([SubResource("ProgElectrificationL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgElectrificationL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 9830
+
+[sub_resource type="Resource" id="ProgElectrificationL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgElectrificationL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 9830
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.manufacturing_output_factor"
+
+[sub_resource type="Resource" id="ProgElectrificationL3"]
+script = ExtResource("2_effect")
+definition_key = &"electrification_l3"
+summary = "能源支柱地块周围 2 格（最多 32 格）：工业产出 +15%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"electrification_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 15
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.energy"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgElectrificationL3Const0"), SubResource("ProgElectrificationL3Emit0")])
+commands = Array[Resource]([SubResource("ProgElectrificationL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgEcologicalBalanceL1RichConst0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 6554
+
+[sub_resource type="Resource" id="ProgEcologicalBalanceL1RichEmit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgEcologicalBalanceL1RichCmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 6554
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgEcologicalBalanceL1Rich"]
+script = ExtResource("2_effect")
+definition_key = &"ecological_balance_l1_rich"
+summary = "富饶地块（最多 32 格）：全部产出 +10%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"ecological_balance_l1_rich"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.abundant"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgEcologicalBalanceL1RichConst0"), SubResource("ProgEcologicalBalanceL1RichEmit0")])
+commands = Array[Resource]([SubResource("ProgEcologicalBalanceL1RichCmd0")])
+
+[sub_resource type="Resource" id="ProgEcologicalBalanceL1DryConst0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 3277
+
+[sub_resource type="Resource" id="ProgEcologicalBalanceL1DryEmit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgEcologicalBalanceL1DryCmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 3277
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor.cut"
+
+[sub_resource type="Resource" id="ProgEcologicalBalanceL1Dry"]
+script = ExtResource("2_effect")
+definition_key = &"ecological_balance_l1_dry"
+summary = "枯竭地块（最多 32 格）：全部产出 -5%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"ecological_balance_l1_dry"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.depleted"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgEcologicalBalanceL1DryConst0"), SubResource("ProgEcologicalBalanceL1DryEmit0")])
+commands = Array[Resource]([SubResource("ProgEcologicalBalanceL1DryCmd0")])
+
+[sub_resource type="Resource" id="ProgEcologicalBalanceL2RichConst0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 9175
+
+[sub_resource type="Resource" id="ProgEcologicalBalanceL2RichEmit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgEcologicalBalanceL2RichCmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 9175
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgEcologicalBalanceL2Rich"]
+script = ExtResource("2_effect")
+definition_key = &"ecological_balance_l2_rich"
+summary = "富饶地块（最多 32 格）：全部产出 +14%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"ecological_balance_l2_rich"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.abundant"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgEcologicalBalanceL2RichConst0"), SubResource("ProgEcologicalBalanceL2RichEmit0")])
+commands = Array[Resource]([SubResource("ProgEcologicalBalanceL2RichCmd0")])
+
+[sub_resource type="Resource" id="ProgEcologicalBalanceL2DryConst0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 3277
+
+[sub_resource type="Resource" id="ProgEcologicalBalanceL2DryEmit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgEcologicalBalanceL2DryCmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 3277
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor.cut"
+
+[sub_resource type="Resource" id="ProgEcologicalBalanceL2Dry"]
+script = ExtResource("2_effect")
+definition_key = &"ecological_balance_l2_dry"
+summary = "枯竭地块（最多 32 格）：全部产出 -5%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"ecological_balance_l2_dry"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.depleted"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgEcologicalBalanceL2DryConst0"), SubResource("ProgEcologicalBalanceL2DryEmit0")])
+commands = Array[Resource]([SubResource("ProgEcologicalBalanceL2DryCmd0")])
+
+[sub_resource type="Resource" id="ProgEcologicalBalanceL3RichConst0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 9175
+
+[sub_resource type="Resource" id="ProgEcologicalBalanceL3RichEmit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgEcologicalBalanceL3RichCmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 9175
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgEcologicalBalanceL3Rich"]
+script = ExtResource("2_effect")
+definition_key = &"ecological_balance_l3_rich"
+summary = "富饶地块（最多 32 格）：全部产出 +14%，枯竭惩罚取消"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"ecological_balance_l3_rich"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.abundant"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgEcologicalBalanceL3RichConst0"), SubResource("ProgEcologicalBalanceL3RichEmit0")])
+commands = Array[Resource]([SubResource("ProgEcologicalBalanceL3RichCmd0")])
+
+[sub_resource type="Resource" id="ProgHydroelectricL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 5243
+
+[sub_resource type="Resource" id="ProgHydroelectricL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgHydroelectricL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 5243
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.energy_output_factor"
+
+[sub_resource type="Resource" id="ProgHydroelectricL3"]
+script = ExtResource("2_effect")
+definition_key = &"hydroelectric_l3"
+summary = "能源支柱的河谷地块周围 1 格（最多 32 格）：能源产出 +8%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"hydroelectric_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 15
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.energy"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgHydroelectricL3Const0"), SubResource("ProgHydroelectricL3Emit0")])
+commands = Array[Resource]([SubResource("ProgHydroelectricL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgAntitrustL1BonusConst0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 5243
+
+[sub_resource type="Resource" id="ProgAntitrustL1BonusEmit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgAntitrustL1BonusCmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 5243
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgAntitrustL1Bonus"]
+script = ExtResource("2_effect")
+definition_key = &"antitrust_l1_bonus"
+summary = "多元地块（最多 32 格）：全部产出 +8%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"antitrust_l1_bonus"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.diversified"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgAntitrustL1BonusConst0"), SubResource("ProgAntitrustL1BonusEmit0")])
+commands = Array[Resource]([SubResource("ProgAntitrustL1BonusCmd0")])
+
+[sub_resource type="Resource" id="ProgAntitrustL1PenaltyConst0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 3277
+
+[sub_resource type="Resource" id="ProgAntitrustL1PenaltyEmit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgAntitrustL1PenaltyCmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 3277
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor.cut"
+
+[sub_resource type="Resource" id="ProgAntitrustL1Penalty"]
+script = ExtResource("2_effect")
+definition_key = &"antitrust_l1_penalty"
+summary = "高度专精地块（最多 32 格）：全部产出 -5%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"antitrust_l1_penalty"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.specialized_high"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgAntitrustL1PenaltyConst0"), SubResource("ProgAntitrustL1PenaltyEmit0")])
+commands = Array[Resource]([SubResource("ProgAntitrustL1PenaltyCmd0")])
+
+[sub_resource type="Resource" id="ProgAntitrustL2BonusConst0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 7864
+
+[sub_resource type="Resource" id="ProgAntitrustL2BonusEmit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgAntitrustL2BonusCmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 7864
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgAntitrustL2Bonus"]
+script = ExtResource("2_effect")
+definition_key = &"antitrust_l2_bonus"
+summary = "多元地块（最多 32 格）：全部产出 +12%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"antitrust_l2_bonus"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.diversified"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgAntitrustL2BonusConst0"), SubResource("ProgAntitrustL2BonusEmit0")])
+commands = Array[Resource]([SubResource("ProgAntitrustL2BonusCmd0")])
+
+[sub_resource type="Resource" id="ProgAntitrustL2PenaltyConst0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 3277
+
+[sub_resource type="Resource" id="ProgAntitrustL2PenaltyEmit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgAntitrustL2PenaltyCmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 3277
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor.cut"
+
+[sub_resource type="Resource" id="ProgAntitrustL2Penalty"]
+script = ExtResource("2_effect")
+definition_key = &"antitrust_l2_penalty"
+summary = "高度专精地块（最多 32 格）：全部产出 -5%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"antitrust_l2_penalty"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.specialized_high"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgAntitrustL2PenaltyConst0"), SubResource("ProgAntitrustL2PenaltyEmit0")])
+commands = Array[Resource]([SubResource("ProgAntitrustL2PenaltyCmd0")])
+
+[sub_resource type="Resource" id="ProgAntitrustL3BonusConst0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 7864
+
+[sub_resource type="Resource" id="ProgAntitrustL3BonusEmit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgAntitrustL3BonusCmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 7864
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgAntitrustL3Bonus"]
+script = ExtResource("2_effect")
+definition_key = &"antitrust_l3_bonus"
+summary = "多元地块（最多 32 格）：全部产出 +12%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"antitrust_l3_bonus"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.diversified"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgAntitrustL3BonusConst0"), SubResource("ProgAntitrustL3BonusEmit0")])
+commands = Array[Resource]([SubResource("ProgAntitrustL3BonusCmd0")])
+
+[sub_resource type="Resource" id="ProgAntitrustL3PenaltyConst0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 1966
+
+[sub_resource type="Resource" id="ProgAntitrustL3PenaltyEmit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgAntitrustL3PenaltyCmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 1966
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor.cut"
+
+[sub_resource type="Resource" id="ProgAntitrustL3Penalty"]
+script = ExtResource("2_effect")
+definition_key = &"antitrust_l3_penalty"
+summary = "高度专精地块（最多 32 格）：全部产出 -3%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"antitrust_l3_penalty"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.specialized_high"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgAntitrustL3PenaltyConst0"), SubResource("ProgAntitrustL3PenaltyEmit0")])
+commands = Array[Resource]([SubResource("ProgAntitrustL3PenaltyCmd0")])
+
+[sub_resource type="Resource" id="ProgMotorizationL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 2621
+
+[sub_resource type="Resource" id="ProgMotorizationL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgMotorizationL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 2621
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgMotorizationL1"]
+script = ExtResource("2_effect")
+definition_key = &"motorization_l1"
+summary = "繁市地块周围 2 格（最多 32 格）：全部产出 +4%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"motorization_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 15
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.market"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgMotorizationL1Const0"), SubResource("ProgMotorizationL1Emit0")])
+commands = Array[Resource]([SubResource("ProgMotorizationL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgMotorizationL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 3932
+
+[sub_resource type="Resource" id="ProgMotorizationL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgMotorizationL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 3932
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgMotorizationL2"]
+script = ExtResource("2_effect")
+definition_key = &"motorization_l2"
+summary = "繁市地块周围 2 格（最多 32 格）：全部产出 +6%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"motorization_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 15
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.market"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgMotorizationL2Const0"), SubResource("ProgMotorizationL2Emit0")])
+commands = Array[Resource]([SubResource("ProgMotorizationL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgMotorizationL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 5243
+
+[sub_resource type="Resource" id="ProgMotorizationL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgMotorizationL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 5243
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.output_factor"
+
+[sub_resource type="Resource" id="ProgMotorizationL3"]
+script = ExtResource("2_effect")
+definition_key = &"motorization_l3"
+summary = "繁市地块周围 2 格（最多 32 格）：全部产出 +8%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"motorization_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 15
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.market"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgMotorizationL3Const0"), SubResource("ProgMotorizationL3Emit0")])
+commands = Array[Resource]([SubResource("ProgMotorizationL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgPetrochemicalL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 7864
+
+[sub_resource type="Resource" id="ProgPetrochemicalL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgPetrochemicalL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 7864
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.plastics.output_factor"
+
+[sub_resource type="Resource" id="ProgPetrochemicalL1Const1"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 7864
+
+[sub_resource type="Resource" id="ProgPetrochemicalL1Emit1"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 1
+
+[sub_resource type="Resource" id="ProgPetrochemicalL1Cmd1"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 7864
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.synthetic_fiber.output_factor"
+
+[sub_resource type="Resource" id="ProgPetrochemicalL1"]
+script = ExtResource("2_effect")
+definition_key = &"petrochemical_l1"
+summary = "主产原油的地块周围 2 格（最多 32 格）：塑料、合成纤维产出 +12%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"petrochemical_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 15
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.crude_oil"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgPetrochemicalL1Const0"), SubResource("ProgPetrochemicalL1Emit0"), SubResource("ProgPetrochemicalL1Const1"), SubResource("ProgPetrochemicalL1Emit1")])
+commands = Array[Resource]([SubResource("ProgPetrochemicalL1Cmd0"), SubResource("ProgPetrochemicalL1Cmd1")])
+
+[sub_resource type="Resource" id="ProgPetrochemicalL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 10486
+
+[sub_resource type="Resource" id="ProgPetrochemicalL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgPetrochemicalL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 10486
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.plastics.output_factor"
+
+[sub_resource type="Resource" id="ProgPetrochemicalL2Const1"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 10486
+
+[sub_resource type="Resource" id="ProgPetrochemicalL2Emit1"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 1
+
+[sub_resource type="Resource" id="ProgPetrochemicalL2Cmd1"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 10486
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.synthetic_fiber.output_factor"
+
+[sub_resource type="Resource" id="ProgPetrochemicalL2"]
+script = ExtResource("2_effect")
+definition_key = &"petrochemical_l2"
+summary = "主产原油的地块周围 2 格（最多 32 格）：塑料、合成纤维产出 +16%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"petrochemical_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 15
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.crude_oil"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgPetrochemicalL2Const0"), SubResource("ProgPetrochemicalL2Emit0"), SubResource("ProgPetrochemicalL2Const1"), SubResource("ProgPetrochemicalL2Emit1")])
+commands = Array[Resource]([SubResource("ProgPetrochemicalL2Cmd0"), SubResource("ProgPetrochemicalL2Cmd1")])
+
+[sub_resource type="Resource" id="ProgPetrochemicalL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 13107
+
+[sub_resource type="Resource" id="ProgPetrochemicalL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgPetrochemicalL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 13107
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.plastics.output_factor"
+
+[sub_resource type="Resource" id="ProgPetrochemicalL3Const1"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 13107
+
+[sub_resource type="Resource" id="ProgPetrochemicalL3Emit1"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 1
+
+[sub_resource type="Resource" id="ProgPetrochemicalL3Cmd1"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 13107
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.synthetic_fiber.output_factor"
+
+[sub_resource type="Resource" id="ProgPetrochemicalL3"]
+script = ExtResource("2_effect")
+definition_key = &"petrochemical_l3"
+summary = "主产原油的地块周围 2 格（最多 32 格）：塑料、合成纤维产出 +20%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"petrochemical_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 15
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.produces.crude_oil"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgPetrochemicalL3Const0"), SubResource("ProgPetrochemicalL3Emit0"), SubResource("ProgPetrochemicalL3Const1"), SubResource("ProgPetrochemicalL3Emit1")])
+commands = Array[Resource]([SubResource("ProgPetrochemicalL3Cmd0"), SubResource("ProgPetrochemicalL3Cmd1")])
+
+[sub_resource type="Resource" id="ProgComputingNetworksL1Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 13107
+
+[sub_resource type="Resource" id="ProgComputingNetworksL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgComputingNetworksL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 13107
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.knowledge_output_factor"
+
+[sub_resource type="Resource" id="ProgComputingNetworksL1"]
+script = ExtResource("2_effect")
+definition_key = &"computing_networks_l1"
+summary = "知识支柱地块（最多 32 格）：知识产出 +20%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"computing_networks_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.knowledge"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgComputingNetworksL1Const0"), SubResource("ProgComputingNetworksL1Emit0")])
+commands = Array[Resource]([SubResource("ProgComputingNetworksL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgComputingNetworksL2Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 16384
+
+[sub_resource type="Resource" id="ProgComputingNetworksL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgComputingNetworksL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 16384
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.knowledge_output_factor"
+
+[sub_resource type="Resource" id="ProgComputingNetworksL2"]
+script = ExtResource("2_effect")
+definition_key = &"computing_networks_l2"
+summary = "知识支柱地块（最多 32 格）：知识产出 +25%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"computing_networks_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.knowledge"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgComputingNetworksL2Const0"), SubResource("ProgComputingNetworksL2Emit0")])
+commands = Array[Resource]([SubResource("ProgComputingNetworksL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgComputingNetworksL3Const0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 19661
+
+[sub_resource type="Resource" id="ProgComputingNetworksL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgComputingNetworksL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 19661
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.building.knowledge_output_factor"
+
+[sub_resource type="Resource" id="ProgComputingNetworksL3"]
+script = ExtResource("2_effect")
+definition_key = &"computing_networks_l3"
+summary = "知识支柱地块（最多 32 格）：知识产出 +30%"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"computing_networks_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.sector.knowledge"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgComputingNetworksL3Const0"), SubResource("ProgComputingNetworksL3Emit0")])
+commands = Array[Resource]([SubResource("ProgComputingNetworksL3Cmd0")])
+
+[sub_resource type="Resource" id="ProgSemiconductorL1Ramp0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 1311
+
+[sub_resource type="Resource" id="ProgSemiconductorL1Ramp1"]
+script = ExtResource("4_instruction")
+op = 2
+arg0 = 59
+
+[sub_resource type="Resource" id="ProgSemiconductorL1Ramp2"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 1310720
+
+[sub_resource type="Resource" id="ProgSemiconductorL1Ramp3"]
+script = ExtResource("4_instruction")
+op = 8
+
+[sub_resource type="Resource" id="ProgSemiconductorL1Ramp4"]
+script = ExtResource("4_instruction")
+op = 6
+
+[sub_resource type="Resource" id="ProgSemiconductorL1Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgSemiconductorL1Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 1311
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.semiconductors.output_factor"
+
+[sub_resource type="Resource" id="ProgSemiconductorL1"]
+script = ExtResource("2_effect")
+definition_key = &"semiconductor_l1"
+summary = "每个成链地块使成链地块的半导体产出 +2%（上限 +40%）"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"semiconductor_l1"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.chained"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgSemiconductorL1Ramp0"), SubResource("ProgSemiconductorL1Ramp1"), SubResource("ProgSemiconductorL1Ramp2"), SubResource("ProgSemiconductorL1Ramp3"), SubResource("ProgSemiconductorL1Ramp4"), SubResource("ProgSemiconductorL1Emit0")])
+commands = Array[Resource]([SubResource("ProgSemiconductorL1Cmd0")])
+
+[sub_resource type="Resource" id="ProgSemiconductorL2Ramp0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 1638
+
+[sub_resource type="Resource" id="ProgSemiconductorL2Ramp1"]
+script = ExtResource("4_instruction")
+op = 2
+arg0 = 59
+
+[sub_resource type="Resource" id="ProgSemiconductorL2Ramp2"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 1310720
+
+[sub_resource type="Resource" id="ProgSemiconductorL2Ramp3"]
+script = ExtResource("4_instruction")
+op = 8
+
+[sub_resource type="Resource" id="ProgSemiconductorL2Ramp4"]
+script = ExtResource("4_instruction")
+op = 6
+
+[sub_resource type="Resource" id="ProgSemiconductorL2Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgSemiconductorL2Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 1638
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.semiconductors.output_factor"
+
+[sub_resource type="Resource" id="ProgSemiconductorL2"]
+script = ExtResource("2_effect")
+definition_key = &"semiconductor_l2"
+summary = "每个成链地块使成链地块的半导体产出 +2.5%（上限 +40%）"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"semiconductor_l2"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.chained"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgSemiconductorL2Ramp0"), SubResource("ProgSemiconductorL2Ramp1"), SubResource("ProgSemiconductorL2Ramp2"), SubResource("ProgSemiconductorL2Ramp3"), SubResource("ProgSemiconductorL2Ramp4"), SubResource("ProgSemiconductorL2Emit0")])
+commands = Array[Resource]([SubResource("ProgSemiconductorL2Cmd0")])
+
+[sub_resource type="Resource" id="ProgSemiconductorL3Ramp0"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 1966
+
+[sub_resource type="Resource" id="ProgSemiconductorL3Ramp1"]
+script = ExtResource("4_instruction")
+op = 2
+arg0 = 59
+
+[sub_resource type="Resource" id="ProgSemiconductorL3Ramp2"]
+script = ExtResource("4_instruction")
+op = 1
+value_q16 = 1310720
+
+[sub_resource type="Resource" id="ProgSemiconductorL3Ramp3"]
+script = ExtResource("4_instruction")
+op = 8
+
+[sub_resource type="Resource" id="ProgSemiconductorL3Ramp4"]
+script = ExtResource("4_instruction")
+op = 6
+
+[sub_resource type="Resource" id="ProgSemiconductorL3Emit0"]
+script = ExtResource("4_instruction")
+op = 11
+arg0 = 0
+
+[sub_resource type="Resource" id="ProgSemiconductorL3Cmd0"]
+script = ExtResource("5_command")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 1966
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"economy.city.good.semiconductors.output_factor"
+
+[sub_resource type="Resource" id="ProgSemiconductorL3"]
+script = ExtResource("2_effect")
+definition_key = &"semiconductor_l3"
+summary = "每个成链地块使成链地块的半导体产出 +3%（上限 +40%）"
+target_domain = 2
+operation = 1
+lifecycle = 0
+duration_days = -1
+stack_policy = 0
+stack_key = &"semiconductor_l3"
+max_stacks = 1
+priority = 0
+target_selector_kind = 12
+target_selector_id = &""
+target_selector_param = PackedInt32Array(32, 0)
+cadence_days = 1
+target_selector_tag = &"cell.chained"
+conditions = Array[Resource]([])
+instructions = Array[Resource]([SubResource("ProgSemiconductorL3Ramp0"), SubResource("ProgSemiconductorL3Ramp1"), SubResource("ProgSemiconductorL3Ramp2"), SubResource("ProgSemiconductorL3Ramp3"), SubResource("ProgSemiconductorL3Ramp4"), SubResource("ProgSemiconductorL3Emit0")])
+commands = Array[Resource]([SubResource("ProgSemiconductorL3Cmd0")])
 
 [resource]
 script = ExtResource("1_catalog")
-effects = Array[Resource]([SubResource("EffectGranaryBelt"), SubResource("EffectForgeRing"), SubResource("EffectVeinDominance"), SubResource("EffectIronThrone"), SubResource("EffectStackedWorkshop"), SubResource("EffectGuildMonopoly")])
+effects = Array[Resource]([SubResource("ProgV1GranaryBelt"), SubResource("ProgV2ForgeRing"), SubResource("ProgV3VeinDominance"), SubResource("ProgV4IronThrone"), SubResource("ProgV5StackedWorkshop"), SubResource("ProgV6GuildMonopoly"), SubResource("ProgHuntingTraditionL1"), SubResource("ProgHuntingTraditionL2"), SubResource("ProgHuntingTraditionL3"), SubResource("ProgFlintKnappingL1"), SubResource("ProgFlintKnappingL2"), SubResource("ProgFlintKnappingL3"), SubResource("ProgRiversideCampL3"), SubResource("ProgPitDwellingL3"), SubResource("ProgCollectiveStewardshipL1"), SubResource("ProgCollectiveStewardshipL2"), SubResource("ProgCollectiveStewardshipL3"), SubResource("ProgTerraceFarmingL3"), SubResource("ProgThreeFieldRotationL1"), SubResource("ProgThreeFieldRotationL2"), SubResource("ProgThreeFieldRotationL3"), SubResource("ProgFreeExchangeL1"), SubResource("ProgFreeExchangeL2"), SubResource("ProgFreeExchangeL3"), SubResource("ProgStandardizationL1"), SubResource("ProgStandardizationL2"), SubResource("ProgStandardizationL3"), SubResource("ProgHouseholdWeavingL1"), SubResource("ProgHouseholdWeavingL2"), SubResource("ProgHouseholdWeavingL3"), SubResource("ProgCoppiceRotationL1"), SubResource("ProgCoppiceRotationL2"), SubResource("ProgCoppiceRotationL3"), SubResource("ProgWaterWorksL3"), SubResource("ProgSeasonalCalendarL3"), SubResource("ProgEverNormalGranaryL1"), SubResource("ProgEverNormalGranaryL2"), SubResource("ProgEverNormalGranaryL3"), SubResource("ProgSettleAndFarmL1"), SubResource("ProgSettleAndFarmL2"), SubResource("ProgSettleAndFarmL3"), SubResource("ProgGuildChartersL1"), SubResource("ProgGuildChartersL2"), SubResource("ProgGuildChartersL3"), SubResource("ProgIronSmeltingL1"), SubResource("ProgIronSmeltingL2"), SubResource("ProgIronSmeltingL3"), SubResource("ProgVillageCompactL1"), SubResource("ProgVillageCompactL2"), SubResource("ProgVillageCompactL3"), SubResource("ProgLandReclamationL1"), SubResource("ProgLandReclamationL2"), SubResource("ProgLandReclamationL3"), SubResource("ProgPublicHygieneL1"), SubResource("ProgPublicHygieneL2"), SubResource("ProgPublicHygieneL3"), SubResource("ProgSaltMonopolyL1"), SubResource("ProgSaltMonopolyL2"), SubResource("ProgSaltMonopolyL3"), SubResource("ProgSericultureL1"), SubResource("ProgSericultureL2"), SubResource("ProgSericultureL3"), SubResource("ProgCharteredRouteL1"), SubResource("ProgCharteredRouteL2"), SubResource("ProgCharteredRouteL3"), SubResource("ProgSilverFlowL1"), SubResource("ProgSilverFlowL2"), SubResource("ProgSilverFlowL3"), SubResource("ProgCoalBasinL1"), SubResource("ProgCoalBasinL2"), SubResource("ProgCoalBasinL3"), SubResource("ProgCottonGinL1"), SubResource("ProgCottonGinL2"), SubResource("ProgCottonGinL3"), SubResource("ProgUrbanSanitationL1"), SubResource("ProgUrbanSanitationL2"), SubResource("ProgUrbanSanitationL3"), SubResource("ProgAgriculturalChemistryL1"), SubResource("ProgAgriculturalChemistryL2"), SubResource("ProgAgriculturalChemistryL3"), SubResource("ProgElectrificationL1"), SubResource("ProgElectrificationL2"), SubResource("ProgElectrificationL3"), SubResource("ProgEcologicalBalanceL1Rich"), SubResource("ProgEcologicalBalanceL1Dry"), SubResource("ProgEcologicalBalanceL2Rich"), SubResource("ProgEcologicalBalanceL2Dry"), SubResource("ProgEcologicalBalanceL3Rich"), SubResource("ProgHydroelectricL3"), SubResource("ProgAntitrustL1Bonus"), SubResource("ProgAntitrustL1Penalty"), SubResource("ProgAntitrustL2Bonus"), SubResource("ProgAntitrustL2Penalty"), SubResource("ProgAntitrustL3Bonus"), SubResource("ProgAntitrustL3Penalty"), SubResource("ProgMotorizationL1"), SubResource("ProgMotorizationL2"), SubResource("ProgMotorizationL3"), SubResource("ProgPetrochemicalL1"), SubResource("ProgPetrochemicalL2"), SubResource("ProgPetrochemicalL3"), SubResource("ProgComputingNetworksL1"), SubResource("ProgComputingNetworksL2"), SubResource("ProgComputingNetworksL3"), SubResource("ProgSemiconductorL1"), SubResource("ProgSemiconductorL2"), SubResource("ProgSemiconductorL3")])

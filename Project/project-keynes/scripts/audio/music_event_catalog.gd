@@ -28,6 +28,26 @@ const MUSIC := {
 
 	## 大厅 / 主菜单背景音乐。不属于任何时代的轮播池，单独播放。
 	&"hall": "event:/Music/Hall/hall",
+
+	## 石器时代交互式配乐组曲（含开局 Intro + 3段常态循环 + Population 人口变体 + CameraZoom 镜头缩放变体）。
+	&"stone_age_suite": "event:/Music/StoneAge/Suite",
+
+	## 农耕时代交互式配乐组曲（含开局 Intro + 3段常态循环 + Population 人口变体 + CameraZoom 镜头缩放变体）。
+	&"agrarian_age_suite": "event:/Music/AgrarianAge/Suite",
+
+	## 王国时代交互式配乐组曲（含开局 Intro + 3段常态循环 + Population 人口变体 + CameraZoom 镜头缩放变体）。
+	&"kingdom_age_suite": "event:/Music/KingdomAge/Suite",
+
+	## 帝国时代交互式配乐组曲（含开局 Intro + 3段常态循环 + Population 人口变体 + CameraZoom 镜头缩放变体）。
+	&"empire_age_suite": "event:/Music/EmpireAge/Suite",
+}
+
+## 时代 ID 到交互式配乐组曲 key 的映射
+const ERA_SUITES := {
+	&"stone": &"stone_age_suite",
+	&"agrarian": &"agrarian_age_suite",
+	&"kingdom": &"kingdom_age_suite",
+	&"empire": &"empire_age_suite",
 }
 
 ## 一次性过渡：时代升级
@@ -35,6 +55,9 @@ const TRANSITION := {
 	&"trans_explore_feudal": "event:/Music/Transition/trans_explore_feudal",
 	&"trans_explore_castle": "event:/Music/Transition/trans_explore_castle",
 	&"trans_explore_imperial": "event:/Music/Transition/trans_explore_imperial",
+	&"trans_stone_to_agrarian": "event:/Music/Transition/era_stone_to_agrarian",
+	&"trans_agrarian_to_kingdom": "event:/Music/Transition/era_agrarian_to_kingdom",
+	&"trans_kingdom_to_empire": "event:/Music/Transition/era_kingdom_to_empire",
 }
 
 ## 一次性 stinger：胜利

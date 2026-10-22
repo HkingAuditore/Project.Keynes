@@ -16,6 +16,7 @@
 #include <godot_cpp/variant/variant.hpp>
 
 #include "runtime_modifier_pod.h"
+#include "effect_magnitude.h"
 
 namespace pk {
 
@@ -30,7 +31,9 @@ public:
     static constexpr int32_t SAVE_SCHEMA_VERSION = 3;
     static constexpr int64_t PERMANENT_EXPIRY = -1;
     static constexpr int32_t Q16_ONE = 65536;
-    static constexpr int32_t MAX_MAGNITUDE_Q16 = Q16_ONE * 4;
+    // Shared with the EFFECT worker's plan path via effect_magnitude.h: the two
+    // sides multiply the same per-instance scale and must clamp identically.
+    static constexpr int32_t MAX_MAGNITUDE_Q16 = EFFECT_MAX_MAGNITUDE_Q16;
 
     enum Domain : int32_t { CLIMATE = 0, COUNTRY = 1, ECONOMY = 2, GAMEPLAY = 3, DOMAIN_COUNT = 4 };
     enum Scope : int32_t { GLOBAL = 0, GROUP = 1, ENTITY = 2 };
@@ -139,6 +142,22 @@ public:
     bool has_technology_effect(uint64_t country_handle,
                                const std::string &definition_key,
                                int32_t technology_id) const;
+    // Read-only resolution of one authored definition into its (stat, op, value)
+    // rows. Nothing else in the runtime ever asks a definition what it *does* --
+    // every other entry point only asks whether a handle exists -- but the
+    // coefficient plane has to turn "card -> modifier definition" into a per-cell
+    // stat delta, and it must not re-parse the catalog to do it.
+    //
+    // DIVIDE is normalised to MULTIPLY(1/value) at parse time, so only ADD and
+    // MULTIPLY are ever reported. A term that adds 0 and multiplies by 1 is
+    // skipped: it contributes nothing.
+    struct ResolvedTerm {
+        int32_t stat_id = -1;
+        int32_t operation = ADD;
+        double value = 0.0;
+    };
+    bool resolve_definition_terms(const std::string &definition_key,
+                                  std::vector<ResolvedTerm> &out) const;
     // Active non-INDEPENDENT ENTITY entry keyed by exactly this source.
     bool has_unique_source_entry(int32_t domain, const std::string &definition_key,
                                  uint64_t entity_handle, uint64_t source_type,

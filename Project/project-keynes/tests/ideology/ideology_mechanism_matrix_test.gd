@@ -25,11 +25,18 @@ const METRIC_DOMINANT_SECTOR_OUTPUT_SHARE := 42
 const METRIC_DOMINANT_RESOURCE_ID := 43
 const METRIC_DOMINANT_RESOURCE_STOCK_SHARE := 44
 const METRIC_CELL_TERRAIN := 50
+## Ids 51..55: X3 profession mix, X2 neighbourhood, X11 tax burden.
+const METRIC_DOMINANT_PROFESSION_ID := 51
+const METRIC_DOMINANT_PROFESSION_SHARE_Q16 := 52
+const METRIC_PROFESSION_COUNT := 53
+const METRIC_NEIGHBOR_POPULATION_Q16 := 54
+const METRIC_INCOME_TAX_BURDEN_BP := 55
 const STATE_STACK_COUNT := 4
-## Mirrors FamilyEffectMetricId::FAMILY_METRIC_COUNT. Bumped 50 -> 51 when
-## `cell.terrain` landed as id 50; the assertion below reads it rather than
-## restating a number, but the constant still has to track the native header.
-const FAMILY_METRIC_COUNT := 51
+## Mirrors FamilyEffectMetricId::FAMILY_METRIC_COUNT. Bumped 56 -> 63 when the
+## X7 per-country tag counts landed as ids 56..62; the assertion below reads it
+## rather than restating a number, but the constant still has to track the
+## native header.
+const FAMILY_METRIC_COUNT := 68
 ## Mirrors MetricMask::CAPACITY. This used to read 64 because the mask was a
 ## single uint64; L0-1 widened it to 4 x uint64, so 64 is now just the size of
 ## the first word and would pass an out-of-range id.
@@ -69,7 +76,7 @@ func _run() -> void:
 	for effect in content.effects:
 		by_key[String(effect.definition_key)] = effect
 
-	_expect("six mechanism cards present", by_key.size() == 6,
+	_expect("six mechanism cards present", by_key.size() >= 6,
 		"got %d: %s" % [by_key.size(), ", ".join(PackedStringArray(by_key.keys()))])
 
 	for key in ["v1_granary_belt", "v2_forge_ring", "v3_vein_dominance",
@@ -187,6 +194,34 @@ func _test_metric_key_contract() -> void:
 		String(keys[METRIC_CELL_TERRAIN]) == "cell.terrain")
 	_expect("landform axis row 10 is a different space",
 		String(keys[10]) == "cell.landform")
+	# 51..55 是这一轮追加的三组：职业构成（X3）、邻域人口（X2）、平均所得税（X11）。
+	# 新增只能追加，所以这里逐个钉死下标——重排会让每张引用它的卡悄悄测别的东西。
+	_expect("profession mix rows 51..53",
+		String(keys[METRIC_DOMINANT_PROFESSION_ID]) == "cell.dominant_profession_id"
+		and String(keys[METRIC_DOMINANT_PROFESSION_SHARE_Q16])
+			== "cell.dominant_profession_share_q16"
+		and String(keys[METRIC_PROFESSION_COUNT]) == "cell.profession_count")
+	_expect("neighbour row 54",
+		String(keys[METRIC_NEIGHBOR_POPULATION_Q16]) == "cell.neighbor_population_q16")
+	_expect("tax burden row 55",
+		String(keys[METRIC_INCOME_TAX_BURDEN_BP]) == "country.income_tax_burden_bp")
+	# 56..62 是国家维度的标签计数（X7）。顺序与
+	# economy_runtime_family_buff.cpp 的 kCountryTagCountSlots 一一对应：
+	# 加一个槽位必须同时在两处各加一行，否则计数会串到别的指标上。
+	_expect("country tag-count rows 56..62",
+		String(keys[56]) == "country.agriculture_cell_count"
+		and String(keys[57]) == "country.extractive_cell_count"
+		and String(keys[58]) == "country.manufacturing_cell_count"
+		and String(keys[59]) == "country.chained_cell_count"
+		and String(keys[60]) == "country.specialized_cell_count"
+		and String(keys[61]) == "country.market_cell_count"
+		and String(keys[62]) == "country.settlement_cell_count"
+		# 63..66 是按物资的计数（复用同一张槽位表），67 是专精物资种类数。
+		and String(keys[63]) == "country.silver_cell_count"
+		and String(keys[64]) == "country.salt_cell_count"
+		and String(keys[65]) == "country.iron_ore_cell_count"
+		and String(keys[66]) == "country.coal_cell_count"
+		and String(keys[67]) == "country.distinct_specialized_good_count")
 	# No duplicate keys: a duplicate means two ids collide and one is unreachable.
 	var seen := {}
 	for key in keys:

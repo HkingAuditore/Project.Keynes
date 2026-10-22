@@ -3,6 +3,8 @@
 __pycache__/
 *.py[cod]
 .venv-economy-validator/
+.env
+.env.*
 
 # 本地私有配置文档，不纳入版本管理
 /docs/3000-mcp-setup.md

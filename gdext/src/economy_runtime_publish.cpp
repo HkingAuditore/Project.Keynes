@@ -719,6 +719,10 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         _last_committed_day = _sample_day;
         _commit_day = _current_day.get();
         if (++_committed_generation == 0) _committed_generation = 1;
+        // P1-A: the only place the Effect input digest is recomputed. It has to
+        // be the commit tail -- the per-cell columns and the tag bits are final
+        // here, and "the day advanced" is not the same as "the input changed".
+        refresh_effect_input_digest();
         _resource_deltas_ready = std::any_of(
             _resource_touched_lanes.begin(), _resource_touched_lanes.end(),
             [&](size_t index) {

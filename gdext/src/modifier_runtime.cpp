@@ -1619,6 +1619,30 @@ bool ModifierRuntime::apply_technology_effect(uint64_t country_handle,
     return true;
 }
 
+bool ModifierRuntime::resolve_definition_terms(
+        const std::string &definition_key,
+        std::vector<ResolvedTerm> &out) const {
+    out.clear();
+    for (const Definition &definition : _definitions) {
+        if (definition.key != definition_key) continue;
+        for (uint32_t offset = 0; offset < definition.term_count; ++offset) {
+            const TermDefinition &term = _terms[
+                static_cast<size_t>(definition.term_begin) + offset];
+            if (term.add != 0.0)
+                out.push_back(ResolvedTerm{term.stat_id, ADD, term.add});
+            // A term that only multiplies by 1.0 is still meaningful: it NAMES a
+            // stat. Dropping it loses the identity, which is how a generated
+            // template (`MULTIPLY 1.0`, real magnitude on the command) ended up
+            // producing zero plane entries with zero counters. Only a term that
+            // is a genuine no-op in BOTH halves is skipped.
+            if (term.factor != 1.0 || term.add == 0.0)
+                out.push_back(ResolvedTerm{term.stat_id, MULTIPLY, term.factor});
+        }
+        return true;
+    }
+    return false;
+}
+
 bool ModifierRuntime::has_technology_effect(uint64_t country_handle,
                                             const std::string &definition_key,
                                             int32_t technology_id) const {
@@ -2292,13 +2316,34 @@ bool ModifierRuntime::restore_domain(int32_t domain, const std::vector<uint8_t> 
     if (!read_le(bytes, cursor, magic) || !read_le(bytes, cursor, version) ||
         !read_le(bytes, cursor, saved_domain) || !read_le(bytes, cursor, saved_catalog) ||
         !read_le(bytes, cursor, saved_day) || !read_le(bytes, cursor, snapshot_version) ||
-        !read_le(bytes, cursor, count) || magic != SAVE_MAGIC ||
-        version != SAVE_SCHEMA_VERSION || saved_domain != domain ||
-        (saved_catalog != _catalog_hash &&
-         (!allow_tax_catalog_extension ||
-          saved_catalog != _legacy_catalog_hash_without_tax)) ||
-        count > 10000000ULL) {
-        error = "modifier_restore_header_invalid";
+        !read_le(bytes, cursor, count)) {
+        error = "modifier_restore_header_truncated";
+        return false;
+    }
+    // One reason per condition. The old single `modifier_restore_header_invalid`
+    // covered all of them, so "save written by a different modifier catalog"
+    // was indistinguishable from "file is garbage" and every audit started in
+    // the wrong place.
+    if (magic != SAVE_MAGIC) {
+        error = "modifier_restore_magic_invalid";
+        return false;
+    }
+    if (version != SAVE_SCHEMA_VERSION) {
+        error = "modifier_restore_schema_unsupported";
+        return false;
+    }
+    if (saved_domain != domain) {
+        error = "modifier_restore_domain_mismatch";
+        return false;
+    }
+    if (saved_catalog != _catalog_hash &&
+        (!allow_tax_catalog_extension ||
+         saved_catalog != _legacy_catalog_hash_without_tax)) {
+        error = "modifier_restore_catalog_mismatch";
+        return false;
+    }
+    if (count > 10000000ULL) {
+        error = "modifier_restore_instance_count_invalid";
         return false;
     }
     struct SavedInstance {

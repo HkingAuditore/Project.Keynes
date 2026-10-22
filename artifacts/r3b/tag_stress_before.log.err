@@ -1,0 +1,13 @@
+ERROR: [FAIL] economy publishes an epoch (revision=0)
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:425)
+       [1] _require (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:431)
+       [2] _run (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:83)
+       [3] _init (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:39)
+ERROR: 32 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 4 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 325 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

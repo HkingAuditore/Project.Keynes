@@ -74,6 +74,7 @@ func _run() -> void:
 	_test_ideology_reroute(country_ir, defined[0])
 	_test_adapter_parity(country_ir, defined[0])
 	_test_worker_save_restore(country_ir, defined[0])
+	_test_snapshot_carry(country_ir, defined[0])
 
 
 ## The ideology restore proves that every bound instance still exists before it
@@ -245,6 +246,66 @@ func _adopt_and_report(country_ir: Dictionary, program: Resource,
 	_expect("%s: level promotion keeps the same writer" % label,
 		_present_at(promoted, 0) == expected_present)
 	return first
+
+
+## P1-B: a worker write-back must not re-submit the world.
+##
+## `apply_pod_snapshot` used to reconcile every card of every country on every
+## generation, and there is one generation per day -- so the whole world was
+## re-submitted daily and the retire pass had nothing to compare against.
+##
+## The self-snapshot mirrors the CURRENT state, so a correct apply is invisible
+## to the held instance set and only marks the sliced refresh dirty. This is the
+## only way to exercise the path headless: a fresh ACTIVE start never earns the
+## IDEOLOGY grant without a Climate trace (see the file header).
+func _test_snapshot_carry(country_ir: Dictionary, program: Resource) -> void:
+	var ext: Object = _configured_ext(country_ir, program)
+	# P3 step 1b: the coefficient plane needs "which modifier does this program
+	# emit", because a card's stat is only knowable from its command definition.
+	var commands: Dictionary = ext.resolve_effect_program_modifier_commands(PROGRAM_KEY)
+	_expect("carry: the program's modifier commands resolve",
+		bool(commands.get("ok", false)))
+	var rows: Array = commands.get("commands", [])
+	_expect("carry: the program emits one modifier command", rows.size() == 1)
+	if rows.size() == 1:
+		_expect("carry: the command names the expected definition",
+			String(rows[0].get("definition_key", "")) == TEST_MODIFIER_KEY)
+	var handle := int(ext.get_country_cell_summary(0).get("country_handle", 0))
+	_expect("carry: country handle is generation safe", handle != 0)
+	_expect("carry: discover and adopt queue", bool(ext.submit_ideology_commands(
+		_commands([
+			{"op": 1, "day": 0, "handle": handle, "idea": 0},
+			{"op": 5, "day": 0, "handle": handle, "idea": 0},
+		])).get("ok", false)))
+	ext.run_ideology_daily(0)
+	var before: Dictionary = ext.get_ideology_effect_instance_report(handle)
+	if int(before.get("count", -1)) != 1:
+		_expect("carry: fixture holds one instance before the write-back", false)
+		return
+	_expect("carry: fixture holds one instance before the write-back", true)
+	var ids_before: PackedInt64Array = before.get("instance_ids", PackedInt64Array())
+	for step in range(10):
+		var applied: Dictionary = ext.apply_ideology_self_snapshot_for_test(step + 1)
+		if not bool(applied.get("ok", false)):
+			_expect("carry: snapshot %d applies" % step, false)
+			print("    reason=%s" % String(applied.get("reason", "")))
+			return
+		_expect("carry: snapshot %d applies" % step, true)
+		if int(applied.get("instances_after", -1)) != int(applied.get("instances_before", -2)):
+			_expect("carry: snapshot %d keeps the held instances" % step, false)
+			return
+		_expect("carry: snapshot %d keeps the held instances" % step, true)
+		_expect("carry: snapshot %d does not reconcile" % step,
+			int(applied.get("metric_publishes", -1)) == 0)
+		_expect("carry: snapshot %d marks the refresh dirty" % step,
+			bool(applied.get("refresh_dirty", false)))
+	var after: Dictionary = ext.get_ideology_effect_instance_report(handle)
+	_expect("carry: ten write-backs keep the same instance ids",
+		after.get("instance_ids", PackedInt64Array()) == ids_before)
+	# The refresh itself is exercised in ideology_tag_source_selector_test: this
+	# fixture has no economy, so there is no input revision to drive it. What is
+	# asserted here is that the write-back leaves the pass owed (refresh_dirty on
+	# every apply, above) instead of doing the work inline.
 
 
 func _present_at(report: Dictionary, index: int) -> int:
