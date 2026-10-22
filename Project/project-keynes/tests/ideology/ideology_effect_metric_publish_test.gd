@@ -77,6 +77,9 @@ const POPULATION_SCALED := 64
 
 const OP_METRIC_GTE := 2
 const OP_METRIC_LTE := 3
+const OP_METRIC_EQ := 4
+const METRIC_NEIGHBOR_POPULATION := 54
+const OP_BOOL_AND := 6
 const OP_CONST := 1
 const OP_EMIT_COMMAND := 11
 const SEL_OWNER := 0
@@ -122,6 +125,16 @@ func _run() -> void:
 	_test_value_tracks_world(catalog)
 	_test_no_condition_no_publish(catalog)
 	_test_cell_domain_projects_per_cell(catalog)
+	_test_unchanged_publish_is_skipped(catalog)
+	_test_metric_scope_guard()
+	_test_cell_program_table(catalog)
+	_test_column_units(catalog)
+	_test_input_revision_split(catalog)
+	_test_threshold_gate(catalog)
+	_test_operator_boundaries(catalog)
+	_test_two_metric_signature(catalog)
+	_test_digest_cost(catalog)
+	_test_latched_survives_save(catalog)
 
 
 ## The real half of the domain-2 fixture: the shipped catalog must actually
@@ -344,7 +357,445 @@ func _fixture(catalog: Dictionary, program: Resource,
 	_expect("effect day runs", bool(ext.run_effect_daily(0).get("ok", false)))
 	var dispatch: Dictionary = ext.dispatch_effect_native_modifier()
 	ext.ack_effect_native_modifier()
-	return {"ext": ext, "report": report, "dispatch": dispatch}
+	return {"ext": ext, "report": report, "dispatch": dispatch, "handle": handle}
+
+
+## P1-C: a reconcile that sees the same world must publish nothing. Before the
+## digest, every reconcile re-sent every masked column, advanced the Effect
+## input revision, and therefore minted one Modifier transaction per instance --
+## once the daily refresh exists that is one no-op transaction per card per day.
+##
+## The fixture already reconciled once while the card was adopted, so by the
+## time this runs the digest exists and every later reconcile must be a no-op.
+## The forced reconcile is the only way to observe this: production only
+## reconciles on a transition, a restore or a worker write-back.
+func _test_unchanged_publish_is_skipped(catalog: Dictionary) -> void:
+	var fixture := _fixture(catalog, _metric_program(OP_METRIC_GTE, 0))
+	if not _require("publish-gate fixture builds", not fixture.is_empty()):
+		return
+	var ext: Object = fixture["ext"]
+	var handle: int = int(fixture.get("handle", 0))
+	if not _require("publish-gate fixture resolves the country", handle != 0):
+		return
+	var before: Dictionary = fixture["report"]
+	if not _require("publish-gate fixture holds one instance",
+			int(before.get("count", -1)) == 1, str(before)):
+		return
+	var first: Dictionary = ext.reconcile_ideology_effects_for_test(handle)
+	if not _require("first forced reconcile succeeds",
+			bool(first.get("ok", false)), str(first)):
+		return
+	_expect("reconcile against unchanged inputs publishes nothing",
+		int(first.get("metric_publishes", -1)) == 0, str(first))
+	# `skipped` only increments for an activation that HAS a mask and a
+	# cell-domain target, so this also proves the zero above is the gate and not
+	# an empty mask.
+	_expect("the skip is attributed to the digest gate",
+		int(first.get("metric_publishes_skipped", 0)) >= 1, str(first))
+	var second: Dictionary = ext.reconcile_ideology_effects_for_test(handle)
+	if not _require("second forced reconcile succeeds",
+			bool(second.get("ok", false)), str(second)):
+		return
+	_expect("a second unchanged reconcile also publishes nothing",
+		int(second.get("metric_publishes", -1)) == 0, str(second))
+	_expect("the instance set is stable across reconciles",
+		int(second.get("instances", -1)) == 1,
+		"%s vs %s" % [str(second), str(first)])
+
+
+## P2-C1: the latch must survive a save. PKEF used to omit it on the grounds
+## that it "self-heals in one cadence", which is false for a card whose
+## hysteresis band is exactly what its condition reads -- losing it costs a whole
+## day of latch, and a replay test sees that as a divergence.
+func _test_latched_survives_save(catalog: Dictionary) -> void:
+	var fixture := _fixture(catalog, _metric_program(OP_METRIC_GTE, 0))
+	if not _require("latch fixture builds", not fixture.is_empty()):
+		return
+	var ext: Object = fixture["ext"]
+	var report: Dictionary = fixture["report"]
+	var ids: PackedInt64Array = report.get("instance_ids", PackedInt64Array())
+	if not _require("latch fixture has one instance", ids.size() == 1, str(report)):
+		return
+	var explained: Dictionary = ext.explain_effect(int(ids[0]))
+	# The fixture conditions on `metric >= 0`, so the daily pass must have latched
+	# it. Without this guard a zero would make the round-trip below vacuous.
+	if not _require("the fixture instance is latched",
+			bool(explained.get("latched", false)), str(explained)):
+		return
+	var captured: PackedByteArray = ext.capture_effect_state()
+	if not _require("effect state captures", captured.size() > 0):
+		return
+	var restored: Dictionary = ext.restore_effect_state(captured)
+	if not _require("effect state restores", bool(restored.get("ok", false)),
+			str(restored)):
+		return
+	_expect("a restore round-trips the effect state byte for byte",
+		ext.capture_effect_state() == captured)
+	_expect("the restored instance is still latched",
+		bool(ext.explain_effect(int(ids[0])).get("latched", false)),
+		str(ext.explain_effect(int(ids[0]))))
+
+
+## P3 step 2: the per-cell coefficient table. A cell card with the default
+## selector has to land on the plane as "every owned cell" (filter_tag == -1) --
+## that is the X1 unlock, because today the runtime resolves kind 0 to the anchor
+## cell alone and the card only ever touches one cell.
+func _test_cell_program_table(catalog: Dictionary) -> void:
+	var program := _metric_program(OP_METRIC_GTE, 0)
+	# The fixture's card has no persistent row this runtime can resolve against a
+	# per-good definition yet (see the pending note in the review doc), so this
+	# asserts the table shape against a definition the fixture does carry.
+	var good_ids: PackedStringArray = catalog.get("good_ids", PackedStringArray())
+	if not _require("the economy catalog declares goods", good_ids.size() > 0):
+		return
+	# Option 1: the card writes the good's own output factor, so the plane entry
+	# lands on a stat the per-cell read path actually consults.
+	program.commands[0].definition_key = StringName(
+		"economy.city.good.%s.output_factor" % String(good_ids[0]))
+	# 2.0 mul: the fixture's default is 1.0, and an identity leaves the factor
+	# unchanged, which would make "the plane landed" indistinguishable from
+	# "nothing happened".
+	program.commands[0].value_q16 = Q16_ONE * 2
+	var fixture := _fixture(catalog, program)
+	if not _require("cell program fixture builds", not fixture.is_empty()):
+		return
+	var summary: Dictionary = fixture["ext"].get_ideology_cell_program_summary()
+	if not _require("cell program table builds", bool(summary.get("ok", false)),
+			str(summary)):
+		return
+	_expect("the table has a generation", int(summary.get("generation", 0)) > 0)
+	_expect("one card yields one entry", int(summary.get("entry_count", -1)) == 1,
+		str(summary))
+	var entries: Array = summary.get("entries", [])
+	if entries.size() != 1:
+		return
+	_expect("a default-selector cell card covers the whole territory",
+		int(entries[0].get("filter_tag", -2)) == -1, str(entries[0]))
+	# ADD, not MULTIPLY: the command magnitude is the delta (+5% -> 0.05), so the
+	# definition has to be an ADD term or the same number reads as a multiplier.
+	_expect("the entry carries the definition's operation",
+		int(entries[0].get("operation", -1)) == 0, str(entries[0]))
+	_expect("the entry carries the command magnitude verbatim",
+		int(entries[0].get("coef_q16", -1)) == Q16_ONE * 2, str(entries[0]))
+	# And the number the production path reads: the card doubles the good's
+	# output factor on the cell the country owns.
+	# The plane is off by default now (review §2.0), so the automatic publish in
+	# run_ideology_daily no longer happens; this test is about the plane, so it
+	# publishes explicitly.
+	fixture["ext"].publish_ideology_cell_programs()
+	# 1.0 base + the card's 2.0 delta. Doubling as a multiplier would be 2.0; the
+	# sum is what proves the ADD semantics, not just that "something changed".
+	var factor: Dictionary = fixture["ext"].get_city_output_factor_q16(0, 0)
+	_expect("the plane reaches the per-cell output factor as a delta",
+		int(factor.get("factor_q16", -1)) == Q16_ONE * 3, str(factor))
+
+	# A debuff is a SUBTRACT term and its magnitude is always positive, so the
+	# sign can only come from the definition. Getting this wrong turns every
+	# "-8%" card into "+8%" and nothing in the pipeline complains.
+	var cut_program := _metric_program(OP_METRIC_GTE, 0)
+	# The cell family is keyed on the ECONOMY stat names: gdext reads per-cell
+	# output/consumption through its own economy stat ids, so an `ideology.city.*`
+	# key compiled, stored a row and changed nothing, and the generator's
+	# `city_stat_key()` now emits `economy.city.*` (see 09-content-status.md §3.8).
+	cut_program.commands[0].definition_key = StringName(
+		"economy.city.birth_factor.cut")
+	cut_program.commands[0].value_q16 = Q16_ONE / 8
+	var cut_fixture := _fixture(catalog, cut_program)
+	if _require("cut fixture builds", not cut_fixture.is_empty()):
+		var cut_summary: Dictionary = cut_fixture["ext"].get_ideology_cell_program_summary()
+		var cut_entries: Array = cut_summary.get("entries", [])
+		if _require("a cut definition yields an entry", cut_entries.size() == 1):
+			_expect("a cut definition yields a negative delta",
+				int(cut_entries[0].get("coef_q16", 0)) == -(Q16_ONE / 8),
+				str(cut_entries[0]))
+
+
+
+## Review §3: the effect-input revision is split into territory / tag / per-metric,
+## so a card depends only on the inputs it reads. This is the weak but real half of
+## the gate: it proves the split exists and that metrics nobody reads stay at 0.
+## The strong half (a threshold crossing bumps exactly one metric) needs a fixture
+## that can move a single metric by a controlled amount, which this one cannot.
+func _test_input_revision_split(catalog: Dictionary) -> void:
+	var program := _metric_program(OP_METRIC_GTE, 0)
+	var fixture := _fixture(catalog, program)
+	if not _require("revision fixture builds", not fixture.is_empty()):
+		return
+	var ext: Object = fixture["ext"]
+	# Force the pass first: without it every assertion below is trivially true
+	# because the fixture never commits a day.
+	_expect("digest refresh runs",
+		bool(ext.refresh_effect_input_digest_for_test().get("ok", false)))
+	var report: Dictionary = ext.get_economy_report()
+	_expect("the digest actually computed at least once",
+		int(report.get("effect_input_digest_computations", 0)) >= 1,
+		str(report.get("effect_input_digest_computations", -1)))
+	var revisions: Dictionary = ext.get_effect_input_revisions()
+	if not _require("revision report is available",
+			bool(revisions.get("ok", false)), str(revisions)):
+		return
+	var metrics: PackedInt64Array = revisions.get("metrics", PackedInt64Array())
+	_expect("the report carries one revision per metric",
+		metrics.size() == 68, str(metrics.size()))
+	# 55 = COUNTRY_INCOME_TAX_BURDEN_BP. No card in this fixture reads it, so it
+	# must never have advanced. If the split were fake (one global counter copied
+	# into every slot) this would be non-zero.
+	_expect("a metric no card reads keeps revision 0",
+		metrics.size() > 55 and int(metrics[55]) == 0, str(metrics))
+	# The card in this fixture reads cell population (metric 9) and nothing else.
+	# So exactly that slot must have advanced, and metric 55 must not have -- which
+	# is the split doing its job rather than one global counter copied everywhere.
+	_expect("the metric the card reads has advanced",
+		int(metrics[METRIC_CELL_POPULATION]) >= 1, str(metrics))
+
+	# Idempotence is the property the whole gate rests on: identical inputs must
+	# produce identical buckets, or every card re-signs every day no matter how
+	# well the split is drawn.
+	ext.refresh_effect_input_digest_for_test()
+	var again: Dictionary = ext.get_effect_input_revisions()
+	# P3-B: the revisions are published as one immutable snapshot, so a reader sees
+	# a whole generation rather than a mix of old and new counters.
+	_expect("the snapshot carries a generation", int(revisions.get("generation", 0)) >= 1,
+		str(revisions.get("generation", -1)))
+	var generation_before := int(revisions.get("generation", 0))
+
+	_expect("a second refresh with unchanged inputs bumps nothing",
+		int(again.get("global", -1)) == int(revisions.get("global", -2))
+		and int(again.get("territory", -1)) == int(revisions.get("territory", -2))
+		and int(again.get("tag", -1)) == int(revisions.get("tag", -2))
+		and str(again.get("metrics", PackedInt64Array()))
+			== str(revisions.get("metrics", PackedInt64Array())), str(again))
+	_expect("an unchanged refresh does not publish a new generation",
+		int(again.get("generation", -1)) == generation_before,
+		"%d -> %d" % [generation_before, int(again.get("generation", -1))])
+
+
+## Review §3, the gate itself: a metric drifting *inside* a threshold bucket must
+## not advance its revision, and crossing the threshold must advance it exactly once.
+## The card below compares cell population against 1000, so 100 and 900 are the same
+## bucket and 1000 is the next one.
+func _test_threshold_gate(catalog: Dictionary) -> void:
+	var program := _metric_program(OP_METRIC_GTE, 1000)
+	var fixture := _fixture(catalog, program)
+	if not _require("threshold fixture builds", not fixture.is_empty()):
+		return
+	var ext: Object = fixture["ext"]
+	var metric := METRIC_CELL_POPULATION
+
+	_expect("override 100 applies",
+		bool(ext.set_effect_metric_override_for_test(metric, 100, true).get("ok", false)))
+	ext.refresh_effect_input_digest_for_test()
+	var at_low: int = (ext.get_effect_input_revisions().get(
+		"metrics", PackedInt64Array()) as PackedInt64Array)[metric]
+
+	_expect("override 900 applies",
+		bool(ext.set_effect_metric_override_for_test(metric, 900, true).get("ok", false)))
+	ext.refresh_effect_input_digest_for_test()
+	var same_bucket: int = (ext.get_effect_input_revisions().get(
+		"metrics", PackedInt64Array()) as PackedInt64Array)[metric]
+	_expect("a drift inside the same bucket does not advance the revision",
+		same_bucket == at_low, "%d -> %d" % [at_low, same_bucket])
+
+	_expect("override 1000 applies",
+		bool(ext.set_effect_metric_override_for_test(metric, 1000, true).get("ok", false)))
+	ext.refresh_effect_input_digest_for_test()
+	var crossed: int = (ext.get_effect_input_revisions().get(
+		"metrics", PackedInt64Array()) as PackedInt64Array)[metric]
+	_expect("crossing the threshold advances the revision once",
+		crossed == at_low + 1, "%d -> %d" % [at_low, crossed])
+
+	_expect("override 5000 applies",
+		bool(ext.set_effect_metric_override_for_test(metric, 5000, true).get("ok", false)))
+	ext.refresh_effect_input_digest_for_test()
+	var past: int = (ext.get_effect_input_revisions().get(
+		"metrics", PackedInt64Array()) as PackedInt64Array)[metric]
+	_expect("moving further past the threshold does not advance it again",
+		past == crossed, "%d -> %d" % [crossed, past])
+
+
+## Review round 2, problem 2: the bucket boundary belongs to the OPERATOR, not the
+## metric. Counting "boundaries <= value" flips GTE at N, LTE at N+1 and EQ on both
+## sides -- passing the raw N leaves LTE a whole integer late, which for count-like
+## metrics (the common case) means a missed refresh on the exact value.
+func _test_operator_boundaries(catalog: Dictionary) -> void:
+	var metric := METRIC_CELL_POPULATION
+	for case in [
+			{"op": OP_METRIC_LTE, "label": "LTE"},
+			{"op": OP_METRIC_EQ, "label": "EQ"}]:
+		var fixture := _fixture(catalog, _metric_program(int(case["op"]), 1000))
+		if not _require("%s fixture builds" % case["label"], not fixture.is_empty()):
+			continue
+		var ext: Object = fixture["ext"]
+		var path := "%s boundary" % case["label"]
+
+		ext.set_effect_metric_override_for_test(metric, 999, true)
+		ext.refresh_effect_input_digest_for_test()
+		var at_999 := _revision_for(ext, metric)
+
+		ext.set_effect_metric_override_for_test(metric, 1000, true)
+		ext.refresh_effect_input_digest_for_test()
+		var at_1000 := _revision_for(ext, metric)
+
+		ext.set_effect_metric_override_for_test(metric, 1001, true)
+		ext.refresh_effect_input_digest_for_test()
+		var at_1001 := _revision_for(ext, metric)
+
+		if int(case["op"]) == OP_METRIC_LTE:
+			# LTE 1000 is still true at 1000, so the flip is 1000 -> 1001.
+			_expect("%s: 999 -> 1000 does not flip" % path, at_1000 == at_999,
+				"%d -> %d" % [at_999, at_1000])
+			_expect("%s: 1000 -> 1001 flips" % path, at_1001 == at_1000 + 1,
+				"%d -> %d" % [at_1000, at_1001])
+		else:
+			# EQ 1000 is false at 999, true at 1000, false again at 1001: two flips.
+			_expect("%s: 999 -> 1000 flips" % path, at_1000 == at_999 + 1,
+				"%d -> %d" % [at_999, at_1000])
+			_expect("%s: 1000 -> 1001 flips back" % path,
+				at_1001 == at_1000 + 1, "%d -> %d" % [at_1000, at_1001])
+
+
+func _revision_for(ext: Object, metric: int) -> int:
+	var metrics: PackedInt64Array = ext.get_effect_input_revisions().get(
+		"metrics", PackedInt64Array())
+	return int(metrics[metric]) if metric < metrics.size() else -1
+
+
+## Review round 2, problem 1: a card reading TWO metrics must re-sign when either
+## crosses. Combining the per-metric revisions with `max` hides every metric that is
+## not the leader -- here A is crossed first (rev 1), then B (rev 1) while A stays 1,
+## so `max` would keep returning 1 and the signature would not move.
+func _test_two_metric_signature(catalog: Dictionary) -> void:
+	var program := _metric_program(OP_METRIC_GTE, 1000)
+	var second := EffectConditionScript.new()
+	second.op = OP_METRIC_GTE
+	second.arg0 = METRIC_NEIGHBOR_POPULATION
+	second.value_q16 = 1000
+	# Conditions are a postfix stack, so two of them need an AND between: [A, B, AND]
+	# leaves depth 1, which is what the validator requires.
+	var join := EffectConditionScript.new()
+	join.op = OP_BOOL_AND
+	var conditions: Array[Resource] = [program.conditions[0], second, join]
+	program.conditions = conditions
+	var fixture := _fixture(catalog, program)
+	if not _require("two-metric fixture builds", not fixture.is_empty()):
+		return
+	var ext: Object = fixture["ext"]
+	var handle := int(ext.get_country_cell_summary(0).get("country_handle", 0))
+	if not _require("two-metric: country handle is generation safe", handle != 0):
+		return
+
+	ext.set_effect_metric_override_for_test(METRIC_CELL_POPULATION, 100, true)
+	ext.set_effect_metric_override_for_test(METRIC_NEIGHBOR_POPULATION, 100, true)
+	ext.refresh_effect_input_digest_for_test()
+	var signature_both_low: int = int(ext.compute_idea_activation_signature_for_test(
+		handle, 0))
+
+	ext.set_effect_metric_override_for_test(METRIC_CELL_POPULATION, 5000, true)
+	ext.refresh_effect_input_digest_for_test()
+	var signature_a_high: int = int(ext.compute_idea_activation_signature_for_test(
+		handle, 0))
+	_expect("crossing metric A changes the signature",
+		signature_a_high != signature_both_low, str(signature_both_low))
+
+	# A stays crossed, only B moves. `max` would return the same number here.
+	ext.set_effect_metric_override_for_test(METRIC_NEIGHBOR_POPULATION, 5000, true)
+	ext.refresh_effect_input_digest_for_test()
+	var signature_both_high: int = int(ext.compute_idea_activation_signature_for_test(
+		handle, 0))
+	_expect("crossing metric B while A stays crossed still changes the signature",
+		signature_both_high != signature_a_high, str(signature_a_high))
+
+
+## B1's real question, without the 64-country harness: what does one digest pass
+## cost at 64 cells with a live metric consumer? Reads the internal
+## `effect_input_digest_ms` counter as well as the wall clock, because the counter is
+## what a future benchmark will compare against.
+func _test_digest_cost(catalog: Dictionary) -> void:
+	# Scale curve, not a single point: one pass over one metric is linear in cells,
+	# and the slope is what decides whether the digest fits in a day's budget.
+	var passes := 50
+	for cells in [64, 512, 2048]:
+		var fixture := _fixture(catalog, _metric_program(OP_METRIC_GTE, 1000), cells)
+		if not _require("%d-cell digest fixture builds" % cells, not fixture.is_empty()):
+			continue
+		var ext: Object = fixture["ext"]
+		var report_before: Dictionary = ext.get_economy_report()
+		var computations_before := int(
+			report_before.get("effect_input_digest_computations", 0))
+		var internal_before := float(report_before.get("effect_input_digest_ms", 0.0))
+
+		var started := Time.get_ticks_usec()
+		for _i in range(passes):
+			ext.refresh_effect_input_digest_for_test()
+		var wall_ms := float(Time.get_ticks_usec() - started) / 1000.0
+
+		var report_after: Dictionary = ext.get_economy_report()
+		var computations := int(report_after.get("effect_input_digest_computations", 0))
+		computations -= computations_before
+		var internal_ms := float(report_after.get("effect_input_digest_ms", 0.0))
+		internal_ms -= internal_before
+		var per_pass := wall_ms / float(maxi(computations, 1))
+		print("    digest cells=%d passes=%d per_pass_ms=%.4f internal_per_pass_ms=%.4f"
+			% [cells, computations, per_pass,
+				internal_ms / float(maxi(computations, 1))])
+		_expect("the digest ran for every requested pass at %d cells" % cells,
+			computations == passes, "%d vs %d" % [computations, passes])
+		_expect("a %d-cell digest pass stays under 5 ms" % cells, per_pass < 5.0,
+			"%.3f ms" % per_pass)
+
+
+## X2 groundwork: a column entry multiplies its coefficient by a per-cell count
+## instead of adding it once. The 1-cell fixture makes the two behaviours
+## distinguishable without assuming any map geometry: with no neighbours the
+## column contributes nothing, while the constant still adds its full amount.
+func _test_column_units(catalog: Dictionary) -> void:
+	var good_ids: PackedStringArray = catalog.get("good_ids", PackedStringArray())
+	if not _require("column: the catalog declares goods", good_ids.size() > 0):
+		return
+	var program := _metric_program(OP_METRIC_GTE, 0)
+	program.commands[0].definition_key = StringName(
+		"economy.city.good.%s.output_factor" % String(good_ids[0]))
+	var fixture := _fixture(catalog, program)
+	if not _require("column fixture builds", not fixture.is_empty()):
+		return
+	var ext: Object = fixture["ext"]
+	var resolved: Dictionary = ext.resolve_modifier_definition_terms(
+		"economy.city.good.%s.output_factor" % String(good_ids[0]))
+	var rows: Array = resolved.get("terms", [])
+	if not _require("column: the target stat resolves", rows.size() == 1):
+		return
+	var stat_id := int(rows[0].get("stat_id", -1))
+	var half := Q16_ONE / 2
+	_expect("column: a constant entry injects",
+		bool(ext.set_ideology_cell_program_entry_for_test(
+			stat_id, -1, 0, half, 0, -1, 0)))
+	var constant_factor: Dictionary = ext.get_city_output_factor_q16(0, 0)
+	_expect("a constant entry adds its coefficient once",
+		int(constant_factor.get("factor_q16", -1)) == Q16_ONE + half,
+		str(constant_factor))
+
+	_expect("column: a neighbour-count entry injects",
+		bool(ext.set_ideology_cell_program_entry_for_test(
+			stat_id, -1, 0, half, 1, -1, 0)))
+	var column_factor: Dictionary = ext.get_city_output_factor_q16(0, 0)
+	_expect("a neighbour-count entry adds nothing with zero neighbours",
+		int(column_factor.get("factor_q16", -1)) == Q16_ONE, str(column_factor))
+
+
+## P2-D: metric scope must match program scope. This fixture's condition reads a
+## `cell.*` metric; retargeting the same program at COUNTRY has to fail at compile
+## time, because at runtime it would silently sample the anchor cell and present
+## that one number as the country's.
+func _test_metric_scope_guard() -> void:
+	var program := _metric_program(OP_METRIC_GTE, 0)
+	program.target_domain = 3
+	var outcome: Dictionary = _effect_catalog(program)
+	_expect("a country-domain program cannot read a cell metric",
+		not bool(outcome.get("ok", true)), str(outcome))
+	_expect("the rejection names the metric scope",
+		String(outcome.get("reason", "")).begins_with(
+			"effect_cell_metric_on_country_domain"),
+		String(outcome.get("reason", "")))
 
 
 func _find_definition(definitions: Array, key: String) -> Resource:

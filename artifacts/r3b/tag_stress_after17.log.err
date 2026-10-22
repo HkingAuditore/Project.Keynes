@@ -1,0 +1,4 @@
+SCRIPT ERROR: Parse Error: Cannot infer the type of "equipped_batch" variable because the value doesn't have a set type.
+   at: GDScript::reload (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:653)
+ERROR: Failed to load script "res://tests/ideology/ideology_tag_snapshot_stress_test.gd" with error "Parse error".
+   at: load (modules/gdscript/gdscript.cpp:2907)

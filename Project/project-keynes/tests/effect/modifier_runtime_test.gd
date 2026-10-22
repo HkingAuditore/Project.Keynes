@@ -42,6 +42,77 @@ func _catalog_wire_hash(catalog: Dictionary) -> int:
 	return hash_value
 
 
+## P3 step 1: the coefficient plane has to know what a definition DOES, not just
+## that it exists. `country.economic_mobilization` is a single MULTIPLY term on
+## `country.economy_output_factor`, which makes it the cheapest exact assertion.
+func _test_definition_term_resolution(ext: Object) -> void:
+	var resolved: Dictionary = ext.resolve_modifier_definition_terms(
+		"country.economic_mobilization")
+	_expect("definition terms resolve", bool(resolved.get("ok", false)))
+	var terms: Array = resolved.get("terms", [])
+	_expect("the definition resolves to one term", terms.size() == 1)
+	if terms.size() != 1:
+		return
+	_expect("the term is a multiply", int(terms[0].get("operation", -1)) == 2)
+	_expect("the term value is 1.1",
+		absf(float(terms[0].get("value", 0.0)) - 1.1) < 1e-6)
+	# An unknown key has to fail rather than resolve to an empty success: a plane
+	# built from "no terms" would silently turn every card into a no-op.
+	_expect("an unknown definition fails",
+		not bool(ext.resolve_modifier_definition_terms(
+			"no.such.definition").get("ok", true)))
+
+	# The generated city-card definitions: one ADD and one `.cut` per target.
+	# Both have to exist at runtime, and the cut has to come back as a NEGATIVE
+	# addend -- modifier magnitudes are clamped to [0, 4] and cannot carry a sign.
+	var compiled: Dictionary = ModifierCatalogScript.load_default().compile_native_catalog()
+	var good_stat := ""
+	for key in compiled.get("stat_keys", PackedStringArray()):
+		if String(key).begins_with("economy.city.good.") \
+				and String(key).ends_with(".output_factor"):
+			good_stat = String(key)
+			break
+	_expect("the catalog generates a per-good output stat", not good_stat.is_empty())
+	if good_stat.is_empty():
+		return
+	var add_terms: Dictionary = ext.resolve_modifier_definition_terms(good_stat)
+	_expect("the gain definition resolves", bool(add_terms.get("ok", false)))
+	var add_rows: Array = add_terms.get("terms", [])
+	_expect("the gain definition is one positive ADD",
+		add_rows.size() == 1 and int(add_rows[0].get("operation", -1)) == 0
+		and float(add_rows[0].get("value", 0.0)) > 0.0)
+	var cut_terms: Dictionary = ext.resolve_modifier_definition_terms(good_stat + ".cut")
+	_expect("the cut definition resolves", bool(cut_terms.get("ok", false)))
+	var cut_rows: Array = cut_terms.get("terms", [])
+	_expect("the cut definition is one negative addend",
+		cut_rows.size() == 1 and float(cut_rows[0].get("value", 0.0)) < 0.0)
+
+
+## P2-D: a cell-scope stat can only be summed. MaxSource/TopNSources keep one
+## contributing row and drop the rest, so a card authored to lift every
+## settlement would reach exactly one of them -- silently, because the surviving
+## row still reads correct.
+func _test_city_stat_aggregation_guard() -> void:
+	# Duplicated on purpose: the catalog resource is shared through ResourceLoader,
+	# and mutating the cached copy would leak into every later test in the process.
+	var catalog: Resource = ModifierCatalogScript.load_default().duplicate(true)
+	var target: Resource = null
+	for stat in catalog.stats:
+		if stat != null and String(stat.key).begins_with("economy.city."):
+			target = stat
+			break
+	if target == null:
+		_expect("a city stat exists to guard", false)
+		return
+	target.aggregate_policy = 1  # MaxSource
+	var outcome: Dictionary = catalog.compile_native_catalog()
+	_expect("a city stat cannot use a non-SUM aggregation",
+		not bool(outcome.get("ok", true)))
+	_expect("the rejection names the aggregation rule",
+		String(outcome.get("reason", "")).begins_with(
+			"modifier_city_stat_requires_sum"))
+
+
 func _run() -> void:
 	if not ClassDB.class_exists("DCWorldExt"):
 		print("[modifier-runtime] SKIP: DCWorldExt unavailable")
@@ -57,6 +128,8 @@ func _run() -> void:
 	_expect("catalog hash uses deterministic legacy wire bytes",
 		int(configured.get("catalog_hash", 0)) == _catalog_wire_hash(
 			ModifierCatalogScript.load_default().compile_native_catalog()))
+	_test_city_stat_aggregation_guard()
+	_test_definition_term_resolution(ext)
 
 	var climate_target := {"domain": 0, "scope": 2, "entity_handle": 3, "group_handle": 0}
 	var source := {"type": 7, "id": 11}

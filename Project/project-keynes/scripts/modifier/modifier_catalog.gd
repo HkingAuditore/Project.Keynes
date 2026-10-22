@@ -343,6 +343,16 @@ func compile_native_catalog() -> Dictionary:
 					policy = int(stat.aggregate_policy)
 					cap = int(stat.source_cap)
 					break
+			# P2-D: a cell-scope stat can only be summed. MaxSource/TopNSources
+			# keep ONE contributing row and drop the rest, so a card authored to
+			# lift every settlement would reach exactly one of them -- and the
+			# loss is invisible, because the surviving row still reads correct.
+			if policy != 0:
+				var scope_key := String(out.stat_keys[index])
+				if scope_key.begins_with("city.") \
+						or scope_key.begins_with("economy.city."):
+					return {"ok": false,
+						"reason": "modifier_city_stat_requires_sum:" + scope_key}
 			out.stat_aggregate_policies.append(policy)
 			out.stat_source_caps.append(cap)
 	var definition_keys := {}
@@ -373,6 +383,72 @@ func compile_native_catalog() -> Dictionary:
 			out.term_stat_ids.append(int(stat_ids[term.stat_key]))
 			out.term_operations.append(term.operation)
 			out.term_values.append(term.value)
+		out.definition_term_offsets.append(out.term_values.size())
+	# P3 / option 1: one definition per per-good output stat, so a card can name
+	# "this good's output here" instead of the aggregate factor. Without these a
+	# cell card can only ever write `economy.city.output_factor`, which the
+	# per-cell read path does not consult -- the coefficient plane would produce
+	# entries nothing reads.
+	#
+	# Default value 1.0 (a no-op multiply): the real magnitude rides on the
+	# command's `value_q16`, exactly like every authored definition.
+	# Which city stats a CARD may target. The criterion is "does gdext read this
+	# stat per cell", not "is it registered": `_city_resource_regen_stat_ids` and
+	# the aggregate `economy.city.output_factor` have zero read sites, so a card
+	# aimed at them would compile, store a row, and change nothing. They are
+	# deliberately absent, and `IDEOLOGY_CITY_DEAD_STATS` in the generator names
+	# them so the gap stays visible instead of looking like an oversight.
+	var card_target_stats := PackedStringArray()
+	for generated_good in economy.good_ids:
+		card_target_stats.append(
+			"economy.city.good.%s.output_factor" % String(generated_good))
+	for generated_building in economy.get("building_type_ids", PackedStringArray()):
+		card_target_stats.append(
+			"economy.city.building.%s_output_factor" % String(generated_building))
+	for generated_need in economy.need_ids:
+		card_target_stats.append(
+			"economy.city.need.%s.consumption_factor" % String(generated_need))
+	card_target_stats.append("economy.city.birth_factor")
+	for generated_key in card_target_stats:
+		if not stat_ids.has(generated_key):
+			continue
+		if definition_keys.has(generated_key):
+			return {"ok": false, "reason": "modifier_definition_invalid_or_duplicate"}
+		definition_keys[generated_key] = true
+		out.definition_keys.append(generated_key)
+		out.definition_versions.append(1)
+		out.definition_domains.append(2)
+		# UNIQUE_SOURCE matches the other per-city definitions: one row per
+		# (source, cell) so two cards on the same cell stack instead of
+		# replacing each other.
+		out.definition_policies.append(1)
+		out.definition_max_stacks.append(1)
+		out.definition_default_duration.append(-1)
+		out.term_stat_ids.append(int(stat_ids[generated_key]))
+		# ADD 1.0, not MULTIPLY 1.0 -- and the difference is not cosmetic. The
+		# command magnitude is the effect itself (+5% -> 0.05) for the whole
+		# ideology city family, so an ADD term with value 1.0 makes
+		# `magnitude x 1.0` land as a delta. A MULTIPLY term would read the same
+		# 0.05 as "x0.05", i.e. a 95% cut.
+		out.term_operations.append(0)
+		out.term_values.append(1.0)
+		out.definition_term_offsets.append(out.term_values.size())
+		# The `.cut` twin. Modifier magnitudes are clamped to [0, 4] and cannot
+		# carry a sign, so a debuff has to be a SUBTRACT term on a separate
+		# definition -- the same shape the `ideology.city.*` family already uses.
+		var cut_key := generated_key + ".cut"
+		if definition_keys.has(cut_key):
+			return {"ok": false, "reason": "modifier_definition_invalid_or_duplicate"}
+		definition_keys[cut_key] = true
+		out.definition_keys.append(cut_key)
+		out.definition_versions.append(1)
+		out.definition_domains.append(2)
+		out.definition_policies.append(1)
+		out.definition_max_stacks.append(1)
+		out.definition_default_duration.append(-1)
+		out.term_stat_ids.append(int(stat_ids[generated_key]))
+		out.term_operations.append(1)
+		out.term_values.append(1.0)
 		out.definition_term_offsets.append(out.term_values.size())
 	var technologies: Dictionary = TechnologyCatalogScript.compile_native_catalog()
 	if not bool(technologies.get("ok", false)):

@@ -114,6 +114,41 @@ static func build(family_effect_catalog_override: Resource = null,
 		# TerrainType (grassland / floodplain / ...). 「河谷」is a floodplain
 		# TERRAIN, so it could not be tagged at all while only landform existed.
 		"cell.terrain",
+		# --- X3: the cell's profession mix (ids 51..53) ----------------------
+		# One id for "this is a hunters' camp", one share for "single-profession
+		# town >= 80%", one count for diversity. Deliberately not one metric per
+		# profession: the profession list is data-driven, and an enum edited on
+		# every content change rots.
+		"cell.dominant_profession_id",
+		"cell.dominant_profession_share_q16",
+		"cell.profession_count",
+		# --- X2: the neighbourhood (id 54) ----------------------------------
+		# Sum of the six neighbours' populations. The cheap half of X2: O(6) per
+		# sample instead of walking every neighbour's buildings.
+		"cell.neighbor_population_q16",
+		# --- X11: what the state takes (id 55) ------------------------------
+		# Mean income-tax rate across professions, basis points (10000 = 100%).
+		"country.income_tax_burden_bp",
+		# --- X7: how much of the country looks a certain way (ids 56..61) ---
+		# Counts of the country's OWN cells matching a compiled-in tag list
+		# (economy_runtime_family_buff.cpp `kCountryTagCountSlots`). Slot order
+		# is the metric order; appending a tag means appending an id.
+		"country.agriculture_cell_count",
+		"country.extractive_cell_count",
+		"country.manufacturing_cell_count",
+		"country.chained_cell_count",
+		"country.specialized_cell_count",
+		"country.market_cell_count",
+		"country.settlement_cell_count",
+		# Per-good counts reuse the same slot table: `cell.produces.<good>` is
+		# "dominant output good == that good", so a slot is the whole feature.
+		"country.silver_cell_count",
+		"country.salt_cell_count",
+		"country.iron_ore_cell_count",
+		"country.coal_cell_count",
+		# Distinct goods with at least one specialized cell (share >= 60%).
+		# Cannot be derived from tag counts: duplicates must collapse.
+		"country.distinct_specialized_good_count",
 	])
 	catalog.behavior_command_keys = PackedStringArray()
 	var definitions: Array[Resource] = []

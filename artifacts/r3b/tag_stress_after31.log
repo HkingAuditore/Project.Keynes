@@ -1,0 +1,43 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [OK] country configures
+  [OK] modifier configures
+  [OK] effect configures
+  [OK] economy configures
+  [OK] ideology configures (code=ok)
+  [consumers] tag_snapshot_needed=true columns=1
+  [ideology] catalog_hash=-5169240371228082941
+  [OK] ideology declared a tag-consuming program (tag_snapshot_needed=true columns=1)
+  [OK] environment slots register
+  [OK] country worker snapshot captures
+  [economy] sliced=true class_opinion_revision=1
+  [OK] economy publishes an epoch (revision=1)
+  [OK] worker inputs publish
+  [worker] started=true authoritative=false mask=0x0 (grant needs one committed day, and a DCWorldExt-only fixture has no climate trace -- see the comment at the top of _run)
+  [equip] submit={"accepted":6,"duplicates":0,"ok":true,"pending":12,"worker_shadow_mirrored":true}
+    [probe d1] tagged_cells=0 untagged_cells=32
+    [d1] slots=1 ideas=[0] instances=0 inst_count=0 rev=1 builds=2 tag_needed=true last_error=
+      instance_ids=[] present=[]
+  [flip] day=15 population -> 900 (tag threshold 400)
+    [probe d15] tagged_cells=32 untagged_cells=32
+    [d15] slots=1 ideas=[0] instances=192 inst_count=32 rev=2 builds=16 tag_needed=true last_error=
+      instance_ids=[27758616743968098, 495411569805048475, 789521978789466647, 910089843697222614, 1083632387773884819, 1377742796758302991, 1671853205742721163, 1965963614727139335, 2260074023711557507, 2727726976772637884, 3021837385757056056, 3142405250664812023, 3315947794741474228, 3610058203725892400, 3904168612710310572, 4198279021694728744, 4492389430679146916, 4786499839663565088, 4960042383740227293, 5254152792724645465, 5548263201709063637, 5668831066616819604, 6430594428662318153, 6724704837646736325, 7018815246631154497, 7192357790707816702, 7486468199692234874, 7780578608676653046, 7901146473584409013, 8074689017661071218, 8662909835629907562, 8957020244614325734] present=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+    [probe d30] tagged_cells=32 untagged_cells=32
+    [d30] slots=1 ideas=[0] instances=192 inst_count=32 rev=2 builds=31 tag_needed=true last_error=
+      instance_ids=[27758616743968098, 495411569805048475, 789521978789466647, 910089843697222614, 1083632387773884819, 1377742796758302991, 1671853205742721163, 1965963614727139335, 2260074023711557507, 2727726976772637884, 3021837385757056056, 3142405250664812023, 3315947794741474228, 3610058203725892400, 3904168612710310572, 4198279021694728744, 4492389430679146916, 4786499839663565088, 4960042383740227293, 5254152792724645465, 5548263201709063637, 5668831066616819604, 6430594428662318153, 6724704837646736325, 7018815246631154497, 7192357790707816702, 7486468199692234874, 7780578608676653046, 7901146473584409013, 8074689017661071218, 8662909835629907562, 8957020244614325734] present=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+  refreshes=240 inflight_skips=0 lock_skips=0 max_consecutive_skips=0
+  tag_changes=1 misses=0 tag_needed=true
+  snapshot_builds=31 snapshot_skips=0 concurrent_writes=0
+  refresh_visits=1 refresh_skips=1 refresh_passes=2 dirty=?
+  instances before_flip=0 after_flip=192
+  [OK] refresh ran on every tick of 30 days
+  [OK] economy report exports tag_snapshot_miss_count
+  [OK] no reader missed the tag snapshot (misses=0)
+  [OK] tag-filtered card has no target before the flip (before=0)
+  [OK] cell instance count tracked the tag change (tag_changes=1)
+  [OK] the catalog declared tags, so the tables are built (needed=true)
+  [OK] tag snapshot was built for every measured epoch (builds=31)
+  [OK] set_target_tags never ran concurrently with a rebuild (concurrent_writes=0)
+  [OK] lock skips stayed under the consecutive threshold (max_consecutive=0 limit=12)
+  [OK] lock skip counters are exported (lock_skips=0)
+=== ideology tag snapshot stress: 21 checks, 1 failures ===

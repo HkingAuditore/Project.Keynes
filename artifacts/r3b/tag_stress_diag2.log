@@ -1,0 +1,24 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [OK] country configures
+  [OK] modifier configures
+  [OK] effect configures
+  [OK] economy configures
+  [OK] ideology configures (code=ok)
+  [OK] country worker snapshot captures
+  [economy] sliced=true class_opinion_revision=0
+  [diag] fatal=false
+  [diag] fatal_reason=
+  [diag] stage=idle
+  [diag] executed_stage=idle
+  [diag] executed_substage=
+  [diag] committed_generation=2
+  [diag] last_committed_day=-1
+  [diag] bootstrapped=true
+  [diag] epoch_active=false
+  [diag] market_runtime_mode=ACTIVE
+  [diag] class_opinion_country_count=0
+  [diag] class_opinion_class_count=0
+  [diag] class_opinion_cells=0
+  [diag] class_opinion_zero_population_rows=0
+=== ideology tag snapshot stress: 7 checks, 1 failures ===

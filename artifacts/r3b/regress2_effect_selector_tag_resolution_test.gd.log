@@ -1,0 +1,51 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [OK] a blank tag name is accepted
+  [OK] a blank tag name leaves params untouched
+  [OK] a known tag name is accepted
+  [OK] the id lands in param[1]
+  [OK] the cell cap in param[0] survives resolution
+  [OK] the first tag resolves to 1, not to 'no filter'
+  [OK] id 1 on a fresh card is written, not treated as unset
+  [OK] an unknown tag name is rejected
+  [OK] the rejection names the invariant
+  [OK] the rejection carries the program key and the offending name
+  [OK] a rejected tag leaves params untouched
+  [OK] id 0 is rejected as unknown rather than read as 'no filter'
+  [OK] a missing dictionary names itself
+  [OK] an empty param array is widened, not skipped
+  [OK] widening fills param[0] with 'runtime default'
+  [OK] a one-slot param array keeps its cap
+  [OK] a tag on an untagged kind is rejected
+  [OK] a tag competing with a raw param[1] is rejected
+  [OK] a tag outside the selector ceiling is rejected
+  [OK] a tag on kind 12 is accepted
+  [OK] a tag on kind 13 is accepted
+  [OK] naming a tag and a tag list at once is rejected
+  [OK] five names exceed the authoring cap
+  [OK] a blank name in the list is rejected
+  [OK] a repeated name is rejected rather than collapsed
+  [OK] a tag list on an untagged kind is rejected
+  [OK] a tag list competing with a raw param[1] is rejected
+  [OK] a three-name AND on kind 12 is accepted
+  [OK] a three-name AND on kind 13 is accepted
+  [OK] a card naming a real tag compiles
+  [OK] the card reached the definition table
+  [OK] the published dictionary knows cell.market
+  [OK] param[1] is the resolved id
+  [OK] a typo'd tag name fails the whole build
+  [OK] a duplicate key does not hide the second card's typo
+  [OK] a three-tag card compiles
+  [OK] the three-tag card reached the definition table
+  [OK] the build appended the synthetic tag
+  [OK] param[1] is the synthetic id
+  [OK] the cell cap in param[0] survives the fold
+  [OK] cell.frontier keeps id 1 after the append
+  [OK] the synthetic tag is the last entry
+  [OK] the synthetic tag carries the 15-row clause product
+  [OK] its clauses are one per grain good
+  [OK] both orderings compile
+  [OK] both orderings collapse onto one dictionary entry
+  [OK] both cards address the same id
+  [OK] a typo inside a tag list fails the build
+effect selector tag resolution: 48 checks, 0 failures

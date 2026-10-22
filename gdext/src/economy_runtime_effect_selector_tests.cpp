@@ -16,6 +16,7 @@
 
 #include "economy_runtime.h"
 #include "effect_runtime.h"
+#include "effect_selector_cap.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -113,6 +114,40 @@ bool all_cells_in_left_half(const std::vector<int32_t> &cells) {
 
 bool EconomyTargetSelectorTests::run(std::string &error) {
     error.clear();
+
+    // P2-B: the cap keeps a KEYED subset, not the lowest ids. Asserted on the
+    // helper directly -- planting 40 tag-matching cells needs a tag table this
+    // fixture does not have, and the property under test belongs to the helper.
+    {
+        std::vector<int32_t> many;
+        for (int32_t cell = 0; cell < 40; ++cell) many.push_back(cell);
+        EffectSelectorStats stats;
+        std::vector<int32_t> capped = many;
+        effect_stable_cap(capped, 32, 7, 99, &stats);
+        if (!expect(capped.size() == 32, "selector_cap_size", error)) return false;
+        if (!expect(stats.matched_total == 40, "selector_cap_matched_total", error))
+            return false;
+        if (!expect(stats.truncated == 1, "selector_cap_truncated_flag", error))
+            return false;
+        if (!expect(std::is_sorted(capped.begin(), capped.end()),
+                    "selector_cap_keeps_id_order", error)) return false;
+        // "The lowest 32 ids" is exactly what this replaced. A good hash lands
+        // on it with probability ~1/7.7e7, so this is not a coin flip.
+        if (!expect(!(capped.front() == 0 && capped.back() == 31),
+                    "selector_cap_not_lowest_ids", error)) return false;
+        std::vector<int32_t> again = many;
+        EffectSelectorStats again_stats;
+        effect_stable_cap(again, 32, 7, 99, &again_stats);
+        if (!expect(again == capped, "selector_cap_deterministic", error))
+            return false;
+        std::vector<int32_t> under = many;
+        EffectSelectorStats under_stats;
+        effect_stable_cap(under, 64, 7, 99, &under_stats);
+        if (!expect(under.size() == 40, "selector_cap_no_truncation_when_under",
+                    error)) return false;
+        if (!expect(under_stats.truncated == 0,
+                    "selector_cap_no_flag_when_under", error)) return false;
+    }
 
     // Access to the runtime's private per-cell snapshot is limited to this
     // function and lambdas defined in it; see the note at the top of the file.

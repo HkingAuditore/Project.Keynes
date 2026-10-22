@@ -181,18 +181,80 @@ The four original roads still exist and remain exclusive through
 `synergy.planned_granaries` and `synergy.chartered_frontier`. They are no longer
 the whole catalog, so do not reason about balance from them alone.
 
-**What the 85 cards do NOT do yet, and it matters:**
+**What the 85 cards do and do not do (2026-10-21):**
 
-- **0 cards** set `route_tag` / `secondary_route_tags`, so no 体系羁绊 counts them
-  even though the mechanism (§33.2) is finished.
-- **0 cards** set `target_selector_kind` or any selector tag, and **0 cards**
-  reference a managed `ideology.effect.*` program. The declarative effect path is
-  exercised only by the six V1–V6 programs in
-  `data/ideologies/default_ideology_effects.tres`, which no production card uses.
+- **12 cards are managed-program cards** (§39): 公共卫生、城市卫生、屯垦、三圃轮作、煤田开发、
+  标准化、自由交换、反垄断、轮伐、生态均衡、计算网络、常平仓. They carry `route_tag`, a
+  `target_selector_kind`, and a `definition_key` that names a program in
+  `default_ideology_effects.tres`.
+- **9 more are X1 spillover cards** (§40): 冶铁、打制石器、蚕桑、轧棉、农业化学、石化、
+  共同体治理、电气化、汽车社会. They use `SEL_TAG_SOURCE_R1/R2` (14/15): the tag selects the
+  **source** cells among the country's own territory, each source contributes its ring, the
+  union is sorted, deduped and capped.
+- **5 C-level cards use metric conditions** (§41): 狩猎传统、行会特许、家内纺织、乡约自治、
+  垦荒令. They are the first production cards with `conditions` at all — the tag picks the
+  population, the condition narrows it per target cell.
+- **2 more are X7 country-count cards** (§42): 盐铁专营、半导体. They gate on
+  `country.extractive_cell_count` / `country.chained_cell_count` — per-country tag counts built
+  once per epoch from the tag bitset.
+- **2 more are X7b cards** (§43): 白银流入、特许航路. Per-good counts are just extra tag
+  slots (`cell.produces.<good>`); the distinct-specialized-goods count is its own lazily built
+  per-country bitset.
+- **55 cards** are still national Modifier rows only (30 of 85 are program cards).
+- **13 route bonds** (§44): `ROUTE_BONDS` in the generator emits 8 tier-1 (2 cards) and 5
+  tier-2 (4 cards) synergies that expand members by `route_tag`. Tier 2 only exists where the
+  route has >= 4 member cards; a taller tier is rejected by `IdeologyCatalog` at compile time.
 
-Until §22's first gate is lit — one real card demonstrating "condition changes →
-hit set changes → panel shows N cells" — no cell-level card is trustworthy, no
-matter how green the unit tests are.
+Metric rows 63..67 are X7b: four per-good counts (`country.{silver,salt,iron_ore,coal}_cell_count`,
+which are only extra slots in the same table) plus `country.distinct_specialized_good_count`.
+The latter needs its own per-cell sample pass; it keeps a separate valid flag and must be
+invalidated together with the tag bits.
+
+Metric rows 56..62 are X7 per-country tag counts (`country.*_cell_count`). Their slot order MUST
+match `kCountryTagCountSlots` in `economy_runtime_family_buff.cpp`; the mechanism-matrix test pins
+both lists by index. A swapped row does not error — it silently publishes "mining cell count" as
+"chained cell count".
+
+Metric rows 51..55 are X3/X2/X11: `cell.dominant_profession_id`,
+`cell.dominant_profession_share_q16`, `cell.profession_count`,
+`cell.neighbor_population_q16`, `country.income_tax_burden_bp`. Ids are append-only;
+`ideology_mechanism_matrix_test` pins 51..55 by index because a reorder would silently
+repoint every condition.
+
+Selector rules that are easy to get wrong:
+
+- `OWN_TERRITORY(12)` = the tagged cells themselves (SELF). `TAG_ANY_CELL(13)` = the **whole
+  grid**, not the country — do not use it for national content.
+- `TAG_SOURCE_R1/R2(14/15)` = per-source rings. `param[1]` is the source tag, `param[0]` the
+  union cap. Source tag 0 is rejected on purpose.
+- Source cells can only be filtered by **tags**. A metric condition is evaluated on the
+  *target* cell, not the source.
+- Union, not per-source stacking: "each cell eats at most 3 sources / +30%" is not expressible.
+- Every ring selector needs a neighbour graph. A headless fixture without
+  `bind_map_data()` + one economy slice has **no neighbours**, so every ring is empty and the
+  test passes vacuously.
+
+**Authoring a card program** (generator is still the only source of truth):
+
+1. Keep the card's `terms` cost-only. Benefits go into `LEVEL_ROWS`.
+2. `LEVEL_ROWS[card]` is exactly three levels; each level is a list of `prog(...)` rows.
+   One level may hold several programs when it targets several tag populations.
+3. Program keys must be `<card>_l<n>` (suffix allowed). The compiler drops the second program
+   with a duplicate key, and the card silently keeps one level's numbers.
+4. `definition_key` in the card row must be the **bare** program key; the compiler adds
+   `ideology.effect.`. Writing the prefixed form makes the row look like a legacy Modifier row.
+5. Cell commands must name an `ideology.city.*` definition; the gain/cut twin is chosen by the
+   sign of `Cmd.value` and the magnitude is the effect itself (`cell(5)` → +5%).
+6. Every program needs a `summary`; it is the card-face line.
+7. **Linear magnitude is authoring, not engine work** (§45): pass
+   `ramp=Ramp("country.<count>_cell_count", per=0.01, cap=15)` and the generator emits
+   `CONST per → READ_METRIC → CONST cap → MIN → MUL_Q16 → EMIT`, so the command value is
+   `per * min(metric, cap)`. `READ_METRIC` ids are unioned into the metric mask by
+   `family_effect_metadata_pod`, so a ramp needs no condition to be published.
+   `Ramp` requires exactly one command per program.
+8. Assert amplitude through `list_modifiers(...).magnitude_q16`. `evaluate_modifier_stat`
+   returns a bare double and wants the modifier's own entity handle — passing 0 silently
+   returns the base, which reads exactly like "the ramp did not apply".
 
 ## Verify
 

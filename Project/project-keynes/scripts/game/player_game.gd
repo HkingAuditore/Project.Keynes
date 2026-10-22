@@ -201,6 +201,9 @@ func _on_regenerate_requested() -> void:
 
 
 func _regenerate_world() -> void:
+	var audio := get_node_or_null("/root/GameAudio")
+	if audio != null and audio.has_method("stop_music"):
+		audio.stop_music()
 	_player_controller.clear_selection()
 	_ui_manager.show_loading("正在重生成世界...")
 	await get_tree().process_frame

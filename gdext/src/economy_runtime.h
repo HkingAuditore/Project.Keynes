@@ -37,6 +37,8 @@
 #include "trade_visual_cache.h"
 #include "annual_development_ledger.h"
 #include "metric_mask.h"
+#include "effect_selector_cap.h"
+#include "ideology_cell_program.h"
 #include "target_tag.h"
 
 namespace pk {
@@ -87,6 +89,52 @@ constexpr uint32_t RUNTIME_ECONOMY_D7_ALL_GATE_MASK =
 // NativeEconomyRuntime is the sole mutable authority for population cohorts
 // and markets. Godot containers are accepted/emitted only at coarse API
 // boundaries; every graph stage operates on POD/std::vector storage.
+// P3-B: everything a reader depends on is published as ONE immutable snapshot.
+// Reading the counters one by one let a card see metric A's new revision next to
+// metric B's old one; reading one snapshot cannot.
+//
+// Namespace scope, not nested: the class both stores it and reads it from another
+// translation unit, and a nested private type cannot be named there.
+struct EffectInputSnapshot {
+    uint64_t generation = 0;
+    uint64_t territory_revision = 0;
+    uint64_t tag_revision = 0;
+    std::array<uint64_t, 68> metric_revision{};
+};
+
+// R-3: the per-epoch tag tables, published once and then READ ONLY.
+//
+// Both tables used to be plain `std::vector` members that the owning thread cleared
+// and refilled at `capture_country_epoch`, while any thread could read them through
+// `ensure_epoch_tag_bits()` / `ensure_country_tag_counts()`. Clearing a vector that
+// another thread is iterating is a data race on the vector's buffer, not a stale
+// read -- exactly the defect this type removes.
+//
+// Published like `_effect_input_snapshot`: build a new immutable copy, `atomic_store`
+// it, and let every reader `atomic_load` ONCE into a local shared_ptr. The loaded
+// pointer keeps the tables alive for the whole read even if a later epoch swaps a new
+// one in, so no reader can observe a half-built table.
+//
+// Namespace scope, not nested: the class stores it, and other translation units
+// read it, so a nested private type could not be named where it is consumed.
+struct TagSnapshot {
+    // `words` is cells/64: the bitset is [tag * tag_words + word].
+    int32_t tag_words = 0;
+    int32_t tag_count = 0;
+    std::vector<uint64_t> tag_bits;
+    // [country * kCountryTagCountSlotCount + slot]; slot order must match
+    // kCountryTagCountSlots in economy_runtime_family_buff.cpp.
+    int32_t country_count = 0;
+    std::vector<int32_t> country_tag_counts;
+    // X7b (metric 67): distinct specialized goods per country. Moved here from a
+    // pair of `mutable` members that were built lazily from a const getter (R-3):
+    // the same race, and worse, because it also sampled per-cell metrics while the
+    // epoch columns could be moving.
+    std::vector<int32_t> country_specialized_good_count;
+    // Monotone, so a report can tell which epoch a reader saw.
+    uint64_t generation = 0;
+};
+
 class NativeEconomyRuntime {
 public:
     // A+Y N3/N4: live tables now live in runtime_economy_live_tables.h so
@@ -411,12 +459,69 @@ public:
         // could not be expressed at all until this row existed. Count_q16, like
         // landform, because it is a category id compared for equality.
         FAMILY_METRIC_CELL_TERRAIN = 50,
+        // ── X3: who works this cell ─────────────────────────────────────────
+        // The cell's profession mix. `DOMINANT_*` answers "this is a hunters'
+        // camp / a weavers' town"; the share is what makes that readable as a
+        // threshold ("单一职业 ≥ 80%"), the id is for equality gating once
+        // content knows the profession ids. `COUNT` is the diversity reading.
+        //
+        // Deliberately NOT one metric per profession: the id list is data-driven
+        // (data/economy/professions/*.tres), and an enum that has to be edited
+        // every time content adds a profession would rot.
+        FAMILY_METRIC_CELL_DOMINANT_PROFESSION_ID = 51,
+        FAMILY_METRIC_CELL_DOMINANT_PROFESSION_SHARE_Q16 = 52,
+        FAMILY_METRIC_CELL_PROFESSION_COUNT = 53,
+        // ── X2: the neighbourhood ───────────────────────────────────────────
+        // Sum of the six neighbours' populations. The cheap half of X2: it needs
+        // only the neighbour graph and the committed population column, so it
+        // stays O(6) per sample instead of walking every neighbour's buildings.
+        // "城郊" content reads this instead of inventing a radius.
+        FAMILY_METRIC_CELL_NEIGHBOR_POPULATION_Q16 = 54,
+        // ── X11: what the state takes ───────────────────────────────────────
+        // Mean income-tax rate across professions, in basis points (10000 =
+        // 100%). Frozen once per epoch with the rest of the tax shape, so a
+        // condition cannot observe a half-applied tax change.
+        FAMILY_METRIC_COUNTRY_INCOME_TAX_BURDEN_BP = 55,
+        // ── X7: how much of the country looks a certain way ─────────────────
+        // Counts of the country's OWN cells matching a tag from the compiled-in
+        // list in economy_runtime_family_buff.cpp. This is the reading behind
+        // "每有 1 个矿业支柱地块，再 +1%" style cards.
+        //
+        // Deliberately not a generic "count of tag N" metric: metrics take no
+        // parameters, and one id per tag would mean an enum entry for all 270
+        // tags. The list below is the subset content actually counts; adding a
+        // tag means appending one slot AND one metric id together, which the
+        // static table makes a single reviewable edit.
+        FAMILY_METRIC_COUNTRY_AGRICULTURE_CELL_COUNT = 56,
+        FAMILY_METRIC_COUNTRY_EXTRACTIVE_CELL_COUNT = 57,
+        FAMILY_METRIC_COUNTRY_MANUFACTURING_CELL_COUNT = 58,
+        FAMILY_METRIC_COUNTRY_CHAINED_CELL_COUNT = 59,
+        FAMILY_METRIC_COUNTRY_SPECIALIZED_CELL_COUNT = 60,
+        FAMILY_METRIC_COUNTRY_MARKET_CELL_COUNT = 61,
+        // Settlement count is the one tag that needs no production at all (it is
+        // a population threshold), so it is also the honest control for "did the
+        // count run" in a fixture whose buildings never produce.
+        FAMILY_METRIC_COUNTRY_SETTLEMENT_CELL_COUNT = 62,
+        // Per-good counts. These are NOT a new mechanism: `cell.produces.<good>`
+        // already marks exactly the cells whose dominant output is that good, so
+        // one more slot in kCountryTagCountSlots is one more metric. Four goods
+        // content actually counts today; adding another is a two-line change.
+        FAMILY_METRIC_COUNTRY_SILVER_CELL_COUNT = 63,
+        FAMILY_METRIC_COUNTRY_SALT_CELL_COUNT = 64,
+        FAMILY_METRIC_COUNTRY_IRON_ORE_CELL_COUNT = 65,
+        FAMILY_METRIC_COUNTRY_COAL_CELL_COUNT = 66,
+        // Distinct goods for which this country owns at least one *specialized*
+        // cell (top-output-good share >= 60%, the same threshold as the
+        // `cell.specialized` tag). "特许航路" counts this, and it cannot be
+        // derived from tag counts: two cells producing the same good must
+        // collapse into one.
+        FAMILY_METRIC_COUNTRY_DISTINCT_SPECIALIZED_GOOD_COUNT = 67,
         // The selection set is a MetricMask (256 ids), so this count may grow
         // past 64 -- it just must not exceed MetricMask::CAPACITY, which the
         // static_assert below pins at compile time. Ids are the array index, so
         // new rows MUST be appended; reordering silently changes what every
         // existing card measures.
-        FAMILY_METRIC_COUNT = 51,
+        FAMILY_METRIC_COUNT = 68,
     };
     static_assert(FAMILY_METRIC_COUNT <= MetricMask::CAPACITY,
         "FAMILY_METRIC_COUNT exceeds MetricMask::CAPACITY; widen the mask "
@@ -1086,6 +1191,12 @@ public:
         uint64_t class_hash = 0;
         int64_t epoch_day = -1;
         int64_t commit_day = -1;
+        // Development period this snapshot describes, and the period length in
+        // days. `period_index = commit_day / period_days` is DERIVED, so both
+        // authorities compute the same key for the same simulated day no matter
+        // how often each of them publishes; ideology uses it as its accrual
+        // idempotency key (A1).
+        int64_t period_index = -1;
         int32_t country_count = 0;
         int32_t class_count = 0;
         std::vector<uint64_t> country_handles;
@@ -6345,12 +6456,115 @@ private:
     std::vector<int32_t> _epoch_country_cells;
     // Tag predicate table, copied from EffectRuntime at attach time.
     TargetTagTable _target_tags;
-    // Per-epoch tag bitset: tag_count words-runs of ceil(cell_count/64) words,
-    // tag-major. Derived from _target_tags + the epoch's metric columns, so it
-    // is never persisted, never hashed and never restored.
-    mutable std::vector<uint64_t> _epoch_tag_bits;
-    mutable int32_t _epoch_tag_words = 0;
-    mutable bool _epoch_tag_bits_valid = false;
+    // Per-epoch tag tables (tag bitset + X7 per-country counts), published as ONE
+    // immutable snapshot.
+    //
+    // R-3: these used to be plain `std::vector` members. `capture_country_epoch`
+    // cleared and refilled them on the owning thread while
+    // `step_ideology_instance_refresh` -> `reconcile` iterated them on the main
+    // thread without holding anything, so a reader could walk a buffer that had just
+    // been freed. "Build it eagerly at commit" (R-3 first pass) did not fix that: it
+    // still wrote the same vectors the reader was walking.
+    //
+    // Now the writer builds a `TagSnapshot` and `atomic_store`s it; every reader does
+    // ONE `atomic_load` into a local shared_ptr and uses that for the whole read.
+    // Swapping is therefore safe against a concurrent read by construction. Derived,
+    // never persisted, never hashed.
+    std::shared_ptr<const TagSnapshot> _tag_snapshot;
+    // Monotone publish counter, so a snapshot can say which epoch it describes.
+    //
+    // R-3b: SINGLE WRITER. Assigned only inside `rebuild_epoch_tag_snapshot`, which
+    // runs either from `capture_country_epoch` (the economy commit thread) or from
+    // `set_target_tags` (config time, or a caller holding the boundary lock -- see
+    // the assertion there). Two concurrent writers would not corrupt the swapped
+    // pointer (that store is atomic) but they WOULD race on this counter and can
+    // publish two snapshots with the same generation.
+    uint64_t _published_tag_snapshot_generation = 0;
+    // R-3b: evidence that an epoch which nobody reads costs nothing. One increment
+    // per snapshot actually built, one per epoch where both halves were skipped.
+    std::atomic<uint64_t> _tag_snapshot_builds{0};
+    std::atomic<uint64_t> _tag_snapshot_skips{0};
+    // R-3b: "only one builder at a time" assertion (see rebuild_epoch_tag_snapshot).
+    // Atomic so a second caller can see it without holding a lock; `exchange(false)`
+    // in the guard's destructor is what makes the early-outs below leak-free.
+    std::atomic<bool> _tag_snapshot_building{false};
+    // `set_target_tags` calls that arrived while a rebuild was in flight. Must stay 0:
+    // it is the only observable form of "someone called outside the config phase
+    // without holding the boundary lock".
+    std::atomic<uint64_t> _tag_snapshot_concurrent_writes{0};
+    // Readers that arrived before the first publish. Must be 0 after the first
+    // commit; exported as `tag_snapshot_miss_count`.
+    mutable std::atomic<int64_t> _last_tag_snapshot_miss_count{0};
+    // R-3b: how many `tag_snapshot()` loads happened, so "one load per scan" is a
+    // measured property rather than a code-review claim.
+    mutable std::atomic<int64_t> _tag_snapshot_loads{0};
+    // ── Effect input revision (P1-A) ────────────────────────────────────────
+    // A monotone count of "an input an ideology program reads actually changed".
+    // Deliberately a CONTENT digest, not a clock: bumping once per economy epoch
+    // would make every managed card refresh every day, which is exactly the
+    // no-op churn this revision exists to prevent (see 04-review-verification
+    // §3.1). All fields below are derived and never persisted.
+    mutable std::atomic<uint64_t> _effect_input_revision{0};
+    uint64_t _published_effect_input_digest = 0;
+    // Declared by the ideology catalog: the union of the per-cell metrics its
+    // managed programs read, and whether any of them selects targets by tag.
+    // Both empty/false means "no managed card reads economy input", and the
+    // digest then costs nothing at all.
+    // P3-B, second half: the consumer set moves behind one immutable object.
+    // Previously `metric_mask`, `tags_needed` and the "force republish" flag were
+    // plain fields written by the catalog configurer on the main thread and read
+    // by the digest on the economy thread -- the same data race the revisions had.
+    struct EffectInputConsumers {
+        MetricMask metric_mask;
+        bool tags_needed = false;
+        // Bumped on every swap so the digest can tell "the consumer set changed"
+        // without the writer touching the digest's own published state.
+        uint64_t generation = 0;
+        std::array<std::vector<int64_t>, FAMILY_METRIC_COUNT> thresholds;
+    };
+    std::shared_ptr<const EffectInputConsumers> _effect_input_consumers;
+    uint64_t _published_consumers_generation = 0;
+    // Published revision snapshot (see EffectInputSnapshot at namespace scope).
+    std::shared_ptr<const EffectInputSnapshot> _effect_input_snapshot;
+    // Per-metric revisions (review §3, second half). The global revision stays a
+    // union -- "something moved" -- so the existing refresh/should_run gates keep
+    // their meaning; these let a card's signature depend only on the metrics it
+    // actually reads, instead of re-signing every economy-input card whenever any
+    // metric moves.
+    // Test hook: a metric value forced for every cell. The gate's job is to react
+    // to *threshold crossings*, and the only way to test that deterministically is
+    // to move one metric by a chosen amount -- the simulation cannot be steered
+    // that precisely. Unset means "use the sampled value".
+    // The override is a test hook, but it was still a main-thread write into the
+    // digest thread's state. Same treatment as everything else on this path: one
+    // immutable object, swapped atomically.
+    struct EffectMetricOverrideSet {
+        std::array<int64_t, FAMILY_METRIC_COUNT> values{};
+        std::array<uint8_t, FAMILY_METRIC_COUNT> set{};
+        uint64_t generation = 0;
+    };
+    std::shared_ptr<const EffectMetricOverrideSet> _effect_metric_override_snapshot;
+    uint64_t _published_override_generation = 0;
+    // Last published digests, used only by the digest pass itself (single writer,
+    // single thread) to decide what moved.
+    std::array<uint64_t, FAMILY_METRIC_COUNT> _effect_metric_published{};
+    uint64_t _effect_territory_published = 0;
+    uint64_t _effect_tag_published = 0;
+
+    uint64_t _effect_input_digest_computations = 0;
+    double _effect_input_digest_ms = 0.0;
+    // X7 second half: distinct specialized goods per country. One small bitset
+    // per country while building, then collapsed to a count. Derived from a
+    // per-cell sample of (dominant output good, its share), so it carries its
+    // own valid flag and is dropped with the rest of the epoch state.
+    //
+    // Nested vectors instead of one flat country x good matrix: the good id
+    // space is data-driven (data/goods), and a flat matrix would need a good
+    // count the runtime does not hold. Growing each country's bitset on demand
+    // keeps this exact without inventing a cap.
+    // X7b (metric 67) now lives inside the published `TagSnapshot`; readers go
+    // through `tag_snapshot()`. The `mutable` lazy-build trio it used to have is
+    // gone with R-3.
     std::vector<uint8_t> _epoch_cell_visible;
     int32_t _epoch_player_country_slot = -1;
     bool _epoch_trade_vision_gated = false;
@@ -6556,6 +6770,8 @@ private:
     // `cell_count * good_count`, and is rebuilt only when one of those stats
     // changes. Transient; never saved or hashed.
     uint64_t _epoch_city_output_factor_stat_version = 0;
+    CellProgramTable _ideology_cell_programs;
+    uint64_t _epoch_city_output_ideology_generation = 0;
     bool _epoch_city_output_factor_valid = false;
     std::vector<int32_t> _city_output_shared_goods_q16;
     std::vector<int32_t> _city_output_cell_offsets;
@@ -7224,17 +7440,113 @@ private:
     // ownership column is absent or no country count is known, which is what
     // makes the consumers' linear-scan fallback kick in.
     void rebuild_country_territory_index();
-    // Builds the per-epoch tag bitset on first use. Lazy on purpose: building it
-    // eagerly in capture_country_epoch() would make every save pay a per-cell
-    // metric sample even when no card uses a tag, and the sample is the whole
-    // cost of the feature (cells x 1 sample, then tag tests are integer work).
+    // R-3: builds BOTH per-epoch tag tables into a NEW immutable `TagSnapshot` and
+    // publishes it with a single atomic store. The only writer.
     //
-    // const because the bitset is a memoised *derived* view of state that is
-    // already frozen for the epoch -- it can never disagree with
-    // _epoch_cell_country. Reentrancy is not a concern here for the same reason
-    // the rest of the epoch columns are not: one writer, readers gated by the
-    // epoch, same as _merchant_nonempty_cells.
-    void ensure_epoch_tag_bits() const;
+    // Callers must hold the economy input capture lock (`try_lock_economy_input_capture`)
+    // or be the thread that owns the epoch columns: the snapshot is built from
+    // `_target_tags`, `_cell_count` and `_epoch_cell_country`, so building it while
+    // those move would publish a torn answer.
+    //
+    // R-3b: reentrancy is COUNTED and refused, not compiled away. `_tag_snapshot_building`
+    // is the "only one thread may be in here" assertion: two concurrent builds would
+    // race on `_published_tag_snapshot_generation` and could publish two snapshots
+    // carrying the same generation, which a reader would then read as "unchanged".
+    // The loser returns immediately and keeps the previously published snapshot --
+    // stale at worst, never torn.
+    void rebuild_epoch_tag_snapshot();
+    // R-3b: does ANYTHING read the tag bits or metric 67 this epoch?
+    //
+    // The tables cost a full per-cell metric sample plus a per-country sweep. When
+    // the catalog declares neither (an all-national-Modifier catalog, which is 55 of
+    // the shipped 85 cards), paying it every epoch is pure waste -- and the caller
+    // cannot tell, because the answer is invisible unless someone asks.
+    //
+    // Conservative on purpose: before any consumer set is published the answer is
+    // YES, so a world that never configures ideology, and the selector fixtures that
+    // drive `set_target_tags()` directly, keep working with no extra wiring. The
+    // skip therefore applies only where something has explicitly declared a consumer
+    // set and that set asked for neither.
+    bool tag_snapshot_needed() const {
+        const std::shared_ptr<const EffectInputConsumers> consumers =
+            std::atomic_load_explicit(&_effect_input_consumers,
+                std::memory_order_acquire);
+        if (consumers == nullptr) return true;
+        return consumers->tags_needed || consumers->metric_mask.test(
+            FAMILY_METRIC_COUNTRY_DISTINCT_SPECIALIZED_GOOD_COUNT);
+    }
+    // Whether the TAG BITS half is wanted (vs metric 67, which owns its own pass).
+    bool tag_bits_needed() const {
+        const std::shared_ptr<const EffectInputConsumers> consumers =
+            std::atomic_load_explicit(&_effect_input_consumers,
+                std::memory_order_acquire);
+        if (consumers == nullptr) return true;
+        return consumers->tags_needed;
+    }
+    bool specialized_good_count_needed() const {
+        const std::shared_ptr<const EffectInputConsumers> consumers =
+            std::atomic_load_explicit(&_effect_input_consumers,
+                std::memory_order_acquire);
+        if (consumers == nullptr) return true;
+        return consumers->metric_mask.test(
+            FAMILY_METRIC_COUNTRY_DISTINCT_SPECIALIZED_GOOD_COUNT);
+    }
+    // Counters behind the lazy decision. `tag_snapshot_builds` is the evidence that
+    // the skip works: an idle epoch whose catalog uses no tags must not increment it.
+    uint64_t tag_snapshot_builds() const {
+        return _tag_snapshot_builds.load(std::memory_order_relaxed);
+    }
+    uint64_t tag_snapshot_skips() const {
+        return _tag_snapshot_skips.load(std::memory_order_relaxed);
+    }
+    uint64_t tag_snapshot_concurrent_writes() const {
+        return _tag_snapshot_concurrent_writes.load(std::memory_order_relaxed);
+    }
+    // The published tables, or null before the first commit. ONE atomic load: the
+    // returned pointer keeps the storage alive for the whole read even if a later
+    // epoch swaps in a replacement, which is what makes readers safe without a lock.
+    std::shared_ptr<const TagSnapshot> tag_snapshot() const {
+        // R-3b: counts every load, so a per-cell loop that took the lock once per cell
+        // is visible as a number instead of as a mysterious latency.
+        _tag_snapshot_loads.fetch_add(1, std::memory_order_relaxed);
+        auto snapshot = std::atomic_load_explicit(&_tag_snapshot,
+                                                  std::memory_order_acquire);
+        if (snapshot == nullptr)
+            _last_tag_snapshot_miss_count.fetch_add(1, std::memory_order_relaxed);
+        return snapshot;
+    }
+    // Total `tag_snapshot()` calls. Exported so the "load once outside the loop" rule
+    // is checkable: a selector that scans N cells must cost O(1) loads, not O(N).
+    int64_t tag_snapshot_loads() const {
+        return _tag_snapshot_loads.load(std::memory_order_relaxed);
+    }
+    // R-3b: the per-CELL half of `cell_has_target_tag`, split out so a loop can do
+    // the `atomic_load` ONCE and still ask per cell.
+    //
+    // `atomic_load(shared_ptr)` on MSVC takes a process-wide spin lock (the refcount
+    // bump is not lock-free), so the old shape -- one load per cell, inside a
+    // per-cell loop -- serialized every thread in the process against every tag scan.
+    // Callers with a loop must load once and pass the snapshot in.
+    static bool snapshot_has_tag(const TagSnapshot *snapshot, int32_t cell,
+                                 int32_t tag) {
+        if (snapshot == nullptr || tag < 0 || cell < 0) return false;
+        if (snapshot->tag_words <= 0) return false;
+        const size_t index = static_cast<size_t>(tag) *
+            static_cast<size_t>(snapshot->tag_words) + static_cast<size_t>(cell / 64);
+        if (index >= snapshot->tag_bits.size()) return false;
+        return (snapshot->tag_bits[index] & (uint64_t{1} << (cell % 64))) != 0;
+    }
+    // Number of readers that found the tag snapshot unbuilt. Must be 0 on any world
+    // that has completed one commit, so a caller that starts reading before commit
+    // is visible instead of silently getting empty bits.
+    int64_t last_tag_snapshot_miss_count() const {
+        return _last_tag_snapshot_miss_count.load(std::memory_order_relaxed);
+    }
+    // X7: per-country counts live inside the same `TagSnapshot` (see
+    // `tag_snapshot()`), because they are derived from the same tag bits and must
+    // never be read from a different epoch than the bits they describe.
+    // Counts, per country, how many distinct goods have at least one specialized
+    // cell. Built into the epoch `TagSnapshot`; there is no lazy path any more.
     // True when the CSR is self-consistent with _epoch_country_count, i.e. its
     // slice table covers every slot and its last offset equals the cell list
     // length. Consumers use this to decide between O(1) index reads and the
@@ -7990,9 +8302,22 @@ public:
     // anchor's terrain / dominant resource). Output is always sorted,
     // deduplicated and capped, so two identical calls produce the same vector --
     // which is what makes "one instance per cell" replayable.
+    // P3 step 3: the per-cell coefficient table published by the Ideology side.
+    // Copied, because the table is an immutable snapshot by contract -- the
+    // publisher builds a new one instead of mutating this.
+    void set_ideology_cell_programs(CellProgramTable table);
+    // Public seam over city_good_output_factor_q16(), which lives in a private
+    // section. Diagnostics and tests need to read the composed factor; the
+    // production hot path keeps using the private one directly.
+    int32_t city_output_factor_for_test(int32_t cell, int32_t good_id) const;
+    // How many of `cell`'s hex neighbours satisfy the tag (-1 = count every
+    // neighbour). Reuses the selector BFS so there is exactly one definition of
+    // "adjacent" in the codebase; a second adjacency walk would drift from it.
+    int32_t neighbor_count_with_tag(int32_t cell, int32_t tag) const;
     void collect_effect_target_cells(
         int32_t source_cell, int32_t selector_kind, int32_t param0, int32_t param1,
-        std::vector<int32_t> &out_cells) const;
+        std::vector<int32_t> &out_cells, uint64_t selection_salt = 0,
+        EffectSelectorStats *stats = nullptr) const;
     // Resource id with the largest stock at `cell`, or -1 when the cell holds
     // no resource. Ties resolve to the lowest id so the answer is stable.
     int32_t dominant_resource_at(int32_t cell) const;
@@ -8045,6 +8370,52 @@ public:
                                int64_t *out_metrics,
                                const MetricMask &metric_mask =
                                    MetricMask::all()) const;
+
+    // ── Effect input revision (P1-A) ────────────────────────────────────────
+    // Read by NativeIdeologyRuntime to decide whether anything has to be
+    // re-evaluated at all. Acquire/release because the economy may publish from
+    // its own thread while the ideology facade reads on the main thread.
+    uint64_t effect_input_revision() const {
+        return _effect_input_revision.load(std::memory_order_acquire);
+    }
+    // Per-metric revision (review §3). A card mixes only the metrics it reads,
+    // so one metric moving no longer re-signs every economy-input card.
+    uint64_t effect_metric_revision(int32_t metric) const {
+        if (metric < 0 || metric >= static_cast<int32_t>(FAMILY_METRIC_COUNT))
+            return 0;
+        const auto snapshot = effect_input_snapshot();
+        return snapshot == nullptr
+            ? 0
+            : snapshot->metric_revision[static_cast<size_t>(metric)];
+    }
+    std::shared_ptr<const EffectInputSnapshot> effect_input_snapshot() const {
+        return std::atomic_load_explicit(&_effect_input_snapshot,
+            std::memory_order_acquire);
+    }
+    // The other two thirds of the split: ownership and tag bits move on their
+    // own schedules, so a card that only reads one of them does not re-sign when
+    // the others move (review §3).
+    uint64_t effect_territory_revision() const {
+        const auto snapshot = effect_input_snapshot();
+        return snapshot == nullptr ? 0 : snapshot->territory_revision;
+    }
+    uint64_t effect_tag_revision() const {
+        const auto snapshot = effect_input_snapshot();
+        return snapshot == nullptr ? 0 : snapshot->tag_revision;
+    }
+    // Called from configure_ideologies() with the catalog's declared consumer
+    // set. Clears the published digest so the next COMMIT definitely advances
+    // the revision instead of matching the empty-catalog digest.
+    // `has_value == false` clears the override.
+    void set_effect_metric_override(int32_t metric, int64_t value, bool has_value);
+    void set_effect_input_consumers(
+        const MetricMask &cell_metrics, bool tags_needed,
+        const std::array<std::vector<int64_t>, FAMILY_METRIC_COUNT>
+            &metric_thresholds);
+    // Called once per committed economy day. Recomputes the digest and advances
+    // `effect_input_revision()` only when it differs from the last published
+    // one. A no-op when no managed card reads economy input.
+    void refresh_effect_input_digest();
 private:
     void fire_family_event_once_effect(int32_t family_index,
                                        const std::string &program_key);

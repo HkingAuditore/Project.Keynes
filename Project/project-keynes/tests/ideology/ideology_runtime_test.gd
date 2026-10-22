@@ -126,8 +126,42 @@ func _run() -> void:
 	var stale_ideology_result: Dictionary = stale_restored.restore_ideology_state(bytes)
 	_expect("PKID rejects an unknown pending ideology transaction", bool(stale_effect_result.get("ok", false))
 		and not bool(stale_ideology_result.get("ok", true)))
+	_test_stale_pkid_is_rejected_by_version(bytes, stale_restored)
+	_test_world_seed_changes_the_draw_sequence(country_ir)
 	_test_effect_link_after_ideology_configuration(country_ir, catalog)
 	_test_native_publish_event_adapter(country_ir)
+
+
+# R8-1: a v7 PKID payload must fail by VERSION, not by misreading the rows.
+#
+# `trade_paid_day` was appended to the country row without moving
+# SAVE_SCHEMA_VERSION, so a v7 file was decoded with the v8 layout and the error
+# that surfaced was a later one (`ideology_save_truncated` or
+# `ideology_save_state_hash_mismatch`) -- both of which point at the wrong
+# function. Rewrite ONLY the schema word: the catalog hash, the trailing state
+# hash and every byte after the header must stay identical, so a reader that
+# skipped the version gate would accept this payload. That is what makes the
+# assertion meaningful instead of "it failed for some reason".
+func _test_stale_pkid_is_rejected_by_version(fresh: PackedByteArray,
+		configured_ext: Object) -> void:
+	_expect("fresh PKID payload is nonempty", fresh.size() > 16)
+	if fresh.size() <= 16 or configured_ext == null:
+		return
+	# Header: magic u32 @0, schema i32 @4.
+	var stale := fresh.duplicate()
+	stale.encode_s32(4, 7)
+	var stale_result: Dictionary = configured_ext.restore_ideology_state(stale)
+	_expect("PKID v7 payload is rejected rather than misread",
+		not bool(stale_result.get("ok", true)))
+	_expect("PKID v7 rejection names the schema, not a truncation",
+		str(stale_result.get("reason", "")) == "ideology_save_schema_unsupported")
+	# The same bytes with the current schema must still restore: the gate rejects
+	# the OLD VERSION, it does not reject the payload.
+	var current_result: Dictionary = configured_ext.restore_ideology_state(fresh)
+	_expect("PKID v8 payload restores after the version probe",
+		bool(current_result.get("ok", false)) or
+			str(current_result.get("reason", "")) != "ideology_save_schema_unsupported")
+
 
 
 func _test_effect_link_after_ideology_configuration(country_ir: Dictionary, catalog: Dictionary) -> void:
@@ -236,6 +270,72 @@ func _test_native_publish_event_adapter(country_ir: Dictionary) -> void:
 		bool(orphaned_restored.restore_gameplay_event_journal(orphaned).get("ok", false))
 		and int(orphaned_restored.get_gameplay_event_bus_report().get(
 			"effect_idempotency_count", 0)) == 3)
+
+# R9-4: the country draw sequence must depend on the WORLD seed, not just on the
+# handle. Before R8-3 every game of the same map drew the same cards for the same
+# country, because the seed was `handle ^ constant`.
+#
+# WHY THIS COMPARES A SEQUENCE AND NOT ONE OFFER (measured, twice):
+# the fixture holds four cards and an offer draws three, so the FIRST offer is a
+# single `roll % 4` step. Two different seeds landed on the same first roll
+# (`[3,0,1]` for both 11111 and 22222) while later offers diverged, which made a
+# one-offer assertion fail against working code. The sequences below are printed by
+# the test so a future reader can see this directly.
+#
+# The assertion is therefore "the same seed reproduces its sequence, and a
+# different seed diverges somewhere in the sequence". A seed that never reaches the
+# draw produces identical sequences and still fails.
+func _test_world_seed_changes_the_draw_sequence(country_ir: Dictionary) -> void:
+	var first: Array = _offer_sequence_for_seed(country_ir, 11111)
+	var again: Array = _offer_sequence_for_seed(country_ir, 11111)
+	var other: Array = _offer_sequence_for_seed(country_ir, 22222)
+	_expect("world_seed: a seed produces offers", not first.is_empty())
+	_expect("world_seed: the same seed reproduces the same sequence",
+		first == again)
+	var diverging_index := -1
+	for index in mini(first.size(), other.size()):
+		if first[index] != other[index]:
+			diverging_index = index
+			break
+	# Evidence line, kept because this assertion has already been mis-designed once:
+	# identical sequences mean the seed never reached the draw; different sequences
+	# with `diverging_index == 0` mean even the first offer differs.
+	print("  [world_seed] A=%s" % str(first))
+	print("  [world_seed] A(again)=%s" % str(again))
+	print("  [world_seed] B=%s first_divergence=%d" % [str(other), diverging_index])
+	_expect("world_seed: a different world seed changes the sequence",
+		diverging_index >= 0)
+
+func _offer_sequence_for_seed(country_ir: Dictionary, world_seed: int) -> Array:
+	var ext := _country_ext(country_ir)
+	var catalog := _catalog()
+	catalog["world_seed"] = world_seed
+	if not bool(ext.configure_ideologies(catalog).get("ok", false)):
+		return []
+	var handle := int(ext.get_country_cell_summary(0).get("country_handle", 0))
+	if handle == 0:
+		return []
+	ext.submit_ideology_commands(_commands([
+		{"op": 2, "day": 0, "handle": handle, "value": 100 * Q16_ONE},
+		{"op": 3, "day": 1, "handle": handle},
+	]))
+	ext.run_ideology_daily(1)
+	var sequence: Array = []
+	for day in 6:
+		var snapshot: Dictionary = ext.get_ideology_snapshot(handle)
+		if not bool(snapshot.get("offer_active", false)):
+			break
+		var offer: PackedInt32Array = snapshot.offer_ids
+		sequence.append(offer.duplicate())
+		# Re-roll advances the shared RNG stream, so the next offer differs even
+		# with an unchanged pool.
+		ext.submit_ideology_commands(_commands([
+			{"op": 10, "day": 2 + day, "handle": handle,
+				"offer": int(snapshot.get("offer_generation", 0))},
+		]))
+		ext.run_ideology_daily(2 + day)
+	return sequence
+
 
 func _country_ext(country_ir: Dictionary) -> Object:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")

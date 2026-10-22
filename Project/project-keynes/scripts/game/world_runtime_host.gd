@@ -944,6 +944,7 @@ func run_daily_tick(day_idx: int, season_phase: float) -> Dictionary:
 	_service_trigger_worker_intents_if_authoritative()
 	_consume_ideology_worker_snapshot_if_authoritative()
 	_service_ideology_worker_intents_if_authoritative()
+	_step_ideology_instance_refresh_if_authoritative(day_idx)
 	_consume_country_worker_read_view_if_authoritative()
 	_fast_tick_count += 1
 	if _renderer != null and _generator.has_method("has_pending_detail_scatter_refresh") \
@@ -1349,6 +1350,22 @@ func _service_effect_worker_intents_if_authoritative() -> void:
 		ext.dispatch_effect_native_economy()
 	if ext.has_method("ack_effect_native_economy"):
 		ext.ack_effect_native_economy()
+
+
+## P1-A: under IDEOLOGY worker authority the main-thread daily job is
+## suppressed, so the sliced instance refresh -- whose instances still belong to
+## this facade -- has to be pumped here. Bounded per call; `done == false` only
+## means the pass has more countries left.
+func _step_ideology_instance_refresh_if_authoritative(day_idx: int) -> void:
+	if not _runtime_ready_for_ticks or _generator == null:
+		return
+	if not _generator.has_method("step_ideology_instance_refresh"):
+		return
+	var report: Dictionary = _generator.get_runtime_thread_report() \
+		if _generator.has_method("get_runtime_thread_report") else {}
+	if (int(report.get("authoritative_domain_mask", 0)) & 0x010) == 0:
+		return
+	_generator.step_ideology_instance_refresh(day_idx)
 
 
 ## G8 ACTIVE Ideology write-back. Non-blocking: drops intermediate generations.

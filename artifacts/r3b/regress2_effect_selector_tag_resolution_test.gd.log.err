@@ -1,0 +1,30 @@
+ERROR: [effect-catalog] effect_catalog_target_selector_tag_unknown:ideology.effect.test.bad_tag:cell.market_typo
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _reject (res://scripts/effect/effect_domain_catalog.gd:395)
+       [1] build (res://scripts/effect/effect_domain_catalog.gd:378)
+       [2] _test_compile_loop_end_to_end (res://tests/effect/effect_selector_tag_resolution_test.gd:271)
+       [3] _run (res://tests/effect/effect_selector_tag_resolution_test.gd:63)
+       [4] _init (res://tests/effect/effect_selector_tag_resolution_test.gd:49)
+ERROR: [effect-catalog] effect_catalog_target_selector_tag_unknown:ideology.effect.test.duplicate:cell.no_such_tag
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _reject (res://scripts/effect/effect_domain_catalog.gd:395)
+       [1] build (res://scripts/effect/effect_domain_catalog.gd:378)
+       [2] _test_compile_loop_resolves_before_dedupe (res://tests/effect/effect_selector_tag_resolution_test.gd:287)
+       [3] _run (res://tests/effect/effect_selector_tag_resolution_test.gd:64)
+       [4] _init (res://tests/effect/effect_selector_tag_resolution_test.gd:49)
+ERROR: [effect-catalog] effect_catalog_target_selector_tag_unknown:ideology.effect.test.multi_typo:cell.grann
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _reject (res://scripts/effect/effect_domain_catalog.gd:395)
+       [1] build (res://scripts/effect/effect_domain_catalog.gd:378)
+       [2] _test_multi_tag_compile_loop (res://tests/effect/effect_selector_tag_resolution_test.gd:376)
+       [3] _run (res://tests/effect/effect_selector_tag_resolution_test.gd:65)
+       [4] _init (res://tests/effect/effect_selector_tag_resolution_test.gd:49)
+ERROR: 32 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 4 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 325 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

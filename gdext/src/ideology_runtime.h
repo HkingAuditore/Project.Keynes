@@ -13,6 +13,8 @@
 
 #include "effect_runtime.h"
 #include "metric_mask.h"
+#include "effect_selector_cap.h"
+#include "ideology_cell_program.h"
 #include "runtime_ideology_pod.h"
 
 namespace pk {
@@ -33,7 +35,17 @@ public:
     // rather than silently misread.
     // v6 adds per-idea reconciled Effect instance references, so a load can
     // verify that the EffectRuntime still owns every instance the card created.
-    static constexpr int32_t SAVE_SCHEMA_VERSION = 7;
+    // v7 added per-country `trade_paid_day` WITHOUT bumping this constant (R8-1).
+    // A v7 file written by that build has an extra int64 in every country row,
+    // so reading it as v8 shifts every later field: the row is then rejected
+    // late, by `ideology_save_truncated` or `ideology_save_state_hash_mismatch`,
+    // and both messages point at the wrong thing. That is why the constant moves
+    // and the gate below is an exact equality: a v7 payload must be refused by
+    // VERSION, before a single row is decoded.
+    // v8 also changes what `points_revision` means (the consumed class-opinion
+    // PERIOD instead of the raw snapshot revision) and adds the point-accrual
+    // baseline day, so the old numeric value is not reinterpretable either.
+    static constexpr int32_t SAVE_SCHEMA_VERSION = 8;
     static constexpr int64_t Q16_ONE = 65536;
     static constexpr int32_t POINT_HISTORY = 32;
     static constexpr int32_t MAX_ERA_INDEX = 63;
@@ -72,8 +84,19 @@ public:
     };
 
     void attach_country_runtime(NativeCountryRuntime *runtime) { _country_runtime = runtime; }
-    void attach_economy_runtime(NativeEconomyRuntime *runtime) { _economy_runtime = runtime; }
-    void attach_effect_runtime(EffectRuntime *runtime) { _effect_runtime = runtime; }
+    void attach_economy_runtime(NativeEconomyRuntime *runtime) {
+        _economy_runtime = runtime;
+        publish_effect_input_consumers();
+    }
+    NativeEconomyRuntime *economy_runtime() const { return _economy_runtime; }
+    void attach_effect_runtime(EffectRuntime *runtime) {
+        _effect_runtime = runtime;
+        // The per-level "is this card managed, and what does it read" table is
+        // derived from the Effect catalog, which may arrive after ideology was
+        // configured. Rebuilding here is what makes the order-independent.
+        _level_managed_built = false;
+        publish_effect_input_consumers();
+    }
     // M2a: declarative effect instances must be written through the same single
     // path DCWorldExt uses, otherwise an equipped card lands on the main thread
     // while the worker owns EFFECT (and the next snapshot erases it). Null keeps
@@ -105,12 +128,76 @@ public:
         int64_t country_handle,
         const godot::PackedInt32Array &ideology_ids);
     godot::Dictionary report() const;
+    // Computes the signature on demand instead of reading the stored one, so a
+    // test can prove "this card re-signs when that metric crosses" without
+    // running a reconcile pass.
+    uint64_t activation_signature_for_test(uint64_t handle,
+                                           int32_t ideology_id) const;
     godot::PackedByteArray capture() const;
     godot::Dictionary restore(const godot::PackedByteArray &bytes);
     // Read-only view of the reconciled Effect instances each held idea owns,
     // annotated with whether the EffectRuntime still holds them. Used by the
     // effect-instance tests and by save diagnostics; never mutates state.
     godot::Dictionary effect_instance_report(int64_t country_handle) const;
+    // Force one reconcile for a country and report what it did, as deltas.
+    // Production reaches a reconcile only through a transition, a restore or a
+    // worker write-back, so a test that needs "reconcile twice against the same
+    // inputs" -- the only way to observe the metric publish gate -- has no
+    // other entry point. Never touches saved state.
+    godot::Dictionary reconcile_effects_for_test(int64_t country_handle);
+    // Publish a snapshot of the CURRENT state back into the runtime, the way the
+    // worker would, and report what apply_pod_snapshot did. A correct apply
+    // carries the held instance set across untouched, so this is the direct
+    // assertion for P1-B. Test-only: never touches saved state.
+    godot::Dictionary apply_self_pod_snapshot_for_test(int64_t generation);
+    // Main-thread -> POD export, factored out of the test hook above. Parity needs
+    // the same neutral structure on both sides: the worker hashes its own snapshot,
+    // the main thread hashes this one.
+    bool export_pod_business_snapshot(RuntimeIdeologyPodSnapshot &out) const;
+    // Last day this runtime fully settled. The parity publisher uses it to refuse
+    // a reference for a day that is still mid-slice: a partial snapshot under a
+    // finished day's key makes the very first comparison fail for a reason that
+    // looks like a business divergence.
+    int64_t last_day() const { return _last_day; }
+    // True when the most recent `accrue_points` actually settled an opinion
+    // revision (result code 0). A day that never settled has no country rows on
+    // this side, so a reference published for it can only mismatch.
+    bool points_accrual_settled() const { return _points_accrue_result == 0; }
+    // True when this runtime has settled at least one opinion revision, i.e. it
+    // holds real country rows. A reference published before that describes an
+    // empty world and can only mismatch. `accrue_points` result 3 ("already
+    // seen") is a healthy state on a day with no new revision, so it must count
+    // as settled for publishing purposes.
+    bool points_accrual_ever_settled() const {
+        return _points_accrue_result == 0 || _points_accrue_result == 3 ||
+               _points_revision_seen != 0;
+    }
+    // Last opinion revision this runtime consumed. Compared against what was
+    // actually handed to the worker to tell "same inputs, different result"
+    // apart from "the two sides ran on different snapshots".
+    uint64_t points_revision_seen() const { return _points_revision_seen; }
+    int32_t points_accrual_result() const { return _points_accrue_result; }
+    // Make this runtime settle the current Economy opinion revision, if it has
+    // not already. Called when the runtime graph is about to hand that revision
+    // to the worker: both sides must accrue from the same input, and accrual is
+    // idempotent per revision. Returns true when a settlement happened.
+    // NOTE: there is deliberately no "settle points now" seam here. Point
+    // settlement belongs to `run_ideology_daily`; expising it so an input
+    // publisher could force a settle moved production cadence to satisfy a test.
+    // ── P1-A sliced instance refresh ────────────────────────────────────────
+    // One slice of the "re-evaluate the managed cards whose economy inputs may
+    // have moved" pass. Returns true while the pass still has countries left.
+    // The target revision is adopted only when a pass STARTS: restarting the
+    // cursor on every new revision starves the tail (04 §3.2).
+    bool step_effect_instance_refresh(int64_t day_index,
+                                      int32_t country_budget = 0);
+    // Set when something outside the economy revision can invalidate the
+    // signature (worker write-back, authority flip, restore).
+    void mark_instance_refresh_dirty() { _instance_refresh_dirty = true; }
+    int32_t managed_active_total() const { return _managed_active_total; }
+    // What the catalog's managed programs read from the economy. Pushed into
+    // NativeEconomyRuntime so its digest covers exactly those columns.
+    void publish_effect_input_consumers();
     godot::Dictionary clear_state();
     bool export_pod_catalog(const RuntimeCountryPodSnapshot &country,
                             RuntimeIdeologyPodCatalog &out,
@@ -130,6 +217,10 @@ public:
     // generation regression and the facade would freeze on stale state.
     void reset_pod_snapshot_cursor() { _pod_snapshot_generation = 0; }
 
+    // P3 step 2: build the per-cell coefficient table for the current card set.
+    // Pure function of (cards, levels, effect catalog, modifier catalog); the
+    // caller decides when to publish it. v1 scope is documented in the header.
+    bool build_cell_program_table(CellProgramTable &out) const;
 private:
     struct Level {
         int64_t threshold_q16 = 0;
@@ -222,6 +313,17 @@ private:
             uint32_t target_generation = 0;
             int64_t instance_id = 0;
             uint32_t generation = 0;
+            // Digest of the metric columns this instance last published. A
+            // reconcile that would publish the identical values skips the
+            // whole row; without it, every daily reconcile produced one
+            // transaction per instance (P1-C). Derived -- `capture()` must not
+            // write it, so PKID's layout and hash stay unchanged.
+            uint64_t metric_digest = 0;
+            // What the last submit told the Effect authority this instance's
+            // multiplier is. Compared on the next reconcile so a synergy flip
+            // that only changes strength still resubmits -- id and generation
+            // alone cannot see it. Derived, never serialised.
+            int32_t magnitude_scale_q16 = static_cast<int32_t>(Q16_ONE);
         };
         int32_t ideology_id = -1;
         int64_t understanding_q16 = 0;
@@ -251,6 +353,11 @@ private:
             std::vector<uint8_t> previous_synergy_active;
         } transition;
         std::vector<EffectInstanceRef> effect_instances;
+        // P1-A: digest of everything that decides this card's instance set and
+        // magnitudes -- identity, level, location, program keys, active
+        // synergies, and the economy input revision when the card reads it.
+        // Derived: `capture()` must not write it, so PKID stays bit-identical.
+        uint64_t activation_signature = 0;
     };
     // A desired instance plus the program key needed to submit it. The key is
     // not persisted (the hash is), so it is rebuilt from the catalog on demand.
@@ -303,6 +410,10 @@ private:
         int64_t baseline_population = 0;
         int64_t baseline_buildings = 0;
         int64_t lifetime_points_q16 = 0;
+        // Last day this row paid its trade flow. Trade is paid once per day at
+        // most, so a second settlement on the same day pays nothing. Without this
+        // the total depended on how many times each side settled.
+        int64_t trade_paid_day = INT64_MIN;
         RuntimeIdeologyPodPointLedger ledger;
         std::array<int64_t, POINT_HISTORY> history_q16{};
         std::vector<uint64_t> known_bits;
@@ -436,6 +547,13 @@ private:
     bool banned(const CountryState &country, int32_t ideology_id) const;
     void set_banned(CountryState &country, int32_t ideology_id);
     void accrue_points(int64_t day);
+    // R9-1: the single settlement body. `accrue_points(day)` feeds it Economy's
+    // snapshot; the parity path feeds it the worker's snapshot.
+    void accrue_points_from(const RuntimeIdeologyOpinionSnapshot &opinion,
+                            int64_t day);
+    // Slices of one day, shared by the settlement entry point. Kept separate so
+    // the day's command/transition work has exactly one implementation (R9-1).
+    godot::Dictionary run_daily_slices(int64_t day_index);
     void init_country_state(CountryState &state, uint64_t handle) const;
     bool choose_offer(CountryState &country, const Command &command, std::string &error);
     // 封存: permanently retires one card from this country's draw pool for the
@@ -485,6 +603,7 @@ private:
     bool resolve_effect_targets(
         const CountryState &country, const IdeaState &state,
         const EffectRuntime::FamilyEffectMetadataPod &metadata,
+        uint64_t selection_salt,
         std::vector<std::pair<uint64_t, uint32_t>> &out) const;
     bool collect_effect_activations(
         const CountryState &country, const IdeaState &state,
@@ -508,6 +627,32 @@ private:
     void retire_effect_activations(IdeaState &state, int64_t day);
     void reconcile_country_effect_activations(CountryState &country,
                                               int64_t day);
+    // P1-A: per-(definition, level) facts derived from the Effect catalog.
+    // `mutable` because should_run() is const but still has to know whether any
+    // managed card is in play.
+    struct LevelManagedInfo {
+        uint8_t has_managed = 0;
+        uint8_t uses_economy_inputs = 0;
+        uint8_t uses_tags = 0;
+        uint8_t scale_capable = 0;
+        MetricMask consumer_mask;
+        uint64_t program_mix = 1469598103934665603ULL;
+        // Thresholds this level's programs compare metrics against, copied from
+        // the effect metadata so the economy can bucket by "did a condition
+        // cross" instead of hashing raw values (review §3). Runtime-only cache,
+        // never serialised.
+        uint8_t threshold_count = 0;
+        int32_t threshold_ids[8] = {0};
+        int64_t threshold_values[8] = {0};
+        MetricMask exact_mask;
+    };
+    void rebuild_level_managed_if_needed() const;
+    bool level_is_managed(int32_t ideology_id, int32_t level) const;
+    const LevelManagedInfo *level_managed_info(int32_t ideology_id,
+                                               int32_t level) const;
+    uint64_t compute_activation_signature(const CountryState &country,
+                                          const IdeaState &state) const;
+    void recount_managed_active();
     bool start_next_level_transition(CountryState &country, IdeaState &state,
                                      int64_t day, std::string &error);
     uint64_t unentered_level_mask(const IdeaState &state, int32_t through_level) const;
@@ -543,6 +688,11 @@ private:
 
     bool _configured = false;
     uint64_t _catalog_hash = 0;
+    // World seed mixed into each country's offer RNG. Optional catalog key
+    // (`world_seed`); zero means "no world seed available", in which case the RNG
+    // is seeded from the handle alone -- same as the worker, so parity is intact
+    // either way.
+    uint64_t _world_seed = 0;
     int32_t _ideology_capacity = 6;
     int32_t _spirit_capacity = 3;
     int32_t _draw_count = 3;
@@ -610,6 +760,15 @@ private:
     // (program key, scale, per-synergy span on Synergy) rather than a map so the
     // catalog hash is a straight walk and the order is whatever the catalog says.
     std::vector<std::string> _synergy_override_programs;
+    // program -> [(synergy index, scale)]. magnitude_scale_for used to scan every
+    // synergy for every program on every country; the reverse index makes it
+    // proportional to the rewrites that actually name the program.
+    std::unordered_map<std::string, std::vector<std::pair<int32_t, int32_t>>>
+        _synergy_override_index;
+    // Review §4: "idle = 0" for this counter is the acceptance criterion for the
+    // index -- a scan means the index missed and the old path ran.
+    mutable uint64_t _synergy_scale_scans = 0;
+    mutable uint64_t _synergy_scale_lookups = 0;
     std::vector<int32_t> _synergy_override_scales;
     std::vector<Synergy> _synergies;
     std::vector<int32_t> _ideology_synergy_offsets;
@@ -660,7 +819,53 @@ private:
     uint64_t _levels_advanced = 0;
     uint64_t _class_snapshot_reads = 0;
     uint64_t _support_evaluations = 0;
+    // Why the last `accrue_points` call did or did not settle. A parity failure
+    // that shows an empty main-thread snapshot cannot be diagnosed from the
+    // resulting numbers; these say which early return fired.
+    //   0 = settled, 1 = no economy, 2 = revision 0, 3 = revision already seen,
+    //   4 = shape mismatch, 5 = class hash/count mismatch.
+    int32_t _points_accrue_result = -1;
+    uint64_t _points_accrue_revision = 0;
     uint64_t _synergy_candidates_visited = 0;
+    // P1-C evidence. `metric_publishes_skipped` counts rows whose sampled
+    // values matched the previous publish; on a quiescent day every managed
+    // instance must land there and `metric_publishes` must not move.
+    uint64_t _metric_publishes = 0;
+    uint64_t _metric_publishes_skipped = 0;
+    // P2-B: how many selections the cap actually cut, and how many cells the
+    // last one matched BEFORE the cap. `mutable` because resolve is const.
+    mutable EffectSelectorStats _selector_stats;
+    mutable uint64_t _selector_truncations = 0;
+    // Bumped on every build; Economy keys its per-cell cache on (this, input revision).
+    uint64_t _cell_program_generation = 0;
+    // ── P1-A sliced instance refresh ────────────────────────────────────────
+    // Budget in COUNTRIES, never milliseconds: a time-based slice would make
+    // which cards get refreshed depend on machine speed and break replay.
+    // Zero means "scan every country", which is what the callers use: the scan
+    // itself is a cheap per-card comparison, and slicing it by country would
+    // stretch one pass over a 512-country map across eight days.
+    static constexpr int32_t INSTANCE_REFRESH_COUNTRY_BUDGET = 0;
+    // Real work happens only for cards whose signature moved, so the slice cap
+    // belongs here. A pass with more than this many changed cards continues on
+    // the next call with the cursor preserved.
+    static constexpr int32_t INSTANCE_REFRESH_VISIT_BUDGET = 64;
+    mutable std::vector<LevelManagedInfo> _level_managed;
+    mutable bool _level_managed_built = false;
+    int32_t _managed_active_total = 0;
+    uint64_t _effect_input_revision_seen = 0;
+    uint64_t _effect_input_revision_target = 0;
+    bool _instance_refresh_pending = false;
+    bool _instance_refresh_dirty = false;
+    int32_t _instance_refresh_country_cursor = 0;
+    uint64_t _instance_refresh_visits = 0;
+    // Doc 03 §6.2 wants this at 0 on an idle day. It counts builds, not publishes:
+    // a build with no publisher still costs the per-card string lookups, which is
+    // exactly the idle overhead the threshold is about.
+    mutable uint64_t _cell_plane_builds = 0;
+    uint64_t _instance_refresh_skips = 0;
+    uint64_t _instance_refresh_passes = 0;
+    uint64_t _instance_refresh_lag_revisions = 0;
+    double _instance_refresh_ms = 0.0;
     double _transition_poll_ms = 0.0;
     double _command_apply_ms = 0.0;
     double _active_progress_ms = 0.0;

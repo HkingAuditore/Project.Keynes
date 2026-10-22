@@ -63,10 +63,21 @@ enum TargetSelectorKind {
 	## Every cell on the grid matching `param[1]` = 1-based tag id (0 = the
 	## whole grid). The ownership-free twin of OWN_TERRITORY.
 	TAG_ANY_CELL = 13,
+	## X1: evaluate the radial fan-out once per SOURCE cell. `param[1]` is the
+	## 1-based tag id that selects the source cells among the country's own
+	## territory, `param[0]` is the union cap; each source contributes its R1
+	## neighbours, the results are unioned, sorted and capped.
+	##
+	## Without these kinds a card like "主产铁矿的地块：周围 1 格工业 +10%" could
+	## only be anchored on the country's first owned cell, so it silently buffed
+	## the capital's neighbourhood instead of every iron cell's.
+	TAG_SOURCE_R1 = 14,
+	## Same, R2.
+	TAG_SOURCE_R2 = 15,
 	## Authoring ceiling. Validate against this, never against a named kind:
 	## the previous check compared with DISTANCE_N, so kinds 12 and 13 were
 	## rejected by the authoring layer long after the runtime accepted them.
-	SELECTOR_MAX_KIND = 13,
+	SELECTOR_MAX_KIND = 15,
 }
 
 ## Hard cap mirrored from EffectRuntime::SELECTOR_MAX_CELLS.
@@ -80,6 +91,15 @@ const MAX_SELECTOR_TAGS := 4
 
 ## Matches an IdeologyCatalog card-effect `definition_key`.
 @export var definition_key: StringName = &""
+## One player-facing line for the card face ("聚落地块：出生率 +5%，住房需求 -8%").
+##
+## A program row has no Modifier definition of its own, so the catalog's
+## Modifier presenter cannot render it. Without this field a cell-level card
+## would show only its cost line -- the effect would exist, apply, and be
+## invisible. Authored here rather than derived from the commands because the
+## tag condition ("聚落地块") is what makes the numbers readable, and that lives
+## on the selector, not on any single command.
+@export_multiline var summary: String = ""
 @export var target_domain: int = TargetDomain.COUNTRY
 @export var operation: int = Operation.ADD
 @export var lifecycle: int = Lifecycle.PERMANENT
@@ -204,7 +224,9 @@ func validate() -> String:
 	if not tag_names.is_empty():
 		if target_selector_kind not in [
 				TargetSelectorKind.OWN_TERRITORY,
-				TargetSelectorKind.TAG_ANY_CELL]:
+				TargetSelectorKind.TAG_ANY_CELL,
+				TargetSelectorKind.TAG_SOURCE_R1,
+				TargetSelectorKind.TAG_SOURCE_R2]:
 			return "ideology_effect_selector_tag_kind_invalid"
 		if target_selector_param.size() > 1 \
 				and int(target_selector_param[1]) != 0:

@@ -126,6 +126,8 @@ void DCWorldExt::_bind_methods() {
                           &DCWorldExt::get_runtime_climate_parity_divergence);
      ClassDB::bind_method(D_METHOD("set_runtime_climate_parity_forcing", "enabled"),
                           &DCWorldExt::set_runtime_climate_parity_forcing);
+    ClassDB::bind_method(D_METHOD("set_runtime_ideology_parity_enabled", "enabled"),
+                         &DCWorldExt::set_runtime_ideology_parity_enabled);
     ClassDB::bind_method(D_METHOD("capture_country_runtime_snapshot"),
                          &DCWorldExt::capture_country_runtime_snapshot);
     ClassDB::bind_method(D_METHOD("capture_country_pod_catalog"),
@@ -470,6 +472,8 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(D_METHOD("explain_modifier_stat", "domain", "entity_handle",
                                   "group_handle", "stat_key", "base_value"),
                          &DCWorldExt::explain_modifier_stat);
+    ClassDB::bind_method(D_METHOD("resolve_modifier_definition_terms", "definition_key"),
+                         &DCWorldExt::resolve_modifier_definition_terms);
     ClassDB::bind_method(D_METHOD("get_modifier_report"),
                          &DCWorldExt::get_modifier_report);
     ClassDB::bind_method(D_METHOD("poll_modifier_events", "after_event_id", "limit"),
@@ -641,6 +645,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::run_ideology_daily);
     ClassDB::bind_method(D_METHOD("ideology_should_run", "day_index"),
                          &DCWorldExt::ideology_should_run);
+    ClassDB::bind_method(D_METHOD("step_ideology_instance_refresh", "day_index"),
+                         &DCWorldExt::step_ideology_instance_refresh);
     ClassDB::bind_method(D_METHOD("apply_runtime_ideology_snapshot",
                          "after_generation"),
                          &DCWorldExt::apply_runtime_ideology_snapshot,
@@ -649,6 +655,24 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_ideology_snapshot);
     ClassDB::bind_method(D_METHOD("get_ideology_effect_instance_report", "country_handle"),
                          &DCWorldExt::get_ideology_effect_instance_report);
+    ClassDB::bind_method(D_METHOD("set_ideology_cell_program_entry_for_test",
+            "stat_id", "filter_tag", "operation", "coef_q16",
+            "column_kind", "column_tag", "cap_units"),
+                         &DCWorldExt::set_ideology_cell_program_entry_for_test);
+    ClassDB::bind_method(D_METHOD("get_city_output_factor_q16", "cell", "good_id"),
+                         &DCWorldExt::get_city_output_factor_q16);
+    ClassDB::bind_method(D_METHOD("set_ideology_cell_plane_enabled", "enabled"),
+                         &DCWorldExt::set_ideology_cell_plane_enabled);
+    ClassDB::bind_method(D_METHOD("publish_ideology_cell_programs"),
+                         &DCWorldExt::publish_ideology_cell_programs);
+    ClassDB::bind_method(D_METHOD("get_ideology_cell_program_summary"),
+                         &DCWorldExt::get_ideology_cell_program_summary);
+    ClassDB::bind_method(D_METHOD("resolve_effect_program_modifier_commands", "program_key"),
+                         &DCWorldExt::resolve_effect_program_modifier_commands);
+    ClassDB::bind_method(D_METHOD("reconcile_ideology_effects_for_test", "country_handle"),
+                         &DCWorldExt::reconcile_ideology_effects_for_test);
+    ClassDB::bind_method(D_METHOD("apply_ideology_self_snapshot_for_test", "generation"),
+                         &DCWorldExt::apply_ideology_self_snapshot_for_test);
     ClassDB::bind_method(D_METHOD("effect_program_is_managed", "program_key"),
                          &DCWorldExt::effect_program_is_managed);
     ClassDB::bind_method(D_METHOD("query_effect_target_cells",
@@ -663,8 +687,13 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(D_METHOD("explain_ideologies",
                          "country_handle", "ideology_ids"),
                          &DCWorldExt::explain_ideologies);
+    ClassDB::bind_method(D_METHOD("compute_idea_activation_signature_for_test",
+            "handle", "ideology_id"),
+                         &DCWorldExt::compute_idea_activation_signature_for_test);
     ClassDB::bind_method(D_METHOD("get_ideology_report"),
                          &DCWorldExt::get_ideology_report);
+    ClassDB::bind_method(D_METHOD("get_ideology_business_state"),
+                         &DCWorldExt::get_ideology_business_state);
     ClassDB::bind_method(D_METHOD("capture_ideology_state"),
                          &DCWorldExt::capture_ideology_state);
     ClassDB::bind_method(D_METHOD("restore_ideology_state", "bytes"),
@@ -713,6 +742,13 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::economy_deadline_critical);
     ClassDB::bind_method(D_METHOD("get_economy_live_cells"),
                          &DCWorldExt::get_economy_live_cells);
+    ClassDB::bind_method(D_METHOD("set_effect_metric_override_for_test",
+            "metric", "value", "has_value"),
+                         &DCWorldExt::set_effect_metric_override_for_test);
+    ClassDB::bind_method(D_METHOD("refresh_effect_input_digest_for_test"),
+                         &DCWorldExt::refresh_effect_input_digest_for_test);
+    ClassDB::bind_method(D_METHOD("get_effect_input_revisions"),
+                         &DCWorldExt::get_effect_input_revisions);
     ClassDB::bind_method(D_METHOD("get_economy_report"),
                          &DCWorldExt::get_economy_report);
     ClassDB::bind_method(D_METHOD("get_economy_committed_audit_report"),

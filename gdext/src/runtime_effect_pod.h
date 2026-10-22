@@ -15,7 +15,17 @@ namespace pk {
 // F2-F6 Effect worker ABI.  This header intentionally contains no Godot type,
 // allocator, callback, or object reference.  The main thread compiles the
 // catalog once and the worker only sees the immutable numeric projection.
-constexpr uint32_t RUNTIME_EFFECT_POD_ABI_VERSION = 1u;
+// 2: instances carry the per-instance magnitude scale and the latch. Both are
+// decided by this authority under worker ownership, so they have to travel on
+// the wire or a write-back silently reverts them to 1.0 / 0.
+// 3: the latch is now actually carried end to end. ABI 2 declared the field on
+// both structs and serialized it, but the forwarder never READ a `latched` column
+// and no producer ever wrote one, so the value was always 0 across an authority
+// flip while the comment above claimed otherwise. The snapshot layout is
+// unchanged (the byte was already there); the version moves because the MEANING of
+// that byte changed from "always 0" to "the evaluating side's latch", and an ABI-2
+// payload must not be trusted to mean the latter.
+constexpr uint32_t RUNTIME_EFFECT_POD_ABI_VERSION = 3u;
 constexpr uint32_t RUNTIME_EFFECT_POD_CATALOG_VERSION = 1u;
 constexpr uint32_t RUNTIME_EFFECT_POD_MAX_DEFINITIONS = 65536u;
 constexpr uint32_t RUNTIME_EFFECT_POD_MAX_METRICS = 65536u;
@@ -276,6 +286,11 @@ struct RuntimeEffectPodInstanceInput {
     // the pod only derives it inside evaluate(), so an instance whose trigger
     // never fires would otherwise stay alive forever.
     int64_t expires_day = -1;
+    // L3-9: per-instance multiplier, Q16. Absent column means 1.0, which is what
+    // every pre-existing caller passes.
+    int32_t magnitude_scale_q16 = 65536;
+    // Carried only across an authority flip; the evaluating side owns it.
+    uint8_t latched = 0;
     bool active = true;
 };
 
@@ -289,6 +304,7 @@ struct RuntimeEffectPodInstance {
     uint64_t target_handle = 0;
     uint32_t target_generation = 0;
     int32_t level = 0;
+    int32_t magnitude_scale_q16 = 65536;
     uint32_t metric_base = 0;
     int64_t input_revision = 0;
     int64_t last_evaluated_input_revision = 0;
@@ -460,6 +476,7 @@ public:
     static uint32_t adapter_ack_bit(RuntimeEffectPodAction action) noexcept;
     static uint16_t adapter_domain(RuntimeEffectPodAction action) noexcept;
     static bool self_test(std::string &error);
+    static bool magnitude_scale_self_test(std::string &error);
     // Cell 0 is a real target: a cell-domain program addresses a raw cell index,
     // and the main thread has always accepted handle 0 there. Guards the
     // instance validation, the EFP1 restore and compile_command against drifting
@@ -482,7 +499,7 @@ public:
     // the whole catalog fail validation, which left the EFFECT bit of the
     // completed-mask unset and stopped the entire twelve-domain authority graph
     // from ever being granted. scripts/effect/effect_catalog.gd mirrors both.
-    static constexpr int32_t MAX_SELECTOR_KIND = 13;  // TAG_ANY_CELL
+    static constexpr int32_t MAX_SELECTOR_KIND = 15;  // TAG_SOURCE_R2
     static constexpr int32_t MAX_STATE_ID = 5;        // STATE_LATCHED
 
     // ── Cross-thread value contract ─────────────────────────────────────────

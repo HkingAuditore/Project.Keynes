@@ -38,6 +38,14 @@ Dictionary forwarder_failure(const char *reason) {
     return out;
 }
 
+// A scale outside [0.25x, 4x] is clamped rather than rejected: the batch is
+// produced by our own caller, and a rejected row would silently drop a card
+// instead of capping a mis-authored multiplier.
+int32_t magnitude_scale_at(const PackedInt32Array &values, int32_t index) {
+    const int32_t raw = index >= 0 && index < values.size() ? values[index] : 65536;
+    return std::clamp(raw, 65536 / 4, 65536 * 4);
+}
+
 int32_t i32_at(const PackedInt32Array &values, int32_t index, int32_t fallback) {
     return index < values.size() ? values[index] : fallback;
 }
@@ -183,9 +191,23 @@ Dictionary EffectInstanceForwarder::submit_batch(const Dictionary &batch) {
     const PackedInt32Array target_generations = batch.get(
         "target_generations", PackedInt32Array());
     const PackedInt32Array levels = batch.get("levels", PackedInt32Array());
+    // L3-9: already present on every submit_instances batch. The forwarder used
+    // to ignore it, so under worker authority the scale silently collapsed to
+    // 1.0 -- and the main-thread consumer is suppressed there, so nothing else
+    // could apply it either.
+    const PackedInt32Array magnitude_scales = batch.get("magnitude_scales",
+                                                        PackedInt32Array());
     const PackedInt64Array next_due_days = batch.get("next_due_days",
                                                       PackedInt64Array());
     const PackedByteArray active = batch.get("active", PackedByteArray());
+    // A5: the last raw condition result, so a latch survives an authority flip.
+    //
+    // Absent column means 0, which is the pre-existing "not latched" default and
+    // what every caller that does not care about latching passes. The consumer's
+    // `upsert_instance` keeps its own value when the identity is unchanged and
+    // only takes the wire value on a new generation, so a steady stream of 0s
+    // cannot clear a live latch.
+    const PackedByteArray latched_column = batch.get("latched", PackedByteArray());
 
     if (!worker_path) {
         // Legacy authority keeps EffectRuntime as the writer of record.
@@ -226,6 +248,11 @@ Dictionary EffectInstanceForwarder::submit_batch(const Dictionary &batch) {
                 std::max(0, i32_at(target_generations, i, 0)));
             input.level = i32_at(levels, i, 0);
             input.next_due_day = i64_at(next_due_days, i, 0);
+            // The shadow has to mirror the scale too: authority can flip at any
+            // time and a shadow stuck at 1.0 would then become the truth.
+            input.magnitude_scale_q16 = magnitude_scale_at(magnitude_scales, i);
+            input.latched = i >= 0 && i < latched_column.size()
+                && latched_column[i] != 0 ? 1 : 0;
             input.active = i >= active.size() || active[i] != 0;
             std::string mirror_error;
             if (_host->queue_effect_pod_instance(input, mirror_error))
@@ -292,6 +319,9 @@ Dictionary EffectInstanceForwarder::submit_batch(const Dictionary &batch) {
             std::max(0, i32_at(target_generations, i, 0)));
         input.level = i32_at(levels, i, 0);
         input.next_due_day = i64_at(next_due_days, i, 0);
+        input.magnitude_scale_q16 = magnitude_scale_at(magnitude_scales, i);
+        input.latched = i >= 0 && i < latched_column.size()
+            && latched_column[i] != 0 ? 1 : 0;
         input.active = row_active;
         std::string queue_error;
         if (_host->queue_effect_pod_instance(input, queue_error)) {

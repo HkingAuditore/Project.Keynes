@@ -1791,7 +1791,7 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		_loading_profile_step("ideology_facade.configure(")
 		var ideology_configured: Dictionary = ideology_facade.configure(
 			_data_core_world_ext, _country_facade.native_catalog(), null,
-			_economy_facade.native_catalog())
+			_economy_facade.native_catalog(), seed_value)
 		if bool(ideology_configured.get("ok", false)):
 			_ideology_facade = ideology_facade
 		else:
@@ -2143,6 +2143,16 @@ func apply_runtime_trigger_snapshot(after_generation: int) -> Dictionary:
 
 func apply_runtime_ideology_snapshot(after_generation: int) -> Dictionary:
 	return _forward_runtime_snapshot_apply("apply_runtime_ideology_snapshot", after_generation)
+
+
+## P1-A: under IDEOLOGY worker authority the main-thread daily job is suppressed,
+## so the host pumps the sliced instance refresh itself. One call = at most one
+## country budget; `done == false` means "call again".
+func step_ideology_instance_refresh(day_index: int) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
+			"step_ideology_instance_refresh"):
+		return {"ok": false, "code": "runtime_worker_api_missing"}
+	return _data_core_world_ext.step_ideology_instance_refresh(day_index)
 
 
 func apply_runtime_modifier_snapshot(after_generation: int) -> Dictionary:
@@ -2958,7 +2968,7 @@ func prepare_economy_save_restore_runtime() -> Dictionary:
 			var ideology_facade := IdeologyFacadeScript.new()
 			var ideology_configured: Dictionary = ideology_facade.configure(
 				_data_core_world_ext, _country_facade.native_catalog(), null,
-				_economy_facade.native_catalog())
+				_economy_facade.native_catalog(), _save_restore_seed)
 			if not bool(ideology_configured.get("ok", false)):
 				return ideology_configured
 			_ideology_facade = ideology_facade

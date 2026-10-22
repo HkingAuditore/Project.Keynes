@@ -4766,12 +4766,17 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
     // end of the capture) means a later capture failure leaves a territory index
     // that is stale in exactly the same way as the rest of the epoch state.
     rebuild_country_territory_index();
-    // The tag bitset reads per-cell metrics, so it is only valid for the epoch
-    // that produced them. Dropping it here (rather than rebuilding eagerly)
-    // keeps save/load free for the many games whose cards use no tags at all.
-    _epoch_tag_bits_valid = false;
-    _epoch_tag_bits.clear();
-    _epoch_tag_words = 0;
+    // The tag tables read per-cell metrics, so they are only valid for the epoch
+    // that produced them.
+    //
+    // R-3, stated precisely: the tag tables are safe to read concurrently because
+    // they are immutable snapshots swapped by atomic store, NOT because this whole
+    // function is atomic. The territory index right above
+    // (`rebuild_country_territory_index`) is still rewritten IN PLACE -- it always
+    // was -- so a reader that needs territory and tags together must hold the input
+    // capture boundary lock, which is why `step_ideology_instance_refresh` takes it.
+    // Reading only the tag snapshot needs no lock at all.
+    rebuild_epoch_tag_snapshot();
     _epoch_country_technology_words = snapshot.technology_words;
     _epoch_country_generation = snapshot.generation;
     _epoch_country_hash = snapshot.state_hash;
@@ -6541,6 +6546,46 @@ void NativeEconomyRuntime::refresh_city_modifier_factors() {
     _epoch_city_factor_valid = true;
 }
 
+int32_t NativeEconomyRuntime::neighbor_count_with_tag(
+        int32_t cell, int32_t tag) const {
+    if (cell < 0 || cell >= _cell_count.get()) return 0;
+    std::vector<int32_t> neighbors;
+    collect_effect_target_cells(cell, EffectRuntime::SELECTOR_NEIGHBORS_R1,
+                                EffectRuntime::SELECTOR_MAX_CELLS, 0, neighbors);
+    // R-3b: ONE load, outside the loop. The neighbour walk visits at most 18 cells,
+    // but this is called per cell from other loops, so a per-neighbour load would
+    // multiply the shared_ptr spin lock by the caller's own iteration count.
+    const std::shared_ptr<const TagSnapshot> tags_here =
+        tag >= 0 ? tag_snapshot() : std::shared_ptr<const TagSnapshot>();
+    const TagSnapshot *const tags_ptr = tags_here.get();
+    int32_t count = 0;
+    for (const int32_t neighbor : neighbors) {
+        if (neighbor == cell) continue;
+        if (tag >= 0 && !snapshot_has_tag(tags_ptr, neighbor, tag)) continue;
+        ++count;
+    }
+    return count;
+}
+
+int32_t NativeEconomyRuntime::city_output_factor_for_test(
+        int32_t cell, int32_t good_id) const {
+    return city_good_output_factor_q16(cell, good_id);
+}
+
+void NativeEconomyRuntime::set_ideology_cell_programs(CellProgramTable table) {
+    _ideology_cell_programs = std::move(table);
+    // Force the next refresh to run even when the new table carries the same
+    // generation. Two publishers can legitimately both say "generation 1", and
+    // the cache guard compares generations -- without this the newer table is
+    // silently ignored and the reader keeps the old factors.
+    _epoch_city_output_ideology_generation =
+        std::numeric_limits<uint64_t>::max();
+    // Rebuild now instead of on the next economy step: the CSR is read by
+    // production between steps, and a caller that publishes and then reads would
+    // otherwise see the previous day's factors.
+    refresh_city_output_modifier_factors();
+}
+
 void NativeEconomyRuntime::refresh_city_output_modifier_factors() {
     const size_t cells = static_cast<size_t>(std::max(0, _cell_count.get()));
     const size_t good_count = _good_ids.size();
@@ -6565,7 +6610,8 @@ void NativeEconomyRuntime::refresh_city_output_modifier_factors() {
         ModifierRuntime::ECONOMY, _city_good_output_stat_ids.data(),
         _city_good_output_stat_ids.size());
     if (_epoch_city_output_factor_valid && shape_valid &&
-        _epoch_city_output_factor_stat_version == version)
+        _epoch_city_output_factor_stat_version == version &&
+        _epoch_city_output_ideology_generation == _ideology_cell_programs.generation)
         return;
 
     _city_output_shared_goods_q16.resize(good_count);
@@ -6616,6 +6662,80 @@ void NativeEconomyRuntime::refresh_city_output_modifier_factors() {
         overrides.push_back({static_cast<int32_t>(scope), good, factor_q16});
     }
     std::sort(overrides.begin(), overrides.end());
+    // P3 step 3: the Ideology plane writes the same per-cell stat from the
+    // country side, so it has to land in THIS CSR. Two readers of one stat would
+    // otherwise disagree depending on who asked first.
+    if (!_ideology_cell_programs.entries.empty() && good_count > 0) {
+        std::unordered_map<int64_t, int32_t> merged;
+        merged.reserve(overrides.size() + _ideology_cell_programs.entries.size());
+        for (const OutputOverride &entry : overrides)
+            merged[static_cast<int64_t>(entry.cell) *
+                static_cast<int64_t>(good_count) + entry.good] = entry.factor_q16;
+        const size_t country_slots = _ideology_cell_programs.country_offsets.empty()
+            ? 0 : _ideology_cell_programs.country_offsets.size() - 1;
+        // R-3b: ONE load for the whole (country x cell x entry) nest. This is the
+        // widest loop in the file that filters by tag, so a per-entry
+        // `cell_has_target_tag` here was cells x entries process-wide spin locks.
+        const std::shared_ptr<const TagSnapshot> filter_tags = tag_snapshot();
+        const TagSnapshot *const filter_tags_ptr = filter_tags.get();
+        for (size_t country_slot = 0; country_slot < country_slots; ++country_slot) {
+            const int32_t begin = _ideology_cell_programs.country_offsets[country_slot];
+            const int32_t end = _ideology_cell_programs.country_offsets[country_slot + 1];
+            if (begin >= end) continue;
+            const int32_t owned = country_cell_count(static_cast<int32_t>(country_slot));
+            for (int32_t index = 0; index < owned; ++index) {
+                const int32_t cell = country_cell_at(
+                    static_cast<int32_t>(country_slot), index);
+                if (cell < 0 || cell >= static_cast<int32_t>(cells)) continue;
+                for (int32_t offset = begin; offset < end; ++offset) {
+                    const CellProgramEntry &entry = _ideology_cell_programs.entries[
+                        static_cast<size_t>(offset)];
+                    if (entry.filter_tag >= 0 &&
+                        !snapshot_has_tag(filter_tags_ptr, cell, entry.filter_tag))
+                        continue;
+                    const auto good_found = good_by_stat.find(entry.stat_id);
+                    if (good_found == good_by_stat.end()) continue;
+                    const int32_t good = good_found->second;
+                    const int64_t key = static_cast<int64_t>(cell) *
+                        static_cast<int64_t>(good_count) + good;
+                    const auto current = merged.find(key);
+                    const int32_t base = current == merged.end()
+                        ? _city_output_shared_goods_q16[static_cast<size_t>(good)]
+                        : current->second;
+                    // The column turns a flat coefficient into "per unit". A
+                    // CONSTANT entry is exactly the old behaviour (units = 1),
+                    // so a table built before columns existed behaves identically.
+                    int32_t units = 1;
+                    if (entry.column_kind == CELL_COLUMN_NEIGHBOR_COUNT)
+                        units = neighbor_count_with_tag(cell, entry.column_tag);
+                    else if (entry.column_kind != CELL_COLUMN_CONSTANT)
+                        continue;  // unknown kind: fail closed, do not guess
+                    if (entry.cap_units > 0) units = std::min(units, entry.cap_units);
+                    if (units <= 0) continue;
+                    const int64_t scaled = static_cast<int64_t>(entry.coef_q16) *
+                        static_cast<int64_t>(units);
+                    merged[key] = entry.operation == ModifierRuntime::ADD
+                        ? static_cast<int32_t>(std::clamp<int64_t>(
+                            static_cast<int64_t>(base) + scaled,
+                            std::numeric_limits<int32_t>::min(),
+                            std::numeric_limits<int32_t>::max()))
+                        : static_cast<int32_t>(static_cast<int64_t>(base) *
+                            scaled / Q16_ONE);
+                }
+            }
+        }
+        overrides.clear();
+        overrides.reserve(merged.size());
+        for (const auto &row : merged) {
+            const int32_t good = static_cast<int32_t>(row.first % good_count);
+            const int32_t cell = static_cast<int32_t>(row.first / good_count);
+            if (row.second == _city_output_shared_goods_q16[
+                    static_cast<size_t>(good)])
+                continue;
+            overrides.push_back({cell, good, row.second});
+        }
+        std::sort(overrides.begin(), overrides.end());
+    }
     _city_output_cell_offsets.assign(cells + 1, 0);
     for (const OutputOverride &entry : overrides)
         ++_city_output_cell_offsets[static_cast<size_t>(entry.cell) + 1];
@@ -6628,6 +6748,7 @@ void NativeEconomyRuntime::refresh_city_output_modifier_factors() {
         _city_output_factors_q16[index] = overrides[index].factor_q16;
     }
     _epoch_city_output_factor_stat_version = version;
+    _epoch_city_output_ideology_generation = _ideology_cell_programs.generation;
     _epoch_city_output_factor_valid = true;
 }
 
@@ -16192,11 +16313,22 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
     int64_t cell_employed = 0;
     int64_t cell_funds = 0;
     std::vector<uint8_t> employed_professions;
+    // X3: the profession mix needs per-profession population, which is the same
+    // walk the unemployment rows already do. One extra accumulator beats a
+    // second pass over the cell's cohorts.
+    const bool wants_profession_mix =
+        requested(FAMILY_METRIC_CELL_DOMINANT_PROFESSION_ID) ||
+        requested(FAMILY_METRIC_CELL_DOMINANT_PROFESSION_SHARE_Q16) ||
+        requested(FAMILY_METRIC_CELL_PROFESSION_COUNT);
+    std::vector<int64_t> profession_people;
     if (requested(FAMILY_METRIC_CELL_UNEMPLOYMENT_Q16) ||
         requested(FAMILY_METRIC_CELL_VACANT_PROFESSION_COUNT) ||
-        requested(FAMILY_METRIC_FAMILY_CASH_PER_CAPITA_VS_CELL_Q16)) {
+        requested(FAMILY_METRIC_FAMILY_CASH_PER_CAPITA_VS_CELL_Q16) ||
+        wants_profession_mix) {
         if (requested(FAMILY_METRIC_CELL_VACANT_PROFESSION_COUNT))
             employed_professions.assign(_profession_ids.size(), 0);
+        if (wants_profession_mix)
+            profession_people.assign(_profession_ids.size(), 0);
         population_store().for_each_in_cell(cell, [&](int32_t slot) {
             const int64_t people = std::max<int64_t>(0, population_store().population[slot]);
             cell_population += people;
@@ -16214,8 +16346,141 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
                 if (profession >= 0 &&
                     static_cast<size_t>(profession) < employed_professions.size())
                     employed_professions[static_cast<size_t>(profession)] = 1;
+                if (profession >= 0 &&
+                    static_cast<size_t>(profession) < profession_people.size())
+                    profession_people[static_cast<size_t>(profession)] += people;
             }
         });
+    }
+    if (wants_profession_mix) {
+        int64_t total_people = 0;
+        int64_t best_people = 0;
+        int32_t best_profession = -1;
+        int32_t profession_count = 0;
+        for (size_t profession = 0; profession < profession_people.size(); ++profession) {
+            const int64_t people = profession_people[profession];
+            if (people <= 0) continue;
+            ++profession_count;
+            total_people += people;
+            if (people > best_people) {
+                best_people = people;
+                best_profession = static_cast<int32_t>(profession);
+            }
+        }
+        if (requested(FAMILY_METRIC_CELL_DOMINANT_PROFESSION_ID))
+            metrics[FAMILY_METRIC_CELL_DOMINANT_PROFESSION_ID] =
+                best_profession < 0 ? -Q16_ONE : count_q16(best_profession);
+        if (requested(FAMILY_METRIC_CELL_DOMINANT_PROFESSION_SHARE_Q16))
+            metrics[FAMILY_METRIC_CELL_DOMINANT_PROFESSION_SHARE_Q16] =
+                total_people > 0
+                    ? std::clamp<int64_t>(best_people * Q16_ONE / total_people,
+                        0, Q16_ONE)
+                    : 0;
+        if (requested(FAMILY_METRIC_CELL_PROFESSION_COUNT))
+            metrics[FAMILY_METRIC_CELL_PROFESSION_COUNT] = count_q16(profession_count);
+    }
+    // X2: the neighbourhood's population. O(6), so it is safe in the hot path;
+    // a missing or stale neighbour graph reads 0 rather than guessing.
+    if (requested(FAMILY_METRIC_CELL_NEIGHBOR_POPULATION_Q16)) {
+        int64_t neighbor_population = 0;
+        if (_building_neighbors.size() ==
+                static_cast<size_t>(_cell_count.get()) * 6) {
+            for (int32_t direction = 0; direction < 6; ++direction) {
+                const int32_t neighbor = _building_neighbors[
+                    static_cast<size_t>(cell) * 6 + static_cast<size_t>(direction)];
+                if (neighbor < 0 ||
+                    neighbor >= static_cast<int32_t>(_committed_cells.size()))
+                    continue;
+                neighbor_population += std::max<int64_t>(
+                    0, _committed_cells[static_cast<size_t>(neighbor)].population);
+            }
+        }
+        int64_t neighbor_saturate = 0;
+        metrics[FAMILY_METRIC_CELL_NEIGHBOR_POPULATION_Q16] = saturating_mul(
+            neighbor_population, Q16_ONE, neighbor_saturate);
+    }
+    // X11: mean income-tax rate across professions, in basis points. Read from
+    // the frozen epoch shape (see `tax_shape_valid`), never from live stores.
+    if (requested(FAMILY_METRIC_COUNTRY_INCOME_TAX_BURDEN_BP)) {
+        const int32_t tax_country = cell_country_slot(cell);
+        const int64_t professions =
+            static_cast<int64_t>(_profession_ids.size());
+        int64_t burden = 0;
+        if (tax_country >= 0 && professions > 0 &&
+            _epoch_income_tax_rates.size() >=
+                static_cast<size_t>(tax_country + 1) * _profession_ids.size()) {
+            int64_t total = 0;
+            const size_t begin = static_cast<size_t>(tax_country) *
+                _profession_ids.size();
+            for (size_t profession = 0; profession < _profession_ids.size();
+                    ++profession)
+                total += _epoch_income_tax_rates[begin + profession];
+            burden = total / professions;
+        }
+        metrics[FAMILY_METRIC_COUNTRY_INCOME_TAX_BURDEN_BP] = burden;
+    }
+    // X7: how many of the country's own cells match each counted tag. Published
+    // as a country scalar on every cell, so a cell-domain card can gate on "my
+    // country owns at least N mining cells". Counts go through count_q16 like
+    // every other count/id metric, because tag thresholds are Q16 too.
+    if (requested(FAMILY_METRIC_COUNTRY_AGRICULTURE_CELL_COUNT) ||
+        requested(FAMILY_METRIC_COUNTRY_EXTRACTIVE_CELL_COUNT) ||
+        requested(FAMILY_METRIC_COUNTRY_MANUFACTURING_CELL_COUNT) ||
+        requested(FAMILY_METRIC_COUNTRY_CHAINED_CELL_COUNT) ||
+        requested(FAMILY_METRIC_COUNTRY_SPECIALIZED_CELL_COUNT) ||
+        requested(FAMILY_METRIC_COUNTRY_MARKET_CELL_COUNT) ||
+        requested(FAMILY_METRIC_COUNTRY_SETTLEMENT_CELL_COUNT) ||
+        requested(FAMILY_METRIC_COUNTRY_SILVER_CELL_COUNT) ||
+        requested(FAMILY_METRIC_COUNTRY_SALT_CELL_COUNT) ||
+        requested(FAMILY_METRIC_COUNTRY_IRON_ORE_CELL_COUNT) ||
+        requested(FAMILY_METRIC_COUNTRY_COAL_CELL_COUNT)) {
+        // R-3: ONE atomic load of the immutable snapshot. The local pointer keeps
+        // the counts alive for this read even if a commit publishes a new epoch
+        // underneath it, so `count_in_range` and the reads below all describe the
+        // same snapshot.
+        const std::shared_ptr<const TagSnapshot> tag_snapshot_local = tag_snapshot();
+        // Slot count must match kCountryTagCountSlots exactly; the metric id
+        // array below is the other half of that contract.
+        constexpr int32_t kSlots = 11;
+        const int32_t count_country = cell_country_slot(cell);
+        const size_t base = count_country >= 0
+            ? static_cast<size_t>(count_country) * kSlots : 0;
+        const bool count_in_range = count_country >= 0 &&
+            tag_snapshot_local != nullptr &&
+            base + kSlots <= tag_snapshot_local->country_tag_counts.size();
+        const int32_t count_metric_ids[kSlots] = {
+            FAMILY_METRIC_COUNTRY_AGRICULTURE_CELL_COUNT,
+            FAMILY_METRIC_COUNTRY_EXTRACTIVE_CELL_COUNT,
+            FAMILY_METRIC_COUNTRY_MANUFACTURING_CELL_COUNT,
+            FAMILY_METRIC_COUNTRY_CHAINED_CELL_COUNT,
+            FAMILY_METRIC_COUNTRY_SPECIALIZED_CELL_COUNT,
+            FAMILY_METRIC_COUNTRY_MARKET_CELL_COUNT,
+            FAMILY_METRIC_COUNTRY_SETTLEMENT_CELL_COUNT,
+            FAMILY_METRIC_COUNTRY_SILVER_CELL_COUNT,
+            FAMILY_METRIC_COUNTRY_SALT_CELL_COUNT,
+            FAMILY_METRIC_COUNTRY_IRON_ORE_CELL_COUNT,
+            FAMILY_METRIC_COUNTRY_COAL_CELL_COUNT,
+        };
+        for (int32_t slot = 0; slot < kSlots; ++slot) {
+            metrics[count_metric_ids[slot]] = count_in_range
+                ? count_q16(tag_snapshot_local->country_tag_counts[
+                    base + static_cast<size_t>(slot)])
+                : 0;
+        }
+    }
+    // X7b: distinct goods with at least one specialized cell in this country.
+    if (requested(FAMILY_METRIC_COUNTRY_DISTINCT_SPECIALIZED_GOOD_COUNT)) {
+        // R-3: read from the same immutable snapshot as the tag counts, one load.
+        const std::shared_ptr<const TagSnapshot> specialized_snapshot =
+            tag_snapshot();
+        const int32_t distinct_country = cell_country_slot(cell);
+        metrics[FAMILY_METRIC_COUNTRY_DISTINCT_SPECIALIZED_GOOD_COUNT] =
+            specialized_snapshot != nullptr && distinct_country >= 0 &&
+            static_cast<size_t>(distinct_country) <
+                specialized_snapshot->country_specialized_good_count.size()
+            ? count_q16(specialized_snapshot->country_specialized_good_count[
+                static_cast<size_t>(distinct_country)])
+            : 0;
     }
     if (requested(FAMILY_METRIC_CELL_UNEMPLOYMENT_Q16)) {
         const int64_t unemployed = std::max<int64_t>(0, cell_population - cell_employed);
@@ -16557,6 +16822,34 @@ void NativeEconomyRuntime::sample_effect_metrics(
     // must read 0 rather than inherit whatever family happened to be nearby.
     fill_family_behavior_metrics(-1, -1, cell, out_metrics, metric_count,
                                  metric_mask);
+    // R-3b: the test override belongs HERE, not only in the digest.
+    //
+    // `set_effect_metric_override_for_test` exists because a headless fixture cannot
+    // steer a metric precisely enough to cross a threshold on demand. It was applied
+    // by `refresh_effect_input_digest` alone, so the digest and the tag bitset read
+    // DIFFERENT epochs: the digest hashed the override while `rebuild_epoch_tag_snapshot`
+    // sampled the raw value, which means a fixture that moved the override could flip
+    // a revision without ever flipping a tag (and a tag stress test could never make
+    // `tag_changes` happen at all). Applying it at the one sampling point makes
+    // "what the epoch contains" answer the same question everywhere.
+    //
+    // Deliberately NOT gated on `metric_mask.test(metric)`: the mask is the set of
+    // metrics a TAG ROW named by key, while the override is set by NUMBER. A fixture
+    // that overrides metric 13 to move `cell.population` and a tag table that reaches
+    // population through a different key would otherwise silently disagree -- the
+    // override would be set and never read, and the reported symptom would be "the
+    // tag never flipped" rather than "the override was filtered out".
+    const std::shared_ptr<const EffectMetricOverrideSet> overrides =
+        std::atomic_load_explicit(&_effect_metric_override_snapshot,
+            std::memory_order_acquire);
+    if (overrides == nullptr || out_metrics == nullptr) return;
+    const int32_t limit = std::min(metric_count,
+        static_cast<int32_t>(FAMILY_METRIC_COUNT));
+    for (int32_t metric = 0; metric < limit; ++metric) {
+        const size_t slot = static_cast<size_t>(metric);
+        if (overrides->set[slot] == 0) continue;
+        out_metrics[slot] = overrides->values[slot];
+    }
 }
 
 bool NativeEconomyRuntime::evaluate_family_behavior_conditions(
@@ -24389,9 +24682,10 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _epoch_cell_country.clear();
     _epoch_country_cell_offsets.clear();
     _epoch_country_cells.clear();
-    _epoch_tag_bits.clear();
-    _epoch_tag_words = 0;
-    _epoch_tag_bits_valid = false;
+    // R-3: drop the published tag snapshot with one atomic store. A reader that has
+    // already loaded it keeps it alive for the rest of its read.
+    std::atomic_store_explicit(&_tag_snapshot,
+        std::shared_ptr<const TagSnapshot>(), std::memory_order_release);
     _epoch_cell_visible.clear();
     _epoch_player_country_slot = -1;
     _epoch_trade_vision_gated = false;

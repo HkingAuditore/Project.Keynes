@@ -3,10 +3,12 @@
 #include "runtime_ideology_draw_kernel.h"
 #include "runtime_pod_protocol.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <climits>
 #include <string>
 #include <vector>
 
@@ -15,7 +17,13 @@ namespace pk {
 // 5: the offer row grew to IDEOLOGY_OFFER_CHOICE_CAPACITY and gained
 // choice_count, the country row gained banned_bits, and the opinion
 // snapshot gained the two draw-side per-country values.
-constexpr uint32_t RUNTIME_IDEOLOGY_POD_ABI_VERSION = 5u;
+// 6: the country row gained `trade_paid_day` and then the point-accrual
+// period/baseline-day markers, which were written WITHOUT bumping this constant
+// (R8-1). An ABI-5 reader would consume the v6 country row with the old field
+// layout, so version 6 makes an old payload fail by VERSION instead of
+// misreading it. Mirrors PKID 7 -> 8; the two move together because they
+// serialize the same `CountryState` shape.
+constexpr uint32_t RUNTIME_IDEOLOGY_POD_ABI_VERSION = 6u;
 constexpr uint32_t RUNTIME_IDEOLOGY_POD_MAX_COUNTRIES = 1u << 20;
 constexpr uint32_t RUNTIME_IDEOLOGY_POD_MAX_IDEAS = 65536u;
 constexpr uint32_t RUNTIME_IDEOLOGY_POD_MAX_COMMANDS = 1u << 20;
@@ -142,6 +150,11 @@ struct RuntimeIdeologyPodSynergy {
 struct RuntimeIdeologyPodCatalog {
     uint32_t abi_version = RUNTIME_IDEOLOGY_POD_ABI_VERSION;
     uint64_t catalog_hash = 0;
+    // World seed the offer RNG is mixed with. Must be identical on both sides; it
+    // is carried in the catalog for that reason. Without it the card order only
+    // depended on the country handle, so every session of the same map drew the
+    // same sequence.
+    uint64_t world_seed = 0;
     uint64_t country_catalog_hash = 0;
     uint64_t class_hash = 0;
     uint32_t class_count = 0;
@@ -215,6 +228,12 @@ struct RuntimeIdeologyOpinionSnapshot {
     uint64_t revision = 0;
     uint64_t class_hash = 0;
     int64_t committed_day = -1;
+    // Development period this opinion covers, expressed as a monotone index.
+    // Accrual is idempotent per PERIOD, not per revision (A1): the revision is
+    // bumped on every Economy publish, so two authorities that publish at
+    // different rates settled the same day different numbers of times. The
+    // period index is the same number on both sides for the same day.
+    int64_t period_index = -1;
     uint32_t country_count = 0;
     uint32_t class_count = 0;
     std::vector<uint64_t> country_handles;
@@ -283,6 +302,69 @@ struct RuntimeIdeologyPodOffer {
     void clear() { ideology_ids.fill(-1); choice_count = 0; active = 0; }
 };
 
+// Shared RNG seed constant. Both sides must derive `rng_state` from the SAME
+// inputs, never from `catalog_hash`: the main thread and the worker compute that
+// with different functions, so seeding from it made `rng_state` -- and therefore
+// the whole `draw` section -- permanently unequal.
+//
+// The world seed is part of the input on purpose. Hashing only the country handle
+// gave every session of the same map the same card order for a given country: two
+// different games drew identical sequences, which is a content bug rather than a
+// parity one. `world_seed` is the same number on both sides, so parity still
+// holds.
+constexpr uint64_t RUNTIME_IDEOLOGY_RNG_SEED_MIX = 0x9e3779b97f4a7c15ull;
+
+inline uint64_t runtime_ideology_country_rng_seed(uint64_t handle,
+                                                  uint64_t world_seed) {
+    // splitmix-style avalanche so nearby (handle, seed) pairs do not produce
+    // correlated streams.
+    uint64_t value = handle ^ world_seed * 0x9e3779b97f4a7c15ull;
+    value ^= value >> 30;
+    value *= 0xbf58476d1ce4e5b9ull;
+    value ^= value >> 27;
+    value *= 0x94d049bb133111ebull;
+    value ^= value >> 31;
+    return value ^ RUNTIME_IDEOLOGY_RNG_SEED_MIX;
+}
+
+// Trade is a FLOW: `trade_per_day` points are earned on every day that passes,
+// not once per settlement. Paying the full daily amount on every call made the
+// total a function of how many times the caller happened to run, which is how
+// two authorities with identical inputs produced 46859 vs 67969 points (R8-2).
+//
+// The correct account is "pay for the days that elapsed, once":
+//     trade = trade_per_day * (day - trade_paid_day)
+//
+//   - the first observation only seeds the marker (`paid` stays INT64_MIN), so a
+//     jump from INT64_MIN never pays for all of history;
+//   - a settlement that happens twice on the same day pays once;
+//   - a settlement that happens once every `period` days pays those `period`
+//     days (it is the same elapsed span, not a special case);
+//   - settling once or thirty times over the same 30 days pays the same total.
+//
+// NO period clamp. An earlier draft clamped the span to `period_days`, which
+// reintroduced exactly the settlement-count dependence this function exists to
+// remove: over 30 days with period 5, settling once paid 5000 and settling daily
+// paid 29000, because the single settlement could only claim one period of
+// elapsed time. The invariant "the total depends only on elapsed days" requires
+// the full span. `period_days` stays a parameter so callers still state the
+// cadence they are accounting for, but it does not cap the flow.
+//
+// Returns the amount owed and advances `paid`. Both authorities call THIS
+// function, so the two can never drift into different accounting.
+inline int64_t ideology_trade_flow_q16(int64_t trade_per_day, int64_t day,
+                                       int64_t period_days, int64_t &paid) {
+    (void)period_days;
+    if (paid == INT64_MIN) {          // first observation: baseline only
+        paid = day;
+        return 0;
+    }
+    const int64_t span = day - paid;
+    if (span <= 0) return 0;          // same day, or a day already paid
+    paid = day;
+    return trade_per_day * span;
+}
+
 struct RuntimeIdeologyPodPointLedger {
     int64_t population_q16 = 0;
     int64_t building_q16 = 0;
@@ -305,6 +387,12 @@ struct RuntimeIdeologyPodCountryState {
     int64_t baseline_population = 0;
     int64_t baseline_buildings = 0;
     int64_t lifetime_points_q16 = 0;
+    // Last day this row paid its trade flow. Trade is a FLOW, not a high-water
+    // delta, so a settlement must pay for the days that actually elapsed rather
+    // than for the number of times it happened to run. `accrue_points` reads
+    // this, clamps the elapsed span to the opinion period, and advances the
+    // marker; see `ideology_trade_flow_q16` below.
+    int64_t trade_paid_day = INT64_MIN;
     RuntimeIdeologyPodPointLedger ledger;
     std::array<int64_t, RUNTIME_IDEOLOGY_POD_HISTORY> history_q16{};
     uint64_t rng_state = 0;
@@ -383,6 +471,38 @@ struct RuntimeIdeologyPodSnapshot {
     std::vector<RuntimeIdeologyPodReceipt> receipts;
 };
 
+// Business-only hash for parity (review round 3): the same fields on both sides,
+// excluding transport (generation, cursors, watermarks, phases, opinion_revision)
+// and derived fields (slots used, active ids). `compute_state_hash` above includes
+// the transport fields, so main-thread and worker snapshots can never agree on it.
+// Per-section business hashes. The total is the mix of these seven, so any section
+// that differs shows up in the total; keeping them apart is what lets a parity
+// failure name the first diverging area instead of just "mismatch".
+struct IdeologyBusinessSections {
+    uint64_t points = 0;
+    uint64_t baseline = 0;
+    uint64_t history = 0;
+    uint64_t draw = 0;
+    uint64_t bits = 0;
+    uint64_t offer = 0;
+    uint64_t ideas = 0;
+    // `points` is a mix of three independent quantities and a single hash says
+    // only "one of them moved". Keeping the sub-hashes lets a parity failure
+    // name the actual field instead of sending the next reader back into the
+    // accrual call chain. They do not participate in the total hash.
+    uint64_t points_balance = 0;
+    uint64_t points_lifetime = 0;
+    uint64_t points_revision = 0;
+    // Ring cursor of the point-history buffer. Diagnostic only: it counts how
+    // many accruals wrote, so it depends on each side's Economy publish cadence
+    // and can never constrain business equality.
+    uint64_t history_cursor = 0;
+};
+void ideology_business_sections(const RuntimeIdeologyPodSnapshot &state,
+                                IdeologyBusinessSections &out);
+uint64_t ideology_business_hash(const RuntimeIdeologyPodSnapshot &state);
+
+
 // One Modifier row of an Ideology transition batch. All rows of a transition
 // share transition_id; the worker settles the transition only after every row
 // is ACKed by the Modifier POD.
@@ -457,12 +577,15 @@ public:
     // than looked up because the opinion snapshot is a per-stage argument, not
     // authority state — the worker never owns modifier values.
     int64_t reroll_cost_for(uint64_t draw_sequence, int32_t factor_q16) const;
+    // Public so the main-thread runtime can hash its exported snapshot with the
+    // SAME function the worker uses -- that shared implementation is the whole
+    // basis of ideology parity.
+    static uint64_t compute_state_hash(const RuntimeIdeologyPodSnapshot &state);
 
 private:
     static bool command_less(const RuntimeIdeologyPodCommand &a,
                              const RuntimeIdeologyPodCommand &b) noexcept;
     static uint64_t compute_catalog_hash(const RuntimeIdeologyPodCatalog &catalog);
-    static uint64_t compute_state_hash(const RuntimeIdeologyPodSnapshot &state);
     bool validate_catalog(const RuntimeIdeologyPodCatalog &catalog,
                           std::string &error) const;
     bool validate_inputs(const RuntimeCountryPodSnapshot &country,

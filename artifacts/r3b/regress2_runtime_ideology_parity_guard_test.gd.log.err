@@ -1,0 +1,30 @@
+WARNING: [loading-catalog] source changed: rebuild tools/prebake_loading_catalogs.gd; using source compiler
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] prepare (res://scripts/game/loading_catalog_cache.gd:55)
+       [1] compute (res://scripts/geography/native_loading_tasks.gd:15)
+WARNING: [building-visual] disabled: building_visual_renderer_unavailable
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] generate_world (res://scripts/game/world_runtime_host.gd:747)
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:5019)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2527)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:771)
+[runtime-day-wait] day=1 env_day=0 missing=0x0 stall=0x0 economy_input=-1
+[research-procure-diag] day=7 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate][boundary] cold-start env_day=0 plan_day=1 ok=0 ref_hash=1407601553259776563 adopted_parity=1407601553259776563 round_ran=1
+[climate/worker][b8] physics_knobs day=1 ready=0 missing=physics_knobs
+[climate][boundary] day=1 planned=1 compared=1 matched=1 worker_parity=1407601553259776563 ref=1407601553259776563 stage_ran=0x0 prod_stage=0x0 round_ran=0 alb=0 veg=0 fb=0 err=
+[country][parity] worker_day=1 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=8 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] physics_knobs day=2 ready=0 missing=physics_knobs
+[climate][boundary] day=2 planned=1 compared=1 matched=1 worker_parity=1407601553259776563 ref=1407601553259776563 stage_ran=0x0 prod_stage=0x0 round_ran=0 alb=0 veg=0 fb=0 err=
+[country][parity] worker_day=2 uncompared reference_range=8..8 depth=1
+ERROR: 27 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 2441 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

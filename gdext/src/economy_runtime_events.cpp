@@ -484,6 +484,11 @@ void NativeEconomyRuntime::publish_country_development_facts() {
     class_snapshot.country_buildings_installed.assign(opinion_country_count, 0);
     class_snapshot.country_trade_base_value.assign(opinion_country_count, 0);
     class_snapshot.period_days = std::max<int64_t>(1, _epoch_days.get());
+    // Derived from the day, NOT from a publish counter: two authorities that
+    // publish the same simulated day at different rates must produce the same
+    // period index, because it is ideology's accrual idempotency key (A1).
+    class_snapshot.period_index =
+        class_snapshot.commit_day / class_snapshot.period_days;
     uint64_t cells_scanned = 0;
     uint64_t slots_scanned = 0;
     auto finalize_class_snapshot = [&]() {

@@ -116,6 +116,11 @@ func _run() -> void:
 			costs_ok = false
 		if int(snap.ideology_points_q16) < expected_cost:
 			break
+		# Settle the previous iteration's equip transaction before issuing the
+		# next command: a PENDING transition rejects new commands, which would
+		# make every second choice disappear.
+		_commit_effect(ext, 3 + draw)
+		_drain_ideology(ext, 3 + draw)
 		_submit(ext, 3 + draw, [{"opcode": 3}])
 		_drain_ideology(ext, 3 + draw)
 		snap = ext.get_ideology_snapshot(handle)
@@ -140,12 +145,18 @@ func _run() -> void:
 		_submit(ext, 3 + draw, [{"opcode": 4, "generation": int(snap.offer_generation),
 			"choice": 0}])
 		_drain_ideology(ext, 3 + draw)
+		_commit_effect(ext, 3 + draw)
 		expected_cost = (expected_cost * 120 + 50) / 100
 	snap = ext.get_ideology_snapshot(handle)
 	_expect("every draw is paid and costs 20% more than the previous", costs_ok)
 	_expect("reroll cost is 50% of the paid draw", reroll_ok)
+	# Not `>= 5` any more: since §36.3 an already-known card comes back as a
+	# refine, so N paid draws do not guarantee N distinct cards. What must hold
+	# is that choosing keeps growing the collection, and that a duplicate is what
+	# the remaining draws hit.
 	_expect("chosen cards enter the collection",
-		(snap.known_ids as PackedInt32Array).size() >= 5)
+		(snap.known_ids as PackedInt32Array).size() >= 3
+		and (snap.known_ids as PackedInt32Array).size() <= 6)
 
 	# No low ceiling: the cost keeps compounding by 20% per paid draw.
 	var paid_draws := int(snap.draw_sequence)

@@ -1,9 +1,11 @@
 #include "ideology_runtime.h"
+#include "effect_selector_cap.h"
 
 #include "country_runtime.h"
 #include "economy_runtime.h"
 #include "effect_runtime.h"
 #include "effect_instance_forwarder.h"
+#include "ideology_opinion_bridge.h"
 // Authority-aware instance queries: the ideology report and the ideology restore
 // both ask whether an instance still exists / has fired.
 #include "economy_effect_forward.h"
@@ -102,6 +104,23 @@ uint64_t splitmix64(uint64_t &state) { uint64_t z = (state += 0x9e3779b97f4a7c15
 // divergence the moment either side is touched.
 uint64_t effect_program_hash(const std::string &program) {
     return mix(1469598103934665603ULL, program.data(), program.size());
+}
+// Digest of "which columns this instance conditions on, and what they read".
+// Deliberately excludes the day and the revision: two reconciles that see the
+// same world have to produce the same digest, otherwise the publish gate in
+// reconcile_effect_activations() would never close.
+uint64_t metric_publish_digest(const MetricMask &mask,
+                               const std::vector<int64_t> &values) {
+    uint64_t digest = 1469598103934665603ULL;
+    for (int32_t word = 0; word < MetricMask::WORD_COUNT; ++word)
+        digest = mixv(digest, mask.word(word));
+    const int32_t count = static_cast<int32_t>(values.size()) < MetricMask::CAPACITY
+        ? static_cast<int32_t>(values.size()) : MetricMask::CAPACITY;
+    for (int32_t id = 0; id < count; ++id) {
+        if (!mask.test(id)) continue;
+        digest = mixv(digest, values[static_cast<size_t>(id)]);
+    }
+    return digest;
 }
 int64_t add_sat(int64_t a, int64_t b) { if (b > 0 && a > std::numeric_limits<int64_t>::max() - b) return std::numeric_limits<int64_t>::max(); if (b < 0 && a < std::numeric_limits<int64_t>::min() - b) return std::numeric_limits<int64_t>::min(); return a+b; }
 int64_t mul_sat(int64_t a, int64_t b) {
@@ -509,11 +528,32 @@ bool NativeIdeologyRuntime::validate_catalog(const Dictionary &catalog, std::str
             ? 0 : synergy_override_offsets[i + 1] - synergy_override_offsets[i];
         _synergies.push_back({synergy_requirement_offsets[i],requirements,synergy_effect_offsets[i],synergy_effect_offsets[i+1]-synergy_effect_offsets[i],min_count,override_begin,override_count});
     }
+    // Reverse index, built once per catalog: the scale lookup is on the hot path
+    // (per program, per country, per reconcile) and used to walk every synergy.
+    _synergy_override_index.clear();
+    for (size_t synergy_id = 0; synergy_id < _synergies.size(); ++synergy_id) {
+        const Synergy &synergy = _synergies[synergy_id];
+        const int32_t end = synergy.override_begin + synergy.override_count;
+        for (int32_t row = synergy.override_begin; row < end; ++row) {
+            if (row < 0 ||
+                    row >= static_cast<int32_t>(_synergy_override_programs.size()) ||
+                    row >= static_cast<int32_t>(_synergy_override_scales.size()))
+                continue;
+            _synergy_override_index[_synergy_override_programs[
+                static_cast<size_t>(row)]].push_back(
+                    {static_cast<int32_t>(synergy_id),
+                     _synergy_override_scales[static_cast<size_t>(row)]});
+        }
+    }
     _capacity_unlocks.clear();
     for (int32_t i=0;i<unlock_technologies.size();++i) _capacity_unlocks.push_back({unlock_technologies[i],unlock_ideology[i],unlock_spirit[i]});
     _ideology_synergy_offsets.assign(ideology_synergy_offsets.ptr(), ideology_synergy_offsets.ptr()+ideology_synergy_offsets.size());
     _ideology_synergy_ids.assign(ideology_synergy_ids.ptr(), ideology_synergy_ids.ptr()+ideology_synergy_ids.size());
     _synergy_candidate_stamps.assign(static_cast<size_t>(synergy_count), 0);
+    // Optional. Only the offer RNG depends on it, and the worker receives the
+    // same value through `export_pod_catalog`, so parity holds whether or not a
+    // content layer supplies one.
+    _world_seed = static_cast<uint64_t>(int64_t(catalog.get("world_seed", 0)));
     _political_class_count = political_class_ids.size();
     _political_class_hash = 1469598103934665603ULL;
     for (int32_t i=0;i<political_class_ids.size();++i) {
@@ -564,7 +604,11 @@ bool NativeIdeologyRuntime::validate_catalog(const Dictionary &catalog, std::str
 }
 
 Dictionary NativeIdeologyRuntime::configure(const Dictionary &catalog) {
-    _configured=false; reset_runtime_state(); std::string error; if (!validate_catalog(catalog,error)) return fail(error); _catalog_hash=compute_catalog_hash(); _configured=true; Dictionary out; out["ok"]=true; out["catalog_hash"]=static_cast<int64_t>(_catalog_hash); out["ideology_count"]=static_cast<int32_t>(_definitions.size()); return out;
+    _configured=false; reset_runtime_state(); std::string error; if (!validate_catalog(catalog,error)) return fail(error); _catalog_hash=compute_catalog_hash(); _configured=true;
+    // Hand the economy the declared consumer set: without it the digest covers
+    // nothing and every managed card would sit frozen on a content change.
+    publish_effect_input_consumers();
+    Dictionary out; out["ok"]=true; out["catalog_hash"]=static_cast<int64_t>(_catalog_hash); out["ideology_count"]=static_cast<int32_t>(_definitions.size()); return out;
 }
 
 void NativeIdeologyRuntime::reset_runtime_state() {
@@ -599,6 +643,22 @@ void NativeIdeologyRuntime::reset_runtime_state() {
     _class_snapshot_reads = 0;
     _support_evaluations = 0;
     _synergy_candidates_visited = 0;
+    _metric_publishes = 0;
+    _metric_publishes_skipped = 0;
+    _selector_stats = EffectSelectorStats{};
+    _selector_truncations = 0;
+    _managed_active_total = 0;
+    _effect_input_revision_seen = 0;
+    _effect_input_revision_target = 0;
+    _instance_refresh_pending = false;
+    _instance_refresh_dirty = false;
+    _instance_refresh_country_cursor = 0;
+    _instance_refresh_visits = 0;
+    _instance_refresh_skips = 0;
+    _instance_refresh_passes = 0;
+    _instance_refresh_lag_revisions = 0;
+    _instance_refresh_ms = 0.0;
+    _level_managed_built = false;
     _synergy_candidate_generation = 0;
     _synergy_candidate_scratch.clear();
     _transition_poll_ms = 0.0;
@@ -638,7 +698,19 @@ bool NativeIdeologyRuntime::apply_pod_snapshot(
         const RuntimeIdeologyPodCountryState &source = snapshot.countries[slot];
         if (source.handle == 0) continue;
         CountryState &target = next_countries[slot];
+        // P1-B: the instance set is NOT part of the POD snapshot -- the worker
+        // never sees an Effect instance, the facade owns them. Carry the previous
+        // rows across by (country, ideology) so a write-back cannot resubmit the
+        // whole world, and so the retire pass still has something to compare
+        // against. Moved, not copied: the old table is discarded right below.
+        CountryState *previous_country = nullptr;
+        const uint32_t previous_slot =
+            static_cast<uint32_t>(source.handle & 0xffffffffULL);
+        if (previous_slot < _countries.size() &&
+                _countries[previous_slot].handle == source.handle)
+            previous_country = &_countries[previous_slot];
         target.handle = source.handle;
+        target.unlocked_era = source.unlocked_era;
         target.ideology_points_q16 = source.ideology_points_q16;
         target.rng_state = source.rng_state;
         target.draw_sequence = source.draw_sequence;
@@ -649,6 +721,7 @@ bool NativeIdeologyRuntime::apply_pod_snapshot(
         target.baseline_population = source.baseline_population;
         target.baseline_buildings = source.baseline_buildings;
         target.lifetime_points_q16 = source.lifetime_points_q16;
+        target.trade_paid_day = source.trade_paid_day;
         target.ledger = source.ledger;
         for (size_t i = 0; i < target.history_q16.size() &&
                 i < source.history_q16.size(); ++i)
@@ -660,6 +733,18 @@ bool NativeIdeologyRuntime::apply_pod_snapshot(
         target.gate_bits.assign(gate_words, 0);
         target.active_bits.assign(idea_words, 0);
         target.active_synergy_bits.assign(synergy_words, 0);
+        // 封存 lives in its own bitmap, and the POD has always carried it. Not
+        // copying it let a banned card reappear in the offer the moment a worker
+        // snapshot landed.
+        target.banned_bits.assign(idea_words, 0);
+        for (size_t word = 0;
+                word < idea_words && word < source.banned_bits.size(); ++word)
+            target.banned_bits[word] = source.banned_bits[word];
+        if (source.offer.choice_count > OFFER_CHOICE_CAPACITY ||
+                source.unlocked_era < 0) {
+            error = "ideology_pod_snapshot_country_invalid";
+            return false;
+        }
         for (size_t word = 0;
                 word < idea_words && word < source.known_bits.size(); ++word)
             target.known_bits[word] = source.known_bits[word];
@@ -672,6 +757,7 @@ bool NativeIdeologyRuntime::apply_pod_snapshot(
         target.offer.generation = source.offer.generation;
         target.offer.ideology_ids = source.offer.ideology_ids;
         target.offer.active = source.offer.active;
+        target.offer.choice_count = source.offer.choice_count;
         // POD ideas are dense by ideology_id. The facade keeps sparse rows plus
         // an id->row index, so only rows that carry state are materialised;
         // everything else stays absent exactly as the synchronous path leaves
@@ -695,6 +781,33 @@ bool NativeIdeologyRuntime::apply_pod_snapshot(
             state.entered_levels = idea.entered_levels;
             state.generation = idea.generation;
             state.location = static_cast<uint8_t>(idea.location);
+            // Carry the facade-owned instance rows and the signature that
+            // produced them. Without this every write-back looked like "no
+            // instances held", so reconcile resubmitted every card and the
+            // retire pass had nothing to retire against.
+            if (previous_country != nullptr) {
+                auto previous_row =
+                    previous_country->idea_indices.find(state.ideology_id);
+                if (previous_row != previous_country->idea_indices.end()) {
+                    IdeaState &previous = previous_country->ideas[
+                        static_cast<size_t>(previous_row->second)];
+                    state.effect_instances = std::move(previous.effect_instances);
+                    state.activation_signature = previous.activation_signature;
+                }
+            }
+            // The durable binding identity is a pure function of (handle, idea,
+            // location, generation, level), so it is derived rather than carried.
+            // Leaving it zero made compute_state_hash disagree between the
+            // synchronous and worker paths for the same world.
+            if (state.location != INACTIVE) {
+                state.binding_id = static_cast<int64_t>(binding_id_for(
+                    target.handle, state.ideology_id, state.location));
+                state.binding_generation = state.generation;
+                state.binding_signature =
+                    binding_signature_for(state.ideology_id, state.level);
+                state.binding_program_hash =
+                    _effect_runtime != nullptr ? _effect_runtime->catalog_hash() : 0;
+            }
             target.idea_indices[state.ideology_id] = row;
             if (state.location != INACTIVE) {
                 // Rows are appended in ascending ideology_id, so the active
@@ -800,13 +913,14 @@ bool NativeIdeologyRuntime::apply_pod_snapshot(
     _worker_origin = true;
     // The pod owns level/location under worker authority, so this snapshot is
     // the only place where the main thread learns that a card changed tier.
-    // Converge the instance set here or cell/condition-driven effects would
-    // silently never appear on the worker path.
-    for (CountryState &country : _countries) {
-        if (country.handle == 0) continue;
-        reconcile_country_effect_activations(
-            country, std::max<int64_t>(0, _last_day));
-    }
+    //
+    // Do NOT converge here. Reconciling every card of every country on every
+    // write-back is the P1-B defect: one snapshot per generation, and a
+    // generation per day, meant the whole world was re-submitted daily. Mark
+    // the refresh dirty instead; the sliced pass recomputes only the cards whose
+    // signature actually moved.
+    mark_instance_refresh_dirty();
+    recount_managed_active();
     return true;
 }
 
@@ -831,7 +945,11 @@ void NativeIdeologyRuntime::init_country_state(CountryState &state,
     state = CountryState{};
     state.handle = handle;
     state.ideology_points_q16 = _starting_points_q16;
-    state.rng_state = handle ^ (_catalog_hash + 0x9e3779b97f4a7c15ULL);
+    // Seed from the handle and the SHARED world seed only. The worker uses
+    // `runtime_ideology_country_rng_seed()` with the same pair; seeding from
+    // `_catalog_hash` here made `rng_state` differ by construction, and seeding
+    // from the handle alone made every session of a map draw the same sequence.
+    state.rng_state = runtime_ideology_country_rng_seed(handle, _world_seed);
     state.known_bits.assign(static_cast<size_t>(_idea_words), 0);
     state.banned_bits.assign(static_cast<size_t>(_idea_words), 0);
     state.gate_bits.assign(static_cast<size_t>(_gate_words), 0);
@@ -1308,9 +1426,24 @@ bool NativeIdeologyRuntime::emit_templates(uint64_t country_handle, int32_t ideo
                     _effect_runtime->family_effect_metadata_pod(program, metadata))
                 continue;
         }
+        // The APPLY and its matching REMOVE must mint the SAME effect identity.
+        //
+        // `enqueue_external_effect_batch_pod` derives the instance id from
+        // (source_type, transition_source_id, first.effect_id, first.fire_sequence)
+        // and that instance id becomes the Modifier row's `source_id`
+        // (`effect_runtime.cpp`: NATIVE_MODIFIER_IDEOLOGY sets
+        // `source_id = source_instance->id`). A REMOVE is matched by
+        // `remove_unique_command`, which keys `unique_instances` on
+        // (definition, scope, scope_id, source_type, source_id) and answers
+        // `already_removed` on a miss -- so any difference here leaves the applied
+        // row alive while reporting success.
+        //
+        // `remove` used to be mixed into this hash, which guaranteed that
+        // difference: every unequip retired the slot and the binding but left the
+        // national Modifier row in place, and the stat kept its buffed value.
         uint64_t hash = 1469598103934665603ULL;
         hash = mixv(hash, country_handle); hash = mixv(hash, ideology_id); hash = mixv(hash, level);
-        hash = mixv(hash, begin + offset); hash = mixv(hash, salt); hash = mixv(hash, remove);
+        hash = mixv(hash, begin + offset); hash = mixv(hash, salt);
         const int64_t effect_id = static_cast<int64_t>(hash & 0x7fffffffffffffffULL);
         const int32_t opcode = remove ? 2 : templ.opcode; // Modifier COMMAND_REMOVE
         EffectRuntime::ExternalEffectCommandPod command;
@@ -1361,6 +1494,7 @@ int64_t NativeIdeologyRuntime::effect_instance_id(uint64_t country_handle,
 bool NativeIdeologyRuntime::resolve_effect_targets(
         const CountryState &country, const IdeaState &state,
         const EffectRuntime::FamilyEffectMetadataPod &metadata,
+        uint64_t selection_salt,
         std::vector<std::pair<uint64_t, uint32_t>> &out) const {
     out.clear();
     if (country.handle == 0) return false;
@@ -1381,13 +1515,66 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
     const int32_t anchor = _economy_runtime->country_anchor_cell(country_slot);
     if (anchor < 0) return false;
     std::vector<int32_t> cells;
-    _economy_runtime->collect_effect_target_cells(anchor,
-        metadata.target_selector_kind, metadata.target_selector_param[0],
-        metadata.target_selector_param[1], cells);
+    // X1: per-source evaluation. Kinds 14/15 mean "for every owned cell that
+    // matches the source tag, expand one radial fan-out and union the results".
+    // Doing it here (rather than inside the economy selector) keeps the
+    // territory walk and the neighbour walk as two existing, separately tested
+    // primitives, and keeps the union/dedup/cap rule in one place.
+    if (metadata.target_selector_kind == EffectRuntime::SELECTOR_TAG_SOURCE_R1 ||
+            metadata.target_selector_kind == EffectRuntime::SELECTOR_TAG_SOURCE_R2) {
+        const int32_t tag = metadata.target_selector_param[1];
+        // 0 would mean "every owned cell", which for a radial fan-out is a
+        // country-sized sweep disguised as a card. Requiring the tag makes the
+        // cost of the card visible in the data.
+        if (tag <= 0) return false;
+        const int32_t cap = metadata.target_selector_param[0] > 0
+            ? std::min(metadata.target_selector_param[0],
+                EffectRuntime::SELECTOR_MAX_CELLS)
+            : EffectRuntime::SELECTOR_MAX_CELLS;
+        std::vector<int32_t> sources;
+        _economy_runtime->collect_effect_target_cells(anchor,
+            EffectRuntime::SELECTOR_OWN_TERRITORY, cap, tag, sources,
+            selection_salt, &_selector_stats);
+        if (sources.empty()) return false;
+        const bool first_ring =
+            metadata.target_selector_kind == EffectRuntime::SELECTOR_TAG_SOURCE_R1;
+        const int32_t ring_kind = first_ring
+            ? EffectRuntime::SELECTOR_NEIGHBORS_R1
+            : EffectRuntime::SELECTOR_NEIGHBORS_R2;
+        // One cell's own fan-out is capped by the same ceiling as the union, so
+        // a dense cluster of sources cannot make a single source unbounded.
+        const int32_t ring_cap = std::min(cap, EffectRuntime::SELECTOR_MAX_CELLS);
+        std::vector<int32_t> ring;
+        for (const int32_t source : sources) {
+            ring.clear();
+            _economy_runtime->collect_effect_target_cells(
+                source, ring_kind, ring_cap, 0, ring, selection_salt);
+            cells.insert(cells.end(), ring.begin(), ring.end());
+        }
+        std::sort(cells.begin(), cells.end());
+        cells.erase(std::unique(cells.begin(), cells.end()), cells.end());
+        // Stable cap over the UNION, keyed on the anchor cell: resizing the
+        // ascending list kept the lowest ids, which is the same corner of the
+        // map for every card.
+        effect_stable_cap(cells, cap, static_cast<uint64_t>(anchor),
+            selection_salt, &_selector_stats);
+    } else {
+        _economy_runtime->collect_effect_target_cells(anchor,
+            metadata.target_selector_kind, metadata.target_selector_param[0],
+            metadata.target_selector_param[1], cells, selection_salt,
+            &_selector_stats);
+    }
     const uint32_t generation = static_cast<uint32_t>(country.handle >> 32U);
     for (const int32_t cell : cells) {
         if (cell < 0) continue;
         out.emplace_back(static_cast<uint64_t>(cell), generation);
+    }
+    // One truncation per resolve that cut something. The flag is cleared so a
+    // later untruncated resolve cannot inherit the previous one's verdict;
+    // `matched_total` stays as the last reading for the report.
+    if (_selector_stats.truncated != 0) {
+        ++_selector_truncations;
+        _selector_stats.truncated = 0;
     }
     return !out.empty();
 }
@@ -1416,7 +1603,9 @@ bool NativeIdeologyRuntime::collect_effect_activations(
             continue; // No declarative program: the row stays on the legacy batch.
         (void)state;
         std::vector<std::pair<uint64_t, uint32_t>> targets;
-        if (!resolve_effect_targets(country, state, metadata, targets)) continue;
+        if (!resolve_effect_targets(country, state, metadata,
+                effect_program_hash(program), targets))
+            continue;
         // One instance per resolved target. The per-card cap keeps a wide
         // selector from flooding the instance table: a card level owns at most
         // SELECTOR_MAX_CELLS branches, matching the selector's own hard cap.
@@ -1444,6 +1633,7 @@ bool NativeIdeologyRuntime::collect_effect_activations(
                 // program can be rewritten for one country and untouched for
                 // another. 1.0 when no active synergy targets it.
                 activation.magnitude_scale_q16 = activation_scale_q16;
+                activation.ref.magnitude_scale_q16 = activation_scale_q16;
                 activation.ref.program_hash = effect_program_hash(program);
                 activation.ref.target_handle = target.first;
                 activation.ref.target_generation = target.second;
@@ -1547,8 +1737,13 @@ bool NativeIdeologyRuntime::reconcile_effect_activations(
     for (const EffectActivation &want : desired) {
         bool present = false;
         for (const IdeaState::EffectInstanceRef &held : state.effect_instances) {
+            // The scale is part of "present": a synergy flip can change a
+            // card's strength without touching its identity, and skipping the
+            // submit here is exactly the X5 bug (the instance keeps the old
+            // multiplier until something else makes it re-submit).
             if (held.instance_id == want.ref.instance_id &&
-                    held.generation == want.ref.generation) {
+                    held.generation == want.ref.generation &&
+                    held.magnitude_scale_q16 == want.ref.magnitude_scale_q16) {
                 present = true;
                 break;
             }
@@ -1614,6 +1809,16 @@ bool NativeIdeologyRuntime::reconcile_effect_activations(
         batch["levels"] = levels;
         batch["next_due_days"] = next_due_days;
         batch["magnitude_scales"] = magnitude_scales;
+        // A5 NOTE: no `latched` column is sent here, deliberately.
+        //
+        // Everything in `added` is by definition an instance the Effect side does
+        // NOT already hold (a held one with matching id/generation/scale is
+        // filtered out above), so this side has no knowledge of its latch --
+        // sending a column of zeros would be a claim, and `submit_instances`
+        // treats an explicit column as authoritative. Omitting the column means
+        // "not owned here", which is the truth: the evaluating authority keeps its
+        // own latch, and the write-back path (`apply_pod_snapshot`) carries it
+        // back. The forwarder's builder also reads no latch from these rows.
         batch["active"] = active;
         // Same attached() rule as the retires: submit_batch on an unattached
         // forwarder can only answer effect_runtime_unavailable, which would read
@@ -1643,8 +1848,10 @@ bool NativeIdeologyRuntime::reconcile_effect_activations(
     // permanently true -- which is why the V1..V6 mechanism cards could only be
     // asserted as declarations, never observed firing.
     //
-    // Published every reconcile, not only on creation: a condition has to see
-    // the world move, and the world moves every day.
+    // Published on every reconcile that changes something, not only on
+    // creation: a condition has to see the world move, and the world moves
+    // every day. The digest below is what keeps "the world moves" from being
+    // read as "the input changed" -- an identical publish is skipped whole.
     //
     // Sampled at the instance's own target cell (not at the country anchor), so
     // "this cell's extractive share >= 60%" means the cell the effect lands on.
@@ -1654,8 +1861,13 @@ bool NativeIdeologyRuntime::reconcile_effect_activations(
         constexpr int32_t metric_count = NativeEconomyRuntime::FAMILY_METRIC_COUNT;
         const int64_t revision = day > (std::numeric_limits<int64_t>::max() - 1) / 4
             ? std::numeric_limits<int64_t>::max() : day * 4 + 1;
-        std::unordered_map<int32_t, std::vector<int64_t>> sampled_by_cell;
-        for (const EffectActivation &activation : desired) {
+        // O3: sample each cell ONCE with the union of the masks that target it.
+        // The old `all_declared` mask forced every reconcile to compute all 68
+        // columns, and the X7 country counts among them rebuild the whole-map
+        // tag bitset -- the most expensive thing in this function.
+        std::unordered_map<int32_t, MetricMask> mask_by_cell;
+        std::vector<std::pair<int32_t, EffectActivation *>> pending_publishes;
+        for (EffectActivation &activation : desired) {
             if (activation.metric_mask.is_none()) continue;
             // COUNTRY-domain programs carry a country handle in target_handle;
             // sampling it as a cell index would read an unrelated column.
@@ -1664,17 +1876,46 @@ bool NativeIdeologyRuntime::reconcile_effect_activations(
             const int64_t raw = static_cast<int64_t>(activation.ref.target_handle);
             if (raw < 0 || raw > std::numeric_limits<int32_t>::max()) continue;
             const int32_t cell = static_cast<int32_t>(raw);
-            auto found = sampled_by_cell.find(cell);
-            if (found == sampled_by_cell.end()) {
-                std::vector<int64_t> values(static_cast<size_t>(metric_count), 0);
-                // `all_declared` rather than the activation's own mask: the
-                // cache is keyed on the cell and shared by every card that
-                // targets it, each with a different mask.
-                _economy_runtime->sample_effect_metrics(cell, metric_count,
-                    values.data(), MetricMask::all_declared(metric_count));
-                found = sampled_by_cell.emplace(cell, std::move(values)).first;
+            mask_by_cell[cell] |= activation.metric_mask;
+            pending_publishes.emplace_back(cell, &activation);
+        }
+        std::unordered_map<int32_t, std::vector<int64_t>> sampled_by_cell;
+        sampled_by_cell.reserve(mask_by_cell.size());
+        for (const auto &entry : mask_by_cell) {
+            std::vector<int64_t> values(static_cast<size_t>(metric_count), 0);
+            _economy_runtime->sample_effect_metrics(entry.first, metric_count,
+                values.data(), entry.second);
+            sampled_by_cell.emplace(entry.first, std::move(values));
+        }
+        // Previous publish per instance. Built before `effect_instances` is
+        // rebuilt below; a level change advances the generation, which
+        // invalidates the digest by construction.
+        std::unordered_map<int64_t, size_t> held_by_instance;
+        held_by_instance.reserve(state.effect_instances.size());
+        for (size_t held = 0; held < state.effect_instances.size(); ++held)
+            held_by_instance.emplace(state.effect_instances[held].instance_id, held);
+        for (const auto &publish : pending_publishes) {
+            EffectActivation &activation = *publish.second;
+            auto found = sampled_by_cell.find(publish.first);
+            if (found == sampled_by_cell.end()) continue;
+            const uint64_t digest = metric_publish_digest(
+                activation.metric_mask, found->second);
+            const auto held = held_by_instance.find(activation.ref.instance_id);
+            if (held != held_by_instance.end()) {
+                const IdeaState::EffectInstanceRef &previous =
+                    state.effect_instances[held->second];
+                if (previous.generation == activation.ref.generation &&
+                        previous.metric_digest == digest) {
+                    // Same columns, same values, same instance. Publishing
+                    // again would advance the Effect input revision and mint a
+                    // Modifier transaction for a world that did not move.
+                    activation.ref.metric_digest = digest;
+                    ++_metric_publishes_skipped;
+                    continue;
+                }
             }
             std::string metric_error;
+            bool published = true;
             for (int32_t metric_id = 0; metric_id < metric_count; ++metric_id) {
                 // MetricMask covers 256 ids (infra item L0-1), so this is a
                 // plain membership test rather than a shift that would be
@@ -1686,8 +1927,16 @@ bool NativeIdeologyRuntime::reconcile_effect_activations(
                         activation.ref.instance_id, activation.ref.generation,
                         metric_id, revision,
                         found->second[static_cast<size_t>(metric_id)],
-                        metric_error))
+                        metric_error)) {
+                    published = false;
                     break;
+                }
+            }
+            // Only stamp the digest when every column landed, so a partial
+            // publish is retried instead of being remembered as done.
+            if (published) {
+                activation.ref.metric_digest = digest;
+                ++_metric_publishes;
             }
         }
     }
@@ -1696,7 +1945,276 @@ bool NativeIdeologyRuntime::reconcile_effect_activations(
     state.effect_instances.reserve(desired.size());
     for (const EffectActivation &activation : desired)
         state.effect_instances.push_back(activation.ref);
+    // Stamp the input signature AFTER the set is rebuilt. Every path that
+    // reconciles -- transition, restore, worker write-back, refresh -- leaves
+    // this current, which is what lets a later refresh skip the card without
+    // re-deriving anything.
+    state.activation_signature = compute_activation_signature(country, state);
     return true;
+}
+
+void NativeIdeologyRuntime::publish_effect_input_consumers() {
+    if (_economy_runtime == nullptr) return;
+    rebuild_level_managed_if_needed();
+    MetricMask mask;
+    bool tags = false;
+    MetricMask exact;
+    std::array<std::vector<int64_t>, NativeEconomyRuntime::FAMILY_METRIC_COUNT>
+        thresholds;
+    for (const LevelManagedInfo &info : _level_managed) {
+        if (info.has_managed == 0) continue;
+        mask |= info.consumer_mask;
+        if (info.uses_tags != 0) tags = true;
+        exact |= info.exact_mask;
+        for (int32_t t = 0; t < info.threshold_count; ++t) {
+            const int32_t metric = info.threshold_ids[t];
+            if (metric < 0 || metric >= static_cast<int32_t>(thresholds.size()))
+                continue;
+            thresholds[static_cast<size_t>(metric)].push_back(
+                info.threshold_values[t]);
+        }
+    }
+    // One sorted, deduplicated threshold set per metric: the digest asks "how
+    // many are <= value", so order is the whole point and duplicates would
+    // shift the count without meaning anything.
+    for (auto &per_metric : thresholds) {
+        if (per_metric.empty()) continue;
+        std::sort(per_metric.begin(), per_metric.end());
+        per_metric.erase(std::unique(per_metric.begin(), per_metric.end()),
+                         per_metric.end());
+    }
+    // Exact metrics drop every boundary: an empty set means "compare raw values",
+    // which is the only safe answer for a Ramp input or a truncated set.
+    for (int32_t metric = 0;
+            metric < static_cast<int32_t>(thresholds.size()); ++metric) {
+        if (exact.test(metric)) thresholds[static_cast<size_t>(metric)].clear();
+    }
+    _economy_runtime->set_effect_input_consumers(mask, tags, thresholds);
+}
+
+void NativeIdeologyRuntime::rebuild_level_managed_if_needed() const {
+    if (_level_managed_built) return;
+    _level_managed_built = true;
+    _level_managed.assign(_levels.size(), LevelManagedInfo{});
+    if (_effect_runtime == nullptr) return;
+    for (int32_t id = 0; id < static_cast<int32_t>(_definitions.size()); ++id) {
+        const Definition &definition = _definitions[static_cast<size_t>(id)];
+        for (int32_t level = 0; level < definition.level_count; ++level) {
+            const int32_t index = definition.level_begin + level;
+            if (index < 0 || index >= static_cast<int32_t>(_levels.size())) continue;
+            const Level &row = _levels[static_cast<size_t>(index)];
+            LevelManagedInfo info;
+            for (int32_t offset = 0; offset < row.persistent_count; ++offset) {
+                const EffectTemplate &templ = _persistent_templates[
+                    static_cast<size_t>(row.persistent_begin + offset)];
+                const std::string program = effect_program_key(templ.definition_key);
+                if (program.empty()) continue;
+                EffectRuntime::FamilyEffectMetadataPod metadata;
+                if (!_effect_runtime->family_effect_metadata_pod(program, metadata))
+                    continue; // Legacy Modifier row: nothing to reconcile.
+                info.has_managed = 1;
+                info.program_mix = mixv(info.program_mix,
+                    effect_program_hash(program));
+                if (metadata.target_domain == 2 || metadata.target_domain == 5)
+                    info.uses_economy_inputs = 1;
+                if (metadata.metric_mask.is_any()) {
+                    info.uses_economy_inputs = 1;
+                    info.consumer_mask |= metadata.metric_mask;
+                    info.exact_mask |= metadata.exact_metric_mask;
+                    for (int32_t t = 0; t < metadata.metric_threshold_count; ++t) {
+                        if (info.threshold_count >= 8) {
+                            // Same reasoning as the pod cap: a dropped boundary
+                            // must demote the metric to exact, not vanish.
+                            info.exact_mask.set(metadata.metric_threshold_ids[t]);
+                            break;
+                        }
+                        const int32_t slot = info.threshold_count++;
+                        info.threshold_ids[slot] = metadata.metric_threshold_ids[t];
+                        info.threshold_values[slot] =
+                            metadata.metric_threshold_values[t];
+                    }
+                }
+                // Selector kinds 12..15 all read the epoch tag bitset: 12/13
+                // filter targets by tag, 14/15 select source cells by tag.
+                if (metadata.target_selector_kind >= 12) info.uses_tags = 1;
+            }
+            _level_managed[static_cast<size_t>(index)] = info;
+        }
+    }
+}
+
+const NativeIdeologyRuntime::LevelManagedInfo *
+NativeIdeologyRuntime::level_managed_info(
+        int32_t ideology_id, int32_t level) const {
+    if (ideology_id < 0 ||
+            ideology_id >= static_cast<int32_t>(_definitions.size()))
+        return nullptr;
+    const Definition &definition = _definitions[static_cast<size_t>(ideology_id)];
+    if (level < 0 || level >= definition.level_count) return nullptr;
+    const int32_t index = definition.level_begin + level;
+    if (index < 0 || index >= static_cast<int32_t>(_level_managed.size()))
+        return nullptr;
+    return &_level_managed[static_cast<size_t>(index)];
+}
+
+bool NativeIdeologyRuntime::level_is_managed(
+        int32_t ideology_id, int32_t level) const {
+    rebuild_level_managed_if_needed();
+    const LevelManagedInfo *info = level_managed_info(ideology_id, level);
+    return info != nullptr && info->has_managed != 0;
+}
+
+uint64_t NativeIdeologyRuntime::activation_signature_for_test(uint64_t handle,
+        int32_t ideology_id) const {
+    for (const CountryState &country : _countries) {
+        if (country.handle != handle) continue;
+        const auto found = country.idea_indices.find(ideology_id);
+        if (found == country.idea_indices.end()) return 0;
+        const size_t index = found->second;
+        if (index >= country.ideas.size()) return 0;
+        return compute_activation_signature(country, country.ideas[index]);
+    }
+    return 0;
+}
+
+uint64_t NativeIdeologyRuntime::compute_activation_signature(
+        const CountryState &country, const IdeaState &state) const {
+    rebuild_level_managed_if_needed();
+    uint64_t hash = 1469598103934665603ULL;
+    hash = mixv(hash, state.ideology_id);
+    hash = mixv(hash, state.level);
+    hash = mixv(hash, state.location);
+    hash = mixv(hash, state.generation);
+    const LevelManagedInfo *info =
+        level_managed_info(state.ideology_id, state.level);
+    if (info == nullptr) return hash;
+    hash = mixv(hash, info->program_mix);
+    // X5: a synergy flip changes this card's magnitude without touching the
+    // card. Hashing the active set is coarser than a per-program scale lookup
+    // but costs a couple of words instead of a catalog scan, and over-triggering
+    // here only costs one reconcile.
+    if (!_synergy_override_scales.empty()) {
+        for (const uint64_t word : country.active_synergy_bits)
+            hash = mixv(hash, word);
+    }
+    // Review §3: a card's signature mixes only the metrics it reads. Cards with
+    // no metric mask keep the global revision, so nothing that used to refresh
+    // stops refreshing -- the change can only narrow.
+    if (_economy_runtime != nullptr) {
+        // Three independent inputs, mixed only where this card actually reads
+        // them (review §3). Anything the old global revision caught is still
+        // caught: a cell card that reads neither metrics nor tags depends on
+        // ownership, which is the territory revision.
+        // ONE snapshot load for the whole signature. Reading it per metric meant a
+        // card could mix metric A's new revision with metric B's old one -- the
+        // exact torn read the snapshot exists to prevent -- and cost up to 68
+        // atomic shared_ptr loads per card, which is lock-prefixed on MSVC.
+        const std::shared_ptr<const EffectInputSnapshot> snapshot =
+            _economy_runtime->effect_input_snapshot();
+        if (snapshot != nullptr) {
+            if (info->consumer_mask.is_any()) {
+                // SUM, not max: the revisions are independent counters, so a max
+                // hides every metric that is not the leading one. With A=5 and B
+                // going 3->4, max stays 5 and a card reading both would never
+                // refresh. Revisions only increase, so the sum always moves.
+                uint64_t metric_revision = 0;
+                constexpr int32_t kMetricCount =
+                    static_cast<int32_t>(NativeEconomyRuntime::FAMILY_METRIC_COUNT);
+                for (int32_t metric = 0; metric < kMetricCount; ++metric) {
+                    if (!info->consumer_mask.test(metric)) continue;
+                    metric_revision +=
+                        snapshot->metric_revision[static_cast<size_t>(metric)];
+                }
+                hash = mixv(hash, metric_revision);
+            }
+            if (info->uses_tags != 0)
+                hash = mixv(hash, snapshot->tag_revision);
+            if (info->uses_economy_inputs != 0)
+                hash = mixv(hash, snapshot->territory_revision);
+        }
+    }
+    return hash;
+}
+
+void NativeIdeologyRuntime::recount_managed_active() {
+    rebuild_level_managed_if_needed();
+    int32_t total = 0;
+    for (const CountryState &country : _countries) {
+        if (country.handle == 0) continue;
+        for (const int32_t row : country.active_state_indices) {
+            if (row < 0 || row >= static_cast<int32_t>(country.ideas.size()))
+                continue;
+            const IdeaState &state = country.ideas[static_cast<size_t>(row)];
+            if (level_is_managed(state.ideology_id, state.level)) ++total;
+        }
+    }
+    _managed_active_total = total;
+}
+
+bool NativeIdeologyRuntime::step_effect_instance_refresh(
+        int64_t day, int32_t country_budget) {
+    if (_economy_runtime == nullptr) return false;
+    if (_effect_runtime == nullptr && _effect_forwarder == nullptr) return false;
+    rebuild_level_managed_if_needed();
+    if (_level_managed.empty()) return false;
+    if (!_instance_refresh_pending) {
+        const uint64_t revision = _economy_runtime->effect_input_revision();
+        if (revision == _effect_input_revision_seen && !_instance_refresh_dirty)
+            return false;
+        _instance_refresh_pending = true;
+        // Adopt the target only at the START of a pass. Restarting on every new
+        // revision would reset the cursor before it ever reaches the tail.
+        _effect_input_revision_target = revision;
+        _instance_refresh_country_cursor = 0;
+        _instance_refresh_dirty = false;
+    }
+    const Clock::time_point started = Clock::now();
+    int32_t budget = country_budget > 0
+        ? country_budget : INSTANCE_REFRESH_COUNTRY_BUDGET;
+    if (budget <= 0) budget = static_cast<int32_t>(_countries.size());
+    int32_t visit_budget = INSTANCE_REFRESH_VISIT_BUDGET;
+    while (_instance_refresh_country_cursor <
+               static_cast<int32_t>(_countries.size()) && budget > 0) {
+        if (visit_budget <= 0) break;
+        CountryState &country = _countries[
+            static_cast<size_t>(_instance_refresh_country_cursor)];
+        --budget;
+        ++_instance_refresh_country_cursor;
+        if (country.handle == 0) continue;
+        for (const int32_t row : country.active_state_indices) {
+            if (row < 0 || row >= static_cast<int32_t>(country.ideas.size()))
+                continue;
+            IdeaState &state = country.ideas[static_cast<size_t>(row)];
+            if (state.location == INACTIVE || state.level < 0) continue;
+            // A card with an Effect transaction in flight is owned by the ACK
+            // branch; touching it here would race the rollback.
+            if (state.transition.active != 0) continue;
+            if (!level_is_managed(state.ideology_id, state.level)) continue;
+            const uint64_t signature = compute_activation_signature(country, state);
+            if (signature == state.activation_signature) {
+                ++_instance_refresh_skips;
+                continue;
+            }
+            std::string ignored;
+            reconcile_effect_activations(country, state, day, ignored);
+            --visit_budget;
+            ++_instance_refresh_visits;
+        }
+    }
+    _instance_refresh_ms += elapsed_ms(started);
+    if (_instance_refresh_country_cursor <
+            static_cast<int32_t>(_countries.size()))
+        return true;
+    _effect_input_revision_seen = _effect_input_revision_target;
+    _instance_refresh_pending = false;
+    ++_instance_refresh_passes;
+    const uint64_t now = _economy_runtime->effect_input_revision();
+    if (now > _effect_input_revision_seen) {
+        const uint64_t lag = now - _effect_input_revision_seen;
+        if (lag > _instance_refresh_lag_revisions)
+            _instance_refresh_lag_revisions = lag;
+    }
+    return false;
 }
 
 void NativeIdeologyRuntime::reconcile_country_effect_activations(
@@ -2064,20 +2582,15 @@ int32_t NativeIdeologyRuntime::magnitude_scale_for(
     // Product, not max: two cards that each rewrite the same program stack, and
     // taking the larger one would make the second card silently do nothing.
     // Clamped once at the end -- clamping per step would turn 1.5^3 into 1.5^2.
+    const auto found = _synergy_override_index.find(program);
+    if (found == _synergy_override_index.end()) return static_cast<int32_t>(Q16_ONE);
+    ++_synergy_scale_lookups;
     int64_t scale = Q16_ONE;
-    for (size_t synergy_id = 0; synergy_id < _synergies.size(); ++synergy_id) {
-        if (!synergy_active(country, static_cast<int32_t>(synergy_id))) continue;
-        const Synergy &synergy = _synergies[synergy_id];
-        const int32_t end = synergy.override_begin + synergy.override_count;
-        for (int32_t row = synergy.override_begin; row < end; ++row) {
-            if (row < 0 ||
-                    row >= static_cast<int32_t>(_synergy_override_programs.size()) ||
-                    row >= static_cast<int32_t>(_synergy_override_scales.size()))
-                continue;
-            if (_synergy_override_programs[static_cast<size_t>(row)] != program) continue;
-            scale = scale * _synergy_override_scales[static_cast<size_t>(row)] / Q16_ONE;
-            if (scale > 4 * Q16_ONE) { scale = 4 * Q16_ONE; break; }
-        }
+    for (const auto &entry : found->second) {
+        ++_synergy_scale_scans;
+        if (!synergy_active(country, entry.first)) continue;
+        scale = scale * entry.second / Q16_ONE;
+        if (scale > 4 * Q16_ONE) { scale = 4 * Q16_ONE; break; }
     }
     if (scale < Q16_ONE / 4) scale = Q16_ONE / 4;
     if (scale > 4 * Q16_ONE) scale = 4 * Q16_ONE;
@@ -2241,35 +2754,88 @@ bool NativeIdeologyRuntime::reroll_offer(CountryState &c, int32_t slot,
     return true;
 }
 void NativeIdeologyRuntime::accrue_points(int64_t day) {
-    // Settles once per committed class-opinion revision, O(countries). Mirrors
-    // RuntimeIdeologyPodAuthority::accrue_points exactly.
-    if (_economy_runtime == nullptr) return;
-    const NativeEconomyRuntime::CountryClassOpinionSnapshot &opinion =
-        _economy_runtime->country_class_opinion_snapshot();
-    if (opinion.revision == 0 || opinion.revision == _points_revision_seen) return;
-    _points_revision_seen = opinion.revision;
-    const size_t countries = static_cast<size_t>(std::max(0, opinion.country_count));
+    // Production entry point: settle from Economy's committed snapshot.
+    //
+    // Read it by REFERENCE -- `ideology_opinion_from_economy` copies every lane
+    // (population/funds/satisfaction arrays) and this runs once per day per world.
+    if (_economy_runtime == nullptr) {
+        _points_accrue_result = 1;
+        return;
+    }
+    accrue_points_from(
+        ideology_opinion_from_economy(
+            _economy_runtime->country_class_opinion_snapshot()),
+        day);
+}
+
+void NativeIdeologyRuntime::accrue_points_from(
+        const RuntimeIdeologyOpinionSnapshot &opinion, int64_t day) {
+    // THE ONLY settlement body (R9-1). `accrue_points(day)` is the sole caller
+    // today: it feeds Economy's committed snapshot. The parity binding that would
+    // feed this from the worker's snapshot is not landed (05 §2.7) -- but keeping
+    // ONE body means that wiring only has to supply an opinion, never re-implement
+    // the accounting.
+    // Mirrors RuntimeIdeologyPodAuthority::accrue_points field for field -- the
+    // two must stay line-comparable or parity regresses into a business diff.
+    _points_accrue_result = -1;
+    const uint64_t revision = opinion.revision;
+    _points_accrue_revision = revision;
+    if (revision == 0) { _points_accrue_result = 2; return; }
+    // R9-2: settle once per COMMITTED DAY, never per publish.
+    //
+    // The key used to be `period_index = commit_day / period_days`, and that
+    // divisor is not constant: `period_days` comes from `_epoch_days`
+    // (`economy_runtime_epoch.cpp`), recomputed whenever the workset changes. With
+    // period 5, day 10 is period 2; once the epoch widens to 6, day 12 is period 2
+    // as well, so a genuinely new commit was skipped as "already settled" (and the
+    // reverse split one period into two). `commit_day` is monotone and independent
+    // of the publish count, so it is the only safe key. `period_index` survives as
+    // a diagnostic field only.
+    const int64_t commit_day = opinion.committed_day;
+    const uint64_t settle_key = commit_day >= 0
+        ? static_cast<uint64_t>(commit_day) + 1u
+        : revision;
+    if (settle_key == _points_revision_seen) { _points_accrue_result = 3; return; }
+    const size_t countries = static_cast<size_t>(opinion.country_count);
     if (opinion.country_handles.size() < countries ||
             opinion.country_population.size() != countries ||
             opinion.country_buildings_installed.size() != countries ||
-            opinion.country_trade_base_value.size() != countries ||
-            opinion.class_hash != _political_class_hash ||
-            opinion.class_count != _political_class_count)
+            opinion.country_trade_base_value.size() != countries) {
+        _points_accrue_result = 4;
         return;
+    }
+    if (opinion.class_hash != _political_class_hash ||
+            opinion.class_count != _political_class_count) {
+        _points_accrue_result = 5;
+        return;
+    }
+    // Mark the key consumed only AFTER every gate passed. The original order
+    // consumed it first, so a single snapshot with a mismatched class catalog
+    // permanently retired that revision: the next day's identical snapshot fell
+    // into the "already seen" branch and the runtime never allocated a single
+    // country row. A retryable gate has to stay retryable.
+    _points_revision_seen = settle_key;
+    _points_accrue_result = 0;
     const int64_t period = std::max<int64_t>(1, opinion.period_days);
     const size_t classes = static_cast<size_t>(std::max(0, _political_class_count));
     for (size_t slot = 0; slot < countries; ++slot) {
         const uint64_t handle = opinion.country_handles[slot];
         if (handle == 0) continue;
         CountryState *row = country_state_for(handle, true);
-        if (row == nullptr || row->points_revision == opinion.revision) continue;
-        row->points_revision = opinion.revision;
+        if (row == nullptr || row->points_revision == settle_key) continue;
+        row->points_revision = settle_key;
         const int64_t population = std::max<int64_t>(0, opinion.country_population[slot]);
         const int64_t buildings = std::max<int64_t>(0, opinion.country_buildings_installed[slot]);
         if (row->baseline_ready == 0) {
             row->baseline_population = population;
             row->baseline_buildings = buildings;
             row->baseline_ready = 1;
+            // R9-5: seed the trade marker on the SAME settlement that establishes
+            // the baseline. Leaving it at INT64_MIN meant the kernel's first call
+            // did the seeding instead, one settlement later, so the whole first
+            // period's trade flow was never paid. Seeding here costs nothing (it
+            // pays 0 either way) and removes the silent lost period.
+            if (row->trade_paid_day == INT64_MIN) row->trade_paid_day = day;
             continue;
         }
         const int64_t population_gain = std::max<int64_t>(0, population - row->baseline_population);
@@ -2281,8 +2847,28 @@ void NativeIdeologyRuntime::accrue_points(int64_t day) {
         ledger.day = day;
         ledger.population_q16 = mul_sat(population_gain, _point_population_weight_q16);
         ledger.building_q16 = mul_sat(building_gain, _point_building_weight_q16);
-        ledger.trade_q16 = mul_sat(trade_per_day, _point_trade_weight_q16) / TRADE_MONEY_SCALE;
-        int64_t total_influence = 0;
+        // Trade is a FLOW, so one settlement pays for the days that actually
+        // elapsed. Population and buildings are high-water deltas and already
+        // pay at most once whatever the cadence, but trade used to pay its full
+        // daily amount per settlement and then suppress a second settlement on
+        // the SAME day. That made the total a function of the settlement count:
+        // the worker, settling on its own clock, collected 11 days where the
+        // main thread collected one (measured 46859 vs 67969, R8-2).
+        //
+        // `ideology_trade_flow_q16` is the shared kernel: `trade_per_day x
+        // clamp(day - trade_paid_day, 0, period_days)`, seeded (not paid) on the
+        // first observation. Settling once, thirty times, or a random number of
+        // times over the same 30 days now pays the same total, and the marker
+        // saves/restores with the row.
+        // The span this settlement covers, needed by the cap (R9-3). Trade is the
+        // only flow that knows elapsed time, so the kernel reports how many days
+        // it paid for; a day already paid counts as 1 so the cap never collapses.
+        const int64_t trade_paid_before = row->trade_paid_day;
+        const int64_t trade_days_q16 = ideology_trade_flow_q16(
+            trade_per_day, day, period, row->trade_paid_day);
+        const int64_t ledger_span_days = trade_paid_before == INT64_MIN
+            ? 1 : std::max<int64_t>(1, day - trade_paid_before);
+        ledger.trade_q16 = mul_sat(trade_days_q16, _point_trade_weight_q16) / TRADE_MONEY_SCALE;        int64_t total_influence = 0;
         int64_t weighted = 0;
         for (size_t class_index = 0; class_index < classes; ++class_index) {
             const size_t lane = slot * classes + class_index;
@@ -2312,7 +2898,23 @@ void NativeIdeologyRuntime::accrue_points(int64_t day) {
         const int64_t raw = add_sat(add_sat(ledger.population_q16, ledger.building_q16), ledger.trade_q16);
         int64_t gain = mul_sat(raw, ledger.opinion_factor_q16) / Q16_ONE;
         gain = mul_sat(gain, ledger.gain_factor_q16) / Q16_ONE;
-        if (_point_gain_cap_q16 > 0) gain = std::min(gain, _point_gain_cap_q16);
+        // R9-3: the single-settlement cap scales with the days this settlement
+        // covers.
+        //
+        // `_point_gain_cap_q16` is authored as a PER-DAY ceiling, but it was
+        // applied to the whole settlement. Trade now pays its full elapsed span at
+        // once, so a side that settles rarely hits the cap with a large span while
+        // a side that settles daily never does -- "1 settlement == 30 settlements"
+        // held in the kernel and broke here, paying the rare settler LESS.
+        //
+        // The span is the number of days this settlement is responsible for. It is
+        // 1 when trade was already paid for this day, and `day - previous_day`
+        // otherwise. Population and building gains are high-water deltas that
+        // describe the whole span, so they are covered by the same multiplier.
+        const int64_t covered_days = std::max<int64_t>(1, ledger_span_days);
+        if (_point_gain_cap_q16 > 0) {
+            gain = std::min(gain, mul_sat(_point_gain_cap_q16, covered_days * Q16_ONE) / Q16_ONE);
+        }
         ledger.gain_q16 = std::max<int64_t>(0, gain);
         row->ideology_points_q16 = add_sat(row->ideology_points_q16, ledger.gain_q16);
         row->lifetime_points_q16 = add_sat(row->lifetime_points_q16, ledger.gain_q16);
@@ -2654,10 +3256,13 @@ bool NativeIdeologyRuntime::apply_command(const Command &command, int64_t day,
 }
 Dictionary NativeIdeologyRuntime::run_daily(int64_t day) {
     if (!_configured) return fail("ideology_runtime_unconfigured");
-    const Clock::time_point slice_started = Clock::now();
     accrue_points(day);
-    int32_t handled = 0;
-    int32_t visits = 0;
+    return run_daily_slices(day);
+}
+
+Dictionary NativeIdeologyRuntime::run_daily_slices(int64_t day) {
+    const Clock::time_point slice_started = Clock::now();
+    int32_t handled = 0;    int32_t visits = 0;
     int32_t transition_visits = 0;
     auto finish = [&](bool done, const char *stage) {
         _last_slice_ms = elapsed_ms(slice_started);
@@ -2739,6 +3344,9 @@ Dictionary NativeIdeologyRuntime::run_daily(int64_t day) {
         _active_progress_day = day;
         _active_country_cursor = 0;
         _active_item_cursor = 0;
+        // Once per day is enough: the refresh gate only needs to know whether
+        // any managed card is in play, and that set changes at most on equip.
+        recount_managed_active();
     }
     const Clock::time_point active_started = Clock::now();
     while (_active_progress_day == day &&
@@ -2793,12 +3401,22 @@ Dictionary NativeIdeologyRuntime::run_daily(int64_t day) {
         _active_item_cursor = 0;
         _last_day = day;
     }
+    // P1-A: the instance refresh runs after the day's own work, and finishing
+    // the day is NOT the same as being idle. While the pass still has countries
+    // left, report done=false so the graph keeps scheduling this system.
+    if (step_effect_instance_refresh(day))
+        return finish(false, "ideology_instance_refresh");
     return finish(true, "ideology_active_progress");
 }
 bool NativeIdeologyRuntime::should_run(int64_t day) const {
     const Command *command = next_command();
     return _configured && ((command != nullptr && command->effective_day <= day) ||
-        !_pending_transitions.empty() || _active_progress_day == day || _last_day < day);
+        !_pending_transitions.empty() || _active_progress_day == day || _last_day < day ||
+        // P1-A: a stale input revision has to wake the graph, otherwise the
+        // refresh would only ever run on a day that had other work to do.
+        (_managed_active_total > 0 && _economy_runtime != nullptr &&
+         (_instance_refresh_pending || _instance_refresh_dirty ||
+          _economy_runtime->effect_input_revision() != _effect_input_revision_seen)));
 }
 
 bool NativeIdeologyRuntime::export_pod_catalog(
@@ -2811,6 +3429,10 @@ bool NativeIdeologyRuntime::export_pod_catalog(
     }
     RuntimeIdeologyPodCatalog catalog;
     catalog.country_catalog_hash = country.catalog_hash;
+    // Same world seed on both sides: the worker seeds its offer RNG from this and
+    // the country handle, exactly like `init_country_state` does on the main
+    // thread.
+    catalog.world_seed = _world_seed;
     catalog.class_hash = _political_class_hash;
     catalog.class_count = static_cast<uint32_t>(std::max(0, _political_class_count));
     catalog.technology_count = country.technology_count;
@@ -2957,6 +3579,247 @@ bool NativeIdeologyRuntime::export_pod_catalog(
     out = std::move(catalog);
     return true;
 }
+Dictionary NativeIdeologyRuntime::reconcile_effects_for_test(int64_t handle) {
+    if (!_configured) return fail("ideology_runtime_unconfigured");
+    if (_effect_runtime == nullptr && _effect_forwarder == nullptr)
+        return fail("ideology_effect_runtime_unavailable");
+    CountryState *country = country_state_for(static_cast<uint64_t>(handle), false);
+    if (country == nullptr) return fail("ideology_country_unknown");
+    const uint64_t publishes_before = _metric_publishes;
+    const uint64_t skipped_before = _metric_publishes_skipped;
+    reconcile_country_effect_activations(*country,
+        std::max<int64_t>(0, _last_day));
+    int64_t instances = 0;
+    for (const IdeaState &state : country->ideas)
+        instances += static_cast<int64_t>(state.effect_instances.size());
+    Dictionary out;
+    out["ok"] = true;
+    // Deltas, not totals: a caller that reconciles twice compares these.
+    out["metric_publishes"] = static_cast<int64_t>(_metric_publishes - publishes_before);
+    out["metric_publishes_skipped"] =
+        static_cast<int64_t>(_metric_publishes_skipped - skipped_before);
+    out["instances"] = instances;
+    out["last_error"] = String(_last_error.c_str());
+    return out;
+}
+
+// Main-thread -> POD export. This is the neutral structure both sides can hash:
+// `apply_self_pod_snapshot_for_test` used to build it inline, and parity needs the
+// same snapshot without applying it.
+bool NativeIdeologyRuntime::export_pod_business_snapshot(
+        RuntimeIdeologyPodSnapshot &out) const {
+    if (!_configured) return false;
+    out = RuntimeIdeologyPodSnapshot{};
+    out.abi_version = RUNTIME_IDEOLOGY_POD_ABI_VERSION;
+    out.catalog_hash = _catalog_hash;
+    out.generation = std::max<uint64_t>(1, _pod_snapshot_generation);
+    out.committed_day = _last_day;
+    out.round_day = _last_day;
+    out.countries.resize(_countries.size());
+    for (size_t slot = 0; slot < _countries.size(); ++slot) {
+        const CountryState &source = _countries[slot];
+        if (source.handle == 0) continue;
+        RuntimeIdeologyPodCountryState &target = out.countries[slot];
+        target.handle = source.handle;
+        target.unlocked_era = source.unlocked_era;
+        target.ideology_points_q16 = source.ideology_points_q16;
+        target.points_revision = source.points_revision;
+        target.rng_state = source.rng_state;
+        target.draw_sequence = source.draw_sequence;
+        target.known_bits = source.known_bits;
+        target.banned_bits = source.banned_bits;
+        target.gate_bits = source.gate_bits;
+        target.synergy_bits = source.active_synergy_bits;
+        target.offer.generation = source.offer.generation;
+        target.offer.ideology_ids = source.offer.ideology_ids;
+        target.offer.choice_count = source.offer.choice_count;
+        target.offer.active = source.offer.active;
+        // Everything `apply_pod_snapshot` reads has to be exported, or applying a
+        // snapshot silently zeroes it -- and the business hash would report the
+        // main-thread side as "0" for these forever.
+        target.lifetime_points_q16 = source.lifetime_points_q16;
+        target.trade_paid_day = source.trade_paid_day;
+        target.baseline_ready = source.baseline_ready;
+        target.baseline_population = source.baseline_population;
+        target.baseline_buildings = source.baseline_buildings;
+        target.history_count = source.history_count;
+        target.history_head = source.history_head;
+        target.history_q16 = source.history_q16;
+        target.ledger = source.ledger;
+        target.ideology_slots_used = source.ideology_slots_used;
+        target.spirit_slots_used = source.spirit_slots_used;
+        target.opinion_revision = source.opinion_revision;
+        target.ideas.resize(_definitions.size());
+        for (const IdeaState &idea : source.ideas) {
+            if (idea.ideology_id < 0 ||
+                    idea.ideology_id >= static_cast<int32_t>(_definitions.size()))
+                continue;
+            RuntimeIdeologyPodIdeaState &row =
+                target.ideas[static_cast<size_t>(idea.ideology_id)];
+            row.understanding_q16 = idea.understanding_q16;
+            row.level = idea.level;
+            row.entered_levels = idea.entered_levels;
+            row.generation = idea.generation;
+            row.location = static_cast<RuntimeIdeologyPodLocation>(idea.location);
+        }
+    }
+    // Business hash, not `compute_state_hash`: the latter folds in generation,
+    // cursors and opinion_revision, which differ between main and worker by
+    // construction and made every parity comparison a guaranteed mismatch.
+    out.state_hash = ideology_business_hash(out);
+    return true;
+}
+
+
+Dictionary NativeIdeologyRuntime::apply_self_pod_snapshot_for_test(int64_t generation) {
+    if (!_configured) return fail("ideology_runtime_unconfigured");
+    // Mirrors what the worker would publish for the CURRENT state, so applying
+    // it must be a no-op for the instance set. That is the P1-B contract and the
+    // only way to exercise it without a real worker (a headless fixture never
+    // earns the IDEOLOGY grant -- see ideology_effect_worker_forward_test.gd).
+    RuntimeIdeologyPodSnapshot snapshot;
+    if (!export_pod_business_snapshot(snapshot))
+        return fail("ideology_runtime_unconfigured");
+    // The hook's whole point is to control the generation it applies, so it
+    // overrides whatever the export used (the internal cursor).
+    snapshot.generation =
+        static_cast<uint64_t>(std::max<int64_t>(1, generation));
+    int64_t instances_before = 0;
+    for (const CountryState &country : _countries)
+        for (const IdeaState &state : country.ideas)
+            instances_before += static_cast<int64_t>(state.effect_instances.size());
+    const uint64_t publishes_before = _metric_publishes;
+    std::string error;
+    const bool ok = apply_pod_snapshot(snapshot, error);
+    int64_t instances_after = 0;
+    for (const CountryState &country : _countries)
+        for (const IdeaState &state : country.ideas)
+            instances_after += static_cast<int64_t>(state.effect_instances.size());
+    Dictionary out;
+    out["ok"] = ok;
+    out["reason"] = String(error.c_str());
+    out["instances_before"] = instances_before;
+    out["instances_after"] = instances_after;
+    out["refresh_pending"] = _instance_refresh_pending;
+    out["refresh_dirty"] = _instance_refresh_dirty;
+    // apply_pod_snapshot must not reconcile: any publish here means the inline
+    // full pass came back.
+    out["metric_publishes"] =
+        static_cast<int64_t>(_metric_publishes - publishes_before);
+    return out;
+}
+
+bool NativeIdeologyRuntime::build_cell_program_table(CellProgramTable &out) const {
+    out = CellProgramTable{};
+    if (!_configured) return false;
+    ++_cell_plane_builds;
+    out.generation = _cell_program_generation + 1;
+    out.country_offsets.assign(_countries.size() + 1, 0);
+    for (size_t slot = 0; slot < _countries.size(); ++slot) {
+        out.country_offsets[slot] = static_cast<int32_t>(out.entries.size());
+        const CountryState &country = _countries[slot];
+        if (country.handle == 0) continue;
+        for (const IdeaState &idea : country.ideas) {
+            if (idea.location == INACTIVE || idea.level < 0) continue;
+            ++out.scanned_cards;
+            if (idea.ideology_id < 0 ||
+                    idea.ideology_id >= static_cast<int32_t>(_definitions.size()))
+                continue;
+            const Definition &definition =
+                _definitions[static_cast<size_t>(idea.ideology_id)];
+            if (idea.level >= definition.level_count) continue;
+            const Level &level_row = _levels[
+                static_cast<size_t>(definition.level_begin + idea.level)];
+            out.scanned_templates += level_row.persistent_count;
+            for (int32_t offset = 0; offset < level_row.persistent_count; ++offset) {
+                const EffectTemplate &templ = _persistent_templates[
+                    static_cast<size_t>(level_row.persistent_begin + offset)];
+                const std::string program = effect_program_key(templ.definition_key);
+                if (program.empty()) continue;
+                EffectRuntime::FamilyEffectMetadataPod metadata;
+                if (_effect_runtime == nullptr ||
+                        !_effect_runtime->family_effect_metadata_pod(program, metadata)) {
+                    ++out.unsupported_definition;
+                    continue;
+                }
+                // Only cell-domain cards belong on the plane; everything else
+                // keeps its country instance.
+                if (metadata.target_domain != 2 && metadata.target_domain != 5) {
+                    ++out.unsupported_domain;
+                    continue;
+                }
+                // v1 filter is a single tag. Kinds 0/12/13 map onto it exactly,
+                // and kind 0 becomes "the whole territory" -- that is the X1
+                // unlock, since today it resolves to the anchor cell alone.
+                int32_t filter_tag = -1;
+                const int32_t kind = metadata.target_selector_kind;
+                if (kind == EffectRuntime::SELECTOR_OWN_TERRITORY ||
+                        kind == EffectRuntime::SELECTOR_TAG_ANY_CELL) {
+                    const int32_t tag = metadata.target_selector_param[1];
+                    filter_tag = tag > 0 ? tag - 1 : -1;
+                } else if (kind >= EffectRuntime::SELECTOR_NEIGHBORS_R1) {
+                    // Radial and component kinds compose several cells per
+                    // source; a single tag cannot express them.
+                    ++out.unsupported_selector;
+                    continue;
+                }
+                std::vector<EffectRuntime::ProgramModifierCommand> commands;
+                if (!_effect_runtime->program_modifier_commands(program, commands) ||
+                        commands.empty()) {
+                    ++out.unsupported_definition;
+                    continue;
+                }
+                for (const EffectRuntime::ProgramModifierCommand &command : commands) {
+                    // Stacked rows would need the plane to model stacks, which
+                    // v1 does not. Counting them keeps the gap visible.
+                    if (command.stacks != 1) {
+                        ++out.unsupported_stack;
+                        continue;
+                    }
+                    if (_modifier_runtime == nullptr) {
+                        ++out.unsupported_definition;
+                        continue;
+                    }
+                    std::vector<ModifierRuntime::ResolvedTerm> terms;
+                    if (!_modifier_runtime->resolve_definition_terms(
+                            command.definition_key, terms)) {
+                        ++out.unsupported_definition;
+                        continue;
+                    }
+                    for (const ModifierRuntime::ResolvedTerm &term : terms) {
+                        CellProgramEntry entry;
+                        entry.stat_id = term.stat_id;
+                        entry.filter_tag = filter_tag;
+                        // The magnitude is the command's, verbatim: that is the
+                        // same number the Modifier row would carry, so the
+                        // consumer can interpret `operation` exactly as the
+                        // Modifier runtime does.
+                        entry.operation = term.operation;
+                        // The sign lives in the DEFINITION, not the magnitude:
+                        // modifier magnitudes are clamped to [0, 4] and can
+                        // never be negative, so a debuff is a SUBTRACT term
+                        // whose `add` comes back negative from the resolver.
+                        // Ignoring that would turn every "-8%" card into +8%.
+                        const int64_t magnitude = std::clamp<int64_t>(
+                            command.value_q16, 0, ModifierRuntime::MAX_MAGNITUDE_Q16);
+                        // The resolver folds SUBTRACT into ADD with a negative
+                        // value, so the sign is `term.value`, not a separate
+                        // operation.
+                        const bool negate = term.operation == ModifierRuntime::ADD &&
+                            term.value < 0.0;
+                        entry.coef_q16 = static_cast<int32_t>(
+                            negate ? -magnitude : magnitude);
+                        out.entries.push_back(entry);
+                    }
+                }
+            }
+        }
+    }
+    out.country_offsets[_countries.size()] =
+        static_cast<int32_t>(out.entries.size());
+    return true;
+}
+
 Dictionary NativeIdeologyRuntime::effect_instance_report(int64_t handle) const {
     if (!_configured) return fail("ideology_runtime_unconfigured");
     const CountryState *country = country_state_for(static_cast<uint64_t>(handle));
@@ -3568,10 +4431,42 @@ Dictionary NativeIdeologyRuntime::report() const {
     out["levels_advanced"] = static_cast<int64_t>(_levels_advanced);
     out["class_snapshot_reads"] =
         static_cast<int64_t>(_class_snapshot_reads);
+    out["political_class_hash"] = static_cast<int64_t>(_political_class_hash);
+    out["political_class_count"] = static_cast<int32_t>(_political_class_count);
+    out["points_accrue_result"] = static_cast<int32_t>(_points_accrue_result);
+    out["points_accrue_revision"] = static_cast<int64_t>(_points_accrue_revision);
+    out["points_revision_seen"] = static_cast<int64_t>(_points_revision_seen);
     out["support_evaluations"] =
         static_cast<int64_t>(_support_evaluations);
     out["synergy_candidates_visited"] =
         static_cast<int64_t>(_synergy_candidates_visited);
+    out["selector_truncations"] = static_cast<int64_t>(_selector_truncations);
+    out["selector_matched_total"] =
+        static_cast<int64_t>(_selector_stats.matched_total);
+    out["metric_publishes"] = static_cast<int64_t>(_metric_publishes);
+    out["metric_publishes_skipped"] =
+        static_cast<int64_t>(_metric_publishes_skipped);
+    out["managed_idea_count"] = static_cast<int64_t>(_managed_active_total);
+    out["instance_refresh_visits"] =
+        static_cast<int64_t>(_instance_refresh_visits);
+    out["cell_plane_rebuilds"] = static_cast<int64_t>(_cell_plane_builds);
+    out["synergy_scale_lookups"] = static_cast<int64_t>(_synergy_scale_lookups);
+    out["synergy_scale_scans"] = static_cast<int64_t>(_synergy_scale_scans);
+    out["instance_refresh_skips"] =
+        static_cast<int64_t>(_instance_refresh_skips);
+    out["instance_refresh_passes"] =
+        static_cast<int64_t>(_instance_refresh_passes);
+    out["instance_refresh_lag_revisions"] =
+        static_cast<int64_t>(_instance_refresh_lag_revisions);
+    out["instance_refresh_pending"] = _instance_refresh_pending;
+    out["instance_refresh_ms"] = _instance_refresh_ms;
+    out["effect_input_revision_seen"] =
+        static_cast<int64_t>(_effect_input_revision_seen);
+    out["effect_input_revision_target"] =
+        static_cast<int64_t>(_effect_input_revision_target);
+    out["effect_input_revision"] = _economy_runtime == nullptr
+        ? static_cast<int64_t>(0)
+        : static_cast<int64_t>(_economy_runtime->effect_input_revision());
     out["transition_poll_ms"] = _transition_poll_ms;
     out["command_apply_ms"] = _command_apply_ms;
     out["active_progress_ms"] = _active_progress_ms;
@@ -3735,6 +4630,7 @@ PackedByteArray NativeIdeologyRuntime::capture() const {
         append_le<int64_t>(bytes, country.baseline_population);
         append_le<int64_t>(bytes, country.baseline_buildings);
         append_le<int64_t>(bytes, country.lifetime_points_q16);
+    append_le<int64_t>(bytes, country.trade_paid_day);
         append_le<int64_t>(bytes, country.ledger.population_q16);
         append_le<int64_t>(bytes, country.ledger.building_q16);
         append_le<int64_t>(bytes, country.ledger.trade_q16);
@@ -3865,6 +4761,7 @@ Dictionary NativeIdeologyRuntime::restore(const PackedByteArray &packed) {
                 !read_le(data, size, cursor, country.baseline_population) ||
                 !read_le(data, size, cursor, country.baseline_buildings) ||
                 !read_le(data, size, cursor, country.lifetime_points_q16) ||
+                !read_le(data, size, cursor, country.trade_paid_day) ||
                 !read_le(data, size, cursor, country.ledger.population_q16) ||
                 !read_le(data, size, cursor, country.ledger.building_q16) ||
                 !read_le(data, size, cursor, country.ledger.trade_q16) ||
@@ -4141,6 +5038,15 @@ Dictionary NativeIdeologyRuntime::restore(const PackedByteArray &packed) {
     // card silently inert. Idempotent: a matching set produces no submits.
     for (CountryState &country : _countries)
         reconcile_country_effect_activations(country, std::max<int64_t>(0, _last_day));
+    // The restore pass above already revisited every card and stamped its
+    // signature, so the first refresh must not repeat it.
+    _effect_input_revision_seen = _economy_runtime == nullptr
+        ? 0 : _economy_runtime->effect_input_revision();
+    _effect_input_revision_target = _effect_input_revision_seen;
+    _instance_refresh_pending = false;
+    _instance_refresh_dirty = false;
+    _instance_refresh_country_cursor = 0;
+    recount_managed_active();
     Dictionary out; out["ok"] = true; out["state_hash"] = static_cast<int64_t>(state_hash); return out;
 }
 

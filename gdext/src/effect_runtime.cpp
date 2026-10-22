@@ -510,8 +510,16 @@ bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
         instance.target_handle = entry.target_handle;
         instance.target_generation = entry.target_generation;
         instance.level = entry.level;
+        // ABI 2. Both are decided by whoever owns EFFECT, so a write-back has to
+        // carry them or the flip silently rewrites a card's strength.
+        instance.magnitude_scale_q16 = entry.magnitude_scale_q16;
+        instance.latched = entry.latched;
         instance.next_due_day = entry.next_due_day;
         instance.input_revision = entry.input_revision;
+        // The snapshot carries the change watermark only; treat it as the
+        // observed one too so the first publish after a write-back is compared
+        // against what the worker already committed.
+        instance.metric_observed_revision = entry.input_revision;
         instance.last_evaluated_input_revision =
             entry.last_evaluated_input_revision;
         instance.fire_sequence = entry.fire_sequence;
@@ -704,7 +712,12 @@ bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
             _due_heap.push(node);
         }
     }
-    _committed_generation = snapshot.generation;
+    // A snapshot only ever advances the watermark. Assigning directly would
+    // let a worker snapshot that is behind the local value-driven publishes
+    // pull `_committed_generation` backwards, and country_runtime rejects any
+    // peer intent whose adapter generation looks older than its own.
+    _committed_generation = std::max<uint64_t>(_committed_generation,
+        snapshot.generation);
     _pod_snapshot_generation = snapshot.generation;
     return true;
 }
@@ -2734,15 +2747,27 @@ bool EffectRuntime::set_metric_pod(int64_t instance_id, int32_t metric_id,
         error = "effect_snapshot_metric_invalid"; return false;
     }
     Instance &instance = _instances[static_cast<size_t>(index)];
-    // A frozen snapshot is published column by column. Equal revisions are
-    // therefore part of the same atomic logical row and must still update the
-    // requested metric; only genuinely older snapshots are stale.
-    if (revision < instance.input_revision) return true;
+    // Two different questions, two different fields:
+    //   staleness -- is this snapshot older than one already consumed?
+    //   change    -- does this publish alter a value any consumer reads?
+    // A frozen snapshot is published column by column, so equal revisions are
+    // part of the same atomic logical row and must still be written; only
+    // genuinely older snapshots are stale.
+    if (revision < instance.metric_observed_revision) return true;
+    if (revision > instance.metric_observed_revision)
+        instance.metric_observed_revision = revision;
     int64_t *metric = metric_ptr(instance, metric_id);
     if (metric == nullptr) { error = "effect_snapshot_metric_invalid"; return false; }
+    const size_t present_offset = static_cast<size_t>(instance.metric_base) +
+        static_cast<size_t>(metric_id);
+    const bool present = present_offset < _metric_present.size() &&
+        _metric_present[present_offset] != 0;
+    // An unchanged value is not an input change. Returning before the
+    // watermark moves is what stops a daily re-publish from creating one
+    // transaction per instance per day (P1-C).
+    if (present && *metric == value_q16) return true;
     *metric = value_q16;
-    _metric_present[static_cast<size_t>(instance.metric_base) +
-                    static_cast<size_t>(metric_id)] = 1;
+    if (present_offset < _metric_present.size()) _metric_present[present_offset] = 1;
     if (revision > instance.input_revision) {
         instance.input_revision = revision;
         mark_family_effect_group_dirty(index);
@@ -2807,13 +2832,40 @@ bool EffectRuntime::family_effect_metadata_pod(
          row < definition.condition_begin + definition.condition_count; ++row) {
         const Condition &condition = _conditions[static_cast<size_t>(row)];
         if (condition.op == METRIC_GTE || condition.op == METRIC_LTE ||
-            condition.op == METRIC_EQ)
+            condition.op == METRIC_EQ) {
             include_metric(condition.arg0);
+            auto push_boundary = [&](int64_t boundary) {
+                if (out.metric_threshold_count >=
+                        FamilyEffectMetadataPod::METRIC_THRESHOLD_CAP) {
+                    // Truncating silently would leave a boundary unobserved while
+                    // still bucketing the metric -- worse than not bucketing at
+                    // all, because the miss is invisible.
+                    out.exact_metric_mask.set(condition.arg0);
+                    return;
+                }
+                const int32_t slot = out.metric_threshold_count++;
+                out.metric_threshold_ids[slot] = condition.arg0;
+                out.metric_threshold_values[slot] = boundary;
+            };
+            if (condition.op == METRIC_GTE) {
+                push_boundary(condition.value);
+            } else if (condition.op == METRIC_LTE) {
+                push_boundary(condition.value + 1);
+            } else {  // METRIC_EQ flips on both sides
+                push_boundary(condition.value);
+                push_boundary(condition.value + 1);
+            }
+        }
     }
     for (int32_t row = definition.instruction_begin;
          row < definition.instruction_begin + definition.instruction_count; ++row) {
         const InstructionRow &instruction = _instructions[static_cast<size_t>(row)];
-        if (instruction.op == READ_METRIC) include_metric(instruction.arg0);
+        if (instruction.op == READ_METRIC) {
+            include_metric(instruction.arg0);
+            // A Ramp consumes the continuous value: bucketing it would quantise
+            // the card's own strength, which is a silent numeric change.
+            out.exact_metric_mask.set(instruction.arg0);
+        }
     }
     return true;
 }
@@ -3747,11 +3799,18 @@ Dictionary EffectRuntime::submit_instances(const Dictionary &batch) {
         batch, "activation_sequences");
     const PackedInt64Array next_due_days = get_i64(batch, "next_due_days");
     const PackedByteArray active = get_u8(batch, "active");
+    // A5: optional latch column. Absent means 0 ("no latch"), which is the
+    // pre-existing behaviour for every caller that does not carry one, so no
+    // existing batch has to change. A supplied column must match the row count,
+    // like the other optional columns, so a truncated column cannot latch the
+    // wrong instances.
+    const PackedByteArray latched_column = get_u8(batch, "latched");
     if (count <= 0 || count > _max_instances || program_keys.size() != count ||
         (!submitted_stack_counts.is_empty() && submitted_stack_counts.size() != count) ||
         (!activation_sequences.is_empty() && activation_sequences.size() != count) ||
         (!declared_source_kinds.is_empty() && declared_source_kinds.size() != count) ||
-        (!magnitude_scales.is_empty() && magnitude_scales.size() != count))
+        (!magnitude_scales.is_empty() && magnitude_scales.size() != count) ||
+        (!latched_column.is_empty() && latched_column.size() != count))
         return failure("effect_instance_columns_invalid");
     int32_t accepted = 0;
     int32_t rejected = 0;
@@ -3829,6 +3888,16 @@ Dictionary EffectRuntime::submit_instances(const Dictionary &batch) {
                 instance.magnitude_scale_q16 = requested_scale;
                 instance.effect_applied = 0;
             }
+        }
+        if (!latched_column.is_empty()) {
+            // A5: carry the evaluating side's latch across an authority flip.
+            //
+            // Only an explicit column writes it. Absent means "the caller does not
+            // own this state", so the instance keeps whatever it had -- which is
+            // what keeps a legacy caller from clearing a live latch on every
+            // submit. A change does NOT force a re-emit: the latch is an input to
+            // the next evaluation, not a command to replay.
+            instance.latched = latched_column[i] != 0 ? 1 : 0;
         }
         const uint64_t submitted_activation = activation_sequences.is_empty()
             ? 0 : static_cast<uint64_t>(std::max<int64_t>(
@@ -5319,12 +5388,7 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
         // A scale of exactly 1.0 takes the old path bit-for-bit.
         const int32_t magnitude_scale_q16 = source_instance->magnitude_scale_q16;
         const auto scaled_magnitude = [magnitude_scale_q16](int64_t value) -> int32_t {
-            if (magnitude_scale_q16 == Q16_ONE)
-                return static_cast<int32_t>(std::clamp<int64_t>(
-                    value, 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
-            return static_cast<int32_t>(std::clamp<int64_t>(
-                value * magnitude_scale_q16 / Q16_ONE, 0,
-                ModifierRuntime::MAX_MAGNITUDE_Q16));
+            return effect_scaled_magnitude_q16(value, magnitude_scale_q16);
         };
 
         const uint32_t request_offset = static_cast<uint32_t>(native_commands.size());
@@ -6555,6 +6619,24 @@ Dictionary EffectRuntime::ack_transactions(const Dictionary &batch) {
     return out;
 }
 
+bool EffectRuntime::program_modifier_commands(
+        const std::string &program_key,
+        std::vector<ProgramModifierCommand> &out) const {
+    out.clear();
+    for (const Definition &definition : _definitions) {
+        if (definition.key != program_key) continue;
+        for (int32_t offset = 0; offset < definition.command_count; ++offset) {
+            const CommandDefinition &command = _command_definitions[
+                static_cast<size_t>(definition.command_begin + offset)];
+            if (command.action != MODIFIER_COMMAND) continue;
+            out.push_back(ProgramModifierCommand{command.definition_key,
+                command.value, command.stacks, command.duration_days});
+        }
+        return true;
+    }
+    return false;
+}
+
 Dictionary EffectRuntime::explain(int64_t instance_id) const {
     const int32_t index = instance_index_for_id(instance_id);
     if (index < 0) return failure("effect_instance_not_found");
@@ -6585,6 +6667,9 @@ Dictionary EffectRuntime::explain(int64_t instance_id) const {
     out["applied_input_revision"] = instance.applied_input_revision;
     out["last_acked_fire_sequence"] = static_cast<int64_t>(
         instance.last_acked_fire_sequence);
+    // Persisted since PKEF 13. Exposed so a test can tell a genuinely latched
+    // instance from one that merely round-tripped a zero.
+    out["latched"] = instance.latched != 0;
     out["next_due_day"] = instance.next_due_day;
     out["input_revision"] = instance.input_revision;
     out["last_evaluated_input_revision"] = instance.last_evaluated_input_revision;
@@ -6785,33 +6870,22 @@ bool EffectRuntime::pod_snapshot_persistence_self_test(std::string &error) const
         candidate._instances[0].activation_sequence != activation)
         return fail("effect_pod_activation_changed_on_refresh");
     // Reproduce the old bridge's exact omissions, including its original POD hash.
-    candidate._instances[0].activation_sequence = 0;
-    candidate._instances[0].stack_key_hash = 0;
-    candidate._instances[0].effect_applied = 0;
-    candidate._instances[0].applied_input_revision = 0;
-    candidate._transactions[0].program_id = -1;
-    candidate._transactions[0].transition_input_revision = 7;
-    candidate._transactions[0].transition_fire_sequence = 3;
-    candidate._transactions[0].plan_hash = tx.plan_hash;
-    candidate._command_arena[0].command_key_id = -1;
-    candidate._command_arena[0].external_effect_id = 42;
-    const PackedByteArray legacy = candidate.capture();
-    candidate._transactions[0].plan_hash ^= 1;
-    const PackedByteArray tampered = candidate.capture();
-    if (!bool(candidate.restore(legacy).get("ok", false)))
-        return fail("effect_legacy_pod_roundtrip_failed");
-    const PackedByteArray migrated = candidate.capture();
-    const Dictionary rejected = candidate.restore(tampered);
-    if (bool(rejected.get("ok", true)) ||
-        String(rejected.get("reason", "")) != "pkef_legacy_pod_plan_hash_invalid" ||
-        candidate.capture() != migrated)
-        return fail("effect_legacy_pod_tamper_not_atomic");
-    if (!bool(candidate.restore(migrated).get("ok", false)) ||
-        candidate.capture() != migrated || candidate._instances.size() != 1 ||
-        candidate._transactions.size() != 1 || candidate._instances[0].fire_sequence != 3 ||
-        candidate._instances[0].applied_stack_count != 1 ||
-        candidate._command_arena[0].idempotency_key != 123)
-        return fail("effect_legacy_pod_identity_changed");
+    // Reproduce the old bridge's exact omissions, then prove the SAVE format
+    // rejects them: since the v12 bump the version gate refuses anything but
+    // the current schema, so the `schema == 11` migration branch is unreachable
+    // by construction. Pinning fail-closed is the only assertion that still
+    // means something here; the branch itself is dead code and goes away with
+    // PKEF 13.
+    const PackedByteArray current = candidate.capture();
+    PackedByteArray legacy = current;
+    const int32_t legacy_schema = 11;
+    std::memcpy(legacy.ptrw() + sizeof(uint32_t), &legacy_schema,
+        sizeof(int32_t));
+    const Dictionary rejected_legacy = candidate.restore(legacy);
+    if (bool(rejected_legacy.get("ok", true)))
+        return fail("effect_legacy_pod_save_not_rejected");
+    if (candidate.capture() != current)
+        return fail("effect_legacy_pod_reject_not_atomic");
     return true;
 }
 
@@ -6931,6 +7005,17 @@ bool EffectRuntime::pod_state_parity_self_test(std::string &error) const {
         RuntimeEffectPodAuthority::scaled_command_stacks(2, 3, 8) != 6 ||
         RuntimeEffectPodAuthority::scaled_command_stacks(5, 2, 0) != 1)
         return fail("effect_command_stack_scaling_changed");
+
+    // A5: the POD ABI must be 3, because the `latched` byte's MEANING changed.
+    //
+    // ABI 2 declared and serialized the byte but nothing ever populated it
+    // (no producer wrote a `latched` column, the forwarder read none), so an
+    // ABI-2 snapshot says "unlatched" for a latched instance. A payload from the
+    // old ABI must therefore be refused by version, not read as "latch cleared".
+    if (RUNTIME_EFFECT_POD_ABI_VERSION != 3u)
+        return fail("effect_pod_abi_must_be_3_for_latched_wire");
+    if (RuntimeEffectPodSnapshot{}.abi_version != 3u)
+        return fail("effect_pod_snapshot_default_abi_is_stale");
     return true;
 }
 
@@ -7026,6 +7111,9 @@ PackedByteArray EffectRuntime::capture() const {
         append_le<uint8_t>(bytes, instance.retire_requested);
         append_le<int64_t>(bytes, instance.applied_input_revision);
         append_le<uint64_t>(bytes, instance.last_acked_fire_sequence);
+        // Before the metric slab, not after: the slab is a variable-length tail
+        // whose length is the very next field.
+        append_le<uint8_t>(bytes, instance.latched);
         append_le<uint32_t>(bytes, static_cast<uint32_t>(_metric_count));
         for (int32_t metric_id = 0; metric_id < _metric_count; ++metric_id) {
             const int64_t *value = metric_ptr(instance, metric_id);
@@ -7147,8 +7235,11 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
     if (!read_le(bytes, size, cursor, magic) || magic != SAVE_MAGIC ||
         !read_le(bytes, size, cursor, schema))
         return failure("pkef_header_incompatible");
+    // Two different failures that used to share `catalog_hash_mismatch`, which
+    // sent every compatibility audit after the wrong cause: a save from another
+    // build is an unsupported schema, not a content mismatch.
     if (schema != SAVE_SCHEMA_VERSION)
-        return failure("catalog_hash_mismatch");
+        return failure("pkef_schema_unsupported");
     if (!read_le(bytes, size, cursor, protocol) || protocol != PROTOCOL_VERSION ||
         !read_le(bytes, size, cursor, hash) || hash != _catalog_hash)
         return failure("catalog_hash_mismatch");
@@ -7174,6 +7265,11 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
     restored_metric_present.reserve(static_cast<size_t>(instance_count) *
                                     static_cast<size_t>(_metric_count));
     std::unordered_map<int64_t, int32_t> restored_instance_ids;
+    // Nothing inserts here since PKEF 13 deleted the v11 migration, so the
+    // legacy POD transaction branch that reads it is unreachable. The container
+    // and the guard stay because a future schema migration is exactly the way
+    // this state comes back, and deleting the guard would make that change look
+    // smaller than it is.
     std::unordered_set<int64_t> legacy_pod_instance_ids;
     restored_instances.reserve(instance_count);
     for (uint32_t i = 0; i < instance_count; ++i) {
@@ -7209,26 +7305,16 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
             !read_le(bytes, size, cursor, instance.retire_requested) ||
             !read_le(bytes, size, cursor, instance.applied_input_revision) ||
             !read_le(bytes, size, cursor, instance.last_acked_fire_sequence) ||
+            !read_le(bytes, size, cursor, instance.latched) ||
             !read_le(bytes, size, cursor, metric_count) ||
             metric_count != static_cast<uint32_t>(_metric_count))
             return failure("pkef_instance_truncated_or_metric_mismatch");
-        // 旧 worker 写回漏填这两个必需字段；只修复可由当前目录重建的非托管实例。
-        if (schema == 11 && instance.id > 0 && instance.generation > 0 &&
-            instance.activation_sequence == 0 && instance.stack_key_hash == 0 &&
-            instance.effect_applied == 0 && instance.applied_input_revision == 0 &&
-            instance.program_id >= 0 &&
-            instance.program_id < static_cast<int32_t>(_definitions.size()) &&
-            !uses_managed_lifecycle(_definitions[instance.program_id])) {
-            const Definition &definition = _definitions[instance.program_id];
-            instance.activation_sequence = next_activation_sequence++;
-            instance.stack_key_hash = fnv_string(1469598103934665603ULL,
-                definition.stack_key.empty() ? definition.key : definition.stack_key);
-            instance.duration_days = definition.duration_days;
-            instance.effect_applied = instance.applied_stack_count > 0 ? 1 : 0;
-            instance.applied_input_revision = instance.effect_applied
-                ? instance.last_evaluated_input_revision : 0;
-            legacy_pod_instance_ids.insert(instance.id);
-        }
+        // The v11 migration block that used to live here is gone: the version
+        // gate above rejects anything but the current schema, so `schema == 11`
+        // could never be true and the repair never ran. Its only other effect
+        // was feeding `legacy_pod_instance_ids`, which is why the legacy POD
+        // transaction branch below is now unreachable too -- see the note at the
+        // set's declaration.
         if (instance.active > 1 || instance.source_kind < 0 || instance.source_kind > 5 ||
             instance.target_domain < 0 || instance.target_domain > 5 ||
             instance.operation < 0 || instance.operation > 4 ||
@@ -7241,6 +7327,7 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
             instance.applied_stack_count < 0 ||
             instance.applied_stack_count > instance.max_stacks ||
             instance.effect_applied > 1 || instance.retire_requested > 1 ||
+            instance.latched > 1 ||
             ((instance.effect_applied == 0) !=
              (instance.applied_stack_count == 0)) ||
             instance.applied_input_revision < 0 ||
@@ -7265,6 +7352,10 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
                        static_cast<int32_t>(restored_instances.size())).second) {
             return failure("pkef_instance_identity_invalid");
         }
+        // The save carried the change watermark but not the observed one, and
+        // a restored instance must not treat the first publish after load as a
+        // regression against a value it has already seen.
+        instance.metric_observed_revision = instance.input_revision;
         if (instance.id > 0) {
             const Definition &definition = _definitions[
                 static_cast<size_t>(instance.program_id)];

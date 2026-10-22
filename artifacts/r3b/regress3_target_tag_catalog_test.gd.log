@@ -1,0 +1,33 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [OK] no-tag catalog compiles
+  [OK] no-tag catalog emits an empty name table
+  [OK] no-tag catalog emits no offsets
+  [OK] no-tag catalog emits no rows
+  [OK] no-tag catalog configures
+  [OK] tag catalog compiles
+  [OK] tag names keep author order
+  [OK] tag offsets are a tag_count + 1 CSR
+  [OK] tag metric ids resolve against metric_keys
+  [OK] tag ops keep author order
+  [OK] tag clauses keep author order and grouping
+  [OK] tag thresholds are Q16 and untouched
+  [OK] well-formed tag table configures
+  [OK] undeclared metric is rejected
+  [OK] undeclared metric names the invariant
+  [OK] tag with no rows is rejected
+  [OK] tag with no rows names the invariant
+  [OK] empty tag name is rejected
+  [OK] empty tag name names the invariant
+  [OK] unknown op is rejected
+  [OK] unknown op names the invariant
+  [OK] clause ids decrease is rejected
+  [OK] clause ids decrease names the invariant
+  [OK] mutated-payload fixture compiles first
+  [OK] offset tail past the row count is rejected
+  [OK] rejection names the column shape
+  [OK] mismatched tag column lengths are rejected
+  [OK] mismatched columns name the column contract
+  [OK] metric id past metric_keys is rejected
+  [OK] undeclared metric id names its contract
+target tag catalog: 30 checks, 0 failures

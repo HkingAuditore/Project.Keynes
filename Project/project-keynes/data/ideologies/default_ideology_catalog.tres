@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="IdeologyCatalog" load_steps=1010 format=3]
+[gd_resource type="Resource" script_class="IdeologyCatalog" load_steps=1135 format=3]
 
 [ext_resource type="Script" path="res://scripts/ideology/ideology_catalog.gd" id="1_catalog"]
 [ext_resource type="Script" path="res://scripts/ideology/ideology_profile.gd" id="2_profile"]
@@ -8,6 +8,7 @@
 [ext_resource type="Script" path="res://scripts/ideology/ideology_synergy_definition.gd" id="6_synergy"]
 [ext_resource type="Script" path="res://scripts/effect/effect_command.gd" id="7_effect"]
 [ext_resource type="Script" path="res://scripts/ideology/ideology_requirement.gd" id="8_requirement"]
+[ext_resource type="Resource" path="res://data/ideologies/default_ideology_effects.tres" id="9_programs"]
 
 [sub_resource type="Resource" id="Profile"]
 script = ExtResource("2_profile")
@@ -43,7 +44,7 @@ value_mode = 0
 value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.forager_band"
+definition_key = &"ideology.forager_band.l1"
 
 [sub_resource type="Resource" id="LevelForagerBandL1"]
 script = ExtResource("4_level")
@@ -58,10 +59,10 @@ domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.forager_band"
+definition_key = &"ideology.forager_band.l2"
 
 [sub_resource type="Resource" id="LevelForagerBandL2"]
 script = ExtResource("4_level")
@@ -76,10 +77,10 @@ domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.forager_band"
+definition_key = &"ideology.forager_band.l3"
 
 [sub_resource type="Resource" id="LevelForagerBandL3"]
 script = ExtResource("4_level")
@@ -115,6 +116,7 @@ icon_key = &"economy.crop"
 name_key = &"采集游群"
 detail_key = "按季节轮换营地，林下的坚果、块根与浆果养活了整个部族。"
 school_id = &"agrarian"
+route_tag = &"livelihood"
 rarity = 1
 era_index = 0
 rarity_weight = 120
@@ -125,7 +127,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 16384
 levels = Array[Resource]([SubResource("LevelForagerBandL1"), SubResource("LevelForagerBandL2"), SubResource("LevelForagerBandL3")])
 
-[sub_resource type="Resource" id="EffectHuntingTraditionL1"]
+[sub_resource type="Resource" id="EffectHuntingTraditionCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -137,47 +139,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.hunting_tradition"
 
+[sub_resource type="Resource" id="EffectHuntingTraditionL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"hunting_tradition_l1"
+
 [sub_resource type="Resource" id="LevelHuntingTraditionL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectHuntingTraditionL1")])
+persistent_effects = Array[Resource]([SubResource("EffectHuntingTraditionCostL1"), SubResource("EffectHuntingTraditionL1R0")])
 
-[sub_resource type="Resource" id="EffectHuntingTraditionL2"]
+[sub_resource type="Resource" id="EffectHuntingTraditionCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.hunting_tradition"
+
+[sub_resource type="Resource" id="EffectHuntingTraditionL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"hunting_tradition_l2"
 
 [sub_resource type="Resource" id="LevelHuntingTraditionL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectHuntingTraditionL2")])
+persistent_effects = Array[Resource]([SubResource("EffectHuntingTraditionCostL2"), SubResource("EffectHuntingTraditionL2R0")])
 
-[sub_resource type="Resource" id="EffectHuntingTraditionL3"]
+[sub_resource type="Resource" id="EffectHuntingTraditionCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.hunting_tradition"
+
+[sub_resource type="Resource" id="EffectHuntingTraditionL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"hunting_tradition_l3"
 
 [sub_resource type="Resource" id="LevelHuntingTraditionL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectHuntingTraditionL3")])
+persistent_effects = Array[Resource]([SubResource("EffectHuntingTraditionCostL3"), SubResource("EffectHuntingTraditionL3R0")])
 
 [sub_resource type="Resource" id="StanceHuntingTraditionFarmer"]
 script = ExtResource("5_stance")
@@ -207,6 +248,7 @@ icon_key = &"country.politics"
 name_key = &"狩猎传统"
 detail_key = "以围猎、陷阱与分工分配肉食，青壮年在协作中学会统一号令。"
 school_id = &"mobilization"
+route_tag = &"livelihood"
 rarity = 1
 era_index = 0
 rarity_weight = 120
@@ -217,7 +259,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 16384
 levels = Array[Resource]([SubResource("LevelHuntingTraditionL1"), SubResource("LevelHuntingTraditionL2"), SubResource("LevelHuntingTraditionL3")])
 
-[sub_resource type="Resource" id="EffectFlintKnappingL1"]
+[sub_resource type="Resource" id="EffectFlintKnappingCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -229,47 +271,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.flint_knapping"
 
+[sub_resource type="Resource" id="EffectFlintKnappingL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"flint_knapping_l1"
+
 [sub_resource type="Resource" id="LevelFlintKnappingL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectFlintKnappingL1")])
+persistent_effects = Array[Resource]([SubResource("EffectFlintKnappingCostL1"), SubResource("EffectFlintKnappingL1R0")])
 
-[sub_resource type="Resource" id="EffectFlintKnappingL2"]
+[sub_resource type="Resource" id="EffectFlintKnappingCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.flint_knapping"
+
+[sub_resource type="Resource" id="EffectFlintKnappingL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"flint_knapping_l2"
 
 [sub_resource type="Resource" id="LevelFlintKnappingL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectFlintKnappingL2")])
+persistent_effects = Array[Resource]([SubResource("EffectFlintKnappingCostL2"), SubResource("EffectFlintKnappingL2R0")])
 
-[sub_resource type="Resource" id="EffectFlintKnappingL3"]
+[sub_resource type="Resource" id="EffectFlintKnappingCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.flint_knapping"
+
+[sub_resource type="Resource" id="EffectFlintKnappingL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"flint_knapping_l3"
 
 [sub_resource type="Resource" id="LevelFlintKnappingL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectFlintKnappingL3")])
+persistent_effects = Array[Resource]([SubResource("EffectFlintKnappingCostL3"), SubResource("EffectFlintKnappingL3R0")])
 
 [sub_resource type="Resource" id="StanceFlintKnappingFarmer"]
 script = ExtResource("5_stance")
@@ -304,6 +385,7 @@ icon_key = &"economy.building.factory"
 name_key = &"打制石器"
 detail_key = "打击石核取刃，形状统一的石器让各项劳作都更省力。"
 school_id = &"industry"
+route_tag = &"mining"
 rarity = 1
 era_index = 0
 rarity_weight = 120
@@ -417,7 +499,7 @@ value_mode = 0
 value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.riverside_camp"
+definition_key = &"ideology.riverside_camp.l1"
 
 [sub_resource type="Resource" id="LevelRiversideCampL1"]
 script = ExtResource("4_level")
@@ -432,10 +514,10 @@ domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.riverside_camp"
+definition_key = &"ideology.riverside_camp.l2"
 
 [sub_resource type="Resource" id="LevelRiversideCampL2"]
 script = ExtResource("4_level")
@@ -450,16 +532,29 @@ domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.riverside_camp"
+definition_key = &"ideology.riverside_camp.l3"
+
+[sub_resource type="Resource" id="EffectRiversideCampL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"riverside_camp_l3"
 
 [sub_resource type="Resource" id="LevelRiversideCampL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectRiversideCampL3")])
+persistent_effects = Array[Resource]([SubResource("EffectRiversideCampL3"), SubResource("EffectRiversideCampL3R0")])
 
 [sub_resource type="Resource" id="StanceRiversideCampFarmer"]
 script = ExtResource("5_stance")
@@ -494,6 +589,7 @@ icon_key = &"economy.resource"
 name_key = &"逐水而居"
 detail_key = "营地紧贴河岸与湖湾，取水捕鱼极便，洪水却始终是威胁。"
 school_id = &"harmony"
+route_tag = &"cropland"
 rarity = 1
 era_index = 0
 rarity_weight = 120
@@ -692,7 +788,7 @@ value_mode = 0
 value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.pit_dwelling"
+definition_key = &"ideology.pit_dwelling.l1"
 
 [sub_resource type="Resource" id="LevelPitDwellingL1"]
 script = ExtResource("4_level")
@@ -707,10 +803,10 @@ domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.pit_dwelling"
+definition_key = &"ideology.pit_dwelling.l2"
 
 [sub_resource type="Resource" id="LevelPitDwellingL2"]
 script = ExtResource("4_level")
@@ -725,16 +821,29 @@ domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.pit_dwelling"
+definition_key = &"ideology.pit_dwelling.l3"
+
+[sub_resource type="Resource" id="EffectPitDwellingL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"pit_dwelling_l3"
 
 [sub_resource type="Resource" id="LevelPitDwellingL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectPitDwellingL3")])
+persistent_effects = Array[Resource]([SubResource("EffectPitDwellingL3"), SubResource("EffectPitDwellingL3R0")])
 
 [sub_resource type="Resource" id="StancePitDwellingFarmer"]
 script = ExtResource("5_stance")
@@ -764,6 +873,7 @@ icon_key = &"economy.building.factory"
 name_key = &"穴居聚落"
 detail_key = "掘地为屋、聚族而居，御寒与省工两得，可耕的地面却让了出去。"
 school_id = &"industry"
+route_tag = &"granary"
 rarity = 1
 era_index = 0
 rarity_weight = 120
@@ -774,7 +884,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 16384
 levels = Array[Resource]([SubResource("LevelPitDwellingL1"), SubResource("LevelPitDwellingL2"), SubResource("LevelPitDwellingL3")])
 
-[sub_resource type="Resource" id="EffectCollectiveStewardshipL1"]
+[sub_resource type="Resource" id="EffectCollectiveStewardshipCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -786,47 +896,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.collective_stewardship"
 
+[sub_resource type="Resource" id="EffectCollectiveStewardshipL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"collective_stewardship_l1"
+
 [sub_resource type="Resource" id="LevelCollectiveStewardshipL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectCollectiveStewardshipL1")])
+persistent_effects = Array[Resource]([SubResource("EffectCollectiveStewardshipCostL1"), SubResource("EffectCollectiveStewardshipL1R0")])
 
-[sub_resource type="Resource" id="EffectCollectiveStewardshipL2"]
+[sub_resource type="Resource" id="EffectCollectiveStewardshipCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.collective_stewardship"
+
+[sub_resource type="Resource" id="EffectCollectiveStewardshipL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"collective_stewardship_l2"
 
 [sub_resource type="Resource" id="LevelCollectiveStewardshipL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectCollectiveStewardshipL2")])
+persistent_effects = Array[Resource]([SubResource("EffectCollectiveStewardshipCostL2"), SubResource("EffectCollectiveStewardshipL2R0")])
 
-[sub_resource type="Resource" id="EffectCollectiveStewardshipL3"]
+[sub_resource type="Resource" id="EffectCollectiveStewardshipCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.collective_stewardship"
+
+[sub_resource type="Resource" id="EffectCollectiveStewardshipL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"collective_stewardship_l3"
 
 [sub_resource type="Resource" id="LevelCollectiveStewardshipL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectCollectiveStewardshipL3")])
+persistent_effects = Array[Resource]([SubResource("EffectCollectiveStewardshipCostL3"), SubResource("EffectCollectiveStewardshipL3R0")])
 
 [sub_resource type="Resource" id="StanceCollectiveStewardshipFarmer"]
 script = ExtResource("5_stance")
@@ -861,6 +1010,7 @@ icon_key = &"economy.crop"
 name_key = &"共同体治理"
 detail_key = "以共同仓储、互助义务和长期土地责任组织生产，灵活交易被牺牲。"
 school_id = &"agrarian"
+route_tag = &"cropland"
 rarity = 1
 era_index = 1
 rarity_weight = 120
@@ -883,7 +1033,7 @@ value_mode = 0
 value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.terrace_farming"
+definition_key = &"ideology.terrace_farming.l1"
 
 [sub_resource type="Resource" id="LevelTerraceFarmingL1"]
 script = ExtResource("4_level")
@@ -898,10 +1048,10 @@ domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.terrace_farming"
+definition_key = &"ideology.terrace_farming.l2"
 
 [sub_resource type="Resource" id="LevelTerraceFarmingL2"]
 script = ExtResource("4_level")
@@ -916,16 +1066,29 @@ domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.terrace_farming"
+definition_key = &"ideology.terrace_farming.l3"
+
+[sub_resource type="Resource" id="EffectTerraceFarmingL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"terrace_farming_l3"
 
 [sub_resource type="Resource" id="LevelTerraceFarmingL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectTerraceFarmingL3")])
+persistent_effects = Array[Resource]([SubResource("EffectTerraceFarmingL3"), SubResource("EffectTerraceFarmingL3R0")])
 
 [sub_resource type="Resource" id="StanceTerraceFarmingFarmer"]
 script = ExtResource("5_stance")
@@ -965,6 +1128,7 @@ icon_key = &"economy.crop"
 name_key = &"梯田"
 detail_key = "顺山势砌石成田，坡地上的每一寸土都被用上，工料耗费极大。"
 school_id = &"agrarian"
+route_tag = &"cropland"
 rarity = 1
 era_index = 1
 rarity_weight = 120
@@ -1079,7 +1243,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 16384
 levels = Array[Resource]([SubResource("LevelPaddyCultivationL1"), SubResource("LevelPaddyCultivationL2"), SubResource("LevelPaddyCultivationL3")])
 
-[sub_resource type="Resource" id="EffectThreeFieldRotationL1"]
+[sub_resource type="Resource" id="EffectThreeFieldRotationCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -1091,47 +1255,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.three_field_rotation"
 
+[sub_resource type="Resource" id="EffectThreeFieldRotationL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"three_field_rotation_l1"
+
 [sub_resource type="Resource" id="LevelThreeFieldRotationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectThreeFieldRotationL1")])
+persistent_effects = Array[Resource]([SubResource("EffectThreeFieldRotationCostL1"), SubResource("EffectThreeFieldRotationL1R0")])
 
-[sub_resource type="Resource" id="EffectThreeFieldRotationL2"]
+[sub_resource type="Resource" id="EffectThreeFieldRotationCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.three_field_rotation"
+
+[sub_resource type="Resource" id="EffectThreeFieldRotationL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"three_field_rotation_l2"
 
 [sub_resource type="Resource" id="LevelThreeFieldRotationL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectThreeFieldRotationL2")])
+persistent_effects = Array[Resource]([SubResource("EffectThreeFieldRotationCostL2"), SubResource("EffectThreeFieldRotationL2R0")])
 
-[sub_resource type="Resource" id="EffectThreeFieldRotationL3"]
+[sub_resource type="Resource" id="EffectThreeFieldRotationCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.three_field_rotation"
+
+[sub_resource type="Resource" id="EffectThreeFieldRotationL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"three_field_rotation_l3"
 
 [sub_resource type="Resource" id="LevelThreeFieldRotationL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectThreeFieldRotationL3")])
+persistent_effects = Array[Resource]([SubResource("EffectThreeFieldRotationCostL3"), SubResource("EffectThreeFieldRotationL3R0")])
 
 [sub_resource type="Resource" id="StanceThreeFieldRotationFarmer"]
 script = ExtResource("5_stance")
@@ -1171,6 +1374,7 @@ icon_key = &"economy.crop"
 name_key = &"三圃轮作"
 detail_key = "把耕地分为三片轮换休耕，地力得以恢复，牧草地相应让出。"
 school_id = &"agrarian"
+route_tag = &"cropland"
 rarity = 2
 era_index = 1
 rarity_weight = 60
@@ -1183,7 +1387,7 @@ promote_threshold_q16 = 20480
 exclusion_group = &"land_order"
 levels = Array[Resource]([SubResource("LevelThreeFieldRotationL1"), SubResource("LevelThreeFieldRotationL2"), SubResource("LevelThreeFieldRotationL3")])
 
-[sub_resource type="Resource" id="EffectFreeExchangeL1"]
+[sub_resource type="Resource" id="EffectFreeExchangeCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -1195,47 +1399,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.free_exchange"
 
+[sub_resource type="Resource" id="EffectFreeExchangeL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"free_exchange_l1"
+
 [sub_resource type="Resource" id="LevelFreeExchangeL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectFreeExchangeL1")])
+persistent_effects = Array[Resource]([SubResource("EffectFreeExchangeCostL1"), SubResource("EffectFreeExchangeL1R0")])
 
-[sub_resource type="Resource" id="EffectFreeExchangeL2"]
+[sub_resource type="Resource" id="EffectFreeExchangeCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.free_exchange"
+
+[sub_resource type="Resource" id="EffectFreeExchangeL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"free_exchange_l2"
 
 [sub_resource type="Resource" id="LevelFreeExchangeL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectFreeExchangeL2")])
+persistent_effects = Array[Resource]([SubResource("EffectFreeExchangeCostL2"), SubResource("EffectFreeExchangeL2R0")])
 
-[sub_resource type="Resource" id="EffectFreeExchangeL3"]
+[sub_resource type="Resource" id="EffectFreeExchangeCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.free_exchange"
+
+[sub_resource type="Resource" id="EffectFreeExchangeL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"free_exchange_l3"
 
 [sub_resource type="Resource" id="LevelFreeExchangeL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectFreeExchangeL3")])
+persistent_effects = Array[Resource]([SubResource("EffectFreeExchangeCostL3"), SubResource("EffectFreeExchangeL3R0")])
 
 [sub_resource type="Resource" id="StanceFreeExchangeFarmer"]
 script = ExtResource("5_stance")
@@ -1271,6 +1514,7 @@ icon_key = &"economy.building.market"
 name_key = &"自由交换"
 detail_key = "以契约、流通和分散决策鼓励资源重新配置，家庭消费随之抬头。"
 school_id = &"commerce"
+route_tag = &"market"
 rarity = 1
 era_index = 1
 rarity_weight = 120
@@ -1375,7 +1619,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 16384
 levels = Array[Resource]([SubResource("LevelScholarOfficeL1"), SubResource("LevelScholarOfficeL2"), SubResource("LevelScholarOfficeL3")])
 
-[sub_resource type="Resource" id="EffectStandardizationL1"]
+[sub_resource type="Resource" id="EffectStandardizationCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -1387,47 +1631,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.standardization"
 
+[sub_resource type="Resource" id="EffectStandardizationL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"standardization_l1"
+
 [sub_resource type="Resource" id="LevelStandardizationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectStandardizationL1")])
+persistent_effects = Array[Resource]([SubResource("EffectStandardizationCostL1"), SubResource("EffectStandardizationL1R0")])
 
-[sub_resource type="Resource" id="EffectStandardizationL2"]
+[sub_resource type="Resource" id="EffectStandardizationCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.standardization"
+
+[sub_resource type="Resource" id="EffectStandardizationL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"standardization_l2"
 
 [sub_resource type="Resource" id="LevelStandardizationL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectStandardizationL2")])
+persistent_effects = Array[Resource]([SubResource("EffectStandardizationCostL2"), SubResource("EffectStandardizationL2R0")])
 
-[sub_resource type="Resource" id="EffectStandardizationL3"]
+[sub_resource type="Resource" id="EffectStandardizationCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.standardization"
+
+[sub_resource type="Resource" id="EffectStandardizationL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"standardization_l3"
 
 [sub_resource type="Resource" id="LevelStandardizationL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectStandardizationL3")])
+persistent_effects = Array[Resource]([SubResource("EffectStandardizationCostL3"), SubResource("EffectStandardizationL3R0")])
 
 [sub_resource type="Resource" id="StanceStandardizationFarmer"]
 script = ExtResource("5_stance")
@@ -1462,6 +1745,7 @@ icon_key = &"economy.building.factory"
 name_key = &"标准化"
 detail_key = "统一度量、规格与零件，生产与建造都更省料，流通节奏却被规矩拖慢。"
 school_id = &"industry"
+route_tag = &"workshop"
 rarity = 1
 era_index = 1
 rarity_weight = 120
@@ -1473,7 +1757,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 16384
 levels = Array[Resource]([SubResource("LevelStandardizationL1"), SubResource("LevelStandardizationL2"), SubResource("LevelStandardizationL3")])
 
-[sub_resource type="Resource" id="EffectHouseholdWeavingL1"]
+[sub_resource type="Resource" id="EffectHouseholdWeavingCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -1485,47 +1769,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.household_weaving"
 
+[sub_resource type="Resource" id="EffectHouseholdWeavingL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"household_weaving_l1"
+
 [sub_resource type="Resource" id="LevelHouseholdWeavingL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectHouseholdWeavingL1")])
+persistent_effects = Array[Resource]([SubResource("EffectHouseholdWeavingCostL1"), SubResource("EffectHouseholdWeavingL1R0")])
 
-[sub_resource type="Resource" id="EffectHouseholdWeavingL2"]
+[sub_resource type="Resource" id="EffectHouseholdWeavingCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.household_weaving"
+
+[sub_resource type="Resource" id="EffectHouseholdWeavingL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"household_weaving_l2"
 
 [sub_resource type="Resource" id="LevelHouseholdWeavingL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectHouseholdWeavingL2")])
+persistent_effects = Array[Resource]([SubResource("EffectHouseholdWeavingCostL2"), SubResource("EffectHouseholdWeavingL2R0")])
 
-[sub_resource type="Resource" id="EffectHouseholdWeavingL3"]
+[sub_resource type="Resource" id="EffectHouseholdWeavingCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.household_weaving"
+
+[sub_resource type="Resource" id="EffectHouseholdWeavingL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"household_weaving_l3"
 
 [sub_resource type="Resource" id="LevelHouseholdWeavingL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectHouseholdWeavingL3")])
+persistent_effects = Array[Resource]([SubResource("EffectHouseholdWeavingCostL3"), SubResource("EffectHouseholdWeavingL3R0")])
 
 [sub_resource type="Resource" id="StanceHouseholdWeavingFarmer"]
 script = ExtResource("5_stance")
@@ -1565,6 +1888,7 @@ icon_key = &"economy.building.factory"
 name_key = &"家内纺织"
 detail_key = "农妇在农隙纺麻织布，家庭收支多了一条底线，麻田与粮田开始争地。"
 school_id = &"industry"
+route_tag = &"workshop"
 rarity = 1
 era_index = 1
 rarity_weight = 120
@@ -1576,59 +1900,62 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 16384
 levels = Array[Resource]([SubResource("LevelHouseholdWeavingL1"), SubResource("LevelHouseholdWeavingL2"), SubResource("LevelHouseholdWeavingL3")])
 
-[sub_resource type="Resource" id="EffectCoppiceRotationL1"]
+[sub_resource type="Resource" id="EffectCoppiceRotationL1R0"]
 script = ExtResource("7_effect")
 action = 1
-domain = 1
+domain = 2
 opcode = 1
 target_resolver = 1
-value_mode = 0
+value_mode = 1
 value_q16 = 65536
 duration_days = -1
+stacks = 1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.coppice_rotation"
+definition_key = &"coppice_rotation_l1"
 
 [sub_resource type="Resource" id="LevelCoppiceRotationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectCoppiceRotationL1")])
+persistent_effects = Array[Resource]([SubResource("EffectCoppiceRotationL1R0")])
 
-[sub_resource type="Resource" id="EffectCoppiceRotationL2"]
+[sub_resource type="Resource" id="EffectCoppiceRotationL2R0"]
 script = ExtResource("7_effect")
 action = 1
-domain = 1
+domain = 2
 opcode = 1
 target_resolver = 1
-value_mode = 0
-value_q16 = 104858
+value_mode = 1
+value_q16 = 65536
 duration_days = -1
+stacks = 1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.coppice_rotation"
+definition_key = &"coppice_rotation_l2"
 
 [sub_resource type="Resource" id="LevelCoppiceRotationL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectCoppiceRotationL2")])
+persistent_effects = Array[Resource]([SubResource("EffectCoppiceRotationL2R0")])
 
-[sub_resource type="Resource" id="EffectCoppiceRotationL3"]
+[sub_resource type="Resource" id="EffectCoppiceRotationL3R0"]
 script = ExtResource("7_effect")
 action = 1
-domain = 1
+domain = 2
 opcode = 1
 target_resolver = 1
-value_mode = 0
-value_q16 = 144179
+value_mode = 1
+value_q16 = 65536
 duration_days = -1
+stacks = 1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.coppice_rotation"
+definition_key = &"coppice_rotation_l3"
 
 [sub_resource type="Resource" id="LevelCoppiceRotationL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectCoppiceRotationL3")])
+persistent_effects = Array[Resource]([SubResource("EffectCoppiceRotationL3R0")])
 
 [sub_resource type="Resource" id="StanceCoppiceRotationFarmer"]
 script = ExtResource("5_stance")
@@ -1668,6 +1995,7 @@ icon_key = &"economy.resource"
 name_key = &"轮伐"
 detail_key = "分区伐取、留桩待萌，林木再生率大涨，短期木材产量却要退一步。"
 school_id = &"harmony"
+route_tag = &"livelihood"
 rarity = 2
 era_index = 1
 rarity_weight = 60
@@ -1689,7 +2017,7 @@ value_mode = 0
 value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.water_works"
+definition_key = &"ideology.water_works.l1"
 
 [sub_resource type="Resource" id="LevelWaterWorksL1"]
 script = ExtResource("4_level")
@@ -1704,10 +2032,10 @@ domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.water_works"
+definition_key = &"ideology.water_works.l2"
 
 [sub_resource type="Resource" id="LevelWaterWorksL2"]
 script = ExtResource("4_level")
@@ -1722,16 +2050,29 @@ domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.water_works"
+definition_key = &"ideology.water_works.l3"
+
+[sub_resource type="Resource" id="EffectWaterWorksL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"water_works_l3"
 
 [sub_resource type="Resource" id="LevelWaterWorksL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectWaterWorksL3")])
+persistent_effects = Array[Resource]([SubResource("EffectWaterWorksL3"), SubResource("EffectWaterWorksL3R0")])
 
 [sub_resource type="Resource" id="StanceWaterWorksFarmer"]
 script = ExtResource("5_stance")
@@ -1771,6 +2112,8 @@ icon_key = &"economy.resource"
 name_key = &"治水营田"
 detail_key = "修堤疏渠、引水灌田，把洪水变成可用的水利，工役耗费不轻。"
 school_id = &"harmony"
+route_tag = &"cropland"
+secondary_route_tags = PackedStringArray("thoroughfare")
 rarity = 1
 era_index = 1
 rarity_weight = 120
@@ -1792,7 +2135,7 @@ value_mode = 0
 value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.seasonal_calendar"
+definition_key = &"ideology.seasonal_calendar.l1"
 
 [sub_resource type="Resource" id="LevelSeasonalCalendarL1"]
 script = ExtResource("4_level")
@@ -1807,10 +2150,10 @@ domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.seasonal_calendar"
+definition_key = &"ideology.seasonal_calendar.l2"
 
 [sub_resource type="Resource" id="LevelSeasonalCalendarL2"]
 script = ExtResource("4_level")
@@ -1825,16 +2168,29 @@ domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.seasonal_calendar"
+definition_key = &"ideology.seasonal_calendar.l3"
+
+[sub_resource type="Resource" id="EffectSeasonalCalendarL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"seasonal_calendar_l3"
 
 [sub_resource type="Resource" id="LevelSeasonalCalendarL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectSeasonalCalendarL3")])
+persistent_effects = Array[Resource]([SubResource("EffectSeasonalCalendarL3"), SubResource("EffectSeasonalCalendarL3R0")])
 
 [sub_resource type="Resource" id="StanceSeasonalCalendarFarmer"]
 script = ExtResource("5_stance")
@@ -1869,6 +2225,7 @@ icon_key = &"economy.resource"
 name_key = &"寒暑历法"
 detail_key = "以节气指导农时与役使，寒暑异常的危害大为减轻，思辨的锐气稍减。"
 school_id = &"harmony"
+route_tag = &"season"
 rarity = 1
 era_index = 1
 rarity_weight = 120
@@ -1880,7 +2237,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 16384
 levels = Array[Resource]([SubResource("LevelSeasonalCalendarL1"), SubResource("LevelSeasonalCalendarL2"), SubResource("LevelSeasonalCalendarL3")])
 
-[sub_resource type="Resource" id="EffectEverNormalGranaryL1"]
+[sub_resource type="Resource" id="EffectEverNormalGranaryCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -1892,47 +2249,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.ever_normal_granary"
 
+[sub_resource type="Resource" id="EffectEverNormalGranaryL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"ever_normal_granary_l1"
+
 [sub_resource type="Resource" id="LevelEverNormalGranaryL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectEverNormalGranaryL1")])
+persistent_effects = Array[Resource]([SubResource("EffectEverNormalGranaryCostL1"), SubResource("EffectEverNormalGranaryL1R0")])
 
-[sub_resource type="Resource" id="EffectEverNormalGranaryL2"]
+[sub_resource type="Resource" id="EffectEverNormalGranaryCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.ever_normal_granary"
+
+[sub_resource type="Resource" id="EffectEverNormalGranaryL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"ever_normal_granary_l2"
 
 [sub_resource type="Resource" id="LevelEverNormalGranaryL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectEverNormalGranaryL2")])
+persistent_effects = Array[Resource]([SubResource("EffectEverNormalGranaryCostL2"), SubResource("EffectEverNormalGranaryL2R0")])
 
-[sub_resource type="Resource" id="EffectEverNormalGranaryL3"]
+[sub_resource type="Resource" id="EffectEverNormalGranaryCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.ever_normal_granary"
+
+[sub_resource type="Resource" id="EffectEverNormalGranaryL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"ever_normal_granary_l3"
 
 [sub_resource type="Resource" id="LevelEverNormalGranaryL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectEverNormalGranaryL3")])
+persistent_effects = Array[Resource]([SubResource("EffectEverNormalGranaryCostL3"), SubResource("EffectEverNormalGranaryL3R0")])
 
 [sub_resource type="Resource" id="StanceEverNormalGranaryFarmer"]
 script = ExtResource("5_stance")
@@ -1967,6 +2363,7 @@ icon_key = &"economy.crop"
 name_key = &"常平仓"
 detail_key = "丰年籴入、歉年粜出，以官仓平抑粮价与饥荒，市面流通被官仓压住。"
 school_id = &"agrarian"
+route_tag = &"granary"
 rarity = 2
 era_index = 2
 rarity_weight = 60
@@ -1978,7 +2375,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 20480
 levels = Array[Resource]([SubResource("LevelEverNormalGranaryL1"), SubResource("LevelEverNormalGranaryL2"), SubResource("LevelEverNormalGranaryL3")])
 
-[sub_resource type="Resource" id="EffectSettleAndFarmL1"]
+[sub_resource type="Resource" id="EffectSettleAndFarmCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -1990,47 +2387,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.settle_and_farm"
 
+[sub_resource type="Resource" id="EffectSettleAndFarmL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"settle_and_farm_l1"
+
 [sub_resource type="Resource" id="LevelSettleAndFarmL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectSettleAndFarmL1")])
+persistent_effects = Array[Resource]([SubResource("EffectSettleAndFarmCostL1"), SubResource("EffectSettleAndFarmL1R0")])
 
-[sub_resource type="Resource" id="EffectSettleAndFarmL2"]
+[sub_resource type="Resource" id="EffectSettleAndFarmCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.settle_and_farm"
+
+[sub_resource type="Resource" id="EffectSettleAndFarmL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"settle_and_farm_l2"
 
 [sub_resource type="Resource" id="LevelSettleAndFarmL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectSettleAndFarmL2")])
+persistent_effects = Array[Resource]([SubResource("EffectSettleAndFarmCostL2"), SubResource("EffectSettleAndFarmL2R0")])
 
-[sub_resource type="Resource" id="EffectSettleAndFarmL3"]
+[sub_resource type="Resource" id="EffectSettleAndFarmCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.settle_and_farm"
+
+[sub_resource type="Resource" id="EffectSettleAndFarmL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"settle_and_farm_l3"
 
 [sub_resource type="Resource" id="LevelSettleAndFarmL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectSettleAndFarmL3")])
+persistent_effects = Array[Resource]([SubResource("EffectSettleAndFarmCostL3"), SubResource("EffectSettleAndFarmL3R0")])
 
 [sub_resource type="Resource" id="StanceSettleAndFarmFarmer"]
 script = ExtResource("5_stance")
@@ -2065,6 +2501,7 @@ icon_key = &"economy.crop"
 name_key = &"屯垦"
 detail_key = "编户屯垦，把荒原与边地一并开成田，投入的农具与口粮同样惊人。"
 school_id = &"agrarian"
+route_tag = &"granary"
 rarity = 2
 era_index = 2
 rarity_weight = 60
@@ -2180,7 +2617,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 16384
 levels = Array[Resource]([SubResource("LevelOpenPortsL1"), SubResource("LevelOpenPortsL2"), SubResource("LevelOpenPortsL3")])
 
-[sub_resource type="Resource" id="EffectGuildChartersL1"]
+[sub_resource type="Resource" id="EffectGuildChartersCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -2192,47 +2629,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.guild_charters"
 
+[sub_resource type="Resource" id="EffectGuildChartersL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"guild_charters_l1"
+
 [sub_resource type="Resource" id="LevelGuildChartersL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectGuildChartersL1")])
+persistent_effects = Array[Resource]([SubResource("EffectGuildChartersCostL1"), SubResource("EffectGuildChartersL1R0")])
 
-[sub_resource type="Resource" id="EffectGuildChartersL2"]
+[sub_resource type="Resource" id="EffectGuildChartersCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.guild_charters"
+
+[sub_resource type="Resource" id="EffectGuildChartersL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"guild_charters_l2"
 
 [sub_resource type="Resource" id="LevelGuildChartersL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectGuildChartersL2")])
+persistent_effects = Array[Resource]([SubResource("EffectGuildChartersCostL2"), SubResource("EffectGuildChartersL2R0")])
 
-[sub_resource type="Resource" id="EffectGuildChartersL3"]
+[sub_resource type="Resource" id="EffectGuildChartersCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.guild_charters"
+
+[sub_resource type="Resource" id="EffectGuildChartersL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"guild_charters_l3"
 
 [sub_resource type="Resource" id="LevelGuildChartersL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectGuildChartersL3")])
+persistent_effects = Array[Resource]([SubResource("EffectGuildChartersCostL3"), SubResource("EffectGuildChartersL3R0")])
 
 [sub_resource type="Resource" id="StanceGuildChartersFarmer"]
 script = ExtResource("5_stance")
@@ -2267,6 +2743,7 @@ icon_key = &"economy.building.market"
 name_key = &"行会特许"
 detail_key = "以特许状给予行会定价与学徒制度，品质稳定而新建更贵。"
 school_id = &"commerce"
+route_tag = &"workshop"
 rarity = 2
 era_index = 2
 rarity_weight = 60
@@ -2559,7 +3036,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 20480
 levels = Array[Resource]([SubResource("LevelCivilExaminationL1"), SubResource("LevelCivilExaminationL2"), SubResource("LevelCivilExaminationL3")])
 
-[sub_resource type="Resource" id="EffectIronSmeltingL1"]
+[sub_resource type="Resource" id="EffectIronSmeltingCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -2571,47 +3048,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.iron_smelting"
 
+[sub_resource type="Resource" id="EffectIronSmeltingL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"iron_smelting_l1"
+
 [sub_resource type="Resource" id="LevelIronSmeltingL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectIronSmeltingL1")])
+persistent_effects = Array[Resource]([SubResource("EffectIronSmeltingCostL1"), SubResource("EffectIronSmeltingL1R0")])
 
-[sub_resource type="Resource" id="EffectIronSmeltingL2"]
+[sub_resource type="Resource" id="EffectIronSmeltingCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.iron_smelting"
+
+[sub_resource type="Resource" id="EffectIronSmeltingL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"iron_smelting_l2"
 
 [sub_resource type="Resource" id="LevelIronSmeltingL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectIronSmeltingL2")])
+persistent_effects = Array[Resource]([SubResource("EffectIronSmeltingCostL2"), SubResource("EffectIronSmeltingL2R0")])
 
-[sub_resource type="Resource" id="EffectIronSmeltingL3"]
+[sub_resource type="Resource" id="EffectIronSmeltingCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.iron_smelting"
+
+[sub_resource type="Resource" id="EffectIronSmeltingL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"iron_smelting_l3"
 
 [sub_resource type="Resource" id="LevelIronSmeltingL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectIronSmeltingL3")])
+persistent_effects = Array[Resource]([SubResource("EffectIronSmeltingCostL3"), SubResource("EffectIronSmeltingL3R0")])
 
 [sub_resource type="Resource" id="StanceIronSmeltingFarmer"]
 script = ExtResource("5_stance")
@@ -2651,6 +3167,7 @@ icon_key = &"economy.building.factory"
 name_key = &"冶铁"
 detail_key = "就地开炉鼓风，铁矿运距归零让铁料便宜，矿脉也消耗得飞快。"
 school_id = &"industry"
+route_tag = &"mining"
 rarity = 2
 era_index = 2
 rarity_weight = 60
@@ -2971,7 +3488,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 20480
 levels = Array[Resource]([SubResource("LevelRiverTransportL1"), SubResource("LevelRiverTransportL2"), SubResource("LevelRiverTransportL3")])
 
-[sub_resource type="Resource" id="EffectVillageCompactL1"]
+[sub_resource type="Resource" id="EffectVillageCompactCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -2983,47 +3500,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.village_compact"
 
+[sub_resource type="Resource" id="EffectVillageCompactL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"village_compact_l1"
+
 [sub_resource type="Resource" id="LevelVillageCompactL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectVillageCompactL1")])
+persistent_effects = Array[Resource]([SubResource("EffectVillageCompactCostL1"), SubResource("EffectVillageCompactL1R0")])
 
-[sub_resource type="Resource" id="EffectVillageCompactL2"]
+[sub_resource type="Resource" id="EffectVillageCompactCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.village_compact"
+
+[sub_resource type="Resource" id="EffectVillageCompactL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"village_compact_l2"
 
 [sub_resource type="Resource" id="LevelVillageCompactL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectVillageCompactL2")])
+persistent_effects = Array[Resource]([SubResource("EffectVillageCompactCostL2"), SubResource("EffectVillageCompactL2R0")])
 
-[sub_resource type="Resource" id="EffectVillageCompactL3"]
+[sub_resource type="Resource" id="EffectVillageCompactCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.village_compact"
+
+[sub_resource type="Resource" id="EffectVillageCompactL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"village_compact_l3"
 
 [sub_resource type="Resource" id="LevelVillageCompactL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectVillageCompactL3")])
+persistent_effects = Array[Resource]([SubResource("EffectVillageCompactCostL3"), SubResource("EffectVillageCompactL3R0")])
 
 [sub_resource type="Resource" id="StanceVillageCompactFarmer"]
 script = ExtResource("5_stance")
@@ -3058,6 +3614,7 @@ icon_key = &"economy.crop"
 name_key = &"乡约自治"
 detail_key = "以乡约、社仓与家族共治维系基层秩序，民心即是国本，流通却少了弹性。"
 school_id = &"agrarian"
+route_tag = &"clan"
 rarity = 3
 era_index = 3
 rarity_weight = 20
@@ -3069,7 +3626,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 24576
 levels = Array[Resource]([SubResource("LevelVillageCompactL1"), SubResource("LevelVillageCompactL2"), SubResource("LevelVillageCompactL3")])
 
-[sub_resource type="Resource" id="EffectLandReclamationL1"]
+[sub_resource type="Resource" id="EffectLandReclamationCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -3081,47 +3638,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.land_reclamation"
 
+[sub_resource type="Resource" id="EffectLandReclamationL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"land_reclamation_l1"
+
 [sub_resource type="Resource" id="LevelLandReclamationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectLandReclamationL1")])
+persistent_effects = Array[Resource]([SubResource("EffectLandReclamationCostL1"), SubResource("EffectLandReclamationL1R0")])
 
-[sub_resource type="Resource" id="EffectLandReclamationL2"]
+[sub_resource type="Resource" id="EffectLandReclamationCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.land_reclamation"
+
+[sub_resource type="Resource" id="EffectLandReclamationL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"land_reclamation_l2"
 
 [sub_resource type="Resource" id="LevelLandReclamationL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectLandReclamationL2")])
+persistent_effects = Array[Resource]([SubResource("EffectLandReclamationCostL2"), SubResource("EffectLandReclamationL2R0")])
 
-[sub_resource type="Resource" id="EffectLandReclamationL3"]
+[sub_resource type="Resource" id="EffectLandReclamationCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.land_reclamation"
+
+[sub_resource type="Resource" id="EffectLandReclamationL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"land_reclamation_l3"
 
 [sub_resource type="Resource" id="LevelLandReclamationL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectLandReclamationL3")])
+persistent_effects = Array[Resource]([SubResource("EffectLandReclamationCostL3"), SubResource("EffectLandReclamationL3R0")])
 
 [sub_resource type="Resource" id="StanceLandReclamationFarmer"]
 script = ExtResource("5_stance")
@@ -3156,6 +3752,7 @@ icon_key = &"economy.crop"
 name_key = &"垦荒令"
 detail_key = "招民开垦河漫与绿洲，田亩既增，水土也开始吃紧。"
 school_id = &"agrarian"
+route_tag = &"cropland"
 rarity = 2
 era_index = 3
 rarity_weight = 60
@@ -3357,7 +3954,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 20480
 levels = Array[Resource]([SubResource("LevelImperialAcademyL1"), SubResource("LevelImperialAcademyL2"), SubResource("LevelImperialAcademyL3")])
 
-[sub_resource type="Resource" id="EffectPublicHygieneL1"]
+[sub_resource type="Resource" id="EffectPublicHygieneCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -3369,47 +3966,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.public_hygiene"
 
+[sub_resource type="Resource" id="EffectPublicHygieneL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"public_hygiene_l1"
+
 [sub_resource type="Resource" id="LevelPublicHygieneL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectPublicHygieneL1")])
+persistent_effects = Array[Resource]([SubResource("EffectPublicHygieneCostL1"), SubResource("EffectPublicHygieneL1R0")])
 
-[sub_resource type="Resource" id="EffectPublicHygieneL2"]
+[sub_resource type="Resource" id="EffectPublicHygieneCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.public_hygiene"
+
+[sub_resource type="Resource" id="EffectPublicHygieneL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"public_hygiene_l2"
 
 [sub_resource type="Resource" id="LevelPublicHygieneL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectPublicHygieneL2")])
+persistent_effects = Array[Resource]([SubResource("EffectPublicHygieneCostL2"), SubResource("EffectPublicHygieneL2R0")])
 
-[sub_resource type="Resource" id="EffectPublicHygieneL3"]
+[sub_resource type="Resource" id="EffectPublicHygieneCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.public_hygiene"
+
+[sub_resource type="Resource" id="EffectPublicHygieneL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"public_hygiene_l3"
 
 [sub_resource type="Resource" id="LevelPublicHygieneL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectPublicHygieneL3")])
+persistent_effects = Array[Resource]([SubResource("EffectPublicHygieneCostL3"), SubResource("EffectPublicHygieneL3R0")])
 
 [sub_resource type="Resource" id="StancePublicHygieneFarmer"]
 script = ExtResource("5_stance")
@@ -3444,6 +4080,7 @@ icon_key = &"country.politics"
 name_key = &"公共卫生"
 detail_key = "清渠、隔离与种痘，把健康变成可以组织的公共事务，宅第造价随之上浮。"
 school_id = &"mobilization"
+route_tag = &"granary"
 rarity = 2
 era_index = 3
 rarity_weight = 60
@@ -3553,7 +4190,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 20480
 levels = Array[Resource]([SubResource("LevelHeavenHumanL1"), SubResource("LevelHeavenHumanL2"), SubResource("LevelHeavenHumanL3")])
 
-[sub_resource type="Resource" id="EffectSaltMonopolyL1"]
+[sub_resource type="Resource" id="EffectSaltMonopolyCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -3565,47 +4202,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.salt_monopoly"
 
+[sub_resource type="Resource" id="EffectSaltMonopolyL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"salt_monopoly_l1"
+
 [sub_resource type="Resource" id="LevelSaltMonopolyL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectSaltMonopolyL1")])
+persistent_effects = Array[Resource]([SubResource("EffectSaltMonopolyCostL1"), SubResource("EffectSaltMonopolyL1R0")])
 
-[sub_resource type="Resource" id="EffectSaltMonopolyL2"]
+[sub_resource type="Resource" id="EffectSaltMonopolyCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.salt_monopoly"
+
+[sub_resource type="Resource" id="EffectSaltMonopolyL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"salt_monopoly_l2"
 
 [sub_resource type="Resource" id="LevelSaltMonopolyL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectSaltMonopolyL2")])
+persistent_effects = Array[Resource]([SubResource("EffectSaltMonopolyCostL2"), SubResource("EffectSaltMonopolyL2R0")])
 
-[sub_resource type="Resource" id="EffectSaltMonopolyL3"]
+[sub_resource type="Resource" id="EffectSaltMonopolyCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.salt_monopoly"
+
+[sub_resource type="Resource" id="EffectSaltMonopolyL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"salt_monopoly_l3"
 
 [sub_resource type="Resource" id="LevelSaltMonopolyL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectSaltMonopolyL3")])
+persistent_effects = Array[Resource]([SubResource("EffectSaltMonopolyCostL3"), SubResource("EffectSaltMonopolyL3R0")])
 
 [sub_resource type="Resource" id="StanceSaltMonopolyFarmer"]
 script = ExtResource("5_stance")
@@ -3645,6 +4321,7 @@ icon_key = &"economy.building.factory"
 name_key = &"盐铁专营"
 detail_key = "国家专营盐池与铁冶，盐利充盈国库，私商与盐脉同受挤压。"
 school_id = &"industry"
+route_tag = &"mining"
 rarity = 2
 era_index = 3
 rarity_weight = 60
@@ -3657,7 +4334,7 @@ promote_threshold_q16 = 20480
 exclusion_group = &"economic_order"
 levels = Array[Resource]([SubResource("LevelSaltMonopolyL1"), SubResource("LevelSaltMonopolyL2"), SubResource("LevelSaltMonopolyL3")])
 
-[sub_resource type="Resource" id="EffectSericultureL1"]
+[sub_resource type="Resource" id="EffectSericultureCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -3669,47 +4346,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.sericulture"
 
+[sub_resource type="Resource" id="EffectSericultureL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"sericulture_l1"
+
 [sub_resource type="Resource" id="LevelSericultureL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectSericultureL1")])
+persistent_effects = Array[Resource]([SubResource("EffectSericultureCostL1"), SubResource("EffectSericultureL1R0")])
 
-[sub_resource type="Resource" id="EffectSericultureL2"]
+[sub_resource type="Resource" id="EffectSericultureCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.sericulture"
+
+[sub_resource type="Resource" id="EffectSericultureL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"sericulture_l2"
 
 [sub_resource type="Resource" id="LevelSericultureL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectSericultureL2")])
+persistent_effects = Array[Resource]([SubResource("EffectSericultureCostL2"), SubResource("EffectSericultureL2R0")])
 
-[sub_resource type="Resource" id="EffectSericultureL3"]
+[sub_resource type="Resource" id="EffectSericultureCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.sericulture"
+
+[sub_resource type="Resource" id="EffectSericultureL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"sericulture_l3"
 
 [sub_resource type="Resource" id="LevelSericultureL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectSericultureL3")])
+persistent_effects = Array[Resource]([SubResource("EffectSericultureCostL3"), SubResource("EffectSericultureL3R0")])
 
 [sub_resource type="Resource" id="StanceSericultureFarmer"]
 script = ExtResource("5_stance")
@@ -3749,6 +4465,7 @@ icon_key = &"economy.building.factory"
 name_key = &"蚕桑"
 detail_key = "植桑养蚕、缫丝织锦，绢帛成了硬通货，桑田与粮田争地。"
 school_id = &"industry"
+route_tag = &"workshop"
 rarity = 2
 era_index = 3
 rarity_weight = 60
@@ -3858,7 +4575,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 24576
 levels = Array[Resource]([SubResource("LevelOceanCompanyL1"), SubResource("LevelOceanCompanyL2"), SubResource("LevelOceanCompanyL3")])
 
-[sub_resource type="Resource" id="EffectCharteredRouteL1"]
+[sub_resource type="Resource" id="EffectCharteredRouteCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -3870,47 +4587,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.chartered_route"
 
+[sub_resource type="Resource" id="EffectCharteredRouteL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"chartered_route_l1"
+
 [sub_resource type="Resource" id="LevelCharteredRouteL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectCharteredRouteL1")])
+persistent_effects = Array[Resource]([SubResource("EffectCharteredRouteCostL1"), SubResource("EffectCharteredRouteL1R0")])
 
-[sub_resource type="Resource" id="EffectCharteredRouteL2"]
+[sub_resource type="Resource" id="EffectCharteredRouteCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.chartered_route"
+
+[sub_resource type="Resource" id="EffectCharteredRouteL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"chartered_route_l2"
 
 [sub_resource type="Resource" id="LevelCharteredRouteL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectCharteredRouteL2")])
+persistent_effects = Array[Resource]([SubResource("EffectCharteredRouteCostL2"), SubResource("EffectCharteredRouteL2R0")])
 
-[sub_resource type="Resource" id="EffectCharteredRouteL3"]
+[sub_resource type="Resource" id="EffectCharteredRouteCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.chartered_route"
+
+[sub_resource type="Resource" id="EffectCharteredRouteL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"chartered_route_l3"
 
 [sub_resource type="Resource" id="LevelCharteredRouteL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectCharteredRouteL3")])
+persistent_effects = Array[Resource]([SubResource("EffectCharteredRouteCostL3"), SubResource("EffectCharteredRouteL3R0")])
 
 [sub_resource type="Resource" id="StanceCharteredRouteFarmer"]
 script = ExtResource("5_stance")
@@ -3950,6 +4706,7 @@ icon_key = &"economy.building.market"
 name_key = &"特许航路"
 detail_key = "把航线、港口与补给点连成一张特许网络，香料与糖源源而来，盐业受挤。"
 school_id = &"commerce"
+route_tag = &"thoroughfare"
 rarity = 2
 era_index = 4
 rarity_weight = 60
@@ -4162,7 +4919,7 @@ promote_threshold_q16 = 20480
 exclusion_group = &"land_order"
 levels = Array[Resource]([SubResource("LevelColonialPlantationL1"), SubResource("LevelColonialPlantationL2"), SubResource("LevelColonialPlantationL3")])
 
-[sub_resource type="Resource" id="EffectSilverFlowL1"]
+[sub_resource type="Resource" id="EffectSilverFlowCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -4174,47 +4931,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.silver_flow"
 
+[sub_resource type="Resource" id="EffectSilverFlowL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"silver_flow_l1"
+
 [sub_resource type="Resource" id="LevelSilverFlowL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectSilverFlowL1")])
+persistent_effects = Array[Resource]([SubResource("EffectSilverFlowCostL1"), SubResource("EffectSilverFlowL1R0")])
 
-[sub_resource type="Resource" id="EffectSilverFlowL2"]
+[sub_resource type="Resource" id="EffectSilverFlowCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.silver_flow"
+
+[sub_resource type="Resource" id="EffectSilverFlowL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"silver_flow_l2"
 
 [sub_resource type="Resource" id="LevelSilverFlowL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectSilverFlowL2")])
+persistent_effects = Array[Resource]([SubResource("EffectSilverFlowCostL2"), SubResource("EffectSilverFlowL2R0")])
 
-[sub_resource type="Resource" id="EffectSilverFlowL3"]
+[sub_resource type="Resource" id="EffectSilverFlowCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.silver_flow"
+
+[sub_resource type="Resource" id="EffectSilverFlowL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"silver_flow_l3"
 
 [sub_resource type="Resource" id="LevelSilverFlowL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectSilverFlowL3")])
+persistent_effects = Array[Resource]([SubResource("EffectSilverFlowCostL3"), SubResource("EffectSilverFlowL3R0")])
 
 [sub_resource type="Resource" id="StanceSilverFlowFarmer"]
 script = ExtResource("5_stance")
@@ -4254,6 +5050,7 @@ icon_key = &"economy.building.market"
 name_key = &"白银流入"
 detail_key = "海外白银持续涌入，物价与交易规模一起被推高，银矿被疯狂开采。"
 school_id = &"commerce"
+route_tag = &"market"
 rarity = 3
 era_index = 4
 rarity_weight = 20
@@ -4937,7 +5734,7 @@ promote_threshold_q16 = 20480
 exclusion_group = &"land_order"
 levels = Array[Resource]([SubResource("LevelAgrarianReformL1"), SubResource("LevelAgrarianReformL2"), SubResource("LevelAgrarianReformL3")])
 
-[sub_resource type="Resource" id="EffectCoalBasinL1"]
+[sub_resource type="Resource" id="EffectCoalBasinCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -4949,47 +5746,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.coal_basin"
 
+[sub_resource type="Resource" id="EffectCoalBasinL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"coal_basin_l1"
+
 [sub_resource type="Resource" id="LevelCoalBasinL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectCoalBasinL1")])
+persistent_effects = Array[Resource]([SubResource("EffectCoalBasinCostL1"), SubResource("EffectCoalBasinL1R0")])
 
-[sub_resource type="Resource" id="EffectCoalBasinL2"]
+[sub_resource type="Resource" id="EffectCoalBasinCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.coal_basin"
+
+[sub_resource type="Resource" id="EffectCoalBasinL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"coal_basin_l2"
 
 [sub_resource type="Resource" id="LevelCoalBasinL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectCoalBasinL2")])
+persistent_effects = Array[Resource]([SubResource("EffectCoalBasinCostL2"), SubResource("EffectCoalBasinL2R0")])
 
-[sub_resource type="Resource" id="EffectCoalBasinL3"]
+[sub_resource type="Resource" id="EffectCoalBasinCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.coal_basin"
+
+[sub_resource type="Resource" id="EffectCoalBasinL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"coal_basin_l3"
 
 [sub_resource type="Resource" id="LevelCoalBasinL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectCoalBasinL3")])
+persistent_effects = Array[Resource]([SubResource("EffectCoalBasinCostL3"), SubResource("EffectCoalBasinL3R0")])
 
 [sub_resource type="Resource" id="StanceCoalBasinFarmer"]
 script = ExtResource("5_stance")
@@ -5029,6 +5865,7 @@ icon_key = &"economy.building.factory"
 name_key = &"煤田开发"
 detail_key = "沿煤层开凿矿井与洗煤厂，能源充裕而矿脉消耗极快。"
 school_id = &"industry"
+route_tag = &"mining"
 rarity = 2
 era_index = 5
 rarity_weight = 60
@@ -5041,7 +5878,7 @@ promote_threshold_q16 = 20480
 exclusion_group = &"land_order"
 levels = Array[Resource]([SubResource("LevelCoalBasinL1"), SubResource("LevelCoalBasinL2"), SubResource("LevelCoalBasinL3")])
 
-[sub_resource type="Resource" id="EffectCottonGinL1"]
+[sub_resource type="Resource" id="EffectCottonGinCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -5053,47 +5890,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.cotton_gin"
 
+[sub_resource type="Resource" id="EffectCottonGinL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"cotton_gin_l1"
+
 [sub_resource type="Resource" id="LevelCottonGinL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectCottonGinL1")])
+persistent_effects = Array[Resource]([SubResource("EffectCottonGinCostL1"), SubResource("EffectCottonGinL1R0")])
 
-[sub_resource type="Resource" id="EffectCottonGinL2"]
+[sub_resource type="Resource" id="EffectCottonGinCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.cotton_gin"
+
+[sub_resource type="Resource" id="EffectCottonGinL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"cotton_gin_l2"
 
 [sub_resource type="Resource" id="LevelCottonGinL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectCottonGinL2")])
+persistent_effects = Array[Resource]([SubResource("EffectCottonGinCostL2"), SubResource("EffectCottonGinL2R0")])
 
-[sub_resource type="Resource" id="EffectCottonGinL3"]
+[sub_resource type="Resource" id="EffectCottonGinCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.cotton_gin"
+
+[sub_resource type="Resource" id="EffectCottonGinL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"cotton_gin_l3"
 
 [sub_resource type="Resource" id="LevelCottonGinL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectCottonGinL3")])
+persistent_effects = Array[Resource]([SubResource("EffectCottonGinCostL3"), SubResource("EffectCottonGinL3R0")])
 
 [sub_resource type="Resource" id="StanceCottonGinFarmer"]
 script = ExtResource("5_stance")
@@ -5133,6 +6009,7 @@ icon_key = &"economy.building.factory"
 name_key = &"轧棉"
 detail_key = "以机械脱籽代替手工，棉花纤维的可用量大增，棉田挤占了粮田。"
 school_id = &"industry"
+route_tag = &"workshop"
 rarity = 2
 era_index = 5
 rarity_weight = 60
@@ -5535,7 +6412,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 20480
 levels = Array[Resource]([SubResource("LevelRailwayNetworkL1"), SubResource("LevelRailwayNetworkL2"), SubResource("LevelRailwayNetworkL3")])
 
-[sub_resource type="Resource" id="EffectUrbanSanitationL1"]
+[sub_resource type="Resource" id="EffectUrbanSanitationCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -5547,47 +6424,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.urban_sanitation"
 
+[sub_resource type="Resource" id="EffectUrbanSanitationL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"urban_sanitation_l1"
+
 [sub_resource type="Resource" id="LevelUrbanSanitationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectUrbanSanitationL1")])
+persistent_effects = Array[Resource]([SubResource("EffectUrbanSanitationCostL1"), SubResource("EffectUrbanSanitationL1R0")])
 
-[sub_resource type="Resource" id="EffectUrbanSanitationL2"]
+[sub_resource type="Resource" id="EffectUrbanSanitationCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.urban_sanitation"
+
+[sub_resource type="Resource" id="EffectUrbanSanitationL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"urban_sanitation_l2"
 
 [sub_resource type="Resource" id="LevelUrbanSanitationL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectUrbanSanitationL2")])
+persistent_effects = Array[Resource]([SubResource("EffectUrbanSanitationCostL2"), SubResource("EffectUrbanSanitationL2R0")])
 
-[sub_resource type="Resource" id="EffectUrbanSanitationL3"]
+[sub_resource type="Resource" id="EffectUrbanSanitationCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.urban_sanitation"
+
+[sub_resource type="Resource" id="EffectUrbanSanitationL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"urban_sanitation_l3"
 
 [sub_resource type="Resource" id="LevelUrbanSanitationL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectUrbanSanitationL3")])
+persistent_effects = Array[Resource]([SubResource("EffectUrbanSanitationCostL3"), SubResource("EffectUrbanSanitationL3R0")])
 
 [sub_resource type="Resource" id="StanceUrbanSanitationFarmer"]
 script = ExtResource("5_stance")
@@ -5622,6 +6538,7 @@ icon_key = &"country.politics"
 name_key = &"城市卫生"
 detail_key = "下水道、自来水与皂厂让拥挤的城市不再自我毒害，管网投资巨大。"
 school_id = &"mobilization"
+route_tag = &"granary"
 rarity = 2
 era_index = 6
 rarity_weight = 60
@@ -5817,7 +6734,7 @@ script = ExtResource("3_definition")
 id = &"idea.labour_legislation"
 icon_key = &"country.politics"
 name_key = &"劳动立法"
-detail_key = "限定工时、承认工会，工人税负与生活压力一并减轻，用工成本上升。"
+detail_key = "限定工时、承认工会，工人生活压力减轻，用工成本上升。"
 school_id = &"mobilization"
 rarity = 2
 era_index = 6
@@ -5930,7 +6847,7 @@ promote_threshold_q16 = 20480
 exclusion_group = &"economic_order"
 levels = Array[Resource]([SubResource("LevelFreeTradeL1"), SubResource("LevelFreeTradeL2"), SubResource("LevelFreeTradeL3")])
 
-[sub_resource type="Resource" id="EffectAgriculturalChemistryL1"]
+[sub_resource type="Resource" id="EffectAgriculturalChemistryCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -5942,47 +6859,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.agricultural_chemistry"
 
+[sub_resource type="Resource" id="EffectAgriculturalChemistryL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"agricultural_chemistry_l1"
+
 [sub_resource type="Resource" id="LevelAgriculturalChemistryL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectAgriculturalChemistryL1")])
+persistent_effects = Array[Resource]([SubResource("EffectAgriculturalChemistryCostL1"), SubResource("EffectAgriculturalChemistryL1R0")])
 
-[sub_resource type="Resource" id="EffectAgriculturalChemistryL2"]
+[sub_resource type="Resource" id="EffectAgriculturalChemistryCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.agricultural_chemistry"
+
+[sub_resource type="Resource" id="EffectAgriculturalChemistryL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"agricultural_chemistry_l2"
 
 [sub_resource type="Resource" id="LevelAgriculturalChemistryL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectAgriculturalChemistryL2")])
+persistent_effects = Array[Resource]([SubResource("EffectAgriculturalChemistryCostL2"), SubResource("EffectAgriculturalChemistryL2R0")])
 
-[sub_resource type="Resource" id="EffectAgriculturalChemistryL3"]
+[sub_resource type="Resource" id="EffectAgriculturalChemistryCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.agricultural_chemistry"
+
+[sub_resource type="Resource" id="EffectAgriculturalChemistryL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"agricultural_chemistry_l3"
 
 [sub_resource type="Resource" id="LevelAgriculturalChemistryL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectAgriculturalChemistryL3")])
+persistent_effects = Array[Resource]([SubResource("EffectAgriculturalChemistryCostL3"), SubResource("EffectAgriculturalChemistryL3R0")])
 
 [sub_resource type="Resource" id="StanceAgriculturalChemistryFarmer"]
 script = ExtResource("5_stance")
@@ -6022,6 +6978,7 @@ icon_key = &"economy.crop"
 name_key = &"农业化学"
 detail_key = "以磷矿与硝酸盐造肥，旱地单产大涨，矿源与水体同时承压。"
 school_id = &"agrarian"
+route_tag = &"cropland"
 rarity = 2
 era_index = 6
 rarity_weight = 60
@@ -6222,7 +7179,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 24576
 levels = Array[Resource]([SubResource("LevelAssemblyLineL1"), SubResource("LevelAssemblyLineL2"), SubResource("LevelAssemblyLineL3")])
 
-[sub_resource type="Resource" id="EffectElectrificationL1"]
+[sub_resource type="Resource" id="EffectElectrificationCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -6234,47 +7191,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.electrification"
 
+[sub_resource type="Resource" id="EffectElectrificationL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"electrification_l1"
+
 [sub_resource type="Resource" id="LevelElectrificationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectElectrificationL1")])
+persistent_effects = Array[Resource]([SubResource("EffectElectrificationCostL1"), SubResource("EffectElectrificationL1R0")])
 
-[sub_resource type="Resource" id="EffectElectrificationL2"]
+[sub_resource type="Resource" id="EffectElectrificationCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.electrification"
+
+[sub_resource type="Resource" id="EffectElectrificationL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"electrification_l2"
 
 [sub_resource type="Resource" id="LevelElectrificationL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectElectrificationL2")])
+persistent_effects = Array[Resource]([SubResource("EffectElectrificationCostL2"), SubResource("EffectElectrificationL2R0")])
 
-[sub_resource type="Resource" id="EffectElectrificationL3"]
+[sub_resource type="Resource" id="EffectElectrificationCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.electrification"
+
+[sub_resource type="Resource" id="EffectElectrificationL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"electrification_l3"
 
 [sub_resource type="Resource" id="LevelElectrificationL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectElectrificationL3")])
+persistent_effects = Array[Resource]([SubResource("EffectElectrificationCostL3"), SubResource("EffectElectrificationL3R0")])
 
 [sub_resource type="Resource" id="StanceElectrificationFarmer"]
 script = ExtResource("5_stance")
@@ -6309,6 +7305,7 @@ icon_key = &"economy.building.factory"
 name_key = &"电气化"
 detail_key = "以电网覆盖城乡，动力可以远距离输送到每一台机器，发电仍靠烧煤。"
 school_id = &"industry"
+route_tag = &"workshop"
 rarity = 3
 era_index = 7
 rarity_weight = 20
@@ -6320,7 +7317,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 24576
 levels = Array[Resource]([SubResource("LevelElectrificationL1"), SubResource("LevelElectrificationL2"), SubResource("LevelElectrificationL3")])
 
-[sub_resource type="Resource" id="EffectEcologicalBalanceL1"]
+[sub_resource type="Resource" id="EffectEcologicalBalanceCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -6332,47 +7329,112 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.ecological_balance"
 
+[sub_resource type="Resource" id="EffectEcologicalBalanceL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"ecological_balance_l1_rich"
+
+[sub_resource type="Resource" id="EffectEcologicalBalanceL1R1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"ecological_balance_l1_dry"
+
 [sub_resource type="Resource" id="LevelEcologicalBalanceL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectEcologicalBalanceL1")])
+persistent_effects = Array[Resource]([SubResource("EffectEcologicalBalanceCostL1"), SubResource("EffectEcologicalBalanceL1R0"), SubResource("EffectEcologicalBalanceL1R1")])
 
-[sub_resource type="Resource" id="EffectEcologicalBalanceL2"]
+[sub_resource type="Resource" id="EffectEcologicalBalanceCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.ecological_balance"
+
+[sub_resource type="Resource" id="EffectEcologicalBalanceL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"ecological_balance_l2_rich"
+
+[sub_resource type="Resource" id="EffectEcologicalBalanceL2R1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"ecological_balance_l2_dry"
 
 [sub_resource type="Resource" id="LevelEcologicalBalanceL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectEcologicalBalanceL2")])
+persistent_effects = Array[Resource]([SubResource("EffectEcologicalBalanceCostL2"), SubResource("EffectEcologicalBalanceL2R0"), SubResource("EffectEcologicalBalanceL2R1")])
 
-[sub_resource type="Resource" id="EffectEcologicalBalanceL3"]
+[sub_resource type="Resource" id="EffectEcologicalBalanceCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.ecological_balance"
+
+[sub_resource type="Resource" id="EffectEcologicalBalanceL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"ecological_balance_l3_rich"
 
 [sub_resource type="Resource" id="LevelEcologicalBalanceL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectEcologicalBalanceL3")])
+persistent_effects = Array[Resource]([SubResource("EffectEcologicalBalanceCostL3"), SubResource("EffectEcologicalBalanceL3R0")])
 
 [sub_resource type="Resource" id="StanceEcologicalBalanceFarmer"]
 script = ExtResource("5_stance")
@@ -6407,6 +7469,7 @@ icon_key = &"economy.resource"
 name_key = &"生态均衡"
 detail_key = "以循环与修复约束工业增长，资源与人口得到长期平衡，产能让步。"
 school_id = &"harmony"
+route_tag = &"livelihood"
 rarity = 3
 era_index = 7
 rarity_weight = 20
@@ -6622,7 +7685,7 @@ value_mode = 0
 value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.hydroelectric"
+definition_key = &"ideology.hydroelectric.l1"
 
 [sub_resource type="Resource" id="LevelHydroelectricL1"]
 script = ExtResource("4_level")
@@ -6637,10 +7700,10 @@ domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.hydroelectric"
+definition_key = &"ideology.hydroelectric.l2"
 
 [sub_resource type="Resource" id="LevelHydroelectricL2"]
 script = ExtResource("4_level")
@@ -6655,16 +7718,29 @@ domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
-definition_key = &"ideology.hydroelectric"
+definition_key = &"ideology.hydroelectric.l3"
+
+[sub_resource type="Resource" id="EffectHydroelectricL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"hydroelectric_l3"
 
 [sub_resource type="Resource" id="LevelHydroelectricL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectHydroelectricL3")])
+persistent_effects = Array[Resource]([SubResource("EffectHydroelectricL3"), SubResource("EffectHydroelectricL3R0")])
 
 [sub_resource type="Resource" id="StanceHydroelectricFarmer"]
 script = ExtResource("5_stance")
@@ -6704,6 +7780,7 @@ icon_key = &"economy.building.factory"
 name_key = &"水电"
 detail_key = "筑坝蓄水发电，谷地能源充沛，坝下平原的洪水风险反而上升。"
 school_id = &"industry"
+route_tag = &"terrain"
 rarity = 2
 era_index = 7
 rarity_weight = 60
@@ -6715,7 +7792,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 20480
 levels = Array[Resource]([SubResource("LevelHydroelectricL1"), SubResource("LevelHydroelectricL2"), SubResource("LevelHydroelectricL3")])
 
-[sub_resource type="Resource" id="EffectAntitrustL1"]
+[sub_resource type="Resource" id="EffectAntitrustCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -6727,47 +7804,125 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.antitrust"
 
+[sub_resource type="Resource" id="EffectAntitrustL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"antitrust_l1_bonus"
+
+[sub_resource type="Resource" id="EffectAntitrustL1R1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"antitrust_l1_penalty"
+
 [sub_resource type="Resource" id="LevelAntitrustL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectAntitrustL1")])
+persistent_effects = Array[Resource]([SubResource("EffectAntitrustCostL1"), SubResource("EffectAntitrustL1R0"), SubResource("EffectAntitrustL1R1")])
 
-[sub_resource type="Resource" id="EffectAntitrustL2"]
+[sub_resource type="Resource" id="EffectAntitrustCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.antitrust"
+
+[sub_resource type="Resource" id="EffectAntitrustL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"antitrust_l2_bonus"
+
+[sub_resource type="Resource" id="EffectAntitrustL2R1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"antitrust_l2_penalty"
 
 [sub_resource type="Resource" id="LevelAntitrustL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectAntitrustL2")])
+persistent_effects = Array[Resource]([SubResource("EffectAntitrustCostL2"), SubResource("EffectAntitrustL2R0"), SubResource("EffectAntitrustL2R1")])
 
-[sub_resource type="Resource" id="EffectAntitrustL3"]
+[sub_resource type="Resource" id="EffectAntitrustCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.antitrust"
+
+[sub_resource type="Resource" id="EffectAntitrustL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"antitrust_l3_bonus"
+
+[sub_resource type="Resource" id="EffectAntitrustL3R1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"antitrust_l3_penalty"
 
 [sub_resource type="Resource" id="LevelAntitrustL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectAntitrustL3")])
+persistent_effects = Array[Resource]([SubResource("EffectAntitrustCostL3"), SubResource("EffectAntitrustL3R0"), SubResource("EffectAntitrustL3R1")])
 
 [sub_resource type="Resource" id="StanceAntitrustFarmer"]
 script = ExtResource("5_stance")
@@ -6802,6 +7957,7 @@ icon_key = &"economy.building.market"
 name_key = &"反垄断"
 detail_key = "拆分托拉斯、恢复竞争，物价与流通受益，规模效率被牺牲。"
 school_id = &"commerce"
+route_tag = &"market"
 rarity = 2
 era_index = 7
 rarity_weight = 60
@@ -7015,7 +8171,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 24576
 levels = Array[Resource]([SubResource("LevelAntibioticsL1"), SubResource("LevelAntibioticsL2"), SubResource("LevelAntibioticsL3")])
 
-[sub_resource type="Resource" id="EffectMotorizationL1"]
+[sub_resource type="Resource" id="EffectMotorizationCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -7027,47 +8183,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.motorization"
 
+[sub_resource type="Resource" id="EffectMotorizationL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"motorization_l1"
+
 [sub_resource type="Resource" id="LevelMotorizationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectMotorizationL1")])
+persistent_effects = Array[Resource]([SubResource("EffectMotorizationCostL1"), SubResource("EffectMotorizationL1R0")])
 
-[sub_resource type="Resource" id="EffectMotorizationL2"]
+[sub_resource type="Resource" id="EffectMotorizationCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.motorization"
+
+[sub_resource type="Resource" id="EffectMotorizationL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"motorization_l2"
 
 [sub_resource type="Resource" id="LevelMotorizationL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectMotorizationL2")])
+persistent_effects = Array[Resource]([SubResource("EffectMotorizationCostL2"), SubResource("EffectMotorizationL2R0")])
 
-[sub_resource type="Resource" id="EffectMotorizationL3"]
+[sub_resource type="Resource" id="EffectMotorizationCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.motorization"
+
+[sub_resource type="Resource" id="EffectMotorizationL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"motorization_l3"
 
 [sub_resource type="Resource" id="LevelMotorizationL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectMotorizationL3")])
+persistent_effects = Array[Resource]([SubResource("EffectMotorizationCostL3"), SubResource("EffectMotorizationL3R0")])
 
 [sub_resource type="Resource" id="StanceMotorizationFarmer"]
 script = ExtResource("5_stance")
@@ -7102,6 +8297,7 @@ icon_key = &"economy.building.market"
 name_key = &"汽车社会"
 detail_key = "公路与私家车重构了城市与市场的距离，燃油消耗同步飙升。"
 school_id = &"commerce"
+route_tag = &"thoroughfare"
 rarity = 2
 era_index = 8
 rarity_weight = 60
@@ -7216,7 +8412,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 24576
 levels = Array[Resource]([SubResource("LevelGreenRevolutionL1"), SubResource("LevelGreenRevolutionL2"), SubResource("LevelGreenRevolutionL3")])
 
-[sub_resource type="Resource" id="EffectPetrochemicalL1"]
+[sub_resource type="Resource" id="EffectPetrochemicalCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -7228,47 +8424,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.petrochemical"
 
+[sub_resource type="Resource" id="EffectPetrochemicalL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"petrochemical_l1"
+
 [sub_resource type="Resource" id="LevelPetrochemicalL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectPetrochemicalL1")])
+persistent_effects = Array[Resource]([SubResource("EffectPetrochemicalCostL1"), SubResource("EffectPetrochemicalL1R0")])
 
-[sub_resource type="Resource" id="EffectPetrochemicalL2"]
+[sub_resource type="Resource" id="EffectPetrochemicalCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.petrochemical"
+
+[sub_resource type="Resource" id="EffectPetrochemicalL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"petrochemical_l2"
 
 [sub_resource type="Resource" id="LevelPetrochemicalL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectPetrochemicalL2")])
+persistent_effects = Array[Resource]([SubResource("EffectPetrochemicalCostL2"), SubResource("EffectPetrochemicalL2R0")])
 
-[sub_resource type="Resource" id="EffectPetrochemicalL3"]
+[sub_resource type="Resource" id="EffectPetrochemicalCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.petrochemical"
+
+[sub_resource type="Resource" id="EffectPetrochemicalL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"petrochemical_l3"
 
 [sub_resource type="Resource" id="LevelPetrochemicalL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectPetrochemicalL3")])
+persistent_effects = Array[Resource]([SubResource("EffectPetrochemicalCostL3"), SubResource("EffectPetrochemicalL3R0")])
 
 [sub_resource type="Resource" id="StancePetrochemicalFarmer"]
 script = ExtResource("5_stance")
@@ -7308,6 +8543,7 @@ icon_key = &"economy.building.factory"
 name_key = &"石化"
 detail_key = "以石油为原料生产塑料与合成纤维，原料端成本归零，油田压力加大。"
 school_id = &"industry"
+route_tag = &"workshop"
 rarity = 2
 era_index = 8
 rarity_weight = 60
@@ -7422,7 +8658,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 20480
 levels = Array[Resource]([SubResource("LevelContainerPortL1"), SubResource("LevelContainerPortL2"), SubResource("LevelContainerPortL3")])
 
-[sub_resource type="Resource" id="EffectComputingNetworksL1"]
+[sub_resource type="Resource" id="EffectComputingNetworksCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -7434,47 +8670,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.computing_networks"
 
+[sub_resource type="Resource" id="EffectComputingNetworksL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"computing_networks_l1"
+
 [sub_resource type="Resource" id="LevelComputingNetworksL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectComputingNetworksL1")])
+persistent_effects = Array[Resource]([SubResource("EffectComputingNetworksCostL1"), SubResource("EffectComputingNetworksL1R0")])
 
-[sub_resource type="Resource" id="EffectComputingNetworksL2"]
+[sub_resource type="Resource" id="EffectComputingNetworksCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.computing_networks"
+
+[sub_resource type="Resource" id="EffectComputingNetworksL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"computing_networks_l2"
 
 [sub_resource type="Resource" id="LevelComputingNetworksL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectComputingNetworksL2")])
+persistent_effects = Array[Resource]([SubResource("EffectComputingNetworksCostL2"), SubResource("EffectComputingNetworksL2R0")])
 
-[sub_resource type="Resource" id="EffectComputingNetworksL3"]
+[sub_resource type="Resource" id="EffectComputingNetworksCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.computing_networks"
+
+[sub_resource type="Resource" id="EffectComputingNetworksL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"computing_networks_l3"
 
 [sub_resource type="Resource" id="LevelComputingNetworksL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectComputingNetworksL3")])
+persistent_effects = Array[Resource]([SubResource("EffectComputingNetworksCostL3"), SubResource("EffectComputingNetworksL3R0")])
 
 [sub_resource type="Resource" id="StanceComputingNetworksGeneral"]
 script = ExtResource("5_stance")
@@ -7502,6 +8777,7 @@ icon_key = &"metric.technology"
 name_key = &"计算网络"
 detail_key = "算力与网络成为公共基础设施，研究周期被整体压缩，机房耗电可观。"
 school_id = &"learning"
+route_tag = &"learning"
 rarity = 3
 era_index = 9
 rarity_weight = 20
@@ -7513,7 +8789,7 @@ repeal_threshold_q16 = 0
 promote_threshold_q16 = 24576
 levels = Array[Resource]([SubResource("LevelComputingNetworksL1"), SubResource("LevelComputingNetworksL2"), SubResource("LevelComputingNetworksL3")])
 
-[sub_resource type="Resource" id="EffectSemiconductorL1"]
+[sub_resource type="Resource" id="EffectSemiconductorCostL1"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
@@ -7525,47 +8801,86 @@ duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.semiconductor"
 
+[sub_resource type="Resource" id="EffectSemiconductorL1R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"semiconductor_l1"
+
 [sub_resource type="Resource" id="LevelSemiconductorL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
 daily_understanding_q16 = 8192
-persistent_effects = Array[Resource]([SubResource("EffectSemiconductorL1")])
+persistent_effects = Array[Resource]([SubResource("EffectSemiconductorCostL1"), SubResource("EffectSemiconductorL1R0")])
 
-[sub_resource type="Resource" id="EffectSemiconductorL2"]
+[sub_resource type="Resource" id="EffectSemiconductorCostL2"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 104858
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.semiconductor"
+
+[sub_resource type="Resource" id="EffectSemiconductorL2R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"semiconductor_l2"
 
 [sub_resource type="Resource" id="LevelSemiconductorL2"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 262144
 daily_understanding_q16 = 4096
-persistent_effects = Array[Resource]([SubResource("EffectSemiconductorL2")])
+persistent_effects = Array[Resource]([SubResource("EffectSemiconductorCostL2"), SubResource("EffectSemiconductorL2R0")])
 
-[sub_resource type="Resource" id="EffectSemiconductorL3"]
+[sub_resource type="Resource" id="EffectSemiconductorCostL3"]
 script = ExtResource("7_effect")
 action = 1
 domain = 1
 opcode = 1
 target_resolver = 1
 value_mode = 0
-value_q16 = 144179
+value_q16 = 65536
 duration_days = -1
 command_key = &"ideology.persistent"
 definition_key = &"ideology.semiconductor"
+
+[sub_resource type="Resource" id="EffectSemiconductorL3R0"]
+script = ExtResource("7_effect")
+action = 1
+domain = 2
+opcode = 1
+target_resolver = 1
+value_mode = 1
+value_q16 = 65536
+duration_days = -1
+stacks = 1
+command_key = &"ideology.persistent"
+definition_key = &"semiconductor_l3"
 
 [sub_resource type="Resource" id="LevelSemiconductorL3"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 786432
 daily_understanding_q16 = 0
-persistent_effects = Array[Resource]([SubResource("EffectSemiconductorL3")])
+persistent_effects = Array[Resource]([SubResource("EffectSemiconductorCostL3"), SubResource("EffectSemiconductorL3R0")])
 
 [sub_resource type="Resource" id="StanceSemiconductorFarmer"]
 script = ExtResource("5_stance")
@@ -7605,6 +8920,7 @@ icon_key = &"economy.building.factory"
 name_key = &"半导体"
 detail_key = "以高纯硅与精密光刻重塑制造业，硅砂被纯化成稀缺料。"
 school_id = &"industry"
+route_tag = &"learning"
 rarity = 3
 era_index = 9
 rarity_weight = 20
@@ -8719,6 +10035,331 @@ minimum_levels = PackedInt32Array(0, 0)
 location_masks = PackedByteArray(6, 6)
 persistent_effects = Array[Resource]([SubResource("EffectSynergyExperimentalNaturalHistory")])
 
+[sub_resource type="Resource" id="EffectRouteGranary1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.route.granary.t1"
+
+[sub_resource type="Resource" id="SynergyRouteGranary1"]
+script = ExtResource("6_synergy")
+id = &"route.granary.2"
+display_name = "仓廪·一"
+required_ideology_ids = PackedStringArray()
+minimum_levels = PackedInt32Array()
+location_masks = PackedByteArray()
+min_count = 2
+route_tag = &"granary"
+route_tag_min_level = 0
+route_tag_location_mask = 2
+persistent_effects = Array[Resource]([SubResource("EffectRouteGranary1")])
+
+[sub_resource type="Resource" id="EffectRouteGranary2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.route.granary.t2"
+
+[sub_resource type="Resource" id="SynergyRouteGranary2"]
+script = ExtResource("6_synergy")
+id = &"route.granary.4"
+display_name = "仓廪·二"
+required_ideology_ids = PackedStringArray()
+minimum_levels = PackedInt32Array()
+location_masks = PackedByteArray()
+min_count = 4
+route_tag = &"granary"
+route_tag_min_level = 0
+route_tag_location_mask = 2
+persistent_effects = Array[Resource]([SubResource("EffectRouteGranary2")])
+
+[sub_resource type="Resource" id="EffectRouteCropland1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.route.cropland.t1"
+
+[sub_resource type="Resource" id="SynergyRouteCropland1"]
+script = ExtResource("6_synergy")
+id = &"route.cropland.2"
+display_name = "田垄·一"
+required_ideology_ids = PackedStringArray()
+minimum_levels = PackedInt32Array()
+location_masks = PackedByteArray()
+min_count = 2
+route_tag = &"cropland"
+route_tag_min_level = 0
+route_tag_location_mask = 2
+persistent_effects = Array[Resource]([SubResource("EffectRouteCropland1")])
+
+[sub_resource type="Resource" id="EffectRouteCropland2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.route.cropland.t2"
+
+[sub_resource type="Resource" id="SynergyRouteCropland2"]
+script = ExtResource("6_synergy")
+id = &"route.cropland.4"
+display_name = "田垄·二"
+required_ideology_ids = PackedStringArray()
+minimum_levels = PackedInt32Array()
+location_masks = PackedByteArray()
+min_count = 4
+route_tag = &"cropland"
+route_tag_min_level = 0
+route_tag_location_mask = 2
+persistent_effects = Array[Resource]([SubResource("EffectRouteCropland2")])
+
+[sub_resource type="Resource" id="EffectRouteMining1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.route.mining.t1"
+
+[sub_resource type="Resource" id="SynergyRouteMining1"]
+script = ExtResource("6_synergy")
+id = &"route.mining.2"
+display_name = "矿冶·一"
+required_ideology_ids = PackedStringArray()
+minimum_levels = PackedInt32Array()
+location_masks = PackedByteArray()
+min_count = 2
+route_tag = &"mining"
+route_tag_min_level = 0
+route_tag_location_mask = 2
+persistent_effects = Array[Resource]([SubResource("EffectRouteMining1")])
+
+[sub_resource type="Resource" id="EffectRouteMining2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.route.mining.t2"
+
+[sub_resource type="Resource" id="SynergyRouteMining2"]
+script = ExtResource("6_synergy")
+id = &"route.mining.4"
+display_name = "矿冶·二"
+required_ideology_ids = PackedStringArray()
+minimum_levels = PackedInt32Array()
+location_masks = PackedByteArray()
+min_count = 4
+route_tag = &"mining"
+route_tag_min_level = 0
+route_tag_location_mask = 2
+persistent_effects = Array[Resource]([SubResource("EffectRouteMining2")])
+
+[sub_resource type="Resource" id="EffectRouteWorkshop1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.route.workshop.t1"
+
+[sub_resource type="Resource" id="SynergyRouteWorkshop1"]
+script = ExtResource("6_synergy")
+id = &"route.workshop.2"
+display_name = "工坊·一"
+required_ideology_ids = PackedStringArray()
+minimum_levels = PackedInt32Array()
+location_masks = PackedByteArray()
+min_count = 2
+route_tag = &"workshop"
+route_tag_min_level = 0
+route_tag_location_mask = 2
+persistent_effects = Array[Resource]([SubResource("EffectRouteWorkshop1")])
+
+[sub_resource type="Resource" id="EffectRouteWorkshop2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.route.workshop.t2"
+
+[sub_resource type="Resource" id="SynergyRouteWorkshop2"]
+script = ExtResource("6_synergy")
+id = &"route.workshop.4"
+display_name = "工坊·二"
+required_ideology_ids = PackedStringArray()
+minimum_levels = PackedInt32Array()
+location_masks = PackedByteArray()
+min_count = 4
+route_tag = &"workshop"
+route_tag_min_level = 0
+route_tag_location_mask = 2
+persistent_effects = Array[Resource]([SubResource("EffectRouteWorkshop2")])
+
+[sub_resource type="Resource" id="EffectRouteLivelihood1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.route.livelihood.t1"
+
+[sub_resource type="Resource" id="SynergyRouteLivelihood1"]
+script = ExtResource("6_synergy")
+id = &"route.livelihood.2"
+display_name = "生灵·一"
+required_ideology_ids = PackedStringArray()
+minimum_levels = PackedInt32Array()
+location_masks = PackedByteArray()
+min_count = 2
+route_tag = &"livelihood"
+route_tag_min_level = 0
+route_tag_location_mask = 2
+persistent_effects = Array[Resource]([SubResource("EffectRouteLivelihood1")])
+
+[sub_resource type="Resource" id="EffectRouteLivelihood2"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.route.livelihood.t2"
+
+[sub_resource type="Resource" id="SynergyRouteLivelihood2"]
+script = ExtResource("6_synergy")
+id = &"route.livelihood.4"
+display_name = "生灵·二"
+required_ideology_ids = PackedStringArray()
+minimum_levels = PackedInt32Array()
+location_masks = PackedByteArray()
+min_count = 4
+route_tag = &"livelihood"
+route_tag_min_level = 0
+route_tag_location_mask = 2
+persistent_effects = Array[Resource]([SubResource("EffectRouteLivelihood2")])
+
+[sub_resource type="Resource" id="EffectRouteMarket1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.route.market.t1"
+
+[sub_resource type="Resource" id="SynergyRouteMarket1"]
+script = ExtResource("6_synergy")
+id = &"route.market.2"
+display_name = "市易·一"
+required_ideology_ids = PackedStringArray()
+minimum_levels = PackedInt32Array()
+location_masks = PackedByteArray()
+min_count = 2
+route_tag = &"market"
+route_tag_min_level = 0
+route_tag_location_mask = 2
+persistent_effects = Array[Resource]([SubResource("EffectRouteMarket1")])
+
+[sub_resource type="Resource" id="EffectRouteLearning1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.route.learning.t1"
+
+[sub_resource type="Resource" id="SynergyRouteLearning1"]
+script = ExtResource("6_synergy")
+id = &"route.learning.2"
+display_name = "学识·一"
+required_ideology_ids = PackedStringArray()
+minimum_levels = PackedInt32Array()
+location_masks = PackedByteArray()
+min_count = 2
+route_tag = &"learning"
+route_tag_min_level = 0
+route_tag_location_mask = 2
+persistent_effects = Array[Resource]([SubResource("EffectRouteLearning1")])
+
+[sub_resource type="Resource" id="EffectRouteThoroughfare1"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 65536
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"ideology.route.thoroughfare.t1"
+
+[sub_resource type="Resource" id="SynergyRouteThoroughfare1"]
+script = ExtResource("6_synergy")
+id = &"route.thoroughfare.2"
+display_name = "通衢·一"
+required_ideology_ids = PackedStringArray()
+minimum_levels = PackedInt32Array()
+location_masks = PackedByteArray()
+min_count = 2
+route_tag = &"thoroughfare"
+route_tag_min_level = 0
+route_tag_location_mask = 2
+persistent_effects = Array[Resource]([SubResource("EffectRouteThoroughfare1")])
+
 [sub_resource type="Resource" id="EffectResonanceAgrarian2"]
 script = ExtResource("7_effect")
 action = 1
@@ -9010,5 +10651,6 @@ persistent_effects = Array[Resource]([SubResource("EffectResonanceHarmony4")])
 [resource]
 script = ExtResource("1_catalog")
 profile = SubResource("Profile")
+effect_programs = ExtResource("9_programs")
 definitions = Array[Resource]([SubResource("IdeaForagerBand"), SubResource("IdeaHuntingTradition"), SubResource("IdeaFlintKnapping"), SubResource("IdeaFireKeeping"), SubResource("IdeaRiversideCamp"), SubResource("IdeaAnimistRitual"), SubResource("IdeaGiftExchange"), SubResource("IdeaPitDwelling"), SubResource("IdeaCollectiveStewardship"), SubResource("IdeaTerraceFarming"), SubResource("IdeaPaddyCultivation"), SubResource("IdeaThreeFieldRotation"), SubResource("IdeaFreeExchange"), SubResource("IdeaScholarOffice"), SubResource("IdeaStandardization"), SubResource("IdeaHouseholdWeaving"), SubResource("IdeaCoppiceRotation"), SubResource("IdeaWaterWorks"), SubResource("IdeaSeasonalCalendar"), SubResource("IdeaEverNormalGranary"), SubResource("IdeaSettleAndFarm"), SubResource("IdeaOpenPorts"), SubResource("IdeaGuildCharters"), SubResource("IdeaDoubleEntry"), SubResource("IdeaAcademyLectures"), SubResource("IdeaCivilExamination"), SubResource("IdeaIronSmelting"), SubResource("IdeaPostalHorse"), SubResource("IdeaMonsoonFarming"), SubResource("IdeaRiverTransport"), SubResource("IdeaVillageCompact"), SubResource("IdeaLandReclamation"), SubResource("IdeaGranaryRoad"), SubResource("IdeaImperialAcademy"), SubResource("IdeaPublicHygiene"), SubResource("IdeaHeavenHuman"), SubResource("IdeaSaltMonopoly"), SubResource("IdeaSericulture"), SubResource("IdeaOceanCompany"), SubResource("IdeaCharteredRoute"), SubResource("IdeaCartography"), SubResource("IdeaColonialPlantation"), SubResource("IdeaSilverFlow"), SubResource("IdeaNaturalHistory"), SubResource("IdeaManufactoryRegulation"), SubResource("IdeaMaritimeInsurance"), SubResource("IdeaExperimentalMethod"), SubResource("IdeaEncyclopedia"), SubResource("IdeaNationalEducation"), SubResource("IdeaAgrarianReform"), SubResource("IdeaCoalBasin"), SubResource("IdeaCottonGin"), SubResource("IdeaEnclosure"), SubResource("IdeaLearnedSociety"), SubResource("IdeaSteamPower"), SubResource("IdeaRailwayNetwork"), SubResource("IdeaUrbanSanitation"), SubResource("IdeaSteamShipping"), SubResource("IdeaLabourLegislation"), SubResource("IdeaFreeTrade"), SubResource("IdeaAgriculturalChemistry"), SubResource("IdeaTelegraph"), SubResource("IdeaAssemblyLine"), SubResource("IdeaElectrification"), SubResource("IdeaEcologicalBalance"), SubResource("IdeaMassMedia"), SubResource("IdeaChemicalIndustry"), SubResource("IdeaHydroelectric"), SubResource("IdeaAntitrust"), SubResource("IdeaNuclearPower"), SubResource("IdeaAntibiotics"), SubResource("IdeaMotorization"), SubResource("IdeaGreenRevolution"), SubResource("IdeaPetrochemical"), SubResource("IdeaContainerPort"), SubResource("IdeaComputingNetworks"), SubResource("IdeaSemiconductor"), SubResource("IdeaPrecisionAgriculture"), SubResource("IdeaFinancialization"), SubResource("IdeaAutomationLine"), SubResource("IdeaAlgorithmicGovernance"), SubResource("IdeaAutonomousLogistics"), SubResource("IdeaCarbonMarket"), SubResource("IdeaGeneEditing"), SubResource("IdeaDesalination")])
-synergies = Array[Resource]([SubResource("SynergyGranaryRecords"), SubResource("SynergyPolderFarming"), SubResource("SynergyMixedHusbandry"), SubResource("SynergyCoalIronComplex"), SubResource("SynergyPostalCanalGrid"), SubResource("SynergyJointStockAccounting"), SubResource("SynergySteamRailComplex"), SubResource("SynergyChemicalAgriculture"), SubResource("SynergyElectricAssembly"), SubResource("SynergyDigitalAutomation"), SubResource("SynergyDoubleConstraint"), SubResource("SynergyEpidemicDefence"), SubResource("SynergyOceanicFinance"), SubResource("SynergySilkWeavingChain"), SubResource("SynergyExperimentalNaturalHistory"), SubResource("SynergyResonanceAgrarian2"), SubResource("SynergyResonanceAgrarian4"), SubResource("SynergyResonanceCommerce2"), SubResource("SynergyResonanceCommerce4"), SubResource("SynergyResonanceLearning2"), SubResource("SynergyResonanceLearning4"), SubResource("SynergyResonanceMobilization2"), SubResource("SynergyResonanceMobilization4"), SubResource("SynergyResonanceIndustry2"), SubResource("SynergyResonanceIndustry4"), SubResource("SynergyResonanceHarmony2"), SubResource("SynergyResonanceHarmony4")])
+synergies = Array[Resource]([SubResource("SynergyGranaryRecords"), SubResource("SynergyPolderFarming"), SubResource("SynergyMixedHusbandry"), SubResource("SynergyCoalIronComplex"), SubResource("SynergyPostalCanalGrid"), SubResource("SynergyJointStockAccounting"), SubResource("SynergySteamRailComplex"), SubResource("SynergyChemicalAgriculture"), SubResource("SynergyElectricAssembly"), SubResource("SynergyDigitalAutomation"), SubResource("SynergyDoubleConstraint"), SubResource("SynergyEpidemicDefence"), SubResource("SynergyOceanicFinance"), SubResource("SynergySilkWeavingChain"), SubResource("SynergyExperimentalNaturalHistory"), SubResource("SynergyRouteGranary1"), SubResource("SynergyRouteGranary2"), SubResource("SynergyRouteCropland1"), SubResource("SynergyRouteCropland2"), SubResource("SynergyRouteMining1"), SubResource("SynergyRouteMining2"), SubResource("SynergyRouteWorkshop1"), SubResource("SynergyRouteWorkshop2"), SubResource("SynergyRouteLivelihood1"), SubResource("SynergyRouteLivelihood2"), SubResource("SynergyRouteMarket1"), SubResource("SynergyRouteLearning1"), SubResource("SynergyRouteThoroughfare1"), SubResource("SynergyResonanceAgrarian2"), SubResource("SynergyResonanceAgrarian4"), SubResource("SynergyResonanceCommerce2"), SubResource("SynergyResonanceCommerce4"), SubResource("SynergyResonanceLearning2"), SubResource("SynergyResonanceLearning4"), SubResource("SynergyResonanceMobilization2"), SubResource("SynergyResonanceMobilization4"), SubResource("SynergyResonanceIndustry2"), SubResource("SynergyResonanceIndustry4"), SubResource("SynergyResonanceHarmony2"), SubResource("SynergyResonanceHarmony4")])

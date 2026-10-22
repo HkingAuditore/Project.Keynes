@@ -34,7 +34,11 @@ class EffectRuntime {
 public:
     static constexpr int32_t PROTOCOL_VERSION = 1;
     // 12: Effect instances carry the per-instance magnitude scale (L3-9).
-    static constexpr int32_t SAVE_SCHEMA_VERSION = 12;
+    // 13: the latch is persisted. "One cadence self-heals" was only true while
+    //     the only consumer was the daily pass; a save/load straddling a
+    //     threshold card lost a whole day of hysteresis, which the replay audit
+    //     reads as a divergence rather than a one-off.
+    static constexpr int32_t SAVE_SCHEMA_VERSION = 13;
     static constexpr int64_t Q16_ONE = 65536;
 
     enum Instruction : int32_t {
@@ -83,9 +87,12 @@ public:
         // band lives in the authored condition graph; the runtime only supplies
         // the one bit it cannot compute from the present.
         //
-        // Deliberately NOT persisted: it is derived state, and a save/load reset
-        // to 0 just means the card must re-cross `high` once. Persisting it
-        // would force a schema bump for a value that self-heals in one cadence.
+        // Persisted since PKEF 13, as part of the instance header. It IS derived
+        // state, but "a reset to 0 only means the card must re-cross `high`
+        // once" was wrong for the case the band exists for: a save taken inside
+        // the band lost a whole day of hysteresis, and a continuous run does
+        // not. The one-cadence argument only held while the daily pass was the
+        // sole reader.
         STATE_LATCHED = 5,
     };
     // Guardrail for authored max_stacks. state_value() multiplies the stack
@@ -167,7 +174,25 @@ public:
         // content and mean river / water / land, and tag ids start at 1 too,
         // so re-using the slot would silently rewrite existing cards.
         SELECTOR_TAG_ANY_CELL = 13,
-        SELECTOR_MAX_KIND = SELECTOR_TAG_ANY_CELL,
+        // 14/15: X1 — evaluate the radial selector once per *source* cell.
+        //
+        // param1 is a 1-based tag id selecting the source cells among the
+        // country's own territory; param0 is the total target cap. The engine
+        // walks OWN_TERRITORY with that tag, then expands every source cell
+        // with the R1 (14) or R2 (15) fan-out, unions the results, sorts and
+        // caps. Before this, `resolve_effect_targets` expanded from
+        // `country_anchor_cell()` only, so "主产铁矿的地块：周围 1 格工业 +10%"
+        // silently applied to the first owned cell's neighbourhood instead of
+        // every iron cell's.
+        //
+        // A new kind rather than a wider param1 on 6/7: param1 there already
+        // means "hops" for DISTANCE_N and "predicate id" for PREDICATE_ANY_CELL,
+        // and tag ids start at 1 too, so re-using the slot would rewrite
+        // existing programs. TAG_ANY_CELL (13) is the grid-wide twin of 14/15
+        // and keeps its old meaning.
+        SELECTOR_TAG_SOURCE_R1 = 14,
+        SELECTOR_TAG_SOURCE_R2 = 15,
+        SELECTOR_MAX_KIND = SELECTOR_TAG_SOURCE_R2,
     };
     // Hard cap on cells a single selector may return. The cap is what keeps
     // "one instance per cell" bounded: 32 cells x a handful of cards stays well
@@ -224,6 +249,28 @@ public:
         MetricMask metric_mask;
         int32_t magnitude_by_prestige_q16[6] = {
             Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE};
+        // Thresholds this program compares metrics against. The economy buckets
+        // a metric change by "how many of these did it cross", which is exactly
+        // "could a condition have flipped" -- and it needs no per-metric unit
+        // knowledge, so it works for population, counts and category ids alike
+        // (review §3). Filled on every request like the rest of this struct; it
+        // is NOT serialised, so adding it costs no ABI.
+        //
+        // Overflow past the cap is not an error: that metric simply has an
+        // incomplete threshold set, and the digest falls back to exact for it.
+        static constexpr int32_t METRIC_THRESHOLD_CAP = 8;
+        int32_t metric_threshold_count = 0;
+        int32_t metric_threshold_ids[METRIC_THRESHOLD_CAP] = {0};
+        // Bucket BOUNDARIES, not raw thresholds: GTE N contributes N, LTE N
+        // contributes N+1, EQ N contributes both. Counting "how many boundaries
+        // are <= value" then flips exactly where the condition flips, for all
+        // three operators. Passing the raw N would leave LTE one boundary late.
+        int64_t metric_threshold_values[METRIC_THRESHOLD_CAP] = {0};
+        // Metrics that must NOT be bucketed: anything read by READ_METRIC (a Ramp
+        // consumes the continuous value, so a bucket would freeze its strength),
+        // and anything whose boundaries did not all fit in the cap. Empty
+        // threshold set == exact comparison, so marking is all it takes.
+        MetricMask exact_metric_mask;
     };
 
     // Durable identity for an external owner (ideology, trigger, etc.).  The
@@ -491,6 +538,19 @@ public:
     godot::Dictionary commit_transactions(const godot::Dictionary &batch);
     godot::Dictionary ack_transactions(const godot::Dictionary &batch);
     godot::Dictionary explain(int64_t instance_id) const;
+    // One authored MODIFIER command of a program, without resolving it.
+    // The coefficient plane composes this with ModifierRuntime's
+    // definition->(stat, op, value) lookup to learn "which per-cell stat does
+    // this card touch, and by how much". Resolving it here would mean Effect
+    // knowing about Modifier stat ids, which it deliberately does not.
+    struct ProgramModifierCommand {
+        std::string definition_key;
+        int64_t value_q16 = 0;
+        int32_t stacks = 1;
+        int32_t duration_days = -1;
+    };
+    bool program_modifier_commands(const std::string &program_key,
+                                   std::vector<ProgramModifierCommand> &out) const;
     godot::Dictionary report() const;
     godot::PackedByteArray capture() const;
     godot::Dictionary restore(const godot::PackedByteArray &bytes);
@@ -624,6 +684,14 @@ private:
         int32_t level = 0;
         int64_t next_due_day = 0;
         int64_t input_revision = 0;
+        // Highest revision this instance has SEEN, independent of whether that
+        // publish changed anything. `input_revision` is the change watermark:
+        // it only advances when a metric value actually differs, because
+        // downstream work (dirty groups, Modifier remove/re-add, ACK) keys off
+        // `input_revision > applied_input_revision`. Splitting the two keeps a
+        // genuinely stale snapshot detectable without letting an unchanged
+        // publish look like a change. Derived, never serialised.
+        int64_t metric_observed_revision = 0;
         // A newer frozen input revision may be evaluated before cadence so an
         // event-driven metric publish is visible in the current simulation day.
         int64_t last_evaluated_input_revision = 0;

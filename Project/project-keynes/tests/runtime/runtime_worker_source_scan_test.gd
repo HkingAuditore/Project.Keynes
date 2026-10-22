@@ -22,6 +22,12 @@ const WORKER_SOURCES := [
 	"gdext/src/runtime_trigger_pod.h",
 	"gdext/src/runtime_ideology_pod.cpp",
 	"gdext/src/runtime_ideology_pod.h",
+	# The Effect POD runs on the worker thread and shares its metric/instance
+	# structs with the ideology and modifier stages. It was self-declared
+	# Godot-free but unenforced, so a stray include would only surface as a
+	# link error or a silent cross-thread type.
+	"gdext/src/runtime_effect_pod.cpp",
+	"gdext/src/runtime_effect_pod.h",
 	"gdext/src/runtime_domain_pod.cpp",
 	"gdext/src/runtime_domain_pod.h",
 	"gdext/src/runtime_pod_protocol.h",

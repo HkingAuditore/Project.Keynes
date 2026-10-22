@@ -68,7 +68,10 @@ func _start_hall_music() -> void:
 		return
 	for _attempt in range(30):
 		if String(audio.status) == "ready":
-			audio.play_music(&"hall")
+			if audio.has_method("play_stone_age_suite"):
+				audio.play_stone_age_suite(true, 0.0, 0.78, 0)
+			else:
+				audio.play_music(&"hall")
 			return
 		await get_tree().process_frame
 

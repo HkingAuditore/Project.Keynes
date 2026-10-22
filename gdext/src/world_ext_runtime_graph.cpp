@@ -688,6 +688,18 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
             case RuntimeWorkerState::FAULTED: state = "FAULTED"; break;
         }
         out["simulation_host_state"] = state;
+        // R-3b: how many CLIENTS are still waiting for a boundary turn. A non-zero
+        // value with `state == PAUSED` means the worker is parked for that client --
+        // which is the exact condition that used to persist for a whole session
+        // because the ideology path requested and never completed.
+        out["main_boundary_service_requests"] =
+            static_cast<int64_t>(_runtime_host->main_boundary_service_requests());
+        out["main_boundary_service_ideology"] =
+            _runtime_host->main_boundary_service_requested_by(
+                NativeSimulationHost::MainBoundaryClient::IDEOLOGY);
+        out["main_boundary_service_trigger"] =
+            _runtime_host->main_boundary_service_requested_by(
+                NativeSimulationHost::MainBoundaryClient::TRIGGER);
         // Keep the raw readiness bit in the direct report.  The effective
         // mode intentionally remains OFF until every native domain is proven;
         // callers still need to distinguish a merely running SHADOW worker
@@ -1100,6 +1112,114 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["country_parity_worker_hash"] = static_cast<int64_t>(
             host.country_parity_worker_hash);
         out["country_parity_field"] = String(host.country_parity_field);
+        out["ideology_parity_compared"] = host.ideology_parity_compared;
+        out["ideology_parity_matched"] = host.ideology_parity_matched;
+        out["ideology_parity_compared_count"] = host.ideology_parity_compared_count;
+        out["ideology_parity_matched_count"] = host.ideology_parity_matched_count;
+        out["ideology_parity_reference_hash"] =
+            static_cast<int64_t>(host.ideology_parity_reference_hash);
+        out["ideology_parity_worker_hash"] =
+            static_cast<int64_t>(host.ideology_parity_worker_hash);
+        out["ideology_parity_first_mismatch_day"] =
+            host.ideology_parity_first_mismatch_day;
+        out["ideology_parity_uncompared_day_offset"] =
+            host.ideology_parity_uncompared_day_offset;
+        out["ideology_parity_field"] = String(host.ideology_parity_field);
+        // Reference-publish ledger, always exported. A caller must be able to tell
+        // "nothing was ever compared" apart from "compared and disagreed", and
+        // "the reference was refused because the main thread had no rows" apart
+        // from "the reference was published". Without these three the only
+        // visible symptom of main-thread starvation was `field=points`.
+        out["ideology_parity_reference_publish_count"] =
+            host.ideology_parity_reference_publish_count;
+        out["ideology_parity_reference_published_day"] =
+            host.ideology_parity_reference_published_day;
+        out["ideology_parity_reference_published_countries"] =
+            host.ideology_parity_reference_published_countries;
+        out["ideology_parity_reference_published_with_points_revision"] =
+            host.ideology_parity_reference_published_with_points_revision;
+        out["ideology_parity_reference_skipped_count"] =
+            host.ideology_parity_reference_skipped_count;
+        out["ideology_parity_reference_skip_reason"] =
+            String(host.ideology_parity_reference_skip_reason);
+        // Precondition, not a business divergence: the two sides hash the
+        // catalog with different functions, so equality is never expected.
+        out["ideology_parity_catalog_mismatch_count"] =
+            host.ideology_parity_catalog_mismatch_count;
+        out["ideology_parity_last_reference_catalog_hash"] =
+            host.ideology_parity_last_reference_catalog_hash;
+        out["ideology_parity_last_worker_catalog_hash"] =
+            host.ideology_parity_last_worker_catalog_hash;
+        out["ideology_parity_worker_opinion_revision"] =
+            host.ideology_parity_worker_opinion_revision;
+        out["ideology_parity_worker_committed_day"] =
+            host.ideology_parity_worker_committed_day;
+        out["ideology_parity_worker_opinion_period_index"] =
+            host.ideology_parity_worker_opinion_period_index;
+        out["ideology_parity_worker_opinion_committed_day"] =
+            host.ideology_parity_worker_opinion_committed_day;
+        out["ideology_parity_paired_reference_day"] =
+            host.ideology_parity_paired_reference_day;
+        out["ideology_parity_paired_worker_day"] =
+            host.ideology_parity_paired_worker_day;
+        out["ideology_parity_row_mismatch_slot"] =
+            host.ideology_parity_row_mismatch_slot;
+        out["ideology_parity_row_mismatch_reference_handle"] =
+            host.ideology_parity_row_mismatch_reference_handle;
+        out["ideology_parity_row_mismatch_worker_handle"] =
+            host.ideology_parity_row_mismatch_worker_handle;
+        out["ideology_parity_row_mismatch_reference_points"] =
+            host.ideology_parity_row_mismatch_reference_points;
+        out["ideology_parity_row_mismatch_worker_points"] =
+            host.ideology_parity_row_mismatch_worker_points;
+        if (host.ideology_parity_points_diff_valid) {
+            Dictionary diff;
+            diff["day"] = host.ideology_parity_points_diff_day;
+            diff["slot"] = host.ideology_parity_points_diff_slot;
+            diff["reference_countries"] = host.ideology_parity_points_diff_reference_countries;
+            diff["worker_countries"] = host.ideology_parity_points_diff_worker_countries;
+            diff["handle"] = host.ideology_parity_points_diff_handle;
+            diff["reference_handle"] = host.ideology_parity_points_diff_reference_handle;
+            diff["worker_handle"] = host.ideology_parity_points_diff_worker_handle;
+            diff["reference_points_q16"] = host.ideology_parity_points_diff_reference_points_q16;
+            diff["worker_points_q16"] = host.ideology_parity_points_diff_worker_points_q16;
+            diff["reference_lifetime_q16"] = host.ideology_parity_points_diff_reference_lifetime_q16;
+            diff["worker_lifetime_q16"] = host.ideology_parity_points_diff_worker_lifetime_q16;
+            diff["reference_revision"] = host.ideology_parity_points_diff_reference_revision;
+            diff["worker_revision"] = host.ideology_parity_points_diff_worker_revision;
+            diff["reference_baseline_ready"] = host.ideology_parity_points_diff_reference_baseline_ready;
+            diff["worker_baseline_ready"] = host.ideology_parity_points_diff_worker_baseline_ready;
+            diff["reference_baseline_population"] = host.ideology_parity_points_diff_reference_baseline_population;
+            diff["worker_baseline_population"] = host.ideology_parity_points_diff_worker_baseline_population;
+            diff["reference_baseline_buildings"] = host.ideology_parity_points_diff_reference_baseline_buildings;
+            diff["worker_baseline_buildings"] = host.ideology_parity_points_diff_worker_baseline_buildings;
+            diff["reference_history_count"] = host.ideology_parity_points_diff_reference_history_count;
+            diff["worker_history_count"] = host.ideology_parity_points_diff_worker_history_count;
+            diff["reference_history_head"] = host.ideology_parity_points_diff_reference_history_head;
+            diff["worker_history_head"] = host.ideology_parity_points_diff_worker_history_head;
+            {
+                godot::Array ref_hist;
+                godot::Array worker_hist;
+                for (size_t i = 0; i < host.ideology_parity_points_diff_reference_history_q16.size(); ++i)
+                    ref_hist.push_back(host.ideology_parity_points_diff_reference_history_q16[i]);
+                for (size_t i = 0; i < host.ideology_parity_points_diff_worker_history_q16.size(); ++i)
+                    worker_hist.push_back(host.ideology_parity_points_diff_worker_history_q16[i]);
+                diff["reference_history_q16"] = ref_hist;
+                diff["worker_history_q16"] = worker_hist;
+            }
+            diff["reference_last_day"] = host.ideology_parity_points_diff_reference_last_day;
+            diff["worker_round_day"] = host.ideology_parity_points_diff_worker_round_day;
+            diff["worker_committed_day"] = host.ideology_parity_points_diff_worker_committed_day;
+            diff["reference_catalog_hash"] = host.ideology_parity_points_diff_reference_catalog_hash;
+            diff["worker_catalog_hash"] = host.ideology_parity_points_diff_worker_catalog_hash;
+            diff["reference_publish_count"] = host.ideology_parity_reference_publish_count;
+            diff["reference_published_day"] = host.ideology_parity_reference_published_day;
+            diff["reference_published_countries"] = host.ideology_parity_reference_published_countries;
+            diff["reference_published_with_points_revision"] = host.ideology_parity_reference_published_with_points_revision;
+            diff["reference_skipped_count"] = host.ideology_parity_reference_skipped_count;
+            diff["reference_skip_reason"] = String(host.ideology_parity_reference_skip_reason);
+            out["ideology_parity_points_diff"] = diff;
+        }
         out["country_parity_index"] = host.country_parity_index;
         out["trigger_parity_day"] = host.trigger_parity_day;
         out["trigger_reference_day"] = host.trigger_reference_day;
@@ -1421,6 +1541,114 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
         out["country_parity_worker_hash"] = static_cast<int64_t>(
             host.country_parity_worker_hash);
         out["country_parity_field"] = String(host.country_parity_field);
+        out["ideology_parity_compared"] = host.ideology_parity_compared;
+        out["ideology_parity_matched"] = host.ideology_parity_matched;
+        out["ideology_parity_compared_count"] = host.ideology_parity_compared_count;
+        out["ideology_parity_matched_count"] = host.ideology_parity_matched_count;
+        out["ideology_parity_reference_hash"] =
+            static_cast<int64_t>(host.ideology_parity_reference_hash);
+        out["ideology_parity_worker_hash"] =
+            static_cast<int64_t>(host.ideology_parity_worker_hash);
+        out["ideology_parity_first_mismatch_day"] =
+            host.ideology_parity_first_mismatch_day;
+        out["ideology_parity_uncompared_day_offset"] =
+            host.ideology_parity_uncompared_day_offset;
+        out["ideology_parity_field"] = String(host.ideology_parity_field);
+        // Reference-publish ledger, always exported. A caller must be able to tell
+        // "nothing was ever compared" apart from "compared and disagreed", and
+        // "the reference was refused because the main thread had no rows" apart
+        // from "the reference was published". Without these three the only
+        // visible symptom of main-thread starvation was `field=points`.
+        out["ideology_parity_reference_publish_count"] =
+            host.ideology_parity_reference_publish_count;
+        out["ideology_parity_reference_published_day"] =
+            host.ideology_parity_reference_published_day;
+        out["ideology_parity_reference_published_countries"] =
+            host.ideology_parity_reference_published_countries;
+        out["ideology_parity_reference_published_with_points_revision"] =
+            host.ideology_parity_reference_published_with_points_revision;
+        out["ideology_parity_reference_skipped_count"] =
+            host.ideology_parity_reference_skipped_count;
+        out["ideology_parity_reference_skip_reason"] =
+            String(host.ideology_parity_reference_skip_reason);
+        // Precondition, not a business divergence: the two sides hash the
+        // catalog with different functions, so equality is never expected.
+        out["ideology_parity_catalog_mismatch_count"] =
+            host.ideology_parity_catalog_mismatch_count;
+        out["ideology_parity_last_reference_catalog_hash"] =
+            host.ideology_parity_last_reference_catalog_hash;
+        out["ideology_parity_last_worker_catalog_hash"] =
+            host.ideology_parity_last_worker_catalog_hash;
+        out["ideology_parity_worker_opinion_revision"] =
+            host.ideology_parity_worker_opinion_revision;
+        out["ideology_parity_worker_committed_day"] =
+            host.ideology_parity_worker_committed_day;
+        out["ideology_parity_worker_opinion_period_index"] =
+            host.ideology_parity_worker_opinion_period_index;
+        out["ideology_parity_worker_opinion_committed_day"] =
+            host.ideology_parity_worker_opinion_committed_day;
+        out["ideology_parity_paired_reference_day"] =
+            host.ideology_parity_paired_reference_day;
+        out["ideology_parity_paired_worker_day"] =
+            host.ideology_parity_paired_worker_day;
+        out["ideology_parity_row_mismatch_slot"] =
+            host.ideology_parity_row_mismatch_slot;
+        out["ideology_parity_row_mismatch_reference_handle"] =
+            host.ideology_parity_row_mismatch_reference_handle;
+        out["ideology_parity_row_mismatch_worker_handle"] =
+            host.ideology_parity_row_mismatch_worker_handle;
+        out["ideology_parity_row_mismatch_reference_points"] =
+            host.ideology_parity_row_mismatch_reference_points;
+        out["ideology_parity_row_mismatch_worker_points"] =
+            host.ideology_parity_row_mismatch_worker_points;
+        if (host.ideology_parity_points_diff_valid) {
+            Dictionary diff;
+            diff["day"] = host.ideology_parity_points_diff_day;
+            diff["slot"] = host.ideology_parity_points_diff_slot;
+            diff["reference_countries"] = host.ideology_parity_points_diff_reference_countries;
+            diff["worker_countries"] = host.ideology_parity_points_diff_worker_countries;
+            diff["handle"] = host.ideology_parity_points_diff_handle;
+            diff["reference_handle"] = host.ideology_parity_points_diff_reference_handle;
+            diff["worker_handle"] = host.ideology_parity_points_diff_worker_handle;
+            diff["reference_points_q16"] = host.ideology_parity_points_diff_reference_points_q16;
+            diff["worker_points_q16"] = host.ideology_parity_points_diff_worker_points_q16;
+            diff["reference_lifetime_q16"] = host.ideology_parity_points_diff_reference_lifetime_q16;
+            diff["worker_lifetime_q16"] = host.ideology_parity_points_diff_worker_lifetime_q16;
+            diff["reference_revision"] = host.ideology_parity_points_diff_reference_revision;
+            diff["worker_revision"] = host.ideology_parity_points_diff_worker_revision;
+            diff["reference_baseline_ready"] = host.ideology_parity_points_diff_reference_baseline_ready;
+            diff["worker_baseline_ready"] = host.ideology_parity_points_diff_worker_baseline_ready;
+            diff["reference_baseline_population"] = host.ideology_parity_points_diff_reference_baseline_population;
+            diff["worker_baseline_population"] = host.ideology_parity_points_diff_worker_baseline_population;
+            diff["reference_baseline_buildings"] = host.ideology_parity_points_diff_reference_baseline_buildings;
+            diff["worker_baseline_buildings"] = host.ideology_parity_points_diff_worker_baseline_buildings;
+            diff["reference_history_count"] = host.ideology_parity_points_diff_reference_history_count;
+            diff["worker_history_count"] = host.ideology_parity_points_diff_worker_history_count;
+            diff["reference_history_head"] = host.ideology_parity_points_diff_reference_history_head;
+            diff["worker_history_head"] = host.ideology_parity_points_diff_worker_history_head;
+            {
+                godot::Array ref_hist;
+                godot::Array worker_hist;
+                for (size_t i = 0; i < host.ideology_parity_points_diff_reference_history_q16.size(); ++i)
+                    ref_hist.push_back(host.ideology_parity_points_diff_reference_history_q16[i]);
+                for (size_t i = 0; i < host.ideology_parity_points_diff_worker_history_q16.size(); ++i)
+                    worker_hist.push_back(host.ideology_parity_points_diff_worker_history_q16[i]);
+                diff["reference_history_q16"] = ref_hist;
+                diff["worker_history_q16"] = worker_hist;
+            }
+            diff["reference_last_day"] = host.ideology_parity_points_diff_reference_last_day;
+            diff["worker_round_day"] = host.ideology_parity_points_diff_worker_round_day;
+            diff["worker_committed_day"] = host.ideology_parity_points_diff_worker_committed_day;
+            diff["reference_catalog_hash"] = host.ideology_parity_points_diff_reference_catalog_hash;
+            diff["worker_catalog_hash"] = host.ideology_parity_points_diff_worker_catalog_hash;
+            diff["reference_publish_count"] = host.ideology_parity_reference_publish_count;
+            diff["reference_published_day"] = host.ideology_parity_reference_published_day;
+            diff["reference_published_countries"] = host.ideology_parity_reference_published_countries;
+            diff["reference_published_with_points_revision"] = host.ideology_parity_reference_published_with_points_revision;
+            diff["reference_skipped_count"] = host.ideology_parity_reference_skipped_count;
+            diff["reference_skip_reason"] = String(host.ideology_parity_reference_skip_reason);
+            out["ideology_parity_points_diff"] = diff;
+        }
         out["country_parity_index"] = host.country_parity_index;
         out["trigger_parity_day"] = host.trigger_parity_day;
         out["trigger_reference_day"] = host.trigger_reference_day;

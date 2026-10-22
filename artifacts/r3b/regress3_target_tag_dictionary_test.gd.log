@@ -1,0 +1,82 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [OK] dictionary builds from a synthetic economy
+  [OK] dictionary emits tags
+  [OK] frontier has one row
+  [OK] frontier reads population
+  [OK] frontier is an upper bound
+  [OK] frontier threshold is strictly below P0
+  [OK] cell.settlement has one row
+  [OK] cell.settlement reads cell.population
+  [OK] cell.settlement is a lower bound
+  [OK] cell.settlement threshold matches calibration
+  [OK] cell.metropolis has one row
+  [OK] cell.metropolis reads cell.population
+  [OK] cell.metropolis is a lower bound
+  [OK] cell.metropolis threshold matches calibration
+  [OK] cell.market has one row
+  [OK] cell.market reads cell.trade_events
+  [OK] cell.market is a lower bound
+  [OK] cell.market threshold matches calibration
+  [OK] grain has one row per grain good
+  [OK] each grain good is its own clause (OR)
+  [OK] rich tag has two rows
+  [OK] rich rows share one clause (AND)
+  [OK] rich reads both the id and the share
+  [OK] every good gets a produces tag
+  [OK] every landform gets a tag
+  [OK] every sector gets a tag
+  [OK] cell.rain has one row
+  [OK] cell.rain reads cell.rain_event
+  [OK] cell.rain is a lower bound
+  [OK] cell.rain threshold matches calibration
+  [OK] every op is in range
+  [OK] every metric key is non-empty
+  [OK] clauses are non-decreasing per tag
+  [OK] frontier x agriculture exists
+  [OK] single-clause conjunction is one clause of two rows
+  [OK] conjunction carries both predicates
+  [OK] frontier x grain is a 5 x 1 clause product
+  [OK] frontier x grain keeps one clause per grain good
+  [OK] market x coast exists
+  [OK] terrain floodplain tag exists
+  [OK] terrain floodplain reads the terrain axis
+  [OK] terrain floodplain compares id 29 for equality
+  [OK] landform coast and terrain coast are different axes
+  [OK] terrain coast is its own tag
+  [OK] three tags intersect
+  [OK] a three-tag AND is the clause product, not a concatenation
+  [OK] one clause per grain good survives the fold
+  [OK] every clause carries all three predicates
+  [OK] tag order does not change the synthetic name
+  [OK] tag order does not change the clause layout
+  [OK] one name is not an intersection
+  [OK] a repeated name is rejected
+  [OK] an unknown name names itself
+  [OK] a clause product past the budget is rejected
+  [OK] the budget rejection names the count
+  [OK] tag count is within MAX_TAGS
+  [OK] row count is within MAX_ROWS
+  [OK] names are unique
+  [INFO] shipped dictionary: 113 tags, 182 rows
+  [OK] a missing grain good is rejected
+  [OK] the rejection names the missing good
+  [OK] an empty good table is rejected
+  [OK] an unusable economy catalog is rejected
+  [OK] production catalog builds
+  [OK] production catalog carries the tag dictionary
+  [OK] production catalog compiles
+  [INFO] production dictionary: 272 tags, 372 rows
+  [OK] compiled table keeps every tag
+  [OK] tag id 1 is cell.frontier
+  [OK] tag id 2 is cell.settlement
+  [OK] tag id 3 is cell.metropolis
+  [OK] tag id 4 is cell.market
+  [OK] tag id 5 is cell.specialized
+  [OK] tag id 6 is cell.specialized_high
+  [OK] tag id 7 is cell.grain
+  [OK] tag ids are the emitted order and names are unique
+  [OK] an unknown tag name resolves to 0
+  [OK] compiled offsets close on the row count
+  [OK] native accepts the production tag table
+target tag dictionary: 77 checks, 0 failures

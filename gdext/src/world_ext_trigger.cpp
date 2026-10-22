@@ -461,7 +461,8 @@ Dictionary DCWorldExt::handoff_trigger_effects(int limit) {
         boundary = _runtime_host->try_lock_economy_input_capture();
         if (!boundary.owns_lock()) {
             _trigger_handoff_retry_limit = std::max(_trigger_handoff_retry_limit, limit);
-            _runtime_host->request_main_boundary_service();
+            _runtime_host->request_main_boundary_service(
+                NativeSimulationHost::MainBoundaryClient::TRIGGER);
             Dictionary out;
             out["ok"] = true;
             out["native_supported"] = true;
@@ -489,7 +490,9 @@ Dictionary DCWorldExt::handoff_trigger_effects_unlocked(int limit) {
         const PackedInt64Array handed_off_ids = out.get("effect_ids", PackedInt64Array());
         publish_trigger_ack_ids(this, handed_off_ids, out);
     }
-    if (_runtime_host != nullptr) _runtime_host->complete_main_boundary_service();
+    if (_runtime_host != nullptr)
+        _runtime_host->complete_main_boundary_service(
+            NativeSimulationHost::MainBoundaryClient::TRIGGER);
     return out;
 }
 

@@ -5,11 +5,14 @@
 #include "effect_runtime.h"
 #include "effect_instance_forwarder.h"
 #include "ideology_runtime.h"
+#include "ideology_opinion_bridge.h"
 #include "modifier_runtime.h"
 #include "native_simulation_host.h"
+#include "runtime_ideology_pod.h"
 
 #include <algorithm>
 #include <limits>
+#include <optional>
 
 namespace pk {
 using namespace godot;
@@ -43,24 +46,9 @@ uint64_t worker_request_id(uint32_t producer_id, uint64_t sequence,
 
 RuntimeIdeologyOpinionSnapshot copy_opinion_snapshot(
         const NativeEconomyRuntime::CountryClassOpinionSnapshot &source) {
-    RuntimeIdeologyOpinionSnapshot out;
-    out.revision = source.revision;
-    out.class_hash = source.class_hash;
-    out.committed_day = source.commit_day;
-    out.country_count = static_cast<uint32_t>(std::max(0, source.country_count));
-    out.class_count = static_cast<uint32_t>(std::max(0, source.class_count));
-    out.country_handles = source.country_handles;
-    out.country_generations = source.country_generations;
-    out.population = source.population;
-    out.funds = source.funds;
-    out.owner_employed = source.owner_employed;
-    out.satisfaction_weighted = source.satisfaction_weighted;
-    out.satisfaction_q16 = source.satisfaction_q16;
-    out.country_population = source.country_population;
-    out.country_buildings_installed = source.country_buildings_installed;
-    out.country_trade_base_value = source.country_trade_base_value;
-    out.period_days = std::max<int64_t>(1, source.period_days);
-    return out;
+    // Single conversion point (ideology_opinion_bridge.h): the worker publish and
+    // the main-thread accrual must not drift field by field.
+    return ideology_opinion_from_economy(source);
 }
 } // namespace
 
@@ -198,6 +186,22 @@ Dictionary DCWorldExt::publish_ideology_worker_inputs() {
     RuntimeIdeologyOpinionSnapshot snapshot = copy_opinion_snapshot(
         static_cast<NativeEconomyRuntime *>(_economy_runtime)
             ->country_class_opinion_snapshot());
+    // Do NOT accrue here.
+    //
+    // An earlier revision called `settle_points_for_opinion()` at this point to
+    // make the main thread level with the revision being published. That was a
+    // test-shaped fix leaking into production: this function runs on every graph
+    // pulse (native daily, runtime graph, country peer bridge), so it moved point
+    // settlement timing and its ledger `day` off the daily cadence that
+    // `run_ideology_daily` establishes. Accrual belongs to the Ideology day, not
+    // to an input publish.
+    //
+    // It did not fix the real divergence either: the worker and the main thread
+    // settle a different NUMBER of times, and `ledger.trade_q16` pays on every
+    // settlement, so the totals genuinely differ. See the report note below.
+    NativeIdeologyRuntime *self = _ideology_runtime == nullptr ? nullptr
+        : ideology_runtime_from(_ideology_runtime);
+    const bool settled_now = false;
     std::string error;
     const bool ok = _runtime_host->publish_ideology_opinion_snapshot(
         snapshot, error);
@@ -206,6 +210,16 @@ Dictionary DCWorldExt::publish_ideology_worker_inputs() {
     out["code"] = ok ? "ok" : String(error.c_str());
     out["revision"] = static_cast<int64_t>(snapshot.revision);
     out["committed_day"] = snapshot.committed_day;
+    // Parity needs to know whether the worker was handed the SAME opinion
+    // revision the main thread last settled against. A mismatch here means the
+    // two sides are accruing from different inputs, which is a driver problem,
+    // not a business divergence.
+    out["main_points_revision"] = _ideology_runtime == nullptr ? -1
+        : static_cast<int64_t>(ideology_runtime_from(_ideology_runtime)
+            ->points_revision_seen());
+    out["settled_now"] = settled_now;
+    out["accrue_result"] = self == nullptr ? -1
+        : static_cast<int32_t>(self->points_accrual_result());
     return out;
 }
 
@@ -253,6 +267,15 @@ Dictionary DCWorldExt::poll_ideology_receipts(int64_t after_receipt_id,
             after_receipt_id, limit);
 }
 
+void DCWorldExt::publish_ideology_cell_programs() {
+    if (_ideology_runtime == nullptr || _economy_runtime == nullptr) return;
+    CellProgramTable table;
+    if (!ideology_runtime_from(_ideology_runtime)->build_cell_program_table(table))
+        return;
+    static_cast<NativeEconomyRuntime *>(_economy_runtime)
+        ->set_ideology_cell_programs(std::move(table));
+}
+
 Dictionary DCWorldExt::run_ideology_daily(int64_t day_index) {
     if (_ideology_runtime == nullptr) return unavailable();
     if (_runtime_host != nullptr &&
@@ -264,6 +287,23 @@ Dictionary DCWorldExt::run_ideology_daily(int64_t day_index) {
         out["day"] = day_index;
         return out;
     }
+    // R9-1 binding is NOT landed (05 §2.7). The worker DOES record the exact
+    // (plan_day -> opinion) pair in a locked ring, and `worker_opinion_snapshot_for_day`
+    // reads it correctly; what does not work is the join between the two calendars.
+    // Measured, three times over:
+    //   1. The ring is populated monotonically (plan=1,2,3,...) and lookups by the
+    //      same day DO match when the worker has already recorded that day.
+    //   2. The main thread is almost always called for a day the worker has not
+    //      recorded yet (wopinion=0), because the driver ticks faster than the
+    //      worker commits.
+    //   3. Binding to "the newest recorded day" instead published 1278 references
+    //      for 24 distinct days: re-publishing one day filled the comparison FIFO
+    //      with duplicates, and exact-day pairing then never matched (compared=0).
+    // Deduplicating those left the branch unreachable and ref_pub=0 again.
+    //
+    // Until that ordering is designed properly (the worker's plan day and the day
+    // the main thread is asked to run are simply not the same coordinate), the
+    // main thread keeps its pre-existing behaviour: settle from Economy.
     if (_runtime_host && _runtime_host->annual_development_enabled()) {
         AnnualDevelopmentReport pending;
         std::string error;
@@ -273,7 +313,96 @@ Dictionary DCWorldExt::run_ideology_daily(int64_t day_index) {
                 pending.reward_sequence, day_index, error))
             _runtime_host->settle_annual_reward(pending.reward_sequence);
     }
-    return ideology_runtime_from(_ideology_runtime)->run_daily(day_index);
+    Dictionary result = ideology_runtime_from(_ideology_runtime)->run_daily(day_index);
+    // Parity reference: hash the main thread's own state for this day with the
+    // SAME function the worker uses. Only meaningful in a live comparison run --
+    // with no worker nothing ever compares against it, which the report shows as
+    // `ideology_parity_compared_count == 0`.
+    //
+    // Publish only when the day is actually FINISHED **and settled**.
+    //
+    // `run_daily` is sliced: a call can return `done=false` with the day still in
+    // progress. Publishing then stores a partial state under this day's key while
+    // the worker, having committed the whole day, compares against a snapshot
+    // that is already stale.
+    //
+    // `done` alone is not enough either. On the first days the main thread's
+    // Economy has not published an opinion revision yet, so `accrue_points`
+    // settles nothing and the runtime has no country rows while the worker (whose
+    // Economy runs on the worker clock) already has them. That day cannot be
+    // compared honestly, so it is not published.
+    //
+    // Note the predicate is "has EVER settled", not "settled on this call": a day
+    // with no new opinion revision legitimately reports `already seen`, and
+    // refusing to publish then would starve the comparison for every quiet day.
+    const bool settled = ideology_runtime_from(_ideology_runtime)
+        ->points_accrual_ever_settled();
+    // Compare against `bound_day`: when parity bound this settlement to the
+    // worker's recorded day, THAT is the day the reference describes.
+    const bool day_finished = bool(result.get("done", true)) && settled &&
+        ideology_runtime_from(_ideology_runtime)->last_day() == day_index;
+    // Short-circuit BEFORE the export, not inside the publisher: building a
+    // full snapshot is the cost, and a production session must not pay it to
+    // have `publish_ideology_reference` immediately refuse (03 idle-zero-cost).
+    const bool parity_on = _runtime_host != nullptr &&
+        _runtime_host->ideology_parity_enabled();
+    if (parity_on && bool(result.get("ok", false)) && day_finished) {
+        RuntimeIdeologyPodSnapshot reference;
+        if (ideology_runtime_from(_ideology_runtime)
+                ->export_pod_business_snapshot(reference)) {
+            // A refused reference is a fact about the main thread, not a silent
+            // no-op: say so in the daily result so a parity run can tell
+            // "nothing to compare" apart from "compared and disagreed".
+            result["parity_reference_published"] =
+                _runtime_host->publish_ideology_reference(day_index, reference);
+            result["parity_reference_countries"] =
+                static_cast<int64_t>(reference.countries.size());
+        } else {
+            result["parity_reference_export_ok"] = false;
+        }
+    } else if (parity_on && bool(result.get("ok", false))) {
+        result["parity_reference_published"] = false;
+        result["parity_reference_deferred"] = true;
+    }
+    // Gated: see `_ideology_cell_plane_enabled`. Off by default because the v1
+    // table is not yet safe to apply (stale generation, double application with
+    // the per-cell instances, coefficient semantics that differ from Modifier).
+    if (_ideology_cell_plane_enabled) publish_ideology_cell_programs();
+    return result;
+}
+
+bool DCWorldExt::set_ideology_cell_program_entry_for_test(
+        int32_t stat_id, int32_t filter_tag, int32_t operation,
+        int32_t coef_q16, int32_t column_kind, int32_t column_tag,
+        int32_t cap_units) {
+    if (_economy_runtime == nullptr) return false;
+    // Scalar arguments on purpose: an earlier version took a Dictionary and the
+    // nested Array never made it across the Variant boundary (entries arrived
+    // empty), which read exactly like "the plane did nothing".
+    CellProgramTable table;
+    table.generation = 1;
+    table.country_offsets = {0, 1, 1};
+    CellProgramEntry entry;
+    entry.stat_id = stat_id;
+    entry.filter_tag = filter_tag;
+    entry.operation = operation;
+    entry.coef_q16 = coef_q16;
+    entry.column_kind = column_kind;
+    entry.column_tag = column_tag;
+    entry.cap_units = cap_units;
+    table.entries.push_back(entry);
+    static_cast<NativeEconomyRuntime *>(_economy_runtime)
+        ->set_ideology_cell_programs(std::move(table));
+    return true;
+}
+
+Dictionary DCWorldExt::get_city_output_factor_q16(int32_t cell, int32_t good_id) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    Dictionary out;
+    out["ok"] = true;
+    out["factor_q16"] = static_cast<NativeEconomyRuntime *>(_economy_runtime)
+        ->city_output_factor_for_test(cell, good_id);
+    return out;
 }
 
 bool DCWorldExt::ideology_should_run(int64_t day_index) const {
@@ -283,6 +412,88 @@ bool DCWorldExt::ideology_should_run(int64_t day_index) const {
     }
     return _ideology_runtime != nullptr &&
         ideology_runtime_from(_ideology_runtime)->should_run(day_index);
+}
+
+Dictionary DCWorldExt::step_ideology_instance_refresh(int64_t day_index) {
+    if (_ideology_runtime == nullptr) return unavailable();
+    // R-3: take the same boundary lock `apply_runtime_ideology_snapshot` takes,
+    // and skip this tick when it is not available.
+    //
+    // The refresh path runs `reconcile`, which resolves card target selectors --
+    // `cell_has_target_tag`, `collect_effect_target_cells`, the per-country tag
+    // counts. Those read Economy's per-epoch state. That state is now immutable
+    // snapshots (so a read cannot tear), but it still describes an epoch that is mid
+    // commit unless the two are serialized: taking the lock means every selector this
+    // pass resolves against belongs to one finished epoch. When the lock is busy the
+    // whole tick is skipped and retried, exactly like the write-back path, because a
+    // late consistent set beats an early mixed one.
+    //
+    // Under worker authority the main-thread daily job is suppressed entirely, so
+    // the host drives this refresh itself -- the instances still belong to the
+    // main-thread facade even when the POD owns the card state.
+    std::optional<std::unique_lock<std::mutex>> boundary_lock;
+    if (_runtime_host != nullptr) {
+        auto acquired = _runtime_host->try_lock_economy_input_capture();
+        if (!acquired.owns_lock()) {
+            // R-3: same deferred-service handshake `world_ext_trigger.cpp` uses.
+            // Without it the refresh starves while the economy day is inflight: the
+            // main thread keeps skipping and nothing asks the host to come back for
+            // the boundary.
+            //
+            // R-3b: this path used to request and NEVER complete, and the supplied
+            // flag was a single bool shared with the trigger handoff, so:
+            //   * the worker parked between semantic days for the rest of the
+            //     session (`native_simulation_host.cpp:15284`) -- the observed
+            //     "worker_committed_day 2 -> 2", `slots_used=0`, `rows=[]` and empty
+            //     receipts in `ideology_card_content_worker_test`;
+            //   * a trigger completion cleared the flag on ideology's behalf,
+            //     releasing the worker early whenever the two overlapped.
+            //
+            // The request must PERSIST across the skip: it is the only thing asking
+            // the worker to come back. It is released at the top of the next call,
+            // which is the first moment this path can act on it -- the worker also
+            // takes the same boundary mutex, so a request that stayed set after a
+            // successful refresh would park the worker with nothing left to do.
+            _runtime_host->request_main_boundary_service(
+                NativeSimulationHost::MainBoundaryClient::IDEOLOGY);
+            ++_instance_refresh_lock_skips;
+            ++_instance_refresh_consecutive_skips;
+            _instance_refresh_max_consecutive_skips = std::max(
+                _instance_refresh_max_consecutive_skips,
+                _instance_refresh_consecutive_skips);
+            Dictionary out;
+            out["ok"] = true;
+            out["done"] = false;
+            out["pending"] = true;
+            out["day"] = day_index;
+            out["code"] = "economy_day_inflight";
+            out["lock_skips"] = static_cast<int64_t>(_instance_refresh_lock_skips);
+            return out;
+        }
+        boundary_lock.emplace(std::move(acquired));
+    }
+    // The boundary turn has been taken (or there is no host to ask), so this client
+    // no longer needs the worker parked. Releasing here covers BOTH exits below --
+    // the early `publish_ideology_worker_inputs` return and the normal one -- which
+    // is exactly what keeps the request/complete pair balanced on every path.
+    // The boundary bit is released on BOTH exits below (the early
+    // `publish_ideology_worker_inputs` one and the normal one), which is what keeps
+    // the request/complete pair balanced on every path. Leaving it set after a
+    // successful refresh would park the worker with nothing left to do.
+    if (_runtime_host != nullptr)
+        _runtime_host->complete_main_boundary_service(
+            NativeSimulationHost::MainBoundaryClient::IDEOLOGY);
+    // A refresh that actually ran breaks the consecutive streak.
+    _instance_refresh_consecutive_skips = 0;
+    NativeIdeologyRuntime *runtime = ideology_runtime_from(_ideology_runtime);
+    const bool pending = runtime->step_effect_instance_refresh(day_index, 0);
+    Dictionary out;
+    out["ok"] = true;
+    out["done"] = !pending;
+    out["pending"] = pending;
+    out["day"] = day_index;
+    out["lock_skips"] = static_cast<int64_t>(_instance_refresh_lock_skips);
+    return out;
 }
 
 Dictionary DCWorldExt::apply_runtime_ideology_snapshot(int64_t after_generation) {
@@ -351,6 +562,69 @@ Dictionary DCWorldExt::get_ideology_effect_instance_report(int64_t country_handl
         : ideology_runtime_from(_ideology_runtime)->effect_instance_report(country_handle);
 }
 
+Dictionary DCWorldExt::get_ideology_cell_program_summary() {
+    if (_ideology_runtime == nullptr) return unavailable();
+    CellProgramTable table;
+    const bool ok = ideology_runtime_from(_ideology_runtime)->build_cell_program_table(table);
+    Dictionary out;
+    out["ok"] = ok;
+    out["generation"] = static_cast<int64_t>(table.generation);
+    out["entry_count"] = static_cast<int64_t>(table.entries.size());
+    out["country_count"] = static_cast<int64_t>(
+        table.country_offsets.empty() ? 0 : table.country_offsets.size() - 1);
+    out["unsupported_selector"] = table.unsupported_selector;
+    out["unsupported_definition"] = table.unsupported_definition;
+    out["unsupported_stack"] = table.unsupported_stack;
+    out["unsupported_domain"] = table.unsupported_domain;
+    out["scanned_cards"] = table.scanned_cards;
+    out["scanned_templates"] = table.scanned_templates;
+    // First few entries only: this is a diagnostic, and a 4096-row Dictionary
+    // would cost more than the thing it describes.
+    Array rows;
+    for (size_t i = 0; i < table.entries.size() && i < 8; ++i) {
+        Dictionary row;
+        row["stat_id"] = table.entries[i].stat_id;
+        row["filter_tag"] = table.entries[i].filter_tag;
+        row["operation"] = table.entries[i].operation;
+        row["coef_q16"] = table.entries[i].coef_q16;
+        rows.push_back(row);
+    }
+    out["entries"] = rows;
+    return out;
+}
+
+Dictionary DCWorldExt::resolve_effect_program_modifier_commands(
+        const String &program_key) const {
+    if (_effect_runtime == nullptr) return unavailable();
+    std::vector<EffectRuntime::ProgramModifierCommand> commands;
+    const bool found =
+        static_cast<const EffectRuntime *>(_effect_runtime)->program_modifier_commands(
+            std::string(program_key.utf8().get_data()), commands);
+    Dictionary out;
+    out["ok"] = found;
+    Array rows;
+    for (const EffectRuntime::ProgramModifierCommand &command : commands) {
+        Dictionary row;
+        row["definition_key"] = String(command.definition_key.c_str());
+        row["value_q16"] = command.value_q16;
+        row["stacks"] = command.stacks;
+        row["duration_days"] = command.duration_days;
+        rows.push_back(row);
+    }
+    out["commands"] = rows;
+    return out;
+}
+
+Dictionary DCWorldExt::reconcile_ideology_effects_for_test(int64_t country_handle) {
+    return _ideology_runtime == nullptr ? unavailable()
+        : ideology_runtime_from(_ideology_runtime)->reconcile_effects_for_test(country_handle);
+}
+
+Dictionary DCWorldExt::apply_ideology_self_snapshot_for_test(int64_t generation) {
+    return _ideology_runtime == nullptr ? unavailable()
+        : ideology_runtime_from(_ideology_runtime)->apply_self_pod_snapshot_for_test(generation);
+}
+
 PackedInt32Array DCWorldExt::query_effect_target_cells(
         int32_t source_cell, int32_t selector_kind, int32_t param0,
         int32_t param1) const {
@@ -396,9 +670,91 @@ Dictionary DCWorldExt::explain_ideologies(int64_t country_handle,
             country_handle, ideology_ids);
 }
 
+int64_t DCWorldExt::compute_idea_activation_signature_for_test(int64_t handle,
+        int32_t ideology_id) {
+    if (_ideology_runtime == nullptr) return 0;
+    return static_cast<int64_t>(ideology_runtime_from(_ideology_runtime)
+        ->activation_signature_for_test(static_cast<uint64_t>(handle),
+                                        ideology_id));
+}
+
+Dictionary DCWorldExt::get_ideology_business_state() const {
+    Dictionary out;
+    out["ok"] = false;
+    if (_ideology_runtime == nullptr) {
+        out["code"] = "ideology_runtime_unavailable";
+        return out;
+    }
+    RuntimeIdeologyPodSnapshot snapshot;
+    if (!ideology_runtime_from(_ideology_runtime)
+            ->export_pod_business_snapshot(snapshot)) {
+        out["code"] = "ideology_business_snapshot_unavailable";
+        return out;
+    }
+    IdeologyBusinessSections sections;
+    ideology_business_sections(snapshot, sections);
+    out["ok"] = true;
+    out["hash"] = static_cast<int64_t>(ideology_business_hash(snapshot));
+    out["committed_day"] = snapshot.committed_day;
+    out["catalog_hash"] = static_cast<int64_t>(snapshot.catalog_hash);
+    out["countries"] = static_cast<int64_t>(snapshot.countries.size());
+    // Per-section values, so a caller comparing two worlds (or a main thread
+    // against a worker) can name the first diverging area instead of only
+    // "the totals differ".
+    out["points"] = static_cast<int64_t>(sections.points);
+    out["baseline"] = static_cast<int64_t>(sections.baseline);
+    out["history"] = static_cast<int64_t>(sections.history);
+    out["draw"] = static_cast<int64_t>(sections.draw);
+    out["bits"] = static_cast<int64_t>(sections.bits);
+    out["offer"] = static_cast<int64_t>(sections.offer);
+    out["ideas"] = static_cast<int64_t>(sections.ideas);
+    // Diagnostic sub-hashes. They never participate in the total hash; they exist
+    // so a failure can say WHICH part of a section moved without a debugger rerun.
+    out["points_balance"] = static_cast<int64_t>(sections.points_balance);
+    out["points_lifetime"] = static_cast<int64_t>(sections.points_lifetime);
+    out["points_revision"] = static_cast<int64_t>(sections.points_revision);
+    out["history_cursor"] = static_cast<int64_t>(sections.history_cursor);
+    // Country rows in slot order, points only. Enough to bisect a points
+    // divergence to one country without a debugger.
+    PackedInt64Array handles;
+    PackedInt64Array points_q16;
+    PackedInt64Array lifetime_q16;
+    PackedInt64Array revisions;
+    for (const RuntimeIdeologyPodCountryState &country : snapshot.countries) {
+        handles.append(static_cast<int64_t>(country.handle));
+        points_q16.append(country.ideology_points_q16);
+        lifetime_q16.append(country.lifetime_points_q16);
+        revisions.append(static_cast<int64_t>(country.points_revision));
+    }
+    out["handles"] = handles;
+    out["points_q16"] = points_q16;
+    out["lifetime_q16"] = lifetime_q16;
+    out["revisions"] = revisions;
+    return out;
+}
+
 Dictionary DCWorldExt::get_ideology_report() const {
-    return _ideology_runtime == nullptr ? unavailable()
-        : ideology_runtime_from(_ideology_runtime)->report();
+    if (_ideology_runtime == nullptr) return unavailable();
+    Dictionary out = ideology_runtime_from(_ideology_runtime)->report();
+    // R-3: how often the refresh lost the economy input boundary lock, and the
+    // longest run of consecutive losses. A high max-consecutive value means the
+    // refresh is starved rather than merely deferred, which is invisible from the
+    // per-call result alone (every call still answers ok=true).
+    out["instance_refresh_lock_skips"] =
+        static_cast<int64_t>(_instance_refresh_lock_skips);
+    out["instance_refresh_max_consecutive_skips"] =
+        static_cast<int64_t>(_instance_refresh_max_consecutive_skips);
+    out["instance_refresh_consecutive_skips"] =
+        static_cast<int64_t>(_instance_refresh_consecutive_skips);
+    // Pointer identity, not a value: a parity failure whose reference side has
+    // no country rows is almost always two different Economy instances, and the
+    // numbers cannot show that on their own.
+    out["economy_runtime_bound"] = _economy_runtime != nullptr;
+    out["economy_runtime_matches_ideology"] =
+        _economy_runtime != nullptr &&
+        ideology_runtime_from(_ideology_runtime)->economy_runtime() ==
+            static_cast<NativeEconomyRuntime *>(_economy_runtime);
+    return out;
 }
 
 PackedByteArray DCWorldExt::capture_ideology_state() const {

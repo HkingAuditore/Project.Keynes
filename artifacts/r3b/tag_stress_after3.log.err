@@ -1,0 +1,38 @@
+[research-procure-diag] day=1 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+ERROR: [FAIL] IDEOLOGY is worker-authoritative (mask & 0x10 != 0, mask=0)
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:599)
+       [1] _require (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:605)
+       [2] _run (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:123)
+       [3] _init (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:58)
+ERROR: [FAIL] worker committed at least one day
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:599)
+       [1] _run (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:195)
+       [2] _init (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:58)
+ERROR: [FAIL] tag flip creates 6 instances (after=0)
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:599)
+       [1] _run (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:204)
+       [2] _init (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:58)
+ERROR: [FAIL] cell instance count tracked the tag change (tag_changes=0)
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:599)
+       [1] _run (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:207)
+       [2] _init (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:58)
+ERROR: [FAIL] tag snapshot was built for a tag-consuming catalog (builds=1)
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:599)
+       [1] _run (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:212)
+       [2] _init (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:58)
+ERROR: 32 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 4 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 325 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
