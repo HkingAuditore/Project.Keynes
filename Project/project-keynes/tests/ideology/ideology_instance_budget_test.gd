@@ -230,7 +230,7 @@ func _compile(level_count: int, program: Resource, profile: Resource,
 	programs.effects = program_list
 	var card: Resource = IdeologyDefinitionScript.new()
 	card.id = &"probe_card"
-	card.route_tag = &"probe"
+	card.route_tag = &"mining"
 	var levels: Array[Resource] = []
 	for index in maxi(level_count, 1):
 		var level: Resource = IdeologyLevelDefinitionScript.new()

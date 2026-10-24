@@ -8,7 +8,7 @@ const IdeologyCatalogScript = preload("res://scripts/ideology/ideology_catalog.g
 enum Opcode { DISCOVER_IDEOLOGY = 1, GRANT_IDEOLOGY_POINTS = 2, OPEN_IDEOLOGY_OFFER = 3,
 	CHOOSE_IDEOLOGY_OFFER = 4, EQUIP_IDEOLOGY = 5, UNEQUIP_IDEOLOGY = 6,
 	PROMOTE_NATIONAL_SPIRIT = 7, ADD_UNDERSTANDING = 8, SET_IDEOLOGY_GATE = 9,
-	REROLL_IDEOLOGY_OFFER = 10 }
+	REROLL_IDEOLOGY_OFFER = 10, BAN_IDEOLOGY_CARD = 11, GRANT_FREE_DRAW = 12 }
 
 var _world_ext: Object
 var _catalog: Resource
@@ -130,6 +130,8 @@ func discover(handle: int, ideology_id, effective_day: int, sequence: int) -> Di
 	return _idea_command(Opcode.DISCOVER_IDEOLOGY, handle, ideology_id, 0, effective_day, sequence)
 func grant_points(handle: int, value_q16: int, effective_day: int, sequence: int) -> Dictionary:
 	return _idea_command(Opcode.GRANT_IDEOLOGY_POINTS, handle, -1, value_q16, effective_day, sequence)
+func grant_free_draw(handle: int, count: int, effective_day: int, sequence: int) -> Dictionary:
+	return _idea_command(Opcode.GRANT_FREE_DRAW, handle, -1, count, effective_day, sequence)
 func add_understanding(handle: int, ideology_id, value_q16: int, effective_day: int, sequence: int) -> Dictionary:
 	return _idea_command(Opcode.ADD_UNDERSTANDING, handle, ideology_id, value_q16, effective_day, sequence)
 func set_gate(handle: int, gate_id, enabled: bool, effective_day: int, sequence: int) -> Dictionary:

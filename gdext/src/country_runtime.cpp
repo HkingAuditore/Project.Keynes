@@ -9150,6 +9150,8 @@ bool NativeCountryRuntime::copy_economy_snapshot(EconomySnapshot &out) const {
         ? _simulation_host->country_asset_snapshot() : nullptr;
     const auto &_cell_country_slot = worker ? worker->cell_country_slot : this->_cell_country_slot;
     const auto &_country_technologies = worker ? worker->country_technologies : this->_country_technologies;
+    const auto &_country_research_signals = worker
+        ? worker->country_research_signals : this->_country_research_signals;
     const auto &_country_tax_defaults = worker ? worker->country_tax_defaults : this->_country_tax_defaults;
     const auto &_country_tax_default_modes = worker ? worker->country_tax_default_modes : this->_country_tax_default_modes;
     const auto &_cell_tax_policy_ids = worker ? worker->cell_tax_policy_ids : this->_cell_tax_policy_ids;
@@ -9172,8 +9174,15 @@ bool NativeCountryRuntime::copy_economy_snapshot(EconomySnapshot &out) const {
         out.country_handles[slot] = active[slot] != 0
             ? (uint64_t{generations[slot]} << 32u) | static_cast<uint32_t>(slot) : 0;
     out.country_technologies = _country_technologies;
+    out.country_research_signals = _country_research_signals;
     out.country_count = static_cast<int32_t>(active.size());
     out.technology_words = _technology_words;
+    out.research_signal_words = worker
+        ? static_cast<int32_t>(worker->research_signal_words)
+        : _research_signal_words;
+    out.research_signal_count = worker
+        ? static_cast<int32_t>(worker->research_signal_count)
+        : static_cast<int32_t>(_research_signal_ids.size());
     out.profession_count = static_cast<int32_t>(_profession_ids.size());
     out.good_count = static_cast<int32_t>(_good_ids.size());
     out.building_type_count =
@@ -9231,6 +9240,13 @@ bool NativeCountryRuntime::copy_economy_snapshot(EconomySnapshot &out) const {
     out.tax_policy_version = worker ? worker->generation : _tax_policy_version;
     out.generation = worker ? worker->generation : _generation;
     out.state_hash = worker ? worker->state_hash : compute_state_hash();
+    return true;
+}
+
+bool NativeCountryRuntime::copy_technology_domains(
+        std::vector<int32_t> &out) const {
+    if (!_configured) return false;
+    out = _technology_domains;
     return true;
 }
 

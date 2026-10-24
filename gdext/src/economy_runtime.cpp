@@ -15,6 +15,7 @@
 #include "modifier_runtime.h"
 #include "parallel_dispatcher.h"
 #include "trigger_runtime.h"
+#include "pk_log.h"
 
 #include <algorithm>
 #include <array>
@@ -22,6 +23,7 @@
 #include <chrono>
 #include <charconv>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <iterator>
 #include <limits>
@@ -1417,6 +1419,9 @@ void NativeEconomyRuntime::record_fiscal_peer_terminal(
 }
 
 uint64_t NativeEconomyRuntime::fiscal_record_digest(const FiscalPeerJournalRecord &record) {
+    // Schema 57 persists the seven legacy environment lanes. The two new
+    // lanes are validated inputs and derived columns, not save authority, so
+    // they must not enter the hash that restore recomputes from the stream.
     uint64_t hash = 1469598103934665603ULL;
     auto mix = [&](uint64_t value) { hash = economy_hash_u64(hash, value); };
     mix(record.request_id); mix(record.transaction_id); mix(record.country_handle);
@@ -2003,6 +2008,24 @@ bool NativeEconomyRuntime::bind_formula_owned_state(
         owned.resources.cell_generation.write_scalar(static_cast<size_t>(cell),
             _cell_resource_gen[static_cast<size_t>(cell)]);
     bind_resource_store(&owned.resources);
+    // A bound OwnedState is a CAPTURE, and every ledger block must say so.
+    //
+    // `capture_ecp2_authority` reads the blocks out of `_formula_owned` verbatim when
+    // this runtime is bound (`formula_owned_bound()` branch below). It fills `building`
+    // through `fill_ledger_building_from_store`, which always sets `captured = true`,
+    // but the other blocks were copied as-is. So as soon as a POD-owned world tried to
+    // capture a backup -- which `restore_ecp2_authority` does before applying anything,
+    // i.e. exactly the restore path -- the shape check saw
+    // `building.captured != trade_escrow.captured` and rejected with
+    // `building_trade_block_pairing`, surfacing one layer up as
+    // `ecp2_atomic_backup_failed` and killing `start_runtime_worker`.
+    //
+    // The sync helpers immediately above have just repacked these four stores from the
+    // live tables, so "captured" is true by construction at this point.
+    owned.trade_escrow.captured = true;
+    owned.family.captured = true;
+    owned.resource.captured = true;
+    owned.epoch_cursor.captured = true;
     return true;
 }
 
@@ -3016,6 +3039,36 @@ void NativeEconomyRuntime::capture_committed_ledger_state(
     out.market_demand_ema = market_store().demand_ema;
     out.market_last_shortage_q16 = market_store().last_shortage_q16;
     out.market_cell_to_market = market_store().cell_to_market;
+    // A cell→market column that the restore did not carry must not reach `begin_save`.
+    //
+    // ECP2 does not serialize this column (it is derived: `market_store().clear()` fills
+    // it with the identity mapping). After a POD restore the bound OwnedState therefore
+    // has an EMPTY `cell_to_market` while every other market lane is sized correctly, and
+    // `NativeEconomyRuntime::begin_save` rejects the shape with
+    // `economy_save_state_shape_invalid`. That gate runs for the ROLLBACK BACKUP that
+    // `apply_ecp2_authority` takes before applying anything, so a restored world could
+    // not start its worker at all (`ecp2_atomic_backup_failed` ->
+    // `runtime_worker_start_failed`), which production hits on every load
+    // (`world_runtime_host.gd:804`). Measured: `[save-shape] market_cell_to_market
+    // actual=0 expected=192`.
+    //
+    // Rebuilding it here is exact, not a guess: the derived column IS the identity
+    // mapping when the archive has no override, which is the same value `clear()` packs.
+    if (out.market_cell_to_market.size() !=
+            static_cast<size_t>(std::max(0, market_store().market_count.get()))) {
+        if (std::getenv("PK_SAVE_SHAPE_PROBE") != nullptr)
+            pk::log_error("[save-shape/capture] cell_to_market=%zu market_count=%d "
+                "bound=%d cells=%d stock=%zu",
+                out.market_cell_to_market.size(),
+                market_store().market_count.get(),
+                formula_owned_bound() ? 1 : 0, _cell_count.get(),
+                market_store().stock.size());
+        const size_t markets = static_cast<size_t>(
+            std::max(0, market_store().market_count.get()));
+        out.market_cell_to_market.resize(markets);
+        for (size_t cell = 0; cell < markets; ++cell)
+            out.market_cell_to_market[cell] = static_cast<int32_t>(cell);
+    }
 
     // A+Y N2/N8: one live group/pending lane in both modes; sync only repacks
     // the role CSR before the ledger reads it.
@@ -3028,6 +3081,52 @@ void NativeEconomyRuntime::capture_committed_ledger_state(
         out.trade_escrow = _formula_owned->trade_escrow;
         out.family = _formula_owned->family;
         out.resource = _formula_owned->resource;
+        // The bound OwnedState is a COMPLETE capture, so every block must report that.
+        //
+        // `building` above is filled by `fill_ledger_building_from_store`, which always
+        // sets `captured = true`. The three blocks copied here took their flag from the
+        // OwnedState verbatim, and after a POD restore those flags can still be false.
+        // The result was `building.captured != trade_escrow.captured`, rejected as
+        // `building_trade_block_pairing` -- i.e. the rollback backup that
+        // `apply_ecp2_authority` takes BEFORE applying anything could not be produced,
+        // surfacing as `ecp2_atomic_backup_failed` and killing `start_runtime_worker`.
+        // Production hits this on every load that restarts the worker
+        // (`world_runtime_host.gd:804`).
+        //
+        // Marking them here is the same statement the non-bound branch makes
+        // unconditionally: this runtime just repacked those stores from its live tables.
+        // The block stores must accompany the flag -- a block that reports `captured`
+        // with an empty store fails the shape check one layer down
+        // (`economy_save_state_shape_invalid`), so the store is packed from the live
+        // table too rather than copied from a possibly-stale OwnedState field.
+        out.trade_escrow.captured = true;
+        out.trade_escrow.country_trade_revision = _country_trade_revision.get();
+        out.trade_escrow.next_id = trade_orders_store().next_id;
+        sync_owned_trade_escrow_store(out.trade_escrow.store);
+        out.trade_escrow.sync_counts_from_store();
+        out.trade_escrow.recompute_content_hash();
+
+        out.family.captured = true;
+        out.family.catalog_hash =
+            static_cast<uint64_t>(std::max<int64_t>(0, _family_catalog_hash.get()));
+        out.family.person_catalog_hash =
+            static_cast<uint64_t>(std::max<int64_t>(0, _person_catalog_hash.get()));
+        out.family.trait_catalog_hash =
+            static_cast<uint64_t>(std::max<int64_t>(0, _family_trait_catalog_hash.get()));
+        out.family.runtime_mode = _family_runtime_mode.get();
+        out.family.person_runtime_mode = _person_runtime_mode.get();
+        out.family.next_expedition_stable_id = _next_family_expedition_stable_id.get();
+        sync_owned_family_store(out.family.store);
+        out.family.sync_counts_from_store();
+        out.family.recompute_content_hash();
+
+        out.resource.captured = true;
+        out.resource.catalog_hash =
+            static_cast<uint64_t>(std::max<int64_t>(0, _catalog_hash.get()));
+        out.resource.environment_hash =
+            static_cast<uint64_t>(std::max<int64_t>(0, _environment_hash.get()));
+        out.resource.context_day = _building_context_day;
+        out.resource.min_reserve_q16 = _resource_min_reserve_q16.get();
     } else {
         out.trade_escrow.captured = true;
         out.trade_escrow.country_trade_revision = _country_trade_revision.get();
@@ -4115,9 +4214,16 @@ bool NativeEconomyRuntime::capture_worker_day_input(
         changes.push_back(change.empty() ? nullptr : change.data());
     }
     if (needs_environment_capture(input.day)) {
+        if (input.climate_u8[0].size() != count ||
+            input.climate_u8[1].size() != count) {
+            error = "economy_environment_snapshot_invalid";
+            return false;
+        }
         if (!capture_environment(input.day, input.fields[0].data(), input.fields[1].data(),
                 input.fields[2].data(), input.fields[3].data(), input.fields[4].data(),
-                input.fields[5].data(), input.fields[6].data(), _cell_count.get(), error)) return false;
+                input.fields[5].data(), input.fields[6].data(),
+                input.fields[8].data(), input.climate_u8[0].data(),
+                input.climate_u8[1].data(), _cell_count.get(), error)) return false;
         if ((input.fog_solved || !trade_visibility_manual()) &&
             !capture_trade_visibility(input.geography[5].empty() ? nullptr : input.geography[5].data(),
                 static_cast<int32_t>(input.geography[5].size()), input.fog_solved, true, error)) return false;
@@ -4351,12 +4457,16 @@ bool NativeEconomyRuntime::capture_environment(int64_t day_index, const float *t
                                                const float *plant_available_water,
                                                const float *precipitation,
                                                const float *snow_cover,
-                                               const float *weather_intensity, int32_t count,
+                                               const float *weather_intensity,
+                                               const float *temperature_365d,
+                                               const uint8_t *weather_type,
+                                               const uint8_t *cover, int32_t count,
                                                std::string &error) {
     if (!_configured || count != _cell_count.get() || temperature == nullptr ||
         temperature_30d == nullptr || moisture == nullptr || plant_available_water == nullptr ||
         precipitation == nullptr || snow_cover == nullptr ||
-        weather_intensity == nullptr) {
+        weather_intensity == nullptr || temperature_365d == nullptr ||
+        weather_type == nullptr || cover == nullptr) {
         error = "economy_environment_snapshot_invalid";
         return false;
     }
@@ -4366,6 +4476,12 @@ bool NativeEconomyRuntime::capture_environment(int64_t day_index, const float *t
             static_cast<int64_t>(std::llround(std::clamp(value, 0.0f, 1.0f) * Q16_ONE)),
             0, Q16_ONE));
     };
+    for (int32_t i = 0; i < count; ++i) {
+        if (weather_type[i] > 7 || cover[i] > 6) {
+            error = "economy_environment_snapshot_invalid";
+            return false;
+        }
+    }
     _environment_temperature_q16.resize(count);
     _environment_temperature_30d_q16.resize(count);
     _environment_moisture_q16.resize(count);
@@ -4373,6 +4489,14 @@ bool NativeEconomyRuntime::capture_environment(int64_t day_index, const float *t
     _environment_precipitation_q16.resize(count);
     _environment_snow_q16.resize(count);
     _environment_weather_q16.resize(count);
+    _cell_temperature_annual_q16.resize(count);
+    _cell_temperature_anomaly_q16.resize(count);
+    _cell_hazard_today_mask.resize(count);
+    _cell_dry_streak_days.resize(count);
+    _cell_days_since_hazard.resize(count);
+    _cell_previous_hazard_mask.resize(count);
+    _cell_weather_type.resize(count);
+    _cell_cover.resize(count);
     if (_cell_previous_precipitation_q16.size() != static_cast<size_t>(count))
         _cell_previous_precipitation_q16.assign(static_cast<size_t>(count), 0);
     if (_cell_rain_event_q16.size() != static_cast<size_t>(count))
@@ -4384,6 +4508,8 @@ bool NativeEconomyRuntime::capture_environment(int64_t day_index, const float *t
             hash *= 1099511628211ULL;
         }
     };
+    // Mirrors `SNOW_FREEZE_T` in scripts/weather/weather_system.gd.
+    constexpr float SNOW_FREEZE_T = 0.24f;
     for (int32_t i = 0; i < count; ++i) {
         _environment_temperature_q16.write_scalar(i, quantize(temperature[i]), market_mutation_sink());
         _environment_temperature_30d_q16.write_scalar(i, quantize(temperature_30d[i]), market_mutation_sink());
@@ -4392,6 +4518,18 @@ bool NativeEconomyRuntime::capture_environment(int64_t day_index, const float *t
         _environment_precipitation_q16.write_scalar(i, quantize(precipitation[i]), market_mutation_sink());
         _environment_snow_q16.write_scalar(i, quantize(snow_cover[i]), market_mutation_sink());
         _environment_weather_q16.write_scalar(i, quantize(weather_intensity[i]), market_mutation_sink());
+        _cell_temperature_annual_q16.write_scalar(
+            i, quantize(temperature_365d[i]), market_mutation_sink());
+        _cell_temperature_anomaly_q16.write_scalar(i,
+            _environment_temperature_q16[i] -
+                _environment_temperature_30d_q16[i],
+            market_mutation_sink());
+        _cell_weather_type.write_scalar(i, weather_type[i], market_mutation_sink());
+        _cell_cover.write_scalar(i, cover[i], market_mutation_sink());
+        // Preserve yesterday's committed hazard before replacing today's
+        // derived mask. `advance_climate_day_columns` consumes both lanes.
+        _cell_previous_hazard_mask.write_scalar(
+            i, _cell_hazard_today_mask[i], market_mutation_sink());
         const int32_t previous = _cell_previous_precipitation_q16[
             static_cast<size_t>(i)];
         const int32_t current = _environment_precipitation_q16[i];
@@ -4405,6 +4543,17 @@ bool NativeEconomyRuntime::capture_environment(int64_t day_index, const float *t
             (current >= threshold && current > previous)
                 ? static_cast<int32_t>(Q16_ONE) : 0;
         _cell_previous_precipitation_q16[static_cast<size_t>(i)] = current;
+        const bool rain_event = _cell_rain_event_q16[static_cast<size_t>(i)] != 0;
+        int32_t hazard_mask = 0;
+        if (cover[i] == 5) hazard_mask |= 1 << 0; // flooding
+        if (weather_type[i] == 4) hazard_mask |= 1 << 1; // drought
+        if (weather_type[i] == 3 ||
+            (temperature[i] < SNOW_FREEZE_T &&
+             temperature_30d[i] >= SNOW_FREEZE_T))
+            hazard_mask |= 1 << 2; // blizzard
+        if (weather_type[i] == 6) hazard_mask |= 1 << 3; // heatwave
+        _cell_hazard_today_mask.write_scalar(
+            i, hazard_mask, market_mutation_sink());
         mix(static_cast<uint32_t>(_environment_temperature_q16[i]));
         mix(static_cast<uint32_t>(_environment_temperature_30d_q16[i]));
         mix(static_cast<uint32_t>(_environment_moisture_q16[i]));
@@ -4415,6 +4564,36 @@ bool NativeEconomyRuntime::capture_environment(int64_t day_index, const float *t
     }
     _environment_day = day_index;
     _environment_hash = static_cast<int64_t>((hash & 0x7fffffffffffffffULL) | 1ULL);
+    return true;
+}
+
+bool NativeEconomyRuntime::advance_climate_day_columns(std::string &error) {
+    const size_t cells = static_cast<size_t>(std::max(0, _cell_count.get()));
+    if (_environment_day.get() < 0 ||
+        _cell_rain_event_q16.size() != cells ||
+        _cell_hazard_today_mask.size() != cells ||
+        _cell_dry_streak_days.size() != cells ||
+        _cell_days_since_hazard.size() != cells ||
+        _cell_previous_hazard_mask.size() != cells) {
+        error = "economy_environment_snapshot_invalid";
+        return false;
+    }
+    constexpr int32_t MAX_CLIMATE_STREAK_DAYS = 3650;
+    for (size_t cell = 0; cell < cells; ++cell) {
+        const bool rain_event = _cell_rain_event_q16[cell] != 0;
+        const int32_t dry_streak = rain_event
+            ? 0 : std::min(MAX_CLIMATE_STREAK_DAYS,
+                _cell_dry_streak_days[static_cast<int32_t>(cell)] + 1);
+        _cell_dry_streak_days.write_scalar(
+            static_cast<int32_t>(cell), dry_streak, market_mutation_sink());
+        const bool hazard_today = _cell_hazard_today_mask[cell] != 0;
+        const int32_t days_since_hazard = hazard_today
+            ? 0 : std::min(MAX_CLIMATE_STREAK_DAYS,
+                _cell_days_since_hazard[static_cast<int32_t>(cell)] + 1);
+        _cell_days_since_hazard.write_scalar(
+            static_cast<int32_t>(cell), days_since_hazard,
+            market_mutation_sink());
+    }
     return true;
 }
 
@@ -4605,6 +4784,50 @@ bool NativeEconomyRuntime::valid_family_effect_entity_handle(
         family_influences().valid_handle(handle, index);
 }
 
+bool NativeEconomyRuntime::valid_family_effect_target_handle(
+        uint64_t handle) const {
+    int32_t index = -1;
+    return families_store().valid_handle(handle, index);
+}
+
+void NativeEconomyRuntime::collect_family_effect_target_handles(
+        int32_t country_slot, int32_t min_branches, int32_t cap,
+        std::vector<uint64_t> &out_handles) const {
+    out_handles.clear();
+    if (country_slot < 0 || min_branches < 1 || cap < 1) return;
+    const auto &families = families_store();
+    const auto &influences = family_influences();
+    std::vector<int32_t> branch_counts(families.active.size(), 0);
+    for (int32_t branch = 0; branch < static_cast<int32_t>(
+            influences.active.size()); ++branch) {
+        if (influences.active[branch] == 0) continue;
+        int32_t family = -1;
+        if (!families.valid_handle(influences.family_handle[branch], family) ||
+            family < 0 || family >= static_cast<int32_t>(
+                branch_counts.size()))
+            continue;
+        if (cell_country_slot(influences.cell[branch]) != country_slot)
+            continue;
+        ++branch_counts[static_cast<size_t>(family)];
+    }
+    for (int32_t family = 0; family < static_cast<int32_t>(
+            families.active.size()); ++family) {
+        if (families.active[family] == 0 ||
+            branch_counts[static_cast<size_t>(family)] < min_branches)
+            continue;
+        const uint64_t handle = families.handle_for_index(family);
+        if (family_owned_buildings(handle) <= 0)
+            continue;
+        out_handles.push_back(handle);
+        if (static_cast<int32_t>(out_handles.size()) >= cap) break;
+    }
+}
+
+void NativeEconomyRuntime::set_family_target_min_branches_override_for_test(
+        int32_t min_branches) {
+    _family_target_min_branches_override_for_test = std::max(0, min_branches);
+}
+
 bool NativeEconomyRuntime::cell_has_technology(int32_t cell, int32_t technology_id,
                                                bool frozen) const {
     if (cell < 0 || cell >= _cell_count.get() || technology_id < 0 ||
@@ -4761,11 +4984,180 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
     _epoch_player_country_slot = _country_runtime->starting_country_slot();
     _epoch_country_technologies = std::move(snapshot.country_technologies);
     _epoch_country_count = snapshot.country_count;
+    _epoch_country_technology_words = snapshot.technology_words;
+    if (snapshot.research_signal_words < 0 ||
+        snapshot.research_signal_count < 0 ||
+        snapshot.country_research_signals.size() !=
+            static_cast<size_t>(std::max(0, _epoch_country_count)) *
+                static_cast<size_t>(std::max(0, snapshot.research_signal_words)) ||
+        snapshot.research_signal_words * 64 < snapshot.research_signal_count ||
+        (snapshot.research_signal_count > 0 &&
+         snapshot.research_signal_words <= 0)) {
+        error = "country_research_signal_snapshot_shape_invalid";
+        return false;
+    }
+    if (snapshot.research_signal_words != _research_signal_prefix_words) {
+        error = "country_research_signal_words_mismatch";
+        return false;
+    }
+    _epoch_country_research_signals =
+        std::move(snapshot.country_research_signals);
+    _epoch_country_research_signal_words = snapshot.research_signal_words;
+    const size_t expected_technology_words =
+        static_cast<size_t>(std::max(0, _epoch_country_count)) *
+        static_cast<size_t>(std::max(0, _epoch_country_technology_words));
+    if (_technology_metric_input_override_enabled) {
+        if (_technology_metric_input_override.size() ==
+            expected_technology_words) {
+            _epoch_country_technologies = _technology_metric_input_override;
+        } else {
+            _technology_metric_input_override.clear();
+            _technology_metric_input_override_enabled = false;
+        }
+    }
+    refresh_technology_metrics();
+    // X14 reads the last COMMITTED class-opinion rows. This capture runs before
+    // today's publish pass, so it cannot observe the buffer being written for
+    // the day. The refresh itself reuses the rows when the source revision has
+    // not advanced.
+    refresh_class_opinion_metrics();
     // Must run right after _epoch_country_count so the CSR slice count matches
     // the ownership column it was derived from. Landing here (instead of at the
     // end of the capture) means a later capture failure leaves a territory index
     // that is stale in exactly the same way as the rest of the epoch state.
     rebuild_country_territory_index();
+    // X13 residual: one pass over the same ownership column the CSR was built
+    // from. `advance_climate_day_columns` has already updated today's hazard
+    // counters, so this is the frozen country answer every metric sample reads.
+    _epoch_country_hazard_free_cell_share_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
+    if (_epoch_country_hazard_free_cell_share_q16.size() > 0 &&
+        _epoch_cell_country.size() == static_cast<size_t>(_cell_count.get()) &&
+        _cell_days_since_hazard.size() == _epoch_cell_country.size()) {
+        std::vector<int32_t> owned_by_country(
+            _epoch_country_hazard_free_cell_share_q16.size(), 0);
+        std::vector<int32_t> hazard_free_by_country(
+            _epoch_country_hazard_free_cell_share_q16.size(), 0);
+        for (int32_t cell = 0; cell < _cell_count.get(); ++cell) {
+            const int32_t country = _epoch_cell_country[static_cast<size_t>(cell)];
+            if (country < 0 || static_cast<size_t>(country) >=
+                    owned_by_country.size()) continue;
+            ++owned_by_country[static_cast<size_t>(country)];
+            if (_cell_days_since_hazard[cell] >= 365)
+                ++hazard_free_by_country[static_cast<size_t>(country)];
+        }
+        for (size_t country = 0; country < owned_by_country.size(); ++country) {
+            const int32_t owned = owned_by_country[country];
+            if (owned <= 0) continue;
+            _epoch_country_hazard_free_cell_share_q16[country] =
+                static_cast<int32_t>(std::clamp<int64_t>(
+                    static_cast<int64_t>(hazard_free_by_country[country]) *
+                        Q16_ONE / owned, 0, Q16_ONE));
+        }
+    }
+    // X12 consumes both the territory hash and the canal topology. Compute the
+    // hash before the tag snapshot so the derived geography columns are current
+    // when tag rows sample metrics 75/76.
+    uint64_t topology_hash = 1469598103934665603ULL;
+    for (const int32_t country : _epoch_cell_country) {
+        const uint32_t value = static_cast<uint32_t>(country);
+        for (int32_t byte = 0; byte < 4; ++byte) {
+            topology_hash ^= static_cast<uint8_t>((value >> (byte * 8)) & 0xffU);
+            topology_hash *= 1099511628211ULL;
+        }
+    }
+    _epoch_country_topology_hash = (topology_hash & 0x7fffffffffffffffULL) | 1ULL;
+    rebuild_epoch_geo_columns();
+    // X9-a reads the branch table frozen by the previous FAMILY_COMMIT. Refresh
+    // the aggregate columns before tag evaluation so day-one `cell.clan` and
+    // `cell.eminent_clan` rows describe the same branch table as the metrics.
+    rebuild_epoch_family_cell_metrics();
+    rebuild_epoch_family_country_metrics();
+    // X7-b: freeze the three non-tag country counts beside the existing family
+    // aggregates. Building groups, landform/terrain, and resource abundance are
+    // all Economy-owned committed columns; no live Country read is involved.
+    _epoch_country_energy_cell_count.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
+    _epoch_country_abundant_mountain_forest_cell_count.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
+    _epoch_country_landform_signal_count.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
+    _epoch_country_weather_signal_count.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
+    _epoch_country_bio_signal_count.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
+    const int32_t x7b_cells = std::max(0, _cell_count.get());
+    const int32_t x7b_countries = std::max(0, _epoch_country_count);
+    const bool x7b_building_csr =
+        _building_cell_offsets.size() == static_cast<size_t>(x7b_cells + 1);
+    for (int32_t cell = 0; cell < x7b_cells; ++cell) {
+        const int32_t country = _epoch_cell_country[static_cast<size_t>(cell)];
+        if (country < 0 || country >= x7b_countries) continue;
+        if (x7b_building_csr) {
+            for (int32_t group_index = _building_cell_offsets[cell];
+                 group_index < _building_cell_offsets[cell + 1]; ++group_index) {
+                const auto group = building_view(static_cast<size_t>(group_index));
+                if (group.count <= 0 || group.type_id < 0 ||
+                    group.type_id >= static_cast<int32_t>(
+                        _building_economic_sectors.size()))
+                    continue;
+                if (_building_economic_sectors[
+                        static_cast<size_t>(group.type_id)] == 3) {
+                    ++_epoch_country_energy_cell_count[
+                        static_cast<size_t>(country)];
+                    break;
+                }
+            }
+        }
+        const int32_t abundance = cell < static_cast<int32_t>(
+                _cell_resource_abundance_q16.size())
+            ? _cell_resource_abundance_q16[static_cast<size_t>(cell)] : 0;
+        const int32_t landform = cell < static_cast<int32_t>(
+                _building_landform.size())
+            ? _building_landform[static_cast<size_t>(cell)] : -1;
+        const int32_t terrain = cell < static_cast<int32_t>(
+                _building_terrain.size())
+            ? _building_terrain[static_cast<size_t>(cell)] : -1;
+        // cell.abundant is >=80% Q16. The design's mountain/forest pair is
+        // LandformType.MOUNTAIN plus TerrainType.FOREST (not
+        // landform.forest); named ids are resolved at catalog compile time.
+        if (abundance >= static_cast<int32_t>(Q16_ONE * 80 / 100) &&
+            _abundant_mountain_landform_id >= 0 &&
+            _abundant_forest_terrain_id >= 0 &&
+            (landform == _abundant_mountain_landform_id ||
+             terrain == _abundant_forest_terrain_id)) {
+            ++_epoch_country_abundant_mountain_forest_cell_count[
+                static_cast<size_t>(country)];
+        }
+    }
+    const size_t signal_stride = static_cast<size_t>(
+        std::max(0, _epoch_country_research_signal_words));
+    if (signal_stride > 0) {
+        for (int32_t country = 0; country < x7b_countries; ++country) {
+            const size_t base = static_cast<size_t>(country) * signal_stride;
+            for (size_t prefix = 0; prefix < 3; ++prefix) {
+                int32_t count = 0;
+                for (size_t word = 0; word < signal_stride; ++word) {
+                    const size_t prefix_index =
+                        prefix * signal_stride + word;
+                    if (prefix_index >= _research_signal_prefix_masks.size())
+                        break;
+                    count += popcount_u64(
+                        _epoch_country_research_signals[base + word] &
+                        _research_signal_prefix_masks[prefix_index]);
+                }
+                if (prefix == 0)
+                    _epoch_country_landform_signal_count[
+                        static_cast<size_t>(country)] = count;
+                else if (prefix == 1)
+                    _epoch_country_weather_signal_count[
+                        static_cast<size_t>(country)] = count;
+                else
+                    _epoch_country_bio_signal_count[
+                        static_cast<size_t>(country)] = count;
+            }
+        }
+    }
     // The tag tables read per-cell metrics, so they are only valid for the epoch
     // that produced them.
     //
@@ -4777,7 +5169,6 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
     // capture boundary lock, which is why `step_ideology_instance_refresh` takes it.
     // Reading only the tag snapshot needs no lock at all.
     rebuild_epoch_tag_snapshot();
-    _epoch_country_technology_words = snapshot.technology_words;
     _epoch_country_generation = snapshot.generation;
     _epoch_country_hash = snapshot.state_hash;
     _epoch_tax_policy_version = snapshot.tax_policy_version;
@@ -5018,15 +5409,6 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
         _epoch_country_building_type_offsets[country + 1] =
             static_cast<int32_t>(_epoch_country_building_type_indices.size());
     }
-    uint64_t topology_hash = 1469598103934665603ULL;
-    for (const int32_t country : _epoch_cell_country) {
-        const uint32_t value = static_cast<uint32_t>(country);
-        for (int32_t byte = 0; byte < 4; ++byte) {
-            topology_hash ^= static_cast<uint8_t>((value >> (byte * 8)) & 0xffU);
-            topology_hash *= 1099511628211ULL;
-        }
-    }
-    _epoch_country_topology_hash = (topology_hash & 0x7fffffffffffffffULL) | 1ULL;
     _epoch_country_merchant_population.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
     if (_merchant_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)) {
@@ -5075,6 +5457,20 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
     _epoch_country_resource_generation_factor_q16.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)) *
             _resource_ids.size(), Q16_ONE);
+    // X16: default 1.0 tolerance and 0 bp bias, overwritten per country below for the
+    // professions that actually declare the stat.
+    //
+    // The row width is the REAL profession count, not `max(1, count)`: the stride is
+    // used to index `_epoch_country_profession_*` and a `max(1, 0)` width would make
+    // country N and country N+1 overlap when the catalog has no professions yet.
+    _epoch_country_profession_tax_tolerance_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)) *
+            _profession_ids.size(), Q16_ONE);
+    _epoch_country_profession_satisfaction_bp.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)) *
+            _profession_ids.size(), 0);
+    _epoch_country_reserve_pct.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
     _epoch_country_terrain_sector_output_factor_q16.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)) *
             _modifier_terrain_ids.size() * 5U, Q16_ONE);
@@ -5245,6 +5641,70 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
                         _country_resource_generation_stat_ids[resource],
                         country_handle, 0, 1.0));
             }
+            // X16: per-profession tax tolerance (Q16, clamped to [0.5, 3.0]) and
+            // satisfaction bias (bp, clamped to [-2500, 2500]).
+            //
+            // Clamped HERE rather than at the reader so the frozen epoch value is the
+            // one the game actually uses: a card that stacks to 5x cannot overflow the
+            // Q16 multiply later, and a bias cannot push satisfaction past the design
+            // envelope.
+            for (size_t profession = 0; profession < _profession_ids.size();
+                 ++profession) {
+                const size_t index = static_cast<size_t>(country) *
+                    _profession_ids.size() + profession;
+                const int32_t tolerance_stat =
+                    profession < _profession_tax_tolerance_stat_ids.size()
+                        ? _profession_tax_tolerance_stat_ids[profession] : -1;
+                const int32_t bias_stat =
+                    profession < _profession_satisfaction_bp_stat_ids.size()
+                        ? _profession_satisfaction_bp_stat_ids[profession] : -1;
+                int32_t tolerance_q16 = Q16_ONE;
+                if (tolerance_stat >= 0)
+                    tolerance_q16 = static_cast<int32_t>(std::clamp<int64_t>(
+                        modifier_factor_q16(_modifier_runtime->effective_value(
+                            ModifierRuntime::COUNTRY, tolerance_stat,
+                            country_handle, 0, 1.0)),
+                        Q16_ONE / 2, 3 * Q16_ONE));
+                int32_t bias_bp = 0;
+                if (bias_stat >= 0)
+                    bias_bp = static_cast<int32_t>(std::clamp<int64_t>(
+                        static_cast<int64_t>(std::llround(
+                            _modifier_runtime->effective_value(
+                                ModifierRuntime::COUNTRY, bias_stat,
+                                country_handle, 0, 0.0))),
+                        -2500, 2500));
+                _epoch_country_profession_tax_tolerance_q16[index] = tolerance_q16;
+                _epoch_country_profession_satisfaction_bp[index] = bias_bp;
+                // X16 PROBE (temporary). Answers "why does the frozen table stay at the
+                // default while the Modifier read is correct?" without guessing:
+                //
+                //   this          -- which NativeEconomyRuntime actually ran the freeze
+                //   modifier      -- whether it had a ModifierRuntime at that moment
+                //   stat / raw    -- the resolved id and what effective_value returned
+                //   epoch_id      -- which epoch this row belongs to
+                //
+                // Compared against the same line printed by
+                // `get_epoch_profession_report`, this separates "the report reads a
+                // different instance" from "the freeze ran before Modifier had the row".
+                static int64_t x16_freeze_probe_last_epoch = -1;
+                if (std::getenv("PK_X16_PROBE") != nullptr &&
+                    profession == 0 && _epoch_id != x16_freeze_probe_last_epoch) {
+                    x16_freeze_probe_last_epoch = _epoch_id;
+                    const double raw = tolerance_stat >= 0
+                        ? _modifier_runtime->effective_value(
+                            ModifierRuntime::COUNTRY, tolerance_stat,
+                            country_handle, 0, 1.0)
+                        : 1.0;
+                    pk::log_error("[x16-freeze] this=%p modifier=%p country=%d "
+                        "handle=%lld epoch_id=%lld profession=%zu stat=%d raw=%.5f "
+                        "frozen=%d",
+                        static_cast<const void *>(this),
+                        static_cast<const void *>(_modifier_runtime),
+                        country, static_cast<long long>(country_handle),
+                        static_cast<long long>(_epoch_id), profession,
+                        tolerance_stat, raw, tolerance_q16);
+                }
+            }
             const auto freeze_geography = [&](const std::vector<int32_t> &stat_ids,
                     size_t geography_count, std::vector<int32_t> &target) {
                 const size_t row_width = geography_count * 5U;
@@ -5279,6 +5739,9 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
                 modifier_factor_q16(_modifier_runtime->effective_value(
                     ModifierRuntime::COUNTRY, _country_resource_use_stat_id,
                     country_handle, 0, 1.0));
+            // R-4 metric 69 is filled AFTER this loop, see the single-pass block
+            // below: computing it here would be O(countries x cells x cohorts) per
+            // epoch, and this loop already runs once per country.
             for (size_t building = 0;
                  building < _country_building_output_stat_ids.size(); ++building) {
                 _epoch_country_building_output_factor_q16[
@@ -5326,6 +5789,51 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
                 modifier_factor_q16(
                     _modifier_runtime->country_construction_time_factor(
                         _epoch_country_handles[static_cast<size_t>(country)]));
+        }
+    }
+    // R-4 metric 69: treasury reserve ratio per country, in percentage points.
+    //
+    // ONE pass over the cohorts, not one pass per country: the per-country version
+    // scanned every cell for every country, which on a 192-cell world with several
+    // countries is O(C x cells x cohorts) inside the epoch capture -- and the capture
+    // runs on the critical path of the daily barrier. It made the worker miss the
+    // climate handshake (`[climate/worker][b8] physics_knobs ready=0`) and the whole
+    // day never committed.
+    //
+    // v0 denominator is 365 x the country's summed `income_ema`. `income_ema` is the
+    // daily net-income EMA already in the save, so this adds NO save state; a true
+    // rolling-year accumulator is deferred to M4 (09 §8).
+    {
+        const size_t reserve_countries = _epoch_country_reserve_pct.size();
+        if (reserve_countries > 0) {
+            std::vector<int64_t> annual_income(reserve_countries, 0);
+            const size_t reserve_cells = std::min(
+                _epoch_cell_country.size(),
+                static_cast<size_t>(std::max(0, _cell_count.get())));
+            for (size_t cell_index = 0; cell_index < reserve_cells; ++cell_index) {
+                const int32_t slot_country =
+                    _epoch_cell_country[cell_index];
+                if (slot_country < 0 ||
+                    static_cast<size_t>(slot_country) >= reserve_countries)
+                    continue;
+                population_store().for_each_in_cell(
+                    static_cast<int32_t>(cell_index), [&](int32_t slot) {
+                    annual_income[static_cast<size_t>(slot_country)] +=
+                        std::max<int64_t>(0, population_store().income_ema[slot]);
+                });
+            }
+            for (size_t country = 0; country < reserve_countries; ++country) {
+                const int64_t yearly = annual_income[country] * 365;
+                int64_t reserve_pct = 0;
+                if (yearly > 0 && _country_runtime != nullptr) {
+                    const int64_t cash = _country_runtime->cash_for_slot(
+                        static_cast<int32_t>(country));
+                    reserve_pct = std::clamp<int64_t>(
+                        cash * 100 / yearly, 0, 1000);
+                }
+                _epoch_country_reserve_pct[country] =
+                    static_cast<int32_t>(reserve_pct);
+            }
         }
     }
     const auto cell_tax_compile_started = Clock::now();
@@ -6254,6 +6762,30 @@ int64_t NativeEconomyRuntime::update_cohort_satisfaction(
     const int64_t net_tax = saturating_sub(population_store().epoch_tax_paid[slot],
                                            population_store().epoch_subsidy_received[slot],
                                            sat);
+    // X16: this cohort's country + profession decide how much tax burden it tolerates.
+    //
+    // `_satisfaction_tax_tolerance_q16` is the world-wide default; the per-profession
+    // factor scales it (1.15 = "landlords tolerate 15% more burden before the tax
+    // dimension starts falling"). Both indices are looked up defensively: a cohort whose
+    // cell has no country slot (or whose profession is out of range) simply keeps the
+    // default, which is what the fixture-only cells in tests rely on.
+    int32_t tax_tolerance_q16 = _satisfaction_tax_tolerance_q16;
+    {
+        const int32_t country_slot = cell_country_slot(cell);
+        const int32_t profession_id = signature.profession_id;
+        const size_t professions = _profession_ids.size();
+        if (professions > 0 && country_slot >= 0 && profession_id >= 0 &&
+            static_cast<size_t>(profession_id) < _profession_ids.size() &&
+            static_cast<size_t>(country_slot) * professions +
+                    static_cast<size_t>(profession_id) <
+                _epoch_country_profession_tax_tolerance_q16.size()) {
+            const int32_t factor_q16 = _epoch_country_profession_tax_tolerance_q16[
+                static_cast<size_t>(country_slot) * professions +
+                static_cast<size_t>(profession_id)];
+            tax_tolerance_q16 = static_cast<int32_t>(std::max<int64_t>(1,
+                mul_div_sat(tax_tolerance_q16, factor_q16, Q16_ONE, sat)));
+        }
+    }
     if (net_tax <= 0) {
         dims[SAT_DIM_TAX] = Q16_ONE - 1;
     } else if (gross_income <= 0) {
@@ -6262,7 +6794,7 @@ int64_t NativeEconomyRuntime::update_cohort_satisfaction(
     } else {
         const int64_t burden_q16 = mul_div_sat(net_tax, Q16_ONE, gross_income, sat);
         dims[SAT_DIM_TAX] = Q16_ONE - 1 - normalize_band_q16(
-            burden_q16, 0, _satisfaction_tax_tolerance_q16, sat);
+            burden_q16, 0, tax_tolerance_q16, sat);
     }
 
     dims[SAT_DIM_DEVELOPMENT] = cell >= 0 &&
@@ -6287,9 +6819,29 @@ int64_t NativeEconomyRuntime::update_cohort_satisfaction(
             worst_dimension = dim;
         }
     }
-    const int64_t raw_q16 = weight_total > 0
+    const int64_t raw_weighted_q16 = weight_total > 0
         ? std::clamp<int64_t>(weighted_total / weight_total, 0, Q16_ONE - 1)
         : Q16_ONE - 1;
+    // X16: the per-profession satisfaction bias is applied BEFORE the ceiling, so a
+    // positive bias lifts the cohort's own rating but can never buy its way past the
+    // needs hierarchy. Applying it after `min(raw, ceiling)` would let a card make a
+    // starving city "satisfied", which is the one thing the ceiling exists to prevent.
+    int64_t bias_bp = 0;
+    {
+        const int32_t country_slot = cell_country_slot(cell);
+        const int32_t profession_id = signature.profession_id;
+        const size_t professions = _profession_ids.size();
+        const size_t index = static_cast<size_t>(std::max(0, country_slot)) *
+                professions + static_cast<size_t>(std::max(0, profession_id));
+        if (professions > 0 && country_slot >= 0 && profession_id >= 0 &&
+            static_cast<size_t>(profession_id) < _profession_ids.size() &&
+            index < _epoch_country_profession_satisfaction_bp.size()) {
+            bias_bp = _epoch_country_profession_satisfaction_bp[index];
+        }
+    }
+    const int64_t raw_q16 = bias_bp == 0 ? raw_weighted_q16
+        : std::clamp<int64_t>(raw_weighted_q16 + bias_bp * Q16_ONE / 10000,
+                              0, Q16_ONE - 1);
     // Needs are hierarchical: a cohort that cannot eat may not be rated
     // satisfied because it banked money or lives in a developed city. The
     // ceiling lets the other dimensions lift it only through the configured
@@ -6565,6 +7117,16 @@ int32_t NativeEconomyRuntime::neighbor_count_with_tag(
         ++count;
     }
     return count;
+}
+
+int32_t NativeEconomyRuntime::building_neighbor(
+        int32_t cell, int32_t direction) const {
+    if (cell < 0 || cell >= _cell_count.get() ||
+            direction < 0 || direction >= 6) return -1;
+    if (_building_neighbors.size() !=
+            static_cast<size_t>(_cell_count.get()) * 6) return -1;
+    return _building_neighbors[
+        static_cast<size_t>(cell) * 6 + static_cast<size_t>(direction)];
 }
 
 int32_t NativeEconomyRuntime::city_output_factor_for_test(
@@ -16271,6 +16833,26 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
         metrics[FAMILY_METRIC_CELL_RAIN_EVENT] =
             cell < static_cast<int32_t>(_cell_rain_event_q16.size())
                 ? _cell_rain_event_q16[cell] : 0;
+    if (requested(FAMILY_METRIC_CELL_TEMPERATURE_ANNUAL_Q16))
+        metrics[FAMILY_METRIC_CELL_TEMPERATURE_ANNUAL_Q16] =
+            cell < static_cast<int32_t>(_cell_temperature_annual_q16.size())
+                ? _cell_temperature_annual_q16[cell] : 0;
+    if (requested(FAMILY_METRIC_CELL_DRY_STREAK_DAYS))
+        metrics[FAMILY_METRIC_CELL_DRY_STREAK_DAYS] =
+            cell < static_cast<int32_t>(_cell_dry_streak_days.size())
+                ? count_q16(_cell_dry_streak_days[cell]) : 0;
+    if (requested(FAMILY_METRIC_CELL_HAZARD_TODAY_MASK))
+        metrics[FAMILY_METRIC_CELL_HAZARD_TODAY_MASK] =
+            cell < static_cast<int32_t>(_cell_hazard_today_mask.size())
+                ? count_q16(_cell_hazard_today_mask[cell]) : 0;
+    if (requested(FAMILY_METRIC_CELL_DAYS_SINCE_HAZARD))
+        metrics[FAMILY_METRIC_CELL_DAYS_SINCE_HAZARD] =
+            cell < static_cast<int32_t>(_cell_days_since_hazard.size())
+                ? count_q16(_cell_days_since_hazard[cell]) : 0;
+    if (requested(FAMILY_METRIC_CELL_TEMPERATURE_ANOMALY_Q16))
+        metrics[FAMILY_METRIC_CELL_TEMPERATURE_ANOMALY_Q16] =
+            cell < static_cast<int32_t>(_cell_temperature_anomaly_q16.size())
+                ? _cell_temperature_anomaly_q16[cell] : 0;
     if (requested(FAMILY_METRIC_CELL_RESOURCE_ABUNDANCE_Q16))
         metrics[FAMILY_METRIC_CELL_RESOURCE_ABUNDANCE_Q16] =
             cell < static_cast<int32_t>(_cell_resource_abundance_q16.size())
@@ -16316,11 +16898,18 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
     // X3: the profession mix needs per-profession population, which is the same
     // walk the unemployment rows already do. One extra accumulator beats a
     // second pass over the cell's cohorts.
-    const bool wants_profession_mix =
+    const bool wants_dominant_profession =
         requested(FAMILY_METRIC_CELL_DOMINANT_PROFESSION_ID) ||
         requested(FAMILY_METRIC_CELL_DOMINANT_PROFESSION_SHARE_Q16) ||
         requested(FAMILY_METRIC_CELL_PROFESSION_COUNT);
+    const bool wants_profession_shares =
+        requested(FAMILY_METRIC_CELL_PROFESSION_SHARE_FARMER_Q16) ||
+        requested(FAMILY_METRIC_CELL_PROFESSION_SHARE_INDUSTRIAL_Q16) ||
+        requested(FAMILY_METRIC_CELL_PROFESSION_SHARE_COOPERATIVE_Q16);
+    const bool wants_profession_mix =
+        wants_dominant_profession || wants_profession_shares;
     std::vector<int64_t> profession_people;
+    std::vector<int64_t> employed_profession_people;
     if (requested(FAMILY_METRIC_CELL_UNEMPLOYMENT_Q16) ||
         requested(FAMILY_METRIC_CELL_VACANT_PROFESSION_COUNT) ||
         requested(FAMILY_METRIC_FAMILY_CASH_PER_CAPITA_VS_CELL_Q16) ||
@@ -16329,6 +16918,8 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
             employed_professions.assign(_profession_ids.size(), 0);
         if (wants_profession_mix)
             profession_people.assign(_profession_ids.size(), 0);
+        if (wants_dominant_profession)
+            employed_profession_people.assign(_profession_ids.size(), 0);
         population_store().for_each_in_cell(cell, [&](int32_t slot) {
             const int64_t people = std::max<int64_t>(0, population_store().population[slot]);
             cell_population += people;
@@ -16339,26 +16930,31 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
             cell_funds += std::max<int64_t>(0, population_store().funds[slot]);
             const int32_t signature = static_cast<int32_t>(
                 population_store().signature_id[slot]);
-            if (employed > 0 && signature >= 0 &&
-                signature < static_cast<int32_t>(_signatures.size())) {
-                const int32_t profession = _signatures[
-                    static_cast<size_t>(signature)].profession_id;
-                if (profession >= 0 &&
-                    static_cast<size_t>(profession) < employed_professions.size())
-                    employed_professions[static_cast<size_t>(profession)] = 1;
-                if (profession >= 0 &&
-                    static_cast<size_t>(profession) < profession_people.size())
-                    profession_people[static_cast<size_t>(profession)] += people;
-            }
+            if (signature < 0 ||
+                signature >= static_cast<int32_t>(_signatures.size()))
+                return;
+            const int32_t profession = _signatures[
+                static_cast<size_t>(signature)].profession_id;
+            if (profession < 0) return;
+            if (static_cast<size_t>(profession) < profession_people.size())
+                profession_people[static_cast<size_t>(profession)] += people;
+            if (employed <= 0) return;
+            if (static_cast<size_t>(profession) < employed_professions.size())
+                employed_professions[static_cast<size_t>(profession)] = 1;
+            if (static_cast<size_t>(profession) <
+                    employed_profession_people.size())
+                employed_profession_people[static_cast<size_t>(profession)] +=
+                    people;
         });
     }
-    if (wants_profession_mix) {
+    if (wants_dominant_profession) {
         int64_t total_people = 0;
         int64_t best_people = 0;
         int32_t best_profession = -1;
         int32_t profession_count = 0;
-        for (size_t profession = 0; profession < profession_people.size(); ++profession) {
-            const int64_t people = profession_people[profession];
+        for (size_t profession = 0;
+             profession < employed_profession_people.size(); ++profession) {
+            const int64_t people = employed_profession_people[profession];
             if (people <= 0) continue;
             ++profession_count;
             total_people += people;
@@ -16379,6 +16975,46 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
         if (requested(FAMILY_METRIC_CELL_PROFESSION_COUNT))
             metrics[FAMILY_METRIC_CELL_PROFESSION_COUNT] = count_q16(profession_count);
     }
+    if (wants_profession_shares) {
+        int64_t total_people = 0;
+        int64_t farmer_people = 0;
+        int64_t industrial_people = 0;
+        int64_t cooperative_people = 0;
+        for (size_t profession = 0; profession < profession_people.size();
+             ++profession) {
+            const int64_t people = profession_people[profession];
+            if (people <= 0) continue;
+            total_people += people;
+            const std::string &profession_id =
+                _profession_ids[static_cast<size_t>(profession)];
+            if (profession_id == "household_farmer" ||
+                    profession_id == "subsistence_farmer" ||
+                    profession_id == "tenant_farmer" ||
+                    profession_id == "sharecropper" ||
+                    profession_id == "agricultural_worker" ||
+                    profession_id == "serf")
+                farmer_people += people;
+            if (profession_id == "industrial_worker")
+                industrial_people += people;
+            if (profession_id == "cooperative_member")
+                cooperative_people += people;
+        }
+        const auto share = [total_people](int64_t people) {
+            return total_people > 0
+                ? std::clamp<int64_t>(people * Q16_ONE / total_people,
+                    0, Q16_ONE)
+                : 0;
+        };
+        if (requested(FAMILY_METRIC_CELL_PROFESSION_SHARE_FARMER_Q16))
+            metrics[FAMILY_METRIC_CELL_PROFESSION_SHARE_FARMER_Q16] =
+                share(farmer_people);
+        if (requested(FAMILY_METRIC_CELL_PROFESSION_SHARE_INDUSTRIAL_Q16))
+            metrics[FAMILY_METRIC_CELL_PROFESSION_SHARE_INDUSTRIAL_Q16] =
+                share(industrial_people);
+        if (requested(FAMILY_METRIC_CELL_PROFESSION_SHARE_COOPERATIVE_Q16))
+            metrics[FAMILY_METRIC_CELL_PROFESSION_SHARE_COOPERATIVE_Q16] =
+                share(cooperative_people);
+    }
     // X2: the neighbourhood's population. O(6), so it is safe in the hot path;
     // a missing or stale neighbour graph reads 0 rather than guessing.
     if (requested(FAMILY_METRIC_CELL_NEIGHBOR_POPULATION_Q16)) {
@@ -16398,6 +17034,50 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
         int64_t neighbor_saturate = 0;
         metrics[FAMILY_METRIC_CELL_NEIGHBOR_POPULATION_Q16] = saturating_mul(
             neighbor_population, Q16_ONE, neighbor_saturate);
+    }
+    // X2 extension: count neighbours that are agriculture pillars, using the
+    // same "agriculture output share >= 50%" definition as
+    // `cell.sector.agriculture`. Reading the current building rows avoids
+    // depending on the previous epoch's tag snapshot while that snapshot is
+    // being rebuilt.
+    if (requested(FAMILY_METRIC_CELL_NEIGHBOR_AGRICULTURE_COUNT)) {
+        int32_t agriculture_neighbors = 0;
+        const bool neighbor_graph_ready = _building_neighbors.size() ==
+            static_cast<size_t>(_cell_count.get()) * 6;
+        const bool building_csr_ready = _building_cell_offsets.size() ==
+            static_cast<size_t>(_cell_count.get()) + 1;
+        if (neighbor_graph_ready && building_csr_ready) {
+            for (int32_t direction = 0; direction < 6; ++direction) {
+                const int32_t neighbor = _building_neighbors[
+                    static_cast<size_t>(cell) * 6 +
+                    static_cast<size_t>(direction)];
+                if (neighbor < 0 || neighbor == cell ||
+                    neighbor >= static_cast<int32_t>(_cell_count.get()))
+                    continue;
+                int64_t total_output = 0;
+                int64_t agriculture_output = 0;
+                for (int32_t group_index = _building_cell_offsets[neighbor];
+                     group_index < _building_cell_offsets[neighbor + 1];
+                     ++group_index) {
+                    const auto group = building_view(
+                        static_cast<size_t>(group_index));
+                    if (group.count <= 0 || group.last_output <= 0 ||
+                        group.type_id < 0 ||
+                        group.type_id >= static_cast<int32_t>(
+                            _building_economic_sectors.size()))
+                        continue;
+                    total_output += group.last_output;
+                    if (_building_economic_sectors[
+                            static_cast<size_t>(group.type_id)] == 0)
+                        agriculture_output += group.last_output;
+                }
+                if (total_output > 0 &&
+                    agriculture_output >= (total_output + 1) / 2)
+                    ++agriculture_neighbors;
+            }
+        }
+        metrics[FAMILY_METRIC_CELL_NEIGHBOR_AGRICULTURE_COUNT] =
+            count_q16(agriculture_neighbors);
     }
     // X11: mean income-tax rate across professions, in basis points. Read from
     // the frozen epoch shape (see `tax_shape_valid`), never from live stores.
@@ -16659,6 +17339,14 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
         if (requested(FAMILY_METRIC_CELL_TOP_OUTPUT_GOOD_SHARE_Q16))
             metrics[FAMILY_METRIC_CELL_TOP_OUTPUT_GOOD_SHARE_Q16] = output_share;
     }
+    if (requested(FAMILY_METRIC_CELL_NEIGHBOR_DISTINCT_GOODS)) {
+        metrics[FAMILY_METRIC_CELL_NEIGHBOR_DISTINCT_GOODS] =
+            cell >= 0 && cell < static_cast<int32_t>(
+                _epoch_cell_neighbor_distinct_goods.size())
+                ? count_q16(_epoch_cell_neighbor_distinct_goods[
+                    static_cast<size_t>(cell)])
+                : 0;
+    }
     if (requested(FAMILY_METRIC_COUNTRY_POPULATION_Q16) ||
         requested(FAMILY_METRIC_COUNTRY_BUILDINGS_INSTALLED) ||
         requested(FAMILY_METRIC_COUNTRY_TRADE_BASE_VALUE_Q16)) {
@@ -16795,6 +17483,251 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
     if (requested(FAMILY_METRIC_CELL_CAN_PRODUCE_CORN))
         metrics[FAMILY_METRIC_CELL_CAN_PRODUCE_CORN] =
             can_produce_corn ? Q16_ONE : 0;
+    // R-4 metric 68: this cell's net tax burden over the current epoch.
+    //
+    // Same arithmetic as the satisfaction tax dimension a few hundred lines up, so a
+    // card that ramps on this metric moves the number the player actually feels. The
+    // ACCOUNTING_EPOCH_BIT parity comes from `touch_accounting_slot` -- a cohort that
+    // has not booked this epoch is skipped rather than counted with last epoch's
+    // leftovers, which would make the metric jump on the first day of every epoch.
+    if (requested(FAMILY_METRIC_CELL_NET_TAX_BURDEN_Q16)) {
+        const int64_t parity = ((_epoch_id & 1) != 0) ? 0x8000 : 0;
+        int64_t net_total = 0;
+        int64_t gross_total = 0;
+        if (cell >= 0 && cell < static_cast<int32_t>(_cell_count.get())) {
+            population_store().for_each_in_cell(cell, [&](int32_t slot) {
+                if ((population_store().flags[slot] & 0x8000) != parity) return;
+                net_total += population_store().epoch_tax_paid[slot];
+                net_total -= population_store().epoch_subsidy_received[slot];
+                const int64_t income = population_store().epoch_income[slot];
+                const int64_t in_kind = population_store().epoch_in_kind_income[slot];
+                gross_total += std::max<int64_t>(0, income) +
+                    std::max<int64_t>(0, in_kind);
+            });
+        }
+        int64_t burden_q16 = Q16_ONE;
+        if (gross_total > 0) {
+            if (net_total <= 0) {
+                burden_q16 = 0;
+            } else {
+                int64_t saturate = 0;
+                burden_q16 = std::clamp<int64_t>(
+                    saturating_mul(net_total, Q16_ONE, saturate) /
+                        std::max<int64_t>(1, gross_total),
+                    0, Q16_ONE);
+            }
+        }
+        metrics[FAMILY_METRIC_CELL_NET_TAX_BURDEN_Q16] = burden_q16;
+    }
+    if (requested(FAMILY_METRIC_CELL_GEO_FLAGS)) {
+        metrics[FAMILY_METRIC_CELL_GEO_FLAGS] =
+            cell < static_cast<int32_t>(_epoch_cell_geo_flags.size())
+                ? _epoch_cell_geo_flags[static_cast<size_t>(cell)] : 0;
+    }
+    if (requested(FAMILY_METRIC_CELL_WATERWAY_COMPONENT_SIZE)) {
+        metrics[FAMILY_METRIC_CELL_WATERWAY_COMPONENT_SIZE] = count_q16(
+            cell < static_cast<int32_t>(_epoch_cell_waterway_component_size.size())
+                ? _epoch_cell_waterway_component_size[static_cast<size_t>(cell)] : 0);
+    }
+    if (requested(FAMILY_METRIC_CELL_FAMILY_BRANCH_COUNT)) {
+        metrics[FAMILY_METRIC_CELL_FAMILY_BRANCH_COUNT] = count_q16(
+            cell < static_cast<int32_t>(_epoch_cell_family_branch_count.size())
+                ? _epoch_cell_family_branch_count[static_cast<size_t>(cell)] : 0);
+    }
+    if (requested(FAMILY_METRIC_CELL_MAX_BRANCH_PRESTIGE_Q16)) {
+        metrics[FAMILY_METRIC_CELL_MAX_BRANCH_PRESTIGE_Q16] =
+            cell < static_cast<int32_t>(
+                _epoch_cell_max_branch_prestige_q16.size())
+                ? _epoch_cell_max_branch_prestige_q16[static_cast<size_t>(cell)]
+                : 0;
+    }
+    if (requested(FAMILY_METRIC_CELL_FAMILY_ASSET_SHARE_Q16)) {
+        metrics[FAMILY_METRIC_CELL_FAMILY_ASSET_SHARE_Q16] =
+            cell < static_cast<int32_t>(
+                _epoch_cell_family_asset_share_q16.size())
+                ? _epoch_cell_family_asset_share_q16[static_cast<size_t>(cell)]
+                : 0;
+    }
+    if (requested(FAMILY_METRIC_COUNTRY_CLASS_SATISFACTION_Q16) ||
+        requested(FAMILY_METRIC_COUNTRY_WEIGHTED_SATISFACTION_Q16) ||
+        requested(FAMILY_METRIC_COUNTRY_FARMER_SATISFACTION_Q16) ||
+        requested(FAMILY_METRIC_COUNTRY_WORKER_CLASS_SATISFACTION_Q16)) {
+        const int32_t opinion_country = cell_country_slot(cell);
+        const bool in_range = opinion_country >= 0 &&
+            static_cast<size_t>(opinion_country) <
+                _epoch_country_class_satisfaction_q16.size() &&
+            static_cast<size_t>(opinion_country) <
+                _epoch_country_weighted_satisfaction_q16.size() &&
+            static_cast<size_t>(opinion_country) <
+                _epoch_country_farmer_satisfaction_q16.size() &&
+            static_cast<size_t>(opinion_country) <
+                _epoch_country_worker_satisfaction_q16.size();
+        if (requested(FAMILY_METRIC_COUNTRY_CLASS_SATISFACTION_Q16))
+            metrics[FAMILY_METRIC_COUNTRY_CLASS_SATISFACTION_Q16] = in_range
+                ? _epoch_country_class_satisfaction_q16[
+                    static_cast<size_t>(opinion_country)]
+                : static_cast<int64_t>(Q16_ONE);
+        if (requested(FAMILY_METRIC_COUNTRY_WEIGHTED_SATISFACTION_Q16))
+            metrics[FAMILY_METRIC_COUNTRY_WEIGHTED_SATISFACTION_Q16] = in_range
+                ? _epoch_country_weighted_satisfaction_q16[
+                    static_cast<size_t>(opinion_country)]
+                : static_cast<int64_t>(Q16_ONE);
+        if (requested(FAMILY_METRIC_COUNTRY_FARMER_SATISFACTION_Q16))
+            metrics[FAMILY_METRIC_COUNTRY_FARMER_SATISFACTION_Q16] = in_range
+                ? _epoch_country_farmer_satisfaction_q16[
+                    static_cast<size_t>(opinion_country)]
+                : static_cast<int64_t>(Q16_ONE);
+        if (requested(FAMILY_METRIC_COUNTRY_WORKER_CLASS_SATISFACTION_Q16))
+            metrics[FAMILY_METRIC_COUNTRY_WORKER_CLASS_SATISFACTION_Q16] = in_range
+                ? _epoch_country_worker_satisfaction_q16[
+                    static_cast<size_t>(opinion_country)]
+                : static_cast<int64_t>(Q16_ONE);
+    }
+    if (requested(FAMILY_METRIC_COUNTRY_COMPLETED_TECH_COUNT) ||
+        requested(FAMILY_METRIC_COUNTRY_COMPLETED_TECH_COUNT_DOMAIN_0) ||
+        requested(FAMILY_METRIC_COUNTRY_COMPLETED_TECH_COUNT_DOMAIN_1) ||
+        requested(FAMILY_METRIC_COUNTRY_COMPLETED_TECH_COUNT_DOMAIN_2) ||
+        requested(FAMILY_METRIC_COUNTRY_COMPLETED_TECH_COUNT_DOMAIN_3)) {
+        const int32_t technology_country = cell_country_slot(cell);
+        const bool in_range = technology_country >= 0 &&
+            static_cast<size_t>(technology_country) <
+                _epoch_country_completed_tech_count.size();
+        if (requested(FAMILY_METRIC_COUNTRY_COMPLETED_TECH_COUNT))
+            metrics[FAMILY_METRIC_COUNTRY_COMPLETED_TECH_COUNT] = count_q16(
+                in_range ? _epoch_country_completed_tech_count[
+                    static_cast<size_t>(technology_country)] : 0);
+        const std::array<const std::vector<int64_t> *, 4> domain_columns = {
+            &_epoch_country_completed_tech_count_domain_0,
+            &_epoch_country_completed_tech_count_domain_1,
+            &_epoch_country_completed_tech_count_domain_2,
+            &_epoch_country_completed_tech_count_domain_3,
+        };
+        const std::array<int32_t, 4> domain_metrics = {
+            FAMILY_METRIC_COUNTRY_COMPLETED_TECH_COUNT_DOMAIN_0,
+            FAMILY_METRIC_COUNTRY_COMPLETED_TECH_COUNT_DOMAIN_1,
+            FAMILY_METRIC_COUNTRY_COMPLETED_TECH_COUNT_DOMAIN_2,
+            FAMILY_METRIC_COUNTRY_COMPLETED_TECH_COUNT_DOMAIN_3,
+        };
+        for (size_t domain = 0; domain < domain_columns.size(); ++domain) {
+            const std::vector<int64_t> &column = *domain_columns[domain];
+            if (!requested(domain_metrics[domain])) continue;
+            metrics[domain_metrics[domain]] = count_q16(
+                in_range && static_cast<size_t>(technology_country) <
+                    column.size()
+                ? column[static_cast<size_t>(technology_country)] : 0);
+        }
+    }
+    // R-4 metric 69: country treasury reserve ratio, 1 point = 1%.
+    //
+    // Frozen per country per epoch in `capture_country_epoch`; this is the published
+    // copy, mirroring metric 55's "read the frozen epoch shape, never the live store"
+    // rule. `count_q16` because the generator's ramp treats the value as a COUNT of
+    // percentage points, not a Q16 ratio.
+    if (requested(FAMILY_METRIC_COUNTRY_TREASURY_RESERVE_RATIO_PCT)) {
+        const int32_t reserve_country = cell_country_slot(cell);
+        int64_t reserve_pct = 0;
+        if (reserve_country >= 0 &&
+            static_cast<size_t>(reserve_country) <
+                _epoch_country_reserve_pct.size())
+            reserve_pct = _epoch_country_reserve_pct[
+                static_cast<size_t>(reserve_country)];
+        metrics[FAMILY_METRIC_COUNTRY_TREASURY_RESERVE_RATIO_PCT] =
+            count_q16(reserve_pct);
+    }
+    // X13 residual metric 88: already Q16, so publish the frozen ratio directly.
+    // A country with no owned cells reads 0; no fallback to 1.0 would be honest.
+    if (requested(FAMILY_METRIC_COUNTRY_HAZARD_FREE_CELL_SHARE_Q16)) {
+        const int32_t hazard_country = cell_country_slot(cell);
+        metrics[FAMILY_METRIC_COUNTRY_HAZARD_FREE_CELL_SHARE_Q16] =
+            hazard_country >= 0 &&
+                static_cast<size_t>(hazard_country) <
+                    _epoch_country_hazard_free_cell_share_q16.size()
+            ? _epoch_country_hazard_free_cell_share_q16[
+                static_cast<size_t>(hazard_country)] : 0;
+    }
+    if (requested(FAMILY_METRIC_COUNTRY_FAMILY_REMOTE_BRANCH_COUNT) ||
+        requested(FAMILY_METRIC_COUNTRY_FAMILIES_WITH_AT_LEAST_3_BRANCHES) ||
+        requested(FAMILY_METRIC_COUNTRY_MAX_FAMILY_AGE_DAYS) ||
+        requested(FAMILY_METRIC_COUNTRY_AVG_FAMILY_AGE_DAYS)) {
+        const int32_t family_country = cell_country_slot(cell);
+        const bool in_range = family_country >= 0 &&
+            static_cast<size_t>(family_country) <
+                _epoch_country_family_remote_branch_count.size();
+        if (requested(FAMILY_METRIC_COUNTRY_FAMILY_REMOTE_BRANCH_COUNT))
+            metrics[FAMILY_METRIC_COUNTRY_FAMILY_REMOTE_BRANCH_COUNT] =
+                count_q16(in_range
+                    ? _epoch_country_family_remote_branch_count[
+                        static_cast<size_t>(family_country)] : 0);
+        if (requested(FAMILY_METRIC_COUNTRY_FAMILIES_WITH_AT_LEAST_3_BRANCHES))
+            metrics[FAMILY_METRIC_COUNTRY_FAMILIES_WITH_AT_LEAST_3_BRANCHES] =
+                count_q16(in_range
+                    ? _epoch_country_families_with_at_least_3_branches[
+                        static_cast<size_t>(family_country)] : 0);
+        const int32_t family_count = in_range &&
+                static_cast<size_t>(family_country) <
+                    _epoch_country_family_count.size()
+            ? _epoch_country_family_count[static_cast<size_t>(family_country)]
+            : 0;
+        if (requested(FAMILY_METRIC_COUNTRY_MAX_FAMILY_AGE_DAYS)) {
+            int32_t age = 0;
+            if (family_count > 0 && in_range &&
+                static_cast<size_t>(family_country) <
+                    _epoch_country_oldest_family_founded_day.size())
+                age = static_cast<int32_t>(std::clamp<int64_t>(
+                    _current_day.get() - _epoch_country_oldest_family_founded_day[
+                        static_cast<size_t>(family_country)],
+                    0, std::numeric_limits<int32_t>::max()));
+            metrics[FAMILY_METRIC_COUNTRY_MAX_FAMILY_AGE_DAYS] = count_q16(age);
+        }
+        if (requested(FAMILY_METRIC_COUNTRY_AVG_FAMILY_AGE_DAYS)) {
+            int64_t age_sum = 0;
+            if (family_count > 0 && in_range &&
+                static_cast<size_t>(family_country) <
+                    _epoch_country_family_founded_day_sum.size()) {
+                const int64_t founded_sum = _epoch_country_family_founded_day_sum[
+                    static_cast<size_t>(family_country)];
+                age_sum = std::max<int64_t>(0,
+                    _current_day.get() * family_count - founded_sum);
+            }
+            const int64_t avg_age = family_count > 0
+                ? age_sum / family_count : 0;
+            metrics[FAMILY_METRIC_COUNTRY_AVG_FAMILY_AGE_DAYS] = count_q16(
+                std::clamp<int64_t>(avg_age, 0,
+                    std::numeric_limits<int32_t>::max()));
+        }
+    }
+    if (requested(FAMILY_METRIC_COUNTRY_ENERGY_CELL_COUNT) ||
+        requested(
+            FAMILY_METRIC_COUNTRY_ABUNDANT_MOUNTAIN_FOREST_CELL_COUNT) ||
+        requested(FAMILY_METRIC_COUNTRY_LANDFORM_SIGNAL_COUNT) ||
+        requested(FAMILY_METRIC_COUNTRY_WEATHER_SIGNAL_COUNT) ||
+        requested(FAMILY_METRIC_COUNTRY_BIO_SIGNAL_COUNT)) {
+        const int32_t metric_country = cell_country_slot(cell);
+        const size_t country = static_cast<size_t>(std::max(0, metric_country));
+        const bool in_range = metric_country >= 0;
+        const auto read_count = [&](const std::vector<int32_t> &column) {
+            return in_range && country < column.size()
+                ? static_cast<int64_t>(column[country]) : 0;
+        };
+        if (requested(FAMILY_METRIC_COUNTRY_ENERGY_CELL_COUNT))
+            metrics[FAMILY_METRIC_COUNTRY_ENERGY_CELL_COUNT] =
+                count_q16(read_count(_epoch_country_energy_cell_count));
+        if (requested(
+                FAMILY_METRIC_COUNTRY_ABUNDANT_MOUNTAIN_FOREST_CELL_COUNT))
+            metrics[
+                FAMILY_METRIC_COUNTRY_ABUNDANT_MOUNTAIN_FOREST_CELL_COUNT] =
+                count_q16(read_count(
+                    _epoch_country_abundant_mountain_forest_cell_count));
+        if (requested(FAMILY_METRIC_COUNTRY_LANDFORM_SIGNAL_COUNT))
+            metrics[FAMILY_METRIC_COUNTRY_LANDFORM_SIGNAL_COUNT] =
+                count_q16(read_count(_epoch_country_landform_signal_count));
+        if (requested(FAMILY_METRIC_COUNTRY_WEATHER_SIGNAL_COUNT))
+            metrics[FAMILY_METRIC_COUNTRY_WEATHER_SIGNAL_COUNT] =
+                count_q16(read_count(_epoch_country_weather_signal_count));
+        if (requested(FAMILY_METRIC_COUNTRY_BIO_SIGNAL_COUNT))
+            metrics[FAMILY_METRIC_COUNTRY_BIO_SIGNAL_COUNT] =
+                count_q16(read_count(_epoch_country_bio_signal_count));
+    }
     static const bool verify_metrics = [] {
         const char *value = std::getenv("PK_ECONOMY_MEMO_VERIFY");
         return value && std::strcmp(value, "1") == 0;
@@ -19840,6 +20773,21 @@ void NativeEconomyRuntime::rebuild_family_influences(bool rebuild_derived) {
         const MetricMask FAMILY_COMMIT_METRICS = [] {
             MetricMask mask = MetricMask::all_declared(FAMILY_METRIC_COUNT);
             mask.unset(FAMILY_METRIC_MAGNITUDE_Q16);
+            // X9-a cell aggregates are sampled once from the completed branch
+            // cache below, not once per branch while the cache is still moving.
+            mask.unset(FAMILY_METRIC_CELL_FAMILY_BRANCH_COUNT);
+            mask.unset(FAMILY_METRIC_CELL_MAX_BRANCH_PRESTIGE_Q16);
+            mask.unset(FAMILY_METRIC_CELL_FAMILY_ASSET_SHARE_Q16);
+            mask.unset(FAMILY_METRIC_COUNTRY_FAMILY_REMOTE_BRANCH_COUNT);
+            mask.unset(FAMILY_METRIC_COUNTRY_FAMILIES_WITH_AT_LEAST_3_BRANCHES);
+            mask.unset(FAMILY_METRIC_COUNTRY_MAX_FAMILY_AGE_DAYS);
+            mask.unset(FAMILY_METRIC_COUNTRY_AVG_FAMILY_AGE_DAYS);
+            mask.unset(FAMILY_METRIC_COUNTRY_ENERGY_CELL_COUNT);
+            mask.unset(
+                FAMILY_METRIC_COUNTRY_ABUNDANT_MOUNTAIN_FOREST_CELL_COUNT);
+            mask.unset(FAMILY_METRIC_COUNTRY_LANDFORM_SIGNAL_COUNT);
+            mask.unset(FAMILY_METRIC_COUNTRY_WEATHER_SIGNAL_COUNT);
+            mask.unset(FAMILY_METRIC_COUNTRY_BIO_SIGNAL_COUNT);
             return mask;
         }();
         refresh_family_effect_metrics_for_branch(branch_handle,
@@ -19854,6 +20802,44 @@ void NativeEconomyRuntime::rebuild_family_influences(bool rebuild_derived) {
     }
     rebuild_family_policy_scalars();
     mark_family_behavior_cache_dirty(FAMILY_BEHAVIOR_DIRTY_INFLUENCES);
+    if (rebuild_epoch_family_cell_metrics()) {
+        const MetricMask family_cell_metrics = [] {
+            MetricMask mask;
+            mask.set(FAMILY_METRIC_CELL_FAMILY_BRANCH_COUNT);
+            mask.set(FAMILY_METRIC_CELL_MAX_BRANCH_PRESTIGE_Q16);
+            mask.set(FAMILY_METRIC_CELL_FAMILY_ASSET_SHARE_Q16);
+            return mask;
+        }();
+        const int64_t revision = family_effect_metric_revision(1);
+        for (int32_t cell = 0; cell < static_cast<int32_t>(
+                _family_cell_metric_changed_cells.size()); ++cell) {
+            if (_family_cell_metric_changed_cells[static_cast<size_t>(cell)] == 0)
+                continue;
+            refresh_family_effect_metrics_for_cell(
+                cell, revision, family_cell_metrics);
+        }
+    }
+    if (rebuild_epoch_family_country_metrics()) {
+        const MetricMask family_country_metrics = [] {
+            MetricMask mask;
+            mask.set(FAMILY_METRIC_COUNTRY_FAMILY_REMOTE_BRANCH_COUNT);
+            mask.set(FAMILY_METRIC_COUNTRY_FAMILIES_WITH_AT_LEAST_3_BRANCHES);
+            mask.set(FAMILY_METRIC_COUNTRY_MAX_FAMILY_AGE_DAYS);
+            mask.set(FAMILY_METRIC_COUNTRY_AVG_FAMILY_AGE_DAYS);
+            return mask;
+        }();
+        const int64_t revision = family_effect_metric_revision(2);
+        for (int32_t country = 0; country < static_cast<int32_t>(
+                _family_country_metric_changed_countries.size()); ++country) {
+            if (_family_country_metric_changed_countries[
+                    static_cast<size_t>(country)] == 0)
+                continue;
+            const int32_t anchor = country_anchor_cell(country);
+            if (anchor >= 0)
+                refresh_family_effect_metrics_for_cell(
+                    anchor, revision, family_country_metrics);
+        }
+    }
     if (rebuild_derived) {
         rebuild_family_industry_metrics();
         rebuild_family_behavior_cache();
@@ -23771,6 +24757,10 @@ int64_t NativeEconomyRuntime::state_hash_internal(bool paged) const {
     hash = economy_hash_lanes<true>(hash, _birth_residual_q32);
     mix_u64(0x53555050454d41ULL); // "SUPPEMA"
     hash = economy_hash_lanes<true>(hash, _cell_support_ema_q16);
+    mix_u64(0x583133415354524dULL); // "X13ASTRM"
+    hash = economy_hash_lanes<true>(hash, _cell_dry_streak_days);
+    hash = economy_hash_lanes<true>(hash, _cell_days_since_hazard);
+    hash = economy_hash_lanes<true>(hash, _cell_previous_hazard_mask);
     mix_u64(0x464f4f44464c4f57ULL); // "FOODFLOW"
     mix_u64(static_cast<uint32_t>(_food_flow_previous_period_days.get()));
     hash = economy_hash_lanes<true>(hash, _cell_food_flow_valid);
@@ -24659,6 +25649,60 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _building_is_water.clear();
     _building_has_river.clear();
     _building_neighbors.clear();
+    _epoch_cell_geo_flags.clear();
+    _epoch_cell_waterway_component_size.clear();
+    _geo_flags_territory_hash = 0;
+    _geo_flags_canal_hash = 0;
+    _epoch_cell_family_branch_count.clear();
+    _epoch_cell_max_branch_prestige_q16.clear();
+    _epoch_cell_family_asset_share_q16.clear();
+    _family_cell_metric_signature = 0;
+    _family_cell_metric_changed_cells.clear();
+    _family_cell_metric_rebuilds.store(0, std::memory_order_relaxed);
+    _epoch_country_family_remote_branch_count.clear();
+    _epoch_country_families_with_at_least_3_branches.clear();
+    _epoch_country_oldest_family_founded_day.clear();
+    _epoch_country_family_founded_day_sum.clear();
+    _epoch_country_family_count.clear();
+    _family_country_metric_signature = 0;
+    _family_country_metric_changed_countries.clear();
+    _family_country_metric_rebuilds.store(0, std::memory_order_relaxed);
+    _epoch_country_class_satisfaction_q16.clear();
+    _epoch_country_weighted_satisfaction_q16.clear();
+    _epoch_country_farmer_satisfaction_q16.clear();
+    _epoch_country_worker_satisfaction_q16.clear();
+    _technology_domain_ids.clear();
+    _technology_domain_masks.clear();
+    _epoch_country_completed_tech_count.clear();
+    _epoch_country_completed_tech_count_domain_0.clear();
+    _epoch_country_completed_tech_count_domain_1.clear();
+    _epoch_country_completed_tech_count_domain_2.clear();
+    _epoch_country_completed_tech_count_domain_3.clear();
+    _epoch_country_hazard_free_cell_share_q16.clear();
+    _epoch_country_research_signals.clear();
+    _epoch_country_research_signal_words = 0;
+    _epoch_country_energy_cell_count.clear();
+    _epoch_country_abundant_mountain_forest_cell_count.clear();
+    _epoch_country_landform_signal_count.clear();
+    _epoch_country_weather_signal_count.clear();
+    _epoch_country_bio_signal_count.clear();
+    _technology_metric_input_override.clear();
+    _technology_metric_input_override_enabled = false;
+    _technology_metric_source_hash = 0;
+    _technology_metric_rebuilds.store(0, std::memory_order_relaxed);
+    _epoch_cell_neighbor_distinct_goods.clear();
+    _neighbor_distinct_goods_source_hash = 0;
+    _neighbor_distinct_goods_rebuilds.store(0, std::memory_order_relaxed);
+    _class_opinion_override_population.clear();
+    _class_opinion_override_satisfaction_q16.clear();
+    _class_opinion_override_weighted.clear();
+    _class_opinion_source_override_enabled = false;
+    _class_opinion_override_revision = 0;
+    _class_opinion_override_commit_day = -1;
+    _class_metric_source_revision = 0;
+    _class_metric_source_content_hash = 0;
+    _class_metric_source_epoch_day = -1;
+    _class_metric_rebuilds.store(0, std::memory_order_relaxed);
     resource_stock_lanes().clear();
     resource_remaining_lanes().clear();
     resource_harvest_remaining_lanes().clear();
@@ -24852,6 +25896,14 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _cell_resource_abundance_q16.clear();
     _cell_previous_precipitation_q16.clear();
     _cell_rain_event_q16.clear();
+    _cell_temperature_annual_q16.clear();
+    _cell_temperature_anomaly_q16.clear();
+    _cell_hazard_today_mask.clear();
+    _cell_dry_streak_days.clear();
+    _cell_days_since_hazard.clear();
+    _cell_previous_hazard_mask.clear();
+    _cell_weather_type.clear();
+    _cell_cover.clear();
     _epoch_market_ids.clear();
     _economy_live_cells.clear();
     {

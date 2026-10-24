@@ -13,6 +13,7 @@ extends Resource
 const Q16_ONE := 65536
 
 enum TargetDomain {
+	FAMILY = 0,
 	SETTLEMENT_CELL = 2,
 	COUNTRY = 3,
 	CLIMATE = 4,
@@ -74,14 +75,64 @@ enum TargetSelectorKind {
 	TAG_SOURCE_R1 = 14,
 	## Same, R2.
 	TAG_SOURCE_R2 = 15,
+	## X1-b: per-source count stacking. `radius` / `cap` are packed into
+	## `target_selector_param[0]`; `target_selector_param[1]` remains the
+	## 1-based source tag id. One target receives
+	## `min(count, cap) / cap` of the program's full-stack magnitude.
+	TAG_SOURCE_COUNT = 16,
+	## X9-b: resolve qualifying families to stable family handles. `param[1]` is
+	## the minimum active branch count; `param[0]` is the family cap (32 = all).
+	FAMILY_OWNED = 17,
 	## Authoring ceiling. Validate against this, never against a named kind:
 	## the previous check compared with DISTANCE_N, so kinds 12 and 13 were
 	## rejected by the authoring layer long after the runtime accepted them.
-	SELECTOR_MAX_KIND = 15,
+	SELECTOR_MAX_KIND = 17,
 }
 
 ## Hard cap mirrored from EffectRuntime::SELECTOR_MAX_CELLS.
 const SELECTOR_MAX_CELLS := 32
+
+const SOURCE_COUNT_TARGET_CAP_MASK := 0x1F
+const SOURCE_COUNT_RADIUS_SHIFT := 5
+const SOURCE_COUNT_RADIUS_MASK := 0x07
+const SOURCE_COUNT_CAP_SHIFT := 8
+const SOURCE_COUNT_CAP_MASK := 0x0F
+const SOURCE_COUNT_TAG_MASK := 0xFFFF
+
+
+## Pack kind 16's four parameters into the two POD int slots.
+## `target_cap == SELECTOR_MAX_CELLS` is stored as 0 ("runtime default 32").
+static func pack_source_count(target_cap: int, radius: int, cap: int,
+		tag_id: int) -> PackedInt32Array:
+	if target_cap < 0 or target_cap > SELECTOR_MAX_CELLS:
+		return PackedInt32Array()
+	if radius < 1 or radius > SOURCE_COUNT_RADIUS_MASK:
+		return PackedInt32Array()
+	if cap < 1 or cap > SOURCE_COUNT_CAP_MASK:
+		return PackedInt32Array()
+	if tag_id < 1 or tag_id > SOURCE_COUNT_TAG_MASK:
+		return PackedInt32Array()
+	var stored_cap := target_cap if target_cap != SELECTOR_MAX_CELLS else 0
+	var packed := (stored_cap & SOURCE_COUNT_TARGET_CAP_MASK) \
+		| ((radius & SOURCE_COUNT_RADIUS_MASK) << SOURCE_COUNT_RADIUS_SHIFT) \
+		| ((cap & SOURCE_COUNT_CAP_MASK) << SOURCE_COUNT_CAP_SHIFT)
+	return PackedInt32Array([packed, tag_id & SOURCE_COUNT_TAG_MASK])
+
+
+## Inverse of `pack_source_count`, shared by authoring validation and tests.
+static func unpack_source_count(params: PackedInt32Array) -> Dictionary:
+	if params.is_empty():
+		return {}
+	var packed := int(params[0])
+	var stored_cap := packed & SOURCE_COUNT_TARGET_CAP_MASK
+	var target_cap := SELECTOR_MAX_CELLS if stored_cap == 0 else stored_cap
+	return {
+		"target_cap": target_cap,
+		"radius": (packed >> SOURCE_COUNT_RADIUS_SHIFT) & SOURCE_COUNT_RADIUS_MASK,
+		"cap": (packed >> SOURCE_COUNT_CAP_SHIFT) & SOURCE_COUNT_CAP_MASK,
+		"tag_id": (int(params[1]) if params.size() > 1 else 0)
+			& SOURCE_COUNT_TAG_MASK,
+	}
 
 ## How many names `target_selector_tags` may hold. Not a runtime limit — the
 ## runtime sees one id either way. It is an authoring guard: the compiler folds
@@ -188,7 +239,7 @@ func validate() -> String:
 	if definition_key == &"" or program_key() == &"":
 		return "ideology_effect_definition_key_missing"
 	if target_domain not in [
-			TargetDomain.SETTLEMENT_CELL, TargetDomain.COUNTRY,
+			TargetDomain.FAMILY, TargetDomain.SETTLEMENT_CELL, TargetDomain.COUNTRY,
 			TargetDomain.CLIMATE, TargetDomain.BUILDING_RESOURCE]:
 		return "ideology_effect_target_domain_invalid"
 	if operation < 0 or operation > 4:
@@ -205,10 +256,27 @@ func validate() -> String:
 		return "ideology_effect_max_stacks_invalid"
 	if target_selector_kind < 0 or target_selector_kind > TargetSelectorKind.SELECTOR_MAX_KIND:
 		return "ideology_effect_selector_invalid"
-	if target_selector_param.size() > 0 \
+	# Kind 16 bit-packs its geometry into param[0], so the plain "cell cap"
+	# range check would always reject it. Validate the unpacked domain instead.
+	if target_selector_kind != TargetSelectorKind.TAG_SOURCE_COUNT \
+			and target_selector_kind != TargetSelectorKind.FAMILY_OWNED \
+			and target_selector_param.size() > 0 \
 			and (int(target_selector_param[0]) < 0 \
 			or int(target_selector_param[0]) > SELECTOR_MAX_CELLS):
 		return "ideology_effect_selector_cap_invalid"
+	if target_selector_kind == TargetSelectorKind.FAMILY_OWNED:
+		if target_domain != TargetDomain.FAMILY:
+			return "ideology_effect_family_selector_domain_invalid"
+		if target_selector_param.size() < 2 \
+				or int(target_selector_param[0]) < 1 \
+				or int(target_selector_param[0]) > SELECTOR_MAX_CELLS \
+				or int(target_selector_param[1]) < 1:
+			return "ideology_effect_family_selector_param_invalid"
+	if target_selector_kind == TargetSelectorKind.TAG_SOURCE_COUNT:
+		var decoded := unpack_source_count(target_selector_param)
+		if decoded.is_empty() or int(decoded["radius"]) < 1 \
+				or int(decoded["cap"]) < 1:
+			return "ideology_effect_selector_param_invalid"
 	# A tag name is only meaningful for the two tag-scoped kinds, and it must
 	# not compete with a raw param[1]: two sources of truth for one slot is how
 	# a card ends up filtering on a tag its author cannot see.
@@ -226,7 +294,8 @@ func validate() -> String:
 				TargetSelectorKind.OWN_TERRITORY,
 				TargetSelectorKind.TAG_ANY_CELL,
 				TargetSelectorKind.TAG_SOURCE_R1,
-				TargetSelectorKind.TAG_SOURCE_R2]:
+				TargetSelectorKind.TAG_SOURCE_R2,
+				TargetSelectorKind.TAG_SOURCE_COUNT]:
 			return "ideology_effect_selector_tag_kind_invalid"
 		if target_selector_param.size() > 1 \
 				and int(target_selector_param[1]) != 0:

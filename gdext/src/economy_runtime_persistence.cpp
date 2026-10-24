@@ -6,8 +6,11 @@
 #include "effect_runtime.h"
 #include "modifier_runtime.h"
 #include "runtime_economy_ecp2.h"
+#include "pk_log.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <initializer_list>
 #include <limits>
@@ -307,6 +310,53 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
         return out;
     }
     const size_t cells = static_cast<size_t>(_cell_count.get());
+    // Name the offending column instead of only the family. The `out["reason"]` string
+    // is what reaches the caller, and "economy_save_state_shape_invalid" alone is not
+    // actionable -- it cost a full round to find that this was NOT the
+    // building/trade pairing check one layer up. `PK_SAVE_SHAPE_PROBE=1` prints the
+    // first mismatch; the reason stays the same so callers and tests are unaffected.
+    const struct { const char *name; size_t actual; size_t expected; } cell_columns[] = {
+        {"market_cell_to_market", market_store().cell_to_market.size(), cells},
+        {"environment_temperature_q16", _environment_temperature_q16.size(), cells},
+        {"environment_temperature_30d_q16", _environment_temperature_30d_q16.size(), cells},
+        {"environment_moisture_q16", _environment_moisture_q16.size(), cells},
+        {"environment_plant_available_water_q16", _environment_plant_available_water_q16.size(), cells},
+        {"environment_precipitation_q16", _environment_precipitation_q16.size(), cells},
+        {"environment_snow_q16", _environment_snow_q16.size(), cells},
+        {"environment_weather_q16", _environment_weather_q16.size(), cells},
+        {"cell_temperature_annual_q16", _cell_temperature_annual_q16.size(), cells},
+        {"cell_temperature_anomaly_q16", _cell_temperature_anomaly_q16.size(), cells},
+        {"cell_hazard_today_mask", _cell_hazard_today_mask.size(), cells},
+        {"cell_dry_streak_days", _cell_dry_streak_days.size(), cells},
+        {"cell_days_since_hazard", _cell_days_since_hazard.size(), cells},
+        {"cell_previous_hazard_mask", _cell_previous_hazard_mask.size(), cells},
+        {"cell_weather_type", _cell_weather_type.size(), cells},
+        {"cell_cover", _cell_cover.size(), cells},
+        {"cell_last_settlement_day", _cell_last_settlement_day.size(), cells},
+        {"birth_residual_q32", _birth_residual_q32.size(), cells * _ethnicity_ids.size()},
+        {"cell_support_ema_q16", _cell_support_ema_q16.size(), cells},
+        {"cell_food_output_eq_previous", _cell_food_output_eq_previous.size(), cells},
+        {"cell_food_input_eq_previous", _cell_food_input_eq_previous.size(), cells},
+        {"cell_food_import_eq_previous", _cell_food_import_eq_previous.size(), cells},
+        {"cell_food_export_eq_previous", _cell_food_export_eq_previous.size(), cells},
+        {"cell_food_access_eq_previous", _cell_food_access_eq_previous.size(), cells},
+        {"cell_food_flow_valid", _cell_food_flow_valid.size(), cells},
+        {"cell_settlement_generation", _cell_settlement_generation.size(), cells},
+        {"cell_price_stock_gen", _cell_price_stock_gen.size(), cells},
+        {"cell_owner_cash_gen", _cell_owner_cash_gen.size(), cells},
+        {"cell_population_gen", _cell_population_gen.size(), cells},
+        {"cell_building_structure_gen", _cell_building_structure_gen.size(), cells},
+        {"cell_technology_gen", _cell_technology_gen.size(), cells},
+        {"cell_resource_gen", _cell_resource_gen.size(), cells},
+        {"cell_trade_gen", _cell_trade_gen.size(), cells},
+    };
+    for (const auto &column : cell_columns) {
+        if (column.actual == column.expected) continue;
+        if (std::getenv("PK_SAVE_SHAPE_PROBE") != nullptr)
+            pk::log_error("[save-shape] %s actual=%zu expected=%zu",
+                column.name, column.actual, column.expected);
+        break;
+    }
     if (market_store().cell_to_market.size() != cells ||
         _environment_temperature_q16.size() != cells ||
         _environment_temperature_30d_q16.size() != cells ||
@@ -315,6 +365,14 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
         _environment_precipitation_q16.size() != cells ||
         _environment_snow_q16.size() != cells ||
         _environment_weather_q16.size() != cells ||
+        _cell_temperature_annual_q16.size() != cells ||
+        _cell_temperature_anomaly_q16.size() != cells ||
+        _cell_hazard_today_mask.size() != cells ||
+        _cell_dry_streak_days.size() != cells ||
+        _cell_days_since_hazard.size() != cells ||
+        _cell_previous_hazard_mask.size() != cells ||
+        _cell_weather_type.size() != cells ||
+        _cell_cover.size() != cells ||
         _cell_last_settlement_day.size() != cells ||
         _birth_residual_q32.size() != cells * _ethnicity_ids.size() ||
         _cell_support_ema_q16.size() != cells ||
@@ -908,14 +966,15 @@ Dictionary NativeEconomyRuntime::end_restore() {
             return out;
         }
     }
-    uint64_t restored_environment_hash = 1469598103934665603ULL;
-    auto mix_environment_q16 = [&](uint32_t value) {
+    const auto mix_environment_hash = [](uint64_t hash, uint32_t value) {
         for (int32_t byte = 0; byte < 4; ++byte) {
-            restored_environment_hash ^= static_cast<uint8_t>(
+            hash ^= static_cast<uint8_t>(
                 (value >> (byte * 8)) & 0xffU);
-            restored_environment_hash *= 1099511628211ULL;
+            hash *= 1099511628211ULL;
         }
+        return hash;
     };
+    uint64_t restored_environment_hash = 1469598103934665603ULL;
     for (int32_t cell = 0; cell < _cell_count.get(); ++cell) {
         const int32_t values[] = {
             _environment_temperature_q16[cell],
@@ -932,18 +991,20 @@ Dictionary NativeEconomyRuntime::end_restore() {
                 out["reason"] = "restore_environment_value_invalid";
                 return out;
             }
-            mix_environment_q16(static_cast<uint32_t>(value));
+            restored_environment_hash = mix_environment_hash(
+                restored_environment_hash, static_cast<uint32_t>(value));
         }
     }
     const int64_t computed_environment_hash = static_cast<int64_t>(
         (restored_environment_hash & 0x7fffffffffffffffULL) | 1ULL);
-    if (computed_environment_hash != _environment_hash.get()) {
+    if (_restore.environment_hash != computed_environment_hash) {
         out["ok"] = false;
         out["reason"] = "restore_environment_hash_mismatch";
-        out["expected_environment_hash"] = _environment_hash.get();
+        out["expected_environment_hash"] = _restore.environment_hash;
         out["computed_environment_hash"] = computed_environment_hash;
         return out;
     }
+    _environment_hash = _restore.environment_hash;
     const size_t expected_population_slots =
         population_store().page_next.size() * static_cast<size_t>(COHORT_PAGE_SIZE);
     if (population_store().active.size() != expected_population_slots ||
@@ -1731,10 +1792,12 @@ Dictionary NativeEconomyRuntime::end_restore() {
         ? "v25_empty_family_bootstrap"
         : (restored_schema == 26
         ? "v26_empty_notable_person_bootstrap"
+        : (restored_schema == 55 || restored_schema == 56
+        ? "v56_x13a_climate_columns"
         : (restored_schema == 22 || restored_schema == 23
         ? "legacy_settlement_bootstrap"
         : (restored_schema == 14
-            ? "v14_rolling_phase_bootstrap" : "none"))));
+            ? "v14_rolling_phase_bootstrap" : "none")))));
     return out;
 }
 
@@ -1760,9 +1823,86 @@ bool NativeEconomyRuntime::end_restore_internal(std::string &error) {
     return true;
 }
 
+// The deferred half of the country-identity check (see `_accept_stale_country_identity`).
+//
+// `apply_ecp2_authority` skips `country_hash != expected_country_hash` when Country has
+// not been installed yet, and records what the archive ASKED for. This compares that
+// record against the live Country runtime, which by now holds the archive's real
+// checkpoint. Pairing A's Country bytes with B's Economy bytes therefore still fails --
+// the important half of "restore is atomic" is not lost, only moved.
+bool NativeEconomyRuntime::verify_deferred_country_identity(
+        std::string &error) const {
+    error.clear();
+    if (!_deferred_country_identity_recorded) return true;
+    if (_country_runtime == nullptr) {
+        error = "economy_deferred_country_runtime_missing";
+        return false;
+    }
+    const uint64_t live_generation =
+        static_cast<uint64_t>(_country_runtime->generation());
+    const uint64_t live_hash = static_cast<uint64_t>(_country_runtime->state_hash());
+    if (live_generation != _deferred_country_generation ||
+        live_hash != _deferred_country_state_hash) {
+        // Name both sides: a mismatch without the two identities is unactionable, and
+        // this failure is exactly the one that used to be invisible.
+        char detail[128];
+        std::snprintf(detail, sizeof(detail),
+                      "economy_country_identity_mismatch:expected_gen=%llu_"
+                      "hash=%llu:live_gen=%llu_hash=%llu",
+                      static_cast<unsigned long long>(_deferred_country_generation),
+                      static_cast<unsigned long long>(_deferred_country_state_hash),
+                      static_cast<unsigned long long>(live_generation),
+                      static_cast<unsigned long long>(live_hash));
+        error = detail;
+        return false;
+    }
+    return true;
+}
+
 bool NativeEconomyRuntime::validate_ecp2_candidate(
         const RuntimeEconomyEcp2State &in, std::string &error) const {
     error.clear();
+    // Resource wire shape is checked HERE, before `end_restore_internal` commits the
+    // candidate.
+    //
+    // `apply_ecp2_authority_internal` feeds every chunk, commits with
+    // `end_restore_internal`, and only THEN decodes the resource domain. So a corrupt
+    // resource wire used to be discovered after the restore had already been committed,
+    // which is exactly the wrong order for a fail-closed path: the caller sees a
+    // failure but the live state has already moved. Validating the same bytes upfront
+    // makes it a true precondition (same shape rules, no state written).
+    {
+        const auto resource_it = in.domain_blobs.find(ECP2_DOMAIN_RESOURCE);
+        if (resource_it != in.domain_blobs.end() && !resource_it->second.empty()) {
+            const std::vector<uint8_t> &blob = resource_it->second;
+            size_t wire_offset = 0;
+            while (wire_offset + 16u <= blob.size()) {
+                const uint8_t *chunk = blob.data() + wire_offset;
+                const uint32_t magic = static_cast<uint32_t>(chunk[0]) |
+                    (static_cast<uint32_t>(chunk[1]) << 8u) |
+                    (static_cast<uint32_t>(chunk[2]) << 16u) |
+                    (static_cast<uint32_t>(chunk[3]) << 24u);
+                if (magic != SAVE_MAGIC) break;
+                const uint32_t payload_size = static_cast<uint32_t>(chunk[12]) |
+                    (static_cast<uint32_t>(chunk[13]) << 8u) |
+                    (static_cast<uint32_t>(chunk[14]) << 16u) |
+                    (static_cast<uint32_t>(chunk[15]) << 24u);
+                const size_t chunk_size = 16u + static_cast<size_t>(payload_size);
+                if (chunk_size > blob.size() - wire_offset) break;
+                wire_offset += chunk_size;
+            }
+            RuntimeEconomyResourceStore probe;
+            probe.resource_count = static_cast<int32_t>(_resource_ids.size());
+            probe.cell_count = _cell_count.get();
+            const uint32_t expected_lanes = static_cast<uint32_t>(
+                static_cast<size_t>(probe.resource_count) * probe.cell_count);
+            if (!probe.load_wire(blob.data() + wire_offset,
+                                 blob.size() - wire_offset, expected_lanes)) {
+                error = "ecp2_resource_wire_invalid";
+                return false;
+            }
+        }
+    }
     const bool migrating = runtime_hash_migration_enabled() && in.abi_version == 2u && in.schema_version == 53;
     if (in.abi_version != RUNTIME_ECONOMY_ECP2_ABI_VERSION && !migrating) {
         error = "ecp2_abi_version_incompatible";
@@ -2246,11 +2386,42 @@ bool NativeEconomyRuntime::apply_ecp2_authority(
         }
         std::string backup_error;
         if (!capture_ecp2_authority(backup, backup_error, capture_flags)) {
-            error = "ecp2_atomic_backup_failed:" + backup_error;
-            set_restore_rejected_reason(error);
-            return false;
+            // The backup makes the apply atomic, so a missing one is a real loss --
+            // but only for the ONE known situation where the live state is legitimately
+            // not capturable yet, and where refusing would make loading a save
+            // impossible instead of safer.
+            //
+            // That situation is the worker bootstrap: `native_simulation_host.cpp`
+            // applies the ECP2 bundle to the economy runtime FIRST and installs it into
+            // the POD authority afterwards, so this capture reads a live state whose POD
+            // mirror is still empty (measured:
+            // `[save-shape] market_cell_to_market actual=0 expected=192`). Any OTHER
+            // failure -- a genuinely corrupt live state, a mid-apply leftover, a hash
+            // mismatch -- still fails closed exactly as before: silently applying over
+            // an unknown live state is how a rollback stops meaning anything.
+            //
+            // Allowlist, not "always": the previous revision skipped the backup on every
+            // failure, which is wider than the evidence justified.
+            //
+            // The two codes that mean "the POD mirror has not been restored yet":
+            //   * `economy_save_state_shape_invalid` -- `begin_save` refused because a
+            //     derived column was still empty (`market_cell_to_market 0 vs 192`).
+            //   * `ecp2_owned_state_capture_invalid:<ledger shape>` -- the owned ledger
+            //     could not be validated, i.e. the mirror is half-installed.
+            // Both can only happen before the POD state exists; a genuinely corrupt live
+            // state has different codes and still fails closed below.
+            const bool pod_mirror_not_restored =
+                backup_error == "economy_save_state_shape_invalid" ||
+                backup_error.rfind("ecp2_owned_state_capture_invalid", 0) == 0;
+            if (!pod_mirror_not_restored) {
+                error = "ecp2_atomic_backup_failed:" + backup_error;
+                set_restore_rejected_reason(error);
+                return false;
+            }
+            _last_restore_backup_skipped_reason = backup_error;
+        } else {
+            backup_ready = true;
         }
-        backup_ready = true;
     }
 
     std::string apply_error;

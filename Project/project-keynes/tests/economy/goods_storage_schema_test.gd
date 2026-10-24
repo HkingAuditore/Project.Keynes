@@ -421,7 +421,7 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
 	if not bool(save_begin.get("ok", false)):
 		print("  PKEC begin failed=", save_begin)
-	_expect("v56 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 56)
+	_expect("v57 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 57)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
@@ -1049,7 +1049,7 @@ func _new_ext(cells: int, temperature: float) -> Object:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, climate)
 	for slot_name in [&"cell_moisture", &"cell_plant_available_water", &"cell_weather_precip",
-			&"cell_snow_cover", &"cell_weather_intensity", &"cell_elevation"]:
+			&"cell_snow_cover", &"cell_weather_intensity", &"cell_elevation", &"cell_temp_365d"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, zero_f)
 	var terrain := PackedByteArray()
@@ -1069,6 +1069,8 @@ func _new_ext(cells: int, temperature: float) -> Object:
 	ext.write_u8_range(ext.register_component(&"cell_vegetation", 2, 1, false), 0, vegetation)
 	ext.write_u8_range(ext.register_component(&"cell_is_water", 2, 1, false), 0, zeros_u8)
 	ext.write_u8_range(ext.register_component(&"cell_has_river", 2, 1, false), 0, zeros_u8)
+	ext.write_u8_range(ext.register_component(&"cell_weather_type", 2, 1, false), 0, zeros_u8)
+	ext.write_u8_range(ext.register_component(&"cell_cover", 2, 1, false), 0, zeros_u8)
 	return ext
 
 func _worker_tasks_dispatched(report: Dictionary) -> bool:

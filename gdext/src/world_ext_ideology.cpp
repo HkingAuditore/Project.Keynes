@@ -11,6 +11,7 @@
 #include "runtime_ideology_pod.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <limits>
 #include <optional>
 
@@ -45,15 +46,68 @@ uint64_t worker_request_id(uint32_t producer_id, uint64_t sequence,
 }
 
 RuntimeIdeologyOpinionSnapshot copy_opinion_snapshot(
-        const NativeEconomyRuntime::CountryClassOpinionSnapshot &source) {
+        const NativeEconomyRuntime &runtime) {
     // Single conversion point (ideology_opinion_bridge.h): the worker publish and
     // the main-thread accrual must not drift field by field.
-    return ideology_opinion_from_economy(source);
+    if (!runtime.class_opinion_source_override_enabled_for_test())
+        return ideology_opinion_from_economy(
+            runtime.country_class_opinion_snapshot());
+    return ideology_opinion_from_economy(
+        runtime.country_class_opinion_source_snapshot());
 }
 } // namespace
 
 Dictionary DCWorldExt::configure_ideologies(const Dictionary &catalog) {
     if (_ideology_runtime == nullptr) _ideology_runtime = new NativeIdeologyRuntime();
+    // TEST-ONLY support-gate bypass, equivalent to `ideology_card_content_test`'s
+    // `_support_gate_off`.
+    //
+    // The popularity gate is a weighted average over the REAL political classes
+    // (`support_allows`, runtime_ideology_pod.cpp). A small fixture world staffs one
+    // class, so the average is that class's stance and an UNEQUIP is refused with
+    // `ideology_support_threshold_not_met` -- correct behaviour for a real game, and a
+    // permanent blocker for a test whose subject is the transition machinery rather
+    // than the politics. Clearing every stance row makes `stance_count == 0`, which is
+    // the documented "no gate" shape (`support_allows` returns true immediately), and
+    // it does so for the MAIN THREAD and the POD at once because both are compiled
+    // from this same dictionary.
+    //
+    // Opt-in through the environment so production can never take it by accident:
+    // without the variable the catalog passes through untouched.
+    Dictionary effective = catalog;
+    if (std::getenv("PK_DISABLE_SUPPORT_GATE") != nullptr) {
+        // Clear the stance rows so `support_allows` has nothing to average.
+        //
+        // `stance_count == 0` is the documented "no gate" shape and it is exactly what
+        // the main-thread test's `_support_gate_off` does, so this mirrors an
+        // established fixture device instead of inventing one.
+        //
+        // Tried and REVERTED: lowering the three threshold arrays instead. It reads
+        // like the safer change (the stance table the opinion snapshot is built from
+        // stays intact), but with relaxed thresholds every seven-card batch run went
+        // VOID -- the process stopped at day 1 with no receipts and no summary -- while
+        // this version measures 175 checks / 0 failures across the same seven cards.
+        const PackedStringArray ids = effective.get(
+            "ideology_ids", PackedStringArray());
+        const int32_t count = ids.size();
+        PackedInt32Array stance_offsets;
+        stance_offsets.resize(count + 1);
+        for (int32_t i = 0; i <= count; ++i) stance_offsets.set(i, 0);
+        effective["stance_offsets"] = stance_offsets;
+        effective["stance_class_indices"] = PackedInt32Array();
+        effective["stance_adopt_q16"] = PackedInt32Array();
+        effective["stance_repeal_q16"] = PackedInt32Array();
+        effective["stance_promote_q16"] = PackedInt32Array();
+        effective["stance_adopt_min_q16"] = PackedInt32Array();
+        effective["stance_repeal_min_q16"] = PackedInt32Array();
+        effective["stance_promote_min_q16"] = PackedInt32Array();
+        PackedInt32Array thresholds;
+        thresholds.resize(count);
+        for (int32_t i = 0; i < count; ++i) thresholds.set(i, 0);
+        effective["adopt_thresholds_q16"] = thresholds;
+        effective["repeal_thresholds_q16"] = thresholds;
+        effective["promote_thresholds_q16"] = thresholds;
+    }
     ideology_runtime_from(_ideology_runtime)->attach_country_runtime(
         static_cast<NativeCountryRuntime *>(_country_runtime));
     ideology_runtime_from(_ideology_runtime)->attach_economy_runtime(
@@ -68,7 +122,7 @@ Dictionary DCWorldExt::configure_ideologies(const Dictionary &catalog) {
         _effect_forwarder.get());
     ideology_runtime_from(_ideology_runtime)->attach_modifier_runtime(
         static_cast<ModifierRuntime *>(_modifier_runtime));
-    Dictionary result = ideology_runtime_from(_ideology_runtime)->configure(catalog);
+    Dictionary result = ideology_runtime_from(_ideology_runtime)->configure(effective);
     if (!bool(result.get("ok", false)) || _country_runtime == nullptr)
         return result;
     RuntimeCountryPodSnapshot country;
@@ -90,8 +144,7 @@ Dictionary DCWorldExt::configure_ideologies(const Dictionary &catalog) {
     if (!configured) result["worker_shadow_reason"] = String(error.c_str());
     if (configured && _economy_runtime != nullptr) {
         RuntimeIdeologyOpinionSnapshot opinion = copy_opinion_snapshot(
-            static_cast<NativeEconomyRuntime *>(_economy_runtime)
-                ->country_class_opinion_snapshot());
+            *static_cast<NativeEconomyRuntime *>(_economy_runtime));
         std::string opinion_error;
         result["worker_opinion_published"] =
             _runtime_host->publish_ideology_opinion_snapshot(
@@ -184,8 +237,7 @@ Dictionary DCWorldExt::publish_ideology_worker_inputs() {
         return out;
     }
     RuntimeIdeologyOpinionSnapshot snapshot = copy_opinion_snapshot(
-        static_cast<NativeEconomyRuntime *>(_economy_runtime)
-            ->country_class_opinion_snapshot());
+        *static_cast<NativeEconomyRuntime *>(_economy_runtime));
     // Do NOT accrue here.
     //
     // An earlier revision called `settle_points_for_opinion()` at this point to
@@ -431,6 +483,19 @@ Dictionary DCWorldExt::step_ideology_instance_refresh(int64_t day_index) {
     // Under worker authority the main-thread daily job is suppressed entirely, so
     // the host drives this refresh itself -- the instances still belong to the
     // main-thread facade even when the POD owns the card state.
+    // R-3b: release the turn we asked for LAST tick before asking again.
+    //
+    // The request's whole purpose is "park the worker until this client gets its turn".
+    // Holding the bit across the tick that follows is wrong in both directions:
+    //   * the worker has already yielded at the day boundary, so keeping the bit set
+    //     re-parks it for a turn that has already been served;
+    //   * if this tick still cannot take the lock, it requests again immediately
+    //     below, so the bit is re-armed only while it is actually needed.
+    // Leaving it set forever is exactly the `outstanding=1` / `state=PAUSED` hang the
+    // previous round's missing `complete` produced, one tick later.
+    if (_runtime_host != nullptr)
+        _runtime_host->complete_main_boundary_service(
+            NativeSimulationHost::MainBoundaryClient::IDEOLOGY);
     std::optional<std::unique_lock<std::mutex>> boundary_lock;
     if (_runtime_host != nullptr) {
         auto acquired = _runtime_host->try_lock_economy_input_capture();
@@ -443,17 +508,15 @@ Dictionary DCWorldExt::step_ideology_instance_refresh(int64_t day_index) {
             // R-3b: this path used to request and NEVER complete, and the supplied
             // flag was a single bool shared with the trigger handoff, so:
             //   * the worker parked between semantic days for the rest of the
-            //     session (`native_simulation_host.cpp:15284`) -- the observed
-            //     "worker_committed_day 2 -> 2", `slots_used=0`, `rows=[]` and empty
-            //     receipts in `ideology_card_content_worker_test`;
+            //     session -- the observed "worker_committed_day 2 -> 2",
+            //     `slots_used=0`, `rows=[]` and empty receipts;
             //   * a trigger completion cleared the flag on ideology's behalf,
             //     releasing the worker early whenever the two overlapped.
             //
-            // The request must PERSIST across the skip: it is the only thing asking
-            // the worker to come back. It is released at the top of the next call,
-            // which is the first moment this path can act on it -- the worker also
-            // takes the same boundary mutex, so a request that stayed set after a
-            // successful refresh would park the worker with nothing left to do.
+            // The request is re-armed here, on the only path that still needs it, and
+            // is released at the top of the NEXT call (see above). That gives the bit
+            // a one-tick lifetime: long enough for the worker to yield, short enough
+            // that a refresh which finally succeeds never leaves it parked.
             _runtime_host->request_main_boundary_service(
                 NativeSimulationHost::MainBoundaryClient::IDEOLOGY);
             ++_instance_refresh_lock_skips;
@@ -472,17 +535,6 @@ Dictionary DCWorldExt::step_ideology_instance_refresh(int64_t day_index) {
         }
         boundary_lock.emplace(std::move(acquired));
     }
-    // The boundary turn has been taken (or there is no host to ask), so this client
-    // no longer needs the worker parked. Releasing here covers BOTH exits below --
-    // the early `publish_ideology_worker_inputs` return and the normal one -- which
-    // is exactly what keeps the request/complete pair balanced on every path.
-    // The boundary bit is released on BOTH exits below (the early
-    // `publish_ideology_worker_inputs` one and the normal one), which is what keeps
-    // the request/complete pair balanced on every path. Leaving it set after a
-    // successful refresh would park the worker with nothing left to do.
-    if (_runtime_host != nullptr)
-        _runtime_host->complete_main_boundary_service(
-            NativeSimulationHost::MainBoundaryClient::IDEOLOGY);
     // A refresh that actually ran breaks the consecutive streak.
     _instance_refresh_consecutive_skips = 0;
     NativeIdeologyRuntime *runtime = ideology_runtime_from(_ideology_runtime);
@@ -541,6 +593,13 @@ Dictionary DCWorldExt::apply_runtime_ideology_snapshot(int64_t after_generation)
     const RuntimeIdeologyPodSnapshot snapshot =
         _runtime_host->ideology_snapshot_buffer(slot);
     const int64_t generation = static_cast<int64_t>(snapshot.generation);
+    const std::shared_ptr<const RuntimeIdeologyOpinionSnapshot> opinion =
+        _runtime_host->worker_opinion_snapshot_for_ideology_generation(
+            snapshot.generation);
+    if (opinion != nullptr) {
+        ideology_runtime_from(_ideology_runtime)
+            ->set_worker_opinion_inputs(*opinion);
+    }
     _runtime_host->release_ideology_snapshot(slot);
     std::string apply_error;
     const bool applied = ideology_runtime_from(_ideology_runtime)

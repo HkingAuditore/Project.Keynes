@@ -13,11 +13,38 @@ const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.g
 const IdeologyCatalogScript = preload("res://scripts/ideology/ideology_catalog.gd")
 const IdeologyEffectCatalogScript = preload("res://scripts/ideology/ideology_effect_catalog.gd")
 const IdeologyEffectDefinitionScript = preload("res://scripts/ideology/ideology_effect_definition.gd")
+const IdeologyEffectParameterScript = preload(
+	"res://scripts/ideology/ideology_effect_parameter.gd")
+const IdeologySynergyDefinitionScript = preload(
+	"res://scripts/ideology/ideology_synergy_definition.gd")
 const EraRewardCatalogScript = preload("res://scripts/effect/era_reward_catalog.gd")
 const TriggerCatalogScript = preload("res://scripts/trigger/trigger_catalog.gd")
 const TargetTagDictionaryScript = preload("res://scripts/effect/target_tag_dictionary.gd")
 
 const Q16_ONE := 65536
+
+## Ideology-local scalar ids appended after NativeEconomyRuntime's metric range.
+## No constant here: PackedStringArray construction is not a GDScript constant
+## expression. These are appended to the packaged `metric_keys` below.
+const SCALAR_METRIC_KEYS := [
+	"ideology.scalar.equipped_count",
+	"ideology.scalar.route_count.clan",
+	"ideology.scalar.route_count.cropland",
+	"ideology.scalar.route_count.era",
+	"ideology.scalar.route_count.fiscal",
+	"ideology.scalar.route_count.granary",
+	"ideology.scalar.route_count.labor",
+	"ideology.scalar.route_count.learning",
+	"ideology.scalar.route_count.livelihood",
+	"ideology.scalar.route_count.market",
+	"ideology.scalar.route_count.mining",
+	"ideology.scalar.route_count.season",
+	"ideology.scalar.route_count.terrain",
+	"ideology.scalar.route_count.thoroughfare",
+	"ideology.scalar.route_count.workshop",
+	"ideology.scalar.active_synergy_count",
+	"ideology.scalar.unlocked_era",
+]
 
 ## Builds the shared Effect IR from existing authoritative domain catalogs.
 ## Domain catalogs remain the source of truth; this only creates executable
@@ -149,7 +176,76 @@ static func build(family_effect_catalog_override: Resource = null,
 		# Distinct goods with at least one specialized cell (share >= 60%).
 		# Cannot be derived from tag counts: duplicates must collapse.
 		"country.distinct_specialized_good_count",
+		# R-4: net tax burden of this cell's cohorts over the current epoch, as a
+		# Q16 ratio (0 = untaxed, Q16_ONE = every unit of income taken).
+		"cell.net_tax_burden_q16",
+		# R-4: country treasury cash as a percentage of one year of national income,
+		# as a COUNT of percentage points (1 point = 1%). A ramp's `per` is a fraction
+		# of the value, so a count here is what the generator's lint expects.
+		"country.treasury_reserve_ratio_pct",
+		# --- 19 §3.2 reservation (ids 70..86) ---------------------------------
+		# Placeholders: the owning lane renames its key to the real metric name when
+		# it implements the sampler. A reserved.* key is never bound by the generator.
+		"cell.temperature_annual_q16",
+		"cell.dry_streak_days",
+		"cell.hazard_today_mask",
+		"cell.days_since_hazard",
+		"cell.temperature_anomaly_q16",
+		"cell.geo_flags",
+		"cell.waterway_component_size",
+		"country.class_satisfaction_q16",
+		"country.weighted_satisfaction_q16",
+		"country.completed_tech_count",
+		"country.completed_tech_count.agriculture",
+		"country.completed_tech_count.engineering",
+		"country.completed_tech_count.science",
+		"country.completed_tech_count.society",
+		"cell.family_branch_count",
+		"cell.max_branch_prestige_q16",
+		"cell.family_asset_share_q16",
+		"cell.neighbor_distinct_goods",
+		"country.hazard_free_cell_share_q16",
+		# X14 extension: committed `farmer` class satisfaction. This is a
+		# separate row from metric 77 (general) so petition_box can gate on the
+		# class the design names.
+		"country.farmer_satisfaction_q16",
+		# X9-b: country-level family aggregates rebuilt at FAMILY_COMMIT.
+		"country.family_remote_branch_count",
+		"country.families_with_at_least_3_branches",
+		"country.max_family_age_days",
+		"country.avg_family_age_days",
+		# X2 extension: count of the six neighbours whose agriculture output
+		# share is at least 50%. 95 remains a reserved X3-b slot.
+		"cell.neighbor_agriculture_count",
+		"reserved.x3b_95",
+		# X3-b profession shares, measured across the cell's known-profession
+		# population (the same denominator as metrics 51..53).
+		"cell.profession_share_farmer_q16",
+		"cell.profession_share_industrial_q16",
+		"cell.profession_share_cooperative_q16",
+		# X14 extension used by trade_unions: committed `worker` class satisfaction.
+		"country.worker_class_satisfaction_q16",
+		"reserved.x3b_100",
+		"reserved.x3b_101",
+		# X7-b: committed country counts for infrastructure/science cards.
+		"country.energy_cell_count",
+		"country.abundant_mountain_forest_cell_count",
+		"country.landform_signal_count",
+		"country.weather_signal_count",
+		"country.bio_signal_count",
+		# The allocation reserves 102-107 for X7-b but names only five
+		# mechanics; keep the final slot explicit rather than shifting a count.
+		"reserved.x7b_107",
 	])
+	# --- Ideology-local scalars -------------------------------------------
+	# These are not Economy metrics and are never sampled by
+	# NativeEconomyRuntime. NativeIdeologyRuntime fills them into the same
+	# per-instance slab immediately before reconciling the card's programs.
+	# Values are Q16 fixed-point counts; unlocked_era is also value*Q16.
+	# They append to whatever Economy declares: Economy owns the prefix and
+	# may grow without forcing this lane to guess or reserve a base id.
+	for scalar_metric_key in SCALAR_METRIC_KEYS:
+		catalog.metric_keys.append(String(scalar_metric_key))
 	catalog.behavior_command_keys = PackedStringArray()
 	var definitions: Array[Resource] = []
 
@@ -269,6 +365,14 @@ static func build(family_effect_catalog_override: Resource = null,
 						continue
 					definition_seen[program_key] = true
 					definitions.append(_family_definition(String(keys[i])))
+	# X5 rewrites name tag synonyms that do not exist in the base dictionary.
+	# Materialize them before either IdeologyCatalog.compile_native_catalog()
+	# call below can embed the dictionary size, and append only (ids are contract).
+	if bool(economy_catalog.get("ok", false)):
+		var rewrite_tags_error := _append_ideology_rewrite_tags(
+			tag_list, tag_ids)
+		if not rewrite_tags_error.is_empty():
+			return _reject(rewrite_tags_error)
 
 	# Precompile person programs from existing Modifier definitions. The native
 	# PERSON_COMMIT producer currently activates the gameplay.generic.bonus
@@ -332,6 +436,14 @@ static func build(family_effect_catalog_override: Resource = null,
 		if not bool(ideology_ir.get("ok", false)):
 			return _reject("effect_catalog_ideology_command_unavailable:%s" % String(
 				ideology_ir.get("reason", "")))
+		# `metric_keys` becomes the dense id table every native condition reads.
+		# A route with no scalar row would compile to an id that is never
+		# published, so enforce the pairing where both tables are available.
+		for route_key in ideology_ir.get("route_keys", PackedStringArray()):
+			var route_metric := "ideology.scalar.route_count.%s" % String(route_key)
+			if not catalog.metric_keys.has(route_metric):
+				return _reject("effect_catalog_ideology_route_scalar_missing:%s"
+					% String(route_key))
 		definitions.append(_ideology_command_definition(ideology_ir))
 	# Ideology declarative programs. A card effect row whose definition_key
 	# matches one of these keys is owned by the reconciliation path (conditions,
@@ -389,6 +501,101 @@ static func build(family_effect_catalog_override: Resource = null,
 	return catalog
 
 
+## Collect every distinct TAG rewrite replacement and append its union to the
+## shared dictionary. Returns "" on success or a fully-qualified rejection.
+##
+## The scan is driven by the default ideology catalog, not by the compiled
+## catalog, because compilation resolves override targets and route membership.
+## It deliberately tolerates a missing catalog (bare effect tests) and does not
+## mutate anything it cannot validate.
+static func _append_ideology_rewrite_tags(tag_list: Array, tag_ids: Dictionary) -> String:
+	if tag_list.is_empty() or tag_ids.is_empty():
+		return ""
+	var ideology_catalog: Resource = IdeologyCatalogScript.load_default()
+	if ideology_catalog == null or not ideology_catalog is IdeologyCatalogScript:
+		return ""
+	var expressions := PackedStringArray()
+	for synergy in ideology_catalog.synergies:
+		if synergy == null or not synergy is IdeologySynergyDefinitionScript:
+			continue
+		for override in synergy.overrides:
+			if override == null or not override is IdeologyEffectParameterScript:
+				continue
+			if int(override.field) != IdeologyEffectParameterScript.Field.TAG:
+				continue
+			var expression: String = override.tag_union_name()
+			if not expression.is_empty() and not expressions.has(expression):
+				expressions.append(expression)
+	if expressions.is_empty():
+		return ""
+	for expression in expressions:
+		if tag_ids.has(expression):
+			continue
+		var members := PackedStringArray(expression.split("|", false))
+		for member in members:
+			if not tag_ids.has(member):
+				return "effect_catalog_target_selector_tag_unknown:%s" % member
+		var union_error := _materialize_tag_union(members, tag_list, tag_ids)
+		if not union_error.is_empty():
+			return union_error
+		if not tag_ids.has(expression):
+			return "effect_catalog_target_tag_union_invalid:%s" % expression
+	return ""
+
+
+## Append a deterministic union tag for the requested member names. Names already
+## present need no work; every missing name must be a real atom/composite in the
+## dictionary, so a typo fails here rather than becoming a never-matching row.
+static func _materialize_tag_union(names: PackedStringArray, tag_list: Array,
+		tag_ids: Dictionary) -> String:
+	# Canonicalize the FULL member list, not only the names that happen to be
+	# missing. `coast|delta` needs a synthetic OR even when both atoms exist;
+	# otherwise the rewrite names an expression that no dictionary id owns.
+	var canonical := PackedStringArray()
+	for name in names:
+		if not canonical.has(name):
+			canonical.append(name)
+	canonical.sort()
+	if canonical.is_empty():
+		return "effect_catalog_target_tag_union_invalid"
+	var combined_name := "|".join(canonical)
+	if tag_ids.has(combined_name):
+		return ""
+	# Every member is validated by union(): only names already in the dictionary
+	# can be members. A replacement like `a|b` is materialized as one synthetic
+	# entry so downstream cards still reference one stable id.
+	var merged: Dictionary = TargetTagDictionaryScript.union(canonical, tag_list)
+	if not bool(merged.get("ok", false)):
+		return "effect_catalog_target_tag_union_invalid:%s" % String(
+			merged.get("reason", ""))
+	var composite := String(merged.get("name", ""))
+	if composite.is_empty():
+		return "effect_catalog_target_tag_union_invalid"
+	if not tag_ids.has(composite):
+		if tag_list.size() >= TargetTagDictionaryScript.MAX_TAGS:
+			return "effect_catalog_target_tag_table_over_capacity:%d" % (
+				tag_list.size() + 1)
+		tag_list.append({"name": composite, "rows": merged["rows"]})
+		tag_ids[composite] = tag_list.size()
+	return ""
+
+
+## Resolve a TAG rewrite expression to the id of its concrete dictionary entry.
+## Single names use the existing tag; `a|b` uses the sorted synthetic union
+## appended above. The caller has already validated every member.
+static func resolve_rewrite_tag_id(expression: String, tag_ids: Dictionary) -> int:
+	var canonical := PackedStringArray()
+	for part in expression.split("|", false):
+		var name := String(part).strip_edges()
+		if not name.is_empty() and not canonical.has(name):
+			canonical.append(name)
+	canonical.sort()
+	if canonical.is_empty():
+		return 0
+	var name := "|".join(canonical)
+	return int(tag_ids.get(name, 0))
+
+
 ## A null return here used to be silent, which made a broken catalog
 ## indistinguishable from a missing one. Every rejection now names itself.
 static func _reject(reason: String) -> Resource:
@@ -407,7 +614,20 @@ static func _apply_selector_tag(program: Resource, tag_name: StringName,
 		tag_ids: Dictionary) -> String:
 	if tag_name == &"":
 		return ""
-	var resolved := int(tag_ids.get(String(tag_name), 0))
+	var expression := String(tag_name)
+	var members := PackedStringArray(expression.split("|", false))
+	for index in range(members.size()):
+		members[index] = members[index].strip_edges()
+	if members.size() > 1:
+		var canonical := PackedStringArray()
+		for member in members:
+			if member.is_empty():
+				continue
+			if not canonical.has(member):
+				canonical.append(member)
+		canonical.sort()
+		expression = "|".join(canonical)
+	var resolved := int(tag_ids.get(expression, 0))
 	if resolved <= 0:
 		# Distinguish "no dictionary at all" from "typo": when the economy
 		# catalog failed to compile, every name looks unknown and the error
@@ -415,7 +635,7 @@ static func _apply_selector_tag(program: Resource, tag_name: StringName,
 		var reason := "effect_catalog_target_selector_tag_unknown" \
 			if not tag_ids.is_empty() \
 			else "effect_catalog_target_selector_tag_no_dictionary"
-		return "%s:%s:%s" % [reason, String(program.key), String(tag_name)]
+		return "%s:%s:%s" % [reason, String(program.key), expression]
 	return _write_selector_tag_id(program, resolved)
 
 
@@ -435,7 +655,33 @@ static func _apply_selector_tags(program: Resource, names: PackedStringArray,
 		tag_list: Array, tag_ids: Dictionary) -> String:
 	if names.is_empty():
 		return ""
+	var selector_kind := int(program.target_selector_kind)
+	if selector_kind <= 0 or selector_kind > EffectCatalogScript.POD_MAX_SELECTOR_KIND:
+		return ""
 	if names.size() == 1:
+		var union_members := PackedStringArray()
+		for part in String(names[0]).split("|", false):
+			var member := String(part).strip_edges()
+			if not member.is_empty() and not union_members.has(member):
+				union_members.append(member)
+		union_members.sort()
+		if union_members.size() > 1:
+			if tag_ids.is_empty():
+				return "effect_catalog_target_selector_tag_no_dictionary:%s:%s" % [
+					String(program.key), String(names[0])]
+			for member in union_members:
+				if int(tag_ids.get(member, 0)) <= 0:
+					return "effect_catalog_target_selector_tag_unknown:%s:%s" % [
+						String(program.key), member]
+			var union_error := _materialize_tag_union(
+				union_members, tag_list, tag_ids)
+			if not union_error.is_empty():
+				return "%s:%s" % [union_error, String(program.key)]
+			var resolved := int(tag_ids.get("|".join(union_members), 0))
+			if resolved <= 0:
+				return "effect_catalog_target_tag_union_invalid:%s" % String(
+					program.key)
+			return _write_selector_tag_id(program, resolved)
 		return _apply_selector_tag(program, StringName(names[0]), tag_ids)
 	if tag_ids.is_empty():
 		return "effect_catalog_target_selector_tag_no_dictionary:%s:%s" % [
@@ -443,11 +689,31 @@ static func _apply_selector_tags(program: Resource, names: PackedStringArray,
 	# Check membership before folding so an unknown name reports the same
 	# `tag_unknown` invariant the single-name path reports, rather than a
 	# budget/duplicate reason that points the reader at the wrong thing.
+	var selector_names := PackedStringArray()
 	for name in names:
-		if int(tag_ids.get(String(name), 0)) <= 0:
+		var members := PackedStringArray()
+		for part in String(name).split("|", false):
+			var member := String(part).strip_edges()
+			if not member.is_empty() and not members.has(member):
+				members.append(member)
+		members.sort()
+		for member in members:
+			if int(tag_ids.get(member, 0)) <= 0:
+				return "effect_catalog_target_selector_tag_unknown:%s:%s" % [
+					String(program.key), member]
+		if members.size() > 1:
+			var union_error := _materialize_tag_union(members, tag_list, tag_ids)
+			if not union_error.is_empty():
+				return "%s:%s" % [union_error, String(program.key)]
+		else:
+			members = PackedStringArray([String(name)])
+		var resolved_name := "|".join(members)
+		if int(tag_ids.get(resolved_name, 0)) <= 0:
 			return "effect_catalog_target_selector_tag_unknown:%s:%s" % [
 				String(program.key), String(name)]
-	var merged: Dictionary = TargetTagDictionaryScript.intersection(names, tag_list)
+		selector_names.append(resolved_name)
+	var merged: Dictionary = TargetTagDictionaryScript.intersection(
+		selector_names, tag_list)
 	if not bool(merged.get("ok", false)):
 		return "effect_catalog_target_selector_intersection:%s:%s" % [
 			String(program.key), String(merged.get("reason", ""))]

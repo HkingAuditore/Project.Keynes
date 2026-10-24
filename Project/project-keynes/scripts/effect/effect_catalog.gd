@@ -22,7 +22,7 @@ const Q16_ONE := 65536
 ## (the main thread resolves cells and passes a target_handle) and reads state
 ## through one shared switch, so both ceilings track the main thread's, not a
 ## narrower subset. Keep the two files in step.
-const POD_MAX_SELECTOR_KIND := 15
+const POD_MAX_SELECTOR_KIND := 17
 ## 5 = STATE_LATCHED (previous evaluation's condition result). Ids are
 ## append-only on both sides; bumping this without the matching case in
 ## RuntimeEffectPodAuthority::state_value trips
@@ -246,7 +246,7 @@ func compile_native_catalog() -> Dictionary:
 					return {"ok": false,
 						"reason": "target_tag_metric_not_declared:" + metric_key}
 				var op := int(row.get("op", 0))
-				if op < 0 or op >= 4:
+				if op < 0 or op >= 5:
 					return {"ok": false, "reason": "target_tag_op_invalid"}
 				var clause := int(row.get("clause", 0))
 				if clause < previous_clause:
@@ -344,8 +344,11 @@ static func _native_command_error(command: Resource) -> String:
 			if command.domain != 4 or command.opcode <= 0:
 				return "effect_publish_event_opcode_unregistered"
 		6:
-			if command.domain != 6 or command.opcode != 1:
+			if command.domain != 6 or command.opcode not in [1, 2, 3]:
 				return "effect_custom_domain_adapter_unregistered"
+			if command.opcode == 3 and (command.value_q16 <= 0 \
+					or command.value_q16 > 65535):
+				return "effect_ideology_free_draw_count_invalid"
 		_:
 			return "effect_command_action_unregistered"
 	return ""

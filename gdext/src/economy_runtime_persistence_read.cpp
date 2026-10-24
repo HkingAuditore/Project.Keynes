@@ -3,8 +3,10 @@
 #include "economy_runtime_binary_codec.h"
 #include "economy_runtime_persistence_codec.h"
 #include "modifier_runtime.h"
+#include "pk_log.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <limits>
 #include <unordered_map>
 #include <unordered_set>
@@ -31,9 +33,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    // Explicit v55 -> v56 migration: ordinary offers gain a zero source
-    // handle and an empty lineage table; all previous hashes stay unchanged.
-    if (schema != SCHEMA_VERSION && schema != 55) {
+    // v55/v56 migrate to v57 by starting the X13a counters at zero.
+    if (schema != SCHEMA_VERSION && schema != 56 && schema != 55) {
         error = "economy_save_price_v6_requires_new_game";
         return false;
     }
@@ -558,10 +559,57 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 : (_country_runtime != nullptr
                     ? static_cast<uint64_t>(_country_runtime->state_hash())
                     : 0);
+        // LOAD ORDER EXCEPTION (worker start after a save).
+        //
+        // The worker-start path applies the ECP2 bundle to Economy BEFORE Country is
+        // installed (`native_simulation_host.cpp`), so at this moment the live Country is
+        // still the freshly bootstrapped one -- measured:
+        // `saved_gen=19 live_gen=1 saved_hash=325166771088284131
+        //  live_hash=1824313771786949620`. Comparing hashes then can only fail, which is
+        // how every load of a real save ended in
+        // `economy_country_restore_order_or_hash_mismatch` -> `runtime_worker_start_failed`.
+        //
+        // `_accept_stale_country_identity` is set ONLY by the host while it is installing
+        // a restore bundle, and cleared as soon as that start proceeds. Outside that
+        // window the comparison is exactly as strict as before: applying an ECP2 to a
+        // live economy whose Country has moved is a real corruption and must still fail.
+        //
+        // What this does NOT give up: the archive's expected identity is recorded here
+        // and re-checked by the Host once the PKCN checkpoint is installed
+        // (`NativeEconomyRuntime::verify_deferred_country_identity`). Deferring the
+        // comparison is only legitimate because somebody still performs it -- an
+        // archive whose Country bytes and Economy bytes come from different saves must
+        // still fail to start the worker. The other shape checks
+        // (`country_schema_compatible`, generation sanity, building/trade counts) run
+        // in both cases.
+        const bool country_identity_deferred = _accept_stale_country_identity;
+        if (country_identity_deferred) {
+            _deferred_country_generation = country_generation;
+            _deferred_country_state_hash = country_hash;
+            _deferred_country_identity_recorded = true;
+        }
         if (_country_runtime == nullptr || !_country_runtime->economy_available() ||
             !country_schema_compatible ||
-            country_generation != _country_runtime->generation() ||
-            country_hash != expected_country_hash) {
+            (!country_identity_deferred && (
+                country_generation != _country_runtime->generation() ||
+                country_hash != expected_country_hash))) {
+            if (std::getenv("PK_COUNTRY_HASH_PROBE") != nullptr)
+                pk::log_error("[country-hash] saved_schema=%u live_schema=%d "
+                    "saved_gen=%llu live_gen=%llu saved_hash=%llu live_hash=%llu "
+                    "compatible=%d economy_available=%d deferred=%d",
+                    country_schema,
+                    _country_runtime == nullptr ? -1
+                        : NativeCountryRuntime::SCHEMA_VERSION,
+                    static_cast<unsigned long long>(country_generation),
+                    static_cast<unsigned long long>(
+                        _country_runtime == nullptr ? 0
+                            : _country_runtime->generation()),
+                    static_cast<unsigned long long>(country_hash),
+                    static_cast<unsigned long long>(expected_country_hash),
+                    country_schema_compatible ? 1 : 0,
+                    (_country_runtime != nullptr &&
+                     _country_runtime->economy_available()) ? 1 : 0,
+                    country_identity_deferred ? 1 : 0);
             error = "economy_country_restore_order_or_hash_mismatch";
             return false;
         }
@@ -698,6 +746,14 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _environment_precipitation_q16.assign(_cell_count.get(), 0);
         _environment_snow_q16.assign(_cell_count.get(), 0);
         _environment_weather_q16.assign(_cell_count.get(), 0);
+        _cell_temperature_annual_q16.assign(_cell_count.get(), Q16_ONE / 2);
+        _cell_temperature_anomaly_q16.assign(_cell_count.get(), 0);
+        _cell_hazard_today_mask.assign(_cell_count.get(), 0);
+        _cell_dry_streak_days.assign(_cell_count.get(), 0);
+        _cell_days_since_hazard.assign(_cell_count.get(), 0);
+        _cell_previous_hazard_mask.assign(_cell_count.get(), 0);
+        _cell_weather_type.assign(_cell_count.get(), 0);
+        _cell_cover.assign(_cell_count.get(), 0);
         _cell_living_cost_per_capita.assign(_cell_count.get(), 0);
         _epoch_cell_development_q16.assign(_cell_count.get(), 0);
         _cell_social_pressure_level.assign(_cell_count.get(), 0);
@@ -724,6 +780,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             static_cast<size_t>(_cell_count.get()) * CARRYING_FAMILY_COUNT, 0);
         _environment_day = environment_day;
         _environment_hash = environment_hash;
+        _restore.environment_hash = environment_hash;
         _epoch_days = epoch_days;
         _commit_lag_budget_days = std::max(0, epoch_days - 1);
         if (schema >= 38) {
@@ -1069,6 +1126,32 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 }
                 _food_flow_previous_period_days = std::max(
                     _food_flow_previous_period_days.get(), saved_food_days);
+            }
+            if (schema >= 57) {
+                int32_t saved_dry_streak = 0;
+                int32_t saved_days_since_hazard = 0;
+                uint8_t saved_hazard_mask = 0;
+                if (!read_le(bytes, cursor, saved_dry_streak) ||
+                    !read_le(bytes, cursor, saved_days_since_hazard) ||
+                    !read_le(bytes, cursor, saved_hazard_mask) ||
+                    saved_dry_streak < 0 || saved_dry_streak > 3650 ||
+                    saved_days_since_hazard < 0 ||
+                    saved_days_since_hazard > 3650 ||
+                    saved_hazard_mask > 0x0F) {
+                    error = "save_climate_state_invalid";
+                    return false;
+                }
+                _cell_dry_streak_days.write_scalar(
+                    cell, saved_dry_streak, market_mutation_sink());
+                _cell_days_since_hazard.write_scalar(
+                    cell, saved_days_since_hazard, market_mutation_sink());
+                _cell_previous_hazard_mask.write_scalar(
+                    cell, saved_hazard_mask, market_mutation_sink());
+                // The saved byte is the last committed hazard. Seed today's
+                // derived lane so the first post-restore capture preserves it
+                // as yesterday's edge input.
+                _cell_hazard_today_mask.write_scalar(
+                    cell, saved_hazard_mask, market_mutation_sink());
             }
             market_store().cell_to_market.write_scalar(cell, market, market_mutation_sink());
             ++_restore.restored_cells;

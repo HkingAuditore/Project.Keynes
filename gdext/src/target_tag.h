@@ -47,7 +47,8 @@ enum TargetTagOp : int32_t {
     TARGET_TAG_LTE = 1,
     TARGET_TAG_EQ = 2,
     TARGET_TAG_NEQ = 3,
-    TARGET_TAG_OP_COUNT = 4,
+    TARGET_TAG_BIT_SET = 4,
+    TARGET_TAG_OP_COUNT = 5,
 };
 
 struct TargetTagRow {
@@ -184,6 +185,8 @@ public:
             case TARGET_TAG_LTE: return value <= row.threshold_q16;
             case TARGET_TAG_EQ: return value == row.threshold_q16;
             case TARGET_TAG_NEQ: return value != row.threshold_q16;
+            case TARGET_TAG_BIT_SET:
+                return (value & row.threshold_q16) != 0;
             default: return false;
         }
     }

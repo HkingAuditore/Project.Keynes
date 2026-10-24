@@ -95,11 +95,27 @@ constexpr uint32_t RUNTIME_ECONOMY_D7_ALL_GATE_MASK =
 //
 // Namespace scope, not nested: the class both stores it and reads it from another
 // translation unit, and a nested private type cannot be named there.
+//
+// The array length MUST be the real metric count. `FAMILY_METRIC_COUNT` lives inside
+// `NativeEconomyRuntime`, which is declared AFTER this struct, so the length used to be
+// the literal `68` -- and when R-4 appended metrics 68 and 69 nobody widened it. The
+// result was a 2-element heap overwrite on every publish that touched a new metric:
+// `economy_runtime_family_buff.cpp` does `++next->metric_revision[slot]` for
+// `slot == 68/69`, and Windows logged ~65 `0xc0000374` (heap corruption) crashes from
+// 14:27 on. A card reading metric 68 (`land_tax_reform` L3, `light_levy`) triggered it
+// every time, which is why the worker tests "stopped at day 1" -- the process died, it
+// did not get slow.
+//
+// `PK_EFFECT_INPUT_METRIC_REVISION_CAPACITY` is the namespace-scope mirror of
+// `FAMILY_METRIC_COUNT`; the `static_assert` below the enum keeps the two in lockstep.
+constexpr int32_t PK_EFFECT_INPUT_METRIC_REVISION_CAPACITY = 108;
+
 struct EffectInputSnapshot {
     uint64_t generation = 0;
     uint64_t territory_revision = 0;
     uint64_t tag_revision = 0;
-    std::array<uint64_t, 68> metric_revision{};
+    uint64_t family_revision = 0;
+    std::array<uint64_t, PK_EFFECT_INPUT_METRIC_REVISION_CAPACITY> metric_revision{};
 };
 
 // R-3: the per-epoch tag tables, published once and then READ ONLY.
@@ -204,7 +220,8 @@ public:
     // stores milestone counts, open founding offers, queued choices, and
     // preselected founding effects.
     // 56: player-reviewed branch splits and persistent split lineage.
-    static constexpr int32_t SCHEMA_VERSION = 56;
+    // 57: X13a climate derived columns and persistent dry/hazard counters.
+    static constexpr int32_t SCHEMA_VERSION = 57;
     static constexpr uint32_t BUILDING_KIT_ROLE_TRADE = 1u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CONSTRUCTION = 2u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CLOTHING_INPUT = 4u;
@@ -516,16 +533,112 @@ public:
         // derived from tag counts: two cells producing the same good must
         // collapse into one.
         FAMILY_METRIC_COUNTRY_DISTINCT_SPECIALIZED_GOOD_COUNT = 67,
+        // Net tax burden of this cell's cohorts over the current epoch, Q16 ratio of
+        // (tax paid - subsidy received) to gross cash + in-kind income. Clamped to
+        // [0, Q16_ONE]; a cell with no income reports Q16_ONE (fully burdened) only
+        // when it also paid tax, otherwise Q16_ONE is the "no signal" value the
+        // generator's ramp expects for an empty cell. Uses the same
+        // ACCOUNTING_EPOCH_BIT parity as `touch_accounting_slot`, so a cohort that has
+        // not booked this epoch counts as 0 instead of leaking last epoch's numbers.
+        FAMILY_METRIC_CELL_NET_TAX_BURDEN_Q16 = 68,
+        // Country treasury cash as a percentage of one year of national population
+        // income (1 point = 1%), clamped to [0, 1000]. Frozen per country per epoch.
+        // v0 denominator is a 365-day extrapolation of the live `income_ema`; the true
+        // rolling-year accumulator would add save state and is deferred (09 §8).
+        FAMILY_METRIC_COUNTRY_TREASURY_RESERVE_RATIO_PCT = 69,
+        // ── 19 §3.2 reservation: ids 70..86 ─────────────────────────────────
+        // Pre-allocated in one commit so parallel lanes only FILL a slot and never
+        // change the total (which would conflict on every merge). Until a lane
+        // implements its slot the sampler leaves it at 0 and the GDScript key is a
+        // `reserved.*` placeholder, so the generator cannot bind a card to it.
+        // Owner docs: 70-74 X13 (16), 75-76 X12, 77-78 X14, 79-83 X10, 84-86 X9-a (17).
+        FAMILY_METRIC_CELL_TEMPERATURE_ANNUAL_Q16 = 70,
+        FAMILY_METRIC_CELL_DRY_STREAK_DAYS = 71,
+        FAMILY_METRIC_CELL_HAZARD_TODAY_MASK = 72,
+        FAMILY_METRIC_CELL_DAYS_SINCE_HAZARD = 73,
+        FAMILY_METRIC_CELL_TEMPERATURE_ANOMALY_Q16 = 74,
+        // X12: raw integer bitmask (river=1, coastal=2, canal=4, border=8).
+        FAMILY_METRIC_CELL_GEO_FLAGS = 75,
+        // X12: connected river/canal component size, encoded as count_q16.
+        FAMILY_METRIC_CELL_WATERWAY_COMPONENT_SIZE = 76,
+        // X14: committed class opinion. The catalog currently has four
+        // political classes, which do not fit 77..78, so 77 is the most-used
+        // class ("general") and 78 is the population-weighted country value.
+        FAMILY_METRIC_COUNTRY_CLASS_SATISFACTION_Q16 = 77,
+        FAMILY_METRIC_COUNTRY_WEIGHTED_SATISFACTION_Q16 = 78,
+        FAMILY_METRIC_COUNTRY_COMPLETED_TECH_COUNT = 79,
+        FAMILY_METRIC_COUNTRY_COMPLETED_TECH_COUNT_DOMAIN_0 = 80,
+        FAMILY_METRIC_COUNTRY_COMPLETED_TECH_COUNT_DOMAIN_1 = 81,
+        FAMILY_METRIC_COUNTRY_COMPLETED_TECH_COUNT_DOMAIN_2 = 82,
+        FAMILY_METRIC_COUNTRY_COMPLETED_TECH_COUNT_DOMAIN_3 = 83,
+        // X9-a: per-cell family aggregates. The branch table already holds the
+        // authoritative rows; these are derived and never persisted.
+        FAMILY_METRIC_CELL_FAMILY_BRANCH_COUNT = 84,
+        FAMILY_METRIC_CELL_MAX_BRANCH_PRESTIGE_Q16 = 85,
+        FAMILY_METRIC_CELL_FAMILY_ASSET_SHARE_Q16 = 86,
+        // X8: distinct dominant output goods among the six neighbours. Derived
+        // at the commit tail; no Economy column or save-schema field owns it.
+        FAMILY_METRIC_CELL_NEIGHBOR_DISTINCT_GOODS = 87,
+        // X13 residual used by mandate_of_heaven: share of this country's owned
+        // cells whose days_since_hazard is at least 365, as a Q16 ratio.
+        FAMILY_METRIC_COUNTRY_HAZARD_FREE_CELL_SHARE_Q16 = 88,
+        // X14 extension: the committed `farmer` political-class satisfaction.
+        // Unlike metric 77 (general) this row is what petition_box's point-gain
+        // gate reads. Appended so existing ids remain stable.
+        FAMILY_METRIC_COUNTRY_FARMER_SATISFACTION_Q16 = 89,
+        // X9-b: country-level family aggregates rebuilt at FAMILY_COMMIT from
+        // the live family/branch tables. Counts and ages are encoded with
+        // count_q16 so the generator can use ordinary count ramps.
+        FAMILY_METRIC_COUNTRY_FAMILY_REMOTE_BRANCH_COUNT = 90,
+        FAMILY_METRIC_COUNTRY_FAMILIES_WITH_AT_LEAST_3_BRANCHES = 91,
+        FAMILY_METRIC_COUNTRY_MAX_FAMILY_AGE_DAYS = 92,
+        FAMILY_METRIC_COUNTRY_AVG_FAMILY_AGE_DAYS = 93,
+        // X2 extension: number of the six neighbors that are agriculture
+        // pillars (agriculture output share >= 50%, the same definition as the
+        // `cell.sector.agriculture` tag). Terrace farming's L3 clause gates on
+        // this without requiring a terrain-specific tag count.
+        FAMILY_METRIC_CELL_NEIGHBOR_AGRICULTURE_COUNT = 94,
+        // Still reserved by the original X3-b allocation.
+        FAMILY_METRIC_RESERVED_95 = 95,
+        // X3-b: population shares for the profession groups that the
+        // cooperative/mechanized-farming/trade-union cards name. The share
+        // denominator is the cell population assigned to known professions,
+        // consistent with metrics 51..53. Employment is a separate X3 reading.
+        FAMILY_METRIC_CELL_PROFESSION_SHARE_FARMER_Q16 = 96,
+        FAMILY_METRIC_CELL_PROFESSION_SHARE_INDUSTRIAL_Q16 = 97,
+        FAMILY_METRIC_CELL_PROFESSION_SHARE_COOPERATIVE_Q16 = 98,
+        // X14 extension: the committed `worker` political-class satisfaction.
+        // This is the class trade_unions gates on; metric 77 remains `general`.
+        FAMILY_METRIC_COUNTRY_WORKER_CLASS_SATISFACTION_Q16 = 99,
+        FAMILY_METRIC_RESERVED_100 = 100,
+        FAMILY_METRIC_RESERVED_101 = 101,
+        // X7-b: IDs 102-107 are reserved by the fixed cross-lane allocation.
+        // Five metrics use five ids; 107 stays an explicit empty slot so this
+        // lane keeps the 102-107 range without inventing a sixth mechanic.
+        FAMILY_METRIC_COUNTRY_ENERGY_CELL_COUNT = 102,
+        FAMILY_METRIC_COUNTRY_ABUNDANT_MOUNTAIN_FOREST_CELL_COUNT = 103,
+        FAMILY_METRIC_COUNTRY_LANDFORM_SIGNAL_COUNT = 104,
+        FAMILY_METRIC_COUNTRY_WEATHER_SIGNAL_COUNT = 105,
+        FAMILY_METRIC_COUNTRY_BIO_SIGNAL_COUNT = 106,
+        FAMILY_METRIC_RESERVED_107 = 107,
         // The selection set is a MetricMask (256 ids), so this count may grow
         // past 64 -- it just must not exceed MetricMask::CAPACITY, which the
         // static_assert below pins at compile time. Ids are the array index, so
         // new rows MUST be appended; reordering silently changes what every
         // existing card measures.
-        FAMILY_METRIC_COUNT = 68,
+        FAMILY_METRIC_COUNT = 108,
     };
     static_assert(FAMILY_METRIC_COUNT <= MetricMask::CAPACITY,
         "FAMILY_METRIC_COUNT exceeds MetricMask::CAPACITY; widen the mask "
         "before appending metric ids");
+    // `EffectInputSnapshot::metric_revision` is indexed by metric id and is written as
+    // `++next->metric_revision[slot]`, so its length must BE the metric count. A short
+    // array is a heap overwrite, not a truncation, and it took ~65 `0xc0000374` crashes
+    // to notice. Pinning the two constants together here makes appending a metric
+    // without widening the array a compile error.
+    static_assert(FAMILY_METRIC_COUNT == PK_EFFECT_INPUT_METRIC_REVISION_CAPACITY,
+        "FAMILY_METRIC_COUNT and PK_EFFECT_INPUT_METRIC_REVISION_CAPACITY must match: "
+        "EffectInputSnapshot::metric_revision is indexed by metric id");
 
     enum FamilyBehaviorDirtyReason : uint32_t {
         FAMILY_BEHAVIOR_DIRTY_INITIAL = 1u << 0u,
@@ -726,6 +839,22 @@ public:
     }
     void attach_trigger_runtime(TriggerRuntime *runtime) { _trigger_runtime = runtime; }
     bool valid_family_effect_entity_handle(uint64_t handle) const;
+    // X9-b ideology family targeting. FAMILY_COMMIT owns both the family and
+    // branch tables, so resolution stays on this side of the domain boundary.
+    bool valid_family_effect_target_handle(uint64_t handle) const;
+    void collect_family_effect_target_handles(int32_t country_slot,
+        int32_t min_branches, int32_t cap,
+        std::vector<uint64_t> &out_handles) const;
+    // Worker fixtures use this to exercise the authored >=3 branch clause with
+    // the one founder branch a headless world can create. It may only relax the
+    // authored floor; 0 disables the override.
+    void set_family_target_min_branches_override_for_test(int32_t min_branches);
+    int32_t family_target_min_branches_for_test(int32_t authored_min) const {
+        return _family_target_min_branches_override_for_test > 0
+            ? std::min(authored_min,
+                _family_target_min_branches_override_for_test)
+            : authored_min;
+    }
     void notify_era_milestone_activated(uint64_t country_handle);
     bool country_restore_allowed() const {
         return !_bootstrapped && !_save.active && !_restore.active;
@@ -814,7 +943,10 @@ public:
                              const float *plant_available_water,
                              const float *precipitation,
                              const float *snow_cover,
-                             const float *weather_intensity, int32_t count,
+                             const float *weather_intensity,
+                             const float *temperature_365d,
+                             const uint8_t *weather_type,
+                             const uint8_t *cover, int32_t count,
                              std::string &error);
     bool needs_environment_capture(int64_t day_index) const {
         return !_epoch_active && day_index > _last_committed_day &&
@@ -1178,6 +1310,78 @@ public:
     uint64_t canal_topology_hash() const {
         return _trade_topology.ready ? _trade_topology.topology_hash : 0;
     }
+    uint64_t geo_flags_rebuilds() const {
+        return _geo_flags_rebuilds.load(std::memory_order_relaxed);
+    }
+    uint64_t family_cell_metric_rebuilds() const {
+        return _family_cell_metric_rebuilds.load(std::memory_order_relaxed);
+    }
+    uint64_t family_country_metric_rebuilds() const {
+        return _family_country_metric_rebuilds.load(std::memory_order_relaxed);
+    }
+    uint64_t class_metric_rebuilds() const {
+        return _class_metric_rebuilds.load(std::memory_order_relaxed);
+    }
+    int64_t class_metric_source_revision() const {
+        return static_cast<int64_t>(_class_metric_source_revision);
+    }
+    int64_t class_metric_source_epoch_day() const {
+        return _class_metric_source_epoch_day;
+    }
+    uint64_t class_metric_source_content_hash() const {
+        return _class_metric_source_content_hash;
+    }
+    // Test-only: runs the same refresh as the epoch boundary without advancing
+    // the simulation. Used to synchronize a fixture with the already-committed
+    // snapshot before measuring.
+    void refresh_class_opinion_metrics_for_test() {
+        refresh_class_opinion_metrics();
+    }
+    const std::vector<int64_t> &class_metric_satisfaction_q16() const {
+        return _epoch_country_class_satisfaction_q16;
+    }
+    const std::vector<int64_t> &class_metric_weighted_satisfaction_q16() const {
+        return _epoch_country_weighted_satisfaction_q16;
+    }
+    const std::vector<int64_t> &class_metric_farmer_satisfaction_q16() const {
+        return _epoch_country_farmer_satisfaction_q16;
+    }
+    const std::vector<int64_t> &class_metric_worker_satisfaction_q16() const {
+        return _epoch_country_worker_satisfaction_q16;
+    }
+    uint64_t technology_metric_rebuilds() const {
+        return _technology_metric_rebuilds.load(std::memory_order_relaxed);
+    }
+    uint64_t technology_metric_source_hash() const {
+        return _technology_metric_source_hash;
+    }
+    uint64_t neighbor_distinct_goods_source_hash() const {
+        return _neighbor_distinct_goods_source_hash;
+    }
+    // Test-only: replace the captured country technology bitset with an exact
+    // shape, then run the production hash-gated refresh.
+    void set_epoch_country_technologies_for_test(
+        const std::vector<uint64_t> &bits);
+    void clear_epoch_country_technologies_for_test();
+    int32_t epoch_country_count_for_test() const {
+        return _epoch_country_count;
+    }
+    int32_t epoch_country_technology_words_for_test() const {
+        return _epoch_country_technology_words;
+    }
+    int64_t epoch_country_technology_word_for_test(
+            int32_t country, int32_t word) const {
+        if (country < 0 || word < 0) return 0;
+        const size_t index =
+            static_cast<size_t>(country) *
+                static_cast<size_t>(_epoch_country_technology_words) +
+            static_cast<size_t>(word);
+        return index < _epoch_country_technologies.size()
+            ? static_cast<int64_t>(_epoch_country_technologies[index]) : 0;
+    }
+    void refresh_technology_metrics_for_test() {
+        refresh_technology_metrics();
+    }
     // Bounded, read-only payload used by the Effect gameplay adapter. The
     // route remains Economy-owned until the Effect transaction is ACKED.
     bool canal_project_commit_payload(uint64_t project_handle,
@@ -1189,6 +1393,10 @@ public:
     struct CountryClassOpinionSnapshot {
         uint64_t revision = 0;
         uint64_t class_hash = 0;
+        // Hash of the country-level values derived for metrics 77/78. Revision
+        // advances on every publish, but the copied metric content must reuse
+        // when these values are unchanged.
+        uint64_t class_metric_content_hash = 0;
         int64_t epoch_day = -1;
         int64_t commit_day = -1;
         // Development period this snapshot describes, and the period length in
@@ -1218,6 +1426,12 @@ public:
         return _class_opinion_buffers[
             static_cast<size_t>(_class_opinion_committed_buffer)];
     }
+    // Test-only publication view. The X14 override already drives the derived
+    // country metrics, but the Ideology worker consumes the raw row snapshot.
+    // Returning a copy keeps the committed buffer immutable while exposing the
+    // overridden rows and the country totals derived from them.
+    bool class_opinion_source_override_enabled_for_test() const;
+    CountryClassOpinionSnapshot country_class_opinion_source_snapshot() const;
     godot::Dictionary country_class_opinion_snapshot_debug() const;
 
     // Country AI boundary (see docs/cpp-dots-runtime/country-ai-runtime.md).
@@ -4550,6 +4764,7 @@ private:
         int32_t restored_cells = 0;
         int32_t restored_commands = 0;
         int32_t schema_version = 0;
+        int64_t environment_hash = 0;
         int32_t restored_buildings = 0;
         int32_t restored_construction = 0;
         int32_t expected_audits = 0;
@@ -6221,6 +6436,14 @@ private:
     EconomyOwnedColumn<int32_t> _environment_precipitation_q16{{{16, 39}, "persisted_columns.environment_precipitation_q16", EconomyFieldEncoding::I32, 4}};
     EconomyOwnedColumn<int32_t> _environment_snow_q16{{{16, 40}, "persisted_columns.environment_snow_q16", EconomyFieldEncoding::I32, 4}};
     EconomyOwnedColumn<int32_t> _environment_weather_q16{{{16, 43}, "persisted_columns.environment_weather_q16", EconomyFieldEncoding::I32, 4}};
+    EconomyOwnedColumn<int32_t> _cell_temperature_annual_q16{{{16, 52}, "persisted_columns.cell_temperature_annual_q16", EconomyFieldEncoding::I32, 4}};
+    EconomyOwnedColumn<int32_t> _cell_temperature_anomaly_q16{{{16, 53}, "persisted_columns.cell_temperature_anomaly_q16", EconomyFieldEncoding::I32, 4}};
+    EconomyOwnedColumn<int32_t> _cell_hazard_today_mask{{{16, 54}, "persisted_columns.cell_hazard_today_mask", EconomyFieldEncoding::I32, 4}};
+    EconomyOwnedColumn<int32_t> _cell_dry_streak_days{{{16, 55}, "persisted_columns.cell_dry_streak_days", EconomyFieldEncoding::I32, 4}};
+    EconomyOwnedColumn<int32_t> _cell_days_since_hazard{{{16, 56}, "persisted_columns.cell_days_since_hazard", EconomyFieldEncoding::I32, 4}};
+    EconomyOwnedColumn<uint8_t> _cell_previous_hazard_mask{{{16, 57}, "persisted_columns.cell_previous_hazard_mask", EconomyFieldEncoding::U8, 1}};
+    EconomyOwnedColumn<uint8_t> _cell_weather_type{{{16, 58}, "persisted_columns.cell_weather_type", EconomyFieldEncoding::U8, 1}};
+    EconomyOwnedColumn<uint8_t> _cell_cover{{{16, 59}, "persisted_columns.cell_cover", EconomyFieldEncoding::U8, 1}};
     std::vector<int32_t> _building_elevation_q16;
     std::vector<uint8_t> _building_terrain;
     std::vector<uint8_t> _building_landform;
@@ -6228,6 +6451,86 @@ private:
     std::vector<uint8_t> _building_is_water;
     std::vector<uint8_t> _building_has_river;
     std::vector<int32_t> _building_neighbors;
+    // X12 derived geography columns. Rebuilt only when the territory hash or
+    // canal topology hash changes; never persisted.
+    std::vector<int32_t> _epoch_cell_geo_flags;
+    std::vector<int32_t> _epoch_cell_waterway_component_size;
+    uint64_t _geo_flags_territory_hash = 0;
+    uint64_t _geo_flags_canal_hash = 0;
+    std::atomic<uint64_t> _geo_flags_rebuilds{0};
+    // X9-a derived family aggregates. Rebuilt only when the authoritative
+    // branch columns change; a daily seal is not a content change.
+    std::vector<int32_t> _epoch_cell_family_branch_count;
+    std::vector<int64_t> _epoch_cell_max_branch_prestige_q16;
+    std::vector<int32_t> _epoch_cell_family_asset_share_q16;
+    uint64_t _family_cell_metric_signature = 0;
+    std::vector<uint8_t> _family_cell_metric_changed_cells;
+    std::atomic<uint64_t> _family_cell_metric_rebuilds{0};
+    // X9-b derived country columns. Rebuilt in the same FAMILY_COMMIT pass as
+    // the cell aggregates, then published to each country's anchor cell.
+    std::vector<int32_t> _epoch_country_family_remote_branch_count;
+    std::vector<int32_t> _epoch_country_families_with_at_least_3_branches;
+    std::vector<int64_t> _epoch_country_oldest_family_founded_day;
+    std::vector<int64_t> _epoch_country_family_founded_day_sum;
+    std::vector<int32_t> _epoch_country_family_count;
+    uint64_t _family_country_metric_signature = 0;
+    std::vector<uint8_t> _family_country_metric_changed_countries;
+    std::atomic<uint64_t> _family_country_metric_rebuilds{0};
+    // X14 derived country columns. Copied from the last COMMITTED class
+    // opinion snapshot at commit finalize; never persisted.
+    std::vector<int64_t> _epoch_country_class_satisfaction_q16;
+    std::vector<int64_t> _epoch_country_weighted_satisfaction_q16;
+    std::vector<int64_t> _epoch_country_farmer_satisfaction_q16;
+    std::vector<int64_t> _epoch_country_worker_satisfaction_q16;
+    std::vector<int64_t> _class_opinion_override_population;
+    std::vector<int32_t> _class_opinion_override_satisfaction_q16;
+    std::vector<int64_t> _class_opinion_override_weighted;
+    bool _class_opinion_source_override_enabled = false;
+    // Test-only synthetic publication identity. The worker settles once per
+    // committed day, so reusing the frozen source's identity would make every
+    // controlled row update after the first one a no-op.
+    uint64_t _class_opinion_override_revision = 0;
+    int64_t _class_opinion_override_commit_day = -1;
+    uint64_t _class_metric_source_revision = 0;
+    uint64_t _class_metric_source_content_hash = 0;
+    int64_t _class_metric_source_epoch_day = -1;
+    std::atomic<uint64_t> _class_metric_rebuilds{0};
+    // X10 derived country columns. The domain table is copied once from the
+    // immutable Country catalog at configure; `_technology_domain_masks` holds
+    // one mask per technology word per domain (the shipped catalog has >64
+    // technologies). Counts are rebuilt only when the technology bitset content
+    // changes, never on ordinary country state.
+    std::vector<int32_t> _technology_domain_ids;
+    std::vector<uint64_t> _technology_domain_masks;
+    std::vector<int64_t> _epoch_country_completed_tech_count;
+    std::vector<int64_t> _epoch_country_completed_tech_count_domain_0;
+    std::vector<int64_t> _epoch_country_completed_tech_count_domain_1;
+    std::vector<int64_t> _epoch_country_completed_tech_count_domain_2;
+    std::vector<int64_t> _epoch_country_completed_tech_count_domain_3;
+    // X13 residual: derived from the frozen climate counters and the country
+    // territory CSR once per capture. Never persisted or hashed.
+    std::vector<int32_t> _epoch_country_hazard_free_cell_share_q16;
+    std::vector<uint64_t> _technology_metric_input_override;
+    bool _technology_metric_input_override_enabled = false;
+    uint64_t _technology_metric_source_hash = 0;
+    std::atomic<uint64_t> _technology_metric_rebuilds{0};
+    // X7-b frozen Country projection. Signal words are copied from the same
+    // immutable Country commit as technologies; the three Economy counts are
+    // derived from committed building/geography columns during epoch capture.
+    std::vector<uint64_t> _epoch_country_research_signals;
+    int32_t _epoch_country_research_signal_words = 0;
+    std::vector<int32_t> _epoch_country_energy_cell_count;
+    std::vector<int32_t> _epoch_country_abundant_mountain_forest_cell_count;
+    std::vector<int32_t> _epoch_country_landform_signal_count;
+    std::vector<int32_t> _epoch_country_weather_signal_count;
+    std::vector<int32_t> _epoch_country_bio_signal_count;
+    // X8 derived cell column. `_neighbor_distinct_goods_source_hash` is the
+    // committed production shape (building groups, neighbour graph, and each
+    // cell's dominant output) that can change the answer. A hash miss rebuilds
+    // the column and advances the counter; an unchanged idle day does neither.
+    std::vector<int32_t> _epoch_cell_neighbor_distinct_goods;
+    uint64_t _neighbor_distinct_goods_source_hash = 0;
+    std::atomic<uint64_t> _neighbor_distinct_goods_rebuilds{0};
     // A+Y N5/N9: unbound fallback for the live resource lanes. While a store is
     // bound these stay empty and the accessors alias OwnedState::resources.
     EconomyTrackedColumn<int64_t> _resource_snapshot{_resource_changes_local,
@@ -6389,6 +6692,11 @@ private:
     int32_t _bio_maize_signal_id = -1;
     std::array<int32_t, 8> _metal_resource_signal_ids{
         -1, -1, -1, -1, -1, -1, -1, -1};
+    std::vector<uint64_t> _research_signal_prefix_masks;
+    int32_t _research_signal_prefix_words = 0;
+    int32_t _abundant_mountain_landform_id = -1;
+    int32_t _abundant_forest_terrain_id = -1;
+    bool _catalog_geography_lookup_warning_emitted = false;
     std::vector<int32_t> _building_technology_offsets;
     std::vector<int32_t> _building_required_technologies;
     std::vector<int32_t> _building_all_technology_offsets;
@@ -6435,6 +6743,8 @@ private:
     bool _sync_writes_forbidden = false;
     uint32_t _d7_operation_gate_mask = RUNTIME_ECONOMY_D7_FISCAL_GATE_MASK;
     ModifierRuntime *_modifier_runtime = nullptr;
+    int32_t _family_scoped_output_stat_id = -1;
+    int32_t _family_target_min_branches_override_for_test = 0;
     EffectRuntime *_effect_runtime = nullptr;
     EffectInstanceForwarder *_effect_forwarder = nullptr;
     TriggerRuntime *_trigger_runtime = nullptr;
@@ -6517,6 +6827,7 @@ private:
     struct EffectInputConsumers {
         MetricMask metric_mask;
         bool tags_needed = false;
+        bool families_needed = false;
         // Bumped on every swap so the digest can tell "the consumer set changed"
         // without the writer touching the digest's own published state.
         uint64_t generation = 0;
@@ -6545,11 +6856,26 @@ private:
     };
     std::shared_ptr<const EffectMetricOverrideSet> _effect_metric_override_snapshot;
     uint64_t _published_override_generation = 0;
+    // Test-only tag overrides, consulted while sampling a cell's effect metrics.
+    // Unlike the metric override, these are scoped to one cell: a card's tagged
+    // fixture cell and an untagged control cell can coexist in one world.
+    struct CellTagOverride {
+        uint8_t force_true = 0;
+        uint8_t force_false = 0;
+    };
+    struct CellTagOverrideSet {
+        std::unordered_map<int32_t, std::vector<CellTagOverride>> cells;
+        uint64_t generation = 0;
+    };
+    std::shared_ptr<const CellTagOverrideSet> _cell_tag_override_snapshot;
+    uint64_t _tag_override_published_generation = 0;
+    uint64_t _tag_snapshot_override_generation = 0;
     // Last published digests, used only by the digest pass itself (single writer,
     // single thread) to decide what moved.
     std::array<uint64_t, FAMILY_METRIC_COUNT> _effect_metric_published{};
     uint64_t _effect_territory_published = 0;
     uint64_t _effect_tag_published = 0;
+    uint64_t _effect_family_published = 0;
 
     uint64_t _effect_input_digest_computations = 0;
     double _effect_input_digest_ms = 0.0;
@@ -6584,6 +6910,9 @@ private:
     std::vector<int32_t> _country_good_consumption_stat_ids;
     std::vector<int32_t> _country_resource_use_stat_ids;
     std::vector<int32_t> _country_resource_generation_stat_ids;
+    // X16: indexed by `profession_id`; -1 means the stat is absent.
+    std::vector<int32_t> _profession_tax_tolerance_stat_ids;
+    std::vector<int32_t> _profession_satisfaction_bp_stat_ids;
     std::vector<int32_t> _country_terrain_sector_output_stat_ids;
     std::vector<int32_t> _country_landform_sector_output_stat_ids;
     std::vector<int32_t> _country_building_output_stat_ids;
@@ -6730,6 +7059,19 @@ private:
     std::vector<int32_t> _epoch_country_good_consumption_factor_q16;
     std::vector<int32_t> _epoch_country_resource_use_factor_q16;
     std::vector<int32_t> _epoch_country_resource_generation_factor_q16;
+    // X16 frozen per (country slot, profession id), stride = profession count.
+    //
+    // Frozen once per epoch like every other country modifier read: the satisfaction
+    // loop runs per cell per cohort, and resolving a modifier stat there would both
+    // cost a lookup per cohort and let the value change mid-epoch (two cohorts in the
+    // same country could then see different tolerances). Q16 factor and basis points,
+    // clamped to [0.5, 3.0] and [-2500, 2500] respectively.
+    std::vector<int32_t> _epoch_country_profession_tax_tolerance_q16;
+    std::vector<int32_t> _epoch_country_profession_satisfaction_bp;
+    // R-4 metric 69: per-country treasury reserve ratio, in percentage points.
+    // v0 denominator is a 365-day extrapolation of the live income EMA (no new save
+    // state); the true rolling-year accumulator is deferred to M4 (09 §8).
+    std::vector<int32_t> _epoch_country_reserve_pct;
     std::vector<int32_t> _epoch_country_terrain_sector_output_factor_q16;
     std::vector<int32_t> _epoch_country_landform_sector_output_factor_q16;
     std::vector<int32_t> _epoch_country_building_output_factor_q16;
@@ -7440,6 +7782,24 @@ private:
     // ownership column is absent or no country count is known, which is what
     // makes the consumers' linear-scan fallback kick in.
     void rebuild_country_territory_index();
+    // Rebuilds X12's derived geography columns only when territory or canal
+    // topology changed. `geo_flags_rebuilds` is the idle no-op evidence.
+    void rebuild_epoch_geo_columns();
+    // Rebuilds X9-a's per-cell family aggregates only when a tracked branch
+    // column changes. Returns true when the cache was rebuilt.
+    bool rebuild_epoch_family_cell_metrics();
+    bool rebuild_epoch_family_country_metrics();
+    // X13a persistent counters advance once per daily epoch, before the tag
+    // snapshot is rebuilt. capture_environment only derives today's hazard.
+    bool advance_climate_day_columns(std::string &error);
+    // Refreshes X14's country scalars from the last committed class-opinion
+    // snapshot at the start of the country epoch capture, reusing the previous
+    // rows when the snapshot revision has not advanced.
+    void refresh_class_opinion_metrics();
+    // Rebuilds X10's per-country technology counts only when the frozen
+    // technology bitset content changes. The four domain masks were compiled
+    // once at configure.
+    void refresh_technology_metrics();
     // R-3: builds BOTH per-epoch tag tables into a NEW immutable `TagSnapshot` and
     // publishes it with a single atomic store. The only writer.
     //
@@ -8140,6 +8500,7 @@ private:
     int32_t family_owned_output_factor_q16(int32_t family_index, int32_t cell,
                                            int32_t sector,
                                            int32_t upgrade_family) const;
+    int32_t family_scoped_output_factor_q16(uint64_t family_handle) const;
     int32_t family_group_owned_output_factor_q16(int32_t group_index) const;
     const FamilyIndustryStats *family_industry_stats_for(
         int32_t family_index, int32_t cell) const;
@@ -8314,6 +8675,10 @@ public:
     // neighbour). Reuses the selector BFS so there is exactly one definition of
     // "adjacent" in the codebase; a second adjacency walk would drift from it.
     int32_t neighbor_count_with_tag(int32_t cell, int32_t tag) const;
+    // One hex neighbour from the epoch snapshot, or -1 when the snapshot or
+    // direction is absent. X1-b's source-count walk needs bounded R1/R2
+    // neighbour reads and a BFS for radius 3/4.
+    int32_t building_neighbor(int32_t cell, int32_t direction) const;
     void collect_effect_target_cells(
         int32_t source_cell, int32_t selector_kind, int32_t param0, int32_t param1,
         std::vector<int32_t> &out_cells, uint64_t selection_salt = 0,
@@ -8343,6 +8708,12 @@ public:
     // Ascending order is what makes SELECTOR_OWN_TERRITORY replayable: a cap
     // always keeps the lowest cell ids.
     int32_t country_cell_at(int32_t country_slot, int32_t index) const;
+    // Every cell owned by `country_slot` that carries `tag` (0-based, unlike the
+    // selector's 1-based ids), ascending. No cap: X1-b must count every source,
+    // while SELECTOR_OWN_TERRITORY intentionally stops at its instance budget.
+    // The tag snapshot is loaded once for the whole sweep.
+    void collect_own_tagged_cells(int32_t country_slot, int32_t tag,
+        std::vector<int32_t> &out_cells) const;
     // Catalog-declared tag table (see target_tag.h). Called once where the
     // effect runtime is attached, so the selector never has to reach through a
     // possibly-null pointer from a const query path. Assigning here also
@@ -8370,6 +8741,35 @@ public:
                                int64_t *out_metrics,
                                const MetricMask &metric_mask =
                                    MetricMask::all()) const;
+
+    // ── R-4 X16 diagnostics ─────────────────────────────────────────────────
+    // The profession id table, in `profession_id` order, so a probe can index the
+    // frozen per-profession arrays by name.
+    const std::vector<std::string> &profession_ids() const noexcept {
+        return _profession_ids;
+    }
+    // The value `update_cohort_satisfaction` will use for (country_slot, profession).
+    // Returns the DESIGN DEFAULTS (1.0 / 0) when the index is out of range, matching
+    // what the reader does -- a probe that reported -1 instead would be measuring the
+    // probe, not the runtime.
+    //
+    // Takes a COUNTRY SLOT, not a handle: the epoch arrays are slot-indexed, and
+    // converting a handle here would need a lookup that does not exist on this class.
+    // Callers get the slot from `get_country_cell_summary(...).country_slot`.
+    void epoch_profession_values(int32_t country_slot, int32_t profession_id,
+                                 int32_t &tax_tolerance_q16,
+                                 int32_t &satisfaction_bp) const noexcept {
+        tax_tolerance_q16 = Q16_ONE;
+        satisfaction_bp = 0;
+        if (country_slot < 0 || profession_id < 0) return;
+        const size_t professions = std::max<size_t>(1, _profession_ids.size());
+        const size_t index = static_cast<size_t>(country_slot) * professions +
+            static_cast<size_t>(profession_id);
+        if (index < _epoch_country_profession_tax_tolerance_q16.size())
+            tax_tolerance_q16 = _epoch_country_profession_tax_tolerance_q16[index];
+        if (index < _epoch_country_profession_satisfaction_bp.size())
+            satisfaction_bp = _epoch_country_profession_satisfaction_bp[index];
+    }
 
     // ── Effect input revision (P1-A) ────────────────────────────────────────
     // Read by NativeIdeologyRuntime to decide whether anything has to be
@@ -8403,19 +8803,37 @@ public:
         const auto snapshot = effect_input_snapshot();
         return snapshot == nullptr ? 0 : snapshot->tag_revision;
     }
+    uint64_t effect_family_revision() const {
+        const auto snapshot = effect_input_snapshot();
+        return snapshot == nullptr ? 0 : snapshot->family_revision;
+    }
     // Called from configure_ideologies() with the catalog's declared consumer
     // set. Clears the published digest so the next COMMIT definitely advances
     // the revision instead of matching the empty-catalog digest.
     // `has_value == false` clears the override.
     void set_effect_metric_override(int32_t metric, int64_t value, bool has_value);
+    // Test-only: force one (tag, cell) pair true or false while effect metrics
+    // are sampled. The snapshot builder applies these bits after predicate
+    // evaluation, so the tag bitset and its digest see the same input.
+    bool set_cell_tag_override_for_test(const std::string &tag_key,
+                                        int32_t cell, bool on);
+    void clear_cell_tag_overrides_for_test();
+    // Test-only: freezes the committed class-opinion source rows for X14's
+    // unchanged-day proof. Subsequent publishes still advance their revision.
+    void set_class_opinion_source_override_for_test(
+        const std::vector<int64_t> &population,
+        const std::vector<int32_t> &satisfaction_q16,
+        const std::vector<int64_t> &satisfaction_weighted);
+    void clear_class_opinion_source_override_for_test();
     void set_effect_input_consumers(
-        const MetricMask &cell_metrics, bool tags_needed,
+        const MetricMask &cell_metrics, bool tags_needed, bool families_needed,
         const std::array<std::vector<int64_t>, FAMILY_METRIC_COUNT>
             &metric_thresholds);
     // Called once per committed economy day. Recomputes the digest and advances
     // `effect_input_revision()` only when it differs from the last published
     // one. A no-op when no managed card reads economy input.
     void refresh_effect_input_digest();
+    void refresh_neighbor_distinct_goods_metrics();
 private:
     void fire_family_event_once_effect(int32_t family_index,
                                        const std::string &program_key);
@@ -8740,6 +9158,14 @@ private:
                     case 49: return _fiscal_last_reserved.registry();
                     case 50: return _fiscal_last_unmet.registry();
                     case 51: return _maintenance_horizon_days_by_sector.registry();
+                    case 52: return _cell_temperature_annual_q16.registry();
+                    case 53: return _cell_temperature_anomaly_q16.registry();
+                    case 54: return _cell_hazard_today_mask.registry();
+                    case 55: return _cell_dry_streak_days.registry();
+                    case 56: return _cell_days_since_hazard.registry();
+                    case 57: return _cell_previous_hazard_mask.registry();
+                    case 58: return _cell_weather_type.registry();
+                    case 59: return _cell_cover.registry();
                     default: throw std::logic_error("economy_worker_native_column_unregistered");
                 }
             case 15: return _metadata_changes;
@@ -8953,6 +9379,35 @@ private:
 
     // ECP2 mid-epoch export bypasses the committed-boundary gate in begin_save.
     mutable bool _ecp2_allow_mid_epoch_export = false;
+    // While the worker-start path installs a save, Economy is applied BEFORE Country
+    // (`native_simulation_host.cpp`), so the archive's country generation/hash cannot
+    // match the still-bootstrapping live runtime. Set only inside that window; every
+    // other apply compares them strictly (see `economy_runtime_persistence_read.cpp`).
+    bool _accept_stale_country_identity = false;
+    // The country identity the ARCHIVE asked for, recorded when the comparison was
+    // deferred. The Host verifies these against the real Country runtime once the PKCN
+    // checkpoint is installed (`verify_deferred_country_identity`), so deferring the
+    // check moves it rather than dropping it -- otherwise an archive whose Country
+    // bytes and Economy bytes come from different saves would load silently.
+    uint64_t _deferred_country_generation = 0;
+    uint64_t _deferred_country_state_hash = 0;
+    bool _deferred_country_identity_recorded = false;
+
+  public:
+    // Verify the country identity the archive asked for against the LIVE Country
+    // runtime. Called by the Host once the PKCN checkpoint has been installed.
+    //
+    // This is the other half of `_accept_stale_country_identity`: the apply step
+    // defers the comparison because Country is not installed yet, and this performs it
+    // at the first moment the answer means something. Without it, pairing A's Country
+    // bytes with B's Economy bytes would load silently -- the exact corruption the
+    // original check existed to catch.
+    //
+    // Returns true when there is nothing to verify (no deferred identity), so a caller
+    // can call it unconditionally on any start path.
+    bool verify_deferred_country_identity(std::string &error) const;
+
+  private:
     mutable bool _forensics_allow_fatal_export = false;
     // Set only for the begin_save call inside an ECP2 rollback-backup capture.
     mutable bool _ecp2_rollback_backup_export = false;
@@ -8963,6 +9418,13 @@ private:
     uint64_t _save_country_state_hash = 0;
     // Stable reject code for the last failed restore/ECP2 apply (diagnostics).
     std::string _restore_rejected_reason;
+    // Why the last `apply_ecp2_authority` ran WITHOUT a rollback backup.
+    //
+    // The backup is best-effort: a live state that cannot be captured (which is normal
+    // during a load, where the economy bundle is applied before the POD mirror is
+    // installed) must not make the restore impossible. Kept for diagnostics so "we
+    // applied without a rollback point" is visible instead of silent.
+    std::string _last_restore_backup_skipped_reason;
 
     bool trace_detail_for_cell(int32_t cell) const;
     void trace_record_cashflow(int32_t cell, uint64_t cohort_handle, int32_t source,

@@ -34,6 +34,7 @@ const TAG_GTE := 0
 const TAG_LTE := 1
 const TAG_EQ := 2
 const TAG_NEQ := 3
+const TAG_BIT_SET := 4
 
 ## Caps from `TargetTagTable` in gdext/src/target_tag.h.
 const MAX_TAGS := 512
@@ -53,6 +54,7 @@ func _run() -> void:
 	_test_shape_against_synthetic_economy()
 	_test_composite_is_a_clause_product()
 	_test_intersection_folds_three_tags()
+	_test_union_concatenates_clauses()
 	_test_limits_hold_for_the_shipped_dictionary()
 	_test_authoring_errors()
 	_test_production_catalog_round_trips()
@@ -134,6 +136,18 @@ func _test_shape_against_synthetic_economy() -> void:
 
 	# 降雨：原生只会写 0 或 Q16_ONE，所以 ≥Q16_ONE 才是"当日有雨"。
 	_expect_lower_bound(by_name, "cell.rain", "cell.rain_event", Q16_ONE)
+	# X12 地理标签共享 metric 75 的位掩码；每格必须测自己的位，不能把整个
+	# bitmask 当计数比较。
+	for row in [
+			["cell.river", 1], ["cell.coastal", 2],
+			["cell.canal", 4], ["cell.border", 8]]:
+		var geo: Array = by_name.get(String(row[0]), [])
+		_expect("%s has one bit-test row" % String(row[0]), geo.size() == 1,
+			str(geo))
+		_expect("%s tests metric 75 bit %d" % [String(row[0]), int(row[1])],
+			geo.size() == 1 and String(geo[0]["metric"]) == "cell.geo_flags"
+				and int(geo[0]["op"]) == TAG_BIT_SET
+				and int(geo[0]["threshold_q16"]) == int(row[1]), str(geo))
 
 	# 全局不变式：op 合法、clause 非降、metric 非空。
 	var bad_op := ""
@@ -143,7 +157,7 @@ func _test_shape_against_synthetic_economy() -> void:
 		var previous := -1
 		for row in tag["rows"]:
 			var op := int(row["op"])
-			if op < TAG_GTE or op > TAG_NEQ:
+			if op < TAG_GTE or op > TAG_BIT_SET:
 				bad_op = "%s:%d" % [String(tag["name"]), op]
 			if String(row["metric"]).is_empty():
 				bad_metric = String(tag["name"])
@@ -301,6 +315,56 @@ func _test_intersection_folds_three_tags() -> void:
 		String(over.get("reason", "")).begins_with(
 			"target_tag_intersection_clause_budget:"),
 		str(over.get("reason", "")))
+
+
+## 2c. X5 tag widening: `A OR B` appends B's clauses to A's, renumbered from 0.
+##     This is deliberately the opposite operation from `intersection()`: A's
+##     two-row AND clause stays one clause, and B's one-row clause becomes the
+##     second clause. Concatenating rows without renumbering would make B part
+##     of A's AND and silently narrow the card.
+func _test_union_concatenates_clauses() -> void:
+	var tag_a := TargetTagDictionaryScript._atom("x5.union.a", [
+		TargetTagDictionaryScript._row("cell.population", TAG_GTE,
+			400 * Q16_ONE, 0),
+		TargetTagDictionaryScript._row("cell.trade_events", TAG_GTE,
+			24 * Q16_ONE, 0),
+	])
+	var tag_b := TargetTagDictionaryScript._atom("x5.union.b", [
+		TargetTagDictionaryScript._row("cell.landform", TAG_EQ,
+			2 * Q16_ONE, 0),
+	])
+	var merged: Dictionary = TargetTagDictionaryScript.union(
+		PackedStringArray(["x5.union.b", "x5.union.a"]),
+		[tag_a, tag_b])
+	_expect("two tags union", bool(merged.get("ok", false)),
+		str(merged.get("reason", "")))
+	var rows: Array = merged.get("rows", [])
+	_expect("union keeps all source rows", rows.size() == 3, str(rows.size()))
+	var clauses: Array[int] = []
+	for row in rows:
+		clauses.append(int(row["clause"]))
+	_expect("union renumbers A clause then B clause",
+		clauses == [0, 0, 1], str(clauses))
+	_expect("union keeps A's AND pair", rows.size() == 3
+		and int(rows[0]["clause"]) == 0 and int(rows[1]["clause"]) == 0,
+		str(rows))
+	_expect("union canonicalizes member order",
+		String(merged.get("name", "")) == "x5.union.a|x5.union.b",
+		String(merged.get("name", "")))
+	var reordered: Dictionary = TargetTagDictionaryScript.union(
+		PackedStringArray(["x5.union.a", "x5.union.b"]), [tag_b, tag_a])
+	_expect("union name and rows are order-independent",
+		String(reordered.get("name", "")) == String(merged.get("name", ""))
+			and _row_signature(reordered.get("rows", [])) == _row_signature(rows),
+		_row_signature(reordered.get("rows", [])))
+	_expect("union rejects a repeated member",
+		String(TargetTagDictionaryScript.union(PackedStringArray(
+			["x5.union.a", "x5.union.a"]), [tag_a]).get("reason", ""))
+			== "target_tag_union_duplicate")
+	_expect("union rejects an unknown member",
+		String(TargetTagDictionaryScript.union(PackedStringArray(
+			["x5.union.a", "cell.nowhere"]), [tag_a]).get("reason", ""))
+			== "target_tag_union_unknown:cell.nowhere")
 
 
 ## 3. The shipped dictionary must stay inside the native table's fixed limits.

@@ -140,6 +140,24 @@ const FAMILIES := [
 		"consumer": "country_runtime.cpp tax policy snapshot -> effective income rate",
 	},
 	{
+		# R-4 X16: how much tax burden a profession tolerates before its satisfaction
+		# tax dimension starts falling. Frozen per epoch in `capture_country_epoch`,
+		# read in `economy_runtime.cpp update_cohort_satisfaction`.
+		"id": &"profession_tax_tolerance",
+		"pattern": "economy.profession.%s.tax_tolerance_factor",
+		"dimensions": ["profession"],
+		"consumer": "economy_runtime.cpp update_cohort_satisfaction",
+	},
+	{
+		# R-4 X16: basis-point offset on a profession's composite satisfaction. Applied
+		# BEFORE the needs ceiling, so a positive bias cannot make a starving city
+		# content.
+		"id": &"profession_satisfaction",
+		"pattern": "economy.profession.%s.satisfaction_bp",
+		"dimensions": ["profession"],
+		"consumer": "economy_runtime.cpp update_cohort_satisfaction",
+	},
+	{
 		"id": &"tax_consumption",
 		"pattern": "country.tax.consumption.%s.rate_bp",
 		"dimensions": ["good"],

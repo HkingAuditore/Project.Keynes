@@ -23,7 +23,22 @@ namespace pk {
 // layout, so version 6 makes an old payload fail by VERSION instead of
 // misreading it. Mirrors PKID 7 -> 8; the two move together because they
 // serialize the same `CountryState` shape.
-constexpr uint32_t RUNTIME_IDEOLOGY_POD_ABI_VERSION = 6u;
+// 7: X6-a adds three frozen per-term point-factor columns to the opinion
+// snapshot. They are not serialized by IDP2 itself, but the ABI moves so an
+// ABI-6 payload is rejected by version rather than read against the new
+// catalog/opinion contract.
+// 8: IdeaState.reserved[0] now carries the deterministic slot_index and the
+// catalog definition carries the X6-c copy flags. An ABI-7 reader cannot safely
+// restore or replay the new slot/copy semantics.
+// 9: X6-b adds the per-country `free_draws` row field. Keeping the old version
+// would decode every later field one uint16 out of place.
+// 10: social_media freezes `country.ideology.opinion_factor_floor` into the
+// opinion snapshot. The value is per-country, so a different catalog/floor must
+// reject old saves rather than silently reuse 0.5.
+// 11: mandate_of_heaven freezes one global strength multiplier per school into
+// the opinion snapshot. The card's school index also joins the catalog contract
+// so the host and worker agree on which lane an equipped card consumes.
+constexpr uint32_t RUNTIME_IDEOLOGY_POD_ABI_VERSION = 11u;
 constexpr uint32_t RUNTIME_IDEOLOGY_POD_MAX_COUNTRIES = 1u << 20;
 constexpr uint32_t RUNTIME_IDEOLOGY_POD_MAX_IDEAS = 65536u;
 constexpr uint32_t RUNTIME_IDEOLOGY_POD_MAX_COMMANDS = 1u << 20;
@@ -59,6 +74,7 @@ enum class RuntimeIdeologyPodOpcode : uint16_t {
     SET_GATE = 9,
     REROLL_OFFER = 10,
     BAN_CARD = 11,
+    GRANT_FREE_DRAW = 12,
 };
 
 enum class RuntimeIdeologyPodLocation : uint8_t {
@@ -84,6 +100,10 @@ struct RuntimeIdeologyPodLevel {
     int64_t daily_understanding_q16 = 0;
     uint32_t modifier_begin = 0;
     uint32_t modifier_count = 0;
+    // X6-b card-tier grants delivered only after the transition's Modifier
+    // batch ACKs. The worker owns the free-draw row, so it must carry this
+    // one-shot metadata rather than routing it through the Modifier bridge.
+    uint16_t on_enter_free_draws = 0;
 };
 
 // Reversible UniqueSource Modifier template row. The worker resolves the
@@ -102,7 +122,9 @@ struct RuntimeIdeologyPodCapacityUnlock {
 
 struct RuntimeIdeologyPodDefinition {
     uint8_t acquisition = 3;
-    uint8_t reserved[3]{};
+    uint8_t copy_left_programs = 0;
+    uint8_t copyable = 1;
+    uint8_t school_index = 0;
     int32_t rarity_weight = 1;
     int32_t ideology_cost = 1;
     int32_t spirit_cost = 1;
@@ -122,6 +144,9 @@ struct RuntimeIdeologyPodDefinition {
     // Era the idea belongs to; drives the draw-weight decay curve. Appended last
     // so the field order of every earlier member stays put.
     int32_t era_index = 0;
+    // Primary + secondary build route bits. Derived catalog metadata for the
+    // worker's per-country route_count scalars.
+    uint32_t route_mask = 0;
 };
 
 struct RuntimeIdeologyPodClassStance {
@@ -181,6 +206,21 @@ struct RuntimeIdeologyPodCatalog {
     int64_t point_gain_cap_q16 = 0;
     // Modifier POD stat id of country.ideology.point_gain_factor (-1 = 1.0).
     int32_t point_gain_stat_id = -1;
+    // X6-a per-term point factors. Their values are frozen per country into
+    // RuntimeIdeologyOpinionSnapshot; these ids only tell the host which
+    // Modifier POD buckets to copy.
+    int32_t point_population_factor_stat_id = -1;
+    int32_t point_building_factor_stat_id = -1;
+    int32_t point_trade_factor_stat_id = -1;
+    // social_media: per-country opinion-factor floor. Frozen into the opinion
+    // snapshot for the same reason as the point factors above.
+    int32_t opinion_factor_floor_stat_id = -1;
+    // One stat id per school, in the same order as `school_keys`. The host
+    // freezes each lane into `school_strength_factor_q16`.
+    std::vector<int32_t> school_strength_factor_stat_ids;
+    std::vector<std::string> school_keys;
+    // Route ids in catalog order, identical to NativeIdeologyRuntime.
+    std::vector<std::string> route_keys;
     // Same, for the two other ideology-facing multipliers. Their *values* are
     // frozen per country into RuntimeIdeologyOpinionSnapshot below, because the
     // worker cannot read ModifierRuntime; the id here only tells the host which
@@ -250,6 +290,16 @@ struct RuntimeIdeologyOpinionSnapshot {
     int64_t period_days = 1;
     // Frozen country.ideology.point_gain_factor (Q16); empty means 1.0.
     std::vector<int32_t> point_gain_factor_q16;
+    // Frozen X6-a per-term multipliers (Q16); empty means 1.0 for each term.
+    std::vector<int32_t> point_population_factor_q16;
+    std::vector<int32_t> point_building_factor_q16;
+    std::vector<int32_t> point_trade_factor_q16;
+    // Frozen country.ideology.opinion_factor_floor (Q16). Empty means 0.5, the
+    // pre-social_media identity for every existing caller.
+    std::vector<int32_t> opinion_factor_floor_q16;
+    // Country-major, school-minor frozen strength multipliers. Empty means the
+    // catalog has no school-strength stats and every card reads 1.0.
+    std::vector<int32_t> school_strength_factor_q16;
     // Frozen country.ideology.understanding_gain_factor / reroll_cost_factor.
     // Empty means 1.0 for every country, which is why adding them is a no-op
     // for every existing caller: the worker only looks when the array has the
@@ -288,7 +338,8 @@ struct RuntimeIdeologyPodIdeaState {
     uint64_t entered_levels = 0;
     uint32_t generation = 1;
     RuntimeIdeologyPodLocation location = RuntimeIdeologyPodLocation::INACTIVE;
-    uint8_t reserved[3]{};
+    uint8_t slot_index = 0;
+    uint8_t reserved[2]{};
 };
 
 struct RuntimeIdeologyPodOffer {
@@ -365,6 +416,44 @@ inline int64_t ideology_trade_flow_q16(int64_t trade_per_day, int64_t day,
     return trade_per_day * span;
 }
 
+// X6-a: the one per-term point multiplier both authorities use.
+//
+// Modifier values are frozen into the opinion snapshot in Q16 and clamped to
+// [0.5, 3.0] before they get here. A missing/empty column is the identity
+// multiplier (1.0), so old callers and fixtures retain their exact arithmetic.
+inline int64_t ideology_point_term_q16(
+        int64_t raw_q16, const std::vector<int32_t> &factors_q16,
+        size_t slot) {
+    constexpr int64_t kQ16One = 65536;
+    if (raw_q16 == 0) return 0;
+    int64_t factor_q16 = kQ16One;
+    if (slot < factors_q16.size())
+        factor_q16 = std::clamp<int64_t>(factors_q16[slot], kQ16One / 2,
+                                         3 * kQ16One);
+    if (factor_q16 == kQ16One) return raw_q16;
+    if (raw_q16 > 0 && raw_q16 > INT64_MAX / factor_q16) return INT64_MAX;
+    if (raw_q16 < 0 && raw_q16 < INT64_MIN / factor_q16) return INT64_MIN;
+    return raw_q16 * factor_q16 / kQ16One;
+}
+
+// The single opinion-factor kernel. The floor is a country scalar frozen from
+// Modifier; satisfaction is the population/influence-weighted committed value.
+// Both authorities call this so a floor card cannot change only one side.
+inline int32_t ideology_opinion_factor_q16(
+        int64_t satisfaction_q16, const std::vector<int32_t> &floors_q16,
+        size_t slot) {
+    constexpr int32_t kQ16One = 65536;
+    constexpr int32_t kFloorMin = 19661; // 0.3
+    constexpr int32_t kFloorMax = 32768; // 0.5
+    int32_t floor_q16 = kFloorMax;
+    if (slot < floors_q16.size())
+        floor_q16 = std::clamp(floors_q16[slot], kFloorMin, kFloorMax);
+    const int64_t satisfaction = std::clamp<int64_t>(
+        satisfaction_q16, 0, kQ16One);
+    return static_cast<int32_t>(static_cast<int64_t>(floor_q16) +
+                                satisfaction);
+}
+
 struct RuntimeIdeologyPodPointLedger {
     int64_t population_q16 = 0;
     int64_t building_q16 = 0;
@@ -397,6 +486,7 @@ struct RuntimeIdeologyPodCountryState {
     std::array<int64_t, RUNTIME_IDEOLOGY_POD_HISTORY> history_q16{};
     uint64_t rng_state = 0;
     uint64_t draw_sequence = 0;
+    uint16_t free_draws = 0;
     int32_t ideology_slots_used = 0;
     int32_t spirit_slots_used = 0;
     // Pushed by the content layer through SET_ERA before that day's draw. Kept on
@@ -426,8 +516,13 @@ struct RuntimeIdeologyPodTransition {
     int32_t desired_level = -1;
     uint64_t desired_entered_levels = 0;
     RuntimeIdeologyPodLocation desired_location = RuntimeIdeologyPodLocation::INACTIVE;
+    uint8_t desired_slot_index = 0;
     uint8_t intent_emitted = 0;
-    uint8_t reserved[2]{};
+    uint8_t reserved = 0;
+    // Entered levels the retained idea already had when this transition began.
+    // The ACK path grants only the newly entered tiers; without this snapshot a
+    // level-up from L2 to L3 could replay the L2 one-shot.
+    uint64_t previous_entered_levels = 0;
     std::vector<uint64_t> desired_synergy_bits;
 };
 
@@ -441,6 +536,19 @@ struct RuntimeIdeologyPodReceipt {
     int32_t ideology_id = -1;
     int64_t settled_day = -1;
     uint32_t reason_code = 0;
+    // Why a command was rejected, verbatim from `apply_command`'s `error`.
+    //
+    // `reason_code` is a 1-bit "something went wrong" flag, and the main-thread
+    // receipt collapsed it into the constant string `ideology_worker_rejected`. That
+    // made every worker-side rejection indistinguishable -- an unequip refused for
+    // `ideology_not_equipped` read exactly like one refused for a support threshold,
+    // and the only way to tell was to re-run under a debugger.
+    //
+    // Deliberately NOT serialized: this is an in-process diagnostic, so adding it
+    // changes no save layout and needs no ABI bump. A restored session simply has no
+    // rejection text, which is correct -- the rejection already happened and was
+    // already acted on.
+    std::string reason_text;
 };
 
 struct RuntimeIdeologyPodProducerWatermark {
@@ -601,10 +709,13 @@ private:
     bool begin_transition(RuntimeIdeologyPodSnapshot &state, uint32_t country_slot,
                           int32_t ideology_id, int32_t desired_level,
                           RuntimeIdeologyPodLocation desired_location,
-                          uint64_t entered_levels,
+                          uint8_t desired_slot_index, uint64_t entered_levels,
                           const RuntimeIdeologyPodCommand *command,
                           int64_t day, RuntimeIdeologyPodPlan &plan,
                           std::string &error) const;
+    uint8_t next_free_slot(const RuntimeIdeologyPodCountryState &country,
+                           RuntimeIdeologyPodLocation location,
+                           int32_t exclude_ideology_id) const;
     void emit_transition(const RuntimeIdeologyPodSnapshot &state,
                          RuntimeIdeologyPodTransition &transition,
                          RuntimeIdeologyPodPlan &plan) const;

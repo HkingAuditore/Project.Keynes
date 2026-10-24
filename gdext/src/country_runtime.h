@@ -159,6 +159,7 @@ public:
         std::vector<int32_t> cell_country_slot;
         std::vector<uint64_t> country_handles;
         std::vector<uint64_t> country_technologies;
+        std::vector<uint64_t> country_research_signals;
         std::vector<int32_t> income_tax_rates;
         std::vector<int32_t> consumption_tax_rates;
         std::vector<int32_t> business_tax_rates;
@@ -173,6 +174,8 @@ public:
         std::vector<CellTaxPolicy> cell_tax_policies;
         int32_t country_count = 0;
         int32_t technology_words = 0;
+        int32_t research_signal_words = 0;
+        int32_t research_signal_count = 0;
         int32_t profession_count = 0;
         int32_t good_count = 0;
         int32_t building_type_count = 0;
@@ -348,6 +351,10 @@ public:
     // resolve strings. Frozen cycles use copy_economy_snapshot(); direct
     // transfers validate generation-bearing handles.
     bool copy_economy_snapshot(EconomySnapshot &out) const;
+    // Static catalog handoff for Economy's one-time configuration. Keep this
+    // out of the per-epoch EconomySnapshot so the domain table is not copied
+    // every day.
+    bool copy_technology_domains(std::vector<int32_t> &out) const;
     // When Country is worker-authoritative, pins country_asset_snapshot() the
     // same way copy_economy_snapshot / cash_for_slot do. Sync-store bits stop
     // advancing after handoff and must not drive Economy live technology gates.

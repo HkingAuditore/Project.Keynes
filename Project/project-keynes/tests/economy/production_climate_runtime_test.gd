@@ -189,7 +189,7 @@ func _test_worker_scalar_and_save(catalog: Dictionary) -> void:
 			worker.ext.get_economy_state_hash()))
 	var saved := _save_economy(worker.ext)
 	_expect("PKEC v42 climate save streams at a committed boundary",
-		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 43)
+		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 57)
 	if not bool(saved.get("ok", false)):
 		return
 	var restored := _configured_runtime(catalog, CELL_COUNT, 4403, false)
@@ -245,7 +245,7 @@ func _configured_runtime(catalog: Dictionary, cell_count: int,
 	var slots := {}
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
 			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
-			&"cell_weather_intensity", &"cell_elevation"]:
+			&"cell_weather_intensity", &"cell_elevation", &"cell_temp_365d"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, half)
 		slots[String(slot_name)] = sid
@@ -253,7 +253,7 @@ func _configured_runtime(catalog: Dictionary, cell_count: int,
 	zeros_u8.resize(cell_count)
 	zeros_u8.fill(0)
 	for slot_name in [&"cell_terrain", &"cell_landform", &"cell_vegetation",
-			&"cell_is_water", &"cell_has_river"]:
+			&"cell_is_water", &"cell_has_river", &"cell_weather_type", &"cell_cover"]:
 		var sid: int = ext.register_component(slot_name, 2, 1, false)
 		ext.write_u8_range(sid, 0, zeros_u8)
 	var reserve_slots: PackedStringArray = catalog.building_resource_reserve_slots

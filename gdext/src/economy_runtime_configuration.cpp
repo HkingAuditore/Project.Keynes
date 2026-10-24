@@ -159,6 +159,24 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
                 "country.resource." + resource_id +
                 ".managed_generation_factor") : -1);
     }
+    // X16: per-profession tax tolerance and satisfaction bias. Resolved in
+    // `_profession_ids` order so the arrays can be indexed by `profession_id`
+    // directly. -1 means "this profession has no such stat", which the reader treats
+    // as the default (1.0 / 0 bp) instead of calling into Modifier.
+    _profession_tax_tolerance_stat_ids.clear();
+    _profession_satisfaction_bp_stat_ids.clear();
+    _profession_tax_tolerance_stat_ids.reserve(_profession_ids.size());
+    _profession_satisfaction_bp_stat_ids.reserve(_profession_ids.size());
+    for (const std::string &profession_id : _profession_ids) {
+        _profession_tax_tolerance_stat_ids.push_back(_modifier_runtime != nullptr
+            ? _modifier_runtime->stat_id_for_key(
+                "economy.profession." + profession_id +
+                ".tax_tolerance_factor") : -1);
+        _profession_satisfaction_bp_stat_ids.push_back(_modifier_runtime != nullptr
+            ? _modifier_runtime->stat_id_for_key(
+                "economy.profession." + profession_id +
+                ".satisfaction_bp") : -1);
+    }
     const auto resolve_geography_stats = [&](const std::string &kind,
             const std::vector<std::string> &geography_ids,
             std::vector<int32_t> &target) {
@@ -179,6 +197,8 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _country_household_consumption_stat_id = _modifier_runtime != nullptr
         ? _modifier_runtime->stat_id_for_key(
             "country.household.consumption_factor") : -1;
+    _family_scoped_output_stat_id = _modifier_runtime != nullptr
+        ? _modifier_runtime->stat_id_for_key("economy.city.output_factor") : -1;
     _country_resource_use_stat_id = _modifier_runtime != nullptr
         ? _modifier_runtime->stat_id_for_key("country.resource.use_factor") : -1;
     _country_population_death_stat_id = _modifier_runtime != nullptr
@@ -426,6 +446,14 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _cell_resource_abundance_q16.clear();
     _cell_previous_precipitation_q16.clear();
     _cell_rain_event_q16.clear();
+    _cell_temperature_annual_q16.clear();
+    _cell_temperature_anomaly_q16.clear();
+    _cell_hazard_today_mask.clear();
+    _cell_dry_streak_days.clear();
+    _cell_days_since_hazard.clear();
+    _cell_previous_hazard_mask.clear();
+    _cell_weather_type.clear();
+    _cell_cover.clear();
     _epoch_market_ids.clear();
     _economy_live_cells.clear();
     {
@@ -472,6 +500,14 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _environment_precipitation_q16.assign(cell_count, 0);
     _environment_snow_q16.assign(cell_count, 0);
     _environment_weather_q16.assign(cell_count, 0);
+    _cell_temperature_annual_q16.assign(cell_count, Q16_ONE / 2);
+    _cell_temperature_anomaly_q16.assign(cell_count, 0);
+    _cell_hazard_today_mask.assign(cell_count, 0);
+    _cell_dry_streak_days.assign(cell_count, 0);
+    _cell_days_since_hazard.assign(cell_count, 0);
+    _cell_previous_hazard_mask.assign(cell_count, 0);
+    _cell_weather_type.assign(cell_count, 0);
+    _cell_cover.assign(cell_count, 0);
     _cell_living_cost_per_capita.assign(cell_count, 0);
     _epoch_cell_development_q16.assign(cell_count, 0);
     _cell_social_pressure_level.assign(cell_count, 0);
@@ -534,6 +570,58 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
         out["ok"] = false;
         out["reason"] = "country_runtime_required";
         return out;
+    }
+    // X10: copy the immutable technology->domain table exactly once. Economy
+    // must not keep reading live Country catalog state across the authority
+    // boundary, and the four domain masks are static for the whole session.
+    std::vector<int32_t> technology_domains;
+    if (!_country_runtime->copy_technology_domains(technology_domains) ||
+        technology_domains.size() != _technology_ids.size()) {
+        reset("country_technology_domains_invalid");
+        out["ok"] = false;
+        out["reason"] = "country_technology_domains_invalid";
+        return out;
+    }
+    // The metric contract has four domain columns. Keep the first four distinct
+    // authored domains if a future catalog adds more; diagnostics expose the
+    // exact count so the expansion can be reviewed without changing metric ids.
+    _technology_domain_ids.clear();
+    for (const int32_t domain : technology_domains) {
+        if (domain < 0) {
+            reset("country_technology_domain_out_of_range");
+            out["ok"] = false;
+            out["reason"] = "country_technology_domain_out_of_range";
+            return out;
+        }
+        if (std::find(_technology_domain_ids.begin(),
+                      _technology_domain_ids.end(), domain) ==
+            _technology_domain_ids.end()) {
+            _technology_domain_ids.push_back(domain);
+        }
+    }
+    std::sort(_technology_domain_ids.begin(), _technology_domain_ids.end());
+    if (_technology_domain_ids.size() > 4)
+        _technology_domain_ids.resize(4);
+    // One 64-bit mask per technology word per retained domain. Indexing is
+    // [domain_slot * technology_word_count + word], so a catalog wider than one
+    // word works without a second representation.
+    _technology_domain_masks.assign(
+        _technology_domain_ids.size() *
+            static_cast<size_t>(std::max(0, _technology_words)), 0);
+    for (size_t technology = 0;
+         technology < technology_domains.size(); ++technology) {
+        const int32_t domain = technology_domains[technology];
+        const auto domain_it = std::find(_technology_domain_ids.begin(),
+                                         _technology_domain_ids.end(), domain);
+        if (domain_it == _technology_domain_ids.end()) continue;
+        const size_t domain_slot = static_cast<size_t>(
+            std::distance(_technology_domain_ids.begin(), domain_it));
+        const size_t mask_index =
+            domain_slot *
+                static_cast<size_t>(_technology_words) +
+            technology / 64U;
+        _technology_domain_masks[mask_index] |=
+            uint64_t{1} << (technology % 64U);
     }
     _configured = true;
     _stage = Stage::IDLE;

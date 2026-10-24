@@ -43,6 +43,23 @@ const TECHNOLOGY_STATS := [
 	# keeping the existing ids stable makes any diff of a compiled catalog readable.
 	["country.ideology.understanding_gain_factor", 0.0, 4.0],
 	["country.ideology.reroll_cost_factor", 0.0, 4.0],
+	# X6-a: per-term point multipliers. Same epoch freeze path as point_gain,
+	# but each applies to exactly one ledger term and clamps to [0.5, 3.0].
+	["country.ideology.point_population_factor", 0.5, 3.0],
+	["country.ideology.point_building_factor", 0.5, 3.0],
+	["country.ideology.point_trade_factor", 0.5, 3.0],
+	# social_media: base floor under the opinion factor. ADD-only, so the card's
+	# -0.1 is a point offset instead of a multiplier on 0.5.
+	["country.ideology.opinion_factor_floor", 0.3, 0.5],
+	# Global school-strength multipliers frozen into the Ideology POD. One
+	# explicit stat per school keeps Modifier POD buckets keyed by stat id
+	# instead of introducing a sub-key dimension no consumer reads today.
+	["country.ideology.school_strength_factor.agrarian", 0.5, 2.0],
+	["country.ideology.school_strength_factor.commerce", 0.5, 2.0],
+	["country.ideology.school_strength_factor.learning", 0.5, 2.0],
+	["country.ideology.school_strength_factor.mobilization", 0.5, 2.0],
+	["country.ideology.school_strength_factor.industry", 0.5, 2.0],
+	["country.ideology.school_strength_factor.harmony", 0.5, 2.0],
 	# Draw-side, and the only two ideology stats that are ADDITIVE rather than
 	# multiplicative. `era_decay_floor_bp` is a floor under the era decay curve
 	# (0 = no floor, 10000 = no decay at all); `offer_choice_bonus` adds rows to
@@ -78,6 +95,16 @@ const STAT_DISPLAY_NAMES := {
 	"country.ideology.point_gain_factor": "理念点获取",
 	"country.ideology.understanding_gain_factor": "理念理解速度",
 	"country.ideology.reroll_cost_factor": "理念重抽费用",
+	"country.ideology.point_population_factor": "人口增长理念点",
+	"country.ideology.point_building_factor": "建筑增长理念点",
+	"country.ideology.point_trade_factor": "贸易理念点",
+	"country.ideology.opinion_factor_floor": "民意系数下限",
+	"country.ideology.school_strength_factor.agrarian": "农本理念强度",
+	"country.ideology.school_strength_factor.commerce": "商贸理念强度",
+	"country.ideology.school_strength_factor.learning": "学识理念强度",
+	"country.ideology.school_strength_factor.mobilization": "动员理念强度",
+	"country.ideology.school_strength_factor.industry": "工造理念强度",
+	"country.ideology.school_strength_factor.harmony": "调和理念强度",
 	"country.trade.capacity_factor": "国内贸易容量",
 	"country.trade.speed_factor": "贸易速度",
 }
@@ -170,7 +197,10 @@ func compile_native_catalog() -> Dictionary:
 		out.stat_max_values.append(float(row[2]))
 		out.stat_persistable.append(1)
 		stat_domains_by_id.append(1)
-		stat_allowed_operations_by_id.append(15)
+		# social_media authors a negative ADD point offset; every other ideology
+		# scalar remains a general multiplicative factor.
+		stat_allowed_operations_by_id.append(
+			1 if key == &"country.ideology.opinion_factor_floor" else 15)
 	var economy: Dictionary = EconomyCatalogScript.compile_native_catalog()
 	if not bool(economy.get("ok", false)):
 		return economy
@@ -326,6 +356,42 @@ func compile_native_catalog() -> Dictionary:
 			out.stat_persistable.append(1)
 			stat_domains_by_id.append(1)
 			stat_allowed_operations_by_id.append(15)
+	# R-4 X16: per-profession tax tolerance and satisfaction bias.
+	#
+	# `tax_tolerance_factor` scales how much tax burden a profession tolerates before
+	# its satisfaction tax dimension starts falling; MULTIPLY only (4), because an
+	# "additive tolerance" has no meaning (the reader multiplies a Q16 factor).
+	# `satisfaction_bp` is a basis-point offset on the cohort's composite satisfaction;
+	# ADD only (1), because summing offsets is the whole model.
+	#
+	# The bit values are spelled out rather than 15: allowing all four operations here
+	# would let a card SUBTRACT a tolerance into a negative factor, which the reader
+	# clamps but which would silently mean the opposite of what the card says.
+	for profession_id in economy.profession_ids:
+		var tolerance_key := StringName(
+			"economy.profession.%s.tax_tolerance_factor" % String(profession_id))
+		if stat_ids.has(tolerance_key):
+			return {"ok": false, "reason": "modifier_stat_key_invalid_or_duplicate"}
+		stat_ids[tolerance_key] = out.stat_keys.size()
+		out.stat_keys.append(String(tolerance_key))
+		out.stat_domains.append(1)
+		out.stat_min_values.append(0.5)
+		out.stat_max_values.append(3.0)
+		out.stat_persistable.append(1)
+		stat_domains_by_id.append(1)
+		stat_allowed_operations_by_id.append(4)
+		var satisfaction_key := StringName(
+			"economy.profession.%s.satisfaction_bp" % String(profession_id))
+		if stat_ids.has(satisfaction_key):
+			return {"ok": false, "reason": "modifier_stat_key_invalid_or_duplicate"}
+		stat_ids[satisfaction_key] = out.stat_keys.size()
+		out.stat_keys.append(String(satisfaction_key))
+		out.stat_domains.append(1)
+		out.stat_min_values.append(-2500.0)
+		out.stat_max_values.append(2500.0)
+		out.stat_persistable.append(1)
+		stat_domains_by_id.append(1)
+		stat_allowed_operations_by_id.append(1)
 	# Fill the two aggregate columns in one pass, at the end, in `stat_keys` order.
 	# Doing it here instead of at the eight append sites is deliberate: a stat can
 	# be declared by the resource, by a constant table, by an economy-derived loop
@@ -626,6 +692,16 @@ static func _describe_stat_key(stat_key: String) -> Dictionary:
 				return {}
 			return {"label": "%s %s损失" % [parts[3],
 				String(HAZARD_DISPLAY_NAMES.get(hazard, hazard))], "unit": UNIT_FACTOR}
+		# R-4 X16: economy.profession.<pid>.tax_tolerance_factor / .satisfaction_bp
+		if parts[0] == "economy" and parts[1] == "profession" and parts.size() == 4:
+			var profession_label := display_name_of(&"profession", parts[2])
+			match parts[3]:
+				"tax_tolerance_factor":
+					return {"label": "%s 税负容忍度" % profession_label,
+						"unit": UNIT_FACTOR}
+				"satisfaction_bp":
+					return {"label": "%s 满意度" % profession_label,
+						"unit": UNIT_RATE_BP}
 		# country.tax.<kind>.<stable_id>.rate_bp
 		if parts[0] == "country" and parts[1] == "tax" and parts[4] == "rate_bp":
 			var target := parts[3]

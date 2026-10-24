@@ -718,7 +718,22 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             0, _rolling_due_cells - _rolling_processed_cells);
         _last_committed_day = _sample_day;
         _commit_day = _current_day.get();
+        // X13a: this is the last committed hazard mask. Keeping it in the
+        // commit tail makes save/restore and the next day's edge exact.
+        if (_cell_previous_hazard_mask.size() ==
+                static_cast<size_t>(_cell_count.get()) &&
+            _cell_hazard_today_mask.size() ==
+                static_cast<size_t>(_cell_count.get())) {
+            for (int32_t cell = 0; cell < _cell_count.get(); ++cell) {
+                _cell_previous_hazard_mask.write_scalar(
+                    cell, _cell_hazard_today_mask[cell],
+                    market_mutation_sink());
+            }
+        }
         if (++_committed_generation == 0) _committed_generation = 1;
+        // X8 reads the committed production shape. Refresh immediately before
+        // the digest so every metric-87 consumer sees this commit's answer.
+        refresh_neighbor_distinct_goods_metrics();
         // P1-A: the only place the Effect input digest is recomputed. It has to
         // be the commit tail -- the per-cell columns and the tag bits are final
         // here, and "the day advanced" is not the same as "the input changed".

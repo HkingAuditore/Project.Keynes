@@ -258,11 +258,11 @@ func _new_ext(catalog: Dictionary) -> Object:
 	ext.create_entities(1)
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
 			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
-			&"cell_weather_intensity", &"cell_elevation"]:
+			&"cell_weather_intensity", &"cell_elevation", &"cell_temp_365d"]:
 		var slot: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(slot, 0, PackedFloat32Array([0.5]))
 	for slot_name in [&"cell_terrain", &"cell_landform", &"cell_vegetation",
-			&"cell_is_water", &"cell_has_river"]:
+			&"cell_is_water", &"cell_has_river", &"cell_weather_type", &"cell_cover"]:
 		var slot: int = ext.register_component(slot_name, 2, 1, false)
 		ext.write_u8_range(slot, 0, PackedByteArray([0]))
 	var reserve_slots: PackedStringArray = catalog.building_resource_reserve_slots

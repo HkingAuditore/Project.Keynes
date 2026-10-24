@@ -329,6 +329,10 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_cell_resource_gen); cap(_cell_trade_gen); cap(_cell_effect_shortage_q16);
     cap(_cell_essentials_shortage_q16); cap(_cell_resource_abundance_q16);
     cap(_cell_previous_precipitation_q16); cap(_cell_rain_event_q16);
+    cap(_cell_temperature_annual_q16); cap(_cell_temperature_anomaly_q16);
+    cap(_cell_hazard_today_mask); cap(_cell_dry_streak_days);
+    cap(_cell_days_since_hazard); cap(_cell_previous_hazard_mask);
+    cap(_cell_weather_type); cap(_cell_cover);
     cap(_epoch_cell_country); cap(_epoch_cell_visible); cap(_epoch_country_technologies);
     cap(_city_output_shared_goods_q16); cap(_city_output_cell_offsets);
     cap(_city_output_good_indices); cap(_city_output_factors_q16);
@@ -1398,6 +1402,56 @@ Dictionary NativeEconomyRuntime::report() const {
     // declares neither must show builds == 0 and skips == committed epochs.
     out["tag_snapshot_builds"] = static_cast<int64_t>(tag_snapshot_builds());
     out["tag_snapshot_skips"] = static_cast<int64_t>(tag_snapshot_skips());
+    out["geo_flags_rebuilds"] = static_cast<int64_t>(geo_flags_rebuilds());
+    out["family_cell_metric_rebuilds"] =
+        static_cast<int64_t>(family_cell_metric_rebuilds());
+    out["family_country_metric_rebuilds"] =
+        static_cast<int64_t>(family_country_metric_rebuilds());
+    out["class_metric_rebuilds"] = static_cast<int64_t>(class_metric_rebuilds());
+    out["technology_metric_rebuilds"] =
+        static_cast<int64_t>(technology_metric_rebuilds());
+    out["technology_metric_source_hash"] =
+        static_cast<int64_t>(technology_metric_source_hash());
+    out["neighbor_distinct_goods_rebuilds"] =
+        static_cast<int64_t>(_neighbor_distinct_goods_rebuilds.load(
+            std::memory_order_relaxed));
+    out["neighbor_distinct_goods_source_hash"] =
+        static_cast<int64_t>(neighbor_distinct_goods_source_hash());
+    out["technology_metric_domain_mask_count"] =
+        static_cast<int64_t>(_technology_domain_masks.size());
+    out["technology_metric_domain_count"] =
+        static_cast<int64_t>(_technology_domain_ids.size());
+    out["technology_metric_input_override"] =
+        _technology_metric_input_override_enabled;
+    PackedInt32Array technology_domain_ids;
+    for (const int32_t domain : _technology_domain_ids)
+        technology_domain_ids.append(domain);
+    out["technology_metric_domain_ids"] = technology_domain_ids;
+    PackedInt64Array technology_domain_masks;
+    for (const uint64_t mask : _technology_domain_masks)
+        technology_domain_masks.append(static_cast<int64_t>(mask));
+    out["technology_metric_domain_masks"] = technology_domain_masks;
+    out["class_metric_source_revision"] =
+        static_cast<int64_t>(_class_metric_source_revision);
+    out["class_metric_source_content_hash"] =
+        static_cast<int64_t>(_class_metric_source_content_hash);
+    out["class_metric_source_epoch_day"] = _class_metric_source_epoch_day;
+    out["class_metric_country_count"] =
+        static_cast<int64_t>(_epoch_country_weighted_satisfaction_q16.size());
+    PackedInt64Array class_metric_satisfaction;
+    PackedInt64Array class_metric_weighted_satisfaction;
+    PackedInt64Array class_metric_farmer_satisfaction;
+    for (const int64_t value : _epoch_country_class_satisfaction_q16)
+        class_metric_satisfaction.append(value);
+    for (const int64_t value : _epoch_country_weighted_satisfaction_q16)
+        class_metric_weighted_satisfaction.append(value);
+    for (const int64_t value : _epoch_country_farmer_satisfaction_q16)
+        class_metric_farmer_satisfaction.append(value);
+    out["class_metric_satisfaction_q16"] = class_metric_satisfaction;
+    out["class_metric_weighted_satisfaction_q16"] =
+        class_metric_weighted_satisfaction;
+    out["class_metric_farmer_satisfaction_q16"] =
+        class_metric_farmer_satisfaction;
     out["tag_snapshot_needed"] = tag_snapshot_needed();
     out["tag_bits_needed"] = tag_bits_needed();
     out["specialized_good_count_needed"] = specialized_good_count_needed();

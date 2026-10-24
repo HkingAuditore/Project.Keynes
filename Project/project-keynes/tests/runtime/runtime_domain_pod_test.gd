@@ -17,6 +17,11 @@ func _init() -> void:
 		_expect("Ideology POD self-test exported", ext.has_method("runtime_ideology_pod_self_test"))
 		if ext.has_method("runtime_ideology_pod_self_test"):
 			_expect("Ideology worker plan/replay contract", bool(ext.runtime_ideology_pod_self_test()))
+		_expect("economy target-selector self-test exported",
+			ext.has_method("runtime_economy_target_selector_self_test"))
+		if ext.has_method("runtime_economy_target_selector_self_test"):
+			_expect("economy target-selector contract",
+				bool(ext.runtime_economy_target_selector_self_test()))
 		var started: Dictionary = ext.start_runtime_worker({
 			"simulation_thread_mode": "SHADOW",
 			"graph_coverage_complete": false,

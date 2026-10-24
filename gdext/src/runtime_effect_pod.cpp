@@ -7,6 +7,7 @@
 #include <cstring>
 #include <limits>
 #include <type_traits>
+#include <unordered_map>
 
 namespace pk {
 namespace {
@@ -246,6 +247,7 @@ uint64_t RuntimeEffectPodAuthority::catalog_hash(
         hash = mix_value(hash, definition.cadence_days);
         hash = mix_value(hash, definition.max_work);
         hash = mix_value(hash, definition.enabled);
+        hash = mix_value(hash, definition.managed);
         hash = mix_value(hash, definition.condition_begin);
         hash = mix_value(hash, definition.condition_count);
         hash = mix_value(hash, definition.instruction_begin);
@@ -264,6 +266,7 @@ uint64_t RuntimeEffectPodAuthority::catalog_hash(
         hash = mix_value(hash, definition.priority);
         hash = mix_value(hash, definition.target_selector_kind);
         hash = mix_value(hash, definition.target_selector_hash);
+        hash = mix_value(hash, definition.min_magnitude_scale_q16);
         for (const int32_t value : definition.magnitude_by_prestige_q16)
             hash = mix_value(hash, value);
     }
@@ -355,6 +358,7 @@ bool RuntimeEffectPodAuthority::validate_catalog(
             !valid_range(definition.command_begin, definition.command_count,
                          catalog.commands.size()) ||
             definition.max_stacks <= 0 || definition.duration_days == 0 ||
+            definition.managed > 1u ||
             definition.target_selector_kind < 0 ||
             definition.target_selector_kind > MAX_SELECTOR_KIND) {
             error = "effect_pod_definition_invalid";
@@ -556,14 +560,53 @@ bool RuntimeEffectPodAuthority::upsert_instance(
     const bool same_identity =
         instance.instance_id == input.instance_id &&
         instance.generation == input.generation;
-    const uint64_t keep_fire = same_identity ? instance.fire_sequence : 0;
+    // A managed level/location transition advances the generation while the
+    // downstream Modifier row still belongs to this instance identity. Losing
+    // effect_applied or an in-flight transaction here would make a later
+    // condition-false evaluation look "never applied", so no REMOVE is emitted
+    // and the old tier stays live. Carry the lifecycle across that replacement;
+    // the next true evaluation is forced to re-fire the new generation.
+    const bool managed_replacement =
+        same_identity == false &&
+        instance.instance_id == input.instance_id &&
+        definition.managed != 0 &&
+        (instance.effect_applied != 0 ||
+         instance.pending_transaction_id != 0);
+    const bool carry_lifecycle = same_identity || managed_replacement;
+    const uint64_t keep_fire =
+        carry_lifecycle ? instance.fire_sequence : 0;
     const uint64_t keep_acked =
-        same_identity ? instance.last_acked_fire_sequence : 0;
+        carry_lifecycle ? instance.last_acked_fire_sequence : 0;
     const int64_t keep_pending_tx =
-        same_identity ? instance.pending_transaction_id : 0;
+        carry_lifecycle ? instance.pending_transaction_id : 0;
     const uint64_t keep_pending_key =
-        same_identity ? instance.pending_idempotency_key : 0;
+        carry_lifecycle ? instance.pending_idempotency_key : 0;
     const int64_t keep_revision = instance.input_revision;
+    const uint8_t keep_effect_applied =
+        carry_lifecycle ? instance.effect_applied : 0;
+    const int64_t keep_applied_revision =
+        carry_lifecycle ? instance.applied_input_revision : 0;
+    // The old generation's APPLY may still be the row that exists downstream.
+    // Keep effect_applied so a false condition can remove it. A replacement
+    // forces the next evaluation through needs_resync, which re-fires the new
+    // tier without leaving an effect_applied=1 / applied_stack_count=0 wire
+    // pair that restore() would reject.
+    const int32_t keep_applied_stack_count =
+        carry_lifecycle ? instance.applied_stack_count : 0;
+    const uint8_t keep_needs_resync = managed_replacement
+        ? 1 : (same_identity ? instance.needs_resync : 0);
+    // A re-ENSURE can race an explicit remove. Keep the retire request when it
+    // belongs to an instance that has already applied (or has an in-flight
+    // APPLY); the trailing ENSURE must not erase the only record that the row
+    // still needs a REMOVE. A never-applied tombstone may still be reinstalled,
+    // which is the recoverable retire/upsert ordering used by the transport.
+    // The same applies when a level transition replaces the generation while a
+    // REMOVE is pending.
+    const uint8_t keep_retire_requested =
+        carry_lifecycle && (instance.effect_applied != 0 ||
+                            instance.pending_transaction_id != 0)
+            ? instance.retire_requested
+            : 0;
     // The latch belongs to whoever is evaluating. A same-identity re-ENSURE
     // (Country soft-skip) must not wipe it; a new generation is a new card tier
     // and starts the band over, so it takes the wire value.
@@ -591,9 +634,14 @@ bool RuntimeEffectPodAuthority::upsert_instance(
     instance.stack_key_hash = definition.stack_key_hash;
     instance.active = input.active ? 1 : 0;
     instance.fire_sequence = keep_fire;
+    instance.effect_applied = keep_effect_applied;
+    instance.applied_input_revision = keep_applied_revision;
+    instance.applied_stack_count = keep_applied_stack_count;
+    instance.needs_resync = keep_needs_resync;
     instance.last_acked_fire_sequence = keep_acked;
     instance.pending_transaction_id = keep_pending_tx;
     instance.pending_idempotency_key = keep_pending_key;
+    instance.retire_requested = keep_retire_requested;
     _current.deterministic_state_hash = state_hash(_current);
     build_snapshot(_current, _snapshot);
     rebuild_report();
@@ -607,6 +655,21 @@ bool RuntimeEffectPodAuthority::remove_instance(int64_t instance_id,
     const int32_t index = instance_index(instance_id, generation);
     if (index < 0) { error = "effect_pod_instance_stale_generation"; return false; }
     auto &instance = _current.instances[static_cast<size_t>(index)];
+    const auto &definition =
+        _catalog.definitions[static_cast<size_t>(instance.program_id)];
+    // An explicit retire must undo what the instance actually applied. Let the
+    // next plan emit a REMOVE transaction; planning handles inactive tombstones
+    // while their pending transaction is live, and the ACK clears lifecycle
+    // state. Unmanaged instances keep the old immediate tombstone behaviour.
+    if (definition.managed != 0 &&
+        (instance.effect_applied != 0 ||
+         instance.pending_transaction_id != 0)) {
+        instance.retire_requested = 1;
+        _current.deterministic_state_hash = state_hash(_current);
+        build_snapshot(_current, _snapshot);
+        rebuild_report();
+        return true;
+    }
     instance.active = 0;
     instance.retire_requested = 1;
     _current.deterministic_state_hash = state_hash(_current);
@@ -705,13 +768,51 @@ uint32_t RuntimeEffectPodAuthority::catchup_fire_never_fired_instances(
             instance.next_due_day = fire_day + 1;
             continue;
         }
-        const bool condition_passed =
-            evaluate_conditions(definition, instance, _current, fire_day);
-        // Latch the raw result before any stack arbitration, exactly like the
-        // main thread. A hysteresis band describes the metric, not the outcome
-        // of this tick's stack fight.
-        instance.latched = condition_passed ? 1 : 0;
-        if (!condition_passed) {
+        if (instance.retire_requested != 0) {
+            if (definition.managed == 0) {
+                instance.active = 0;
+                instance.retire_requested = 0;
+                continue;
+            }
+            // A never-applied instance has no downstream row to remove, even
+            // though its reference object may carry an unresolved command.
+            // Retire the row now so a later ENSURE cannot resurrect it.
+            if (instance.effect_applied == 0) {
+                instance.active = 0;
+                instance.retire_requested = 0;
+                instance.next_due_day = fire_day + 1;
+                continue;
+            }
+            RuntimeEffectPodTransaction transaction;
+            if (!append_retirement_transaction(
+                    _current, definition, instance, fire_day, emitted,
+                    transaction, error)) {
+                return fired;
+            }
+            _current.transactions.back().status =
+                RuntimeEffectPodTransactionStatus::COMMITTED;
+            append_transaction_intents(_current, definition, instance,
+                                       transaction, out_intents);
+            ++fired;
+            continue;
+        }
+        const ManagedLifecycleDecision decision = evaluate_managed_lifecycle(
+            definition, instance, _current, fire_day);
+        if (decision == ManagedLifecycleDecision::RETIRE) {
+            RuntimeEffectPodTransaction transaction;
+            if (!append_retirement_transaction(
+                    _current, definition, instance, fire_day, emitted,
+                    transaction, error)) {
+                return fired;
+            }
+            _current.transactions.back().status =
+                RuntimeEffectPodTransactionStatus::COMMITTED;
+            append_transaction_intents(_current, definition, instance,
+                                       transaction, out_intents);
+            ++fired;
+            continue;
+        }
+        if (decision == ManagedLifecycleDecision::IDLE) {
             instance.last_evaluated_input_revision = instance.input_revision;
             instance.next_due_day = fire_day + 1;
             continue;
@@ -733,83 +834,16 @@ uint32_t RuntimeEffectPodAuthority::catchup_fire_never_fired_instances(
             ++fired;
             continue;
         }
-        std::stable_sort(emitted.begin(), emitted.end(), command_less);
         RuntimeEffectPodTransaction transaction;
-        if (!append_transaction(_current, instance, fire_day, emitted,
-                                transaction, error)) {
+        if (!schedule_application(_current, definition, instance, fire_day,
+                                  emitted, transaction, error)) {
             return fired;
         }
-        ++_next_transaction_id;
-        instance.fire_sequence += 1u;
-        instance.pending_transaction_id = transaction.transaction_id;
-        instance.pending_idempotency_key = emitted.front().idempotency_key;
-        instance.last_evaluated_input_revision = instance.input_revision;
-        instance.next_due_day = fire_day + definition.cadence_days;
-        instance.expires_day =
-            definition.lifecycle == RuntimeEffectPodLifecycle::DURATION
-                ? fire_day + definition.duration_days
-                : -1;
         // Mirror commit_day: catch-up emits are already live on _current.
         _current.transactions.back().status =
             RuntimeEffectPodTransactionStatus::COMMITTED;
-        for (uint32_t ordinal = 0; ordinal < transaction.command_count;
-             ++ordinal) {
-            const auto &command =
-                _current.command_arena[transaction.command_begin + ordinal];
-            RuntimeDomainIntent intent;
-            intent.source_domain =
-                static_cast<uint16_t>(RuntimeDomainId::EFFECT);
-            intent.target_domain = adapter_domain(command.action);
-            intent.opcode = static_cast<uint16_t>(command.opcode);
-            intent.effect_action = static_cast<uint16_t>(command.action);
-            intent.source_id =
-                static_cast<uint64_t>(command.source_instance_id);
-            intent.target_handle = command.target_handle;
-            intent.target_generation = command.target_generation;
-            intent.value = command.value;
-            intent.effective_day = command.effective_day;
-            intent.payload = command.payload;
-            intent.request_id =
-                static_cast<uint64_t>(transaction.transaction_id);
-            intent.producer_id =
-                static_cast<uint32_t>(RuntimeDomainId::EFFECT);
-            intent.sequence = transaction.fire_sequence * 16u + ordinal;
-            intent.idempotency_key = command.idempotency_key;
-            intent.duration_days = command.duration_days;
-            intent.stacks = command.stacks;
-            // L3-9: the worker is the ONLY place this multiplier can take
-            // effect under its own authority -- the main thread's
-            // dispatch_native_modifier is suppressed for a worker-owned domain.
-            intent.magnitude_q16 = effect_scaled_magnitude_q16(
-                command.value != 0 ? command.value : 65536,
-                instance.magnitude_scale_q16);
-            if (command.action == RuntimeEffectPodAction::MODIFIER_COMMAND &&
-                intent.payload[1] == 0 && command.domain >= 0 &&
-                command.domain < 4) {
-                intent.payload[1] = command.domain;
-            }
-            if (command.action == RuntimeEffectPodAction::MODIFIER_COMMAND) {
-                // Hand the Modifier stage the adapter the main thread compiled
-                // for this command. Without it the stage guesses from the
-                // Modifier domain, which labels ideology commands TECHNOLOGY
-                // and clamps their magnitude to 1.0 -- a silent wrong-value
-                // failure that looks like success.
-                //
-                // Layout: low byte = EffectRuntime adapter kind, next byte =
-                // the program's target_domain (FAMILY_EFFECT / IDEOLOGY pick
-                // GROUP vs ENTITY from it). intent.flags is NOT usable here:
-                // bits 0..1 are RUNTIME_DOMAIN_INTENT_DEFERRED / _REQUIRES_ACK.
-                int32_t adapter = 0;
-                if (command.command_definition_id <
-                    _catalog.command_native_adapters.size()) {
-                    adapter = _catalog
-                        .command_native_adapters[command.command_definition_id];
-                }
-                intent.reserved = adapter |
-                    ((definition.target_domain & 0xFF) << 8);
-            }
-            out_intents.push_back(intent);
-        }
+        append_transaction_intents(_current, definition, instance,
+                                   transaction, out_intents);
         ++fired;
     }
     if (fired == 0) return 0;
@@ -914,6 +948,32 @@ bool RuntimeEffectPodAuthority::evaluate_conditions(
         }
     }
     return depth == 1 && stack[0] != 0;
+}
+
+RuntimeEffectPodAuthority::ManagedLifecycleDecision
+RuntimeEffectPodAuthority::evaluate_managed_lifecycle(
+        const RuntimeEffectPodDefinition &definition,
+        RuntimeEffectPodInstance &instance, const State &state,
+        int64_t day) const {
+    const bool condition_passed =
+        evaluate_conditions(definition, instance, state, day);
+    // Latch the raw result before any stack arbitration, exactly like the main
+    // thread. A hysteresis band describes the metric, not the outcome of this
+    // tick's stack fight.
+    instance.latched = condition_passed ? 1 : 0;
+    if (definition.managed == 0)
+        return condition_passed ? ManagedLifecycleDecision::FIRE
+                                : ManagedLifecycleDecision::IDLE;
+    if (!condition_passed)
+        return instance.effect_applied != 0
+            ? ManagedLifecycleDecision::RETIRE
+            : ManagedLifecycleDecision::IDLE;
+    if (instance.needs_resync == 0 && instance.effect_applied != 0 &&
+        instance.input_revision <= instance.applied_input_revision &&
+        instance.applied_stack_count == std::max(1, instance.stack_count)) {
+        return ManagedLifecycleDecision::IDLE;
+    }
+    return ManagedLifecycleDecision::FIRE;
 }
 
 bool RuntimeEffectPodAuthority::compile_command(
@@ -1057,6 +1117,63 @@ bool RuntimeEffectPodAuthority::invoke_behavior(
     return true;
 }
 
+bool RuntimeEffectPodAuthority::build_retirement_commands(
+        const RuntimeEffectPodDefinition &definition,
+        const RuntimeEffectPodInstance &instance, int64_t day,
+        std::vector<RuntimeEffectPodCommand> &commands,
+        std::string &error) const {
+    commands.clear();
+    error.clear();
+    uint32_t command_position = 0;
+    for (uint32_t i = 0; i < definition.command_count; ++i) {
+        const uint32_t command_index = definition.command_begin + i;
+        if (command_index >= _catalog.commands.size()) {
+            error = "effect_pod_retirement_command_missing";
+            return false;
+        }
+        const auto &apply = _catalog.commands[command_index];
+        if (apply.action != RuntimeEffectPodAction::MODIFIER_COMMAND ||
+            apply.opcode != 1) {
+            ++command_position;
+            continue;
+        }
+        RuntimeEffectPodCommand command;
+        if (!compile_command(apply, instance, 0, day,
+                             instance.fire_sequence + 1u, command_position++,
+                             command)) {
+            error = "effect_command_target_invalid";
+            return false;
+        }
+        command.opcode = 2;
+        command.value = 0;
+        command.duration_days = -1;
+        command.stacks = 1;
+        if (apply.target_resolver == RuntimeEffectPodTargetResolver::SOURCE) {
+            command.target_generation = instance.generation;
+        }
+        // Mirror EffectRuntime::create_retirement_transaction(): the REMOVE
+        // names the same reversible command definition but is not the APPLY
+        // key, so it cannot collide with the row it removes.
+        uint64_t key = FNV_OFFSET;
+        key = mix_value(key, instance.instance_id);
+        key = mix_value(key, instance.generation);
+        key = mix_value(key, instance.fire_sequence + 1u);
+        key = mix_value(key, command_index);
+        key = mix_value(key, static_cast<uint8_t>(
+            RuntimeEffectPodAction::MODIFIER_COMMAND));
+        key = mix_value(key, command.domain);
+        key = mix_value(key, command.opcode);
+        key = mix_value(key, 1u);
+        command.idempotency_key = key;
+        commands.push_back(command);
+    }
+    if (commands.empty()) {
+        error = "effect_retire_reversible_command_missing";
+        return false;
+    }
+    return true;
+}
+
 bool RuntimeEffectPodAuthority::execute_program(
         const RuntimeEffectPodDefinition &definition,
         const RuntimeEffectPodInstance &instance, const State &state,
@@ -1152,7 +1269,8 @@ bool RuntimeEffectPodAuthority::execute_program(
 bool RuntimeEffectPodAuthority::append_transaction(
         State &state, const RuntimeEffectPodInstance &instance, int64_t day,
         const std::vector<RuntimeEffectPodCommand> &commands,
-        RuntimeEffectPodTransaction &transaction, std::string &error) const {
+        bool retirement,
+        RuntimeEffectPodTransaction &transaction, std::string &error) {
     if (commands.empty()) return false;
     if (state.transactions.size() >= _transaction_capacity ||
         state.command_arena.size() + commands.size() > _command_capacity) {
@@ -1171,6 +1289,8 @@ bool RuntimeEffectPodAuthority::append_transaction(
     transaction.status = RuntimeEffectPodTransactionStatus::PREFLIGHTED;
     transaction.fire_sequence = instance.fire_sequence + 1u;
     transaction.input_revision = instance.input_revision;
+    transaction.transition_stack_count =
+        retirement ? 0 : std::max(1, instance.stack_count);
     for (const auto &command : commands) {
         transaction.required_ack_mask |= adapter_ack_bit(command.action);
         state.command_arena.push_back(command);
@@ -1180,6 +1300,133 @@ bool RuntimeEffectPodAuthority::append_transaction(
         transaction.fire_sequence, commands);
     state.transactions.push_back(transaction);
     return true;
+}
+
+bool RuntimeEffectPodAuthority::append_retirement_transaction(
+        State &state, const RuntimeEffectPodDefinition &definition,
+        RuntimeEffectPodInstance &instance, int64_t day,
+        std::vector<RuntimeEffectPodCommand> &commands,
+        RuntimeEffectPodTransaction &transaction, std::string &error,
+        bool retire_instance) {
+    commands.clear();
+    if (!build_retirement_commands(definition, instance, day, commands, error))
+        return false;
+    std::stable_sort(commands.begin(), commands.end(), command_less);
+    if (!append_transaction(state, instance, day, commands, true, transaction,
+                            error))
+        return false;
+    ++_next_transaction_id;
+    instance.fire_sequence += 1u;
+    instance.pending_transaction_id = transaction.transaction_id;
+    instance.pending_idempotency_key = commands.front().idempotency_key;
+    instance.last_evaluated_input_revision = instance.input_revision;
+    instance.next_due_day = day + 1;
+    if (retire_instance) instance.retire_requested = 1;
+    return true;
+}
+
+void RuntimeEffectPodAuthority::append_transaction_intents(
+        const State &state, const RuntimeEffectPodDefinition &definition,
+        const RuntimeEffectPodInstance &instance,
+        const RuntimeEffectPodTransaction &transaction,
+        std::vector<RuntimeDomainIntent> &out_intents,
+        uint64_t *plan_hash) const {
+    for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
+        const size_t command_index =
+            static_cast<size_t>(transaction.command_begin) + ordinal;
+        if (command_index >= state.command_arena.size()) return;
+        const auto &command = state.command_arena[command_index];
+        RuntimeDomainIntent intent;
+        intent.source_domain = static_cast<uint16_t>(RuntimeDomainId::EFFECT);
+        intent.target_domain = adapter_domain(command.action);
+        intent.opcode = static_cast<uint16_t>(command.opcode);
+        intent.effect_action = static_cast<uint16_t>(command.action);
+        intent.source_id = static_cast<uint64_t>(command.source_instance_id);
+        intent.target_handle = command.target_handle;
+        intent.target_generation = command.target_generation;
+        intent.value = command.value;
+        intent.reserved_effect_flags |= RUNTIME_DOMAIN_INTENT_HAS_EFFECT_VALUE;
+        intent.effective_day = command.effective_day;
+        intent.payload = command.payload;
+        intent.request_id = static_cast<uint64_t>(transaction.transaction_id);
+        intent.producer_id = static_cast<uint32_t>(RuntimeDomainId::EFFECT);
+        intent.sequence = transaction.fire_sequence * 16u + ordinal;
+        intent.idempotency_key = command.idempotency_key;
+        intent.duration_days = command.duration_days;
+        intent.stacks = command.stacks;
+        intent.magnitude_q16 = effect_scaled_magnitude_q16(
+            command.value, instance.magnitude_scale_q16);
+        if (command.action == RuntimeEffectPodAction::MODIFIER_COMMAND &&
+            intent.payload[1] == 0 && command.domain >= 0 &&
+            command.domain < 4) {
+            intent.payload[1] = command.domain;
+        }
+        if (command.action == RuntimeEffectPodAction::MODIFIER_COMMAND) {
+            int32_t adapter = 0;
+            if (command.command_definition_id <
+                _catalog.command_native_adapters.size()) {
+                adapter =
+                    _catalog.command_native_adapters[
+                        command.command_definition_id];
+            }
+            intent.reserved =
+                adapter | ((definition.target_domain & 0xFF) << 8);
+        }
+        out_intents.push_back(intent);
+        if (plan_hash != nullptr)
+            *plan_hash = command_hash(*plan_hash, command);
+    }
+}
+
+bool RuntimeEffectPodAuthority::schedule_application(
+        State &state, const RuntimeEffectPodDefinition &definition,
+        RuntimeEffectPodInstance &instance, int64_t day,
+        std::vector<RuntimeEffectPodCommand> &commands,
+        RuntimeEffectPodTransaction &transaction, std::string &error) {
+    if (commands.empty()) return false;
+    std::stable_sort(commands.begin(), commands.end(), command_less);
+    if (!append_transaction(state, instance, day, commands, false, transaction,
+                            error))
+        return false;
+    ++_next_transaction_id;
+    instance.fire_sequence += 1u;
+    instance.pending_transaction_id = transaction.transaction_id;
+    instance.pending_idempotency_key = commands.front().idempotency_key;
+    instance.last_evaluated_input_revision = instance.input_revision;
+    instance.next_due_day = day + definition.cadence_days;
+    instance.expires_day =
+        definition.lifecycle == RuntimeEffectPodLifecycle::DURATION
+            ? day + definition.duration_days
+            : -1;
+    return true;
+}
+
+void RuntimeEffectPodAuthority::compact_acked_transactions(State &state) const {
+    if (state.transactions.empty()) return;
+    std::vector<RuntimeEffectPodTransaction> retained;
+    retained.reserve(state.transactions.size());
+    std::vector<RuntimeEffectPodCommand> compacted_commands;
+    compacted_commands.reserve(state.command_arena.size());
+    for (RuntimeEffectPodTransaction transaction : state.transactions) {
+        if (transaction.status == RuntimeEffectPodTransactionStatus::ACKED)
+            continue;
+        const uint32_t begin =
+            static_cast<uint32_t>(compacted_commands.size());
+        for (uint32_t ordinal = 0; ordinal < transaction.command_count;
+             ++ordinal) {
+            const size_t command_index =
+                static_cast<size_t>(transaction.command_begin) + ordinal;
+            if (command_index >= state.command_arena.size()) break;
+            compacted_commands.push_back(state.command_arena[command_index]);
+        }
+        transaction.command_begin = begin;
+        transaction.command_count = static_cast<uint32_t>(
+            compacted_commands.size()) - begin;
+        retained.push_back(std::move(transaction));
+    }
+    if (retained.size() == state.transactions.size()) return;
+    state.transactions.swap(retained);
+    state.command_arena.swap(compacted_commands);
 }
 
 uint64_t RuntimeEffectPodAuthority::command_hash(
@@ -1264,6 +1511,8 @@ uint64_t RuntimeEffectPodAuthority::state_hash(const State &state) noexcept {
         hash = mix_value(hash, instance.stack_policy);
         hash = mix_value(hash, instance.stack_count);
         hash = mix_value(hash, instance.applied_stack_count);
+        hash = mix_value(hash, instance.effect_applied);
+        hash = mix_value(hash, instance.applied_input_revision);
         hash = mix_value(hash, instance.max_stacks);
         hash = mix_value(hash, instance.expires_day);
         hash = mix_value(hash, instance.stack_key_hash);
@@ -1385,11 +1634,17 @@ bool RuntimeEffectPodAuthority::plan_day(int64_t day, uint64_t input_generation,
     for (size_t instance_index_value = 0;
          instance_index_value < _next.instances.size(); ++instance_index_value) {
         RuntimeEffectPodInstance &instance = _next.instances[instance_index_value];
-        if (instance.active == 0) continue;
-        if (instance.expires_day >= 0 && instance.expires_day <= day) {
-            instance.active = 0;
-            if (instance.pending_transaction_id == 0) continue;
+        // An explicit retire keeps the tombstone active only until its REMOVE
+        // ACKs. Planning the removal is the whole point of that state.
+        if (instance.active == 0 && instance.retire_requested == 0) continue;
+        if (instance.program_id < 0 ||
+            instance.program_id >= static_cast<int32_t>(_catalog.definitions.size())) {
+            error = "effect_pod_program_invalid";
+            set_blocker(error.c_str());
+            return false;
         }
+        const auto &definition =
+            _catalog.definitions[static_cast<size_t>(instance.program_id)];
         if (instance.pending_transaction_id != 0) {
             int32_t tx_index = -1;
             for (size_t i = 0; i < _next.transactions.size(); ++i) {
@@ -1404,53 +1659,53 @@ bool RuntimeEffectPodAuthority::plan_day(int64_t day, uint64_t input_generation,
                 transaction.status = RuntimeEffectPodTransactionStatus::PREFLIGHTED;
                 ++plan.retried_transaction_count;
                 plan.required_ack_mask |= transaction.required_ack_mask;
-                for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
-                    if (transaction.command_begin + ordinal >= _next.command_arena.size()) {
-                        error = "effect_pod_transaction_command_offset_invalid";
-                        set_blocker(error.c_str());
-                        return false;
-                    }
-                    const auto &command = _next.command_arena[transaction.command_begin + ordinal];
-                    emitted.push_back(command);
-                    RuntimeDomainIntent intent;
-                    intent.source_domain = static_cast<uint16_t>(RuntimeDomainId::EFFECT);
-                    intent.target_domain = adapter_domain(command.action);
-                    intent.opcode = static_cast<uint16_t>(command.opcode);
-                    intent.effect_action = static_cast<uint16_t>(command.action);
-                    intent.source_id = static_cast<uint64_t>(command.source_instance_id);
-                    intent.target_handle = command.target_handle;
-                    intent.target_generation = command.target_generation;
-                    intent.value = command.value;
-                    intent.effective_day = command.effective_day;
-                    intent.payload = command.payload;
-                    intent.request_id = static_cast<uint64_t>(transaction.transaction_id);
-                    intent.producer_id = static_cast<uint32_t>(RuntimeDomainId::EFFECT);
-                    intent.sequence = transaction.fire_sequence * 16u + ordinal;
-                    intent.idempotency_key = command.idempotency_key;
-                    intent.duration_days = command.duration_days;
-                    intent.stacks = command.stacks;
-                    intent.magnitude_q16 = effect_scaled_magnitude_q16(
-                        command.value != 0 ? command.value : 65536,
-                        instance.magnitude_scale_q16);
-                    if (command.action == RuntimeEffectPodAction::MODIFIER_COMMAND &&
-                        intent.payload[1] == 0 && command.domain >= 0 &&
-                        command.domain < 4) {
-                        intent.payload[1] = command.domain;
-                    }
-                    plan.intents.push_back(intent);
-                    plan_hash = command_hash(plan_hash, command);
-                }
+                append_transaction_intents(_next, definition, instance, transaction,
+                                           plan.intents, &plan_hash);
             }
             continue;
         }
-        if (instance.next_due_day < 0 || instance.next_due_day > day) continue;
-        if (instance.program_id < 0 ||
-            instance.program_id >= static_cast<int32_t>(_catalog.definitions.size())) {
-            error = "effect_pod_program_invalid";
-            set_blocker(error.c_str());
-            return false;
+        if (instance.expires_day >= 0 && instance.expires_day <= day) {
+            if (definition.managed != 0 && instance.effect_applied != 0) {
+                RuntimeEffectPodTransaction transaction;
+                if (!append_retirement_transaction(
+                        _next, definition, instance, day, emitted, transaction,
+                        error, true)) {
+                    set_blocker(error.c_str());
+                    return false;
+                }
+                plan.required_ack_mask |= transaction.required_ack_mask;
+                append_transaction_intents(_next, definition, instance, transaction,
+                                           plan.intents, &plan_hash);
+                continue;
+            }
+            instance.active = 0;
+            continue;
         }
-        const auto &definition = _catalog.definitions[static_cast<size_t>(instance.program_id)];
+        // An explicit retire is a request to remove the live row now, not a
+        // cadence event. Let it through even when the APPLY parked the instance
+        // on a future due day.
+        if (instance.retire_requested == 0 &&
+            (instance.next_due_day < 0 || instance.next_due_day > day)) {
+            continue;
+        }
+        if (instance.retire_requested != 0) {
+            if (definition.managed == 0 || instance.effect_applied == 0) {
+                instance.active = 0;
+                instance.retire_requested = 0;
+                continue;
+            }
+            RuntimeEffectPodTransaction transaction;
+            if (!append_retirement_transaction(
+                    _next, definition, instance, day, emitted, transaction,
+                    error)) {
+                set_blocker(error.c_str());
+                return false;
+            }
+            plan.required_ack_mask |= transaction.required_ack_mask;
+            append_transaction_intents(_next, definition, instance, transaction,
+                                       plan.intents, &plan_hash);
+            continue;
+        }
         // Cadence is the gap after a successful fire. A never-fired instance
         // (fire_sequence==0) must retry on the next calendar day — technology
         // programs author cadence_days=3650, and using that as a failure
@@ -1462,10 +1717,23 @@ bool RuntimeEffectPodAuthority::plan_day(int64_t day, uint64_t input_generation,
             instance.next_due_day = retry_due;
             continue;
         }
-        const bool condition_passed =
-            evaluate_conditions(definition, instance, _current, day);
-        instance.latched = condition_passed ? 1 : 0;
-        if (!condition_passed) {
+        const ManagedLifecycleDecision decision = evaluate_managed_lifecycle(
+            definition, instance, _current, day);
+        if (decision == ManagedLifecycleDecision::RETIRE) {
+            RuntimeEffectPodTransaction transaction;
+            if (!append_retirement_transaction(
+                    _next, definition, instance, day, emitted, transaction,
+                    error)) {
+                set_blocker(error.c_str());
+                return false;
+            }
+            plan.required_ack_mask |= transaction.required_ack_mask;
+            append_transaction_intents(_next, definition, instance,
+                                       transaction, plan.intents,
+                                       &plan_hash);
+            continue;
+        }
+        if (decision == ManagedLifecycleDecision::IDLE) {
             instance.last_evaluated_input_revision = instance.input_revision;
             instance.next_due_day = retry_due;
             continue;
@@ -1489,54 +1757,15 @@ bool RuntimeEffectPodAuthority::plan_day(int64_t day, uint64_t input_generation,
             instance.next_due_day = day + std::max<int32_t>(1, definition.cadence_days);
             continue;
         }
-        std::stable_sort(emitted.begin(), emitted.end(), command_less);
         RuntimeEffectPodTransaction transaction;
-        if (!append_transaction(_next, instance, day, emitted, transaction, error)) {
+        if (!schedule_application(_next, definition, instance, day, emitted,
+                                  transaction, error)) {
             set_blocker(error.c_str());
             return false;
         }
-        ++_next_transaction_id;
-        instance.fire_sequence += 1u;
-        instance.pending_transaction_id = transaction.transaction_id;
-        instance.pending_idempotency_key = emitted.front().idempotency_key;
-        instance.last_evaluated_input_revision = instance.input_revision;
-        instance.next_due_day = day + definition.cadence_days;
-        instance.expires_day = definition.lifecycle == RuntimeEffectPodLifecycle::DURATION
-            ? day + definition.duration_days : -1;
         plan.required_ack_mask |= transaction.required_ack_mask;
-        for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
-            const auto &command = _next.command_arena[transaction.command_begin + ordinal];
-            RuntimeDomainIntent intent;
-            intent.source_domain = static_cast<uint16_t>(RuntimeDomainId::EFFECT);
-            intent.target_domain = adapter_domain(command.action);
-            intent.opcode = static_cast<uint16_t>(command.opcode);
-            intent.effect_action = static_cast<uint16_t>(command.action);
-            intent.source_id = static_cast<uint64_t>(command.source_instance_id);
-            intent.target_handle = command.target_handle;
-            intent.target_generation = command.target_generation;
-            intent.value = command.value;
-            intent.effective_day = command.effective_day;
-            intent.payload = command.payload;
-            intent.request_id = static_cast<uint64_t>(transaction.transaction_id);
-            intent.producer_id = static_cast<uint32_t>(RuntimeDomainId::EFFECT);
-            intent.sequence = transaction.fire_sequence * 16u + ordinal;
-            intent.idempotency_key = command.idempotency_key;
-            intent.duration_days = command.duration_days;
-            intent.stacks = command.stacks;
-            // L3-9: the worker is the ONLY place this multiplier can take
-            // effect under its own authority -- the main thread's
-            // dispatch_native_modifier is suppressed for a worker-owned domain.
-            intent.magnitude_q16 = effect_scaled_magnitude_q16(
-                command.value != 0 ? command.value : 65536,
-                instance.magnitude_scale_q16);
-            if (command.action == RuntimeEffectPodAction::MODIFIER_COMMAND &&
-                intent.payload[1] == 0 && command.domain >= 0 &&
-                command.domain < 4) {
-                intent.payload[1] = command.domain;
-            }
-            plan.intents.push_back(intent);
-            plan_hash = command_hash(plan_hash, command);
-        }
+        append_transaction_intents(_next, definition, instance, transaction,
+                                   plan.intents, &plan_hash);
     }
     _next.generation = _current.generation + 1u;
     _next.committed_day = day;
@@ -1571,6 +1800,7 @@ bool RuntimeEffectPodAuthority::commit_day(RuntimeEffectPodPlan &plan,
         if (transaction.status == RuntimeEffectPodTransactionStatus::PREFLIGHTED)
             transaction.status = RuntimeEffectPodTransactionStatus::COMMITTED;
     }
+    compact_acked_transactions(_next);
     _next.deterministic_state_hash = state_hash(_next);
     _current = std::move(_next);
     _next = State{};
@@ -1628,9 +1858,31 @@ bool RuntimeEffectPodAuthority::apply_ack(const RuntimeDomainAck &ack,
                 auto &instance = _current.instances[static_cast<size_t>(instance_index_value)];
                 instance.pending_transaction_id = 0;
                 instance.pending_idempotency_key = 0;
-                instance.applied_stack_count = instance.stack_count;
                 instance.last_acked_fire_sequence = transaction.fire_sequence;
-                if (instance.retire_requested) instance.active = 0;
+                const auto &definition = _catalog.definitions[
+                    static_cast<size_t>(instance.program_id)];
+                const bool retirement =
+                    transaction.transition_stack_count == 0;
+                if (definition.managed != 0 && retirement) {
+                    instance.effect_applied = 0;
+                    instance.applied_input_revision = 0;
+                    instance.applied_stack_count = 0;
+                    if (instance.retire_requested) {
+                        instance.active = 0;
+                        instance.retire_requested = 0;
+                    }
+                } else if (definition.managed != 0) {
+                    instance.effect_applied = 1;
+                    instance.applied_input_revision =
+                        std::max(instance.applied_input_revision,
+                                 transaction.input_revision);
+                    instance.applied_stack_count = std::max(
+                        1, transaction.transition_stack_count);
+                } else {
+                    // Unmanaged programs keep their historical bookkeeping.
+                    instance.applied_stack_count = instance.stack_count;
+                    if (instance.retire_requested) instance.active = 0;
+                }
             }
         }
     } else if (ack.code == RuntimeDomainAckCode::RETRY) {
@@ -1729,6 +1981,8 @@ void RuntimeEffectPodAuthority::serialize(std::vector<uint8_t> &out) const {
         append_le<uint64_t>(out, instance.pending_idempotency_key);
         append_le<uint64_t>(out, instance.last_acked_fire_sequence);
         append_le<int32_t>(out, instance.magnitude_scale_q16);
+        append_le<uint8_t>(out, instance.effect_applied);
+        append_le<int64_t>(out, instance.applied_input_revision);
         append_le<uint8_t>(out, instance.latched);
         append_le<uint8_t>(out, instance.active);
         append_le<uint8_t>(out, instance.retire_requested);
@@ -1867,6 +2121,8 @@ bool RuntimeEffectPodAuthority::restore(const uint8_t *data, size_t size,
             !read_le(data,payload_end,cursor,instance.pending_idempotency_key) ||
             !read_le(data,payload_end,cursor,instance.last_acked_fire_sequence) ||
             !read_le(data,payload_end,cursor,instance.magnitude_scale_q16) ||
+            !read_le(data,payload_end,cursor,instance.effect_applied) ||
+            !read_le(data,payload_end,cursor,instance.applied_input_revision) ||
             !read_le(data,payload_end,cursor,instance.latched) ||
             !read_le(data,payload_end,cursor,instance.active) ||
             !read_le(data,payload_end,cursor,instance.retire_requested) ||
@@ -1881,8 +2137,17 @@ bool RuntimeEffectPodAuthority::restore(const uint8_t *data, size_t size,
                 _catalog.definitions[static_cast<size_t>(
                     instance.program_id)].target_domain).generation_allowed) ||
             instance.metric_base > restored.metric_values.size() ||
-            instance.magnitude_scale_q16 < 65536 / 4 ||
+            instance.magnitude_scale_q16 <
+                _catalog.definitions[static_cast<size_t>(
+                    instance.program_id)].min_magnitude_scale_q16 ||
             instance.magnitude_scale_q16 > 65536 * 4 ||
+            instance.effect_applied > 1 ||
+            (_catalog.definitions[static_cast<size_t>(
+                  instance.program_id)].managed != 0 &&
+              (((instance.effect_applied == 0) !=
+                (instance.applied_stack_count == 0)) ||
+               instance.applied_input_revision < 0 ||
+               instance.applied_input_revision > instance.input_revision)) ||
             instance.latched > 1) {
             error = "effect_pod_instance_truncated_or_invalid"; return false;
         }
@@ -1989,6 +2254,20 @@ bool RuntimeEffectPodAuthority::restore(const uint8_t *data, size_t size,
         error = "effect_pod_save_state_hash_failed";
         return false;
     }
+    // Several historical ACKED transitions may legitimately remain for one
+    // instance until the next commit compacts them (for example APPLY then
+    // RETIRE). Only the latest ACKED transition must agree with the final ACKed
+    // lifecycle state.
+    std::unordered_map<int64_t, const RuntimeEffectPodTransaction *> latest_acked;
+    for (const auto &transaction : restored.transactions) {
+        if (transaction.status != RuntimeEffectPodTransactionStatus::ACKED)
+            continue;
+        auto it = latest_acked.find(transaction.source_instance_id);
+        if (it == latest_acked.end() ||
+            transaction.transaction_id > it->second->transaction_id) {
+            latest_acked[transaction.source_instance_id] = &transaction;
+        }
+    }
     for (const auto &transaction : restored.transactions) {
         const int32_t index = [&]() {
             for (size_t i = 0; i < restored.instances.size(); ++i)
@@ -1998,6 +2277,24 @@ bool RuntimeEffectPodAuthority::restore(const uint8_t *data, size_t size,
             return -1;
         }();
         if (index < 0) { error = "effect_pod_transaction_instance_missing"; return false; }
+        const auto &instance = restored.instances[static_cast<size_t>(index)];
+        const auto latest = latest_acked.find(instance.instance_id);
+        if (transaction.status == RuntimeEffectPodTransactionStatus::ACKED &&
+            latest != latest_acked.end() &&
+            latest->second != &transaction) {
+            continue;
+        }
+        const auto &definition = _catalog.definitions[
+            static_cast<size_t>(instance.program_id)];
+        if (definition.managed != 0 &&
+            transaction.status == RuntimeEffectPodTransactionStatus::ACKED &&
+            ((transaction.transition_stack_count == 0 &&
+              instance.effect_applied != 0) ||
+             (transaction.transition_stack_count > 0 &&
+              instance.effect_applied == 0))) {
+            error = "effect_pod_managed_transaction_state_invalid";
+            return false;
+        }
     }
     // Install only after the complete candidate has passed every check.
     _catalog_revision = catalog_revision;
@@ -2009,6 +2306,34 @@ bool RuntimeEffectPodAuthority::restore(const uint8_t *data, size_t size,
     _active_plan = nullptr;
     rebuild_report();
     return true;
+}
+
+bool RuntimeEffectPodAuthority::definition_is_managed(
+        int32_t program_id) const noexcept {
+    return program_id >= 0 &&
+        program_id < static_cast<int32_t>(_catalog.definitions.size()) &&
+        _catalog.definitions[static_cast<size_t>(program_id)].managed != 0;
+}
+
+int32_t RuntimeEffectPodAuthority::program_id_for_instance(
+        int64_t instance_id, uint32_t generation) const noexcept {
+    for (const RuntimeEffectPodInstance &instance : _current.instances) {
+        if (instance.instance_id == instance_id &&
+            instance.generation == generation) {
+            return instance.program_id;
+        }
+    }
+    return -1;
+}
+
+int32_t RuntimeEffectPodAuthority::instance_index_for_id(
+        int64_t instance_id) const noexcept {
+    for (size_t i = 0; i < _current.instances.size(); ++i) {
+        if (_current.instances[i].instance_id == instance_id) {
+            return static_cast<int32_t>(i);
+        }
+    }
+    return -1;
 }
 
 bool RuntimeEffectPodAuthority::magnitude_scale_self_test(std::string &error) {
@@ -2076,21 +2401,432 @@ bool RuntimeEffectPodAuthority::magnitude_scale_self_test(std::string &error) {
         return fail("effect_scale_control_plan_failed");
     if (plain_plan.intents.front().magnitude_q16 != static_cast<int32_t>(Q16_ONE))
         return fail("effect_scale_control_changed");
+
+    // Kind 16 derives its scale from the source cap. A cap of 6 yields 1/6,
+    // below the generic 0.25x authoring floor, but it is a valid count step.
+    definition.key_hash = hash_text("scale.source_count.fixture");
+    definition.target_selector_kind = MAX_SELECTOR_KIND;
+    definition.min_magnitude_scale_q16 = Q16_ONE / 6;
+    catalog.definitions.clear();
+    catalog.definitions.push_back(definition);
+    RuntimeEffectPodAuthority source_count;
+    if (!source_count.configure(catalog, error))
+        return fail("effect_source_count_scale_configure_failed");
+    input.instance_id = 13;
+    input.magnitude_scale_q16 = Q16_ONE / 6;
+    if (!source_count.upsert_instance(input, error))
+        return fail("effect_source_count_scale_rejected");
+    RuntimeEffectPodPlan source_count_plan;
+    if (!source_count.plan_day(0, 1, source_count_plan, error) ||
+            source_count_plan.intents.size() != 1u)
+        return fail("effect_source_count_scale_plan_failed");
+    if (source_count_plan.intents.front().magnitude_q16 != Q16_ONE / 6)
+        return fail("effect_source_count_scale_clamped");
     return true;
 }
 
 bool RuntimeEffectPodAuthority::self_test(std::string &error) {
+    const auto fail = [&error](const char *reason) {
+        error = reason;
+        return false;
+    };
     // Cell 0 is a real target on the main thread, so the pod has to agree. Kept
     // as its own fixture because this one pins exact plan hashes and adding a
     // second program to its catalog would move all of them.
     if (!cell_target_self_test(error)) return false;
     if (!latch_self_test(error)) return false;
     if (!magnitude_scale_self_test(error)) return false;
+    // Managed lifecycle: one apply, one deactivation after the condition
+    // falls, and no idle churn while the same input stays applied. The
+    // fixture also pins ACK semantics and ACKED transaction compaction.
+    {
+        RuntimeEffectPodCatalog managed_catalog;
+        managed_catalog.metric_key_hashes = {hash_text("managed.metric")};
+        RuntimeEffectPodDefinition managed;
+        managed.key_hash = hash_text("managed.program");
+        managed.cadence_days = 1;
+        managed.max_work = 8;
+        managed.managed = 1;
+        managed.condition_begin = 0;
+        managed.condition_count = 1;
+        managed.instruction_begin = 0;
+        managed.instruction_count = 2;
+        managed.command_begin = 0;
+        managed.command_count = 1;
+        managed_catalog.definitions.push_back(managed);
+        RuntimeEffectPodCondition condition;
+        condition.op = RuntimeEffectPodConditionOp::METRIC_GTE;
+        condition.arg0 = 0;
+        condition.value = Q16_ONE;
+        managed_catalog.conditions.push_back(condition);
+        RuntimeEffectPodInstruction constant;
+        constant.op = RuntimeEffectPodInstructionOp::CONST;
+        constant.value = 0;  // not used: command value is constant
+        managed_catalog.instructions.push_back(constant);
+        RuntimeEffectPodInstruction emit;
+        emit.op = RuntimeEffectPodInstructionOp::EMIT_COMMAND;
+        emit.arg0 = 0;
+        managed_catalog.instructions.push_back(emit);
+        RuntimeEffectPodCommandDefinition apply;
+        apply.action = RuntimeEffectPodAction::MODIFIER_COMMAND;
+        apply.domain = 2;
+        apply.opcode = 1;
+        apply.target_resolver = RuntimeEffectPodTargetResolver::INSTANCE;
+        apply.value_mode = RuntimeEffectPodValueMode::CONSTANT;
+        apply.value = Q16_ONE;
+        apply.duration_days = -1;
+        apply.stacks = 1;
+        apply.command_key_hash = hash_text("managed.command");
+        apply.definition_key_hash = hash_text("managed.stat");
+        managed_catalog.commands.push_back(apply);
+
+        RuntimeEffectPodAuthority authority;
+        if (!authority.configure(managed_catalog, error)) return false;
+        RuntimeEffectPodInstanceInput input;
+        input.instance_id = 7001;
+        input.generation = 1;
+        input.program_id = 0;
+        input.source_handle = 3;
+        input.target_handle = 4;
+        input.target_generation = 1;
+        input.next_due_day = 0;
+        if (!authority.upsert_instance(input, error))
+            return fail("effect_managed_setup_failed");
+        if (!authority.set_metric(7001, 1, 0, 1, 2 * Q16_ONE, error))
+            return fail("effect_managed_metric_failed");
+
+        int64_t transaction_id = 0;
+        for (int64_t day = 0; day < 3; ++day) {
+            RuntimeEffectPodPlan plan;
+            if (!authority.plan_day(day, static_cast<uint64_t>(day + 1),
+                                    plan, error)) {
+                return fail("effect_managed_true_plan_failed");
+            }
+            if (day == 0) {
+                if (plan.intents.size() != 1u)
+                    return fail("effect_managed_initial_apply_missing");
+                transaction_id = plan.next_snapshot.transactions.empty()
+                    ? 0 : plan.next_snapshot.transactions.front().transaction_id;
+                if (!authority.commit_day(plan, error))
+                    return fail("effect_managed_initial_commit_failed");
+                RuntimeDomainAck ack;
+                ack.transaction_id = static_cast<uint64_t>(transaction_id);
+                ack.target_handle = 4;
+                ack.target_generation = 1;
+                ack.domain = static_cast<uint16_t>(RuntimeDomainId::MODIFIER);
+                ack.effective_day = day;
+                ack.code = RuntimeDomainAckCode::OK;
+                if (!authority.apply_ack(ack, error))
+                    return fail("effect_managed_initial_ack_failed");
+                const auto &applied = authority.snapshot().instances.front();
+                if (applied.effect_applied != 1 ||
+                        applied.applied_input_revision != 1 ||
+                        applied.applied_stack_count != 1) {
+                    return fail("effect_managed_ack_state_not_recorded");
+                }
+            } else {
+                if (!plan.intents.empty())
+                    return fail("effect_managed_true_days_refired");
+                if (!authority.commit_day(plan, error))
+                    return fail("effect_managed_true_commit_failed");
+                if (!authority.snapshot().transactions.empty())
+                    return fail("effect_managed_acked_transaction_not_compacted");
+            }
+        }
+
+        // Falling condition: exactly one REMOVE, then silence until applied.
+        if (!authority.set_metric(7001, 1, 0, 2, 0, error))
+            return fail("effect_managed_metric_lower_failed");
+        RuntimeEffectPodPlan retire_plan;
+        if (!authority.plan_day(3, 4, retire_plan, error) ||
+                retire_plan.intents.size() != 1u)
+            return fail("effect_managed_retire_missing");
+        const auto &retire_command = retire_plan.next_snapshot.command_arena[
+            retire_plan.next_snapshot.transactions.front().command_begin];
+        if (retire_command.action != RuntimeEffectPodAction::MODIFIER_COMMAND ||
+                retire_command.opcode != 2 ||
+                retire_plan.next_snapshot.transactions.front()
+                    .transition_stack_count != 0) {
+            return fail("effect_managed_retire_shape_invalid");
+        }
+        transaction_id = retire_plan.next_snapshot.transactions.front()
+            .transaction_id;
+        if (!authority.commit_day(retire_plan, error))
+            return fail("effect_managed_retire_commit_failed");
+        RuntimeDomainAck retire_ack;
+        retire_ack.transaction_id = static_cast<uint64_t>(transaction_id);
+        retire_ack.target_handle = 4;
+        retire_ack.target_generation = 1;
+        retire_ack.domain = static_cast<uint16_t>(RuntimeDomainId::MODIFIER);
+        retire_ack.effective_day = 3;
+        retire_ack.code = RuntimeDomainAckCode::OK;
+        if (!authority.apply_ack(retire_ack, error))
+            return fail("effect_managed_retire_ack_failed");
+        const auto &retired = authority.snapshot().instances.front();
+        if (retired.effect_applied != 0 ||
+                retired.applied_input_revision != 0 ||
+                retired.applied_stack_count != 0 ||
+                authority.snapshot().transactions.empty() ||
+                authority.snapshot().transactions.front().status !=
+                    RuntimeEffectPodTransactionStatus::ACKED) {
+            return fail("effect_managed_retire_state_not_cleared");
+        }
+        RuntimeEffectPodPlan idle_plan;
+        if (!authority.plan_day(4, 5, idle_plan, error) ||
+                !idle_plan.intents.empty() ||
+                !authority.commit_day(idle_plan, error)) {
+            return fail("effect_managed_false_day_refired");
+        }
+        if (!authority.snapshot().transactions.empty() ||
+                !authority.snapshot().command_arena.empty()) {
+            return fail("effect_managed_acked_transaction_not_compacted");
+        }
+
+        // Re-apply, then exercise the explicit remove path. This is the
+        // cell-instance case: the instance must stay scheduled long enough to
+        // emit a REMOVE and only become a tombstone after that REMOVE ACKs.
+        const int64_t reapply_day = 5;
+        if (!authority.set_metric(7001, 1, 0, 3, 2 * Q16_ONE, error))
+            return fail("effect_managed_reapply_metric_failed");
+        RuntimeEffectPodPlan reapply_plan;
+        if (!authority.plan_day(reapply_day, 6, reapply_plan, error) ||
+                reapply_plan.intents.size() != 1u) {
+            return fail("effect_managed_reapply_missing");
+        }
+        transaction_id = reapply_plan.next_snapshot.transactions.front()
+            .transaction_id;
+        if (!authority.commit_day(reapply_plan, error))
+            return fail("effect_managed_reapply_commit_failed");
+        RuntimeDomainAck reapply_ack;
+        reapply_ack.transaction_id = static_cast<uint64_t>(transaction_id);
+        reapply_ack.target_handle = 4;
+        reapply_ack.target_generation = 1;
+        reapply_ack.domain = static_cast<uint16_t>(RuntimeDomainId::MODIFIER);
+        reapply_ack.effective_day = reapply_day;
+        reapply_ack.code = RuntimeDomainAckCode::OK;
+        if (!authority.apply_ack(reapply_ack, error))
+            return fail("effect_managed_reapply_ack_failed");
+        if (!authority.remove_instance(7001, 1, error))
+            return fail("effect_managed_remove_request_failed");
+        // A same-identity re-ENSURE may arrive after the explicit remove while
+        // the APPLY is still settling. It must not erase the pending REMOVE.
+        input.next_due_day = 6;
+        if (!authority.upsert_instance(input, error) ||
+                authority.snapshot().instances.front().retire_requested == 0) {
+            return fail("effect_managed_remove_request_erased");
+        }
+        RuntimeEffectPodPlan remove_plan;
+        if (!authority.plan_day(6, 7, remove_plan, error) ||
+                remove_plan.intents.size() != 1u) {
+            return fail("effect_managed_remove_missing");
+        }
+        const auto &remove_snapshot = remove_plan.next_snapshot;
+        // The re-apply transaction is ACKED but remains until this commit
+        // compacts it, so the newly planned retirement is the last row.
+        const auto &remove_transaction = remove_snapshot.transactions.back();
+        const auto &remove_command = remove_snapshot.command_arena[
+            remove_transaction.command_begin];
+        if (remove_transaction.transition_stack_count != 0 ||
+                remove_command.opcode != 2) {
+            return fail("effect_managed_remove_shape_invalid");
+        }
+        transaction_id = remove_transaction.transaction_id;
+        if (!authority.commit_day(remove_plan, error))
+            return fail("effect_managed_remove_commit_failed");
+        RuntimeDomainAck remove_ack;
+        remove_ack.transaction_id = static_cast<uint64_t>(transaction_id);
+        remove_ack.target_handle = 4;
+        remove_ack.target_generation = 1;
+        remove_ack.domain = static_cast<uint16_t>(RuntimeDomainId::MODIFIER);
+        remove_ack.effective_day = 6;
+        remove_ack.code = RuntimeDomainAckCode::OK;
+        if (!authority.apply_ack(remove_ack, error))
+            return fail("effect_managed_remove_ack_failed");
+        const auto &removed = authority.snapshot().instances.front();
+        if (removed.active != 0 || removed.effect_applied != 0 ||
+                removed.retire_requested != 0) {
+            return fail("effect_managed_remove_tombstone_invalid");
+        }
+
+        // Duration expiry uses the same retirement transaction rather than
+        // silently tombstoning an applied managed row.
+        RuntimeEffectPodCatalog duration_catalog = managed_catalog;
+        duration_catalog.definitions[0].lifecycle =
+            RuntimeEffectPodLifecycle::DURATION;
+        duration_catalog.definitions[0].duration_days = 2;
+        RuntimeEffectPodAuthority duration_authority;
+        if (!duration_authority.configure(duration_catalog, error))
+            return fail("effect_managed_duration_configure_failed");
+        RuntimeEffectPodInstanceInput duration_input;
+        duration_input.instance_id = 7002;
+        duration_input.generation = 1;
+        duration_input.program_id = 0;
+        duration_input.source_handle = 3;
+        duration_input.target_handle = 4;
+        duration_input.target_generation = 1;
+        duration_input.next_due_day = 0;
+        if (!duration_authority.upsert_instance(duration_input, error) ||
+                !duration_authority.set_metric(
+                    7002, 1, 0, 1, 2 * Q16_ONE, error)) {
+            return fail("effect_managed_duration_setup_failed");
+        }
+        RuntimeEffectPodPlan duration_apply;
+        if (!duration_authority.plan_day(0, 1, duration_apply, error) ||
+                duration_apply.intents.size() != 1u) {
+            return fail("effect_managed_duration_apply_missing");
+        }
+        transaction_id = duration_apply.next_snapshot.transactions.front()
+            .transaction_id;
+        if (!duration_authority.commit_day(duration_apply, error))
+            return fail("effect_managed_duration_apply_commit_failed");
+        RuntimeDomainAck duration_ack;
+        duration_ack.transaction_id = static_cast<uint64_t>(transaction_id);
+        duration_ack.target_handle = 4;
+        duration_ack.target_generation = 1;
+        duration_ack.domain = static_cast<uint16_t>(RuntimeDomainId::MODIFIER);
+        duration_ack.effective_day = 0;
+        duration_ack.code = RuntimeDomainAckCode::OK;
+        if (!duration_authority.apply_ack(duration_ack, error))
+            return fail("effect_managed_duration_apply_ack_failed");
+        for (int64_t day = 1; day < 2; ++day) {
+            RuntimeEffectPodPlan plan;
+            if (!duration_authority.plan_day(
+                    day, static_cast<uint64_t>(day + 1), plan, error) ||
+                    !plan.intents.empty() ||
+                    !duration_authority.commit_day(plan, error)) {
+                return fail("effect_managed_duration_idle_failed");
+            }
+        }
+        RuntimeEffectPodPlan duration_retire;
+        if (!duration_authority.plan_day(2, 3, duration_retire, error) ||
+                duration_retire.intents.size() != 1u ||
+                duration_retire.next_snapshot.command_arena[
+                    duration_retire.next_snapshot.transactions.front().command_begin]
+                    .opcode != 2) {
+            return fail("effect_managed_duration_retire_missing");
+        }
+
+        for (int64_t day = 7; day < 105; ++day) {
+            RuntimeEffectPodPlan plan;
+            if (!authority.plan_day(day, static_cast<uint64_t>(day + 1),
+                                    plan, error) ||
+                    !plan.intents.empty() ||
+                    !authority.commit_day(plan, error)) {
+                return fail("effect_managed_idle_day_churned");
+            }
+        }
+        if (!authority.snapshot().transactions.empty() ||
+                !authority.snapshot().command_arena.empty()) {
+            return fail("effect_managed_compaction_invalid");
+        }
+
+        // Removing an instance while its APPLY is in flight must still retire
+        // the row the APPLY is about to create. Keep the request across the
+        // APPLY ACK, then emit exactly one REMOVE on the next plan.
+        RuntimeEffectPodAuthority pending_remove_authority;
+        if (!pending_remove_authority.configure(managed_catalog, error))
+            return fail("effect_managed_pending_remove_configure_failed");
+        RuntimeEffectPodInstanceInput pending_remove_input;
+        pending_remove_input.instance_id = 7003;
+        pending_remove_input.generation = 1;
+        pending_remove_input.program_id = 0;
+        pending_remove_input.source_handle = 3;
+        pending_remove_input.target_handle = 4;
+        pending_remove_input.target_generation = 1;
+        pending_remove_input.next_due_day = 0;
+        if (!pending_remove_authority.upsert_instance(
+                pending_remove_input, error) ||
+                !pending_remove_authority.set_metric(
+                    7003, 1, 0, 1, 2 * Q16_ONE, error)) {
+            return fail("effect_managed_pending_remove_setup_failed");
+        }
+        RuntimeEffectPodPlan pending_apply;
+        if (!pending_remove_authority.plan_day(0, 1, pending_apply, error) ||
+                pending_apply.intents.size() != 1u) {
+            return fail("effect_managed_pending_remove_apply_missing");
+        }
+        transaction_id = pending_apply.next_snapshot.transactions.front()
+            .transaction_id;
+        if (!pending_remove_authority.commit_day(pending_apply, error) ||
+                !pending_remove_authority.remove_instance(7003, 1, error)) {
+            return fail("effect_managed_pending_remove_request_failed");
+        }
+        const auto &pending_removed =
+            pending_remove_authority.snapshot().instances.front();
+        if (pending_removed.active == 0 ||
+                pending_removed.effect_applied != 0 ||
+                pending_removed.retire_requested == 0 ||
+                pending_removed.pending_transaction_id == 0) {
+            return fail("effect_managed_pending_remove_tombstoned_early");
+        }
+        RuntimeDomainAck pending_apply_ack;
+        pending_apply_ack.transaction_id = static_cast<uint64_t>(transaction_id);
+        pending_apply_ack.target_handle = 4;
+        pending_apply_ack.target_generation = 1;
+        pending_apply_ack.domain =
+            static_cast<uint16_t>(RuntimeDomainId::MODIFIER);
+        pending_apply_ack.effective_day = 0;
+        pending_apply_ack.code = RuntimeDomainAckCode::OK;
+        if (!pending_remove_authority.apply_ack(pending_apply_ack, error))
+            return fail("effect_managed_pending_remove_apply_ack_failed");
+        const auto &pending_applied =
+            pending_remove_authority.snapshot().instances.front();
+        if (pending_applied.active == 0 ||
+                pending_applied.effect_applied == 0 ||
+                pending_applied.retire_requested == 0 ||
+                pending_applied.pending_transaction_id != 0) {
+            return fail("effect_managed_pending_remove_ack_state_invalid");
+        }
+        RuntimeEffectPodPlan pending_retire;
+        if (!pending_remove_authority.plan_day(1, 2, pending_retire, error) ||
+                pending_retire.intents.size() != 1u ||
+                pending_retire.next_snapshot.transactions.back().status !=
+                    RuntimeEffectPodTransactionStatus::PREFLIGHTED) {
+            return fail("effect_managed_pending_remove_retire_missing");
+        }
+        const auto &pending_retire_transaction =
+            pending_retire.next_snapshot.transactions.back();
+        const auto &pending_retire_command =
+            pending_retire.next_snapshot.command_arena[
+                pending_retire_transaction.command_begin];
+        if (pending_retire_transaction.transition_stack_count != 0 ||
+                pending_retire_command.opcode != 2) {
+            return fail("effect_managed_pending_remove_retire_shape_invalid");
+        }
+        transaction_id = pending_retire_transaction.transaction_id;
+        if (!pending_remove_authority.commit_day(pending_retire, error))
+            return fail("effect_managed_pending_remove_retire_commit_failed");
+        RuntimeDomainAck pending_retire_ack;
+        pending_retire_ack.transaction_id = static_cast<uint64_t>(transaction_id);
+        pending_retire_ack.target_handle = 4;
+        pending_retire_ack.target_generation = 1;
+        pending_retire_ack.domain =
+            static_cast<uint16_t>(RuntimeDomainId::MODIFIER);
+        pending_retire_ack.effective_day = 1;
+        pending_retire_ack.code = RuntimeDomainAckCode::OK;
+        if (!pending_remove_authority.apply_ack(
+                pending_retire_ack, error)) {
+            return fail("effect_managed_pending_remove_retire_ack_failed");
+        }
+        const auto &pending_retired =
+            pending_remove_authority.snapshot().instances.front();
+        if (pending_retired.active != 0 ||
+                pending_retired.effect_applied != 0 ||
+                pending_retired.retire_requested != 0) {
+            return fail("effect_managed_pending_remove_tombstone_invalid");
+        }
+        RuntimeEffectPodPlan pending_compaction;
+        if (!pending_remove_authority.plan_day(
+                2, 3, pending_compaction, error) ||
+                !pending_compaction.intents.empty() ||
+                !pending_remove_authority.commit_day(
+                    pending_compaction, error) ||
+                !pending_remove_authority.snapshot().transactions.empty() ||
+                !pending_remove_authority.snapshot().command_arena.empty()) {
+            return fail("effect_managed_pending_remove_compaction_failed");
+        }
+    }
     error.clear();
-    const auto fail = [&error](const char *reason) {
-        error = reason;
-        return false;
-    };
     RuntimeEffectPodCatalog catalog;
     catalog.metric_key_hashes = {hash_text("metric")};
     RuntimeEffectPodDefinition definition;

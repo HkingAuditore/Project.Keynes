@@ -721,7 +721,7 @@ public:
     RuntimeEffectPodReport effect_pod_report() const {
         return _effect_pod_authority.report();
     }
-    bool effect_pod_self_test(std::string *error = nullptr) const;
+    bool effect_pod_self_test(std::string *error = nullptr);
     // F7 host-stage smoke: plan/commit + MODIFIER intent emission + ACK
     // round-trip. Does not grant EFFECT ACTIVE authority.
     bool effect_pod_host_stage_self_test(std::string *error = nullptr);
@@ -809,12 +809,24 @@ public:
     // re-derived opinion.
     std::shared_ptr<const RuntimeIdeologyOpinionSnapshot>
         worker_opinion_snapshot_for_day(int64_t day) const;
+    // The opinion consumed by the worker plan that produced `generation`.
+    // Write-back binds state and its frozen factors together; looking up only by
+    // calendar day can select a newer plan when Economy and Ideology day scales
+    // differ.
+    std::shared_ptr<const RuntimeIdeologyOpinionSnapshot>
+        worker_opinion_snapshot_for_ideology_generation(
+            uint64_t generation) const;
     // (removed) latest_worker_opinion_day / debug_ideology_worker_opinion_ring:
     // the "bind to the newest recorded day" rule published 1278 references for 24
     // distinct days and never compared anything. The reader above stays; the join
     // is still open (05 §2.7).
     bool queue_ideology_pod_command(const RuntimeIdeologyPodCommand &command,
                                     std::string &error);
+    // Effect custom-domain grants are a semantic batch: validate and reserve
+    // the whole batch before publishing any command to the Ideology transport.
+    bool queue_ideology_pod_commands(
+        const std::vector<RuntimeIdeologyPodCommand> &commands,
+        std::string &error);
     bool poll_ideology_pod_intent(RuntimeDomainIntent &intent);
     bool submit_ideology_pod_ack(const RuntimeDomainAck &ack,
                                  std::string &error);
@@ -1376,6 +1388,7 @@ private:
         int64_t committed_day = -1;
         int64_t period_index = -1;
         uint64_t revision = 0;
+        uint64_t ideology_generation = 0;
         std::shared_ptr<const RuntimeIdeologyOpinionSnapshot> opinion;
     };
     static constexpr size_t IDEOLOGY_WORKER_OPINION_RING = 16;
@@ -1386,7 +1399,8 @@ private:
     void record_ideology_worker_opinion_use(
         int64_t plan_day,
         const RuntimeIdeologyOpinionSnapshot &opinion,
-        std::shared_ptr<const RuntimeIdeologyOpinionSnapshot> owner);
+        std::shared_ptr<const RuntimeIdeologyOpinionSnapshot> owner,
+        uint64_t ideology_generation);
     std::atomic<int64_t> _ideology_pod_committed_day{-1};
     // First diverging country row, kept once per run (not per day) so a failing
     // parity can be read as numbers instead of "somewhere in `points`".
@@ -1884,6 +1898,13 @@ private:
     std::atomic<uint64_t> _effect_pod_snapshot_generation{0};
     std::atomic<uint32_t> _effect_pod_ack_count{0};
     std::atomic<uint32_t> _effect_pod_intent_count{0};
+    std::atomic<uint32_t> _effect_pod_managed_intent_count{0};
+    std::atomic<uint32_t> _effect_pod_unmanaged_intent_count{0};
+    std::atomic<uint32_t> _effect_pod_program_intent_count{0};
+    std::array<std::atomic<int32_t>,
+        RUNTIME_EFFECT_INTENT_PROGRAM_REPORT_CAPACITY>
+        _effect_pod_intent_program_ids{};
+    std::atomic<uint32_t> _effect_pod_transaction_count{0};
     // Retire requests that found nothing to retire. The main-thread contract
     // (EffectRuntime::retire_instance_pod) treats a missing instance as success
     // -- "no Effect instance means no Effect-owned Modifier was committed" --

@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <vector>
 
 namespace pk {
 
@@ -111,6 +112,19 @@ public:
         int32_t total = 0;
         for (int32_t id = 0; id < limit; ++id) total += test(id) ? 1 : 0;
         return total;
+    }
+
+    // Copy the ids in [begin, end) into `out` in ascending order. Used where
+    // one sparse mask (Economy metrics or ideology scalars) has to be handed to
+    // a different consumer without walking the full 256-id namespace.
+    int32_t collect_ids(int32_t begin, int32_t end,
+                        std::vector<int32_t> &out) const {
+        out.clear();
+        if (begin < 0) begin = 0;
+        if (end > CAPACITY) end = CAPACITY;
+        for (int32_t id = begin; id < end; ++id)
+            if (test(id)) out.push_back(id);
+        return static_cast<int32_t>(out.size());
     }
 
     // Raw word access for the sampler's "walk only the requested ids" loop and

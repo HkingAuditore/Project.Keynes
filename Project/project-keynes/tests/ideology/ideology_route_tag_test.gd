@@ -262,10 +262,11 @@ func _test_route_display_names() -> void:
 ## right index -- which is the same argument §29.6 made for the tag-name
 ## resolver. So one real catalog is mutated (in memory only) and compiled.
 ##
-## Two tags are attached to two real cards through `secondary_route_tags` so a
-## card that already carries a primary route keeps it; the acceptance is that
-## the requirement span shows up with the authored level/mask and that a typo in
-## the route id fails the build instead of compiling an empty bond.
+## The shipped catalog already has several mining cards. The native route table is a
+## catalog contract (it maps card masks to route_count scalar ids), so a synthetic
+## route could not be represented by the EffectDomainCatalog's fixed scalar table.
+## The acceptance is that the requirement span shows up with the authored
+## level/mask and that a typo still fails the build.
 func _test_compile_end_to_end() -> void:
 	var economy_ir: Dictionary = EconomyCatalogScript.compile_native_catalog()
 	_expect("economy catalog compiles for the end-to-end case",
@@ -276,22 +277,18 @@ func _test_compile_end_to_end() -> void:
 	_expect("default ideology catalog loads", catalog != null)
 	if catalog == null:
 		return
-	const ROUTE := "__route_tag_probe"
-	var tagged := 0
-	for definition in catalog.definitions:
-		if definition == null or tagged >= 2:
-			continue
-		var extras := PackedStringArray(definition.secondary_route_tags)
-		extras.append(ROUTE)
-		definition.secondary_route_tags = extras
-		tagged += 1
-	_expect("two real cards accept the probe route", tagged == 2, str(tagged))
-	if tagged != 2:
-		return
+	const ROUTE := &"mining"
 	var card_ids := PackedStringArray()
 	for definition in catalog.definitions:
-		if definition != null and definition.route_tags().has(ROUTE):
+		if definition == null:
+			continue
+		if definition.route_tags().has(ROUTE):
 			card_ids.append(String(definition.id))
+	_expect("the shipped catalog has at least two mining cards",
+		card_ids.size() >= 2,
+		str(card_ids))
+	if card_ids.size() < 2:
+		return
 
 	var tier := _synergy_route(&"zz_route_probe_tier", ROUTE, 2, 1, 2)
 	catalog.synergies.append(tier)
@@ -307,8 +304,9 @@ func _test_compile_end_to_end() -> void:
 			var offsets: PackedInt32Array = compiled.synergy_requirement_offsets
 			var begin := int(offsets[synergy_index])
 			var end := int(offsets[synergy_index + 1])
-			_expect("the route expands to exactly its two members",
-				end - begin == 2, "%d..%d" % [begin, end])
+			_expect("the route expands to exactly its shipped members",
+				end - begin == card_ids.size(), "%d..%d expected=%d" %
+					[begin, end, card_ids.size()])
 			var levels: PackedInt32Array = compiled.synergy_requirement_min_levels
 			var masks: PackedByteArray = compiled.synergy_requirement_location_masks
 			var all_level_one := true
@@ -349,8 +347,9 @@ func _test_compile_end_to_end() -> void:
 				saw_route = true
 				var names: PackedStringArray = (row as Dictionary).get(
 					"route_names", PackedStringArray())
-				_expect("an unknown route id shows through as itself in the label list",
-					names.has(ROUTE), str(names))
+				_expect("a known route id resolves to its display label",
+					names.has(IdeologyCatalogScript.route_display_name(ROUTE)),
+					str(names))
 				break
 		_expect("the view exposes route membership per card", saw_route)
 

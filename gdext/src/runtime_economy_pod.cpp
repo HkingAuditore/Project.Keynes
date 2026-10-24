@@ -309,8 +309,28 @@ void assign_market_from_ledger(const RuntimeEconomyLedgerState &ledger,
     market.demand_ema = ledger.market_demand_ema;
     if (!ledger.market_last_shortage_q16.empty())
         market.last_shortage_q16 = ledger.market_last_shortage_q16;
-    if (!ledger.market_cell_to_market.empty())
+    if (!ledger.market_cell_to_market.empty()) {
         market.cell_to_market = ledger.market_cell_to_market;
+    } else if (market.cell_to_market.size() !=
+            static_cast<size_t>(std::max(0, ledger.market_count))) {
+        // The ledger did not carry the cell→market column, so rebuild it from the
+        // identity mapping `RuntimeEconomyMarketStore::clear()` uses.
+        //
+        // Leaving it empty is not benign: `NativeEconomyRuntime::begin_save` gates on
+        // `market_store().cell_to_market.size() != cells` and answers
+        // `economy_save_state_shape_invalid`. That gate runs when
+        // `apply_ecp2_authority` takes its pre-apply ROLLBACK BACKUP, so a restored POD
+        // state could not be restarted at all -- `start_runtime_worker` died with
+        // `ecp2_atomic_backup_failed`, and production hits that on every load
+        // (`world_runtime_host.gd:804` restores the bundle and then starts the worker).
+        //
+        // Measured before this: `[save-shape] market_cell_to_market actual=0
+        // expected=192`.
+        const size_t markets = static_cast<size_t>(std::max(0, ledger.market_count));
+        market.cell_to_market.resize(markets);
+        for (size_t cell = 0; cell < markets; ++cell)
+            market.cell_to_market.write_scalar(cell, static_cast<int32_t>(cell));
+    }
 }
 
 template<class T>
@@ -374,6 +394,35 @@ void assign_owned_blocks_from_ledger(const RuntimeEconomyLedgerState &ledger,
     state.epoch_cursor = ledger.epoch_cursor;
     if (ledger.epoch_cursor.captured)
         state.epoch_cursors = ledger.epoch_cursor.store;
+    // The OwnedState that comes out of a successful ledger read is a COMPLETE capture,
+    // so every block must say so -- the ledger's own flags are not the authority here.
+    //
+    // `assign_owned_blocks_from_ledger` runs only after `validate_owned_ledger`, which
+    // already rejected a mismatched shape (`building_trade_block_pairing`) and any
+    // missing required block. What it did NOT do was update the flags on the state it
+    // produced, so a restored `_state` could carry `trade_escrow.captured == false`
+    // while `building.captured == true`.
+    //
+    // That matters because `NativeEconomyRuntime` reads those flags verbatim when it is
+    // bound to this state (`formula_owned_bound()` branch of
+    // `capture_committed_ledger_state`): `building` is refilled from the store (which
+    // sets `captured = true`), the rest are copied as-is. The very next capture --
+    // which `restore_ecp2_authority` performs as its rollback backup -- then failed
+    // `building.captured != trade_escrow.captured`, surfaced as
+    // `ecp2_atomic_backup_failed`, and `start_runtime_worker` died. Production hits
+    // this on every load that restarts the worker (`world_runtime_host.gd:804`).
+    if (state.building.captured || state.trade_escrow.captured ||
+        state.family.captured || state.resource.captured ||
+        state.epoch_cursor.captured) {
+        state.trade_escrow.captured = true;
+        // ABI8/ABI9 pair family with building and resource with family, so a state
+        // that captured building also owns the later blocks by construction. Setting
+        // them keeps the shape self-consistent for the next capture, which is exactly
+        // the check that rejected it.
+        state.family.captured = true;
+        state.resource.captured = true;
+        state.epoch_cursor.captured = true;
+    }
 }
 
 bool build_owned_state_from_ledger(const RuntimeEconomyLedgerState &ledger,

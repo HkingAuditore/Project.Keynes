@@ -446,7 +446,7 @@ func _new_ext(cells: int, catalog: Dictionary = {}) -> Object:
 			&"cell_plant_available_water", &"cell_weather_precip"]:
 		var slot: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(slot, 0, climate)
-	for slot_name in [&"cell_snow_cover", &"cell_weather_intensity", &"cell_elevation"]:
+	for slot_name in [&"cell_snow_cover", &"cell_weather_intensity", &"cell_elevation", &"cell_temp_365d"]:
 		var slot: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(slot, 0, zero_f)
 	var terrain := PackedByteArray()
@@ -471,6 +471,10 @@ func _new_ext(cells: int, catalog: Dictionary = {}) -> Object:
 	ext.write_u8_range(water_sid, 0, zeros_u8)
 	var river_sid: int = ext.register_component(&"cell_has_river", 2, 1, false)
 	ext.write_u8_range(river_sid, 0, zeros_u8)
+	var weather_type_sid: int = ext.register_component(&"cell_weather_type", 2, 1, false)
+	ext.write_u8_range(weather_type_sid, 0, zeros_u8)
+	var cover_sid: int = ext.register_component(&"cell_cover", 2, 1, false)
+	ext.write_u8_range(cover_sid, 0, zeros_u8)
 	if not catalog.is_empty():
 		var reserve_slots: PackedStringArray = catalog.get(
 			"building_resource_reserve_slots", PackedStringArray())

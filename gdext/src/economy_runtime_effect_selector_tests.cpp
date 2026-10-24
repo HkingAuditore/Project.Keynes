@@ -225,6 +225,28 @@ bool EconomyTargetSelectorTests::run(std::string &error) {
     rt->collect_effect_target_cells(0, ER::SELECTOR_NEIGHBORS_R2, 0, 0, out);
     if (!expect(out.size() <= 18, "selector_r2_cap", error)) return false;
 
+    // T11: kind 16's two-int packed layout. The GDScript side has its own
+    // implementation on purpose; this pins the C++ bit positions and the
+    // documented boundary values so either side drifting fails by name.
+    {
+        const int32_t boundary[2] = {
+            ((31 & 0x1F) | ((4 & 0x07) << 5) | ((15 & 0x0F) << 8)),
+            65535};
+        const ER::SourceCountSelector decoded =
+            ER::decode_source_count_selector(boundary);
+        if (!expect(decoded.target_cap == 31, "source_count_pack_cap_31",
+                    error)) return false;
+        if (!expect(decoded.radius == 4, "source_count_pack_radius_4",
+                    error)) return false;
+        if (!expect(decoded.cap == 15, "source_count_pack_count_15",
+                    error)) return false;
+        if (!expect(decoded.tag == 65535, "source_count_pack_tag_65535",
+                    error)) return false;
+        const int32_t default_cap[2] = {((2 & 0x07) << 5), 1};
+        if (!expect(ER::decode_source_count_selector(default_cap).target_cap == 32,
+                    "source_count_pack_zero_is_default_32", error)) return false;
+    }
+
     // 6-7. Terrain component: stays inside terrain 0 and includes its anchor.
     rt->collect_effect_target_cells(
         kInteriorCell, ER::SELECTOR_SAME_TERRAIN_COMPONENT, 8, 0, out);

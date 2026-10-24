@@ -135,6 +135,7 @@ func _run() -> void:
 	_test_two_metric_signature(catalog)
 	_test_digest_cost(catalog)
 	_test_latched_survives_save(catalog)
+	_test_ideology_scalar_inputs(catalog)
 
 
 ## The real half of the domain-2 fixture: the shipped catalog must actually
@@ -436,6 +437,137 @@ func _test_latched_survives_save(catalog: Dictionary) -> void:
 		str(ext.explain_effect(int(ids[0]))))
 
 
+## §5 acceptance: ideology-local scalars are derived inputs backed by the same
+## Effect instance slab as Economy metrics. The observer is a learning-route card
+## reading `route_count.learning`; a mining card and a third learning card provide
+## the controlled changes. The third card has no program, so both Effect instances
+## belong to cards whose activation signatures can be compared directly.
+func _test_ideology_scalar_inputs(catalog: Dictionary) -> void:
+	var route_metric := _scalar_metric_id("ideology.scalar.route_count.learning")
+	if not _require("scalar: route_count.learning has a stable metric id",
+			route_metric >= 0, "keys=%d" % _metric_keys().size()):
+		return
+
+	var observer := _metric_program(0, 0)
+	var condition: Resource = EffectConditionScript.new()
+	condition.op = OP_METRIC_GTE
+	condition.arg0 = route_metric
+	condition.value_q16 = Q16_ONE
+	var observer_conditions: Array[Resource] = [condition]
+	observer.conditions = observer_conditions
+	observer.definition_key = &"scalar_observer"
+	_move_program_to_country(observer)
+	var control := _metric_program(0, 0)
+	control.definition_key = &"scalar_control"
+	_move_program_to_country(control)
+
+	var native := _ideology_catalog_scalar_fixture()
+	var ext: Object = _build_ext(catalog, 1)
+	var configured: Dictionary = ext.configure_ideologies(native)
+	if not _require("scalar: native ideology catalog configures",
+			bool(configured.get("ok", false)), str(configured)):
+		return
+	var effect_ir: Dictionary = ext.configure_effects(
+		_scalar_effect_catalog([observer, control]))
+	if not _require("scalar: effect catalog configures",
+			bool(effect_ir.get("ok", false)), str(effect_ir)):
+		return
+	var handle := int(ext.get_country_cell_summary(0).get("country_handle", 0))
+	if not _require("scalar: fixture resolves the country handle", handle != 0):
+		return
+
+	if not _submit_scalar_cards(ext, handle, [0, 1, 2]):
+		_expect("scalar: all three cards are discovered", false)
+		return
+	if not _submit_scalar_equips(ext, handle, [1, 0], 0):
+		_expect("scalar: the mining card and observer are equipped", false)
+		return
+	_force_scalar_refresh(ext, 0)
+	var observer_id := _scalar_instance_id(ext, handle, 0)
+	var control_id := _scalar_instance_id(ext, handle, 1)
+	if not _require("scalar: both programs hold one instance",
+			observer_id != 0 and control_id != 0,
+			"observer=%d control=%d report=%s snapshot=%s" % [
+				observer_id, control_id,
+				str(ext.get_ideology_effect_instance_report(handle)),
+				str(ext.get_ideology_snapshot(handle))]):
+		return
+	var observer_scalar := _scalar_value(ext, observer_id, route_metric)
+	_expect("scalar: a mining card does not contribute to learning",
+		observer_scalar == Q16_ONE, "value_q16=%d" % observer_scalar)
+	var observer_signature := int(
+		ext.compute_idea_activation_signature_for_test(handle, 0))
+	var control_signature := int(
+		ext.compute_idea_activation_signature_for_test(handle, 1))
+
+	if not _submit_scalar_equips(ext, handle, [2], 1):
+		_expect("scalar: the third learning card is equipped", false)
+		return
+	_force_scalar_refresh(ext, 1)
+	observer_scalar = _scalar_value(ext, observer_id, route_metric)
+	_expect("scalar: equipping a second learning card changes the observer",
+		observer_scalar == 2 * Q16_ONE, "value_q16=%d" % observer_scalar)
+	var observer_after := int(
+		ext.compute_idea_activation_signature_for_test(handle, 0))
+	_expect("scalar: the referenced route count changes the signature",
+		observer_after != observer_signature,
+		"before=%d after=%d" % [observer_signature, observer_after])
+	_expect("scalar: the mining control signature is unchanged",
+		int(ext.compute_idea_activation_signature_for_test(handle, 1))
+			== control_signature,
+		"before=%d after=%d" % [control_signature,
+			int(ext.compute_idea_activation_signature_for_test(handle, 1))])
+
+	if not _submit_scalar_unequip(ext, handle, 2, 2):
+		_expect("scalar: the third learning card unequips", false)
+		return
+	_force_scalar_refresh(ext, 2)
+	observer_scalar = _scalar_value(ext, observer_id, route_metric)
+	_expect("scalar: unequipping restores the observer count",
+		observer_scalar == Q16_ONE, "value_q16=%d" % observer_scalar)
+
+	# Re-equip before capture so the save proves the NON-default value and its
+	# signature survive. PKEF must restore first: PKID owns the card pointer that
+	# addresses the captured Effect instance.
+	if not _submit_scalar_equips(ext, handle, [2], 3):
+		_expect("scalar: the third learning card re-equips", false)
+		return
+	_force_scalar_refresh(ext, 3)
+	_expect("scalar: the saved world has two learning cards",
+		_scalar_value(ext, observer_id, route_metric) == 2 * Q16_ONE)
+	var saved_signature := int(
+		ext.compute_idea_activation_signature_for_test(handle, 0))
+	var pkef: PackedByteArray = ext.capture_effect_state()
+	var pkid: PackedByteArray = ext.capture_ideology_state()
+	var restored_handle := int(
+		ext.get_country_cell_summary(0).get("country_handle", 0))
+	if not _require("scalar: both save payloads are non-empty",
+			pkef.size() > 0 and pkid.size() > 0 and restored_handle != 0,
+			"pkef=%d pkid=%d handle=%d" %
+				[pkef.size(), pkid.size(), restored_handle]):
+		return
+	var restored_ext: Object = _build_ext(catalog, 1)
+	restored_ext.configure_ideologies(native)
+	restored_ext.configure_effects(_scalar_effect_catalog([observer, control]))
+	_expect("scalar: PKEF restores first",
+		bool(restored_ext.restore_effect_state(pkef).get("ok", false)))
+	_expect("scalar: PKID restores after PKEF",
+		bool(restored_ext.restore_ideology_state(pkid).get("ok", false)))
+	_force_scalar_refresh(restored_ext, 3)
+	var restored_observer := _scalar_instance_id(
+		restored_ext, restored_handle, 0)
+	var restored_value := _scalar_value(
+		restored_ext, restored_observer, route_metric)
+	_expect("scalar: save/load preserves the two-card route count",
+		restored_value == 2 * Q16_ONE, "value_q16=%d" % restored_value)
+	_expect("scalar: save/load preserves the activation signature",
+		int(restored_ext.compute_idea_activation_signature_for_test(
+			restored_handle, 0)) == saved_signature,
+		"saved=%d restored=%d" % [saved_signature,
+			int(restored_ext.compute_idea_activation_signature_for_test(
+				restored_handle, 0))])
+
+
 ## P3 step 2: the per-cell coefficient table. A cell card with the default
 ## selector has to land on the plane as "every owned cell" (filter_tag == -1) --
 ## that is the X1 unlock, because today the runtime resolves kind 0 to the anchor
@@ -535,8 +667,23 @@ func _test_input_revision_split(catalog: Dictionary) -> void:
 			bool(revisions.get("ok", false)), str(revisions)):
 		return
 	var metrics: PackedInt64Array = revisions.get("metrics", PackedInt64Array())
-	_expect("the report carries one revision per metric",
-		metrics.size() == 68, str(metrics.size()))
+	var economy_metric_count := (
+		_metric_keys().size()
+		- EffectDomainCatalogScript.SCALAR_METRIC_KEYS.size())
+	# 108 = X3-b (96..101) + X7-b (102..107). Later lanes append, so the
+	# X3-b ids below stay fixed while the total grows.
+	_expect("X3-b appends four metrics after the allocated gap",
+		economy_metric_count == 108
+		and String(_metric_keys()[96]) == "cell.profession_share_farmer_q16"
+		and String(_metric_keys()[97]) == "cell.profession_share_industrial_q16"
+		and String(_metric_keys()[98]) == "cell.profession_share_cooperative_q16"
+		and String(_metric_keys()[99]) == "country.worker_class_satisfaction_q16",
+		"economy=%d" % economy_metric_count)
+	_expect("the report carries one revision per Economy metric (X10, X9a, "
+			+ "the X8 reservation, and X13a's country hazard-free share included)",
+		metrics.size() == economy_metric_count,
+		"reported=%d economy=%d total=%d" % [metrics.size(),
+			economy_metric_count, _metric_keys().size()])
 	# 55 = COUNTRY_INCOME_TAX_BURDEN_BP. No card in this fixture reads it, so it
 	# must never have advanced. If the split were fake (one global counter copied
 	# into every slot) this would be non-zero.
@@ -826,11 +973,11 @@ func _build_ext(catalog: Dictionary, cells: int = 1) -> Object:
 	# epoch ownership index this test depends on.
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
 			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
-			&"cell_weather_intensity", &"cell_elevation"]:
+			&"cell_weather_intensity", &"cell_elevation", &"cell_temp_365d"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, _f32_fill(cells, 0.5))
 	for slot_name in [&"cell_terrain", &"cell_landform", &"cell_vegetation",
-			&"cell_is_water", &"cell_has_river"]:
+			&"cell_is_water", &"cell_has_river", &"cell_weather_type", &"cell_cover"]:
 		var sid2: int = ext.register_component(slot_name, 2, 1, false)
 		ext.write_u8_range(sid2, 0, _u8_fill(cells, 0))
 	for i in range((catalog.building_resource_ids as PackedStringArray).size()):
@@ -963,6 +1110,193 @@ func _metric_keys() -> PackedStringArray:
 		"size=%d id=%d" % [keys.size(), METRIC_CELL_POPULATION])
 	_metric_keys_cache = keys
 	return keys
+
+
+func _scalar_metric_id(key: String) -> int:
+	var keys := _metric_keys()
+	for metric_index in range(keys.size()):
+		if String(keys[metric_index]) == key:
+			return metric_index
+	return -1
+
+
+func _move_program_to_country(program: Resource) -> void:
+	program.target_domain = 3
+	program.target_selector_kind = 3
+	program.commands[0].domain = 1
+
+
+func _scalar_effect_catalog(programs: Array) -> Dictionary:
+	var catalog: Resource = EffectCatalogScript.new()
+	catalog.metric_keys = _metric_keys()
+	var definitions: Array[Resource] = []
+	var registry: Resource = EffectDefinitionScript.new()
+	registry.key = &"ideology.command"
+	registry.cadence_days = 3650
+	var end := EffectInstruction.new()
+	end.op = 12
+	var registry_instructions: Array[Resource] = [end]
+	registry.instructions = registry_instructions
+	var template: Resource = EffectCommandScript.new()
+	template.action = 1
+	template.domain = MODIFIER_DOMAIN_ECONOMY
+	template.opcode = 1
+	template.target_resolver = 1
+	template.value_mode = 0
+	template.command_key = &"ideology.persistent"
+	template.definition_key = StringName(TEST_MODIFIER_KEY)
+	var registry_commands: Array[Resource] = [template]
+	registry.commands = registry_commands
+	definitions.append(registry)
+	for program in programs:
+		definitions.append((program as Resource).to_effect_definition())
+	catalog.definitions = definitions
+	return catalog.compile_native_catalog()
+
+
+func _ideology_catalog_scalar_fixture() -> Dictionary:
+	var ids := PackedStringArray(["scalar_observer", "scalar_control", "scalar_third"])
+	# `IdeologyCatalog.compile_native_catalog` sorts route ids. In this two-route
+	# fixture learning is bit 0 and mining is bit 1.
+	var routes := PackedInt32Array([1, 2, 1])
+	return {
+		"protocol_version": 1,
+		"ideology_capacity": 4,
+		"national_spirit_capacity": 1,
+		"offer_choice_count": 3,
+		"offer_cost_q16": 0,
+		"starting_points_q16": 0,
+		"max_commands_per_slice": 64,
+		"max_transition_commands": 256,
+		"max_effect_instances": 128,
+		"political_class_ids": PackedStringArray(["general"]),
+		"stance_offsets": PackedInt32Array([0, 0, 0, 0]),
+		"stance_class_indices": PackedInt32Array(),
+		"stance_adopt_q16": PackedInt32Array(),
+		"stance_repeal_q16": PackedInt32Array(),
+		"stance_promote_q16": PackedInt32Array(),
+		"stance_adopt_min_q16": PackedInt32Array(),
+		"stance_repeal_min_q16": PackedInt32Array(),
+		"stance_promote_min_q16": PackedInt32Array(),
+		"adopt_thresholds_q16": PackedInt32Array([0, 0, 0]),
+		"repeal_thresholds_q16": PackedInt32Array([0, 0, 0]),
+		"promote_thresholds_q16": PackedInt32Array([0, 0, 0]),
+		"exclusion_group_ids": PackedInt32Array([-1, -1, -1]),
+		"ideology_era_indices": PackedInt32Array([0, 0, 0]),
+		"route_keys": PackedStringArray(["learning", "mining"]),
+		"ideology_route_masks": routes,
+		"synergy_ids": PackedStringArray(),
+		"synergy_requirement_offsets": PackedInt32Array([0]),
+		"synergy_requirement_ideology_ids": PackedInt32Array(),
+		"synergy_requirement_min_levels": PackedInt32Array(),
+		"synergy_requirement_location_masks": PackedByteArray(),
+		"synergy_effect_offsets": PackedInt32Array([0]),
+		"synergy_effect_actions": PackedInt32Array(),
+		"synergy_effect_domains": PackedInt32Array(),
+		"synergy_effect_opcodes": PackedInt32Array(),
+		"synergy_effect_values_q16": PackedInt64Array(),
+		"synergy_effect_duration_days": PackedInt32Array(),
+		"synergy_effect_stacks": PackedInt32Array(),
+		"synergy_effect_command_keys": PackedStringArray(),
+		"synergy_effect_definition_keys": PackedStringArray(),
+		"synergy_effect_payload_i0": PackedInt64Array(),
+		"synergy_effect_payload_i1": PackedInt64Array(),
+		"synergy_effect_payload_i2": PackedInt64Array(),
+		"synergy_effect_payload_i3": PackedInt64Array(),
+		"ideology_synergy_offsets": PackedInt32Array([0, 0, 0, 0]),
+		"ideology_synergy_ids": PackedInt32Array(),
+		"ideology_ids": ids,
+		"acquisition_flags": PackedByteArray([1, 1, 1]),
+		"rarity_weights": PackedInt32Array([1, 1, 1]),
+		"ideology_slot_costs": PackedInt32Array([1, 1, 1]),
+		"spirit_slot_costs": PackedInt32Array([1, 1, 1]),
+		"national_spirit_min_levels": PackedInt32Array([0, 0, 0]),
+		"level_offsets": PackedInt32Array([0, 1, 2, 3]),
+		"level_thresholds_q16": PackedInt64Array([0, 0, 0]),
+		"level_daily_understanding_q16": PackedInt64Array([0, 0, 0]),
+		"technology_requirement_offsets": PackedInt32Array([0, 0, 0, 0]),
+		"technology_requirements": PackedInt32Array(),
+		"signal_requirement_offsets": PackedInt32Array([0, 0, 0, 0]),
+		"signal_requirements": PackedInt32Array(),
+		"gate_requirement_offsets": PackedInt32Array([0, 0, 0, 0]),
+		"gate_requirements": PackedInt32Array(),
+		"level_persistent_offsets": PackedInt32Array([0, 1, 2, 2]),
+		"persistent_actions": PackedInt32Array([1, 1]),
+		"persistent_domains": PackedInt32Array([1, 1]),
+		"persistent_opcodes": PackedInt32Array([1, 1]),
+		"persistent_values_q16": PackedInt64Array([Q16_ONE, Q16_ONE]),
+		"persistent_duration_days": PackedInt32Array([-1, -1]),
+		"persistent_stacks": PackedInt32Array([1, 1]),
+		"persistent_command_keys": PackedStringArray([
+			"ideology.persistent", "ideology.persistent"]),
+		"persistent_definition_keys": PackedStringArray([
+			"scalar_observer", "scalar_control"]),
+		"persistent_payload_i0": PackedInt64Array([0, 0]),
+		"persistent_payload_i1": PackedInt64Array([0, 0]),
+		"persistent_payload_i2": PackedInt64Array([0, 0]),
+		"persistent_payload_i3": PackedInt64Array([0, 0]),
+		"level_on_enter_offsets": PackedInt32Array([0, 0, 0, 0]),
+		"on_enter_actions": PackedInt32Array(),
+		"on_enter_domains": PackedInt32Array(),
+		"on_enter_opcodes": PackedInt32Array(),
+		"on_enter_values_q16": PackedInt64Array(),
+		"on_enter_duration_days": PackedInt32Array(),
+		"on_enter_stacks": PackedInt32Array(),
+		"on_enter_command_keys": PackedStringArray(),
+		"on_enter_definition_keys": PackedStringArray(),
+		"on_enter_payload_i0": PackedInt64Array(),
+		"on_enter_payload_i1": PackedInt64Array(),
+		"on_enter_payload_i2": PackedInt64Array(),
+		"on_enter_payload_i3": PackedInt64Array(),
+	}
+
+
+func _submit_scalar_cards(ext: Object, handle: int, cards: Array) -> bool:
+	var rows: Array[Dictionary] = []
+	for card in cards:
+		rows.append({"op": 1, "day": 0, "handle": handle, "idea": int(card)})
+	return bool(ext.submit_ideology_commands(_commands(rows)).get("ok", false))
+
+
+func _submit_scalar_equips(ext: Object, handle: int, cards: Array,
+		first_day: int) -> bool:
+	var rows: Array[Dictionary] = []
+	for card in cards:
+		rows.append({"op": 5, "day": first_day, "handle": handle,
+			"idea": int(card)})
+	return bool(ext.submit_ideology_commands(_commands(rows)).get("ok", false))
+
+
+func _submit_scalar_unequip(ext: Object, handle: int, card: int,
+		first_day: int) -> bool:
+	return bool(ext.submit_ideology_commands(_commands([{
+		"op": 6, "day": first_day, "handle": handle, "idea": card}])).get(
+			"ok", false))
+
+
+func _force_scalar_refresh(ext: Object, day: int) -> void:
+	ext.run_ideology_daily(day)
+	var refresh: Dictionary = ext.step_ideology_instance_refresh(day)
+	_expect("scalar: refresh at day %d completes" % day,
+		bool(refresh.get("ok", false)), str(refresh))
+
+
+func _scalar_instance_id(ext: Object, handle: int, idea_id: int) -> int:
+	var report: Dictionary = ext.get_ideology_effect_instance_report(handle)
+	var idea_ids: PackedInt64Array = report.get("idea_ids", PackedInt64Array())
+	var ids: PackedInt64Array = report.get("instance_ids", PackedInt64Array())
+	for index in range(mini(idea_ids.size(), ids.size())):
+		if int(idea_ids[index]) == idea_id:
+			return int(ids[index])
+	return 0
+
+
+func _scalar_value(ext: Object, instance_id: int, metric_id: int) -> int:
+	var metric: Dictionary = ext.query_effect_instance_metric(
+		instance_id, metric_id)
+	if not bool(metric.get("ok", false)) or not bool(metric.get("present", false)):
+		return -1
+	return int(metric.get("value", -1))
 
 
 ## `condition_op` 0 disables the condition entirely (metrics must then stay

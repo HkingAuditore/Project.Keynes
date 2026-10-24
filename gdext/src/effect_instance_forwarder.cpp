@@ -41,9 +41,14 @@ Dictionary forwarder_failure(const char *reason) {
 // A scale outside [0.25x, 4x] is clamped rather than rejected: the batch is
 // produced by our own caller, and a rejected row would silently drop a card
 // instead of capping a mis-authored multiplier.
-int32_t magnitude_scale_at(const PackedInt32Array &values, int32_t index) {
-    const int32_t raw = index >= 0 && index < values.size() ? values[index] : 65536;
-    return std::clamp(raw, 65536 / 4, 65536 * 4);
+int32_t magnitude_scale_for_facts(
+        const PackedInt32Array &values, int32_t index,
+        const EffectInstanceForwarder::ProgramFacts &facts) {
+    const int32_t raw = index >= 0 && index < values.size()
+        ? values[index] : 65536;
+    const int32_t minimum = EffectRuntime::minimum_magnitude_scale_for_selector(
+        facts.target_selector_kind, facts.target_selector_param);
+    return std::clamp(raw, minimum, 65536 * 4);
 }
 
 int32_t i32_at(const PackedInt32Array &values, int32_t index, int32_t fallback) {
@@ -142,8 +147,12 @@ bool EffectInstanceForwarder::resolve_facts(const std::string &program_key,
     int32_t program_id = -1;
     int32_t source_kind = 0;
     bool managed_declared = false;
+    int32_t target_selector_kind = 0;
+    int32_t target_selector_param[2] = {0, 0};
     if (!_effect->declarative_facts_for_key(program_key, program_id, source_kind,
-                                            managed_declared)) {
+                                            managed_declared,
+                                            target_selector_kind,
+                                            target_selector_param)) {
         // The pod catalog is compiled from the same definitions, so a key the
         // runtime does not know cannot be a pod program either.
         return false;
@@ -151,6 +160,9 @@ bool EffectInstanceForwarder::resolve_facts(const std::string &program_key,
     out.program_id = program_id;
     out.source_kind = source_kind;
     out.managed_declared = managed_declared;
+    out.target_selector_kind = target_selector_kind;
+    out.target_selector_param[0] = target_selector_param[0];
+    out.target_selector_param[1] = target_selector_param[1];
     out.resolved = true;
     return true;
 }
@@ -250,7 +262,8 @@ Dictionary EffectInstanceForwarder::submit_batch(const Dictionary &batch) {
             input.next_due_day = i64_at(next_due_days, i, 0);
             // The shadow has to mirror the scale too: authority can flip at any
             // time and a shadow stuck at 1.0 would then become the truth.
-            input.magnitude_scale_q16 = magnitude_scale_at(magnitude_scales, i);
+            input.magnitude_scale_q16 = magnitude_scale_for_facts(
+                magnitude_scales, i, *facts);
             input.latched = i >= 0 && i < latched_column.size()
                 && latched_column[i] != 0 ? 1 : 0;
             input.active = i >= active.size() || active[i] != 0;
@@ -319,7 +332,8 @@ Dictionary EffectInstanceForwarder::submit_batch(const Dictionary &batch) {
             std::max(0, i32_at(target_generations, i, 0)));
         input.level = i32_at(levels, i, 0);
         input.next_due_day = i64_at(next_due_days, i, 0);
-        input.magnitude_scale_q16 = magnitude_scale_at(magnitude_scales, i);
+        input.magnitude_scale_q16 = magnitude_scale_for_facts(
+            magnitude_scales, i, *facts);
         input.latched = i >= 0 && i < latched_column.size()
             && latched_column[i] != 0 ? 1 : 0;
         input.active = row_active;

@@ -121,6 +121,7 @@ bool compile_effect_pod_catalog(const Dictionary &catalog,
     const auto target_domains = packed_i32(catalog, "target_domains");
     const auto operations = packed_i32(catalog, "operations");
     const auto lifecycles = packed_i32(catalog, "lifecycles");
+    const auto managed_flags = packed_u8(catalog, "managed_flags");
     const auto duration_days = packed_i32(catalog, "duration_days");
     const auto stack_policies = packed_i32(catalog, "stack_policies");
     const auto stack_keys = packed_strings(catalog, "stack_keys");
@@ -128,6 +129,8 @@ bool compile_effect_pod_catalog(const Dictionary &catalog,
     const auto priorities = packed_i32(catalog, "priorities");
     const auto selector_kinds = packed_i32(catalog, "target_selector_kinds");
     const auto selector_ids = packed_strings(catalog, "target_selector_ids");
+    const auto target_selector_params =
+        packed_i32(catalog, "target_selector_params");
     const auto prestige = packed_i32(catalog, "magnitude_by_prestige_q16");
     const int count = effect_keys.size();
     if (behavior_keys.size() != count || versions.size() != count ||
@@ -138,6 +141,9 @@ bool compile_effect_pod_catalog(const Dictionary &catalog,
         stack_policies.size() != count || stack_keys.size() != count ||
         max_stacks.size() != count || priorities.size() != count ||
         selector_kinds.size() != count || selector_ids.size() != count ||
+         (!target_selector_params.is_empty() &&
+          target_selector_params.size() != count * 2) ||
+        (!managed_flags.is_empty() && managed_flags.size() != count) ||
         (!prestige.is_empty() && prestige.size() != count * 6)) {
         error = "effect_pod_definition_columns_invalid";
         return false;
@@ -325,6 +331,15 @@ bool compile_effect_pod_catalog(const Dictionary &catalog,
         value.source_kind = source_kinds[i]; value.target_domain = target_domains[i];
         value.operation = operations[i];
         value.lifecycle = static_cast<RuntimeEffectPodLifecycle>(lifecycles[i]);
+        // Same rule as EffectRuntime::uses_managed_lifecycle(): a lifecycle
+        // declaration or an explicit managed flag owns reconciliation. When the
+        // optional column is absent, the legacy family prefix is the fallback.
+        const bool legacy_family_owned =
+            effect_keys[i].begins_with("family.effect.");
+        value.managed = static_cast<uint8_t>(
+            lifecycles[i] != 0 ||
+            (managed_flags.is_empty()
+                ? legacy_family_owned : managed_flags[i] != 0));
         value.duration_days = duration_days[i];
         value.stack_policy = static_cast<RuntimeEffectPodStackPolicy>(stack_policies[i]);
         value.stack_key_hash = stack_keys[i].is_empty() ? 0 :
@@ -333,6 +348,11 @@ bool compile_effect_pod_catalog(const Dictionary &catalog,
         value.target_selector_kind = selector_kinds[i];
         value.target_selector_hash = selector_ids[i].is_empty() ? 0 :
             RuntimeEffectPodAuthority::hash_text(selector_ids[i].utf8().get_data());
+        value.min_magnitude_scale_q16 =
+            EffectRuntime::minimum_magnitude_scale_for_selector(
+                value.target_selector_kind,
+                target_selector_params.size() == count * 2
+                    ? &target_selector_params[i * 2] : nullptr);
         for (int tier = 0; tier < 6; ++tier)
             value.magnitude_by_prestige_q16[tier] = prestige.is_empty()
                 ? 65536 : prestige[i * 6 + tier];
@@ -364,31 +384,19 @@ Dictionary DCWorldExt::configure_effects(const Dictionary &catalog) {
             return EffectRuntime::invoke_pod_behavior(
                 behavior_id_hash, input, output, error);
         });
-    // Metric capacity contract.
-    //
-    // The catalog declares the metric table (`metric_keys`, one entry per id)
-    // and NativeEconomyRuntime is the only sampler: its FAMILY_METRIC_COUNT
-    // bounds what can actually be computed. A catalog that declares more ids
-    // than the economy computes would leave every program referencing one of the
-    // surplus ids permanently inert -- the condition would compare against a
-    // column nobody ever publishes, with no error anywhere. That is the exact
-    // failure mode the metric-publish work removed, so refuse the catalog
-    // instead of reintroducing it.
-    //
-    // Checked here rather than in configure_economy because this is where the
-    // declared count becomes known, and because FAMILY_METRIC_COUNT is a
-    // compile-time constant -- no economy instance is needed. Done before
-    // configure() so a rejected catalog leaves the runtime untouched rather
-    // than half-configured with a facade that believes it failed.
+    // Metric capacity contract. NativeEconomyRuntime samples ids below
+    // FAMILY_METRIC_COUNT; ids above that boundary are ideology-local scalars
+    // published by NativeIdeologyRuntime from its own derived state. Both share
+    // the one Effect metric table, and the Effect/MetricMask capacity is the
+    // ceiling for the merged namespace.
     const int32_t declared_metrics =
         static_cast<int32_t>(packed_strings(catalog, "metric_keys").size());
-    if (declared_metrics > NativeEconomyRuntime::FAMILY_METRIC_COUNT) {
+    if (declared_metrics > MetricMask::CAPACITY) {
         Dictionary rejected;
         rejected["ok"] = false;
-        rejected["reason"] = String("effect_metric_count_exceeds_economy");
+        rejected["reason"] = String("effect_metric_count_exceeds_mask");
         rejected["declared_metrics"] = declared_metrics;
-        rejected["computed_metrics"] =
-            static_cast<int64_t>(NativeEconomyRuntime::FAMILY_METRIC_COUNT);
+        rejected["mask_capacity"] = MetricMask::CAPACITY;
         return rejected;
     }
     Dictionary result = runtime_from(_effect_runtime)->configure(catalog);
@@ -446,6 +454,16 @@ Dictionary DCWorldExt::configure_effects(const Dictionary &catalog) {
         if (_ideology_runtime != nullptr)
             static_cast<NativeIdeologyRuntime *>(_ideology_runtime)->attach_effect_runtime(
                 runtime_from(_effect_runtime));
+        if (_ideology_runtime != nullptr) {
+            std::string ideology_error;
+            if (!static_cast<NativeIdeologyRuntime *>(_ideology_runtime)
+                    ->resolve_synergy_override_tags(ideology_error)) {
+                Dictionary rejected;
+                rejected["ok"] = false;
+                rejected["reason"] = String(ideology_error.c_str());
+                return rejected;
+            }
+        }
         // Re-attach on every configure: the forwarder's program facts are keyed
         // by the catalog this call just replaced.
         if (_ideology_runtime != nullptr)

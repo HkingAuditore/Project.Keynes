@@ -559,6 +559,314 @@ mask 是「tag 行按 key 点到的 metric」，override 是按**编号**设的�
 
 ---
 
+## 2.10 R-3c（2026-10-23）：worker 路径跑通
+
+范围：只做「worker 跑通」。构建 `scons: done building targets.`，
+DLL **2026-10-23 02:57:19**。版本号全部未变；`RuntimeIdeologyPodReceipt` 增了一个
+**不序列化**的 `reason_text`，所以 IDP2 布局没动。
+
+### 1. 卸下不恢复：根因是 generation 自增（不是 emit_templates 的 salt）
+
+`start_transition` 在构造批次身份之前就 `++state.generation`，而
+`enqueue_external_effect_batch_pod` 用
+`(source_type, transition_source_id, first.effect_id, fire_sequence)` 派生 Effect 实例 id
+（`effect_runtime.cpp:3465`），`transition_source_id` 里嵌的正是这个 generation。
+于是 UNEQUIP 与它要撤销的 EQUIP 不是同一个实例，`remove_unique_command` 查不到，
+回 `already_removed`，行留着、stat 保持加成值。
+
+R-3c 的修法是「UNEQUIP 用 previous_generation」。R-3d 发现这还不够：
+升级/换位时同一批里的 remove 与 apply 仍共用新 generation，于是把两者**拆成两批**
+（见 §2.11.3）。R-3c 版的单点修法已被那个更一般的修法取代。
+
+> **关于 `emit_templates` 的 salt**：那条 `salt == 0 && managed` 的 `continue` 是对的，
+> 没有改。实测这些模板 `managed=0`，从未被跳过；探针也证明 `remove=1` 时命令数是 1，
+> 断点在入队之后的实例身份上。
+
+### 2. 回执原因透传（可观测性）
+
+`apply_command` 的 `error` 原来被丢弃，主线程只看到常量串 `ideology_worker_rejected`。
+`RuntimeIdeologyPodReceipt` 多一个 `reason_text`（不序列化）。这条是定位
+「卸下被谁拒绝」的唯一手段：实测直接读到 `ideology_support_threshold_not_met`。
+
+### 3. 测试侧
+
+`CARDS` 删掉 `land_tax_reform` / `excise`（C 按 `CARD_REQUIRES` 暂存不发布）；前置检查从
+「九张都在 catalog」改成「当前选中的那张在 catalog」。`tmp/run_worker_cards.ps1` 同步到 7 张。
+另外修了三处非确定性：等 `ideology_pod_committed_day`、装备后等 Modifier 行真的出现、
+卸下后给有界追平窗口。
+
+### 4. 当时的结果
+
+7 卡里 5 张 `18/0`，2 张卡在 support 门槛（`support=-8192 < threshold=0`）。
+存档往返曾绕道手跑 `run_*_daily`，R-3d 已改回「恢复后重启 worker」。
+
+---
+## 2.11 R-3d（2026-10-23）：worker 跑通收尾
+
+构建 `scons: done building targets.`，DLL **2026-10-23 12:19:56**。
+**版本号全部未变**：PKID 8、IDP2 ABI 6、Effect POD ABI 3、PKEF 13、
+`FAMILY_METRIC_COUNT` 68、catalog hash 未变。
+
+### 1. 「等 worker 跑完一天」等的是一个不存在的字段
+
+`_drive_days` 轮询 `ideology_pod_committed_day`，而报告里从来没有这个键
+（`RuntimeThreadReport` 有 `worker_committed_ideology_day`，但 `get_runtime_thread_report`
+从未把它写进 Dictionary）。于是**每一天都干等满 8 秒超时**，然后对着上一份快照断言。
+
+修法：报告正式输出 `ideology_pod_committed_day`（= POD 自己的 `_ideology_pod_committed_day`）。
+注意 `ideology_parity_worker_committed_day` **不能替代**：它只在记录 parity 参照时赋值，
+生产会话与这个 fixture 永远是 -1。
+
+测试同时改成「等 pod 天数**前进**」而不是「到达我的 tick」——两者是不同坐标系
+（`[waittrace]` 实测 18 次等待里 16 次 miss），并把超时从 8 s 降到 2 s。
+另加两条断言：发现阶段必须观察到真实提交日、装备阶段的天数必须递增。
+
+`ideology_worker_benchmark.gd` 同步改到同一个字段。
+
+**单张卡耗时**（同机、同 DLL、`terrace_farming`）：
+
+| | 墙钟 | `[wait]` 汇总 | 结果 |
+|---|---|---|---|
+| 修前（8 s 超时、字段缺失） | **181.1 s** | 18 次全 miss | 24/0（早期版本 18/0） |
+| 修后（真实字段 + 2 s） | **59.4 s** | `calls=18 total_ms=32024 misses=16` | 24/0 |
+| `C0_LEGACY_WAIT=1` 复现旧行为 | 64.1 s | `calls=18 total_ms=36021 misses=18` | **24/2**（两条 committed-day 断言红） |
+
+### 2. 卸下不再用「被拒绝」当通过
+
+新增 `PK_DISABLE_SUPPORT_GATE`：在 `DCWorldExt::configure_ideologies` 里把
+每张卡的 `stance_*` 清空（`stance_count == 0` 即 `support_allows` 直接放行），
+**主线程与 POD 同时生效**，因为两边由同一份字典编译。生产不设该变量时目录原样透传。
+这等价于主线程测试的 `_support_gate_off`，但只作用于 fixture。
+
+`ideology_card_content_worker_test` 里「repeal 被 support 拒绝」从**通过**改为 **FAIL**
+（fixture 已关门槛，再被拒就说明 bypass 没到 POD）。`tmp/run_worker_cards.ps1` 带上该变量。
+
+### 3. 升级 / 换位的来源 id（用户怀疑成立，确实是同一个 bug）
+
+`transition_source_id` 嵌 generation，而 `NATIVE_MODIFIER_IDEOLOGY` 用它的实例 id 当
+Modifier 行的 `source_id`。**同一批里 remove 和 apply 共用一个 id**，于是升级 L1→L2 时
+旧等级行在新 generation 下删不掉，两个等级的行并存、数值层层叠乘。
+
+修法（按用户建议，不加特判）：**把 remove 与 apply 拆成两批**，
+remove 用 `transition.previous_generation`。`_removed_command_scratch` 是新的独立缓冲。
+
+新增两个测试（主线程，`ideology_card_content_test`）：
+- `_test_level_up_replaces_rows`：L2 生效、`.l1` 已退休、只有一行、stat = 1.15（不是 L1×L2）；
+- `_test_relocation_replaces_rows`：换位到国家精神位后 `ideology=0 spirit=1`，只有一行。
+
+**逆向验证**：把 remove 改回新 generation →
+`ideology card content: 1731 checks, 354 failures`，
+`forager_band L2 ... = 1.1200 (json) (got 1.20960 expected 1.12000)`、
+`L3 ... got 1.35475` —— 正是叠乘指纹。
+
+### 4. GDScript 自动回复收紧
+
+「Effect 已接受」代表效果已生效，不是走过场。门控改回
+**「worker 拥有 IDEOLOGY，且 Effect 不归 worker 管」**：0xFFF 下 worker 自己 drain，
+GDScript 再回一次就是在替一个没人验证的提交背书。
+新增 `_ideology_intent_duplicate_acks` / `_ideology_intent_unknown_acks` 两个计数器
+（去重按 transaction id），经 `WorldRuntimeHost.get_ideology_intent_reply_report()` 导出，
+测试在 0xFFF 夹具下断言两者为 0。
+
+### 5. 读档后重启 worker：P1，修到第三层，第三层仍未解决
+
+先确认正式路径：`game_save_coordinator.gd:697` 调 `restore_runtime_bundle`，
+`world_runtime_host.gd:804` 随后调 `_start_production_shadow_worker()`；
+而 `restore_runtime_bundle` 只把 bundle 交给 host，**由下一次 `start()` 消费**
+（`world_ext_simulation_host.cpp:2674` 注释明说）。所以「recover → start worker」
+就是正式顺序，这条是 P1。
+
+逐层定位并修掉前两层：
+
+1. `ecp2_atomic_backup_failed:building_trade_block_pairing`
+   —— **已修**：`apply_ecp2_authority` 取回滚备份时，`_formula_owned` 绑定的 OwnedState
+   里 `building.captured` 恒为 true（`fill_ledger_building_from_store` 设的），
+   其余 block 的 flag 仍是从恢复前复制的。现在 `capture_committed_ledger_state` 的
+   绑定分支按 live 表重新打包这几个 block 并置 `captured`，
+   `assign_owned_blocks_from_ledger` 也补了同样的标志。
+2. `ecp2_atomic_backup_failed:economy_save_state_shape_invalid`
+   —— **已修**：`[save-shape] market_cell_to_market actual=0 expected=192`。
+   回滚备份改成**尽力而为**：live 状态不可捕获时不再拒绝 restore
+   （`apply_ecp2_authority_internal` 本身仍是全有或全无，候选先校验后重建）。
+   `_last_restore_backup_skipped_reason` 记录跳过的原因。
+3. `economy_country_restore_order_or_hash_mismatch`
+   —— **未解决**。economy 的 apply 会比对存档里的 country state hash 与 live country
+   runtime（`economy_runtime_persistence_read.cpp:561-567`），load 路径上两者不一致。
+   存档往返测试仍**红在这一条**，断言保留（红着比假装通过好）。
+
+### 6. 杂项
+
+`ideology_card_content_worker_test.gd` 的 8 处 GBK 误解码乱码（`鈹€`、`搂5`、`鐢熸垚…`）
+全部修回正确中文，文件按 UTF-8 无 BOM 重写；复查 `tests/ideology/*.gd` 无残留。
+
+### 7. 最终验收（DLL 2026-10-23 12:19:56）
+
+**7 张卡**（`tmp/run_worker_cards.ps1`，每张 25/0）：
+
+| 卡 | 结果 |
+|---|---|
+| terrace_farming / water_works / forager_band / riverside_camp / seasonal_calendar | `25 checks, 0 failures` |
+| pit_dwelling / hydroelectric | `25 checks, 0 failures` |
+| **合计** | **`=== worker-path C0 total: 175 checks, 0 failures ===`** |
+
+每张卡现在都走完「卸下 → 卡槽释放 → 加成行消失 → 数值恢复」，没有一张靠「被拒绝」蒙过。
+
+**回归（全部 SCRIPT ERROR 0）**
+
+| 测试 | 结果 |
+|---|---|
+| `ideology_card_content_test` | `1731 checks, 0 failures`（含新增升级/换位两条） |
+| `ideology_effect_worker_forward_test` | `127 checks, 0 failures` |
+| `runtime_ideology_save_roundtrip_test` | `22 checks, 0 failures` |
+| `ideology_tag_snapshot_stress_test` | `37 checks, 0 failures` |
+| `runtime_domain_pod_test` | `13 checks, 0 failures` |
+
+注：`ideology_card_content_test` 的检查数从 452 涨到 1731，是**会话 C** 同期在该文件里
+加了「按 85 张卡的期望表驱动」；我的两条升级/换位断言也在其中，均通过。
+
+**存档往返（`C0_SAVE_ROUNDTRIP=1`）**：`29 checks, 1 failures`，
+红在 `worker restarts on the restored bundle (runtime_worker_start_failed)`，
+内部原因即上面的第 3 层 `economy_country_restore_order_or_hash_mismatch`。
+
+---
+
+范围：只做「worker 跑通」。构建 `scons: done building targets.`，
+DLL **2026-10-23 02:57:19**。**版本号全部未变**：PKID 8、IDP2 ABI 6、
+Effect POD ABI 3、PKEF 13、`FAMILY_METRIC_COUNT` 68、catalog hash 未变。
+`RuntimeIdeologyPodReceipt` 增了一个 **不序列化** 的 `reason_text`，所以 IDP2 布局没动。
+
+### 1. 卸下不恢复：根因是 generation 自增（不是 emit_templates 的 salt）
+
+`start_transition` 在**构造批次身份之前**就 `++state.generation`，
+而 `enqueue_external_effect_batch_pod` 用
+`(source_type, transition_source_id, first.effect_id, fire_sequence)` 派生 Effect 实例 id
+（`effect_runtime.cpp:3465`），`transition_source_id` 里嵌的正是这个 generation。
+于是 UNEQUIP 与它要撤销的 EQUIP **不是同一个实例**：
+
+1. `upsert_instance_pod` 为 remove **新建**了一个实例；
+2. `NATIVE_MODIFIER_IDEOLOGY` 把 `source_id` 设成那个新实例的 id
+   （`effect_runtime.cpp:5509`）；
+3. `remove_unique_command` 按 `(definition, scope, scope_id, source_type, source_id)` 查
+   （`modifier_runtime.cpp:1190`），查不到 → 回 `already_removed`，
+   **行留着，stat 保持加成值**。
+
+修法：UNEQUIP 的批次用 `transition.previous_generation`，其余用 `state.generation`
+（`ideology_runtime.cpp`，`batch_generation`）。apply/remove 的 `effect_id` 本来就不含
+generation，所以两侧对得上。
+
+实测（主线程冒烟）：
+- 修前 `remove_events=[0,0,0,0]`，`rows=["ideology.terrace_farming.l2"]`，`452/2`；
+- 修后 `remove_events=[0,1,0,0]`，`rows=[]`，`452/0`。
+
+> **关于用户点名的 `emit_templates` salt**：那条 `salt == 0 && managed` 的 `continue`
+> 是**对的**，没有改。实测这三行模板的 `managed=0`（`ideology.terrace_farming.l2` 是
+> Modifier 行，不是 `ideology.effect.*` 程序），所以它从来没被跳过；
+> 探针还证明 `remove=1` 时命令数确实是 1，断点在**入队之后**的实例身份上。
+
+### 2. 回执原因透传（可观测性）
+
+`apply_command` 的 `error` 原来被丢弃，主线程只看到常量串 `ideology_worker_rejected`。
+现在 `RuntimeIdeologyPodReceipt` 多一个 `reason_text`（**不序列化**），
+`apply_ack` 的拒绝也写 `effect_transition_rejected`。
+这条改动是定位「卸下被谁拒绝」的唯一手段：实测直接读到
+`ideology_support_threshold_not_met`。
+
+### 3. 边界请求的生命周期（R-3b 遗留）
+
+R-3b 把 ideology 的 complete 放在「拿到锁之后」，于是**最后一次跳过**留下的请求
+没人清，worker 停在 `outstanding=1 / state=PAUSED`。
+现在改成「进入函数先清上一轮、仍抢不到锁再重新请求」，请求生命期正好一轮。
+
+### 4. worker 的 intent 泵不再要求域授权
+
+`world_runtime_host._service_ideology_worker_intents_if_authoritative` 原来以
+`authoritative_domain_mask & 0x10` 为门。pod 已经规划了 transition 并排队 intent，
+但域没授权（授权要**完整提交一天**，而没有 Climate trace 的 fixture 永远完不成），
+于是没人 ACK，transition 永远 PENDING。
+回 ACK 不是授权决策——pod 已经决定了，这只是告诉它 Effect 侧接受了。门改成
+「有授权 **或** pod 已配置 **或** 有待处理 intent」。
+
+### 5. 测试侧（归 R）
+
+- `CARDS` 删掉 `land_tax_reform` / `excise`（C 按 `CARD_REQUIRES` 暂存不发布，
+  旧断言写的 `country.tax.*` 已随 V1 作废）；前置检查从「九张都在 catalog」
+  改成「**当前选中的那张**在 catalog」。
+- `tmp/run_worker_cards.ps1` 同步到 7 张。
+- 三处**非确定性**修复（这才是「同一 DLL 每次红的卡不同」的原因）：
+  - `_drive_days` 等到 `ideology_pod_committed_day >= 目标天`，不再是「PAUSED 就算好」；
+  - 装备后等 Modifier 行真的出现（`_wait_for_modifier_row`），因为行由 Ideology
+    之后的 Effect/Modifier 阶段写；
+  - 卸下后给两级有界的「快照追平」窗口，因为 WRITE-BACK 读到的可能是 ACK 之前的快照。
+- 新增 `C0_SAVE_ROUNDTRIP=1` 分支：装备 → PKSR 存档 → 停 worker → restore →
+  再跑 3 天 → 断言 stat 不变、行还是同一行、天数前进。
+
+### 6. 本轮实测（原文）
+
+DLL **2026-10-23 02:57:19**。
+
+**a. 逐卡（`run_worker_cards.ps1`，7 张）**
+
+| 卡 | 结果 |
+|---|---|
+| terrace_farming | `18 checks, 0 failures` |
+| water_works | `18 checks, 0 failures` |
+| forager_band | `18 checks, 0 failures` |
+| riverside_camp | `18 checks, 0 failures` |
+| seasonal_calendar | `18 checks, 0 failures` |
+| pit_dwelling | `22 checks, 0 failures` |
+| hydroelectric | `22 checks, 0 failures`（02:57 DLL） |
+
+**c. 存档往返**（`C0_ONLY_CARD=pit_dwelling C0_SAVE_ROUNDTRIP=1`）
+`=== ideology card content worker: 28 checks, 0 failures ===`，SCRIPT ERROR 0，
+`[save-roundtrip] pit_dwelling day_before=-1 day_after=17 stat 0.95000 -> 0.95000`。
+
+**e. 回归（全部 SCRIPT ERROR 0）**
+
+| 测试 | 结果 |
+|---|---|
+| `ideology_card_content_test` | `ideology card content: 452 checks, 0 failures`（原 452/2） |
+| `ideology_effect_worker_forward_test` | `=== ideology effect worker forward: 127 checks, 0 failures ===` |
+| `runtime_ideology_save_roundtrip_test` | `runtime ideology IDP2 save: 22 checks, 0 failures` |
+| `ideology_tag_snapshot_stress_test` | `=== ideology tag snapshot stress: 37 checks, 0 failures ===` |
+
+### 7. 敏感性验证（原文）
+
+- **A：撤掉 bug B 的修复**（`batch_generation` 改回 `state.generation`）。
+  `ideology_card_content_test` → `452 checks, 2 failures`，
+  `[unequip] slots=0 tx_offsets=[0, 0] emitted=2 acked=2 remove_events=[0, 0, 0, 0]`，
+  `[FAIL] unequip retires the national modifier row (rows=["ideology.terrace_farming.l2"])`，
+  `[FAIL] unequip restores the terrain factor to its base (1.15000 ...)`。
+- **B：撤掉 `complete_main_boundary_service`**（ideology 侧）。
+  `C0_ONLY_CARD=pit_dwelling` → `17 checks, 4 failures`，`script 不会超时但 worker 停住`：
+  `[FAIL] pit_dwelling occupies an ideology slot on the worker path (slots_used=0 pod_day=2 ...)`、
+  `[FAIL] applied a national modifier row (rows=[])`、
+  `[FAIL] ... equals the design value (after=1.00000)`、
+  `[FAIL] worker delivered the unequip to the pod (receipt=false)`，
+  receipts 为空。**上一轮没做成的这一项本轮拿到了。**
+
+### 8. 未完成 / 交叉影响（明确标出）
+
+- **卸下在 worker 路径仍会被 support 门槛拒绝**：实测
+  `support=-8192 < threshold=0`（该 fixture 世界的 opinion.population 只有
+  `general` 一个 lane 有 20 人，另外两个政治阶层为 0）。这是**真实的民意结果**，
+  不是链路断裂——pod 收到 opcode 6、给出确切原因、槽位/行/stat 按设计保留。
+  尝试过用 `CHANGE_SIGNATURE`（POD opcode 8，签名从 `target_country` 读，
+  不是 `payload0`）把 cohort 重标到其他阶层，命令被接受但发布的 opinion 不变，
+  该路线**记录不采用**。解锁它需要 X16/metric68 之后的多阶层世界。
+- **restore 后重启 worker 会撞一个无关缺陷**：`ecp2_atomic_backup_failed:
+  building_trade_block_pairing`（`runtime_worker_start_failed`）。3c 因此改为在恢复后
+  继续跑日循环，仍满足「stat 不变 + 天数前进」。
+- **hydroelectric 的最终全量重跑撞上 C 的内容改动**：
+  `[modifier] configure failed: modifier_term_invalid` /
+  `[effect] domain catalog build failed`，停在 4 checks。
+  `default_modifier_catalog.tres` 等三个 catalog 的 mtime 是 **10:20:33**，
+  而我最后一次构建是 **02:57:19**——是 C 在我跑测试期间改的内容，
+  不是本轮代码。该卡在 02:57 的 DLL 上是 `22 checks, 0 failures`。
+  最后一次批跑因此汇总成 `116 checks, 0 failures`（少一张卡的 4 条前置检查），
+  **不是** 134；这一条必须在 C 的目录稳定后重跑一次才算数。
+
+---
+
 ## 3. 既有红（**不是**本轮引入）
 
 以下两项在动手之前就是红的，已用「还原改动后重跑」的方式确认：
@@ -584,3 +892,195 @@ mask 是「tag 行按 key 点到的 metric」，override 是按**编号**设的�
 - **截断用稳定哈希，不是最小 id** —— 最小 id 让每张卡都偏爱地图同一角落。
 - **贸易因子是成交量因子** —— 只放宽容量等于对空闲国家无效；两处都乘是平方。
 - **`legacy_pod_instance_ids` 保留但永远为空** —— 删掉判据会让下次 schema 迁移看起来比实际小。
+
+---
+
+## 2.12 R-4（2026-10-23）：worker 读档第 3 层 + X16 / metric 68 / metric 69
+
+### 1. worker 读档第 3 层 — **已修**
+
+`economy_country_restore_order_or_hash_mismatch` 的根因不是 hash 算法，是**顺序**：
+
+`native_simulation_host.cpp` 的 `start()` 先应用 ECP2（economy），后解码 country
+checkpoint。于是 ECP2 校验时 live country 还是刚 bootstrap 的那份。
+探针原文（`PK_COUNTRY_HASH_PROBE=1`）：
+
+```
+[country-hash] saved_schema=13 live_schema=13 saved_gen=19 live_gen=1
+saved_hash=325166771088284131 live_hash=1824313771786949620 compatible=1
+economy_available=1
+```
+
+正式游戏同样走这条路（`restore_runtime_bundle` 只暂存，`start()` 消费），
+所以每次读档起 worker 都会死在 `runtime_worker_start_failed`。
+
+修法：`NativeEconomyRuntime::_accept_stale_country_identity`，由 host 在**那一次**
+`apply_ecp2_authority` 调用前后成对设置/清除。作用域外校验照旧严格——
+把一份 ECP2 应用到 Country 已经前进过的 live economy 上仍然是真损坏，必须失败。
+
+代价（明确记录）：Country 字节与 Economy 字节来自不同存档的档案，不再被这道门拦下；
+其余形状校验（`country_schema_compatible`、building/trade 计数）仍生效。
+
+### 2. 第 4 层 — **未修，P1 欠账**
+
+修掉顺序后，重启 worker 本身成功（`worker restarts on the restored bundle` 变绿），
+但**重启后的 worker 不再提交新的一天**：
+
+```
+[FAIL] pit_dwelling: the RESTARTED worker commits days on the restored state (16 -> 16)
+```
+
+`[climate/worker][b8] paw day=13` 是最后一行动，重启后 climate 阶段不再推进。
+即主线程每天调用 `run_daily_tick` 也无法让 pod 拿到新的 climate day。
+这条与 ideology 无关，是 worker 重启后的 climate/economy 握手没有重建。
+
+复现方法：
+```
+$env:C0_ONLY_CARD="pit_dwelling"; $env:C0_SAVE_ROUNDTRIP="1"
+$env:PK_DISABLE_SUPPORT_GATE="1"
+godot --headless --path Project/project-keynes `
+  -s tests/ideology/ideology_card_content_worker_test.gd
+```
+观察 `artifacts/r4/save_test3.log`：`save roundtrip` 之后没有新的
+`[climate/worker][b8]` 行。
+
+### 3. X16 / metric 68 / metric 69（已落地）
+
+**版本**：`FAMILY_METRIC_COUNT` 68 -> 70，`MetricMask::CAPACITY` 仍是 256（不用加宽）。
+PKID / IDP2 ABI / Effect POD ABI / PKEF **全部未变**——这三项都是派生量，没有新存档字段。
+Modifier / Effect catalog hash 变了，旧档 fail-closed，这是预期的。
+
+**X16**
+- `economy_runtime_configuration.cpp`：按 `_profession_ids` 顺序解析
+  `economy.profession.<pid>.tax_tolerance_factor` / `.satisfaction_bp`，缺失为 -1。
+- `capture_country_epoch`：`_epoch_country_profession_tax_tolerance_q16`（Q16，钳 [0.5,3.0]）与
+  `_epoch_country_profession_satisfaction_bp`（bp，钳 [-2500,2500]），每 epoch 每国每职业冻结一次。
+- `update_cohort_satisfaction`：容忍度参与税维度；满意度偏置**在 ceiling 之前**加，
+  正偏置无法突破生存天花板。
+- `modifier_catalog.gd`：两族 stat，tolerance 只允许 MULTIPLY（位 4），satisfaction 只允许 ADD（位 1）——
+  写 15 会让卡把容忍度减成负数。
+- `stat_key_families.gd` 两族登记；`modifier_catalog.gd` 显示名「<职业> 税负容忍度 / 满意度」。
+
+**metric 68** `cell.net_tax_burden_q16`：在 `fill_family_behavior_metrics` 里累加本格 cohort 的
+`epoch_tax_paid - epoch_subsidy_received` / `max(0,epoch_income)+max(0,epoch_in_kind_income)`，
+按 `touch_accounting_slot` 的 `ACCOUNTING_EPOCH_BIT` 奇偶过滤（本期没记过账的 cohort 记 0，
+避免读到上期残值）。口径与满意度税维度一致。
+
+**metric 69** `country.treasury_reserve_ratio_pct`：`cash_for_slot / (Σ income_ema × 365) × 100`，
+钳 [0,1000]，每 epoch 每国冻结。v0 分母用 income_ema 外推，**不新增存档状态**；真正的滚动年累加器
+推迟到 M4（09 §8）。
+
+**观测**：新增 `DCWorldExt.get_epoch_profession_report(country_slot)` 和
+`sample_effect_metric_probe(metric, cell, handle)`，让测试断言**冻结后的**值而不是 Modifier 读数——
+后者在「卡声明了 stat 但 freeze 没取到」时仍会通过。
+
+### 4. 生成器：`cards_published` 85 -> 93
+
+`AVAILABLE_CAPABILITIES` 加 `X16` 和 `metric68`。`reserve_ratio` **保持不可用**，原因是实测的：
+
+> `card programs must use an ideology.city.* definition`
+
+`excise` L3 和 `progressive_tax` L1-L3 各带一个 `RampTerm`，ramp 是 Effect 指令序列，
+不能写进 Modifier 定义（`modifier_blocks.add()` 直接跳过）。先尝试把它们改写成
+`LEVEL_ROWS` 程序行，被上面这条规则拒绝——国家域 stat（建造成本、死亡率）没有程序载体。
+如果照旧发布，L1 只会剩下 11 条 tolerance，第 12 条 ramp **静默消失**（已实测到 11 条）。
+
+因此加了一条生成器硬规则（校验/lint 部分，属 R 的范围）：`LEVEL_TERMS` 里含 `RampTerm` 的卡
+一律不算已发布，除非它的 metric 有程序载体。加之前是 95，加之后是 **93**，与 §4.4 的预期一致。
+
+### 5. 更正：`modifier_term_invalid` 是 R 自己引入的（已修）
+
+上一版这一节把根因归给了 C，**是错的**。真实根因在 R 自己写的 stat 声明：
+
+`modifier_catalog.gd` 声明 `economy.profession.*.satisfaction_bp` 只允许 ADD（位 1），
+而生成器的 `_term_operation` 对**没写第三个 tuple 元素**的项一律输出 MULTIPLY（2）。
+`petition_box` 和 `light_levy` 的正向满意度加成正是这种写法，于是产物
+`default_modifier_catalog.tres` 里有 **32 条 `satisfaction_bp` 是 operation=2**，
+编译时 `modifier_term_domain_or_operation_invalid`，整个 Modifier 目录起不来，
+世界生成随之失败。之前"换成 git 原版仍然失败"的对照之所以误导，是因为那份原版
+`modifier_catalog.gd` 里还没有 R 加的 stat 声明，而**产物 tres 里已经有**这些 term。
+
+三项修复：
+
+1. `_term_operation` 增加加性判定：`*.satisfaction_bp`、所有 `*_bp` / `*_q16` 以及
+   `satisfaction_*` 家族一律输出 ADD，正向加成也是 ADD。
+2. 生成器新增 `stat 前缀 -> 允许运算` 表（`_STAT_ALLOWED_OPERATIONS` /
+   `_STAT_ALLOWED_OPERATIONS_BY_SUFFIX`），与 `modifier_catalog.gd` 的
+   `allowed_operations` 一致；某 term 的运算不在允许范围内直接 `SystemExit` 硬失败。
+3. 期望表（`card_expectations.json`）的 `operation` 字段改用同一个 `_term_operation`
+   判定，否则 `satisfaction_bp = 400` 会按 multiply 读成 401（实测 26 + 6 条）。
+
+重生成后核对：**56 条 `satisfaction_bp` 全部 `operation=0`**，无残留。
+
+连带修正：`ideology_card_content_test` 的 `STAGED_CARDS` 去掉 `land_tax_reform`
+（R-4 起它随 metric 68 一起发布，L3 是真正的 Effect 程序行 `land_tax_reform_l3`）。
+`excise` 仍暂存，因为它的 L3 是国家域 `RampTerm`，卡程序只能命名 `ideology.city.*`。
+
+**P0 修复后的验收**：
+
+| 测试 | 结果 |
+|---|---|
+| `ideology_effect_metric_publish_test` | `283 checks, 0 failures`（修前 101/60） |
+| `ideology_mechanism_matrix_test` | `473 checks, 0 failures`（修前 390/1） |
+| `runtime_domain_pod_test` | `13 checks, 0 failures` |
+| `ideology_card_content_test` | `1928 checks, 0 failures`（修前 1929/33） |
+
+### 6. 已解决：worker 7 卡不是「变慢」，是堆被写坏
+
+上一版把这一节写成「epoch 变慢」，**是错的**。真实根因是数组越界写：
+
+* `EffectInputSnapshot::metric_revision` 声明为 `std::array<uint64_t, 68>`
+  （`economy_runtime.h`），而 `FAMILY_METRIC_COUNT` 在 R-4 已经变成 70。
+  该结构在**命名空间作用域**，`FAMILY_METRIC_COUNT` 在 `NativeEconomyRuntime` 类内
+  且声明在它之后，所以当初只能写字面量 68，追加 metric 时没人把它加宽。
+* `economy_runtime_family_buff.cpp` 的 `++next->metric_revision[slot]` 会写到
+  下标 68/69，越界两个 `uint64_t`。
+* 读取侧 `economy_runtime.h:effect_metric_revision` 与 `ideology_runtime.cpp` 的
+  卡片 revision 求和也读 68/69。
+* 任何读取 metric 68 的卡（`land_tax_reform` L3、`light_levy`）**必触发**。
+  Windows 事件日志从 14:27 起约 65 次 `0xc0000374`（堆损坏），之前为 0。
+
+之所以表现为「停在第 1 天」，是因为进程直接死了；`run_worker_cards.ps1` 把
+「没有 summary 行」记成 `run void`，读起来像慢，实际是崩溃。
+
+**修法**：把容量提到命名空间作用域
+`constexpr int32_t PK_EFFECT_INPUT_METRIC_REVISION_CAPACITY = 70;`，数组改用它，
+并在 `FAMILY_METRIC_COUNT` 后加 `static_assert` 把两个常量钉在一起——以后追加
+metric 而忘记加宽数组会变成**编译错误**，不再是运行期堆破坏。
+
+全仓复核过：`metric_revision` 的其余用法要么按下标、要么是 `std::vector`；
+其它 `std::array<..., N>` 与 metric 无关（`annual_development_ledger.cpp` 的 4 是
+满意度维度）。
+
+### 7. 排查期的临时改动：逐条处置
+
+| 改动 | 处置 | 理由 |
+|---|---|---|
+| metric 69 的 `_epoch_country_reserve_pct` 改成**一次遍历归集**（原为每国扫全部格） | **保留** | 原版 O(国家×格×cohort)，单遍 O(格×cohort)，与崩溃原因无关但明显更对 |
+| X16 的 epoch 数组 stride 由 `max(1, _profession_ids.size())` 改为**真实 size** | **保留** | `max(1,0)` 会让国家 N+1 索引到国家 N 的行，是真实索引错位 |
+| worker 测试的 pod 等待超时 2 s → **8 s** | **保留** | 2 s 会让 pod 未提交就继续，8 s 是 R-3d 验证过的值 |
+| `run_worker_cards.ps1` 的 `2>&1` → **`Start-Process` 显式重定向** | **保留** | 合并 stderr 会丢掉输出尾部（含 summary 行） |
+| `PK_DISABLE_SUPPORT_GATE` 改成「只降门槛」 | **已回退** | 带该版本时 pod 一天都不提交；回到 R-3d 的「清空 stance」版本 |
+| 测试里临时加的 `[daydbg]` / `[waittrace]` / `PK_SAVE_SHAPE_PROBE` 之外的探针 | 已移除 | 诊断用，不应留在产物里 |
+
+### 8. P1 之后
+
+完成 P0 之后本轮的剩余项（P1-a / P1-b / R-5）见下一节。
+
+## 2.13 R-7 F（2026-10-24）：X1_PLAIN_SWITCH 全量发布
+
+`X1_PLAIN_SWITCH` 加入 `AVAILABLE_CAPABILITIES`；逐卡发布由
+`X1_PLAIN_RELEASE` 显式控制。23 张卡先在 `PK_X1_FORCE_READY=all` 生成的
+candidate catalog 上用真实 worker 路径逐张验收（每进程一张，0xFFF），
+全部通过后才写入 allowlist。测试用 only-for-test 的 tag/metric 覆写补齐固定
+夹具，不再按地图碰运气；equip 时 tagged cell 为 `1.0 + value`，untagged cell
+为 `1.0`，unequip 后恢复基线。
+
+发布结果：`cards_published=116 of 116`（同分支空 allowlist 基线为
+`cards_published=109 of 116`；16 张改写卡 + 7 张新卡随本轮从旧定义/未入池
+切换为逐格定义）。catalog hash（sha256）：
+ideology `755D70954D61D0A82C5B75401BC719D76E924C987E71646AD6D3B64E5C781012`、
+effects `D10830C03CED26A975EC7AED650B39CE0AF3A3000CF38C8BABC1E8BB30AD8DAB`、
+modifier `82F6A909B516E71A0ECEEEF9EE6AD413404C2CA3E76D8325167148D297292866`。
+旧 PKID / PKCM / PKEF 存档在加载时以 catalog mismatch fail-closed；这是内容
+身份变化的预期行为，不做迁移或修补。

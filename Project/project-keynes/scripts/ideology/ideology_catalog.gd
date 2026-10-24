@@ -7,6 +7,8 @@ const IdeologyRequirementScript = preload("res://scripts/ideology/ideology_requi
 const IdeologyProfileScript = preload("res://scripts/ideology/ideology_profile.gd")
 const IdeologyClassStanceScript = preload("res://scripts/ideology/ideology_class_stance.gd")
 const IdeologySynergyDefinitionScript = preload("res://scripts/ideology/ideology_synergy_definition.gd")
+const IdeologyEffectParameterScript = preload(
+	"res://scripts/ideology/ideology_effect_parameter.gd")
 const EffectCommandScript = preload("res://scripts/effect/effect_command.gd")
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 const IdeologyEffectCatalogScript = preload("res://scripts/ideology/ideology_effect_catalog.gd")
@@ -189,6 +191,18 @@ func compile_native_catalog(country_catalog: Dictionary,
 		"point_trade_weight_q16": effective_profile.point_trade_weight_q16,
 		"point_gain_cap_q16": effective_profile.point_gain_cap_q16,
 		"point_gain_stat_key": String(effective_profile.point_gain_stat_key),
+		"point_population_factor_stat_key": String(
+			effective_profile.point_population_factor_stat_key),
+		"point_building_factor_stat_key": String(
+			effective_profile.point_building_factor_stat_key),
+		"point_trade_factor_stat_key": String(
+			effective_profile.point_trade_factor_stat_key),
+		"opinion_factor_floor_stat_key": String(
+			effective_profile.opinion_factor_floor_stat_key),
+		"school_strength_factor_stat_keys": \
+			effective_profile.school_strength_factor_stat_keys.duplicate(),
+		"ideology_school_keys": PackedStringArray(
+			SCHOOLS.map(func(school): return String(school.id))),
 		# Ideology-facing multipliers. Same contract as point_gain_stat_key: an
 		# empty string means "no stat", which every consumer reads as 1.0. Kept
 		# as separate keys rather than one packed field so a catalog can enable
@@ -214,10 +228,18 @@ func compile_native_catalog(country_catalog: Dictionary,
 		"synergy_override_offsets": PackedInt32Array([0]),
 		"synergy_override_programs": PackedStringArray(),
 		"synergy_override_scales": PackedInt32Array(),
+		"synergy_override_match_kinds": PackedInt32Array(),
+		"synergy_override_match_values": PackedStringArray(),
+		"synergy_override_fields": PackedInt32Array(),
+		"synergy_override_values": PackedInt32Array(),
+		"synergy_override_tag_names": PackedStringArray(),
 		"political_class_ids": PackedStringArray(political_class_ids),
 		"ideology_ids": PackedStringArray(), "acquisition_flags": PackedByteArray(),
 		"rarity_weights": PackedInt32Array(), "ideology_slot_costs": PackedInt32Array(),
 		"spirit_slot_costs": PackedInt32Array(), "national_spirit_min_levels": PackedInt32Array(),
+		"ideology_copy_left_programs": PackedByteArray(),
+		"ideology_copyable": PackedByteArray(),
+		"ideology_school_indices": PackedInt32Array(),
 		"level_offsets": PackedInt32Array([0]), "level_thresholds_q16": PackedInt64Array(),
 		"level_daily_understanding_q16": PackedInt64Array(),
 		"technology_requirement_offsets": PackedInt32Array([0]),
@@ -252,6 +274,10 @@ func compile_native_catalog(country_catalog: Dictionary,
 		"repeal_thresholds_q16": PackedInt32Array(),
 		"promote_thresholds_q16": PackedInt32Array(),
 		"exclusion_group_ids": PackedInt32Array(),
+		# Route ids are a catalog contract. Each card's mask names the primary
+		# and secondary routes used by ideology-local route_count scalars.
+		"route_keys": PackedStringArray(),
+		"ideology_route_masks": PackedInt32Array(),
 		"synergy_ids": PackedStringArray(),
 		"synergy_requirement_offsets": PackedInt32Array([0]),
 		"synergy_requirement_ideology_ids": PackedInt32Array(),
@@ -298,6 +324,9 @@ func compile_native_catalog(country_catalog: Dictionary,
 		out.capacity_unlock_ideology_deltas.append(ideology_delta)
 		out.capacity_unlock_spirit_deltas.append(spirit_delta)
 	var seen := {}
+	var school_index := {}
+	for index in SCHOOLS.size():
+		school_index[String(SCHOOLS[index].id)] = index
 	for definition in ordered:
 		var key := String(definition.id)
 		if seen.has(key): return {"ok": false, "reason": "ideology_id_duplicate"}
@@ -311,6 +340,13 @@ func compile_native_catalog(country_catalog: Dictionary,
 		out.ideology_affinity_offsets.append(out.ideology_affinity_gate_ids.size())
 		out.acquisition_flags.append(definition.acquisition_flags)
 		out.rarity_weights.append(definition.rarity_weight)
+		out.ideology_copy_left_programs.append(
+			1 if definition.copy_left_programs else 0)
+		out.ideology_copyable.append(1 if definition.copyable else 0)
+		var definition_school := String(definition.school_id)
+		if not school_index.has(definition_school):
+			return {"ok": false, "reason": "ideology_school_unknown:%s" % definition_school}
+		out.ideology_school_indices.append(int(school_index[definition_school]))
 		out.ideology_slot_costs.append(definition.ideology_slot_cost)
 		out.spirit_slot_costs.append(definition.national_spirit_slot_cost)
 		out.national_spirit_min_levels.append(definition.national_spirit_min_level)
@@ -387,14 +423,35 @@ func compile_native_catalog(country_catalog: Dictionary,
 	# table per row. Dense order (not authored order) is what the native side
 	# sees, which keeps two builds of the same content byte-identical.
 	var route_index := {}
+	# Sorted ids make the dense route order independent of dictionary insertion
+	# order. EffectDomainCatalog validates that every one has a scalar row.
+	var route_keys: Array = ROUTE_DISPLAY_NAMES.keys()
+	route_keys.sort()
+	var route_ids := {}
+	for route_id in route_keys.size():
+		var route_key := String(route_keys[route_id])
+		route_ids[route_key] = route_id
+		out.route_keys.append(route_key)
+	var selector_kind_by_program := {}
+	if program_resource != null:
+		for effect in program_resource.effects:
+			if effect == null or not effect is IdeologyEffectDefinitionScript:
+				continue
+			selector_kind_by_program[String(effect.program_key())] = \
+				int(effect.target_selector_kind)
 	for definition in ordered:
 		var definition_dense := int(ideology_index[String(definition.id)])
+		var definition_route_mask := 0
 		for route in definition.route_tags():
+			if not route_ids.has(route):
+				return {"ok": false, "reason": "ideology_route_unknown:%s" % route}
+			definition_route_mask |= 1 << int(route_ids[route])
 			if not route_index.has(route):
 				route_index[route] = PackedInt32Array()
 			var bucket: PackedInt32Array = route_index[route]
 			bucket.append(definition_dense)
 			route_index[route] = bucket
+		out.ideology_route_masks.append(definition_route_mask)
 	var ordered_synergies: Array[Resource] = synergies.duplicate()
 	ordered_synergies.sort_custom(func(a, b) -> bool:
 		return String(a.id) < String(b.id) if a != null and b != null else a != null)
@@ -422,14 +479,28 @@ func compile_native_catalog(country_catalog: Dictionary,
 			var override_error: String = override.validate()
 			if not override_error.is_empty():
 				return {"ok": false, "reason": override_error}
-			var target_key: String = IdeologyEffectDefinitionScript.definition_key_of(
-				override.target_definition_key)
-			if target_key.is_empty() or not declared_programs.has(target_key):
-				return {"ok": false, "reason":
-					"ideology_synergy_override_target_unknown:%s" % String(
-						override.target_definition_key)}
-			out.synergy_override_programs.append(target_key)
-			out.synergy_override_scales.append(int(override.value))
+			var rewrite_rows: Dictionary = _expand_override_rows(
+				override, declared_programs, route_index, ordered,
+				selector_kind_by_program)
+			if not bool(rewrite_rows.get("ok", false)):
+				return {"ok": false, "reason": String(rewrite_rows.get("reason", ""))}
+			for expanded_row in rewrite_rows.get("rows", []):
+				var row: Dictionary = expanded_row
+				var match_kind := int(row["match_kind"])
+				var match_value := String(row["match_value"])
+				var field := int(override.field)
+				# Legacy scale columns stay populated for the pre-X5 lookup path.
+				out.synergy_override_programs.append(match_value)
+				out.synergy_override_scales.append(
+					int(override.value) if field == \
+						IdeologyEffectParameterScript.Field.MAGNITUDE_SCALE else 0)
+				out.synergy_override_match_kinds.append(match_kind)
+				out.synergy_override_match_values.append(match_value)
+				out.synergy_override_fields.append(field)
+				out.synergy_override_values.append(int(override.value))
+				out.synergy_override_tag_names.append(
+					override.tag_union_name() if field == \
+						IdeologyEffectParameterScript.Field.TAG else "")
 		out.synergy_override_offsets.append(out.synergy_override_programs.size())
 		if synergy.uses_route_tag():
 			var expanded: Dictionary = _expand_route_synergy_members(
@@ -517,6 +588,74 @@ func compile_native_catalog(country_catalog: Dictionary,
 	out.ok = true
 	return out
 
+
+## Turn one authored rewrite into the PROGRAM/TAG rows the native runtime can
+## index. ROUTE never crosses into native: it becomes one PROGRAM row per card
+## carrying that route, in dense card order so the output is deterministic.
+static func _expand_override_rows(override: Resource, declared_programs: Dictionary,
+		route_index: Dictionary, ordered_definitions: Array[Resource],
+		selector_kind_by_program: Dictionary) -> Dictionary:
+	var match_kind := int(override.match_kind)
+	var match_text := String(override.match_value).strip_edges()
+	if match_text.is_empty() and match_kind == \
+			IdeologyEffectParameterScript.MatchKind.PROGRAM:
+		match_text = String(override.target_definition_key).strip_edges()
+	if match_kind == IdeologyEffectParameterScript.MatchKind.PROGRAM:
+		var target_key := IdeologyEffectDefinitionScript.definition_key_of(
+			StringName(match_text))
+		if target_key.is_empty() or not declared_programs.has(target_key):
+			return {"ok": false, "reason":
+				"ideology_synergy_override_target_unknown:%s" % match_text}
+		return {"ok": true, "rows": [{"match_kind": match_kind,
+			"match_value": target_key}]}
+	if match_kind == IdeologyEffectParameterScript.MatchKind.TAG:
+		if match_text.begins_with(PROGRAM_KEY_PREFIX):
+			match_text = match_text.trim_prefix(PROGRAM_KEY_PREFIX)
+		return {"ok": true, "rows": [{"match_kind": match_kind,
+			"match_value": match_text}]}
+	if match_kind != IdeologyEffectParameterScript.MatchKind.ROUTE:
+		return {"ok": false, "reason": "ideology_effect_parameter_match_kind_invalid"}
+	if not route_index.has(match_text):
+		return {"ok": false, "reason":
+			"ideology_synergy_override_route_unknown:%s" % match_text}
+	var rows: Array = []
+	var seen: Dictionary = {}
+	var rewrite_field := int(override.field)
+	var source_kind := -1
+	if rewrite_field == IdeologyEffectParameterScript.Field.SELECTOR_KIND:
+		match int(override.value):
+			IdeologyEffectDefinitionScript.TargetSelectorKind.NEIGHBORS_R1:
+				source_kind = IdeologyEffectDefinitionScript.TargetSelectorKind.NEIGHBORS_R2
+			IdeologyEffectDefinitionScript.TargetSelectorKind.NEIGHBORS_R2:
+				source_kind = IdeologyEffectDefinitionScript.TargetSelectorKind.NEIGHBORS_R1
+			IdeologyEffectDefinitionScript.TargetSelectorKind.TAG_SOURCE_R1:
+				source_kind = IdeologyEffectDefinitionScript.TargetSelectorKind.TAG_SOURCE_R2
+			IdeologyEffectDefinitionScript.TargetSelectorKind.TAG_SOURCE_R2:
+				source_kind = IdeologyEffectDefinitionScript.TargetSelectorKind.TAG_SOURCE_R1
+			_:
+				return {"ok": false,
+					"reason": "ideology_effect_parameter_selector_kind_invalid"}
+	for dense_id in route_index[match_text]:
+		var definition: Resource = ordered_definitions[dense_id]
+		for level in definition.levels:
+			for effect in level.persistent_effects:
+				if effect == null or effect.definition_key == &"":
+					continue
+				var program_key := PROGRAM_KEY_PREFIX + String(effect.definition_key)
+				if not declared_programs.has(program_key) or seen.has(program_key):
+					continue
+				if source_kind >= 0 and int(selector_kind_by_program.get(
+						program_key, -1)) != source_kind:
+					continue
+				seen[program_key] = true
+				rows.append({"match_kind":
+					IdeologyEffectParameterScript.MatchKind.PROGRAM,
+					"match_value": program_key})
+	if rows.is_empty():
+		return {"ok": false, "reason":
+			"ideology_synergy_override_route_no_programs:%s" % match_text}
+	return {"ok": true, "rows": rows}
+
 func _append_effect_rows(out: Dictionary, effects: Array[Resource], persistent: bool,
 		declared_programs: Dictionary, tally: Dictionary) -> String:
 	var prefix := "persistent" if persistent else "on_enter"
@@ -576,8 +715,11 @@ func _append_effect_rows(out: Dictionary, effects: Array[Resource], persistent: 
 					if effect.domain != 4 or effect.opcode <= 0:
 						return "ideology_publish_event_opcode_invalid"
 				6:
-					if effect.domain != 6 or effect.opcode != 1:
+					if effect.domain != 6 or effect.opcode not in [1, 2, 3]:
 						return "ideology_custom_domain_adapter_unregistered"
+					if effect.opcode == 3 and (effect.value_q16 <= 0 \
+							or effect.value_q16 > 65535):
+						return "ideology_on_enter_free_draw_invalid"
 				_:
 					return "ideology_effect_action_invalid"
 		out["%s_actions" % prefix].append(effect.action)
@@ -691,6 +833,8 @@ func catalog_view(country_catalog: Dictionary = {},
 	for i in compiled.synergy_ids.size():
 		var synergy = _synergy_resource(String(compiled.synergy_ids[i]))
 		if synergy == null:
+			continue
+		if synergy.hidden:
 			continue
 		# Requirement rows are read back from the compiled table, not re-derived
 		# from the resource. A named synergy and an expanded route synergy both
