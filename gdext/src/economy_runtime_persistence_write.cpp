@@ -264,7 +264,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                                static_cast<uint32_t>(_save.market_cursor - begin), payload);
     }
     if (_save.section == SAVE_SECTION_CELLS) {
-        const int32_t record_bytes = 167 +
+        const int32_t record_bytes = 176 +
             static_cast<int32_t>(_ethnicity_ids.size()) * 8;
         const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
         const int32_t end = std::min(_cell_count.get(), _save.cell_cursor + max_records);
@@ -339,6 +339,16 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                 food_cell < _cell_food_access_eq_previous.size()
                     ? _cell_food_access_eq_previous[food_cell] : 0);
             append_le<int32_t>(payload, _food_flow_previous_period_days.get());
+            append_le<int32_t>(payload,
+                food_cell < _cell_dry_streak_days.size()
+                    ? _cell_dry_streak_days[food_cell] : 0);
+            append_le<int32_t>(payload,
+                food_cell < _cell_days_since_hazard.size()
+                    ? _cell_days_since_hazard[food_cell] : 0);
+            append_le<uint8_t>(payload,
+                food_cell < _cell_previous_hazard_mask.size()
+                    ? _cell_previous_hazard_mask[food_cell]
+                    : 0);
         }
         if (_save.cell_cursor >= _cell_count.get()) ++_save.section;
         return make_save_chunk(SAVE_SECTION_CELLS,

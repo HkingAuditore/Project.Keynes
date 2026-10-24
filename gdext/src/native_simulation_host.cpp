@@ -9,6 +9,7 @@
 #include "country_runtime.h"
 #include "economy_runtime.h"
 #include "economy_hash.h"
+#include "effect_magnitude.h"
 #include "runtime_economy_ecp2.h"
 #include "native_parallel_executor.h"
 #include "runtime_climate_parity.h"
@@ -37,6 +38,22 @@ std::FILE *sim_day_trace_file() {
         return path != nullptr && path[0] != '\0' ? std::fopen(path, "w") : nullptr;
     }();
     return file;
+}
+
+// Peer-stall fault threshold. Production keeps the protocol default; headless
+// test suites on a loaded machine may raise it via PK_PEER_STALL_TIMEOUT_MS so
+// wall-clock contention is not reported as a protocol deadlock.
+uint64_t peer_stall_fault_timeout_ms() {
+    static const uint64_t value = [] () -> uint64_t {
+        const char *raw = std::getenv("PK_PEER_STALL_TIMEOUT_MS");
+        if (raw == nullptr || raw[0] == '\0')
+            return RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS;
+        const unsigned long long parsed = std::strtoull(raw, nullptr, 10);
+        return parsed >= RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS
+            ? static_cast<uint64_t>(parsed)
+            : RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS;
+    }();
+    return value;
 }
 
 // The trace file is shared by the worker and the main thread; multi-call
@@ -549,6 +566,12 @@ NativeSimulationHost::NativeSimulationHost() {
     _effect_pod_snapshot_generation.store(0, std::memory_order_release);
     _effect_pod_ack_count.store(0, std::memory_order_release);
     _effect_pod_intent_count.store(0, std::memory_order_release);
+    _effect_pod_managed_intent_count.store(0, std::memory_order_release);
+    _effect_pod_unmanaged_intent_count.store(0, std::memory_order_release);
+    _effect_pod_program_intent_count.store(0, std::memory_order_release);
+    for (auto &program_id : _effect_pod_intent_program_ids)
+        program_id.store(-1, std::memory_order_relaxed);
+    _effect_pod_transaction_count.store(0, std::memory_order_release);
     _effect_retire_absent_count.store(0, std::memory_order_release);
     _effect_retire_stale_count.store(0, std::memory_order_release);
     _effect_day_stage_ok = false;
@@ -1202,8 +1225,26 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
             _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
             return false;
         }
-        if (!_economy_production_runtime->apply_ecp2_authority(
-                restored_ecp2, ecp2_apply_error)) {
+        // COUNTRY IS INSTALLED AFTER ECONOMY ON THIS PATH, so the archive's country
+        // generation/hash cannot match the live (still bootstrapped) Country runtime
+        // yet. Measured: `saved_gen=19 live_gen=1 saved_hash=325166771088284131
+        // live_hash=1824313771786949620`, which is why every load of a real save ended
+        // in `economy_country_restore_order_or_hash_mismatch` and could not start the
+        // worker.
+        //
+        // Skipping the check entirely would let an archive whose Country bytes and
+        // Economy bytes come from DIFFERENT saves through, which is real corruption.
+        // So the identity the archive asked for is captured here and verified again
+        // below, once Country is actually installed -- the same comparison, just moved
+        // to a point where it is meaningful.
+        const bool previous_stale_identity =
+            _economy_production_runtime->_accept_stale_country_identity;
+        _economy_production_runtime->_accept_stale_country_identity = true;
+        const bool ecp2_applied = _economy_production_runtime->apply_ecp2_authority(
+            restored_ecp2, ecp2_apply_error);
+        _economy_production_runtime->_accept_stale_country_identity =
+            previous_stale_identity;
+        if (!ecp2_applied) {
             set_fault(ecp2_apply_error.empty()
                 ? "economy_ecp2_apply_failed"
                 : ecp2_apply_error.c_str());
@@ -1357,6 +1398,26 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         std::atomic_store_explicit(&_country_checkpoint,
             std::shared_ptr<const CountryCoreCheckpoint>(std::move(copy)),
             std::memory_order_release);
+        // P1-a: verify the country identity the ARCHIVE asked for, now that Country is
+        // actually installed.
+        //
+        // `apply_ecp2_authority` had to skip this comparison (Country was still the
+        // freshly bootstrapped one at that point, measured `saved_gen=19 live_gen=1`),
+        // and it recorded the expected values instead. Checking here is what keeps the
+        // deferred comparison honest: pairing A's Country bytes with B's Economy bytes
+        // must fail to start the worker, not load silently.
+        if (_economy_production_runtime != nullptr) {
+            std::string identity_error;
+            if (!_economy_production_runtime->verify_deferred_country_identity(
+                    identity_error)) {
+                set_fault(identity_error.empty()
+                    ? "economy_country_identity_mismatch"
+                    : identity_error.c_str());
+                _state.store(RuntimeWorkerState::STOPPED,
+                             std::memory_order_release);
+                return false;
+            }
+        }
     }
     if (restore_pending) {
         uint64_t restored_request_id = _command_request_id.load(
@@ -2704,7 +2765,7 @@ bool NativeSimulationHost::fault_if_peer_stall_timed_out(
         _day_stall_peer_since_us.load(std::memory_order_acquire);
     if (since == 0u) return false;
     const uint64_t elapsed_ms = (now_us() - since) / 1000u;
-    if (elapsed_ms < RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS) return false;
+    if (elapsed_ms < peer_stall_fault_timeout_ms()) return false;
     const uint32_t mask = day_stall_reason_mask();
     const std::string fault_line = pk::log_format(
         "[day-stall-fault] day=%d stall=0x%x peer_ms=%d code=%s ring=%d",
@@ -6614,6 +6675,8 @@ void NativeSimulationHost::reemit_effect_committed_pending_intents(int64_t day) 
             intent.target_handle = command.target_handle;
             intent.target_generation = command.target_generation;
             intent.value = command.value;
+            intent.reserved_effect_flags |=
+                RUNTIME_DOMAIN_INTENT_HAS_EFFECT_VALUE;
             intent.effective_day = command.effective_day >= 0
                 ? command.effective_day : day;
             intent.payload = command.payload;
@@ -6626,8 +6689,15 @@ void NativeSimulationHost::reemit_effect_committed_pending_intents(int64_t day) 
             intent.idempotency_key = command.idempotency_key;
             intent.duration_days = command.duration_days;
             intent.stacks = command.stacks;
-            intent.magnitude_q16 = command.value != 0
-                ? static_cast<int32_t>(command.value) : 65536;
+            const int32_t instance_index =
+                _effect_pod_authority.instance_index_for_id(
+                    command.source_instance_id);
+            const int32_t magnitude_scale_q16 = instance_index >= 0
+                ? _effect_pod_authority.snapshot().instances[
+                    static_cast<size_t>(instance_index)].magnitude_scale_q16
+                : EFFECT_MAGNITUDE_Q16_ONE;
+            intent.magnitude_q16 = effect_scaled_magnitude_q16(
+                command.value, magnitude_scale_q16);
             if (command.action == RuntimeEffectPodAction::MODIFIER_COMMAND &&
                 intent.payload[1] == 0 && command.domain >= 0 &&
                 command.domain < 4) {
@@ -6745,7 +6815,7 @@ bool NativeSimulationHost::restore_effect_pod_save(
     return true;
 }
 
-bool NativeSimulationHost::effect_pod_self_test(std::string *out_error) const {
+bool NativeSimulationHost::effect_pod_self_test(std::string *out_error) {
     std::string error;
     const bool ok = RuntimeEffectPodAuthority::self_test(error);
     if (!ok && out_error != nullptr) *out_error = error;
@@ -7252,10 +7322,13 @@ bool NativeSimulationHost::modifier_effect_adapter_self_test(
         {kAdapterIdeology, 3, 0, 0, 5007, 1008, 1,
          /*scope=*/2, /*entity=*/1008, /*group=*/1008, kTagIdeology,
          /*source_id=*/5007, kMagnitude, "modifier_adapter_ideology_entity"},
-        // ...and payload[2] overrides it afterwards (1 == GROUP).
+        // payload[2] is Modifier command metadata. It must not override the
+        // program's resolved target domain; doing so turned a cell row into an
+        // ENTITY command and left the applied Modifier behind on unequip.
         {kAdapterIdeology, 3, 0, 1, 5008, 1010, 1,
-         /*scope=*/1, /*entity=*/1010, /*group=*/1010, kTagIdeology,
-         /*source_id=*/5008, kMagnitude, "modifier_adapter_ideology_override"},
+         /*scope=*/2, /*entity=*/1010, /*group=*/1010, kTagIdeology,
+         /*source_id=*/5008, kMagnitude,
+         "modifier_adapter_ideology_payload_scope_ignored"},
     };
 
     std::vector<RuntimeDomainIntent> intents;
@@ -7278,6 +7351,8 @@ bool NativeSimulationHost::modifier_effect_adapter_self_test(
         intent.duration_days = -1;
         intent.stacks = 1;
         intent.magnitude_q16 = kMagnitude;
+        intent.reserved_effect_flags |=
+            RUNTIME_DOMAIN_INTENT_HAS_EFFECT_VALUE;
         intent.payload[0] = static_cast<int64_t>(test.modifier_domain) + 1;
         intent.payload[1] = test.modifier_domain;
         intent.payload[2] = test.payload2;
@@ -7694,7 +7769,8 @@ bool NativeSimulationHost::configure_ideology_pod(
 
 void NativeSimulationHost::record_ideology_worker_opinion_use(
         int64_t plan_day, const RuntimeIdeologyOpinionSnapshot &opinion,
-        std::shared_ptr<const RuntimeIdeologyOpinionSnapshot> owner) {
+        std::shared_ptr<const RuntimeIdeologyOpinionSnapshot> owner,
+        uint64_t ideology_generation) {
     // Publish the day and the opinion as ONE record (R9-1). Three separate
     // atomics let a reader pair day N with the opinion of day N-1, which is the
     // intermittency this replaces: the reader then binds the main thread to an
@@ -7704,12 +7780,31 @@ void NativeSimulationHost::record_ideology_worker_opinion_use(
     use.committed_day = opinion.committed_day;
     use.period_index = opinion.period_index;
     use.revision = opinion.revision;
+    use.ideology_generation = ideology_generation;
     use.opinion = std::move(owner);
     std::lock_guard<std::mutex> lock(_ideology_worker_opinion_mutex);
     _ideology_worker_opinion_ring[
         _ideology_worker_opinion_count % IDEOLOGY_WORKER_OPINION_RING] =
         std::move(use);
     ++_ideology_worker_opinion_count;
+}
+
+std::shared_ptr<const RuntimeIdeologyOpinionSnapshot>
+NativeSimulationHost::worker_opinion_snapshot_for_ideology_generation(
+        uint64_t generation) const {
+    if (generation == 0) return nullptr;
+    std::lock_guard<std::mutex> lock(_ideology_worker_opinion_mutex);
+    const size_t filled = std::min<size_t>(_ideology_worker_opinion_count,
+                                           IDEOLOGY_WORKER_OPINION_RING);
+    for (size_t i = 0; i < filled; ++i) {
+        const size_t slot = (_ideology_worker_opinion_count - 1u - i) %
+                            IDEOLOGY_WORKER_OPINION_RING;
+        const IdeologyWorkerOpinionUse &use = _ideology_worker_opinion_ring[slot];
+        if (use.ideology_generation != generation || use.opinion == nullptr)
+            continue;
+        return use.opinion;
+    }
+    return nullptr;
 }
 
 std::shared_ptr<const RuntimeIdeologyOpinionSnapshot>
@@ -7770,13 +7865,45 @@ bool NativeSimulationHost::publish_ideology_opinion_snapshot(
 
 bool NativeSimulationHost::queue_ideology_pod_command(
         const RuntimeIdeologyPodCommand &command, std::string &error) {
+    return queue_ideology_pod_commands({command}, error);
+}
+
+bool NativeSimulationHost::queue_ideology_pod_commands(
+        const std::vector<RuntimeIdeologyPodCommand> &commands,
+        std::string &error) {
     if (!_ideology_pod_configured) { error = "ideology_pod_not_configured"; return false; }
     std::lock_guard<std::mutex> lock(_ideology_transport_mutex);
-    if (_ideology_commands.size() >= RUNTIME_COMMAND_QUEUE_CAPACITY) {
+    // The Effect adapter stages this vector as one semantic batch. Validate
+    // every row before publishing any of them, otherwise a reject on row N
+    // leaves rows 0..N-1 in the transport and the caller reports failure while
+    // the worker still applies a partial grant.
+    for (const RuntimeIdeologyPodCommand &command : commands) {
+        const int32_t opcode = static_cast<int32_t>(command.opcode);
+        if (command.request_id == 0 || command.producer_id == 0 ||
+                command.country_handle == 0 ||
+                command.requested_day < 0 || command.effective_day < 0 ||
+                command.effective_day < command.requested_day ||
+                opcode < static_cast<int32_t>(
+                    RuntimeIdeologyPodOpcode::DISCOVER) ||
+                opcode > static_cast<int32_t>(
+                    RuntimeIdeologyPodOpcode::GRANT_FREE_DRAW)) {
+            error = "ideology_command_invalid";
+            return false;
+        }
+        if (command.opcode == RuntimeIdeologyPodOpcode::GRANT_FREE_DRAW &&
+                (command.value_q16 <= 0 || command.value_q16 > 65535 ||
+                 command.ideology_id != -1)) {
+            error = "ideology_free_draw_invalid";
+            return false;
+        }
+    }
+    if (commands.size() > RUNTIME_COMMAND_QUEUE_CAPACITY -
+            _ideology_commands.size()) {
         error = "ideology_command_capacity_exceeded";
         return false;
     }
-    _ideology_commands.push_back(command);
+    _ideology_commands.insert(_ideology_commands.end(),
+                              commands.begin(), commands.end());
     return true;
 }
 
@@ -9626,10 +9753,16 @@ bool NativeSimulationHost::execute_ideology_worker_stage(
          _ideology_pod_catalog.understanding_gain_stat_id >= 0 ||
          _ideology_pod_catalog.reroll_cost_stat_id >= 0 ||
          _ideology_pod_catalog.era_decay_floor_stat_id >= 0 ||
-         _ideology_pod_catalog.offer_choice_bonus_stat_id >= 0)) {
+         _ideology_pod_catalog.offer_choice_bonus_stat_id >= 0 ||
+         _ideology_pod_catalog.point_population_factor_stat_id >= 0 ||
+         _ideology_pod_catalog.point_building_factor_stat_id >= 0 ||
+         _ideology_pod_catalog.point_trade_factor_stat_id >= 0 ||
+         _ideology_pod_catalog.opinion_factor_floor_stat_id >= 0 ||
+         !_ideology_pod_catalog.school_strength_factor_stat_ids.empty())) {
         auto with_factors = std::make_shared<RuntimeIdeologyOpinionSnapshot>(*opinion);
         const auto &buckets = _modifier_pod_authority.snapshot().buckets;
-        auto freeze = [&](int32_t stat_id, std::vector<int32_t> &out) {
+        auto freeze = [&](int32_t stat_id, std::vector<int32_t> &out,
+                          double minimum = 0.0, double maximum = 4.0) {
             if (stat_id < 0) return;
             out.assign(opinion->country_count, 65536);
             for (const RuntimeModifierPodBucket &bucket : buckets) {
@@ -9641,7 +9774,7 @@ bool NativeSimulationHost::execute_ideology_worker_stage(
                     opinion->country_handles[slot] != bucket.scope_id) continue;
                 double value = (1.0 + bucket.sum_add) * bucket.product_factor;
                 if (!std::isfinite(value)) value = 1.0;
-                value = std::clamp(value, 0.0, 4.0);
+                value = std::clamp(value, minimum, maximum);
                 out[slot] = static_cast<int32_t>(std::lround(value * 65536.0));
             }
         };
@@ -9651,6 +9784,76 @@ bool NativeSimulationHost::execute_ideology_worker_stage(
                with_factors->understanding_gain_q16);
         freeze(_ideology_pod_catalog.reroll_cost_stat_id,
                with_factors->reroll_cost_q16);
+        freeze(_ideology_pod_catalog.point_population_factor_stat_id,
+               with_factors->point_population_factor_q16, 0.5, 3.0);
+        freeze(_ideology_pod_catalog.point_building_factor_stat_id,
+               with_factors->point_building_factor_q16, 0.5, 3.0);
+        freeze(_ideology_pod_catalog.point_trade_factor_stat_id,
+               with_factors->point_trade_factor_q16, 0.5, 3.0);
+        // The opinion floor is ADDitive from a 0.5 base and clamped to
+        // [0.3, 0.5]. A negative row therefore lowers the floor without ever
+        // producing a negative multiplier.
+        auto freeze_opinion_floor = [&]() {
+            if (_ideology_pod_catalog.opinion_factor_floor_stat_id < 0) return;
+            with_factors->opinion_factor_floor_q16.assign(
+                opinion->country_count, 32768);
+            for (const RuntimeModifierPodBucket &bucket : buckets) {
+                if (bucket.domain != 1 || bucket.scope != 2 ||
+                    bucket.stat_id != static_cast<uint32_t>(
+                        _ideology_pod_catalog.opinion_factor_floor_stat_id))
+                    continue;
+                const uint32_t slot =
+                    static_cast<uint32_t>(bucket.scope_id & 0xffffffffull);
+                if (slot >= opinion->country_count ||
+                    opinion->country_handles[slot] != bucket.scope_id)
+                    continue;
+                double value = (0.5 + bucket.sum_add) * bucket.product_factor;
+                if (!std::isfinite(value)) value = 0.5;
+                with_factors->opinion_factor_floor_q16[slot] =
+                    static_cast<int32_t>(std::lround(
+                        std::clamp(value, 0.3, 0.5) * 65536.0));
+            }
+        };
+        freeze_opinion_floor();
+        const int32_t school_count = static_cast<int32_t>(
+            _ideology_pod_catalog.school_keys.size());
+        if (school_count > 0 &&
+            _ideology_pod_catalog.school_strength_factor_stat_ids.size() ==
+                static_cast<size_t>(school_count)) {
+            with_factors->school_strength_factor_q16.assign(
+                static_cast<size_t>(opinion->country_count) *
+                    static_cast<size_t>(school_count), 65536);
+            for (int32_t school = 0; school < school_count; ++school) {
+                const int32_t stat_id =
+                    _ideology_pod_catalog.school_strength_factor_stat_ids[
+                        static_cast<size_t>(school)];
+                if (stat_id < 0) continue;
+                for (const RuntimeModifierPodBucket &bucket : buckets) {
+                    if (bucket.domain != 1 || bucket.scope != 2 ||
+                        bucket.stat_id != static_cast<uint32_t>(stat_id)) {
+                        continue;
+                    }
+                    const uint32_t country_slot =
+                        static_cast<uint32_t>(
+                            bucket.scope_id & 0xffffffffull);
+                    if (country_slot >= opinion->country_count ||
+                        opinion->country_handles[country_slot] !=
+                            bucket.scope_id) {
+                        continue;
+                    }
+                    double value =
+                        (1.0 + bucket.sum_add) * bucket.product_factor;
+                    if (!std::isfinite(value)) value = 1.0;
+                    const size_t lane =
+                        static_cast<size_t>(country_slot) *
+                            static_cast<size_t>(school_count) +
+                        static_cast<size_t>(school);
+                    with_factors->school_strength_factor_q16[lane] =
+                        static_cast<int32_t>(std::lround(
+                            std::clamp(value, 0.5, 2.0) * 65536.0));
+                }
+            }
+        }
         // The two draw-side values are ADDITIVE, not multipliers: an empty array
         // has to read as 0 (no floor, no extra rows), while `freeze` seeds 65536
         // because 1.0 is the identity for a factor. Sharing `freeze` here would
@@ -9686,7 +9889,6 @@ bool NativeSimulationHost::execute_ideology_worker_stage(
     // `point_gain_factor_q16`, so the two sides would settle from inputs that
     // differ in a field the accounting reads. The shared_ptr is kept alive by the
     // ring, so the main thread can consume it after this stage returns.
-    record_ideology_worker_opinion_use(day, *opinion, opinion);
     if (_ideology_pod_authority.snapshot().countries.empty()) {
         if (!_ideology_pod_authority.bootstrap(*country, *opinion, error))
             return false;
@@ -9777,6 +9979,8 @@ bool NativeSimulationHost::execute_ideology_worker_stage(
     }
     const RuntimeIdeologyPodSnapshot &snapshot =
         _ideology_pod_authority.snapshot();
+    record_ideology_worker_opinion_use(
+        day, *opinion, opinion, snapshot.generation);
     if (domain_is_worker_authoritative(RuntimeDomainId::IDEOLOGY))
         settle_annual_worker_reward(snapshot);
     auto copy = std::make_shared<RuntimeIdeologyPodSnapshot>(snapshot);
@@ -9966,8 +10170,13 @@ bool NativeSimulationHost::map_effect_intent_to_modifier_command(
     command.modifier_handle = intent.modifier_handle;
     command.duration_days = intent.duration_days;
     command.stacks = intent.stacks > 0 ? intent.stacks : 1;
-    command.magnitude_q16 = intent.magnitude_q16 > 0
-        ? intent.magnitude_q16 : 65536;
+    // `magnitude_q16` is the already-scaled adapter value. A legitimately
+    // emitted zero must survive; only intents without emitted Effect value
+    // metadata use the legacy 1.0 default.
+    const bool has_effect_value =
+        (intent.reserved_effect_flags &
+         RUNTIME_DOMAIN_INTENT_HAS_EFFECT_VALUE) != 0u;
+    command.magnitude_q16 = has_effect_value ? intent.magnitude_q16 : 65536;
     command.input_generation = input_generation;
     // The POD carries the adapter EffectRuntime compiled for this command
     // in intent.reserved (low byte = adapter, next byte = the program's
@@ -9991,15 +10200,6 @@ bool NativeSimulationHost::map_effect_intent_to_modifier_command(
         intent.source_domain == static_cast<uint16_t>(RuntimeDomainId::EFFECT)
         ? (intent.reserved & 0xFF) : -1;
     const int32_t adapter_target_domain = (intent.reserved >> 8) & 0xFF;
-    // 262144 = ModifierRuntime::MAX_MAGNITUDE_Q16 (modifier_runtime.h:33);
-    // this TU deliberately does not include modifier_runtime.h, matching how
-    // the sibling branches spell their type tags inline. The bound is spelled
-    // inside the lambda on purpose: std::clamp binds its arguments by
-    // reference, so a local constexpr would be odr-used and would have to be
-    // captured, which MSVC rejects for a capture-less lambda (C3493).
-    const auto clamp_magnitude = [](int64_t value) {
-        return static_cast<int32_t>(std::clamp<int64_t>(value, 0, 262144));
-    };
     // EffectRuntime's GENERIC adapter reads the instance row (its own
     // source_type / source_id), but the intent only carries the instance id
     // in source_id. Look the row up in the snapshot the Effect stage just
@@ -10022,20 +10222,19 @@ bool NativeSimulationHost::map_effect_intent_to_modifier_command(
         // effect_runtime.cpp:5317-5363.
         command.source_type = 0x4944454fULL; // IDEO
         command.source_id = intent.source_id;
-        command.magnitude_q16 = clamp_magnitude(intent.magnitude_q16);
         // Cell-scoped programs (settlement cell = 2, building/resource in a
-        // cell = 5) bind GROUP; everything else binds ENTITY so a
-        // mis-authored program fails the Modifier target check instead of
-        // silently hitting a country.
+        // cell = 5) bind GROUP; family programs (0) bind ENTITY on the stable
+        // family handle. Never leave both handles populated: the Modifier
+        // validates group_handle as a settlement before it looks at scope.
         command.scope = 1; // GROUP
-        if (adapter_target_domain != 2 && adapter_target_domain != 5)
-            command.scope = 2; // ENTITY
-        // Both handles carry the resolved target; scope_id_for() picks the
-        // one matching the final scope.
         command.entity_handle = intent.target_handle;
         command.group_handle = intent.target_handle;
-        if (intent.payload[2] >= 1 && intent.payload[2] <= 2)
-            command.scope = static_cast<int32_t>(intent.payload[2]);
+        if (adapter_target_domain != 2 && adapter_target_domain != 5) {
+            command.scope = 2; // ENTITY
+            command.group_handle = 0;
+        }
+        // The Effect POD stamps the program's target_domain in `reserved`.
+        // payload[2] is Modifier command metadata, not a scope override.
     } else if (adapter_kind == EFFECT_MODIFIER_TRIGGER) {
         // effect_runtime.cpp:5279-5288. Binds ENTITY on the command's own
         // target handle and always tags TRIGGER. The old fallthrough tagged
@@ -10044,7 +10243,6 @@ bool NativeSimulationHost::map_effect_intent_to_modifier_command(
         command.entity_handle = intent.target_handle;
         command.source_type = 0x54524947474552ULL; // TRIGGER
         command.source_id = intent.source_id;
-        command.magnitude_q16 = clamp_magnitude(intent.magnitude_q16);
     } else if (adapter_kind == EFFECT_MODIFIER_FAMILY_EFFECT) {
         // effect_runtime.cpp:5289-5316. Same target_domain split as the
         // ideology adapter, except EffectRuntime refuses an unknown
@@ -10071,7 +10269,6 @@ bool NativeSimulationHost::map_effect_intent_to_modifier_command(
         command.group_handle = intent.target_handle;
         command.source_type = 0x46414d4546464543ULL; // FAMEFFEC
         command.source_id = intent.source_id;
-        command.magnitude_q16 = clamp_magnitude(intent.magnitude_q16);
     } else if (adapter_kind == EFFECT_MODIFIER_GENERIC) {
         // effect_runtime.cpp:5364-5374. This is the branch the old domain
         // heuristic got wrong: an ordinary declarative MODIFIER_COMMAND is
@@ -10089,12 +10286,10 @@ bool NativeSimulationHost::map_effect_intent_to_modifier_command(
         command.source_id = source != nullptr
             ? static_cast<uint64_t>(source->source_id)
             : intent.source_id;
-        command.magnitude_q16 = clamp_magnitude(intent.magnitude_q16);
     } else if (command.domain == 1) {
         command.scope = 2; // ENTITY
         command.source_type = 0x54454348ULL; // TECH
         command.source_id = intent.source_id & 0xffffULL;
-        command.magnitude_q16 = 65536;
     } else if (command.domain == 2) {
         command.scope = 1; // GROUP
         command.group_handle = intent.target_generation;
@@ -10634,6 +10829,12 @@ bool NativeSimulationHost::execute_effect_worker_stage(
     }
 
     uint32_t emitted = 0;
+    uint32_t managed_emitted = 0;
+    uint32_t unmanaged_emitted = 0;
+    std::array<int32_t, RUNTIME_EFFECT_INTENT_PROGRAM_REPORT_CAPACITY>
+        emitted_program_ids{};
+    emitted_program_ids.fill(-1);
+    uint32_t emitted_program_count = 0;
     uint32_t modifier_targeted = 0;
     {
         std::lock_guard<std::mutex> lock(_effect_transport_mutex);
@@ -10645,6 +10846,28 @@ bool NativeSimulationHost::execute_effect_worker_stage(
             }
             _effect_intents.push_back(intent);
             _effect_day_intents.push_back(intent);
+            const int32_t source_instance_index =
+                _effect_pod_authority.instance_index_for_id(
+                    static_cast<int64_t>(intent.source_id));
+            const auto &source_instances =
+                _effect_pod_authority.snapshot().instances;
+            const int32_t source_program_id =
+                source_instance_index >= 0 &&
+                    static_cast<size_t>(source_instance_index) <
+                        source_instances.size()
+                ? source_instances[static_cast<size_t>(source_instance_index)]
+                    .program_id
+                : -1;
+            if (_effect_pod_authority.definition_is_managed(
+                    source_program_id)) {
+                ++managed_emitted;
+            } else {
+                ++unmanaged_emitted;
+            }
+            if (emitted_program_count < emitted_program_ids.size()) {
+                emitted_program_ids[emitted_program_count++] =
+                    source_program_id;
+            }
             ++emitted;
             if (intent.target_domain ==
                 static_cast<uint16_t>(RuntimeDomainId::MODIFIER)) {
@@ -10696,6 +10919,20 @@ bool NativeSimulationHost::execute_effect_worker_stage(
     _effect_pod_snapshot_generation.store(snapshot.generation,
                                           std::memory_order_release);
     _effect_pod_intent_count.store(emitted, std::memory_order_release);
+    _effect_pod_managed_intent_count.store(
+        managed_emitted, std::memory_order_release);
+    _effect_pod_unmanaged_intent_count.store(
+        unmanaged_emitted, std::memory_order_release);
+    _effect_pod_program_intent_count.store(
+        emitted_program_count, std::memory_order_release);
+    for (uint32_t index = 0; index < emitted_program_ids.size(); ++index) {
+        _effect_pod_intent_program_ids[index].store(
+            index < emitted_program_count ? emitted_program_ids[index] : -1,
+            std::memory_order_relaxed);
+    }
+    _effect_pod_transaction_count.store(
+        static_cast<uint32_t>(snapshot.transactions.size()),
+        std::memory_order_release);
     // ACKs are applied at the top of this stage via drain_effect_transport_queues.
     _effect_pod_ack_count.store(0u, std::memory_order_release);
     // F8: publish immutable snapshot for main-thread EffectRuntime write-back.
@@ -12494,7 +12731,10 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     climate_lane_ok(climate_store.plant_available_water) &&
                     climate_lane_ok(climate_store.weather_precipitation) &&
                     climate_lane_ok(climate_store.snow_cover) &&
-                    climate_lane_ok(climate_store.weather_intensity)) {
+                    climate_lane_ok(climate_store.weather_intensity) &&
+                    climate_lane_ok(climate_store.temperature_365d_ema) &&
+                    climate_lane_ok(climate_store.weather_type) &&
+                    climate_lane_ok(climate_store.cover)) {
                     worker_climate_input = *economy_day_input;
                     worker_climate_input.fields[0] = climate_store.temperature;
                     worker_climate_input.fields[1] = climate_store.temperature_30d_ema;
@@ -12503,6 +12743,11 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     worker_climate_input.fields[4] = climate_store.weather_precipitation;
                     worker_climate_input.fields[5] = climate_store.snow_cover;
                     worker_climate_input.fields[6] = climate_store.weather_intensity;
+                    worker_climate_input.fields[8] =
+                        climate_store.temperature_365d_ema;
+                    worker_climate_input.climate_u8[0] =
+                        climate_store.weather_type;
+                    worker_climate_input.climate_u8[1] = climate_store.cover;
                     if (climate_lane_ok(climate_store.terrain))
                         worker_climate_input.geography[0] = climate_store.terrain;
                     if (climate_lane_ok(climate_store.vegetation))
@@ -13103,8 +13348,10 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             // accounting here; publication of the resulting event is handled
             // by the subsequent EVENTS stage. No Godot value is touched.
             uint32_t terminal = 0;
+            uint32_t events_terminal = 0;
             uint64_t effect_hash = 1469598103934665603ull;
             bool gameplay_effect_ok = true;
+            std::vector<RuntimeIdeologyPodCommand> ideology_commands;
             for (const RuntimeCommandPacket &packet : day_commands) {
                 if (packet.envelope.domain != static_cast<uint16_t>(
                         RuntimeDomainId::GAMEPLAY_EFFECT) ||
@@ -13147,12 +13394,48 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 const bool publishes_event =
                     (action == 4 && target_domain == 3) ||
                     (action == 5 && target_domain == 4);
-                if (!decoded || !publishes_event || opcode <= 0 ||
+                const bool grants_ideology_free_draw =
+                    action == 6 && target_domain == 6 &&
+                    opcode == 3 && value_i64 > 0 && value_i64 <= 65535;
+                if (!decoded || (!publishes_event && !grants_ideology_free_draw) ||
+                    opcode <= 0 ||
                     effective_day != packet.envelope.effective_day ||
                     target_handle == 0 || target_generation == 0 ||
                     idempotency_key == 0) {
                     gameplay_effect_ok = false;
                     break;
+                }
+                if (grants_ideology_free_draw) {
+                    // Custom-domain free-draw grant. This does not append an
+                    // Events packet: the target domain is Ideology, and the
+                    // grant is durable in the Ideology POD. The request id is
+                    // the Effect transaction's idempotency key so replay after
+                    // a staged failure cannot grant twice.
+                    RuntimeIdeologyPodCommand ideology_command;
+                    ideology_command.request_id = idempotency_key;
+                    ideology_command.producer_id = packet.envelope.producer_id;
+                    ideology_command.sequence = packet.envelope.sequence;
+                    ideology_command.submit_order = packet.submit_order;
+                    ideology_command.requested_day =
+                        packet.envelope.requested_day;
+                    ideology_command.effective_day = effective_day;
+                    ideology_command.opcode =
+                        RuntimeIdeologyPodOpcode::GRANT_FREE_DRAW;
+                    ideology_command.country_handle = target_handle;
+                    ideology_command.value_q16 = value_i64;
+                    ideology_commands.push_back(ideology_command);
+                    ++terminal;
+                    effect_hash = mix_hash(effect_hash,
+                                           packet.envelope.request_id);
+                    effect_hash = mix_hash(effect_hash,
+                                           packet.envelope.sequence);
+                    effect_hash = mix_hash(effect_hash,
+                                           packet.envelope.opcode);
+                    effect_hash = mix_hash(effect_hash,
+                                           packet.envelope.payload_size);
+                    for (uint32_t i = 0; i < packet.envelope.payload_size; ++i)
+                        effect_hash = mix_hash(effect_hash, packet.payload[i]);
+                    continue;
                 }
                 RuntimeCommandPacket event_packet{};
                 event_packet.envelope.request_id = packet.envelope.request_id;
@@ -13211,6 +13494,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                             event_payload.size());
                 gameplay_event_commands.push_back(event_packet);
                 ++terminal;
+                ++events_terminal;
                 effect_hash = mix_hash(effect_hash, packet.envelope.request_id);
                 effect_hash = mix_hash(effect_hash, packet.envelope.sequence);
                 effect_hash = mix_hash(effect_hash, packet.envelope.opcode);
@@ -13231,13 +13515,28 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 commit.preflight_ok = 0;
                 continue;
             }
+            if (!ideology_commands.empty()) {
+                std::string ideology_queue_error;
+                if (!queue_ideology_pod_commands(
+                        ideology_commands, ideology_queue_error)) {
+                    gameplay_event_commands.clear();
+                    _gameplay_effect_pending.store(terminal + 1u,
+                                                   std::memory_order_release);
+                    _gameplay_effect_terminal.store(0,
+                                                    std::memory_order_release);
+                    stage.completed = 0;
+                    commit.preflight_ok = 0;
+                    continue;
+                }
+            }
             _gameplay_effect_generation.fetch_add(1, std::memory_order_release);
             _gameplay_effect_pending.store(0, std::memory_order_release);
             _gameplay_effect_terminal.store(terminal, std::memory_order_release);
             _gameplay_effect_state_hash.store(effect_hash,
                                                std::memory_order_release);
             stage.work_units = std::max<uint64_t>(1u, terminal);
-            stage.dirty_families = terminal != 0 ? RUNTIME_DIRTY_EVENTS : 0;
+            stage.dirty_families = events_terminal != 0
+                ? RUNTIME_DIRTY_EVENTS : 0;
             stage.completed = 1;
             commit.work_units += stage.work_units;
             commit.dirty_families |= stage.dirty_families;
@@ -15618,7 +15917,7 @@ void NativeSimulationHost::worker_main() {
                             events_failed_wait_day = day;
                             events_failed_since_us = now_us();
                         } else if ((now_us() - events_failed_since_us) / 1000u >=
-                                   RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS) {
+                                   peer_stall_fault_timeout_ms()) {
                             char events_reason[64];
                             size_t er = 0;
                             for (; er + 1 < sizeof(events_reason) &&
@@ -16506,6 +16805,18 @@ RuntimeThreadReport NativeSimulationHost::report() const {
     out.effect_pod_ack_count = _effect_pod_ack_count.load(std::memory_order_acquire);
     out.effect_pod_intent_count = _effect_pod_intent_count.load(
         std::memory_order_acquire);
+    out.effect_pod_managed_intent_count =
+        _effect_pod_managed_intent_count.load(std::memory_order_acquire);
+    out.effect_pod_unmanaged_intent_count =
+        _effect_pod_unmanaged_intent_count.load(std::memory_order_acquire);
+    out.effect_pod_program_intent_count =
+        _effect_pod_program_intent_count.load(std::memory_order_acquire);
+    for (size_t i = 0; i < out.effect_pod_intent_program_ids.size(); ++i) {
+        out.effect_pod_intent_program_ids[i] =
+            _effect_pod_intent_program_ids[i].load(std::memory_order_relaxed);
+    }
+    out.effect_pod_transaction_count =
+        _effect_pod_transaction_count.load(std::memory_order_acquire);
     out.effect_retire_absent_count = _effect_retire_absent_count.load(
         std::memory_order_acquire);
     out.effect_retire_stale_count = _effect_retire_stale_count.load(
@@ -16527,6 +16838,8 @@ RuntimeThreadReport NativeSimulationHost::report() const {
     out.ideology_pod_pending_transition_count =
         _ideology_pod_pending_transition_count.load(std::memory_order_acquire);
     out.ideology_pod_intent_count = _ideology_pod_intent_count.load(
+        std::memory_order_acquire);
+    out.ideology_pod_committed_day = _ideology_pod_committed_day.load(
         std::memory_order_acquire);
     for (size_t i = 0; i + 1 < sizeof(out.ideology_pod_fallback_reason); ++i) {
         const char value = _ideology_pod_fallback_reason[i].load(

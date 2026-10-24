@@ -27,6 +27,7 @@ const OP_GTE := 0
 const OP_LTE := 1
 const OP_EQ := 2
 const OP_NEQ := 3
+const OP_BIT_SET := 4
 
 # --- 标定表（唯一可调处）------------------------------------------------
 #
@@ -84,6 +85,9 @@ const MAX_INTERSECTION_CLAUSES := 64
 const MAX_INTERSECTION_ROWS := 256
 ## 与 IdeologyEffectDefinition.MAX_SELECTOR_TAGS 同值；这里是第二道闸。
 const MAX_INTERSECTION_TAGS := 4
+## X5 unions are narrower than intersections (no clause product), but still
+## bounded so one typo cannot append an unbounded synthetic row group.
+const MAX_UNION_TAGS := 16
 
 
 # --- 入口 ---------------------------------------------------------------
@@ -170,7 +174,6 @@ static func build(economy_catalog: Dictionary) -> Dictionary:
 	# RAIN_EVENT_THRESHOLD_Q16 判定后二值化），所以 ≥Q16_ONE 就是「当日有雨」。
 	_append(tags, by_name, _atom("cell.rain", [_row(
 		"cell.rain_event", OP_GTE, Q16_ONE)]))
-
 	# ── 地貌 ─────────────────────────────────────────────────────────
 	# 枚举直接来自 LandformType.LF，尾部追加的 PLATEAU / RIFT_VALLEY /
 	# CANYON 自动带上，不需要在这里手工抄 id。注意 metric 10 是 **landform**
@@ -220,6 +223,32 @@ static func build(economy_catalog: Dictionary) -> Dictionary:
 	for scale in COMPOSITE_SCALES:
 		_append(tags, by_name, _conjunction(
 			"%s.grain" % scale, by_name[scale], by_name["cell.grain"]))
+
+	# X12 geography flags. The metric is a raw bitmask, not a count, so each tag
+	# tests its own bit instead of comparing the combined integer.
+	# These MUST stay at the true end of the table: tag ids are 1-based array
+	# indices, and inserting them earlier silently retargets every later card.
+	_append(tags, by_name, _atom("cell.river", [_row(
+		"cell.geo_flags", OP_BIT_SET, 1)]))
+	_append(tags, by_name, _atom("cell.coastal", [_row(
+		"cell.geo_flags", OP_BIT_SET, 2)]))
+	_append(tags, by_name, _atom("cell.canal", [_row(
+		"cell.geo_flags", OP_BIT_SET, 4)]))
+	_append(tags, by_name, _atom("cell.border", [_row(
+		"cell.geo_flags", OP_BIT_SET, 8)]))
+	# X13a climate tags. Temperature uses the runtime normalization
+	# `C = 50 * q - 17`: 5C -> 28836, 22C -> 51118, both rounded.
+	_append(tags, by_name, _atom("cell.climate.cold", [_row(
+		"cell.temperature_annual_q16", OP_LTE, 28836)]))
+	_append(tags, by_name, _atom("cell.climate.hot", [_row(
+		"cell.temperature_annual_q16", OP_GTE, 51118)]))
+	_append(tags, by_name, _atom("cell.climate.dry_spell", [_row(
+		"cell.dry_streak_days", OP_GTE, 20 * Q16_ONE)]))
+	# X9a family tags. Metric 84 is count_q16; metric 85 is raw Q16.
+	_append(tags, by_name, _atom("cell.clan", [_row(
+		"cell.family_branch_count", OP_GTE, Q16_ONE)]))
+	_append(tags, by_name, _atom("cell.eminent_clan", [_row(
+		"cell.max_branch_prestige_q16", OP_GTE, 32768)]))
 
 	# 重名会让同名标签在原生侧只保留先出现的偏移，卡面引用到哪个全凭顺序。
 	# 用一个集合大小对账代替 assert —— assert 在 release 导出里是空的，
@@ -347,6 +376,50 @@ static func intersection(names: PackedStringArray, tags: Array) -> Dictionary:
 			return {"ok": false, "reason": "target_tag_intersection_clause_budget:%d" % clauses}
 		if rows.size() > MAX_INTERSECTION_ROWS:
 			return {"ok": false, "reason": "target_tag_intersection_row_budget:%d" % rows.size()}
+	return {"ok": true, "reason": "", "name": composite, "rows": rows}
+
+
+## N 个标签的**逻辑或**。与 `intersection()` 相反，这是把各标签的 clause
+## 组直接串接并重新编号，因此结果正好是「命中任意一个成员」。
+##
+## X5 的重写会用它生成 `cell.landform.delta|cell.terrain.floodplain` 这类
+## 合成标签；返回值仍是一个普通标签，原生侧只看到追加后的 id。
+static func union(names: PackedStringArray, tags: Array) -> Dictionary:
+	if names.is_empty():
+		return {"ok": false, "reason": "target_tag_union_empty"}
+	if names.size() == 1:
+		var only_name := String(names[0]).strip_edges()
+		for tag in tags:
+			if String(tag["name"]) == only_name:
+				return {"ok": true, "reason": "", "name": only_name,
+					"rows": (tag["rows"] as Array).duplicate()}
+		return {"ok": false, "reason": "target_tag_union_unknown:%s" % only_name}
+	var rows_by_name := {}
+	for tag in tags:
+		rows_by_name[String(tag["name"])] = tag["rows"]
+	var ordered := PackedStringArray(names)
+	ordered.sort()
+	if int(ordered.size()) > MAX_UNION_TAGS:
+		return {"ok": false, "reason": "target_tag_union_tag_count"}
+	var rows: Array = []
+	var composite := ""
+	var previous := ""
+	var clause := 0
+	for name in ordered:
+		if String(name) == previous:
+			return {"ok": false, "reason": "target_tag_union_duplicate"}
+		previous = String(name)
+		if not rows_by_name.has(name):
+			return {"ok": false, "reason": "target_tag_union_unknown:%s" % name}
+		composite = String(name) if composite.is_empty() \
+			else composite + "|" + String(name)
+		for group in _clause_groups(rows_by_name[name]):
+			for row in group:
+				rows.append(_row(String(row["metric"]), int(row["op"]),
+					int(row["threshold_q16"]), clause))
+			clause += 1
+	if rows.size() > MAX_INTERSECTION_ROWS:
+		return {"ok": false, "reason": "target_tag_union_row_budget:%d" % rows.size()}
 	return {"ok": true, "reason": "", "name": composite, "rows": rows}
 
 

@@ -39,6 +39,7 @@ constexpr int PK_EFFECT_PUBLISH_DOMAIN = 4;
 constexpr int PK_EFFECT_CUSTOM_DOMAIN = 6;
 constexpr int PK_EFFECT_CUSTOM_AUDIT_OPCODE = 1;
 constexpr int PK_EFFECT_CUSTOM_CANAL_COMMIT_OPCODE = 2;
+constexpr int PK_EFFECT_CUSTOM_IDEOLOGY_FREE_DRAW_OPCODE = 3;
 
 constexpr int PK_PAYLOAD_NONE = 0;
 constexpr int PK_PAYLOAD_SUCCESSION_V1 = 1; // i0=old_veg, i1=new_veg
@@ -304,11 +305,12 @@ bool DCWorldExt::submit_effect_gameplay_commands_pod(
             source.domain == PK_EFFECT_GAMEPLAY_DOMAIN && source.opcode > 0;
         const bool publish = source.action == PK_EFFECT_ACTION_PUBLISH_EVENT &&
             source.domain == PK_EFFECT_PUBLISH_DOMAIN && source.opcode > 0;
-        const bool custom_audit = source.action == PK_EFFECT_ACTION_CUSTOM_DOMAIN &&
+        const bool custom_native = source.action == PK_EFFECT_ACTION_CUSTOM_DOMAIN &&
             source.domain == PK_EFFECT_CUSTOM_DOMAIN &&
             (source.opcode == PK_EFFECT_CUSTOM_AUDIT_OPCODE ||
-             source.opcode == PK_EFFECT_CUSTOM_CANAL_COMMIT_OPCODE);
-        if ((!gameplay && !publish && !custom_audit) || source.effective_day < 0 ||
+             source.opcode == PK_EFFECT_CUSTOM_CANAL_COMMIT_OPCODE ||
+             source.opcode == PK_EFFECT_CUSTOM_IDEOLOGY_FREE_DRAW_OPCODE);
+        if ((!gameplay && !publish && !custom_native) || source.effective_day < 0 ||
             source.idempotency_key == 0) {
             error = source.action == PK_EFFECT_ACTION_PUBLISH_EVENT
                 ? "effect_publish_event_command_invalid"
@@ -492,6 +494,19 @@ Dictionary DCWorldExt::run_gameplay_effects(int64_t day_index) {
                 ++rejected;
                 continue;
             }
+            _effect_gameplay_event_ids.emplace(command.idempotency_key, -1);
+            result.complete = 1;
+            result.ok = 1;
+            result.reason.clear();
+            ++committed;
+            continue;
+        }
+        if (command.action == PK_EFFECT_ACTION_CUSTOM_DOMAIN &&
+            command.domain == PK_EFFECT_CUSTOM_DOMAIN &&
+            command.opcode == PK_EFFECT_CUSTOM_IDEOLOGY_FREE_DRAW_OPCODE) {
+            // SHADOW/probe has no worker Ideology authority to receive the
+            // grant. The Effect transaction is still terminal-successful; the
+            // ACTIVE path stages the typed Ideology command below.
             _effect_gameplay_event_ids.emplace(command.idempotency_key, -1);
             result.complete = 1;
             result.ok = 1;

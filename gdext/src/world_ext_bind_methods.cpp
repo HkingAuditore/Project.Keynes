@@ -476,6 +476,12 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::resolve_modifier_definition_terms);
     ClassDB::bind_method(D_METHOD("get_modifier_report"),
                          &DCWorldExt::get_modifier_report);
+    // R-4 X16 / metric probes.
+    ClassDB::bind_method(D_METHOD("get_epoch_profession_report", "country_slot"),
+                         &DCWorldExt::get_epoch_profession_report);
+    ClassDB::bind_method(D_METHOD("sample_effect_metric_probe", "metric", "cell",
+                                  "country_handle"),
+                         &DCWorldExt::sample_effect_metric_probe);
     ClassDB::bind_method(D_METHOD("poll_modifier_events", "after_event_id", "limit"),
                          &DCWorldExt::poll_modifier_events, DEFVAL(128));
     ClassDB::bind_method(D_METHOD("evaluate_modifier_stat", "domain", "entity_handle",
@@ -745,8 +751,33 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_effect_metric_override_for_test",
             "metric", "value", "has_value"),
                          &DCWorldExt::set_effect_metric_override_for_test);
+    ClassDB::bind_method(D_METHOD(
+                             "set_family_target_min_branches_override_for_test",
+                             "min_branches"),
+                         &DCWorldExt::set_family_target_min_branches_override_for_test);
+    ClassDB::bind_method(D_METHOD("set_cell_tag_override_for_test",
+            "tag_key", "cell", "on"),
+                         &DCWorldExt::set_cell_tag_override_for_test);
+    ClassDB::bind_method(D_METHOD("clear_cell_tag_overrides_for_test"),
+                         &DCWorldExt::clear_cell_tag_overrides_for_test);
     ClassDB::bind_method(D_METHOD("refresh_effect_input_digest_for_test"),
                          &DCWorldExt::refresh_effect_input_digest_for_test);
+    ClassDB::bind_method(D_METHOD("get_class_metric_source_for_test"),
+                         &DCWorldExt::get_class_metric_source_for_test);
+    ClassDB::bind_method(D_METHOD("capture_class_metric_source_for_test"),
+                         &DCWorldExt::capture_class_metric_source_for_test);
+    ClassDB::bind_method(D_METHOD("set_class_opinion_source_override_for_test",
+            "population", "satisfaction_q16", "satisfaction_weighted"),
+                         &DCWorldExt::set_class_opinion_source_override_for_test);
+    ClassDB::bind_method(D_METHOD("clear_class_opinion_source_override_for_test"),
+                         &DCWorldExt::clear_class_opinion_source_override_for_test);
+    ClassDB::bind_method(D_METHOD(
+                             "set_country_technology_metric_input_for_test",
+                             "country_slot", "words"),
+                         &DCWorldExt::set_country_technology_metric_input_for_test);
+    ClassDB::bind_method(D_METHOD(
+                             "clear_country_technology_metric_input_for_test"),
+                         &DCWorldExt::clear_country_technology_metric_input_for_test);
     ClassDB::bind_method(D_METHOD("get_effect_input_revisions"),
                          &DCWorldExt::get_effect_input_revisions);
     ClassDB::bind_method(D_METHOD("get_economy_report"),

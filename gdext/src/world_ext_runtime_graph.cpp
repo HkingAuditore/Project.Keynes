@@ -1278,6 +1278,20 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
             host.effect_pod_ack_count);
         out["effect_pod_intent_count"] = static_cast<int>(
             host.effect_pod_intent_count);
+        out["effect_pod_managed_intent_count"] = static_cast<int>(
+            host.effect_pod_managed_intent_count);
+        out["effect_pod_unmanaged_intent_count"] = static_cast<int>(
+            host.effect_pod_unmanaged_intent_count);
+        out["effect_pod_transaction_count"] = static_cast<int>(
+            host.effect_pod_transaction_count);
+        PackedInt32Array effect_program_ids;
+        effect_program_ids.resize(static_cast<int>(
+            host.effect_pod_program_intent_count));
+        for (uint32_t i = 0; i < host.effect_pod_program_intent_count; ++i) {
+            effect_program_ids.set(static_cast<int>(i),
+                host.effect_pod_intent_program_ids[i]);
+        }
+        out["effect_pod_intent_program_ids"] = effect_program_ids;
         out["effect_retire_absent_count"] = static_cast<int64_t>(
             host.effect_retire_absent_count);
         out["effect_retire_stale_count"] = static_cast<int64_t>(
@@ -1295,6 +1309,19 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
             host.ideology_pod_pending_transition_count);
         out["ideology_pod_intent_count"] = static_cast<int>(
             host.ideology_pod_intent_count);
+        // The day the worker last committed IDEOLOGY for.
+        //
+        // `RuntimeThreadReport` has carried `worker_committed_ideology_day` since the
+        // POD landed, but nothing ever copied it into this Dictionary, so GDScript had
+        // no way to observe it. Tests did the only thing left and polled a key that
+        // never existed (`ideology_pod_committed_day`), which is why every
+        // "wait for the worker to finish a day" loop silently burned its whole timeout
+        // and then asserted on a stale snapshot.
+        //
+        // `ideology_parity_worker_committed_day` is NOT a substitute: it is only
+        // assigned while a parity reference is being recorded, so a production session
+        // (and this fixture, which never completes a parity day) leaves it at -1.
+        out["ideology_pod_committed_day"] = host.ideology_pod_committed_day;
         out["ideology_pod_fallback_reason"] = String(
             host.ideology_pod_fallback_reason);
         out["events_probe_enabled"] = host.events_probe_enabled;

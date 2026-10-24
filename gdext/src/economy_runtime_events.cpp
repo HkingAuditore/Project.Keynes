@@ -506,6 +506,73 @@ void NativeEconomyRuntime::publish_country_development_facts() {
                     class_snapshot.satisfaction_weighted[row] /
                         population, 0, Q16_ONE));
         }
+        const auto general_class = std::lower_bound(_political_class_ids.begin(),
+            _political_class_ids.end(), std::string("general"));
+        const int32_t general_class_index =
+            general_class != _political_class_ids.end() &&
+                *general_class == "general"
+            ? static_cast<int32_t>(general_class - _political_class_ids.begin())
+            : -1;
+        const bool class_rows_valid = general_class_index >= 0 &&
+            static_cast<int64_t>(class_snapshot.satisfaction_q16.size()) ==
+                static_cast<int64_t>(class_snapshot.country_count) *
+                    class_snapshot.class_count &&
+            static_cast<int64_t>(class_snapshot.population.size()) ==
+                static_cast<int64_t>(class_snapshot.country_count) *
+                    class_snapshot.class_count &&
+            static_cast<int64_t>(class_snapshot.satisfaction_weighted.size()) ==
+                static_cast<int64_t>(class_snapshot.country_count) *
+                    class_snapshot.class_count;
+        auto mix_metric_hash = [](uint64_t hash, uint64_t value) {
+            hash ^= value;
+            hash *= 1099511628211ULL;
+            return hash;
+        };
+        uint64_t metric_hash = 1469598103934665603ULL;
+        metric_hash = mix_metric_hash(metric_hash,
+            static_cast<uint64_t>(class_snapshot.country_count));
+        metric_hash = mix_metric_hash(metric_hash,
+            static_cast<uint64_t>(class_snapshot.class_count));
+        metric_hash = mix_metric_hash(metric_hash,
+            static_cast<uint64_t>(general_class_index));
+        for (int32_t country = 0; country < class_snapshot.country_count;
+             ++country) {
+            int64_t class_value = 0;
+            if (class_rows_valid) {
+                const size_t general_row = static_cast<size_t>(country) *
+                    static_cast<size_t>(class_snapshot.class_count) +
+                    static_cast<size_t>(general_class_index);
+                class_value = class_snapshot.satisfaction_q16[general_row];
+            }
+            int64_t country_population = 0;
+            int64_t country_weighted = 0;
+            for (int32_t political_class = 0;
+                 political_class < class_snapshot.class_count;
+                 ++political_class) {
+                const size_t row = static_cast<size_t>(country) *
+                    static_cast<size_t>(class_snapshot.class_count) +
+                    static_cast<size_t>(political_class);
+                if (row >= class_snapshot.population.size() ||
+                    row >= class_snapshot.satisfaction_weighted.size())
+                    break;
+                country_population = saturating_add(country_population,
+                    std::max<int64_t>(0, class_snapshot.population[row]),
+                    _saturation_count);
+                country_weighted = saturating_add(country_weighted,
+                    std::max<int64_t>(0,
+                        class_snapshot.satisfaction_weighted[row]),
+                    _saturation_count);
+            }
+            const int64_t weighted_value = country_population > 0
+                ? std::clamp<int64_t>(
+                    country_weighted / country_population, 0, Q16_ONE)
+                : 0;
+            metric_hash = mix_metric_hash(metric_hash,
+                static_cast<uint64_t>(class_value));
+            metric_hash = mix_metric_hash(metric_hash,
+                static_cast<uint64_t>(weighted_value));
+        }
+        class_snapshot.class_metric_content_hash = metric_hash;
         _class_opinion_cells_scanned += cells_scanned;
         _class_opinion_slots_scanned += slots_scanned;
         _last_class_opinion_cells_scanned = cells_scanned;

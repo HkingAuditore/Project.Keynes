@@ -321,7 +321,7 @@ func _test_save_round_trip(compiled: Dictionary, check_full_replay_hash: bool = 
 	_expect("Country peer save completes", bool(source.end_country_save().get("ok", false)))
 	var saved := _save(source)
 	_expect("PKEC v56 streams the satisfaction columns",
-		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 56)
+		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 57)
 	if not bool(saved.get("ok", false)):
 		return
 	var restored := _configured_world(compiled, 4004, true, false,
@@ -473,12 +473,17 @@ func _new_ext(cells: int) -> Object:
 	ext.create_entities(cells)
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
 			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
-			&"cell_weather_intensity"]:
+			&"cell_weather_intensity", &"cell_temp_365d"]:
 		var values := PackedFloat32Array()
 		values.resize(cells)
 		values.fill(1.0 if slot_name == &"cell_temp" else 0.0)
 		var slot: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(slot, 0, values)
+	var zeros := PackedByteArray()
+	zeros.resize(cells)
+	zeros.fill(0)
+	ext.write_u8_range(ext.register_component(&"cell_weather_type", 2, 1, false), 0, zeros)
+	ext.write_u8_range(ext.register_component(&"cell_cover", 2, 1, false), 0, zeros)
 	return ext
 
 

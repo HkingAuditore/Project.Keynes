@@ -64,6 +64,24 @@ extends Resource
 @export_range(0, 2147483647, 1) var point_trade_weight_q16: int = 0
 @export_range(0, 2147483647, 1) var point_gain_cap_q16: int = 0
 @export var point_gain_stat_key: StringName = &"country.ideology.point_gain_factor"
+## X6-a: per-term point multipliers. Empty means 1.0 for that term.
+@export var point_population_factor_stat_key: StringName = &"country.ideology.point_population_factor"
+@export var point_building_factor_stat_key: StringName = &"country.ideology.point_building_factor"
+@export var point_trade_factor_stat_key: StringName = &"country.ideology.point_trade_factor"
+## social_media: floor under the opinion factor. Empty means 0.5. This is an
+## ADD-only point stat, so a card lowers it with a negative point offset.
+@export var opinion_factor_floor_stat_key: StringName = &"country.ideology.opinion_factor_floor"
+## Global per-school strength multipliers. The catalog also carries the school
+## order and stat keys natively; these profile fields are the authoring surface
+## for the same contract, so content and runtime resolve one table.
+@export var school_strength_factor_stat_keys: PackedStringArray = PackedStringArray([
+	"country.ideology.school_strength_factor.agrarian",
+	"country.ideology.school_strength_factor.commerce",
+	"country.ideology.school_strength_factor.learning",
+	"country.ideology.school_strength_factor.mobilization",
+	"country.ideology.school_strength_factor.industry",
+	"country.ideology.school_strength_factor.harmony",
+])
 ## Multiplies each level's static `daily_understanding_q16`. Empty = 1.0.
 ##
 ## Understanding accrual used to be the one number a card could not reach: it

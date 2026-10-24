@@ -33,11 +33,14 @@ const ParameterScript = preload("res://scripts/ideology/ideology_effect_paramete
 @export_range(0, 63, 1) var route_tag_min_level: int = 0
 @export_flags("Equipped:2", "NationalSpirit:4") var route_tag_location_mask: int = 2
 @export var persistent_effects: Array[Resource] = []
-## L3-9 runtime rewrites: while this synergy is active, each row multiplies the
-## magnitude of the program it names. Only `Field.MAGNITUDE_SCALE` is accepted --
-## the other override fields are compile-time (L3-9 first slice) and applying
-## them per country would mean per-instance program templates.
+## Runtime rewrites carried by this synergy. X5 rows rewrite the selector of
+## matching programs for every country where the synergy is active; legacy
+## MAGNITUDE_SCALE rows keep multiplying as before.
 @export var overrides: Array[Resource] = []
+## Authoring-only self-synergy used to carry X5 rewrites. Hidden rows still
+## compile into the native condition table but are omitted from resonance and
+## card tooltips.
+@export var hidden: bool = false
 
 
 ## True when this row selects its members by 体系 tag instead of by id.
@@ -77,21 +80,30 @@ func validate() -> String:
 	for effect in persistent_effects:
 		if effect == null or not effect is EffectCommandScript:
 			return "ideology_synergy_effect_invalid"
-	var seen_override_targets := {}
+	var seen_override_rows := {}
 	for override in overrides:
 		if override == null or not override is ParameterScript:
 			return "ideology_synergy_override_resource_invalid"
 		var override_error: String = override.validate()
 		if not override_error.is_empty():
 			return override_error
-		if int(override.field) != ParameterScript.Field.MAGNITUDE_SCALE:
+		if int(override.field) not in [
+				ParameterScript.Field.MAGNITUDE_SCALE,
+				ParameterScript.Field.TAG,
+				ParameterScript.Field.SELECTOR_KIND,
+				ParameterScript.Field.SELECTOR_CAP]:
 			return "ideology_synergy_override_field_invalid"
-		var target := String(override.target_definition_key).strip_edges()
-		if target.is_empty():
-			return "ideology_synergy_override_target_empty"
-		# Two rows for one target would multiply twice and read as a typo, which
-		# it is: one synergy rewrites a program once.
-		if seen_override_targets.has(target):
+		if int(override.match_kind) == ParameterScript.MatchKind.ROUTE:
+			# Routes are expanded by IdeologyCatalog before native compilation.
+			# Multiple route rows for one route would duplicate every expansion.
+			if String(override.match_value).strip_edges().is_empty():
+				return "ideology_synergy_override_match_value_missing"
+		var row_key := "%d:%s:%d" % [int(override.match_kind),
+			String(override.match_value).strip_edges(), int(override.field)]
+		# Scale rows of different magnitudes on one target would multiply twice;
+		# selector rewrites of the same field on one target are ambiguous. Both
+		# are authoring slips and must fail before expansion can hide them.
+		if seen_override_rows.has(row_key):
 			return "ideology_synergy_override_target_duplicate"
-		seen_override_targets[target] = true
+		seen_override_rows[row_key] = true
 	return ""

@@ -50,7 +50,8 @@ bool is_family_owned_key(const std::string &key) {
 // routed through the native gameplay journal consumer below.
 bool native_command_shape_valid(int32_t action, int32_t domain, int32_t opcode,
                                 int32_t target_resolver, int32_t duration_days,
-                                int32_t stacks, std::string &reason) {
+                                int32_t stacks, int64_t value,
+                                std::string &reason) {
     if (action < EffectRuntime::MODIFIER_COMMAND ||
         action > EffectRuntime::CUSTOM_DOMAIN_COMMAND) {
         reason = "effect_command_action_unregistered";
@@ -97,11 +98,19 @@ bool native_command_shape_valid(int32_t action, int32_t domain, int32_t opcode,
             }
             break;
         case EffectRuntime::CUSTOM_DOMAIN_COMMAND:
-            // The first native custom consumer is the journal-backed audit
-            // command. New custom domains must register a C++ adapter and add
-            // an explicit shape check here before content can compile.
-            if (domain != 6 || opcode != 1) {
+            // Each native custom consumer must be registered explicitly here.
+            // Opcode 3 grants Ideology free draws; its value is a positive row
+            // count, not an Ideology opcode.
+            if (domain != 6 ||
+                (opcode != EffectRuntime::CUSTOM_AUDIT_OPCODE &&
+                 opcode != EffectRuntime::CUSTOM_CANAL_COMMIT_OPCODE &&
+                 opcode != EffectRuntime::CUSTOM_IDEOLOGY_FREE_DRAW_OPCODE)) {
                 reason = "effect_custom_domain_adapter_unregistered";
+                return false;
+            }
+            if (opcode == EffectRuntime::CUSTOM_IDEOLOGY_FREE_DRAW_OPCODE &&
+                (value <= 0 || value > 65535)) {
+                reason = "effect_ideology_free_draw_count_invalid";
                 return false;
             }
             break;
@@ -529,9 +538,8 @@ bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
         instance.max_stacks = entry.max_stacks;
         instance.stack_count = entry.stack_count;
         instance.applied_stack_count = entry.applied_stack_count;
-        instance.effect_applied = entry.applied_stack_count > 0 ? 1 : 0;
-        instance.applied_input_revision = instance.effect_applied
-            ? entry.last_evaluated_input_revision : 0;
+        instance.effect_applied = entry.effect_applied;
+        instance.applied_input_revision = entry.applied_input_revision;
         instance.expires_day = entry.expires_day;
         instance.stack_key_hash = entry.stack_key_hash;
         instance.retire_requested = entry.retire_requested;
@@ -972,6 +980,19 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
                 definition.magnitude_by_prestige_q16[tier] > 4 * Q16_ONE)
                 return failure("effect_prestige_magnitude_invalid");
         }
+        // Kind 16 stores target_cap/radius/count_cap in one packed int, so the
+        // plain "selector cap" range check would reject every valid row. Decode
+        // the same fields the runtime resolves and keep the old range rule for
+        // every other selector.
+        const SourceCountSelector source_count_selector =
+            decode_source_count_selector(definition.target_selector_param);
+        const bool source_count_selector_valid =
+            definition.target_selector_kind == SELECTOR_TAG_SOURCE_COUNT
+                ? source_count_selector.radius >= 1 &&
+                    source_count_selector.radius <= 4 &&
+                    source_count_selector.cap >= 1 &&
+                    source_count_selector.tag >= 0
+                : true;
         if (definition.source_kind < 0 || definition.source_kind > 5 ||
             definition.target_domain < 0 || definition.target_domain > 5 ||
             definition.operation < 0 || definition.operation > 4 ||
@@ -982,7 +1003,15 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
             definition.max_stacks <= 0 || definition.target_selector_kind < 0 ||
             definition.target_selector_kind > SELECTOR_MAX_KIND ||
             definition.target_selector_param[0] < 0 ||
-            definition.target_selector_param[0] > SELECTOR_MAX_CELLS ||
+            (definition.target_selector_kind != SELECTOR_TAG_SOURCE_COUNT &&
+                definition.target_selector_kind != SELECTOR_FAMILY_OWNED &&
+                definition.target_selector_param[0] > SELECTOR_MAX_CELLS) ||
+            (definition.target_selector_kind == SELECTOR_FAMILY_OWNED &&
+                (definition.target_domain != 0 ||
+                    definition.target_selector_param[0] < 1 ||
+                    definition.target_selector_param[0] > SELECTOR_MAX_CELLS ||
+                    definition.target_selector_param[1] < 1)) ||
+            !source_count_selector_valid ||
             (definition.lifecycle == 1 && definition.command_count == 0))
             return failure("effect_family_metadata_invalid");
         if (definition.condition_begin < 0 || definition.condition_count < 0 ||
@@ -1082,7 +1111,7 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
         std::string command_error;
         if (!native_command_shape_valid(command.action, command.domain, command.opcode,
                 command.target_resolver, command.duration_days, command.stacks,
-                command_error) ||
+                command.value, command_error) ||
             command.value_mode < VALUE_CONSTANT || command.value_mode > VALUE_STACK_TOP ||
             command.command_key.empty() ||
             (command.action != MODIFIER_COMMAND &&
@@ -2794,6 +2823,11 @@ bool EffectRuntime::instance_metric_pod(int64_t instance_id, int32_t metric_id,
     return true;
 }
 
+int32_t EffectRuntime::metric_id_for_key(const std::string &key) const {
+    const auto found = _metric_ids.find(key);
+    return found == _metric_ids.end() ? -1 : found->second;
+}
+
 bool EffectRuntime::family_effect_metadata_pod(
         const std::string &program_key, FamilyEffectMetadataPod &out) const {
     const int32_t definition_id = definition_id_for_key(program_key);
@@ -2826,7 +2860,10 @@ bool EffectRuntime::family_effect_metadata_pod(
         // guard above already rejected; keeping the check here too means a
         // program that somehow bypassed it publishes nothing rather than
         // publishing the wrong column.
-        out.metric_mask.set(metric_id);
+        if (metric_id < NativeEconomyRuntime::FAMILY_METRIC_COUNT)
+            out.metric_mask.set(metric_id);
+        else
+            out.scalar_mask.set(metric_id);
     };
     for (int32_t row = definition.condition_begin;
          row < definition.condition_begin + definition.condition_count; ++row) {
@@ -2840,12 +2877,18 @@ bool EffectRuntime::family_effect_metadata_pod(
                     // Truncating silently would leave a boundary unobserved while
                     // still bucketing the metric -- worse than not bucketing at
                     // all, because the miss is invisible.
-                    out.exact_metric_mask.set(condition.arg0);
+                    if (condition.arg0 < NativeEconomyRuntime::FAMILY_METRIC_COUNT)
+                        out.exact_metric_mask.set(condition.arg0);
                     return;
                 }
-                const int32_t slot = out.metric_threshold_count++;
-                out.metric_threshold_ids[slot] = condition.arg0;
-                out.metric_threshold_values[slot] = boundary;
+                // Economy consumes thresholds for revision bucketing. Ideology
+                // scalars live above that boundary and have no Economy consumer,
+                // but this skip must not abandon later conditions/instructions.
+                if (condition.arg0 < NativeEconomyRuntime::FAMILY_METRIC_COUNT) {
+                    const int32_t slot = out.metric_threshold_count++;
+                    out.metric_threshold_ids[slot] = condition.arg0;
+                    out.metric_threshold_values[slot] = boundary;
+                }
             };
             if (condition.op == METRIC_GTE) {
                 push_boundary(condition.value);
@@ -2864,7 +2907,8 @@ bool EffectRuntime::family_effect_metadata_pod(
             include_metric(instruction.arg0);
             // A Ramp consumes the continuous value: bucketing it would quantise
             // the card's own strength, which is a silent numeric change.
-            out.exact_metric_mask.set(instruction.arg0);
+            if (instruction.arg0 < NativeEconomyRuntime::FAMILY_METRIC_COUNT)
+                out.exact_metric_mask.set(instruction.arg0);
         }
     }
     return true;
@@ -3881,9 +3925,20 @@ Dictionary EffectRuntime::submit_instances(const Dictionary &batch) {
             // A scale change has to force a re-emit: the instance is already
             // `effect_applied`, and without clearing that flag the new
             // multiplier would sit unused until something else touched the row.
-            const int32_t requested_scale = std::clamp<int32_t>(
-                magnitude_scales[i], static_cast<int32_t>(Q16_ONE / 4),
-                static_cast<int32_t>(4 * Q16_ONE));
+            const int32_t max_scale = static_cast<int32_t>(4 * Q16_ONE);
+            const int32_t raw_scale = magnitude_scales[i];
+            int32_t requested_scale = std::clamp(
+                raw_scale, static_cast<int32_t>(Q16_ONE / 4), max_scale);
+            if (definition.target_selector_kind ==
+                    SELECTOR_TAG_SOURCE_COUNT) {
+                const SourceCountSelector selector =
+                    decode_source_count_selector(
+                        definition.target_selector_param);
+                const int32_t count_min_scale = static_cast<int32_t>(
+                    Q16_ONE / std::clamp(selector.cap, 1, 15));
+                requested_scale = std::clamp(
+                    raw_scale, count_min_scale, max_scale);
+            }
             if (requested_scale != instance.magnitude_scale_q16) {
                 instance.magnitude_scale_q16 = requested_scale;
                 instance.effect_applied = 0;
@@ -4025,10 +4080,16 @@ int32_t EffectRuntime::native_modifier_adapter_for_command(
 
 bool EffectRuntime::declarative_facts_for_key(
         const std::string &key, int32_t &program_id, int32_t &source_kind,
-        bool &managed_declared) const {
+        bool &managed_declared, int32_t &target_selector_kind,
+        int32_t *target_selector_param) const {
     program_id = -1;
     source_kind = 0;
     managed_declared = false;
+    target_selector_kind = 0;
+    if (target_selector_param != nullptr) {
+        target_selector_param[0] = 0;
+        target_selector_param[1] = 0;
+    }
     if (!_configured) return false;
     const int32_t index = definition_id_for_key(key);
     if (index < 0 || index >= static_cast<int32_t>(_definitions.size()))
@@ -4037,6 +4098,11 @@ bool EffectRuntime::declarative_facts_for_key(
     program_id = index;
     source_kind = definition.source_kind;
     managed_declared = definition.managed_declared;
+    target_selector_kind = definition.target_selector_kind;
+    if (target_selector_param != nullptr) {
+        target_selector_param[0] = definition.target_selector_param[0];
+        target_selector_param[1] = definition.target_selector_param[1];
+    }
     return true;
 }
 
@@ -5462,7 +5528,7 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
                 native.source_type = 0x504552534f4eULL; // PERSON
                 native.source_id = static_cast<uint64_t>(transaction.source_instance_id);
                 native.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-                    std::max<int64_t>(1, scaled_magnitude(command->value_q16)), 0,
+                    scaled_magnitude(command->value_q16), 0,
                     ModifierRuntime::MAX_MAGNITUDE_Q16));
             } else if (adapter_kind == NATIVE_MODIFIER_TRIGGER) {
                 native.producer = 175;
@@ -5509,29 +5575,36 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
                 native.source_id = static_cast<uint64_t>(source_instance->id);
                 native.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
                     scaled_magnitude(command->value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
-                // Same target_domain convention as the family adapter, except
-                // that ideology never binds to a family/branch handle: 0 and 1
-                // fall through to ENTITY so a mis-authored program fails the
-                // Modifier target check instead of silently hitting a country.
+                // X9-b family programs carry the stable family handle in ENTITY;
+                // cell/resource programs (2/5) carry a cell in GROUP. Both
+                // handles must not be set: Modifier's scope_id_for() would read
+                // the family handle as a settlement group while scope is GROUP.
                 switch (source_instance->target_domain) {
+                    case 0: // Family.
+                        native.scope = ModifierRuntime::ENTITY;
+                        native.entity_handle = command->target_handle;
+                        native.group_handle = 0;
+                        break;
                     case 2: // Settlement cell.
                     case 5: // Building/resource selector within the cell.
                         native.scope = ModifierRuntime::GROUP;
+                        native.entity_handle = command->target_handle;
+                        native.group_handle = command->target_handle;
                         break;
                     default:
                         native.scope = ModifierRuntime::ENTITY;
+                        native.entity_handle = command->target_handle;
+                        native.group_handle = 0;
                         break;
                 }
-                // Both handles carry the resolved target: scope_id_for() picks
-                // the one matching the final scope, so a payload[2] override
-                // below never leaves the chosen handle empty.
-                native.entity_handle = command->target_handle;
-                native.group_handle = command->target_handle;
                 // Command-level scope override. payload[2] == 0 means "unset",
                 // never GLOBAL -- GLOBAL is also 0, so defaulting would silently
                 // widen a cell effect to the whole country.
-                if (command->payload[2] >= 1 && command->payload[2] <= 2)
+                if (command->payload[2] >= 1 && command->payload[2] <= 2) {
                     native.scope = static_cast<int32_t>(command->payload[2]);
+                    native.group_handle = native.scope == ModifierRuntime::GROUP
+                        ? command->target_handle : 0;
+                }
             } else if (command->action == MODIFIER_COMMAND) {
                 // Generic declarative Modifier command. Complex target/source
                 // resolvers stay on the adapter path until declared natively.
@@ -6187,7 +6260,9 @@ Dictionary EffectRuntime::dispatch_native_gameplay(DCWorldExt *world_ext) {
                 command->opcode > 0;
             const bool native_custom = command != nullptr &&
                 command->action == CUSTOM_DOMAIN_COMMAND && command->domain == 6 &&
-                (command->opcode == 1 || command->opcode == 2);
+                (command->opcode == CUSTOM_AUDIT_OPCODE ||
+                 command->opcode == CUSTOM_CANAL_COMMIT_OPCODE ||
+                 command->opcode == CUSTOM_IDEOLOGY_FREE_DRAW_OPCODE);
             if (!native_gameplay && !native_publish && !native_custom) {
                 continue;
             }
@@ -6821,6 +6896,8 @@ bool EffectRuntime::pod_snapshot_persistence_self_test(std::string &error) const
     instance.last_evaluated_input_revision = 7;
     instance.fire_sequence = 3;
     instance.last_acked_fire_sequence = 3;
+    instance.effect_applied = 1;
+    instance.applied_input_revision = 7;
     instance.applied_stack_count = 1;
     snapshot.instances.push_back(instance);
     RuntimeEffectPodCommand command;
@@ -7006,15 +7083,17 @@ bool EffectRuntime::pod_state_parity_self_test(std::string &error) const {
         RuntimeEffectPodAuthority::scaled_command_stacks(5, 2, 0) != 1)
         return fail("effect_command_stack_scaling_changed");
 
-    // A5: the POD ABI must be 3, because the `latched` byte's MEANING changed.
+    // A5: ABI 3 pinned the latch byte's meaning; ABI 4 adds the ACKed managed
+    // lifecycle state. Both are version-gated so an older payload cannot be
+    // mistaken for "not applied" and silently resurrect a card row.
     //
     // ABI 2 declared and serialized the byte but nothing ever populated it
     // (no producer wrote a `latched` column, the forwarder read none), so an
     // ABI-2 snapshot says "unlatched" for a latched instance. A payload from the
     // old ABI must therefore be refused by version, not read as "latch cleared".
-    if (RUNTIME_EFFECT_POD_ABI_VERSION != 3u)
-        return fail("effect_pod_abi_must_be_3_for_latched_wire");
-    if (RuntimeEffectPodSnapshot{}.abi_version != 3u)
+    if (RUNTIME_EFFECT_POD_ABI_VERSION != 4u)
+        return fail("effect_pod_abi_must_be_4_for_managed_lifecycle_wire");
+    if (RuntimeEffectPodSnapshot{}.abi_version != 4u)
         return fail("effect_pod_snapshot_default_abi_is_stale");
     return true;
 }
@@ -7281,8 +7360,12 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
             !read_le(bytes, size, cursor, instance.target_handle) || !read_le(bytes, size, cursor, instance.target_generation) ||
             !read_le(bytes, size, cursor, instance.level) ||
             !read_le(bytes, size, cursor, instance.magnitude_scale_q16) ||
-            instance.magnitude_scale_q16 < Q16_ONE / 4 ||
-            instance.magnitude_scale_q16 > 4 * Q16_ONE ||
+            !magnitude_scale_allowed_for_selector(
+                _definitions[static_cast<size_t>(instance.program_id)]
+                    .target_selector_kind,
+                instance.magnitude_scale_q16,
+                _definitions[static_cast<size_t>(instance.program_id)]
+                    .target_selector_param) ||
             !read_le(bytes, size, cursor, instance.next_due_day) ||
             !read_le(bytes, size, cursor, instance.input_revision) ||
             !read_le(bytes, size, cursor, instance.last_evaluated_input_revision) ||
@@ -7584,7 +7667,8 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
                 if (!command_shape_matches ||
                     !native_command_shape_valid(command.action, command.domain,
                         command.opcode, definition.target_resolver,
-                        command.duration_days, command.stacks, command_error))
+                        command.duration_days, command.stacks, command.value_q16,
+                        command_error))
                     return failure(command_error.empty()
                         ? "pkef_command_definition_mismatch" : command_error.c_str());
             }

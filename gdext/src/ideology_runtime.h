@@ -45,7 +45,9 @@ public:
     // v8 also changes what `points_revision` means (the consumed class-opinion
     // PERIOD instead of the raw snapshot revision) and adds the point-accrual
     // baseline day, so the old numeric value is not reinterpretable either.
-    static constexpr int32_t SAVE_SCHEMA_VERSION = 8;
+    // v10 adds per-country `free_draws` (X6-b). The row layout grows by one
+    // uint16, so v9 payloads must be refused by VERSION before decoding.
+    static constexpr int32_t SAVE_SCHEMA_VERSION = 10;
     static constexpr int64_t Q16_ONE = 65536;
     static constexpr int32_t POINT_HISTORY = 32;
     static constexpr int32_t MAX_ERA_INDEX = 63;
@@ -70,6 +72,7 @@ public:
         SET_IDEOLOGY_GATE = 9,
         REROLL_IDEOLOGY_OFFER = 10,
         BAN_IDEOLOGY_CARD = 11,
+        GRANT_IDEOLOGY_FREE_DRAW = 12,
     };
     enum Location : uint8_t { INACTIVE = 0, IDEOLOGY = 1, NATIONAL_SPIRIT = 2 };
     enum ReceiptStatus : int32_t {
@@ -91,12 +94,19 @@ public:
     NativeEconomyRuntime *economy_runtime() const { return _economy_runtime; }
     void attach_effect_runtime(EffectRuntime *runtime) {
         _effect_runtime = runtime;
+        _synergy_override_tags_resolved = false;
+        _synergy_tag_overrides.clear();
         // The per-level "is this card managed, and what does it read" table is
         // derived from the Effect catalog, which may arrive after ideology was
         // configured. Rebuilding here is what makes the order-independent.
         _level_managed_built = false;
         publish_effect_input_consumers();
     }
+    // X5 tag names are resolved against the Effect catalog's shared tag table.
+    // configure() calls this when Effect already exists; configure_effects()
+    // calls it after attaching its newly-built table. Unknown names fail the
+    // configuration instead of silently becoming a rule that never matches.
+    bool resolve_synergy_override_tags(std::string &error) const;
     // M2a: declarative effect instances must be written through the same single
     // path DCWorldExt uses, otherwise an equipped card lands on the main thread
     // while the worker owns EFFECT (and the next snapshot erases it). Null keeps
@@ -194,6 +204,10 @@ public:
     // Set when something outside the economy revision can invalidate the
     // signature (worker write-back, authority flip, restore).
     void mark_instance_refresh_dirty() { _instance_refresh_dirty = true; }
+    // Apply the exact worker-frozen school factors alongside the state snapshot,
+    // so the facade does not re-read a newer Modifier store than the worker used.
+    void set_worker_opinion_inputs(
+        const RuntimeIdeologyOpinionSnapshot &opinion);
     int32_t managed_active_total() const { return _managed_active_total; }
     // What the catalog's managed programs read from the economy. Pushed into
     // NativeEconomyRuntime so its digest covers exactly those columns.
@@ -263,6 +277,15 @@ private:
         // Era this idea belongs to. Combined with the country's unlocked era it
         // drives the draw-weight decay curve in the profile.
         int32_t era_index = 0;
+        // Primary + up to two secondary build routes (IdeologyCatalog order).
+        // Derived catalog metadata; not persisted.
+        uint32_t route_mask = 0;
+        // X6-c: persistent programs are read from the immediately-left ideology
+        // slot. `copyable` is false for Legendary/rule cards, which therefore
+        // cannot be copy sources.
+        uint8_t copy_left_programs = 0;
+        uint8_t copyable = 1;
+        int32_t school_index = -1;
     };
     struct ClassStance {
         int32_t class_index = -1;
@@ -288,6 +311,19 @@ private:
         // is every synergy that predates the feature.
         int32_t override_begin = 0;
         int32_t override_count = 0;
+    };
+    struct SynergyOverride {
+        int32_t match_kind = 0;
+        int32_t field = 0;
+        int32_t value = 0;
+        std::string match_value;
+        std::string tag_name;
+        // 0-based TargetTagTable ids, resolved once when Effect attaches.
+        // `match_tag_id` indexes the TAG rows by the selector they match;
+        // `tag_id` is the replacement applied by those rows.
+        mutable int32_t match_tag_id = -1;
+        mutable int32_t tag_id = -1;
+        int32_t synergy_id = -1;
     };
     struct CapacityUnlock {
         int32_t technology_id = -1;
@@ -331,6 +367,10 @@ private:
         uint64_t entered_levels = 0;
         uint32_t generation = 1;
         uint8_t location = INACTIVE;
+        // Deterministic order within location; 0 is also the first valid slot.
+        // INACTIVE rows retain their last slot so re-equipping after a failed
+        // transition has no hidden allocation step.
+        uint8_t slot_index = 0;
         int64_t binding_id = 0;
         uint32_t binding_generation = 0;
         uint64_t binding_signature = 0;
@@ -347,6 +387,7 @@ private:
             uint64_t previous_entered_levels = 0;
             uint32_t previous_generation = 1;
             uint8_t previous_location = INACTIVE;
+            uint8_t previous_slot_index = 0;
             uint64_t entered_on_success = 0;
             std::vector<int64_t> transaction_ids;
             std::vector<int32_t> changed_synergy_ids;
@@ -378,9 +419,21 @@ private:
         // FamilyEffectMetadataPod. Empty means "this program conditions on
         // nothing", so the publisher does no work for it at all.
         MetricMask metric_mask;
+        // Ideology-local scalar inputs use a separate id range in the same
+        // Effect metric slab. They are derived from this country's ideology
+        // state, never sampled from Economy.
+        MetricMask scalar_mask;
         // L3-9: per-instance multiplier derived from the country's ACTIVE
         // synergies, not from the catalog alone -- two countries running the same
         // program can hold different values.
+        int32_t magnitude_scale_q16 = static_cast<int32_t>(Q16_ONE);
+    };
+    // One resolved target cell and its X1-b source-count multiplier. The
+    // multiplier composes with the program-level synergy scale before it reaches
+    // the Effect instance; Q16_ONE is the identity for every pre-X1-b selector.
+    struct EffectTarget {
+        uint64_t handle = 0;
+        uint32_t generation = 0;
         int32_t magnitude_scale_q16 = static_cast<int32_t>(Q16_ONE);
     };
     struct Offer {
@@ -402,6 +455,9 @@ private:
         int64_t ideology_points_q16 = 0;
         uint64_t rng_state = 0;
         uint64_t draw_sequence = 0;
+        // X6-b: OPEN_OFFER consumes one of these before points. Authoritative
+        // row state, saved in PKID and mirrored through IDP2.
+        uint16_t free_draws = 0;
         // Increment-only point accrual (PKID v4).
         uint64_t points_revision = 0;
         uint8_t baseline_ready = 0;
@@ -538,12 +594,22 @@ private:
     // Additive non-negative count for one country, pre-clamped to `cap`.
     int32_t ideology_stat_count(const std::string &key, int32_t &cache,
                                 uint64_t handle, int32_t cap) const;
+    bool program_writes_school_strength(const std::string &program,
+                                        int32_t school_index) const;
+    int32_t school_strength_scale_q16(
+        const CountryState &country, int32_t school_index) const;
     // Rows this country's next offer may hold, already clamped to the array.
     int32_t offer_choice_count_for(const CountryState &country) const;
     // Product of every ACTIVE synergy override that targets `program`, clamped
     // to [0.25x, 4x]. Returns 1.0 when nothing rewrites it.
     int32_t magnitude_scale_for(const CountryState &country,
                                 const std::string &program) const;
+    // X5: copy the base metadata and apply the highest-priority ACTIVE rewrite
+    // per rewritten field. TAG/KIND/CAP do not compose; scales keep their
+    // independent product path in magnitude_scale_for().
+    EffectRuntime::FamilyEffectMetadataPod effective_selector_metadata(
+        const CountryState &country, const std::string &program,
+        const EffectRuntime::FamilyEffectMetadataPod &metadata) const;
     bool banned(const CountryState &country, int32_t ideology_id) const;
     void set_banned(CountryState &country, int32_t ideology_id);
     void accrue_points(int64_t day);
@@ -566,6 +632,7 @@ private:
     int32_t unlocked_level(const IdeaState &state) const;
     bool start_transition(CountryState &country, IdeaState &state,
                           uint8_t location, int32_t level,
+                          uint8_t slot_index,
                           bool remove_previous_persistent,
                           bool apply_current_persistent,
                           uint64_t entered_on_success, int64_t day,
@@ -602,12 +669,28 @@ private:
     // mis-authored program never silently widens to the whole country.
     bool resolve_effect_targets(
         const CountryState &country, const IdeaState &state,
+        const std::string &program,
         const EffectRuntime::FamilyEffectMetadataPod &metadata,
         uint64_t selection_salt,
-        std::vector<std::pair<uint64_t, uint32_t>> &out) const;
+        std::vector<EffectTarget> &out) const;
     bool collect_effect_activations(
         const CountryState &country, const IdeaState &state,
         std::vector<EffectActivation> &out) const;
+    // X6-c: the copier owns fresh Effect instances but reads the persistent
+    // program list of the card in the immediately-left slot. The callers branch
+    // on `copy_left_programs` first: only a non-copier falls back to its own
+    // managed list.
+    bool copy_source_state(const CountryState &country, const IdeaState &state,
+                           const IdeaState *&source) const;
+    bool copy_source_programs(
+        const CountryState &country, const IdeaState &state,
+        std::vector<const EffectTemplate *> &out) const;
+    // The legacy Modifier path keeps the copier's own non-managed rows and adds
+    // the source's non-managed rows. Managed rows stay with the Effect
+    // reconciler.
+    void collect_copied_legacy_templates(
+        const CountryState &country, const IdeaState &state,
+        std::vector<const EffectTemplate *> &out) const;
     // program_hash -> declared target_domain, for the programs this idea's
     // *current* level expands into. The reconciler derives the same hashes in
     // collect_effect_activations, so a report row can be labelled with its
@@ -619,7 +702,8 @@ private:
     // reconciliation and this call the refs are stale and will be rebuilt on
     // the next tick anyway; labelling a country handle as a cell index in that
     // window would paint the wrong hex.
-    void collect_idea_program_domains(const IdeaState &state,
+    void collect_idea_program_domains(const CountryState &country,
+        const IdeaState &state,
         std::unordered_map<uint64_t, int32_t> &out) const;
     bool reconcile_effect_activations(const CountryState &country,
                                       IdeaState &state, int64_t day,
@@ -634,8 +718,10 @@ private:
         uint8_t has_managed = 0;
         uint8_t uses_economy_inputs = 0;
         uint8_t uses_tags = 0;
+        uint8_t uses_families = 0;
         uint8_t scale_capable = 0;
         MetricMask consumer_mask;
+        MetricMask scalar_mask;
         uint64_t program_mix = 1469598103934665603ULL;
         // Thresholds this level's programs compare metrics against, copied from
         // the effect metadata so the economy can bucket by "did a condition
@@ -650,6 +736,10 @@ private:
     bool level_is_managed(int32_t ideology_id, int32_t level) const;
     const LevelManagedInfo *level_managed_info(int32_t ideology_id,
                                                int32_t level) const;
+    // Fill the reserved scalar ids of the Effect metric slab from this
+    // country's authoritative ideology state. Economy never sees these ids.
+    void fill_ideology_scalars(const CountryState &country,
+        const IdeaState &state, std::vector<int64_t> &values) const;
     uint64_t compute_activation_signature(const CountryState &country,
                                           const IdeaState &state) const;
     void recount_managed_active();
@@ -659,6 +749,8 @@ private:
     void rebuild_country_derived(CountryState &country);
     void rebuild_pending_transition_index();
     void set_state_location(CountryState &country, int32_t idea_slot, uint8_t location);
+    uint8_t next_free_slot(const CountryState &country, uint8_t location,
+                           int32_t exclude_ideology_id) const;
     void insert_active_state(CountryState &country, int32_t idea_slot);
     void remove_active_state(CountryState &country, int32_t idea_slot);
     void append_pending_transition(CountryState &country, int32_t idea_slot);
@@ -708,6 +800,13 @@ private:
     int64_t _point_trade_weight_q16 = 0;
     int64_t _point_gain_cap_q16 = 0;
     std::string _point_gain_stat_key;
+    // X6-a: per-term point multipliers. Empty keys disable each factor.
+    std::string _point_population_factor_stat_key;
+    std::string _point_building_factor_stat_key;
+    std::string _point_trade_factor_stat_key;
+    // social_media: floor under the opinion factor. Empty preserves 0.5.
+    std::string _opinion_factor_floor_stat_key;
+    std::vector<std::string> _school_strength_factor_stat_keys;
     // Same shape as _point_gain_stat_key, separate consumption points. Kept as
     // three keys rather than one table because each is optional independently:
     // a catalog that only wants faster studying leaves reroll alone.
@@ -724,6 +823,13 @@ private:
     mutable int32_t _reroll_cost_stat_id = -1;
     mutable int32_t _era_decay_floor_stat_id = -1;
     mutable int32_t _offer_choice_bonus_stat_id = -1;
+    mutable int32_t _point_population_factor_stat_id = -1;
+    mutable int32_t _point_building_factor_stat_id = -1;
+    mutable int32_t _point_trade_factor_stat_id = -1;
+    mutable int32_t _opinion_factor_floor_stat_id = -1;
+    mutable std::vector<int32_t> _school_strength_factor_stat_ids;
+    RuntimeIdeologyOpinionSnapshot _worker_opinion_inputs;
+    bool _worker_opinion_inputs_valid = false;
     // Weight of an owned-but-not-maxed card offered again as 精进, on the same
     // x10000 scale as rarity weight. 0 keeps every owned card out of the pool,
     // which is the pre-L4-11 behaviour.
@@ -750,6 +856,9 @@ private:
     // country reached era i"; -1 means the era has no milestone and is skipped.
     std::vector<int32_t> _era_milestone_technologies;
     std::vector<Definition> _definitions;
+    std::vector<std::string> _route_keys;
+    std::unordered_map<std::string, int32_t> _route_indices;
+    std::vector<std::string> _school_keys;
     std::vector<Level> _levels;
     std::vector<EffectTemplate> _persistent_templates;
     std::vector<EffectTemplate> _on_enter_templates;
@@ -770,6 +879,19 @@ private:
     mutable uint64_t _synergy_scale_scans = 0;
     mutable uint64_t _synergy_scale_lookups = 0;
     std::vector<int32_t> _synergy_override_scales;
+    // Lazily resolved derived data: configuration may run before the Effect
+    // catalog exists, while selector lookup is const. Only the cache and the
+    // resolved ids are mutable; authored catalog rows never change after load.
+    mutable std::vector<SynergyOverride> _synergy_overrides;
+    // program -> override row indices, and resolved tag id -> override row
+    // indices. Both are built once per catalog; selector rewrite is on the
+    // reconcile path, so scanning every synergy per target would be avoidable
+    // work.
+    std::unordered_map<std::string, std::vector<int32_t>>
+        _synergy_program_overrides;
+    mutable std::unordered_map<int32_t, std::vector<int32_t>>
+        _synergy_tag_overrides;
+    mutable bool _synergy_override_tags_resolved = false;
     std::vector<Synergy> _synergies;
     std::vector<int32_t> _ideology_synergy_offsets;
     std::vector<int32_t> _ideology_synergy_ids;
@@ -785,6 +907,14 @@ private:
     std::vector<int32_t> _gate_requirements;
     std::vector<EffectRuntime::ExternalEffectCommandPod>
         _transition_command_scratch;
+    // REMOVE rows during a level change / relocation, kept apart from the apply batch.
+    //
+    // The two sides must name DIFFERENT generations: a row is removed under the
+    // generation that applied it (`previous_generation`) and added under the new one.
+    // Sharing one scratch vector forced a single batch id onto both, which is how a
+    // level-up ended up keeping BOTH the old and the new level's national row.
+    std::vector<EffectRuntime::ExternalEffectCommandPod>
+        _removed_command_scratch;
     std::vector<CountryState> _countries;
     std::vector<Command> _commands;
     size_t _command_cursor = 0;
@@ -836,6 +966,10 @@ private:
     // last one matched BEFORE the cap. `mutable` because resolve is const.
     mutable EffectSelectorStats _selector_stats;
     mutable uint64_t _selector_truncations = 0;
+    // X1-b evidence: incremented once per kind-16 target whose source count was
+    // evaluated during reconcile. A catalog without a kind-16 card must leave
+    // this at exactly zero (declaration-driven work, not a daily scan).
+    mutable uint64_t _source_count_evaluations = 0;
     // Bumped on every build; Economy keys its per-cell cache on (this, input revision).
     uint64_t _cell_program_generation = 0;
     // ── P1-A sliced instance refresh ────────────────────────────────────────

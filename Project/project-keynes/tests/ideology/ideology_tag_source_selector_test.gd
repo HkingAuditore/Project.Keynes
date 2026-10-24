@@ -548,7 +548,7 @@ func _ramp_program(per: float, cap: float) -> Resource:
 	command.duration_days = -1
 	command.stacks = 1
 	command.command_key = &"ideology.persistent"
-	command.definition_key = &"ideology.city.output_factor"
+	command.definition_key = &"economy.city.output_factor"
 	var commands: Array[Resource] = [command]
 	program.commands = commands
 	return program
@@ -679,11 +679,11 @@ func _build_ext() -> Object:
 	ext.create_entities(CELLS)
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
 			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
-			&"cell_weather_intensity", &"cell_elevation"]:
+			&"cell_weather_intensity", &"cell_elevation", &"cell_temp_365d"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, _f32_fill(CELLS, 0.5))
 	for slot_name in [&"cell_terrain", &"cell_landform", &"cell_vegetation",
-			&"cell_is_water", &"cell_has_river"]:
+			&"cell_is_water", &"cell_has_river", &"cell_weather_type", &"cell_cover"]:
 		var sid2: int = ext.register_component(slot_name, 2, 1, false)
 		ext.write_u8_range(sid2, 0, _u8_fill(CELLS, 0))
 	for i in range((_country_ir.building_resource_ids as PackedStringArray).size()):

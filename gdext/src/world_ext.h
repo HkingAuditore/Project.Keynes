@@ -838,6 +838,42 @@ public:
     godot::Dictionary set_effect_metric_override_for_test(int32_t metric,
                                                           int64_t value,
                                                           bool has_value);
+    // X9-b worker fixture: relax the authored family-target branch floor.
+    godot::Dictionary set_family_target_min_branches_override_for_test(
+        int32_t min_branches);
+    // Force one catalog tag on or off for one cell while the economy samples
+    // effect metrics. Test-only; add/remove semantics are immutable swaps.
+    godot::Dictionary set_cell_tag_override_for_test(
+        const godot::String &tag_key, int32_t cell, bool on);
+    godot::Dictionary clear_cell_tag_overrides_for_test();
+    // X14: the committed source revision/epoch and content hash the current
+    // class-metric copy was taken from, plus the exact ids the copy used.
+    godot::Dictionary get_class_metric_source_for_test() const;
+    // Test-only: capture the current committed snapshot now, without waiting
+    // for the next economy epoch boundary.
+    godot::Dictionary capture_class_metric_source_for_test();
+    godot::Dictionary set_class_opinion_source_override_for_test(
+        godot::PackedInt64Array population,
+        godot::PackedInt32Array satisfaction_q16,
+        godot::PackedInt64Array satisfaction_weighted);
+    godot::Dictionary clear_class_opinion_source_override_for_test();
+    // X10 test-only bridge: replace the frozen country technology words with an
+    // exact bitset, then run the same hash-gated metric refresh as epoch capture.
+    godot::Dictionary set_country_technology_metric_input_for_test(
+        int32_t country_slot, godot::PackedInt64Array words);
+    godot::Dictionary clear_country_technology_metric_input_for_test();
+    // R-4 X16: the frozen per-profession tax tolerance / satisfaction bias the
+    // satisfaction loop will read, indexed by `profession_id`. Takes a COUNTRY SLOT
+    // (from `get_country_cell_summary(...).country_slot`), not a handle.
+    //
+    // Modifier-side reads would answer a different question: a card can declare the
+    // stat and still never reach a cohort if the epoch freeze does not pick it up.
+    godot::Dictionary get_epoch_profession_report(int64_t country_slot) const;
+    // R-4: sample ONE effect metric for ONE cell through the real sampling path,
+    // without `set_effect_metric_override_for_test`. Used by the metric 68/69 tests,
+    // which are about the live epoch accounting rather than about thresholds.
+    godot::Dictionary sample_effect_metric_probe(int64_t metric, int64_t cell,
+                                                 int64_t country_handle) const;
     godot::Dictionary get_economy_committed_audit_report() const;
     godot::Dictionary get_country_class_opinion_snapshot() const;
     godot::Dictionary get_population_cell_summary(int cell_idx) const;

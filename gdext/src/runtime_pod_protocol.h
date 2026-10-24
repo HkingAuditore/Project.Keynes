@@ -212,8 +212,11 @@ struct RuntimeDomainSaveSection {
 struct RuntimeEconomyDayInput {
     int64_t day = -1;
     uint32_t cell_count = 0;
-    std::array<std::vector<float>, 8> fields; // temp, temp30, moisture, PAW, precip, snow, weather, elevation
+    // temp, temp30, moisture, PAW, precip, snow, weather, elevation, temp365
+    std::array<std::vector<float>, 9> fields;
     std::array<std::vector<uint8_t>, 6> geography; // terrain, landform, vegetation, water, river, visibility
+    // weather_type, cover
+    std::array<std::vector<uint8_t>, 2> climate_u8;
     std::vector<int32_t> neighbors;
     std::vector<std::vector<float>> reserves;
     std::vector<std::vector<float>> changes;
@@ -715,9 +718,14 @@ struct RuntimeDomainIntent {
     // command idempotency identity. Other domains leave them at zero.
     uint16_t effect_action = 0;
     uint16_t reserved_effect = 0;
+    // Set by Effect when `value` came from an emitted command, including the
+    // legitimate zero value. Adapters must not infer presence from `value != 0`.
     uint32_t reserved_effect_flags = 0;
     uint64_t idempotency_key = 0;
 };
+
+constexpr uint32_t RUNTIME_DOMAIN_INTENT_HAS_EFFECT_VALUE = 1u << 0;
+constexpr uint32_t RUNTIME_EFFECT_INTENT_PROGRAM_REPORT_CAPACITY = 64u;
 
 // K2-B Country/Economy transaction wire contract.  These records are fixed
 // size and trivially copyable so the worker can publish them without exposing
@@ -1810,6 +1818,12 @@ struct RuntimeThreadReport {
     uint64_t effect_pod_snapshot_generation = 0;
     uint32_t effect_pod_ack_count = 0;
     uint32_t effect_pod_intent_count = 0;
+    uint32_t effect_pod_managed_intent_count = 0;
+    uint32_t effect_pod_unmanaged_intent_count = 0;
+    uint32_t effect_pod_program_intent_count = 0;
+    std::array<int32_t, RUNTIME_EFFECT_INTENT_PROGRAM_REPORT_CAPACITY>
+        effect_pod_intent_program_ids{};
+    uint32_t effect_pod_transaction_count = 0;
     // Retire requests that found nothing to retire (absent instance) versus
     // ones whose generation had already been superseded. Both are benign
     // no-ops that mirror EffectRuntime::retire_instance_pod, but a non-zero
@@ -1824,6 +1838,14 @@ struct RuntimeThreadReport {
     uint64_t ideology_pod_snapshot_generation = 0;
     uint32_t ideology_pod_pending_transition_count = 0;
     uint32_t ideology_pod_intent_count = 0;
+    // Day the worker last committed IDEOLOGY for. -1 means it never ran.
+    //
+    // `IdeologyParityReport` has a same-named field, but that one is assigned only
+    // while a parity reference is being recorded, so a production session -- and any
+    // fixture that never completes a parity day -- leaves it at -1 forever. This copy
+    // is the POD's own committed day (`_ideology_pod_committed_day`), i.e. the field a
+    // caller can use to ask "has the worker finished day N yet".
+    int64_t ideology_pod_committed_day = -1;
     char ideology_pod_fallback_reason[64]{};
     bool events_probe_enabled = false;
     bool events_pod_ready = false;

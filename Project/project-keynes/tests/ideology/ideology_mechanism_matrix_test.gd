@@ -12,11 +12,12 @@ extends SceneTree
 ##   V5 stack count  -> terrain component V6 two conditions AND -> distance N
 ##
 ## It also guards the metric-id contract: metric_keys[] is indexed by metric id,
-## so its length must match the native FAMILY_METRIC_COUNT and the first 37
-## entries must never move (existing family effects read those ids).
+## so the Economy prefix must remain stable and the ideology-local scalar rows
+## must append to it without a gap.
 
 const IdeologyEffectCatalogScript = preload("res://scripts/ideology/ideology_effect_catalog.gd")
 const EffectDomainCatalogScript = preload("res://scripts/effect/effect_domain_catalog.gd")
+const Q16_ONE := 65536
 
 ## Metric ids this file depends on. Must match FamilyEffectMetricId in
 ## gdext/src/economy_runtime.h.
@@ -32,11 +33,17 @@ const METRIC_PROFESSION_COUNT := 53
 const METRIC_NEIGHBOR_POPULATION_Q16 := 54
 const METRIC_INCOME_TAX_BURDEN_BP := 55
 const STATE_STACK_COUNT := 4
+const IDEOLOGY_SCALAR_COUNT := 17
 ## Mirrors FamilyEffectMetricId::FAMILY_METRIC_COUNT. Bumped 56 -> 63 when the
-## X7 per-country tag counts landed as ids 56..62; the assertion below reads it
-## rather than restating a number, but the constant still has to track the
-## native header.
-const FAMILY_METRIC_COUNT := 68
+## X7 per-country tag counts landed as ids 56..62; 63 -> 68 for the remaining
+## X7 counts; 68 -> 70 when R-4 added `cell.net_tax_burden_q16` (68) and
+## `country.treasury_reserve_ratio_pct` (69). It is 94 after X10 filled 79..83,
+## X9a filled 84..86, X8 reserved 87, X13a's residual filled 88, X14's
+## farmer-class extension filled 89, X9b filled 90..93, X3-b filled 96..99,
+## and X7-b filled 102..106 with 107 reserved by the fixed allocation. The
+## assertion below reads this constant rather than restating a number, but it
+## still has to track the native header.
+const FAMILY_METRIC_COUNT := 108
 ## Mirrors MetricMask::CAPACITY. This used to read 64 because the mask was a
 ## single uint64; L0-1 widened it to 4 x uint64, so 64 is now just the size of
 ## the first word and would pass an out-of-range id.
@@ -65,6 +72,7 @@ func _init() -> void:
 
 func _run() -> void:
 	_test_metric_key_contract()
+	_test_x3b_card_mechanisms()
 	var content: Resource = IdeologyEffectCatalogScript.load_default()
 	if content == null:
 		_expect("load default ideology effect catalog", false)
@@ -167,11 +175,16 @@ func _test_metric_key_contract() -> void:
 	if catalog == null:
 		return
 	var keys: PackedStringArray = catalog.metric_keys
-	_expect("metric_keys length matches native FAMILY_METRIC_COUNT",
-		keys.size() == FAMILY_METRIC_COUNT,
-		"gdscript=%d native=%d" % [keys.size(), FAMILY_METRIC_COUNT])
-	if keys.size() != FAMILY_METRIC_COUNT:
+	var economy_count := keys.size() - IDEOLOGY_SCALAR_COUNT
+	_expect("metric_keys has an Economy prefix plus ideology scalars",
+		economy_count >= 0, "gdscript=%d scalars=%d" %
+			[keys.size(), IDEOLOGY_SCALAR_COUNT])
+	if economy_count < 0:
 		return
+	for scalar_index in range(IDEOLOGY_SCALAR_COUNT):
+		_expect("ideology scalar id is economy_count + %d" % scalar_index,
+			String(keys[economy_count + scalar_index]) ==
+				String(EffectDomainCatalogScript.SCALAR_METRIC_KEYS[scalar_index]))
 	# Ids 0..36 predate this milestone and are read by shipped family effects.
 	_expect("legacy metric id 18 unchanged",
 		String(keys[18]) == "family.dominant_sector_share_q16")
@@ -221,13 +234,120 @@ func _test_metric_key_contract() -> void:
 		and String(keys[64]) == "country.salt_cell_count"
 		and String(keys[65]) == "country.iron_ore_cell_count"
 		and String(keys[66]) == "country.coal_cell_count"
-		and String(keys[67]) == "country.distinct_specialized_good_count")
+		and String(keys[67]) == "country.distinct_specialized_good_count"
+		# R-4: 68 is the cell's net tax burden (Q16 ratio), 69 the country's treasury
+		# reserve ratio in percentage points. Both are appended, never inserted: an id
+		# that moves changes what every existing card measures.
+		and String(keys[68]) == "cell.net_tax_burden_q16"
+		and String(keys[69]) == "country.treasury_reserve_ratio_pct")
+	_expect("X14 farmer row 89",
+		String(keys[89]) == "country.farmer_satisfaction_q16")
+	_expect("X9-b family aggregates 90..93",
+		String(keys[90]) == "country.family_remote_branch_count"
+		and String(keys[93]) == "country.avg_family_age_days")
+	_expect("metric 94 is the neighbour agriculture count",
+		String(keys[94]) == "cell.neighbor_agriculture_count")
+	_expect("X3-b reserved gap 95",
+		String(keys[95]) == "reserved.x3b_95")
+	_expect("X3-b profession shares 96..98",
+		String(keys[96]) == "cell.profession_share_farmer_q16"
+		and String(keys[97]) == "cell.profession_share_industrial_q16"
+		and String(keys[98]) == "cell.profession_share_cooperative_q16")
+	_expect("worker-class satisfaction row 99",
+		String(keys[99]) == "country.worker_class_satisfaction_q16")
+	_expect("X7-b country counts 102..107",
+		String(keys[102]) == "country.energy_cell_count"
+		and String(keys[103]) == "country.abundant_mountain_forest_cell_count"
+		and String(keys[104]) == "country.landform_signal_count"
+		and String(keys[105]) == "country.weather_signal_count"
+		and String(keys[106]) == "country.bio_signal_count"
+		and String(keys[107]) == "reserved.x7b_107")
 	# No duplicate keys: a duplicate means two ids collide and one is unreachable.
 	var seen := {}
 	for key in keys:
 		_expect("metric key %s unique" % key, not seen.has(String(key)))
 		seen[String(key)] = true
 
+
+
+func _test_x3b_card_mechanisms() -> void:
+	var content: Resource = IdeologyEffectCatalogScript.load_default()
+	if content == null:
+		_expect("X3-b effect catalog loads", false)
+		return
+	var by_key := {}
+	for effect in content.effects:
+		by_key[String(effect.definition_key)] = effect
+	var domain: Resource = EffectDomainCatalogScript.build()
+	if domain == null:
+		_expect("X3-b metric key table builds", false)
+		return
+	var keys: PackedStringArray = domain.metric_keys
+	var industrial := keys.find("cell.profession_share_industrial_q16")
+	var cooperative := keys.find("cell.profession_share_cooperative_q16")
+	var worker := keys.find("country.worker_class_satisfaction_q16")
+	_expect("X3-b metric keys resolve by name",
+		industrial >= 0 and cooperative >= 0 and worker >= 0,
+		"industrial=%d cooperative=%d worker=%d" % [industrial, cooperative, worker])
+	if industrial < 0 or cooperative < 0 or worker < 0:
+		return
+	for level in [1, 2, 3]:
+		var low_key := "trade_unions_l%d" % level
+		var high_key := "trade_unions_l%d_worker_bonus" % level
+		_expect("trade_unions L%d low-opinion program exists" % level,
+			by_key.has(low_key))
+		_expect("trade_unions L%d high-opinion program exists" % level,
+			by_key.has(high_key))
+		if not by_key.has(low_key) or not by_key.has(high_key):
+			continue
+		var low: Resource = by_key[low_key]
+		var high: Resource = by_key[high_key]
+		var share_threshold := _pct_q16(20 if level == 3 else 25)
+		_expect("trade_unions L%d uses manufacturing tags" % level,
+			_has_selector_tag(low, "cell.sector.manufacturing")
+				and _has_selector_tag(high, "cell.sector.manufacturing"))
+		_expect("trade_unions L%d low row gates industrial share" % level,
+			_condition_value(low, OP_METRIC_GTE, industrial, share_threshold))
+		_expect("trade_unions L%d low row excludes opinion >=0.2" % level,
+			_condition_value(low, 3, worker, _pct_q16(20) - 1))
+		_expect("trade_unions L%d high row gates opinion >=0.2" % level,
+			_condition_value(high, OP_METRIC_GTE, worker, _pct_q16(20)))
+	_expect("cooperative L1/L2 gate cooperative share at 20%",
+		_by_key_has_metric_gte(by_key, "cooperative_l1", cooperative, _pct_q16(20))
+			and _by_key_has_metric_gte(by_key, "cooperative_l2", cooperative, _pct_q16(20)))
+	_expect("cooperative L3 lowers the share gate to 15%",
+		_by_key_has_metric_gte(by_key, "cooperative_l3", cooperative, _pct_q16(15)))
+	_expect("cooperative programs use agriculture tags",
+		by_key.has("cooperative_l1")
+			and _has_selector_tag(
+				by_key["cooperative_l1"], "cell.sector.agriculture")
+			and by_key.has("cooperative_l3")
+			and _has_selector_tag(
+				by_key["cooperative_l3"], "cell.sector.agriculture"))
+
+
+func _pct_q16(percent: int) -> int:
+	return int(round(percent / 100.0 * Q16_ONE))
+
+
+func _has_selector_tag(effect: Resource, tag: String) -> bool:
+	return effect.target_selector_tags.has(tag) \
+		or String(effect.target_selector_tag) == tag
+
+
+func _condition_value(effect: Resource, op: int, arg0: int, value: int) -> bool:
+	for condition_row in effect.conditions:
+		if int(condition_row.op) == op and int(condition_row.arg0) == arg0 \
+				and int(condition_row.value_q16) == value:
+			return true
+	return false
+
+
+func _by_key_has_metric_gte(by_key: Dictionary, key: String, metric: int,
+		value: int) -> bool:
+	if not by_key.has(key):
+		return false
+	return _condition_value(by_key[key], OP_METRIC_GTE, metric, value)
 
 func _has_condition(effect: Resource, op: int, arg0: int) -> bool:
 	for condition in effect.conditions:

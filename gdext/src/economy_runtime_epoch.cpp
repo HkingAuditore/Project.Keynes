@@ -902,6 +902,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     _country_research_consumed_opening = 0;
     _epoch_begin_reset_ms = elapsed_ms(prepare_started);
     const auto country_started = Clock::now();
+    if (!advance_climate_day_columns(error)) return false;
     if (!capture_country_epoch(error)) return false;
     _epoch_begin_country_ms = elapsed_ms(country_started);
     const auto workset_started = Clock::now();

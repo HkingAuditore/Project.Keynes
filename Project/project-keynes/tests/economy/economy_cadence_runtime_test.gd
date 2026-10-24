@@ -488,14 +488,14 @@ func _new_ext(cells: int) -> Object:
 	climate.fill(0.5)
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
 			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
-			&"cell_weather_intensity", &"cell_elevation"]:
+			&"cell_weather_intensity", &"cell_elevation", &"cell_temp_365d"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, climate)
 	var zeros := PackedByteArray()
 	zeros.resize(cells)
 	zeros.fill(0)
 	for slot_name in [&"cell_terrain", &"cell_landform", &"cell_vegetation",
-			&"cell_is_water", &"cell_has_river"]:
+			&"cell_is_water", &"cell_has_river", &"cell_weather_type", &"cell_cover"]:
 		var sid: int = ext.register_component(slot_name, 2, 1, false)
 		ext.write_u8_range(sid, 0, zeros)
 	return ext

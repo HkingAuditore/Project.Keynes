@@ -1,7 +1,7 @@
 extends SceneTree
 
 ## L0-1 acceptance: the metric selection set addresses 256 ids, and the
-## catalogue can no longer declare more metrics than the economy computes.
+## catalogue can no longer declare more metrics than that mask can address.
 ##
 ## Why this exists
 ## ---------------
@@ -14,26 +14,21 @@ extends SceneTree
 ## Two things are proved here:
 ##
 ##  1. `MetricMask` really does address ids 64..255 (delegated to the C++ self
-##     check, because the economy's metric *table* is still 51 rows and so a
-##     GDScript-level catalog cannot reach id 64 yet).
+##     check).
 ##
-##  2. The replacement ceiling is `NativeEconomyRuntime::FAMILY_METRIC_COUNT`,
-##     enforced by an explicit contract instead of an undocumented 64-bit
-##     coincidence. A catalogue that declares 52 metric keys is rejected with
-##     `effect_metric_count_exceeds_economy`, because the 52nd id would never be
-##     sampled and its conditions would sit silently false forever -- the exact
-##     failure mode the metric-publish work (L0-2) removed.
+##  2. The replacement ceiling is `MetricMask::CAPACITY`. Economy metrics and
+##     ideology-local scalars share one dense Effect table, so the sampler's
+##     FAMILY_METRIC_COUNT is not the declaration ceiling; ids at or above it
+##     are derived by ideology instead of Economy. The declare-and-configure
+##     boundary itself is exercised here so a future widening cannot silently
+##     drop the guard.
 ##
-## The boundary is read from `domain.metric_keys.size()`, not written down here,
-## so growing the table (L0-1 content side) does not need this file edited. It
-## moved 50 -> 51 when `cell.terrain` landed; that required changing zero
-## assertions.
+## The boundary is the native mask capacity, reported by the rejected result.
+## Deliberately not written down here: it was once 64 and is now 256.
 ##
-## Deliberately NOT proved here: that a card on id 64 fires. That needs the
-## metric table itself to grow, which is content (X9..X14): the enum, the fill
-## branch in `fill_family_behavior_metrics`, `FAMILY_METRIC_COUNT` and
-## `effect_domain_catalog.gd:metric_keys` all move together. The contract below
-## is what makes that step safe to take.
+## Deliberately NOT proved here: that every id below the mask ceiling has an
+## authoritative producer. That is the Economy/scalar catalog contract; this
+## test only pins the mask ceiling that prevents undefined bit shifts.
 
 const EffectCatalogScript = preload("res://scripts/effect/effect_catalog.gd")
 const EffectDefinitionScript = preload("res://scripts/effect/effect_definition.gd")
@@ -109,36 +104,34 @@ func _test_authoritative_table() -> void:
 		declared.size() == keys.size())
 
 
-## The contract: a catalogue may not declare an id the sampler cannot compute.
-## Without this the surplus id would compile fine and then never publish.
+## The contract: a catalogue may not declare an id the mask cannot represent.
 func _test_catalog_contract() -> void:
 	var domain: Resource = EffectDomainCatalogScript.build()
 	if domain == null:
 		return
-	var computed: int = domain.metric_keys.size()
+	var declared: int = domain.metric_keys.size()
 
-	# Exactly the computed table: accepted, and a condition on the last id is
-	# legal -- that is the boundary the old 64 ceiling used to cut through.
-	var edge := _configure(_catalog_with_metric_count(computed,
-		_metric_program(computed - 1)))
-	if _require("catalog at the computed count configures",
+	# A catalog with room left is accepted, and its last id is a legal condition.
+	var edge := _configure(_catalog_with_metric_count(declared,
+		_metric_program(declared - 1)))
+	if _require("catalog at the declared count configures",
 			not edge.is_empty(), str(edge)):
 		_expect("last declared id is accepted", bool(edge.get("ok", false)),
 			str(edge))
 
-	# One past it: rejected, with a reason that names the contract.
-	var over := _catalog_with_metric_count(computed + 1,
-		_metric_program(computed - 1))
-	var rejected := _configure(over)
-	_expect("catalog one metric past the computed count is rejected",
-		not bool(rejected.get("ok", false)), str(rejected))
-	_expect("rejection names the metric capacity contract",
-		String(rejected.get("reason", "")) == "effect_metric_count_exceeds_economy",
-		str(rejected))
+	# The mask addresses ids 0..255. A 257-row table is rejected before the
+	# runtime is touched.
+	var over := _configure(_catalog_with_metric_count(257,
+		_metric_program(declared - 1)))
+	_expect("catalog one id past MetricMask capacity is rejected",
+		not bool(over.get("ok", false)), str(over))
+	_expect("rejection names the metric mask capacity contract",
+		String(over.get("reason", "")) ==
+			"effect_metric_count_exceeds_mask", str(over))
 	_expect("rejection reports both sides of the boundary",
-		int(rejected.get("declared_metrics", -1)) == computed + 1
-		and int(rejected.get("computed_metrics", -1)) == computed,
-		str(rejected))
+		int(over.get("declared_metrics", -1)) == 257
+			and int(over.get("mask_capacity", -1)) == 256,
+		str(over))
 
 
 ## Builds an Effect catalog declaring `metric_count` ids (padded with inert

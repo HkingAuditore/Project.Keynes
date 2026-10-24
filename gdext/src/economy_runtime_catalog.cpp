@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <limits>
 #include <numeric>
@@ -1592,6 +1593,21 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
             ? static_cast<int32_t>(found - research_signals.begin()) : -1;
     };
     _bio_maize_signal_id = signal_id("bio.maize");
+    _research_signal_prefix_words = static_cast<int32_t>(
+        (research_signals.size() + 63u) / 64u);
+    _research_signal_prefix_masks.assign(
+        static_cast<size_t>(_research_signal_prefix_words) * 3u, 0);
+    static constexpr std::array<const char *, 3> kSignalPrefixes{
+        "landform.", "weather.", "bio."};
+    for (size_t signal = 0; signal < research_signals.size(); ++signal) {
+        for (size_t prefix = 0; prefix < kSignalPrefixes.size(); ++prefix) {
+            if (research_signals[signal].rfind(kSignalPrefixes[prefix], 0) != 0)
+                continue;
+            _research_signal_prefix_masks[
+                prefix * static_cast<size_t>(_research_signal_prefix_words) +
+                signal / 64u] |= uint64_t{1} << (signal % 64u);
+        }
+    }
     _good_occupancy_bit_offsets.assign(_good_ids.size() + 1, 0);
     _good_occupancy_bits.clear();
     {
@@ -2091,6 +2107,30 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
     _modifier_sector_ids = packed_strings(catalog, "modifier_sector_ids");
     _modifier_terrain_ids = packed_strings(catalog, "modifier_terrain_ids");
     _modifier_landform_ids = packed_strings(catalog, "modifier_landform_ids");
+    _abundant_mountain_landform_id = -1;
+    _abundant_forest_terrain_id = -1;
+    {
+        const auto lookup_id = [](const std::vector<std::string> &ids,
+                                  const char *wanted) {
+            const auto found = std::find(ids.begin(), ids.end(), wanted);
+            return found != ids.end() && *found == wanted
+                ? static_cast<int32_t>(found - ids.begin()) : -1;
+        };
+        _abundant_mountain_landform_id = lookup_id(
+            _modifier_landform_ids, "mountain");
+        // The design's "mountain/forest" means the forest terrain row, not
+        // landform.forest (which is not a LandformType.LF member).
+        _abundant_forest_terrain_id = lookup_id(
+            _modifier_terrain_ids, "forest");
+        if ((_abundant_mountain_landform_id < 0 ||
+             _abundant_forest_terrain_id < 0) &&
+            !_catalog_geography_lookup_warning_emitted) {
+            std::fprintf(stderr,
+                "[economy-x7b] abundant mountain/forest ids missing "
+                "(landform=mountain terrain=forest); metric 103 stays 0\n");
+            _catalog_geography_lookup_warning_emitted = true;
+        }
+    }
     _resource_reserve_slots = packed_strings(catalog, "building_resource_reserve_slots");
     _resource_extra_slots = packed_strings(catalog, "building_resource_extra_slots");
     _resource_gen_base = packed_i64(catalog, "building_resource_gen_base");

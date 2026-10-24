@@ -53,6 +53,8 @@ public:
         int32_t program_id = -1;
         int32_t source_kind = 0;
         bool managed_declared = false;
+        int32_t target_selector_kind = 0;
+        int32_t target_selector_param[2] = {0, 0};
         bool resolved = false;
     };
 

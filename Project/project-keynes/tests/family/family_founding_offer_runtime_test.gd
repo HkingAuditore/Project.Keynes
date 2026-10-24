@@ -213,7 +213,7 @@ func _test_offer_survives_save_restore(catalog: Dictionary) -> void:
 	var hash_before := int(ext.get_economy_state_hash())
 	var save_begin: Dictionary = ext.begin_economy_save(4096)
 	_expect("PKEC v56 save begins", bool(save_begin.get("ok", false))
-		and int(save_begin.get("schema_version", 0)) == 56)
+		and int(save_begin.get("schema_version", 0)) == 57)
 	var chunks: Array[PackedByteArray] = []
 	for _i in 4096:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(4096)
@@ -252,11 +252,11 @@ func _new_ext(catalog: Dictionary) -> Object:
 	ext.configure_modifiers(modifier_catalog, 1)
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
 			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
-			&"cell_weather_intensity", &"cell_elevation"]:
+			&"cell_weather_intensity", &"cell_elevation", &"cell_temp_365d"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, PackedFloat32Array([0.5]))
 	for slot_name in [&"cell_terrain", &"cell_landform", &"cell_vegetation",
-			&"cell_is_water", &"cell_has_river"]:
+			&"cell_is_water", &"cell_has_river", &"cell_weather_type", &"cell_cover"]:
 		var sid: int = ext.register_component(slot_name, 2, 1, false)
 		ext.write_u8_range(sid, 0, PackedByteArray([0]))
 	for i in range((catalog.building_resource_ids as PackedStringArray).size()):

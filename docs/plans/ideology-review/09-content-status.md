@@ -20,6 +20,9 @@ hash 是 **sha256 全文摘要**；R 若遇到 `catalog_mismatch` / `ideology_sa
 | 2026-10-22 20:59:35 | 会话 C | `fb8a46b5efc830a96b4afb311c810ed1997533cfc984ffc9eedb80edeeeb00a6`（346903 → 340566 B） | `be24e303e9e4837492861f99261c1e6a413c42fd8cd808ef6a2ab4ff39e31e67`（161726 B，未变） | `297abf0011ba43570eeb2536d7f344fd328b0a7fbbb8587e01629ed65a19594e`（175503 → 165433 B） | **C-a**：V1 硬失败（禁 `country.tax.*`）、V3 扩到全部卡、§47.7 三张旧卡改写；`land_tax_reform` + `excise` 按 §47.5 重写但**暂存不发布**（缺 X16 / metric68）；发布卡数 87 → 85 |
 | 2026-10-22 21:24:11 | 会话 C | `fb8a46b5efc830a96b4afb311c810ed1997533cfc984ffc9eedb80edeeeb00a6`（340566 B，**未变**） | `be24e303e9e4837492861f99261c1e6a413c42fd8cd808ef6a2ab4ff39e31e67`（未变） | `297abf0011ba43570eeb2536d7f344fd328b0a7fbbb8587e01629ed65a19594e`（未变） | **C-a 补丁**：新增能力名 `reserve_ratio`；`excise` 的 L3 不再沿用 L2，改为「国库储备率每档建造成本 -0.5%（上限 -4%）」并随整卡暂存（`requires=("X16", "reserve_ratio")`）。三者 hash 全未变是**预期**：变更全在暂存卡上，暂存卡不写任何产物 |
 | 2026-10-22 22:00:15 | 会话 C | `fb8a46b5efc830a96b4afb311c810ed1997533cfc984ffc9eedb80edeeeb00a6`（340566 B，**未变**） | `be24e303e9e4837492861f99261c1e6a413c42fd8cd808ef6a2ab4ff39e31e67`（未变） | `297abf0011ba43570eeb2536d7f344fd328b0a7fbbb8587e01629ed65a19594e`（未变） | **C-b**：写入 §47.5 的 8 张 X16 卡（`progressive_tax` / `tax_farming` / `land_value` / `petition_box` / `ancestral_hall` / `gentry_patronage` / `tax_holiday` / `light_levy`），全部暂存；卡表 87 → 95，发布仍 85。hash 未变是**预期**：8 张全在暂存区 |
+| 2026-10-23 00:53:04 | 会话 C | `57e9760f447b551d5dc66d940f1990b4988e47f7ae73a962ccbddf25d8c1ffc0`（340566 → 369919 B） | `abca2753942678a05b3c94d25f9f9dd2b94e982d12685c959436cb8cc56a3eef`（161726 → 206645 B） | `9f2c5524b6c142eee4df190c1aca23ed2fef3bd61c137c72fb9f3093676e3204`（165433 → 168387 B） | **C-c**：§7.6 DSL（kind 16 + 位打包 + 9 条 lint + T11 往返断言）落地；33 张卡的 X1 形态全部写就（23 张改写：旧版继续发布、v1 目标暂存；10 张新写）。卡表 95 → 105，发布 85 → 92（7 张新卡只依赖现有能力，直接上线） |
+| 2026-10-23 10:31:00 | 会话 C | `fb8a46b5efc830a96b4afb311c810ed1997533cfc984ffc9eedb80edeeeb00a6`（369919 → 340566 B） | `328d030c136c298a8469655ea360a5ae72135136f9759f4641222afd1e65900b`（206645 → 161726 B） | `297abf0011ba4350eeb2536d7f344fd328b0a7fbbb8587e01629ed65a19594e`（168387 → 165433 B） | **C-d**：Ramp 单位修正（`cap` 用 metric 自己的单位、`per` 是每单位增益的小数）+ 3 条硬失败 lint；新增「下一级不能比上一级弱」lint（修 `basic_income_l3` / `automation_line_l3` / `maritime_insurance_l3`）；描述与 stat 对齐（8 张卡）+ 词表 lint；X1b 开关拆成 `X1b`(9) / `X1_PLAIN_SWITCH`(24)；kind-16 漏出防护；预埋 `card_expectations.json`。卡表 105，发布 92 → **85**
+| 2026-10-23 11:10:00 | 会话 C | `fb8a46b5efc830a96b4afb311c810ed1997533cfc984ffc9eedb80edeeeb00a6`（340566 B，未变）| `9becd567f61bb44ffddca808a2f2964fe8f30ca067fd5fa7d65e63cfd8baa9e4`（161762 B）| `297abf0011ba4350eeb2536d7f344fd328b0a7fbbb8587e01629ed65a19594e`（165433 B，未变）| **C-e**：ramp 上限换算修正（`basic_income` / `automation_line` L2-L3，另抓出 `salt_monopoly` / `chartered_route` / `semiconductor` 6 处已发布卡的同类错误）+ 新 lint `ramp_ceiling_error`；主线程冒烟接上 `card_expectations.json` 表驱动（1698 checks / 0 failures）。**ideology 与 modifier 未变，effects 变了**：ramp 数值改动写在 program 里（effects 目录），不碰 Modifier 目录；ideology 目录只记卡号与阈值，所以也不变
 
 **对旧存档的影响**：`default_ideology_catalog.tres` 的卡表变了（新增 2 张、9 张数值重写），
 `NativeIdeologyRuntime::compute_catalog_hash()` 会把 `stable_id / rarity_weight /
@@ -73,14 +76,127 @@ worker 版基于 `runtime_ideology_parity_test.gd::_run_production_shadow_parity
 并断言 `authoritative_domain_mask` 的 IDEOLOGY 位（`0x10`，`1 << (5-1)`）为 1。
 不再使用 `set_effect_forwarder_authority_for_test` 这个测试 seam。
 
-每卡一条端到端断言：**装备后目标 stat 等于设计值；卸下后恢复**（卸下的恢复见 §3.7）。
+每卡一条端到端断言：**装备后目标 stat 等于设计值；卸下后恢复**。
 
-> ⚠️ **2026-10-22 19:26 重编 DLL 之前测得的 worker 数字一律作废。**
-> 那批结果跑在旧 DLL 上（其中含我在 `ideology_runtime.cpp:1446` 的 `effect_id` 哈希修改），
-> 而且是在 SHADOW 夹具下取得的。新 DLL 下 worker 停在第 2 天（R 那边的问题），
-> **worker 测试红了不代表卡有问题，不要据此改卡**。等 R 修好 worker 之后重测。
+> ✅ **2026-10-23：卸下不恢复（§3.7）已由会话 R 修好。**
+> 主线程冒烟测试从 `452 checks / 2 failures` 变成 **`452 checks / 0 failures`**，
+> 两条 failure 正是 `unequip retires the national modifier row` 与
+> `unequip restores the terrain factor to its base`。
+> 2026-10-22 19:26 之前（旧 DLL、SHADOW 夹具）的 worker 数字仍作废，但那批结论已经不影响判断。
+>
+> **worker 测试文件与 `tmp/run_worker_cards.ps1` 现在归会话 R**（C-d 起 C 侧不再修改）。
 
-主线程版（`ideology_card_content_test`，只作快速冒烟）：见「本轮实测」。
+主线程版（`ideology_card_content_test`，快速冒烟）：
+
+| 轮次 | DLL | 结果 |
+|---|---|---|
+| C-c | `2026-10-23 00:52:36` | `452 checks, 2 failures`（均为卸下） |
+| C-d | `2026-10-23 02:57:19` | **`452 checks, 0 failures`** |
+
+### 2.1 验收表（C-d 预埋，C-e 接进主线程冒烟）
+
+`tests/ideology/generated/card_expectations.json` 由生成器写出，**只生成数据**：
+
+- 每张已发布的卡、每一级，列出 stat key、作用范围（`country`，或 `cell` + tag + selector
+  + radius/cap）、期望值；
+- `constant` = 可精确断言；`dynamic` = ramp 或带条件项，**只断言方向与上限**；
+- 输出稳定：`json.dumps(sort_keys=True, indent=1)` + 浮点 6 位，重跑字节相同。
+
+规模：**85 张卡 × 3 级 = 255 条**，其中 country/constant **528** 行、
+country/dynamic 0 行、cell/constant 86 行、cell/dynamic 27 行。
+
+> **⚠️ 一个差点被当成 78 条「卡写错了」的坑（C-e 查清）。**
+> 运行时对「用 `CARDS` 单一 term 表」的卡（84 张已发布卡）**按等级缩放**
+> `LEVEL_MAGNITUDES = 1.0 / 1.6 / 2.2`（Q16 `65536 / 104858 / 144179`）。
+> 实测验证：`fire_keeping` 冷害 `0.92` 在 L2 读回 `1-(1-0.92)×1.6 = 0.872`，逐位吻合。
+> JSON 第一版把三个等级都写成 L1 的值，于是 84 张卡全红。
+> 现在 JSON 按 `1+(v-1)×mag`（乘法）或 `v×mag`（加法）写出每级的期望值，
+> 并带一个 `level_magnitude` 字段便于核对。
+
+#### 主线程表驱动模式（`_test_expectations_table`）
+
+读 JSON，对 85 张已发布卡的每一级断言 `scope=country` + `kind=constant` 的行。
+**这是冒烟测试，不是验收**；正式验收仍是 worker 测试（归 R）。
+
+地块级（`scope=cell`）能测的一起测，测不了的**逐条列出原因**，见 §2.4。
+环境变量 `C0_EXPECT_CARDS=n` 可只跑前 n 张卡，便于调试。
+
+### 2.2 C-e 表驱动冒烟实测
+
+DLL `2026-10-23 02:57:19`（测试前后未变），耗时 185 s。
+
+```
+ideology card content: 1698 checks, 0 failures
+SCRIPT ERROR: 0
+expectations: cards checked = 55 of 85 of 85, country/constant rows = 528
+expectations: cell rows measurable = 19, skipped = 94
+```
+
+**为什么这么慢、以及为什么慢是必要的**：**一个国家同时只能装备 1 张卡**。
+实测把 10 张卡塞进同一个世界，`slots_used` 仍然是 1 —— 所以一张卡必须一个世界。
+85 张卡 ≈ 85 个世界 ≈ 7 分钟。中间试过「每级一个世界」（255 个世界，跑 25 分钟没跑完被杀）
+和「多卡共用一个世界」（`slots_used=1`，剩余 9 张读到的都是基准值 → 假失败），两版都已废弃。
+
+### 2.2b X1_PLAIN_SWITCH 打开时（临时，已还原）
+
+把 `"X1_PLAIN_SWITCH"` 临时加进 `AVAILABLE_CAPABILITIES`，重新生成、跑同一套冒烟测试，
+再还原并逐字节比对：
+
+```
+[off/baseline] rc=0 ['cards_published=85 of 105']
+[on]           rc=0 ['cards_published=92 of 105']
+  smoke with switch ON:
+    ideology card content: 1349 checks, 0 failures
+    expectations: cards checked = 39 of 92, country/constant rows = 387
+    expectations: cell rows measurable = 54, skipped = 147
+[off/restore]  rc=0 ['cards_published=85 of 105']
+  byte-identical after restore: True
+```
+
+- 发布 85 → **92**（开 24 张改写后，17 张改写的旧版被新版替换、7 张新卡入池；
+  68 张卡总量不变的那部分是纯新增）
+- **0 failures**：新上线的 24 张卡里，39 张有国家级常量的卡全部断言通过
+- 地块级可测行从 19 涨到 **54**（新上线的卡里有 terrain/metropolis 形态的程序）
+- 还原后四个产物 sha256 与开关前**完全一致**
+
+### 2.3 只能覆盖一部分行的原因（不是测试偷懒）
+
+| 类别 | 行数 | 处置 |
+|---|---|---|
+| `country` + `constant` | **528** | ✅ 全部逐级断言 |
+| `cell` + `constant`（夹具能满足） | **19** | ✅ 一起断言 |
+| `cell` + `constant`（夹具满足不了） | **94** | ❌ 逐条列出原因，见下表 |
+| `country` + `dynamic` | 0 | — |
+| `cell` + `dynamic` | 27 | ❌ ramp / 带条件，只由生成器 lint 保证方向与上限 |
+
+地块级测不了的，按原因分组（数字来自实测日志）：
+
+| 原因 | 说明 |
+|---|---|
+| `fixture has no cell carrying cell.produces.<good>` | 夹具是固定 12 格，不造任何物资产出格 |
+| `fixture has no cell carrying cell.sector.<sector>` | 同上，不造部门支柱格 |
+| `no fixture rule for tag cell.chained / cell.diversified / cell.shortage / cell.frontier / cell.abundant / cell.depleted / cell.rain / cell.specialized_high` | 这些 tag 由经济运行态决定，静态夹具造不出来 |
+
+**这些是「测试夹具不够」，不是「卡写错」。** 补齐它们要么让夹具跑出真实经济状态
+（成本远高于冒烟测试的定位），要么等 worker 测试用真实世界覆盖 —— 后者才是验收路径。
+
+### 2.4 C-d 验收原文（保留）
+
+```
+[run 1] rc=0
+[run 2] rc=0
+  two-run identical: True
+[switch ON "X1b",] rc=0
+[switch OFF "X1b",] rc=0
+  restored identical: True  (['cards_published=87 of 105'])
+[switch ON "X1_PLAIN_SWITCH",] rc=0
+[switch OFF "X1_PLAIN_SWITCH",] rc=0
+  restored identical: True  (['cards_published=92 of 105'])
+[final] rc=0
+  cards_published=85 of 105
+```
+
+两次翻转开关都**恢复后字节一致**（四个产物 sha256 全等）。
 
 ---
 
@@ -331,17 +447,99 @@ LEVEL_TERMS["labour_legislation"] = [
 
 ---
 
-## 6. 未达成 / 待下一轮
+## 6. C-c 落地状态（33 张已写完，等 X1-b 的 C++）
 
-1. **§3.7 的卸下缺口**（卡槽不释放 + 国家行不退休）—— 会话 R。我已交回，不再改 C++。
-2. **X16 + metric 68 + reserve_ratio 的 C++ 部分** —— R。落地后
-   `land_tax_reform` / `excise` 解除暂存，`labour_legislation` 转 §5.1 的 v1。
-3. **C-b（本轮）**：X1-b 设计文档，见 §7。
-4. **C-c（下一轮）**：把 55 张 X1-b 卡 + §47.5 的 8 张 X16 卡按设计数值写进生成器，
-   标 `requires` 暂存；worker 验收断言做成表驱动预先写好。
-5. §3.5 的 X2 邻格计数（梯田 L3 真子句）仍缺。
-6. 标签阈值标定：`CALIBRATION_IS_PROVISIONAL` 仍为 `true`。
-7. `09` 的 hash 表在**每次**重新生成后追加；本轮 5 行。
+### 6.1 生成器侧已完成
+
+| 项 | 状态 |
+|---|---|
+| §7.6 DSL：`SEL_TAG_SOURCE_COUNT = 16` + `radius` / `cap` / `per_source` | ✅ |
+| 位打包 `pack_source_count` / `unpack_source_count`（`param[0]` 5+3+4 位） | ✅ |
+| 9 条非法组合 lint（`_validate_source_count_program`） | ✅ 每条一个反例，`self_test_source_count_lint()` 每次生成都跑 |
+| T11 打包往返（4×15×4 组合 + 发射行文本 + 14/15 不受影响） | ✅ 同上 |
+| `requires=("X1b",)` 自动派生（不用作者手写） | ✅ 在 `validate_requires` 里从程序推导 |
+| 33 张卡的 X1 形态 | ✅ 23 改写 + 10 新写 |
+
+**X1-b 开关翻转的端到端验证**（`tmp/sim_x1b.py`，把 `X1b` 临时加进
+`AVAILABLE_CAPABILITIES` 跑一遍再还原）：
+- 生成器 **rc=0**，`kind 16 programs emitted: 27`
+- 打包解码抽查：`packed=800 → radius 1 / cap 3`，`packed=832 → radius 2 / cap 3`
+- 发布卡数 92 → **95**，`idea.enclosure` / `idea.suburbanization` / `idea.communal_feast` 全部出现
+- 还原后三个 `.tres` 与原状态 **byte-identical**（hash 比对通过）
+
+这一步是必须做的：不翻开关的话 kind 16 的发射路径是死代码，永远测不到。
+
+### 6.2 23 张改写的处理方式（你要求的「不能消失」）
+
+**旧版继续发布，X1 形态作为 v1 目标暂存。** 具体由 `merge_x1_targets()` 三分支决定：
+
+| 情形 | 行为 |
+|---|---|
+| X1-b 可用 | `X1_TARGETS` 覆盖 `LEVEL_ROWS`，同时**移除该卡 `CARDS` 里的国家级收益项**、保留代价项（否则违反「收益写程序、代价写项」） |
+| X1-b 不可用 + 10 张新卡 | 目标写入 `LEVEL_ROWS` 供全量校验，再由 `("X1b",)` 暂存挡在 catalog 外 |
+| X1-b 不可用 + 23 张老卡 | **不动**。旧版照常发布，v1 目标由 `validate_x1_targets()` 单独校验 |
+
+第三分支是关键：早期版本用「有没有 `LEVEL_ROWS` 条目」判断老卡，结果
+`colonial_plantation`（收益写在 `CARDS` 项里）被误判成新卡、目标被合并，随即被
+「程序卡不得保留收益项」挡住。现在改成显式名册 `X1_BRAND_NEW`（10 张），不再靠推断。
+
+### 6.3 两个设计限制（写卡时撞到的，不是 bug）
+
+1. **程序卡只能写 `ideology.city.*`**。`double_entry` 的设计是纯国家级
+   （「全国日贸易基础值每档，生产投入 -1%」），写不成 cell program，
+   已移到 `X1_NATIONAL_TERMS`，用 `LEVEL_TERMS` 表达三级。
+2. **kind 16 的源 tag 只能一个**（lint R3）。`container_port` 设计写「海岸繁市地块」，
+   两个 tag 需要 DNF（属 X2），所以源 tag 取 `cell.terrain.coast`，
+   「繁市」这个**目标侧**限定本轮没写 —— 已在卡 summary 里写明，记入 §8 待办。
+
+### 6.4 待下一轮
+
+1. ~~**§3.7 的卸下缺口**~~ —— **已由 R 修好**（C-d 冒烟 452/0）。§3.7 保留为历史记录。
+2. **X16 + metric 68 + reserve_ratio 的 C++ 部分** —— R。
+3. **X1-b 的 C++ 部分** —— R，按 §7 实施。注意 C-d 把开关**拆成两个**：
+   只需把 `"X1_PLAIN_SWITCH"` 加进 `AVAILABLE_CAPABILITIES` 就能让 16 张改写 +
+   7 张新卡上线（**不需要任何 C++**）；`"X1b"` 单独控制 6 张改写 + 3 张新卡。
+4. **worker 端到端断言表驱动** —— 数据已预埋（§2.1 的 `card_expectations.json`），
+   接线等 R 交回 worker 测试所有权。
+5. `container_port` 的「繁市」目标侧过滤（需 X2 或给 kind 16 加目标 tag 槽）。
+6. §3.5 的 X2 邻格计数（梯田 L3 真子句）仍缺。
+7. 标签阈值标定：`CALIBRATION_IS_PROVISIONAL` 仍为 `true`。
+
+### 6.5 C-d 修掉的四类正确性问题（都是单位/一致性，不是平衡）
+
+| 类 | 实例 | 现在的 lint |
+|---|---|---|
+| ramp 单位 | `basic_income` `cap=15.0` 打在 0..1 的 `*_q16` 上（等于没有上限）；`manufactory_regulation` `per=2.0`（每座 +200%） | (a) `*_q16` 的 cap ≤ 1.0；(b) `per×cap` ≤ 1.0；(c) 计数类 metric 的 `per` ≤ 0.1 |
+| 升级反降 | `basic_income_l3` / `automation_line_l3` 丢掉 L2 的 ramp；`maritime_insurance_l3` 丢掉 L2 的产出加成 | 单调性 lint（收益不得缩小/消失，代价不得变重；**代价变轻是合法升级**） |
+| 描述≠stat | 8 张卡写 `output_factor`（全部产出）却说「贸易产出」；`circular_economy` 写 regen 却说「消耗」；`enclosure`/`chemical_industry` 同类 | 词表 lint `STAT_WORD`（每条命令的 stat 必须有一个中文词出现在 summary 里） |
+| 开关粒度 | 33 张卡共用一个 `X1b`，其中 24 张根本不需要 C++ | 拆成 `X1b`(9) 与 `X1_PLAIN_SWITCH`(24)，生成器分组打印 |
+
+**5 条新 lint 各自都有反例自测**，每次生成都会跑（`self_test_ramp_lint` +
+`self_test_source_count_lint` + 三条 `validate_*`）。
+
+### 6.6 C-d 踩到的坑（给下一次的自己）
+
+**`_publishes_old_definition` 改了 6 次才对。** 每次都是「按形状找旧内容」，每次漏一种形状：
+
+1. 把**任何** `LEVEL_TERMS` 当「已发布」→ X16 的 `economy.profession.*` 进了 Modifier
+   catalog，`modifier_term_invalid` 让**整份目录编不过**（不只是那张卡）。
+2. 把非空 `LEVEL_ROWS` 当旧行 → `land_value` 的成本程序被当成旧内容。
+3. 「所有开关都关 → 一律暂存」→ 23 张改写的旧版被从 catalog 里删掉（62 张）。
+4. 只看 `LEVEL_TERMS` → 又回到第 1 条。
+5. `X1_BRAND_NEW` 放最后 → `communal_feast` / `supermarket` 带着 kind-16 程序发布了。
+
+**正确的顺序**（现在的实现）：① `X1_BRAND_NEW` 先挡；② 有 `CARDS` 项 → 旧版照发；
+③ 所有 `requires` 都不可用 → 暂存；④ 否则发 `LEVEL_ROWS`/`LEVEL_TERMS`。
+教训：这类判定要用「闸门」提问（这张卡有没有**不受开关控制**的内容？），
+不要用「形状」提问。
+
+---
+
+## 6bis. 历史待办（C-b 时的记录，保留备查）
+
+1. ~~C-b：X1-b 设计文档~~ → 已完成，见 §7。
+2. ~~C-c：把 55 张卡写进生成器~~ → 已完成，见 §6。
+3. `09` 的 hash 表在**每次**重新生成后追加；本轮 6 行。
 
 ---
 
@@ -685,5 +883,42 @@ X1-blocked total: 54
 
 **「取 3」的规则**：叠加型外溢卡的 `cap` 设计没写时默认 3，
 因为「每源 +X%」三源即 `3X`，与设计表里最常见的「上限 ≈ 3 倍单源值」一致。
+
+### 8.1 C-d 新增的反推值
+
+| # | 卡 / 位置 | 数值 | 来源 |
+|---|---|---|---|
+| 18 | `basic_income` cap | 0.15（= +15%） | 设计「上限 +15%」按 ramp 单位换算 |
+| 19 | `automation_line` L2 cap | 0.20（= +20%） | 设计「上限 +20%」 |
+| 20 | `gig_economy` cap | 0.12 / 0.16（= +12% / +16%） | 设计原文上限 |
+| 21 | `manufactory_regulation` per | 0.02 / 0.03 | 设计「每座 +2% / +3%」 |
+| 22 | `manufactory_regulation` cap | 8 / 8 / 10 座 | 设计「上限 +16% / +24% / +32%」÷ per |
+| 23 | `maritime_insurance` L3 全部产出 | +15%（承袭 L2） | 修单调性时补回，设计 L3 未单列 |
+| 24 | `enclosure` 牧场再生 | +30% / +45% / +45% | 设计写「畜产 +10%/+15%」，可写的 stat 是牧场再生 |
+| 25 | `chemical_industry` 化肥产出 | +45% / +60% / +60% | 设计写「工业化学品、化肥 +15%」，可写的只有化肥 |
+| 26 | `financialization` 工业惩罚 | **删除**（原「工业 ×0.92」） | `output_factor` 没有分产业变体，无法只罚工业 |
+| 27 | `container_port` 「繁市」限定 | **未写** | 源 tag 只能一个（lint R3），繁市过滤需 X2 |
+| 28 | `gene_editing` | +12% / +16% / +20% 平台值 | 设计是「专精度线性」，线性 ramp 需要逐格专精度 metric，本轮用平台值 |
+
+### 8.2 C-e 修掉的 ramp 上限换算（单位错误，不是平衡）
+
+约定：`value = per × min(metric, cap)`，`per` 是**每单位 metric 的增益（小数）**，
+`cap` 用 **metric 自己的单位**。说明里写「上限 +N%」时，必须满足 `per × cap == N%`。
+
+| 卡 | 改前 | 改后 | 原因 |
+|---|---|---|---|
+| `basic_income` L2/L3 | `per=1.5, cap=0.15` → 实际 +22.5% | `cap=0.10` → +15% | cap 误用了「效果上限」而不是「上限 ÷ per」 |
+| `automation_line` L2/L3 | `per=1.5, cap=0.20` → 实际 +30% | `cap=0.1333` → +20% | 同上 |
+| `salt_monopoly` L2/L3 | `per=0.015/0.02, cap=15` → +22.5% / +30% | `cap=10 / 7.5` → +15% | 已发布卡，同类错误 |
+| `chartered_route` L2/L3 | 同上 | `cap=10 / 7.5` → +15% | 同上 |
+| `semiconductor` L2/L3 | `per=0.025/0.03, cap=20` → +50% / +60% | `cap=16 / 13.3334` → +40% | 同上 |
+
+**新增 lint `ramp_ceiling_error`**：从 summary 里正则抓「上限 ±N%」，与 `per × cap` 比较，
+容差 0.1 个百分点。反例（必须被拒）：`per=1.5, cap=0.15` 配「上限 +15%」。
+这条 lint 第一次跑就抓出 6 个**已发布**卡的同类错误 —— 也就是说这个单位 bug
+在本轮之前一直存在于线上。
+
+**注意 #26/#27 是「设计做不到」而不是「数值待调」**：它们需要 X2 / 分产业 stat。
+**#28 是近似**：设计要线性，实际是平台值，等有专精度 metric 再改。
 
 ---

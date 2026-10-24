@@ -405,6 +405,20 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
         report.effect_pod_snapshot_generation);
     out["effect_pod_ack_count"] = static_cast<int>(report.effect_pod_ack_count);
     out["effect_pod_intent_count"] = static_cast<int>(report.effect_pod_intent_count);
+    out["effect_pod_managed_intent_count"] = static_cast<int>(
+        report.effect_pod_managed_intent_count);
+    out["effect_pod_unmanaged_intent_count"] = static_cast<int>(
+        report.effect_pod_unmanaged_intent_count);
+    out["effect_pod_transaction_count"] = static_cast<int>(
+        report.effect_pod_transaction_count);
+    PackedInt32Array effect_program_ids;
+    effect_program_ids.resize(static_cast<int>(
+        report.effect_pod_program_intent_count));
+    for (uint32_t i = 0; i < report.effect_pod_program_intent_count; ++i) {
+        effect_program_ids.set(static_cast<int>(i),
+            report.effect_pod_intent_program_ids[i]);
+    }
+    out["effect_pod_intent_program_ids"] = effect_program_ids;
     out["effect_retire_absent_count"] = static_cast<int64_t>(
         report.effect_retire_absent_count);
     out["effect_retire_stale_count"] = static_cast<int64_t>(
@@ -2118,7 +2132,7 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
         economy_input->cell_count = static_cast<uint32_t>(cells);
         const char *fields[] = {"cell_temp", "cell_temp_30d", "cell_moisture",
             "cell_plant_available_water", "cell_weather_precip", "cell_snow_cover",
-            "cell_weather_intensity", "cell_elevation"};
+            "cell_weather_intensity", "cell_elevation", "cell_temp_365d"};
         auto copy_slot_f32 = [&](const char *name, std::vector<float> &dest) {
             const int sid = component_id(StringName(name));
             if (sid >= 0 && sid < _slots.size() && _slots[sid].dtype == SlotDType::F32 &&
@@ -2129,6 +2143,16 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
         };
         for (size_t i = 0; i < economy_input->fields.size(); ++i)
             copy_slot_f32(fields[i], economy_input->fields[i]);
+        const char *climate_u8[] = {"cell_weather_type", "cell_cover"};
+        for (size_t i = 0; i < economy_input->climate_u8.size(); ++i) {
+            const int sid = component_id(StringName(climate_u8[i]));
+            if (sid >= 0 && sid < _slots.size() && _slots[sid].dtype == SlotDType::U8 &&
+                static_cast<size_t>(_slots[sid].arr_u8.size()) == cells) {
+                const auto &array = _slots[sid].arr_u8;
+                economy_input->climate_u8[i].assign(
+                    array.ptr(), array.ptr() + array.size());
+            }
+        }
         const char *geography[] = {"cell_terrain", "cell_landform", "cell_vegetation",
             "cell_is_water", "cell_has_river"};
         for (size_t i = 0; i < 5; ++i) {

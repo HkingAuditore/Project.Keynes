@@ -712,14 +712,25 @@ bool ModifierRuntime::validate_target(const Command &command, std::string &error
         // Producer 161 = declared FamilyEffect, 162 = declared Ideology effect.
         // Both address the economy domain by a domain-owned entity handle
         // instead of a building identity, so the building check must not apply.
-        const bool family_effect_entity = command.domain == ECONOMY &&
-            (command.producer == 161 || command.producer == 162) &&
-            command.entity_handle != 0;
-        if (command.domain == ECONOMY && command.producer == 161 &&
-            family_effect_entity && _economy_runtime != nullptr &&
+        // The ideology family shape is ENTITY-only and carries exactly one
+        // family handle; group-scoped Economy commands remain cell targets.
+        const bool declared_family_entity = command.domain == ECONOMY &&
+            command.producer == 161 && command.entity_handle != 0;
+        const bool ideology_family_entity = command.domain == ECONOMY &&
+            command.producer == 162 && command.scope == ENTITY &&
+            command.group_handle == 0 && command.entity_handle != 0;
+        const bool family_effect_entity =
+            declared_family_entity || ideology_family_entity;
+        if (declared_family_entity && _economy_runtime != nullptr &&
             !_economy_runtime->valid_family_effect_entity_handle(
                 command.entity_handle)) {
             error = "modifier_family_effect_handle_stale";
+            return false;
+        }
+        if (ideology_family_entity && _economy_runtime != nullptr &&
+            !_economy_runtime->valid_family_effect_target_handle(
+                command.entity_handle)) {
+            error = "modifier_ideology_family_handle_stale";
             return false;
         }
         if (command.domain == ECONOMY && !family_effect_entity &&

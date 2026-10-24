@@ -357,7 +357,7 @@ func _test_no_consumer_epochs_are_free() -> void:
 	scalar.fill(0.5)
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
 			&"cell_plant_available_water", &"cell_weather_precip",
-			&"cell_snow_cover", &"cell_weather_intensity", &"cell_elevation"]:
+			&"cell_snow_cover", &"cell_weather_intensity", &"cell_elevation", &"cell_temp_365d"]:
 		var sid: int = free_ext.register_component(slot_name, 0, 1, false)
 		free_ext.write_f32_range(sid, 0, scalar)
 	var terrain := PackedByteArray()
@@ -367,7 +367,7 @@ func _test_no_consumer_epochs_are_free() -> void:
 	zeros_u8.resize(CELL_COUNT)
 	zeros_u8.fill(0)
 	for slot_name in [&"cell_terrain", &"cell_landform", &"cell_vegetation",
-			&"cell_is_water", &"cell_has_river"]:
+			&"cell_is_water", &"cell_has_river", &"cell_weather_type", &"cell_cover"]:
 		var sid: int = free_ext.register_component(slot_name, 2, 1, false)
 		free_ext.write_u8_range(
 			sid, 0, terrain if slot_name == &"cell_terrain" else zeros_u8)
@@ -692,7 +692,7 @@ func _register_environment_slots() -> bool:
 	scalar.fill(0.5)
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
 			&"cell_plant_available_water", &"cell_weather_precip",
-			&"cell_snow_cover", &"cell_weather_intensity", &"cell_elevation"]:
+			&"cell_snow_cover", &"cell_weather_intensity", &"cell_elevation", &"cell_temp_365d"]:
 		var sid: int = _ext.register_component(slot_name, 0, 1, false)
 		if sid < 0:
 			print("  [env] register failed: %s" % slot_name)
@@ -705,7 +705,7 @@ func _register_environment_slots() -> bool:
 	zeros_u8.resize(CELL_COUNT)
 	zeros_u8.fill(0)
 	for slot_name in [&"cell_terrain", &"cell_landform", &"cell_vegetation",
-			&"cell_is_water", &"cell_has_river"]:
+			&"cell_is_water", &"cell_has_river", &"cell_weather_type", &"cell_cover"]:
 		var sid: int = _ext.register_component(slot_name, 2, 1, false)
 		if sid < 0:
 			print("  [env] register failed: %s" % slot_name)

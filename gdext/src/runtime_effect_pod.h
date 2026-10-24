@@ -25,7 +25,11 @@ namespace pk {
 // unchanged (the byte was already there); the version moves because the MEANING of
 // that byte changed from "always 0" to "the evaluating side's latch", and an ABI-2
 // payload must not be trusted to mean the latter.
-constexpr uint32_t RUNTIME_EFFECT_POD_ABI_VERSION = 3u;
+// 4: managed instances carry their ACKed lifecycle state (`effect_applied` and
+// `applied_input_revision`) in EFP1 and the snapshot wire. Without those fields
+// an authority flip either re-applies a live Modifier row or forgets to retire
+// one, so older payloads must fail closed rather than infer the state.
+constexpr uint32_t RUNTIME_EFFECT_POD_ABI_VERSION = 4u;
 constexpr uint32_t RUNTIME_EFFECT_POD_CATALOG_VERSION = 1u;
 constexpr uint32_t RUNTIME_EFFECT_POD_MAX_DEFINITIONS = 65536u;
 constexpr uint32_t RUNTIME_EFFECT_POD_MAX_METRICS = 65536u;
@@ -208,7 +212,10 @@ struct RuntimeEffectPodDefinition {
     int32_t cadence_days = 1;
     int32_t max_work = 1024;
     uint8_t enabled = 1;
-    uint8_t reserved[3]{};
+    // Catalog-declared managed lifecycle. Mirrors EffectRuntime's
+    // uses_managed_lifecycle(): lifecycle != 0 || managed_flags entry.
+    uint8_t managed = 0;
+    uint8_t reserved[2]{};
     uint32_t condition_begin = 0;
     uint32_t condition_count = 0;
     uint32_t instruction_begin = 0;
@@ -227,6 +234,7 @@ struct RuntimeEffectPodDefinition {
     int32_t priority = 0;
     int32_t target_selector_kind = 0;
     uint64_t target_selector_hash = 0;
+    int32_t min_magnitude_scale_q16 = 65536 / 4;
     std::array<int32_t, 6> magnitude_by_prestige_q16{
         {65536, 65536, 65536, 65536, 65536, 65536}};
 };
@@ -318,6 +326,12 @@ struct RuntimeEffectPodInstance {
     int64_t expires_day = -1;
     uint64_t stack_key_hash = 0;
     uint64_t fire_sequence = 0;
+    // ACKed lifecycle state. Set only when the full transaction ACKs OK; an
+    // APPLY/UPDATE stores the emitted depth and input revision, while a
+    // retirement clears both. This is wire state, not observation state.
+    uint8_t effect_applied = 0;
+    uint8_t reserved_wire = 0;
+    int64_t applied_input_revision = 0;
     int64_t pending_transaction_id = 0;
     uint64_t pending_idempotency_key = 0;
     uint64_t last_acked_fire_sequence = 0;
@@ -435,6 +449,10 @@ public:
     bool configured() const noexcept { return _configured; }
     uint64_t catalog_hash() const noexcept { return _catalog.catalog_hash; }
     uint64_t catalog_revision() const noexcept { return _catalog_revision; }
+    bool definition_is_managed(int32_t program_id) const noexcept;
+    int32_t instance_index_for_id(int64_t instance_id) const noexcept;
+    int32_t program_id_for_instance(
+        int64_t instance_id, uint32_t generation) const noexcept;
 
     bool upsert_instance(const RuntimeEffectPodInstanceInput &input,
                          std::string &error);
@@ -499,7 +517,7 @@ public:
     // the whole catalog fail validation, which left the EFFECT bit of the
     // completed-mask unset and stopped the entire twelve-domain authority graph
     // from ever being granted. scripts/effect/effect_catalog.gd mirrors both.
-    static constexpr int32_t MAX_SELECTOR_KIND = 15;  // TAG_SOURCE_R2
+    static constexpr int32_t MAX_SELECTOR_KIND = 17;  // FAMILY_OWNED
     static constexpr int32_t MAX_STATE_ID = 5;        // STATE_LATCHED
 
     // ── Cross-thread value contract ─────────────────────────────────────────
@@ -519,6 +537,12 @@ public:
                                          int32_t max_stacks) noexcept;
 
 private:
+    enum class ManagedLifecycleDecision {
+        FIRE,
+        IDLE,
+        RETIRE,
+    };
+
     struct State {
         uint64_t generation = 0;
         uint64_t deterministic_state_hash = 1469598103934665603ull;
@@ -555,6 +579,9 @@ private:
     bool evaluate_conditions(const RuntimeEffectPodDefinition &definition,
                              const RuntimeEffectPodInstance &instance,
                              const State &state, int64_t day) const;
+    ManagedLifecycleDecision evaluate_managed_lifecycle(
+        const RuntimeEffectPodDefinition &definition,
+        RuntimeEffectPodInstance &instance, const State &state, int64_t day) const;
     bool execute_program(const RuntimeEffectPodDefinition &definition,
                          const RuntimeEffectPodInstance &instance,
                          const State &state, int64_t day,
@@ -570,13 +597,37 @@ private:
                          const State &state, int64_t day,
                          std::vector<RuntimeEffectPodCommand> &commands,
                          std::string &error) const;
+    bool build_retirement_commands(
+        const RuntimeEffectPodDefinition &definition,
+        const RuntimeEffectPodInstance &instance, int64_t day,
+        std::vector<RuntimeEffectPodCommand> &commands,
+        std::string &error) const;
     int32_t instance_index(int64_t instance_id, uint32_t generation) const;
     int32_t transaction_index(int64_t transaction_id) const;
     bool append_transaction(State &state, const RuntimeEffectPodInstance &instance,
                             int64_t day,
                             const std::vector<RuntimeEffectPodCommand> &commands,
+                            bool retirement,
                             RuntimeEffectPodTransaction &transaction,
-                            std::string &error) const;
+                            std::string &error);
+    bool append_retirement_transaction(
+        State &state, const RuntimeEffectPodDefinition &definition,
+        RuntimeEffectPodInstance &instance, int64_t day,
+        std::vector<RuntimeEffectPodCommand> &commands,
+        RuntimeEffectPodTransaction &transaction, std::string &error,
+        bool retire_instance = false);
+    void append_transaction_intents(
+        const State &state, const RuntimeEffectPodDefinition &definition,
+        const RuntimeEffectPodInstance &instance,
+        const RuntimeEffectPodTransaction &transaction,
+        std::vector<RuntimeDomainIntent> &out_intents,
+        uint64_t *plan_hash = nullptr) const;
+    bool schedule_application(
+        State &state, const RuntimeEffectPodDefinition &definition,
+        RuntimeEffectPodInstance &instance, int64_t day,
+        std::vector<RuntimeEffectPodCommand> &commands,
+        RuntimeEffectPodTransaction &transaction, std::string &error);
+    void compact_acked_transactions(State &state) const;
     void build_snapshot(const State &state, RuntimeEffectPodSnapshot &out) const;
     void rebuild_report(const RuntimeEffectPodPlan *plan = nullptr);
 

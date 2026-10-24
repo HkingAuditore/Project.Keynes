@@ -181,12 +181,20 @@ func _run_economy(day: int) -> void:
 
 
 func _wait_committed(day: int) -> void:
+	# `ideology_pod_committed_day` is the POD's own committed day
+	# (`RuntimeThreadReport::worker_committed_ideology_day`). This used to poll a key
+	# that did not exist, so every measured day sat through the full 5 s timeout and
+	# the "day" the benchmark timed was whatever had committed by then -- which is
+	# indistinguishable from the worker being a day behind.
 	var deadline := Time.get_ticks_msec() + 5000
 	while Time.get_ticks_msec() < deadline:
 		var report: Dictionary = _ext.get_runtime_thread_report()
 		if int(report.get("ideology_pod_committed_day", -1)) >= day:
 			return
 		OS.delay_msec(1)
+	printerr("[benchmark] day %d never committed (pod day=%d)" % [
+		day, int(_ext.get_runtime_thread_report().get(
+			"ideology_pod_committed_day", -1))])
 
 
 func _stop_worker() -> void:

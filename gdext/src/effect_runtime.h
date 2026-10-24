@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <functional>
@@ -38,7 +39,9 @@ public:
     //     the only consumer was the daily pass; a save/load straddling a
     //     threshold card lost a whole day of hysteresis, which the replay audit
     //     reads as a divergence rather than a one-off.
-    static constexpr int32_t SAVE_SCHEMA_VERSION = 13;
+    // 14: managed POD instances persist their ACKed lifecycle fields so a
+    //     worker/main authority flip cannot replay an APPLY or lose a RETIRE.
+    static constexpr int32_t SAVE_SCHEMA_VERSION = 14;
     static constexpr int64_t Q16_ONE = 65536;
 
     enum Instruction : int32_t {
@@ -107,6 +110,12 @@ public:
         PUBLISH_EVENT = 5,
         CUSTOM_DOMAIN_COMMAND = 6,
     };
+    // Native custom-domain adapters. Effect content names these by
+    // (action=6, domain=6, opcode); the values are part of PKEF content, not a
+    // struct layout, so adding one does not bump the Effect POD ABI.
+    static constexpr int32_t CUSTOM_AUDIT_OPCODE = 1;
+    static constexpr int32_t CUSTOM_CANAL_COMMIT_OPCODE = 2;
+    static constexpr int32_t CUSTOM_IDEOLOGY_FREE_DRAW_OPCODE = 3;
     enum TargetResolver : int32_t {
         TARGET_STATIC = 0,
         TARGET_INSTANCE = 1,
@@ -192,8 +201,71 @@ public:
         // and keeps its old meaning.
         SELECTOR_TAG_SOURCE_R1 = 14,
         SELECTOR_TAG_SOURCE_R2 = 15,
-        SELECTOR_MAX_KIND = SELECTOR_TAG_SOURCE_R2,
+        // 16: X1-b per-source COUNT stacking. Same source-tag selection as
+        // 14/15, but a target receives one contribution per distinct source
+        // within `radius` instead of one unioned contribution.
+        //
+        // param0 is bit-packed because the POD carries exactly two int slots:
+        //   bits 0..4  target cell cap (0 = default 32)
+        //   bits 5..7  radius (1..4)
+        //   bits 8..11 source-count cap (1..15)
+        // param1 remains the 1-based source tag id, like 12..15.
+        SELECTOR_TAG_SOURCE_COUNT = 16,
+        // 17: X9-b family-owned target. The target domain is 0 (family); the
+        // selector resolves stable family handles owned by the country. param0
+        // is the family cap and param1 is the minimum active branch count.
+        SELECTOR_FAMILY_OWNED = 17,
+        SELECTOR_MAX_KIND = SELECTOR_FAMILY_OWNED,
     };
+    static constexpr int32_t SOURCE_COUNT_TARGET_CAP_MASK = 0x1F;
+    static constexpr int32_t SOURCE_COUNT_RADIUS_SHIFT = 5;
+    static constexpr int32_t SOURCE_COUNT_RADIUS_MASK = 0x07;
+    static constexpr int32_t SOURCE_COUNT_CAP_SHIFT = 8;
+    static constexpr int32_t SOURCE_COUNT_CAP_MASK = 0x0F;
+    static constexpr int32_t SOURCE_COUNT_TAG_MASK = 0xFFFF;
+    struct SourceCountSelector {
+        int32_t target_cap = SELECTOR_MAX_CELLS;
+        int32_t radius = 0;
+        int32_t cap = 0;
+        int32_t tag = 0;
+    };
+    static SourceCountSelector decode_source_count_selector(
+            const int32_t *params) {
+        SourceCountSelector out;
+        if (params == nullptr) return out;
+        const int32_t packed = params[0];
+        const int32_t stored_cap = packed & SOURCE_COUNT_TARGET_CAP_MASK;
+        out.target_cap = stored_cap == 0 ? SELECTOR_MAX_CELLS : stored_cap;
+        out.radius = (packed >> SOURCE_COUNT_RADIUS_SHIFT) &
+            SOURCE_COUNT_RADIUS_MASK;
+        out.cap = (packed >> SOURCE_COUNT_CAP_SHIFT) & SOURCE_COUNT_CAP_MASK;
+        out.tag = params[1] & SOURCE_COUNT_TAG_MASK;
+        return out;
+    }
+    static bool magnitude_scale_allowed_for_selector(
+            int32_t selector_kind, int32_t scale_q16,
+            const int32_t *selector_params = nullptr) {
+        if (selector_params == nullptr && selector_kind == SELECTOR_TAG_SOURCE_COUNT)
+            return false;
+        if (scale_q16 < 0 || scale_q16 > 4 * Q16_ONE) return false;
+        if (selector_kind != SELECTOR_TAG_SOURCE_COUNT)
+            return scale_q16 >= Q16_ONE / 4;
+        const SourceCountSelector selector =
+            decode_source_count_selector(selector_params);
+        const int32_t cap = std::clamp(selector.cap, 1, 15);
+        return scale_q16 >= Q16_ONE / cap;
+    }
+    static int32_t minimum_magnitude_scale_for_selector(
+            int32_t selector_kind, const int32_t *selector_params) {
+        if (selector_kind != SELECTOR_TAG_SOURCE_COUNT)
+            return static_cast<int32_t>(Q16_ONE / 4);
+        if (selector_params == nullptr)
+            return static_cast<int32_t>(4 * Q16_ONE);
+        const SourceCountSelector selector =
+            decode_source_count_selector(selector_params);
+        return static_cast<int32_t>(
+            Q16_ONE / std::clamp(selector.cap, 1, 15));
+    }
     // Hard cap on cells a single selector may return. The cap is what keeps
     // "one instance per cell" bounded: 32 cells x a handful of cards stays well
     // inside the instance table, while an uncapped whole-map predicate would not.
@@ -271,6 +343,9 @@ public:
         // and anything whose boundaries did not all fit in the cap. Empty
         // threshold set == exact comparison, so marking is all it takes.
         MetricMask exact_metric_mask;
+        // Ideology-local scalars live above the Economy range in the same
+        // catalog but have no Economy sampler or threshold consumer.
+        MetricMask scalar_mask;
     };
 
     // Durable identity for an external owner (ideology, trigger, etc.).  The
@@ -376,7 +451,9 @@ public:
     // UNKNOWN_PROGRAM.
     bool declarative_facts_for_key(const std::string &key, int32_t &program_id,
                                    int32_t &source_kind,
-                                   bool &managed_declared) const;
+                                   bool &managed_declared,
+                                   int32_t &target_selector_kind,
+                                   int32_t *target_selector_param) const;
     // Absolute expiry write. The previous refresh_managed_duration_pod recomputed
     // the day from the definition; callers that already resolved the definition
     // (the family path reads FamilyEffectMetadataPod) pass the absolute day
@@ -428,6 +505,8 @@ public:
     // instance reads as absent, which is why the callers are diagnostics/tests.
     bool instance_metric_pod(int64_t instance_id, int32_t metric_id,
                              int64_t &out_value, bool &out_present) const;
+    int32_t metric_count() const noexcept { return _metric_count; }
+    int32_t metric_id_for_key(const std::string &key) const;
     // Emits the final native Modifier removal. The instance is reclaimed only
     // after its transaction receives the domain ACK.
     bool retire_instance_pod(int64_t instance_id, uint32_t generation,

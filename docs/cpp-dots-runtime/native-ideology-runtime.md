@@ -22,7 +22,7 @@ stage is the **sole Ideology writer**:
   `NativeIdeologyRuntime::apply_pod_snapshot`, so UI, `explain`, receipts and
   `PKID` keep reading one runtime. The apply is non-blocking and generation
   gated, so intermediate generations may be skipped.
-- Transition intents address `EFFECT`. The POD catalog (ABI 3) carries the
+- Transition intents address `EFFECT`. The POD catalog (ABI 4) carries the
   per-level and per-synergy Modifier template rows (definition key hash,
   magnitude, reversible flag). When IDEOLOGY and MODIFIER are both granted in
   ACTIVE mode, `stage_ideology_modifier_commands` turns each transition into one
@@ -316,7 +316,7 @@ PKEF saves. Settled
 UI receipt history is not persisted. PKID is restored after `PKTR` and `PKEF`.
 A save without PKID
 migrates to empty ideology state; a present PKID must match its catalog hash and
-payload/schema exactly. Every active idea must resolve its exact PKEF v10 external
+payload/schema exactly. Every active idea must resolve its exact PKEF v14 external
 binding after restore; missing binding, generation/level/location mismatch,
 template/program-hash mismatch, or an unknown pending transaction fails closed.
 The pending audit is bidirectional: every PKID transition ID must still be a

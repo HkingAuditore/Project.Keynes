@@ -31,11 +31,11 @@ func _run() -> void:
 	ext.create_entities(1)
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
 			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
-			&"cell_weather_intensity", &"cell_elevation"]:
+			&"cell_weather_intensity", &"cell_elevation", &"cell_temp_365d"]:
 		var float_slot: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(float_slot, 0, PackedFloat32Array([0.5]))
 	for slot_name in [&"cell_terrain", &"cell_landform", &"cell_vegetation",
-			&"cell_is_water", &"cell_has_river"]:
+			&"cell_is_water", &"cell_has_river", &"cell_weather_type", &"cell_cover"]:
 		var byte_slot: int = ext.register_component(slot_name, 2, 1, false)
 		ext.write_u8_range(byte_slot, 0, PackedByteArray([0]))
 	var reserve_slots: PackedStringArray = native_catalog.building_resource_reserve_slots
@@ -135,6 +135,16 @@ func _run() -> void:
 		and int(restored_report.get("ideology_pod_state_hash", 0)) == saved_hash)
 	_stop(ext)
 
+	var stale_abi := _rewrite_idp2_abi(save_bytes, 6)
+	var stale_rejected: Dictionary = ext.restore_runtime_bundle(stale_abi)
+	_expect("old IDP2 ABI is rejected by version (%s)" % String(
+		stale_rejected.get("code", "")),
+		not stale_abi.is_empty()
+		and not bool(stale_rejected.get("restored", false))
+		and String(stale_rejected.get("code", "")) == "ideology_pod_save_header_invalid")
+	_expect("failed stale IDP2 restore leaves the prior worker snapshot intact",
+		int(ext.get_runtime_thread_report().get("ideology_pod_state_hash", 0)) == saved_hash)
+
 	var tampered := save_bytes.duplicate()
 	if tampered.size() > 0:
 		tampered[tampered.size() - 1] = tampered[tampered.size() - 1] ^ 0x40
@@ -188,6 +198,47 @@ func _stop(ext: Object) -> void:
 		if str(ext.get_runtime_thread_report().get("state", "")) == "STOPPED":
 			return
 		OS.delay_msec(5)
+
+
+func _rewrite_idp2_abi(bundle: PackedByteArray, abi: int) -> PackedByteArray:
+	const IDP2_MARKER := 0x32504449
+	var out := bundle.duplicate()
+	var cursor := 89
+	var section_offset := -1
+	while cursor + 16 <= out.size():
+		if int(out.decode_u32(cursor)) == IDP2_MARKER:
+			var size := int(out.decode_u32(cursor + 4))
+			if size >= 16 and cursor + 8 + size + 8 <= out.size() \
+					and int(out.decode_u32(cursor + 8)) == IDP2_MARKER \
+					and int(out.decode_u64(cursor + 8 + size)) == _fnv(
+						out.slice(cursor + 8, cursor + 8 + size)):
+				section_offset = cursor
+				break
+		cursor += 1
+	if section_offset < 0:
+		return PackedByteArray()
+	var payload_start := section_offset + 8
+	var payload_size := int(out.decode_u32(section_offset + 4))
+	var payload := out.slice(payload_start, payload_start + payload_size)
+	payload.encode_u32(4, abi)
+	payload.encode_u64(payload_size - 8, _fnv(payload.slice(0, payload_size - 8)))
+	out = out.slice(0, payload_start)
+	out.append_array(payload)
+	var section_checksum := PackedByteArray()
+	section_checksum.resize(8)
+	section_checksum.encode_u64(0, _fnv(payload))
+	out.append_array(section_checksum)
+	out.append_array(bundle.slice(payload_start + payload_size + 8,
+		bundle.size() - 8))
+	out.encode_u64(out.size() - 8, _fnv(out.slice(0, out.size() - 8)))
+	return out
+
+
+func _fnv(bytes: PackedByteArray, hash: int = 1469598103934665603) -> int:
+	const prime := 1099511628211
+	for byte in bytes:
+		hash = (hash ^ byte) * prime
+	return hash
 
 
 func _expect(label: String, ok: bool) -> void:

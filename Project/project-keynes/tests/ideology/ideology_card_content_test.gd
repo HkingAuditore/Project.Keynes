@@ -50,6 +50,9 @@ const Q16_ONE := 65536
 ## L3 programme triples. Kept slightly under the real number so adding an
 ## assertion does not need this edited, but a half-run fixture still trips it.
 const MIN_CHECKS := 75
+## The generator's acceptance table (09-content-status.md §2.1). Read-only here: the
+## smoke test never writes it, and it is not the acceptance path.
+const EXPECTATIONS_PATH := "res://tests/ideology/generated/card_expectations.json"
 ## `ModifierRuntime::COUNTRY`.
 const MODIFIER_DOMAIN_COUNTRY := 1
 
@@ -83,6 +86,11 @@ const CARDS := [
 	# of authoring fixes; it is recorded in 09-content-status.md.
 	{"key": "riverside_camp", "stat": "country.output.terrain.floodplain.agriculture_factor",
 	 "levels": [1.06, 1.09, 1.09]},
+	# X3-b cards: national production / trade-capacity prices.
+	{"key": "trade_unions", "stat": "country.production.input_factor",
+	 "levels": [1.03, 1.03, 1.03]},
+	{"key": "cooperative", "stat": "country.trade.capacity_factor",
+	 "levels": [0.98, 0.98, 0.98]},
 	# Ⅰ 寒暑历法: 冷害 -6 / -9 / -9, 热害 -5 / -7.5 / -7.5.
 	{"key": "seasonal_calendar", "stat": "country.climate.cold_stress_factor",
 	 "levels": [0.94, 0.91, 0.91]},
@@ -112,13 +120,22 @@ const CARDS := [
 ## Cards the generator stages on a capability the runtime does not have yet.
 ## The smoke test asserts they are genuinely out of the catalog: a staged card that
 ## still published would be a card in the draw pool that does nothing.
-const STAGED_CARDS := ["land_tax_reform", "excise"]
+## Cards that must be ABSENT because a capability they need is still missing.
+##
+## `land_tax_reform` left this list in R-4: its `metric68` condition
+## (`cell.net_tax_burden_q16 <= 8%`) is now backed by a real metric and the L3 clause
+## is a proper Effect program row (`land_tax_reform_l3`), so the card publishes whole.
+## R-7 item G publishes `excise` and `progressive_tax` through country-scope program
+## rows. X1-b step 6 released its kind-16 cards, and R-7 F releases every verified
+## X1 plain cell card, so no capability-staged cards remain.
+const STAGED_CARDS: Array[String] = []
 
 ## The L3 sub-clauses that are cell-level programs rather than national rows.
 ## Each is `{card, program, tag}`; the assertion is "the tag selects N cells".
 const L3_PROGRAMS := [
-	{"card": "terrace_farming", "program": "terrace_farming_l3", "tag": "cell.terrain.hill"},
 	{"card": "pit_dwelling", "program": "pit_dwelling_l3", "tag": "cell.settlement"},
+	{"card": "terrace_farming", "program": "terrace_farming_l3",
+	 "tag": "cell.terrain.hill|cell.terrain.mountain"},
 ]
 
 var _checks := 0
@@ -207,11 +224,21 @@ func _run() -> void:
 		_expect("%s is staged out of the catalog (needs a capability)" % stage_key,
 			ids.find("idea.%s" % stage_key) < 0,
 			"found dossier at dense %d" % ids.find("idea.%s" % stage_key))
-	_stage("run:cards resolved")
+	# The table driver covers all 85 published cards, but `_dense` above only holds
+	# the hand-written C0 list. Resolve the rest from the compiled catalog -- it is
+	# the authority on what published, and without this every non-C0 card failed with
+	# "absent from the compiled catalog" (75 of them, a harness bug).
+	for json_key in _expectation_card_keys():
+		if not _dense.has(json_key):
+			_dense[json_key] = ids.find("idea.%s" % json_key)
+	_stage("run:cards resolved (%d dense entries)" % _dense.size())
 
 	_test_national_values()
+	_test_expectations_table()
 	_test_condition_not_satisfied()
 	_test_unequip_restores()
+	_test_level_up_replaces_rows()
+	_test_relocation_replaces_rows()
 	_test_l3_programs()
 
 
@@ -315,19 +342,25 @@ func _test_unequip_restores() -> void:
 	var snap2: Dictionary = ext.get_ideology_snapshot(handle)
 	var eff2: Dictionary = ext.get_effect_report()
 	var mod_report2: Dictionary = ext.get_modifier_report()
-	# MEASURED, and the reason this assertion is currently RED:
+	# MEASURED, and this is what the fix had to move:
 	#
-	#   slots=0                 -- the slot IS released, so the transition ran
-	#   tx_offsets=[0, 0]       -- but the unequip enqueued ZERO transactions
-	#   commands_emitted=2      -- unchanged from the equip; no REMOVE was emitted
-	#   remove_events_by_domain=[0,0,0,0]
+	#   BEFORE (broken): slots=0  tx_offsets=[0,0]  emitted=2  remove_events=[0,0,0,0]
+	#                    rows=["ideology.terrace_farming.l2"]  stat=1.15
+	#   AFTER  (fixed):  slots=0  tx_offsets=[0,0]  emitted=2  remove_events=[0,1,0,0]
+	#                    rows=[]                              stat=1.00
 	#
-	# So the national row survives because `emit_level_effects(remove=true)`
-	# produced no command at all -- it is not a source-identity mismatch, and my
-	# fix to `emit_templates`'s `effect_id` hash (dropping the `remove` salt) was
-	# necessary but not sufficient. The remaining gap is upstream of
-	# `emit_templates` in `start_transition` and is recorded in
-	# `09-content-status.md` §3.7b for session R.
+	# `tx_offsets` stays `[0,0]` on both sides: the unequip batch is ACKed and
+	# compacted within `_settle`, so the durable snapshot legitimately carries no
+	# pending transaction. What changed is `remove_events`, i.e. the REMOVE command
+	# finally reached the row it was meant to retire.
+	#
+	# Root cause (for the next reader): `start_transition` bumps `state.generation`
+	# before building the batch identity, and `enqueue_external_effect_batch_pod`
+	# derives the Effect instance id from that generation
+	# (`effect_runtime.cpp:3465`). An unequip therefore addressed a BRAND NEW
+	# instance, `NATIVE_MODIFIER_IDEOLOGY` set `source_id` from it, and
+	# `remove_unique_command` could not match the applied row -- it answered
+	# `already_removed` while the row stayed live.
 	var diag := ("slots=%d tx_offsets=%s emitted=%d acked=%d remove_events=%s"
 		% [int(snap2.get("ideology_slots_used", -1)),
 			str(snap2.get("transition_transaction_offsets", PackedInt32Array())),
@@ -398,6 +431,197 @@ func _test_l3_programs() -> void:
 ## equip it" -- that is how a caller reads the untouched base. Equipping inside
 ## this helper and then asserting the base afterwards measures the equipped world
 ## twice, which is exactly the vacuous check this parameter exists to prevent.
+## Card keys listed in `card_expectations.json` (empty when it is missing/unparsable).
+func _expectation_card_keys() -> PackedStringArray:
+	var out := PackedStringArray()
+	if not FileAccess.file_exists(EXPECTATIONS_PATH):
+		return out
+	var parsed: Variant = JSON.parse_string(
+		FileAccess.get_file_as_string(EXPECTATIONS_PATH))
+	if not (parsed is Dictionary):
+		return out
+	for entry_value in (parsed as Dictionary).get("cards", []):
+		var entry: Dictionary = entry_value
+		var key := String(entry.get("card", ""))
+		if not key.is_empty() and not out.has(key):
+			out.append(key)
+	return out
+
+
+## Table-driven check driven by `generated/card_expectations.json`.
+##
+## The generator writes one entry per published card per level, with every row the
+## card should produce. This walks that table and asserts the numbers, which is a
+## different kind of check from the hand-written arrays above: those pin a handful of
+## cards the design doc calls out, this covers ALL 85 published cards and fails if a
+## card's numbers stop matching its own description.
+##
+## SCOPE: `country` + `constant` only. Why the rest is skipped is printed, not
+## silently dropped:
+##   * `dynamic` rows are ramps or conditional programs. Their magnitude depends on a
+##     live metric, so the only honest assertion is "within the ceiling", which the
+##     generator's own lint already proves. Asserting a number here would encode the
+##     fixture's metric values instead of the design.
+##   * `cell` rows need a cell whose tags match the program's selector, and the
+##     synthetic 12-cell fixture only satisfies a few tag shapes.
+## See 09-content-status.md §2.4 for the measured list.
+func _test_expectations_table() -> void:
+	if not FileAccess.file_exists(EXPECTATIONS_PATH):
+		_expect("card_expectations.json exists", false,
+			"missing %s (run the generator)" % EXPECTATIONS_PATH)
+		return
+	var parsed: Variant = JSON.parse_string(
+		FileAccess.get_file_as_string(EXPECTATIONS_PATH))
+	if not _require("card_expectations.json parses", parsed is Dictionary):
+		return
+	var cards: Array = (parsed as Dictionary).get("cards", [])
+	_require("expectations table is non-empty", not cards.is_empty())
+	_stage("expectations: %d card-levels" % cards.size())
+
+	var by_card: Dictionary = {}
+	var order: Array = []
+	for entry_value in cards:
+		var entry: Dictionary = entry_value
+		var key := String(entry["card"])
+		if not by_card.has(key):
+			by_card[key] = []
+			order.append(key)
+		(by_card[key] as Array).append(entry)
+
+	var country_rows := 0
+	var cell_rows_measurable := 0
+	var cell_rows_skipped := 0
+	var skipped_reasons: Dictionary = {}
+	var cards_checked := 0
+	var limit := int(OS.get_environment("C0_EXPECT_CARDS"))
+
+	for key_value in order:
+		if limit > 0 and cards_checked >= limit:
+			break
+		var key := String(key_value)
+		var dense := int(_dense.get(key, -1))
+		if dense < 0:
+			_expect("%s is in the catalog (expectations)" % key, false,
+				"card is published per the json but absent from the compiled catalog")
+			continue
+		var levels: Array = by_card[key]
+
+		# Classify every row once so the report is complete even if the world fails.
+		var per_level: Dictionary = {}
+		for level_index in 3:
+			var entry := _expectation_level(levels, level_index + 1)
+			if entry.is_empty():
+				continue
+			var rows: Array = entry.get("rows", [])
+			for row_value in rows:
+				var row: Dictionary = row_value
+				if String(row["scope"]) == "country" and String(row["kind"]) == "constant":
+					country_rows += 1
+				elif String(row["scope"]) == "cell":
+					var reason := _cell_row_unmeasurable(row)
+					if reason.is_empty():
+						cell_rows_measurable += 1
+					else:
+						cell_rows_skipped += 1
+						skipped_reasons[reason] = int(skipped_reasons.get(reason, 0)) + 1
+			var measurable := rows.filter(func(r):
+				return String(r["scope"]) == "country" and String(r["kind"]) == "constant")
+			if not measurable.is_empty():
+				per_level[level_index + 1] = measurable
+		if per_level.is_empty():
+			continue
+
+		# ONLY ONE card can hold a slot, so each card needs its own world. One world
+		# per CARD (not per level): levels are reached in place by raising
+		# understanding, which is the runtime's own upgrade path.
+		cards_checked += 1
+		var level_keys: Array = per_level.keys()
+		level_keys.sort()
+		var fixture := _equip(key, dense, int(level_keys[0]))
+		if fixture.is_empty():
+			continue
+		var ext: Object = fixture["ext"]
+		var handle: int = int(fixture["handle"])
+		for level_value in level_keys:
+			var level := int(level_value)
+			if level > int(level_keys[0]):
+				_raise_understanding(ext, handle, dense, level)
+			for row_value in per_level[level_value]:
+				var row: Dictionary = row_value
+				var stat := String(row["stat"])
+				var expected := float(row["value"])
+				var base := float(row.get("base",
+					1.0 if String(row.get("operation", "multiply")) == "multiply" else 0.0))
+				var actual := _read(ext, handle, stat, base)
+				_expect("%s L%d %s = %.4f (json)" % [key, level, stat, expected],
+					_is_close(actual, expected, 0.0005),
+					"got %.5f expected %.5f" % [actual, expected])
+		ext = null
+		fixture.clear()
+
+	_stage("expectations: cards checked = %d of %d, country/constant rows = %d"
+		% [cards_checked, order.size(), country_rows])
+	_stage("expectations: cell rows measurable = %d, skipped = %d"
+		% [cell_rows_measurable, cell_rows_skipped])
+	for reason_value in skipped_reasons.keys():
+		_stage("expectations: skipped %d rows -- %s"
+			% [int(skipped_reasons[reason_value]), String(reason_value)])
+	_expect("the json table produced at least one country row per level",
+		country_rows > 0, "country_rows=%d" % country_rows)
+
+
+## The entry for one card level, or {} when the table has no such level.
+func _expectation_level(levels: Array, level: int) -> Dictionary:
+	for entry_value in levels:
+		var entry: Dictionary = entry_value
+		if int(entry["level"]) == level:
+			return entry
+	return {}
+
+
+## Why the synthetic fixture cannot measure this cell row, or "" when it can.
+##
+## The fixture is 12 cells with fixed terrain/tags, so a program that selects
+## `cell.produces.<good>` or `cell.sector.<sector>` has nothing to bind to unless the
+## fixture happens to create one. Rather than claim a check it cannot make, each
+## unmeasurable shape is named so the gap is visible in the log.
+func _cell_row_unmeasurable(row: Dictionary) -> String:
+	var tags: Array = row.get("tags", [])
+	if tags.is_empty():
+		return "cell program with no tag selector (whole territory)"
+	for tag_value in tags:
+		var tag := String(tag_value)
+		if tag.begins_with("cell.terrain.") or tag.begins_with("cell.landform."):
+			continue  # the fixture pins terrain, so these CAN be satisfied
+		if tag == "cell.settlement" or tag == "cell.metropolis" or tag == "cell.market":
+			continue
+		if tag.begins_with("cell.produces.") or tag.begins_with("cell.sector."):
+			return "fixture has no cell carrying %s" % tag
+		if tag.begins_with("cell.rich."):
+			return "fixture declares no natural resource (%s)" % tag
+		return "no fixture rule for tag %s" % tag
+	if int(row.get("selector", 0)) == 16:
+		return "kind 16 (per-source count) is not implemented in the runtime"
+	return ""
+
+
+## Raise an equipped card's understanding to reach `level`, then settle.
+##
+## Thresholds are 0 / 4 / 12 understanding. The command is stamped with the day the
+## world is currently on, and settled from that day, so the level change is picked up
+## by the normal daily pass.
+func _raise_understanding(ext: Object, handle: int, dense: int, level: int) -> bool:
+	var understanding := 0
+	match level:
+		2: understanding = 4 * Q16_ONE
+		3: understanding = 12 * Q16_ONE
+		_: return true
+	ext.submit_ideology_commands(_commands([
+		{"op": 8, "day": 0, "handle": handle, "idea": dense,
+		 "value": understanding}]))
+	return _settle(ext, 0)
+
+
 func _equip(key: String, dense: int, level: int) -> Dictionary:
 	if not _require("%s is in the catalog" % key, dense >= 0):
 		return {}
@@ -439,9 +663,14 @@ func _equip(key: String, dense: int, level: int) -> Dictionary:
 	# Level thresholds are 0 / 4.0 / 12.0 understanding; +8 per call is enough to
 	# cross one tier and the level is clamped, so asking for tier N with
 	# (N-1) * 4.0 keeps the card at exactly that tier.
+	# Thresholds are 0 / 4 / 12, so the multiplier is NOT (level-1)*4: that gives
+	# 0 / 4 / 8, and 8 sits inside tier 2 -- asking for L3 silently measured L2.
+	# The fixture's own comment said this and the code did not.
 	var understanding := 0
-	if level >= 2:
-		understanding = (level - 1) * 4 * Q16_ONE
+	match level:
+		2: understanding = 4 * Q16_ONE
+		3: understanding = 12 * Q16_ONE
+		_: understanding = 0
 	if understanding > 0:
 		ext.submit_ideology_commands(_commands([
 			{"op": 8, "day": 0, "handle": handle, "idea": dense,
@@ -518,6 +747,75 @@ func _read(ext: Object, handle: int, stat: String, base: float = 1.0) -> float:
 	return float(ext.evaluate_modifier_stat(MODIFIER_DOMAIN_COUNTRY, handle, 0, stat, base))
 
 
+## R-3d item 3: LEVEL-UP must retire the old tier's row, not stack on top of it.
+##
+## A level transition removes one tier's persistent rows and adds another's. The REMOVE
+## has to name the generation that APPLIED the row, not the generation being created:
+## `enqueue_external_effect_batch_pod` derives the Effect instance id from
+## (source_type, transition_source_id, effect_id, fire_sequence) and
+## `NATIVE_MODIFIER_IDEOLOGY` takes the Modifier row's `source_id` from that instance,
+## so a shared batch id makes the old row unreachable and BOTH tiers stay live.
+##
+## `_equip(key, ..., 2)` drives the card to L2, so the interesting assertion is that
+## `.l1` is gone -- not merely that `.l2` exists.
+func _test_level_up_replaces_rows() -> void:
+	var key := "terrace_farming"
+	var stat := "country.output.terrain.hill.agriculture_factor"
+	var fixture := _equip(key, int(_dense[key]), 2)
+	if fixture.is_empty():
+		return
+	var ext: Object = fixture["ext"]
+	var handle: int = int(fixture["handle"])
+	var rows: Dictionary = ext.list_modifiers(MODIFIER_DOMAIN_COUNTRY, handle, "")
+	var keys := PackedStringArray(rows.get("definition_keys", PackedStringArray()))
+	_expect("level-up: L2 is live (rows=%s)" % str(keys),
+		keys.has("ideology.%s.l2" % key))
+	# The decisive one: the OLD tier must be gone. A shared batch id left it live and
+	# the stat then read L1 x L2.
+	_expect("level-up: the OLD level's row is retired (rows=%s)" % str(keys),
+		not keys.has("ideology.%s.l1" % key))
+	_expect("level-up: exactly ONE tier row is live (count=%d, rows=%s)" % [
+			keys.size(), str(keys)], keys.size() == 1, "rows=%s" % str(keys))
+	_expect("level-up: the stat reads the L2 value only (1.15000, got %.5f)"
+			% _read(ext, handle, stat),
+		_is_close(_read(ext, handle, stat), 1.15, 0.0005),
+		"%.5f rows=%s" % [_read(ext, handle, stat), str(keys)])
+
+
+## R-3d item 3 (second half): relocation IDEOLOGY -> NATIONAL_SPIRIT.
+##
+## Different destination, same removal mechanics. The spirit tier carries its own row
+## set, so a stale IDEOLOGY row is double-counted here too.
+func _test_relocation_replaces_rows() -> void:
+	var key := "terrace_farming"
+	var fixture := _equip(key, int(_dense[key]), 2)
+	if fixture.is_empty():
+		return
+	var ext: Object = fixture["ext"]
+	var handle: int = int(fixture["handle"])
+	# PROMOTE is opcode 7.
+	var promoted: Dictionary = _submit(ext, [{"op": 7, "day": 4, "handle": handle,
+		"idea": int(_dense[key])}])
+	if not _require("relocation: promote is accepted",
+			bool(promoted.get("ok", false)), str(promoted)):
+		return
+	_settle(ext, 4)
+	var snapshot: Dictionary = ext.get_ideology_snapshot(handle)
+	var ideology_slots := int(snapshot.get("ideology_slots_used", -1))
+	var spirit_slots := int(snapshot.get("national_spirit_slots_used", -1))
+	var rows: Dictionary = ext.list_modifiers(MODIFIER_DOMAIN_COUNTRY, handle, "")
+	var keys := PackedStringArray(rows.get("definition_keys", PackedStringArray()))
+	_expect("relocation: the card moved to the spirit tier (ideology=%d spirit=%d)" % [
+			ideology_slots, spirit_slots],
+		ideology_slots == 0 and spirit_slots == 1,
+		"ideology=%d spirit=%d" % [ideology_slots, spirit_slots])
+	_expect("relocation: exactly ONE tier row is live (count=%d, rows=%s)" % [
+			keys.size(), str(keys)], keys.size() <= 1, "rows=%s" % str(keys))
+	printerr("[relocation] ideology=%d spirit=%d rows=%s stat=%.5f" % [
+		ideology_slots, spirit_slots, str(keys),
+		_read(ext, handle, "country.output.terrain.hill.agriculture_factor")])
+
+
 func _support_gate_off(native: Dictionary) -> Dictionary:
 	var out := native.duplicate(false)
 	var count := (out["ideology_ids"] as PackedStringArray).size()
@@ -550,7 +848,7 @@ func _build_ext() -> Object:
 		bool(ext.configure_modifiers(modifier_catalog, CELLS).get("ok", false)))
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
 			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
-			&"cell_weather_intensity", &"cell_elevation"]:
+			&"cell_weather_intensity", &"cell_elevation", &"cell_temp_365d"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, _f32_fill(CELLS, 0.5))
 	# Terrain and landform must be REAL ids, not zeros: the tag dictionary builds
@@ -561,7 +859,7 @@ func _build_ext() -> Object:
 	terrain.resize(CELLS)
 	terrain.fill(_terrain_id("HILL"))
 	for slot_name in [&"cell_landform", &"cell_vegetation", &"cell_is_water",
-			&"cell_has_river"]:
+			&"cell_has_river", &"cell_weather_type", &"cell_cover"]:
 		var sid2: int = ext.register_component(slot_name, 2, 1, false)
 		ext.write_u8_range(sid2, 0, _u8_fill(CELLS, 0))
 	var terrain_sid: int = ext.register_component(&"cell_terrain", 2, 1, false)

@@ -475,29 +475,32 @@ transactions not claimed by the native bridge.
 ### Worker mirror persistence repair (2026-10-15)
 
 `apply_pod_snapshot()` rebuilds catalog-owned duration/stack metadata, preserves
-activation sequence for the same instance binding, derives the applied flag
-from ACKed stack state, and maps each transaction back to its source program.
+activation sequence for the same instance binding, carries the ACKed
+`effect_applied` / `applied_input_revision` lifecycle fields from the POD
+snapshot, and maps each transaction back to its source program.
 POD command IDs become catalog command IDs; POD source identity is not an
 external-source binding. The mirror computes the PKEF plan hash in the PKEF
 format, retains command idempotency/ACK masks, rebuilds pending-source counts
 and group indexes, and advances its day/transaction cursors. Both colonization
 and canal builtins stay outside the worker snapshot and survive write-back.
 
-The PKEF v11 reader recognizes the old non-managed POD mirror signature
+The legacy POD mirror reader recognizes the non-managed POD signature
 (`activation_sequence=0`, `stack_key_hash=0`, absent applied flag/revision).
 It reconstructs missing catalog metadata and deterministic activation order;
 misclassified transactions are recovered only for those source instances and
 catalog-owned commands. Their original POD plan hash must validate before
 conversion to PKEF hashing. Unknown shapes, managed instances, altered commands,
 and hash failures remain rejected. Parsing and conversion use temporary state,
-so a failed repair cannot replace live state. The wire schema remains v11.
+so a failed repair cannot replace live state. PKEF schema v14 carries the
+worker POD ABI-4 lifecycle fields; older PKEF streams fail closed rather than
+infer whether a managed row is applied.
 
 `runtime_effect_pod_test.gd` runs the native snapshot-to-PKEF fixture after
 catalog configuration, including repeated snapshot activation stability, legacy
 repair, byte-exact canonical round-trip, ACK/idempotency preservation, and
 atomic rejection of a modified legacy plan hash.
 
-`PKEF v11` stores catalog hash, runtime cursors, an in-progress candidate list,
+PKEF schema v14 stores catalog hash, runtime cursors, an in-progress candidate list,
 instances, input metrics, published and consumed input revisions, fire sequences, and pending
 transactions/commands. External commands persist their effect/source identity
 and include it in the plan hash, so atomic peer batches remain auditable after
@@ -512,7 +515,7 @@ wrong protocol, schema, catalog hash, truncation, invalid IDs, and invalid
 transaction status. Domain state is not duplicated in PKEF; its domain-side
 idempotency evidence remains in PKCN, PKEC, or the gameplay journal.
 
-PKEF v11 also owns the complete frozen era-reward Alternative Offer Plan:
+PKEF schema v14 also owns the complete frozen era-reward Alternative Offer Plan:
 three alternatives, visible weighting reasons, generation-safe targets,
 plan hash, selected choice and its transaction. PKCN v11 stores only the matching
 plan reference and status. PKEF restore rejects any cross-section mismatch with
@@ -539,7 +542,7 @@ pending ACKs, explicit transaction-state counts, work, elapsed time, behavior
 failures, overflow, due/dirty/candidate counts, flat-slab bytes, native Modifier
 batch timings, worker planning/serial merge timings, worker/fallback path fields,
 the pending idempotency-key count, per-native-adapter pending ACK counts, family
-effect stack-group/member/byte counts, and last error. `PKEF v11` restore parses into temporary
+effect stack-group/member/byte counts, and last error. PKEF schema v14 restore parses into temporary
 vectors and swaps only after all bounds, command masks, plan hash and end marker
 checks pass, so a truncated save cannot clear the live state.
 `explain_effect(instance_id)` reports the resolved program, input revision,

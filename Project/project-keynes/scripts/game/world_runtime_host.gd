@@ -278,6 +278,19 @@ var _modifier_worker_snapshot_generation: int = 0
 var _effect_worker_snapshot_generation: int = 0
 var _ideology_worker_snapshot_generation: int = 0
 var _trigger_worker_snapshot_generation: int = 0
+# R-3d: correctness counters for the GDScript ideology-intent reply.
+#
+# `submit_ideology_worker_ack` claims that the Effect side committed the transition.
+# Two ways that claim can be wrong, both counted here so they are observable instead
+# of silent:
+#   * duplicate — the same transaction answered twice (a retry raced the first reply,
+#     or the POD emitted two intents for one transition);
+#   * unknown — an intent with no request id, i.e. nothing to reply to.
+# Under the production 0xFFF mask the worker owns EFFECT and drains these itself, so
+# BOTH must stay 0: any other value means the fallback pump fired when it should not.
+var _ideology_intent_duplicate_acks: int = 0
+var _ideology_intent_unknown_acks: int = 0
+var _ideology_acked_transactions: Dictionary = {}
 # Trigger delivery still uses Effect's native domain adapters. Keep its facade
 # transaction alive until Country acknowledges and the worker admits its ACK.
 # Effect ids are ingress-allocated while delivery is canonical, so the exact id
@@ -1392,8 +1405,26 @@ func _consume_ideology_worker_snapshot_if_authoritative() -> void:
 
 ## G8: Ideology transition intents address EFFECT and require an ACK before the
 ## worker applies the transition. When EFFECT is granted in the same session the
-## worker already ACKs them in-worker; this pump is the protocol path and covers
-## an IDEOLOGY-only grant plus anything the in-worker drain missed.
+## worker already ACKs them in-worker; this pump is the protocol path and covers an
+## IDEOLOGY-only grant where EFFECT is still main-thread owned.
+##
+## R-3d: "Effect accepted" is a real statement, not a formality. `submit_ideology_worker_ack`
+## tells the POD that the Effect side has actually taken the transition, and the POD
+## then flips the card's location and frees the slot. Answering it on behalf of a worker
+## that owns EFFECT would mean claiming a commit that never happened -- the slot frees
+## while the modifier row is still live, which is the exact divergence the earlier
+## rounds chased.
+##
+## So the pump is ONLY the fallback for the split-authority case:
+##   * IDEOLOGY must be worker-authoritative (otherwise the main thread owns the day
+##     and this queue is empty anyway), and
+##   * EFFECT must NOT be worker-authoritative. When the worker owns EFFECT it drains
+##     the intents itself (`ack_ideology_intents_in_worker`) and a GDScript ACK would
+##     be a duplicate.
+##
+## `_ideology_intent_duplicate_acks` and `_ideology_intent_unknown_acks` count the two
+## ways a reply can be wrong; both must stay 0 under the 0xFFF fixture, where the worker
+## owns everything and this function should never fire at all.
 func _service_ideology_worker_intents_if_authoritative() -> void:
 	if not _runtime_ready_for_ticks or _generator == null:
 		return
@@ -1401,6 +1432,10 @@ func _service_ideology_worker_intents_if_authoritative() -> void:
 		if _generator.has_method("get_runtime_thread_report") else {}
 	var granted_mask := int(report.get("authoritative_domain_mask", 0))
 	if (granted_mask & 0x010) == 0:
+		return
+	if (granted_mask & 0x020) != 0:
+		# EFFECT belongs to the worker: it ACKs in-worker, and a second reply from
+		# here would report a commit nobody verified.
 		return
 	var ext = _generator.get_data_core_world_ext() \
 		if _generator.has_method("get_data_core_world_ext") else null
@@ -1413,12 +1448,24 @@ func _service_ideology_worker_intents_if_authoritative() -> void:
 		var intent: Dictionary = ext.poll_ideology_worker_intent()
 		if not bool(intent.get("ok", false)) or not bool(intent.get("available", false)):
 			break
+		var request_id := int(intent.get("request_id", 0))
+		var transaction_id := int(intent.get("transaction_id", request_id))
+		if request_id == 0:
+			++_ideology_intent_unknown_acks
+			continue
+		# Same transaction answered twice means the POD emitted two intents for one
+		# transition (or a retry raced the first reply). Either way the second reply
+		# must not be sent: it would settle a transition the first reply already
+		# settled, and the POD cannot tell the difference.
+		if _ideology_acked_transactions.has(transaction_id):
+			++_ideology_intent_duplicate_acks
+			continue
+		_ideology_acked_transactions[transaction_id] = true
 		# submit_ideology_worker_ack stamps EFFECT itself; the Ideology
 		# authority ignores an ACK from any other domain.
 		ext.submit_ideology_worker_ack({
-			"request_id": int(intent.get("request_id", 0)),
-			"transaction_id": int(intent.get("transaction_id",
-				intent.get("request_id", 0))),
+			"request_id": request_id,
+			"transaction_id": transaction_id,
 			"target_handle": int(intent.get("target_handle", 0)),
 			"target_generation": int(intent.get("target_generation", 0)),
 			# RuntimeDomainAckCode::OK == 0. 1 is RETRY, which clears
@@ -2205,6 +2252,19 @@ func get_sus_last_tick_report() -> Dictionary:
 		return {}
 	var report: Dictionary = _generator.sus_report_last_tick()
 	return report.duplicate(false)
+
+
+## R-3d: how the GDScript ideology-intent fallback behaved.
+##
+## `duplicate_acks` and `unknown_acks` must both be 0 on any session where the worker
+## owns EFFECT (the 0xFFF production mask), because the worker drains its own intents
+## and this pump should never reply at all. `replies` is informational.
+func get_ideology_intent_reply_report() -> Dictionary:
+	return {
+		"duplicate_acks": _ideology_intent_duplicate_acks,
+		"unknown_acks": _ideology_intent_unknown_acks,
+		"replies": _ideology_acked_transactions.size(),
+	}
 
 
 func get_sus_last_tick_summary() -> Dictionary:

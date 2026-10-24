@@ -53,6 +53,13 @@ const MAX_SECONDARY_ROUTE_TAGS := 2
 ## `route_tag` instead of turning it into an array so the primary route stays a
 ## single authored field with no ordering rule to remember.
 @export var secondary_route_tags: PackedStringArray = PackedStringArray()
+## X6-c: this card's persistent programs come from the card in the immediately
+## left ideology slot. The copier owns fresh Effect instances under its own
+## (ideology_id, level) identity. Legendary/rule cards are never copy sources.
+@export var copy_left_programs: bool = false
+## Whether another card may use this definition's programs as a copy source.
+## The generator writes false for every Legendary/rule card.
+@export var copyable: bool = true
 
 ## Every build route this card belongs to: the primary first, then the extras,
 ## de-duplicated and with blanks dropped. Single source of truth for both the
