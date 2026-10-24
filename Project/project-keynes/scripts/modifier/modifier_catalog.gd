@@ -9,6 +9,9 @@ const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const EraRewardCatalogScript = preload("res://scripts/effect/era_reward_catalog.gd")
 const TerrainTypeScript = preload("res://scripts/geography/terrain_type.gd")
 const LandformTypeScript = preload("res://scripts/geography/landform_type.gd")
+const GoodProfileRegistryScript = preload("res://scripts/data/good_profile_registry.gd")
+const ResourceProfileRegistryScript = preload(
+	"res://scripts/data/resource_profile_registry.gd")
 
 const TECHNOLOGY_STATS := [
 	["country.research.agriculture_efficiency", 0.0, 6.0],
@@ -79,8 +82,8 @@ const STAT_DISPLAY_NAMES := {
 	"country.climate.drought_loss_factor": "旱灾损失",
 	"country.climate.flood_loss_factor": "洪灾损失",
 	"country.climate.heat_stress_factor": "热害损失",
-	"country.construction.cost_factor": "国家建设成本",
-	"country.construction.time_factor": "国家建设耗时",
+	"country.construction.cost_factor": "全国建设成本",
+	"country.construction.time_factor": "全国建设耗时",
 	"country.output.agriculture_factor": "农业部门产出",
 	"country.output.extractive_factor": "采掘部门产出",
 	"country.output.manufacturing_factor": "制造部门产出",
@@ -98,7 +101,7 @@ const STAT_DISPLAY_NAMES := {
 	"country.ideology.point_population_factor": "人口增长理念点",
 	"country.ideology.point_building_factor": "建筑增长理念点",
 	"country.ideology.point_trade_factor": "贸易理念点",
-	"country.ideology.opinion_factor_floor": "民意系数下限",
+	"country.ideology.opinion_factor_floor": "理念点获取的民意加成下限",
 	"country.ideology.school_strength_factor.agrarian": "农本理念强度",
 	"country.ideology.school_strength_factor.commerce": "商贸理念强度",
 	"country.ideology.school_strength_factor.learning": "学识理念强度",
@@ -107,6 +110,30 @@ const STAT_DISPLAY_NAMES := {
 	"country.ideology.school_strength_factor.harmony": "调和理念强度",
 	"country.trade.capacity_factor": "国内贸易容量",
 	"country.trade.speed_factor": "贸易速度",
+}
+## Ideology cards have their own audience-facing wording. Keep this map separate
+## from the shared stat labels so other panels keep their established terms.
+const IDEOLOGY_PLAIN_STAT_NAMES := {
+	"country.output.agriculture_factor": "农业产出",
+	"country.output.extractive_factor": "采掘产出",
+	"country.output.manufacturing_factor": "制造业产出",
+	"country.output.energy_factor": "能源产出",
+	"country.output.knowledge_factor": "知识产出",
+	"country.research.agriculture_efficiency": "农业研究速度",
+	"country.research.engineering_efficiency": "工程研究速度",
+	"country.research.science_efficiency": "科学研究速度",
+	"country.research.society_efficiency": "社会研究速度",
+	"country.research.institution_output_factor": "研究机构产出",
+	"country.production.input_factor": "生产所需原料",
+	"country.household.consumption_factor": "家庭消费需求",
+	"country.resource.use_factor": "自然资源消耗",
+	"country.trade.capacity_factor": "每次贸易可成交的货物量",
+	"country.trade.speed_factor": "贸易运输速度",
+	"country.resource.fertile_soil.managed_generation_factor": "肥沃土壤自然恢复速度",
+	"country.resource.freshwater_fish.managed_generation_factor": "淡水鱼群自然恢复速度",
+	"country.resource.timber.managed_generation_factor": "木材自然恢复速度",
+	"country.resource.wild_game.managed_generation_factor": "野生动物自然恢复速度",
+	"country.resource.pasture.managed_generation_factor": "牧场自然恢复速度",
 }
 
 # Selector-addressable stat keys (see compile_native_catalog() below) are expanded
@@ -120,6 +147,7 @@ const STAT_DISPLAY_NAMES := {
 # editor previews keep working without any economy bootstrap.
 const UNIT_FACTOR := 0
 const UNIT_RATE_BP := 1
+const UNIT_POINTS := 2
 
 const SECTOR_DISPLAY_NAMES := {
 	"agriculture": "农业",
@@ -133,6 +161,10 @@ const HAZARD_DISPLAY_NAMES := {
 	"flood": "洪灾",
 	"cold_stress": "寒害",
 	"heat_stress": "热害",
+}
+const PRODUCTION_CLIMATE_PROFILE_DISPLAY_NAMES := {
+	"dryland_crop": "旱作作物",
+	"paddy_crop": "水田作物",
 }
 
 static var _dimension_display_names: Dictionary = {}
@@ -604,7 +636,26 @@ static func reset_display_names() -> void:
 
 static func display_name_of(kind: StringName, stable_id: String) -> String:
 	var bucket: Dictionary = _dimension_display_names.get(kind, {})
-	return String(bucket.get(stable_id, stable_id))
+	if bucket.has(stable_id):
+		return String(bucket[stable_id])
+	# Headless catalog views can run before EconomyFacade registers names. Read
+	# the authoritative profile catalogs directly so card faces never fall back
+	# to a stable ID merely because of bootstrap order.
+	if kind == &"good":
+		var good: Resource = GoodProfileRegistryScript.profile_by_id(stable_id)
+		if good != null:
+			var good_name := String(good.get("display_name")).strip_edges()
+			if not good_name.is_empty():
+				return good_name
+	elif kind == &"resource":
+		for resource_value in ResourceProfileRegistryScript.ordered():
+			var resource: Resource = resource_value
+			if resource == null or String(resource.get("id")) != stable_id:
+				continue
+			var resource_name := String(resource.get("display_name")).strip_edges()
+			if not resource_name.is_empty():
+				return resource_name
+	return stable_id
 
 
 static func _terrain_display_name(stable_id: String) -> String:
@@ -664,14 +715,16 @@ static func _describe_stat_key(stat_key: String) -> Dictionary:
 			return {}
 		# economy.profession.<profession_id>.<tax_tolerance_factor|satisfaction_bp>
 		if parts[0] == "economy" and parts[1] == "profession":
-			var profession_label := display_name_of(&"profession", parts[2])
+			var profession_name := _profession_display_name(parts[2])
 			match parts[3]:
 				"tax_tolerance_factor":
-					return {"label": "%s 税负容忍度" % profession_label,
-						"unit": UNIT_FACTOR}
+					return {"label": "%s 税负容忍度" % profession_name,
+						"unit": UNIT_FACTOR, "profession_id": parts[2],
+						"profession_metric": "tax_tolerance"}
 				"satisfaction_bp":
-					return {"label": "%s 满意度" % profession_label,
-						"unit": UNIT_RATE_BP}
+					return {"label": profession_name,
+						"unit": UNIT_POINTS, "profession_id": parts[2],
+						"profession_metric": "satisfaction"}
 			return {}
 		# country.resource.<stable_id>.<use_factor|managed_generation_factor>
 		if parts[0] == "country" and parts[1] == "resource":
@@ -701,7 +754,9 @@ static func _describe_stat_key(stat_key: String) -> Dictionary:
 			var hazard := _strip_suffix(parts[4], "_loss_factor")
 			if hazard.is_empty():
 				return {}
-			return {"label": "%s %s损失" % [parts[3],
+			var profile_name := String(PRODUCTION_CLIMATE_PROFILE_DISPLAY_NAMES.get(
+				parts[3], parts[3]))
+			return {"label": "%s%s损失" % [profile_name,
 				String(HAZARD_DISPLAY_NAMES.get(hazard, hazard))], "unit": UNIT_FACTOR}
 		# country.tax.<kind>.<stable_id>.rate_bp
 		if parts[0] == "country" and parts[1] == "tax" and parts[4] == "rate_bp":
@@ -709,7 +764,7 @@ static func _describe_stat_key(stat_key: String) -> Dictionary:
 			var target_name := target
 			match parts[2]:
 				"income":
-					target_name = display_name_of(&"profession", target)
+					target_name = _profession_display_name(target)
 					return {"label": "%s 所得税率" % target_name, "unit": UNIT_RATE_BP}
 				"consumption":
 					target_name = display_name_of(&"good", target)
@@ -753,17 +808,26 @@ static func _describe_stat_key(stat_key: String) -> Dictionary:
 
 
 static func present_stat_delta(stat_key: String, operation: int, value: float,
-		magnitude_q16: int = Q16_ONE) -> String:
+		magnitude_q16: int = Q16_ONE, plain_language: bool = false,
+		label_override: String = "") -> String:
 	if not is_finite(value):
 		return ""
 	var label := String(STAT_DISPLAY_NAMES.get(stat_key, ""))
 	var unit := UNIT_FACTOR
+	var profession_id := ""
+	var profession_metric := ""
 	if label.is_empty():
 		var described := _describe_stat_key(stat_key)
 		if described.is_empty():
 			return ""
 		label = String(described.get("label", ""))
 		unit = int(described.get("unit", UNIT_FACTOR))
+		profession_id = String(described.get("profession_id", ""))
+		profession_metric = String(described.get("profession_metric", ""))
+	elif plain_language:
+		label = String(IDEOLOGY_PLAIN_STAT_NAMES.get(stat_key, label))
+	if plain_language and not label_override.is_empty():
+		label = label_override
 	if label.is_empty():
 		return ""
 	var magnitude := float(magnitude_q16) / float(Q16_ONE)
@@ -781,20 +845,209 @@ static func present_stat_delta(stat_key: String, operation: int, value: float,
 			delta = ((1.0 / value) - 1.0) * magnitude
 		_:
 			return ""
+	var is_tolerance := profession_metric == "tax_tolerance"
+	var is_satisfaction := profession_metric == "satisfaction"
+	if not profession_id.is_empty():
+		label = _profession_display_name(profession_id)
+		if is_satisfaction and plain_language:
+			label += "满意度"
+		elif is_satisfaction:
+			pass
+		elif plain_language and is_tolerance:
+			pass
+		elif is_tolerance:
+			label += " 税负容忍度"
 	if unit == UNIT_RATE_BP and (operation == 0 or operation == 1):
 		# Rate stats are authored in basis points, so additive terms never fit the
 		# whole-percent formatting below (a 15 bp change would render as +0%).
 		if absf(delta) < 0.5:
 			return ""
-		return "%s %+.2f%%" % [label, delta * 0.01]
+		var rate_points := delta * 0.01
+		if plain_language:
+			var plain_label := label.replace(" 所得税率", "所得税率") \
+				.replace(" 消费税", "消费税").replace(" 营业税率", "营业税率") \
+				.replace(" 进口税率", "进口税率").replace(" 出口税率", "出口税率")
+			return "%s%s %s 个百分点" % [plain_label,
+				"提高" if rate_points > 0.0 else "降低",
+				_format_decimal(absf(rate_points))]
+		return "%s %+.2f%%" % [label, rate_points]
+	if unit == UNIT_POINTS and (operation == 0 or operation == 1):
+		if absf(delta) < 0.5:
+			return ""
+		var satisfaction_points := delta * 0.01
+		if plain_language:
+			return "%s%s %s 点" % [label,
+				"提高" if delta > 0.0 else "降低",
+				_format_decimal(absf(satisfaction_points))]
+		return "%s %+.2f 点" % [label, satisfaction_points]
 	var percent := int(round(delta * 100.0))
 	if percent == 0:
 		return ""
+	# This stat is an additive offset on the opinion-factor floor, not a
+	# multiplicative percentage. One authored step therefore changes the floor
+	# by one percentage point.
+	if plain_language and stat_key == "country.ideology.opinion_factor_floor":
+		return "%s%s %d 个百分点" % [label,
+			"提高" if percent > 0 else "降低", absi(percent)]
+	if plain_language and is_tolerance:
+		return "%s对税负的承受能力%s %d%%" % [label,
+			"提高" if percent > 0 else "降低", absi(percent)]
+	if plain_language and is_satisfaction:
+		return "%s%s %d 点" % [label,
+			"提高" if delta > 0.0 else "降低", absi(percent)]
 	return "%s %+d%%" % [label, percent]
+
+
+const PROFESSION_DISPLAY_NAMES := {
+	"agricultural_worker": "农业工人",
+	"ai_researcher": "AI 研究员",
+	"apprentice": "学徒",
+	"artisan": "工匠",
+	"chemist": "化学家",
+	"construction_worker": "建筑工人",
+	"cooperative_member": "合作社成员",
+	"corvee_worker": "徭役劳动者",
+	"data_scientist": "数据科学家",
+	"electrician": "电工",
+	"engineer": "工程师",
+	"enslaved_laborer": "奴隶劳工",
+	"fisher": "渔民",
+	"forager": "采集者",
+	"forestry_worker": "林业工人",
+	"guild_master": "行会师傅",
+	"household_farmer": "家庭小农",
+	"hunter": "猎人",
+	"indentured_laborer": "契约劳工",
+	"industrial_worker": "产业工人",
+	"industrialist": "工业资本家",
+	"journeyman": "熟练工",
+	"landlord": "地主",
+	"lorekeeper": "传知者",
+	"machinist": "机械师",
+	"manager": "经理",
+	"merchant": "商人",
+	"metallurgist": "冶金师",
+	"miner": "矿工",
+	"natural_philosopher": "自然哲学家",
+	"pastoralist": "牧民",
+	"petroleum_worker": "石油工人",
+	"research_scientist": "研究科学家",
+	"researcher": "研究员",
+	"scholar": "学者",
+	"scientist": "科学家",
+	"scribe": "书记员",
+	"serf": "农奴",
+	"sharecropper": "分成佃农",
+	"subsistence_farmer": "自给农民",
+	"technician": "技术员",
+	"tenant_farmer": "佃农",
+	"transport_worker": "运输工人",
+	"unemployed": "失业者",
+	"worker": "工人",
+}
+
+
+static func _profession_display_name(stable_id: String) -> String:
+	var registered := display_name_of(&"profession", stable_id)
+	if registered != stable_id:
+		return registered
+	return String(PROFESSION_DISPLAY_NAMES.get(stable_id, stable_id))
+
+
+static func _format_decimal(value: float) -> String:
+	var text := "%.2f" % value
+	text = text.trim_suffix("0").trim_suffix("0").trim_suffix(".")
+	return text
+
+
+func present_definition_for_ideology(definition_key: StringName,
+		magnitude_q16: int = Q16_ONE) -> PackedStringArray:
+	var lines := PackedStringArray()
+	if definition_key == &"":
+		return lines
+	for definition in definitions:
+		if definition == null or definition.key != definition_key:
+			continue
+		var profession_terms: Dictionary = {}
+		var names_by_kind: Dictionary = {}
+		for term in definition.terms:
+			if term == null:
+				continue
+			var stat_key := String(term.stat_key)
+			var described := _describe_stat_key(stat_key)
+			var unit := int(described.get("unit", UNIT_FACTOR))
+			var label := String(described.get("label", stat_key))
+			if not described.is_empty():
+				label = String(IDEOLOGY_PLAIN_STAT_NAMES.get(stat_key, label))
+			if label.begins_with("全国自然资源") \
+					and label.ends_with("恢复速度"):
+				label = label.replace("全国自然资源", "自然资源")
+			if not described.is_empty() and unit in [UNIT_FACTOR, UNIT_POINTS] \
+					and stat_key.begins_with("economy.profession."):
+				var parts := stat_key.split(".")
+				if parts.size() == 4 and parts[3] in [
+						"tax_tolerance_factor", "satisfaction_bp"]:
+					var line := present_stat_delta(stat_key, int(term.operation),
+						float(term.value), magnitude_q16, true)
+					if not line.is_empty():
+						var group_key := "%s|%d|%s" % [parts[3],
+							int(term.operation), var_to_str(term.value)]
+						profession_terms[group_key] = int(
+							profession_terms.get(group_key, 0)) + 1
+						var names: PackedStringArray = names_by_kind.get(group_key,
+							PackedStringArray())
+						names.append(_profession_display_name(parts[2]))
+						names_by_kind[group_key] = names
+					continue
+			var line := present_stat_delta(stat_key, int(term.operation),
+				float(term.value), magnitude_q16, true,
+				"" if described.is_empty() else label)
+			if not line.is_empty() and not lines.has(line):
+				lines.append(line)
+		for group_key in names_by_kind:
+			var names: PackedStringArray = names_by_kind[group_key]
+			var group_parts := String(group_key).split("|")
+			var sample_key := "economy.profession.%s.%s" % [
+				_profession_id_for_display_name(
+					names[0] if not names.is_empty() else "unknown"),
+				group_parts[0]]
+			var sample_label := present_stat_delta(sample_key, int(group_parts[1]),
+				float(group_parts[2]), magnitude_q16, true)
+			if sample_label.is_empty():
+				continue
+			if int(profession_terms[group_key]) >= _known_profession_count():
+				var split := sample_label.find("对税负")
+				if split >= 0:
+					lines.append("全国各职业%s" % sample_label.substr(split))
+				else:
+					var satisfaction := sample_label.rfind("满意度")
+					lines.append("全国各职业%s" % sample_label.substr(
+						satisfaction if satisfaction >= 0 else 0))
+			else:
+				var split := sample_label.find("对税负")
+				if split < 0:
+					split = sample_label.rfind("满意度")
+				lines.append("%s%s" % ["、".join(names),
+					sample_label.substr(split if split >= 0 else 0)])
+		break
+	return lines
+
+
+static func _profession_id_for_display_name(display_name: String) -> String:
+	for stable_id in PROFESSION_DISPLAY_NAMES:
+		if String(PROFESSION_DISPLAY_NAMES[stable_id]) == display_name:
+			return String(stable_id)
+	return display_name
+
+
+static func _known_profession_count() -> int:
+	return PROFESSION_DISPLAY_NAMES.size()
 
 
 func present_definition(definition_key: StringName,
 		magnitude_q16: int = Q16_ONE) -> PackedStringArray:
+	if String(definition_key).begins_with("ideology."):
+		return present_definition_for_ideology(definition_key, magnitude_q16)
 	var lines := PackedStringArray()
 	if definition_key == &"":
 		return lines

@@ -17,6 +17,11 @@ const IdeologyEffectCatalogScript = preload("res://scripts/ideology/ideology_eff
 ## constant that drifted the last three times this project tried it.
 const IdeologyEffectDefinitionScript = preload(
 	"res://scripts/ideology/ideology_effect_definition.gd")
+const GoodProfileRegistryScript = preload("res://scripts/data/good_profile_registry.gd")
+const ResourceProfileRegistryScript = preload(
+	"res://scripts/data/resource_profile_registry.gd")
+const ResearchSignalCatalogScript = preload(
+	"res://scripts/research/research_signal_catalog.gd")
 
 const PROTOCOL_VERSION := 1
 ## Card effect rows name a program by its BARE key (`v1_granary_belt`); the
@@ -778,16 +783,19 @@ func catalog_view(country_catalog: Dictionary = {},
 			continue
 		var level_thresholds := PackedInt64Array()
 		var level_effect_lines: Array = []
-		for level in definition.levels:
+		for level_index in definition.levels.size():
+			var level = definition.levels[level_index]
 			level_thresholds.append(level.understanding_threshold_q16)
 			level_effect_lines.append(_present_effect_lines(
-				modifier_catalog, level.persistent_effects))
+				modifier_catalog, String(definition.id), level_index,
+				level.persistent_effects, level.on_enter_effects))
 		var level_labels := PackedStringArray()
 		for level_index in definition.levels.size():
 			level_labels.append(LEVEL_LABELS[level_index] if level_index < LEVEL_LABELS.size()
 				else "%d级" % (level_index + 1))
 		var required_technologies := PackedStringArray()
 		var required_technology_names := PackedStringArray()
+		var required_research_signal_names := PackedStringArray()
 		var required_gates := PackedStringArray()
 		for requirement in definition.draw_requirements:
 			if requirement == null:
@@ -795,6 +803,9 @@ func catalog_view(country_catalog: Dictionary = {},
 			if requirement.kind == IdeologyRequirementScript.Kind.TECHNOLOGY:
 				required_technologies.append(String(requirement.key))
 				required_technology_names.append(technology_display_name(String(requirement.key)))
+			elif requirement.kind == IdeologyRequirementScript.Kind.RESEARCH_SIGNAL:
+				required_research_signal_names.append(
+					research_signal_display_name(String(requirement.key)))
 			elif requirement.kind == IdeologyRequirementScript.Kind.GATE:
 				required_gates.append(String(requirement.key))
 		rows.append({"id": String(definition.id), "dense_id": i, "icon_key": String(definition.icon_key),
@@ -813,6 +824,7 @@ func catalog_view(country_catalog: Dictionary = {},
 			"level_labels": level_labels,
 			"required_technologies": required_technologies,
 			"required_technology_names": required_technology_names,
+			"required_research_signal_names": required_research_signal_names,
 			"rarity_weight": definition.rarity_weight, "ideology_slot_cost": definition.ideology_slot_cost,
 			"national_spirit_slot_cost": definition.national_spirit_slot_cost,
 			"acquisition_flags": definition.acquisition_flags,
@@ -850,7 +862,7 @@ func catalog_view(country_catalog: Dictionary = {},
 			member_names.append(_display_name_for_id(
 				String(compiled.ideology_ids[dense])))
 		var effect_lines := _present_effect_lines(
-			modifier_catalog, synergy.persistent_effects)
+			modifier_catalog, "", 0, synergy.persistent_effects)
 		var display := _synergy_display_name(synergy)
 		var effect_text := "、".join(effect_lines) if not effect_lines.is_empty() else "额外国家修正"
 		var route_key := String(synergy.route_tag).strip_edges()
@@ -1043,6 +1055,18 @@ static func technology_display_name(technology_key: String) -> String:
 	return String(_technology_names.get(technology_key, technology_key))
 
 
+static var _research_signal_names: Dictionary = {}
+
+
+static func research_signal_display_name(signal_key: String) -> String:
+	if _research_signal_names.is_empty():
+		for metadata in ResearchSignalCatalogScript.public_metadata():
+			_research_signal_names[String(metadata.get("id", ""))] = String(
+				metadata.get("display_name", metadata.get("id", "")))
+		_research_signal_names[""] = ""
+	return String(_research_signal_names.get(signal_key, signal_key))
+
+
 static var _era_rows_cache: Array = []
 
 
@@ -1118,16 +1142,108 @@ func _synergy_display_name(synergy) -> String:
 	return String(synergy.id)
 
 
-func _present_effect_lines(modifier_catalog, effects: Array[Resource]) -> PackedStringArray:
-	var lines := PackedStringArray()
-	if modifier_catalog != null and modifier_catalog.has_method("present_definition"):
+const CARD_FACE_MAX_LINES := 6
+## Display-only overrides for rows whose managed program summary describes the
+## raw selector instead of the effect the runtime actually applies. Keys are the
+## generator's bare card keys; `idea.` is stripped before lookup.
+const CARD_FACE_PROGRAM_OVERRIDES := {
+	"experimental_method": {
+		0: "周围 2 格内每有 1 个以知识业为主的地块，该地块的工业产出提高 6%；每个目标地块最多累计 3 个满足条件的地块，最高提高 18%；最多影响 32 个目标地块",
+		1: "周围 2 格内每有 1 个以知识业为主的地块，该地块的工业产出提高 9%；每个目标地块最多累计 3 个满足条件的地块，最高提高 27%；最多影响 32 个目标地块",
+		2: "周围 2 格内每有 1 个以知识业为主的地块，该地块的工业产出提高 9%；每个目标地块最多累计 3 个满足条件的地块，最高提高 27%；最多影响 32 个目标地块",
+	},
+	"telegraph": {
+		0: "周围 2 格内每有 1 个以知识业为主的地块，该地块的知识产出提高 6%；每个目标地块最多累计 3 个满足条件的地块，最高提高 18%；最多影响 32 个目标地块",
+		1: "周围 2 格内每有 1 个以知识业为主的地块，该地块的知识产出提高 9%；每个目标地块最多累计 3 个满足条件的地块，最高提高 27%；最多影响 32 个目标地块",
+		2: "周围 3 格内每有 1 个以知识业为主的地块，该地块的知识产出提高 9%；每个目标地块最多累计 3 个满足条件的地块，最高提高 27%；最多影响 32 个目标地块",
+	},
+	"scholar_office": {
+		0: "以知识业为主的地块：知识产出提高 10%",
+		1: "以知识业为主的地块：知识产出提高 15%",
+		2: "以知识业为主的地块：知识产出提高 15%",
+	},
+	"container_port": {
+		0: "周围 2 格内每有 1 个海岸地块，该地块的工业产出提高 10%；每个目标地块最多累计 3 个满足条件的地块，最高提高 30%；最多影响 32 个目标地块",
+		1: "周围 2 格内每有 1 个海岸地块，该地块的工业产出提高 10%；每个目标地块最多累计 3 个满足条件的地块，最高提高 30%；最多影响 32 个目标地块",
+		2: "周围 2 格内每有 1 个海岸地块，该地块的工业产出提高 10%；每个目标地块最多累计 3 个满足条件的地块，最高提高 30%；最多影响 32 个目标地块",
+	},
+	"salt_monopoly": {
+		0: "以采掘业为主的地块：全国每有 1 个采掘业地块，这些目标地块的采掘产出提高 1%；这些目标地块最多累计 15 个满足条件的地块，最高提高 15%",
+		1: "以采掘业为主的地块：全国每有 1 个采掘业地块，这些目标地块的采掘产出提高 1.5%；这些目标地块最多累计 10 个满足条件的地块，最高提高 15%",
+		2: "以采掘业为主的地块：全国每有 1 个采掘业地块，这些目标地块的采掘产出提高 2%；这些目标地块最多累计 7.5 个满足条件的地块，最高提高 15%",
+	},
+	"semiconductor": {
+		0: "当地至少已建成 1 条完整建筑升级链（同一升级系列的各等级建筑均已建成）的地块：全国每有 1 个这样的地块，这些目标地块的半导体产出提高 2%；这些目标地块最多累计 20 个满足条件的地块，最高提高 40%",
+		1: "当地至少已建成 1 条完整建筑升级链（同一升级系列的各等级建筑均已建成）的地块：全国每有 1 个这样的地块，这些目标地块的半导体产出提高 2.5%；这些目标地块最多累计 16 个满足条件的地块，最高提高 40%",
+		2: "当地至少已建成 1 条完整建筑升级链（同一升级系列的各等级建筑均已建成）的地块：全国每有 1 个这样的地块，这些目标地块的半导体产出提高 3%；这些目标地块最多累计 13.3334 个满足条件的地块，最高提高 40%",
+	},
+	"silver_flow": {
+		0: "主产白银的地块：全国每有 1 个这样的地块，这些目标地块的全部产出提高 3%；这些目标地块最多累计 5 个满足条件的地块，最高提高 15%",
+		1: "主产白银的地块：全国每有 1 个这样的地块，这些目标地块的全部产出提高 3%；这些目标地块最多累计 7 个满足条件的地块，最高提高 21%",
+		2: "主产白银的地块：全国每有 1 个这样的地块，这些目标地块的全部产出提高 3%；这些目标地块最多累计 9 个满足条件的地块，最高提高 27%",
+	},
+	"carbon_market": {
+		0: "当地至少有 3 个经济部门的地块：全部产出提高 6%",
+		1: "当地至少有 3 个经济部门的地块：全部产出提高 9%",
+		2: "当地至少有 3 个经济部门的地块：全部产出提高 9%",
+	},
+	"autonomous_logistics": {
+		0: "当地贸易事件至少达到 24 次的地块，其周围 1 格内的地块：全部产出提高 2%；全国交通路线的影响范围由周围 1 格扩大为周围 2 格",
+		1: "当地贸易事件至少达到 24 次的地块，其周围 1 格内的地块：全部产出提高 2%；全国交通路线的影响范围由周围 1 格扩大为周围 2 格",
+		2: "当地贸易事件至少达到 24 次的地块，其周围 1 格内的地块：全部产出提高 2%；全国交通路线的影响范围由周围 1 格扩大为周围 2 格",
+	},
+	"frontier_garrison": {
+		0: "边境地块：农业产出提高 8%，出生率提高 5%",
+		1: "边境地块：农业产出提高 10%，出生率提高 7%",
+		2: "边境或边远地块：农业产出提高 10%，出生率提高 7%",
+	},
+	"fire_keeping": {
+		0: "冻原地块：出生率提高 5%",
+		1: "冻原地块：出生率提高 8%",
+		2: "冻原地块：出生率提高 8%，农业产出提高 8%",
+	},
+	"manufactory_regulation": {
+		"manufactory_regulation_l1": "制造业产出占当地总产出至少 50% 的地块：当地每有 1 座工业建筑，该地块的工业产出提高 2%，最高提高 16%",
+		"manufactory_regulation_l2": "制造业产出占当地总产出至少 50% 的地块：当地每有 1 座工业建筑，该地块的工业产出提高 3%，最高提高 24%",
+		"manufactory_regulation_l3": "制造业产出占当地总产出至少 50% 的地块：当地每有 1 座工业建筑，该地块的工业产出提高 3%，最高提高 30%",
+	},
+	"marriage_alliance": {
+		0: "当地至少有 2 个家族分支的地块：全部产出提高 5%，奢侈品需求提高 10%。此外，周围 1 格内每有 1 个有至少 1 个家族分支的地块，该目标地块的全部产出提高 1%；该目标地块最多累计 6 个满足条件的地块，最高提高 6%",
+		1: "当地至少有 2 个家族分支的地块：全部产出提高 7%，奢侈品需求提高 10%。此外，周围 1 格内每有 1 个有至少 1 个家族分支的地块，该目标地块的全部产出提高 1%；该目标地块最多累计 6 个满足条件的地块，最高提高 6%",
+		2: "当地至少有 3 个家族分支的地块：全部产出提高 7.35%，奢侈品需求提高 10%。此外，周围 1 格内每有 1 个有至少 1 个家族分支的地块，该目标地块的全部产出提高 1%；该目标地块最多累计 6 个满足条件的地块，最高提高 6%",
+	},
+	"family_office": {
+		0: "全国每有 1 个拥有至少 3 个家族分支的家族，研究成本降低 0.5%；最多按 16 个家族计算，最高降低 8%",
+		1: "全国每有 1 个拥有至少 3 个家族分支的家族，研究成本降低 0.5%；最多按 24 个家族计算，最高降低 12%",
+		2: "全国每有 1 个拥有至少 3 个家族分支的家族，研究成本降低 0.5%；最多按 24 个家族计算，最高降低 12%。另有一组独立效果：拥有至少 3 个家族分支且持有建筑的家族，其名下全部建筑产出提高 6%；最多按 32 个家族计算",
+	},
+	"colonial_plantation": {
+		0: "农业产出占当地总产出至少 50%，且单一货物产出占当地全部产出至少 80% 的地块：农业产出提高 20%",
+		1: "农业产出占当地总产出至少 50%，且单一货物产出占当地全部产出至少 80% 的地块：农业产出提高 28%",
+		2: "农业产出占当地总产出至少 50%，且单一货物产出占当地全部产出至少 80% 的地块：农业产出提高 28%",
+	},
+}
+
+
+func _present_effect_lines(modifier_catalog, card_id: String, level_index: int,
+		effects: Array[Resource], on_enter_effects: Array[Resource] = []) -> PackedStringArray:
+	var persistent_lines := PackedStringArray()
+	var on_enter_lines := PackedStringArray()
+	if modifier_catalog != null \
+			and modifier_catalog.has_method("present_definition_for_ideology"):
+		for effect in effects:
+			if effect == null or not effect is EffectCommandScript:
+				continue
+			for line in modifier_catalog.present_definition_for_ideology(
+					effect.definition_key, int(effect.value_q16)):
+				_append_clean_line(persistent_lines, line)
+	elif modifier_catalog != null and modifier_catalog.has_method("present_definition"):
 		for effect in effects:
 			if effect == null or not effect is EffectCommandScript:
 				continue
 			for line in modifier_catalog.present_definition(
 					effect.definition_key, int(effect.value_q16)):
-				if not lines.has(line):
-					lines.append(line)
+				_append_clean_line(persistent_lines, line)
 	# A managed program row names a program, not a Modifier definition, so the
 	# presenter above returns nothing for it. Falling back to the program's own
 	# summary is the only thing standing between a cell-level card and a card
@@ -1135,10 +1251,26 @@ func _present_effect_lines(modifier_catalog, effects: Array[Resource]) -> Packed
 	for effect in effects:
 		if effect == null or not effect is EffectCommandScript:
 			continue
-		var summary := _program_summary(String(effect.definition_key))
-		if not summary.is_empty() and not lines.has(summary):
-			lines.append(summary)
-	return lines
+		var summary := _card_face_program_summary(card_id, level_index,
+			String(effect.definition_key))
+		if not summary.is_empty():
+			_append_clean_line(persistent_lines, summary)
+	for effect in on_enter_effects:
+		if effect == null or not effect is EffectCommandScript:
+			continue
+		var on_enter := _present_on_enter_effect(effect)
+		if not on_enter.is_empty():
+			_append_clean_line(on_enter_lines, on_enter)
+	# Reserve one-shot lines first: a wide persistent row set must never hide
+	# the only reason a player would advance to this level.
+	var lines := PackedStringArray()
+	var persistent_budget := maxi(0, CARD_FACE_MAX_LINES - on_enter_lines.size())
+	for index in mini(persistent_lines.size(), persistent_budget):
+		lines.append(persistent_lines[index])
+	for line in on_enter_lines:
+		if not lines.has(line):
+			lines.append(line)
+	return PackedStringArray(lines.slice(0, CARD_FACE_MAX_LINES))
 
 
 ## Player-facing summary of the managed program named by `definition_key`.
@@ -1149,6 +1281,8 @@ func _program_summary(definition_key: String) -> String:
 	if definition_key.is_empty():
 		return ""
 	var catalog: Resource = effect_programs
+	if catalog == null:
+		catalog = IdeologyEffectCatalogScript.load_default()
 	if catalog == null:
 		return ""
 	var rows: Variant = catalog.get("effects")
@@ -1164,3 +1298,537 @@ func _program_summary(definition_key: String) -> String:
 			return ""
 		return String(summary).strip_edges()
 	return ""
+
+
+func _card_face_program_summary(card_id: String, level_index: int,
+		definition_key: String) -> String:
+	# Catalog rows carry the stable `idea.` prefix, while the display-only table
+	# is keyed by the generator's bare card key.
+	var normalized_card_id := card_id.trim_prefix("idea.")
+	var by_level: Variant = CARD_FACE_PROGRAM_OVERRIDES.get(normalized_card_id)
+	if by_level is Dictionary:
+		var program_override: Dictionary = by_level
+		var keyed_override: Variant = program_override.get(definition_key)
+		if keyed_override != null and String(keyed_override).strip_edges() != "":
+			return String(keyed_override)
+		var level_override: Variant = program_override.get(level_index)
+		if level_override != null and String(level_override).strip_edges() != "":
+			return String(level_override)
+	return _program_summary(definition_key)
+
+
+func _present_on_enter_effect(effect: Resource) -> String:
+	if effect == null or not effect is EffectCommandScript:
+		return ""
+	# The only authored one-shot today is the native free-draw adapter. Keep the
+	# mapping explicit so a future on-enter write cannot silently acquire a
+	# player-facing promise the runtime does not implement.
+	if effect.action == 6 and effect.domain == 6 and effect.opcode == 3:
+		var count := int(effect.value_q16)
+		if count == 1:
+			return "首次达到化育等级时：免费获得 1 次理念抽取。该奖励只能领取一次。"
+		if count > 1:
+			return "首次达到化育等级时：免费获得 %d 次理念抽取。该奖励只能领取一次。" % count
+	return ""
+
+
+func _append_clean_line(lines: PackedStringArray, raw_line: Variant) -> void:
+	var line := _clean_card_face_text(String(raw_line))
+	if not line.is_empty() and not lines.has(line):
+		lines.append(line)
+
+
+func _clean_card_face_text(raw: String) -> String:
+	var text := raw.strip_edges()
+	if text.is_empty():
+		return ""
+	# Normalize ASCII comparisons before phrase rules so every summary uses the
+	# same "至少"/"至多" path and no spaces are stranded after symbols.
+	text = text.replace(">=", "≥").replace("<=", "≤")
+	text = _replace_unemployment_text(text)
+	text = text.replace("（最多 32 格）", "")
+	text = text.replace("最多 32 格", "最多 32 个地块")
+	text = text.replace(" 产出 提高", "产出提高")
+	text = text.replace(" 产出 降低", "产出降低")
+	text = _replace_source_count_text(text)
+	text = text.replace("最多计算", "最多计入")
+	text = _replace_chain_text(text)
+	text = _replace_profession_text(text)
+	text = _replace_tax_burden_text(text)
+	text = _replace_reserve_ratio_text(text)
+	text = _replace_policy_floor_text(text)
+	text = _replace_domain_terms_text(text)
+	text = text.replace("农业提高", "农业产出提高")
+	text = text.replace("工业降低", "工业产出降低")
+	text = text.replace("≥", "至少 ").replace("≤", "至多 ")
+	text = text.replace("R1", "周围 1 格").replace("R2", "周围 2 格")
+	text = text.replace("职业 至少 ", "职业至少 ")
+	text = text.replace("占比 至少 ", "占比至少 ")
+	text = text.replace("民意 至少 ", "民意至少 ")
+	text = text.replace("人口 至少 ", "人口至少 ").replace("人口 至多 ", "人口至多 ")
+	text = text.replace("  ", " ")
+	text = text.replace("产出 提高", "产出提高").replace("产出 降低", "产出降低")
+	text = _replace_multiplier_text(text)
+	text = _replace_ceiling_text(text)
+	text = _replace_signed_percent_text(text)
+	text = _replace_percent_spacing(text)
+	text = _replace_known_resource_ids(text)
+	text = text.replace("建造成本", "建设成本")
+	text = text.replace("边地农业地块：农业提高", "边地农业地块：农业产出提高")
+	text = text.replace("、成本", "，成本")
+	text = text.replace("、且", "，且")
+	text = _normalize_card_face_punctuation(text)
+	text = text.replace("符合条件 的地块", "符合条件的地块")
+	# Two selectively conditioned phrases are expanded after the broad
+	# production wording pass. Apply the narrow fixes at the end so their new
+	# suffixes cannot bypass the earlier rules.
+	text = text.replace("：工业降低 5%", "：工业产出降低 5%")
+	text = text.replace("降水充足时农业提高", "降水充足时农业产出提高")
+	text = text.replace("  ", " ")
+	text = text.replace("+0%", "").replace("-0%", "")
+	text = _collapse_colons(text)
+	text = text.replace(" ：", "：").replace("： ", "：")
+	return text.strip_edges().trim_suffix("，").trim_suffix("：")
+
+
+func _replace_multiplier_text(text: String) -> String:
+	var regex := RegEx.new()
+	if regex.compile("×\\s*([0-9]+(?:\\.[0-9]+)?)") != OK:
+		return text
+	for found in regex.search_all(text):
+		var multiplier := float(found.get_string(1))
+		var percent := int(round((multiplier - 1.0) * 100.0))
+		text = text.replace(found.get_string(0), "提高 %d%%" % percent)
+	return text
+
+
+func _replace_ceiling_text(text: String) -> String:
+	var regex := RegEx.new()
+	if regex.compile("上限\\s*([+-])\\s*([0-9]+(?:\\.[0-9]+)?)%") != OK:
+		return text
+	for found in regex.search_all(text):
+		var direction := "提高" if found.get_string(1) == "+" else "降低"
+		var replacement := "最多%s %s%%" % [direction, found.get_string(2)]
+		text = text.replace(found.get_string(0), replacement)
+	return text
+
+
+func _replace_source_count_text(text: String) -> String:
+	# Source-count programs scale by the number of qualifying cells in range.
+	# Rewrite the authored shorthand as a complete rule instead of exposing
+	# "源", "每源" or an assignment such as "3 源 = +9%".
+	var result := text
+	# X1-b authors the source selector between the source description and the
+	# target effect. Parse that whole row first: the generic per-source rules
+	# below cannot know the source predicate, radius, source cap, or target cap.
+	var source_row := RegEx.new()
+	if source_row.compile(
+			"^(.+?)周围\\s*([0-9]+)\\s*格\\s*[（(]每源\\s*\\+?\\s*([0-9]+(?:\\.[0-9]+)?)%[，,]\\s*最多\\s*([0-9]+)\\s*源(?:\\s*=\\s*\\+?\\s*([0-9]+(?:\\.[0-9]+)?)%)?[）)]\\s*[：:]\\s*(.+?)产出\\s*([+\\-])\\s*([0-9]+(?:\\.[0-9]+)?)%$"
+			) == OK:
+		for found in source_row.search_all(result):
+			var source_subject := found.get_string(1).strip_edges()
+			var radius := found.get_string(2)
+			var per_source := found.get_string(3)
+			var source_cap := found.get_string(4)
+			var ceiling := found.get_string(5)
+			var target_label := found.get_string(6).strip_edges()
+			var direction := "提高" if found.get_string(7) == "+" else "降低"
+			var sentence := "周围 %s 格内每有 1 个%s，该地块的%s产出%s %s%%" % [
+				radius, source_subject, target_label, direction,
+				per_source]
+			if not ceiling.is_empty():
+				sentence += "；每个目标地块最多累计 %s 个满足条件的地块，最高提高 %s%%" % [
+					source_cap, ceiling]
+			else:
+				var full_percent := float(per_source) * float(source_cap)
+				sentence += "；每个目标地块最多累计 %s 个满足条件的地块，最高提高 %s%%" % [
+					source_cap, _format_card_face_number(full_percent)]
+			sentence += "；最多影响 32 个目标地块"
+			result = result.replace(found.get_string(0), sentence)
+	var source_row_without_assignment := RegEx.new()
+	if source_row_without_assignment.compile(
+			"^(.+?)周围\\s*([0-9]+)\\s*格\\s*[（(]每源\\s*\\+?\\s*([0-9]+(?:\\.[0-9]+)?)%[，,]\\s*最多\\s*([0-9]+)\\s*源[）)]\\s*[：:]\\s*(.+?)产出\\s*([+\\-])\\s*([0-9]+(?:\\.[0-9]+)?)%$"
+			) == OK:
+		for found in source_row_without_assignment.search_all(result):
+			var direction := "提高" if found.get_string(6) == "+" else "降低"
+			result = result.replace(found.get_string(0),
+				"周围 %s 格内每有 1 个%s，该地块的%s产出%s %s%%；每个目标地块最多累计 %s 个满足条件的地块；最多影响 32 个目标地块" % [
+					found.get_string(2), found.get_string(1).strip_edges(),
+					found.get_string(5).strip_edges(), direction, found.get_string(3),
+					found.get_string(4)])
+	result = result.replace("每源", "每个来源")
+	var target_ramp := RegEx.new()
+	if target_ramp.compile(
+			"^(.+?)周围\\s*([0-9]+)\\s*格\\s*（每有 1 个符合条件的地块提高\\s*([0-9]+(?:\\.[0-9]+)?)%，最多计算\\s*([0-9]+)\\s*个地块）\\s*：\\s*(.+?)(提高|降低)\\s*([0-9]+(?:\\.[0-9]+)?)%$"
+			) == OK:
+		for found in target_ramp.search_all(result):
+			result = result.replace(found.get_string(0),
+				"周围 %s 格内每有 1 个%s，该地块的%s%s %s%%；每个目标地块最多累计 %s 个满足条件的地块，最高%s %s%%；最多影响 32 个目标地块" % [
+					found.get_string(2), found.get_string(1), found.get_string(5),
+					found.get_string(6), found.get_string(3), found.get_string(4),
+					found.get_string(6), found.get_string(7)])
+	# `每源 +X%，最多 N 源 = +Y%` is authored arithmetic. Preserve the cap and
+	# final ceiling, but express them as a complete player-facing rule.
+	var source_assignment := RegEx.new()
+	if source_assignment.compile(
+			"每个来源\\s*(?:提高\\s*)?\\+?\\s*([0-9]+(?:\\.[0-9]+)?)%\\s*[，,]?\\s*最多\\s*([0-9]+)\\s*(?:个来源|源)(?:\\s*=\\s*\\+?([0-9]+(?:\\.[0-9]+)?)%)?"
+			) == OK:
+		for found in source_assignment.search_all(result):
+			result = result.replace(found.get_string(0),
+				"每有 1 个符合条件的地块提高 %s%%，最多计入 %s 个地块" % [
+					found.get_string(1), found.get_string(2)])
+	var shorthand := RegEx.new()
+	if shorthand.compile(
+			"每个来源\\s*提高\\s*([0-9]+(?:\\.[0-9]+)?)%\\s*[，,]\\s*最多\\s*([0-9]+)\\s*(?:个来源|源)(?:\\s*[，,]?\\s*使效果达到\\s*([0-9]+(?:\\.[0-9]+)?)%)?"
+			) == OK:
+		for found in shorthand.search_all(result):
+			var replacement := "每有 1 个符合条件的地块提高 %s%%，最多计入 %s 个地块" % [
+				found.get_string(1), found.get_string(2)]
+			result = result.replace(found.get_string(0), replacement)
+	var plain_cap := RegEx.new()
+	if plain_cap.compile(
+			"每个来源\\s*提高\\s*([0-9]+(?:\\.[0-9]+)?)%\\s*[，,]\\s*最多\\s*([0-9]+)\\s*(?:个来源|源)"
+			) == OK:
+		for found in plain_cap.search_all(result):
+			result = result.replace(found.get_string(0),
+				"每有 1 个符合条件的地块提高 %s%%，最多计入 %s 个地块" % [
+					found.get_string(1), found.get_string(2)])
+	var assignment := RegEx.new()
+	if assignment.compile(
+			"每个来源\\s*提高\\s*([0-9]+(?:\\.[0-9]+)?)%\\s*[，,]\\s*最多\\s*([0-9]+)\\s*(?:个来源|源)\\s*=\\s*\\+?([0-9]+(?:\\.[0-9]+)?)%"
+			) == OK:
+		for found in assignment.search_all(result):
+			result = result.replace(found.get_string(0),
+				"每有 1 个符合条件的地块提高 %s%%，最多计入 %s 个地块" % [
+					found.get_string(1), found.get_string(2)])
+	var bare_source := RegEx.new()
+	if bare_source.compile(
+			"每个来源\\s*提高\\s*([0-9]+(?:\\.[0-9]+)?)%\\s*[，,]\\s*最多\\s*([0-9]+)\\s*源"
+			) == OK:
+		for found in bare_source.search_all(result):
+			result = result.replace(found.get_string(0),
+				"每有 1 个符合条件的地块提高 %s%%，最多计入 %s 个地块" % [
+					found.get_string(1), found.get_string(2)])
+	var remaining_source := RegEx.new()
+	if remaining_source.compile("最多\\s*([0-9]+)\\s*源") == OK:
+		for found in remaining_source.search_all(result):
+			result = result.replace(found.get_string(0),
+				"最多计入 %s 个地块" % found.get_string(1))
+	result = result.replace("每个来源", "每有 1 个符合条件的地块")
+	result = result.replace(" =提高", "")
+	result = result.replace(" = 提高", "")
+	return result
+
+
+func _format_card_face_number(value: float) -> String:
+	var text := "%.4f" % value
+	while text.ends_with("0"):
+		text = text.left(text.length() - 1)
+	if text.ends_with("."):
+		text = text.left(text.length() - 1)
+	return text
+
+
+func _replace_target_effect_text(text: String) -> String:
+	var result := text.strip_edges()
+	result = result.replace("全部产出", "全部产出").replace("农业产出", "农业产出") \
+		.replace("工业产出", "工业产出").replace("知识产出", "知识产出") \
+		.replace("能源产出", "能源产出").replace("采掘产出", "采掘产出")
+	var effect := RegEx.new()
+	if effect.compile("^(.+?)\\s*([+\\-])\\s*([0-9]+(?:\\.[0-9]+)?)%$") != OK:
+		return result
+	var found := effect.search(result)
+	if found == null:
+		return result
+	var direction := "提高" if found.get_string(2) == "+" else "降低"
+	return "%s%s %s%%" % [found.get_string(1), direction, found.get_string(3)]
+
+
+func _replace_unemployment_text(text: String) -> String:
+	text = text.replace("（最多 32 格）", "")
+	# Authored rows still spell the sector subject before the selector. Normalize
+	# this compact form independently of the later pillar-cell wording pass.
+	text = text.replace("工业支柱地块（最多 32 格）：", "以工业为主的地块：")
+	text = text.replace("农业支柱地块（最多 32 格）：", "以农业为主的地块：")
+	text = text.replace("知识支柱地块（最多 32 格）：", "以知识业为主的地块：")
+	text = text.replace("能源支柱地块（最多 32 格）：", "以能源业为主的地块：")
+	text = text.replace("矿业支柱地块（最多 32 格）：", "以矿业为主的地块：")
+	text = text.replace("采掘业支柱地块（最多 32 格）：", "以采掘业为主的地块：")
+	text = text.replace("失业率每点工业 +", "失业率每提高 1 个百分点，工业产出 +")
+	text = text.replace("失业率每点知识 +", "失业率每提高 1 个百分点，知识产出 +")
+	text = text.replace("失业率每点全部产出 +", "失业率每提高 1 个百分点，全部产出 +")
+	text = text.replace("失业率每点工业提高", "失业率每提高 1 个百分点，工业产出提高")
+	text = text.replace("失业率每点知识提高", "失业率每提高 1 个百分点，知识产出提高")
+	text = text.replace("失业率每点全部产出提高", "失业率每提高 1 个百分点，全部产出提高")
+	return text
+
+
+func _replace_chain_text(text: String) -> String:
+	var result := text
+	var chain_label := "至少已建成 1 条完整建筑升级链（同一升级系列的各等级建筑均已建成）的地块"
+	# Rewrite the authored shape before the generic `成链地块` substitution.
+	# The source may carry ASCII signed percentages (`+2%`).
+	var chained_ramp := RegEx.new()
+	if chained_ramp.compile(
+			"每个成链地块使成链地块的(.+?)产出\\s*([+\\-])\\s*([0-9]+(?:\\.[0-9]+)?)%\\s*[（(]\\s*(?:上限|最多)\\s*\\+?([0-9]+(?:\\.[0-9]+)?)%\\s*[）)]"
+			) == OK:
+		for found in chained_ramp.search_all(result):
+			var direction := "提高" if found.get_string(2) == "+" else "降低"
+			result = result.replace(found.get_string(0),
+				"当地%s：全国每有 1 个这样的地块，这些目标地块的%s产出%s %s%%；最高%s %s%%" % [
+					chain_label, found.get_string(1), direction,
+					found.get_string(3), direction, found.get_string(4)])
+	var chain_count := RegEx.new()
+	if chain_count.compile(
+			"成链\\s*(?:≥|>=|至少)?\\s*([0-9]+)\\s*的地块"
+			) == OK:
+		for found in chain_count.search_all(result):
+			result = result.replace(found.get_string(0),
+				"当地%s的地块" % chain_label)
+	result = result.replace("成链地块", "当地%s的地块" % chain_label)
+	return result
+
+
+func _replace_profession_text(text: String) -> String:
+	var result := text
+	# These summaries are generated from cell metrics, so "占比" is a share of
+	# the local workforce rather than a national or sector share.
+	var profession_count := RegEx.new()
+	if profession_count.compile("职业\\s*≥\\s*([0-9]+)\\s*种") == OK:
+		for found in profession_count.search_all(result):
+			result = result.replace(found.get_string(0),
+				"劳动力至少包含 %s 种职业" % found.get_string(1))
+	var sole_share := RegEx.new()
+	if sole_share.compile("单一职业占比\\s*≥\\s*([0-9]+(?:\\.[0-9]+)?)%") == OK:
+		for found in sole_share.search_all(result):
+			result = result.replace(found.get_string(0),
+				"单一职业占劳动力至少 %s%%" % found.get_string(1))
+	var industrial_share := RegEx.new()
+	if industrial_share.compile(
+			"工业职业占比\\s*≥\\s*([0-9]+(?:\\.[0-9]+)?)%"
+			) == OK:
+		for found in industrial_share.search_all(result):
+			result = result.replace(found.get_string(0),
+				"工业职业占劳动力至少 %s%%" % found.get_string(1))
+	var cooperative_share := RegEx.new()
+	if cooperative_share.compile(
+			"合作社职业占比\\s*≥\\s*([0-9]+(?:\\.[0-9]+)?)%"
+			) == OK:
+		for found in cooperative_share.search_all(result):
+			result = result.replace(found.get_string(0),
+				"合作社职业占劳动力至少 %s%%" % found.get_string(1))
+	var worker_opinion := RegEx.new()
+	if worker_opinion.compile(
+			"工人阶层民意\\s*(<|≥)\\s*([0-9]+(?:\\.[0-9]+)?)"
+			) == OK:
+		for found in worker_opinion.search_all(result):
+			var ratio := float(found.get_string(2))
+			var percent := int(round(ratio * 100.0))
+			var replacement := "工人阶层支持度低于 %d%%" % percent
+			if found.get_string(1) == "≥":
+				replacement = "工人阶层支持度不低于 %d%%" % percent
+			result = result.replace(found.get_string(0), replacement)
+	return result
+
+
+func _replace_tax_burden_text(text: String) -> String:
+	var result := text
+	var at_most := RegEx.new()
+	if at_most.compile(
+			"实测净税负\\s*(?:至多|<=|≤)\\s*([0-9]+(?:\\.[0-9]+)?)%"
+			) == OK:
+		for found in at_most.search_all(result):
+			result = result.replace(found.get_string(0),
+				"实际净纳税额不超过税前收入的 %s%%" % found.get_string(1))
+	var zero := RegEx.new()
+	if zero.compile("实测净税负\\s*=\\s*0") == OK:
+		for found in zero.search_all(result):
+			result = result.replace(found.get_string(0), "实际净纳税额为 0")
+	return result
+
+
+func _replace_reserve_ratio_text(text: String) -> String:
+	# `country.treasury_reserve_ratio_pct` is measured in percentage points.
+	# Ramp.per is the effect fraction per one such point: per=0.01 => 1% per
+	# point, while `excise` authors per=0.005 => 0.5% per point. Preserve that
+	# authored rate and ceiling exactly.
+	var result := text
+	# Older summaries used "每档"; treat that word as one percentage point only
+	# after normalizing it to the explicit reserve ratio metric.
+	result = result.replace("国库储备率每档", "国库储备率每 1 档")
+	var reserve := RegEx.new()
+	if reserve.compile(
+			"国库储备率每\\s*([0-9]+(?:\\.[0-9]+)?)\\s*档\\s*([^0-9+\\-（(]+?)\\s*([+\\-])\\s*([0-9]+(?:\\.[0-9]+)?)%\\s*[（(]\\s*(?:上限|最多)\\s*([+\\-])\\s*([0-9]+(?:\\.[0-9]+)?)%\\s*[）)]"
+			) != OK:
+		return result
+	for found in reserve.search_all(result):
+		var band := found.get_string(1)
+		var label := found.get_string(2).strip_edges()
+		var per_direction := "提高" if found.get_string(3) == "+" else "降低"
+		var cap_direction := "提高" if found.get_string(5) == "+" else "降低"
+		var replacement := "按“国库现金 ÷ 全国人口一年收入总额”计算，该比例每提高 %s 个百分点，%s%s %s%%（最多%s %s%%）" % [
+			band, label, per_direction, found.get_string(4),
+			cap_direction, found.get_string(6)]
+		result = result.replace(found.get_string(0), replacement)
+	var band_word := RegEx.new()
+	if band_word.compile(
+			"国库储备率每\\s*([0-9]+(?:\\.[0-9]+)?)\\s*档\\s*([^0-9+\\-（(]+?)\\s*([+\\-])\\s*([0-9]+(?:\\.[0-9]+)?)%"
+			) == OK:
+		for found in band_word.search_all(result):
+			var replacement := "按“国库现金 ÷ 全国人口一年收入总额”计算，该比例每提高 %s 个百分点，%s%s %s%%" % [
+				found.get_string(1), found.get_string(2).strip_edges(),
+				"提高" if found.get_string(3) == "+" else "降低",
+				found.get_string(4)]
+			result = result.replace(found.get_string(0), replacement)
+	return result
+
+
+func _replace_policy_floor_text(text: String) -> String:
+	text = text.replace("民意对理念点获取的加成保底降低 10%",
+		"理念点获取的民意加成下限降低 10 个百分点")
+	var regex := RegEx.new()
+	if regex.compile(
+			"民意系数下限\\s*降低\\s*([0-9]+(?:\\.[0-9]+)?)%"
+			) != OK:
+		return text
+	for found in regex.search_all(text):
+		text = text.replace(found.get_string(0),
+			"理念点获取的民意加成下限降低 %s 个百分点" % found.get_string(1))
+	return text
+
+
+func _replace_domain_terms_text(text: String) -> String:
+	text = text.replace("农业提高", "农业产出提高")
+	text = text.replace("工业降低", "工业产出降低")
+	text = text.replace("知识占比 至少 ", "以知识业为主且知识业占比至少 ")
+	text = text.replace("知识占比至少", "以知识业为主且知识业占比至少")
+	text = text.replace("知识占比 ≥", "知识业占比至少 ")
+	text = text.replace("知识占比≥", "知识业占比至少 ")
+	text = text.replace("非多元的工业支柱地块", "经济部门少于 3 个的工业支柱地块")
+	text = text.replace("专精的粮作地块",
+		"主导产出为小麦、稻米、玉米、马铃薯或谷物，且单一货物产出占当地全部产出至少 60% 的地块")
+	text = text.replace("高度专精的农业支柱地块",
+		"农业产出占当地总产出至少 50%，且单一货物产出占当地全部产出至少 80% 的地块")
+	text = text.replace("高度专精地块",
+		"单一货物产出占当地全部产出至少 80% 的地块")
+	text = text.replace("多元地块", "当地至少有 3 个经济部门有产出的地块")
+	text = text.replace("非多元地块", "当地至多有 2 个经济部门有产出的地块")
+	text = text.replace("大邑地块", "人口至少 1200 的地块")
+	text = text.replace("大邑周围", "人口至少 1200 的地块周围")
+	text = text.replace("暑地繁市周围",
+		"当地贸易事件至少达到 24 次的炎热地区地块周围")
+	text = text.replace("寒地繁市周围",
+		"当地贸易事件至少达到 24 次的寒冷地区地块周围")
+	text = text.replace("繁市地块", "当地贸易事件至少达到 24 次的地块")
+	text = text.replace("贸易繁荣的城市", "当地贸易事件至少达到 24 次的地块")
+	text = text.replace("贸易繁荣的地块", "当地贸易事件至少达到 24 次的地块")
+	text = text.replace("通衢路线", "交通路线")
+	text = text.replace("名门地块", "显赫家族所在地块")
+	text = text.replace("聚落地块", "人口至少 400 的地块")
+	text = text.replace("工业支柱地块", "以工业为主的地块")
+	text = text.replace("农业支柱地块", "以农业为主的地块")
+	text = text.replace("知识支柱地块", "以知识业为主的地块")
+	text = text.replace("能源支柱地块", "以能源业为主的地块")
+	text = text.replace("矿业支柱地块", "以矿业为主的地块")
+	text = text.replace("采掘业支柱地块", "以采掘业为主的地块")
+	text = text.replace("有人居住的地块", "人口至少 400 的地块")
+	text = text.replace("富饶的", "资源丰度至少 80% 的")
+	text = text.replace("资源再生", "各类自然资源恢复速度")
+	text = text.replace("管护再生", "自然恢复速度")
+	text = text.replace("时农业提高", "时农业产出提高")
+	text = text.replace("：工业降低", "：工业产出降低")
+	text = text.replace("农业提高", "农业产出提高")
+	text = text.replace("工业降低", "工业产出降低")
+	text = text.replace("国库现金每相当于", "国库现金每增加相当于")
+	text = text.replace("的地块的地块", "的地块")
+	return text
+
+
+func _replace_signed_percent_text(text: String) -> String:
+	text = text.replace("+0%", "").replace("-0%", "")
+	var regex := RegEx.new()
+	if regex.compile("([^+\\-])\\s*([+\\-])\\s*([0-9]+(?:\\.[0-9]+)?)%") != OK:
+		return text
+	for found in regex.search_all(text):
+		var percent := float(found.get_string(3))
+		if is_zero_approx(percent):
+			text = text.replace(found.get_string(0), found.get_string(1))
+			continue
+		var direction := "提高" if found.get_string(2) == "+" else "降低"
+		var replacement := "%s%s %s%%" % [found.get_string(1), direction,
+			found.get_string(3)]
+		text = text.replace(found.get_string(0), replacement)
+	return text
+
+
+func _replace_percent_spacing(text: String) -> String:
+	var regex := RegEx.new()
+	if regex.compile("([0-9])%\\s+([\\x{4e00}-\\x{9fff}])") != OK:
+		return text
+	for found in regex.search_all(text):
+		text = text.replace(found.get_string(0),
+			"%s%%%s" % [found.get_string(1), found.get_string(2)])
+	return text
+
+
+func _replace_known_resource_ids(text: String) -> String:
+	# Ideology card views are sometimes built before EconomyFacade has registered
+	# display names. Resolve the authoritative profile catalogs first; the small
+	# table below is only a bootstrap fallback and for climate-profile IDs that
+	# are not part of either registry.
+	const CLIMATE_DISPLAY_NAMES := {
+		"dryland_crop": "旱作作物",
+		"paddy_crop": "水田作物",
+	}
+	var regex := RegEx.new()
+	if regex.compile("(?<![a-z0-9_])([a-z][a-z0-9_]*)(?![a-z0-9_])") != OK:
+		return text
+	# Replace from the end so each match offset remains valid.
+	var matches := regex.search_all(text)
+	for index in range(matches.size() - 1, -1, -1):
+		var found := matches[index]
+		var stable_id := found.get_string(1)
+		var display_name := _resource_display_name(stable_id, CLIMATE_DISPLAY_NAMES)
+		if display_name.is_empty() or display_name == stable_id:
+			continue
+		text = text.substr(0, found.get_start()) + display_name \
+			+ text.substr(found.get_end())
+	return text
+
+
+func _resource_display_name(stable_id: String,
+		climate_display_names: Dictionary) -> String:
+	if climate_display_names.has(stable_id):
+		return String(climate_display_names[stable_id])
+	var good: Resource = GoodProfileRegistryScript.profile_by_id(stable_id)
+	if good != null:
+		var good_name := String(good.get("display_name")).strip_edges()
+		if not good_name.is_empty():
+			return good_name
+	for resource_value in ResourceProfileRegistryScript.ordered():
+		var resource: Resource = resource_value
+		if resource == null or String(resource.get("id")) != stable_id:
+			continue
+		var resource_name := String(resource.get("display_name")).strip_edges()
+		if not resource_name.is_empty():
+			return resource_name
+	return ""
+
+
+func _normalize_card_face_punctuation(text: String) -> String:
+	# Keep one stable style across migrated and legacy rows. This deliberately
+	# touches only spacing around the player-facing labels, not the stat values.
+	text = text.replace(" 耗用", "耗用").replace(" 管护再生", "管护再生")
+	text = text.replace(" 全国产出", "全国产出").replace(" 城市产出", "城市产出")
+	text = text.replace(" 产出", "产出").replace(" 提升", "提升")
+	text = text.replace("产出 提高", "产出提高").replace("产出 降低", "产出降低")
+	text = text.replace("人口 至多", "人口至多").replace("人口 至少", "人口至少")
+	text = text.replace("%的地块", "% 的地块")
+	return text.strip_edges()
+
+
+func _collapse_colons(text: String) -> String:
+	var out := text
+	while out.contains("：："):
+		out = out.replace("：：", "：")
+	return out

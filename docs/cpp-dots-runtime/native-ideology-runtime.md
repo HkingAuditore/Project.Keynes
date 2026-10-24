@@ -217,16 +217,24 @@ writes `data/ideologies/default_ideology_catalog.tres`,
 - Cell-level commands name `ideology.city.*` (gain) or `ideology.city.*.cut`
   (penalty) definitions: `domain=2`, `stack_policy=1`, ADD/SUBTRACT with
   `value=1.0`, so the command magnitude *is* the effect.
-- Card-face text for a program row comes from `IdeologyEffectDefinition.summary`
-  (`_present_effect_lines` falls back to it when no Modifier definition matches).
-- 12 of the 85 cards are program cards; the rest are still national Modifier
-  rows. Neighbourhood selectors remain anchor-only (X1 not done).
-
-- 30 cards, 6 schools × 5: 农本 (agrarian), 商贸 (commerce), 学识 (learning),
-  动员 (mobilization), 工造 (industry), 调和 (harmony). Every card has its own
-  UniqueSource Country definition `ideology.<key>` built from existing country
-  stats; some cards carry a cost term (consumption, construction cost, resource
-  use).
+- Card-face text for a program row starts from
+  `IdeologyEffectDefinition.summary`; `IdeologyCatalog` may replace a misleading
+  selector-oriented summary with a display-only plain-language override. These
+  overrides do not change the program, targets, or values.
+- The authored roster contains 134 cards. The temporary content gate currently
+  publishes 113 cards, and every published card exposes three levels, for 339
+  card-level faces. The roster still spans six schools: 农本 (agrarian), 商贸
+  (commerce), 学识 (learning), 动员 (mobilization), 工造 (industry), and 调和
+  (harmony); "6 schools × 5" describes the original authoring shape, not the
+  current pool.
+- The 21 mechanically incomplete cards remain withheld from the pool: 小冰期,
+  空调, 开渠, 大运河, 灌溉网, 贝丘, 合作社, 工业实验室, 包税, 地租论, 轻徭薄赋,
+  累进税, 宗祠, 族田, 慈善, 商号, 家族企业, 登闻鼓, 免税特区, 天命 and
+  主权基金. Four cards that needed card-face fixes rather than mechanics remain
+  published: 摊丁入亩, 消费税制, 乡绅, and 劳动立法.
+- Each card uses its UniqueSource Country definition `ideology.<key>` or an
+  authored managed Effect program; some cards carry a cost term (consumption,
+  construction cost, or resource use).
 - Rarity common/rare/legendary with draw weights 120/60/20. Legendary and some
   rare cards require an era technology. Exclusion groups: `economic_order`,
   `labor_order`, `land_order`.
@@ -241,6 +249,39 @@ writes `data/ideologies/default_ideology_catalog.tres`,
   Industrial era technologies (max 6) and spirit slots at Imperial and Electric
   (max 3). Capacity is cached per country from Country technology facts and is
   rebuilt after restore.
+
+### Card-face presentation contract
+
+`IdeologyCatalog.catalog_view()` is the single display projection for offer,
+slot, and collection cards. It emits `level_effect_lines` for every level of
+every published card and includes one-shot `on_enter_effects` alongside
+persistent effects, so a free draw or other equip-time consequence cannot be
+omitted from the card. Each level is capped at six non-empty lines; duplicate
+lines are removed before that cap is applied.
+
+Card faces are player-facing text, not a dump of catalog identifiers or
+machine grammar:
+
+- Goods and natural resources resolve their names from
+  `GoodProfileRegistry` and `ResourceProfileRegistry`. Climate production
+  profiles use explicit display names (`dryland_crop` -> 旱作作物,
+  `paddy_crop` -> 水田作物). A raw stable ID must not reach a card face.
+- `ModifierCatalog.present_definition_for_ideology()` uses the plain-language
+  presenter, merges repeated profession rows, and expresses satisfaction,
+  tax-rate, and tax-tolerance changes in player units rather than basis points
+  or raw Q16 values.
+- Internal concepts such as `Ramp`, selector metrics, "每档", "实测净税负",
+  "职业占比", raw class-opinion ratios, and `R1` / `R2` do not appear. The
+  presenter states the actual percentage-point interpretation, support
+  percentage, source limit, chain requirement, or reserve threshold directly.
+- Program rows fall back to their authored summary when no Modifier definition
+  matches. `CARD_FACE_PROGRAM_OVERRIDES` is display-only and exists solely when
+  that summary does not describe the effect the runtime actually applies.
+
+`Project/project-keynes/tools/ideology/export_card_faces.gd` renders all
+published levels into `Project/project-keynes/docs/ideology-card-faces.md` for
+review. The export reads `catalog_view()` and never writes the generated
+catalogs or changes balance.
 
 ## Points, offers and reroll
 
@@ -283,16 +324,16 @@ the clock and reports `ideology_draw_timeout`. The draw state is saved in
 as pending.
 
 `共同体治理` and `自由交换` remain exclusive via `economic_order`.
-`IdeologyCatalog.catalog_view()` joins those modifier terms into
-player-facing `level_effect_lines`; the ideology panel must show them on
-three-card offers, slot rows and collection cards. The panel is a two-column
-board: the left column lists one compact row per equipped idea plus a single
-collapsed drop row for the remaining capacity, with the next technology
-milestone as a caption instead of an empty alcove; the right column scrolls the
-owned collection beside it. A three-card offer opens in a centred tray over a
-scrim and is selected with one left click. Changing authored ideology
-modifier keys or term values changes the Modifier and Effect catalog
-hashes; existing PKCM/PKEF saves fail closed.
+`IdeologyCatalog.catalog_view()` joins modifier terms and one-shot effects into
+player-facing `level_effect_lines` under the card-face presentation contract
+above; the ideology panel must show them on three-card offers, slot rows and
+collection cards. The panel is a two-column board: the left column lists one
+compact row per equipped idea plus a single collapsed drop row for the
+remaining capacity, with the next technology milestone as a caption instead of
+an empty alcove; the right column scrolls the owned collection beside it. A
+three-card offer opens in a centred tray over a scrim and is selected with one
+left click. Changing authored ideology modifier keys or term values changes the
+Modifier and Effect catalog hashes; existing PKCM/PKEF saves fail closed.
 
 ## Save and restore
 
@@ -338,9 +379,11 @@ Run `tests/ideology_runtime_test.gd`,
 `tests/ideology_runtime_stress_test.gd`, and
 `tests/ideology_content_test.gd`, `tests/ideology_progression_test.gd`, `tests/ideology_draw_flow_test.gd`, and
 `tests/player_country_ui_smoke_test.gd` plus Trigger/PlayerController fixtures and
-`git diff --check`. Headless CSV exposes ideology phase timings and deterministic
-work counters, Effect ACK state, and class-opinion scan rows/time. The target
-gates are 64 countries × 12 active at ideology p95 ≤ 0.35 ms, each 512-country
+`git diff --check`. Card-face wording changes also run
+`tests/ideology/ideology_card_face_semantics_test.gd` and regenerate the review
+export. Headless CSV exposes ideology phase timings and deterministic work
+counters, Effect ACK state, and class-opinion scan rows/time. The target gates
+are 64 countries × 12 active at ideology p95 ≤ 0.35 ms, each 512-country
 continuation slice p95 ≤ 0.42 ms with no native call above 1 ms, and a 6400-cell
 class-opinion median below 1 ms. Timing claims require same-machine, same debug
 DLL, fixed-seed evidence.
