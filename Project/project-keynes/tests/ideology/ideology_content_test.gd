@@ -8,6 +8,37 @@ const IdeologyEffectCatalogScript = preload("res://scripts/ideology/ideology_eff
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 const WorkspaceScene = preload("res://scenes/ui/ideology_workspace.tscn")
 
+const EXPECTED_PUBLISHED_CARDS := 113
+const EXPECTED_HOLDOUT_CARDS := [
+	"idea.little_ice_age",
+	"idea.air_conditioning",
+	"idea.canal_corvee",
+	"idea.grand_canal",
+	"idea.irrigation_grid",
+	"idea.shell_midden",
+	"idea.cooperative",
+	"idea.industrial_lab",
+	"idea.tax_farming",
+	"idea.land_value",
+	"idea.light_levy",
+	"idea.progressive_tax",
+	"idea.ancestral_hall",
+	"idea.clan_fields",
+	"idea.philanthropy",
+	"idea.merchant_houses",
+	"idea.family_enterprise",
+	"idea.petition_box",
+	"idea.tax_holiday",
+	"idea.mandate_of_heaven",
+	"idea.sovereign_fund",
+]
+const EXPECTED_FACE_FIX_CARDS := [
+	"idea.land_tax_reform",
+	"idea.excise",
+	"idea.gentry_patronage",
+	"idea.labour_legislation",
+]
+
 var _checks := 0
 var _failures := 0
 
@@ -32,8 +63,21 @@ func _init() -> void:
 		_expect("default ideology catalog compiles",
 			bool(ideology_ir.get("ok", false)))
 		if bool(ideology_ir.get("ok", false)):
-			_expect("deep ideology pool has at least thirty cards",
-				(ideology_ir.ideology_ids as PackedStringArray).size() >= 30)
+			var compiled_ids: PackedStringArray = ideology_ir.ideology_ids
+			_expect("temporary content gate publishes exactly 113 cards",
+				compiled_ids.size() == EXPECTED_PUBLISHED_CARDS)
+			var leaked_holdouts := PackedStringArray()
+			for held_out in EXPECTED_HOLDOUT_CARDS:
+				if compiled_ids.has(held_out):
+					leaked_holdouts.append(String(held_out))
+			_expect("all 21 mechanically incomplete cards stay out of the pool",
+				leaked_holdouts.is_empty())
+			var missing_face_fixes := PackedStringArray()
+			for fixed_card in EXPECTED_FACE_FIX_CARDS:
+				if not compiled_ids.has(fixed_card):
+					missing_face_fixes.append(String(fixed_card))
+			_expect("all 4 face-only cards remain in the pool",
+				missing_face_fixes.is_empty())
 			_expect("directional stances compile to sparse rows",
 				(ideology_ir.stance_class_indices as PackedInt32Array).size() >= 8)
 			_expect("exclusive ideology pair is compiled",
@@ -55,10 +99,10 @@ func _init() -> void:
 			for value in min_counts:
 				two_tier += 1 if int(value) == 2 else 0
 				four_tier += 1 if int(value) == 4 else 0
-			# 6 school resonances + 8 route bonds at "2 cards"; 6 resonances +
-			# 5 route bonds at "4 cards" (market / learning / thoroughfare have
-			# fewer than four members, so they only ship the first tier).
-			_expect("resonances and route bonds compile as 2- and 4-card count rows",
+			# The temporary pool keeps every emitted tier reachable. The exact
+			# counts are recomputed from the published roster below, so pruning
+			# one card cannot leave a "4-card" bond that can never fire.
+			_expect("only reachable resonance and route tiers compile",
 				two_tier == 14 and four_tier == 11)
 			var level_offsets: PackedInt32Array = ideology_ir.level_offsets
 			var three_levels := level_offsets.size() == (ideology_ir.ideology_ids as PackedStringArray).size() + 1
@@ -118,6 +162,33 @@ func _init() -> void:
 				_expect("common, rare and legendary rarities are all present",
 					rarities.has(1) and rarities.has(2) and rarities.has(3))
 				_expect("every level of every card presents effect text", effects_ok)
+				var face_lines := {
+					"摊丁入亩": PackedStringArray(),
+					"消费税制": PackedStringArray(),
+					"乡绅": PackedStringArray(),
+					"劳动立法": PackedStringArray(),
+				}
+				for row_value in ideology_view.get("ideologies", []):
+					var row: Dictionary = row_value
+					var display := String(row.get("display_name", ""))
+					if face_lines.has(display):
+						var levels: Array = row.get("level_effect_lines", [])
+						for level_index in levels.size():
+							face_lines[display].append(
+								"、".join(levels[level_index] as PackedStringArray))
+				var land_tax_lines := ",".join(face_lines["摊丁入亩"])
+				var excise_lines := ",".join(face_lines["消费税制"])
+				var gentry_lines := ",".join(face_lines["乡绅"])
+				var labour_lines := ",".join(face_lines["劳动立法"])
+				_expect("land tax reform renders tolerance and landlord satisfaction",
+					land_tax_lines.contains("税负容忍度")
+					and land_tax_lines.contains("landlord 满意度"))
+				_expect("excise renders every profession tolerance term",
+					excise_lines.contains("税负容忍度"))
+				_expect("gentry patronage renders tenant satisfaction",
+					gentry_lines.contains("满意度"))
+				_expect("labour legislation renders worker satisfaction",
+					labour_lines.contains("满意度"))
 				_expect("slot unlock milestones carry technology display names",
 					(ideology_view.get("capacity_unlock_technology_names", PackedStringArray()) as PackedStringArray).has("王国体系"))
 				var by_name := {}
@@ -138,8 +209,8 @@ func _init() -> void:
 				# card would render its cost and nothing else.
 				_expect("free exchange names all-output on diversified cells",
 					String(by_name.get("自由交换", "")).contains("全部产出"))
-				_expect("scholar office names science research",
-					String(by_name.get("学识官署", "")).contains("科学"))
+				_expect("scholar office names its knowledge-cell program",
+					String(by_name.get("学识官署", "")).contains("知识产出"))
 				# The card table is now conditional: 冶铁 must read as an input-side
 				# effect on a specific good rather than a flat national multiplier.
 				_expect("iron smelting names the ring around iron cells",
@@ -156,6 +227,12 @@ func _init() -> void:
 	_expect("default modifier catalog loads for ideology definitions",
 		modifier_catalog != null)
 	if modifier_catalog != null:
+		_expect("four-segment profession tax tolerance renders on card faces",
+			not ModifierCatalogScript.present_stat_delta(
+				"economy.profession.tenant_farmer.tax_tolerance_factor", 2, 1.3).is_empty())
+		_expect("four-segment profession satisfaction renders on card faces",
+			not ModifierCatalogScript.present_stat_delta(
+				"economy.profession.landlord.satisfaction_bp", 0, -800.0).is_empty())
 		var modifier_ir: Dictionary = modifier_catalog.compile_native_catalog()
 		_expect("modifier catalog compiles with ideology definitions",
 			bool(modifier_ir.get("ok", false))
@@ -375,9 +452,9 @@ func _test_card_definitions_resolve() -> void:
 	var effects: Resource = load("res://data/ideologies/default_ideology_effects.tres")
 	if not _require("default ideology effects load", effects != null):
 		return
-	var effects_ir: Dictionary = effects.compile_native_catalog()
-	if not _require("default ideology effects compile",
-			bool(effects_ir.get("ok", false)), str(effects_ir.get("reason", ""))):
+	var effect_validation := String(effects.call("validate"))
+	if not _require("default ideology effects validate",
+			effect_validation.is_empty(), effect_validation):
 		return
 	var modifier_ir: Dictionary = ModifierCatalogScript.load_default().compile_native_catalog()
 	if not _require("modifier catalog compiles", bool(modifier_ir.get("ok", false))):
@@ -386,14 +463,15 @@ func _test_card_definitions_resolve() -> void:
 	for key in modifier_ir.get("definition_keys", PackedStringArray()):
 		known[String(key)] = true
 	var missing := {}
-	var actions: PackedInt32Array = effects_ir.get("command_actions", PackedInt32Array())
-	var keys: PackedStringArray = effects_ir.get("command_definition_keys", PackedStringArray())
-	for index in mini(actions.size(), keys.size()):
-		if int(actions[index]) != 1:  # MODIFIER_COMMAND
+	for effect in effects.effects:
+		if effect == null:
 			continue
-		var key := String(keys[index])
-		if key.is_empty() or not known.has(key):
-			missing[key] = true
+		for command in effect.commands:
+			if command == null or int(command.action) != 1:  # MODIFIER_COMMAND
+				continue
+			var key := String(command.definition_key)
+			if key.is_empty() or not known.has(key):
+				missing[key] = true
 	_expect("every card modifier definition resolves (%d missing)" % missing.size(),
 		missing.is_empty())
 

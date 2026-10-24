@@ -662,6 +662,17 @@ static func _describe_stat_key(stat_key: String) -> Dictionary:
 					return {"label": "%s 全国消费" % display_name_of(&"good", good_tail),
 						"unit": UNIT_FACTOR}
 			return {}
+		# economy.profession.<profession_id>.<tax_tolerance_factor|satisfaction_bp>
+		if parts[0] == "economy" and parts[1] == "profession":
+			var profession_label := display_name_of(&"profession", parts[2])
+			match parts[3]:
+				"tax_tolerance_factor":
+					return {"label": "%s 税负容忍度" % profession_label,
+						"unit": UNIT_FACTOR}
+				"satisfaction_bp":
+					return {"label": "%s 满意度" % profession_label,
+						"unit": UNIT_RATE_BP}
+			return {}
 		# country.resource.<stable_id>.<use_factor|managed_generation_factor>
 		if parts[0] == "country" and parts[1] == "resource":
 			var resource_name := display_name_of(&"resource", parts[2])
@@ -692,16 +703,6 @@ static func _describe_stat_key(stat_key: String) -> Dictionary:
 				return {}
 			return {"label": "%s %s损失" % [parts[3],
 				String(HAZARD_DISPLAY_NAMES.get(hazard, hazard))], "unit": UNIT_FACTOR}
-		# R-4 X16: economy.profession.<pid>.tax_tolerance_factor / .satisfaction_bp
-		if parts[0] == "economy" and parts[1] == "profession" and parts.size() == 4:
-			var profession_label := display_name_of(&"profession", parts[2])
-			match parts[3]:
-				"tax_tolerance_factor":
-					return {"label": "%s 税负容忍度" % profession_label,
-						"unit": UNIT_FACTOR}
-				"satisfaction_bp":
-					return {"label": "%s 满意度" % profession_label,
-						"unit": UNIT_RATE_BP}
 		# country.tax.<kind>.<stable_id>.rate_bp
 		if parts[0] == "country" and parts[1] == "tax" and parts[4] == "rate_bp":
 			var target := parts[3]

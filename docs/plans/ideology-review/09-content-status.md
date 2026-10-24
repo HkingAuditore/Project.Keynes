@@ -23,14 +23,46 @@ hash 是 **sha256 全文摘要**；R 若遇到 `catalog_mismatch` / `ideology_sa
 | 2026-10-23 00:53:04 | 会话 C | `57e9760f447b551d5dc66d940f1990b4988e47f7ae73a962ccbddf25d8c1ffc0`（340566 → 369919 B） | `abca2753942678a05b3c94d25f9f9dd2b94e982d12685c959436cb8cc56a3eef`（161726 → 206645 B） | `9f2c5524b6c142eee4df190c1aca23ed2fef3bd61c137c72fb9f3093676e3204`（165433 → 168387 B） | **C-c**：§7.6 DSL（kind 16 + 位打包 + 9 条 lint + T11 往返断言）落地；33 张卡的 X1 形态全部写就（23 张改写：旧版继续发布、v1 目标暂存；10 张新写）。卡表 95 → 105，发布 85 → 92（7 张新卡只依赖现有能力，直接上线） |
 | 2026-10-23 10:31:00 | 会话 C | `fb8a46b5efc830a96b4afb311c810ed1997533cfc984ffc9eedb80edeeeb00a6`（369919 → 340566 B） | `328d030c136c298a8469655ea360a5ae72135136f9759f4641222afd1e65900b`（206645 → 161726 B） | `297abf0011ba4350eeb2536d7f344fd328b0a7fbbb8587e01629ed65a19594e`（168387 → 165433 B） | **C-d**：Ramp 单位修正（`cap` 用 metric 自己的单位、`per` 是每单位增益的小数）+ 3 条硬失败 lint；新增「下一级不能比上一级弱」lint（修 `basic_income_l3` / `automation_line_l3` / `maritime_insurance_l3`）；描述与 stat 对齐（8 张卡）+ 词表 lint；X1b 开关拆成 `X1b`(9) / `X1_PLAIN_SWITCH`(24)；kind-16 漏出防护；预埋 `card_expectations.json`。卡表 105，发布 92 → **85**
 | 2026-10-23 11:10:00 | 会话 C | `fb8a46b5efc830a96b4afb311c810ed1997533cfc984ffc9eedb80edeeeb00a6`（340566 B，未变）| `9becd567f61bb44ffddca808a2f2964fe8f30ca067fd5fa7d65e63cfd8baa9e4`（161762 B）| `297abf0011ba4350eeb2536d7f344fd328b0a7fbbb8587e01629ed65a19594e`（165433 B，未变）| **C-e**：ramp 上限换算修正（`basic_income` / `automation_line` L2-L3，另抓出 `salt_monopoly` / `chartered_route` / `semiconductor` 6 处已发布卡的同类错误）+ 新 lint `ramp_ceiling_error`；主线程冒烟接上 `card_expectations.json` 表驱动（1698 checks / 0 failures）。**ideology 与 modifier 未变，effects 变了**：ramp 数值改动写在 program 里（effects 目录），不碰 Modifier 目录；ideology 目录只记卡号与阈值，所以也不变
+| 2026-10-25 | 会话 C（续） | `6ccd034106d5d0adb67893e56dafbbb9bb4b909814da4946d01b1912e2d53a0b`（510151 B） | `5923a9bc44e3b146b35801e7b2e022df1bff6d00ab6d448b70d6c5d128286670`（459516 B） | `b8908f24588d771419a51162ceced6345bd39ec93b6b1e43d738fff9409ded53`（233824 B） | **临时卡池收敛**：发布 113 / 134（109 张可用 + 4 张仅卡面缺陷修复）；21 张缺机制卡 hard holdout，详见 §0.3b。四段 `economy.profession.*` 卡面解析补正；`card_expectations.json` 221084 B / `40ffd90191c1716d57f093b0edca64048ba1a149ba3484c3cf1450e74b1226b2` |
 
 **对旧存档的影响**：`default_ideology_catalog.tres` 的卡表变了（新增 2 张、9 张数值重写），
 `NativeIdeologyRuntime::compute_catalog_hash()` 会把 `stable_id / rarity_weight /
 stance / level threshold` 全部混进去，所以 hash 必然变化 → **旧 PKID 以
 `ideology_save_catalog_mismatch` fail-closed**（`ideology_runtime.cpp:4651`）。
+
 POD 侧同理（`world_ext_ideology.cpp` 的 `worker_catalog_hash`）。这是设计预期，不是缺陷。
 
 ---
+
+## 0.3b 2026-10-25 临时卡池收敛
+
+本轮只把结论落到发布过滤，不删除作者数据、不改 C++：
+
+- **保留**：109 张未见明确机械缺口的卡 + 4 张仅卡面缺陷卡
+  （`land_tax_reform`、`excise`、`gentry_patronage`、`labour_legislation`）。
+- **卡面修复**：`ModifierCatalog._describe_stat_key()` 原先把四段
+  `economy.profession.<pid>.<tax_tolerance_factor|satisfaction_bp>` 放在
+  `count == 5` 分支，现已移入四段分支；上述四张卡的税负容忍度、
+  满意度或既有真实收益会进入 `level_effect_lines`。
+- **暂移除出池**（21 张，生成器中
+  `TEMPORARY_CARD_POOL_HOLDOUTS`；作者行继续校验，但不写入任何产物）：
+
+| 类别 | 卡 |
+|---|---|
+| 部分运行时缺口（8） | `little_ice_age`、`air_conditioning`、`canal_corvee`、`grand_canal`、`irrigation_grid`、`shell_midden`、`cooperative`、`industrial_lab` |
+| 税制机制缺口（4） | `tax_farming`、`land_value`、`light_levy`、`progressive_tax` |
+| 家族机制/近似（5） | `ancestral_hall`、`clan_fields`、`philanthropy`、`merchant_houses`、`family_enterprise` |
+| 明确内容缺陷（2） | `petition_box`（社会研究误写 ADD 0.98）、`tax_holiday`（三级收益为空） |
+| 待当前二进制复测（2） | `mandate_of_heaven`、`sovereign_fund` |
+
+- **联动可达性**：15 条命名联动均不依赖 holdout；体系档位按发布后成员数生成，
+  共鸣二档只在对应学派仍有至少 4 张发布卡时生成。当前仍为
+  14 个 2 张档位、11 个 4 张档位，编译时不会留下「永远无法触发」的档位。
+- **生成规模**：`cards_published=113 of 134`、`city_definitions=24`、
+  `country_definitions=14`、`card_programs=280`。
+- **存档兼容**：三个生成目录的 hash 均变化，旧 PKCM / PKEF / PKID 会按既有合同
+  `catalog_mismatch` / `ideology_save_catalog_mismatch` fail-closed；不要把旧档
+  当作可静默迁移。
 
 ## 1. 本轮范围与结论
 

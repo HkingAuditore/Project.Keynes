@@ -1,6 +1,6 @@
 extends SceneTree
 
-## C0 acceptance: the nine cards the reachability matrix marks 可直接做, asserted
+## C0 acceptance: the hand-picked reachability-matrix cards, asserted
 ## end to end against the DESIGN DOC's numbers.
 ##
 ## Why this exists
@@ -86,11 +86,10 @@ const CARDS := [
 	# of authoring fixes; it is recorded in 09-content-status.md.
 	{"key": "riverside_camp", "stat": "country.output.terrain.floodplain.agriculture_factor",
 	 "levels": [1.06, 1.09, 1.09]},
-	# X3-b cards: national production / trade-capacity prices.
+	# X3-b card: national production price. `cooperative` is temporarily held out
+	# of the pool because its neighbourhood clause is not expressible yet.
 	{"key": "trade_unions", "stat": "country.production.input_factor",
 	 "levels": [1.03, 1.03, 1.03]},
-	{"key": "cooperative", "stat": "country.trade.capacity_factor",
-	 "levels": [0.98, 0.98, 0.98]},
 	# Ⅰ 寒暑历法: 冷害 -6 / -9 / -9, 热害 -5 / -7.5 / -7.5.
 	{"key": "seasonal_calendar", "stat": "country.climate.cold_stress_factor",
 	 "levels": [0.94, 0.91, 0.91]},
@@ -224,7 +223,7 @@ func _run() -> void:
 		_expect("%s is staged out of the catalog (needs a capability)" % stage_key,
 			ids.find("idea.%s" % stage_key) < 0,
 			"found dossier at dense %d" % ids.find("idea.%s" % stage_key))
-	# The table driver covers all 85 published cards, but `_dense` above only holds
+	# The table driver covers every published card, but `_dense` above only holds
 	# the hand-written C0 list. Resolve the rest from the compiled catalog -- it is
 	# the authority on what published, and without this every non-C0 card failed with
 	# "absent from the compiled catalog" (75 of them, a harness bug).
@@ -453,7 +452,7 @@ func _expectation_card_keys() -> PackedStringArray:
 ## The generator writes one entry per published card per level, with every row the
 ## card should produce. This walks that table and asserts the numbers, which is a
 ## different kind of check from the hand-written arrays above: those pin a handful of
-## cards the design doc calls out, this covers ALL 85 published cards and fails if a
+## cards the design doc calls out, this covers every published card and fails if a
 ## card's numbers stop matching its own description.
 ##
 ## SCOPE: `country` + `constant` only. Why the rest is skipped is printed, not
