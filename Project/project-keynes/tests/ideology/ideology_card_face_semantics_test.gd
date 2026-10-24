@@ -167,6 +167,12 @@ func _init() -> void:
 		joined.contains("贸易运输速度"))
 	_expect("research efficiency names its actual discipline lane",
 		joined.contains("社会研究速度") and joined.contains("科学研究速度"))
+	_expect("population thresholds carry a count noun",
+		joined.contains("人口数量至少 1200 人的地块")
+		and not joined.contains("人口至少 1200 的地块"))
+	_expect("neighbour agriculture counts use ordinary Chinese",
+		joined.contains("周围至少 2 个以农业为主的地块")
+		and not joined.contains("相邻至少 2 个以农业为主的地块"))
 	_expect_contains(by_id, "idea.free_trade", 0,
 		"经济部门少于 3 个的以工业为主的地块：工业产出降低 5%")
 	_expect_contains(by_id, "idea.heaven_human", 0,

@@ -1366,6 +1366,9 @@ func _clean_card_face_text(raw: String) -> String:
 	text = text.replace("占比 至少 ", "占比至少 ")
 	text = text.replace("民意 至少 ", "民意至少 ")
 	text = text.replace("人口 至少 ", "人口至少 ").replace("人口 至多 ", "人口至多 ")
+	text = _replace_population_count_text(text)
+	text = text.replace("相邻至少 2 个以农业为主的地块", "周围至少 2 个以农业为主的地块")
+	text = text.replace("相邻至少 ", "周围至少 ")
 	text = text.replace("  ", " ")
 	text = text.replace("产出 提高", "产出提高").replace("产出 降低", "产出降低")
 	text = _replace_multiplier_text(text)
@@ -1517,6 +1520,20 @@ func _replace_source_count_text(text: String) -> String:
 	result = result.replace("每个来源", "每有 1 个符合条件的地块")
 	result = result.replace(" =提高", "")
 	result = result.replace(" = 提高", "")
+	return result
+
+
+func _replace_population_count_text(text: String) -> String:
+	# Population selectors are authored as integer thresholds. Add a count noun
+	# and make the comparator read like ordinary Chinese.
+	var regex := RegEx.new()
+	if regex.compile("人口(至少|至多)\\s*([0-9]+)\\s*的地块") != OK:
+		return text
+	var result := text
+	for found in regex.search_all(text):
+		var replacement := "人口数量%s %s 人的地块" % [
+			found.get_string(1), found.get_string(2)]
+		result = result.replace(found.get_string(0), replacement)
 	return result
 
 
