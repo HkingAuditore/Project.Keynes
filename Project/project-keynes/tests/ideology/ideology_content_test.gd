@@ -181,14 +181,15 @@ func _init() -> void:
 				var gentry_lines := ",".join(face_lines["乡绅"])
 				var labour_lines := ",".join(face_lines["劳动立法"])
 				_expect("land tax reform renders tolerance and landlord satisfaction",
-					land_tax_lines.contains("税负容忍度")
-					and land_tax_lines.contains("landlord 满意度"))
-				_expect("excise renders every profession tolerance term",
-					excise_lines.contains("税负容忍度"))
+					land_tax_lines.contains("对税负的承受能力")
+					and land_tax_lines.contains("地主满意度降低 8 点"))
+				_expect("excise merges profession tolerance terms",
+					excise_lines.contains("全国各职业对税负的承受能力提高 8%")
+					and not excise_lines.contains("税负容忍度"))
 				_expect("gentry patronage renders tenant satisfaction",
-					gentry_lines.contains("满意度"))
+					gentry_lines.contains("佃农、分成佃农、农奴满意度降低 2 点"))
 				_expect("labour legislation renders worker satisfaction",
-					labour_lines.contains("满意度"))
+					labour_lines.contains("产业工人、矿工满意度提高 4 点"))
 				_expect("slot unlock milestones carry technology display names",
 					(ideology_view.get("capacity_unlock_technology_names", PackedStringArray()) as PackedStringArray).has("王国体系"))
 				var by_name := {}
@@ -201,7 +202,7 @@ func _init() -> void:
 				# 共同体治理 is now an X1 spillover card: its face line says which
 				# cells it radiates from, not which national stats it moves.
 				_expect("collective stewardship names its agricultural source ring",
-					String(by_name.get("共同体治理", "")).contains("农业支柱")
+					String(by_name.get("共同体治理", "")).contains("以农业为主")
 					and String(by_name.get("共同体治理", "")).contains("周围"))
 				# 自由交换 moved to a cell-level program this round: its card face
 				# line is the program summary, not a Modifier presenter line. This
@@ -227,12 +228,30 @@ func _init() -> void:
 	_expect("default modifier catalog loads for ideology definitions",
 		modifier_catalog != null)
 	if modifier_catalog != null:
-		_expect("four-segment profession tax tolerance renders on card faces",
-			not ModifierCatalogScript.present_stat_delta(
-				"economy.profession.tenant_farmer.tax_tolerance_factor", 2, 1.3).is_empty())
-		_expect("four-segment profession satisfaction renders on card faces",
-			not ModifierCatalogScript.present_stat_delta(
-				"economy.profession.landlord.satisfaction_bp", 0, -800.0).is_empty())
+		_expect("tax tolerance reads as a plain-language capacity",
+			ModifierCatalogScript.present_stat_delta(
+				"economy.profession.tenant_farmer.tax_tolerance_factor", 2, 1.3,
+				ModifierCatalogScript.Q16_ONE, true)
+				== "佃农对税负的承受能力提高 30%")
+		_expect("satisfaction basis points read as satisfaction points",
+			ModifierCatalogScript.present_stat_delta(
+				"economy.profession.landlord.satisfaction_bp", 0, -800.0,
+				ModifierCatalogScript.Q16_ONE, true)
+				== "地主满意度降低 8 点")
+		_expect("tax rates read as percentage points in plain language",
+			ModifierCatalogScript.present_stat_delta(
+				"country.tax.income.miner.rate_bp", 0, 150,
+				ModifierCatalogScript.Q16_ONE, true)
+				== "矿工所得税率提高 1.5 个百分点")
+		_expect("the public stat presenter keeps its legacy formatting",
+			ModifierCatalogScript.present_stat_delta(
+				"economy.profession.landlord.satisfaction_bp", 0, -800.0)
+				== "地主 -8.00 点")
+		var excise_definition_lines: PackedStringArray = \
+			modifier_catalog.present_definition_for_ideology(&"ideology.excise.l1")
+		_expect("the ideology presenter collapses repeated profession terms",
+			excise_definition_lines.size() <= 6
+			and excise_definition_lines.has("全国各职业对税负的承受能力提高 8%"))
 		var modifier_ir: Dictionary = modifier_catalog.compile_native_catalog()
 		_expect("modifier catalog compiles with ideology definitions",
 			bool(modifier_ir.get("ok", false))
