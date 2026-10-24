@@ -65,6 +65,8 @@ func _init() -> void:
 				else "等级 %d" % (level_index + 1)))
 			for effect_line in levels[level_index]:
 				lines.append("- %s" % String(effect_line))
+		if row_value != rows.back():
+			lines.append("")
 	var file := FileAccess.open(OUTPUT_PATH, FileAccess.WRITE)
 	if file == null:
 		push_error("[export_card_faces] cannot write %s" % OUTPUT_PATH)
