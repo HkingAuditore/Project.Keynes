@@ -281,6 +281,56 @@ NEEDS_RUNTIME: dict[str, str] = {
         "L3 radius-3 distance needs a radius-3 source selector",
 }
 
+# Cards that are mechanically incomplete enough that publishing their
+# expressible subset would misrepresent the card. Unlike `NEEDS_RUNTIME`, this
+# is a hard pool gate: the row is still validated, but none of its definitions
+# or programs reach the generated catalogs. Remove an entry only after its
+# missing mechanics land and an end-to-end card test covers them.
+TEMPORARY_CARD_POOL_HOLDOUTS: dict[str, str] = {
+    "little_ice_age":
+        "missing cold-card doubling and the L3 8 C threshold",
+    "air_conditioning":
+        "missing cell heat-loss reduction and L3 hot-penalty immunity",
+    "canal_corvee":
+        "missing canal trade output and the national canal-trade clause",
+    "grand_canal":
+        "missing continuous size ramp and the L3 market-only sub-target",
+    "irrigation_grid":
+        "missing drought-loss reduction and radius-3 reach",
+    "shell_midden":
+        "missing coast/lake split and adjacent same-fish stacking",
+    "cooperative":
+        "missing the neighbourhood agriculture source/ring clause",
+    "industrial_lab":
+        "missing the L3 radius-3 source selector",
+    "tax_farming":
+        "missing market trade bonuses and the L3 adjacent-trade clause",
+    "land_value":
+        "missing metropolitan-ring agriculture and the L3 birth-rate clause",
+    "light_levy":
+        "missing metric-68 light-tax birth and agriculture clauses",
+    "progressive_tax":
+        "missing the metric-68 light-tax birth clause",
+    "ancestral_hall":
+        "missing surrounding branch-prestige growth",
+    "clan_fields":
+        "missing same-family building stacking and L3 prestige growth",
+    "philanthropy":
+        "missing high-cash family prestige growth",
+    "merchant_houses":
+        "family three-sector/market intersection is only approximated",
+    "family_enterprise":
+        "the single-sector clause is only approximated",
+    "petition_box":
+        "social research is authored as ADD 0.98, which is +98%",
+    "tax_holiday":
+        "all three benefit rows are empty",
+    "mandate_of_heaven":
+        "legacy worker failure has not been reproduced on the current binary",
+    "sovereign_fund":
+        "legacy worker failure has not been reproduced on the current binary",
+}
+
 # Design rows that are intentionally absent from CARDS: no exact runtime
 # mechanic exists yet, so publishing a partial row would silently change the
 # design. This is the skip audit for content-authoring lanes.
@@ -5693,32 +5743,33 @@ def build_ideology_catalog() -> str:
             "minimum_levels = PackedInt32Array(%s)\n" % ", ".join("0" for _ in cards) +
             "location_masks = PackedByteArray(%s)\n" % ", ".join("6" for _ in cards) +
             f'persistent_effects = Array[Resource]([SubResource("{effect_id}")])\n')
-    for route, (display, tier1, tier2) in ROUTE_BONDS.items():
-        for tier, count, terms in ((1, 2, tier1), (2, 4, tier2)):
-            if terms is None:
-                continue
-            base = f"Route{camel(route)}{tier}"
-            effect_id = f"Effect{base}"
-            blocks.append(effect_block(
-                effect_id, f"ideology.route.{route}.t{tier}", Q16))
-            synergy_id = f"Synergy{base}"
-            synergy_ids.append(synergy_id)
-            blocks.append(
-                f'[sub_resource type="Resource" id="{synergy_id}"]\n'
-                'script = ExtResource("6_synergy")\n'
-                f'id = &"route.{route}.{count}"\n'
-                f'display_name = "{display}·{"一" if tier == 1 else "二"}"\n'
-                'required_ideology_ids = PackedStringArray()\n'
-                'minimum_levels = PackedInt32Array()\n'
-                'location_masks = PackedByteArray()\n'
-                f"min_count = {count}\n"
-                f'route_tag = &"{route}"\n'
-                "route_tag_min_level = 0\n"
-                "route_tag_location_mask = 2\n"
-                f'persistent_effects = Array[Resource]([SubResource("{effect_id}")])\n')
+    for route, count, _terms in published_route_bonds():
+        tier = 1 if count == 2 else 2
+        display = ROUTE_BONDS[route][0]
+        base = f"Route{camel(route)}{tier}"
+        effect_id = f"Effect{base}"
+        blocks.append(effect_block(
+            effect_id, f"ideology.route.{route}.t{tier}", Q16))
+        synergy_id = f"Synergy{base}"
+        synergy_ids.append(synergy_id)
+        blocks.append(
+            f'[sub_resource type="Resource" id="{synergy_id}"]\n'
+            'script = ExtResource("6_synergy")\n'
+            f'id = &"route.{route}.{count}"\n'
+            f'display_name = "{display}·{"一" if tier == 1 else "二"}"\n'
+            'required_ideology_ids = PackedStringArray()\n'
+            'minimum_levels = PackedInt32Array()\n'
+            'location_masks = PackedByteArray()\n'
+            f"min_count = {count}\n"
+            f'route_tag = &"{route}"\n'
+            "route_tag_min_level = 0\n"
+            "route_tag_location_mask = 2\n"
+            f'persistent_effects = Array[Resource]([SubResource("{effect_id}")])\n')
     for school in SCHOOL_ORDER:
         cards = [card[0] for card in cards_to_emit() if card[2] == school]
         for tier, count in ((1, 2), (2, 4)):
+            if len(cards) < count:
+                continue
             base = f"Resonance{camel(school)}{count}"
             effect_id = f"Effect{base}"
             blocks.append(effect_block(
@@ -5995,19 +6046,22 @@ def modifier_blocks() -> tuple[list[str], list[str]]:
             add(f"{camel(key)}L{level_index + 1}",
                 f"ideology.{key}.l{level_index + 1}",
                 f"{name}（{LEVEL_TITLES[level_index]}）", detail, rows)
-    for route, (display, tier1, tier2) in ROUTE_BONDS.items():
-        for tier, terms in ((1, tier1), (2, tier2)):
-            if terms is None:
-                continue
-            add(f"Route{camel(route)}{tier}",
-                f"ideology.route.{route}.t{tier}",
-                f"{display}·{'一' if tier == 1 else '二'}",
-                f"{display}体系联动修正（{'2' if tier == 1 else '4'} 张）。",
-                terms)
+    for route, count, terms in published_route_bonds():
+        tier = 1 if count == 2 else 2
+        display = ROUTE_BONDS[route][0]
+        add(f"Route{camel(route)}{tier}",
+            f"ideology.route.{route}.t{tier}",
+            f"{display}·{'一' if tier == 1 else '二'}",
+            f"{display}体系联动修正（{count} 张）。",
+            terms)
     for key, name, _cards, terms in NAMED_SYNERGIES:
         add("Synergy" + camel(key), f"ideology.synergy.{key}", name, f"{name}联动修正。", terms)
     for school in SCHOOL_ORDER:
+        school_card_count = sum(
+            1 for card in cards_to_emit() if card[2] == school)
         for count, terms in zip((2, 4), RESONANCES[school]):
+            if school_card_count < count:
+                continue
             add(f"Resonance{camel(school)}{count}", f"ideology.resonance.{school}.{count}",
                 f"{SCHOOL_NAMES[school]}共鸣{count}",
                 f"装备或晋升{count}张{SCHOOL_NAMES[school]}理念。", terms)
@@ -7092,6 +7146,11 @@ def validate_requires() -> None:
                     f"requires: card {key} names unknown capability {name!r}; "
                     "add it to KNOWN_CAPABILITIES (and AVAILABLE_CAPABILITIES "
                     "once the runtime supports it)")
+    for key, reason in TEMPORARY_CARD_POOL_HOLDOUTS.items():
+        if key not in card_keys:
+            raise SystemExit(f"pool-holdout: unknown card {key}")
+        if not reason.strip():
+            raise SystemExit(f"pool-holdout: card {key} has no reason")
 
 
 def validate_copy_flags() -> None:
@@ -7562,8 +7621,61 @@ def published_cards() -> list:
         key for key in X1_BRAND_NEW
         if not x1_card_ready_for_build(key)
     }
+    held_out = set(TEMPORARY_CARD_POOL_HOLDOUTS)
     return [card for card in CARDS
-            if card[0] not in staged and card[0] not in unreleased]
+            if card[0] not in staged and card[0] not in unreleased
+            and card[0] not in held_out]
+
+
+def published_route_member_counts() -> dict[str, int]:
+    """Route memberships after every publication gate has been applied."""
+    counts: dict[str, int] = {}
+    for key, _name, _school, _rarity, _era, _exclusion, _tech, _signals, \
+            _detail, _terms in cards_to_emit():
+        meta = CARD_META.get(key)
+        if meta is None:
+            continue
+        for route in (meta.route, *meta.secondary):
+            if route:
+                counts[route] = counts.get(route, 0) + 1
+    return counts
+
+
+def published_route_bonds() -> list[tuple[str, int, list]]:
+    """Only route tiers that the published roster can actually reach."""
+    counts = published_route_member_counts()
+    out: list[tuple[str, int, list]] = []
+    for route, (_display, tier1, tier2) in ROUTE_BONDS.items():
+        for count, terms in ((2, tier1), (4, tier2)):
+            if terms is not None and counts.get(route, 0) >= count:
+                out.append((route, count, terms))
+    return out
+
+
+def validate_published_synergies() -> None:
+    """Every emitted named synergy and route tier must be reachable."""
+    published = {card[0] for card in cards_to_emit()}
+    for key, _name, cards, _terms in NAMED_SYNERGIES:
+        missing = [card for card in cards if card not in published]
+        if missing:
+            raise SystemExit(
+                "published synergy %s references held-out cards %s"
+                % (key, ", ".join(missing)))
+    counts = published_route_member_counts()
+    for route, (_display, tier1, tier2) in ROUTE_BONDS.items():
+        members = counts.get(route, 0)
+        for count, terms in ((2, tier1), (4, tier2)):
+            if terms is not None and members < count:
+                raise SystemExit(
+                    "published route bond %s.%d needs %d members, found %d"
+                    % (route, count, count, members))
+    for school, tiers in RESONANCES.items():
+        members = sum(1 for card in cards_to_emit() if card[2] == school)
+        for count, terms in zip((2, 4), tiers):
+            if terms is not None and members < count:
+                raise SystemExit(
+                    "published resonance %s.%d needs %d members, found %d"
+                    % (school, count, count, members))
 
 
 # Set by `main()` after validation, read by the three emitters. Module-level (and
@@ -7785,6 +7897,7 @@ def main() -> None:
     # emitted artifact. All three emitters read `cards_to_emit()`, so a staged card
     # leaves no orphan Effect or Modifier definition behind either.
     _PUBLISHED = published_cards()
+    validate_published_synergies()
     IDEOLOGY_PATH.write_text(build_ideology_catalog(), encoding="utf-8", newline="\n")
     EFFECTS_PATH.write_text(build_effect_catalog(), encoding="utf-8", newline="\n")
     rewrite_modifier_catalog()
@@ -7796,6 +7909,11 @@ def main() -> None:
     print(f"programs={len(DIAGNOSTIC_PROGRAMS) + len(all_card_programs())} "
           f"card_programs={len(all_card_programs())}")
     print(f"cards_published={len(cards_to_emit())} of {len(CARDS)}")
+    if TEMPORARY_CARD_POOL_HOLDOUTS:
+        print(f"temporary-pool-holdouts={len(TEMPORARY_CARD_POOL_HOLDOUTS)} 张"
+              "（保留作者数据，不写入 catalog）：")
+        for key, reason in sorted(TEMPORARY_CARD_POOL_HOLDOUTS.items()):
+            print(f"  - {key}: {reason}")
     staged = staged_cards()
     if staged:
         print(f"已暂存 {len(staged)} 张（缺能力，未写入 catalog）：")
