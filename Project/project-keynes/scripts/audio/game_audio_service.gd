@@ -340,14 +340,16 @@ func set_era_parameter(era_index: int) -> bool:
 
 ## 时代推进驱动音乐。接入前四个时代的交互式配乐组曲（石器/农耕/王国/帝国），
 ## 更靠后的时代沿用「帝国时代」组曲。
-## 首次进入会话（_era_index < 0）时从 0.0s「刚进入游戏」引子起播；
+## 首次进入会话时，若菜单已播放目标组曲则延续时间轴，否则从引子起播；
 ## 会话内时代升级（_era_index >= 0 且晋升）时叠加 9.6s 时代升级礼乐过渡曲并切入新时代主循环。
 func set_era(era_index: int) -> bool:
 	if era_index < 0:
 		return false
 	var clamped := mini(era_index, ERA_MUSIC.size() - 1)
 	var target_key := _era_suite_key(clamped)
-	if clamped == _era_index and _music != 0 and _music_key == target_key:
+	if _music != 0 and _music_key == target_key:
+		# 菜单组曲尚未绑定国家时代；接管时只认领时代，避免再次 seek 到引子。
+		_era_index = clamped
 		return true
 	var advancing := _era_index >= 0 and clamped > _era_index
 	var from_intro := not advancing

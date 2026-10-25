@@ -13,7 +13,7 @@ const RARITY_FRAMES := {
 const CARD_BACK := ROOT + "card_back.png"
 const SLOT_NICHE := ROOT + "slot_niche.png"
 const SPIRIT_NICHE := ROOT + "spirit_niche.png"
-const WAX_SEAL := ROOT + "wax_seal.png"
+const WAX_SEAL := "decoration.wax_seal"
 const SCROLL_BAR := ROOT + "scroll_bar.png"
 const INK_SPLASH := ROOT + "ink_splash.png"
 const PAPER_CONFETTI := ROOT + "paper_confetti.png"
@@ -22,6 +22,11 @@ const SCHOOL_ORDER := ["agrarian", "commerce", "learning", "mobilization",
 const SCHOOL_NAMES := {
 	"agrarian": "农本", "commerce": "商贸", "learning": "学识",
 	"mobilization": "动员", "industry": "工造", "harmony": "调和",
+}
+const SCHOOL_ICONS := {
+	"agrarian": &"good.grain", "commerce": &"hud.country.economy",
+	"learning": &"hud.country.technology", "mobilization": &"family.workspace.people",
+	"industry": &"economy.building.factory", "harmony": &"hud.country.diplomacy",
 }
 ## Ink tones per school, used for pips, link threads and tab underlines.
 const SCHOOL_COLORS := {
@@ -48,6 +53,8 @@ static var _cache := {}
 
 
 static func texture(path: String) -> Texture2D:
+	if path == WAX_SEAL:
+		return IconCatalog.texture_for_key(&"decoration.wax_seal")
 	if _cache.has(path):
 		return _cache[path]
 	var loaded: Texture2D = null
@@ -64,7 +71,7 @@ static func frame_for(rarity: int) -> Texture2D:
 static func emblem_for(school_id: String) -> Texture2D:
 	if school_id.is_empty():
 		return null
-	return texture(ROOT + "school_%s.png" % school_id)
+	return IconCatalog.texture_for_key(SCHOOL_ICONS.get(school_id, &"system.unknown"))
 
 
 static func school_color(school_id: String) -> Color:

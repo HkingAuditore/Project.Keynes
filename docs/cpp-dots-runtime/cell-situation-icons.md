@@ -35,6 +35,8 @@
   天气列由 `DCViewAdapter` 补齐，经济查询不拥有或推算气候状态。
 - `CellSituationLayer` 在 HUD Canvas 中绘制，共用一张图集、八个冷路径 AtlasTexture，
   不为每格/图标创建 Control 节点。tooltip 节点持久复用，既有地块悬停卡在其显示时让位。
+  图案从 `IconCatalog` 的八个 `situation.*` 键读取，使用
+  `assets/icons/paper/ui_situations_01.png` 彩铅剪纸图集；旧金属徽章图集不再加载。
 - 每 0.25 秒最多查询一页 128 格；候选来自逆相机变换的视窗行列范围，中心优先，
   最多 1024 格，不扫描全图。稳定分页在后台日提交后继续轮转，不停留于第一页。
   最大候选数下完整遍历约 2 秒，常见近景视窗更快；配置在 `UITokens.MAP_SITUATION_*`。

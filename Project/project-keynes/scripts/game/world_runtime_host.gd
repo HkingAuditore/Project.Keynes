@@ -317,7 +317,7 @@ var _gm_tod_eternal_uv: Vector2 = Vector2(0.25, 0.5)
 var _gm_tod_eternal_uv_valid: bool = false
 var _gm_tod_sun_height_scale: float = 1.0
 
-const GM_SPEED_PRESETS: Array[float] = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
+const GM_SPEED_PRESETS: Array[float] = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0]
 const GM_CASH_SCALE: int = 10000
 const GM_GOODS_SCALE: int = 1000
 
@@ -2681,7 +2681,7 @@ func execute_gm_command(command_id: String, raw_args: Dictionary) -> Dictionary:
 	if effective_day <= _world_clock.day_index():
 		return _gm_error("effective_day_invalid", "生效日必须晚于当前游戏日。")
 	var sequence := _gm_sequence
-	_gm_sequence += 1
+	_gm_sequence += 2 if command_id == "economy.mint_to_treasury" else 1
 	var result: Dictionary
 	if command_id.begins_with("country."):
 		result = _gm_execute_country_command(command_id, args, effective_day, sequence)
@@ -2957,6 +2957,8 @@ func _gm_command_specs(technologies: PackedStringArray = PackedStringArray(),
 			"args": [_gm_arg("cell", "int", false), _gm_choice_arg("good_id", goods), _gm_positive_arg("quantity"), _gm_day_arg()]},
 		{"id": "economy.mint_to_cohort", "label": "向阶层铸币", "category": "经济", "destructive": true,
 			"args": [_gm_arg("cohort_handle", "int", true), _gm_positive_arg("amount"), _gm_day_arg()]},
+		{"id": "economy.mint_to_treasury", "label": "刷钱到玩家国库", "category": "经济", "destructive": true,
+			"args": [_gm_positive_arg("amount"), _gm_day_arg()]},
 		{"id": "economy.burn_from_cohort", "label": "从阶层销毁货币", "category": "经济", "destructive": true,
 			"args": [_gm_arg("cohort_handle", "int", true), _gm_positive_arg("amount"), _gm_day_arg()]},
 		{"id": "economy.add_population", "label": "增加阶层人口", "category": "经济", "destructive": true,
@@ -3161,6 +3163,13 @@ func _gm_execute_economy_command(command_id: String, args: Dictionary,
 	if facade == null:
 		return {"ok": false, "reason": "economy_facade_unavailable"}
 	match command_id:
+		"economy.mint_to_treasury":
+			var minted := _gm_scaled_positive(args.amount, GM_CASH_SCALE)
+			var handle := _resolve_player_country_handle()
+			var cell := _resolve_player_start_cell()
+			if minted <= 0 or handle == 0 or cell < 0:
+				return {"ok": false, "reason": "player_treasury_unavailable"}
+			return facade.mint_to_treasury(handle, cell, minted, effective_day, sequence)
 		"economy.add_stock":
 			var quantity := _gm_scaled_positive(args.quantity, GM_GOODS_SCALE)
 			if quantity <= 0:

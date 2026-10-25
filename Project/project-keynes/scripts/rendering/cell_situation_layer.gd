@@ -6,7 +6,9 @@ const TITLES := ["生活物资短缺", "工业品短缺", "消费品短缺", "�
 const CLASS_NAMES := {"general": "一般居民", "farmer": "农民", "worker": "工人",
     "technology": "知识阶层", "merchant": "商人", "capitalist": "资本所有者",
     "landowner": "地主", "aristocrat": "贵族", "artisan": "工匠"}
-const ATLAS: Texture2D = preload("res://assets/vfx/situation/situation_badges.png")
+const ICON_KEYS := [&"situation.food_shortage", &"situation.industry_shortage",
+    &"situation.consumer_shortage", &"situation.discontent", &"situation.drought",
+    &"situation.flood", &"situation.unemployment", &"situation.vacant_jobs"]
 
 var _map: MapData
 var _camera: Camera2D
@@ -58,21 +60,8 @@ func _ready() -> void:
 func _make_icons() -> void:
     if not _icons.is_empty():
         return
-    var image := ATLAS.get_image()
-    var tile := Vector2(ATLAS.get_width() / 4.0, ATLAS.get_height() / 2.0)
-    for kind in range(8):
-        var origin := Vector2(kind % 4, kind / 4) * tile
-        var region := Rect2i(Vector2i(origin), Vector2i(tile))
-        # 冷路径只算 alpha 包围盒，原图与透明通道保持不变。
-        if image != null:
-            var used := image.get_region(region).get_used_rect()
-            if used.has_area():
-                region = Rect2i(region.position + used.position, used.size)
-        var icon := AtlasTexture.new()
-        icon.atlas = ATLAS
-        icon.region = Rect2(region)
-        icon.filter_clip = true
-        _icons.append(icon)
+    for key in ICON_KEYS:
+        _icons.append(IconCatalog.texture_for_key(key))
 
 
 func configure(map: MapData, camera: Camera2D, host, economy,

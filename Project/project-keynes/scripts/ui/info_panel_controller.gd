@@ -185,7 +185,7 @@ func refresh_info_panel() -> void:
 	var veg_now := VegetationType.name_cn(vegetation_v)
 	if vegetation_v != cell.base_vegetation:
 		var veg_base := VegetationType.name_cn(cell.base_vegetation)
-		_vegetation_label.text = "当前植被：%s   ⚠ 当季已演替（生态基线：%s）" % [veg_now, veg_base]
+		_vegetation_label.text = "当前植被：%s   警告： 当季已演替（生态基线：%s）" % [veg_now, veg_base]
 	else:
 		_vegetation_label.text = "当前植被：%s" % veg_now
 	# Milestone 4：植被生命值 + 演替倒计时
@@ -329,15 +329,15 @@ func refresh_vitality_line() -> void:
 	if cell._vitality_low_streak > 0:
 		var rem: int = (_generator._c().succession_degrade_days if _generator != null else 180) - cell._vitality_low_streak
 		if rem <= 0:
-			hint = "  ⚠ 即将退化"
+			hint = "  警告： 即将退化"
 		elif rem <= 30:
-			hint = "  ⚠ 退化倒计时 %d 天" % rem
+			hint = "  警告： 退化倒计时 %d 天" % rem
 	elif cell._vitality_high_streak > 0:
 		var rem2: int = (_generator._c().succession_upgrade_days if _generator != null else 360) - cell._vitality_high_streak
 		if rem2 <= 0:
-			hint = "  ✓ 即将升级"
+			hint = "  已达成： 即将升级"
 		elif rem2 <= 45:
-			hint = "  ✓ 升级倒计时 %d 天" % rem2
+			hint = "  已达成： 升级倒计时 %d 天" % rem2
 	_vitality_label.text = "生命值：%.0f%%（%s）%s" % [v * 100.0, band, hint]
 
 

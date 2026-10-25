@@ -16,6 +16,32 @@
 [ext_resource type="Texture2D" path="res://assets/ui/paper_aux_v1/torn_note_v1.tres" id="15_note"]
 [ext_resource type="Texture2D" path="res://assets/ui/paper_aux_v1/cut_tag_v1.tres" id="16_tag"]
 
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/panel_horizontal.png" id="paper_panel_horizontal"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/panel_vertical.png" id="paper_panel_vertical"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/button_normal.png" id="paper_button_normal"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/button_hover.png" id="paper_button_hover"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/button_pressed.png" id="paper_button_pressed"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/button_disabled.png" id="paper_button_disabled"]
+
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/arrow_down.png" id="paper_ctrl_arrow_down"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/arrow_left.png" id="paper_ctrl_arrow_left"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/arrow_right.png" id="paper_ctrl_arrow_right"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/arrow_up.png" id="paper_ctrl_arrow_up"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/checked.png" id="paper_ctrl_checked"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/close.png" id="paper_ctrl_close"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/grabber.png" id="paper_ctrl_grabber"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/indeterminate.png" id="paper_ctrl_indeterminate"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/radio_checked.png" id="paper_ctrl_radio_checked"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/radio_unchecked.png" id="paper_ctrl_radio_unchecked"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/reset.png" id="paper_ctrl_reset"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/target.png" id="paper_ctrl_target"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/toggle_off.png" id="paper_ctrl_toggle_off"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/toggle_on.png" id="paper_ctrl_toggle_on"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/unchecked.png" id="paper_ctrl_unchecked"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/updown.png" id="paper_ctrl_updown"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/zoom_in.png" id="paper_ctrl_zoom_in"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/zoom_out.png" id="paper_ctrl_zoom_out"]
+
 [sub_resource type="StyleBoxTexture" id="ButtonDisabled"]
 content_margin_left = 8.0
 content_margin_top = 4.0
@@ -1137,6 +1163,72 @@ corner_radius_top_right = 3
 corner_radius_bottom_right = 3
 corner_radius_bottom_left = 3
 
+[sub_resource type="StyleBoxTexture" id="PaperHud_panel_horizontal"]
+content_margin_left = 8.0
+content_margin_top = 5.0
+content_margin_right = 8.0
+content_margin_bottom = 5.0
+texture = ExtResource("paper_panel_horizontal")
+texture_margin_left = 16.0
+texture_margin_top = 16.0
+texture_margin_right = 16.0
+texture_margin_bottom = 16.0
+
+[sub_resource type="StyleBoxTexture" id="PaperHud_panel_vertical"]
+content_margin_left = 8.0
+content_margin_top = 5.0
+content_margin_right = 8.0
+content_margin_bottom = 5.0
+texture = ExtResource("paper_panel_vertical")
+texture_margin_left = 16.0
+texture_margin_top = 16.0
+texture_margin_right = 16.0
+texture_margin_bottom = 16.0
+
+[sub_resource type="StyleBoxTexture" id="PaperHud_button_normal"]
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+texture = ExtResource("paper_button_normal")
+texture_margin_left = 10.0
+texture_margin_top = 10.0
+texture_margin_right = 10.0
+texture_margin_bottom = 10.0
+
+[sub_resource type="StyleBoxTexture" id="PaperHud_button_hover"]
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+texture = ExtResource("paper_button_hover")
+texture_margin_left = 10.0
+texture_margin_top = 10.0
+texture_margin_right = 10.0
+texture_margin_bottom = 10.0
+
+[sub_resource type="StyleBoxTexture" id="PaperHud_button_pressed"]
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+texture = ExtResource("paper_button_pressed")
+texture_margin_left = 10.0
+texture_margin_top = 10.0
+texture_margin_right = 10.0
+texture_margin_bottom = 10.0
+
+[sub_resource type="StyleBoxTexture" id="PaperHud_button_disabled"]
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+texture = ExtResource("paper_button_disabled")
+texture_margin_left = 10.0
+texture_margin_top = 10.0
+texture_margin_right = 10.0
+texture_margin_bottom = 10.0
+
 [resource]
 default_font = SubResource("SansMedium")
 default_font_size = 16
@@ -1466,20 +1558,20 @@ PKHUDButton/base_type = &"Button"
 PKHUDButton/colors/font_color = Color(0.45, 0.25, 0.13, 0.96)
 PKHUDButton/colors/font_disabled_color = Color(0.32, 0.24, 0.16, 0.85)
 PKHUDButton/colors/font_hover_color = Color(0.62, 0.18, 0.12, 1)
-PKHUDButton/colors/font_hover_pressed_color = Color(0.99, 0.94, 0.8, 1)
-PKHUDButton/colors/font_pressed_color = Color(0.99, 0.94, 0.8, 1)
+PKHUDButton/colors/font_hover_pressed_color = Color(0.38, 0.12, 0.08, 1)
+PKHUDButton/colors/font_pressed_color = Color(0.38, 0.12, 0.08, 1)
 PKHUDButton/colors/icon_disabled_color = Color(0.76, 0.72, 0.64, 0.42)
 PKHUDButton/colors/icon_focus_color = Color(1, 1, 1, 1)
 PKHUDButton/colors/icon_hover_color = Color(1.08, 1.05, 0.98, 1)
 PKHUDButton/colors/icon_hover_pressed_color = Color(1.08, 1.05, 0.98, 1)
 PKHUDButton/colors/icon_normal_color = Color(1, 1, 1, 1)
 PKHUDButton/colors/icon_pressed_color = Color(1.08, 1.05, 0.98, 1)
-PKHUDButton/styles/disabled = SubResource("HudButtonDisabled")
+PKHUDButton/styles/disabled = SubResource("PaperHud_button_disabled")
 PKHUDButton/styles/focus = SubResource("HudButtonFocus")
-PKHUDButton/styles/hover = SubResource("HudButtonHover")
-PKHUDButton/styles/hover_pressed = SubResource("HudButtonPressed")
-PKHUDButton/styles/normal = SubResource("HudButtonNormal")
-PKHUDButton/styles/pressed = SubResource("HudButtonPressed")
+PKHUDButton/styles/hover = SubResource("PaperHud_button_hover")
+PKHUDButton/styles/hover_pressed = SubResource("PaperHud_button_pressed")
+PKHUDButton/styles/normal = SubResource("PaperHud_button_normal")
+PKHUDButton/styles/pressed = SubResource("PaperHud_button_pressed")
 PKHUDInset/base_type = &"PanelContainer"
 PKHUDInset/styles/panel = SubResource("HudInset")
 PKHUDLabel/base_type = &"Label"
@@ -1487,25 +1579,25 @@ PKHUDLabel/colors/font_color = Color(0.14, 0.082, 0.042, 1)
 PKHUDLabel/font_sizes/font_size = 14
 PKHUDLabel/fonts/font = SubResource("SansStrong")
 PKHUDPanel/base_type = &"PanelContainer"
-PKHUDPanel/styles/panel = SubResource("HudPanel")
+PKHUDPanel/styles/panel = SubResource("PaperHud_panel_horizontal")
 PKHUDTab/base_type = &"Button"
 PKHUDTab/colors/font_color = Color(0.18, 0.105, 0.055, 1)
 PKHUDTab/colors/font_disabled_color = Color(0.32, 0.24, 0.16, 0.85)
 PKHUDTab/colors/font_hover_color = Color(0.55, 0.18, 0.12, 1)
-PKHUDTab/colors/font_hover_pressed_color = Color(0.99, 0.94, 0.8, 1)
-PKHUDTab/colors/font_pressed_color = Color(0.99, 0.94, 0.8, 1)
+PKHUDTab/colors/font_hover_pressed_color = Color(0.38, 0.12, 0.08, 1)
+PKHUDTab/colors/font_pressed_color = Color(0.38, 0.12, 0.08, 1)
 PKHUDTab/colors/icon_disabled_color = Color(0.76, 0.72, 0.64, 0.42)
 PKHUDTab/colors/icon_focus_color = Color(1, 1, 1, 1)
 PKHUDTab/colors/icon_hover_color = Color(1.08, 1.05, 0.98, 1)
 PKHUDTab/colors/icon_hover_pressed_color = Color(1.08, 1.05, 0.98, 1)
 PKHUDTab/colors/icon_normal_color = Color(1, 1, 1, 1)
 PKHUDTab/colors/icon_pressed_color = Color(1.08, 1.05, 0.98, 1)
-PKHUDTab/styles/disabled = SubResource("HudButtonDisabled")
+PKHUDTab/styles/disabled = SubResource("PaperHud_button_disabled")
 PKHUDTab/styles/focus = SubResource("HudButtonFocus")
-PKHUDTab/styles/hover = SubResource("HudButtonHover")
-PKHUDTab/styles/hover_pressed = SubResource("HudButtonPressed")
-PKHUDTab/styles/normal = SubResource("HudButtonNormal")
-PKHUDTab/styles/pressed = SubResource("HudButtonPressed")
+PKHUDTab/styles/hover = SubResource("PaperHud_button_hover")
+PKHUDTab/styles/hover_pressed = SubResource("PaperHud_button_pressed")
+PKHUDTab/styles/normal = SubResource("PaperHud_button_normal")
+PKHUDTab/styles/pressed = SubResource("PaperHud_button_pressed")
 PKHUDTopBarShell/base_type = &"PanelContainer"
 PKHUDTopBarShell/styles/panel = SubResource("HudTopBarShell")
 PKIconButton/base_type = &"Button"
@@ -1646,3 +1738,109 @@ VScrollBar/styles/grabber_pressed = SubResource("ScrollGrabberPressed")
 VScrollBar/styles/scroll = SubResource("ScrollTrack")
 VScrollBar/styles/scroll_focus = SubResource("ScrollTrack")
 VSeparator/styles/separator = SubResource("Rule")
+
+PKPaperHUDVertical/base_type = &"PanelContainer"
+PKPaperHUDVertical/styles/panel = SubResource("PaperHud_panel_vertical")
+
+; Generated paper control icons: tools/bake_paper_control_icons.gd
+CheckBox/icons/checked = ExtResource("paper_ctrl_checked")
+CheckBox/icons/checked_disabled = ExtResource("paper_ctrl_checked")
+CheckBox/icons/unchecked = ExtResource("paper_ctrl_unchecked")
+CheckBox/icons/unchecked_disabled = ExtResource("paper_ctrl_unchecked")
+CheckBox/icons/radio_checked = ExtResource("paper_ctrl_radio_checked")
+CheckBox/icons/radio_checked_disabled = ExtResource("paper_ctrl_radio_checked")
+CheckBox/icons/radio_unchecked = ExtResource("paper_ctrl_radio_unchecked")
+CheckBox/icons/radio_unchecked_disabled = ExtResource("paper_ctrl_radio_unchecked")
+PopupMenu/icons/checked = ExtResource("paper_ctrl_checked")
+PopupMenu/icons/checked_disabled = ExtResource("paper_ctrl_checked")
+PopupMenu/icons/unchecked = ExtResource("paper_ctrl_unchecked")
+PopupMenu/icons/unchecked_disabled = ExtResource("paper_ctrl_unchecked")
+PopupMenu/icons/radio_checked = ExtResource("paper_ctrl_radio_checked")
+PopupMenu/icons/radio_checked_disabled = ExtResource("paper_ctrl_radio_checked")
+PopupMenu/icons/radio_unchecked = ExtResource("paper_ctrl_radio_unchecked")
+PopupMenu/icons/radio_unchecked_disabled = ExtResource("paper_ctrl_radio_unchecked")
+Tree/icons/checked = ExtResource("paper_ctrl_checked")
+Tree/icons/checked_disabled = ExtResource("paper_ctrl_checked")
+Tree/icons/unchecked = ExtResource("paper_ctrl_unchecked")
+Tree/icons/unchecked_disabled = ExtResource("paper_ctrl_unchecked")
+Tree/icons/indeterminate = ExtResource("paper_ctrl_indeterminate")
+Tree/icons/indeterminate_disabled = ExtResource("paper_ctrl_indeterminate")
+CheckButton/icons/checked = ExtResource("paper_ctrl_toggle_on")
+CheckButton/icons/checked_disabled = ExtResource("paper_ctrl_toggle_on")
+CheckButton/icons/checked_mirrored = ExtResource("paper_ctrl_toggle_on")
+CheckButton/icons/checked_disabled_mirrored = ExtResource("paper_ctrl_toggle_on")
+CheckButton/icons/unchecked = ExtResource("paper_ctrl_toggle_off")
+CheckButton/icons/unchecked_disabled = ExtResource("paper_ctrl_toggle_off")
+CheckButton/icons/unchecked_mirrored = ExtResource("paper_ctrl_toggle_off")
+CheckButton/icons/unchecked_disabled_mirrored = ExtResource("paper_ctrl_toggle_off")
+OptionButton/icons/arrow = ExtResource("paper_ctrl_arrow_down")
+SpinBox/icons/updown = ExtResource("paper_ctrl_updown")
+SpinBox/icons/up = ExtResource("paper_ctrl_arrow_up")
+SpinBox/icons/up_hover = ExtResource("paper_ctrl_arrow_up")
+SpinBox/icons/up_pressed = ExtResource("paper_ctrl_arrow_up")
+SpinBox/icons/up_disabled = ExtResource("paper_ctrl_arrow_up")
+SpinBox/icons/down = ExtResource("paper_ctrl_arrow_down")
+SpinBox/icons/down_hover = ExtResource("paper_ctrl_arrow_down")
+SpinBox/icons/down_pressed = ExtResource("paper_ctrl_arrow_down")
+SpinBox/icons/down_disabled = ExtResource("paper_ctrl_arrow_down")
+PopupMenu/icons/submenu = ExtResource("paper_ctrl_arrow_right")
+PopupMenu/icons/submenu_mirrored = ExtResource("paper_ctrl_arrow_left")
+Tree/icons/updown = ExtResource("paper_ctrl_updown")
+Tree/icons/select_arrow = ExtResource("paper_ctrl_arrow_down")
+Tree/icons/arrow = ExtResource("paper_ctrl_arrow_down")
+Tree/icons/arrow_collapsed = ExtResource("paper_ctrl_arrow_right")
+Tree/icons/arrow_collapsed_mirrored = ExtResource("paper_ctrl_arrow_left")
+Tree/icons/scroll_hint = ExtResource("paper_ctrl_arrow_down")
+HSlider/icons/grabber = ExtResource("paper_ctrl_grabber")
+HSlider/icons/grabber_highlight = ExtResource("paper_ctrl_grabber")
+HSlider/icons/grabber_disabled = ExtResource("paper_ctrl_grabber")
+VSlider/icons/grabber = ExtResource("paper_ctrl_grabber")
+VSlider/icons/grabber_highlight = ExtResource("paper_ctrl_grabber")
+VSlider/icons/grabber_disabled = ExtResource("paper_ctrl_grabber")
+HScrollBar/icons/increment = ExtResource("paper_ctrl_arrow_right")
+HScrollBar/icons/increment_highlight = ExtResource("paper_ctrl_arrow_right")
+HScrollBar/icons/increment_pressed = ExtResource("paper_ctrl_arrow_right")
+HScrollBar/icons/decrement = ExtResource("paper_ctrl_arrow_left")
+HScrollBar/icons/decrement_highlight = ExtResource("paper_ctrl_arrow_left")
+HScrollBar/icons/decrement_pressed = ExtResource("paper_ctrl_arrow_left")
+VScrollBar/icons/increment = ExtResource("paper_ctrl_arrow_down")
+VScrollBar/icons/increment_highlight = ExtResource("paper_ctrl_arrow_down")
+VScrollBar/icons/increment_pressed = ExtResource("paper_ctrl_arrow_down")
+VScrollBar/icons/decrement = ExtResource("paper_ctrl_arrow_up")
+VScrollBar/icons/decrement_highlight = ExtResource("paper_ctrl_arrow_up")
+VScrollBar/icons/decrement_pressed = ExtResource("paper_ctrl_arrow_up")
+LineEdit/icons/clear = ExtResource("paper_ctrl_close")
+TextEdit/icons/tab = ExtResource("paper_ctrl_arrow_right")
+TextEdit/icons/space = ExtResource("paper_ctrl_radio_unchecked")
+TabBar/icons/increment = ExtResource("paper_ctrl_arrow_right")
+TabBar/icons/increment_highlight = ExtResource("paper_ctrl_arrow_right")
+TabBar/icons/decrement = ExtResource("paper_ctrl_arrow_left")
+TabBar/icons/decrement_highlight = ExtResource("paper_ctrl_arrow_left")
+TabBar/icons/drop_mark = ExtResource("paper_ctrl_arrow_down")
+TabBar/icons/close = ExtResource("paper_ctrl_close")
+Window/icons/close = ExtResource("paper_ctrl_close")
+Window/icons/close_pressed = ExtResource("paper_ctrl_close")
+GraphEdit/icons/zoom_in = ExtResource("paper_ctrl_zoom_in")
+GraphEdit/icons/zoom_out = ExtResource("paper_ctrl_zoom_out")
+GraphEdit/icons/zoom_reset = ExtResource("paper_ctrl_reset")
+GraphEdit/icons/grid_toggle = ExtResource("paper_ctrl_unchecked")
+GraphEdit/icons/minimap_toggle = ExtResource("paper_ctrl_target")
+GraphEdit/icons/snapping_toggle = ExtResource("paper_ctrl_target")
+GraphEdit/icons/layout = ExtResource("paper_ctrl_reset")
+CheckBox/colors/checkbox_checked_color = Color(1, 1, 1, 1)
+CheckBox/colors/checkbox_unchecked_color = Color(1, 1, 1, 1)
+CheckButton/colors/button_checked_color = Color(1, 1, 1, 1)
+CheckButton/colors/button_unchecked_color = Color(1, 1, 1, 1)
+LineEdit/colors/clear_button_color = Color(1, 1, 1, 1)
+LineEdit/colors/clear_button_color_pressed = Color(1, 1, 1, 1)
+SpinBox/colors/up_icon_modulate = Color(1, 1, 1, 1)
+SpinBox/colors/up_hover_icon_modulate = Color(1, 1, 1, 1)
+SpinBox/colors/up_pressed_icon_modulate = Color(1, 1, 1, 1)
+SpinBox/colors/up_disabled_icon_modulate = Color(1, 1, 1, 0.45)
+SpinBox/colors/down_icon_modulate = Color(1, 1, 1, 1)
+SpinBox/colors/down_hover_icon_modulate = Color(1, 1, 1, 1)
+SpinBox/colors/down_pressed_icon_modulate = Color(1, 1, 1, 1)
+SpinBox/colors/down_disabled_icon_modulate = Color(1, 1, 1, 0.45)
+TabBar/colors/icon_selected_color = Color(1, 1, 1, 1)
+TabBar/colors/icon_hovered_color = Color(1, 1, 1, 1)
+TabBar/colors/icon_unselected_color = Color(1, 1, 1, 1)

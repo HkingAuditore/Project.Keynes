@@ -474,18 +474,8 @@ func _draw_effect(center: Vector2, effect: Dictionary) -> void:
 	# Atlas seal: a stable ink backing makes the feedback readable on snow and sand.
 	draw_circle(badge_center, badge_r + scale_inv, Color(color, fade))
 	draw_circle(badge_center, badge_r, Color(ink, fade * 0.96))
-	var texture := IconCatalog.texture_for_key(icon)
-	if texture != null:
-		draw_texture_rect(texture, Rect2(badge_center - Vector2.ONE * badge_r * 0.65,
-			Vector2.ONE * badge_r * 1.3), false, Color(color, fade))
-	else:
-		var font_size := 12 if major else 11
-		draw_set_transform(badge_center, 0.0, Vector2.ONE * scale_inv)
-		var glyph := IconCatalog.glyph_for_key(icon)
-		var size := IconCatalog.FONT_AWESOME.get_string_size(glyph, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
-		draw_string(IconCatalog.FONT_AWESOME, Vector2(-size.x * 0.5, font_size * 0.35),
-			glyph, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(color, fade))
-		draw_set_transform(Vector2.ZERO)
+	IconCatalog.draw_icon(self, icon, Rect2(badge_center - Vector2.ONE * badge_r * 0.85,
+		Vector2.ONE * badge_r * 1.7), fade)
 	if major or _camera.zoom.x >= UITokens.MAP_ACTIVITY_TEXT_ZOOM \
 			or int(effect.cell) == _selected_cell_index():
 		draw_set_transform(badge_center + Vector2(0, -badge_r - 7.0 * scale_inv),

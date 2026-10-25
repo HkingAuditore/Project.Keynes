@@ -1,0 +1,16 @@
+{
+  "name": "ui_native_controls",
+  "columns": 4,
+  "rows": 2,
+  "semantics": [
+    "control.checkbox_unchecked",
+    "control.checkbox_checked",
+    "control.checkbox_indeterminate",
+    "control.radio_unchecked",
+    "control.radio_checked",
+    "control.toggle_off",
+    "control.toggle_on",
+    "control.scroll_grip"
+  ],
+  "prompt": "Use case: stylized-concept. A functional game UI sprite atlas with EXACTLY 4 columns by 2 rows, 8 isolated paper stickers. Same style as reference: rough thick BLACK PENCIL outlines, colored-pencil grain, angular close-cut OFF-WHITE paper edge, simple flat colors. True transparent alpha between and outside stickers. No text, labels, numbers, scene, shadows, glossy 3D or metallic ornament. Designed to remain clear after reduction to 16 pixels. Row1: EMPTY square checkbox drawn in black pencil with cream paper interior; identical square checkbox with a large GREEN checkmark inside; identical square checkbox with a bold ochre HORIZONTAL DASH inside; EMPTY circular radio button drawn in black pencil with cream interior. Row2: circular radio button with a BLUE filled dot inside; short horizontal OFF toggle switch with pale gray track and paper knob at LEFT; same horizontal ON toggle switch with muted green track and paper knob at RIGHT; vertical scrollbar grip made of three short bold horizontal graphite pencil lines on a small cream paper tab. Center one distinct component in each equal cell, middle 70 percent of cell, generous transparent gutters. Checkbox frame silhouettes same sizes, radio silhouettes same sizes, toggle silhouettes same sizes. Do not place labels below any component."
+}

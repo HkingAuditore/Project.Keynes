@@ -1,0 +1,2620 @@
+{
+  "style_reference": "ToyEmpires Icon_TMP.png (user supplied; style reference only)",
+  "tool": "built-in image_gen",
+  "sheets": [
+    {
+      "name": "goods_01",
+      "columns": 6,
+      "rows": 6,
+      "semantics": [
+        "good.adobe_brick",
+        "good.advanced_chips",
+        "good.agricultural_machinery",
+        "good.aluminum",
+        "good.automobiles",
+        "good.autonomous_systems",
+        "good.bast_fiber",
+        "good.batteries",
+        "good.bauxite",
+        "good.beverages",
+        "good.bread",
+        "good.bricks",
+        "good.brine",
+        "good.bronze_tools",
+        "good.canned_fish",
+        "good.cement",
+        "good.charcoal",
+        "good.chipped_stone_tools",
+        "good.clay",
+        "good.cloth",
+        "good.clothing",
+        "good.coal",
+        "good.coke",
+        "good.computers",
+        "good.concrete",
+        "good.construction_components",
+        "good.copper",
+        "good.copper_ore",
+        "good.copper_tools",
+        "good.corn_grain",
+        "good.cotton_fiber",
+        "good.crude_oil",
+        "good.dairy_products",
+        "good.detergent",
+        "good.edible_oil",
+        "good.electric_motor"
+      ],
+      "prompt": "Use case: stylized-concept. Asset type: production game UI sprite atlas. Use the supplied image ONLY as a style reference. Create NEW drawings of the subjects below. Match its thick rough black graphite outlines, visible colored-pencil hatching and wax-crayon grain, simple charming slightly irregular silhouettes, flat warm ochre, brick-red, muted blue and leaf-green fills. Every subject is drawn on its OWN close-cut irregular OFF-WHITE paper sticker with angular scissor-cut edges. The paper border must closely follow the object, NOT a rectangular card. Do not use watercolor, smooth vector, fine engraving, photorealism, glossy 3D, ornate framing or cast shadows. Bold simple silhouettes legible at 32 pixels. TRANSPARENT alpha outside each white paper sticker. No labels, no text, no grid lines, no numbers, no watermark. Square canvas with EXACTLY 6 columns and 6 rows of equally sized cells. One centered sticker per cell, left to right, top to bottom. Each sticker fits within the middle 76% of its cell, leaving generous TRANSPARENT gutters on all sides. Do not move objects to other cells. Any unused final cells must stay transparent. Draw mineral deposits as rough rocks, refined metals as ingots, occupations as distinct worker busts with their characteristic tool, buildings as simple recognizable structures.\nRow 1: adobe brick; advanced chips; agricultural machinery; aluminum; automobiles; autonomous systems.\nRow 2: bast fiber; batteries; bauxite; beverages; bread; bricks.\nRow 3: brine; bronze tools; canned fish; cement; charcoal; chipped stone tools.\nRow 4: clay; cloth; clothing; coal; coke; computers.\nRow 5: concrete; construction components; copper; copper ore; copper tools; corn grain.\nRow 6: cotton fiber; crude oil; dairy products; detergent; edible oil; electric motor.",
+      "actual_rows": 6,
+      "row_edges_px": [
+        0,
+        235,
+        454,
+        657,
+        845,
+        1033,
+        1254
+      ],
+      "regions": {
+        "good.adobe_brick": [
+          28,
+          60,
+          183,
+          166
+        ],
+        "good.advanced_chips": [
+          228,
+          41,
+          187,
+          192
+        ],
+        "good.agricultural_machinery": [
+          424,
+          48,
+          217,
+          184
+        ],
+        "good.aluminum": [
+          650,
+          61,
+          185,
+          171
+        ],
+        "good.automobiles": [
+          837,
+          71,
+          203,
+          153
+        ],
+        "good.autonomous_systems": [
+          1043,
+          66,
+          194,
+          155
+        ],
+        "good.bast_fiber": [
+          23,
+          251,
+          191,
+          203
+        ],
+        "good.batteries": [
+          231,
+          262,
+          178,
+          175
+        ],
+        "good.bauxite": [
+          429,
+          259,
+          199,
+          176
+        ],
+        "good.beverages": [
+          648,
+          247,
+          169,
+          198
+        ],
+        "good.bread": [
+          840,
+          267,
+          197,
+          178
+        ],
+        "good.bricks": [
+          1046,
+          267,
+          194,
+          165
+        ],
+        "good.brine": [
+          16,
+          493,
+          206,
+          135
+        ],
+        "good.bronze_tools": [
+          230,
+          455,
+          189,
+          200
+        ],
+        "good.canned_fish": [
+          434,
+          462,
+          196,
+          180
+        ],
+        "good.cement": [
+          644,
+          463,
+          186,
+          185
+        ],
+        "good.charcoal": [
+          847,
+          486,
+          187,
+          157
+        ],
+        "good.chipped_stone_tools": [
+          1048,
+          466,
+          184,
+          177
+        ],
+        "good.clay": [
+          15,
+          683,
+          202,
+          144
+        ],
+        "good.cloth": [
+          220,
+          669,
+          213,
+          175
+        ],
+        "good.clothing": [
+          435,
+          667,
+          193,
+          176
+        ],
+        "good.coal": [
+          631,
+          687,
+          215,
+          148
+        ],
+        "good.coke": [
+          855,
+          677,
+          180,
+          154
+        ],
+        "good.computers": [
+          1049,
+          674,
+          189,
+          161
+        ],
+        "good.concrete": [
+          26,
+          864,
+          187,
+          162
+        ],
+        "good.construction_components": [
+          231,
+          846,
+          202,
+          183
+        ],
+        "good.copper": [
+          442,
+          877,
+          187,
+          153
+        ],
+        "good.copper_ore": [
+          644,
+          870,
+          193,
+          151
+        ],
+        "good.copper_tools": [
+          848,
+          857,
+          205,
+          173
+        ],
+        "good.corn_grain": [
+          1071,
+          852,
+          166,
+          179
+        ],
+        "good.cotton_fiber": [
+          25,
+          1041,
+          200,
+          190
+        ],
+        "good.crude_oil": [
+          253,
+          1035,
+          140,
+          194
+        ],
+        "good.dairy_products": [
+          429,
+          1040,
+          199,
+          189
+        ],
+        "good.detergent": [
+          650,
+          1037,
+          203,
+          192
+        ],
+        "good.edible_oil": [
+          884,
+          1040,
+          166,
+          190
+        ],
+        "good.electric_motor": [
+          1053,
+          1061,
+          188,
+          162
+        ]
+      }
+    },
+    {
+      "name": "goods_02",
+      "columns": 6,
+      "rows": 6,
+      "semantics": [
+        "good.electrical_equipment",
+        "good.electricity",
+        "good.electronic_components",
+        "good.engines",
+        "good.explosives",
+        "good.fertilizer",
+        "good.fine_clothing",
+        "good.fine_furniture",
+        "good.fish",
+        "good.flax_fiber",
+        "good.flint",
+        "good.footwear",
+        "good.fur",
+        "good.furniture",
+        "good.game_meat",
+        "good.gathered_plants",
+        "good.glass",
+        "good.glassware",
+        "good.gold",
+        "good.grain",
+        "good.horses",
+        "good.household_appliances",
+        "good.industrial_chemicals",
+        "good.industrial_machinery",
+        "good.insulated_cable",
+        "good.iron_ore",
+        "good.jewelry",
+        "good.latex",
+        "good.lead",
+        "good.lead_ore",
+        "good.leather",
+        "good.leather_goods",
+        "good.lime",
+        "good.limestone",
+        "good.livestock_products",
+        "good.logs"
+      ],
+      "prompt": "Use case: stylized-concept. Asset type: production game UI sprite atlas. Use the supplied image ONLY as a style reference. Create NEW drawings of the subjects below. Match its thick rough black graphite outlines, visible colored-pencil hatching and wax-crayon grain, simple charming slightly irregular silhouettes, flat warm ochre, brick-red, muted blue and leaf-green fills. Every subject is drawn on its OWN close-cut irregular OFF-WHITE paper sticker with angular scissor-cut edges. The paper border must closely follow the object, NOT a rectangular card. Do not use watercolor, smooth vector, fine engraving, photorealism, glossy 3D, ornate framing or cast shadows. Bold simple silhouettes legible at 32 pixels. TRANSPARENT alpha outside each white paper sticker. No labels, no text, no grid lines, no numbers, no watermark. Square canvas with EXACTLY 6 columns and 6 rows of equally sized cells. One centered sticker per cell, left to right, top to bottom. Each sticker fits within the middle 76% of its cell, leaving generous TRANSPARENT gutters on all sides. Do not move objects to other cells. Any unused final cells must stay transparent. Draw mineral deposits as rough rocks, refined metals as ingots, occupations as distinct worker busts with their characteristic tool, buildings as simple recognizable structures.\nRow 1: electrical equipment; electricity; electronic components; engines; explosives; fertilizer.\nRow 2: fine clothing; fine furniture; fish; flax fiber; flint; footwear.\nRow 3: fur; furniture; game meat; gathered plants; glass; glassware.\nRow 4: gold; grain; horses; household appliances; industrial chemicals; industrial machinery.\nRow 5: insulated cable; iron ore; jewelry; latex; lead; lead ore.\nRow 6: leather; leather goods; lime; limestone; livestock products; logs.",
+      "actual_rows": 6,
+      "row_edges_px": [
+        0,
+        222,
+        426,
+        628,
+        836,
+        1036,
+        1254
+      ],
+      "regions": {
+        "good.electrical_equipment": [
+          25,
+          28,
+          179,
+          192
+        ],
+        "good.electricity": [
+          243,
+          22,
+          143,
+          188
+        ],
+        "good.electronic_components": [
+          420,
+          45,
+          197,
+          173
+        ],
+        "good.engines": [
+          636,
+          29,
+          198,
+          190
+        ],
+        "good.explosives": [
+          846,
+          24,
+          192,
+          195
+        ],
+        "good.fertilizer": [
+          1053,
+          47,
+          183,
+          173
+        ],
+        "good.fine_clothing": [
+          15,
+          230,
+          195,
+          191
+        ],
+        "good.fine_furniture": [
+          229,
+          228,
+          179,
+          188
+        ],
+        "good.fish": [
+          422,
+          249,
+          203,
+          149
+        ],
+        "good.flax_fiber": [
+          643,
+          232,
+          185,
+          192
+        ],
+        "good.flint": [
+          844,
+          249,
+          191,
+          162
+        ],
+        "good.footwear": [
+          1049,
+          242,
+          193,
+          173
+        ],
+        "good.fur": [
+          18,
+          434,
+          181,
+          187
+        ],
+        "good.furniture": [
+          215,
+          450,
+          200,
+          160
+        ],
+        "good.game_meat": [
+          428,
+          435,
+          177,
+          185
+        ],
+        "good.gathered_plants": [
+          627,
+          435,
+          200,
+          186
+        ],
+        "good.glass": [
+          843,
+          443,
+          200,
+          175
+        ],
+        "good.glassware": [
+          1086,
+          432,
+          147,
+          194
+        ],
+        "good.gold": [
+          12,
+          655,
+          214,
+          172
+        ],
+        "good.grain": [
+          248,
+          635,
+          156,
+          198
+        ],
+        "good.horses": [
+          419,
+          633,
+          205,
+          192
+        ],
+        "good.household_appliances": [
+          654,
+          646,
+          164,
+          182
+        ],
+        "good.industrial_chemicals": [
+          862,
+          639,
+          159,
+          189
+        ],
+        "good.industrial_machinery": [
+          1047,
+          639,
+          195,
+          191
+        ],
+        "good.insulated_cable": [
+          16,
+          852,
+          200,
+          165
+        ],
+        "good.iron_ore": [
+          228,
+          849,
+          184,
+          167
+        ],
+        "good.jewelry": [
+          439,
+          846,
+          167,
+          177
+        ],
+        "good.latex": [
+          648,
+          844,
+          161,
+          184
+        ],
+        "good.lead": [
+          840,
+          862,
+          208,
+          160
+        ],
+        "good.lead_ore": [
+          1060,
+          851,
+          181,
+          172
+        ],
+        "good.leather": [
+          19,
+          1039,
+          189,
+          188
+        ],
+        "good.leather_goods": [
+          222,
+          1040,
+          188,
+          190
+        ],
+        "good.lime": [
+          421,
+          1039,
+          196,
+          191
+        ],
+        "good.limestone": [
+          629,
+          1051,
+          200,
+          175
+        ],
+        "good.livestock_products": [
+          862,
+          1040,
+          170,
+          190
+        ],
+        "good.logs": [
+          1042,
+          1062,
+          201,
+          159
+        ]
+      }
+    },
+    {
+      "name": "goods_03",
+      "columns": 6,
+      "rows": 6,
+      "semantics": [
+        "good.lubricants",
+        "good.lumber",
+        "good.machine_parts",
+        "good.manganese_ore",
+        "good.manuscripts",
+        "good.meat",
+        "good.medicinal_herbs",
+        "good.metal_housewares",
+        "good.natural_gas",
+        "good.natural_rubber",
+        "good.nuclear_fuel",
+        "good.oceanic_vessels",
+        "good.packaging",
+        "good.paper",
+        "good.petrochemicals",
+        "good.pharmaceuticals",
+        "good.phosphate_rock",
+        "good.plastics",
+        "good.potatoes",
+        "good.pottery",
+        "good.precision_tools",
+        "good.prepared_staples",
+        "good.printed_materials",
+        "good.processed_food",
+        "good.radio_equipment",
+        "good.railway_equipment",
+        "good.rare_earth_metals",
+        "good.rare_earth_ore",
+        "good.raw_hide",
+        "good.raw_stone",
+        "good.reactor_components",
+        "good.reed_bundle",
+        "good.refined_fuel",
+        "good.rice_grain",
+        "good.salt",
+        "good.saltpeter"
+      ],
+      "prompt": "Use case: stylized-concept. Asset type: production game UI sprite atlas. Use the supplied image ONLY as a style reference. Create NEW drawings of the subjects below. Match its thick rough black graphite outlines, visible colored-pencil hatching and wax-crayon grain, simple charming slightly irregular silhouettes, flat warm ochre, brick-red, muted blue and leaf-green fills. Every subject is drawn on its OWN close-cut irregular OFF-WHITE paper sticker with angular scissor-cut edges. The paper border must closely follow the object, NOT a rectangular card. Do not use watercolor, smooth vector, fine engraving, photorealism, glossy 3D, ornate framing or cast shadows. Bold simple silhouettes legible at 32 pixels. TRANSPARENT alpha outside each white paper sticker. No labels, no text, no grid lines, no numbers, no watermark. Square canvas with EXACTLY 6 columns and 6 rows of equally sized cells. One centered sticker per cell, left to right, top to bottom. Each sticker fits within the middle 76% of its cell, leaving generous TRANSPARENT gutters on all sides. Do not move objects to other cells. Any unused final cells must stay transparent. Draw mineral deposits as rough rocks, refined metals as ingots, occupations as distinct worker busts with their characteristic tool, buildings as simple recognizable structures.\nRow 1: lubricants; lumber; machine parts; manganese ore; manuscripts; meat.\nRow 2: medicinal herbs; metal housewares; natural gas; natural rubber; nuclear fuel; oceanic vessels.\nRow 3: packaging; paper; petrochemicals; pharmaceuticals; phosphate rock; plastics.\nRow 4: potatoes; pottery; precision tools; prepared staples; printed materials; processed food.\nRow 5: radio equipment; railway equipment; rare earth metals; rare earth ore; raw hide; raw stone.\nRow 6: reactor components; reed bundle; refined fuel; rice grain; salt; saltpeter.",
+      "actual_rows": 6,
+      "row_edges_px": [
+        0,
+        243,
+        439,
+        630,
+        826,
+        1019,
+        1254
+      ],
+      "regions": {
+        "good.lubricants": [
+          28,
+          46,
+          187,
+          186
+        ],
+        "good.lumber": [
+          224,
+          67,
+          208,
+          174
+        ],
+        "good.machine_parts": [
+          432,
+          64,
+          196,
+          172
+        ],
+        "good.manganese_ore": [
+          637,
+          67,
+          188,
+          164
+        ],
+        "good.manuscripts": [
+          836,
+          58,
+          199,
+          177
+        ],
+        "good.meat": [
+          1043,
+          64,
+          193,
+          159
+        ],
+        "good.medicinal_herbs": [
+          19,
+          250,
+          190,
+          182
+        ],
+        "good.metal_housewares": [
+          227,
+          257,
+          199,
+          170
+        ],
+        "good.natural_gas": [
+          452,
+          249,
+          144,
+          182
+        ],
+        "good.natural_rubber": [
+          646,
+          250,
+          170,
+          187
+        ],
+        "good.nuclear_fuel": [
+          832,
+          268,
+          196,
+          162
+        ],
+        "good.oceanic_vessels": [
+          1036,
+          256,
+          200,
+          170
+        ],
+        "good.packaging": [
+          18,
+          455,
+          204,
+          170
+        ],
+        "good.paper": [
+          227,
+          455,
+          196,
+          173
+        ],
+        "good.petrochemicals": [
+          450,
+          448,
+          165,
+          177
+        ],
+        "good.pharmaceuticals": [
+          633,
+          464,
+          190,
+          152
+        ],
+        "good.phosphate_rock": [
+          837,
+          459,
+          196,
+          164
+        ],
+        "good.plastics": [
+          1064,
+          449,
+          171,
+          179
+        ],
+        "good.potatoes": [
+          20,
+          645,
+          199,
+          175
+        ],
+        "good.pottery": [
+          246,
+          640,
+          156,
+          182
+        ],
+        "good.precision_tools": [
+          424,
+          641,
+          204,
+          167
+        ],
+        "good.prepared_staples": [
+          635,
+          635,
+          190,
+          189
+        ],
+        "good.printed_materials": [
+          829,
+          642,
+          207,
+          178
+        ],
+        "good.processed_food": [
+          1047,
+          647,
+          188,
+          169
+        ],
+        "good.radio_equipment": [
+          25,
+          829,
+          187,
+          187
+        ],
+        "good.railway_equipment": [
+          224,
+          839,
+          195,
+          178
+        ],
+        "good.rare_earth_metals": [
+          429,
+          852,
+          196,
+          162
+        ],
+        "good.rare_earth_ore": [
+          634,
+          847,
+          195,
+          166
+        ],
+        "good.raw_hide": [
+          847,
+          841,
+          183,
+          175
+        ],
+        "good.raw_stone": [
+          1037,
+          848,
+          197,
+          163
+        ],
+        "good.reactor_components": [
+          42,
+          1022,
+          152,
+          194
+        ],
+        "good.reed_bundle": [
+          235,
+          1029,
+          174,
+          185
+        ],
+        "good.refined_fuel": [
+          458,
+          1030,
+          135,
+          183
+        ],
+        "good.rice_grain": [
+          639,
+          1035,
+          190,
+          173
+        ],
+        "good.salt": [
+          839,
+          1060,
+          195,
+          144
+        ],
+        "good.saltpeter": [
+          1048,
+          1035,
+          179,
+          172
+        ]
+      }
+    },
+    {
+      "name": "goods_04",
+      "columns": 6,
+      "rows": 6,
+      "semantics": [
+        "good.scientific_instruments",
+        "good.seed_cotton",
+        "good.semiconductors",
+        "good.silica_sand",
+        "good.silver",
+        "good.soap",
+        "good.spices",
+        "good.stainless_steel",
+        "good.steam_engines",
+        "good.steel",
+        "good.sulfur",
+        "good.synthetic_fiber",
+        "good.synthetic_rubber",
+        "good.technology_points",
+        "good.telecom_equipment",
+        "good.tin",
+        "good.tin_ore",
+        "good.tools",
+        "good.turf_block",
+        "good.vegetables",
+        "good.wheat_grain",
+        "good.wire",
+        "good.wool",
+        "good.wrought_iron",
+        "good.zinc",
+        "good.zinc_ore"
+      ],
+      "prompt": "Use case: stylized-concept. Asset type: production game UI sprite atlas. Use the supplied image ONLY as a style reference. Create NEW drawings of the subjects below. Match its thick rough black graphite outlines, visible colored-pencil hatching and wax-crayon grain, simple charming slightly irregular silhouettes, flat warm ochre, brick-red, muted blue and leaf-green fills. Every subject is drawn on its OWN close-cut irregular OFF-WHITE paper sticker with angular scissor-cut edges. The paper border must closely follow the object, NOT a rectangular card. Do not use watercolor, smooth vector, fine engraving, photorealism, glossy 3D, ornate framing or cast shadows. Bold simple silhouettes legible at 32 pixels. TRANSPARENT alpha outside each white paper sticker. No labels, no text, no grid lines, no numbers, no watermark. Square canvas with EXACTLY 6 columns and 6 rows of equally sized cells. One centered sticker per cell, left to right, top to bottom. Each sticker fits within the middle 76% of its cell, leaving generous TRANSPARENT gutters on all sides. Do not move objects to other cells. Any unused final cells must stay transparent. Draw mineral deposits as rough rocks, refined metals as ingots, occupations as distinct worker busts with their characteristic tool, buildings as simple recognizable structures.\nRow 1: scientific instruments; seed cotton; semiconductors; silica sand; silver; soap.\nRow 2: spices; stainless steel; steam engines; steel; sulfur; synthetic fiber.\nRow 3: synthetic rubber; technology points; telecom equipment; tin; tin ore; tools.\nRow 4: turf block; vegetables; wheat grain; wire; wool; wrought iron.\nRow 5: zinc; zinc ore.",
+      "actual_rows": 5,
+      "row_edges_px": [
+        0,
+        263,
+        488,
+        727,
+        973,
+        1254
+      ],
+      "regions": {
+        "good.scientific_instruments": [
+          41,
+          39,
+          157,
+          216
+        ],
+        "good.seed_cotton": [
+          226,
+          69,
+          197,
+          192
+        ],
+        "good.semiconductors": [
+          435,
+          61,
+          190,
+          192
+        ],
+        "good.silica_sand": [
+          635,
+          90,
+          192,
+          159
+        ],
+        "good.silver": [
+          834,
+          84,
+          204,
+          170
+        ],
+        "good.soap": [
+          1048,
+          65,
+          183,
+          186
+        ],
+        "good.spices": [
+          15,
+          274,
+          203,
+          207
+        ],
+        "good.stainless_steel": [
+          223,
+          308,
+          203,
+          173
+        ],
+        "good.steam_engines": [
+          426,
+          272,
+          218,
+          216
+        ],
+        "good.steel": [
+          644,
+          285,
+          195,
+          193
+        ],
+        "good.sulfur": [
+          841,
+          303,
+          209,
+          177
+        ],
+        "good.synthetic_fiber": [
+          1057,
+          276,
+          177,
+          203
+        ],
+        "good.synthetic_rubber": [
+          17,
+          521,
+          207,
+          190
+        ],
+        "good.technology_points": [
+          224,
+          511,
+          222,
+          193
+        ],
+        "good.telecom_equipment": [
+          446,
+          488,
+          176,
+          222
+        ],
+        "good.tin": [
+          635,
+          541,
+          201,
+          159
+        ],
+        "good.tin_ore": [
+          842,
+          518,
+          202,
+          188
+        ],
+        "good.tools": [
+          1049,
+          515,
+          189,
+          188
+        ],
+        "good.turf_block": [
+          22,
+          742,
+          197,
+          189
+        ],
+        "good.vegetables": [
+          227,
+          730,
+          207,
+          211
+        ],
+        "good.wheat_grain": [
+          436,
+          730,
+          178,
+          209
+        ],
+        "good.wire": [
+          626,
+          757,
+          213,
+          173
+        ],
+        "good.wool": [
+          841,
+          752,
+          201,
+          182
+        ],
+        "good.wrought_iron": [
+          1058,
+          738,
+          177,
+          199
+        ],
+        "good.zinc": [
+          18,
+          983,
+          201,
+          169
+        ],
+        "good.zinc_ore": [
+          229,
+          976,
+          194,
+          181
+        ]
+      }
+    },
+    {
+      "name": "professions_01",
+      "columns": 5,
+      "rows": 5,
+      "semantics": [
+        "profession.agricultural_worker",
+        "profession.ai_researcher",
+        "profession.apprentice",
+        "profession.artisan",
+        "profession.chemist",
+        "profession.construction_worker",
+        "profession.cooperative_member",
+        "profession.corvee_worker",
+        "profession.data_scientist",
+        "profession.electrician",
+        "profession.engineer",
+        "profession.enslaved_laborer",
+        "profession.fisher",
+        "profession.forager",
+        "profession.forestry_worker",
+        "profession.guild_master",
+        "profession.household_farmer",
+        "profession.hunter",
+        "profession.indentured_laborer",
+        "profession.industrialist",
+        "profession.industrial_worker",
+        "profession.journeyman",
+        "profession.landlord",
+        "profession.lorekeeper",
+        "profession.machinist"
+      ],
+      "prompt": "Use case: stylized-concept. Asset type: production game UI sprite atlas. Use the supplied image ONLY as a style reference. Create NEW drawings of the subjects below. Match its thick rough black graphite outlines, visible colored-pencil hatching and wax-crayon grain, simple charming slightly irregular silhouettes, flat warm ochre, brick-red, muted blue and leaf-green fills. Every subject is drawn on its OWN close-cut irregular OFF-WHITE paper sticker with angular scissor-cut edges. The paper border must closely follow the object, NOT a rectangular card. Do not use watercolor, smooth vector, fine engraving, photorealism, glossy 3D, ornate framing or cast shadows. Bold simple silhouettes legible at 32 pixels. TRANSPARENT alpha outside each white paper sticker. No labels, no text, no grid lines, no numbers, no watermark. Square canvas with EXACTLY 5 columns and 5 rows of equally sized cells. One centered sticker per cell, left to right, top to bottom. Each sticker fits within the middle 76% of its cell, leaving generous TRANSPARENT gutters on all sides. Do not move objects to other cells. Any unused final cells must stay transparent. Draw mineral deposits as rough rocks, refined metals as ingots, occupations as distinct worker busts with their characteristic tool, buildings as simple recognizable structures.\nRow 1: agricultural worker; ai researcher; apprentice; artisan; chemist.\nRow 2: construction worker; cooperative member; corvee worker; data scientist; electrician.\nRow 3: engineer; enslaved laborer; fisher; forager; forestry worker.\nRow 4: guild master; household farmer; hunter; indentured laborer; industrialist.\nRow 5: industrial worker; journeyman; landlord; lorekeeper; machinist.",
+      "actual_rows": 5,
+      "row_edges_px": [
+        0,
+        287,
+        538,
+        772,
+        1000,
+        1254
+      ],
+      "regions": {
+        "profession.agricultural_worker": [
+          29,
+          44,
+          230,
+          233
+        ],
+        "profession.ai_researcher": [
+          276,
+          48,
+          240,
+          223
+        ],
+        "profession.apprentice": [
+          529,
+          58,
+          224,
+          224
+        ],
+        "profession.artisan": [
+          758,
+          45,
+          235,
+          234
+        ],
+        "profession.chemist": [
+          1019,
+          50,
+          213,
+          235
+        ],
+        "profession.construction_worker": [
+          30,
+          295,
+          219,
+          228
+        ],
+        "profession.cooperative_member": [
+          260,
+          312,
+          246,
+          217
+        ],
+        "profession.corvee_worker": [
+          514,
+          296,
+          233,
+          233
+        ],
+        "profession.data_scientist": [
+          765,
+          298,
+          232,
+          239
+        ],
+        "profession.electrician": [
+          1008,
+          302,
+          220,
+          235
+        ],
+        "profession.engineer": [
+          33,
+          538,
+          232,
+          226
+        ],
+        "profession.enslaved_laborer": [
+          279,
+          543,
+          213,
+          217
+        ],
+        "profession.fisher": [
+          506,
+          541,
+          237,
+          225
+        ],
+        "profession.forager": [
+          754,
+          551,
+          240,
+          219
+        ],
+        "profession.forestry_worker": [
+          998,
+          551,
+          247,
+          220
+        ],
+        "profession.guild_master": [
+          18,
+          776,
+          233,
+          220
+        ],
+        "profession.household_farmer": [
+          271,
+          773,
+          238,
+          222
+        ],
+        "profession.hunter": [
+          523,
+          778,
+          233,
+          222
+        ],
+        "profession.indentured_laborer": [
+          762,
+          785,
+          227,
+          209
+        ],
+        "profession.industrialist": [
+          997,
+          783,
+          236,
+          211
+        ],
+        "profession.industrial_worker": [
+          22,
+          1002,
+          254,
+          225
+        ],
+        "profession.journeyman": [
+          281,
+          1004,
+          225,
+          223
+        ],
+        "profession.landlord": [
+          510,
+          1006,
+          241,
+          224
+        ],
+        "profession.lorekeeper": [
+          754,
+          1004,
+          237,
+          233
+        ],
+        "profession.machinist": [
+          993,
+          1008,
+          245,
+          219
+        ]
+      }
+    },
+    {
+      "name": "professions_02",
+      "columns": 5,
+      "rows": 5,
+      "semantics": [
+        "profession.manager",
+        "profession.merchant",
+        "profession.metallurgist",
+        "profession.miner",
+        "profession.natural_philosopher",
+        "profession.pastoralist",
+        "profession.petroleum_worker",
+        "profession.research_scientist",
+        "profession.researcher",
+        "profession.scholar",
+        "profession.scientist",
+        "profession.scribe",
+        "profession.serf",
+        "profession.sharecropper",
+        "profession.subsistence_farmer",
+        "profession.technician",
+        "profession.tenant_farmer",
+        "profession.transport_worker",
+        "profession.unemployed",
+        "profession.worker"
+      ],
+      "prompt": "Use case: stylized-concept. Asset type: production game UI sprite atlas. Use the supplied image ONLY as a style reference. Create NEW drawings of the subjects below. Match its thick rough black graphite outlines, visible colored-pencil hatching and wax-crayon grain, simple charming slightly irregular silhouettes, flat warm ochre, brick-red, muted blue and leaf-green fills. Every subject is drawn on its OWN close-cut irregular OFF-WHITE paper sticker with angular scissor-cut edges. The paper border must closely follow the object, NOT a rectangular card. Do not use watercolor, smooth vector, fine engraving, photorealism, glossy 3D, ornate framing or cast shadows. Bold simple silhouettes legible at 32 pixels. TRANSPARENT alpha outside each white paper sticker. No labels, no text, no grid lines, no numbers, no watermark. Square canvas with EXACTLY 5 columns and 5 rows of equally sized cells. One centered sticker per cell, left to right, top to bottom. Each sticker fits within the middle 76% of its cell, leaving generous TRANSPARENT gutters on all sides. Do not move objects to other cells. Any unused final cells must stay transparent. Draw mineral deposits as rough rocks, refined metals as ingots, occupations as distinct worker busts with their characteristic tool, buildings as simple recognizable structures.\nRow 1: manager; merchant; metallurgist; miner; natural philosopher.\nRow 2: pastoralist; petroleum worker; research scientist; researcher; scholar.\nRow 3: scientist; scribe; serf; sharecropper; subsistence farmer.\nRow 4: technician; tenant farmer; transport worker; unemployed; worker.",
+      "actual_rows": 4,
+      "row_edges_px": [
+        0,
+        333,
+        628,
+        938,
+        1254
+      ],
+      "regions": {
+        "profession.manager": [
+          11,
+          73,
+          235,
+          255
+        ],
+        "profession.merchant": [
+          259,
+          78,
+          238,
+          244
+        ],
+        "profession.metallurgist": [
+          505,
+          72,
+          238,
+          258
+        ],
+        "profession.miner": [
+          754,
+          87,
+          235,
+          244
+        ],
+        "profession.natural_philosopher": [
+          1001,
+          83,
+          245,
+          248
+        ],
+        "profession.pastoralist": [
+          12,
+          362,
+          245,
+          264
+        ],
+        "profession.petroleum_worker": [
+          258,
+          372,
+          239,
+          246
+        ],
+        "profession.research_scientist": [
+          512,
+          369,
+          228,
+          244
+        ],
+        "profession.researcher": [
+          751,
+          373,
+          247,
+          249
+        ],
+        "profession.scholar": [
+          999,
+          369,
+          242,
+          252
+        ],
+        "profession.scientist": [
+          12,
+          665,
+          233,
+          236
+        ],
+        "profession.scribe": [
+          258,
+          664,
+          242,
+          241
+        ],
+        "profession.serf": [
+          508,
+          664,
+          232,
+          244
+        ],
+        "profession.sharecropper": [
+          753,
+          671,
+          246,
+          240
+        ],
+        "profession.subsistence_farmer": [
+          1002,
+          672,
+          243,
+          232
+        ],
+        "profession.technician": [
+          13,
+          941,
+          238,
+          254
+        ],
+        "profession.tenant_farmer": [
+          259,
+          946,
+          243,
+          240
+        ],
+        "profession.transport_worker": [
+          509,
+          943,
+          235,
+          249
+        ],
+        "profession.unemployed": [
+          752,
+          958,
+          233,
+          230
+        ],
+        "profession.worker": [
+          995,
+          949,
+          251,
+          240
+        ]
+      }
+    },
+    {
+      "name": "resources_01",
+      "columns": 6,
+      "rows": 7,
+      "semantics": [
+        "resource.animal",
+        "resource.arable_land",
+        "resource.bauxite",
+        "resource.clay",
+        "resource.coal",
+        "resource.copper",
+        "resource.earth",
+        "resource.fertile_soil",
+        "resource.fire",
+        "resource.fish",
+        "resource.flint",
+        "resource.freshwater_fish",
+        "resource.gold",
+        "resource.iron",
+        "resource.lead",
+        "resource.limestone",
+        "resource.manganese",
+        "resource.marine_fish",
+        "resource.metal",
+        "resource.natural_gas",
+        "resource.oil",
+        "resource.paddy_land",
+        "resource.pasture",
+        "resource.phosphate_rock",
+        "resource.plantation_land",
+        "resource.precious",
+        "resource.rare_earth",
+        "resource.rock",
+        "resource.salt",
+        "resource.salt_deposit",
+        "resource.saltpeter",
+        "resource.silica_sand",
+        "resource.silver",
+        "resource.sulfur",
+        "resource.tin",
+        "resource.wood",
+        "resource.zinc"
+      ],
+      "prompt": "Use case: stylized-concept. Asset type: production game UI sprite atlas. Use the supplied image ONLY as a style reference. Create NEW drawings of the subjects below. Match its thick rough black graphite outlines, visible colored-pencil hatching and wax-crayon grain, simple charming slightly irregular silhouettes, flat warm ochre, brick-red, muted blue and leaf-green fills. Every subject is drawn on its OWN close-cut irregular OFF-WHITE paper sticker with angular scissor-cut edges. The paper border must closely follow the object, NOT a rectangular card. Do not use watercolor, smooth vector, fine engraving, photorealism, glossy 3D, ornate framing or cast shadows. Bold simple silhouettes legible at 32 pixels. TRANSPARENT alpha outside each white paper sticker. No labels, no text, no grid lines, no numbers, no watermark. Square canvas with EXACTLY 6 columns and 7 rows of equally sized cells. One centered sticker per cell, left to right, top to bottom. Each sticker fits within the middle 76% of its cell, leaving generous TRANSPARENT gutters on all sides. Do not move objects to other cells. Any unused final cells must stay transparent. Draw mineral deposits as rough rocks, refined metals as ingots, occupations as distinct worker busts with their characteristic tool, buildings as simple recognizable structures.\nRow 1: animal; arable land; bauxite; clay; coal; copper.\nRow 2: earth; fertile soil; fire; fish; flint; freshwater fish.\nRow 3: gold; iron; lead; limestone; manganese; marine fish.\nRow 4: metal; natural gas; oil; paddy land; pasture; phosphate rock.\nRow 5: plantation land; precious; rare earth; rock; salt; salt deposit.\nRow 6: saltpeter; silica sand; silver; sulfur; tin; wood.\nRow 7: zinc.",
+      "actual_rows": 7,
+      "row_edges_px": [
+        0,
+        199,
+        368,
+        540,
+        717,
+        896,
+        1075,
+        1254
+      ],
+      "regions": {
+        "resource.animal": [
+          30,
+          43,
+          176,
+          149
+        ],
+        "resource.arable_land": [
+          222,
+          54,
+          193,
+          136
+        ],
+        "resource.bauxite": [
+          437,
+          47,
+          180,
+          140
+        ],
+        "resource.clay": [
+          637,
+          57,
+          187,
+          132
+        ],
+        "resource.coal": [
+          844,
+          45,
+          185,
+          152
+        ],
+        "resource.copper": [
+          1047,
+          50,
+          188,
+          142
+        ],
+        "resource.earth": [
+          21,
+          225,
+          188,
+          137
+        ],
+        "resource.fertile_soil": [
+          230,
+          211,
+          187,
+          155
+        ],
+        "resource.fire": [
+          457,
+          204,
+          141,
+          161
+        ],
+        "resource.fish": [
+          637,
+          228,
+          187,
+          127
+        ],
+        "resource.flint": [
+          854,
+          215,
+          160,
+          151
+        ],
+        "resource.freshwater_fish": [
+          1045,
+          229,
+          192,
+          127
+        ],
+        "resource.gold": [
+          20,
+          392,
+          189,
+          146
+        ],
+        "resource.iron": [
+          227,
+          390,
+          199,
+          145
+        ],
+        "resource.lead": [
+          439,
+          389,
+          188,
+          148
+        ],
+        "resource.limestone": [
+          640,
+          390,
+          183,
+          144
+        ],
+        "resource.manganese": [
+          843,
+          387,
+          190,
+          147
+        ],
+        "resource.marine_fish": [
+          1045,
+          401,
+          191,
+          127
+        ],
+        "resource.metal": [
+          22,
+          559,
+          200,
+          155
+        ],
+        "resource.natural_gas": [
+          263,
+          551,
+          128,
+          163
+        ],
+        "resource.oil": [
+          468,
+          552,
+          119,
+          162
+        ],
+        "resource.paddy_land": [
+          627,
+          562,
+          199,
+          151
+        ],
+        "resource.pasture": [
+          837,
+          561,
+          199,
+          150
+        ],
+        "resource.phosphate_rock": [
+          1050,
+          559,
+          186,
+          155
+        ],
+        "resource.plantation_land": [
+          17,
+          732,
+          197,
+          155
+        ],
+        "resource.precious": [
+          237,
+          730,
+          167,
+          160
+        ],
+        "resource.rare_earth": [
+          435,
+          730,
+          186,
+          161
+        ],
+        "resource.rock": [
+          643,
+          743,
+          176,
+          149
+        ],
+        "resource.salt": [
+          837,
+          747,
+          196,
+          142
+        ],
+        "resource.salt_deposit": [
+          1045,
+          744,
+          193,
+          141
+        ],
+        "resource.saltpeter": [
+          32,
+          910,
+          162,
+          148
+        ],
+        "resource.silica_sand": [
+          219,
+          913,
+          196,
+          139
+        ],
+        "resource.silver": [
+          428,
+          910,
+          197,
+          152
+        ],
+        "resource.sulfur": [
+          637,
+          910,
+          187,
+          150
+        ],
+        "resource.tin": [
+          839,
+          918,
+          192,
+          139
+        ],
+        "resource.wood": [
+          1045,
+          911,
+          191,
+          146
+        ],
+        "resource.zinc": [
+          19,
+          1081,
+          195,
+          149
+        ]
+      }
+    },
+    {
+      "name": "buildings_01",
+      "columns": 5,
+      "rows": 4,
+      "semantics": [
+        "economy.building",
+        "economy.building.factory",
+        "economy.building.farm",
+        "economy.building.fishing",
+        "economy.building.food",
+        "economy.building.forestry",
+        "economy.building.gathering",
+        "economy.building.hearth",
+        "economy.building.hunting",
+        "economy.building.market",
+        "economy.building.mine",
+        "economy.building.power",
+        "economy.building.science",
+        "economy.building.service",
+        "economy.building.shipyard",
+        "economy.building.transport",
+        "economy.building.workshop"
+      ],
+      "prompt": "Use case: stylized-concept. Asset type: production game UI sprite atlas. Use the supplied image ONLY as a style reference. Create NEW drawings of the subjects below. Match its thick rough black graphite outlines, visible colored-pencil hatching and wax-crayon grain, simple charming slightly irregular silhouettes, flat warm ochre, brick-red, muted blue and leaf-green fills. Every subject is drawn on its OWN close-cut irregular OFF-WHITE paper sticker with angular scissor-cut edges. The paper border must closely follow the object, NOT a rectangular card. Do not use watercolor, smooth vector, fine engraving, photorealism, glossy 3D, ornate framing or cast shadows. Bold simple silhouettes legible at 32 pixels. TRANSPARENT alpha outside each white paper sticker. No labels, no text, no grid lines, no numbers, no watermark. Square canvas with EXACTLY 5 columns and 4 rows of equally sized cells. One centered sticker per cell, left to right, top to bottom. Each sticker fits within the middle 76% of its cell, leaving generous TRANSPARENT gutters on all sides. Do not move objects to other cells. Any unused final cells must stay transparent. Draw mineral deposits as rough rocks, refined metals as ingots, occupations as distinct worker busts with their characteristic tool, buildings as simple recognizable structures.\nRow 1: building; factory; farm; fishing; food.\nRow 2: forestry; gathering; hearth; hunting; market.\nRow 3: mine; power; science; service; shipyard.\nRow 4: transport; workshop.",
+      "actual_rows": 4,
+      "row_edges_px": [
+        0,
+        361,
+        664,
+        955,
+        1254
+      ],
+      "regions": {
+        "economy.building": [
+          7,
+          103,
+          251,
+          237
+        ],
+        "economy.building.factory": [
+          264,
+          63,
+          228,
+          277
+        ],
+        "economy.building.farm": [
+          501,
+          118,
+          252,
+          236
+        ],
+        "economy.building.fishing": [
+          755,
+          124,
+          247,
+          235
+        ],
+        "economy.building.food": [
+          1003,
+          129,
+          248,
+          217
+        ],
+        "economy.building.forestry": [
+          0,
+          404,
+          278,
+          258
+        ],
+        "economy.building.gathering": [
+          278,
+          436,
+          225,
+          222
+        ],
+        "economy.building.hearth": [
+          503,
+          413,
+          246,
+          246
+        ],
+        "economy.building.hunting": [
+          749,
+          416,
+          257,
+          244
+        ],
+        "economy.building.market": [
+          1009,
+          422,
+          239,
+          237
+        ],
+        "economy.building.mine": [
+          4,
+          720,
+          264,
+          232
+        ],
+        "economy.building.power": [
+          268,
+          689,
+          237,
+          260
+        ],
+        "economy.building.science": [
+          505,
+          697,
+          244,
+          252
+        ],
+        "economy.building.service": [
+          749,
+          698,
+          257,
+          252
+        ],
+        "economy.building.shipyard": [
+          1006,
+          728,
+          243,
+          225
+        ],
+        "economy.building.transport": [
+          0,
+          998,
+          266,
+          231
+        ],
+        "economy.building.workshop": [
+          266,
+          971,
+          253,
+          256
+        ]
+      }
+    },
+    {
+      "name": "hud_01",
+      "columns": 5,
+      "rows": 5,
+      "semantics": [
+        "hud.country.technology",
+        "hud.country.ideology",
+        "hud.country.economy",
+        "hud.country.military",
+        "hud.country.diplomacy",
+        "hud.overlay.geography",
+        "hud.overlay.climate",
+        "hud.overlay.resources",
+        "hud.overlay.biology",
+        "hud.overlay.clear",
+        "geography.elevation",
+        "geography.surface",
+        "geography.terrain",
+        "climate.temperature",
+        "climate.humidity",
+        "climate.wind",
+        "ecology.growth",
+        "ecology.vegetation",
+        "hud.clock.calendar",
+        "hud.clock.pause",
+        "hud.clock.play",
+        "hud.clock.speed",
+        "hud.system.settings",
+        "hud.system.day_night_on",
+        "hud.system.day_night_off"
+      ],
+      "prompt": "Use case: stylized-concept. Asset type: game HUD icon sprite atlas. Use the attached image only as STYLE reference. Create NEW original drawings in exactly the same rough thick BLACK PENCIL contour, waxy colored-pencil grain, simple bold color areas, warm ochre/red/blue/green palette, slightly imperfect hand-drawing, angular off-white cut-paper sticker border. True transparent alpha outside each sticker. NO watercolor, NO smooth vector, NO shiny 3D, NO thin engraving. Legible at 24 to 44 pixels.\nExactly 5 columns by 5 rows, one isolated sticker per equally sized cell, centered, no overlap, generous transparent gutters, no labels or numbers or grid lines. Each object occupies middle 70 percent of cell.\nRow1: science open book with blue flask; ideology rolled scroll with red seal and feather; economy golden coins in pouch; military crossed swords with shield; diplomacy two shaking hands with small olive sprig.\nRow2: geography folded map with mountain; climate sun emerging from blue cloud; natural resources pickaxe and ore rock; biology tree with deer silhouette; clear map overlay folded blank map and small eraser.\nRow3: elevation triangular mountain with snowcap; landform rolling hills and layered rock cross-section; biome landscape with pine and grass; temperature red thermometer; humidity blue water droplet.\nRow4: wind curling wind ribbons with small leaf; ecology new sprout growing from soil; vegetation three green leaves; calendar blank parchment calendar with small red binding tabs; pause two thick red pencil vertical bars.\nRow5: play green triangular pointer; speed three ochre right-pointing chevrons; settings gray cog with brown pencil; day and night golden sun overlapping crescent moon; eternal daytime large golden sun alone.\nNo text or letters. Preserve white paper cut edges like reference.",
+      "actual_rows": 5,
+      "row_edges_px": [
+        0,
+        273,
+        524,
+        768,
+        991,
+        1254
+      ],
+      "regions": {
+        "hud.country.technology": [
+          19,
+          65,
+          253,
+          206
+        ],
+        "hud.country.ideology": [
+          277,
+          50,
+          224,
+          221
+        ],
+        "hud.country.economy": [
+          521,
+          54,
+          225,
+          215
+        ],
+        "hud.country.military": [
+          762,
+          47,
+          238,
+          222
+        ],
+        "hud.country.diplomacy": [
+          1006,
+          62,
+          231,
+          206
+        ],
+        "hud.overlay.geography": [
+          18,
+          299,
+          257,
+          214
+        ],
+        "hud.overlay.climate": [
+          284,
+          296,
+          226,
+          217
+        ],
+        "hud.overlay.resources": [
+          518,
+          296,
+          236,
+          226
+        ],
+        "hud.overlay.biology": [
+          756,
+          291,
+          240,
+          227
+        ],
+        "hud.overlay.clear": [
+          1009,
+          300,
+          233,
+          215
+        ],
+        "geography.elevation": [
+          20,
+          534,
+          247,
+          232
+        ],
+        "geography.surface": [
+          277,
+          567,
+          225,
+          183
+        ],
+        "geography.terrain": [
+          522,
+          536,
+          235,
+          216
+        ],
+        "climate.temperature": [
+          815,
+          536,
+          162,
+          221
+        ],
+        "climate.humidity": [
+          1051,
+          542,
+          152,
+          208
+        ],
+        "climate.wind": [
+          22,
+          784,
+          235,
+          202
+        ],
+        "ecology.growth": [
+          280,
+          775,
+          216,
+          211
+        ],
+        "ecology.vegetation": [
+          520,
+          783,
+          238,
+          204
+        ],
+        "hud.clock.calendar": [
+          772,
+          772,
+          215,
+          217
+        ],
+        "hud.clock.pause": [
+          1043,
+          786,
+          174,
+          188
+        ],
+        "hud.clock.play": [
+          49,
+          1011,
+          183,
+          197
+        ],
+        "hud.clock.speed": [
+          274,
+          1028,
+          227,
+          166
+        ],
+        "hud.system.settings": [
+          524,
+          1005,
+          232,
+          207
+        ],
+        "hud.system.day_night_on": [
+          765,
+          1000,
+          231,
+          211
+        ],
+        "hud.system.day_night_off": [
+          1016,
+          994,
+          222,
+          218
+        ]
+      }
+    },
+    {
+      "name": "hud_current",
+      "columns": 1,
+      "rows": 1,
+      "semantics": [
+        "hydrology.current"
+      ],
+      "prompt": "Use case: stylized-concept. Create ONE game map-layer icon for OCEAN CURRENT. Match the attached style reference: thick rough black graphite outlines, blue and turquoise colored-pencil grain, simple bold hand-drawn shape, off-white paper sticker border with angular scissor-cut edges. Subject: two curling horizontal BLUE ocean waves flowing to the right, with one small curved arrow integrated into a wave to show current direction. One centered icon only, occupying 76% of square canvas. True fully transparent alpha outside the close-cut white paper border. No words, no letters, no grid, no frame, no watercolor, no smooth vector, no 3D rendering.",
+      "actual_rows": 1,
+      "row_edges_px": [
+        0,
+        1254
+      ],
+      "regions": {
+        "hydrology.current": [
+          35,
+          132,
+          1188,
+          1018
+        ]
+      }
+    },
+    {
+      "name": "ui_controls_01",
+      "columns": 5,
+      "rows": 4,
+      "semantics": [
+        "action.add",
+        "action.back",
+        "action.chevron_down",
+        "action.chevron_right",
+        "action.close",
+        "action.confirm",
+        "action.fit",
+        "action.history",
+        "action.more",
+        "action.pin",
+        "action.refresh",
+        "action.reset",
+        "action.save",
+        "system.clock",
+        "system.seed",
+        "system.target",
+        "system.unknown",
+        "status.hidden",
+        "status.warning",
+        "summary.overview"
+      ],
+      "prompt": "Use case: stylized-concept. Asset type: production game UI sprite atlas. Use supplied image ONLY as a style reference. Draw NEW original icons. Match thick rough BLACK GRAPHITE contours, waxy colored-pencil grain, simple slightly irregular silhouettes, warm ochre, brick red, blue and leaf green fills, angular off-white SCISSOR-CUT paper sticker border. Paper border follows each object closely. Bold shapes readable at 16 to 32 pixels. No watercolor, engraving, smooth vectors, glossy 3D, metal frames, outer shadows, decorative background. TRUE TRANSPARENT ALPHA outside each sticker. No text or numbers or labels or grid lines. EXACTLY 5 columns by 4 rows of equal cells on a square canvas. One centered sticker in each cell. Each sticker occupies ONLY middle 72% of its cell, with generous transparent gutters. Read subjects left to right, top to bottom.\nRow 1: bold green plus sign; blue left-pointing arrow; single black downward chevron; single black right-pointing chevron; bold red X cross.\nRow 2: bold green checkmark; four dark pencil corner brackets around a tiny folded map; small clock encircled by a backward arrow; three bold horizontal dark graphite dots; red drawing pin.\nRow 3: two blue circular arrows chasing each other; one ochre backward curved arrow; cream document with a red bookmark and quill; round brass clock face with two dark clock hands, no numbers; ivory dice with dark pips.\nRow 4: red and ivory bullseye with arrow; large dark pencil question mark; eye crossed by a red diagonal stroke; ochre triangle with dark exclamation mark; cream ledger report with three drawn horizontal lines and red binding.",
+      "actual_rows": 4,
+      "row_edges_px": [
+        0,
+        324,
+        627,
+        915,
+        1254
+      ],
+      "regions": {
+        "action.add": [
+          47,
+          105,
+          207,
+          214
+        ],
+        "action.back": [
+          282,
+          124,
+          218,
+          193
+        ],
+        "action.chevron_down": [
+          527,
+          139,
+          210,
+          160
+        ],
+        "action.chevron_right": [
+          798,
+          120,
+          147,
+          198
+        ],
+        "action.close": [
+          994,
+          110,
+          212,
+          212
+        ],
+        "action.confirm": [
+          48,
+          407,
+          226,
+          194
+        ],
+        "action.fit": [
+          289,
+          388,
+          213,
+          220
+        ],
+        "action.history": [
+          538,
+          382,
+          210,
+          230
+        ],
+        "action.more": [
+          766,
+          461,
+          208,
+          85
+        ],
+        "action.pin": [
+          1018,
+          385,
+          189,
+          217
+        ],
+        "action.refresh": [
+          48,
+          659,
+          211,
+          218
+        ],
+        "action.reset": [
+          290,
+          662,
+          211,
+          216
+        ],
+        "action.save": [
+          528,
+          663,
+          214,
+          222
+        ],
+        "system.clock": [
+          760,
+          668,
+          218,
+          219
+        ],
+        "system.seed": [
+          1005,
+          671,
+          200,
+          208
+        ],
+        "system.target": [
+          41,
+          918,
+          242,
+          244
+        ],
+        "system.unknown": [
+          313,
+          931,
+          169,
+          226
+        ],
+        "status.hidden": [
+          511,
+          956,
+          233,
+          197
+        ],
+        "status.warning": [
+          761,
+          954,
+          221,
+          197
+        ],
+        "summary.overview": [
+          1014,
+          945,
+          193,
+          212
+        ]
+      }
+    },
+    {
+      "name": "ui_states_01",
+      "columns": 5,
+      "rows": 4,
+      "semantics": [
+        "climate.moon",
+        "climate.snow",
+        "population.heart",
+        "population.living.destitute",
+        "population.living.struggling",
+        "population.living.poor",
+        "population.living.secure",
+        "population.living.comfortable",
+        "population.living.affluent",
+        "population.living.luxury",
+        "tax.business",
+        "tax.consumption",
+        "tax.default",
+        "tax.export",
+        "tax.import",
+        "tax.income",
+        "tax.section",
+        "tax.tariff",
+        "technology.milestone",
+        "technology.state.available"
+      ],
+      "prompt": "Use case: stylized-concept. Asset type: production game UI sprite atlas. Use supplied image ONLY as a style reference. Draw NEW original icons. Match thick rough BLACK GRAPHITE contours, waxy colored-pencil grain, simple slightly irregular silhouettes, warm ochre, brick red, blue and leaf green fills, angular off-white SCISSOR-CUT paper sticker border. Paper border follows each object closely. Bold shapes readable at 16 to 32 pixels. No watercolor, engraving, smooth vectors, glossy 3D, metal frames, outer shadows, decorative background. TRUE TRANSPARENT ALPHA outside each sticker. No text or numbers or labels or grid lines. EXACTLY 5 columns by 4 rows of equal cells on a square canvas. One centered sticker in each cell. Each sticker occupies ONLY middle 72% of its cell, with generous transparent gutters. Read subjects left to right, top to bottom.\nRow 1: pale ochre crescent moon; single icy blue six-point snowflake; red heart; empty chipped begging bowl and rag; patched brown purse with a single copper coin.\nRow 2: small humble thatched hut; basket holding bread and green vegetables; comfortable blue upholstered chair; gold coin stack with small gold crown; large red ruby in a gold jewel setting.\nRow 3: small factory with coin stack; shopping basket beside coins; ledger with three small adjustment sliders; wooden crate with red arrow pointing outward to the right; wooden crate with blue arrow pointing inward from the left.\nRow 4: open hand receiving a gold coin; abacus beside a cream tax ledger; border gate with wooden crate and gold coin; gold medal on a red ribbon; glowing ochre light bulb.",
+      "actual_rows": 4,
+      "row_edges_px": [
+        0,
+        317,
+        627,
+        927,
+        1254
+      ],
+      "regions": {
+        "climate.moon": [
+          34,
+          84,
+          211,
+          229
+        ],
+        "climate.snow": [
+          274,
+          79,
+          215,
+          236
+        ],
+        "population.heart": [
+          519,
+          105,
+          212,
+          193
+        ],
+        "population.living.destitute": [
+          753,
+          105,
+          237,
+          205
+        ],
+        "population.living.struggling": [
+          1014,
+          88,
+          221,
+          226
+        ],
+        "population.living.poor": [
+          23,
+          372,
+          246,
+          228
+        ],
+        "population.living.secure": [
+          278,
+          381,
+          227,
+          212
+        ],
+        "population.living.comfortable": [
+          522,
+          366,
+          227,
+          233
+        ],
+        "population.living.affluent": [
+          767,
+          359,
+          212,
+          237
+        ],
+        "population.living.luxury": [
+          1009,
+          368,
+          223,
+          234
+        ],
+        "tax.business": [
+          20,
+          643,
+          234,
+          252
+        ],
+        "tax.consumption": [
+          271,
+          668,
+          235,
+          213
+        ],
+        "tax.default": [
+          522,
+          656,
+          227,
+          234
+        ],
+        "tax.export": [
+          756,
+          679,
+          251,
+          199
+        ],
+        "tax.import": [
+          1014,
+          682,
+          219,
+          192
+        ],
+        "tax.income": [
+          22,
+          940,
+          226,
+          239
+        ],
+        "tax.section": [
+          273,
+          954,
+          231,
+          225
+        ],
+        "tax.tariff": [
+          516,
+          943,
+          238,
+          234
+        ],
+        "technology.milestone": [
+          781,
+          938,
+          201,
+          242
+        ],
+        "technology.state.available": [
+          1011,
+          930,
+          221,
+          250
+        ]
+      }
+    },
+    {
+      "name": "ui_family_01",
+      "columns": 4,
+      "rows": 4,
+      "semantics": [
+        "family.workspace.crest",
+        "family.workspace.prestige",
+        "family.workspace.person",
+        "family.workspace.traits",
+        "family.workspace.preferences",
+        "family.workspace.effects",
+        "family.workspace.people",
+        "family.workspace.branches",
+        "technology.state.queued",
+        "trend.up",
+        "trend.down",
+        "trend.flat",
+        "technology.state.locked",
+        "country.world",
+        "map.expedition",
+        "metric.goods"
+      ],
+      "prompt": "Use case: stylized-concept. Asset type: production game UI sprite atlas. Use supplied image ONLY as a style reference. Draw NEW original icons. Match thick rough BLACK GRAPHITE contours, waxy colored-pencil grain, simple slightly irregular silhouettes, warm ochre, brick red, blue and leaf green fills, angular off-white SCISSOR-CUT paper sticker border. Paper border follows each object closely. Bold shapes readable at 16 to 32 pixels. No watercolor, engraving, smooth vectors, glossy 3D, metal frames, outer shadows, decorative background. TRUE TRANSPARENT ALPHA outside each sticker. No text or numbers or labels or grid lines. EXACTLY 4 columns by 4 rows of equal cells on a square canvas. One centered sticker in each cell. Each sticker occupies ONLY middle 72% of its cell, with generous transparent gutters. Read subjects left to right, top to bottom.\nRow 1: red heraldic shield with simple gold oak tree, no text; gold laurel wreath around a red star; single dignified handwritten-style human bust in a brown coat; three interlocking colored puzzle pieces.\nRow 2: small red heart beside bread and a hammer; wax-sealed document with small blue spark and cog; three distinct human busts grouped together; family tree diagram with three small portrait frames connected by brown branches.\nRow 3: three cream papers stacked in order with small blue bookmark; bold green upward arrow; bold red downward arrow; bold blue right-pointing horizontal arrow.\nRow 4: closed dark iron padlock with brass keyhole; blue and green globe on a small brass stand; red expedition flag planted on a small folded map; wooden supply crate with small cloth bundle.",
+      "actual_rows": 4,
+      "row_edges_px": [
+        0,
+        326,
+        627,
+        927,
+        1254
+      ],
+      "regions": {
+        "family.workspace.crest": [
+          51,
+          46,
+          242,
+          276
+        ],
+        "family.workspace.prestige": [
+          340,
+          47,
+          285,
+          270
+        ],
+        "family.workspace.person": [
+          664,
+          45,
+          252,
+          279
+        ],
+        "family.workspace.traits": [
+          963,
+          53,
+          266,
+          263
+        ],
+        "family.workspace.preferences": [
+          32,
+          357,
+          269,
+          258
+        ],
+        "family.workspace.effects": [
+          344,
+          358,
+          273,
+          261
+        ],
+        "family.workspace.people": [
+          630,
+          380,
+          316,
+          245
+        ],
+        "family.workspace.branches": [
+          970,
+          354,
+          257,
+          269
+        ],
+        "technology.state.queued": [
+          39,
+          657,
+          277,
+          265
+        ],
+        "trend.up": [
+          363,
+          658,
+          222,
+          253
+        ],
+        "trend.down": [
+          675,
+          663,
+          219,
+          249
+        ],
+        "trend.flat": [
+          981,
+          684,
+          250,
+          207
+        ],
+        "technology.state.locked": [
+          56,
+          941,
+          222,
+          268
+        ],
+        "country.world": [
+          362,
+          930,
+          228,
+          283
+        ],
+        "map.expedition": [
+          635,
+          940,
+          296,
+          278
+        ],
+        "metric.goods": [
+          953,
+          962,
+          278,
+          247
+        ]
+      }
+    },
+    {
+      "name": "ui_situations_01",
+      "columns": 4,
+      "rows": 2,
+      "semantics": [
+        "situation.food_shortage",
+        "situation.industry_shortage",
+        "situation.consumer_shortage",
+        "situation.discontent",
+        "situation.drought",
+        "situation.flood",
+        "situation.unemployment",
+        "situation.vacant_jobs"
+      ],
+      "prompt": "Use case: stylized-concept. Production game UI warning-icon sprite atlas. Use supplied picture ONLY as style reference. Exactly 4 columns x 2 rows of isolated stickers, one centered in each equal cell, no overlap, generous transparent gutters. Match rough thick BLACK PENCIL outlines, colored-pencil grain, simple red/ochre/blue/green fills and close-cut irregular angular WHITE PAPER borders. NO metallic medallions, no stone carving, no photorealism, no 3D. True transparent alpha outside the white paper stickers. Each subject must have a small red warning triangle with black exclamation mark at lower right, as part of the same sticker. Row1: bread and wheat sheaf (food shortage); gray cog with steel ingot (industrial shortage); folded cloth and pottery jug (consumer goods shortage); unhappy frowning human face (discontent). Row2: hot sun above dry cracked soil (drought); small house with blue floodwater (flood); idle worker beside shovel (unemployment); empty wooden workbench and empty stool (vacant jobs). No words, no labels, no numbers, no grid lines, no background. Each sticker occupies middle 72 percent of its cell.",
+      "actual_rows": 2,
+      "row_edges_px": [
+        0,
+        443,
+        887
+      ],
+      "regions": {
+        "situation.food_shortage": [
+          47,
+          64,
+          389,
+          336
+        ],
+        "situation.industry_shortage": [
+          491,
+          60,
+          372,
+          347
+        ],
+        "situation.consumer_shortage": [
+          910,
+          86,
+          398,
+          323
+        ],
+        "situation.discontent": [
+          1390,
+          64,
+          346,
+          338
+        ],
+        "situation.drought": [
+          45,
+          471,
+          382,
+          352
+        ],
+        "situation.flood": [
+          469,
+          487,
+          392,
+          336
+        ],
+        "situation.unemployment": [
+          910,
+          472,
+          397,
+          348
+        ],
+        "situation.vacant_jobs": [
+          1359,
+          515,
+          379,
+          300
+        ]
+      }
+    },
+    {
+      "name": "ui_wax_seal",
+      "columns": 1,
+      "rows": 1,
+      "semantics": [
+        "decoration.wax_seal"
+      ],
+      "prompt": "Use case: stylized-concept. One small game UI icon, a RED WAX SEAL as a flat colored-pencil paper sticker. Match reference thick uneven black graphite outlines and visible red colored-pencil grain. A simple irregular circular red seal with a tiny embossed pencil-drawn star at its center, one darker red ring line, no glossy highlights, no photorealistic wax, no metallic ornament, no shadows, no extra drops. Close-cut angular off-white paper border following the seal silhouette. Centered on square canvas with 15 percent transparent padding all around. True fully transparent alpha outside the white paper cutout. No words, letters, numbers or background.",
+      "actual_rows": 1,
+      "row_edges_px": [
+        0,
+        1254
+      ],
+      "regions": {
+        "decoration.wax_seal": [
+          195,
+          204,
+          866,
+          865
+        ]
+      }
+    },
+    {
+      "name": "ui_native_controls",
+      "columns": 4,
+      "rows": 2,
+      "semantics": [
+        "control.checkbox_unchecked",
+        "control.checkbox_checked",
+        "control.checkbox_indeterminate",
+        "control.radio_unchecked",
+        "control.radio_checked",
+        "control.toggle_off",
+        "control.toggle_on",
+        "control.scroll_grip"
+      ],
+      "prompt": "Use case: stylized-concept. A functional game UI sprite atlas with EXACTLY 4 columns by 2 rows, 8 isolated paper stickers. Same style as reference: rough thick BLACK PENCIL outlines, colored-pencil grain, angular close-cut OFF-WHITE paper edge, simple flat colors. True transparent alpha between and outside stickers. No text, labels, numbers, scene, shadows, glossy 3D or metallic ornament. Designed to remain clear after reduction to 16 pixels. Row1: EMPTY square checkbox drawn in black pencil with cream paper interior; identical square checkbox with a large GREEN checkmark inside; identical square checkbox with a bold ochre HORIZONTAL DASH inside; EMPTY circular radio button drawn in black pencil with cream interior. Row2: circular radio button with a BLUE filled dot inside; short horizontal OFF toggle switch with pale gray track and paper knob at LEFT; same horizontal ON toggle switch with muted green track and paper knob at RIGHT; vertical scrollbar grip made of three short bold horizontal graphite pencil lines on a small cream paper tab. Center one distinct component in each equal cell, middle 70 percent of cell, generous transparent gutters. Checkbox frame silhouettes same sizes, radio silhouettes same sizes, toggle silhouettes same sizes. Do not place labels below any component.",
+      "actual_rows": 2,
+      "row_edges_px": [
+        0,
+        443,
+        887
+      ],
+      "regions": {
+        "control.checkbox_unchecked": [
+          78,
+          96,
+          315,
+          321
+        ],
+        "control.checkbox_checked": [
+          511,
+          96,
+          336,
+          326
+        ],
+        "control.checkbox_indeterminate": [
+          944,
+          94,
+          322,
+          329
+        ],
+        "control.radio_unchecked": [
+          1384,
+          98,
+          308,
+          318
+        ],
+        "control.radio_checked": [
+          80,
+          505,
+          309,
+          298
+        ],
+        "control.toggle_off": [
+          471,
+          532,
+          391,
+          238
+        ],
+        "control.toggle_on": [
+          911,
+          533,
+          393,
+          235
+        ],
+        "control.scroll_grip": [
+          1443,
+          507,
+          199,
+          279
+        ]
+      }
+    }
+  ]
+}

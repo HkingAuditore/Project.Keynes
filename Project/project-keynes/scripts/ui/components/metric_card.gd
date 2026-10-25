@@ -23,7 +23,6 @@ func _ready() -> void:
 			or _value_label == null or _subtitle_label == null:
 		push_error("MetricCard 必须通过 metric_card.tscn 实例化。")
 		return
-	_trend_label.add_theme_font_override("font", IconBadge.FA_SOLID_FONT)
 	_trend_label.add_theme_font_size_override("font_size", 11)
 	_value_label.add_theme_font_override("font", UITokens.font_with_weight(650))
 

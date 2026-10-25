@@ -108,6 +108,8 @@ var _close_generation := 0
 
 
 func _ready() -> void:
+	_crest.texture = IconCatalog.texture_for_key(&"family.workspace.crest")
+	_prestige_plate.texture = IconCatalog.texture_for_key(&"family.workspace.prestige")
 	for page_id in PAGE_ORDER:
 		var button := get_node_or_null("%" + String(NAV_NAMES[page_id])) as Button
 		if button == null:

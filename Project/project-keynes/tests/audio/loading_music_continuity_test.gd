@@ -40,6 +40,9 @@ func _run() -> void:
 	_check(audio.set_era(0), "world-ready era music takes over")
 	_check(int(audio.get("_music")) == instance, "Stone Age handoff reuses menu suite")
 	await get_tree().create_timer(0.3).timeout
+	var after_handoff: Dictionary = audio.diagnostics()
+	_check(int(after_handoff.get("timeline_ms", 0)) >= int(during.get("timeline_ms", 0)),
+		"world-ready handoff preserves timeline instead of restarting intro")
 	_check(audio.set_era(2), "loaded Kingdom-era save switches suite")
 	await get_tree().create_timer(0.4).timeout
 	_check(audio.diagnostics().get("music_key") == &"kingdom_age_suite", "Kingdom suite active")

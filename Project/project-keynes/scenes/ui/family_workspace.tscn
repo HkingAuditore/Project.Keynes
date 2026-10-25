@@ -1,9 +1,7 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/components/family_workspace.gd" id="1_script"]
 [ext_resource type="Theme" path="res://assets/themes/player_session_theme.tres" id="2_theme"]
-[ext_resource type="Texture2D" path="res://assets/ui/family_workspace/bitmap/crest_bitmap.tres" id="4_crest"]
-[ext_resource type="Texture2D" path="res://assets/ui/family_workspace/bitmap/prestige_bitmap.tres" id="5_prestige"]
 [ext_resource type="Texture2D" path="res://assets/ui/dossier_shell/hinge.png" id="6_hinge"]
 [ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_chapter_nav.gd" id="7_nav"]
 [ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_kpi_card.gd" id="8_kpi"]
@@ -202,7 +200,6 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(44, 44)
 layout_mode = 2
 size_flags_vertical = 4
-texture = ExtResource("4_crest")
 expand_mode = 1
 stretch_mode = 5
 
@@ -259,7 +256,6 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(68, 72)
 layout_mode = 2
 size_flags_vertical = 4
-texture = ExtResource("5_prestige")
 expand_mode = 1
 stretch_mode = 5
 

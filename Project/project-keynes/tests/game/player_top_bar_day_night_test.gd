@@ -74,10 +74,10 @@ func _run() -> void:
 		_expect(speed_button.text == "50×", "状态回读更新至 50×", failures)
 		speed_button.pressed.emit()
 		_expect(is_equal_approx(emitted_speeds.back(), 1.0) and speed_button.text == "1×",
-			"50× 再次左键点击回环至 1×", failures)
+			"GM 50× 再次左键点击回环至 1×", failures)
 		top_bar.cycle_speed_backward()
-		_expect(is_equal_approx(emitted_speeds.back(), 50.0) and speed_button.text == "50×",
-			"右键/逆向循环从 1× 回退至 50×", failures)
+		_expect(is_equal_approx(emitted_speeds.back(), 10.0) and speed_button.text == "10×",
+			"右键/逆向循环从 1× 回退至最高 10×", failures)
 
 	for failure in failures:
 		push_error("[player-top-bar-day-night] FAIL: %s" % failure)

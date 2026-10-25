@@ -78,6 +78,9 @@ func _start_hall_music() -> void:
 
 
 func _ready() -> void:
+	var brand_crest := find_child("Crest", true, false) as TextureRect
+	if brand_crest != null:
+		brand_crest.texture = IconCatalog.texture_for_key(&"family.workspace.crest")
 	if OS.get_cmdline_user_args().has("--editor-tech-tree") or OS.get_cmdline_args().has("--editor-tech-tree"):
 		call_deferred("_open_technology_authoring_editor")
 		return

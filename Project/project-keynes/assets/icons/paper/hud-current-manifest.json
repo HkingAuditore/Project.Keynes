@@ -1,0 +1,9 @@
+{
+  "name": "hud_current",
+  "columns": 1,
+  "rows": 1,
+  "semantics": [
+    "hydrology.current"
+  ],
+  "prompt": "Use case: stylized-concept. Create ONE game map-layer icon for OCEAN CURRENT. Match the attached style reference: thick rough black graphite outlines, blue and turquoise colored-pencil grain, simple bold hand-drawn shape, off-white paper sticker border with angular scissor-cut edges. Subject: two curling horizontal BLUE ocean waves flowing to the right, with one small curved arrow integrated into a wave to show current direction. One centered icon only, occupying 76% of square canvas. True fully transparent alpha outside the close-cut white paper border. No words, no letters, no grid, no frame, no watercolor, no smooth vector, no 3D rendering."
+}

@@ -649,3 +649,12 @@ debug recording is Economy CSV v22.
   and compact/full reports. The report schema and scheduler-visible fields are
   unchanged; `economy_runtime.cpp` still owns all stage mutations and worker
   execution.
+
+2026-10-25：新局默认国库为 1 万（定点 100000000）；普通倍速档位为
+1/2/5/10，PlayerController 将普通改速意图限制在 1..10。GM 指令页提供
+`economy.mint_to_treasury amount=10000` 与最高 1000 倍速快捷选择；刷钱复用
+EconomyFacade 同批铸币及国库转账，两条连续 sequence 在下一有效日提交。
+
+2026-10-25 财政 UI：交易税与关税合并到 EconomyWorkspace 的“物资税”页
+（沿用 consumption page id），每种可贸易物资一张卡片同时调整交易/进口/出口税。
+不可贸易物资仅有交易税；三条 policy lane、命令与次日生效规则保持独立。

@@ -102,12 +102,12 @@ func _run() -> void:
 		and int(snap.get("national_spirit_slots_capacity", 0)) == 3)
 
 	# --- Cost curve and reroll.
-	_submit(ext, 2, [{"opcode": 2, "value": 160 * Q16}])
+	_submit(ext, 2, [{"opcode": 2, "value": 1600 * Q16}])
 	_drain_ideology(ext, 2)
 	snap = ext.get_ideology_snapshot(handle)
-	_expect("grant adds points", int(snap.ideology_points_q16) == 160 * Q16)
+	_expect("grant adds points", int(snap.ideology_points_q16) == 1600 * Q16)
 	var points := int(snap.ideology_points_q16)
-	var expected_cost := 12 * Q16
+	var expected_cost := 120 * Q16
 	var costs_ok := true
 	var reroll_ok := true
 	for draw in 10:
@@ -160,12 +160,12 @@ func _run() -> void:
 
 	# No low ceiling: the cost keeps compounding by 20% per paid draw.
 	var paid_draws := int(snap.draw_sequence)
-	var compounded := 12 * Q16
+	var compounded := 120 * Q16
 	for _step in paid_draws:
 		compounded = (compounded * 120 + 50) / 100
 	_expect("draw cost compounds without a low cap",
 		paid_draws >= 5 and int(snap.next_offer_cost_q16) == compounded
-		and compounded > 12 * Q16)
+		and compounded > 120 * Q16)
 
 	# --- School resonance activates at two equipped cards of one school.
 	var synergy_ids: PackedStringArray = ideology_ir.get("synergy_ids", PackedStringArray())

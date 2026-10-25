@@ -6,7 +6,6 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/land_layout_card.tscn" id="4_layout_card"]
 [ext_resource type="PackedScene" path="res://scenes/ui/papercut_map_preview.tscn" id="5_preview"]
 [ext_resource type="Texture2D" uid="uid://dtq8g7ce702ij" path="res://assets/ui/dossier_shell/hinge.png" id="6_hinge"]
-[ext_resource type="Texture2D" path="res://assets/ui/family_workspace/bitmap/crest_bitmap.tres" id="7_crest"]
 [ext_resource type="Shader" uid="uid://dspdg0p4uwrfm" path="res://shaders/paper_folio_plaque.gdshader" id="8_folio_shader"]
 [ext_resource type="Shader" uid="uid://cuehdjldca646" path="res://shaders/paper_command_slip.gdshader" id="9_slip_shader"]
 [ext_resource type="Texture2D" uid="uid://dbw72vpul2qsy" path="res://assets/ui/paper_aux_v1/torn_note_v1.png" id="10_grain"]
@@ -159,7 +158,6 @@ custom_minimum_size = Vector2(58, 58)
 layout_mode = 2
 size_flags_vertical = 4
 mouse_filter = 2
-texture = ExtResource("7_crest")
 expand_mode = 1
 stretch_mode = 5
 

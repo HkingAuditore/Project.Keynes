@@ -562,6 +562,7 @@ func _tax_availability(economy_facade, cell: int) -> Dictionary:
 		var population: Dictionary = economy_facade.population_cell_snapshot(cell)
 		var population_profession_ids: PackedInt32Array = population.get(
 			"profession_ids", PackedInt32Array())
+		var populations: PackedInt64Array = population.get("populations", PackedInt64Array())
 		var profession_stable_ids: PackedStringArray = population.get(
 			"profession_stable_ids", PackedStringArray())
 		# An empty profession row set is still an authoritative snapshot: it means
@@ -569,7 +570,10 @@ func _tax_availability(economy_facade, cell: int) -> Dictionary:
 		population_valid = bool(population.get("ok", false)) \
 				and not profession_stable_ids.is_empty()
 		if population_valid:
-			for profession_index in population_profession_ids:
+			for row in range(mini(population_profession_ids.size(), populations.size())):
+				if populations[row] <= 0:
+					continue
+				var profession_index := int(population_profession_ids[row])
 				if profession_index >= 0 and profession_index < profession_stable_ids.size():
 					professions[String(profession_stable_ids[profession_index])] = true
 
@@ -967,18 +971,28 @@ static func _present_tax_policy(tax_policy: Dictionary, completed_technologies,
 	var profession_filter: Dictionary = availability.get("profession", {})
 	var good_filter: Dictionary = availability.get("good", {})
 	var building_filter: Dictionary = availability.get("building", {})
+	var buildings := _present_items(
+			tax_policy.get("building_type_ids", PackedStringArray()), "building", completed,
+		false, false, building_filter, availability.has("building"))
+	# 职业没有独立科技门槛；快照缺失时从已解锁建筑的岗位推导，不能回退到全职业。
+	if not availability.has("profession"):
+		var building_content := _tax_content("building")
+		for row in buildings.get("unlocked", []):
+			var building_item: Dictionary = building_content.get(String(row.get("id", "")), {})
+			var owner := String(building_item.get("owner_profession_id", ""))
+			if not owner.is_empty():
+				profession_filter[owner] = true
+			for employee in building_item.get("employee_profession_ids", PackedStringArray()):
+				profession_filter[String(employee)] = true
 	var professions := _present_items(
 		tax_policy.get("profession_ids", PackedStringArray()), "profession", completed,
-		false, false, profession_filter, availability.has("profession"))
+		false, false, profession_filter, true)
 	var goods := _present_items(
 		tax_policy.get("good_ids", PackedStringArray()), "good", completed,
 		false, false, good_filter, availability.has("good"))
 	var tariff_goods := _present_items(
 		tax_policy.get("good_ids", PackedStringArray()), "good", completed,
-		true, true)
-	var buildings := _present_items(
-			tax_policy.get("building_type_ids", PackedStringArray()), "building", completed,
-		false, false, building_filter, availability.has("building"))
+		false, true, good_filter, availability.has("good"))
 	return {
 		"ok": true,
 		"income": professions,

@@ -15,6 +15,25 @@
 [ext_resource type="Texture2D" path="res://assets/ui/paper_aux_v1/torn_note_v1.tres" id="15_note"]
 [ext_resource type="Texture2D" path="res://assets/ui/paper_aux_v1/cut_tag_v1.tres" id="16_tag"]
 
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/arrow_down.png" id="paper_ctrl_arrow_down"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/arrow_left.png" id="paper_ctrl_arrow_left"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/arrow_right.png" id="paper_ctrl_arrow_right"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/arrow_up.png" id="paper_ctrl_arrow_up"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/checked.png" id="paper_ctrl_checked"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/close.png" id="paper_ctrl_close"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/grabber.png" id="paper_ctrl_grabber"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/indeterminate.png" id="paper_ctrl_indeterminate"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/radio_checked.png" id="paper_ctrl_radio_checked"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/radio_unchecked.png" id="paper_ctrl_radio_unchecked"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/reset.png" id="paper_ctrl_reset"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/target.png" id="paper_ctrl_target"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/toggle_off.png" id="paper_ctrl_toggle_off"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/toggle_on.png" id="paper_ctrl_toggle_on"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/unchecked.png" id="paper_ctrl_unchecked"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/updown.png" id="paper_ctrl_updown"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/zoom_in.png" id="paper_ctrl_zoom_in"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/zoom_out.png" id="paper_ctrl_zoom_out"]
+
 [sub_resource type="StyleBoxTexture" id="ButtonDisabled"]
 content_margin_left = 8.0
 content_margin_top = 4.0
@@ -1624,3 +1643,106 @@ VScrollBar/styles/grabber_pressed = SubResource("ScrollGrabberPressed")
 VScrollBar/styles/scroll = SubResource("ScrollTrack")
 VScrollBar/styles/scroll_focus = SubResource("ScrollTrack")
 VSeparator/styles/separator = SubResource("Rule")
+
+; Generated paper control icons: tools/bake_paper_control_icons.gd
+CheckBox/icons/checked = ExtResource("paper_ctrl_checked")
+CheckBox/icons/checked_disabled = ExtResource("paper_ctrl_checked")
+CheckBox/icons/unchecked = ExtResource("paper_ctrl_unchecked")
+CheckBox/icons/unchecked_disabled = ExtResource("paper_ctrl_unchecked")
+CheckBox/icons/radio_checked = ExtResource("paper_ctrl_radio_checked")
+CheckBox/icons/radio_checked_disabled = ExtResource("paper_ctrl_radio_checked")
+CheckBox/icons/radio_unchecked = ExtResource("paper_ctrl_radio_unchecked")
+CheckBox/icons/radio_unchecked_disabled = ExtResource("paper_ctrl_radio_unchecked")
+PopupMenu/icons/checked = ExtResource("paper_ctrl_checked")
+PopupMenu/icons/checked_disabled = ExtResource("paper_ctrl_checked")
+PopupMenu/icons/unchecked = ExtResource("paper_ctrl_unchecked")
+PopupMenu/icons/unchecked_disabled = ExtResource("paper_ctrl_unchecked")
+PopupMenu/icons/radio_checked = ExtResource("paper_ctrl_radio_checked")
+PopupMenu/icons/radio_checked_disabled = ExtResource("paper_ctrl_radio_checked")
+PopupMenu/icons/radio_unchecked = ExtResource("paper_ctrl_radio_unchecked")
+PopupMenu/icons/radio_unchecked_disabled = ExtResource("paper_ctrl_radio_unchecked")
+Tree/icons/checked = ExtResource("paper_ctrl_checked")
+Tree/icons/checked_disabled = ExtResource("paper_ctrl_checked")
+Tree/icons/unchecked = ExtResource("paper_ctrl_unchecked")
+Tree/icons/unchecked_disabled = ExtResource("paper_ctrl_unchecked")
+Tree/icons/indeterminate = ExtResource("paper_ctrl_indeterminate")
+Tree/icons/indeterminate_disabled = ExtResource("paper_ctrl_indeterminate")
+CheckButton/icons/checked = ExtResource("paper_ctrl_toggle_on")
+CheckButton/icons/checked_disabled = ExtResource("paper_ctrl_toggle_on")
+CheckButton/icons/checked_mirrored = ExtResource("paper_ctrl_toggle_on")
+CheckButton/icons/checked_disabled_mirrored = ExtResource("paper_ctrl_toggle_on")
+CheckButton/icons/unchecked = ExtResource("paper_ctrl_toggle_off")
+CheckButton/icons/unchecked_disabled = ExtResource("paper_ctrl_toggle_off")
+CheckButton/icons/unchecked_mirrored = ExtResource("paper_ctrl_toggle_off")
+CheckButton/icons/unchecked_disabled_mirrored = ExtResource("paper_ctrl_toggle_off")
+OptionButton/icons/arrow = ExtResource("paper_ctrl_arrow_down")
+SpinBox/icons/updown = ExtResource("paper_ctrl_updown")
+SpinBox/icons/up = ExtResource("paper_ctrl_arrow_up")
+SpinBox/icons/up_hover = ExtResource("paper_ctrl_arrow_up")
+SpinBox/icons/up_pressed = ExtResource("paper_ctrl_arrow_up")
+SpinBox/icons/up_disabled = ExtResource("paper_ctrl_arrow_up")
+SpinBox/icons/down = ExtResource("paper_ctrl_arrow_down")
+SpinBox/icons/down_hover = ExtResource("paper_ctrl_arrow_down")
+SpinBox/icons/down_pressed = ExtResource("paper_ctrl_arrow_down")
+SpinBox/icons/down_disabled = ExtResource("paper_ctrl_arrow_down")
+PopupMenu/icons/submenu = ExtResource("paper_ctrl_arrow_right")
+PopupMenu/icons/submenu_mirrored = ExtResource("paper_ctrl_arrow_left")
+Tree/icons/updown = ExtResource("paper_ctrl_updown")
+Tree/icons/select_arrow = ExtResource("paper_ctrl_arrow_down")
+Tree/icons/arrow = ExtResource("paper_ctrl_arrow_down")
+Tree/icons/arrow_collapsed = ExtResource("paper_ctrl_arrow_right")
+Tree/icons/arrow_collapsed_mirrored = ExtResource("paper_ctrl_arrow_left")
+Tree/icons/scroll_hint = ExtResource("paper_ctrl_arrow_down")
+HSlider/icons/grabber = ExtResource("paper_ctrl_grabber")
+HSlider/icons/grabber_highlight = ExtResource("paper_ctrl_grabber")
+HSlider/icons/grabber_disabled = ExtResource("paper_ctrl_grabber")
+VSlider/icons/grabber = ExtResource("paper_ctrl_grabber")
+VSlider/icons/grabber_highlight = ExtResource("paper_ctrl_grabber")
+VSlider/icons/grabber_disabled = ExtResource("paper_ctrl_grabber")
+HScrollBar/icons/increment = ExtResource("paper_ctrl_arrow_right")
+HScrollBar/icons/increment_highlight = ExtResource("paper_ctrl_arrow_right")
+HScrollBar/icons/increment_pressed = ExtResource("paper_ctrl_arrow_right")
+HScrollBar/icons/decrement = ExtResource("paper_ctrl_arrow_left")
+HScrollBar/icons/decrement_highlight = ExtResource("paper_ctrl_arrow_left")
+HScrollBar/icons/decrement_pressed = ExtResource("paper_ctrl_arrow_left")
+VScrollBar/icons/increment = ExtResource("paper_ctrl_arrow_down")
+VScrollBar/icons/increment_highlight = ExtResource("paper_ctrl_arrow_down")
+VScrollBar/icons/increment_pressed = ExtResource("paper_ctrl_arrow_down")
+VScrollBar/icons/decrement = ExtResource("paper_ctrl_arrow_up")
+VScrollBar/icons/decrement_highlight = ExtResource("paper_ctrl_arrow_up")
+VScrollBar/icons/decrement_pressed = ExtResource("paper_ctrl_arrow_up")
+LineEdit/icons/clear = ExtResource("paper_ctrl_close")
+TextEdit/icons/tab = ExtResource("paper_ctrl_arrow_right")
+TextEdit/icons/space = ExtResource("paper_ctrl_radio_unchecked")
+TabBar/icons/increment = ExtResource("paper_ctrl_arrow_right")
+TabBar/icons/increment_highlight = ExtResource("paper_ctrl_arrow_right")
+TabBar/icons/decrement = ExtResource("paper_ctrl_arrow_left")
+TabBar/icons/decrement_highlight = ExtResource("paper_ctrl_arrow_left")
+TabBar/icons/drop_mark = ExtResource("paper_ctrl_arrow_down")
+TabBar/icons/close = ExtResource("paper_ctrl_close")
+Window/icons/close = ExtResource("paper_ctrl_close")
+Window/icons/close_pressed = ExtResource("paper_ctrl_close")
+GraphEdit/icons/zoom_in = ExtResource("paper_ctrl_zoom_in")
+GraphEdit/icons/zoom_out = ExtResource("paper_ctrl_zoom_out")
+GraphEdit/icons/zoom_reset = ExtResource("paper_ctrl_reset")
+GraphEdit/icons/grid_toggle = ExtResource("paper_ctrl_unchecked")
+GraphEdit/icons/minimap_toggle = ExtResource("paper_ctrl_target")
+GraphEdit/icons/snapping_toggle = ExtResource("paper_ctrl_target")
+GraphEdit/icons/layout = ExtResource("paper_ctrl_reset")
+CheckBox/colors/checkbox_checked_color = Color(1, 1, 1, 1)
+CheckBox/colors/checkbox_unchecked_color = Color(1, 1, 1, 1)
+CheckButton/colors/button_checked_color = Color(1, 1, 1, 1)
+CheckButton/colors/button_unchecked_color = Color(1, 1, 1, 1)
+LineEdit/colors/clear_button_color = Color(1, 1, 1, 1)
+LineEdit/colors/clear_button_color_pressed = Color(1, 1, 1, 1)
+SpinBox/colors/up_icon_modulate = Color(1, 1, 1, 1)
+SpinBox/colors/up_hover_icon_modulate = Color(1, 1, 1, 1)
+SpinBox/colors/up_pressed_icon_modulate = Color(1, 1, 1, 1)
+SpinBox/colors/up_disabled_icon_modulate = Color(1, 1, 1, 0.45)
+SpinBox/colors/down_icon_modulate = Color(1, 1, 1, 1)
+SpinBox/colors/down_hover_icon_modulate = Color(1, 1, 1, 1)
+SpinBox/colors/down_pressed_icon_modulate = Color(1, 1, 1, 1)
+SpinBox/colors/down_disabled_icon_modulate = Color(1, 1, 1, 0.45)
+TabBar/colors/icon_selected_color = Color(1, 1, 1, 1)
+TabBar/colors/icon_hovered_color = Color(1, 1, 1, 1)
+TabBar/colors/icon_unselected_color = Color(1, 1, 1, 1)

@@ -850,11 +850,8 @@ func _draw_progress(index: int, rect: Rect2, accent: Color, dim: bool) -> void:
 
 func _draw_glyph(semantic: StringName, baseline: Vector2, glyph_size: int,
 		colour: Color) -> void:
-	var glyph := IconCatalog.glyph_for_key(semantic)
-	if glyph.is_empty():
-		return
-	draw_string(IconCatalog.FONT_AWESOME, baseline, glyph,
-		HORIZONTAL_ALIGNMENT_LEFT, -1.0, glyph_size, colour)
+	IconCatalog.draw_icon(self, semantic,
+		Rect2(baseline - Vector2(0, glyph_size * 0.84), Vector2.ONE * glyph_size), colour.a)
 
 
 func _emphasis_for(index: int) -> int:

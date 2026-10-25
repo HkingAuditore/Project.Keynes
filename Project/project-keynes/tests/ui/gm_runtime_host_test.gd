@@ -22,6 +22,14 @@ func _run() -> void:
 	_expect(bool(speed.get("ok", false)) and is_equal_approx(clock.speed_multiplier, 5.0),
 		"speed routing", failures)
 	var pause := host.execute_gm_command("time.pause", {"state": "on"})
+	var high_speed := host.execute_gm_command("time.speed", {"value": "1000"})
+	_expect(bool(high_speed.get("ok", false)) and is_equal_approx(clock.speed_multiplier, 1000.0),
+		"GM high speed routing", failures)
+	host.execute_gm_command("time.pause", {"state": "on"})
+	_expect(host.execute_gm_command("economy.mint_to_treasury", {"amount": "0"}).get("code") == "invalid_argument",
+		"treasury mint rejects zero", failures)
+	_expect(host.execute_gm_command("economy.mint_to_treasury", {"amount": "10000"}).get("code") == "world_not_ready",
+		"treasury mint readiness boundary", failures)
 	_expect(bool(pause.get("ok", false)) and clock.paused, "pause routing", failures)
 	_expect(host.execute_gm_command("economy.add_population", {
 		"cohort_handle": "1", "amount": "10"}).get("code") == "world_not_ready",
