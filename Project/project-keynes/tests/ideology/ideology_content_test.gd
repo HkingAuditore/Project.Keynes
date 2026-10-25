@@ -116,10 +116,10 @@ func _init() -> void:
 			_expect("ideology points start at zero and growth income has no daily cap",
 				int(ideology_ir.get("starting_points_q16", -1)) == 0
 				and int(ideology_ir.get("point_gain_cap_q16", -1)) == 0)
-			_expect("growth point weights use the reduced production balance",
-				int(ideology_ir.get("point_population_weight_q16", 0)) == 33
-				and int(ideology_ir.get("point_building_weight_q16", 0)) == 410
-				and int(ideology_ir.get("point_trade_weight_q16", 0)) == 3)
+			_expect("growth point weights are 80x the previous balance",
+				int(ideology_ir.get("point_population_weight_q16", 0)) == 2640
+				and int(ideology_ir.get("point_building_weight_q16", 0)) == 32800
+				and int(ideology_ir.get("point_trade_weight_q16", 0)) == 240)
 			_expect("first draw costs 120, +20% per draw, and reroll costs 75 percent",
 				int(ideology_ir.get("offer_cost_q16", 0)) == 7864320
 				and int(ideology_ir.get("offer_cost_growth_percent", 0)) == 120
@@ -206,7 +206,7 @@ func _init() -> void:
 				# 共同体治理 is now an X1 spillover card: its face line says which
 				# cells it radiates from, not which national stats it moves.
 				_expect("collective stewardship names its agricultural source ring",
-					String(by_name.get("共同体治理", "")).contains("以农业为主")
+					String(by_name.get("共同体治理", "")).contains("农业产出占当地总产出至少 50%")
 					and String(by_name.get("共同体治理", "")).contains("周围"))
 				# 自由交换 moved to a cell-level program this round: its card face
 				# line is the program summary, not a Modifier presenter line. This
@@ -219,7 +219,7 @@ func _init() -> void:
 				# The card table is now conditional: 冶铁 must read as an input-side
 				# effect on a specific good rather than a flat national multiplier.
 				_expect("iron smelting names the ring around iron cells",
-					String(by_name.get("冶铁", "")).contains("工业产出")
+					String(by_name.get("冶铁", "")).contains("制造业产出")
 					and String(by_name.get("冶铁", "")).contains("铁矿石"))
 				_expect("terrace farming names the terrain it targets",
 					String(by_name.get("梯田", "")).contains("丘陵"))

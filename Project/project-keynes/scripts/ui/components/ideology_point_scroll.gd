@@ -53,7 +53,7 @@ func _init() -> void:
 	_ledger_button.text = "账簿"
 	_ledger_button.flat = true
 	_ledger_button.add_theme_color_override("font_color", ArtScript.VERMILION)
-	_ledger_button.add_theme_font_size_override("font_size", 13)
+	_ledger_button.add_theme_font_size_override("font_size", 17)
 	_ledger_button.tooltip_text = "理念点来源"
 	_ledger_button.pressed.connect(func() -> void: ledger_requested.emit())
 	row.add_child(_ledger_button)
@@ -66,9 +66,9 @@ func _notification(what: int) -> void:
 		_row.offset_right = -inset
 		queue_redraw()
 		var narrow := size.x < 520.0
-		_points_label.add_theme_font_size_override("font_size", 17 if narrow else 20)
-		_gain_label.add_theme_font_size_override("font_size", 11 if narrow else 12)
-		_cost_label.add_theme_font_size_override("font_size", 11 if narrow else 12)
+		_points_label.add_theme_font_size_override("font_size", 22 if narrow else 26)
+		_gain_label.add_theme_font_size_override("font_size", 15 if narrow else 17)
+		_cost_label.add_theme_font_size_override("font_size", 15 if narrow else 17)
 
 
 func set_points(points_q16: int, cost_q16: int, last_gain_q16: int, baseline_ready: bool,

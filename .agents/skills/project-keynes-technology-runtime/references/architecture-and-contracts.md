@@ -201,6 +201,9 @@ undiscovered route names and future era columns, so neither the catalog size nor
 is observable. Unknown names and effects stay masked in visible and assistive channels. Selected
 frontier details explain missing discovery/research gates, logical grouping, and anonymous routes;
 unknown prerequisite names and authored route names/descriptions remain masked.
+Development achievements appear only in the selected technology’s discovery or research conditions,
+including current values and consecutive-day progress. Do not show a global development-objective
+board in the policy/queue rail or imply every achievement is required for era advancement.
 Domain color is only supplemental; pair states with icon, border, and text.
 
 All revealed technology names, effect summaries, route badges, prerequisite names, and research-signal

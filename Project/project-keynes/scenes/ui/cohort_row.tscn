@@ -46,7 +46,7 @@ size_flags_horizontal = 3
 text_overrun_behavior = 3
 theme_type_variation = &"PKDossierMuted"
 [node name="LivingIcon" parent="Body/Button/Header" instance=ExtResource("1_icon")]
-custom_minimum_size = Vector2(22, 22)
+custom_minimum_size = Vector2(32, 32)
 layout_mode = 2
 size_flags_vertical = 4
 [node name="Population" type="Label" parent="Body/Button/Header"]

@@ -46,6 +46,7 @@ func _init() -> void:
 		lines.append("- ID：`%s`" % String(row.get("id", "")))
 		lines.append("- 稀有度：%s" % String(row.get("rarity_label",
 			row.get("rarity", ""))))
+		lines.append("- 详情：%s" % String(row.get("detail_key", "")))
 		var requirement_lines := PackedStringArray()
 		var technology_names: PackedStringArray = row.get(
 			"required_technology_names", PackedStringArray())
@@ -67,12 +68,22 @@ func _init() -> void:
 				lines.append("- %s" % String(effect_line))
 		if row_value != rows.back():
 			lines.append("")
+	lines.append("")
+	lines.append("## 羁绊与流派共鸣")
+	lines.append("")
+	var synergies: Array = view.get("synergies", [])
+	for synergy in synergies:
+		lines.append("### %s" % String(synergy.get("display_name", "")))
+		lines.append("")
+		lines.append("- %s" % String(synergy.get("tooltip", "")))
+		lines.append("")
 	var file := FileAccess.open(OUTPUT_PATH, FileAccess.WRITE)
 	if file == null:
 		push_error("[export_card_faces] cannot write %s" % OUTPUT_PATH)
 		quit(1)
 		return
-	file.store_string("\n".join(lines) + "\n")
+	file.store_string("\n".join(lines).strip_edges() + "\n")
 	file.close()
-	print("[PASS] exported %d ideology cards to %s" % [rows.size(), OUTPUT_PATH])
+	print("[PASS] exported %d ideology cards and %d synergies to %s" % [
+		rows.size(), synergies.size(), OUTPUT_PATH])
 	quit(0)

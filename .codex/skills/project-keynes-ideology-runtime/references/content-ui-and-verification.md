@@ -198,3 +198,26 @@ drafting of Modifier formulas at runtime, and GDScript evaluation in the
 daily graph.
 
 UI text stays minimal: numbers on the point scroll (points / cost, last gain), short button labels (抽取 · X, 重抽 · X), hint line hidden unless blocked, detail only in tooltips. A paid draw floats a -X on the scroll.
+
+## Production text audit (2026-10-25)
+
+The current pool has 113 published cards / 339 levels, 280 managed programs,
+and 40 visible synergies. Twenty-one holdouts remain outside the pool.
+
+- Edit `Project/project-keynes/tools/ideology/generate_ideology_catalog.py`.
+  Production summaries come from `player_program_summary()` using executable
+  selectors, conditions, command stats, ramps, and live Good/Need names.
+  `Prog.summary` remains an author note/diagnostic field for production rows.
+- Run `validate_player_text()` before writing resources; an unknown program or
+  rewrite shape must fail generation, never fall back to an invented promise.
+- `housing` is the household-plan category 居住维护; describe its modifier as 居住维护消费需求. `lumber` means 木材 (`logs` is 原木).
+  `cell.depleted` currently reads maximum market-good shortage, not deposits.
+- Do not restore `CARD_FACE_PROGRAM_OVERRIDES`, strip target caps, or truncate
+  visible effect lines to six. Bonus, cost, rule, and one-shot lines all matter.
+- Hidden self-synergy `note` strings describe actual selector rewrites; render
+  them with their ideology-slot restriction. They do not mutate tile tags.
+- Export details, all levels and synergies with `tools/ideology/export_card_faces.gd`.
+  Run `tests/ideology/ideology_card_face_semantics_test.gd` and
+  `python -m unittest discover -s tools/ideology -p test_ideology_player_text.py`.
+- Text-only edits must preserve every executable field in the generated ideology,
+  Effect and Modifier catalogs. No native build/schema/save migration is needed.

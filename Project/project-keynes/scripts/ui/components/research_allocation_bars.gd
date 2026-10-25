@@ -11,11 +11,11 @@ signal weights_committed(weights_bp: PackedInt32Array)
 
 const DOMAIN_COUNT := 4
 const TOTAL_BP := 10000
-const ROW_HEIGHT := 36.0
-const FOOTER_HEIGHT := 24.0
-const NAME_WIDTH := 92.0
-const VALUE_WIDTH := 44.0
-const BAR_HEIGHT := 10.0
+const ROW_HEIGHT := 50.0
+const FOOTER_HEIGHT := 36.0
+const NAME_WIDTH := 98.0
+const VALUE_WIDTH := 48.0
+const BAR_HEIGHT := 12.0
 const DRAG_THRESHOLD := 2.0
 
 var _domains: Array = []
@@ -75,7 +75,7 @@ func bar_rect(domain: int) -> Rect2:
 
 
 func reset_rect() -> Rect2:
-	var label_width := _text_width("均衡分配", 12, "sans_strong") + 22.0
+	var label_width := 36.0
 	return Rect2(size.x - label_width, ROW_HEIGHT * DOMAIN_COUNT + 2.0, label_width,
 		FOOTER_HEIGHT - 4.0)
 
@@ -237,12 +237,12 @@ func _draw() -> void:
 			draw_line(Vector2(0.0, row.position.y + 0.5), Vector2(size.x, row.position.y + 0.5),
 				UITokens.DOSSIER_RULE, 1.0)
 		_icon(_domain_icon(domain), Rect2(Vector2(2.0, row.position.y + 5.0),
-			Vector2(14.0, 14.0)), ink)
-		_text(Vector2(21.0, row.position.y + 17.0),
-			_fit_text(_domain_name(domain), 13, NAME_WIDTH - 24.0, "sans_strong"),
-			13, UITokens.DOSSIER_INK, "sans_strong")
+			Vector2(24.0, 24.0)), ink)
+		_text(Vector2(32.0, row.position.y + 23.0),
+			_fit_text(_domain_name(domain), 17, NAME_WIDTH - 34.0, "sans_strong"),
+			17, UITokens.DOSSIER_INK, "sans_strong")
 		var queue_text := "空队列" if empty else "队列 %d/%d" % [queued, _queue_capacity]
-		_text(Vector2(21.0, row.position.y + 31.0), queue_text, 11,
+		_text(Vector2(32.0, row.position.y + 43.0), queue_text, 15,
 			UITokens.DOSSIER_OXBLOOD if empty else UITokens.DOSSIER_INK_MUTED)
 		var bar := bar_rect(domain)
 		_rounded_bar(bar, UITokens.DOSSIER_TRACK, BAR_HEIGHT * 0.5)
@@ -258,8 +258,8 @@ func _draw() -> void:
 		draw_circle(knob, knob_radius, UITokens.DOSSIER_PAPER)
 		draw_circle(knob, knob_radius - 2.5, fill_color)
 		var value_text := "%d%%" % int(round(share * 100.0))
-		_text(Vector2(size.x - VALUE_WIDTH, row.position.y + 23.0), value_text, 15,
-			UITokens.DOSSIER_INK if not empty else UITokens.DOSSIER_INK_MUTED, "serif",
+		_text(Vector2(size.x - VALUE_WIDTH, row.position.y + 32.0), value_text, 18,
+			UITokens.DOSSIER_INK if not empty else UITokens.DOSSIER_INK_MUTED, "numeral",
 			HORIZONTAL_ALIGNMENT_RIGHT, VALUE_WIDTH)
 	var footer_y := ROW_HEIGHT * DOMAIN_COUNT
 	draw_line(Vector2(0.0, footer_y + 0.5), Vector2(size.x, footer_y + 0.5),
@@ -267,14 +267,16 @@ func _draw() -> void:
 	var reset := reset_rect()
 	var hint := "空队列的份额并入其他领域" if _has_empty_weighted_domain() \
 		else "拖动横条调整投入比例"
-	_text(Vector2(2.0, footer_y + 16.0), _fit_text(hint, 11, reset.position.x - 8.0), 11,
+	_text(Vector2(2.0, footer_y + 24.0), _fit_text(hint, 15, reset.position.x - 8.0), 15,
 		UITokens.DOSSIER_INK_MUTED)
 	if _reset_hover:
 		draw_rect(reset, UITokens.DOSSIER_HOVER)
-	_icon(&"action.reset", Rect2(Vector2(reset.position.x + 3.0, reset.position.y + 3.0),
-		Vector2(13.0, 13.0)), UITokens.DOSSIER_OXBLOOD)
-	_text(Vector2(reset.position.x + 19.0, footer_y + 16.0), "均衡分配", 12,
-		UITokens.DOSSIER_OXBLOOD, "sans_strong")
+	_icon(&"action.reset", reset.grow(-3.0), UITokens.DOSSIER_OXBLOOD)
+
+
+func _get_tooltip(at_position: Vector2) -> String:
+	return "均衡分配：四个领域各投入 25%" if reset_rect().has_point(at_position) \
+		else "拖动横条调整投入比例；空队列的份额并入其他领域。"
 
 
 func _has_empty_weighted_domain() -> bool:

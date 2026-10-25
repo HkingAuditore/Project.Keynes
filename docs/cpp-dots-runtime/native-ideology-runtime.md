@@ -1,5 +1,19 @@
 # Native Ideology Runtime
 
+## 2026-10-25 玩家文本与机制核对
+
+当前正式卡池为 113 张、339 个等级、280 个托管效果程序和 40 项可见羁绊。
+`tools/ideology/generate_ideology_catalog.py` 的 `player_program_summary()`
+从实际选择器、条件、指令和数值生成正式摘要，`validate_player_text()` 在写资源前
+拒绝尚未审查的程序形态；`Prog.summary` 对正式内容只保留作者备注用途。
+`IdeologyCatalog` 不再维护逐卡覆盖摘要，不删除地块上限或截断效果行。
+隐藏的自身羁绊通过生成的 `note` 展示筛选改写，并注明理念槽限制。
+
+`housing` 表示居住维护材料消费，不能描述成住宅容量或房租；商品名称读取当前目录。
+本轮只改展示文本，可执行目录字段、C++ 权威与 PKID/PKEF 协议均不变。
+详细核对记录见 [理念文本审查](../ideology-text-audit-2026-10-25.md)，
+全量玩家文本见 [理念卡面文案](../../Project/project-keynes/docs/ideology-card-faces.md)。
+
 `NativeIdeologyRuntime` is the country-scoped authority for ideology collection,
 understanding, levels, ideology slots, national-spirit slots, deterministic
 three-card offers, gates, and queued ideology commands. It intentionally does
@@ -300,9 +314,9 @@ gain = raw × opinion_factor × point_gain_factor
 
 `opinion_factor = 0.5 + influence-weighted satisfaction`, clamped to
 [0.5, 1.5]. Weights and cap live in the profile (`point_*_weight_q16`,
-`point_gain_cap_q16`; default approximately 0.0005/resident, 0.00625/building,
-0.00005/money of daily trade, with no daily ceiling). The exact Q16 weights
-are 33 / 410 / 3 and the cap is 0 (disabled on both native and worker paths). The first observation only establishes the
+`point_gain_cap_q16`; default approximately 0.0403/resident, 0.5005/building,
+0.004/money of daily trade, with no daily ceiling). The exact Q16 weights
+are 2640 / 32800 / 240 and the cap is 0 (disabled on both native and worker paths). The first observation only establishes the
 per-country baseline and yields nothing. The last source breakdown and a 32-gain
 history ring are kept per country for the UI ledger. Main (`NativeIdeologyRuntime`)
 and worker (`RuntimeIdeologyPodAuthority`) implement the same integer formula;
@@ -312,10 +326,11 @@ Every draw is paid. The first draw costs 120.0 and each later draw costs 20% mor
 (opcode 10) replaces the active offer for 75% of the cost paid for that offer, is
 unlimited, and uses the same offer RNG stream.
 
-The revised 2026-10-25 balance pass reduces the previous growth weights
-328 / 4096 / 33 to 33 / 410 / 3, increases the first draw from 12 to 120,
-and removes the previous 0.5-point daily ceiling. The reroll share stays 75%
-(first-offer reroll: 90 points). There is no fixed minimum earning period:
+The 2026-10-25 balance pass sets growth weights to 2640 / 32800 / 240
+(80 times the prior 33 / 410 / 3), increases the first draw from 12 to 120,
+and removes the previous 0.5-point daily ceiling. Annual development rewards
+are reduced to 30% of their grade-based draw-cost value. The reroll share stays
+75% (first-offer reroll: 90 points). There is no fixed minimum earning period:
 uncapped income scales with development, trade, opinion and card multipliers.
 These profile values change the ideology catalog hash: existing PKID saves
 fail closed on catalog mismatch. PKID/PKEF layouts, command semantics,

@@ -1,7 +1,9 @@
 extends RefCounted
 class_name UITokens
 
-const UI_FONT: FontFile = preload("res://assets/fonts/source_han/SourceHanSansCN-VF.woff2")
+const UI_FONT: FontFile = preload("res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.ttf")
+const UI_FONT_BOLD: FontFile = preload("res://assets/fonts/swei/SweiGothicLegCJKsc-Bold.ttf")
+const UI_DISPLAY_FONT: Font = preload("res://assets/fonts/muyao/display_handwritten.tres")
 const CHRONICLE_SERIF: FontFile = preload("res://assets/fonts/source_han_serif/SourceHanSerifCN-Regular.otf")
 const CHRONICLE_INK := Color(0.19, 0.15, 0.12)
 const CHRONICLE_MUTED := Color(0.39, 0.32, 0.25)
@@ -64,8 +66,7 @@ static func annual_font(kind: String) -> Font:
 			font = numeral
 		"label":
 			var label := FontVariation.new()
-			label.base_font = UI_FONT
-			label.variation_opentype = {&"wght": 620.0}
+			label.base_font = UI_FONT_BOLD
 			label.spacing_glyph = 1.2
 			font = label
 		"body_soft":
@@ -161,7 +162,8 @@ const MAP_ACTIVITY_MIN_ZOOM := 0.35
 # 地块屏幕宽度门控，兼容窗口缩放；不同情况共用位图图集，恒定屏幕尺寸。
 const MAP_SITUATION_SHOW_WIDTH := 80.0
 const MAP_SITUATION_HIDE_WIDTH := 72.0
-const MAP_SITUATION_ICON_SIZE := 25.0
+# 地块告警图标需要在高分辨率地图上保持可辨识；绘制与命中区域共用此基准尺寸。
+const MAP_SITUATION_ICON_SIZE := 36.0
 const MAP_SITUATION_REFRESH_SECONDS := 0.25
 const MAP_SITUATION_BATCH_CELLS := 128
 const MAP_SITUATION_VISIBLE_CAP := 1024
@@ -216,12 +218,16 @@ const FAMILY_FOUNDING_WIDE_WIDTH := 520.0
 const FAMILY_FOUNDING_COLLAPSED_WIDTH := 320.0
 const FAMILY_FOUNDING_MAP_GAP := 240.0
 
-const FONT_BODY := 14
-const FONT_SMALL := 12
-const FONT_SECTION := 13
-const FONT_TITLE := 20
-const FONT_VALUE := 18
-const FONT_HUD_TIME := 17
+# 按屏幕像素设计：Swei 负责阅读与数值，Muyao 负责短标题的手写表现。
+const FONT_BODY := 18
+const FONT_SMALL := 15
+const FONT_SECTION := 20
+const FONT_TITLE := 34
+const FONT_VALUE := 24
+const FONT_HUD_TIME := 21
+const ICON_INLINE := 24
+const ICON_ACTION := 32
+const ICON_HUD := 44
 
 const INK_DEEP := Color(0.027, 0.025, 0.022, 0.98)
 const INK_PANEL := Color(0.052, 0.047, 0.039, 0.965)
@@ -389,12 +395,11 @@ static func _trim_number(value: float, decimals: int) -> String:
 
 static func font_with_weight(weight: int) -> FontVariation:
 	var font := FontVariation.new()
-	font.base_font = UI_FONT
-	font.variation_opentype = {&"wght": float(clampi(weight, 200, 900))}
+	font.base_font = UI_FONT_BOLD if weight >= 600 else UI_FONT
 	return font
 
 
-## Cached fonts for self-drawn dossier charts: "sans", "sans_strong", "serif".
+## 缓存字面：sans/sans_strong/numeral = Swei，serif 为兼容旧调用的 Muyao 标题别名。
 static func dossier_font(kind: String) -> Font:
 	if _dossier_fonts.has(kind):
 		return _dossier_fonts[kind]
@@ -402,11 +407,12 @@ static func dossier_font(kind: String) -> Font:
 	match kind:
 		"serif":
 			font = FontVariation.new()
-			font.base_font = DOSSIER_SERIF
-			font.variation_embolden = 0.7
+			font.base_font = UI_DISPLAY_FONT
+		"numeral":
+			font = font_with_weight(650)
 		"sans_strong":
-			font = font_with_weight(760)
+			font = font_with_weight(650)
 		_:
-			font = font_with_weight(560)
+			font = font_with_weight(500)
 	_dossier_fonts[kind] = font
 	return font

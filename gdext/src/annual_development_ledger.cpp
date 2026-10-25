@@ -211,6 +211,7 @@ void AnnualDevelopmentLedger::evaluate(AnnualDevelopmentReport &r,const AnnualDe
     r.reward_q16=0;
     for(int32_t n=0;n<p.reward_draws[r.grade];++n)r.reward_q16=add(r.reward_q16,runtime_ideology_offer_cost_q16(p.offer_cost,p.offer_growth_percent,p.max_offer_cost,draws+static_cast<uint64_t>(n)));
     if(r.grade==5)r.reward_q16=runtime_ideology_offer_cost_q16(p.offer_cost,p.offer_growth_percent,p.max_offer_cost,draws)/2;
+    r.reward_q16=(r.reward_q16/10)*3+((r.reward_q16%10)*3)/10;
 }
 bool AnnualDevelopmentLedger::has_pending_reward() const{while(_reward_cursor<_reports.size()&&_reports[_reward_cursor].reward_settled)++_reward_cursor;return _reward_cursor<_reports.size();}
 uint64_t AnnualDevelopmentLedger::ready_report_id() const{while(_ready_cursor<_reports.size()&&_reports[_ready_cursor].presented)++_ready_cursor;return _ready_cursor<_reports.size()&&_reports[_ready_cursor].reward_settled?_reports[_ready_cursor].id:0;}
@@ -269,6 +270,7 @@ bool annual_development_self_test(std::string &error){
             int64_t reward=0,price=400*65536;
             for(int32_t n=0;n<boundaries.reward_draws[expected];++n){reward+=price;price*=2;}
             if(expected==5)reward=200*65536;
+            reward=(reward/10)*3+((reward%10)*3)/10;
             if(sample.score_bp!=score||sample.grade!=expected||sample.reward_q16!=reward){error="annual_grade_boundary_or_reward_failed";return false;}
         }
     }

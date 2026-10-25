@@ -124,7 +124,11 @@ const IDEOLOGY_PLAIN_STAT_NAMES := {
 	"country.research.science_efficiency": "科学研究速度",
 	"country.research.society_efficiency": "社会研究速度",
 	"country.research.institution_output_factor": "研究机构产出",
-	"country.production.input_factor": "生产所需原料",
+	"country.production.input_factor": "生产原料需求量",
+	"country.climate.cold_stress_factor": "寒冷造成的生产损失",
+	"country.climate.heat_stress_factor": "热害造成的生产损失",
+	"country.climate.drought_loss_factor": "旱灾造成的生产损失",
+	"country.climate.flood_loss_factor": "洪灾造成的生产损失",
 	"country.household.consumption_factor": "家庭消费需求",
 	"country.resource.use_factor": "自然资源消耗",
 	"country.trade.capacity_factor": "每次贸易可成交的货物量",
@@ -979,6 +983,14 @@ func present_definition_for_ideology(definition_key: StringName,
 			var label := String(described.get("label", stat_key))
 			if not described.is_empty():
 				label = String(IDEOLOGY_PLAIN_STAT_NAMES.get(stat_key, label))
+			if stat_key.begins_with("country.input.good."):
+				label = "%s生产原料需求量" % display_name_of(&"good",
+					_strip_suffix(stat_key.split(".")[3], "_factor"))
+			elif stat_key.begins_with("country.consumption.good."):
+				label = "%s家庭消费需求量" % display_name_of(&"good",
+					_strip_suffix(stat_key.split(".")[3], "_factor"))
+			elif stat_key.begins_with("country.climate.profile."):
+				label = label.replace("损失", "生产损失")
 			if label.begins_with("全国自然资源") \
 					and label.ends_with("恢复速度"):
 				label = label.replace("全国自然资源", "自然资源")

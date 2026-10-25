@@ -5,10 +5,10 @@ class_name InspectorMeterList
 ## 数据形状沿用视图模型的 gauges（id/label/value/marker/status_label/value_text/accent）。
 ## 首次出现时条从零生长，之后数值变化只做补间。
 
-const ROW_HEIGHT := 30.0
-const LABEL_WIDTH := 66.0
-const READOUT_WIDTH := 118.0
-const BAR_HEIGHT := 6.0
+const ROW_HEIGHT := 40.0
+const LABEL_WIDTH := 80.0
+const READOUT_WIDTH := 150.0
+const BAR_HEIGHT := 8.0
 
 var _meters: Array = []
 var _from: Dictionary = {}
@@ -83,8 +83,8 @@ func _draw() -> void:
 		var meter: Dictionary = _meters[i]
 		var top := ROW_HEIGHT * float(i)
 		var mid := top + ROW_HEIGHT * 0.5
-		_text(Vector2(4.0, mid + 4.5), _fit_text(String(meter.get("label", "")), 12, LABEL_WIDTH),
-			12, UITokens.DOSSIER_INK_SOFT)
+		_text(Vector2(4.0, mid + 6.0), _fit_text(String(meter.get("label", "")), 17, LABEL_WIDTH),
+			17, UITokens.DOSSIER_INK_SOFT)
 		var track := Rect2(Vector2(bar_x, mid - BAR_HEIGHT * 0.5), Vector2(bar_w, BAR_HEIGHT))
 		_rounded_bar(track, UITokens.DOSSIER_TRACK, 3.0)
 		var value := _shown_value(meter) * (_grow if _has_grown else 1.0)
@@ -95,6 +95,6 @@ func _draw() -> void:
 			var mx := track.position.x + track.size.x * clampf(marker, 0.0, 1.0)
 			draw_line(Vector2(mx, track.position.y - 4.0), Vector2(mx, track.end.y + 4.0),
 				UITokens.DOSSIER_INK, 1.5)
-		var readout := _fit_text(_readout(meter), 12, readout_width, "sans_strong")
-		_text(Vector2(w - readout_width - 2.0, mid + 4.5), readout, 12, UITokens.DOSSIER_INK,
+		var readout := _fit_text(_readout(meter), 17, readout_width, "sans_strong")
+		_text(Vector2(w - readout_width - 2.0, mid + 6.0), readout, 17, UITokens.DOSSIER_INK,
 			"sans_strong", HORIZONTAL_ALIGNMENT_RIGHT, readout_width)

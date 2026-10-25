@@ -1,12 +1,12 @@
 extends DossierChart
 class_name DossierKpiCard
 
-## 页头 KPI 单元：图标 + 标题、衬线大数字、与上一周期的差值箭头、迷你趋势线。
+## 页头 KPI 单元：纸贴图标 + 标题、Swei 大数字、差值箭头、迷你趋势线。
 ## 同一 KPI 条里的卡片用竖线分隔，不再各自套框。
 
-const ICON_SIZE := 16.0
-const HEIGHT := 66.0
-const DENSE_HEIGHT := 32.0
+const ICON_SIZE := 24.0
+const HEIGHT := 86.0
+const DENSE_HEIGHT := 54.0
 const STACKED_DENSE_MAX_WIDTH := 150.0
 
 var metric_id := ""
@@ -87,20 +87,21 @@ func _draw() -> void:
 		_icon(icon_key, Rect2(Vector2(x, 7.0 + dy), Vector2(ICON_SIZE, ICON_SIZE)),
 			UITokens.DOSSIER_INK_SOFT)
 		x += ICON_SIZE + 5.0
-	_text(Vector2(x, 20.0 + dy), _fit_text(title, 12, w - x - 8.0), 12,
-		UITokens.DOSSIER_INK_MUTED)
+	if w >= 135.0 or icon_key == &"":
+		_text(Vector2(x, 25.0 + dy), _fit_text(title, 15, w - x - 8.0), 15,
+			UITokens.DOSSIER_INK_MUTED)
 	var shown := lerpf(_from_value, _value, _blend) if _has_grown else _value
 	var value_string := text_value if kind == "text" \
 		else EconomyDossierViewModel.format_value(shown, kind)
 	var compact_card := w < 135.0
 	var spark_width := (clampf(w * 0.28, 0.0, 28.0) if compact_card else clampf(w * 0.34, 0.0, 86.0)) \
 		if _spark.size() >= 2 else 0.0
-	var value_size := 22 if w >= 170.0 else (18 if w >= 135.0 else 16)
+	var value_size := 26 if w >= 170.0 else (22 if w >= 135.0 else 20)
 	var avail_value_w := w - spark_width - (14.0 if compact_card else 18.0)
-	if value_size > 14 and _text_width(value_string, value_size, "serif") > avail_value_w:
-		value_size = 14
-	_text(Vector2(10.0, 46.0 + dy), _fit_text(value_string, value_size,
-		avail_value_w, "serif"), value_size, _value_color(), "serif")
+	if value_size > 20 and _text_width(value_string, value_size, "numeral") > avail_value_w:
+		value_size = 20
+	_text(Vector2(10.0, 57.0 + dy), _fit_text(value_string, value_size,
+		avail_value_w, "numeral"), value_size, _value_color(), "numeral")
 	var delta_line := caption
 	var delta_color := UITokens.DOSSIER_INK_MUTED if tone.is_empty() else _value_color()
 	if not is_nan(_delta) and absf(_delta) > 1e-6:
@@ -117,10 +118,10 @@ func _draw() -> void:
 		var delta_text := EconomyDossierViewModel.format_value(absf(_delta), kind)
 		if kind == "percent":
 			delta_text = "%.1f 点" % (absf(_delta) * 100.0)
-		_text(Vector2(arrow_x + 12.0, h - 8.0), _fit_text("%s · %s" % [delta_text, caption], 11,
-			w - spark_width - 34.0), 11, delta_color)
+		_text(Vector2(arrow_x + 12.0, h - 8.0), _fit_text("%s · %s" % [delta_text, caption], 15,
+			w - spark_width - 34.0), 15, delta_color)
 	else:
-		_text(Vector2(10.0, h - 8.0), _fit_text(delta_line, 11, w - spark_width - 18.0), 11,
+		_text(Vector2(10.0, h - 8.0), _fit_text(delta_line, 15, w - spark_width - 18.0), 15,
 			delta_color)
 	if spark_width > 0.0:
 		_draw_spark(Rect2(Vector2(w - spark_width - 10.0, 28.0), Vector2(spark_width, h - 40.0)))
@@ -139,25 +140,25 @@ func _draw_dense(w: float, h: float) -> void:
 	var shown := lerpf(_from_value, _value, _blend) if _has_grown else _value
 	var value_string := text_value if kind == "text" \
 		else EconomyDossierViewModel.format_value(shown, kind)
-	var value_width := minf(_text_width(value_string, 16, "serif"), (w - x) * 0.62)
-	_text(Vector2(x, mid + 5.0), _fit_text(title, 12, w - x - value_width - 18.0), 12,
+	var value_width := minf(_text_width(value_string, 22, "numeral"), (w - x) * 0.62)
+	_text(Vector2(x, mid + 6.0), _fit_text(title, 15, w - x - value_width - 18.0), 15,
 		UITokens.DOSSIER_INK_MUTED)
-	_text(Vector2(w - 10.0 - value_width, mid + 6.0), _fit_text(value_string, 16, value_width,
-		"serif"), 16, _value_color(), "serif")
+	_text(Vector2(w - 10.0 - value_width, mid + 8.0), _fit_text(value_string, 22, value_width,
+		"numeral"), 22, _value_color(), "numeral")
 
 
 ## 窄卡（地块档案四格并排约 100px）单行放不下“标题……数值”，改成上标题、下数值。
 func _draw_dense_stacked(w: float) -> void:
 	var x := 8.0
 	if icon_key != &"":
-		_icon(icon_key, Rect2(Vector2(x, 3.0), Vector2(12.0, 12.0)), UITokens.DOSSIER_INK_SOFT)
-		x += 15.0
-	_text(Vector2(x, 13.0), _fit_text(title, 11, w - x - 6.0), 11, UITokens.DOSSIER_INK_MUTED)
+		_icon(icon_key, Rect2(Vector2(x, 3.0), Vector2(24.0, 24.0)), UITokens.DOSSIER_INK_SOFT)
+	else:
+		_text(Vector2(x, 20.0), _fit_text(title, 15, w - x - 6.0), 15, UITokens.DOSSIER_INK_MUTED)
 	var shown := lerpf(_from_value, _value, _blend) if _has_grown else _value
 	var value_string := text_value if kind == "text" \
 		else EconomyDossierViewModel.format_value(shown, kind)
-	_text(Vector2(8.0, 30.0), _fit_text(value_string, 16, w - 14.0, "serif"), 16,
-		_value_color(), "serif")
+	_text(Vector2(8.0, 48.0), _fit_text(value_string, 20, w - 14.0, "numeral"), 20,
+		_value_color(), "numeral")
 
 
 func _value_color() -> Color:

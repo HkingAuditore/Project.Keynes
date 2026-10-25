@@ -87,7 +87,8 @@ static func label(text: String, size: int, color: Color,
 	var node := Label.new()
 	node.text = text
 	node.horizontal_alignment = align
-	node.add_theme_font_size_override("font_size", size)
+	node.add_theme_font_size_override("font_size", maxi(UITokens.FONT_SMALL, size))
+	node.add_theme_font_override("font", UITokens.dossier_font("sans"))
 	node.add_theme_color_override("font_color", color)
 	node.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return node

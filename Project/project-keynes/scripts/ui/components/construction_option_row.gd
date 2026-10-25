@@ -23,6 +23,13 @@ func _ready() -> void:
 	_materials_icon.set_semantic(&"economy.resource", UITokens.RESOURCE)
 	_recipe_icon.set_semantic(&"economy.building.factory", UITokens.CLIMATE)
 	_jobs_icon.set_semantic(&"population.profession.worker", UITokens.ACCENT)
+	# Button 的自由布局子树不会自动把换行高度传给外部 VBox。
+	# 按实际内容量高，避免字体放大后岗位/配方落到下一张卡下面。
+	var content := get_node("Margin") as MarginContainer
+	if not content.minimum_size_changed.is_connected(_queue_fit_height):
+		content.minimum_size_changed.connect(_queue_fit_height)
+	if not resized.is_connected(_queue_fit_height):
+		resized.connect(_queue_fit_height)
 
 
 func set_option(item: Dictionary) -> void:
@@ -35,6 +42,18 @@ func set_option(item: Dictionary) -> void:
 			float(item.get("cash_required", 0)) / 10000.0)
 	_recipe.text = _recipe_text(item.get("inputs", []), item.get("outputs", []))
 	_jobs.text = _jobs_text(item.get("jobs", []))
+	_queue_fit_height()
+
+
+func _queue_fit_height() -> void:
+	call_deferred("_fit_height")
+
+
+func _fit_height() -> void:
+	var content := get_node("Margin") as MarginContainer
+	var needed := maxf(124.0, content.get_combined_minimum_size().y + 16.0)
+	if not is_equal_approx(custom_minimum_size.y, needed):
+		custom_minimum_size.y = needed
 
 
 func _materials_text(materials: Array, cash: float) -> String:

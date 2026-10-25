@@ -4,7 +4,7 @@ class_name InspectorNoteList
 ## 地块卷宗批注：左侧色签 + 自动换行的短句，用于警示与说明（承载告急、投资受阻……）。
 ## 数据形状沿用视图模型的 insights（id/text/accent）。
 
-const FONT_SIZE := 13
+const FONT_SIZE := UITokens.FONT_BODY
 const LINE_GAP := UITokens.PAPER_NOTE_LINE_GAP
 const PAD_LEFT := UITokens.PAPER_NOTE_PAD_X + 10.0
 

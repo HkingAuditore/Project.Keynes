@@ -4,7 +4,7 @@ class_name TechnologyProgressBlock
 ## 研究进度块：百分比、进度条、剩余科技值与预计完成时间。
 ## 每日只改数值并补间，不重建节点。
 
-const HEIGHT := 62.0
+const HEIGHT := 92.0
 
 var _fraction := 0.0
 var _from_fraction := 0.0
@@ -58,11 +58,11 @@ func _shown_fraction() -> float:
 func _draw() -> void:
 	var w := size.x
 	var shown := _fraction * _grow if _blend >= 1.0 else lerpf(_from_fraction, _fraction, _blend)
-	_text(Vector2(0.0, 16.0), "研究进度", 12, UITokens.DOSSIER_INK_MUTED)
+	_text(Vector2(0.0, 22.0), "研究进度", 17, UITokens.DOSSIER_INK_MUTED)
 	var percent := "已掌握" if _state >= 5 else ("%d%%" % int(floor(shown * 100.0)))
-	_text(Vector2(0.0, 22.0), percent, 20, UITokens.DOSSIER_INK, "serif",
+	_text(Vector2(0.0, 26.0), percent, 28, UITokens.DOSSIER_INK, "numeral",
 		HORIZONTAL_ALIGNMENT_RIGHT, w)
-	var track := Rect2(0.0, 30.0, w, 8.0)
+	var track := Rect2(0.0, 38.0, w, 8.0)
 	_rounded_bar(track, UITokens.DOSSIER_TRACK, 4.0)
 	var fill_color := UITokens.DOSSIER_VERDIGRIS if _state >= 4 \
 		else _accent.lerp(UITokens.DOSSIER_INK, 0.2)
@@ -70,7 +70,7 @@ func _draw() -> void:
 	if fill > 0.0:
 		_rounded_bar(Rect2(track.position, Vector2(track.size.x * fill, track.size.y)),
 			fill_color, 4.0)
-	_text(Vector2(0.0, 56.0), _fit_text(_remaining, 12, w * 0.55), 12, UITokens.DOSSIER_INK_SOFT)
+	_text(Vector2(0.0, 68.0), _fit_text(_remaining, 15, w), 15, UITokens.DOSSIER_INK_SOFT)
 	if not _schedule.is_empty():
-		_text(Vector2(0.0, 56.0), _fit_text(_schedule, 12, w * 0.45), 12,
+		_text(Vector2(0.0, 88.0), _fit_text(_schedule, 15, w), 15,
 			UITokens.DOSSIER_OXBLOOD, "sans_strong", HORIZONTAL_ALIGNMENT_RIGHT, w)

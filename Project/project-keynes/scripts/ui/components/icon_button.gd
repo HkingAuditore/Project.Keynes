@@ -2,9 +2,9 @@ class_name IconButton
 extends RefCounted
 
 
-const SMALL := 14
-const MEDIUM := 16
-const LARGE := 21
+const SMALL := UITokens.ICON_INLINE
+const MEDIUM := UITokens.ICON_ACTION
+const LARGE := UITokens.ICON_HUD
 
 
 static func apply(

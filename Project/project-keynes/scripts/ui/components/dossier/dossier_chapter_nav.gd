@@ -6,8 +6,9 @@ class_name DossierChapterNav
 
 signal chapter_selected(chapter_id: String)
 
-const HEIGHT := 38.0
-const ICON := 16.0
+const HEIGHT := 48.0
+const ICON := 28.0
+const FONT_SIZE := UITokens.FONT_SMALL
 
 var chapters: Array = []
 var current := ""
@@ -93,13 +94,13 @@ func _relayout() -> void:
 		return
 	var full_width := 0.0
 	for chapter in chapters:
-		full_width += _text_width(String(chapter.label), 13, "sans_strong") + ICON + 30.0
+		full_width += _text_width(String(chapter.label), FONT_SIZE, "sans_strong") + ICON + 22.0
 	icon_only = full_width > size.x
 	var x := 0.0
 	var tab_width := (size.x / float(chapters.size())) if icon_only else 0.0
 	for chapter in chapters:
 		var width := tab_width if icon_only \
-			else _text_width(String(chapter.label), 13, "sans_strong") + ICON + 30.0
+			else _text_width(String(chapter.label), FONT_SIZE, "sans_strong") + ICON + 22.0
 		if not icon_only:
 			width += (size.x - full_width) / float(chapters.size())
 		_rects.append(Rect2(Vector2(x, 0.0), Vector2(width, HEIGHT)))
@@ -160,11 +161,11 @@ func _draw() -> void:
 			_icon(icon_key, Rect2(rect.get_center() - Vector2(ICON, ICON) * 0.5 + Vector2(0.0, 1.0),
 				Vector2(ICON, ICON)), ink)
 			continue
-		var content_width := ICON + 6.0 + _text_width(label, 13, "sans_strong")
+		var content_width := ICON + 6.0 + _text_width(label, FONT_SIZE, "sans_strong")
 		var x := rect.position.x + (rect.size.x - content_width) * 0.5
 		_icon(icon_key, Rect2(Vector2(x, rect.get_center().y - ICON * 0.5 + 1.0),
 			Vector2(ICON, ICON)), ink)
-		_text(Vector2(x + ICON + 6.0, rect.get_center().y + 6.0), label, 13, ink, "sans_strong")
+		_text(Vector2(x + ICON + 6.0, rect.get_center().y + 6.0), label, FONT_SIZE, ink, "sans_strong")
 		if i < chapters.size() - 1 and not active and String(chapters[i + 1].id) != current:
 			draw_line(Vector2(rect.end.x, 12.0), Vector2(rect.end.x, HEIGHT - 10.0),
 				UITokens.DOSSIER_RULE, 1.0)

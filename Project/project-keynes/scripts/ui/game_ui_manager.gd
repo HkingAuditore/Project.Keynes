@@ -1742,7 +1742,7 @@ func _layout_country_action_bar() -> void:
 	_country_action_bar.visible = true
 	var viewport_width := get_viewport().get_visible_rect().size.x
 	var safe := _base_map_safe_area()
-	var bar_width := 336.0
+	var bar_width := 412.0
 	_country_action_bar.visible = not (_right_panel != null \
 		and _right_panel.family_workspace_open() \
 		and safe.size.x < bar_width + UITokens.ARCHIVE_EDGE_INSET * 2.0)
@@ -1779,8 +1779,8 @@ func _layout_research_toast() -> void:
 	_research_toast.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	_research_toast.offset_left = 24.0
 	_research_toast.offset_right = -24.0
-	_research_toast.offset_top = 64.0
-	_research_toast.offset_bottom = 160.0
+	_research_toast.offset_top = PlayerTopBar.BAR_HEIGHT + UITokens.SPACE_SM
+	_research_toast.offset_bottom = _research_toast.offset_top + 96.0
 	_research_toast.z_index = 40
 
 

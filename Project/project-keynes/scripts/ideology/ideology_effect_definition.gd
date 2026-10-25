@@ -142,14 +142,14 @@ const MAX_SELECTOR_TAGS := 4
 
 ## Matches an IdeologyCatalog card-effect `definition_key`.
 @export var definition_key: StringName = &""
-## One player-facing line for the card face ("聚落地块：出生率 +5%，住房需求 -8%").
+## One player-facing line for the card face ("聚落地块：出生率 +5%，居住维护消费需求 -8%").
 ##
 ## A program row has no Modifier definition of its own, so the catalog's
 ## Modifier presenter cannot render it. Without this field a cell-level card
 ## would show only its cost line -- the effect would exist, apply, and be
-## invisible. Authored here rather than derived from the commands because the
-## tag condition ("聚落地块") is what makes the numbers readable, and that lives
-## on the selector, not on any single command.
+## invisible. Production summaries are generated from the selector, conditions,
+## and commands together by `player_program_summary()` in the catalog generator.
+## Fixtures can still author this field directly.
 @export_multiline var summary: String = ""
 @export var target_domain: int = TargetDomain.COUNTRY
 @export var operation: int = Operation.ADD

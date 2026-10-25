@@ -6,8 +6,6 @@ const ToastScene := preload("res://scenes/ui/research_toast.tscn")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 const TechnologyTreeLayoutScript = preload("res://scripts/ui/technology_tree_layout.gd")
 const ResearchSignalCatalogScript = preload("res://scripts/research/research_signal_catalog.gd")
-const DevelopmentAchievementCatalogScript = preload(
-	"res://scripts/research/development_achievement_catalog.gd")
 
 var _failures := 0
 
@@ -85,14 +83,19 @@ func _init() -> void:
 		_items_contain(route_items, "研究条件 · 土地制度路线") and
 		not _items_contain(route_items, "替代研究条件"))
 	_audit_unknown_conditions(workspace, definitions, maize, plantation)
-	var development_title := workspace.get_node(
-		"Root/Main/PolicyPanel/Scroll/Body/DevelopmentTitle") as Label
-	var development_list := workspace.get_node(
-		"Root/Main/PolicyPanel/Scroll/Body/DevelopmentList") as VBoxContainer
-	_expect("development board shows only current-era neutral objectives",
-		development_title.visible and development_list.visible and
-		development_list.get_child_count() == 1 and
-		not development_title.text.contains("科技"))
+	_expect("policy rail contains no global development objective board",
+		workspace.get_node_or_null("Root/Main/PolicyPanel/Scroll/Body/DevelopmentTitle") == null
+		and workspace.get_node_or_null("Root/Main/PolicyPanel/Scroll/Body/DevelopmentList") == null)
+	var weaving := (compiled.technology_ids as PackedStringArray).find("tech.loom_weaving")
+	var unknown_states := PackedInt32Array()
+	unknown_states.resize(definitions.size())
+	var development_items: Array = workspace._condition_items(weaving, unknown_states)
+	_expect("unknown technology discovery explains its own development progress",
+		_items_contain(development_items, "发现条件")
+		and _items_contain(development_items, "人口规模 100")
+		and _items_contain(development_items, "80/100")
+		and _items_contain(development_items, "45/90日")
+		and not _items_contain(development_items, "62500"))
 	var tree: Control = workspace.tree_view()
 	_expect("tree view exists", tree != null)
 	if tree == null:
@@ -222,11 +225,6 @@ func _model(definitions: Array, eras: Array, domains: Array) -> Dictionary:
 		states[index] = 2
 	states[4] = 3
 	progress[4] = 500 * 1000
-	var population_objective: Dictionary = {}
-	for definition in DevelopmentAchievementCatalogScript.definitions():
-		if String(definition.get("signal_id", "")) == "development.population.100_90d":
-			population_objective = definition.duplicate(true)
-			break
 	return {
 		"country_handle": 0,
 		"technology_definitions": definitions,
@@ -237,8 +235,6 @@ func _model(definitions: Array, eras: Array, domains: Array) -> Dictionary:
 		"research_signal_definitions": signal_definitions,
 		"development": {
 			"ok": true,
-			"era_id": "stone",
-			"objectives": [population_objective],
 			"progress_by_signal": {
 				"development.population.100_90d": {
 					"current_value": 80,

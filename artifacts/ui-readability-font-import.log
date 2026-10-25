@@ -1,0 +1,156 @@
+ERROR: Failed to open 'F:/Developent/Godot/Project.Keynes/Project/project-keynes/addons/dots_ext/bin/windows/~dots_ext_annual_v1.windows.template_debug.x86_64.dll'.
+   at: copy (core/io/dir_access.cpp:423)
+ERROR: Error copying library: F:/Developent/Godot/Project.Keynes/Project/project-keynes/addons/dots_ext/bin/windows/dots_ext_annual_v1.windows.template_debug.x86_64.dll
+   at: open_dynamic_library (platform/windows/os_windows.cpp:503)
+ERROR: Condition "!FileAccess::exists(path)" is true. Returning: ERR_FILE_NOT_FOUND
+   at: open_dynamic_library (platform/windows/os_windows.cpp:487)
+ERROR: GDExtension dynamic library not found: 'res://addons/dots_ext/dots_ext.gdextension'.
+   at: open_library (core/extension/gdextension.cpp:740)
+ERROR: Error loading extension: 'res://addons/dots_ext/dots_ext.gdextension'.
+   at: load_extensions (core/extension/gdextension_manager.cpp:329)
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[   0% ] [90m[1mfirst_scan_filesystem[22m | Started 项目初始化 (5 steps)[39m[0m
+[   0% ] [90m[1mfirst_scan_filesystem[22m | 正在扫描文件结构……[39m[0m
+[  16% ] [90m[1mfirst_scan_filesystem[22m | 正在加载全局类名……[39m[0m
+[  33% ] [90m[1mfirst_scan_filesystem[22m | 正在校验 GDExtension……[39m[0m
+[  50% ] [90m[1mfirst_scan_filesystem[22m | 正在创建自动加载脚本……[39m[0m
+ERROR: Failed loading resource: res://assets/fonts/muyao/Muyao-Softbrush-2.ttf.
+   at: _load (core/io/resource_loader.cpp:343)
+ERROR: Failed loading resource: res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.ttf.
+   at: _load (core/io/resource_loader.cpp:343)
+ERROR: Attempted to assign an object of type 'Resource' into a TypedArray, which does not inherit from 'Font'.
+   at: _internal_validate_object (core/variant/container_type_validate.h:114)
+ERROR: Unable to convert array index 0 from "Object" to "Object".
+   at: assign (core/variant/array.cpp:238)
+SCRIPT ERROR: Parse Error: Preload file "res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.ttf" has no resource loaders (unrecognized file extension).
+   at: GDScript::reload (res://scripts/ui/ui_tokens.gd:4)
+SCRIPT ERROR: Parse Error: Preload file "res://assets/fonts/swei/SweiGothicLegCJKsc-Bold.ttf" has no resource loaders (unrecognized file extension).
+   at: GDScript::reload (res://scripts/ui/ui_tokens.gd:5)
+SCRIPT ERROR: Compile Error: Failed to compile depended scripts.
+   at: GDScript::reload (res://scripts/geography/map_generation/terrain_gen.gd:0)
+SCRIPT ERROR: Compile Error: Failed to compile depended scripts.
+   at: GDScript::reload (res://scripts/geography/map_generator.gd:0)
+SCRIPT ERROR: Compile Error: Failed to compile depended scripts.
+   at: GDScript::reload (res://scripts/game/world_runtime_host.gd:0)
+SCRIPT ERROR: Compile Error: Failed to compile depended scripts.
+   at: GDScript::reload (res://scripts/game/game_save_coordinator.gd:0)
+ERROR: Failed to load script "res://scripts/game/game_save_coordinator.gd" with error "Parse error".
+   at: load (modules/gdscript/gdscript.cpp:2907)
+[  66% ] [90m[1mfirst_scan_filesystem[22m | 正在初始化插件……[39m[0m
+[  83% ] [90m[1mfirst_scan_filesystem[22m | 正在启动文件扫描……[39m[0m
+[92m[ DONE ][39m [1mfirst_scan_filesystem[22m
+[0m
+ERROR: Failed loading resource: res://assets/fonts/muyao/Muyao-Softbrush-2.ttf.
+   at: _load (core/io/resource_loader.cpp:343)
+ERROR: Failed loading resource: res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.ttf.
+   at: _load (core/io/resource_loader.cpp:343)
+ERROR: Attempted to assign an object of type 'Resource' into a TypedArray, which does not inherit from 'Font'.
+   at: _internal_validate_object (core/variant/container_type_validate.h:114)
+ERROR: Unable to convert array index 0 from "Object" to "Object".
+   at: assign (core/variant/array.cpp:238)
+SCRIPT ERROR: Parse Error: Preload file "res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.ttf" has no resource loaders (unrecognized file extension).
+   at: GDScript::reload (res://scripts/ui/ui_tokens.gd:4)
+SCRIPT ERROR: Parse Error: Preload file "res://assets/fonts/swei/SweiGothicLegCJKsc-Bold.ttf" has no resource loaders (unrecognized file extension).
+   at: GDScript::reload (res://scripts/ui/ui_tokens.gd:5)
+[   0% ] [90m[1mupdate_scripts_classes[22m | Started 正在注册全局类…… (36 steps)[39m[0m
+[   0% ] [90m[1mupdate_scripts_classes[22m | IdeologyCatalog[39m[0m
+[   2% ] [90m[1mupdate_scripts_classes[22m | IdeologyEffectDefinition[39m[0m
+[   5% ] [90m[1mupdate_scripts_classes[22m | ModifierCatalog[39m[0m
+[   8% ] [90m[1mupdate_scripts_classes[22m | DossierChapterNav[39m[0m
+[  10% ] [90m[1mupdate_scripts_classes[22m | DossierKpiCard[39m[0m
+[  13% ] [90m[1mupdate_scripts_classes[22m | InspectorColumnHeader[39m[0m
+[  16% ] [90m[1mupdate_scripts_classes[22m | InspectorFactGrid[39m[0m
+[  18% ] [90m[1mupdate_scripts_classes[22m | InspectorMeterList[39m[0m
+[  21% ] [90m[1mupdate_scripts_classes[22m | InspectorNoteList[39m[0m
+[  24% ] [90m[1mupdate_scripts_classes[22m | ConstructionOptionRow[39m[0m
+[  27% ] [90m[1mupdate_scripts_classes[22m | CountryActionBar[39m[0m
+[  29% ] [90m[1mupdate_scripts_classes[22m | IconButton[39m[0m
+[  32% ] [90m[1mupdate_scripts_classes[22m | IdeologyArt[39m[0m
+[  35% ] [90m[1mupdate_scripts_classes[22m | IdeologyCard[39m[0m
+[  37% ] [90m[1mupdate_scripts_classes[22m | IdeologyPointScroll[39m[0m
+[  40% ] [90m[1mupdate_scripts_classes[22m | IdeologySlotNiche[39m[0m
+[  43% ] [90m[1mupdate_scripts_classes[22m | MapOverlayToolbar[39m[0m
+[  45% ] [90m[1mupdate_scripts_classes[22m | PlayerTopBar[39m[0m
+[  48% ] [90m[1mupdate_scripts_classes[22m | ProcurementBudgetSlider[39m[0m
+[  51% ] [90m[1mupdate_scripts_classes[22m | TechnologyAvailableList[39m[0m
+[  54% ] [90m[1mupdate_scripts_classes[22m | TechnologyFactSheet[39m[0m
+[  56% ] [90m[1mupdate_scripts_classes[22m | TechnologyObjectiveRow[39m[0m
+[  59% ] [90m[1mupdate_scripts_classes[22m | TechnologyProgressBlock[39m[0m
+[  62% ] [90m[1mupdate_scripts_classes[22m | TechnologyQueueRow[39m[0m
+[  64% ] [90m[1mupdate_scripts_classes[22m | TechnologyTreeView[39m[0m
+[  67% ] [90m[1mupdate_scripts_classes[22m | TechnologyWorkspace[39m[0m
+[  70% ] [90m[1mupdate_scripts_classes[22m | CountryViewModel[39m[0m
+[  72% ] [90m[1mupdate_scripts_classes[22m | GameUIManager[39m[0m
+[  75% ] [90m[1mupdate_scripts_classes[22m | UITokens[39m[0m
+[  78% ] [90m[1mupdate_scripts_classes[22m | [39m[0m
+[  81% ] [90m[1mupdate_scripts_classes[22m | [39m[0m
+[  83% ] [90m[1mupdate_scripts_classes[22m | [39m[0m
+[  86% ] [90m[1mupdate_scripts_classes[22m | [39m[0m
+[  89% ] [90m[1mupdate_scripts_classes[22m | [39m[0m
+[  91% ] [90m[1mupdate_scripts_classes[22m | [39m[0m
+[  94% ] [90m[1mupdate_scripts_classes[22m | [39m[0m
+[92m[ DONE ][39m [1mupdate_scripts_classes[22m
+[0m
+[   0% ] [90m[1m_update_scan_actions[22m | Started 正在扫描动作…… (12 steps)[39m[0m
+[   0% ] [90m[1m_update_scan_actions[22m | Muyao-Softbrush-2.ttf[39m[0m
+[   7% ] [90m[1m_update_scan_actions[22m | SweiGothicLegCJKsc-Bold.ttf[39m[0m
+[  15% ] [90m[1m_update_scan_actions[22m | SweiGothicLegCJKsc-Regular.ttf[39m[0m
+[  23% ] [90m[1m_update_scan_actions[22m | technology_available_1280x720.png[39m[0m
+[  30% ] [90m[1m_update_scan_actions[22m | technology_available_1366x768.png[39m[0m
+[  38% ] [90m[1m_update_scan_actions[22m | technology_available_1920x1080.png[39m[0m
+[  46% ] [90m[1m_update_scan_actions[22m | technology_focus_1280x720.png[39m[0m
+[  53% ] [90m[1m_update_scan_actions[22m | technology_focus_1366x768.png[39m[0m
+[  61% ] [90m[1m_update_scan_actions[22m | technology_focus_1920x1080.png[39m[0m
+[  69% ] [90m[1m_update_scan_actions[22m | technology_overview_1280x720.png[39m[0m
+[  76% ] [90m[1m_update_scan_actions[22m | technology_overview_1366x768.png[39m[0m
+[  84% ] [90m[1m_update_scan_actions[22m | technology_overview_1920x1080.png[39m[0m
+[92m[ DONE ][39m [1m_update_scan_actions[22m
+[0m
+[   0% ] [90m[1mreimport[22m | Started 正在导入或重新导入资产 (12 steps)[39m[0m
+[   0% ] [90m[1mreimport[22m | 正在准备重新导入文件……[39m[0m
+[   7% ] [90m[1mreimport[22m | 正在准备重新导入文件……[39m[0m
+[  15% ] [90m[1mreimport[22m | 正在准备重新导入文件……[39m[0m
+[  23% ] [90m[1mreimport[22m | 正在准备重新导入文件……[39m[0m
+[  30% ] [90m[1mreimport[22m | 正在准备重新导入文件……[39m[0m
+[  38% ] [90m[1mreimport[22m | 正在准备重新导入文件……[39m[0m
+[  46% ] [90m[1mreimport[22m | 正在准备重新导入文件……[39m[0m
+[  53% ] [90m[1mreimport[22m | 正在准备重新导入文件……[39m[0m
+[  61% ] [90m[1mreimport[22m | 正在准备重新导入文件……[39m[0m
+[  69% ] [90m[1mreimport[22m | 正在准备重新导入文件……[39m[0m
+[  76% ] [90m[1mreimport[22m | 正在准备重新导入文件……[39m[0m
+[  84% ] [90m[1mreimport[22m | 正在准备重新导入文件……[39m[0m
+[   0% ] [90m[1mreimport[22m | 正在执行重新导入的前置操作……[39m[0m
+[   0% ] [90m[1mreimport[22m | Muyao-Softbrush-2.ttf[39m[0m
+[   7% ] [90m[1mreimport[22m | SweiGothicLegCJKsc-Bold.ttf[39m[0m
+[  15% ] [90m[1mreimport[22m | SweiGothicLegCJKsc-Regular.ttf[39m[0m
+[  23% ] [90m[1mreimport[22m | Muyao-Softbrush-2.ttf[39m[0m
+[  30% ] [90m[1mreimport[22m | SweiGothicLegCJKsc-Bold.ttf[39m[0m
+[  38% ] [90m[1mreimport[22m | SweiGothicLegCJKsc-Regular.ttf[39m[0m
+[  46% ] [90m[1mreimport[22m | technology_available_1280x720.png[39m[0m
+[  53% ] [90m[1mreimport[22m | technology_available_1366x768.png[39m[0m
+[  61% ] [90m[1mreimport[22m | technology_available_1920x1080.png[39m[0m
+[  69% ] [90m[1mreimport[22m | technology_focus_1280x720.png[39m[0m
+[  76% ] [90m[1mreimport[22m | technology_focus_1366x768.png[39m[0m
+[  84% ] [90m[1mreimport[22m | technology_focus_1920x1080.png[39m[0m
+[  92% ] [90m[1mreimport[22m | 正在结束资产导入……[39m[0m
+[92m[ DONE ][39m [1mreimport[22m
+[0m
+[   0% ] [90m[1mreimport[22m | Started 正在导入或重新导入资产 (12 steps)[39m[0m
+[   0% ] [90m[1mreimport[22m | 正在执行重新导入的后置操作……[39m[0m
+[92m[ DONE ][39m [1mreimport[22m
+[0m
+[   0% ] [90m[1mloading_editor_layout[22m | Started 正在加载编辑器 (5 steps)[39m[0m
+[   0% ] [90m[1mloading_editor_layout[22m | 正在加载编辑器布局……[39m[0m
+[  16% ] [90m[1mloading_editor_layout[22m | 正在加载停靠面板……[39m[0m
+[  33% ] [90m[1mloading_editor_layout[22m | 正在重新打开场景……[39m[0m
+[  50% ] [90m[1mloading_editor_layout[22m | 正在加载中央编辑器布局……[39m[0m
+[  66% ] [90m[1mloading_editor_layout[22m | 正在加载插件窗口布局……[39m[0m
+[  83% ] [90m[1mloading_editor_layout[22m | 编辑器布局就绪。[39m[0m
+[92m[ DONE ][39m [1mloading_editor_layout[22m
+[0m
+ERROR: 17 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 457 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

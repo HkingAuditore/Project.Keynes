@@ -3,7 +3,7 @@ class_name TechnologyObjectiveRow
 
 ## 国家发展目标的一行：名称、当前/目标与持续天数、细进度线。
 
-const ROW_HEIGHT := 34.0
+const ROW_HEIGHT := 68.0
 
 var signal_id := ""
 var definition: Dictionary = {}
@@ -44,15 +44,14 @@ func value_text() -> String:
 
 func _draw() -> void:
 	var w := size.x
-	var value_width := _text_width(_value, 11)
 	var mark := &"technology.state.completed" if _completed else &"technology.state.locked"
-	_icon(mark, Rect2(Vector2(0.0, 5.0), Vector2(12.0, 12.0)),
+	_icon(mark, Rect2(Vector2(0.0, 4.0), Vector2(24.0, 24.0)),
 		UITokens.DOSSIER_VERDIGRIS if _completed else UITokens.DOSSIER_INK_MUTED)
-	_text(Vector2(18.0, 16.0), _fit_text(_title, 13, w - value_width - 26.0), 13,
-		UITokens.DOSSIER_INK)
-	_text(Vector2(w - value_width, 16.0), _value, 11,
+	_text(Vector2(32.0, 23.0), _fit_text(_title, 17, w - 32.0), 17,
+		UITokens.DOSSIER_INK, "sans_strong")
+	_text(Vector2(32.0, 47.0), _fit_text(_value, 15, w - 32.0), 15,
 		UITokens.DOSSIER_VERDIGRIS if _completed else UITokens.DOSSIER_INK_MUTED)
-	var track := Rect2(18.0, 23.0, maxf(8.0, w - 18.0), 4.0)
+	var track := Rect2(32.0, 57.0, maxf(8.0, w - 32.0), 6.0)
 	_rounded_bar(track, UITokens.DOSSIER_TRACK, 2.0)
 	if _ratio > 0.0:
 		_rounded_bar(Rect2(track.position, Vector2(track.size.x * _ratio, track.size.y)),

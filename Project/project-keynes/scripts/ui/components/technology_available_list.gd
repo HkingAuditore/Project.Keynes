@@ -16,16 +16,16 @@ const Art := preload("res://scripts/ui/components/technology_tree_art.gd")
 const EffectsLayer := preload("res://scripts/ui/components/technology_effects_layer.gd")
 const TechnologyEffectTextScript := preload(
 	"res://scripts/ui/components/technology_effect_text.gd")
-const CARD_HEIGHT := 60.0
+const CARD_HEIGHT := 84.0
 const CARD_GAP := 8.0
-const MIN_CARD_WIDTH := 300.0
+const MIN_CARD_WIDTH := 340.0
 const MAX_COLUMNS := 3
-const SECTION_HEIGHT := 34.0
-const GROUP_HEIGHT := 28.0
+const SECTION_HEIGHT := 40.0
+const GROUP_HEIGHT := 36.0
 const PAD := 14.0
-const ACTION_WIDTH := 56.0
-const ACTION_HEIGHT := 24.0
-const TREE_BUTTON := 22.0
+const ACTION_WIDTH := 36.0
+const ACTION_HEIGHT := 36.0
+const TREE_BUTTON := 32.0
 
 var _definitions: Array = []
 var _domains: Array = []
@@ -326,14 +326,14 @@ func _draw() -> void:
 		var section: Dictionary = section_value
 		var y := float(section.get("y", 0.0))
 		if y + SECTION_HEIGHT >= view.position.y and y <= view.end.y:
-			_text(Vector2(PAD, y + 20.0), String(section.title), 16, UITokens.DOSSIER_INK, "serif")
-			var title_width := _text_width(String(section.title), 16, "serif")
+			_text(Vector2(PAD, y + 28.0), String(section.title), 28, UITokens.DOSSIER_INK, "serif")
+			var title_width := _text_width(String(section.title), 28, "serif")
 			var count := 0
 			for group in section.groups:
 				count += ((group as Dictionary).members as Array).size()
-			_text(Vector2(PAD + title_width + 10.0, y + 20.0),
-				_fit_text("%d 项 · %s" % [count, String(section.caption)], 12,
-					size.x - PAD * 2.0 - title_width - 10.0), 12, UITokens.DOSSIER_INK_MUTED)
+			_text(Vector2(PAD + title_width + 10.0, y + 25.0),
+				_fit_text("%d 项 · %s" % [count, String(section.caption)], 15,
+					size.x - PAD * 2.0 - title_width - 10.0), 15, UITokens.DOSSIER_INK_MUTED)
 			draw_line(Vector2(PAD, y + SECTION_HEIGHT - 6.0),
 				Vector2(size.x - PAD, y + SECTION_HEIGHT - 6.0), UITokens.DOSSIER_RULE_STRONG, 1.0)
 		for group_value in section.groups:
@@ -346,9 +346,9 @@ func _draw() -> void:
 				continue
 			var accent := _domain_accent(domain)
 			var ink := accent.lerp(UITokens.DOSSIER_INK, 0.5)
-			_icon(_domain_icon(domain), Rect2(Vector2(PAD, gy + 6.0), Vector2(14.0, 14.0)), ink)
+			_icon(_domain_icon(domain), Rect2(Vector2(PAD, gy + 3.0), Vector2(28.0, 28.0)), ink)
 			var label := "%s · %d" % [_domain_name(domain), (group.members as Array).size()]
-			_text(Vector2(PAD + 20.0, gy + 18.0), label, 13, ink, "sans_strong")
+			_text(Vector2(PAD + 34.0, gy + 24.0), label, 17, ink, "sans_strong")
 	for item_index in range(_items.size()):
 		var item: Dictionary = _items[item_index]
 		var rect: Rect2 = item.rect
@@ -409,12 +409,12 @@ func _draw_card(item_index: int, technology: int, rect: Rect2) -> void:
 	var right_limit := action_rect(rect).position.x - 10.0 if state in [2, 3] \
 		else tree_rect(rect).position.x - 10.0
 	var name := String(definition.get("display_name", ""))
-	_text(Vector2(text_left, rect.position.y + 24.0),
-		_fit_text(name, 15, right_limit - text_left, "serif"), 15, UITokens.DOSSIER_INK, "serif")
+	_text(Vector2(text_left, rect.position.y + 30.0),
+		_fit_text(name, 21, right_limit - text_left, "sans_strong"), 21, UITokens.DOSSIER_INK, "sans_strong")
 	var fraction := _fraction(technology, definition)
 	var meta := _meta_text(technology, definition, state, fraction)
-	_text(Vector2(text_left, rect.position.y + 44.0),
-		_fit_text(meta, 12, rect.end.x - 12.0 - text_left), 12,
+	_text(Vector2(text_left, rect.position.y + 62.0),
+		_fit_text(meta, 16, rect.end.x - 12.0 - text_left), 16,
 		UITokens.DOSSIER_OXBLOOD if state == 3 and int(_queue_order.get(technology, -1)) == 0 \
 			else UITokens.DOSSIER_INK_MUTED)
 	if state == 3 or (state == 2 and fraction > 0.0) or state == 4:
@@ -430,7 +430,7 @@ func _draw_card(item_index: int, technology: int, rect: Rect2) -> void:
 	var tree := tree_rect(rect)
 	if hovered and _hover_part == "tree":
 		draw_rect(tree, UITokens.DOSSIER_HOVER)
-	_icon(&"action.chevron_right", tree.grow(-5.0),
+	_icon(&"action.chevron_right", tree.grow(-2.0),
 		UITokens.DOSSIER_INK_SOFT if hovered else Color(UITokens.DOSSIER_INK_MUTED, 0.6))
 
 
@@ -446,12 +446,10 @@ func _draw_action(card: Rect2, state: int, hovered: bool) -> void:
 			else Color(0.0, 0.0, 0.0, 0.0)
 		_button_style.border_color = UITokens.DOSSIER_RULE
 	draw_style_box(_button_style, rect)
-	var label := "加入" if enqueue else "移出"
 	var ink := UITokens.DOSSIER_PAPER if enqueue and hovered \
 		else (UITokens.DOSSIER_OXBLOOD if enqueue else UITokens.DOSSIER_INK_SOFT)
 	_icon(&"action.add" if enqueue else &"action.close",
-		Rect2(Vector2(rect.position.x + 8.0, rect.position.y + 6.0), Vector2(11.0, 11.0)), ink)
-	_text(Vector2(rect.position.x + 22.0, rect.position.y + 17.0), label, 12, ink, "sans_strong")
+		rect.grow(-4.0), ink)
 
 
 func _draw_empty() -> void:

@@ -14,7 +14,6 @@ const DevelopmentAchievementCatalogScript = preload(
 signal policy_submitted()
 
 const TechnologyQueueRowScene := preload("res://scenes/ui/technology_queue_row.tscn")
-const TechnologyObjectiveRowScene := preload("res://scenes/ui/technology_objective_row.tscn")
 const KPI_IDS := ["Era", "Stock", "Output", "Queue", "Treasury"]
 const COMPACT_HIDDEN_KPIS := ["Output", "Treasury"]
 const QUEUE_CAPACITY := 8
@@ -98,8 +97,6 @@ var _search: LineEdit
 var _queue_zones: Array = []
 var _queue_headers: Array = []
 var _queue_rows: Array = []
-var _development_rows: Array = []
-var _development_signature := ""
 var _research_signature := 0
 var _refresh_count := 0
 var _current_day := -1
@@ -765,7 +762,6 @@ func _apply_research(force: bool = false) -> void:
 	_schedule_inputs = {"states": research_states, "progress": research_progress,
 		"offsets": offsets, "technologies": technologies}
 	_patch_schedule(research_states, research_progress, weights, offsets, technologies)
-	_patch_development()
 	_update_kpis(research_states)
 	if _initial_focus_pending:
 		_apply_default_focus()
@@ -1205,57 +1201,6 @@ func _kpi_changed(id: String, signature: int) -> bool:
 		return false
 	_kpi_signatures[id] = signature
 	return true
-
-
-func _patch_development() -> void:
-	var title := get_node_or_null("Root/Main/PolicyPanel/Scroll/Body/DevelopmentTitle") as Label
-	var list := get_node_or_null("Root/Main/PolicyPanel/Scroll/Body/DevelopmentList") as VBoxContainer
-	var rule := get_node_or_null("Root/Main/PolicyPanel/Scroll/Body/DevelopmentRule") as Control
-	if title == null or list == null:
-		return
-	var objectives: Array = _development.get("objectives", [])
-	var era_name := String(_era_names.get(String(_development.get("era_id", "")), ""))
-	title.visible = not objectives.is_empty()
-	list.visible = not objectives.is_empty()
-	if rule != null:
-		rule.visible = not objectives.is_empty()
-	if objectives.is_empty():
-		return
-	title.text = "国家发展目标" if era_name.is_empty() else "国家发展目标 · %s" % era_name
-	var signature_parts := PackedStringArray()
-	for objective_value in objectives:
-		var objective: Dictionary = objective_value
-		signature_parts.append(String(objective.get("signal_id", "")))
-	var signature := "|".join(signature_parts)
-	if signature != _development_signature:
-		_development_signature = signature
-		for child in list.get_children():
-			list.remove_child(child)
-			child.queue_free()
-		_development_rows.clear()
-		for objective_value in objectives:
-			var objective: Dictionary = objective_value
-			var row := TechnologyObjectiveRowScene.instantiate() as TechnologyObjectiveRow
-			row.setup(String(objective.get("signal_id", "")), objective,
-				String(objective.get("display_name", "发展目标")))
-			list.add_child(row)
-			_development_rows.append(row)
-	var progress_by_signal: Dictionary = _development.get("progress_by_signal", {})
-	for row_value in _development_rows:
-		var row := row_value as TechnologyObjectiveRow
-		var definition: Dictionary = row.definition
-		var progress: Dictionary = progress_by_signal.get(row.signal_id, {})
-		var completed := int(progress.get("completed", 0)) > 0
-		var qualifier := int(progress.get("qualifier_threshold", definition.get("qualifier_threshold", 0)))
-		var current := int(progress.get("current_value", 0))
-		var target_days := maxi(1, int(progress.get("target_days", definition.get("duration_days", 1))))
-		var consecutive := int(progress.get("consecutive_days", 0))
-		var value_text := "已达成" if completed else _development_value_text(
-			definition, current, qualifier, consecutive, target_days)
-		var value_ratio := 1.0 if qualifier <= 0 and completed else (float(current) / float(qualifier) if qualifier > 0 else 0.0)
-		var duration_ratio := 1.0 if target_days <= 1 and completed else float(consecutive) / float(target_days)
-		row.set_progress(value_text, minf(value_ratio, duration_ratio) if not completed else 1.0,
-			completed)
 
 
 func _development_value_text(definition: Dictionary, current: int, qualifier: int,
