@@ -60,8 +60,9 @@ static func summarize(report: Dictionary) -> Dictionary:
 			"total": 0,
 			"by_idea": {},
 		}
-	var idea_ids: PackedInt32Array = report.get("idea_ids", PackedInt32Array())
-	var levels: PackedInt32Array = report.get("idea_levels", PackedInt32Array())
+	# 原生列为 64 位；保留数组类型，也兼容旧的 32 位报告。
+	var idea_ids: Variant = report.get("idea_ids", PackedInt64Array())
+	var levels: Variant = report.get("idea_levels", PackedInt64Array())
 	var targets: PackedInt64Array = report.get("target_handles", PackedInt64Array())
 	var domains: PackedInt32Array = report.get("target_domains", PackedInt32Array())
 	var owned: PackedByteArray = report.get("present", PackedByteArray())

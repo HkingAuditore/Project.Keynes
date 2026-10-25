@@ -1,11 +1,25 @@
 # FMOD 接入与验收
 
-## 当前状态（2026-10-20）
+## 加载期间音乐连续性（2026-10-25）
+
+主菜单退出和地图重生成不停止全局 `GameAudio` 音乐实例。场景载入、世界生成以及
+生成失败后的加载画面继续播放当前音乐，世界就绪后由 `PlayerController._sync_era_music`
+按玩家国家时代接管；相同石器时代组曲复用现有实例。退出应用仍由 `GameAudio._exit_tree`
+释放音乐和 Bank。此行为同时覆盖新游戏与读取存档共用的场景切换路径。
+
+`tests/audio/loading_music_continuity_test.tscn` 使用真实菜单和加载画面验证菜单移除后实例
+保留、加载期间 FMOD 时间轴持续推进，以及世界就绪后石器/王国时代组曲接管。
+
+## 当前状态（2026-10-23）
 
 首轮 Windows 音频基础接入已实现：正式项目注册 `GameAudio` 表现层服务，加载真实
 Bank，复用现有音量设置，并提供独立分层音乐试听场景。现有 UI 已接入八种 CC0
-纸张与轻敲操作音，见 [UI 音效](ui-feedback.md)。正式时代曲库、局势状态映射尚未制作；
-默认游戏入口不会自动播放临时合成音乐。
+纸张与轻敲操作音，见 [UI 音效](ui-feedback.md)。Kingdom 和 Empire 已接入五声部
+时代组曲（Base/Pulse/Theme/Color/Impact），并支持 Population、CameraZoom、LoopSection、
+Tension、War、Ceremony 参数；Stone 和 Agrarian 保留三层兼容结构。
+Kingdom/Empire 保持一套连贯的 A/B/C 主题弧线，每段 50 秒；含 Intro 的完整时长分别为
+166 秒和 165 秒。更长的播放时长应通过轮换独立创作、各自闭合的套曲实现，避免把不相关的
+25 秒片段拼进同一次长生成而破坏主题叙事。
 
 - 本机引擎实测：Godot `4.6.2.stable.official.71f334935`。
 - 候选插件：`marcozee03/FMOD-GODOT`，固定发行版 `v1.1.3`。
@@ -24,7 +38,7 @@ Bank，复用现有音量设置，并提供独立分层音乐试听场景。现�
 
 后续验证使用真实工程构建的四个 Bank：Master、Master.strings、Music、UI。
 正式项目内测试和隔离 Windows Release 测试均输出 `FMOD_AUDIO_TEST_OK=true`：
-事件启动、一次性音效、Tension 写入读回、输入范围限制、Master 音量与静音、八秒循环
+事件启动、一次性音效、情绪参数写入读回、输入范围限制、Master 音量与静音、八秒循环
 回绕和持久实例释放均通过。Release 从 PCK 读取 Bank，并加载随发布目录携带的 DLL。
 Studio 工程完整性诊断已通过（退出码 0），包括两条分轨音量自动化曲线的参数绑定。
 隔离 Web PCK 导出通过，打包清单不包含 FMOD 扩展、DLL 或 Bank；这是打包边界验证，
@@ -147,7 +161,7 @@ Godot FileAccess 回调读取 PCK 内资源。未采用经验证有波形加载�
 `master_volume` / `master_muted` 应用到 FMOD Master，初始化或加载 Master Bank 后
 也应重新应用一次。现有 Godot AudioServer 设置继续控制 Godot 路径上的声音。
 
-音乐参数读取已发布状态。时代变化切换曲组，局势变化更新 Tension；应有平滑、
+音乐参数读取已发布状态。时代变化切换曲组，局势变化更新 Tension、War、Ceremony；应有平滑、
 滞回或最短保持时间，避免高速模拟和日间波动造成频繁切歌。游戏时间暂停是否影响
 音乐需显式规定，首轮建议音乐和 UI 音效继续播放。
 
@@ -162,9 +176,9 @@ Godot FileAccess 回调读取 PCK 内资源。未采用经验证有波形加载�
 
 ## 首轮交付标准
 
-本轮已完成八种 UI 音效及正式 UI 接线、一个 Tension 分层音乐事件、总音量与静音、试听场景退出清理，
-以及 Windows 音频模块 Release 独立运行。下一阶段为正式音乐素材、时代与局势映射、
-过渡保持/平滑规则；完整游戏发布预烘焙错误也需另行处理。
+本轮已完成八种 UI 音效及正式 UI 接线、Kingdom/Empire 五声部素材、三类情绪参数、总音量与静音、
+时代过渡、试听场景退出清理，以及 Windows 音频模块 Release 独立运行。完整游戏发布预烘焙错误仍需
+另行处理。
 
 ## 来源
 

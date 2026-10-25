@@ -303,6 +303,16 @@ func market_cell_snapshot(cell_idx: int) -> Dictionary:
 		snapshot["details_pending"] = bool(snapshot.get("busy", false))
 	return snapshot
 
+
+## 有界地图状况视图。NativeEconomyRuntime 只返回请求地块的定点严重度，
+## 不把市场/人口/建筑矩阵复制进 MapData。
+func cell_situation_snapshot(requested_cells: PackedInt32Array) -> Dictionary:
+	if not _configured or not _world_ext.has_method(
+			"get_cell_situation_snapshot"):
+		return {"ok": false, "reason": "economy_situation_visual_api_unavailable"}
+	return _world_ext.get_cell_situation_snapshot(
+		requested_cells)
+
 ## 冷路径满意度溯源。只读且只在原生 slice 之间安全，Inspector 打开时才调用。
 func explain_cohort_satisfaction(cohort_handle: int) -> Dictionary:
 	if not _configured or not _world_ext.has_method("explain_cohort_satisfaction"):

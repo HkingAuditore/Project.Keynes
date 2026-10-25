@@ -115,12 +115,16 @@ func _init() -> void:
 				and int(ideology_ir.level_thresholds_q16[2]) == 786432)
 			_expect("ideology points start at zero and only accrue from growth",
 				int(ideology_ir.get("starting_points_q16", -1)) == 0
-				and int(ideology_ir.get("point_gain_cap_q16", 0)) > 0)
-			_expect("every draw costs 6.0, +20% per draw, and reroll is half price",
-				int(ideology_ir.get("offer_cost_q16", 0)) == 393216
+				and int(ideology_ir.get("point_gain_cap_q16", 0)) == 32768)
+			_expect("growth point weights use the reduced production balance",
+				int(ideology_ir.get("point_population_weight_q16", 0)) == 328
+				and int(ideology_ir.get("point_building_weight_q16", 0)) == 4096
+				and int(ideology_ir.get("point_trade_weight_q16", 0)) == 33)
+			_expect("first draw costs 12, +20% per draw, and reroll costs 75 percent",
+				int(ideology_ir.get("offer_cost_q16", 0)) == 786432
 				and int(ideology_ir.get("offer_cost_growth_percent", 0)) == 120
 				and int(ideology_ir.get("offer_cost_max_q16", 0)) == 2147483647
-				and int(ideology_ir.get("reroll_cost_percent", 0)) == 50)
+				and int(ideology_ir.get("reroll_cost_percent", 0)) == 75)
 			_expect("slot capacity grows through five technology milestones",
 				int(ideology_ir.get("ideology_capacity", 0)) == 2
 				and int(ideology_ir.get("national_spirit_capacity", 0)) == 1

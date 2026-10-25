@@ -40,6 +40,7 @@ func _init() -> void:
 func _run() -> void:
 	_test_shape_rejection()
 	_test_per_card_totals()
+	_test_native_int64_columns()
 	_test_short_columns_are_absent()
 	_test_card_row()
 	_test_card_badge()
@@ -91,6 +92,34 @@ func _test_per_card_totals() -> void:
 	_expect("a second card keeps its own targets", int(
 		(card_seven.get("targets", PackedInt64Array()) as PackedInt64Array).size()) == 2,
 		str(card_seven.get("targets", PackedInt64Array())))
+
+
+## Native idea columns are 64-bit, while cell domains remain 32-bit.
+func _test_native_int64_columns() -> void:
+	var country_handle: int = 4294967297
+	var summary: Dictionary = IdeologyEffectReportScript.summarize({
+		"ok": true,
+		"count": 3,
+		"idea_ids": PackedInt64Array([3, 3, 7]),
+		"idea_levels": PackedInt64Array([2, 0, 1]),
+		"target_handles": PackedInt64Array([country_handle, 12, 13]),
+		"target_domains": PackedInt32Array([3, 2, 5]),
+		"present": PackedByteArray([0, 1, 0]),
+	})
+	_expect("native int64 columns count every instance",
+		int(summary.get("total", 0)) == 3, str(summary))
+	var row: Dictionary = IdeologyEffectReportScript.card_row(summary, 3)
+	_expect("native int64 IDs group instances by card",
+		int(row.get("instances", 0)) == 2, str(row))
+	_expect("native int64 levels produce sorted UI levels",
+		row.get("levels") == PackedInt32Array([0, 2]), str(row))
+	var raw_row: Dictionary = (summary.get("by_idea", {}) as Dictionary).get(3, {})
+	_expect("native target handles retain all 64 bits",
+		raw_row.get("targets") == PackedInt64Array([country_handle, 12]), str(raw_row))
+	_expect("native report excludes country handles from cells",
+		row.get("cells") == PackedInt32Array([12]), str(row))
+	_expect("native int64 IDs keep separate cards",
+		int(IdeologyEffectReportScript.card_row(summary, 7).get("instances", 0)) == 1)
 
 
 ## 3. A column that is shorter than `idea_ids` (older native build, or a payload

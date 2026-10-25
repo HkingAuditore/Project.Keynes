@@ -1305,11 +1305,12 @@ PROFILE_COLUMNS = {
     "national_spirit_capacity": 1,
     "ideology_capacity_max": 6,
     "national_spirit_capacity_max": 3,
-    # Every draw is paid: 6.0 points first, then +20% per draw (6.0, 7.2, 8.64...).
-    "offer_cost_q16": 393216,
+    # Every draw is paid: 12 points first, then +20% (12, 14.4, 17.28...).
+    # At the daily gain ceiling the first draw needs 24 covered days of growth.
+    "offer_cost_q16": 786432,
     "offer_cost_growth_percent": 120,
     "offer_cost_max_q16": 2147483647,
-    "reroll_cost_percent": 50,
+    "reroll_cost_percent": 75,
     "starting_points_q16": 0,
     "max_transition_commands": 256,
     # Catalog declaration budget -- NOT a concurrency budget.
@@ -1325,12 +1326,12 @@ PROFILE_COLUMNS = {
     # Per-cell fan-out is meant to be aggregated by cell, not by one instance per
     # (card, cell) pair, so this budget must not be used to size that product.
     "max_effect_instances": 2048,
-    # 0.02 point per new resident, 0.25 point per new installed building,
-    # 0.002 point per money unit of daily trade base value, capped at 2 per period.
-    "point_population_weight_q16": 1311,
-    "point_building_weight_q16": 16384,
-    "point_trade_weight_q16": 131,
-    "point_gain_cap_q16": 131072,
+    # About 0.005 point per new resident, 0.0625 per new installed building,
+    # 0.0005 per money unit of trade base value, capped at 0.5 per covered day.
+    "point_population_weight_q16": 328,
+    "point_building_weight_q16": 4096,
+    "point_trade_weight_q16": 33,
+    "point_gain_cap_q16": 32768,
 }
 CAPACITY_UNLOCKS = [  # tech, +ideology, +spirit
     (KINGDOM, 1, 0),

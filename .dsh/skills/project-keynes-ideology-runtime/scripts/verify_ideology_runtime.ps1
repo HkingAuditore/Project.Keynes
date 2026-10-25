@@ -42,9 +42,9 @@ $required = @(
     'Project\project-keynes\scripts\ideology\ideology_facade.gd',
     'Project\project-keynes\scripts\simulation\systems\ideology_runtime_system.gd',
     'Project\project-keynes\data\ideologies\default_ideology_catalog.tres',
-    'Project\project-keynes\tests\ideology_runtime_test.gd',
-    'Project\project-keynes\tests\ideology_opinion_synergy_test.gd',
-    'Project\project-keynes\tests\ideology_content_test.gd',
+    'Project\project-keynes\tests\ideology\ideology_runtime_test.gd',
+    'Project\project-keynes\tests\ideology\ideology_opinion_synergy_test.gd',
+    'Project\project-keynes\tests\ideology\ideology_content_test.gd',
     'docs\cpp-dots-runtime\native-ideology-runtime.md'
 )
 foreach ($relative in $required) {
@@ -96,9 +96,9 @@ if ($Godot) {
         throw "Godot not found: $GodotExe"
     }
     $tests = @(
-        'res://tests/ideology_content_test.gd',
-        'res://tests/ideology_runtime_test.gd',
-        'res://tests/ideology_opinion_synergy_test.gd'
+        'res://tests/ideology/ideology_content_test.gd',
+        'res://tests/ideology/ideology_runtime_test.gd',
+        'res://tests/ideology/ideology_opinion_synergy_test.gd'
     )
     foreach ($script in $tests) {
         Write-Host "[ideology] $script"

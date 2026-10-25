@@ -53,8 +53,8 @@ AMBIENCE_TARGET_LUFS = -28.0
 TRUE_PEAK_CEILING_DB = -1.0
 
 # Share of every separated stem sent to (Base_Core, Pop_Rhythm, Pop_Chorus). Rows sum to 1.0, so the three
-# layers always reconstruct the master exactly. Base keeps some bass/percussion/voice so Tier 0 never sounds
-# hollow (Demucs often files solo flutes/erhu under "vocals"); the tiers add drive and choral bloom.
+# legacy layers always reconstruct the master exactly. Base keeps some bass/percussion/voice so Tier 0 never
+# sounds hollow (Demucs often files solo flutes/erhu under "vocals").
 LAYER_SPLIT = {
     "other": (1.0, 0.0, 0.0),
     "bass": (0.6, 0.4, 0.0),
@@ -67,6 +67,13 @@ LAYER_SPLIT = {
 #   * stereo-side part of the sustained ensemble (section width, hall bloom, divisi) -> Pop_Chorus
 OTHER_PERCUSSIVE_TO_RHYTHM = 0.6
 OTHER_SIDE_TO_CHORUS = 0.6
+
+# Kingdom and Empire use five role-oriented layers.  The role split is deliberately complementary: it is
+# derived from the legacy exact-sum layers and the residual is folded into Base_Core, so the new reference mix
+# remains bit-for-bit reconstructible before 16-bit quantisation.  This gives FMOD useful musical roles without
+# reintroducing the old "filtered copies of the master" comb-filter problem.
+FIVE_STEM_ERAS = {"kingdom_age", "empire_age"}
+FIVE_STEM_NAMES = ("base_core", "pulse", "theme", "color", "impact")
 
 GLOBAL_NEGATIVE_STYLES = [
     "electronic synthesizer",
@@ -167,11 +174,13 @@ def write_wav16(path: Path, audio: np.ndarray, rng: np.random.Generator) -> None
     path.parent.mkdir(parents=True, exist_ok=True)
     tpdf = rng.random(audio.shape) - rng.random(audio.shape)
     pcm = np.clip(np.round(audio * 32767.0 + tpdf), -32768, 32767).astype("<i2")
-    with wave.open(str(path), "wb") as wf:
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    with wave.open(str(tmp_path), "wb") as wf:
         wf.setnchannels(2)
         wf.setsampwidth(2)
         wf.setframerate(SR)
         wf.writeframes(pcm.tobytes())
+    os.replace(tmp_path, path)
 
 
 def k_weighted(audio: np.ndarray) -> np.ndarray:
@@ -233,7 +242,7 @@ def equal_power(n: int) -> tuple[np.ndarray, np.ndarray]:
     return np.sin(0.5 * math.pi * t), np.cos(0.5 * math.pi * t)
 
 
-def make_loop_seamless(audio: np.ndarray, intro_sec: float, loop_sec: float) -> np.ndarray:
+def make_loop_seamless(audio: np.ndarray, intro_sec: float, loop_sec: float, loop_count: int = 3) -> np.ndarray:
     """Linear (layer-sum preserving) loop preparation for the FMOD marker regions.
 
     The default Loop_All_ABC region jumps from the end of C back to the start of A, so the last 1.5 s of C is
@@ -241,10 +250,10 @@ def make_loop_seamless(audio: np.ndarray, intro_sec: float, loop_sec: float) -> 
     a waveform and phrase that naturally continue. A/B/C-only audition loops get a short click-free blend.
     """
     out = audio.copy()
+    loop_count = max(1, int(loop_count))
     a = int(round(intro_sec * SR))
     b = int(round((intro_sec + loop_sec) * SR))
-    c = int(round((intro_sec + 2.0 * loop_sec) * SR))
-    end = int(round((intro_sec + 3.0 * loop_sec) * SR))
+    end = int(round((intro_sec + loop_count * loop_sec) * SR))
 
     n = min(int(round(1.5 * SR)), a)
     fin, fout = equal_power(n)
@@ -252,12 +261,20 @@ def make_loop_seamless(audio: np.ndarray, intro_sec: float, loop_sec: float) -> 
 
     m = int(round(0.06 * SR))
     mi, mo = equal_power(m)
-    for s, e in ((a, b), (b, c)):
+    for i in range(loop_count):
+        s = int(round((intro_sec + i * loop_sec) * SR))
+        e = int(round((intro_sec + (i + 1) * loop_sec) * SR))
+        if i == loop_count - 1:
+            continue
         out[e - m:e] = out[e - m:e] * mo + audio[s - m:s] * mi
 
     k = int(round(0.005 * SR))
     out[:k] *= np.linspace(0.0, 1.0, k)[:, None]
     return out
+
+
+def loop_sec_samples(loop_sec: float) -> int:
+    return int(round(loop_sec * SR))
 
 
 def tile_loop(loop_audio: np.ndarray, total_samples: int) -> np.ndarray:
@@ -352,17 +369,61 @@ def hpss_split(audio: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return audio - p, p
 
 
-def report_sections(spec: dict, master: np.ndarray, layers: tuple[np.ndarray, ...]) -> None:
-    print("  section                              start   loud(LUFS)  base%  rhythm%  chorus%")
+def _sos_filter(audio: np.ndarray, kind: str, cutoff: float | tuple[float, float]) -> np.ndarray:
+    """Small stereo-safe Butterworth helper used by the five-role split."""
+    if kind == "lowpass":
+        sos = signal.butter(4, float(cutoff), btype="lowpass", fs=SR, output="sos")
+    elif kind == "highpass":
+        sos = signal.butter(4, float(cutoff), btype="highpass", fs=SR, output="sos")
+    else:
+        lo, hi = cutoff  # type: ignore[misc]
+        sos = signal.butter(4, (float(lo), float(hi)), btype="bandpass", fs=SR, output="sos")
+    return signal.sosfiltfilt(sos, audio, axis=0).astype(np.float64, copy=False)
+
+
+def build_five_layers(master: np.ndarray, legacy_layers: tuple[np.ndarray, ...]) -> tuple[np.ndarray, ...]:
+    """Turn the v3 exact-sum layers into five musical roles without per-role normalisation.
+
+    The split is intentionally conservative.  It exposes the low-frequency foundation, harmonic theme,
+    articulated pulse, orchestral colour and transient impact as separate FMOD controls.  Any energy left by
+    the masks is folded into Base_Core, preserving the invariant that the role sum equals the master exactly.
+    """
+    base, rhythm, chorus = legacy_layers
+    rhythm_h, rhythm_p = hpss_split(rhythm)
+    chorus_h, chorus_p = hpss_split(chorus)
+
+    base_low = _sos_filter(base, "lowpass", 240.0)
+    base_mid = _sos_filter(base, "bandpass", (240.0, 2600.0))
+    base_high = _sos_filter(base, "highpass", 2600.0)
+
+    # Keep the pulse forward but leave its sharpest transient for Impact.  Chorus harmonic energy becomes
+    # Color, while its percussive tail contributes to Impact for a stronger, less synthetic climax.
+    base_role = base_low + 0.20 * rhythm_h
+    pulse = 0.80 * rhythm_h + 0.45 * rhythm_p
+    theme = base_mid
+    color = base_high + 0.70 * chorus_h
+    impact = 0.55 * rhythm_p + 0.30 * chorus_h + chorus_p
+
+    roles = [base_role, pulse, theme, color, impact]
+    residual = master - sum(roles)
+    roles[0] += residual
+    residual_db = 20.0 * math.log10(float(np.sqrt(np.mean(residual ** 2))) + 1e-12)
+    master_db = 20.0 * math.log10(float(np.sqrt(np.mean(master ** 2))) + 1e-12)
+    print(f"  [five-stem] residual {residual_db - master_db:6.1f} dB relative to master (folded into Base_Core)")
+    return tuple(roles)
+
+
+def report_sections(spec: dict, master: np.ndarray, layers: tuple[np.ndarray, ...], names: tuple[str, ...] = ("base", "rhythm", "chorus"), chunks: list[dict] | None = None) -> None:
+    print("  section                              start   loud(LUFS)  " + "  ".join(f"{n:>7s}" for n in names))
     pos = 0
-    for ch in spec["chunks"]:
+    for ch in chunks or spec["chunks"]:
         n = int(round(ch["duration_ms"] / 1000.0 * SR))
         seg = slice(pos, min(pos + n, master.shape[0]))
         energies = [float(np.mean(layer[seg] ** 2)) for layer in layers]
         total = sum(energies) + 1e-20
         shares = [100.0 * e / total for e in energies]
-        print(f"  {ch['label'][:36]:36s} {pos / SR:6.1f}s   {short_loudness(master[seg]):7.1f}    "
-              f"{shares[0]:5.1f}  {shares[1]:6.1f}  {shares[2]:6.1f}")
+        share_text = "  ".join(f"{shares[i]:7.1f}" for i in range(len(names)))
+        print(f"  {ch['label'][:36]:36s} {pos / SR:6.1f}s   {short_loudness(master[seg]):7.1f}    {share_text}")
         pos += n
 
 
@@ -394,6 +455,50 @@ def build_composition_plan(identity: list[str], chunks: list[dict], extra_negati
             "context_adherence": ch["adherence"],
         })
     return {"chunks": plan_chunks}
+
+
+ROLE_PROMPTS = {
+    "base_core": {
+        "styles": ["low strings and low brass foundation", "sustained harmonic bed", "deep but articulate orchestral floor"],
+        "negatives": ["lead melody", "busy percussion", "high register sparkle", "choir foreground"],
+    },
+    "pulse": {
+        "styles": ["bass ostinato", "snare and timpani pulse", "short bow strings and articulated low brass", "clear rhythmic transients"],
+        "negatives": ["long sustained pads", "solo melody", "wordless choir", "wall of sound"],
+    },
+    "theme": {
+        "styles": ["single foreground melodic voice", "memorable leitmotif", "clear phrasing and breath", "expressive human rubato"],
+        "negatives": ["busy percussion", "constant tutti", "generic trailer melody", "background wash"],
+    },
+    "color": {
+        "styles": ["high strings and woodwinds", "bronze bells and distant choir", "wide stereo hall bloom", "ornamental counterline"],
+        "negatives": ["low bass", "snare ostinato", "foreground lead", "dry mono recording"],
+    },
+    "impact": {
+        "styles": ["sparse orchestral impacts", "bass drum and timpani punctuation", "brass stabs for cadences", "long cinematic tail"],
+        "negatives": ["constant rhythm", "continuous drone", "pop drum kit", "over-compressed trailer hits"],
+    },
+}
+
+
+def build_role_composition_plan(spec: dict, role: str) -> dict:
+    """Build an experimental role-isolated plan; repeated API calls are not guaranteed to phase/key lock."""
+    role_spec = ROLE_PROMPTS[role]
+    identity = [
+        spec["identity"][0],
+        spec["identity"][1],
+        "one synchronized orchestral role in a five-part interactive score",
+        "follow the supplied section timing exactly",
+    ] + HIFI
+    chunks = []
+    for ch in composition_chunks(spec):
+        chunks.append(section(
+            ch["label"], ch["duration_ms"],
+            ch["cues"] + [f"foreground role: {role.replace('_', ' ')}", "leave space for the other synchronized roles"],
+            role_spec["styles"] + ["section-specific variation"],
+            role_spec["negatives"] + ch["negatives"], ch["adherence"],
+        ))
+    return build_composition_plan(identity, chunks)
 
 
 HIFI = ["wide dynamic range, uncompressed", "pristine high fidelity studio master", "real acoustic performance"]
@@ -551,6 +656,10 @@ ERA_SPECS: list[dict] = [
         "prefix": "stem_kng_",
         "intro_sec": 16.0,
         "loop_sec": 50.0,
+        # Keep one generated suite to its authored A/B/C arc. Longer rotation is
+        # implemented by alternating complete suites, never by asking one model
+        # call to invent an unrelated second composition.
+        "loop_count": 3,
         "identity": [
             "royal court orchestral score for a grand historical strategy game",
             "renaissance court ensemble with symphony orchestra and East Asian court instruments",
@@ -624,6 +733,7 @@ ERA_SPECS: list[dict] = [
         "prefix": "stem_emp_",
         "intro_sec": 15.0,
         "loop_sec": 50.0,
+        "loop_count": 3,
         "identity": [
             "late-romantic nineteenth-century symphonic score for a grand historical strategy game",
             "full symphony orchestra with concert grand piano",
@@ -696,6 +806,42 @@ ERA_SPECS: list[dict] = [
 ]
 
 
+def variant_chunks(spec: dict) -> list[dict]:
+    """Optional second A/B/C pass for future separately validated suite variants.
+
+    It is deliberately disabled for the production suite. Appending unrelated
+    25-second cues to one API composition weakens the motif and harmonic arc.
+    """
+    if spec["key"] == "kingdom_age":
+        rows = [
+            ("Theme A2 - the old crown", ["the royal theme returns in low strings and lute, E minor, restrained 3/4"], ["dark court variation", "low strings and lute", "E minor", "3/4"], ["full choir", "fortissimo brass"]),
+            ("Theme A2 - banners in wind", ["oboe and French horn trade the theme over harp and pizzicato strings, G major"], ["noble counter-theme", "oboe and horn dialogue", "G major", "light pizzicato"], ["war drums", "dense tutti"]),
+            ("Theme B2 - the border march", ["a dry 2/4 military march in D minor, snare, bass drum and low brass, controlled crescendo"], ["controlled border march", "D minor", "2/4 snare ostinato", "low brass"], ["waltz", "pastoral lullaby"]),
+            ("Theme B2 - night council", ["A minor palace intrigue with muted strings, bassoon and distant timpani, tense but sparse"], ["sparse night intrigue", "A minor", "muted strings and bassoon", "distant timpani"], ["triumphant choir", "bright major fanfare"]),
+            ("Theme C2 - candlelit chapel", ["quiet F major chapel nocturne, solo viola, harp harmonics and soft organ, pianissimo"], ["candlelit nocturne", "F major", "solo viola and harp harmonics", "pianissimo"], ["drums", "fortissimo brass"]),
+            ("Theme C2 - the second coronation", ["the royal theme broadens in C major with horns, strings and bronze bells, a new cadence into the loop"], ["second coronation climax", "C major", "horns and bronze bells", "broad augmentation", "new closing cadence"], ["small ensemble", "dry mono"]),
+        ]
+    elif spec["key"] == "empire_age":
+        rows = [
+            ("Theme A2 - winter salon", ["the imperial theme returns on solo violin and piano in A minor, rubato and intimate"], ["winter salon variation", "solo violin and piano", "A minor", "rubato", "intimate"], ["full brass", "snare drum"]),
+            ("Theme A2 - glass ballroom", ["a graceful 6/8 ballroom transformation in D major, clarinet, harp and high strings"], ["glittering ballroom variation", "D major", "6/8", "clarinet and harp", "high strings"], ["war march", "low brass ostinato"]),
+            ("Theme B2 - ironworks", ["a relentless 2/4 industrial ostinato in G minor, cellos, basses, snare and trombones"], ["ironworks ostinato", "G minor", "2/4", "cellos and basses", "snare and trombones"], ["waltz", "wordless choir"]),
+            ("Theme B2 - the great dispatch", ["a tense brass and timpani expansion in B flat minor, rising through syncopated strings"], ["tense expansion variation", "B flat minor", "syncopated strings", "brass and timpani", "rising sequence"], ["salon nocturne", "pastoral flute"]),
+            ("Theme C2 - rain on the capital", ["a sparse D flat major nocturne with piano, English horn and muted strings, pianissimo"], ["rain-soaked nocturne", "D flat major", "piano and English horn", "muted strings", "pianissimo"], ["drums", "fortissimo cymbals"]),
+            ("Theme C2 - the long ascent", ["a new F major symphonic climax with the imperial theme in augmentation, horns, choir and timpani, final cadence"], ["long symphonic ascent", "F major", "theme in augmentation", "horns and choir", "timpani and final cadence"], ["small chamber ensemble", "repetitive loop"]),
+        ]
+    else:
+        return []
+    return [section(label, 25000, cues, styles, negatives, "medium") for label, cues, styles, negatives in rows]
+
+
+def composition_chunks(spec: dict) -> list[dict]:
+    chunks = list(spec["chunks"])
+    if int(spec.get("loop_count", 3)) > 3:
+        chunks.extend(variant_chunks(spec))
+    return chunks
+
+
 def transition_plan(spec: dict) -> dict:
     t = spec["transition"]
     base = ["orchestral era transition for a grand historical strategy game", t["bpm"]] + HIFI
@@ -732,9 +878,11 @@ def process_era(spec: dict, api_key: str | None, args: argparse.Namespace, rng: 
     prefix = spec["prefix"]
     intro_sec = float(spec["intro_sec"])
     loop_sec = float(spec["loop_sec"])
-    total_sec = intro_sec + 3.0 * loop_sec
+    loop_count = int(spec.get("loop_count", 3))
+    chunks = composition_chunks(spec)
+    total_sec = intro_sec + loop_count * loop_sec
     total_n = int(round(total_sec * SR))
-    plan_sec = sum(c["duration_ms"] for c in spec["chunks"]) / 1000.0
+    plan_sec = sum(c["duration_ms"] for c in chunks) / 1000.0
     assert abs(plan_sec - total_sec) < 1e-6, f"{key}: plan {plan_sec}s != timeline {total_sec}s"
 
     work = WORK_ROOT / f"fmod_{key}"
@@ -743,38 +891,70 @@ def process_era(spec: dict, api_key: str | None, args: argparse.Namespace, rng: 
     cache.mkdir(parents=True, exist_ok=True)
 
     print("\n" + "=" * 92)
-    print(f"{key}: v3 suite {total_sec:.0f}s ({len(spec['chunks'])} sections)")
+    print(f"{key}: v3 suite {total_sec:.0f}s ({len(chunks)} sections, {loop_count} loop blocks)")
     print("=" * 92)
 
-    # 1. Master (lossless PCM)
-    master_path = cache / "master_48k.pcm"
-    plan = build_composition_plan(spec["identity"], spec["chunks"])
-    if args.force_music or not master_path.exists():
-        if api_key is None:
-            raise RuntimeError(f"{key}: no cached master and --no-api given")
-        print("[1/5] Composing master via /v1/music (pcm_48000) ...")
-        (cache / "composition_plan.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
-        master_path.write_bytes(generate_music_pcm(api_key, plan))
+    # 1. Master or role-isolated material (lossless PCM). Kingdom and Empire can use independently authored
+    # role plans. If those plans are unavailable, the previous master + local separation path remains usable.
+    role_paths = {role: cache / f"role_{role}_48k.pcm" for role in FIVE_STEM_NAMES}
+    direct_layers: tuple[np.ndarray, ...] | None = None
+    role_generation_failed = False
+    if key in FIVE_STEM_ERAS and args.direct_role_generation and all(path.exists() for path in role_paths.values()) and not args.force_music:
+        print("[1/5] Reusing cached five-role PCM stems ...")
+        direct_layers = tuple(fit_length(pcm16_bytes_to_float(role_paths[role].read_bytes()), total_n)
+                             for role in FIVE_STEM_NAMES)
+    elif key in FIVE_STEM_ERAS and args.direct_role_generation and api_key is not None and args.force_music:
+        print("[1/5] Composing five role stems via /v1/music (pcm_48000) ...")
+        try:
+            for role, path in role_paths.items():
+                role_plan = build_role_composition_plan(spec, role)
+                (cache / f"composition_plan_{role}.json").write_text(json.dumps(role_plan, indent=2), encoding="utf-8")
+                path.write_bytes(generate_music_pcm(api_key, role_plan))
+            direct_layers = tuple(fit_length(pcm16_bytes_to_float(role_paths[role].read_bytes()), total_n)
+                                 for role in FIVE_STEM_NAMES)
+        except Exception as exc:
+            role_generation_failed = True
+            print(f"  [five-stem] role generation failed; falling back to master separation: {exc}")
+
+    if direct_layers is not None:
+        layers = direct_layers
+        master = sum(layers)
+        layer_names = FIVE_STEM_NAMES
+        print(f"  role-sum length {master.shape[0] / SR:.2f}s (timeline {total_sec:.2f}s)")
     else:
-        print(f"[1/5] Reusing cached master {master_path}")
-    raw_master = pcm16_bytes_to_float(master_path.read_bytes())
-    got_sec = raw_master.shape[0] / SR
-    print(f"  master length {got_sec:.2f}s (timeline {total_sec:.2f}s)")
-    if got_sec < total_sec - 0.25:
-        print("  WARNING: master shorter than timeline; the tail will be padded with silence")
-    master = fit_length(raw_master, total_n)
+        master_path = cache / "master_48k.pcm"
+        plan = build_composition_plan(spec["identity"], chunks)
+        # If a role call failed, prefer an existing master/separation cache for the fallback.  This keeps a
+        # single transient API failure from forcing the local Demucs path to regenerate unavailable inputs.
+        force_legacy = args.force_music and not role_generation_failed
+        if force_legacy or not master_path.exists():
+            if api_key is None:
+                raise RuntimeError(f"{key}: no cached master and --no-api given")
+            print("[1/5] Composing master via /v1/music (pcm_48000) ...")
+            (cache / "composition_plan.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
+            master_path.write_bytes(generate_music_pcm(api_key, plan))
+        else:
+            print(f"[1/5] Reusing cached master {master_path}")
+        raw_master = pcm16_bytes_to_float(master_path.read_bytes())
+        got_sec = raw_master.shape[0] / SR
+        print(f"  master length {got_sec:.2f}s (timeline {total_sec:.2f}s)")
+        if got_sec < total_sec - 0.25:
+            print("  WARNING: master shorter than timeline; the tail will be padded with silence")
+        master = fit_length(raw_master, total_n)
 
-    # 2. Local separation
-    print("[2/5] Separating stems ...")
-    stems = separate_stems(master, cache, force=args.force_music or args.force_separation)
+        # 2. Local separation
+        print("[2/5] Separating stems ...")
+        stems = separate_stems(master, cache, force=(args.force_separation or (args.force_music and not role_generation_failed)))
 
-    # 3. Exact-sum layers, loop prep, common gain
-    print("[3/5] Building exact-sum layers ...")
-    base, rhythm, chorus = build_layers(master, stems)
-    report_sections(spec, master, (base, rhythm, chorus))
-    base, rhythm, chorus = (make_loop_seamless(x, intro_sec, loop_sec) for x in (base, rhythm, chorus))
-    full = base + rhythm + chorus
-    gain, lufs, tp = common_gain(full, [base, rhythm, chorus], MUSIC_TARGET_LUFS)
+        # 3. Exact-sum layers, loop prep, common gain. Kingdom and Empire expose five musical roles; Stone and
+        # Agrarian keep the published three-layer contract until their own authored material is migrated.
+        legacy = build_layers(master, stems)
+        layers = build_five_layers(master, legacy) if key in FIVE_STEM_ERAS else legacy
+        layer_names = FIVE_STEM_NAMES if key in FIVE_STEM_ERAS else ("base_core", "pop_rhythm", "pop_chorus")
+    report_sections(spec, master, layers, layer_names, chunks)
+    layers = tuple(make_loop_seamless(x, intro_sec, loop_sec, loop_count) for x in layers)
+    full = sum(layers)
+    gain, lufs, tp = common_gain(full, list(layers), MUSIC_TARGET_LUFS)
     print(f"  common gain {20 * math.log10(gain):+.2f} dB -> full mix {lufs:.1f} LUFS, true peak {tp:.1f} dBTP")
 
     # 4. Ambience beds
@@ -789,15 +969,18 @@ def process_era(spec: dict, api_key: str | None, args: argparse.Namespace, rng: 
         else:
             print(f"[4/5] Reusing cached {tag} ambience")
         loop_audio = decode_with_ffmpeg(amb_path.read_bytes())
-        bed = make_loop_seamless(tile_loop(loop_audio, total_n), intro_sec, loop_sec)
+        bed = make_loop_seamless(tile_loop(loop_audio, total_n), intro_sec, loop_sec, loop_count)
         g, l, p = common_gain(bed, [], AMBIENCE_TARGET_LUFS)
         ambience[tag] = bed * g
         print(f"  {tag}: {l:.1f} LUFS, true peak {p:.1f} dBTP")
 
-    outputs = [
-        (f"{prefix}base_core.wav", base * gain),
-        (f"{prefix}pop_rhythm.wav", rhythm * gain),
-        (f"{prefix}pop_chorus.wav", chorus * gain),
+    role_files = (
+        [f"{prefix}{name}.wav" for name in FIVE_STEM_NAMES]
+        if key in FIVE_STEM_ERAS
+        else [f"{prefix}base_core.wav", f"{prefix}pop_rhythm.wav", f"{prefix}pop_chorus.wav"]
+    )
+    outputs = [(name, layer * gain) for name, layer in zip(role_files, layers)]
+    outputs += [
         (f"{prefix}zoom_close.wav", ambience["zoom_close"]),
         (f"{prefix}zoom_far.wav", ambience["zoom_far"]),
     ]
@@ -809,6 +992,18 @@ def process_era(spec: dict, api_key: str | None, args: argparse.Namespace, rng: 
               f"sample peak {peak:5.1f} dBFS")
     # Full-mix reference for listening and A/B against the old suite.
     write_wav16(out_dir / f"{prefix}reference_full_mix.wav", full * gain, rng)
+    (cache / "layer_manifest.json").write_text(json.dumps({
+        "era": key,
+        "roles": list(role_files),
+        "sample_rate": SR,
+        "intro_seconds": intro_sec,
+        "loop_seconds": loop_sec,
+        "loop_blocks": loop_count,
+        "total_seconds": total_sec,
+        "target_lufs": MUSIC_TARGET_LUFS,
+        "exact_sum": True,
+        "legacy_fallback": list(layer_names) if key not in FIVE_STEM_ERAS else False,
+    }, indent=2), encoding="utf-8")
 
     # 5. Era transition fanfare
     trans_file = spec.get("transition_file")
@@ -837,6 +1032,8 @@ def main() -> None:
     parser.add_argument("--force-transitions", action="store_true", help="re-compose transition fanfares")
     parser.add_argument("--skip-transitions", action="store_true")
     parser.add_argument("--no-api", action="store_true", help="never call ElevenLabs; fail if cache is missing")
+    parser.add_argument("--direct-role-generation", action="store_true",
+                        help="experimental: compose each five-stem role independently; disabled by default because independent calls are not phase/key locked")
     args = parser.parse_args()
 
     wanted = None if args.eras == "all" else {e.strip() for e in args.eras.split(",") if e.strip()}

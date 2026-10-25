@@ -1,0 +1,34 @@
+{
+  "sample_rate": 48000,
+  "ceiling_dbfs": -1.2,
+  "events": {
+    "tech_research.wav": {
+      "duration_seconds": 0.9628,
+      "body_cutoff_hz": 750.0
+    },
+    "territory_expand.wav": {
+      "duration_seconds": 0.5381,
+      "body_cutoff_hz": 420.0
+    },
+    "ideology_draw.wav": {
+      "duration_seconds": 0.4869,
+      "body_cutoff_hz": 620.0
+    },
+    "ideology_use.wav": {
+      "duration_seconds": 0.873,
+      "body_cutoff_hz": 520.0
+    },
+    "building_complete.wav": {
+      "duration_seconds": 0.5035,
+      "body_cutoff_hz": 360.0
+    },
+    "population_grow.wav": {
+      "duration_seconds": 0.6463,
+      "body_cutoff_hz": 680.0
+    },
+    "trade.wav": {
+      "duration_seconds": 0.856,
+      "body_cutoff_hz": 480.0
+    }
+  }
+}

@@ -294,21 +294,31 @@ advances, Ideology settles each country once (O(countries), no idea scan):
 ```
 raw  = max(0, Δpopulation) × w_pop + max(0, Δbuildings) × w_build
      + trade_value / period_days × w_trade
-gain = min(cap, raw × opinion_factor × point_gain_factor)
+gain = min(cap_per_day × covered_days, raw × opinion_factor × point_gain_factor)
 ```
 
 `opinion_factor = 0.5 + influence-weighted satisfaction`, clamped to
 [0.5, 1.5]. Weights and cap live in the profile (`point_*_weight_q16`,
-`point_gain_cap_q16`; default 0.02/resident, 0.25/building, 0.002/money of
-daily trade, cap 2.0 per period). The first observation only establishes the
+`point_gain_cap_q16`; default approximately 0.005/resident, 0.0625/building,
+0.0005/money of daily trade, cap 0.5 per covered day). The Q16 weights are
+328 / 4096 / 33 and the cap is 32768. The first observation only establishes the
 per-country baseline and yields nothing. The last source breakdown and a 32-gain
 history ring are kept per country for the UI ledger. Main (`NativeIdeologyRuntime`)
 and worker (`RuntimeIdeologyPodAuthority`) implement the same integer formula;
 `copy_opinion_snapshot` copies the new lanes.
 
-Every draw is paid. The first draw costs 6.0 and each later draw costs 20% more than the previous one (`offer_cost_growth_percent = 120`, Q16 rounded per step by the shared `runtime_ideology_offer_cost_q16` helper; `offer_cost_max_q16` is only a saturation guard). `REROLL_IDEOLOGY_OFFER`
-(opcode 10) replaces the active offer for 50% of the cost paid for that offer, is
+Every draw is paid. The first draw costs 12.0 and each later draw costs 20% more than the previous one (`offer_cost_growth_percent = 120`, Q16 rounded per step by the shared `runtime_ideology_offer_cost_q16` helper; `offer_cost_max_q16` is only a saturation guard). `REROLL_IDEOLOGY_OFFER`
+(opcode 10) replaces the active offer for 75% of the cost paid for that offer, is
 unlimited, and uses the same offer RNG stream.
+
+The 2026-10-25 balance pass quarters the growth weights and daily ceiling,
+doubles the first draw cost, and raises the reroll share from 50% to 75%.
+At the ceiling, earning the first paid draw from zero now requires 24 covered
+days instead of 3, excluding baseline establishment and explicit card rewards.
+These profile values change the ideology catalog hash: existing PKID saves
+fail closed on catalog mismatch. PKID/PKEF layouts, command semantics,
+Effect/ACK transitions, support and synergy rules are unchanged. UI costs and
+point ledgers continue to read the native snapshot without presentation constants.
 
 ## Player draw flow
 

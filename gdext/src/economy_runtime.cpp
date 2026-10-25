@@ -3410,9 +3410,10 @@ bool NativeEconomyRuntime::coordinate_country_cohort_cash(
     // country_worker_cohort_cash_boundary_invalid as a fatal — the cohort was
     // credited while the treasury debit never happened (money_error).
     // Main-thread Economy must use the Host peer queue further down instead.
+    // Host 授权是权威来源；本地禁写镜像滞后时也必须走线程内结算。
+    // 无游标的异步分支会在每次结构提交重试时创建新请求并永久 park。
     if (_simulation_host != nullptr && _country_runtime != nullptr &&
         _simulation_host->on_worker_thread() &&
-        _country_runtime->sync_store_writes_forbidden() &&
         _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) &&
         (_d7_operation_gate_mask & (1u << static_cast<uint32_t>(operation))) != 0u) {
         const int64_t funds = population_store().funds[cohort_slot];

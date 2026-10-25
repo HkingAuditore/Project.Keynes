@@ -62,6 +62,7 @@ var _current_page_key := "home"
 
 ## 主菜单背景音乐。GameAudio 是 autoload，bank 可能还没加载完，
 ## 所以轮询 status 直到 ready 再播；始终不就绪就静默放弃（大厅静音不影响功能）。
+## 离开菜单后由全局 GameAudio 继续播放，直到世界就绪后时代音乐接管。
 func _start_hall_music() -> void:
 	var audio := get_node_or_null("/root/GameAudio")
 	if audio == null or not audio.has_method("play_music"):
@@ -74,13 +75,6 @@ func _start_hall_music() -> void:
 				audio.play_music(&"hall")
 			return
 		await get_tree().process_frame
-
-
-## 离开大厅时停掉，交给游戏内时代音乐接管。
-func _exit_tree() -> void:
-	var audio := get_node_or_null("/root/GameAudio")
-	if audio != null and audio.has_method("stop_music"):
-		audio.stop_music()
 
 
 func _ready() -> void:

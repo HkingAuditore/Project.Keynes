@@ -2858,6 +2858,15 @@ encode、GPU 上传和 shader fetch 均被删除；只保留 per-cell 风/洋流
 
 这条链路是玩家信息遮罩的唯一动态路径。下面的 derived-resolution 路径保留给旧 debug 工具。
 
+## 近景地块告警图标
+
+`PlayerGame -> CellSituationLayer -> EconomyFacade.cell_situation_snapshot ->
+DCWorldExt.committed_read -> NativeEconomyRuntime.cell_situation_snapshot`。
+每 0.25 秒轮询一页当前视窗可见格，最多 128 格；后台忙时订阅下一 committed view，
+保留上次有效结果。天气直接采已发布 `DCViewAdapter`。屏幕宽度 80 px 进入、72 px
+退出；八种共图集位图在 HUD Canvas 中定位到地块上方。同格多告警并存，远景停读。
+该路径独立于切换式信息遮罩，详见 [近景地块告警](./cell-situation-icons.md)。
+
 ## Debug Data Overlay bake
 
 主要入口：

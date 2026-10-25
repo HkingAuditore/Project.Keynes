@@ -18,6 +18,7 @@
 		<relationship name="effects">
 			<destination>{7fd423d2-f491-4d97-9ada-841c9377334e}</destination>
 			<destination>{c8b28687-4f38-43f8-ae3a-64c9dcfbfee0}</destination>
+			<destination>{b1a5f8d6-9c2e-4a74-8d15-3e4c5b6a7f80}</destination>
 		</relationship>
 	</object>
 	<object class="MixerBusPanner" id="{bfbace69-aa45-4e7f-b2ca-ef8f4c761769}" />
@@ -25,6 +26,17 @@
 	<object class="MultibandEqEffect" id="{c8b28687-4f38-43f8-ae3a-64c9dcfbfee0}">
 		<property name="frequencyA">
 			<value>22000</value>
+		</property>
+	</object>
+	<object class="CompressorEffect" id="{b1a5f8d6-9c2e-4a74-8d15-3e4c5b6a7f80}">
+		<property name="threshold">
+			<value>-18</value>
+		</property>
+		<property name="ratio">
+			<value>1.5</value>
+		</property>
+		<property name="attackTime">
+			<value>30</value>
 		</property>
 	</object>
 </objects>

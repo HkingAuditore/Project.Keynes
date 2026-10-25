@@ -102,12 +102,12 @@ func _run() -> void:
 		and int(snap.get("national_spirit_slots_capacity", 0)) == 3)
 
 	# --- Cost curve and reroll.
-	_submit(ext, 2, [{"opcode": 2, "value": 80 * Q16}])
+	_submit(ext, 2, [{"opcode": 2, "value": 160 * Q16}])
 	_drain_ideology(ext, 2)
 	snap = ext.get_ideology_snapshot(handle)
-	_expect("grant adds points", int(snap.ideology_points_q16) == 80 * Q16)
+	_expect("grant adds points", int(snap.ideology_points_q16) == 160 * Q16)
 	var points := int(snap.ideology_points_q16)
-	var expected_cost := 6 * Q16
+	var expected_cost := 12 * Q16
 	var costs_ok := true
 	var reroll_ok := true
 	for draw in 10:
@@ -128,7 +128,7 @@ func _run() -> void:
 				or not bool(snap.offer_active):
 			costs_ok = false
 			break
-		if int(snap.reroll_cost_q16) != expected_cost * 50 / 100:
+		if int(snap.reroll_cost_q16) != expected_cost * 75 / 100:
 			reroll_ok = false
 		points = int(snap.ideology_points_q16)
 		if draw == 0:
@@ -137,7 +137,7 @@ func _run() -> void:
 			_submit(ext, 3, [{"opcode": 10, "generation": generation}])
 			_drain_ideology(ext, 3)
 			snap = ext.get_ideology_snapshot(handle)
-			_expect("reroll replaces the offer for half the draw cost",
+			_expect("reroll replaces the offer for 75 percent of the draw cost",
 				bool(snap.offer_active)
 				and int(snap.offer_generation) > generation
 				and int(snap.ideology_points_q16) == points - reroll_cost)
@@ -149,7 +149,7 @@ func _run() -> void:
 		expected_cost = (expected_cost * 120 + 50) / 100
 	snap = ext.get_ideology_snapshot(handle)
 	_expect("every draw is paid and costs 20% more than the previous", costs_ok)
-	_expect("reroll cost is 50% of the paid draw", reroll_ok)
+	_expect("reroll cost is 75% of the paid draw", reroll_ok)
 	# Not `>= 5` any more: since §36.3 an already-known card comes back as a
 	# refine, so N paid draws do not guarantee N distinct cards. What must hold
 	# is that choosing keeps growing the collection, and that a duplicate is what
@@ -160,7 +160,7 @@ func _run() -> void:
 
 	# No low ceiling: the cost keeps compounding by 20% per paid draw.
 	var paid_draws := int(snap.draw_sequence)
-	var compounded := 6 * Q16
+	var compounded := 12 * Q16
 	for _step in paid_draws:
 		compounded = (compounded * 120 + 50) / 100
 	_expect("draw cost compounds without a low cap",
