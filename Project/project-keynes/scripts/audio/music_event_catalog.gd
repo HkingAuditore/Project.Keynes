@@ -35,10 +35,10 @@ const MUSIC := {
 	## 农耕时代交互式配乐组曲（含开局 Intro + 3段常态循环 + Population 人口变体 + CameraZoom 镜头缩放变体）。
 	&"agrarian_age_suite": "event:/Music/AgrarianAge/Suite",
 
-	## 王国时代交互式配乐组曲（含开局 Intro + 3段常态循环 + Population 人口变体 + CameraZoom 镜头缩放变体）。
+	## 王国时代交互式配乐组曲（含开局 Intro + 6段常态循环变体 + Population 人口变体 + CameraZoom 镜头缩放变体）。
 	&"kingdom_age_suite": "event:/Music/KingdomAge/Suite",
 
-	## 帝国时代交互式配乐组曲（含开局 Intro + 3段常态循环 + Population 人口变体 + CameraZoom 镜头缩放变体）。
+	## 帝国时代交互式配乐组曲（含开局 Intro + 6段常态循环变体 + Population 人口变体 + CameraZoom 镜头缩放变体）。
 	&"empire_age_suite": "event:/Music/EmpireAge/Suite",
 }
 

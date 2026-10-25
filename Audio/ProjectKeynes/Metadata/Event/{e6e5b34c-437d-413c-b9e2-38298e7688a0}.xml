@@ -78,6 +78,9 @@
 		<relationship name="panner">
 			<destination>{bba81578-0e0e-49c0-9b97-498e0a0a2021}</destination>
 		</relationship>
+		<relationship name="output">
+			<destination>{d320eb98-3d4a-4cd9-a001-fdb4e071c58e}</destination>
+		</relationship>
 		<relationship name="mixer">
 			<destination>{0c4fd1f0-a5ed-440f-b256-5b725fb69177}</destination>
 		</relationship>

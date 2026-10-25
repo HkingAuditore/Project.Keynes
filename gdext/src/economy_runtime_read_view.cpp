@@ -137,6 +137,8 @@ Dictionary NativeEconomyRuntime::evaluate_read_query(const ReadKey &key) {
     case ReadQuery::COUNTRY_ECONOMY_OVERVIEW:
         return country_economy_overview(a[0], key.text, i32(a[1]), i32(a[2]),
                                         i32(a[3]), i32(a[4]));
+    case ReadQuery::SITUATION_VISUAL_SNAPSHOT:
+        return cell_situation_snapshot(key.ints);
     case ReadQuery::NONE:
         break;
     }

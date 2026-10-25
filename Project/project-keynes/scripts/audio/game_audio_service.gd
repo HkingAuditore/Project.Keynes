@@ -35,7 +35,7 @@ const AGRARIAN_AGE_SECTION_MS := {
 	2: 68000,
 	3: 120000,
 }
-## 王国时代交互式配乐组曲（含 Intro + 三段常态循环 + Population 人口变体 + CameraZoom 镜头变体）。
+## 王国时代交互式配乐组曲（含 Intro + 三段常态循环变体 + Population 人口变体 + CameraZoom 镜头变体）。
 const KINGDOM_AGE_SUITE_EVENT := "event:/Music/KingdomAge/Suite"
 const KINGDOM_AGE_INTRO_MS := 0
 const KINGDOM_AGE_SECTION_MS := {
@@ -44,7 +44,7 @@ const KINGDOM_AGE_SECTION_MS := {
 	2: 66000,
 	3: 116000,
 }
-## 帝国时代交互式配乐组曲（含 Intro + 三段常态循环 + Population 人口变体 + CameraZoom 镜头变体）。
+## 帝国时代交互式配乐组曲（含 Intro + 三段常态循环变体 + Population 人口变体 + CameraZoom 镜头变体）。
 const EMPIRE_AGE_SUITE_EVENT := "event:/Music/EmpireAge/Suite"
 const EMPIRE_AGE_INTRO_MS := 0
 const EMPIRE_AGE_SECTION_MS := {
@@ -95,6 +95,9 @@ var _kingdom_age_pop_tier := 0
 var _empire_age_pop_tier := 0
 var _last_camera_zoom_ratio := 0.5
 var _last_population_count := 0
+var _last_tension := 0.0
+var _last_war := 0.0
+var _last_ceremony := 0.0
 var _timeline_jump_seq := 0
 var _event_descriptions: Dictionary = {}
 var _event_next_ms: Dictionary = {}
@@ -350,6 +353,8 @@ func set_era(era_index: int) -> bool:
 		_era_index = clamped
 		if _last_population_count > 0:
 			update_active_suite_population_count(_last_population_count)
+		if _music_key in [&"kingdom_age_suite", &"empire_age_suite"]:
+			set_active_suite_emotion(_last_tension, _last_war, _last_ceremony, true)
 	return ok
 
 
@@ -402,6 +407,26 @@ func set_active_suite_camera_zoom(zoom_out_ratio: float, ignore_seek_speed: bool
 		&"empire_age_suite":
 			return set_empire_age_camera_zoom(_last_camera_zoom_ratio, ignore_seek_speed)
 	return false
+
+
+## 当前 Kingdom/Empire 组曲的情绪层控制。Stone/Agrarian 保持接口兼容，暂不暴露五声部自动化。
+func set_active_suite_emotion(tension: float, war: float, ceremony: float,
+		ignore_seek_speed: bool = false) -> bool:
+	if _music == 0 or _music_key not in [&"kingdom_age_suite", &"empire_age_suite"]:
+		return false
+	var values := {
+		"Tension": clampf(tension, 0.0, 1.0),
+		"War": clampf(war, 0.0, 1.0),
+		"Ceremony": clampf(ceremony, 0.0, 1.0),
+	}
+	var ok := true
+	for parameter_name in values:
+		ok = int(ClassDB.class_call_static("StudioEventInstance", "set_parameter_by_name", _music,
+			parameter_name, float(values[parameter_name]), ignore_seek_speed)) == 0 and ok
+	_last_tension = values["Tension"]
+	_last_war = values["War"]
+	_last_ceremony = values["Ceremony"]
+	return ok
 
 
 ## 按时代播放探索音乐。pick_random 时在同代多段里随机挑一首。
@@ -729,7 +754,7 @@ func play_kingdom_age_suite(from_intro: bool = true, population_ratio: float = 0
 		set_kingdom_age_population(population_ratio, false)
 		set_kingdom_age_camera_zoom(camera_zoom_ratio, false)
 		set_kingdom_age_loop_section(loop_section, false)
-	var start_ms: int = KINGDOM_AGE_INTRO_MS if from_intro else int(KINGDOM_AGE_SECTION_MS.get(clampi(loop_section, 0, 3), 11200))
+	var start_ms: int = KINGDOM_AGE_INTRO_MS if from_intro else int(KINGDOM_AGE_SECTION_MS.get(clampi(loop_section, 0, 3), 16000))
 	_ensure_suite_timeline_start(_music, start_ms)
 	return true
 
@@ -783,13 +808,13 @@ func set_kingdom_age_camera_zoom(zoom_out_ratio: float, ignore_seek_speed: bool 
 		_music, "CameraZoom", clampf(zoom_out_ratio, 0.0, 1.0), ignore_seek_speed)) == 0
 
 
-## 设置王国时代常态循环段落 LoopSection (0=三段自动轮转 A→B→C, 1=锁定循环A, 2=锁定循环B, 3=锁定循环C)。
-func set_kingdom_age_loop_section(section: int, jump_immediately: bool = true) -> bool:
+## 设置王国时代常态循环段落 LoopSection (0=三段自动轮转, 1..3=锁定对应 50 秒循环块)。
+func set_kingdom_age_loop_section(section: int, jump_immediately: bool = false) -> bool:
 	if _music == 0 or _music_key != &"kingdom_age_suite":
 		return false
 	var clamped := clampi(section, 0, 3)
 	var ok := int(ClassDB.class_call_static("StudioEventInstance", "set_parameter_by_name",
-		_music, "LoopSection", float(clamped), true)) == 0
+		_music, "LoopSection", float(clamped), false)) == 0
 	if jump_immediately and clamped >= 1:
 		jump_kingdom_age_timeline_ms(int(KINGDOM_AGE_SECTION_MS.get(clamped, 11200)))
 	return ok
@@ -814,9 +839,9 @@ func advance_agrarian_to_kingdom_suite(population_ratio: float = 0.04,
 	return trans_ok and suite_ok
 
 
-## 启动帝国时代交互式配乐组曲 (49.40s @ 92.3 BPM, F 盛世燕乐交响调式)。
-## from_intro=true 时从 0.0s「刚进入游戏 · 九天阊阖」引子开始，播完自动滑入 10.4s..49.4s 常态循环；
-## from_intro=false 时直接从 10.4s 常态循环起点切入。
+## 启动帝国时代交互式配乐组曲（Intro + 三段 50 秒循环，F 大调交响调式）。
+## from_intro=true 时从 0.0s 引子开始，随后进入 15.0s..165.0s 常态循环；
+## from_intro=false 时直接从 15.0s 常态循环起点切入。
 func play_empire_age_suite(from_intro: bool = true, population_ratio: float = 0.0,
 		camera_zoom_ratio: float = 0.5, loop_section: int = 0) -> bool:
 	if status != "ready":
@@ -841,7 +866,7 @@ func play_empire_age_suite(from_intro: bool = true, population_ratio: float = 0.
 		set_empire_age_population(population_ratio, false)
 		set_empire_age_camera_zoom(camera_zoom_ratio, false)
 		set_empire_age_loop_section(loop_section, false)
-	var start_ms: int = EMPIRE_AGE_INTRO_MS if from_intro else int(EMPIRE_AGE_SECTION_MS.get(clampi(loop_section, 0, 3), 10400))
+	var start_ms: int = EMPIRE_AGE_INTRO_MS if from_intro else int(EMPIRE_AGE_SECTION_MS.get(clampi(loop_section, 0, 3), 15000))
 	_ensure_suite_timeline_start(_music, start_ms)
 	return true
 
@@ -895,13 +920,13 @@ func set_empire_age_camera_zoom(zoom_out_ratio: float, ignore_seek_speed: bool =
 		_music, "CameraZoom", clampf(zoom_out_ratio, 0.0, 1.0), ignore_seek_speed)) == 0
 
 
-## 设置帝国时代常态循环段落 LoopSection (0=三段自动轮转 A→B→C, 1=锁定循环A, 2=锁定循环B, 3=锁定循环C)。
-func set_empire_age_loop_section(section: int, jump_immediately: bool = true) -> bool:
+## 设置帝国时代常态循环段落 LoopSection (0=三段自动轮转, 1..3=锁定对应 50 秒循环块)。
+func set_empire_age_loop_section(section: int, jump_immediately: bool = false) -> bool:
 	if _music == 0 or _music_key != &"empire_age_suite":
 		return false
 	var clamped := clampi(section, 0, 3)
 	var ok := int(ClassDB.class_call_static("StudioEventInstance", "set_parameter_by_name",
-		_music, "LoopSection", float(clamped), true)) == 0
+		_music, "LoopSection", float(clamped), false)) == 0
 	if jump_immediately and clamped >= 1:
 		jump_empire_age_timeline_ms(int(EMPIRE_AGE_SECTION_MS.get(clamped, 10400)))
 	return ok
@@ -935,6 +960,9 @@ func stop_music() -> void:
 	_music_parameterized = false
 	_music_key = &""
 	_era_index = -1
+	_last_tension = 0.0
+	_last_war = 0.0
+	_last_ceremony = 0.0
 
 
 func diagnostics() -> Dictionary:
@@ -959,6 +987,8 @@ func diagnostics() -> Dictionary:
 		"master_volume": ClassDB.class_call_static("StudioBus", "get_volume", _master),
 		"master_muted": ClassDB.class_call_static("StudioBus", "get_mute", _master),
 		"tension": ClassDB.class_call_static("StudioEventInstance", "get_parameter_by_name", _music, "Tension") if _music != 0 else 0.0,
+		"war": ClassDB.class_call_static("StudioEventInstance", "get_parameter_by_name", _music, "War") if _music != 0 else 0.0,
+		"ceremony": ClassDB.class_call_static("StudioEventInstance", "get_parameter_by_name", _music, "Ceremony") if _music != 0 else 0.0,
 		"population": ClassDB.class_call_static("StudioEventInstance", "get_parameter_by_name", _music, "Population") if _music != 0 else 0.0,
 		"camera_zoom": ClassDB.class_call_static("StudioEventInstance", "get_parameter_by_name", _music, "CameraZoom") if _music != 0 else 0.5,
 		"loop_section": int(round(float(ClassDB.class_call_static("StudioEventInstance", "get_parameter_by_name", _music, "LoopSection")))) if _music != 0 else 0,

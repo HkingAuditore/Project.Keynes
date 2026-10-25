@@ -904,6 +904,8 @@ public:
     godot::Dictionary capture_economy_trade_visibility(
         const godot::PackedByteArray &visible, bool fog_solved);
     godot::Dictionary get_building_cell_snapshot(int cell_idx) const;
+    godot::Dictionary get_cell_situation_snapshot(
+        const godot::PackedInt32Array &requested_cells) const;
     godot::Dictionary get_building_visual_snapshot(
         const godot::PackedInt32Array &requested_cells) const;
     godot::Dictionary consume_building_visual_dirty_cells();

@@ -32,9 +32,12 @@ func _run() -> void:
 	_check(audio.advance_agrarian_to_kingdom_suite(0.45, 0.5, false), "advance_agrarian_to_kingdom_suite orchestration")
 
 	_check(audio.play_kingdom_age_suite(true, 0.0, 0.5, 0), "start Kingdom Age suite from Intro (0.0s)")
+	_check(audio.set_active_suite_emotion(0.35, 0.0, 0.25, true), "set Kingdom Tension/War/Ceremony")
 	await get_tree().create_timer(0.65).timeout
 	var dk0: Dictionary = audio.diagnostics()
 	_check(bool(dk0.get("music_playing", false)) and dk0.get("music_key") == &"kingdom_age_suite", "Kingdom Age suite playing")
+	_check(absf(float(dk0.get("tension", -1.0)) - 0.35) < 0.05 and absf(float(dk0.get("war", -1.0))) < 0.05
+		and absf(float(dk0.get("ceremony", -1.0)) - 0.25) < 0.05, "Kingdom emotion parameters read back")
 	_check(int(dk0.get("timeline_ms", 0)) > 50 and int(dk0.get("timeline_ms", 0)) < 2500,
 		"Kingdom Intro timeline advancing (%d ms)" % int(dk0.get("timeline_ms", 0)))
 
@@ -60,6 +63,8 @@ func _run() -> void:
 	await get_tree().create_timer(0.85).timeout
 	var pos_kf := int(audio.diagnostics().get("timeline_ms", 0))
 	_check(pos_kf >= 16000 and pos_kf < 17700, "Kingdom Full Loop wrapped from 166.0s to 16.0s (pos=%d ms)" % pos_kf)
+	_check(audio.set_kingdom_age_loop_section(3, true), "select Kingdom Loop C (16.0s + 100s)")
+	_check(audio.jump_kingdom_age_timeline_ms(115600), "jump near end of Kingdom Loop C")
 
 	# ==========================================================================
 	# PART 2: EMPIRE AGE (帝国时代) + Kingdom->Empire Transition
@@ -68,9 +73,12 @@ func _run() -> void:
 	_check(audio.advance_kingdom_to_empire_suite(0.45, 0.5, false), "advance_kingdom_to_empire_suite orchestration")
 
 	_check(audio.play_empire_age_suite(true, 0.0, 0.5, 0), "start Empire Age suite from Intro (0.0s)")
+	_check(audio.set_active_suite_emotion(0.65, 0.8, 0.1, true), "set Empire Tension/War/Ceremony")
 	await get_tree().create_timer(0.65).timeout
 	var de0: Dictionary = audio.diagnostics()
 	_check(bool(de0.get("music_playing", false)) and de0.get("music_key") == &"empire_age_suite", "Empire Age suite playing")
+	_check(absf(float(de0.get("tension", -1.0)) - 0.65) < 0.05 and absf(float(de0.get("war", -1.0)) - 0.8) < 0.05
+		and absf(float(de0.get("ceremony", -1.0)) - 0.1) < 0.05, "Empire emotion parameters read back")
 	_check(int(de0.get("timeline_ms", 0)) > 50 and int(de0.get("timeline_ms", 0)) < 2500,
 		"Empire Intro timeline advancing (%d ms)" % int(de0.get("timeline_ms", 0)))
 
@@ -96,6 +104,8 @@ func _run() -> void:
 	await get_tree().create_timer(0.85).timeout
 	var pos_ef := int(audio.diagnostics().get("timeline_ms", 0))
 	_check(pos_ef >= 15000 and pos_ef < 16700, "Empire Full Loop wrapped from 165.0s to 15.0s (pos=%d ms)" % pos_ef)
+	_check(audio.set_empire_age_loop_section(3, true), "select Empire Loop C (15.0s + 100s)")
+	_check(audio.jump_empire_age_timeline_ms(115600), "jump near end of Empire Loop C")
 
 	# ==========================================================================
 	# PART 3: FORMAL GAMEPLAY set_era(0..3) + Active Suite Population & Zoom
@@ -129,6 +139,10 @@ func _run() -> void:
 	var de3: Dictionary = audio.diagnostics()
 	_check(de3.get("music_key") == &"empire_age_suite" and int(de3.get("timeline_ms", 0)) >= 15000,
 		"set_era(3) plays empire_age_suite main loop (%d ms)" % int(de3.get("timeline_ms", -1)))
+	_check(audio.set_active_suite_emotion(0.4, 0.6, 0.7, true), "set active suite emotions after era switch")
+	var de4: Dictionary = audio.diagnostics()
+	_check(absf(float(de4.get("tension", -1.0)) - 0.4) < 0.05 and absf(float(de4.get("war", -1.0)) - 0.6) < 0.05
+		and absf(float(de4.get("ceremony", -1.0)) - 0.7) < 0.05, "active suite emotion readback after era switch")
 
 	var z_far := PlayerController.camera_zoom_to_audio_ratio(0.55, 0.55, 3.6)
 	var z_close := PlayerController.camera_zoom_to_audio_ratio(3.6, 0.55, 3.6)

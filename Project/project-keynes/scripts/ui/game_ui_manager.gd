@@ -1537,6 +1537,9 @@ func _ensure_cell_hover_card() -> void:
 
 ## 悬停卡的抑制策略集中在这里：任何"地图不该被打扰"的状态都返回 true。
 func _hover_blocked() -> bool:
+	var situations := get_node_or_null("UIRoot/HUDLayer/CellSituationLayer")
+	if situations != null and situations.is_icon_hovered():
+		return true
 	if _map == null or _inspector_view_model == null or _player_camera == null:
 		return true
 	if _loading_overlay != null and _loading_overlay.visible:

@@ -137,6 +137,14 @@ yield 并在后续 pulse 重试。把其中任何一个当成 fatal，都会留�
 
 ### cohort cash 的 plan 窗口
 
+线程内 `coordinate_country_cohort_cash()` 路由以 Host 的 COUNTRY worker grant
+和当前 worker 线程身份为准，不再额外要求 Country facade 的
+`sync_store_writes_forbidden` 镜像已同步。镜像滞后时走异步兜底会丢失 cohort target
+和可续接的 request id；空 cohort 遗产回收在 `structural_commit` 重试时不断创建请求，
+最终表现为 `structural_country_asset_pending`、气候输入环满、日期停止但 `fatal=false`。
+结算仍复用 prepare → Economy peer side effect → Country finish，保持资金守恒；
+主线程不进入线程内路径，Country plan 窗口仍按下表 park。
+
 `prepare_worker_cohort_cash()` 的拒绝按类分开：
 
 | 条件 | reason | 语义 |
@@ -805,6 +813,19 @@ slice 按连续 market range 切分；每个 worker 只写自身市场行及其�
 focused test 必须验证 worker/scalar state hash 完全相同。
 
 ## 公共 API
+
+### 近景地块告警投影（2026-10-25）
+
+`DCWorldExt.get_cell_situation_snapshot(requested_cells)` 为自动悬浮图标提供最多
+128 格的 committed 批量查询，经 `EconomyFacade.cell_situation_snapshot` 调用。
+它沿用 EconomyCommitView 的 `committed_read`，返回八位 `flags`、八列 Q16 严重度、
+三类短缺的具体商品、最不满政治阶层和每格最近结算日；不复制模拟矩阵或修改存档。
+生活/消费类别来自已有需求层级，工业缺口来自建筑生产/施工预留；失业和空缺岗位
+复用 cohort 就业列、`group_job_totals`。天气两列留给已发布 climate adapter。
+
+正式玩家场景使用 `CellSituationLayer` 在近景自动显示八种透明位图，屏幕外与当前
+不可见格不查询，远景停止查询。无新增地图模式或 selector。完整判定、渲染、预算与
+验证入口见 [近景地块告警](./cell-situation-icons.md)。
 
 `configure_economy`、`bootstrap_economy`、`submit_economy_commands`、
 `economy_should_run`、`run_economy_slice`、`run_economy_slice_compact`、`get_economy_report`、人口/市场 cell

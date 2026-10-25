@@ -798,6 +798,9 @@ void DCWorldExt::_bind_methods() {
                          DEFVAL(true));
     ClassDB::bind_method(D_METHOD("get_market_cell_snapshot", "cell_idx"),
                          &DCWorldExt::get_market_cell_snapshot);
+    ClassDB::bind_method(
+        D_METHOD("get_cell_situation_snapshot", "requested_cells"),
+        &DCWorldExt::get_cell_situation_snapshot);
     ClassDB::bind_method(D_METHOD("explain_cohort_satisfaction", "cohort_handle"),
                          &DCWorldExt::explain_cohort_satisfaction);
     ClassDB::bind_method(

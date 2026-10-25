@@ -1007,6 +1007,10 @@ public:
                                                int32_t filter_id,
                                                int32_t offset,
                                                int32_t limit) const;
+    // Bounded committed projection for automatic, near-map situation icons.
+    // No economy state is copied into MapData or the save schema.
+    godot::Dictionary cell_situation_snapshot(
+        const godot::PackedInt32Array &requested_cells) const;
     // Sparse, committed visual projection. This lane is deliberately excluded
     // from PKEC and state_hash; it is rebuilt from authoritative groups.
     godot::Dictionary building_visual_snapshot(
@@ -1502,6 +1506,7 @@ public:
         BUILDING_NOTABLE_PEOPLE,
         COUNTRY_CLASS_OPINION_SNAPSHOT,
         COUNTRY_ECONOMY_OVERVIEW,
+        SITUATION_VISUAL_SNAPSHOT,
     };
     struct ReadKey {
         ReadQuery query = ReadQuery::NONE;

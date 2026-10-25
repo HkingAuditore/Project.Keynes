@@ -1642,6 +1642,23 @@ Dictionary DCWorldExt::get_market_cell_snapshot(int cell_idx) const {
         [&] { return runtime->market_cell_snapshot(cell_idx); });
 }
 
+Dictionary DCWorldExt::get_cell_situation_snapshot(
+        const PackedInt32Array &requested_cells) const {
+    if (requested_cells.size() > 128) {
+        Dictionary out;
+        out["ok"] = false;
+        out["reason"] = "situation_cell_limit_exceeded";
+        return out;
+    }
+    if (_economy_runtime == nullptr) return unavailable();
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    ReadKey key = read_key(ReadQuery::SITUATION_VISUAL_SNAPSHOT, {});
+    key.ints = requested_cells;
+    return committed_read(_runtime_host.get(), runtime, key, [&] {
+        return runtime->cell_situation_snapshot(requested_cells);
+    });
+}
+
 Dictionary DCWorldExt::explain_cohort_satisfaction(int64_t cohort_handle) const {
     if (_economy_runtime == nullptr) return unavailable();
     NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);

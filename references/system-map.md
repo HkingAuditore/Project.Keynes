@@ -20,6 +20,10 @@ external_ecp2=[])` → `NativeSimulationHost`。PKSR 完整保存超过 64 MiB �
 `HexRenderer.configure_trade_visuals` 同步 TOD 和地形纹理，高画质中心采法线/Horizon GI 并投影；
 见 [trade-visual-runtime.md](../docs/cpp-dots-runtime/trade-visual-runtime.md)。
 
+近景地块告警：`PlayerGame -> CellSituationLayer -> EconomyFacade -> committed NativeEconomyRuntime`；
+天气读取现有 climate adapter，八种位图自动显示于当前可见格。见
+[cell-situation-icons.md](../docs/cpp-dots-runtime/cell-situation-icons.md)。
+
 Source-file ownership and decomposition rules live in
 [`docs/architecture/module-boundaries.md`](../docs/architecture/module-boundaries.md).
 

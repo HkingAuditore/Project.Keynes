@@ -21,6 +21,7 @@ var day_night_enabled: bool = DEFAULT_DAY_NIGHT_ENABLED
 @onready var _colonization_route: ColonizationRouteLayer = $WorldRoot/ColonizationRouteLayer
 @onready var _map_activity = $WorldRoot/MapActivityLayer
 @onready var _trade_activity = $WorldRoot/TradeActivityLayer
+@onready var _cell_situations = $UI/UIRoot/HUDLayer/CellSituationLayer
 @onready var _world_clock: WorldClock = $WorldClock
 @onready var _runtime_host: WorldRuntimeHost = $RuntimeHost
 @onready var _ui_manager: GameUIManager = $UI
@@ -151,6 +152,8 @@ func _on_world_ready(
 	_trade_activity.configure(map, _camera, _runtime_host, _player_controller,
 		generator.get_economy_facade(), _world_clock)
 	_trade_activity.set_quality(visual_quality)
+	_cell_situations.configure(map, _camera, _runtime_host,
+		generator.get_economy_facade(), view_adapter)
 	_renderer.configure_trade_visuals(_trade_activity)
 	_ui_manager.set_world_context(
 		map,
@@ -201,9 +204,7 @@ func _on_regenerate_requested() -> void:
 
 
 func _regenerate_world() -> void:
-	var audio := get_node_or_null("/root/GameAudio")
-	if audio != null and audio.has_method("stop_music"):
-		audio.stop_music()
+	# 重生成期间保留全局音乐，世界就绪后由 PlayerController 同步时代。
 	_player_controller.clear_selection()
 	_ui_manager.show_loading("正在重生成世界...")
 	await get_tree().process_frame

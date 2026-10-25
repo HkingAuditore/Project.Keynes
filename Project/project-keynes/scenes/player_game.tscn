@@ -27,6 +27,7 @@
 [ext_resource type="Theme" path="res://assets/themes/player_ui_theme.tres" id="27_legacy_theme"]
 [ext_resource type="PackedScene" path="res://scenes/ui/family/family_founding_dialog.tscn" id="28_family_founding"]
 [ext_resource type="Script" path="res://scripts/rendering/cell_highlight_set.gd" id="31_cell_highlight_set"]
+[ext_resource type="Script" path="res://scripts/rendering/cell_situation_layer.gd" id="32_situations"]
 
 [node name="PlayerGame" type="Node2D" unique_id=198229795]
 script = ExtResource("1_player")
@@ -103,6 +104,16 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
+
+[node name="CellSituationLayer" type="Control" parent="UI/UIRoot/HUDLayer"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("32_situations")
 
 [node name="PlayerTopBar" parent="UI/UIRoot/HUDLayer" unique_id=358183008 instance=ExtResource("12_top_bar")]
 unique_name_in_owner = true
