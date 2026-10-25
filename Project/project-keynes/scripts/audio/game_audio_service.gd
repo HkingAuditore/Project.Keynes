@@ -54,12 +54,19 @@ const EMPIRE_AGE_SECTION_MS := {
 	3: 115000,
 }
 
-## 游戏事件音效（UI bank）。素材为 CC0，源文件在 Audio/Sources/UI/events/。
+## 游戏事件音效（UI bank）；科技/理念由 ElevenLabs 生成，清单见 Assets/UI/progression。
 const EVENT_CUES := {
+	&"tech_start": "event:/UI/Event/tech_start",
 	&"tech_research": "event:/UI/Event/tech_research",
+	&"tech_cancel": "event:/UI/Event/tech_cancel",
 	&"territory_expand": "event:/UI/Event/territory_expand",
 	&"ideology_draw": "event:/UI/Event/ideology_draw",
 	&"ideology_use": "event:/UI/Event/ideology_use",
+	&"ideology_reroll": "event:/UI/Event/ideology_reroll",
+	&"ideology_reveal": "event:/UI/Event/ideology_reveal",
+	&"ideology_choose": "event:/UI/Event/ideology_choose",
+	&"ideology_unequip": "event:/UI/Event/ideology_unequip",
+	&"ideology_promote": "event:/UI/Event/ideology_promote",
 	&"building_complete": "event:/UI/Event/building_complete",
 	&"population_grow": "event:/UI/Event/population_grow",
 	&"trade": "event:/UI/Event/trade",
@@ -68,15 +75,23 @@ const EVENT_CUES := {
 ## 每个 cue 的最小间隔（毫秒）。高频事件必须稀疏，否则会糊成噪音墙：
 ## 贸易单次结算上限 32768 条信号，人口是 cell 级，逐个播没有意义。
 const EVENT_COOLDOWN_MS := {
-	&"tech_research": 0,
+	&"tech_start": 80,
+	&"tech_research": 700,
+	&"tech_cancel": 80,
 	&"territory_expand": 0,
 	&"ideology_draw": 0,
 	&"ideology_use": 0,
+	&"ideology_reroll": 100,
+	&"ideology_reveal": 90,
+	&"ideology_choose": 100,
+	&"ideology_unequip": 100,
+	&"ideology_promote": 700,
 	&"building_complete": 150,
 	&"population_grow": 2500,
 	&"trade": 2500,
 }
 signal ui_sound_played(cue: StringName)
+signal event_sound_played(cue: StringName)
 
 var status := "not_initialized"
 var _system := 0
@@ -235,6 +250,7 @@ func play_event_cue(cue: StringName, world_pos: Vector2 = Vector2.INF) -> bool:
 	ClassDB.class_call_static("StudioEventInstance", "release", instance)
 	if result == 0:
 		_event_next_ms[cue] = now + int(EVENT_COOLDOWN_MS.get(cue, 0))
+		event_sound_played.emit(cue)
 	return result == 0
 
 

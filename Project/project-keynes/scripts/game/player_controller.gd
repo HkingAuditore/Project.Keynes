@@ -855,12 +855,10 @@ func _on_ideology_command_settled(result: Dictionary) -> void:
 		else:
 			_sync_ideology_draw()
 	command_settled.emit(command_id, result)
-	_play_ideology_cue(command_id, result)
 
 
 
 ## 事件音效与交互式音乐用的增量状态
-var _tech_state_snapshot := PackedInt32Array()
 var _territory_snapshot := -1
 var _last_music_pop_sample_ms := 0
 var _camera_zoom_baseline := -1.0
@@ -946,24 +944,10 @@ static func camera_zoom_to_audio_ratio(zoom_val: float,
 
 ## 理念音效：抽（offer/choose/reroll）与用（equip/unequip/promote）分开。
 ## 只在成功时发声，被拒绝的命令不响。
-func _play_ideology_cue(command_id: StringName, result: Dictionary) -> void:
-	if not bool(result.get("ok", false)):
-		return
-	var audio := get_node_or_null("/root/GameAudio")
-	if audio == null or not audio.has_method("play_event_cue"):
-		return
-	match command_id:
-		COMMAND_IDEOLOGY_OFFER, COMMAND_IDEOLOGY_CHOOSE, COMMAND_IDEOLOGY_REROLL:
-			audio.play_event_cue(&"ideology_draw")
-		COMMAND_IDEOLOGY_EQUIP, COMMAND_IDEOLOGY_UNEQUIP, COMMAND_IDEOLOGY_PROMOTE:
-			audio.play_event_cue(&"ideology_use")
-
-
-## 游戏事件音效。四个数据源都是「增量」，每天一次调用成本可控：
-##   建筑 / 贸易 → 经济 trace 流（consumer 游标自带去重，不遍历全图）
-##   科技      → diff technology_states（<5 变 >=5 视为完成）
+## 日常游戏事件音效：经济 trace 流自带消费游标，不遍历全图。
+##   贸易 / 人口 → 经济 trace 流；建筑由可见地图活动层播放。
+##   科技/理念 → GameUIManager 的完成通知与命令回执，避免日切重复播放。
 ##   开拓      → diff territory_cells.size()
-## 人口没有增量接口：引擎侧只在 cell 级提供当前值，逐个 diff 太贵，暂不接。
 func _sync_event_audio() -> void:
 	if _player_country_handle == 0:
 		return
@@ -984,20 +968,6 @@ func _sync_event_audio() -> void:
 		if int(pop.get("count", 0)) > 0:
 			audio.play_event_cue(&"population_grow")
 	# _player_controller_build_removed
-
-	# 科技：diff 已生效状态
-	if _country_facade != null and _country_facade.has_method("research_snapshot"):
-		var research: Dictionary = _country_facade.research_snapshot(_player_country_handle)
-		var states: PackedInt32Array = research.get("technology_states", PackedInt32Array())
-		if not states.is_empty():
-			if not _tech_state_snapshot.is_empty():
-				var completed := 0
-				for index in range(mini(states.size(), _tech_state_snapshot.size())):
-					if int(_tech_state_snapshot[index]) < 5 and int(states[index]) >= 5:
-						completed += 1
-				if completed > 0:
-					audio.play_event_cue(&"tech_research")
-			_tech_state_snapshot = states.duplicate()
 
 	# 开拓：领土格数变多
 	if _country_facade != null and _country_facade.has_method("snapshot"):
