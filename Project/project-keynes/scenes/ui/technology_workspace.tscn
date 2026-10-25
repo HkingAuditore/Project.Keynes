@@ -280,7 +280,7 @@ layout_mode = 2
 theme_override_constants/separation = 6
 
 [node name="Icon" parent="Root/Main/PolicyPanel/Scroll/Body/Domain0" instance=ExtResource("2_icon")]
-custom_minimum_size = Vector2(18, 18)
+custom_minimum_size = Vector2(28, 28)
 layout_mode = 2
 
 [node name="Name" type="Label" parent="Root/Main/PolicyPanel/Scroll/Body/Domain0"]
@@ -300,7 +300,7 @@ layout_mode = 2
 theme_override_constants/separation = 6
 
 [node name="Icon" parent="Root/Main/PolicyPanel/Scroll/Body/Domain1" instance=ExtResource("2_icon")]
-custom_minimum_size = Vector2(18, 18)
+custom_minimum_size = Vector2(28, 28)
 layout_mode = 2
 
 [node name="Name" type="Label" parent="Root/Main/PolicyPanel/Scroll/Body/Domain1"]
@@ -320,7 +320,7 @@ layout_mode = 2
 theme_override_constants/separation = 6
 
 [node name="Icon" parent="Root/Main/PolicyPanel/Scroll/Body/Domain2" instance=ExtResource("2_icon")]
-custom_minimum_size = Vector2(18, 18)
+custom_minimum_size = Vector2(28, 28)
 layout_mode = 2
 
 [node name="Name" type="Label" parent="Root/Main/PolicyPanel/Scroll/Body/Domain2"]
@@ -340,7 +340,7 @@ layout_mode = 2
 theme_override_constants/separation = 6
 
 [node name="Icon" parent="Root/Main/PolicyPanel/Scroll/Body/Domain3" instance=ExtResource("2_icon")]
-custom_minimum_size = Vector2(18, 18)
+custom_minimum_size = Vector2(28, 28)
 layout_mode = 2
 
 [node name="Name" type="Label" parent="Root/Main/PolicyPanel/Scroll/Body/Domain3"]
@@ -354,21 +354,6 @@ theme_type_variation = &"PKDossierCaption"
 
 [node name="Zone3" parent="Root/Main/PolicyPanel/Scroll/Body" instance=ExtResource("5_zone")]
 layout_mode = 2
-
-[node name="DevelopmentRule" type="HSeparator" parent="Root/Main/PolicyPanel/Scroll/Body"]
-visible = false
-layout_mode = 2
-
-[node name="DevelopmentTitle" type="Label" parent="Root/Main/PolicyPanel/Scroll/Body"]
-visible = false
-layout_mode = 2
-text = "国家发展目标"
-theme_type_variation = &"PKDossierKicker"
-
-[node name="DevelopmentList" type="VBoxContainer" parent="Root/Main/PolicyPanel/Scroll/Body"]
-visible = false
-layout_mode = 2
-theme_override_constants/separation = 2
 
 [node name="DetailHost" type="PanelContainer" parent="Root/Main"]
 unique_name_in_owner = true

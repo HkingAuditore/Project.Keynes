@@ -5,8 +5,8 @@ class_name TechnologyQueueRow
 ## 行只在队列组成变化时创建；每日进度经 update_dynamic()/set_eta() 只重绘。
 
 const DragPreviewScene := preload("res://scenes/ui/technology_drag_preview.tscn")
-const ROW_HEIGHT := 32.0
-const REMOVE_SIZE := 18.0
+const ROW_HEIGHT := 62.0
+const REMOVE_SIZE := 28.0
 
 signal move_requested(technology: int, domain: int, position: int)
 signal remove_requested(technology: int)
@@ -121,15 +121,14 @@ func _draw() -> void:
 		draw_rect(Rect2(Vector2.ZERO, size), UITokens.DOSSIER_HOVER)
 	if head:
 		draw_rect(Rect2(0.0, 3.0, 2.0, ROW_HEIGHT - 8.0), _accent.lerp(UITokens.DOSSIER_INK, 0.2))
-	_text(Vector2(6.0, 18.0), "%d" % (queue_position + 1), 12,
-		UITokens.DOSSIER_INK_MUTED, "serif")
-	var eta_width := _text_width(_eta, 11) if not _eta.is_empty() else 0.0
-	var name_right := w - REMOVE_SIZE - 8.0 - (eta_width + 8.0 if eta_width > 0.0 else 0.0)
-	_text(Vector2(22.0, 18.0), _fit_text(display_name, 13, name_right - 22.0,
-		"sans_strong" if head else "sans"), 13, UITokens.DOSSIER_INK,
+	_text(Vector2(6.0, 25.0), "%d" % (queue_position + 1), 17,
+		UITokens.DOSSIER_INK_MUTED, "numeral")
+	var name_right := w - REMOVE_SIZE - 8.0
+	_text(Vector2(30.0, 25.0), _fit_text(display_name, 18, name_right - 30.0,
+		"sans_strong" if head else "sans"), 18, UITokens.DOSSIER_INK,
 		"sans_strong" if head else "sans")
-	if eta_width > 0.0:
-		_text(Vector2(w - REMOVE_SIZE - 6.0 - eta_width, 18.0), _eta, 11,
+	if not _eta.is_empty():
+		_text(Vector2(30.0, 46.0), _fit_text(_eta, 15, name_right - 30.0), 15,
 			UITokens.DOSSIER_OXBLOOD if head else UITokens.DOSSIER_INK_MUTED)
 	var track := Rect2(22.0, ROW_HEIGHT - 8.0, maxf(8.0, w - REMOVE_SIZE - 30.0), 3.0)
 	_rounded_bar(track, UITokens.DOSSIER_TRACK, 1.5)
@@ -139,8 +138,8 @@ func _draw() -> void:
 	var remove := _remove_rect()
 	if _remove_hover:
 		draw_rect(remove, UITokens.DOSSIER_SELECTED)
-	_icon(&"action.close", remove.grow(-4.0),
+	_icon(&"action.close", remove.grow(-2.0),
 		UITokens.DOSSIER_OXBLOOD if _remove_hover \
-			else Color(UITokens.DOSSIER_INK_MUTED, 0.55 if _hover else 0.3))
+			else Color(UITokens.DOSSIER_INK_MUTED, 1.0 if _hover else 0.75))
 	draw_line(Vector2(0.0, ROW_HEIGHT - 0.5), Vector2(w, ROW_HEIGHT - 0.5),
 		UITokens.DOSSIER_RULE, 1.0)

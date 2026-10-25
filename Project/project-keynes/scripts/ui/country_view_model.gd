@@ -647,18 +647,8 @@ func _development_model(country_handle: int, research: Dictionary) -> Dictionary
 		var signal_id := String((signal_metadata[signal_index] as Dictionary).get("id", ""))
 		if signal_id.begins_with("development.") and not progress_by_signal.has(signal_id):
 			progress_by_signal[signal_id] = {"completed": 1}
-	var era_id := String(era_ids[highest_era])
-	var objectives: Array[Dictionary] = []
-	for definition in definitions:
-		if String(definition.get("era_id", "")) == era_id:
-			objectives.append(definition.duplicate(true))
-	return {
-		"ok": true,
-		"era_id": era_id,
-		"era_index": highest_era,
-		"objectives": objectives,
-		"progress_by_signal": progress_by_signal,
-	}
+	# Development progress is explained only by the selected technology gates.
+	return {"ok": true, "progress_by_signal": progress_by_signal}
 
 
 func _ideology_model(country_handle: int) -> Dictionary:

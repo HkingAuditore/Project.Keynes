@@ -866,13 +866,17 @@ func catalog_view(country_catalog: Dictionary = {},
 		var display := _synergy_display_name(synergy)
 		var effect_text := "、".join(effect_lines) if not effect_lines.is_empty() else "额外国家修正"
 		var route_key := String(synergy.route_tag).strip_edges()
-		var tooltip := "同时装备%s：%s" % ["与".join(member_names), effect_text]
+		var tooltip := "以下理念同时生效（含民族精神）：%s；%s" % [
+			"与".join(member_names), effect_text]
 		if synergy.uses_route_tag():
-			tooltip = "%s体系·%d张：%s" % [route_display_name(route_key),
-				int(synergy.min_count), effect_text]
+			var location := "理念槽中" if int(synergy.route_tag_location_mask) == 2 \
+				else ("民族精神中" if int(synergy.route_tag_location_mask) == 4 \
+				else "生效理念中（含民族精神）")
+			tooltip = "%s至少 %d 张%s体系理念：%s" % [location,
+				int(synergy.min_count), route_display_name(route_key), effect_text]
 		var resonance_school := String(synergy.school_id)
 		if not resonance_school.is_empty():
-			tooltip = "%s共鸣·%d张：%s" % [school_name(resonance_school),
+			tooltip = "%s共鸣·至少 %d 张生效（含民族精神）：%s" % [school_name(resonance_school),
 				int(synergy.min_count), effect_text]
 		synergy_rows.append({
 			"dense_id": i,
@@ -1142,89 +1146,6 @@ func _synergy_display_name(synergy) -> String:
 	return String(synergy.id)
 
 
-const CARD_FACE_MAX_LINES := 6
-## Display-only overrides for rows whose managed program summary describes the
-## raw selector instead of the effect the runtime actually applies. Keys are the
-## generator's bare card keys; `idea.` is stripped before lookup.
-const CARD_FACE_PROGRAM_OVERRIDES := {
-	"experimental_method": {
-		0: "周围 2 格内每有 1 个以知识业为主的地块，该地块的工业产出提高 6%；每个目标地块最多累计 3 个满足条件的地块，最高提高 18%；最多影响 32 个目标地块",
-		1: "周围 2 格内每有 1 个以知识业为主的地块，该地块的工业产出提高 9%；每个目标地块最多累计 3 个满足条件的地块，最高提高 27%；最多影响 32 个目标地块",
-		2: "周围 2 格内每有 1 个以知识业为主的地块，该地块的工业产出提高 9%；每个目标地块最多累计 3 个满足条件的地块，最高提高 27%；最多影响 32 个目标地块",
-	},
-	"telegraph": {
-		0: "周围 2 格内每有 1 个以知识业为主的地块，该地块的知识产出提高 6%；每个目标地块最多累计 3 个满足条件的地块，最高提高 18%；最多影响 32 个目标地块",
-		1: "周围 2 格内每有 1 个以知识业为主的地块，该地块的知识产出提高 9%；每个目标地块最多累计 3 个满足条件的地块，最高提高 27%；最多影响 32 个目标地块",
-		2: "周围 3 格内每有 1 个以知识业为主的地块，该地块的知识产出提高 9%；每个目标地块最多累计 3 个满足条件的地块，最高提高 27%；最多影响 32 个目标地块",
-	},
-	"scholar_office": {
-		0: "以知识业为主的地块：知识产出提高 10%",
-		1: "以知识业为主的地块：知识产出提高 15%",
-		2: "以知识业为主的地块：知识产出提高 15%",
-	},
-	"container_port": {
-		0: "周围 2 格内每有 1 个海岸地块，该地块的工业产出提高 10%；每个目标地块最多累计 3 个满足条件的地块，最高提高 30%；最多影响 32 个目标地块",
-		1: "周围 2 格内每有 1 个海岸地块，该地块的工业产出提高 10%；每个目标地块最多累计 3 个满足条件的地块，最高提高 30%；最多影响 32 个目标地块",
-		2: "周围 2 格内每有 1 个海岸地块，该地块的工业产出提高 10%；每个目标地块最多累计 3 个满足条件的地块，最高提高 30%；最多影响 32 个目标地块",
-	},
-	"salt_monopoly": {
-		0: "以采掘业为主的地块：全国每有 1 个采掘业地块，这些目标地块的采掘产出提高 1%；这些目标地块最多累计 15 个满足条件的地块，最高提高 15%",
-		1: "以采掘业为主的地块：全国每有 1 个采掘业地块，这些目标地块的采掘产出提高 1.5%；这些目标地块最多累计 10 个满足条件的地块，最高提高 15%",
-		2: "以采掘业为主的地块：全国每有 1 个采掘业地块，这些目标地块的采掘产出提高 2%；这些目标地块最多累计 7.5 个满足条件的地块，最高提高 15%",
-	},
-	"semiconductor": {
-		0: "当地至少已建成 1 条完整建筑升级链（同一升级系列的各等级建筑均已建成）的地块：全国每有 1 个这样的地块，这些目标地块的半导体产出提高 2%；这些目标地块最多累计 20 个满足条件的地块，最高提高 40%",
-		1: "当地至少已建成 1 条完整建筑升级链（同一升级系列的各等级建筑均已建成）的地块：全国每有 1 个这样的地块，这些目标地块的半导体产出提高 2.5%；这些目标地块最多累计 16 个满足条件的地块，最高提高 40%",
-		2: "当地至少已建成 1 条完整建筑升级链（同一升级系列的各等级建筑均已建成）的地块：全国每有 1 个这样的地块，这些目标地块的半导体产出提高 3%；这些目标地块最多累计 13.3334 个满足条件的地块，最高提高 40%",
-	},
-	"silver_flow": {
-		0: "主产白银的地块：全国每有 1 个这样的地块，这些目标地块的全部产出提高 3%；这些目标地块最多累计 5 个满足条件的地块，最高提高 15%",
-		1: "主产白银的地块：全国每有 1 个这样的地块，这些目标地块的全部产出提高 3%；这些目标地块最多累计 7 个满足条件的地块，最高提高 21%",
-		2: "主产白银的地块：全国每有 1 个这样的地块，这些目标地块的全部产出提高 3%；这些目标地块最多累计 9 个满足条件的地块，最高提高 27%",
-	},
-	"carbon_market": {
-		0: "当地至少有 3 个经济部门的地块：全部产出提高 6%",
-		1: "当地至少有 3 个经济部门的地块：全部产出提高 9%",
-		2: "当地至少有 3 个经济部门的地块：全部产出提高 9%",
-	},
-	"autonomous_logistics": {
-		0: "当地贸易事件至少达到 24 次的地块，其周围 1 格内的地块：全部产出提高 2%；全国交通路线的影响范围由周围 1 格扩大为周围 2 格",
-		1: "当地贸易事件至少达到 24 次的地块，其周围 1 格内的地块：全部产出提高 2%；全国交通路线的影响范围由周围 1 格扩大为周围 2 格",
-		2: "当地贸易事件至少达到 24 次的地块，其周围 1 格内的地块：全部产出提高 2%；全国交通路线的影响范围由周围 1 格扩大为周围 2 格",
-	},
-	"frontier_garrison": {
-		0: "边境地块：农业产出提高 8%，出生率提高 5%",
-		1: "边境地块：农业产出提高 10%，出生率提高 7%",
-		2: "边境或边远地块：农业产出提高 10%，出生率提高 7%",
-	},
-	"fire_keeping": {
-		0: "冻原地块：出生率提高 5%",
-		1: "冻原地块：出生率提高 8%",
-		2: "冻原地块：出生率提高 8%，农业产出提高 8%",
-	},
-	"manufactory_regulation": {
-		"manufactory_regulation_l1": "制造业产出占当地总产出至少 50% 的地块：当地每有 1 座工业建筑，该地块的工业产出提高 2%，最高提高 16%",
-		"manufactory_regulation_l2": "制造业产出占当地总产出至少 50% 的地块：当地每有 1 座工业建筑，该地块的工业产出提高 3%，最高提高 24%",
-		"manufactory_regulation_l3": "制造业产出占当地总产出至少 50% 的地块：当地每有 1 座工业建筑，该地块的工业产出提高 3%，最高提高 30%",
-	},
-	"marriage_alliance": {
-		0: "当地至少有 2 个家族分支的地块：全部产出提高 5%，奢侈品需求提高 10%。此外，周围 1 格内每有 1 个有至少 1 个家族分支的地块，该目标地块的全部产出提高 1%；该目标地块最多累计 6 个满足条件的地块，最高提高 6%",
-		1: "当地至少有 2 个家族分支的地块：全部产出提高 7%，奢侈品需求提高 10%。此外，周围 1 格内每有 1 个有至少 1 个家族分支的地块，该目标地块的全部产出提高 1%；该目标地块最多累计 6 个满足条件的地块，最高提高 6%",
-		2: "当地至少有 3 个家族分支的地块：全部产出提高 7.35%，奢侈品需求提高 10%。此外，周围 1 格内每有 1 个有至少 1 个家族分支的地块，该目标地块的全部产出提高 1%；该目标地块最多累计 6 个满足条件的地块，最高提高 6%",
-	},
-	"family_office": {
-		0: "全国每有 1 个拥有至少 3 个家族分支的家族，研究成本降低 0.5%；最多按 16 个家族计算，最高降低 8%",
-		1: "全国每有 1 个拥有至少 3 个家族分支的家族，研究成本降低 0.5%；最多按 24 个家族计算，最高降低 12%",
-		2: "全国每有 1 个拥有至少 3 个家族分支的家族，研究成本降低 0.5%；最多按 24 个家族计算，最高降低 12%。另有一组独立效果：拥有至少 3 个家族分支且持有建筑的家族，其名下全部建筑产出提高 6%；最多按 32 个家族计算",
-	},
-	"colonial_plantation": {
-		0: "农业产出占当地总产出至少 50%，且单一货物产出占当地全部产出至少 80% 的地块：农业产出提高 20%",
-		1: "农业产出占当地总产出至少 50%，且单一货物产出占当地全部产出至少 80% 的地块：农业产出提高 28%",
-		2: "农业产出占当地总产出至少 50%，且单一货物产出占当地全部产出至少 80% 的地块：农业产出提高 28%",
-	},
-}
-
-
 func _present_effect_lines(modifier_catalog, card_id: String, level_index: int,
 		effects: Array[Resource], on_enter_effects: Array[Resource] = []) -> PackedStringArray:
 	var persistent_lines := PackedStringArray()
@@ -1261,16 +1182,43 @@ func _present_effect_lines(modifier_catalog, card_id: String, level_index: int,
 		var on_enter := _present_on_enter_effect(effect)
 		if not on_enter.is_empty():
 			_append_clean_line(on_enter_lines, on_enter)
-	# Reserve one-shot lines first: a wide persistent row set must never hide
-	# the only reason a player would advance to this level.
-	var lines := PackedStringArray()
-	var persistent_budget := maxi(0, CARD_FACE_MAX_LINES - on_enter_lines.size())
-	for index in mini(persistent_lines.size(), persistent_budget):
-		lines.append(persistent_lines[index])
+	for line in _present_rule_lines(card_id, level_index):
+		_append_clean_line(persistent_lines, line)
+	# Layout may wrap or scroll these lines; it must never silently drop a price,
+	# a rule rewrite, or a first-entry reward to fit a fixed presentation budget.
+	var lines := persistent_lines.duplicate()
 	for line in on_enter_lines:
 		if not lines.has(line):
 			lines.append(line)
-	return PackedStringArray(lines.slice(0, CARD_FACE_MAX_LINES))
+	return lines
+
+
+func _present_rule_lines(card_id: String, level_index: int) -> PackedStringArray:
+	var lines := PackedStringArray()
+	if card_id.is_empty():
+		return lines
+	for definition in definitions:
+		if definition == null or String(definition.id) != card_id:
+			continue
+		if definition.copy_left_programs:
+			lines.append("复制同一区域内左邻槽位理念当前等级的持续效果（包含其代价）；左邻为空或为传世理念时不复制，不复制首次奖励和条件改写规则")
+		break
+	# Hidden self-synergies carry real player-facing rules. Their generated notes
+	# use the same authoring fields as the executable rewrite; no second card-ID
+	# override table is allowed here. Location mask 2 is an ideology-slot rule.
+	for synergy in synergies:
+		if synergy == null or not synergy.hidden \
+				or synergy.required_ideology_ids.size() != 1 \
+				or String(synergy.required_ideology_ids[0]) != card_id \
+				or int(synergy.minimum_levels[0]) > level_index:
+			continue
+		for parameter in synergy.overrides:
+			if parameter == null or String(parameter.note).strip_edges().is_empty():
+				continue
+			var note := "置于理念槽时：%s" % String(parameter.note)
+			if not lines.has(note):
+				lines.append(note)
+	return lines
 
 
 ## Player-facing summary of the managed program named by `definition_key`.
@@ -1300,20 +1248,8 @@ func _program_summary(definition_key: String) -> String:
 	return ""
 
 
-func _card_face_program_summary(card_id: String, level_index: int,
+func _card_face_program_summary(_card_id: String, _level_index: int,
 		definition_key: String) -> String:
-	# Catalog rows carry the stable `idea.` prefix, while the display-only table
-	# is keyed by the generator's bare card key.
-	var normalized_card_id := card_id.trim_prefix("idea.")
-	var by_level: Variant = CARD_FACE_PROGRAM_OVERRIDES.get(normalized_card_id)
-	if by_level is Dictionary:
-		var program_override: Dictionary = by_level
-		var keyed_override: Variant = program_override.get(definition_key)
-		if keyed_override != null and String(keyed_override).strip_edges() != "":
-			return String(keyed_override)
-		var level_override: Variant = program_override.get(level_index)
-		if level_override != null and String(level_override).strip_edges() != "":
-			return String(level_override)
 	return _program_summary(definition_key)
 
 
@@ -1346,7 +1282,7 @@ func _clean_card_face_text(raw: String) -> String:
 	# same "至少"/"至多" path and no spaces are stranded after symbols.
 	text = text.replace(">=", "≥").replace("<=", "≤")
 	text = _replace_unemployment_text(text)
-	text = text.replace("（最多 32 格）", "")
+	text = text.replace("（最多 32 格）", "（最多 32 个地块）")
 	text = text.replace("最多 32 格", "最多 32 个地块")
 	text = text.replace(" 产出 提高", "产出提高")
 	text = text.replace(" 产出 降低", "产出降低")
@@ -1562,7 +1498,7 @@ func _replace_target_effect_text(text: String) -> String:
 
 
 func _replace_unemployment_text(text: String) -> String:
-	text = text.replace("（最多 32 格）", "")
+	text = text.replace("（最多 32 格）", "（最多 32 个地块）")
 	# Authored rows still spell the sector subject before the selector. Normalize
 	# this compact form independently of the later pillar-cell wording pass.
 	text = text.replace("工业支柱地块（最多 32 格）：", "以工业为主的地块：")

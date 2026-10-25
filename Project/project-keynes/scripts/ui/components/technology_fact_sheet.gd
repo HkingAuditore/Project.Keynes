@@ -3,10 +3,10 @@ class_name TechnologyFactSheet
 
 ## 科技详情的事实表：左列键、右列值，长值自动换行，不再截断成「条件 · 制度 …」。
 
-const KEY_WIDTH := 64.0
-const LINE_GAP := 6.0
-const FONT_SIZE := 13
-const KEY_SIZE := 12
+const KEY_WIDTH := 80.0
+const LINE_GAP := 12.0
+const FONT_SIZE := 18
+const KEY_SIZE := 15
 
 var _facts: Array = []
 var _layout_width := -1.0
@@ -46,7 +46,7 @@ func _relayout() -> void:
 		var value := String((_facts[index] as Dictionary).get("value", ""))
 		var height := font.get_multiline_string_size(value, HORIZONTAL_ALIGNMENT_LEFT,
 			value_width, FONT_SIZE).y
-		_row_heights[index] = maxf(18.0, height)
+		_row_heights[index] = maxf(26.0, height)
 		total += _row_heights[index] + LINE_GAP
 	var target := maxf(0.0, total - LINE_GAP) + 4.0
 	if not is_equal_approx(custom_minimum_size.y, target):
@@ -61,10 +61,10 @@ func _draw() -> void:
 	for index in range(_facts.size()):
 		var fact: Dictionary = _facts[index]
 		var height := float(_row_heights[index]) if index < _row_heights.size() else 18.0
-		_text(Vector2(0.0, y + 14.0), String(fact.get("key", "")), KEY_SIZE,
+		_text(Vector2(0.0, y + 21.0), String(fact.get("key", "")), KEY_SIZE,
 			UITokens.DOSSIER_INK_MUTED)
 		var color: Color = fact.get("accent", UITokens.DOSSIER_INK)
-		draw_multiline_string(font, Vector2(KEY_WIDTH, y + 14.0), String(fact.get("value", "")),
+		draw_multiline_string(font, Vector2(KEY_WIDTH, y + 21.0), String(fact.get("value", "")),
 			HORIZONTAL_ALIGNMENT_LEFT, value_width, FONT_SIZE, -1, color)
 		y += height + LINE_GAP
 		if index < _facts.size() - 1:

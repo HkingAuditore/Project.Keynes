@@ -7,14 +7,14 @@ const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalo
 signal overlay_requested(request: Dictionary)
 signal overlay_cleared()
 
-const COLUMN_WIDTH := 62.0
-const SECONDARY_WIDTH := 66.0
-const BUTTON_SIZE := Vector2(44.0, 44.0)
+const COLUMN_WIDTH := 76.0
+const SECONDARY_WIDTH := 76.0
+const BUTTON_SIZE := Vector2(56.0, 56.0)
 const MAX_RESOURCE_PANEL_HEIGHT := 430.0
 const PANEL_MARGIN_TOTAL := 12.0
 const PANEL_THEME_MARGIN_TOTAL := 16.0
-const PRIMARY_ICON_SIZE := 38
-const SECONDARY_ICON_SIZE := 24
+const PRIMARY_ICON_SIZE := 48
+const SECONDARY_ICON_SIZE := 40
 
 enum Category { NONE, GEOGRAPHY, CLIMATE, RESOURCES, BIOLOGY }
 
@@ -255,7 +255,7 @@ func _add_resource_buttons() -> void:
 			button.icon = profile.icon
 			button.text = ""
 			button.expand_icon = true
-			button.icon_max_width = 24
+			button.icon_max_width = SECONDARY_ICON_SIZE
 		elif icon_key == &"system.unknown" and not _warned_missing_icons.has(profile.id):
 			_warned_missing_icons[profile.id] = true
 			push_warning("MapOverlayToolbar: resource '%s' has no registered icon" % profile.id)

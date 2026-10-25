@@ -1,5 +1,9 @@
 # Project.Keynes System Map
 
+玩家 UI 字体与辨识度：`UITokens -> player_session/menu_atlas/family_workspace Theme`，
+Muyao 承担手写短标题，完整 Swei Regular/Bold 承担正文与读数；统一字阶与位图尺寸见
+[`docs/ui-readability.md`](../docs/ui-readability.md)。
+
 Windows 音频基础：`GameSettings -> GameAudio -> FMOD Studio Bank/事件`。
 `GameAudio` 仅属于表现层，不运行每日模拟、不拥有时代或局势权威状态。
 Studio 源工程位于 `Audio/ProjectKeynes/`；构建、试听及平台导出边界见

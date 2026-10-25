@@ -115,21 +115,22 @@ func _init() -> void:
 	_name = ArtScript.label("", 14, ArtScript.INK, HORIZONTAL_ALIGNMENT_LEFT)
 	_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_name.clip_text = true
+	_name.add_theme_font_override("font", UITokens.dossier_font("sans_strong"))
 	_head.add_child(_name)
 	_level = ArtScript.label("", 10, ArtScript.INK_MUTED, HORIZONTAL_ALIGNMENT_RIGHT)
-	_head.add_child(_level)
+	_row.add_child(_level)
 	_support_chip = ArtScript.label("", 10, ArtScript.INK_MUTED, HORIZONTAL_ALIGNMENT_RIGHT)
 	_support_chip.visible = false
-	_head.add_child(_support_chip)
+	_info.add_child(_support_chip)
 	_badge = ArtScript.label("", 10, ArtScript.VERMILION, HORIZONTAL_ALIGNMENT_RIGHT)
 	_badge.visible = false
 	_head.add_child(_badge)
-	# Actions ride the name line so the effect line can use the full row width.
+	# 操作另占一行，给较大的名称和支持度留出完整阅读宽度。
 	_actions = HBoxContainer.new()
 	_actions.add_theme_constant_override("separation", 4)
 	_actions.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_actions.visible = false
-	_head.add_child(_actions)
+	_info.add_child(_actions)
 	_unequip = _action_button("撤回")
 	_unequip.pressed.connect(func() -> void: command_requested.emit("unequip", occupied_id))
 	_actions.add_child(_unequip)
@@ -137,9 +138,9 @@ func _init() -> void:
 	_promote.pressed.connect(func() -> void: promote_requested.emit(occupied_id))
 	_actions.add_child(_promote)
 	_effects = ArtScript.label("", 11, ArtScript.INK, HORIZONTAL_ALIGNMENT_LEFT)
-	_effects.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_effects.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_effects.clip_text = true
-	_effects.max_lines_visible = 1
+	_effects.max_lines_visible = 3
 	_info.add_child(_effects)
 	_empty_label = ArtScript.label("", 12, ArtScript.INK_MUTED, HORIZONTAL_ALIGNMENT_LEFT)
 	_empty_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -152,8 +153,8 @@ func _init() -> void:
 func _action_button(text: String) -> Button:
 	var button := Button.new()
 	button.text = text
-	button.custom_minimum_size = Vector2(50, 20)
-	button.add_theme_font_size_override("font_size", 10)
+	button.custom_minimum_size = Vector2(36, 36)
+	IconButton.apply(button, &"action.back" if text == "撤回" else &"action.confirm", 24, text)
 	button.focus_mode = Control.FOCUS_NONE
 	return button
 
@@ -168,13 +169,13 @@ func configure(niche_kind: int, is_empty: bool, compact: bool) -> void:
 	theme_type_variation = &"PKPaperNote" if empty else &"PKPaperCard"
 	_apply_surface()
 	_icon.modulate = Color(1, 1, 1, 0.6) if empty else Color.WHITE
-	_name.add_theme_font_size_override("font_size", 13 if compact else 14)
-	var effect_font := 10 if compact else 11
+	_name.add_theme_font_size_override("font_size", 18 if compact else 20)
+	var effect_font := 15 if compact else 17
 	_effects.add_theme_font_size_override("font_size", effect_font)
-	_support_chip.add_theme_font_size_override("font_size", 9 if compact else 10)
-	_level.add_theme_font_size_override("font_size", 9 if compact else 10)
-	_badge.add_theme_font_size_override("font_size", 9 if compact else 10)
-	_icon.custom_minimum_size = Vector2(26, 26) if compact else Vector2(30, 30)
+	_support_chip.add_theme_font_size_override("font_size", 15)
+	_level.add_theme_font_size_override("font_size", 15)
+	_badge.add_theme_font_size_override("font_size", 15)
+	_icon.custom_minimum_size = Vector2(40, 40) if compact else Vector2(48, 48)
 
 
 ## Empty slots are collapsed into one row so a fresh country never stares at a

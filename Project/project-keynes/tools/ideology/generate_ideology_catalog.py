@@ -777,85 +777,85 @@ ERA_NAMES = ["石器时代", "农耕时代", "王国时代", "帝国时代", "�
 CARDS = [
     # X11 fiscal cards. Numbers live in LEVEL_TERMS / LEVEL_ROWS.
     ("treasury_reserve", "太仓", "mobilization", 2, 4, "", "", [],
-     "国库储备越厚，死亡率与建设成本越低；全国贸易容量为这套储备体系让路。", []),
+     "国库现金相对全国人口年收入越充裕，自然死亡率与建设成本越低；代价是国内贸易成交容量下降。", []),
     ("silver_standard", "银本位", "commerce", 2, 5, "", "", [],
-     "以白银保证货币信用，国库储备直接扩张贸易容量；全国家庭消费承担银根成本。", []),
+     "国库储备率越高，国内贸易成交容量越大；代价是家庭消费需求增加。", []),
     ("subsidy_state", "补贴国家", "harmony", 3, 7, "", "", [],
-     "轻税地块得到国家补贴，产出提高；全国建设成本随行政负担上升。", []),
+     "实际净税负较低的地块获得各部门产出加成；代价是全国建设成本增加。", []),
     ("sovereign_fund", "主权基金", "commerce", 3, 10, "", "", [],
      "把国库储备投向长期产业，各部门产出随储备增厚；全国贸易容量为此让路。", []),
 
     # ── 石器时代 ────────────────────────────────────────────────────────────
     # X9a family cards. Numbers live in LEVEL_TERMS / LEVEL_ROWS.
     ("kin_hearth", "亲族火塘", "mobilization", 1, 0, "", "", [],
-     "火塘边的人口与家产聚成宗族，最早的家族秩序由灶火维系。", []),
+     "有家族分支的地块提高出生率，同时增加居住维护消费需求；化育后另为高威望分支所在地增加产出。", []),
     ("forager_band", "采集游群", "agrarian", 1, 0, "", "", [],
-     "按季节轮换营地，林下的坚果、块根与浆果养活了整个部族。",
+     "温带森林与热带雨林的农业产出提高，野生动物资源耗用随之增加。",
      []),  # numbers live in LEVEL_TERMS
     ("hunting_tradition", "狩猎传统", "mobilization", 1, 0, "", "", [],
-     "以围猎、陷阱与分工分配肉食，青壮年在协作中学会统一号令。",
+     "在主产野味且就业职业集中的地块提高野味产出，代价是野生动物资源耗用增加。",
      [(RUSE(WILD_GAME), 1.06)]),
     ("flint_knapping", "打制石器", "industry", 1, 0, "", "", [FLINT],
-     "打击石核取刃，形状统一的石器让各项劳作都更省力。",
+     "主产燧石的地块为周边地块提供产出加成，代价是燧石资源耗用增加。",
      [(RUSE(FLINT), 1.08)]),
     ("fire_keeping", "火种守护", "harmony", 1, 0, "", "", [],
-     "专人看守长明火堆，寒夜的冻害与恐惧同时退去，柴薪消耗也随之上升。",
+     "减轻寒冷造成的生产损失，并提高冻原地块的出生率；代价是林木资源耗用增加。",
      [(COLD, 0.92), (T("tundra", "agriculture"), 1.05), (RUSE(TIMBER), 1.04)]),
     ("riverside_camp", "逐水而居", "harmony", 1, 0, "", "", [FRESHWATER_ACCESS],
-     "营地紧贴河岸与湖湾，取水捕鱼极便，洪水却始终是威胁。",
+     "提高三角洲和泛滥平原的农业产出，化育后另为三角洲周边提供农业加成；代价是生产原料需求增加。",
      []),  # numbers live in LEVEL_TERMS
     ("animist_ritual", "万物有灵", "learning", 1, 0, "", "", [],
-     "把山川鸟兽都视作有意志的存在，解释世界的方式由此开始。",
+     "社会研究与理念点获取提高，代价是科学研究速度下降。",
      [(R_SOC, 1.05), (POINTS, 1.05), (R_SCI, 0.97)]),
     ("gift_exchange", "馈赠交换", "commerce", 1, 0, "", "", [],
-     "以礼物与回礼代替买卖，熟人之间的物流从不间断，礼物本身却要耗料。",
+     "提高国内贸易成交容量与运输速度，代价是生产原料需求增加。",
      [(T_CAP, 1.05), (T_SPEED, 1.04), (INPUT, 1.02)]),
     ("communal_feast", "共食", "mobilization", 1, 0, "", "", [],
-     "猎物与采集物在火塘边均分，人人有份，野兽却被猎得更狠。",
+     "主产野味的地块为周边提供出生率加成，代价是野生动物资源耗用增加。",
      [(RUSE(WILD_GAME), 1.04)]),
     ("shell_midden", "贝丘", "harmony", 1, 0, "", "", [],
      "鱼骨与贝壳堆成营地，沿岸渔获更稳定，鱼群被持续采捕。", []),
     ("pit_dwelling", "穴居聚落", "industry", 1, 0, "", "", [],
-     "掘地为屋、聚族而居，御寒与省工两得，可耕的地面却让了出去。",
+     "降低寒冷生产损失与全国建设成本，代价是丘陵农业产出下降；化育后为聚落增加出生率。",
      []),  # numbers live in LEVEL_TERMS
 
     # ── 农耕时代 ────────────────────────────────────────────────────────────
     ("collective_stewardship", "共同体治理", "agrarian", 1, 1, "economic_order", "", [],
-     "以共同仓储、互助义务和长期土地责任组织生产，灵活交易被牺牲。",
+     "农业产出占比较高的地块为周边提供产出加成，代价是国内贸易成交容量下降。",
      [(T_CAP, 0.97)]),
     ("terrace_farming", "梯田", "agrarian", 1, 1, "", "", [MOUNTAIN],
-     "顺山势砌石成田，坡地上的每一寸土都被用上，工料耗费极大。",
+     "提高丘陵与山地的农业产出，代价是当地采掘产出下降；化育后还可从周边农业地块获得加成。",
      []),  # numbers live in LEVEL_TERMS
     ("paddy_cultivation", "稻作", "agrarian", 1, 1, "", "", [RICE],
-     "筑埂蓄水、育秧移栽，水田的单产远高于旱地，却挤占麦作。",
+     "提高稻米产出及沼泽、三角洲的农业产出，代价是小麦产出下降。",
      [(G("rice_grain"), 1.10), (T("swamp", "agriculture"), 1.08),
       (LF("delta", "agriculture"), 1.08), (G("wheat_grain"), 0.95)]),
     ("three_field_rotation", "三圃轮作", "agrarian", 2, 1, "land_order", "", [WHEAT],
-     "把耕地分为三片轮换休耕，地力得以恢复，牧草地相应让出。",
+     "农业产出占比较高的地块加快肥沃土壤恢复，代价是草地农业产出下降。",
      [(T("grassland", "agriculture"), 0.97)]),
     ("free_exchange", "自由交换", "commerce", 1, 1, "economic_order", "", [],
-     "以契约、流通和分散决策鼓励资源重新配置，家庭消费随之抬头。",
+     "在有多个经济部门产出的地块提高产出，代价是家庭消费需求增加。",
      [(CONSUME, 1.02)]),
     ("scholar_office", "学识官署", "learning", 1, 1, "", "", [],
-     "让记录、测量与专业知识成为公共决策的正式依据，行政耗费上升。",
+     "知识业产出占比较高的地块提高知识产出，代价是生产原料需求增加。",
      [(KNOW, 1.05), (R_SCI, 1.04), (INPUT, 1.02)]),
     ("standardization", "标准化", "industry", 1, 1, "", "", [],
-     "统一度量、规格与零件，生产与建造都更省料，流通节奏却被规矩拖慢。",
+     "已建成完整建筑升级链的地块提高制造业产出，代价是贸易运输速度下降。",
      [(T_SPEED, 0.98)]),
     ("household_weaving", "家内纺织", "industry", 1, 1, "", "", [BAST_FIBER],
-     "农妇在农隙纺麻织布，家庭收支多了一条底线，麻田与粮田开始争地。",
+     "主产韧皮纤维且就业职业多样的地块提高布产出，代价是平原农业产出下降。",
      [(T("plain", "agriculture"), 0.97)]),
     ("coppice_rotation", "轮伐", "harmony", 2, 1, "", "", [TIMBER],
-     "分区伐取、留桩待萌，林木再生率大涨，短期木材产量却要退一步。",
+     "主产木材的地块加快林木资源恢复，同时降低当地木材产出。",
      []),
     ("water_works", "治水营田", "harmony", 1, 1, "", "", [FLOODPLAIN],
-     "修堤疏渠、引水灌田，把洪水变成可用的水利，工役耗费不轻。",
+     "提高泛滥平原与三角洲的农业产出并减轻洪灾生产损失，代价是全国建设成本增加。",
      []),  # numbers live in LEVEL_TERMS
     ("bronze_casting", "青铜铸造", "industry", 1, 1, "", "", [COPPER],
-     "铜矿与锡矿在同一片工坊网络中汇合，青铜工具的成本由此下降。",
+     "主产铜矿石或锡矿石的地块为周边制造业提供加成，代价是铜矿资源耗用增加。",
      [(RUSE(COPPER), 1.06)]),
     ("seasonal_calendar", "寒暑历法", "harmony", 1, 1, "", "", [],
-     "以节气指导农时与役使，寒暑异常的危害大为减轻，思辨的锐气稍减。",
+     "减轻寒冷、热害及旱作作物的旱灾生产损失，代价是理念点获取下降。",
      []),  # numbers live in LEVEL_TERMS
     # §47.5 X16 cards. All STAGED (see CARD_REQUIRES); numbers live in LEVEL_TERMS.
     ("light_levy", "轻徭薄赋", "agrarian", 1, 1, "", "", [],
@@ -867,41 +867,41 @@ CARDS = [
 
     # ── 王国时代 ────────────────────────────────────────────────────────────
     ("ever_normal_granary", "常平仓", "agrarian", 2, 2, "", "", [],
-     "丰年籴入、歉年粜出，以官仓平抑粮价与饥荒，市面流通被官仓压住。",
+     "必需品短缺较重的地块降低主食消费需求，代价是国内贸易成交容量下降。",
      [(T_CAP, 0.97)]),
     ("tax_farming", "包税", "commerce", 2, 2, "", "", [],
      "包税商代征，商户不必直面官府，重税之下仍留一线。", []),
     ("petition_box", "登闻鼓", "harmony", 1, 2, "", "", [],
      "击鼓上闻、直达天听，怨气有处可去，吏员却多了一桩差事。", []),
     ("settle_and_farm", "屯垦", "agrarian", 2, 2, "land_order", KINGDOM, [],
-     "编户屯垦，把荒原与边地一并开成田，投入的农具与口粮同样惊人。",
+     "在人口较少且农业产出占比较高的地块提高农业产出与出生率，代价是生产原料需求增加。",
      [(INPUT, 1.03)]),
     ("open_ports", "市舶开港", "commerce", 1, 2, "", "", [COAST_LF],
-     "设市舶司、开海口通商，货物周转加快，船料把林地消耗推高。",
+     "提高海岸地块的产出，代价是林木资源耗用增加。",
      [(T_SPEED, 1.07), (T_CAP, 1.03), (RUSE(TIMBER), 1.03)]),
     ("guild_charters", "行会特许", "commerce", 2, 2, "labor_order", "", [],
-     "以特许状给予行会定价与学徒制度，品质稳定而新建更贵。",
+     "制造业产出占比较高且就业职业集中的地块提高制造业产出，代价是全国建设成本增加。",
      [(B_COST, 1.03)]),
     ("double_entry", "复式簿记", "commerce", 2, 2, "", KINGDOM, [],
-     "借贷必相等，账目透明让工坊与商号都能精打细算，算计压过了理想。",
+     "降低生产原料需求并提高国内贸易成交容量，代价是理念点获取下降。",
      [(INPUT, 0.95), (T_CAP, 1.03), (POINTS, 0.97)]),
     ("academy_lectures", "书院讲学", "learning", 1, 2, "", "", [],
-     "书院讲会、辞辩争鸣，民间对国家道路的理解更加深入，耗用于是增加。",
+     "提高社会研究、知识产出与理念点获取，代价是生产原料需求增加。",
      [(R_SOC, 1.05), (KNOW, 1.03), (POINTS, 1.06), (INPUT, 1.02)]),
     ("civil_examination", "科举取士", "learning", 2, 2, "", KINGDOM, [],
-     "以考试选拔官员，学风大盛，最好的头脑都去读经，工技反受冷落。",
+     "降低研究成本并提高社会研究速度，代价是平原制造业产出下降；首次化育还可获得一次免费抽取。",
      [(R_COST, 0.95), (R_SOC, 1.03), (T("plain", "manufacturing"), 0.98)]),
     ("iron_smelting", "冶铁", "industry", 2, 2, "", "", [IRON],
-     "就地开炉鼓风，铁矿运距归零让铁料便宜，矿脉也消耗得飞快。",
+     "主产铁矿石的地块为周边制造业提供加成，代价是铁矿资源耗用增加。",
      [(RUSE(IRON), 1.06)]),
     ("postal_horse", "驿传", "mobilization", 2, 2, "", "", [HORSE],
-     "沿官道设驿换马，政令与商旅同时提速，牧草挤掉了口粮田。",
+     "主产马匹的地块为周边提供产出加成，代价是全国小麦产出下降。",
      [(T_SPEED, 1.08), (G("horses"), 1.06), (G("wheat_grain"), 0.96)]),
     ("monsoon_farming", "汛期农法", "agrarian", 3, 2, "", "", [W_MONSOON],
-     "按季风起落安排浸种与排水，水田的洪灾损失被压到最低，旱地却学不来。",
+     "减轻水田作物的洪灾生产损失并提高三角洲农业产出，代价是沙漠农业产出下降。",
      [(PROFILE("paddy_crop", "flood"), 0.88), (LF("delta", "agriculture"), 1.06),      (T("desert", "agriculture"), 0.95)]),
     ("river_transport", "漕运", "commerce", 2, 2, "", "", [RIVER_VALLEY],
-     "沿河设闸、分段转运，粮货逆流而上，沿岸谷地的工坊随之兴旺，河工岁修是一笔长期账。",
+     "提高国内贸易成交容量、运输速度和泛滥平原制造业产出，代价是全国建设成本增加。",
      [(T_SPEED, 1.06), (T_CAP, 1.04), (T("floodplain", "manufacturing"), 1.05),
       (B_COST, 1.04)]),
     ("canal_corvee", "开渠", "mobilization", 2, 2, "", "", [],
@@ -909,107 +909,107 @@ CARDS = [
 
     # ── 帝国时代 ────────────────────────────────────────────────────────────
     ("village_compact", "乡约自治", "agrarian", 3, 3, "", IMPERIAL, [],
-     "以乡约、社仓与家族共治维系基层秩序，民心即是国本，流通却少了弹性。",
+     "在周边人口较多且农业产出占比较高的地块提高农业产出，代价是国内贸易成交容量下降。",
      [(T_CAP, 0.97)]),
     # X9a. The branch-count bonus and luxury price ship here. The adjacent
     # clan-cell stacking clause has no selector for "same tag in R1" yet, so it
     # remains a NEEDS_RUNTIME gap instead of a second ring approximation.
     ("marriage_alliance", "联姻", "harmony", 2, 3, "", "", [],
-     "以婚姻缔结同盟，多个宗族共处一地，奢侈品往来成为维系门第的代价。", []),
+     "在有多个家族分支的地块提高产出并增加奢侈品需求；家族分支所在地还可为周边提供产出加成。", []),
     ("land_reclamation", "垦荒令", "agrarian", 2, 3, "land_order", "", [],
-     "招民开垦河漫与绿洲，田亩既增，水土也开始吃紧。",
+     "在周边人口较少且农业产出占比较高的低人口地块提高农业产出，代价是全国建设成本增加。",
      # §47.7: the only price used to be `FLOOD 1.03`, which is a V3 no-op (that
      # stat is clamped at 1.0), so the card was free. Build cost is charged.
      [(B_COST, 1.02)]),
     ("granary_road", "漕运仓法", "commerce", 2, 3, "", "", [],
-     "以运河与官仓串起粮道，丰歉在千里之间互相调剂，船料取于山林。",
+     "提高国内贸易成交容量与运输速度并降低自然死亡率，代价是林木资源耗用增加。",
      [(T_SPEED, 1.05), (T_CAP, 1.03), (DEATH, 0.98), (RUSE(TIMBER), 1.03)]),
     ("imperial_academy", "太学", "learning", 2, 3, "", "", [],
-     "国家设学养士，注疏与考据成为可积累的公共知识，正统压住异说。",
+     "提高研究机构产出并降低研究成本，代价是理念点获取下降。",
      [(R_INST, 1.05), (R_COST, 0.97), (POINTS, 0.97)]),
     ("public_hygiene", "公共卫生", "mobilization", 2, 3, "", IMPERIAL, [],
-     "清渠、隔离与种痘，把健康变成可以组织的公共事务，宅第造价随之上浮。",
+     "聚落提高出生率并降低居住维护消费需求，代价是全国建设成本增加。",
      [(B_COST, 1.03)]),
     # X13a. Neighbour spillover and drought-end birth are X4 timed clauses;
     # the drought-cell staple-demand relief is expressible as an exact mask.
     ("drought_relief", "赈旱", "mobilization", 2, 3, "", "", [],
-     "赈粮直抵旱区，主食需求压力下降，全国调运余量却被摊薄。", []),
+     "在当日仅发生旱灾的地块降低主食消费需求，代价是国内贸易成交容量下降。", []),
     ("heaven_human", "天人相参", "harmony", 2, 3, "", IMPERIAL, [],
-     "观天察地以定政令，对旱涝与农业规律的理解更加系统，实测精神被压制。",
+     "降水较充足时，农业产出占比较高的地块提高农业产出，代价是科学研究速度下降。",
      [(DROUGHT, 0.95), (FLOOD, 0.95), (R_AGRI, 1.05), (R_SCI, 0.97)]),
     ("mandate_of_heaven", "天命", "harmony", 3, 3, "", "", [],
      "过去一年没有灾害的自有地块越多，调和理念越强；灾害遍及时则以赈济降低死亡。",
      []),  # numbers live in LEVEL_TERMS / LEVEL_ROWS
     ("salt_monopoly", "盐铁专营", "industry", 2, 3, "economic_order", "", [SALT],
-     "国家专营盐池与铁冶，盐利充盈国库，私商与盐脉同受挤压。",
+     "全国采掘业地块越多，目标地块的采掘产出加成越高；代价是盐资源耗用增加、国内贸易成交容量下降。",
      [(RUSE(SALT), 1.08), (T_CAP, 0.97)]),
     ("sericulture", "蚕桑", "industry", 2, 3, "", "", [SILKWORM],
-     "植桑养蚕、缫丝织锦，绢帛成了硬通货，桑田与粮田争地。",
+     "主产布的地块为周边的精致服装产出提供加成，代价是平原农业产出下降。",
      [(T("plain", "agriculture"), 0.97)]),
     ("grand_canal", "大运河", "commerce", 3, 3, "", "", [],
      "运河与河道连成贯通全国的漕渠，渠网内生产兴旺，维护工程耗费巨大。", []),
 
     # ── 探索时代 ────────────────────────────────────────────────────────────
     ("ocean_company", "远洋公司", "commerce", 3, 4, "", GLOBAL, [],
-     "以股份与特许组织远洋贸易，财富涌入也加速了船料与木林的消耗。",
+     "提高海岸贸易活跃地块的产出，代价是林木资源耗用增加。",
      [(T_CAP, 1.07), (T_SPEED, 1.05), (RUSE(TIMBER), 1.04)]),
     ("chartered_route", "特许航路", "commerce", 2, 4, "economic_order", "", [C_MARITIME],
-     "把航线、港口与补给点连成一张特许网络，香料与糖源源而来，盐业受挤。",
+     "全国专精地块的主产货物种类越多，贸易活跃地块的产出加成越高；代价是全国食盐产出下降。",
      [(G("salt"), 0.97)]),
     ("cartography", "舆图测绘", "learning", 2, 4, "", "", [COAST_LF],
-     "以经纬、罗盘与实测修订海图，远航代价下降，测绘本身也是开销。",
+     "提高科学研究与贸易运输速度，代价是全国建设成本增加。",
      [(R_SCI, 1.04), (T_SPEED, 1.05), (B_COST, 1.02)]),
     ("colonial_plantation", "殖民种植园", "agrarian", 2, 4, "land_order", "", [MONSOON_BASIN],
-     "以单一作物大规模开垦，产量惊人，地力与林地迅速被抽干。",
+     "在农业占比高且单一货物高度集中的地块提高农业产出，代价是肥沃土壤耗用增加、恢复减慢。",
      [(T("jungle", "agriculture"), 1.10), (G("cotton_fiber"), 1.06),
       (RUSE(FERTILE), 1.08), (RREG(FERTILE), 0.92)]),
     ("silver_flow", "白银流入", "commerce", 3, 4, "economic_order", "", [SILVER],
-     "海外白银持续涌入，物价与交易规模一起被推高，银矿被疯狂开采。",
+     "全国主产白银的地块越多，这些地块的产出加成越高；代价是银矿资源耗用增加。",
      [(RUSE(SILVER), 1.10)]),
     ("natural_history", "博物志", "learning", 2, 4, "", "", [],
-     "标本、分类与田野记录并行，农业与科学的边界开始相接，纯粹思辨退场。",
+     "提高科学与农业研究速度，代价是知识产出下降。",
      [(R_SCI, 1.05), (R_AGRI, 1.04), (KNOW, 0.98)]),
     ("manufactory_regulation", "工场规程", "industry", 2, 4, "", "", [],
-     "以工序章程约束手工工场，用料被重新安排，周转反被规矩拖慢。",
+     "制造业产出占比较高的地块按当地制造业建筑数量获得加成，代价是贸易运输速度下降。",
      [(G("metal_housewares"), 1.06), (INPUT, 0.97), (T_SPEED, 0.98)]),
     ("maritime_insurance", "海事保险", "commerce", 2, 4, "", "", [C_MARITIME],
-     "分摊海难风险，远洋船队敢走更远的航线，保费最终摊到每一户的消费上。",
+     "海岸地块获得可刷新的限时产出加成，代价是家庭消费需求增加。",
      [(T_CAP, 1.05), (CONSUME, 1.02)]),
     ("merchant_houses", "商号", "commerce", 2, 4, "", "", [],
      "商号以宗族信用经营多处产业，家产铺得越广，投入品的议价越占优势。", []),
 
     ("gentry_patronage", "乡绅", "learning", 1, 4, "", "", [],
-     "乡绅办学、修桥、赈济，乡土文教随之兴旺，佃户却更难自立。", []),
+     "高威望家族分支所在地提高知识产出并降低教育文化需求，代价是佃农、分成佃农与农奴满意度下降。", []),
     # X12. The border clause is expressible with the new metric-75 tag; L3's
     # "also counts as frontier" OR needs a tag-set operator and is deferred.
     ("frontier_garrison", "戍边", "mobilization", 1, 2, "", "", [],
-     "以军屯守边、就地开垦，边境的农事与人口都更稳定，商路却被拖慢。", []),
+     "提高边境地块的农业产出与出生率，代价是贸易运输速度下降；化育后还扩大相关理念的筛选范围。", []),
 
     # ── 启蒙时代 ────────────────────────────────────────────────────────────
     ("experimental_method", "实验之法", "learning", 2, 5, "", ENLIGHT, [],
-     "以可重复的实验代替权威，工程与自然研究同步大进，经世之学受冷落。",
+     "知识业产出占比较高的地块为周边制造业提供加成，代价是社会研究速度下降。",
      [(R_SCI, 1.06), (R_ENG, 1.05), (R_SOC, 0.97)]),
     ("encyclopedia", "百科全书", "learning", 3, 5, "", ENLIGHT, [],
-     "把天下之学编为一部可查可证的书，知识流通不可逆，编纂耗费巨大。",
+     "提高研究机构产出、知识产出与理念点获取，代价是全国建设成本增加。",
      [(R_INST, 1.06), (KNOW, 1.05), (POINTS, 1.08), (B_COST, 1.03)]),
     ("national_education", "国民教育", "mobilization", 2, 5, "", ENLIGHT, [],
-     "义务教育塑造统一语言与技艺，研究与理念同时受益，家计负担上升。",
+     "提高社会与工程研究速度及理念点获取，代价是家庭消费需求增加。",
      [(R_SOC, 1.05), (R_ENG, 1.03), (POINTS, 1.04), (CONSUME, 1.03)]),
     ("agrarian_reform", "农政改革", "agrarian", 2, 5, "land_order", "", [],
-     "清丈田亩、整顿租佃，粮产与地权都更清楚，旧有乡约秩序被削弱。",
+     "在主产粮食且产出集中的地块提高农业产出，代价是社会研究速度下降。",
      [(G("wheat_grain"), 1.06), (T("plain", "agriculture"), 1.06), (R_SOC, 0.97)]),
     ("coal_basin", "煤田开发", "industry", 2, 5, "land_order", "", [COAL],
-     "沿煤层开凿矿井与洗煤厂，能源充裕而矿脉消耗极快。",
+     "提高采掘业产出占比较高地块的采掘产出，代价是煤炭资源耗用增加。",
      [(RUSE(COAL), 1.06)]),
     ("cotton_gin", "轧棉", "industry", 2, 5, "", "", [COTTON],
-     "以机械脱籽代替手工，棉花纤维的可用量大增，棉田挤占了粮田。",
+     "主产棉纤维的地块为周边布产出提供加成，代价是平原农业产出下降。",
      [(T("plain", "agriculture"), 0.97)]),
     ("enclosure", "圈地", "agrarian", 2, 5, "land_order", "", [],
-     "以篱界并小块为牧场，畜产与牧草再生大增，小农与谷物让位。",
+     "主产畜产的地块为周边牧草资源恢复提供加成，代价是平原农业产出与社会研究速度下降。",
      [(T("grassland", "agriculture"), 1.08), (RREG(PASTURE_LAND), 1.10),
       (T("plain", "agriculture"), 0.96), (R_SOC, 0.97)]),
     ("land_value", "地租论", "agrarian", 1, 5, "", "", [],
-     "地价上涨，地主付得起地税，城郊农业也随大邑兴起。", []),
+     "提高地主对税负的承受能力，并增加大邑地块的居住维护消费需求。", []),
     ("family_enterprise", "家族企业", "industry", 2, 5, "", "", [],
      "家族把资本集中到工坊，家产占优的地块工业更盛，外来工坊却难与之争。", []),
     # X13a. The annual-temperature multiplier is available now. The cold-cell
@@ -1017,74 +1017,74 @@ CARDS = [
     ("little_ice_age", "小冰期", "harmony", 3, 4, "", "", [],
      "长年低温把寒地变成新的产粮核心，暑地农业却因积温不足而萎缩。", []),
     ("learned_society", "学会", "learning", 2, 5, "", "", [],
-     "以通信、期刊与同行评议组织学问，研究效率上升，会务与出版耗费不轻。",
+     "提高研究机构产出与理念点获取，代价是生产原料需求增加。",
      [(R_INST, 1.05), (POINTS, 1.05), (INPUT, 1.02)]),
     # 摊丁入亩 (§47.5): the numbers are X16 stat rows, so they live in
     # `LEVEL_TERMS` below. The card is STAGED on X16 + metric68 -- see
     # `CARD_REQUIRES` -- because writing the old `TAX(...)` rates is exactly the
     # V1 defect §47 removed: one free tax click, worth nothing.
     ("land_tax_reform", "摊丁入亩", "agrarian", 2, 5, "land_order", ENLIGHT, [],
-     "把丁银摊入田亩，无地者不再负担人头税，田多的地主税负随之加重。",
+     "提高农业相关职业的税负承受能力，降低地主满意度与社会研究速度；化育后为轻税农业地块增加出生率。",
      []),
     # 消费税制 (§47.5): same story -- X16 tolerance instead of a consumption-tax
     # rate the player can set himself. Staged on X16.
     ("excise", "消费税制", "commerce", 1, 5, "", ENLIGHT, [],
-     "对奢侈品开征消费税，国库得到稳定进项，这些货物的负担落到用得起的人身上。",
+     "提高各职业的税负承受能力，代价是珠宝、华服与酒饮产出下降；化育后还可按国库储备率降低建设成本。",
      []),
 
     # ── 蒸汽时代 ────────────────────────────────────────────────────────────
     ("steam_power", "蒸汽动力", "industry", 2, 6, "", INDUSTRIAL, [COAL],
-     "以蒸汽机取代水力与畜力，能源与制造同时跃进，煤耗随之暴涨。",
+     "提高能源与制造业产出，代价是煤炭资源耗用增加。",
      [(ENER, 1.06), (MANU, 1.03), (RUSE(COAL), 1.05)]),
     ("railway_network", "铁路网", "industry", 2, 6, "", "", [],
-     "钢轨把内陆与港口缝在一起，货运速度从此改换量级，平原沿线的工坊先被点亮，路基造价高昂。",
+     "提高国内贸易成交容量、运输速度和平原制造业产出，代价是全国建设成本增加。",
      [(T_SPEED, 1.08), (T_CAP, 1.04), (T("plain", "manufacturing"), 1.05),
       (B_COST, 1.04)]),
     ("urban_sanitation", "城市卫生", "mobilization", 2, 6, "", "", [],
-     "下水道、自来水与皂厂让拥挤的城市不再自我毒害，管网投资巨大。",
+     "提高人口较多地块的产出，代价是全国建设成本增加。",
      [(B_COST, 1.03)]),
     ("steam_shipping", "汽船航运", "commerce", 2, 6, "", "", [],
-     "定期汽船班轮取代风帆，贸易容量与速度同步上升，锅炉张着嘴烧煤。",
+     "提高国内贸易成交容量与运输速度，代价是煤炭资源耗用增加。",
      [(T_CAP, 1.06), (T_SPEED, 1.04), (RUSE(COAL), 1.04)]),
     ("labour_legislation", "劳动立法", "mobilization", 2, 6, "labor_order", "", [],
-     "限定工时、承认工会，工人生活压力减轻，用工成本上升。",
+     "降低家庭消费需求，同时增加生产原料需求；化育后还提高产业工人与矿工满意度。",
      []),  # numbers live in LEVEL_TERMS
     ("free_trade", "自由贸易", "commerce", 2, 6, "economic_order", "", [],
-     "撤除关税壁垒，贸易容量大涨，本国制造在进口货面前没有遮拦。",
+     "按地块的经济部门多样性调整产出，代价还包括平原制造业产出下降。",
      [(T_CAP, 1.07), (T("plain", "manufacturing"), 0.97)]),
     ("agricultural_chemistry", "农业化学", "agrarian", 2, 6, "", "", [PHOSPHATE],
-     "以磷矿与硝酸盐造肥，旱地单产大涨，矿源与水体同时承压。",
+     "主产肥料的地块为周边农业提供加成，代价是磷矿石资源耗用增加。",
      # §47.7: `FLOOD 1.02` was a V3 no-op; the real price is the phosphate burn.
      [(RUSE(PHOSPHATE), 1.08)]),
     # X13a. Frost aftermath and L3 winter storage are X4 timed event stacks;
     # only the annual-climate clause is expressible in this round.
     ("frost_lore", "霜信", "harmony", 1, 1, "", "", [],
-     "以霜期、土温和冬储经验安排农事，寒地农业更稳，暑地精耕受到拖累。", []),
+     "提高年均温较低地区的农业产出，同时降低年均温较高地区的农业产出。", []),
     ("telegraph", "电报", "learning", 2, 6, "", "", [],
-     "以电线传递消息，商情与政令同时提速，线路维护是一笔常年开销。",
+     "知识业产出占比较高的地块为周边知识产出提供加成，代价是全国建设成本增加。",
      [(T_SPEED, 1.05), (R_SOC, 1.03), (B_COST, 1.02)]),
     ("trade_unions", "工会", "mobilization", 2, 6, "labor_order", "", [],
-     "产业工人占比越高的地块越能从集体谈判中受益，全国生产投入却随工资压力上升。",
+     "工业职业占比达到条件的地块获得制造业加成，全国工人阶层满意度较高时加成更大；代价是生产原料需求增加。",
      [(INPUT, 1.03)]),
 
     # ── 电气时代 ────────────────────────────────────────────────────────────
     ("assembly_line", "流水线", "industry", 3, 7, "", ELECTRIC, [],
-     "以传送带与工序分解组织大规模生产，物料极省而原料吞吐陡增。",
+     "已建成完整建筑升级链的地块提高制造业产出，代价是自然资源耗用增加。",
      [(MANU, 1.07), (INPUT, 0.96), (RES_USE, 1.04)]),
     ("electrification", "电气化", "industry", 3, 7, "", "", [],
-     "以电网覆盖城乡，动力可以远距离输送到每一台机器，发电仍靠烧煤。",
+     "能源业产出占比较高的地块为周边制造业提供加成，代价是煤炭资源耗用增加。",
      [(RUSE(COAL), 1.05)]),
     ("ecological_balance", "生态均衡", "harmony", 3, 7, "", ELECTRIC, [],
-     "以循环与修复约束工业增长，资源与人口得到长期平衡，产能让步。",
+     "自然资源平均剩余比例较高的地块增加产出，货物短缺较重的地块减少产出；化育后取消后者，保留全国制造业产出代价。",
      [(MANU, 0.97)]),
     ("mass_media", "大众传媒", "learning", 2, 7, "", "", [],
-     "报纸、广播与电影把同一套叙事送进每一个家庭，深度学问被稀释。",
+     "提高社会研究速度与理念点获取，代价是知识产出下降。",
      [(R_SOC, 1.05), (POINTS, 1.04), (KNOW, 0.98)]),
     ("chemical_industry", "化学工业", "industry", 2, 7, "", "", [SALT],
-     "以电解与合成改写原料来源，盐卤变成化工之母，副产物污染水土。",
+     "主产食盐的地块为周边肥料产出提供加成，代价是盐资源耗用增加。",
      [(G("industrial_chemicals"), 1.08), (GI("salt"), 0.94), (RUSE(SALT), 1.06)]),
     ("hydroelectric", "水电", "industry", 2, 7, "", "", [RIVER_VALLEY],
-     "筑坝蓄水发电，谷地能源充沛，坝下平原的洪水风险反而上升。",
+     "提高泛滥平原、裂谷和峡谷的能源产出，代价是生产原料需求增加。",
      []),  # numbers live in LEVEL_TERMS
     ("irrigation_grid", "灌溉网", "agrarian", 2, 6, "", "", [],
      "沿河渠铺设灌区，周围农业得到稳定水源，全国渠系维护成本上升。", []),
@@ -1095,13 +1095,13 @@ CARDS = [
      "距知识支柱 2 格内的工业地块获得工业加成，并以已完成科学科技继续增强，研究成本上升。",
      [(R_COST, 1.02)]),
     ("antitrust", "反垄断", "commerce", 2, 7, "economic_order", "", [],
-     "拆分托拉斯、恢复竞争，物价与流通受益，规模效率被牺牲。",
+     "有多个经济部门产出的地块获得加成，高度专精地块受到减产；另有全国制造业产出下降的代价。",
      [(MANU, 0.97)]),
     # X13a. The hot-cell fish/meat/dairy output and national heat-loss cut ship
     # here with the true home-energy cost. L3's hot-market R1 protein demand cut
     # uses the existing tag-source ring selector directly.
     ("refrigeration", "冷链", "commerce", 1, 7, "", "", [],
-     "冷库与冷藏运输把暑地的鱼、肉和乳品从腐坏中救回，家用能源开支随之上升。",
+     "减轻热害生产损失，提高炎热地区的鱼、肉类与乳品产出，代价是当地家用能源需求增加。",
      []),
 
     # X9a. Rich-family prestige growth is a Family-side write; the eminent-clan
@@ -1113,36 +1113,36 @@ CARDS = [
      "重税转福利：劳动者扛得住税，资本方对同样的税率更敏感。", []),
 
         ("department_store", "百货公司", "commerce", 1, 7, "", "", [],
-     "橱窗把货架变成景观，购物变成消遣，家庭开支随之水涨。", []),
+     "人口较多的地块提高产出，同时增加当地家用品与衣着需求。", []),
     ("offshore_drilling", "海上钻井", "industry", 1, 8, "", "", [OIL],
-     "平台立在海面上，原油与天然气从浅海涌出，海岸却被工事占去。",
+     "提高海岸地块的原油与天然气产出，代价是石油资源耗用增加。",
      [(RUSE(OIL), 1.06)]),
     ("supermarket", "超市", "commerce", 1, 8, "", "", [],
-     "一站式自选让采购极省，街坊小店与近郊农事都被挤走。",
+     "聚落为周边农业提供加成，代价是家庭消费需求增加。",
      [(CONSUME, 1.02)]),
 # ── 原子时代 ────────────────────────────────────────────────────────────
     ("nuclear_power", "核电计划", "industry", 3, 8, "", "", [RARE_EARTH],
-     "以核裂变集中供能，能源产出跃升，稀有矿料成为长期负担。",
+     "能源业产出占比较高的地块提高全部产出，代价是稀土资源耗用增加。",
      [(ENER, 1.08), (G("electricity"), 1.06), (RUSE(RARE_EARTH), 1.08)]),
     # X13a. Cell-level heat-loss semantics and L3's hot-penalty immunity are not
     # readable; do not silently broaden them to national heat loss.
     ("air_conditioning", "空调", "industry", 1, 8, "", "", [],
      "暑地大邑靠机械降温维持生产，凉爽换来更高的家用能源需求。", []),
     ("antibiotics", "抗生素", "harmony", 3, 8, "", "", [],
-     "感染不再是绝症，人口的死亡水平被永久压低，医疗投入随之常态化。",
+     "降低人口自然死亡率，代价是生产原料需求增加；另将部分理念原有的大邑筛选条件改为聚落条件。",
      [(DEATH, 0.92), (INPUT, 1.02)]),
     ("motorization", "汽车社会", "commerce", 2, 8, "", "", [],
-     "公路与私家车重构了城市与市场的距离，燃油消耗同步飙升。",
+     "贸易活跃地块为周边提供产出加成，代价是石油资源耗用增加。",
      [(RUSE(OIL), 1.06)]),
     ("green_revolution", "绿色革命", "agrarian", 3, 8, "", "", [GAS],
-     "以合成氮肥、良种与灌溉把旱地单产推上台阶，天然气与磷矿被大量吃掉。",
+     "提高平原农业与肥料产出，代价是天然气和磷矿石资源耗用增加。",
      [(T("plain", "agriculture"), 1.10), (G("fertilizer"), 1.06),
       (RUSE(GAS), 1.08), (RUSE(PHOSPHATE), 1.06)]),
     ("petrochemical", "石化", "industry", 2, 8, "", "", [OIL],
-     "以石油为原料生产塑料与合成纤维，原料端成本归零，油田压力加大。",
+     "主产原油的地块为周边塑料与合成纤维产出提供加成，代价是石油资源耗用增加。",
      [(RUSE(OIL), 1.08)]),
     ("container_port", "集装箱港", "commerce", 2, 8, "", "", [COAST_LF],
-     "标准箱与枢纽港把装卸成本压到接近为零，海岸带工厂直接贴上码头，深水泊位造价极高。",
+     "海岸地块为周边制造业提供加成，代价是全国建设成本增加。",
      [(T_CAP, 1.08), (T_SPEED, 1.05), (T("coast", "manufacturing"), 1.05),
       (B_COST, 1.03)]),
 
@@ -1150,66 +1150,64 @@ CARDS = [
      "指定地块免征营业税，以一块有税基的地换取工业与贸易的聚集。", []),
 
         ("welfare_state", "福利国家", "mobilization", 3, 8, "", "", [],
-     "以社会保障网兜住短缺与失业，税负与行政随之沉重。",
+     "在必需品短缺很少的聚落提高产出，代价是生产原料需求增加。",
      [(INPUT, 1.03)]),
     ("suburbanization", "郊区化", "commerce", 1, 8, "", "", [],
-     "大邑向外摊开，环城地带住得宽，市中心却空了。", []),
+     "人口较多的地块为周边提供出生率加成，同时降低这些来源地块自身的出生率。", []),
     ("family_office", "家族办公室", "commerce", 2, 8, "", "", [],
-     "把家族事务交给常设办公室，跨地分支的经验被折算成更便宜的研究，"
-     "全国贸易运力却为其让路。", []),
+     "拥有多个分支的家族越多，全国研究成本越低；化育后另提高目标家族名下建筑产出，代价是国内贸易成交容量下降。", []),
     ("gig_economy", "零工经济", "commerce", 1, 9, "", "", [],
-     "按单结算的零工把闲置劳动力接入流通，稳定收入由此消失。", []),
+     "失业率达到条件的地块按失业率获得产出加成，同时降低当地出生率。", []),
 # ── 信息时代 ────────────────────────────────────────────────────────────
     ("computing_networks", "计算网络", "learning", 3, 9, "", "", [],
-     "算力与网络成为公共基础设施，研究周期被整体压缩，机房耗电可观。",
+     "知识业产出占比较高的地块提高知识产出，代价是全国建设成本增加。",
      [(B_COST, 1.02)]),
     ("semiconductor", "半导体", "industry", 3, 9, "", "", [SILICA],
-     "以高纯硅与精密光刻重塑制造业，硅砂被纯化成稀缺料。",
+     "全国已建成完整建筑升级链的地块越多，这些地块的半导体产出加成越高；代价是硅砂资源耗用增加。",
      [(RUSE(SILICA), 1.08)]),
     ("precision_agriculture", "精准农业", "agrarian", 2, 9, "", "", [],
-     "遥感、滴灌与变量施肥让每一块田都按需供给，前期设备投入不小。",
+     "提高平原与高原农业产出，代价是生产原料需求增加。",
      [(T("plain", "agriculture"), 1.08), (LF("plateau", "agriculture"), 1.06),
       (INPUT, 1.03)]),
     ("financialization", "金融化", "commerce", 3, 9, "economic_order", "", [],
-     "以资本运作而非生产获取利润，融资成本极低，实业根基被抽薄。",
+     "提高贸易活跃地块的产出，代价是全国制造业产出下降。",
      [(T_CAP, 1.06), (R_COST, 0.96), (MANU, 0.96)]),
     ("automation_line", "自动化产线", "industry", 3, 9, "", "", [],
-     "以程序控制代替人手，单位产出的物料大幅下降，设备投资却高得惊人。",
+     "制造业产出占比较高的地块按失业率获得制造业加成，代价是全国建设成本增加。",
      [(INPUT, 0.94), (MANU, 1.06), (B_COST, 1.04)]),
     ("social_media", "社交媒体", "learning", 2, 9, "", "", [],
-     "平台把表达与连接压进同一套推荐系统，人口增长带来的理念点被放大，"
-     "民意低落时却更难形成共识。", []),
+     "放大人口增长带来的理念点，化育后另放大贸易理念点；代价是民意加成下限下降。", []),
 
         ("arcology", "生态城", "harmony", 2, 10, "", "", [],
-     "立体城把居住、生产与循环挤进一栋楼，造价与资源投入都极高。",
+     "在人口较多且自然资源平均剩余比例较高的地块提高产出与资源恢复速度，代价是全国建设成本增加。",
      [(B_COST, 1.04)]),
     ("basic_income", "基本收入", "mobilization", 2, 10, "", "", [],
-     "无条件发给每个人一笔钱，短缺消失，财政负担随人口增长。",
+     "失业率达到条件的地块按失业率获得知识产出加成，代价是生产原料需求增加。",
      [(INPUT, 1.03)]),
     ("circular_economy", "循环经济", "harmony", 2, 10, "", "", [],
-     "废料重新进入生产循环，资源消耗大降，工业产出相应让路。",
+     "已建成完整建筑升级链的地块加快自然资源恢复，代价是全国制造业产出下降。",
      [(MANU, 0.97)]),
 # ── 智能时代 ────────────────────────────────────────────────────────────
     ("algorithmic_governance", "算法治理", "learning", 3, 10, "", "", [],
-     "以模型分配资源与名额，效率极高，解释权集中，基础科学被挤压。",
+     "提高社会研究速度与理念点获取，并复制左邻槽位理念的持续效果；代价是科学研究速度下降。",
      [(R_SOC, 1.06), (POINTS, 1.05), (R_SCI, 0.97)]),
     ("autonomous_logistics", "无人运输", "commerce", 3, 10, "", "", [],
-     "无人车与自动调度把运力从人力约束中解放出来，车队与系统投资极高。",
+     "贸易活跃地块为周边提供产出加成，并扩大部分通衢理念效果的范围；代价是全国建设成本增加。",
      [(B_COST, 1.03)]),
     ("carbon_market", "碳市场", "harmony", 3, 10, "", "", [],
-     "给排放定价，资源耗用被系统性压低，高耗能制造随之收缩。",
+     "有多个经济部门产出的地块获得产出加成，代价是全国制造业产出下降。",
      [(RES_USE, 0.92), (MANU, 0.96)]),
     ("gene_editing", "基因编辑", "agrarian", 3, 10, "", "", [MAIZE],
-     "定向改造作物性状，主粮单产再上台阶，伦理争议削弱社会共识。",
+     "在主产粮食且产出集中的地块提高农业产出，代价是社会研究速度下降。",
      [(T("plain", "agriculture"), 1.10), (DEATH, 0.98), (R_SOC, 0.97)]),
     ("vertical_farm", "垂直农场", "agrarian", 3, 10, "", "", [],
-     "把农田摞进城市：大邑地块从此刻满足农业支柱条件，能源需求随之上抬。",
+     "扩大部分理念的农业地块筛选范围，并提高目标地块农业产出，同时降低其全部产出。",
      []),
     ("space_mining", "太空采矿", "industry", 3, 10, "", "", [RARE_EARTH],
-     "以轨道与机器人开采把矿石条件打通：任一矿石地块都满足其它矿种条件，稀土开采被推高。",
+     "将部分理念的铁矿石主产条件扩大到多种金属矿石，并提高目标地块采掘产出；代价是稀土资源耗用增加。",
      [(RUSE(RARE_EARTH), 1.08)]),
     ("desalination", "海水淡化", "harmony", 3, 10, "", "", [COAST_LF],
-     "以反渗透取得淡水，海岸带可以耕种，耗电与浓盐水排放是代价。",
+     "提高海岸农业产出与淡水鱼群恢复速度，并扩大部分理念的地块筛选范围；代价是生产原料需求增加。",
      [(T("coast", "agriculture"), 1.06), (RREG(FRESHWATER_FISH), 1.06), (INPUT, 1.03)]),
 ]
 
@@ -1325,11 +1323,11 @@ PROFILE_COLUMNS = {
     # Per-cell fan-out is meant to be aggregated by cell, not by one instance per
     # (card, cell) pair, so this budget must not be used to size that product.
     "max_effect_instances": 2048,
-    # About 0.0005 point per new resident, 0.00625 per new installed building,
-    # 0.00005 per money unit of trade base value. Zero cap disables clipping.
-    "point_population_weight_q16": 33,
-    "point_building_weight_q16": 410,
-    "point_trade_weight_q16": 3,
+    # About 0.0403 point per new resident, 0.5005 per new installed building,
+    # 0.004 per money unit of trade base value. Zero cap disables clipping.
+    "point_population_weight_q16": 2640,
+    "point_building_weight_q16": 32800,
+    "point_trade_weight_q16": 240,
     "point_gain_cap_q16": 0,
 }
 CAPACITY_UNLOCKS = [  # tech, +ideology, +spirit
@@ -1620,6 +1618,233 @@ def prog(key: str, summary: str, **kwargs) -> Prog:
     return Prog(key=key, summary=summary, **kwargs)
 
 
+# Production effect text is derived from the same selectors, conditions and
+# commands that are emitted below. Handwritten summaries remain author notes and
+# diagnostic-fixture text; they must not invent a condition, omit a price, or
+# turn a source-count ceiling into a guaranteed bonus on a player's card.
+def _text_number(value: float) -> str:
+    return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
+def _profile_text(directory: pathlib.Path, stable_id: str) -> str:
+    text = (directory / f"{stable_id}.tres").read_text(encoding="utf-8")
+    match = re.search(r'^display_name = "([^"]+)"', text, re.M)
+    if not match:
+        raise SystemExit(f"player text: missing display name for {stable_id}")
+    return match[1]
+
+
+def _tag_constant(name: str) -> int:
+    text = TARGET_TAG_DICTIONARY_PATH.read_text(encoding="utf-8")
+    match = re.search(rf"const {name}\s*:=\s*(\d+)", text)
+    if not match:
+        raise SystemExit(f"player text: missing tag constant {name}")
+    return int(match[1])
+
+
+def _tag_text(tag: str) -> str:
+    if "|" in tag:
+        return "（" + "或".join(_tag_text(t) for t in tag.split("|")) + "）"
+    if tag.startswith("cell.produces."):
+        return "主产" + _profile_text(GOODS_DIR, tag.removeprefix("cell.produces."))
+    sectors = {"agriculture": "农业", "extractive": "采掘业",
+               "manufacturing": "制造业", "energy": "能源业", "knowledge": "知识业"}
+    if tag.startswith("cell.sector."):
+        return sectors[tag.removeprefix("cell.sector.")] + "产出占当地总产出至少 50%"
+    labels = {
+        "cell.frontier": f"人口少于 {_tag_constant('FRONTIER_POPULATION')} 人",
+        "cell.settlement": f"人口至少 {_tag_constant('SETTLEMENT_POPULATION')} 人",
+        "cell.metropolis": f"人口至少 {_tag_constant('METROPOLIS_POPULATION')} 人",
+        "cell.market": f"当地累计贸易事件至少 {_tag_constant('MARKET_TRADE_EVENTS')} 次",
+        "cell.clan": "当地至少有 1 个家族分支",
+        "cell.eminent_clan": "当地至少有 1 个威望不低于 50% 的家族分支",
+        "cell.chained": "当地至少已建成 1 条完整建筑升级链（同一升级系列的各等级建筑均已建成）",
+        "cell.diversified": "当地至少有 3 个经济部门有产出",
+        "cell.unemployed": "失业率至少 10%",
+        "cell.shortage": "必需品短缺率至少 20%",
+        # Metric 7 is the maximum market-good shortage, not depleted mineral
+        # reserves. Metric 14 is the mean remaining/original resource stock.
+        "cell.depleted": "当地货物最高短缺率至少 30%",
+        "cell.abundant": "自然资源平均剩余比例至少 80%",
+        "cell.specialized": "单一货物产出占当地全部产出至少 60%",
+        "cell.specialized_high": "单一货物产出占当地全部产出至少 80%",
+        "cell.grain": "主产小麦、稻米、玉米、马铃薯或谷物",
+        "cell.rain": "当日有降雨",
+        "cell.climate.cold": "年均温不高于 5℃",
+        "cell.climate.hot": "年均温不低于 22℃",
+        "cell.terrain.coast": "海岸",
+        "cell.landform.coast": "海岸地貌",
+        "cell.terrain.floodplain": "泛滥平原",
+        "cell.landform.delta": "三角洲",
+        "cell.terrain.hill": "丘陵",
+        "cell.terrain.mountain": "山地",
+        "cell.terrain.tundra": "冻原",
+        "cell.border": "边境",
+    }
+    if tag not in labels:
+        raise SystemExit(f"player text: unreviewed target tag {tag}")
+    return labels[tag]
+
+
+def _condition_text(condition: Cond) -> str:
+    key = metric_keys()[condition.arg0]
+    value = condition.value_q16 / Q16
+    number = _text_number(value)
+    comparison = {COND_METRIC_GTE: "至少", COND_METRIC_LTE: "不超过",
+                  COND_METRIC_EQ: "等于"}[condition.op]
+    if key == "cell.hazard_today_mask" and condition.op == COND_METRIC_EQ and value == 2:
+        return "当日发生旱灾且没有其他灾害"
+    if key == "country.worker_class_satisfaction_q16" and condition.value_q16 == 13106:
+        return "全国工人阶层满意度低于 20%"
+    ratios = {
+        "cell.dominant_profession_share_q16": "单一职业占当地就业人口",
+        "cell.profession_share_industrial_q16": "工业职业占当地劳动力",
+        "country.worker_class_satisfaction_q16": "全国工人阶层满意度",
+        "cell.essentials_shortage_q16": "必需品短缺率",
+        "cell.net_tax_burden_q16": "实际净纳税额占税前收入",
+    }
+    if key in ratios:
+        return ratios[key] + comparison + f" {_text_number(value * 100)}%"
+    counts = {
+        "cell.family_branch_count": ("当地家族分支", "个"),
+        "cell.profession_count": ("当地就业人口的职业", "种"),
+        "cell.distinct_sector_count": ("当地有产出的经济部门", "个"),
+        "cell.neighbor_agriculture_count": ("周围 1 格内农业产出占比至少 50% 的地块", "个"),
+        "cell.neighbor_population_q16": ("周围 1 格内人口合计", "人"),
+    }
+    if key in counts:
+        label, unit = counts[key]
+        return f"{label}{comparison} {number} {unit}"
+    if key == "cell.precipitation_q16":
+        return f"降水强度{comparison} {_text_number(value * 100)}%"
+    raise SystemExit(f"player text: unreviewed condition {key}")
+
+
+def _command_text_label(command: Cmd) -> str:
+    key = command.modifier.removesuffix(".cut").removesuffix(".gain")
+    if key.startswith("economy.city.need."):
+        need = key.split(".")[3]
+        if need == "housing":
+            return "居住维护消费需求"
+        return _profile_text(NEEDS_DIR, need) + "需求"
+    if key.startswith("economy.city.good."):
+        return _profile_text(GOODS_DIR, key.split(".")[3]) + "产出"
+    labels = {
+        "economy.city.output_factor": "全部产出",
+        "economy.city.birth_factor": "出生率",
+        "economy.city.building.agriculture_output_factor": "农业产出",
+        "economy.city.building.extractive_output_factor": "采掘产出",
+        "economy.city.building.manufacturing_output_factor": "制造业产出",
+        "economy.city.building.energy_output_factor": "能源产出",
+        "economy.city.building.knowledge_output_factor": "知识产出",
+        "economy.city.resource.regen_factor": "自然资源恢复速度",
+        "economy.city.resource.timber.regen_factor": "林木资源恢复速度",
+        "economy.city.resource.pasture.regen_factor": "牧草资源恢复速度",
+        "economy.city.resource.fertile_soil.regen_factor": "肥沃土壤恢复速度",
+        "ideology.country.construction.cost_factor": "全国建设成本",
+        "ideology.country.population.death_factor": "人口自然死亡率",
+        "ideology.country.research.cost_factor": "研究成本",
+        "ideology.country.trade.capacity_factor": "每次贸易可成交的货物量",
+        "ideology.country.ideology.point_gain_factor": "理念点获取",
+    }
+    if key not in labels:
+        raise SystemExit(f"player text: unreviewed command {key}")
+    return labels[key]
+
+
+def player_program_summary(item: Prog) -> str:
+    """Compile production text from executable data; fail on an unknown shape."""
+    if item in DIAGNOSTIC_PROGRAMS:
+        return item.summary
+    if item.stacks != 1 or item.max_stacks != 1 or item.lifecycle != 0 or any(
+            command.magnitude_q16 is not None or command.stacks != 1 or
+            command.duration_days != -1 for command in item.cmds):
+        raise SystemExit(f"player text: unreviewed lifecycle/magnitude {item.key}")
+    predicates = [_tag_text(tag) for tag in item.tags]
+    predicates += [_condition_text(condition) for condition in item.conds]
+    subject = "，且".join(predicates) + "的地块" if predicates else "本国地块"
+    effects = []
+    for command in item.cmds:
+        label = _command_text_label(command)
+        amount = command.value
+        if item.selector == SEL_TAG_SOURCE_COUNT:
+            amount = float(item.per_source)
+        direction = "降低" if amount < 0 or command.modifier.endswith(".cut") else "提高"
+        effects.append(f"{label}{direction} {_text_number(abs(amount) * 100)}%")
+    if item.ramp is not None:
+        ramp = item.ramp
+        rate = ramp.per * 100
+        bases = {
+            "cell.unemployment_q16": "失业率每提高 1 个百分点",
+            "cell.manufacturing_building_count": "当地每有 1 座制造业建筑",
+            "country.chained_cell_count": "全国每有 1 个已建成完整建筑升级链的地块",
+            "country.extractive_cell_count": "全国每有 1 个采掘业产出占比至少 50% 的地块",
+            "country.silver_cell_count": "全国每有 1 个主产白银的地块",
+            "country.distinct_specialized_good_count": "全国专精地块（单一货物产出占比至少 60%）的主产货物每多 1 种（同种货物只计一次）",
+            "country.families_with_at_least_3_branches": "全国每有 1 个拥有至少 3 个分支的家族",
+            "country.treasury_reserve_ratio_pct": "国库储备率（国库现金 ÷ 全国人口一年收入总额）每提高 1 个百分点",
+        }
+        if ramp.metric not in bases:
+            raise SystemExit(f"player text: unreviewed ramp {ramp.metric}")
+        if ramp.metric == "cell.unemployment_q16":
+            rate = ramp.per
+        label = _command_text_label(item.cmds[0])
+        direction = "降低" if item.cmds[0].modifier.endswith(".cut") else "提高"
+        effects = [f"{bases[ramp.metric]}，{label}{direction} {_text_number(rate)}%"
+                   f"，最高{direction} {_text_number(ramp.per * ramp.cap * 100)}%"]
+    effect = "，".join(effects)
+    if item.target_domain == DOMAIN_COUNTRY:
+        return effect
+    if item.target_domain == DOMAIN_FAMILY and item.selector == SEL_FAMILY_OWNED:
+        return (f"拥有至少 {item.selector_param1} 个分支且持有建筑的家族："
+                f"其名下建筑的{effect}；最多影响 {item.selector_cap} 个家族")
+    if item.target_domain != DOMAIN_CELL:
+        raise SystemExit(f"player text: unreviewed domain {item.key}")
+    if item.selector == SEL_TAG_SOURCE_COUNT:
+        ceiling = float(item.per_source) * item.cap * 100
+        label = _command_text_label(item.cmds[0])
+        result = (f"周围 {item.radius} 格内每有 1 个本国{subject}，该目标地块的{effect}；"
+                  f"每个目标地块最多计入 {item.cap} 个来源地块，"
+                  f"{label}最高提高 {_text_number(ceiling)}%")
+    elif item.selector in (SEL_TAG_SOURCE_R1, SEL_TAG_SOURCE_R2):
+        radius = 1 if item.selector == SEL_TAG_SOURCE_R1 else 2
+        result = (f"本国{subject}周围 {radius} 格内的地块：{effect}（多个来源不叠加）；"
+                  f"最多计入 {item.selector_cap} 个来源地块")
+    elif item.selector == SEL_OWN_TERRITORY:
+        result = f"本国{subject}：{effect}"
+    else:
+        raise SystemExit(f"player text: unreviewed selector {item.key}")
+    result += f"；最多影响 {item.selector_cap} 个目标地块"
+    if item.duration_days > 0:
+        result += f"；持续 {item.duration_days} 天" + ("，可刷新" if item.stack_policy == STACK_REFRESH else "")
+    return result
+
+
+def player_rewrite_summary(row: Rewrite) -> str:
+    if row.field == REWRITE_TAG and row.match_tag:
+        return (f"本国理念的地块效果中，原仅以「{_tag_text(row.match_tag)}」筛选的条件，"
+                f"改为「{_tag_text(row.tag)}」；地块本身的属性不变")
+    if row.field == REWRITE_SELECTOR_KIND and row.match_route:
+        radius = 2 if row.value == SEL_TAG_SOURCE_R2 else 1
+        return (f"本国{ROUTE_BONDS[row.match_route][0]}体系理念中，"
+                f"原按来源地块周围 {3 - radius} 格生效的不叠加邻域效果，"
+                f"改为周围 {radius} 格；按来源数量累计的效果不变")
+    raise SystemExit("player text: unreviewed rewrite rule")
+
+
+def validate_player_text() -> None:
+    # Run BEFORE any generated file is replaced. Unsupported new program
+    # shapes must fail generation instead of shipping an invented/fallback line.
+    for item in all_card_programs():
+        player_program_summary(item)
+    published = {card[0] for card in cards_to_emit()}
+    for key, levels in LEVEL_REWRITES.items():
+        if key in published:
+            for rows in levels:
+                for row in rows:
+                    player_rewrite_summary(row)
+
+
 ## X5 rewrite fields. Kept in one place so the generator lint and the emitter
 ## cannot disagree about which field a row targets.
 REWRITE_SCALE = 4
@@ -1841,17 +2066,17 @@ CARD_META["mandate_of_heaven"] = Meta(route="season")
 CARD_REQUIRES["mandate_of_heaven"] = ("X13a", "X5")
 LEVEL_ROWS["public_hygiene"] = [
     [prog("public_hygiene_l1",
-          "聚落地块（最多 32 格）：出生率 +5%，住房需求 -8%",
+          "聚落地块（最多 32 格）：出生率 +5%，居住维护消费需求 -8%",
           tags=("cell.settlement",),
           cmds=(mod(city_stat_key("birth_factor"), cell(5)),
                 mod(city_stat_key("need.housing.consumption_factor"), cell(-8))))],
     [prog("public_hygiene_l2",
-          "聚落地块（最多 32 格）：出生率 +8%，住房需求 -10%",
+          "聚落地块（最多 32 格）：出生率 +8%，居住维护消费需求 -10%",
           tags=("cell.settlement",),
           cmds=(mod(city_stat_key("birth_factor"), cell(8)),
                 mod(city_stat_key("need.housing.consumption_factor"), cell(-10))))],
     [prog("public_hygiene_l3",
-          "聚落地块（最多 32 格）：出生率 +9%，住房需求 -11%",
+          "聚落地块（最多 32 格）：出生率 +9%，居住维护消费需求 -11%",
           tags=("cell.settlement",),
           cmds=(mod(city_stat_key("birth_factor"), cell(9)),
                 mod(city_stat_key("need.housing.consumption_factor"), cell(-11))))],
@@ -2080,17 +2305,17 @@ CARD_REQUIRES["merchant_houses"] = ("X9a",)
 CARD_REQUIRES["family_enterprise"] = ("X9a",)
 LEVEL_ROWS["kin_hearth"] = [
     [prog("kin_hearth_l1",
-          "宗族地块（最多 32 格）：出生率 +6%，住房需求 +5%",
+          "宗族地块（最多 32 格）：出生率 +6%，居住维护消费需求 +5%",
           tags=("cell.clan",),
           cmds=(mod(city_stat_key("birth_factor"), cell(6)),
                 mod(city_stat_key("need.housing.consumption_factor"), cell(5))))],
     [prog("kin_hearth_l2",
-          "宗族地块（最多 32 格）：出生率 +9%，住房需求 +5%",
+          "宗族地块（最多 32 格）：出生率 +9%，居住维护消费需求 +5%",
           tags=("cell.clan",),
           cmds=(mod(city_stat_key("birth_factor"), cell(9)),
                 mod(city_stat_key("need.housing.consumption_factor"), cell(5))))],
     [prog("kin_hearth_l3",
-          "宗族地块（最多 32 格）：出生率 +9%，住房需求 +5%",
+          "宗族地块（最多 32 格）：出生率 +9%，居住维护消费需求 +5%",
           tags=("cell.clan",),
           cmds=(mod(city_stat_key("birth_factor"), cell(9)),
                 mod(city_stat_key("need.housing.consumption_factor"), cell(5)))),
@@ -3337,15 +3562,15 @@ LEVEL_ON_ENTER_EFFECTS: dict[str, list[list[dict]]] = {
 
 LEVEL_ROWS["land_value"] = [
     [prog("land_value_l1",
-          "大邑地块（最多 32 格）：住房需求 +5%（地价推高居住成本）",
+          "大邑地块（最多 32 格）：居住维护消费需求 +5%",
           tags=("cell.metropolis",),
           cmds=(mod(city_stat_key("need.housing.consumption_factor"), cell(5)),))],
     [prog("land_value_l2",
-          "大邑地块（最多 32 格）：住房需求 +5%",
+          "大邑地块（最多 32 格）：居住维护消费需求 +5%",
           tags=("cell.metropolis",),
           cmds=(mod(city_stat_key("need.housing.consumption_factor"), cell(5)),))],
     [prog("land_value_l3",
-          "大邑地块（最多 32 格）：住房需求 +5%",
+          "大邑地块（最多 32 格）：居住维护消费需求 +5%",
           tags=("cell.metropolis",),
           cmds=(mod(city_stat_key("need.housing.consumption_factor"), cell(5)),))],
 ]
@@ -4907,7 +5132,7 @@ def _program_blocks(item: Prog, blocks: list[str]) -> str:
         f'[sub_resource type="Resource" id="{base}"]\n'
         'script = ExtResource("2_effect")\n'
         f'definition_key = &"{item.key}"\n'
-        f'summary = "{item.summary.replace(chr(34), chr(92) + chr(34))}"\n'
+        f'summary = "{player_program_summary(item).replace(chr(34), chr(92) + chr(34))}"\n'
         f"target_domain = {item.target_domain}\n"
         "operation = 1\n"
         f"lifecycle = {item.lifecycle}\n"
@@ -5711,7 +5936,7 @@ def build_ideology_catalog() -> str:
                     f"match_kind = {row.match_kind()}\n"
                     f'match_value = &"{row.match_value()}"\n'
                     + (f'tag_value = &"{row.tag}"\n' if row.tag else "") +
-                    f'note = "X5 {key} L{level_index + 1}"\n')
+                    f'note = "{player_rewrite_summary(row)}"\n')
                 override_ids.append(override_id)
             synergy_id = f"SynergyRewrite{base}L{level_index + 1}"
             synergy_ids.append(synergy_id)
@@ -5819,14 +6044,14 @@ def _city_stat_label(suffix: str) -> str:
     """Human label for a cell stat, used only by the definition's display name."""
     sectors = {"agriculture": "农业", "extractive": "采掘", "manufacturing": "制造",
                "energy": "能源", "knowledge": "知识"}
-    needs = {"staple_food": "主食", "housing": "住房", "clothing": "衣着",
+    needs = {"staple_food": "主食", "housing": "居住维护", "clothing": "衣着",
              "household_goods": "家用品", "protein": "蛋白质",
              "home_energy": "家用能源"}
     resources = {"timber": "木材", "pasture": "牧草", "fertile_soil": "肥沃土壤",
                  "wild_game": "野味", "freshwater_fish": "淡水鱼"}
-    goods = {"lumber": "原木", "crude_oil": "原油", "natural_gas": "天然气",
+    goods = {"lumber": "木材", "crude_oil": "原油", "natural_gas": "天然气",
              "rice_grain": "稻米", "grain": "谷物", "cloth": "布",
-             "fine_clothing": "精致服装", "fertilizer": "化肥", "plastics": "塑料",
+             "fine_clothing": "华服", "fertilizer": "肥料", "plastics": "塑料",
              "game_meat": "野味", "fish": "鱼", "meat": "肉类",
              "dairy_products": "乳品"}
     if suffix == "output_factor":
@@ -6398,7 +6623,7 @@ STAT_WORD = {
     "need.staple_food.consumption_factor": "主食需求",
     "need.protein.consumption_factor": "蛋白质需求",
     "need.home_energy.consumption_factor": "家用能源需求",
-    "need.housing.consumption_factor": "住房需求",
+    "need.housing.consumption_factor": "居住维护消费需求",
     "need.clothing.consumption_factor": "服装",
     "need.household_goods.consumption_factor": "家用品",
     "resource.regen_factor": "资源再生",
@@ -6923,7 +7148,7 @@ def validate_cards() -> None:
         #
         # "A price" is not always `value < 0`: on a cost-direction stat (housing /
         # consumption demand, resource burn, hazard loss) the price is a POSITIVE
-        # value. `land_value`'s "这些地块住房需求 +5%" is exactly that, so the test
+        # value. `land_value`'s "这些地块居住维护消费需求 +5%" is exactly that, so the test
         # goes through `_is_downside` rather than comparing the raw sign.
         program_rows = LEVEL_ROWS.get(key, ())
         program_has_cut = any(
@@ -7898,6 +8123,7 @@ def main() -> None:
     # leaves no orphan Effect or Modifier definition behind either.
     _PUBLISHED = published_cards()
     validate_published_synergies()
+    validate_player_text()
     IDEOLOGY_PATH.write_text(build_ideology_catalog(), encoding="utf-8", newline="\n")
     EFFECTS_PATH.write_text(build_effect_catalog(), encoding="utf-8", newline="\n")
     rewrite_modifier_catalog()

@@ -1,6 +1,7 @@
 [gd_resource type="Theme" format=3 uid="uid://pxjpycs2dsct"]
 
-[ext_resource type="FontFile" uid="uid://0mtmrt8e1u4k" path="res://assets/fonts/source_han/SourceHanSansCN-VF.woff2" id="1_font"]
+[ext_resource type="FontFile" path="res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.ttf" id="1_font"]
+[ext_resource type="FontVariation" path="res://assets/fonts/muyao/display_handwritten.tres" id="ui_display"]
 
 [sub_resource type="StyleBoxFlat" id="ButtonDisabled"]
 content_margin_left = 12.0
@@ -309,9 +310,10 @@ corner_radius_bottom_left = 3
 color = Color(0.36, 0.29, 0.19, 0.64)
 vertical = true
 
+
 [resource]
 default_font = ExtResource("1_font")
-default_font_size = 14
+default_font_size = 18
 Button/colors/font_color = Color(0.965, 0.925, 0.825, 1)
 Button/colors/font_disabled_color = Color(0.55, 0.49, 0.4, 1)
 Button/colors/font_hover_color = Color(1, 0.94, 0.72, 1)
@@ -355,7 +357,7 @@ OptionButton/styles/pressed = SubResource("ButtonPressed")
 PKArchivePage/base_type = &"PanelContainer"
 PKArchivePage/styles/panel = SubResource("ArchivePage")
 PKBadgeLabel/base_type = &"Label"
-PKBadgeLabel/font_sizes/font_size = 12
+PKBadgeLabel/font_sizes/font_size = 15
 PKBadgeLabel/styles/normal = SubResource("StyleInset")
 PKDangerText/base_type = &"Label"
 PKDangerText/colors/font_color = Color(0.86, 0.42, 0.31, 1)
@@ -377,7 +379,7 @@ PKMetricCard/base_type = &"PanelContainer"
 PKMetricCard/styles/panel = SubResource("StyleInset")
 PKMutedLabel/base_type = &"Label"
 PKMutedLabel/colors/font_color = Color(0.78, 0.7, 0.56, 1)
-PKMutedLabel/font_sizes/font_size = 12
+PKMutedLabel/font_sizes/font_size = 15
 PKOrnamentCard/base_type = &"PanelContainer"
 PKOrnamentCard/styles/panel = SubResource("StyleInset")
 PKPanel/base_type = &"PanelContainer"
@@ -391,7 +393,7 @@ PKPrimaryButton/styles/normal = SubResource("ButtonPressed")
 PKPrimaryButton/styles/pressed = SubResource("ButtonPressed")
 PKSectionTitle/base_type = &"Label"
 PKSectionTitle/colors/font_color = Color(0.92, 0.72, 0.38, 0.96)
-PKSectionTitle/font_sizes/font_size = 13
+PKSectionTitle/font_sizes/font_size = 17
 PKTabButton/base_type = &"Button"
 PKTabButton/styles/disabled = SubResource("ButtonDisabled")
 PKTabButton/styles/focus = SubResource("ButtonFocus")
@@ -407,7 +409,7 @@ ProgressBar/styles/background = SubResource("ProgressBackground")
 ProgressBar/styles/fill = SubResource("ProgressFill")
 SpinBox/colors/updown = Color(0.92, 0.72, 0.38, 0.96)
 TooltipLabel/colors/font_color = Color(0.965, 0.925, 0.825, 1)
-TooltipLabel/font_sizes/font_size = 12
+TooltipLabel/font_sizes/font_size = 15
 TooltipPanel/styles/panel = SubResource("StyleDialog")
 VScrollBar/styles/grabber = SubResource("ScrollGrabber")
 VScrollBar/styles/grabber_highlight = SubResource("ScrollGrabberHover")
@@ -415,3 +417,6 @@ VScrollBar/styles/grabber_pressed = SubResource("ScrollGrabberPressed")
 VScrollBar/styles/scroll = SubResource("ScrollTrack")
 VScrollBar/styles/scroll_focus = SubResource("ScrollTrack")
 VSeparator/styles/separator = SubResource("VerticalRule")
+
+PKTitle/fonts/font = ExtResource("ui_display")
+PKSectionTitle/fonts/font = ExtResource("ui_display")

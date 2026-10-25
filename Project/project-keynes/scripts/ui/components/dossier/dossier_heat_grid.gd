@@ -120,8 +120,13 @@ func _draw() -> void:
 		var strong := absf(heat) > 0.55
 		var ink := UITokens.DOSSIER_PAPER if strong else UITokens.DOSSIER_INK
 		var muted := Color(UITokens.DOSSIER_PAPER, 0.85) if strong else UITokens.DOSSIER_INK_MUTED
-		_text(rect.position + Vector2(6.0, 17.0), _fit_text(String(cell.get("name", "")), 12,
-			rect.size.x - 22.0), 12, ink, "sans_strong")
+		var icon_key := IconCatalog.good_semantic(String(cell.get("id", "")))
+		var icon_rect := Rect2(rect.position + Vector2(5.0, 5.0), Vector2(18.0, 18.0))
+		if icon_key != &"system.unknown":
+			IconCatalog.draw_icon(self, icon_key, icon_rect)
+		var name_left := 28.0 if icon_key != &"system.unknown" else 6.0
+		_text(rect.position + Vector2(name_left, 17.0), _fit_text(String(cell.get("name", "")), 12,
+			rect.size.x - name_left - 4.0), 12, ink, "sans_strong")
 		var status := String(cell.get("status", ""))
 		_text(rect.position + Vector2(6.0, 34.0), _fit_text(status, 11, rect.size.x - 10.0), 11, muted)
 		var price_index := float(cell.get("price_index", 1.0))

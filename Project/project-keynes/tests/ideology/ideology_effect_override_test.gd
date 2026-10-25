@@ -60,8 +60,9 @@ func _test_row_rules() -> void:
 		String(row.field_key()))
 
 	var no_target := _row(&"", IdeologyEffectParameterScript.Field.DURATION_DAYS, 30)
+	# X5 validates the generalized program/tag/route match value first.
 	_expect("a row without a target is rejected",
-		no_target.validate() == "ideology_effect_parameter_target_missing",
+		no_target.validate() == "ideology_effect_parameter_match_value_missing",
 		no_target.validate())
 
 	var bad_field := _row(&"probe", 99, 1)

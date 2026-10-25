@@ -5,9 +5,9 @@ class_name InspectorFactGrid
 ## 数据形状沿用视图模型的 metrics（id/title/value/subtitle/icon/accent）。
 ## 每日补丁只改值：同 id 数值变化时该格短暂泛黄，不重建节点。
 
-const ROW_HEIGHT := 44.0
+const ROW_HEIGHT := 62.0
 const TWO_COLUMN_MIN_WIDTH := 300.0
-const ICON_SIZE := 14.0
+const ICON_SIZE := 24.0
 const FLASH_SECONDS := 0.9
 
 var _facts: Array = []
@@ -134,20 +134,20 @@ func _draw() -> void:
 				Vector2(ICON_SIZE, ICON_SIZE)), Color(UITokens.DOSSIER_INK_MUTED, appear))
 			label_x += ICON_SIZE + 5.0
 		var inner_right := rect.end.x - 8.0
-		_text(Vector2(label_x, rect.position.y + 17.0 + lift),
-			_fit_text(String(fact.get("title", "")), 11, inner_right - label_x),
-			11, Color(UITokens.DOSSIER_INK_MUTED, appear))
+		_text(Vector2(label_x, rect.position.y + 25.0 + lift),
+			_fit_text(String(fact.get("title", "")), UITokens.FONT_SMALL, inner_right - label_x),
+			UITokens.FONT_SMALL, Color(UITokens.DOSSIER_INK_MUTED, appear))
 		var value := String(fact.get("value", ""))
 		var value_color := tone_color(fact.get("accent", UITokens.ACCENT))
-		var value_text := _fit_text(value, 15, inner_right - x, "serif")
-		var baseline := rect.position.y + 37.0 + lift
-		_text(Vector2(x, baseline), value_text, 15, Color(value_color, appear), "serif")
+		var value_text := _fit_text(value, 21, inner_right - x, "sans_strong")
+		var baseline := rect.position.y + 53.0 + lift
+		_text(Vector2(x, baseline), value_text, 21, Color(value_color, appear), "sans_strong")
 		var subtitle := String(fact.get("subtitle", ""))
 		if subtitle != "":
-			var sub_x := x + _text_width(value_text, 15, "serif") + 6.0
-			if inner_right - sub_x > 24.0:
-				_text(Vector2(sub_x, baseline - 1.0), _fit_text(subtitle, 11, inner_right - sub_x),
-					11, Color(UITokens.DOSSIER_INK_MUTED, appear))
+			var sub_x := x + _text_width(value_text, 21, "sans_strong") + 6.0
+			if inner_right - sub_x > 60.0:
+				_text(Vector2(sub_x, baseline - 1.0), _fit_text(subtitle, UITokens.FONT_SMALL, inner_right - sub_x),
+					UITokens.FONT_SMALL, Color(UITokens.DOSSIER_INK_MUTED, appear))
 		var row_count := int(ceil(float(count) / float(columns)))
 		if i % columns == 0 and i / columns < row_count - 1:
 			draw_line(Vector2(6.0, rect.end.y - 0.5), Vector2(size.x - 6.0, rect.end.y - 0.5),

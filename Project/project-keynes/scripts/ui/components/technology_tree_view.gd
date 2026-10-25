@@ -7,8 +7,8 @@ signal portal_requested(index: int)
 
 const LayoutScript = preload("res://scripts/ui/technology_tree_layout.gd")
 const VIEW_PADDING := 34.0
-const NAME_FONT_SIZE := 18
-const NAME_FONT_MIN_SIZE := 13
+const NAME_FONT_SIZE := 20
+const NAME_FONT_MIN_SIZE := 17
 const NARROW_CARD_WIDTH := 150.0
 const ERA_FONT_SIZE := 16
 const PORTAL_SIZE := Vector2(26.0, 24.0)

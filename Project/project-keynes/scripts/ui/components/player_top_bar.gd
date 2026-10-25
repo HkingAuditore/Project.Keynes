@@ -8,9 +8,9 @@ signal setup_requested()
 signal gm_requested()
 signal annual_history_requested()
 
-const BAR_HEIGHT := 64.0
+const BAR_HEIGHT := 80.0
 const SPEED_PRESETS: Array[float] = [1.0, 2.0, 5.0, 10.0]
-const HUD_ICON_SIZE := 28
+const HUD_ICON_SIZE := 36
 
 var _calendar_icon: TextureRect
 var _date_label: Label
@@ -53,12 +53,12 @@ func _ready() -> void:
 	if _calendar_icon != null:
 		_calendar_icon.texture = IconCatalog.texture_for_key(&"hud.clock.calendar")
 		_calendar_icon.modulate = Color.WHITE
-	_date_label.add_theme_font_override("font", UITokens.dossier_font("serif"))
-	_date_label.add_theme_font_size_override("font_size", 15)
+	_date_label.add_theme_font_override("font", UITokens.dossier_font("sans_strong"))
+	_date_label.add_theme_font_size_override("font_size", UITokens.FONT_HUD_TIME)
 	_date_label.add_theme_color_override("font_color", UITokens.HUD_INK)
 
-	_speed_button.add_theme_font_override("font", UITokens.dossier_font("serif"))
-	_speed_button.add_theme_font_size_override("font_size", 14)
+	_speed_button.add_theme_font_override("font", UITokens.dossier_font("sans_strong"))
+	_speed_button.add_theme_font_size_override("font_size", UITokens.FONT_VALUE)
 
 	# 昼夜循环按钮通过日月剪纸图标本身表达状态，不占用暗红告警激活底色。
 	var normal_sb := get_theme_stylebox("normal", &"PKHUDButton")
@@ -104,7 +104,7 @@ func update_time_state(
 	if _date_label == null:
 		_ready()
 	_date_label.text = "第%d年 · %d月%d日" % [year_idx + 1, month, day_of_month]
-	_date_button.custom_minimum_size.x = maxf(176.0, _date_label.get_minimum_size().x + 52.0)
+	_date_button.custom_minimum_size.x = maxf(252.0, _date_label.get_minimum_size().x + 64.0)
 	_apply_clock_controls(paused, speed)
 
 

@@ -4,10 +4,10 @@ class_name CountryActionBar
 
 signal section_selected(section_id: String)
 
-const BAR_HEIGHT := 74.0
-const BUTTON_SIZE := Vector2(58.0, 54.0)
-const COMPACT_BUTTON_WIDTH := 50.0
-const ICON_SIZE := 44
+const BAR_HEIGHT := 86.0
+const BUTTON_SIZE := Vector2(72.0, 66.0)
+const COMPACT_BUTTON_WIDTH := 64.0
+const ICON_SIZE := 56
 const SECTIONS := [
 	{"id": "technology", "label": "科技", "icon": &"hud.country.technology", "available": true},
 	{"id": "ideology", "label": "理念", "icon": &"hud.country.ideology", "available": true},

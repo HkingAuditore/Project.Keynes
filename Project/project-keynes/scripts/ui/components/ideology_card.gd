@@ -88,7 +88,8 @@ func _build() -> void:
 	_emblem.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_emblem.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_face.add_child(_emblem)
-	_name = ArtScript.label("", 17, ArtScript.INK)
+	_name = ArtScript.label("", 20, ArtScript.INK)
+	_name.add_theme_font_override("font", UITokens.dossier_font("serif"))
 	_name.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
 	_face.add_child(_name)
 	_school = ArtScript.label("", 11, ArtScript.INK_MUTED)
@@ -208,12 +209,13 @@ func _apply_metrics() -> void:
 	_face.offset_right = -pad_x
 	_face.offset_top = pad_top
 	_face.offset_bottom = -pad_bottom
-	_rarity.add_theme_font_size_override("font_size", rarity_font)
-	_name.add_theme_font_size_override("font_size", name_font)
-	_school.add_theme_font_size_override("font_size", meta_font)
-	_effects.add_theme_font_size_override("font_size", effect_font)
+	_rarity.add_theme_font_size_override("font_size", maxi(15, rarity_font))
+	_name.add_theme_font_override("font", UITokens.dossier_font("serif" if _stage else "sans_strong"))
+	_name.add_theme_font_size_override("font_size", maxi(24 if _stage else 18, name_font))
+	_school.add_theme_font_size_override("font_size", maxi(15, meta_font))
+	_effects.add_theme_font_size_override("font_size", maxi(15, effect_font))
 	_emblem.custom_minimum_size.y = emblem_height
-	_stamp.add_theme_font_size_override("font_size", stamp_font)
+	_stamp.add_theme_font_size_override("font_size", maxi(15, stamp_font))
 	_gloss.size.y = card_size.y * 1.6
 	_rebuild_level_pips()
 

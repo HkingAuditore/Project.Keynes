@@ -3,12 +3,12 @@
 [ext_resource type="Script" path="res://scripts/ui/components/country_action_bar.gd" id="1"]
 
 [node name="CountryActionBar" type="PanelContainer"]
-custom_minimum_size = Vector2(0, 68)
+custom_minimum_size = Vector2(0, 86)
 anchors_preset = 12
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 64.0
-offset_top = -76.0
+offset_top = -94.0
 offset_right = -64.0
 offset_bottom = -8.0
 grow_horizontal = 2
@@ -22,7 +22,7 @@ size_flags_horizontal = 3
 theme_override_constants/separation = 6
 
 [node name="Technology" type="Button" parent="Sections"]
-custom_minimum_size = Vector2(58, 52)
+custom_minimum_size = Vector2(72, 66)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKHUDTab"
@@ -39,7 +39,7 @@ alignment = 1
 theme_override_constants/separation = 0
 
 [node name="Icon" type="TextureRect" parent="Sections/Technology/Column"]
-custom_minimum_size = Vector2(36, 36)
+custom_minimum_size = Vector2(56, 56)
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4
@@ -55,7 +55,7 @@ text = "科技"
 theme_type_variation = &"PKHUDLabel"
 
 [node name="Ideology" type="Button" parent="Sections"]
-custom_minimum_size = Vector2(58, 52)
+custom_minimum_size = Vector2(72, 66)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKHUDTab"
@@ -72,7 +72,7 @@ alignment = 1
 theme_override_constants/separation = 0
 
 [node name="Icon" type="TextureRect" parent="Sections/Ideology/Column"]
-custom_minimum_size = Vector2(36, 36)
+custom_minimum_size = Vector2(56, 56)
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4
@@ -88,7 +88,7 @@ text = "理念"
 theme_type_variation = &"PKHUDLabel"
 
 [node name="Economy" type="Button" parent="Sections"]
-custom_minimum_size = Vector2(58, 52)
+custom_minimum_size = Vector2(72, 66)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKHUDTab"
@@ -105,7 +105,7 @@ alignment = 1
 theme_override_constants/separation = 0
 
 [node name="Icon" type="TextureRect" parent="Sections/Economy/Column"]
-custom_minimum_size = Vector2(36, 36)
+custom_minimum_size = Vector2(56, 56)
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4
@@ -121,7 +121,7 @@ text = "经济"
 theme_type_variation = &"PKHUDLabel"
 
 [node name="Military" type="Button" parent="Sections"]
-custom_minimum_size = Vector2(58, 52)
+custom_minimum_size = Vector2(72, 66)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKHUDTab"
@@ -138,7 +138,7 @@ alignment = 1
 theme_override_constants/separation = 0
 
 [node name="Icon" type="TextureRect" parent="Sections/Military/Column"]
-custom_minimum_size = Vector2(36, 36)
+custom_minimum_size = Vector2(56, 56)
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4
@@ -154,7 +154,7 @@ text = "军事"
 theme_type_variation = &"PKHUDLabel"
 
 [node name="Diplomacy" type="Button" parent="Sections"]
-custom_minimum_size = Vector2(58, 52)
+custom_minimum_size = Vector2(72, 66)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKHUDTab"
@@ -171,7 +171,7 @@ alignment = 1
 theme_override_constants/separation = 0
 
 [node name="Icon" type="TextureRect" parent="Sections/Diplomacy/Column"]
-custom_minimum_size = Vector2(36, 36)
+custom_minimum_size = Vector2(56, 56)
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4

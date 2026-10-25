@@ -128,7 +128,7 @@ text = "地块档案"
 clip_text = true
 text_overrun_behavior = 3
 theme_type_variation = &"PKTitle"
-theme_override_font_sizes/font_size = 21
+theme_override_font_sizes/font_size = 34
 
 [node name="SubtitleLabel" type="Label" parent="Margin/Split/InspectorRoot/Header/Row/Titles"]
 unique_name_in_owner = true

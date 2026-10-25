@@ -446,7 +446,7 @@ definition_key = &"ideology.country.population.death_factor.cut"
 [sub_resource type="Resource" id="ProgTreasuryReserveL1Death"]
 script = ExtResource("2_effect")
 definition_key = &"treasury_reserve_l1_death"
-summary = "国库储备率每档死亡率 -1%（上限 -5%）"
+summary = "国库储备率（国库现金 ÷ 全国人口一年收入总额）每提高 1 个百分点，人口自然死亡率降低 1%，最高降低 5%"
 target_domain = 3
 operation = 1
 lifecycle = 0
@@ -507,7 +507,7 @@ definition_key = &"ideology.country.construction.cost_factor.cut"
 [sub_resource type="Resource" id="ProgTreasuryReserveL1Build"]
 script = ExtResource("2_effect")
 definition_key = &"treasury_reserve_l1_build"
-summary = "国库储备率每档建设成本 -1%（上限 -5%）"
+summary = "国库储备率（国库现金 ÷ 全国人口一年收入总额）每提高 1 个百分点，全国建设成本降低 1%，最高降低 5%"
 target_domain = 3
 operation = 1
 lifecycle = 0
@@ -568,7 +568,7 @@ definition_key = &"ideology.country.population.death_factor.cut"
 [sub_resource type="Resource" id="ProgTreasuryReserveL2Death"]
 script = ExtResource("2_effect")
 definition_key = &"treasury_reserve_l2_death"
-summary = "国库储备率每档死亡率 -1%（上限 -7%）"
+summary = "国库储备率（国库现金 ÷ 全国人口一年收入总额）每提高 1 个百分点，人口自然死亡率降低 1%，最高降低 7%"
 target_domain = 3
 operation = 1
 lifecycle = 0
@@ -629,7 +629,7 @@ definition_key = &"ideology.country.construction.cost_factor.cut"
 [sub_resource type="Resource" id="ProgTreasuryReserveL2Build"]
 script = ExtResource("2_effect")
 definition_key = &"treasury_reserve_l2_build"
-summary = "国库储备率每档建设成本 -1%（上限 -7%）"
+summary = "国库储备率（国库现金 ÷ 全国人口一年收入总额）每提高 1 个百分点，全国建设成本降低 1%，最高降低 7%"
 target_domain = 3
 operation = 1
 lifecycle = 0
@@ -690,7 +690,7 @@ definition_key = &"ideology.country.population.death_factor.cut"
 [sub_resource type="Resource" id="ProgTreasuryReserveL3Death"]
 script = ExtResource("2_effect")
 definition_key = &"treasury_reserve_l3_death"
-summary = "国库储备率每档死亡率 -1%（上限 -7%）"
+summary = "国库储备率（国库现金 ÷ 全国人口一年收入总额）每提高 1 个百分点，人口自然死亡率降低 1%，最高降低 7%"
 target_domain = 3
 operation = 1
 lifecycle = 0
@@ -751,7 +751,7 @@ definition_key = &"ideology.country.construction.cost_factor.cut"
 [sub_resource type="Resource" id="ProgTreasuryReserveL3Build"]
 script = ExtResource("2_effect")
 definition_key = &"treasury_reserve_l3_build"
-summary = "国库储备率每档建设成本 -1%（上限 -7%）"
+summary = "国库储备率（国库现金 ÷ 全国人口一年收入总额）每提高 1 个百分点，全国建设成本降低 1%，最高降低 7%"
 target_domain = 3
 operation = 1
 lifecycle = 0
@@ -812,7 +812,7 @@ definition_key = &"ideology.country.ideology.point_gain_factor.gain"
 [sub_resource type="Resource" id="ProgTreasuryReserveL3Points"]
 script = ExtResource("2_effect")
 definition_key = &"treasury_reserve_l3_points"
-summary = "国库储备率每档理念点获取 +1%（上限 +5%）"
+summary = "国库储备率（国库现金 ÷ 全国人口一年收入总额）每提高 1 个百分点，理念点获取提高 1%，最高提高 5%"
 target_domain = 3
 operation = 1
 lifecycle = 0
@@ -873,7 +873,7 @@ definition_key = &"ideology.country.trade.capacity_factor.gain"
 [sub_resource type="Resource" id="ProgSilverStandardL1"]
 script = ExtResource("2_effect")
 definition_key = &"silver_standard_l1"
-summary = "国库储备率每档贸易容量 +1%（上限 +12%）"
+summary = "国库储备率（国库现金 ÷ 全国人口一年收入总额）每提高 1 个百分点，每次贸易可成交的货物量提高 1%，最高提高 12%"
 target_domain = 3
 operation = 1
 lifecycle = 0
@@ -934,7 +934,7 @@ definition_key = &"ideology.country.trade.capacity_factor.gain"
 [sub_resource type="Resource" id="ProgSilverStandardL2"]
 script = ExtResource("2_effect")
 definition_key = &"silver_standard_l2"
-summary = "国库储备率每档贸易容量 +1%（上限 +15%）"
+summary = "国库储备率（国库现金 ÷ 全国人口一年收入总额）每提高 1 个百分点，每次贸易可成交的货物量提高 1%，最高提高 15%"
 target_domain = 3
 operation = 1
 lifecycle = 0
@@ -995,7 +995,7 @@ definition_key = &"ideology.country.trade.capacity_factor.gain"
 [sub_resource type="Resource" id="ProgSilverStandardL3"]
 script = ExtResource("2_effect")
 definition_key = &"silver_standard_l3"
-summary = "国库储备率每档贸易容量 +1%（上限 +15%）"
+summary = "国库储备率（国库现金 ÷ 全国人口一年收入总额）每提高 1 个百分点，每次贸易可成交的货物量提高 1%，最高提高 15%"
 target_domain = 3
 operation = 1
 lifecycle = 0
@@ -1136,7 +1136,7 @@ definition_key = &"economy.city.building.knowledge_output_factor"
 [sub_resource type="Resource" id="ProgSubsidyStateL1"]
 script = ExtResource("2_effect")
 definition_key = &"subsidy_state_l1"
-summary = "轻税地块（实测净税负 ≤ 8%，最多 32 格）：农业、采掘、工业、能源、知识产出 +10%"
+summary = "本国实际净纳税额占税前收入不超过 8%的地块：农业产出提高 10%，采掘产出提高 10%，制造业产出提高 10%，能源产出提高 10%，知识产出提高 10%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -1277,7 +1277,7 @@ definition_key = &"economy.city.building.knowledge_output_factor"
 [sub_resource type="Resource" id="ProgSubsidyStateL2"]
 script = ExtResource("2_effect")
 definition_key = &"subsidy_state_l2"
-summary = "轻税地块（实测净税负 ≤ 12%，最多 32 格）：农业、采掘、工业、能源、知识产出 +14%"
+summary = "本国实际净纳税额占税前收入不超过 12%的地块：农业产出提高 14%，采掘产出提高 14%，制造业产出提高 14%，能源产出提高 14%，知识产出提高 14%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -1418,7 +1418,7 @@ definition_key = &"economy.city.building.knowledge_output_factor"
 [sub_resource type="Resource" id="ProgSubsidyStateL3"]
 script = ExtResource("2_effect")
 definition_key = &"subsidy_state_l3"
-summary = "轻税或免税地块（实测净税负 ≤ 12%，最多 32 格）：农业、采掘、工业、能源、知识产出 +14%"
+summary = "本国实际净纳税额占税前收入不超过 12%的地块：农业产出提高 14%，采掘产出提高 14%，制造业产出提高 14%，能源产出提高 14%，知识产出提高 14%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -1559,7 +1559,7 @@ definition_key = &"economy.city.building.knowledge_output_factor"
 [sub_resource type="Resource" id="ProgSubsidyStateL3Free"]
 script = ExtResource("2_effect")
 definition_key = &"subsidy_state_l3_free"
-summary = "免税地块（实测净税负 = 0，最多 32 格）：农业、采掘、工业、能源、知识产出再 +5%"
+summary = "本国实际净纳税额占税前收入不超过 0%的地块：农业产出提高 5%，采掘产出提高 5%，制造业产出提高 5%，能源产出提高 5%，知识产出提高 5%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -1625,7 +1625,7 @@ definition_key = &"economy.city.need.housing.consumption_factor"
 [sub_resource type="Resource" id="ProgKinHearthL1"]
 script = ExtResource("2_effect")
 definition_key = &"kin_hearth_l1"
-summary = "宗族地块（最多 32 格）：出生率 +6%，住房需求 +5%"
+summary = "本国当地至少有 1 个家族分支的地块：出生率提高 6%，居住维护消费需求提高 5%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -1692,7 +1692,7 @@ definition_key = &"economy.city.need.housing.consumption_factor"
 [sub_resource type="Resource" id="ProgKinHearthL2"]
 script = ExtResource("2_effect")
 definition_key = &"kin_hearth_l2"
-summary = "宗族地块（最多 32 格）：出生率 +9%，住房需求 +5%"
+summary = "本国当地至少有 1 个家族分支的地块：出生率提高 9%，居住维护消费需求提高 5%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -1759,7 +1759,7 @@ definition_key = &"economy.city.need.housing.consumption_factor"
 [sub_resource type="Resource" id="ProgKinHearthL3"]
 script = ExtResource("2_effect")
 definition_key = &"kin_hearth_l3"
-summary = "宗族地块（最多 32 格）：出生率 +9%，住房需求 +5%"
+summary = "本国当地至少有 1 个家族分支的地块：出生率提高 9%，居住维护消费需求提高 5%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -1803,7 +1803,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgKinHearthL3Eminent"]
 script = ExtResource("2_effect")
 definition_key = &"kin_hearth_l3_eminent"
-summary = "名门地块（最多 32 格）：全部产出 +3%"
+summary = "本国当地至少有 1 个威望不低于 50% 的家族分支的地块：全部产出提高 3%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -1853,7 +1853,7 @@ definition_key = &"economy.city.good.game_meat.output_factor"
 [sub_resource type="Resource" id="ProgHuntingTraditionL1"]
 script = ExtResource("2_effect")
 definition_key = &"hunting_tradition_l1"
-summary = "主产野味、且单一职业占比 ≥60% 的地块：野味产出 +12%"
+summary = "本国主产野味，且单一职业占当地就业人口至少 60%的地块：野味产出提高 12%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -1903,7 +1903,7 @@ definition_key = &"economy.city.good.game_meat.output_factor"
 [sub_resource type="Resource" id="ProgHuntingTraditionL2"]
 script = ExtResource("2_effect")
 definition_key = &"hunting_tradition_l2"
-summary = "主产野味、且单一职业占比 ≥60% 的地块：野味产出 +16%"
+summary = "本国主产野味，且单一职业占当地就业人口至少 60%的地块：野味产出提高 16%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -1953,7 +1953,7 @@ definition_key = &"economy.city.good.game_meat.output_factor"
 [sub_resource type="Resource" id="ProgHuntingTraditionL3"]
 script = ExtResource("2_effect")
 definition_key = &"hunting_tradition_l3"
-summary = "主产野味、且单一职业占比 ≥60% 的地块：野味产出 +20%"
+summary = "本国主产野味，且单一职业占当地就业人口至少 60%的地块：野味产出提高 20%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -1997,7 +1997,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgFlintKnappingL1"]
 script = ExtResource("2_effect")
 definition_key = &"flint_knapping_l1"
-summary = "主产燧石的地块周围 1 格（每源 +4%，最多 3 源 = +12%）：全部产出 +12%"
+summary = "周围 1 格内每有 1 个本国主产燧石原料的地块，该目标地块的全部产出提高 4%；每个目标地块最多计入 3 个来源地块，全部产出最高提高 12%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -2041,7 +2041,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgFlintKnappingL2"]
 script = ExtResource("2_effect")
 definition_key = &"flint_knapping_l2"
-summary = "主产燧石的地块周围 1 格（每源 +4%，最多 3 源 = +12%）：全部产出 +12%"
+summary = "周围 1 格内每有 1 个本国主产燧石原料的地块，该目标地块的全部产出提高 4%；每个目标地块最多计入 3 个来源地块，全部产出最高提高 12%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -2085,7 +2085,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgFlintKnappingL3"]
 script = ExtResource("2_effect")
 definition_key = &"flint_knapping_l3"
-summary = "主产燧石的地块周围 1 格（每源 +4%，最多 3 源 = +12%）：全部产出 +12%"
+summary = "周围 1 格内每有 1 个本国主产燧石原料的地块，该目标地块的全部产出提高 4%；每个目标地块最多计入 3 个来源地块，全部产出最高提高 12%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -2129,7 +2129,7 @@ definition_key = &"economy.city.birth_factor"
 [sub_resource type="Resource" id="ProgFireKeepingL1"]
 script = ExtResource("2_effect")
 definition_key = &"fire_keeping_l1"
-summary = "年均温 ≤0℃ 的地块（最多 32 格）：出生率 +5%"
+summary = "本国冻原的地块：出生率提高 5%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -2173,7 +2173,7 @@ definition_key = &"economy.city.birth_factor"
 [sub_resource type="Resource" id="ProgFireKeepingL2"]
 script = ExtResource("2_effect")
 definition_key = &"fire_keeping_l2"
-summary = "年均温 ≤0℃ 的地块（最多 32 格）：出生率 +8%"
+summary = "本国冻原的地块：出生率提高 8%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -2240,7 +2240,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgFireKeepingL3"]
 script = ExtResource("2_effect")
 definition_key = &"fire_keeping_l3"
-summary = "冻原地块（最多 32 格）：出生率 +8%、农业 +8%"
+summary = "本国冻原的地块：出生率提高 8%，农业产出提高 8%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -2284,7 +2284,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgRiversideCampL3"]
 script = ExtResource("2_effect")
 definition_key = &"riverside_camp_l3"
-summary = "三角洲地块周围 1 格（每源 +3%，最多 3 源 = +9%）：农业产出 +9%"
+summary = "周围 1 格内每有 1 个本国三角洲的地块，该目标地块的农业产出提高 3%；每个目标地块最多计入 3 个来源地块，农业产出最高提高 9%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -2328,7 +2328,7 @@ definition_key = &"economy.city.birth_factor"
 [sub_resource type="Resource" id="ProgCommunalFeastL1"]
 script = ExtResource("2_effect")
 definition_key = &"communal_feast_l1"
-summary = "主产野味/鱼/采集物的地块周围 1 格（每源 +3%，最多 3 源 = +9%）：出生率 +9%"
+summary = "周围 1 格内每有 1 个本国主产野味的地块，该目标地块的出生率提高 3%；每个目标地块最多计入 3 个来源地块，出生率最高提高 9%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -2372,7 +2372,7 @@ definition_key = &"economy.city.birth_factor"
 [sub_resource type="Resource" id="ProgCommunalFeastL2"]
 script = ExtResource("2_effect")
 definition_key = &"communal_feast_l2"
-summary = "主产野味的地块周围 1 格（每源 +3%，最多 3 源 = +9%）：出生率 +9%"
+summary = "周围 1 格内每有 1 个本国主产野味的地块，该目标地块的出生率提高 3%；每个目标地块最多计入 3 个来源地块，出生率最高提高 9%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -2416,7 +2416,7 @@ definition_key = &"economy.city.birth_factor"
 [sub_resource type="Resource" id="ProgCommunalFeastL3"]
 script = ExtResource("2_effect")
 definition_key = &"communal_feast_l3"
-summary = "主产野味的地块周围 1 格（每源 +3%，最多 3 源 = +9%）：出生率 +9%"
+summary = "周围 1 格内每有 1 个本国主产野味的地块，该目标地块的出生率提高 3%；每个目标地块最多计入 3 个来源地块，出生率最高提高 9%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -2460,7 +2460,7 @@ definition_key = &"economy.city.birth_factor"
 [sub_resource type="Resource" id="ProgPitDwellingL3"]
 script = ExtResource("2_effect")
 definition_key = &"pit_dwelling_l3"
-summary = "聚落地块（最多 32 格）：出生率 +5%"
+summary = "本国人口至少 400 人的地块：出生率提高 5%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -2504,7 +2504,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgCollectiveStewardshipL1"]
 script = ExtResource("2_effect")
 definition_key = &"collective_stewardship_l1"
-summary = "农业支柱地块周围 1 格（每源 +3%，最多 3 源 = +9%）：全部产出 +9%"
+summary = "周围 1 格内每有 1 个本国农业产出占当地总产出至少 50%的地块，该目标地块的全部产出提高 3%；每个目标地块最多计入 3 个来源地块，全部产出最高提高 9%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -2548,7 +2548,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgCollectiveStewardshipL2"]
 script = ExtResource("2_effect")
 definition_key = &"collective_stewardship_l2"
-summary = "农业支柱地块周围 1 格（每源 +3%，最多 3 源 = +9%）：全部产出 +9%"
+summary = "周围 1 格内每有 1 个本国农业产出占当地总产出至少 50%的地块，该目标地块的全部产出提高 3%；每个目标地块最多计入 3 个来源地块，全部产出最高提高 9%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -2592,7 +2592,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgCollectiveStewardshipL3"]
 script = ExtResource("2_effect")
 definition_key = &"collective_stewardship_l3"
-summary = "农业支柱地块周围 1 格（每源 +3%，最多 3 源 = +9%）：全部产出 +9%"
+summary = "周围 1 格内每有 1 个本国农业产出占当地总产出至少 50%的地块，该目标地块的全部产出提高 3%；每个目标地块最多计入 3 个来源地块，全部产出最高提高 9%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -2642,7 +2642,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgTerraceFarmingL3"]
 script = ExtResource("2_effect")
 definition_key = &"terrace_farming_l3"
-summary = "相邻至少 2 个农业支柱地块的丘陵/山地（最多 32 格）：农业产出 +6%"
+summary = "本国（丘陵或山地），且周围 1 格内农业产出占比至少 50% 的地块至少 2 个的地块：农业产出提高 6%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -2686,7 +2686,7 @@ definition_key = &"economy.city.resource.fertile_soil.regen_factor"
 [sub_resource type="Resource" id="ProgThreeFieldRotationL1"]
 script = ExtResource("2_effect")
 definition_key = &"three_field_rotation_l1"
-summary = "农业支柱地块（最多 32 格）：肥沃土壤再生 +20%"
+summary = "本国农业产出占当地总产出至少 50%的地块：肥沃土壤恢复速度提高 20%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -2730,7 +2730,7 @@ definition_key = &"economy.city.resource.fertile_soil.regen_factor"
 [sub_resource type="Resource" id="ProgThreeFieldRotationL2"]
 script = ExtResource("2_effect")
 definition_key = &"three_field_rotation_l2"
-summary = "农业支柱地块（最多 32 格）：肥沃土壤再生 +30%"
+summary = "本国农业产出占当地总产出至少 50%的地块：肥沃土壤恢复速度提高 30%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -2774,7 +2774,7 @@ definition_key = &"economy.city.resource.fertile_soil.regen_factor"
 [sub_resource type="Resource" id="ProgThreeFieldRotationL3"]
 script = ExtResource("2_effect")
 definition_key = &"three_field_rotation_l3"
-summary = "农业支柱地块（最多 32 格）：肥沃土壤再生 +35%"
+summary = "本国农业产出占当地总产出至少 50%的地块：肥沃土壤恢复速度提高 35%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -2818,7 +2818,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgFreeExchangeL1"]
 script = ExtResource("2_effect")
 definition_key = &"free_exchange_l1"
-summary = "多元地块（最多 32 格）：全部产出 +6%"
+summary = "本国当地至少有 3 个经济部门有产出的地块：全部产出提高 6%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -2862,7 +2862,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgFreeExchangeL2"]
 script = ExtResource("2_effect")
 definition_key = &"free_exchange_l2"
-summary = "多元地块（最多 32 格）：全部产出 +9%"
+summary = "本国当地至少有 3 个经济部门有产出的地块：全部产出提高 9%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -2906,7 +2906,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgFreeExchangeL3"]
 script = ExtResource("2_effect")
 definition_key = &"free_exchange_l3"
-summary = "多元地块（最多 32 格）：全部产出 +12%"
+summary = "本国当地至少有 3 个经济部门有产出的地块：全部产出提高 12%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -2950,7 +2950,7 @@ definition_key = &"economy.city.building.knowledge_output_factor"
 [sub_resource type="Resource" id="ProgScholarOfficeL1"]
 script = ExtResource("2_effect")
 definition_key = &"scholar_office_l1"
-summary = "知识建筑 ≥2 类的地块（最多 32 格）：知识产出 +10%"
+summary = "本国知识业产出占当地总产出至少 50%的地块：知识产出提高 10%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -2994,7 +2994,7 @@ definition_key = &"economy.city.building.knowledge_output_factor"
 [sub_resource type="Resource" id="ProgScholarOfficeL2"]
 script = ExtResource("2_effect")
 definition_key = &"scholar_office_l2"
-summary = "知识建筑 ≥2 类的地块（最多 32 格）：知识产出 +15%"
+summary = "本国知识业产出占当地总产出至少 50%的地块：知识产出提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -3038,7 +3038,7 @@ definition_key = &"economy.city.building.knowledge_output_factor"
 [sub_resource type="Resource" id="ProgScholarOfficeL3"]
 script = ExtResource("2_effect")
 definition_key = &"scholar_office_l3"
-summary = "知识建筑 ≥2 类的地块（最多 32 格）：知识产出 +15%"
+summary = "本国知识业产出占当地总产出至少 50%的地块：知识产出提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -3082,7 +3082,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgStandardizationL1"]
 script = ExtResource("2_effect")
 definition_key = &"standardization_l1"
-summary = "成链地块（最多 32 格）：工业产出 +8%"
+summary = "本国当地至少已建成 1 条完整建筑升级链（同一升级系列的各等级建筑均已建成）的地块：制造业产出提高 8%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -3126,7 +3126,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgStandardizationL2"]
 script = ExtResource("2_effect")
 definition_key = &"standardization_l2"
-summary = "成链地块（最多 32 格）：工业产出 +12%"
+summary = "本国当地至少已建成 1 条完整建筑升级链（同一升级系列的各等级建筑均已建成）的地块：制造业产出提高 12%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -3170,7 +3170,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgStandardizationL3"]
 script = ExtResource("2_effect")
 definition_key = &"standardization_l3"
-summary = "成链地块（最多 32 格）：工业产出 +16%"
+summary = "本国当地至少已建成 1 条完整建筑升级链（同一升级系列的各等级建筑均已建成）的地块：制造业产出提高 16%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -3220,7 +3220,7 @@ definition_key = &"economy.city.good.cloth.output_factor"
 [sub_resource type="Resource" id="ProgHouseholdWeavingL1"]
 script = ExtResource("2_effect")
 definition_key = &"household_weaving_l1"
-summary = "主产韧皮纤维、且职业 ≥2 种的地块：布产出 +12%"
+summary = "本国主产亚麻秆/韧皮原料，且当地就业人口的职业至少 2 种的地块：布料产出提高 12%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -3270,7 +3270,7 @@ definition_key = &"economy.city.good.cloth.output_factor"
 [sub_resource type="Resource" id="ProgHouseholdWeavingL2"]
 script = ExtResource("2_effect")
 definition_key = &"household_weaving_l2"
-summary = "主产韧皮纤维、且职业 ≥2 种的地块：布产出 +15%"
+summary = "本国主产亚麻秆/韧皮原料，且当地就业人口的职业至少 2 种的地块：布料产出提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -3320,7 +3320,7 @@ definition_key = &"economy.city.good.cloth.output_factor"
 [sub_resource type="Resource" id="ProgHouseholdWeavingL3"]
 script = ExtResource("2_effect")
 definition_key = &"household_weaving_l3"
-summary = "主产韧皮纤维、且职业 ≥2 种的地块：布产出 +18%"
+summary = "本国主产亚麻秆/韧皮原料，且当地就业人口的职业至少 2 种的地块：布料产出提高 18%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -3387,7 +3387,7 @@ definition_key = &"economy.city.good.lumber.output_factor.cut"
 [sub_resource type="Resource" id="ProgCoppiceRotationL1"]
 script = ExtResource("2_effect")
 definition_key = &"coppice_rotation_l1"
-summary = "主产原木的地块（最多 32 格）：木材再生 +20%，原木产出 -6%"
+summary = "本国主产木材的地块：林木资源恢复速度提高 20%，木材产出降低 6%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -3454,7 +3454,7 @@ definition_key = &"economy.city.good.lumber.output_factor.cut"
 [sub_resource type="Resource" id="ProgCoppiceRotationL2"]
 script = ExtResource("2_effect")
 definition_key = &"coppice_rotation_l2"
-summary = "主产原木的地块（最多 32 格）：木材再生 +30%，原木产出 -6%"
+summary = "本国主产木材的地块：林木资源恢复速度提高 30%，木材产出降低 6%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -3521,7 +3521,7 @@ definition_key = &"economy.city.good.lumber.output_factor.cut"
 [sub_resource type="Resource" id="ProgCoppiceRotationL3"]
 script = ExtResource("2_effect")
 definition_key = &"coppice_rotation_l3"
-summary = "主产原木的地块（最多 32 格）：木材再生 +30%，原木产出 -3%"
+summary = "本国主产木材的地块：林木资源恢复速度提高 30%，木材产出降低 3%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -3565,7 +3565,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgWaterWorksL3"]
 script = ExtResource("2_effect")
 definition_key = &"water_works_l3"
-summary = "泛滥平原地块周围 1 格（每源 +4%，最多 3 源 = +12%）：农业产出 +12%"
+summary = "周围 1 格内每有 1 个本国泛滥平原的地块，该目标地块的农业产出提高 4%；每个目标地块最多计入 3 个来源地块，农业产出最高提高 12%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -3609,7 +3609,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgBronzeCastingL1"]
 script = ExtResource("2_effect")
 definition_key = &"bronze_casting_l1"
-summary = "铜矿或锡矿周围 1 格（每源 +15%，最多 2 源 = +30%）：工业产出 +30%"
+summary = "周围 1 格内每有 1 个本国（主产铜矿石或主产锡矿石）的地块，该目标地块的制造业产出提高 15%；每个目标地块最多计入 2 个来源地块，制造业产出最高提高 30%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -3653,7 +3653,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgBronzeCastingL2"]
 script = ExtResource("2_effect")
 definition_key = &"bronze_casting_l2"
-summary = "铜矿或锡矿周围 1 格（每源 +20%，最多 2 源 = +40%）：工业产出 +40%"
+summary = "周围 1 格内每有 1 个本国（主产铜矿石或主产锡矿石）的地块，该目标地块的制造业产出提高 20%；每个目标地块最多计入 2 个来源地块，制造业产出最高提高 40%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -3697,7 +3697,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgBronzeCastingL3"]
 script = ExtResource("2_effect")
 definition_key = &"bronze_casting_l3"
-summary = "铜矿或锡矿周围 2 格（每源 +20%，最多 2 源 = +40%）：工业产出 +40%"
+summary = "周围 2 格内每有 1 个本国（主产铜矿石或主产锡矿石）的地块，该目标地块的制造业产出提高 20%；每个目标地块最多计入 2 个来源地块，制造业产出最高提高 40%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -3741,7 +3741,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgSeasonalCalendarL3"]
 script = ExtResource("2_effect")
 definition_key = &"seasonal_calendar_l3"
-summary = "降雨日的农业支柱地块（最多 32 格）：农业产出 +5%"
+summary = "本国当日有降雨，且农业产出占当地总产出至少 50%的地块：农业产出提高 5%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -3785,7 +3785,7 @@ definition_key = &"economy.city.need.staple_food.consumption_factor.cut"
 [sub_resource type="Resource" id="ProgEverNormalGranaryL1"]
 script = ExtResource("2_effect")
 definition_key = &"ever_normal_granary_l1"
-summary = "短缺地块（最多 32 格）：主食需求 -15%"
+summary = "本国必需品短缺率至少 20%的地块：食品需求降低 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -3829,7 +3829,7 @@ definition_key = &"economy.city.need.staple_food.consumption_factor.cut"
 [sub_resource type="Resource" id="ProgEverNormalGranaryL2"]
 script = ExtResource("2_effect")
 definition_key = &"ever_normal_granary_l2"
-summary = "短缺地块（最多 32 格）：主食需求 -20%"
+summary = "本国必需品短缺率至少 20%的地块：食品需求降低 20%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -3873,7 +3873,7 @@ definition_key = &"economy.city.need.staple_food.consumption_factor.cut"
 [sub_resource type="Resource" id="ProgEverNormalGranaryL3"]
 script = ExtResource("2_effect")
 definition_key = &"ever_normal_granary_l3"
-summary = "短缺地块（最多 32 格）：主食需求 -22%"
+summary = "本国必需品短缺率至少 20%的地块：食品需求降低 22%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -3940,7 +3940,7 @@ definition_key = &"economy.city.birth_factor"
 [sub_resource type="Resource" id="ProgSettleAndFarmL1"]
 script = ExtResource("2_effect")
 definition_key = &"settle_and_farm_l1"
-summary = "边地农业地块（最多 32 格）：农业 +15%，出生率 +8%"
+summary = "本国人口少于 120 人，且农业产出占当地总产出至少 50%的地块：农业产出提高 15%，出生率提高 8%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -4007,7 +4007,7 @@ definition_key = &"economy.city.birth_factor"
 [sub_resource type="Resource" id="ProgSettleAndFarmL2"]
 script = ExtResource("2_effect")
 definition_key = &"settle_and_farm_l2"
-summary = "边地农业地块（最多 32 格）：农业 +20%，出生率 +10%"
+summary = "本国人口少于 120 人，且农业产出占当地总产出至少 50%的地块：农业产出提高 20%，出生率提高 10%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -4074,7 +4074,7 @@ definition_key = &"economy.city.birth_factor"
 [sub_resource type="Resource" id="ProgSettleAndFarmL3"]
 script = ExtResource("2_effect")
 definition_key = &"settle_and_farm_l3"
-summary = "边地农业地块（最多 32 格）：农业 +22%，出生率 +11%"
+summary = "本国人口少于 120 人，且农业产出占当地总产出至少 50%的地块：农业产出提高 22%，出生率提高 11%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -4118,7 +4118,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgOpenPortsL1"]
 script = ExtResource("2_effect")
 definition_key = &"open_ports_l1"
-summary = "海岸地块（最多 32 格）：全部产出 +15%"
+summary = "本国海岸的地块：全部产出提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -4162,7 +4162,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgOpenPortsL2"]
 script = ExtResource("2_effect")
 definition_key = &"open_ports_l2"
-summary = "海岸地块（最多 32 格）：全部产出 +22%"
+summary = "本国海岸的地块：全部产出提高 22%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -4206,7 +4206,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgOpenPortsL3"]
 script = ExtResource("2_effect")
 definition_key = &"open_ports_l3"
-summary = "海岸地块（最多 32 格）：全部产出 +22%"
+summary = "本国海岸的地块：全部产出提高 22%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -4256,7 +4256,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgGuildChartersL1"]
 script = ExtResource("2_effect")
 definition_key = &"guild_charters_l1"
-summary = "工业支柱、且单一职业占比 ≥60% 的地块：工业产出 +10%"
+summary = "本国制造业产出占当地总产出至少 50%，且单一职业占当地就业人口至少 60%的地块：制造业产出提高 10%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -4306,7 +4306,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgGuildChartersL2"]
 script = ExtResource("2_effect")
 definition_key = &"guild_charters_l2"
-summary = "工业支柱、且单一职业占比 ≥60% 的地块：工业产出 +14%"
+summary = "本国制造业产出占当地总产出至少 50%，且单一职业占当地就业人口至少 60%的地块：制造业产出提高 14%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -4356,7 +4356,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgGuildChartersL3"]
 script = ExtResource("2_effect")
 definition_key = &"guild_charters_l3"
-summary = "工业支柱、且单一职业占比 ≥60% 的地块：工业产出 +18%"
+summary = "本国制造业产出占当地总产出至少 50%，且单一职业占当地就业人口至少 60%的地块：制造业产出提高 18%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -4400,7 +4400,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgIronSmeltingL1"]
 script = ExtResource("2_effect")
 definition_key = &"iron_smelting_l1"
-summary = "主产铁矿石的地块周围 1 格（每源 +10%，最多 3 源 = +30%）：工业产出 +30%"
+summary = "周围 1 格内每有 1 个本国主产铁矿石的地块，该目标地块的制造业产出提高 10%；每个目标地块最多计入 3 个来源地块，制造业产出最高提高 30%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -4444,7 +4444,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgIronSmeltingL2"]
 script = ExtResource("2_effect")
 definition_key = &"iron_smelting_l2"
-summary = "主产铁矿石的地块周围 2 格（每源 +10%，最多 3 源 = +30%）：工业产出 +30%"
+summary = "周围 2 格内每有 1 个本国主产铁矿石的地块，该目标地块的制造业产出提高 10%；每个目标地块最多计入 3 个来源地块，制造业产出最高提高 30%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -4488,7 +4488,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgIronSmeltingL3"]
 script = ExtResource("2_effect")
 definition_key = &"iron_smelting_l3"
-summary = "主产铁矿石的地块周围 1 格（每源 +10%，最多 3 源 = +30%）：工业产出 +30%"
+summary = "周围 1 格内每有 1 个本国主产铁矿石的地块，该目标地块的制造业产出提高 10%；每个目标地块最多计入 3 个来源地块，制造业产出最高提高 30%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -4532,7 +4532,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgIronSmeltingL3TargetOutput"]
 script = ExtResource("2_effect")
 definition_key = &"iron_smelting_l3_target_output"
-summary = "主产熟铁、钢或工具的地块（最多 32 格）：工业产出 +10%"
+summary = "本国（主产钢材或主产金属工具或主产锻铁）的地块：制造业产出提高 10%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -4576,7 +4576,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgPostalHorseL1"]
 script = ExtResource("2_effect")
 definition_key = &"postal_horse_l1"
-summary = "主产马匹的地块周围 2 格（每源 +6%，最多 3 源）：全部产出 +18%"
+summary = "周围 2 格内每有 1 个本国主产马匹的地块，该目标地块的全部产出提高 6%；每个目标地块最多计入 3 个来源地块，全部产出最高提高 18%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -4620,7 +4620,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgPostalHorseL2"]
 script = ExtResource("2_effect")
 definition_key = &"postal_horse_l2"
-summary = "主产马匹的地块周围 2 格（每源 +6%，最多 3 源）：全部产出 +18%"
+summary = "周围 2 格内每有 1 个本国主产马匹的地块，该目标地块的全部产出提高 6%；每个目标地块最多计入 3 个来源地块，全部产出最高提高 18%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -4664,7 +4664,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgPostalHorseL3"]
 script = ExtResource("2_effect")
 definition_key = &"postal_horse_l3"
-summary = "主产马匹的地块周围 2 格（每源 +6%，最多 3 源）：全部产出 +18%"
+summary = "周围 2 格内每有 1 个本国主产马匹的地块，该目标地块的全部产出提高 6%；每个目标地块最多计入 3 个来源地块，全部产出最高提高 18%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -4714,7 +4714,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgVillageCompactL1"]
 script = ExtResource("2_effect")
 definition_key = &"village_compact_l1"
-summary = "农业支柱、且相邻人口 ≥800 的地块：农业产出 +8%"
+summary = "本国农业产出占当地总产出至少 50%，且周围 1 格内人口合计至少 800 人的地块：农业产出提高 8%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -4764,7 +4764,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgVillageCompactL2"]
 script = ExtResource("2_effect")
 definition_key = &"village_compact_l2"
-summary = "农业支柱、且相邻人口 ≥800 的地块：农业产出 +11%"
+summary = "本国农业产出占当地总产出至少 50%，且周围 1 格内人口合计至少 800 人的地块：农业产出提高 11%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -4814,7 +4814,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgVillageCompactL3"]
 script = ExtResource("2_effect")
 definition_key = &"village_compact_l3"
-summary = "农业支柱、且相邻人口 ≥800 的地块：农业产出 +14%"
+summary = "本国农业产出占当地总产出至少 50%，且周围 1 格内人口合计至少 800 人的地块：农业产出提高 14%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -4887,7 +4887,7 @@ definition_key = &"economy.city.need.luxury.consumption_factor"
 [sub_resource type="Resource" id="ProgMarriageAllianceL1"]
 script = ExtResource("2_effect")
 definition_key = &"marriage_alliance_l1"
-summary = "宗族数 ≥2 的地块（最多 32 格）：全部产出 +5%，奢侈品需求 +10%"
+summary = "本国当地至少有 1 个家族分支，且当地家族分支至少 2 个的地块：全部产出提高 5%，奢侈消费需求提高 10%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -4931,7 +4931,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgMarriageAllianceL1AdjacentClan"]
 script = ExtResource("2_effect")
 definition_key = &"marriage_alliance_l1_adjacent_clan"
-summary = "相邻宗族地块（每源 +1%，最多 6 源 = +6%）：全部产出 +6%"
+summary = "周围 1 格内每有 1 个本国当地至少有 1 个家族分支的地块，该目标地块的全部产出提高 1%；每个目标地块最多计入 6 个来源地块，全部产出最高提高 6%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -5004,7 +5004,7 @@ definition_key = &"economy.city.need.luxury.consumption_factor"
 [sub_resource type="Resource" id="ProgMarriageAllianceL2"]
 script = ExtResource("2_effect")
 definition_key = &"marriage_alliance_l2"
-summary = "宗族数 ≥2 的地块（最多 32 格）：全部产出 +7%，奢侈品需求 +10%"
+summary = "本国当地至少有 1 个家族分支，且当地家族分支至少 2 个的地块：全部产出提高 7%，奢侈消费需求提高 10%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -5048,7 +5048,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgMarriageAllianceL2AdjacentClan"]
 script = ExtResource("2_effect")
 definition_key = &"marriage_alliance_l2_adjacent_clan"
-summary = "相邻宗族地块（每源 +1%，最多 6 源 = +6%）：全部产出 +6%"
+summary = "周围 1 格内每有 1 个本国当地至少有 1 个家族分支的地块，该目标地块的全部产出提高 1%；每个目标地块最多计入 6 个来源地块，全部产出最高提高 6%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -5121,7 +5121,7 @@ definition_key = &"economy.city.need.luxury.consumption_factor"
 [sub_resource type="Resource" id="ProgMarriageAllianceL3"]
 script = ExtResource("2_effect")
 definition_key = &"marriage_alliance_l3"
-summary = "宗族数 ≥3 的地块（最多 32 格）：全部产出 +7.35%，奢侈品需求 +10%"
+summary = "本国当地至少有 1 个家族分支，且当地家族分支至少 3 个的地块：全部产出提高 7.35%，奢侈消费需求提高 10%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -5165,7 +5165,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgMarriageAllianceL3AdjacentClan"]
 script = ExtResource("2_effect")
 definition_key = &"marriage_alliance_l3_adjacent_clan"
-summary = "相邻宗族地块（每源 +1%，最多 6 源 = +6%）：全部产出 +6%"
+summary = "周围 1 格内每有 1 个本国当地至少有 1 个家族分支的地块，该目标地块的全部产出提高 1%；每个目标地块最多计入 6 个来源地块，全部产出最高提高 6%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -5215,7 +5215,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgLandReclamationL1"]
 script = ExtResource("2_effect")
 definition_key = &"land_reclamation_l1"
-summary = "边地农业、且相邻人口 ≤400 的地块：农业产出 +10%"
+summary = "本国人口少于 120 人，且农业产出占当地总产出至少 50%，且周围 1 格内人口合计不超过 400 人的地块：农业产出提高 10%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -5265,7 +5265,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgLandReclamationL2"]
 script = ExtResource("2_effect")
 definition_key = &"land_reclamation_l2"
-summary = "边地农业、且相邻人口 ≤400 的地块：农业产出 +13%"
+summary = "本国人口少于 120 人，且农业产出占当地总产出至少 50%，且周围 1 格内人口合计不超过 400 人的地块：农业产出提高 13%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -5315,7 +5315,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgLandReclamationL3"]
 script = ExtResource("2_effect")
 definition_key = &"land_reclamation_l3"
-summary = "边地农业、且相邻人口 ≤400 的地块：农业产出 +16%"
+summary = "本国人口少于 120 人，且农业产出占当地总产出至少 50%，且周围 1 格内人口合计不超过 400 人的地块：农业产出提高 16%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -5382,7 +5382,7 @@ definition_key = &"economy.city.need.housing.consumption_factor.cut"
 [sub_resource type="Resource" id="ProgPublicHygieneL1"]
 script = ExtResource("2_effect")
 definition_key = &"public_hygiene_l1"
-summary = "聚落地块（最多 32 格）：出生率 +5%，住房需求 -8%"
+summary = "本国人口至少 400 人的地块：出生率提高 5%，居住维护消费需求降低 8%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -5449,7 +5449,7 @@ definition_key = &"economy.city.need.housing.consumption_factor.cut"
 [sub_resource type="Resource" id="ProgPublicHygieneL2"]
 script = ExtResource("2_effect")
 definition_key = &"public_hygiene_l2"
-summary = "聚落地块（最多 32 格）：出生率 +8%，住房需求 -10%"
+summary = "本国人口至少 400 人的地块：出生率提高 8%，居住维护消费需求降低 10%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -5516,7 +5516,7 @@ definition_key = &"economy.city.need.housing.consumption_factor.cut"
 [sub_resource type="Resource" id="ProgPublicHygieneL3"]
 script = ExtResource("2_effect")
 definition_key = &"public_hygiene_l3"
-summary = "聚落地块（最多 32 格）：出生率 +9%，住房需求 -11%"
+summary = "本国人口至少 400 人的地块：出生率提高 9%，居住维护消费需求降低 11%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -5566,7 +5566,7 @@ definition_key = &"economy.city.need.staple_food.consumption_factor.cut"
 [sub_resource type="Resource" id="ProgDroughtReliefL1"]
 script = ExtResource("2_effect")
 definition_key = &"drought_relief_l1"
-summary = "今日仅旱灾的地块（最多 32 格）：主食需求 -15%"
+summary = "本国当日发生旱灾且没有其他灾害的地块：食品需求降低 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -5615,7 +5615,7 @@ definition_key = &"economy.city.need.staple_food.consumption_factor.cut"
 [sub_resource type="Resource" id="ProgDroughtReliefL2"]
 script = ExtResource("2_effect")
 definition_key = &"drought_relief_l2"
-summary = "今日仅旱灾的地块（最多 32 格）：主食需求 -20%"
+summary = "本国当日发生旱灾且没有其他灾害的地块：食品需求降低 20%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -5664,7 +5664,7 @@ definition_key = &"economy.city.need.staple_food.consumption_factor.cut"
 [sub_resource type="Resource" id="ProgDroughtReliefL3"]
 script = ExtResource("2_effect")
 definition_key = &"drought_relief_l3"
-summary = "今日仅旱灾的地块（最多 32 格）：主食需求 -20%"
+summary = "本国当日发生旱灾且没有其他灾害的地块：食品需求降低 20%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -5713,7 +5713,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgHeavenHumanL1"]
 script = ExtResource("2_effect")
 definition_key = &"heaven_human_l1"
-summary = "农业支柱地块（最多 32 格）：降水充足时农业 +6%"
+summary = "本国农业产出占当地总产出至少 50%，且降水强度至少 50%的地块：农业产出提高 6%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -5763,7 +5763,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgHeavenHumanL2"]
 script = ExtResource("2_effect")
 definition_key = &"heaven_human_l2"
-summary = "农业支柱地块（最多 32 格）：降水充足时农业 +9%"
+summary = "本国农业产出占当地总产出至少 50%，且降水强度至少 50%的地块：农业产出提高 9%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -5813,7 +5813,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgHeavenHumanL3"]
 script = ExtResource("2_effect")
 definition_key = &"heaven_human_l3"
-summary = "农业支柱地块（最多 32 格）：降水充足时农业 +9%"
+summary = "本国农业产出占当地总产出至少 50%，且降水强度至少 50%的地块：农业产出提高 9%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -5875,7 +5875,7 @@ definition_key = &"economy.city.building.extractive_output_factor"
 [sub_resource type="Resource" id="ProgSaltMonopolyL1"]
 script = ExtResource("2_effect")
 definition_key = &"salt_monopoly_l1"
-summary = "每个矿业支柱地块使矿业支柱地块产出 +1%（上限 +15%）"
+summary = "本国采掘业产出占当地总产出至少 50%的地块：全国每有 1 个采掘业产出占比至少 50% 的地块，采掘产出提高 1%，最高提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -5937,7 +5937,7 @@ definition_key = &"economy.city.building.extractive_output_factor"
 [sub_resource type="Resource" id="ProgSaltMonopolyL2"]
 script = ExtResource("2_effect")
 definition_key = &"salt_monopoly_l2"
-summary = "每个矿业支柱地块使矿业支柱地块产出 +1.5%（上限 +15%）"
+summary = "本国采掘业产出占当地总产出至少 50%的地块：全国每有 1 个采掘业产出占比至少 50% 的地块，采掘产出提高 1.5%，最高提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -5999,7 +5999,7 @@ definition_key = &"economy.city.building.extractive_output_factor"
 [sub_resource type="Resource" id="ProgSaltMonopolyL3"]
 script = ExtResource("2_effect")
 definition_key = &"salt_monopoly_l3"
-summary = "每个矿业支柱地块使矿业支柱地块产出 +2%（上限 +15%）"
+summary = "本国采掘业产出占当地总产出至少 50%的地块：全国每有 1 个采掘业产出占比至少 50% 的地块，采掘产出提高 2%，最高提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -6043,7 +6043,7 @@ definition_key = &"economy.city.good.fine_clothing.output_factor"
 [sub_resource type="Resource" id="ProgSericultureL1"]
 script = ExtResource("2_effect")
 definition_key = &"sericulture_l1"
-summary = "主产布的地块周围 1 格（每源 +12%，最多 3 源 = +36%）：精致服装产出 +36%"
+summary = "周围 1 格内每有 1 个本国主产布料的地块，该目标地块的华服产出提高 12%；每个目标地块最多计入 3 个来源地块，华服产出最高提高 36%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -6087,7 +6087,7 @@ definition_key = &"economy.city.good.fine_clothing.output_factor"
 [sub_resource type="Resource" id="ProgSericultureL2"]
 script = ExtResource("2_effect")
 definition_key = &"sericulture_l2"
-summary = "主产布的地块周围 1 格（每源 +12%，最多 3 源 = +36%）：精致服装产出 +36%"
+summary = "周围 1 格内每有 1 个本国主产布料的地块，该目标地块的华服产出提高 12%；每个目标地块最多计入 3 个来源地块，华服产出最高提高 36%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -6131,7 +6131,7 @@ definition_key = &"economy.city.good.fine_clothing.output_factor"
 [sub_resource type="Resource" id="ProgSericultureL3"]
 script = ExtResource("2_effect")
 definition_key = &"sericulture_l3"
-summary = "主产布的地块周围 1 格（每源 +12%，最多 3 源 = +36%）：精致服装产出 +36%"
+summary = "周围 1 格内每有 1 个本国主产布料的地块，该目标地块的华服产出提高 12%；每个目标地块最多计入 3 个来源地块，华服产出最高提高 36%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -6175,7 +6175,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgOceanCompanyL1"]
 script = ExtResource("2_effect")
 definition_key = &"ocean_company_l1"
-summary = "海岸繁市地块（最多 32 格）：全部产出 ×1.25"
+summary = "本国海岸，且当地累计贸易事件至少 24 次的地块：全部产出提高 25%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -6219,7 +6219,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgOceanCompanyL2"]
 script = ExtResource("2_effect")
 definition_key = &"ocean_company_l2"
-summary = "海岸繁市地块（最多 32 格）：全部产出 ×1.30"
+summary = "本国海岸，且当地累计贸易事件至少 24 次的地块：全部产出提高 30%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -6263,7 +6263,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgOceanCompanyL3"]
 script = ExtResource("2_effect")
 definition_key = &"ocean_company_l3"
-summary = "海岸繁市地块（最多 32 格）：全部产出 ×1.30"
+summary = "本国海岸，且当地累计贸易事件至少 24 次的地块：全部产出提高 30%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -6325,7 +6325,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgCharteredRouteL1"]
 script = ExtResource("2_effect")
 definition_key = &"chartered_route_l1"
-summary = "每种专精物资使繁市地块全部产出 +1%（上限 +15%）"
+summary = "本国当地累计贸易事件至少 24 次的地块：全国专精地块（单一货物产出占比至少 60%）的主产货物每多 1 种（同种货物只计一次），全部产出提高 1%，最高提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -6387,7 +6387,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgCharteredRouteL2"]
 script = ExtResource("2_effect")
 definition_key = &"chartered_route_l2"
-summary = "每种专精物资使繁市地块全部产出 +1.5%（上限 +15%）"
+summary = "本国当地累计贸易事件至少 24 次的地块：全国专精地块（单一货物产出占比至少 60%）的主产货物每多 1 种（同种货物只计一次），全部产出提高 1.5%，最高提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -6449,7 +6449,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgCharteredRouteL3"]
 script = ExtResource("2_effect")
 definition_key = &"chartered_route_l3"
-summary = "每种专精物资使繁市地块全部产出 +2%（上限 +15%）"
+summary = "本国当地累计贸易事件至少 24 次的地块：全国专精地块（单一货物产出占比至少 60%）的主产货物每多 1 种（同种货物只计一次），全部产出提高 2%，最高提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -6493,7 +6493,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgColonialPlantationL1"]
 script = ExtResource("2_effect")
 definition_key = &"colonial_plantation_l1"
-summary = "高度专精的农业支柱地块（最多 32 格）：农业产出 +20%"
+summary = "本国单一货物产出占当地全部产出至少 80%，且农业产出占当地总产出至少 50%的地块：农业产出提高 20%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -6537,7 +6537,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgColonialPlantationL2"]
 script = ExtResource("2_effect")
 definition_key = &"colonial_plantation_l2"
-summary = "高度专精的农业支柱地块（最多 32 格）：农业产出 +28%"
+summary = "本国单一货物产出占当地全部产出至少 80%，且农业产出占当地总产出至少 50%的地块：农业产出提高 28%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -6581,7 +6581,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgColonialPlantationL3"]
 script = ExtResource("2_effect")
 definition_key = &"colonial_plantation_l3"
-summary = "高度专精的农业支柱地块（最多 32 格）：农业产出 +28%，产出 -0%"
+summary = "本国单一货物产出占当地全部产出至少 80%，且农业产出占当地总产出至少 50%的地块：农业产出提高 28%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -6643,7 +6643,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgSilverFlowL1"]
 script = ExtResource("2_effect")
 definition_key = &"silver_flow_l1"
-summary = "每个主产白银地块使白银地块全部产出 +3%（上限 +15%）"
+summary = "本国主产白银的地块：全国每有 1 个主产白银的地块，全部产出提高 3%，最高提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -6705,7 +6705,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgSilverFlowL2"]
 script = ExtResource("2_effect")
 definition_key = &"silver_flow_l2"
-summary = "每个主产白银地块使白银地块全部产出 +3%（上限 +21%）"
+summary = "本国主产白银的地块：全国每有 1 个主产白银的地块，全部产出提高 3%，最高提高 21%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -6767,7 +6767,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgSilverFlowL3"]
 script = ExtResource("2_effect")
 definition_key = &"silver_flow_l3"
-summary = "每个主产白银地块使白银地块全部产出 +3%（上限 +27%）"
+summary = "本国主产白银的地块：全国每有 1 个主产白银的地块，全部产出提高 3%，最高提高 27%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -6829,7 +6829,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgManufactoryRegulationL1"]
 script = ExtResource("2_effect")
 definition_key = &"manufactory_regulation_l1"
-summary = "工业建筑 ≥2 座的地块（最多 32 格）：每座工业 +2%（上限 +16%）"
+summary = "本国制造业产出占当地总产出至少 50%的地块：当地每有 1 座制造业建筑，制造业产出提高 2%，最高提高 16%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -6891,7 +6891,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgManufactoryRegulationL2"]
 script = ExtResource("2_effect")
 definition_key = &"manufactory_regulation_l2"
-summary = "工业建筑 ≥2 座的地块（最多 32 格）：每座工业 +3%（上限 +24%）"
+summary = "本国制造业产出占当地总产出至少 50%的地块：当地每有 1 座制造业建筑，制造业产出提高 3%，最高提高 24%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -6953,7 +6953,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgManufactoryRegulationL3"]
 script = ExtResource("2_effect")
 definition_key = &"manufactory_regulation_l3"
-summary = "工业建筑 ≥2 座的地块（最多 32 格）：每座工业 +3%（上限 +30%）"
+summary = "本国制造业产出占当地总产出至少 50%的地块：当地每有 1 座制造业建筑，制造业产出提高 3%，最高提高 30%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -6997,7 +6997,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgMaritimeInsuranceL1"]
 script = ExtResource("2_effect")
 definition_key = &"maritime_insurance_l1"
-summary = "海岸地块（最多 32 格）：全部产出 +10%（持续 30 天，可刷新）"
+summary = "本国海岸的地块：全部产出提高 10%；最多影响 32 个目标地块；持续 30 天，可刷新"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -7041,7 +7041,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgMaritimeInsuranceL2"]
 script = ExtResource("2_effect")
 definition_key = &"maritime_insurance_l2"
-summary = "海岸地块（最多 32 格）：全部产出 +15%（持续 30 天，可刷新）"
+summary = "本国海岸的地块：全部产出提高 15%；最多影响 32 个目标地块；持续 30 天，可刷新"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -7108,7 +7108,7 @@ definition_key = &"economy.city.need.staple_food.consumption_factor.cut"
 [sub_resource type="Resource" id="ProgMaritimeInsuranceL3"]
 script = ExtResource("2_effect")
 definition_key = &"maritime_insurance_l3"
-summary = "海岸地块（最多 32 格）：全部产出 +15%（持续 30 天，可刷新），主食需求 -10%"
+summary = "本国海岸的地块：全部产出提高 15%，食品需求降低 10%；最多影响 32 个目标地块；持续 30 天，可刷新"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -7175,7 +7175,7 @@ definition_key = &"economy.city.need.education_culture.consumption_factor.cut"
 [sub_resource type="Resource" id="ProgGentryPatronageL1"]
 script = ExtResource("2_effect")
 definition_key = &"gentry_patronage_l1"
-summary = "名门地块（最多 32 格）：知识产出 +10%，教育文化需求 -8%"
+summary = "本国当地至少有 1 个威望不低于 50% 的家族分支的地块：知识产出提高 10%，教育与文化需求降低 8%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -7242,7 +7242,7 @@ definition_key = &"economy.city.need.education_culture.consumption_factor.cut"
 [sub_resource type="Resource" id="ProgGentryPatronageL2"]
 script = ExtResource("2_effect")
 definition_key = &"gentry_patronage_l2"
-summary = "名门地块（最多 32 格）：知识产出 +14%，教育文化需求 -8%"
+summary = "本国当地至少有 1 个威望不低于 50% 的家族分支的地块：知识产出提高 14%，教育与文化需求降低 8%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -7309,7 +7309,7 @@ definition_key = &"economy.city.need.education_culture.consumption_factor.cut"
 [sub_resource type="Resource" id="ProgGentryPatronageL3"]
 script = ExtResource("2_effect")
 definition_key = &"gentry_patronage_l3"
-summary = "名门地块（最多 32 格）：知识产出 +14%，教育文化需求 -8%"
+summary = "本国当地至少有 1 个威望不低于 50% 的家族分支的地块：知识产出提高 14%，教育与文化需求降低 8%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -7353,7 +7353,7 @@ definition_key = &"economy.city.building.knowledge_output_factor"
 [sub_resource type="Resource" id="ProgGentryPatronageL3Ring"]
 script = ExtResource("2_effect")
 definition_key = &"gentry_patronage_l3_ring"
-summary = "名门地块周围 1 格（最多 32 格）：知识产出 +4%"
+summary = "本国当地至少有 1 个威望不低于 50% 的家族分支的地块周围 1 格内的地块：知识产出提高 4%（多个来源不叠加）；最多计入 32 个来源地块；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -7420,7 +7420,7 @@ definition_key = &"economy.city.birth_factor"
 [sub_resource type="Resource" id="ProgFrontierGarrisonL1"]
 script = ExtResource("2_effect")
 definition_key = &"frontier_garrison_l1"
-summary = "边境地块（最多 32 格）：农业产出 +8%，出生率 +5%"
+summary = "本国边境的地块：农业产出提高 8%，出生率提高 5%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -7487,7 +7487,7 @@ definition_key = &"economy.city.birth_factor"
 [sub_resource type="Resource" id="ProgFrontierGarrisonL2"]
 script = ExtResource("2_effect")
 definition_key = &"frontier_garrison_l2"
-summary = "边境地块（最多 32 格）：农业产出 +10%，出生率 +7%"
+summary = "本国边境的地块：农业产出提高 10%，出生率提高 7%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -7554,7 +7554,7 @@ definition_key = &"economy.city.birth_factor"
 [sub_resource type="Resource" id="ProgFrontierGarrisonL3"]
 script = ExtResource("2_effect")
 definition_key = &"frontier_garrison_l3"
-summary = "边境或边地地块（最多 32 格）：农业产出 +10%，出生率 +7%"
+summary = "本国边境的地块：农业产出提高 10%，出生率提高 7%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -7598,7 +7598,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgExperimentalMethodL1"]
 script = ExtResource("2_effect")
 definition_key = &"experimental_method_l1"
-summary = "知识占比 ≥20% 的地块周围 2 格（每源 +6%，最多 3 源）：工业 +6%"
+summary = "周围 2 格内每有 1 个本国知识业产出占当地总产出至少 50%的地块，该目标地块的制造业产出提高 6%；每个目标地块最多计入 3 个来源地块，制造业产出最高提高 18%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -7642,7 +7642,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgExperimentalMethodL2"]
 script = ExtResource("2_effect")
 definition_key = &"experimental_method_l2"
-summary = "知识占比 ≥20% 的地块周围 2 格（每源 +9%，最多 3 源）：工业 +27%：工业 +9%"
+summary = "周围 2 格内每有 1 个本国知识业产出占当地总产出至少 50%的地块，该目标地块的制造业产出提高 9%；每个目标地块最多计入 3 个来源地块，制造业产出最高提高 27%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -7686,7 +7686,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgExperimentalMethodL3"]
 script = ExtResource("2_effect")
 definition_key = &"experimental_method_l3"
-summary = "知识占比 ≥20% 的地块周围 2 格（每源 +9%，最多 3 源）：工业 +27%"
+summary = "周围 2 格内每有 1 个本国知识业产出占当地总产出至少 50%的地块，该目标地块的制造业产出提高 9%；每个目标地块最多计入 3 个来源地块，制造业产出最高提高 27%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -7730,7 +7730,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgAgrarianReformL1"]
 script = ExtResource("2_effect")
 definition_key = &"agrarian_reform_l1"
-summary = "专精的粮作地块（最多 32 格）：农业产出 ×1.10"
+summary = "本国主产小麦、稻米、玉米、马铃薯或谷物，且单一货物产出占当地全部产出至少 60%的地块：农业产出提高 10%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -7774,7 +7774,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgAgrarianReformL2"]
 script = ExtResource("2_effect")
 definition_key = &"agrarian_reform_l2"
-summary = "专精的粮作地块（最多 32 格）：农业产出 ×1.14"
+summary = "本国主产小麦、稻米、玉米、马铃薯或谷物，且单一货物产出占当地全部产出至少 60%的地块：农业产出提高 14%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -7818,7 +7818,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgAgrarianReformL3"]
 script = ExtResource("2_effect")
 definition_key = &"agrarian_reform_l3"
-summary = "专精的粮作地块（最多 32 格）：农业产出 ×1.18"
+summary = "本国主产小麦、稻米、玉米、马铃薯或谷物，且单一货物产出占当地全部产出至少 60%的地块：农业产出提高 18%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -7862,7 +7862,7 @@ definition_key = &"economy.city.building.extractive_output_factor"
 [sub_resource type="Resource" id="ProgCoalBasinL1"]
 script = ExtResource("2_effect")
 definition_key = &"coal_basin_l1"
-summary = "矿业支柱地块（最多 32 格）：矿业产出 +20%"
+summary = "本国采掘业产出占当地总产出至少 50%的地块：采掘产出提高 20%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -7906,7 +7906,7 @@ definition_key = &"economy.city.building.extractive_output_factor"
 [sub_resource type="Resource" id="ProgCoalBasinL2"]
 script = ExtResource("2_effect")
 definition_key = &"coal_basin_l2"
-summary = "矿业支柱地块（最多 32 格）：矿业产出 +28%"
+summary = "本国采掘业产出占当地总产出至少 50%的地块：采掘产出提高 28%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -7950,7 +7950,7 @@ definition_key = &"economy.city.building.extractive_output_factor"
 [sub_resource type="Resource" id="ProgCoalBasinL3"]
 script = ExtResource("2_effect")
 definition_key = &"coal_basin_l3"
-summary = "矿业支柱地块（最多 32 格）：矿业产出 +32%"
+summary = "本国采掘业产出占当地总产出至少 50%的地块：采掘产出提高 32%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -7994,7 +7994,7 @@ definition_key = &"economy.city.good.cloth.output_factor"
 [sub_resource type="Resource" id="ProgCottonGinL1"]
 script = ExtResource("2_effect")
 definition_key = &"cotton_gin_l1"
-summary = "主产棉纤维的地块周围 2 格（每源 +10%，最多 3 源 = +30%）：布产出 +30%"
+summary = "周围 2 格内每有 1 个本国主产棉纤维的地块，该目标地块的布料产出提高 10%；每个目标地块最多计入 3 个来源地块，布料产出最高提高 30%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -8038,7 +8038,7 @@ definition_key = &"economy.city.good.cloth.output_factor"
 [sub_resource type="Resource" id="ProgCottonGinL2"]
 script = ExtResource("2_effect")
 definition_key = &"cotton_gin_l2"
-summary = "主产棉纤维的地块周围 2 格（每源 +10%，最多 3 源 = +30%）：布产出 +30%"
+summary = "周围 2 格内每有 1 个本国主产棉纤维的地块，该目标地块的布料产出提高 10%；每个目标地块最多计入 3 个来源地块，布料产出最高提高 30%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -8082,7 +8082,7 @@ definition_key = &"economy.city.good.cloth.output_factor"
 [sub_resource type="Resource" id="ProgCottonGinL3"]
 script = ExtResource("2_effect")
 definition_key = &"cotton_gin_l3"
-summary = "主产棉纤维的地块周围 2 格（每源 +10%，最多 3 源 = +30%）：布产出 +30%"
+summary = "周围 2 格内每有 1 个本国主产棉纤维的地块，该目标地块的布料产出提高 10%；每个目标地块最多计入 3 个来源地块，布料产出最高提高 30%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -8126,7 +8126,7 @@ definition_key = &"economy.city.resource.pasture.regen_factor"
 [sub_resource type="Resource" id="ProgEnclosureL1"]
 script = ExtResource("2_effect")
 definition_key = &"enclosure_l1"
-summary = "主产畜产的地块周围 1 格（每源 +10%，最多 3 源 = +30%）：牧场再生 +30%"
+summary = "周围 1 格内每有 1 个本国主产畜牧产品的地块，该目标地块的牧草资源恢复速度提高 10%；每个目标地块最多计入 3 个来源地块，牧草资源恢复速度最高提高 30%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -8170,7 +8170,7 @@ definition_key = &"economy.city.resource.pasture.regen_factor"
 [sub_resource type="Resource" id="ProgEnclosureL2"]
 script = ExtResource("2_effect")
 definition_key = &"enclosure_l2"
-summary = "主产畜产的地块周围 1 格（每源 +10%，最多 3 源 = +30%）：牧场再生 +30%"
+summary = "周围 1 格内每有 1 个本国主产畜牧产品的地块，该目标地块的牧草资源恢复速度提高 10%；每个目标地块最多计入 3 个来源地块，牧草资源恢复速度最高提高 30%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -8214,7 +8214,7 @@ definition_key = &"economy.city.resource.pasture.regen_factor"
 [sub_resource type="Resource" id="ProgEnclosureL3"]
 script = ExtResource("2_effect")
 definition_key = &"enclosure_l3"
-summary = "主产畜产的地块周围 1 格（每源 +10%，最多 3 源 = +30%）：牧场再生 +30%"
+summary = "周围 1 格内每有 1 个本国主产畜牧产品的地块，该目标地块的牧草资源恢复速度提高 10%；每个目标地块最多计入 3 个来源地块，牧草资源恢复速度最高提高 30%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -8264,7 +8264,7 @@ definition_key = &"economy.city.birth_factor"
 [sub_resource type="Resource" id="ProgLandTaxReformL3"]
 script = ExtResource("2_effect")
 definition_key = &"land_tax_reform_l3"
-summary = "轻税的农业支柱地块（实测净税负 ≤ 8%，最多 32 格）：出生率 +8%"
+summary = "本国农业产出占当地总产出至少 50%，且实际净纳税额占税前收入不超过 8%的地块：出生率提高 8%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -8326,7 +8326,7 @@ definition_key = &"ideology.country.construction.cost_factor.cut"
 [sub_resource type="Resource" id="ProgExciseL3Ramp"]
 script = ExtResource("2_effect")
 definition_key = &"excise_l3_ramp"
-summary = "国库储备率每档建造成本 -0.5%（上限 -4%）"
+summary = "国库储备率（国库现金 ÷ 全国人口一年收入总额）每提高 1 个百分点，全国建设成本降低 0.5%，最高降低 4%"
 target_domain = 3
 operation = 1
 lifecycle = 0
@@ -8369,7 +8369,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgUrbanSanitationL1"]
 script = ExtResource("2_effect")
 definition_key = &"urban_sanitation_l1"
-summary = "大邑地块（最多 32 格）：全部产出 +8%"
+summary = "本国人口至少 1200 人的地块：全部产出提高 8%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -8413,7 +8413,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgUrbanSanitationL2"]
 script = ExtResource("2_effect")
 definition_key = &"urban_sanitation_l2"
-summary = "大邑地块（最多 32 格）：全部产出 +12%"
+summary = "本国人口至少 1200 人的地块：全部产出提高 12%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -8457,7 +8457,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgUrbanSanitationL3"]
 script = ExtResource("2_effect")
 definition_key = &"urban_sanitation_l3"
-summary = "大邑地块（最多 32 格）：全部产出 +14%"
+summary = "本国人口至少 1200 人的地块：全部产出提高 14%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -8507,7 +8507,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor.cut"
 [sub_resource type="Resource" id="ProgFreeTradeL1"]
 script = ExtResource("2_effect")
 definition_key = &"free_trade_l1"
-summary = "非多元的工业支柱地块（最多 32 格）：工业 -5%"
+summary = "本国制造业产出占当地总产出至少 50%，且当地有产出的经济部门不超过 2 个的地块：制造业产出降低 5%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -8557,7 +8557,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor.cut"
 [sub_resource type="Resource" id="ProgFreeTradeL2"]
 script = ExtResource("2_effect")
 definition_key = &"free_trade_l2"
-summary = "非多元的工业支柱地块（最多 32 格）：工业 -5%"
+summary = "本国制造业产出占当地总产出至少 50%，且当地有产出的经济部门不超过 2 个的地块：制造业产出降低 5%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -8601,7 +8601,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgFreeTradeL3"]
 script = ExtResource("2_effect")
 definition_key = &"free_trade_l3"
-summary = "多元地块（最多 32 格）：全部产出 +10%"
+summary = "本国当地至少有 3 个经济部门有产出的地块：全部产出提高 10%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -8645,7 +8645,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgAgriculturalChemistryL1"]
 script = ExtResource("2_effect")
 definition_key = &"agricultural_chemistry_l1"
-summary = "主产化肥的地块周围 2 格（每源 +8%，最多 3 源 = +24%）：农业产出 +24%"
+summary = "周围 2 格内每有 1 个本国主产肥料的地块，该目标地块的农业产出提高 8%；每个目标地块最多计入 3 个来源地块，农业产出最高提高 24%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -8689,7 +8689,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgAgriculturalChemistryL2"]
 script = ExtResource("2_effect")
 definition_key = &"agricultural_chemistry_l2"
-summary = "主产化肥的地块周围 2 格（每源 +8%，最多 3 源 = +24%）：农业产出 +24%"
+summary = "周围 2 格内每有 1 个本国主产肥料的地块，该目标地块的农业产出提高 8%；每个目标地块最多计入 3 个来源地块，农业产出最高提高 24%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -8733,7 +8733,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgAgriculturalChemistryL3"]
 script = ExtResource("2_effect")
 definition_key = &"agricultural_chemistry_l3"
-summary = "主产化肥的地块周围 2 格（每源 +8%，最多 3 源 = +24%）：农业产出 +24%"
+summary = "周围 2 格内每有 1 个本国主产肥料的地块，该目标地块的农业产出提高 8%；每个目标地块最多计入 3 个来源地块，农业产出最高提高 24%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -8777,7 +8777,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgFrostLoreL1Cold"]
 script = ExtResource("2_effect")
 definition_key = &"frost_lore_l1_cold"
-summary = "寒地农业地块（最多 32 格）：农业产出 +5%"
+summary = "本国年均温不高于 5℃，且农业产出占当地总产出至少 50%的地块：农业产出提高 5%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -8821,7 +8821,7 @@ definition_key = &"economy.city.building.agriculture_output_factor.cut"
 [sub_resource type="Resource" id="ProgFrostLoreL1Hot"]
 script = ExtResource("2_effect")
 definition_key = &"frost_lore_l1_hot"
-summary = "暑地农业地块（最多 32 格）：农业产出 -3%"
+summary = "本国年均温不低于 22℃，且农业产出占当地总产出至少 50%的地块：农业产出降低 3%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -8865,7 +8865,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgFrostLoreL2Cold"]
 script = ExtResource("2_effect")
 definition_key = &"frost_lore_l2_cold"
-summary = "寒地农业地块（最多 32 格）：农业产出 +7%"
+summary = "本国年均温不高于 5℃，且农业产出占当地总产出至少 50%的地块：农业产出提高 7%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -8909,7 +8909,7 @@ definition_key = &"economy.city.building.agriculture_output_factor.cut"
 [sub_resource type="Resource" id="ProgFrostLoreL2Hot"]
 script = ExtResource("2_effect")
 definition_key = &"frost_lore_l2_hot"
-summary = "暑地农业地块（最多 32 格）：农业产出 -3%"
+summary = "本国年均温不低于 22℃，且农业产出占当地总产出至少 50%的地块：农业产出降低 3%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -8953,7 +8953,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgFrostLoreL3Cold"]
 script = ExtResource("2_effect")
 definition_key = &"frost_lore_l3_cold"
-summary = "寒地农业地块（最多 32 格）：农业产出 +7%"
+summary = "本国年均温不高于 5℃，且农业产出占当地总产出至少 50%的地块：农业产出提高 7%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -8997,7 +8997,7 @@ definition_key = &"economy.city.building.agriculture_output_factor.cut"
 [sub_resource type="Resource" id="ProgFrostLoreL3Hot"]
 script = ExtResource("2_effect")
 definition_key = &"frost_lore_l3_hot"
-summary = "暑地农业地块（最多 32 格）：农业产出 -3%"
+summary = "本国年均温不低于 22℃，且农业产出占当地总产出至少 50%的地块：农业产出降低 3%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -9041,7 +9041,7 @@ definition_key = &"economy.city.building.knowledge_output_factor"
 [sub_resource type="Resource" id="ProgTelegraphL1"]
 script = ExtResource("2_effect")
 definition_key = &"telegraph_l1"
-summary = "知识支柱地块周围 2 格（每源 +6%，最多 3 源）：知识 +6%、贸易 +3%"
+summary = "周围 2 格内每有 1 个本国知识业产出占当地总产出至少 50%的地块，该目标地块的知识产出提高 6%；每个目标地块最多计入 3 个来源地块，知识产出最高提高 18%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -9085,7 +9085,7 @@ definition_key = &"economy.city.building.knowledge_output_factor"
 [sub_resource type="Resource" id="ProgTelegraphL2"]
 script = ExtResource("2_effect")
 definition_key = &"telegraph_l2"
-summary = "知识支柱地块周围 2 格（每源 +9%，最多 3 源）：知识 +9%"
+summary = "周围 2 格内每有 1 个本国知识业产出占当地总产出至少 50%的地块，该目标地块的知识产出提高 9%；每个目标地块最多计入 3 个来源地块，知识产出最高提高 27%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -9129,7 +9129,7 @@ definition_key = &"economy.city.building.knowledge_output_factor"
 [sub_resource type="Resource" id="ProgTelegraphL3"]
 script = ExtResource("2_effect")
 definition_key = &"telegraph_l3"
-summary = "知识支柱地块周围 3 格（每源 +9%，最多 3 源）"
+summary = "周围 3 格内每有 1 个本国知识业产出占当地总产出至少 50%的地块，该目标地块的知识产出提高 9%；每个目标地块最多计入 3 个来源地块，知识产出最高提高 27%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -9189,7 +9189,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgTradeUnionsL1"]
 script = ExtResource("2_effect")
 definition_key = &"trade_unions_l1"
-summary = "工业职业占比 ≥25%、且工人阶层民意 <0.2 的地块：工业产出 +10%"
+summary = "本国制造业产出占当地总产出至少 50%，且工业职业占当地劳动力至少 25%，且全国工人阶层满意度低于 20%的地块：制造业产出提高 10%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -9249,7 +9249,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgTradeUnionsL1WorkerBonus"]
 script = ExtResource("2_effect")
 definition_key = &"trade_unions_l1_worker_bonus"
-summary = "工业职业占比 ≥25%、且工人阶层民意 ≥0.2 的地块：工业产出 +20%"
+summary = "本国制造业产出占当地总产出至少 50%，且工业职业占当地劳动力至少 25%，且全国工人阶层满意度至少 20%的地块：制造业产出提高 20%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -9309,7 +9309,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgTradeUnionsL2"]
 script = ExtResource("2_effect")
 definition_key = &"trade_unions_l2"
-summary = "工业职业占比 ≥25%、且工人阶层民意 <0.2 的地块：工业产出 +14%"
+summary = "本国制造业产出占当地总产出至少 50%，且工业职业占当地劳动力至少 25%，且全国工人阶层满意度低于 20%的地块：制造业产出提高 14%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -9369,7 +9369,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgTradeUnionsL2WorkerBonus"]
 script = ExtResource("2_effect")
 definition_key = &"trade_unions_l2_worker_bonus"
-summary = "工业职业占比 ≥25%、且工人阶层民意 ≥0.2 的地块：工业产出 +28%"
+summary = "本国制造业产出占当地总产出至少 50%，且工业职业占当地劳动力至少 25%，且全国工人阶层满意度至少 20%的地块：制造业产出提高 28%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -9429,7 +9429,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgTradeUnionsL3"]
 script = ExtResource("2_effect")
 definition_key = &"trade_unions_l3"
-summary = "工业职业占比 ≥20%、且工人阶层民意 <0.2 的地块：工业产出 +14%"
+summary = "本国制造业产出占当地总产出至少 50%，且工业职业占当地劳动力至少 20%，且全国工人阶层满意度低于 20%的地块：制造业产出提高 14%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -9489,7 +9489,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgTradeUnionsL3WorkerBonus"]
 script = ExtResource("2_effect")
 definition_key = &"trade_unions_l3_worker_bonus"
-summary = "工业职业占比 ≥20%、且工人阶层民意 ≥0.2 的地块：工业产出 +28%"
+summary = "本国制造业产出占当地总产出至少 50%，且工业职业占当地劳动力至少 20%，且全国工人阶层满意度至少 20%的地块：制造业产出提高 28%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -9533,7 +9533,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgAssemblyLineL1"]
 script = ExtResource("2_effect")
 definition_key = &"assembly_line_l1"
-summary = "成链 ≥2 的地块（最多 32 格）：工业产出 ×1.15"
+summary = "本国当地至少已建成 1 条完整建筑升级链（同一升级系列的各等级建筑均已建成）的地块：制造业产出提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -9577,7 +9577,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgAssemblyLineL2"]
 script = ExtResource("2_effect")
 definition_key = &"assembly_line_l2"
-summary = "成链 ≥2 的地块（最多 32 格）：工业产出 ×1.20"
+summary = "本国当地至少已建成 1 条完整建筑升级链（同一升级系列的各等级建筑均已建成）的地块：制造业产出提高 20%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -9621,7 +9621,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgAssemblyLineL3"]
 script = ExtResource("2_effect")
 definition_key = &"assembly_line_l3"
-summary = "成链 ≥2 的地块（最多 32 格）：工业产出 ×1.20"
+summary = "本国当地至少已建成 1 条完整建筑升级链（同一升级系列的各等级建筑均已建成）的地块：制造业产出提高 20%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -9665,7 +9665,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgElectrificationL1"]
 script = ExtResource("2_effect")
 definition_key = &"electrification_l1"
-summary = "能源支柱地块周围 2 格（每源 +8%，最多 3 源 = +24%）：工业产出 +24%"
+summary = "周围 2 格内每有 1 个本国能源业产出占当地总产出至少 50%的地块，该目标地块的制造业产出提高 8%；每个目标地块最多计入 3 个来源地块，制造业产出最高提高 24%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -9709,7 +9709,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgElectrificationL2"]
 script = ExtResource("2_effect")
 definition_key = &"electrification_l2"
-summary = "能源支柱地块周围 2 格（每源 +8%，最多 3 源 = +24%）：工业产出 +24%"
+summary = "周围 2 格内每有 1 个本国能源业产出占当地总产出至少 50%的地块，该目标地块的制造业产出提高 8%；每个目标地块最多计入 3 个来源地块，制造业产出最高提高 24%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -9753,7 +9753,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgElectrificationL3"]
 script = ExtResource("2_effect")
 definition_key = &"electrification_l3"
-summary = "能源支柱地块周围 2 格（每源 +8%，最多 3 源 = +24%）：工业产出 +24%"
+summary = "周围 2 格内每有 1 个本国能源业产出占当地总产出至少 50%的地块，该目标地块的制造业产出提高 8%；每个目标地块最多计入 3 个来源地块，制造业产出最高提高 24%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -9797,7 +9797,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgEcologicalBalanceL1Rich"]
 script = ExtResource("2_effect")
 definition_key = &"ecological_balance_l1_rich"
-summary = "富饶地块（最多 32 格）：全部产出 +10%"
+summary = "本国自然资源平均剩余比例至少 80%的地块：全部产出提高 10%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -9841,7 +9841,7 @@ definition_key = &"economy.city.output_factor.cut"
 [sub_resource type="Resource" id="ProgEcologicalBalanceL1Dry"]
 script = ExtResource("2_effect")
 definition_key = &"ecological_balance_l1_dry"
-summary = "枯竭地块（最多 32 格）：全部产出 -5%"
+summary = "本国当地货物最高短缺率至少 30%的地块：全部产出降低 5%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -9885,7 +9885,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgEcologicalBalanceL2Rich"]
 script = ExtResource("2_effect")
 definition_key = &"ecological_balance_l2_rich"
-summary = "富饶地块（最多 32 格）：全部产出 +14%"
+summary = "本国自然资源平均剩余比例至少 80%的地块：全部产出提高 14%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -9929,7 +9929,7 @@ definition_key = &"economy.city.output_factor.cut"
 [sub_resource type="Resource" id="ProgEcologicalBalanceL2Dry"]
 script = ExtResource("2_effect")
 definition_key = &"ecological_balance_l2_dry"
-summary = "枯竭地块（最多 32 格）：全部产出 -5%"
+summary = "本国当地货物最高短缺率至少 30%的地块：全部产出降低 5%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -9973,7 +9973,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgEcologicalBalanceL3Rich"]
 script = ExtResource("2_effect")
 definition_key = &"ecological_balance_l3_rich"
-summary = "富饶地块（最多 32 格）：全部产出 +14%，枯竭惩罚取消"
+summary = "本国自然资源平均剩余比例至少 80%的地块：全部产出提高 14%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -10017,7 +10017,7 @@ definition_key = &"economy.city.good.fertilizer.output_factor"
 [sub_resource type="Resource" id="ProgChemicalIndustryL1"]
 script = ExtResource("2_effect")
 definition_key = &"chemical_industry_l1"
-summary = "主产盐的地块周围 2 格（每源 +15%，最多 3 源 = +45%）：化肥产出 +45%"
+summary = "周围 2 格内每有 1 个本国主产食盐的地块，该目标地块的肥料产出提高 15%；每个目标地块最多计入 3 个来源地块，肥料产出最高提高 45%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -10061,7 +10061,7 @@ definition_key = &"economy.city.good.fertilizer.output_factor"
 [sub_resource type="Resource" id="ProgChemicalIndustryL2"]
 script = ExtResource("2_effect")
 definition_key = &"chemical_industry_l2"
-summary = "主产盐的地块周围 2 格（每源 +15%，最多 3 源 = +45%）：化肥产出 +45%"
+summary = "周围 2 格内每有 1 个本国主产食盐的地块，该目标地块的肥料产出提高 15%；每个目标地块最多计入 3 个来源地块，肥料产出最高提高 45%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -10105,7 +10105,7 @@ definition_key = &"economy.city.good.fertilizer.output_factor"
 [sub_resource type="Resource" id="ProgChemicalIndustryL3"]
 script = ExtResource("2_effect")
 definition_key = &"chemical_industry_l3"
-summary = "主产盐的地块周围 2 格（每源 +15%，最多 3 源 = +45%）：化肥产出 +45%"
+summary = "周围 2 格内每有 1 个本国主产食盐的地块，该目标地块的肥料产出提高 15%；每个目标地块最多计入 3 个来源地块，肥料产出最高提高 45%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -10149,7 +10149,7 @@ definition_key = &"economy.city.building.energy_output_factor"
 [sub_resource type="Resource" id="ProgHydroelectricL3"]
 script = ExtResource("2_effect")
 definition_key = &"hydroelectric_l3"
-summary = "能源支柱地块周围 2 格（每源 +8%，最多 3 源 = +24%）：能源产出 +24%"
+summary = "周围 2 格内每有 1 个本国能源业产出占当地总产出至少 50%的地块，该目标地块的能源产出提高 8%；每个目标地块最多计入 3 个来源地块，能源产出最高提高 24%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -10193,7 +10193,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgAntitrustL1Bonus"]
 script = ExtResource("2_effect")
 definition_key = &"antitrust_l1_bonus"
-summary = "多元地块（最多 32 格）：全部产出 +8%"
+summary = "本国当地至少有 3 个经济部门有产出的地块：全部产出提高 8%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -10237,7 +10237,7 @@ definition_key = &"economy.city.output_factor.cut"
 [sub_resource type="Resource" id="ProgAntitrustL1Penalty"]
 script = ExtResource("2_effect")
 definition_key = &"antitrust_l1_penalty"
-summary = "高度专精地块（最多 32 格）：全部产出 -5%"
+summary = "本国单一货物产出占当地全部产出至少 80%的地块：全部产出降低 5%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -10281,7 +10281,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgAntitrustL2Bonus"]
 script = ExtResource("2_effect")
 definition_key = &"antitrust_l2_bonus"
-summary = "多元地块（最多 32 格）：全部产出 +12%"
+summary = "本国当地至少有 3 个经济部门有产出的地块：全部产出提高 12%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -10325,7 +10325,7 @@ definition_key = &"economy.city.output_factor.cut"
 [sub_resource type="Resource" id="ProgAntitrustL2Penalty"]
 script = ExtResource("2_effect")
 definition_key = &"antitrust_l2_penalty"
-summary = "高度专精地块（最多 32 格）：全部产出 -5%"
+summary = "本国单一货物产出占当地全部产出至少 80%的地块：全部产出降低 5%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -10369,7 +10369,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgAntitrustL3Bonus"]
 script = ExtResource("2_effect")
 definition_key = &"antitrust_l3_bonus"
-summary = "多元地块（最多 32 格）：全部产出 +12%"
+summary = "本国当地至少有 3 个经济部门有产出的地块：全部产出提高 12%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -10413,7 +10413,7 @@ definition_key = &"economy.city.output_factor.cut"
 [sub_resource type="Resource" id="ProgAntitrustL3Penalty"]
 script = ExtResource("2_effect")
 definition_key = &"antitrust_l3_penalty"
-summary = "高度专精地块（最多 32 格）：全部产出 -3%"
+summary = "本国单一货物产出占当地全部产出至少 80%的地块：全部产出降低 3%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -10526,7 +10526,7 @@ definition_key = &"economy.city.need.home_energy.consumption_factor"
 [sub_resource type="Resource" id="ProgRefrigerationL1"]
 script = ExtResource("2_effect")
 definition_key = &"refrigeration_l1"
-summary = "暑地地块（最多 32 格）：鱼产出、肉类产出、乳品产出 +10%，家用能源需求 +5%"
+summary = "本国年均温不低于 22℃的地块：鱼类产出提高 10%，肉类产出提高 10%，乳制品产出提高 10%，家庭能源需求提高 5%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -10639,7 +10639,7 @@ definition_key = &"economy.city.need.home_energy.consumption_factor"
 [sub_resource type="Resource" id="ProgRefrigerationL2"]
 script = ExtResource("2_effect")
 definition_key = &"refrigeration_l2"
-summary = "暑地地块（最多 32 格）：鱼产出、肉类产出、乳品产出 +14%，家用能源需求 +5%"
+summary = "本国年均温不低于 22℃的地块：鱼类产出提高 14%，肉类产出提高 14%，乳制品产出提高 14%，家庭能源需求提高 5%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -10752,7 +10752,7 @@ definition_key = &"economy.city.need.home_energy.consumption_factor"
 [sub_resource type="Resource" id="ProgRefrigerationL3"]
 script = ExtResource("2_effect")
 definition_key = &"refrigeration_l3"
-summary = "暑地地块（最多 32 格）：鱼产出、肉类产出、乳品产出 +14%，家用能源需求 +5%"
+summary = "本国年均温不低于 22℃的地块：鱼类产出提高 14%，肉类产出提高 14%，乳制品产出提高 14%，家庭能源需求提高 5%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -10796,7 +10796,7 @@ definition_key = &"economy.city.need.protein.consumption_factor.cut"
 [sub_resource type="Resource" id="ProgRefrigerationL3Ring"]
 script = ExtResource("2_effect")
 definition_key = &"refrigeration_l3_ring"
-summary = "暑地繁市周围 1 格（最多 32 格）：蛋白质需求 -8%"
+summary = "本国年均温不低于 22℃，且当地累计贸易事件至少 24 次的地块周围 1 格内的地块：食品需求降低 8%（多个来源不叠加）；最多计入 32 个来源地块；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -10840,7 +10840,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgDepartmentStoreL1"]
 script = ExtResource("2_effect")
 definition_key = &"department_store_l1"
-summary = "大邑地块（最多 32 格）：全部产出 +10%"
+summary = "本国人口至少 1200 人的地块：全部产出提高 10%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -10907,7 +10907,7 @@ definition_key = &"economy.city.need.clothing.consumption_factor"
 [sub_resource type="Resource" id="ProgDepartmentStoreL1Cost"]
 script = ExtResource("2_effect")
 definition_key = &"department_store_l1_cost"
-summary = "大邑地块：家用品、服装需求 +10%（橱窗刺激消费）"
+summary = "本国人口至少 1200 人的地块：家庭用品需求提高 10%，衣着需求提高 10%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -10951,7 +10951,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgDepartmentStoreL2"]
 script = ExtResource("2_effect")
 definition_key = &"department_store_l2"
-summary = "大邑地块（最多 32 格）：全部产出 +15%"
+summary = "本国人口至少 1200 人的地块：全部产出提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -11018,7 +11018,7 @@ definition_key = &"economy.city.need.clothing.consumption_factor"
 [sub_resource type="Resource" id="ProgDepartmentStoreL2Cost"]
 script = ExtResource("2_effect")
 definition_key = &"department_store_l2_cost"
-summary = "大邑地块：家用品、服装需求 +10%"
+summary = "本国人口至少 1200 人的地块：家庭用品需求提高 10%，衣着需求提高 10%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -11062,7 +11062,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgDepartmentStoreL3"]
 script = ExtResource("2_effect")
 definition_key = &"department_store_l3"
-summary = "大邑地块（最多 32 格）：全部产出 +15%"
+summary = "本国人口至少 1200 人的地块：全部产出提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -11129,7 +11129,7 @@ definition_key = &"economy.city.need.clothing.consumption_factor"
 [sub_resource type="Resource" id="ProgDepartmentStoreL3Cost"]
 script = ExtResource("2_effect")
 definition_key = &"department_store_l3_cost"
-summary = "大邑地块：家用品、服装需求 +10%"
+summary = "本国人口至少 1200 人的地块：家庭用品需求提高 10%，衣着需求提高 10%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -11196,7 +11196,7 @@ definition_key = &"economy.city.good.natural_gas.output_factor"
 [sub_resource type="Resource" id="ProgOffshoreDrillingL1"]
 script = ExtResource("2_effect")
 definition_key = &"offshore_drilling_l1"
-summary = "海岸地块（最多 32 格）：原油、天然气产出 +15%"
+summary = "本国海岸的地块：原油产出提高 15%，天然气产出提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -11263,7 +11263,7 @@ definition_key = &"economy.city.good.natural_gas.output_factor"
 [sub_resource type="Resource" id="ProgOffshoreDrillingL2"]
 script = ExtResource("2_effect")
 definition_key = &"offshore_drilling_l2"
-summary = "海岸地块（最多 32 格）：原油、天然气产出 +20%"
+summary = "本国海岸的地块：原油产出提高 20%，天然气产出提高 20%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -11330,7 +11330,7 @@ definition_key = &"economy.city.good.natural_gas.output_factor"
 [sub_resource type="Resource" id="ProgOffshoreDrillingL3"]
 script = ExtResource("2_effect")
 definition_key = &"offshore_drilling_l3"
-summary = "海岸地块（最多 32 格）：原油、天然气产出 +20%"
+summary = "本国海岸的地块：原油产出提高 20%，天然气产出提高 20%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -11374,7 +11374,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgSupermarketL1"]
 script = ExtResource("2_effect")
 definition_key = &"supermarket_l1"
-summary = "聚落地块周围 1 格（每源 +6%，最多 3 源 = +18%）：农业产出 +18%"
+summary = "周围 1 格内每有 1 个本国人口至少 400 人的地块，该目标地块的农业产出提高 6%；每个目标地块最多计入 3 个来源地块，农业产出最高提高 18%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -11418,7 +11418,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgSupermarketL2"]
 script = ExtResource("2_effect")
 definition_key = &"supermarket_l2"
-summary = "聚落地块周围 1 格（每源 +6%，最多 3 源 = +18%）：农业产出 +18%"
+summary = "周围 1 格内每有 1 个本国人口至少 400 人的地块，该目标地块的农业产出提高 6%；每个目标地块最多计入 3 个来源地块，农业产出最高提高 18%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -11462,7 +11462,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgSupermarketL3"]
 script = ExtResource("2_effect")
 definition_key = &"supermarket_l3"
-summary = "聚落地块周围 1 格（每源 +6%，最多 3 源 = +18%）：农业产出 +18%"
+summary = "周围 1 格内每有 1 个本国人口至少 400 人的地块，该目标地块的农业产出提高 6%；每个目标地块最多计入 3 个来源地块，农业产出最高提高 18%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -11506,7 +11506,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgNuclearPowerL1"]
 script = ExtResource("2_effect")
 definition_key = &"nuclear_power_l1"
-summary = "能源支柱地块（最多 32 格）：全部产出 ×1.15"
+summary = "本国能源业产出占当地总产出至少 50%的地块：全部产出提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -11550,7 +11550,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgNuclearPowerL2"]
 script = ExtResource("2_effect")
 definition_key = &"nuclear_power_l2"
-summary = "能源支柱地块（最多 32 格）：全部产出 ×1.20"
+summary = "本国能源业产出占当地总产出至少 50%的地块：全部产出提高 20%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -11594,7 +11594,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgNuclearPowerL3"]
 script = ExtResource("2_effect")
 definition_key = &"nuclear_power_l3"
-summary = "能源支柱地块（最多 32 格）：全部产出 ×1.20"
+summary = "本国能源业产出占当地总产出至少 50%的地块：全部产出提高 20%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -11638,7 +11638,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgMotorizationL1"]
 script = ExtResource("2_effect")
 definition_key = &"motorization_l1"
-summary = "繁市地块周围 2 格（每源 +4%，最多 3 源 = +12%）：全部产出 +12%"
+summary = "周围 2 格内每有 1 个本国当地累计贸易事件至少 24 次的地块，该目标地块的全部产出提高 4%；每个目标地块最多计入 3 个来源地块，全部产出最高提高 12%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -11682,7 +11682,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgMotorizationL2"]
 script = ExtResource("2_effect")
 definition_key = &"motorization_l2"
-summary = "繁市地块周围 2 格（每源 +4%，最多 3 源 = +12%）：全部产出 +12%"
+summary = "周围 2 格内每有 1 个本国当地累计贸易事件至少 24 次的地块，该目标地块的全部产出提高 4%；每个目标地块最多计入 3 个来源地块，全部产出最高提高 12%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -11726,7 +11726,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgMotorizationL3"]
 script = ExtResource("2_effect")
 definition_key = &"motorization_l3"
-summary = "繁市地块周围 2 格（每源 +4%，最多 3 源 = +12%）：全部产出 +12%"
+summary = "周围 2 格内每有 1 个本国当地累计贸易事件至少 24 次的地块，该目标地块的全部产出提高 4%；每个目标地块最多计入 3 个来源地块，全部产出最高提高 12%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -11770,7 +11770,7 @@ definition_key = &"economy.city.good.plastics.output_factor"
 [sub_resource type="Resource" id="ProgPetrochemicalL1Plastics"]
 script = ExtResource("2_effect")
 definition_key = &"petrochemical_l1_plastics"
-summary = "主产原油的地块周围 2 格（每源 +12%，最多 3 源 = +36%）：塑料产出 +36%"
+summary = "周围 2 格内每有 1 个本国主产原油的地块，该目标地块的塑料产出提高 12%；每个目标地块最多计入 3 个来源地块，塑料产出最高提高 36%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -11814,7 +11814,7 @@ definition_key = &"economy.city.good.synthetic_fiber.output_factor"
 [sub_resource type="Resource" id="ProgPetrochemicalL1SyntheticFiber"]
 script = ExtResource("2_effect")
 definition_key = &"petrochemical_l1_synthetic_fiber"
-summary = "主产原油的地块周围 2 格（每源 +12%，最多 3 源 = +36%）：合成纤维产出 +36%"
+summary = "周围 2 格内每有 1 个本国主产原油的地块，该目标地块的合成纤维产出提高 12%；每个目标地块最多计入 3 个来源地块，合成纤维产出最高提高 36%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -11858,7 +11858,7 @@ definition_key = &"economy.city.good.plastics.output_factor"
 [sub_resource type="Resource" id="ProgPetrochemicalL2Plastics"]
 script = ExtResource("2_effect")
 definition_key = &"petrochemical_l2_plastics"
-summary = "主产原油的地块周围 2 格（每源 +12%，最多 3 源 = +36%）：塑料产出 +36%"
+summary = "周围 2 格内每有 1 个本国主产原油的地块，该目标地块的塑料产出提高 12%；每个目标地块最多计入 3 个来源地块，塑料产出最高提高 36%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -11902,7 +11902,7 @@ definition_key = &"economy.city.good.synthetic_fiber.output_factor"
 [sub_resource type="Resource" id="ProgPetrochemicalL2SyntheticFiber"]
 script = ExtResource("2_effect")
 definition_key = &"petrochemical_l2_synthetic_fiber"
-summary = "主产原油的地块周围 2 格（每源 +12%，最多 3 源 = +36%）：合成纤维产出 +36%"
+summary = "周围 2 格内每有 1 个本国主产原油的地块，该目标地块的合成纤维产出提高 12%；每个目标地块最多计入 3 个来源地块，合成纤维产出最高提高 36%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -11946,7 +11946,7 @@ definition_key = &"economy.city.good.plastics.output_factor"
 [sub_resource type="Resource" id="ProgPetrochemicalL3Plastics"]
 script = ExtResource("2_effect")
 definition_key = &"petrochemical_l3_plastics"
-summary = "主产原油的地块周围 2 格（每源 +12%，最多 3 源 = +36%）：塑料产出 +36%"
+summary = "周围 2 格内每有 1 个本国主产原油的地块，该目标地块的塑料产出提高 12%；每个目标地块最多计入 3 个来源地块，塑料产出最高提高 36%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -11990,7 +11990,7 @@ definition_key = &"economy.city.good.synthetic_fiber.output_factor"
 [sub_resource type="Resource" id="ProgPetrochemicalL3SyntheticFiber"]
 script = ExtResource("2_effect")
 definition_key = &"petrochemical_l3_synthetic_fiber"
-summary = "主产原油的地块周围 2 格（每源 +12%，最多 3 源 = +36%）：合成纤维产出 +36%"
+summary = "周围 2 格内每有 1 个本国主产原油的地块，该目标地块的合成纤维产出提高 12%；每个目标地块最多计入 3 个来源地块，合成纤维产出最高提高 36%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -12034,7 +12034,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgContainerPortL1"]
 script = ExtResource("2_effect")
 definition_key = &"container_port_l1"
-summary = "海岸繁市地块周围 2 格（每源 +10%，最多 3 源 = +30%）：工业产出 +30%"
+summary = "周围 2 格内每有 1 个本国海岸的地块，该目标地块的制造业产出提高 10%；每个目标地块最多计入 3 个来源地块，制造业产出最高提高 30%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -12078,7 +12078,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgContainerPortL2"]
 script = ExtResource("2_effect")
 definition_key = &"container_port_l2"
-summary = "海岸繁市地块周围 2 格（每源 +10%，最多 3 源 = +30%）：工业产出 +30%"
+summary = "周围 2 格内每有 1 个本国海岸的地块，该目标地块的制造业产出提高 10%；每个目标地块最多计入 3 个来源地块，制造业产出最高提高 30%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -12122,7 +12122,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgContainerPortL3"]
 script = ExtResource("2_effect")
 definition_key = &"container_port_l3"
-summary = "海岸繁市地块周围 2 格（每源 +10%，最多 3 源 = +30%）：工业产出 +30%"
+summary = "周围 2 格内每有 1 个本国海岸的地块，该目标地块的制造业产出提高 10%；每个目标地块最多计入 3 个来源地块，制造业产出最高提高 30%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -12172,7 +12172,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgWelfareStateL1"]
 script = ExtResource("2_effect")
 definition_key = &"welfare_state_l1"
-summary = "无短缺的聚落地块（最多 32 格）：全部产出 ×1.10"
+summary = "本国人口至少 400 人，且必需品短缺率不超过 1%的地块：全部产出提高 10%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -12222,7 +12222,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgWelfareStateL2"]
 script = ExtResource("2_effect")
 definition_key = &"welfare_state_l2"
-summary = "无短缺的聚落地块（最多 32 格）：全部产出 ×1.14"
+summary = "本国人口至少 400 人，且必需品短缺率不超过 1%的地块：全部产出提高 14%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -12272,7 +12272,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgWelfareStateL3"]
 script = ExtResource("2_effect")
 definition_key = &"welfare_state_l3"
-summary = "无短缺的聚落地块（最多 32 格）：全部产出 ×1.14"
+summary = "本国人口至少 400 人，且必需品短缺率不超过 1%的地块：全部产出提高 14%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -12316,7 +12316,7 @@ definition_key = &"economy.city.birth_factor"
 [sub_resource type="Resource" id="ProgSuburbanizationL1"]
 script = ExtResource("2_effect")
 definition_key = &"suburbanization_l1"
-summary = "大邑周围 2 格（每源 +5%，最多 3 源 = +15%）：出生率 +15%"
+summary = "周围 2 格内每有 1 个本国人口至少 1200 人的地块，该目标地块的出生率提高 5%；每个目标地块最多计入 3 个来源地块，出生率最高提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -12360,7 +12360,7 @@ definition_key = &"economy.city.birth_factor.cut"
 [sub_resource type="Resource" id="ProgSuburbanizationL1Cost"]
 script = ExtResource("2_effect")
 definition_key = &"suburbanization_l1_cost"
-summary = "大邑地块：出生率 -5%（市中心空心化）"
+summary = "本国人口至少 1200 人的地块：出生率降低 5%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -12404,7 +12404,7 @@ definition_key = &"economy.city.birth_factor"
 [sub_resource type="Resource" id="ProgSuburbanizationL2"]
 script = ExtResource("2_effect")
 definition_key = &"suburbanization_l2"
-summary = "大邑周围 2 格（每源 +5%，最多 3 源 = +15%）：出生率 +15%"
+summary = "周围 2 格内每有 1 个本国人口至少 1200 人的地块，该目标地块的出生率提高 5%；每个目标地块最多计入 3 个来源地块，出生率最高提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -12448,7 +12448,7 @@ definition_key = &"economy.city.birth_factor.cut"
 [sub_resource type="Resource" id="ProgSuburbanizationL2Cost"]
 script = ExtResource("2_effect")
 definition_key = &"suburbanization_l2_cost"
-summary = "大邑地块：出生率 -5%"
+summary = "本国人口至少 1200 人的地块：出生率降低 5%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -12492,7 +12492,7 @@ definition_key = &"economy.city.birth_factor"
 [sub_resource type="Resource" id="ProgSuburbanizationL3"]
 script = ExtResource("2_effect")
 definition_key = &"suburbanization_l3"
-summary = "大邑周围 2 格（每源 +5%，最多 3 源 = +15%）：出生率 +15%"
+summary = "周围 2 格内每有 1 个本国人口至少 1200 人的地块，该目标地块的出生率提高 5%；每个目标地块最多计入 3 个来源地块，出生率最高提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -12536,7 +12536,7 @@ definition_key = &"economy.city.birth_factor.cut"
 [sub_resource type="Resource" id="ProgSuburbanizationL3Cost"]
 script = ExtResource("2_effect")
 definition_key = &"suburbanization_l3_cost"
-summary = "大邑地块：出生率 -5%"
+summary = "本国人口至少 1200 人的地块：出生率降低 5%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -12598,7 +12598,7 @@ definition_key = &"ideology.country.research.cost_factor.cut"
 [sub_resource type="Resource" id="ProgFamilyOfficeL1"]
 script = ExtResource("2_effect")
 definition_key = &"family_office_l1"
-summary = "每个拥有 >=3 个分支的家族：全国研究成本 -0.5%（上限 -8%）"
+summary = "全国每有 1 个拥有至少 3 个分支的家族，研究成本降低 0.5%，最高降低 8%"
 target_domain = 3
 operation = 1
 lifecycle = 0
@@ -12659,7 +12659,7 @@ definition_key = &"ideology.country.research.cost_factor.cut"
 [sub_resource type="Resource" id="ProgFamilyOfficeL2"]
 script = ExtResource("2_effect")
 definition_key = &"family_office_l2"
-summary = "每个拥有 >=3 个分支的家族：全国研究成本 -0.5%（上限 -12%）"
+summary = "全国每有 1 个拥有至少 3 个分支的家族，研究成本降低 0.5%，最高降低 12%"
 target_domain = 3
 operation = 1
 lifecycle = 0
@@ -12720,7 +12720,7 @@ definition_key = &"ideology.country.research.cost_factor.cut"
 [sub_resource type="Resource" id="ProgFamilyOfficeL3"]
 script = ExtResource("2_effect")
 definition_key = &"family_office_l3"
-summary = "每个拥有 >=3 个分支的家族：全国研究成本 -0.5%（上限 -12%）"
+summary = "全国每有 1 个拥有至少 3 个分支的家族，研究成本降低 0.5%，最高降低 12%"
 target_domain = 3
 operation = 1
 lifecycle = 0
@@ -12763,7 +12763,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgFamilyOfficeL3OwnedOutput"]
 script = ExtResource("2_effect")
 definition_key = &"family_office_l3_owned_output"
-summary = "拥有 >=3 个分支的家族：家产建筑全部产出 +6%"
+summary = "拥有至少 3 个分支且持有建筑的家族：其名下建筑的全部产出提高 6%；最多影响 32 个家族"
 target_domain = 0
 operation = 1
 lifecycle = 0
@@ -12824,7 +12824,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgGigEconomyL1"]
 script = ExtResource("2_effect")
 definition_key = &"gig_economy_l1"
-summary = "失业地块（最多 32 格）：失业率每点全部产出 +1%（上限 +12%）"
+summary = "本国失业率至少 10%的地块：失业率每提高 1 个百分点，全部产出提高 1%，最高提高 12%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -12868,7 +12868,7 @@ definition_key = &"economy.city.birth_factor.cut"
 [sub_resource type="Resource" id="ProgGigEconomyL1Cost"]
 script = ExtResource("2_effect")
 definition_key = &"gig_economy_l1_cost"
-summary = "失业地块：出生率 -3%（收入不稳）"
+summary = "本国失业率至少 10%的地块：出生率降低 3%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -12930,7 +12930,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgGigEconomyL2"]
 script = ExtResource("2_effect")
 definition_key = &"gig_economy_l2"
-summary = "失业地块（最多 32 格）：失业率每点全部产出 +1%（上限 +16%）"
+summary = "本国失业率至少 10%的地块：失业率每提高 1 个百分点，全部产出提高 1%，最高提高 16%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -12974,7 +12974,7 @@ definition_key = &"economy.city.birth_factor.cut"
 [sub_resource type="Resource" id="ProgGigEconomyL2Cost"]
 script = ExtResource("2_effect")
 definition_key = &"gig_economy_l2_cost"
-summary = "失业地块：出生率 -3%"
+summary = "本国失业率至少 10%的地块：出生率降低 3%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -13036,7 +13036,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgGigEconomyL3"]
 script = ExtResource("2_effect")
 definition_key = &"gig_economy_l3"
-summary = "失业地块（最多 32 格）：失业率每点全部产出 +1%（上限 +16%）"
+summary = "本国失业率至少 10%的地块：失业率每提高 1 个百分点，全部产出提高 1%，最高提高 16%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -13080,7 +13080,7 @@ definition_key = &"economy.city.birth_factor.cut"
 [sub_resource type="Resource" id="ProgGigEconomyL3Cost"]
 script = ExtResource("2_effect")
 definition_key = &"gig_economy_l3_cost"
-summary = "失业地块：出生率 -3%"
+summary = "本国失业率至少 10%的地块：出生率降低 3%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -13124,7 +13124,7 @@ definition_key = &"economy.city.building.knowledge_output_factor"
 [sub_resource type="Resource" id="ProgComputingNetworksL1"]
 script = ExtResource("2_effect")
 definition_key = &"computing_networks_l1"
-summary = "知识支柱地块（最多 32 格）：知识产出 +20%"
+summary = "本国知识业产出占当地总产出至少 50%的地块：知识产出提高 20%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -13168,7 +13168,7 @@ definition_key = &"economy.city.building.knowledge_output_factor"
 [sub_resource type="Resource" id="ProgComputingNetworksL2"]
 script = ExtResource("2_effect")
 definition_key = &"computing_networks_l2"
-summary = "知识支柱地块（最多 32 格）：知识产出 +25%"
+summary = "本国知识业产出占当地总产出至少 50%的地块：知识产出提高 25%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -13212,7 +13212,7 @@ definition_key = &"economy.city.building.knowledge_output_factor"
 [sub_resource type="Resource" id="ProgComputingNetworksL3"]
 script = ExtResource("2_effect")
 definition_key = &"computing_networks_l3"
-summary = "知识支柱地块（最多 32 格）：知识产出 +30%"
+summary = "本国知识业产出占当地总产出至少 50%的地块：知识产出提高 30%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -13274,7 +13274,7 @@ definition_key = &"economy.city.good.semiconductors.output_factor"
 [sub_resource type="Resource" id="ProgSemiconductorL1"]
 script = ExtResource("2_effect")
 definition_key = &"semiconductor_l1"
-summary = "每个成链地块使成链地块的半导体产出 +2%（上限 +40%）"
+summary = "本国当地至少已建成 1 条完整建筑升级链（同一升级系列的各等级建筑均已建成）的地块：全国每有 1 个已建成完整建筑升级链的地块，半导体产出提高 2%，最高提高 40%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -13336,7 +13336,7 @@ definition_key = &"economy.city.good.semiconductors.output_factor"
 [sub_resource type="Resource" id="ProgSemiconductorL2"]
 script = ExtResource("2_effect")
 definition_key = &"semiconductor_l2"
-summary = "每个成链地块使成链地块的半导体产出 +2.5%（上限 +40%）"
+summary = "本国当地至少已建成 1 条完整建筑升级链（同一升级系列的各等级建筑均已建成）的地块：全国每有 1 个已建成完整建筑升级链的地块，半导体产出提高 2.5%，最高提高 40%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -13398,7 +13398,7 @@ definition_key = &"economy.city.good.semiconductors.output_factor"
 [sub_resource type="Resource" id="ProgSemiconductorL3"]
 script = ExtResource("2_effect")
 definition_key = &"semiconductor_l3"
-summary = "每个成链地块使成链地块的半导体产出 +3%（上限 +40%）"
+summary = "本国当地至少已建成 1 条完整建筑升级链（同一升级系列的各等级建筑均已建成）的地块：全国每有 1 个已建成完整建筑升级链的地块，半导体产出提高 3%，最高提高 40%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -13442,7 +13442,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgFinancializationL1"]
 script = ExtResource("2_effect")
 definition_key = &"financialization_l1"
-summary = "繁市地块（最多 32 格）：全部产出 ×1.25"
+summary = "本国当地累计贸易事件至少 24 次的地块：全部产出提高 25%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -13486,7 +13486,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgFinancializationL2"]
 script = ExtResource("2_effect")
 definition_key = &"financialization_l2"
-summary = "繁市地块（最多 32 格）：全部产出 ×1.30"
+summary = "本国当地累计贸易事件至少 24 次的地块：全部产出提高 30%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -13530,7 +13530,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgFinancializationL3"]
 script = ExtResource("2_effect")
 definition_key = &"financialization_l3"
-summary = "繁市地块（最多 32 格）：全部产出 ×1.30"
+summary = "本国当地累计贸易事件至少 24 次的地块：全部产出提高 30%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -13592,7 +13592,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgAutomationLineL1"]
 script = ExtResource("2_effect")
 definition_key = &"automation_line_l1"
-summary = "工业支柱地块（最多 32 格）：失业率每点工业 +1%（上限 +15%）"
+summary = "本国制造业产出占当地总产出至少 50%的地块：失业率每提高 1 个百分点，制造业产出提高 1%，最高提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -13654,7 +13654,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgAutomationLineL2"]
 script = ExtResource("2_effect")
 definition_key = &"automation_line_l2"
-summary = "工业支柱地块（最多 32 格）：失业率每点工业 +1.5%（上限 +20%）"
+summary = "本国制造业产出占当地总产出至少 50%的地块：失业率每提高 1 个百分点，制造业产出提高 1.5%，最高提高 20%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -13716,7 +13716,7 @@ definition_key = &"economy.city.building.manufacturing_output_factor"
 [sub_resource type="Resource" id="ProgAutomationLineL3"]
 script = ExtResource("2_effect")
 definition_key = &"automation_line_l3"
-summary = "工业支柱地块（最多 32 格）：失业率每点工业 +1.5%（上限 +20%）"
+summary = "本国制造业产出占当地总产出至少 50%的地块：失业率每提高 1 个百分点，制造业产出提高 1.5%，最高提高 20%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -13760,7 +13760,7 @@ definition_key = &"economy.city.building.knowledge_output_factor"
 [sub_resource type="Resource" id="ProgAutomationLineL3Knowledge"]
 script = ExtResource("2_effect")
 definition_key = &"automation_line_l3_knowledge"
-summary = "工业支柱地块（最多 32 格）：知识产出 +8%"
+summary = "本国制造业产出占当地总产出至少 50%的地块：知识产出提高 8%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -13827,7 +13827,7 @@ definition_key = &"economy.city.resource.regen_factor"
 [sub_resource type="Resource" id="ProgArcologyL1"]
 script = ExtResource("2_effect")
 definition_key = &"arcology_l1"
-summary = "富饶的大邑地块（最多 32 格）：全部产出 +12%，资源再生 +10%"
+summary = "本国人口至少 1200 人，且自然资源平均剩余比例至少 80%的地块：全部产出提高 12%，自然资源恢复速度提高 10%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -13894,7 +13894,7 @@ definition_key = &"economy.city.resource.regen_factor"
 [sub_resource type="Resource" id="ProgArcologyL2"]
 script = ExtResource("2_effect")
 definition_key = &"arcology_l2"
-summary = "富饶的大邑地块（最多 32 格）：全部产出 +16%，资源再生 +10%"
+summary = "本国人口至少 1200 人，且自然资源平均剩余比例至少 80%的地块：全部产出提高 16%，自然资源恢复速度提高 10%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -13961,7 +13961,7 @@ definition_key = &"economy.city.resource.regen_factor"
 [sub_resource type="Resource" id="ProgArcologyL3"]
 script = ExtResource("2_effect")
 definition_key = &"arcology_l3"
-summary = "富饶的大邑地块（最多 32 格）：全部产出 +16%，资源再生 +10%"
+summary = "本国人口至少 1200 人，且自然资源平均剩余比例至少 80%的地块：全部产出提高 16%，自然资源恢复速度提高 10%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -14023,7 +14023,7 @@ definition_key = &"economy.city.building.knowledge_output_factor"
 [sub_resource type="Resource" id="ProgBasicIncomeL1"]
 script = ExtResource("2_effect")
 definition_key = &"basic_income_l1"
-summary = "失业地块（最多 32 格）：失业率每点知识 +1%（上限 +15%）"
+summary = "本国失业率至少 10%的地块：失业率每提高 1 个百分点，知识产出提高 1%，最高提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -14085,7 +14085,7 @@ definition_key = &"economy.city.building.knowledge_output_factor"
 [sub_resource type="Resource" id="ProgBasicIncomeL2"]
 script = ExtResource("2_effect")
 definition_key = &"basic_income_l2"
-summary = "失业地块（最多 32 格）：失业率每点知识 +1.5%（上限 +15%）"
+summary = "本国失业率至少 10%的地块：失业率每提高 1 个百分点，知识产出提高 1.5%，最高提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -14147,7 +14147,7 @@ definition_key = &"economy.city.building.knowledge_output_factor"
 [sub_resource type="Resource" id="ProgBasicIncomeL3"]
 script = ExtResource("2_effect")
 definition_key = &"basic_income_l3"
-summary = "失业地块（最多 32 格）：失业率每点知识 +1.5%（上限 +15%）"
+summary = "本国失业率至少 10%的地块：失业率每提高 1 个百分点，知识产出提高 1.5%，最高提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -14191,7 +14191,7 @@ definition_key = &"economy.city.birth_factor"
 [sub_resource type="Resource" id="ProgBasicIncomeL3Birth"]
 script = ExtResource("2_effect")
 definition_key = &"basic_income_l3_birth"
-summary = "失业地块（最多 32 格）：出生率 +5%"
+summary = "本国失业率至少 10%的地块：出生率提高 5%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -14235,7 +14235,7 @@ definition_key = &"economy.city.resource.regen_factor"
 [sub_resource type="Resource" id="ProgCircularEconomyL1"]
 script = ExtResource("2_effect")
 definition_key = &"circular_economy_l1"
-summary = "成链地块（最多 32 格）：资源再生 +15%"
+summary = "本国当地至少已建成 1 条完整建筑升级链（同一升级系列的各等级建筑均已建成）的地块：自然资源恢复速度提高 15%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -14279,7 +14279,7 @@ definition_key = &"economy.city.resource.regen_factor"
 [sub_resource type="Resource" id="ProgCircularEconomyL2"]
 script = ExtResource("2_effect")
 definition_key = &"circular_economy_l2"
-summary = "成链地块（最多 32 格）：资源再生 +20%"
+summary = "本国当地至少已建成 1 条完整建筑升级链（同一升级系列的各等级建筑均已建成）的地块：自然资源恢复速度提高 20%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -14323,7 +14323,7 @@ definition_key = &"economy.city.resource.regen_factor"
 [sub_resource type="Resource" id="ProgCircularEconomyL3"]
 script = ExtResource("2_effect")
 definition_key = &"circular_economy_l3"
-summary = "成链地块（最多 32 格）：资源再生 +20%"
+summary = "本国当地至少已建成 1 条完整建筑升级链（同一升级系列的各等级建筑均已建成）的地块：自然资源恢复速度提高 20%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -14367,7 +14367,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgAutonomousLogisticsL1"]
 script = ExtResource("2_effect")
 definition_key = &"autonomous_logistics_l1"
-summary = "通衢地块周围 1 格（最多 32 格）：全部产出 +2%"
+summary = "本国当地累计贸易事件至少 24 次的地块周围 1 格内的地块：全部产出提高 2%（多个来源不叠加）；最多计入 32 个来源地块；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -14411,7 +14411,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgAutonomousLogisticsL2"]
 script = ExtResource("2_effect")
 definition_key = &"autonomous_logistics_l2"
-summary = "通衢地块周围 1 格（最多 32 格）：全部产出 +2%"
+summary = "本国当地累计贸易事件至少 24 次的地块周围 1 格内的地块：全部产出提高 2%（多个来源不叠加）；最多计入 32 个来源地块；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -14455,7 +14455,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgAutonomousLogisticsL3"]
 script = ExtResource("2_effect")
 definition_key = &"autonomous_logistics_l3"
-summary = "通衢地块周围 1 格（最多 32 格）：全部产出 +2%"
+summary = "本国当地累计贸易事件至少 24 次的地块周围 1 格内的地块：全部产出提高 2%（多个来源不叠加）；最多计入 32 个来源地块；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -14499,7 +14499,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgCarbonMarketL1"]
 script = ExtResource("2_effect")
 definition_key = &"carbon_market_l1"
-summary = "非工业支柱地块（最多 32 格）：全部产出 +6%"
+summary = "本国当地至少有 3 个经济部门有产出的地块：全部产出提高 6%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -14543,7 +14543,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgCarbonMarketL2"]
 script = ExtResource("2_effect")
 definition_key = &"carbon_market_l2"
-summary = "非工业支柱地块（最多 32 格）：全部产出 +9%"
+summary = "本国当地至少有 3 个经济部门有产出的地块：全部产出提高 9%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -14587,7 +14587,7 @@ definition_key = &"economy.city.output_factor"
 [sub_resource type="Resource" id="ProgCarbonMarketL3"]
 script = ExtResource("2_effect")
 definition_key = &"carbon_market_l3"
-summary = "非工业支柱地块（最多 32 格）：全部产出 +9%"
+summary = "本国当地至少有 3 个经济部门有产出的地块：全部产出提高 9%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -14631,7 +14631,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgGeneEditingL1"]
 script = ExtResource("2_effect")
 definition_key = &"gene_editing_l1"
-summary = "专精的粮作地块（最多 32 格）：农业产出 +12%"
+summary = "本国主产小麦、稻米、玉米、马铃薯或谷物，且单一货物产出占当地全部产出至少 60%的地块：农业产出提高 12%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -14675,7 +14675,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgGeneEditingL2"]
 script = ExtResource("2_effect")
 definition_key = &"gene_editing_l2"
-summary = "专精的粮作地块（最多 32 格）：农业产出 +16%"
+summary = "本国主产小麦、稻米、玉米、马铃薯或谷物，且单一货物产出占当地全部产出至少 60%的地块：农业产出提高 16%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -14719,7 +14719,7 @@ definition_key = &"economy.city.building.agriculture_output_factor"
 [sub_resource type="Resource" id="ProgGeneEditingL3"]
 script = ExtResource("2_effect")
 definition_key = &"gene_editing_l3"
-summary = "专精的粮作地块（最多 32 格）：农业产出 +20%"
+summary = "本国主产小麦、稻米、玉米、马铃薯或谷物，且单一货物产出占当地全部产出至少 60%的地块：农业产出提高 20%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -14786,7 +14786,7 @@ definition_key = &"economy.city.output_factor.cut"
 [sub_resource type="Resource" id="ProgVerticalFarmL1"]
 script = ExtResource("2_effect")
 definition_key = &"vertical_farm_l1"
-summary = "农业支柱地块（最多 32 格）：农业产出 +8%，全部产出 -2%"
+summary = "本国农业产出占当地总产出至少 50%的地块：农业产出提高 8%，全部产出降低 2%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -14853,7 +14853,7 @@ definition_key = &"economy.city.output_factor.cut"
 [sub_resource type="Resource" id="ProgVerticalFarmL2"]
 script = ExtResource("2_effect")
 definition_key = &"vertical_farm_l2"
-summary = "农业支柱地块（最多 32 格）：农业产出 +12%，全部产出 -2%"
+summary = "本国农业产出占当地总产出至少 50%的地块：农业产出提高 12%，全部产出降低 2%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -14920,7 +14920,7 @@ definition_key = &"economy.city.output_factor.cut"
 [sub_resource type="Resource" id="ProgVerticalFarmL3"]
 script = ExtResource("2_effect")
 definition_key = &"vertical_farm_l3"
-summary = "农业支柱地块（最多 32 格）：农业产出 +15%，全部产出 -2%"
+summary = "本国农业产出占当地总产出至少 50%的地块：农业产出提高 15%，全部产出降低 2%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -14964,7 +14964,7 @@ definition_key = &"economy.city.building.extractive_output_factor"
 [sub_resource type="Resource" id="ProgSpaceMiningL1"]
 script = ExtResource("2_effect")
 definition_key = &"space_mining_l1"
-summary = "主产矿石的地块（最多 32 格）：矿业产出 +6%，资源消耗 +2%"
+summary = "本国主产铁矿石的地块：采掘产出提高 6%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -15008,7 +15008,7 @@ definition_key = &"economy.city.building.extractive_output_factor"
 [sub_resource type="Resource" id="ProgSpaceMiningL2"]
 script = ExtResource("2_effect")
 definition_key = &"space_mining_l2"
-summary = "主产矿石的地块（最多 32 格）：矿业产出 +9%，资源消耗 +2%"
+summary = "本国主产铁矿石的地块：采掘产出提高 9%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0
@@ -15052,7 +15052,7 @@ definition_key = &"economy.city.building.extractive_output_factor"
 [sub_resource type="Resource" id="ProgSpaceMiningL3"]
 script = ExtResource("2_effect")
 definition_key = &"space_mining_l3"
-summary = "主产矿石的地块（最多 32 格）：矿业产出 +11%，资源消耗 +2%"
+summary = "本国主产铁矿石的地块：采掘产出提高 11%；最多影响 32 个目标地块"
 target_domain = 2
 operation = 1
 lifecycle = 0

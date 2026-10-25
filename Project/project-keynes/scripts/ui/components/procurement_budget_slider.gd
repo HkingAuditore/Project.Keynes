@@ -10,8 +10,8 @@ signal budget_committed(enabled: bool, daily_cash_limit: int)
 
 const CASH_SCALE := 10000.0
 const MAX_TREASURY_SHARE := 0.10
-const TRACK_TOP := 27.0
-const TRACK_HEIGHT := 6.0
+const TRACK_TOP := 61.0
+const TRACK_HEIGHT := 8.0
 const HIT_BAND := 13.0
 const GRABBER_RADIUS := 6.5
 const TICKS := [0.0, 0.25, 0.5, 0.75, 1.0]
@@ -27,7 +27,7 @@ var _track_style := StyleBoxFlat.new()
 func _ready() -> void:
 	_track_style.set_corner_radius_all(int(TRACK_HEIGHT * 0.5))
 	_track_style.anti_aliasing = true
-	custom_minimum_size = Vector2(0.0, 62.0)
+	custom_minimum_size = Vector2(0.0, 102.0)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	tooltip_text = "拖到最左端即关闭自动采购；松手立即生效"
 
@@ -102,17 +102,17 @@ func _draw() -> void:
 	var enabled := is_enabled()
 	var sans := UITokens.dossier_font("sans")
 	var strong := UITokens.dossier_font("sans_strong")
-	var serif := UITokens.dossier_font("serif")
-	_draw_glyph(IconCatalog.good_semantic("technology_points"), Vector2(2.0, 15.0), 12,
+	var serif := UITokens.dossier_font("numeral")
+	_draw_glyph(IconCatalog.good_semantic("technology_points"), Vector2(2.0, 23.0), 24,
 		UITokens.DOSSIER_INK_SOFT)
-	draw_string(strong, Vector2(20.0, 15.0), "国库采购科技值",
-		HORIZONTAL_ALIGNMENT_LEFT, -1.0, 13, UITokens.DOSSIER_INK)
+	draw_string(strong, Vector2(32.0, 22.0), "国库采购科技值",
+		HORIZONTAL_ALIGNMENT_LEFT, -1.0, 17, UITokens.DOSSIER_INK)
 	var value_text := "已关闭" if not enabled else "每日 %s" % \
 		UITokens.format_compact_number_cn(float(_limit) / CASH_SCALE, 2)
 	var value_extent := serif.get_string_size(
-		value_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 14)
-	draw_string(serif, Vector2(size.x - value_extent.x - 1.0, 16.0), value_text,
-		HORIZONTAL_ALIGNMENT_LEFT, -1.0, 14,
+		value_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 18)
+	draw_string(serif, Vector2(size.x - value_extent.x - 1.0, 47.0), value_text,
+		HORIZONTAL_ALIGNMENT_LEFT, -1.0, 18,
 		UITokens.DOSSIER_OXBLOOD if enabled else UITokens.DOSSIER_INK_MUTED)
 	var track := Rect2(GRABBER_RADIUS, TRACK_TOP, maxf(1.0, size.x - GRABBER_RADIUS * 2.0),
 		TRACK_HEIGHT)
@@ -132,8 +132,8 @@ func _draw() -> void:
 	draw_circle(grabber, radius, UITokens.DOSSIER_PAPER)
 	draw_circle(grabber, radius - 2.5, UITokens.DOSSIER_OXBLOOD if enabled \
 		else UITokens.DOSSIER_UMBER)
-	draw_string(sans, Vector2(1.0, 56.0), _preview_text(),
-		HORIZONTAL_ALIGNMENT_LEFT, size.x - 2.0, 11, UITokens.DOSSIER_INK_MUTED)
+	draw_string(sans, Vector2(1.0, 96.0), _preview_text(),
+		HORIZONTAL_ALIGNMENT_LEFT, size.x - 2.0, 15, UITokens.DOSSIER_INK_MUTED)
 
 
 func _preview_text() -> String:
