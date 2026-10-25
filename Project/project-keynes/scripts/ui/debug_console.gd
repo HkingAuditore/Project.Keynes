@@ -391,6 +391,38 @@ func _build_gm_command_page(parent: Control) -> void:
 	_gm_command_help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_gm_command_help.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
 	page.add_child(_gm_command_help)
+	var money_row := HBoxContainer.new()
+	var money_amount := SpinBox.new()
+	money_amount.name = "GMTreasuryAmount"
+	money_amount.min_value = 1.0
+	money_amount.max_value = 1000000000.0
+	money_amount.value = 10000.0
+	money_amount.step = 1.0
+	money_amount.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	money_amount.tooltip_text = "增加到玩家国库的货币数量，下一游戏日生效"
+	money_row.add_child(money_amount)
+	var mint_button := Button.new()
+	mint_button.text = "刷钱到国库"
+	mint_button.pressed.connect(func() -> void:
+		_gm_command_input.text = "economy.mint_to_treasury amount=%d" % int(money_amount.value)
+		_submit_gm_command())
+	money_row.add_child(mint_button)
+	page.add_child(money_row)
+	var speed_row := HBoxContainer.new()
+	var speed_options := OptionButton.new()
+	speed_options.name = "GMSpeedOptions"
+	speed_options.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for speed in WorldRuntimeHost.GM_SPEED_PRESETS:
+		speed_options.add_item("%d 倍速" % int(speed), int(speed))
+	speed_options.select(5)
+	speed_row.add_child(speed_options)
+	var speed_button := Button.new()
+	speed_button.text = "设置 GM 倍速"
+	speed_button.pressed.connect(func() -> void:
+		_gm_command_input.text = "time.speed value=%d" % speed_options.get_selected_id()
+		_submit_gm_command())
+	speed_row.add_child(speed_button)
+	page.add_child(speed_row)
 	var input_row := HBoxContainer.new()
 	_gm_command_input = LineEdit.new()
 	_gm_command_input.placeholder_text = "<command_id> key=value"
@@ -815,7 +847,8 @@ func _format_gm_confirmation(checked: Dictionary) -> String:
 	for key in keys:
 		lines.append("  %s = %s" % [key, args[key]])
 	var day := int(args.get("day", _gm_current_day() + 1))
-	lines.append("目标：%s" % _gm_command_target(args))
+	lines.append("目标：%s" % ("玩家国库" if checked.get("command_id", "") == "economy.mint_to_treasury"
+		else _gm_command_target(args)))
 	lines.append("生效日：第 %d 游戏日" % day)
 	return "\n".join(lines)
 
@@ -1206,13 +1239,13 @@ func _build_telemetry_group(parent: VBoxContainer) -> void:
 	var ctrl_row := HBoxContainer.new()
 	ctrl_row.add_theme_constant_override("separation", 6)
 	_pause_btn = Button.new()
-	_pause_btn.text = "⏸ 暂停刷新"
+	IconButton.apply_with_text(_pause_btn, (&"action.play" if _telemetry_paused else &"action.pause"), _gm_sanitize_legacy_status("⏸ 暂停刷新"), 14)
 	_pause_btn.tooltip_text = "暂停后 telemetry 文本冻结，方便复制/截图当前快照"
 	_pause_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_pause_btn.pressed.connect(_on_btn_toggle_pause)
 	ctrl_row.add_child(_pause_btn)
 	_snapshot_btn = Button.new()
-	_snapshot_btn.text = "📸 快照→文件"
+	IconButton.apply_with_text(_snapshot_btn, &"action.save", _gm_sanitize_legacy_status("📸 快照→文件"), 14)
 	_snapshot_btn.tooltip_text = "导出当前 SUS report + 滚动统计 + breakdowns 到 res://tmp/perf_snapshot_<时间>.json"
 	_snapshot_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_snapshot_btn.pressed.connect(_on_btn_snapshot)
@@ -1221,7 +1254,7 @@ func _build_telemetry_group(parent: VBoxContainer) -> void:
 	# 录制按钮：再次点击触发 stop_and_export，CSV 桌面落盘到 ../../tmp，
 	# mobile 落盘到 user://perf，避免 Android APK 资源目录不可写。
 	_record_btn = Button.new()
-	_record_btn.text = "⏺ 开始录制"
+	IconButton.apply_with_text(_record_btn, &"action.history", _gm_sanitize_legacy_status("⏺ 开始录制"), 14)
 	_record_btn.tooltip_text = "录制每个 fast_tick 的核心耗时；完整 Job/Breakdown 仅低频采样 → 桌面 ../../tmp；手机 user://perf"
 	_record_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_record_btn.pressed.connect(_on_btn_toggle_record)
@@ -1231,7 +1264,7 @@ func _build_telemetry_group(parent: VBoxContainer) -> void:
 	var tile_ctrl_row := HBoxContainer.new()
 	tile_ctrl_row.add_theme_constant_override("separation", 6)
 	_tile_record_btn = Button.new()
-	_tile_record_btn.text = "⏺ 开始地块全量录制"
+	IconButton.apply_with_text(_tile_record_btn, &"action.history", _gm_sanitize_legacy_status("⏺ 开始地块全量录制"), 14)
 	_tile_record_btn.tooltip_text = "录制每个 fast_tick、每个地块、所有可用 SoA 字段；会同步写入大型 CSV → 桌面 ../../tmp；手机 user://tile_data"
 	_tile_record_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_tile_record_btn.pressed.connect(_on_btn_toggle_tile_record)
@@ -1271,7 +1304,7 @@ func _build_telemetry_group(parent: VBoxContainer) -> void:
 	var econ_ctrl_row := HBoxContainer.new()
 	econ_ctrl_row.add_theme_constant_override("separation", 6)
 	_economy_record_btn = Button.new()
-	_economy_record_btn.text = "⏺ 开始经济录制"
+	IconButton.apply_with_text(_economy_record_btn, &"action.history", _gm_sanitize_legacy_status("⏺ 开始经济录制"), 14)
 	_economy_record_btn.tooltip_text = "每个经济 epoch 写一组 CSV（汇总/阶层/建筑/自然资源/物资，按上方开关）→ 桌面 ../../tmp；手机 user://economy_data"
 	_economy_record_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_economy_record_btn.pressed.connect(_on_btn_toggle_economy_record)
@@ -1598,7 +1631,7 @@ func _refresh_overlay_error_line() -> void:
 		_overlay_error_label.text = ""
 	else:
 		_overlay_error_label.visible = true
-		_overlay_error_label.text = "⚠ overlay disabled: %s" % msg
+		_overlay_error_label.text = "图层已停用：%s" % msg
 
 func _show_need_map_toast() -> void:
 	push_warning("[DebugConsole] 请先生成地图（R 键）")
@@ -1757,7 +1790,7 @@ func _refresh_sim_perf_lines() -> void:
 func _on_btn_toggle_pause() -> void:
 	_telemetry_paused = not _telemetry_paused
 	if _pause_btn != null:
-		_pause_btn.text = "▶ 恢复刷新" if _telemetry_paused else "⏸ 暂停刷新"
+		IconButton.apply_with_text(_pause_btn, (&"action.play" if _telemetry_paused else &"action.pause"), _gm_sanitize_legacy_status("▶ 恢复刷新" if _telemetry_paused else "⏸ 暂停刷新"), 14)
 		if _telemetry_paused:
 			_pause_btn.add_theme_color_override("font_color", Color(0.98, 0.75, 0.30))
 		else:
@@ -1842,7 +1875,7 @@ func _show_snapshot_toast(msg: String, is_error: bool) -> void:
 	if _snapshot_btn == null:
 		return
 	var prev: String = "📸 快照→文件"
-	_snapshot_btn.text = ("⚠ " if is_error else "✓ ") + msg
+	IconButton.apply_with_text(_snapshot_btn, (&"status.warning" if is_error else &"action.confirm"), _gm_sanitize_legacy_status(("⚠ " if is_error else "✓ ") + msg), 14)
 	if is_error:
 		_snapshot_btn.add_theme_color_override("font_color", Color(0.98, 0.45, 0.30))
 	else:
@@ -1850,7 +1883,7 @@ func _show_snapshot_toast(msg: String, is_error: bool) -> void:
 	var t := get_tree().create_timer(2.0)
 	t.timeout.connect(func() -> void:
 		if _snapshot_btn != null and is_instance_valid(_snapshot_btn):
-			_snapshot_btn.text = prev
+			IconButton.apply_with_text(_snapshot_btn, &"action.save", _gm_sanitize_legacy_status(prev), 14)
 			_snapshot_btn.remove_theme_color_override("font_color")
 	)
 
@@ -1898,10 +1931,10 @@ func _refresh_record_btn_text(force: bool = false) -> void:
 		var n: int = 0
 		if _perf_recorder.has_method("row_count"):
 			n = int(_perf_recorder.call("row_count"))
-		_record_btn.text = "⏹ 停止并导出（已录 %d 帧）" % n
+		IconButton.apply_with_text(_record_btn, &"action.history", _gm_sanitize_legacy_status("⏹ 停止并导出（已录 %d 帧）" % n), 14)
 		_record_btn.add_theme_color_override("font_color", Color(0.98, 0.45, 0.45))
 	else:
-		_record_btn.text = "⏺ 开始录制"
+		IconButton.apply_with_text(_record_btn, &"action.history", _gm_sanitize_legacy_status("⏺ 开始录制"), 14)
 		_record_btn.remove_theme_color_override("font_color")
 
 
@@ -1912,7 +1945,7 @@ func _show_record_toast(msg: String, is_error: bool) -> void:
 		return
 	if _record_btn == null:
 		return
-	_record_btn.text = ("⚠ " if is_error else "✓ ") + msg
+	IconButton.apply_with_text(_record_btn, (&"status.warning" if is_error else &"action.confirm"), _gm_sanitize_legacy_status(("⚠ " if is_error else "✓ ") + msg), 14)
 	if is_error:
 		_record_btn.add_theme_color_override("font_color", Color(0.98, 0.45, 0.30))
 	else:
@@ -1982,12 +2015,12 @@ func _refresh_tile_record_btn_text(force: bool = false) -> void:
 				float(summary.get("last_tick_format_ms", 0.0)),
 				float(summary.get("last_tick_flush_ms", 0.0)),
 			]
-		_tile_record_btn.text = "⏹ 停止并导出（全量 %d/%d tick / %d 行%s / %.1fms%s）" % [
+		IconButton.apply_with_text(_tile_record_btn, &"action.history", _gm_sanitize_legacy_status("⏹ 停止并导出（全量 %d/%d tick / %d 行%s / %.1fms%s）" % [
 			recorded_ticks, ticks, rows, stride_txt, last_ms, detail_txt,
-		]
+		]), 14)
 		_tile_record_btn.add_theme_color_override("font_color", Color(0.98, 0.45, 0.45))
 	else:
-		_tile_record_btn.text = "⏺ 开始地块全量录制"
+		IconButton.apply_with_text(_tile_record_btn, &"action.history", _gm_sanitize_legacy_status("⏺ 开始地块全量录制"), 14)
 		_tile_record_btn.remove_theme_color_override("font_color")
 
 
@@ -1998,7 +2031,7 @@ func _show_tile_record_toast(msg: String, is_error: bool) -> void:
 		return
 	if _tile_record_btn == null:
 		return
-	_tile_record_btn.text = ("⚠ " if is_error else "✓ ") + msg
+	IconButton.apply_with_text(_tile_record_btn, (&"status.warning" if is_error else &"action.confirm"), _gm_sanitize_legacy_status(("⚠ " if is_error else "✓ ") + msg), 14)
 	if is_error:
 		_tile_record_btn.add_theme_color_override("font_color", Color(0.98, 0.45, 0.30))
 	else:
@@ -2077,27 +2110,27 @@ func _refresh_economy_record_btn_text(force: bool = false) -> void:
 	if state == "recording":
 		var scope_text: String = "地块 #%d，" % selected_cell_index \
 			if current_cell_only else "全图，"
-		_economy_record_btn.text = "⏹ 停止并导出（%s抓取 %d / 写入 %d epoch，%d 行，队列 %d，%.1fms）" % [
+		IconButton.apply_with_text(_economy_record_btn, &"action.history", _gm_sanitize_legacy_status("⏹ 停止并导出（%s抓取 %d / 写入 %d epoch，%d 行，队列 %d，%.1fms）" % [
 			scope_text, captured_epochs, written_epochs, rows, queue, capture_ms,
-		]
+		]), 14)
 		_economy_record_btn.add_theme_color_override("font_color", Color(0.98, 0.45, 0.45))
 	elif state == "draining" or state == "opening":
-		_economy_record_btn.text = "⏳ 正在后台收尾（写入 %d/%d epoch，队列 %d）" % [
+		IconButton.apply_with_text(_economy_record_btn, &"action.history", _gm_sanitize_legacy_status("⏳ 正在后台收尾（写入 %d/%d epoch，队列 %d）" % [
 			written_epochs, captured_epochs, queue,
-		]
+		]), 14)
 		_economy_record_btn.add_theme_color_override("font_color", Color(0.95, 0.75, 0.30))
 	elif state == "error":
 		var error_label: String = str(summary.get("error_message", ""))
 		if error_label == "":
 			error_label = str(summary.get("error_code", "write_failed"))
-		_economy_record_btn.text = "⚠ 录制停止：%s（点击重新开始）" % error_label
+		IconButton.apply_with_text(_economy_record_btn, &"action.history", _gm_sanitize_legacy_status("⚠ 录制停止：%s（点击重新开始）" % error_label), 14)
 		_economy_record_btn.add_theme_color_override("font_color", Color(0.98, 0.45, 0.30))
 	elif state == "completed":
 		var path_count: int = (summary.get("paths", PackedStringArray()) as PackedStringArray).size()
-		_economy_record_btn.text = "✓ 已导出 %d 个 CSV（点击重新开始）" % path_count
+		IconButton.apply_with_text(_economy_record_btn, &"action.history", _gm_sanitize_legacy_status("✓ 已导出 %d 个 CSV（点击重新开始）" % path_count), 14)
 		_economy_record_btn.add_theme_color_override("font_color", Color(0.55, 0.95, 0.55))
 	else:
-		_economy_record_btn.text = "⏺ 开始经济数据录制"
+		IconButton.apply_with_text(_economy_record_btn, &"action.history", _gm_sanitize_legacy_status("⏺ 开始经济数据录制"), 14)
 		_economy_record_btn.remove_theme_color_override("font_color")
 
 
@@ -2108,7 +2141,7 @@ func _show_economy_record_toast(msg: String, is_error: bool) -> void:
 		return
 	if _economy_record_btn == null:
 		return
-	_economy_record_btn.text = ("⚠ " if is_error else "✓ ") + msg
+	IconButton.apply_with_text(_economy_record_btn, (&"status.warning" if is_error else &"action.confirm"), _gm_sanitize_legacy_status(("⚠ " if is_error else "✓ ") + msg), 14)
 	if is_error:
 		_economy_record_btn.add_theme_color_override("font_color", Color(0.98, 0.45, 0.30))
 	else:

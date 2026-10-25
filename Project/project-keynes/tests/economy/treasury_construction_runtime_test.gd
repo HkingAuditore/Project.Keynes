@@ -16,11 +16,36 @@ func _init() -> void:
 			"res://data/economy/default_economy.tres").to_native_profile()
 		profile.market_runtime_mode = "ACTIVE"
 		profile.market_cycle_days = 5
+		_test_gm_treasury_mint(catalog, profile)
 		_test_market_funded_build(catalog, profile)
 		_test_cash_failure_is_atomic(catalog, profile)
 		_test_grouped_material_planner(catalog, profile)
 	print("=== treasury construction runtime: %d failures ===" % _failures)
 	quit(0 if _failures == 0 else 1)
+
+
+func _test_gm_treasury_mint(catalog: Dictionary, profile: Dictionary) -> void:
+	var ext := _fixture(catalog, profile, 100000000)
+	_expect("GM mint fixture bootstraps", ext != null)
+	if ext == null:
+		return
+	_run_day(ext, 0)
+	var country: Dictionary = ext.get_country_cell_summary(0)
+	var handle := int(country.country_handle)
+	var before := int(ext.get_country_treasury_snapshot(handle).get("cash", -1))
+	var facade := EconomyFacadeScript.new()
+	facade._world_ext = ext
+	facade._configured = true
+	facade._catalog = catalog
+	var mint: Dictionary = facade.mint_to_treasury(handle, 0, 100000000, 1, 801)
+	_expect("GM mint and transfer queue together", bool(mint.get("ok", false)))
+	var report := _run_day(ext, 1)
+	_expect("GM mint adds exactly 10000 currency to treasury",
+		int(ext.get_country_treasury_snapshot(handle).get("cash", -1)) == before + 100000000)
+	_expect("GM mint preserves native conservation",
+		int(report.get("money_error", 1)) == 0
+		and int(report.get("population_error", 1)) == 0
+		and int(report.get("goods_error", 1)) == 0)
 
 
 func _test_catalog_hides_locked_buildings(catalog: Dictionary) -> void:

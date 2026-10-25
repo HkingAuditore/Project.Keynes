@@ -200,6 +200,8 @@ func _run() -> void:
 		var player: Dictionary = country.snapshot(int(start_summary.get("country_handle", -1)))
 		_expect("stable player country id is preserved",
 			String(player.get("country_id", "")) == "country.player")
+		_expect("player starts with exactly 10000 currency",
+			int(country.treasury_snapshot(int(start_summary.country_handle)).get("cash", -1)) == 100000000)
 		var minimum_distance := int(start.get("minimum_country_distance", 0))
 		_expect("country distance uses the reduced map-scale requirement",
 			minimum_distance == StartLocationPolicy.minimum_country_distance(60, 40)

@@ -1070,6 +1070,7 @@ func _on_pause_toggled(paused: bool) -> void:
 func _on_speed_selected(speed: float) -> void:
 	if _world_clock == null:
 		return
+	speed = clampf(speed, 1.0, 10.0)
 	if _runtime_host != null and _runtime_host.has_method("is_runtime_fault_paused") \
 			and _runtime_host.is_runtime_fault_paused():
 		sync_ui()

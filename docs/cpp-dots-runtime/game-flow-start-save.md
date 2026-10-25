@@ -587,3 +587,24 @@ use the existing facade capture. `PK_SAVE_ECP2_REUSE_DISABLE=1` selects that
 reference path; `PK_SAVE_ECP2_REUSE_VERIFY=1` independently captures ECP2 again
 and rejects the save unless every byte matches. The original manual-save replay
 verified 44,697,814 identical bytes and an isolated saved-file restore.
+
+## Opening treasury and GM controls (2026-10-25)
+
+New games default to 10,000 currency (`starting_country_cash = 100000000`,
+fixed-point scale 10,000). Explicit saved configuration and existing treasury
+state retain their values. The player speed cycle is 1/2/5/10; PlayerController
+caps player speed intents at 10. WorldClock retains unrestricted diagnostic
+speeds, and the top bar displays the actual GM-selected speed.
+
+The GM command page offers a currency amount and a speed selector (up to 1000).
+`economy.mint_to_treasury amount=10000` queues an existing MINT_TO_COHORT followed
+by TRANSFER_FROM_COHORT in one native batch, using a cohort in the player start
+cell and two consecutive GM sequences. Both run on the same effective day and
+preserve explicit mint accounting and the country asset coordinator. A missing
+player binding or cohort fails closed. Paused games must advance to settle the
+queued money. `time.speed value=1000` changes target throughput immediately;
+WorldClock retains its existing workload limits.
+
+These controls extend the existing host, facade and DebugConsole paths. This is
+a scoped file-size exception for those existing oversized files: no simulation
+state or alternative command dispatcher is added.

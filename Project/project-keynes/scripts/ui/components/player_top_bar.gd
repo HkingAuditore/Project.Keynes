@@ -9,7 +9,7 @@ signal gm_requested()
 signal annual_history_requested()
 
 const BAR_HEIGHT := 64.0
-const SPEED_PRESETS: Array[float] = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
+const SPEED_PRESETS: Array[float] = [1.0, 2.0, 5.0, 10.0]
 const HUD_ICON_SIZE := 28
 
 var _calendar_icon: TextureRect
@@ -110,7 +110,7 @@ func update_time_state(
 
 func _apply_clock_controls(paused: bool, speed: float) -> void:
 	_is_paused = paused
-	_current_speed = _snap_speed(speed)
+	_current_speed = speed
 	var speed_int := int(round(_current_speed))
 	IconButton.apply(
 		_pause_button,

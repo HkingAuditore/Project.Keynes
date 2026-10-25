@@ -310,8 +310,9 @@ Include:
 
 ## Production point balance (2026-10-25)
 
-The generator profile uses Q16 point weights 328 / 4096 / 33 (population /
-buildings / trade), a per-covered-day cap of 32768 (0.5 points), first paid
-draw cost 786432 (12 points), +20% per later draw, and 75% reroll cost.
+The generator profile uses Q16 point weights 33 / 410 / 3 (population /
+buildings / trade), no daily gain ceiling (cap 0 disables clipping on both
+native paths), first paid draw cost 7864320 (120 points), +20% per later draw,
+and 75% reroll cost (90 points on the first offer).
 Retune the generator and regenerate resources; these values change the PKID
 catalog hash, so old saves fail closed. UI reads native costs and ledgers.

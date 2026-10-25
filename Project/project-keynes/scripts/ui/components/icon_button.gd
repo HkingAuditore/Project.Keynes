@@ -20,25 +20,14 @@ static func apply(
 	configure(button, tooltip, toggle, active)
 	preload("res://scripts/ui/ui_audio_feedback.gd").tag_icon(button, semantic_key)
 	var texture := IconCatalog.texture_for_key(semantic_key)
-	var label := IconCatalog.label_for_key(semantic_key)
 	button.icon = texture
 	button.expand_icon = false
-	if texture != null:
-		button.text = ""
-		button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		button.add_theme_constant_override("icon_max_width", icon_size)
-		button.remove_theme_font_override("font")
-		button.remove_theme_font_size_override("font_size")
-		return
-	button.remove_theme_constant_override("icon_max_width")
-	if not label.is_empty():
-		button.text = label
-		button.remove_theme_font_override("font")
-		button.add_theme_font_size_override("font_size", maxi(10, icon_size - 2))
-		return
-	button.text = IconCatalog.glyph_for_key(semantic_key)
-	button.add_theme_font_override("font", IconCatalog.FONT_AWESOME)
-	button.add_theme_font_size_override("font_size", icon_size)
+	_apply_paper_colours(button, semantic_key)
+	button.text = ""
+	button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	button.add_theme_constant_override("icon_max_width", icon_size)
+	button.remove_theme_font_override("font")
+	button.remove_theme_font_size_override("font_size")
 
 
 static func apply_with_text(
@@ -57,14 +46,10 @@ static func apply_with_text(
 	var texture := IconCatalog.texture_for_key(semantic_key)
 	button.icon = texture
 	button.expand_icon = false
+	_apply_paper_colours(button, semantic_key)
 	button.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	if texture != null:
-		button.add_theme_constant_override("icon_max_width", icon_size)
-		button.text = text_value
-		button.remove_theme_font_override("font")
-		return
-	button.remove_theme_constant_override("icon_max_width")
-	button.text = "%s %s" % [IconCatalog.glyph_for_key(semantic_key), text_value]
+	button.add_theme_constant_override("icon_max_width", icon_size)
+	button.text = text_value
 	button.remove_theme_font_override("font")
 
 
@@ -89,6 +74,16 @@ static func set_active(button: Button, active: bool) -> void:
 		button.set_pressed_no_signal(active)
 
 
+static func _apply_paper_colours(button: Button, semantic_key: StringName) -> void:
+	for state in ["normal", "hover", "pressed", "hover_pressed", "focus", "disabled"]:
+		var token := "icon_%s_color" % state
+		if IconCatalog.family_for_key(semantic_key) == IconCatalog.FAMILY_PAPER:
+			button.add_theme_color_override(token,
+				Color(1.0, 1.0, 1.0, 0.45) if state == "disabled" else Color.WHITE)
+		else:
+			button.remove_theme_color_override(token)
+
+
 static func apply_to_label(
 		label: Label,
 		semantic_key: StringName,
@@ -96,12 +91,23 @@ static func apply_to_label(
 ) -> void:
 	if label == null:
 		return
-	var material_label := IconCatalog.label_for_key(semantic_key)
-	label.text = material_label if not material_label.is_empty() \
-		else IconCatalog.glyph_for_key(semantic_key)
-	if not material_label.is_empty():
-		label.remove_theme_font_override("font")
-		label.add_theme_font_size_override("font_size", maxi(10, icon_size - 2))
+	var texture := IconCatalog.texture_for_key(semantic_key)
+	var artwork := label.get_node_or_null("SemanticArtwork") as TextureRect
+	if texture != null:
+		if artwork == null:
+			artwork = TextureRect.new()
+			artwork.name = "SemanticArtwork"
+			artwork.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			artwork.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			artwork.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			label.add_child(artwork)
+			artwork.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		artwork.texture = texture
+		artwork.visible = true
+		label.text = ""
+		label.custom_minimum_size = Vector2(icon_size, icon_size)
 		return
-	label.add_theme_font_override("font", IconCatalog.FONT_AWESOME)
-	label.add_theme_font_size_override("font_size", icon_size)
+	if artwork != null:
+		artwork.visible = false
+	label.text = ""
+	label.remove_theme_font_override("font")

@@ -43,19 +43,15 @@ static func texture(path: String) -> Texture2D:
 
 
 static func domain_emblem(domain_id: String) -> Texture2D:
-	return texture(ROOT + "domain_%s.png" % domain_id) if not domain_id.is_empty() else null
+	return IconCatalog.texture_for_key(IconCatalog.technology_domain_semantic(domain_id)) \
+		if not domain_id.is_empty() else null
 
 
-## Seal for research states that carry a distinct bitmap (unknown / queued /
-## pending / completed). Available and locked keep the icon-font glyph.
+## 所有科研状态与其他玩家控件共用中央彩铅纸贴目录。
 static func state_seal(state: int, known: bool = true) -> Texture2D:
 	if not known:
-		return texture(ROOT + "state_unknown.png")
-	match state:
-		3: return texture(ROOT + "state_queued.png")
-		4: return texture(ROOT + "state_pending.png")
-		5: return texture(ROOT + "state_completed.png")
-	return null
+		return IconCatalog.texture_for_key(&"technology.state.unknown")
+	return IconCatalog.texture_for_key(IconCatalog.technology_state_semantic(state))
 
 
 ## Draws a plate into `rect` using height-proportional horizontal caps.
@@ -121,5 +117,6 @@ static func draw_icon(canvas: CanvasItem, tex: Texture2D, center: Vector2, diame
 	var tex_size := tex.get_size()
 	var scale := diameter / maxf(tex_size.x, tex_size.y)
 	var draw_size := tex_size * scale
-	canvas.draw_texture_rect(tex, Rect2(center - draw_size * 0.5, draw_size), false, modulate)
+	canvas.draw_texture_rect(tex, Rect2(center - draw_size * 0.5, draw_size), false,
+		Color(1.0, 1.0, 1.0, modulate.a))
 	return true

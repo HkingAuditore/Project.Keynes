@@ -113,15 +113,15 @@ func _init() -> void:
 				int(ideology_ir.level_thresholds_q16[0]) == 0
 				and int(ideology_ir.level_thresholds_q16[1]) == 262144
 				and int(ideology_ir.level_thresholds_q16[2]) == 786432)
-			_expect("ideology points start at zero and only accrue from growth",
+			_expect("ideology points start at zero and growth income has no daily cap",
 				int(ideology_ir.get("starting_points_q16", -1)) == 0
-				and int(ideology_ir.get("point_gain_cap_q16", 0)) == 32768)
+				and int(ideology_ir.get("point_gain_cap_q16", -1)) == 0)
 			_expect("growth point weights use the reduced production balance",
-				int(ideology_ir.get("point_population_weight_q16", 0)) == 328
-				and int(ideology_ir.get("point_building_weight_q16", 0)) == 4096
-				and int(ideology_ir.get("point_trade_weight_q16", 0)) == 33)
-			_expect("first draw costs 12, +20% per draw, and reroll costs 75 percent",
-				int(ideology_ir.get("offer_cost_q16", 0)) == 786432
+				int(ideology_ir.get("point_population_weight_q16", 0)) == 33
+				and int(ideology_ir.get("point_building_weight_q16", 0)) == 410
+				and int(ideology_ir.get("point_trade_weight_q16", 0)) == 3)
+			_expect("first draw costs 120, +20% per draw, and reroll costs 75 percent",
+				int(ideology_ir.get("offer_cost_q16", 0)) == 7864320
 				and int(ideology_ir.get("offer_cost_growth_percent", 0)) == 120
 				and int(ideology_ir.get("offer_cost_max_q16", 0)) == 2147483647
 				and int(ideology_ir.get("reroll_cost_percent", 0)) == 75)

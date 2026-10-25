@@ -34,7 +34,9 @@ class FakeRuntime:
 			"commands": [
 				{"id": "time.speed", "destructive": false, "args": [
 					{"name": "value", "type": "float", "required": true,
-						"choices": PackedFloat32Array([1.0, 2.0, 5.0])}]},
+						"choices": PackedFloat32Array(WorldRuntimeHost.GM_SPEED_PRESETS)}]},
+				{"id": "economy.mint_to_treasury", "destructive": true, "args": [
+					{"name": "amount", "type": "float", "required": true, "min": 0.0001}]},
 				{"id": "country.rename", "destructive": true, "args": [
 					{"name": "country_handle", "type": "int", "required": true},
 					{"name": "name", "type": "string", "required": true}]},
@@ -93,6 +95,20 @@ func _run() -> void:
 	console.open_panel()
 	await process_frame
 	var failures := PackedStringArray()
+	var money_amount := console.find_child("GMTreasuryAmount", true, false) as SpinBox
+	var speed_options := console.find_child("GMSpeedOptions", true, false) as OptionButton
+	_expect(money_amount != null and money_amount.value == 10000.0,
+		"GM treasury quick amount defaults to 10000", failures)
+	_expect(speed_options != null and speed_options.get_item_id(speed_options.item_count - 1) == 1000,
+		"GM quick speed offers 1000x", failures)
+	if money_amount != null:
+		(money_amount.get_parent().get_child(1) as Button).pressed.emit()
+		var pending: Dictionary = console.get("_gm_pending_command")
+		_expect(pending.get("command_id", "") == "economy.mint_to_treasury"
+			and float(pending.get("args", {}).get("amount", 0)) == 10000.0,
+			"GM treasury button prepares the mint command", failures)
+		(console.get("_gm_confirmation") as ConfirmationDialog).hide()
+		console.set("_gm_pending_command", {})
 
 	var calls_when_open := runtime.snapshot_calls
 	await create_timer(0.62).timeout

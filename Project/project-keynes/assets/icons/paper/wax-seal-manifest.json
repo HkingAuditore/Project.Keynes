@@ -1,0 +1,9 @@
+{
+  "name": "ui_wax_seal",
+  "columns": 1,
+  "rows": 1,
+  "semantics": [
+    "decoration.wax_seal"
+  ],
+  "prompt": "Use case: stylized-concept. One small game UI icon, a RED WAX SEAL as a flat colored-pencil paper sticker. Match reference thick uneven black graphite outlines and visible red colored-pencil grain. A simple irregular circular red seal with a tiny embossed pencil-drawn star at its center, one darker red ring line, no glossy highlights, no photorealistic wax, no metallic ornament, no shadows, no extra drops. Close-cut angular off-white paper border following the seal silhouette. Centered on square canvas with 15 percent transparent padding all around. True fully transparent alpha outside the white paper cutout. No words, letters, numbers or background."
+}

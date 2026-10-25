@@ -239,11 +239,17 @@ func _run() -> void:
 	_expect("locked professions stay hidden from the income page",
 		locked_profession == "" or int(economy.call(
 			"tax_row_instance_id", "income", locked_profession)) == 0)
-	economy.call("select_page_for_test", "tariff")
+	economy.call("select_page_for_test", "consumption")
 	var import_pres: Dictionary = presentation.get("import", {})
-	_expect("tariff page exposes editable tradeable goods",
-		int(economy.call("tax_row_count", "tariff")) ==
-			(import_pres.get("unlocked", []) as Array).size() + 1)
+	_expect("goods tax page exposes all unlocked goods once",
+		int(economy.call("tax_row_count", "consumption")) ==
+			(presentation.get("consumption", {}).get("unlocked", []) as Array).size() + 1)
+	_expect("tariffs have no separate page", not EconomyWorkspace.TAX_PAGE_IDS.has("tariff"))
+	var tax_rows: Dictionary = economy.get("_rows")
+	for item in import_pres.get("unlocked", []):
+		var row: Dictionary = tax_rows.get("consumption:%s" % String(item.id), {})
+		_expect("tradeable good combines transaction and both tariff lanes",
+			row.get("spins", {}).has_all(["consumption", "import", "export"]))
 	economy.call("select_page_for_test", "income")
 	economy.call("refresh_model", model)
 	_expect("daily tax refresh reuses cached row nodes",

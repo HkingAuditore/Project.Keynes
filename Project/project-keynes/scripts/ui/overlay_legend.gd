@@ -113,7 +113,6 @@ func _ready() -> void:
 			or _vector_low_label == null or _vector_high_label == null:
 		push_error("OverlayLegend 必须通过 map_overlay_legend.tscn 实例化。")
 		return
-	_icon_label.add_theme_font_override("font", IconBadge.FA_SOLID_FONT)
 	_icon_label.add_theme_font_size_override("font_size", 15)
 	_icon_label.add_theme_color_override("font_color", UITokens.DOSSIER_OXBLOOD)
 	_title_label.add_theme_font_override("font", UITokens.dossier_font("serif"))

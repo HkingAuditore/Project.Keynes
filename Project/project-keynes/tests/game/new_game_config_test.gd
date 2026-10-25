@@ -6,6 +6,7 @@ var _failures := 0
 
 func _init() -> void:
 	var config := NewGameConfig.create_default()
+	_expect("starting treasury is 10000 currency", int(config.research.starting_country_cash) == 10000 * 10000)
 	config.country.name = "  大河联邦  "
 	_expect("foreign default", int(config.country.foreign_count) == 5)
 	_expect("unicode country accepted", bool(config.validate().ok))

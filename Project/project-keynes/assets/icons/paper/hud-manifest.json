@@ -1,0 +1,33 @@
+{
+  "name": "hud_01",
+  "columns": 5,
+  "rows": 5,
+  "semantics": [
+    "hud.country.technology",
+    "hud.country.ideology",
+    "hud.country.economy",
+    "hud.country.military",
+    "hud.country.diplomacy",
+    "hud.overlay.geography",
+    "hud.overlay.climate",
+    "hud.overlay.resources",
+    "hud.overlay.biology",
+    "hud.overlay.clear",
+    "geography.elevation",
+    "geography.surface",
+    "geography.terrain",
+    "climate.temperature",
+    "climate.humidity",
+    "climate.wind",
+    "ecology.growth",
+    "ecology.vegetation",
+    "hud.clock.calendar",
+    "hud.clock.pause",
+    "hud.clock.play",
+    "hud.clock.speed",
+    "hud.system.settings",
+    "hud.system.day_night_on",
+    "hud.system.day_night_off"
+  ],
+  "prompt": "Use case: stylized-concept. Asset type: game HUD icon sprite atlas. Use the attached image only as STYLE reference. Create NEW original drawings in exactly the same rough thick BLACK PENCIL contour, waxy colored-pencil grain, simple bold color areas, warm ochre/red/blue/green palette, slightly imperfect hand-drawing, angular off-white cut-paper sticker border. True transparent alpha outside each sticker. NO watercolor, NO smooth vector, NO shiny 3D, NO thin engraving. Legible at 24 to 44 pixels.\nExactly 5 columns by 5 rows, one isolated sticker per equally sized cell, centered, no overlap, generous transparent gutters, no labels or numbers or grid lines. Each object occupies middle 70 percent of cell.\nRow1: science open book with blue flask; ideology rolled scroll with red seal and feather; economy golden coins in pouch; military crossed swords with shield; diplomacy two shaking hands with small olive sprig.\nRow2: geography folded map with mountain; climate sun emerging from blue cloud; natural resources pickaxe and ore rock; biology tree with deer silhouette; clear map overlay folded blank map and small eraser.\nRow3: elevation triangular mountain with snowcap; landform rolling hills and layered rock cross-section; biome landscape with pine and grass; temperature red thermometer; humidity blue water droplet.\nRow4: wind curling wind ribbons with small leaf; ecology new sprout growing from soil; vegetation three green leaves; calendar blank parchment calendar with small red binding tabs; pause two thick red pencil vertical bars.\nRow5: play green triangular pointer; speed three ochre right-pointing chevrons; settings gray cog with brown pencil; day and night golden sun overlapping crescent moon; eternal daytime large golden sun alone.\nNo text or letters. Preserve white paper cut edges like reference."
+}

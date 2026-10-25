@@ -23,6 +23,7 @@ func _init() -> void:
 	_audit_shared_implementations()
 	_audit_context_mappings()
 	_audit_semantic_contracts()
+	_audit_paper_controls()
 	if _failures.is_empty():
 		print("[icon-catalog-audit] PASS")
 		quit(0)
@@ -34,19 +35,24 @@ func _init() -> void:
 
 func _audit_registered_semantics() -> void:
 	for semantic in IconCatalog.registered_keys():
+		if not IconCatalog.PAPER_TEXTURES.has(semantic) and not IconCatalog.PAPER_ALIASES.has(semantic):
+			_failures.append("semantic has no explicit paper artwork mapping: %s" % semantic)
 		if IconCatalog.resolve_semantic(semantic) != semantic:
 			_failures.append("semantic key does not resolve to itself: %s" % semantic)
 		var spec := IconCatalog.spec_for(semantic)
 		var has_glyph := not String(spec.get("glyph", "")).is_empty()
 		var texture := spec.get("texture") as Texture2D
-		if has_glyph == (texture != null):
-			_failures.append("spec must define exactly one renderer: %s" % semantic)
+		if has_glyph or texture == null or spec.get("family") != IconCatalog.FAMILY_PAPER:
+			_failures.append("all player icons must use paper textures: %s" % semantic)
 		if texture != null and not ResourceLoader.exists(texture.resource_path):
 			_failures.append("missing texture for %s: %s" % [semantic, texture.resource_path])
-		if has_glyph:
-			var glyph := String(spec.glyph)
-			if not IconCatalog.FONT_AWESOME.has_char(glyph.unicode_at(0)):
-				_failures.append("font does not contain glyph for %s" % semantic)
+		if texture is AtlasTexture and IconCatalog.family_for_key(semantic) == IconCatalog.FAMILY_PAPER:
+			var atlas := texture as AtlasTexture
+			if not Rect2(Vector2.ZERO, atlas.atlas.get_size()).encloses(atlas.region):
+				_failures.append("paper icon extends outside its atlas: %s" % semantic)
+			var pixels := atlas.get_image()
+			if pixels == null or pixels.is_invisible() or pixels.detect_alpha() == Image.ALPHA_NONE:
+				_failures.append("paper icon must contain visible art and transparent cutout: %s" % semantic)
 	if IconCatalog.resolve_semantic(&"country.technology") == \
 			IconCatalog.resolve_semantic(&"metric.technology"):
 		_failures.append("distinct business semantics collapsed during resolution")
@@ -62,6 +68,18 @@ func _audit_source_boundaries(root: String) -> void:
 			_failures.append("private-use glyph outside IconCatalog: %s" % path)
 		if source.contains("res://assets/icons/"):
 			_failures.append("icon asset path outside IconCatalog: %s" % path)
+		if source.contains("IconCatalog.FONT_AWESOME") or source.contains("IconBadge.FA_SOLID_FONT") \
+				or source.contains("IconCatalog.glyph_for_key("):
+			_failures.append("legacy icon font renderer remains: %s" % path)
+	for path in _files_recursive("res://scripts/rendering", ".gd"):
+		var source := FileAccess.get_file_as_string(path)
+		if source.contains("IconCatalog.FONT_AWESOME") or source.contains("IconCatalog.glyph_for_key("):
+			_failures.append("map marker still renders legacy icon glyph: %s" % path)
+	for path in _files_recursive("res://scenes", ".tscn"):
+		var source := FileAccess.get_file_as_string(path)
+		if source.contains(".svg\"") or source.contains("crest_bitmap.tres") \
+				or source.contains("prestige_bitmap.tres"):
+			_failures.append("scene bypasses the paper icon catalog: %s" % path)
 
 
 func _audit_assets() -> void:
@@ -97,7 +115,20 @@ func _audit_shared_implementations() -> void:
 			continue
 		var allowed := IconCatalog.ALLOWED_SHARED_IMPLEMENTATIONS.get(signature, []) as Array
 		var allowed_sorted := allowed.duplicate()
+		allowed_sorted = allowed_sorted.filter(func(key):
+			return IconCatalog.implementation_signature(key) == signature)
 		allowed_sorted.sort()
+		if String(signature).begins_with("project_keynes:"):
+			var explicit_paper: Array = []
+			for paper_key in IconCatalog.PAPER_TEXTURES:
+				if IconCatalog.implementation_signature(paper_key) == signature:
+					explicit_paper.append(paper_key)
+			for alias in IconCatalog.PAPER_ALIASES:
+				if IconCatalog.implementation_signature(alias) == signature:
+					explicit_paper.append(alias)
+			explicit_paper.sort()
+			if semantics == explicit_paper:
+				continue
 		if semantics != allowed_sorted:
 			# Identity catalogs are checked for uniqueness inside their own domain
 			# below; cross-domain reuse remains visible in this printed report.
@@ -175,13 +206,11 @@ func _audit_building_catalog() -> void:
 
 func _audit_semantic_contracts() -> void:
 	var copper := IconCatalog.spec_for(&"resource.copper")
-	if String(copper.get("label", "")) != "Cu":
-		_failures.append("copper ore must keep its Cu material marker")
-	if String(copper.get("glyph", "")).unicode_at(0) != 0xf6fc:
-		_failures.append("copper ore must use the mountain/mineral silhouette")
+	if copper.get("texture") == null or copper.get("family") != IconCatalog.FAMILY_PAPER:
+		_failures.append("copper ore must use the generated mineral paper cutout")
 	var logs := IconCatalog.spec_for(&"good.logs")
-	if String(logs.get("glyph", "")).unicode_at(0) != 0xf550:
-		_failures.append("logs must use the stacked-timber silhouette")
+	if logs.get("texture") == null or logs.get("family") != IconCatalog.FAMILY_PAPER:
+		_failures.append("logs must use the generated timber paper cutout")
 	if IconCatalog.implementation_signature(&"resource.copper") == \
 			IconCatalog.implementation_signature(&"good.copper"):
 		_failures.append("copper ore and refined copper must remain visually distinct")
@@ -201,6 +230,12 @@ func _audit_semantic_contracts() -> void:
 	if IconCatalog.implementation_signature(copper_mine) == \
 			IconCatalog.implementation_signature(copper_plant):
 		_failures.append("collector and industrial buildings must remain visually distinct")
+	var mine_texture := IconCatalog.texture_for_key(copper_mine)
+	if mine_texture == null or mine_texture != IconCatalog.texture_for_key(copper_mine):
+		_failures.append("building paper composites must be cached across refreshes")
+	if mine_texture != null and mine_texture.get_image().get_data() == \
+			IconCatalog.texture_for_key(copper_plant).get_image().get_data():
+		_failures.append("building kinds must produce visually different composites")
 
 
 func _audit_unique_identity(domain: String, stable_id: String, semantic: StringName,
@@ -214,6 +249,47 @@ func _audit_unique_identity(domain: String, stable_id: String, semantic: StringN
 			domain, signature, signatures[signature], stable_id
 		])
 	signatures[signature] = "%s:%s" % [domain, stable_id]
+
+
+func _audit_paper_controls() -> void:
+	for theme_path in ["res://assets/themes/player_session_theme.tres", "res://assets/themes/menu_atlas_theme.tres"]:
+		var theme := load(theme_path) as Theme
+		for pair in [["CheckBox", "checked"], ["CheckBox", "unchecked"], ["CheckButton", "checked"],
+				["OptionButton", "arrow"], ["SpinBox", "updown"], ["Tree", "arrow"], ["LineEdit", "clear"]]:
+			var texture := theme.get_icon(pair[1], pair[0])
+			if texture == null or not texture.resource_path.contains("/paper_hud/control_icons/") \
+					or texture.get_width() > 32 or texture.get_height() > 24:
+				_failures.append("native control must use compact paper artwork: %s/%s" % [pair[0], pair[1]])
+	for domain in ["agriculture", "engineering", "science", "society"]:
+		if TechnologyTreeArt.domain_emblem(domain) != IconCatalog.texture_for_key(
+				IconCatalog.technology_domain_semantic(domain)):
+			_failures.append("technology domain bypasses paper catalog: %s" % domain)
+	for state in range(6):
+		if TechnologyTreeArt.state_seal(state) != IconCatalog.texture_for_key(
+				IconCatalog.technology_state_semantic(state)):
+			_failures.append("technology state bypasses paper catalog: %d" % state)
+	for school in IdeologyArt.SCHOOL_ORDER:
+		if IdeologyArt.emblem_for(school) != IconCatalog.texture_for_key(IdeologyArt.SCHOOL_ICONS[school]):
+			_failures.append("ideology school bypasses paper catalog: %s" % school)
+	var button := Button.new()
+	IconButton.apply(button, &"good.grain", 24)
+	if button.icon == null or button.get_theme_color("icon_normal_color") != Color.WHITE:
+		_failures.append("paper buttons must keep generated color")
+	IconButton.apply(button, &"action.close", 16)
+	if button.icon != IconCatalog.texture_for_key(&"action.close") or not button.text.is_empty():
+		_failures.append("action controls must use generated paper artwork too")
+	button.free()
+	var label := Label.new()
+	IconButton.apply_to_label(label, &"good.grain", 24)
+	IconButton.apply_to_label(label, &"good.logs", 24)
+	var artwork := label.get_node_or_null("SemanticArtwork") as TextureRect
+	if artwork == null or label.get_child_count() != 1 or artwork.texture != \
+			IconCatalog.texture_for_key(&"good.logs"):
+		_failures.append("label refresh must reuse its paper texture node")
+	IconButton.apply_to_label(label, &"", 16)
+	if artwork != null and artwork.visible:
+		_failures.append("empty label must hide previous paper texture")
+	label.free()
 
 
 func _files_recursive(root: String, suffix: String) -> PackedStringArray:

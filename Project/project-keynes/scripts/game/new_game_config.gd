@@ -86,7 +86,7 @@ var base: Dictionary = {
 var world_controls: Dictionary = {}
 var climate: Dictionary = {}
 var research: Dictionary = {
-	"starting_country_cash": 2500000000000,
+	"starting_country_cash": 100000000,
 	"procurement_budget_per_day": 10000000,
 	"domain_weights_bp": PackedInt32Array([2500, 2500, 2500, 2500]),
 	"auto_purchase_enabled": true,

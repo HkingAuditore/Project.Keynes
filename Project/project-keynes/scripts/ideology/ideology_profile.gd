@@ -62,6 +62,7 @@ extends Resource
 @export_range(0, 2147483647, 1) var point_population_weight_q16: int = 0
 @export_range(0, 2147483647, 1) var point_building_weight_q16: int = 0
 @export_range(0, 2147483647, 1) var point_trade_weight_q16: int = 0
+## Optional ceiling per covered day. Zero disables the ceiling, not point income.
 @export_range(0, 2147483647, 1) var point_gain_cap_q16: int = 0
 @export var point_gain_stat_key: StringName = &"country.ideology.point_gain_factor"
 ## X6-a: per-term point multipliers. Empty means 1.0 for that term.

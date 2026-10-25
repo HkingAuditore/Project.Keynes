@@ -98,28 +98,9 @@ func _fit_text(text: String, size_px: int, max_width: float, kind: String = "san
 	return out + "…"
 
 
-## 语义图标画进 rect：有位图用位图，否则用 Font Awesome 字形居中。
+## 在统一入口等比绘制彩铅纸贴，保留原色与状态透明度。
 func _icon(key: StringName, rect: Rect2, color: Color) -> void:
-	if key == &"":
-		return
-	var texture := IconCatalog.texture_for_key(key)
-	if texture != null:
-		var modulate_col := Color.WHITE \
-			if IconCatalog.family_for_key(key) == &"project_keynes" else color
-		draw_texture_rect(texture, rect, false, modulate_col)
-		return
-	var glyph := IconCatalog.glyph_for_key(key)
-	if glyph.is_empty():
-		return
-	var glyph_size := int(round(minf(rect.size.x, rect.size.y) * 0.86))
-	var extent := IconCatalog.FONT_AWESOME.get_string_size(glyph, HORIZONTAL_ALIGNMENT_LEFT,
-		-1.0, glyph_size)
-	var ascent := IconCatalog.FONT_AWESOME.get_ascent(glyph_size)
-	var descent := IconCatalog.FONT_AWESOME.get_descent(glyph_size)
-	var baseline := Vector2(rect.get_center().x - extent.x * 0.5,
-		rect.get_center().y + (ascent - descent) * 0.5)
-	draw_string(IconCatalog.FONT_AWESOME, baseline, glyph, HORIZONTAL_ALIGNMENT_LEFT, -1.0,
-		glyph_size, color)
+	IconCatalog.draw_icon(self, key, rect, color.a)
 
 
 ## StyleBoxFlat 在 draw 时立即生成几何，所以复用同一实例是安全的。

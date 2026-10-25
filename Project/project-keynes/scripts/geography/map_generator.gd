@@ -3066,7 +3066,7 @@ func _build_gameplay_country_packet() -> Dictionary:
 		country_ids.append(country_id)
 		country_names.append(country_name)
 		country_cash.append(int(research_config.get(
-			"starting_country_cash", 2500000000000)))
+			"starting_country_cash", 100000000)))
 		territory_cells.append(cell)
 		territory_offsets.append(territory_cells.size())
 		var starter_ids: PackedStringArray = start.get(

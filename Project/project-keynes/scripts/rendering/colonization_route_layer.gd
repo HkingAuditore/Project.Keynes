@@ -240,11 +240,7 @@ func _draw() -> void:
 		# Reuse the atlas territory icon as the expedition's raised standard.
 		draw_line(marker, marker + Vector2(0, -15) * unit, LINE_CASING, 3.0 * unit, true)
 		draw_set_transform(marker + shift + Vector2(-1.0, -15.0) * unit, 0.0, Vector2.ONE * unit)
-		var glyph := IconCatalog.glyph_for_key(&"map.expedition")
-		draw_string_outline(IconCatalog.FONT_AWESOME, Vector2.ZERO, glyph,
-			HORIZONTAL_ALIGNMENT_LEFT, -1.0, 15, 3, LINE_CASING)
-		draw_string(IconCatalog.FONT_AWESOME, Vector2.ZERO, glyph,
-			HORIZONTAL_ALIGNMENT_LEFT, -1.0, 15, UITokens.MAP_ACTIVITY_GOLD)
+		IconCatalog.draw_icon(self, &"map.expedition", Rect2(-8.0, -16.0, 24.0, 24.0))
 	draw_set_transform(Vector2.ZERO)
 
 

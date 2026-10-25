@@ -6,20 +6,19 @@ const TaxLaneScene := preload("res://scenes/ui/economy_tax_lane.tscn")
 const TreasuryGoodScene := preload("res://scenes/ui/treasury_good_card.tscn")
 const TradeRowScene := preload("res://scenes/ui/economy_trade_row.tscn")
 
-const PAGE_IDS := ["treasury", "income", "consumption", "business", "tariff", "trade"]
+const PAGE_IDS := ["treasury", "income", "consumption", "business", "trade"]
 const TOP_PAGE_IDS := ["treasury", "tax", "trade"]
-const TAX_PAGE_IDS := ["income", "consumption", "business", "tariff"]
+const TAX_PAGE_IDS := ["income", "consumption", "business"]
 const PAGE_DEFINITIONS := {
 	"treasury": {"label": "国库", "icon": &"metric.treasury", "accent": UITokens.RESOURCE},
 	"tax": {"label": "税制", "icon": &"tax.section", "accent": UITokens.BRASS_HIGHLIGHT},
 	"income": {"label": "所得税", "icon": &"tax.income", "accent": UITokens.ACCENT},
-	"consumption": {"label": "交易税", "icon": &"tax.consumption", "accent": UITokens.GOOD},
+	"consumption": {"label": "物资税", "icon": &"tax.consumption", "accent": UITokens.GOOD},
 	"business": {"label": "营业税", "icon": &"tax.business", "accent": UITokens.CLIMATE},
-	"tariff": {"label": "关税", "icon": &"tax.tariff", "accent": UITokens.WATER},
 	"trade": {"label": "贸易", "icon": &"metric.trade", "accent": UITokens.ACCENT},
 }
 const TAX_KIND := {"income": 0, "consumption": 1, "business": 2, "import": 3, "export": 4}
-const KIND_LABELS := {"import": "进口", "export": "出口"}
+const KIND_LABELS := {"consumption": "交易", "import": "进口", "export": "出口"}
 const TAX_MODE_PERCENT_BP := 0
 const TAX_MODE_ABSOLUTE := 1
 const TAX_ABSOLUTE_MIN := -1000000000
@@ -313,7 +312,7 @@ func _refresh_tax_tabs() -> void:
 	var tabs: Array = []
 	for page in TAX_PAGE_IDS:
 		var definition: Dictionary = PAGE_DEFINITIONS[page]
-		var page_pres: Dictionary = presentation.get(_presentation_key(page), {})
+		var page_pres: Dictionary = presentation.get(page, {})
 		var unlocked_count := (page_pres.get("unlocked", []) as Array).size()
 		var total := int(page_pres.get("total_count", 0))
 		signature_parts.append("%s:%d:%d" % [page, unlocked_count, total])
@@ -370,9 +369,8 @@ func _page_description(page: String) -> String:
 	match page:
 		"treasury": return "国家库存与战略物资的可用余额"
 		"income": return "按职业审定所得税覆盖与实际税率"
-		"consumption": return "按商品审定买方交易税覆盖与实际税率"
+		"consumption": return "按物资统一调整交易税、进口关税与出口关税"
 		"business": return "按建筑类型审定营业税覆盖与实际税率"
-		"tariff": return "管理进口与出口关税"
 		"trade": return "核对商品流量、贸易伙伴与关税影响"
 		_: return "国家财政账目"
 
@@ -401,7 +399,7 @@ func _refresh_page() -> void:
 		_set_status(String(policy.get("reason", "税收政策暂不可用")))
 		return
 	var presentation: Dictionary = _model.get("tax_presentation", {})
-	var page_pres: Dictionary = presentation.get(_presentation_key(_page), {})
+	var page_pres: Dictionary = presentation.get(_page, {})
 	var defaults := _basis_points_array(policy.get("default_rates_basis_points", PackedInt32Array()),
 		policy.get("default_rates", PackedInt32Array()))
 	var default_modes: PackedInt32Array = policy.get(
@@ -424,6 +422,9 @@ func _refresh_page() -> void:
 	var kind_groups := {}
 	for kind in _page_kinds(_page):
 		kind_groups[kind] = policy.get(kind, {})
+	var tariff_ids := {}
+	for item in presentation.get("import", {}).get("unlocked", []):
+		tariff_ids[String(item.get("id", ""))] = true
 	var unlocked: Array = page_pres.get("unlocked", [])
 	for item_value in unlocked:
 		var item: Dictionary = item_value
@@ -434,6 +435,8 @@ func _refresh_page() -> void:
 		var kind_data := {}
 		var complete := true
 		for kind in _page_kinds(_page):
+			if kind in ["import", "export"] and not tariff_ids.has(stable_id):
+				continue
 			var group: Dictionary = kind_groups[kind]
 			var rates := _group_basis_points(group, "rates")
 			if index >= rates.size():
@@ -455,7 +458,7 @@ func _refresh_page() -> void:
 			continue
 		var card := _ensure_card(_page, stable_id,
 			String(item.get("display_name", stable_id)),
-			String(item.get("icon_key", "")), false)
+			String(item.get("icon_key", "")), false, kind_data.keys())
 		_update_card(card, kind_data)
 		wanted["%s:%s" % [_page, stable_id]] = true
 	_sync_visibility(wanted)
@@ -746,22 +749,17 @@ func _sync_visibility(wanted: Dictionary) -> void:
 			control.visible = should_show
 
 
-# The tariff page merges import and export onto one card per good; both kinds
-# share the goods catalog, so the import lane carries the merged presentation.
-func _presentation_key(page: String) -> String:
-	return "import" if page == "tariff" else page
-
-
+# 物资税卡片共用物资目录，各税种仍独立提交。
 func _page_kinds(page: String) -> Array:
-	return ["import", "export"] if page == "tariff" else [page]
+	return ["consumption", "import", "export"] if page == "consumption" else [page]
 
 
 func _kind_page(kind: String) -> String:
-	return "tariff" if kind == "import" or kind == "export" else kind
+	return "consumption" if kind == "import" or kind == "export" else kind
 
 
 func _default_title() -> String:
-	return "默认进出口税率" if _page == "tariff" else "默认税率"
+	return "默认物资税率" if _page == "consumption" else "默认税率"
 
 
 func _item_ids(policy: Dictionary) -> PackedStringArray:
@@ -862,7 +860,7 @@ func _on_mode_selected(index: int, key: String, kind: String) -> void:
 
 
 func _ensure_card(page: String, item_id: String, label: String,
-		icon_key: String, is_default: bool) -> Dictionary:
+		icon_key: String, is_default: bool, item_kinds: Array = []) -> Dictionary:
 	var key := "%s:%s" % [page, item_id]
 	if _rows.has(key):
 		return _rows[key]
@@ -870,7 +868,7 @@ func _ensure_card(page: String, item_id: String, label: String,
 	var panel := TaxCardScene.instantiate() as PanelContainer
 	panel.name = "Tax_%s_%s" % [page, item_id]
 	panel.custom_minimum_size = CARD_SIZE
-	var kinds := _page_kinds(page)
+	var kinds := item_kinds if not item_kinds.is_empty() else _page_kinds(page)
 	var badge := panel.get_node("Body/Head/Icon") as IconBadge
 	badge.set_semantic(StringName(icon_key), accent)
 	var name_label := panel.get_node("Body/Head/Name") as Label
@@ -890,7 +888,7 @@ func _ensure_card(page: String, item_id: String, label: String,
 		lane_host.add_child(kind_row)
 		var kind_label := kind_row.get_node("Kind") as Label
 		kind_label.text = String(KIND_LABELS.get(kind, kind))
-		kind_label.visible = kinds.size() > 1
+		kind_label.visible = kinds.size() > 1 or page == "consumption"
 		var mode_button := kind_row.get_node_or_null("Mode") as OptionButton
 		if mode_button != null:
 			mode_button.clear()

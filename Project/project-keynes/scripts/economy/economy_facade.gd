@@ -201,6 +201,24 @@ func mint_to_cohort(cohort_handle: int, amount: int,
 		"i64_0": amount,
 	}])
 
+## GM 铸币与转账同批提交，复用原生审计和国家资金协调器。
+func mint_to_treasury(country_handle: int, cell_idx: int, amount: int,
+		effective_day: int, sequence: int) -> Dictionary:
+	if amount <= 0 or country_handle == 0:
+		return {"ok": false, "reason": "invalid_treasury_mint"}
+	var snapshot := population_cell_snapshot(cell_idx)
+	var handles: PackedInt64Array = snapshot.get("handles", PackedInt64Array())
+	if handles.is_empty():
+		return {"ok": false, "reason": "treasury_mint_cohort_unavailable"}
+	return submit([
+		{"opcode": Opcode.MINT_TO_COHORT, "target_handle": handles[0],
+			"i64_0": amount, "effective_day": effective_day, "sequence": sequence},
+		{"opcode": Opcode.TRANSFER_FROM_COHORT, "target_handle": handles[0],
+			"i64_0": amount, "i64_1": country_handle,
+			"effective_day": effective_day, "sequence": sequence + 1},
+	])
+
+
 func burn_from_cohort(cohort_handle: int, amount: int,
 		effective_day: int, sequence: int) -> Dictionary:
 	if amount <= 0:
