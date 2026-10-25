@@ -56,6 +56,49 @@ button.set_meta(&"ui_sound", &"none") # 本控件及子控件不自动发声
 
 ## 验证
 
+### 科技与理念专用音效（2026-10-25）
+
+`GameUIManager` 消费 `PlayerController.command_completed/command_settled`，
+通过现有 `GameAudio.play_event_cue` 播放；不修改命令、研发、抽卡或经济规则。
+原事件 `tech_research`、`ideology_draw`、`ideology_use` 的 GUID 保留。
+以下事件均属于 `event:/UI/Event/`，收录在 UI.bank 并路由至 SFX bus。
+
+| cue | 触发点 | 材质 |
+| --- | --- | --- |
+| tech_start | research.enqueue 返回 ok | 羽笔、纸面与轻敲 |
+| tech_cancel | research.remove 返回 ok | 纸签抽出、木质收束 |
+| tech_research | 完成通知的首次状态边沿（<4 → ≥4） | 铜铃与玻璃共鸣 |
+| ideology_draw | ideology.offer 返回 ok | 卷轴展开、卡牌滑动 |
+| ideology_reroll | ideology.reroll 返回 ok | 撕纸、洗牌 |
+| ideology_reveal | 可见卡牌翻面动画开始 | 纸牌翻动与轻响 |
+| ideology_choose | ideology.choose 返回 ok | 蜡封落印 |
+| ideology_use | ideology.equip 权威结算成功 | 木牌嵌入 |
+| ideology_unequip | ideology.unequip 权威结算成功 | 木牌抽离 |
+| ideology_promote | ideology.promote 权威结算成功 | 深沉印章与铜钵共鸣 |
+
+完成提示复用研究 toast 的状态基线：首次读档、程序刷新及 4→5 激活不会重播；
+同批多科技合并一次，另有 700 ms 冷却。删除控制器旧日切科技扫描与理念共用音效，
+避免次日或结算时重复播放。通用按钮触感仍走原 UI adapter。
+后台只带 generation、未带旧 dirty-family 位的提交同样进入原节流的 toast 检测，
+科技页关闭时也能提示完成。
+
+10 个素材由 ElevenLabs Sound Effects v2 生成，48 kHz / stereo / PCM16 WAV，
+TPDF 抖动；常用动作约 -25 至 -21 LUFS，完成/晋升 -19 LUFS，真峰值上限 -1 dBTP。
+完整提示词、时长与 SHA256 在 `Audio/ProjectKeynes/Assets/UI/progression/manifest.json`。
+旧 CC0 素材保留在原目录，不再用于这三个被替换的事件。
+
+复现：`python tools/audio/generate_progression_sfx_elevenlabs.py`，
+缓存离线重处理加 `--no-api`；随后运行 FMOD CLI 的
+`tools/audio/build_progression_sfx_fmod.js`，再运行 `tools/audio/Build-FmodBanks.ps1`。
+生成接口契约参见 [ElevenLabs 官方文档](https://elevenlabs.io/docs/api-reference/text-to-sound-effects/convert)。
+专项回归：`PK_FMOD_TEST=1`，Godot `--headless --path Project/project-keynes --script
+res://tests/audio/progression_audio_test.gd`，覆盖命令失败、重复绑定、结算去重、
+完成/激活边沿、暂停、冷却、所有事件解析与 FMOD 实例回收。
+
+本次在现有大文件 `GameUIManager`/`GameAudio` 中仅扩展既有音频接线和 cue 表，
+作为 module-boundaries 文件规模规则的局部例外；`PlayerController` 删除重复观察路径，
+不引入新的模拟、存档或音频子系统。
+
 使用 Godot 4.6.2，设置 `PK_FMOD_TEST=1` 后运行：
 
 - `res://tests/ui_audio_feedback_test.tscn`：八事件、真实鼠标与 ui_accept、动态

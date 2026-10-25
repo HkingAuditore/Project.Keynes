@@ -1,0 +1,97 @@
+{
+  "provider": "ElevenLabs",
+  "model_id": "eleven_text_to_sound_v2",
+  "output_format": "wav_48000",
+  "events": {
+    "tech_start": {
+      "duration_seconds": 0.88,
+      "target_lufs": -22,
+      "sample_rate": 48000,
+      "sha256": "e6953c80bc8c21ba9ca58ccfe592cbcd0d2be9c9d4e4a8ea1c5c99be41b58393",
+      "peak_dbfs": -8.66,
+      "prompt": "One isolated tactile historical strategy game interface sound, immediate onset, warm detailed natural materials, clean studio recording, short natural decay. No speech, no voices, no music bed, no electronic beeps, no background noise. A quill makes a decisive short inscription on parchment, followed by a tiny wooden stamp and a delicate bronze tick. Beginning a research project.",
+      "event": "event:/UI/Event/tech_start"
+    },
+    "tech_research": {
+      "duration_seconds": 2.2,
+      "target_lufs": -19,
+      "sample_rate": 48000,
+      "sha256": "a69bd725e6c304834b8c4d1de3a064455d668d7c4e19822423ec5d6f7d5331ce",
+      "peak_dbfs": -8.67,
+      "prompt": "One isolated tactile historical strategy game interface sound, immediate onset, warm detailed natural materials, clean studio recording, short natural decay. No speech, no voices, no music bed, no electronic beeps, no background noise. A bright small bronze bell blooms above a warm struck glass resonance and a soft parchment flourish. A satisfying discovery, elegant and restrained, a single rising shimmer resolving warmly.",
+      "event": "event:/UI/Event/tech_research"
+    },
+    "tech_cancel": {
+      "duration_seconds": 0.6,
+      "target_lufs": -24,
+      "sample_rate": 48000,
+      "sha256": "2d6f1ca0ebb4e06747b24f80c914e0d6a5574526a53eb588daf2aedb0ed84b3d",
+      "peak_dbfs": -11.08,
+      "prompt": "One isolated tactile historical strategy game interface sound, immediate onset, warm detailed natural materials, clean studio recording, short natural decay. No speech, no voices, no music bed, no electronic beeps, no background noise. A short dry parchment slip withdrawn from a wooden ledger, softly damped wooden tap at the end.",
+      "event": "event:/UI/Event/tech_cancel"
+    },
+    "ideology_draw": {
+      "duration_seconds": 0.9592,
+      "target_lufs": -22,
+      "sample_rate": 48000,
+      "sha256": "2c1f65e23bdf6fdfb02814ac3d78190034f46a855a8b4345f2db2770fee55ccd",
+      "peak_dbfs": -4.74,
+      "prompt": "One isolated tactile historical strategy game interface sound, immediate onset, warm detailed natural materials, clean studio recording, short natural decay. No speech, no voices, no music bed, no electronic beeps, no background noise. A thick parchment scroll swiftly unrolls, three stiff paper cards slide across felt, a gentle airy anticipation flourish ending in a small wood knock.",
+      "event": "event:/UI/Event/ideology_draw"
+    },
+    "ideology_reroll": {
+      "duration_seconds": 0.7775,
+      "target_lufs": -23,
+      "sample_rate": 48000,
+      "sha256": "c2e6e44854ea7bb43caa8736d8ccec2105ce64b22493cd63c4de2c8350f11fc3",
+      "peak_dbfs": -10.94,
+      "prompt": "One isolated tactile historical strategy game interface sound, immediate onset, warm detailed natural materials, clean studio recording, short natural decay. No speech, no voices, no music bed, no electronic beeps, no background noise. A crisp parchment sheet tears once, followed immediately by a quick shuffle of three thick paper cards, intimate and restrained.",
+      "event": "event:/UI/Event/ideology_reroll"
+    },
+    "ideology_reveal": {
+      "duration_seconds": 0.48,
+      "target_lufs": -25,
+      "sample_rate": 48000,
+      "sha256": "6a65a8336de04bb1380b0c6245611011d812b60066cf6b88347c7d821b5c0cd8",
+      "peak_dbfs": -9.81,
+      "prompt": "One isolated tactile historical strategy game interface sound, immediate onset, warm detailed natural materials, clean studio recording, short natural decay. No speech, no voices, no music bed, no electronic beeps, no background noise. One stiff handmade paper card flips over with a crisp papery flutter and one very light delicate glass tick, extremely short and light.",
+      "event": "event:/UI/Event/ideology_reveal"
+    },
+    "ideology_choose": {
+      "duration_seconds": 1.0,
+      "target_lufs": -21,
+      "sample_rate": 48000,
+      "sha256": "4ee48df138f2c98be630efe31711ed1bf9a1169a8159f74129bc28549b79f9e3",
+      "peak_dbfs": -8.69,
+      "prompt": "One isolated tactile historical strategy game interface sound, immediate onset, warm detailed natural materials, clean studio recording, short natural decay. No speech, no voices, no music bed, no electronic beeps, no background noise. A warm heavy wax seal stamp lands decisively on thick parchment, a soft leather thump and a tiny bronze ring with a short satisfying decay.",
+      "event": "event:/UI/Event/ideology_choose"
+    },
+    "ideology_use": {
+      "duration_seconds": 0.8,
+      "target_lufs": -22,
+      "sample_rate": 48000,
+      "sha256": "6e46935dc21d347ca4be3f606caee0089bab3c406ab50b8e9e26601c35a5adb2",
+      "peak_dbfs": -7.25,
+      "prompt": "One isolated tactile historical strategy game interface sound, immediate onset, warm detailed natural materials, clean studio recording, short natural decay. No speech, no voices, no music bed, no electronic beeps, no background noise. A carved wooden tablet slides into a fitted niche and locks with a soft wooden click, a tiny warm metal resonance, confident and tactile.",
+      "event": "event:/UI/Event/ideology_use"
+    },
+    "ideology_unequip": {
+      "duration_seconds": 0.4756,
+      "target_lufs": -24,
+      "sample_rate": 48000,
+      "sha256": "3a581e54b54a499884f70e4247f6c5bc0a35f577e0276380404c9757041105d1",
+      "peak_dbfs": -11.84,
+      "prompt": "One isolated tactile historical strategy game interface sound, immediate onset, warm detailed natural materials, clean studio recording, short natural decay. No speech, no voices, no music bed, no electronic beeps, no background noise. A carved wooden tablet gently lifts out of a felt lined niche, short soft scrape followed by a muted wooden click.",
+      "event": "event:/UI/Event/ideology_unequip"
+    },
+    "ideology_promote": {
+      "duration_seconds": 2.4,
+      "target_lufs": -19,
+      "sample_rate": 48000,
+      "sha256": "a5d4679a8330bba4b03d7488fa1f09460c6cfbb576aa4eb5c00662f29ac95191",
+      "peak_dbfs": -7.16,
+      "prompt": "One isolated tactile historical strategy game interface sound, immediate onset, warm detailed natural materials, clean studio recording, short natural decay. No speech, no voices, no music bed, no electronic beeps, no background noise. A deep ceremonial seal strike followed by a luminous bronze bowl resonance with a rising golden shimmer and warm dignified resolution. A rare intellectual achievement, compact and graceful, no orchestra.",
+      "event": "event:/UI/Event/ideology_promote"
+    }
+  }
+}

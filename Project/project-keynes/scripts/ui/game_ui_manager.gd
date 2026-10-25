@@ -695,12 +695,13 @@ func _on_country_committed(report: Dictionary) -> void:
 	# technology click forces a direct live snapshot.  Closed or other sections
 	# only invalidate the cached technology model (no build), so reopening never
 	# presents a model from before the panel was closed.
-	if int(report.get("generation", report.get("country_generation", 0))) > 0 \
+	var research_committed := int(report.get("generation", report.get("country_generation", 0))) > 0 \
 			or int(report.get("changed_countries", 0)) > 0 \
-			or state_dirty:
+			or state_dirty
+	if research_committed:
 		domains |= COUNTRY_DIRTY_TECHNOLOGY
 	var research_poll := {"states_changed": false, "completed": false}
-	if state_dirty:
+	if research_committed:
 		var now_ms := Time.get_ticks_msec()
 		if now_ms >= _next_research_toast_poll_ms:
 			_next_research_toast_poll_ms = now_ms + RESEARCH_TOAST_POLL_INTERVAL_MSEC
@@ -1054,7 +1055,29 @@ func _on_expedition_selected(expedition_handle: int) -> void:
 		_colonization_route.show_expedition(snapshot)
 
 
+func _play_progression_cue(cue: StringName) -> void:
+	var audio := get_node_or_null("/root/GameAudio")
+	if audio != null:
+		audio.play_event_cue(cue)
+
+
+func _on_player_command_completed_audio(id: StringName, result: Dictionary) -> void:
+	if not bool(result.get("ok", false)):
+		return
+	# 入队与抽牌先反馈已接受的操作，装备/晋升则等待权威结算成功。
+	var cues := {&"research.enqueue": &"tech_start", &"research.remove": &"tech_cancel",
+		&"ideology.offer": &"ideology_draw", &"ideology.reroll": &"ideology_reroll",
+		&"ideology.choose": &"ideology_choose"}
+	if cues.has(id):
+		_play_progression_cue(cues[id])
+
+
 func _on_player_command_settled(id: StringName, result: Dictionary) -> void:
+	if bool(result.get("ok", false)):
+		var cues := {&"ideology.equip": &"ideology_use",
+			&"ideology.unequip": &"ideology_unequip", &"ideology.promote": &"ideology_promote"}
+		if cues.has(id):
+			_play_progression_cue(cues[id])
 	if id == &"family.colonization.start" or \
 			id == &"family.colonization.cancel":
 		if _colonization_panel != null:
@@ -1356,6 +1379,10 @@ func _refresh_player_discovery_context() -> void:
 
 
 func set_player_controller(controller) -> void:
+	if _player_controller != null and _player_controller.has_signal("command_completed"):
+		var old_audio := Callable(self, "_on_player_command_completed_audio")
+		if _player_controller.command_completed.is_connected(old_audio):
+			_player_controller.command_completed.disconnect(old_audio)
 	if _player_controller != null and _player_controller.has_signal("country_committed"):
 		var old_callback := Callable(self, "_on_country_committed")
 		if _player_controller.country_committed.is_connected(old_callback):
@@ -1365,6 +1392,10 @@ func set_player_controller(controller) -> void:
 		if _player_controller.command_settled.is_connected(old_settled):
 			_player_controller.command_settled.disconnect(old_settled)
 	_player_controller = controller
+	if _player_controller != null and _player_controller.has_signal("command_completed"):
+		var audio_callback := Callable(self, "_on_player_command_completed_audio")
+		if not _player_controller.command_completed.is_connected(audio_callback):
+			_player_controller.command_completed.connect(audio_callback)
 	if _country_panel != null and _country_panel.has_method("set_player_controller"):
 		_country_panel.set_player_controller(controller)
 	if _right_panel != null and _right_panel.has_method("set_player_controller"):
@@ -1788,6 +1819,8 @@ func _poll_research_completion_toasts() -> Dictionary:
 			"display_name", definition.get("id", ""))))
 		result["completed"] = true
 	_last_research_toast_states = states.duplicate()
+	if bool(result["completed"]):
+		_play_progression_cue(&"tech_research")
 	return result
 
 

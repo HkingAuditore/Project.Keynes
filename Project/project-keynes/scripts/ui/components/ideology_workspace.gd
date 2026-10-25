@@ -1230,6 +1230,10 @@ func _play_reveal(count: int) -> void:
 
 
 func _reveal_card(index: int) -> void:
+	if is_visible_in_tree():
+		var audio := get_node_or_null("/root/GameAudio")
+		if audio != null:
+			audio.play_event_cue(&"ideology_reveal")
 	var card := _choice(index)
 	var flip: Tween = card.call("flip_to_face")
 	var rarity := int((card.call("card_data") as Dictionary).get("rarity", 1))
