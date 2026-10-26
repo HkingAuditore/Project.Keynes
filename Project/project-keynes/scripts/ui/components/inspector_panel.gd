@@ -15,10 +15,10 @@ const ColumnHeaderScene := preload("res://scenes/ui/inspector_column_header.tscn
 const CollapsibleSectionScene := preload("res://scenes/ui/inspector_collapsible_section.tscn")
 const TaxSectionScene := preload("res://scenes/ui/object_tax_section.tscn")
 const TaxLaneScene := preload("res://scenes/ui/object_tax_lane.tscn")
+const ActionButtonScene := preload("res://scenes/ui/object_action_button.tscn")
 
 const TAX_KIND_IDS := {"income": 0, "consumption": 1, "business": 2,
 	"import": 3, "export": 4}
-const CLEAR_ALL_MENU_ID := 1
 const SPLIT_DETAIL_MIN_WIDTH := 800.0
 ## 档案列低于此高度时 KPI 条改为单行，给正文多留约 34px。
 const DENSE_KPI_MAX_HEIGHT := 500.0
@@ -58,7 +58,8 @@ var _object_detail_dialog: ObjectDetailDialog
 var _family_workspace: FamilyWorkspace
 var _construction_pane: VBoxContainer
 var _construction_picker: ConstructionPicker
-var _more_button: MenuButton
+var _reset_tax_button: Button
+var _tax_reset_request: Dictionary = {}
 var _clear_tax_confirmation: ConfirmationDialog
 
 ## 以下控件表都按“块 id”（根块为 "_root"，其余为 section id）索引，
@@ -117,7 +118,6 @@ func _ready() -> void:
 	_family_workspace = get_node_or_null("%FamilyWorkspace") as FamilyWorkspace
 	_construction_pane = get_node_or_null("%ConstructionPane") as VBoxContainer
 	_construction_picker = get_node_or_null("%ConstructionPicker") as ConstructionPicker
-	_more_button = get_node_or_null("%MoreButton") as MenuButton
 	_clear_tax_confirmation = get_node_or_null("%ClearTaxConfirmation") as ConfirmationDialog
 	_colonization_button = get_node_or_null("%ColonizationButton") as Button
 	var close_button := get_node_or_null("%CloseButton") as Button
@@ -139,9 +139,7 @@ func _ready() -> void:
 			close_requested.emit())
 	_colonization_button.pressed.connect(func() -> void:
 		colonization_requested.emit(_model.get("colonization_action", {})))
-	IconButton.apply(_more_button, &"action.more", IconButton.SMALL, "更多操作")
-	_more_button.get_popup().id_pressed.connect(_on_more_menu_pressed)
-	_clear_tax_confirmation.confirmed.connect(_on_clear_all_tax_confirmed)
+	_clear_tax_confirmation.confirmed.connect(_on_category_tax_reset_confirmed)
 	_object_detail_dialog.set_embedded(true)
 	_object_detail_dialog.closed.connect(_on_detail_closed)
 	_object_detail_dialog.colonization_requested.connect(
@@ -377,6 +375,7 @@ func _render_content(reset_scroll: bool) -> void:
 	_tax_editors.clear()
 	_page_tax_editors.clear()
 	_page_tax_section = null
+	_reset_tax_button = null
 	var categories: Dictionary = _model.get("categories", {})
 	var data: Dictionary = categories.get(_current_tab, {})
 	_content_structure = _category_structure(data)
@@ -418,7 +417,6 @@ func _restore_tax_drafts() -> void:
 
 func _build_category_content(data: Dictionary) -> void:
 	_tax_context = data.get("tax_context", {})
-	_update_more_button()
 	var root_data := data.duplicate(false)
 	root_data.erase("sections")
 	root_data.erase("tax_context")
@@ -550,6 +548,7 @@ func _set_list_caption(caption: InspectorNoteList, text: String) -> void:
 func _build_page_tax_section(context: Dictionary) -> void:
 	_page_tax_editors.clear()
 	_page_tax_section = null
+	_reset_tax_button = null
 	var defaults: Array = context.get("default_lanes", [])
 	if defaults.is_empty():
 		return
@@ -580,6 +579,12 @@ func _build_page_tax_section(context: Dictionary) -> void:
 		_restore_lane_pending(editor, lane)
 		_page_tax_editors.append(editor)
 	lanes.visible = not defaults.is_empty()
+	_reset_tax_button = ActionButtonScene.instantiate() as Button
+	_reset_tax_button.text = "重置本栏税收设置"
+	_reset_tax_button.tooltip_text = "清除此栏税种在本地的默认税率和全部单项覆盖，恢复沿用国家政策；次日生效。"
+	_reset_tax_button.pressed.connect(_request_category_tax_reset)
+	body.add_child(_reset_tax_button)
+	_update_reset_tax_button()
 	_sync_page_tax_visibility()
 
 
@@ -615,9 +620,6 @@ func _restore_lane_pending(editor: TaxLaneEditor, lane: Dictionary) -> void:
 		editor.mark_pending(
 			int(_pending_tax[key].get("rate", lane.get("base", 0))),
 			int(_pending_tax[key].get("mode", lane.get("mode", 0))))
-	elif _pending_tax.has(_clear_all_pending_key()):
-		editor.mark_pending(
-			int(lane.get("base", 0)), int(lane.get("mode", 0)))
 
 
 func _rebuild_tax_editor_registry() -> void:
@@ -671,8 +673,6 @@ func _register_tax_editor(editor: TaxLaneEditor) -> void:
 		var pending: Dictionary = _pending_tax[key]
 		editor.mark_pending(int(pending.get(
 			"rate", editor.lane_data().get("base", 0))))
-	elif _pending_tax.has(_clear_all_pending_key()):
-		editor.mark_pending(int(editor.lane_data().get("base", 0)))
 
 
 func _on_tax_override_requested(
@@ -756,11 +756,7 @@ func _resolve_tax_pending(context: Dictionary, category: Dictionary = {}) -> voi
 		resolved.append(key)
 	for key in resolved:
 		_pending_tax.erase(key)
-		if key == _clear_all_pending_key():
-			for editor_key in _tax_editors.keys():
-				_resolve_tax_editor_key(String(editor_key))
-		else:
-			_resolve_tax_editor_key(key)
+		_resolve_tax_editor_key(key)
 
 
 func _pending_visible_in_snapshot(
@@ -770,14 +766,6 @@ func _pending_visible_in_snapshot(
 		category: Dictionary
 ) -> bool:
 	var op := String(pending.get("op", "set"))
-	if key == _clear_all_pending_key() or op == "clear_all":
-		var lanes: Array = context.get("default_lanes", [])
-		if lanes.is_empty():
-			return false
-		for lane_value in lanes:
-			if bool((lane_value as Dictionary).get("has_override", true)):
-				return false
-		return true
 	var parts := key.split("/")
 	if parts.size() < 3:
 		return false
@@ -809,6 +797,14 @@ func _find_snapshot_tax_lane(
 				if String(lane.get("kind", "")) == kind \
 						and String(lane.get("item_id", "")) == item_key:
 					return lane
+	if context.has("reset_targets"):
+		for lane in context.get("default_lanes", []):
+			if String(lane.get("kind", "")) != kind:
+				continue
+			for target in context.get("reset_targets", []):
+				if String(target.kind) == kind and String(target.item_id) == item_key:
+					return {"has_override": true}
+			return {"has_override": false}
 	return {}
 
 
@@ -821,44 +817,43 @@ func _tax_key(kind: String, item_key: String) -> String:
 	return "cell:%d/%s/%s" % [_cell_index, kind, item_key]
 
 
-func _clear_all_pending_key() -> String:
-	return "cell:%d/all" % _cell_index
-
-
-func _update_more_button() -> void:
-	if _more_button == null:
+func _update_reset_tax_button() -> void:
+	if not is_instance_valid(_reset_tax_button):
 		return
-	_more_button.visible = bool(_tax_context.get("editable", false))
+	_reset_tax_button.visible = bool(_tax_context.get("editable", false))
+	_reset_tax_button.disabled = (_tax_context.get("reset_targets", []) as Array).is_empty()
 
 
-func _on_more_menu_pressed(id: int) -> void:
-	if id == CLEAR_ALL_MENU_ID and bool(_tax_context.get("editable", false)):
-		_clear_tax_confirmation.popup_centered(Vector2i(480, 220))
-
-
-func _on_clear_all_tax_confirmed() -> void:
-	if _player_controller == null or _cell_index < 0:
+func _request_category_tax_reset() -> void:
+	if not bool(_tax_context.get("editable", false)):
 		return
-	var result: Dictionary = _player_controller.request_command(
-		&"country.tax.cell.clear_all", {"cell": _cell_index})
-	if not bool(result.get("ok", false)):
+	var targets: Array = _tax_context.get("reset_targets", [])
+	if targets.is_empty():
 		return
-	var key := _clear_all_pending_key()
-	_pending_tax[key] = {
-		"effective_day": int(_tax_context.get("current_day", -1)) + 1,
-		"policy_version": int(_tax_context.get("policy_version", -1)),
-		"op": "clear_all",
-	}
-	for editor_key in _tax_editors.keys():
-		for editor_value in _tax_editors[editor_key]:
-			var editor := editor_value as TaxLaneEditor
-			editor.mark_pending(int(editor.lane_data().get("base", 0)))
+	_tax_reset_request = {"cell": _cell_index, "tab": _current_tab,
+		"targets": targets.duplicate(true)}
+	_clear_tax_confirmation.title = "重置本栏税收设置"
+	_clear_tax_confirmation.dialog_text = (
+		"将清除本格%s的默认税率和全部单项覆盖，恢复沿用国家政策，次日生效。"
+		% _page_tax_title(_current_tab).trim_prefix("此地"))
+	_clear_tax_confirmation.popup_centered(Vector2i(480, 220))
+
+
+func _on_category_tax_reset_confirmed() -> void:
+	var request := _tax_reset_request
+	_tax_reset_request = {}
+	if int(request.get("cell", -1)) != _cell_index \
+			or String(request.get("tab", "")) != _current_tab \
+			or not bool(_tax_context.get("editable", false)):
+		return
+	for target in request.get("targets", []):
+		_on_tax_reset_requested(String(target.scope), String(target.kind), String(target.item_id))
 
 
 func _apply_category_patch(data: Dictionary) -> void:
 	if data.has("tax_context"):
 		_tax_context = data.get("tax_context", {})
-		_update_more_button()
+		_update_reset_tax_button()
 		_apply_page_tax_patch(_tax_context)
 		_resolve_tax_pending(_tax_context, data)
 		var tax_refs: Dictionary = _section_refs.get("page_tax", {})
@@ -954,7 +949,7 @@ func _add_collapsible_section(section: Dictionary) -> VBoxContainer:
 		_apply_section_chevron(chevron, not expanded)
 		body.visible = expanded
 		if expanded:
-			UIAnimation.fade_slide_in(body, Vector2(0.0, -6.0), UITokens.ANIM_FAST)
+			UIAnimation.crossfade(body, UITokens.ANIM_FAST)
 	)
 	_content_box.add_child(root)
 	_section_refs[section_id] = refs

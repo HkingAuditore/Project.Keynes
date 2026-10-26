@@ -144,18 +144,22 @@ func _run() -> void:
 	_expect("economy dossier KPI strip reads the live country",
 		dossier != null and dossier.kpi_texts().size() == 5 and dossier.view_model().available())
 	if dossier != null:
-		dossier.select_chapter("finance")
+		dossier.select_chapter("treasury")
 		await process_frame
 	var economy := panel.get("_economy_workspace") as Control
-	_expect("finance chapter hosts the treasury workspace",
-		economy != null and economy.is_visible_in_tree() and dossier.current_chapter() == "finance")
+	_expect("treasury chapter hosts the treasury workspace",
+		economy != null and economy.is_visible_in_tree() and dossier.current_chapter() == "treasury")
 	_expect("economy workspace shows current treasury cash",
 		economy != null and String(economy.call("cash_text")) \
 			== String(treasury.get("cash_text", "")))
 	_expect("economy workspace renders every nonzero treasury good",
 		economy != null and int(economy.call("visible_good_count")) \
 			== int(treasury.get("nonzero_good_count", -1)))
-	economy.call("select_page_for_test", "income")
+	dossier.select_chapter("tax")
+	_expect("tax chapter opens income taxes without duplicate top navigation",
+		dossier.current_chapter() == "tax" and economy.get("_page") == "income"
+		and not (economy.get("_tabs") as Control).visible
+		and (economy.get("_tax_tabs") as Control).visible)
 	var policy: Dictionary = model.get("tax_policy", {})
 	var presentation: Dictionary = model.get("tax_presentation", {})
 	var income_pres: Dictionary = presentation.get("income", {})
@@ -737,7 +741,7 @@ func _run() -> void:
 			and dossier.scroll_value() == dossier_scroll_before)
 	_expect("50x soak keeps dossier KPIs populated",
 		dossier.kpi_texts().size() == 5 and not dossier.kpi_texts()[0].is_empty())
-	dossier.select_chapter("finance")
+	dossier.select_chapter("treasury")
 
 	var unavailable := CountryViewModel.new().build()
 	_expect("missing country context returns recoverable unavailable state",

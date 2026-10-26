@@ -146,18 +146,6 @@ size_flags_vertical = 0
 text = "开拓"
 theme_type_variation = &"PKPrimaryButton"
 
-[node name="MoreButton" type="MenuButton" parent="Margin/Split/InspectorRoot/Header/Row"]
-unique_name_in_owner = true
-visible = false
-custom_minimum_size = Vector2(34, 32)
-layout_mode = 2
-size_flags_vertical = 0
-focus_mode = 0
-theme_type_variation = &"PKIconButton"
-item_count = 1
-popup/item_0/text = "清除本格全部税务覆盖"
-popup/item_0/id = 1
-
 [node name="CloseButton" type="Button" parent="Margin/Split/InspectorRoot/Header/Row"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(34, 32)
@@ -241,7 +229,7 @@ theme_override_constants/separation = 8
 
 [node name="ClearTaxConfirmation" type="ConfirmationDialog" parent="."]
 unique_name_in_owner = true
-title = "清除本格税务覆盖"
-dialog_text = "将清除本格全部默认率与对象税率覆盖，并于下一日生效。"
-ok_button_text = "确认清除"
+title = "重置本栏税收设置"
+dialog_text = "将重置本栏税收设置，并于下一日生效。"
+ok_button_text = "确认重置"
 cancel_button_text = "取消"
