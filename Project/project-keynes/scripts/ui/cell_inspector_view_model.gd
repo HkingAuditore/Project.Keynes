@@ -1820,6 +1820,7 @@ func _tax_context_for_cell(cell_idx: int, kinds: Array) -> Dictionary:
 		"country_handle", country.get("country_handle", 0)))
 	var editable := owner_handle == _player_country_handle()
 	var defaults: Array = []
+	var reset_targets: Array = []
 	var country_defaults := _tax_basis_points_array(policy,
 		"country_default_rates_basis_points", "country_default_rates")
 	var local_defaults := _tax_basis_points_array(policy,
@@ -1855,6 +1856,16 @@ func _tax_context_for_cell(cell_idx: int, kinds: Array) -> Dictionary:
 			"has_override": overridden,
 			"editable": editable,
 		})
+		if overridden:
+			reset_targets.append({"scope": "default", "kind": kind, "item_id": ""})
+		# 从政策快照取全部覆盖，包含当前名录中未出现的职业、物资和建筑。
+		var group: Dictionary = policy.get(kind, {})
+		var item_ids: PackedStringArray = group.get("item_ids", PackedStringArray())
+		var item_flags: PackedByteArray = group.get("has_local_item", PackedByteArray())
+		for item_index in range(mini(item_ids.size(), item_flags.size())):
+			if item_flags[item_index] != 0:
+				reset_targets.append({"scope": "item", "kind": kind,
+					"item_id": String(item_ids[item_index])})
 	return {
 		"available": true,
 		"editable": editable,
@@ -1865,6 +1876,7 @@ func _tax_context_for_cell(cell_idx: int, kinds: Array) -> Dictionary:
 			if facade.has_method("report") else -1,
 		"policy_version": int(policy.get("policy_version", -1)),
 		"default_lanes": defaults,
+		"reset_targets": reset_targets,
 		"policy": policy,
 	}
 

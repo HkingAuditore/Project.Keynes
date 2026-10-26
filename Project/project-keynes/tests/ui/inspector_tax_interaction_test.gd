@@ -1,5 +1,6 @@
 extends SceneTree
 
+const TaxMergeTest := preload("res://tests/ui/inspector_tax_merge_test.gd")
 
 class FakePlayerController extends Node:
 	var succeed := false
@@ -17,12 +18,28 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var failures := PackedStringArray()
+	get_root().size = Vector2i(1280, 720)
+	get_root().gui_embed_subwindows = true
+	var view_model := CellInspectorViewModel.new()
+	var generator := TaxMergeTest.FakeGenerator.new()
+	view_model.set_context(null, generator, null, null, 0.42, 22.0)
+	for spec in [["population", ["income"], 2],
+			["market", ["consumption", "import", "export"], 4],
+			["buildings", ["business"], 2]]:
+		var category := view_model._decorate_category_with_tax(0, spec[0], {})
+		var targets: Array = category.tax_context.get("reset_targets", [])
+		if targets.size() != spec[2]:
+			failures.append("%s reset omitted overrides absent from the visible list" % spec[0])
+		for target in targets:
+			if String(target.kind) not in spec[1]:
+				failures.append("%s reset included another category's tax kind" % spec[0])
 	var root := Control.new()
 	root.theme = load("res://assets/themes/player_ui_theme.tres") as Theme
 	get_root().add_child(root)
 	var inspector := (load("res://scenes/ui/inspector_panel.tscn") as PackedScene) \
 		.instantiate() as InspectorPanel
 	root.add_child(inspector)
+	inspector.show()
 	var controller := FakePlayerController.new()
 	root.add_child(controller)
 	inspector.set_player_controller(controller)
@@ -47,6 +64,11 @@ func _run() -> void:
 		failures.append("cohort detail left the page income default visible")
 	var row_editor := (inspector._object_detail_dialog.tax_editors()[0] \
 		as TaxLaneEditor)
+	if row_editor.is_visible_in_tree():
+		failures.append("overview exposed the cohort tax editor")
+	inspector._object_detail_dialog._on_chapter_selected("operations")
+	if not row_editor.is_visible_in_tree():
+		failures.append("operations did not expose the cohort tax editor")
 	# Live detail refreshes must not replace a tax editor while its LineEdit owns focus.
 	var editor_instance_id := row_editor.get_instance_id()
 	var refreshed_payload := {
@@ -134,18 +156,25 @@ func _run() -> void:
 
 		pending.clear()
 		default_editor.resolve_pending()
-		inspector._on_clear_all_tax_confirmed()
-	var clear_key := "cell:5/all"
-	if not pending.has(clear_key) \
-			or StringName(controller.calls[-1].id) != &"country.tax.cell.clear_all":
-		failures.append("confirmed clear-all did not queue the existing clear_all command")
+		var before_reset := controller.calls.size()
+		inspector._request_category_tax_reset()
+		inspector._clear_tax_confirmation.hide()
+		inspector._on_category_tax_reset_confirmed()
+		if controller.calls.size() != before_reset + 1 \
+				or StringName(controller.calls[-1].id) != &"country.tax.cell.clear_override" \
+				or int(controller.calls[-1].args.kind) != 0:
+			failures.append("population reset did not isolate the income override")
+	var clear_key := "cell:5/income/artisan"
+	if not pending.has(clear_key):
+		failures.append("category reset did not retain pending state")
 	var clear_ctx: Dictionary = (_model(5).categories.population.tax_context as Dictionary) \
 		.duplicate(true)
 	clear_ctx["current_day"] = 11
 	clear_ctx["policy_version"] = 8
+	clear_ctx["reset_targets"] = []
 	inspector._resolve_tax_pending(clear_ctx)
 	if pending.has(clear_key):
-		failures.append("policy version advance did not resolve clear-all pending")
+		failures.append("policy version advance did not resolve category reset pending")
 
 	inspector.close_detail()
 	inspector.set_model_for_selection(_building_model(5))
@@ -322,6 +351,40 @@ func _run() -> void:
 	inspector.set_model_for_selection(_model(6))
 	if not (inspector.get("_pending_tax") as Dictionary).is_empty():
 		failures.append("new cell selection retained stale Inspector pending state")
+	for spec in [["population", _model(5), [0]],
+			["market", _market_model(5), [1, 3, 4]],
+			["buildings", _building_model(5), [2]]]:
+		inspector.close_detail()
+		inspector.set_model_for_selection(spec[1])
+		inspector.select_tab(spec[0])
+		var reset_button := inspector.get("_reset_tax_button") as Button
+		var tax_section := inspector.get("_page_tax_section") as Control
+		if reset_button == null or not tax_section.is_ancestor_of(reset_button):
+			failures.append("%s reset was not placed in its tax section" % spec[0])
+		var header := tax_section.get_node("Header") as Button
+		header.button_pressed = true
+		await create_timer(UITokens.ANIM_FAST + 0.05).timeout
+		var body := tax_section.get_node("Body") as Control
+		if body.position.y < header.position.y + header.size.y:
+			failures.append("expanded tax controls overlapped the section heading")
+		var before := controller.calls.size()
+		inspector._request_category_tax_reset()
+		inspector._clear_tax_confirmation.hide()
+		inspector._on_category_tax_reset_confirmed()
+		if controller.calls.size() - before != spec[2].size():
+			failures.append("%s reset did not clear every item override" % spec[0])
+		for call_index in range(before, controller.calls.size()):
+			var call: Dictionary = controller.calls[call_index]
+			if int(call.args.kind) not in spec[2] \
+					or StringName(call.id) != &"country.tax.cell.clear_override":
+				failures.append("%s reset changed another category's taxes" % spec[0])
+		before = controller.calls.size()
+		inspector._request_category_tax_reset()
+		inspector._clear_tax_confirmation.hide()
+		inspector.select_tab("geography")
+		inspector._on_category_tax_reset_confirmed()
+		if controller.calls.size() != before:
+			failures.append("stale reset confirmation changed a different category")
 
 	if failures.is_empty():
 		print("[inspector-tax-interaction] PASS")
@@ -362,6 +425,7 @@ func _model(cell_idx: int) -> Dictionary:
 					"available": true, "editable": true, "cell": cell_idx,
 					"current_day": 10, "policy_version": 7,
 					"default_lanes": [default_lane],
+					"reset_targets": [{"scope": "item", "kind": lane.kind, "item_id": lane.item_id}],
 				},
 				"cohort_rows": [{
 					"id": "cohort_1", "profession_id": "artisan",
@@ -401,6 +465,7 @@ func _building_model(cell_idx: int) -> Dictionary:
 					"available": true, "editable": true, "cell": cell_idx,
 					"current_day": 10, "policy_version": 7,
 					"default_lanes": [default_lane],
+					"reset_targets": [{"scope": "item", "kind": lane.kind, "item_id": lane.item_id}],
 				},
 				"building_rows": [{
 					"id": "building_1", "building_type_id": "forge",
@@ -447,6 +512,7 @@ func _market_model(cell_idx: int) -> Dictionary:
 					"available": true, "editable": true, "cell": cell_idx,
 					"current_day": 10, "policy_version": 7,
 					"default_lanes": default_lanes,
+					"reset_targets": item_lanes,
 				},
 				"market_rows": [{
 					"id": "market_1", "good_id": "grain",
@@ -475,6 +541,14 @@ func _assert_object_tax_layer(
 		if not expected_kind.is_empty() \
 				and String(data.get("kind", "")) != expected_kind:
 			failures.append("%s detail bound the wrong tax kind" % object_kind)
+	inspector._object_detail_dialog._on_chapter_selected("overview")
+	for editor in editors:
+		if (editor as Control).is_visible_in_tree():
+			failures.append("%s overview exposed tax controls" % object_kind)
+	inspector._object_detail_dialog._on_chapter_selected("operations")
+	for editor in editors:
+		if not (editor as Control).is_visible_in_tree():
+			failures.append("%s operations hid tax controls" % object_kind)
 	var page_section := inspector.get("_page_tax_section") as Control
 	if page_section != null and page_section.visible:
 		failures.append("%s detail left the page default tax visible" % object_kind)

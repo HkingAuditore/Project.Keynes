@@ -87,6 +87,7 @@ var _has_rendered_model := false
 var _last_render_msec := 0
 var _compact := false
 var _embedded := false
+var _last_tax_page := "income"
 
 
 func _ready() -> void:
@@ -175,11 +176,12 @@ func set_player_controller(controller) -> void:
 	_player_controller = controller
 
 
-## 嵌入国民经济卷宗「财政」章时：外壳已有国家页头，贸易由独立章节承担。
+## 嵌入国民经济卷宗时：外壳负责国库 / 税收导航，只保留税种页签。
 func set_embedded(embedded: bool) -> void:
 	if _cash_card == null:
 		_ready()
 	_embedded = embedded
+	_tabs.visible = not embedded
 	var header := get_node_or_null("Column/Header") as Control
 	if header != null:
 		header.visible = not embedded
@@ -188,6 +190,13 @@ func set_embedded(embedded: bool) -> void:
 		_select_page("treasury")
 	elif not _model.is_empty():
 		_refresh_tabs()
+
+
+func select_embedded_chapter(chapter_id: String) -> void:
+	if chapter_id == "tax":
+		_select_page(_last_tax_page)
+	elif chapter_id == "treasury":
+		_select_page("treasury")
 
 
 func set_compact(compact: bool) -> void:
@@ -330,6 +339,8 @@ func _refresh_tax_tabs() -> void:
 func _select_page(page: String) -> void:
 	if page == "tax":
 		page = _page if _is_tax_page(_page) else "income"
+	if _is_tax_page(page):
+		_last_tax_page = page
 	_page = page
 	if _tabs != null:
 		_tabs.select_tab(_top_page_for(page))

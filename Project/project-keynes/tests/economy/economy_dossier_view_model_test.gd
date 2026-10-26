@@ -213,10 +213,24 @@ func _check_dossier_scene(model: Dictionary, city_cell: int) -> void:
 			dossier.gdp_band_visible() == overview)
 		_expect("chapter %s KPI strip visibility" % chapter_id,
 			dossier.kpi_strip_visible() == overview)
-		if chapter_id != "finance":
+		if chapter_id not in ["tax", "treasury"]:
 			var page := dossier.page(chapter_id)
 			_expect("chapter %s page exists" % chapter_id, page != null and page.visible)
 			nodes[chapter_id] = page
+	var workspace := dossier.economy_workspace() as EconomyWorkspace
+	dossier.select_chapter("tax")
+	workspace.select_page_for_test("consumption")
+	var tax_row := workspace.tax_row_instance_id("consumption", "__default__")
+	dossier.select_chapter("treasury")
+	_expect("treasury chapter hides both nested navigation rows",
+		workspace.get("_page") == "treasury"
+		and not (workspace.get("_tabs") as Control).visible
+		and not (workspace.get("_tax_tabs") as Control).visible)
+	dossier.select_chapter("tax")
+	_expect("tax chapter restores its tax kind and cached editor",
+		workspace.get("_page") == "consumption"
+		and (workspace.get("_tax_tabs") as Control).visible
+		and workspace.tax_row_instance_id("consumption", "__default__") == tax_row)
 	dossier.select_chapter("strata")
 	var strata_table := dossier.page("strata").get_node("%StrataTable") as DossierLedgerTable
 	_expect("strata ledger has 8 rows", strata_table != null and strata_table.row_count() == 8)

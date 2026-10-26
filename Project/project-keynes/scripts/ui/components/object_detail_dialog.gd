@@ -655,7 +655,7 @@ func _build_good_details(row: Dictionary, tax_context: Variant) -> void:
 	}
 	_section_targets["overview"] = overview_page
 	_section_targets["operations"] = operations_page
-	_build_tax_section("good", tax_context, row, _content)
+	_build_tax_section("good", tax_context, row, operations_page)
 	_apply_good_dossier_data(row, false)
 
 
@@ -881,7 +881,7 @@ func _build_cohort_details(row: Dictionary, tax_context: Variant) -> void:
 	}
 	_section_targets["overview"] = overview_page
 	_section_targets["operations"] = operations_page
-	_build_tax_section("cohort", tax_context, row, _content)
+	_build_tax_section("cohort", tax_context, row, operations_page)
 	_apply_cohort_dossier_data(row, false)
 	_sync_cohort_radar_split()
 
@@ -1058,7 +1058,7 @@ func _build_building_details(row: Dictionary, tax_context: Variant = {}) -> void
 	}
 	_section_targets["overview"] = overview_page
 	_section_targets["operations"] = operations_page
-	_build_tax_section("building", tax_context, row, _content)
+	_build_tax_section("building", tax_context, row, operations_page)
 	_apply_building_dossier_data(row, false)
 
 

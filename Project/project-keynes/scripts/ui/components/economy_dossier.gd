@@ -3,7 +3,7 @@ class_name EconomyDossier
 
 ## 国民经济卷宗：国家事务外壳里的一页。章节索引 + 范围选择 + KPI 条 + 章节视口。
 ## 每日刷新只把新数据推给当前可见章节；章节节点、滚动位置和选中项在刷新间保留。
-## 财政章直接承载原有 EconomyWorkspace（国库 / 税制编辑逻辑不变）。
+## 税收与国库章复用 EconomyWorkspace，外壳负责一级导航。
 
 signal locate_cell_requested(cell: int)
 
@@ -96,7 +96,7 @@ func set_model(model: Dictionary) -> void:
 
 func refresh_model(model: Dictionary) -> void:
 	_model = model
-	if _chapter == "finance" and _workspace != null and _workspace.has_method("refresh_model"):
+	if _is_finance_chapter(_chapter) and _workspace != null and _workspace.has_method("refresh_model"):
 		_workspace.refresh_model(model)
 	var now := Time.get_ticks_msec()
 	if now - _last_refresh_ms < LIVE_REFRESH_INTERVAL_MSEC:
@@ -174,10 +174,10 @@ func select_chapter(chapter_id: String) -> void:
 	_chapter_nav.select(chapter_id)
 	_apply_chapter_visibility()
 	_refresh_page()
-	var target: Control = _finance_host if chapter_id == "finance" else _viewport
+	var target: Control = _finance_host if _is_finance_chapter(chapter_id) else _viewport
 	UIAnimation.crossfade(target, UITokens.ANIM_FAST)
 	_viewport.scroll_vertical = int(_scroll_by_chapter.get(chapter_id, 0))
-	if chapter_id != "finance":
+	if not _is_finance_chapter(chapter_id):
 		call_deferred("_restore_scroll", chapter_id)
 
 
@@ -228,7 +228,7 @@ func _refresh_page() -> void:
 
 
 func _render_page() -> void:
-	if _chapter == "finance":
+	if _is_finance_chapter(_chapter):
 		_status_label.visible = false
 		return
 	var current = _pages.get(_chapter, null)
@@ -373,10 +373,14 @@ func _is_known_chapter(chapter_id: String) -> bool:
 	return false
 
 
+func _is_finance_chapter(chapter_id: String) -> bool:
+	return chapter_id in ["tax", "treasury"]
+
+
 func _apply_chapter_visibility() -> void:
-	var finance := _chapter == "finance"
+	var finance := _is_finance_chapter(_chapter)
 	# 页头是总览专属：产值横幅与 KPI 条都是全国/全城快照，放在阶层、产业这类
-	# 逐项表格上方只会挤掉首屏，不提供对照价值。财政章本来就把 _viewport 整体隐藏，
+	# 逐项表格上方只会挤掉首屏，不提供对照价值。税收与国库章把 _viewport 整体隐藏，
 	# 这个判断对它冗余但无害。
 	var overview := _chapter == "overview"
 	_gdp_band_panel.visible = overview
@@ -386,9 +390,10 @@ func _apply_chapter_visibility() -> void:
 	for chapter_id in _pages:
 		(_pages[chapter_id] as Control).visible = chapter_id == _chapter
 	_refresh_filters()
-	if finance and _workspace != null and _workspace.has_method("refresh_model") \
-			and not _model.is_empty():
-		_workspace.refresh_model(_model)
+	if finance and _workspace != null:
+		_workspace.select_embedded_chapter(_chapter)
+		if not _model.is_empty():
+			_workspace.refresh_model(_model)
 
 
 func _restore_scroll(chapter_id: String) -> void:

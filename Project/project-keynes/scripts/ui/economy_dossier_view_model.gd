@@ -14,7 +14,8 @@ const CHAPTERS: Array[Dictionary] = [
 	{"id": "industry", "label": "产业", "icon": &"economy.building.factory", "question": ""},
 	{"id": "market", "label": "市场", "icon": &"metric.goods", "question": ""},
 	{"id": "cities", "label": "城市", "icon": &"metric.territory", "question": ""},
-	{"id": "finance", "label": "财政", "icon": &"metric.treasury", "question": ""},
+	{"id": "tax", "label": "税收", "icon": &"tax.section", "question": ""},
+	{"id": "treasury", "label": "国库", "icon": &"metric.treasury", "question": ""},
 ]
 
 const SECTORS: Array[Dictionary] = [
