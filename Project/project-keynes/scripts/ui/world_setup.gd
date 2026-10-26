@@ -21,7 +21,7 @@ const DESKTOP_CONTROL_HEIGHT := 34.0
 
 const PRESETS := [
 	{"label": "小 40x28", "width": 40, "height": 28},
-	{"label": "当前 60x40", "width": 60, "height": 40},
+	{"label": "标准 60x40", "width": 60, "height": 40},
 	{"label": "大 100x64", "width": 100, "height": 64},
 	{"label": "自定义", "width": 60, "height": 40},
 ]
@@ -78,8 +78,8 @@ const CLIMATE_GROUPS := [
 	{
 		"title": "湖泊",
 		"fields": [
-			{"name": "lake_density", "label": "湖泊密度", "hint": "调大：湖泊更多；调小：湖泊更少", "type": "int", "default": 45, "min": 0, "max": 100, "step": 1},
-			{"name": "lake_size", "label": "湖泊大小", "hint": "调大：单个湖更大更深；调小：湖更小", "type": "int", "default": 55, "min": 0, "max": 100, "step": 1},
+			{"name": "lake_density", "label": "湖泊密度", "hint": "", "type": "int", "default": 45, "min": 0, "max": 100, "step": 1},
+			{"name": "lake_size", "label": "湖泊大小", "hint": "同时影响单湖尺寸与深度", "type": "int", "default": 55, "min": 0, "max": 100, "step": 1},
 		],
 	},
 	{
@@ -260,7 +260,7 @@ func _build_render_panel(parent: VBoxContainer) -> void:
 
 func _build_climate_panel(parent: VBoxContainer) -> void:
 	var advanced_title := SectionTitleScene.instantiate() as Label
-	advanced_title.text = "世界风格（简单调节）"
+	advanced_title.text = "世界风格"
 	advanced_title.add_theme_font_size_override("font_size", 24 if _mobile_layout else 20)
 	parent.add_child(advanced_title)
 

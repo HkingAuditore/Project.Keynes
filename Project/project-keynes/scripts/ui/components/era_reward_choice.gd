@@ -25,7 +25,8 @@ func set_option(option: Dictionary) -> void:
 	_description.text = String(option.get("description", "当前没有可用的时代奖励。"))
 	_target.text = "作用对象：%s" % String(option.get("target_summary", "玩家国家"))
 	var reasons: PackedStringArray = option.get("reasons", PackedStringArray())
-	_reason.text = "适配：%s" % "；".join(reasons) if not reasons.is_empty() else "适配：通用时代方案"
+	_reason.text = "适配：%s" % "；".join(reasons) if not reasons.is_empty() else ""
+	_reason.visible = not _reason.text.is_empty()
 	_choose.disabled = _option_empty
 	_choose.tooltip_text = "当前没有可用的时代方案" if _option_empty else "采纳「%s」" % _title.text
 

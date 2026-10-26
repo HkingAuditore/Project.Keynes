@@ -1,8 +1,53 @@
 # Native Ideology Runtime
 
+## 2026-10-26 理念纸片界面与稳定刷新
+
+### 排版与纸边修复
+
+国家理念槽使用 `reparent()` 进入 `IdeologyInset`，不再重复 `add_child()`。
+左栏的国家理念／民族精神上下分组，每个标题紧邻对应槽位；收藏区域按可用宽度排卡。
+收藏和已推行卡统一按名称、完整当前效果、理解度、底部动作的顺序排列。
+收藏卡高度由容器内容决定，效果逐条换行，不再用 104px 短卡或截断行压缩信息。
+正文 17px、操作 17–18px、理解度数字至少 15px，复用 Swei 正文与真实粗体。
+候选卡的完整效果置于卡内滚动容器，保留第三条以后的内容；窄窗可滚动读到底部。
+
+纸面原图通过 Godot 导入器缩至 512px，九切片直接读取缩放后的 `region_rect`，
+使用 12px 对称边距及双轴 stretch，避免原图高频纸边以过大的固定像素显示为反复锯齿。
+分层纸色、稀有度边饰和实时柔影保持独立。每日刷新继续保留卡片、焦点与滚动。
+本轮未改变 native 理念／Effect 权威、数值、命令或存档协议。
+
+`IdeologyWorkspace` 的结构签名不再包含 `support_revision` 或 pending 状态；
+支持修订仍触发一次 Facade explain，但只原位更新行、按钮可用性、提示及理解度。
+目录／国家、已知卡、位置、境界、容量或筛选排序改变时才调整结构。
+每日刷新不重播收藏入场，保留滚动与焦点。
+
+整卡及名称区域都可悬停查看当前／下一境效果、理解度和对应操作的支持条件。
+“民意”缩写改为具名的推行／撤回／晋升支持条件，提示解释阶层影响力加权评分、
+门槛及关键阶层限制。数值与 allowed 标记继续读取 native explain。
+点数条上的“账”／“来源”按钮已移除，不以新字符或占位控件替代。
+
+悬停详情由 `ideology_detail_tooltip.gd` 使用结构化 `detail_model` 渲染，
+分开显示名称／流派／稀有度／状态、理解度进度条、逐条当前效果、下一境效果、
+操作支持评分与门槛、关联限制。支持图的圆点是当前值，竖线是门槛；
+无支持快照时显示等待结算，不能伪造零值。效果中的数字只做原文加粗。
+长内容按逻辑视口高度限制；鼠标仍悬在卡面时滚轮优先滚动详情，保留收藏滚动位置。
+结构化详情数据随既有快照原位更新，节点只在悬停时创建。
+
+视觉素材见 `assets/ui/ideology_paper_v3/README.md`：基础纸面、青绿／朱砂描金透明边饰、
+流派图案、文字、动作和进度独立组合。寻常／珍稀／传世由纸色和边饰区分，
+成长境界另读 native level。纸影使用尺寸匹配的柔边圆角 SDF，绘制在纸面后方；
+禁止叠加硬边深色矩形衬底。抽取模态在工作区所属 CanvasLayer 中使用视口空间，
+工作区隐藏时同步隐藏；短窗保留筛选独立一行，完整卡面通过收藏滚动阅读。
+发牌只做短位移淡入，选定只做轻微抬起与淡出；移除整页撕纸、飘带、光晕和喷溅。
+
+`tests/ideology/ideology_workspace_stability_test.gd` 覆盖 100 次支持修订的节点、
+焦点、滚动保留和按钮更新，并检查 1280×720、1920×1080、3840×2088 下的模态边界。
+`tests/qa/ideology_workspace_screenshot_qa.gd` 继续覆盖真实 worker 的抽取／选定流程。
+本轮仅改展示，native 权威、命令／槽位／羁绊／Effect ACK 与 PKID/PKEF 协议均不变。
+
 ## 2026-10-25 玩家文本与机制核对
 
-当前正式卡池为 113 张、339 个等级、280 个托管效果程序和 40 项可见羁绊。
+当前正式卡池为 113 张、339 个等级、280 个托管效果程序和 52 项可见羁绊。
 `tools/ideology/generate_ideology_catalog.py` 的 `player_program_summary()`
 从实际选择器、条件、指令和数值生成正式摘要，`validate_player_text()` 在写资源前
 拒绝尚未审查的程序形态；`Prog.summary` 对正式内容只保留作者备注用途。
@@ -253,11 +298,12 @@ writes `data/ideologies/default_ideology_catalog.tres`,
   rare cards require an era technology. Exclusion groups: `economic_order`,
   `labor_order`, `land_order`.
 - Three levels: understanding thresholds 0 / 4.0 / 12.0, daily understanding
-  0.125 / 0.0625 / 0. Each level replaces the same definition at Q16 magnitude
+  0.0125 / 0.00626 / 0. Each level replaces the same definition at Q16 magnitude
   `65536` / `104858` / `144179` (1.0x / 1.6x / 2.2x).
-- 12 resonances `ideology.resonance.<school>.<2|4>` and 6 named cross-school
+- 24 resonances `ideology.resonance.<school>.<2|4|5|6>` and 6 named cross-school
   synergies `ideology.synergy.*` (计划仓廪, 特许开拓, 海商账簿, 工役营造, 工业科学,
-  河渠公社). Learning tier 4 raises `country.ideology.point_gain_factor`.
+  河渠公社). Resonance tiers are cumulative. Learning tier 4 raises
+  `country.ideology.point_gain_factor`.
 - Slots start at 2 ideology / 1 national spirit. `capacity_unlocks` (technology
   key + deltas) add ideology slots at Kingdom, Imperial, Enlightenment and
   Industrial era technologies (max 6) and spirit slots at Imperial and Electric

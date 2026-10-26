@@ -86,7 +86,16 @@ func _draw() -> void:
 				if not rate.is_empty() and rate != "无可比数据":
 					_right_text(delta_right, baseline + 12.0, rate, 12, Color(tone.r, tone.g, tone.b, 0.8))
 
-		draw_line(Vector2(0.0, top + ROW_HEIGHT - 1.0), Vector2(w, top + ROW_HEIGHT - 1.0), Color(_ink.r, _ink.g, _ink.b, 0.10), 1.0, true)
+		# Alternating paper bands plus an uneven graphite stroke replace the
+		# hairline printer rule that made the old report read as a ledger.
+		if i % 2 == 1:
+			draw_rect(Rect2(0.0, top, w, ROW_HEIGHT - 1.0),
+				Color(UITokens.CHRONICLE_PENCIL_BLUE.r, UITokens.CHRONICLE_PENCIL_BLUE.g,
+					UITokens.CHRONICLE_PENCIL_BLUE.b, 0.045), true)
+		draw_line(Vector2(0.0, top + ROW_HEIGHT - 1.0), Vector2(w * 0.97, top + ROW_HEIGHT - 1.0),
+			Color(_ink.r, _ink.g, _ink.b, 0.25), 1.4, true)
+		draw_line(Vector2(2.0, top + ROW_HEIGHT + 0.8), Vector2(w * 0.94, top + ROW_HEIGHT + 0.8),
+			Color(_ink.r, _ink.g, _ink.b, 0.045), 1.0, true)
 
 
 func _text(at: Vector2, text: String, size_px: int, color: Color, kind: String) -> void:

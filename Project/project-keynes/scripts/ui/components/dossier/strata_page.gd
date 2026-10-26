@@ -145,7 +145,7 @@ func _refresh_detail(selected: Dictionary, national: PackedFloat32Array) -> void
 		city_rows.append({"id": int(city.cell), "label": String(city.name),
 			"value": float(city.satisfaction), "color": satisfaction_color(float(city.satisfaction)),
 			"text": "%s 人 · %s" % [count(float(city.population)), percent(float(city.satisfaction))],
-			"tooltip": "点击切换到 %s 的卷宗" % city.name})
+			"tooltip": "切换到此城市范围"})
 	_cities.set_rows(city_rows)
 	_show_empty(_cities_empty, _cities, "" if not city_rows.is_empty() else "暂无城市分布")
 

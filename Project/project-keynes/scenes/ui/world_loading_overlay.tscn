@@ -75,7 +75,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKMutedLabel"
-text = "正在生成地图"
+text = "准备地图数据"
 
 [node name="Percent" type="Label" parent="Center/Card/Content/StageRow" unique_id=247464246]
 layout_mode = 2

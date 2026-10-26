@@ -12,9 +12,9 @@ signal locate_cell_requested(cell: int)
 signal target_cells_requested(cells: PackedInt32Array)
 
 const SECTION_DEFINITIONS := [
-	{"id": "technology", "label": "科技研究", "subtitle": "编排研究投入，浏览技术网络与时代前沿", "icon": &"country.technology", "hud_icon": &"hud.country.technology", "accent": UITokens.CLIMATE, "available": true},
-	{"id": "ideology", "label": "国家理念", "subtitle": "形成国家道路，审视社会支持与民族精神", "icon": &"country.politics", "hud_icon": &"hud.country.ideology", "accent": UITokens.ACCENT, "available": true},
-	{"id": "economy", "label": "国民经济", "subtitle": "阶层民生、产业运营、投资风向、物资贸易与财政", "icon": &"country.economy", "hud_icon": &"hud.country.economy", "accent": UITokens.RESOURCE, "available": true},
+	{"id": "technology", "label": "科技研究", "subtitle": "", "icon": &"country.technology", "hud_icon": &"hud.country.technology", "accent": UITokens.CLIMATE, "available": true},
+	{"id": "ideology", "label": "国家理念", "subtitle": "", "icon": &"country.politics", "hud_icon": &"hud.country.ideology", "accent": UITokens.ACCENT, "available": true},
+	{"id": "economy", "label": "国民经济", "subtitle": "", "icon": &"country.economy", "hud_icon": &"hud.country.economy", "accent": UITokens.RESOURCE, "available": true},
 	{"id": "military", "label": "军事", "subtitle": "尚未开放", "icon": &"country.military", "hud_icon": &"hud.country.military", "accent": UITokens.RISK, "available": false},
 	{"id": "diplomacy", "label": "外交", "subtitle": "尚未开放", "icon": &"country.diplomacy", "hud_icon": &"hud.country.diplomacy", "accent": UITokens.WATER, "available": false},
 ]
@@ -331,7 +331,7 @@ func _update_navigation_state() -> void:
 
 
 func _country_summary_line() -> String:
-	var parts := PackedStringArray(["行政档案"])
+	var parts := PackedStringArray()
 	var territory := int(_model.get("territory_count", 0))
 	var technologies := int(_model.get("technology_count", 0))
 	var day := int(_model.get("current_day", -1))

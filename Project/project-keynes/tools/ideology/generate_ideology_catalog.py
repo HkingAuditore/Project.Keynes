@@ -78,7 +78,7 @@ NEEDS_DIR = ROOT / "data/economy/needs"
 
 Q16 = 65536
 LEVEL_THRESHOLDS = [0, 262144, 786432]          # 0 / 4.0 / 12.0 understanding
-LEVEL_DAILY = [8192, 4096, 0]                   # 0.125 / 0.0625 / 0 per day
+LEVEL_DAILY = [819, 410, 0]                      # ~0.0125 / ~0.00626 per day
 LEVEL_MAGNITUDES = [65536, 104858, 144179]      # 1.0x / 1.6x / 2.2x
 LEVEL_TITLES = ["初识", "通晓", "化育"]           # presentation only
 
@@ -1259,7 +1259,9 @@ ROUTE_TAGS = (
     "learning", "labor", "livelihood", "clan", "era", "fiscal", "season", "terrain",
 )
 
-# school -> (tier-2 terms, tier-4 terms)
+# School resonances: 2 / 4 / 5 / 6 active cards. Tiers are cumulative, so a
+# six-card school also keeps its 2- and 4-card rows.
+RESONANCE_COUNTS = (2, 4, 5, 6)
 
 # ── 体系羁绊（route bonds）─────────────────────────────────────────────────
 # Members are selected by `route_tag`, never enumerated: adding a card to a
@@ -1283,13 +1285,30 @@ ROUTE_BONDS = {
 }
 
 RESONANCES = {
-    "agrarian": ([(AGRI, 1.03)], [(AGRI, 1.04), (RUSE(FERTILE), 0.95)]),
-    "commerce": ([(T_CAP, 1.03)], [(T_SPEED, 1.05), (T_CAP, 1.03)]),
-    "learning": ([(R_SCI, 1.03), (R_SOC, 1.03)], [(R_COST, 0.95), (POINTS, 1.10)]),
-    "mobilization": ([(B_COST, 0.97)], [(DEATH, 0.97), (R_SOC, 1.03)]),
-    "industry": ([(MANU, 1.03)], [(INPUT, 0.96), (ENER, 1.03)]),
+    "agrarian": ([(AGRI, 1.03)],
+                 [(AGRI, 1.04), (RUSE(FERTILE), 0.95)],
+                 [(AGRI, 1.03), (DEATH, 0.98)],
+                 [(AGRI, 1.05), (RUSE(FERTILE), 0.94)]),
+    "commerce": ([(T_CAP, 1.03)],
+                 [(T_SPEED, 1.05), (T_CAP, 1.03)],
+                 [(T_SPEED, 1.03), (T_CAP, 1.04)],
+                 [(T_SPEED, 1.05), (T_CAP, 1.05)]),
+    "learning": ([(R_SCI, 1.03), (R_SOC, 1.03)],
+                 [(R_COST, 0.95), (POINTS, 1.10)],
+                 [(R_SCI, 1.04), (R_SOC, 1.04)],
+                 [(R_COST, 0.94), (POINTS, 1.12)]),
+    "mobilization": ([(B_COST, 0.97)],
+                     [(DEATH, 0.97), (R_SOC, 1.03)],
+                     [(B_COST, 0.96), (R_SOC, 1.03)],
+                     [(B_COST, 0.95), (DEATH, 0.98)]),
+    "industry": ([(MANU, 1.03)],
+                 [(INPUT, 0.96), (ENER, 1.03)],
+                 [(MANU, 1.04), (INPUT, 0.96)],
+                 [(MANU, 1.05), (ENER, 1.04)]),
     "harmony": ([(RES_USE, 0.97)],
-                [(DROUGHT, 0.96), (FLOOD, 0.96), (COLD, 0.96), (HEAT, 0.96)]),
+                [(DROUGHT, 0.96), (FLOOD, 0.96), (COLD, 0.96), (HEAT, 0.96)],
+                [(RES_USE, 0.96), (DEATH, 0.98)],
+                [(DROUGHT, 0.95), (FLOOD, 0.95), (COLD, 0.95), (HEAT, 0.95)]),
 }
 SCHOOL_NAMES = {"agrarian": "农本", "commerce": "商贸", "learning": "学识",
                 "mobilization": "动员", "industry": "工造", "harmony": "调和"}
@@ -5992,7 +6011,8 @@ def build_ideology_catalog() -> str:
             f'persistent_effects = Array[Resource]([SubResource("{effect_id}")])\n')
     for school in SCHOOL_ORDER:
         cards = [card[0] for card in cards_to_emit() if card[2] == school]
-        for tier, count in ((1, 2), (2, 4)):
+        tier_names = ("一", "二", "三", "四")
+        for tier, count in enumerate(RESONANCE_COUNTS, start=1):
             if len(cards) < count:
                 continue
             base = f"Resonance{camel(school)}{count}"
@@ -6005,7 +6025,7 @@ def build_ideology_catalog() -> str:
                 f'[sub_resource type="Resource" id="{synergy_id}"]\n'
                 'script = ExtResource("6_synergy")\n'
                 f'id = &"resonance.{school}.{count}"\n'
-                f'display_name = "{SCHOOL_NAMES[school]}共鸣·{"一" if tier == 1 else "二"}"\n'
+                f'display_name = "{SCHOOL_NAMES[school]}共鸣·{tier_names[tier - 1]}"\n'
                 "required_ideology_ids = PackedStringArray(%s)\n" % ", ".join(
                     f'"idea.{card}"' for card in cards) +
                 "minimum_levels = PackedInt32Array(%s)\n" % ", ".join("0" for _ in cards) +
@@ -6284,7 +6304,7 @@ def modifier_blocks() -> tuple[list[str], list[str]]:
     for school in SCHOOL_ORDER:
         school_card_count = sum(
             1 for card in cards_to_emit() if card[2] == school)
-        for count, terms in zip((2, 4), RESONANCES[school]):
+        for count, terms in zip(RESONANCE_COUNTS, RESONANCES[school]):
             if school_card_count < count:
                 continue
             add(f"Resonance{camel(school)}{count}", f"ideology.resonance.{school}.{count}",
@@ -7308,7 +7328,7 @@ def validate_cards() -> None:
     for entry in list(NAMED_SYNERGIES) + [
             (f"resonance.{school}.{count}", "", [], terms)
             for school in SCHOOL_ORDER
-            for count, terms in zip((2, 4), RESONANCES[school])]:
+            for count, terms in zip(RESONANCE_COUNTS, RESONANCES[school])]:
         key, _name, _cards, terms = entry[0], entry[1], entry[2], entry[3]
         for stat, _value in terms:
             if stat in DEAD_STAT_KEYS:
@@ -7896,7 +7916,7 @@ def validate_published_synergies() -> None:
                     % (route, count, count, members))
     for school, tiers in RESONANCES.items():
         members = sum(1 for card in cards_to_emit() if card[2] == school)
-        for count, terms in zip((2, 4), tiers):
+        for count, terms in zip(RESONANCE_COUNTS, tiers):
             if terms is not None and members < count:
                 raise SystemExit(
                     "published resonance %s.%d needs %d members, found %d"
@@ -8129,7 +8149,8 @@ def main() -> None:
     rewrite_modifier_catalog()
     validate_selector_kinds_emitted()
     write_card_expectations()
-    print(f"named={len(NAMED_SYNERGIES)} resonances={len(RESONANCES) * 2}")
+    print(f"named={len(NAMED_SYNERGIES)} "
+          f"resonances={len(RESONANCES) * len(RESONANCE_COUNTS)}")
     print(f"city_definitions={len(MODIFIER_CITY_DEFINITION_IDS)}")
     print(f"country_definitions={len(MODIFIER_COUNTRY_DEFINITION_IDS)}")
     print(f"programs={len(DIAGNOSTIC_PROGRAMS) + len(all_card_programs())} "

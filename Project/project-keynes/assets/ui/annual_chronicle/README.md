@@ -1,4 +1,4 @@
-# 文明编年史 · 剪纸资产
+# 文明编年史 · 彩铅剪纸资产
 
 2026-10-20 由内置 ImageGen 生成，已保存到项目。原始输出留在本会话 generated_images；所有图片无文字，年份、国家、评级、数值由 Godot 绘制。
 
@@ -19,6 +19,42 @@
 | intelligent.png | 自动化、农业和智能交通 |
 | annual_seal.png | 透明朱红干墨印记，中间空白供实时评级 |
 | annual_folio.png | 毛边象牙纸页、层叠纸边、装订布签，透明外围 |
+
+## 年度报告彩铅统一层
+
+2026-10-25 二次生图补齐年度报告在封面、章首和评级位置上的视觉语言。此层采用彩铅、石墨轮廓、平涂土色颜料、象牙白手撕纸边与轻微接触阴影，参考用户提供的 Toy Empires 图标和年度报告材质。资产不复制参考项目中的文字、界面或地图内容。
+
+| 文件 | 用途 |
+|---|---|
+| chronicle_pencil_scene.png | 封面综合文明村落题图；透明剪刀边，Godot 按 alpha 裁切 |
+| chronicle_pencil_badge.png | 封面评级奖章；红面、金边和纸片轮廓由贴图提供，评级字母仍由 Godot 实时绘制 |
+| chronicle_chapter_emblems.png | 九枚章节徽记；1536×1536 透明九宫格，每格 512×512，按阅读顺序排列 |
+
+九枚章节徽记依次表示：年度总览、国民经济、人口与民生、产业与建设、城乡与国土、科技与文明、市场与财政、资源与年度问题、发展考核。正文通过 `draw_texture_rect_region` 从图集裁取每个章节对应的区域，不把标题、数值或评级烘焙进图像。
+
+最终封面题图提示：
+
+```text
+Use case: stylized-concept
+Asset type: transparent game UI cutout illustration
+Primary request: a compact parchment chronicle illustration of a lively historic civilization
+Style/medium: dense colored-pencil and graphite texture, bold uneven charcoal outlines, warm flat pigment fills, ivory hand-cut paper silhouette, tactile scrapbook sticker
+Composition/framing: wide asymmetric village scene entering from the upper edge, transparent background
+Constraints: no text, no numerals, no frame, no rectangular backing, real transparent alpha, no 3D render, no vector or flat icon-library look
+```
+
+九宫格徽记提示：
+
+```text
+Use case: stylized-concept
+Asset type: production UI sprite sheet
+Primary request: nine chapter emblems for a hand-drawn grand strategy annual report
+Style/medium: dense colored-pencil and graphite texture, bold uneven charcoal outlines, warm flat pigment fills, ivory hand-cut paper silhouette around every object, small graphite contact shadow, tactile scrapbook sticker feel
+Composition/framing: 3x3 evenly spaced grid, one isolated icon centered in each cell, generous gaps, fully transparent background
+Constraints: no text, no numerals, no borders, no grid lines, no background panels, no 3D render, no vector or flat icon-library look
+```
+
+`chronicle_pencil_badge.png` 由 `annual_seal_press.gdshader` 保留原图 RGB，grit 只作用于 alpha 边缘。不要再把整枚奖章着成单色朱红，否则红面、金边和纸片阴影会同时消失。
 
 最终时代图由各自原始剪纸图作为编辑目标，要求：保持时代、人物与建筑；去除整张棕色矩形背景，替换真实 alpha；外围沿树木、屋顶、人物、岩石与不规则地面形成有白色纸边的自然剪纸轮廓，保留透明安全区；不加框、不加承托纸板、不加文字。不得再用矩形容器裁切/装框。Godot 使用保留比例的透明 TextureRect 与轻微交叠构图，不把文字烘焙进资产。
 

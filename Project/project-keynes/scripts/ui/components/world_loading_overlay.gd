@@ -7,18 +7,18 @@ signal return_requested
 var _failed := false
 
 const STAGE_LABELS := {
-	"preparing": "铺展海图与疆域卷宗",
-	"continents": "隆起大陆与群岛陆核",
-	"climate": "推演季风与大洋环流",
-	"terrain": "正在烘焙地形与水文图层",
-	"physical": "测绘山川水系与河床",
-	"atlas": "绘制疆域舆图与等高线",
-	"encode": "摹绘山海地貌与林原",
-	"ecology": "繁衍植被与自然群落",
-	"simulation": "建立开局城邦与秩序",
+	"preparing": "准备地图数据",
+	"continents": "生成陆地",
+	"climate": "生成气候",
+	"terrain": "生成地形和水文",
+	"physical": "生成河流",
+	"atlas": "生成地图图层",
+	"encode": "生成地貌和植被",
+	"ecology": "生成生态系统",
+	"simulation": "生成初始聚落",
 	"done": "即将进入世界",
-	"bind": "校订世界历法与档案",
-	"upload": "展开世界画卷",
+	"bind": "绑定世界状态",
+	"upload": "进入世界",
 }
 
 var _backdrop: Control
@@ -190,7 +190,7 @@ func hide_completed() -> void:
 	if not visible:
 		return
 	_kill_tween()
-	_title_label.text = "世界测绘完成"
+	_title_label.text = "世界生成完成"
 	_stage_label.text = "正在进入世界"
 	_percent_label.text = "100%"
 	_progress.value = 100.0

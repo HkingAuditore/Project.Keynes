@@ -23,4 +23,5 @@ func set_section(label: String, icon: StringName, accent: Color) -> void:
 		_ready()
 	_icon.set_semantic(icon, accent)
 	_title.text = "%s尚未开放" % label
-	_detail.text = "这一事务还不能操作。"
+	_detail.text = ""
+	_detail.visible = false

@@ -36,7 +36,7 @@ func _ready() -> void:
 		var available := bool(definition.available)
 		var button := scene_buttons[index] as Button
 		button.set_meta(&"ui_sound", &"fold")
-		var tooltip := "%s（打开国家%s卷宗）" % [String(definition.label), String(definition.label)] \
+		var tooltip := String(definition.label) \
 			if available else "%s（尚未开放）" % String(definition.label)
 		IconButton.configure(button, tooltip, true, false)
 		button.text = ""

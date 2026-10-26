@@ -75,20 +75,8 @@ layout_mode = 2
 text = "家族事务"
 theme_type_variation = &"PKCountryRailTitle"
 
-[node name="BrandSubtitle" type="Label" parent="SafeMargin/Main/NavColumn/Brand"]
-layout_mode = 2
-text = "HOUSE DOSSIER"
-theme_type_variation = &"PKCountryRailMuted"
-
 [node name="BrandRule" type="HSeparator" parent="SafeMargin/Main/NavColumn"]
 layout_mode = 2
-
-[node name="NavKicker" type="Label" parent="SafeMargin/Main/NavColumn"]
-custom_minimum_size = Vector2(0, 22)
-layout_mode = 2
-text = "卷宗目录"
-vertical_alignment = 1
-theme_type_variation = &"PKCountryRailMuted"
 
 [node name="NavTopSpacer" type="Control" parent="SafeMargin/Main/NavColumn"]
 custom_minimum_size = Vector2(0, 2)
@@ -153,12 +141,6 @@ theme_type_variation = &"PKCountryNavButton"
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="NavFoot" type="Label" parent="SafeMargin/Main/NavColumn"]
-layout_mode = 2
-text = "地方世家 · 宗族谱牒"
-autowrap_mode = 3
-theme_type_variation = &"PKCountryRailMuted"
-
 [node name="PageArea" type="VBoxContainer" parent="SafeMargin/Main"]
 layout_mode = 2
 size_flags_horizontal = 3
@@ -212,7 +194,7 @@ theme_override_constants/separation = 0
 [node name="Title" type="Label" parent="SafeMargin/Main/PageArea/Header/HeaderContent/IdentityRow/Titles"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "家族档案"
+text = ""
 clip_text = true
 text_overrun_behavior = 3
 theme_type_variation = &"PKTitle"

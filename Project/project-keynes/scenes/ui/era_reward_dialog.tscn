@@ -43,6 +43,7 @@ z_index = 1
 mouse_filter = 2
 
 [node name="Prompt" type="PanelContainer" parent="ArchiveSurface/Frame/Margin/Column/Body"]
+visible = false
 layout_mode = 2
 theme_type_variation = &"PKArchiveBand"
 
@@ -56,7 +57,7 @@ theme_override_constants/margin_bottom = 8
 [node name="Text" type="Label" parent="ArchiveSurface/Frame/Margin/Column/Body/Prompt/Margin"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "从下列三项时代方案中择一，选择后将提交本次晋升的正式效果。"
+text = ""
 horizontal_alignment = 1
 autowrap_mode = 2
 theme_type_variation = &"PKMutedLabel"

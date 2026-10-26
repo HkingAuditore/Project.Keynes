@@ -381,7 +381,7 @@ layout_mode = 2
 [node name="Title" type="Label" parent="Root/Main/DetailHost/Body/Header"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "科技详情"
+text = ""
 theme_type_variation = &"PKDossierKicker"
 
 [node name="Pin" type="Button" parent="Root/Main/DetailHost/Body/Header"]

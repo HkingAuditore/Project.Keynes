@@ -24,37 +24,37 @@ const PAGE_META := {
 		"title": "概览",
 		"icon": "family.workspace.overview",
 		"nav_icon": &"summary.overview",
-		"question": "家族核心家风、显著偏好、据点威望与主要成员总览",
+		"question": "",
 	},
 	"traits": {
 		"title": "家族特性",
 		"icon": "family.workspace.traits",
 		"nav_icon": &"family.house",
-		"question": "立族核心门风与随时代演进的附加特性",
+		"question": "",
 	},
 	"preferences": {
 		"title": "行为偏好",
 		"icon": "family.workspace.preferences",
 		"nav_icon": &"ecology.growth",
-		"question": "产业投资、职业从业、民生需求与商品消费四轴倾向",
+		"question": "",
 	},
 	"effects": {
 		"title": "家族效果",
 		"icon": "family.workspace.effects",
 		"nav_icon": &"technology.milestone",
-		"question": "各分支地块生效的威望五档阶梯加成与触发器进度",
+		"question": "",
 	},
 	"people": {
 		"title": "主要人物",
 		"icon": "family.workspace.people",
 		"nav_icon": &"population.profession.owner",
-		"question": "家族重要人物的职务身份、股权净值与周期收支对冲",
+		"question": "",
 	},
 	"branches": {
 		"title": "领地与分支",
 		"icon": "family.workspace.branches",
 		"nav_icon": &"metric.territory",
-		"question": "家族在各地块的人口、资金、产业份额与开拓派遣",
+		"question": "",
 	},
 }
 const NAV_NAMES := {
@@ -150,7 +150,7 @@ func _ready() -> void:
 				_kpi_cards.append(child as DossierKpiCard)
 		if not _kpi_cards.is_empty():
 			_kpi_cards[_kpi_cards.size() - 1].show_divider = false
-	IconButton.apply(_close_button, &"action.close", IconButton.SMALL, "关闭家族档案")
+	IconButton.apply(_close_button, &"action.close", IconButton.SMALL, "关闭")
 	_close_button.focus_mode = Control.FOCUS_ALL
 	_close_button.pressed.connect(request_close)
 	resized.connect(_apply_responsive_layout)
@@ -394,7 +394,7 @@ func _add_overview_branches_card(host: Control, branches: Array) -> void:
 	card.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	host.add_child(card)
 	var body := _card_body(card)
-	_add_overview_heading(body, "branches", "据点威望与三维份额")
+	_add_overview_heading(body, "branches", "据点威望")
 
 	var ring_grid := FamilyGridScene.instantiate() as GridContainer
 	ring_grid.name = "OverviewRingGrid"
@@ -562,7 +562,7 @@ func _add_overview_preferences_card(host: Control, items: Array) -> void:
 	card.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	host.add_child(card)
 	var body := _card_body(card)
-	_add_overview_heading(body, "preferences", "显著行为偏好 · 100% 基准")
+	_add_overview_heading(body, "preferences", "显著行为偏好")
 	if items.is_empty():
 		_add_empty_label(body, "暂无显著行为偏好")
 		return
@@ -750,7 +750,7 @@ func _add_overview_people_card(host: Control, items: Array) -> void:
 	card.name = "OverviewPeople"
 	host.add_child(card)
 	var body := _card_body(card)
-	_add_overview_heading(body, "people", "主要人物 · 资产、执掌产业与周期收支")
+	_add_overview_heading(body, "people", "主要人物")
 	var people_grid := FamilyGridScene.instantiate() as GridContainer
 	people_grid.name = "OverviewPeopleGrid"
 	people_grid.columns = _overview_people_columns(items.size(), size.x)
@@ -881,7 +881,7 @@ func _person_overview_metrics_text(person: Dictionary) -> String:
 	if not sat.is_empty():
 		parts.append("满足度 %s" % sat)
 	if parts.is_empty():
-		return "家族核心成员 · 点击查阅完整资产与收支卷宗"
+		return "暂无成员详情"
 	return " · ".join(parts)
 
 
@@ -1362,7 +1362,7 @@ func _refresh_overview_page(page: Control) -> void:
 
 func _update_header() -> void:
 	var header: Dictionary = _model.get("header", {})
-	_title.text = String(header.get("name", "家族档案"))
+	_title.text = String(header.get("name", "家族"))
 	_subtitle.text = String(header.get("subtitle", ""))
 	_prestige_value.text = String(header.get("prestige_progress_text", "0%"))
 	_prestige_caption.text = "威望 %s" % String(header.get("prestige_label", "0"))

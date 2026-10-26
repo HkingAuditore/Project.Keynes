@@ -50,7 +50,7 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_apply_floating_frame_style()
 	if _archive_surface != null:
-		_archive_surface.configure_header("望族兴起", "地方志 · 择一扶持", &"family.house")
+		_archive_surface.configure_header("望族兴起", "择一扶持", &"family.house")
 	for child in _grid.get_children():
 		if child is FamilyFoundingCard:
 			_cards.append(child as FamilyFoundingCard)
@@ -112,14 +112,14 @@ func present_offer(offer: Dictionary) -> void:
 	var split := String(offer.get("kind", "FOUNDING")) == "SPLIT"
 	if _archive_surface != null:
 		_archive_surface.configure_header("%s · %s" % [settlement, "分支立族" if split else "望族兴起"],
-			"同宗分支 · 择定家风" if split else
+			"择定家风" if split else
 			"人口 %s · 择一扶持" % UITokens.format_compact_number_cn(float(cell_pop), 0), &"family.house")
 	if _queue_badge != null and _queue_label != null:
 		_queue_badge.visible = remaining > 0
 		_queue_label.text = "另有 %d 处待决" % remaining
 	if _locate_button != null:
 		_locate_button.text = "定位城市"
-		_locate_button.tooltip_text = "定位%s，并查看右侧地块档案" % settlement
+		_locate_button.tooltip_text = "定位%s并查看详情" % settlement
 	if _prompt != null:
 		if split:
 			_prompt.text = "%s在%s的分支已具备独立条件。保留原姓氏，择定一套家风与效果；本地整支族人、产业和名人统一转入新家族，原家族在其他城市继续存在。" % [
@@ -226,7 +226,7 @@ func _apply_collapsed_visuals(animate: bool) -> void:
 		_body.visible = not _collapsed
 	if _rule != null:
 		_rule.visible = not _collapsed
-	_collapsed_entry.tooltip_text = "返回家族扶持（关闭当前大档案）" if _inspector_obscures else "展开候选家族，继续扶持抉择"
+	_collapsed_entry.tooltip_text = "返回家族扶持" if _inspector_obscures else "展开候选家族，继续扶持抉择"
 	if animate and _offer_open:
 		UIAnimation.crossfade(_collapsed_entry if _collapsed else _archive_surface, UITokens.ANIM_FAST)
 

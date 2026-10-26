@@ -350,8 +350,9 @@ func _select_page(page: String) -> void:
 		_insights.visible = page == "treasury" and not _compact
 	if _ledger_title != null:
 		var definition: Dictionary = PAGE_DEFINITIONS.get(page, {})
-		_ledger_title.text = "%s账簿" % String(definition.get("label", "财政"))
+		_ledger_title.text = String(definition.get("label", "财政"))
 		_ledger_subtitle.text = _page_description(page)
+		_ledger_subtitle.visible = not _ledger_subtitle.text.is_empty()
 	_refresh_page()
 	_refresh_treasury_insights()
 	_animate_cards_in()
@@ -366,13 +367,7 @@ func _is_tax_page(page: String) -> bool:
 
 
 func _page_description(page: String) -> String:
-	match page:
-		"treasury": return "国家库存与战略物资的可用余额"
-		"income": return "按职业审定所得税覆盖与实际税率"
-		"consumption": return "按物资统一调整交易税、进口关税与出口关税"
-		"business": return "按建筑类型审定营业税覆盖与实际税率"
-		"trade": return "核对商品流量、贸易伙伴与关税影响"
-		_: return "国家财政账目"
+	return ""
 
 
 # Visibility is synced from a wanted-set instead of hide-all-then-reshow, so a

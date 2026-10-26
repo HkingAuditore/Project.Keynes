@@ -42,7 +42,16 @@ func _draw() -> void:
 		var count: float = _values[i]
 		var length: float = (slot - 18.0) * clampf(count / max_count, 0.0, 1.0) * _grow
 		if length > 0.6:
-			draw_line(Vector2(slot_left + 9.0, y), Vector2(slot_left + 9.0 + length, y), _accent, 4.0, true)
+			var bar := Rect2(slot_left + 9.0, y - 4.0, length, 8.0)
+			draw_rect(bar, UITokens.CHRONICLE_PENCIL_RED, true)
+			var hatch_x := bar.position.x + 4.0
+			while hatch_x < bar.end.x - 2.0:
+				draw_line(Vector2(hatch_x, bar.position.y + 1.0),
+					Vector2(maxf(bar.position.x, hatch_x - 7.0), bar.end.y - 1.0),
+					Color(1.0, 0.96, 0.84, 0.25), 1.0, true)
+				hatch_x += 8.0
+			draw_line(Vector2(bar.position.x, bar.position.y), Vector2(bar.end.x, bar.position.y),
+				Color(_ink.r, _ink.g, _ink.b, 0.64), 1.5, true)
 			if count > 0:
 				_caption(Vector2(slot_left + 9.0, y - 9.0), "%d" % int(count))
 		else:
@@ -50,7 +59,8 @@ func _draw() -> void:
 		# 上一年的数量用铜金短标线挂在同一踏面下方
 		if i < _previous.size() and _previous[i] > 0.0:
 			var prior: float = (slot - 18.0) * clampf(_previous[i] / max_count, 0.0, 1.0)
-			draw_line(Vector2(slot_left + 9.0 + prior, y + 5.0), Vector2(slot_left + 9.0 + prior, y + 10.0), Color(_brass.r, _brass.g, _brass.b, 0.9), 1.0, true)
+			draw_line(Vector2(slot_left + 9.0 + prior, y + 6.0), Vector2(slot_left + 9.0 + prior, y + 12.0),
+				UITokens.CHRONICLE_PENCIL_GREEN, 2.4, true)
 		# 竖直踏板把台阶连起来
 		if i > 1:
 			draw_line(Vector2(slot_left + 9.0, prev_point.y), Vector2(slot_left + 9.0, y), Color(_ink.r, _ink.g, _ink.b, 0.22), 1.0, true)

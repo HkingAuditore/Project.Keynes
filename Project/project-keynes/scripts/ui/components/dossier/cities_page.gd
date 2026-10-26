@@ -16,7 +16,7 @@ const COLUMNS := [
 	{"id": "actions", "label": "", "kind": "actions", "width": 60.0, "sortable": false},
 ]
 const ACTIONS := [
-	{"id": "scope", "icon": &"action.chevron_right", "tooltip": "切换到该城市的卷宗"},
+	{"id": "scope", "icon": &"action.chevron_right", "tooltip": "切换到此城市范围"},
 	{"id": "locate", "icon": &"action.pin", "tooltip": "关闭面板并在地图上定位"},
 ]
 

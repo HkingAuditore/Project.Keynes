@@ -13,6 +13,10 @@ const CHRONICLE_BRASS := Color(0.65, 0.44, 0.18)
 const CHRONICLE_RULE := Color(0.36, 0.25, 0.13, 0.22)
 const CHRONICLE_LIGHT_INK := Color(0.96, 0.91, 0.80)
 const CHRONICLE_LIGHT_MUTED := Color(0.74, 0.72, 0.62)
+const CHRONICLE_PENCIL_BLUE := Color(0.25, 0.43, 0.58)
+const CHRONICLE_PENCIL_GREEN := Color(0.31, 0.47, 0.25)
+const CHRONICLE_PENCIL_GOLD := Color(0.78, 0.55, 0.16)
+const CHRONICLE_PENCIL_RED := Color(0.72, 0.19, 0.16)
 const CHRONICLE_BODY_SIZE := 18
 const CHRONICLE_NOTE_SIZE := 14
 const CHRONICLE_CHAPTER_SECONDS := 0.15
@@ -42,6 +46,8 @@ const CHRONICLE_SHEET_EDGE := Color(0.855, 0.780, 0.640)
 # 展示级衬线：与现有 SourceHanSerifCN-Regular 同族（Noto Serif CJK = 思源宋体），
 # 只为拿到真正的 SemiBold 笔画，避免 132px 伪粗糊成一团。
 const ANNUAL_DISPLAY_SERIF: FontFile = preload("res://assets/fonts/noto_serif_sc/NotoSerifSC-SemiBold.otf")
+const ANNUAL_PENCIL_DISPLAY: FontFile = preload("res://assets/fonts/annual_pencil/Muyao-Softbrush-2.ttf")
+const ANNUAL_PENCIL_BODY: FontFile = preload("res://assets/fonts/annual_pencil/PFanHuTuTi_Min.ttf")
 
 static var _annual_fonts: Dictionary = {}
 
@@ -53,26 +59,33 @@ static func annual_font(kind: String) -> Font:
 	var font: Font
 	match kind:
 		"display":
-			font = ANNUAL_DISPLAY_SERIF
+			font = ANNUAL_PENCIL_DISPLAY
 		"display_soft":
 			var soft := FontVariation.new()
-			soft.base_font = CHRONICLE_SERIF
-			soft.variation_embolden = 0.12
+			soft.base_font = ANNUAL_PENCIL_BODY
+			soft.variation_embolden = 0.08
 			font = soft
 		"numeral":
 			var numeral := FontVariation.new()
-			numeral.base_font = ANNUAL_DISPLAY_SERIF
-			numeral.spacing_glyph = -1
+			numeral.base_font = ANNUAL_PENCIL_DISPLAY
+			numeral.spacing_glyph = 0
 			font = numeral
 		"label":
 			var label := FontVariation.new()
-			label.base_font = UI_FONT_BOLD
-			label.spacing_glyph = 1.2
+			label.base_font = ANNUAL_PENCIL_BODY
+			label.variation_embolden = 0.12
+			label.spacing_glyph = 0.6
 			font = label
 		"body_soft":
-			font = font_with_weight(480)
+			var body_soft := FontVariation.new()
+			body_soft.base_font = ANNUAL_PENCIL_BODY
+			body_soft.variation_embolden = 0.02
+			font = body_soft
 		_:
-			font = font_with_weight(540)
+			var body := FontVariation.new()
+			body.base_font = ANNUAL_PENCIL_BODY
+			body.variation_embolden = 0.06
+			font = body
 	_annual_fonts[kind] = font
 	return font
 
@@ -139,6 +152,11 @@ const RADIUS_LG := 12
 const ANIM_FAST := 0.12
 const ANIM_MED := 0.18
 const ANIM_SLOW := 0.28
+const IDEOLOGY_HEADING_PLATE := Color(0.18, 0.25, 0.19, 0.93)
+const IDEOLOGY_HEADING_INK := Color(0.97, 0.88, 0.68, 1.0)
+const IDEOLOGY_HEADING_MUTED := Color(0.84, 0.73, 0.54, 0.90)
+const IDEOLOGY_CARD_WELL := Color(0.12, 0.08, 0.045, 0.20)
+const IDEOLOGY_LEVEL_TRACK := Color(0.18, 0.10, 0.05, 0.88)
 const ANIM_DISCLOSURE := 0.14
 const TECH_PAGE_REVEAL := 0.52
 const TECH_FOCUS_SECONDS := 0.65

@@ -20,7 +20,6 @@ var _scroll_tex: Texture2D
 var _points_label: Label
 var _cost_label: Label
 var _gain_label: Label
-var _ledger_button: Button
 var _tween: Tween
 var _row: HBoxContainer
 var _last_points_q16 := -1
@@ -49,14 +48,6 @@ func _init() -> void:
 	_gain_label = ArtScript.label("", 12, ArtScript.VERMILION, HORIZONTAL_ALIGNMENT_RIGHT)
 	_gain_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(_gain_label)
-	_ledger_button = Button.new()
-	_ledger_button.text = "账簿"
-	_ledger_button.flat = true
-	_ledger_button.add_theme_color_override("font_color", ArtScript.VERMILION)
-	_ledger_button.add_theme_font_size_override("font_size", 17)
-	_ledger_button.tooltip_text = "理念点来源"
-	_ledger_button.pressed.connect(func() -> void: ledger_requested.emit())
-	row.add_child(_ledger_button)
 
 
 func _notification(what: int) -> void:
@@ -183,10 +174,16 @@ static func build_ledger(snapshot: Dictionary) -> Control:
 		line.add_child(ArtScript.label("+%s" % ArtScript.q16(int(row[1])), 13, ArtScript.INK,
 			HORIZONTAL_ALIGNMENT_RIGHT))
 		column.add_child(line)
-	var factors := "民意 ×%s    加成 ×%s" % [
+	var factors := "满意度系数 ×%s    理念加成 ×%s" % [
 		ArtScript.q16(int(snapshot.get("point_ledger_opinion_factor_q16", 65536))),
 		ArtScript.q16(int(snapshot.get("point_ledger_gain_factor_q16", 65536)))]
 	column.add_child(ArtScript.label(factors, 12, ArtScript.INK_MUTED))
+	var explanation := ArtScript.label(
+		"满意度按各阶层影响力加权，影响本期理念点收益。",
+		14, ArtScript.INK_MUTED, HORIZONTAL_ALIGNMENT_LEFT)
+	explanation.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	explanation.custom_minimum_size.x = 340
+	column.add_child(explanation)
 	column.add_child(ArtScript.label("本期 +%s    累计 %s" % [
 		ArtScript.q16(int(snapshot.get("point_ledger_gain_q16", 0))),
 		ArtScript.q16(int(snapshot.get("lifetime_points_q16", 0)))], 14, ArtScript.VERMILION))

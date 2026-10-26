@@ -62,12 +62,26 @@ func _draw() -> void:
 	for point in points:
 		area.append(point)
 	area.append(Vector2(points[points.size() - 1].x, plot.end.y))
-	draw_colored_polygon(area, Color(_accent.r, _accent.g, _accent.b, 0.10))
+	draw_colored_polygon(area, Color(UITokens.CHRONICLE_PENCIL_GOLD.r,
+		UITokens.CHRONICLE_PENCIL_GOLD.g, UITokens.CHRONICLE_PENCIL_GOLD.b, 0.20))
+	# Cross-hatching makes the area read as colored pencil rather than alpha fill.
+	for i in maxi(1, points.size() - 1):
+		var edge: Vector2 = points[i]
+		var dy := edge.y - plot.end.y
+		var hatch_x := edge.x - 7.0
+		if hatch_x > plot.position.x and dy > 3.0:
+			draw_line(Vector2(edge.x, edge.y + 3.0),
+				Vector2(maxf(plot.position.x, edge.x - dy * 0.38), plot.end.y),
+				Color(UITokens.CHRONICLE_PENCIL_GOLD.r, UITokens.CHRONICLE_PENCIL_GOLD.g,
+					UITokens.CHRONICLE_PENCIL_GOLD.b, 0.12), 1.0, true)
 
 	if points.size() > 1:
-		draw_polyline(points, Color(_ink.r, _ink.g, _ink.b, 0.86), 2.0, true)
+		# A doubled, slightly tighter line mimics graphite pressure on paper.
+		draw_polyline(points, Color(_ink.r, _ink.g, _ink.b, 0.92), 3.1, true)
+		draw_polyline(points, UITokens.CHRONICLE_PENCIL_RED, 1.5, true)
 	var last: Vector2 = points[points.size() - 1]
-	draw_circle(last, 3.0, _accent)
+	draw_circle(last, 4.6, Color(_ink.r, _ink.g, _ink.b, 0.9))
+	draw_circle(last, 3.0, UITokens.CHRONICLE_PENCIL_RED)
 
 	_baseline(plot.end.y, plot.position.x, plot.end.x)
 

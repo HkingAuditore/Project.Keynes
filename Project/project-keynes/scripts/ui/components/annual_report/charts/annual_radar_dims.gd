@@ -32,10 +32,12 @@ func _draw() -> void:
 	for ring in range(1, 5):
 		var points := _polygon(center, radius * float(ring) / 4.0, PackedFloat64Array(), count, 1.0)
 		points.append(points[0])
-		draw_polyline(points, Color(_ink.r, _ink.g, _ink.b, 0.10 if ring < 4 else 0.20), 1.0, true)
+		draw_polyline(points, Color(_ink.r, _ink.g, _ink.b, 0.13 if ring < 4 else 0.34),
+			1.0 if ring < 4 else 2.0, true)
 	for i in count:
 		var angle := -PI * 0.5 + TAU * float(i) / float(count)
-		draw_line(center, center + Vector2(cos(angle), sin(angle)) * radius, Color(_ink.r, _ink.g, _ink.b, 0.12), 1.0, true)
+		draw_line(center, center + Vector2(cos(angle), sin(angle)) * radius,
+			Color(_ink.r, _ink.g, _ink.b, 0.18), 1.0, true)
 
 	if _previous.size() == count:
 		var prior := _polygon(center, radius, _previous, count, 1.0)
@@ -47,13 +49,16 @@ func _draw() -> void:
 	var poly := _polygon(center, radius, _values, count, _grow)
 	var closed := poly.duplicate()
 	closed.append(poly[0])
-	draw_colored_polygon(closed, Color(_accent.r, _accent.g, _accent.b, 0.13))
-	draw_polyline(closed, Color(_accent.r, _accent.g, _accent.b, 0.9), 2.0, true)
+	draw_colored_polygon(closed, Color(UITokens.CHRONICLE_PENCIL_BLUE.r,
+		UITokens.CHRONICLE_PENCIL_BLUE.g, UITokens.CHRONICLE_PENCIL_BLUE.b, 0.23))
+	draw_polyline(closed, Color(_ink.r, _ink.g, _ink.b, 0.90), 3.0, true)
+	draw_polyline(closed, UITokens.CHRONICLE_PENCIL_BLUE, 1.4, true)
 	for i in count:
 		if _values[i] < 0.0:
 			draw_circle(poly[i], 2.4, Color(_ink.r, _ink.g, _ink.b, 0.25))
 			continue
-		draw_circle(poly[i], 3.2, _accent)
+		draw_circle(poly[i], 5.1, Color(_ink.r, _ink.g, _ink.b, 0.88))
+		draw_circle(poly[i], 3.1, UITokens.CHRONICLE_PENCIL_RED)
 
 	for i in count:
 		var angle := -PI * 0.5 + TAU * float(i) / float(count)

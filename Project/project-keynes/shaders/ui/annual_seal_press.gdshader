@@ -38,7 +38,9 @@ void fragment() {
 	// 压印前缘：press 从 0 到 1 时，先从边缘往里吃墨。
 	float bias = mix(0.0, 1.0, smoothstep(0.0, 0.35, press));
 	float mask = smoothstep(0.26, 0.60, src.a) * coverage * press * mix(0.82, 1.0, bias);
-	vec3 rgb = mix(ink.rgb, ink.rgb * 1.28, dry);
+	// The generated rosette already carries its final paper, pigment and foil
+	// colours. Grit should break up the stamped edge, not recolour the sprite.
+	vec3 rgb = src.rgb;
 	// 斜向掠光
 	float sweep = 1.0 - smoothstep(0.0, 0.13, abs(UV.x + UV.y * 0.28 - glint));
 	rgb = mix(rgb, vec3(0.97, 0.84, 0.52), sweep * 0.34 * step(0.0, glint));

@@ -32,7 +32,7 @@ var _choices: Array[EraRewardChoice] = []
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	if _archive_surface != null:
-		_archive_surface.configure_header("时代奖励", "时代晋升记录 · 选择一项正式方案",
+		_archive_surface.configure_header("时代奖励", "",
 			&"country.technology")
 	for child in _grid.get_children():
 		if child is EraRewardChoice:
@@ -46,10 +46,10 @@ func present_offer(offer: Dictionary) -> void:
 	_offer_generation = int(offer.get("offer_generation", 0))
 	var era_title := String(offer.get("era_title", "时代"))
 	if _archive_surface != null:
-		_archive_surface.configure_header(era_title, "时代晋升记录 · 选择一项正式方案",
+		_archive_surface.configure_header(era_title, "",
 			&"country.technology")
 	if _prompt != null:
-		_prompt.text = "从下列三项 %s 方案中择一，选择后将提交本次晋升的正式效果。" % era_title
+		_prompt.text = ""
 	_status.text = ""
 	_status.modulate = UITokens.ARCHIVE_INK_MUTED
 	var alternatives: Array = offer.get("alternatives", [])

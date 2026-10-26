@@ -316,3 +316,13 @@ native paths), first paid draw cost 7864320 (120 points), +20% per later draw,
 and 75% reroll cost (90 points on the first offer).
 Retune the generator and regenerate resources; these values change the PKID
 catalog hash, so old saves fail closed. UI reads native costs and ledgers.
+
+
+## UI paper layers and stable refresh (2026-10-26)
+
+For ideology panel work, preserve card/slot nodes on support_revision and pending-only updates. Refresh explain once per revision, then update values, tooltip, action availability and understanding in place. Never replay collection entrance on a daily refresh. Use assets/ui/ideology_paper_v3 materials as separate paper, transparent edition edge, real-time soft SDF shadow, icon and text layers. Rarity uses plain/jade/cinnabar-gold faces; native level remains a separate progression cue. Avoid opaque rectangular shadow backings. Compact layouts must be checked against the real 908x274 logical workspace with the current text scaling, not only a full 720p canvas. Offer CanvasLayer visibility follows the workspace; modal focus and Escape stay local. Run tests/ideology/ideology_workspace_stability_test.gd and tests/qa/ideology_workspace_screenshot_qa.gd in addition to affected mechanism fixtures. Native authority, command/support/ACK semantics and save formats do not change for presentation alone.
+
+
+### Structured ideology hover details (2026-10-26)
+
+Remove the point-scroll ledger text button entirely; do not replace it with another character. Render card hover details through ideology_detail_tooltip.gd and the read-only detail_model, not one concatenated Label. Separate identity/status, understanding progress, individual current effects, next-level effects, directional support score/threshold and restrictions. Effect-number emphasis must preserve authored strings; gauges read native snapshot values. Bound tooltip height to the logical viewport and forward wheel input from the hovered card to long details without scrolling the collection. Verify actual mouse-hover creation, long-detail scroll isolation, and absence of a replacement point-bar button in ideology_workspace_stability_test.gd.

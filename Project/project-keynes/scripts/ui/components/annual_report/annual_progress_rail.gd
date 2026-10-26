@@ -65,15 +65,15 @@ func _draw() -> void:
 	_tick_bottom = minf(h - 96.0, h * 0.80)
 	var line_x: float = 22.0
 	var span: float = _tick_bottom - _tick_top
-	draw_line(Vector2(line_x, _tick_top), Vector2(line_x, _tick_bottom), _ink(0.20 if _on_desk else 0.16), 1.0, true)
+	draw_line(Vector2(line_x, _tick_top), Vector2(line_x, _tick_bottom), _ink(0.38 if _on_desk else 0.30), 2.4, true)
 	var font := UITokens.annual_font("label")
 	for i in count:
 		var y: float = _tick_top + span * float(i) / float(count - 1)
 		var active: bool = i == _current
 		var hovered: bool = i == _hover
-		var length: float = 14.0 if active else (10.0 if hovered else 6.0)
-		var color: Color = _accent(0.95) if active else _ink(0.30 if not hovered else 0.55)
-		draw_line(Vector2(line_x, y), Vector2(line_x + length, y), color, 2.0 if active else 1.0, true)
+		var length: float = 18.0 if active else (13.0 if hovered else 8.0)
+		var color: Color = _accent(0.95) if active else _ink(0.42 if not hovered else 0.72)
+		draw_line(Vector2(line_x, y), Vector2(line_x + length, y), color, 3.2 if active else 1.7, true)
 		if active or hovered:
 			var text := "%02d  %s" % [i + 1, _titles[i]]
 			var alpha: float = 1.0 if active else 0.7

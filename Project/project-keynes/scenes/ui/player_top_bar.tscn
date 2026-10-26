@@ -33,7 +33,7 @@ custom_minimum_size = Vector2(252, 48)
 layout_mode = 2
 mouse_filter = 0
 theme_type_variation = &"PKHUDButton"
-tooltip_text = "年度纪事 · 查阅国家历年发展报告"
+tooltip_text = "查阅历年发展报告"
 
 [node name="DateRow" type="HBoxContainer" parent="Margin/Row/DateBlock"]
 layout_mode = 1

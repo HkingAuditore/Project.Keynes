@@ -176,7 +176,7 @@ func _rebuild_if_needed() -> void:
 	_pending_count = pending.size()
 	_sections = []
 	if not queued.is_empty():
-		_sections.append({"title": "研究中", "caption": "按领域队列顺序推进",
+		_sections.append({"title": "研究中", "caption": "",
 			"groups": [{"domain": -1, "members": queued}]})
 	if _researchable_count > 0:
 		var groups: Array = []
@@ -331,8 +331,12 @@ func _draw() -> void:
 			var count := 0
 			for group in section.groups:
 				count += ((group as Dictionary).members as Array).size()
+			var caption := String(section.get("caption", "")).strip_edges()
+			var summary := "%d 项" % count
+			if not caption.is_empty():
+				summary += " · %s" % caption
 			_text(Vector2(PAD + title_width + 10.0, y + 25.0),
-				_fit_text("%d 项 · %s" % [count, String(section.caption)], 15,
+				_fit_text(summary, 15,
 					size.x - PAD * 2.0 - title_width - 10.0), 15, UITokens.DOSSIER_INK_MUTED)
 			draw_line(Vector2(PAD, y + SECTION_HEIGHT - 6.0),
 				Vector2(size.x - PAD, y + SECTION_HEIGHT - 6.0), UITokens.DOSSIER_RULE_STRONG, 1.0)
