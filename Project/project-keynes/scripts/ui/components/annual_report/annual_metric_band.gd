@@ -77,7 +77,7 @@ func _draw() -> void:
 
 func _draw_item(figure: Dictionary, rect: Rect2, compact: bool = false) -> void:
 	var tone: String = String(figure.get("tone", "plain"))
-	var color: Color = _accent if tone == "accent" else _ink
+	var color: Color = UITokens.CHRONICLE_PENCIL_RED if tone == "accent" else _ink
 	var text: String = String(figure.get("text", "—"))
 	var unit: String = String(figure.get("unit", ""))
 	var label: String = String(figure.get("label", ""))
@@ -88,6 +88,27 @@ func _draw_item(figure: Dictionary, rect: Rect2, compact: bool = false) -> void:
 	var desired := 56 if compact else 96
 	var size_px := _fit_size(text, desired, rect.size.x - 4.0, "numeral")
 	var baseline: float = rect.position.y + 18.0 + float(size_px) * 0.94
+	# Hand-cut colored-paper swatches sit behind the large numerals. Their pale
+	# offsets preserve the paper-cut silhouette without obscuring the values.
+	var swatch := Rect2(rect.position + Vector2(0.0, 3.0),
+		Vector2(minf(rect.size.x - 8.0, maxf(76.0, _text_width(text, size_px, "numeral"))),
+			float(size_px) * 0.88))
+	if compact:
+		swatch.size.y = float(size_px) * 0.78
+	var swatch_color: Color = (UITokens.CHRONICLE_PENCIL_GOLD if tone == "accent"
+		else UITokens.CHRONICLE_PENCIL_BLUE)
+	draw_colored_polygon(PackedVector2Array([
+		swatch.position + Vector2(7.0, 0.0),
+		Vector2(swatch.end.x - 4.0, swatch.position.y + 2.0),
+		swatch.end - Vector2(0.0, 5.0),
+		Vector2(swatch.position.x + 2.0, swatch.end.y),
+	]), Color(swatch_color.r, swatch_color.g, swatch_color.b, 0.22))
+	var hatch_x := swatch.position.x + 7.0
+	while hatch_x < swatch.end.x - 3.0:
+		draw_line(Vector2(hatch_x, swatch.position.y + 2.0),
+			Vector2(maxf(swatch.position.x, hatch_x - 15.0), swatch.end.y - 2.0),
+			Color(swatch_color.r, swatch_color.g, swatch_color.b, 0.14), 1.0, true)
+		hatch_x += 11.0
 	_text(Vector2(rect.position.x, baseline), text, size_px, color, "numeral")
 
 	if not unit.is_empty():
@@ -97,7 +118,8 @@ func _draw_item(figure: Dictionary, rect: Rect2, compact: bool = false) -> void:
 	var delta: String = String(figure.get("delta", "—"))
 	if delta != "—" and not delta.is_empty():
 		var direction: int = int(figure.get("direction", 0))
-		var delta_color: Color = _brass if direction > 0 else (_accent if direction < 0 else _muted)
+		var delta_color: Color = (UITokens.CHRONICLE_PENCIL_GREEN if direction > 0
+			else (UITokens.CHRONICLE_PENCIL_RED if direction < 0 else _muted))
 		_text(Vector2(rect.position.x, baseline + (17.0 if compact else 22.0)), delta, 14 if compact else 15, delta_color, "label")
 
 

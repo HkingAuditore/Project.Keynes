@@ -33,7 +33,7 @@ theme_override_constants/margin_bottom = 8
 
 [node name="Root" type="VBoxContainer" parent="Margin"]
 layout_mode = 2
-theme_override_constants/separation = 5
+theme_override_constants/separation = 4
 
 [node name="Header" type="HBoxContainer" parent="Margin/Root"]
 layout_mode = 2
@@ -106,14 +106,13 @@ theme_type_variation = &"PKTabButton"
 [node name="RouteStepper" type="PanelContainer" parent="Margin/Root"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_type_variation = &"PKDossierNote"
 
 [node name="Margin" type="MarginContainer" parent="Margin/Root/RouteStepper"]
 layout_mode = 2
 theme_override_constants/margin_left = 8
-theme_override_constants/margin_top = 4
+theme_override_constants/margin_top = 1
 theme_override_constants/margin_right = 8
-theme_override_constants/margin_bottom = 4
+theme_override_constants/margin_bottom = 1
 
 [node name="Row" type="HBoxContainer" parent="Margin/Root/RouteStepper/Margin"]
 layout_mode = 2
@@ -127,7 +126,7 @@ size_flags_vertical = 4
 
 [node name="SourcePickButton" type="Button" parent="Margin/Root/RouteStepper/Margin/Row"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(76, 28)
+custom_minimum_size = Vector2(64, 24)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "地图点选出发城"
@@ -169,7 +168,7 @@ size_flags_vertical = 4
 
 [node name="TargetButton" type="Button" parent="Margin/Root/RouteStepper/Margin/Row"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(76, 28)
+custom_minimum_size = Vector2(64, 24)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "选择目的地"
@@ -322,7 +321,7 @@ size_flags_vertical = 4
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-text = "家族开拓与迁徙卷宗"
+text = "家族开拓与迁徙"
 theme_type_variation = &"PKDossierSectionTitle"
 
 [node name="GuideFacts" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewGuideCard/Margin/Body" instance=ExtResource("4_facts")]
@@ -337,14 +336,13 @@ layout_mode = 2
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-theme_type_variation = &"FamilyCard"
 
 [node name="Margin" type="MarginContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard"]
 layout_mode = 2
-theme_override_constants/margin_left = 10
-theme_override_constants/margin_top = 8
-theme_override_constants/margin_right = 10
-theme_override_constants/margin_bottom = 8
+theme_override_constants/margin_left = 1
+theme_override_constants/margin_top = 1
+theme_override_constants/margin_right = 1
+theme_override_constants/margin_bottom = 1
 
 [node name="Body" type="VBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin"]
 layout_mode = 2
@@ -369,7 +367,8 @@ theme_override_constants/separation = 0
 unique_name_in_owner = true
 layout_mode = 2
 autowrap_mode = 3
-theme_type_variation = &"PKSectionTitle"
+theme_type_variation = &"FamilyTitle"
+theme_override_font_sizes/font_size = 24
 
 [node name="PreviewOriginSub" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin/Body/Head/TitleCol"]
 unique_name_in_owner = true
@@ -379,9 +378,70 @@ theme_type_variation = &"PKDossierCaption"
 
 [node name="PreviewStatePill" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin/Body/Head"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 size_flags_vertical = 4
-theme_type_variation = &"FamilyTraitBadgePos"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="PreviewQuickRead" type="PanelContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierNote"
+
+[node name="Margin" type="MarginContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin/Body/PreviewQuickRead"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 5
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 5
+
+[node name="Body" type="VBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin/Body/PreviewQuickRead/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 3
+
+[node name="TraitRow" type="HBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin/Body/PreviewQuickRead/Margin/Body"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="TraitIcon" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin/Body/PreviewQuickRead/Margin/Body/TraitRow" instance=ExtResource("3_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="PreviewTraitSummary" type="RichTextLabel" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin/Body/PreviewQuickRead/Margin/Body/TraitRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+theme_override_colors/default_color = Color(0.12, 0.075, 0.04, 1)
+theme_override_font_sizes/normal_font_size = 15
+theme_override_font_sizes/bold_font_size = 15
+
+[node name="EffectRow" type="HBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin/Body/PreviewQuickRead/Margin/Body"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="EffectIcon" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin/Body/PreviewQuickRead/Margin/Body/EffectRow" instance=ExtResource("3_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="PreviewEffectSummary" type="RichTextLabel" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin/Body/PreviewQuickRead/Margin/Body/EffectRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+theme_override_colors/default_color = Color(0.27, 0.19, 0.12, 1)
+theme_override_font_sizes/normal_font_size = 15
+theme_override_font_sizes/bold_font_size = 15
 
 [node name="PreviewFactGrid" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin/Body" instance=ExtResource("4_facts")]
 unique_name_in_owner = true
@@ -389,152 +449,136 @@ layout_mode = 2
 
 [node name="PreviewMeters" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewIdentityCard/Margin/Body" instance=ExtResource("5_meters")]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 
-[node name="PreviewRouteCard" type="PanelContainer" parent="Margin/Root/Body/PreviewScroll/Preview"]
+[node name="PreviewDetailSection" type="PanelContainer" parent="Margin/Root/Body/PreviewScroll/Preview"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-theme_type_variation = &"FamilyCard"
+theme_type_variation = &"PKDossierBand"
 
-[node name="Margin" type="MarginContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewRouteCard"]
+[node name="Margin" type="MarginContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection"]
 layout_mode = 2
-theme_override_constants/margin_left = 10
-theme_override_constants/margin_top = 8
-theme_override_constants/margin_right = 10
-theme_override_constants/margin_bottom = 8
+theme_override_constants/margin_left = 0
+theme_override_constants/margin_top = 0
+theme_override_constants/margin_right = 0
+theme_override_constants/margin_bottom = 0
 
-[node name="Body" type="VBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewRouteCard/Margin"]
+[node name="Body" type="VBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="RouteHead" type="HBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection/Margin/Body"]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="Head" type="HBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewRouteCard/Margin/Body"]
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="RouteCardIcon" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewRouteCard/Margin/Body/Head" instance=ExtResource("3_icon")]
+[node name="RouteCardIcon" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection/Margin/Body/RouteHead" instance=ExtResource("3_icon")]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(20, 20)
 layout_mode = 2
 size_flags_vertical = 4
 
-[node name="RouteCardTitle" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewRouteCard/Margin/Body/Head"]
+[node name="RouteCardTitle" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection/Margin/Body/RouteHead"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-text = "远征路线与安家方案"
-theme_type_variation = &"PKDossierKicker"
+text = "路线与家风"
+theme_type_variation = &"PKDossierSectionTitle"
+theme_override_font_sizes/font_size = 19
 
-[node name="RouteReadyPill" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewRouteCard/Margin/Body/Head"]
+[node name="RouteReadyPill" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection/Margin/Body/RouteHead"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
 theme_type_variation = &"FamilyTraitBadgePos"
 
-[node name="RouteFactGrid" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewRouteCard/Margin/Body" instance=ExtResource("4_facts")]
+[node name="RouteBlock" type="VBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection/Margin/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="RouteFactGrid" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection/Margin/Body/RouteBlock" instance=ExtResource("4_facts")]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="KitKicker" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewRouteCard/Margin/Body"]
+[node name="KitKicker" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection/Margin/Body/RouteBlock"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "落地开工建筑与随行构成"
+text = "开工包"
 theme_type_variation = &"PKDossierCaption"
 
-[node name="KitBadges" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewRouteCard/Margin/Body" instance=ExtResource("7_badges")]
+[node name="KitBadges" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection/Margin/Body/RouteBlock" instance=ExtResource("7_badges")]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="RouteNotes" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewRouteCard/Margin/Body" instance=ExtResource("6_notes")]
+[node name="RouteNotes" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection/Margin/Body/RouteBlock" instance=ExtResource("6_notes")]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="PreviewTraitsCard" type="PanelContainer" parent="Margin/Root/Body/PreviewScroll/Preview"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_type_variation = &"FamilyCard"
-
-[node name="Margin" type="MarginContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewTraitsCard"]
-layout_mode = 2
-theme_override_constants/margin_left = 10
-theme_override_constants/margin_top = 8
-theme_override_constants/margin_right = 10
-theme_override_constants/margin_bottom = 8
-
-[node name="Body" type="VBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewTraitsCard/Margin"]
+[node name="TraitsHead" type="HBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection/Margin/Body"]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="Head" type="HBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewTraitsCard/Margin/Body"]
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="TraitsCardIcon" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewTraitsCard/Margin/Body/Head" instance=ExtResource("3_icon")]
+[node name="TraitsCardIcon" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection/Margin/Body/TraitsHead" instance=ExtResource("3_icon")]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(20, 20)
 layout_mode = 2
 size_flags_vertical = 4
 
-[node name="TraitsCardTitle" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewTraitsCard/Margin/Body/Head"]
+[node name="TraitsCardTitle" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection/Margin/Body/TraitsHead"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "家风特性与经营偏好"
-theme_type_variation = &"PKDossierKicker"
+text = "家风与具体加成"
+theme_type_variation = &"PKDossierSectionTitle"
+theme_override_font_sizes/font_size = 19
 
-[node name="TraitsVisualBox" type="VBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewTraitsCard/Margin/Body"]
+[node name="TraitsBlock" type="VBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection/Margin/Body"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="PrefKicker" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewTraitsCard/Margin/Body"]
+[node name="TraitsVisualBox" type="VBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection/Margin/Body/TraitsBlock"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "显著经营与消费偏好"
+theme_override_constants/separation = 6
+
+[node name="PrefKicker" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection/Margin/Body/TraitsBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+text = ""
 theme_type_variation = &"PKDossierCaption"
 
-[node name="PrefBadges" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewTraitsCard/Margin/Body" instance=ExtResource("7_badges")]
+[node name="PrefBadges" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection/Margin/Body/TraitsBlock" instance=ExtResource("7_badges")]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="PreviewEffectsCard" type="PanelContainer" parent="Margin/Root/Body/PreviewScroll/Preview"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_type_variation = &"FamilyCard"
-
-[node name="Margin" type="MarginContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewEffectsCard"]
-layout_mode = 2
-theme_override_constants/margin_left = 10
-theme_override_constants/margin_top = 8
-theme_override_constants/margin_right = 10
-theme_override_constants/margin_bottom = 8
-
-[node name="Body" type="VBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewEffectsCard/Margin"]
+[node name="EffectsHead" type="HBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection/Margin/Body"]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="Head" type="HBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewEffectsCard/Margin/Body"]
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="EffectsCardIcon" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewEffectsCard/Margin/Body/Head" instance=ExtResource("3_icon")]
+[node name="EffectsCardIcon" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection/Margin/Body/EffectsHead" instance=ExtResource("3_icon")]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(20, 20)
 layout_mode = 2
 size_flags_vertical = 4
 
-[node name="EffectsCardTitle" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewEffectsCard/Margin/Body/Head"]
+[node name="EffectsCardTitle" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection/Margin/Body/EffectsHead"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "当地威望加成"
-theme_type_variation = &"PKDossierKicker"
+text = "当前家族效果"
+theme_type_variation = &"PKDossierSectionTitle"
+theme_override_font_sizes/font_size = 19
 
-[node name="EffectsVisualBox" type="VBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewEffectsCard/Margin/Body"]
+[node name="EffectsBlock" type="VBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection/Margin/Body"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 6
 
+[node name="EffectsVisualBox" type="VBoxContainer" parent="Margin/Root/Body/PreviewScroll/Preview/PreviewDetailSection/Margin/Body/EffectsBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
 [node name="PreviewMetrics" type="Label" parent="Margin/Root/Body/PreviewScroll/Preview"]
 unique_name_in_owner = true
 visible = false
@@ -601,12 +645,13 @@ layout_mode = 2
 size_flags_vertical = 4
 
 [node name="PopulationLabel" type="Label" parent="Margin/Root/Footer/PopulationRow"]
+unique_name_in_owner = true
 layout_mode = 2
 text = "人数"
 
 [node name="PopulationSlider" type="HSlider" parent="Margin/Root/Footer/PopulationRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(68, 0)
+custom_minimum_size = Vector2(58, 0)
 layout_mode = 2
 size_flags_vertical = 4
 min_value = 1.0
@@ -616,7 +661,7 @@ rounded = true
 
 [node name="PopulationSpin" type="SpinBox" parent="Margin/Root/Footer/PopulationRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(88, 0)
+custom_minimum_size = Vector2(76, 0)
 layout_mode = 2
 min_value = 1.0
 max_value = 1.0

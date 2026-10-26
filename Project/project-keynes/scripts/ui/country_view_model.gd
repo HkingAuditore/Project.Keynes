@@ -267,7 +267,7 @@ func _build_full_legacy(section_id: String = "technology") -> Dictionary:
 	# measure the same query contract as the production event-driven path.
 	var context := _country_context()
 	if not bool(context.get("ok", false)):
-		return _unavailable_model(String(context.get("reason", "国家档案暂不可用")))
+		return _unavailable_model(String(context.get("reason", "国家数据暂不可用")))
 	var facade = context.facade
 	var economy_facade = _generator.get_economy_facade() \
 		if _generator.has_method("get_economy_facade") else null
@@ -347,7 +347,7 @@ func build_legacy(section_id: String = "technology") -> Dictionary:
 func _country_context() -> Dictionary:
 	if _generator == null or not _generator.has_method("gameplay_start_report") \
 			or not _generator.has_method("get_country_facade"):
-		return {"ok": false, "reason": "国家档案尚未就绪"}
+		return {"ok": false, "reason": "国家数据尚未就绪"}
 	var start_report: Dictionary = _generator.gameplay_start_report()
 	var start_cell := int(start_report.get("cell", -1))
 	var facade = _generator.get_country_facade()
@@ -355,7 +355,7 @@ func _country_context() -> Dictionary:
 		return {"ok": false, "reason": "当前会话没有可用的玩家国家"}
 	var summary: Dictionary = facade.cell_summary(start_cell)
 	if not bool(summary.get("ok", false)) or not bool(summary.get("owned", false)):
-		return {"ok": false, "reason": "玩家国家档案暂不可用"}
+		return {"ok": false, "reason": "玩家国家数据暂不可用"}
 	return {
 		"ok": true,
 		"start_cell": start_cell,
@@ -481,7 +481,7 @@ func build(section_id: String = "technology") -> Dictionary:
 		return _section_cache[normalized_section]
 	var context := _country_context()
 	if not bool(context.get("ok", false)):
-		return _unavailable_model(String(context.get("reason", "国家档案暂不可用")))
+		return _unavailable_model(String(context.get("reason", "国家数据暂不可用")))
 	var facade = context.facade
 	var country_handle := int(context.country_handle)
 	var ui_snapshot: Dictionary = facade.ui_snapshot(country_handle,
@@ -661,7 +661,7 @@ func _ideology_model(country_handle: int) -> Dictionary:
 	var catalog: Dictionary = facade.catalog_view()
 	if not bool(snapshot.get("ok", false)) or not bool(catalog.get("ok", false)):
 		return {"available": false, "reason": ideology_player_reason(String(snapshot.get("reason",
-			catalog.get("reason", "理念档案暂不可用。"))))}
+			catalog.get("reason", "理念数据暂不可用。"))))}
 	return _decorate_ideology({
 		"available": true, "facade": facade, "snapshot": snapshot, "catalog": catalog,
 	})
@@ -883,7 +883,7 @@ static func ideology_player_reason(reason: String) -> String:
 				"DCWorldExt ideology API unavailable":
 			return "理念事务暂不可用。"
 		"ideology_country_handle_stale", "ideology_country_state_unavailable":
-			return "国家档案已更新，请稍后重试。"
+			return "国家数据已更新，请稍后重试。"
 		"正在载入已提交数据":
 			return "载入中…"
 		_:

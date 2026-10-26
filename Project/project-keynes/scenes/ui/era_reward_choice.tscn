@@ -66,7 +66,7 @@ theme_type_variation = &"PKMutedLabel"
 [node name="Reason" type="Label" parent="Margin/Column"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "适配：通用时代方案"
+text = ""
 autowrap_mode = 2
 theme_type_variation = &"PKMutedLabel"
 

@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="ModifierCatalog" load_steps=855 format=3]
+[gd_resource type="Resource" script_class="ModifierCatalog" load_steps=893 format=3]
 
 [ext_resource type="Script" path="res://scripts/modifier/modifier_catalog.gd" id="1_catalog"]
 [ext_resource type="Script" path="res://scripts/modifier/modifier_stat_definition.gd" id="2_stat"]
@@ -5308,6 +5308,50 @@ stack_policy = 1
 default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceAgrarian40"), SubResource("TermIdeologyResonanceAgrarian41")])
 
+[sub_resource type="Resource" id="TermIdeologyResonanceAgrarian50"]
+script = ExtResource("4_term")
+stat_key = &"country.output.agriculture_factor"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="TermIdeologyResonanceAgrarian51"]
+script = ExtResource("4_term")
+stat_key = &"country.population.death_factor"
+operation = 2
+value = 0.98
+
+[sub_resource type="Resource" id="DefIdeologyResonanceAgrarian5"]
+script = ExtResource("3_definition")
+key = &"ideology.resonance.agrarian.5"
+display_name = "农本共鸣5"
+description = "装备或晋升5张农本理念。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyResonanceAgrarian50"), SubResource("TermIdeologyResonanceAgrarian51")])
+
+[sub_resource type="Resource" id="TermIdeologyResonanceAgrarian60"]
+script = ExtResource("4_term")
+stat_key = &"country.output.agriculture_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyResonanceAgrarian61"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.fertile_soil.use_factor"
+operation = 2
+value = 0.94
+
+[sub_resource type="Resource" id="DefIdeologyResonanceAgrarian6"]
+script = ExtResource("3_definition")
+key = &"ideology.resonance.agrarian.6"
+display_name = "农本共鸣6"
+description = "装备或晋升6张农本理念。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyResonanceAgrarian60"), SubResource("TermIdeologyResonanceAgrarian61")])
+
 [sub_resource type="Resource" id="TermIdeologyResonanceCommerce20"]
 script = ExtResource("4_term")
 stat_key = &"country.trade.capacity_factor"
@@ -5345,6 +5389,50 @@ domain = 1
 stack_policy = 1
 default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceCommerce40"), SubResource("TermIdeologyResonanceCommerce41")])
+
+[sub_resource type="Resource" id="TermIdeologyResonanceCommerce50"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.speed_factor"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="TermIdeologyResonanceCommerce51"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="DefIdeologyResonanceCommerce5"]
+script = ExtResource("3_definition")
+key = &"ideology.resonance.commerce.5"
+display_name = "商贸共鸣5"
+description = "装备或晋升5张商贸理念。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyResonanceCommerce50"), SubResource("TermIdeologyResonanceCommerce51")])
+
+[sub_resource type="Resource" id="TermIdeologyResonanceCommerce60"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.speed_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyResonanceCommerce61"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefIdeologyResonanceCommerce6"]
+script = ExtResource("3_definition")
+key = &"ideology.resonance.commerce.6"
+display_name = "商贸共鸣6"
+description = "装备或晋升6张商贸理念。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyResonanceCommerce60"), SubResource("TermIdeologyResonanceCommerce61")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceLearning20"]
 script = ExtResource("4_term")
@@ -5390,6 +5478,50 @@ stack_policy = 1
 default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceLearning40"), SubResource("TermIdeologyResonanceLearning41")])
 
+[sub_resource type="Resource" id="TermIdeologyResonanceLearning50"]
+script = ExtResource("4_term")
+stat_key = &"country.research.science_efficiency"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologyResonanceLearning51"]
+script = ExtResource("4_term")
+stat_key = &"country.research.society_efficiency"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="DefIdeologyResonanceLearning5"]
+script = ExtResource("3_definition")
+key = &"ideology.resonance.learning.5"
+display_name = "学识共鸣5"
+description = "装备或晋升5张学识理念。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyResonanceLearning50"), SubResource("TermIdeologyResonanceLearning51")])
+
+[sub_resource type="Resource" id="TermIdeologyResonanceLearning60"]
+script = ExtResource("4_term")
+stat_key = &"country.research.cost_factor"
+operation = 2
+value = 0.94
+
+[sub_resource type="Resource" id="TermIdeologyResonanceLearning61"]
+script = ExtResource("4_term")
+stat_key = &"country.ideology.point_gain_factor"
+operation = 2
+value = 1.12
+
+[sub_resource type="Resource" id="DefIdeologyResonanceLearning6"]
+script = ExtResource("3_definition")
+key = &"ideology.resonance.learning.6"
+display_name = "学识共鸣6"
+description = "装备或晋升6张学识理念。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyResonanceLearning60"), SubResource("TermIdeologyResonanceLearning61")])
+
 [sub_resource type="Resource" id="TermIdeologyResonanceMobilization20"]
 script = ExtResource("4_term")
 stat_key = &"country.construction.cost_factor"
@@ -5428,6 +5560,50 @@ stack_policy = 1
 default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceMobilization40"), SubResource("TermIdeologyResonanceMobilization41")])
 
+[sub_resource type="Resource" id="TermIdeologyResonanceMobilization50"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 0.96
+
+[sub_resource type="Resource" id="TermIdeologyResonanceMobilization51"]
+script = ExtResource("4_term")
+stat_key = &"country.research.society_efficiency"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="DefIdeologyResonanceMobilization5"]
+script = ExtResource("3_definition")
+key = &"ideology.resonance.mobilization.5"
+display_name = "动员共鸣5"
+description = "装备或晋升5张动员理念。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyResonanceMobilization50"), SubResource("TermIdeologyResonanceMobilization51")])
+
+[sub_resource type="Resource" id="TermIdeologyResonanceMobilization60"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="TermIdeologyResonanceMobilization61"]
+script = ExtResource("4_term")
+stat_key = &"country.population.death_factor"
+operation = 2
+value = 0.98
+
+[sub_resource type="Resource" id="DefIdeologyResonanceMobilization6"]
+script = ExtResource("3_definition")
+key = &"ideology.resonance.mobilization.6"
+display_name = "动员共鸣6"
+description = "装备或晋升6张动员理念。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyResonanceMobilization60"), SubResource("TermIdeologyResonanceMobilization61")])
+
 [sub_resource type="Resource" id="TermIdeologyResonanceIndustry20"]
 script = ExtResource("4_term")
 stat_key = &"country.output.manufacturing_factor"
@@ -5465,6 +5641,50 @@ domain = 1
 stack_policy = 1
 default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceIndustry40"), SubResource("TermIdeologyResonanceIndustry41")])
+
+[sub_resource type="Resource" id="TermIdeologyResonanceIndustry50"]
+script = ExtResource("4_term")
+stat_key = &"country.output.manufacturing_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologyResonanceIndustry51"]
+script = ExtResource("4_term")
+stat_key = &"country.production.input_factor"
+operation = 2
+value = 0.96
+
+[sub_resource type="Resource" id="DefIdeologyResonanceIndustry5"]
+script = ExtResource("3_definition")
+key = &"ideology.resonance.industry.5"
+display_name = "工造共鸣5"
+description = "装备或晋升5张工造理念。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyResonanceIndustry50"), SubResource("TermIdeologyResonanceIndustry51")])
+
+[sub_resource type="Resource" id="TermIdeologyResonanceIndustry60"]
+script = ExtResource("4_term")
+stat_key = &"country.output.manufacturing_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyResonanceIndustry61"]
+script = ExtResource("4_term")
+stat_key = &"country.output.energy_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="DefIdeologyResonanceIndustry6"]
+script = ExtResource("3_definition")
+key = &"ideology.resonance.industry.6"
+display_name = "工造共鸣6"
+description = "装备或晋升6张工造理念。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyResonanceIndustry60"), SubResource("TermIdeologyResonanceIndustry61")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceHarmony20"]
 script = ExtResource("4_term")
@@ -5515,6 +5735,62 @@ domain = 1
 stack_policy = 1
 default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceHarmony40"), SubResource("TermIdeologyResonanceHarmony41"), SubResource("TermIdeologyResonanceHarmony42"), SubResource("TermIdeologyResonanceHarmony43")])
+
+[sub_resource type="Resource" id="TermIdeologyResonanceHarmony50"]
+script = ExtResource("4_term")
+stat_key = &"country.resource.use_factor"
+operation = 2
+value = 0.96
+
+[sub_resource type="Resource" id="TermIdeologyResonanceHarmony51"]
+script = ExtResource("4_term")
+stat_key = &"country.population.death_factor"
+operation = 2
+value = 0.98
+
+[sub_resource type="Resource" id="DefIdeologyResonanceHarmony5"]
+script = ExtResource("3_definition")
+key = &"ideology.resonance.harmony.5"
+display_name = "调和共鸣5"
+description = "装备或晋升5张调和理念。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyResonanceHarmony50"), SubResource("TermIdeologyResonanceHarmony51")])
+
+[sub_resource type="Resource" id="TermIdeologyResonanceHarmony60"]
+script = ExtResource("4_term")
+stat_key = &"country.climate.drought_loss_factor"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="TermIdeologyResonanceHarmony61"]
+script = ExtResource("4_term")
+stat_key = &"country.climate.flood_loss_factor"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="TermIdeologyResonanceHarmony62"]
+script = ExtResource("4_term")
+stat_key = &"country.climate.cold_stress_factor"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="TermIdeologyResonanceHarmony63"]
+script = ExtResource("4_term")
+stat_key = &"country.climate.heat_stress_factor"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="DefIdeologyResonanceHarmony6"]
+script = ExtResource("3_definition")
+key = &"ideology.resonance.harmony.6"
+display_name = "调和共鸣6"
+description = "装备或晋升6张调和理念。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyResonanceHarmony60"), SubResource("TermIdeologyResonanceHarmony61"), SubResource("TermIdeologyResonanceHarmony62"), SubResource("TermIdeologyResonanceHarmony63")])
 
 [sub_resource type="Resource" id="TermIdeologyCityOutputFactor"]
 script = ExtResource("4_term")
@@ -6127,4 +6403,4 @@ terms = Array[Resource]([SubResource("TermIdeologyCountryIdeologySchoolStrengthF
 [resource]
 script = ExtResource("1_catalog")
 stats = Array[Resource]([SubResource("StatClimate"), SubResource("StatCountry"), SubResource("StatBuilding"), SubResource("StatGameplay"), SubResource("StatCityOutput"), SubResource("StatCityAgricultureOutput"), SubResource("StatCityExtractiveOutput"), SubResource("StatCityManufacturingOutput"), SubResource("StatCityEnergyOutput"), SubResource("StatCityKnowledgeOutput"), SubResource("StatCityBirth"), SubResource("StatCityTradeOutput"), SubResource("StatCityConsumption"), SubResource("StatCityResourceRegen")])
-definitions = Array[Resource]([SubResource("DefClimate"), SubResource("DefCountry"), SubResource("DefBuilding"), SubResource("DefGameplay"), SubResource("DefFamilyCityOutput"), SubResource("DefFamilyHuntingOutput"), SubResource("DefFamilyAgricultureOutput"), SubResource("DefFamilyExtractiveOutput"), SubResource("DefFamilyManufacturingOutput"), SubResource("DefFamilyEnergyOutput"), SubResource("DefFamilyKnowledgeOutput"), SubResource("DefFamilyBirth"), SubResource("DefFamilyTradeOutput"), SubResource("DefFamilyFoodConsumption"), SubResource("DefFamilyProteinConsumption"), SubResource("DefFamilyClothingConsumption"), SubResource("DefFamilyHousingConsumption"), SubResource("DefFamilyHouseholdGoodsConsumption"), SubResource("DefFamilyHomeEnergyConsumption"), SubResource("DefFamilyEducationConsumption"), SubResource("DefFamilyWorkEquipmentConsumption"), SubResource("DefFamilyLuxuryConsumption"), SubResource("DefFamilyStatusConsumption"), SubResource("DefFamilyAustereConsumption"), SubResource("DefFamilyWildGameRegen"), SubResource("DefFamilyFreshwaterFishRegen"), SubResource("DefFamilyMarineFishRegen"), SubResource("DefFamilyPastureRegen"), SubResource("DefFamilyTimberRegen"), SubResource("DefFamilyBirthCut"), SubResource("DefFamilyHedonism"), SubResource("DefFamilyCornOutput"), SubResource("DefFamilyStapleConsumptionCut"), SubResource("DefFamilyResourceRegenCut"), SubResource("DefFamilyOwnedBuildingOutput"), SubResource("DefFamilyCountryTradeCapacity"), SubResource("DefIdeologyHuntingTradition"), SubResource("DefIdeologyFlintKnapping"), SubResource("DefIdeologyFireKeeping"), SubResource("DefIdeologyAnimistRitual"), SubResource("DefIdeologyGiftExchange"), SubResource("DefIdeologyCommunalFeast"), SubResource("DefIdeologyCollectiveStewardship"), SubResource("DefIdeologyPaddyCultivation"), SubResource("DefIdeologyThreeFieldRotation"), SubResource("DefIdeologyFreeExchange"), SubResource("DefIdeologyScholarOffice"), SubResource("DefIdeologyStandardization"), SubResource("DefIdeologyHouseholdWeaving"), SubResource("DefIdeologyBronzeCasting"), SubResource("DefIdeologyEverNormalGranary"), SubResource("DefIdeologySettleAndFarm"), SubResource("DefIdeologyOpenPorts"), SubResource("DefIdeologyGuildCharters"), SubResource("DefIdeologyDoubleEntry"), SubResource("DefIdeologyAcademyLectures"), SubResource("DefIdeologyCivilExamination"), SubResource("DefIdeologyIronSmelting"), SubResource("DefIdeologyPostalHorse"), SubResource("DefIdeologyMonsoonFarming"), SubResource("DefIdeologyRiverTransport"), SubResource("DefIdeologyVillageCompact"), SubResource("DefIdeologyLandReclamation"), SubResource("DefIdeologyGranaryRoad"), SubResource("DefIdeologyImperialAcademy"), SubResource("DefIdeologyPublicHygiene"), SubResource("DefIdeologyHeavenHuman"), SubResource("DefIdeologySaltMonopoly"), SubResource("DefIdeologySericulture"), SubResource("DefIdeologyOceanCompany"), SubResource("DefIdeologyCharteredRoute"), SubResource("DefIdeologyCartography"), SubResource("DefIdeologyColonialPlantation"), SubResource("DefIdeologySilverFlow"), SubResource("DefIdeologyNaturalHistory"), SubResource("DefIdeologyManufactoryRegulation"), SubResource("DefIdeologyMaritimeInsurance"), SubResource("DefIdeologyExperimentalMethod"), SubResource("DefIdeologyEncyclopedia"), SubResource("DefIdeologyNationalEducation"), SubResource("DefIdeologyAgrarianReform"), SubResource("DefIdeologyCoalBasin"), SubResource("DefIdeologyCottonGin"), SubResource("DefIdeologyEnclosure"), SubResource("DefIdeologyLearnedSociety"), SubResource("DefIdeologySteamPower"), SubResource("DefIdeologyRailwayNetwork"), SubResource("DefIdeologyUrbanSanitation"), SubResource("DefIdeologySteamShipping"), SubResource("DefIdeologyFreeTrade"), SubResource("DefIdeologyAgriculturalChemistry"), SubResource("DefIdeologyTelegraph"), SubResource("DefIdeologyTradeUnions"), SubResource("DefIdeologyAssemblyLine"), SubResource("DefIdeologyElectrification"), SubResource("DefIdeologyEcologicalBalance"), SubResource("DefIdeologyMassMedia"), SubResource("DefIdeologyChemicalIndustry"), SubResource("DefIdeologyAntitrust"), SubResource("DefIdeologyOffshoreDrilling"), SubResource("DefIdeologySupermarket"), SubResource("DefIdeologyNuclearPower"), SubResource("DefIdeologyAntibiotics"), SubResource("DefIdeologyMotorization"), SubResource("DefIdeologyGreenRevolution"), SubResource("DefIdeologyPetrochemical"), SubResource("DefIdeologyContainerPort"), SubResource("DefIdeologyWelfareState"), SubResource("DefIdeologyComputingNetworks"), SubResource("DefIdeologySemiconductor"), SubResource("DefIdeologyPrecisionAgriculture"), SubResource("DefIdeologyFinancialization"), SubResource("DefIdeologyAutomationLine"), SubResource("DefIdeologyArcology"), SubResource("DefIdeologyBasicIncome"), SubResource("DefIdeologyCircularEconomy"), SubResource("DefIdeologyAlgorithmicGovernance"), SubResource("DefIdeologyAutonomousLogistics"), SubResource("DefIdeologyCarbonMarket"), SubResource("DefIdeologyGeneEditing"), SubResource("DefIdeologySpaceMining"), SubResource("DefIdeologyDesalination"), SubResource("DefIdeologyFamilyOfficeL1"), SubResource("DefIdeologyFamilyOfficeL2"), SubResource("DefIdeologyFamilyOfficeL3"), SubResource("DefIdeologyRefrigerationL1"), SubResource("DefIdeologyRefrigerationL2"), SubResource("DefIdeologyRefrigerationL3"), SubResource("DefIdeologyDroughtReliefL1"), SubResource("DefIdeologyDroughtReliefL2"), SubResource("DefIdeologyDroughtReliefL3"), SubResource("DefIdeologyTerraceFarmingL1"), SubResource("DefIdeologyTerraceFarmingL2"), SubResource("DefIdeologyTerraceFarmingL3"), SubResource("DefIdeologyWaterWorksL1"), SubResource("DefIdeologyWaterWorksL2"), SubResource("DefIdeologyWaterWorksL3"), SubResource("DefIdeologyForagerBandL1"), SubResource("DefIdeologyForagerBandL2"), SubResource("DefIdeologyForagerBandL3"), SubResource("DefIdeologyRiversideCampL1"), SubResource("DefIdeologyRiversideCampL2"), SubResource("DefIdeologyRiversideCampL3"), SubResource("DefIdeologySeasonalCalendarL1"), SubResource("DefIdeologySeasonalCalendarL2"), SubResource("DefIdeologySeasonalCalendarL3"), SubResource("DefIdeologyPitDwellingL1"), SubResource("DefIdeologyPitDwellingL2"), SubResource("DefIdeologyPitDwellingL3"), SubResource("DefIdeologyHydroelectricL1"), SubResource("DefIdeologyHydroelectricL2"), SubResource("DefIdeologyHydroelectricL3"), SubResource("DefIdeologyFrontierGarrisonL1"), SubResource("DefIdeologyFrontierGarrisonL2"), SubResource("DefIdeologyFrontierGarrisonL3"), SubResource("DefIdeologyLandTaxReformL1"), SubResource("DefIdeologyLandTaxReformL2"), SubResource("DefIdeologyLandTaxReformL3"), SubResource("DefIdeologyExciseL1"), SubResource("DefIdeologyExciseL2"), SubResource("DefIdeologyExciseL3"), SubResource("DefIdeologyLabourLegislationL1"), SubResource("DefIdeologyLabourLegislationL2"), SubResource("DefIdeologyLabourLegislationL3"), SubResource("DefIdeologyTreasuryReserveL1"), SubResource("DefIdeologyTreasuryReserveL2"), SubResource("DefIdeologyTreasuryReserveL3"), SubResource("DefIdeologySilverStandardL1"), SubResource("DefIdeologySilverStandardL2"), SubResource("DefIdeologySilverStandardL3"), SubResource("DefIdeologySubsidyStateL1"), SubResource("DefIdeologySubsidyStateL2"), SubResource("DefIdeologySubsidyStateL3"), SubResource("DefIdeologySocialMediaL1"), SubResource("DefIdeologySocialMediaL2"), SubResource("DefIdeologySocialMediaL3"), SubResource("DefIdeologyGentryPatronageL1"), SubResource("DefIdeologyGentryPatronageL2"), SubResource("DefIdeologyGentryPatronageL3"), SubResource("DefIdeologyRouteGranary1"), SubResource("DefIdeologyRouteGranary2"), SubResource("DefIdeologyRouteCropland1"), SubResource("DefIdeologyRouteCropland2"), SubResource("DefIdeologyRouteMining1"), SubResource("DefIdeologyRouteMining2"), SubResource("DefIdeologyRouteWorkshop1"), SubResource("DefIdeologyRouteWorkshop2"), SubResource("DefIdeologyRouteLivelihood1"), SubResource("DefIdeologyRouteLivelihood2"), SubResource("DefIdeologyRouteMarket1"), SubResource("DefIdeologyRouteLearning1"), SubResource("DefIdeologyRouteThoroughfare1"), SubResource("DefIdeologySynergyGranaryRecords"), SubResource("DefIdeologySynergyPolderFarming"), SubResource("DefIdeologySynergyMixedHusbandry"), SubResource("DefIdeologySynergyCoalIronComplex"), SubResource("DefIdeologySynergyPostalCanalGrid"), SubResource("DefIdeologySynergyJointStockAccounting"), SubResource("DefIdeologySynergySteamRailComplex"), SubResource("DefIdeologySynergyChemicalAgriculture"), SubResource("DefIdeologySynergyElectricAssembly"), SubResource("DefIdeologySynergyDigitalAutomation"), SubResource("DefIdeologySynergyDoubleConstraint"), SubResource("DefIdeologySynergyEpidemicDefence"), SubResource("DefIdeologySynergyOceanicFinance"), SubResource("DefIdeologySynergySilkWeavingChain"), SubResource("DefIdeologySynergyExperimentalNaturalHistory"), SubResource("DefIdeologyResonanceAgrarian2"), SubResource("DefIdeologyResonanceAgrarian4"), SubResource("DefIdeologyResonanceCommerce2"), SubResource("DefIdeologyResonanceCommerce4"), SubResource("DefIdeologyResonanceLearning2"), SubResource("DefIdeologyResonanceLearning4"), SubResource("DefIdeologyResonanceMobilization2"), SubResource("DefIdeologyResonanceMobilization4"), SubResource("DefIdeologyResonanceIndustry2"), SubResource("DefIdeologyResonanceIndustry4"), SubResource("DefIdeologyResonanceHarmony2"), SubResource("DefIdeologyResonanceHarmony4"), SubResource("DefIdeologyCityOutputFactor"), SubResource("DefIdeologyCityOutputFactorCut"), SubResource("DefIdeologyCityBuildingAgricultureOutputFactor"), SubResource("DefIdeologyCityBuildingAgricultureOutputFactorCut"), SubResource("DefIdeologyCityBuildingExtractiveOutputFactor"), SubResource("DefIdeologyCityBuildingExtractiveOutputFactorCut"), SubResource("DefIdeologyCityBuildingManufacturingOutputFactor"), SubResource("DefIdeologyCityBuildingManufacturingOutputFactorCut"), SubResource("DefIdeologyCityBuildingEnergyOutputFactor"), SubResource("DefIdeologyCityBuildingEnergyOutputFactorCut"), SubResource("DefIdeologyCityBuildingKnowledgeOutputFactor"), SubResource("DefIdeologyCityBuildingKnowledgeOutputFactorCut"), SubResource("DefIdeologyCityResourceRegenFactor"), SubResource("DefIdeologyCityResourceRegenFactorCut"), SubResource("DefIdeologyCityResourceTimberRegenFactor"), SubResource("DefIdeologyCityResourceTimberRegenFactorCut"), SubResource("DefIdeologyCityResourcePastureRegenFactor"), SubResource("DefIdeologyCityResourcePastureRegenFactorCut"), SubResource("DefIdeologyCityResourceFertileSoilRegenFactor"), SubResource("DefIdeologyCityResourceFertileSoilRegenFactorCut"), SubResource("DefIdeologyCityResourceWildGameRegenFactor"), SubResource("DefIdeologyCityResourceWildGameRegenFactorCut"), SubResource("DefIdeologyCityResourceFreshwaterFishRegenFactor"), SubResource("DefIdeologyCityResourceFreshwaterFishRegenFactorCut"), SubResource("DefIdeologyCountryPopulationDeathFactorCut"), SubResource("DefIdeologyCountryConstructionCostFactorCut"), SubResource("DefIdeologyCountryResearchCostFactorCut"), SubResource("DefIdeologyCountryTradeCapacityFactorGain"), SubResource("DefIdeologyCountryOutputAgricultureFactorGain"), SubResource("DefIdeologyCountryOutputExtractiveFactorGain"), SubResource("DefIdeologyCountryOutputManufacturingFactorGain"), SubResource("DefIdeologyCountryOutputEnergyFactorGain"), SubResource("DefIdeologyCountryOutputKnowledgeFactorGain"), SubResource("DefIdeologyCountryIdeologyPointGainFactorGain"), SubResource("DefIdeologyCountryIdeologyPointPopulationFactorGain"), SubResource("DefIdeologyCountryIdeologyPointBuildingFactorGain"), SubResource("DefIdeologyCountryIdeologyPointTradeFactorGain"), SubResource("DefIdeologyCountryIdeologySchoolStrengthFactorHarmonyGain")])
+definitions = Array[Resource]([SubResource("DefClimate"), SubResource("DefCountry"), SubResource("DefBuilding"), SubResource("DefGameplay"), SubResource("DefFamilyCityOutput"), SubResource("DefFamilyHuntingOutput"), SubResource("DefFamilyAgricultureOutput"), SubResource("DefFamilyExtractiveOutput"), SubResource("DefFamilyManufacturingOutput"), SubResource("DefFamilyEnergyOutput"), SubResource("DefFamilyKnowledgeOutput"), SubResource("DefFamilyBirth"), SubResource("DefFamilyTradeOutput"), SubResource("DefFamilyFoodConsumption"), SubResource("DefFamilyProteinConsumption"), SubResource("DefFamilyClothingConsumption"), SubResource("DefFamilyHousingConsumption"), SubResource("DefFamilyHouseholdGoodsConsumption"), SubResource("DefFamilyHomeEnergyConsumption"), SubResource("DefFamilyEducationConsumption"), SubResource("DefFamilyWorkEquipmentConsumption"), SubResource("DefFamilyLuxuryConsumption"), SubResource("DefFamilyStatusConsumption"), SubResource("DefFamilyAustereConsumption"), SubResource("DefFamilyWildGameRegen"), SubResource("DefFamilyFreshwaterFishRegen"), SubResource("DefFamilyMarineFishRegen"), SubResource("DefFamilyPastureRegen"), SubResource("DefFamilyTimberRegen"), SubResource("DefFamilyBirthCut"), SubResource("DefFamilyHedonism"), SubResource("DefFamilyCornOutput"), SubResource("DefFamilyStapleConsumptionCut"), SubResource("DefFamilyResourceRegenCut"), SubResource("DefFamilyOwnedBuildingOutput"), SubResource("DefFamilyCountryTradeCapacity"), SubResource("DefIdeologyHuntingTradition"), SubResource("DefIdeologyFlintKnapping"), SubResource("DefIdeologyFireKeeping"), SubResource("DefIdeologyAnimistRitual"), SubResource("DefIdeologyGiftExchange"), SubResource("DefIdeologyCommunalFeast"), SubResource("DefIdeologyCollectiveStewardship"), SubResource("DefIdeologyPaddyCultivation"), SubResource("DefIdeologyThreeFieldRotation"), SubResource("DefIdeologyFreeExchange"), SubResource("DefIdeologyScholarOffice"), SubResource("DefIdeologyStandardization"), SubResource("DefIdeologyHouseholdWeaving"), SubResource("DefIdeologyBronzeCasting"), SubResource("DefIdeologyEverNormalGranary"), SubResource("DefIdeologySettleAndFarm"), SubResource("DefIdeologyOpenPorts"), SubResource("DefIdeologyGuildCharters"), SubResource("DefIdeologyDoubleEntry"), SubResource("DefIdeologyAcademyLectures"), SubResource("DefIdeologyCivilExamination"), SubResource("DefIdeologyIronSmelting"), SubResource("DefIdeologyPostalHorse"), SubResource("DefIdeologyMonsoonFarming"), SubResource("DefIdeologyRiverTransport"), SubResource("DefIdeologyVillageCompact"), SubResource("DefIdeologyLandReclamation"), SubResource("DefIdeologyGranaryRoad"), SubResource("DefIdeologyImperialAcademy"), SubResource("DefIdeologyPublicHygiene"), SubResource("DefIdeologyHeavenHuman"), SubResource("DefIdeologySaltMonopoly"), SubResource("DefIdeologySericulture"), SubResource("DefIdeologyOceanCompany"), SubResource("DefIdeologyCharteredRoute"), SubResource("DefIdeologyCartography"), SubResource("DefIdeologyColonialPlantation"), SubResource("DefIdeologySilverFlow"), SubResource("DefIdeologyNaturalHistory"), SubResource("DefIdeologyManufactoryRegulation"), SubResource("DefIdeologyMaritimeInsurance"), SubResource("DefIdeologyExperimentalMethod"), SubResource("DefIdeologyEncyclopedia"), SubResource("DefIdeologyNationalEducation"), SubResource("DefIdeologyAgrarianReform"), SubResource("DefIdeologyCoalBasin"), SubResource("DefIdeologyCottonGin"), SubResource("DefIdeologyEnclosure"), SubResource("DefIdeologyLearnedSociety"), SubResource("DefIdeologySteamPower"), SubResource("DefIdeologyRailwayNetwork"), SubResource("DefIdeologyUrbanSanitation"), SubResource("DefIdeologySteamShipping"), SubResource("DefIdeologyFreeTrade"), SubResource("DefIdeologyAgriculturalChemistry"), SubResource("DefIdeologyTelegraph"), SubResource("DefIdeologyTradeUnions"), SubResource("DefIdeologyAssemblyLine"), SubResource("DefIdeologyElectrification"), SubResource("DefIdeologyEcologicalBalance"), SubResource("DefIdeologyMassMedia"), SubResource("DefIdeologyChemicalIndustry"), SubResource("DefIdeologyAntitrust"), SubResource("DefIdeologyOffshoreDrilling"), SubResource("DefIdeologySupermarket"), SubResource("DefIdeologyNuclearPower"), SubResource("DefIdeologyAntibiotics"), SubResource("DefIdeologyMotorization"), SubResource("DefIdeologyGreenRevolution"), SubResource("DefIdeologyPetrochemical"), SubResource("DefIdeologyContainerPort"), SubResource("DefIdeologyWelfareState"), SubResource("DefIdeologyComputingNetworks"), SubResource("DefIdeologySemiconductor"), SubResource("DefIdeologyPrecisionAgriculture"), SubResource("DefIdeologyFinancialization"), SubResource("DefIdeologyAutomationLine"), SubResource("DefIdeologyArcology"), SubResource("DefIdeologyBasicIncome"), SubResource("DefIdeologyCircularEconomy"), SubResource("DefIdeologyAlgorithmicGovernance"), SubResource("DefIdeologyAutonomousLogistics"), SubResource("DefIdeologyCarbonMarket"), SubResource("DefIdeologyGeneEditing"), SubResource("DefIdeologySpaceMining"), SubResource("DefIdeologyDesalination"), SubResource("DefIdeologyFamilyOfficeL1"), SubResource("DefIdeologyFamilyOfficeL2"), SubResource("DefIdeologyFamilyOfficeL3"), SubResource("DefIdeologyRefrigerationL1"), SubResource("DefIdeologyRefrigerationL2"), SubResource("DefIdeologyRefrigerationL3"), SubResource("DefIdeologyDroughtReliefL1"), SubResource("DefIdeologyDroughtReliefL2"), SubResource("DefIdeologyDroughtReliefL3"), SubResource("DefIdeologyTerraceFarmingL1"), SubResource("DefIdeologyTerraceFarmingL2"), SubResource("DefIdeologyTerraceFarmingL3"), SubResource("DefIdeologyWaterWorksL1"), SubResource("DefIdeologyWaterWorksL2"), SubResource("DefIdeologyWaterWorksL3"), SubResource("DefIdeologyForagerBandL1"), SubResource("DefIdeologyForagerBandL2"), SubResource("DefIdeologyForagerBandL3"), SubResource("DefIdeologyRiversideCampL1"), SubResource("DefIdeologyRiversideCampL2"), SubResource("DefIdeologyRiversideCampL3"), SubResource("DefIdeologySeasonalCalendarL1"), SubResource("DefIdeologySeasonalCalendarL2"), SubResource("DefIdeologySeasonalCalendarL3"), SubResource("DefIdeologyPitDwellingL1"), SubResource("DefIdeologyPitDwellingL2"), SubResource("DefIdeologyPitDwellingL3"), SubResource("DefIdeologyHydroelectricL1"), SubResource("DefIdeologyHydroelectricL2"), SubResource("DefIdeologyHydroelectricL3"), SubResource("DefIdeologyFrontierGarrisonL1"), SubResource("DefIdeologyFrontierGarrisonL2"), SubResource("DefIdeologyFrontierGarrisonL3"), SubResource("DefIdeologyLandTaxReformL1"), SubResource("DefIdeologyLandTaxReformL2"), SubResource("DefIdeologyLandTaxReformL3"), SubResource("DefIdeologyExciseL1"), SubResource("DefIdeologyExciseL2"), SubResource("DefIdeologyExciseL3"), SubResource("DefIdeologyLabourLegislationL1"), SubResource("DefIdeologyLabourLegislationL2"), SubResource("DefIdeologyLabourLegislationL3"), SubResource("DefIdeologyTreasuryReserveL1"), SubResource("DefIdeologyTreasuryReserveL2"), SubResource("DefIdeologyTreasuryReserveL3"), SubResource("DefIdeologySilverStandardL1"), SubResource("DefIdeologySilverStandardL2"), SubResource("DefIdeologySilverStandardL3"), SubResource("DefIdeologySubsidyStateL1"), SubResource("DefIdeologySubsidyStateL2"), SubResource("DefIdeologySubsidyStateL3"), SubResource("DefIdeologySocialMediaL1"), SubResource("DefIdeologySocialMediaL2"), SubResource("DefIdeologySocialMediaL3"), SubResource("DefIdeologyGentryPatronageL1"), SubResource("DefIdeologyGentryPatronageL2"), SubResource("DefIdeologyGentryPatronageL3"), SubResource("DefIdeologyRouteGranary1"), SubResource("DefIdeologyRouteGranary2"), SubResource("DefIdeologyRouteCropland1"), SubResource("DefIdeologyRouteCropland2"), SubResource("DefIdeologyRouteMining1"), SubResource("DefIdeologyRouteMining2"), SubResource("DefIdeologyRouteWorkshop1"), SubResource("DefIdeologyRouteWorkshop2"), SubResource("DefIdeologyRouteLivelihood1"), SubResource("DefIdeologyRouteLivelihood2"), SubResource("DefIdeologyRouteMarket1"), SubResource("DefIdeologyRouteLearning1"), SubResource("DefIdeologyRouteThoroughfare1"), SubResource("DefIdeologySynergyGranaryRecords"), SubResource("DefIdeologySynergyPolderFarming"), SubResource("DefIdeologySynergyMixedHusbandry"), SubResource("DefIdeologySynergyCoalIronComplex"), SubResource("DefIdeologySynergyPostalCanalGrid"), SubResource("DefIdeologySynergyJointStockAccounting"), SubResource("DefIdeologySynergySteamRailComplex"), SubResource("DefIdeologySynergyChemicalAgriculture"), SubResource("DefIdeologySynergyElectricAssembly"), SubResource("DefIdeologySynergyDigitalAutomation"), SubResource("DefIdeologySynergyDoubleConstraint"), SubResource("DefIdeologySynergyEpidemicDefence"), SubResource("DefIdeologySynergyOceanicFinance"), SubResource("DefIdeologySynergySilkWeavingChain"), SubResource("DefIdeologySynergyExperimentalNaturalHistory"), SubResource("DefIdeologyResonanceAgrarian2"), SubResource("DefIdeologyResonanceAgrarian4"), SubResource("DefIdeologyResonanceAgrarian5"), SubResource("DefIdeologyResonanceAgrarian6"), SubResource("DefIdeologyResonanceCommerce2"), SubResource("DefIdeologyResonanceCommerce4"), SubResource("DefIdeologyResonanceCommerce5"), SubResource("DefIdeologyResonanceCommerce6"), SubResource("DefIdeologyResonanceLearning2"), SubResource("DefIdeologyResonanceLearning4"), SubResource("DefIdeologyResonanceLearning5"), SubResource("DefIdeologyResonanceLearning6"), SubResource("DefIdeologyResonanceMobilization2"), SubResource("DefIdeologyResonanceMobilization4"), SubResource("DefIdeologyResonanceMobilization5"), SubResource("DefIdeologyResonanceMobilization6"), SubResource("DefIdeologyResonanceIndustry2"), SubResource("DefIdeologyResonanceIndustry4"), SubResource("DefIdeologyResonanceIndustry5"), SubResource("DefIdeologyResonanceIndustry6"), SubResource("DefIdeologyResonanceHarmony2"), SubResource("DefIdeologyResonanceHarmony4"), SubResource("DefIdeologyResonanceHarmony5"), SubResource("DefIdeologyResonanceHarmony6"), SubResource("DefIdeologyCityOutputFactor"), SubResource("DefIdeologyCityOutputFactorCut"), SubResource("DefIdeologyCityBuildingAgricultureOutputFactor"), SubResource("DefIdeologyCityBuildingAgricultureOutputFactorCut"), SubResource("DefIdeologyCityBuildingExtractiveOutputFactor"), SubResource("DefIdeologyCityBuildingExtractiveOutputFactorCut"), SubResource("DefIdeologyCityBuildingManufacturingOutputFactor"), SubResource("DefIdeologyCityBuildingManufacturingOutputFactorCut"), SubResource("DefIdeologyCityBuildingEnergyOutputFactor"), SubResource("DefIdeologyCityBuildingEnergyOutputFactorCut"), SubResource("DefIdeologyCityBuildingKnowledgeOutputFactor"), SubResource("DefIdeologyCityBuildingKnowledgeOutputFactorCut"), SubResource("DefIdeologyCityResourceRegenFactor"), SubResource("DefIdeologyCityResourceRegenFactorCut"), SubResource("DefIdeologyCityResourceTimberRegenFactor"), SubResource("DefIdeologyCityResourceTimberRegenFactorCut"), SubResource("DefIdeologyCityResourcePastureRegenFactor"), SubResource("DefIdeologyCityResourcePastureRegenFactorCut"), SubResource("DefIdeologyCityResourceFertileSoilRegenFactor"), SubResource("DefIdeologyCityResourceFertileSoilRegenFactorCut"), SubResource("DefIdeologyCityResourceWildGameRegenFactor"), SubResource("DefIdeologyCityResourceWildGameRegenFactorCut"), SubResource("DefIdeologyCityResourceFreshwaterFishRegenFactor"), SubResource("DefIdeologyCityResourceFreshwaterFishRegenFactorCut"), SubResource("DefIdeologyCountryPopulationDeathFactorCut"), SubResource("DefIdeologyCountryConstructionCostFactorCut"), SubResource("DefIdeologyCountryResearchCostFactorCut"), SubResource("DefIdeologyCountryTradeCapacityFactorGain"), SubResource("DefIdeologyCountryOutputAgricultureFactorGain"), SubResource("DefIdeologyCountryOutputExtractiveFactorGain"), SubResource("DefIdeologyCountryOutputManufacturingFactorGain"), SubResource("DefIdeologyCountryOutputEnergyFactorGain"), SubResource("DefIdeologyCountryOutputKnowledgeFactorGain"), SubResource("DefIdeologyCountryIdeologyPointGainFactorGain"), SubResource("DefIdeologyCountryIdeologyPointPopulationFactorGain"), SubResource("DefIdeologyCountryIdeologyPointBuildingFactorGain"), SubResource("DefIdeologyCountryIdeologyPointTradeFactorGain"), SubResource("DefIdeologyCountryIdeologySchoolStrengthFactorHarmonyGain")])

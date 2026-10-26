@@ -87,7 +87,7 @@ func _draw() -> void:
 	var h: float = size.y
 	var w: float = size.x
 	var font := UITokens.annual_font("label")
-	var muted := Color(_ink.r, _ink.g, _ink.b, 0.85)
+	var muted := Color(_ink.r, _ink.g, _ink.b, 0.92)
 	var left_edge: float = _inset
 	var right_edge: float = w - _inset
 	if not _left.is_empty():
@@ -95,4 +95,7 @@ func _draw() -> void:
 	if not _right.is_empty():
 		var width: float = font.get_string_size(_right, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 13).x
 		draw_string(font, Vector2(right_edge - width, h - 14.0), _right, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 13,
-			Color(UITokens.CHRONICLE_RED.r, UITokens.CHRONICLE_RED.g, UITokens.CHRONICLE_RED.b, 0.85))
+			UITokens.CHRONICLE_PENCIL_RED)
+	# A doubled graphite mark echoes the visible pencil pressure in the icon set.
+	draw_line(Vector2(left_edge, h - 5.0), Vector2(left_edge + minf(44.0, w - _inset * 2.0), h - 5.0),
+		Color(_ink.r, _ink.g, _ink.b, 0.42), 2.0, true)

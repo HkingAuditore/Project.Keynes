@@ -34,6 +34,8 @@ const GAP_CHAPTER_COMPACT := 108.0
 const RUNNING_HEAD_HEIGHT := 44.0
 const FOOTER_HEIGHT := 40.0
 const RAIL_WIDTH := 116.0
+const PENCIL_STROKE := Color(0.17, 0.19, 0.20)
+const PENCIL_SHADOW := Color(0.29, 0.28, 0.25)
 
 # ── 撕口蒙版的几何契约 ──────────────────────────────────────────────────────
 #
@@ -53,17 +55,17 @@ const MASK_FAR_PX := 64.0  # 构建脚本 FAR_PX：G 通道的满量程（纸外
 # 剪纸内部是米色底＋人物，大字直接压上去必糊。wash 控制左侧纸雾强度，
 # shift 让主体右移避开标题列，scale 给个别构图更松的图留余地。
 const ERA_LAYOUT := [
-	{"wash": 0.74, "shift": 0.00, "scale": 1.02}, # stone
-	{"wash": 0.70, "shift": 0.00, "scale": 1.02}, # agrarian
-	{"wash": 0.72, "shift": 0.00, "scale": 1.02}, # kingdom
-	{"wash": 0.70, "shift": 0.00, "scale": 1.02}, # empire
-	{"wash": 0.68, "shift": 0.00, "scale": 1.02}, # exploration
-	{"wash": 0.68, "shift": 0.00, "scale": 1.02}, # enlightenment
-	{"wash": 0.72, "shift": 0.00, "scale": 1.02}, # steam
-	{"wash": 0.72, "shift": 0.00, "scale": 1.02}, # electrical
-	{"wash": 0.74, "shift": 0.00, "scale": 1.02}, # atomic
-	{"wash": 0.68, "shift": 0.00, "scale": 1.02}, # information
-	{"wash": 0.66, "shift": 0.00, "scale": 1.02}, # intelligent
+	{"wash": 0.00, "shift": 0.00, "scale": 1.00}, # stone
+	{"wash": 0.00, "shift": 0.00, "scale": 1.00}, # agrarian
+	{"wash": 0.00, "shift": 0.00, "scale": 1.00}, # kingdom
+	{"wash": 0.00, "shift": 0.00, "scale": 1.00}, # empire
+	{"wash": 0.00, "shift": 0.00, "scale": 1.00}, # exploration
+	{"wash": 0.00, "shift": 0.00, "scale": 1.00}, # enlightenment
+	{"wash": 0.00, "shift": 0.00, "scale": 1.00}, # steam
+	{"wash": 0.00, "shift": 0.00, "scale": 1.00}, # electrical
+	{"wash": 0.00, "shift": 0.00, "scale": 1.00}, # atomic
+	{"wash": 0.00, "shift": 0.00, "scale": 1.00}, # information
+	{"wash": 0.00, "shift": 0.00, "scale": 1.00}, # intelligent
 ]
 
 # ── 派生度量 ────────────────────────────────────────────────────────────────
@@ -134,12 +136,12 @@ static func sheet_rect(viewport: Vector2, height: float) -> Rect2:
 ## 左右撕口留白：纸层比可见纸面宽出的那一圈。撕口从这条线往里咬，所以必须比最深
 ## 咬入（10px）宽，否则咬口会被纸层矩形硬切。
 static func tear_pad(viewport: Vector2) -> float:
-	return clampf(paper_width(viewport) * 0.030, 14.0, 32.0)
+	return clampf(paper_width(viewport) * 0.040, 16.0, 38.0)
 
 
 ## 上下撕口的最深咬入。与左右同量级 —— 手撕纸不会"两头撕得比两侧狠"。
 static func cap_depth(viewport: Vector2) -> float:
-	return tear_pad(viewport) * 0.72
+	return tear_pad(viewport) * 0.82
 
 
 ## 上下撕口留白：纸层在可见纸面之外多留的一圈，等于最深咬入 + 抗锯齿余量。
@@ -208,7 +210,7 @@ static func cover_title_size(paper_width_value: float) -> int:
 
 
 static func cover_seal_size(paper_width_value: float) -> float:
-	return clampf(paper_width_value * 0.170, 72.0, 168.0)
+	return clampf(paper_width_value * 0.190, 84.0, 184.0)
 
 
 static func cover_figure_size(paper_width_value: float) -> int:

@@ -7,38 +7,38 @@
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_paper"]
 shader = ExtResource("2")
-shader_parameter/paper_light = Color(0.972, 0.938, 0.856, 1)
-shader_parameter/paper_deep = Color(0.898, 0.836, 0.702, 1)
+shader_parameter/paper_light = Color(0.992, 0.979, 0.943, 1)
+shader_parameter/paper_deep = Color(0.948, 0.919, 0.838, 1)
 shader_parameter/fibre_tint = Color(1, 0.988, 0.962, 1)
-shader_parameter/mottle = 0.58
-shader_parameter/laid = 0.6
-shader_parameter/fibre = 0.62
-shader_parameter/speckle = 0.3
-shader_parameter/grain = 0.42
-shader_parameter/foxing = 0.36
-shader_parameter/vignette = 0.1
-shader_parameter/edge_shade = 0.6
-shader_parameter/grain_scale = 1.0
+shader_parameter/mottle = 0.30
+shader_parameter/laid = 0.08
+shader_parameter/fibre = 0.46
+shader_parameter/speckle = 0.22
+shader_parameter/grain = 0.72
+shader_parameter/foxing = 0.10
+shader_parameter/vignette = 0.04
+shader_parameter/edge_shade = 0.36
+shader_parameter/grain_scale = 1.25
 shader_parameter/settle = 1.0
 shader_parameter/seed = 0.0
 shader_parameter/rect_px = Vector2(880, 1080)
 shader_parameter/tear_pad = 16.0
-shader_parameter/tear_depth = 7.0
+shader_parameter/tear_depth = 13.0
 shader_parameter/has_mask = 0.0
 shader_parameter/mask_uv_rect = Vector4(0, 0, 1, 1)
 shader_parameter/mask_near_px = 12.0
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_desk"]
 shader = ExtResource("3")
-shader_parameter/grain = 0.03
-shader_parameter/vignette = 0.28
-shader_parameter/shade_color = Color(0.02, 0.014, 0.008, 1)
+shader_parameter/grain = 0.045
+shader_parameter/vignette = 0.22
+shader_parameter/shade_color = Color(0.035, 0.028, 0.023, 1)
 shader_parameter/seed = 0.0
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_shadow"]
 shader = ExtResource("4")
 shader_parameter/shade = Color(0.02, 0.014, 0.008, 1)
-shader_parameter/strength = 0.66
+shader_parameter/strength = 0.58
 shader_parameter/inset = 0.06
 shader_parameter/falloff = 2.2
 shader_parameter/has_mask = 0.0
@@ -64,7 +64,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-color = Color(0.129, 0.108, 0.086, 1)
+color = Color(0.17, 0.14, 0.115, 1)
 
 [node name="DeskGrain" type="ColorRect" parent="."]
 material = SubResource("ShaderMaterial_desk")

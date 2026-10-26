@@ -19,7 +19,7 @@ theme_override_constants/separation = 6
 
 [node name="Title" type="Label" parent="Margin/Root"]
 layout_mode = 2
-text = "国库资助修建"
+text = "国库资助"
 theme_type_variation = &"PKSectionTitle"
 
 [node name="SearchRow" type="HBoxContainer" parent="Margin/Root"]

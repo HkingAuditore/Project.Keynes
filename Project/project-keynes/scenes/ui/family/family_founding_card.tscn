@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/components/family_founding_card.gd" id="1_script"]
 [ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
+[ext_resource type="PackedScene" path="res://scenes/ui/badge_row.tscn" id="3_badges"]
 
 [node name="FamilyFoundingCard" type="PanelContainer"]
 layout_mode = 2
@@ -27,53 +28,131 @@ theme_override_constants/separation = 8
 [node name="Icon" parent="Margin/Column/Top" instance=ExtResource("2_icon")]
 layout_mode = 2
 unique_name_in_owner = true
-custom_minimum_size = Vector2(30, 30)
+custom_minimum_size = Vector2(34, 34)
+size_flags_vertical = 4
 
-[node name="Title" type="Label" parent="Margin/Column/Top"]
+[node name="TitleGroup" type="VBoxContainer" parent="Margin/Column/Top"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 1
+
+[node name="Title" type="Label" parent="Margin/Column/Top/TitleGroup"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+theme_type_variation = &"FamilyTitle"
+theme_override_font_sizes/font_size = 22
+
+[node name="Origin" type="Label" parent="Margin/Column/Top/TitleGroup"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+theme_type_variation = &"PKDossierCaption"
+theme_override_font_sizes/font_size = 13
+
+[node name="PopulationBlock" type="VBoxContainer" parent="Margin/Column/Top"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_constants/separation = 0
+
+[node name="PopulationIcon" parent="Margin/Column/Top/PopulationBlock" instance=ExtResource("2_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+size_flags_horizontal = 8
+mouse_filter = 2
+
+[node name="Population" type="Label" parent="Margin/Column/Top/PopulationBlock"]
+layout_mode = 2
+unique_name_in_owner = true
+text = "0"
+horizontal_alignment = 2
+theme_type_variation = &"FamilyPrestigeValue"
+theme_override_font_sizes/font_size = 25
+
+[node name="SummaryRule" type="HSeparator" parent="Margin/Column"]
+layout_mode = 2
+
+[node name="Summary" type="GridContainer" parent="Margin/Column"]
+layout_mode = 2
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 4
+columns = 2
+
+[node name="TraitIcon" parent="Margin/Column/Summary" instance=ExtResource("2_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+
+[node name="TraitSummary" type="Label" parent="Margin/Column/Summary"]
 layout_mode = 2
 unique_name_in_owner = true
 size_flags_horizontal = 3
 autowrap_mode = 3
-theme_type_variation = &"PKDossierSectionTitle"
-theme_override_font_sizes/font_size = 19
+theme_type_variation = &"FamilyStrongLabel"
+theme_override_font_sizes/font_size = 15
 
-[node name="Origin" type="Label" parent="Margin/Column"]
+[node name="EffectKickerIcon" parent="Margin/Column/Summary" instance=ExtResource("2_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+
+[node name="EffectPreview" type="RichTextLabel" parent="Margin/Column/Summary"]
 layout_mode = 2
 unique_name_in_owner = true
-autowrap_mode = 3
-theme_type_variation = &"PKDossierBody"
-
-[node name="TraitSummary" type="Label" parent="Margin/Column"]
-layout_mode = 2
-unique_name_in_owner = true
-autowrap_mode = 3
-theme_type_variation = &"PKDossierBody"
-
-[node name="EffectPreview" type="RichTextLabel" parent="Margin/Column"]
-layout_mode = 2
-unique_name_in_owner = true
+size_flags_horizontal = 3
 autowrap_mode = 3
 bbcode_enabled = true
 fit_content = true
 scroll_active = false
+theme_override_colors/default_color = Color(0.27, 0.19, 0.12, 1)
+theme_override_font_sizes/normal_font_size = 15
+theme_override_font_sizes/bold_font_size = 15
+
+[node name="MetaRow" type="HBoxContainer" parent="Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Meta" type="Label" parent="Margin/Column/MetaRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+autowrap_mode = 3
+theme_type_variation = &"PKDossierCaption"
+
+[node name="Badges" parent="Margin/Column/MetaRow" instance=ExtResource("3_badges")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+max_badge_width = 112.0
 
 [node name="Actions" type="HBoxContainer" parent="Margin/Column"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
+[node name="ActionsSpacer" type="Control" parent="Margin/Column/Actions"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+
 [node name="DetailsToggle" type="Button" parent="Margin/Column/Actions"]
 layout_mode = 2
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 32)
-size_flags_horizontal = 3
+custom_minimum_size = Vector2(30, 30)
+size_flags_horizontal = 0
 toggle_mode = true
-text = "查看详情"
+text = "▾"
 theme_type_variation = &"PKDossierChip"
 
 [node name="Choose" type="Button" parent="Margin/Column/Actions"]
 layout_mode = 2
 unique_name_in_owner = true
-custom_minimum_size = Vector2(130, 32)
+custom_minimum_size = Vector2(126, 30)
 text = "扶持此家族"
 theme_type_variation = &"PKPrimaryButton"
 
@@ -99,6 +178,7 @@ layout_mode = 2
 layout_mode = 2
 text = "家风与行为偏好"
 theme_type_variation = &"PKDossierSectionTitle"
+theme_override_font_sizes/font_size = 20
 
 [node name="TraitsList" type="VBoxContainer" parent="Margin/Column/DetailsClip/DetailsContent"]
 layout_mode = 2
@@ -120,12 +200,7 @@ unique_name_in_owner = true
 size_flags_horizontal = 3
 autowrap_mode = 3
 theme_type_variation = &"PKDossierSectionTitle"
-
-[node name="EffectHint" type="Label" parent="Margin/Column/DetailsClip/DetailsContent"]
-layout_mode = 2
-text = "威望晋升后生效 · 各级效果如下"
-autowrap_mode = 3
-theme_type_variation = &"PKDossierBody"
+theme_override_font_sizes/font_size = 20
 
 [node name="EffectContext" type="RichTextLabel" parent="Margin/Column/DetailsClip/DetailsContent"]
 layout_mode = 2

@@ -231,7 +231,7 @@ func _build_unexplored_model(cell: HexCell) -> Dictionary:
 	return {
 		"cell_index": int(cell.index),
 		"header": {
-			"kicker": "地块档案 · 区域 %d, %d" % [off.x + 1, off.y + 1],
+			"kicker": "区域 %d, %d" % [off.x + 1, off.y + 1],
 			"title": "未探索区域",
 			"subtitle": "尚未进入视野，地理、人口与市场皆不可知",
 		},
@@ -653,7 +653,7 @@ static func family_workspace_model(detail: Dictionary) -> Dictionary:
 		"kind": "family_workspace",
 		"row_id": String(detail.get("row_id", "")),
 		"header": {
-			"name": String(detail.get("name", row.get("name", "家族档案"))),
+			"name": String(detail.get("name", row.get("name", "家族"))),
 			"subtitle": String(detail.get("subtitle", "")),
 			"crest_icon": "family.workspace.crest",
 			"prestige_level": level,
@@ -2076,7 +2076,7 @@ func _build_header(
 	if not intel_visible:
 		meta.append("视野之外 · 仅存地理记忆")
 	return {
-		"kicker": "地块档案 · 区域 %d, %d" % [off.x + 1, off.y + 1],
+		"kicker": "区域 %d, %d" % [off.x + 1, off.y + 1],
 		"title": title,
 		"subtitle": " · ".join(meta),
 	}
@@ -2572,7 +2572,7 @@ static func _snapshot_pending(snapshot: Dictionary) -> bool:
 
 static func _pending_category() -> Dictionary:
 	return {"data_pending": true, "insights": [{"id": "snapshot_pending",
-		"text": "正在读取最新档案…", "accent": UITokens.TEXT_MUTED, "icon": "history"}]}
+		"text": "正在读取最新数据…", "accent": UITokens.TEXT_MUTED, "icon": "history"}]}
 
 
 func _population_snapshot(cell_idx: int, include_details: bool = true) -> Dictionary:
@@ -4273,7 +4273,7 @@ func trade_orders_model(cell_idx: int, good_id: String, offset: int = 0,
 		return _trade_orders_failure("贸易数据暂不可用。", "trade_order_api_unavailable")
 	var good_index := _trade_order_good_index(facade, good_id)
 	if good_index < 0:
-		return _trade_orders_failure("物资不在当前目录中。", "unknown_good")
+		return _trade_orders_failure("物资不在当前列表中。", "unknown_good")
 	var page_limit := clampi(limit, 1, 64)
 	var page_offset := maxi(0, offset)
 	var resolved_sample_day := sample_day if sample_day >= 0 else _current_sample_day()
@@ -4949,7 +4949,7 @@ func build_construction_options(cell_idx: int, search: String = "",
 	var economy = _generator.get_economy_facade()
 	var start: Dictionary = _generator.gameplay_start_report()
 	if country == null or economy == null or not bool(start.get("ok", false)):
-		return {"available": false, "message": "国家档案暂不可用。"}
+		return {"available": false, "message": "国家数据暂不可用。"}
 	var player_summary: Dictionary = country.cell_summary(int(start.get("cell", -1)))
 	var target_summary: Dictionary = country.cell_summary(cell_idx)
 	var player_handle := int(player_summary.get("country_handle", 0))

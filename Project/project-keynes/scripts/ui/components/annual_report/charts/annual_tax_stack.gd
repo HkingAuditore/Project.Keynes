@@ -31,12 +31,12 @@ func _draw() -> void:
 	var w: float = size.x
 	var y: float = 34.0
 	var ramp := [
-		Color(_accent.r, _accent.g, _accent.b, 0.86),
-		Color(_brass.r, _brass.g, _brass.b, 0.80),
-		Color(_ink.r, _ink.g, _ink.b, 0.62),
-		Color(_muted.r, _muted.g, _muted.b, 0.52),
-		Color(_ink.r, _ink.g, _ink.b, 0.30),
-		Color(_muted.r, _muted.g, _muted.b, 0.28),
+		UITokens.CHRONICLE_PENCIL_RED,
+		UITokens.CHRONICLE_PENCIL_GOLD,
+		UITokens.CHRONICLE_PENCIL_BLUE,
+		UITokens.CHRONICLE_PENCIL_GREEN,
+		Color(0.47, 0.30, 0.52),
+		Color(0.59, 0.43, 0.26),
 	]
 	var cursor: float = 0.0
 	var label_index := 0
@@ -46,7 +46,15 @@ func _draw() -> void:
 		var length: float = w * share
 		var drawn: float = length * _grow
 		if drawn > 0.4:
-			draw_rect(Rect2(cursor, y, maxf(1.0, drawn - 2.0), SEGMENT_HEIGHT), ramp[i % ramp.size()], true)
+			var segment := Rect2(cursor, y, maxf(1.0, drawn - 2.0), SEGMENT_HEIGHT)
+			draw_rect(segment, ramp[i % ramp.size()], true)
+			var hatch_x := segment.position.x + 4.0
+			while hatch_x < segment.end.x - 2.0:
+				draw_line(Vector2(hatch_x, segment.position.y + 2.0),
+					Vector2(maxf(segment.position.x, hatch_x - 9.0), segment.end.y - 2.0),
+					Color(1.0, 0.96, 0.85, 0.22), 1.0, true)
+				hatch_x += 10.0
+			draw_rect(segment, Color(_ink.r, _ink.g, _ink.b, 0.68), false, 1.7)
 		if share >= 0.02 and _grow > 0.75:
 			var center: float = cursor + length * 0.5
 			var above: bool = label_index % 2 == 0

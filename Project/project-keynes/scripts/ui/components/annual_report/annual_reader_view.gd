@@ -135,7 +135,7 @@ func _build_chrome() -> void:
 	_older.tooltip_text = "载入更早的年度报告"
 	var copy := _link_button("复制全文", func() -> void: copy_requested.emit(), &"confirm")
 	copy.tooltip_text = "把完整报告复制到剪贴板（Ctrl+Shift+C）"
-	var close := _link_button("合卷", func() -> void: close_requested.emit(), &"close")
+	var close := _link_button("关闭", func() -> void: close_requested.emit(), &"close")
 	close.tooltip_text = "关闭报告并恢复此前的时间状态"
 
 
@@ -213,7 +213,7 @@ func present(model: Dictionary) -> void:
 	_rail.set_chapters(titles)
 	_rail.set_current(-1)
 	var year := int(_model.get("year", 1))
-	_head.set_texts("第 %d 年 · 国家档案" % year, "")
+	_head.set_texts("第 %d 年" % year, "")
 	_head.set_ink(UITokens.CHRONICLE_MUTED)
 	_scroll.scroll_vertical = 0
 	_refresh_page_label()
@@ -478,7 +478,7 @@ func _update_chapter(index: int, force: bool = false) -> void:
 	var right := ""
 	if index >= 0 and index < chapters.size():
 		right = "%02d  %s" % [index + 1, String(chapters[index].get("title", ""))]
-	_head.set_texts("第 %d 年 · 国家档案" % year, right)
+	_head.set_texts("第 %d 年" % year, right)
 	_refresh_page_label()
 
 

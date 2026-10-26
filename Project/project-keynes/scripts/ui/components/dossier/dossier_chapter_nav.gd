@@ -115,7 +115,9 @@ func _gui_input(event: InputEvent) -> void:
 			_hover = hit
 			if hit >= 0:
 				var chapter: Dictionary = chapters[hit]
-				tooltip_text = "%s\n%s" % [String(chapter.label), String(chapter.get("question", ""))]
+				var question := String(chapter.get("question", "")).strip_edges()
+				tooltip_text = String(chapter.label) if question.is_empty() \
+					else "%s\n%s" % [String(chapter.label), question]
 			else:
 				tooltip_text = ""
 			mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if hit >= 0 \

@@ -38,7 +38,7 @@ func _ready() -> void:
 	_calendar_icon = %CalendarIcon
 	_date_label = %DateLabel
 	_date_button = $Margin/Row/DateBlock as Button
-	_date_button.tooltip_text = "年度纪事 · 查阅国家历年发展报告"
+	_date_button.tooltip_text = "查阅历年发展报告"
 	_date_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	_date_button.focus_mode = Control.FOCUS_ALL
 	_date_button.pressed.connect(func() -> void: annual_history_requested.emit())

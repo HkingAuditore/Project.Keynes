@@ -28,12 +28,12 @@ func _draw() -> void:
 	var alpha: float = 1.0 if _complete else 0.34
 	var ink := Color(_ink.r, _ink.g, _ink.b, 0.55 * alpha)
 
-	draw_line(Vector2(0.0, axis_y), Vector2(w, axis_y), ink, 1.0, true)
+	draw_line(Vector2(0.0, axis_y), Vector2(w, axis_y), ink, 2.8, true)
 	for band in bands:
 		var left: float = w * float(band.min) / 100.0
 		var right: float = w * float(band.max) / 100.0
 		# 段端刻度
-		draw_line(Vector2(left, axis_y - 4.0), Vector2(left, axis_y + 4.0), ink, 1.0, true)
+		draw_line(Vector2(left, axis_y - 6.0), Vector2(left, axis_y + 6.0), ink, 2.0, true)
 		# 段名居中在段内；E 段太窄就把字放到右侧。
 		var label: String = String(band.grade)
 		var label_size := 13
@@ -46,14 +46,15 @@ func _draw() -> void:
 			while x < right:
 				draw_line(Vector2(x, axis_y - 8.0), Vector2(minf(x + 6.0, right), axis_y), Color(_accent.r, _accent.g, _accent.b, 0.26 * alpha), 1.0, true)
 				x += 7.0
-	draw_line(Vector2(w, axis_y - 4.0), Vector2(w, axis_y + 4.0), ink, 1.0, true)
+	draw_line(Vector2(w, axis_y - 6.0), Vector2(w, axis_y + 6.0), ink, 2.0, true)
 
 	if not _complete:
 		_caption(Vector2(0.0, axis_y - 14.0), "统计未满一年，不评级")
 		return
 
 	var cursor: float = w * _score / 100.0 * _grow
-	draw_line(Vector2(cursor, axis_y - 16.0), Vector2(cursor, axis_y + 6.0), _accent, 2.0, true)
+	draw_line(Vector2(cursor, axis_y - 18.0), Vector2(cursor, axis_y + 7.0),
+		UITokens.CHRONICLE_PENCIL_RED, 4.0, true)
 	draw_colored_polygon(PackedVector2Array([
 		Vector2(cursor - 4.0, axis_y + 6.0), Vector2(cursor + 4.0, axis_y + 6.0), Vector2(cursor, axis_y + 11.0),
 	]), _accent)

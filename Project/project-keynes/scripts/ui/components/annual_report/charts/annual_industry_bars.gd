@@ -48,13 +48,34 @@ func _draw() -> void:
 		var value: float = float(row.get("value", 0.0))
 		var length: float = track_len * clampf(value / max_value, 0.0, 1.0) * _grow
 		if length > 0.6:
-			draw_line(Vector2(track_left, y - 2.0), Vector2(track_left + length, y - 2.0), Color(_accent.r, _accent.g, _accent.b, 0.88), 8.0, true)
+			var colors := [UITokens.CHRONICLE_PENCIL_RED, UITokens.CHRONICLE_PENCIL_GOLD,
+				UITokens.CHRONICLE_PENCIL_BLUE, UITokens.CHRONICLE_PENCIL_GREEN]
+			var bar_color: Color = colors[i % colors.size()]
+			var bar := Rect2(track_left, y - 7.0, length, 12.0)
+			draw_colored_polygon(PackedVector2Array([
+				bar.position + Vector2(3.0, 0.0),
+				Vector2(bar.end.x, bar.position.y + 1.0),
+				bar.end - Vector2(2.0, 1.0),
+				Vector2(bar.position.x + 1.0, bar.end.y),
+			]), bar_color)
+			var hatch_x := bar.position.x + 5.0
+			while hatch_x < bar.end.x - 2.0:
+				draw_line(Vector2(hatch_x, bar.position.y + 1.0),
+					Vector2(maxf(bar.position.x, hatch_x - 7.0), bar.end.y - 1.0),
+					Color(1.0, 0.96, 0.84, 0.24), 1.0, true)
+				hatch_x += 8.0
+			draw_line(bar.position, Vector2(bar.end.x, bar.position.y),
+				Color(_ink.r, _ink.g, _ink.b, 0.78), 2.0, true)
+			draw_line(Vector2(bar.end.x, bar.position.y + 2.0), bar.end,
+				Color(_ink.r, _ink.g, _ink.b, 0.50), 1.2, true)
 		var secondary: float = float(row.get("secondary", 0.0))
 		if secondary > 0.0:
 			var prior: float = track_len * clampf(secondary / max_value, 0.0, 1.0) * _grow
-			draw_line(Vector2(track_left, y + 3.0), Vector2(track_left + prior, y + 3.0), Color(_brass.r, _brass.g, _brass.b, 0.75), 1.5, true)
+			draw_line(Vector2(track_left, y + 8.0), Vector2(track_left + prior, y + 8.0),
+				Color(UITokens.CHRONICLE_PENCIL_GREEN.r, UITokens.CHRONICLE_PENCIL_GREEN.g,
+					UITokens.CHRONICLE_PENCIL_GREEN.b, 0.80), 2.0, true)
 		_right_text(w, y + 2.0, UITokens.format_compact_number_cn(value), 19, _ink)
 
 	if _rows.size() > _cap:
 		_caption(Vector2(track_left, top + 34.0 * float(shown) + 8.0), "另有 %d 项未列入图内，见本章明细表" % (_rows.size() - _cap))
-	_caption(Vector2(0.0, 14.0), "朱红为增加值，铜色细线为实付工资，同一比例尺")
+	_caption(Vector2(0.0, 14.0), "彩条为增加值，绿线为实付工资，同一比例尺")

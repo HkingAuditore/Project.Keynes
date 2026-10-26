@@ -178,12 +178,9 @@ func _ready() -> void:
 	_mode_nav.custom_minimum_size = Vector2(MODE_NAV_WIDTH, DossierChapterNav.HEIGHT)
 	_mode_nav.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	_mode_nav.set_chapters([
-		{"id": "available", "label": "可研究", "icon": &"technology.state.available",
-			"question": "现在能研究什么、正在研究什么"},
-		{"id": "focus", "label": "科技树", "icon": &"country.technology",
-			"question": "前置、后继与研究路线"},
-		{"id": "overview", "label": "总览", "icon": &"technology.milestone",
-			"question": "各领域在各时代的掌握程度"},
+		{"id": "available", "label": "可研究", "icon": &"technology.state.available", "question": ""},
+		{"id": "focus", "label": "科技树", "icon": &"country.technology", "question": ""},
+		{"id": "overview", "label": "总览", "icon": &"technology.milestone", "question": ""},
 	], "available")
 	_mode_nav.chapter_selected.connect(_on_mode_chapter_selected)
 	for domain in range(DOMAIN_COUNT):

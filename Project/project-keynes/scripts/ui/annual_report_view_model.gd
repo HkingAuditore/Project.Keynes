@@ -13,19 +13,8 @@ const ERA_NAMES := ["石器时代", "农耕时代", "王国时代", "帝国时�
 const TIERS := ["无人区", "聚落", "乡村", "小镇", "县城", "城市", "都市", "特大都市"]
 const CHAPTER_TITLES := ["年度总述", "国民经济", "人口与民生", "产业与建设", "城乡与国土", "科技与文明", "市场与财政", "资源与年度问题", "发展考核"]
 const CHAPTER_ICONS := [&"country.economy", &"country.economy", &"family.house", &"economy.building", &"country.politics", &"country.technology", &"economy.building.transport", &"geo", &"technology.milestone"]
-## 每章唯一的一句话说明位：只交代「这一章是什么数据」，不解释口径、不给建议。
-## 渲染器按实际行数给高度（一行），写长了会被截断，这是刻意的上限。
-const CHAPTER_LEADS := [
-	"本年总量与上年对照",
-	"全年经营流量与年末居民资金",
-	"年末人口、全年平均满意度与职业分布",
-	"年末建筑存量与本年竣工、拆除",
-	"年末聚落等级与地块归属",
-	"年末文明阶段与本年新增科技",
-	"本年跨国成交、税种收入与年末国库",
-	"本年资源提取与气候损失",
-	"十项评分分解与最终评级",
-]
+## Chapter titles, number bands, charts and ledgers carry the data themselves.
+const CHAPTER_LEADS := ["", "", "", "", "", "", "", "", ""]
 const SCORE_LABELS := ["综合满意度", "基本需求满足", "就业状况", "产业有效运转", "GDP 增长", "人均 GDP 增长", "人口增长", "建筑增长", "聚落发展", "科技进步"]
 const SCORE_WEIGHTS := [20.0, 20.0, 15.0, 15.0, 8.0, 6.0, 5.0, 3.0, 3.0, 5.0]
 const GRADE_BANDS := [

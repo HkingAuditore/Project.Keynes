@@ -25,7 +25,7 @@ grow_vertical = 2
 theme_override_constants/separation = 8
 
 [node name="TopBar" type="PanelContainer" parent="Root"]
-custom_minimum_size = Vector2(0, 76)
+custom_minimum_size = Vector2(0, 72)
 layout_mode = 2
 theme_type_variation = &"PKWorkspaceToolbar"
 
@@ -35,7 +35,7 @@ theme_override_constants/separation = 14
 
 [node name="PointScroll" type="Control" parent="Root/TopBar/Row"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(380, 64)
+custom_minimum_size = Vector2(360, 56)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 4
@@ -93,9 +93,10 @@ theme_override_constants/separation = 4
 
 [node name="SlotCounts" type="Label" parent="Root/Body/SlotColumn/DeckTable/DeckBody/DeckScroll/DeckColumn"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 size_flags_horizontal = 0
-text = "意识形态"
+text = ""
 theme_type_variation = &"PKPaperTag"
 
 [node name="IdeologySlots" type="VBoxContainer" parent="Root/Body/SlotColumn/DeckTable/DeckBody/DeckScroll/DeckColumn"]
@@ -146,7 +147,7 @@ theme_override_constants/separation = 8
 
 [node name="CollectionHeading" type="VBoxContainer" parent="Root/Body/CollectionColumn"]
 layout_mode = 2
-theme_override_constants/separation = 4
+theme_override_constants/separation = 0
 
 [node name="HeadingTop" type="HBoxContainer" parent="Root/Body/CollectionColumn/CollectionHeading"]
 layout_mode = 2
@@ -168,7 +169,7 @@ custom_minimum_size = Vector2(116, 0)
 layout_mode = 2
 
 [node name="TabsScroll" type="ScrollContainer" parent="Root/Body/CollectionColumn/CollectionHeading"]
-custom_minimum_size = Vector2(0, 32)
+custom_minimum_size = Vector2(0, 28)
 layout_mode = 2
 vertical_scroll_mode = 0
 
@@ -245,8 +246,8 @@ horizontal_scroll_mode = 0
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/h_separation = 12
-theme_override_constants/v_separation = 12
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 8
 
 [node name="OfferLayer" type="Control" parent="."]
 unique_name_in_owner = true

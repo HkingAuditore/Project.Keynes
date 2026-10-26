@@ -6,6 +6,7 @@ var _name: Label
 var _badges: BadgeRow
 var _effect: Label
 var _population: Label
+var _population_icon: IconBadge
 var _family_name := ""
 var _hovered := false
 var _prestige_level := -1
@@ -14,6 +15,8 @@ var _tag_color := UITokens.DOSSIER_BRASS
 var _bar_ratio := 0.0
 var _bar_color := UITokens.DOSSIER_VERDIGRIS
 var _empty_style := StyleBoxEmpty.new()
+var _preview_loaded := false
+var _base_summary := ""
 
 
 func _ready() -> void:
@@ -24,6 +27,7 @@ func _ready() -> void:
 	_badges = get_node("Margin/Line/Info/Badges") as BadgeRow
 	_effect = get_node("Margin/Line/Info/Effect") as Label
 	_population = get_node("Margin/Line/Population") as Label
+	_population_icon = get_node_or_null("Margin/Line/PopulationIcon") as IconBadge
 	toggle_mode = true
 	focus_mode = Control.FOCUS_NONE
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
@@ -32,6 +36,9 @@ func _ready() -> void:
 	_population.add_theme_font_override("font", UITokens.font_with_weight(650))
 	_population.add_theme_font_size_override("font_size", 15)
 	_population.add_theme_color_override("font_color", UITokens.ARCHIVE_INK)
+	if _population_icon != null:
+		_population_icon.set_semantic(&"family.metric.population", UITokens.DOSSIER_OXBLOOD)
+	_name.add_theme_font_size_override("font_size", 15)
 	mouse_entered.connect(func() -> void:
 		_hovered = true
 		_sync_visual_state()
@@ -69,14 +76,18 @@ func set_row(data: Dictionary) -> void:
 	_badges.mouse_filter = Control.MOUSE_FILTER_PASS
 	_badges.set_badges(badges)
 	var effect := String(data.get("effect", "")).strip_edges()
-	_effect.text = effect
+	_effect.text = _metric_copy(effect)
 	_effect.visible = not effect.is_empty()
+	_base_summary = effect
+	_effect.visible = true
 	var pop_text := String(data.get("population_text", ""))
 	if pop_text.is_empty():
-		pop_text = "%s 人" % UITokens.format_compact_number_cn(
+		pop_text = UITokens.format_compact_number_cn(
 			float(data.get("population", 0)), 0)
 	_population.text = pop_text
-	_population.tooltip_text = String(data.get("population_tooltip", "当地人口：%s" % _population.text))
+	_population.tooltip_text = ""
+	if _population_icon != null:
+		_population_icon.visible = not pop_text.is_empty()
 	tooltip_text = String(data.get("tooltip", ""))
 	_tag_text = String(data.get("tag_text", ""))
 	_tag_color = data.get("tag_color", accent) as Color
@@ -95,12 +106,15 @@ func set_compact_summary(data: Dictionary) -> void:
 	custom_minimum_size.y = 48.0
 	focus_mode = Control.FOCUS_ALL
 	_icon.visible = true
-	_icon.custom_minimum_size = Vector2(26.0, 26.0)
+	_icon.custom_minimum_size = Vector2(24.0, 24.0)
 	_badges.visible = false
 	_name.add_theme_font_size_override("font_size", 14)
 	_population.add_theme_font_size_override("font_size", 14)
 	_population.add_theme_color_override("font_color", UITokens.ARCHIVE_INK)
 	_population.custom_minimum_size.x = 56.0
+	if _population_icon != null:
+		_population_icon.custom_minimum_size = Vector2(16.0, 16.0)
+		_population_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_effect.add_theme_font_size_override("font_size", 12)
 	_effect.autowrap_mode = TextServer.AUTOWRAP_OFF
 	_effect.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
@@ -109,20 +123,91 @@ func set_compact_summary(data: Dictionary) -> void:
 	margin.add_theme_constant_override("margin_left", 10)
 	margin.add_theme_constant_override("margin_top", 4)
 	margin.add_theme_constant_override("margin_right", 10)
-	margin.add_theme_constant_override("margin_bottom", 6)
+	margin.add_theme_constant_override("margin_bottom", 5)
+	# The compact directory reserves its second line for family identity, not a
+	# floating prestige chip that can collide with long names.
+	_tag_text = ""
+	_preview_loaded = false
 	_sync_visual_state()
 	queue_redraw()
+
+
+func apply_preview_summary(traits: Dictionary, effects: Dictionary) -> void:
+	if _name == null:
+		_ready()
+	_preview_loaded = true
+	var trait_names: PackedStringArray = traits.get("display_names", PackedStringArray())
+	var effect_names: PackedStringArray = effects.get("effect_display_names", PackedStringArray())
+	var current_copy: PackedStringArray = effects.get("effect_current_descriptions",
+		effects.get("effect_descriptions", PackedStringArray()))
+	var parts := PackedStringArray()
+	if not trait_names.is_empty():
+		parts.append(_join_head(trait_names, 2))
+	if not effect_names.is_empty():
+		var effect_text := String(effect_names[0])
+		if not current_copy.is_empty():
+			effect_text += " · " + _short_effect_copy(String(current_copy[0]))
+		parts.append(effect_text)
+	if not parts.is_empty():
+		_effect.text = _metric_copy(" · ".join(parts))
+		_effect.visible = true
+	# The right-hand dossier is the single detailed reading surface. Avoid a
+	# second native tooltip that can cover it and repeat the same family facts.
+	tooltip_text = ""
+	_sync_visual_state()
+	queue_redraw()
+
+
+func has_preview_summary() -> bool:
+	return _preview_loaded
+
+
+static func _join_head(values: PackedStringArray, limit: int) -> String:
+	var head := PackedStringArray()
+	for index in mini(values.size(), limit):
+		var value := String(values[index]).strip_edges()
+		if not value.is_empty():
+			head.append(value)
+	return " · ".join(head)
+
+
+static func _short_effect_copy(value: String) -> String:
+	var clean := value.strip_edges()
+	var label_end := clean.find("：")
+	if clean.begins_with("当地当前威望档") and label_end >= 0:
+		clean = clean.substr(label_end + 1).strip_edges()
+	if clean.length() > 28:
+		clean = clean.substr(0, 27) + "…"
+	return clean
 
 
 func _sync_visual_state() -> void:
 	if _name == null or _effect == null or _population == null:
 		return
 	var active := button_pressed and toggle_mode
+	_effect.visible = true
 	_name.add_theme_color_override("font_color",
-		UITokens.DOSSIER_OXBLOOD if active else UITokens.ARCHIVE_INK)
+		UITokens.ARCHIVE_PAPER_LIGHT if active else UITokens.ARCHIVE_INK)
 	_effect.add_theme_color_override("font_color",
-		UITokens.DOSSIER_INK_SOFT if active else UITokens.ARCHIVE_INK_MUTED)
-	_population.add_theme_color_override("font_color", UITokens.ARCHIVE_INK)
+		Color(UITokens.ARCHIVE_PAPER_LIGHT, 0.86) if active else UITokens.ARCHIVE_INK_MUTED)
+	_population.add_theme_color_override("font_color",
+		UITokens.ARCHIVE_PAPER_LIGHT if active else UITokens.DOSSIER_OXBLOOD)
+	if _population_icon != null:
+		_population_icon.modulate = Color.WHITE if active else Color(1.0, 1.0, 1.0, 0.88)
+	if not _preview_loaded:
+		_effect.text = _metric_copy(_default_compact_effect())
+	_sync_tooltip()
+
+
+func _metric_copy(value: String) -> String:
+	var parts := value.split("·", false)
+	if parts.size() != 3:
+		return value
+	return "   ".join(parts)
+
+
+func _sync_tooltip() -> void:
+	tooltip_text = ""
 
 
 func _draw() -> void:
@@ -135,8 +220,8 @@ func _draw() -> void:
 		bg = Color(UITokens.DOSSIER_PAPER_DEEP, 0.52)
 		border = Color(UITokens.DOSSIER_RULE, 0.28)
 	elif active:
-		bg = Color(0.975, 0.90, 0.745, 0.98)
-		border = UITokens.DOSSIER_OXBLOOD
+		bg = UITokens.DOSSIER_OXBLOOD
+		border = UITokens.DOSSIER_BRASS
 		border_w = 1.5
 	elif _hovered or has_focus():
 		bg = Color(0.985, 0.94, 0.83, 0.96)
@@ -147,7 +232,7 @@ func _draw() -> void:
 
 	if active:
 		draw_rect(Rect2(Vector2(1.0, 2.0), Vector2(4.0, maxf(2.0, size.y - 4.0))),
-			UITokens.DOSSIER_OXBLOOD, true)
+			UITokens.DOSSIER_BRASS, true)
 	elif _hovered or has_focus():
 		draw_rect(Rect2(Vector2(1.0, 4.0), Vector2(3.0, maxf(2.0, size.y - 8.0))),
 			UITokens.DOSSIER_BRASS, true)
@@ -166,7 +251,7 @@ func _draw() -> void:
 		draw_rect(Rect2(Vector2(bar_left, bar_y), Vector2(bar_w * _bar_ratio, 2.2)),
 			Color(fill_c, 0.88), true)
 
-	if not _tag_text.is_empty() and _name != null and size.x >= 200.0:
+	if not _tag_text.is_empty() and _name != null and size.x >= 200.0 and not active:
 		var font := UITokens.dossier_font("sans_strong")
 		var name_w := font.get_string_size(_family_name, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 14).x
 		var tag_w := font.get_string_size(_tag_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 10).x + 10.0
@@ -178,3 +263,7 @@ func _draw() -> void:
 			draw_rect(pill_rect, Color(_tag_color, 0.55), false, 1.0)
 			draw_string(font, Vector2(tag_x + 5.0, 17.5), _tag_text,
 				HORIZONTAL_ALIGNMENT_LEFT, -1.0, 10, _tag_color.lerp(UITokens.DOSSIER_INK, 0.25))
+
+
+func _default_compact_effect() -> String:
+	return _base_summary

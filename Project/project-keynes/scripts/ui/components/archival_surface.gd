@@ -6,7 +6,7 @@ class_name ArchivalSurface
 ## command/event wiring.
 
 @onready var _title: Label = %Title
-@onready var _subtitle: Label = %Subtitle
+@onready var _subtitle: Label = get_node_or_null("%Subtitle") as Label
 @onready var _icon: TextureRect = %Icon
 @onready var _body: VBoxContainer = %Body
 @onready var _frame: PanelContainer = %Frame

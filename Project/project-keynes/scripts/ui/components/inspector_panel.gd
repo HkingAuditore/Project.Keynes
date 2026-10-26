@@ -128,7 +128,7 @@ func _ready() -> void:
 			or _construction_picker == null:
 		push_error("InspectorPanel 必须通过 inspector_panel.tscn 实例化。")
 		return
-	IconButton.apply(close_button, &"action.close", IconButton.SMALL, "关闭地块档案")
+	IconButton.apply(close_button, &"action.close", IconButton.SMALL, "关闭")
 	close_button.pressed.connect(func() -> void:
 		if family_workspace_open():
 			close_detail(false)
@@ -161,7 +161,7 @@ func _ready() -> void:
 			family_colonization_requested.emit(family_handle, source_cell))
 	var construction_back := get_node(
 		"Margin/Split/DetailShell/ConstructionPane/Header/BackButton") as Button
-	IconButton.apply(construction_back, &"action.back", IconButton.SMALL, "返回地块档案")
+	IconButton.apply(construction_back, &"action.back", IconButton.SMALL, "返回")
 	construction_back.pressed.connect(close_detail)
 	_construction_picker.page_requested.connect(
 		func(search: String, offset: int) -> void:
@@ -297,8 +297,8 @@ func visible_node_count() -> int:
 
 
 func _apply_header(header: Dictionary, _live_patch: bool) -> void:
-	_kicker_label.text = String(header.get("kicker", "地块档案"))
-	_title_label.text = String(header.get("title", "地块档案"))
+	_kicker_label.text = String(header.get("kicker", ""))
+	_title_label.text = String(header.get("title", "地块"))
 	_title_label.tooltip_text = _title_label.text
 	_subtitle_label.text = String(header.get("subtitle", ""))
 	_subtitle_label.tooltip_text = _subtitle_label.text

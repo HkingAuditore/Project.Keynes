@@ -16,7 +16,7 @@ class_name AnnualCoverView
 const InkBleedShader = preload("res://shaders/ui/annual_ink_bleed.gdshader")
 const CoverWashShader = preload("res://shaders/ui/annual_cover_wash.gdshader")
 const SealPressShader = preload("res://shaders/ui/annual_seal_press.gdshader")
-const SealTexture = preload("res://assets/ui/annual_chronicle/annual_seal.png")
+const SealTexture = preload("res://assets/ui/annual_chronicle/chronicle_pencil_badge.png")
 const RewardMoteScene = preload("res://scenes/ui/annual_report/reward_mote.tscn")
 
 signal begin_requested()
@@ -72,6 +72,7 @@ func _build() -> void:
 	add_child(_art_clip)
 	_art = TextureRect.new()
 	_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_art.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_art.stretch_mode = TextureRect.STRETCH_SCALE
 	_art_clip.add_child(_art)
@@ -137,6 +138,7 @@ func _build() -> void:
 	_seal_art.texture = SealTexture
 	_seal_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_seal_art.stretch_mode = TextureRect.STRETCH_SCALE
+	_seal_art.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	_seal_art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_seal_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_seal.add_child(_seal_art)
@@ -146,6 +148,10 @@ func _build() -> void:
 	_seal_material.set_shader_parameter("ring", 0.0)
 	_seal_material.set_shader_parameter("glint", -1.0)
 	_seal_material.set_shader_parameter("ink", UITokens.CHRONICLE_RED)
+	# The generated rosette already carries red ink and gold foil. Running it
+	# through the old red seal shader flattens both into a dark maroon blob.
+	_seal_material.set_shader_parameter("grit", 0.0)
+	_seal_material.set_shader_parameter("density", 1.0)
 	_seal_art.material = _seal_material
 	_grade = _label("—", 72, UITokens.CHRONICLE_RED, "display")
 	_grade.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -175,7 +181,7 @@ func _build() -> void:
 		add_child(delta)
 		_deltas.append(delta)
 
-	_cue = _label("↓  向下卷动，展开正文", 13, UITokens.CHRONICLE_MUTED, "label")
+	_cue = _label("↓ 展开正文", 13, UITokens.CHRONICLE_MUTED, "label")
 	_cue.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_cue)
 
@@ -216,7 +222,7 @@ func _apply_model() -> void:
 		return
 	var available: bool = not _model.is_empty() and bool(_model.get("available", false))
 	var complete: bool = bool(_model.get("complete", false))
-	_kicker.text = "第 %d 年  ·  国家档案" % int(_model.get("year", 1))
+	_kicker.text = "第 %d 年" % int(_model.get("year", 1))
 	_country.text = String(_model.get("country_name", "本国"))
 	_country.tooltip_text = _country.text
 	_grade.text = String(_model.get("grade", "—"))
@@ -228,6 +234,17 @@ func _apply_model() -> void:
 	if not complete:
 		_score.text = "—"
 	_art.texture = _cover_texture()
+	if _art.texture != null:
+		# The generated illustration has an irregular transparent silhouette.
+		# Use its actual alpha bounds rather than stretching its square canvas.
+		var image := _art.texture.get_image()
+		if image != null and not image.is_empty():
+			var bounds := image.get_used_rect()
+			if bounds.size.x > 1 and bounds.size.y > 1:
+				var clipped := AtlasTexture.new()
+				clipped.atlas = _art.texture
+				clipped.region = Rect2(bounds)
+				_art.texture = clipped
 	var items: Array = _model.get("kpis", [])
 	for i in _numerals.size():
 		var has_item: bool = i < items.size()
@@ -246,6 +263,9 @@ func _apply_model() -> void:
 
 
 func _cover_texture() -> Texture2D:
+	var pencil_path := "res://assets/ui/annual_chronicle/chronicle_pencil_scene.png"
+	if ResourceLoader.exists(pencil_path):
+		return load(pencil_path) as Texture2D
 	var path := String(_model.get("art_path", "res://assets/ui/annual_chronicle/stone.png"))
 	var crop := path.trim_suffix(".png") + "_cutout.tres"
 	if ResourceLoader.exists(crop):
@@ -276,7 +296,7 @@ func _relayout() -> void:
 	var width: float = AnnualReportTokens.paper_width(viewport)
 	var pad: float = AnnualReportTokens.paper_padding(viewport)
 	var inner: float = maxf(96.0, width - pad * 2.0)
-	var art_height: float = clampf(viewport.y * 0.345, 150.0, 420.0)
+	var art_height: float = clampf(viewport.y * 0.285, 134.0, 356.0)
 	var title_size: int = AnnualReportTokens.cover_title_size(width)
 	var country_size: int = int(clampf(width * 0.034, 16.0, 29.0))
 	var seal: float = AnnualReportTokens.cover_seal_size(width)
@@ -343,30 +363,35 @@ func _relayout() -> void:
 		_captions[i].visible = figures_shown
 		_deltas[i].visible = figures_shown and not _deltas[i].text.is_empty()
 
-	# ── 版画：左右贴纸缘，下沿化进纸里 ──
-	_art_clip.position = Vector2.ZERO
-	_art_clip.size = Vector2(width, art_height)
+	# ── 剪纸题图：留出纸边，让插画自身的不规则轮廓完整可见 ──
+	# Let the illustrated cutout overlap the paper margin. A small print inside
+	# a wide sheet reads like a stock image; a cropped object entering from the
+	# top edge reads like a deliberately pasted paper illustration.
+	_art_clip.position = Vector2(pad * 0.12, 5.0)
+	_art_clip.size = Vector2(width - pad * 0.24, art_height - 10.0)
 	var art_size := Vector2(1395.0, 921.0)
 	if _art.texture != null:
 		var texture_size: Vector2 = _art.texture.get_size()
 		if texture_size.x > 1.0 and texture_size.y > 1.0:
 			art_size = texture_size
 	var era: Dictionary = AnnualReportTokens.era_layout(int(_model.get("era_index", 0)))
-	var art_scale: float = maxf(width / art_size.x, art_height / art_size.y) * float(era.get("scale", 1.0))
+	var art_scale: float = minf(_art_clip.size.x / art_size.x,
+		_art_clip.size.y / art_size.y) * float(era.get("scale", 1.0))
+	# Width-led scaling gives the hand-drawn village a stronger compositional
+	# anchor on the cover; the composition may crop slightly into the torn edges.
+	art_scale = maxf(art_scale, minf(_art_clip.size.x / art_size.x,
+		_art_clip.size.y / art_size.y) * 1.16)
 	var scaled: Vector2 = art_size * art_scale
-	_art.position = Vector2((width - scaled.x) * 0.5, (art_height - scaled.y) * 0.42)
+	_art.position = Vector2((_art_clip.size.x - scaled.x) * 0.56,
+		(_art_clip.size.y - scaled.y) * 0.42)
 	_art.size = scaled
-	# 下沿不能用一块纸色矩形盖住 —— 纸本身是有纹理的，盖上去就是一块平斑。
-	# 改成把版画自己的 alpha 化掉，让底下的纸真的露出来。
-	var clip_bottom: float = art_height - _art.position.y
-	_art_material.set_shader_parameter("fade_from", clip_bottom - art_height * 0.62)
-	_art_material.set_shader_parameter("fade_to", clip_bottom - art_height * 0.02)
+	# 彩铅剪纸本身已有白纸边；不再用版画墨迹羽化把它融成一张旧插图。
+	_art_material.set_shader_parameter("fade_from", art_height + 1000.0)
+	_art_material.set_shader_parameter("fade_to", art_height + 1001.0)
+	_art_material.set_shader_parameter("noise_amount", 0.03)
 	_wash.position = Vector2.ZERO
-	_wash.size = _art_clip.size
-	# 纸雾改成"上浓下透"：给版画压一层暖调，越往下越让位给纸。
-	_wash_material.set_shader_parameter("flip", 1.0)
-	_wash_material.set_shader_parameter("feather", 0.95)
-	_wash_material.set_shader_parameter("strength", clampf(0.34 + float(era.get("wash", 0.70)) * 0.10, 0.34, 0.46))
+	_wash.size = Vector2.ZERO
+	_wash_material.set_shader_parameter("strength", 0.0)
 
 	# ── 依链式布局落位 ──
 	# 链：0 眉题 · 1 报头 · 2 短线 · 3 国名 · 4 印章 · [5 大数] · 末位 提示
@@ -385,7 +410,8 @@ func _relayout() -> void:
 	cursor += float(heights[1]) + gap * float(weights[2])
 
 	_rule.position = Vector2(pad, cursor)
-	_rule.size = Vector2(clampf(float(title_size) * 1.55, 64.0, 240.0), float(heights[2]))
+	_rule.size = Vector2(clampf(float(title_size) * 1.55, 64.0, 240.0), 3.0)
+	_rule.color = UITokens.CHRONICLE_PENCIL_RED
 	cursor += float(heights[2]) + gap * float(weights[3])
 
 	_country.add_theme_font_size_override("font_size", country_size)
@@ -395,18 +421,21 @@ func _relayout() -> void:
 	cursor += float(heights[3]) + gap * float(weights[4])
 
 	_seal.position = Vector2(pad, cursor)
-	_seal.size = Vector2(seal, seal)
+	_seal.size = Vector2(seal * 1.06, seal * 0.80)
 	_seal.pivot_offset = _seal.size * 0.5
-	_grade.add_theme_font_size_override("font_size", int(round(seal * 0.42)))
-	var score_size: int = int(clampf(seal * 0.36, 22.0, 54.0))
+	_grade.add_theme_font_size_override("font_size", int(round(seal * 0.30)))
+	_grade.add_theme_color_override("font_color", Color(0.99, 0.93, 0.73))
+	_grade.add_theme_color_override("font_outline_color", Color(0.23, 0.13, 0.08, 0.92))
+	_grade.add_theme_constant_override("outline_size", 5)
+	var score_size: int = int(clampf(seal * 0.34, 22.0, 50.0))
 	_score.add_theme_font_size_override("font_size", score_size)
-	var score_x: float = pad + seal + 20.0
-	var score_width: float = maxf(60.0, inner - seal - 20.0)
-	_score.position = Vector2(score_x, cursor + seal * 0.10)
+	var score_x: float = pad + _seal.size.x + 20.0
+	var score_width: float = maxf(60.0, inner - _seal.size.x - 20.0)
+	_score.position = Vector2(score_x, cursor + _seal.size.y * 0.10)
 	_score.size = Vector2(score_width, float(score_size) * 1.24)
-	_score_unit.position = Vector2(score_x, cursor + seal * 0.10 + float(score_size) * 1.14)
+	_score_unit.position = Vector2(score_x, cursor + _seal.size.y * 0.10 + float(score_size) * 1.14)
 	_score_unit.size = Vector2(score_width, 20.0)
-	_reward.position = Vector2(score_x, cursor + seal * 0.10 + float(score_size) * 1.14 + 24.0)
+	_reward.position = Vector2(score_x, cursor + _seal.size.y * 0.10 + float(score_size) * 1.14 + 24.0)
 	_reward.size = Vector2(score_width, 22.0)
 	cursor += float(heights[4]) + gap * float(weights[5])
 

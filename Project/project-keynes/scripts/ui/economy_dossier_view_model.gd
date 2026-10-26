@@ -9,18 +9,12 @@ const MONEY_SCALE := 10000.0
 const Q16 := 65536.0
 
 const CHAPTERS: Array[Dictionary] = [
-	{"id": "overview", "label": "总览", "icon": &"summary.overview",
-		"question": "经济是否健康？哪里在出问题？"},
-	{"id": "strata", "label": "阶层民生", "icon": &"population.heart",
-		"question": "谁过得好、谁过得差，为什么？"},
-	{"id": "industry", "label": "产业", "icon": &"economy.building.factory",
-		"question": "哪些产业在赚钱、哪些在停工，资本又流向哪里？"},
-	{"id": "market", "label": "市场", "icon": &"metric.goods",
-		"question": "什么东西缺、什么东西过剩，靠什么进出口？"},
-	{"id": "cities", "label": "城市", "icon": &"metric.territory",
-		"question": "各城市之间差距多大？"},
-	{"id": "finance", "label": "财政", "icon": &"metric.treasury",
-		"question": "国库与税制"},
+	{"id": "overview", "label": "总览", "icon": &"summary.overview", "question": ""},
+	{"id": "strata", "label": "阶层民生", "icon": &"population.heart", "question": ""},
+	{"id": "industry", "label": "产业", "icon": &"economy.building.factory", "question": ""},
+	{"id": "market", "label": "市场", "icon": &"metric.goods", "question": ""},
+	{"id": "cities", "label": "城市", "icon": &"metric.territory", "question": ""},
+	{"id": "finance", "label": "财政", "icon": &"metric.treasury", "question": ""},
 ]
 
 const SECTORS: Array[Dictionary] = [
@@ -131,8 +125,8 @@ func available() -> bool:
 
 func unavailable_reason() -> String:
 	if not bool(_model.get("available", false)):
-		return String(_model.get("reason", "国家档案暂不可用"))
-	return "国民经济聚合暂不可用"
+		return String(_model.get("reason", "国家数据暂不可用"))
+	return "国民经济数据暂不可用"
 
 
 ## 每次实时刷新前清空本轮查询缓存；同一轮里各区块共享同一份原生结果。
@@ -204,9 +198,9 @@ func scope_options() -> Array:
 func gdp_headline() -> Dictionary:
 	var title := "本年度累计产值" if scope_cell < 0 else "本城年度累计产值"
 	if _gdp_ledger == null:
-		return {"ok": false, "title": title, "reason": "经济账本尚未接入"}
+		return {"ok": false, "title": title, "reason": "经济数据尚未接入"}
 	if not _gdp_ledger.ready():
-		return {"ok": false, "title": title, "reason": "经济账本尚未就绪"}
+		return {"ok": false, "title": title, "reason": "经济数据尚未就绪"}
 	var national := scope_cell < 0
 	if not national and not _gdp_ledger.tracks_cell(scope_cell):
 		return {"ok": false, "title": title, "reason": "此地暂无可统计的产值"}
@@ -1009,7 +1003,7 @@ static func _reason(page: Dictionary) -> String:
 		return "正在读取经济数据…"
 	match String(page.get("reason", "")):
 		"country_handle_invalid":
-			return "国家档案已失效"
+			return "国家数据已失效"
 		"cell_not_in_country":
 			return "该区域已不在本国领土内"
 		"economy_not_bootstrapped", "economy_not_configured":

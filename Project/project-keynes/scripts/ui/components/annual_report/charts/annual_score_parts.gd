@@ -50,7 +50,16 @@ func _draw() -> void:
 		draw_line(Vector2(track_left, y - 3.0), Vector2(track_right, y - 3.0), Color(_ink.r, _ink.g, _ink.b, 0.09), 1.0, true)
 		var achieved: float = track_len * clampf(score / max_weight, 0.0, 1.0) * _grow
 		if achieved > 0.6:
-			draw_line(Vector2(track_left, y - 3.0), Vector2(track_left + achieved, y - 3.0), Color(_accent.r, _accent.g, _accent.b, 0.92), 4.0, true)
+			var tone: Color = [UITokens.CHRONICLE_PENCIL_RED, UITokens.CHRONICLE_PENCIL_GOLD,
+				UITokens.CHRONICLE_PENCIL_BLUE, UITokens.CHRONICLE_PENCIL_GREEN][i % 4]
+			draw_rect(Rect2(track_left, y - 7.0, achieved, 9.0), tone, true)
+			var hatch_x := track_left + 4.0
+			while hatch_x < track_left + achieved - 2.0:
+				draw_line(Vector2(hatch_x, y - 6.0), Vector2(maxf(track_left, hatch_x - 8.0), y + 1.0),
+					Color(1.0, 0.96, 0.84, 0.27), 1.0, true)
+				hatch_x += 9.0
+			draw_line(Vector2(track_left, y - 7.0), Vector2(track_left + achieved, y - 7.0),
+				Color(_ink.r, _ink.g, _ink.b, 0.66), 1.5, true)
 		var full: float = track_len * clampf(weight / max_weight, 0.0, 1.0)
 		draw_line(Vector2(track_left + full, y - 8.0), Vector2(track_left + full, y + 2.0), Color(_brass.r, _brass.g, _brass.b, 0.85), 1.0, true)
 		var text := "%.1f" % score

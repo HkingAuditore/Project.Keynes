@@ -24,7 +24,7 @@ var _narrow := false
 var _viewport := Vector2(1920.0, 1080.0)
 var _revealed := false
 
-
+const CHAPTER_EMBLEMS := preload("res://assets/ui/annual_chronicle/chronicle_chapter_emblems.png")
 func build(p_index: int, chapter: Dictionary, model: Dictionary, layout: Dictionary) -> void:
 	index = p_index
 	_chapter = chapter
@@ -76,13 +76,14 @@ func play_in(instant: bool = false) -> void:
 # ── 章首 ────────────────────────────────────────────────────────────────────
 
 func _build_header() -> void:
-	# 版式：眉标 → 标题 → 一行数据标签，三行贴紧；巨型章号是 14% 墨色的背景水印，
-	# 靠右摆放，尺寸由这三行的高度反推。旧版让章号的高度决定章首留白，一章开头
-	# 就要吃掉近一屏——密度全丢在这里。
+	# 章首也采用剪纸：章号是一块淡彩纸片，标题用重手绘字形压在纸面上。
 	var display: Font = UITokens.annual_font("display")
 	var soft: Font = UITokens.annual_font("display_soft")
 	var title_size: int = 40 if _narrow else UITokens.CHRONICLE_H1
 	var lead_size: int = 17 if _narrow else UITokens.CHRONICLE_LEAD
+	var title_width: float = _measure
+	var emblem_size: float = clampf(_measure * 0.17, 64.0, 118.0)
+	title_width = maxf(190.0, _measure - emblem_size - 12.0)
 	var kicker_height: float = 18.0
 	var title_top: float = kicker_height + 6.0
 	var title_height: float = display.get_height(title_size) * 1.14
@@ -95,6 +96,7 @@ func _build_header() -> void:
 		var measured: float = soft.get_multiline_string_size(lead_text, HORIZONTAL_ALIGNMENT_LEFT, _measure, lead_size).y
 		lead_height = minf(measured, float(lead_size) * 1.52 * 2.0) + 4.0
 	var height: float = (lead_top + lead_height + 4.0) if lead_height > 0.0 else (title_top + title_height + 4.0)
+	height = maxf(height, title_top + title_height + 8.0)
 	# 水印字号由内容高度反推：数字底边压在导语基线上，不再向下压正文。
 	var number_size: int = clampi(int(height * 1.05), 56,
 		mini(AnnualReportTokens.chapter_number_size(_viewport), int(_measure * 0.30)))
@@ -105,20 +107,32 @@ func _build_header() -> void:
 	_header.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var mark := _ChapterMark.new()
 	mark.index = int(_chapter.get("number", index + 1))
-	mark.tone = Color(UITokens.CHRONICLE_INK.r, UITokens.CHRONICLE_INK.g, UITokens.CHRONICLE_INK.b, 0.14)
+	mark.tone = Color(UITokens.CHRONICLE_PENCIL_BLUE.r, UITokens.CHRONICLE_PENCIL_BLUE.g,
+		UITokens.CHRONICLE_PENCIL_BLUE.b, 0.20)
 	mark.size_px = number_size
 	mark.right = _measure
 	mark.baseline = baseline
 	mark.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_header.add_child(mark)
 
-	var kicker := _text_label("第 %02d 章  /  %s" % [int(_chapter.get("number", index + 1)), String(_chapter.get("title", ""))], 13, UITokens.CHRONICLE_RED, true)
-	_place(kicker, Vector2(0.0, 0.0), Vector2(_measure, kicker_height))
+	var kicker := _text_label("第 %02d 章" % int(_chapter.get("number", index + 1)), 13, UITokens.CHRONICLE_RED, true)
+	kicker.add_theme_color_override("font_color", UITokens.CHRONICLE_PENCIL_RED)
+	_place(kicker, Vector2(0.0, 0.0), Vector2(title_width, kicker_height))
 	_header.add_child(kicker)
 
 	var title := _text_label(String(_chapter.get("title", "")), title_size, UITokens.CHRONICLE_INK, false)
-	_place(title, Vector2(0.0, title_top), Vector2(_measure, title_height + 4.0))
+	_place(title, Vector2(0.0, title_top), Vector2(title_width, title_height + 4.0))
 	_header.add_child(title)
+
+	var emblem_index: int = clampi(index, 0, 8)
+	var emblem_art := _ChapterEmblem.new()
+	emblem_art.name = "ChapterEmblem"
+	emblem_art.atlas = CHAPTER_EMBLEMS
+	emblem_art.index = emblem_index
+	var emblem_top: float = -24.0
+	_place(emblem_art, Vector2(_measure - emblem_size * 0.94, emblem_top),
+		Vector2(emblem_size, emblem_size))
+	_header.add_child(emblem_art)
 
 	if lead_height > 0.0:
 		var lead := _text_label(lead_text, lead_size, UITokens.CHRONICLE_MUTED, false)
@@ -129,6 +143,9 @@ func _build_header() -> void:
 		_place(lead, Vector2(0.0, lead_top), Vector2(_measure, lead_height))
 		_header.add_child(lead)
 	_column.add_child(_header)
+	var pencil_rule := ColorRect.new()
+	_pencil_rule(pencil_rule)
+	_column.add_child(pencil_rule)
 
 
 func _spacer(height: float) -> void:
@@ -136,6 +153,14 @@ func _spacer(height: float) -> void:
 	gap.custom_minimum_size = Vector2(0.0, height)
 	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_column.add_child(gap)
+
+
+func _pencil_rule(rule: ColorRect) -> void:
+	rule.color = Color(UITokens.CHRONICLE_INK.r,
+		UITokens.CHRONICLE_INK.g, UITokens.CHRONICLE_INK.b, 0.58)
+	rule.custom_minimum_size = Vector2(0.0, 2.0)
+	rule.size_flags_horizontal = Control.SIZE_FILL
+	rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
 # ── 正文 ────────────────────────────────────────────────────────────────────
@@ -193,7 +218,7 @@ func _build_visuals() -> void:
 func _add_chart(title: String, node: Control) -> void:
 	if node == null:
 		return
-	var caption := _text_label(title, 13, UITokens.CHRONICLE_MUTED, true)
+	var caption := _text_label(title, 14, UITokens.CHRONICLE_MUTED, true)
 	caption.custom_minimum_size = Vector2(_chart_width, 0.0)
 	_column.add_child(caption)
 	_spacer(9.0)
@@ -286,7 +311,8 @@ func _era_chart(visual: Dictionary) -> Control:
 		return null
 	var line := AnnualEraLine.new()
 	line.set_reveal_enabled(not UIAnimation.reduced_motion())
-	line.custom_minimum_size = Vector2(minf(_chart_width, 900.0), 96.0)
+	line.custom_minimum_size = Vector2(minf(_chart_width, 900.0),
+		102.0 if _narrow else 112.0)
 	var era_index: int = int(visual.get("index", 0))
 	_binds.append(func() -> void:
 		if not line.set_data(era_index, names):
@@ -411,3 +437,26 @@ class _ChapterMark extends Control:
 		var width := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size_px).x
 		var x: float = clampf(right - width, 0.0, maxf(0.0, size.x - width))
 		draw_string(font, Vector2(x, baseline), text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size_px, tone)
+
+
+## The generated object already contains its ivory cut-paper silhouette and
+## contact shadow; a second backing here would read as a pale card.
+class _ChapterEmblem extends Control:
+	var atlas: Texture2D
+	var index := 0
+
+	func _ready() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		queue_redraw()
+
+	func _draw() -> void:
+		if atlas == null:
+			return
+		var source := Rect2(
+			(float(index % 3) * 512.0),
+			(float(index / 3) * 512.0),
+			512.0,
+			512.0,
+		)
+		draw_texture_rect_region(atlas, Rect2(Vector2.ZERO, size), source)

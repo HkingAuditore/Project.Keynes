@@ -93,7 +93,7 @@ func show_empty() -> void:
 	_state_label.text = "尚未选择"
 	_state_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
 	_placeholder.visible = true
-	_placeholder.text = "在可研究清单或科技树中选择一项科技，查看成本、效果与前置。"
+	_placeholder.text = "选择科技以查看详情"
 	_detail_block.visible = false
 	_action.visible = false
 
@@ -110,7 +110,7 @@ func show_unknown(condition_items: Array = [], state: int = 0) -> void:
 	_state_label.text = STATE_NAMES[clampi(state, 0, 1)]
 	_state_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
 	_placeholder.visible = true
-	_placeholder.text = "按以下条件发现并解锁研究。名称、成本与效果将在可研究时显示。"
+	_placeholder.text = "完成以下条件以发现该科技"
 	_detail_block.visible = true
 	for child in _detail_block.get_children():
 		child.visible = child == _condition_title or child == _conditions
@@ -127,7 +127,7 @@ func show_milestone_locked(era_name: String, completed: int, required: int,
 	_state_label.text = era_name
 	_state_label.add_theme_color_override("font_color", UITokens.DOSSIER_BRASS)
 	_placeholder.visible = true
-	_placeholder.text = "完成本时代 %d / %d 项后可研究此关隘。可研究后显示名称与效果。" \
+	_placeholder.text = "完成本时代 %d / %d 项后可研究" \
 		% [completed, maxi(1, required)]
 	_action.visible = false
 

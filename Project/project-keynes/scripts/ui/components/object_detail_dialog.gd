@@ -206,12 +206,12 @@ func has_blocking_tax_state() -> bool:
 
 func _kicker_for_kind(kind: String) -> String:
 	match kind:
-		"good": return "物资市场卷宗"
-		"cohort": return "阶层民生卷宗"
-		"building": return "产业建筑卷宗"
-		"resource": return "自然资源卷宗"
-		"family": return "家族分支卷宗"
-		_: return "地块对象卷宗"
+		"good": return "物资"
+		"cohort": return "阶层"
+		"building": return "建筑"
+		"resource": return "自然资源"
+		"family": return "家族分支"
+		_: return ""
 
 
 static func _dossier_accent(color: Color) -> Color:
@@ -515,10 +515,10 @@ func _tax_title(kind: String) -> String:
 
 func _tax_hint(kind: String) -> String:
 	return {
-		"cohort": "在此调整本阶层所得税率，次日生效。",
-		"good": "在此调整本物资交易税与进出口关税，次日生效。",
-		"building": "在此调整本建筑税率，次日生效。",
-	}.get(kind, "在此调整本项税率，次日生效。")
+		"cohort": "次日生效。",
+		"good": "次日生效。",
+		"building": "次日生效。",
+	}.get(kind, "次日生效。")
 
 
 func set_embedded(embedded: bool = true) -> void:
@@ -1446,24 +1446,18 @@ func _configure_section_nav(kind: String) -> void:
 	var chapters: Array = []
 	if kind == "good":
 		chapters = [
-			{"id": "overview", "label": "供需与价格", "icon": &"metric.goods",
-				"question": "本地供需是否平衡？当前价格相对成本锚偏离多少？"},
-			{"id": "operations", "label": "贸易与税率", "icon": &"tax.tariff",
-				"question": "跨区调入调出多少？交易税与关税如何设定？"},
+			{"id": "overview", "label": "供需与价格", "icon": &"metric.goods", "question": ""},
+			{"id": "operations", "label": "贸易与税率", "icon": &"tax.tariff", "question": ""},
 		]
 	elif kind == "cohort":
 		chapters = [
-			{"id": "overview", "label": "民生与收支", "icon": &"population.heart",
-				"question": "该阶层生活水平处于哪一档？满意度短板与日常收支如何？"},
-			{"id": "operations", "label": "消费与税率", "icon": &"metric.goods",
-				"question": "日常支出花在哪些物资上？本阶层所得税如何设定？"},
+			{"id": "overview", "label": "民生与收支", "icon": &"population.heart", "question": ""},
+			{"id": "operations", "label": "消费与税率", "icon": &"metric.goods", "question": ""},
 		]
 	elif kind == "building":
 		chapters = [
-			{"id": "overview", "label": "生产与岗位", "icon": &"economy.building.factory",
-				"question": "产能出力与岗位到岗如何？有哪些投入与产出？"},
-			{"id": "operations", "label": "财务与税率", "icon": &"metric.treasury",
-				"question": "本期营收、自用留存与成本构成如何？营业税率如何设定？"},
+			{"id": "overview", "label": "生产与岗位", "icon": &"economy.building.factory", "question": ""},
+			{"id": "operations", "label": "财务与税率", "icon": &"metric.treasury", "question": ""},
 		]
 	else:
 		var icon_map := {

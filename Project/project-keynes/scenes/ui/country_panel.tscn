@@ -47,7 +47,6 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-clip_contents = true
 theme_type_variation = &"PKCountryShell"
 
 [node name="Main" type="HBoxContainer" parent="Center/Dialog"]
@@ -72,18 +71,8 @@ theme_override_constants/separation = 1
 layout_mode = 2
 text = "国家事务"
 theme_type_variation = &"PKCountryRailTitle"
-[node name="Subtitle" type="Label" parent="Center/Dialog/Main/NavRail/NavColumn/Brand"]
-layout_mode = 2
-text = "CABINET DOSSIER"
-theme_type_variation = &"PKCountryRailMuted"
 [node name="BrandRule" type="HSeparator" parent="Center/Dialog/Main/NavRail/NavColumn"]
 layout_mode = 2
-[node name="NavKicker" type="Label" parent="Center/Dialog/Main/NavRail/NavColumn"]
-custom_minimum_size = Vector2(0, 24)
-layout_mode = 2
-text = "事务目录"
-vertical_alignment = 1
-theme_type_variation = &"PKCountryRailMuted"
 
 [node name="Technology" type="Button" parent="Center/Dialog/Main/NavRail/NavColumn"]
 custom_minimum_size = Vector2(0, 52)
@@ -238,22 +227,17 @@ theme_type_variation = &"PKCountryRailMuted"
 [node name="NavSpacer" type="Control" parent="Center/Dialog/Main/NavRail/NavColumn"]
 layout_mode = 2
 size_flags_vertical = 3
-[node name="NavFoot" type="Label" parent="Center/Dialog/Main/NavRail/NavColumn"]
-layout_mode = 2
-text = "王室内阁 · 机密卷宗"
-autowrap_mode = 3
-theme_type_variation = &"PKCountryRailMuted"
 
 [node name="PageSurface" type="PanelContainer" parent="Center/Dialog/Main"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+clip_contents = true
 theme_type_variation = &"PKCountryPage"
 [node name="PageArea" type="VBoxContainer" parent="Center/Dialog/Main/PageSurface"]
 unique_name_in_owner = true
 layout_mode = 2
-clip_contents = true
 theme_override_constants/separation = 8
 
 [node name="MobileHeader" type="HBoxContainer" parent="Center/Dialog/Main/PageSurface/PageArea"]
@@ -339,7 +323,7 @@ theme_type_variation = &"PKArchiveTitle"
 [node name="CountrySubtitle" type="Label" parent="Center/Dialog/Main/PageSurface/PageArea/Header/HeaderRow/CountryBlock"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "行政档案"
+text = ""
 text_overrun_behavior = 3
 theme_type_variation = &"PKMutedLabel"
 [node name="HeaderDivider" type="VSeparator" parent="Center/Dialog/Main/PageSurface/PageArea/Header/HeaderRow"]
