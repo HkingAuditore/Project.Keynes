@@ -131,6 +131,8 @@ GDScript 不模拟价格，界面将 0.01 以下金额显示为四位小数。
   0.70 时出生乘数为 1.0，0.85 时升到 1.15，负载 0.9→1.0 时奖励渐退，严重匮乏时会大幅压低出生。同地块同民族的出生
   贡献在 worker 内聚合，Q32 小数余数跨周期累计，并于 `STRUCTURAL_COMMIT` 加入
   `unemployed|eth`；新生不携带资金且不在同周期招聘。
+- 正式开局每国 40 人；小国人口出生扶持按周期开始时冻结的全国人口计算，40 人时最高 1.5 倍，
+  40–200 人线性回落到 1 倍，并在本地食物负载从 90% 接近承载力时渐退。饥饿死亡和承载力规则不变。
 - 九套在业职业原型加一套失业者生存原型；在业原型共用九项基础家庭需求，并以基础/舒适/奢侈三档比例及分层财富弹性校准。猎人使用独立的
   `hunter_household`，保留职业装备但移除农业型家庭的交通和娱乐需求，并降低基础/舒适消费尺度。
   同一 good 跨 need 只允许 refined_fuel、computers、beverages、fur 四种明确多用途；展示层聚合
@@ -649,7 +651,7 @@ whole 2,912-subunit bill with logs, bast fibre, reed bundles, or a mixture.
   full snapshot plus bounded deltas with fog, LOD, collision and pool limits.
 - Current PKEC v44 preserves the settlement state introduced by v24; older schemas are rejected.
 - Production bootstrap marks opening-country cells as forced-name capitals:
-  they retain the exact 20-person contract and population-derived tier, but
+  they retain the exact 40-person contract and population-derived tier, but
   always receive a deterministic settlement name. The bit round-trips in current
   PKEC v44 (the field was introduced in v24) and is exposed as
   `settlement_name_forced`.

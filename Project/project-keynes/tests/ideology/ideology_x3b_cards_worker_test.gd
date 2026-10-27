@@ -398,7 +398,7 @@ func _raise_level(card: String, level: int) -> bool:
 	var dense := _dense_card(card)
 	if dense < 0:
 		return false
-	var understanding := 4 * Q16_ONE if level == 2 else 12 * Q16_ONE
+	var understanding := 8 * Q16_ONE if level == 2 else 24 * Q16_ONE
 	var submitted := _submit_ideology([{
 		"op": 8, "day": _day, "handle": _handle, "idea": dense,
 		"value": understanding,

@@ -55,7 +55,7 @@ func _run() -> void:
 	if bool(report.get("ok", false)):
 		var totals: Dictionary = report.get("totals", {})
 		print("[annual-runtime] grade=%s reward=%d totals=%s opening=%s" % [String(report.get("grade", "")), int(report.get("reward_q16", 0)), JSON.stringify(totals), JSON.stringify(report.get("opening", {}))])
-		_expect("opening census is the formal 20-person start", int(report.get("opening", {}).get("population", 0)) == 20)
+		_expect("opening census is the formal 40-person start", int(report.get("opening", {}).get("population", 0)) == 40)
 		_expect("actual committed GDP is positive", int(totals.get("gdp", 0)) > 0)
 		_expect("GDP accounting identity is exact", int(totals.get("gdp", 0)) == int(totals.get("revenue", 0)) - int(totals.get("input_cost", 0)) - int(totals.get("maintenance", 0)))
 		_expect("no bootstrap technology counted as new", report.get("new_technologies", PackedInt64Array()).size() < int(totals.get("technologies", 0)))

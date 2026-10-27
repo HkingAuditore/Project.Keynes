@@ -222,14 +222,14 @@ func _run() -> void:
 			var settlement_cell := int(country_start.get("cell", -1))
 			var precious := String(country_start.get("precious_resource", ""))
 			var population: Dictionary = economy.population_cell_snapshot(settlement_cell)
-			_expect("starter population is exactly 20",
-				int(population.get("population", 0)) == 20)
+			_expect("starter population is exactly 40",
+				int(population.get("population", 0)) == 40)
 			_expect("starter leaves non-founder population for native job matching",
 				_profession_population(population, "unemployed") > 0
 				and _sum_i64(population.get("owner_employed_by_cohort",
 					PackedInt64Array())) > 0
 				and _sum_i64(population.get("owner_employed_by_cohort",
-					PackedInt64Array())) < 20
+					PackedInt64Array())) < 40
 				and _sum_i64(population.get("employee_employed_by_cohort",
 					PackedInt64Array())) == 0)
 			var market: Dictionary = economy.market_cell_snapshot(settlement_cell)
@@ -284,9 +284,9 @@ func _run() -> void:
 					_building_count(buildings, building_id) == int(route_counts[building_index]))
 			_expect("starter food lots operate without leftover construction techs",
 				_food_lots_operable(buildings, route_buildings))
-			_expect("starter route keeps self-operated jobs within the 20-person cap",
+			_expect("starter route keeps self-operated jobs within the 40-person cap",
 				int(country_start.get("starter_job_capacity", 0)) > 0
-				and int(country_start.get("starter_job_capacity", 0)) <= 20)
+				and int(country_start.get("starter_job_capacity", 0)) <= 40)
 			_expect("starter route confines employee slots to precious workings",
 				int(country_start.get("starter_employee_job_capacity", 0)) ==
 					_precious_employee_slots(String(country_start.get(
@@ -331,7 +331,7 @@ func _run() -> void:
 						and int(person.get("job_kind", 0)) == 1
 						and int(person.get("building_handle", 0)) != 0)
 	_expect("all settlements contribute population",
-		int(start.get("total_population", 0)) == country_starts.size() * 20)
+		int(start.get("total_population", 0)) == country_starts.size() * 40)
 	_expect("all capitals receive one founder family and notable person",
 		int(start.get("founder_family_count", 0)) == country_starts.size()
 		and int(start.get("founder_person_count", 0)) == country_starts.size())

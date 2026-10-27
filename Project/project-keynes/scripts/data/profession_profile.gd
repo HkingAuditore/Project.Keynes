@@ -26,8 +26,8 @@ extends Resource
 ## medicine technologies, floor 1/3) lowers natural deaths toward 2.5%, and
 ## composite satisfaction above the birth reference raises births up to 1.15x,
 ## so a developed, well-fed population grows near 20% per year while a stagnant
-## stone-age one grows near 12.5%. A 20-person starter settlement averages one
-## birth every 91 days.
+## stone-age one grows near 12.5%. A well-fed 40-person starter settlement
+## averages one birth about every 30 days while small-country support is full.
 ## Composite satisfaction fully modulates births. Healthy cohorts retain the
 ## gameplay-scale rate while severe deprivation sharply suppresses births.
 @export var birth_rate_q32: int = 2353407

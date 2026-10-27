@@ -18,6 +18,8 @@ var _generator = null
 var _section_cache: Dictionary = {}
 var _section_cache_revisions: Dictionary = {}
 var _static_catalog_cache: Dictionary = {}
+var _ideology_catalog_cache: Dictionary = {}
+var _ideology_catalog_facade = null
 var _economy_history := EconomyHistoryBuffer.new()
 var _gdp_ledger: EconomyGdpLedger = null
 var _strata_table: SocialStrataTable
@@ -27,6 +29,8 @@ func set_context(generator) -> void:
 	_generator = generator
 	_section_cache.clear()
 	_section_cache_revisions.clear()
+	_ideology_catalog_cache.clear()
+	_ideology_catalog_facade = null
 	_economy_history.reset()
 
 
@@ -463,12 +467,20 @@ func build_ideology_snapshot(country_handle: int, ui_snapshot: Dictionary) -> Di
 	var ideology_facade = _generator.get_ideology_facade() \
 		if _generator != null and _generator.has_method("get_ideology_facade") else null
 	if bool(native_ideology.get("ok", false)) and ideology_facade != null:
+		if ideology_facade != _ideology_catalog_facade:
+			_ideology_catalog_facade = ideology_facade
+			_ideology_catalog_cache = {}
+		var ideology_catalog := _ideology_catalog_cache
+		if ideology_catalog.is_empty():
+			ideology_catalog = ideology_facade.catalog_view()
+			if bool(ideology_catalog.get("ok", false)):
+				_ideology_catalog_cache = ideology_catalog
 		return {
 			"ideology": _decorate_ideology({
 				"available": true,
 				"facade": ideology_facade,
 				"snapshot": native_ideology,
-				"catalog": ideology_facade.catalog_view(),
+				"catalog": ideology_catalog,
 			}),
 		}
 	return {"ideology": _ideology_model(country_handle)}

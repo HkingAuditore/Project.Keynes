@@ -62,7 +62,7 @@ func _run_runtime_checks(compiled: Dictionary) -> void:
 	var capital: Object = _configured_world(compiled,
 		PackedInt64Array([20, 0, 0, 0, 0, 0, 0, 0]), 7410, true,
 		PackedInt32Array([0]))
-	_expect("20 人首都在乡村阈值以下仍保证命名",
+	_expect("40 人首都在乡村阈值以下仍保证命名",
 		capital != null and
 		bool(capital.get_population_cell_summary(0).get(
 			"settlement_name_active", false)) and

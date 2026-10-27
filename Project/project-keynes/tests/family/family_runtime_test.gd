@@ -561,7 +561,7 @@ func _test_opening_capital_keeps_anonymous_majority(catalog: Dictionary) -> void
 		"building_owner_signature_ids": PackedInt32Array([owner_sig]),
 		"building_counts": PackedInt64Array([1]),
 	})
-	_expect("opening 20-person capital creates one founder family of two operators",
+	_expect("opening 40-person capital creates one founder family of two operators",
 		bool(boot.get("ok", false))
 		and int(boot.get("founder_family_count", 0)) == 1)
 	if not bool(boot.get("ok", false)):

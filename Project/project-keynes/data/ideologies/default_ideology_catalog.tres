@@ -24,10 +24,11 @@ reroll_cost_percent = 75
 starting_points_q16 = 0
 max_transition_commands = 256
 max_effect_instances = 2048
-point_population_weight_q16 = 2640
-point_building_weight_q16 = 32800
-point_trade_weight_q16 = 240
+point_population_weight_q16 = 660
+point_building_weight_q16 = 8200
+point_trade_weight_q16 = 60
 point_gain_cap_q16 = 0
+refine_understanding_q16 = 262144
 capacity_unlock_technology_keys = PackedStringArray("tech.kingdom_administration", "tech.imperial_integration", "tech.enlightenment_institutions", "tech.industrialization", "tech.electrical_society")
 capacity_unlock_ideology_deltas = PackedInt32Array(1, 1, 1, 1, 0)
 capacity_unlock_spirit_deltas = PackedInt32Array(0, 1, 0, 0, 1)
@@ -81,7 +82,7 @@ definition_key = &"treasury_reserve_l1_build"
 [sub_resource type="Resource" id="LevelTreasuryReserveL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectTreasuryReserveL1"), SubResource("EffectTreasuryReserveL1R0"), SubResource("EffectTreasuryReserveL1R1")])
 on_enter_effects = Array[Resource]([])
 
@@ -125,8 +126,8 @@ definition_key = &"treasury_reserve_l2_build"
 
 [sub_resource type="Resource" id="LevelTreasuryReserveL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectTreasuryReserveL2"), SubResource("EffectTreasuryReserveL2R0"), SubResource("EffectTreasuryReserveL2R1")])
 on_enter_effects = Array[Resource]([])
 
@@ -183,7 +184,7 @@ definition_key = &"treasury_reserve_l3_points"
 
 [sub_resource type="Resource" id="LevelTreasuryReserveL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectTreasuryReserveL3"), SubResource("EffectTreasuryReserveL3R0"), SubResource("EffectTreasuryReserveL3R1"), SubResource("EffectTreasuryReserveL3R2")])
 on_enter_effects = Array[Resource]([])
@@ -260,7 +261,7 @@ definition_key = &"silver_standard_l1"
 [sub_resource type="Resource" id="LevelSilverStandardL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectSilverStandardL1"), SubResource("EffectSilverStandardL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -291,8 +292,8 @@ definition_key = &"silver_standard_l2"
 
 [sub_resource type="Resource" id="LevelSilverStandardL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectSilverStandardL2"), SubResource("EffectSilverStandardL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -323,7 +324,7 @@ definition_key = &"silver_standard_l3"
 
 [sub_resource type="Resource" id="LevelSilverStandardL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectSilverStandardL3"), SubResource("EffectSilverStandardL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -400,7 +401,7 @@ definition_key = &"subsidy_state_l1"
 [sub_resource type="Resource" id="LevelSubsidyStateL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectSubsidyStateL1"), SubResource("EffectSubsidyStateL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -431,8 +432,8 @@ definition_key = &"subsidy_state_l2"
 
 [sub_resource type="Resource" id="LevelSubsidyStateL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectSubsidyStateL2"), SubResource("EffectSubsidyStateL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -476,7 +477,7 @@ definition_key = &"subsidy_state_l3_free"
 
 [sub_resource type="Resource" id="LevelSubsidyStateL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectSubsidyStateL3"), SubResource("EffectSubsidyStateL3R0"), SubResource("EffectSubsidyStateL3R1")])
 on_enter_effects = Array[Resource]([])
@@ -542,7 +543,7 @@ definition_key = &"kin_hearth_l1"
 [sub_resource type="Resource" id="LevelKinHearthL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectKinHearthL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -561,8 +562,8 @@ definition_key = &"kin_hearth_l2"
 
 [sub_resource type="Resource" id="LevelKinHearthL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectKinHearthL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -594,7 +595,7 @@ definition_key = &"kin_hearth_l3_eminent"
 
 [sub_resource type="Resource" id="LevelKinHearthL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectKinHearthL3R0"), SubResource("EffectKinHearthL3R1")])
 on_enter_effects = Array[Resource]([])
@@ -653,7 +654,7 @@ definition_key = &"ideology.forager_band.l1"
 [sub_resource type="Resource" id="LevelForagerBandL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectForagerBandL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -671,8 +672,8 @@ definition_key = &"ideology.forager_band.l2"
 
 [sub_resource type="Resource" id="LevelForagerBandL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectForagerBandL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -690,7 +691,7 @@ definition_key = &"ideology.forager_band.l3"
 
 [sub_resource type="Resource" id="LevelForagerBandL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectForagerBandL3")])
 on_enter_effects = Array[Resource]([])
@@ -762,7 +763,7 @@ definition_key = &"hunting_tradition_l1"
 [sub_resource type="Resource" id="LevelHuntingTraditionL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectHuntingTraditionCostL1"), SubResource("EffectHuntingTraditionL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -793,8 +794,8 @@ definition_key = &"hunting_tradition_l2"
 
 [sub_resource type="Resource" id="LevelHuntingTraditionL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectHuntingTraditionCostL2"), SubResource("EffectHuntingTraditionL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -825,7 +826,7 @@ definition_key = &"hunting_tradition_l3"
 
 [sub_resource type="Resource" id="LevelHuntingTraditionL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectHuntingTraditionCostL3"), SubResource("EffectHuntingTraditionL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -897,7 +898,7 @@ definition_key = &"flint_knapping_l1"
 [sub_resource type="Resource" id="LevelFlintKnappingL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectFlintKnappingCostL1"), SubResource("EffectFlintKnappingL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -928,8 +929,8 @@ definition_key = &"flint_knapping_l2"
 
 [sub_resource type="Resource" id="LevelFlintKnappingL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectFlintKnappingCostL2"), SubResource("EffectFlintKnappingL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -960,7 +961,7 @@ definition_key = &"flint_knapping_l3"
 
 [sub_resource type="Resource" id="LevelFlintKnappingL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectFlintKnappingCostL3"), SubResource("EffectFlintKnappingL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -1038,7 +1039,7 @@ definition_key = &"fire_keeping_l1"
 [sub_resource type="Resource" id="LevelFireKeepingL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectFireKeepingCostL1"), SubResource("EffectFireKeepingL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -1069,8 +1070,8 @@ definition_key = &"fire_keeping_l2"
 
 [sub_resource type="Resource" id="LevelFireKeepingL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectFireKeepingCostL2"), SubResource("EffectFireKeepingL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -1101,7 +1102,7 @@ definition_key = &"fire_keeping_l3"
 
 [sub_resource type="Resource" id="LevelFireKeepingL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectFireKeepingCostL3"), SubResource("EffectFireKeepingL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -1159,7 +1160,7 @@ definition_key = &"ideology.riverside_camp.l1"
 [sub_resource type="Resource" id="LevelRiversideCampL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectRiversideCampL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -1177,8 +1178,8 @@ definition_key = &"ideology.riverside_camp.l2"
 
 [sub_resource type="Resource" id="LevelRiversideCampL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectRiversideCampL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -1209,7 +1210,7 @@ definition_key = &"riverside_camp_l3"
 
 [sub_resource type="Resource" id="LevelRiversideCampL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectRiversideCampL3"), SubResource("EffectRiversideCampL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -1274,7 +1275,7 @@ definition_key = &"ideology.animist_ritual"
 [sub_resource type="Resource" id="LevelAnimistRitualL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectAnimistRitualL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -1292,8 +1293,8 @@ definition_key = &"ideology.animist_ritual"
 
 [sub_resource type="Resource" id="LevelAnimistRitualL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectAnimistRitualL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -1311,7 +1312,7 @@ definition_key = &"ideology.animist_ritual"
 
 [sub_resource type="Resource" id="LevelAnimistRitualL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectAnimistRitualL3")])
 on_enter_effects = Array[Resource]([])
@@ -1362,7 +1363,7 @@ definition_key = &"ideology.gift_exchange"
 [sub_resource type="Resource" id="LevelGiftExchangeL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectGiftExchangeL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -1380,8 +1381,8 @@ definition_key = &"ideology.gift_exchange"
 
 [sub_resource type="Resource" id="LevelGiftExchangeL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectGiftExchangeL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -1399,7 +1400,7 @@ definition_key = &"ideology.gift_exchange"
 
 [sub_resource type="Resource" id="LevelGiftExchangeL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectGiftExchangeL3")])
 on_enter_effects = Array[Resource]([])
@@ -1470,7 +1471,7 @@ definition_key = &"communal_feast_l1"
 [sub_resource type="Resource" id="LevelCommunalFeastL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectCommunalFeastCostL1"), SubResource("EffectCommunalFeastL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -1501,8 +1502,8 @@ definition_key = &"communal_feast_l2"
 
 [sub_resource type="Resource" id="LevelCommunalFeastL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectCommunalFeastCostL2"), SubResource("EffectCommunalFeastL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -1533,7 +1534,7 @@ definition_key = &"communal_feast_l3"
 
 [sub_resource type="Resource" id="LevelCommunalFeastL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectCommunalFeastCostL3"), SubResource("EffectCommunalFeastL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -1591,7 +1592,7 @@ definition_key = &"ideology.pit_dwelling.l1"
 [sub_resource type="Resource" id="LevelPitDwellingL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectPitDwellingL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -1609,8 +1610,8 @@ definition_key = &"ideology.pit_dwelling.l2"
 
 [sub_resource type="Resource" id="LevelPitDwellingL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectPitDwellingL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -1641,7 +1642,7 @@ definition_key = &"pit_dwelling_l3"
 
 [sub_resource type="Resource" id="LevelPitDwellingL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectPitDwellingL3"), SubResource("EffectPitDwellingL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -1713,7 +1714,7 @@ definition_key = &"collective_stewardship_l1"
 [sub_resource type="Resource" id="LevelCollectiveStewardshipL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectCollectiveStewardshipCostL1"), SubResource("EffectCollectiveStewardshipL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -1744,8 +1745,8 @@ definition_key = &"collective_stewardship_l2"
 
 [sub_resource type="Resource" id="LevelCollectiveStewardshipL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectCollectiveStewardshipCostL2"), SubResource("EffectCollectiveStewardshipL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -1776,7 +1777,7 @@ definition_key = &"collective_stewardship_l3"
 
 [sub_resource type="Resource" id="LevelCollectiveStewardshipL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectCollectiveStewardshipCostL3"), SubResource("EffectCollectiveStewardshipL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -1842,7 +1843,7 @@ definition_key = &"ideology.terrace_farming.l1"
 [sub_resource type="Resource" id="LevelTerraceFarmingL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectTerraceFarmingL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -1860,8 +1861,8 @@ definition_key = &"ideology.terrace_farming.l2"
 
 [sub_resource type="Resource" id="LevelTerraceFarmingL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectTerraceFarmingL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -1892,7 +1893,7 @@ definition_key = &"terrace_farming_l3"
 
 [sub_resource type="Resource" id="LevelTerraceFarmingL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectTerraceFarmingL3"), SubResource("EffectTerraceFarmingL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -1962,7 +1963,7 @@ definition_key = &"ideology.paddy_cultivation"
 [sub_resource type="Resource" id="LevelPaddyCultivationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectPaddyCultivationL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -1980,8 +1981,8 @@ definition_key = &"ideology.paddy_cultivation"
 
 [sub_resource type="Resource" id="LevelPaddyCultivationL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectPaddyCultivationL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -1999,7 +2000,7 @@ definition_key = &"ideology.paddy_cultivation"
 
 [sub_resource type="Resource" id="LevelPaddyCultivationL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectPaddyCultivationL3")])
 on_enter_effects = Array[Resource]([])
@@ -2081,7 +2082,7 @@ definition_key = &"three_field_rotation_l1"
 [sub_resource type="Resource" id="LevelThreeFieldRotationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectThreeFieldRotationCostL1"), SubResource("EffectThreeFieldRotationL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -2112,8 +2113,8 @@ definition_key = &"three_field_rotation_l2"
 
 [sub_resource type="Resource" id="LevelThreeFieldRotationL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectThreeFieldRotationCostL2"), SubResource("EffectThreeFieldRotationL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -2144,7 +2145,7 @@ definition_key = &"three_field_rotation_l3"
 
 [sub_resource type="Resource" id="LevelThreeFieldRotationL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectThreeFieldRotationCostL3"), SubResource("EffectThreeFieldRotationL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -2228,7 +2229,7 @@ definition_key = &"free_exchange_l1"
 [sub_resource type="Resource" id="LevelFreeExchangeL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectFreeExchangeCostL1"), SubResource("EffectFreeExchangeL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -2259,8 +2260,8 @@ definition_key = &"free_exchange_l2"
 
 [sub_resource type="Resource" id="LevelFreeExchangeL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectFreeExchangeCostL2"), SubResource("EffectFreeExchangeL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -2291,7 +2292,7 @@ definition_key = &"free_exchange_l3"
 
 [sub_resource type="Resource" id="LevelFreeExchangeL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectFreeExchangeCostL3"), SubResource("EffectFreeExchangeL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -2371,7 +2372,7 @@ definition_key = &"scholar_office_l1"
 [sub_resource type="Resource" id="LevelScholarOfficeL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectScholarOfficeCostL1"), SubResource("EffectScholarOfficeL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -2402,8 +2403,8 @@ definition_key = &"scholar_office_l2"
 
 [sub_resource type="Resource" id="LevelScholarOfficeL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectScholarOfficeCostL2"), SubResource("EffectScholarOfficeL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -2434,7 +2435,7 @@ definition_key = &"scholar_office_l3"
 
 [sub_resource type="Resource" id="LevelScholarOfficeL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectScholarOfficeCostL3"), SubResource("EffectScholarOfficeL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -2505,7 +2506,7 @@ definition_key = &"standardization_l1"
 [sub_resource type="Resource" id="LevelStandardizationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectStandardizationCostL1"), SubResource("EffectStandardizationL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -2536,8 +2537,8 @@ definition_key = &"standardization_l2"
 
 [sub_resource type="Resource" id="LevelStandardizationL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectStandardizationCostL2"), SubResource("EffectStandardizationL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -2568,7 +2569,7 @@ definition_key = &"standardization_l3"
 
 [sub_resource type="Resource" id="LevelStandardizationL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectStandardizationCostL3"), SubResource("EffectStandardizationL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -2646,7 +2647,7 @@ definition_key = &"household_weaving_l1"
 [sub_resource type="Resource" id="LevelHouseholdWeavingL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectHouseholdWeavingCostL1"), SubResource("EffectHouseholdWeavingL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -2677,8 +2678,8 @@ definition_key = &"household_weaving_l2"
 
 [sub_resource type="Resource" id="LevelHouseholdWeavingL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectHouseholdWeavingCostL2"), SubResource("EffectHouseholdWeavingL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -2709,7 +2710,7 @@ definition_key = &"household_weaving_l3"
 
 [sub_resource type="Resource" id="LevelHouseholdWeavingL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectHouseholdWeavingCostL3"), SubResource("EffectHouseholdWeavingL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -2780,7 +2781,7 @@ definition_key = &"coppice_rotation_l1"
 [sub_resource type="Resource" id="LevelCoppiceRotationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectCoppiceRotationL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -2799,8 +2800,8 @@ definition_key = &"coppice_rotation_l2"
 
 [sub_resource type="Resource" id="LevelCoppiceRotationL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectCoppiceRotationL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -2819,7 +2820,7 @@ definition_key = &"coppice_rotation_l3"
 
 [sub_resource type="Resource" id="LevelCoppiceRotationL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectCoppiceRotationL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -2889,7 +2890,7 @@ definition_key = &"ideology.water_works.l1"
 [sub_resource type="Resource" id="LevelWaterWorksL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectWaterWorksL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -2907,8 +2908,8 @@ definition_key = &"ideology.water_works.l2"
 
 [sub_resource type="Resource" id="LevelWaterWorksL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectWaterWorksL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -2939,7 +2940,7 @@ definition_key = &"water_works_l3"
 
 [sub_resource type="Resource" id="LevelWaterWorksL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectWaterWorksL3"), SubResource("EffectWaterWorksL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -3023,7 +3024,7 @@ definition_key = &"bronze_casting_l1"
 [sub_resource type="Resource" id="LevelBronzeCastingL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectBronzeCastingCostL1"), SubResource("EffectBronzeCastingL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -3054,8 +3055,8 @@ definition_key = &"bronze_casting_l2"
 
 [sub_resource type="Resource" id="LevelBronzeCastingL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectBronzeCastingCostL2"), SubResource("EffectBronzeCastingL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -3086,7 +3087,7 @@ definition_key = &"bronze_casting_l3"
 
 [sub_resource type="Resource" id="LevelBronzeCastingL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectBronzeCastingCostL3"), SubResource("EffectBronzeCastingL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -3156,7 +3157,7 @@ definition_key = &"ideology.seasonal_calendar.l1"
 [sub_resource type="Resource" id="LevelSeasonalCalendarL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectSeasonalCalendarL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -3174,8 +3175,8 @@ definition_key = &"ideology.seasonal_calendar.l2"
 
 [sub_resource type="Resource" id="LevelSeasonalCalendarL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectSeasonalCalendarL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -3206,7 +3207,7 @@ definition_key = &"seasonal_calendar_l3"
 
 [sub_resource type="Resource" id="LevelSeasonalCalendarL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectSeasonalCalendarL3"), SubResource("EffectSeasonalCalendarL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -3284,7 +3285,7 @@ definition_key = &"ever_normal_granary_l1"
 [sub_resource type="Resource" id="LevelEverNormalGranaryL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectEverNormalGranaryCostL1"), SubResource("EffectEverNormalGranaryL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -3315,8 +3316,8 @@ definition_key = &"ever_normal_granary_l2"
 
 [sub_resource type="Resource" id="LevelEverNormalGranaryL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectEverNormalGranaryCostL2"), SubResource("EffectEverNormalGranaryL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -3347,7 +3348,7 @@ definition_key = &"ever_normal_granary_l3"
 
 [sub_resource type="Resource" id="LevelEverNormalGranaryL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectEverNormalGranaryCostL3"), SubResource("EffectEverNormalGranaryL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -3425,7 +3426,7 @@ definition_key = &"settle_and_farm_l1"
 [sub_resource type="Resource" id="LevelSettleAndFarmL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectSettleAndFarmCostL1"), SubResource("EffectSettleAndFarmL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -3456,8 +3457,8 @@ definition_key = &"settle_and_farm_l2"
 
 [sub_resource type="Resource" id="LevelSettleAndFarmL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectSettleAndFarmCostL2"), SubResource("EffectSettleAndFarmL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -3488,7 +3489,7 @@ definition_key = &"settle_and_farm_l3"
 
 [sub_resource type="Resource" id="LevelSettleAndFarmL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectSettleAndFarmCostL3"), SubResource("EffectSettleAndFarmL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -3567,7 +3568,7 @@ definition_key = &"open_ports_l1"
 [sub_resource type="Resource" id="LevelOpenPortsL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectOpenPortsCostL1"), SubResource("EffectOpenPortsL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -3598,8 +3599,8 @@ definition_key = &"open_ports_l2"
 
 [sub_resource type="Resource" id="LevelOpenPortsL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectOpenPortsCostL2"), SubResource("EffectOpenPortsL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -3630,7 +3631,7 @@ definition_key = &"open_ports_l3"
 
 [sub_resource type="Resource" id="LevelOpenPortsL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectOpenPortsCostL3"), SubResource("EffectOpenPortsL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -3712,7 +3713,7 @@ definition_key = &"guild_charters_l1"
 [sub_resource type="Resource" id="LevelGuildChartersL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectGuildChartersCostL1"), SubResource("EffectGuildChartersL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -3743,8 +3744,8 @@ definition_key = &"guild_charters_l2"
 
 [sub_resource type="Resource" id="LevelGuildChartersL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectGuildChartersCostL2"), SubResource("EffectGuildChartersL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -3775,7 +3776,7 @@ definition_key = &"guild_charters_l3"
 
 [sub_resource type="Resource" id="LevelGuildChartersL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectGuildChartersCostL3"), SubResource("EffectGuildChartersL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -3841,7 +3842,7 @@ definition_key = &"ideology.double_entry"
 [sub_resource type="Resource" id="LevelDoubleEntryL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectDoubleEntryL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -3859,8 +3860,8 @@ definition_key = &"ideology.double_entry"
 
 [sub_resource type="Resource" id="LevelDoubleEntryL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectDoubleEntryL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -3878,7 +3879,7 @@ definition_key = &"ideology.double_entry"
 
 [sub_resource type="Resource" id="LevelDoubleEntryL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectDoubleEntryL3")])
 on_enter_effects = Array[Resource]([])
@@ -3942,7 +3943,7 @@ definition_key = &"ideology.academy_lectures"
 [sub_resource type="Resource" id="LevelAcademyLecturesL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectAcademyLecturesL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -3960,8 +3961,8 @@ definition_key = &"ideology.academy_lectures"
 
 [sub_resource type="Resource" id="LevelAcademyLecturesL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectAcademyLecturesL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -3979,7 +3980,7 @@ definition_key = &"ideology.academy_lectures"
 
 [sub_resource type="Resource" id="LevelAcademyLecturesL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectAcademyLecturesL3")])
 on_enter_effects = Array[Resource]([])
@@ -4036,7 +4037,7 @@ definition_key = &"ideology.civil_examination"
 [sub_resource type="Resource" id="LevelCivilExaminationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectCivilExaminationL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -4054,8 +4055,8 @@ definition_key = &"ideology.civil_examination"
 
 [sub_resource type="Resource" id="LevelCivilExaminationL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectCivilExaminationL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -4086,7 +4087,7 @@ definition_key = &"ideology.civil_examination.l3.free_draw"
 
 [sub_resource type="Resource" id="LevelCivilExaminationL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectCivilExaminationL3")])
 on_enter_effects = Array[Resource]([SubResource("EffectCivilExaminationL3OnEnter0")])
@@ -4156,7 +4157,7 @@ definition_key = &"iron_smelting_l1"
 [sub_resource type="Resource" id="LevelIronSmeltingL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectIronSmeltingCostL1"), SubResource("EffectIronSmeltingL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -4187,8 +4188,8 @@ definition_key = &"iron_smelting_l2"
 
 [sub_resource type="Resource" id="LevelIronSmeltingL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectIronSmeltingCostL2"), SubResource("EffectIronSmeltingL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -4232,7 +4233,7 @@ definition_key = &"iron_smelting_l3_target_output"
 
 [sub_resource type="Resource" id="LevelIronSmeltingL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectIronSmeltingCostL3"), SubResource("EffectIronSmeltingL3R0"), SubResource("EffectIronSmeltingL3R1")])
 on_enter_effects = Array[Resource]([])
@@ -4315,7 +4316,7 @@ definition_key = &"postal_horse_l1"
 [sub_resource type="Resource" id="LevelPostalHorseL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectPostalHorseCostL1"), SubResource("EffectPostalHorseL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -4346,8 +4347,8 @@ definition_key = &"postal_horse_l2"
 
 [sub_resource type="Resource" id="LevelPostalHorseL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectPostalHorseCostL2"), SubResource("EffectPostalHorseL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -4378,7 +4379,7 @@ definition_key = &"postal_horse_l3"
 
 [sub_resource type="Resource" id="LevelPostalHorseL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectPostalHorseCostL3"), SubResource("EffectPostalHorseL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -4447,7 +4448,7 @@ definition_key = &"ideology.monsoon_farming"
 [sub_resource type="Resource" id="LevelMonsoonFarmingL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectMonsoonFarmingL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -4465,8 +4466,8 @@ definition_key = &"ideology.monsoon_farming"
 
 [sub_resource type="Resource" id="LevelMonsoonFarmingL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectMonsoonFarmingL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -4484,7 +4485,7 @@ definition_key = &"ideology.monsoon_farming"
 
 [sub_resource type="Resource" id="LevelMonsoonFarmingL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectMonsoonFarmingL3")])
 on_enter_effects = Array[Resource]([])
@@ -4554,7 +4555,7 @@ definition_key = &"ideology.river_transport"
 [sub_resource type="Resource" id="LevelRiverTransportL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectRiverTransportL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -4572,8 +4573,8 @@ definition_key = &"ideology.river_transport"
 
 [sub_resource type="Resource" id="LevelRiverTransportL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectRiverTransportL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -4591,7 +4592,7 @@ definition_key = &"ideology.river_transport"
 
 [sub_resource type="Resource" id="LevelRiverTransportL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectRiverTransportL3")])
 on_enter_effects = Array[Resource]([])
@@ -4673,7 +4674,7 @@ definition_key = &"village_compact_l1"
 [sub_resource type="Resource" id="LevelVillageCompactL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectVillageCompactCostL1"), SubResource("EffectVillageCompactL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -4704,8 +4705,8 @@ definition_key = &"village_compact_l2"
 
 [sub_resource type="Resource" id="LevelVillageCompactL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectVillageCompactCostL2"), SubResource("EffectVillageCompactL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -4736,7 +4737,7 @@ definition_key = &"village_compact_l3"
 
 [sub_resource type="Resource" id="LevelVillageCompactL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectVillageCompactCostL3"), SubResource("EffectVillageCompactL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -4816,7 +4817,7 @@ definition_key = &"marriage_alliance_l1_adjacent_clan"
 [sub_resource type="Resource" id="LevelMarriageAllianceL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectMarriageAllianceL1R0"), SubResource("EffectMarriageAllianceL1R1")])
 on_enter_effects = Array[Resource]([])
 
@@ -4848,8 +4849,8 @@ definition_key = &"marriage_alliance_l2_adjacent_clan"
 
 [sub_resource type="Resource" id="LevelMarriageAllianceL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectMarriageAllianceL2R0"), SubResource("EffectMarriageAllianceL2R1")])
 on_enter_effects = Array[Resource]([])
 
@@ -4881,7 +4882,7 @@ definition_key = &"marriage_alliance_l3_adjacent_clan"
 
 [sub_resource type="Resource" id="LevelMarriageAllianceL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectMarriageAllianceL3R0"), SubResource("EffectMarriageAllianceL3R1")])
 on_enter_effects = Array[Resource]([])
@@ -4959,7 +4960,7 @@ definition_key = &"land_reclamation_l1"
 [sub_resource type="Resource" id="LevelLandReclamationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectLandReclamationCostL1"), SubResource("EffectLandReclamationL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -4990,8 +4991,8 @@ definition_key = &"land_reclamation_l2"
 
 [sub_resource type="Resource" id="LevelLandReclamationL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectLandReclamationCostL2"), SubResource("EffectLandReclamationL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -5022,7 +5023,7 @@ definition_key = &"land_reclamation_l3"
 
 [sub_resource type="Resource" id="LevelLandReclamationL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectLandReclamationCostL3"), SubResource("EffectLandReclamationL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -5088,7 +5089,7 @@ definition_key = &"ideology.granary_road"
 [sub_resource type="Resource" id="LevelGranaryRoadL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectGranaryRoadL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -5106,8 +5107,8 @@ definition_key = &"ideology.granary_road"
 
 [sub_resource type="Resource" id="LevelGranaryRoadL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectGranaryRoadL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -5125,7 +5126,7 @@ definition_key = &"ideology.granary_road"
 
 [sub_resource type="Resource" id="LevelGranaryRoadL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectGranaryRoadL3")])
 on_enter_effects = Array[Resource]([])
@@ -5189,7 +5190,7 @@ definition_key = &"ideology.imperial_academy"
 [sub_resource type="Resource" id="LevelImperialAcademyL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectImperialAcademyL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -5207,8 +5208,8 @@ definition_key = &"ideology.imperial_academy"
 
 [sub_resource type="Resource" id="LevelImperialAcademyL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectImperialAcademyL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -5226,7 +5227,7 @@ definition_key = &"ideology.imperial_academy"
 
 [sub_resource type="Resource" id="LevelImperialAcademyL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectImperialAcademyL3")])
 on_enter_effects = Array[Resource]([])
@@ -5296,7 +5297,7 @@ definition_key = &"public_hygiene_l1"
 [sub_resource type="Resource" id="LevelPublicHygieneL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectPublicHygieneCostL1"), SubResource("EffectPublicHygieneL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -5327,8 +5328,8 @@ definition_key = &"public_hygiene_l2"
 
 [sub_resource type="Resource" id="LevelPublicHygieneL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectPublicHygieneCostL2"), SubResource("EffectPublicHygieneL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -5359,7 +5360,7 @@ definition_key = &"public_hygiene_l3"
 
 [sub_resource type="Resource" id="LevelPublicHygieneL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectPublicHygieneCostL3"), SubResource("EffectPublicHygieneL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -5437,7 +5438,7 @@ definition_key = &"drought_relief_l1"
 [sub_resource type="Resource" id="LevelDroughtReliefL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectDroughtReliefL1"), SubResource("EffectDroughtReliefL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -5468,8 +5469,8 @@ definition_key = &"drought_relief_l2"
 
 [sub_resource type="Resource" id="LevelDroughtReliefL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectDroughtReliefL2"), SubResource("EffectDroughtReliefL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -5500,7 +5501,7 @@ definition_key = &"drought_relief_l3"
 
 [sub_resource type="Resource" id="LevelDroughtReliefL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectDroughtReliefL3"), SubResource("EffectDroughtReliefL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -5578,7 +5579,7 @@ definition_key = &"heaven_human_l1"
 [sub_resource type="Resource" id="LevelHeavenHumanL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectHeavenHumanCostL1"), SubResource("EffectHeavenHumanL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -5609,8 +5610,8 @@ definition_key = &"heaven_human_l2"
 
 [sub_resource type="Resource" id="LevelHeavenHumanL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectHeavenHumanCostL2"), SubResource("EffectHeavenHumanL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -5641,7 +5642,7 @@ definition_key = &"heaven_human_l3"
 
 [sub_resource type="Resource" id="LevelHeavenHumanL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectHeavenHumanCostL3"), SubResource("EffectHeavenHumanL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -5718,7 +5719,7 @@ definition_key = &"salt_monopoly_l1"
 [sub_resource type="Resource" id="LevelSaltMonopolyL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectSaltMonopolyCostL1"), SubResource("EffectSaltMonopolyL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -5749,8 +5750,8 @@ definition_key = &"salt_monopoly_l2"
 
 [sub_resource type="Resource" id="LevelSaltMonopolyL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectSaltMonopolyCostL2"), SubResource("EffectSaltMonopolyL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -5781,7 +5782,7 @@ definition_key = &"salt_monopoly_l3"
 
 [sub_resource type="Resource" id="LevelSaltMonopolyL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectSaltMonopolyCostL3"), SubResource("EffectSaltMonopolyL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -5865,7 +5866,7 @@ definition_key = &"sericulture_l1"
 [sub_resource type="Resource" id="LevelSericultureL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectSericultureCostL1"), SubResource("EffectSericultureL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -5896,8 +5897,8 @@ definition_key = &"sericulture_l2"
 
 [sub_resource type="Resource" id="LevelSericultureL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectSericultureCostL2"), SubResource("EffectSericultureL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -5928,7 +5929,7 @@ definition_key = &"sericulture_l3"
 
 [sub_resource type="Resource" id="LevelSericultureL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectSericultureCostL3"), SubResource("EffectSericultureL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -6011,7 +6012,7 @@ definition_key = &"ocean_company_l1"
 [sub_resource type="Resource" id="LevelOceanCompanyL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectOceanCompanyCostL1"), SubResource("EffectOceanCompanyL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -6042,8 +6043,8 @@ definition_key = &"ocean_company_l2"
 
 [sub_resource type="Resource" id="LevelOceanCompanyL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectOceanCompanyCostL2"), SubResource("EffectOceanCompanyL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -6074,7 +6075,7 @@ definition_key = &"ocean_company_l3"
 
 [sub_resource type="Resource" id="LevelOceanCompanyL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectOceanCompanyCostL3"), SubResource("EffectOceanCompanyL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -6152,7 +6153,7 @@ definition_key = &"chartered_route_l1"
 [sub_resource type="Resource" id="LevelCharteredRouteL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectCharteredRouteCostL1"), SubResource("EffectCharteredRouteL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -6183,8 +6184,8 @@ definition_key = &"chartered_route_l2"
 
 [sub_resource type="Resource" id="LevelCharteredRouteL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectCharteredRouteCostL2"), SubResource("EffectCharteredRouteL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -6215,7 +6216,7 @@ definition_key = &"chartered_route_l3"
 
 [sub_resource type="Resource" id="LevelCharteredRouteL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectCharteredRouteCostL3"), SubResource("EffectCharteredRouteL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -6286,7 +6287,7 @@ definition_key = &"ideology.cartography"
 [sub_resource type="Resource" id="LevelCartographyL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectCartographyL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -6304,8 +6305,8 @@ definition_key = &"ideology.cartography"
 
 [sub_resource type="Resource" id="LevelCartographyL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectCartographyL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -6323,7 +6324,7 @@ definition_key = &"ideology.cartography"
 
 [sub_resource type="Resource" id="LevelCartographyL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectCartographyL3")])
 on_enter_effects = Array[Resource]([])
@@ -6398,7 +6399,7 @@ definition_key = &"colonial_plantation_l1"
 [sub_resource type="Resource" id="LevelColonialPlantationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectColonialPlantationCostL1"), SubResource("EffectColonialPlantationL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -6429,8 +6430,8 @@ definition_key = &"colonial_plantation_l2"
 
 [sub_resource type="Resource" id="LevelColonialPlantationL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectColonialPlantationCostL2"), SubResource("EffectColonialPlantationL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -6461,7 +6462,7 @@ definition_key = &"colonial_plantation_l3"
 
 [sub_resource type="Resource" id="LevelColonialPlantationL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectColonialPlantationCostL3"), SubResource("EffectColonialPlantationL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -6544,7 +6545,7 @@ definition_key = &"silver_flow_l1"
 [sub_resource type="Resource" id="LevelSilverFlowL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectSilverFlowCostL1"), SubResource("EffectSilverFlowL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -6575,8 +6576,8 @@ definition_key = &"silver_flow_l2"
 
 [sub_resource type="Resource" id="LevelSilverFlowL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectSilverFlowCostL2"), SubResource("EffectSilverFlowL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -6607,7 +6608,7 @@ definition_key = &"silver_flow_l3"
 
 [sub_resource type="Resource" id="LevelSilverFlowL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectSilverFlowCostL3"), SubResource("EffectSilverFlowL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -6679,7 +6680,7 @@ definition_key = &"ideology.natural_history"
 [sub_resource type="Resource" id="LevelNaturalHistoryL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectNaturalHistoryL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -6697,8 +6698,8 @@ definition_key = &"ideology.natural_history"
 
 [sub_resource type="Resource" id="LevelNaturalHistoryL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectNaturalHistoryL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -6716,7 +6717,7 @@ definition_key = &"ideology.natural_history"
 
 [sub_resource type="Resource" id="LevelNaturalHistoryL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectNaturalHistoryL3")])
 on_enter_effects = Array[Resource]([])
@@ -6786,7 +6787,7 @@ definition_key = &"manufactory_regulation_l1"
 [sub_resource type="Resource" id="LevelManufactoryRegulationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectManufactoryRegulationCostL1"), SubResource("EffectManufactoryRegulationL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -6817,8 +6818,8 @@ definition_key = &"manufactory_regulation_l2"
 
 [sub_resource type="Resource" id="LevelManufactoryRegulationL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectManufactoryRegulationCostL2"), SubResource("EffectManufactoryRegulationL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -6849,7 +6850,7 @@ definition_key = &"manufactory_regulation_l3"
 
 [sub_resource type="Resource" id="LevelManufactoryRegulationL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectManufactoryRegulationCostL3"), SubResource("EffectManufactoryRegulationL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -6926,7 +6927,7 @@ definition_key = &"maritime_insurance_l1"
 [sub_resource type="Resource" id="LevelMaritimeInsuranceL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectMaritimeInsuranceCostL1"), SubResource("EffectMaritimeInsuranceL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -6957,8 +6958,8 @@ definition_key = &"maritime_insurance_l2"
 
 [sub_resource type="Resource" id="LevelMaritimeInsuranceL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectMaritimeInsuranceCostL2"), SubResource("EffectMaritimeInsuranceL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -6989,7 +6990,7 @@ definition_key = &"maritime_insurance_l3"
 
 [sub_resource type="Resource" id="LevelMaritimeInsuranceL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectMaritimeInsuranceCostL3"), SubResource("EffectMaritimeInsuranceL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -7071,7 +7072,7 @@ definition_key = &"gentry_patronage_l1"
 [sub_resource type="Resource" id="LevelGentryPatronageL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectGentryPatronageL1"), SubResource("EffectGentryPatronageL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -7102,8 +7103,8 @@ definition_key = &"gentry_patronage_l2"
 
 [sub_resource type="Resource" id="LevelGentryPatronageL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectGentryPatronageL2"), SubResource("EffectGentryPatronageL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -7147,7 +7148,7 @@ definition_key = &"gentry_patronage_l3_ring"
 
 [sub_resource type="Resource" id="LevelGentryPatronageL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectGentryPatronageL3"), SubResource("EffectGentryPatronageL3R0"), SubResource("EffectGentryPatronageL3R1")])
 on_enter_effects = Array[Resource]([])
@@ -7217,7 +7218,7 @@ definition_key = &"frontier_garrison_l1"
 [sub_resource type="Resource" id="LevelFrontierGarrisonL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectFrontierGarrisonL1"), SubResource("EffectFrontierGarrisonL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -7248,8 +7249,8 @@ definition_key = &"frontier_garrison_l2"
 
 [sub_resource type="Resource" id="LevelFrontierGarrisonL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectFrontierGarrisonL2"), SubResource("EffectFrontierGarrisonL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -7280,7 +7281,7 @@ definition_key = &"frontier_garrison_l3"
 
 [sub_resource type="Resource" id="LevelFrontierGarrisonL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectFrontierGarrisonL3"), SubResource("EffectFrontierGarrisonL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -7358,7 +7359,7 @@ definition_key = &"experimental_method_l1"
 [sub_resource type="Resource" id="LevelExperimentalMethodL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectExperimentalMethodCostL1"), SubResource("EffectExperimentalMethodL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -7389,8 +7390,8 @@ definition_key = &"experimental_method_l2"
 
 [sub_resource type="Resource" id="LevelExperimentalMethodL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectExperimentalMethodCostL2"), SubResource("EffectExperimentalMethodL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -7421,7 +7422,7 @@ definition_key = &"experimental_method_l3"
 
 [sub_resource type="Resource" id="LevelExperimentalMethodL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectExperimentalMethodCostL3"), SubResource("EffectExperimentalMethodL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -7478,7 +7479,7 @@ definition_key = &"ideology.encyclopedia"
 [sub_resource type="Resource" id="LevelEncyclopediaL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectEncyclopediaL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -7496,8 +7497,8 @@ definition_key = &"ideology.encyclopedia"
 
 [sub_resource type="Resource" id="LevelEncyclopediaL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectEncyclopediaL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -7515,7 +7516,7 @@ definition_key = &"ideology.encyclopedia"
 
 [sub_resource type="Resource" id="LevelEncyclopediaL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectEncyclopediaL3")])
 on_enter_effects = Array[Resource]([])
@@ -7573,7 +7574,7 @@ definition_key = &"ideology.national_education"
 [sub_resource type="Resource" id="LevelNationalEducationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectNationalEducationL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -7591,8 +7592,8 @@ definition_key = &"ideology.national_education"
 
 [sub_resource type="Resource" id="LevelNationalEducationL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectNationalEducationL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -7610,7 +7611,7 @@ definition_key = &"ideology.national_education"
 
 [sub_resource type="Resource" id="LevelNationalEducationL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectNationalEducationL3")])
 on_enter_effects = Array[Resource]([])
@@ -7687,7 +7688,7 @@ definition_key = &"agrarian_reform_l1"
 [sub_resource type="Resource" id="LevelAgrarianReformL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectAgrarianReformCostL1"), SubResource("EffectAgrarianReformL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -7718,8 +7719,8 @@ definition_key = &"agrarian_reform_l2"
 
 [sub_resource type="Resource" id="LevelAgrarianReformL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectAgrarianReformCostL2"), SubResource("EffectAgrarianReformL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -7750,7 +7751,7 @@ definition_key = &"agrarian_reform_l3"
 
 [sub_resource type="Resource" id="LevelAgrarianReformL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectAgrarianReformCostL3"), SubResource("EffectAgrarianReformL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -7828,7 +7829,7 @@ definition_key = &"coal_basin_l1"
 [sub_resource type="Resource" id="LevelCoalBasinL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectCoalBasinCostL1"), SubResource("EffectCoalBasinL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -7859,8 +7860,8 @@ definition_key = &"coal_basin_l2"
 
 [sub_resource type="Resource" id="LevelCoalBasinL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectCoalBasinCostL2"), SubResource("EffectCoalBasinL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -7891,7 +7892,7 @@ definition_key = &"coal_basin_l3"
 
 [sub_resource type="Resource" id="LevelCoalBasinL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectCoalBasinCostL3"), SubResource("EffectCoalBasinL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -7975,7 +7976,7 @@ definition_key = &"cotton_gin_l1"
 [sub_resource type="Resource" id="LevelCottonGinL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectCottonGinCostL1"), SubResource("EffectCottonGinL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -8006,8 +8007,8 @@ definition_key = &"cotton_gin_l2"
 
 [sub_resource type="Resource" id="LevelCottonGinL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectCottonGinCostL2"), SubResource("EffectCottonGinL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -8038,7 +8039,7 @@ definition_key = &"cotton_gin_l3"
 
 [sub_resource type="Resource" id="LevelCottonGinL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectCottonGinCostL3"), SubResource("EffectCottonGinL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -8121,7 +8122,7 @@ definition_key = &"enclosure_l1"
 [sub_resource type="Resource" id="LevelEnclosureL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectEnclosureCostL1"), SubResource("EffectEnclosureL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -8152,8 +8153,8 @@ definition_key = &"enclosure_l2"
 
 [sub_resource type="Resource" id="LevelEnclosureL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectEnclosureCostL2"), SubResource("EffectEnclosureL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -8184,7 +8185,7 @@ definition_key = &"enclosure_l3"
 
 [sub_resource type="Resource" id="LevelEnclosureL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectEnclosureCostL3"), SubResource("EffectEnclosureL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -8249,7 +8250,7 @@ definition_key = &"ideology.learned_society"
 [sub_resource type="Resource" id="LevelLearnedSocietyL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectLearnedSocietyL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -8267,8 +8268,8 @@ definition_key = &"ideology.learned_society"
 
 [sub_resource type="Resource" id="LevelLearnedSocietyL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectLearnedSocietyL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -8286,7 +8287,7 @@ definition_key = &"ideology.learned_society"
 
 [sub_resource type="Resource" id="LevelLearnedSocietyL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectLearnedSocietyL3")])
 on_enter_effects = Array[Resource]([])
@@ -8343,7 +8344,7 @@ definition_key = &"ideology.land_tax_reform.l1"
 [sub_resource type="Resource" id="LevelLandTaxReformL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectLandTaxReformL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -8361,8 +8362,8 @@ definition_key = &"ideology.land_tax_reform.l2"
 
 [sub_resource type="Resource" id="LevelLandTaxReformL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectLandTaxReformL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -8393,7 +8394,7 @@ definition_key = &"land_tax_reform_l3"
 
 [sub_resource type="Resource" id="LevelLandTaxReformL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectLandTaxReformL3"), SubResource("EffectLandTaxReformL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -8459,7 +8460,7 @@ definition_key = &"ideology.excise.l1"
 [sub_resource type="Resource" id="LevelExciseL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectExciseL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -8477,8 +8478,8 @@ definition_key = &"ideology.excise.l2"
 
 [sub_resource type="Resource" id="LevelExciseL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectExciseL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -8509,7 +8510,7 @@ definition_key = &"excise_l3_ramp"
 
 [sub_resource type="Resource" id="LevelExciseL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectExciseL3"), SubResource("EffectExciseL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -8574,7 +8575,7 @@ definition_key = &"ideology.steam_power"
 [sub_resource type="Resource" id="LevelSteamPowerL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectSteamPowerL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -8592,8 +8593,8 @@ definition_key = &"ideology.steam_power"
 
 [sub_resource type="Resource" id="LevelSteamPowerL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectSteamPowerL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -8611,7 +8612,7 @@ definition_key = &"ideology.steam_power"
 
 [sub_resource type="Resource" id="LevelSteamPowerL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectSteamPowerL3")])
 on_enter_effects = Array[Resource]([])
@@ -8680,7 +8681,7 @@ definition_key = &"ideology.railway_network"
 [sub_resource type="Resource" id="LevelRailwayNetworkL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectRailwayNetworkL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -8698,8 +8699,8 @@ definition_key = &"ideology.railway_network"
 
 [sub_resource type="Resource" id="LevelRailwayNetworkL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectRailwayNetworkL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -8717,7 +8718,7 @@ definition_key = &"ideology.railway_network"
 
 [sub_resource type="Resource" id="LevelRailwayNetworkL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectRailwayNetworkL3")])
 on_enter_effects = Array[Resource]([])
@@ -8794,7 +8795,7 @@ definition_key = &"urban_sanitation_l1"
 [sub_resource type="Resource" id="LevelUrbanSanitationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectUrbanSanitationCostL1"), SubResource("EffectUrbanSanitationL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -8825,8 +8826,8 @@ definition_key = &"urban_sanitation_l2"
 
 [sub_resource type="Resource" id="LevelUrbanSanitationL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectUrbanSanitationCostL2"), SubResource("EffectUrbanSanitationL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -8857,7 +8858,7 @@ definition_key = &"urban_sanitation_l3"
 
 [sub_resource type="Resource" id="LevelUrbanSanitationL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectUrbanSanitationCostL3"), SubResource("EffectUrbanSanitationL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -8922,7 +8923,7 @@ definition_key = &"ideology.steam_shipping"
 [sub_resource type="Resource" id="LevelSteamShippingL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectSteamShippingL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -8940,8 +8941,8 @@ definition_key = &"ideology.steam_shipping"
 
 [sub_resource type="Resource" id="LevelSteamShippingL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectSteamShippingL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -8959,7 +8960,7 @@ definition_key = &"ideology.steam_shipping"
 
 [sub_resource type="Resource" id="LevelSteamShippingL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectSteamShippingL3")])
 on_enter_effects = Array[Resource]([])
@@ -9023,7 +9024,7 @@ definition_key = &"ideology.labour_legislation.l1"
 [sub_resource type="Resource" id="LevelLabourLegislationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectLabourLegislationL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -9041,8 +9042,8 @@ definition_key = &"ideology.labour_legislation.l2"
 
 [sub_resource type="Resource" id="LevelLabourLegislationL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectLabourLegislationL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -9060,7 +9061,7 @@ definition_key = &"ideology.labour_legislation.l3"
 
 [sub_resource type="Resource" id="LevelLabourLegislationL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectLabourLegislationL3")])
 on_enter_effects = Array[Resource]([])
@@ -9139,7 +9140,7 @@ definition_key = &"free_trade_l1"
 [sub_resource type="Resource" id="LevelFreeTradeL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectFreeTradeCostL1"), SubResource("EffectFreeTradeL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -9170,8 +9171,8 @@ definition_key = &"free_trade_l2"
 
 [sub_resource type="Resource" id="LevelFreeTradeL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectFreeTradeCostL2"), SubResource("EffectFreeTradeL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -9202,7 +9203,7 @@ definition_key = &"free_trade_l3"
 
 [sub_resource type="Resource" id="LevelFreeTradeL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectFreeTradeCostL3"), SubResource("EffectFreeTradeL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -9280,7 +9281,7 @@ definition_key = &"agricultural_chemistry_l1"
 [sub_resource type="Resource" id="LevelAgriculturalChemistryL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectAgriculturalChemistryCostL1"), SubResource("EffectAgriculturalChemistryL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -9311,8 +9312,8 @@ definition_key = &"agricultural_chemistry_l2"
 
 [sub_resource type="Resource" id="LevelAgriculturalChemistryL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectAgriculturalChemistryCostL2"), SubResource("EffectAgriculturalChemistryL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -9343,7 +9344,7 @@ definition_key = &"agricultural_chemistry_l3"
 
 [sub_resource type="Resource" id="LevelAgriculturalChemistryL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectAgriculturalChemistryCostL3"), SubResource("EffectAgriculturalChemistryL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -9427,7 +9428,7 @@ definition_key = &"frost_lore_l1_hot"
 [sub_resource type="Resource" id="LevelFrostLoreL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectFrostLoreL1R0"), SubResource("EffectFrostLoreL1R1")])
 on_enter_effects = Array[Resource]([])
 
@@ -9459,8 +9460,8 @@ definition_key = &"frost_lore_l2_hot"
 
 [sub_resource type="Resource" id="LevelFrostLoreL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectFrostLoreL2R0"), SubResource("EffectFrostLoreL2R1")])
 on_enter_effects = Array[Resource]([])
 
@@ -9492,7 +9493,7 @@ definition_key = &"frost_lore_l3_hot"
 
 [sub_resource type="Resource" id="LevelFrostLoreL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectFrostLoreL3R0"), SubResource("EffectFrostLoreL3R1")])
 on_enter_effects = Array[Resource]([])
@@ -9570,7 +9571,7 @@ definition_key = &"telegraph_l1"
 [sub_resource type="Resource" id="LevelTelegraphL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectTelegraphCostL1"), SubResource("EffectTelegraphL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -9601,8 +9602,8 @@ definition_key = &"telegraph_l2"
 
 [sub_resource type="Resource" id="LevelTelegraphL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectTelegraphCostL2"), SubResource("EffectTelegraphL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -9633,7 +9634,7 @@ definition_key = &"telegraph_l3"
 
 [sub_resource type="Resource" id="LevelTelegraphL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectTelegraphCostL3"), SubResource("EffectTelegraphL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -9716,7 +9717,7 @@ definition_key = &"trade_unions_l1_worker_bonus"
 [sub_resource type="Resource" id="LevelTradeUnionsL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectTradeUnionsCostL1"), SubResource("EffectTradeUnionsL1R0"), SubResource("EffectTradeUnionsL1R1")])
 on_enter_effects = Array[Resource]([])
 
@@ -9760,8 +9761,8 @@ definition_key = &"trade_unions_l2_worker_bonus"
 
 [sub_resource type="Resource" id="LevelTradeUnionsL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectTradeUnionsCostL2"), SubResource("EffectTradeUnionsL2R0"), SubResource("EffectTradeUnionsL2R1")])
 on_enter_effects = Array[Resource]([])
 
@@ -9805,7 +9806,7 @@ definition_key = &"trade_unions_l3_worker_bonus"
 
 [sub_resource type="Resource" id="LevelTradeUnionsL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectTradeUnionsCostL3"), SubResource("EffectTradeUnionsL3R0"), SubResource("EffectTradeUnionsL3R1")])
 on_enter_effects = Array[Resource]([])
@@ -9884,7 +9885,7 @@ definition_key = &"assembly_line_l1"
 [sub_resource type="Resource" id="LevelAssemblyLineL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectAssemblyLineCostL1"), SubResource("EffectAssemblyLineL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -9915,8 +9916,8 @@ definition_key = &"assembly_line_l2"
 
 [sub_resource type="Resource" id="LevelAssemblyLineL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectAssemblyLineCostL2"), SubResource("EffectAssemblyLineL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -9947,7 +9948,7 @@ definition_key = &"assembly_line_l3"
 
 [sub_resource type="Resource" id="LevelAssemblyLineL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectAssemblyLineCostL3"), SubResource("EffectAssemblyLineL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -10025,7 +10026,7 @@ definition_key = &"electrification_l1"
 [sub_resource type="Resource" id="LevelElectrificationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectElectrificationCostL1"), SubResource("EffectElectrificationL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -10056,8 +10057,8 @@ definition_key = &"electrification_l2"
 
 [sub_resource type="Resource" id="LevelElectrificationL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectElectrificationCostL2"), SubResource("EffectElectrificationL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -10088,7 +10089,7 @@ definition_key = &"electrification_l3"
 
 [sub_resource type="Resource" id="LevelElectrificationL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectElectrificationCostL3"), SubResource("EffectElectrificationL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -10180,7 +10181,7 @@ definition_key = &"ecological_balance_l1_dry"
 [sub_resource type="Resource" id="LevelEcologicalBalanceL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectEcologicalBalanceCostL1"), SubResource("EffectEcologicalBalanceL1R0"), SubResource("EffectEcologicalBalanceL1R1")])
 on_enter_effects = Array[Resource]([])
 
@@ -10224,8 +10225,8 @@ definition_key = &"ecological_balance_l2_dry"
 
 [sub_resource type="Resource" id="LevelEcologicalBalanceL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectEcologicalBalanceCostL2"), SubResource("EffectEcologicalBalanceL2R0"), SubResource("EffectEcologicalBalanceL2R1")])
 on_enter_effects = Array[Resource]([])
 
@@ -10256,7 +10257,7 @@ definition_key = &"ecological_balance_l3_rich"
 
 [sub_resource type="Resource" id="LevelEcologicalBalanceL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectEcologicalBalanceCostL3"), SubResource("EffectEcologicalBalanceL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -10322,7 +10323,7 @@ definition_key = &"ideology.mass_media"
 [sub_resource type="Resource" id="LevelMassMediaL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectMassMediaL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -10340,8 +10341,8 @@ definition_key = &"ideology.mass_media"
 
 [sub_resource type="Resource" id="LevelMassMediaL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectMassMediaL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -10359,7 +10360,7 @@ definition_key = &"ideology.mass_media"
 
 [sub_resource type="Resource" id="LevelMassMediaL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectMassMediaL3")])
 on_enter_effects = Array[Resource]([])
@@ -10429,7 +10430,7 @@ definition_key = &"chemical_industry_l1"
 [sub_resource type="Resource" id="LevelChemicalIndustryL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectChemicalIndustryCostL1"), SubResource("EffectChemicalIndustryL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -10460,8 +10461,8 @@ definition_key = &"chemical_industry_l2"
 
 [sub_resource type="Resource" id="LevelChemicalIndustryL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectChemicalIndustryCostL2"), SubResource("EffectChemicalIndustryL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -10492,7 +10493,7 @@ definition_key = &"chemical_industry_l3"
 
 [sub_resource type="Resource" id="LevelChemicalIndustryL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectChemicalIndustryCostL3"), SubResource("EffectChemicalIndustryL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -10561,7 +10562,7 @@ definition_key = &"ideology.hydroelectric.l1"
 [sub_resource type="Resource" id="LevelHydroelectricL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectHydroelectricL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -10579,8 +10580,8 @@ definition_key = &"ideology.hydroelectric.l2"
 
 [sub_resource type="Resource" id="LevelHydroelectricL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectHydroelectricL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -10611,7 +10612,7 @@ definition_key = &"hydroelectric_l3"
 
 [sub_resource type="Resource" id="LevelHydroelectricL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectHydroelectricL3"), SubResource("EffectHydroelectricL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -10707,7 +10708,7 @@ definition_key = &"antitrust_l1_penalty"
 [sub_resource type="Resource" id="LevelAntitrustL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectAntitrustCostL1"), SubResource("EffectAntitrustL1R0"), SubResource("EffectAntitrustL1R1")])
 on_enter_effects = Array[Resource]([])
 
@@ -10751,8 +10752,8 @@ definition_key = &"antitrust_l2_penalty"
 
 [sub_resource type="Resource" id="LevelAntitrustL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectAntitrustCostL2"), SubResource("EffectAntitrustL2R0"), SubResource("EffectAntitrustL2R1")])
 on_enter_effects = Array[Resource]([])
 
@@ -10796,7 +10797,7 @@ definition_key = &"antitrust_l3_penalty"
 
 [sub_resource type="Resource" id="LevelAntitrustL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectAntitrustCostL3"), SubResource("EffectAntitrustL3R0"), SubResource("EffectAntitrustL3R1")])
 on_enter_effects = Array[Resource]([])
@@ -10875,7 +10876,7 @@ definition_key = &"refrigeration_l1"
 [sub_resource type="Resource" id="LevelRefrigerationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectRefrigerationL1"), SubResource("EffectRefrigerationL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -10906,8 +10907,8 @@ definition_key = &"refrigeration_l2"
 
 [sub_resource type="Resource" id="LevelRefrigerationL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectRefrigerationL2"), SubResource("EffectRefrigerationL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -10951,7 +10952,7 @@ definition_key = &"refrigeration_l3_ring"
 
 [sub_resource type="Resource" id="LevelRefrigerationL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectRefrigerationL3"), SubResource("EffectRefrigerationL3R0"), SubResource("EffectRefrigerationL3R1")])
 on_enter_effects = Array[Resource]([])
@@ -11030,7 +11031,7 @@ definition_key = &"department_store_l1_cost"
 [sub_resource type="Resource" id="LevelDepartmentStoreL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectDepartmentStoreL1R0"), SubResource("EffectDepartmentStoreL1R1")])
 on_enter_effects = Array[Resource]([])
 
@@ -11062,8 +11063,8 @@ definition_key = &"department_store_l2_cost"
 
 [sub_resource type="Resource" id="LevelDepartmentStoreL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectDepartmentStoreL2R0"), SubResource("EffectDepartmentStoreL2R1")])
 on_enter_effects = Array[Resource]([])
 
@@ -11095,7 +11096,7 @@ definition_key = &"department_store_l3_cost"
 
 [sub_resource type="Resource" id="LevelDepartmentStoreL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectDepartmentStoreL3R0"), SubResource("EffectDepartmentStoreL3R1")])
 on_enter_effects = Array[Resource]([])
@@ -11172,7 +11173,7 @@ definition_key = &"offshore_drilling_l1"
 [sub_resource type="Resource" id="LevelOffshoreDrillingL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectOffshoreDrillingCostL1"), SubResource("EffectOffshoreDrillingL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -11203,8 +11204,8 @@ definition_key = &"offshore_drilling_l2"
 
 [sub_resource type="Resource" id="LevelOffshoreDrillingL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectOffshoreDrillingCostL2"), SubResource("EffectOffshoreDrillingL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -11235,7 +11236,7 @@ definition_key = &"offshore_drilling_l3"
 
 [sub_resource type="Resource" id="LevelOffshoreDrillingL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectOffshoreDrillingCostL3"), SubResource("EffectOffshoreDrillingL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -11317,7 +11318,7 @@ definition_key = &"supermarket_l1"
 [sub_resource type="Resource" id="LevelSupermarketL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectSupermarketCostL1"), SubResource("EffectSupermarketL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -11348,8 +11349,8 @@ definition_key = &"supermarket_l2"
 
 [sub_resource type="Resource" id="LevelSupermarketL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectSupermarketCostL2"), SubResource("EffectSupermarketL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -11380,7 +11381,7 @@ definition_key = &"supermarket_l3"
 
 [sub_resource type="Resource" id="LevelSupermarketL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectSupermarketCostL3"), SubResource("EffectSupermarketL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -11457,7 +11458,7 @@ definition_key = &"nuclear_power_l1"
 [sub_resource type="Resource" id="LevelNuclearPowerL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectNuclearPowerCostL1"), SubResource("EffectNuclearPowerL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -11488,8 +11489,8 @@ definition_key = &"nuclear_power_l2"
 
 [sub_resource type="Resource" id="LevelNuclearPowerL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectNuclearPowerCostL2"), SubResource("EffectNuclearPowerL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -11520,7 +11521,7 @@ definition_key = &"nuclear_power_l3"
 
 [sub_resource type="Resource" id="LevelNuclearPowerL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectNuclearPowerCostL3"), SubResource("EffectNuclearPowerL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -11590,7 +11591,7 @@ definition_key = &"ideology.antibiotics"
 [sub_resource type="Resource" id="LevelAntibioticsL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectAntibioticsL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -11608,8 +11609,8 @@ definition_key = &"ideology.antibiotics"
 
 [sub_resource type="Resource" id="LevelAntibioticsL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectAntibioticsL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -11627,7 +11628,7 @@ definition_key = &"ideology.antibiotics"
 
 [sub_resource type="Resource" id="LevelAntibioticsL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectAntibioticsL3")])
 on_enter_effects = Array[Resource]([])
@@ -11705,7 +11706,7 @@ definition_key = &"motorization_l1"
 [sub_resource type="Resource" id="LevelMotorizationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectMotorizationCostL1"), SubResource("EffectMotorizationL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -11736,8 +11737,8 @@ definition_key = &"motorization_l2"
 
 [sub_resource type="Resource" id="LevelMotorizationL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectMotorizationCostL2"), SubResource("EffectMotorizationL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -11768,7 +11769,7 @@ definition_key = &"motorization_l3"
 
 [sub_resource type="Resource" id="LevelMotorizationL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectMotorizationCostL3"), SubResource("EffectMotorizationL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -11833,7 +11834,7 @@ definition_key = &"ideology.green_revolution"
 [sub_resource type="Resource" id="LevelGreenRevolutionL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectGreenRevolutionL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -11851,8 +11852,8 @@ definition_key = &"ideology.green_revolution"
 
 [sub_resource type="Resource" id="LevelGreenRevolutionL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectGreenRevolutionL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -11870,7 +11871,7 @@ definition_key = &"ideology.green_revolution"
 
 [sub_resource type="Resource" id="LevelGreenRevolutionL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectGreenRevolutionL3")])
 on_enter_effects = Array[Resource]([])
@@ -11966,7 +11967,7 @@ definition_key = &"petrochemical_l1_synthetic_fiber"
 [sub_resource type="Resource" id="LevelPetrochemicalL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectPetrochemicalCostL1"), SubResource("EffectPetrochemicalL1R0"), SubResource("EffectPetrochemicalL1R1")])
 on_enter_effects = Array[Resource]([])
 
@@ -12010,8 +12011,8 @@ definition_key = &"petrochemical_l2_synthetic_fiber"
 
 [sub_resource type="Resource" id="LevelPetrochemicalL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectPetrochemicalCostL2"), SubResource("EffectPetrochemicalL2R0"), SubResource("EffectPetrochemicalL2R1")])
 on_enter_effects = Array[Resource]([])
 
@@ -12055,7 +12056,7 @@ definition_key = &"petrochemical_l3_synthetic_fiber"
 
 [sub_resource type="Resource" id="LevelPetrochemicalL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectPetrochemicalCostL3"), SubResource("EffectPetrochemicalL3R0"), SubResource("EffectPetrochemicalL3R1")])
 on_enter_effects = Array[Resource]([])
@@ -12138,7 +12139,7 @@ definition_key = &"container_port_l1"
 [sub_resource type="Resource" id="LevelContainerPortL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectContainerPortCostL1"), SubResource("EffectContainerPortL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -12169,8 +12170,8 @@ definition_key = &"container_port_l2"
 
 [sub_resource type="Resource" id="LevelContainerPortL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectContainerPortCostL2"), SubResource("EffectContainerPortL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -12201,7 +12202,7 @@ definition_key = &"container_port_l3"
 
 [sub_resource type="Resource" id="LevelContainerPortL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectContainerPortCostL3"), SubResource("EffectContainerPortL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -12283,7 +12284,7 @@ definition_key = &"welfare_state_l1"
 [sub_resource type="Resource" id="LevelWelfareStateL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectWelfareStateCostL1"), SubResource("EffectWelfareStateL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -12314,8 +12315,8 @@ definition_key = &"welfare_state_l2"
 
 [sub_resource type="Resource" id="LevelWelfareStateL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectWelfareStateCostL2"), SubResource("EffectWelfareStateL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -12346,7 +12347,7 @@ definition_key = &"welfare_state_l3"
 
 [sub_resource type="Resource" id="LevelWelfareStateL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectWelfareStateCostL3"), SubResource("EffectWelfareStateL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -12425,7 +12426,7 @@ definition_key = &"suburbanization_l1_cost"
 [sub_resource type="Resource" id="LevelSuburbanizationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectSuburbanizationL1R0"), SubResource("EffectSuburbanizationL1R1")])
 on_enter_effects = Array[Resource]([])
 
@@ -12457,8 +12458,8 @@ definition_key = &"suburbanization_l2_cost"
 
 [sub_resource type="Resource" id="LevelSuburbanizationL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectSuburbanizationL2R0"), SubResource("EffectSuburbanizationL2R1")])
 on_enter_effects = Array[Resource]([])
 
@@ -12490,7 +12491,7 @@ definition_key = &"suburbanization_l3_cost"
 
 [sub_resource type="Resource" id="LevelSuburbanizationL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectSuburbanizationL3R0"), SubResource("EffectSuburbanizationL3R1")])
 on_enter_effects = Array[Resource]([])
@@ -12567,7 +12568,7 @@ definition_key = &"family_office_l1"
 [sub_resource type="Resource" id="LevelFamilyOfficeL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectFamilyOfficeL1"), SubResource("EffectFamilyOfficeL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -12598,8 +12599,8 @@ definition_key = &"family_office_l2"
 
 [sub_resource type="Resource" id="LevelFamilyOfficeL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectFamilyOfficeL2"), SubResource("EffectFamilyOfficeL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -12643,7 +12644,7 @@ definition_key = &"family_office_l3_owned_output"
 
 [sub_resource type="Resource" id="LevelFamilyOfficeL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectFamilyOfficeL3"), SubResource("EffectFamilyOfficeL3R0"), SubResource("EffectFamilyOfficeL3R1")])
 on_enter_effects = Array[Resource]([])
@@ -12722,7 +12723,7 @@ definition_key = &"gig_economy_l1_cost"
 [sub_resource type="Resource" id="LevelGigEconomyL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectGigEconomyL1R0"), SubResource("EffectGigEconomyL1R1")])
 on_enter_effects = Array[Resource]([])
 
@@ -12754,8 +12755,8 @@ definition_key = &"gig_economy_l2_cost"
 
 [sub_resource type="Resource" id="LevelGigEconomyL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectGigEconomyL2R0"), SubResource("EffectGigEconomyL2R1")])
 on_enter_effects = Array[Resource]([])
 
@@ -12787,7 +12788,7 @@ definition_key = &"gig_economy_l3_cost"
 
 [sub_resource type="Resource" id="LevelGigEconomyL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectGigEconomyL3R0"), SubResource("EffectGigEconomyL3R1")])
 on_enter_effects = Array[Resource]([])
@@ -12864,7 +12865,7 @@ definition_key = &"computing_networks_l1"
 [sub_resource type="Resource" id="LevelComputingNetworksL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectComputingNetworksCostL1"), SubResource("EffectComputingNetworksL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -12895,8 +12896,8 @@ definition_key = &"computing_networks_l2"
 
 [sub_resource type="Resource" id="LevelComputingNetworksL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectComputingNetworksCostL2"), SubResource("EffectComputingNetworksL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -12927,7 +12928,7 @@ definition_key = &"computing_networks_l3"
 
 [sub_resource type="Resource" id="LevelComputingNetworksL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectComputingNetworksCostL3"), SubResource("EffectComputingNetworksL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -12999,7 +13000,7 @@ definition_key = &"semiconductor_l1"
 [sub_resource type="Resource" id="LevelSemiconductorL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectSemiconductorCostL1"), SubResource("EffectSemiconductorL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -13030,8 +13031,8 @@ definition_key = &"semiconductor_l2"
 
 [sub_resource type="Resource" id="LevelSemiconductorL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectSemiconductorCostL2"), SubResource("EffectSemiconductorL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -13062,7 +13063,7 @@ definition_key = &"semiconductor_l3"
 
 [sub_resource type="Resource" id="LevelSemiconductorL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectSemiconductorCostL3"), SubResource("EffectSemiconductorL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -13133,7 +13134,7 @@ definition_key = &"ideology.precision_agriculture"
 [sub_resource type="Resource" id="LevelPrecisionAgricultureL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectPrecisionAgricultureL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -13151,8 +13152,8 @@ definition_key = &"ideology.precision_agriculture"
 
 [sub_resource type="Resource" id="LevelPrecisionAgricultureL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectPrecisionAgricultureL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -13170,7 +13171,7 @@ definition_key = &"ideology.precision_agriculture"
 
 [sub_resource type="Resource" id="LevelPrecisionAgricultureL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectPrecisionAgricultureL3")])
 on_enter_effects = Array[Resource]([])
@@ -13247,7 +13248,7 @@ definition_key = &"financialization_l1"
 [sub_resource type="Resource" id="LevelFinancializationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectFinancializationCostL1"), SubResource("EffectFinancializationL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -13278,8 +13279,8 @@ definition_key = &"financialization_l2"
 
 [sub_resource type="Resource" id="LevelFinancializationL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectFinancializationCostL2"), SubResource("EffectFinancializationL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -13310,7 +13311,7 @@ definition_key = &"financialization_l3"
 
 [sub_resource type="Resource" id="LevelFinancializationL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectFinancializationCostL3"), SubResource("EffectFinancializationL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -13389,7 +13390,7 @@ definition_key = &"automation_line_l1"
 [sub_resource type="Resource" id="LevelAutomationLineL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectAutomationLineCostL1"), SubResource("EffectAutomationLineL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -13420,8 +13421,8 @@ definition_key = &"automation_line_l2"
 
 [sub_resource type="Resource" id="LevelAutomationLineL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectAutomationLineCostL2"), SubResource("EffectAutomationLineL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -13465,7 +13466,7 @@ definition_key = &"automation_line_l3_knowledge"
 
 [sub_resource type="Resource" id="LevelAutomationLineL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectAutomationLineCostL3"), SubResource("EffectAutomationLineL3R0"), SubResource("EffectAutomationLineL3R1")])
 on_enter_effects = Array[Resource]([])
@@ -13530,7 +13531,7 @@ definition_key = &"ideology.social_media.l1"
 [sub_resource type="Resource" id="LevelSocialMediaL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectSocialMediaL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -13548,8 +13549,8 @@ definition_key = &"ideology.social_media.l2"
 
 [sub_resource type="Resource" id="LevelSocialMediaL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectSocialMediaL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -13567,7 +13568,7 @@ definition_key = &"ideology.social_media.l3"
 
 [sub_resource type="Resource" id="LevelSocialMediaL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectSocialMediaL3")])
 on_enter_effects = Array[Resource]([])
@@ -13637,7 +13638,7 @@ definition_key = &"arcology_l1"
 [sub_resource type="Resource" id="LevelArcologyL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectArcologyCostL1"), SubResource("EffectArcologyL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -13668,8 +13669,8 @@ definition_key = &"arcology_l2"
 
 [sub_resource type="Resource" id="LevelArcologyL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectArcologyCostL2"), SubResource("EffectArcologyL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -13700,7 +13701,7 @@ definition_key = &"arcology_l3"
 
 [sub_resource type="Resource" id="LevelArcologyL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectArcologyCostL3"), SubResource("EffectArcologyL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -13777,7 +13778,7 @@ definition_key = &"basic_income_l1"
 [sub_resource type="Resource" id="LevelBasicIncomeL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectBasicIncomeCostL1"), SubResource("EffectBasicIncomeL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -13808,8 +13809,8 @@ definition_key = &"basic_income_l2"
 
 [sub_resource type="Resource" id="LevelBasicIncomeL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectBasicIncomeCostL2"), SubResource("EffectBasicIncomeL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -13853,7 +13854,7 @@ definition_key = &"basic_income_l3_birth"
 
 [sub_resource type="Resource" id="LevelBasicIncomeL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectBasicIncomeCostL3"), SubResource("EffectBasicIncomeL3R0"), SubResource("EffectBasicIncomeL3R1")])
 on_enter_effects = Array[Resource]([])
@@ -13930,7 +13931,7 @@ definition_key = &"circular_economy_l1"
 [sub_resource type="Resource" id="LevelCircularEconomyL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectCircularEconomyCostL1"), SubResource("EffectCircularEconomyL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -13961,8 +13962,8 @@ definition_key = &"circular_economy_l2"
 
 [sub_resource type="Resource" id="LevelCircularEconomyL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectCircularEconomyCostL2"), SubResource("EffectCircularEconomyL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -13993,7 +13994,7 @@ definition_key = &"circular_economy_l3"
 
 [sub_resource type="Resource" id="LevelCircularEconomyL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectCircularEconomyCostL3"), SubResource("EffectCircularEconomyL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -14057,7 +14058,7 @@ definition_key = &"ideology.algorithmic_governance"
 [sub_resource type="Resource" id="LevelAlgorithmicGovernanceL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectAlgorithmicGovernanceL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -14075,8 +14076,8 @@ definition_key = &"ideology.algorithmic_governance"
 
 [sub_resource type="Resource" id="LevelAlgorithmicGovernanceL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectAlgorithmicGovernanceL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -14094,7 +14095,7 @@ definition_key = &"ideology.algorithmic_governance"
 
 [sub_resource type="Resource" id="LevelAlgorithmicGovernanceL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectAlgorithmicGovernanceL3")])
 on_enter_effects = Array[Resource]([])
@@ -14166,7 +14167,7 @@ definition_key = &"autonomous_logistics_l1"
 [sub_resource type="Resource" id="LevelAutonomousLogisticsL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectAutonomousLogisticsCostL1"), SubResource("EffectAutonomousLogisticsL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -14197,8 +14198,8 @@ definition_key = &"autonomous_logistics_l2"
 
 [sub_resource type="Resource" id="LevelAutonomousLogisticsL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectAutonomousLogisticsCostL2"), SubResource("EffectAutonomousLogisticsL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -14229,7 +14230,7 @@ definition_key = &"autonomous_logistics_l3"
 
 [sub_resource type="Resource" id="LevelAutonomousLogisticsL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectAutonomousLogisticsCostL3"), SubResource("EffectAutonomousLogisticsL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -14308,7 +14309,7 @@ definition_key = &"carbon_market_l1"
 [sub_resource type="Resource" id="LevelCarbonMarketL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectCarbonMarketCostL1"), SubResource("EffectCarbonMarketL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -14339,8 +14340,8 @@ definition_key = &"carbon_market_l2"
 
 [sub_resource type="Resource" id="LevelCarbonMarketL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectCarbonMarketCostL2"), SubResource("EffectCarbonMarketL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -14371,7 +14372,7 @@ definition_key = &"carbon_market_l3"
 
 [sub_resource type="Resource" id="LevelCarbonMarketL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectCarbonMarketCostL3"), SubResource("EffectCarbonMarketL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -14449,7 +14450,7 @@ definition_key = &"gene_editing_l1"
 [sub_resource type="Resource" id="LevelGeneEditingL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectGeneEditingCostL1"), SubResource("EffectGeneEditingL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -14480,8 +14481,8 @@ definition_key = &"gene_editing_l2"
 
 [sub_resource type="Resource" id="LevelGeneEditingL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectGeneEditingCostL2"), SubResource("EffectGeneEditingL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -14512,7 +14513,7 @@ definition_key = &"gene_editing_l3"
 
 [sub_resource type="Resource" id="LevelGeneEditingL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectGeneEditingCostL3"), SubResource("EffectGeneEditingL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -14583,7 +14584,7 @@ definition_key = &"vertical_farm_l1"
 [sub_resource type="Resource" id="LevelVerticalFarmL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectVerticalFarmL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -14602,8 +14603,8 @@ definition_key = &"vertical_farm_l2"
 
 [sub_resource type="Resource" id="LevelVerticalFarmL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectVerticalFarmL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -14622,7 +14623,7 @@ definition_key = &"vertical_farm_l3"
 
 [sub_resource type="Resource" id="LevelVerticalFarmL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectVerticalFarmL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -14701,7 +14702,7 @@ definition_key = &"space_mining_l1"
 [sub_resource type="Resource" id="LevelSpaceMiningL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectSpaceMiningCostL1"), SubResource("EffectSpaceMiningL1R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -14732,8 +14733,8 @@ definition_key = &"space_mining_l2"
 
 [sub_resource type="Resource" id="LevelSpaceMiningL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectSpaceMiningCostL2"), SubResource("EffectSpaceMiningL2R0")])
 on_enter_effects = Array[Resource]([])
 
@@ -14764,7 +14765,7 @@ definition_key = &"space_mining_l3"
 
 [sub_resource type="Resource" id="LevelSpaceMiningL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectSpaceMiningCostL3"), SubResource("EffectSpaceMiningL3R0")])
 on_enter_effects = Array[Resource]([])
@@ -14835,7 +14836,7 @@ definition_key = &"ideology.desalination"
 [sub_resource type="Resource" id="LevelDesalinationL1"]
 script = ExtResource("4_level")
 understanding_threshold_q16 = 0
-daily_understanding_q16 = 819
+daily_understanding_q16 = 205
 persistent_effects = Array[Resource]([SubResource("EffectDesalinationL1")])
 on_enter_effects = Array[Resource]([])
 
@@ -14853,8 +14854,8 @@ definition_key = &"ideology.desalination"
 
 [sub_resource type="Resource" id="LevelDesalinationL2"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 262144
-daily_understanding_q16 = 410
+understanding_threshold_q16 = 524288
+daily_understanding_q16 = 103
 persistent_effects = Array[Resource]([SubResource("EffectDesalinationL2")])
 on_enter_effects = Array[Resource]([])
 
@@ -14872,7 +14873,7 @@ definition_key = &"ideology.desalination"
 
 [sub_resource type="Resource" id="LevelDesalinationL3"]
 script = ExtResource("4_level")
-understanding_threshold_q16 = 786432
+understanding_threshold_q16 = 1572864
 daily_understanding_q16 = 0
 persistent_effects = Array[Resource]([SubResource("EffectDesalinationL3")])
 on_enter_effects = Array[Resource]([])

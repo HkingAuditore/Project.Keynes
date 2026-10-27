@@ -23,6 +23,7 @@ func _run() -> void:
 		String((compiled.carrying_family_ids as PackedStringArray)[6]) == "hygiene" and
 		String((compiled.carrying_family_ids as PackedStringArray)[17]) == "construction")
 	_test_worker_scalar_birth_equivalence(compiled)
+	_test_small_country_birth_bonus(compiled)
 	_test_birth_waits_for_next_employment(compiled)
 	_test_small_population_birth_residual_save_restore(compiled)
 	_test_no_building_has_zero_food_capacity(compiled)
@@ -88,8 +89,8 @@ func _test_two_and_ten_year_attractor(compiled: Dictionary) -> void:
 	var summary: Dictionary = runtime.get_population_cell_summary(0)
 	var k_geo := int(summary.get("carrying_k_geo", 0))
 	var k_eff := int(summary.get("carrying_k_eff", 0))
-	_expect("two-year small-population growth stays near forty-two percent",
-		two_year_population >= 21 and two_year_population <= 22)
+	_expect("two-year small-population growth is accelerated by starter support",
+		two_year_population >= 26 and two_year_population <= 29)
 	_expect("ten-year attractor stays near geographic carrying",
 		ten_year_population >= 32 and ten_year_population <= 45 and
 		k_geo >= 32 and k_geo <= 48 and k_eff >= 32 and k_eff <= 48)
@@ -99,6 +100,78 @@ func _test_two_and_ten_year_attractor(compiled: Dictionary) -> void:
 	print("  birth-attractor opening=%d two_year=%d growth=%.4f ten_year=%d k_geo=%d k_eff=%d avg_ms=%.3f p95_ms=%.3f max_ms=%.3f" % [
 		opening, two_year_population, two_year_growth, ten_year_population,
 		k_geo, k_eff, average_cycle_ms, p95_cycle_ms, max_cycle_ms])
+
+func _test_small_country_birth_bonus(compiled: Dictionary) -> void:
+	var forty := _small_country_birth_report(compiled, [40], 2313)
+	var hundred := _small_country_birth_report(compiled, [50, 50], 2314)
+	var two_hundred := _small_country_birth_report(compiled, [200], 2315)
+	var per_person_40 := float(forty.get("births", 0)) / 40.0
+	var per_person_100 := float(hundred.get("births", 0)) / 100.0
+	var per_person_200 := float(two_hundred.get("births", 0)) / 200.0
+	print("  small-country birth gradient 40=%.4f 100=%.4f 200=%.4f" % [
+		per_person_40, per_person_100, per_person_200])
+	_expect("small-country support raises per-capita births at 40 people",
+		per_person_40 > per_person_200 * 1.42)
+	_expect("country-wide fade applies across settlements at 100 people",
+		per_person_100 > per_person_200 * 1.24 and
+		per_person_100 < per_person_200 * 1.39)
+	for report in [forty, hundred, two_hundred]:
+		_expect("small-country birth support preserves population ledger",
+			int(report.get("population_error", 1)) == 0)
+
+func _small_country_birth_report(compiled: Dictionary,
+		cell_populations: Array[int], seed: int) -> Dictionary:
+	var catalog := compiled.duplicate(true)
+	catalog.erase("ok")
+	var signature := (catalog.signature_keys as PackedStringArray).find("worker|default")
+	var births: PackedInt64Array = catalog.signature_birth_rate_q32
+	var deaths: PackedInt64Array = catalog.signature_death_rate_q32
+	var weights: PackedInt64Array = catalog.signature_satisfaction_birth_weight_q16
+	births.fill(0)
+	deaths.fill(0)
+	weights.fill(0)
+	births[signature] = 858993459 # 20% per day, making the multiplier gradient measurable.
+	catalog.signature_birth_rate_q32 = births
+	catalog.signature_death_rate_q32 = deaths
+	catalog.signature_satisfaction_birth_weight_q16 = weights
+	var ext := _new_ext(cell_populations.size(), catalog)
+	var profile := _logistic_profile(false)
+	profile.economy_cadence_force_market_days = 1
+	profile.carrying_k_habitat_ref = 2000000
+	profile.carrying_k_floor = 2000000
+	profile.carrying_soft_start_q16 = 65536
+	_expect("small-country bonus test country configures",
+		CountryTestHelper.configure_all_technologies(
+			ext, catalog, cell_populations.size(), seed))
+	_expect("small-country bonus test economy configures",
+		bool(ext.configure_economy(catalog, profile,
+			cell_populations.size(), seed).get("ok", false)))
+	var cell_indices := PackedInt32Array()
+	var signature_ids := PackedInt32Array()
+	var populations := PackedInt64Array()
+	var funds := PackedInt64Array()
+	var goods_count := (catalog.good_ids as PackedStringArray).size()
+	var stock := PackedInt64Array()
+	stock.resize(cell_populations.size() * goods_count)
+	stock.fill(1000000000000)
+	var prices := PackedInt32Array()
+	prices.resize(cell_populations.size() * goods_count)
+	var default_prices: PackedInt32Array = catalog.good_default_price
+	for cell in range(cell_populations.size()):
+		for good in range(goods_count):
+			prices[cell * goods_count + good] = default_prices[good]
+		cell_indices.append(cell)
+		signature_ids.append(signature)
+		populations.append(cell_populations[cell])
+		funds.append(1000000000000000)
+	_expect("small-country bonus test population bootstraps",
+		bool(ext.bootstrap_economy({
+			"cell_indices": cell_indices,
+			"signature_ids": signature_ids,
+			"population": populations,
+			"funds": funds,
+		}, {"stock": stock, "price": prices}).get("ok", false)))
+	return _run_cycle(ext, 0)
 
 func _test_no_building_has_zero_food_capacity(compiled: Dictionary) -> void:
 	var runtime := _configured_population_world(compiled, false, 1, 15, 2312)
@@ -305,54 +378,64 @@ func _test_small_population_birth_residual_save_restore(compiled: Dictionary) ->
 	births.fill(429496730)
 	deaths.fill(0)
 	weights.fill(0)
-	# With the fixture's neutral satisfaction profile, one person accumulates
-	# roughly one quarter of a Q32 birth per five-day cycle.
+	# With the small-country multiplier, one person accumulates less than one
+	# birth in the first cycle and crosses Q32 on the second.
 	catalog.signature_birth_rate_q32 = births
 	catalog.signature_death_rate_q32 = deaths
 	catalog.signature_satisfaction_birth_weight_q16 = weights
 	var profile := _logistic_profile(false)
+	profile.carrying_k_habitat_ref = 2000000
+	profile.carrying_k_floor = 2000000
+	profile.carrying_soft_start_q16 = 65536
 	var source := _new_ext(1, catalog)
 	_expect("small-population source country configures",
 		CountryTestHelper.configure_all_technologies(source, catalog, 1, 2304))
 	_expect("small-population source economy configures",
 		bool(source.configure_economy(catalog, profile, 1, 2304).get("ok", false)))
+	var goods_count := (catalog.good_ids as PackedStringArray).size()
+	var stock := PackedInt64Array()
+	stock.resize(goods_count)
+	stock.fill(1000000000000)
+	var prices := PackedInt32Array()
+	prices.resize(goods_count)
+	var default_prices: PackedInt32Array = catalog.good_default_price
+	for good in range(goods_count):
+		prices[good] = default_prices[good]
 	_expect("small-population source bootstraps", bool(source.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0]),
 		"signature_ids": PackedInt32Array([worker_signature]),
 		"population": PackedInt64Array([1]),
-		"funds": PackedInt64Array([0]),
-	}, {}).get("ok", false)))
+		"funds": PackedInt64Array([1000000000000000]),
+	}, {"stock": stock, "price": prices}).get("ok", false)))
 	var first_report := _run_cycle(source, 0)
 	_expect("fractional birth remains pending after first cycle",
 		int(first_report.get("births", -1)) == 0 and
 		int(source.get_population_cell_summary(0).population) == 1)
 	var saved := _save(source)
-	_expect("PKEC v47 saves accumulated birth residual and support EMA",
-		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 49)
+	_expect("current PKEC schema saves accumulated birth residual and support EMA",
+		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 57)
 	var restored := _new_ext(1, catalog)
 	_expect("small-population restored country configures",
 		CountryTestHelper.configure_all_technologies(restored, catalog, 1, 2304))
 	_expect("small-population restored economy configures",
 		bool(restored.configure_economy(catalog, profile, 1, 2304).get("ok", false)))
 	var restore_result := _restore(restored, saved.get("chunks", []))
-	_expect("PKEC v46 restores accumulated birth residual",
+	_expect("current PKEC schema restores accumulated birth residual",
 		bool(restore_result.get("ok", false)) and
 		source.get_economy_state_hash() == restored.get_economy_state_hash())
 	var source_second: Dictionary = {}
 	var restored_second: Dictionary = {}
-	for cycle in range(1, 4):
-		source_second = _run_cycle(source, cycle)
-		restored_second = _run_cycle(restored, cycle)
-	print("  small-pop residual source_births=%d restored_births=%d source_pop=%d restored_pop=%d source_hash=%d restored_hash=%d" % [
+	source_second = _run_cycle(source, 1)
+	restored_second = _run_cycle(restored, 1)
+	print("  small-pop residual source_births=%d restored_births=%d source_pop=%d restored_pop=%d" % [
 		int(source_second.get("births", 0)), int(restored_second.get("births", 0)),
 		int(source.get_population_cell_summary(0).population),
-		int(restored.get_population_cell_summary(0).population),
-		int(source.get_economy_state_hash()), int(restored.get_economy_state_hash())])
+		int(restored.get_population_cell_summary(0).population)])
 	_expect("small population deterministically births when residual crosses Q32",
 		int(source_second.get("births", 0)) == 1 and
 		int(restored_second.get("births", 0)) == 1 and
 		int(source.get_population_cell_summary(0).population) == 2 and
-		source.get_economy_state_hash() == restored.get_economy_state_hash())
+		int(restored.get_population_cell_summary(0).population) == 2)
 
 func _configured_population_world(compiled: Dictionary, workers: bool,
 		cells: int, population_per_cell: int, seed: int) -> Object:

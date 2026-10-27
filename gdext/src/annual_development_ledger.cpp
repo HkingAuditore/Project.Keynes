@@ -46,8 +46,9 @@ int64_t growth(int64_t now,int64_t before) {
     return ratio(add(now,-before),before<0?-before:before);
 }
 int32_t improvement(int64_t change,int64_t target,int32_t weight) {
-    int64_t fraction=change>=0 ? 52429+ratio(std::min(change,target),target,13107)
-        : 52429-ratio(std::min(-change,target),target,52429);
+    constexpr int64_t neutral_q16 = 16384; // No change earns 25% of this progress weight.
+    int64_t fraction=change>=0 ? neutral_q16+ratio(std::min(change,target),target,65536-neutral_q16)
+        : neutral_q16-ratio(std::min(-change,target),target,neutral_q16);
     return static_cast<int32_t>(mul(std::clamp<int64_t>(fraction,0,65536),weight)/65536);
 }
 uint64_t checksum(const uint8_t *p,size_t n) {
@@ -113,6 +114,11 @@ bool AnnualDevelopmentProfile::valid() const {
 bool AnnualDevelopmentLedger::configure(uint64_t handle,int64_t length,int64_t initial,const AnnualDevelopmentProfile &profile,std::string &error){
     if(handle==0||length<1||length>3660||initial<0||!profile.valid()){error="annual_configuration_invalid";return false;}
     *this=AnnualDevelopmentLedger{};_handle=handle;_length=length;_tracked_since=initial;_last_day=initial-1;_profile=profile;begin_year(initial/length);return true;
+}
+bool AnnualDevelopmentLedger::update_profile(const AnnualDevelopmentProfile &profile,std::string &error){
+    if(!configured()||!profile.valid()||profile.version<_profile.version){error="annual_profile_update_invalid";return false;}
+    if(profile.version!=_profile.version){_profile=profile;_current.scoring_version=profile.version;++_revision;}
+    error.clear();return true;
 }
 void AnnualDevelopmentLedger::seed(const AnnualEconomyFacts &f,const AnnualCountryFacts &c){
     if(!configured()||f.country_handle!=_handle||c.handle!=_handle||_economy_revision!=0)return;
@@ -211,7 +217,7 @@ void AnnualDevelopmentLedger::evaluate(AnnualDevelopmentReport &r,const AnnualDe
     r.reward_q16=0;
     for(int32_t n=0;n<p.reward_draws[r.grade];++n)r.reward_q16=add(r.reward_q16,runtime_ideology_offer_cost_q16(p.offer_cost,p.offer_growth_percent,p.max_offer_cost,draws+static_cast<uint64_t>(n)));
     if(r.grade==5)r.reward_q16=runtime_ideology_offer_cost_q16(p.offer_cost,p.offer_growth_percent,p.max_offer_cost,draws)/2;
-    r.reward_q16=(r.reward_q16/10)*3+((r.reward_q16%10)*3)/10;
+    r.reward_q16=r.reward_q16/10;
 }
 bool AnnualDevelopmentLedger::has_pending_reward() const{while(_reward_cursor<_reports.size()&&_reports[_reward_cursor].reward_settled)++_reward_cursor;return _reward_cursor<_reports.size();}
 uint64_t AnnualDevelopmentLedger::ready_report_id() const{while(_ready_cursor<_reports.size()&&_reports[_ready_cursor].presented)++_ready_cursor;return _ready_cursor<_reports.size()&&_reports[_ready_cursor].reward_settled?_reports[_ready_cursor].id:0;}
@@ -234,12 +240,23 @@ bool AnnualDevelopmentLedger::restore(const uint8_t *bytes,size_t size,std::stri
     c(next._profile);c(next._latest);c(next._country);c(next._current);c(next._quality_sum);c(next._population_days);c(next._days);c(next._dimension_sum);c(next._dimension_days);c(next._reports);
     if(!c.ok||c.at!=c.size||!next._profile.valid()||next._handle==0||next._length<1||next._length>3660||next._days<0||next._days>next._length||next._last_day<next._tracked_since-1||next._current.year!=((next._last_day+1)/next._length)||next._current.country_handle!=next._handle){error="annual_save_payload_invalid";return false;}
     for(size_t i=0;i<next._reports.size();++i){const auto &r=next._reports[i];if(r.country_handle!=next._handle||r.id!=static_cast<uint64_t>(r.year)+1||r.grade<0||r.grade>6||r.score_bp<0||r.score_bp>10000||r.reward_q16<0||r.reward_sequence!=r.id||r.start_day!=r.year*next._length||r.end_day!=r.start_day+next._length-1||(i&&r.year<=next._reports[i-1].year)){error="annual_save_report_invalid";return false;}}
-    if(configured()&&(_handle!=next._handle||_length!=next._length||_profile.version!=next._profile.version)){error="annual_save_identity_mismatch";return false;}
+    if(configured()){
+        if(_handle!=next._handle||_length!=next._length){error="annual_save_identity_mismatch";return false;}
+        const bool v1_to_v2=next._profile.version==1&&_profile.version==2;
+        if(_profile.version!=next._profile.version&&!v1_to_v2){error="annual_save_identity_mismatch";return false;}
+        // Completed reports retain their frozen scores and rewards. The open
+        // year contains raw accumulators, so it can continue under v2.
+        if(v1_to_v2){next._profile=_profile;next._current.scoring_version=_profile.version;}
+    }
     *this=std::move(next);return true;
 }
 bool annual_development_self_test(std::string &error){
-    AnnualDevelopmentProfile p;AnnualDevelopmentLedger ledger;
-    if(!ledger.configure(7,4,0,p,error))return false;
+    AnnualDevelopmentProfile p;AnnualDevelopmentProfile legacy=p;
+    legacy.version=1;legacy.grade_thresholds={{9400,8600,7500,6000,4500,3000,0}};
+    legacy.reward_draws={{6,4,3,2,1,0,0}};
+    legacy.quality_targets={{62259,64225,62259,55706}};
+    AnnualDevelopmentLedger ledger;
+    if(!ledger.configure(7,4,0,legacy,error))return false;
     AnnualEconomyFacts f;f.country_handle=7;f.values[ix(AnnualMetric::POPULATION)]=100;f.values[ix(AnnualMetric::EMPLOYED)]=100;f.values[ix(AnnualMetric::SATISFACTION)]=65536;f.values[ix(AnnualMetric::SURVIVAL)]=65536;f.values[ix(AnnualMetric::UTILIZATION)]=65536;f.values[ix(AnnualMetric::ACTIVE_BUILDINGS)]=65536;
     AnnualCountryFacts country;country.handle=7;country.name="Test";ledger.seed(f,country);
     for(int64_t d=0;d<4;++d){f.day=d;f.revision=static_cast<uint64_t>(d)+1;f.values[ix(AnnualMetric::GDP)]=100+d*10;ledger.observe_economy(f);ledger.observe_economy(f);ledger.commit_day(d,country,0);}
@@ -247,11 +264,24 @@ bool annual_development_self_test(std::string &error){
     const auto seq=ledger.reports()[0].reward_sequence;ledger.settle_reward(seq);ledger.settle_reward(seq);
     std::vector<uint8_t> bytes;ledger.encode(bytes);AnnualDevelopmentLedger restored;
     if(!restored.restore(bytes.data(),bytes.size(),error)||restored.reports().size()!=1||!restored.reports()[0].reward_settled){error="annual_roundtrip_failed";return false;}
+    AnnualDevelopmentProfile upgraded=p;upgraded.version=2;
+    AnnualDevelopmentLedger migrated;
+    if(!migrated.configure(7,4,4,upgraded,error)||!migrated.restore(bytes.data(),bytes.size(),error)||
+       migrated.reports().size()!=1||migrated.reports()[0].scoring_version!=1||
+       migrated.current().scoring_version!=2){error="annual_profile_v1_to_v2_migration_failed";return false;}
+    AnnualDevelopmentLedger live_update;
+    if(!live_update.configure(7,4,4,legacy,error)||!live_update.update_profile(p,error)||
+       live_update.current().scoring_version!=2){error="annual_live_profile_update_failed";return false;}
     bytes[15]^=1;if(restored.restore(bytes.data(),bytes.size(),error)){error="annual_corruption_accepted";return false;}
     AnnualDevelopmentReport r=ledger.reports()[0];r.quality_average[1]=30000;AnnualDevelopmentLedger::evaluate(r,nullptr,p,3);
     if(r.grade<5){error="annual_survival_cap_failed";return false;}
+    AnnualDevelopmentReport stagnant;stagnant.complete=1;
+    AnnualDevelopmentLedger::evaluate(stagnant,nullptr,p,0);
+    if(stagnant.score_parts[4]!=200||stagnant.score_parts[5]!=150||
+       stagnant.score_parts[6]!=125||stagnant.score_parts[7]!=75||
+       stagnant.score_parts[8]!=75||stagnant.score_parts[9]!=125){error="annual_stagnation_score_failed";return false;}
     // Exercise both sides of every grade boundary with an independently
-    // controlled quality score and a known escalating draw-price sequence.
+    // controlled quality score and the reduced escalating draw-price reward.
     AnnualDevelopmentProfile boundaries=p;
     boundaries.quality_weights={{10000,0,0,0}};
     boundaries.progress_weights={{0,0,0,0,0,0}};
@@ -270,7 +300,7 @@ bool annual_development_self_test(std::string &error){
             int64_t reward=0,price=400*65536;
             for(int32_t n=0;n<boundaries.reward_draws[expected];++n){reward+=price;price*=2;}
             if(expected==5)reward=200*65536;
-            reward=(reward/10)*3+((reward%10)*3)/10;
+            reward/=10;
             if(sample.score_bp!=score||sample.grade!=expected||sample.reward_q16!=reward){error="annual_grade_boundary_or_reward_failed";return false;}
         }
     }

@@ -2521,6 +2521,38 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                     effective_birth_rate_q32,
                     _epoch_cell_birth_factor_q16[cell], Q16_ONE, sat);
             }
+            const int32_t birth_country = cell >= 0 && cell < static_cast<int32_t>(
+                    _epoch_cell_country.size())
+                ? _epoch_cell_country[static_cast<size_t>(cell)] : -1;
+            if (birth_country >= 0 && birth_country < static_cast<int32_t>(
+                    _epoch_country_population.size())) {
+                constexpr int64_t SMALL_COUNTRY_FULL_BONUS_POPULATION = 40;
+                constexpr int64_t SMALL_COUNTRY_NO_BONUS_POPULATION = 200;
+                const int64_t country_population = _epoch_country_population[
+                    static_cast<size_t>(birth_country)];
+                if (country_population < SMALL_COUNTRY_NO_BONUS_POPULATION) {
+                    const int64_t span = SMALL_COUNTRY_NO_BONUS_POPULATION -
+                        SMALL_COUNTRY_FULL_BONUS_POPULATION;
+                    const int64_t t_q16 = std::clamp<int64_t>(mul_div_sat(
+                        std::max<int64_t>(0, country_population -
+                            SMALL_COUNTRY_FULL_BONUS_POPULATION),
+                        Q16_ONE, span, sat), 0, Q16_ONE);
+                    const int64_t bonus_q16 = saturating_add(
+                        Q16_ONE, mul_div_sat(Q16_ONE / 2,
+                            Q16_ONE - t_q16, Q16_ONE, sat), sat);
+                    const int64_t load_fade_q16 = load_q16 <= _carrying_soft_start_q16
+                        ? Q16_ONE
+                        : Q16_ONE - std::clamp<int64_t>(mul_div_sat(
+                            load_q16 - _carrying_soft_start_q16, Q16_ONE,
+                            std::max<int64_t>(1, Q16_ONE - _carrying_soft_start_q16),
+                            sat), 0, Q16_ONE);
+                    const int64_t effective_bonus_q16 = saturating_add(
+                        Q16_ONE, mul_div_sat(bonus_q16 - Q16_ONE,
+                            load_fade_q16, Q16_ONE, sat), sat);
+                    effective_birth_rate_q32 = mul_div_sat(
+                        effective_birth_rate_q32, effective_bonus_q16, Q16_ONE, sat);
+                }
+            }
             if (_family_cohort_offsets.size() == population_store().active.size() + 1 &&
                 !_family_birth_factor_q16.empty()) {
                 const int64_t cohort_population = std::max<int64_t>(1,

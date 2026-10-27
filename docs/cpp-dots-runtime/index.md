@@ -25,7 +25,7 @@
   资源、社会发展、Trigger、Effect 和经济内容组织成可分化、可重放、可审计的科技路线。
 
 - [Formal Game Flow, Player Start, and PKSV](./game-flow-start-save.md): 正式主菜单、
-  `NewGameConfig v3`、确定性多国单格开局、每国 20 人聚落、PKSV 安全边界与恢复顺序。
+  `NewGameConfig v3`、确定性多国单格开局、每国 40 人聚落、PKSV 安全边界与恢复顺序。
 - 修改启动场景、玩家出生、完整存档或退出流程前先读该文档。
 
 - [Country AI 运行时](./country-ai-runtime.md)：外国的确定性分层效用 AI（科研/时代、默认税、

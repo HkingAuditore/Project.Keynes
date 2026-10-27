@@ -17,8 +17,8 @@ const MODIFIER_DOMAIN_ECONOMY := 2
 const MODIFIER_SCOPE_ENTITY := 2
 const OUTPUT_STAT := "economy.city.output_factor"
 const CARD := "family_office"
-const L2_THRESHOLD_Q16 := 262144
-const L3_THRESHOLD_Q16 := 786432
+const L2_THRESHOLD_Q16 := 524288
+const L3_THRESHOLD_Q16 := 1572864
 const WorkerWaitHelper = preload(
 	"res://tests/ideology/ideology_worker_wait_helper.gd")
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")

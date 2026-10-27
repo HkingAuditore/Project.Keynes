@@ -76,7 +76,7 @@ func _test_free_draw_lifecycle() -> bool:
 	# must settle L2 and then cross L3.
 	var to_l2: Dictionary = _submit([{
 		"op": 8, "day": _tick, "handle": _handle,
-		"idea": _dense_id(CARD), "value": 786432}])
+		"idea": _dense_id(CARD), "value": 524288}])
 	if not _require("worker accepts understanding through L2",
 			bool(to_l2.get("ok", false)), str(to_l2)):
 		return false
@@ -95,7 +95,7 @@ func _test_free_draw_lifecycle() -> bool:
 		return false
 	var to_l3: Dictionary = _submit([{
 		"op": 8, "day": _tick, "handle": _handle,
-		"idea": _dense_id(CARD), "value": 524288}])
+		"idea": _dense_id(CARD), "value": 1048576}])
 	if not _require("worker accepts understanding through L3",
 			bool(to_l3.get("ok", false)), str(to_l3)):
 		return false

@@ -109,17 +109,23 @@ func _init() -> void:
 			for index in range(1, level_offsets.size()):
 				three_levels = three_levels and int(level_offsets[index]) - int(level_offsets[index - 1]) == 3
 			_expect("every card authors three understanding levels", three_levels)
-			_expect("levels gate at 0 / 4 / 12 understanding",
+			_expect("levels gate at 0 / 8 / 24 understanding",
 				int(ideology_ir.level_thresholds_q16[0]) == 0
-				and int(ideology_ir.level_thresholds_q16[1]) == 262144
-				and int(ideology_ir.level_thresholds_q16[2]) == 786432)
+				and int(ideology_ir.level_thresholds_q16[1]) == 524288
+				and int(ideology_ir.level_thresholds_q16[2]) == 1572864)
+			_expect("understanding accrues at one quarter of the previous rate",
+				int(ideology_ir.level_daily_understanding_q16[0]) == 205
+				and int(ideology_ir.level_daily_understanding_q16[1]) == 103
+				and int(ideology_ir.level_daily_understanding_q16[2]) == 0)
+			_expect("duplicate refinement retains its 4-point reward",
+				int(ideology_ir.get("refine_understanding_q16", -1)) == 262144)
 			_expect("ideology points start at zero and growth income has no daily cap",
 				int(ideology_ir.get("starting_points_q16", -1)) == 0
 				and int(ideology_ir.get("point_gain_cap_q16", -1)) == 0)
-			_expect("growth point weights are 80x the previous balance",
-				int(ideology_ir.get("point_population_weight_q16", 0)) == 2640
-				and int(ideology_ir.get("point_building_weight_q16", 0)) == 32800
-				and int(ideology_ir.get("point_trade_weight_q16", 0)) == 240)
+			_expect("growth point weights are one quarter of the previous balance",
+				int(ideology_ir.get("point_population_weight_q16", 0)) == 660
+				and int(ideology_ir.get("point_building_weight_q16", 0)) == 8200
+				and int(ideology_ir.get("point_trade_weight_q16", 0)) == 60)
 			_expect("first draw costs 120, +20% per draw, and reroll costs 75 percent",
 				int(ideology_ir.get("offer_cost_q16", 0)) == 7864320
 				and int(ideology_ir.get("offer_cost_growth_percent", 0)) == 120

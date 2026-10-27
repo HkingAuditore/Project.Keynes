@@ -1217,6 +1217,12 @@ func _observe_runtime_worker_fault(report: Dictionary = {}) -> void:
 		str(_runtime_last_fault_diagnostics.get("committed_day", -1)),
 		str(_runtime_last_fault_diagnostics.get("generation", 0)),
 		str(_runtime_last_fault_diagnostics.get("worker_fault_count", 0))])
+	RuntimeForensics.capture_and_dump(
+		String(_runtime_last_fault_diagnostics.get("fault_code", "runtime_worker_fault")),
+		_generator, _world_clock, "runtime_worker_fault", {
+			"source": "world_runtime_host",
+			"worker_fault": _runtime_last_fault_diagnostics.duplicate(true),
+		})
 
 
 func get_runtime_fault_diagnostics() -> Dictionary:

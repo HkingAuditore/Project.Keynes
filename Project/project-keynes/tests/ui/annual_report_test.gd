@@ -49,12 +49,22 @@ func _run() -> void:
 	_expect("all 11 illustrations exist", _all_art_exists())
 	var compiled: Dictionary = ProfileScript.new().compile_native(TechnologyCatalog.compile_native_catalog(), {"offer_cost_q16": 393216, "offer_cost_growth_percent": 120, "offer_cost_max_q16": 1000000000000})
 	_expect("profile compiles dense technology equivalents", compiled.technology_equivalents_q16.size() > 0 and compiled.era_milestones.size() == 11)
+	_expect("annual profile v2 raises quality targets and grade gates",
+		int(compiled.version) == 2
+		and compiled.grade_thresholds == PackedInt32Array([9800, 9300, 8400, 7200, 5200, 3200, 0])
+		and compiled.quality_targets == PackedInt32Array([64225, 64880, 64225, 62259])
+		and compiled.reward_draws == PackedInt32Array([4, 3, 2, 1, 1, 0, 0]))
 	# ── 纸本长卷所需的派生量（图表与账簿不能靠格式化字符串反解） ──────────────
 	var gdp_row: Dictionary = model.chapters[1].rows[0]
 	_expect("row exposes normalized raw value", is_equal_approx(float(gdp_row.get("value", -1.0)), 12850.0) and gdp_row.get("has_baseline") == false)
 	_expect("first year reports no baseline", model.get("has_previous") == false and model.chapters[1].get("has_previous") == false)
 	_expect("chapter figures are structured", model.chapters[1].get("figures", []).size() == 3 and model.chapters[1].figures[0].has("text"))
-	_expect("grade bands cover the full axis", model.get("grade_bands", []).size() == 7 and float(model.grade_bands[0].min) == 94.0)
+	_expect("stricter grade bands cover the full axis", model.get("grade_bands", []).size() == 7 and float(model.grade_bands[0].min) == 98.0)
+	var legacy_scored: Dictionary = raw.duplicate(true)
+	legacy_scored.scoring_version = 1
+	var legacy_model: Dictionary = ViewModel.build(legacy_scored)
+	_expect("legacy reports keep their original grade ruler",
+		float(legacy_model.grade_bands[0].min) == 94.0)
 	_expect("tax parts drop zero entries", model.get("tax_parts", []).size() == 4 and float(model.get("tax_total", 0.0)) > 0.0)
 	_expect("monthly visual keeps twelve slots", model.chapters[1].get("visuals", []).size() == 1 and model.chapters[1].visuals[0].get("gdp", PackedFloat64Array()).size() == 12)
 	_expect("satisfaction visual is a radar", String(model.chapters[2].visuals[0].get("kind", "")) == "radar")
@@ -108,8 +118,8 @@ func _all_art_exists() -> bool:
 	return true
 
 static func fixture() -> Dictionary:
-	return {"ok": true, "id": 1, "year": 0, "country_name": "河湾共同体", "era": 0,
-		"complete": true, "grade": "S", "grade_index": 1, "score_bp": 9000,
+	return {"ok": true, "id": 1, "year": 0, "scoring_version": 2, "country_name": "河湾共同体", "era": 0,
+		"complete": true, "grade": "A", "grade_index": 2, "score_bp": 9000,
 		"reward_q16": 48 * 65536, "reward_settled": true,
 		"quality_average": PackedInt64Array([60000, 64000, 62000, 60000]),
 		"score_parts": PackedInt64Array([1900, 1950, 1400, 1350, 640, 480, 400, 240, 240, 400]),

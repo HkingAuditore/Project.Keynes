@@ -149,6 +149,53 @@ void NativeEconomyRuntime::rebuild_economy_live_cells() {
     _economy_live_cells_published = std::move(published);
 }
 
+void NativeEconomyRuntime::capture_epoch_country_population() {
+    const size_t country_count = static_cast<size_t>(
+        std::max(0, _epoch_country_count));
+    _epoch_country_population.assign(country_count, 0);
+    if (country_count == 0 || _epoch_cell_country.size() !=
+            static_cast<size_t>(std::max(0, _cell_count.get())))
+        return;
+
+    const bool have_territory_index =
+        _epoch_country_cell_offsets.size() == country_count + 1 &&
+        !_epoch_country_cell_offsets.empty() &&
+        _epoch_country_cell_offsets.front() == 0 &&
+        _epoch_country_cell_offsets.back() ==
+            static_cast<int32_t>(_epoch_country_cells.size());
+    if (have_territory_index) {
+        for (int32_t country = 0; country < _epoch_country_count; ++country) {
+            const int32_t begin = _epoch_country_cell_offsets[static_cast<size_t>(country)];
+            const int32_t end = _epoch_country_cell_offsets[static_cast<size_t>(country) + 1];
+            if (begin < 0 || end < begin ||
+                static_cast<size_t>(end) > _epoch_country_cells.size())
+                continue;
+            int64_t total = 0;
+            for (int32_t edge = begin; edge < end; ++edge) {
+                const int32_t cell = _epoch_country_cells[static_cast<size_t>(edge)];
+                if (cell < 0 || static_cast<size_t>(cell) >= _cell_population_total.size())
+                    continue;
+                total = saturating_add(total,
+                    _cell_population_total[static_cast<size_t>(cell)], _saturation_count);
+            }
+            _epoch_country_population[static_cast<size_t>(country)] = total;
+        }
+        return;
+    }
+
+    // Defensive fallback for test/restoration paths that capture before the
+    // territory CSR is available. This runs only at the epoch boundary.
+    for (int32_t cell = 0; cell < _cell_count.get(); ++cell) {
+        const int32_t country = _epoch_cell_country[static_cast<size_t>(cell)];
+        if (country < 0 || country >= _epoch_country_count ||
+            static_cast<size_t>(cell) >= _cell_population_total.size())
+            continue;
+        _epoch_country_population[static_cast<size_t>(country)] = saturating_add(
+            _epoch_country_population[static_cast<size_t>(country)],
+            _cell_population_total[static_cast<size_t>(cell)], _saturation_count);
+    }
+}
+
 PackedInt32Array NativeEconomyRuntime::economy_live_cells_query() {
     std::shared_ptr<const std::vector<int32_t>> cells;
     {
