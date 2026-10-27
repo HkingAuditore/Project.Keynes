@@ -53,6 +53,7 @@ const ECONOMY_CONSERVATION_KEYS := [
 	"goods_expected", "saturation_count",
 	"goods_audit_candidate_lanes",
 	"money_audit_candidate_accounts",
+	"money_stage_diagnostics",
 ]
 
 ## 定位一次停机真正需要的东西：哪个 stage、哪条命令、哪些边界开着。
@@ -137,7 +138,12 @@ static func capture(reason: String, generator, clock,
 ## 落盘并打印单行标记。返回 tmp 下那份的绝对路径（失败时返回空串）。
 static func dump(payload: Dictionary, tag: String) -> String:
 	var text := JSON.stringify(payload)
-	print("[runtime-forensics/%s] %s" % [tag, text])
+	var log_payload := payload.duplicate(true)
+	if log_payload.has("economy_conservation"):
+		var log_conservation: Dictionary = log_payload["economy_conservation"]
+		log_conservation.erase("money_stage_diagnostics")
+		log_payload["economy_conservation"] = log_conservation
+	print("[runtime-forensics/%s] %s" % [tag, JSON.stringify(log_payload)])
 	DirAccess.make_dir_recursive_absolute(
 		ProjectSettings.globalize_path(DIAGNOSTICS_DIR))
 	var stamp := Time.get_datetime_string_from_system().replace(":", "").replace(
@@ -164,7 +170,55 @@ static func capture_and_dump(reason: String, generator, clock, tag: String,
 	if tag == "economy_fatal":
 		payload["economic_snapshots"] = _dump_economic_snapshots(generator,
 			payload, tag)
+	if tag == "runtime_worker_fault" and not bool(
+		payload.get("economy", {}).get("fatal", false)):
+		_print_economy_trace(payload, tag)
 	return dump(payload, tag)
+
+
+## 发生经济 fatal 或 worker 暂停时，把经济状态和阶段账目打印到 Godot
+## 输出面板；正常模拟期间不会逐帧输出追踪日志。
+static func _print_economy_trace(payload: Dictionary, tag: String) -> void:
+	var economy: Dictionary = payload.get("economy", {})
+	var conservation: Dictionary = payload.get("economy_conservation", {})
+	print("[runtime-forensics/%s/economy] fatal=%s reason=%s day=%s stage=%s executed=%s substage=%s audit_incomplete=%s audit_mode=%s money_error=%s" % [
+		tag,
+		str(economy.get("fatal", false)),
+		str(economy.get("fatal_reason", "")),
+		str(economy.get("current_day", -1)),
+		str(economy.get("stage", "unknown")),
+		str(economy.get("executed_stage", "unknown")),
+		str(economy.get("executed_substage", "")),
+		str(conservation.get("audit_incomplete", "unknown")),
+		str(conservation.get("closing_audit_mode", "unknown")),
+		str(conservation.get("money_error", "unknown")),
+	])
+	var stage_rows = conservation.get("money_stage_diagnostics", [])
+	for row in stage_rows:
+		if not row is Dictionary:
+			continue
+		print("[runtime-forensics/%s/money-stage] day=%s epoch=%s where=%s stage=%s executed=%s substage=%s diff=%s delta=%s money=%s expected=%s cohort=%s country=%s escrow=%s mint=%s burn=%s" % [
+			tag,
+			str(row.get("day", -1)),
+			str(row.get("epoch_id", -1)),
+			str(row.get("where", "")),
+			str(row.get("stage", "unknown")),
+			str(row.get("executed_stage", "unknown")),
+			str(row.get("substage", "")),
+			str(row.get("diff", "unknown")),
+			str(row.get("delta", "unknown")),
+			str(row.get("money_now", "unknown")),
+			str(row.get("money_expected", "unknown")),
+			str(row.get("cohort_funds", "unknown")),
+			str(row.get("country_cash", "unknown")),
+			str(row.get("escrow_cash", "unknown")),
+			str(row.get("explicit_money_mint", "unknown")),
+			str(row.get("explicit_money_burn", "unknown")),
+		])
+	for account in conservation.get("money_audit_candidate_accounts", []):
+		if account is Dictionary:
+			print("[runtime-forensics/%s/money-candidate] %s" % [tag,
+				JSON.stringify(account)])
 
 
 static func _dump_economic_snapshots(generator, payload: Dictionary,

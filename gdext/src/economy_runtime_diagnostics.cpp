@@ -287,6 +287,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_audit_shadow_market_stock);
     cap(_audit_population_lane_stamp); cap(_audit_market_lane_stamp);
     cap(_audit_population_touched_lanes); cap(_audit_market_touched_lanes);
+    cap(_money_stage_diagnostics);
     cap(_market_signals.cell_offsets); cap(_market_signals.good_ids);
     cap(_market_signals.dense_index);
     cap(_market_signals.business_demand_ema); cap(_market_signals.offered_supply_ema);
@@ -334,6 +335,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_cell_days_since_hazard); cap(_cell_previous_hazard_mask);
     cap(_cell_weather_type); cap(_cell_cover);
     cap(_epoch_cell_country); cap(_epoch_cell_visible); cap(_epoch_country_technologies);
+    cap(_epoch_country_population);
     cap(_city_output_shared_goods_q16); cap(_city_output_cell_offsets);
     cap(_city_output_good_indices); cap(_city_output_factors_q16);
     cap(_city_output_scope_cells_scratch);
@@ -2756,6 +2758,34 @@ Dictionary NativeEconomyRuntime::report() const {
     out["money_error"] = conservation_reportable
         ? money_close - (money_open + _explicit_money_mint - _explicit_money_burn)
         : 0;
+    godot::Array money_stage_diagnostics;
+    money_stage_diagnostics.resize(
+        static_cast<int64_t>(_money_stage_diagnostics.size()));
+    for (size_t index = 0; index < _money_stage_diagnostics.size(); ++index) {
+        const MoneyStageDiagnostic &diagnostic =
+            _money_stage_diagnostics[index];
+        godot::Dictionary item;
+        item["day"] = diagnostic.day;
+        item["epoch_id"] = diagnostic.epoch_id;
+        item["stage"] = stage_name(
+            static_cast<Stage>(diagnostic.stage));
+        item["executed_stage"] = stage_name(
+            static_cast<Stage>(diagnostic.executed_stage));
+        item["where"] = String::utf8(diagnostic.where.data());
+        item["substage"] = String::utf8(diagnostic.substage.data());
+        item["money_open"] = diagnostic.money_open;
+        item["money_now"] = diagnostic.money_now;
+        item["money_expected"] = diagnostic.money_expected;
+        item["diff"] = diagnostic.diff;
+        item["delta"] = diagnostic.delta;
+        item["cohort_funds"] = diagnostic.cohort_funds;
+        item["country_cash"] = diagnostic.country_cash;
+        item["escrow_cash"] = diagnostic.escrow_cash;
+        item["explicit_money_mint"] = diagnostic.explicit_money_mint;
+        item["explicit_money_burn"] = diagnostic.explicit_money_burn;
+        money_stage_diagnostics[index] = item;
+    }
+    out["money_stage_diagnostics"] = money_stage_diagnostics;
     out["money_open"] = money_open;
     out["money_close"] = money_close;
     out["money_expected"] = money_open + _explicit_money_mint - _explicit_money_burn;

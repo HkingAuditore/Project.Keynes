@@ -314,7 +314,9 @@ load      = P / max(1, effective_food_capacity_persons)
 fertility_land = 1                          if load ≤ soft_start
                lerp(1, death/birth, t)      otherwise
 cohort_sat_residual = clamp(rescale(cohort) / sat_cell)
-effective_birth_rate_q32 = birth_rate_q32 × fertility_land × city.birth_factor × cohort_sat_residual
+small_country_birth = lerp(1.5, 1.0, clamp((country_population - 40) / 160, 0, 1))
+small_country_birth = lerp(1.0, small_country_birth, load_fade)
+effective_birth_rate_q32 = birth_rate_q32 × fertility_land × city.birth_factor × small_country_birth × cohort_sat_residual
 expected_births_q32 = population × effective_birth_rate_q32 × epoch_days
 ```
 
@@ -327,6 +329,10 @@ expected_births_q32 = population × effective_birth_rate_q32 × epoch_days
 家庭购买属于所有权转移，不得再次加到本地产出；
 加工链按输出减投入计量。上一期流量快照进入 PKEC v45 与 `state_hash`。
 饥饿死亡公式不变，只读 `SAT_DIM_SUBSISTENCE`。
+
+小国出生扶持以周期开始时冻结的全国人口计算：人口不超过 40 时最高 1.5 倍，40 至 200
+之间线性递减，达到 200 后归一；本地食物负载超过 soft start 后，扶持随 `load_fade` 线性退出，
+达到有效承载力时归一。无国家归属的地块不领取此扶持。该规则不改变死亡率，也不会提高承载力。
 
 `composite_sat` 的八维度定义、权重契约与生存闸门见
 [综合满意度运行时](./satisfaction-runtime.md)。

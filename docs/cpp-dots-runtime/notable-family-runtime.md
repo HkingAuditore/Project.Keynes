@@ -270,7 +270,7 @@ PlayerController 把玩家 OPEN 卡组当作强制模态：锁定其他玩家命
 四槽起碰到 1024 封顶。创始人口只从业主 signature 的剩余匿名人口吸收，并把 `filled_owner`
 记为业主槽位数。当日 `FAMILY_COMMIT` 只对**当日新立**的家族再吸收一次：只吸收业主职业的
 匿名人口，每个 cohort 至少留 1 名匿名者，并且同一地块所有家族合计不超过 `S_total`(70%)，其余
-保持匿名。开局 20 人首都因此仍是两名采集业主加匿名多数。初始 cash claim 按匿名人均资金取得；
+保持匿名。开局 40 人首都因此仍由采集业主与匿名多数组成。初始 cash claim 按匿名人均资金取得；
 首栋建筑的 `owned_count=1`。既有家族不再每日吸收：它们的规模由出生/死亡归属和分支评审时的
 依附招募（`recruit_family_dependents`，目标占比 `s*` 高于当前占比时每次评审补 2% 差距）决定，
 不新增人口、不改账本总量。`family_max_per_cell` 写进 PKEC family policy header，

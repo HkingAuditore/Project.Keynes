@@ -207,13 +207,12 @@ func _exercise_lifecycle() -> bool:
 	_expect("above threshold reapplies village_compact L1 (+8%%) (got %.5f)" % reapplied,
 		_is_close(reapplied, 1.08, 0.0005), "%.5f" % reapplied)
 
-	# Pin the card at L3 before the idle window. At L1 the daily understanding
-	# gain naturally promotes it to L2/L3 mid-window; those APPLY/RETIRE pairs are
-	# real input changes, not a managed-program re-fire. L3 has no further level
-	# transition, so every following day with the metric fixed must be silent.
+	# Pin the card at L3 before the idle window. L3 has no further understanding
+	# growth or level transition, so every following day with the metric fixed
+	# must be silent.
 	var raise: Dictionary = _submit([
 		{"op": 8, "day": _tick, "handle": _handle, "idea": dense,
-		 "value": 12 * Q16_ONE}])
+		 "value": 24 * Q16_ONE}])
 	if not _require("worker accepts village_compact understanding bump",
 			bool(raise.get("ok", false)), str(raise)):
 		return false

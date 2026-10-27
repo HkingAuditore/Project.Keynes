@@ -327,7 +327,7 @@ Controller 本国权限门控和 UI 恢复／地图安全区。UI 夹具 8／40�
 `advance_preparing_family_expedition` 立即 abort 并写 `PREPARING_UNBUILDABLE` 回执、退还托管、
 释放目标占用——这种缺口不会随时间消失，继续逐日囤积就是永久卡死。
 
-规划复杂度仍是 `O(unlocked_types)`，禁止把 GDScript `StarterEconomyPlanner` 的 20 人穷举
+规划复杂度仍是 `O(unlocked_types)`，禁止把 GDScript `StarterEconomyPlanner` 的 40 人穷举
 搬进报价热路径，也不扫全图、不跑投资周期 I。
 物资只从源地市场划走；`N < 3` 抽货失败仍可回执 `colonization_kit_materials_short`。
 到达仍一次性插入冻结开工计划；若 BUFFER 里还有建材，落地当天对目标再 `plan_colonization_kit` 一次

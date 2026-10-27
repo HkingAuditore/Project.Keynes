@@ -41,8 +41,10 @@ func _run() -> void:
 	await _advance_days(clock, 3)
 	# QA-only producer so the grant never collides with PlayerController's
 	# producer-1 sequence high-water mark.
+	var catalog: Dictionary = facade.catalog_view()
+	var first_draw_cost := int(catalog.get("offer_cost_q16", 120 * Q16))
 	var grant_rows: Array[Dictionary] = [{"opcode": 2, "producer_id": 77,
-		"country_handle": handle, "value_q16": 40 * Q16,
+		"country_handle": handle, "value_q16": first_draw_cost * 2,
 		"effective_day": clock.day_index() + 1, "sequence": 1}]
 	var granted: Dictionary = facade.submit(grant_rows)
 	if not bool(granted.get("ok", false)):

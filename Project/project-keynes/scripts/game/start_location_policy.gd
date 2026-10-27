@@ -14,6 +14,7 @@ const UNREACHABLE_DISTANCE := 0x3fffffff
 const COUNTRY_DISTANCE_MAP_RATIO := 0.15
 const MIN_COUNTRY_DISTANCE := 4
 const MAX_COUNTRY_DISTANCE := 12
+const STARTER_POPULATION := 40
 
 static var _research_signal_index_by_id: Dictionary = {}
 static var _research_signal_occupancy_bit: PackedInt32Array = PackedInt32Array()
@@ -551,7 +552,7 @@ static func _validate_starter_technologies(technology_ids: PackedStringArray,
 				return _error("starter_building_required_technology_missing", "%s 缺少 required technology %s" % [building_id, required_tags[edge]])
 		var owner_slots: PackedInt64Array = catalog.get("building_owner_slots", PackedInt64Array())
 		total_owner_slots += int(owner_slots[building_index])
-	if total_owner_slots > 20:
+	if total_owner_slots > STARTER_POPULATION:
 		return _error("starter_population_overcommitted", "开局建筑自营岗位容量超过初始人口规模。")
 	if not building_ids.has("early_merchant_post"):
 		return _error("starter_trade_building_missing", "开局必须预建早期商栈。")

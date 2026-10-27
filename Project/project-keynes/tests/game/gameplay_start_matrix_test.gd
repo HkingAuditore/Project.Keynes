@@ -113,8 +113,8 @@ func _run_case(label: String, size: Vector2i, seed: int) -> Dictionary:
 		int(country.cell_summary(cell).get("country_slot", -1)) == 0)
 	var economy = generator.get_economy_facade()
 	var population: Dictionary = economy.population_cell_snapshot(cell)
-	_expect("%s starter population is 20" % label,
-		int(population.get("population", 0)) == 20)
+	_expect("%s starter population is 40" % label,
+		int(population.get("population", 0)) == 40)
 	_expect("%s starter capital is named" % label,
 		bool(population.get("settlement_name_active", false)) and
 		bool(population.get("settlement_name_forced", false)) and
@@ -138,9 +138,9 @@ func _run_case(label: String, size: Vector2i, seed: int) -> Dictionary:
 			_building_count(buildings, building_id) == int(route_counts[building_index]))
 	_expect("%s food lots operate without leftover construction techs" % label,
 		_food_lots_operable(buildings, route_buildings))
-	_expect("%s route keeps self-operated jobs within the 20-person cap" % label,
+	_expect("%s route keeps self-operated jobs within the 40-person cap" % label,
 		int(player_start.get("starter_job_capacity", 0)) > 0
-		and int(player_start.get("starter_job_capacity", 0)) <= 20)
+		and int(player_start.get("starter_job_capacity", 0)) <= 40)
 	_expect("%s route confines employee slots to precious workings" % label,
 		int(player_start.get("starter_employee_job_capacity", 0)) ==
 			_precious_employee_slots(String(player_start.get("precious_resource", ""))))
@@ -158,7 +158,7 @@ func _run_case(label: String, size: Vector2i, seed: int) -> Dictionary:
 		and _sum_i64(population.get("owner_employed_by_cohort",
 			PackedInt64Array())) > 0
 		and _sum_i64(population.get("owner_employed_by_cohort",
-			PackedInt64Array())) < 20
+			PackedInt64Array())) < 40
 		and _sum_i64(population.get("employee_employed_by_cohort",
 			PackedInt64Array())) == 0)
 	_expect("%s placer-gold work site matches the opening deposit" % label,

@@ -3931,6 +3931,25 @@ private:
         int64_t net_change = 0;
     };
 
+    struct MoneyStageDiagnostic {
+        int64_t day = -1;
+        int64_t epoch_id = -1;
+        int32_t stage = -1;
+        int32_t executed_stage = -1;
+        int64_t money_open = 0;
+        int64_t money_now = 0;
+        int64_t money_expected = 0;
+        int64_t diff = 0;
+        int64_t delta = 0;
+        int64_t cohort_funds = 0;
+        int64_t country_cash = 0;
+        int64_t escrow_cash = 0;
+        int64_t explicit_money_mint = 0;
+        int64_t explicit_money_burn = 0;
+        std::array<char, 32> where{};
+        std::array<char, 96> substage{};
+    };
+
     struct TradePlanInitState {
         TradePlanInitPhase phase = TradePlanInitPhase::IDLE;
         size_t cursor = 0;
@@ -5513,6 +5532,15 @@ private:
     int64_t _closing_audit_mismatch_lane = -1;
     std::vector<GoodsAuditLaneDiagnostic> _goods_audit_candidate_lanes;
     std::vector<MoneyAuditAccountDiagnostic> _money_audit_candidate_accounts;
+    std::vector<MoneyStageDiagnostic> _money_stage_diagnostics;
+    int64_t _money_stage_probe_epoch_id = -1;
+    int64_t _money_stage_probe_last_diff = 0;
+    int32_t _money_stage_probe_last_stage = -1;
+    int32_t _money_stage_probe_last_executed_stage = -1;
+    bool _money_stage_probe_post_commit = false;
+    bool _money_stage_probe_has_last = false;
+    std::string _money_stage_probe_last_where;
+    std::string _money_stage_probe_last_substage;
     int64_t _investment_scheduled_review_cells = 0;
     int64_t _investment_review_cells = 0;
     int64_t _investment_type_evaluations = 0;
@@ -7187,6 +7215,8 @@ private:
     // Merchant capacity is frozen with the country snapshot so dispatch does
     // not rescan every map cell on each trade slice.
     std::vector<int64_t> _epoch_country_merchant_population;
+    // Frozen at the same epoch boundary for the small-country birth bonus.
+    std::vector<int64_t> _epoch_country_population;
     std::vector<BuildingType> _building_types;
     std::vector<std::string> _production_climate_profile_ids;
     std::vector<ProductionClimateProfile> _production_climate_profiles;
@@ -8470,7 +8500,7 @@ private:
     // Phase-2.4.3.2: StageOps-only fiscal bridge after BUILDING_COMMIT.
     // Fail-closed on country peer pending (compact yields; StageOps cannot).
     bool run_fiscal_settlement_drain(std::string &error);
-    void diag_stage_money_probe(const char *where);
+    void diag_stage_money_probe(const char *where, bool force = false);
     // Phase-2.4.4.3: StageOps bounded mid-graph drains (cursor + slice caps).
     // Compact keeps its own slice loops; these drains never re-enter
     // run_slice_compact.
@@ -9242,6 +9272,7 @@ private:
     void request_cell_wake(int32_t cell);
     int32_t tier_review_period_days(uint8_t tier) const;
     void rebuild_economy_live_cells();
+    void capture_epoch_country_population();
     void refresh_cadence_estimates();
     void maybe_lock_cadence_cycles(int64_t day_index);
     void lock_market_cycle(int64_t day_index);

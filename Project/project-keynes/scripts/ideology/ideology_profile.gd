@@ -114,8 +114,9 @@ extends Resource
 ## same x10000 scale as rarity weight. 0 disables the mechanic, which keeps the
 ## pre-L4-11 behaviour for any catalog that predates it.
 @export_range(0, 10000, 1) var refine_weight_bp: int = 4000
-## Understanding granted when a 精进 row is picked, in Q16. 4.0 is about one
-## level on the shipped curve, which is what the design note asks for.
+## Understanding granted when a 精进 row is picked, in Q16. The production
+## profile keeps the immediate 4.0-point refinement reward; level thresholds are
+## tuned separately so one duplicate does not unlock a level by itself.
 @export_range(0, 1073741824, 1) var refine_understanding_q16: int = 262144
 ## Draw-weight decay indexed by (current_era - idea.era_index). Index 0 is the
 ## card's own era (10000 = full weight); the last entry is reused for anything

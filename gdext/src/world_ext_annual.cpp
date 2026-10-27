@@ -36,7 +36,7 @@ Dictionary DCWorldExt::configure_annual_reports(int64_t handle,int64_t length,in
     if(!_country_runtime||!_economy_runtime||!_ideology_runtime)return result(false,"annual_domains_unavailable");
     if(!_runtime_host)_runtime_host=std::make_unique<NativeSimulationHost>();
     auto *economy=static_cast<NativeEconomyRuntime*>(_economy_runtime);economy->attach_simulation_host(_runtime_host.get());
-    AnnualDevelopmentProfile p;p.version=static_cast<uint32_t>(static_cast<int64_t>(source.get("version",1)));
+    AnnualDevelopmentProfile p;p.version=static_cast<uint32_t>(static_cast<int64_t>(source.get("version",2)));
     if(!read_array(source,"grade_thresholds",p.grade_thresholds)||!read_array(source,"reward_draws",p.reward_draws)||!read_array(source,"quality_weights",p.quality_weights)||!read_array(source,"quality_targets",p.quality_targets)||!read_array(source,"progress_weights",p.progress_weights)||!read_array(source,"progress_targets",p.progress_targets))return result(false,"annual_profile_shape_invalid");
     p.active_target=source.get("active_target",p.active_target);p.offer_cost=source.get("offer_cost_q16",p.offer_cost);p.max_offer_cost=source.get("offer_cost_max_q16",p.max_offer_cost);p.offer_growth_percent=source.get("offer_cost_growth_percent",p.offer_growth_percent);
     const PackedInt32Array equivalents=source.get("technology_equivalents_q16",PackedInt32Array());for(auto value:equivalents)p.technology_equivalents_q16.push_back(value);

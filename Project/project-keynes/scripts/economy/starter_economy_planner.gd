@@ -11,7 +11,7 @@ const SURVIVAL_PLAN_PATH := \
 const CLOTHING_CURVE_PATH := \
 	"res://data/economy/environment_curves/cold_clothing_quantity.tres"
 const PRODUCTION_CLIMATE_DIR := "res://data/economy/production_climates"
-const STARTER_POPULATION := 20
+const STARTER_POPULATION := 40
 const GOODS_SCALE := 1000
 const Q16_ONE := 65536
 const RESOURCE_RUNWAY_DAYS := 365
@@ -160,7 +160,7 @@ static func plan(map: MapData, cell_idx: int, starter_route: Dictionary,
 		minimum_owner_slots += int(candidate.min_count) * int(candidate.owner_slots)
 	if minimum_owner_slots > STARTER_POPULATION:
 		return _error("starter_population_overcommitted",
-			"路线基础建筑的自营岗位容量已经超过 20 个。")
+			"路线基础建筑的自营岗位容量已经超过 40 个。")
 	var suffix_min := PackedInt32Array()
 	var suffix_max := PackedInt32Array()
 	suffix_min.resize(candidates.size() + 1)
@@ -178,7 +178,7 @@ static func plan(map: MapData, cell_idx: int, starter_route: Dictionary,
 		return {
 			"ok": false,
 			"code": "starter_capacity_plan_unsatisfied",
-			"message": "当地资源无法组成不超过 20 个自营岗位的可持续开局产业。",
+			"message": "当地资源无法组成不超过 40 个自营岗位的可持续开局产业。",
 			"candidate_building_ids": _candidate_ids(candidates),
 			"evaluated_combinations": int(search.evaluated),
 		}

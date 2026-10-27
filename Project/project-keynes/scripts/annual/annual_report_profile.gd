@@ -2,11 +2,11 @@ extends Resource
 class_name AnnualReportProfile
 
 ## The native reducer owns all scoring. This resource only compiles content.
-@export var version: int = 1
-@export var grade_thresholds := PackedInt32Array([9400, 8600, 7500, 6000, 4500, 3000, 0])
-@export var reward_draws := PackedInt32Array([6, 4, 3, 2, 1, 0, 0])
+@export var version: int = 2
+@export var grade_thresholds := PackedInt32Array([9800, 9300, 8400, 7200, 5200, 3200, 0])
+@export var reward_draws := PackedInt32Array([4, 3, 2, 1, 1, 0, 0])
 @export var quality_weights := PackedInt32Array([2000, 2000, 1500, 1500])
-@export var quality_targets := PackedInt32Array([62259, 64225, 62259, 55706])
+@export var quality_targets := PackedInt32Array([64225, 64880, 64225, 62259])
 @export var active_target: int = 62259
 @export var progress_weights := PackedInt32Array([800, 600, 500, 300, 300, 500])
 @export var progress_targets := PackedInt32Array([6554, 3277, 3277, 6554, 3277, 131072])

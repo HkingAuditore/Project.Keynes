@@ -907,6 +907,10 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     _epoch_begin_country_ms = elapsed_ms(country_started);
     const auto workset_started = Clock::now();
     rebuild_economy_live_cells();
+    // Freeze the birth-support population once, from the same boundary as the
+    // country and cohort snapshots. Cadence refreshes may rebuild live cells
+    // during the epoch, but must not change this period's demographic input.
+    capture_epoch_country_population();
     maybe_lock_cadence_cycles(day_index);
     _rolling_phase = cycle_phase(day_index, _market_cycle_start_day.get(),
                                  locked_market_cycle_days());

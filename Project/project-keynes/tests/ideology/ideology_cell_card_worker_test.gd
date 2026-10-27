@@ -859,7 +859,7 @@ func _equip() -> bool:
 func _raise_to_level(level: int) -> bool:
 	var raise: Dictionary = _submit([{
 		"op": 8, "day": _tick, "handle": _handle, "idea": _dense,
-		"value": 4 * Q16_ONE if level == 2 else 12 * Q16_ONE}])
+		"value": 8 * Q16_ONE if level == 2 else 24 * Q16_ONE}])
 	if not _require("%s: worker accepts understanding bump to L%d"
 			% [_card, level], bool(raise.get("ok", false)), str(raise)):
 		return false

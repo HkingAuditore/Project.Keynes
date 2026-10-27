@@ -55,11 +55,11 @@ struct AnnualCountryFacts {
     std::vector<int32_t> technologies;
 };
 struct AnnualDevelopmentProfile {
-    uint32_t version = 1;
-    std::array<int32_t, 7> grade_thresholds{{9400,8600,7500,6000,4500,3000,0}};
-    std::array<int32_t, 7> reward_draws{{6,4,3,2,1,0,0}};
+    uint32_t version = 2;
+    std::array<int32_t, 7> grade_thresholds{{9800,9300,8400,7200,5200,3200,0}};
+    std::array<int32_t, 7> reward_draws{{4,3,2,1,1,0,0}};
     std::array<int32_t, 4> quality_weights{{2000,2000,1500,1500}};
-    std::array<int32_t, 4> quality_targets{{62259,64225,62259,55706}};
+    std::array<int32_t, 4> quality_targets{{64225,64880,64225,62259}};
     std::array<int32_t, 6> progress_weights{{800,600,500,300,300,500}};
     std::array<int32_t, 6> progress_targets{{6554,3277,3277,6554,3277,131072}};
     int32_t active_target = 62259;
@@ -96,6 +96,7 @@ class AnnualDevelopmentLedger {
 public:
     bool configure(uint64_t handle, int64_t days_per_year, int64_t initial_day,
                    const AnnualDevelopmentProfile &profile, std::string &error);
+    bool update_profile(const AnnualDevelopmentProfile &profile, std::string &error);
     bool configured() const { return _handle != 0; }
     uint64_t country_handle() const { return _handle; }
     int64_t days_per_year() const { return _length; }

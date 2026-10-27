@@ -77,8 +77,8 @@ PRODUCTION_CLIMATES_DIR = ROOT / "data/economy/production_climates"
 NEEDS_DIR = ROOT / "data/economy/needs"
 
 Q16 = 65536
-LEVEL_THRESHOLDS = [0, 262144, 786432]          # 0 / 4.0 / 12.0 understanding
-LEVEL_DAILY = [819, 410, 0]                      # ~0.0125 / ~0.00626 per day
+LEVEL_THRESHOLDS = [0, 524288, 1572864]        # 0 / 8.0 / 24.0 understanding
+LEVEL_DAILY = [205, 103, 0]                      # ~0.00313 / ~0.00157 per day (1/4 rate)
 LEVEL_MAGNITUDES = [65536, 104858, 144179]      # 1.0x / 1.6x / 2.2x
 LEVEL_TITLES = ["初识", "通晓", "化育"]           # presentation only
 
@@ -1342,12 +1342,16 @@ PROFILE_COLUMNS = {
     # Per-cell fan-out is meant to be aggregated by cell, not by one instance per
     # (card, cell) pair, so this budget must not be used to size that product.
     "max_effect_instances": 2048,
-    # About 0.0403 point per new resident, 0.5005 per new installed building,
-    # 0.004 per money unit of trade base value. Zero cap disables clipping.
-    "point_population_weight_q16": 2640,
-    "point_building_weight_q16": 32800,
-    "point_trade_weight_q16": 240,
+    # One quarter of the previous production balance: about 0.0101 point per
+    # new resident and 0.125 point per new installed building. Zero cap disables
+    # clipping; the reduced weights apply equally to native and worker accrual.
+    "point_population_weight_q16": 660,
+    "point_building_weight_q16": 8200,
+    "point_trade_weight_q16": 60,
     "point_gain_cap_q16": 0,
+    # Keep the immediate 4-point refinement reward; the doubled level thresholds
+    # make a single duplicate insufficient to unlock the next level.
+    "refine_understanding_q16": 4 * Q16,
 }
 CAPACITY_UNLOCKS = [  # tech, +ideology, +spirit
     (KINGDOM, 1, 0),

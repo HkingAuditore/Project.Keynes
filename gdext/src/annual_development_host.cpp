@@ -8,7 +8,7 @@ bool NativeSimulationHost::configure_annual_development(uint64_t handle,int64_t 
     std::lock_guard<std::mutex> lock(_annual_mutex);
     if(_annual_ledger.configured()){
         if(_annual_ledger.country_handle()!=handle||_annual_ledger.days_per_year()!=length){error="annual_session_identity_changed";return false;}
-        return true;
+        return _annual_ledger.update_profile(profile,error);
     }
     if(!_annual_ledger.configure(handle,length,day,profile,error))return false;
     _annual_ledger.seed(baseline,country);_annual_ledger.commit_day(day,country,0);_annual_queued_reward=0;

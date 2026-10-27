@@ -55,8 +55,9 @@ var _live_by_id := {}
 var _effect_summary: Dictionary = {}
 var _metadata := {}
 var _states := {}
-var _signature := ""
-var _explain_signature := ""
+var _signature: Array = []
+var _explain_signature: Array = []
+var _resonance_signature: PackedInt32Array = PackedInt32Array()
 var _points_signature := ""
 var _pending_promotion_id := -1
 var _compact := false
@@ -71,9 +72,16 @@ var _hint_hold_until := 0
 var _active_resonances := {}
 var _hover_niche: Control = null
 var _hover_id := -1
-var _progress_by_id := {}
 var _collection_entries := {}
 var _entry_intro_played := false
+var _indexed_snapshot_valid := false
+var _indexed_idea_ids := PackedInt32Array()
+var _indexed_understanding := PackedInt64Array()
+var _indexed_levels := PackedInt32Array()
+var _indexed_locations := PackedInt32Array()
+var _indexed_pending := PackedByteArray()
+var _effect_report_day := -1
+var _effect_report_context: Array = []
 
 var _root: VBoxContainer
 var _draw_stack: DrawStack
@@ -711,9 +719,11 @@ func set_compact(compact: bool) -> void:
 		_hint.visible = false
 	for view in _resonance_views.values():
 		(view as ResonanceEmblem).set_compact(compact)
-	_signature = ""
+	_signature = []
 	if not _snapshot.is_empty() and not _presentation.is_empty():
 		_rebuild_board()
+		_signature = _board_signature(
+			_snapshot.get("known_ids", PackedInt32Array()))
 
 
 func _stage_card_size() -> Vector2:
@@ -854,31 +864,44 @@ func _apply_model(model: Dictionary) -> void:
 	if _player_controller != null and _player_controller.has_method("ideology_draw_phase"):
 		_draw_phase = String(_player_controller.ideology_draw_phase())
 	_index_catalog()
-	_index_states()
-	_refresh_effect_report()
+	var state_changes := _index_states()
 	_render_top()
 	var known: PackedInt32Array = _snapshot.get("known_ids", PackedInt32Array())
-	var explain_signature := "%d|%d|%s|%s|%s|%s" % [
+	var explain_signature: Array = [
 		_country_handle, int(_snapshot.get("support_revision", 0)), known,
 		_snapshot.get("levels", PackedInt32Array()),
-		_snapshot.get("locations", PackedInt32Array()),
-		_snapshot.get("transition_pending", PackedByteArray())]
-	if explain_signature != _explain_signature:
+		_snapshot.get("locations", PackedInt32Array())]
+	var support_changed := explain_signature != _explain_signature
+	if support_changed:
 		_explain_signature = explain_signature
 		_refresh_live_explain(known)
-	var signature := "%s|%s|%s|%s|%d|%d|%d|%d|%s|%d|%d" % [known,
+	var effect_changed_ids := PackedInt32Array()
+	var effect_context: Array = [
+		_country_handle, known,
 		_snapshot.get("levels", PackedInt32Array()),
 		_snapshot.get("locations", PackedInt32Array()),
-		_snapshot.get("active_synergy_ids", PackedInt32Array()),
-		int(_presentation.get("slots_capacity", 0)),
-		int(_presentation.get("spirits_capacity", 0)),
-		_country_handle,
-		_metadata.size(), _tab_school, _sort_mode, int(_compact)]
+		_snapshot.get("active_synergy_ids", PackedInt32Array())]
+	if _effect_report_context != effect_context:
+		_effect_report_context = effect_context
+		_effect_report_day = -1
+	if _effect_report_day != _current_day:
+		_effect_report_day = _current_day
+		effect_changed_ids = _refresh_effect_report()
+	var signature := _board_signature(known)
+	var active_synergy_ids: PackedInt32Array = _snapshot.get(
+		"active_synergy_ids", PackedInt32Array())
 	if signature != _signature:
 		_signature = signature
 		_rebuild_board()
+		_resonance_signature = active_synergy_ids
 	else:
-		_refresh_board_values()
+		if active_synergy_ids != _resonance_signature:
+			_resonance_signature = active_synergy_ids
+			_update_resonance(null, -1)
+		_refresh_board_values(support_changed,
+			state_changes.get("progress_ids", PackedInt32Array()),
+			state_changes.get("pending_ids", PackedInt32Array()),
+			state_changes.get("level_ids", PackedInt32Array()), effect_changed_ids)
 	_rebuild_offer()
 	_show_empty_state(bool(_presentation.get("empty", known.is_empty())), _presentation)
 
@@ -893,20 +916,51 @@ func _index_catalog() -> void:
 		_metadata[int(row.get("dense_id", -1))] = row
 
 
-func _index_states() -> void:
-	_states.clear()
+func _index_states() -> Dictionary:
 	var ids: PackedInt32Array = _snapshot.get("idea_ids", PackedInt32Array())
 	var understanding: PackedInt64Array = _snapshot.get("understanding_q16", PackedInt64Array())
 	var levels: PackedInt32Array = _snapshot.get("levels", PackedInt32Array())
 	var locations: PackedInt32Array = _snapshot.get("locations", PackedInt32Array())
 	var pending: PackedByteArray = _snapshot.get("transition_pending", PackedByteArray())
+	var same_ids := _indexed_snapshot_valid and ids == _indexed_idea_ids
+	var changed := not same_ids or understanding != _indexed_understanding \
+		or levels != _indexed_levels or locations != _indexed_locations \
+		or pending != _indexed_pending
+	if not changed:
+		return {"progress_ids": PackedInt32Array(),
+			"pending_ids": PackedInt32Array(), "level_ids": PackedInt32Array()}
+	if not same_ids:
+		_states.clear()
+	var progress_ids := PackedInt32Array()
+	var pending_ids := PackedInt32Array()
+	var level_ids := PackedInt32Array()
 	for index in ids.size():
-		_states[int(ids[index])] = {
-			"understanding": int(understanding[index]) if index < understanding.size() else 0,
-			"level": int(levels[index]) if index < levels.size() else 0,
-			"location": int(locations[index]) if index < locations.size() else 0,
-			"pending": index < pending.size() and pending[index] != 0,
-		}
+		var idea_id := int(ids[index])
+		var state: Dictionary = _states.get(idea_id, {})
+		var next_understanding := int(understanding[index]) if index < understanding.size() else 0
+		var next_level := int(levels[index]) if index < levels.size() else 0
+		var next_location := int(locations[index]) if index < locations.size() else 0
+		var next_pending := index < pending.size() and pending[index] != 0
+		if not same_ids or int(state.get("understanding", -1)) != next_understanding \
+				or int(state.get("level", -1)) != next_level:
+			progress_ids.append(idea_id)
+		if not same_ids or int(state.get("level", -1)) != next_level:
+			level_ids.append(idea_id)
+		if not same_ids or bool(state.get("pending", false)) != next_pending:
+			pending_ids.append(idea_id)
+		state["understanding"] = next_understanding
+		state["level"] = next_level
+		state["location"] = next_location
+		state["pending"] = next_pending
+		_states[idea_id] = state
+	_indexed_snapshot_valid = true
+	_indexed_idea_ids = ids
+	_indexed_understanding = understanding
+	_indexed_levels = levels
+	_indexed_locations = locations
+	_indexed_pending = pending
+	return {"progress_ids": progress_ids, "pending_ids": pending_ids,
+		"level_ids": level_ids}
 
 
 func _render_top() -> void:
@@ -953,16 +1007,33 @@ func _draw_waiting() -> bool:
 
 ## Per-card effect-instance totals for the card face.
 ##
-## Refreshed on every model application, not on the explain signature: the
-## instance set also moves when a selector's targets change (a cell changes
-## hands) without any level or location changing, and the call is one native
-## pass over at most a few hundred rows.
-func _refresh_effect_report() -> void:
+## Effect target rows can change when a committed day changes or an equipped
+## card changes. The UI only queries this native report at those boundaries.
+func _refresh_effect_report() -> PackedInt32Array:
 	if _facade == null or _country_handle == 0:
-		_effect_summary = {}
-		return
-	_effect_summary = IdeologyEffectReportScript.summarize(
-		_facade.effect_instances(_country_handle))
+		return _replace_effect_summary({})
+	var report: Dictionary = _facade.effect_instances(_country_handle)
+	if not bool(report.get("ok", false)):
+		return _replace_effect_summary({})
+	var summary: Dictionary = IdeologyEffectReportScript.summarize(report)
+	if not bool(summary.get("ok", false)):
+		return _replace_effect_summary({})
+	return _replace_effect_summary(summary)
+
+
+func _replace_effect_summary(summary: Dictionary) -> PackedInt32Array:
+	var previous_rows: Dictionary = _effect_summary.get("by_idea", {})
+	var next_rows: Dictionary = summary.get("by_idea", {})
+	var changed := PackedInt32Array()
+	for raw_id in previous_rows:
+		var idea_id := int(raw_id)
+		if not next_rows.has(raw_id) or previous_rows[raw_id] != next_rows[raw_id]:
+			changed.append(idea_id)
+	for raw_id in next_rows:
+		if not previous_rows.has(raw_id):
+			changed.append(int(raw_id))
+	_effect_summary = summary
+	return changed
 
 
 func _refresh_live_explain(known: PackedInt32Array) -> void:
@@ -1036,6 +1107,17 @@ func _rebuild_board() -> void:
 	_rebuild_collection(known)
 	if _scroll != null:
 		_scroll.set_deferred("scroll_vertical", saved_scroll)
+
+
+func _board_signature(known: PackedInt32Array) -> Array:
+	var signature: Array = [known]
+	if _sort_mode == 3:
+		signature.append(_snapshot.get("levels", PackedInt32Array()))
+	signature.append_array([_snapshot.get("locations", PackedInt32Array()),
+		int(_presentation.get("slots_capacity", 0)),
+		int(_presentation.get("spirits_capacity", 0)), _country_handle,
+		_metadata.size(), _tab_school, _sort_mode, _compact])
+	return signature
 
 
 ## One compact row per equipped idea, plus a single collapsed row for whatever
@@ -1153,7 +1235,6 @@ func _rebuild_collection(known: PackedInt32Array) -> void:
 	for child in _collection.get_children():
 		_collection.remove_child(child)
 		child.queue_free()
-	_progress_by_id.clear()
 	_collection_entries.clear()
 	var ids: Array[int] = []
 	for value in known:
@@ -1165,7 +1246,6 @@ func _rebuild_collection(known: PackedInt32Array) -> void:
 	for ideology_id in ids:
 		_collection.add_child(_make_collection_entry(ideology_id))
 	_apply_collection_columns()
-	_update_progress()
 	_update_collection_metrics(ids.size())
 
 
@@ -1256,7 +1336,6 @@ func _make_collection_entry(ideology_id: int) -> Control:
 	entry.custom_minimum_size = Vector2(0, 180.0 if _compact else 220.0)
 	entry.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var progress: Control = entry.call("level_meter")
-	_progress_by_id[ideology_id] = progress
 	progress.set_meta("accent_source", int(meta.get("rarity", 1)))
 	var actions: HBoxContainer = entry.call("footer")
 	actions.alignment = BoxContainer.ALIGNMENT_END
@@ -1374,17 +1453,11 @@ func _detail_data(ideology_id: int, offer := false) -> Dictionary:
 	var location := int(state.get("location", 0))
 	var live: Dictionary = _live_by_id.get(ideology_id, {})
 	var supports: Array[Dictionary] = []
+	if not offer:
+		supports = _support_details(live, location)
 	var notes := PackedStringArray()
-	if not offer and location != 2:
-		var direction := 0 if location == 0 else 1
-		var rows: Array = live.get("support", [])
-		if direction < rows.size():
-			var row: Dictionary = rows[direction].duplicate()
-			row["action"] = "推行" if direction == 0 else "撤回"
-			row["reason"] = "关键阶层未达到最低支持要求" if int(row.get("blocking_class", -1)) >= 0 else ""
-			supports.append(row)
-		if location == 1:
-			notes.append("晋升民族精神需达到第 %d 境，晋升不可逆。" % (int(meta.get("min_spirit_level", 2)) + 1))
+	if not offer and location == 1:
+		notes.append("晋升民族精神需达到第 %d 境，晋升不可逆。" % (int(meta.get("min_spirit_level", 2)) + 1))
 	var requirements: PackedStringArray = meta.get("required_technology_names", PackedStringArray())
 	if not requirements.is_empty():
 		notes.append("需要科技：%s" % "、".join(requirements))
@@ -1405,50 +1478,96 @@ func _detail_data(ideology_id: int, offer := false) -> Dictionary:
 		"notes": notes, "supports": supports}
 
 
-func _update_progress() -> void:
-	for ideology_id in _progress_by_id:
-		var meter := _progress_by_id[ideology_id] as Control
-		if meter == null or not is_instance_valid(meter):
-			continue
-		var state: Dictionary = _states.get(int(ideology_id), {})
-		var meta: Dictionary = _metadata.get(int(ideology_id), {})
-		var view := CountryViewModel.present_ideology_card(meta,
-			maxi(0, int(state.get("level", 0))),
-			IdeologyEffectReportScript.card_row(_effect_summary, int(ideology_id)))
-		var progress := LevelProgressScript.build(meta, state,
-			String(view.get("level_label", "")))
-		progress["accent"] = ArtScript.rarity_accent(int(meta.get("rarity", 1)))
-		meter.configure(progress, _compact)
-
-
 # --- resonance and synergy threads ----------------------------------------
 
-func _refresh_board_values() -> void:
+func _refresh_board_values(support_changed: bool,
+		progress_ids: PackedInt32Array, pending_ids: PackedInt32Array,
+		level_ids: PackedInt32Array, effect_ids: PackedInt32Array) -> void:
+	if not support_changed and progress_ids.is_empty() \
+			and pending_ids.is_empty() and level_ids.is_empty() \
+			and effect_ids.is_empty():
+		return
+	var progress_set := _id_set(progress_ids)
+	var pending_set := _id_set(pending_ids)
+	var level_set := _id_set(level_ids)
+	var effect_set := _id_set(effect_ids)
 	for host in [_ideology_slots, _spirit_slots]:
 		for row in host.get_children():
 			var id := int(row.get("occupied_id"))
-			if id >= 0:
+			if id >= 0 and (support_changed or progress_set.has(id) \
+					or pending_set.has(id) or level_set.has(id) \
+					or effect_set.has(id)):
 				row.set_row(_slot_row_data(id, int(row.get("kind"))))
+	if not support_changed and progress_ids.is_empty() \
+			and pending_ids.is_empty() and level_ids.is_empty() \
+			and effect_ids.is_empty():
+		return
 	for id in _collection_entries:
+		var idea_id := int(id)
+		if not support_changed and not progress_set.has(idea_id) \
+				and not pending_set.has(idea_id) and not level_set.has(idea_id) \
+				and not effect_set.has(idea_id):
+			continue
 		var entry: Control = _collection_entries[id]
-		var data := _card_data(id, true)
-		entry.tooltip_text = String(data.get("tooltip", ""))
-		entry.set_detail_model(data.get("detail_model", {}))
-		var live: Dictionary = _live_by_id.get(id, {})
-		var state: Dictionary = _states.get(id, {})
-		entry.refresh_status(bool(state.get("pending", false)), int(state.get("location", 0)))
-		for button in entry.footer().get_children():
-			if not button is Button:
-				continue
-			var action := String(button.get_meta("ideology_action", ""))
-			var direction := 0 if action == "推行" else 1 if action == "撤回" else 2
-			var key: String = ["equip_allowed", "unequip_allowed", "promote_allowed"][direction]
-			button.disabled = bool(state.get("pending", false)) or not bool(live.get(key, false))
-			if direction == 2:
-				button.disabled = button.disabled or int(state.get("level", 0)) < int(
-					(_metadata.get(id, {}) as Dictionary).get("min_spirit_level", 99))
-			button.tooltip_text = _support_tooltip(live, direction)
-	_update_progress()
+		var live: Dictionary = _live_by_id.get(idea_id, {})
+		var state: Dictionary = _states.get(idea_id, {})
+		var location := int(state.get("location", 0))
+		if pending_set.has(idea_id):
+			entry.call("refresh_status", bool(state.get("pending", false)), location)
+		if support_changed:
+			entry.call("refresh_support_details", _support_details(live, location))
+		if support_changed or pending_set.has(idea_id) or level_set.has(idea_id):
+			var footer := entry.call("footer") as HBoxContainer
+			for button in footer.get_children():
+				if not button is Button:
+					continue
+				var action := String(button.get_meta("ideology_action", ""))
+				var direction := 0 if action == "推行" else 1 if action == "撤回" else 2
+				var key: String = ["equip_allowed", "unequip_allowed", "promote_allowed"][direction]
+				button.disabled = bool(state.get("pending", false)) \
+					or not bool(live.get(key, false))
+				if direction == 2:
+					button.disabled = button.disabled or int(state.get("level", 0)) < int(
+						(_metadata.get(idea_id, {}) as Dictionary).get("min_spirit_level", 99))
+				if support_changed:
+					button.tooltip_text = _support_tooltip(live, direction)
+		if level_set.has(idea_id) or effect_set.has(idea_id):
+			entry.call("refresh_card_data", _card_data(idea_id, true))
+		elif progress_set.has(idea_id):
+			entry.call("refresh_progress", _progress_data(idea_id))
+
+
+func _id_set(ids: PackedInt32Array) -> Dictionary:
+	var out := {}
+	for value in ids:
+		out[int(value)] = true
+	return out
+
+
+func _progress_data(ideology_id: int) -> Dictionary:
+	var meta: Dictionary = _metadata.get(ideology_id, {})
+	var state: Dictionary = _states.get(ideology_id, {})
+	var labels: PackedStringArray = meta.get("level_labels", PackedStringArray())
+	var level := clampi(int(state.get("level", 0)), 0, 64)
+	var label := String(labels[level]) if level < labels.size() else ""
+	var progress := LevelProgressScript.build(meta, state, label)
+	progress["accent"] = ArtScript.rarity_accent(int(meta.get("rarity", 1)))
+	return progress
+
+
+func _support_details(live: Dictionary, location: int) -> Array[Dictionary]:
+	var supports: Array[Dictionary] = []
+	if location == 2:
+		return supports
+	var direction := 0 if location == 0 else 1
+	var rows: Array = live.get("support", [])
+	if direction < rows.size():
+		var row: Dictionary = (rows[direction] as Dictionary).duplicate()
+		row["action"] = "推行" if direction == 0 else "撤回"
+		row["reason"] = "关键阶层未达到最低支持要求" \
+			if int(row.get("blocking_class", -1)) >= 0 else ""
+		supports.append(row)
+	return supports
 
 
 func _school_counts(extra_id: int) -> Dictionary:
@@ -1583,16 +1702,20 @@ func _on_tab_changed(tab: int) -> void:
 	_tab_school = "" if tab <= 0 else String(ArtScript.SCHOOL_ORDER[tab - 1])
 	if _snapshot.is_empty():
 		return
-	_signature = ""
+	_signature = []
 	_rebuild_board()
+	_signature = _board_signature(
+		_snapshot.get("known_ids", PackedInt32Array()))
 
 
 func _on_sort_selected(index: int) -> void:
 	_sort_mode = index
 	if _snapshot.is_empty():
 		return
-	_signature = ""
+	_signature = []
 	_rebuild_board()
+	_signature = _board_signature(
+		_snapshot.get("known_ids", PackedInt32Array()))
 
 
 # --- commands -------------------------------------------------------------
@@ -2026,9 +2149,20 @@ func _q16_signed(value: int) -> String:
 
 
 func _show_shell(reason: String, loading: bool) -> void:
-	_signature = ""
-	_explain_signature = ""
+	_signature = []
+	_explain_signature = []
 	_points_signature = ""
+	_effect_summary = {}
+	_effect_report_context = []
+	_effect_report_day = -1
+	_resonance_signature = PackedInt32Array()
+	_indexed_snapshot_valid = false
+	_indexed_idea_ids = PackedInt32Array()
+	_indexed_understanding = PackedInt64Array()
+	_indexed_levels = PackedInt32Array()
+	_indexed_locations = PackedInt32Array()
+	_indexed_pending = PackedByteArray()
+	_states.clear()
 	_presentation = {}
 	_snapshot = {}
 	_offer_button.disabled = true
@@ -2341,13 +2475,15 @@ class CollectionEntry:
 	var _detail_model: Dictionary = {}
 	var _action_well: MarginContainer
 	var _head: HBoxContainer
+	var _compact := false
 
 	func setup(data: Dictionary) -> void:
 		_detail_model = data.get("detail_model", {})
 		_payload = data.get("payload", {}).duplicate()
 		_payload["activated"] = data.get("activated", Callable())
 		_draggable = bool(data.get("draggable", true))
-		var compact := bool(data.get("compact", false))
+		_compact = bool(data.get("compact", false))
+		var compact := _compact
 		_rarity = clampi(int(data.get("rarity", 1)), 1, 3)
 		focus_mode = Control.FOCUS_ALL
 		mouse_filter = Control.MOUSE_FILTER_PASS
@@ -2452,6 +2588,28 @@ class CollectionEntry:
 	func refresh_status(pending: bool, location: int) -> void:
 		_status.text = "待生效" if pending else "推行中" if location == 1 else "民族精神" if location == 2 else ""
 		_status.visible = not _status.text.is_empty()
+		if not _detail_model.is_empty():
+			_detail_model["status"] = "待生效" if pending else "推行中" \
+				if location == 1 else "民族精神" if location == 2 else "尚未推行"
+
+	func refresh_support_details(supports: Array[Dictionary]) -> void:
+		if not _detail_model.is_empty():
+			_detail_model["supports"] = supports
+
+	func refresh_progress(data: Dictionary) -> void:
+		if _level_meter != null:
+			_level_meter.configure(data, _compact)
+		if not _detail_model.is_empty():
+			var progress := data.duplicate(false)
+			progress.erase("accent")
+			_detail_model["progress"] = progress
+
+	func refresh_card_data(data: Dictionary) -> void:
+		tooltip_text = String(data.get("tooltip", ""))
+		set_detail_model(data.get("detail_model", {}))
+		var effects: PackedStringArray = data.get("effects", PackedStringArray())
+		_effects.text = "\n".join(effects)
+		refresh_progress(data.get("level_progress", {}))
 
 	func level_meter() -> Control:
 		return _level_meter

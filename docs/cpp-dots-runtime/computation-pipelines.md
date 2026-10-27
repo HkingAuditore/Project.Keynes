@@ -1382,7 +1382,7 @@ EconomyDailySystem (SUS shell)
 ```
 
 生成期的 `MapGenerator._setup_economy_runtime()` 先把玩家与配置数量的外国编译为单个多国
-CSR 包并 bootstrap country authority，再配置 economy；随后把每国 20 人聚落、首都创始家族及
+CSR 包并 bootstrap country authority，再配置 economy；随后把每国 40 人聚落、首都创始家族及
 具名业主代表声明聚合为一次人口/市场/建筑 bootstrap，并在此之前一次性调用
 `capture_economy_trade_topology(neighbors, terrain, passable_lut, move_cost_lut, generation)`。
 默认 ACTIVE 模式只有在 `trade_topology_ready=true` 后才继续注册 `economy_daily`。

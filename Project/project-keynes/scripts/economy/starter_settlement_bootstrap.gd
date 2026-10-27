@@ -5,7 +5,7 @@ const StarterEconomyPlannerScript = preload(
 	"res://scripts/economy/starter_economy_planner.gd")
 const MONEY_SCALE := 10000
 const GOODS_SCALE := 1000
-const STARTER_POPULATION := 20
+const STARTER_POPULATION := 40
 const SURVIVAL_DAYS := 15
 const LOCAL_INPUT_BUFFER_DAYS := 3
 const SURVIVAL_PLAN_PATH := "res://data/economy/consumption_plans/survival_household.tres"
@@ -118,7 +118,7 @@ static func build_many(map: MapData, facade: EconomyFacade,
 
 		if job_capacity <= 0 or job_capacity > STARTER_POPULATION:
 			return _error("starter_population_capacity_mismatch",
-				"初始建筑自营岗位容量必须为正且不超过 20。")
+				"初始建筑自营岗位容量必须为正且不超过 40。")
 		if first_owner_slots <= 0 or first_owner_slots >= STARTER_POPULATION:
 			return _error("starter_founder_capacity_invalid",
 				"首栋生产建筑必须为待业人口保留可自主匹配的岗位空间。")

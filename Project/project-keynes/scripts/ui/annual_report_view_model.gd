@@ -17,7 +17,7 @@ const CHAPTER_ICONS := [&"country.economy", &"country.economy", &"family.house",
 const CHAPTER_LEADS := ["", "", "", "", "", "", "", "", ""]
 const SCORE_LABELS := ["综合满意度", "基本需求满足", "就业状况", "产业有效运转", "GDP 增长", "人均 GDP 增长", "人口增长", "建筑增长", "聚落发展", "科技进步"]
 const SCORE_WEIGHTS := [20.0, 20.0, 15.0, 15.0, 8.0, 6.0, 5.0, 3.0, 3.0, 5.0]
-const GRADE_BANDS := [
+const GRADE_BANDS_V1 := [
 	{"grade": "SS", "min": 94.0, "max": 100.0},
 	{"grade": "S", "min": 86.0, "max": 94.0},
 	{"grade": "A", "min": 75.0, "max": 86.0},
@@ -25,6 +25,15 @@ const GRADE_BANDS := [
 	{"grade": "C", "min": 45.0, "max": 60.0},
 	{"grade": "D", "min": 30.0, "max": 45.0},
 	{"grade": "E", "min": 0.0, "max": 30.0},
+]
+const GRADE_BANDS_V2 := [
+	{"grade": "SS", "min": 98.0, "max": 100.0},
+	{"grade": "S", "min": 93.0, "max": 98.0},
+	{"grade": "A", "min": 84.0, "max": 93.0},
+	{"grade": "B", "min": 72.0, "max": 84.0},
+	{"grade": "C", "min": 52.0, "max": 72.0},
+	{"grade": "D", "min": 32.0, "max": 52.0},
+	{"grade": "E", "min": 0.0, "max": 32.0},
 ]
 const DIMENSION_NAMES := ["生计", "基本生活", "舒适生活", "奢侈消费", "收入", "储蓄", "税负", "发展"]
 const TAX_KEYS := [
@@ -246,7 +255,8 @@ static func build(report: Dictionary, previous: Dictionary = {}, catalogs: Dicti
 		"year": year, "era_index": era, "score_bp": int(report.get("score_bp", 0)),
 		"score_value": float(report.get("score_bp", 0)) / 100.0,
 		"grade_cap": cap, "has_previous": has_previous,
-		"grade_bands": GRADE_BANDS, "months": months_gdp.size(),
+		"grade_bands": GRADE_BANDS_V1 if int(report.get("scoring_version", 1)) == 1 else GRADE_BANDS_V2,
+		"months": months_gdp.size(),
 		"score_parts": parts, "score_labels": PackedStringArray(SCORE_LABELS),
 		"score_weights": PackedFloat32Array(SCORE_WEIGHTS),
 		"dimension_names": PackedStringArray(DIMENSION_NAMES),

@@ -297,8 +297,15 @@ writes `data/ideologies/default_ideology_catalog.tres`,
 - Rarity common/rare/legendary with draw weights 120/60/20. Legendary and some
   rare cards require an era technology. Exclusion groups: `economic_order`,
   `labor_order`, `land_order`.
-- Three levels: understanding thresholds 0 / 4.0 / 12.0, daily understanding
-  0.0125 / 0.00626 / 0. Each level replaces the same definition at Q16 magnitude
+- Three levels: understanding thresholds 0 / 8.0 / 24.0, daily understanding
+  0.00313 / 0.00157 / 0 (one quarter of the former rates). At the default 1x
+  country factor, an active idea takes about 2,560 days to reach level 2 and
+  another 10,180 days to reach level 3. Growth uses the idea's current level and
+  is multiplied by `country.ideology.understanding_gain_factor`; inactive ideas
+  do not accrue. Population, point income, and annual report rewards have no
+  direct link to this growth. Repeated refinement continues to grant 4.0
+  understanding; the higher thresholds provide the additional slowdown.
+  Each level replaces the same definition at Q16 magnitude
   `65536` / `104858` / `144179` (1.0x / 1.6x / 2.2x).
 - 24 resonances `ideology.resonance.<school>.<2|4|5|6>` and 6 named cross-school
   synergies `ideology.synergy.*` (计划仓廪, 特许开拓, 海商账簿, 工役营造, 工业科学,
@@ -372,16 +379,23 @@ Every draw is paid. The first draw costs 120.0 and each later draw costs 20% mor
 (opcode 10) replaces the active offer for 75% of the cost paid for that offer, is
 unlimited, and uses the same offer RNG stream.
 
-The 2026-10-25 balance pass sets growth weights to 2640 / 32800 / 240
-(80 times the prior 33 / 410 / 3), increases the first draw from 12 to 120,
-and removes the previous 0.5-point daily ceiling. Annual development rewards
-are reduced to 30% of their grade-based draw-cost value. The reroll share stays
-75% (first-offer reroll: 90 points). There is no fixed minimum earning period:
-uncapped income scales with development, trade, opinion and card multipliers.
-These profile values change the ideology catalog hash: existing PKID saves
-fail closed on catalog mismatch. PKID/PKEF layouts, command semantics,
-Effect/ACK transitions, support and synergy rules are unchanged. UI costs and
-point ledgers continue to read the native snapshot without presentation constants.
+The 2026-10-27 balance pass sets growth weights to 660 / 8200 / 60 (one quarter
+of the previous 2640 / 32800 / 240), keeps the first draw at 120 and the daily
+ceiling disabled, and reduces annual report rewards to 10% of their grade-based
+draw-cost value. The annual report profile now awards 4/3/2/1/1 draw-cost slots
+for SS/S/A/B/C, uses thresholds 98/93/84/72/52/32/0, and gives only 25% progress
+credit when a tracked metric is unchanged. The reroll share stays 75% (first-
+offer reroll: 90 points). Income still scales with development, trade, opinion
+and card multipliers; the reduced weights apply identically to native and worker
+accrual. Point weights, level thresholds and daily rates, and the refinement
+reward are part of the ideology catalog hash: existing PKID saves fail closed on
+catalog mismatch.
+The annual profile version moves from 1
+to 2 without changing PKAR bytes; completed reports and frozen rewards retain
+their original values, while an unfinished year resumes with the new profile.
+PKID/PKEF layouts, command semantics, Effect/ACK transitions, support and
+synergy rules are unchanged. UI costs and point ledgers continue to read the
+native snapshot without presentation constants.
 
 ## Player draw flow
 

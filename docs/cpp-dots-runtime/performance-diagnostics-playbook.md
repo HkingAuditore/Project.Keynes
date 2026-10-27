@@ -218,10 +218,18 @@ throughput without one simulated day.
 | 现象 | 产物 | 写入者 |
 | --- | --- | --- |
 | 任意 economy fatal | `tmp/runtime_forensics_economy_fatal.json` | `WorldRuntimeHost._observe_economy_fatal`（每种 reason 一次） |
+| native worker 故障并暂停时钟 | `tmp/runtime_forensics_runtime_worker_fault.json` | `WorldRuntimeHost._observe_runtime_worker_fault`（每次 worker 故障一次） |
 | 权威日卡住 >15s | `tmp/runtime_forensics_stall.json`（之后每 30s 复抓） | `WorldRuntimeHost._poll_simulation_stall_watchdog` |
 | 存档回放失败 | `tmp/runtime_forensics_save_replay_{fatal,stall,restore_failed}.json` | `tests/headless_save_replay.gd` |
 
 逐次留存在 `user://diagnostics/<tag>_<时间戳>.json`；`tmp/` 那份是固定文件名的最新一次。
+
+经济守恒默认保留最多 128 条阶段快照（保留开头样本和最近样本），在 `money_conservation_failed`
+或 worker 暂停时打印 `[runtime-forensics/.../money-stage]`，包含阶段、子阶段、资金差额及 cohort、
+country、escrow 分桶。`[economy-money-audit]` 和候选账户行也使用标准输出，能在 Godot 输出面板直接看见。
+阶段快照优先使用增量审计结果；FULL 审计模式不额外逐切片全量扫描，发生
+`money_conservation_failed` 时使用已完成的关账总额记录最后一个样本。若需在 FULL 模式定位错误首次出现的阶段，可在启动前设置
+`PK_DIAG_STAGE_MONEY=<起始日>`，这会对起始日之后的各阶段做全量探针，成本较高。
 
 ### 读 economy fatal 的顺序
 

@@ -70,8 +70,8 @@ func _run() -> void:
 	if economy == null or not economy.is_configured() or start_cell < 0:
 		_finish()
 		return
-	_expect("starter population begins at exactly 20",
-		int(economy.population_cell_snapshot(start_cell).get("population", 0)) == 20)
+	_expect("starter population begins at exactly 40",
+		int(economy.population_cell_snapshot(start_cell).get("population", 0)) == 40)
 	var opening_buildings: Dictionary = economy.building_cell_snapshot(start_cell)
 	_expect("opening food lots operate without leftover construction techs",
 		_food_lots_operable(opening_buildings,

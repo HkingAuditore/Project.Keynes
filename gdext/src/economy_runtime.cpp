@@ -5412,6 +5412,8 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
     }
     _epoch_country_merchant_population.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
+    _epoch_country_population.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
     if (_merchant_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)) {
         const bool use_index = _merchant_nonempty_cells_valid;
         const int32_t scan_count = use_index
@@ -14664,10 +14666,16 @@ void NativeEconomyRuntime::capture_fatal_context(const std::string &reason) {
 }
 
 void NativeEconomyRuntime::fail(const std::string &reason) {
+    capture_fatal_context(reason);
+    diag_stage_money_probe("fatal", reason == "money_conservation_failed");
     if (reason == "money_conservation_failed") {
+        // Leave a final stage marker even when the incremental trace is not
+        // available for this audit mode. Reuse already verified closing totals
+        // so the fatal path does not trigger another full scan.
         capture_money_audit_candidates();
-        std::fprintf(stderr,
-            "[economy-money-audit] open=%lld close=%lld expected=%lld error=%lld mint=%lld burn=%lld producer_support=%lld bullion=%lld opening_escrow=%lld closing_escrow=%lld\n",
+        pk::log_info(
+            "[economy-money-audit] day=%lld open=%lld close=%lld expected=%lld error=%lld mint=%lld burn=%lld producer_support=%lld bullion=%lld opening_escrow=%lld closing_escrow=%lld",
+            static_cast<long long>(_current_day.get()),
             static_cast<long long>(_opening_totals.cohort_funds +
                 _opening_totals.country_cash + _opening_totals.escrow_cash),
             static_cast<long long>(_closing_totals.cohort_funds +
@@ -14691,8 +14699,8 @@ void NativeEconomyRuntime::fail(const std::string &reason) {
             const char *profession = account.profession >= 0 &&
                 account.profession < static_cast<int32_t>(_profession_ids.size())
                 ? _profession_ids[account.profession].c_str() : "unknown";
-            std::fprintf(stderr,
-                "[economy-money-audit-candidate] slot=%d handle=%llu cell=%d signature=%d profession=%d:%s opening=%lld closing=%lld net_change=%lld\n",
+            pk::log_info(
+                "[economy-money-audit-candidate] slot=%d handle=%llu cell=%d signature=%d profession=%d:%s opening=%lld closing=%lld net_change=%lld",
                 account.slot, static_cast<unsigned long long>(account.handle),
                 account.cell, account.signature, account.profession, profession,
                 static_cast<long long>(account.opening_funds),
@@ -14706,18 +14714,44 @@ void NativeEconomyRuntime::fail(const std::string &reason) {
             const char *good_id = lane.good >= 0 &&
                 lane.good < static_cast<int32_t>(_good_ids.size())
                 ? _good_ids[lane.good].c_str() : "unknown";
-            std::fprintf(stderr,
-                "[economy-goods-audit-candidate] market=%d cell=%d good=%d:%s opening=%lld closing=%lld net_change=%lld\n",
+            pk::log_info(
+                "[economy-goods-audit-candidate] market=%d cell=%d good=%d:%s opening=%lld closing=%lld net_change=%lld",
                 lane.market, lane.cell, lane.good, good_id,
                 static_cast<long long>(lane.opening_stock),
                 static_cast<long long>(lane.closing_stock),
                 static_cast<long long>(lane.net_change));
         }
     }
-    std::fprintf(stderr, "[economy-fatal] day=%lld stage=%d substage=%s reason=%s\n",
-        static_cast<long long>(_current_day.get()), static_cast<int>(_stage),
-        _executed_substage.c_str(), reason.c_str());
-    capture_fatal_context(reason);
+    for (const MoneyStageDiagnostic &diagnostic : _money_stage_diagnostics) {
+        pk::log_info(
+            "[economy-money-stage] day=%lld epoch=%lld where=%s stage=%s executed=%s substage=%s diff=%lld delta=%lld money=%lld expected=%lld cohort=%lld country=%lld escrow=%lld mint=%lld burn=%lld",
+            static_cast<long long>(diagnostic.day),
+            static_cast<long long>(diagnostic.epoch_id),
+            diagnostic.where.data(),
+            stage_name(static_cast<Stage>(diagnostic.stage)),
+            stage_name(static_cast<Stage>(diagnostic.executed_stage)),
+            diagnostic.substage.data(),
+            static_cast<long long>(diagnostic.diff),
+            static_cast<long long>(diagnostic.delta),
+            static_cast<long long>(diagnostic.money_now),
+            static_cast<long long>(diagnostic.money_expected),
+            static_cast<long long>(diagnostic.cohort_funds),
+            static_cast<long long>(diagnostic.country_cash),
+            static_cast<long long>(diagnostic.escrow_cash),
+            static_cast<long long>(diagnostic.explicit_money_mint),
+            static_cast<long long>(diagnostic.explicit_money_burn));
+    }
+    pk::log_info(
+        "[economy-fatal] day=%lld stage=%s executed_stage=%s substage=%s reason=%s command_cursor=%d opcode=%d target=%lld subject=%lld amount=%lld d7_gate_mask=%u country_sync_writes_forbidden=%d country_worker_authoritative=%d",
+        static_cast<long long>(_current_day.get()), stage_name(_stage),
+        stage_name(_executed_stage), _executed_substage.c_str(), reason.c_str(),
+        _fatal_context.command_cursor, _fatal_context.command_opcode,
+        static_cast<long long>(_fatal_context.target_handle),
+        static_cast<long long>(_fatal_context.subject_handle),
+        static_cast<long long>(_fatal_context.amount),
+        static_cast<unsigned int>(_fatal_context.d7_operation_gate_mask),
+        _fatal_context.country_sync_writes_forbidden ? 1 : 0,
+        _fatal_context.country_worker_authoritative ? 1 : 0);
     trace_abort_epoch();
     for (const int32_t cell : _staging_touched_cells) {
         if (cell >= 0 && cell < static_cast<int32_t>(_committed_cells.size()) &&
@@ -14936,26 +14970,43 @@ bool NativeEconomyRuntime::worker_run_compact_slice(int64_t day_index,
     return true;
 }
 
-void NativeEconomyRuntime::diag_stage_money_probe(const char *where) {
+void NativeEconomyRuntime::diag_stage_money_probe(const char *where, bool force) {
     static const char *env = std::getenv("PK_DIAG_STAGE_MONEY");
     static const int64_t from_day = env ? std::atoll(env) : -1;
-    if (from_day < 0 || _current_day.get() < from_day) return;
-    static int64_t last_diff = 0;
-    static bool armed = false;
-    if (!armed) {
-        armed = true;
-        std::fprintf(stderr, "[diag-stage-money] armed day=%lld where=%s\n",
-            static_cast<long long>(_current_day.get()), where);
+    if (_current_day.get() < 0) return;
+    const bool force_full_trace = from_day >= 0 &&
+        _current_day.get() >= from_day;
+    const bool incremental_available = _audit_mutation_generation != 0 &&
+        _closing_audit_mode != 0 && !_closing_audit_runtime_disabled;
+    if (_money_stage_probe_epoch_id != _epoch_id.get()) {
+        _money_stage_probe_epoch_id = _epoch_id.get();
+        _money_stage_diagnostics.clear();
+        _money_stage_probe_last_diff = 0;
+        _money_stage_probe_last_stage = -1;
+        _money_stage_probe_last_executed_stage = -1;
+        _money_stage_probe_post_commit = false;
+        _money_stage_probe_has_last = false;
+        _money_stage_probe_last_where.clear();
+        _money_stage_probe_last_substage.clear();
     }
-    static int64_t probe_day = -1;
-    static bool post_commit = false;
-    if (probe_day != _current_day.get()) {
-        probe_day = _current_day.get();
-        post_commit = false;
+    // The default trace is cheap in incremental-audit mode. In FULL mode,
+    // retain stage samples only when explicitly requested or at the fatal
+    // boundary; otherwise a full population/market scan per slice would be
+    // an unacceptable always-on cost.
+    if (!incremental_available && !force_full_trace && !force && !_fatal) return;
+
+    const bool use_closing_totals = force && _closing_totals_valid;
+    AuditTotals now;
+    if (use_closing_totals) {
+        now = _closing_totals;
+    } else if (incremental_available) {
+        now = incremental_audit_totals();
+    } else {
+        now = audit_totals();
     }
-    const AuditTotals now = audit_totals();
     int64_t money_now = now.cohort_funds + now.country_cash + now.escrow_cash;
-    if (!post_commit && std::strcmp(where, "fiscal_settlement") != 0) {
+    if (!use_closing_totals && !_money_stage_probe_post_commit &&
+        std::strcmp(where, "fiscal_settlement") != 0) {
         // Before commit_fiscal folds lanes into escrow, withheld tax and paid
         // subsidy live only in the lane tallies.
         for (size_t lane = 0; lane < _fiscal_epoch_collected.size(); ++lane)
@@ -14967,18 +15018,57 @@ void NativeEconomyRuntime::diag_stage_money_probe(const char *where) {
         for (size_t lane = 0; lane < _tariff_epoch_paid.size(); ++lane)
             money_now -= _tariff_epoch_paid[lane];
     }
-    if (std::strcmp(where, "fiscal_settlement") == 0) post_commit = true;
+    if (std::strcmp(where, "fiscal_settlement") == 0)
+        _money_stage_probe_post_commit = true;
     const int64_t money_open = _opening_totals.cohort_funds +
         _opening_totals.country_cash + _opening_totals.escrow_cash;
-    const int64_t diff = money_now - (money_open + _explicit_money_mint - _explicit_money_burn);
-    if (diff != last_diff) {
-        std::fprintf(stderr,
-            "[diag-stage-money] day=%lld where=%s stage=%d executed=%d substage=%s diff=%lld delta=%lld\n",
-            static_cast<long long>(_current_day.get()), where, static_cast<int>(_stage),
-            static_cast<int>(_executed_stage), _executed_substage.c_str(),
-            static_cast<long long>(diff), static_cast<long long>(diff - last_diff));
-        last_diff = diff;
+    const int64_t money_expected = money_open + _explicit_money_mint -
+        _explicit_money_burn;
+    const int64_t diff = money_now - money_expected;
+    const int32_t stage = static_cast<int32_t>(_stage);
+    const int32_t executed_stage = static_cast<int32_t>(_executed_stage);
+    const bool point_changed = !_money_stage_probe_has_last ||
+        diff != _money_stage_probe_last_diff ||
+        stage != _money_stage_probe_last_stage ||
+        executed_stage != _money_stage_probe_last_executed_stage ||
+        _money_stage_probe_last_where != where ||
+        _money_stage_probe_last_substage != _executed_substage;
+    if (!point_changed) return;
+
+    MoneyStageDiagnostic diagnostic;
+    diagnostic.day = _current_day.get();
+    diagnostic.epoch_id = _epoch_id.get();
+    diagnostic.stage = stage;
+    diagnostic.executed_stage = executed_stage;
+    diagnostic.money_open = money_open;
+    diagnostic.money_now = money_now;
+    diagnostic.money_expected = money_expected;
+    diagnostic.diff = diff;
+    diagnostic.delta = _money_stage_probe_has_last
+        ? diff - _money_stage_probe_last_diff : diff;
+    diagnostic.cohort_funds = now.cohort_funds;
+    diagnostic.country_cash = now.country_cash;
+    diagnostic.escrow_cash = now.escrow_cash;
+    diagnostic.explicit_money_mint = _explicit_money_mint;
+    diagnostic.explicit_money_burn = _explicit_money_burn;
+    std::snprintf(diagnostic.where.data(), diagnostic.where.size(), "%s", where);
+    std::snprintf(diagnostic.substage.data(), diagnostic.substage.size(), "%s",
+        _executed_substage.c_str());
+    constexpr size_t MAX_MONEY_STAGE_DIAGNOSTICS = 128;
+    constexpr size_t PRESERVED_INITIAL_DIAGNOSTICS = 32;
+    if (_money_stage_diagnostics.capacity() < MAX_MONEY_STAGE_DIAGNOSTICS)
+        _money_stage_diagnostics.reserve(MAX_MONEY_STAGE_DIAGNOSTICS);
+    if (_money_stage_diagnostics.size() >= MAX_MONEY_STAGE_DIAGNOSTICS) {
+        _money_stage_diagnostics.erase(
+            _money_stage_diagnostics.begin() + PRESERVED_INITIAL_DIAGNOSTICS);
     }
+    _money_stage_diagnostics.push_back(std::move(diagnostic));
+    _money_stage_probe_last_diff = diff;
+    _money_stage_probe_last_stage = stage;
+    _money_stage_probe_last_executed_stage = executed_stage;
+    _money_stage_probe_last_where = where;
+    _money_stage_probe_last_substage = _executed_substage;
+    _money_stage_probe_has_last = true;
 }
 
 Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool compact) {
@@ -25391,6 +25481,15 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _closing_totals = {};
     _closing_totals_valid = false;
     _fatal_context = FatalContext{};
+    _money_stage_diagnostics.clear();
+    _money_stage_probe_epoch_id = -1;
+    _money_stage_probe_last_diff = 0;
+    _money_stage_probe_last_stage = -1;
+    _money_stage_probe_last_executed_stage = -1;
+    _money_stage_probe_post_commit = false;
+    _money_stage_probe_has_last = false;
+    _money_stage_probe_last_where.clear();
+    _money_stage_probe_last_substage.clear();
     _incremental_closing_totals = {};
     _opening_audit_force_full = false;
     _audit_shadow_population.clear();
@@ -25738,6 +25837,7 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _trade_rejected_vision = 0;
     _epoch_country_technologies.clear();
     _epoch_country_building_available.clear();
+    _epoch_country_population.clear();
     _epoch_country_support_yield.clear();
     _epoch_country_building_type_offsets.clear();
     _epoch_country_building_type_indices.clear();

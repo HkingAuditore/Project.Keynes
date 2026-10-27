@@ -606,14 +606,14 @@ func _cell_row_unmeasurable(row: Dictionary) -> String:
 
 ## Raise an equipped card's understanding to reach `level`, then settle.
 ##
-## Thresholds are 0 / 4 / 12 understanding. The command is stamped with the day the
+## Thresholds are 0 / 8 / 24 understanding. The command is stamped with the day the
 ## world is currently on, and settled from that day, so the level change is picked up
 ## by the normal daily pass.
 func _raise_understanding(ext: Object, handle: int, dense: int, level: int) -> bool:
 	var understanding := 0
 	match level:
-		2: understanding = 4 * Q16_ONE
-		3: understanding = 12 * Q16_ONE
+		2: understanding = 8 * Q16_ONE
+		3: understanding = 24 * Q16_ONE
 		_: return true
 	ext.submit_ideology_commands(_commands([
 		{"op": 8, "day": 0, "handle": handle, "idea": dense,
@@ -659,16 +659,12 @@ func _equip(key: String, dense: int, level: int) -> Dictionary:
 		if not _require("%s: base world settles" % key, _settle(ext, 0), str(key)):
 			return {}
 		return {"ext": ext, "handle": handle, "equipped": false}
-	# Level thresholds are 0 / 4.0 / 12.0 understanding; +8 per call is enough to
-	# cross one tier and the level is clamped, so asking for tier N with
-	# (N-1) * 4.0 keeps the card at exactly that tier.
-	# Thresholds are 0 / 4 / 12, so the multiplier is NOT (level-1)*4: that gives
-	# 0 / 4 / 8, and 8 sits inside tier 2 -- asking for L3 silently measured L2.
-	# The fixture's own comment said this and the code did not.
+	# Thresholds are 0 / 8 / 24, so use the actual tier threshold to prepare the
+	# fixture state. Doubling only the thresholds preserves the prior spacing.
 	var understanding := 0
 	match level:
-		2: understanding = 4 * Q16_ONE
-		3: understanding = 12 * Q16_ONE
+		2: understanding = 8 * Q16_ONE
+		3: understanding = 24 * Q16_ONE
 		_: understanding = 0
 	if understanding > 0:
 		ext.submit_ideology_commands(_commands([

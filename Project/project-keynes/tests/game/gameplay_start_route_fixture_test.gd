@@ -265,9 +265,9 @@ func _assert_plan_contract(label: String, route: Dictionary) -> void:
 		else:
 			assert(not has_employees, "%s %s has no employee role" % [label, ids[index]])
 		job_capacity += int(counts[index]) * int(profile.owner_slots_per_building)
-	assert(job_capacity > 0 and job_capacity <= 20
+	assert(job_capacity > 0 and job_capacity <= 40
 			and int(route.get("starter_job_capacity", 0)) == job_capacity,
-		"%s keeps self-operated jobs within the 20-person cap" % label)
+		"%s keeps self-operated jobs within the 40-person cap" % label)
 	assert(int(route.get("starter_employee_job_capacity", -1)) == employee_capacity,
 		"%s confines employee slots to precious workings" % label)
 	assert(not route.has("owner_job_capacity_by_profession"),

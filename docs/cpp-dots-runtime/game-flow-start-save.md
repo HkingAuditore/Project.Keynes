@@ -169,10 +169,10 @@ Generation fails rather than reducing the requested count or relaxing distance.
 Display names are selected without replacement from the resource-backed Chinese
 country-name pack, excluding the player's display name.
 
-## Twenty-Person Settlements
+## Forty-Person Settlements
 
-Every opening country receives exactly 20 people. Self-operated job-capacity slots
-follow the survival-core buildings and stay at or below 20; leftover people enter
+Every opening country receives exactly 40 people. Self-operated job-capacity slots
+follow the survival-core buildings and stay at or below 40; leftover people enter
 the native unemployed pool for ordinary employment matching. The opening grant is
 the survival core—gathering, hunting, early trade, one placer-gold working, one
 deadwood gathering camp, and hide scraping only on cold highland—not every
@@ -208,9 +208,9 @@ capital during days 0..30 once its occupied gathering-ground owner posts exist;
 the normal `PERSON_COMMIT` then promotes and binds the representative.
 The packet marks every opening-country start cell as `forced_named_cells`.
 Native `SettlementStore` therefore assigns each capital a deterministic name
-even though 20 people remain below the ordinary rural naming threshold. This is
+even though 40 people remain below the ordinary rural naming threshold. This is
 a naming exception only: prosperity remains population-derived and the exact
-20-person economy contract is unchanged.
+40-person economy contract is unchanged.
 
 ## PKSV v1
 
@@ -516,7 +516,7 @@ buildings cannot require steel, coal, industrial chemicals, industrialists, mana
 landlords, serfs or indentured labor. The food bridge is 15 days of every locally granted, runnable
 food sub-basket as authored by `survival_household`, split across multiple substitutes when present;
 `processed_food` receives no fixed grant. Every generated country starts with exactly one
-territory cell, one survival-core bundle, 20 population, core self-operated job-capacity slots at or below 20, employee
+territory cell, one survival-core bundle, 40 population, core self-operated job-capacity slots at or below 40, employee
 slots only on the placer-gold working and left unfilled, a founder operator cohort plus a native unemployed pool, one founder family and one notable
 founder. The first economy cycles may reassign the unemployed cohort into the planned self-operated roles;
 that is ordinary native employment matching and does not introduce employee relationships.
