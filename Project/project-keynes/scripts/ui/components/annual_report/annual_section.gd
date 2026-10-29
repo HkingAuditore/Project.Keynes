@@ -25,6 +25,7 @@ var _viewport := Vector2(1920.0, 1080.0)
 var _revealed := false
 
 const CHAPTER_EMBLEMS := preload("res://assets/ui/annual_chronicle/chronicle_chapter_emblems.png")
+const AnnualGradeRulerScript = preload("res://scripts/ui/components/annual_report/charts/annual_grade_ruler.gd")
 func build(p_index: int, chapter: Dictionary, model: Dictionary, layout: Dictionary) -> void:
 	index = p_index
 	_chapter = chapter
@@ -349,14 +350,14 @@ func _score_chart(visual: Dictionary) -> Control:
 
 
 func _ruler_chart(visual: Dictionary) -> Control:
-	var ruler := AnnualGradeRuler.new()
+	var ruler: AnnualGradeRuler = AnnualGradeRulerScript.new()
 	ruler.set_reveal_enabled(not UIAnimation.reduced_motion())
 	ruler.custom_minimum_size = Vector2(minf(_chart_width, 520.0), 56.0)
 	var score: float = float(visual.get("score", 0.0))
 	var cap: int = int(visual.get("cap", -1))
 	var complete: bool = bool(visual.get("complete", true))
 	_binds.append(func() -> void:
-		ruler.set_data(score, String(visual.get("grade", "—")), cap, complete))
+		ruler.set_data(score, String(visual.get("grade", "—")), cap, complete, visual.get("bands", [])))
 	return ruler
 
 

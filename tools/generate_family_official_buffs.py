@@ -206,6 +206,23 @@ def apply_design_copy(traits: list[dict], effects: list[dict]) -> None:
         row["range_text"] = range_text
         row["appearance_condition"] = design["appearance_condition"]
         row["description"] = template
+        # Keep the authored player-facing X range and the native Q16 roll in
+        # lockstep.  Several older rows only supplied the mechanical default
+        # range, which made a displayed +60% preference behave like +40%.
+        match = re.search(
+            r"X\s*∈\s*\[\s*(-?[0-9]+(?:\.[0-9]+)?)\s*%?\s*[,，]\s*"
+            r"(-?[0-9]+(?:\.[0-9]+)?)\s*%?\s*\]",
+            range_text,
+        )
+        if match:
+            row["strength_min_q16"] = max(0, min(4 * Q16, q16(float(match.group(1)) / 100.0)))
+            row["strength_max_q16"] = max(
+                row["strength_min_q16"],
+                min(4 * Q16, q16(float(match.group(2)) / 100.0)),
+            )
+            row["strength_step_q16"] = max(
+                1, min(4096, row["strength_max_q16"] - row["strength_min_q16"])
+            )
     for row in effects:
         name = str(row["display_name"])
         design = effect_copy.get(name)

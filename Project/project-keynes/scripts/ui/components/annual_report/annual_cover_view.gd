@@ -18,6 +18,7 @@ const CoverWashShader = preload("res://shaders/ui/annual_cover_wash.gdshader")
 const SealPressShader = preload("res://shaders/ui/annual_seal_press.gdshader")
 const SealTexture = preload("res://assets/ui/annual_chronicle/chronicle_pencil_badge.png")
 const RewardMoteScene = preload("res://scenes/ui/annual_report/reward_mote.tscn")
+const AnnualGradeRulerScript = preload("res://scripts/ui/components/annual_report/charts/annual_grade_ruler.gd")
 
 signal begin_requested()
 
@@ -166,7 +167,7 @@ func _build() -> void:
 	_reward = _label("", 15, UITokens.CHRONICLE_RED, "display_soft")
 	add_child(_reward)
 
-	_ruler = AnnualGradeRuler.new()
+	_ruler = AnnualGradeRulerScript.new()
 	_ruler.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_ruler)
 
@@ -259,7 +260,7 @@ func _apply_model() -> void:
 			else (UITokens.CHRONICLE_RED if direction < 0 else UITokens.CHRONICLE_MUTED))
 		_deltas[i].visible = available and not _deltas[i].text.is_empty()
 	_ruler.set_data(float(_model.get("score", 0.0)), String(_model.get("grade", "—")),
-		int(_model.get("grade_cap", -1)), complete)
+		int(_model.get("grade_cap", -1)), complete, _model.get("grade_bands", []))
 
 
 func _cover_texture() -> Texture2D:
@@ -636,7 +637,7 @@ func _restart_ruler() -> void:
 	if _ruler == null or not is_instance_valid(_ruler):
 		return
 	_ruler.set_data(float(_model.get("score", 0.0)), String(_model.get("grade", "—")),
-		int(_model.get("grade_cap", -1)), bool(_model.get("complete", false)))
+		int(_model.get("grade_cap", -1)), bool(_model.get("complete", false)), _model.get("grade_bands", []))
 
 
 func _gather_reward_motes() -> void:

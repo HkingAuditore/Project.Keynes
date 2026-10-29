@@ -671,3 +671,10 @@ EconomyFacade 同批铸币及国库转账，两条连续 sequence 在下一有�
 页，概览不显示编辑器。各栏目「此地税率」折叠区提供「重置本栏税收设置」，
 按完整政策快照中的本地覆盖提交既有 clear_default / clear_override 命令；
 仅清除该栏目税种，次日生效，含当前列表未展示项目。页头更多菜单已移除。
+
+# Adaptive music presentation boundary
+
+The adaptive music path lives below `scripts/audio/music_situation_aggregator.gd`.
+It reads committed runtime data and sends normalized `Tension` values to
+`GameAudioService`; it is outside simulation authority and must not introduce
+full-map scans or per-frame economy reads.

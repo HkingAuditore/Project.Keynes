@@ -655,21 +655,36 @@ func _layout_dossier_popup() -> void:
 	if _dossier_popup == null or not is_instance_valid(_dossier_popup) \
 			or not _dossier_popup.is_inside_tree():
 		return
-	var canvas_transform := get_viewport().get_canvas_transform()
-	var scale := maxf(0.001, canvas_transform.get_scale().x)
-	var visible_rect := get_viewport().get_visible_rect()
-	var screen_origin := canvas_transform.affine_inverse() * visible_rect.position
-	var screen_end := canvas_transform.affine_inverse() \
-		* (visible_rect.position + visible_rect.size)
-	var margin := DOSSIER_SCREEN_MARGIN / scale
-	var safe_top := DOSSIER_SAFE_TOP / scale
-	var gap := 12.0 / scale
+	# 悬浮窗挂在 ModalLayer，坐标必须按 UI 画布计算。Viewport 的 canvas
+	# transform 属于地图画布并包含 MapCamera 缩放，直接取其逆矩阵会让固定在
+	# UI 层的悬浮窗随地图缩放漂移。
+	var popup_parent := _dossier_popup.get_parent() as CanvasItem
+	if popup_parent == null:
+		return
+	var parent_transform := popup_parent.get_global_transform_with_canvas()
+	var parent_inverse := parent_transform.affine_inverse()
+	var viewport_rect := get_viewport().get_visible_rect()
+	var viewport_min := parent_inverse * viewport_rect.position
+	var viewport_max := parent_inverse * (viewport_rect.position + viewport_rect.size)
+	var screen_origin := Vector2(minf(viewport_min.x, viewport_max.x),
+		minf(viewport_min.y, viewport_max.y))
+	var screen_end := Vector2(maxf(viewport_min.x, viewport_max.x),
+		maxf(viewport_min.y, viewport_max.y))
+	var parent_scale := maxf(0.001, parent_transform.get_scale().x)
+	var margin := DOSSIER_SCREEN_MARGIN / parent_scale
+	var safe_top := DOSSIER_SAFE_TOP / parent_scale
+	var gap := 12.0 / parent_scale
 	var min_y := screen_origin.y + safe_top
 	var available_height := maxf(240.0, screen_end.y - min_y - margin)
 	var popup_height := minf(DOSSIER_MAX_HEIGHT, available_height)
 	var popup_size := Vector2(DOSSIER_WIDTH, popup_height)
 	_dossier_popup.size = popup_size
-	var anchor := get_global_rect()
+	var anchor_global := get_global_transform_with_canvas()
+	var anchor_min := parent_inverse * (anchor_global * Vector2.ZERO)
+	var anchor_max := parent_inverse * (anchor_global * size)
+	var anchor := Rect2(
+		Vector2(minf(anchor_min.x, anchor_max.x), minf(anchor_min.y, anchor_max.y)),
+		Vector2(absf(anchor_max.x - anchor_min.x), absf(anchor_max.y - anchor_min.y)))
 	var x := anchor.end.x + gap
 	if x + popup_size.x > screen_end.x - margin:
 		x = anchor.position.x - popup_size.x - gap
