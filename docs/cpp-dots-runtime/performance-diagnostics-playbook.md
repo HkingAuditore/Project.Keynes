@@ -252,12 +252,18 @@ throughput without one simulated day.
 
 逐次留存在 `user://diagnostics/<tag>_<时间戳>.json`；`tmp/` 那份是固定文件名的最新一次。
 
-经济守恒默认保留最多 128 条阶段快照（保留开头样本和最近样本），在 `money_conservation_failed`
-或 worker 暂停时打印 `[runtime-forensics/.../money-stage]`，包含阶段、子阶段、资金差额及 cohort、
-country、escrow 分桶。`[economy-money-audit]` 和候选账户行也使用标准输出，能在 Godot 输出面板直接看见。
+经济守恒默认保留最多 128 条阶段快照（保留开头样本和最近样本）。economy fatal、worker fault
+与 stall 取证都会在 Godot 输出面板打印经济现场：`[runtime-forensics/.../money-ledger]` 是完整
+open/close/expected/error 与增发/销毁及 cohort、country、escrow 分桶，`money-stage` 是阶段差分，
+`money-first-observed` 标出记录中首个非零差额阶段，`money-candidate` 给出变动最大的账户。
+同一组阶段数组也保留在取证 JSON 中。`money-first-observed` 代表首次被探针观察到，不一定是导致
+差额的具体操作；结合该阶段和账户候选可缩小代码路径。阶段数组为空时会明确打印
+`money-first-observed unavailable=true`，不会把缺少探针数据伪装成无差额。
 阶段快照优先使用增量审计结果；FULL 审计模式不额外逐切片全量扫描，发生
 `money_conservation_failed` 时使用已完成的关账总额记录最后一个样本。若需在 FULL 模式定位错误首次出现的阶段，可在启动前设置
 `PK_DIAG_STAGE_MONEY=<起始日>`，这会对起始日之后的各阶段做全量探针，成本较高。
+
+回归覆盖：`godot --headless --path Project/project-keynes --script res://tests/game/runtime_forensics_diagnostics_test.gd`。
 
 ### 读 economy fatal 的顺序
 

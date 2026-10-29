@@ -28,6 +28,8 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/family/family_founding_dialog.tscn" id="28_family_founding"]
 [ext_resource type="Script" path="res://scripts/rendering/cell_highlight_set.gd" id="31_cell_highlight_set"]
 [ext_resource type="Script" path="res://scripts/rendering/cell_situation_layer.gd" id="32_situations"]
+[ext_resource type="PackedScene" path="res://scenes/ui/era_indicator.tscn" id="33_era_indicator"]
+[ext_resource type="PackedScene" path="res://scenes/ui/era_transition_flight.tscn" id="34_era_flight"]
 
 [node name="PlayerGame" type="Node2D" unique_id=198229795]
 script = ExtResource("1_player")
@@ -138,6 +140,13 @@ anchors_preset = 0
 unique_name_in_owner = true
 layout_mode = 0
 anchors_preset = 0
+
+[node name="EraIndicator" parent="UI/UIRoot/HUDLayer" instance=ExtResource("33_era_indicator")]
+unique_name_in_owner = true
+layout_mode = 1
+
+[node name="EraTransitionFlight" parent="UI/UIRoot/HUDLayer" instance=ExtResource("34_era_flight")]
+layout_mode = 1
 
 [node name="PanelLayer" type="Control" parent="UI/UIRoot" unique_id=1843493714]
 layout_mode = 1

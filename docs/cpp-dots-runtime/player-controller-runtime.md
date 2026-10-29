@@ -89,6 +89,37 @@ SpinBox 的草稿与次日 pending 不得被日常 live patch 回写成继承默
 镜头和选中态，并保存 `next_command_sequence`，避免 PKCN pending 命令恢复后发生序号
 冲突。无效 cell 会清除高亮和 cell panel。
 
+## 时代纸徽与待领奖励
+
+当前交互：纸徽默认半露；hover 只下探 28px 并放大 4.5%，约 130ms；点击才完整展开。
+图标下方不再绘制时代名或晋升提示。点击打开纸片式国家概况，显示 GDP（本年累计）、国库货币、
+人口、地块数量；GDP 复用 `EconomyGdpLedger`，货币按原生 1/10000 单位转换，人口读取
+`country_economy_overview(..., "summary")`，国土来自 `ui_snapshot(handle, 0)` 的国家摘要。
+快照缺失显示破折号，不把未结算当作零。仅概况可见时合并刷新这些读数。
+
+有待领奖励时，点击纸徽后仍由控制器暂停并保存时钟，但三选一现在是概况下方三张独立纸片，
+已移除全屏暗幕与全屏卷宗。未提交可通过收起、Esc 或窗外点击关闭（窗外事件被消费）；
+提交后关闭与时钟控件均受事务锁门控。ACK 移除奖励纸片，保留国家概况并恢复原时钟。
+显示层 `is_era_reward_modal_open()` 保留兼容方法名，仅表示奖励选择流程打开，不代表全屏遮挡。
+
+顶部中央 `EraIndicator` 和日历旁时代名读取玩家国家的已提交研究快照。只有时代里程碑
+进入完成状态 5 才晋升；状态 4 等待 ACK 时仍停留旧时代，研究遮罩可显示 100%。
+`GameUIManager` 合并每日提交、国家提交和奖励通知，最多每 100ms 刷新一次，不逐帧轮询。
+新世界与读档建立显示基线；只有会话内真实晋升才播放纸徽庆祝，并让光点飞向日历旁，
+抵达后更新时代名。
+
+原生 `era_reward_offer()` 仍是候选与事务状态的唯一权威。`OPEN/ERROR` 只通知纸徽边缘
+高亮，不暂停、不锁命令，也不强制弹窗。玩家点击纸徽触发 `era_reward_open_requested`，
+由 `PlayerController.open_era_reward_offer()` 保存原速度/运行状态、暂停并打开三选一。
+尚未选择时 Esc 触发 `era_reward_dismiss_requested`，恢复原时钟，奖励继续留待领取。
+选择仍走既有 `era_reward.choose` 正式命令；`SELECTED_PENDING` 不允许取消，继续安全边界
+排空或必要的单日推进，ACK 后关闭弹窗并恢复原速度/运行状态。
+
+`player_view` 复用现有 `era_reward_*` 时钟/代际字段，不新增存档字段。
+旧存档中未选择的 `OPEN/ERROR` 弹窗锁恢复为待领提醒并恢复时钟；已提交事务保持锁定直到 ACK。
+回归：`tests/ui/era_indicator_ui_test.gd`、
+`tests/technology/era_reward_notification_regression_test.gd`。
+
 ## 变更规则
 
 - 新增正式命令必须先进入静态白名单，再补参数验证、facade API、结果码和契约测试。

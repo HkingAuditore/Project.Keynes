@@ -338,6 +338,16 @@ func restore_view_state(map, state: Dictionary) -> void:
 	_era_reward_previous_speed = float(state.get("era_reward_previous_speed", 1.0))
 	_era_reward_generation = int(state.get("era_reward_generation", 0))
 	_era_reward_locked = bool(state.get("era_reward_locked", false))
+	# 读档恢复待领取提醒；已提交事务仍继续排空，未选择的旧弹窗不强制重开。
+	if _era_reward_locked and _country_facade != null:
+		var restored_offer: Dictionary = _country_facade.era_reward_offer()
+		if bool(restored_offer.get("ok", false)) and String(restored_offer.get("status", "NONE")) in ["OPEN", "ERROR"]:
+			_era_reward_locked = false
+			if _ui_manager != null:
+				_ui_manager.close_era_reward_offer()
+			if _world_clock != null:
+				_world_clock.set_speed(_era_reward_previous_speed)
+				_world_clock.pause(not _era_reward_resume_running)
 	_family_founding_resume_running = bool(state.get(
 		"family_founding_resume_running", false))
 	_family_founding_previous_speed = float(state.get(
@@ -714,7 +724,7 @@ func _dispatch_player_input(event: InputEvent) -> void:
 	if key.is_action_pressed(&"player_pause"):
 		if _annual_report_flow.is_open():
 			get_viewport().set_input_as_handled()
-		elif _family_founding_locked:
+		elif _family_founding_locked or _era_reward_locked:
 			get_viewport().set_input_as_handled()
 		elif ideology_draw_locked():
 			get_viewport().set_input_as_handled()
@@ -829,6 +839,10 @@ func _connect_ui() -> void:
 				_on_era_reward_choice_requested):
 		_ui_manager.era_reward_choice_requested.connect(
 			_on_era_reward_choice_requested)
+	if not _ui_manager.era_reward_open_requested.is_connected(open_era_reward_offer):
+		_ui_manager.era_reward_open_requested.connect(open_era_reward_offer)
+	if not _ui_manager.era_reward_dismiss_requested.is_connected(dismiss_era_reward_offer):
+		_ui_manager.era_reward_dismiss_requested.connect(dismiss_era_reward_offer)
 	if _ui_manager.has_signal("family_founding_choice_requested") and not \
 			_ui_manager.family_founding_choice_requested.is_connected(
 				_on_family_founding_choice_requested):
@@ -849,6 +863,10 @@ func _on_tile_tapped(world_pos: Vector2) -> void:
 
 func get_country_facade():
 	return _country_facade
+
+
+func get_economy_facade():
+	return _economy_facade
 
 
 func get_player_country_handle() -> int:
@@ -1116,6 +1134,9 @@ func _on_speed_changed(speed: float) -> void:
 func _on_pause_toggled(paused: bool) -> void:
 	if _annual_report_flow.is_open():
 		return
+	if _era_reward_locked:
+		sync_ui()
+		return
 	if _world_clock == null:
 		return
 	if _runtime_host != null and _runtime_host.has_method("is_runtime_fault_paused") \
@@ -1139,6 +1160,9 @@ func _on_pause_toggled(paused: bool) -> void:
 
 func _on_speed_selected(speed: float) -> void:
 	if _world_clock == null:
+		return
+	if _era_reward_locked:
+		sync_ui()
 		return
 	speed = clampf(speed, 1.0, 10.0)
 	if _runtime_host != null and _runtime_host.has_method("is_runtime_fault_paused") \
@@ -1418,6 +1442,38 @@ func _drain_era_reward_until_settled() -> void:
 	_era_reward_drain_active = false
 
 
+func open_era_reward_offer() -> void:
+	# 点击纸徽才进入暂停选择；待领奖励本身不锁住会话。
+	if _country_facade == null or _ui_manager == null or _family_founding_locked \
+			or ideology_draw_locked() or _annual_report_flow.is_open():
+		return
+	var offer: Dictionary = _country_facade.era_reward_offer()
+	if not bool(offer.get("ok", false)) or String(offer.get("status", "NONE")) not in ["OPEN", "ERROR"]:
+		return
+	if not _era_reward_locked:
+		_era_reward_resume_running = _world_clock != null and not _world_clock.paused
+		_era_reward_previous_speed = _world_clock.speed_multiplier if _world_clock != null else 1.0
+		_era_reward_locked = true
+	if _world_clock != null:
+		_world_clock.pause(true)
+	_ui_manager.show_era_reward_offer(offer)
+	_sync_era_reward_offer()
+	sync_ui()
+
+
+func dismiss_era_reward_offer() -> void:
+	# 已提交的跨领域事务必须完成 ACK；尚未选择时可以稍后领取。
+	if not _era_reward_locked or _era_reward_last_status == "SELECTED_PENDING":
+		return
+	if _ui_manager != null:
+		_ui_manager.close_era_reward_offer()
+	_era_reward_locked = false
+	if _world_clock != null:
+		_world_clock.set_speed(_era_reward_previous_speed)
+		_world_clock.pause(not _era_reward_resume_running)
+	sync_ui()
+
+
 func _sync_era_reward_offer() -> void:
 	if _country_facade == null or not _country_facade.has_method("era_reward_offer"):
 		return
@@ -1426,6 +1482,12 @@ func _sync_era_reward_offer() -> void:
 		return
 	var status := String(offer.get("status", "NONE"))
 	_era_reward_last_status = status
+	if _ui_manager != null:
+		_ui_manager.notify_era_reward_offer(offer)
+	if status in ["OPEN", "ERROR"] and not _era_reward_locked:
+		_era_reward_generation = int(offer.get("offer_generation", 0))
+		era_reward_offer_changed.emit(offer)
+		return
 	if status == "OPEN" or status == "SELECTED_PENDING" or status == "ERROR":
 		if not _era_reward_locked:
 			_era_reward_resume_running = _world_clock != null and not _world_clock.paused
@@ -1440,9 +1502,10 @@ func _sync_era_reward_offer() -> void:
 				_world_clock.pause(false)
 			else:
 				_world_clock.pause(true)
+		var changed := _era_reward_generation != int(offer.get("offer_generation", 0))
 		_era_reward_generation = int(offer.get("offer_generation", 0))
 		if _ui_manager != null:
-			if not _ui_manager.is_era_reward_modal_open():
+			if changed or not _ui_manager.is_era_reward_modal_open():
 				_ui_manager.show_era_reward_offer(offer)
 			if status == "SELECTED_PENDING":
 				_ui_manager.show_era_reward_pending()

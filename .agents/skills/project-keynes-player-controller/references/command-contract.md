@@ -78,6 +78,20 @@ sequence      = PlayerController 的单调递增整数
 `handle_input()` 直接分发。HUD 图层/顶栏/国家栏按钮使用 `FOCUS_NONE`；空地图
 指针事件会释放残留的普通 UI 焦点。
 
+## 时代奖励入口与时钟
+
+展示为中央纸徽下的国家概况 + 三张奖励纸片，无全屏暗幕。hover 仅轻探；点击才完整展开。
+Esc/收起/窗外点击发相同 dismiss 意图；事务提交后不可取消，时钟按钮和暂停快捷键不能绕过锁。
+ACK 后移除奖励纸片、恢复原时钟，概况可继续查看。方法名 `is_era_reward_modal_open` 为兼容接口。
+
+`GameUIManager.era_reward_open_requested/dismiss_requested` 是视图意图，不分配模拟命令序号。
+原生 `OPEN/ERROR` 只点亮顶部纸徽；点击才暂停并打开三选一，未选择时 Esc 可恢复原速度与
+运行状态。选择继续走既有 `era_reward.choose`，`SELECTED_PENDING` 必须完成 ACK，不能取消。
+`player_view` 复用现有时代奖励时钟字段；恢复旧 `OPEN/ERROR` 弹窗锁时改为待领提醒，
+恢复已提交事务时保留锁和原时钟恢复意图。不得把待领状态变成自动弹窗或命令锁。
+验证 `tests/technology/era_reward_notification_regression_test.gd` 和
+`tests/ui/era_indicator_ui_test.gd`，详见运行时文档「时代纸徽与待领奖励」。
+
 ## 视图存档
 
 `capture_view_state()` 保存 `selected_cell`、`camera_position`、`camera_zoom` 和

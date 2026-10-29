@@ -15,6 +15,7 @@ const HUD_ICON_SIZE := 36
 var _calendar_icon: TextureRect
 var _date_label: Label
 var _date_button: Button
+var _date_row: HBoxContainer
 var _pause_button: Button
 var _speed_button: Button
 var _day_night_button: Button
@@ -23,6 +24,8 @@ var _setup_button: Button
 var _current_speed := 1.0
 var _is_paused := false
 var _gm_available := false
+var _era_name: Label
+var _era_flash: Tween
 
 
 func _ready() -> void:
@@ -37,7 +40,13 @@ func _ready() -> void:
 
 	_calendar_icon = %CalendarIcon
 	_date_label = %DateLabel
+	_era_name = %EraName
+	_era_name.add_theme_font_override("font", UITokens.dossier_font("sans_strong"))
+	_era_name.add_theme_font_size_override("font_size", UITokens.FONT_HUD_TIME)
+	_era_name.add_theme_color_override("font_color", UITokens.HUD_INK)
 	_date_button = $Margin/Row/DateBlock as Button
+	_date_row = $Margin/Row/DateBlock/DateRow as HBoxContainer
+	_date_row.minimum_size_changed.connect(_update_date_block_width)
 	_date_button.tooltip_text = "查阅历年发展报告"
 	_date_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	_date_button.focus_mode = Control.FOCUS_ALL
@@ -56,6 +65,7 @@ func _ready() -> void:
 	_date_label.add_theme_font_override("font", UITokens.dossier_font("sans_strong"))
 	_date_label.add_theme_font_size_override("font_size", UITokens.FONT_HUD_TIME)
 	_date_label.add_theme_color_override("font_color", UITokens.HUD_INK)
+	_update_date_block_width()
 
 	_speed_button.add_theme_font_override("font", UITokens.dossier_font("sans_strong"))
 	_speed_button.add_theme_font_size_override("font_size", UITokens.FONT_VALUE)
@@ -94,6 +104,31 @@ func set_world_summary(_width: int, _height: int, _cells: int, _seed: int) -> vo
 	pass
 
 
+func era_name_target() -> Control:
+	return _era_name
+
+
+func set_era_name(era_name: String, celebrate: bool = false) -> void:
+	if _era_name == null:
+		return
+	if _era_name.text == era_name and not celebrate:
+		return
+	_era_name.text = era_name
+	_update_date_block_width()
+	if _era_flash != null and _era_flash.is_valid():
+		_era_flash.kill()
+	_era_name.modulate = Color.WHITE
+	_era_name.scale = Vector2.ONE
+	if not celebrate:
+		return
+	_era_name.pivot_offset = _era_name.size * 0.5
+	_era_name.modulate = UITokens.ERA_BADGE_GOLD
+	_era_name.scale = Vector2(1.14, 1.14)
+	_era_flash = create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_era_flash.tween_property(_era_name, "scale", Vector2.ONE, 0.55)
+	_era_flash.tween_property(_era_name, "modulate", Color.WHITE, 0.8)
+
+
 func update_time_state(
 		year_idx: int,
 		month: int,
@@ -104,8 +139,13 @@ func update_time_state(
 	if _date_label == null:
 		_ready()
 	_date_label.text = "第%d年 · %d月%d日" % [year_idx + 1, month, day_of_month]
-	_date_button.custom_minimum_size.x = maxf(252.0, _date_label.get_minimum_size().x + 64.0)
+	_update_date_block_width()
 	_apply_clock_controls(paused, speed)
+
+
+func _update_date_block_width() -> void:
+	# Button 不会从子容器继承最小宽度；日期和时代名一起撑开纸框。
+	_date_button.custom_minimum_size.x = maxf(252.0, _date_row.get_combined_minimum_size().x + 20.0)
 
 
 func _apply_clock_controls(paused: bool, speed: float) -> void:

@@ -232,6 +232,27 @@ Key files:
 - `Project/project-keynes/scripts/ui/components/section_placeholder_screen.gd`
 - `Project/project-keynes/scripts/ui/country_view_model.gd`
 
+## Era HUD and deferred reward presentation
+
+`EraIndicatorViewModel` reads the player's committed research snapshot and catalog milestone indices.
+The badge only peeks/scales on hover and fully expands on click. Its caption is removed. Click opens a
+compact paper overview (year-to-date GDP from the shared ledger, treasury cash, population, territory),
+with three separate torn-paper reward choices underneath when an offer is available. No full-screen shade.
+ACK removes the choices but keeps the overview. Existing transaction and clock ownership still apply.
+Only state 5 advances the displayed era; state 4 fills the milestone progress mask while waiting for
+ACK. The central paper badge shows a top-down 50%-opacity progress overlay, peeks on hover and expands on click,
+and celebrates live advancement. Light travels to the calendar's era label before that label changes.
+World reset/load establishes a baseline without replaying the ceremony. Committed-day/country/offer
+events coalesce through one 100ms timer; the HUD does not poll simulation every frame.
+
+Native offer state remains authoritative. OPEN/ERROR only highlights the badge; it does not pause or
+open a modal. Explicit badge activation asks PlayerController to preserve the clock and present the
+three choices. Escape before selection restores the clock while retaining the offer. SELECTED_PENDING
+keeps the existing transaction/ACK drain and session lock; resolution restores the preserved clock.
+Restore of an unchosen OPEN/ERROR offer returns to the reminder, while a submitted offer stays locked.
+No native/save schema changes. Regressions: `era_indicator_ui_test.gd` and
+`era_reward_notification_regression_test.gd` in the UI/technology test directories.
+
 ## Save and startup contract
 
 Current versions:
