@@ -10199,8 +10199,18 @@ void NativeSimulationHost::settle_ideology_modifier_acks(
         it = _ideology_modifier_inflight.erase(it);
     }
     if (settled.empty()) return;
-    std::lock_guard<std::mutex> lock(_ideology_transport_mutex);
-    for (const auto &ack : settled) _ideology_acks.push_back(ack);
+    {
+        std::lock_guard<std::mutex> lock(_ideology_transport_mutex);
+        for (const auto &ack : settled) _ideology_acks.push_back(ack);
+    }
+    // Internal Modifier completion uses the same ACK queue as the split-
+    // authority transport. Wake the day barrier so the next Ideology poll
+    // cannot remain asleep with transition_pending latched forever.
+    {
+        std::lock_guard<std::mutex> control_lock(_control_mutex);
+        _country_peer_signal.fetch_add(1, std::memory_order_release);
+    }
+    _control_cv.notify_all();
 }
 bool NativeSimulationHost::map_effect_intent_to_modifier_command(
         const RuntimeDomainIntent &intent, uint64_t input_generation,

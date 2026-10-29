@@ -55,13 +55,13 @@ struct AnnualCountryFacts {
     std::vector<int32_t> technologies;
 };
 struct AnnualDevelopmentProfile {
-    uint32_t version = 2;
+    uint32_t version = 3;
     std::array<int32_t, 7> grade_thresholds{{9800,9300,8400,7200,5200,3200,0}};
     std::array<int32_t, 7> reward_draws{{4,3,2,1,1,0,0}};
     std::array<int32_t, 4> quality_weights{{2000,2000,1500,1500}};
     std::array<int32_t, 4> quality_targets{{64225,64880,64225,62259}};
     std::array<int32_t, 6> progress_weights{{800,600,500,300,300,500}};
-    std::array<int32_t, 6> progress_targets{{6554,3277,3277,6554,3277,131072}};
+    std::array<int32_t, 6> progress_targets{{16384,9830,6554,16384,9830,131072}};
     int32_t active_target = 62259;
     int64_t offer_cost = 393216, max_offer_cost = INT64_MAX;
     int64_t offer_growth_percent = 120;

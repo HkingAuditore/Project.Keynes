@@ -46,7 +46,9 @@ int64_t growth(int64_t now,int64_t before) {
     return ratio(add(now,-before),before<0?-before:before);
 }
 int32_t improvement(int64_t change,int64_t target,int32_t weight) {
-    constexpr int64_t neutral_q16 = 16384; // No change earns 25% of this progress weight.
+    // A year with no improvement earns no progress points; only positive change
+    // toward the target contributes, while an equally sized decline bottoms out.
+    constexpr int64_t neutral_q16 = 0;
     int64_t fraction=change>=0 ? neutral_q16+ratio(std::min(change,target),target,65536-neutral_q16)
         : neutral_q16-ratio(std::min(-change,target),target,neutral_q16);
     return static_cast<int32_t>(mul(std::clamp<int64_t>(fraction,0,65536),weight)/65536);
@@ -242,11 +244,11 @@ bool AnnualDevelopmentLedger::restore(const uint8_t *bytes,size_t size,std::stri
     for(size_t i=0;i<next._reports.size();++i){const auto &r=next._reports[i];if(r.country_handle!=next._handle||r.id!=static_cast<uint64_t>(r.year)+1||r.grade<0||r.grade>6||r.score_bp<0||r.score_bp>10000||r.reward_q16<0||r.reward_sequence!=r.id||r.start_day!=r.year*next._length||r.end_day!=r.start_day+next._length-1||(i&&r.year<=next._reports[i-1].year)){error="annual_save_report_invalid";return false;}}
     if(configured()){
         if(_handle!=next._handle||_length!=next._length){error="annual_save_identity_mismatch";return false;}
-        const bool v1_to_v2=next._profile.version==1&&_profile.version==2;
-        if(_profile.version!=next._profile.version&&!v1_to_v2){error="annual_save_identity_mismatch";return false;}
+        const bool saved_profile_is_older=next._profile.version<_profile.version;
+        if(_profile.version!=next._profile.version&&!saved_profile_is_older){error="annual_save_identity_mismatch";return false;}
         // Completed reports retain their frozen scores and rewards. The open
-        // year contains raw accumulators, so it can continue under v2.
-        if(v1_to_v2){next._profile=_profile;next._current.scoring_version=_profile.version;}
+        // year contains raw accumulators, so it can continue under the current profile.
+        if(saved_profile_is_older){next._profile=_profile;next._current.scoring_version=_profile.version;}
     }
     *this=std::move(next);return true;
 }
@@ -264,22 +266,22 @@ bool annual_development_self_test(std::string &error){
     const auto seq=ledger.reports()[0].reward_sequence;ledger.settle_reward(seq);ledger.settle_reward(seq);
     std::vector<uint8_t> bytes;ledger.encode(bytes);AnnualDevelopmentLedger restored;
     if(!restored.restore(bytes.data(),bytes.size(),error)||restored.reports().size()!=1||!restored.reports()[0].reward_settled){error="annual_roundtrip_failed";return false;}
-    AnnualDevelopmentProfile upgraded=p;upgraded.version=2;
+    AnnualDevelopmentProfile upgraded=p;upgraded.version=3;
     AnnualDevelopmentLedger migrated;
     if(!migrated.configure(7,4,4,upgraded,error)||!migrated.restore(bytes.data(),bytes.size(),error)||
        migrated.reports().size()!=1||migrated.reports()[0].scoring_version!=1||
-       migrated.current().scoring_version!=2){error="annual_profile_v1_to_v2_migration_failed";return false;}
+       migrated.current().scoring_version!=3){error="annual_profile_v1_to_v3_migration_failed";return false;}
     AnnualDevelopmentLedger live_update;
     if(!live_update.configure(7,4,4,legacy,error)||!live_update.update_profile(p,error)||
-       live_update.current().scoring_version!=2){error="annual_live_profile_update_failed";return false;}
+       live_update.current().scoring_version!=3){error="annual_live_profile_update_failed";return false;}
     bytes[15]^=1;if(restored.restore(bytes.data(),bytes.size(),error)){error="annual_corruption_accepted";return false;}
     AnnualDevelopmentReport r=ledger.reports()[0];r.quality_average[1]=30000;AnnualDevelopmentLedger::evaluate(r,nullptr,p,3);
     if(r.grade<5){error="annual_survival_cap_failed";return false;}
     AnnualDevelopmentReport stagnant;stagnant.complete=1;
     AnnualDevelopmentLedger::evaluate(stagnant,nullptr,p,0);
-    if(stagnant.score_parts[4]!=200||stagnant.score_parts[5]!=150||
-       stagnant.score_parts[6]!=125||stagnant.score_parts[7]!=75||
-       stagnant.score_parts[8]!=75||stagnant.score_parts[9]!=125){error="annual_stagnation_score_failed";return false;}
+    if(stagnant.score_parts[4]!=0||stagnant.score_parts[5]!=0||
+       stagnant.score_parts[6]!=0||stagnant.score_parts[7]!=0||
+       stagnant.score_parts[8]!=0||stagnant.score_parts[9]!=0){error="annual_stagnation_score_failed";return false;}
     // Exercise both sides of every grade boundary with an independently
     // controlled quality score and the reduced escalating draw-price reward.
     AnnualDevelopmentProfile boundaries=p;

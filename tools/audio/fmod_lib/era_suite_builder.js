@@ -9,6 +9,8 @@
 var POP_RHYTHM_CURVE = [[0.00, -80.0], [0.18, -80.0], [0.30, -12.0], [0.42, -3.0], [0.50, 0.0], [1.00, 0.0]];
 var POP_RHYTHM_ZOOM_CURVE = [[0.00, 0.0], [0.60, 0.0], [1.00, -3.0]];
 var POP_CHORUS_CURVE = [[0.00, -80.0], [0.52, -80.0], [0.64, -12.0], [0.76, -3.0], [0.85, 0.0], [1.00, 0.0]];
+var LEGACY_TENSION_RHYTHM_CURVE = [[0.00, -6.0], [0.30, -3.0], [0.65, -1.0], [1.00, 0.0]];
+var LEGACY_TENSION_CHORUS_CURVE = [[0.00, 0.0], [0.50, -1.0], [1.00, -3.0]];
 var FIVE_POP_PULSE_CURVE = [[0.00, -12.0], [0.18, -9.0], [0.38, -3.0], [0.62, 0.0], [1.00, 0.0]];
 var FIVE_POP_THEME_CURVE = [[0.00, -9.0], [0.20, -6.0], [0.45, -2.0], [0.70, 0.0], [1.00, 0.0]];
 var TENSION_PULSE_CURVE = [[0.00, -6.0], [0.35, -3.0], [0.70, -1.0], [1.00, 0.0]];
@@ -169,9 +171,11 @@ function buildSuite(cfg) {
         var trkRhythm = addStem(ev, cfg.audioDir, "Pop_Rhythm", cfg.prefix + "pop_rhythm.wav");
         automatePoints(trkRhythm.mixerGroup, "volume", popParam, POP_RHYTHM_CURVE);
         automatePoints(trkRhythm.mixerGroup, "volume", zoomParam, POP_RHYTHM_ZOOM_CURVE);
+        automatePoints(trkRhythm.mixerGroup, "volume", tensionParam, LEGACY_TENSION_RHYTHM_CURVE);
 
         var trkChorus = addStem(ev, cfg.audioDir, "Pop_Chorus", cfg.prefix + "pop_chorus.wav");
         automatePoints(trkChorus.mixerGroup, "volume", popParam, POP_CHORUS_CURVE);
+        automatePoints(trkChorus.mixerGroup, "volume", tensionParam, LEGACY_TENSION_CHORUS_CURVE);
     }
 
     var trkClose = addStem(ev, cfg.audioDir, "Zoom_Close", cfg.prefix + "zoom_close.wav");

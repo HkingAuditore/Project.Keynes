@@ -9,13 +9,19 @@ var _score := 0.0
 var _grade := "—"
 var _cap := -1
 var _complete := true
+## 七段等级的分界。评分口径写在存档里（scoring_version），旧报告仍按 V1 阈值读，
+## 新报告按 V2，所以刻度不能焊在图上：默认用当前口径，真正的分段由调用方
+## 从模型的 `grade_bands` 传进来。
+var _bands: Array = AnnualReportViewModel.GRADE_BANDS_V2
 
 
-func set_data(score: float, grade: String, cap: int = -1, complete: bool = true) -> bool:
+func set_data(score: float, grade: String, cap: int = -1, complete: bool = true, bands: Array = []) -> bool:
 	_score = clampf(score, 0.0, 100.0)
 	_grade = grade
 	_cap = cap
 	_complete = complete
+	if not bands.is_empty():
+		_bands = bands
 	custom_minimum_size.y = 56.0
 	_start_reveal()
 	return true
@@ -24,7 +30,7 @@ func set_data(score: float, grade: String, cap: int = -1, complete: bool = true)
 func _draw() -> void:
 	var w: float = size.x
 	var axis_y: float = 32.0
-	var bands: Array = AnnualReportViewModel.GRADE_BANDS
+	var bands: Array = _bands
 	var alpha: float = 1.0 if _complete else 0.34
 	var ink := Color(_ink.r, _ink.g, _ink.b, 0.55 * alpha)
 
@@ -65,5 +71,11 @@ func _draw() -> void:
 		_right_text(w, axis_y - 20.0, "评级上限 " + ("D" if _cap == 5 else "B"), 13, Color(_muted.r, _muted.g, _muted.b, 0.9), "label")
 
 
+## 封顶后不可达的那一段从哪儿开始：封顶档之上那一段的顶点。
+## V1 口径下 D 封顶 = 60（C 段上限）、B 封顶 = 86（A 段上限），与旧写死的两个数一致；
+## V2 分段更严，同一档位自动收紧，不用再改代码。
 func _cap_threshold() -> float:
-	return 60.0 if _cap == 5 else 86.0
+	var index: int = _cap - 1
+	if index < 0 or index >= _bands.size():
+		return 100.0
+	return float(_bands[index].max)

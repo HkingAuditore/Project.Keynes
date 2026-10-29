@@ -71,6 +71,12 @@ const METRICS := [
 ]
 const STOCKS := ["funds", "population", "employed", "satisfaction", "survival", "families", "persons", "buildings", "pending_buildings", "suspended", "utilization", "job_capacity", "territory", "settlements", "technologies", "treasury"]
 
+
+## 分段与报告同口径：旧存档（scoring_version = 1）按 V1 阈值，其余按当前阈值。
+static func grade_bands(scoring_version: int) -> Array:
+	return GRADE_BANDS_V1 if scoring_version == 1 else GRADE_BANDS_V2
+
+
 static func build(report: Dictionary, previous: Dictionary = {}, catalogs: Dictionary = {}) -> Dictionary:
 	if not bool(report.get("ok", false)):
 		return {"available": false, "title": "年度报告", "chapters": [], "full_text": "尚无年度报告。"}
@@ -255,7 +261,7 @@ static func build(report: Dictionary, previous: Dictionary = {}, catalogs: Dicti
 		"year": year, "era_index": era, "score_bp": int(report.get("score_bp", 0)),
 		"score_value": float(report.get("score_bp", 0)) / 100.0,
 		"grade_cap": cap, "has_previous": has_previous,
-		"grade_bands": GRADE_BANDS_V1 if int(report.get("scoring_version", 1)) == 1 else GRADE_BANDS_V2,
+		"grade_bands": grade_bands(int(report.get("scoring_version", 1))),
 		"months": months_gdp.size(),
 		"score_parts": parts, "score_labels": PackedStringArray(SCORE_LABELS),
 		"score_weights": PackedFloat32Array(SCORE_WEIGHTS),
@@ -348,7 +354,7 @@ static func _attach_visuals(chapters: Array[Dictionary], report: Dictionary, tie
 	chapters[7].visuals.append({"kind": "bars", "rows": resource_rows, "unit": "", "label": "资源提取量"})
 	if parts.size() >= SCORE_LABELS.size():
 		chapters[8].visuals.append({"kind": "score_parts", "parts": parts, "labels": PackedStringArray(SCORE_LABELS), "weights": PackedFloat32Array(SCORE_WEIGHTS)})
-	chapters[8].visuals.append({"kind": "grade_ruler", "score": score, "grade": String(report.get("grade", "—")), "grade_index": int(report.get("grade_index", 6)), "cap": int(report.get("grade_cap", -1)), "complete": bool(report.get("complete", false))})
+	chapters[8].visuals.append({"kind": "grade_ruler", "score": score, "grade": String(report.get("grade", "—")), "grade_index": int(report.get("grade_index", 6)), "cap": int(report.get("grade_cap", -1)), "complete": bool(report.get("complete", false)), "bands": grade_bands(int(report.get("scoring_version", 1)))})
 
 
 # ── 边注（短句，只在真正有话说时才出现） ────────────────────────────────────
@@ -374,7 +380,7 @@ static func _figure(label: String, value: Variant, previous: Variant, kind: Stri
 	var direction: int = 0
 	if value != null and previous != null:
 		var change: float = float(value) - float(previous)
-		delta_text = ("%+.2f 个百分点" % (change / 655.36)) if kind == "ratio" else _signed(change, kind)
+		delta_text = ("%+.2f%%" % (change / 655.36)) if kind == "ratio" else _signed(change, kind)
 		direction = 1 if change > 0.0 else (-1 if change < 0.0 else 0)
 	return {
 		"label": label, "text": current_text, "raw": _normalized(value, kind),
@@ -436,7 +442,7 @@ static func _row(label: String, value: Variant, previous: Variant, kind: String,
 	var direction: int = 0
 	if value != null and previous != null:
 		var change: float = float(value) - float(previous)
-		delta = "%+.2f 个百分点" % (change / 655.36) if kind == "ratio" else _signed(change, kind)
+		delta = "%+.2f%%" % (change / 655.36) if kind == "ratio" else _signed(change, kind)
 		if float(previous) > 0.0 and kind != "ratio":
 			rate = "%+.2f%%" % (change * 100.0 / float(previous))
 		direction = 1 if change > 0.0 else (-1 if change < 0.0 else 0)
