@@ -1,0 +1,40 @@
+[economy-open-finish] day=0 country=0.355 workset=0.037 fiscal=0.015 csr=0.001 recovery=0.001 vectors=0.764 audit=0.041 commands=0.006
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.336 workset=0.029 fiscal=0.007 csr=0.001 recovery=0.001 vectors=0.176 audit=0.037 commands=0.003
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=3 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.324 workset=0.027 fiscal=0.006 csr=0.001 recovery=0.001 vectors=0.124 audit=0.040 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.249 workset=0.022 fiscal=0.005 csr=0.000 recovery=0.001 vectors=0.183 audit=0.018 commands=0.003
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.305 workset=0.022 fiscal=0.006 csr=0.001 recovery=0.001 vectors=0.188 audit=0.037 commands=0.007
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.331 workset=0.028 fiscal=0.016 csr=0.001 recovery=0.001 vectors=0.169 audit=0.053 commands=0.003
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.169 workset=0.014 fiscal=0.006 csr=0.000 recovery=0.000 vectors=0.162 audit=0.036 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.567 workset=0.022 fiscal=0.019 csr=0.000 recovery=0.001 vectors=0.182 audit=0.035 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.248 workset=0.049 fiscal=0.031 csr=0.001 recovery=0.003 vectors=0.585 audit=0.182 commands=0.003
+[research-procure-diag] day=0 phase=0 done=0 cands=72 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=72 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=72 cursor=64 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=72 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=1 done=0 cands=72 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=1 done=0 cands=72 cursor=64 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.417 workset=0.088 fiscal=0.028 csr=0.002 recovery=0.002 vectors=0.435 audit=0.088 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=72 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+ERROR: 19 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 635 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

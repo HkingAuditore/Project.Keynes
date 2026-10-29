@@ -1,0 +1,259 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  ok   the modifier catalog compiles with the two test school terms
+  ok   the copier card is in the compiled catalog
+  ok   the source card is in the compiled catalog
+  ok   exactly one card in content is a copier
+  ok   the copier is the card the fixture names
+  ok   the copier is not itself copyable
+  ok   the source card IS copyable
+
+=== PHASE A/B: copier with a copyable source in its LEFT slot ===
+  ok   copy: the world configures
+  ok   copy: the country bootstraps
+  ok   copy: ideologies configure
+  ok   copy: the economy epoch opens
+  ok   copy: the economy bootstraps
+  ok   idea.public_hygiene: the equip transition SETTLES (pending_transitions == 0 after 0 extra day(s))
+  ok   A: the source alone occupies slot 0
+[A] source alone      value=1.0500030518 derived_add=0.0500030518 contributors=1
+[A] front alone       contributions=50 cells=50 stats=2
+  ok   A: the source's program is a derived row on the probed cell
+  ok   A: the source alone contributes exactly 3277/Q16 (0.0500030517)
+  ok   A: exactly one contributor paints the cell
+  ok   A: the front is 2 stats x 25 cells
+  ok   idea.algorithmic_governance: the equip transition SETTLES (pending_transitions == 0 after 0 extra day(s))
+  ok   B: the copier lands in slot 1, to the RIGHT of the source
+  ok   B: the copier is ACTIVE (location 1), not merely known
+[B] source + copier   value=1.1000061035 derived_add=0.1000061035 contributors=1
+[B] front now         contributions=50 cells=50 stats=2
+[B] expected          derived_add=0.1000061035 (2 x 0.0500030518)
+  ok   B: the copier reproduces the source's program exactly (add doubles)
+  ok   B: the merged value is 1 + 2 x 3277/Q16
+  ok   B: the copier's contribution is the SOURCE's stat, not its own
+  ok   B: the front keeps one row per (stat, cell); the copy folds into it
+
+=== PHASE C: the copier with NO left slot contributes nothing ===
+  ok   noleft: the world configures
+  ok   noleft: the country bootstraps
+  ok   noleft: ideologies configure
+  ok   noleft: the economy epoch opens
+  ok   noleft: the economy bootstraps
+  ok   idea.algorithmic_governance: the equip transition SETTLES (pending_transitions == 0 after 0 extra day(s))
+  ok   C: the copier is ACTIVE in slot 0
+[C] copier alone      value=1.0000000000 derived_present=false
+[C] front             installed=false cells=0 contributions=?
+[C] instances         count=0
+  ok   C: NO left slot means NO derived row at all
+  ok   C: the merged value is the untouched base
+  ok   C: the derived front is not even installed
+  ok   C: zero derived coverage
+  ok   C: zero managed instances
+  ok   C: the phase-B copier DID contribute (the negative is not vacuous)
+
+=== PHASE D: a NONCOPYABLE source gives the copier nothing ===
+  ok   noncopy: the world configures
+  ok   noncopy: the country bootstraps
+  ok   noncopy: ideologies configure
+  ok   noncopy: the economy epoch opens
+  ok   noncopy: the economy bootstraps
+  ok   idea.public_hygiene: the equip transition SETTLES (pending_transitions == 0 after 0 extra day(s))
+[D] noncopyable alone value=1.0500030518 derived_add=0.0500030518 contributors=1
+  ok   D: clearing `copyable` does not change what the source itself does
+  ok   idea.algorithmic_governance: the equip transition SETTLES (pending_transitions == 0 after 0 extra day(s))
+  ok   D: the copier is ACTIVE in slot 1
+[D] + copier          value=1.0500030518 derived_add=0.0500030518 contributors=1
+[D] front             before=50 after=50
+  ok   D: a noncopyable source leaves the copier with nothing to copy
+  ok   D: the merged value is 1 + 3277/Q16, NOT the phase-B double
+  ok   D: the front does NOT grow (it did in phase B)
+
+=== PHASE E: the school strength factor on a Mobilization card ===
+  ok   E: the Mobilization card is in the catalog
+  ok   E: the Commerce card is in the catalog
+[E] school order      ["agrarian", "commerce", "learning", "mobilization", "industry", "harmony"]
+  ok   E: the fixture's two cards really sit in DIFFERENT schools
+  ok   E: the Mobilization card's school is `mobilization`
+  ok   mob: the world configures
+  ok   mob: the country bootstraps
+  ok   mob: ideologies configure
+  ok   mob: the economy epoch opens
+  ok   mob: the economy bootstraps
+  ok   idea.treasury_reserve: the equip transition SETTLES (pending_transitions == 0 after 0 extra day(s))
+[E] baseline          mob scale=1.000000 factor=1.000000
+  ok   E: instances exist for the Mobilization card (so the column is real)
+  ok   E: with no school term the scale is exactly 1.00
+  ok   school term mobilization submits
+  ok   school term mobilization applies without a reject ([])
+[E] after mob 1.25    mob factor=1.250000
+  ok   E: the Mobilization school factor reads exactly 1.25
+[E] mob scale         1.250000 (expected 1.25)
+  ok   E: the Mobilization card's scale becomes exactly 1.25
+  ok   school term commerce submits
+  ok   school term commerce applies without a reject ([])
+[E] after com 1.50    com factor=1.500000  mob factor=1.250000
+  ok   E: the Commerce factor really rose to 1.50 (the control is live)
+[E] mob scale         1.250000 (must stay 1.25)
+  ok   E: a Commerce factor does NOT touch the Mobilization card
+
+=== PHASE F: the same two factors on a Commerce card ===
+  ok   com: the world configures
+  ok   com: the country bootstraps
+  ok   com: ideologies configure
+  ok   com: the economy epoch opens
+  ok   com: the economy bootstraps
+  ok   idea.family_office: the equip transition SETTLES (pending_transitions == 0 after 0 extra day(s))
+[F] baseline          com scale=1.000000
+  ok   F: the Commerce card starts at scale 1.00
+  ok   school term mobilization submits
+  ok   school term mobilization applies without a reject ([])
+[F] after mob 1.25    com scale=1.000000 (must stay 1.00)
+  ok   F: a Mobilization factor does NOT touch the Commerce card
+  ok   school term commerce submits
+  ok   school term commerce applies without a reject ([])
+[F] after com 1.50    factor=1.500000 com scale=1.500000 (expected 1.50)
+  ok   F: the Commerce school factor reads exactly 1.50
+  ok   F: the Commerce card's scale becomes exactly 1.50
+
+=== PHASE G: the school factor reaches the DERIVED backend ===
+  ok   G: the compiled catalog carries one strength stat per school
+  ok   G: the derived card has an in-range school index
+[G] derived card      idea.public_hygiene  school=mobilization  stat=country.ideology.school_strength_factor.mobilization
+  ok   G: the derived card is authored in the `mobilization` school
+  ok   G: the card's own school strength stat is `country.ideology.school_strength_factor.mobilization`
+  ok   G: the control school `commerce` is NOT the card's own school
+[G] shipped programs writing a school-strength stat = 0
+  ok   G: no shipped program writes a school-strength stat (guard unreachable)
+  ok   derived: the world configures
+  ok   derived: the country bootstraps
+  ok   derived: ideologies configure
+  ok   derived: the economy epoch opens
+  ok   derived: the economy bootstraps
+  ok   idea.public_hygiene: the equip transition SETTLES (pending_transitions == 0 after 0 extra day(s))
+[G] baseline          derived_add=0.0500030518 value=1.0500030518 contributors=1
+[G] front             installed=true contributions=50 cells=50 stats=2 gen=1 sample_day=96 rebuilds=12
+  ok   G: the derived front is installed and covers 2 stats x 25 cells
+  ok   G: A0, the derived per-cell add, is the authored L1 add 3277/Q16
+  ok   G: exactly one contributor paints the probed cell
+  ok   G: before any injection the card's own factor is exactly 1.00
+  ok   school term mobilization submits
+  ok   school term mobilization applies without a reject ([])
+[G] after own 1.25    factor=1.25000000
+  ok   G: the card's own school factor reads exactly 1.25
+[G] after own 1.25    derived_add=0.062503814697 expected=0.062503814697
+[G] front             gen 1 -> 2  rebuilds 12 -> 14  sample_day=98
+  ok   G: the front is REINSTALLED after the factor changes (gen 1 -> 2)
+  ok   G: the collector ran on that day (rebuilds 12 -> 14)
+  ok   G: the derived add scales by exactly 1.25 (A1 == A0 * 1.25)
+  ok   G: A1 is not A0 (the 1.25 assertion is not vacuous)
+  ok   G: the factor scaled the MAGNITUDE, not the contributor count
+  ok   G: the merged stat value is 1 + A1 (the row really moved)
+  ok   school term commerce submits
+  ok   school term commerce applies without a reject ([])
+[G] after other 1.50  com=1.50000000 own=1.25000000
+  ok   G: the control school's factor really rose to 1.50 (it is live)
+  ok   G: the card's own factor is still 1.25 (the control is additive)
+[G] after other 1.50  derived_add=0.062503814697 (must stay A1=0.062503814697; A0=0.050003051758)
+[G] front             gen 2 -> 2  rebuilds 14 -> 16
+  ok   G: the collector ran again with the other school at 1.50 (rebuilds 14 -> 16)
+  ok   G: its candidate is content-identical, so the front is NOT reinstalled (gen stays 2)
+  ok   G: another school's factor does NOT touch this card's derived add
+  ok   G: and the own-school factor is still in force (A2 != A0)
+  ok   G: A2 is exactly A0 * 1.25, not 1.50 or 1.875 stacked on top
+[G] own term handle   4294967297 (test.school_strength.mobilization)
+  ok   G: the own-school term is addressable in the COUNTRY store
+  ok   school term removal submits
+  ok   school term removal applies without a reject ([])
+  ok   G: the card's own factor is back to exactly 1.00
+[G] own term removed  derived_add=0.050003051758 (A0=0.050003051758) com=1.50000000 gen 2 -> 3
+  ok   G: the control school is still at 1.50 (the control stays live)
+  ok   G: the front is reinstalled on the way DOWN too (gen 2 -> 3)
+  ok   G: with only the OTHER school live, the derived add returns to A0
+  ok   G: and it is NOT the 1.25 value (the return is not a stale read)
+[G] |A1 - A0*1.25| = 0.00000000000000000  |A2 - A1| = 0.00000000000000000  |A3 - A0| = 0.00000000000000000
+
+=== PHASE H: another school ALONE leaves the derived add at A0 ===
+  ok   other: the world configures
+  ok   other: the country bootstraps
+  ok   other: ideologies configure
+  ok   other: the economy epoch opens
+  ok   other: the economy bootstraps
+  ok   idea.public_hygiene: the equip transition SETTLES (pending_transitions == 0 after 0 extra day(s))
+[H] baseline          derived_add=0.050003051758 (A0 from G = 0.050003051758) gen=1
+  ok   H: a second world reproduces A0 exactly (the baseline is deterministic)
+  ok   school term commerce submits
+  ok   school term commerce applies without a reject ([])
+[H] after other 1.50  com=1.50000000 own=1.00000000
+  ok   H: the control school's factor reads exactly 1.50
+  ok   H: the card's own school factor never moved (still 1.00)
+[H] after other 1.50  derived_add=0.050003051758 (must stay A0=0.050003051758) gen 1 -> 1 rebuilds 12 -> 14
+  ok   H: the collector ran with the other school at 1.50 (rebuilds 12 -> 14)
+  ok   H: its candidate is content-identical, so the front is NOT reinstalled
+  ok   H: with only the OTHER school driven, the derived add stays at A0
+  ok   H: the cell still carries the card's derived row (not a cleared front)
+
+=== copier + school: 141 checks, 0 failures ===
+[economy-open-finish] day=0 country=0.537 workset=0.032 fiscal=0.017 csr=0.001 recovery=0.001 vectors=0.082 audit=0.025 commands=0.006
+[research-procure-diag] day=0 phase=0 done=0 cands=25 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=25/25 took=0.0138 cells=50 commands=50
+[probe] AB old_first=1 old=0.0035 new=0.0023 rows=50
+[probe] finish scratch=0.0001 emit=0.0064 versions=0.0108 builder_install=0.0001 digest=0.0000 total=0.0174 rows=50 stats=2
+[probe] fold step cursor=50/50 took=0.1257 cells=100 commands=100
+[probe] AB old_first=0 old=0.0029 new=0.0024 rows=50
+[probe] finish scratch=0.0000 emit=0.0058 versions=0.0093 builder_install=0.0002 digest=0.0005 total=0.0158 rows=50 stats=2
+[economy-open-finish] day=0 country=0.270 workset=0.016 fiscal=0.012 csr=0.000 recovery=0.000 vectors=0.036 audit=0.011 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=25 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=1 old=0.0002 new=0.0000 rows=0
+[economy-open-finish] day=0 country=0.232 workset=0.025 fiscal=0.006 csr=0.000 recovery=0.000 vectors=0.061 audit=0.015 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=25 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=25/25 took=0.0064 cells=50 commands=50
+[probe] AB old_first=0 old=0.0035 new=0.0034 rows=50
+[probe] finish scratch=0.0001 emit=0.0066 versions=0.0125 builder_install=0.0002 digest=0.0000 total=0.0194 rows=50 stats=2
+[probe] fold step cursor=25/25 took=0.0049 cells=50 commands=50
+[probe] AB old_first=1 old=0.0028 new=0.0044 rows=50
+[probe] finish scratch=0.0000 emit=0.0038 versions=0.0119 builder_install=0.0001 digest=0.0004 total=0.0162 rows=50 stats=2
+[economy-open-finish] day=0 country=0.240 workset=0.017 fiscal=0.008 csr=0.000 recovery=0.000 vectors=0.043 audit=0.014 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=25 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0002 new=0.0002 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0001 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0001 new=0.0000 rows=0
+[economy-open-finish] day=0 country=0.232 workset=0.016 fiscal=0.008 csr=0.000 recovery=0.000 vectors=0.047 audit=0.013 commands=0.001
+[research-procure-diag] day=0 phase=0 done=0 cands=25 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=0/0 took=0.0003 cells=0 commands=0
+[probe] AB old_first=1 old=0.0002 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0001 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0001 new=0.0000 rows=0
+[economy-open-finish] day=0 country=0.289 workset=0.016 fiscal=0.007 csr=0.000 recovery=0.000 vectors=0.040 audit=0.011 commands=0.001
+[research-procure-diag] day=0 phase=0 done=0 cands=25 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=25/25 took=0.0067 cells=50 commands=50
+[probe] AB old_first=0 old=0.0107 new=0.0028 rows=50
+[probe] finish scratch=0.0000 emit=0.0066 versions=0.0195 builder_install=0.0002 digest=0.0000 total=0.0263 rows=50 stats=2
+[probe] fold step cursor=25/25 took=0.0070 cells=50 commands=50
+[probe] AB old_first=1 old=0.0046 new=0.0027 rows=50
+[probe] finish scratch=0.0000 emit=0.0055 versions=0.0140 builder_install=0.0001 digest=0.0006 total=0.0202 rows=50 stats=2
+[probe] fold step cursor=25/25 took=0.0048 cells=50 commands=50
+[probe] AB old_first=0 old=0.0029 new=0.0038 rows=50
+[probe] finish scratch=0.0000 emit=0.0042 versions=0.0117 builder_install=0.0002 digest=0.0003 total=0.0164 rows=50 stats=2
+[probe] fold step cursor=25/25 took=0.0057 cells=50 commands=50
+[probe] AB old_first=1 old=0.0039 new=0.0025 rows=50
+[probe] finish scratch=0.0000 emit=0.0050 versions=0.0193 builder_install=0.0001 digest=0.0004 total=0.0248 rows=50 stats=2
+[economy-open-finish] day=0 country=0.252 workset=0.017 fiscal=0.010 csr=0.000 recovery=0.000 vectors=0.038 audit=0.013 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=25 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=25/25 took=0.0064 cells=50 commands=50
+[probe] AB old_first=0 old=0.0048 new=0.0041 rows=50
+[probe] finish scratch=0.0000 emit=0.0091 versions=0.0145 builder_install=0.0002 digest=0.0000 total=0.0238 rows=50 stats=2
+[probe] fold step cursor=25/25 took=0.0056 cells=50 commands=50
+[probe] AB old_first=1 old=0.0043 new=0.0035 rows=50
+[probe] finish scratch=0.0000 emit=0.0078 versions=0.0126 builder_install=0.0001 digest=0.0004 total=0.0209 rows=50 stats=2
+ERROR: 19 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 635 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

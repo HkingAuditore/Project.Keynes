@@ -14,6 +14,23 @@ const RuntimeStateProviderScript = preload("res://scripts/game/runtime_state_pro
 const PksrBundleHeaderScript = preload("res://scripts/game/pksr_bundle_header.gd")
 const TECHNOLOGY_INDUSTRY_PROVIDER_ID := "technology_industry"
 const TECHNOLOGY_INDUSTRY_REVISION := 2
+## Plan 11.5, the WHOLE-PACKAGE half. The ideology execution-contract identity
+## already travels inside the PKID payload (the native reader refuses a payload
+## stamped by a different contract with `cell_program_execution_contract_mismatch`).
+## It also has to enter the CONTAINER-level compatibility check, so the manifest
+## of every provider is asked whether it can certify the same identity.
+##
+## The refusal code here is deliberately NOT the payload's. The payload code is a
+## native verdict reached after restore has begun; this one is a GDScript
+## pre-flight reached before any provider has touched the world. Sharing one
+## string would make the two layers indistinguishable in a log -- and in a test,
+## where an assertion that "the whole-package gate refused" could be satisfied by
+## the payload reader instead, passing while the new gate did nothing.
+const EXECUTION_CONTRACT_KEY := "execution_contract_hash"
+const EXECUTION_CONTRACT_PROVIDER_ID := "pkid"
+const EXECUTION_CONTRACT_PAYLOAD_CODE := "cell_program_execution_contract_mismatch"
+const EXECUTION_CONTRACT_MANIFEST_CODE := \
+	"cell_program_execution_contract_manifest_mismatch"
 
 var _repository = SaveRepositoryScript.new()
 var _runtime_host: WorldRuntimeHost
@@ -39,6 +56,7 @@ func _ready() -> void:
 
 func list_slots() -> Array:
 	var slots := _repository.list_slots()
+	var running_contract := _running_execution_contract()
 	for slot in slots:
 		if not bool(slot.get("loadable", false)):
 			continue
@@ -49,6 +67,19 @@ func list_slots() -> Array:
 		elif not _manifest_compatible(manifest):
 			slot.loadable = false
 			slot.reason = "存档运行时 provider 版本不兼容。"
+		else:
+			# Plan 11.5. The slot list reads the HEADER only, so `state_present`
+			# is unknowable here; it never decides the flag (an unstamped entry is
+			# deferred, not refused), only how the deferral is worded. A stamped
+			# entry that differs from the live runtime is refused here early, so
+			# the pause menu does not offer a load that cannot succeed.
+			var contract := _execution_contract_verdict(manifest, running_contract, true)
+			if not bool(contract.get("ok", false)):
+				slot.loadable = false
+				# The tooltip carries the CODE as well as the sentence, so a
+				# refusal is greppable from a screenshot of the pause menu.
+				slot.reason = "%s: %s" % [String(contract.get("code", "")),
+					String(contract.get("message", ""))]
 	return slots
 
 
@@ -113,14 +144,23 @@ func prepare_load(slot_id: String) -> Dictionary:
 	var container: Dictionary = _repository.load_slot(slot_id)
 	if not bool(container.get("ok", false)):
 		return container
-	if _manifest_industry_revision(container.header.get(
-			"provider_manifest", [])) != TECHNOLOGY_INDUSTRY_REVISION:
+	var manifest = container.header.get("provider_manifest", [])
+	if _manifest_industry_revision(manifest) != TECHNOLOGY_INDUSTRY_REVISION:
 		return _result(false, "technology_industry_revision_incompatible",
 			SaveRepositoryScript.LEGACY_INDUSTRY_REASON)
-	if not _manifest_compatible(container.header.get("provider_manifest", [])):
+	if not _manifest_compatible(manifest):
 		return _result(false, "save_provider_incompatible",
 			"存档运行时 provider 缺失或版本不兼容。")
 	var bytes_by_id: Dictionary = container.get("section_bytes", {})
+	# Plan 11.5. This runs in the session request, before a world exists, so the
+	# running contract usually reads 0 here and the verdict defers; the refusal
+	# for a certified mismatch is `restore_prepared_game`, which re-decides with
+	# the live runtime and still precedes every provider restore.
+	var contract := _execution_contract_verdict(manifest, _running_execution_contract(),
+		_pkid_state_present(bytes_by_id))
+	if not bool(contract.get("ok", false)):
+		return _result(false, String(contract.get("code", EXECUTION_CONTRACT_MANIFEST_CODE)),
+			String(contract.get("message", "")))
 	for required in REQUIRED_SECTIONS:
 		if not bytes_by_id.has(required):
 			if required in ["pkcm", "pkgp", "pktr", "pkef", "pkid", "pkai"]:
@@ -160,6 +200,7 @@ func prepare_load(slot_id: String) -> Dictionary:
 		"slot_id": slot_id,
 		"header": container.header,
 		"sections": decoded,
+		"execution_contract": contract,
 	}
 	return {"ok": true, "code": "ok", "message": "", "bundle": _pending_load.duplicate(true),
 		"config": decoded.new_game_config}
@@ -172,6 +213,24 @@ func restore_prepared_game(host: WorldRuntimeHost) -> Dictionary:
 	var generator := host.generator()
 	if generator == null:
 		return _result(false, "load_runtime_missing", "地图运行时尚未建立。")
+	# Plan 11.5, the authoritative whole-package gate: the world now exists, so
+	# the running contract is a real number and this refusal still precedes every
+	# `provider.restore_sections` call, i.e. it refuses before anything mutates.
+	var header: Dictionary = _pending_load.get("header", {})
+	var contract := _execution_contract_verdict(header.get("provider_manifest", []),
+		_running_execution_contract(host), _pkid_state_present(sections))
+	if not bool(contract.get("ok", false)):
+		push_warning("[save/restore] execution contract refused code=%s detail=%s saved=%d running=%d"
+			% [String(contract.get("code", "")), String(contract.get("detail", "")),
+				int(contract.get("saved", 0)), int(contract.get("running", 0))])
+		return _result(false, String(contract.get("code", EXECUTION_CONTRACT_MANIFEST_CODE)),
+			String(contract.get("message", "")))
+	if bool(contract.get("deferred", false)):
+		# NOT silent: the manifest could not certify the identity, so the PKID
+		# payload is the authority for it. Recorded here so a load log always says
+		# which layer made the call.
+		push_warning("[save/restore] execution contract deferred to the PKID payload detail=%s"
+			% String(contract.get("detail", "")))
 	var context := _provider_context(host, generator, false, 0.0)
 	for provider in _providers:
 		var provider_result: Dictionary = provider.restore_sections(sections, context)
@@ -537,9 +596,21 @@ func _register_providers() -> void:
 		_make_provider(&"pktr", 6, PackedStringArray(["pktr"]),
 			"_can_trigger_provider", "_write_trigger_provider",
 			"_restore_trigger_provider"),
+		# PKID also certifies the plan 11.5 execution contract in the manifest.
+		# THREE version spaces live here and are never interchangeable:
+		#   * this provider-section `schema` = 2 (the pkid manifest entry's own);
+		#   * the PKID payload schema = 14 (inside the section bytes, native);
+		#   * `execution_contract_hash` -- neither of the above, a hash of the
+		#     rule versions plus the ideology / Effect / Modifier catalogs this
+		#     runtime was configured with.
+		# The contract can stay equal across a payload schema bump and change
+		# without one (a catalog edit), so bumping the payload schema does NOT
+		# certify a different contract, and PK_SAVE_MIGRATE cannot make one safe:
+		# migration is a schema operation, the contract is not a schema version.
+		# Never compare the three.
 		_make_provider(&"pkid", 2, PackedStringArray(["pkid"]),
 			"_can_ideology_provider", "_write_ideology_provider",
-			"_restore_ideology_provider"),
+			"_restore_ideology_provider", &"_ideology_manifest_identity"),
 		_make_provider(&"pkar", 1, PackedStringArray(["pkar"]),
 			"_can_annual_provider", "_write_annual_provider", "_restore_annual_provider"),
 		_make_provider(&"player_session", 1,
@@ -550,10 +621,13 @@ func _register_providers() -> void:
 
 func _make_provider(provider_id: StringName, schema: int, section_ids: PackedStringArray,
 		can_method: StringName, write_method: StringName,
-		restore_method: StringName):
-	return RuntimeStateProviderScript.new().configure(provider_id, schema, section_ids,
+		restore_method: StringName, identity_method: StringName = &""):
+	var provider = RuntimeStateProviderScript.new().configure(provider_id, schema, section_ids,
 		Callable(self, can_method), Callable(self, write_method),
 		Callable(self, restore_method), Callable(self, "_hash_provider_sections"))
+	if identity_method != &"":
+		provider.configure_manifest_identity(Callable(self, identity_method))
+	return provider
 
 
 func _provider_context(host: WorldRuntimeHost, generator: MapGenerator,
@@ -636,6 +710,181 @@ func _manifest_industry_revision(raw_manifest) -> int:
 				== TECHNOLOGY_INDUSTRY_PROVIDER_ID:
 			return int(raw.get("schema_version", 1))
 	return 1
+
+
+# --- Plan 11.5, the WHOLE-PACKAGE half ---------------------------------------
+#
+# `_manifest_compatible` answers "are these providers the ones this build can
+# restore?". It cannot answer "is the stored cell-program EXECUTION CONTRACT
+# this build's?" -- that identity now lives in the pkid manifest entry, and the
+# decision needs a fact the manifest does not contain: what the running runtime
+# is configured with. That fact only exists once a world has been built, so the
+# decision is a separate, PURE function (`running` and `state_present` are
+# inputs) called from three places that do not share a runtime:
+#
+#   * `list_slots()`            -- the pause menu. The runtime IS live, so a
+#                                  certified mismatch greys the slot out early.
+#   * `prepare_load()`          -- the session request, which runs BEFORE a world
+#                                  exists (`world_runtime_host.gd:527`), so
+#                                  `running` is normally 0 and the verdict
+#                                  defers instead of guessing.
+#   * `restore_prepared_game()` -- after the world was built, BEFORE the first
+#                                  provider restores anything. This is the
+#                                  authoritative gate: it is the last moment a
+#                                  refusal can still leave the world untouched.
+
+## The identity the LIVE runtime is running, or 0 when it cannot be stated
+## (no world yet, or ideology unconfigured). 0 is "unknown", never "matches":
+## the contract itself is a hash, so a zero value is not a contract.
+func _running_execution_contract(host = null) -> int:
+	var target = host if host != null else _runtime_host
+	if target == null or not target.has_method("generator"):
+		return 0
+	var generator = target.generator()
+	if generator == null or not generator.has_method("get_ideology_report"):
+		return 0
+	return _contract_from_report(generator.get_ideology_report())
+
+
+func _contract_from_report(report) -> int:
+	# The report is IdeologyFacade.report() -> DCWorldExt.get_ideology_report().
+	# `{"configured": false}` means the owner is unconfigured (the facade says so
+	# itself; the native report says so through the same key), and an older
+	# extension build has no identity field at all. All three mean 0 = unknown,
+	# never "matches": a hash of rule versions with no catalog attached is not
+	# this world's contract.
+	if not report is Dictionary:
+		return 0
+	var configured = report.get("configured", true)
+	if configured is bool and not bool(configured):
+		return 0
+	return _contract_value(report.get(EXECUTION_CONTRACT_KEY, 0))
+
+
+## Normalizes an identity read from a dictionary or from the save header.
+## The header is JSON, and JSON hands a number back as int or float depending on
+## how it was written, so a raw `int(...)` is not enough to compare identities.
+func _contract_value(value) -> int:
+	if value is int:
+		return value
+	if value is float:
+		return int(value)
+	if value is String or value is StringName:
+		return String(value).to_int()
+	return 0
+
+
+## The pkid provider's manifest identity (plan 11.5). An empty dictionary means
+## the entry carries NO `execution_contract_hash` key, which the load gate reads
+## as UNSTATED -- that is the same shape as an archive written before the field
+## existed, and it must not be confused with a stored zero.
+##
+## The value is written as a DECIMAL STRING, not as a JSON number. The PKSV
+## header is JSON, and JSON numbers are IEEE-754 doubles by spec, so a 64-bit
+## hash is only exact while the reader happens to preserve int64 -- any reader
+## past 2^53 (a browser, a Python tool, or a future parser) would silently
+## compare a ROUNDED identity and refuse a save that is fine. `_contract_value`
+## still accepts a numeric form, so a manifest written either way compares.
+func _ideology_manifest_identity(context: Dictionary) -> Dictionary:
+	var generator = context.get("generator")
+	if generator == null or not generator.has_method("get_ideology_report"):
+		return {}
+	var contract := _contract_from_report(generator.get_ideology_report())
+	if contract == 0:
+		return {}
+	return {EXECUTION_CONTRACT_KEY: str(contract)}
+
+
+static func _manifest_entry_for(raw_manifest, provider_id: String) -> Dictionary:
+	if not raw_manifest is Array:
+		return {}
+	for raw in raw_manifest:
+		if raw is Dictionary and String(raw.get("provider_id", "")) == provider_id:
+			return raw
+	return {}
+
+
+## Whether the archive actually carries ideology state. Needed because the
+## contract's absence only matters when there is contract-governed state that
+## could be reinterpreted: an archive with no PKID payload restores to the empty
+## ideology state, which cannot be governed by any contract.
+static func _pkid_state_present(sections) -> bool:
+	if not sections is Dictionary:
+		return false
+	return not PackedByteArray(sections.get("pkid", PackedByteArray())).is_empty()
+
+
+## The whole-package execution-contract verdict.
+##
+## Returns {ok, code, detail, saved, running, deferred, message}.
+##   ok=false  ONLY when the archive certified a contract that differs from the
+##             running one (`detail == "contract_differs"`).
+##   deferred  the archive did not certify the identity, so this gate did NOT
+##             verify it. The PKID payload owns the same identity and compares it
+##             exactly (`cell_program_execution_contract_mismatch`), so the load
+##             is neither refused nor whitewashed: the deferral is recorded and
+##             logged by the caller.
+##
+## LEGACY ARCHIVES (the backward-honest half). An archive written before this
+## field existed has no key. That fact means UNSTATED -- never "matches" (which
+## would be silent acceptance of an identity nobody checked) and never "differs"
+## (which would refuse every archive on disk today, including ones whose PKID
+## payload already carries the identical identity and will be compared exactly a
+## few frames later). Plan 11.5's old-archive rule -- an older save must NOT be
+## read under an unproven contract, and the refusal it names is
+## `cell_program_execution_contract_mismatch` -- is therefore honoured by the
+## layer that owns the identity, and this gate says out loud that it did not
+## check instead of pretending it did.
+func _execution_contract_verdict(raw_manifest, running: int,
+		state_present: bool) -> Dictionary:
+	var entry := _manifest_entry_for(raw_manifest, EXECUTION_CONTRACT_PROVIDER_ID)
+	if entry.is_empty():
+		# Pre-ideology archive: no pkid provider, so no contract-governed state.
+		return _contract_verdict(true, "contract_no_provider", 0, 0, false)
+	var saved := _contract_value(entry.get(EXECUTION_CONTRACT_KEY, 0))
+	if running == 0:
+		return _contract_verdict(true, "contract_unverifiable", 0, saved, saved != 0)
+	if saved == 0:
+		return _contract_verdict(true,
+			"contract_unstated" if state_present else "contract_unstated_no_state",
+			running, 0, state_present)
+	if saved != running:
+		return _contract_verdict(false, "contract_differs", running, saved, false)
+	return _contract_verdict(true, "contract_matches", running, saved, false)
+
+
+func _contract_verdict(ok: bool, detail: String, running: int, saved: int,
+		deferred: bool) -> Dictionary:
+	return {
+		"ok": ok,
+		"code": "" if ok else EXECUTION_CONTRACT_MANIFEST_CODE,
+		"detail": detail,
+		"saved": saved,
+		"running": running,
+		"deferred": deferred,
+		"message": _contract_verdict_message(detail, running, saved),
+	}
+
+
+func _contract_verdict_message(detail: String, running: int, saved: int) -> String:
+	match detail:
+		"contract_differs":
+			return ("Save was written under a different cell-program execution "
+				+ "contract (saved=%d running=%d); refused before any provider "
+				+ "restored state.") % [saved, running]
+		"contract_unstated":
+			return ("Save predates the pkid execution-contract manifest identity; "
+				+ "the PKID payload remains the authority (%s).") \
+				% EXECUTION_CONTRACT_PAYLOAD_CODE
+		"contract_unstated_no_state":
+			return ("Save carries no ideology state and no execution-contract "
+				+ "identity; nothing can be reinterpreted.")
+		"contract_unverifiable":
+			return ("The running execution contract is not available yet; the "
+				+ "whole-package comparison is deferred to the PKID payload.")
+		"contract_no_provider":
+			return "Save predates the ideology provider."
+	return ""
 
 
 func _can_world_provider(context: Dictionary) -> Dictionary:

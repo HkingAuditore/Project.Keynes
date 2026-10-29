@@ -1,0 +1,75 @@
+[economy-open-finish] day=0 country=0.351 workset=0.038 fiscal=0.026 csr=0.000 recovery=0.002 vectors=1.025 audit=0.054 commands=0.010
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+ERROR: [FAIL] T1 target handles stay distinct per centre target ([])
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_x1b_source_count_test.gd:798)
+       [1] _test_bracketed_sources (res://tests/ideology/ideology_x1b_source_count_test.gd:166)
+       [2] _run (res://tests/ideology/ideology_x1b_source_count_test.gd:111)
+       [3] _init (res://tests/ideology/ideology_x1b_source_count_test.gd:85)
+[economy-open-finish] day=0 country=0.279 workset=0.039 fiscal=0.022 csr=0.001 recovery=0.001 vectors=0.157 audit=0.069 commands=0.003
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=3 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+ERROR: [FAIL] T2 removing one source halves the stack (before=1.12000 after=1.12000)
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_x1b_source_count_test.gd:798)
+       [1] _test_source_removal (res://tests/ideology/ideology_x1b_source_count_test.gd:189)
+       [2] _run (res://tests/ideology/ideology_x1b_source_count_test.gd:112)
+       [3] _init (res://tests/ideology/ideology_x1b_source_count_test.gd:85)
+ERROR: [FAIL] T2 the centre target remains held with the halved scale ({ "ok": true, "country_handle": 4294967296, "count": 0, "idea_ids": [], "idea_levels": [], "instance_ids": [], "generations": [], "program_hashes": [], "target_handles": [], "target_generations": [], "target_domains": [], "magnitude_scales": [], "present": [] })
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_x1b_source_count_test.gd:798)
+       [1] _test_source_removal (res://tests/ideology/ideology_x1b_source_count_test.gd:194)
+       [2] _run (res://tests/ideology/ideology_x1b_source_count_test.gd:112)
+       [3] _init (res://tests/ideology/ideology_x1b_source_count_test.gd:85)
+[economy-open-finish] day=0 country=0.404 workset=0.035 fiscal=0.006 csr=0.001 recovery=0.005 vectors=0.170 audit=0.034 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+ERROR: [FAIL] T3 radius 3 returns 1..3 in the fixture ([])
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_x1b_source_count_test.gd:798)
+       [1] _test_radius_three_bfs (res://tests/ideology/ideology_x1b_source_count_test.gd:209)
+       [2] _run (res://tests/ideology/ideology_x1b_source_count_test.gd:113)
+       [3] _init (res://tests/ideology/ideology_x1b_source_count_test.gd:85)
+[economy-open-finish] day=0 country=0.327 workset=0.025 fiscal=0.017 csr=0.000 recovery=0.001 vectors=0.151 audit=0.048 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.212 workset=0.019 fiscal=0.007 csr=0.001 recovery=0.001 vectors=0.159 audit=0.018 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.185 workset=0.014 fiscal=0.012 csr=0.000 recovery=0.000 vectors=0.134 audit=0.020 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.382 workset=0.028 fiscal=0.011 csr=0.001 recovery=0.001 vectors=0.158 audit=0.035 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.609 workset=0.024 fiscal=0.011 csr=0.001 recovery=0.001 vectors=0.178 audit=0.041 commands=0.003
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.258 workset=0.050 fiscal=0.010 csr=0.001 recovery=0.001 vectors=0.319 audit=0.146 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=72 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=72 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=72 cursor=64 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=72 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=1 done=0 cands=72 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=1 done=0 cands=72 cursor=64 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+ERROR: [FAIL] T8 truncation keeps the 32-cell ceiling ([])
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_x1b_source_count_test.gd:798)
+       [1] _test_stable_truncation (res://tests/ideology/ideology_x1b_source_count_test.gd:296)
+       [2] _run (res://tests/ideology/ideology_x1b_source_count_test.gd:118)
+       [3] _init (res://tests/ideology/ideology_x1b_source_count_test.gd:85)
+[economy-open-finish] day=0 country=0.550 workset=0.102 fiscal=0.062 csr=0.001 recovery=0.001 vectors=0.552 audit=0.238 commands=0.016
+[research-procure-diag] day=0 phase=0 done=0 cands=72 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+ERROR: 19 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 635 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

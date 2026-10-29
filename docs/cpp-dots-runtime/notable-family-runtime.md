@@ -77,7 +77,7 @@ dense ID CSR。建筑、职业、需求、商品和自然资源 profile 可提�
 `default_family_traits.tres` / `default_family_effects.tres`（薄包装，traits/effects 数组为空）。
 第一批正式内容为 98 条偏好（C/I/J）加 48 条效果。互斥组覆盖暴食/节俭、肉食/菜食、进步/守旧、
 精明/老实、多子/少子、百业/一业、抱残/兼收/破旧等轴；同轴多条消费偏好可以共存，靠 4× 乘积帽
-限制极端叠乘。选择器依赖建筑/职业 `semantic_tags`；城市制造/能源/知识产出走
+限制极端叠乘。编译器会把设计表的 X 取值范围同步到实际 Q16 抽取范围，避免玩家看到的数值与运行时强度不一致。选择器依赖建筑/职业 `semantic_tags`；城市制造/能源/知识产出走
 `economy.city.building.*_output_factor`。改目录身份会改 `family_trait_catalog_hash`，
 旧存档按 catalog mismatch 拒绝，不做隐式迁移。
 
@@ -146,8 +146,7 @@ profession-class selector，查询时以 `_profession_class_index` 匹配，精�
 它声明六类来源（Trait、随机池、事件、玩家命令、科技、国家状态）、六类目标（家族、分支、
 聚落格、国家、气候格、格内建筑/商品/资源）、五类运算、三类生命周期、五类 stack policy 和
 八类 target selector（含 `NEIGHBORS_R1` / `NEIGHBORS_R2`，绑定处只对 `_building_neighbors`
-做 6/18 格扇出）。`default_family_effects.tres` 是指向官方 JSON 的薄包装；形成时随机池**必定**
-抽 1 条独立效果（已有 random_pool 绑定则跳过）。威望缩放的投资/出生/降雨门槛/抗寒容量在
+做 6/18 格扇出）。`default_family_effects.tres` 是指向官方 JSON 的薄包装；官方目录的新立族/分家会对随机池先做确定性的稀有标签抽取，约 20% 的家族获得一条独立效果，其余家族保持“只有家风偏好”的身份差异；已有 random_pool 绑定则跳过。小型测试目录保留原有确定性抽取语义。威望缩放的投资/出生/降雨门槛/抗寒容量在
 `FAMILY_COMMIT` 冻成 `_family_investment_factor_q16` / `_family_birth_factor_q16` /
 `_epoch_cell_rain_event_threshold_q16` / `_epoch_cell_cold_capacity_factor_q16`，热循环只读。
 「开枝散叶」按 membership 人口加权出生，禁止写 `economy.city.birth_factor`。后续内容包只需

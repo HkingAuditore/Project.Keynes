@@ -28,7 +28,7 @@ theme_override_constants/separation = 3
 layout_mode = 2
 [node name="Headline" type="Label" parent="Stage/Typography"]
 layout_mode = 2
-text = "国家年度\n发展报告"
+text = "年度\n报告"
 [node name="Nation" type="Label" parent="Stage/Typography"]
 layout_mode = 2
 autowrap_mode = 3

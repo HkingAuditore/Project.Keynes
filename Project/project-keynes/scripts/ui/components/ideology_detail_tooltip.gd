@@ -122,7 +122,7 @@ func _progress(data: Dictionary, accent: Color) -> void:
 	var line := HBoxContainer.new()
 	line.add_child(Art.label("境界 · %s" % String(data.get("level_label", "")),
 		15, Art.INK, HORIZONTAL_ALIGNMENT_LEFT))
-	var amount := Art.label("已臻圆满" if bool(data.get("maxed", false)) else "%s / %s" % [
+	var amount := Art.label("已完成" if bool(data.get("maxed", false)) else "%s / %s" % [
 		Art.q16(int(data.get("understanding_q16", 0))),
 		Art.q16(int(data.get("threshold_q16", 0)))], 14, Art.INK_MUTED, HORIZONTAL_ALIGNMENT_RIGHT)
 	amount.size_flags_horizontal = Control.SIZE_EXPAND_FILL

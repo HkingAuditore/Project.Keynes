@@ -1,0 +1,208 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== PHASE 0: catalogs, the fixture cards, and the derived backend ===
+  ok   the modifier catalog compiles
+  ok   the shipped effect catalog declares the program the fixture routes to
+  ok   the ideology catalog compiles with the three fixture cards
+  ok   the source card is in the compiled catalog
+  ok   the copier card is in the compiled catalog
+  ok   the control card is in the compiled catalog
+  ok   the copier card compiles with copy_left_programs = 1
+  ok   the source and control cards compile with copy_left_programs = 0
+  ok   the source card is copyable and the copier/control cards are not
+  ok   the source has 1 level and the copier/control have 3 each (so level index 2 exists)
+  ok   dcs: the world configures
+  ok   dcs: the country bootstraps
+  ok   dcs: ideologies configure
+  ok   dcs: the economy epoch opens
+  ok   dcs: the economy bootstraps
+[0] program ideology.effect.public_hygiene_l1  domain=2 kind=12 lifecycle=0 -> backend=DerivedCell reason=
+  ok   the program the fixture routes to is classified DerivedCell by `decide_cell_program_backend`
+  ok   its selector kind is 12 (OWN_TERRITORY), a cell selector
+[0] derived-layer rollout enabled kinds = [12, 14, 15, 16]
+  ok   the runtime's derived rollout covers exactly the cell selector kinds 12/14/15/16 (so a kind-12 copier has a derived backend to reach)
+  ok   the shipped program is owned by the Effect reconciler, not the legacy Modifier batch
+
+=== PHASE 1: the source alone (S) ===
+  ok   test.dcs.source: the card is DISCOVERED before the equip (known_ids contains it)
+  ok   test.dcs.source: the equip lands ACTIVE (location 1)
+  ok   1: the source occupies slot 0 (nothing to its left)
+  ok   1: the source is ACTIVE (location 1)
+  ok   1: the source is at level index 0
+[1/source alone] derived_add 3:0.050003051758, 7:0.050003051758, 12:0.050003051758, 24:0.050003051758
+[1/source alone] front installed=true stats=2 cells=50 contributions=50 gen=1 sample_day=2 rebuilds=4 pending=0 values[0]=1.050003051758
+  ok   1: the derived front is installed
+  ok   1: the front covers 50 cells (2 stats x 25 owned cells)
+  ok   1: the front holds 50 contributions
+  ok   1: the front holds 2 stats
+  ok   1: every probe cell carries a derived row for economy.city.birth_factor
+  ok   1: all 4 probe cells read the same add 0.05000305175781250
+  ok   1: the source alone contributes exactly 3277/Q16 (0.0500030517578125)
+  ok   1: 3277/Q16 is EXACTLY the authored magnitude (add * 65536 == 3277)
+
+=== PHASE 2: + copier at level index 0 (the A1 baseline) ===
+  ok   test.dcs.copier: the card is DISCOVERED before the equip (known_ids contains it)
+  ok   test.dcs.copier: the equip lands ACTIVE (location 1)
+  ok   2: the copier lands in slot 1, to the RIGHT of the source
+  ok   2: the copier is ACTIVE (location 1)
+  ok   2: the copier is at level index 0 -- BELOW the `state.level >= 2` gate
+  ok   2: no transition is in flight before the read (plan 10.1: a pending card would contribute the OLD level)
+[2/copier L0] derived_add 3:0.100006103516, 7:0.100006103516, 12:0.100006103516, 24:0.100006103516
+[2/copier L0] front installed=true stats=2 cells=50 contributions=50 gen=2 sample_day=4 rebuilds=8 pending=0 values[0]=1.100006103516
+  ok   2: the derived front is installed
+  ok   2: the front covers 50 cells (2 stats x 25 owned cells)
+  ok   2: the front holds 50 contributions
+  ok   2: the front holds 2 stats
+  ok   2: every probe cell carries a derived row for economy.city.birth_factor
+  ok   2: the copier's contribution REINSTALLED the front (generation 1 -> 2)
+  ok   2: the collector ran again (rebuild visits 4 -> 8)
+  ok   2: all 4 probe cells read the same add 0.10000610351562500
+  ok   2: the copier reproduces the source exactly at level 0 (front add == 2 x S), so A1 below is the COPIER's own add and not noise
+  ok   2: the merged stat value is 1 + 2S (the front really reached the reader)
+[2] A1 = front(L0) - S = 0.10000610351562500 - 0.05000305175781250 = 0.05000305175781250
+  ok   2: A1 (the copier's own add at level 0) IS S, bit for bit
+  ok   2: A1 is exactly 3277/Q16 (integer identity)
+
+=== PHASE 3: copier at level index 1 -- levelled up, factor NOT applied ===
+  ok   3/copier L1: the card really reached level index 1 (level=1, 1 promotion step(s)) -- a silent level-0 measurement would make everything below meaningless
+  ok   3/copier L1: no transition is in flight at the measurement (plan 10.1: a pending card contributes the OLD level)
+[3/copier L1] derived_add 3:0.100006103516, 7:0.100006103516, 12:0.100006103516, 24:0.100006103516
+[3/copier L1] front installed=true stats=2 cells=50 contributions=50 gen=2 sample_day=4 rebuilds=10 pending=0 values[0]=1.100006103516
+[3] A(index 1) = 0.05000305175781250 (A1 = 0.05000305175781250, 1.2 x A1 would be 0.06000366210937499)
+  ok   3: at level index 1 the copier's add is STILL A1 (the factor is gated at level >= 2, not at 'levelled up')
+  ok   3: and it is NOT 1.2 x A1 (the two candidates differ by 0.2 x A1 = 0.010000610, which is 1.3e6 times the residual phase 4 pins)
+  ok   3: the candidate is content-identical, so the front is NOT reinstalled (generation stays 2)
+  ok   3: the collector still RAN on that day (rebuild visits 8 -> 10), so 'unchanged' means re-evaluated-and-equal, not never-looked
+
+=== PHASE 4: copier at level index 2 (A2) -- the fix under test ===
+  ok   4/copier L2: the card really reached level index 2 (level=2, 1 promotion step(s)) -- a silent level-0 measurement would make everything below meaningless
+  ok   4/copier L2: no transition is in flight at the measurement (plan 10.1: a pending card contributes the OLD level)
+[4/copier L2] derived_add 3:0.110006561270, 7:0.110006561270, 12:0.110006561270, 24:0.110006561270
+[4/copier L2] front installed=true stats=2 cells=50 contributions=50 gen=3 sample_day=6 rebuilds=12 pending=0 values[0]=1.110006561270
+[4] A2 = front(L2) - S = 0.11000656126998365 - 0.05000305175781250 = 0.06000350951217115
+[4] A2 / A1 = 1.19999694824218750   (78643/65536 = 1.19999694824218750, stated 1.2)
+[4] |A2 - A1*(78643/65536)| = 0.00000000000000000
+[4] |A2 - A1*1.2|           = 0.00000015259720385  (predicted A1*(1.2 - 78643/65536) = 0.00000015259720385)
+  ok   4: the level really moved to index 2 before the read
+  ok   4: the level-2 transition SETTLED before the read (pending == 0, plan 10.1)
+  ok   4: the derived front is installed
+  ok   4: the front covers 50 cells (2 stats x 25 owned cells)
+  ok   4: the front holds 50 contributions
+  ok   4: the front holds 2 stats
+  ok   4: every probe cell carries a derived row for economy.city.birth_factor
+  ok   4: the front IS reinstalled at level 2 (generation 2 -> 3)
+  ok   4: the collector ran again (rebuild visits 10 -> 12)
+  ok   4: the derived add scales by EXACTLY 78643/65536 (A2 == A1 * kCopierLevelTwoScaleQ16 / Q16)
+  ok   4: and it scales by exactly 1.2 to within the constant's own quantisation: |A2 - A1*1.2| == A1*(1.2 - 78643/65536)
+  ok   4: the |A2 - A1*1.2| residual is ~1.5e-7, i.e. 0.2*A1 = 0.010000610, which is 65000x larger -- a MISSING factor could not hide inside it
+  ok   4: A2 * 2^32 == 3277 * 78643 (exact integer identity, no epsilon)
+  ok   4: A2 != A1 (the 1.2 assertion is not vacuous)
+  ok   4: the front's contribution structure did not change -- only the MAGNITUDE scaled (one row per stat per cell, 2 x 25)
+  ok   4: the merged stat value is 1 + S + A2 (the reader sees the scaled row)
+  ok   4: all 4 probe cells read the same add 0.11000656126998365
+[4] ratio A2/A1 = 1.199996948242   |A2 - A1*1.2| = 0.000000152597
+
+=== PHASE 5: the NON-COPIER control at the SAME level ===
+  ok   dcsctl: the world configures
+  ok   dcsctl: the country bootstraps
+  ok   dcsctl: ideologies configure
+  ok   dcsctl: the economy epoch opens
+  ok   dcsctl: the economy bootstraps
+  ok   test.dcs.control: the card is DISCOVERED before the equip (known_ids contains it)
+  ok   test.dcs.control: the equip lands ACTIVE (location 1)
+  ok   5: the control card is ACTIVE in slot 0 at level index 0
+[5/control L0] derived_add 3:0.050003051758, 7:0.050003051758, 12:0.050003051758, 24:0.050003051758
+[5/control L0] front installed=true stats=2 cells=50 contributions=50 gen=1 sample_day=8 rebuilds=4 pending=0 values[0]=1.050003051758
+  ok   5: the derived front is installed
+  ok   5: the front covers 50 cells (2 stats x 25 owned cells)
+  ok   5: the front holds 50 contributions
+  ok   5: the front holds 2 stats
+  ok   5: every probe cell carries a derived row for economy.city.birth_factor
+[5] control add at level 0 = 0.05000305175781250 (A1 = 0.05000305175781250)
+  ok   5: the control card's level-0 add is the same S the copier's source paints (one program, one backend)
+  ok   5/control L2: the card really reached level index 2 (level=2, 2 promotion step(s)) -- a silent level-0 measurement would make everything below meaningless
+  ok   5/control L2: no transition is in flight at the measurement (plan 10.1: a pending card contributes the OLD level)
+[5/control L2] derived_add 3:0.050003051758, 7:0.050003051758, 12:0.050003051758, 24:0.050003051758
+[5/control L2] front installed=true stats=2 cells=50 contributions=50 gen=1 sample_day=8 rebuilds=8 pending=0 values[0]=1.050003051758
+[5] control add at level 2 = 0.05000305175781250
+[5] |V2 - V0| = 0.00000000000000000   |V2 - V0*1.2| = 0.01000061035156249
+  ok   5: the control card's level-2 add is BIT-IDENTICAL to its level-0 add (no factor), |V2 - V0| == 0
+  ok   5: and it is NOT 1.2 x V0 -- |V2 - V0*1.2| = 0.2*V0 = 0.010000610, which is 44000x the copier's own |A2 - A1*1.2| (0.000000152597)
+  ok   5: the control's front was NOT reinstalled at level 2 either (generation 1 -> 1)
+  ok   5: but the collector ran (rebuild visits 4 -> 8), so the control is a measurement, not a skipped day
+  ok   5: the copier's ratio (1.199996948242) differs from the control's (1.000000000000)
+
+=== PHASE 6: the shipped catalog ===
+[6] shipped cards                      = 113
+[6] shipped copiers                    = 1 ["idea.algorithmic_governance"]
+[6] shipped cards with a derived (cell-targeting) effect = 82
+[6] shipped DERIVED COPIERS            = 0 []
+[6] first derived cards                = ["idea.subsidy_state", "idea.kin_hearth", "idea.hunting_tradition", "idea.flint_knapping", "idea.fire_keeping"]
+[6] fixture cards excluded from the audit = 3 ["test.dcs.copier"]
+  ok   6: the shipped catalog carries exactly one copier card
+  ok   6: that copier is `idea.algorithmic_governance`
+  ok   6: the audit finds derived cards at all (a zero here would make the next assertion vacuous)
+  ok   6: NO shipped card is both a copier and a cell-targeting (derived) effect -- so the derived copier factor is shipped-impact-free
+  ok   6: the fixture contributed exactly three cards and they are excluded from the shipped counts
+  ok   6: the fixture's derived copier card DOES satisfy the same predicate (the guard can fire)
+[6] the shipped copier's rows      = 3 (3 NOT a declared program, definition keys ["ideology.algorithmic_governance"])
+  ok   6: the shipped copier has one block row per level (3 total)
+  ok   6: all three rows are Modifier-domain commands, not programs (so only the instance path can express the card)
+  ok   6: every row names the same Modifier definition `ideology.algorithmic_governance`
+  ok   6: no shipped level row of any card routes to a program named `ideology.algorithmic_governance`
+  ok   6: every shipped copier row has target_resolver = 1 (a Modifier-domain command, not a cell selector)
+  ok   6: every shipped copier row has duration_days = -1 (permanent)
+  ok   6: every shipped copier row has domain = 1 (COUNTRY, not the cell domain 2)
+  ok   6: the shipped card the copier mechanism documents as its source (`idea.public_hygiene`) exists and is copyable
+
+=== SUMMARY (all values are `derived_add` on economy.city.birth_factor) ===
+  S   (source alone)            = 0.05000305175781250  (3277/Q16 = 0.05000305175781250)
+  A1  (copier at level index 0) = 0.05000305175781250
+  A?  (copier at level index 1) = 0.05000305175781250  (unchanged: below the gate)
+  A2  (copier at level index 2) = 0.06000350951217115
+  ratio A2/A1                   = 1.19999694824218750  (78643/65536 = 1.19999694824218750)
+  |A2 - A1*(78643/65536)|       = 0.000000000000
+  |A2 - A1*1.2|                 = 0.000000152597
+  A1*(1.2 - 78643/65536)        = 0.000000152597
+  control V0 -> V2              = 0.05000305175781250 -> 0.05000305175781250  (delta 0.000000000000)
+  |V2 - V0*1.2|                 = 0.010000610
+
+=== derived copier scale: 110 checks, 0 failures ===
+[economy-open-finish] day=0 country=0.333 workset=0.018 fiscal=0.013 csr=0.000 recovery=0.001 vectors=0.079 audit=0.029 commands=0.009
+[research-procure-diag] day=0 phase=0 done=0 cands=25 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=1 old=0.0002 new=0.0000 rows=0
+[probe] fold step cursor=25/25 took=0.0135 cells=50 commands=50
+[probe] AB old_first=0 old=0.0059 new=0.0074 rows=50
+[probe] finish scratch=0.0001 emit=0.0347 versions=0.0233 builder_install=0.0006 digest=0.0001 total=0.0588 rows=50 stats=2
+[probe] fold step cursor=25/25 took=0.0109 cells=50 commands=50
+[probe] AB old_first=1 old=0.0110 new=0.0065 rows=50
+[probe] finish scratch=0.0001 emit=0.0105 versions=0.0324 builder_install=0.0018 digest=0.0009 total=0.0457 rows=50 stats=2
+[probe] fold step cursor=50/50 took=0.0108 cells=100 commands=100
+[probe] AB old_first=0 old=0.0064 new=0.0065 rows=50
+[probe] finish scratch=0.0000 emit=0.0066 versions=0.0231 builder_install=0.0002 digest=0.0008 total=0.0307 rows=50 stats=2
+[probe] fold step cursor=50/50 took=0.0098 cells=100 commands=100
+[probe] AB old_first=1 old=0.0071 new=0.0047 rows=50
+[probe] finish scratch=0.0000 emit=0.0067 versions=0.0206 builder_install=0.0003 digest=0.0007 total=0.0283 rows=50 stats=2
+[probe] fold step cursor=50/50 took=0.0103 cells=100 commands=100
+[probe] AB old_first=0 old=0.0076 new=0.0252 rows=50
+[probe] finish scratch=0.0000 emit=0.0584 versions=0.0580 builder_install=0.0008 digest=0.0006 total=0.1178 rows=50 stats=2
+[economy-open-finish] day=0 country=0.642 workset=0.021 fiscal=0.012 csr=0.001 recovery=0.000 vectors=0.040 audit=0.019 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=25 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0002 new=0.0001 rows=0
+[probe] fold step cursor=25/25 took=0.0077 cells=50 commands=50
+[probe] AB old_first=0 old=0.0056 new=0.0053 rows=50
+[probe] finish scratch=0.0001 emit=0.0095 versions=0.0169 builder_install=0.0004 digest=0.0001 total=0.0270 rows=50 stats=2
+[probe] fold step cursor=25/25 took=0.0067 cells=50 commands=50
+[probe] AB old_first=1 old=0.0049 new=0.0042 rows=50
+[probe] finish scratch=0.0001 emit=0.0069 versions=0.0149 builder_install=0.0002 digest=0.0006 total=0.0227 rows=50 stats=2
+[probe] fold step cursor=25/25 took=0.0056 cells=50 commands=50
+[probe] AB old_first=0 old=0.0039 new=0.0039 rows=50
+[probe] finish scratch=0.0000 emit=0.0048 versions=0.0120 builder_install=0.0001 digest=0.0004 total=0.0173 rows=50 stats=2
+ERROR: 19 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 635 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

@@ -490,7 +490,7 @@ func _show_quotes() -> void:
 			# 水面在拓扑里不可走，只能靠航道门户跳跃，缺科技时整片水就是墙。
 			_add_note(ROUTE_UNREACHABLE_NOTE, UITokens.WARN)
 		else:
-			_add_note("没有可向此地派遣家族的城市。", UITokens.WARN)
+			_add_note("可派遣城市：无", UITokens.WARN)
 		_update_start_enabled()
 		return
 	_load_local_families()
@@ -520,7 +520,7 @@ func _show_quotes() -> void:
 			# 全国都没城市能到达：换出发城市没有意义，直接点出航道门槛。
 			_add_note(ROUTE_UNREACHABLE_NOTE, UITokens.WARN)
 		else:
-			_add_note("该城没有可向此地派遣的家族，请更换出发城市。", UITokens.WARN)
+			_add_note("可派遣家族：无", UITokens.WARN)
 	if restored:
 		_refresh_selected_kit()
 	else:
@@ -636,7 +636,7 @@ func _show_expeditions() -> void:
 	_hover_timer.stop()
 	_hover_family = 0
 	_preview_title.text = "在途队伍"
-	_preview_metrics.text = "点击队伍查看路线；筹备与返程可在列表中取消。"
+	_preview_metrics.text = "筹备和返程中的队伍可在列表中取消。"
 	_preview_traits.text = ""
 	_preview_preferences.text = ""
 	_preview_effects.text = ""
@@ -680,7 +680,7 @@ func _show_expeditions() -> void:
 		if _economy_busy:
 			_add_note("经济正在结算。在途队伍将在提交后刷新。", UITokens.ARCHIVE_INK_MUTED)
 		else:
-			_add_note("当前没有活动开拓队。", UITokens.ARCHIVE_INK_MUTED)
+			_add_note("活动开拓队：无", UITokens.ARCHIVE_INK_MUTED)
 		return
 	_sync_expedition_rows(page)
 
@@ -1275,7 +1275,7 @@ func _family_view_for(family_handle: int, fallback_people: int) -> Dictionary:
 	var view := {
 		"family_population": maxi(0, fallback_people),
 		"trait_badges": [],
-		"effect_text": "暂无特性",
+		"effect_text": "特性：无",
 	}
 	if _controller != null and _controller.has_method("get_family_snapshot"):
 		var snapshot: Dictionary = _controller.get_family_snapshot(family_handle)
@@ -1379,7 +1379,7 @@ static func _effect_text(traits: Dictionary) -> String:
 		return "效果：%s" % "、".join(effect_parts)
 	var trait_names: PackedStringArray = traits.get(
 		"display_names", PackedStringArray())
-	return "暂无特性" if trait_names.is_empty() else ""
+	return "特性：无" if trait_names.is_empty() else ""
 
 
 
@@ -1773,7 +1773,7 @@ func _show_family_preview(quote: Dictionary, hovering: bool = false) -> void:
 	_preview_traits.text = "特性
 " + "
 
-".join(lines) if not lines.is_empty() else "暂无特性"
+".join(lines) if not lines.is_empty() else "特性：无"
 	var preferences: PackedStringArray = traits.get("behavior_selector_display_names", PackedStringArray())
 	_preview_preferences.text = "行为偏好
 " + "、".join(preferences) if not preferences.is_empty() else ""
@@ -1976,7 +1976,7 @@ func _refresh_city_cards() -> void:
 	var prompt := get_node_or_null("%CityPromptLabel") as Label
 	if prompt != null:
 		prompt.text = "正在地图上点选出发城，也可点击卡片" if _source_picking \
-			else "直接点地图上的青绿环，或点击下方城市卡片"
+			else "选择地图上的青绿环或下方城市卡片"
 	if _city_cards_identity != _source_cities_identity:
 		_city_cards_identity = _source_cities_identity
 		for child in _city_cards_box.get_children():
@@ -2140,7 +2140,7 @@ func _paint_quick_read(traits: Dictionary, effects: Dictionary) -> void:
 		trait_parts.append("[color=#%s]另 %d 项[/color]" % [
 			UITokens.DOSSIER_INK_MUTED.to_html(false), trait_names.size() - 2])
 	_preview_trait_summary.text = "  ·  ".join(trait_parts) if not trait_parts.is_empty() \
-		else "[color=#%s]尚无可考家风[/color]" % UITokens.DOSSIER_INK_MUTED.to_html(false)
+		else "[color=#%s]家风：无[/color]" % UITokens.DOSSIER_INK_MUTED.to_html(false)
 	var trait_tooltip := PackedStringArray()
 	for index in trait_names.size():
 		var description := String(trait_descriptions[index]).strip_edges() \
@@ -2162,7 +2162,7 @@ func _paint_quick_read(traits: Dictionary, effects: Dictionary) -> void:
 			effect_parts.append("[color=#%s]另 %d 项[/color]" % [
 				UITokens.DOSSIER_INK_MUTED.to_html(false), effect_names.size() - 1])
 	_preview_effect_summary.text = "  ·  ".join(effect_parts) if not effect_parts.is_empty() \
-		else "[color=#%s]暂无额外效果[/color]" % UITokens.DOSSIER_INK_MUTED.to_html(false)
+		else "[color=#%s]效果：无[/color]" % UITokens.DOSSIER_INK_MUTED.to_html(false)
 	var effect_tooltip := PackedStringArray()
 	for index in effect_names.size():
 		var description := String(effect_copy[index]).strip_edges() \
@@ -2250,12 +2250,18 @@ func _paint_effect_card(effects: Dictionary) -> void:
 	var names: PackedStringArray = effects.get("effect_display_names", PackedStringArray())
 	var copy: PackedStringArray = effects.get("effect_current_descriptions",
 		effects.get("effect_descriptions", PackedStringArray()))
-	var show := not names.is_empty()
+	var show := true
 	if _effects_block != null:
 		_effects_block.visible = show
-	if not show or _effect_notes == null:
+	if _effect_notes == null:
 		return
 	var notes: Array = []
+	if names.is_empty():
+		notes.append({
+			"id": "effect-none",
+			"text": "独特效果：无",
+			"accent": UITokens.DOSSIER_INK_MUTED,
+		})
 	for index in range(mini(names.size(), 4)):
 		var description := String(copy[index]) if index < copy.size() else ""
 		var text := String(names[index])

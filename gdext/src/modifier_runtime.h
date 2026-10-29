@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <array>
 #include <cstdint>
@@ -17,6 +17,9 @@
 
 #include "runtime_modifier_pod.h"
 #include "effect_magnitude.h"
+// ADR02: the derived cell layer is a SEPARATE member, never part of `_stores`,
+// because `apply_pod_snapshot` rebuilds every store from scratch.
+#include "derived_cell_layer.h"
 
 namespace pk {
 
@@ -118,6 +121,38 @@ public:
     // not invalidated by every modifier applied elsewhere in the domain.
     uint64_t stat_bucket_version(int32_t domain, const int32_t *stat_ids,
                                  size_t stat_count) const;
+
+    // ── Derived cell layer (plan 22 ADR01/ADR02, M1) ────────────────────────
+    //
+    // Install an already-validated front. Only the Economy freeze coordinator
+    // may call this (plan §4.2); it does NOT touch the instance Store, Effect
+    // ACKs, or any Modifier instance handle, so it cannot be a second command
+    // channel.
+    //
+    // `expected_generation` guards plan §9.6: a candidate built against an older
+    // front must be discarded, never installed over a newer one. Pass 0 to
+    // accept any generation (used only by first install and by tests).
+    //
+    // Returns true when the front was installed; false when it was rejected
+    // (`ok=false` with `reason`) or skipped as identical (`skipped=true`).
+    bool install_derived_cell_layer(DerivedCellFront front,
+                                    uint64_t expected_generation,
+                                    bool &skipped, std::string &error);
+    // Read access. Returns nullptr when no front is installed, which readers must
+    // treat as "no derived term", never as a zero contribution.
+    const DerivedCellFront *derived_cell_front() const {
+        return _derived_cell_front.rows.empty() ? nullptr : &_derived_cell_front;
+    }
+    uint64_t derived_cell_layer_generation() const {
+        return _derived_cell_front.generation;
+    }
+    // Combined layer revision for a stat subset, kept INDEPENDENT of
+    // `stat_bucket_version` because `apply_pod_snapshot` bumps the legacy store
+    // versions unconditionally (`modifier_runtime.cpp:463-464`). A cache keyed
+    // on the legacy version alone would rebuild every day even when the derived
+    // content did not change (plan §7.4).
+    uint64_t derived_cell_stat_version(const int32_t *stat_ids,
+                                       size_t stat_count) const;
     float climate_radiative_target(int32_t cell, float base_value) const;
     void climate_radiative_terms(int32_t cell, double &add,
                                  double &factor) const;
@@ -228,6 +263,20 @@ public:
             ? _stores[domain].snapshot_version : 0;
     }
     bool configured() const { return _configured; }
+    // Plan 8: remove every row whose identity is this source, across all domains.
+    //
+    // Exists because a rejected Effect batch leaves rows behind that no lifecycle step
+    // ever revisits: `run_modifier_daily` applies each row in submission order and only
+    // then does the ACK reach the failing row, so rows that committed before it are never
+    // reversed by `apply_rejected_instance_transition` (which only reschedules). Measured:
+    // a rejected equip left the card's own cost row live while the card was INACTIVE with
+    // zero cell contributions -- an unambiguous orphan.
+    //
+    // Each removal is journalled as EVENT_REJECT, so a rollback is visible in the event
+    // stream rather than an unexplained disappearance.
+    //
+    // Returns the number of rows removed.
+    int32_t remove_rows_for_source(uint64_t source_type, uint64_t source_id, int64_t day);
 
 private:
     // How the additive part of a bucket is folded when one stat is contributed
@@ -458,6 +507,22 @@ private:
     std::unordered_map<std::string, int32_t> _stat_ids;
     std::unordered_map<std::string, int32_t> _definition_ids;
     std::array<Store, DOMAIN_COUNT> _stores;
+    // ADR02: derived cell contributions live HERE, not in `_stores`.
+    //
+    // `apply_pod_snapshot` rebuilds `_stores` from a fresh array and swaps it in
+    // (`modifier_runtime.cpp:459-557`), and clears `_pending_commands` (`:558`).
+    // Anything housed in a Store is therefore wiped on every worker snapshot.
+    // This member is deliberately outside that array.
+    //
+    // Read-only after install: readers take a reference for the duration of one
+    // frozen compute segment (plan §8.4) and never see a half-built front.
+    DerivedCellFront _derived_cell_front;
+    // Counters for plan §12.4. Task-local accumulation happens in the caller;
+    // these are the published totals.
+    uint64_t _derived_layer_installs = 0;
+    uint64_t _derived_layer_install_skips = 0;
+    uint64_t _derived_layer_generation = 0;
+    double _derived_layer_int8_bytes = 0.0;
     std::vector<Command> _pending_commands;
     std::unordered_map<int64_t, Result> _results;
     std::deque<Event> _events;

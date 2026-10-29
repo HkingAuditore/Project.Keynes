@@ -427,15 +427,18 @@ func set_active_suite_camera_zoom(zoom_out_ratio: float, ignore_seek_speed: bool
 	return false
 
 
-## 当前 Kingdom/Empire 组曲的情绪层控制。Stone/Agrarian 保持接口兼容，暂不暴露五声部自动化。
+## 当前时代组曲的情绪层控制。
+## Stone/Agrarian 目前只使用 Tension；War/Ceremony 保持为 0，等待对应玩法。
 func set_active_suite_emotion(tension: float, war: float, ceremony: float,
 		ignore_seek_speed: bool = false) -> bool:
-	if _music == 0 or _music_key not in [&"kingdom_age_suite", &"empire_age_suite"]:
+	if _music == 0 or _music_key not in [&"stone_age_suite", &"agrarian_age_suite",
+			&"kingdom_age_suite", &"empire_age_suite"]:
 		return false
+	var is_legacy_era := _music_key in [&"stone_age_suite", &"agrarian_age_suite"]
 	var values := {
 		"Tension": clampf(tension, 0.0, 1.0),
-		"War": clampf(war, 0.0, 1.0),
-		"Ceremony": clampf(ceremony, 0.0, 1.0),
+		"War": 0.0 if is_legacy_era else clampf(war, 0.0, 1.0),
+		"Ceremony": 0.0 if is_legacy_era else clampf(ceremony, 0.0, 1.0),
 	}
 	var ok := true
 	for parameter_name in values:

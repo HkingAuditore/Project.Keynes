@@ -1,0 +1,70 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [OK] economy facade exposes its compiled catalog
+  [OK] economy catalog compiles for ideology classes
+  [OK] default ideology effects load
+  [OK] default ideology effects validate
+  [OK] modifier catalog compiles
+  [OK] every card modifier definition resolves (0 missing)
+  [OK] default ideology catalog loads
+  [OK] default ideology catalog compiles
+  [OK] temporary content gate publishes exactly 113 cards
+  [OK] all 21 mechanically incomplete cards stay out of the pool
+  [OK] all 4 face-only cards remain in the pool
+  [OK] directional stances compile to sparse rows
+  [OK] exclusive ideology pair is compiled
+  [OK] named synergies plus twenty-four school resonances compile
+  [OK] a third of the pool is gated on discovered geography
+  [OK] geography gates compile as per-card requirement spans
+  [OK] only reachable 2/4/5/6 resonance and route tiers compile
+  [OK] every card authors three understanding levels
+  [OK] levels gate at 0 / 4 / 12 understanding
+  [OK] natural understanding growth is decimated
+  [OK] ideology points start at zero and growth income has no daily cap
+  [OK] growth point weights are 80x the previous balance
+  [OK] first draw costs 120, +20% per draw, and reroll costs 75 percent
+  [OK] slot capacity grows through five technology milestones
+  [OK] each idea uses a dedicated country modifier
+  [OK] production ideas are not a shared mobilization stub
+  [OK] catalog view exposes player-facing effect lines
+  [OK] six schools carry at least five cards each and the pool holds 60+
+  [OK] cards are spread across every era instead of clustering at the start
+  [OK] common, rare and legendary rarities are all present
+  [OK] every level of every card presents effect text
+  [OK] land tax reform renders tolerance and landlord satisfaction
+  [OK] excise merges profession tolerance terms
+  [OK] gentry patronage renders tenant satisfaction
+  [OK] labour legislation renders worker satisfaction
+  [OK] slot unlock milestones carry technology display names
+  [OK] collective stewardship names its agricultural source ring
+  [OK] free exchange names all-output on diversified cells
+  [OK] scholar office names its knowledge-cell program
+  [OK] iron smelting names the ring around iron cells
+  [OK] terrace farming names the terrain it targets
+  [OK] the four roads do not share one effect line
+  [OK] default modifier catalog loads for ideology definitions
+  [OK] tax tolerance reads as a plain-language capacity
+  [OK] satisfaction basis points read as satisfaction points
+  [OK] tax rates read as percentage points in plain language
+  [OK] the public stat presenter keeps its legacy formatting
+  [OK] the ideology presenter collapses repeated profession terms
+  [OK] modifier catalog compiles with ideology definitions
+  [OK] every ideology/synergy/resonance definition exists in the modifier catalog
+  [OK] point gain stat is a registered country stat
+  [OK] modifier presenter formats stewardship cost line
+  [OK] shared Effect catalog includes ideology templates
+  [OK] shared Effect IR compiles
+  [OK] collection entries use the shared paper sheet
+  [OK] ideology workspace scene instantiates
+  [OK] offer cards and dialog are authored in the workspace scene
+  [OK] unavailable model keeps the empty cabinet card
+  [OK] presentation falls back to catalog slot capacity
+  [OK] presentation no longer invents starting points
+  [OK] presentation uses the escalating draw cost and reroll price
+  [OK] presentation lists slot milestones with ownership
+  [OK] playable empty collection shows the draw action
+  [OK] deck table reports catalog slot capacity
+  [OK] choice presentation lists mechanical effects
+  [OK] card badges name the next level instead of doubling
+  [OK] offer cards show named mechanical effects
+ideology content: 70 checks, 3 failures

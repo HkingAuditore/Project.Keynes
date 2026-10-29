@@ -35,7 +35,7 @@ func _ready() -> void:
 	_status.add_theme_font_size_override("font_size", UITokens.FONT_BODY)
 	add_child(_status)
 	var hint := Label.new()
-	hint.text = "勾选后拖动地图上的太阳标记，关掉面板也能继续拖。昼夜循环开着时改时刻和纬度；永昼时标记在哪边，光就从哪边来，越靠近地图中心太阳越高。点「恢复跟随」交还时钟。"
+	hint.text = "勾选后可拖动太阳标记；关闭面板后仍可继续拖动。昼夜循环开启时，拖动会调整时刻和纬度；永昼模式下，太阳位置决定光线方向和高度。选择「恢复跟随」后由时钟控制。"
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
 	hint.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)

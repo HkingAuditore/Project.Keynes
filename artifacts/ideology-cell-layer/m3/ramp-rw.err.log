@@ -1,0 +1,23 @@
+WARNING: [loading-catalog] source changed: rebuild tools/prebake_loading_catalogs.gd; using source compiler
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] prepare (res://scripts/game/loading_catalog_cache.gd:55)
+       [1] compute (res://scripts/geography/native_loading_tasks.gd:15)
+WARNING: [building-visual] disabled: building_visual_renderer_unavailable
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] generate_world (res://scripts/game/world_runtime_host.gd:760)
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:5019)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2527)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:784)
+[economy-open-finish] day=0 country=40.515 workset=5.600 fiscal=2.708 csr=0.026 recovery=0.000 vectors=0.593 audit=2.292 commands=0.010
+[research-procure-diag] day=0 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+FAIL B: the production metric sampler was consulted taken=0 -- the rebuild ran (visits=7) but never took a sample, so the derived branch was not reached
+ERROR: 42 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 4802 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

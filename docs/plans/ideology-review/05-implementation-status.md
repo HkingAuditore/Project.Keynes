@@ -1084,3 +1084,51 @@ effects `D10830C03CED26A975EC7AED650B39CE0AF3A3000CF38C8BABC1E8BB30AD8DAB`、
 modifier `82F6A909B516E71A0ECEEEF9EE6AD413404C2CA3E76D8325167148D297292866`。
 旧 PKID / PKCM / PKEF 存档在加载时以 catalog mismatch fail-closed；这是内容
 身份变化的预期行为，不做迁移或修补。
+
+## 22. 永久地块效果取消 32 格限制（M0–M5，2026-10-28）
+
+这是独立于上面 P1/P2/P3 的一次迁移，方案见
+[22-cell-program-cap-removal-plan-v3.md](22-cell-program-cap-removal-plan-v3.md)。
+
+**状态：实现中，核心与数值已验证。** §18 的 28 项里 **12 项有证据、16 项无证据**。
+完整交付证据见 [M5-DELIVERY-REPORT](../../../artifacts/ideology-cell-layer/M5-DELIVERY-REPORT.md)，
+玩家/运维面向的变更说明见 [发布说明](22-cell-cap-removal-release-notes.md)。
+
+| 里程碑 | 状态 | 主要落点 | 验证 |
+|---|---|---|---|
+| M0 基线 | 完成 | program inventory、调用顺序、原型 | `m1_backend_coverage.py` 6/6 |
+| M1 资格与 IR | 完成 | `cell_program_eligibility.h`（**I01 唯一判定**）| 265/265 全 DerivedCell |
+| M2 派生层 | 完成 | `derived_cell_layer.h` + `derived_cell_materializer.{h,cpp}` | 内核 **93 checks / 0** |
+| M3 目标与数值 | 完成 | `selector_cell_cap.h`、ramp 走程序幅度 | oracle **12 / 0**（3 点 `delta = 0`）|
+| M4 分片与时序 | 完成 | `step_derived_rebuild` + `drain_derived_cell_layer` | B7 **23/0**、B5 **9/0** |
+| M5 切换与清理 | **部分** | 旧 v1 平面已删（约 430 行）、rollout 开关已删 | 见下 |
+
+### M5 的具体状态
+
+| 项 | 状态 |
+|---|---|
+| 删除旧 v1 平面 | **完成**（8 个子项全删，含 4 个 ClassDB 桥）|
+| 删除迁移期开关 `kCellProgramRollout` | **完成** |
+| 32 常量改 legacy 名 | **完成**（`LEGACY_INSTANCE_MAX_CELLS`）|
+| 归属筛选（用户新增目标项）| **完成**（默认 OWN，74 张卡受影响，边境 51.7%）|
+| debug + release 构建与真实测试 | **完成**（release 跑过 7 个 fixture，检查数逐一相同）|
+| 全量回归 | **68 个夹具：37 通过**（30 失败中 4 个已定案并修复 3 个）|
+| B1–B12 | **4/12**（B5、B7、B8、B10）|
+| save/load 全部时点、权威翻转 | **未做** |
+| 峰值内存 | **未测** |
+| UI 高亮、内容文案 | **未做** |
+| 文档与 skill 同步 | **部分**（3 份 native 文档 + 2 个 skill；§16.5 还列了 7 个）|
+| 真实世界 >32 生产样例 | **没有**（真实世界 `countries=3 widest=1`）|
+
+### 本次顺带修掉的真实缺陷
+
+| 缺陷 | 后果 |
+|---|---|
+| `collect_effect_activations` 以 `out_derived != nullptr` 判后端 | I01 违反，派生卡同时建实例 |
+| `effective_value` 的 `group_handle != 0` 守卫 | **每张卡在其国家第一个格（cell 0）上失效** |
+| `SOURCE_COUNT_RADIUS_MASK`（位宽 7）当校验上限 | author r=5 能过校验、运行时静默丢弃 |
+| **ramp 路径跳过卡片的指令流** | **24 张卡数值错误**，被打到 stat 上限 |
+| `Term::program_key` 用 `std::string` 值成员 | 每次 Term 拷贝分配，6400 格 +13% 耗时 |
+| `building_context_ready_for_test` 少了 `return out;` | 返回未定义数据（**只有 release 构建报 C4715**）|
+| `_cell_layer_rebuild_visits` 只导出不递增 | 计数器永远 0，夹具报出假失败 |
+| `ideology_cell_layer_e2e_realworld_test` 的 `run_economy_slice(64)` | API 漂移 + **报错后挂住**，该夹具从未产出结果 |

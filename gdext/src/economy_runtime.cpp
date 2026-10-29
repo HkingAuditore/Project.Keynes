@@ -1900,6 +1900,27 @@ bool NativeEconomyRuntime::bind_soa_view(EconomySoAView &view,
     // Phase-5: expose live formula stores (OwnedState when bound).
     view.population = &population_store();
     view.market = &market_store();
+    // The graph stages read `view.market` for the whole epoch. An unshaped store
+    // here is the same defect the day-entry probe reports; keep this one quiet
+    // unless the view really captured a matrix that cannot be addressed.
+    {
+        const size_t markets = static_cast<size_t>(
+            std::max(0, view.market->market_count.get()));
+        const size_t goods = static_cast<size_t>(
+            std::max(0, view.market->good_count.get()));
+        if (markets <= 0 || goods <= 0 ||
+            view.market->stock.size() != markets * goods) {
+            std::fprintf(stderr,
+                "[economy-soa-view] day=%lld backing=%s market=%p stock=%zu "
+                "market_count=%d good_count=%d cell_to_market=%zu cell_count=%u\n",
+                static_cast<long long>(_current_day.get()),
+                formula_owned_bound() ? "owned_state" : "ner_local",
+                static_cast<const void *>(view.market), view.market->stock.size(),
+                view.market->market_count.get(), view.market->good_count.get(),
+                view.market->cell_to_market.size(), view.cell_count);
+            std::fflush(stderr);
+        }
+    }
     if (_formula_owned != nullptr) {
         view.buildings = &_formula_owned->buildings;
         view.trade_orders = &_formula_owned->trade_orders;
@@ -1918,6 +1939,21 @@ bool NativeEconomyRuntime::bind_formula_owned_state(
         error = "economy_formula_owned_already_bound";
         return false;
     }
+    // The market store is only carried across when the local population lane is
+    // live. When it is not, the OwnedState's own market becomes authoritative
+    // for every later read, so its shape has to be the same one the runtime was
+    // configured with -- log both sides before the swap.
+    std::fprintf(stderr,
+        "[economy-owned-bind] cell_count=%d local_population_active=%zu "
+        "owned_population_active=%zu local_stock=%zu local_markets=%d "
+        "local_goods=%d owned_stock=%zu owned_markets=%d owned_goods=%d "
+        "owned_cell_to_market=%zu\n",
+        _cell_count.get(), _population_local.active.size(),
+        owned.population.active.size(), _market_local.stock.size(),
+        _market_local.market_count.get(), _market_local.good_count.get(),
+        owned.market.stock.size(), owned.market.market_count.get(),
+        owned.market.good_count.get(), owned.market.cell_to_market.size());
+    std::fflush(stderr);
     // Live NER-local wins at bind time so StageOps does not drop in-memory work.
     if (!_population_local.active.empty()) {
         owned.population = std::move(_population_local);
@@ -1933,6 +1969,10 @@ bool NativeEconomyRuntime::bind_formula_owned_state(
     _market_local = MarketStore{};
     _buildings_soa_local = RuntimeEconomyBuildingStore{};
     _formula_owned = &owned;
+    // Publish the binding to the store's own protocol owner: from this instant
+    // the OwnedState's dense lanes are this runtime's live state, so nothing may
+    // clear them out from under it (see RuntimeEconomyPodAuthority::reset()).
+    owned.formula_owner_bound = true;
     // A+Y N3/N4: hand the live trade/family tables to OwnedState before the ECP
     // projections are packed, so the sync helpers below already read the new
     // home through trade_orders_store()/families_store().
@@ -2031,6 +2071,14 @@ bool NativeEconomyRuntime::bind_formula_owned_state(
 
 void NativeEconomyRuntime::unbind_formula_owned_state() noexcept {
     if (_formula_owned == nullptr) return;
+    std::fprintf(stderr,
+        "[economy-owned-unbind] cell_count=%d owned_stock=%zu owned_markets=%d "
+        "owned_goods=%d owned_cell_to_market=%zu local_stock=%zu\n",
+        _cell_count.get(), _formula_owned->market.stock.size(),
+        _formula_owned->market.market_count.get(),
+        _formula_owned->market.good_count.get(),
+        _formula_owned->market.cell_to_market.size(), _market_local.stock.size());
+    std::fflush(stderr);
     // Copy sole OwnedState columns back into NER-local storage, then detach.
     _population_local = _formula_owned->population;
     _market_local = _formula_owned->market;
@@ -2092,6 +2140,7 @@ void NativeEconomyRuntime::unbind_formula_owned_state() noexcept {
     _formula_owned->resources.deltas.clear();
     _formula_owned->resources.lane_generation.clear();
     bind_resource_store(nullptr);
+    _formula_owned->formula_owner_bound = false;
     _formula_owned = nullptr;
 }
 
@@ -4964,7 +5013,10 @@ bool NativeEconomyRuntime::profession_available(int32_t cell, int32_t profession
 // Building availability/constructibility gates live in
 // economy_runtime_building_production.cpp.
 
-bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
+bool NativeEconomyRuntime::capture_country_epoch(
+        std::string &error, bool *out_pending_city_factors) {
+    if (out_pending_city_factors != nullptr)
+        *out_pending_city_factors = false;
     _technology_words = static_cast<int32_t>((_technology_ids.size() + 63) / 64);
     if (_country_runtime == nullptr || !_country_runtime->economy_available() ||
         _country_runtime->good_count() != static_cast<int32_t>(_good_ids.size()) ||
@@ -5529,9 +5581,21 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
     _epoch_country_construction_time_factor_q16.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
     const auto city_factor_started = Clock::now();
-    refresh_city_modifier_factors();
-    refresh_city_output_modifier_factors();
+    // The city-factor reader can now yield mid-work-set (plan §14.3). Report it
+    // so the caller parks and resumes instead of treating a yield as success:
+    // publishing `_epoch_city_factor_valid` early would hand consumers a matrix
+    // with only the first shard painted.
+    // Both readers advance independently (plan §14.3). Chaining them made the
+    // output factors update only on the LAST city shard, so on a multi-shard
+    // epoch production factors stayed stale for the intermediate slices.
+    const bool city_factors_done = refresh_city_modifier_factors();
+    const bool output_factors_done = refresh_city_output_modifier_factors();
     _epoch_begin_city_factor_ms = elapsed_ms(city_factor_started);
+    if (!city_factors_done || !output_factors_done) {
+        if (out_pending_city_factors != nullptr)
+            *out_pending_city_factors = true;
+        return true;
+    }
     if (_modifier_runtime != nullptr) {
         for (int32_t country = 0; country < _epoch_country_count; ++country) {
             const uint64_t country_handle =
@@ -6979,7 +7043,7 @@ void NativeEconomyRuntime::refresh_epoch_development() {
     }
 }
 
-void NativeEconomyRuntime::refresh_city_modifier_factors() {
+bool NativeEconomyRuntime::refresh_city_modifier_factors() {
     const size_t cells = static_cast<size_t>(std::max(0, _cell_count.get()));
     const size_t need_count = _need_ids.size();
     const size_t good_count = _good_ids.size();
@@ -6988,7 +7052,7 @@ void NativeEconomyRuntime::refresh_city_modifier_factors() {
         _epoch_cell_need_consumption_factor_q16.size() == cells * need_count &&
         _epoch_cell_good_consumption_factor_q16.size() == cells * good_count;
     if (_modifier_runtime == nullptr) {
-        if (_epoch_city_factor_valid && shape_valid) return;
+        if (_epoch_city_factor_valid && shape_valid) return true;
         _epoch_cell_birth_factor_q16.assign(cells, Q16_ONE);
         _epoch_cell_need_consumption_factor_q16.assign(cells * need_count, Q16_ONE);
         _epoch_cell_good_consumption_factor_q16.assign(cells * good_count, Q16_ONE);
@@ -6997,7 +7061,7 @@ void NativeEconomyRuntime::refresh_city_modifier_factors() {
         _city_factor_shared_goods_q16.assign(good_count, Q16_ONE);
         _city_factor_dirty_cells.clear();
         _epoch_city_factor_valid = true;
-        return;
+        return true;
     }
 
     _city_factor_stat_ids_scratch.clear();
@@ -7015,10 +7079,14 @@ void NativeEconomyRuntime::refresh_city_modifier_factors() {
     const uint64_t version = _modifier_runtime->stat_bucket_version(
         ModifierRuntime::ECONOMY, _city_factor_stat_ids_scratch.data(),
         _city_factor_stat_ids_scratch.size());
-    if (_epoch_city_factor_valid && shape_valid &&
-        _epoch_city_factor_stat_version == version)
-        return;
-
+    // A shard in flight must keep resuming even when the version has not moved:
+    // otherwise the second entry short-circuits on `_epoch_city_factor_valid`,
+    // which is exactly the state a partial paint leaves behind, and the work
+    // set would stall forever with only the first shards applied.
+    if (_city_factor_shard_cursor < 0 && _epoch_city_factor_valid &&
+        shape_valid && _epoch_city_factor_stat_version == version) {
+        return true;
+    }
     // A cell id enters effective_value() as the GROUP key, so the GLOBAL and
     // ENTITY(0) contributions are shared by every cell. Resolve that shared row
     // once with an empty group handle, then re-probe only the cells that own a
@@ -7071,34 +7139,111 @@ void NativeEconomyRuntime::refresh_city_modifier_factors() {
     _city_factor_shared_needs_q16 = std::move(shared_needs);
     _city_factor_shared_goods_q16 = std::move(shared_goods);
 
-    _modifier_runtime->collect_scope_ids(
-        ModifierRuntime::ECONOMY, ModifierRuntime::GROUP,
-        _city_factor_stat_ids_scratch.data(),
-        _city_factor_stat_ids_scratch.size(),
-        _city_factor_group_cells_scratch);
-    _city_factor_dirty_cells.clear();
-    _city_factor_dirty_cells.reserve(_city_factor_group_cells_scratch.size());
-    for (const uint64_t scope_id : _city_factor_group_cells_scratch) {
-        if (scope_id >= cells) continue;
-        const auto cell_factor = [&](int32_t stat_id) {
-            return modifier_factor_q16(_modifier_runtime->effective_value(
-                ModifierRuntime::ECONOMY, stat_id, 0, scope_id, 1.0));
-        };
-        _epoch_cell_birth_factor_q16[scope_id] = cell_factor(_city_birth_stat_id);
-        const int32_t general = cell_factor(_city_consumption_stat_id);
-        for (size_t need = 0; need < need_count; ++need) {
-            _epoch_cell_need_consumption_factor_q16[scope_id * need_count + need] =
-                need_factor(general,
-                            cell_factor(_city_need_consumption_stat_ids[need]));
-        }
-        for (size_t good = 0; good < good_count; ++good) {
-            _epoch_cell_good_consumption_factor_q16[scope_id * good_count + good] =
-                cell_factor(_city_good_consumption_stat_ids[good]);
-        }
-        _city_factor_dirty_cells.push_back(static_cast<int32_t>(scope_id));
+    // ── Sharded work set (plan §14.3) ──────────────────────────────────────
+    //
+    // Everything above this point is O(map) and cheap relative to the per-cell
+    // loop below, so it runs once. The per-cell loop is the part that must be
+    // able to stop: M1-6 measured the whole reader at 0.465 ms (2400 cells) and
+    // 1.264 ms (6400 cells), and the derived layer adds work in the SAME
+    // indivisible window because `capture_country_epoch` has no shard point.
+    //
+    // Resume rules:
+    //   cursor < 0                     -> collect, then start the loop at 0
+    //   cursor >= 0, same version      -> resume at cursor
+    //   cursor >= 0, version changed   -> discard the stale work set and restart
+    //
+    // A stale resume must NOT finish the old list: the caller started a new
+    // version, so the earlier half-computed factors are about to be overwritten
+    // anyway, and finishing it would bill time for work nobody reads.
+    if (_city_factor_shard_cursor < 0 ||
+            _city_factor_shard_version != version) {
+        _modifier_runtime->collect_scope_ids(
+            ModifierRuntime::ECONOMY, ModifierRuntime::GROUP,
+            _city_factor_stat_ids_scratch.data(),
+            _city_factor_stat_ids_scratch.size(),
+            _city_factor_group_cells_scratch);
+        _city_factor_dirty_cells.clear();
+        _city_factor_dirty_cells.reserve(_city_factor_group_cells_scratch.size());
+        _city_factor_shard_cursor = 0;
+        _city_factor_shard_version = version;
+        _city_factor_work_cells =
+            static_cast<int64_t>(_city_factor_group_cells_scratch.size());
+        _city_factor_collected_cells =
+            static_cast<int64_t>(_city_factor_group_cells_scratch.size());
     }
+
+    const auto cell_factor = [&](int32_t stat_id, uint64_t scope_id) {
+        return modifier_factor_q16(_modifier_runtime->effective_value(
+            ModifierRuntime::ECONOMY, stat_id, 0, scope_id, 1.0));
+    };
+    // Reset per pass so the counter answers "did THIS pass do the work", which
+    // `_city_factor_work_cells` cannot: that field only moves when collect runs,
+    // so a version-gate short-circuit leaves it reporting the previous pass.
+    _city_factor_cells_processed = 0;
+    // Cumulative epoch timing (plan §14.3): a full build spans many calls, and
+    // `_epoch_begin_city_factor_ms` only measures one of them. Reset here when a
+    // NEW build starts (collect branch ran, or a pass begins with no build open),
+    // accumulate per slice below.
+    if (!_city_factor_epoch_in_progress) {
+        _city_factor_epoch_ms = 0.0;
+        _city_factor_epoch_slices = 0;
+        _city_factor_epoch_cells = 0;
+        _city_factor_epoch_in_progress = true;
+    }
+    const Clock::time_point city_factor_pass_started = Clock::now();
+    const int32_t shard_start = _city_factor_shard_cursor;
+    int32_t &cursor = _city_factor_shard_cursor;
+    const int32_t total = static_cast<int32_t>(_city_factor_group_cells_scratch.size());
+    while (cursor < total) {
+        const uint64_t scope_id =
+            _city_factor_group_cells_scratch[static_cast<size_t>(cursor)];
+        ++cursor;
+        if (scope_id < cells) {
+            ++_city_factor_cells_processed;
+            _epoch_cell_birth_factor_q16[scope_id] =
+                cell_factor(_city_birth_stat_id, scope_id);
+            const int32_t general =
+                cell_factor(_city_consumption_stat_id, scope_id);
+            for (size_t need = 0; need < need_count; ++need) {
+                _epoch_cell_need_consumption_factor_q16[
+                    scope_id * need_count + need] = need_factor(general,
+                        cell_factor(_city_need_consumption_stat_ids[need], scope_id));
+            }
+            for (size_t good = 0; good < good_count; ++good) {
+                _epoch_cell_good_consumption_factor_q16[
+                    scope_id * good_count + good] =
+                    cell_factor(_city_good_consumption_stat_ids[good], scope_id);
+            }
+            _city_factor_dirty_cells.push_back(static_cast<int32_t>(scope_id));
+        }
+        // Yield check AFTER doing one cell, so a shard of size 0 can never spin.
+        // The per-slice budget is a *slice* budget, not a per-cell one: spending
+        // it on the cell we already started is always correct, and stopping
+        // before doing any work would livelock a caller that re-enters with the
+        // same deadline.
+        // Cell-count shard rather than a wall-clock check: a deterministic bound
+        // is testable, and §14.4 warns that wall-clock slicing moves work into
+        // latency without proving anything. M1-6 measured ~6.0 us per covered
+        // cell at B7 scale, so 64 cells ~= 0.38 ms -- comfortably inside the
+        // 1 ms slice gate with room for the surrounding epoch-open work.
+        if (cursor < total &&
+                (cursor - shard_start) >= CITY_FACTOR_SHARD_CELLS) {
+            // Accumulate before yielding: the slice cost belongs to the epoch
+            // even though this call did not finish the build.
+            _city_factor_epoch_ms += elapsed_ms(city_factor_pass_started);
+            _city_factor_epoch_slices += 1;
+            _city_factor_epoch_cells += _city_factor_cells_processed;
+            return false;
+        }
+    }
+    _city_factor_epoch_ms += elapsed_ms(city_factor_pass_started);
+    _city_factor_epoch_slices += 1;
+    _city_factor_epoch_cells += _city_factor_cells_processed;
+    _city_factor_epoch_in_progress = false;  // build complete
+    _city_factor_shard_cursor = -1;
     _epoch_city_factor_stat_version = version;
     _epoch_city_factor_valid = true;
+    return true;
 }
 
 int32_t NativeEconomyRuntime::neighbor_count_with_tag(
@@ -7137,21 +7282,8 @@ int32_t NativeEconomyRuntime::city_output_factor_for_test(
     return city_good_output_factor_q16(cell, good_id);
 }
 
-void NativeEconomyRuntime::set_ideology_cell_programs(CellProgramTable table) {
-    _ideology_cell_programs = std::move(table);
-    // Force the next refresh to run even when the new table carries the same
-    // generation. Two publishers can legitimately both say "generation 1", and
-    // the cache guard compares generations -- without this the newer table is
-    // silently ignored and the reader keeps the old factors.
-    _epoch_city_output_ideology_generation =
-        std::numeric_limits<uint64_t>::max();
-    // Rebuild now instead of on the next economy step: the CSR is read by
-    // production between steps, and a caller that publishes and then reads would
-    // otherwise see the previous day's factors.
-    refresh_city_output_modifier_factors();
-}
 
-void NativeEconomyRuntime::refresh_city_output_modifier_factors() {
+bool NativeEconomyRuntime::refresh_city_output_modifier_factors() {
     const size_t cells = static_cast<size_t>(std::max(0, _cell_count.get()));
     const size_t good_count = _good_ids.size();
     const bool shape_valid =
@@ -7159,7 +7291,7 @@ void NativeEconomyRuntime::refresh_city_output_modifier_factors() {
         _city_output_cell_offsets.size() == cells + 1 &&
         _city_output_good_indices.size() == _city_output_factors_q16.size();
     if (_modifier_runtime == nullptr) {
-        if (_epoch_city_output_factor_valid && shape_valid) return;
+        if (_epoch_city_output_factor_valid && shape_valid) return true;
         _city_output_shared_goods_q16.assign(good_count, Q16_ONE);
         _city_output_cell_offsets.assign(cells + 1, 0);
         _city_output_good_indices.clear();
@@ -7168,16 +7300,19 @@ void NativeEconomyRuntime::refresh_city_output_modifier_factors() {
         _city_output_scope_stat_ids_scratch.clear();
         _epoch_city_output_factor_stat_version = 0;
         _epoch_city_output_factor_valid = true;
-        return;
+        _city_output_shard_cursor = -1;
+        return true;
     }
 
     const uint64_t version = _modifier_runtime->stat_bucket_version(
         ModifierRuntime::ECONOMY, _city_good_output_stat_ids.data(),
         _city_good_output_stat_ids.size());
-    if (_epoch_city_output_factor_valid && shape_valid &&
-        _epoch_city_output_factor_stat_version == version &&
-        _epoch_city_output_ideology_generation == _ideology_cell_programs.generation)
-        return;
+    // Same rule as the city reader: a shard in flight must keep resuming, so the
+    // version gate only short-circuits when no shard is pending.
+    if (_city_output_shard_cursor < 0 && _epoch_city_output_factor_valid &&
+        shape_valid && _epoch_city_output_factor_stat_version == version) {
+        return true;
+    }
 
     _city_output_shared_goods_q16.resize(good_count);
     for (size_t good = 0; good < good_count; ++good) {
@@ -7188,16 +7323,6 @@ void NativeEconomyRuntime::refresh_city_output_modifier_factors() {
                 std::numeric_limits<uint64_t>::max(), 1.0));
     }
 
-    _modifier_runtime->collect_scope_stat_entries(
-        ModifierRuntime::ECONOMY, ModifierRuntime::GROUP,
-        _city_good_output_stat_ids.data(), _city_good_output_stat_ids.size(),
-        _city_output_scope_cells_scratch,
-        _city_output_scope_stat_ids_scratch);
-    std::unordered_map<int32_t, int32_t> good_by_stat;
-    good_by_stat.reserve(good_count);
-    for (size_t good = 0; good < good_count; ++good)
-        good_by_stat.emplace(_city_good_output_stat_ids[good],
-                             static_cast<int32_t>(good));
     struct OutputOverride {
         int32_t cell = -1;
         int32_t good = -1;
@@ -7206,101 +7331,75 @@ void NativeEconomyRuntime::refresh_city_output_modifier_factors() {
             return cell != other.cell ? cell < other.cell : good < other.good;
         }
     };
-    std::vector<OutputOverride> overrides;
-    overrides.reserve(_city_output_scope_cells_scratch.size());
-    for (size_t entry = 0;
-         entry < _city_output_scope_cells_scratch.size() &&
-         entry < _city_output_scope_stat_ids_scratch.size(); ++entry) {
-        const uint64_t scope = _city_output_scope_cells_scratch[entry];
-        const auto found = good_by_stat.find(
-            _city_output_scope_stat_ids_scratch[entry]);
-        if (scope >= cells || found == good_by_stat.end()) continue;
-        const int32_t good = found->second;
-        const int32_t factor_q16 = modifier_factor_q16(
-            _modifier_runtime->effective_value(
-                ModifierRuntime::ECONOMY,
-                _city_good_output_stat_ids[static_cast<size_t>(good)], 0,
-                scope, 1.0));
-        if (factor_q16 == _city_output_shared_goods_q16[
-                static_cast<size_t>(good)])
-            continue;
-        overrides.push_back({static_cast<int32_t>(scope), good, factor_q16});
+
+    // ── Sharded per-cell query loop (plan §14.3) ───────────────────────────
+    //
+    // Only this loop is sharded. The sort + carry merge + CSR rebuild below
+    // cannot stop mid-way, so the partial `overrides` list has to survive across
+    // slices in `_city_output_shard_partial`. Keeping the two readers on
+    // separate cursors is what stops the output factors from being updated only
+    // on the LAST city shard.
+    if (_city_output_shard_cursor < 0 ||
+            _city_output_shard_version != version) {
+        _modifier_runtime->collect_scope_stat_entries(
+            ModifierRuntime::ECONOMY, ModifierRuntime::GROUP,
+            _city_good_output_stat_ids.data(), _city_good_output_stat_ids.size(),
+            _city_output_scope_cells_scratch,
+            _city_output_scope_stat_ids_scratch);
+        _city_output_shard_partial.clear();
+        _city_output_shard_partial.reserve(_city_output_scope_cells_scratch.size());
+        _city_output_shard_cursor = 0;
+        _city_output_shard_version = version;
     }
-    std::sort(overrides.begin(), overrides.end());
-    // P3 step 3: the Ideology plane writes the same per-cell stat from the
-    // country side, so it has to land in THIS CSR. Two readers of one stat would
-    // otherwise disagree depending on who asked first.
-    if (!_ideology_cell_programs.entries.empty() && good_count > 0) {
-        std::unordered_map<int64_t, int32_t> merged;
-        merged.reserve(overrides.size() + _ideology_cell_programs.entries.size());
-        for (const OutputOverride &entry : overrides)
-            merged[static_cast<int64_t>(entry.cell) *
-                static_cast<int64_t>(good_count) + entry.good] = entry.factor_q16;
-        const size_t country_slots = _ideology_cell_programs.country_offsets.empty()
-            ? 0 : _ideology_cell_programs.country_offsets.size() - 1;
-        // R-3b: ONE load for the whole (country x cell x entry) nest. This is the
-        // widest loop in the file that filters by tag, so a per-entry
-        // `cell_has_target_tag` here was cells x entries process-wide spin locks.
-        const std::shared_ptr<const TagSnapshot> filter_tags = tag_snapshot();
-        const TagSnapshot *const filter_tags_ptr = filter_tags.get();
-        for (size_t country_slot = 0; country_slot < country_slots; ++country_slot) {
-            const int32_t begin = _ideology_cell_programs.country_offsets[country_slot];
-            const int32_t end = _ideology_cell_programs.country_offsets[country_slot + 1];
-            if (begin >= end) continue;
-            const int32_t owned = country_cell_count(static_cast<int32_t>(country_slot));
-            for (int32_t index = 0; index < owned; ++index) {
-                const int32_t cell = country_cell_at(
-                    static_cast<int32_t>(country_slot), index);
-                if (cell < 0 || cell >= static_cast<int32_t>(cells)) continue;
-                for (int32_t offset = begin; offset < end; ++offset) {
-                    const CellProgramEntry &entry = _ideology_cell_programs.entries[
-                        static_cast<size_t>(offset)];
-                    if (entry.filter_tag >= 0 &&
-                        !snapshot_has_tag(filter_tags_ptr, cell, entry.filter_tag))
-                        continue;
-                    const auto good_found = good_by_stat.find(entry.stat_id);
-                    if (good_found == good_by_stat.end()) continue;
-                    const int32_t good = good_found->second;
-                    const int64_t key = static_cast<int64_t>(cell) *
-                        static_cast<int64_t>(good_count) + good;
-                    const auto current = merged.find(key);
-                    const int32_t base = current == merged.end()
-                        ? _city_output_shared_goods_q16[static_cast<size_t>(good)]
-                        : current->second;
-                    // The column turns a flat coefficient into "per unit". A
-                    // CONSTANT entry is exactly the old behaviour (units = 1),
-                    // so a table built before columns existed behaves identically.
-                    int32_t units = 1;
-                    if (entry.column_kind == CELL_COLUMN_NEIGHBOR_COUNT)
-                        units = neighbor_count_with_tag(cell, entry.column_tag);
-                    else if (entry.column_kind != CELL_COLUMN_CONSTANT)
-                        continue;  // unknown kind: fail closed, do not guess
-                    if (entry.cap_units > 0) units = std::min(units, entry.cap_units);
-                    if (units <= 0) continue;
-                    const int64_t scaled = static_cast<int64_t>(entry.coef_q16) *
-                        static_cast<int64_t>(units);
-                    merged[key] = entry.operation == ModifierRuntime::ADD
-                        ? static_cast<int32_t>(std::clamp<int64_t>(
-                            static_cast<int64_t>(base) + scaled,
-                            std::numeric_limits<int32_t>::min(),
-                            std::numeric_limits<int32_t>::max()))
-                        : static_cast<int32_t>(static_cast<int64_t>(base) *
-                            scaled / Q16_ONE);
-                }
-            }
-        }
-        overrides.clear();
-        overrides.reserve(merged.size());
-        for (const auto &row : merged) {
-            const int32_t good = static_cast<int32_t>(row.first % good_count);
-            const int32_t cell = static_cast<int32_t>(row.first / good_count);
-            if (row.second == _city_output_shared_goods_q16[
+
+    std::unordered_map<int32_t, int32_t> good_by_stat;
+    good_by_stat.reserve(good_count);
+    for (size_t good = 0; good < good_count; ++good)
+        good_by_stat.emplace(_city_good_output_stat_ids[good],
+                             static_cast<int32_t>(good));
+
+    {
+        const int32_t shard_start = _city_output_shard_cursor;
+        int32_t &cursor = _city_output_shard_cursor;
+        const int32_t total = static_cast<int32_t>(
+            std::min(_city_output_scope_cells_scratch.size(),
+                     _city_output_scope_stat_ids_scratch.size()));
+        while (cursor < total) {
+            const size_t entry = static_cast<size_t>(cursor);
+            ++cursor;
+            const uint64_t scope = _city_output_scope_cells_scratch[entry];
+            const auto found = good_by_stat.find(
+                _city_output_scope_stat_ids_scratch[entry]);
+            if (scope >= cells || found == good_by_stat.end()) continue;
+            const int32_t good = found->second;
+            const int32_t factor_q16 = modifier_factor_q16(
+                _modifier_runtime->effective_value(
+                    ModifierRuntime::ECONOMY,
+                    _city_good_output_stat_ids[static_cast<size_t>(good)], 0,
+                    scope, 1.0));
+            if (factor_q16 == _city_output_shared_goods_q16[
                     static_cast<size_t>(good)])
                 continue;
-            overrides.push_back({cell, good, row.second});
+            _city_output_shard_partial.push_back(
+                {static_cast<int32_t>(scope), good, factor_q16});
+            // Yield check after doing one entry, for the same reason the city
+            // reader does: stopping before any work livelocks a re-entering
+            // caller.
+            if (cursor < total &&
+                    (cursor - shard_start) >= CITY_FACTOR_SHARD_CELLS) {
+                return false;
+            }
         }
-        std::sort(overrides.begin(), overrides.end());
     }
+    _city_output_shard_cursor = -1;
+
+    std::vector<OutputOverride> overrides;
+    overrides.reserve(_city_output_shard_partial.size());
+    for (const CityOutputOverrideRow &row : _city_output_shard_partial) {
+        overrides.push_back({row.cell, row.good, row.factor_q16});
+    }
+    _city_output_shard_partial.clear();
+    std::sort(overrides.begin(), overrides.end());
     _city_output_cell_offsets.assign(cells + 1, 0);
     for (const OutputOverride &entry : overrides)
         ++_city_output_cell_offsets[static_cast<size_t>(entry.cell) + 1];
@@ -7313,8 +7412,8 @@ void NativeEconomyRuntime::refresh_city_output_modifier_factors() {
         _city_output_factors_q16[index] = overrides[index].factor_q16;
     }
     _epoch_city_output_factor_stat_version = version;
-    _epoch_city_output_ideology_generation = _ideology_cell_programs.generation;
     _epoch_city_output_factor_valid = true;
+    return true;
 }
 
 int32_t NativeEconomyRuntime::city_good_output_factor_q16(
@@ -15303,7 +15402,8 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
             // main-thread scheduling gap under worker authority, not a ledger
             // fatal. Park the slice until capture_economy_day_inputs runs.
             if (error == "same_day_environment_not_captured" ||
-                error == "same_day_building_context_not_captured") {
+                error == "same_day_building_context_not_captured" ||
+                error == "city_factor_shard_pending") {
                 _stage = Stage::IDLE;
                 _executed_stage = Stage::IDLE;
                 out = compact ? compact_report() : report();

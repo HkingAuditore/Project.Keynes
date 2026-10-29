@@ -1,0 +1,42 @@
+ERROR: [effect-catalog] effect_catalog_ideology_command_unavailable:ideology_effect_selector_cap_invalid
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _reject (res://scripts/effect/effect_domain_catalog.gd:602)
+       [1] build (res://scripts/effect/effect_domain_catalog.gd:437)
+       [2] _test_metric_key_contract (res://tests/ideology/ideology_mechanism_matrix_test.gd:173)
+       [3] _run (res://tests/ideology/ideology_mechanism_matrix_test.gd:74)
+       [4] _init (res://tests/ideology/ideology_mechanism_matrix_test.gd:68)
+ERROR: [FAIL] effect domain catalog builds
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_mechanism_matrix_test.gd:382)
+       [1] _test_metric_key_contract (res://tests/ideology/ideology_mechanism_matrix_test.gd:174)
+       [2] _run (res://tests/ideology/ideology_mechanism_matrix_test.gd:74)
+       [3] _init (res://tests/ideology/ideology_mechanism_matrix_test.gd:68)
+ERROR: [effect-catalog] effect_catalog_ideology_command_unavailable:ideology_effect_selector_cap_invalid
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _reject (res://scripts/effect/effect_domain_catalog.gd:602)
+       [1] build (res://scripts/effect/effect_domain_catalog.gd:437)
+       [2] _test_x3b_card_mechanisms (res://tests/ideology/ideology_mechanism_matrix_test.gd:281)
+       [3] _run (res://tests/ideology/ideology_mechanism_matrix_test.gd:75)
+       [4] _init (res://tests/ideology/ideology_mechanism_matrix_test.gd:68)
+ERROR: [FAIL] X3-b metric key table builds
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_mechanism_matrix_test.gd:382)
+       [1] _test_x3b_card_mechanisms (res://tests/ideology/ideology_mechanism_matrix_test.gd:283)
+       [2] _run (res://tests/ideology/ideology_mechanism_matrix_test.gd:75)
+       [3] _init (res://tests/ideology/ideology_mechanism_matrix_test.gd:68)
+ERROR: [FAIL] default catalog validates (ideology_effect_selector_cap_invalid)
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_mechanism_matrix_test.gd:384)
+       [1] _run (res://tests/ideology/ideology_mechanism_matrix_test.gd:80)
+       [2] _init (res://tests/ideology/ideology_mechanism_matrix_test.gd:68)
+ERROR: 19 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 635 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

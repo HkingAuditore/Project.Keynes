@@ -1,0 +1,30 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [OK] economy facade exposes its compiled catalog
+  [OK] economy catalog compiles for ideology classes
+  [OK] default ideology effects load
+  [OK] default ideology catalog loads
+  [OK] default modifier catalog loads for ideology definitions
+  [OK] tax tolerance reads as a plain-language capacity
+  [OK] satisfaction basis points read as satisfaction points
+  [OK] tax rates read as percentage points in plain language
+  [OK] the public stat presenter keeps its legacy formatting
+  [OK] the ideology presenter collapses repeated profession terms
+  [OK] modifier catalog compiles with ideology definitions
+  [OK] every ideology/synergy/resonance definition exists in the modifier catalog
+  [OK] point gain stat is a registered country stat
+  [OK] modifier presenter formats stewardship cost line
+  [OK] collection entries use the shared paper sheet
+  [OK] ideology workspace scene instantiates
+  [OK] offer cards and dialog are authored in the workspace scene
+  [OK] unavailable model keeps the empty cabinet card
+  [OK] presentation falls back to catalog slot capacity
+  [OK] presentation no longer invents starting points
+  [OK] presentation uses the escalating draw cost and reroll price
+  [OK] presentation lists slot milestones with ownership
+  [OK] playable empty collection shows the draw action
+  [OK] deck table reports catalog slot capacity
+  [OK] choice presentation lists mechanical effects
+  [OK] card badges name the next level instead of doubling
+  [OK] offer cards show named mechanical effects
+ideology content: 33 checks, 6 failures

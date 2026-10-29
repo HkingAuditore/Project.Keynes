@@ -382,7 +382,7 @@ func _build_overview_page(page: VBoxContainer) -> void:
 
 	_add_overview_list_card(mid_grid, "traits", "家风与家族特性",
 		overview.get("traits", []), false)
-	_add_overview_list_card(mid_grid, "effects", "生效地域加成",
+	_add_overview_list_card(mid_grid, "effects", "稀有独特效果",
 		overview.get("effects", []), true)
 
 	_add_overview_people_card(page, overview.get("people", []))
@@ -564,7 +564,7 @@ func _add_overview_preferences_card(host: Control, items: Array) -> void:
 	var body := _card_body(card)
 	_add_overview_heading(body, "preferences", "显著行为偏好")
 	if items.is_empty():
-		_add_empty_label(body, "暂无显著行为偏好")
+		_add_empty_label(body, "偏好：无")
 		return
 	var bar_list := DossierBarList.new()
 	bar_list.name = "OverviewPrefBars"
@@ -644,7 +644,9 @@ func _add_overview_list_card(host: Control, page_id: String, title_text: String,
 		body.add_child(grid)
 		item_host = grid
 	if items.is_empty():
-		_add_empty_label(item_host, "暂无记录")
+		_add_empty_label(item_host,
+			"无"
+			if page_id == "effects" else "无")
 	for item_index in range(items.size()):
 		var item_value: Variant = items[item_index]
 		var item: Dictionary = item_value
@@ -728,7 +730,7 @@ func _overview_item_detail_text(page_id: String, item: Dictionary) -> String:
 				return "未达威望Ⅰ · 解锁预览：%s" % String(tiers[0])
 			return "当前未达威望Ⅰ · 提升本地威望至Ⅰ级后激活此项地域加成"
 	elif page_id == "traits" and detail.is_empty():
-		return "家族世代传承的核心门风倾向"
+		return "无"
 	return detail
 
 
@@ -759,7 +761,7 @@ func _add_overview_people_card(host: Control, items: Array) -> void:
 	people_grid.add_theme_constant_override("v_separation", 6)
 	body.add_child(people_grid)
 	if items.is_empty():
-		_add_empty_label(people_grid, "尚无可记录的重要人物")
+		_add_empty_label(people_grid, "无")
 	for item_index in range(items.size()):
 		var item_value: Variant = items[item_index]
 		var item: Dictionary = item_value
@@ -881,7 +883,7 @@ func _person_overview_metrics_text(person: Dictionary) -> String:
 	if not sat.is_empty():
 		parts.append("满足度 %s" % sat)
 	if parts.is_empty():
-		return "暂无成员详情"
+		return "详情：无"
 	return " · ".join(parts)
 
 
@@ -917,6 +919,7 @@ func _build_trait_page(page: VBoxContainer, rows: Array) -> void:
 	if rows.is_empty():
 		_add_empty_label(page, "这个家族尚未形成可记录的特性。")
 		return
+	_add_section_label(page, "家风特性")
 	for raw in rows:
 		var row: Dictionary = raw
 		var card := _new_card()
@@ -925,7 +928,7 @@ func _build_trait_page(page: VBoxContainer, rows: Array) -> void:
 		var header_row := _add_title_value_row(body, String(row.get("name", "特性")),
 			String(row.get("kind_label", row.get("value", "附加特性"))))
 		_append_trait_badges(header_row, row)
-		var detail := String(row.get("detail", "暂无说明"))
+		var detail := String(row.get("detail", "无"))
 		_add_wrapped_label(body, detail, true)
 		var effect_summary := String(row.get("effect_summary", ""))
 		if not effect_summary.strip_edges().is_empty() and \
@@ -935,7 +938,7 @@ func _build_trait_page(page: VBoxContainer, rows: Array) -> void:
 
 func _build_preference_page(page: VBoxContainer, rows: Array) -> void:
 	if rows.is_empty():
-		_add_empty_label(page, "当前没有可见的家族行为偏好。")
+		_add_empty_label(page, "无")
 		return
 	var current_axis := ""
 	for raw in rows:
@@ -996,7 +999,7 @@ func _preference_meter_dict(row: Dictionary) -> Dictionary:
 
 func _build_effect_page(page: VBoxContainer, rows: Array) -> void:
 	if rows.is_empty():
-		_add_empty_label(page, "当前没有家族分支效果。")
+		_add_empty_label(page, "无")
 		return
 	var current_cell := -999999
 	for raw in rows:
@@ -1015,7 +1018,7 @@ func _build_effect_page(page: VBoxContainer, rows: Array) -> void:
 		var p_level := int(row.get("prestige_level", 0))
 		var status_text := String(row.get("value", ""))
 		if String(row.get("kind", "")) == "effect":
-			status_text = "当前威望 %s" % CellInspectorViewModel._prestige_text(p_level)
+			status_text = "稀有效果 · 威望 %s" % CellInspectorViewModel._prestige_text(p_level)
 		_add_title_value(body, String(row.get("title", row.get("name", "效果"))), status_text)
 		_add_wrapped_label(body, String(row.get("detail", "")), true)
 		var tiers: Array = row.get("tier_statements", [])
@@ -1056,7 +1059,7 @@ func _build_effect_page(page: VBoxContainer, rows: Array) -> void:
 
 func _build_people_page(page: VBoxContainer, rows: Array) -> void:
 	if rows.is_empty():
-		_add_empty_label(page, "尚无可记录的重要人物。")
+		_add_empty_label(page, "无")
 		return
 	var table := DossierLedgerTable.new()
 	table.name = "PeoplePageLedger"
@@ -1155,8 +1158,16 @@ func _update_person_cashflow_bar(bar: DossierDivergingBar, row: Dictionary) -> v
 
 func _build_branch_page(page: VBoxContainer, rows: Array) -> void:
 	if rows.is_empty():
-		_add_empty_label(page, "这个家族尚未建立分支。")
+		_add_empty_label(page, "无")
 		return
+	_add_section_label(page, "家族晋升 · 家风特性")
+	var trait_rows: Array = _model.get("pages", {}).get("traits", [])
+	var trait_names := PackedStringArray()
+	for trait_row in trait_rows:
+		if trait_row is Dictionary and not String(trait_row.get("name", "")).strip_edges().is_empty():
+			trait_names.append(String(trait_row.get("name", "")))
+	if not trait_names.is_empty():
+		_add_wrapped_label(page, "本家族家风：%s" % " · ".join(trait_names), true)
 	for raw in rows:
 		var row: Dictionary = raw
 		var card := _new_card()
@@ -1251,7 +1262,7 @@ func _apply_card_live(page_id: String, card: PanelContainer, row_value: Variant)
 		"traits":
 			labels[0].text = String(row.get("name", "特性"))
 			if labels.size() > 1: labels[1].text = String(row.get("kind_label", row.get("value", "附加特性")))
-			if labels.size() > 2: labels[2].text = String(row.get("detail", "暂无说明"))
+			if labels.size() > 2: labels[2].text = String(row.get("detail", "无"))
 			if labels.size() > 3: labels[3].text = String(row.get("effect_summary", ""))
 		"preferences":
 			labels[0].text = String(row.get("name", "偏好"))

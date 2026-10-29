@@ -40,6 +40,66 @@ clamp((base + sum(add)) * product(factor), stat_min, stat_max)
 - 现金、商品、人口等守恒量不得成为 stat。Modifier 只能影响产能、效率、需求系数、
   阈值等计算参数。
 
+## 派生地块层
+
+永久 cell 理念的贡献存放在 **ModifierRuntime 内的独立派生层**，不在 `Store` 里（ADR01/ADR02）。
+`apply_pod_snapshot` 会重建 `_stores`，放在那里的东西会被抹掉。
+
+### 形状
+
+```cpp
+struct DerivedCellFront {
+    uint64_t generation, world_identity, map_generation;
+    int64_t sample_day; uint64_t epoch_id, execution_contract_hash;
+    std::vector<uint64_t> stat_versions;      // 按 stat id 索引
+    std::vector<DerivedCellStatRow> rows;     // 每 stat 一行
+};
+struct DerivedCellContribution {              // 每 (stat, cell) 一个
+    uint64_t source_country;
+    uint32_t contributor_count;               // 几个不同来源国贡献过
+    double sum_add, product_nonzero;
+    uint32_t zero_factor_count;
+};
+```
+
+`row_for_stat(stat_id)` + `find(cell)` 是二分查找：`effective_value` 是热路径，不能线性扫。
+
+### 合并规则（§5.1）
+
+派生贡献加入**同一个** add/factor 求和，**在最终 clamp 之前**：
+
+```cpp
+add += slot->sum_add;
+factor = slot->zero_factor_count > 0 ? 0.0 : factor * slot->product_nonzero;
+double value = (base_value + add) * factor;
+return std::clamp(value, min_value, max_value);   // 只有这一次 clamp
+```
+
+`clamp((legacy_effective + derived_add) * derived_factor)` 是错的：legacy 值已经乘过自己的因子、
+可能已被 clamp，任何算术都恢复不出正确组合。
+
+零因子必须归零整个 product，只乘 `product_nonzero` 会忽略「-100%」卡。
+
+### 哪个 handle 是 cell
+
+**`group_handle` 是 cell，`entity_handle` 是 0。** 每一个 ECONOMY 域读者都这样传
+（`economy_runtime.cpp:4391,4394`、`economy_runtime_family_buff.cpp:7127`）。
+
+派生分支的门是 `domain == ECONOMY && !rows.empty()`。
+
+> **曾经这里还有 `group_handle != 0`，那是真实缺陷**：cell 0 是合法格，被这个守卫排除后
+> **每张卡在其国家第一个格上都失效**（实测 cell 0 值 1.0、cell 1 值 1.05）。
+> 移除安全，因为 COUNTRY 域调用方虽然用 group 0 表示「无 group」，但被 `domain == ECONOMY`
+> 挡住；`effective_values` 的三个调用者也全是 COUNTRY 域。
+
+### 安装
+
+`install_derived_cell_layer(front, expected_generation, skipped, error)` 是唯一写入点。
+新一代只在**完整构建后**原子替换，读者全程看旧 front，不会看到半成品。
+内容相同则不安装、不 bump 版本（I13）。
+
+`DerivedCellMaterializeJob` 是可续跑的物化器（`fold_step(budget_ms)` + `finish()`），
+其 fold 状态跨调用存活——分成多片是 §14.3 的 1 ms slice 门槛所要求。
 ## Catalog
 
 目录 term 的 hash 按 `int32 stat_id + uint32(0) + double add + double factor`

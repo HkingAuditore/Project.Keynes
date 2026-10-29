@@ -208,6 +208,7 @@ void RuntimeIdeologyPodAuthority::reset() {
     _planned = RuntimeIdeologyPodSnapshot{};
     _configured = false;
     _plan_ready = false;
+    _import_supersedes_calendar = false;
 }
 
 bool RuntimeIdeologyPodAuthority::command_less(
@@ -558,6 +559,9 @@ bool RuntimeIdeologyPodAuthority::configure(
     _planned = _current;
     _configured = true;
     _plan_ready = false;
+    // A fresh catalog is a fresh lifetime: nothing has been imported into it yet, so a
+    // later backwards day must still fail loudly.
+    _import_supersedes_calendar = false;
     return true;
 }
 
@@ -1495,7 +1499,38 @@ bool RuntimeIdeologyPodAuthority::plan_day(
     plan.next_snapshot = _current;
     auto &state = plan.next_snapshot;
     if (state.round_day < 0) {
-        if (day <= state.committed_day) { error = "ideology_day_not_monotonic"; return false; }
+        if (day <= state.committed_day) {
+            // ── a RESTORED state is ahead of this worker's calendar ──────────
+            //
+            // A restore replaces the POD's whole state INCLUDING its committed day. The
+            // worker's own calendar can be behind that day: a worker world starts at the
+            // host's `day`, and a save carries the day it was taken on, so a load into a
+            // younger worker session (or into a fresh one) has `day <= committed_day`.
+            //
+            // The unguarded monotonicity rule then refuses EVERY worker day until the
+            // calendar catches up -- `ideology_day_not_monotonic`, an Ideology stage that
+            // fails for the rest of the session, and (because the stage returns before it
+            // publishes) NO snapshot at all, so the restored rows would be frozen rather
+            // than adopted. Freezing is not what "supersede" means.
+            //
+            // The imported state already settles those days, so the honest plan for them
+            // is "nothing changes": the day completes, a generation is published so the
+            // main-thread mirror is refreshed FROM the imported state, and the calendar
+            // advances one day per day until it passes the floor. The rule is armed only
+            // by `restore`, so a genuine backwards move still fails loudly.
+            if (!_import_supersedes_calendar) {
+                error = "ideology_day_not_monotonic"; return false;
+            }
+            plan.superseded_day = 1;
+            plan.completed_day = 1;
+            state.generation = _current.generation + 1u;
+            state.state_hash = compute_state_hash(state);
+            plan.plan_hash = state.state_hash;
+            plan.preflight_ok = 1;
+            _planned = state;
+            _plan_ready = true;
+            return true;
+        }
         state.round_day = day;
         state.phase = RuntimeIdeologyPodPhase::PENDING_TRANSITIONS;
         state.pending_cursor = state.command_cursor = 0;
@@ -1637,26 +1672,46 @@ bool RuntimeIdeologyPodAuthority::commit_day(
     _planned = _current;
     plan.committed = 1;
     _plan_ready = false;
+    // A day that actually advanced the calendar past the restored floor retires the
+    // supersede rule; a day the import already settles keeps it armed.
+    if (plan.superseded_day == 0) _import_supersedes_calendar = false;
     return true;
 }
 
 void RuntimeIdeologyPodAuthority::serialize(std::vector<uint8_t> &out) const {
+    serialize_snapshot(_current, out);
+}
+
+// Derived per-country indices + the state hash, for a snapshot built OUTSIDE this
+// POD (the main-thread runtime exporting the state a restore installed). The import
+// path must run this before `serialize_snapshot`: `active_idea_ids` takes part in
+// `compute_state_hash` and `restore` recomputes that hash, so a snapshot that skipped
+// it is refused as `ideology_pod_save_state_hash_failed` -- correctly, because the
+// bytes would otherwise describe a state this POD can never hold.
+void RuntimeIdeologyPodAuthority::canonicalize_import(
+        RuntimeIdeologyPodSnapshot &state) {
+    for (auto &country : state.countries) rebuild_active_idea_ids(country);
+    state.state_hash = compute_state_hash(state);
+}
+
+void RuntimeIdeologyPodAuthority::serialize_snapshot(
+        const RuntimeIdeologyPodSnapshot &state, std::vector<uint8_t> &out) {
     out.clear(); out.reserve(4096);
     append_le<uint32_t>(out, SAVE_MAGIC); append_le<uint32_t>(out, RUNTIME_IDEOLOGY_POD_ABI_VERSION);
-    append_le<uint64_t>(out, _catalog.catalog_hash); append_le<uint64_t>(out, _current.state_hash);
-    append_le<uint64_t>(out, _current.input_generation); append_le<uint64_t>(out, _current.opinion_revision);
-    append_le<uint64_t>(out, _current.generation); append_le<int64_t>(out, _current.committed_day);
-    append_le<int64_t>(out, _current.round_day); append_le(out, _current.phase);
-    append_le<uint32_t>(out, _current.pending_cursor); append_le<uint32_t>(out, _current.command_cursor);
-    append_le<uint32_t>(out, _current.active_country_cursor); append_le<uint32_t>(out, _current.active_idea_cursor);
-    append_le<uint64_t>(out, _current.next_submit_order);
-    append_le<uint32_t>(out, static_cast<uint32_t>(_current.producer_high_watermarks.size()));
-    for (const auto &watermark : _current.producer_high_watermarks) {
+    append_le<uint64_t>(out, state.catalog_hash); append_le<uint64_t>(out, state.state_hash);
+    append_le<uint64_t>(out, state.input_generation); append_le<uint64_t>(out, state.opinion_revision);
+    append_le<uint64_t>(out, state.generation); append_le<int64_t>(out, state.committed_day);
+    append_le<int64_t>(out, state.round_day); append_le(out, state.phase);
+    append_le<uint32_t>(out, state.pending_cursor); append_le<uint32_t>(out, state.command_cursor);
+    append_le<uint32_t>(out, state.active_country_cursor); append_le<uint32_t>(out, state.active_idea_cursor);
+    append_le<uint64_t>(out, state.next_submit_order);
+    append_le<uint32_t>(out, static_cast<uint32_t>(state.producer_high_watermarks.size()));
+    for (const auto &watermark : state.producer_high_watermarks) {
         append_le<uint32_t>(out, watermark.producer_id);
         append_le<uint64_t>(out, watermark.sequence);
     }
-    append_le<uint32_t>(out, static_cast<uint32_t>(_current.countries.size()));
-    for (const auto &country : _current.countries) {
+    append_le<uint32_t>(out, static_cast<uint32_t>(state.countries.size()));
+    for (const auto &country : state.countries) {
         append_le<uint64_t>(out, country.handle); append_le<uint32_t>(out, country.generation);
         append_le<int64_t>(out, country.ideology_points_q16); append_le<uint64_t>(out, country.rng_state);
         append_le<uint64_t>(out, country.points_revision); append_le<uint8_t>(out, country.baseline_ready);
@@ -1687,8 +1742,8 @@ void RuntimeIdeologyPodAuthority::serialize(std::vector<uint8_t> &out) const {
             append_le(out, idea.location); append_le<uint8_t>(out, idea.slot_index);
         }
     }
-    append_le<uint32_t>(out, static_cast<uint32_t>(_current.commands.size()));
-    for (const auto &command : _current.commands) {
+    append_le<uint32_t>(out, static_cast<uint32_t>(state.commands.size()));
+    for (const auto &command : state.commands) {
         append_le<uint64_t>(out, command.request_id); append_le<int32_t>(out, command.source_priority);
         append_le<uint32_t>(out, command.producer_id); append_le<uint64_t>(out, command.sequence);
         append_le<uint64_t>(out, command.submit_order); append_le<int64_t>(out, command.requested_day);
@@ -1697,8 +1752,8 @@ void RuntimeIdeologyPodAuthority::serialize(std::vector<uint8_t> &out) const {
         append_le<int64_t>(out, command.value_q16); append_le<uint32_t>(out, command.offer_generation);
         append_le<int32_t>(out, command.choice_index); append_le<int32_t>(out, command.gate_id);
     }
-    append_le<uint32_t>(out, static_cast<uint32_t>(_current.pending_transitions.size()));
-    for (const auto &transition : _current.pending_transitions) {
+    append_le<uint32_t>(out, static_cast<uint32_t>(state.pending_transitions.size()));
+    for (const auto &transition : state.pending_transitions) {
         append_le<uint64_t>(out, transition.intent_id); append_le<uint64_t>(out, transition.request_id);
         append_le<uint32_t>(out, transition.producer_id); append_le<uint64_t>(out, transition.sequence);
         append_le<int64_t>(out, transition.effective_day); append_le<uint32_t>(out, transition.country_slot);
@@ -1710,8 +1765,8 @@ void RuntimeIdeologyPodAuthority::serialize(std::vector<uint8_t> &out) const {
         append_le<uint64_t>(out, transition.previous_entered_levels);
         append_vector(out, transition.desired_synergy_bits);
     }
-    append_le<uint32_t>(out, static_cast<uint32_t>(_current.receipts.size()));
-    for (const auto &receipt : _current.receipts) {
+    append_le<uint32_t>(out, static_cast<uint32_t>(state.receipts.size()));
+    for (const auto &receipt : state.receipts) {
         append_le<uint64_t>(out, receipt.request_id); append_le<uint32_t>(out, receipt.producer_id);
         append_le<uint64_t>(out, receipt.sequence); append_le(out, receipt.status); append_le(out, receipt.opcode);
         append_le<uint64_t>(out, receipt.country_handle); append_le<int32_t>(out, receipt.ideology_id);
@@ -1852,6 +1907,12 @@ bool RuntimeIdeologyPodAuthority::restore(
     state.state_hash = compute_state_hash(state);
     if (state.state_hash != saved_hash) { error = "ideology_pod_save_state_hash_failed"; return false; }
     _current = std::move(state); _planned = _current; _plan_ready = false;
+    // A restore MEANS "your authoritative state is now this" -- whether the bytes came
+    // from this POD's own save or from the main-thread runtime's import. Its committed
+    // day is now the FLOOR of this worker's calendar: every day at or below it is
+    // already settled by the imported state and must plan as a no-op instead of
+    // failing `ideology_day_not_monotonic` (see `plan_day`).
+    _import_supersedes_calendar = true;
     return true;
 }
 

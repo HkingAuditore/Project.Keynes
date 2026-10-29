@@ -8,6 +8,7 @@ var _can_save_callback: Callable
 var _write_callback: Callable
 var _restore_callback: Callable
 var _hash_callback: Callable
+var _manifest_identity_callback: Callable
 
 
 func configure(provider_id_value: StringName, schema_version_value: int,
@@ -26,6 +27,16 @@ func configure(provider_id_value: StringName, schema_version_value: int,
 
 func provider_id() -> StringName:
 	return _provider_id
+
+
+## Declares the provider-owned identity that the whole-package manifest must
+## carry next to `schema_version` (plan 11.5). `callback(context)` returns a
+## Dictionary of extra manifest fields, or {} when the identity cannot be
+## stated. Optional: providers that never call this write exactly the four
+## fixed keys they always wrote.
+func configure_manifest_identity(callback: Callable) -> RuntimeStateProvider:
+	_manifest_identity_callback = callback
+	return self
 
 
 func schema_version() -> int:
@@ -77,12 +88,29 @@ func state_hash(context: Dictionary) -> String:
 
 
 func manifest_entry(context: Dictionary, include_state_hash: bool = true) -> Dictionary:
-	return {
+	var entry := {
 		"provider_id": String(_provider_id),
 		"schema_version": _schema_version,
 		"sections": Array(_section_ids),
 		"state_hash": state_hash(context) if include_state_hash else "",
 	}
+	# Plan 11.5: some providers own an identity that is NOT a version number and
+	# is not derivable from the section bytes -- the ideology provider's execution
+	# contract is a hash of the rule versions and the catalogs it was configured
+	# with. Such a provider declares it here so the WHOLE-PACKAGE manifest carries
+	# it; a provider that declares nothing keeps the four fixed keys byte for byte.
+	# The callback returns {} when the identity cannot be stated (no runtime yet,
+	# or the owner is unconfigured), and an absent key is a fact the load gate
+	# treats as UNSTATED rather than as "matches" -- see
+	# `game_save_coordinator.gd:_execution_contract_verdict`.
+	if _manifest_identity_callback.is_valid():
+		var identity = _manifest_identity_callback.call(context)
+		if identity is Dictionary:
+			for key in identity:
+				var field := String(key)
+				if not entry.has(field):
+					entry[field] = identity[key]
+	return entry
 
 
 static func _error(code: String, message: String) -> Dictionary:

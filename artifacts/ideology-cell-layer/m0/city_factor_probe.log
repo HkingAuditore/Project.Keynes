@@ -1,0 +1,40 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[city_factor_probe] covered=   8 cells  median=  0.368 ms  reps=[0.2984, 0.3749, 0.3684]
+[city_factor_probe] covered=  32 cells  median=  0.430 ms  reps=[0.4301, 0.3327, 0.4806]
+[city_factor_probe] covered= 128 cells  median=  0.387 ms  reps=[0.3865, 0.4819, 0.3782]
+[city_factor_probe] covered= 512 cells  median=  0.430 ms  reps=[0.3932, 0.4304, 0.4601]
+
+[city_factor_probe] within-N spread (noise floor) = 0.148 ms
+[city_factor_probe] d_ms=0.062 over d_cells=504
+[city_factor_probe] INCONCLUSIVE: signal (0.062 ms) is inside the noise floor (0.148 ms); covered-cell count cannot be resolved by this fixture.
+
+[city_factor_probe] WHY, and what it means for §14.1:
+  The probe varied N (cells holding a derived-shaped row) while
+  holding the map at 2048 cells. `refresh_city_modifier_factors`
+  always does two O(map) passes first:
+    (a) shared_factor x 156  -- GLOBAL + ENTITY(0) probes
+    (b) paint_shared x 2048 cells = 317440 int32 writes
+  when `shared_changed` (economy_runtime.cpp:7048-7061, because
+  clear_epoch_metrics resets _city_factor_shared_* every epoch).
+  Only AFTER those does collect_scope_ids decide the N cells, and
+  the per-covered-cell loop (7085-7095) runs.
+
+  => On a 2048-cell map the fixed term is ~4 x the variable term
+     even at N=512. The plan's `covered_cells x 156` is the right
+     model for LARGE countries (N approaching CELLS) but it is NOT
+     the whole cost: the full-matrix repaint is charged on every
+     epoch regardless of coverage.
+  => M1 must therefore not budget the derived layer as
+     `covered_cells x 156` alone. It has to either (i) publish the
+     shared row once instead of repainting it, or (ii) count 156*N
+     against the MAP, not against coverage.
+
+[city_factor_probe] --- map-scaling control (coverage fixed at 32) ---
+[city_factor_probe] map_cells=  512 covered=32  median=  0.180 ms  reps=[0.185, 0.1751, 0.1804]
+[city_factor_probe] map_cells= 2048 covered=32  median=  0.418 ms  reps=[0.3738, 0.442, 0.4181]
+[city_factor_probe] map_cells= 8192 covered=32  median=  1.790 ms  reps=[1.6423, 1.7903, 2.2995]
+
+[city_factor_probe] d_ms=1.610 over d_map_cells=7680 (coverage fixed)
+[city_factor_probe] per_map_cell=0.000210 ms
+[city_factor_probe] CONFIRMED: cost tracks MAP size, not coverage.

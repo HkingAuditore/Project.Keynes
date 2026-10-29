@@ -96,3 +96,17 @@ Do not claim completion unless code, focused tests, docs, and this skill agree. 
 the 3 percent median / 5 percent p95 target without same-machine baseline and after data.
 Run `quick_validate.py` after editing this skill. Forward-test in isolated context when agent
 delegation is available; otherwise report that gate as not executed.
+
+## Satisfaction realized consumption (2026-10-18)
+
+Basic, comfort and luxury score realized consumption against an authored living
+target (population × base quantity × elapsed days × environment × ethnicity),
+independent of wealth, price-elastic request shrinkage and budget. Missing stock
+keeps the target; technology-inapplicable tiers return -1 in queries (internal
+stored value 0). Native group budgets are consumption 70%, finance 20%, tax 5%,
+development 5%; redistribute missing tiers inside consumption only. Savings alone
+uses cash purchasing power. Missing cost basis scores savings zero, never full.
+Composite is capped by both subsistence (10% slack) and applicable basic living
+(20% slack). Cohort living-standard display uses actual consumption. See
+`docs/cpp-dots-runtime/satisfaction-runtime.md`. No new persistent lane or save
+layout; updated need tiers change the content catalog hash.

@@ -1,0 +1,635 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] the card is in the compiled ideology catalog
+[sv5] ---- time point 5: basis adopted by a new epoch, then the idea changes ----
+  [PASS] tp5-continuous: economy configures
+  [PASS] tp5-continuous: effects configure
+  [PASS] tp5-continuous: modifiers configure
+  [PASS] tp5-continuous: country configures
+  [PASS] tp5-continuous: the fixture territory is a proper subset of the grid
+  [PASS] tp5-continuous: the country bootstraps
+  [PASS] tp5-continuous: ideologies configure
+  [PASS] tp5-continuous: bootstrap_country registered exactly the intended territory
+  [PASS] tp5-continuous: epoch 1 opens for day 0
+  [PASS] tp5-continuous: the fixture resolves both bootstrap signatures
+  [PASS] tp5-continuous: the economy bootstraps
+  [PASS] tp5-continuous: economy day 0 reaches its committed boundary
+[world/tp5-continuous] epoch day=1 ok=true captured=true reused=false
+  [PASS] tp5-continuous: economy day 1 commits under its own epoch
+  [PASS] tp5-continuous: the fixture resolves the country handle
+  [PASS] tp5: epoch 1 (day 0) is opened and committed before any card exists
+  [PASS] tp5: a SECOND epoch (day 1, epoch_id=2) is opened and committed
+  [PASS] tp5: the new epoch's day is committed before the basis is adopted
+  [PASS] ideology batch (seq 1) is admitted
+  [PASS] ideology batch (seq 2) is admitted
+  [PASS] ideology batch (seq 3) is admitted
+  [PASS] tp5/cont: ideology day 0 completes
+  [PASS] tp5: while the equip transition is PENDING the card contributes NOTHING (no front installed, generation 0)
+[tp5/adapters] r1 modifier dispatch={ "ok": true, "submitted_transactions": 1, "submitted_commands": 1 } ack={ "ok": true, "acknowledged": 1, "rejected": 0, "pending": 0 } country={ "ok": true, "submitted_transactions": 0, "submitted_commands": 0 }/{ "ok": true, "acknowledged": 0, "rejected": 0, "pending": 0 }
+[tp5/adapters] rounds=1 effect_acked=true pre_poll_pending_transitions=1 queues={ "country": false, "economy": false, "gameplay": false }
+  [PASS] tp5: the native Effect adapters accepted and ACKED the equip's level commands
+  [PASS] tp5/cont/settle: ideology day 0 completes
+  [PASS] tp5: the equip's transition is SETTLED after the settle pass (pending_transitions == 0)
+  [PASS] tp5: the equip's projection is CONFIRMED on day 0 and eligible only from day 1
+  [PASS] tp5: day 0's rebuild was REFUSED by the eligibility gate (derived_rebuild_gated_by_eligibility > 0)
+  [PASS] tp5: the confirmation day publishes NOTHING (the previous front is still the one in force -- here it is the empty one)
+[sv5] confirmed-not-eligible: confirmed_day=0 eligible_from_day=1 gated=1 front installed=false cells=0 sample_day=?
+  [PASS] tp5/cont/eligible: ideology day 1 completes
+  [PASS] tp5: the eligibility day's rebuild folds to completion
+  [PASS] tp5: the front INSTALLS on the eligibility day (basis adopted)
+  [PASS] tp5: the adopted front is built FOR the eligibility day (sample_day == 1, not the confirmation day 0)
+  [PASS] tp5: the adopted basis covers exactly the owned cells x 2 stats
+  [PASS] tp5/cont: ideology day 1 completes
+  [PASS] tp5: the new epoch's day drives the derived rebuild
+  [PASS] tp5: the new epoch's rebuild runs to completion (nothing left pending)
+  [PASS] tp5: the adopted basis is SETTLED (no transition left in flight)
+  [PASS] tp5: an identical rebuild does NOT bump the layer generation (I13)
+  [PASS] tp5: layer epoch_id is structurally 0 in this build (member never assigned; not usable as a basis marker)
+  [PASS] tp5-cont/day1: the runtime HAS a derived cell layer
+  [PASS] tp5-cont/day1: the layer covers exactly the owned cells x 2 stats
+  [PASS] tp5-cont/day1: the layer carries the expected contribution count
+  [PASS] tp5-cont/day1: a covered cell carries a derived contribution
+  [PASS] tp5-cont/day1: a covered cell's merged value leaves the identity base
+  [PASS] tp5-cont/day1: an unowned cell stays at the identity base
+  [PASS] tp5-cont/day1: the .cut command's derived delta is NEGATIVE
+  [PASS] tp5-cont/day1: the card's persistent program (ideology.effect.public_hygiene_l1) evaluates
+  [PASS] tp5-cont/day1: the covered add equals ideology.effect.public_hygiene_l1 / Q16 (0.05000305)
+[sv/tp5-cont/day1] layer cells=84 contributions=84 stats=2 day=1 generation=1
+[sv/tp5-cont/day1] card locations=[1] levels=[0] understanding=[410] pending_commands=0 pending_transitions=0
+[sv/tp5-cont/day1] economy newest_state_day=1 committed_day=1 instances=0
+[sv/tp5-cont/day1] business hash=-3083176044961334701 points=3327108173056332417 ideas=5866363051466295595
+[sv/tp5-cont/day1] audit available=true pop_err=0 money_err=0 goods_err=0
+[sv/tp5-cont/day1] per-cell fingerprint=b80012bf59ac2a4305fc133160127aec9649653116549a8b88eda9894210475b
+  [PASS] tp5-cont/day1: the economy reached the expected committed day
+  [PASS] tp5: before the change the card is at level 0
+  [PASS] tp5: before the change the understanding is below the level-1 threshold
+  [PASS] ideology batch (seq 4) is admitted
+  [PASS] tp5-cont/save: the runtime HAS a derived cell layer
+  [PASS] tp5-cont/save: the layer covers exactly the owned cells x 2 stats
+  [PASS] tp5-cont/save: the layer carries the expected contribution count
+  [PASS] tp5-cont/save: a covered cell carries a derived contribution
+  [PASS] tp5-cont/save: a covered cell's merged value leaves the identity base
+  [PASS] tp5-cont/save: an unowned cell stays at the identity base
+  [PASS] tp5-cont/save: the .cut command's derived delta is NEGATIVE
+  [PASS] tp5-cont/save: the card's persistent program (ideology.effect.public_hygiene_l1) evaluates
+  [PASS] tp5-cont/save: the covered add equals ideology.effect.public_hygiene_l1 / Q16 (0.05000305)
+[sv/tp5-cont/save] layer cells=84 contributions=84 stats=2 day=1 generation=1
+[sv/tp5-cont/save] card locations=[1] levels=[0] understanding=[410] pending_commands=1 pending_transitions=0
+[sv/tp5-cont/save] economy newest_state_day=1 committed_day=1 instances=0
+[sv/tp5-cont/save] business hash=-3083176044961334701 points=3327108173056332417 ideas=5866363051466295595
+[sv/tp5-cont/save] audit available=true pop_err=0 money_err=0 goods_err=0
+[sv/tp5-cont/save] per-cell fingerprint=b80012bf59ac2a4305fc133160127aec9649653116549a8b88eda9894210475b
+  [PASS] tp5-cont/save: the economy reached the expected committed day
+  [PASS] tp5: the idea change is QUEUED and not applied at save time
+  [PASS] tp5: no derived rebuild is in flight at the save boundary
+  [PASS] tp5: the card is still equipped at save time
+  [PASS] tp5: the save carries the installed, still-serving front
+  [PASS] tp5/SAVE: PKEF payload is produced
+  [PASS] tp5/SAVE: PKID payload is produced and carries the PKID magic
+  [PASS] tp5/cont: ideology day 2 completes
+  [PASS] tp5-cont/day2: the runtime HAS a derived cell layer
+  [PASS] tp5-cont/day2: the layer covers exactly the owned cells x 2 stats
+  [PASS] tp5-cont/day2: the layer carries the expected contribution count
+  [PASS] tp5-cont/day2: a covered cell carries a derived contribution
+  [PASS] tp5-cont/day2: a covered cell's merged value leaves the identity base
+  [PASS] tp5-cont/day2: an unowned cell stays at the identity base
+  [PASS] tp5-cont/day2: the .cut command's derived delta is NEGATIVE
+  [PASS] tp5-cont/day2: the card's persistent program (ideology.effect.public_hygiene_l1) evaluates
+  [PASS] tp5-cont/day2: the covered add equals ideology.effect.public_hygiene_l1 / Q16 (0.05000305)
+[sv/tp5-cont/day2] layer cells=84 contributions=84 stats=2 day=1 generation=1
+[sv/tp5-cont/day2] card locations=[1] levels=[0] understanding=[615] pending_commands=1 pending_transitions=0
+[sv/tp5-cont/day2] economy newest_state_day=2 committed_day=2 instances=0
+[sv/tp5-cont/day2] business hash=-2357219149114660063 points=3327108173056332417 ideas=-6581699936365684108
+[sv/tp5-cont/day2] audit available=true pop_err=0 money_err=0 goods_err=0
+[sv/tp5-cont/day2] per-cell fingerprint=b80012bf59ac2a4305fc133160127aec9649653116549a8b88eda9894210475b
+  [PASS] tp5-cont/day2: the economy reached the expected committed day
+  [PASS] tp5: the queued change has NOT been applied by day 2 (continuous)
+  [PASS] tp5/cont: ideology day 3 completes
+  [PASS] tp5-cont/day3: the runtime HAS a derived cell layer
+  [PASS] tp5-cont/day3: the layer covers exactly the owned cells x 2 stats
+  [PASS] tp5-cont/day3: the layer carries the expected contribution count
+  [PASS] tp5-cont/day3: a covered cell carries a derived contribution
+  [PASS] tp5-cont/day3: a covered cell's merged value leaves the identity base
+  [PASS] tp5-cont/day3: an unowned cell stays at the identity base
+  [PASS] tp5-cont/day3: the .cut command's derived delta is NEGATIVE
+  [PASS] tp5-cont/day3: the card's persistent program (ideology.effect.public_hygiene_l1) evaluates
+  [PASS] tp5-cont/day3: the covered add equals ideology.effect.public_hygiene_l1 / Q16 (0.05000305)
+[sv/tp5-cont/day3] layer cells=84 contributions=84 stats=2 day=1 generation=1
+[sv/tp5-cont/day3] card locations=[1] levels=[1] understanding=[525108] pending_commands=0 pending_transitions=1
+[sv/tp5-cont/day3] economy newest_state_day=3 committed_day=3 instances=0
+[sv/tp5-cont/day3] business hash=-6041541041461775318 points=3327108173056332417 ideas=6410190361351903214
+[sv/tp5-cont/day3] audit available=true pop_err=0 money_err=0 goods_err=0
+[sv/tp5-cont/day3] per-cell fingerprint=b80012bf59ac2a4305fc133160127aec9649653116549a8b88eda9894210475b
+  [PASS] tp5-cont/day3: the economy reached the expected committed day
+  [PASS] tp5: the idea change LANDS on day 3 (continuous): level 1, command applied
+  [PASS] tp5: while the level-up transition is PENDING the front still serves the PREVIOUS level's magnitudes (plan 10.1: the pending window keeps the old basis)
+[tp5/levelup/adapters] r1 modifier dispatch={ "ok": true, "submitted_transactions": 2, "submitted_commands": 2 } ack={ "ok": true, "acknowledged": 2, "rejected": 0, "pending": 0 } country={ "ok": true, "submitted_transactions": 0, "submitted_commands": 0 }/{ "ok": true, "acknowledged": 0, "rejected": 0, "pending": 0 }
+[tp5/levelup/adapters] rounds=1 effect_acked=true pre_poll_pending_transitions=1 queues={ "country": false, "economy": false, "gameplay": false }
+  [PASS] tp5/cont: ideology day 4 completes
+  [PASS] tp5-cont/confirmed: the runtime HAS a derived cell layer
+  [PASS] tp5-cont/confirmed: the layer covers exactly the owned cells x 2 stats
+  [PASS] tp5-cont/confirmed: the layer carries the expected contribution count
+  [PASS] tp5-cont/confirmed: a covered cell carries a derived contribution
+  [PASS] tp5-cont/confirmed: a covered cell's merged value leaves the identity base
+  [PASS] tp5-cont/confirmed: an unowned cell stays at the identity base
+  [PASS] tp5-cont/confirmed: the .cut command's derived delta is NEGATIVE
+  [PASS] tp5-cont/confirmed: the card's persistent program (ideology.effect.public_hygiene_l1) evaluates
+  [PASS] tp5-cont/confirmed: the covered add equals ideology.effect.public_hygiene_l1 / Q16 (0.05000305)
+[sv/tp5-cont/confirmed] layer cells=84 contributions=84 stats=2 day=1 generation=1
+[sv/tp5-cont/confirmed] card locations=[1] levels=[1] understanding=[525211] pending_commands=0 pending_transitions=0
+[sv/tp5-cont/confirmed] economy newest_state_day=4 committed_day=4 instances=0
+[sv/tp5-cont/confirmed] business hash=609046704237098936 points=3327108173056332417 ideas=9207811248194012709
+[sv/tp5-cont/confirmed] audit available=true pop_err=0 money_err=0 goods_err=0
+[sv/tp5-cont/confirmed] per-cell fingerprint=b80012bf59ac2a4305fc133160127aec9649653116549a8b88eda9894210475b
+  [PASS] tp5-cont/confirmed: the economy reached the expected committed day
+  [PASS] tp5: the level-up is CONFIRMED on day 4 and only eligible from day 5
+  [PASS] tp5: the confirmation day's rebuild is REFUSED by the eligibility gate (the level-1 content is NOT published a day early)
+[sv5] level-up confirmed-not-eligible: confirmed_day=4 eligible_from_day=5 gated=2 front sample_day=1 add=0.05000305
+  [PASS] tp5/cont: ideology day 5 completes
+  [PASS] tp5-cont/final: the runtime HAS a derived cell layer
+  [PASS] tp5-cont/final: the layer covers exactly the owned cells x 2 stats
+  [PASS] tp5-cont/final: the layer carries the expected contribution count
+  [PASS] tp5-cont/final: a covered cell carries a derived contribution
+  [PASS] tp5-cont/final: a covered cell's merged value leaves the identity base
+  [PASS] tp5-cont/final: an unowned cell stays at the identity base
+  [PASS] tp5-cont/final: the .cut command's derived delta is NEGATIVE
+  [PASS] tp5-cont/final: the card's persistent program (ideology.effect.public_hygiene_l2) evaluates
+  [PASS] tp5-cont/final: the covered add equals ideology.effect.public_hygiene_l2 / Q16 (0.08000183)
+[sv/tp5-cont/final] layer cells=84 contributions=84 stats=2 day=5 generation=2
+[sv/tp5-cont/final] card locations=[1] levels=[1] understanding=[525314] pending_commands=0 pending_transitions=0
+[sv/tp5-cont/final] economy newest_state_day=5 committed_day=5 instances=0
+[sv/tp5-cont/final] business hash=-4551738672018627052 points=3327108173056332417 ideas=824588901212768706
+[sv/tp5-cont/final] audit available=true pop_err=0 money_err=0 goods_err=0
+[sv/tp5-cont/final] per-cell fingerprint=e9adbfed8a7f4be8fdab8bec69fc20925c024fa181cc8b0f51474187a64cfec1
+  [PASS] tp5-cont/final: the economy reached the expected committed day
+  [PASS] tp5: after the level-up is ACKED and ELIGIBLE the front publishes the LEVEL-1 magnitudes (observable on the eligibility day, not on day 3)
+  [PASS] tp5: the level-1 front is built FOR the eligibility day (sample_day 5)
+  [PASS] tp5-reload: economy configures
+  [PASS] tp5-reload: effects configure
+  [PASS] tp5-reload: modifiers configure
+  [PASS] tp5-reload: country configures
+  [PASS] tp5-reload: the fixture territory is a proper subset of the grid
+  [PASS] tp5-reload: the country bootstraps
+  [PASS] tp5-reload: ideologies configure
+  [PASS] tp5-reload: bootstrap_country registered exactly the intended territory
+  [PASS] tp5-reload: epoch 1 opens for day 0
+  [PASS] tp5-reload: the fixture resolves both bootstrap signatures
+  [PASS] tp5-reload: the economy bootstraps
+  [PASS] tp5-reload: economy day 0 reaches its committed boundary
+[world/tp5-reload] epoch day=1 ok=true captured=true reused=false
+  [PASS] tp5-reload: economy day 1 commits under its own epoch
+  [PASS] tp5-reload: the fixture resolves the country handle
+  [PASS] tp5: PKEF restores FIRST (the order PKID's binding check requires)
+  [PASS] tp5: the PKEF+PKID pair restores into a freshly built runtime
+  [PASS] tp5: the reloaded world resolves the same country handle
+  [PASS] tp5: the idea change is STILL PENDING right after reload (not silently applied early)
+  [PASS] tp5: the restored business state is byte-identical to the saved one
+  [PASS] tp5: PKID carries NO front, so a fresh runtime starts without one
+  [PASS] tp5: the card is still equipped at level 0 after reload
+  [PASS] tp5/reload: ideology day 2 completes
+  [PASS] tp5-reload/day2: the runtime HAS a derived cell layer
+  [PASS] tp5-reload/day2: the layer covers exactly the owned cells x 2 stats
+  [PASS] tp5-reload/day2: the layer carries the expected contribution count
+  [PASS] tp5-reload/day2: a covered cell carries a derived contribution
+  [PASS] tp5-reload/day2: a covered cell's merged value leaves the identity base
+  [PASS] tp5-reload/day2: an unowned cell stays at the identity base
+  [PASS] tp5-reload/day2: the .cut command's derived delta is NEGATIVE
+  [PASS] tp5-reload/day2: the card's persistent program (ideology.effect.public_hygiene_l1) evaluates
+  [PASS] tp5-reload/day2: the covered add equals ideology.effect.public_hygiene_l1 / Q16 (0.05000305)
+[sv/tp5-reload/day2] layer cells=84 contributions=84 stats=2 day=2 generation=1
+[sv/tp5-reload/day2] card locations=[1] levels=[0] understanding=[615] pending_commands=1 pending_transitions=0
+[sv/tp5-reload/day2] economy newest_state_day=2 committed_day=2 instances=0
+[sv/tp5-reload/day2] business hash=-2357219149114660063 points=3327108173056332417 ideas=-6581699936365684108
+[sv/tp5-reload/day2] audit available=true pop_err=0 money_err=0 goods_err=0
+[sv/tp5-reload/day2] per-cell fingerprint=b80012bf59ac2a4305fc133160127aec9649653116549a8b88eda9894210475b
+  [PASS] tp5-reload/day2: the economy reached the expected committed day
+  [PASS] tp5: the queued change has NOT been applied by day 2 (reload)
+  [PASS] tp5/reload: ideology day 3 completes
+  [PASS] tp5-reload/day3: the runtime HAS a derived cell layer
+  [PASS] tp5-reload/day3: the layer covers exactly the owned cells x 2 stats
+  [PASS] tp5-reload/day3: the layer carries the expected contribution count
+  [PASS] tp5-reload/day3: a covered cell carries a derived contribution
+  [PASS] tp5-reload/day3: a covered cell's merged value leaves the identity base
+  [PASS] tp5-reload/day3: an unowned cell stays at the identity base
+  [PASS] tp5-reload/day3: the .cut command's derived delta is NEGATIVE
+  [PASS] tp5-reload/day3: the card's persistent program (ideology.effect.public_hygiene_l1) evaluates
+  [PASS] tp5-reload/day3: the covered add equals ideology.effect.public_hygiene_l1 / Q16 (0.05000305)
+[sv/tp5-reload/day3] layer cells=84 contributions=84 stats=2 day=2 generation=1
+[sv/tp5-reload/day3] card locations=[1] levels=[1] understanding=[525108] pending_commands=0 pending_transitions=1
+[sv/tp5-reload/day3] economy newest_state_day=3 committed_day=3 instances=0
+[sv/tp5-reload/day3] business hash=-6041541041461775318 points=3327108173056332417 ideas=6410190361351903214
+[sv/tp5-reload/day3] audit available=true pop_err=0 money_err=0 goods_err=0
+[sv/tp5-reload/day3] per-cell fingerprint=b80012bf59ac2a4305fc133160127aec9649653116549a8b88eda9894210475b
+  [PASS] tp5-reload/day3: the economy reached the expected committed day
+[tp5/reload-levelup/adapters] r1 modifier dispatch={ "ok": true, "submitted_transactions": 2, "submitted_commands": 2 } ack={ "ok": true, "acknowledged": 2, "rejected": 0, "pending": 0 } country={ "ok": true, "submitted_transactions": 0, "submitted_commands": 0 }/{ "ok": true, "acknowledged": 0, "rejected": 0, "pending": 0 }
+[tp5/reload-levelup/adapters] rounds=1 effect_acked=true pre_poll_pending_transitions=1 queues={ "country": false, "economy": false, "gameplay": false }
+  [PASS] tp5/reload: ideology day 4 completes
+  [PASS] tp5-reload/confirmed: the runtime HAS a derived cell layer
+  [PASS] tp5-reload/confirmed: the layer covers exactly the owned cells x 2 stats
+  [PASS] tp5-reload/confirmed: the layer carries the expected contribution count
+  [PASS] tp5-reload/confirmed: a covered cell carries a derived contribution
+  [PASS] tp5-reload/confirmed: a covered cell's merged value leaves the identity base
+  [PASS] tp5-reload/confirmed: an unowned cell stays at the identity base
+  [PASS] tp5-reload/confirmed: the .cut command's derived delta is NEGATIVE
+  [PASS] tp5-reload/confirmed: the card's persistent program (ideology.effect.public_hygiene_l1) evaluates
+  [PASS] tp5-reload/confirmed: the covered add equals ideology.effect.public_hygiene_l1 / Q16 (0.05000305)
+[sv/tp5-reload/confirmed] layer cells=84 contributions=84 stats=2 day=2 generation=1
+[sv/tp5-reload/confirmed] card locations=[1] levels=[1] understanding=[525211] pending_commands=0 pending_transitions=0
+[sv/tp5-reload/confirmed] economy newest_state_day=4 committed_day=4 instances=0
+[sv/tp5-reload/confirmed] business hash=609046704237098936 points=3327108173056332417 ideas=9207811248194012709
+[sv/tp5-reload/confirmed] audit available=true pop_err=0 money_err=0 goods_err=0
+[sv/tp5-reload/confirmed] per-cell fingerprint=b80012bf59ac2a4305fc133160127aec9649653116549a8b88eda9894210475b
+  [PASS] tp5-reload/confirmed: the economy reached the expected committed day
+  [PASS] tp5/reload: ideology day 5 completes
+  [PASS] tp5-reload/final: the runtime HAS a derived cell layer
+  [PASS] tp5-reload/final: the layer covers exactly the owned cells x 2 stats
+  [PASS] tp5-reload/final: the layer carries the expected contribution count
+  [PASS] tp5-reload/final: a covered cell carries a derived contribution
+  [PASS] tp5-reload/final: a covered cell's merged value leaves the identity base
+  [PASS] tp5-reload/final: an unowned cell stays at the identity base
+  [PASS] tp5-reload/final: the .cut command's derived delta is NEGATIVE
+  [PASS] tp5-reload/final: the card's persistent program (ideology.effect.public_hygiene_l2) evaluates
+  [PASS] tp5-reload/final: the covered add equals ideology.effect.public_hygiene_l2 / Q16 (0.08000183)
+[sv/tp5-reload/final] layer cells=84 contributions=84 stats=2 day=5 generation=2
+[sv/tp5-reload/final] card locations=[1] levels=[1] understanding=[525314] pending_commands=0 pending_transitions=0
+[sv/tp5-reload/final] economy newest_state_day=5 committed_day=5 instances=0
+[sv/tp5-reload/final] business hash=-4551738672018627052 points=3327108173056332417 ideas=824588901212768706
+[sv/tp5-reload/final] audit available=true pop_err=0 money_err=0 goods_err=0
+[sv/tp5-reload/final] per-cell fingerprint=e9adbfed8a7f4be8fdab8bec69fc20925c024fa181cc8b0f51474187a64cfec1
+  [PASS] tp5-reload/final: the economy reached the expected committed day
+  [PASS] tp5/day2: economy.city.birth_factor derived presence matches on every one of 64 cells
+  [PASS] tp5/day2: economy.city.birth_factor derived add matches EXACTLY on every cell
+  [PASS] tp5/day2: economy.city.birth_factor effective value matches EXACTLY on every cell
+  [PASS] tp5/day2: economy.city.need.housing.consumption_factor derived presence matches on every one of 64 cells
+  [PASS] tp5/day2: economy.city.need.housing.consumption_factor derived add matches EXACTLY on every cell
+  [PASS] tp5/day2: economy.city.need.housing.consumption_factor effective value matches EXACTLY on every cell
+  [PASS] tp5/day2: the per-cell fingerprint hash is identical
+  [PASS] tp5/day2: the layer covers the same cells and the same stats
+  [PASS] tp5/day2: both runs installed the layer the same number of times
+  [PASS] tp5/day2: ideology business state hash matches
+  [PASS] tp5/day2: business section points matches
+  [PASS] tp5/day2: business section baseline matches
+  [PASS] tp5/day2: business section history matches
+  [PASS] tp5/day2: business section draw matches
+  [PASS] tp5/day2: business section bits matches
+  [PASS] tp5/day2: business section offer matches
+  [PASS] tp5/day2: business section ideas matches
+  [PASS] tp5/day2: one-shot effect instance count is 0 in both runs
+  [PASS] tp5/day2: both runs carry the same pending command count (1)
+  [PASS] tp5/day2: both runs carry the same in-flight transition count
+  [PASS] tp5/day2: both runs advanced the economy to the same committed day
+  [PASS] tp5/day2: the card's IDEOLOGY slot occupancy matches
+  [PASS] tp5/day2: the card keeps the same level and understanding
+  [PASS] tp5/day2: the committed economy audit is available on both sides
+  [PASS] tp5/day2: economy conservation errors are 0 on both sides
+  [PASS] tp5: the idea change applies on the SAME DAY in both runs (level 0 on day 2, level 1 on day 3)
+  [PASS] tp5/day3: economy.city.birth_factor derived presence matches on every one of 64 cells
+  [PASS] tp5/day3: economy.city.birth_factor derived add matches EXACTLY on every cell
+  [PASS] tp5/day3: economy.city.birth_factor effective value matches EXACTLY on every cell
+  [PASS] tp5/day3: economy.city.need.housing.consumption_factor derived presence matches on every one of 64 cells
+  [PASS] tp5/day3: economy.city.need.housing.consumption_factor derived add matches EXACTLY on every cell
+  [PASS] tp5/day3: economy.city.need.housing.consumption_factor effective value matches EXACTLY on every cell
+  [PASS] tp5/day3: the per-cell fingerprint hash is identical
+  [PASS] tp5/day3: the layer covers the same cells and the same stats
+  [PASS] tp5/day3: both runs installed the layer the same number of times
+  [PASS] tp5/day3: ideology business state hash matches
+  [PASS] tp5/day3: business section points matches
+  [PASS] tp5/day3: business section baseline matches
+  [PASS] tp5/day3: business section history matches
+  [PASS] tp5/day3: business section draw matches
+  [PASS] tp5/day3: business section bits matches
+  [PASS] tp5/day3: business section offer matches
+  [PASS] tp5/day3: business section ideas matches
+  [PASS] tp5/day3: one-shot effect instance count is 0 in both runs
+  [PASS] tp5/day3: both runs carry the same pending command count (0)
+  [PASS] tp5/day3: both runs carry the same in-flight transition count
+  [PASS] tp5/day3: both runs advanced the economy to the same committed day
+  [PASS] tp5/day3: the card's IDEOLOGY slot occupancy matches
+  [PASS] tp5/day3: the card keeps the same level and understanding
+  [PASS] tp5/day3: the committed economy audit is available on both sides
+  [PASS] tp5/day3: economy conservation errors are 0 on both sides
+  [PASS] tp5/confirmed: economy.city.birth_factor derived presence matches on every one of 64 cells
+  [PASS] tp5/confirmed: economy.city.birth_factor derived add matches EXACTLY on every cell
+  [PASS] tp5/confirmed: economy.city.birth_factor effective value matches EXACTLY on every cell
+  [PASS] tp5/confirmed: economy.city.need.housing.consumption_factor derived presence matches on every one of 64 cells
+  [PASS] tp5/confirmed: economy.city.need.housing.consumption_factor derived add matches EXACTLY on every cell
+  [PASS] tp5/confirmed: economy.city.need.housing.consumption_factor effective value matches EXACTLY on every cell
+  [PASS] tp5/confirmed: the per-cell fingerprint hash is identical
+  [PASS] tp5/confirmed: the layer covers the same cells and the same stats
+  [PASS] tp5/confirmed: both runs installed the layer the same number of times
+  [PASS] tp5/confirmed: ideology business state hash matches
+  [PASS] tp5/confirmed: business section points matches
+  [PASS] tp5/confirmed: business section baseline matches
+  [PASS] tp5/confirmed: business section history matches
+  [PASS] tp5/confirmed: business section draw matches
+  [PASS] tp5/confirmed: business section bits matches
+  [PASS] tp5/confirmed: business section offer matches
+  [PASS] tp5/confirmed: business section ideas matches
+  [PASS] tp5/confirmed: one-shot effect instance count is 0 in both runs
+  [PASS] tp5/confirmed: both runs carry the same pending command count (0)
+  [PASS] tp5/confirmed: both runs carry the same in-flight transition count
+  [PASS] tp5/confirmed: both runs advanced the economy to the same committed day
+  [PASS] tp5/confirmed: the card's IDEOLOGY slot occupancy matches
+  [PASS] tp5/confirmed: the card keeps the same level and understanding
+  [PASS] tp5/confirmed: the committed economy audit is available on both sides
+  [PASS] tp5/confirmed: economy conservation errors are 0 on both sides
+  [PASS] tp5/final: economy.city.birth_factor derived presence matches on every one of 64 cells
+  [PASS] tp5/final: economy.city.birth_factor derived add matches EXACTLY on every cell
+  [PASS] tp5/final: economy.city.birth_factor effective value matches EXACTLY on every cell
+  [PASS] tp5/final: economy.city.need.housing.consumption_factor derived presence matches on every one of 64 cells
+  [PASS] tp5/final: economy.city.need.housing.consumption_factor derived add matches EXACTLY on every cell
+  [PASS] tp5/final: economy.city.need.housing.consumption_factor effective value matches EXACTLY on every cell
+  [PASS] tp5/final: the per-cell fingerprint hash is identical
+  [PASS] tp5/final: the layer covers the same cells and the same stats
+  [PASS] tp5/final: both runs installed the layer the same number of times
+  [PASS] tp5/final: ideology business state hash matches
+  [PASS] tp5/final: business section points matches
+  [PASS] tp5/final: business section baseline matches
+  [PASS] tp5/final: business section history matches
+  [PASS] tp5/final: business section draw matches
+  [PASS] tp5/final: business section bits matches
+  [PASS] tp5/final: business section offer matches
+  [PASS] tp5/final: business section ideas matches
+  [PASS] tp5/final: one-shot effect instance count is 0 in both runs
+  [PASS] tp5/final: both runs carry the same pending command count (0)
+  [PASS] tp5/final: both runs carry the same in-flight transition count
+  [PASS] tp5/final: both runs advanced the economy to the same committed day
+  [PASS] tp5/final: the card's IDEOLOGY slot occupancy matches
+  [PASS] tp5/final: the card keeps the same level and understanding
+  [PASS] tp5/final: the committed economy audit is available on both sides
+  [PASS] tp5/final: economy conservation errors are 0 on both sides
+  [PASS] tp5: both runs rebuilt the front on the same day after the change
+[sv6] ---- time point 6: MATERIALIZE mid-shard, candidate not installed ----
+  [PASS] tp6-continuous: economy configures
+  [PASS] tp6-continuous: effects configure
+  [PASS] tp6-continuous: modifiers configure
+  [PASS] tp6-continuous: country configures
+  [PASS] tp6-continuous: the fixture territory is a proper subset of the grid
+  [PASS] tp6-continuous: the country bootstraps
+  [PASS] tp6-continuous: ideologies configure
+  [PASS] tp6-continuous: bootstrap_country registered exactly the intended territory
+  [PASS] tp6-continuous: epoch 1 opens for day 0
+  [PASS] tp6-continuous: the fixture resolves both bootstrap signatures
+  [PASS] tp6-continuous: the economy bootstraps
+  [PASS] tp6-continuous: economy day 0 reaches its committed boundary
+[world/tp6-continuous] epoch day=1 ok=true captured=true reused=false
+  [PASS] tp6-continuous: economy day 1 commits under its own epoch
+  [PASS] tp6-continuous: the fixture resolves the country handle
+  [PASS] ideology batch (seq 1) is admitted
+  [PASS] ideology batch (seq 2) is admitted
+  [PASS] ideology batch (seq 3) is admitted
+  [PASS] tp6/cont: ideology day 0 completes
+  [PASS] tp6: while the equip transition is PENDING the card contributes NOTHING (no front installed, generation 0)
+[tp6/adapters] r1 modifier dispatch={ "ok": true, "submitted_transactions": 1, "submitted_commands": 1 } ack={ "ok": true, "acknowledged": 1, "rejected": 0, "pending": 0 } country={ "ok": true, "submitted_transactions": 0, "submitted_commands": 0 }/{ "ok": true, "acknowledged": 0, "rejected": 0, "pending": 0 }
+[tp6/adapters] rounds=1 effect_acked=true pre_poll_pending_transitions=1 queues={ "country": false, "economy": false, "gameplay": false }
+  [PASS] tp6: the native Effect adapters accepted and ACKED the equip's level commands
+  [PASS] tp6/cont/settle: ideology day 0 completes
+  [PASS] tp6: the equip's transition is SETTLED after the settle pass (pending_transitions == 0)
+  [PASS] tp6: the equip's projection is CONFIRMED on day 0 and eligible only from day 1
+  [PASS] tp6: day 0's rebuild was REFUSED by the eligibility gate (derived_rebuild_gated_by_eligibility > 0)
+  [PASS] tp6: the confirmation day publishes NOTHING (the previous front -- the empty one -- is still in force)
+[sv6] confirmed-not-eligible: confirmed_day=0 eligible_from_day=1 gated=1 front installed=false cells=0 sample_day=?
+  [PASS] tp6/cont/eligible: ideology day 1 completes
+  [PASS] tp6: the eligibility day's rebuild folds to completion (a front exists before the save)
+  [PASS] tp6: the OLD front is installed and serving before day 1's rebuild
+[sv6] slice=0 done=false stage=ideology_derived_rebuild steps=1 pending=true gen=1 cells=84
+  [PASS] tp6: the rebuild is genuinely IN FLIGHT at save time (derived_rebuild_pending == true)
+  [PASS] tp6: the in-flight slice is the collect step of this day (stage=ideology_derived_rebuild, done=false, steps==1)
+  [PASS] tp6: work has really been done, not merely scheduled (rebuild_steps >= 1 AND rebuild_visits > 0)
+  [PASS] tp6: the candidate is NOT installed: the layer generation is unchanged
+  [PASS] tp6: the OLD front is still serving while the candidate is built (installed, same cell count)
+  [PASS] tp6: the old front still returns EXACTLY the same numbers mid-rebuild (presence/add/value, economy.city.birth_factor)
+[sv6] boundary: ideology_should_run(1)=false -> production gate would ALLOW
+  [PASS] tp6: the production save boundary reports idle at the mid-materialize instant (ideology_should_run == false), so the capture is inside the existing safe boundary
+  [PASS] tp6-cont/mid: the runtime HAS a derived cell layer
+  [PASS] tp6-cont/mid: the layer covers exactly the owned cells x 2 stats
+  [PASS] tp6-cont/mid: the layer carries the expected contribution count
+  [PASS] tp6-cont/mid: a covered cell carries a derived contribution
+  [PASS] tp6-cont/mid: a covered cell's merged value leaves the identity base
+  [PASS] tp6-cont/mid: an unowned cell stays at the identity base
+  [PASS] tp6-cont/mid: the .cut command's derived delta is NEGATIVE
+  [PASS] tp6-cont/mid: the card's persistent program (ideology.effect.public_hygiene_l1) evaluates
+  [PASS] tp6-cont/mid: the covered add equals ideology.effect.public_hygiene_l1 / Q16 (0.05000305)
+[sv/tp6-cont/mid] layer cells=84 contributions=84 stats=2 day=1 generation=1
+[sv/tp6-cont/mid] card locations=[1] levels=[0] understanding=[410] pending_commands=0 pending_transitions=0
+[sv/tp6-cont/mid] economy newest_state_day=1 committed_day=1 instances=0
+[sv/tp6-cont/mid] business hash=-3083176044961334701 points=3327108173056332417 ideas=5866363051466295595
+[sv/tp6-cont/mid] audit available=true pop_err=0 money_err=0 goods_err=0
+[sv/tp6-cont/mid] per-cell fingerprint=b80012bf59ac2a4305fc133160127aec9649653116549a8b88eda9894210475b
+  [PASS] tp6-cont/mid: the economy reached the expected committed day
+  [PASS] tp6/SAVE: PKEF payload is produced
+  [PASS] tp6/SAVE: PKID payload is produced and carries the PKID magic
+  [PASS] tp6: PKID capture IS PERMITTED mid-materialize (the shipped capture() has no pending-rebuild guard)
+[sv6] FINDING: mid-materialize capture permitted, 790 bytes (pkef=1663), pending=true steps=1
+  [PASS] tp6: the continuous run's in-flight job folds to completion
+  [PASS] tp6: no rebuild is left pending after the fold
+[sv6] after fold: installed=true cells=84 generation=1
+  [PASS] tp6/cont: ideology day 2 completes
+  [PASS] tp6-cont/final: the runtime HAS a derived cell layer
+  [PASS] tp6-cont/final: the layer covers exactly the owned cells x 2 stats
+  [PASS] tp6-cont/final: the layer carries the expected contribution count
+  [PASS] tp6-cont/final: a covered cell carries a derived contribution
+  [PASS] tp6-cont/final: a covered cell's merged value leaves the identity base
+  [PASS] tp6-cont/final: an unowned cell stays at the identity base
+  [PASS] tp6-cont/final: the .cut command's derived delta is NEGATIVE
+  [PASS] tp6-cont/final: the card's persistent program (ideology.effect.public_hygiene_l1) evaluates
+  [PASS] tp6-cont/final: the covered add equals ideology.effect.public_hygiene_l1 / Q16 (0.05000305)
+[sv/tp6-cont/final] layer cells=84 contributions=84 stats=2 day=1 generation=1
+[sv/tp6-cont/final] card locations=[1] levels=[0] understanding=[615] pending_commands=0 pending_transitions=0
+[sv/tp6-cont/final] economy newest_state_day=2 committed_day=2 instances=0
+[sv/tp6-cont/final] business hash=-2357219149114660063 points=3327108173056332417 ideas=-6581699936365684108
+[sv/tp6-cont/final] audit available=true pop_err=0 money_err=0 goods_err=0
+[sv/tp6-cont/final] per-cell fingerprint=b80012bf59ac2a4305fc133160127aec9649653116549a8b88eda9894210475b
+  [PASS] tp6-cont/final: the economy reached the expected committed day
+  [PASS] tp6-reload: economy configures
+  [PASS] tp6-reload: effects configure
+  [PASS] tp6-reload: modifiers configure
+  [PASS] tp6-reload: country configures
+  [PASS] tp6-reload: the fixture territory is a proper subset of the grid
+  [PASS] tp6-reload: the country bootstraps
+  [PASS] tp6-reload: ideologies configure
+  [PASS] tp6-reload: bootstrap_country registered exactly the intended territory
+  [PASS] tp6-reload: epoch 1 opens for day 0
+  [PASS] tp6-reload: the fixture resolves both bootstrap signatures
+  [PASS] tp6-reload: the economy bootstraps
+  [PASS] tp6-reload: economy day 0 reaches its committed boundary
+[world/tp6-reload] epoch day=1 ok=true captured=true reused=false
+  [PASS] tp6-reload: economy day 1 commits under its own epoch
+  [PASS] tp6-reload: the fixture resolves the country handle
+  [PASS] tp6: PKEF restores FIRST (the order PKID's binding check requires)
+  [PASS] tp6: the mid-materialize PKEF+PKID pair IS ACCEPTED by restore (the state hash does not cover the in-flight job)
+  [PASS] tp6: NO partial front leaks out of the save (the reloaded runtime starts with no layer at all)
+  [PASS] tp6: the restored business state is byte-identical to the mid-flight one
+  [PASS] tp6: the restored runtime has no command left pending
+  [PASS] tp6/reload: ideology day 1 completes
+  [PASS] tp6: the reloaded runtime rebuilds the interrupted day from scratch
+  [PASS] tp6/reload: ideology day 2 completes
+  [PASS] tp6-reload/final: the runtime HAS a derived cell layer
+  [PASS] tp6-reload/final: the layer covers exactly the owned cells x 2 stats
+  [PASS] tp6-reload/final: the layer carries the expected contribution count
+  [PASS] tp6-reload/final: a covered cell carries a derived contribution
+  [PASS] tp6-reload/final: a covered cell's merged value leaves the identity base
+  [PASS] tp6-reload/final: an unowned cell stays at the identity base
+  [PASS] tp6-reload/final: the .cut command's derived delta is NEGATIVE
+  [PASS] tp6-reload/final: the card's persistent program (ideology.effect.public_hygiene_l1) evaluates
+  [PASS] tp6-reload/final: the covered add equals ideology.effect.public_hygiene_l1 / Q16 (0.05000305)
+[sv/tp6-reload/final] layer cells=84 contributions=84 stats=2 day=1 generation=1
+[sv/tp6-reload/final] card locations=[1] levels=[0] understanding=[615] pending_commands=0 pending_transitions=0
+[sv/tp6-reload/final] economy newest_state_day=2 committed_day=2 instances=0
+[sv/tp6-reload/final] business hash=-2357219149114660063 points=3327108173056332417 ideas=-6581699936365684108
+[sv/tp6-reload/final] audit available=true pop_err=0 money_err=0 goods_err=0
+[sv/tp6-reload/final] per-cell fingerprint=b80012bf59ac2a4305fc133160127aec9649653116549a8b88eda9894210475b
+  [PASS] tp6-reload/final: the economy reached the expected committed day
+  [PASS] tp6/final: economy.city.birth_factor derived presence matches on every one of 64 cells
+  [PASS] tp6/final: economy.city.birth_factor derived add matches EXACTLY on every cell
+  [PASS] tp6/final: economy.city.birth_factor effective value matches EXACTLY on every cell
+  [PASS] tp6/final: economy.city.need.housing.consumption_factor derived presence matches on every one of 64 cells
+  [PASS] tp6/final: economy.city.need.housing.consumption_factor derived add matches EXACTLY on every cell
+  [PASS] tp6/final: economy.city.need.housing.consumption_factor effective value matches EXACTLY on every cell
+  [PASS] tp6/final: the per-cell fingerprint hash is identical
+  [PASS] tp6/final: the layer covers the same cells and the same stats
+  [PASS] tp6/final: both runs installed the layer the same number of times
+  [PASS] tp6/final: ideology business state hash matches
+  [PASS] tp6/final: business section points matches
+  [PASS] tp6/final: business section baseline matches
+  [PASS] tp6/final: business section history matches
+  [PASS] tp6/final: business section draw matches
+  [PASS] tp6/final: business section bits matches
+  [PASS] tp6/final: business section offer matches
+  [PASS] tp6/final: business section ideas matches
+  [PASS] tp6/final: one-shot effect instance count is 0 in both runs
+  [PASS] tp6/final: both runs carry the same pending command count (0)
+  [PASS] tp6/final: both runs carry the same in-flight transition count
+  [PASS] tp6/final: both runs advanced the economy to the same committed day
+  [PASS] tp6/final: the card's IDEOLOGY slot occupancy matches
+  [PASS] tp6/final: the card keeps the same level and understanding
+  [PASS] tp6/final: the committed economy audit is available on both sides
+  [PASS] tp6/final: economy conservation errors are 0 on both sides
+  [PASS] tp6: both runs performed the same number of installs (the reload rebuilt what the save did not carry)
+[sv6] install days: continuous sample_day=1 reload sample_day=1 (they differ by design: the save carries no front, so the reload's install is the rebuild of the interrupted day)
+[negctl] ---- negative control: the comparisons must be able to fail ----
+  [PASS] negctl: the per-cell PRESENCE comparison reports the flipped cell (negative control)
+  [PASS] negctl: the per-cell ADD comparison reports a 1e-9 difference (negative control)
+  [PASS] negctl: the per-cell VALUE comparison reports the moved cell (negative control)
+  [PASS] negctl: the per-cell fingerprint changes when one cell changes (negative control)
+[negctl] mismatch counts: presence=1 add=1 value=1
+  [PASS] negctl: the business-hash comparison reports a one-bit change (negative control)
+  [PASS] negctl-scratch: economy configures
+  [PASS] negctl-scratch: effects configure
+  [PASS] negctl-scratch: modifiers configure
+  [PASS] negctl-scratch: country configures
+  [PASS] negctl-scratch: the fixture territory is a proper subset of the grid
+  [PASS] negctl-scratch: the country bootstraps
+  [PASS] negctl-scratch: ideologies configure
+  [PASS] negctl-scratch: bootstrap_country registered exactly the intended territory
+  [PASS] negctl-scratch: epoch 1 opens for day 0
+  [PASS] negctl-scratch: the fixture resolves both bootstrap signatures
+  [PASS] negctl-scratch: the economy bootstraps
+  [PASS] negctl-scratch: economy day 0 reaches its committed boundary
+  [PASS] negctl-scratch: the fixture resolves the country handle
+  [PASS] negctl: a PKID payload with one flipped byte is REFUSED (negative control)
+[negctl] corrupted payload -> ok=false reason=ideology_save_state_hash_mismatch
+[basis] ---- plan 18.2: the applied-program basis ----
+  [PASS] basis: the block parses and its length field is honest
+  [PASS] basis: a SETTLED level-0 card persists exactly ONE (country, program) row -- the card's cost row (target_domain 1) must NOT be in the basis
+  [PASS] basis: the row names the level-0 program (ideology.effect.public_hygiene_l1, got ideology.effect.public_hygiene_l1)
+  [PASS] basis: the row carries selector kind 12 (SELECTOR_OWN_TERRITORY)
+  [PASS] basis: the row carries a non-zero terms digest
+[basis] rows=1 program=ideology.effect.public_hygiene_l1 kind=12 digest=529371912284187474 block=73 bytes
+  [PASS] basis runtime: the Effect catalog configures
+  [PASS] basis runtime: the Modifier catalog configures
+  [PASS] basis runtime: the IDEOLOGY catalog is ACCEPTED (a program assignment is not cross-checked against the level table)
+  [PASS] basis: a digest the catalogs cannot rebuild is refused BY NAME (not as a state-hash mismatch)
+[basis] damaged digest -> ok=false reason=ideology_save_applied_basis_mismatch (offset 818)
+  [PASS] basis runtime: the Effect catalog configures
+  [PASS] basis runtime: the Modifier catalog configures
+  [PASS] basis runtime: the IDEOLOGY catalog is ACCEPTED (a program assignment is not cross-checked against the level table)
+  [PASS] basis cross-build: both builds agree on the ideology CATALOG hash (-7948749275979135744) even though their card->program mappings differ
+  [PASS] basis cross-build: ... and on the execution CONTRACT hash (7666137605786472753)
+  [PASS] basis cross-build: the remapped build reloads its OWN capture
+  [PASS] basis cross-build: the remapped build REFUSES the source's payload by name instead of re-projecting a different program
+[basis/remap] restore -> ok=false reason=ideology_save_applied_basis_mismatch (catalog=-7948749275979135744==-7948749275979135744 contract=7666137605786472753==7666137605786472753)
+  [PASS] basis atomicity: the live world holds an applied basis to protect (rows=1, ideology.effect.public_hygiene_l2)
+  [PASS] basis atomicity: the payload's row names a DIFFERENT program than the runtime holds now (ideology.effect.public_hygiene_l1 vs ideology.effect.public_hygiene_l2)
+  [PASS] basis atomicity: the damaged state hash is refused by name, so the refusal really happened AFTER the basis was accepted
+  [PASS] basis atomicity: the applied basis is UNCHANGED by that refusal (rollback, not half-write)
+[basis/atomic] rows=1 program=ideology.effect.public_hygiene_l2 digest=-8530921408634240012 preserved across a refusal (payload would have installed ideology.effect.public_hygiene_l1)
+=== ideology save basis + mid-materialize (11.7 time points 5 and 6): 446 checks, 0 failures ===
+[economy-open-finish] day=0 country=0.505 workset=0.049 fiscal=0.031 csr=0.000 recovery=0.002 vectors=0.138 audit=0.070 commands=0.020
+[research-procure-diag] day=0 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0002 new=0.0000 rows=0
+[probe] fold step cursor=42/42 took=0.0158 cells=84 commands=84
+[probe] AB old_first=0 old=0.0063 new=0.0052 rows=84
+[probe] finish scratch=0.0001 emit=0.0114 versions=0.0180 builder_install=0.0002 digest=0.0000 total=0.0297 rows=84 stats=2
+[probe] fold step cursor=42/42 took=0.0080 cells=84 commands=84
+[probe] AB old_first=1 old=0.0063 new=0.0069 rows=84
+[probe] finish scratch=0.0000 emit=0.0079 versions=0.0187 builder_install=0.0001 digest=0.0006 total=0.0273 rows=84 stats=2
+[research-procure-diag] day=2 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=42/42 took=0.0105 cells=84 commands=84
+[probe] AB old_first=0 old=0.0075 new=0.0064 rows=84
+[probe] finish scratch=0.0000 emit=0.0132 versions=0.0222 builder_install=0.0004 digest=0.0008 total=0.0366 rows=84 stats=2
+[research-procure-diag] day=3 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=3 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=42/42 took=0.0114 cells=84 commands=84
+[probe] AB old_first=1 old=0.0084 new=0.0042 rows=84
+[probe] finish scratch=0.0000 emit=0.0115 versions=0.0204 builder_install=0.0005 digest=0.0008 total=0.0332 rows=84 stats=2
+[research-procure-diag] day=4 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=4 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=5 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=5 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=42/42 took=0.0082 cells=84 commands=84
+[probe] AB old_first=0 old=0.0053 new=0.0039 rows=84
+[probe] finish scratch=0.0000 emit=0.0126 versions=0.0185 builder_install=0.0003 digest=0.0007 total=0.0321 rows=84 stats=2
+[economy-open-finish] day=0 country=0.545 workset=0.035 fiscal=0.015 csr=0.000 recovery=0.000 vectors=0.038 audit=0.026 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=42/42 took=0.0180 cells=84 commands=84
+[probe] AB old_first=1 old=0.0081 new=0.0081 rows=84
+[probe] finish scratch=0.0000 emit=0.0138 versions=0.0299 builder_install=0.0006 digest=0.0000 total=0.0443 rows=84 stats=2
+[research-procure-diag] day=3 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=3 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=42/42 took=0.0118 cells=84 commands=84
+[probe] AB old_first=0 old=0.0057 new=0.0046 rows=84
+[probe] finish scratch=0.0001 emit=0.0097 versions=0.0178 builder_install=0.0004 digest=0.0008 total=0.0288 rows=84 stats=2
+[research-procure-diag] day=4 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=4 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=5 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=5 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=42/42 took=0.0115 cells=84 commands=84
+[probe] AB old_first=1 old=0.0053 new=0.0048 rows=84
+[probe] finish scratch=0.0000 emit=0.0111 versions=0.0179 builder_install=0.0004 digest=0.0008 total=0.0302 rows=84 stats=2
+[economy-open-finish] day=0 country=0.545 workset=0.035 fiscal=0.021 csr=0.000 recovery=0.000 vectors=0.042 audit=0.026 commands=0.002
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=0 old=0.0001 new=0.0002 rows=0
+[probe] fold step cursor=42/42 took=0.0093 cells=84 commands=84
+[probe] AB old_first=1 old=0.0052 new=0.0034 rows=84
+[probe] finish scratch=0.0001 emit=0.0084 versions=0.0144 builder_install=0.0003 digest=0.0000 total=0.0232 rows=84 stats=2
+[probe] fold step cursor=42/42 took=0.0103 cells=84 commands=84
+[probe] AB old_first=0 old=0.0044 new=0.0046 rows=84
+[probe] finish scratch=0.0000 emit=0.0084 versions=0.0154 builder_install=0.0004 digest=0.0009 total=0.0251 rows=84 stats=2
+[probe] fold step cursor=42/42 took=0.0095 cells=84 commands=84
+[probe] AB old_first=1 old=0.0051 new=0.0032 rows=84
+[probe] finish scratch=0.0001 emit=0.0105 versions=0.0162 builder_install=0.0005 digest=0.0009 total=0.0282 rows=84 stats=2
+[economy-open-finish] day=0 country=0.459 workset=0.042 fiscal=0.014 csr=0.001 recovery=0.000 vectors=0.049 audit=0.027 commands=0.002
+[probe] fold step cursor=42/42 took=0.0088 cells=84 commands=84
+[probe] AB old_first=0 old=0.0070 new=0.0047 rows=84
+[probe] finish scratch=0.0000 emit=0.0090 versions=0.0176 builder_install=0.0003 digest=0.0000 total=0.0269 rows=84 stats=2
+[probe] fold step cursor=42/42 took=0.0086 cells=84 commands=84
+[probe] AB old_first=1 old=0.0074 new=0.0038 rows=84
+[probe] finish scratch=0.0001 emit=0.0101 versions=0.0191 builder_install=0.0002 digest=0.0007 total=0.0302 rows=84 stats=2
+[economy-open-finish] day=0 country=0.551 workset=0.035 fiscal=0.008 csr=0.001 recovery=0.000 vectors=0.066 audit=0.029 commands=0.002
+ERROR: 19 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 635 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

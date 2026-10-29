@@ -1,0 +1,311 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] catalog: the card idea.public_hygiene is in the compiled ideology catalog
+  [PASS] catalog: the shipped catalog carries synergies, so the COUNTRY-level pending guard is live (equip/unequip/level all bail while one is in flight)
+  [PASS] catalog: the shipped slot budget is a positive number of slots
+[EM] ========== world A: equip / level / unequip (shipped catalog) ==========
+  [PASS] A: economy configures
+  [PASS] A: effects configure
+  [PASS] A: modifiers configure
+  [PASS] A: country configures
+  [PASS] A: the fixture territory is a proper subset of the grid
+  [PASS] A: the country bootstraps
+  [PASS] A: ideologies configure
+  [PASS] A: bootstrap_country registered exactly the intended territory
+  [PASS] A: the economy input epoch for day 0 opens
+  [PASS] A: the fixture resolves both bootstrap signatures (household_farmer = political class 'farmer', subsistence_farmer = 'general')
+  [PASS] A: the economy bootstraps (farmer 60 + general 20 per cell)
+  [PASS] A: economy day 0 reaches its committed boundary
+  [PASS] A: the fixture resolves the country handle
+[EM] A/territory: owned=42 of 64 cells -> the card must contribute 84 rows
+[EM] program ideology.effect.public_hygiene_l1 (L1): ok=true magnitude_q16=3277 -> 0.05000305
+[EM] ---- A1: equip, pre-settle ----
+  [PASS] grant: command seq 1 (opcode 2) is admitted by the queue
+  [PASS] discover: command seq 2 (opcode 1) is admitted by the queue
+  [PASS] equip: command seq 3 (opcode 5) is admitted by the queue
+  [PASS] A/equip: ideology day 0 completes
+[EM] A1 support: adopt=10743 repeal=3088 promote=12019 (thresholds [8192, 0, 20480])
+[EM] A1 support: allowed=[1, 1, 0] available=[1, 1, 1] blocking=[-1, -1, -1] revision=1
+[EM] A1 support: class_influence=[2891, 1308, 0] repeal_stances=[8192, -8192, -24576]
+[EM] A1 equip (pre-settle): locations=[1] levels=[0] understanding=[205] slots_used=1/2
+[EM] A1 equip (pre-settle): pending_transitions=1 pending_commands=0 commands_applied=3 levels_advanced=1 commands_rejected=0
+[EM] A1 equip (pre-settle): front installed=false cells=0 contributions=absent (no front installed) stats=0 generation=0 sample_day=?
+  [PASS] A1 equip: the equip command is admitted and the card occupies the IDEOLOGY slot at level 0
+  [PASS] A1 equip: the equip leaves a transition IN FLIGHT (pending_transitions == 1) until the Effect adapters ACK it
+  [PASS] A1 equip: the slot budget counts the card while the transition is in flight
+  [PASS] A1 equip: an unACKed equip publishes NO front at all (plan 10.1: a pending equip contributes nothing)
+  [PASS] A1 equip: the front therefore sums ZERO stats while the equip is pending (nothing lands before the ACK)
+[EM] ---- A2: a second equip while one is pending ----
+  [PASS] equip-while-pending: command seq 4 (opcode 5) is admitted by the queue
+  [PASS] A/equip-while-pending: ideology day 1 completes
+[EM] A2 receipt: opcode=5 status=3 reason='ideology_country_transition_pending'
+  [PASS] A2 equip: a SECOND equip while one transition is pending is REFUSED by the pending guard (country level, because the shipped catalog has synergies: ideology_runtime.cpp:4550)
+  [PASS] A2 equip: the refusal does NOT consume the command queue and does NOT settle or break the transition that is already in flight
+[EM] ---- A3 (day 1): the native adapter handshake, settled but NOT yet eligible ----
+[A/adapters] r1 modifier dispatch={ "ok": true, "submitted_transactions": 1, "submitted_commands": 1 } ack={ "ok": true, "acknowledged": 1, "rejected": 0, "pending": 0 } country={ "ok": true, "submitted_transactions": 0, "submitted_commands": 0 }/{ "ok": true, "acknowledged": 0, "rejected": 0, "pending": 0 }
+[A/adapters] rounds=1 effect_acked=true pre_poll_pending_transitions=1
+  [PASS] A3 settle: the native Effect adapters accepted and ACKED the equip's level commands
+  [PASS] A/settle: ideology day 1 completes
+[EM] A3 settled (day 1, before eligibility): locations=[1] levels=[0] understanding=[410] slots_used=1/2
+[EM] A3 settled (day 1, before eligibility): pending_transitions=0 pending_commands=0 commands_applied=3 levels_advanced=1 commands_rejected=1
+[EM] A3 settled (day 1, before eligibility): front installed=false cells=0 contributions=absent (no front installed) stats=0 generation=0 sample_day=?
+[EM] A3 settled (day 1) basis: confirmed_day=1 eligible_day=2 gated_by_eligibility=1 rebuild_visits=5 pending=false
+  [PASS] A3 settle: after the handshake the transition is SETTLED (pending_transitions == 0)
+  [PASS] A3 settle: the card is ACTIVE in the IDEOLOGY slot at level 0
+  [PASS] A3 basis: the settle CONFIRMS the projection on day 1 and makes it eligible from day 2 (plan 9.3: eligible_from_day = confirmed_day + 1)
+  [PASS] A3 basis: the day-1 rebuild is REFUSED by the eligibility gate and the refusal is COUNTED (derived_rebuild_gated_by_eligibility > 0)
+  [PASS] A3 settle: on the settle day itself the front is STILL NOT INSTALLED -- the confirmed projection is not adopted before eligible_from_day (plan 9.3)
+  [PASS] A3 settle: therefore NO cell carries the new L1 contribution on the settle day (the contribution is one day away, not zero)
+[EM] ---- A4 (day 2 = D + 1): the rebuild may now ADOPT ----
+  [PASS] A/adopt: ideology day 2 completes
+[EM] A4 adopted (day 2 = D + 1): locations=[1] levels=[0] understanding=[615] slots_used=1/2
+[EM] A4 adopted (day 2 = D + 1): pending_transitions=0 pending_commands=0 commands_applied=3 levels_advanced=1 commands_rejected=1
+[EM] A4 adopted (day 2 = D + 1): front installed=true cells=84 contributions=84 stats=2 generation=1 sample_day=2
+[EM] A4 adopted (day 2) basis: confirmed_day=1 eligible_day=2 gated_by_eligibility=1 rebuild_visits=7 pending=false
+  [PASS] A4 adopt: on day D + 1 the eligibility gate does NOT fire again (no new refusal is counted)
+  [PASS] A4 adopt: the adopted front is stamped with the ADOPTION day, not the confirmation day (front sample_day == 2)
+  [PASS] A4 adopt: the adopted front holds exactly the card's rows -- 2 stats x 42 owned cells
+  [PASS] A4 adopt: the front covers exactly the card's two stats
+  [PASS] A4 adopt: every owned cell carries the card's two derived stats
+  [PASS] A4 adopt: NO unowned cell carries a derived contribution
+  [PASS] A4 adopt: the covered cell's add is the L1 program magnitude (0.05000305 from evaluate_effect_program_magnitude)
+  [PASS] A4 adopt: the .cut stat's derived delta is NEGATIVE at L1
+  [PASS] A4 adopt: the L1 numbers are the CATALOG's authored ones -- add 3277/Q16 and cut -5243/Q16 (default_ideology_effects.tres:5336-5401)
+[EM] A4 magnitudes: add=0.05000305 cut=-0.08000183 (L1)
+[EM] ---- A5 (day 3): level advancement (ADD_UNDERSTANDING 524288) ----
+  [PASS] A5 level: before the change the card is at level 0 and its understanding is below the level-1 threshold
+  [PASS] understanding: command seq 5 (opcode 8) is admitted by the queue
+  [PASS] A/level: ideology day 3 completes
+[EM] A5 level (command day 3): locations=[1] levels=[1] understanding=[525108] slots_used=1/2
+[EM] A5 level (command day 3): pending_transitions=1 pending_commands=0 commands_applied=4 levels_advanced=2 commands_rejected=1
+[EM] A5 level (command day 3): front installed=true cells=84 contributions=84 stats=2 generation=1 sample_day=2
+  [PASS] A5 level: the level ADVANCES by exactly 1 on the command day
+  [PASS] A5 level: the understanding CROSSES the level-1 threshold (524288)
+  [PASS] A5 level: the report's levels_advanced counter increments by 1
+  [PASS] A5 level: the report's commands_applied counter increments
+[EM] program ideology.effect.public_hygiene_l2 (L2): ok=true magnitude_q16=5243 -> 0.08000183
+[EM] A5 magnitudes (PENDING, pre-ACK): add=0.05000305 cut=-0.08000183 (L1 0.05000305/-0.08000183, L2 0.08000183/-0.10000610)
+  [PASS] A5 level: the level-up leaves a transition IN FLIGHT (pending_transitions == 1) -- every magnitude below is measured while it is UNACKed
+  [PASS] A5 level: while PENDING the covered cell still serves the OLD L1 add (plan 10.1: a pending level-up keeps the old level) and NOT the L2 one
+  [PASS] A5 level: the two authored levels really differ, so the comparison above discriminates (the derived magnitudes are not a constant)
+  [PASS] A5 level: the .cut magnitude is also still the OLD L1 one while pending (negative, and not yet the deeper L2 cut)
+  [PASS] A5 level: both PENDING magnitudes are the CATALOG's authored L1 ones -- add 3277/Q16 and cut -5243/Q16
+  [PASS] A5 level: the front still covers exactly the card's rows after the level change (same shape, still the OLD numbers)
+  [PASS] A5 level: the pending day's fold is content-identical to the L1 front adopted on day 2, so the front is NOT re-installed (I13: generation unchanged while the level-up is unACKed)
+[EM] ---- A6 (day 3): the level-up settles -- basis confirmed, front still L1 ----
+[A/level/adapters] r1 modifier dispatch={ "ok": true, "submitted_transactions": 2, "submitted_commands": 2 } ack={ "ok": true, "acknowledged": 2, "rejected": 0, "pending": 0 } country={ "ok": true, "submitted_transactions": 0, "submitted_commands": 0 }/{ "ok": true, "acknowledged": 0, "rejected": 0, "pending": 0 }
+[A/level/adapters] rounds=1 effect_acked=true pre_poll_pending_transitions=1
+  [PASS] A/level-settle: ideology day 3 completes
+[EM] A6 level settled (day 3, before eligibility): locations=[1] levels=[1] understanding=[525108] slots_used=1/2
+[EM] A6 level settled (day 3, before eligibility): pending_transitions=0 pending_commands=0 commands_applied=4 levels_advanced=2 commands_rejected=1
+[EM] A6 level settled (day 3, before eligibility): front installed=true cells=84 contributions=84 stats=2 generation=1 sample_day=2
+[EM] A6 level settled (day 3) basis: confirmed_day=3 eligible_day=4 gated_by_eligibility=2 rebuild_visits=10 pending=false
+  [PASS] A6 level settle: the level transition settles through the same handshake (pending_transitions == 0)
+  [PASS] A6 level settle: the card keeps its earned level 1 in the IDEOLOGY slot
+  [PASS] A6 basis: the level-up settle CONFIRMS the projection on day 3 and makes it eligible from day 4 (plan 9.3: eligible_from_day = confirmed_day + 1)
+  [PASS] A6 basis: the day-3 rebuild is REFUSED by the eligibility gate again, so the refusal counter RISES on the settle day
+[EM] A6 magnitudes (settled, day 3, NOT eligible yet): add=0.05000305 cut=-0.08000183 (L1 0.05000305/-0.08000183, L2 0.08000183/-0.10000610)
+  [PASS] A6 level settle: the level is SETTLED and yet the front STILL serves the OLD L1 add -- the confirmed L2 projection is not eligible before day 4
+  [PASS] A6 level settle: the .cut magnitude is still the OLD L1 one too (negative, and not yet the deeper L2 cut)
+  [PASS] A6 level settle: the front was NOT re-installed on the settle day -- the gate kept the previous front, so the generation does not move
+  [PASS] A6 level settle: the front still covers exactly the card's rows
+[EM] ---- A7 (day 4 = E + 1): the L2 projection may now be ADOPTED ----
+  [PASS] A/level-adopt: ideology day 4 completes
+[EM] A7 level adopted (day 4): locations=[1] levels=[1] understanding=[525211] slots_used=1/2
+[EM] A7 level adopted (day 4): pending_transitions=0 pending_commands=0 commands_applied=4 levels_advanced=2 commands_rejected=1
+[EM] A7 level adopted (day 4): front installed=true cells=84 contributions=84 stats=2 generation=2 sample_day=4
+[EM] A7 level adopted (day 4) basis: confirmed_day=3 eligible_day=4 gated_by_eligibility=2 rebuild_visits=12 pending=false
+  [PASS] A7 adopt: on day E + 1 the front is re-installed exactly once, because the content moves from L1 to L2 here (I13)
+[EM] A7 magnitudes (adopted, day 4): add=0.08000183 cut=-0.10000610 (L2)
+  [PASS] A7 adopt: the adopted front carries the L2 program magnitude
+  [PASS] A7 adopt: the adopted cell really MOVED off the L1 values it served while pending and on the settle day (both stats)
+  [PASS] A7 adopt: both adopted magnitudes are the CATALOG's authored L2 ones -- add 5243/Q16 and cut -6554/Q16
+  [PASS] A7 adopt: the adopted front still covers exactly the card's rows
+[EM] ---- A8 (day 5): unequip ----
+[EM] A8 (before unequip) support: adopt=10743 repeal=3088 promote=12019 (thresholds [8192, 0, 20480])
+[EM] A8 (before unequip) support: allowed=[1, 1, 0] available=[1, 1, 1] blocking=[-1, -1, -1] revision=1
+[EM] A8 (before unequip) support: class_influence=[2891, 1308, 0] repeal_stances=[8192, -8192, -24576]
+  [PASS] unequip: command seq 6 (opcode 6) is admitted by the queue
+  [PASS] A/unequip: ideology day 5 completes
+[EM] A8 unequip (request day, pre-settle): locations=[0] levels=[1] understanding=[525211] slots_used=0/2
+[EM] A8 unequip (request day, pre-settle): pending_transitions=1 pending_commands=0 commands_applied=5 levels_advanced=2 commands_rejected=1
+[EM] A8 unequip (request day, pre-settle): front installed=false cells=0 contributions=absent (no front installed) stats=0 generation=3 sample_day=?
+[EM] A8 unequip receipt: status=1 reason=''
+  [PASS] A8 unequip: the unequip command is ACCEPTED (the class-opinion REPEAL gate passes with this fixture's farmer population)
+  [PASS] A8 unequip: the unequip leaves its own transition IN FLIGHT
+[EM] A8 front: cells 84 -> 0, contributions 84 -> 0 (the card owned exactly 84 rows)
+  [PASS] A8 unequip: a PENDING unequip already contributes nothing (location is INACTIVE at request time, :2313), so the card's rows leave the front on the request day -- cell_count falls by EXACTLY the card's rows
+  [PASS] A8 unequip: the front's contribution_count falls by EXACTLY the card's rows too (an absent key means the no-front branch of world_ext_modifier.cpp:1082-1086, i.e. zero rows)
+  [PASS] A8 unequip: the front is the explicit EMPTY result (no stale rows left behind)
+  [PASS] A8 unequip: NO cell still reports a derived contribution
+[EM] ---- A9 (day 6): a second unequip while one is pending ----
+  [PASS] unequip-while-pending: command seq 7 (opcode 6) is admitted by the queue
+  [PASS] A/unequip-while-pending: ideology day 6 completes
+[EM] A9 receipt: status=3 reason='ideology_country_transition_pending'
+  [PASS] A9 unequip: a SECOND unequip while one transition is pending is REFUSED by the pending guard (ideology_runtime.cpp:4576)
+[EM] ---- A10 (day 6): settle the unequip ----
+[A/unequip/adapters] r1 modifier dispatch={ "ok": true, "submitted_transactions": 1, "submitted_commands": 1 } ack={ "ok": true, "acknowledged": 1, "rejected": 0, "pending": 0 } country={ "ok": true, "submitted_transactions": 0, "submitted_commands": 0 }/{ "ok": true, "acknowledged": 0, "rejected": 0, "pending": 0 }
+[A/unequip/adapters] rounds=1 effect_acked=true pre_poll_pending_transitions=1
+  [PASS] A10 unequip settle: the native adapters ACKED the unequip's remove commands
+  [PASS] A/unequip-settle: ideology day 6 completes
+[EM] A10 unequipped (day 6, settled): locations=[0] levels=[1] understanding=[525211] slots_used=0/2
+[EM] A10 unequipped (day 6, settled): pending_transitions=0 pending_commands=0 commands_applied=5 levels_advanced=2 commands_rejected=2
+[EM] A10 unequipped (day 6, settled): front installed=false cells=0 contributions=absent (no front installed) stats=0 generation=3 sample_day=?
+[EM] A10 unequipped (day 6) basis: confirmed_day=6 eligible_day=7 gated_by_eligibility=3 rebuild_visits=17 pending=false
+  [PASS] A10 unequip: after the handshake the transition is SETTLED and the IDEOLOGY slot is EMPTY
+  [PASS] A10 basis: the unequip settle also moves the basis dates (confirmed 6, eligible 7), so the next confirmed projection is what day 7 may adopt
+  [PASS] A10 unequip: the settle does not resurrect a single row -- the front is still the explicit EMPTY result
+  [PASS] A10 unequip: the slot budget is FREED (ideology_slots_used returns to 0)
+[EM] ---- A11 (day 7): the freed capacity slot accepts a new equip ----
+  [PASS] re-equip: command seq 8 (opcode 5) is admitted by the queue
+  [PASS] A/re-equip: ideology day 7 completes
+[EM] A11 receipt: status=1 reason='' slots_used=1
+  [PASS] A11 re-equip: a NEW equip after the unequip is ACCEPTED (the freed capacity slot is usable)
+  [PASS] A11 re-equip: while the re-equip is PENDING the front stays EMPTY (a pending equip contributes nothing, plan 10.1)
+[EM] ---- A12 (day 7): the re-equip settles -- the front stays empty ----
+[A/re-equip/adapters] r1 modifier dispatch={ "ok": true, "submitted_transactions": 1, "submitted_commands": 1 } ack={ "ok": true, "acknowledged": 1, "rejected": 0, "pending": 0 } country={ "ok": true, "submitted_transactions": 0, "submitted_commands": 0 }/{ "ok": true, "acknowledged": 0, "rejected": 0, "pending": 0 }
+[A/re-equip/adapters] rounds=1 effect_acked=true pre_poll_pending_transitions=1
+  [PASS] A/re-equip-settle: ideology day 7 completes
+[EM] A12 re-equipped (day 7, settled, before eligibility): locations=[1] levels=[1] understanding=[525314] slots_used=1/2
+[EM] A12 re-equipped (day 7, settled, before eligibility): pending_transitions=0 pending_commands=0 commands_applied=6 levels_advanced=2 commands_rejected=2
+[EM] A12 re-equipped (day 7, settled, before eligibility): front installed=false cells=0 contributions=absent (no front installed) stats=0 generation=3 sample_day=?
+[EM] A12 re-equipped (day 7) basis: confirmed_day=7 eligible_day=8 gated_by_eligibility=4 rebuild_visits=20 pending=false
+  [PASS] A12 re-equip settle: the transition is SETTLED and the card is at level 1 in the IDEOLOGY slot
+  [PASS] A12 re-equip settle: the settle day publishes NOTHING -- the confirmed projection is not eligible before day 8 (plan 9.3)
+[EM] ---- A13 (day 8 = D + 1): the re-equipped card is ADOPTED ----
+  [PASS] A/re-equip-adopt: ideology day 8 completes
+[EM] A13 re-equipped (day 8, adopted): locations=[1] levels=[1] understanding=[525417] slots_used=1/2
+[EM] A13 re-equipped (day 8, adopted): pending_transitions=0 pending_commands=0 commands_applied=6 levels_advanced=2 commands_rejected=2
+[EM] A13 re-equipped (day 8, adopted): front installed=true cells=84 contributions=84 stats=2 generation=4 sample_day=8
+[EM] A13 re-equipped (day 8) basis: confirmed_day=7 eligible_day=8 gated_by_eligibility=4 rebuild_visits=22 pending=false
+  [PASS] A13 re-equip adopt: on day D + 1 the card is settled and back in the front with exactly its 84 rows
+  [PASS] A13 re-equip adopt: the L2 magnitudes come back with the card (the level was never lost by the unequip)
+[EM] A/final: cut=-0.10000610 (baseline before the equip was 0.00000000: the stat was untouched on every cell at that point)
+  [PASS] A/final: the re-equipped card at level 1 writes the authored L2 .cut value (-6554 / Q16, default_ideology_effects.tres:5443)
+[EM] ========== world B: per-card pending guard (synergies emptied) ==========
+  [PASS] B catalog: the fixture's catalog really has NO synergies, so the country-level pending term is skipped
+  [PASS] B: economy configures
+  [PASS] B: effects configure
+  [PASS] B: modifiers configure
+  [PASS] B: country configures
+  [PASS] B: the fixture territory is a proper subset of the grid
+  [PASS] B: the country bootstraps
+  [PASS] B: ideologies configure
+  [PASS] B: bootstrap_country registered exactly the intended territory
+  [PASS] B: the economy input epoch for day 0 opens
+  [PASS] B: the fixture resolves both bootstrap signatures (household_farmer = political class 'farmer', subsistence_farmer = 'general')
+  [PASS] B: the economy bootstraps (farmer 60 + general 20 per cell)
+  [PASS] B: economy day 0 reaches its committed boundary
+  [PASS] B: the fixture resolves the country handle
+  [PASS] B/grant: command seq 9 (opcode 2) is admitted by the queue
+  [PASS] B/discover: command seq 10 (opcode 1) is admitted by the queue
+  [PASS] B/equip: command seq 11 (opcode 5) is admitted by the queue
+  [PASS] B/equip: ideology day 0 completes
+  [PASS] B1 equip: the equip is in flight (pending_transitions == 1)
+  [PASS] B/equip-while-pending: command seq 12 (opcode 5) is admitted by the queue
+  [PASS] B/equip-while-pending: ideology day 1 completes
+[EM] B2 receipt: status=3 reason='ideology_transition_pending'
+  [PASS] B2 equip: with the synergy table empty a SECOND equip while one is pending is REFUSED by the PER-CARD guard -- reason is exactly 'ideology_transition_pending' (ideology_runtime.cpp:4555)
+  [PASS] B2 equip: the in-flight transition is untouched by the refusal
+[B/adapters] r1 modifier dispatch={ "ok": true, "submitted_transactions": 1, "submitted_commands": 1 } ack={ "ok": true, "acknowledged": 1, "rejected": 0, "pending": 0 } country={ "ok": true, "submitted_transactions": 0, "submitted_commands": 0 }/{ "ok": true, "acknowledged": 0, "rejected": 0, "pending": 0 }
+[B/adapters] rounds=1 effect_acked=true pre_poll_pending_transitions=1
+  [PASS] B/settle: ideology day 2 completes
+  [PASS] B3 settle: the equip settles through the handshake (pending_transitions == 0)
+  [PASS] B/unequip: command seq 13 (opcode 6) is admitted by the queue
+  [PASS] B/unequip: ideology day 3 completes
+  [PASS] B/unequip-while-pending: command seq 14 (opcode 6) is admitted by the queue
+  [PASS] B/unequip-while-pending: ideology day 4 completes
+[EM] B4 receipt: status=3 reason='ideology_not_equipped'
+  [PASS] B4 unequip: a SECOND unequip while one is pending is REFUSED -- and without synergies the code is 'ideology_not_equipped', because the request already moved the location to INACTIVE (:4580 runs before :4581)
+[B/unequip/adapters] r1 modifier dispatch={ "ok": true, "submitted_transactions": 1, "submitted_commands": 1 } ack={ "ok": true, "acknowledged": 1, "rejected": 0, "pending": 0 } country={ "ok": true, "submitted_transactions": 0, "submitted_commands": 0 }/{ "ok": true, "acknowledged": 0, "rejected": 0, "pending": 0 }
+[B/unequip/adapters] rounds=1 effect_acked=true pre_poll_pending_transitions=1
+  [PASS] B/unequip-settle: ideology day 5 completes
+  [PASS] B5 unequip settle: the unequip settles and the slot is empty with no contribution left
+[EM] ========== world C: negative control (general-only population) ==========
+  [PASS] C: economy configures
+  [PASS] C: effects configure
+  [PASS] C: modifiers configure
+  [PASS] C: country configures
+  [PASS] C: the fixture territory is a proper subset of the grid
+  [PASS] C: the country bootstraps
+  [PASS] C: ideologies configure
+  [PASS] C: bootstrap_country registered exactly the intended territory
+  [PASS] C: the economy input epoch for day 0 opens
+  [PASS] C: the fixture resolves both bootstrap signatures (household_farmer = political class 'farmer', subsistence_farmer = 'general')
+  [PASS] C: the economy bootstraps (farmer 0 + general 80 per cell)
+  [PASS] C: economy day 0 reaches its committed boundary
+  [PASS] C: the fixture resolves the country handle
+  [PASS] C/grant: command seq 15 (opcode 2) is admitted by the queue
+  [PASS] C/discover: command seq 16 (opcode 1) is admitted by the queue
+  [PASS] C/equip: command seq 17 (opcode 5) is admitted by the queue
+  [PASS] C/equip: ideology day 0 completes
+  [PASS] C1 control: with a general-only population the EQUIP is still accepted (its adopt stance is positive), so only the repeal differs
+[C/adapters] r1 modifier dispatch={ "ok": true, "submitted_transactions": 1, "submitted_commands": 1 } ack={ "ok": true, "acknowledged": 1, "rejected": 0, "pending": 0 } country={ "ok": true, "submitted_transactions": 0, "submitted_commands": 0 }/{ "ok": true, "acknowledged": 0, "rejected": 0, "pending": 0 }
+[C/adapters] rounds=1 effect_acked=true pre_poll_pending_transitions=1
+  [PASS] C/settle: ideology day 1 completes
+[EM] C (before unequip) support: adopt=16384 repeal=-8192 promote=20480 (thresholds [8192, 0, 20480])
+[EM] C (before unequip) support: allowed=[1, 0, 1] available=[1, 1, 1] blocking=[-1, -1, -1] revision=1
+[EM] C (before unequip) support: class_influence=[0, 3780, 0] repeal_stances=[8192, -8192, -24576]
+  [PASS] C2 control: the REPEAL support is NEGATIVE with this population (the general class repeal stance), i.e. below the card's threshold 0
+  [PASS] C/unequip: command seq 18 (opcode 6) is admitted by the queue
+  [PASS] C/unequip: ideology day 2 completes
+[EM] C3 receipt: status=3 reason='ideology_support_threshold_not_met' locations=[1]
+  [PASS] C3 control: the UNEQUIP is REFUSED with 'ideology_support_threshold_not_met' -- this is the gate, not a stuck transition (pending_transitions is 0 here)
+  [PASS] C3 control: the card stays equipped and serving after the refusal (a refused unequip is a no-op, not a half transition)
+[EM] ---- summary ----
+[EM] catalog: capacity=2 synergies=68
+[EM] A basis (plan 9.3): settled on day 1, confirmed=1 eligible=2, gated=1, front still not installed on the settle day
+[EM] A equip adopted on day 2 (D + 1): cells=84 contributions=84 add=0.05000305 cut=-0.08000183
+[EM] A level up: level 0 -> 1, understanding 615 -> 525108, add 0.05000305 -> 0.08000183 on day 4 (E + 1), levels_advanced 1 -> 2
+[EM] A unequip: accepted on day 5, slots_used 1 -> 0, front 84 -> 0 rows on the request day, settled day 6; re-equip accepted day 7, front back to 84 rows on day 8
+=== ideology mechanism: equip/unequip + level advancement: 160 checks, 0 failures ===
+[economy-open-finish] day=0 country=0.689 workset=0.036 fiscal=0.024 csr=0.000 recovery=0.001 vectors=0.089 audit=0.030 commands=0.005
+[research-procure-diag] day=0 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=1 old=0.0003 new=0.0001 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0001 rows=0
+[probe] fold step cursor=42/42 took=0.0105 cells=84 commands=84
+[probe] AB old_first=1 old=0.0038 new=0.0036 rows=84
+[probe] finish scratch=0.0001 emit=0.0068 versions=0.0131 builder_install=0.0003 digest=0.0001 total=0.0204 rows=84 stats=2
+[probe] fold step cursor=42/42 took=0.0067 cells=84 commands=84
+[probe] AB old_first=0 old=0.0046 new=0.0053 rows=84
+[probe] finish scratch=0.0000 emit=0.0077 versions=0.0155 builder_install=0.0001 digest=0.0008 total=0.0241 rows=84 stats=2
+[probe] fold step cursor=42/42 took=0.0056 cells=84 commands=84
+[probe] AB old_first=1 old=0.0036 new=0.0027 rows=84
+[probe] finish scratch=0.0000 emit=0.0054 versions=0.0113 builder_install=0.0002 digest=0.0005 total=0.0174 rows=84 stats=2
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=0 old=0.0001 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0001 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0001 rows=0
+[probe] fold step cursor=42/42 took=0.0065 cells=84 commands=84
+[probe] AB old_first=1 old=0.0046 new=0.0034 rows=84
+[probe] finish scratch=0.0001 emit=0.0067 versions=0.0138 builder_install=0.0002 digest=0.0000 total=0.0208 rows=84 stats=2
+[economy-open-finish] day=0 country=0.624 workset=0.031 fiscal=0.008 csr=0.000 recovery=0.000 vectors=0.043 audit=0.024 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=0 old=0.0001 new=0.0001 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=0 old=0.0001 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0001 rows=0
+[economy-open-finish] day=0 country=0.404 workset=0.028 fiscal=0.007 csr=0.000 recovery=0.000 vectors=0.042 audit=0.044 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=0 old=0.0001 new=0.0002 rows=0
+[probe] fold step cursor=42/42 took=0.0070 cells=84 commands=84
+[probe] AB old_first=1 old=0.0049 new=0.0030 rows=84
+[probe] finish scratch=0.0001 emit=0.0066 versions=0.0136 builder_install=0.0002 digest=0.0001 total=0.0206 rows=84 stats=2
+ERROR: 19 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 635 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

@@ -290,6 +290,34 @@ bool decode_country_core_checkpoint(const uint8_t *bytes, size_t size,
                                     CountryCoreCheckpoint &out,
                                     std::string &error);
 
+// -- TEST-ONLY seam: mint the smallest checkpoint the validator accepts ---------
+//
+// WHY IT IS NEEDED
+//
+// `validate_country_core_checkpoint` refuses a foreign ABI
+// (`country_checkpoint_abi_incompatible`) and a foreign schema
+// (`country_checkpoint_schema_incompatible`), and `decode_country_core_checkpoint`
+// reaches both through the container's ABI/schema fields. Nothing could prove it:
+//   * `encode_country_core_checkpoint` validates FIRST, so a checkpoint with a wrong
+//     ABI cannot be turned into bytes at all -- there is no way to mint a bad container;
+//   * the only production entry point that decodes a checkpoint is
+//     `NativeSimulationHost::pending_country_checkpoint`, which is host-internal, so a
+//     test has no bytes to tamper with.
+//
+// So a test could only assert the struct-level refusal, which never exercises the
+// container path a real restore walks. This closes that gap.
+//
+// WHY IT CANNOT WEAKEN ANYTHING
+//
+// It only CONSTRUCTS a legal checkpoint; every check still runs in the two functions
+// that own them. It cannot build an invalid checkpoint (the result is validated before it
+// is handed back), it does not read or write any runtime state, and no production path
+// calls it -- it exists for `tests/country_checkpoint_refusal_test.cpp`, which encodes
+// the result, flips one field in the bytes, re-seals the container checksum and asserts
+// the exact refusal.
+bool country_checkpoint_minimal_valid_for_test(CountryCoreCheckpoint &out,
+                                               std::string &error);
+
 struct CountryBoundarySeal {
     uint64_t session_epoch = 0;
     uint64_t boundary_id = 0;

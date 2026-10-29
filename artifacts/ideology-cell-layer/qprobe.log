@@ -1,0 +1,49 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[q] dense=87 of 113 ids
+[q] configure_economy ok=true
+[q] configure_effects ok=true
+[q] configure_modifiers ok=true
+[q] configure_country ok=true
+[q] bootstrap_country ok=true
+[q] persistent_definition_keys=595 offsets=340
+[q] salt persistent keys=["ideology.salt_monopoly", "salt_monopoly_l1", "ideology.salt_monopoly", "salt_monopoly_l2", "ideology.salt_monopoly", "salt_monopoly_l3"]
+[q] level_persistent_offsets=[0, 1, 2, 3, 5, 7, 9, 11, 13, 15, 16, 17]
+[q] configure_ideologies ok=true
+[q] handle=4294967296
+[q] entity_count before=0 after=64
+[q] cell_temp sid=0
+[q] environment slots filled=10 of 10
+[q] economy epoch ok=true reason=
+[q] sigs farmer=39 serf=37 merchant=26 goods=134
+[q] bootstrap_economy ok=true reason=-
+[q] economy day 0 finished after 14 slices
+[q] receipts={ "ok": true, "receipt_ids": [], "producer_ids": [], "sequences": [], "statuses": [], "opcodes": [], "country_handles": [], "ideology_ids": [], "settled_days": [], "reasons": [], "count": 0, "latest_receipt_id": 0 }
+[q] grant points={ "ok": true, "accepted": 1, "duplicates": 0, "pending": 1, "worker_shadow_mirrored": true }
+[q] after grant: snapshot ideas=0
+[q] discover={ "ok": true, "accepted": 1, "duplicates": 0, "pending": 1, "worker_shadow_mirrored": true }
+[q] understanding={ "ok": true, "accepted": 1, "duplicates": 0, "pending": 1, "worker_shadow_mirrored": true }
+[q] equip={ "ok": true, "accepted": 1, "duplicates": 0, "pending": 1, "worker_shadow_mirrored": true }
+[q]   receipts count=4 statuses=[2, 2, 2, 1] reasons=["", "", "", ""]
+[q]   transition_pending=[1] slot_indices=[0] points_q16=4194304
+[q] equip-settle day=0 idea_ids=1 locations=[1] levels=[0] active=1 applied=1
+[q] ACTIVE!
+[q] levels=[0] understanding=[819]
+[q] probe backend=DerivedCell reason= detail=derived
+[q] program_count(selector 12)={ "ok": true, "generation": 1, "entry_count": 1, "country_count": 1, "unsupported_selector": 0, "unsupported_definition": 1, "unsupported_stack": 0, "unsupported_domain": 0, "scanned_cards": 1, "scanned_templates": 2, "entries": [{ "stat_id": 6, "filter_tag": 142, "operation": 0, "coef_q16": 655 }] }
+[q] program ideology.effect.salt_monopoly_l1 -> ok=true reason=-
+[q] program ideology.effect.salt_monopoly -> ok=false reason=effect_program_not_found
+[q] program ideology.effect.SaltMonopolyL1 -> ok=false reason=effect_program_not_found
+[q] effect catalog program_keys=0
+[q] ideology programs in effect catalog=[]
+[q] country_anchor_cell(slot=0) = 0
+[q] kind=12 -> backend=DerivedCell reason= detail=derived
+[q] kind=16 -> backend=DerivedCell reason= detail=derived
+[q] === RAMP COUNTERS ===
+[q] cell_layer_rebuild_visits=5
+[q] ramp_samples_taken=0 memoised=0 evaluated=0 deferred=0
+[q] materialise seen=0 derived=0 legacy=0 truncated=0
+[q] day=0 ideas=0 commands_applied=0 pending_commands=0 stage=ideology_active_progress
+[q] day=1 ideas=0 commands_applied=0 pending_commands=0 stage=ideology_active_progress
+[q] day=2 ideas=0 commands_applied=0 pending_commands=0 stage=ideology_active_progress
+[q] day=3 ideas=0 commands_applied=0 pending_commands=0 stage=ideology_active_progress

@@ -1,0 +1,229 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=432 native_ms=1.256 water=330 land=102
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=432 native_ms=0.338 lakes=0 rivers=0 volcanoes=0
+[native_generation/vegetation] native_ms=0.083 candidates=102 none=216 score=[0.000,1.835,1.102] plant_water_land=102 river_adjacent_desert=0 coastal_highland_desert=1 terrain_weight=[0.180,1.200]
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=1 largest=330 | land_below_sea=0.0% | terr_distinct=13 entropy=2.649bit | river_ratio=0.000%
+MapGenerator v7: per-cell 41ms (432 cells, path=gdext)
+MapBaker v6: hm=(1024, 694) seed=20261022
+    [fused] terrain=100.8ms valley=143.4ms erosion=3.2ms(ok=true) river=12.4ms(ok=true) latitude=0.1ms coast_sdf=3.8ms(ok=true)
+  geometry fields (fused C++): 342ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  visual tiles: {"degradation_reason":"","effective_budget_px":338688,"effective_texels_per_hex":16.0826901849157,"effective_world_units_per_texel":"(1.360897, 1.375)","estimated_peak_bytes":21762720,"estimated_resident_bytes":16235680,"fallback_reason":"","generation_id":1,"grid_size":"(2, 1)","gutter_px":2,"hex_size":22.0,"horizon_path":"neutral_pending","interior_size":"(336, 504)","layer_size":"(340, 508)","layers":[{"bake_ms":146.0839,"coast_sdf_max_dist_px":5.83711304916906,"distance_scale":0.729639131146133,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-5444765428937410105,"edge_neighbor":-9153207607676036314,"height":6614831613580661085,"map_index":3639542555288137451,"terrain_detail":1729453471367148722,"terrain_normal":21633741119299022,"terrain_relief":-5857083970201801737,"water_depth":4667347845417777705},"layer":0,"normal_radius_px":"(6, 6)","raster_scale":"(0.73307, 0.726225)","river_sdf_max_dist_px":2.55373695901146,"shore_carve_band_px":4,"upload_ms":0.069,"wall_ms":147.018},{"bake_ms":108.5811,"coast_sdf_max_dist_px":5.83711304916906,"distance_scale":0.729639131146133,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":5578749692526953460,"edge_neighbor":7886947831172949333,"height":-2858059635395581118,"map_index":3449209846680915315,"terrain_detail":1420861028008514436,"terrain_normal":-3681753351423352233,"terrain_relief":-5811060677009272834,"water_depth":-290586385173045830},"layer":1,"normal_radius_px":"(6, 6)","raster_scale":"(0.73307, 0.726225)","river_sdf_max_dist_px":2.55373695901146,"shore_carve_band_px":4,"upload_ms":0.137,"wall_ms":110.773}],"logical_size":"(672, 504)","mode":"tiled","path":"visual_tiled_static","profile":"desktop_high","relief_scale":2,"renderer":"mobile","requested_budget_px":335664,"requested_texels_per_hex":16.0,"requested_tile_world_span":"(704.0, 704.0)","requested_world_units_per_texel":1.375,"tile_world_area":316882.159606934,"tile_world_span":"(457.2614, 693.0)","total_ms":272.354,"visual_domain":"[P: (0.0, -44.0), S: (914.5228, 693.0)]","wrap_period_x":914.522826396367,"wrap_x":true}
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 725ms
+MapBaker v6: total 1081ms
+MapGenerator v7: bake 1096ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[loading-substep] await map.build_indices_cooperative() 1103.1ms
+[loading-substep] _generate_static_research_signals(map) 118.7ms
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=432 wrap_period_x=41.569
+[native_generation] path=gdext n=432 published=9 native_ms=0.070 compute_ms=0.012 flush_ms=0.058
+[hex_cell] facade ENABLED (432 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=0.66ms wind=0.13ms psi=0.09ms(ran=true) upwelling=0.01ms total=1.06ms
+PhysicalCirculation solve@phase=1.50 total=2ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 3ms
+[cell_lut] deferred encode: 0ms path=gdext
+[loading-substep] _bootstrap_natural_resource_deposits 87.0ms
+[bio-occupancy] seed landmasses=9 provinces=9 species=20 secondary_hearths=6
+[bio-occupancy]   bio.maize envelope=6 hearth=1 seeded_landmasses=1 primary_landmass=2 primary_envelope=5 occupied=1 occupied/envelope=0.20
+[bio-occupancy]   bio.wheat envelope=27 hearth=7 seeded_landmasses=2 primary_landmass=7 primary_envelope=11 occupied=7 occupied/envelope=0.64
+[bio-occupancy]   bio.rice envelope=13 hearth=1 seeded_landmasses=1 primary_landmass=6 primary_envelope=4 occupied=1 occupied/envelope=0.25
+[bio-occupancy]   bio.potato envelope=26 hearth=10 seeded_landmasses=2 primary_landmass=2 primary_envelope=14 occupied=10 occupied/envelope=0.71
+[bio-occupancy]   bio.horse envelope=33 hearth=13 seeded_landmasses=2 primary_landmass=2 primary_envelope=14 occupied=13 occupied/envelope=0.93
+[bio-occupancy]   bio.cotton envelope=17 hearth=4 seeded_landmasses=1 primary_landmass=6 primary_envelope=7 occupied=4 occupied/envelope=0.57
+[bio-occupancy]   bio.flax envelope=24 hearth=6 seeded_landmasses=1 primary_landmass=2 primary_envelope=11 occupied=6 occupied/envelope=0.55
+[bio-occupancy]   bio.spice envelope=19 hearth=1 seeded_landmasses=1 primary_landmass=6 primary_envelope=8 occupied=1 occupied/envelope=0.13
+[bio-occupancy]   bio.rubber envelope=15 hearth=2 seeded_landmasses=1 primary_landmass=6 primary_envelope=6 occupied=2 occupied/envelope=0.33
+[bio-occupancy]   bio.sheep envelope=17 hearth=2 seeded_landmasses=1 primary_landmass=2 primary_envelope=9 occupied=2 occupied/envelope=0.22
+[bio-occupancy]   bio.goat envelope=46 hearth=4 seeded_landmasses=1 primary_landmass=2 primary_envelope=16 occupied=4 occupied/envelope=0.25
+[bio-occupancy]   bio.cattle envelope=0 hearth=0 seeded_landmasses=0 primary_landmass=0 primary_envelope=0 occupied=0 occupied/envelope=0.00
+[bio-occupancy]   bio.pig envelope=34 hearth=12 seeded_landmasses=4 primary_landmass=6 primary_envelope=8 occupied=12 occupied/envelope=1.50
+[bio-occupancy]   bio.camel envelope=11 hearth=5 seeded_landmasses=1 primary_landmass=7 primary_envelope=11 occupied=5 occupied/envelope=0.45
+[bio-occupancy]   bio.yak envelope=9 hearth=3 seeded_landmasses=1 primary_landmass=7 primary_envelope=5 occupied=3 occupied/envelope=0.60
+[bio-occupancy]   bio.silkworm envelope=17 hearth=3 seeded_landmasses=1 primary_landmass=6 primary_envelope=7 occupied=3 occupied/envelope=0.43
+[bio-occupancy]   bio.reed envelope=17 hearth=3 seeded_landmasses=1 primary_landmass=6 primary_envelope=5 occupied=3 occupied/envelope=0.60
+[bio-occupancy]   bio.bast_fiber envelope=29 hearth=4 seeded_landmasses=1 primary_landmass=2 primary_envelope=8 occupied=4 occupied/envelope=0.50
+[bio-occupancy]   bio.dye_plant envelope=20 hearth=4 seeded_landmasses=1 primary_landmass=7 primary_envelope=8 occupied=4 occupied/envelope=0.50
+[bio-occupancy]   bio.medicinal_herb envelope=43 hearth=8 seeded_landmasses=3 primary_landmass=2 primary_envelope=12 occupied=8 occupied/envelope=0.67
+[bio-occupancy]   landmass 1 classes=none foods=none
+[bio-occupancy]   landmass 2 classes=highland_food, dry_grazer, fiber_forest, open_grazer, fiber_open, open_food, forest_grazer foods=potato, maize
+[bio-occupancy]   landmass 3 classes=none foods=none
+[bio-occupancy]   landmass 4 classes=open_food, forest_grazer foods=wheat
+[bio-occupancy]   landmass 5 classes=none foods=none
+[bio-occupancy]   landmass 6 classes=fiber_wet, tropical, forest_grazer, fiber_open, fiber_forest, wetland_food foods=rice
+[bio-occupancy]   landmass 7 classes=forest_grazer, fiber_open, fiber_forest, open_food, open_grazer, dry_grazer, highland_food, cold_grazer foods=wheat, potato
+[bio-occupancy]   landmass 8 classes=none foods=none
+[bio-occupancy]   landmass 9 classes=none foods=none
+[loading-substep] _seed_bio_occupancy 1994.7ms
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[loading-substep] _publish_bootstrapped_natural_resources_to_runtime 46.7ms
+[loading-substep] effect_catalog 5442.7ms
+[loading-substep] _modifier_facade.configure( 1684.6ms
+[loading-substep] _country_facade.configure( 1616.5ms
+[loading-substep] _country_facade.bootstrap(map.is_water_arr, country_packet) 1878.3ms
+[loading-substep] ideology_facade.configure( 195.8ms
+[economy] ACTIVE native graph cells=432 goods=134 cohorts=4 epoch_days=1 trade=ACTIVE topology_ready=true topology_generation=1 bootstrap=starter_settlement_bootstrap_v9 founder_families=1 founder_people=1
+[country] ACTIVE native authority countries=1 cells=432 generation=1
+[economy/test-bootstrap] scale_mode=capacity populated_cells=0 population=0 cohorts=0 professions=0/0 building_groups=0 building_types=0/0 capacity_buildings=0->0 trimmed=0 population_range=0..0 cap=0 goods=0 tiers={  } construction_regions=0/0 skipped=0
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily + bio_occupancy_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "trigger_runtime", "modifier_daily", "natural_resource_daily", "bio_occupancy_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+[loading-visual-substep] building_visual_setup 10.5ms
+[tech-ui-diag/query] apply ok gen=1 day=-1 view_gen=1 progress_total=0 pending_words=6
+[runtime-worker] production ACTIVE started mask=4095 auto_pod=true
+[economy-climate-gate] day=1 climate_ok=0 stall=0x10 ring=0
+[runtime-day-wait] day=1 env_day=0 missing=0x3ff stall=0x10 economy_input=-1 ring=0 country=
+[loading-visual-substep] start_worker 12.0ms
+[psi_solver] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true heat=true -> cpp_gate=true
+[psi_solver] gdext path ACTIVE — first run elapsed=0.20ms (legacy GDScript stage3+4+5 baseline ~32+ms; target < 5ms)
+[psi_solver] commit-diag call#1: rc=0.198 n_water=330 n_cells=432 published=true
+  [ocean_currents] slow phys slice=12.5ms (just-finished stage=3/phys_psi_init, next=6/phys_upwelling, path=gdext, round_done=false)
+[sim/graph-barrier] day=0 pulses=30 released=false pinned=economy work=1920 economy_slices=1920 economy_commits=0 yields=0 last_us=392 trigger_blocked=0/
+[sim/graph-barrier/host] day=0 state=PAUSED econ_requested=true econ_granted=false inflight=0 stall=fiscal_peer@1 sim_committed_day=0 sim_env_day=0 econ_input_day=-1 econ_stage=/ econ_yield= attempt_slices=0 wait_input_us=298422 wait_boundary_us=0
+[sim/graph-barrier/day] day=0 waiting_day=1 missing=input_capture|climate|country|trigger|ideology|effect|modifier|gameplay_effect|economy|events env_day=0 ring=0 stall=fiscal_peer park=effect:effect_parked_climate_input
+[sim/graph-barrier/pods] effect ready=false gen=0 reason= inst_rejected=0 reject_detail= | modifier ready=true reason= | ideology ready=false reason= | events ready=true failed_day=-1 reason= | country_blocker=
+[sim/graph-barrier/econ] day=0 fatal=false stage=idle exec=idle substage=? epoch_active=false current_day=-1 last_committed_day=-1 env_day=-1 trade_plan=IDLE sample_day=-1 last_completed_sample_day=-1
+[sim/graph-barrier] day=0 pulses=330 released=false pinned=economy work=21120 economy_slices=21120 economy_commits=0 yields=0 last_us=573 trigger_blocked=0/
+[sim/graph-barrier/host] day=0 state=PAUSED econ_requested=true econ_granted=false inflight=0 stall=fiscal_peer@1 sim_committed_day=0 sim_env_day=0 econ_input_day=-1 econ_stage=/ econ_yield= attempt_slices=0 wait_input_us=437177 wait_boundary_us=0
+[sim/graph-barrier/day] day=0 waiting_day=1 missing=input_capture|climate|country|trigger|ideology|effect|modifier|gameplay_effect|economy|events env_day=0 ring=0 stall=fiscal_peer park=effect:effect_parked_climate_input
+[sim/graph-barrier/pods] effect ready=false gen=0 reason= inst_rejected=0 reject_detail= | modifier ready=true reason= | ideology ready=false reason= | events ready=true failed_day=-1 reason= | country_blocker=
+[sim/graph-barrier/econ] day=0 fatal=false stage=idle exec=idle substage=? epoch_active=false current_day=-1 last_committed_day=-1 env_day=-1 trade_plan=IDLE sample_day=-1 last_completed_sample_day=-1
+[DCSystemScheduler][RT] ocean_skip#1 tick=1 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[sim/graph-barrier] day=1 pulses=30 released=false pinned=economy work=27520 economy_slices=27520 economy_commits=0 yields=0 last_us=445 trigger_blocked=0/
+[sim/graph-barrier/host] day=1 state=PAUSED econ_requested=true econ_granted=false inflight=0 stall=fiscal_peer@1 sim_committed_day=0 sim_env_day=0 econ_input_day=-1 econ_stage=/ econ_yield= attempt_slices=0 wait_input_us=3341275 wait_boundary_us=0
+[sim/graph-barrier/day] day=1 waiting_day=1 missing=input_capture|climate|country|trigger|ideology|effect|modifier|gameplay_effect|economy|events env_day=0 ring=0 stall=fiscal_peer park=effect:effect_parked_climate_input
+[sim/graph-barrier/pods] effect ready=false gen=0 reason= inst_rejected=0 reject_detail= | modifier ready=true reason= | ideology ready=false reason= | events ready=true failed_day=-1 reason= | country_blocker=
+[sim/graph-barrier/econ] day=1 fatal=false stage=idle exec=idle substage=? epoch_active=false current_day=-1 last_committed_day=-1 env_day=-1 trade_plan=IDLE sample_day=-1 last_completed_sample_day=-1
+[sim/graph-barrier] day=1 pulses=330 released=false pinned=economy work=46720 economy_slices=46720 economy_commits=0 yields=0 last_us=640 trigger_blocked=0/
+[sim/graph-barrier/host] day=1 state=PAUSED econ_requested=true econ_granted=false inflight=0 stall=fiscal_peer@1 sim_committed_day=0 sim_env_day=0 econ_input_day=-1 econ_stage=/ econ_yield= attempt_slices=0 wait_input_us=3341275 wait_boundary_us=0
+[sim/graph-barrier/day] day=1 waiting_day=1 missing=input_capture|climate|country|trigger|ideology|effect|modifier|gameplay_effect|economy|events env_day=0 ring=0 stall=fiscal_peer park=effect:effect_parked_climate_input
+[sim/graph-barrier/pods] effect ready=false gen=0 reason= inst_rejected=0 reject_detail= | modifier ready=true reason= | ideology ready=false reason= | events ready=true failed_day=-1 reason= | country_blocker=
+[sim/graph-barrier/econ] day=1 fatal=false stage=idle exec=idle substage=? epoch_active=false current_day=-1 last_committed_day=-1 env_day=-1 trade_plan=IDLE sample_day=-1 last_completed_sample_day=-1
+[climate][publish] day=0 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[tech-ui-diag/query] apply ok gen=1 day=1 view_gen=1 progress_total=0 pending_words=6
+[DCSystemScheduler][RT] ocean_skip#2 tick=2 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[runtime-day-wait] day=1 env_day=1 missing=0x20 stall=0x0 economy_input=-1 ring=0 country=
+[sim/graph-barrier] day=2 pulses=30 released=false pinned=economy work=53056 economy_slices=53056 economy_commits=0 yields=0 last_us=461 trigger_blocked=0/
+[sim/graph-barrier/host] day=2 state=RUNNING econ_requested=true econ_granted=false inflight=1 stall=none@-1 sim_committed_day=0 sim_env_day=1 econ_input_day=-1 econ_stage=trade_planning/commit econ_yield= attempt_slices=1 wait_input_us=6207700 wait_boundary_us=0
+[sim/graph-barrier/day] day=2 waiting_day=1 missing=effect env_day=1 ring=0 stall=none park=effect:effect_catalog_empty
+[sim/graph-barrier/pods] effect ready=false gen=0 reason= inst_rejected=0 reject_detail= | modifier ready=true reason= | ideology ready=false reason=ideology_pod_not_configured | events ready=true failed_day=-1 reason= | country_blocker=
+[sim/graph-barrier/econ] day=2 fatal=false stage=trade_planning exec=fiscal_settlement substage=? epoch_active=false current_day=1 last_committed_day=1 env_day=1 trade_plan=SCAN sample_day=1 last_completed_sample_day=1
+[sim/graph-barrier] day=2 pulses=330 released=false pinned=economy work=72256 economy_slices=72256 economy_commits=0 yields=0 last_us=304 trigger_blocked=0/
+[sim/graph-barrier/host] day=2 state=RUNNING econ_requested=true econ_granted=false inflight=1 stall=none@-1 sim_committed_day=0 sim_env_day=1 econ_input_day=-1 econ_stage=trade_planning/commit econ_yield= attempt_slices=1 wait_input_us=6207700 wait_boundary_us=0
+[sim/graph-barrier/day] day=2 waiting_day=1 missing=effect env_day=1 ring=0 stall=none park=effect:effect_catalog_empty
+[sim/graph-barrier/pods] effect ready=false gen=0 reason= inst_rejected=0 reject_detail= | modifier ready=true reason= | ideology ready=false reason=ideology_pod_not_configured | events ready=true failed_day=-1 reason= | country_blocker=
+[sim/graph-barrier/econ] day=2 fatal=false stage=trade_planning exec=fiscal_settlement substage=? epoch_active=false current_day=1 last_committed_day=1 env_day=1 trade_plan=SCAN sample_day=1 last_completed_sample_day=1
+[DCSystemScheduler][RT] ocean_skip#3 tick=3 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[sim/graph-barrier] day=3 pulses=30 released=false pinned=economy work=78721 economy_slices=78720 economy_commits=0 yields=0 last_us=181 trigger_blocked=0/
+[sim/graph-barrier/host] day=3 state=RUNNING econ_requested=true econ_granted=false inflight=1 stall=none@-1 sim_committed_day=0 sim_env_day=2 econ_input_day=-1 econ_stage=trade_planning/commit econ_yield= attempt_slices=1 wait_input_us=9096532 wait_boundary_us=0
+[sim/graph-barrier/day] day=3 waiting_day=1 missing=effect env_day=1 ring=1 stall=none park=effect:effect_catalog_empty
+[sim/graph-barrier/pods] effect ready=false gen=0 reason= inst_rejected=0 reject_detail= | modifier ready=true reason= | ideology ready=false reason=ideology_pod_not_configured | events ready=true failed_day=-1 reason= | country_blocker=
+[sim/graph-barrier/econ] day=3 fatal=false stage=trade_planning exec=fiscal_settlement substage=? epoch_active=false current_day=1 last_committed_day=1 env_day=1 trade_plan=SCAN sample_day=1 last_completed_sample_day=1
+[sim/graph-barrier] day=3 pulses=330 released=false pinned=economy work=97921 economy_slices=97920 economy_commits=0 yields=0 last_us=186 trigger_blocked=0/
+[sim/graph-barrier/host] day=3 state=RUNNING econ_requested=true econ_granted=false inflight=1 stall=none@-1 sim_committed_day=0 sim_env_day=2 econ_input_day=-1 econ_stage=trade_planning/commit econ_yield= attempt_slices=1 wait_input_us=9096532 wait_boundary_us=0
+[sim/graph-barrier/day] day=3 waiting_day=1 missing=effect env_day=1 ring=1 stall=none park=effect:effect_catalog_empty
+[sim/graph-barrier/pods] effect ready=false gen=0 reason= inst_rejected=0 reject_detail= | modifier ready=true reason= | ideology ready=false reason=ideology_pod_not_configured | events ready=true failed_day=-1 reason= | country_blocker=
+[sim/graph-barrier/econ] day=3 fatal=false stage=trade_planning exec=fiscal_settlement substage=? epoch_active=false current_day=1 last_committed_day=1 env_day=1 trade_plan=SCAN sample_day=1 last_completed_sample_day=1
+[climate][publish] day=1 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=0
+[upwelling/DIAG#1] gate: prof=true pflag_attr=true pflag_val=true ext=true method=true wind_cpp=true idx=true -> cpp_gate=true
+[upwelling/DIAG#1] cpp-call: ret_type=27 fallback=false reason='' elapsed_native_ms=0.014
+[upwelling/DIAG#1] BREAKDOWN: T1_nb_pack=0.00ms T2_knobs=0.02ms T3_refresh_slots=0.30ms T4_cpp_call=0.04ms (n=432)
+[climate][publish] day=1 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=0
+[sim/graph-barrier] day=4 pulses=30 released=false pinned=economy work=104257 economy_slices=104256 economy_commits=0 yields=0 last_us=553 trigger_blocked=0/
+[sim/graph-barrier/host] day=4 state=RUNNING econ_requested=true econ_granted=false inflight=1 stall=none@-1 sim_committed_day=0 sim_env_day=3 econ_input_day=-1 econ_stage=trade_planning/commit econ_yield= attempt_slices=1 wait_input_us=9096532 wait_boundary_us=9
+[sim/graph-barrier/day] day=4 waiting_day=1 missing=effect env_day=1 ring=2 stall=none park=effect:effect_catalog_empty
+[sim/graph-barrier/pods] effect ready=false gen=0 reason= inst_rejected=0 reject_detail= | modifier ready=true reason= | ideology ready=false reason=ideology_pod_not_configured | events ready=true failed_day=-1 reason= | country_blocker=
+[sim/graph-barrier/econ] day=4 fatal=false stage=trade_planning exec=fiscal_settlement substage=? epoch_active=false current_day=1 last_committed_day=1 env_day=1 trade_plan=SCAN sample_day=1 last_completed_sample_day=1
+[sim/graph-barrier] day=4 pulses=330 released=false pinned=economy work=123457 economy_slices=123456 economy_commits=0 yields=0 last_us=421 trigger_blocked=0/
+[sim/graph-barrier/host] day=4 state=RUNNING econ_requested=true econ_granted=false inflight=1 stall=none@-1 sim_committed_day=0 sim_env_day=3 econ_input_day=-1 econ_stage=trade_planning/commit econ_yield= attempt_slices=1 wait_input_us=9096532 wait_boundary_us=9
+[sim/graph-barrier/day] day=4 waiting_day=1 missing=effect env_day=1 ring=2 stall=none park=effect:effect_catalog_empty
+[sim/graph-barrier/pods] effect ready=false gen=0 reason= inst_rejected=0 reject_detail= | modifier ready=true reason= | ideology ready=false reason=ideology_pod_not_configured | events ready=true failed_day=-1 reason= | country_blocker=
+[sim/graph-barrier/econ] day=4 fatal=false stage=trade_planning exec=fiscal_settlement substage=? epoch_active=false current_day=1 last_committed_day=1 env_day=1 trade_plan=SCAN sample_day=1 last_completed_sample_day=1
+[climate][publish] day=1 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=0
+[DCSystemScheduler][RT] ocean_skip#4 tick=5 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[sim/graph-barrier] day=5 pulses=30 released=false pinned=economy work=129921 economy_slices=129920 economy_commits=0 yields=0 last_us=409 trigger_blocked=0/
+[sim/graph-barrier/host] day=5 state=RUNNING econ_requested=true econ_granted=false inflight=1 stall=none@-1 sim_committed_day=0 sim_env_day=4 econ_input_day=-1 econ_stage=trade_planning/commit econ_yield= attempt_slices=1 wait_input_us=9096532 wait_boundary_us=9
+[sim/graph-barrier/day] day=5 waiting_day=1 missing=effect env_day=1 ring=3 stall=none park=effect:effect_catalog_empty
+[sim/graph-barrier/pods] effect ready=false gen=0 reason= inst_rejected=0 reject_detail= | modifier ready=true reason= | ideology ready=false reason=ideology_pod_not_configured | events ready=true failed_day=-1 reason= | country_blocker=
+[sim/graph-barrier/econ] day=5 fatal=false stage=trade_planning exec=fiscal_settlement substage=? epoch_active=false current_day=1 last_committed_day=1 env_day=1 trade_plan=SCAN sample_day=1 last_completed_sample_day=1
+[sim/graph-barrier] day=5 pulses=330 released=false pinned=economy work=149121 economy_slices=149120 economy_commits=0 yields=0 last_us=499 trigger_blocked=0/
+[sim/graph-barrier/host] day=5 state=RUNNING econ_requested=true econ_granted=false inflight=1 stall=none@-1 sim_committed_day=0 sim_env_day=4 econ_input_day=-1 econ_stage=trade_planning/commit econ_yield= attempt_slices=1 wait_input_us=9096532 wait_boundary_us=9
+[sim/graph-barrier/day] day=5 waiting_day=1 missing=effect env_day=1 ring=3 stall=none park=effect:effect_catalog_empty
+[sim/graph-barrier/pods] effect ready=false gen=0 reason= inst_rejected=0 reject_detail= | modifier ready=true reason= | ideology ready=false reason=ideology_pod_not_configured | events ready=true failed_day=-1 reason= | country_blocker=
+[sim/graph-barrier/econ] day=5 fatal=false stage=trade_planning exec=fiscal_settlement substage=? epoch_active=false current_day=1 last_committed_day=1 env_day=1 trade_plan=SCAN sample_day=1 last_completed_sample_day=1
+[climate][publish] day=1 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=0
+[climate][publish] day=1 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=0
+[sim/graph-barrier] day=6 pulses=30 released=false pinned=economy work=155457 economy_slices=155456 economy_commits=0 yields=0 last_us=184 trigger_blocked=0/
+[sim/graph-barrier/host] day=6 state=RUNNING econ_requested=true econ_granted=false inflight=1 stall=climate_capacity@-1 sim_committed_day=0 sim_env_day=5 econ_input_day=-1 econ_stage=trade_planning/commit econ_yield= attempt_slices=1 wait_input_us=9096532 wait_boundary_us=18
+[sim/graph-barrier/day] day=6 waiting_day=1 missing=effect env_day=1 ring=4 stall=climate_capacity park=effect:effect_catalog_empty
+[sim/graph-barrier/pods] effect ready=false gen=0 reason= inst_rejected=0 reject_detail= | modifier ready=true reason= | ideology ready=false reason=ideology_pod_not_configured | events ready=true failed_day=-1 reason= | country_blocker=
+[sim/graph-barrier/econ] day=6 fatal=false stage=trade_planning exec=fiscal_settlement substage=? epoch_active=false current_day=1 last_committed_day=1 env_day=1 trade_plan=SCAN sample_day=1 last_completed_sample_day=1
+[sim/graph-barrier] day=6 pulses=330 released=false pinned=economy work=174657 economy_slices=174656 economy_commits=0 yields=0 last_us=555 trigger_blocked=0/
+[sim/graph-barrier/host] day=6 state=RUNNING econ_requested=true econ_granted=false inflight=1 stall=climate_capacity@-1 sim_committed_day=0 sim_env_day=5 econ_input_day=-1 econ_stage=trade_planning/commit econ_yield= attempt_slices=1 wait_input_us=9096532 wait_boundary_us=18
+[sim/graph-barrier/day] day=6 waiting_day=1 missing=effect env_day=1 ring=4 stall=climate_capacity park=effect:effect_catalog_empty
+[sim/graph-barrier/pods] effect ready=false gen=0 reason= inst_rejected=0 reject_detail= | modifier ready=true reason= | ideology ready=false reason=ideology_pod_not_configured | events ready=true failed_day=-1 reason= | country_blocker=
+[sim/graph-barrier/econ] day=6 fatal=false stage=trade_planning exec=fiscal_settlement substage=? epoch_active=false current_day=1 last_committed_day=1 env_day=1 trade_plan=SCAN sample_day=1 last_completed_sample_day=1
+[climate][publish] day=1 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=0
+[DCSystemScheduler][RT] ocean_skip#5 tick=7 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[sim/graph-barrier] day=7 pulses=30 released=false pinned=economy work=181121 economy_slices=181120 economy_commits=0 yields=0 last_us=422 trigger_blocked=0/
+[sim/graph-barrier/host] day=7 state=RUNNING econ_requested=true econ_granted=false inflight=1 stall=climate_capacity@-1 sim_committed_day=0 sim_env_day=5 econ_input_day=-1 econ_stage=trade_planning/commit econ_yield= attempt_slices=1 wait_input_us=9096532 wait_boundary_us=27
+[sim/graph-barrier/day] day=7 waiting_day=1 missing=effect env_day=1 ring=4 stall=climate_capacity park=effect:effect_catalog_empty
+[sim/graph-barrier/pods] effect ready=false gen=0 reason= inst_rejected=0 reject_detail= | modifier ready=true reason= | ideology ready=false reason=ideology_pod_not_configured | events ready=true failed_day=-1 reason= | country_blocker=
+[sim/graph-barrier/econ] day=7 fatal=false stage=trade_planning exec=fiscal_settlement substage=? epoch_active=false current_day=1 last_committed_day=1 env_day=1 trade_plan=SCAN sample_day=1 last_completed_sample_day=1
+[sim/graph-barrier] day=7 pulses=330 released=false pinned=economy work=200321 economy_slices=200320 economy_commits=0 yields=0 last_us=471 trigger_blocked=0/
+[sim/graph-barrier/host] day=7 state=RUNNING econ_requested=true econ_granted=false inflight=1 stall=climate_capacity@-1 sim_committed_day=0 sim_env_day=5 econ_input_day=-1 econ_stage=trade_planning/commit econ_yield= attempt_slices=1 wait_input_us=9096532 wait_boundary_us=27
+[sim/graph-barrier/day] day=7 waiting_day=1 missing=effect env_day=1 ring=4 stall=climate_capacity park=effect:effect_catalog_empty
+[sim/graph-barrier/pods] effect ready=false gen=0 reason= inst_rejected=0 reject_detail= | modifier ready=true reason= | ideology ready=false reason=ideology_pod_not_configured | events ready=true failed_day=-1 reason= | country_blocker=
+[sim/graph-barrier/econ] day=7 fatal=false stage=trade_planning exec=fiscal_settlement substage=? epoch_active=false current_day=1 last_committed_day=1 env_day=1 trade_plan=SCAN sample_day=1 last_completed_sample_day=1
+[climate][publish] day=1 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=0
+[climate][publish] day=1 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=0
+[sim/graph-barrier] day=8 pulses=30 released=false pinned=economy work=206657 economy_slices=206656 economy_commits=0 yields=0 last_us=177 trigger_blocked=0/
+[sim/graph-barrier/host] day=8 state=RUNNING econ_requested=true econ_granted=false inflight=1 stall=climate_capacity@-1 sim_committed_day=0 sim_env_day=5 econ_input_day=-1 econ_stage=trade_planning/commit econ_yield= attempt_slices=1 wait_input_us=9096532 wait_boundary_us=27
+[sim/graph-barrier/day] day=8 waiting_day=1 missing=effect env_day=1 ring=4 stall=climate_capacity park=effect:effect_catalog_empty
+[sim/graph-barrier/pods] effect ready=false gen=0 reason= inst_rejected=0 reject_detail= | modifier ready=true reason= | ideology ready=false reason=ideology_pod_not_configured | events ready=true failed_day=-1 reason= | country_blocker=
+[sim/graph-barrier/econ] day=8 fatal=false stage=trade_planning exec=fiscal_settlement substage=? epoch_active=false current_day=1 last_committed_day=1 env_day=1 trade_plan=SCAN sample_day=1 last_completed_sample_day=1
+[sim/graph-barrier] day=8 pulses=330 released=false pinned=economy work=225857 economy_slices=225856 economy_commits=0 yields=0 last_us=620 trigger_blocked=0/
+[sim/graph-barrier/host] day=8 state=RUNNING econ_requested=true econ_granted=false inflight=1 stall=climate_capacity@-1 sim_committed_day=0 sim_env_day=5 econ_input_day=-1 econ_stage=trade_planning/commit econ_yield= attempt_slices=1 wait_input_us=9096532 wait_boundary_us=27
+[sim/graph-barrier/day] day=8 waiting_day=1 missing=effect env_day=1 ring=4 stall=climate_capacity park=effect:effect_catalog_empty
+[sim/graph-barrier/pods] effect ready=false gen=0 reason= inst_rejected=0 reject_detail= | modifier ready=true reason= | ideology ready=false reason=ideology_pod_not_configured | events ready=true failed_day=-1 reason= | country_blocker=
+[sim/graph-barrier/econ] day=8 fatal=false stage=trade_planning exec=fiscal_settlement substage=? epoch_active=false current_day=1 last_committed_day=1 env_day=1 trade_plan=SCAN sample_day=1 last_completed_sample_day=1
+[climate][publish] day=1 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=0
+[DCSystemScheduler][RT] ocean_skip#6 tick=9 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[sim/graph-barrier] day=9 pulses=30 released=false pinned=economy work=232321 economy_slices=232320 economy_commits=0 yields=0 last_us=590 trigger_blocked=0/
+[sim/graph-barrier/host] day=9 state=RUNNING econ_requested=true econ_granted=false inflight=1 stall=climate_capacity@-1 sim_committed_day=0 sim_env_day=5 econ_input_day=-1 econ_stage=trade_planning/commit econ_yield= attempt_slices=1 wait_input_us=9096532 wait_boundary_us=47
+[sim/graph-barrier/day] day=9 waiting_day=1 missing=effect env_day=1 ring=4 stall=climate_capacity park=effect:effect_catalog_empty
+[sim/graph-barrier/pods] effect ready=false gen=0 reason= inst_rejected=0 reject_detail= | modifier ready=true reason= | ideology ready=false reason=ideology_pod_not_configured | events ready=true failed_day=-1 reason= | country_blocker=
+[sim/graph-barrier/econ] day=9 fatal=false stage=trade_planning exec=fiscal_settlement substage=? epoch_active=false current_day=1 last_committed_day=1 env_day=1 trade_plan=SCAN sample_day=1 last_completed_sample_day=1
+[sim/graph-barrier] day=9 pulses=330 released=false pinned=economy work=251521 economy_slices=251520 economy_commits=0 yields=0 last_us=543 trigger_blocked=0/
+[sim/graph-barrier/host] day=9 state=RUNNING econ_requested=true econ_granted=false inflight=1 stall=climate_capacity@-1 sim_committed_day=0 sim_env_day=5 econ_input_day=-1 econ_stage=trade_planning/commit econ_yield= attempt_slices=1 wait_input_us=9096532 wait_boundary_us=47
+[sim/graph-barrier/day] day=9 waiting_day=1 missing=effect env_day=1 ring=4 stall=climate_capacity park=effect:effect_catalog_empty
+[sim/graph-barrier/pods] effect ready=false gen=0 reason= inst_rejected=0 reject_detail= | modifier ready=true reason= | ideology ready=false reason=ideology_pod_not_configured | events ready=true failed_day=-1 reason= | country_blocker=
+[sim/graph-barrier/econ] day=9 fatal=false stage=trade_planning exec=fiscal_settlement substage=? epoch_active=false current_day=1 last_committed_day=1 env_day=1 trade_plan=SCAN sample_day=1 last_completed_sample_day=1
+[climate][publish] day=1 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=0
+[DCSystemScheduler][RT] ocean_skip#7 tick=10 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[climate][publish] day=1 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=0
+[sim/graph-barrier] day=10 pulses=30 released=false pinned=economy work=257857 economy_slices=257856 economy_commits=0 yields=0 last_us=186 trigger_blocked=0/
+[sim/graph-barrier/host] day=10 state=RUNNING econ_requested=true econ_granted=false inflight=1 stall=climate_capacity@-1 sim_committed_day=0 sim_env_day=5 econ_input_day=-1 econ_stage=trade_planning/commit econ_yield= attempt_slices=1 wait_input_us=9096532 wait_boundary_us=81
+[sim/graph-barrier/day] day=10 waiting_day=1 missing=effect env_day=1 ring=4 stall=climate_capacity park=effect:effect_catalog_empty
+[sim/graph-barrier/pods] effect ready=false gen=0 reason= inst_rejected=0 reject_detail= | modifier ready=true reason= | ideology ready=false reason=ideology_pod_not_configured | events ready=true failed_day=-1 reason= | country_blocker=
+[sim/graph-barrier/econ] day=10 fatal=false stage=trade_planning exec=fiscal_settlement substage=? epoch_active=false current_day=1 last_committed_day=1 env_day=1 trade_plan=SCAN sample_day=1 last_completed_sample_day=1
+[sim/graph-barrier] day=10 pulses=330 released=false pinned=economy work=277057 economy_slices=277056 economy_commits=0 yields=0 last_us=705 trigger_blocked=0/
+[sim/graph-barrier/host] day=10 state=RUNNING econ_requested=true econ_granted=false inflight=1 stall=climate_capacity@-1 sim_committed_day=0 sim_env_day=5 econ_input_day=-1 econ_stage=trade_planning/commit econ_yield= attempt_slices=1 wait_input_us=9096532 wait_boundary_us=81
+[sim/graph-barrier/day] day=10 waiting_day=1 missing=effect env_day=1 ring=4 stall=climate_capacity park=effect:effect_catalog_empty
+[sim/graph-barrier/pods] effect ready=false gen=0 reason= inst_rejected=0 reject_detail= | modifier ready=true reason= | ideology ready=false reason=ideology_pod_not_configured | events ready=true failed_day=-1 reason= | country_blocker=
+[sim/graph-barrier/econ] day=10 fatal=false stage=trade_planning exec=fiscal_settlement substage=? epoch_active=false current_day=1 last_committed_day=1 env_day=1 trade_plan=SCAN sample_day=1 last_completed_sample_day=1
+[stage] agrarian_reform: territory expansion claimed=0 owned=1
+=== ideology cell card worker: card=agrarian_reform checks=6 failures=1 ===

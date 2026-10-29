@@ -557,6 +557,10 @@ bool RuntimeEconomyPodAuthority::import_committed_ledger(
     error.clear();
     RuntimeEconomyOwnedState restored;
     if (!build_owned_state_from_ledger(ledger, restored, error)) return false;
+    // Replacing the contents of a store a formula owner is bound to does not
+    // disown it: the owner keeps the same object. Carry the ownership flag over
+    // so a later protocol reset still knows not to zero the lanes.
+    restored.formula_owner_bound = _state.formula_owner_bound;
     _state = std::move(restored);
     _market_export_warmup = 0;
     return true;
@@ -569,6 +573,7 @@ bool RuntimeEconomyPodAuthority::import_and_publish_committed_ledger(
     // Validate all shapes and hashes once, before changing either publication.
     // No producer can mutate this local ledger between validation and move.
     if (!build_owned_state_from_ledger(ledger, restored, error)) return false;
+    restored.formula_owner_bound = _state.formula_owner_bound;
     _state = std::move(restored);
     _committed_ledger_state = std::move(ledger);
     _market_export_warmup = 0;
@@ -801,7 +806,20 @@ bool RuntimeEconomyPodAuthority::export_committed_ledger_internal(
 void RuntimeEconomyPodAuthority::reset() noexcept {
     _market_export_warmup = 0;
     for (auto &pages : _market_export_previous_pages) pages.clear();
-    _state.clear(0, 0);
+    // The dense population/market lanes belong to whichever formula owner is
+    // bound to them, not to this protocol object. Zeroing them while a writer
+    // still holds the pointer is what killed every restarted worker lifetime on
+    // its first Economy day: `start()` resets this authority for the new
+    // lifetime, the bound NativeEconomyRuntime kept `_formula_owned` pointing at
+    // this store, and the next day's first market read asked for
+    // `market.stock[51]` in a matrix whose size was 0 (measured:
+    // `[economy-tracking-range] reason=economy_column_read_range_invalid
+    // field=market.stock index=51 size=0`, then `unhandled_worker_exception`).
+    // Leaving the lanes intact is safe because everything below still clears the
+    // protocol state that decides whether a mirror may be published.
+    if (!_state.formula_owner_bound) {
+        _state.clear(0, 0);
+    }
     _input = RuntimeEconomyEpochInput{};
     _scratch = RuntimeEconomyWorkerScratch{};
     _replay = RuntimeEconomyPodReplayReport{};

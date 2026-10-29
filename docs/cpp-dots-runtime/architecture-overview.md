@@ -302,3 +302,10 @@ removed or weakened. Native integral identity cancellation keeps all formulas
 and saturation semantics intact. Production benchmarks continue to use the
 existing adaptive cadence; elapsed-day results are not controlled timing A/Bs.
 
+# Presentation audio boundary
+
+`MusicSituationAggregator` is a read-only presentation consumer. It may consume
+committed GameplayEventBus records, weather-front snapshots, and bounded
+near-camera economy situation queries, but it does not own or mutate simulation
+state. `GameAudioService` receives normalized values only and never calls native
+economy/climate authorities directly.

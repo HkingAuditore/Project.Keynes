@@ -1,0 +1,12 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[global] stat_id=10
+[global] submit={ "ok": true, "request_ids": [1], "pending_count": 1, "modifier_shadow_enqueued": 1, "modifier_shadow_fallback_reason": "" }
+[global] drain={ "configured": true, "protocol_version": 2, "save_schema_version": 3, "catalog_hash": -2466043773816024548, "current_day": 0, "pending_commands": 0, "commands_applied_total": 1, "commands_rejected_total": 0, "expired_total": 0, "journal_overflow": 0, "journal_version": 2, "command_merge_ms": 0.0144, "expiry_ms": 0.0004, "snapshot_publish_ms": 0.0, "bucket_update_ms": 0.0039, "bucket_rebuild_ms": 0.0, "bucket_update_ms_total": 0.0039, "bucket_rebuild_ms_total": 0.0, "active_instances_by_domain": [0, 0, 1, 0], "peak_instances_by_domain": [0, 0, 1, 0], "bucket_count_by_domain": [0, 0, 1, 0], "query_count_by_domain": [0, 0, 0, 0], "bucket_reads_by_domain": [0, 0, 0, 0], "bucket_rebuilds_by_domain": [0, 0, 0, 0], "snapshot_versions": [1, 1, 2, 1], "apply_events_by_domain": [0, 0, 1, 0], "remove_events_by_domain": [0, 0, 0, 0], "expire_events_by_domain": [0, 0, 0, 0], "reject_events_by_domain": [0, 0, 0, 0], "target_cleanup_events_by_domain": [0, 0, 0, 0], "estimated_memory_bytes_by_domain": [0, 0, 213, 69192], "error_reasons": [], "error_counts": [], "ok": true, "done": true, "path": "MODIFIER_GRAPH", "stage": "modifier_publish", "day_index": 0, "commands_applied": 1, "expired": 0, "work_done": 1 }
+[global] report bucket_count_by_domain=[0, 0, 1, 0]
+[global] explain scopes=[0] handles=[4294967296] sum_add=2.0
+[global] evaluated at cell 7 = 3.0
+[global] GROUP control at cell 7 = 3.0
+[global] oversized add 100 -> value=1.0 submit_ok=true
+[global] oversized drain commands_applied=0 reject_events=[0, 0, 1, 0]
+=== global scope probe: 6 checks, 0 failures ===

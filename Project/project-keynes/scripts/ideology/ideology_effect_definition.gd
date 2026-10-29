@@ -1,4 +1,4 @@
-class_name IdeologyEffectDefinition
+﻿class_name IdeologyEffectDefinition
 extends Resource
 
 ## Authoring-only ideology effect program. Compiled into a shared
@@ -90,32 +90,123 @@ enum TargetSelectorKind {
 }
 
 ## Hard cap mirrored from EffectRuntime::SELECTOR_MAX_CELLS.
+##
+## M2-2: this single value was serving two unrelated meanings, and plan 22 exists
+## because of that confusion:
+##   * a GEOMETRIC bound -- how many cells a radial walk can physically reach;
+##   * a CONTENT POLICY bound -- how many of a country's own cells a card covers.
+## Plan 22 removes the second for territory/source kinds and keeps the first.
+##
+## This constant is now the LEGACY value: still 32, still what an unsplit check
+## uses, and still what every shipped `param[0] == 32` resolves to. New code
+## should call `selector_cell_ceiling()`.
 const SELECTOR_MAX_CELLS := 32
+
+## "No POLICY cap", NOT "no limit at all". The runtime still clamps to the map
+## size, and plan §1.1 requires metering/sharding rather than unbounded work.
+## Mirrors `pk::kSelectorNoCellCap` in `gdext/src/selector_cell_cap.h`.
+const SELECTOR_NO_CELL_CAP := 2147483647
+
+## The ceiling for one selector kind. Must stay in step with
+## `selector_cell_ceiling()` in `gdext/src/selector_cell_cap.h`; the two are
+## checked against each other by `ideology_effect_definition_ceiling_test.gd`.
+static func selector_cell_ceiling(kind: int) -> int:
+	match kind:
+		# Hex ring sizes, EXCLUDING the source cell: ring 1 is 6 cells, rings
+		# 1+2 are 18. Verified against
+		# `economy_runtime_effect_selector_tests.cpp:206-226`.
+		TargetSelectorKind.NEIGHBORS_R1:
+			return 6
+		TargetSelectorKind.NEIGHBORS_R2:
+			return 18
+		# These query the ownership index / source set, so any bound would be a
+		# policy choice rather than a fact.
+		TargetSelectorKind.OWN_TERRITORY, \
+		TargetSelectorKind.TAG_ANY_CELL, \
+		TargetSelectorKind.TAG_SOURCE_R1, \
+		TargetSelectorKind.TAG_SOURCE_R2, \
+		TargetSelectorKind.TAG_SOURCE_COUNT, \
+		TargetSelectorKind.FAMILY_OWNED:
+			return SELECTOR_NO_CELL_CAP
+		_:
+			# Fail closed: an unknown kind keeps the legacy bound rather than
+			# silently becoming unbounded.
+			return SELECTOR_MAX_CELLS
+
+
+static func selector_cell_cap_is_unbounded(kind: int) -> bool:
+	return selector_cell_ceiling(kind) == SELECTOR_NO_CELL_CAP
+
+## The ceiling to use when VALIDATING an authored `param[0]`, as opposed to
+## when clamping a runtime walk.
+##
+## These differ, and conflating them broke the catalog: `selector_cell_ceiling`
+## returns the GEOMETRIC reach of a radial walk (R1 = 6), but shipped content
+## authors `param[0] = 8` for R1 -- a cap that never binds because the walk
+## stops at 6 anyway. Validating against 6 rejected that content.
+##
+## So the authored ceiling stays at the legacy 32 for every bounded kind,
+## which is exactly what this check validated before the refactor. Only the
+## unbounded kinds change, and that is the whole point of plan 22.
+static func selector_authored_cell_ceiling(kind: int) -> int:
+	return SELECTOR_NO_CELL_CAP if selector_cell_cap_is_unbounded(kind) \
+			else SELECTOR_MAX_CELLS
+
+
+static func selector_authored_cap_is_unbounded(kind: int) -> bool:
+	return selector_authored_cell_ceiling(kind) == SELECTOR_NO_CELL_CAP
 
 const SOURCE_COUNT_TARGET_CAP_MASK := 0x1F
 const SOURCE_COUNT_RADIUS_SHIFT := 5
+## Bit width of the radius field: 3 bits, so the field can hold 0..7.
 const SOURCE_COUNT_RADIUS_MASK := 0x07
+## The LARGEST RADIUS THE RUNTIME ACTUALLY HONOURS.
+##
+## Distinct from the mask on purpose. 3 bits can store 7, but the runtime rejects
+## anything above 4 in two places
+## (`effect_runtime.cpp:991-992` and `ideology_runtime.cpp:1922`), and plan 22 §6.2
+## specifies "半径 1–4" with §13.4 testing radii 1/2/3/4 only.
+##
+## Using the MASK as the validation bound was a defect: content could author r=5,
+## pass this check, pack successfully, and then be silently dropped at resolve time
+## with `target_selector_invalid`. A card that validates and then does nothing is the
+## worst failure mode available, so the bound is stated once, here.
+const SOURCE_COUNT_MAX_RADIUS := 4
+## Ownership scope for a source fan-out (kinds 14/15/16), stored at bits 12..13 of
+## `target_selector_param[0]`. Mirrors `EffectRuntime::OwnershipScope`.
+##
+## DEFAULT IS `OWN`: a card authored as "周围地块" means the player's own land. The
+## fan-out used to be ownership-blind, so a border card reached foreign cells.
+const OWNERSHIP_OWN := 0
+const OWNERSHIP_FOREIGN := 1
+const OWNERSHIP_ANY := 2
+const OWNERSHIP_SCOPE_SHIFT := 12
+const OWNERSHIP_SCOPE_MASK := 0x3
 const SOURCE_COUNT_CAP_SHIFT := 8
 const SOURCE_COUNT_CAP_MASK := 0x0F
 const SOURCE_COUNT_TAG_MASK := 0xFFFF
 
 
 ## Pack kind 16's four parameters into the two POD int slots.
-## `target_cap == SELECTOR_MAX_CELLS` is stored as 0 ("runtime default 32").
+## `target_cap == SELECTOR_MAX_CELLS` or `SELECTOR_NO_CELL_CAP` is stored as 0
+## ("unspecified" -- this selector kind has no cell cap).
 static func pack_source_count(target_cap: int, radius: int, cap: int,
-		tag_id: int) -> PackedInt32Array:
-	if target_cap < 0 or target_cap > SELECTOR_MAX_CELLS:
+		tag_id: int, ownership: int = OWNERSHIP_OWN) -> PackedInt32Array:
+	if target_cap < 0 or (target_cap > SELECTOR_MAX_CELLS and target_cap != SELECTOR_NO_CELL_CAP):
 		return PackedInt32Array()
-	if radius < 1 or radius > SOURCE_COUNT_RADIUS_MASK:
+	if radius < 1 or radius > SOURCE_COUNT_MAX_RADIUS:
 		return PackedInt32Array()
 	if cap < 1 or cap > SOURCE_COUNT_CAP_MASK:
 		return PackedInt32Array()
 	if tag_id < 1 or tag_id > SOURCE_COUNT_TAG_MASK:
 		return PackedInt32Array()
-	var stored_cap := target_cap if target_cap != SELECTOR_MAX_CELLS else 0
+	var stored_cap := 0 if (target_cap == SELECTOR_MAX_CELLS or target_cap == SELECTOR_NO_CELL_CAP) else target_cap
+	if ownership < OWNERSHIP_OWN or ownership > OWNERSHIP_ANY:
+		return PackedInt32Array()
 	var packed := (stored_cap & SOURCE_COUNT_TARGET_CAP_MASK) \
 		| ((radius & SOURCE_COUNT_RADIUS_MASK) << SOURCE_COUNT_RADIUS_SHIFT) \
-		| ((cap & SOURCE_COUNT_CAP_MASK) << SOURCE_COUNT_CAP_SHIFT)
+		| ((cap & SOURCE_COUNT_CAP_MASK) << SOURCE_COUNT_CAP_SHIFT) \
+		| ((ownership & OWNERSHIP_SCOPE_MASK) << OWNERSHIP_SCOPE_SHIFT)
 	return PackedInt32Array([packed, tag_id & SOURCE_COUNT_TAG_MASK])
 
 
@@ -125,13 +216,14 @@ static func unpack_source_count(params: PackedInt32Array) -> Dictionary:
 		return {}
 	var packed := int(params[0])
 	var stored_cap := packed & SOURCE_COUNT_TARGET_CAP_MASK
-	var target_cap := SELECTOR_MAX_CELLS if stored_cap == 0 else stored_cap
+	var target_cap := SELECTOR_NO_CELL_CAP if stored_cap == 0 else stored_cap
 	return {
 		"target_cap": target_cap,
 		"radius": (packed >> SOURCE_COUNT_RADIUS_SHIFT) & SOURCE_COUNT_RADIUS_MASK,
 		"cap": (packed >> SOURCE_COUNT_CAP_SHIFT) & SOURCE_COUNT_CAP_MASK,
 		"tag_id": (int(params[1]) if params.size() > 1 else 0)
 			& SOURCE_COUNT_TAG_MASK,
+		"ownership": (packed >> OWNERSHIP_SCOPE_SHIFT) & OWNERSHIP_SCOPE_MASK,
 	}
 
 ## How many names `target_selector_tags` may hold. Not a runtime limit — the
@@ -258,11 +350,24 @@ func validate() -> String:
 		return "ideology_effect_selector_invalid"
 	# Kind 16 bit-packs its geometry into param[0], so the plain "cell cap"
 	# range check would always reject it. Validate the unpacked domain instead.
-	if target_selector_kind != TargetSelectorKind.TAG_SOURCE_COUNT \
-			and target_selector_kind != TargetSelectorKind.FAMILY_OWNED \
+	# M2-2: the ceiling is per-KIND now, not one global 32. Territory and source
+	# kinds report `SELECTOR_NO_CELL_CAP` because their target set comes from the
+	# ownership index rather than a geometric walk, and capping it at 32 is
+	# exactly what plan 22 removes.
+	#
+	# The negative-value check is unconditional: a negative cap is nonsense on
+	# every kind, including the ones that skip the upper bound.
+	if target_selector_param.size() > 0 and int(target_selector_param[0]) < 0:
+		return "ideology_effect_selector_cap_invalid"
+	# NOTE: the AUTHORED ceiling, not the geometric one. `param[0]` is a cap
+	# and shipped content authors 8 for R1 whose walk yields only 6 --
+	# validating against the geometry (6) rejected that content and broke the
+	# catalog. The authored ceiling stays at the legacy 32 for every bounded
+	# kind, which is exactly what this check did before the refactor.
+	var ceiling := selector_authored_cell_ceiling(target_selector_kind)
+	if not selector_authored_cap_is_unbounded(target_selector_kind) \
 			and target_selector_param.size() > 0 \
-			and (int(target_selector_param[0]) < 0 \
-			or int(target_selector_param[0]) > SELECTOR_MAX_CELLS):
+			and int(target_selector_param[0]) > ceiling:
 		return "ideology_effect_selector_cap_invalid"
 	if target_selector_kind == TargetSelectorKind.FAMILY_OWNED:
 		if target_domain != TargetDomain.FAMILY:

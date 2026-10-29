@@ -5,7 +5,9 @@ class_name PlayerController
 ## existing runtime and country facades; it never owns simulation state.
 
 const AnnualReportFlowScript = preload("res://scripts/annual/annual_report_flow.gd")
+const MusicSituationAggregatorScript = preload("res://scripts/audio/music_situation_aggregator.gd")
 var _annual_report_flow = AnnualReportFlowScript.new()
+var _music_situation = MusicSituationAggregatorScript.new()
 
 signal selection_changed(cell)
 signal command_completed(id: StringName, result: Dictionary)
@@ -124,7 +126,26 @@ func configure(
 	_connect_runtime()
 	_connect_ui()
 	_annual_report_flow.configure(self, _runtime_host, _world_clock, _ui_manager)
+	set_process(true)
 	sync_ui()
+
+
+func _process(delta: float) -> void:
+	if _music_situation == null:
+		return
+	var situation: Dictionary = _music_situation.process_audio_update(delta)
+	if not bool(situation.get("tension_write_due", false)):
+		return
+	var audio := get_node_or_null("/root/GameAudio")
+	if audio == null or not audio.has_method("set_active_suite_emotion"):
+		return
+	if bool(audio.set_active_suite_emotion(
+			float(situation.get("tension", 0.0)), 0.0, 0.0, false)):
+		_music_situation.consume_tension_write()
+
+
+func music_situation_diagnostics() -> Dictionary:
+	return _music_situation.diagnostics() if _music_situation != null else {}
 
 
 func selected_cell():
@@ -269,9 +290,21 @@ func refresh_country_binding() -> void:
 			_ideology_facade.command_settled.connect(ideology_callback)
 	if _country_facade != null:
 		_resolve_player_country()
+		_configure_music_situation()
 		_sync_era_reward_offer()
 		_sync_era_music(true)
 	_sync_family_founding_offer()
+
+
+func _configure_music_situation() -> void:
+	if _music_situation == null or _runtime_host == null:
+		return
+	var generator = _runtime_host.generator() if _runtime_host.has_method("generator") else null
+	_music_situation.configure(_runtime_host, generator, self)
+	_music_situation.refresh_global_from_commit()
+	if _camera != null and _camera.has_method("current_world_view_rect"):
+		_music_situation.refresh_local_from_view(
+			_camera.current_world_view_rect(), music_camera_zoom_ratio())
 
 
 func capture_view_state() -> Dictionary:
@@ -726,6 +759,9 @@ func _connect_runtime() -> void:
 	if _camera != null and _camera.has_signal("zoom_changed") \
 			and not _camera.zoom_changed.is_connected(_on_camera_zoom_changed):
 		_camera.zoom_changed.connect(_on_camera_zoom_changed)
+	if _camera != null and _camera.has_signal("view_changed") \
+			and not _camera.view_changed.is_connected(_on_camera_view_changed):
+		_camera.view_changed.connect(_on_camera_view_changed)
 	if _runtime_host != null and _runtime_host.has_signal("simulation_committed") \
 			and not _runtime_host.simulation_committed.is_connected(_on_simulation_committed):
 		_runtime_host.simulation_committed.connect(_on_simulation_committed)
@@ -756,6 +792,8 @@ func _on_simulation_committed(_from_day: int, to_day: int, _generation: int) -> 
 		_ui_manager.refresh_selected_daily_lines(false, to_day)
 	if _ui_manager != null and _ui_manager.has_method("notify_committed_day"):
 		_ui_manager.notify_committed_day()
+	if _music_situation != null:
+		_music_situation.refresh_global_from_commit()
 	_sync_era_reward_offer()
 	_sync_family_founding_offer()
 	# ACTIVE worker days settle here before Godot's own day signal.
@@ -929,6 +967,36 @@ func _on_camera_zoom_changed(zoom_val: float) -> void:
 			max_z = maxf(min_z + 0.6, minf(float(_camera.zoom_max), 4.0))
 	audio.set_active_suite_camera_zoom(
 		camera_zoom_to_audio_ratio(zoom_val, min_z, max_z), false)
+	if _music_situation != null and _camera != null and _camera.has_method("current_world_view_rect"):
+		_music_situation.refresh_local_from_view(
+			_camera.current_world_view_rect(),
+			camera_zoom_to_audio_ratio(zoom_val, min_z, max_z))
+
+
+func _on_camera_view_changed(world_rect: Rect2, _center: Vector2, zoom_value: float) -> void:
+	if _music_situation == null:
+		return
+	var min_z := 0.55
+	var max_z := 3.6
+	if _camera != null:
+		if _camera.has_method("_minimum_zoom"):
+			min_z = clampf(float(_camera._minimum_zoom()), 0.25, 1.2)
+		if "zoom_max" in _camera:
+			max_z = maxf(min_z + 0.6, minf(float(_camera.zoom_max), 4.0))
+	_music_situation.refresh_local_from_view(
+		world_rect, camera_zoom_to_audio_ratio(zoom_value, min_z, max_z))
+
+
+func music_camera_zoom_ratio() -> float:
+	if _camera == null:
+		return 0.5
+	var min_z := 0.55
+	var max_z := 3.6
+	if _camera.has_method("_minimum_zoom"):
+		min_z = clampf(float(_camera._minimum_zoom()), 0.25, 1.2)
+	if "zoom_max" in _camera:
+		max_z = maxf(min_z + 0.6, minf(float(_camera.zoom_max), 4.0))
+	return camera_zoom_to_audio_ratio(float(_camera.zoom.x), min_z, max_z)
 
 
 ## 将 Camera2D 的缩放倍率（越大越近、越小越远）映射为 FMOD CameraZoom 参数（0.0=拉近近景 .. 1.0=拉远苍穹）。
@@ -991,6 +1059,8 @@ func _on_day_changed(day_idx: int) -> void:
 	_sync_ideology_draw()
 	_sync_era_music()
 	_sync_event_audio()
+	if _music_situation != null:
+		_music_situation.refresh_global_from_commit()
 	if _economy_facade != null and _player_country_handle != 0 and \
 			_economy_facade.has_method("dispatch_family_colonization_receipts"):
 		_economy_facade.dispatch_family_colonization_receipts(

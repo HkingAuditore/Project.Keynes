@@ -293,3 +293,17 @@ demand pressure, enough local construction stock, and an entrepreneur whose per-
 materials plus 30 living-cost days. The entrepreneur moves one person and proportional funds into
 the owner signature before the normal BUILD transaction pays local merchants. Collectors and
 services are excluded so price signals alone cannot expand natural-resource extraction.
+
+## Derived cell layer 对经济侧的影响
+
+`refresh_city_output_modifier_factors` 的工作集来自
+`collect_scope_stat_entries(ECONOMY, GROUP, ...)`，该函数**已并入派生层**
+(`modifier_runtime.cpp:1571-1584`)。逐格取值走
+`effective_value(ECONOMY, stat, 0, cell, 1.0)` (`economy_runtime.cpp:7327`)，与派生层合并
+是同一次调用。
+
+因此：**只有派生贡献、没有 legacy GROUP 桶的格也会进工作集**，逐格因子照常被记录。
+不要为此再加第二条路径。
+
+删除理念旧 v1 平面时（plan 22 §15.7）唯一需要确认的就是这条并集仍然存在——它存在。
+

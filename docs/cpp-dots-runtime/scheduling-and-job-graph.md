@@ -1,5 +1,32 @@
 # Scheduling and Job Graph
 
+## 2026-10-28 派生地块层重建进入每日图
+
+理念的永久地块效果不再创建逐格 Effect 实例，而是在 `ModifierRuntime` 里维护一个派生 front。
+它的重建是**跨调用可续跑**的，因此它以「一步」的形态参与每日图：
+
+```cpp
+bool step_derived_rebuild(int64_t day, std::string &error);  // false = 还需一片
+bool derived_rebuild_pending() const;
+int  drain_derived_cell_layer(int64_t day);                  // 立即排空
+```
+
+| 契约 | 内容 |
+|---|---|
+| 预算 | 单步 `DERIVED_REBUILD_STEP_BUDGET_MS = 0.45`；§14.3 的门槛是**单步** ≤ 1 ms |
+| 采集与折叠 | **分两步**。6400 格采集本身 0.68 ms，与折叠合一步会把首步推到 1.03 ms |
+| 工作单元 | 一个 contribution（采集器每格产出一个）|
+| 状态 | 由 `DerivedCellMaterializeJob` 持有，跨 step 存活；`_index` 是游标 |
+| `done()` | `_started && _index >= _total` —— **不能**用 `_index >= _total`，那在首调用前也为真 |
+| 换日 | 半成品 job 被丢弃（拼两天是错的）|
+
+**空闲日不做任何重建**：内容相同的安装是幂等 no-op，且不 bump 版本（plan I13）。
+实测 30 天空闲 `layer_generation` 冻结（`ideology_b5_idle_test`）。
+
+**片数随形态变化**：常数卡 6400 格 **3 片**；带 metric ramp 的卡 1600 格 **25 片**
+（每格要跑一次真实程序）。要求「当天立刻可读」的调用方必须走 `drain_derived_cell_layer`。
+
+
 ## Main-thread research delivery boundary (2026-10-18)
 
 Full-graph ACTIVE retains a bounded main-thread Trigger → Effect → Country research-signal

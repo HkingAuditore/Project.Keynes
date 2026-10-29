@@ -1,0 +1,299 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] the card is in the compiled ideology catalog
+  [PASS] continuous: economy configures
+  [PASS] continuous: effects configure
+  [PASS] continuous: modifiers configure
+  [PASS] continuous: country configures
+  [PASS] continuous: the fixture territory is a proper subset of the grid
+  [PASS] continuous: the country bootstraps
+  [PASS] continuous: ideologies configure
+  [PASS] continuous: bootstrap_country registered exactly the intended territory
+  [PASS] continuous: the economy epoch opens
+  [PASS] continuous: the fixture resolves both bootstrap signatures
+  [PASS] continuous: the economy bootstraps
+  [PASS] continuous: economy day 0 reaches its committed boundary
+  [PASS] continuous: the fixture resolves the country handle
+  [PASS] SAVE-A: PKID payload is produced
+  [PASS] SAVE-A: PKID payload carries the PKID magic
+  [PASS] SAVE-A: no derived cell layer has been installed yet
+  [PASS] SAVE-A: no derived contribution exists yet
+[sv1/SAVE-A] layer installed=false cells=0 contributions=? epoch_active=false
+  [PASS] SAVE-A: the world has no active economy epoch
+  [PASS] ideology batch (seq 1) is admitted
+  [PASS] ideology batch (seq 2) is admitted
+  [PASS] day0: ideology day 0 completes
+  [PASS] day0: ideology day 0 completes
+  [PASS] day0: ideology day 0 completes
+  [PASS] ideology batch (seq 3) is admitted
+  [PASS] day0: ideology day 0 completes
+  [PASS] day0: ideology day 0 completes
+  [PASS] day0: ideology day 0 completes
+  [PASS] ideology batch (seq 4) is admitted
+  [PASS] SAVE-B: PKID payload is produced
+  [PASS] SAVE-B: PKID payload carries the PKID magic
+  [PASS] SAVE-B: no derived cell layer has been installed yet
+  [PASS] SAVE-B: no derived contribution exists yet
+[sv1/SAVE-B] layer installed=false cells=0 contributions=? epoch_active=false
+  [PASS] SAVE-B: the queued equip is still pending, so no effect ran yet
+  [PASS] ideology batch (seq 5) is admitted
+  [PASS] day0: ideology day 0 completes
+  [PASS] day0: ideology day 0 completes
+  [PASS] day0: ideology day 0 completes
+  [PASS] day0: ideology day 0 completes
+  [PASS] continuous: ideology day 0 completes
+  [PASS] continuous: ideology day 1 completes
+  [PASS] continuous: ideology day 2 completes
+  [PASS] continuous: the derived rebuild has no work left after day 2
+  [PASS] continuous: the reloaded/built runtime HAS a derived cell layer
+  [PASS] continuous: the layer covers exactly the owned cells x 2 stats
+  [PASS] continuous: the layer carries the expected contribution count
+  [PASS] continuous: the layer reports the day it was built for
+  [PASS] continuous: a covered cell carries a derived contribution
+  [PASS] continuous: a covered cell's merged value leaves the identity base
+  [PASS] continuous: an unowned cell stays at the identity base
+  [PASS] continuous: the card's persistent program evaluates
+  [PASS] continuous: the covered add equals the program magnitude / Q16 (0.05000305)
+[sv1/continuous] layer cells=84 contributions=84 stats=2 day=1 generation=1
+  [PASS] continuous: the economy reached the last continued day
+[sv1/continuous] card locations=[1] levels=[1] understanding=[524698] pending_transitions=1
+[sv1/continuous] economy newest_state_day=2
+[sv1/continuous] business hash=1287035786511317409 points=3327108173056332417 ideas=6012913703750439668 instances=0 pending=0
+[sv1/continuous] audit available=true pop_err=0 money_err=0 goods_err=0
+[sv1/continuous] per-cell fingerprint=b80012bf59ac2a4305fc133160127aec9649653116549a8b88eda9894210475b
+[sv1/continuous] first 8 cells (present/value, economy.city.birth_factor)=0:0/1.00000000, 1:1/1.05000305, 2:1/1.05000305, 3:0/1.00000000, 4:1/1.05000305, 5:1/1.05000305, 6:0/1.00000000, 7:1/1.05000305
+  [PASS] reload-A: economy configures
+  [PASS] reload-A: effects configure
+  [PASS] reload-A: modifiers configure
+  [PASS] reload-A: country configures
+  [PASS] reload-A: the fixture territory is a proper subset of the grid
+  [PASS] reload-A: the country bootstraps
+  [PASS] reload-A: ideologies configure
+  [PASS] reload-A: bootstrap_country registered exactly the intended territory
+  [PASS] reload-A: the economy epoch opens
+  [PASS] reload-A: the fixture resolves both bootstrap signatures
+  [PASS] reload-A: the economy bootstraps
+  [PASS] reload-A: economy day 0 reaches its committed boundary
+  [PASS] reload-A: the fixture resolves the country handle
+  [PASS] SAVE-A: PKID restores into a freshly built runtime
+  [PASS] SAVE-A: the replayed world resolves the same country handle
+  [PASS] ideology batch (seq 1) is admitted
+  [PASS] ideology batch (seq 2) is admitted
+  [PASS] day0: ideology day 0 completes
+  [PASS] day0: ideology day 0 completes
+  [PASS] day0: ideology day 0 completes
+  [PASS] ideology batch (seq 3) is admitted
+  [PASS] day0: ideology day 0 completes
+  [PASS] day0: ideology day 0 completes
+  [PASS] day0: ideology day 0 completes
+  [PASS] ideology batch (seq 4) is admitted
+  [PASS] ideology batch (seq 5) is admitted
+  [PASS] day0: ideology day 0 completes
+  [PASS] day0: ideology day 0 completes
+  [PASS] day0: ideology day 0 completes
+  [PASS] day0: ideology day 0 completes
+  [PASS] reload-A: ideology day 0 completes
+  [PASS] reload-A: ideology day 1 completes
+  [PASS] reload-A: ideology day 2 completes
+  [PASS] reload-A: the derived rebuild has no work left after day 2
+  [PASS] reload-A: the reloaded/built runtime HAS a derived cell layer
+  [PASS] reload-A: the layer covers exactly the owned cells x 2 stats
+  [PASS] reload-A: the layer carries the expected contribution count
+  [PASS] reload-A: the layer reports the day it was built for
+  [PASS] reload-A: a covered cell carries a derived contribution
+  [PASS] reload-A: a covered cell's merged value leaves the identity base
+  [PASS] reload-A: an unowned cell stays at the identity base
+  [PASS] reload-A: the card's persistent program evaluates
+  [PASS] reload-A: the covered add equals the program magnitude / Q16 (0.05000305)
+[sv1/reload-A] layer cells=84 contributions=84 stats=2 day=1 generation=1
+  [PASS] reload-A: the economy reached the last continued day
+[sv1/reload-A] card locations=[1] levels=[1] understanding=[524698] pending_transitions=1
+[sv1/reload-A] economy newest_state_day=2
+[sv1/reload-A] business hash=1287035786511317409 points=3327108173056332417 ideas=6012913703750439668 instances=0 pending=0
+[sv1/reload-A] audit available=true pop_err=0 money_err=0 goods_err=0
+[sv1/reload-A] per-cell fingerprint=b80012bf59ac2a4305fc133160127aec9649653116549a8b88eda9894210475b
+[sv1/reload-A] first 8 cells (present/value, economy.city.birth_factor)=0:0/1.00000000, 1:1/1.05000305, 2:1/1.05000305, 3:0/1.00000000, 4:1/1.05000305, 5:1/1.05000305, 6:0/1.00000000, 7:1/1.05000305
+  [PASS] reload-B: economy configures
+  [PASS] reload-B: effects configure
+  [PASS] reload-B: modifiers configure
+  [PASS] reload-B: country configures
+  [PASS] reload-B: the fixture territory is a proper subset of the grid
+  [PASS] reload-B: the country bootstraps
+  [PASS] reload-B: ideologies configure
+  [PASS] reload-B: bootstrap_country registered exactly the intended territory
+  [PASS] reload-B: the economy epoch opens
+  [PASS] reload-B: the fixture resolves both bootstrap signatures
+  [PASS] reload-B: the economy bootstraps
+  [PASS] reload-B: economy day 0 reaches its committed boundary
+  [PASS] reload-B: the fixture resolves the country handle
+  [PASS] SAVE-B: PKID restores into a freshly built runtime
+  [PASS] ideology batch (seq 5) is admitted
+  [PASS] day0: ideology day 0 completes
+  [PASS] day0: ideology day 0 completes
+  [PASS] day0: ideology day 0 completes
+  [PASS] day0: ideology day 0 completes
+  [PASS] reload-B: ideology day 0 completes
+  [PASS] reload-B: ideology day 1 completes
+  [PASS] reload-B: ideology day 2 completes
+  [PASS] reload-B: the derived rebuild has no work left after day 2
+  [PASS] reload-B: the reloaded/built runtime HAS a derived cell layer
+  [PASS] reload-B: the layer covers exactly the owned cells x 2 stats
+  [PASS] reload-B: the layer carries the expected contribution count
+  [PASS] reload-B: the layer reports the day it was built for
+  [PASS] reload-B: a covered cell carries a derived contribution
+  [PASS] reload-B: a covered cell's merged value leaves the identity base
+  [PASS] reload-B: an unowned cell stays at the identity base
+  [PASS] reload-B: the card's persistent program evaluates
+  [PASS] reload-B: the covered add equals the program magnitude / Q16 (0.05000305)
+[sv1/reload-B] layer cells=84 contributions=84 stats=2 day=1 generation=1
+  [PASS] reload-B: the economy reached the last continued day
+[sv1/reload-B] card locations=[1] levels=[1] understanding=[524698] pending_transitions=1
+[sv1/reload-B] economy newest_state_day=2
+[sv1/reload-B] business hash=1287035786511317409 points=3327108173056332417 ideas=6012913703750439668 instances=0 pending=0
+[sv1/reload-B] audit available=true pop_err=0 money_err=0 goods_err=0
+[sv1/reload-B] per-cell fingerprint=b80012bf59ac2a4305fc133160127aec9649653116549a8b88eda9894210475b
+[sv1/reload-B] first 8 cells (present/value, economy.city.birth_factor)=0:0/1.00000000, 1:1/1.05000305, 2:1/1.05000305, 3:0/1.00000000, 4:1/1.05000305, 5:1/1.05000305, 6:0/1.00000000, 7:1/1.05000305
+  [PASS] SAVE-A: economy.city.birth_factor derived presence matches on every one of 64 cells
+  [PASS] SAVE-A: economy.city.birth_factor derived add matches EXACTLY on every cell
+  [PASS] SAVE-A: economy.city.birth_factor effective value matches EXACTLY on every cell
+  [PASS] SAVE-A: economy.city.need.housing.consumption_factor derived presence matches on every one of 64 cells
+  [PASS] SAVE-A: economy.city.need.housing.consumption_factor derived add matches EXACTLY on every cell
+  [PASS] SAVE-A: economy.city.need.housing.consumption_factor effective value matches EXACTLY on every cell
+  [PASS] SAVE-A: the per-cell fingerprint hash is identical
+  [PASS] SAVE-A: ideology business state hash matches
+  [PASS] SAVE-A: business section points matches
+  [PASS] SAVE-A: business section baseline matches
+  [PASS] SAVE-A: business section history matches
+  [PASS] SAVE-A: business section draw matches
+  [PASS] SAVE-A: business section bits matches
+  [PASS] SAVE-A: business section offer matches
+  [PASS] SAVE-A: business section ideas matches
+  [PASS] SAVE-A: one-shot effect instance count is 0 in both runs
+  [PASS] SAVE-A: no ideology command is left pending in either run
+  [PASS] SAVE-A: both runs carry the same in-flight transition count
+  [PASS] SAVE-A: both runs advanced the economy to the same committed day
+  [PASS] SAVE-A: the card is equipped (IDEOLOGY slot) on both sides
+  [PASS] SAVE-A: the equipped card keeps the same level and understanding
+  [PASS] SAVE-A: the layer was installed on the same day in both runs
+  [PASS] SAVE-A: both runs installed the layer the same number of times
+  [PASS] SAVE-A: the committed economy audit is available on both sides
+  [PASS] SAVE-A: economy conservation errors are 0 on both sides
+  [PASS] SAVE-B: economy.city.birth_factor derived presence matches on every one of 64 cells
+  [PASS] SAVE-B: economy.city.birth_factor derived add matches EXACTLY on every cell
+  [PASS] SAVE-B: economy.city.birth_factor effective value matches EXACTLY on every cell
+  [PASS] SAVE-B: economy.city.need.housing.consumption_factor derived presence matches on every one of 64 cells
+  [PASS] SAVE-B: economy.city.need.housing.consumption_factor derived add matches EXACTLY on every cell
+  [PASS] SAVE-B: economy.city.need.housing.consumption_factor effective value matches EXACTLY on every cell
+  [PASS] SAVE-B: the per-cell fingerprint hash is identical
+  [PASS] SAVE-B: ideology business state hash matches
+  [PASS] SAVE-B: business section points matches
+  [PASS] SAVE-B: business section baseline matches
+  [PASS] SAVE-B: business section history matches
+  [PASS] SAVE-B: business section draw matches
+  [PASS] SAVE-B: business section bits matches
+  [PASS] SAVE-B: business section offer matches
+  [PASS] SAVE-B: business section ideas matches
+  [PASS] SAVE-B: one-shot effect instance count is 0 in both runs
+  [PASS] SAVE-B: no ideology command is left pending in either run
+  [PASS] SAVE-B: both runs carry the same in-flight transition count
+  [PASS] SAVE-B: both runs advanced the economy to the same committed day
+  [PASS] SAVE-B: the card is equipped (IDEOLOGY slot) on both sides
+  [PASS] SAVE-B: the equipped card keeps the same level and understanding
+  [PASS] SAVE-B: the layer was installed on the same day in both runs
+  [PASS] SAVE-B: both runs installed the layer the same number of times
+  [PASS] SAVE-B: the committed economy audit is available on both sides
+  [PASS] SAVE-B: economy conservation errors are 0 on both sides
+=== ideology save before layer (§11.7 time point 1): 180 checks, 0 failures ===
+[economy-open-finish] day=0 country=0.497 workset=0.035 fiscal=0.021 csr=0.000 recovery=0.001 vectors=0.077 audit=0.027 commands=0.005
+[research-procure-diag] day=0 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=1 old=0.0003 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0001 rows=0
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0001 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0001 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0001 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=0 old=0.0001 new=0.0000 rows=0
+[research-procure-diag] day=1 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=42/42 took=0.0140 cells=84 commands=84
+[probe] AB old_first=1 old=0.0053 new=0.0041 rows=84
+[probe] finish scratch=0.0000 emit=0.0090 versions=0.0154 builder_install=0.0003 digest=0.0001 total=0.0248 rows=84 stats=2
+[research-procure-diag] day=2 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=42/42 took=0.0122 cells=84 commands=84
+[probe] AB old_first=0 old=0.0067 new=0.0045 rows=84
+[probe] finish scratch=0.0001 emit=0.0107 versions=0.0260 builder_install=0.0003 digest=0.0007 total=0.0378 rows=84 stats=2
+[economy-open-finish] day=0 country=0.567 workset=0.038 fiscal=0.015 csr=0.000 recovery=0.000 vectors=0.050 audit=0.025 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0002 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0001 rows=0
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0001 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0001 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0001 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0001 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0001 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0000 rows=0
+[research-procure-diag] day=1 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=42/42 took=0.0072 cells=84 commands=84
+[probe] AB old_first=1 old=0.0052 new=0.0077 rows=84
+[probe] finish scratch=0.0001 emit=0.0092 versions=0.0192 builder_install=0.0003 digest=0.0001 total=0.0289 rows=84 stats=2
+[research-procure-diag] day=2 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=42/42 took=0.0073 cells=84 commands=84
+[probe] AB old_first=0 old=0.0039 new=0.0043 rows=84
+[probe] finish scratch=0.0001 emit=0.0090 versions=0.0144 builder_install=0.0003 digest=0.0009 total=0.0247 rows=84 stats=2
+[economy-open-finish] day=0 country=0.501 workset=0.031 fiscal=0.020 csr=0.000 recovery=0.000 vectors=0.046 audit=0.023 commands=0.001
+[research-procure-diag] day=0 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0003 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0001 rows=0
+[research-procure-diag] day=1 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=42/42 took=0.0096 cells=84 commands=84
+[probe] AB old_first=1 old=0.0039 new=0.0047 rows=84
+[probe] finish scratch=0.0000 emit=0.0097 versions=0.0154 builder_install=0.0003 digest=0.0000 total=0.0254 rows=84 stats=2
+[research-procure-diag] day=2 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=42/42 took=0.0095 cells=84 commands=84
+[probe] AB old_first=0 old=0.0040 new=0.0048 rows=84
+[probe] finish scratch=0.0000 emit=0.0089 versions=0.0148 builder_install=0.0002 digest=0.0010 total=0.0249 rows=84 stats=2
+ERROR: 19 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 635 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

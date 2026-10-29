@@ -1,0 +1,139 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=600 native_ms=1.569 water=465 land=135
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=600 native_ms=0.353 lakes=0 rivers=7 volcanoes=0
+[native_generation/vegetation] native_ms=0.104 candidates=135 none=288 score=[0.000,1.940,1.096] plant_water_land=135 river_adjacent_desert=0 coastal_highland_desert=0 terrain_weight=[0.180,1.200]
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=1 largest=465 | land_below_sea=0.0% | terr_distinct=17 entropy=2.862bit | river_ratio=1.167%
+MapGenerator v7: per-cell 50ms (600 cells, path=gdext)
+MapBaker v6: hm=(1024, 622) seed=20260910
+    [fused] terrain=90.1ms valley=126.5ms erosion=2.1ms(ok=true) river=11.3ms(ok=true) latitude=0.1ms coast_sdf=3.3ms(ok=true)
+  geometry fields (fused C++): 306ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  visual tiles: {"degradation_reason":"","effective_budget_px":465920,"effective_texels_per_hex":16.121489873593,"effective_world_units_per_texel":"(1.373983, 1.355357)","estimated_peak_bytes":30058560,"estimated_resident_bytes":22424640,"fallback_reason":"","generation_id":1,"grid_size":"(2, 2)","gutter_px":2,"hex_size":22.0,"horizon_path":"neutral_pending","interior_size":"(416, 280)","layer_size":"(420, 284)","layers":[{"bake_ms":71.4009,"coast_sdf_max_dist_px":7.15548377265011,"distance_scale":0.894435471581264,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":7821500689563041276,"edge_neighbor":2817425572817208973,"height":2764086553638260492,"map_index":-2826374027353524009,"terrain_detail":-7664514278042618720,"terrain_normal":5296759498012398448,"terrain_relief":-8376187581822918087,"water_depth":-6769429176211407271},"layer":0,"normal_radius_px":"(6, 6)","raster_scale":"(0.888588, 0.900321)","river_sdf_max_dist_px":3.13052415053442,"shore_carve_band_px":5,"upload_ms":0.121,"wall_ms":78.047},{"bake_ms":100.0883,"coast_sdf_max_dist_px":7.15548377265011,"distance_scale":0.894435471581264,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-8220546658063082183,"edge_neighbor":6138183100461913405,"height":-2580432774700520016,"map_index":4883742490746217185,"terrain_detail":328373054036780810,"terrain_normal":2927951196787120873,"terrain_relief":1522233845061597044,"water_depth":-1610697814935930309},"layer":1,"normal_radius_px":"(6, 6)","raster_scale":"(0.888588, 0.900321)","river_sdf_max_dist_px":3.13052415053442,"shore_carve_band_px":5,"upload_ms":0.069,"wall_ms":103.767},{"bake_ms":103.2066,"coast_sdf_max_dist_px":7.15548377265011,"distance_scale":0.894435471581264,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":6962433257738737894,"edge_neighbor":7898755065275048836,"height":-6238907193762136122,"map_index":-5539391166489984086,"terrain_detail":-4495648402331728892,"terrain_normal":8551090519815378257,"terrain_relief":9042810700358556567,"water_depth":3877072811705915042},"layer":2,"normal_radius_px":"(6, 6)","raster_scale":"(0.888588, 0.900321)","river_sdf_max_dist_px":3.13052415053442,"shore_carve_band_px":5,"upload_ms":0.069,"wall_ms":110.674},{"bake_ms":88.6962,"coast_sdf_max_dist_px":7.15548377265011,"distance_scale":0.894435471581264,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":8398893956298703015,"edge_neighbor":-8528629597245800304,"height":-500832022150758544,"map_index":2807261080698726266,"terrain_detail":6241299502434543110,"terrain_normal":730732830782145623,"terrain_relief":6693754792678679409,"water_depth":-1728239723212241459},"layer":3,"normal_radius_px":"(6, 6)","raster_scale":"(0.888588, 0.900321)","river_sdf_max_dist_px":3.13052415053442,"shore_carve_band_px":5,"upload_ms":0.067,"wall_ms":89.913}],"logical_size":"(832, 560)","mode":"tiled","path":"visual_tiled_static","profile":"desktop_high","relief_scale":2,"renderer":"mobile","requested_budget_px":459264,"requested_texels_per_hex":16.0,"requested_tile_world_span":"(704.0, 704.0)","requested_world_units_per_texel":1.375,"tile_world_area":216913.38885498,"tile_world_span":"(571.5768, 379.5)","total_ms":409.429,"visual_domain":"[P: (0.0, -44.0), S: (1143.154, 759.0)]","wrap_period_x":1143.15353299546,"wrap_x":true}
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 801ms
+MapBaker v6: total 1117ms
+MapGenerator v7: bake 1135ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[loading-substep] await map.build_indices_cooperative() 1142.6ms
+[loading-substep] _generate_static_research_signals(map) 119.9ms
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=600 wrap_period_x=51.962
+[native_generation] path=gdext n=600 published=9 native_ms=0.067 compute_ms=0.015 flush_ms=0.051
+[hex_cell] facade ENABLED (600 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=0.67ms wind=0.15ms psi=0.10ms(ran=true) upwelling=0.02ms total=1.10ms
+PhysicalCirculation solve@phase=1.50 total=2ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 3ms
+[cell_lut] deferred encode: 0ms path=gdext
+[loading-substep] cell_facade_bind 47.7ms
+[loading-substep] _bootstrap_natural_resource_deposits 111.4ms
+[bio-occupancy] seed landmasses=10 provinces=10 species=20 secondary_hearths=1
+[bio-occupancy]   bio.maize envelope=9 hearth=2 seeded_landmasses=1 primary_landmass=5 primary_envelope=6 occupied=2 occupied/envelope=0.33
+[bio-occupancy]   bio.wheat envelope=15 hearth=1 seeded_landmasses=1 primary_landmass=9 primary_envelope=12 occupied=1 occupied/envelope=0.08
+[bio-occupancy]   bio.rice envelope=28 hearth=5 seeded_landmasses=1 primary_landmass=5 primary_envelope=19 occupied=5 occupied/envelope=0.26
+[bio-occupancy]   bio.potato envelope=11 hearth=5 seeded_landmasses=1 primary_landmass=9 primary_envelope=10 occupied=5 occupied/envelope=0.50
+[bio-occupancy]   bio.horse envelope=17 hearth=6 seeded_landmasses=1 primary_landmass=9 primary_envelope=14 occupied=6 occupied/envelope=0.43
+[bio-occupancy]   bio.cotton envelope=29 hearth=8 seeded_landmasses=1 primary_landmass=5 primary_envelope=18 occupied=8 occupied/envelope=0.44
+[bio-occupancy]   bio.flax envelope=14 hearth=6 seeded_landmasses=1 primary_landmass=9 primary_envelope=11 occupied=6 occupied/envelope=0.55
+[bio-occupancy]   bio.spice envelope=32 hearth=1 seeded_landmasses=1 primary_landmass=5 primary_envelope=20 occupied=1 occupied/envelope=0.05
+[bio-occupancy]   bio.rubber envelope=18 hearth=3 seeded_landmasses=1 primary_landmass=5 primary_envelope=12 occupied=3 occupied/envelope=0.25
+[bio-occupancy]   bio.sheep envelope=3 hearth=1 seeded_landmasses=1 primary_landmass=9 primary_envelope=3 occupied=1 occupied/envelope=0.33
+[bio-occupancy]   bio.goat envelope=38 hearth=1 seeded_landmasses=1 primary_landmass=5 primary_envelope=8 occupied=1 occupied/envelope=0.13
+[bio-occupancy]   bio.cattle envelope=0 hearth=0 seeded_landmasses=0 primary_landmass=0 primary_envelope=0 occupied=0 occupied/envelope=0.00
+[bio-occupancy]   bio.pig envelope=40 hearth=3 seeded_landmasses=2 primary_landmass=5 primary_envelope=17 occupied=3 occupied/envelope=0.18
+[bio-occupancy]   bio.camel envelope=15 hearth=7 seeded_landmasses=1 primary_landmass=9 primary_envelope=14 occupied=7 occupied/envelope=0.50
+[bio-occupancy]   bio.yak envelope=6 hearth=3 seeded_landmasses=1 primary_landmass=9 primary_envelope=6 occupied=3 occupied/envelope=0.50
+[bio-occupancy]   bio.silkworm envelope=44 hearth=14 seeded_landmasses=1 primary_landmass=5 primary_envelope=31 occupied=14 occupied/envelope=0.45
+[bio-occupancy]   bio.reed envelope=31 hearth=1 seeded_landmasses=1 primary_landmass=5 primary_envelope=17 occupied=1 occupied/envelope=0.06
+[bio-occupancy]   bio.bast_fiber envelope=31 hearth=4 seeded_landmasses=1 primary_landmass=5 primary_envelope=9 occupied=4 occupied/envelope=0.44
+[bio-occupancy]   bio.dye_plant envelope=30 hearth=4 seeded_landmasses=1 primary_landmass=9 primary_envelope=8 occupied=4 occupied/envelope=0.50
+[bio-occupancy]   bio.medicinal_herb envelope=46 hearth=10 seeded_landmasses=2 primary_landmass=9 primary_envelope=21 occupied=10 occupied/envelope=0.48
+[bio-occupancy]   landmass 1 classes=none foods=none
+[bio-occupancy]   landmass 2 classes=none foods=none
+[bio-occupancy]   landmass 3 classes=none foods=none
+[bio-occupancy]   landmass 4 classes=none foods=none
+[bio-occupancy]   landmass 5 classes=forest_grazer, tropical, fiber_forest, wetland_food, dry_grazer, fiber_wet, open_food, fiber_open foods=rice, maize
+[bio-occupancy]   landmass 6 classes=none foods=none
+[bio-occupancy]   landmass 7 classes=none foods=none
+[bio-occupancy]   landmass 8 classes=none foods=none
+[bio-occupancy]   landmass 9 classes=fiber_open, fiber_forest, forest_grazer, dry_grazer, open_food, open_grazer, highland_food, cold_grazer foods=wheat, potato
+[bio-occupancy]   landmass 10 classes=none foods=none
+[loading-substep] _seed_bio_occupancy 1660.3ms
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[loading-substep] _publish_bootstrapped_natural_resources_to_runtime 39.0ms
+[loading-substep] effect_catalog 3509.7ms
+[loading-substep] effect_configure 45.9ms
+[loading-substep] _modifier_facade.configure( 1097.6ms
+[loading-substep] _country_facade.configure( 1117.4ms
+[loading-substep] _country_facade.bootstrap(map.is_water_arr, country_packet) 1188.8ms
+[loading-substep] ideology_facade.configure( 135.0ms
+[economy] ACTIVE native graph cells=600 goods=134 cohorts=12 epoch_days=1 trade=ACTIVE topology_ready=true topology_generation=1 bootstrap=starter_settlement_bootstrap_v9 founder_families=3 founder_people=3
+[country] ACTIVE native authority countries=3 cells=600 generation=1
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily + bio_occupancy_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "trigger_runtime", "ideology_runtime", "effect_runtime", "modifier_daily", "gameplay_effect", "natural_resource_daily", "bio_occupancy_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+[loading-visual-substep] building_visual_setup 11.4ms
+[tech-ui-diag/query] apply ok gen=1 day=-1 view_gen=1 progress_total=0 pending_words=18
+[loading-visual-substep] start_worker 7.4ms
+[DCSystemScheduler][RT] ocean_skip#1 tick=1 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[climate][publish] day=0 round_ran=1 prod_stage=0xff scalar_mask=0x7f alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[DCSystemScheduler][RT] ocean_skip#2 tick=2 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[runtime-day-wait] day=1 env_day=0 missing=0x0 stall=0x0 economy_input=-1 ring=2 country=
+[DCSystemScheduler][RT] ocean_skip#3 tick=3 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[sim/barrier] day=3 pulse=1 economy_inflight=false hard_ack=effect extra=
+[climate][publish] day=1 round_ran=1 prod_stage=0xff scalar_mask=0x7f alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[climate][publish] day=2 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[phys_solve][RT] start#1 phase=0.0438 pending=nan solve_ocean=true ext=true idx=true soa=true
+[slp_field] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#1: rc=0.056 slp_out=600 n_cells=600 map_slp=600 slice=0:75 final=false published=false slot=19/600 reason=intermediate_slice
+[slp_field][RT-DIAG] call#1 phase=0.0438 rc=0.056 slp_out=600 n=600 slice=0:75 final=false published=false slot=19/600 slot_reason=intermediate_slice -> intermediate_slice
+[tech-ui-diag/query] apply ok gen=3 day=1 view_gen=3 progress_total=0 pending_words=18
+[DCSystemScheduler][RT] ocean_skip#4 tick=5 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[climate][publish] day=3 round_ran=1 prod_stage=0x1fff scalar_mask=0x7f alb=1 veg=1 fb=1 weather=1 sr=0 ok=1
+[climate][publish] day=4 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[tech-ui-diag/query] apply ok gen=5 day=2 view_gen=5 progress_total=0 pending_words=18
+[tech-ui-diag/query] apply ok gen=8 day=3 view_gen=8 progress_total=0 pending_words=18
+[DCSystemScheduler][RT] ocean_skip#5 tick=7 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[climate][publish] day=5 round_ran=1 prod_stage=0xff scalar_mask=0x7f alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[climate][publish] day=6 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[tech-ui-diag/query] apply ok gen=9 day=4 view_gen=9 progress_total=0 pending_words=18
+[slp_field] path-decision call#2: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#2: rc=0.050 slp_out=600 n_cells=600 map_slp=600 slice=75:150 final=false published=false slot=19/600 reason=intermediate_slice
+[slp_field][RT-DIAG] call#2 phase=0.0438 rc=0.050 slp_out=600 n=600 slice=75:150 final=false published=false slot=19/600 slot_reason=intermediate_slice -> intermediate_slice
+[tech-ui-diag/query] apply ok gen=13 day=5 view_gen=13 progress_total=0 pending_words=18
+[DCSystemScheduler][RT] ocean_skip#6 tick=9 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[climate][publish] day=7 round_ran=1 prod_stage=0xff scalar_mask=0x7f alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[climate][publish] day=8 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[tech-ui-diag/query] apply ok gen=13 day=6 view_gen=13 progress_total=0 pending_words=18
+[DCSystemScheduler][RT] ocean_skip#7 tick=10 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[tech-ui-diag/query] apply ok gen=15 day=7 view_gen=15 progress_total=0 pending_words=18
+[DCSystemScheduler][RT] ocean_skip#8 tick=11 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[climate][publish] day=9 round_ran=1 prod_stage=0xff scalar_mask=0x7f alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[climate][publish] day=10 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[slp_field] path-decision call#3: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#3: rc=0.049 slp_out=600 n_cells=600 map_slp=600 slice=150:225 final=false published=false slot=19/600 reason=intermediate_slice
+[slp_field][RT-DIAG] call#3 phase=0.0438 rc=0.049 slp_out=600 n=600 slice=150:225 final=false published=false slot=19/600 slot_reason=intermediate_slice -> intermediate_slice
+[DCSystemScheduler][RT] ocean_skip#9 tick=13 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[climate][publish] day=11 round_ran=1 prod_stage=0x18ff scalar_mask=0x7f alb=0 veg=0 fb=0 weather=1 sr=0 ok=1
+[climate][publish] day=12 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[DCSystemScheduler][RT] ocean_skip#10 tick=14 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#11 tick=15 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[climate][publish] day=13 round_ran=1 prod_stage=0xff scalar_mask=0x7f alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[climate][publish] day=14 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[slp_field][RT-DIAG] call#4 phase=0.0438 rc=0.069 slp_out=600 n=600 slice=225:300 final=false published=false slot=19/600 slot_reason=intermediate_slice -> intermediate_slice
+[DCSystemScheduler][RT] ocean_skip#12 tick=17 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[ideology-parity] compared=12 matched=4 first_mismatch_day=3 field=points_balance pod_gen=14 worker_day=14 ref_countries=3 ref_pub=15 skipped=0 worker_opinion_rev=0 ref_points_rev=3 paired_ref=14 paired_worker=14
+[ideology-parity] points_diff={"day":3,"handle":4294967297,"reference_baseline_buildings":9,"reference_baseline_population":20,"reference_baseline_ready":1,"reference_catalog_hash":8451053719376848311,"reference_countries":3,"reference_handle":4294967297,"reference_history_count":0,"reference_history_head":0,"reference_history_q16":[0,0,0,0,0,0,0,0],"reference_last_day":3,"reference_lifetime_q16":0,"reference_points_q16":0,"reference_publish_count":15,"reference_published_countries":3,"reference_published_day":17,"reference_published_with_points_revision":3,"reference_revision":3,"reference_skip_reason":"","reference_skipped_count":0,"slot":1,"worker_baseline_buildings":10,"worker_baseline_population":20,"worker_baseline_ready":1,"worker_catalog_hash":-7597083906950457924,"worker_committed_day":3,"worker_countries":3,"worker_handle":4294967297,"worker_history_count":2,"worker_history_head":2,"worker_history_q16":[46049,0,0,0,0,0,0,0],"worker_lifetime_q16":46049,"worker_points_q16":46049,"worker_revision":7,"worker_round_day":-1}
+[ideology-parity] row_mismatch slot=0 ref_handle=4294967296 worker_handle=4294967296 ref_points=94430 worker_points=136986
+=== runtime ideology parity: 15 checks, 3 failures ===

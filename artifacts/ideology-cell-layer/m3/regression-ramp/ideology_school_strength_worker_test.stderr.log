@@ -1,0 +1,49 @@
+WARNING: [loading-catalog] source changed: rebuild tools/prebake_loading_catalogs.gd; using source compiler
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] prepare (res://scripts/game/loading_catalog_cache.gd:55)
+       [1] compute (res://scripts/geography/native_loading_tasks.gd:15)
+WARNING: [building-visual] disabled: building_visual_renderer_unavailable
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] generate_world (res://scripts/game/world_runtime_host.gd:760)
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:5019)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2527)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:784)
+WARNING: [runtime-worker] Ideology opinion publish deferred: ideology_opinion_snapshot_invalid
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _start_production_shadow_worker (res://scripts/game/world_runtime_host.gd:890)
+       [1] generate_world (res://scripts/game/world_runtime_host.gd:804)
+[runtime-day-wait] day=1 env_day=0 missing=0x3ff stall=0x10 economy_input=-1
+[climate/worker][b8] physics_knobs day=1 ready=0 missing=physics_knobs
+[climate-kernel][round] shared=1 ok=1 n_cells=192 mask=0x1FF ran=0x1FF starved=0x0 knobs_cells=192
+[country][parity] worker_day=1 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=1 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[economy-mirror-cost] day=1 capture_ms=0.655 import_ms=1.359
+WARNING: [climate/worker] field knobs empty (fast_indexed?)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_stage_knobs (res://scripts/geography/map_generator.gd:4981)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2527)
+       [2] sus_tick_daily (res://scripts/geography/map_generator.gd:8151)
+       [3] run_daily_tick (res://scripts/game/world_runtime_host.gd:947)
+       [4] _drive_days (res://tests/ideology/ideology_school_strength_worker_test.gd:446)
+       [5] _wait_ideology_ready (res://tests/ideology/ideology_school_strength_worker_test.gd:125)
+       [6] _run (res://tests/ideology/ideology_school_strength_worker_test.gd:70)
+       [7] _build_world (res://tests/ideology/ideology_school_strength_worker_test.gd:271)
+       [8] generate_world (res://scripts/game/world_runtime_host.gd:826)
+[climate/worker][b8] physics_knobs day=2 ready=1 missing=
+[climate/worker][b8] paw day=2 cell=17 moisture=1 wb30=0 soil=0 paw=1 zeros(water=175 land=0) nonzero=17 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[country][parity] worker_day=2 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=2 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[country][parity] worker_day=2 uncompared reference_range=-1..-1 depth=0
+ERROR: [FAIL] mandate_of_heaven absent from the compiled catalog
+ERROR: 42 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 4803 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

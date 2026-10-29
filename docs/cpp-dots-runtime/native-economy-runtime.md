@@ -1,5 +1,34 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V6）
 
+## 2026-10-28 城市因子 CSR 现在包含派生层覆盖的格
+
+`refresh_city_output_modifier_factors` 的工作集来自
+`ModifierRuntime::collect_scope_stat_entries(ECONOMY, GROUP, ...)`，而该函数
+**已经并入派生层**（`modifier_runtime.cpp:1571-1584`）：
+
+```cpp
+if (domain == ECONOMY && scope == GROUP) {
+    for (const DerivedCellStatRow &row : _derived_cell_front.rows) {
+        if (!std::binary_search(wanted.begin(), wanted.end(), row.stat_id)) continue;
+        for (const int32_t cell : row.cells) {
+            if (cell < 0) continue;
+            entries.emplace_back(static_cast<uint64_t>(cell), row.stat_id);
+        }
+    }
+}
+```
+
+**为什么这对经济侧重要**：旧的理念 v1 平面曾是这条路的一个 override 生产者，它已被删除
+（plan 22 §15.7）。若没有上面这条并集，只有派生贡献、没有 legacy GROUP 桶的格会
+**不在工作集里**，于是逐格因子永远不会被记录，读者静默退回 `shared` 值。
+
+逐格取值本身走 `effective_value(ECONOMY, stat, 0, cell, 1.0)`（`economy_runtime.cpp:7327`），
+与派生层合并用的是同一次调用，所以在 `economy_runtime.cpp:7331` 处
+`factor_q16 == shared` 的比较自然包含了派生贡献。
+
+**不要**为了「让派生格进工作集」再加第二条路径；并集就是那条路径。
+
+
 ## 2026-10-18 实际消费满意度
 
 舒适和奢侈改读各自 need tier 的实际消费 / 生活目标量；目标不随本轮财富、价格缩量、预算或缺货消失。

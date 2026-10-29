@@ -491,6 +491,18 @@ struct RuntimeEconomyOwnedState {
     uint64_t state_generation = 0;
     int64_t sample_day = -1;
     int64_t committed_day = -1;
+    // True while a NativeEconomyRuntime formula owner is bound to this store and
+    // reads/writes these dense lanes directly (`formula_owned_bound()`). It is a
+    // protocol/ownership flag, never business state: it is not persisted, hashed
+    // or visited by any block, and `clear()` leaves it alone because a bound
+    // owner's own `_state.clear()` calls are in-place reshaping, not disowning.
+    //
+    // `RuntimeEconomyPodAuthority::reset()` must not zero a store that another
+    // live owner is holding: the writer would keep the pointer and the next day
+    // would address a zero-length market matrix. Restart is exactly that case --
+    // the host resets its POD authority for the new worker lifetime while the
+    // economy runtime is still bound to it.
+    bool formula_owner_bound = false;
     // Phase-3: population command side effects mirrored before NER pull.
     int64_t external_population_delta = 0;
     std::vector<RuntimeEconomyOwnedStructuralCommand> structural_commands;

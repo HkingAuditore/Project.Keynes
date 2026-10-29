@@ -1,0 +1,85 @@
+WARNING: [loading-catalog] source changed: rebuild tools/prebake_loading_catalogs.gd; using source compiler
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] prepare (res://scripts/game/loading_catalog_cache.gd:55)
+       [1] compute (res://scripts/geography/native_loading_tasks.gd:15)
+WARNING: [building-visual] disabled: building_visual_renderer_unavailable
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] generate_world (res://scripts/game/world_runtime_host.gd:760)
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:5019)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2527)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:784)
+[research-procure-diag] day=2 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate][boundary] cold-start env_day=0 plan_day=1 ok=0 ref_hash=1407601553259776563 adopted_parity=1407601553259776563 round_ran=1
+[runtime-day-wait] day=1 env_day=0 missing=0x0 stall=0x0 economy_input=-1
+[research-procure-diag] day=4 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] physics_knobs day=1 ready=0 missing=physics_knobs
+[climate-kernel][round] shared=1 ok=1 n_cells=600 mask=0x1FF ran=0x1FF starved=0x0 knobs_cells=600
+[climate][boundary] day=1 planned=1 compared=1 matched=1 worker_parity=15872314268650073003 ref=15872314268650073003 stage_ran=0xFF prod_stage=0xFF round_ran=1 alb=0 veg=0 fb=0 err=
+[country][parity] worker_day=1 uncompared reference_range=4..4 depth=1
+[climate/worker][b8] physics_knobs day=2 ready=0 missing=physics_knobs
+[climate][boundary] day=2 planned=1 compared=1 matched=1 worker_parity=15872314268650073003 ref=15872314268650073003 stage_ran=0x0 prod_stage=0x0 round_ran=0 alb=0 veg=0 fb=0 err=
+[country][parity] worker_day=2 uncompared reference_range=4..4 depth=1
+[research-procure-diag] day=6 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] physics_knobs day=3 ready=0 missing=physics_knobs
+[climate/worker][b8] cyclone_gate day=3 input_enabled=0 force_env=0 effective=0
+[climate/worker][b8] weather_solve day=3 cells=600 psi=1 vapor0=0.105327 precip0=0 cloud0=0.0728488 type0=0 field_init0=1
+[climate][boundary] day=3 planned=1 compared=1 matched=0 worker_parity=2312820791413759002 ref=10423700594184765068 stage_ran=0x1FFF prod_stage=0x1FFF round_ran=1 alb=1 veg=1 fb=1 err=
+[climate][boundary] day=3 first_diff=plant_available_water[168] ref=0.766038299 worker=0.765051544
+[country][parity] worker_day=3 uncompared reference_range=4..4 depth=1
+[climate/worker][b8] physics_knobs day=4 ready=0 missing=physics_knobs
+[climate][boundary] day=4 planned=1 compared=1 matched=1 worker_parity=10423700594184765068 ref=10423700594184765068 stage_ran=0x0 prod_stage=0x0 round_ran=0 alb=0 veg=0 fb=0 err=
+[research-procure-diag] day=8 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=8 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] physics_knobs day=5 ready=0 missing=physics_knobs
+[climate][boundary] day=5 planned=1 compared=1 matched=0 worker_parity=11845535967475826564 ref=12554473446702727151 stage_ran=0xFF prod_stage=0xFF round_ran=1 alb=0 veg=0 fb=0 err=
+[climate][boundary] day=5 first_diff=terrain[0] ref=20 worker=0
+[country][parity] worker_day=5 uncompared reference_range=4..4 depth=1
+[climate/worker][b8] physics_knobs day=6 ready=0 missing=physics_knobs
+[climate][boundary] day=6 planned=1 compared=1 matched=1 worker_parity=12554473446702727151 ref=12554473446702727151 stage_ran=0x0 prod_stage=0x0 round_ran=0 alb=0 veg=0 fb=0 err=
+[country][parity] worker_day=6 uncompared reference_range=4..4 depth=1
+[research-procure-diag] day=10 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate][boundary] day=7 planned=1 compared=1 matched=1 worker_parity=11113665297956996875 ref=11113665297956996875 stage_ran=0xFF prod_stage=0xFF round_ran=1 alb=0 veg=0 fb=0 err=
+[country][parity] worker_day=7 uncompared reference_range=4..4 depth=1
+[country][parity] worker_day=8 uncompared reference_range=4..4 depth=1
+[research-procure-diag] day=12 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=12 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate][boundary] day=9 first_diff=terrain[32] ref=20 worker=1
+[country][parity] worker_day=9 uncompared reference_range=4..4 depth=1
+[research-procure-diag] day=14 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] cyclone_gate day=11 input_enabled=0 force_env=0 effective=0
+[climate/worker][b8] weather_solve day=11 cells=600 psi=1 vapor0=0.0893619 precip0=0 cloud0=0.0901454 type0=0 field_init0=1
+[climate][boundary] day=11 first_diff=terrain[31] ref=20 worker=1
+[research-procure-diag] day=15 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=16 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate][boundary] day=13 first_diff=terrain[30] ref=20 worker=1
+ERROR: [FAIL] every compared ideology day matched (matched=9 compared=12) (first_mismatch_day=12 field=points_balance diff={"day":12,"handle":4294967296,"reference_baseline_buildings":9,"reference_baseline_population":20,"reference_baseline_ready":1,"reference_catalog_hash":8451053719376848311,"reference_countries":3,"reference_handle":4294967296,"reference_history_count":4,"reference_history_head":4,"reference_history_q16":[0,0,0,0,0,0,0,0],"reference_last_day":12,"reference_lifetime_q16":0,"reference_points_q16":0,"reference_publish_count":15,"reference_published_countries":3,"reference_published_day":17,"reference_published_with_points_revision":3,"reference_revision":11,"reference_skip_reason":"","reference_skipped_count":0,"slot":0,"worker_baseline_buildings":10,"worker_baseline_population":20,"worker_baseline_ready":1,"worker_catalog_hash":-7597083906950457924,"worker_committed_day":12,"worker_countries":3,"worker_handle":4294967296,"worker_history_count":6,"worker_history_head":6,"worker_history_q16":[0,0,0,0,0,41709,0,0],"worker_lifetime_q16":41709,"worker_points_q16":41709,"worker_revision":16,"worker_round_day":-1})
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _fail (res://tests/runtime/runtime_ideology_parity_test.gd:400)
+       [1] _expect (res://tests/runtime/runtime_ideology_parity_test.gd:395)
+       [2] _run_production_shadow_parity (res://tests/runtime/runtime_ideology_parity_test.gd:313)
+       [3] generate_world (res://scripts/game/world_runtime_host.gd:826)
+ERROR: [FAIL] no ideology day was skipped for calendar misalignment (uncompared=2) (the two authorities ran on different calendars; last distance=-1)
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _fail (res://tests/runtime/runtime_ideology_parity_test.gd:400)
+       [1] _expect (res://tests/runtime/runtime_ideology_parity_test.gd:395)
+       [2] _run_production_shadow_parity (res://tests/runtime/runtime_ideology_parity_test.gd:322)
+       [3] generate_world (res://scripts/game/world_runtime_host.gd:826)
+ERROR: [FAIL] a matched run has no first mismatch day (first_mismatch_day=12 field=points_balance)
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _fail (res://tests/runtime/runtime_ideology_parity_test.gd:400)
+       [1] _expect (res://tests/runtime/runtime_ideology_parity_test.gd:395)
+       [2] _run_production_shadow_parity (res://tests/runtime/runtime_ideology_parity_test.gd:327)
+       [3] generate_world (res://scripts/game/world_runtime_host.gd:826)
+ERROR: 27 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 4267 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

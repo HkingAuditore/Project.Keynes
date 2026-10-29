@@ -1,0 +1,4 @@
+SCRIPT ERROR: Assertion failed: PKEF v11 header
+   at: _init (res://tests/effect/effect_runtime_test.gd:380)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/effect/effect_runtime_test.gd:380)

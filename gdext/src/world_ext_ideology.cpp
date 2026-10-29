@@ -55,6 +55,93 @@ RuntimeIdeologyOpinionSnapshot copy_opinion_snapshot(
     return ideology_opinion_from_economy(
         runtime.country_class_opinion_source_snapshot());
 }
+
+// "The worker owns IDEOLOGY, or will as soon as its first day commits".
+//
+// `domain_is_worker_authoritative` alone is the WRONG predicate for a load: the grant is
+// DEFERRED (it reads 0x000 until a day commits, see `domain_grant_pending`), and a load
+// happens BEFORE the first commit of the new worker lifetime -- so checking only the live
+// grant would skip the import exactly when it is needed and leave the restore to be
+// overwritten. A world with no ideology grant (the main-thread path) answers false on
+// both counts, which is what keeps that path untouched.
+bool ideology_worker_owns_or_is_pending(NativeSimulationHost *host) {
+    if (host == nullptr) return false;
+    return host->domain_is_worker_authoritative(RuntimeDomainId::IDEOLOGY) ||
+        host->domain_grant_pending(RuntimeDomainId::IDEOLOGY);
+}
+
+// ── the worker-side IMPORT of a restored save ────────────────────────────────
+//
+// `capture` / `restore` are main-thread facade calls (below). The worker owns its own
+// state machine (`RuntimeIdeologyPodAuthority`) and never learns it was restored from,
+// so its next publish replaces the restored rows with its own: measured `idea_rows
+// [82,1,0,0] -> []`, the mirrored §9.3 dates `7/8 -> 2/3` (the worker's committed day,
+// not the payload's), and a pump that then clears the front.
+//
+// WHY THIS CHANNEL AND NOT A NEW ONE. The POD already has a state-adoption entry point:
+// the host's `restore_ideology_pod_save`, which the runtime save bundle uses and which
+// configures a candidate authority from the LIVE catalog before restoring into it. It
+// takes the POD's own save bytes, so nothing about the state format is reinvented: the
+// restored mirror exports a `RuntimeIdeologyPodSnapshot`, that snapshot is serialized
+// with the POD's own writer, and the host installs it. The command channel could not
+// carry this: `RuntimeIdeologyPodCommand` is a few scalars, its opcode range is closed
+// in the host, and a state import is not a command.
+//
+// `code` names the outcome either way. `economy_day_inflight` is the only retryable one:
+// the worker was inside its semantic day, and the pending flag makes the write-back path
+// try again instead of applying a worker snapshot over the restore.
+bool import_ideology_pod_state(NativeIdeologyRuntime *runtime,
+                               NativeSimulationHost *host, void *country_opaque,
+                               std::string &code, std::string &error) {
+    code = "not_worker_authoritative";
+    error.clear();
+    if (runtime == nullptr || host == nullptr) return false;
+    if (!ideology_worker_owns_or_is_pending(host)) return false;
+    // The POD is only touched inside the worker's semantic day, and that day holds this
+    // same boundary, so taking it is what makes replacing the POD's state safe. NEVER
+    // block on it: the worker can be parked waiting for main-thread peer service, so a
+    // blocking acquire here is a deadlock that shows up as a stall timeout.
+    auto boundary = host->try_lock_economy_input_capture();
+    if (!boundary.owns_lock()) {
+        code = "economy_day_inflight";
+        return false;
+    }
+    auto *country = static_cast<NativeCountryRuntime *>(country_opaque);
+    if (country == nullptr) {
+        code = "ideology_worker_import_country_runtime_unavailable";
+        return false;
+    }
+    RuntimeCountryPodSnapshot country_snapshot;
+    if (!country->export_pod_snapshot(country_snapshot, error)) {
+        code = "ideology_worker_import_country_snapshot_unavailable";
+        return false;
+    }
+    RuntimeIdeologyPodSnapshot state;
+    if (!runtime->export_pod_import_state(state, country_snapshot, error)) {
+        code = error.empty() ? "ideology_worker_import_export_failed" : error;
+        return false;
+    }
+    std::vector<uint8_t> bytes;
+    RuntimeIdeologyPodAuthority::serialize_snapshot(state, bytes);
+    if (bytes.empty()) {
+        code = "ideology_worker_import_encode_failed";
+        return false;
+    }
+    std::string restore_error;
+    if (!host->restore_ideology_pod_save(bytes.data(), bytes.size(),
+                                        restore_error)) {
+        error = restore_error;
+        code = restore_error.empty() ? "ideology_worker_import_refused"
+                                     : restore_error;
+        return false;
+    }
+    // The imported state's generation is ahead of everything this mirror has applied, so
+    // any snapshot the ring still holds from BEFORE the import is refused as a generation
+    // regression rather than overwriting the load.
+    runtime->adopt_pod_snapshot_generation(state.generation);
+    code = "applied";
+    return true;
+}
 } // namespace
 
 Dictionary DCWorldExt::configure_ideologies(const Dictionary &catalog) {
@@ -319,14 +406,6 @@ Dictionary DCWorldExt::poll_ideology_receipts(int64_t after_receipt_id,
             after_receipt_id, limit);
 }
 
-void DCWorldExt::publish_ideology_cell_programs() {
-    if (_ideology_runtime == nullptr || _economy_runtime == nullptr) return;
-    CellProgramTable table;
-    if (!ideology_runtime_from(_ideology_runtime)->build_cell_program_table(table))
-        return;
-    static_cast<NativeEconomyRuntime *>(_economy_runtime)
-        ->set_ideology_cell_programs(std::move(table));
-}
 
 Dictionary DCWorldExt::run_ideology_daily(int64_t day_index) {
     if (_ideology_runtime == nullptr) return unavailable();
@@ -416,37 +495,9 @@ Dictionary DCWorldExt::run_ideology_daily(int64_t day_index) {
         result["parity_reference_published"] = false;
         result["parity_reference_deferred"] = true;
     }
-    // Gated: see `_ideology_cell_plane_enabled`. Off by default because the v1
-    // table is not yet safe to apply (stale generation, double application with
-    // the per-cell instances, coefficient semantics that differ from Modifier).
-    if (_ideology_cell_plane_enabled) publish_ideology_cell_programs();
     return result;
 }
 
-bool DCWorldExt::set_ideology_cell_program_entry_for_test(
-        int32_t stat_id, int32_t filter_tag, int32_t operation,
-        int32_t coef_q16, int32_t column_kind, int32_t column_tag,
-        int32_t cap_units) {
-    if (_economy_runtime == nullptr) return false;
-    // Scalar arguments on purpose: an earlier version took a Dictionary and the
-    // nested Array never made it across the Variant boundary (entries arrived
-    // empty), which read exactly like "the plane did nothing".
-    CellProgramTable table;
-    table.generation = 1;
-    table.country_offsets = {0, 1, 1};
-    CellProgramEntry entry;
-    entry.stat_id = stat_id;
-    entry.filter_tag = filter_tag;
-    entry.operation = operation;
-    entry.coef_q16 = coef_q16;
-    entry.column_kind = column_kind;
-    entry.column_tag = column_tag;
-    entry.cap_units = cap_units;
-    table.entries.push_back(entry);
-    static_cast<NativeEconomyRuntime *>(_economy_runtime)
-        ->set_ideology_cell_programs(std::move(table));
-    return true;
-}
 
 Dictionary DCWorldExt::get_city_output_factor_q16(int32_t cell, int32_t good_id) const {
     if (_economy_runtime == nullptr) return unavailable();
@@ -548,6 +599,62 @@ Dictionary DCWorldExt::step_ideology_instance_refresh(int64_t day_index) {
     return out;
 }
 
+// Plan §9.3 in worker mode: the derived cell layer's other half.
+//
+// `run_ideology_daily` returns `suppressed` when the worker owns IDEOLOGY, and
+// `run_daily_slices` is the only production caller of `step_derived_rebuild`. So under
+// worker authority the rebuild was never started and the layer produced nothing
+// (measured: visits delta 0 over 12 suppressed days with a live card, vs 4 on the
+// main-thread leg). The host already pumps the INSTANCE half for exactly this reason;
+// this is the missing symmetric pump for the derived half.
+//
+// It takes the same boundary as the instance refresh, because the fold reads Economy
+// metrics and selectors and every selector it resolves must belong to one finished epoch.
+//
+// NOTE: this facade deliberately carries NO once-per-day bookkeeping. Throttling belongs
+// to the caller (the host pump, which is the only thing called every tick). Putting a
+// guard here skipped a NEW EPOCH's rebuild when the epoch changed within the same
+// calendar day -- measured, and it cost two attempts.
+//
+// A caller landing inside the worker's day transaction gets `code = economy_day_inflight`
+// and must retry on a later tick. That is normal contention, not a failure.
+Dictionary DCWorldExt::step_ideology_derived_rebuild(int64_t day_index) {
+    if (_ideology_runtime == nullptr) return unavailable();
+    if (_runtime_host != nullptr)
+        _runtime_host->complete_main_boundary_service(
+            NativeSimulationHost::MainBoundaryClient::IDEOLOGY);
+    std::optional<std::unique_lock<std::mutex>> boundary_lock;
+    if (_runtime_host != nullptr) {
+        auto acquired = _runtime_host->try_lock_economy_input_capture();
+        if (!acquired.owns_lock()) {
+            _runtime_host->request_main_boundary_service(
+                NativeSimulationHost::MainBoundaryClient::IDEOLOGY);
+            Dictionary out;
+            out["ok"] = true;
+            out["done"] = false;
+            out["pending"] = true;
+            out["day"] = day_index;
+            out["code"] = "economy_day_inflight";
+            return out;
+        }
+        boundary_lock.emplace(std::move(acquired));
+    }
+    NativeIdeologyRuntime *runtime = ideology_runtime_from(_ideology_runtime);
+    std::string error;
+    const bool ok = runtime->step_derived_rebuild(day_index, error);
+    const bool pending = runtime->derived_rebuild_pending();
+    Dictionary out;
+    out["ok"] = ok;
+    out["done"] = ok && !pending;
+    out["pending"] = pending;
+    out["day"] = day_index;
+    if (!ok) out["reason"] = error.c_str();
+    return out;
+}
+
+
+
+
 Dictionary DCWorldExt::apply_runtime_ideology_snapshot(int64_t after_generation) {
     Dictionary out;
     out["ok"] = false;
@@ -559,6 +666,29 @@ Dictionary DCWorldExt::apply_runtime_ideology_snapshot(int64_t after_generation)
     if (!_runtime_host->domain_is_worker_authoritative(
             RuntimeDomainId::IDEOLOGY)) {
         out["code"] = "ideology_not_worker_authoritative";
+        return out;
+    }
+    // ── a restore is outstanding: the WORKER must adopt it before anything else ──
+    //
+    // A restore changes only this mirror, and a worker snapshot applied over it undoes
+    // the load. So while the import is outstanding this path refuses to apply and spends
+    // its turn pushing the restored state into the POD instead; the pending flag is
+    // cleared only once the POD has taken it (or refused it by name), after which the
+    // next tick's snapshot IS the imported state.
+    NativeIdeologyRuntime *self = ideology_runtime_from(_ideology_runtime);
+    if (self->worker_import_pending()) {
+        std::string import_code;
+        std::string import_error;
+        const bool imported = import_ideology_pod_state(self,
+            _runtime_host.get(), _country_runtime, import_code, import_error);
+        // Only contention with the worker's own day is worth another attempt.
+        self->record_worker_import(import_code, imported,
+            import_code == "economy_day_inflight");
+        out["ok"] = true;
+        out["applied"] = false;
+        out["imported"] = imported;
+        out["code"] = imported ? "ideology_worker_imported"
+                               : String(import_code.c_str());
         return out;
     }
     // Serialize against the worker day boundary the same way Modifier/Effect
@@ -604,10 +734,19 @@ Dictionary DCWorldExt::apply_runtime_ideology_snapshot(int64_t after_generation)
     std::string apply_error;
     const bool applied = ideology_runtime_from(_ideology_runtime)
         ->apply_pod_snapshot(snapshot, apply_error);
-    out["ok"] = applied;
+    // A snapshot older than the generation an IMPORT adopted is not a failure: it was
+    // published before the load and the imported state supersedes it. Reporting that as
+    // "generation regression" would make a durable load look like a rejected write.
+    const bool superseded = !applied &&
+        apply_error == "ideology_pod_snapshot_generation_regression" &&
+        self->worker_import_last_code() == "applied";
+    out["ok"] = applied || superseded;
     out["applied"] = applied;
+    out["superseded"] = superseded;
     out["generation"] = generation;
-    out["code"] = applied ? "ok" : String(apply_error.c_str());
+    out["code"] = applied ? "ok"
+        : (superseded ? "ideology_pod_snapshot_superseded"
+                      : String(apply_error.c_str()));
     return out;
 }
 
@@ -621,36 +760,6 @@ Dictionary DCWorldExt::get_ideology_effect_instance_report(int64_t country_handl
         : ideology_runtime_from(_ideology_runtime)->effect_instance_report(country_handle);
 }
 
-Dictionary DCWorldExt::get_ideology_cell_program_summary() {
-    if (_ideology_runtime == nullptr) return unavailable();
-    CellProgramTable table;
-    const bool ok = ideology_runtime_from(_ideology_runtime)->build_cell_program_table(table);
-    Dictionary out;
-    out["ok"] = ok;
-    out["generation"] = static_cast<int64_t>(table.generation);
-    out["entry_count"] = static_cast<int64_t>(table.entries.size());
-    out["country_count"] = static_cast<int64_t>(
-        table.country_offsets.empty() ? 0 : table.country_offsets.size() - 1);
-    out["unsupported_selector"] = table.unsupported_selector;
-    out["unsupported_definition"] = table.unsupported_definition;
-    out["unsupported_stack"] = table.unsupported_stack;
-    out["unsupported_domain"] = table.unsupported_domain;
-    out["scanned_cards"] = table.scanned_cards;
-    out["scanned_templates"] = table.scanned_templates;
-    // First few entries only: this is a diagnostic, and a 4096-row Dictionary
-    // would cost more than the thing it describes.
-    Array rows;
-    for (size_t i = 0; i < table.entries.size() && i < 8; ++i) {
-        Dictionary row;
-        row["stat_id"] = table.entries[i].stat_id;
-        row["filter_tag"] = table.entries[i].filter_tag;
-        row["operation"] = table.entries[i].operation;
-        row["coef_q16"] = table.entries[i].coef_q16;
-        rows.push_back(row);
-    }
-    out["entries"] = rows;
-    return out;
-}
 
 Dictionary DCWorldExt::resolve_effect_program_modifier_commands(
         const String &program_key) const {
@@ -813,6 +922,17 @@ Dictionary DCWorldExt::get_ideology_report() const {
         _economy_runtime != nullptr &&
         ideology_runtime_from(_ideology_runtime)->economy_runtime() ==
             static_cast<NativeEconomyRuntime *>(_economy_runtime);
+    // The worker import behind a load under IDEOLOGY worker authority. `pending=1` means
+    // the mirror is still holding the restored state because the POD has not adopted it
+    // yet; `last_code` names the last attempt (`applied`, `economy_day_inflight`, or the
+    // POD's own refusal reason).
+    NativeIdeologyRuntime *runtime = ideology_runtime_from(_ideology_runtime);
+    out["worker_import_pending"] = runtime->worker_import_pending();
+    out["worker_import_attempts"] =
+        static_cast<int64_t>(runtime->worker_import_attempts());
+    out["worker_import_last_code"] =
+        String(runtime->worker_import_last_code().c_str());
+    out["pod_catalog_hash"] = static_cast<int64_t>(runtime->pod_catalog_hash());
     return out;
 }
 
@@ -822,8 +942,34 @@ PackedByteArray DCWorldExt::capture_ideology_state() const {
 }
 
 Dictionary DCWorldExt::restore_ideology_state(const PackedByteArray &bytes) {
-    return _ideology_runtime == nullptr ? unavailable()
-        : ideology_runtime_from(_ideology_runtime)->restore(bytes);
+    if (_ideology_runtime == nullptr) return unavailable();
+    Dictionary out = ideology_runtime_from(_ideology_runtime)->restore(bytes);
+    // A refused restore installs nothing, so there is nothing for the worker to adopt.
+    if (!bool(out.get("ok", false))) return out;
+    if (!ideology_worker_owns_or_is_pending(_runtime_host.get())) {
+        // The MAIN-THREAD path: unchanged, and deliberately so. No key is added here, so
+        // a no-worker world's restore result is the shape it always was.
+        return out;
+    }
+    NativeIdeologyRuntime *self = ideology_runtime_from(_ideology_runtime);
+    // Without this the restored rows live only in the mirror and the worker's next
+    // publish replaces them (see `import_ideology_pod_state`).
+    self->mark_worker_import_pending();
+    // BEST EFFORT here and now: a load happens at a quiet boundary and the POD usually
+    // accepts immediately. If the worker is inside its day the call answers
+    // `economy_day_inflight`, the pending flag stays set, and the write-back path
+    // (`apply_runtime_ideology_snapshot`) retries on the next tick.
+    std::string import_code;
+    std::string import_error;
+    const bool imported = import_ideology_pod_state(self, _runtime_host.get(),
+        _country_runtime, import_code, import_error);
+    self->record_worker_import(import_code, imported,
+        import_code == "economy_day_inflight");
+    out["worker_import"] = String(import_code.c_str());
+    out["worker_imported"] = imported;
+    if (!import_error.empty())
+        out["worker_import_detail"] = String(import_error.c_str());
+    return out;
 }
 
 Dictionary DCWorldExt::clear_ideology_state() {

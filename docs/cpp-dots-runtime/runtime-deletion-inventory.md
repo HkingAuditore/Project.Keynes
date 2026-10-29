@@ -84,3 +84,19 @@ Record → migrate formal diagnostics → then clean.
 不吸收后来从 A 迁入的成员，乙地允许 A 与 A1 同时存在。`_family_split_parents` 继续
 作为亲缘元数据保存，避免改变 v56 存档布局；不参与迁移归属。回归覆盖旧实现失败、
 新实现同格共存与存读档通过，证据在 artifacts/runtime/family-arrival-identity-20261017。
+
+## 2026-10-28 理念 v1 逐格效果平面（plan 22 §15.7）
+
+| File / Symbol | Class | Status | Evidence | Replacement / Owner | Validation |
+| --- | --- | --- | --- | --- | --- |
+| `NativeIdeologyRuntime::build_cell_program_table` (+ `CellProgramTable` / `CellProgramEntry` 的读者) | Immediate delete | **Deleted**（169 行）| 生产不可达：唯一生产者 `publish_ideology_cell_programs` 的 GDScript 调用者只有一个测试；且其开关注释自述 "Off by default because the v1 table is not yet safe to apply (stale generation, double application with the per-cell instances…)"。实测 `get_ideology_cell_program_summary().cell_plane_builds == 0`。 | `DerivedCellFront` + `step_derived_rebuild` + `get_effective_stat_value` | 全回归 21/22（`mechanism_matrix` 为基线既有 1129/3）；内核 93/0 |
+| `NativeEconomyRuntime::set_ideology_cell_programs` + `_ideology_cell_programs` + `_epoch_city_output_ideology_generation` | Immediate delete | **Deleted**（13 行 + 成员）| 唯一写入点是上面那个不可达的桥。 | 派生层经 `effective_value` 直接参与同一 CSR | `city_good_output_factor_q16` 读者不变，回归见上 |
+| `refresh_city_output_modifier_factors` 内的平面合并段 | Immediate delete | **Deleted**（74 行）| 段首条件 `!_ideology_cell_programs.entries.empty()` 恒假。 | 派生层在 `effective_value` 里合并，不需要第二个 CSR 来源 | 同上 |
+| `publish_ideology_cell_programs` / `set_ideology_cell_program_entry_for_test` / `get_ideology_cell_program_summary` / `set_ideology_cell_plane_enabled`（4 个 ClassDB 桥）| Immediate delete | **Deleted**（62 行 + 绑定）| 无生产调用者；`_probe_card_cell_plane.gd` 是唯一专用消费者，一并删除。 | 上表三个新桥（`get_derived_cell_layer_report` / `get_effective_stat_value` / `get_derived_multi_country_report`）| `rg "publish_ideology_cell_programs\|get_ideology_cell_program_summary"` 只剩历史文档 |
+| `ideology_effect_metric_publish_test.gd` 的 `_test_cell_program_table` / `_test_column_units` | Delete after migration | **Deleted**（114 行 / 21 条断言）| 它们注入平面 entry 并读平面 summary。**覆盖已迁移**：ADD vs MULTIPLY 与负幅度加法折叠在内核 `derived_layer_rebuild_test.cpp` 的 A / N 组；逐格值在 B7。 | 内核单测 + `ideology_b7_wide_territory_test.gd` | 268/0 且无 SCRIPT ERROR（删桥未删函数时是 289/0 + `Nonexistent function` 报错，断言其实早已不执行）|
+
+**删除的顺序与理由。** 先补可观测性（`get_effective_stat_value`），再把唯一覆盖迁到内核，
+最后才删平面。反过来做会丢断言而无法察觉：GDScript 函数抛错后测试只会**停止递增 check 计数**，
+仍然报 0 failures。
+
+**保留但已无包含者。** `ideology_cell_program.h` 仍存在，未删除；无任何 `.h`/`.cpp` include 它。

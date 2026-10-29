@@ -248,3 +248,107 @@ verify every active idea against PKEF v10 `ExternalSourceBinding`. Every PKID
 pending transition ID must still be a pending PKEF transaction with the matching
 country/ideology source; PKEF may not contain an extra pending ideology
 transaction omitted by PKID.
+
+## 7. Derived cell layer (permanent cell cards)
+
+Permanent, stateless cell effects do **not** create per-cell Effect instances. They
+contribute to a read-only derived layer inside `ModifierRuntime`. This section is the
+contract; the reasoning lives in `docs/plans/ideology-review/22-*` and the evidence in
+`artifacts/ideology-cell-layer/`.
+
+### Backend decision (I01: one program, one backend)
+
+`cell_program_eligibility.h` is the ONLY place that decides. `decide_cell_program_backend()`
+answers `DerivedCell` or a named reason (`not_cell_domain` / `unsupported_selector` /
+`not_permanent` / `non_constant_value_mode` / `stacked` / `unresolved_definition`).
+
+The production path and the legacy plane both call it; there is no second rule. Measured
+coverage: **265 of 265** in-scope programs (kinds 12/14/15/16) go derived, and 23 stay on
+the instance path for a stated reason (16 non-cell domains + 7 unsupported selectors).
+
+There is **no rollout switch**. Supported selectors go derived, full stop.
+
+### Rebuild is resumable
+
+A full materialise of 6400 cells exceeded the 1 ms slice budget, so it is split:
+
+```cpp
+bool step_derived_rebuild(int64_t day, std::string &error);  // false = needs another slice
+bool derived_rebuild_pending() const;
+int  drain_derived_cell_layer(int64_t day);                  // drive to completion now
+```
+
+The unit of work is a **contribution**. State lives in `DerivedCellMaterializeJob`
+(`folded` / `touched_stats` / report counters / `_index` cursor) and survives across calls.
+`done()` is `_started && _index >= _total` — not `_index >= _total`, which is true before
+the first step.
+
+Collection and folding are **separate steps**: collecting 6400 cells alone costs 0.68 ms,
+so folding in the same step pushed the first slice to 1.03 ms.
+
+### Ownership scope for fan-outs (kinds 14/15/16)
+
+Bits 12..13 of `param0`, uniform across the three kinds, decoded by
+`selector_ownership.h`:
+
+| value | meaning |
+|---|---|
+| `OWN = 0` (**default**) | own territory only |
+| `FOREIGN = 1` | foreign only |
+| `ANY = 2` | no filter (pre-change behaviour) |
+
+An **unknown value falls back to `ANY`, not `OWN`.** Silently narrowing a card whose intent
+is unclear makes its target set vanish, and an empty target set is indistinguishable from
+"nothing matched".
+
+Measured impact of the new default on the 6x5 fixture: **51.7 % of a radius-2 ring at a
+border is foreign** (worst single ring 14 of 18). All 74 shipped cards (5x kind 14,
+66x kind 16) author no scope bits, so they all land on `OWN`.
+
+### Where the value comes from
+
+`effective_value` merges the derived contribution into the SAME add/factor sum, before the
+single final clamp:
+
+```
+add += slot->sum_add;
+factor = zero_factor_count > 0 ? 0.0 : factor * slot->product_nonzero;
+value  = clamp((base + add) * factor, min, max);
+```
+
+The derived lookup is keyed by **`group_handle`, which is the CELL**; `entity_handle` is 0.
+Do not add a `group_handle != 0` guard — that is how cell 0 silently lost every card's
+effect (measured: cell 0 value 1.0 while cell 1 was 1.05).
+
+For a metric ramp the magnitude comes from the **program's own instruction stream**, via
+`evaluate_program_magnitude_for_metrics()`. `metric * term.value` is only correct for a
+stream that is exactly `EMIT metric` at unit scale, and no shipped ramp card is.
+
+### Observability
+
+| bridge | content |
+|---|---|
+| `get_derived_cell_layer_report()` | `layer_generation` / `cell_count` / `stat_count` / `stat_ids` / `sample_day` / `epoch_id` |
+| `get_effective_stat_value(stat_key, cell, entity, base)` | merged value + `derived_add` / `derived_factor` / `derived_zero_factor_count` / `derived_contributors` / `derived_present` |
+| `get_derived_materialize_report()` | seen / derived / skipped_legacy / cells_visited / rows_emitted / truncated |
+| `get_derived_multi_country_report()` | `multi_country_cells` / `max_contributors` / `countries` |
+
+`get_effective_stat_value` calls the same `effective_value` the hot path calls — it reports
+what the game would see, not a re-derivation.
+
+### Idle must not look like work
+
+Identical content must not install and must not bump a version (I13); otherwise every idle
+day invalidates every cache keyed on the layer generation. Verified by
+`tests/ideology/ideology_b5_idle_test.gd` (30 idle days, generation frozen) — with a
+negative control that first PROVES a content change does bump it.
+
+Note `cell_layer_rebuild_steps` is **per-run, not cumulative**; use `layer_generation` or
+`sample_day` to reason about "did work happen".
+
+### Known gap
+
+There is **no >32-cell production sample**: a freshly generated world gives
+`countries=3 widest=1 above_old_cap=0`. The mechanism is verified on synthetic
+400/1600/6400-cell territories only. Producing a real sample needs territory expansion
+gameplay first.

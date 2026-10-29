@@ -1,0 +1,373 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[B12] catalog: tags_rewritten=296 capacity=2 card_a_dense=82 card_b_dense=40
+  [PASS] B12/A1: both cards are in the compiled ideology catalog and are DISTINCT
+  [PASS] B12/A2: the shipped ideology capacity holds 2 cards
+  [PASS] B12/A3: effects configure on the magnitude-interpreter instance
+[B12] ---- part 1: continuous run, save, then a genuinely cold world ----
+  [PASS] cont: economy configures
+  [PASS] cont: effects configure
+  [PASS] cont: modifiers configure
+  [PASS] cont: country configures
+  [PASS] cont: both countries bootstrap
+  [PASS] cont: ideologies configure
+  [PASS] cont: the fixture resolves a non-zero handle for every country
+  [PASS] cont: the fixture territory is a proper subset of the grid
+  [PASS] cont: economy epoch 1 opens for day 0
+  [PASS] cont: the fixture resolves both bootstrap signatures
+  [PASS] cont: the economy bootstraps
+  [PASS] cont: economy epoch 2 opens for day 1
+  [PASS] cont: economy epoch 3 opens for day 2
+[B12/cont] world: owned=256 expected_front_cells=512 handles=[4294967296, 4294967297]
+  [PASS] B12/cont: the pre-save economy is committed at day 2 with NO card in play (so no economy day ever ran under the derived front)
+  [PASS] B12/cmd: a batch of 2 commands (seq 1..2) is admitted
+  [PASS] B12/cmd: a batch of 2 commands (seq 3..4) is admitted
+  [PASS] B12/cmd: a batch of 2 commands (seq 5..6) is admitted
+  [PASS] cont: ideology day 0 completes (stage=ideology_active_progress, 2 slices)
+  [PASS] cont: ideology day 0 leaves no derived rebuild in flight (drained in 0 steps; 0 means the day already folded it)
+  [PASS] B12/cont: while the day-0 equip is unACKed the front is NOT installed (plan 10.1: a pending equip contributes nothing)
+[B12/cont/r1/adapters] modifier dispatch={ "ok": true, "submitted_transactions": 2, "submitted_commands": 2 } ack={ "ok": true, "acknowledged": 2, "rejected": 0, "pending": 0 } country={ "ok": true, "submitted_transactions": 0, "submitted_commands": 0 }/{ "ok": true, "acknowledged": 0, "rejected": 0, "pending": 0 }
+[B12/cont/r1/adapters] rounds=1 effect_acked=true pre_poll_pending_transitions=2 queues={ "country": false, "economy": false, "gameplay": false }
+  [PASS] B12/cont: the native Effect adapters accepted and ACKED round 1's level commands (an equip transition never settles without them)
+  [PASS] cont: ideology day 1 completes (stage=ideology_active_progress, 1 slices)
+  [PASS] cont: ideology day 1 leaves no derived rebuild in flight (drained in 0 steps; 0 means the day already folded it)
+  [PASS] B12/cont: the settle day CONFIRMS the projection for day 2 and the day-1 rebuild is REFUSED by the eligibility gate (plan 9.3)
+  [PASS] B12/cont: on the settle day itself the front is STILL NOT INSTALLED, because the confirmed projection is not eligible before D + 1
+  [PASS] cont: ideology day 2 completes (stage=ideology_active_progress, 2 slices)
+  [PASS] cont: ideology day 2 leaves no derived rebuild in flight (drained in 0 steps; 0 means the day already folded it)
+  [PASS] B12/cont: the day-0 equip INSTALLS the first front (basis adopted) on the day AFTER the settle day, which is the first day its confirmed projection is eligible (plan 9.3)
+  [PASS] B12/cont: round 1's transition is SETTLED before round 2 is submitted (a second equip while one is pending is refused with ideology_country_transition_pending)
+  [PASS] B12/cmd: a batch of 2 commands (seq 7..8) is admitted
+  [PASS] B12/cmd: a batch of 2 commands (seq 9..10) is admitted
+  [PASS] cont: ideology day 3 completes (stage=ideology_active_progress, 2 slices)
+  [PASS] cont: ideology day 3 leaves no derived rebuild in flight (drained in 0 steps; 0 means the day already folded it)
+  [PASS] B12/cont: while the round-2 equip is unACKed the front keeps the round-1 content (generation unchanged)
+[B12/cont/r2/adapters] modifier dispatch={ "ok": true, "submitted_transactions": 2, "submitted_commands": 2 } ack={ "ok": true, "acknowledged": 2, "rejected": 0, "pending": 0 } country={ "ok": true, "submitted_transactions": 0, "submitted_commands": 0 }/{ "ok": true, "acknowledged": 0, "rejected": 0, "pending": 0 }
+[B12/cont/r2/adapters] rounds=1 effect_acked=true pre_poll_pending_transitions=2 queues={ "country": false, "economy": false, "gameplay": false }
+  [PASS] B12/cont: the native Effect adapters ACKED round 2's level commands
+  [PASS] cont: ideology day 4 completes (stage=ideology_active_progress, 1 slices)
+  [PASS] cont: ideology day 4 leaves no derived rebuild in flight (drained in 0 steps; 0 means the day already folded it)
+  [PASS] B12/cont: round 2's settle day confirms the projection for day 5 and the day-4 rebuild is REFUSED by the eligibility gate (plan 9.3)
+  [PASS] B12/cont: on round 2's settle day the front still keeps the round-1 content (generation unchanged, card B not published yet)
+  [PASS] cont: ideology day 5 completes (stage=ideology_active_progress, 2 slices)
+  [PASS] cont: ideology day 5 leaves no derived rebuild in flight (drained in 0 steps; 0 means the day already folded it)
+  [PASS] B12/cont: the day-3 equip CHANGES the front content and installs again on the first day its confirmed projection is eligible, day 5 (card B writes the same birth-factor stat, so the fold is two-source)
+  [PASS] B12/cont: every submitted command landed (zero rejected receipts)
+[B12/cont/save] front installed=true cells=512 contributions=512 stats=2 generation=2 day=5 front_bytes=23328
+[B12/cont/save] slots=[2, 2] levels=[0, 0] pending=0/0 economy_day=2 births=0 deaths=0 audit=0/0/0
+[B12/cont/save] peaks retained=23328 candidate=23328 total=46656 visits=10
+[B12/cont/save] fingerprint=ded97c29efb0a3b6 business=4819269250670354788
+[B12/cont/save] econ cell 1 owned=true pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/cont/save] econ cell 192 owned=true pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/cont/save] econ cell 0 owned=false pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/cont/save] econ cell 3 owned=false pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+  [PASS] B12/save: both cards are ACTIVE and at level 0 on every country
+  [PASS] B12/cont: nothing is left in flight at the save boundary (pending_commands == 0, pending_transitions == 0, no rebuild pending)
+  [PASS] B12/save: the production save boundary reports idle at the save instant (ideology_should_run(5) == false), so this is a legal capture point
+  [PASS] B12/save: PKEF payload is produced
+  [PASS] B12/save: PKID payload is produced and carries the PKID magic
+  [PASS] B12/save: the section ORDER is PKEF then PKID (the order the production coordinator writes, game_save_coordinator.gd:961,969)
+[B12/save] capture_ms=0.088 pkef=3138 pkid=1843
+  [PASS] cont: ideology day 6 completes (stage=ideology_active_progress, 2 slices)
+  [PASS] cont: ideology day 6 leaves no derived rebuild in flight (drained in 0 steps; 0 means the day already folded it)
+  [PASS] cont: economy epoch 4 opens for day 3
+[B12/cont/first-day] front installed=true cells=512 contributions=512 stats=2 generation=2 day=5 front_bytes=23328
+[B12/cont/first-day] slots=[2, 2] levels=[0, 0] pending=0/0 economy_day=3 births=0 deaths=0 audit=0/0/0
+[B12/cont/first-day] peaks retained=23328 candidate=23328 total=46656 visits=12
+[B12/cont/first-day] fingerprint=ded97c29efb0a3b6 business=8348658414743415115
+[B12/cont/first-day] econ cell 1 owned=true pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/cont/first-day] econ cell 192 owned=true pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/cont/first-day] econ cell 0 owned=false pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/cont/first-day] econ cell 3 owned=false pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+  [PASS] B12/cont: the first consumption day reached economy day 3
+  [PASS] cont: ideology day 7 completes (stage=ideology_active_progress, 2 slices)
+  [PASS] cont: ideology day 7 leaves no derived rebuild in flight (drained in 0 steps; 0 means the day already folded it)
+  [PASS] cont: economy epoch 5 opens for day 4
+[B12/cont/second-day] front installed=true cells=512 contributions=512 stats=2 generation=2 day=5 front_bytes=23328
+[B12/cont/second-day] slots=[2, 2] levels=[0, 0] pending=0/0 economy_day=4 births=0 deaths=0 audit=0/0/0
+[B12/cont/second-day] peaks retained=23328 candidate=23328 total=46656 visits=14
+[B12/cont/second-day] fingerprint=ded97c29efb0a3b6 business=6012584309490686710
+[B12/cont/second-day] econ cell 1 owned=true pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/cont/second-day] econ cell 192 owned=true pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/cont/second-day] econ cell 0 owned=false pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/cont/second-day] econ cell 3 owned=false pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12] ---- part 2: cold world (fresh DCWorldExt) + PKEF/PKID restore ----
+  [PASS] cold: economy configures
+  [PASS] cold: effects configure
+  [PASS] cold: modifiers configure
+  [PASS] cold: country configures
+  [PASS] cold: both countries bootstrap
+  [PASS] cold: ideologies configure
+  [PASS] cold: the fixture resolves a non-zero handle for every country
+  [PASS] cold: the fixture territory is a proper subset of the grid
+  [PASS] cold: economy epoch 1 opens for day 0
+  [PASS] cold: the fixture resolves both bootstrap signatures
+  [PASS] cold: the economy bootstraps
+  [PASS] cold: economy epoch 2 opens for day 1
+  [PASS] cold: economy epoch 3 opens for day 2
+  [PASS] B12/cold: the cold build finished inside the hang budget
+  [PASS] B12/cold: the replayed economy reaches the SAME committed day as the continuous run at the save point
+  [PASS] B12/cold: the cold world resolves the SAME country handles
+[B12/cold/pre-restore] front installed=false cells=0 contributions=? stats=0 generation=0 day=? front_bytes=?
+[B12/cold/pre-restore] slots=[0, 0] levels=[] pending=0/0 economy_day=2 births=0 deaths=0 audit=0/0/0
+[B12/cold/pre-restore] peaks retained=0 candidate=0 total=0 visits=0
+[B12/cold/pre-restore] fingerprint=2d882ead19752aa5 business=3180556783132079015
+[B12/cold/pre-restore] econ cell 1 owned=true pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/cold/pre-restore] econ cell 192 owned=true pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/cold/pre-restore] econ cell 0 owned=false pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/cold/pre-restore] econ cell 3 owned=false pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+  [PASS] B12/cold: before the restore the cold world has NO card and NO front (nothing was carried over in memory)
+  [PASS] B12/cold: PKEF restores FIRST (the order PKID's binding check requires)
+  [PASS] B12/cold: PKID restores into the cold runtime
+  [PASS] B12/cold: the timed restore is the sum of its two sections and non-empty (so the reported restore_ms is a real measurement, not a stub)
+[B12/restore] restore_ms=0.115 (pkef=0.026 ms, pkid=0.089 ms) capture_ms=0.088 cold_build_ms=103.256
+[B12/cold/post-restore] front installed=false cells=0 contributions=? stats=0 generation=0 day=? front_bytes=?
+[B12/cold/post-restore] slots=[2, 2] levels=[0, 0] pending=0/0 economy_day=2 births=0 deaths=0 audit=0/0/0
+[B12/cold/post-restore] peaks retained=0 candidate=0 total=0 visits=0
+[B12/cold/post-restore] fingerprint=2d882ead19752aa5 business=4819269250670354788
+[B12/cold/post-restore] econ cell 1 owned=true pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/cold/post-restore] econ cell 192 owned=true pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/cold/post-restore] econ cell 0 owned=false pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/cold/post-restore] econ cell 3 owned=false pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+  [PASS] B12/cold: the restored CARD STATE is identical to the saved one (slots, idea ids, levels, understanding, points)
+  [PASS] B12/cold: the restored BUSINESS STATE hash is identical to the saved one
+  [PASS] B12/cold: the restored runtime keeps the saved pending counts (the payload is restored verbatim, not normalised on the way in)
+  [PASS] B12/cold: PKID carries NO derived front, so the cold runtime starts with installed == false and cell_count == 0
+  [PASS] cold: ideology day 6 completes (stage=ideology_active_progress, 2 slices)
+  [PASS] cold: ideology day 6 leaves no derived rebuild in flight (drained in 0 steps; 0 means the day already folded it)
+  [PASS] B12/cold: the FIRST ideology day after the cold restore REBUILDS and INSTALLS the front from the restored state alone
+[B12/cold] rebuild visits 0 -> 2, steps=2, install day=6
+  [PASS] cold: economy epoch 4 opens for day 3
+[B12/cold/first-day] front installed=true cells=512 contributions=512 stats=2 generation=1 day=6 front_bytes=23328
+[B12/cold/first-day] slots=[2, 2] levels=[0, 0] pending=0/0 economy_day=3 births=0 deaths=0 audit=0/0/0
+[B12/cold/first-day] peaks retained=0 candidate=23328 total=23328 visits=2
+[B12/cold/first-day] fingerprint=ded97c29efb0a3b6 business=8348658414743415115
+[B12/cold/first-day] econ cell 1 owned=true pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/cold/first-day] econ cell 192 owned=true pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/cold/first-day] econ cell 0 owned=false pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/cold/first-day] econ cell 3 owned=false pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+  [PASS] B12/cold: the first consumption day reaches the SAME committed economy day as the continuous run
+  [PASS] B12/cold: the first consumption day kept the economy CONSERVED (population / money / goods errors all 0)
+  [PASS] cold: ideology day 7 completes (stage=ideology_active_progress, 2 slices)
+  [PASS] cold: ideology day 7 leaves no derived rebuild in flight (drained in 0 steps; 0 means the day already folded it)
+  [PASS] cold: economy epoch 5 opens for day 4
+[B12/cold/second-day] front installed=true cells=512 contributions=512 stats=2 generation=1 day=6 front_bytes=23328
+[B12/cold/second-day] slots=[2, 2] levels=[0, 0] pending=0/0 economy_day=4 births=0 deaths=0 audit=0/0/0
+[B12/cold/second-day] peaks retained=23328 candidate=23328 total=46656 visits=4
+[B12/cold/second-day] fingerprint=ded97c29efb0a3b6 business=6012584309490686710
+[B12/cold/second-day] econ cell 1 owned=true pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/cold/second-day] econ cell 192 owned=true pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/cold/second-day] econ cell 0 owned=false pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/cold/second-day] econ cell 3 owned=false pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+  [PASS] B12/first-day: economy.city.birth_factor derived presence matches on every one of 384 cells
+  [PASS] B12/first-day: economy.city.birth_factor derived add matches EXACTLY on every cell
+  [PASS] B12/first-day: economy.city.birth_factor EFFECTIVE VALUE matches EXACTLY on every cell
+  [PASS] B12/first-day: economy.city.need.housing.consumption_factor derived presence matches on every one of 384 cells
+  [PASS] B12/first-day: economy.city.need.housing.consumption_factor derived add matches EXACTLY on every cell
+  [PASS] B12/first-day: economy.city.need.housing.consumption_factor EFFECTIVE VALUE matches EXACTLY on every cell
+  [PASS] B12/first-day: the per-cell fingerprint hash is identical
+  [PASS] B12/first-day: both fronts cover the same cells, contributions, stats and stat ids
+  [PASS] B12/first-day: both fronts are the same SIZE in bytes
+  [PASS] B12/first-day: the ideology business state hash matches
+  [PASS] B12/first-day: business section points matches
+  [PASS] B12/first-day: business section baseline matches
+  [PASS] B12/first-day: business section history matches
+  [PASS] B12/first-day: business section draw matches
+  [PASS] B12/first-day: business section bits matches
+  [PASS] B12/first-day: business section offer matches
+  [PASS] B12/first-day: business section ideas matches
+  [PASS] B12/first-day: both runs are at the SAME committed economy day
+  [PASS] B12/first-day: the economy's birth/death ledger matches at the same day (measured 0/0 here: state agreement, not consumption evidence)
+  [PASS] B12/first-day: the live cohort count matches
+  [PASS] B12/first-day: the economy's own per-cell view agrees exactly on every probed cell (population, funds, income, expense, satisfaction)
+  [PASS] B12/first-day: the committed economy audit is available on both sides
+  [PASS] B12/first-day: economy conservation errors are 0 on both sides
+  [PASS] B12/first-day: the cards occupy the same number of slots
+  [PASS] B12/first-day: the cards keep the same levels and understanding
+  [PASS] B12/first-day: one-shot Effect instance count is 0 on both sides (I01)
+  [PASS] B12/first-day: both sides carry the same pending command/transition counts
+  [PASS] B12/second-day: economy.city.birth_factor derived presence matches on every one of 384 cells
+  [PASS] B12/second-day: economy.city.birth_factor derived add matches EXACTLY on every cell
+  [PASS] B12/second-day: economy.city.birth_factor EFFECTIVE VALUE matches EXACTLY on every cell
+  [PASS] B12/second-day: economy.city.need.housing.consumption_factor derived presence matches on every one of 384 cells
+  [PASS] B12/second-day: economy.city.need.housing.consumption_factor derived add matches EXACTLY on every cell
+  [PASS] B12/second-day: economy.city.need.housing.consumption_factor EFFECTIVE VALUE matches EXACTLY on every cell
+  [PASS] B12/second-day: the per-cell fingerprint hash is identical
+  [PASS] B12/second-day: both fronts cover the same cells, contributions, stats and stat ids
+  [PASS] B12/second-day: both fronts are the same SIZE in bytes
+  [PASS] B12/second-day: the ideology business state hash matches
+  [PASS] B12/second-day: business section points matches
+  [PASS] B12/second-day: business section baseline matches
+  [PASS] B12/second-day: business section history matches
+  [PASS] B12/second-day: business section draw matches
+  [PASS] B12/second-day: business section bits matches
+  [PASS] B12/second-day: business section offer matches
+  [PASS] B12/second-day: business section ideas matches
+  [PASS] B12/second-day: both runs are at the SAME committed economy day
+  [PASS] B12/second-day: the economy's birth/death ledger matches at the same day (measured 0/0 here: state agreement, not consumption evidence)
+  [PASS] B12/second-day: the live cohort count matches
+  [PASS] B12/second-day: the economy's own per-cell view agrees exactly on every probed cell (population, funds, income, expense, satisfaction)
+  [PASS] B12/second-day: the committed economy audit is available on both sides
+  [PASS] B12/second-day: economy conservation errors are 0 on both sides
+  [PASS] B12/second-day: the cards occupy the same number of slots
+  [PASS] B12/second-day: the cards keep the same levels and understanding
+  [PASS] B12/second-day: one-shot Effect instance count is 0 on both sides (I01)
+  [PASS] B12/second-day: both sides carry the same pending command/transition counts
+  [PASS] cont: the persistent program ideology.effect.public_hygiene_l1 evaluates (its magnitude is the absolute reference the per-cell add must equal)
+  [PASS] cont: the persistent program ideology.effect.fire_keeping_l1 evaluates (its magnitude is the absolute reference the per-cell add must equal)
+  [PASS] cont: the persistent program ideology.effect.public_hygiene_l1 evaluates (its magnitude is the absolute reference the per-cell add must equal)
+  [PASS] cont: the persistent program ideology.effect.fire_keeping_l1 evaluates (its magnitude is the absolute reference the per-cell add must equal)
+  [PASS] B12/first-day: the card's TWO-SOURCE birth-factor fold is present on every covered cell, so the comparison is not of an empty front
+  [PASS] B12/cont: the persistent program ideology.effect.public_hygiene_l1 evaluates (its magnitude is the absolute reference the per-cell add must equal)
+  [PASS] B12/cont: the persistent program ideology.effect.fire_keeping_l1 evaluates (its magnitude is the absolute reference the per-cell add must equal)
+  [PASS] B12/cont: the covered birth-factor add equals the SUM of the two cards' level-1 program magnitudes (0.10000610)
+  [PASS] B12/cont: the .cut command's derived delta on the housing stat is NEGATIVE (the sign comes from the definition, not from the magnitude)
+  [PASS] B12/cont: an UNOWNED cell stays at the identity base (no leaked territory)
+  [PASS] B12/cold: the persistent program ideology.effect.public_hygiene_l1 evaluates (its magnitude is the absolute reference the per-cell add must equal)
+  [PASS] B12/cold: the persistent program ideology.effect.fire_keeping_l1 evaluates (its magnitude is the absolute reference the per-cell add must equal)
+  [PASS] B12/cold: the covered birth-factor add equals the SUM of the two cards' level-1 program magnitudes (0.10000610)
+  [PASS] B12/cold: the .cut command's derived delta on the housing stat is NEGATIVE (the sign comes from the definition, not from the magnitude)
+  [PASS] B12/cold: an UNOWNED cell stays at the identity base (no leaked territory)
+  [PASS] B12/cold: the cold runtime recorded no runtime error
+  [PASS] B12/cont: the continuous runtime recorded no runtime error
+[B12] ---- continuous vs cold: front generation/install day ----
+[B12] continuous: generation=2 sample_day=5 | cold: generation=1 sample_day=6 (the front is NOT saved, so the install DAYS legitimately differ: the continuous run installed on days 2 and 5 (each the day AFTER the settle that confirmed the projection) and skipped every identical rebuild after that, the cold run installs once, on its first day)
+  [PASS] B12/cold: the cold world installed the front itself (generation >= 1) and installed no MORE times than the run that produced the save
+[B12] ---- part 3: peak memory, continuous vs cold-restored ----
+[B12/peak] continuous: retained=23328 candidate=23328 total=46656 front_bytes=23328 cells=512 contributions=512 stat_versions_bytes=688
+[B12/peak] cold      : retained=0 candidate=23328 total=23328 front_bytes=23328 cells=512 contributions=512 stat_versions_bytes=688
+[B12/peak] delta(cold - continuous) peak_total=-23328 bytes, front_bytes=0 bytes
+  [PASS] B12/peak: the cold-restored world's PEAK TOTAL is not larger than the continuous run's (a cold restore must not allocate a bigger front than the run that produced it)
+  [PASS] B12/peak: the cold-restored world's PEAK RETAINED is not larger
+  [PASS] B12/peak: the CANDIDATE the cold world built is the same size as the one the continuous run built (the front is the same structure, so a cold restore reproduces it byte for byte)
+  [PASS] B12/peak: the installed front is the same SIZE in both worlds
+  [PASS] B12/peak: continuous peak_total is exactly retained + candidate
+  [PASS] B12/peak: cold peak_total is exactly retained + candidate
+  [PASS] B12/peak: front_bytes closes the documented identity cells*4 + contributions*contribution_bytes + row_overhead + stat_versions
+[B12/peak] second day -- continuous: retained=23328 candidate=23328 total=46656 | cold: retained=23328 candidate=23328 total=46656
+  [PASS] B12/peak: once the cold world has rebuilt with a RETAINED front, its accumulated peaks equal the continuous run's exactly (retained, candidate and total)
+  [PASS] B12/peak: the cold world's FIRST-day retained peak is 0 because its only build so far had no previous front (a fresh instance, not a leak)
+[B12] ---- part 4: negative controls (the comparison must be able to fail) ----
+  [PASS] nc-pkef-only: economy configures
+  [PASS] nc-pkef-only: effects configure
+  [PASS] nc-pkef-only: modifiers configure
+  [PASS] nc-pkef-only: country configures
+  [PASS] nc-pkef-only: both countries bootstrap
+  [PASS] nc-pkef-only: ideologies configure
+  [PASS] nc-pkef-only: the fixture resolves a non-zero handle for every country
+  [PASS] nc-pkef-only: the fixture territory is a proper subset of the grid
+  [PASS] nc-pkef-only: economy epoch 1 opens for day 0
+  [PASS] nc-pkef-only: the fixture resolves both bootstrap signatures
+  [PASS] nc-pkef-only: the economy bootstraps
+  [PASS] nc-pkef-only: economy epoch 2 opens for day 1
+  [PASS] nc-pkef-only: economy epoch 3 opens for day 2
+  [PASS] B12/negctl NC1: PKEF alone still restores (so the damage below is the MISSING PKID, not a broken effect payload)
+  [PASS] nc1: ideology day 6 completes (stage=ideology_active_progress, 2 slices)
+  [PASS] nc1: ideology day 6 leaves no derived rebuild in flight (drained in 0 steps; 0 means the day already folded it)
+[B12/nc1/first-day] front installed=false cells=0 contributions=? stats=0 generation=0 day=? front_bytes=?
+[B12/nc1/first-day] slots=[0, 0] levels=[] pending=0/0 economy_day=2 births=0 deaths=0 audit=0/0/0
+[B12/nc1/first-day] peaks retained=0 candidate=0 total=0 visits=2
+[B12/nc1/first-day] fingerprint=2d882ead19752aa5 business=515006895834178371
+[B12/nc1/first-day] econ cell 1 owned=true pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/nc1/first-day] econ cell 192 owned=true pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/nc1/first-day] econ cell 0 owned=false pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+[B12/nc1/first-day] econ cell 3 owned=false pop=40 funds=20000000 income=0 expense=0 satisfaction=0
+  [PASS] B12/negctl NC1: with no PKID the card is NOT equipped, so the first day installs the explicit EMPTY result and the front covers zero cells
+  [PASS] B12/negctl NC1: the FIRST-DAY comparison REPORTS the missing ideology section (per-cell mismatches, not a silent pass)
+  [PASS] B12/negctl NC1: the per-cell fingerprint also differs
+[B12/negctl] NC1 per-cell mismatch count = 1024 (economy.city.birth_factor presence[mismatches=256 first=1] add[mismatches=256 first=1 max_abs_diff=0.100006103516])
+[B12/negctl] NC1 economy-cell mismatch count = 0 (kind=INERT economy: income/expense/satisfaction/births all 0, so the card's footprint is only visible at the modifier-read boundary)
+  [PASS] nc-pkid-only: economy configures
+  [PASS] nc-pkid-only: effects configure
+  [PASS] nc-pkid-only: modifiers configure
+  [PASS] nc-pkid-only: country configures
+  [PASS] nc-pkid-only: both countries bootstrap
+  [PASS] nc-pkid-only: ideologies configure
+  [PASS] nc-pkid-only: the fixture resolves a non-zero handle for every country
+  [PASS] nc-pkid-only: the fixture territory is a proper subset of the grid
+  [PASS] B12/negctl NC2: PKID WITHOUT PKEF is REFUSED, and the reason is the binding check's own (ideology_effect_binding_missing_or_mismatched) -- which is why the pair and its order are mandatory
+[B12/negctl] NC2 PKID-without-PKEF -> ok=false reason=ideology_effect_binding_missing_or_mismatched
+[B12/nc2/post-refusal] front installed=false cells=0 contributions=? stats=0 generation=0 day=? front_bytes=?
+[B12/nc2/post-refusal] slots=[0, 0] levels=[] pending=0/0 economy_day=-1 births=0 deaths=0 audit=?/?/?
+[B12/nc2/post-refusal] peaks retained=0 candidate=0 total=0 visits=0
+[B12/nc2/post-refusal] fingerprint=2d882ead19752aa5 business=3180556783132079015
+[B12/nc2/post-refusal] econ cell 1 owned=true pop=-1 funds=-1 income=-1 expense=-1 satisfaction=-1
+[B12/nc2/post-refusal] econ cell 192 owned=true pop=-1 funds=-1 income=-1 expense=-1 satisfaction=-1
+[B12/nc2/post-refusal] econ cell 0 owned=false pop=-1 funds=-1 income=-1 expense=-1 satisfaction=-1
+[B12/nc2/post-refusal] econ cell 3 owned=false pop=-1 funds=-1 income=-1 expense=-1 satisfaction=-1
+  [PASS] B12/negctl NC2: the refusal is TOTAL -- the cold runtime keeps no card from the rejected payload, and the rollback left the business state intact
+  [PASS] B12/negctl NC3: the presence comparison reports the flipped cell
+  [PASS] B12/negctl NC3: the add comparison reports a 1e-9 difference (exact equality has no tolerance to hide behind)
+  [PASS] B12/negctl NC3: the fingerprint changes when one cell changes
+[B12/negctl] NC3 mismatch counts: presence=1 add=1
+  [PASS] nc-corrupt: economy configures
+  [PASS] nc-corrupt: effects configure
+  [PASS] nc-corrupt: modifiers configure
+  [PASS] nc-corrupt: country configures
+  [PASS] nc-corrupt: both countries bootstrap
+  [PASS] nc-corrupt: ideologies configure
+  [PASS] nc-corrupt: the fixture resolves a non-zero handle for every country
+  [PASS] nc-corrupt: the fixture territory is a proper subset of the grid
+  [PASS] B12/negctl NC4: a PKID payload with one flipped byte is REFUSED
+[B12/negctl] NC4 corrupted payload -> ok=false reason=ideology_save_state_hash_mismatch
+  [PASS] B12/hang: the whole scenario finished inside the wall-clock budget (hang detector, not a performance gate)
+[B12] === evidence: cells=384 countries=2 cards_per_country=2 restore_ms=0.115 capture_ms=0.088 cold_build_ms=103.256 elapsed_ms=8853 ===
+=== B12 cold-start restore (read load + full cold start + peak memory + restore cost + first consumption): 215 checks, 0 failures ===
+[economy-open-finish] day=0 country=0.359 workset=0.163 fiscal=0.116 csr=0.001 recovery=0.001 vectors=0.111 audit=0.138 commands=0.008
+[research-procure-diag] day=0 phase=0 done=0 cands=256 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=256 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=256 cursor=64 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=256 cursor=96 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=256 cursor=128 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=256 cursor=160 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=256 cursor=192 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=256 cursor=224 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=256 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=1 done=0 cands=256 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=1 done=0 cands=256 cursor=64 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=1 done=0 cands=256 cursor=96 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=1 done=0 cands=256 cursor=128 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=1 done=0 cands=256 cursor=160 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=1 done=0 cands=256 cursor=192 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=1 done=0 cands=256 cursor=224 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=0 done=0 cands=256 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=1 done=0 cands=256 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=1 done=0 cands=256 cursor=64 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=1 done=0 cands=256 cursor=96 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=1 done=0 cands=256 cursor=128 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=1 done=0 cands=256 cursor=160 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=1 done=0 cands=256 cursor=192 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=1 done=0 cands=256 cursor=224 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0001 new=0.0000 rows=0
+[probe] fold step cursor=256/256 took=0.0544 cells=512 commands=512
+[probe] AB old_first=0 old=0.0323 new=0.0247 rows=512
+[probe] finish scratch=0.0001 emit=0.0353 versions=0.0640 builder_install=0.0002 digest=0.0001 total=0.0997 rows=512 stats=2
+[probe] fold step cursor=256/256 took=0.0369 cells=512 commands=512
+[probe] AB old_first=1 old=0.0182 new=0.0219 rows=512
+[probe] finish scratch=0.0001 emit=0.0217 versions=0.0463 builder_install=0.0001 digest=0.0034 total=0.0716 rows=512 stats=2
+[probe] fold step cursor=512/512 took=0.0422 cells=768 commands=768
+[probe] AB old_first=0 old=0.0251 new=0.0166 rows=512
+[probe] finish scratch=0.0000 emit=0.0270 versions=0.0490 builder_install=0.0001 digest=0.0033 total=0.0794 rows=512 stats=2
+[probe] fold step cursor=512/512 took=0.0428 cells=768 commands=768
+[probe] AB old_first=1 old=0.0211 new=0.0156 rows=512
+[probe] finish scratch=0.0000 emit=0.0257 versions=0.0444 builder_install=0.0006 digest=0.0038 total=0.0745 rows=512 stats=2
+[probe] fold step cursor=512/512 took=0.0471 cells=768 commands=768
+[probe] AB old_first=0 old=0.0255 new=0.0162 rows=512
+[probe] finish scratch=0.0001 emit=0.0279 versions=0.0499 builder_install=0.0003 digest=0.0038 total=0.0820 rows=512 stats=2
+[economy-open-finish] day=0 country=0.368 workset=0.158 fiscal=0.140 csr=0.001 recovery=0.000 vectors=0.088 audit=0.123 commands=0.003
+[probe] fold step cursor=512/512 took=0.0409 cells=768 commands=768
+[probe] AB old_first=1 old=0.0230 new=0.0178 rows=512
+[probe] finish scratch=0.0001 emit=0.0318 versions=0.0482 builder_install=0.0003 digest=0.0000 total=0.0804 rows=512 stats=2
+[probe] fold step cursor=512/512 took=0.0449 cells=768 commands=768
+[probe] AB old_first=0 old=0.0219 new=0.0145 rows=512
+[probe] finish scratch=0.0000 emit=0.0286 versions=0.0443 builder_install=0.0004 digest=0.0039 total=0.0772 rows=512 stats=2
+[economy-open-finish] day=0 country=0.366 workset=0.147 fiscal=0.147 csr=0.001 recovery=0.000 vectors=0.049 audit=0.122 commands=0.002
+[probe] fold step cursor=0/0 took=0.0002 cells=0 commands=0
+[probe] AB old_first=1 old=0.0003 new=0.0001 rows=0
+ERROR: 19 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 635 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

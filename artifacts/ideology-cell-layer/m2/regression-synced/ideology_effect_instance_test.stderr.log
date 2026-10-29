@@ -1,0 +1,13 @@
+ERROR: [FAIL] default ideology effect catalog validates
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_effect_instance_test.gd:392)
+       [1] _test_content_catalog (res://tests/ideology/ideology_effect_instance_test.gd:83)
+       [2] _run (res://tests/ideology/ideology_effect_instance_test.gd:43)
+       [3] _init (res://tests/ideology/ideology_effect_instance_test.gd:33)
+ERROR: 19 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 635 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

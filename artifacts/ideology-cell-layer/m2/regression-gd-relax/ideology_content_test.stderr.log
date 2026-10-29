@@ -1,0 +1,90 @@
+ERROR: [FAIL] default ideology effects validate: ideology_effect_selector_cap_invalid
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_content_test.gd:556)
+       [1] _require (res://tests/ideology/ideology_content_test.gd:546)
+       [2] _test_card_definitions_resolve (res://tests/ideology/ideology_content_test.gd:504)
+       [3] _init (res://tests/ideology/ideology_content_test.gd:61)
+ERROR: [effect-catalog] effect_catalog_ideology_command_unavailable:ideology_effect_selector_cap_invalid
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _reject (res://scripts/effect/effect_domain_catalog.gd:602)
+       [1] build (res://scripts/effect/effect_domain_catalog.gd:437)
+       [2] _init (res://tests/ideology/ideology_content_test.gd:62)
+ERROR: [FAIL] default ideology catalog compiles
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_content_test.gd:556)
+       [1] _init (res://tests/ideology/ideology_content_test.gd:68)
+ERROR: [FAIL] shared Effect catalog includes ideology templates
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_content_test.gd:556)
+       [1] _init (res://tests/ideology/ideology_content_test.gd:310)
+ERROR: [FAIL] collection rarity 1 loads its authored landscape frame
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_content_test.gd:556)
+       [1] _init (res://tests/ideology/ideology_content_test.gd:320)
+ERROR: [FAIL] collection rarity 2 loads its authored landscape frame
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_content_test.gd:556)
+       [1] _init (res://tests/ideology/ideology_content_test.gd:320)
+ERROR: [FAIL] collection rarity 3 loads its authored landscape frame
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_content_test.gd:556)
+       [1] _init (res://tests/ideology/ideology_content_test.gd:320)
+WARNING: Adding 'OfferLayer' as child to 'CandidateModal' will make owner 'IdeologyWorkspace' inconsistent. Consider unsetting the owner beforehand.
+   at: add_child (scene/main/node.cpp:1716)
+   GDScript backtrace (most recent call first):
+       [0] _bind_nodes (res://scripts/ui/components/ideology_workspace.gd:177)
+       [1] set_model (res://scripts/ui/components/ideology_workspace.gd:689)
+       [2] _init (res://tests/ideology/ideology_content_test.gd:328)
+WARNING: Adding 'SpiritSlots' as child to 'SpiritInset' will make owner 'IdeologyWorkspace' inconsistent. Consider unsetting the owner beforehand.
+   at: add_child (scene/main/node.cpp:1716)
+   GDScript backtrace (most recent call first):
+       [0] _build_slot_sections (res://scripts/ui/components/ideology_workspace.gd:375)
+       [1] _build_deck_heading (res://scripts/ui/components/ideology_workspace.gd:349)
+       [2] _build_archive_chrome (res://scripts/ui/components/ideology_workspace.gd:298)
+       [3] _build_dynamic_parts (res://scripts/ui/components/ideology_workspace.gd:226)
+       [4] _bind_nodes (res://scripts/ui/components/ideology_workspace.gd:209)
+       [5] set_model (res://scripts/ui/components/ideology_workspace.gd:689)
+       [6] _init (res://tests/ideology/ideology_content_test.gd:328)
+WARNING: Adding 'IdeologySlots' as child to 'IdeologyInset' will make owner 'IdeologyWorkspace' inconsistent. Consider unsetting the owner beforehand.
+   at: add_child (scene/main/node.cpp:1716)
+   GDScript backtrace (most recent call first):
+       [0] _build_slot_sections (res://scripts/ui/components/ideology_workspace.gd:392)
+       [1] _build_deck_heading (res://scripts/ui/components/ideology_workspace.gd:349)
+       [2] _build_archive_chrome (res://scripts/ui/components/ideology_workspace.gd:298)
+       [3] _build_dynamic_parts (res://scripts/ui/components/ideology_workspace.gd:226)
+       [4] _bind_nodes (res://scripts/ui/components/ideology_workspace.gd:209)
+       [5] set_model (res://scripts/ui/components/ideology_workspace.gd:689)
+       [6] _init (res://tests/ideology/ideology_content_test.gd:328)
+WARNING: Adding 'DeckScroll' as child to 'DeckBody' will make owner 'IdeologyWorkspace' inconsistent. Consider unsetting the owner beforehand.
+   at: add_child (scene/main/node.cpp:1716)
+   GDScript backtrace (most recent call first):
+       [0] _build_slot_sections (res://scripts/ui/components/ideology_workspace.gd:414)
+       [1] _build_deck_heading (res://scripts/ui/components/ideology_workspace.gd:349)
+       [2] _build_archive_chrome (res://scripts/ui/components/ideology_workspace.gd:298)
+       [3] _build_dynamic_parts (res://scripts/ui/components/ideology_workspace.gd:226)
+       [4] _bind_nodes (res://scripts/ui/components/ideology_workspace.gd:209)
+       [5] set_model (res://scripts/ui/components/ideology_workspace.gd:689)
+       [6] _init (res://tests/ideology/ideology_content_test.gd:328)
+WARNING: Adding 'CollectionHeading' as child to 'CollectionHeadingSurface' will make owner 'IdeologyWorkspace' inconsistent. Consider unsetting the owner beforehand.
+   at: add_child (scene/main/node.cpp:1716)
+   GDScript backtrace (most recent call first):
+       [0] _build_collection_heading (res://scripts/ui/components/ideology_workspace.gd:495)
+       [1] _build_archive_chrome (res://scripts/ui/components/ideology_workspace.gd:301)
+       [2] _build_dynamic_parts (res://scripts/ui/components/ideology_workspace.gd:226)
+       [3] _bind_nodes (res://scripts/ui/components/ideology_workspace.gd:209)
+       [4] set_model (res://scripts/ui/components/ideology_workspace.gd:689)
+       [5] _init (res://tests/ideology/ideology_content_test.gd:328)
+ERROR: 41 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'N13RendererDummy15MaterialStorage11DummyShaderE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 653 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

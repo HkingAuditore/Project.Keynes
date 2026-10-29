@@ -1,0 +1,371 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[B5] settle equip: pending 1 -> 0 in 1 handshake round(s), last day=10
+[B5] settle equip: basis confirmed_day=10 eligible_day=11 gated=1
+[B5] after equip: gen=1 steps=12 cells=400 pending=false
+[B5] add BEFORE override = 0.14991760253906
+[B5] add AFTER override = 0.04997253417969   gen=2 epoch=0 sample_day=12
+[B5] after content change: gen=2 steps=9
+[B5] after 30 idle days: gen=2 (was 2)  steps=9 (was 9)  cells=400 pending=false
+[B5] idle value probe: { "ok": true, "stat_id": 6, "value": 1.04997253417969, "derived_add": 0.04997253417969, "derived_factor": 1.0, "derived_zero_factor_count": 0, "derived_contributors": 1, "derived_source_country": 4294967296, "derived_present": true }
+=== B5 idle: 12 checks, 0 failures ===
+[economy-open-finish] day=0 country=3.621 workset=0.166 fiscal=0.120 csr=0.001 recovery=0.001 vectors=0.094 audit=0.133 commands=0.006
+[research-procure-diag] day=0 phase=0 done=0 cands=400 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=400 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=400 cursor=64 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=400 cursor=96 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=400 cursor=128 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=400 cursor=160 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=400 cursor=192 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=400 cursor=224 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=400 cursor=256 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=400 cursor=288 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=400 cursor=320 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=400 cursor=352 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=400 cursor=384 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=0/0 took=0.0002 cells=0 commands=0
+[probe] AB old_first=1 old=0.0002 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0001 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0001 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0001 rows=0
+[probe] fold step cursor=34/400 took=0.4504 cells=34 commands=34
+[probe] fold step cursor=68/400 took=0.4536 cells=68 commands=68
+[probe] fold step cursor=107/400 took=0.4557 cells=107 commands=107
+[probe] fold step cursor=147/400 took=0.4573 cells=147 commands=147
+[probe] fold step cursor=189/400 took=0.4553 cells=189 commands=189
+[probe] fold step cursor=227/400 took=0.4583 cells=227 commands=227
+[probe] fold step cursor=261/400 took=0.4548 cells=261 commands=261
+[probe] fold step cursor=313/400 took=0.4580 cells=313 commands=313
+[probe] fold step cursor=355/400 took=0.4624 cells=355 commands=355
+[probe] fold step cursor=392/400 took=0.4556 cells=392 commands=392
+[probe] fold step cursor=400/400 took=0.1007 cells=400 commands=400
+[probe] AB old_first=1 old=0.0401 new=0.0196 rows=400
+[probe] finish scratch=0.0001 emit=0.0225 versions=0.0745 builder_install=0.0007 digest=0.0000 total=0.0978 rows=400 stats=1
+[probe] fold step cursor=54/400 took=0.4543 cells=54 commands=54
+[probe] fold step cursor=105/400 took=0.4578 cells=105 commands=105
+[probe] fold step cursor=163/400 took=0.4572 cells=163 commands=163
+[probe] fold step cursor=207/400 took=0.4539 cells=207 commands=207
+[probe] fold step cursor=254/400 took=0.4520 cells=254 commands=254
+[probe] fold step cursor=312/400 took=0.4533 cells=312 commands=312
+[probe] fold step cursor=370/400 took=0.4545 cells=370 commands=370
+[probe] fold step cursor=400/400 took=0.2677 cells=400 commands=400
+[probe] AB old_first=0 old=0.0228 new=0.0176 rows=400
+[probe] finish scratch=0.0000 emit=0.0269 versions=0.0482 builder_install=0.0002 digest=0.0028 total=0.0781 rows=400 stats=1
+[probe] fold step cursor=56/400 took=0.4556 cells=56 commands=56
+[probe] fold step cursor=106/400 took=0.4538 cells=106 commands=106
+[probe] fold step cursor=163/400 took=0.4510 cells=163 commands=163
+[probe] fold step cursor=221/400 took=0.4554 cells=221 commands=221
+[probe] fold step cursor=269/400 took=0.4537 cells=269 commands=269
+[probe] fold step cursor=327/400 took=0.4502 cells=327 commands=327
+[probe] fold step cursor=362/400 took=0.4519 cells=362 commands=362
+[probe] fold step cursor=396/400 took=0.4540 cells=396 commands=396
+[probe] fold step cursor=400/400 took=0.0433 cells=400 commands=400
+[probe] AB old_first=1 old=0.0197 new=0.0138 rows=400
+[probe] finish scratch=0.0000 emit=0.0149 versions=0.0390 builder_install=0.0002 digest=0.0027 total=0.0568 rows=400 stats=1
+[probe] fold step cursor=55/400 took=0.4561 cells=55 commands=55
+[probe] fold step cursor=111/400 took=0.4523 cells=111 commands=111
+[probe] fold step cursor=160/400 took=0.4504 cells=160 commands=160
+[probe] fold step cursor=218/400 took=0.4549 cells=218 commands=218
+[probe] fold step cursor=265/400 took=0.4554 cells=265 commands=265
+[probe] fold step cursor=324/400 took=0.4568 cells=324 commands=324
+[probe] fold step cursor=383/400 took=0.4562 cells=383 commands=383
+[probe] fold step cursor=400/400 took=0.1658 cells=400 commands=400
+[probe] AB old_first=0 old=0.0247 new=0.0188 rows=400
+[probe] finish scratch=0.0004 emit=0.0269 versions=0.0502 builder_install=0.0005 digest=0.0027 total=0.0807 rows=400 stats=1
+[probe] fold step cursor=55/400 took=0.4520 cells=55 commands=55
+[probe] fold step cursor=103/400 took=0.4540 cells=103 commands=103
+[probe] fold step cursor=160/400 took=0.4555 cells=160 commands=160
+[probe] fold step cursor=208/400 took=0.4529 cells=208 commands=208
+[probe] fold step cursor=265/400 took=0.4514 cells=265 commands=265
+[probe] fold step cursor=315/400 took=0.4564 cells=315 commands=315
+[probe] fold step cursor=373/400 took=0.4556 cells=373 commands=373
+[probe] fold step cursor=400/400 took=0.2097 cells=400 commands=400
+[probe] AB old_first=1 old=0.0177 new=0.0089 rows=400
+[probe] finish scratch=0.0001 emit=0.0125 versions=0.0312 builder_install=0.0002 digest=0.0027 total=0.0467 rows=400 stats=1
+[probe] fold step cursor=41/400 took=0.4787 cells=41 commands=41
+[probe] fold step cursor=54/400 took=0.4521 cells=54 commands=54
+[probe] fold step cursor=104/400 took=0.4618 cells=104 commands=104
+[probe] fold step cursor=162/400 took=0.4562 cells=162 commands=162
+[probe] fold step cursor=214/400 took=0.4763 cells=214 commands=214
+[probe] fold step cursor=271/400 took=0.4561 cells=271 commands=271
+[probe] fold step cursor=324/400 took=0.4509 cells=324 commands=324
+[probe] fold step cursor=381/400 took=0.4536 cells=381 commands=381
+[probe] fold step cursor=400/400 took=0.1519 cells=400 commands=400
+[probe] AB old_first=0 old=0.0187 new=0.0112 rows=400
+[probe] finish scratch=0.0002 emit=0.0149 versions=0.0360 builder_install=0.0001 digest=0.0025 total=0.0537 rows=400 stats=1
+[probe] fold step cursor=47/400 took=0.4562 cells=47 commands=47
+[probe] fold step cursor=103/400 took=0.4560 cells=103 commands=103
+[probe] fold step cursor=157/400 took=0.4574 cells=157 commands=157
+[probe] fold step cursor=210/400 took=0.4613 cells=210 commands=210
+[probe] fold step cursor=267/400 took=0.4554 cells=267 commands=267
+[probe] fold step cursor=316/400 took=0.4528 cells=316 commands=316
+[probe] fold step cursor=373/400 took=0.4509 cells=373 commands=373
+[probe] fold step cursor=400/400 took=0.2185 cells=400 commands=400
+[probe] AB old_first=1 old=0.0315 new=0.0152 rows=400
+[probe] finish scratch=0.0000 emit=0.0236 versions=0.0548 builder_install=0.0002 digest=0.0027 total=0.0813 rows=400 stats=1
+[probe] fold step cursor=57/400 took=0.4547 cells=57 commands=57
+[probe] fold step cursor=109/400 took=0.4549 cells=109 commands=109
+[probe] fold step cursor=168/400 took=0.4552 cells=168 commands=168
+[probe] fold step cursor=219/400 took=0.4517 cells=219 commands=219
+[probe] fold step cursor=278/400 took=0.4549 cells=278 commands=278
+[probe] fold step cursor=334/400 took=0.4549 cells=334 commands=334
+[probe] fold step cursor=394/400 took=0.4575 cells=394 commands=394
+[probe] fold step cursor=400/400 took=0.0466 cells=400 commands=400
+[probe] AB old_first=0 old=0.0150 new=0.0096 rows=400
+[probe] finish scratch=0.0001 emit=0.0092 versions=0.0296 builder_install=0.0001 digest=0.0024 total=0.0414 rows=400 stats=1
+[probe] fold step cursor=56/400 took=0.4540 cells=56 commands=56
+[probe] fold step cursor=110/400 took=0.4734 cells=110 commands=110
+[probe] fold step cursor=167/400 took=0.4501 cells=167 commands=167
+[probe] fold step cursor=226/400 took=0.4568 cells=226 commands=226
+[probe] fold step cursor=285/400 took=0.4572 cells=285 commands=285
+[probe] fold step cursor=336/400 took=0.4568 cells=336 commands=336
+[probe] fold step cursor=394/400 took=0.4553 cells=394 commands=394
+[probe] fold step cursor=400/400 took=0.0485 cells=400 commands=400
+[probe] AB old_first=1 old=0.0161 new=0.0087 rows=400
+[probe] finish scratch=0.0001 emit=0.0102 versions=0.0295 builder_install=0.0001 digest=0.0025 total=0.0424 rows=400 stats=1
+[probe] fold step cursor=53/400 took=0.4614 cells=53 commands=53
+[probe] fold step cursor=109/400 took=0.4513 cells=109 commands=109
+[probe] fold step cursor=168/400 took=0.4564 cells=168 commands=168
+[probe] fold step cursor=221/400 took=0.4559 cells=221 commands=221
+[probe] fold step cursor=268/400 took=0.4560 cells=268 commands=268
+[probe] fold step cursor=321/400 took=0.4573 cells=321 commands=321
+[probe] fold step cursor=370/400 took=0.4546 cells=370 commands=370
+[probe] fold step cursor=400/400 took=0.2317 cells=400 commands=400
+[probe] AB old_first=0 old=0.0144 new=0.0104 rows=400
+[probe] finish scratch=0.0002 emit=0.0122 versions=0.0297 builder_install=0.0003 digest=0.0024 total=0.0448 rows=400 stats=1
+[probe] fold step cursor=46/400 took=0.4510 cells=46 commands=46
+[probe] fold step cursor=105/400 took=0.4536 cells=105 commands=105
+[probe] fold step cursor=164/400 took=0.4533 cells=164 commands=164
+[probe] fold step cursor=212/400 took=0.4511 cells=212 commands=212
+[probe] fold step cursor=270/400 took=0.4542 cells=270 commands=270
+[probe] fold step cursor=317/400 took=0.4550 cells=317 commands=317
+[probe] fold step cursor=335/400 took=0.4513 cells=335 commands=335
+[probe] fold step cursor=391/400 took=0.4545 cells=391 commands=391
+[probe] fold step cursor=400/400 took=0.0712 cells=400 commands=400
+[probe] AB old_first=1 old=0.0195 new=0.0110 rows=400
+[probe] finish scratch=0.0000 emit=0.0130 versions=0.0404 builder_install=0.0006 digest=0.0053 total=0.0593 rows=400 stats=1
+[probe] fold step cursor=57/400 took=0.4514 cells=57 commands=57
+[probe] fold step cursor=116/400 took=0.4532 cells=116 commands=116
+[probe] fold step cursor=165/400 took=0.4543 cells=165 commands=165
+[probe] fold step cursor=225/400 took=0.4517 cells=225 commands=225
+[probe] fold step cursor=282/400 took=0.4543 cells=282 commands=282
+[probe] fold step cursor=342/400 took=0.4563 cells=342 commands=342
+[probe] fold step cursor=400/400 took=0.4404 cells=400 commands=400
+[probe] AB old_first=0 old=0.0154 new=0.0101 rows=400
+[probe] finish scratch=0.0001 emit=0.0106 versions=0.0302 builder_install=0.0002 digest=0.0024 total=0.0435 rows=400 stats=1
+[probe] fold step cursor=50/400 took=0.4509 cells=50 commands=50
+[probe] fold step cursor=103/400 took=0.4630 cells=103 commands=103
+[probe] fold step cursor=161/400 took=0.4522 cells=161 commands=161
+[probe] fold step cursor=221/400 took=0.4521 cells=221 commands=221
+[probe] fold step cursor=272/400 took=0.4565 cells=272 commands=272
+[probe] fold step cursor=332/400 took=0.4518 cells=332 commands=332
+[probe] fold step cursor=379/400 took=0.4500 cells=379 commands=379
+[probe] fold step cursor=400/400 took=0.1651 cells=400 commands=400
+[probe] AB old_first=1 old=0.0167 new=0.0081 rows=400
+[probe] finish scratch=0.0000 emit=0.0098 versions=0.0301 builder_install=0.0000 digest=0.0024 total=0.0423 rows=400 stats=1
+[probe] fold step cursor=56/400 took=0.4516 cells=56 commands=56
+[probe] fold step cursor=103/400 took=0.4523 cells=103 commands=103
+[probe] fold step cursor=161/400 took=0.4501 cells=161 commands=161
+[probe] fold step cursor=206/400 took=0.4517 cells=206 commands=206
+[probe] fold step cursor=264/400 took=0.4569 cells=264 commands=264
+[probe] fold step cursor=313/400 took=0.4574 cells=313 commands=313
+[probe] fold step cursor=351/400 took=0.4521 cells=351 commands=351
+[probe] fold step cursor=400/400 took=0.3944 cells=400 commands=400
+[probe] AB old_first=0 old=0.0173 new=0.0108 rows=400
+[probe] finish scratch=0.0001 emit=0.0150 versions=0.0335 builder_install=0.0001 digest=0.0025 total=0.0512 rows=400 stats=1
+[probe] fold step cursor=56/400 took=0.4577 cells=56 commands=56
+[probe] fold step cursor=113/400 took=0.4563 cells=113 commands=113
+[probe] fold step cursor=170/400 took=0.4510 cells=170 commands=170
+[probe] fold step cursor=226/400 took=0.4546 cells=226 commands=226
+[probe] fold step cursor=282/400 took=0.4535 cells=282 commands=282
+[probe] fold step cursor=338/400 took=0.4962 cells=338 commands=338
+[probe] fold step cursor=394/400 took=0.4550 cells=394 commands=394
+[probe] fold step cursor=400/400 took=0.0587 cells=400 commands=400
+[probe] AB old_first=1 old=0.1171 new=0.0643 rows=400
+[probe] finish scratch=0.0000 emit=0.0151 versions=0.2024 builder_install=0.0007 digest=0.0065 total=0.2247 rows=400 stats=1
+[probe] fold step cursor=40/400 took=0.4560 cells=40 commands=40
+[probe] fold step cursor=96/400 took=0.4525 cells=96 commands=96
+[probe] fold step cursor=151/400 took=0.4514 cells=151 commands=151
+[probe] fold step cursor=208/400 took=0.4568 cells=208 commands=208
+[probe] fold step cursor=264/400 took=0.4567 cells=264 commands=264
+[probe] fold step cursor=320/400 took=0.4520 cells=320 commands=320
+[probe] fold step cursor=376/400 took=0.4574 cells=376 commands=376
+[probe] fold step cursor=400/400 took=0.1912 cells=400 commands=400
+[probe] AB old_first=0 old=0.0182 new=0.0112 rows=400
+[probe] finish scratch=0.0000 emit=0.0130 versions=0.0349 builder_install=0.0002 digest=0.0026 total=0.0507 rows=400 stats=1
+[probe] fold step cursor=56/400 took=0.4574 cells=56 commands=56
+[probe] fold step cursor=113/400 took=0.4548 cells=113 commands=113
+[probe] fold step cursor=171/400 took=0.4557 cells=171 commands=171
+[probe] fold step cursor=229/400 took=0.4556 cells=229 commands=229
+[probe] fold step cursor=288/400 took=0.4574 cells=288 commands=288
+[probe] fold step cursor=345/400 took=0.4519 cells=345 commands=345
+[probe] fold step cursor=400/400 took=0.4264 cells=400 commands=400
+[probe] AB old_first=1 old=0.0178 new=0.0086 rows=400
+[probe] finish scratch=0.0001 emit=0.0102 versions=0.0314 builder_install=0.0001 digest=0.0024 total=0.0442 rows=400 stats=1
+[probe] fold step cursor=56/400 took=0.4525 cells=56 commands=56
+[probe] fold step cursor=114/400 took=0.4537 cells=114 commands=114
+[probe] fold step cursor=173/400 took=0.4568 cells=173 commands=173
+[probe] fold step cursor=231/400 took=0.4557 cells=231 commands=231
+[probe] fold step cursor=289/400 took=0.4539 cells=289 commands=289
+[probe] fold step cursor=347/400 took=0.4521 cells=347 commands=347
+[probe] fold step cursor=400/400 took=0.4145 cells=400 commands=400
+[probe] AB old_first=0 old=0.0147 new=0.0109 rows=400
+[probe] finish scratch=0.0000 emit=0.0126 versions=0.0310 builder_install=0.0001 digest=0.0024 total=0.0461 rows=400 stats=1
+[probe] fold step cursor=56/400 took=0.4510 cells=56 commands=56
+[probe] fold step cursor=114/400 took=0.4520 cells=114 commands=114
+[probe] fold step cursor=162/400 took=0.4521 cells=162 commands=162
+[probe] fold step cursor=216/400 took=0.4500 cells=216 commands=216
+[probe] fold step cursor=273/400 took=0.4535 cells=273 commands=273
+[probe] fold step cursor=329/400 took=0.4588 cells=329 commands=329
+[probe] fold step cursor=385/400 took=0.4556 cells=385 commands=385
+[probe] fold step cursor=400/400 took=0.1225 cells=400 commands=400
+[probe] AB old_first=1 old=0.0205 new=0.0090 rows=400
+[probe] finish scratch=0.0001 emit=0.0160 versions=0.0357 builder_install=0.0004 digest=0.0026 total=0.0548 rows=400 stats=1
+[probe] fold step cursor=54/400 took=0.4560 cells=54 commands=54
+[probe] fold step cursor=108/400 took=0.4546 cells=108 commands=108
+[probe] fold step cursor=159/400 took=0.4506 cells=159 commands=159
+[probe] fold step cursor=217/400 took=0.4528 cells=217 commands=217
+[probe] fold step cursor=270/400 took=0.4510 cells=270 commands=270
+[probe] fold step cursor=325/400 took=0.4505 cells=325 commands=325
+[probe] fold step cursor=381/400 took=0.4530 cells=381 commands=381
+[probe] fold step cursor=400/400 took=0.4599 cells=400 commands=400
+[probe] AB old_first=0 old=0.0199 new=0.0122 rows=400
+[probe] finish scratch=0.0001 emit=0.0180 versions=0.0386 builder_install=0.0003 digest=0.0027 total=0.0597 rows=400 stats=1
+[probe] fold step cursor=54/400 took=0.4503 cells=54 commands=54
+[probe] fold step cursor=113/400 took=0.4529 cells=113 commands=113
+[probe] fold step cursor=170/400 took=0.4518 cells=170 commands=170
+[probe] fold step cursor=227/400 took=0.4521 cells=227 commands=227
+[probe] fold step cursor=284/400 took=0.4537 cells=284 commands=284
+[probe] fold step cursor=340/400 took=0.4552 cells=340 commands=340
+[probe] fold step cursor=398/400 took=0.4554 cells=398 commands=398
+[probe] fold step cursor=400/400 took=0.0157 cells=400 commands=400
+[probe] AB old_first=1 old=0.0181 new=0.0087 rows=400
+[probe] finish scratch=0.0002 emit=0.0114 versions=0.0316 builder_install=0.0003 digest=0.0025 total=0.0460 rows=400 stats=1
+[probe] fold step cursor=56/400 took=0.4521 cells=56 commands=56
+[probe] fold step cursor=112/400 took=0.4501 cells=112 commands=112
+[probe] fold step cursor=170/400 took=0.4563 cells=170 commands=170
+[probe] fold step cursor=228/400 took=0.4552 cells=228 commands=228
+[probe] fold step cursor=288/400 took=0.4567 cells=288 commands=288
+[probe] fold step cursor=348/400 took=0.4542 cells=348 commands=348
+[probe] fold step cursor=400/400 took=0.4054 cells=400 commands=400
+[probe] AB old_first=0 old=0.0158 new=0.0106 rows=400
+[probe] finish scratch=0.0000 emit=0.0118 versions=0.0319 builder_install=0.0005 digest=0.0028 total=0.0470 rows=400 stats=1
+[probe] fold step cursor=58/400 took=0.4549 cells=58 commands=58
+[probe] fold step cursor=116/400 took=0.4566 cells=116 commands=116
+[probe] fold step cursor=174/400 took=0.4505 cells=174 commands=174
+[probe] fold step cursor=233/400 took=0.4848 cells=233 commands=233
+[probe] fold step cursor=291/400 took=0.4537 cells=291 commands=291
+[probe] fold step cursor=349/400 took=0.4539 cells=349 commands=349
+[probe] fold step cursor=380/400 took=0.4539 cells=380 commands=380
+[probe] fold step cursor=400/400 took=0.1531 cells=400 commands=400
+[probe] AB old_first=1 old=0.0200 new=0.0087 rows=400
+[probe] finish scratch=0.0001 emit=0.0146 versions=0.0341 builder_install=0.0002 digest=0.0024 total=0.0514 rows=400 stats=1
+[probe] fold step cursor=52/400 took=0.4570 cells=52 commands=52
+[probe] fold step cursor=109/400 took=0.4507 cells=109 commands=109
+[probe] fold step cursor=163/400 took=0.4520 cells=163 commands=163
+[probe] fold step cursor=216/400 took=0.4519 cells=216 commands=216
+[probe] fold step cursor=257/400 took=0.4542 cells=257 commands=257
+[probe] fold step cursor=311/400 took=0.4515 cells=311 commands=311
+[probe] fold step cursor=349/400 took=0.4514 cells=349 commands=349
+[probe] fold step cursor=396/400 took=0.4568 cells=396 commands=396
+[probe] fold step cursor=400/400 took=0.0380 cells=400 commands=400
+[probe] AB old_first=0 old=0.0175 new=0.0110 rows=400
+[probe] finish scratch=0.0001 emit=0.0154 versions=0.0340 builder_install=0.0001 digest=0.0027 total=0.0523 rows=400 stats=1
+[probe] fold step cursor=46/400 took=0.4569 cells=46 commands=46
+[probe] fold step cursor=103/400 took=0.4574 cells=103 commands=103
+[probe] fold step cursor=160/400 took=0.4523 cells=160 commands=160
+[probe] fold step cursor=216/400 took=0.4545 cells=216 commands=216
+[probe] fold step cursor=275/400 took=0.4560 cells=275 commands=275
+[probe] fold step cursor=332/400 took=0.4537 cells=332 commands=332
+[probe] fold step cursor=390/400 took=0.4558 cells=390 commands=390
+[probe] fold step cursor=400/400 took=0.0759 cells=400 commands=400
+[probe] AB old_first=1 old=0.0298 new=0.0085 rows=400
+[probe] finish scratch=0.0000 emit=0.0126 versions=0.0433 builder_install=0.0002 digest=0.0025 total=0.0586 rows=400 stats=1
+[probe] fold step cursor=54/400 took=0.4501 cells=54 commands=54
+[probe] fold step cursor=113/400 took=0.4528 cells=113 commands=113
+[probe] fold step cursor=167/400 took=0.4536 cells=167 commands=167
+[probe] fold step cursor=224/400 took=0.4532 cells=224 commands=224
+[probe] fold step cursor=282/400 took=0.4503 cells=282 commands=282
+[probe] fold step cursor=341/400 took=0.4532 cells=341 commands=341
+[probe] fold step cursor=400/400 took=0.4537 cells=400 commands=400
+[probe] AB old_first=0 old=0.0148 new=0.0102 rows=400
+[probe] finish scratch=0.0000 emit=0.0107 versions=0.0296 builder_install=0.0002 digest=0.0025 total=0.0430 rows=400 stats=1
+[probe] fold step cursor=58/400 took=0.4573 cells=58 commands=58
+[probe] fold step cursor=116/400 took=0.4525 cells=116 commands=116
+[probe] fold step cursor=173/400 took=0.4533 cells=173 commands=173
+[probe] fold step cursor=229/400 took=0.4548 cells=229 commands=229
+[probe] fold step cursor=283/400 took=0.4500 cells=283 commands=283
+[probe] fold step cursor=339/400 took=0.4533 cells=339 commands=339
+[probe] fold step cursor=396/400 took=0.6117 cells=396 commands=396
+[probe] fold step cursor=400/400 took=0.1629 cells=400 commands=400
+[probe] AB old_first=1 old=0.0177 new=0.0088 rows=400
+[probe] finish scratch=0.0001 emit=0.0132 versions=0.0317 builder_install=0.0001 digest=0.0029 total=0.0480 rows=400 stats=1
+[probe] fold step cursor=56/400 took=0.4568 cells=56 commands=56
+[probe] fold step cursor=106/400 took=0.4502 cells=106 commands=106
+[probe] fold step cursor=164/400 took=0.4522 cells=164 commands=164
+[probe] fold step cursor=215/400 took=0.4557 cells=215 commands=215
+[probe] fold step cursor=274/400 took=0.4549 cells=274 commands=274
+[probe] fold step cursor=333/400 took=0.4535 cells=333 commands=333
+[probe] fold step cursor=392/400 took=0.4539 cells=392 commands=392
+[probe] fold step cursor=400/400 took=0.0626 cells=400 commands=400
+[probe] AB old_first=0 old=0.0178 new=0.0108 rows=400
+[probe] finish scratch=0.0001 emit=0.0150 versions=0.0340 builder_install=0.0003 digest=0.0028 total=0.0522 rows=400 stats=1
+[probe] fold step cursor=57/400 took=0.4565 cells=57 commands=57
+[probe] fold step cursor=115/400 took=0.4557 cells=115 commands=115
+[probe] fold step cursor=172/400 took=0.4557 cells=172 commands=172
+[probe] fold step cursor=230/400 took=0.4521 cells=230 commands=230
+[probe] fold step cursor=288/400 took=0.4508 cells=288 commands=288
+[probe] fold step cursor=346/400 took=0.4534 cells=346 commands=346
+[probe] fold step cursor=400/400 took=0.4518 cells=400 commands=400
+[probe] AB old_first=1 old=0.0193 new=0.0096 rows=400
+[probe] finish scratch=0.0000 emit=0.0156 versions=0.0345 builder_install=0.0001 digest=0.0028 total=0.0530 rows=400 stats=1
+[probe] fold step cursor=57/400 took=0.4572 cells=57 commands=57
+[probe] fold step cursor=108/400 took=0.4563 cells=108 commands=108
+[probe] fold step cursor=150/400 took=0.4557 cells=150 commands=150
+[probe] fold step cursor=202/400 took=0.4513 cells=202 commands=202
+[probe] fold step cursor=252/400 took=0.4502 cells=252 commands=252
+[probe] fold step cursor=307/400 took=0.4524 cells=307 commands=307
+[probe] fold step cursor=365/400 took=0.4515 cells=365 commands=365
+[probe] fold step cursor=400/400 took=0.2682 cells=400 commands=400
+[probe] AB old_first=0 old=0.0246 new=0.0135 rows=400
+[probe] finish scratch=0.0000 emit=0.0147 versions=0.0443 builder_install=0.0001 digest=0.0025 total=0.0616 rows=400 stats=1
+[probe] fold step cursor=57/400 took=0.4574 cells=57 commands=57
+[probe] fold step cursor=116/400 took=0.4547 cells=116 commands=116
+[probe] fold step cursor=175/400 took=0.4537 cells=175 commands=175
+[probe] fold step cursor=234/400 took=0.4564 cells=234 commands=234
+[probe] fold step cursor=292/400 took=0.4503 cells=292 commands=292
+[probe] fold step cursor=349/400 took=0.4503 cells=349 commands=349
+[probe] fold step cursor=400/400 took=0.3913 cells=400 commands=400
+[probe] AB old_first=1 old=0.0174 new=0.0085 rows=400
+[probe] finish scratch=0.0001 emit=0.0113 versions=0.0308 builder_install=0.0001 digest=0.0025 total=0.0448 rows=400 stats=1
+[probe] fold step cursor=57/400 took=0.4546 cells=57 commands=57
+[probe] fold step cursor=106/400 took=0.4561 cells=106 commands=106
+[probe] fold step cursor=161/400 took=0.4532 cells=161 commands=161
+[probe] fold step cursor=215/400 took=0.4738 cells=215 commands=215
+[probe] fold step cursor=269/400 took=0.4518 cells=269 commands=269
+[probe] fold step cursor=327/400 took=0.4563 cells=327 commands=327
+[probe] fold step cursor=382/400 took=0.4510 cells=382 commands=382
+[probe] fold step cursor=400/400 took=0.1644 cells=400 commands=400
+[probe] AB old_first=0 old=0.0193 new=0.0125 rows=400
+[probe] finish scratch=0.0002 emit=0.0175 versions=0.0385 builder_install=0.0002 digest=0.0031 total=0.0595 rows=400 stats=1
+ERROR: 19 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 635 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

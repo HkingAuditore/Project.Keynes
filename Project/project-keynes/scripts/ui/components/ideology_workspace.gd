@@ -142,6 +142,12 @@ var _empty_detail: Label
 var _empty_insights: InsightList
 var _fx: Control
 var _promotion_dialog: ConfirmationDialog
+var _promotion_layer: Control
+var _promotion_sheet: PanelContainer
+var _promotion_title: Label
+var _promotion_copy: Label
+var _promotion_confirm: Button
+var _promotion_cancel: Button
 var _ledger_popup: PopupPanel
 
 
@@ -214,7 +220,106 @@ func _bind_nodes() -> void:
 	_fx = %Fx
 	_promotion_dialog = %PromotionDialog
 	_ledger_popup = %LedgerPopup
+	_build_promotion_overlay()
 	_build_dynamic_parts()
+
+
+## The stock ConfirmationDialog belongs to the debug theme and flashes a
+## rectangular grey window over the paper workspace. Build the promotion
+## confirmation once from the same paper material as the cards, then only
+## replace its text when a different ideology is requested. This keeps the
+## modal cheap to open and preserves the native command/ACK path underneath.
+func _build_promotion_overlay() -> void:
+	if _promotion_layer != null or _promotion_dialog == null:
+		return
+	_promotion_dialog.visible = false
+	_promotion_layer = Control.new()
+	_promotion_layer.name = "PromotionOverlay"
+	_promotion_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_promotion_layer.mouse_filter = Control.MOUSE_FILTER_STOP
+	_promotion_layer.visible = false
+	add_child(_promotion_layer)
+	var veil := ColorRect.new()
+	veil.name = "PromotionVeil"
+	veil.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	veil.color = Color(0.07, 0.045, 0.025, 0.46)
+	veil.mouse_filter = Control.MOUSE_FILTER_STOP
+	_promotion_layer.add_child(veil)
+	var center := CenterContainer.new()
+	center.name = "PromotionCenter"
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_promotion_layer.add_child(center)
+	_promotion_sheet = PanelContainer.new()
+	_promotion_sheet.name = "PromotionSheet"
+	_promotion_sheet.custom_minimum_size = Vector2(460, 238)
+	_promotion_sheet.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_promotion_sheet.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_promotion_sheet.add_theme_stylebox_override("panel", ArtScript.paper_style(24.0,
+		Color(0.985, 0.95, 0.84, 0.99)))
+	ArtScript.attach_panel_shadow(_promotion_sheet, 0.30, 4.0)
+	center.add_child(_promotion_sheet)
+	var margin := MarginContainer.new()
+	for side in ["left", "right"]:
+		margin.add_theme_constant_override("margin_%s" % side, 28)
+	for side in ["top", "bottom"]:
+		margin.add_theme_constant_override("margin_%s" % side, 22)
+	_promotion_sheet.add_child(margin)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 10)
+	margin.add_child(column)
+	_promotion_title = ArtScript.label("晋升民族精神", 25, ArtScript.INK,
+		HORIZONTAL_ALIGNMENT_CENTER)
+	_promotion_title.add_theme_font_override("font",
+		preload("res://assets/fonts/annual_pencil/Muyao-Softbrush-2.ttf"))
+	column.add_child(_promotion_title)
+	var rule := HSeparator.new()
+	rule.modulate = ArtScript.GOLD_LEAF
+	column.add_child(rule)
+	_promotion_copy = ArtScript.label("", 17, ArtScript.INK_MUTED,
+		HORIZONTAL_ALIGNMENT_CENTER)
+	_promotion_copy.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_promotion_copy.custom_minimum_size.y = 62
+	column.add_child(_promotion_copy)
+	var note := ArtScript.label("晋升不可逆，现有国策槽位将转为民族精神。", 14,
+		ArtScript.VERMILION, HORIZONTAL_ALIGNMENT_CENTER)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	column.add_child(note)
+	var actions := HBoxContainer.new()
+	actions.alignment = BoxContainer.ALIGNMENT_CENTER
+	actions.add_theme_constant_override("separation", 12)
+	column.add_child(actions)
+	_promotion_cancel = Button.new()
+	_promotion_cancel.text = "暂不晋升"
+	_promotion_cancel.custom_minimum_size = Vector2(132, 38)
+	_promotion_cancel.theme_type_variation = &"PKHUDButton"
+	_promotion_cancel.focus_mode = Control.FOCUS_ALL
+	_promotion_cancel.pressed.connect(_close_promotion_overlay)
+	actions.add_child(_promotion_cancel)
+	_promotion_confirm = Button.new()
+	_promotion_confirm.text = "确认晋升"
+	_promotion_confirm.custom_minimum_size = Vector2(148, 38)
+	_promotion_confirm.theme_type_variation = &"PKSealPrimaryButton"
+	_promotion_confirm.focus_mode = Control.FOCUS_ALL
+	_promotion_confirm.pressed.connect(_confirm_promotion)
+	actions.add_child(_promotion_confirm)
+	call_deferred("_wire_promotion_focus")
+
+
+func _wire_promotion_focus() -> void:
+	if _promotion_cancel == null or _promotion_confirm == null \
+			or not _promotion_cancel.is_inside_tree():
+		return
+	_promotion_cancel.focus_neighbor_right = _promotion_confirm.get_path()
+	_promotion_confirm.focus_neighbor_left = _promotion_cancel.get_path()
+
+
+func _close_promotion_overlay() -> void:
+	_pending_promotion_id = -1
+	if _promotion_layer != null:
+		_promotion_layer.visible = false
+	if is_visible_in_tree():
+		_focus_initial_action()
 
 
 func _focus_initial_action() -> void:
@@ -1662,6 +1767,11 @@ func _notification(what: int) -> void:
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
+	if _promotion_layer != null and _promotion_layer.visible \
+			and event.is_action_pressed(&"ui_cancel"):
+		_close_promotion_overlay()
+		get_viewport().set_input_as_handled()
+		return
 	if _offer_layer != null and _offer_layer.is_visible_in_tree() \
 			and event.is_action_pressed(&"ui_cancel"):
 		if not _draw_waiting() and not _offer_anim_busy:
@@ -1771,12 +1881,13 @@ func _command(kind: String, ideology_id: int) -> void:
 
 
 func _request_promotion(ideology_id: int) -> void:
-	if _promotion_dialog == null:
+	if _promotion_layer == null or ideology_id < 0:
 		return
 	_pending_promotion_id = ideology_id
-	_promotion_dialog.dialog_text = "将「%s」晋升为民族精神？晋升不可逆。" \
+	_promotion_copy.text = "将「%s」晋升为民族精神？" \
 		% _display_name(_metadata.get(ideology_id, {}), ideology_id)
-	_promotion_dialog.popup_centered()
+	_promotion_layer.visible = true
+	_promotion_confirm.grab_focus()
 
 
 func _confirm_promotion() -> void:
@@ -1784,6 +1895,8 @@ func _confirm_promotion() -> void:
 		return
 	var ideology_id := _pending_promotion_id
 	_pending_promotion_id = -1
+	if _promotion_layer != null:
+		_promotion_layer.visible = false
 	_command("promote", ideology_id)
 
 

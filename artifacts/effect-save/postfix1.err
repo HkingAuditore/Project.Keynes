@@ -1,0 +1,13 @@
+ERROR: Can't open dynamic library: D:/Godot/ProjectKeynes/Project.Keynes/Project/project-keynes/addons/dots_ext/bin/windows/dots_ext_annual_v1.windows.template_debug.x86_64.dll. Error: Error 32: 另一个程序正在使用此文件，进程无法访问。.
+   at: open_dynamic_library (platform/windows/os_windows.cpp:545)
+ERROR: Condition "!FileAccess::exists(path)" is true. Returning: ERR_FILE_NOT_FOUND
+   at: open_dynamic_library (platform/windows/os_windows.cpp:487)
+ERROR: GDExtension dynamic library not found: 'res://addons/dots_ext/dots_ext.gdextension'.
+   at: open_library (core/extension/gdextension.cpp:740)
+ERROR: Error loading extension: 'res://addons/dots_ext/dots_ext.gdextension'.
+   at: load_extensions (core/extension/gdextension_manager.cpp:329)
+ERROR: 1 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 37 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

@@ -1461,11 +1461,21 @@ SEL_TAG_SOURCE_R2 = 15
 ##
 ## `param[0]` is BIT-PACKED because the POD carries exactly two int32 slots
 ## (`effect_runtime.h`: `int32_t target_selector_param[2]`):
-##   bits 0-4  target cell cap (5 bits, 1..31, 0 = default 32)
+##   bits 0-4  target cell cap (5 bits, 1..31, 0 = NO cell cap)
 ##   bits 5-7  radius           (3 bits, 1..4)
 ##   bits 8-11 source count cap (4 bits, 1..15)
 ## `param[1]` is the source tag id (16 bits, 1-based), same slot as kinds 12/13/14/15.
 SEL_TAG_SOURCE_COUNT = 16
+
+# Mirrors `gdext/src/selector_cell_cap.h::selector_cell_ceiling` returning
+# `kSelectorNoCellCap`. For these selectors the runtime treats `param[0] == 0` as
+# "no cell cap", so the emitter must not write the default 32.
+# Kind 17 (FAMILY_OWNED) is deliberately NOT here. `selector_cell_ceiling` calls it
+# unbounded, but its `param[0]` is a FAMILY COUNT cap that the runtime clamps to
+# [1, 32] (`ideology_runtime.cpp`: `std::clamp(param[0], 1, SELECTOR_MAX_CELLS)`), and
+# the validator rejects 0 with `family_selector_param_invalid`. Writing 0 for it turned
+# a valid card into an invalid one -- the content test caught exactly that.
+UNBOUNDED_CELL_SELECTORS = frozenset((12, 14, 15, 16))
 ## X9-b: resolve families with at least `param[1]` active branches to stable
 ## family handles. `param[0]` is the family cap; the command binds that stable
 ## handle as a Modifier ECONOMY ENTITY so only the family's owned buildings move.
@@ -1831,14 +1841,27 @@ def player_program_summary(item: Prog) -> str:
                   f"{label}最高提高 {_text_number(ceiling)}%")
     elif item.selector in (SEL_TAG_SOURCE_R1, SEL_TAG_SOURCE_R2):
         radius = 1 if item.selector == SEL_TAG_SOURCE_R1 else 2
-        result = (f"本国{subject}周围 {radius} 格内的地块：{effect}（多个来源不叠加）；"
-                  f"最多计入 {item.selector_cap} 个来源地块")
+        # §12.1: the source list is expanded in full now, so "at most N
+        # sources" is no longer true and must not be promised to the player.
+        result = (f"本国{subject}周围 {radius} 格内的地块：{effect}（多个来源不叠加）")
     elif item.selector == SEL_OWN_TERRITORY:
         result = f"本国{subject}：{effect}"
     else:
         raise SystemExit(f"player text: unreviewed selector {item.key}")
-    result += f"；最多影响 {item.selector_cap} 个目标地块"
-    if item.duration_days > 0:
+    # §12.1: kinds 12/14/15/16 have no cell cap (`selector_cell_ceiling`),
+    # so promising "at most N targets" contradicts the runtime. Kind 12 says what
+    # it really covers; the ring/source-count kinds already describe their reach
+    # in the sentence above and must not bolt a target count onto it.
+    if item.selector == SEL_OWN_TERRITORY:
+        result += f"；作用于全部领土格"
+    elif item.selector in (SEL_NEIGHBORS_R1, SEL_NEIGHBORS_R2):
+        result += f"；最多影响 {item.selector_cap} 个目标地块"
+    # A PERMANENT (lifecycle == 0) effect cannot expire, so a "lasts N days" line
+    # is a promise the runtime does not keep: `effect_runtime.cpp` only writes
+    # `expires_day` when lifecycle == 1. `maritime_insurance_l1/l2/l3` carry
+    # `duration_days = 30` with `lifecycle = 0` -- a dead field that made all three
+    # read as 30-day buffs while they were permanent.
+    if item.lifecycle == 1 and item.duration_days > 0:
         result += f"；持续 {item.duration_days} 天" + ("，可刷新" if item.stack_policy == STACK_REFRESH else "")
     return result
 
@@ -5044,8 +5067,17 @@ def _selector_param_line(item: Prog) -> str:
             item.selector_cap if item.selector_cap != 32 else 0,
             item.radius, item.cap, tag_id=1)
         return f"target_selector_param = PackedInt32Array({packed}, 0)\n"
+    # Kinds 12/14/15/17 have NO cell cap (`selector_cell_ceiling` returns
+    # kSelectorNoCellCap for them), and the runtime reads `param[0] == 0` as
+    # "unbounded" for those kinds. Writing the default 32 here instead is what
+    # silently re-imposed the cap: regenerating the .tres undid the whole M2
+    # deliverable, because the hand-edited `(0, 0)` lives only in the output.
+    # Kind 16 packs its geometry and already applies the same mapping above.
+    cap = item.selector_cap
+    if item.selector in UNBOUNDED_CELL_SELECTORS and cap == 32:
+        cap = 0
     return (f"target_selector_param = PackedInt32Array("
-            f"{item.selector_cap}, {item.selector_param1})\n")
+            f"{cap}, {item.selector_param1})\n")
 
 
 def _program_blocks(item: Prog, blocks: list[str]) -> str:
@@ -8056,8 +8088,10 @@ def self_test_source_count_lint() -> None:
         key="u_l1", summary="ok", tags=("cell.sector.energy",),
         selector=SEL_TAG_SOURCE_R1, selector_cap=32, selector_param1=7,
         cmds=(mod("economy.city.output_factor", 0.0),)))
+    # A ring-union card is UNBOUNDED, so its default cap must be emitted as 0 --
+    # this check used to require 32 and thereby pinned the defect.
     if union_line != (
-            "target_selector_param = PackedInt32Array(32, 7)\n"):
+            "target_selector_param = PackedInt32Array(0, 7)\n"):
         raise SystemExit(f"union param line changed: {union_line!r}")
 
 

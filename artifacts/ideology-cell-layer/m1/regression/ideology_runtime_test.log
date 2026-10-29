@@ -1,0 +1,88 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [OK] country catalog compiles
+  [OK] modifier runtime configures
+  [OK] effect runtime configures
+  [OK] country bootstrap supplies a generation-safe handle
+  [OK] ideology catalog configures
+  [OK] unmaterialized snapshot still reports catalog slot capacity
+  [OK] discover / points queue
+  [OK] initial ideology commands apply
+  [OK] discovery keeps inactive idea known
+  [OK] offer creates deterministic three unique choices
+  [OK] offer persists and cards are unique
+  [OK] stale offer generation is rejected
+  [OK] valid choice resolves the persisted offer
+  [OK] equip starts an ACK-gated ideology transition
+  [OK] equipped ideology reserves capacity and reports pending
+  [OK] effect evaluates ideology transaction
+  [OK] effect dispatches native ideology modifier
+  [OK] native ideology modifier is excluded from GDScript fallback polling
+  [OK] modifier commits ideology transaction
+  [OK] effect observes ideology modifier ACK
+  [OK] tier replacement stays pending until the new Effect ACK
+  [OK] effect evaluates ideology transaction
+  [OK] effect dispatches native ideology modifier
+  [OK] native ideology modifier is excluded from GDScript fallback polling
+  [OK] modifier commits ideology transaction
+  [OK] effect observes ideology modifier ACK
+  [OK] level confirms only after Effect ACK
+  [OK] promotion is irreversible and releases ideology capacity
+  [OK] national spirit remains active outside ideology slots
+  [OK] PKEF captures the active ideology external binding
+  [OK] PKID capture is nonempty
+  [OK] restored modifier runtime configures
+  [OK] restored effect runtime configures
+  [OK] restored ideology catalog configures
+  [OK] PKID rejects an active idea without its PKEF binding
+  [OK] PKEF then PKID round trip restores exact snapshot
+  [OK] additional ideology discovery/equip queues a strict pending source
+  [OK] pending restore modifier configures
+  [OK] pending restore Effect configures
+  [OK] pending restore Ideology configures
+  [OK] matching PKEF pending transactions restore with PKID
+  [OK] stale restore modifier configures
+  [OK] stale restore Effect configures
+  [OK] stale restore Ideology configures
+  [OK] PKID rejects an unknown pending ideology transaction
+  [OK] fresh PKID payload is nonempty
+  [OK] PKID v7 payload is rejected rather than misread
+  [OK] PKID v7 rejection names the schema, not a truncation
+  [OK] PKID v8 payload restores after the version probe
+  [OK] world_seed: a seed produces offers
+  [OK] world_seed: the same seed reproduces the same sequence
+  [world_seed] A=[[3, 0, 1], [0, 3, 1], [1, 3, 0], [3, 2, 1], [1, 2, 0], [1, 2, 3]]
+  [world_seed] A(again)=[[3, 0, 1], [0, 3, 1], [1, 3, 0], [3, 2, 1], [1, 2, 0], [1, 2, 3]]
+  [world_seed] B=[[3, 0, 1], [0, 2, 1], [2, 1, 3], [2, 3, 1], [2, 1, 0], [3, 1, 0]] first_divergence=1
+  [OK] world_seed: a different world seed changes the sequence
+  [OK] resonance fixture modifier runtime configures
+  [OK] resonance fixture Effect runtime configures
+  [OK] resonance fixture configures
+  [OK] resonance fixture discovers six cards
+  [OK] resonance fixture equips the first two cards
+  [OK] 2/6 cards activate only the first tier
+  [OK] resonance fixture raises the school to four cards
+  [OK] 4/6 cards activate exactly two cumulative tiers
+  [OK] resonance fixture raises the school to five cards
+  [OK] 5/6 cards activate exactly three cumulative tiers
+  [OK] resonance fixture raises the school to six cards
+  [OK] 6/6 cards activate all four cumulative tiers
+  [OK] late-link modifier runtime configures
+  [OK] ideology configures before EffectRuntime
+  [OK] EffectRuntime links to existing ideology runtime
+  [OK] late-link discover queues
+  [OK] late-linked equip starts its Effect transition
+  [OK] event adapter modifier runtime configures
+  [OK] event adapter EffectRuntime configures
+  [OK] event/gameplay/custom adapter ideology catalog configures
+  [OK] event adapter queues discovery/equip
+  [OK] event adapter evaluates
+  [OK] event adapter dispatches native modifier
+  [OK] event/gameplay/custom share one atomic transition
+  [OK] native ideology transactions never enter GDScript fallback polling
+  [OK] Gameplay/PublishEvent/Custom commits exactly once to the native journal
+  [OK] native gameplay ACK settles the aggregate transition
+  [OK] journal persists Effect idempotency evidence
+  [OK] journal restores Effect idempotency evidence
+  [OK] journal restores idempotency even when referenced events scrolled out
+ideology runtime: 82 checks, 0 failures

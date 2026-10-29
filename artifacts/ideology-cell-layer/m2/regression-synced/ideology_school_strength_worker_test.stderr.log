@@ -1,0 +1,68 @@
+WARNING: [loading-catalog] source changed: rebuild tools/prebake_loading_catalogs.gd; using source compiler
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] prepare (res://scripts/game/loading_catalog_cache.gd:55)
+       [1] compute (res://scripts/geography/native_loading_tasks.gd:15)
+ERROR: [effect-catalog] effect_catalog_ideology_command_unavailable:ideology_effect_selector_cap_invalid
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _reject (res://scripts/effect/effect_domain_catalog.gd:602)
+       [1] build (res://scripts/effect/effect_domain_catalog.gd:437)
+       [2] _setup_sus (res://scripts/geography/map_generator.gd:4040)
+       [3] _yield_generation_frame (res://scripts/geography/map_generator.gd:20415)
+ERROR: [effect] domain catalog build failed
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _setup_sus (res://scripts/geography/map_generator.gd:4044)
+       [1] _yield_generation_frame (res://scripts/geography/map_generator.gd:20415)
+ERROR: [ideology] configure failed: ideology_effect_selector_cap_invalid
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _setup_economy_runtime (res://scripts/geography/map_generator.gd:1798)
+       [1] _yield_generation_frame (res://scripts/geography/map_generator.gd:20415)
+WARNING: [building-visual] disabled: building_visual_renderer_unavailable
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] generate_world (res://scripts/game/world_runtime_host.gd:760)
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:5019)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2527)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:784)
+SCRIPT ERROR: Invalid call. Nonexistent function 'native_catalog' in base 'Nil'.
+   at: AnnualReportSession.configure (res://scripts/annual/annual_report_session.gd:25)
+   GDScript backtrace (most recent call first):
+       [0] configure (res://scripts/annual/annual_report_session.gd:25)
+       [1] generate_world (res://scripts/game/world_runtime_host.gd:799)
+ERROR: 年度报告初始化失败：未知原因
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] generate_world (res://scripts/game/world_runtime_host.gd:801)
+WARNING: [runtime-worker] Ideology opinion publish deferred: ideology_opinion_snapshot_invalid
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _start_production_shadow_worker (res://scripts/game/world_runtime_host.gd:890)
+       [1] generate_world (res://scripts/game/world_runtime_host.gd:804)
+[runtime-day-wait] day=1 env_day=0 missing=0x3ff stall=0x10 economy_input=-1
+[climate/worker][b8] physics_knobs day=1 ready=0 missing=physics_knobs
+[climate-kernel][round] shared=1 ok=1 n_cells=192 mask=0x1FF ran=0x1FF starved=0x0 knobs_cells=192
+[country][parity] worker_day=1 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=1 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[economy-mirror-cost] day=1 capture_ms=0.288 import_ms=0.518
+[runtime-day-wait] day=1 env_day=1 missing=0x20 stall=0x0 economy_input=-1
+ERROR: [effect-catalog] effect_catalog_ideology_command_unavailable:ideology_effect_selector_cap_invalid
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _reject (res://scripts/effect/effect_domain_catalog.gd:602)
+       [1] build (res://scripts/effect/effect_domain_catalog.gd:437)
+       [2] _metric_id (res://tests/ideology/ideology_school_strength_worker_test.gd:356)
+       [3] _run (res://tests/ideology/ideology_school_strength_worker_test.gd:65)
+       [4] _build_world (res://tests/ideology/ideology_school_strength_worker_test.gd:271)
+       [5] generate_world (res://scripts/game/world_runtime_host.gd:826)
+ERROR: [FAIL] hazard-free metric resolves by key (-1)
+ERROR: 42 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 1604 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

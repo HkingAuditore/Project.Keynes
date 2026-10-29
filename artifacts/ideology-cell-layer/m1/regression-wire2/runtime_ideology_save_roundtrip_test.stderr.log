@@ -1,0 +1,8 @@
+[economy-open-finish] day=0 country=0.152 workset=0.010 fiscal=0.007 csr=0.000 recovery=0.001 vectors=0.033 audit=0.007 commands=0.005
+[research-procure-diag] day=0 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+ERROR: 19 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 635 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

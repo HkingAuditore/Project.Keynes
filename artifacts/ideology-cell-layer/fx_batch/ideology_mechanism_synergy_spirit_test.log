@@ -1,0 +1,77 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[phase 0] synergy=60 rows=2 effects=44..45 min_count=0
+[phase 0] catalog expectation: country.climate.drought_loss_factor=0.95000 country.output.terrain.plain.agriculture_factor=1.03000
+[phase 0] spirit gate: idea.collective_stewardship needs level >= 1, costs 1 ideology / 1 spirit
+[phase 0] spirit capacity base=1 max=3 unlock deltas=[0, 1, 0, 0, 1] (sum=2)
+[phase 1] baseline: drought=1.00000 plain=1.00000 agriculture=1.00000 slots=0/2 spirit=0/1 active=[]
+[phase 2] promote with no equipped idea: status=3 reason=ideology_promotion_requires_equipped
+[phase 3] second equip while one transition is pending: status=3 reason=ideology_country_transition_pending
+[phase 3] near miss (one of two cards): drought=1.00000 plain=1.00000 active=[] slots=1/2
+[phase 4] promote at level 0 (gate 1): status=3 reason=ideology_national_spirit_level_insufficient
+[phase 5] qualifying pair: active=[60] drought=0.95000 (expected 0.95000) plain=1.03000 (expected 1.03000) candidates=12
+[phase 6] granting 524288 understanding (tier 1 threshold 524288)
+[phase 6] level=1 promote_allowed=1 ideology_slots=2 spirit=0/1
+[phase 7] promote: status=2 location=2 ideology_slots 2->1 spirit 0->1/1
+[phase 7] after promotion: active=[60] drought=0.95000 plain=1.03000
+[phase 8] count rule near miss (resonance.agrarian.2, min_count=2): active_members=1 agriculture=1.00000 expected=1.00000
+[phase 8] count rule qualifying: active=[0, 60] members=2 agriculture=1.03000 (expected 1.03000) slots=2/2 spirit=1/1
+[phase 9] promote into a full spirit pool: status=3 reason=national_spirit_slot_capacity_exceeded spirit=1/1 ideology=2/2
+[phase 10] after unequipping B: active=[0] drought=1.00000 plain=1.00000 agriculture=1.03000 slots=1/2 spirit=1/1 removes=[0, 4, 0, 0] (country delta 2)
+[phase 11] capacity: base spirit=1 ideology=2 | +tech.imperial_integration spirit=2 ideology=3 | all unlocks spirit=3 ideology=6 (max 3/6)
+=== ideology mechanism synergy+spirit: 147 checks, 0 failures ===
+[stage] start
+[stage] ideology catalog compiled
+[stage] effect + modifier catalogs ready
+[stage] world: building
+[stage] build_world:ext
+[stage] build_world:country
+[stage] build_world:economy
+[stage] build_world:effects
+[stage] build_world:ideologies
+[stage] world d0 discover
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0003 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0001 rows=0
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0001 rows=0
+[stage] world d1 promote-without-equip
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0001 rows=0
+[stage] world d2 equip A, second equip while pending
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0000 rows=0
+[stage] world d3 promote below the level gate
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0001 rows=0
+[stage] world d4 equip B (qualifying pair)
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0000 rows=0
+[stage] world d5 raise understanding to the gate
+[stage] world d6 promote
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=1 old=0.0001 new=0.0000 rows=0
+[stage] world d7 count-based synergy
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0000 rows=0
+[stage] world d8 raise B to its spirit gate
+[stage] world d9 promote into a full spirit pool
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0000 rows=0
+[stage] world d10 unequip B, the bond must release
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0000 rows=0
+[stage] capacity worlds
+ERROR: 19 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 635 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

@@ -1,0 +1,105 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[B10] territory counts={ "ok": true, "country_count": 0, "slots": [], "counts": [], "widest": 0, "widest_slot": -1, "total_cells": 0, "above_old_cap": 0 }
+[B10] handles a=4294967296 b=4294967297
+[B10] settle equip: pending 1 -> 0 in 1 handshake round(s), last day=10
+[B10] settle equip: basis confirmed_day=10 eligible_day=11 gated=1
+[B10] settle equip: pending 1 -> 0 in 1 handshake round(s), last day=22
+[B10] settle equip: basis confirmed_day=22 eligible_day=23 gated=2
+[B10] cards equipped=2
+[B10] drained steps=0 complete=true
+[B10] derived front cells=6400 stat_count=2
+[B10] materialise={  }
+[B10] multi-country={ "ok": true, "rows": 2, "cells": 6400, "multi_country_cells": 0, "max_contributors": 1, "countries": [4294967296, 4294967297], "generation": 2 }
+[B10] FLOW contribs=0 rows=6400 cells=6400
+[B10] shard steps=2 collect=0 rows=0 ideas=0 delta_a=0 delta_b=0 worst_step_ms=1.3248
+[B10] multi_country_cells=0 max_contributors=1
+[B10] revocation: SKIPPED (settle blocks headless; see M4-14)
+=== B10 multi-country: 22 checks, 0 failures ===
+[economy-open-finish] day=0 country=27.322 workset=1.350 fiscal=0.970 csr=0.009 recovery=0.002 vectors=0.446 audit=1.027 commands=0.006
+[research-procure-diag] day=0 phase=0 done=0 cands=3200 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=64 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=96 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=128 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=160 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=192 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=224 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=256 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=288 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=320 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=352 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=384 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=416 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=448 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=480 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=512 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=544 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=576 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=608 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=640 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=672 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=704 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=3200 cursor=736 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=1 old=0.0002 new=0.0001 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0001 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0001 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0001 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=1600/1600 took=0.1696 cells=3200 commands=3200
+[probe] AB old_first=1 old=0.1690 new=0.0925 rows=3200
+[probe] finish scratch=0.0000 emit=0.1440 versions=0.2724 builder_install=0.0003 digest=0.0000 total=0.4167 rows=3200 stats=2
+[probe] fold step cursor=1600/1600 took=0.2203 cells=3200 commands=3200
+[probe] AB old_first=0 old=0.1543 new=0.0681 rows=3200
+[probe] finish scratch=0.0000 emit=0.1273 versions=0.2320 builder_install=0.0001 digest=0.0212 total=0.3806 rows=3200 stats=2
+[probe] fold step cursor=1600/1600 took=0.1669 cells=3200 commands=3200
+[probe] AB old_first=1 old=0.1432 new=0.1028 rows=3200
+[probe] finish scratch=0.0000 emit=0.1061 versions=0.2561 builder_install=0.0001 digest=0.0242 total=0.3865 rows=3200 stats=2
+[probe] fold step cursor=1600/1600 took=0.1656 cells=3200 commands=3200
+[probe] AB old_first=0 old=0.1328 new=0.0444 rows=3200
+[probe] finish scratch=0.0000 emit=0.1081 versions=0.1863 builder_install=0.0001 digest=0.0200 total=0.3145 rows=3200 stats=2
+[probe] fold step cursor=1600/1600 took=0.1622 cells=3200 commands=3200
+[probe] AB old_first=1 old=0.1170 new=0.0511 rows=3200
+[probe] finish scratch=0.0000 emit=0.1018 versions=0.1764 builder_install=0.0001 digest=0.0196 total=0.2979 rows=3200 stats=2
+[probe] fold step cursor=1600/1600 took=0.1617 cells=3200 commands=3200
+[probe] AB old_first=0 old=0.1287 new=0.0460 rows=3200
+[probe] finish scratch=0.0000 emit=0.1100 versions=0.1831 builder_install=0.0002 digest=0.0196 total=0.3129 rows=3200 stats=2
+[probe] fold step cursor=1600/1600 took=0.1602 cells=3200 commands=3200
+[probe] AB old_first=1 old=0.1150 new=0.0447 rows=3200
+[probe] finish scratch=0.0001 emit=0.0983 versions=0.1677 builder_install=0.0001 digest=0.0195 total=0.2857 rows=3200 stats=2
+[probe] fold step cursor=1600/1600 took=0.1770 cells=3200 commands=3200
+[probe] AB old_first=0 old=0.1255 new=0.0478 rows=3200
+[probe] finish scratch=0.0000 emit=0.1035 versions=0.1821 builder_install=0.0001 digest=0.0197 total=0.3054 rows=3200 stats=2
+[probe] fold step cursor=1600/1600 took=0.1617 cells=3200 commands=3200
+[probe] AB old_first=1 old=0.1513 new=0.0620 rows=3200
+[probe] finish scratch=0.0000 emit=0.1038 versions=0.2247 builder_install=0.0002 digest=0.0283 total=0.3570 rows=3200 stats=2
+[probe] fold step cursor=1600/1600 took=0.1982 cells=3200 commands=3200
+[probe] AB old_first=0 old=0.1297 new=0.0505 rows=3200
+[probe] finish scratch=0.0001 emit=0.1074 versions=0.2002 builder_install=0.0001 digest=0.0200 total=0.3278 rows=3200 stats=2
+[probe] fold step cursor=1600/1600 took=0.1689 cells=3200 commands=3200
+[probe] AB old_first=1 old=0.1211 new=0.0448 rows=3200
+[probe] finish scratch=0.0001 emit=0.1016 versions=0.1740 builder_install=0.0001 digest=0.0196 total=0.2954 rows=3200 stats=2
+[probe] fold step cursor=3200/3200 took=0.3883 cells=6400 commands=6400
+[probe] AB old_first=0 old=0.3787 new=0.1405 rows=6400
+[probe] finish scratch=0.0001 emit=0.3235 versions=0.5336 builder_install=0.0003 digest=0.0346 total=0.8921 rows=6400 stats=2
+ERROR: 19 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 635 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

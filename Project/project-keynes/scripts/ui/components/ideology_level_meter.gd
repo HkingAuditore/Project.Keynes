@@ -95,7 +95,7 @@ func configure(data: Dictionary, compact_value := false) -> void:
 		else "境界 %d" % (level + 1)
 	_name.add_theme_color_override("font_color", ArtScript.INK)
 	_amount.add_theme_color_override("font_color", ArtScript.INK_MUTED)
-	_amount.text = "已臻圆满" if maxed else "理解 %s / %s" % [
+	_amount.text = "已完成" if maxed else "理解 %s / %s" % [
 		_format_q16(understanding_q16), _format_q16(threshold_q16)]
 	_track.progress = progress
 	_track.maxed = maxed

@@ -1,0 +1,355 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[PK] ==================================================================
+[PK] ideology §18.1: pending keeps the old contribution / rejection leaves no residue / one-shot not replayed
+[PK] ==================================================================
+  [PASS] catalog A: the card idea.public_hygiene is in the compiled ideology catalog
+  [PASS] catalog A: the injected on-enter one-shot compiled an Effect command definition for ideology.standardization (that is what makes the row emittable)
+  [PASS] catalog A: the poisoned row is NOT injected in this world
+[PK/catalog] A: dense=82, 3363 effect programs, one-shot command definition at 633, poison at -1
+[PK] ---------- world A: level-up while the transition is pending ----------
+  [PASS] A: economy configures
+  [PASS] A: effects configure
+  [PASS] A: modifiers configure
+  [PASS] A: country configures
+  [PASS] A: the fixture territory is a proper subset of the grid
+  [PASS] A: the country bootstraps
+  [PASS] A: ideologies configure
+  [PASS] A: bootstrap_country registered exactly the intended territory
+  [PASS] A: the economy input epoch for day 0 opens
+  [PASS] A: the fixture resolves both bootstrap signatures (household_farmer = political class 'farmer' whose repeal stance for this card is +8192, subsistence_farmer = 'general' whose repeal stance is -8192)
+  [PASS] A: the economy bootstraps (farmer 60 + general 20 per cell)
+  [PASS] A: economy day 0 reaches its committed boundary
+  [PASS] A: the fixture resolves the country handle
+[PK] A (before equip) support: adopt=0 repeal=0 promote=0 (thresholds [0, 0, 0])
+[PK] A (before equip) support: allowed=[0, 0, 0] available=[0, 0, 0] blocking=[-1, -1, -1] revision=0
+[PK] A (before equip) support: class_influence=[0, 0, 0] repeal_stances=[8192, -8192, -24576]
+[PK] program ideology.effect.public_hygiene_l1 (L1): ok=true magnitude_q16=3277 -> 0.05000305
+[PK] program ideology.effect.public_hygiene_l2 (L2): ok=true magnitude_q16=5243 -> 0.08000183
+[PK] ---- A0: equip, settle, and establish the L1 baseline ----
+  [PASS] A/grant: command seq 1 (opcode 2) is admitted by the queue
+  [PASS] A/discover: command seq 2 (opcode 1) is admitted by the queue
+  [PASS] A/equip: command seq 3 (opcode 5) is admitted by the queue
+  [PASS] A/equip: ideology day 0 completes
+[PK/A/equip/adapters] r1 modifier dispatch={ "ok": true, "submitted_transactions": 1, "submitted_commands": 1 } ack={ "ok": true, "acknowledged": 1, "rejected": 0, "pending": 0 } country={ "ok": true, "submitted_transactions": 0, "submitted_commands": 0 }/{ "ok": true, "acknowledged": 0, "rejected": 0, "pending": 0 }
+[PK/A/equip/adapters] rounds=1 modifier aked=1 rejected=0 pre_poll_pending_transitions=1
+  [PASS] A0 equip settle: the native adapters ACKED the equip's commands
+  [PASS] A/equip-settle: ideology day 1 completes
+[PK] A0 the settle day (basis confirmed, NOT adopted): locations=[1] levels=[0] understanding=[410] slots_used=1/2
+[PK] A0 the settle day (basis confirmed, NOT adopted): pending_transitions=0 pending_commands=0 commands_applied=3 levels_advanced=1 commands_rejected=0
+[PK] A0 the settle day (basis confirmed, NOT adopted): front installed=false cells=0 contributions=absent (no front installed) stats=0 generation=0 sample_day=?
+[PK] A0 §9.3: settle day=1 confirmed_day=1 eligible_day=2 rebuild_attempts_gated=1
+  [PASS] §9.3: the basis is confirmed on the settle day but only eligible the next day
+  [PASS] §9.3: the confirmation is dated to the business day the ACK was observed (1), not to the day the command was submitted
+  [PASS] §9.3: adoption was actually refused once (the gate fired, it is not dead)
+  [PASS] §9.3: on the settle day the front is NOT yet the new basis -- the layer generation is still the one installed before the settle
+  [PASS] §9.3: on the settle day no cell carries the L1 contribution yet (the front the gate kept was the EMPTY one)
+  [PASS] A/basis-eligible: ideology day 2 completes
+[PK] A0 settled at L1 (basis eligible on day 2): locations=[1] levels=[0] understanding=[615] slots_used=1/2
+[PK] A0 settled at L1 (basis eligible on day 2): pending_transitions=0 pending_commands=0 commands_applied=3 levels_advanced=1 commands_rejected=0
+[PK] A0 settled at L1 (basis eligible on day 2): front installed=true cells=84 contributions=84 stats=2 generation=1 sample_day=2
+  [PASS] A0: the card is settled at level 0 (row L1) in the IDEOLOGY slot
+[PK] A0 magnitudes: add=0.05000305 cut=-0.08000183 (L1 authored 3277/5243 Q16)
+  [PASS] A0: the settled card contributes the AUTHORED L1 add (+3277/Q16 = 0.05000305)
+  [PASS] A0: the settled card contributes the AUTHORED L1 .cut (-5243/Q16 = -0.08000183)
+  [PASS] A0: the front carries exactly the card's 84 rows before the level change (2 stats x 42 owned cells)
+  [PASS] A0: no unowned cell carries a derived contribution
+[PK] A0 one-shot: emitted rows in flight = 0 (must be 0)
+  [PASS] A0: the level-2 on-enter one-shot has NOT been emitted before the level change
+[PK] ---- A1: ADD_UNDERSTANDING 524288, measured while PENDING ----
+  [PASS] A1: before the change the understanding is below the level-1 threshold (524288)
+  [PASS] A/understanding: command seq 4 (opcode 8) is admitted by the queue
+  [PASS] A/level: ideology day 3 completes
+[PK] A1 level-up (PENDING, pre-ACK): locations=[1] levels=[1] understanding=[525108] slots_used=1/2
+[PK] A1 level-up (PENDING, pre-ACK): pending_transitions=1 pending_commands=0 commands_applied=4 levels_advanced=2 commands_rejected=0
+[PK] A1 level-up (PENDING, pre-ACK): front installed=true cells=84 contributions=84 stats=2 generation=1 sample_day=2
+  [PASS] A1: the level-up really is IN FLIGHT (pending_transitions == 1); nothing below is measured after the ACK
+[PK] A1 transition transactions: ids=[2, 3] statuses=[1, 1] (1 PLANNED, 2 PREFLIGHTED, 3 COMMITTED, 4 ACKED, 5 REJECTED)
+  [PASS] A1: the card's state has ALREADY moved to the target level while the transition is pending (start_transition writes state.level at request time, ideology_runtime.cpp:3598)
+  [PASS] A1: the transition carries at least one unACKed Effect transaction
+[PK] A1 PENDING per-cell: add=0.05000305 cut=-0.08000183  (L1 0.05000305 / -0.08000183, L2 0.08000183 / -0.10000610)
+[PK] A1 PENDING front: installed=true cells=84 contributions=84 (before the change: cells=84 contributions=84)
+[PK] A1 PENDING coverage: add present on 42 of 64 cells, .cut on 42
+[PK] A1 PENDING OUTCOME = OLD
+[PK] [OK] pending keeps the OLD contribution: the card is still serving the L1 magnitudes while its transition is unACKed.
+  [PASS] A1 [invariant]: the pending per-cell add is EXACTLY one of the card's two authored level magnitudes (never a third value, never zero) -- measured branch=OLD
+  [PASS] A1 [measured, OUTCOME A]: while PENDING the covered cell still carries the L1 add (+3277/Q16) and not the L2 one
+  [PASS] A1: the pending card does not DOUBLE its rows -- the front still holds exactly 84 contributions
+  [PASS] A1: the pending card does not ORPHAN any contribution -- no unowned cell carries a derived row
+[PK] ---- A2: the on-enter one-shot while the batch is pending ----
+[PK] A2 one-shot: emitted rows in flight = 1 [{ "transaction_index": 1, "key": "ideology.once_marker", "definition": "ideology.standardization", "action": 1, "domain": 1, "opcode": 1, "value": 65536 }]
+  [PASS] A2 one-shot: the level-2 on-enter row is emitted EXACTLY ONCE, at request time, inside the still-pending batch
+  [PASS] A2 one-shot: the emitted row is a modifier APPLY carrying the authored value 65536/Q16 for the real definition ideology.standardization
+  [PASS] A2 one-shot: no OTHER in-flight row names the same definition (the count is not inflated by the card's own persistent rows)
+[PK] ---- A3: the native adapter handshake ----
+[PK/A/level/adapters] r1 modifier dispatch={ "ok": true, "submitted_transactions": 2, "submitted_commands": 3 } ack={ "ok": true, "acknowledged": 2, "rejected": 0, "pending": 0 } country={ "ok": true, "submitted_transactions": 0, "submitted_commands": 0 }/{ "ok": true, "acknowledged": 0, "rejected": 0, "pending": 0 }
+[PK/A/level/adapters] rounds=1 modifier aked=2 rejected=0 pre_poll_pending_transitions=1
+  [PASS] A3 settle: the native adapters ACKED the level transition's rows
+  [PASS] A/level-settle: ideology day 4 completes
+[PK] A3 the settle day (L2 basis confirmed, NOT adopted): locations=[1] levels=[1] understanding=[525211] slots_used=1/2
+[PK] A3 the settle day (L2 basis confirmed, NOT adopted): pending_transitions=0 pending_commands=0 commands_applied=4 levels_advanced=2 commands_rejected=0
+[PK] A3 the settle day (L2 basis confirmed, NOT adopted): front installed=true cells=84 contributions=84 stats=2 generation=1 sample_day=2
+[PK] A3 §9.3: settle day=4 confirmed_day=4 eligible_day=5 gated=2 front add=0.05000305 cut=-0.08000183
+  [PASS] §9.3: the L2 basis is confirmed on the settle day but only eligible the next day
+  [PASS] §9.3: the L2 confirmation is dated to THIS business day (4), the day the ACK was observed
+  [PASS] §9.3: the SECOND settle was gate-refused too (the refusal counter moved again, so this is not the first settle's evidence)
+  [PASS] §9.3: on the settle day the front is NOT yet the new basis -- the layer generation the pending measurement saw is kept
+  [PASS] §9.3: on the settle day the front still serves the L1 pair (add 3277/Q16, .cut -5243/Q16), NOT the L2 pair
+  [PASS] A3 settle: after the handshake the transition is SETTLED
+  [PASS] A3 settle: the card keeps level 1 in the IDEOLOGY slot
+  [PASS] §9.3: on the settle day the front still holds exactly the card's 84 rows -- deferring the basis does not drop the old one
+  [PASS] A/level-basis-eligible: ideology day 5 completes
+[PK] A3 settled at L2 (basis eligible on day 5): locations=[1] levels=[1] understanding=[525314] slots_used=1/2
+[PK] A3 settled at L2 (basis eligible on day 5): pending_transitions=0 pending_commands=0 commands_applied=4 levels_advanced=2 commands_rejected=0
+[PK] A3 settled at L2 (basis eligible on day 5): front installed=true cells=84 contributions=84 stats=2 generation=2 sample_day=5
+[PK] A3 magnitudes: add=0.08000183 cut=-0.10000610 (L2 authored 5243/6554 Q16)
+  [PASS] A3 settle: the settled content is the AUTHORED L2 row (add 5243/Q16, .cut -6554/Q16)
+  [PASS] A3 settle: the front still holds exactly the card's 84 rows
+  [PASS] §9.3: the L2 basis is published exactly ONE settle day later -- the settle day served the L1 pair and this adopt day serves the L2 pair
+  [PASS] §9.3: the published front's sample_day is at or after the basis eligibility day (5) -- a freeze boundary selects only an ELIGIBLE projection
+[PK] ---- A4: the one-shot across the pending -> settled boundary ----
+[PK] A4 one-shot: rows still in flight after the handshake = 0 (the ACK consumed the batch)
+  [PASS] A4 one-shot: the batch is consumed by the ACK -- no on-enter row of this level is still in flight
+  [PASS] A/after-settle-1: ideology day 6 completes
+  [PASS] A/after-settle-2: ideology day 7 completes
+[PK] A4 one-shot: emitted 0 + 1 across the boundary; re-emitted on day 6 = 0, day 7 = 0 (understanding 525520, L3 threshold 1572864)
+  [PASS] A4 one-shot: running two further ideology days emits NO new on-enter row (entered_levels is latched, so the one-shot is not replayed)
+  [PASS] A4 one-shot: the EXACT total number of emissions across the pending -> settled boundary is 1
+[PK] A4 one-shot store: 1 live COUNTRY-domain row(s) for ideology.standardization ["ideology.standardization", "ideology.public_hygiene"]
+  [PASS] A4 one-shot: the Modifier store holds EXACTLY ONE applied row for ideology.standardization after the settle and after two more days (fired once, never replayed)
+  [PASS] A4: the card is still settled at L2 after the two extra days (the count above is not measuring a card that fell over)
+  [PASS] A4: no budget leaked -- the slot budget still shows one occupied IDEOLOGY slot
+  [PASS] catalog B: the card idea.public_hygiene is in the compiled ideology catalog
+  [PASS] catalog B: the injected on-enter one-shot compiled an Effect command definition for ideology.standardization (that is what makes the row emittable)
+  [PASS] catalog B: the poisoned on-enter row on level 1 ALSO compiled a command definition for test.reject_probe.unknown_modifier (the rejection must come from the Modifier catalog, not from a missing Effect definition)
+  [PASS] catalog B: the poisoned definition really is ABSENT from the Modifier catalog, which is what makes the domain ACK refuse it
+[PK/catalog] B: dense=82, 3364 effect programs, one-shot command definition at 633, poison at 726
+[PK] ---------- world B: a domain ACK rejects the level transition ----------
+  [PASS] B: economy configures
+  [PASS] B: effects configure
+  [PASS] B: modifiers configure
+  [PASS] B: country configures
+  [PASS] B: the fixture territory is a proper subset of the grid
+  [PASS] B: the country bootstraps
+  [PASS] B: ideologies configure
+  [PASS] B: bootstrap_country registered exactly the intended territory
+  [PASS] B: the economy input epoch for day 0 opens
+  [PASS] B: the fixture resolves both bootstrap signatures (household_farmer = political class 'farmer' whose repeal stance for this card is +8192, subsistence_farmer = 'general' whose repeal stance is -8192)
+  [PASS] B: the economy bootstraps (farmer 60 + general 20 per cell)
+  [PASS] B: economy day 0 reaches its committed boundary
+  [PASS] B: the fixture resolves the country handle
+[PK] B (before equip) support: adopt=0 repeal=0 promote=0 (thresholds [0, 0, 0])
+[PK] B (before equip) support: allowed=[0, 0, 0] available=[0, 0, 0] blocking=[-1, -1, -1] revision=0
+[PK] B (before equip) support: class_influence=[0, 0, 0] repeal_stances=[8192, -8192, -24576]
+[PK] ---- B0: equip, settle, baseline ----
+  [PASS] B/grant: command seq 5 (opcode 2) is admitted by the queue
+  [PASS] B/discover: command seq 6 (opcode 1) is admitted by the queue
+  [PASS] B/equip: command seq 7 (opcode 5) is admitted by the queue
+  [PASS] B/equip: ideology day 0 completes
+[PK/B/equip/adapters] r1 modifier dispatch={ "ok": true, "submitted_transactions": 1, "submitted_commands": 1 } ack={ "ok": true, "acknowledged": 1, "rejected": 0, "pending": 0 } country={ "ok": true, "submitted_transactions": 0, "submitted_commands": 0 }/{ "ok": true, "acknowledged": 0, "rejected": 0, "pending": 0 }
+[PK/B/equip/adapters] rounds=1 modifier aked=1 rejected=0 pre_poll_pending_transitions=1
+  [PASS] B0 equip settle: the native adapters ACKED the equip's commands
+  [PASS] B/equip-settle: ideology day 1 completes
+[PK] B0 the settle day (basis confirmed, NOT adopted): locations=[1] levels=[0] understanding=[410] slots_used=1/2
+[PK] B0 the settle day (basis confirmed, NOT adopted): pending_transitions=0 pending_commands=0 commands_applied=3 levels_advanced=1 commands_rejected=0
+[PK] B0 the settle day (basis confirmed, NOT adopted): front installed=false cells=0 contributions=absent (no front installed) stats=0 generation=0 sample_day=?
+[PK] B0 §9.3: settle day=1 confirmed_day=1 eligible_day=2 gated=1 front installed=false cells=0
+  [PASS] §9.3: the basis is confirmed on the settle day but only eligible the next day
+  [PASS] §9.3: the confirmation is dated to the business day the ACK was observed (1)
+  [PASS] §9.3: adoption was actually refused once (the gate fired, it is not dead)
+  [PASS] §9.3: on the settle day the front is NOT yet the new basis -- the layer generation is still the one installed before the settle
+  [PASS] B/basis-eligible: ideology day 2 completes
+[PK] B0 settled at L1 (basis eligible on day 2): locations=[1] levels=[0] understanding=[615] slots_used=1/2
+[PK] B0 settled at L1 (basis eligible on day 2): pending_transitions=0 pending_commands=0 commands_applied=3 levels_advanced=1 commands_rejected=0
+[PK] B0 settled at L1 (basis eligible on day 2): front installed=true cells=84 contributions=84 stats=2 generation=1 sample_day=2
+[PK] B0 baseline: cells=84 contributions=84 add=0.05000305 cut=-0.08000183 country-domain modifier rows=1 ["ideology.public_hygiene"]
+  [PASS] B0: the settled card contributes the authored L1 pair and exactly 84 front rows
+[PK] ---- B1: level-up, then an ACK that the domain REFUSES ----
+  [PASS] B/understanding: command seq 8 (opcode 8) is admitted by the queue
+  [PASS] B/level: ideology day 3 completes
+[PK] B1 level-up (PENDING): locations=[1] levels=[1] understanding=[525108] slots_used=1/2
+[PK] B1 level-up (PENDING): pending_transitions=1 pending_commands=0 commands_applied=4 levels_advanced=2 commands_rejected=0
+[PK] B1 level-up (PENDING): front installed=true cells=84 contributions=84 stats=2 generation=1 sample_day=2
+  [PASS] B1: the poisoned level-up is IN FLIGHT before the ACK
+[PK] B1 in flight: poison rows=1, on-enter one-shot rows=1
+  [PASS] B1: the poisoned on-enter row and the clean one-shot are both in the pending batch (the rejection has not happened yet)
+[PK/B/level/adapters] r1 modifier dispatch={ "ok": true, "submitted_transactions": 2, "submitted_commands": 4 } ack={ "ok": false, "acknowledged": 1, "rejected": 1, "pending": 0, "reason": "modifier_definition_unknown" } country={ "ok": true, "submitted_transactions": 0, "submitted_commands": 0 }/{ "ok": true, "acknowledged": 0, "rejected": 0, "pending": 0 }
+[PK/B/level/adapters] rounds=1 modifier aked=1 rejected=1 pre_poll_pending_transitions=1
+[PK] B1 adapter handshake: modifier ok=true acknowledged=1 rejected=1 effect rejected_transactions 0 -> 1
+  [PASS] B1: the domain ACK REJECTED exactly one Effect transaction -- the Modifier runtime refuses the unknown definition (modifier_runtime.cpp:997-1000 -> effect_runtime.cpp:5824-5832)
+[PK] B1 pre-poll state: pending_transitions=1 levels=[1] transition statuses=[4, 5]
+  [PASS] B1: the transition's own transaction status list already contains the REJECTED code (5), i.e. the rejection is a durable row and not a counter
+  [PASS] B1: the ideology runtime has not yet polled the rejection, so the card still reports the target level -- the rollback happens on the NEXT ideology day's transition-poll stage (:4918-4924), which is why 'no residue' can only be measured after that day
+[PK] ---- B2: the rollback day ----
+  [PASS] B/rollback: ideology day 4 completes
+[PK] B2 after the rollback day: locations=[1] levels=[1] understanding=[525313] slots_used=1/2
+[PK] B2 after the rollback day: pending_transitions=1 pending_commands=0 commands_applied=4 levels_advanced=3 commands_rejected=0
+[PK] B2 after the rollback day: front installed=true cells=84 contributions=84 stats=2 generation=1 sample_day=2
+[PK] B2 transition receipt: status=3 opcode=8 reason='ideology_effect_transition_rejected'
+  [PASS] B2: the runtime ROLLED THE CARD BACK and wrote a REJECTED transition receipt with reason 'ideology_effect_transition_rejected'
+[PK] B2 rollback aftermath: levels_advanced 2 -> 3, pending_transitions=1 levels=[1]
+  [PASS] B2: the retry is honestly what the runtime does -- the rollback and the re-opened transition happen in the same day (otherwise the card would sit at level 0 and this check would say so)
+[PK] B2-NUMERIC per-cell: add=0.05000305 cut=-0.08000183, front cells=84 contributions=84 (pre-transition: cells=84 contributions=84)
+  [PASS] B2 no residue: the front's contribution_count is UNCHANGED at the PRE-TRANSITION value 84 -- the rejection added no orphan row
+  [PASS] B2 no residue: the row count did not DOUBLE (84, not 168)
+  [PASS] B2 no residue: no unowned cell carries a derived row (no orphan)
+  [PASS] B2 no residue: the emitted content is still exactly one authored level -- add=0.08000183 is the L2 value and not a sum of two levels
+[PK] B2 country-domain modifier rows: 1 -> 0 []
+[PK] B2 country-domain residue (rows the rejected batch left): none
+[PK] [OK] rejection left no COUNTRY-domain modifier row behind
+  [PASS] B2 [measured]: any COUNTRY-domain row the rejected batch leaves behind is confined to that batch (the card's cost definition and the fixture's on-enter row) -- no unrelated definition appeared
+[PK] ---- B3: a second reject/retry cycle ----
+  [PASS] B/cycle2-pending: ideology day 5 completes
+[PK] B3 cycle 2 pending: poison rows in flight=1
+  [PASS] B3: the retried transition re-emits the on-enter batch EXACTLY once per cycle (no doubling inside one cycle)
+[PK/B/cycle2/adapters] r1 modifier dispatch={ "ok": true, "submitted_transactions": 2, "submitted_commands": 4 } ack={ "ok": false, "acknowledged": 1, "rejected": 1, "pending": 0, "reason": "modifier_definition_unknown" } country={ "ok": true, "submitted_transactions": 0, "submitted_commands": 0 }/{ "ok": true, "acknowledged": 0, "rejected": 0, "pending": 0 }
+[PK/B/cycle2/adapters] rounds=1 modifier aked=1 rejected=1 pre_poll_pending_transitions=1
+  [PASS] B/cycle2-rollback: ideology day 6 completes
+[PK] B3 after the second rejection: locations=[1] levels=[1] understanding=[525723] slots_used=1/2
+[PK] B3 after the second rejection: pending_transitions=1 pending_commands=0 commands_applied=4 levels_advanced=4 commands_rejected=0
+[PK] B3 after the second rejection: front installed=true cells=84 contributions=84 stats=2 generation=1 sample_day=2
+[PK] B3 cycle 2: rejected_transactions 1 -> 2, add=0.05000305, front cells=84 contributions=84
+  [PASS] B3 no residue: the second rejection rejected exactly one more transaction (the cycle really repeated)
+  [PASS] B3 no residue: after TWO rejection cycles the front still holds exactly 84 contributions -- nothing accumulated, nothing doubled
+  [PASS] B3 no residue: after TWO rejection cycles no unowned cell carries a derived row
+  [PASS] B3 no residue: the economy stayed conserved through both rejection cycles (population / money / goods errors are 0)
+  [PASS] §9.3: two REJECTED transitions did not move the basis dates -- a rejection produces no projection
+  [PASS] catalog C: the card idea.public_hygiene is in the compiled ideology catalog
+  [PASS] catalog C: the injected on-enter one-shot compiled an Effect command definition for ideology.standardization (that is what makes the row emittable)
+  [PASS] catalog C: the poisoned on-enter row on level 0 ALSO compiled a command definition for test.reject_probe.unknown_modifier (the rejection must come from the Modifier catalog, not from a missing Effect definition)
+  [PASS] catalog C: the poisoned definition really is ABSENT from the Modifier catalog, which is what makes the domain ACK refuse it
+[PK/catalog] C: dense=82, 3364 effect programs, one-shot command definition at 633, poison at 725
+[PK] ---------- world C: a domain ACK rejects the EQUIP (nothing retries it) ----------
+  [PASS] C: economy configures
+  [PASS] C: effects configure
+  [PASS] C: modifiers configure
+  [PASS] C: country configures
+  [PASS] C: the fixture territory is a proper subset of the grid
+  [PASS] C: the country bootstraps
+  [PASS] C: ideologies configure
+  [PASS] C: bootstrap_country registered exactly the intended territory
+  [PASS] C: the economy input epoch for day 0 opens
+  [PASS] C: the fixture resolves both bootstrap signatures (household_farmer = political class 'farmer' whose repeal stance for this card is +8192, subsistence_farmer = 'general' whose repeal stance is -8192)
+  [PASS] C: the economy bootstraps (farmer 60 + general 20 per cell)
+  [PASS] C: economy day 0 reaches its committed boundary
+  [PASS] C: the fixture resolves the country handle
+[PK] C (before equip) support: adopt=0 repeal=0 promote=0 (thresholds [0, 0, 0])
+[PK] C (before equip) support: allowed=[0, 0, 0] available=[0, 0, 0] blocking=[-1, -1, -1] revision=0
+[PK] C (before equip) support: class_influence=[0, 0, 0] repeal_stances=[8192, -8192, -24576]
+[PK] ---- C0: baseline (no card equipped) ----
+[PK] C0 baseline: installed=false cells=0 contributions=absent (no front installed) add_present=0 country-domain modifier rows=0 []
+  [PASS] C0: with no card equipped the front holds no row at all
+[PK] ---- C1: equip, with the poisoned on-enter row in the batch ----
+  [PASS] C/grant: command seq 9 (opcode 2) is admitted by the queue
+  [PASS] C/discover: command seq 10 (opcode 1) is admitted by the queue
+  [PASS] C/equip: command seq 11 (opcode 5) is admitted by the queue
+  [PASS] C/equip: ideology day 0 completes
+[PK] C1 equip (PENDING): locations=[1] levels=[0] understanding=[205] slots_used=1/2
+[PK] C1 equip (PENDING): pending_transitions=1 pending_commands=0 commands_applied=3 levels_advanced=1 commands_rejected=0
+[PK] C1 equip (PENDING): front installed=false cells=0 contributions=absent (no front installed) stats=0 generation=0 sample_day=?
+[PK] C1 in flight: poison rows=1, front cells=0 contributions=absent (no front installed)
+  [PASS] C1: the equip is in flight and its batch carries the poisoned on-enter row exactly once
+  [PASS] C1 [10.1]: while the equip is pending the front does NOT list the card (a pending EQUIP contributes nothing)
+[PK] ---- C2: the domain ACK rejects it ----
+[PK/C/equip/adapters] r1 modifier dispatch={ "ok": true, "submitted_transactions": 1, "submitted_commands": 2 } ack={ "ok": false, "acknowledged": 0, "rejected": 1, "pending": 0, "reason": "modifier_definition_unknown" } country={ "ok": true, "submitted_transactions": 0, "submitted_commands": 0 }/{ "ok": true, "acknowledged": 0, "rejected": 0, "pending": 0 }
+[PK/C/equip/adapters] rounds=1 modifier aked=0 rejected=1 pre_poll_pending_transitions=1
+[PK] C2 adapter handshake: modifier ok=true acknowledged=0 rejected=1 effect rejected_transactions 0 -> 1
+  [PASS] C2: the domain ACK rejected exactly one transaction
+[PK] ---- C3: the rollback day ----
+  [PASS] C/rollback: ideology day 1 completes
+[PK] C3 after the rejected equip: locations=[0] levels=[0] understanding=[205] slots_used=0/2
+[PK] C3 after the rejected equip: pending_transitions=0 pending_commands=0 commands_applied=3 levels_advanced=1 commands_rejected=0
+[PK] C3 after the rejected equip: front installed=false cells=0 contributions=absent (no front installed) stats=0 generation=0 sample_day=?
+[PK] C3 transition receipt: status=3 opcode=5 reason='ideology_effect_transition_rejected'
+  [PASS] C3: the runtime ROLLED THE EQUIP BACK and wrote a REJECTED transition receipt with reason 'ideology_effect_transition_rejected'
+[PK] C3 §9.3: confirmed_day=-1 eligible_day=-1 gated=0 (a rejected transition produces NO projection)
+  [PASS] §9.3: the REJECTED equip confirmed no projection -- both basis days stay unset (-1) and the eligibility gate never fired
+[PK] C3 REVERTED front: installed=false cells=0 contributions=0 (pre-transition: cells=0 contributions=0), add_present=0 cut_present=0
+  [PASS] C3 no residue: the front's contribution_count is back to the PRE-TRANSITION value 0 (no orphan row left by the rejected equip)
+  [PASS] C3 no residue: NO cell carries a derived contribution -- the rejected equip left nothing on any of the 64 cells, owned or not
+  [PASS] C3 no residue: the card is back to INACTIVE and the slot budget is released
+[PK] C3 country-domain modifier rows after the rejection: 0 -> 0 []
+[PK] C3 country-domain residue (rows the rejected equip left): none
+[PK] [OK] the rejected equip left no COUNTRY-domain modifier row behind
+  [PASS] C3 [measured]: any COUNTRY-domain row the rejected equip leaves behind is confined to that batch (only the card's own cost definition)
+[PK] ---- C4: two further ideology days ----
+  [PASS] C/day2: ideology day 2 completes
+  [PASS] C/day3: ideology day 3 completes
+[PK] C4 two days after the rejected equip: locations=[0] levels=[0] understanding=[205] slots_used=0/2
+[PK] C4 two days after the rejected equip: pending_transitions=0 pending_commands=0 commands_applied=3 levels_advanced=1 commands_rejected=0
+[PK] C4 two days after the rejected equip: front installed=false cells=0 contributions=absent (no front installed) stats=0 generation=0 sample_day=?
+[PK] C4: cells=0 contributions=absent (no front installed) add_present=0 cut_present=0 slots_used=0
+  [PASS] C4 no residue: two days later the front still holds nothing and no cell carries a contribution
+  [PASS] C4 no residue: the card stays INACTIVE and no transition was re-opened (nothing retries an equip)
+  [PASS] C4 no residue: the economy stayed conserved through the rejected equip
+[PK] ---- summary ----
+[PK] catalog A: 113 ideology ids, 2335 effect programs, 1016 modifier definitions
+[PK] A baseline: L1 add=0.05000305 cut=-0.08000183, front 84 rows
+[PK] A pending: branch=OLD add=0.05000305 cut=-0.08000183 vs L1 0.05000305/-0.08000183 and L2 0.08000183/-0.10000610; front 84 rows before, 84 pending, 84 settled
+[PK] A one-shot: 1 emission across the boundary, 0 replays on the two following days
+[PK] §9.3 gate (A): settle day 1 -> confirmed 1 / eligible 2, settle day 4 -> confirmed 4 / eligible 5; the rebuild was refused 2 time(s) and the L2 basis was published on day 5
+[PK] catalog B: 113 ideology ids, 2335 effect programs, 1016 modifier definitions
+[PK] B rejection (level-up): the domain ACK rejected the batch (modifier_definition_unknown) and the runtime rolled the card back, but the SAME slice retried it -- front stayed at 84 rows and 0.05000305 through TWO cycles, with no orphan and no doubling
+[PK] §9.3 gate (B): the equip settled on day 1 -> confirmed 1 / eligible 2, refused 1 time(s); both rejections left the dates unchanged at 1/2
+[PK] catalog C: 113 ideology ids, 2335 effect programs, 1016 modifier definitions
+[PK] C rejection (equip): domain ACK rejected 1 transaction, the card rolled back to INACTIVE, front contributions 0 (from a pending 84), no cell covered, slot released, and nothing came back
+[PK] §9.3 gate (C): never fired -- the equip was rejected, so confirmed/eligible stayed -1/-1 and the gate was never consulted
+[PK] PENDING OUTCOME MEASURED: OLD
+=== ideology pending keeps the old contribution / rejection leaves no residue / one-shot not replayed: 159 checks, 0 failures ===
+[economy-open-finish] day=0 country=0.612 workset=0.037 fiscal=0.023 csr=0.000 recovery=0.001 vectors=0.082 audit=0.030 commands=0.005
+[research-procure-diag] day=0 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0002 new=0.0000 rows=0
+[probe] fold step cursor=42/42 took=0.0101 cells=84 commands=84
+[probe] AB old_first=0 old=0.0082 new=0.0048 rows=84
+[probe] finish scratch=0.0000 emit=0.0117 versions=0.0197 builder_install=0.0004 digest=0.0000 total=0.0318 rows=84 stats=2
+[probe] fold step cursor=42/42 took=0.0101 cells=84 commands=84
+[probe] AB old_first=1 old=0.0093 new=0.0044 rows=84
+[probe] finish scratch=0.0000 emit=0.0083 versions=0.0198 builder_install=0.0002 digest=0.0006 total=0.0289 rows=84 stats=2
+[probe] fold step cursor=42/42 took=0.0121 cells=84 commands=84
+[probe] AB old_first=0 old=0.0117 new=0.0058 rows=84
+[probe] finish scratch=0.0001 emit=0.0113 versions=0.0367 builder_install=0.0005 digest=0.0007 total=0.0493 rows=84 stats=2
+[probe] fold step cursor=42/42 took=0.0068 cells=84 commands=84
+[probe] AB old_first=1 old=0.0064 new=0.0031 rows=84
+[probe] finish scratch=0.0000 emit=0.0065 versions=0.0148 builder_install=0.0003 digest=0.0006 total=0.0222 rows=84 stats=2
+[probe] fold step cursor=42/42 took=0.0057 cells=84 commands=84
+[probe] AB old_first=0 old=0.0042 new=0.0027 rows=84
+[probe] finish scratch=0.0000 emit=0.0051 versions=0.0104 builder_install=0.0000 digest=0.0006 total=0.0161 rows=84 stats=2
+[economy-open-finish] day=0 country=0.832 workset=0.037 fiscal=0.008 csr=0.001 recovery=0.000 vectors=0.057 audit=0.049 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0002 new=0.0001 rows=0
+[probe] fold step cursor=42/42 took=0.0127 cells=84 commands=84
+[probe] AB old_first=0 old=0.0085 new=0.0061 rows=84
+[probe] finish scratch=0.0000 emit=0.0127 versions=0.0212 builder_install=0.0005 digest=0.0000 total=0.0344 rows=84 stats=2
+[probe] fold step cursor=42/42 took=0.0068 cells=84 commands=84
+[probe] AB old_first=1 old=0.0059 new=0.0049 rows=84
+[probe] finish scratch=0.0000 emit=0.0061 versions=0.0165 builder_install=0.0002 digest=0.0005 total=0.0233 rows=84 stats=2
+[probe] fold step cursor=42/42 took=0.0099 cells=84 commands=84
+[probe] AB old_first=0 old=0.0086 new=0.0044 rows=84
+[probe] finish scratch=0.0000 emit=0.0078 versions=0.0192 builder_install=0.0002 digest=0.0006 total=0.0278 rows=84 stats=2
+[probe] fold step cursor=42/42 took=0.0067 cells=84 commands=84
+[probe] AB old_first=1 old=0.0079 new=0.0050 rows=84
+[probe] finish scratch=0.0000 emit=0.0086 versions=0.0195 builder_install=0.0002 digest=0.0006 total=0.0289 rows=84 stats=2
+[probe] fold step cursor=42/42 took=0.0059 cells=84 commands=84
+[probe] AB old_first=0 old=0.0051 new=0.0029 rows=84
+[probe] finish scratch=0.0001 emit=0.0054 versions=0.0135 builder_install=0.0001 digest=0.0006 total=0.0197 rows=84 stats=2
+[economy-open-finish] day=0 country=0.473 workset=0.032 fiscal=0.013 csr=0.000 recovery=0.000 vectors=0.063 audit=0.047 commands=0.001
+[research-procure-diag] day=0 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0001 new=0.0001 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0001 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0000 rows=0
+ERROR: 19 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 635 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

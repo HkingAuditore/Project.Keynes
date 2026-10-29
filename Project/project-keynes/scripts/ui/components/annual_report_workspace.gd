@@ -377,7 +377,7 @@ func _settle_paper() -> void:
 
 func _empty_chapter() -> Dictionary:
 	return {
-		"title": "国家年度发展报告", "number": 1,
+		"title": "年度报告", "number": 1,
 		"lead": "尚无数据",
 		"rows": [], "details": [], "figures": [], "visuals": [], "margin_notes": [],
 		"has_previous": false,

@@ -1,0 +1,10 @@
+FAIL A: work set exceeds one shard work=0 shard=64
+FAIL B: a yield leaves a cursor pointing into the work set cursor=-1 work=0
+FAIL B: the cursor grew monotonically at least once last=-1
+FAIL F: every covered cell was painted across the shards painted=255 of 256
+ERROR: 19 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 635 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

@@ -955,6 +955,18 @@ public:
     uint32_t authoritative_domain_mask() const {
         return _authoritative_domain_mask.load(std::memory_order_acquire);
     }
+    // Domains a PREVIOUS worker lifetime of this host proved at a barrier and was
+    // granted. Both `request_stop()` and `set_fault()` clear the LIVE grant so the
+    // main thread takes the domain back while the old worker winds down; this
+    // ledger deliberately survives both, because the POD state and the handlers
+    // that earned the grant are still installed and a restart resumes on exactly
+    // that state. A restart re-publishes `lifetime_granted_mask() & requested`.
+    //
+    // A FRESH start reads zero here and therefore keeps the deferred
+    // 0x000-until-first-commit behaviour: no day has ever proven the handlers.
+    uint32_t lifetime_granted_mask() const {
+        return _lifetime_granted_mask.load(std::memory_order_acquire);
+    }
     // Main-thread write-back boundary for ACTIVE Climate. Acquire, copy the
     // fields out, release. Non-blocking: returns false when the worker has not
     // committed a newer day.
@@ -1148,6 +1160,15 @@ private:
                      const RuntimeDayCommit &day_commit,
                      const std::vector<RuntimeCommandReceipt> &day_receipts);
     void set_fault(const char *code);
+    // The ONLY writer of `_authoritative_domain_mask`. Records the grant in the
+    // per-host `_lifetime_granted_mask` ledger at the same time, so a later
+    // restart can re-publish exactly what a previous lifetime proved instead of
+    // forgetting it. Never called with 0: revocation is a plain store, which is
+    // what keeps the ledger alive across a stop/fault.
+    void publish_authority_grant(uint32_t mask) noexcept {
+        _lifetime_granted_mask.store(mask, std::memory_order_release);
+        _authoritative_domain_mask.store(mask, std::memory_order_release);
+    }
     void record_save_failure(const char *reason);
     void publish_economy_tax_diag(const std::string &yield_reason,
                                   uint32_t slices);
@@ -1209,6 +1230,15 @@ private:
     std::atomic<bool> _authority_ready{false};
     std::atomic<uint32_t> _requested_authority_mask{0};
     std::atomic<uint32_t> _authoritative_domain_mask{0};
+    // Per-host, per-session grant ledger. `_authoritative_domain_mask` is the LIVE
+    // grant (revoked by stop/fault); this one is what the domains proved, and it is
+    // what a restart re-publishes. See `lifetime_granted_mask()`.
+    std::atomic<uint32_t> _lifetime_granted_mask{0};
+    // True once a worker lifetime actually started on this host. Together with a
+    // non-zero `_lifetime_granted_mask` it is the positive proof that `start()` is a
+    // RESTART of a world this host already ran (see the resume-day block in
+    // `start()`), as opposed to a fresh world on a reused host.
+    std::atomic<bool> _has_started_once{false};
     std::atomic<uint32_t> _active_evidence_mask{0};
     std::atomic<uint32_t> _completion_gate_missing_domain_mask{0};
     std::atomic<bool> _active_gate_blocked{false};

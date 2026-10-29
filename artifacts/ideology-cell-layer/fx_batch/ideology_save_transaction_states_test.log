@@ -1,0 +1,561 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[sv2/catalog] 2336 effect programs, probe dense id=2335
+  [PASS] the card is in the compiled ideology catalog
+  [PASS] continuous: economy configures
+  [PASS] continuous: effects configure
+  [PASS] continuous: modifiers configure
+  [PASS] continuous: country configures
+  [PASS] continuous: the fixture territory is a proper subset of the grid
+  [PASS] continuous: the country bootstraps
+  [PASS] continuous: ideologies configure
+  [PASS] continuous: bootstrap_country registered exactly the intended territory
+  [PASS] continuous: the economy epoch opens
+  [PASS] continuous: the fixture resolves both bootstrap signatures
+  [PASS] continuous: the economy bootstraps
+  [PASS] continuous: economy day 0 reaches its committed boundary
+  [PASS] continuous: the fixture resolves the country handle
+  [PASS] ideology batch (seq 1) is admitted
+  [PASS] ideology batch (seq 2) is admitted
+  [PASS] ideology batch (seq 3) is admitted
+  [PASS] prefix: ideology day 0 completes
+  [PASS] prefix: ideology day 0 completes
+  [PASS] prefix: ideology day 0 completes
+  [PASS] prefix: ideology day 0 completes
+  [PASS] continuous: ideology day 0 completes
+  [PASS] continuous: the day-0 settle leaves the projection CONFIRMED (0) but not yet ELIGIBLE (eligible_from_day == 1)
+  [PASS] continuous: the confirmation-day rebuild is REFUSED by the eligibility gate
+  [PASS] continuous: nothing is published on the confirmation day itself
+  [PASS] continuous: ideology day 1 completes
+  [PASS] continuous: the derived rebuild has no work left after day 1
+  [PASS] continuous: the derived cell layer is installed before the first save point
+  [PASS] continuous: the front is built FOR the eligibility day (sample_day == 1)
+  [PASS] continuous: the card is equipped in the IDEOLOGY slot before the first save
+[sv2/continuous] prefix layer cells=84 business=-3083176044961334701
+[sv2/continuous] basis confirmed_day=0 eligible_from_day=1 gated=1
+[sv2/continuous] prefix in-flight Effect transactions after the settle ids=[] keys=[] values=[]
+  [PASS] continuous: the structural probe instance is admitted
+  [PASS] continuous: effect day 0 completes
+  [PASS] S1/pending: PKEF payload is produced
+  [PASS] S1/pending: PKID payload is produced
+  [PASS] S1/pending: the PKEF payload carries the PKEF magic
+  [PASS] S1/pending: the PKID payload carries the PKID magic
+[sv2/S1/pending] substate=pending probe_in_flight=1 rejected_rows=0 generation=1 fire_sequence=1 effect_applied=false last_acked=0
+  [PASS] S1/pending: the structural transaction is PENDING at this point
+  [PASS] S1/pending: the pending row is PLANNED, waits for mask 1 and carries the program's value
+  [PASS] S1/pending: no ACK has been latched yet
+  [PASS] continuous: exactly one probe transaction is in flight before the ACK
+  [PASS] continuous: the in-flight transaction is PLANNED with a real ACK mask
+  [PASS] continuous: an ACK straight from PLANNED is refused
+  [PASS] continuous: the structural transaction preflights
+  [PASS] continuous: the structural transaction commits
+  [PASS] continuous: the structural transaction is ACKed
+  [PASS] S2/acked: PKEF payload is produced
+  [PASS] S2/acked: PKID payload is produced
+  [PASS] S2/acked: the PKEF payload carries the PKEF magic
+  [PASS] S2/acked: the PKID payload carries the PKID magic
+[sv2/S2/acked] substate=acked probe_in_flight=0 rejected_rows=0 generation=1 fire_sequence=1 effect_applied=true last_acked=1
+  [PASS] S2/acked: the structural transaction has RESOLVED at this point
+  [PASS] S2/acked: the ACK is latched on the instance
+  [PASS] continuous: effect day 1 completes
+  [PASS] continuous: the structural intent is re-issued for generation 2
+  [PASS] %s: a bump with nothing in flight rejects nothing (control on the attribution above)
+  [PASS] continuous: effect day 2 completes
+  [PASS] continuous: the structural intent is re-issued for generation 3
+  [PASS] continuous: the generation bump REJECTED the in-flight structural transaction
+[sv2/continuous] supersession: in_flight 1->0, rejected rows 0->1
+  [PASS] the pre-retry PKEF payload is produced
+  [PASS] continuous: effect day 3 completes
+  [PASS] S3/rejected: PKEF payload is produced
+  [PASS] S3/rejected: PKID payload is produced
+  [PASS] S3/rejected: the PKEF payload carries the PKEF magic
+  [PASS] S3/rejected: the PKID payload carries the PKID magic
+[sv2/S3/rejected] substate=rejected probe_in_flight=1 rejected_rows=1 generation=3 fire_sequence=1 effect_applied=false last_acked=0
+  [PASS] S3/rejected: the structural transaction is REJECTED at this point
+  [PASS] S3/rejected: the rejected intent left no applied state and was re-issued
+  [PASS] S3/rejected: the re-issued intent is a fresh PLANNED transaction
+  [PASS] continuous: effect day 4 completes
+  [PASS] continuous: ideology day 1 completes
+  [PASS] continuous: ideology day 2 completes
+  [PASS] continuous: the derived rebuild has no work left after day 2
+  [PASS] continuous-final: the runtime HAS a derived cell layer
+  [PASS] continuous-final: the layer covers exactly the owned cells x 2 stats
+  [PASS] continuous-final: the layer carries the expected contribution count
+  [PASS] continuous-final: a covered cell carries a derived contribution
+  [PASS] continuous-final: a covered cell's merged value leaves the identity base
+  [PASS] continuous-final: an unowned cell stays at the identity base
+  [PASS] continuous-final: the card's persistent program evaluates
+  [PASS] continuous-final: the covered add equals the program magnitude / Q16 (0.05000305)
+[sv2/continuous-final] layer cells=84 contributions=84 day=1 generation=1
+  [PASS] continuous-final: the economy reached the last continued day
+[sv2/continuous-final] transaction probe_in_flight=1 rejected_rows=1 acked_rows=0 probe_ids=[4]
+[sv2/continuous-final] probe generation=3 fire=1 applied=false last_acked=0
+[sv2/continuous-final] business hash=-2357219149114660063 points=3327108173056332417 ideas=-6581699936365684108 instances=0 pending=0
+[sv2/continuous-final] audit available=true pop_err=0 money_err=0 goods_err=0
+[sv2/continuous-final] per-cell fingerprint=b80012bf59ac2a4305fc133160127aec9649653116549a8b88eda9894210475b
+[sv2/continuous-final] first 8 cells (present/value, economy.city.birth_factor)=0:0/1.00000000, 1:1/1.05000305, 2:1/1.05000305, 3:0/1.00000000, 4:1/1.05000305, 5:1/1.05000305, 6:0/1.00000000, 7:1/1.05000305
+  [PASS] reload-S1: economy configures
+  [PASS] reload-S1: effects configure
+  [PASS] reload-S1: modifiers configure
+  [PASS] reload-S1: country configures
+  [PASS] reload-S1: the fixture territory is a proper subset of the grid
+  [PASS] reload-S1: the country bootstraps
+  [PASS] reload-S1: ideologies configure
+  [PASS] reload-S1: bootstrap_country registered exactly the intended territory
+  [PASS] reload-S1: the economy epoch opens
+  [PASS] reload-S1: the fixture resolves both bootstrap signatures
+  [PASS] reload-S1: the economy bootstraps
+  [PASS] reload-S1: economy day 0 reaches its committed boundary
+  [PASS] reload-S1: the fixture resolves the country handle
+  [PASS] reload-S1: PKEF restores into a freshly built runtime
+  [PASS] reload-S1: PKID restores into a freshly built runtime
+[sv2/reload-S1] substate=pending probe_in_flight=1 rejected_rows=0 generation=1 fire_sequence=1 effect_applied=false last_acked=0
+  [PASS] reload-S1: the structural transaction is PENDING at this point
+  [PASS] reload-S1: the pending row is PLANNED, waits for mask 1 and carries the program's value
+  [PASS] reload-S1: no ACK has been latched yet
+  [PASS] reload-S1: exactly one probe transaction is in flight before the ACK
+  [PASS] reload-S1: the in-flight transaction is PLANNED with a real ACK mask
+  [PASS] reload-S1: an ACK straight from PLANNED is refused
+  [PASS] reload-S1: the structural transaction preflights
+  [PASS] reload-S1: the structural transaction commits
+  [PASS] reload-S1: the structural transaction is ACKed
+  [PASS] reload-S1: effect day 1 completes
+  [PASS] reload-S1: the structural intent is re-issued for generation 2
+  [PASS] %s: a bump with nothing in flight rejects nothing (control on the attribution above)
+  [PASS] reload-S1: effect day 2 completes
+  [PASS] reload-S1: the structural intent is re-issued for generation 3
+  [PASS] reload-S1: the generation bump REJECTED the in-flight structural transaction
+[sv2/reload-S1] supersession: in_flight 1->0, rejected rows 0->1
+  [PASS] reload-S1: effect day 3 completes
+  [PASS] reload-S1: effect day 4 completes
+  [PASS] reload-S1: ideology day 1 completes
+  [PASS] reload-S1: ideology day 2 completes
+  [PASS] reload-S1: the derived rebuild has no work left after day 2
+  [PASS] reload-S1-final: the runtime HAS a derived cell layer
+  [PASS] reload-S1-final: the layer covers exactly the owned cells x 2 stats
+  [PASS] reload-S1-final: the layer carries the expected contribution count
+  [PASS] reload-S1-final: a covered cell carries a derived contribution
+  [PASS] reload-S1-final: a covered cell's merged value leaves the identity base
+  [PASS] reload-S1-final: an unowned cell stays at the identity base
+  [PASS] reload-S1-final: the card's persistent program evaluates
+  [PASS] reload-S1-final: the covered add equals the program magnitude / Q16 (0.05000305)
+[sv2/reload-S1-final] layer cells=84 contributions=84 day=1 generation=1
+  [PASS] reload-S1-final: the economy reached the last continued day
+[sv2/reload-S1-final] transaction probe_in_flight=1 rejected_rows=1 acked_rows=0 probe_ids=[4]
+[sv2/reload-S1-final] probe generation=3 fire=1 applied=false last_acked=0
+[sv2/reload-S1-final] business hash=-2357219149114660063 points=3327108173056332417 ideas=-6581699936365684108 instances=0 pending=0
+[sv2/reload-S1-final] audit available=true pop_err=0 money_err=0 goods_err=0
+[sv2/reload-S1-final] per-cell fingerprint=b80012bf59ac2a4305fc133160127aec9649653116549a8b88eda9894210475b
+[sv2/reload-S1-final] first 8 cells (present/value, economy.city.birth_factor)=0:0/1.00000000, 1:1/1.05000305, 2:1/1.05000305, 3:0/1.00000000, 4:1/1.05000305, 5:1/1.05000305, 6:0/1.00000000, 7:1/1.05000305
+  [PASS] S1(pending): economy.city.birth_factor derived presence matches on every one of 64 cells
+  [PASS] S1(pending): economy.city.birth_factor derived add matches EXACTLY on every cell
+  [PASS] S1(pending): economy.city.birth_factor effective value matches EXACTLY on every cell
+  [PASS] S1(pending): economy.city.need.housing.consumption_factor derived presence matches on every one of 64 cells
+  [PASS] S1(pending): economy.city.need.housing.consumption_factor derived add matches EXACTLY on every cell
+  [PASS] S1(pending): economy.city.need.housing.consumption_factor effective value matches EXACTLY on every cell
+  [PASS] S1(pending): the per-cell fingerprint hash is identical
+  [PASS] S1(pending): ideology business state hash matches
+  [PASS] S1(pending): business section points matches
+  [PASS] S1(pending): business section baseline matches
+  [PASS] S1(pending): business section history matches
+  [PASS] S1(pending): business section draw matches
+  [PASS] S1(pending): business section bits matches
+  [PASS] S1(pending): business section offer matches
+  [PASS] S1(pending): business section ideas matches
+  [PASS] S1(pending): the card is equipped (IDEOLOGY slot) on both sides
+  [PASS] S1(pending): the equipped card keeps the same level and understanding
+  [PASS] S1(pending): no ideology command is left pending in either run
+  [PASS] S1(pending): both runs carry the same in-flight transition count
+  [PASS] S1(pending): the rejected row count matches on both sides
+  [PASS] S1(pending): the same number of Effect transactions is still in flight
+  [PASS] S1(pending): the same number of probe transactions is still in flight
+  [PASS] S1(pending): the in-flight probe ids, statuses and masks match
+  [PASS] S1(pending): the in-flight plan hashes and command values match
+  [PASS] S1(pending): the in-flight idempotency keys match (no duplicate intent)
+  [PASS] S1(pending): the probe fired the same number of times (one-shot count)
+  [PASS] S1(pending): the probe latched the same ACK count and applied state
+  [PASS] S1(pending): the probe instance is on the same generation and due day
+  [PASS] S1(pending): one-shot effect instance count is 0 in both runs (I01)
+  [PASS] S1(pending): both runs advanced the economy to the same committed day
+  [PASS] S1(pending): the committed economy audit is available on both sides
+  [PASS] S1(pending): economy conservation errors are 0 on both sides
+  [PASS] reload-S2: economy configures
+  [PASS] reload-S2: effects configure
+  [PASS] reload-S2: modifiers configure
+  [PASS] reload-S2: country configures
+  [PASS] reload-S2: the fixture territory is a proper subset of the grid
+  [PASS] reload-S2: the country bootstraps
+  [PASS] reload-S2: ideologies configure
+  [PASS] reload-S2: bootstrap_country registered exactly the intended territory
+  [PASS] reload-S2: the economy epoch opens
+  [PASS] reload-S2: the fixture resolves both bootstrap signatures
+  [PASS] reload-S2: the economy bootstraps
+  [PASS] reload-S2: economy day 0 reaches its committed boundary
+  [PASS] reload-S2: the fixture resolves the country handle
+  [PASS] reload-S2: PKEF restores into a freshly built runtime
+  [PASS] reload-S2: PKID restores into a freshly built runtime
+[sv2/reload-S2] substate=acked probe_in_flight=0 rejected_rows=0 generation=1 fire_sequence=1 effect_applied=true last_acked=1
+  [PASS] reload-S2: the structural transaction has RESOLVED at this point
+  [PASS] reload-S2: the ACK is latched on the instance
+  [PASS] reload-S2: effect day 1 completes
+  [PASS] reload-S2: the structural intent is re-issued for generation 2
+  [PASS] %s: a bump with nothing in flight rejects nothing (control on the attribution above)
+  [PASS] reload-S2: effect day 2 completes
+  [PASS] reload-S2: the structural intent is re-issued for generation 3
+  [PASS] reload-S2: the generation bump REJECTED the in-flight structural transaction
+[sv2/reload-S2] supersession: in_flight 1->0, rejected rows 0->1
+  [PASS] reload-S2: effect day 3 completes
+  [PASS] reload-S2: effect day 4 completes
+  [PASS] reload-S2: ideology day 1 completes
+  [PASS] reload-S2: ideology day 2 completes
+  [PASS] reload-S2: the derived rebuild has no work left after day 2
+  [PASS] reload-S2-final: the runtime HAS a derived cell layer
+  [PASS] reload-S2-final: the layer covers exactly the owned cells x 2 stats
+  [PASS] reload-S2-final: the layer carries the expected contribution count
+  [PASS] reload-S2-final: a covered cell carries a derived contribution
+  [PASS] reload-S2-final: a covered cell's merged value leaves the identity base
+  [PASS] reload-S2-final: an unowned cell stays at the identity base
+  [PASS] reload-S2-final: the card's persistent program evaluates
+  [PASS] reload-S2-final: the covered add equals the program magnitude / Q16 (0.05000305)
+[sv2/reload-S2-final] layer cells=84 contributions=84 day=1 generation=1
+  [PASS] reload-S2-final: the economy reached the last continued day
+[sv2/reload-S2-final] transaction probe_in_flight=1 rejected_rows=1 acked_rows=0 probe_ids=[4]
+[sv2/reload-S2-final] probe generation=3 fire=1 applied=false last_acked=0
+[sv2/reload-S2-final] business hash=-2357219149114660063 points=3327108173056332417 ideas=-6581699936365684108 instances=0 pending=0
+[sv2/reload-S2-final] audit available=true pop_err=0 money_err=0 goods_err=0
+[sv2/reload-S2-final] per-cell fingerprint=b80012bf59ac2a4305fc133160127aec9649653116549a8b88eda9894210475b
+[sv2/reload-S2-final] first 8 cells (present/value, economy.city.birth_factor)=0:0/1.00000000, 1:1/1.05000305, 2:1/1.05000305, 3:0/1.00000000, 4:1/1.05000305, 5:1/1.05000305, 6:0/1.00000000, 7:1/1.05000305
+  [PASS] S2(acked): economy.city.birth_factor derived presence matches on every one of 64 cells
+  [PASS] S2(acked): economy.city.birth_factor derived add matches EXACTLY on every cell
+  [PASS] S2(acked): economy.city.birth_factor effective value matches EXACTLY on every cell
+  [PASS] S2(acked): economy.city.need.housing.consumption_factor derived presence matches on every one of 64 cells
+  [PASS] S2(acked): economy.city.need.housing.consumption_factor derived add matches EXACTLY on every cell
+  [PASS] S2(acked): economy.city.need.housing.consumption_factor effective value matches EXACTLY on every cell
+  [PASS] S2(acked): the per-cell fingerprint hash is identical
+  [PASS] S2(acked): ideology business state hash matches
+  [PASS] S2(acked): business section points matches
+  [PASS] S2(acked): business section baseline matches
+  [PASS] S2(acked): business section history matches
+  [PASS] S2(acked): business section draw matches
+  [PASS] S2(acked): business section bits matches
+  [PASS] S2(acked): business section offer matches
+  [PASS] S2(acked): business section ideas matches
+  [PASS] S2(acked): the card is equipped (IDEOLOGY slot) on both sides
+  [PASS] S2(acked): the equipped card keeps the same level and understanding
+  [PASS] S2(acked): no ideology command is left pending in either run
+  [PASS] S2(acked): both runs carry the same in-flight transition count
+  [PASS] S2(acked): the rejected row count matches on both sides
+  [PASS] S2(acked): the same number of Effect transactions is still in flight
+  [PASS] S2(acked): the same number of probe transactions is still in flight
+  [PASS] S2(acked): the in-flight probe ids, statuses and masks match
+  [PASS] S2(acked): the in-flight plan hashes and command values match
+  [PASS] S2(acked): the in-flight idempotency keys match (no duplicate intent)
+  [PASS] S2(acked): the probe fired the same number of times (one-shot count)
+  [PASS] S2(acked): the probe latched the same ACK count and applied state
+  [PASS] S2(acked): the probe instance is on the same generation and due day
+  [PASS] S2(acked): one-shot effect instance count is 0 in both runs (I01)
+  [PASS] S2(acked): both runs advanced the economy to the same committed day
+  [PASS] S2(acked): the committed economy audit is available on both sides
+  [PASS] S2(acked): economy conservation errors are 0 on both sides
+  [PASS] reload-S3: economy configures
+  [PASS] reload-S3: effects configure
+  [PASS] reload-S3: modifiers configure
+  [PASS] reload-S3: country configures
+  [PASS] reload-S3: the fixture territory is a proper subset of the grid
+  [PASS] reload-S3: the country bootstraps
+  [PASS] reload-S3: ideologies configure
+  [PASS] reload-S3: bootstrap_country registered exactly the intended territory
+  [PASS] reload-S3: the economy epoch opens
+  [PASS] reload-S3: the fixture resolves both bootstrap signatures
+  [PASS] reload-S3: the economy bootstraps
+  [PASS] reload-S3: economy day 0 reaches its committed boundary
+  [PASS] reload-S3: the fixture resolves the country handle
+  [PASS] reload-S3: PKEF restores into a freshly built runtime
+  [PASS] reload-S3: PKID restores into a freshly built runtime
+[sv2/reload-S3] substate=rejected probe_in_flight=1 rejected_rows=1 generation=3 fire_sequence=1 effect_applied=false last_acked=0
+  [PASS] reload-S3: the structural transaction is REJECTED at this point
+  [PASS] reload-S3: the rejected intent left no applied state and was re-issued
+  [PASS] reload-S3: the re-issued intent is a fresh PLANNED transaction
+  [PASS] reload-S3: effect day 4 completes
+  [PASS] reload-S3: ideology day 1 completes
+  [PASS] reload-S3: ideology day 2 completes
+  [PASS] reload-S3: the derived rebuild has no work left after day 2
+  [PASS] reload-S3-final: the runtime HAS a derived cell layer
+  [PASS] reload-S3-final: the layer covers exactly the owned cells x 2 stats
+  [PASS] reload-S3-final: the layer carries the expected contribution count
+  [PASS] reload-S3-final: a covered cell carries a derived contribution
+  [PASS] reload-S3-final: a covered cell's merged value leaves the identity base
+  [PASS] reload-S3-final: an unowned cell stays at the identity base
+  [PASS] reload-S3-final: the card's persistent program evaluates
+  [PASS] reload-S3-final: the covered add equals the program magnitude / Q16 (0.05000305)
+[sv2/reload-S3-final] layer cells=84 contributions=84 day=1 generation=1
+  [PASS] reload-S3-final: the economy reached the last continued day
+[sv2/reload-S3-final] transaction probe_in_flight=1 rejected_rows=1 acked_rows=0 probe_ids=[4]
+[sv2/reload-S3-final] probe generation=3 fire=1 applied=false last_acked=0
+[sv2/reload-S3-final] business hash=-2357219149114660063 points=3327108173056332417 ideas=-6581699936365684108 instances=0 pending=0
+[sv2/reload-S3-final] audit available=true pop_err=0 money_err=0 goods_err=0
+[sv2/reload-S3-final] per-cell fingerprint=b80012bf59ac2a4305fc133160127aec9649653116549a8b88eda9894210475b
+[sv2/reload-S3-final] first 8 cells (present/value, economy.city.birth_factor)=0:0/1.00000000, 1:1/1.05000305, 2:1/1.05000305, 3:0/1.00000000, 4:1/1.05000305, 5:1/1.05000305, 6:0/1.00000000, 7:1/1.05000305
+  [PASS] S3(rejected): economy.city.birth_factor derived presence matches on every one of 64 cells
+  [PASS] S3(rejected): economy.city.birth_factor derived add matches EXACTLY on every cell
+  [PASS] S3(rejected): economy.city.birth_factor effective value matches EXACTLY on every cell
+  [PASS] S3(rejected): economy.city.need.housing.consumption_factor derived presence matches on every one of 64 cells
+  [PASS] S3(rejected): economy.city.need.housing.consumption_factor derived add matches EXACTLY on every cell
+  [PASS] S3(rejected): economy.city.need.housing.consumption_factor effective value matches EXACTLY on every cell
+  [PASS] S3(rejected): the per-cell fingerprint hash is identical
+  [PASS] S3(rejected): ideology business state hash matches
+  [PASS] S3(rejected): business section points matches
+  [PASS] S3(rejected): business section baseline matches
+  [PASS] S3(rejected): business section history matches
+  [PASS] S3(rejected): business section draw matches
+  [PASS] S3(rejected): business section bits matches
+  [PASS] S3(rejected): business section offer matches
+  [PASS] S3(rejected): business section ideas matches
+  [PASS] S3(rejected): the card is equipped (IDEOLOGY slot) on both sides
+  [PASS] S3(rejected): the equipped card keeps the same level and understanding
+  [PASS] S3(rejected): no ideology command is left pending in either run
+  [PASS] S3(rejected): both runs carry the same in-flight transition count
+  [PASS] S3(rejected): the rejected row count matches on both sides
+  [PASS] S3(rejected): the same number of Effect transactions is still in flight
+  [PASS] S3(rejected): the same number of probe transactions is still in flight
+  [PASS] S3(rejected): the in-flight probe ids, statuses and masks match
+  [PASS] S3(rejected): the in-flight plan hashes and command values match
+  [PASS] S3(rejected): the in-flight idempotency keys match (no duplicate intent)
+  [PASS] S3(rejected): the probe fired the same number of times (one-shot count)
+  [PASS] S3(rejected): the probe latched the same ACK count and applied state
+  [PASS] S3(rejected): the probe instance is on the same generation and due day
+  [PASS] S3(rejected): one-shot effect instance count is 0 in both runs (I01)
+  [PASS] S3(rejected): both runs advanced the economy to the same committed day
+  [PASS] S3(rejected): the committed economy audit is available on both sides
+  [PASS] S3(rejected): economy conservation errors are 0 on both sides
+[sv2/NEG1] restoring the S1 (pending) payload but continuing with the S3 (rejected) script
+  [PASS] neg1: economy configures
+  [PASS] neg1: effects configure
+  [PASS] neg1: modifiers configure
+  [PASS] neg1: country configures
+  [PASS] neg1: the fixture territory is a proper subset of the grid
+  [PASS] neg1: the country bootstraps
+  [PASS] neg1: ideologies configure
+  [PASS] neg1: bootstrap_country registered exactly the intended territory
+  [PASS] neg1: the economy epoch opens
+  [PASS] neg1: the fixture resolves both bootstrap signatures
+  [PASS] neg1: the economy bootstraps
+  [PASS] neg1: economy day 0 reaches its committed boundary
+  [PASS] neg1: the fixture resolves the country handle
+  [PASS] neg1: PKEF restores into a freshly built runtime
+  [PASS] neg1: PKID restores into a freshly built runtime
+  [PASS] neg1: effect day 4 completes
+  [PASS] neg1: ideology day 1 completes
+  [PASS] neg1: ideology day 2 completes
+  [PASS] neg1: the derived rebuild has no work left after day 2
+  [PASS] neg1-final: the runtime HAS a derived cell layer
+  [PASS] neg1-final: the layer covers exactly the owned cells x 2 stats
+  [PASS] neg1-final: the layer carries the expected contribution count
+  [PASS] neg1-final: a covered cell carries a derived contribution
+  [PASS] neg1-final: a covered cell's merged value leaves the identity base
+  [PASS] neg1-final: an unowned cell stays at the identity base
+  [PASS] neg1-final: the card's persistent program evaluates
+  [PASS] neg1-final: the covered add equals the program magnitude / Q16 (0.05000305)
+[sv2/neg1-final] layer cells=84 contributions=84 day=1 generation=1
+  [PASS] neg1-final: the economy reached the last continued day
+[sv2/neg1-final] transaction probe_in_flight=1 rejected_rows=0 acked_rows=0 probe_ids=[2]
+[sv2/neg1-final] probe generation=1 fire=1 applied=false last_acked=0
+[sv2/neg1-final] business hash=-2357219149114660063 points=3327108173056332417 ideas=-6581699936365684108 instances=0 pending=0
+[sv2/neg1-final] audit available=true pop_err=0 money_err=0 goods_err=0
+[sv2/neg1-final] per-cell fingerprint=b80012bf59ac2a4305fc133160127aec9649653116549a8b88eda9894210475b
+[sv2/neg1-final] first 8 cells (present/value, economy.city.birth_factor)=0:0/1.00000000, 1:1/1.05000305, 2:1/1.05000305, 3:0/1.00000000, 4:1/1.05000305, 5:1/1.05000305, 6:0/1.00000000, 7:1/1.05000305
+  [PASS] NEG1(wrong payload): economy.city.birth_factor derived presence matches on every one of 64 cells
+  [PASS] NEG1(wrong payload): economy.city.birth_factor derived add matches EXACTLY on every cell
+  [PASS] NEG1(wrong payload): economy.city.birth_factor effective value matches EXACTLY on every cell
+  [PASS] NEG1(wrong payload): economy.city.need.housing.consumption_factor derived presence matches on every one of 64 cells
+  [PASS] NEG1(wrong payload): economy.city.need.housing.consumption_factor derived add matches EXACTLY on every cell
+  [PASS] NEG1(wrong payload): economy.city.need.housing.consumption_factor effective value matches EXACTLY on every cell
+  [PASS] NEG1(wrong payload): the per-cell fingerprint hash is identical
+  [PASS] NEG1(wrong payload): ideology business state hash matches
+  [PASS] NEG1(wrong payload): business section points matches
+  [PASS] NEG1(wrong payload): business section baseline matches
+  [PASS] NEG1(wrong payload): business section history matches
+  [PASS] NEG1(wrong payload): business section draw matches
+  [PASS] NEG1(wrong payload): business section bits matches
+  [PASS] NEG1(wrong payload): business section offer matches
+  [PASS] NEG1(wrong payload): business section ideas matches
+  [PASS] NEG1(wrong payload): the card is equipped (IDEOLOGY slot) on both sides
+  [PASS] NEG1(wrong payload): the equipped card keeps the same level and understanding
+  [PASS] NEG1(wrong payload): no ideology command is left pending in either run
+  [PASS] NEG1(wrong payload): both runs carry the same in-flight transition count
+  [FAIL] NEG1(wrong payload): the rejected row count matches on both sides 1 vs 0
+  [PASS] NEG1(wrong payload): the same number of Effect transactions is still in flight
+  [PASS] NEG1(wrong payload): the same number of probe transactions is still in flight
+  [FAIL] NEG1(wrong payload): the in-flight probe ids, statuses and masks match [4] vs [2]
+  [FAIL] NEG1(wrong payload): the in-flight plan hashes and command values match [-7246671395363875412] vs [-2848259821357394789]
+  [FAIL] NEG1(wrong payload): the in-flight idempotency keys match (no duplicate intent) [-2484248736007191039] vs [8899773120194164355]
+  [PASS] NEG1(wrong payload): the probe fired the same number of times (one-shot count)
+  [PASS] NEG1(wrong payload): the probe latched the same ACK count and applied state
+  [FAIL] NEG1(wrong payload): the probe instance is on the same generation and due day gen 3/1 due 5/5
+  [PASS] NEG1(wrong payload): one-shot effect instance count is 0 in both runs (I01)
+  [PASS] NEG1(wrong payload): both runs advanced the economy to the same committed day
+  [PASS] NEG1(wrong payload): the committed economy audit is available on both sides
+  [PASS] NEG1(wrong payload): economy conservation errors are 0 on both sides
+  [PASS] NEG1: continuing a PENDING payload with the rejected-state script is detected by the comparison
+[sv2/NEG1] comparison checks=32 failures=5
+[sv2/FINDING] a PKEF captured between the supersession rejection and the retry fire restores=true reason={ "ok": true, "instances": 1, "transactions": 1 }
+  [PASS] the pre-retry REJECTED payload either restores or is refused with pkef_transaction_transition_invalid
+[sv2/NEG2] restoring the S1 payload and running the continuation WITHOUT any ideology day
+  [PASS] neg2: economy configures
+  [PASS] neg2: effects configure
+  [PASS] neg2: modifiers configure
+  [PASS] neg2: country configures
+  [PASS] neg2: the fixture territory is a proper subset of the grid
+  [PASS] neg2: the country bootstraps
+  [PASS] neg2: ideologies configure
+  [PASS] neg2: bootstrap_country registered exactly the intended territory
+  [PASS] neg2: the economy epoch opens
+  [PASS] neg2: the fixture resolves both bootstrap signatures
+  [PASS] neg2: the economy bootstraps
+  [PASS] neg2: economy day 0 reaches its committed boundary
+  [PASS] neg2: the fixture resolves the country handle
+  [PASS] neg2: PKEF restores into a freshly built runtime
+  [PASS] neg2: PKID restores into a freshly built runtime
+  [PASS] neg2: exactly one probe transaction is in flight before the ACK
+  [PASS] neg2: the in-flight transaction is PLANNED with a real ACK mask
+  [PASS] neg2: an ACK straight from PLANNED is refused
+  [PASS] neg2: the structural transaction preflights
+  [PASS] neg2: the structural transaction commits
+  [PASS] neg2: the structural transaction is ACKed
+  [PASS] neg2: effect day 1 completes
+  [PASS] neg2: the structural intent is re-issued for generation 2
+  [PASS] %s: a bump with nothing in flight rejects nothing (control on the attribution above)
+  [PASS] neg2: effect day 2 completes
+  [PASS] neg2: the structural intent is re-issued for generation 3
+  [PASS] neg2: the generation bump REJECTED the in-flight structural transaction
+[sv2/neg2] supersession: in_flight 1->0, rejected rows 0->1
+  [PASS] neg2: effect day 3 completes
+  [PASS] neg2: effect day 4 completes
+  [FAIL] neg2-final: the runtime HAS a derived cell layer installed=false cells=0
+  [FAIL] neg2-final: the layer covers exactly the owned cells x 2 stats 0 vs 84
+  [FAIL] neg2-final: the layer carries the expected contribution count 0 vs 84
+  [FAIL] neg2-final: a covered cell carries a derived contribution { "ok": true, "stat_id": 10, "value": 1.0, "derived_present": false }
+  [FAIL] neg2-final: a covered cell's merged value leaves the identity base 1.0
+  [PASS] neg2-final: an unowned cell stays at the identity base
+  [PASS] neg2-final: the card's persistent program evaluates
+  [FAIL] neg2-final: the covered add equals the program magnitude / Q16 (0.05000305) derived=0.00000000 expected=0.05000305
+[sv2/neg2-final] layer cells=0 contributions=? day=? generation=0
+  [PASS] neg2-final: the economy reached the last continued day
+[sv2/neg2-final] transaction probe_in_flight=1 rejected_rows=1 acked_rows=0 probe_ids=[4]
+[sv2/neg2-final] probe generation=3 fire=1 applied=false last_acked=0
+[sv2/neg2-final] business hash=-3083176044961334701 points=3327108173056332417 ideas=5866363051466295595 instances=0 pending=0
+[sv2/neg2-final] audit available=true pop_err=0 money_err=0 goods_err=0
+[sv2/neg2-final] per-cell fingerprint=265ad164871ed597cec0e22d278b61ff3773212a5fb9b124f0009391cc788977
+[sv2/neg2-final] first 8 cells (present/value, economy.city.birth_factor)=0:0/1.00000000, 1:0/1.00000000, 2:0/1.00000000, 3:0/1.00000000, 4:0/1.00000000, 5:0/1.00000000, 6:0/1.00000000, 7:0/1.00000000
+  [FAIL] NEG2(no rebuild): economy.city.birth_factor derived presence matches on every one of 64 cells mismatches=42 first=1
+  [FAIL] NEG2(no rebuild): economy.city.birth_factor derived add matches EXACTLY on every cell mismatches=42 first=1 max_abs_diff=0.050003051758
+  [FAIL] NEG2(no rebuild): economy.city.birth_factor effective value matches EXACTLY on every cell mismatches=42 first=1 max_abs_diff=0.050003051758
+  [FAIL] NEG2(no rebuild): economy.city.need.housing.consumption_factor derived presence matches on every one of 64 cells mismatches=42 first=1
+  [FAIL] NEG2(no rebuild): economy.city.need.housing.consumption_factor derived add matches EXACTLY on every cell mismatches=42 first=1 max_abs_diff=0.080001831055
+  [FAIL] NEG2(no rebuild): economy.city.need.housing.consumption_factor effective value matches EXACTLY on every cell mismatches=42 first=1 max_abs_diff=0.080001831055
+  [FAIL] NEG2(no rebuild): the per-cell fingerprint hash is identical b80012bf59ac2a4305fc133160127aec9649653116549a8b88eda9894210475b vs 265ad164871ed597cec0e22d278b61ff3773212a5fb9b124f0009391cc788977
+  [FAIL] NEG2(no rebuild): ideology business state hash matches -2357219149114660063 vs -3083176044961334701
+  [PASS] NEG2(no rebuild): business section points matches
+  [PASS] NEG2(no rebuild): business section baseline matches
+  [PASS] NEG2(no rebuild): business section history matches
+  [PASS] NEG2(no rebuild): business section draw matches
+  [PASS] NEG2(no rebuild): business section bits matches
+  [PASS] NEG2(no rebuild): business section offer matches
+  [FAIL] NEG2(no rebuild): business section ideas matches -6581699936365684108 vs 5866363051466295595
+  [PASS] NEG2(no rebuild): the card is equipped (IDEOLOGY slot) on both sides
+  [FAIL] NEG2(no rebuild): the equipped card keeps the same level and understanding [0] / [615] vs [0] / [410]
+  [PASS] NEG2(no rebuild): no ideology command is left pending in either run
+  [PASS] NEG2(no rebuild): both runs carry the same in-flight transition count
+  [PASS] NEG2(no rebuild): the rejected row count matches on both sides
+  [PASS] NEG2(no rebuild): the same number of Effect transactions is still in flight
+  [PASS] NEG2(no rebuild): the same number of probe transactions is still in flight
+  [PASS] NEG2(no rebuild): the in-flight probe ids, statuses and masks match
+  [PASS] NEG2(no rebuild): the in-flight plan hashes and command values match
+  [PASS] NEG2(no rebuild): the in-flight idempotency keys match (no duplicate intent)
+  [PASS] NEG2(no rebuild): the probe fired the same number of times (one-shot count)
+  [PASS] NEG2(no rebuild): the probe latched the same ACK count and applied state
+  [PASS] NEG2(no rebuild): the probe instance is on the same generation and due day
+  [PASS] NEG2(no rebuild): one-shot effect instance count is 0 in both runs (I01)
+  [PASS] NEG2(no rebuild): both runs advanced the economy to the same committed day
+  [PASS] NEG2(no rebuild): the committed economy audit is available on both sides
+  [PASS] NEG2(no rebuild): economy conservation errors are 0 on both sides
+  [PASS] NEG2: a reload that never rebuilds the derived front is detected on the per-cell columns
+[sv2/NEG2] comparison checks=32 failures=10
+=== ideology save at structural transaction states (§11.7 time point 2): 320 checks, 0 failures ===
+[economy-open-finish] day=0 country=0.411 workset=0.033 fiscal=0.022 csr=0.000 recovery=0.001 vectors=0.102 audit=0.028 commands=0.005
+[research-procure-diag] day=0 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0003 new=0.0003 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0001 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=42/42 took=0.0107 cells=84 commands=84
+[probe] AB old_first=1 old=0.0049 new=0.0041 rows=84
+[probe] finish scratch=0.0001 emit=0.0102 versions=0.0149 builder_install=0.0003 digest=0.0000 total=0.0255 rows=84 stats=2
+[research-procure-diag] day=1 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=42/42 took=0.0075 cells=84 commands=84
+[probe] AB old_first=0 old=0.0040 new=0.0038 rows=84
+[probe] finish scratch=0.0001 emit=0.0095 versions=0.0141 builder_install=0.0002 digest=0.0006 total=0.0245 rows=84 stats=2
+[research-procure-diag] day=2 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=42/42 took=0.0078 cells=84 commands=84
+[probe] AB old_first=1 old=0.0049 new=0.0035 rows=84
+[probe] finish scratch=0.0000 emit=0.0083 versions=0.0148 builder_install=0.0003 digest=0.0007 total=0.0241 rows=84 stats=2
+[economy-open-finish] day=0 country=0.826 workset=0.032 fiscal=0.009 csr=0.000 recovery=0.000 vectors=0.041 audit=0.025 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=42/42 took=0.0079 cells=84 commands=84
+[probe] AB old_first=0 old=0.0056 new=0.0075 rows=84
+[probe] finish scratch=0.0000 emit=0.0095 versions=0.0191 builder_install=0.0002 digest=0.0000 total=0.0288 rows=84 stats=2
+[research-procure-diag] day=2 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=42/42 took=0.0071 cells=84 commands=84
+[probe] AB old_first=1 old=0.0060 new=0.0057 rows=84
+[probe] finish scratch=0.0001 emit=0.0085 versions=0.0176 builder_install=0.0002 digest=0.0006 total=0.0270 rows=84 stats=2
+[economy-open-finish] day=0 country=0.407 workset=0.051 fiscal=0.016 csr=0.000 recovery=0.000 vectors=0.036 audit=0.024 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=42/42 took=0.0091 cells=84 commands=84
+[probe] AB old_first=0 old=0.0043 new=0.0039 rows=84
+[probe] finish scratch=0.0000 emit=0.0080 versions=0.0127 builder_install=0.0003 digest=0.0000 total=0.0210 rows=84 stats=2
+[research-procure-diag] day=2 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=42/42 took=0.0097 cells=84 commands=84
+[probe] AB old_first=1 old=0.0042 new=0.0032 rows=84
+[probe] finish scratch=0.0000 emit=0.0084 versions=0.0136 builder_install=0.0004 digest=0.0006 total=0.0230 rows=84 stats=2
+[economy-open-finish] day=0 country=0.491 workset=0.033 fiscal=0.007 csr=0.000 recovery=0.000 vectors=0.041 audit=0.024 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=42/42 took=0.0073 cells=84 commands=84
+[probe] AB old_first=0 old=0.0041 new=0.0037 rows=84
+[probe] finish scratch=0.0001 emit=0.0079 versions=0.0151 builder_install=0.0003 digest=0.0000 total=0.0234 rows=84 stats=2
+[research-procure-diag] day=2 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=42/42 took=0.0076 cells=84 commands=84
+[probe] AB old_first=1 old=0.0044 new=0.0033 rows=84
+[probe] finish scratch=0.0000 emit=0.0088 versions=0.0149 builder_install=0.0003 digest=0.0006 total=0.0246 rows=84 stats=2
+[economy-open-finish] day=0 country=0.438 workset=0.036 fiscal=0.013 csr=0.000 recovery=0.000 vectors=0.035 audit=0.025 commands=0.001
+[probe] fold step cursor=42/42 took=0.0073 cells=84 commands=84
+[probe] AB old_first=0 old=0.0040 new=0.0119 rows=84
+[probe] finish scratch=0.0001 emit=0.0078 versions=0.0215 builder_install=0.0002 digest=0.0000 total=0.0296 rows=84 stats=2
+[probe] fold step cursor=42/42 took=0.0071 cells=84 commands=84
+[probe] AB old_first=1 old=0.0041 new=0.0035 rows=84
+[probe] finish scratch=0.0000 emit=0.0101 versions=0.0129 builder_install=0.0002 digest=0.0009 total=0.0241 rows=84 stats=2
+[economy-open-finish] day=0 country=0.406 workset=0.032 fiscal=0.015 csr=0.000 recovery=0.000 vectors=0.066 audit=0.023 commands=0.002
+ERROR: 19 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 635 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

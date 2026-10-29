@@ -1,5 +1,33 @@
 # Performance Diagnostics Playbook
 
+## 2026-10-28 派生地块层的诊断口径
+
+理念派生层（plan 22）新增了一组计数器。**它们的「是累积量还是本次运行量」不一致**，
+这是排查时最容易踩的坑：
+
+| 计数器 | 语义 | 能不能用来判断「有没有做事」|
+|---|---|---|
+| `layer_generation`（来自 `get_derived_cell_layer_report`）| 已安装 front 的版本号，**跨重建单调增** | **能**：无内容变化时冻结 |
+| `sample_day`（同上）| 该 front 是从哪一天建的 | **能**：没有重建就完全不动 |
+| `cell_layer_rebuild_steps` | **本次运行的步数**，会变小 | **不能**：实测在 13–17 间来回 |
+| `cell_layer_rebuild_ms` | **单步最大值**（不是全天累积）| 能（看单步是否超 §14.3 门槛）|
+| `cell_layer_collect_ms` / `cell_layer_materialise_ms` | 本次运行的耗时 | 用于定位瓶颈 |
+| `derived_program_evaluations` / `_failures` | 程序幅度求值次数 | **能**：>0 证明走的是真程序而不是回退 |
+| `ramp_samples_memoised` / `ramp_samples_taken` | 采样命中情况 | 用于看 country-scope metric 的 memo 效果 |
+| `ownership_own_resolves` / `_foreign_` / `_filtered_` | 归属筛选命中数 | 用于确认筛选真的在跑 |
+
+**两个必须记住的口径**：
+
+1. **`cell_layer_rebuild_steps` 不是累积量。** 用它断言「空闲时没增加工作」会在噪声上随机失败。
+   判断「有没有做事」看 `layer_generation` 或 `sample_day`。
+2. **`ramp_samples_taken == 0` 不代表 ramp 没跑。** 走程序幅度之后，ramp 的计数在
+   `derived_program_evaluations`，不在 `ramp_samples_taken`。
+
+**一个真实教训**：`cell_layer_rebuild_visits` 曾在删除旧的一键重建时丢了 `++`，
+于是永远为 0，夹具报出「run_daily never reached the hook」这种**看起来很有说服力但其实是疏漏**的失败。
+新增计数器时，同时确认它**被递增**，不只是**被导出**。
+
+
 ## Track B (approved approximation) doctrine (2026-10-19)
 
 Approximation/cadence changes are allowed only with the user-approved Track B switch

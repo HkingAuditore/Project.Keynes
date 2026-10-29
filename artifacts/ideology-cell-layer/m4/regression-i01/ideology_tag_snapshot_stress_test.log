@@ -1,0 +1,56 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [OK] country configures
+  [OK] modifier configures
+  [OK] effect configures
+  [OK] economy configures
+  [OK] ideology configures (code=ok)
+  [consumers] tag_snapshot_needed=true columns=1
+  [OK] ideology declared a tag-consuming program (tag_snapshot_needed=true columns=1)
+  [OK] environment slots register
+  [OK] country worker snapshot captures
+  [economy] sliced=true class_opinion_revision=1
+  [OK] economy publishes an epoch (revision=1)
+  [OK] worker inputs publish
+  [worker] started=true authoritative=false mask=0x0 (grant needs one committed day, and a DCWorldExt-only fixture has no climate trace -- see the comment at the top of _run)
+  [equip] submit={"accepted":6,"duplicates":0,"ok":true,"pending":12,"worker_shadow_mirrored":true}
+    [probe d1] tagged_cells=0 untagged_cells=32
+    [d1] tag_cells=0 instances=0
+  [flip] day=15 population -> 900 (tag threshold 400)
+    [probe d15] tagged_cells=32 untagged_cells=32
+    [d15] tag_cells=32 instances=0
+    [probe d30] tagged_cells=32 untagged_cells=32
+    [d30] tag_cells=32 instances=0
+  refreshes=240 inflight_skips=0 lock_skips=0 max_consecutive_skips=0
+  tag_changes=0 misses=0 tag_needed=true
+  snapshot_builds=31 snapshot_skips=0 concurrent_writes=0
+  refresh_visits=1 refresh_skips=1 refresh_passes=2 dirty=?
+  instances before_flip=0 after_flip=0
+  [OK] refresh ran on every tick of 30 days
+  [OK] economy report exports tag_snapshot_miss_count
+  [OK] no reader missed the tag snapshot (misses=0)
+  [OK] tag-filtered card has no target before the flip (before=0)
+  [OK] the catalog declared tags, so the tables are built (needed=true)
+  [OK] tag snapshot was built for every measured epoch (builds=31)
+  [OK] set_target_tags never ran concurrently with a rebuild (concurrent_writes=0)
+  [OK] lock skips stayed under the consecutive threshold (max_consecutive=0 limit=12)
+  [OK] lock skip counters are exported (lock_skips=0)
+  [OK] a tag-consuming catalog never takes the skip path (builds=31 skips=0)
+  [loads] scans=10 delta=10 per_scan=1.00 bound=4 (cells=36)
+  [OK] tag_snapshot_loads is exported (before=69 after=79)
+  [OK] a whole-territory tag scan costs at most 4 snapshot loads (delta=10 for 10 scans, i.e. 1.00 per scan vs 36 cells)
+  [OK] no-consumer: country configures
+  [OK] no-consumer: country bootstraps
+  [OK] no-consumer: modifier configures
+  [OK] no-consumer: effects configure
+  [OK] no-consumer: economy configures
+  [OK] no-consumer: ideology configures
+  [OK] no-consumer: country snapshot captures
+  [OK] no-consumer: the catalog declares no tags (tag_snapshot_needed=false)
+  [OK] no-consumer: 'hunter|default' signature exists
+  [OK] no-consumer: economy bootstraps
+  [no-consumer] builds=0 skips=4 class_opinion_revision=3
+  [OK] no-consumer: the economy committed epochs (revision=3)
+  [OK] no-consumer: an epoch nobody reads builds NOTHING (builds=0)
+  [OK] no-consumer: every epoch took the skip path (skips=4)
+=== ideology tag snapshot stress: 37 checks, 2 failures ===

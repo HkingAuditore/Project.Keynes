@@ -55,3 +55,6 @@ __pycache__/
 
 # 构建/编辑器写入过程中的「~ 前缀」临时备份（如重编 GDExtension 时对 dll 做的副本）
 ~*
+
+# agent scratch dir (probe scripts, logs, temp builds) -- never commit
+.codex-tmp/

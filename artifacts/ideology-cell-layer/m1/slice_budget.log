@@ -1,0 +1,9 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[slice-budget] map=2400 n=3 p50=0.465 max=0.512 ms  raw=[0.4616, 0.5121, 0.4651]
+[slice-budget] map=2400: baseline 0.465 ms leaves 0.535 ms headroom
+[slice-budget] at 6.0 us/covered-cell that is ~89 cells per slice
+[slice-budget] map=6400 n=3 p50=1.264 max=1.363 ms  raw=[1.264, 1.3625, 1.1137]
+[slice-budget] map=6400: baseline 1.264 ms ALREADY exceeds the %.1f ms slice budget1.0
+[slice-budget] => the derived layer cannot fit without sharding this reader; §15.3's 'sharded materialise' is mandatory, not optional.
+=== cell layer slice budget: 2 checks, 0 failures ===

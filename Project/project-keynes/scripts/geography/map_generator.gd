@@ -2155,6 +2155,25 @@ func step_ideology_instance_refresh(day_index: int) -> Dictionary:
 	return _data_core_world_ext.step_ideology_instance_refresh(day_index)
 
 
+## Plan §9.3 in worker mode: the DERIVED half of the same pump.
+##
+## `run_ideology_daily` is suppressed when the worker owns IDEOLOGY and it is the only
+## production caller of `step_derived_rebuild`, so without this the derived cell layer was
+## never stepped and produced nothing at all (measured: `rebuild_visits` delta 0 over 12
+## suppressed days with a live card). This wrapper is what makes the host's pump reachable:
+## the host guards on `has_method("step_ideology_derived_rebuild")`, and until this existed
+## that guard was FALSE on `MapGenerator`, so the pump on the tick path was dead code.
+##
+## One call steps one slice. `done == false` means "call again"; `code` of
+## `economy_day_inflight` means the boundary was busy and the call should be retried on a
+## later tick -- normal contention, not a failure.
+func step_ideology_derived_rebuild(day_index: int) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
+			"step_ideology_derived_rebuild"):
+		return {"ok": false, "code": "runtime_worker_api_missing"}
+	return _data_core_world_ext.step_ideology_derived_rebuild(day_index)
+
+
 func apply_runtime_modifier_snapshot(after_generation: int) -> Dictionary:
 	return _forward_runtime_snapshot_apply("apply_runtime_modifier_snapshot", after_generation)
 

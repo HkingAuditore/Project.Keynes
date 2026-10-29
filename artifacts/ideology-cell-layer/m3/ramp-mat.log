@@ -1,0 +1,6 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[ramp-mat] report={ "programs_seen": 3, "programs_derived": 3, "commands_folded": 3, "rows_emitted": 3 }
+[ramp-mat] ramp_terms_evaluated=3
+[ramp-mat] per-cell values=[3.0, 5.0, 7.0]
+=== cell layer ramp materialize: 12 checks, 0 failures ===

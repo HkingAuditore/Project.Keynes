@@ -3896,6 +3896,23 @@ void NativeCountryRuntime::rebuild_cell_csr() {
         const int32_t owner = _cell_country_slot[static_cast<size_t>(cell)];
         if (owner >= 0 && owner < count) _country_cells[static_cast<size_t>(cursor[static_cast<size_t>(owner)]++)] = cell;
     }
+    // `territory_count` is DERIVED from `_cell_country_slot`, and this is the one place
+    // that already recomputes everything else derived from it. Before this line the two
+    // were maintained separately: the command path incremented the staged copy
+    // (`:3196`) while the cell delta was applied here, so `COMMAND_CLAIM_UNOWNED_TERRITORY`
+    // left the column updated and the count stale.
+    //
+    // Consequence of that drift: `get_country_territory_counts()` under-reported forever,
+    // `state_hash` hashed a value that disagreed with reality, and the wrong number was
+    // PERSISTED. It also made ">32 cells" unobservable, which is why the real-world
+    // sample could not be produced (M5-52).
+    //
+    // Recomputing from the CSR offsets costs O(countries) and cannot drift, because the
+    // offsets below came from the authoritative column one line earlier.
+    for (int32_t slot = 0; slot < count; ++slot)
+        _countries.territory_count[static_cast<size_t>(slot)] =
+            _country_cell_offsets[static_cast<size_t>(slot + 1)] -
+            _country_cell_offsets[static_cast<size_t>(slot)];
 }
 
 void NativeCountryRuntime::publish_report(const char *stage, int64_t day,

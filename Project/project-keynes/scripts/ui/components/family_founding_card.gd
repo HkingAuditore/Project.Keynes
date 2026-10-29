@@ -117,18 +117,18 @@ func set_candidate(candidate: Dictionary) -> void:
 	_icon.set_semantic(&"family.workspace.crest" if not _candidate_empty else &"family.house",
 		UITokens.DOSSIER_OXBLOOD)
 	if _candidate_empty:
-		_title.text = "暂无候选"
-		_origin.text = "当前没有可扶持的家族。"
+		_title.text = "无候选"
+		_origin.text = "可扶持家族：无"
 		_population.text = "—"
 		_trait_summary.text = "—"
 		_effect_preview.text = "—"
 		_meta.text = ""
 		_badges.visible = false
 		_clear_rows(_traits_list)
-		_add_copy(_traits_list, "暂无已登记的家风偏好")
+		_add_copy(_traits_list, "无")
 		_clear_rows(_effect_tiers_box)
-		_add_copy(_effect_tiers_box, "不携带额外家族效果。")
-		_effect_title.text = "家族效果"
+		_add_copy(_effect_tiers_box, "无")
+		_effect_title.text = "独特效果 · 无"
 		_effect_context.visible = false
 		_choose.disabled = true
 		_details_toggle.disabled = true
@@ -176,7 +176,7 @@ func _trait_names_text(candidate: Dictionary) -> String:
 				var name := String(item.get("name", "")).strip_edges()
 				if not name.is_empty():
 					names.append(name)
-	return " · ".join(names) if not names.is_empty() else "尚无可考家风"
+	return " · ".join(names) if not names.is_empty() else "无"
 
 
 func _effect_short_text(candidate: Dictionary) -> String:
@@ -260,13 +260,13 @@ func _refresh_details(candidate: Dictionary) -> void:
 				"description": descriptions[index] if index < descriptions.size() else "",
 			})
 	if _traits_list.get_child_count() == 0:
-		_add_copy(_traits_list, "暂无已登记的家风偏好")
+		_add_copy(_traits_list, "无")
 	var effect_name := String(candidate.get("effect_display_name", "")).strip_edges()
 	var raw_description := String(candidate.get("effect_description", "")).strip_edges()
 	var tiers: PackedStringArray = candidate.get("effect_prestige_descriptions", PackedStringArray())
 	if tiers.is_empty() and not raw_description.is_empty():
 		tiers = FamilyBuffCopyScript.prestige_statements(raw_description)
-	_effect_title.text = "家族效果 · %s" % effect_name if not effect_name.is_empty() else "家族效果"
+	_effect_title.text = "独特效果 · %s" % effect_name if not effect_name.is_empty() else "独特效果 · 无"
 	_clear_rows(_effect_tiers_box)
 	var presentation := FamilyBuffCopyScript.founding_effect_rows(tiers)
 	var context := String(presentation.get("context", ""))
@@ -276,7 +276,7 @@ func _refresh_details(candidate: Dictionary) -> void:
 		if not String(row.get("body", "")).is_empty():
 			_add_effect_row(row)
 	if _effect_tiers_box.get_child_count() == 0:
-		_add_copy(_effect_tiers_box, raw_description if not raw_description.is_empty() else "不携带额外家族效果。")
+		_add_copy(_effect_tiers_box, raw_description if not raw_description.is_empty() else "无")
 
 
 func _effect_summary_bbcode(candidate: Dictionary, compact: bool) -> String:
@@ -284,7 +284,7 @@ func _effect_summary_bbcode(candidate: Dictionary, compact: bool) -> String:
 	var description := _effect_short_text(candidate) if compact \
 		else _current_effect_description(candidate)
 	if effect_name.is_empty() and description.is_empty():
-		return "[color=#%s]不携带额外家族效果[/color]" % UITokens.ARCHIVE_INK_MUTED.to_html(false)
+		return "[color=#%s]独特效果：无[/color]" % UITokens.ARCHIVE_INK_MUTED.to_html(false)
 	var safe_name := "[b]%s[/b]" % _escape_copy(effect_name) if not effect_name.is_empty() else ""
 	var safe_copy := _emphasize(description)
 	if safe_name.is_empty():
@@ -336,7 +336,7 @@ func _add_trait_row(item: Dictionary) -> void:
 	var factor := float(item.get("factor_percent", 0.0))
 	if factor > 0.0:
 		var factor_label := Label.new()
-		factor_label.text = "%d%%" % int(round(factor))
+		factor_label.text = "倾向 %d%%" % int(round(factor))
 		factor_label.add_theme_font_override("font", _bold_font)
 		factor_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
 		factor_label.add_theme_color_override("font_color", UITokens.DOSSIER_OXBLOOD)
@@ -820,7 +820,7 @@ func _add_tooltip_traits(column: VBoxContainer) -> void:
 			items.append({"name": names[index],
 				"description": descriptions[index] if index < descriptions.size() else ""})
 	if items.is_empty():
-		_add_tooltip_muted(column, "尚无可考家风")
+		_add_tooltip_muted(column, "无")
 		return
 	for raw in items:
 		var item: Dictionary = raw
@@ -856,7 +856,7 @@ func _add_tooltip_traits(column: VBoxContainer) -> void:
 func _add_tooltip_effects(column: VBoxContainer) -> void:
 	var effect_title := String(_candidate.get("effect_display_name", "")).strip_edges()
 	if effect_title.is_empty():
-		effect_title = "家族效果"
+		effect_title = "独特效果"
 	var tiers: PackedStringArray = _candidate.get("effect_prestige_descriptions", PackedStringArray())
 	var presentation := FamilyBuffCopyScript.founding_effect_rows(tiers)
 	var ladder_rows: Array = presentation.get("rows", [])
@@ -897,7 +897,7 @@ func _add_tooltip_effects(column: VBoxContainer) -> void:
 	else:
 		var fallback := String(_candidate.get("effect_description", "")).strip_edges()
 		if fallback.is_empty():
-			fallback = "无额外效果"
+			fallback = "无"
 		_add_tooltip_muted(column, fallback)
 
 

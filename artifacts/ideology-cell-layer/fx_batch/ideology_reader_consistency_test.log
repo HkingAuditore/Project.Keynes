@@ -1,0 +1,80 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[r1] card magnitude=3277/Q16  add=0.050003051758  expected(base+add)=1.050003051758
+[r1/baseline] installed=false layer_generation=0 cell_count=0 bucket_version=-6873952842606289400 scope_ids=0
+[r1/baseline] cell 1 (no front): R1=1.000000000000 R2=1.000000000000 R3=1.000000000000
+[r1/lead] day 0 done=true pending_transitions=0 dispatched=0 modifier=0 acked=true
+[r1/lead] day 0 done=true pending_transitions=0 dispatched=0 modifier=0 acked=true
+[r1/lead2] day 0 done=true pending_transitions=0 dispatched=0 modifier=0 acked=true
+[r1/lead2] day 0 done=true pending_transitions=0 dispatched=0 modifier=0 acked=true
+[r1/equip] day 0 done=true pending_transitions=1 dispatched=1 modifier=1 acked=true
+[r1/equip] day 0 done=true pending_transitions=0 dispatched=0 modifier=0 acked=true
+[r1/equip] after day 0: cell_count=0 layer_generation=0
+[r1/equip] day 1 done=true pending_transitions=0 dispatched=0 modifier=0 acked=true
+[r1/equip] after day 1: cell_count=84 layer_generation=1
+[r1/equip] card location=1 pending_transitions=0 pending_commands=0
+[r1/front] installed=true layer_generation=1 stat_count=2 cell_count=84 contribution_count=84 sample_day=1 epoch_id=0 stat_ids=[10, 85]
+[r1/front] epoch_id=0 (structurally 0 -- not used as a signal)
+[r1/front] multi_country rows=2 cells=84 generation=1
+[r1/coverage] cells with a derived row=42 owned=42 first_covered=1 first_uncovered=3 mismatches=0
+[r1/covered] stat=economy.city.birth_factor cell=1 base=1.000000000000 expected=1.050003051758
+[r1/covered] R1 get_effective_stat_value.value    = 1.050003051758
+[r1/covered] R2 evaluate_modifier_stat(ECONOMY)   = 1.050003051758
+[r1/covered] R3 explain_modifier_stat.effective   = 1.050003051758
+[r1/covered] R1 derived_add slice                 = 0.050003051758
+[fixed] N1 explain decomposition: sum_add=0.050003051758 product_factor=1.000000000000 unclamped=1.050003051758  vs effective_value=1.050003051758
+[FINDING] N2 list_modifiers(ECONOMY, 0, economy.city.birth_factor) handles=0 while the front covers 42 cells -- a derived contribution has no instance handle
+[r1/enum] R4 scope_ids(42)=[1, 2, 4, 5, 7, 8, 10, 11, 13, 14, 16, 17, 19, 20, 22, 23, 25, 26, 28, 29, 31, 32, 34, 35, 37, 38, 40, 41, 43, 44, 46, 47, 49, 50, 52, 53, 55, 56, 58, 59, 61, 62]
+[r1/enum] R5 entries scopes=42 stats=42
+[r1/version] R6 bucket_version ECONOMY -6873952842606289400 -> -7227545563565324098 (COUNTRY=-6873952842606289400)
+[r1/report] ECONOMY snapshot_versions 1 -> 1  active_instances 0 -> 0 buckets 0 -> 0  queries 0 -> 70  layer_generation field present=true
+[r1/report] N3 layer witness: installed=1 generation=1 stat_count=2
+[r1/uncovered] cell=3 base=1.000000000000
+[r1/uncovered] R1=1.000000000000 R2=1.000000000000 R3=1.000000000000 derived_present=false
+[r1/control-C1] COUNTRY-domain read of the same (stat, cell) = 1.000000000000 vs ECONOMY=1.050003051758
+[r1/control-C2] untouched stat economy.city.output_factor at the covered cell = 1.000000000000
+[r1/control-C3] R1 with base=3.0 -> 3.050003051758 (expected 3.050003051758)
+[r1/idle] day 1 done=true pending_transitions=0 dispatched=0 modifier=0 acked=true
+[r1/idle] day 1: layer_generation=1 cell_count=84 bucket_version=-7227545563565324098 R1=1.050003051758
+[r1/idle] two rebuilds with identical content -> one install, layer_generation must still be 1 (0 extra bumps)
+[r1/control-C4] level-2 program ideology.effect.public_hygiene_l2 -> 5243/Q16 (authored 5243)
+[r1/level] day 2 done=true pending_transitions=1 dispatched=2 modifier=2 acked=true
+[r1/level] day 2 done=true pending_transitions=0 dispatched=0 modifier=0 acked=true
+[r1/level] day 3 done=true pending_transitions=0 dispatched=0 modifier=0 acked=true
+[r1/control-C4] card_level=1 layer_generation=2 R1=1.080001831055 R2=1.080001831055 R3=1.080001831055
+[r1/control-C4] new expected=1.080001831055 old=1.050003051758
+[r1/not-front] N4 get_gameplay_modifier_effective ok=false value=0.000000000000 (GAMEPLAY domain only; an ECONOMY stat is refused, so it can never be a second copy of the front)
+[r1/not-front] N5 get_runtime_modifier_snapshot ok=true available=false reason= (no POD snapshot is published in this harness, and the POD schema carries no derived term at all)
+[r1/not-front] N6 resolve_modifier_stat(unknown) ok=false stat_id=-1 (a catalog lookup, not a value reader)
+=== 18.1 reader consistency: 83 checks, 0 failures ===
+[economy-open-finish] day=0 country=0.699 workset=0.041 fiscal=0.029 csr=0.000 recovery=0.001 vectors=0.106 audit=0.029 commands=0.006
+[research-procure-diag] day=0 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=1 old=0.0002 new=0.0001 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=1 old=0.0001 new=0.0000 rows=0
+[probe] fold step cursor=42/42 took=0.0151 cells=84 commands=84
+[probe] AB old_first=0 old=0.0044 new=0.0046 rows=84
+[probe] finish scratch=0.0000 emit=0.0106 versions=0.0141 builder_install=0.0002 digest=0.0001 total=0.0250 rows=84 stats=2
+[probe] fold step cursor=42/42 took=0.0112 cells=84 commands=84
+[probe] AB old_first=1 old=0.0069 new=0.0042 rows=84
+[probe] finish scratch=0.0001 emit=0.0059 versions=0.0163 builder_install=0.0002 digest=0.0006 total=0.0231 rows=84 stats=2
+[probe] fold step cursor=42/42 took=0.0091 cells=84 commands=84
+[probe] AB old_first=0 old=0.0039 new=0.0044 rows=84
+[probe] finish scratch=0.0001 emit=0.0046 versions=0.0124 builder_install=0.0001 digest=0.0005 total=0.0177 rows=84 stats=2
+[probe] fold step cursor=42/42 took=0.0080 cells=84 commands=84
+[probe] AB old_first=1 old=0.0030 new=0.0057 rows=84
+[probe] finish scratch=0.0000 emit=0.0043 versions=0.0133 builder_install=0.0001 digest=0.0005 total=0.0182 rows=84 stats=2
+ERROR: 19 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 635 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

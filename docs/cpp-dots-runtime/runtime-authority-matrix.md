@@ -1,5 +1,36 @@
 # Runtime Authority Matrix
 
+## 2026-10-28 理念派生地块层的权威归属
+
+理念的永久地块效果**不再拥有自己的逐格 Effect 实例**。它的数值权威在 `ModifierRuntime`
+内部的派生层，而不是在 EffectRuntime 或 Store 里。
+
+| 数据 | 权威 | 是否持久化 |
+|---|---|---|
+| 派生 front（`DerivedCellFront`）| `ModifierRuntime` | **否** —— 由输入重算 |
+| 逐格合并后的值 | `ModifierRuntime::effective_value` | 否（派生）|
+| 卡片的 program 定义 | EffectRuntime / 内容 catalog | 是（内容）|
+| 装备/等级状态 | IdeologyRuntime | 是（PKID 等）|
+
+### 三条权威规则
+
+1. **派生层不放 `Store`。** `apply_pod_snapshot` 会重建 `_stores`，放在那里的东西会被抹掉。
+   派生层在 `ModifierRuntime` 的成员上，Store 快照替换不会碰它。
+
+2. **后端判定只有一处。** `cell_program_eligibility.h` 的 `decide_cell_program_backend()`
+   是唯一判定点，生产路径与测试都调它。**没有第二个「要不要走派生」的判断**，
+   也没有迁移期开关（`kCellProgramRollout` 已删）。
+
+3. **一个 program 只有一个后端（I01）。** 派生 program 的逐格实例、逐格事务、逐格 ACK
+   都必须是 0。曾经有一处用 `out_derived != nullptr` 判后端，导致派生卡同时创建了实例——
+   那是 I01 违反，已修。
+
+### 读档后的权威时序
+
+派生层**不写入存档**（见 `game-flow-start-save`）。读档后它是空的，直到重建跑起来。
+**在这之间的窗口里，读者看到的是没有理念地块贡献的数值**——这是设计，不是缺陷，
+但依赖「读档后立刻有值」的调用方必须走 `drain_derived_cell_layer`。
+
 PKSR ECP2 大段持久化修复（2026-10-19）：NativeSimulationHost 完整编码 uint32
 长度的 ECP2；其他段超限则拒绝保存。旧 64 MiB 截断只从同一 PKSV 的完整、
 校验有效且前缀一致的 ECP2 副本恢复，仍由原生 decoder/authority 验证和应用。
@@ -60,6 +91,36 @@ production writer; the Ideology bit is part of
 `implemented_domain_mask() == 0xFFF`. Its `IDP2` section stays independent from
 synchronous `PKID` and legacy composite `PDP3`, and the SHADOW diagnostic stage
 is retained for parity work.
+
+**Restore ownership under the grant.** `capture_ideology_state` /
+`restore_ideology_state` are main-thread facade calls, and the worker's state
+machine never learns it was restored from — so a restore alone used to be undone
+by the next publish (`idea_rows [82,1,0,0] -> []`, the mirrored §9.3 dates
+`7/8 -> 2/3`, then a pump with nothing to fold). `restore_ideology_state` now
+pushes the restored state into the POD through the POD's OWN save format:
+`import_ideology_pod_state` (in `world_ext_ideology.cpp`) builds a
+`RuntimeIdeologyPodSnapshot` from the restored mirror
+(`NativeIdeologyRuntime::export_pod_import_state`, which adds the POD's catalog
+identity, the live per-slot Country generation and the payload's confirmed day),
+serializes it with `RuntimeIdeologyPodAuthority::serialize_snapshot`, and installs
+it with the host's `restore_ideology_pod_save` — the same entry point the runtime
+save bundle uses. No new transport: `RuntimeIdeologyPodCommand` is a handful of
+scalars and cannot carry a state.
+
+The POD **supersedes** rather than merges: `committed_day`, rows, points, RNG and
+offer all become the payload's. A worker day at or below the imported day is a
+**no-op day** (`RuntimeIdeologyPodPlan::superseded_day`) instead of
+`ideology_day_not_monotonic`, because the imported state already settles it and a
+failing Ideology stage publishes no snapshot at all (which would freeze the mirror
+rather than adopt the load). The import is retried from
+`apply_runtime_ideology_snapshot` while the worker holds its day boundary, and
+while it is outstanding that path refuses to apply a worker snapshot over the
+restore. Importing bumps the mirror's adopted generation, so a snapshot published
+BEFORE the import is rejected as a regression (`ideology_pod_snapshot_superseded`)
+instead of overwriting the load. `get_ideology_report()` reports
+`worker_import_pending` / `worker_import_attempts` / `worker_import_last_code`.
+The main-thread path is untouched: without the ideology grant the restore result
+carries no `worker_import` key at all.
 
 H7/H8 did the same for Trigger: with the `0x008` grant the Host worker stage is
 the sole Trigger writer, its snapshot ring writes back into `TriggerRuntime`, and

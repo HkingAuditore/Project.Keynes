@@ -1,0 +1,83 @@
+WARNING: [loading-catalog] source changed: rebuild tools/prebake_loading_catalogs.gd; using source compiler
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] prepare (res://scripts/game/loading_catalog_cache.gd:55)
+       [1] compute (res://scripts/geography/native_loading_tasks.gd:15)
+WARNING: [building-visual] disabled: building_visual_renderer_unavailable
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] generate_world (res://scripts/game/world_runtime_host.gd:760)
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:5019)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2527)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:784)
+WARNING: [runtime-worker] Ideology opinion publish deferred: ideology_opinion_snapshot_invalid
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _start_production_shadow_worker (res://scripts/game/world_runtime_host.gd:890)
+       [1] generate_world (res://scripts/game/world_runtime_host.gd:804)
+[runtime-day-wait] day=1 env_day=0 missing=0x2bf stall=0x0 economy_input=-1
+[climate/worker][b8] physics_knobs day=1 ready=0 missing=physics_knobs
+[climate-kernel][round] shared=1 ok=1 n_cells=2400 mask=0x1FF ran=0x1FF starved=0x0 knobs_cells=2400
+[country][parity] worker_day=1 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=2 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x31e research_gate=1 orders=0 rej=0 procured=0 last_err=
+WARNING: [climate/worker] field knobs empty (fast_indexed?)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_stage_knobs (res://scripts/geography/map_generator.gd:4981)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2527)
+       [2] sus_tick_daily (res://scripts/geography/map_generator.gd:8151)
+       [3] run_daily_tick (res://scripts/game/world_runtime_host.gd:947)
+       [4] _sample_epochs (res://tests/ideology/ideology_cell_layer_m0_realworld_cost_test.gd:412)
+       [5] _run (res://tests/ideology/ideology_cell_layer_m0_realworld_cost_test.gd:162)
+       [6] generate_world (res://scripts/game/world_runtime_host.gd:826)
+[climate/worker][b8] physics_knobs day=2 ready=1 missing=
+[climate/worker][b8] paw day=2 cell=91 moisture=0.783504 wb30=0 soil=0 paw=0.783504 zeros(water=1604 land=3) nonzero=793 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[country][parity] worker_day=2 uncompared reference_range=-1..-1 depth=0
+[climate/worker][b8] physics_knobs day=3 ready=1 missing=
+[climate/worker][b8] paw day=3 cell=91 moisture=0.775814 wb30=-0.000149956 soil=-0.000359895 paw=0.775717 zeros(water=1604 land=3) nonzero=793 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[country][parity] worker_day=3 uncompared reference_range=-1..-1 depth=0
+[diag-money-verify] day=4 expected=373440000 close=373185924 fresh=373185924 cohort close/fresh=73185924/73185924 country close/fresh=300000000/300000000 escrow close/fresh=0/0 fiscal_escrow_now=0
+[economy-money-audit] open=372000000 close=373185924 expected=373440000 error=-254076 mint=1440000 burn=0 producer_support=1440000 bullion=1440000 opening_escrow=0 closing_escrow=0
+[economy-money-audit-candidate] slot=67 handle=4294967363 cell=1846 signature=26 profession=26:merchant opening=1200000 closing=2740284 net_change=1540284
+[economy-money-audit-candidate] slot=3 handle=4294967299 cell=628 signature=26 profession=26:merchant opening=1200000 closing=2695647 net_change=1495647
+[economy-money-audit-candidate] slot=131 handle=4294967427 cell=1860 signature=26 profession=26:merchant opening=1200000 closing=2694415 net_change=1494415
+[economy-money-audit-candidate] slot=0 handle=0 cell=628 signature=13 profession=13:forager opening=1200000 closing=0 net_change=-1200000
+[economy-money-audit-candidate] slot=64 handle=0 cell=1846 signature=13 profession=13:forager opening=1200000 closing=0 net_change=-1200000
+[economy-money-audit-candidate] slot=128 handle=0 cell=1860 signature=13 profession=13:forager opening=1200000 closing=0 net_change=-1200000
+[economy-money-audit-candidate] slot=65 handle=4294967361 cell=1846 signature=17 profession=17:hunter opening=6000000 closing=6342966 net_change=342966
+[economy-money-audit-candidate] slot=1 handle=4294967297 cell=628 signature=17 profession=17:hunter opening=6000000 closing=6283355 net_change=283355
+[economy-money-audit-candidate] slot=129 handle=4294967425 cell=1860 signature=17 profession=17:hunter opening=6000000 closing=6265428 net_change=265428
+[economy-money-audit-candidate] slot=2 handle=4294967298 cell=628 signature=43 profession=43:unemployed opening=15600000 closing=15380491 net_change=-219509
+[economy-money-audit-candidate] slot=130 handle=4294967426 cell=1860 signature=43 profession=43:unemployed opening=15600000 closing=15386588 net_change=-213412
+[economy-money-audit-candidate] slot=66 handle=4294967362 cell=1846 signature=43 profession=43:unemployed opening=15600000 closing=15396750 net_change=-203250
+[economy-fatal] day=4 stage=9 substage=verify reason=money_conservation_failed
+ERROR: [economy] 原生经济 runtime 已 fatal（money_conservation_failed），仿真已在第 4 天暂停以避免继续产出错误结果。
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _halt_on_economy_fatal (res://scripts/geography/map_generator.gd:3585)
+       [1] _advance_runtime_graph_pulse (res://scripts/geography/map_generator.gd:3520)
+       [2] sus_tick_daily (res://scripts/geography/map_generator.gd:8169)
+       [3] run_daily_tick (res://scripts/game/world_runtime_host.gd:947)
+       [4] _sample_epochs (res://tests/ideology/ideology_cell_layer_m0_realworld_cost_test.gd:412)
+       [5] _run (res://tests/ideology/ideology_cell_layer_m0_realworld_cost_test.gd:162)
+       [6] generate_world (res://scripts/game/world_runtime_host.gd:826)
+FAIL loaded A (800 cells): economy still healthy economy went fatal; every reading after this is stale
+[climate/worker][b8] physics_knobs day=4 ready=1 missing=
+[climate/worker][b8] paw day=4 cell=91 moisture=0.773165 wb30=-0.000294311 soil=-0.000707546 paw=0.772973 zeros(water=1604 land=3) nonzero=793 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[country][parity] worker_day=4 uncompared reference_range=-1..-1 depth=0
+FAIL loaded B (800 cells): economy still healthy economy went fatal; every reading after this is stale
+[climate/worker][b8] physics_knobs day=5 ready=1 missing=
+[climate/worker][b8] paw day=5 cell=91 moisture=0.770682 wb30=-0.000433289 soil=-0.00104341 paw=0.7704 zeros(water=1604 land=3) nonzero=793 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[country][parity] worker_day=5 uncompared reference_range=-1..-1 depth=0
+FAIL idle (no cards): economy still healthy economy went fatal; every reading after this is stale
+FAIL both tiers produced samples idle=0 loaded=0
+[climate/writeback][b8] day=5 vapor store0=0 map0=0 dirty_fields=53 applied=53
+ERROR: 46 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 5279 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

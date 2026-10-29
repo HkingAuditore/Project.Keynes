@@ -447,7 +447,7 @@ text = "世界来源"
 [node name="MapSourceOption" type="OptionButton" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/SourceAndSizeGrid/MapSourceField" unique_id=576180472]
 unique_name_in_owner = true
 layout_mode = 2
-tooltip_text = "程序生成按种子造世界；作者地图读取已编译的 .pkmap。"
+tooltip_text = "生成式地图"
 
 [node name="SizeField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/AtlasCard/AtlasCol/SourceAndSizeGrid" unique_id=272912296]
 layout_mode = 2

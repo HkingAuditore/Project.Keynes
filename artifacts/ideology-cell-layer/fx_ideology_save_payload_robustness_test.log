@@ -1,0 +1,507 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] the card is in the compiled ideology catalog
+  [PASS] source: economy configures
+  [PASS] source: effects configure
+  [PASS] source: modifiers configure
+  [PASS] source: country configures
+  [PASS] source: the fixture territory is a proper subset of the grid
+  [PASS] source: the country bootstraps
+  [PASS] source: ideologies configure
+  [PASS] source: bootstrap_country registered exactly the intended territory
+  [PASS] source: the economy epoch opens
+  [PASS] source: the fixture resolves both bootstrap signatures
+  [PASS] source: the economy bootstraps
+  [PASS] source: economy day 0 reaches its committed boundary
+  [PASS] source: the fixture resolves the country handle
+  [PASS] source/day0: ideology day 0 completes
+  [PASS] PLAIN: capture_ideology_state() returns a PackedByteArray
+  [PASS] PLAIN: capture_effect_state() returns a PackedByteArray
+  [PASS] PLAIN: the PKID payload is non-empty
+  [PASS] PLAIN: the PKEF payload is non-empty
+  [PASS] PLAIN: the PKID payload starts with the ASCII magic `PKID`
+  [PASS] PLAIN: the PKEF payload starts with the ASCII magic `PKEF`
+[rob/PLAIN] pkid=584 bytes (magic PKID, schema 13) pkef=304 bytes (magic PKEF, schema 14)
+  [PASS] PLAIN: PKID ABI: the payload is at least one header long (40 bytes)
+  [PASS] PLAIN: PKID ABI: u32 @ 0 is the PKID magic 0x44494B50
+  [PASS] PLAIN: PKID ABI: i32 @ 4 is schema version 13
+  [PASS] PLAIN: PKID ABI: u64 @ 8 is the catalog hash the runtime reports
+  [PASS] PLAIN: PKID ABI: i64 @ 16 is the last day the business state reports
+  [PASS] PLAIN: PKID ABI: u64 @ 40 is the producer high-watermark count (0)
+  [PASS] PLAIN: PKID ABI: u8 @ 56 is the worker_origin flag, and it is 0 for a main-thread world
+  [PASS] PLAIN: PKID ABI: u64 @ 57 is the country count, and this world has 1
+  [PASS] PLAIN: PKID ABI: the first country row's handle (@ 65) is the world's own country handle
+  [PASS] PLAIN: PKID ABI: the row's points (@ 73) are a signed q16 balance
+[rob/PLAIN] PKID 584 bytes, header=40, producer rows=0, country row @ 65, last_day=0 state_hash=6334173092298045294
+  [PASS] PLAIN: PKID carries a non-zero state hash (the layer L22 compares against)
+[rob/PLAIN] runtime pending_commands=0 pending_transitions=0
+  [PASS] PLAIN: PKEF ABI: the payload reaches past the binding count (92 bytes)
+  [PASS] PLAIN: PKEF ABI: u32 @ 0 is the PKEF magic 0x46454B50
+  [PASS] PLAIN: PKEF ABI: i32 @ 4 is schema 14 (the runtime reports 14)
+  [PASS] PLAIN: PKEF ABI: i32 @ 8 is protocol 1
+  [PASS] PLAIN: PKEF ABI: u64 @ 12 is the Effect catalog hash the runtime reports
+  [PASS] PLAIN: PKEF ABI: i64 @ 20 is the runtime's current day
+  [PASS] PLAIN: PKEF ABI: i64 @ 28 is the runtime's last completed day
+  [PASS] PLAIN: PKEF ABI: u32 @ 72 is the instance storage slot count
+  [PASS] PLAIN: PKEF ABI: i32 @ 76 is the candidate cursor (0, no rebuild is in flight)
+  [PASS] PLAIN: PKEF ABI: u32 @ 80 is the candidate count (0)
+  [PASS] PLAIN: PKEF ABI: u32 @ 84 is the transaction count
+  [PASS] PLAIN: PKEF ABI: u32 @ 88 is the external binding count
+[rob/PLAIN] PKEF 304 bytes, schema=14 protocol=1 instances=0 reported transactions=0 bindings=0 current_day=-1
+  [PASS] PLAIN: PKID ABI: the country row's baseline_ready flag (@ 111) is 0 or 1
+  [PASS] PLAIN: PKID ABI: the country row's history_count (@ 112) is a small ring cursor, not garbage
+[rob/PLAIN] PKID country row: era=0 history_count=0 baseline_ready=1 rng_state=0x4617CE506FFA852A
+[rob/PLAIN] source business hash=-1366684265140509904 points=-5896263070131268991 ideas=8870758691692971849 committed_day=0
+  [PASS] PLAIN-again: capture_ideology_state() returns a PackedByteArray
+  [PASS] PLAIN-again: capture_effect_state() returns a PackedByteArray
+  [PASS] PLAIN-again: the PKID payload is non-empty
+  [PASS] PLAIN-again: the PKEF payload is non-empty
+  [PASS] PLAIN-again: the PKID payload starts with the ASCII magic `PKID`
+  [PASS] PLAIN-again: the PKEF payload starts with the ASCII magic `PKEF`
+[rob/PLAIN-again] pkid=584 bytes (magic PKID, schema 13) pkef=304 bytes (magic PKEF, schema 14)
+  [PASS] PLAIN: PKID capture is byte-deterministic (two captures, identical bytes)
+  [PASS] PLAIN: PKEF capture is byte-deterministic
+  [PASS] PLAIN: PKID is a PackedByteArray, non-empty and larger than its header
+  [PASS] PLAIN: PKEF is a PackedByteArray, non-empty and larger than its header
+  [PASS] PLAIN: PKID and PKEF are different streams (different magic, different length)
+  [PASS] ideology batch (seq 1) is admitted
+  [PASS] ideology batch (seq 2) is admitted
+  [PASS] equip/day0-discover: ideology day 0 completes
+  [PASS] ideology batch (seq 3) is admitted
+  [PASS] ideology batch (seq 4) is admitted
+  [PASS] equip/day0: ideology day 0 completes
+[rob/equip] the card became ACTIVE on day 0 (locations=[1] levels=[1] understanding=[524288])
+  [PASS] EQUIP: the card reaches a non-INACTIVE location slot (L26 needs an equipped row)
+  [PASS] EQUIP: the equip registered an EXTERNAL BINDING in the Effect runtime (this is what PKID alone cannot prove on load)
+  [PASS] ARMED: capture_ideology_state() returns a PackedByteArray
+  [PASS] ARMED: capture_effect_state() returns a PackedByteArray
+  [PASS] ARMED: the PKID payload is non-empty
+  [PASS] ARMED: the PKEF payload is non-empty
+  [PASS] ARMED: the PKID payload starts with the ASCII magic `PKID`
+  [PASS] ARMED: the PKEF payload starts with the ASCII magic `PKEF`
+[rob/ARMED] pkid=729 bytes (magic PKID, schema 13) pkef=1847 bytes (magic PKEF, schema 14)
+  [PASS] ARMED: PKID ABI: the payload is at least one header long (40 bytes)
+  [PASS] ARMED: PKID ABI: u32 @ 0 is the PKID magic 0x44494B50
+  [PASS] ARMED: PKID ABI: i32 @ 4 is schema version 13
+  [PASS] ARMED: PKID ABI: u64 @ 8 is the catalog hash the runtime reports
+  [PASS] ARMED: PKID ABI: i64 @ 16 is the last day the business state reports
+  [PASS] ARMED: PKID ABI: u64 @ 40 is the producer high-watermark count (1)
+  [PASS] ARMED: PKID ABI: u8 @ 68 is the worker_origin flag, and it is 0 for a main-thread world
+  [PASS] ARMED: PKID ABI: u64 @ 69 is the country count, and this world has 1
+  [PASS] ARMED: PKID ABI: the first country row's handle (@ 77) is the world's own country handle
+  [PASS] ARMED: PKID ABI: the row's points (@ 85) are a signed q16 balance
+[rob/ARMED] PKID 729 bytes, header=40, producer rows=1, country row @ 77, last_day=0 state_hash=-3157099246663695102
+  [PASS] ARMED: PKID carries a non-zero state hash (the layer L22 compares against)
+[rob/ARMED] runtime pending_commands=0 pending_transitions=1
+  [PASS] ARMED: PKEF ABI: the payload reaches past the binding count (92 bytes)
+  [PASS] ARMED: PKEF ABI: u32 @ 0 is the PKEF magic 0x46454B50
+  [PASS] ARMED: PKEF ABI: i32 @ 4 is schema 14 (the runtime reports 14)
+  [PASS] ARMED: PKEF ABI: i32 @ 8 is protocol 1
+  [PASS] ARMED: PKEF ABI: u64 @ 12 is the Effect catalog hash the runtime reports
+  [PASS] ARMED: PKEF ABI: i64 @ 20 is the runtime's current day
+  [PASS] ARMED: PKEF ABI: i64 @ 28 is the runtime's last completed day
+  [PASS] ARMED: PKEF ABI: u32 @ 72 is the instance storage slot count
+[rob/ARMED] PKEF 1847 bytes, schema=14 protocol=1 instances=1 reported transactions=1 bindings=1 current_day=-1
+  [PASS] ARMED: the basis block parses and its length field is honest
+  [PASS] 18.2 basis: a card whose EQUIP is still PENDING is ACTIVE but has no basis row (plan 10.1: pending contributes nothing)
+[rob/ARMED] basis: rows=0 (pending equip) block=4 bytes
+[rob/ARMED] source business hash=-8551994844515445332 points=3327108173056332417 ideas=1515035583043214077 committed_day=0
+  [PASS] target: economy configures
+  [PASS] target: effects configure
+  [PASS] target: modifiers configure
+  [PASS] target: country configures
+  [PASS] target: the fixture territory is a proper subset of the grid
+  [PASS] target: the country bootstraps
+  [PASS] target: ideologies configure
+  [PASS] target: bootstrap_country registered exactly the intended territory
+  [PASS] target: the economy epoch opens
+  [PASS] target: the fixture resolves both bootstrap signatures
+  [PASS] target: the economy bootstraps
+  [PASS] target: economy day 0 reaches its committed boundary
+  [PASS] target: the fixture resolves the country handle
+  [PASS] target/day0: ideology day 0 completes
+  [PASS] TARGET: the country handle matches the source world
+  [PASS] TARGET: a freshly built world captures its own PKID
+  [PASS] TARGET: two independently built worlds with the same construction serialize to IDENTICAL PKID bytes
+
+[rob] ===== PKID refusals (ideology_runtime.cpp:6509-6848) =====
+  [PASS] L2 PKID wrong magic (offset 0 flipped): refused (never accepted with garbage)
+  [PASS] L2 PKID wrong magic (offset 0 flipped): the refusal carries the layer's own reason `ideology_save_header_invalid`
+  [PASS] L2 PKID wrong magic (offset 0 flipped): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L2 PKID wrong magic (offset 0 flipped): the committed day is unchanged
+  [CASE] L2 PKID wrong magic (offset 0 flipped) -> reason=ideology_save_header_invalid
+  [PASS] L3 PKID OLD schema (13 -> 12): refused (never accepted with garbage)
+  [PASS] L3 PKID OLD schema (13 -> 12): the refusal carries the layer's own reason `ideology_save_schema_unsupported`
+  [PASS] L3 PKID OLD schema (13 -> 12): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L3 PKID OLD schema (13 -> 12): the committed day is unchanged
+  [CASE] L3 PKID OLD schema (13 -> 12) -> reason=ideology_save_schema_unsupported
+  [PASS] L3 PKID FUTURE schema (13 -> 14): refused (never accepted with garbage)
+  [PASS] L3 PKID FUTURE schema (13 -> 14): the refusal carries the layer's own reason `ideology_save_schema_unsupported`
+  [PASS] L3 PKID FUTURE schema (13 -> 14): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L3 PKID FUTURE schema (13 -> 14): the committed day is unchanged
+  [CASE] L3 PKID FUTURE schema (13 -> 14) -> reason=ideology_save_schema_unsupported
+  [PASS] L3 PKID schema 0 (pre-v1 legacy stream): refused (never accepted with garbage)
+  [PASS] L3 PKID schema 0 (pre-v1 legacy stream): the refusal carries the layer's own reason `ideology_save_schema_unsupported`
+  [PASS] L3 PKID schema 0 (pre-v1 legacy stream): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L3 PKID schema 0 (pre-v1 legacy stream): the committed day is unchanged
+  [CASE] L3 PKID schema 0 (pre-v1 legacy stream) -> reason=ideology_save_schema_unsupported
+  [PASS] L4 PKID catalog hash (low bit flipped): refused (never accepted with garbage)
+  [PASS] L4 PKID catalog hash (low bit flipped): the refusal carries the layer's own reason `ideology_save_catalog_mismatch`
+  [PASS] L4 PKID catalog hash (low bit flipped): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L4 PKID catalog hash (low bit flipped): the committed day is unchanged
+  [CASE] L4 PKID catalog hash (low bit flipped) -> reason=ideology_save_catalog_mismatch
+  [PASS] L5 PKID producer high-watermark count (unbounded): refused (never accepted with garbage)
+  [PASS] L5 PKID producer high-watermark count (unbounded): the refusal carries the layer's own reason `ideology_save_producer_count_invalid`
+  [PASS] L5 PKID producer high-watermark count (unbounded): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L5 PKID producer high-watermark count (unbounded): the committed day is unchanged
+  [CASE] L5 PKID producer high-watermark count (unbounded) -> reason=ideology_save_producer_count_invalid
+  [PASS] L6 PKID worker_origin byte = 2 (offset 56): refused (never accepted with garbage)
+  [PASS] L6 PKID worker_origin byte = 2 (offset 56): the refusal carries the layer's own reason `ideology_save_points_header_invalid`
+  [PASS] L6 PKID worker_origin byte = 2 (offset 56): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L6 PKID worker_origin byte = 2 (offset 56): the committed day is unchanged
+  [CASE] L6 PKID worker_origin byte = 2 (offset 56) -> reason=ideology_save_points_header_invalid
+  [PASS] L7 PKID country count = 2^40 (offset 57): refused (never accepted with garbage)
+  [PASS] L7 PKID country count = 2^40 (offset 57): the refusal carries the layer's own reason `ideology_save_country_count_invalid`
+  [PASS] L7 PKID country count = 2^40 (offset 57): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L7 PKID country count = 2^40 (offset 57): the committed day is unchanged
+  [CASE] L7 PKID country count = 2^40 (offset 57) -> reason=ideology_save_country_count_invalid
+  [PASS] L8 PKID per-country row: unlocked_era = 99 (offset 81): refused (never accepted with garbage)
+  [PASS] L8 PKID per-country row: unlocked_era = 99 (offset 81): the refusal carries the layer's own reason `ideology_save_country_invalid`
+  [PASS] L8 PKID per-country row: unlocked_era = 99 (offset 81): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L8 PKID per-country row: unlocked_era = 99 (offset 81): the committed day is unchanged
+  [CASE] L8 PKID per-country row: unlocked_era = 99 (offset 81) -> reason=ideology_save_country_invalid
+  [PASS] L17 PKID ABI: the tail is addressable from the end (block @ 548, 4 bytes, 0 rows, command count @ 540)
+  [PASS] L17 PKID ABI: the u64 immediately before the basis block (@ 540) is the pending command count, and it is 0 for a command-free world
+  [PASS] L17 PKID command count = 2^40 (offset 540): refused (never accepted with garbage)
+  [PASS] L17 PKID command count = 2^40 (offset 540): the refusal carries the layer's own reason `ideology_save_command_count_invalid`
+  [PASS] L17 PKID command count = 2^40 (offset 540): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L17 PKID command count = 2^40 (offset 540): the committed day is unchanged
+  [CASE] L17 PKID command count = 2^40 (offset 540) -> reason=ideology_save_command_count_invalid
+  [PASS] 18.2 basis block: walking its rows lands exactly on the length field (@ 552)
+  [PASS] 18.2 basis block: the declared byte length covers count + rows (@ 4 = 4 bytes walked)
+  [PASS] 18.2 basis block: a world with NO card in play persists an EMPTY basis (0 rows) rather than a fabricated one
+  [PASS] 18.2 basis block: a byte length that does not match its rows is refused as a SHAPE error: refused (never accepted with garbage)
+  [PASS] 18.2 basis block: a byte length that does not match its rows is refused as a SHAPE error: the refusal carries the layer's own reason `ideology_save_applied_basis_invalid`
+  [PASS] 18.2 basis block: a byte length that does not match its rows is refused as a SHAPE error: the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] 18.2 basis block: a byte length that does not match its rows is refused as a SHAPE error: the committed day is unchanged
+  [CASE] 18.2 basis block: a byte length that does not match its rows is refused as a SHAPE error -> reason=ideology_save_applied_basis_invalid
+  [PASS] 18.2 basis block: a row count of 2^20 with no rows behind it is refused as a SHAPE error: refused (never accepted with garbage)
+  [PASS] 18.2 basis block: a row count of 2^20 with no rows behind it is refused as a SHAPE error: the refusal carries the layer's own reason `ideology_save_applied_basis_invalid`
+  [PASS] 18.2 basis block: a row count of 2^20 with no rows behind it is refused as a SHAPE error: the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] 18.2 basis block: a row count of 2^20 with no rows behind it is refused as a SHAPE error: the committed day is unchanged
+  [CASE] 18.2 basis block: a row count of 2^20 with no rows behind it is refused as a SHAPE error -> reason=ideology_save_applied_basis_invalid
+  [PASS] 9.3 basis dates: a never-settled world stores -1 / -1 (no projection yet)
+  [PASS] 11.5 contract identity: the payload carries a non-zero execution contract
+  [PASS] 11.5 contract identity: the payload's value is the runtime's own
+  [PASS] 9.3 basis dates: eligible != confirmed + 1 is refused: refused (never accepted with garbage)
+  [PASS] 9.3 basis dates: eligible != confirmed + 1 is refused: the refusal carries the layer's own reason `ideology_save_basis_dates_invalid`
+  [PASS] 9.3 basis dates: eligible != confirmed + 1 is refused: the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] 9.3 basis dates: eligible != confirmed + 1 is refused: the committed day is unchanged
+  [CASE] 9.3 basis dates: eligible != confirmed + 1 is refused -> reason=ideology_save_basis_dates_invalid
+  [PASS] 9.3 basis dates: one side set and the other unset is refused: refused (never accepted with garbage)
+  [PASS] 9.3 basis dates: one side set and the other unset is refused: the refusal carries the layer's own reason `ideology_save_basis_dates_invalid`
+  [PASS] 9.3 basis dates: one side set and the other unset is refused: the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] 9.3 basis dates: one side set and the other unset is refused: the committed day is unchanged
+  [CASE] 9.3 basis dates: one side set and the other unset is refused -> reason=ideology_save_basis_dates_invalid
+  [PASS] L21 PKID SAVE_END trailer byte flipped (offset 583): refused (never accepted with garbage)
+  [PASS] L21 PKID SAVE_END trailer byte flipped (offset 583): the refusal carries the layer's own reason `ideology_save_truncated`
+  [PASS] L21 PKID SAVE_END trailer byte flipped (offset 583): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L21 PKID SAVE_END trailer byte flipped (offset 583): the committed day is unchanged
+  [CASE] L21 PKID SAVE_END trailer byte flipped (offset 583) -> reason=ideology_save_truncated
+  [PASS] L22 PKID state hash (low bit flipped): refused (never accepted with garbage)
+  [PASS] L22 PKID state hash (low bit flipped): the refusal carries the layer's own reason `ideology_save_state_hash_mismatch`
+  [PASS] L22 PKID state hash (low bit flipped): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L22 PKID state hash (low bit flipped): the committed day is unchanged
+  [CASE] L22 PKID state hash (low bit flipped) -> reason=ideology_save_state_hash_mismatch
+  [PASS] L22 PKID country points +1 q16 (offset 73) -- shape is legal, only the state hash can see it: refused (never accepted with garbage)
+  [PASS] L22 PKID country points +1 q16 (offset 73) -- shape is legal, only the state hash can see it: the refusal carries the layer's own reason `ideology_save_state_hash_mismatch`
+  [PASS] L22 PKID country points +1 q16 (offset 73) -- shape is legal, only the state hash can see it: the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L22 PKID country points +1 q16 (offset 73) -- shape is legal, only the state hash can see it: the committed day is unchanged
+  [CASE] L22 PKID country points +1 q16 (offset 73) -- shape is legal, only the state hash can see it -> reason=ideology_save_state_hash_mismatch
+  [PASS] L22 PKID country handle bit 40 flipped (offset 65): refused (never accepted with garbage)
+  [PASS] L22 PKID country handle bit 40 flipped (offset 65): the refusal carries the layer's own reason `ideology_save_state_hash_mismatch`
+  [PASS] L22 PKID country handle bit 40 flipped (offset 65): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L22 PKID country handle bit 40 flipped (offset 65): the committed day is unchanged
+  [CASE] L22 PKID country handle bit 40 flipped (offset 65) -> reason=ideology_save_state_hash_mismatch
+  [PASS] L22 PKID mid-payload byte flipped (offset 292 of 584): refused (never accepted with garbage)
+  [PASS] L22 PKID mid-payload byte flipped (offset 292 of 584): the refusal carries the layer's own reason `ideology_save_state_hash_mismatch`
+  [PASS] L22 PKID mid-payload byte flipped (offset 292 of 584): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L22 PKID mid-payload byte flipped (offset 292 of 584): the committed day is unchanged
+  [CASE] L22 PKID mid-payload byte flipped (offset 292 of 584) -> reason=ideology_save_state_hash_mismatch
+
+[rob] ===== PKID truncation (never a crash, never garbage) =====
+  [PASS] L2 PKID truncated to 0 bytes: refused (never accepted with garbage)
+  [PASS] L2 PKID truncated to 0 bytes: the refusal carries the layer's own reason `ideology_save_header_invalid`
+  [PASS] L2 PKID truncated to 0 bytes: the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L2 PKID truncated to 0 bytes: the committed day is unchanged
+  [CASE] L2 PKID truncated to 0 bytes -> reason=ideology_save_header_invalid
+  [PASS] L2 PKID truncated to 1 byte: refused (never accepted with garbage)
+  [PASS] L2 PKID truncated to 1 byte: the refusal carries the layer's own reason `ideology_save_header_invalid`
+  [PASS] L2 PKID truncated to 1 byte: the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L2 PKID truncated to 1 byte: the committed day is unchanged
+  [CASE] L2 PKID truncated to 1 byte -> reason=ideology_save_header_invalid
+  [PASS] L2 PKID truncated to magic only (4 bytes): refused (never accepted with garbage)
+  [PASS] L2 PKID truncated to magic only (4 bytes): the refusal carries the layer's own reason `ideology_save_header_invalid`
+  [PASS] L2 PKID truncated to magic only (4 bytes): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L2 PKID truncated to magic only (4 bytes): the committed day is unchanged
+  [CASE] L2 PKID truncated to magic only (4 bytes) -> reason=ideology_save_header_invalid
+  [PASS] L2 PKID truncated to magic+schema (8 bytes): refused (never accepted with garbage)
+  [PASS] L2 PKID truncated to magic+schema (8 bytes): the refusal carries the layer's own reason `ideology_save_header_invalid`
+  [PASS] L2 PKID truncated to magic+schema (8 bytes): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L2 PKID truncated to magic+schema (8 bytes): the committed day is unchanged
+  [CASE] L2 PKID truncated to magic+schema (8 bytes) -> reason=ideology_save_header_invalid
+  [PASS] L2 PKID truncated to magic+schema+catalog (16 bytes): refused (never accepted with garbage)
+  [PASS] L2 PKID truncated to magic+schema+catalog (16 bytes): the refusal carries the layer's own reason `ideology_save_header_invalid`
+  [PASS] L2 PKID truncated to magic+schema+catalog (16 bytes): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L2 PKID truncated to magic+schema+catalog (16 bytes): the committed day is unchanged
+  [CASE] L2 PKID truncated to magic+schema+catalog (16 bytes) -> reason=ideology_save_header_invalid
+  [PASS] L2 PKID truncated mid last_day (20 bytes): refused (never accepted with garbage)
+  [PASS] L2 PKID truncated mid last_day (20 bytes): the refusal carries the layer's own reason `ideology_save_header_invalid`
+  [PASS] L2 PKID truncated mid last_day (20 bytes): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L2 PKID truncated mid last_day (20 bytes): the committed day is unchanged
+  [CASE] L2 PKID truncated mid last_day (20 bytes) -> reason=ideology_save_header_invalid
+  [PASS] L5 PKID truncated to exactly the header (40 bytes): refused (never accepted with garbage)
+  [PASS] L5 PKID truncated to exactly the header (40 bytes): the refusal carries the layer's own reason `ideology_save_producer_count_invalid`
+  [PASS] L5 PKID truncated to exactly the header (40 bytes): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L5 PKID truncated to exactly the header (40 bytes): the committed day is unchanged
+  [CASE] L5 PKID truncated to exactly the header (40 bytes) -> reason=ideology_save_producer_count_invalid
+  [PASS] L9 PKID truncated to 292 of 584 bytes (inside the history ring): refused (never accepted with garbage)
+  [PASS] L9 PKID truncated to 292 of 584 bytes (inside the history ring): the refusal carries the layer's own reason `ideology_save_point_history_invalid`
+  [PASS] L9 PKID truncated to 292 of 584 bytes (inside the history ring): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L9 PKID truncated to 292 of 584 bytes (inside the history ring): the committed day is unchanged
+  [CASE] L9 PKID truncated to 292 of 584 bytes (inside the history ring) -> reason=ideology_save_point_history_invalid
+  [PASS] L21 PKID truncated to size-1 (583 bytes): refused (never accepted with garbage)
+  [PASS] L21 PKID truncated to size-1 (583 bytes): the refusal carries the layer's own reason `ideology_save_truncated`
+  [PASS] L21 PKID truncated to size-1 (583 bytes): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L21 PKID truncated to size-1 (583 bytes): the committed day is unchanged
+  [CASE] L21 PKID truncated to size-1 (583 bytes) -> reason=ideology_save_truncated
+  [PASS] L21 PKID truncated to size-2 (582 bytes): refused (never accepted with garbage)
+  [PASS] L21 PKID truncated to size-2 (582 bytes): the refusal carries the layer's own reason `ideology_save_truncated`
+  [PASS] L21 PKID truncated to size-2 (582 bytes): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L21 PKID truncated to size-2 (582 bytes): the committed day is unchanged
+  [CASE] L21 PKID truncated to size-2 (582 bytes) -> reason=ideology_save_truncated
+  [PASS] L21 PKID truncated to size-3 (581 bytes): refused (never accepted with garbage)
+  [PASS] L21 PKID truncated to size-3 (581 bytes): the refusal carries the layer's own reason `ideology_save_truncated`
+  [PASS] L21 PKID truncated to size-3 (581 bytes): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L21 PKID truncated to size-3 (581 bytes): the committed day is unchanged
+  [CASE] L21 PKID truncated to size-3 (581 bytes) -> reason=ideology_save_truncated
+  [PASS] L21 PKID truncated to size-4 (580 bytes): refused (never accepted with garbage)
+  [PASS] L21 PKID truncated to size-4 (580 bytes): the refusal carries the layer's own reason `ideology_save_truncated`
+  [PASS] L21 PKID truncated to size-4 (580 bytes): the runtime is left BYTE-IDENTICAL (nothing half-restored)
+  [PASS] L21 PKID truncated to size-4 (580 bytes): the committed day is unchanged
+  [CASE] L21 PKID truncated to size-4 (580 bytes) -> reason=ideology_save_truncated
+
+[rob] ===== PKEF refusals (effect_runtime.cpp:7394-8077) =====
+  [PASS] K2 PKEF truncated to 0 bytes: refused (never accepted with garbage)
+  [PASS] K2 PKEF truncated to 0 bytes: the refusal carries the layer's own reason `pkef_truncated`
+  [PASS] K2 PKEF truncated to 0 bytes: the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K2 PKEF truncated to 0 bytes: the Effect runtime's day is unchanged
+  [CASE] K2 PKEF truncated to 0 bytes -> reason=pkef_truncated
+  [PASS] K2 PKEF truncated to 1 byte: refused (never accepted with garbage)
+  [PASS] K2 PKEF truncated to 1 byte: the refusal carries the layer's own reason `pkef_truncated`
+  [PASS] K2 PKEF truncated to 1 byte: the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K2 PKEF truncated to 1 byte: the Effect runtime's day is unchanged
+  [CASE] K2 PKEF truncated to 1 byte -> reason=pkef_truncated
+  [PASS] K2 PKEF truncated to magic only (4 bytes): refused (never accepted with garbage)
+  [PASS] K2 PKEF truncated to magic only (4 bytes): the refusal carries the layer's own reason `pkef_truncated`
+  [PASS] K2 PKEF truncated to magic only (4 bytes): the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K2 PKEF truncated to magic only (4 bytes): the Effect runtime's day is unchanged
+  [CASE] K2 PKEF truncated to magic only (4 bytes) -> reason=pkef_truncated
+  [PASS] K4 PKEF truncated to magic+schema (8 bytes) -- the protocol read reports catalog_hash_mismatch, not pkef_truncated: refused (never accepted with garbage)
+  [PASS] K4 PKEF truncated to magic+schema (8 bytes) -- the protocol read reports catalog_hash_mismatch, not pkef_truncated: the refusal carries the layer's own reason `catalog_hash_mismatch`
+  [PASS] K4 PKEF truncated to magic+schema (8 bytes) -- the protocol read reports catalog_hash_mismatch, not pkef_truncated: the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K4 PKEF truncated to magic+schema (8 bytes) -- the protocol read reports catalog_hash_mismatch, not pkef_truncated: the Effect runtime's day is unchanged
+  [CASE] K4 PKEF truncated to magic+schema (8 bytes) -- the protocol read reports catalog_hash_mismatch, not pkef_truncated -> reason=catalog_hash_mismatch
+  [PASS] K5 PKEF truncated after protocol (12 bytes): refused (never accepted with garbage)
+  [PASS] K5 PKEF truncated after protocol (12 bytes): the refusal carries the layer's own reason `catalog_hash_mismatch`
+  [PASS] K5 PKEF truncated after protocol (12 bytes): the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K5 PKEF truncated after protocol (12 bytes): the Effect runtime's day is unchanged
+  [CASE] K5 PKEF truncated after protocol (12 bytes) -> reason=catalog_hash_mismatch
+  [PASS] K6 PKEF truncated after the catalog hash (20 bytes): refused (never accepted with garbage)
+  [PASS] K6 PKEF truncated after the catalog hash (20 bytes): the refusal carries the layer's own reason `pkef_instances_invalid`
+  [PASS] K6 PKEF truncated after the catalog hash (20 bytes): the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K6 PKEF truncated after the catalog hash (20 bytes): the Effect runtime's day is unchanged
+  [CASE] K6 PKEF truncated after the catalog hash (20 bytes) -> reason=pkef_instances_invalid
+  [PASS] K17 PKEF truncated to 152 of 304 bytes (inside the era-reward block): refused (never accepted with garbage)
+  [PASS] K17 PKEF truncated to 152 of 304 bytes (inside the era-reward block): the refusal carries the layer's own reason `pkef_era_reward_truncated`
+  [PASS] K17 PKEF truncated to 152 of 304 bytes (inside the era-reward block): the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K17 PKEF truncated to 152 of 304 bytes (inside the era-reward block): the Effect runtime's day is unchanged
+  [CASE] K17 PKEF truncated to 152 of 304 bytes (inside the era-reward block) -> reason=pkef_era_reward_truncated
+  [PASS] K18 PKEF truncated to size-1 (303 bytes): refused (never accepted with garbage)
+  [PASS] K18 PKEF truncated to size-1 (303 bytes): the refusal carries the layer's own reason `pkef_end_marker_missing`
+  [PASS] K18 PKEF truncated to size-1 (303 bytes): the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K18 PKEF truncated to size-1 (303 bytes): the Effect runtime's day is unchanged
+  [CASE] K18 PKEF truncated to size-1 (303 bytes) -> reason=pkef_end_marker_missing
+  [PASS] K18 PKEF truncated to size-2 (302 bytes): refused (never accepted with garbage)
+  [PASS] K18 PKEF truncated to size-2 (302 bytes): the refusal carries the layer's own reason `pkef_end_marker_missing`
+  [PASS] K18 PKEF truncated to size-2 (302 bytes): the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K18 PKEF truncated to size-2 (302 bytes): the Effect runtime's day is unchanged
+  [CASE] K18 PKEF truncated to size-2 (302 bytes) -> reason=pkef_end_marker_missing
+  [PASS] K18 PKEF truncated to size-3 (301 bytes): refused (never accepted with garbage)
+  [PASS] K18 PKEF truncated to size-3 (301 bytes): the refusal carries the layer's own reason `pkef_end_marker_missing`
+  [PASS] K18 PKEF truncated to size-3 (301 bytes): the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K18 PKEF truncated to size-3 (301 bytes): the Effect runtime's day is unchanged
+  [CASE] K18 PKEF truncated to size-3 (301 bytes) -> reason=pkef_end_marker_missing
+  [PASS] K18 PKEF truncated to size-4 (300 bytes): refused (never accepted with garbage)
+  [PASS] K18 PKEF truncated to size-4 (300 bytes): the refusal carries the layer's own reason `pkef_end_marker_missing`
+  [PASS] K18 PKEF truncated to size-4 (300 bytes): the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K18 PKEF truncated to size-4 (300 bytes): the Effect runtime's day is unchanged
+  [CASE] K18 PKEF truncated to size-4 (300 bytes) -> reason=pkef_end_marker_missing
+  [PASS] K3 PKEF wrong magic (offset 0 flipped): refused (never accepted with garbage)
+  [PASS] K3 PKEF wrong magic (offset 0 flipped): the refusal carries the layer's own reason `pkef_header_incompatible`
+  [PASS] K3 PKEF wrong magic (offset 0 flipped): the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K3 PKEF wrong magic (offset 0 flipped): the Effect runtime's day is unchanged
+  [CASE] K3 PKEF wrong magic (offset 0 flipped) -> reason=pkef_header_incompatible
+  [PASS] K4 PKEF OLD schema (14 -> 13): refused (never accepted with garbage)
+  [PASS] K4 PKEF OLD schema (14 -> 13): the refusal carries the layer's own reason `pkef_schema_unsupported`
+  [PASS] K4 PKEF OLD schema (14 -> 13): the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K4 PKEF OLD schema (14 -> 13): the Effect runtime's day is unchanged
+  [CASE] K4 PKEF OLD schema (14 -> 13) -> reason=pkef_schema_unsupported
+  [PASS] K4 PKEF FUTURE schema (14 -> 15): refused (never accepted with garbage)
+  [PASS] K4 PKEF FUTURE schema (14 -> 15): the refusal carries the layer's own reason `pkef_schema_unsupported`
+  [PASS] K4 PKEF FUTURE schema (14 -> 15): the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K4 PKEF FUTURE schema (14 -> 15): the Effect runtime's day is unchanged
+  [CASE] K4 PKEF FUTURE schema (14 -> 15) -> reason=pkef_schema_unsupported
+  [PASS] K5 PKEF protocol (1 -> 2): refused (never accepted with garbage)
+  [PASS] K5 PKEF protocol (1 -> 2): the refusal carries the layer's own reason `catalog_hash_mismatch`
+  [PASS] K5 PKEF protocol (1 -> 2): the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K5 PKEF protocol (1 -> 2): the Effect runtime's day is unchanged
+  [CASE] K5 PKEF protocol (1 -> 2) -> reason=catalog_hash_mismatch
+  [PASS] K5 PKEF catalog hash (low bit flipped): refused (never accepted with garbage)
+  [PASS] K5 PKEF catalog hash (low bit flipped): the refusal carries the layer's own reason `catalog_hash_mismatch`
+  [PASS] K5 PKEF catalog hash (low bit flipped): the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K5 PKEF catalog hash (low bit flipped): the Effect runtime's day is unchanged
+  [CASE] K5 PKEF catalog hash (low bit flipped) -> reason=catalog_hash_mismatch
+  [PASS] K6 PKEF instance count = 2^24: refused (never accepted with garbage)
+  [PASS] K6 PKEF instance count = 2^24: the refusal carries the layer's own reason `pkef_instances_invalid`
+  [PASS] K6 PKEF instance count = 2^24: the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K6 PKEF instance count = 2^24: the Effect runtime's day is unchanged
+  [CASE] K6 PKEF instance count = 2^24 -> reason=pkef_instances_invalid
+  [PASS] K6 PKEF next transaction id = 0: refused (never accepted with garbage)
+  [PASS] K6 PKEF next transaction id = 0: the refusal carries the layer's own reason `pkef_runtime_cursor_invalid`
+  [PASS] K6 PKEF next transaction id = 0: the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K6 PKEF next transaction id = 0: the Effect runtime's day is unchanged
+  [CASE] K6 PKEF next transaction id = 0 -> reason=pkef_runtime_cursor_invalid
+  [PASS] K6 PKEF acked transaction id ahead of the next one: refused (never accepted with garbage)
+  [PASS] K6 PKEF acked transaction id ahead of the next one: the refusal carries the layer's own reason `pkef_runtime_cursor_invalid`
+  [PASS] K6 PKEF acked transaction id ahead of the next one: the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K6 PKEF acked transaction id ahead of the next one: the Effect runtime's day is unchanged
+  [CASE] K6 PKEF acked transaction id ahead of the next one -> reason=pkef_runtime_cursor_invalid
+  [PASS] K11 PKEF transaction count = 1 with no row behind it: refused (never accepted with garbage)
+  [PASS] K11 PKEF transaction count = 1 with no row behind it: the refusal carries the layer's own reason `pkef_transaction_identity_invalid`
+  [PASS] K11 PKEF transaction count = 1 with no row behind it: the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K11 PKEF transaction count = 1 with no row behind it: the Effect runtime's day is unchanged
+  [CASE] K11 PKEF transaction count = 1 with no row behind it -> reason=pkef_transaction_identity_invalid
+  [PASS] K16 PKEF external binding count = 1 with no row behind it: refused (never accepted with garbage)
+  [PASS] K16 PKEF external binding count = 1 with no row behind it: the refusal carries the layer's own reason `pkef_external_binding_invalid`
+  [PASS] K16 PKEF external binding count = 1 with no row behind it: the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K16 PKEF external binding count = 1 with no row behind it: the Effect runtime's day is unchanged
+  [CASE] K16 PKEF external binding count = 1 with no row behind it -> reason=pkef_external_binding_invalid
+  [PASS] K17 PKEF PLAIN layout: no instance row and no transaction row, so the era-reward block starts at offset 92
+  [PASS] K17 PKEF era-reward status = 9 (offset 152, mid-payload): refused (never accepted with garbage)
+  [PASS] K17 PKEF era-reward status = 9 (offset 152, mid-payload): the refusal carries the layer's own reason `pkef_era_reward_identity_invalid`
+  [PASS] K17 PKEF era-reward status = 9 (offset 152, mid-payload): the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K17 PKEF era-reward status = 9 (offset 152, mid-payload): the Effect runtime's day is unchanged
+  [CASE] K17 PKEF era-reward status = 9 (offset 152, mid-payload) -> reason=pkef_era_reward_identity_invalid
+  [PASS] K17 PKEF era-reward next plan id = 0 (offset 100): refused (never accepted with garbage)
+  [PASS] K17 PKEF era-reward next plan id = 0 (offset 100): the refusal carries the layer's own reason `pkef_era_reward_identity_invalid`
+  [PASS] K17 PKEF era-reward next plan id = 0 (offset 100): the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K17 PKEF era-reward next plan id = 0 (offset 100): the Effect runtime's day is unchanged
+  [CASE] K17 PKEF era-reward next plan id = 0 (offset 100) -> reason=pkef_era_reward_identity_invalid
+  [PASS] K18 PKEF SAVE_END trailer byte flipped (offset 303): refused (never accepted with garbage)
+  [PASS] K18 PKEF SAVE_END trailer byte flipped (offset 303): the refusal carries the layer's own reason `pkef_end_marker_missing`
+  [PASS] K18 PKEF SAVE_END trailer byte flipped (offset 303): the Effect runtime is left BYTE-IDENTICAL (PKEF parses all, then commits; nothing is applied before the end marker)
+  [PASS] K18 PKEF SAVE_END trailer byte flipped (offset 303): the Effect runtime's day is unchanged
+  [CASE] K18 PKEF SAVE_END trailer byte flipped (offset 303) -> reason=pkef_end_marker_missing
+
+[rob] ===== control: the untouched payloads restore =====
+  [PASS] target/day1: ideology day 1 completes
+  [PASS] CONTROL: the target really drifted before the control restore (its last day is now 1, not the payload's 0)
+  [PASS] CONTROL: PKEF restores into the freshly built runtime
+  [PASS] CONTROL: PKID restores into the freshly built runtime
+  [PASS] CONTROL: the restore echoes the state hash stored in the payload
+  [PASS] CONTROL: PKID re-captured after the restore is BYTE-IDENTICAL to the payload it came from (writer == reader)
+  [PASS] CONTROL: PKEF re-captured after the restore is BYTE-IDENTICAL to the payload it came from
+  [PASS] CONTROL: the restored business section `hash` matches the world the payload was captured from
+  [PASS] CONTROL: the restored business section `points` matches the world the payload was captured from
+  [PASS] CONTROL: the restored business section `baseline` matches the world the payload was captured from
+  [PASS] CONTROL: the restored business section `history` matches the world the payload was captured from
+  [PASS] CONTROL: the restored business section `draw` matches the world the payload was captured from
+  [PASS] CONTROL: the restored business section `bits` matches the world the payload was captured from
+  [PASS] CONTROL: the restored business section `offer` matches the world the payload was captured from
+  [PASS] CONTROL: the restored business section `ideas` matches the world the payload was captured from
+  [PASS] CONTROL: the restored business section `committed_day` matches the world the payload was captured from
+  [PASS] CONTROL: the restored business section `catalog_hash` matches the world the payload was captured from
+  [PASS] CONTROL: the restored ideology snapshot carries the same points the source snapshot reports
+  [PASS] CONTROL: the restored snapshot field `locations` is identical to the source's
+  [PASS] CONTROL: the restored snapshot field `levels` is identical to the source's
+  [PASS] CONTROL: the restored snapshot field `idea_ids` is identical to the source's
+  [PASS] CONTROL: the restored snapshot field `understanding_q16` is identical to the source's
+
+[rob] ===== L26 ordering: PKID without PKEF =====
+  [PASS] L26: restoring the EQUIPPED PKID without PKEF is REFUSED
+  [PASS] L26: the refusal reason is `ideology_effect_binding_missing_or_mismatched`
+  [PASS] L26: the refused out-of-order restore leaves the Effect runtime byte-identical
+  [PASS] L26: the refused out-of-order restore leaves the ideology runtime on the CONTROL payload (not the equipped one)
+  [PASS] L26: the same payload's PKEF restores first
+  [PASS] L26: PKEF now carries the equipped card's external binding
+  [PASS] L26: PKID restores once PKEF has landed (the ordering is the whole difference)
+  [PASS] L26: the restored card is ACTIVE (a non-zero location slot)
+  [PASS] L26: the EQUIPPED PKID also round-trips byte for byte
+  [PASS] L26: the equipped business hash matches the source world
+  [PASS] L27: a PKID payload that does NOT list the Effect side's live transaction is REFUSED
+  [PASS] L27: the refusal carries the Effect side's own reason `effect_external_pending_transaction_unknown`
+  [PASS] L27: the refused restore leaves the card equipped exactly as the restored payload said
+  [PASS] L27: the unequipped Effect payload restores again, clearing the live transaction
+
+[rob] ===== coverage gaps of the two integrity schemes =====
+[rob/gap] PKID last_day 0 -> 1007: ok=true reason= adopted_committed_day=1007
+  [FINDING] PKID `last_day` (offset 16) is OUTSIDE compute_state_hash(): a payload with the day rewritten from 0 to 1007 restores with ok=true and the runtime ADOPTS the injected day
+            
+  [PASS] FINDING-DOC: the injected `last_day` case is REFUSED or the runtime adopts it verbatim (both outcomes are recorded, neither hides)
+[rob/gap] PKID submit_order 0 -> 1007: ok=true reason=
+  [FINDING] PKID `submit_order` (offset 24) is OUTSIDE compute_state_hash(): a rewritten value restores with ok=true and is not observable through any public API
+            
+  [PASS] FINDING-DOC: the injected `submit_order` case is REFUSED or accepted (recorded either way)
+[rob/gap] PKEF current_day -1 -> 1006: ok=true reason= adopted_day=1006
+  [FINDING] PKEF has no state hash and `current_day` (offset 20) is only bounds-checked at -1: a rewritten day (-1 -> 1006) restores with ok=true and becomes the runtime's day
+            
+  [PASS] FINDING-DOC: the injected PKEF `current_day` case is REFUSED or the runtime adopts it verbatim (recorded either way)
+
+[rob] ===== sampled single-byte sweep (every 8th byte) =====
+  [PASS] PKID SWEEP: all 73 sampled single-byte corruptions produce a diagnosable answer (a Dictionary with a String reason), and none crashes the process
+  [PASS] PKID SWEEP: the runtime still accepts the pristine payload after 73 corruptions
+[rob/PKID SWEEP] 59 of 73 sampled corruptions refused, 14 ACCEPTED; accepted offsets=[16, 24, 48, 144, 152, 160, 168, 176, 192, 488, 496, 504, 520, 528]
+[rob/PKID SWEEP] refusal layers: cell_program_execution_contract_mismatch x1, ideology_save_applied_basis_invalid x1, ideology_save_ban_invalid x1, ideology_save_catalog_mismatch x1, ideology_save_command_count_invalid x1, ideology_save_country_count_invalid x1, ideology_save_country_invalid x2, ideology_save_header_invalid x1, ideology_save_idea_count_invalid x1, ideology_save_point_history_invalid x1, ideology_save_points_header_invalid x1, ideology_save_producer_invalid x1, ideology_save_state_hash_mismatch x46
+  [FINDING] PKID accepts 14 of 73 sampled single-byte corruptions: the uncovered bytes are 16-24, 48, 144-176, 192, 488-504, 520-528 (every 8th byte sampled)
+            
+  [PASS] PKEF SWEEP: all 38 sampled single-byte corruptions produce a diagnosable answer (a Dictionary with a String reason), and none crashes the process
+  [PASS] PKEF SWEEP: the runtime still accepts the pristine payload after 38 corruptions
+[rob/PKEF SWEEP] 22 of 38 sampled corruptions refused, 16 ACCEPTED; accepted offsets=[48, 64, 96, 104, 112, 144, 168, 184, 192, 200, 224, 232, 240, 264, 272, 280]
+[rob/PKEF SWEEP] refusal layers: catalog_hash_mismatch x2, era_reward_cross_section_mismatch x2, pkef_candidate_cursor_invalid x1, pkef_era_reward_alternative_truncated x6, pkef_era_reward_identity_invalid x3, pkef_era_reward_truncated x1, pkef_external_binding_invalid x1, pkef_header_incompatible x1, pkef_instance_truncated_or_metric_mismatch x1, pkef_runtime_cursor_invalid x4
+  [FINDING] PKEF accepts 16 of 38 sampled single-byte corruptions: the uncovered bytes are 48, 64, 96-112, 144, 168, 184-200, 224-240, 264-280 (every 8th byte sampled)
+            
+
+=== ideology save payload robustness (18.2: corrupt / truncated / old-schema / ABI): 381 checks, 0 failures, 5 finding(s) ===
+[economy-open-finish] day=0 country=0.529 workset=0.036 fiscal=0.027 csr=0.000 recovery=0.002 vectors=0.091 audit=0.032 commands=0.011
+[research-procure-diag] day=0 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=1 old=0.0002 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=0 old=0.0000 new=0.0000 rows=0
+[probe] fold step cursor=0/0 took=0.0000 cells=0 commands=0
+[probe] AB old_first=1 old=0.0001 new=0.0000 rows=0
+[economy-open-finish] day=0 country=0.529 workset=0.220 fiscal=0.016 csr=0.001 recovery=0.000 vectors=0.051 audit=0.031 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=42 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=42 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=0 old=0.0001 new=0.0001 rows=0
+[probe] fold step cursor=0/0 took=0.0001 cells=0 commands=0
+[probe] AB old_first=1 old=0.0002 new=0.0000 rows=0
+ERROR: 19 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 635 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

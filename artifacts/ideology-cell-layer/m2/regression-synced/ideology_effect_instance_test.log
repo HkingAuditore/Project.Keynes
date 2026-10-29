@@ -1,0 +1,53 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [OK] default ideology effect catalog loads
+  [OK] catalog declares the v1 granary-belt program
+  [OK] program key is not double-prefixed
+  [OK] country catalog compiles
+  [OK] modifier runtime configures
+  [OK] effect catalog configures
+  [OK] ideology catalog configures
+  [OK] declared program resolves as managed
+  [OK] undefined program is not managed
+  [OK] legacy template registry stays unmanaged
+  [OK] country handle is generation safe
+  [OK] discover and adopt queue
+  [OK] adopt day applies
+  [OK] adoption creates exactly one instance
+  [OK] instance records the card level
+  [OK] instance is owned by the EffectRuntime
+  [OK] effect day runs
+  [OK] condition blocks dispatch below the gated level
+  [OK] ideology day 1 applies
+  [OK] ideology day 2 applies
+  [OK] ideology day 3 applies
+  [OK] ideology day 4 applies
+  [OK] level advance does not accumulate instances
+  [OK] instance tracks the promoted level
+  [OK] promoted instance is owned by the EffectRuntime
+  [OK] instance identity changes when the card level changes
+  [OK] effect day after promotion runs
+  [OK] condition lets exactly one command through past the gate
+  [OK] report is stable across identical reconciles
+  [OK] the report carries one target domain per instance row
+  [OK] a country-domain program reports domain 3
+  [OK] a country-domain target handle is the country handle
+  [OK] modifier runtime configures
+  [OK] effect catalog configures
+  [OK] ideology catalog configures
+  [OK] save fixture adopts the card
+  [OK] save fixture holds exactly one instance
+  [OK] save produces both PKEF and PKID payloads
+  [OK] modifier runtime configures
+  [OK] effect catalog configures
+  [OK] ideology catalog configures
+  [OK] PKEF restores first
+  [OK] PKID restores with its Effect instances intact
+  [OK] restored instance count matches
+  [OK] every restored instance is still owned by the EffectRuntime
+  [OK] restored instance keeps its identity
+  [OK] modifier runtime configures
+  [OK] effect catalog configures
+  [OK] ideology catalog configures
+  [OK] PKID rejects a save whose Effect instances are missing
+ideology effect instance: 51 checks, 1 failures

@@ -450,6 +450,62 @@ bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
         preserved_tx_ids.insert(tx.id);
         preserved_builtins.push_back(std::move(row));
     }
+    // SPLIT AUTHORITY (mask 0xFEF: IDEOLOGY on the main thread, EFFECT and
+    // MODIFIER on the worker). An ideology equip plans its batch on THIS table
+    // because the worker's Effect POD store never receives it, and nothing on
+    // the main thread drains it (`run_effect_daily`, both Modifier adapter halves
+    // and `run_modifier_daily` all report `path=EFFECT_WORKER`). Replacing
+    // `_transactions` wholesale therefore erased the row one day after it was
+    // planned: `transaction_status_pod` answered 0 (MISSING), which
+    // `poll_pending_transition` reads as failure and rolls the equip back.
+    //
+    // Preserve the batch AND its source instance (the transaction rebuild below
+    // requires the source instance to exist), so `collect_worker_modifier_rows`
+    // has something to settle.
+    struct PreservedIdeologyBatch {
+        Transaction transaction;
+        std::vector<Command> commands;
+        Instance source;
+        std::vector<int64_t> metric_values;
+        std::vector<uint8_t> metric_present;
+    };
+    std::vector<PreservedIdeologyBatch> preserved_ideology;
+    for (const Transaction &tx : _transactions) {
+        if (tx.program_id < 0) continue;  // builtins are handled above.
+        const int32_t source_index = instance_index_for_id(tx.source_instance_id);
+        if (source_index < 0 ||
+            source_index >= static_cast<int32_t>(_instances.size()))
+            continue;
+        const Instance &source_instance = _instances[static_cast<size_t>(source_index)];
+        if (source_instance.source_type != IDEOLOGY_SOURCE_TYPE) continue;
+        PreservedIdeologyBatch row;
+        row.transaction = tx;
+        row.commands.reserve(tx.command_count);
+        for (uint32_t ordinal = 0; ordinal < tx.command_count; ++ordinal) {
+            const Command *command = command_at(tx, ordinal);
+            if (command == nullptr) {
+                error = "effect_pod_snapshot_ideology_command_missing";
+                return false;
+            }
+            row.commands.push_back(*command);
+        }
+        row.source = source_instance;
+        row.metric_values.reserve(static_cast<size_t>(_metric_count));
+        row.metric_present.reserve(static_cast<size_t>(_metric_count));
+        const size_t source_base = static_cast<size_t>(source_instance.metric_base);
+        for (int32_t metric = 0; metric < _metric_count; ++metric) {
+            const size_t src = source_base + static_cast<size_t>(metric);
+            if (src < _metric_values.size() &&
+                src < _metric_present.size()) {
+                row.metric_values.push_back(_metric_values[src]);
+                row.metric_present.push_back(_metric_present[src]);
+            } else {
+                row.metric_values.push_back(0);
+                row.metric_present.push_back(0);
+            }
+        }
+        preserved_ideology.push_back(std::move(row));
+    }
     std::vector<int64_t> preserved_country_request_ids;
     std::vector<NativeAckBinding> preserved_country_bindings;
     std::unordered_set<int64_t> preserved_country_bound_ids;
@@ -539,6 +595,13 @@ bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
         instance.stack_count = entry.stack_count;
         instance.applied_stack_count = entry.applied_stack_count;
         instance.effect_applied = entry.effect_applied;
+        // Written back verbatim on purpose. For an UNMANAGED program the POD keeps
+        // `applied_stack_count` as fire bookkeeping and never touches the latch, so
+        // this arrives as `(0, N)`; that is the domain's own shape, not a corruption,
+        // and `restore()`'s pair check is scoped to managed rows for exactly this
+        // reason (see the comment there and `runtime_effect_pod.cpp`'s matching save
+        // validation). Normalising it here would make this facade's copy disagree
+        // with the POD's own save of the same instance.
         instance.applied_input_revision = entry.applied_input_revision;
         instance.expires_day = entry.expires_day;
         instance.stack_key_hash = entry.stack_key_hash;
@@ -658,6 +721,23 @@ bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
     _free_instance_indices.clear();
     _metric_values = std::move(next_metric_values);
     _metric_present = std::move(next_metric_present);
+    // Re-attach the preserved ideology source instances. Skipped when the worker
+    // already carries the same id (that state is newer than ours).
+    for (PreservedIdeologyBatch &row : preserved_ideology) {
+        if (_instance_ids.count(row.source.id) != 0) continue;
+        Instance instance = row.source;
+        // Re-attached INACTIVE: it exists only so the settle can map the
+        // preserved transaction back into Modifier rows. It must never be
+        // evaluated on this thread, because the worker owns EFFECT here.
+        instance.active = 0;
+        instance.metric_base = static_cast<uint32_t>(_metric_values.size());
+        _metric_values.insert(_metric_values.end(), row.metric_values.begin(),
+                              row.metric_values.end());
+        _metric_present.insert(_metric_present.end(), row.metric_present.begin(),
+                               row.metric_present.end());
+        _instance_ids[instance.id] = static_cast<int32_t>(_instances.size());
+        _instances.push_back(instance);
+    }
     _transactions = std::move(next_transactions);
     _transaction_ids = std::move(next_transaction_ids);
     _pending_transactions_by_instance = std::move(next_pending_by_instance);
@@ -683,6 +763,22 @@ bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
             static_cast<uint32_t>(_command_arena.size());
         row.transaction.command_count =
             static_cast<uint32_t>(row.commands.size());
+        for (Command &command : row.commands)
+            _command_arena.push_back(std::move(command));
+        _transaction_ids[row.transaction.id] =
+            static_cast<int32_t>(_transactions.size());
+        if (row.transaction.status == PLANNED ||
+            row.transaction.status == PREFLIGHTED ||
+            row.transaction.status == COMMITTED) {
+            ++_pending_transactions_by_instance[row.transaction.source_instance_id];
+        }
+        _transactions.push_back(std::move(row.transaction));
+    }
+    for (PreservedIdeologyBatch &row : preserved_ideology) {
+        if (_transaction_ids.count(row.transaction.id) != 0) continue;
+        if (_instance_ids.count(row.transaction.source_instance_id) == 0) continue;
+        row.transaction.command_begin = static_cast<uint32_t>(_command_arena.size());
+        row.transaction.command_count = static_cast<uint32_t>(row.commands.size());
         for (Command &command : row.commands)
             _command_arena.push_back(std::move(command));
         _transaction_ids[row.transaction.id] =
@@ -1003,13 +1099,38 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
             definition.max_stacks <= 0 || definition.target_selector_kind < 0 ||
             definition.target_selector_kind > SELECTOR_MAX_KIND ||
             definition.target_selector_param[0] < 0 ||
-            (definition.target_selector_kind != SELECTOR_TAG_SOURCE_COUNT &&
-                definition.target_selector_kind != SELECTOR_FAMILY_OWNED &&
-                definition.target_selector_param[0] > SELECTOR_MAX_CELLS) ||
+            // M2-2: the ceiling is per-KIND now, mirroring
+            // `selector_cell_ceiling()`. Territory/source kinds report "no
+            // policy cap" because their target set comes from the ownership
+            // index rather than a geometric walk, and capping it at 32 is what
+            // plan 22 removes.
+            //
+            // This must stay in step with the GDScript validator in
+            // `scripts/ideology/ideology_effect_definition.gd`; the two run at
+            // different layers of the same compile, so a divergence means one
+            // accepts content the other rejects.
+            // NOTE: the AUTHORED ceiling, not the geometric one. `param[0]` is a cap
+            // and shipped content authors 8 for R1 whose walk yields 6 --
+            // validating against the geometry (6) rejected that content and
+            // broke the catalog. The authored ceiling stays at the legacy 32
+            // for every bounded kind, which is what these validators checked
+            // before the refactor.
+            (!selector_authored_cap_is_unbounded(
+                 definition.target_selector_kind) &&
+                definition.target_selector_param[0] >
+                    selector_authored_cell_ceiling(
+                        definition.target_selector_kind)) ||
+            // FAMILY_OWNED selects family HANDLES, not cells, so
+            // `selector_cell_ceiling()` correctly reports "no CELL cap" for it. Its
+            // consumer nevertheless clamps the family count to
+            // `LEGACY_INSTANCE_MAX_CELLS` (`ideology_runtime.cpp:1905`), and a silent
+            // clamp is exactly what a validator exists to prevent: a card authoring 40
+            // families would quietly get 32 and never learn. Bound it here instead.
             (definition.target_selector_kind == SELECTOR_FAMILY_OWNED &&
                 (definition.target_domain != 0 ||
                     definition.target_selector_param[0] < 1 ||
-                    definition.target_selector_param[0] > SELECTOR_MAX_CELLS ||
+                    definition.target_selector_param[0] >
+                        LEGACY_INSTANCE_MAX_CELLS ||
                     definition.target_selector_param[1] < 1)) ||
             !source_count_selector_valid ||
             (definition.lifecycle == 1 && definition.command_count == 0))
@@ -2994,6 +3115,33 @@ void EffectRuntime::mark_family_effect_group_dirty(int32_t instance_index) {
 bool EffectRuntime::preview_family_effect_value(
         const Definition &definition, const Instance &instance,
         int64_t &value, std::string &error) const {
+    // Bind both accessors to this instance and delegate. `state_value` reads the
+    // instance's latched STATE words, which a caller without an instance has no
+    // equivalent for -- the derived layer passes a constant 0 accessor, which is
+    // correct because a program reading STATE is not eligible for DerivedCell in
+    // the first place (`state_dependent` in cell_program_eligibility.h).
+    return run_program_machine(
+        definition,
+        [this, &instance](int32_t metric_id) {
+            return metric_value(instance, metric_id);
+        },
+        [this, &instance](int32_t state_id) {
+            return state_value(instance, state_id);
+        },
+        value, error);
+}
+
+// The stack machine itself, parameterised on where metric reads come from.
+//
+// Extracted so a caller with its own per-cell samples can run the SAME bytecode
+// without an `Instance` (plan §15.5: a Ramp must stay a live function of its
+// metric, and reimplementing the instruction set for the derived layer would be a
+// second evaluator to keep in step).
+bool EffectRuntime::run_program_machine(
+        const Definition &definition,
+        const std::function<int64_t(int32_t)> &metric_accessor,
+        const std::function<int64_t(int32_t)> &state_accessor,
+        int64_t &value, std::string &error) const {
     std::array<int64_t, MAX_STACK> stack{};
     int32_t sp = 0;
     const int32_t end = definition.instruction_begin +
@@ -3008,11 +3156,11 @@ bool EffectRuntime::preview_family_effect_value(
                 break;
             case READ_METRIC:
                 if (sp >= MAX_STACK) { error = "effect_value_stack_overflow"; return false; }
-                stack[sp++] = metric_value(instance, row.arg0);
+                stack[sp++] = metric_accessor(row.arg0);
                 break;
             case READ_STATE:
                 if (sp >= MAX_STACK) { error = "effect_value_stack_overflow"; return false; }
-                stack[sp++] = state_value(instance, row.arg0);
+                stack[sp++] = state_accessor(row.arg0);
                 break;
             case ADD:
             case SUB:
@@ -3486,6 +3634,7 @@ bool EffectRuntime::enqueue_external_effect_batch_pod(
         command.idempotency_key = idempotency;
         command.external_effect_id = source.effect_id;
         command.external_source_id = source.source_id;
+        command.external_source_is_stable = source.stable_source_identity;
         staged.push_back(command);
     }
     if (replayed != 0) {
@@ -4040,6 +4189,42 @@ Dictionary EffectRuntime::submit_snapshots(const Dictionary &batch) {
     return out;
 }
 
+bool EffectRuntime::evaluate_program_magnitude_for_metrics(
+        const std::string &program_key,
+        const int64_t *metric_values, int32_t metric_count,
+        int64_t &out_value, std::string &error) const {
+    error.clear();
+    out_value = 0;
+    if (metric_values == nullptr || metric_count <= 0) {
+        error = "effect_magnitude_metrics_missing";
+        return false;
+    }
+    const Definition *definition = nullptr;
+    for (const Definition &candidate : _definitions) {
+        if (candidate.key == program_key) {
+            definition = &candidate;
+            break;
+        }
+    }
+    if (definition == nullptr) {
+        error = "effect_program_not_found";
+        return false;
+    }
+    // No runtime state is mutated: the accessor closes over the caller's samples.
+    // An earlier version swapped `_metric_values` with a `const_cast`; that would
+    // have been a data race under the worker path (plan §8.1).
+    return run_program_machine(
+        *definition,
+        [metric_values, metric_count](int32_t metric_id) -> int64_t {
+            if (metric_id < 0 || metric_id >= metric_count) return 0;
+            return metric_values[metric_id];
+        },
+        // A STATE-reading program is never DerivedCell (`state_dependent`), so this
+        // accessor should never be consulted. Returning 0 makes that a visible
+        // zero rather than an inherited value if the invariant ever breaks.
+        [](int32_t) -> int64_t { return 0; },
+        out_value, error);
+}
 int64_t EffectRuntime::metric_value(const Instance &instance, int32_t metric_id) const {
     const int64_t *metric = metric_ptr(instance, metric_id);
     return metric != nullptr ? *metric : 0;
@@ -5397,6 +5582,192 @@ Dictionary EffectRuntime::run_daily(int64_t day_index) {
     return out;
 }
 
+bool EffectRuntime::map_modifier_row(const Transaction &transaction,
+                                     const Instance &source_instance,
+                                     const Command &command,
+                                     ModifierRow &out) const {
+    if (command.action != MODIFIER_COMMAND) return false;
+    const std::string *definition_key = nullptr;
+    if (command.command_definition_id >= 0 &&
+        command.command_definition_id < static_cast<int32_t>(_command_definitions.size())) {
+        definition_key = &_command_definitions[
+            static_cast<size_t>(command.command_definition_id)].definition_key;
+    }
+    if (definition_key == nullptr || definition_key->empty()) return false;
+    int32_t adapter_kind = NATIVE_MODIFIER_GENERIC;
+    if (command.command_definition_id >= 0 &&
+        command.command_definition_id < static_cast<int32_t>(
+            _command_definitions.size())) {
+        adapter_kind = _command_definitions[
+            static_cast<size_t>(command.command_definition_id)]
+            .native_modifier_adapter;
+    } else {
+        // Behavior commands are a compile-time extension point. Keep
+        // their legacy key compatibility outside declarative content;
+        // ordinary catalog/template commands never execute this
+        // string branch in the native daily adapter path.
+        const std::string behavior_key = command_key_for(command);
+        if (behavior_key == "technology.modifier")
+            adapter_kind = NATIVE_MODIFIER_TECHNOLOGY;
+        else if (behavior_key == "family.modifier")
+            adapter_kind = NATIVE_MODIFIER_FAMILY;
+        else if (behavior_key == "person.modifier")
+            adapter_kind = NATIVE_MODIFIER_PERSON;
+        else if (behavior_key == "trigger.modifier")
+            adapter_kind = NATIVE_MODIFIER_TRIGGER;
+    }
+    // L3-9: the program's compiled magnitude is the base; this instance may
+    // carry a multiplier written by another card's synergy. Applied here, on
+    // the single path that turns a program command into a modifier row, so
+    // there is exactly one place where "how strong is this row" is decided.
+    // A scale of exactly 1.0 takes the old path bit-for-bit.
+    const int32_t magnitude_scale_q16 = source_instance.magnitude_scale_q16;
+    const auto scaled_magnitude = [magnitude_scale_q16](int64_t value) -> int32_t {
+        return effect_scaled_magnitude_q16(value, magnitude_scale_q16);
+    };
+
+    out = ModifierRow();
+    out.opcode = command.opcode;
+    out.sequence = static_cast<int64_t>(command.idempotency_key &
+        0x7fffffffffffffffULL);
+    out.effective_day = transaction.effective_day;
+    out.definition_key = *definition_key;
+    out.duration_days = command.duration_days;
+    out.stacks = std::max(1, command.stacks);
+    out.domain_bit = adapter_ack_bit_for(command);
+    // A REMOVE row is proved by absence, everything else by presence.
+    out.expect_present = command.opcode != ModifierRuntime::COMMAND_REMOVE;
+
+    if (adapter_kind == NATIVE_MODIFIER_TECHNOLOGY) {
+        out.producer = 180;
+        out.domain = ModifierRuntime::COUNTRY;
+        out.scope = ModifierRuntime::ENTITY;
+        out.entity_handle = command.target_handle;
+        out.source_type = 0x54454348ULL; // TECH
+        out.source_id = static_cast<uint64_t>(transaction.source_instance_id) & 0xffffULL;
+        out.magnitude_q16 = ModifierRuntime::Q16_ONE;
+    } else if (adapter_kind == NATIVE_MODIFIER_FAMILY) {
+        out.producer = 160;
+        out.domain = ModifierRuntime::ECONOMY;
+        out.scope = ModifierRuntime::GROUP;
+        out.group_handle = command.target_generation;
+        out.source_type = 0x46414d494c59ULL; // FAMILY
+        out.source_id = command.target_handle;
+        out.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
+            scaled_magnitude(command.value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+    } else if (adapter_kind == NATIVE_MODIFIER_PERSON) {
+        out.producer = 170;
+        out.domain = command.domain;
+        out.scope = ModifierRuntime::ENTITY;
+        out.entity_handle = command.target_handle;
+        out.source_type = 0x504552534f4eULL; // PERSON
+        out.source_id = static_cast<uint64_t>(transaction.source_instance_id);
+        out.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
+            scaled_magnitude(command.value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+    } else if (adapter_kind == NATIVE_MODIFIER_TRIGGER) {
+        out.producer = 175;
+        out.domain = command.domain;
+        out.scope = ModifierRuntime::ENTITY;
+        out.entity_handle = command.target_handle;
+        out.source_type = 0x54524947474552ULL; // TRIGGER
+        out.source_id = static_cast<uint64_t>(transaction.source_instance_id);
+        out.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
+            scaled_magnitude(command.value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+    } else if (adapter_kind == NATIVE_MODIFIER_FAMILY_EFFECT) {
+        out.producer = 161;
+        out.domain = command.domain;
+        out.source_type = 0x46414d4546464543ULL; // FAMEFFEC
+        out.source_id = static_cast<uint64_t>(source_instance.id);
+        out.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
+            scaled_magnitude(command.value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+        switch (source_instance.target_domain) {
+            case 0: // Family.
+            case 1: // Branch.
+                out.scope = ModifierRuntime::ENTITY;
+                out.entity_handle = command.target_handle;
+                break;
+            case 2: // Settlement cell.
+            case 5: // Building/resource selector within the cell.
+                out.scope = ModifierRuntime::GROUP;
+                out.group_handle = command.target_handle;
+                break;
+            case 3: // Country.
+            case 4: // Climate cell.
+                out.scope = ModifierRuntime::ENTITY;
+                out.entity_handle = command.target_handle;
+                break;
+            default:
+                return false;
+        }
+    } else if (adapter_kind == NATIVE_MODIFIER_IDEOLOGY) {
+        out.producer = 162;
+        out.domain = command.domain;
+        out.source_type = 0x4944454fULL; // IDEO
+        out.source_id = static_cast<uint64_t>(source_instance.id);
+        out.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
+            scaled_magnitude(command.value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+        // X9-b family programs carry the stable family handle in ENTITY;
+        // cell/resource programs (2/5) carry a cell in GROUP. Both
+        // handles must not be set: Modifier's scope_id_for() would read
+        // the family handle as a settlement group while scope is GROUP.
+        switch (source_instance.target_domain) {
+            case 0: // Family.
+                out.scope = ModifierRuntime::ENTITY;
+                out.entity_handle = command.target_handle;
+                out.group_handle = 0;
+                break;
+            case 2: // Settlement cell.
+            case 5: // Building/resource selector within the cell.
+                out.scope = ModifierRuntime::GROUP;
+                out.entity_handle = command.target_handle;
+                out.group_handle = command.target_handle;
+                break;
+            default:
+                out.scope = ModifierRuntime::ENTITY;
+                out.entity_handle = command.target_handle;
+                out.group_handle = 0;
+                break;
+        }
+        // Command-level scope override. payload[2] == 0 means "unset",
+        // never GLOBAL -- GLOBAL is also 0, so defaulting would silently
+        // widen a cell effect to the whole country.
+        if (command.payload[2] >= 1 && command.payload[2] <= 2) {
+            out.scope = static_cast<int32_t>(command.payload[2]);
+            out.group_handle = out.scope == ModifierRuntime::GROUP
+                ? command.target_handle : 0;
+        }
+    } else if (command.action == MODIFIER_COMMAND) {
+        // Generic declarative Modifier command. Complex target/source
+        // resolvers stay on the adapter path until declared natively.
+        // This is the branch SYNERGY rows take: their command's owner_program_id
+        // is -1, so `native_modifier_adapter` stays NATIVE_MODIFIER_GENERIC
+        // (see the assignment at :1124-1132) and the IDEOLOGY branch below is
+        // never reached for them.
+        out.producer = 200;
+        out.domain = command.domain;
+        out.scope = ModifierRuntime::ENTITY;
+        out.entity_handle = command.target_handle;
+        out.source_type = static_cast<uint64_t>(source_instance.source_type);
+        // A command may carry its own stable identity; synergy rows do
+        // (`ExternalEffectCommandPod::stable_source_identity`). This matters
+        // because a synergy's apply and its later deactivation are enqueued as
+        // SEPARATE batches naming DIFFERENT generations (`:3629-3636`), so
+        // `source_instance->source_id` -- the batch's transition source -- can
+        // never be equal for the two. With it equal, ModifierRuntime could not
+        // find the row and answered `already_removed`, leaking the effect
+        // permanently (measured: factors stayed at 0.95/1.03 after the bond died).
+        out.source_id = command.external_source_is_stable &&
+                command.external_source_id != 0
+            ? static_cast<uint64_t>(command.external_source_id)
+            : static_cast<uint64_t>(source_instance.source_id);
+        out.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
+            scaled_magnitude(command.value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+    } else {
+        return false;
+    }
+    return true;
+}
+
 Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_runtime) {
     if (!_configured) return failure("effect_runtime_unconfigured");
     if (modifier_runtime == nullptr || !modifier_runtime->configured())
@@ -5447,16 +5818,6 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
             source_instance->generation != transaction.source_generation)
             continue;
 
-        // L3-9: the program's compiled magnitude is the base; this instance may
-        // carry a multiplier written by another card's synergy. Applied here, on
-        // the single path that turns a program command into a modifier row, so
-        // there is exactly one place where "how strong is this row" is decided.
-        // A scale of exactly 1.0 takes the old path bit-for-bit.
-        const int32_t magnitude_scale_q16 = source_instance->magnitude_scale_q16;
-        const auto scaled_magnitude = [magnitude_scale_q16](int64_t value) -> int32_t {
-            return effect_scaled_magnitude_q16(value, magnitude_scale_q16);
-        };
-
         const uint32_t request_offset = static_cast<uint32_t>(native_commands.size());
         bool supported = true;
         uint32_t domain_mask = 0;
@@ -5466,162 +5827,36 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
             if (command->action != MODIFIER_COMMAND) continue;
             if ((transaction.received_ack_mask & adapter_ack_bit_for(*command)) != 0)
                 continue;
-            const std::string *definition_key = definition_key_ptr(*command);
-            if (definition_key == nullptr || definition_key->empty()) {
+            // THE mapping (magnitude, source identity, scope, handles) lives in
+            // map_modifier_row; the translation below is storage only.
+            ModifierRow row;
+            if (!map_modifier_row(transaction, *source_instance, *command, row)) {
                 supported = false;
                 break;
-            }
-            int32_t adapter_kind = NATIVE_MODIFIER_GENERIC;
-            if (command->command_definition_id >= 0 &&
-                command->command_definition_id < static_cast<int32_t>(
-                    _command_definitions.size())) {
-                adapter_kind = _command_definitions[
-                    static_cast<size_t>(command->command_definition_id)]
-                    .native_modifier_adapter;
-            } else {
-                // Behavior commands are a compile-time extension point. Keep
-                // their legacy key compatibility outside declarative content;
-                // ordinary catalog/template commands never execute this
-                // string branch in the native daily adapter path.
-                const std::string behavior_key = command_key_for(*command);
-                if (behavior_key == "technology.modifier")
-                    adapter_kind = NATIVE_MODIFIER_TECHNOLOGY;
-                else if (behavior_key == "family.modifier")
-                    adapter_kind = NATIVE_MODIFIER_FAMILY;
-                else if (behavior_key == "person.modifier")
-                    adapter_kind = NATIVE_MODIFIER_PERSON;
-                else if (behavior_key == "trigger.modifier")
-                    adapter_kind = NATIVE_MODIFIER_TRIGGER;
             }
             ModifierRuntime::NativeCommand native;
-            native.opcode = command->opcode;
-            native.sequence = static_cast<int64_t>(command->idempotency_key &
-                0x7fffffffffffffffULL);
-            native.effective_day = transaction.effective_day;
-            native.definition_key = definition_key->c_str();
-            native.duration_days = command->duration_days;
-            native.stacks = std::max(1, command->stacks);
+            native.opcode = row.opcode;
+            native.producer = row.producer;
+            native.sequence = row.sequence;
+            native.effective_day = row.effective_day;
+            // `map_modifier_row` already rejected a missing key; keep the
+            // catalog-owned pointer instead of the loop copy so the `const char*`
+            // stays valid after `row` goes out of scope.
+            const std::string *definition_key = definition_key_ptr(*command);
+            native.definition_key = definition_key != nullptr
+                ? definition_key->c_str() : "";
+            native.domain = row.domain;
+            native.scope = row.scope;
+            native.entity_handle = row.entity_handle;
+            native.group_handle = row.group_handle;
+            native.source_type = row.source_type;
+            native.source_id = row.source_id;
+            native.duration_days = row.duration_days;
+            native.stacks = row.stacks;
+            native.magnitude_q16 = row.magnitude_q16;
             native.modifier_handle = 0;
-
-            if (adapter_kind == NATIVE_MODIFIER_TECHNOLOGY) {
-                native.producer = 180;
-                native.domain = ModifierRuntime::COUNTRY;
-                native.scope = ModifierRuntime::ENTITY;
-                native.entity_handle = command->target_handle;
-                native.source_type = 0x54454348ULL; // TECH
-                native.source_id = static_cast<uint64_t>(transaction.source_instance_id) & 0xffffULL;
-                native.magnitude_q16 = ModifierRuntime::Q16_ONE;
-            } else if (adapter_kind == NATIVE_MODIFIER_FAMILY) {
-                native.producer = 160;
-                native.domain = ModifierRuntime::ECONOMY;
-                native.scope = ModifierRuntime::GROUP;
-                native.group_handle = command->target_generation;
-                native.source_type = 0x46414d494c59ULL; // FAMILY
-                native.source_id = command->target_handle;
-                native.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-                    scaled_magnitude(command->value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
-            } else if (adapter_kind == NATIVE_MODIFIER_PERSON) {
-                native.producer = 170;
-                native.domain = command->domain;
-                native.scope = ModifierRuntime::ENTITY;
-                native.entity_handle = command->target_handle;
-                native.source_type = 0x504552534f4eULL; // PERSON
-                native.source_id = static_cast<uint64_t>(transaction.source_instance_id);
-                native.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-                    scaled_magnitude(command->value_q16), 0,
-                    ModifierRuntime::MAX_MAGNITUDE_Q16));
-            } else if (adapter_kind == NATIVE_MODIFIER_TRIGGER) {
-                native.producer = 175;
-                native.domain = command->domain;
-                native.scope = ModifierRuntime::ENTITY;
-                native.entity_handle = command->target_handle;
-                native.source_type = 0x54524947474552ULL; // TRIGGER
-                native.source_id = static_cast<uint64_t>(
-                    transaction.source_instance_id);
-                native.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-                    scaled_magnitude(command->value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
-            } else if (adapter_kind == NATIVE_MODIFIER_FAMILY_EFFECT) {
-                native.producer = 161;
-                native.domain = command->domain;
-                native.source_type = 0x46414d4546464543ULL; // FAMEFFEC
-                native.source_id = static_cast<uint64_t>(source_instance->id);
-                native.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-                    scaled_magnitude(command->value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
-                switch (source_instance->target_domain) {
-                    case 0: // Family.
-                    case 1: // Branch.
-                        native.scope = ModifierRuntime::ENTITY;
-                        native.entity_handle = command->target_handle;
-                        break;
-                    case 2: // Settlement cell.
-                    case 5: // Building/resource selector within the cell.
-                        native.scope = ModifierRuntime::GROUP;
-                        native.group_handle = command->target_handle;
-                        break;
-                    case 3: // Country.
-                    case 4: // Climate cell.
-                        native.scope = ModifierRuntime::ENTITY;
-                        native.entity_handle = command->target_handle;
-                        break;
-                    default:
-                        supported = false;
-                        break;
-                }
-                if (!supported) break;
-            } else if (adapter_kind == NATIVE_MODIFIER_IDEOLOGY) {
-                native.producer = 162;
-                native.domain = command->domain;
-                native.source_type = 0x4944454fULL; // IDEO
-                native.source_id = static_cast<uint64_t>(source_instance->id);
-                native.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-                    scaled_magnitude(command->value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
-                // X9-b family programs carry the stable family handle in ENTITY;
-                // cell/resource programs (2/5) carry a cell in GROUP. Both
-                // handles must not be set: Modifier's scope_id_for() would read
-                // the family handle as a settlement group while scope is GROUP.
-                switch (source_instance->target_domain) {
-                    case 0: // Family.
-                        native.scope = ModifierRuntime::ENTITY;
-                        native.entity_handle = command->target_handle;
-                        native.group_handle = 0;
-                        break;
-                    case 2: // Settlement cell.
-                    case 5: // Building/resource selector within the cell.
-                        native.scope = ModifierRuntime::GROUP;
-                        native.entity_handle = command->target_handle;
-                        native.group_handle = command->target_handle;
-                        break;
-                    default:
-                        native.scope = ModifierRuntime::ENTITY;
-                        native.entity_handle = command->target_handle;
-                        native.group_handle = 0;
-                        break;
-                }
-                // Command-level scope override. payload[2] == 0 means "unset",
-                // never GLOBAL -- GLOBAL is also 0, so defaulting would silently
-                // widen a cell effect to the whole country.
-                if (command->payload[2] >= 1 && command->payload[2] <= 2) {
-                    native.scope = static_cast<int32_t>(command->payload[2]);
-                    native.group_handle = native.scope == ModifierRuntime::GROUP
-                        ? command->target_handle : 0;
-                }
-            } else if (command->action == MODIFIER_COMMAND) {
-                // Generic declarative Modifier command. Complex target/source
-                // resolvers stay on the adapter path until declared natively.
-                native.producer = 200;
-                native.domain = command->domain;
-                native.scope = ModifierRuntime::ENTITY;
-                native.entity_handle = command->target_handle;
-                native.source_type = static_cast<uint64_t>(source_instance->source_type);
-                native.source_id = static_cast<uint64_t>(source_instance->source_id);
-                native.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-                    scaled_magnitude(command->value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
-            } else {
-                supported = false;
-                break;
-            }
             if (command->domain >= 0 && command->domain < 32)
-                domain_mask |= adapter_ack_bit_for(*command);
+                domain_mask |= row.domain_bit;
             native_commands.push_back(native);
         }
         if (!supported) {
@@ -5721,6 +5956,32 @@ Dictionary EffectRuntime::ack_native_modifier(ModifierRuntime *modifier_runtime)
             if (!ok) {
                 failed = true;
                 failure_reason = reason.empty() ? "effect_native_modifier_rejected" : reason;
+                // Roll back the rows THIS batch already committed.
+                //
+                // `run_modifier_daily` applies each row in submission order and only then
+                // does the ACK reach the failing row, so rows that committed before it are
+                // otherwise orphaned: `apply_rejected_instance_transition` only reschedules
+                // and never touches the Modifier store (it has no pointer to it). Measured
+                // before this fix: a rejected equip left the card's own cost row live while
+                // the card was INACTIVE with zero cell contributions.
+                //
+                // The row identity depends on which adapter branch produced it -- the
+                // ideology branch keys on the instance id, the generic MODIFIER_COMMAND
+                // branch on the batch's source id -- so BOTH are swept. A row matching
+                // neither is not from this batch.
+                const int32_t source_index = instance_index_for_id(
+                    transaction->source_instance_id);
+                if (source_index >= 0 &&
+                    source_index < static_cast<int32_t>(_instances.size())) {
+                    const Instance &source =
+                        _instances[static_cast<size_t>(source_index)];
+                    modifier_runtime->remove_rows_for_source(
+                        static_cast<uint64_t>(source.source_type),
+                        static_cast<uint64_t>(source.id), _current_day);
+                    modifier_runtime->remove_rows_for_source(
+                        static_cast<uint64_t>(source.source_type),
+                        static_cast<uint64_t>(source.source_id), _current_day);
+                }
                 break;
             }
         }
@@ -5766,6 +6027,147 @@ Dictionary EffectRuntime::ack_native_modifier(ModifierRuntime *modifier_runtime)
     _last_native_ack_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - started).count();
     return out;
+}
+
+const EffectRuntime::ModifierBinding *EffectRuntime::worker_modifier_binding(
+        int32_t index) const {
+    if (index < 0 || index >= static_cast<int32_t>(_split_settle_bindings.size()))
+        return nullptr;
+    return &_split_settle_bindings[static_cast<size_t>(index)];
+}
+
+const EffectRuntime::ModifierRow *EffectRuntime::worker_modifier_row(
+        int32_t index) const {
+    if (index < 0 || index >= static_cast<int32_t>(_split_settle_rows.size()))
+        return nullptr;
+    return &_split_settle_rows[static_cast<size_t>(index)];
+}
+
+std::vector<EffectRuntime::ModifierRow> EffectRuntime::collect_worker_modifier_rows(
+        int64_t day_index, std::vector<ModifierBinding> &out_bindings) {
+    out_bindings.clear();
+    if (!_configured) return {};
+    const size_t ledger_begin = _split_settle_rows.size();
+    for (Transaction &transaction : _transactions) {
+        if (transaction.status == ACKED || transaction.status == REJECTED ||
+            transaction.status == RESYNC_REQUIRED)
+            continue;
+        const int32_t source_index = instance_index_for_id(transaction.source_instance_id);
+        if (source_index < 0 ||
+            source_index >= static_cast<int32_t>(_instances.size()))
+            continue;
+        const Instance &source = _instances[static_cast<size_t>(source_index)];
+        if (source.source_type != IDEOLOGY_SOURCE_TYPE) continue;
+        if (source.generation != transaction.source_generation) continue;
+        if (transaction.command_count == 0 || transaction.required_ack_mask == 0)
+            continue;
+        // Already handed to the worker: re-collecting it would enqueue the same
+        // row a second time, and an INDEPENDENT stack policy applies that as a
+        // second stack (the measured 1.03 -> 1.0609 double-add defect).
+        bool bound = false;
+        for (const ModifierBinding &binding : _split_settle_bindings) {
+            if (binding.transaction_id == transaction.id) { bound = true; break; }
+        }
+        if (bound) continue;
+        const size_t row_begin = _split_settle_rows.size();
+        uint32_t domain_mask = 0;
+        for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
+            const Command *command = command_at(transaction, ordinal);
+            if (command == nullptr) continue;
+            if (command->action != MODIFIER_COMMAND) continue;
+            if ((transaction.received_ack_mask & adapter_ack_bit_for(*command)) != 0)
+                continue;
+            ModifierRow row;
+            if (!map_modifier_row(transaction, source, *command, row)) continue;
+            domain_mask |= row.domain_bit;
+            _split_settle_rows.push_back(std::move(row));
+        }
+        const int32_t row_count =
+            static_cast<int32_t>(_split_settle_rows.size() - row_begin);
+        if (row_count == 0 || domain_mask == 0) {
+            _split_settle_rows.resize(row_begin);
+            continue;
+        }
+        // COMMITTED, not PLANNED: the transaction is on its way to the worker and
+        // must not be re-planned. The ACK bit lands when the worker proves the
+        // rows are in its committed Modifier store.
+        transaction.status = COMMITTED;
+        ModifierBinding binding;
+        binding.transaction_id = transaction.id;
+        binding.domain_bit = domain_mask;
+        binding.row_begin = static_cast<int32_t>(row_begin);
+        binding.row_count = row_count;
+        binding.submitted_day = day_index;
+        _split_settle_bindings.push_back(binding);
+        out_bindings.push_back(binding);
+    }
+    return std::vector<ModifierRow>(
+        _split_settle_rows.begin() + static_cast<std::ptrdiff_t>(ledger_begin),
+        _split_settle_rows.end());
+}
+
+int32_t EffectRuntime::acknowledge_worker_modifier_rows(
+        const std::vector<int64_t> &transaction_ids) {
+    return finish_worker_modifier_bindings(transaction_ids, true);
+}
+
+void EffectRuntime::discard_worker_modifier_rows(
+        const std::vector<int64_t> &transaction_ids) {
+    finish_worker_modifier_bindings(transaction_ids, false);
+}
+
+int32_t EffectRuntime::finish_worker_modifier_bindings(
+        const std::vector<int64_t> &transaction_ids, bool confirm) {
+    if (!_configured || _split_settle_bindings.empty()) return 0;
+    int32_t completed = 0;
+    std::vector<ModifierBinding> retained;
+    retained.reserve(_split_settle_bindings.size());
+    for (const ModifierBinding &binding : _split_settle_bindings) {
+        const int32_t tx_index = transaction_index_for_id(binding.transaction_id);
+        const bool named = std::find(transaction_ids.begin(),
+            transaction_ids.end(), binding.transaction_id) != transaction_ids.end();
+        if (!named) {
+            // A transaction that is gone can never complete; dropping its ledger
+            // row is what stops the settle from pinning rows forever.
+            if (tx_index >= 0) retained.push_back(binding);
+            continue;
+        }
+        if (tx_index >= 0 &&
+            tx_index < static_cast<int32_t>(_transactions.size())) {
+            Transaction &transaction = _transactions[static_cast<size_t>(tx_index)];
+            if (transaction.status != ACKED && transaction.status != REJECTED &&
+                transaction.status != RESYNC_REQUIRED) {
+                if (confirm) {
+                    acknowledge_native_domain(transaction, binding.domain_bit);
+                    if (transaction.status == ACKED) ++completed;
+                } else {
+                    transaction.status = PLANNED;
+                }
+            }
+        }
+    }
+    std::vector<ModifierRow> retained_rows;
+    retained_rows.reserve(_split_settle_rows.size());
+    std::vector<ModifierBinding> rebased;
+    rebased.reserve(retained.size());
+    for (const ModifierBinding &binding : retained) {
+        ModifierBinding kept = binding;
+        kept.row_begin = static_cast<int32_t>(retained_rows.size());
+        for (int32_t offset = 0; offset < binding.row_count; ++offset) {
+            const int32_t src = binding.row_begin + offset;
+            if (src < 0 ||
+                src >= static_cast<int32_t>(_split_settle_rows.size()))
+                continue;
+            retained_rows.push_back(_split_settle_rows[static_cast<size_t>(src)]);
+        }
+        kept.row_count =
+            static_cast<int32_t>(retained_rows.size()) - kept.row_begin;
+        rebased.push_back(kept);
+    }
+    _split_settle_rows.swap(retained_rows);
+    _split_settle_bindings.swap(rebased);
+    if (completed != 0) compact_terminal_transactions();
+    return completed;
 }
 
 Dictionary EffectRuntime::dispatch_native_country(NativeCountryRuntime *country_runtime) {
@@ -6705,7 +7107,8 @@ bool EffectRuntime::program_modifier_commands(
                 static_cast<size_t>(definition.command_begin + offset)];
             if (command.action != MODIFIER_COMMAND) continue;
             out.push_back(ProgramModifierCommand{command.definition_key,
-                command.value, command.stacks, command.duration_days});
+                command.value, command.stacks, command.duration_days,
+                command.value_mode});
         }
         return true;
     }
@@ -7360,12 +7763,27 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
             !read_le(bytes, size, cursor, instance.target_handle) || !read_le(bytes, size, cursor, instance.target_generation) ||
             !read_le(bytes, size, cursor, instance.level) ||
             !read_le(bytes, size, cursor, instance.magnitude_scale_q16) ||
-            !magnitude_scale_allowed_for_selector(
-                _definitions[static_cast<size_t>(instance.program_id)]
-                    .target_selector_kind,
-                instance.magnitude_scale_q16,
-                _definitions[static_cast<size_t>(instance.program_id)]
-                    .target_selector_param) ||
+            // BOUNDS CHECK BEFORE THE INDEX, not after -- and `-1` is NOT an index.
+            //
+            // `instance.program_id` came straight out of the payload two reads above and
+            // the range check lived ~70 lines LATER (the `pkef_instance_identity_invalid`
+            // test), so a corrupted PKEF could index `_definitions[]` out of bounds here;
+            // a negative id becomes a huge `size_t`, i.e. a guaranteed out-of-bounds read.
+            //
+            // The first attempt at this guard simply added `program_id < 0` to the chain,
+            // which rejected every TOMBSTONE -- `program_id == -1` is the legitimate
+            // marker for a deleted instance (`pkef_instance_tombstone_invalid` below reads
+            // it that way) -- and broke four save fixtures on the next run. So `-1` skips
+            // the whole group instead of failing it.
+            (instance.program_id != -1 &&
+             (instance.program_id < 0 ||
+              instance.program_id >= static_cast<int32_t>(_definitions.size()) ||
+              !magnitude_scale_allowed_for_selector(
+                  _definitions[static_cast<size_t>(instance.program_id)]
+                      .target_selector_kind,
+                  instance.magnitude_scale_q16,
+                  _definitions[static_cast<size_t>(instance.program_id)]
+                      .target_selector_param))) ||
             !read_le(bytes, size, cursor, instance.next_due_day) ||
             !read_le(bytes, size, cursor, instance.input_revision) ||
             !read_le(bytes, size, cursor, instance.last_evaluated_input_revision) ||
@@ -7411,8 +7829,32 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
             instance.applied_stack_count > instance.max_stacks ||
             instance.effect_applied > 1 || instance.retire_requested > 1 ||
             instance.latched > 1 ||
-            ((instance.effect_applied == 0) !=
-             (instance.applied_stack_count == 0)) ||
+            // The (effect_applied, applied_stack_count) pair is a MANAGED-lifecycle
+            // invariant, not a row invariant: the two fields are advanced TOGETHER
+            // only for a managed program (`apply_acked_instance_transition` here,
+            // `RuntimeEffectPodAuthority::apply_ack` on the worker). An UNMANAGED
+            // program is fire-and-forget: the worker records its applied stack count
+            // as bookkeeping and never sets the latch, because nothing consumes the
+            // latch for it (`uses_managed_lifecycle` gates every reader). `(0, N)` is
+            // therefore the pair the domain itself produces for a one-shot row that
+            // fired, and the POD's OWN save format already scopes this identical
+            // test to `managed != 0` (`runtime_effect_pod.cpp`, the
+            // `effect_pod_instance_truncated_or_invalid` chain).
+            //
+            // PKEF used to apply the test to EVERY row. That made this reader refuse
+            // the pair its own domain writes: with EFFECT owned by the worker, the
+            // write-back of a fired `person.modifier.*` instance carries
+            // `(effect_applied=0, applied_stack_count=1)`, `capture()` persisted it,
+            // and `restore()` answered `pkef_instance_identity_invalid` -- measured,
+            // for the payload returned by the runtime that had just written it. The
+            // check is NOT removed: a MANAGED row whose latch and count disagree is
+            // a real inconsistency (both writers move them together) and is still
+            // refused, in a main-thread payload and a worker payload alike.
+            (instance.program_id >= 0 &&
+             uses_managed_lifecycle(
+                 _definitions[static_cast<size_t>(instance.program_id)]) &&
+             (instance.effect_applied == 0) !=
+                 (instance.applied_stack_count == 0)) ||
             instance.applied_input_revision < 0 ||
             instance.applied_input_revision > instance.input_revision ||
             instance.last_acked_fire_sequence > instance.fire_sequence ||
@@ -7564,6 +8006,22 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
                  transaction.status == COMMITTED) &&
                 source_instance.generation != transaction.source_generation)
                 return failure("pkef_transaction_source_generation_invalid");
+            // A TERMINAL REJECTED row keeps the fire/input references it was rejected AT,
+            // while a generation supersession resets those same instance counters to 0
+            // (`upsert_instance_pod`, the `generation_changed` block). The pair is
+            // legitimate, but it violates the "a transition must not reference a counter
+            // the instance no longer has" rule below -- which made any save taken in the
+            // window between the supersession rejection and the retry fire UNLOADABLE
+            // (`pkef_transaction_transition_invalid`, measured by the §11.7 time-point-2
+            // fixture).
+            //
+            // That rule exists to stop a transition from being APPLIED against a stale
+            // instance. A REJECTED row is terminal and is never applied --
+            // `apply_rejected_instance_transition` deliberately leaves the program
+            // retryable, and the retry is a NEW transaction. So the two "stale counter"
+            // checks are skipped for it. The structural checks still apply to every row,
+            // so real corruption is still caught.
+            const bool terminal_rejected = transaction.status == REJECTED;
             if ((transaction.instance_transition == TRANSITION_NONE) !=
                     (transaction.transition_fire_sequence == 0) ||
                 (transaction.instance_transition == TRANSITION_NONE &&
@@ -7576,10 +8034,11 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
                 ((transaction.instance_transition == TRANSITION_DEACTIVATE ||
                   transaction.instance_transition == TRANSITION_RETIRE) &&
                  transaction.transition_stack_count != 0) ||
-                transaction.transition_input_revision >
-                    source_instance.input_revision ||
-                transaction.transition_fire_sequence >
-                    source_instance.fire_sequence)
+                (!terminal_rejected &&
+                 (transaction.transition_input_revision >
+                      source_instance.input_revision ||
+                  transaction.transition_fire_sequence >
+                      source_instance.fire_sequence)))
                 return failure("pkef_transaction_transition_invalid");
         } else if (transaction.instance_transition != TRANSITION_NONE ||
                    transaction.transition_input_revision != 0 ||

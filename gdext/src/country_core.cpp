@@ -560,6 +560,50 @@ bool decode_country_core_checkpoint(const uint8_t *bytes, size_t size,
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// TEST-ONLY seam (declared in the header, next to the codec it serves).
+//
+// `encode_country_core_checkpoint` validates before it writes, so a wrong-ABI checkpoint
+// can never become bytes; and the only production decode site is the host-internal
+// `pending_country_checkpoint`. That left the ABI/schema refusals unreachable from a
+// test. Minting the smallest LEGAL checkpoint here lets a test encode a good container,
+// flip one field, re-seal the trailing checksum and assert the exact refusal from
+// `decode_country_core_checkpoint` -- the same function a restore walks.
+//
+// It builds an object only. No runtime state, no bypass: the value returned has already
+// passed `validate_country_core_checkpoint`.
+// ---------------------------------------------------------------------------
+bool country_checkpoint_minimal_valid_for_test(CountryCoreCheckpoint &out,
+                                               std::string &error) {
+    error.clear();
+    CountryCoreCheckpoint checkpoint;
+    checkpoint.abi_version = COUNTRY_CHECKPOINT_ABI_VERSION;
+    checkpoint.country_schema_version = COUNTRY_CHECKPOINT_SCHEMA_VERSION;
+    // Only the fields the validator requires are non-default. Setting the rest would
+    // make "the smallest legal checkpoint" a lie and hide which fields are mandatory.
+    checkpoint.session_epoch = 1;
+    checkpoint.catalog_hash = 0x0123456789abcdefull;
+    checkpoint.generation = 1;
+    checkpoint.committed_day = 0;
+    checkpoint.command_watermark = 0;
+    checkpoint.next_event_id = 1;
+    checkpoint.next_boundary_id = 1;
+    // The PKCN header is cross-checked field by field against the CPD2 header, so the
+    // payload has to be a real (if empty) PKCN body. Written with the same `append_*`
+    // helpers the encoder uses, so this cannot drift from the container layout.
+    std::vector<uint8_t> pkcn;
+    append_u32(pkcn, PKCN_MAGIC);
+    append_u32(pkcn, checkpoint.country_schema_version);
+    append_u64(pkcn, checkpoint.catalog_hash);
+    append_u64(pkcn, checkpoint.generation);
+    append_i64(pkcn, checkpoint.committed_day);
+    append_u64(pkcn, checkpoint.command_watermark);
+    checkpoint.canonical_pkcn = std::move(pkcn);
+    if (!validate_country_core_checkpoint(checkpoint, error)) return false;
+    out = std::move(checkpoint);
+    return true;
+}
+
 const char *country_core_step_status_name(CountryCoreStepStatus status) {
     switch (status) {
     case CountryCoreStepStatus::PROGRESS: return "progress";

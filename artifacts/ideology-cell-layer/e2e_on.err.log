@@ -1,0 +1,14 @@
+[prog] key=ideology.effect.kin_hearth_l1 domain=2 selector=12 targets_ok=0 n=0 rollout=1 derived=1
+[prog] key=ideology.effect.kin_hearth_l1 domain=2 selector=12 targets_ok=0 n=0 rollout=1 derived=1
+[prog] key=ideology.effect.kin_hearth_l1 domain=2 selector=12 targets_ok=0 n=0 rollout=1 derived=1
+[prog] key=ideology.effect.kin_hearth_l1 domain=2 selector=12 targets_ok=0 n=0 rollout=1 derived=1
+[prog] key=ideology.effect.kin_hearth_l1 domain=2 selector=12 targets_ok=0 n=0 rollout=1 derived=1
+FAIL rollout On: the card's programs are derived { "ok": true, "programs_seen": 0, "programs_derived": 0, "programs_skipped_legacy": 0, "cells_visited": 0, "commands_folded": 0, "rows_emitted": 0, "truncated": 0, "missing_stat": 0 }
+FAIL rollout On: rows are emitted { "ok": true, "programs_seen": 0, "programs_derived": 0, "programs_skipped_legacy": 0, "cells_visited": 0, "commands_folded": 0, "rows_emitted": 0, "truncated": 0, "missing_stat": 0 }
+FAIL rollout On: the layer is installed { "ok": true, "installed": false, "layer_generation": 0, "stat_count": 0, "cell_count": 0, "stat_ids": [] }
+ERROR: 19 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 635 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

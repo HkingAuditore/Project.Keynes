@@ -1,0 +1,106 @@
+WARNING: [loading-catalog] source changed: rebuild tools/prebake_loading_catalogs.gd; using source compiler
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] prepare (res://scripts/game/loading_catalog_cache.gd:55)
+       [1] compute (res://scripts/geography/native_loading_tasks.gd:15)
+WARNING: [building-visual] disabled: building_visual_renderer_unavailable
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] generate_world (res://scripts/game/world_runtime_host.gd:760)
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:5019)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2527)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:784)
+WARNING: [runtime-worker] Ideology opinion publish deferred: ideology_opinion_snapshot_invalid
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _start_production_shadow_worker (res://scripts/game/world_runtime_host.gd:890)
+       [1] generate_world (res://scripts/game/world_runtime_host.gd:804)
+[runtime-day-wait] day=1 env_day=0 missing=0x3ff stall=0x10 economy_input=-1
+[climate/worker][b8] physics_knobs day=1 ready=0 missing=physics_knobs
+[climate-kernel][round] shared=1 ok=1 n_cells=432 mask=0x1FF ran=0x1FF starved=0x0 knobs_cells=432
+[country][parity] worker_day=1 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=1 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1e research_gate=1 orders=0 rej=0 procured=0 last_err=
+[economy-mirror-cost] day=1 capture_ms=0.894 import_ms=1.761
+WARNING: [climate/worker] field knobs empty (fast_indexed?)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_stage_knobs (res://scripts/geography/map_generator.gd:4981)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2527)
+       [2] sus_tick_daily (res://scripts/geography/map_generator.gd:8151)
+       [3] run_daily_tick (res://scripts/game/world_runtime_host.gd:947)
+       [4] _run_territory_day (res://tests/ideology/ideology_cell_card_worker_test.gd:1093)
+       [5] _wait_for_country_commit (res://tests/ideology/ideology_cell_card_worker_test.gd:1079)
+       [6] _claim_neighboring_cells (res://tests/ideology/ideology_cell_card_worker_test.gd:1045)
+       [7] _expand_fixture_territory (res://tests/ideology/ideology_cell_card_worker_test.gd:1012)
+       [8] _build_world (res://tests/ideology/ideology_cell_card_worker_test.gd:981)
+       [9] generate_world (res://scripts/game/world_runtime_host.gd:826)
+[climate/worker][b8] physics_knobs day=2 ready=1 missing=
+[climate/worker][b8] paw day=2 cell=52 moisture=0.999072 wb30=0 soil=0 paw=0.999072 zeros(water=330 land=0) nonzero=102 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[country][parity] worker_day=2 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=2 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] physics_knobs day=3 ready=1 missing=
+[climate/worker][b8] paw day=3 cell=52 moisture=1 wb30=-0.0017808 soil=-0.00427392 paw=0.998842 zeros(water=330 land=0) nonzero=102 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[country][parity] worker_day=3 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=3 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] physics_knobs day=4 ready=1 missing=
+[climate/worker][b8] paw day=4 cell=52 moisture=1 wb30=-0.003506 soil=-0.00842864 paw=0.997721 zeros(water=330 land=0) nonzero=102 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[country][parity] worker_day=4 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=4 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] physics_knobs day=5 ready=1 missing=
+[climate/worker][b8] paw day=5 cell=52 moisture=1 wb30=-0.00517886 soil=-0.0124711 paw=0.996634 zeros(water=330 land=0) nonzero=102 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[country][parity] worker_day=5 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=5 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] physics_knobs day=6 ready=1 missing=
+[climate/worker][b8] paw day=6 cell=52 moisture=1 wb30=-0.00679471 soil=-0.0163893 paw=0.995583 zeros(water=330 land=0) nonzero=102 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[country][parity] worker_day=6 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=6 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=7 cell=52 moisture=1 wb30=-0.00835585 soil=-0.020188 paw=0.994569 zeros(water=330 land=0) nonzero=102 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[country][parity] worker_day=7 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=7 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=8 cell=52 moisture=0.99848 wb30=-0.00984809 soil=-0.0238322 paw=0.992079 zeros(water=330 land=0) nonzero=102 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[country][parity] worker_day=8 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=8 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=9 cell=52 moisture=0.993886 wb30=-0.0112468 soil=-0.027262 paw=0.986575 zeros(water=330 land=0) nonzero=102 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=9 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=10 cell=52 moisture=0.986958 wb30=-0.0125341 soil=-0.0304334 paw=0.978811 zeros(water=330 land=0) nonzero=102 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=10 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=11 cell=52 moisture=0.978012 wb30=-0.0136934 soil=-0.0333053 paw=0.969111 zeros(water=330 land=0) nonzero=102 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=11 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=12 cell=52 moisture=0.967438 wb30=-0.0147149 soil=-0.0358534 paw=0.957873 zeros(water=330 land=0) nonzero=102 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=12 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=13 cell=52 moisture=0.956197 wb30=-0.0156009 soil=-0.0380813 paw=0.946056 zeros(water=330 land=0) nonzero=102 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=13 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=14 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=15 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=16 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=17 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=18 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=19 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=20 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=21 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=22 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=23 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=24 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/writeback][b8] day=26 vapor store0=0 map0=0 dirty_fields=53 applied=53
+[climate/writeback][b8] day=27 vapor store0=0 map0=0 dirty_fields=53 applied=53
+[climate/writeback][b8] day=28 vapor store0=0 map0=0 dirty_fields=53 applied=53
+[country][active] peer-wait preview day=36 commands=1 dirty=0x2
+[country][active] day=36 failed=country_worker_peer_results_pending input_generation=37
+[runtime-day-wait] day=36 env_day=36 missing=0x4 stall=0x6 economy_input=-1
+[day-stall-fault] day=36 stall=0x6 peer_ms=9928 code=country_worker_peer_stall_timeout ring=1
+[runtime-worker-fault] code=country_worker_peer_stall_timeout day=35 ring=1
+[country][active] day=36 failed=country_worker_peer_stall_timeout input_generation=37
+ERROR: [FAIL] worker stays healthy after day 38 (country_worker_peer_stall_timeout)
+ERROR: [FAIL] worker stays healthy before day 39 (country_worker_peer_stall_timeout)
+ERROR: [FAIL] worker stays healthy before day 39 (country_worker_peer_stall_timeout)
+ERROR: [FAIL] agrarian_reform: worker equips the card (slots=0) (0)
+[cell-equip] agrarian_reform receipts opcodes=[1] reasons=[""]
+[cell-equip] agrarian_reform snapshot={ "ok": true, "country_handle": 4294967296, "offer_cost_q16": 7864320, "starting_points_q16": 0, "ideology_slots_capacity_max": 6, "national_spirit_slots_capacity_max": 3, "reroll_cost_percent": 75, "capacity_unlock_technology_ids": [170, 199, 252, 281, 307], "capacity_unlock_ideology_deltas": [1, 1, 1, 1, 0], "capacity_unlock_spirit_deltas": [0, 1, 0, 0, 1], "capacity_unlock_owned": [0, 0, 0, 0, 0], "draw_sequence": 0, "free_draws": 0, "next_offer_cost_q16": 7864320, "reroll_cost_q16": 5898240, "point_ledger_population_q16": 0, "point_ledger_building_q16": 98400, "point_ledger_trade_q16": 0, "point_ledger_opinion_factor_q16": 88802, "point_ledger_gain_factor_q16": 65536, "point_ledger_gain_q16": 133333, "point_ledger_day": 35, "point_baseline_ready": true, "lifetime_points_q16": 461634, "point_history_q16": [0, 46850, 141425, 0, 0, 0, 47360, 0, 0, 0, 0, 0, 92666, 0, 0, 0, 0, 0, 133333], "active_synergy_ids": [], "ideology_scalar_equipped_count": 0, "ideology_scalar_route_counts": { "clan": 0, "cropland": 0, "era": 0, "fiscal": 0, "granary": 0, "labor": 0, "learning": 0, "livelihood": 0, "market": 0, "mining": 0, "season": 0, "terrain": 0, "thoroughfare": 0, "workshop": 0 }, "ideology_scalar_active_synergy_count": 0, "ideology_scalar_unlocked_era": 0, "materialized": true, "ideology_points_q16": 461634, "known_ids": [1], "idea_ids": [1], "understanding_q16": [0], "levels": [-1], "locations": [0], "slot_indices": [0], "transition_pending": [0], "binding_ids": [0], "binding_generations": [0], "binding_signatures": [0], "binding_program_hashes": [0], "binding_verified": [1], "transition_transaction_offsets": [0, 0], "transition_transaction_ids": [], "transition_transaction_statuses": [], "ideology_slots_used": 0, "ideology_slots_capacity": 2, "national_spirit_slots_used": 0, "national_spirit_slots_capacity": 1, "offer_active": false, "offer_generation": 0, "offer_choice_count": 0, "offer_ids": [], "support_revision": 36, "last_error": "" }
+ERROR: 45 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 4844 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

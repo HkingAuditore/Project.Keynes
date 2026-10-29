@@ -1,4 +1,8 @@
 #include "world_ext.h"
+// Cell-program backend decision (plan 22 §4.5): header-only, no Godot
+// types, so the catalog-compile pass and the pure-kernel test can both
+// consume one algorithm instead of re-deriving eligibility.
+#include "cell_program_eligibility.h"
 
 #include "component_bind_table.gen.h"  // A1 / dots-migration-roadmap §3 — autogen by tools/codegen/gen_cpp_bind_table.py
 #include "system_schedule.h"           // Phase C.1 — 静态 DAG 调度图
