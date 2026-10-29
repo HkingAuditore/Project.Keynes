@@ -2,6 +2,7 @@ extends Control
 class_name EraRewardDialog
 
 signal choice_requested(offer_generation: int, choice_index: int)
+signal dismiss_requested()
 
 const ICON_MAP := {
 	"wheat": "economy.crop",
@@ -22,118 +23,198 @@ const CATEGORY_MAP := {
 
 @onready var _grid: GridContainer = %CardGrid
 @onready var _status: Label = %Status
-@onready var _archive_surface: ArchivalSurface = get_node_or_null("ArchiveSurface") as ArchivalSurface
-@onready var _prompt: Label = get_node_or_null(
-		"ArchiveSurface/Frame/Margin/Column/Body/Prompt/Margin/Text") as Label
+@onready var _popup: VBoxContainer = %Popup
+@onready var _rewards: PanelContainer = %Rewards
+@onready var _close: Button = %Close
+@onready var _metrics: GridContainer = %Metrics
 
 var _offer_generation := 0
 var _choices: Array[EraRewardChoice] = []
+var _offer_open := false
+var _pending := false
+var _opening: Tween
+var _closing := false
 
 func _ready() -> void:
-	process_mode = Node.PROCESS_MODE_ALWAYS
-	if _archive_surface != null:
-		_archive_surface.configure_header("时代奖励", "",
-			&"country.technology")
 	for child in _grid.get_children():
 		if child is EraRewardChoice:
 			_choices.append(child as EraRewardChoice)
 	for index in _choices.size():
 		_choices[index].selected.connect(_on_choice_pressed.bind(index))
-	get_viewport().size_changed.connect(_update_columns)
-	_update_columns()
+	_close.pressed.connect(func() -> void: dismiss_requested.emit())
+	for metric: MetricCard in [%GDP, %Treasury, %Population, %Territory]:
+		metric.set_compact(true)
+		metric.get_node("%TitleLabel").add_theme_font_size_override("font_size", 14)
+		metric.get_node("%ValueLabel").add_theme_font_size_override("font_size", 24)
+	refresh_overview({})
+	get_viewport().size_changed.connect(_layout_popup)
+
+func open_overview(model: Dictionary) -> void:
+	refresh_overview(model)
+	_show_popup()
+
+func refresh_overview(model: Dictionary) -> void:
+	%CountryName.text = String(model.get("country_name", "国家概况"))
+	%GDP.set_data("GDP · 本年", String(model.get("gdp", "—")), "本年累计产值", UITokens.HUD_INK)
+	%Treasury.set_data("国库货币", String(model.get("cash", "—")), "", UITokens.HUD_INK)
+	%Population.set_data("人口", String(model.get("population", "—")), "", UITokens.HUD_INK)
+	%Territory.set_data("地块", String(model.get("territory", "—")), "", UITokens.HUD_INK)
+	_layout_popup.call_deferred()
+
+func _show_popup() -> void:
+	var was_open := visible and not _closing
+	_closing = false
+	visible = true
+	_layout_popup.call_deferred()
+	if not was_open:
+		if _opening != null and _opening.is_valid():
+			_opening.kill()
+		_popup.modulate.a = 1.0
+		var sheet := _popup.get_node("Overview") as Control
+		sheet.pivot_offset = Vector2(_popup.size.x * 0.5, 0.0)
+		sheet.modulate.a = 1.0
+		sheet.scale = Vector2.ONE
+		sheet.rotation = 0.0
+		if not UIAnimation.reduced_motion():
+			sheet.modulate.a = 0.0
+			sheet.scale = Vector2(0.985, 0.94)
+			sheet.rotation = deg_to_rad(-0.6)
+			_opening = create_tween().set_parallel(true)
+			_opening.tween_property(sheet, "modulate:a", 1.0, 0.10)
+			_opening.tween_property(sheet, "scale", Vector2.ONE, 0.20).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+			_opening.tween_property(sheet, "rotation", 0.0, 0.20).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 
 func present_offer(offer: Dictionary) -> void:
 	_offer_generation = int(offer.get("offer_generation", 0))
-	var era_title := String(offer.get("era_title", "时代"))
-	if _archive_surface != null:
-		_archive_surface.configure_header(era_title, "",
-			&"country.technology")
-	if _prompt != null:
-		_prompt.text = ""
+	_offer_open = true
+	_pending = false
+	_close.disabled = false
 	_status.text = ""
+	_status.visible = false
 	_status.modulate = UITokens.ARCHIVE_INK_MUTED
 	var alternatives: Array = offer.get("alternatives", [])
 	for index in _choices.size():
 		var option: Dictionary = alternatives[index] if index < alternatives.size() else {}
 		_choices[index].set_option(_presentation_option(option))
-	_update_columns()
-	visible = true
-	move_to_front()
-	UIAnimation.fade_slide_in(self, Vector2(0.0, 18.0), 0.18)
-	if not _choices.is_empty():
-		_choices[0].get_node("Margin/Column/Choose").grab_focus()
+	_rewards.visible = true
+	_show_popup()
+	for index in _choices.size():
+		_choices[index].play_reveal(0.035 * index)
+	_setup_focus_neighbors()
+	for choice in _choices:
+		if not choice.option_empty():
+			choice.choose_button().grab_focus()
+			break
 
 func _presentation_option(option: Dictionary) -> Dictionary:
 	if option.is_empty():
 		return {}
 	var raw_icon := String(option.get("icon_id", "system.unknown"))
-	var mapped_icon := String(ICON_MAP.get(raw_icon, raw_icon))
 	var presented := option.duplicate(true)
-	presented["icon_key"] = mapped_icon
+	presented["icon_key"] = String(ICON_MAP.get(raw_icon, raw_icon))
 	presented["category"] = String(CATEGORY_MAP.get(raw_icon, "时代方案"))
 	return presented
 
 func _on_choice_pressed(index: int) -> void:
-	if index < 0 or index >= _choices.size() or _choices[index].option_empty():
+	if _pending or index < 0 or index >= _choices.size() or _choices[index].option_empty():
 		return
-	_set_pending("正在提交奖励并等待所有领域确认……")
+	show_pending()
+	for choice in _choices.size():
+		_choices[choice].mark_selected(choice == index)
 	choice_requested.emit(_offer_generation, index)
 
-func _update_columns() -> void:
-	if _grid == null:
-		return
-	var width := get_viewport_rect().size.x
-	_grid.columns = 3 if width >= 1280.0 else 2 if width >= 860.0 else 1
-	_setup_focus_neighbors()
-	if _archive_surface != null:
-		_archive_surface.set_compact(width < 1280.0)
-
 func _setup_focus_neighbors() -> void:
-	var columns := maxi(1, _grid.columns)
 	for index in _choices.size():
-		var button := _choices[index].get_node("Margin/Column/Choose") as Button
-		button.focus_mode = Control.FOCUS_ALL
-		var row := int(index / columns)
-		var column := index % columns
-		button.focus_neighbor_left = NodePath("")
-		button.focus_neighbor_right = NodePath("")
-		button.focus_neighbor_top = NodePath("")
-		button.focus_neighbor_bottom = NodePath("")
-		if column > 0:
-			button.focus_neighbor_left = _choices[index - 1].get_node(
-				"Margin/Column/Choose").get_path()
-		if column + 1 < columns and index + 1 < _choices.size():
-			button.focus_neighbor_right = _choices[index + 1].get_node(
-				"Margin/Column/Choose").get_path()
-		if row > 0 and index - columns >= 0:
-			button.focus_neighbor_top = _choices[index - columns].get_node(
-				"Margin/Column/Choose").get_path()
-		if index + columns < _choices.size():
-			button.focus_neighbor_bottom = _choices[index + columns].get_node(
-				"Margin/Column/Choose").get_path()
+		var button := _choices[index].choose_button()
+		button.focus_neighbor_top = button.get_path_to(_close if index == 0 else _choices[index - 1].choose_button())
+		button.focus_neighbor_bottom = button.get_path_to(_close if index == _choices.size() - 1 else _choices[index + 1].choose_button())
+	_close.focus_neighbor_bottom = _close.get_path_to(_choices[0].choose_button())
 
-func _set_pending(message: String) -> void:
-	for choice in _choices:
-		var button := choice.get_node("Margin/Column/Choose") as Button
-		button.disabled = true
-	_status.text = message
-	_status.modulate = UITokens.ARCHIVE_INK_MUTED
+func _layout_popup() -> void:
+	if not is_node_ready():
+		return
+	var viewport_size := get_viewport_rect().size
+	var width := minf(UITokens.ERA_POPUP_WIDTH, maxf(280.0, viewport_size.x - 32.0))
+	_metrics.columns = 4 if width >= 520.0 else 2
+	var top := UITokens.ERA_BADGE_OPEN_Y + UITokens.ERA_BADGE_SIZE + UITokens.ERA_POPUP_GAP
+	var available := maxf(150.0, viewport_size.y - top - 16.0)
+	var overview_height := (_popup.get_node("Overview") as Control).get_combined_minimum_size().y
+	var height := overview_height
+	if _offer_open:
+		var reward_height := _grid.get_combined_minimum_size().y + 44.0
+		if _status.visible:
+			reward_height += _status.get_combined_minimum_size().y + 6.0
+		height = minf(available, overview_height + 12.0 + reward_height)
+	_popup.position = Vector2((viewport_size.x - width) * 0.5, top)
+	_popup.size = Vector2(width, height)
 
 func show_error(message: String) -> void:
-	_set_pending("奖励提交未完成：%s\n游戏保持暂停，请稍后重试。" % message)
+	_pending = false
+	_close.disabled = false
+	for choice in _choices:
+		choice.set_pending(true)
+	_status.text = "奖励提交未完成：%s" % message
 	_status.modulate = UITokens.RISK
+	_status.visible = true
+	_layout_popup.call_deferred()
 
 func show_pending() -> void:
-	_set_pending("正在提交奖励并等待所有领域确认……")
+	_pending = true
+	_close.disabled = true
+	for choice in _choices:
+		choice.set_pending(true)
+	_status.text = "正在确认奖励……"
+	_status.modulate = UITokens.ARCHIVE_INK_MUTED
+	_status.visible = true
+	_layout_popup.call_deferred()
 
 func close_offer() -> void:
-	visible = false
+	_offer_open = false
+	_pending = false
 	_offer_generation = 0
-	_status.text = ""
+	_rewards.visible = false
+	_status.visible = false
+	_close.disabled = false
+	_layout_popup.call_deferred()
+
+func close_overview(immediate: bool = false) -> void:
+	if _pending:
+		return
+	close_offer()
+	if immediate:
+		if _opening != null and _opening.is_valid():
+			_opening.kill()
+		visible = false
+		_closing = false
+		return
+	if _closing:
+		return
+	if UIAnimation.reduced_motion() or not visible:
+		visible = false
+		return
+	_closing = true
+	if _opening != null and _opening.is_valid():
+		_opening.kill()
+	_opening = create_tween()
+	_opening.tween_property(_popup, "modulate:a", 0.0, 0.10)
+	_opening.tween_callback(func() -> void:
+		visible = false
+		_closing = false)
 
 func is_offer_open() -> bool:
-	return visible
+	return visible and _offer_open
 
-func _gui_input(event: InputEvent) -> void:
-	if event is InputEventKey or event is InputEventMouseButton:
-		accept_event()
+func _input(event: InputEvent) -> void:
+	if not visible or _closing:
+		return
+	if event.is_action_pressed("player_cancel") or event.is_action_pressed("ui_cancel"):
+		if not _pending:
+			dismiss_requested.emit()
+		get_viewport().set_input_as_handled()
+	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		# 纸徽本身保留点击开关；其余空白点击收起并消费，避免误选地图。
+		var badge_rect := Rect2(Vector2(get_viewport_rect().size.x * 0.5 - UITokens.ERA_BADGE_SIZE * 0.5, 0), Vector2(UITokens.ERA_BADGE_SIZE, UITokens.ERA_BADGE_SIZE + UITokens.ERA_BADGE_OPEN_Y))
+		if not _popup.get_global_rect().has_point(event.position) and not badge_rect.has_point(event.position):
+			if not _pending:
+				dismiss_requested.emit()
+			get_viewport().set_input_as_handled()

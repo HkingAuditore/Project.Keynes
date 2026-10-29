@@ -1,6 +1,19 @@
 extends RefCounted
 class_name UITokens
 
+# 顶部时代纸徽：半藏在视口外，交互时下滑；晋升只播放一次。
+const ERA_BADGE_SIZE := 220.0
+const ERA_BADGE_REST_Y := -110.0
+const ERA_BADGE_OPEN_Y := 10.0
+const ERA_BADGE_HOVER_Y := -82.0
+const ERA_BADGE_HOVER_SCALE := 1.045
+const ERA_BADGE_SLIDE_SECONDS := 0.20
+const ERA_BADGE_HOVER_SECONDS := 0.13
+const ERA_POPUP_WIDTH := 580.0
+const ERA_POPUP_GAP := 8.0
+const ERA_BADGE_ADVANCE_SECONDS := 2.8
+const ERA_BADGE_GOLD := Color(1.0, 0.79, 0.30)
+
 const UI_FONT: FontFile = preload("res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.ttf")
 const UI_FONT_BOLD: FontFile = preload("res://assets/fonts/swei/SweiGothicLegCJKsc-Bold.ttf")
 const UI_DISPLAY_FONT: Font = preload("res://assets/fonts/muyao/display_handwritten.tres")

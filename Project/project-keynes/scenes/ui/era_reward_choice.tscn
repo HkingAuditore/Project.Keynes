@@ -1,78 +1,104 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/components/era_reward_choice.gd" id="1_script"]
 [ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
+[ext_resource type="StyleBox" path="res://assets/ui/era/era_note_style.tres" id="3_paper"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_aux_v1/cut_tag_v1.tres" id="4_tag"]
+
+[sub_resource type="StyleBoxTexture" id="TagNormal"]
+texture = ExtResource("4_tag")
+content_margin_left = 10.0
+content_margin_top = 5.0
+content_margin_right = 14.0
+content_margin_bottom = 5.0
+texture_margin_left = 18.0
+texture_margin_top = 24.0
+texture_margin_right = 26.0
+texture_margin_bottom = 16.0
+
+[sub_resource type="StyleBoxTexture" id="TagHover"]
+texture = ExtResource("4_tag")
+modulate_color = Color(1, 0.94, 0.80, 1)
+content_margin_left = 10.0
+content_margin_top = 5.0
+content_margin_right = 14.0
+content_margin_bottom = 5.0
+texture_margin_left = 18.0
+texture_margin_top = 24.0
+texture_margin_right = 26.0
+texture_margin_bottom = 16.0
+
+[sub_resource type="StyleBoxTexture" id="TagPressed"]
+texture = ExtResource("4_tag")
+modulate_color = Color(0.92, 0.83, 0.65, 1)
+content_margin_left = 10.0
+content_margin_top = 5.0
+content_margin_right = 14.0
+content_margin_bottom = 5.0
+texture_margin_left = 18.0
+texture_margin_top = 24.0
+texture_margin_right = 26.0
+texture_margin_bottom = 16.0
+
+[sub_resource type="StyleBoxEmpty" id="Empty"]
 
 [node name="EraRewardChoice" type="PanelContainer"]
-custom_minimum_size = Vector2(280, 302)
+custom_minimum_size = Vector2(0, 76)
 layout_mode = 2
 size_flags_horizontal = 3
-theme_type_variation = &"PKEraRewardCard"
+theme_override_styles/panel = ExtResource("3_paper")
 script = ExtResource("1_script")
 
 [node name="Margin" type="MarginContainer" parent="."]
 layout_mode = 2
-theme_override_constants/margin_left = 16
-theme_override_constants/margin_top = 14
-theme_override_constants/margin_right = 16
-theme_override_constants/margin_bottom = 14
+theme_override_constants/margin_left = 22
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 22
+theme_override_constants/margin_bottom = 16
 
-[node name="Column" type="VBoxContainer" parent="Margin"]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="Top" type="HBoxContainer" parent="Margin/Column"]
+[node name="Row" type="HBoxContainer" parent="Margin"]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="Icon" parent="Margin/Column/Top" instance=ExtResource("2_icon")]
+[node name="Icon" parent="Margin/Row" instance=ExtResource("2_icon")]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(58, 58)
+custom_minimum_size = Vector2(40, 40)
 layout_mode = 2
+size_flags_vertical = 4
 
-[node name="Labels" type="VBoxContainer" parent="Margin/Column/Top"]
+[node name="Column" type="VBoxContainer" parent="Margin/Row"]
 layout_mode = 2
 size_flags_horizontal = 3
-alignment = 1
+theme_override_constants/separation = 3
 
-[node name="Category" type="Label" parent="Margin/Column/Top/Labels"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "时代方案"
-theme_type_variation = &"PKSectionTitle"
-
-[node name="Title" type="Label" parent="Margin/Column/Top/Labels"]
+[node name="Title" type="Label" parent="Margin/Row/Column"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "暂无方案"
 autowrap_mode = 2
-theme_type_variation = &"PKTitle"
+theme_type_variation = &"PKSectionTitle"
+theme_override_font_sizes/font_size = 18
 
-[node name="Description" type="Label" parent="Margin/Column"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_vertical = 3
-text = "当前没有可用的时代奖励。"
-autowrap_mode = 2
-theme_type_variation = &"PKWorkspaceLabel"
-
-[node name="Target" type="Label" parent="Margin/Column"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "作用对象：玩家国家"
-autowrap_mode = 2
-theme_type_variation = &"PKMutedLabel"
-
-[node name="Reason" type="Label" parent="Margin/Column"]
+[node name="Description" type="Label" parent="Margin/Row/Column"]
 unique_name_in_owner = true
 layout_mode = 2
 text = ""
 autowrap_mode = 2
-theme_type_variation = &"PKMutedLabel"
+theme_type_variation = &"PKWorkspaceLabel"
+theme_override_font_sizes/font_size = 16
 
-[node name="Choose" type="Button" parent="Margin/Column"]
+[node name="Choose" type="Button" parent="Margin/Row"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 38)
+custom_minimum_size = Vector2(62, 36)
 layout_mode = 2
-theme_type_variation = &"PKEraRewardButton"
-text = "采纳此方案"
+size_flags_vertical = 4
+theme_type_variation = &"PKDossierLink"
+theme_override_styles/normal = SubResource("TagNormal")
+theme_override_styles/hover = SubResource("TagHover")
+theme_override_styles/pressed = SubResource("TagPressed")
+theme_override_styles/disabled = SubResource("TagNormal")
+theme_override_styles/focus = SubResource("Empty")
+theme_override_colors/font_focus_color = Color(0.55, 0.19, 0.13, 1)
+theme_override_colors/font_hover_color = Color(0.69, 0.32, 0.15, 1)
+theme_override_colors/font_pressed_color = Color(0.4, 0.12, 0.08, 1)
+text = "采纳"

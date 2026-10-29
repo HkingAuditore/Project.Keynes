@@ -1,0 +1,68 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/era_indicator.gd" id="1_script"]
+[ext_resource type="Shader" path="res://shaders/ui/era_progress_fill.gdshader" id="2_shader"]
+[ext_resource type="Shader" path="res://shaders/ui/era_badge_shadow.gdshader" id="3_shadow"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_progress"]
+resource_local_to_scene = true
+shader = ExtResource("2_shader")
+
+[sub_resource type="ShaderMaterial" id="ShadowMaterial"]
+shader = ExtResource("3_shadow")
+
+[sub_resource type="StyleBoxEmpty" id="Empty"]
+
+[node name="EraIndicator" type="Control"]
+layout_mode = 1
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -110.0
+offset_right = 110.0
+mouse_filter = 2
+script = ExtResource("1_script")
+
+[node name="Badge" type="Control" parent="."]
+unique_name_in_owner = true
+layout_mode = 0
+offset_top = -110.0
+offset_right = 220.0
+offset_bottom = 150.0
+mouse_filter = 2
+
+[node name="Shadow" type="TextureRect" parent="Badge"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 4.0
+offset_top = 7.0
+offset_right = 224.0
+offset_bottom = 227.0
+mouse_filter = 2
+pivot_offset = Vector2(110, 110)
+material = SubResource("ShadowMaterial")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Icon" type="TextureRect" parent="Badge"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_right = 220.0
+offset_bottom = 220.0
+mouse_filter = 2
+pivot_offset = Vector2(110, 110)
+material = SubResource("ShaderMaterial_progress")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Hit" type="Button" parent="."]
+unique_name_in_owner = true
+layout_mode = 0
+offset_right = 220.0
+offset_bottom = 110.0
+mouse_default_cursor_shape = 2
+focus_mode = 2
+flat = true
+theme_override_styles/normal = SubResource("Empty")
+theme_override_styles/hover = SubResource("Empty")
+theme_override_styles/pressed = SubResource("Empty")
+theme_override_styles/focus = SubResource("Empty")

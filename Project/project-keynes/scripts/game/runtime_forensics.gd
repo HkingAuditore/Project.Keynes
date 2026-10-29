@@ -139,10 +139,6 @@ static func capture(reason: String, generator, clock,
 static func dump(payload: Dictionary, tag: String) -> String:
 	var text := JSON.stringify(payload)
 	var log_payload := payload.duplicate(true)
-	if log_payload.has("economy_conservation"):
-		var log_conservation: Dictionary = log_payload["economy_conservation"]
-		log_conservation.erase("money_stage_diagnostics")
-		log_payload["economy_conservation"] = log_conservation
 	print("[runtime-forensics/%s] %s" % [tag, JSON.stringify(log_payload)])
 	DirAccess.make_dir_recursive_absolute(
 		ProjectSettings.globalize_path(DIAGNOSTICS_DIR))
@@ -170,34 +166,74 @@ static func capture_and_dump(reason: String, generator, clock, tag: String,
 	if tag == "economy_fatal":
 		payload["economic_snapshots"] = _dump_economic_snapshots(generator,
 			payload, tag)
-	if tag == "runtime_worker_fault" and not bool(
-		payload.get("economy", {}).get("fatal", false)):
+	if _should_print_economy_trace(tag):
 		_print_economy_trace(payload, tag)
 	return dump(payload, tag)
+
+
+static func _should_print_economy_trace(tag: String) -> bool:
+	return tag == "economy_fatal" or tag == "runtime_worker_fault" or tag == "stall"
 
 
 ## 发生经济 fatal 或 worker 暂停时，把经济状态和阶段账目打印到 Godot
 ## 输出面板；正常模拟期间不会逐帧输出追踪日志。
 static func _print_economy_trace(payload: Dictionary, tag: String) -> void:
+	for line in _build_economy_trace_lines(payload, tag):
+		print(line)
+
+
+static func _build_economy_trace_lines(payload: Dictionary, tag: String) -> PackedStringArray:
 	var economy: Dictionary = payload.get("economy", {})
 	var conservation: Dictionary = payload.get("economy_conservation", {})
-	print("[runtime-forensics/%s/economy] fatal=%s reason=%s day=%s stage=%s executed=%s substage=%s audit_incomplete=%s audit_mode=%s money_error=%s" % [
+	var lines := PackedStringArray()
+	if economy.is_empty() and conservation.is_empty():
+		lines.append("[runtime-forensics/%s/economy] report_unavailable=true" % tag)
+		return lines
+	lines.append("[runtime-forensics/%s/economy] fatal=%s reason=%s day=%s epoch=%s stage=%s executed=%s substage=%s audit_incomplete=%s audit_incomplete_reason=%s audit_mode=%s population_error=%s money_error=%s goods_error=%s" % [
 		tag,
 		str(economy.get("fatal", false)),
 		str(economy.get("fatal_reason", "")),
 		str(economy.get("current_day", -1)),
+		str(economy.get("epoch_id", -1)),
 		str(economy.get("stage", "unknown")),
 		str(economy.get("executed_stage", "unknown")),
 		str(economy.get("executed_substage", "")),
 		str(conservation.get("audit_incomplete", "unknown")),
+		str(conservation.get("audit_incomplete_reason", "")),
 		str(conservation.get("closing_audit_mode", "unknown")),
+		str(conservation.get("population_error", "unknown")),
 		str(conservation.get("money_error", "unknown")),
+		str(conservation.get("goods_error", "unknown")),
 	])
+	lines.append("[runtime-forensics/%s/money-ledger] open=%s close=%s expected=%s error=%s mint=%s burn=%s cohort_open=%s cohort_close=%s country_open=%s country_close=%s escrow_open=%s escrow_close=%s producer_support=%s bullion=%s" % [
+		tag,
+		str(conservation.get("money_open", "unknown")),
+		str(conservation.get("money_close", "unknown")),
+		str(conservation.get("money_expected", "unknown")),
+		str(conservation.get("money_error", "unknown")),
+		str(conservation.get("explicit_money_mint", "unknown")),
+		str(conservation.get("explicit_money_burn", "unknown")),
+		str(conservation.get("opening_cohort_funds", "unknown")),
+		str(conservation.get("closing_cohort_funds", "unknown")),
+		str(conservation.get("opening_country_cash", "unknown")),
+		str(conservation.get("closing_country_cash", "unknown")),
+		str(conservation.get("opening_escrow_cash", "unknown")),
+		str(conservation.get("closing_escrow_cash", "unknown")),
+		str(conservation.get("producer_support_money_issued", "unknown")),
+		str(conservation.get("bullion_money_issued", "unknown")),
+	])
+	var fatal_context = economy.get("fatal_context", {})
+	if fatal_context is Dictionary and not fatal_context.is_empty():
+		lines.append("[runtime-forensics/%s/fatal-context] %s" % [tag,
+			JSON.stringify(fatal_context)])
 	var stage_rows = conservation.get("money_stage_diagnostics", [])
+	var first_nonzero_stage: Dictionary = {}
 	for row in stage_rows:
 		if not row is Dictionary:
 			continue
-		print("[runtime-forensics/%s/money-stage] day=%s epoch=%s where=%s stage=%s executed=%s substage=%s diff=%s delta=%s money=%s expected=%s cohort=%s country=%s escrow=%s mint=%s burn=%s" % [
+		if first_nonzero_stage.is_empty() and int(row.get("diff", 0)) != 0:
+			first_nonzero_stage = row
+		lines.append("[runtime-forensics/%s/money-stage] day=%s epoch=%s where=%s stage=%s executed=%s substage=%s diff=%s delta=%s money=%s expected=%s cohort=%s country=%s escrow=%s mint=%s burn=%s" % [
 			tag,
 			str(row.get("day", -1)),
 			str(row.get("epoch_id", -1)),
@@ -215,10 +251,25 @@ static func _print_economy_trace(payload: Dictionary, tag: String) -> void:
 			str(row.get("explicit_money_mint", "unknown")),
 			str(row.get("explicit_money_burn", "unknown")),
 		])
+	if first_nonzero_stage.is_empty():
+		lines.append("[runtime-forensics/%s/money-first-observed] unavailable=true stage_rows=%d" % [
+			tag, stage_rows.size()])
+	else:
+		lines.append("[runtime-forensics/%s/money-first-observed] day=%s where=%s stage=%s executed=%s substage=%s diff=%s delta=%s" % [
+			tag,
+			str(first_nonzero_stage.get("day", -1)),
+			str(first_nonzero_stage.get("where", "")),
+			str(first_nonzero_stage.get("stage", "unknown")),
+			str(first_nonzero_stage.get("executed_stage", "unknown")),
+			str(first_nonzero_stage.get("substage", "")),
+			str(first_nonzero_stage.get("diff", "unknown")),
+			str(first_nonzero_stage.get("delta", "unknown")),
+		])
 	for account in conservation.get("money_audit_candidate_accounts", []):
 		if account is Dictionary:
-			print("[runtime-forensics/%s/money-candidate] %s" % [tag,
+			lines.append("[runtime-forensics/%s/money-candidate] %s" % [tag,
 				JSON.stringify(account)])
+	return lines
 
 
 static func _dump_economic_snapshots(generator, payload: Dictionary,

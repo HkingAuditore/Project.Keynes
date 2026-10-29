@@ -14,6 +14,8 @@ signal pause_menu_visibility_changed(open: bool)
 signal return_main_menu_requested()
 signal exit_game_requested()
 signal era_reward_choice_requested(offer_generation: int, choice_index: int)
+signal era_reward_open_requested()
+signal era_reward_dismiss_requested()
 signal family_founding_choice_requested(offer_id: int, generation: int, choice_index: int)
 signal annual_history_requested()
 signal annual_report_closed(report_id: int)
@@ -94,6 +96,12 @@ var _map_overlay_toolbar: MapOverlayToolbar
 var _map_overlay_legend: OverlayLegend
 var _pause_menu
 var _era_reward_dialog: EraRewardDialog
+var _era_indicator: EraIndicator
+var _era_indicator_view_model: EraIndicatorViewModel
+var _era_offer: Dictionary = {}
+var _era_refresh_queued := false
+var _era_flight: Control
+var _era_transfer_name := ""
 var _family_founding_dialog: FamilyFoundingDialog
 var _gm_available := false
 var _debug_layer: Control
@@ -185,6 +193,17 @@ func set_world_context(
 	_country_view_model.set_context(generator)
 	_country_view_model.set_gdp_ledger(_gdp_ledger)
 	_bind_country_runtime_events(generator)
+	if _era_reward_dialog != null:
+		_era_reward_dialog.close_offer()
+		_era_reward_dialog.close_overview(true)
+	if _era_indicator != null:
+		_era_indicator.reset_for_world()
+		# refresh_country_binding 已同步新世界候选；重置动画后保留待领提示。
+		_era_indicator.set_offer_available(String(_era_offer.get("status", "NONE")) in ["OPEN", "ERROR"])
+	if _era_flight != null:
+		_era_flight.cancel()
+	_era_transfer_name = ""
+	_refresh_era_indicator()
 	_refresh_player_discovery_context()
 	if _right_panel != null:
 		_right_panel.reset_for_world()
@@ -254,6 +273,7 @@ func _on_country_research_signal_discovered(_event: Dictionary) -> void:
 
 
 func _on_economy_event_batch_available(_meta: Dictionary) -> void:
+	_queue_era_indicator_refresh()
 	if _country_view_model != null:
 		_country_view_model.sample_economy_history()
 	var domains := COUNTRY_DIRTY_ECONOMY
@@ -271,6 +291,7 @@ func _on_economy_event_batch_available(_meta: Dictionary) -> void:
 ## 经济事件批次只在有事件的日子发布，开局常连续数日没有；经济卷宗打开时
 ## 每个已提交日都要推进一次，否则数据停在打开那天。刷新仍走墙钟节流。
 func notify_committed_day() -> void:
+	_queue_era_indicator_refresh()
 	# 年度产值账本必须在面板关闭时也继续累计，否则中途打开会缺少年初到此刻的流量。
 	# sample() 自带 sample_day 去重与墙钟合流，重复调用无额外开销。
 	_gdp_ledger.sample(int(_world_clock.day_index()) if _world_clock != null else -1)
@@ -673,6 +694,7 @@ func _revision_selection_context(revision: Dictionary) -> String:
 
 
 func _on_country_committed(report: Dictionary) -> void:
+	_queue_era_indicator_refresh()
 	# 税务/国库 soft-commit 每天都会推 generation，但通常 0 格领土变更。
 	# 以前这里无条件 COUNTRY_DIRTY_ALL + 全量科技定义重建，把 50x 主线程打到 ~90ms。
 	var territory_changed := int(report.get("changed_cells", 0)) > 0
@@ -1260,7 +1282,8 @@ func dismiss_overlay_menu() -> bool:
 	if is_annual_report_open():
 		_annual_report_workspace.call("_close")
 		return true
-	if is_era_reward_modal_open():
+	if _era_reward_dialog != null and _era_reward_dialog.visible:
+		_on_era_popup_dismissed()
 		return true
 	if is_family_founding_modal_open():
 		if _right_panel != null and _right_panel.detail_open():
@@ -1301,7 +1324,93 @@ func toggle_pause_menu() -> void:
 
 func show_era_reward_offer(offer: Dictionary) -> void:
 	if _era_reward_dialog != null:
+		if not _era_reward_dialog.visible:
+			_era_reward_dialog.open_overview(_build_era_overview())
 		_era_reward_dialog.present_offer(offer)
+		if _era_indicator != null:
+			_era_indicator.set_expanded(true)
+
+
+func _build_era_overview() -> Dictionary:
+	if _player_controller == null:
+		return {}
+	if _era_indicator_view_model == null:
+		_era_indicator_view_model = EraIndicatorViewModel.new()
+	return _era_indicator_view_model.build_overview(
+		_player_controller.get_country_facade(), _player_controller.get_economy_facade(),
+		int(_player_controller.get_player_country_handle()), _gdp_ledger)
+
+
+func _on_era_indicator_pressed() -> void:
+	if _era_reward_dialog == null or is_annual_report_open() or is_family_founding_modal_open():
+		return
+	if _era_reward_dialog.visible:
+		if not _era_reward_dialog.is_offer_open() and String(_era_offer.get("status", "NONE")) in ["OPEN", "ERROR"]:
+			era_reward_open_requested.emit()
+			return
+		_on_era_popup_dismissed()
+		return
+	_era_reward_dialog.open_overview(_build_era_overview())
+	_era_indicator.set_expanded(true)
+	if String(_era_offer.get("status", "NONE")) in ["OPEN", "ERROR"]:
+		era_reward_open_requested.emit()
+
+
+func _on_era_popup_dismissed() -> void:
+	if _era_reward_dialog.is_offer_open():
+		era_reward_dismiss_requested.emit()
+		# 已提交事务的控制器拒绝关闭，继续等待 ACK。
+		if _era_reward_dialog.is_offer_open():
+			return
+	_era_reward_dialog.close_overview()
+	if _era_indicator != null:
+		_era_indicator.set_expanded(false)
+
+
+# Availability never opens a modal; the native offer remains the sole authority.
+func notify_era_reward_offer(offer: Dictionary) -> void:
+	_era_offer = offer
+	if _era_indicator != null:
+		_era_indicator.set_offer_available(String(offer.get("status", "NONE")) in ["OPEN", "ERROR"])
+	_queue_era_indicator_refresh()
+
+
+func _queue_era_indicator_refresh() -> void:
+	if _era_refresh_queued or not is_inside_tree():
+		return
+	_era_refresh_queued = true
+	get_tree().create_timer(0.10).timeout.connect(func() -> void:
+		_era_refresh_queued = false
+		_refresh_era_indicator())
+
+
+func _refresh_era_indicator() -> void:
+	if _era_indicator == null or _player_controller == null:
+		return
+	var facade = _player_controller.get_country_facade()
+	var handle := int(_player_controller.get_player_country_handle())
+	if facade == null or handle == 0:
+		return
+	if _era_indicator_view_model == null:
+		_era_indicator_view_model = EraIndicatorViewModel.new()
+	var model := _era_indicator_view_model.build(facade.research_snapshot(handle))
+	_era_indicator.set_model(model)
+	if not model.is_empty() and _era_transfer_name.is_empty() and _top_bar != null:
+		_top_bar.set_era_name(String(model.era_name))
+	if _era_reward_dialog != null and _era_reward_dialog.visible:
+		_era_reward_dialog.refresh_overview(_build_era_overview())
+
+
+func _on_era_indicator_advanced(model: Dictionary) -> void:
+	_era_transfer_name = String(model.era_name)
+	if _era_flight != null and _top_bar != null:
+		_era_flight.play(_era_indicator.icon_origin(), _top_bar.era_name_target())
+
+
+func _on_era_flight_landed() -> void:
+	if _top_bar != null and not _era_transfer_name.is_empty():
+		_top_bar.set_era_name(_era_transfer_name, true)
+	_era_transfer_name = ""
 
 
 func show_era_reward_error(message: String) -> void:
@@ -1534,6 +1643,12 @@ func _bind_ui() -> void:
 	_era_reward_dialog.choice_requested.connect(
 		func(generation: int, index: int) -> void:
 			era_reward_choice_requested.emit(generation, index))
+	_era_reward_dialog.dismiss_requested.connect(_on_era_popup_dismissed)
+	_era_indicator = get_node("UIRoot/HUDLayer/EraIndicator") as EraIndicator
+	_era_flight = get_node("UIRoot/HUDLayer/EraTransitionFlight") as Control
+	_era_indicator.era_advanced.connect(_on_era_indicator_advanced)
+	_era_flight.landed.connect(_on_era_flight_landed)
+	_era_indicator.pressed.connect(_on_era_indicator_pressed)
 	_family_founding_dialog = get_node_or_null(
 		"UIRoot/ModalLayer/FamilyFoundingDialog") as FamilyFoundingDialog
 	if _family_founding_dialog != null:

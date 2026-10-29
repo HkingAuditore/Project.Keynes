@@ -27,20 +27,20 @@ func _run() -> void:
 		],
 	})
 	await process_frame
-	var cards := dialog.get_node("ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid")
+	var cards := dialog.get_node("%CardGrid")
 	_expect("dialog opens with three stable cards", dialog.visible and cards.get_child_count() == 3)
 	var first := cards.get_child(0) as EraRewardChoice
 	var second := cards.get_child(1) as EraRewardChoice
 	var third := cards.get_child(2) as EraRewardChoice
 	_expect("first card binds Chinese title and semantic icon",
-		String(first.get_node("Margin/Column/Top/Labels/Title").text).find("产业跃迁") >= 0
-		and String(first.get_node("Margin/Column/Top/Labels/Category").text) == "产业方案"
-		and first.get_node("Margin/Column/Top/Icon").icon_key == &"economy.building")
-	_expect("second card keeps a generic-fit explanation",
-		String(second.get_node("Margin/Column/Reason").text).find("通用时代方案") >= 0)
-	var first_choose := first.get_node("Margin/Column/Choose") as Button
-	var second_choose := second.get_node("Margin/Column/Choose") as Button
-	var third_choose := third.get_node("Margin/Column/Choose") as Button
+		String(first.get_node("%Title").text).find("产业跃迁") >= 0
+		and first.tooltip_text.contains("产业方案")
+		and first.get_node("%Icon").icon_key == &"economy.building")
+	_expect("target and reasons remain accessible in compact card tooltip",
+		first.tooltip_text.contains("拥有石材证据") and second.tooltip_text.contains("玩家国家"))
+	var first_choose := first.choose_button()
+	var second_choose := second.choose_button()
+	var third_choose := third.choose_button()
 	_expect("missing third offer disables only the empty choice",
 		(not first_choose.disabled
 		and not second_choose.disabled
@@ -54,7 +54,7 @@ func _run() -> void:
 		and second_choose.disabled)
 	dialog.show_error("效果未完成")
 	_expect("error state keeps a readable status line",
-		String(dialog.get_node("ArchiveSurface/Frame/Margin/Column/Body/Status").text).find("效果未完成") >= 0)
+		String(dialog.get_node("%Status").text).find("效果未完成") >= 0)
 	dialog.queue_free()
 	print("era reward dialog ui: %d failures" % _failures.size())
 	quit(0 if _failures.is_empty() else 1)

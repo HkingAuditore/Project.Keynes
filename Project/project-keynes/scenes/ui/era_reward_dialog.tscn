@@ -1,8 +1,13 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/era_reward_dialog.gd" id="1_script"]
-[ext_resource type="PackedScene" path="res://scenes/ui/archival_surface.tscn" id="2_archive"]
+[ext_resource type="Theme" path="res://assets/themes/player_session_theme.tres" id="2_theme"]
 [ext_resource type="PackedScene" path="res://scenes/ui/era_reward_choice.tscn" id="3_choice"]
+[ext_resource type="PackedScene" path="res://scenes/ui/metric_card.tscn" id="4_metric"]
+[ext_resource type="StyleBox" path="res://assets/ui/era/era_note_style.tres" id="5_paper"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_aux_v1/torn_note_v1.tres" id="6_paper_texture"]
+
+[sub_resource type="StyleBoxEmpty" id="Empty"]
 
 [node name="EraRewardDialog" type="Control"]
 process_mode = 3
@@ -13,84 +18,161 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-mouse_filter = 0
+mouse_filter = 2
+theme = ExtResource("2_theme")
 script = ExtResource("1_script")
 
-[node name="Shade" type="ColorRect" parent="."]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 0
-color = Color(0.055, 0.038, 0.025, 0.9)
-
-[node name="ArchiveSurface" parent="." instance=ExtResource("2_archive")]
+[node name="Popup" type="VBoxContainer" parent="."]
 unique_name_in_owner = true
-editable_children = true
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 24.0
-offset_top = 18.0
-offset_right = -24.0
-offset_bottom = -18.0
-grow_horizontal = 2
-grow_vertical = 2
-z_index = 1
+layout_mode = 0
+offset_left = 350.0
+offset_top = 238.0
+offset_right = 930.0
+offset_bottom = 690.0
+mouse_filter = 2
+theme_override_constants/separation = 12
+
+[node name="Overview" type="PanelContainer" parent="Popup"]
+layout_mode = 2
+mouse_filter = 0
+theme_override_styles/panel = ExtResource("5_paper")
+
+[node name="Underlay" type="Control" parent="Popup/Overview"]
+show_behind_parent = true
+layout_mode = 2
 mouse_filter = 2
 
-[node name="Prompt" type="PanelContainer" parent="ArchiveSurface/Frame/Margin/Column/Body"]
-visible = false
-layout_mode = 2
-theme_type_variation = &"PKArchiveBand"
+[node name="Paper" type="NinePatchRect" parent="Popup/Overview/Underlay"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 3.0
+offset_top = 4.0
+offset_right = 3.0
+offset_bottom = 4.0
+mouse_filter = 2
+self_modulate = Color(0.82, 0.74, 0.61, 0.85)
+texture = ExtResource("6_paper_texture")
+patch_margin_left = 32
+patch_margin_top = 32
+patch_margin_right = 32
+patch_margin_bottom = 32
+axis_stretch_horizontal = 1
+axis_stretch_vertical = 1
 
-[node name="Margin" type="MarginContainer" parent="ArchiveSurface/Frame/Margin/Column/Body/Prompt"]
+[node name="Margin" type="MarginContainer" parent="Popup/Overview"]
 layout_mode = 2
-theme_override_constants/margin_left = 14
-theme_override_constants/margin_top = 8
-theme_override_constants/margin_right = 14
-theme_override_constants/margin_bottom = 8
+theme_override_constants/margin_left = 22
+theme_override_constants/margin_top = 18
+theme_override_constants/margin_right = 22
+theme_override_constants/margin_bottom = 18
 
-[node name="Text" type="Label" parent="ArchiveSurface/Frame/Margin/Column/Body/Prompt/Margin"]
-unique_name_in_owner = true
+[node name="Column" type="VBoxContainer" parent="Popup/Overview/Margin"]
 layout_mode = 2
-text = ""
-horizontal_alignment = 1
-autowrap_mode = 2
-theme_type_variation = &"PKMutedLabel"
+theme_override_constants/separation = 10
 
-[node name="CardsScroll" type="ScrollContainer" parent="ArchiveSurface/Frame/Margin/Column/Body"]
+[node name="Header" type="HBoxContainer" parent="Popup/Overview/Margin/Column"]
 layout_mode = 2
-custom_minimum_size = Vector2(0, 300)
-size_flags_vertical = 3
-horizontal_scroll_mode = 0
 
-[node name="CardGrid" type="GridContainer" parent="ArchiveSurface/Frame/Margin/Column/Body/CardsScroll"]
+[node name="CountryName" type="Label" parent="Popup/Overview/Margin/Column/Header"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/h_separation = 14
-theme_override_constants/v_separation = 14
-columns = 3
+text = "国家概况"
+theme_type_variation = &"PKSectionTitle"
+text_overrun_behavior = 3
+theme_override_font_sizes/font_size = 22
 
-[node name="Card0" parent="ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid" instance=ExtResource("3_choice")]
-layout_mode = 2
-
-[node name="Card1" parent="ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid" instance=ExtResource("3_choice")]
-layout_mode = 2
-
-[node name="Card2" parent="ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid" instance=ExtResource("3_choice")]
-layout_mode = 2
-
-[node name="Status" type="Label" parent="ArchiveSurface/Frame/Margin/Column/Body"]
+[node name="Close" type="Button" parent="Popup/Overview/Margin/Column/Header"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 42)
+custom_minimum_size = Vector2(58, 32)
+layout_mode = 2
+theme_type_variation = &"PKDossierLink"
+text = "收起"
+theme_override_font_sizes/font_size = 16
+
+[node name="Metrics" type="GridContainer" parent="Popup/Overview/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 6
+columns = 4
+
+[node name="GDP" parent="Popup/Overview/Margin/Column/Metrics" instance=ExtResource("4_metric")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("Empty")
+
+[node name="Treasury" parent="Popup/Overview/Margin/Column/Metrics" instance=ExtResource("4_metric")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("Empty")
+
+[node name="Population" parent="Popup/Overview/Margin/Column/Metrics" instance=ExtResource("4_metric")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("Empty")
+
+[node name="Territory" parent="Popup/Overview/Margin/Column/Metrics" instance=ExtResource("4_metric")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("Empty")
+
+[node name="Rewards" type="PanelContainer" parent="Popup"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 0
+theme_override_styles/panel = SubResource("Empty")
+
+[node name="Margin" type="MarginContainer" parent="Popup/Rewards"]
+layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_top = 0
+theme_override_constants/margin_right = 4
+theme_override_constants/margin_bottom = 6
+
+[node name="Column" type="VBoxContainer" parent="Popup/Rewards/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="Popup/Rewards/Margin/Column"]
+layout_mode = 2
+text = "选择一项时代奖励"
+theme_type_variation = &"PKPaperTag"
+size_flags_horizontal = 0
+
+[node name="CardsScroll" type="ScrollContainer" parent="Popup/Rewards/Margin/Column"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="CardGrid" type="GridContainer" parent="Popup/Rewards/Margin/Column/CardsScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/v_separation = 8
+columns = 1
+
+[node name="Card0" parent="Popup/Rewards/Margin/Column/CardsScroll/CardGrid" instance=ExtResource("3_choice")]
+layout_mode = 2
+
+[node name="Card1" parent="Popup/Rewards/Margin/Column/CardsScroll/CardGrid" instance=ExtResource("3_choice")]
+layout_mode = 2
+
+[node name="Card2" parent="Popup/Rewards/Margin/Column/CardsScroll/CardGrid" instance=ExtResource("3_choice")]
+layout_mode = 2
+
+[node name="Status" type="Label" parent="Popup/Rewards/Margin/Column"]
+unique_name_in_owner = true
+visible = false
 layout_mode = 2
 text = ""
-horizontal_alignment = 1
-vertical_alignment = 1
 autowrap_mode = 2
 theme_type_variation = &"PKEraRewardStatus"
