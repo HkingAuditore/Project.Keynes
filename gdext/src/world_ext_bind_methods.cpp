@@ -130,6 +130,13 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::set_runtime_ideology_parity_enabled);
     ClassDB::bind_method(D_METHOD("capture_country_runtime_snapshot"),
                          &DCWorldExt::capture_country_runtime_snapshot);
+    ClassDB::bind_method(D_METHOD("get_country_territory_counts"),
+                         &DCWorldExt::get_country_territory_counts);
+    ClassDB::bind_method(D_METHOD("get_economy_territory_plane"),
+                         &DCWorldExt::get_economy_territory_plane);
+    ClassDB::bind_method(D_METHOD("diagnose_colonization_target",
+                        "country_handle", "target_cell"),
+                         &DCWorldExt::diagnose_colonization_target);
     ClassDB::bind_method(D_METHOD("capture_country_pod_catalog"),
                          &DCWorldExt::capture_country_pod_catalog);
     ClassDB::bind_method(D_METHOD("get_country_worker_protocol_status"),
@@ -474,6 +481,11 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::explain_modifier_stat);
     ClassDB::bind_method(D_METHOD("resolve_modifier_definition_terms", "definition_key"),
                          &DCWorldExt::resolve_modifier_definition_terms);
+    ClassDB::bind_method(D_METHOD("evaluate_effect_program_magnitude",
+                        "program_key", "metric_values"),
+                         &DCWorldExt::evaluate_effect_program_magnitude);
+    ClassDB::bind_method(D_METHOD("build_derived_cell_front_for_test", "terms"),
+                         &DCWorldExt::build_derived_cell_front_for_test);
     ClassDB::bind_method(D_METHOD("get_modifier_report"),
                          &DCWorldExt::get_modifier_report);
     // R-4 X16 / metric probes.
@@ -504,6 +516,38 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_runtime_modifier_snapshot", "after_generation"),
                          &DCWorldExt::get_runtime_modifier_snapshot,
                          DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("install_derived_cell_layer_for_test", "front"),
+        &DCWorldExt::install_derived_cell_layer_for_test);
+    ClassDB::bind_method(D_METHOD("modifier_stat_bucket_version",
+        "domain", "stat_ids"),
+        &DCWorldExt::modifier_stat_bucket_version);
+    ClassDB::bind_method(D_METHOD("collect_modifier_scope_ids",
+        "domain", "scope", "stat_ids"),
+        &DCWorldExt::collect_modifier_scope_ids);
+    ClassDB::bind_method(D_METHOD("collect_modifier_scope_stat_entries",
+        "domain", "scope", "stat_ids"),
+        &DCWorldExt::collect_modifier_scope_stat_entries);
+    ClassDB::bind_method(D_METHOD("resolve_modifier_stat", "stat_key"),
+        &DCWorldExt::resolve_modifier_stat);
+    ClassDB::bind_method(D_METHOD("get_effective_stat_value", "stat_key", "cell",
+                                  "entity_handle", "base_value"),
+        &DCWorldExt::get_effective_stat_value);
+    ClassDB::bind_method(D_METHOD("get_derived_cell_layer_report"),
+        &DCWorldExt::get_derived_cell_layer_report);
+    ClassDB::bind_method(D_METHOD("get_derived_materialize_report"),
+        &DCWorldExt::get_derived_materialize_report);
+    ClassDB::bind_method(D_METHOD("get_derived_multi_country_report"),
+        &DCWorldExt::get_derived_multi_country_report);
+    ClassDB::bind_method(D_METHOD("probe_fan_out_ownership", "country_handle",
+                                  "source_cell", "selector_kind", "param0", "param1",
+                                  "dilate_depth"),
+        &DCWorldExt::probe_fan_out_ownership, DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("drain_derived_cell_layer", "day_index"),
+        &DCWorldExt::drain_derived_cell_layer);
+    ClassDB::bind_method(D_METHOD("probe_cell_program_backend", "facts"),
+        &DCWorldExt::probe_cell_program_backend);
+    ClassDB::bind_method(D_METHOD("get_cell_program_rollout"),
+        &DCWorldExt::get_cell_program_rollout);
     ClassDB::bind_method(D_METHOD("apply_runtime_modifier_snapshot", "after_generation"),
                          &DCWorldExt::apply_runtime_modifier_snapshot,
                          DEFVAL(-1));
@@ -592,6 +636,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::dispatch_effect_native_modifier);
     ClassDB::bind_method(D_METHOD("ack_effect_native_modifier"),
                          &DCWorldExt::ack_effect_native_modifier);
+    ClassDB::bind_method(D_METHOD("settle_split_authority_effects", "day_index"),
+                         &DCWorldExt::settle_split_authority_effects);
     ClassDB::bind_method(D_METHOD("dispatch_effect_native_country"),
                          &DCWorldExt::dispatch_effect_native_country);
     ClassDB::bind_method(D_METHOD("ack_effect_native_country"),
@@ -653,6 +699,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::ideology_should_run);
     ClassDB::bind_method(D_METHOD("step_ideology_instance_refresh", "day_index"),
                          &DCWorldExt::step_ideology_instance_refresh);
+    ClassDB::bind_method(D_METHOD("step_ideology_derived_rebuild", "day_index"),
+                         &DCWorldExt::step_ideology_derived_rebuild);
     ClassDB::bind_method(D_METHOD("apply_runtime_ideology_snapshot",
                          "after_generation"),
                          &DCWorldExt::apply_runtime_ideology_snapshot,
@@ -661,18 +709,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_ideology_snapshot);
     ClassDB::bind_method(D_METHOD("get_ideology_effect_instance_report", "country_handle"),
                          &DCWorldExt::get_ideology_effect_instance_report);
-    ClassDB::bind_method(D_METHOD("set_ideology_cell_program_entry_for_test",
-            "stat_id", "filter_tag", "operation", "coef_q16",
-            "column_kind", "column_tag", "cap_units"),
-                         &DCWorldExt::set_ideology_cell_program_entry_for_test);
     ClassDB::bind_method(D_METHOD("get_city_output_factor_q16", "cell", "good_id"),
                          &DCWorldExt::get_city_output_factor_q16);
-    ClassDB::bind_method(D_METHOD("set_ideology_cell_plane_enabled", "enabled"),
-                         &DCWorldExt::set_ideology_cell_plane_enabled);
-    ClassDB::bind_method(D_METHOD("publish_ideology_cell_programs"),
-                         &DCWorldExt::publish_ideology_cell_programs);
-    ClassDB::bind_method(D_METHOD("get_ideology_cell_program_summary"),
-                         &DCWorldExt::get_ideology_cell_program_summary);
     ClassDB::bind_method(D_METHOD("resolve_effect_program_modifier_commands", "program_key"),
                          &DCWorldExt::resolve_effect_program_modifier_commands);
     ClassDB::bind_method(D_METHOD("reconcile_ideology_effects_for_test", "country_handle"),

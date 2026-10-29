@@ -1,5 +1,10 @@
 #pragma once
 
+#include "selector_cell_cap.h"
+#include "selector_ownership.h"
+
+#include <limits>
+
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -223,11 +228,31 @@ public:
     static constexpr int32_t SOURCE_COUNT_CAP_SHIFT = 8;
     static constexpr int32_t SOURCE_COUNT_CAP_MASK = 0x0F;
     static constexpr int32_t SOURCE_COUNT_TAG_MASK = 0xFFFF;
+    // Ownership scope lives in `selector_ownership.h`: pure integer logic with no
+    // Godot dependency, so it can be unit-tested without linking godot_cpp -- the same
+    // split `selector_cell_cap.h` made for the cell ceilings.
+    using OwnershipScope = pk::OwnershipScope;
+    static constexpr int32_t OWNERSHIP_OWN = pk::OWNERSHIP_OWN;
+    static constexpr int32_t OWNERSHIP_FOREIGN = pk::OWNERSHIP_FOREIGN;
+    static constexpr int32_t OWNERSHIP_ANY = pk::OWNERSHIP_ANY;
+    static constexpr int32_t OWNERSHIP_SCOPE_SHIFT = pk::OWNERSHIP_SCOPE_SHIFT;
+    static constexpr int32_t OWNERSHIP_SCOPE_MASK = pk::OWNERSHIP_SCOPE_MASK;
+    static constexpr int32_t OWNERSHIP_CAP_MASK = pk::OWNERSHIP_CAP_MASK;
+    static int32_t decode_ownership_scope(const int32_t *params) {
+        if (params == nullptr) return OWNERSHIP_ANY;
+        return pk::decode_ownership_scope(params[0]);
+    }
+    static const char *ownership_scope_name(int32_t scope) {
+        return pk::ownership_scope_name(scope);
+    }
+
     struct SourceCountSelector {
         int32_t target_cap = SELECTOR_MAX_CELLS;
         int32_t radius = 0;
         int32_t cap = 0;
         int32_t tag = 0;
+        // Decoded from `param[0]` bits 12..13; see `OwnershipScope`.
+        int32_t ownership_scope = OWNERSHIP_OWN;
     };
     static SourceCountSelector decode_source_count_selector(
             const int32_t *params) {
@@ -235,11 +260,27 @@ public:
         if (params == nullptr) return out;
         const int32_t packed = params[0];
         const int32_t stored_cap = packed & SOURCE_COUNT_TARGET_CAP_MASK;
-        out.target_cap = stored_cap == 0 ? SELECTOR_MAX_CELLS : stored_cap;
+        // `stored_cap == 0` means the author left the target cap UNSPECIFIED.
+        //
+        // This used to default to `SELECTOR_MAX_CELLS` (32), which contradicted
+        // `selector_cell_ceiling(SELECTOR_TAG_SOURCE_COUNT)` -- that function returns
+        // `kSelectorNoCellCap` for this kind, i.e. "not bounded by cell count".
+        //
+        // The contradiction was not cosmetic: all 66 kind-16 cards author `param0 = 800`,
+        // whose low five bits are 0, so every one of them decoded to a 32-cell target cap
+        // and `resolve_effect_targets` truncated its target set with
+        // `effect_stable_cap(cells, selector.target_cap, ...)`. In a country with more
+        // than 32 tagged cells the effect silently stopped applying past the 32nd cell --
+        // the same defect that was already fixed for kinds 12, 14 and 15.
+        //
+        // `effect_stable_cap` treats a negative or oversized cap as "no limit", so the
+        // sentinel below removes the truncation without touching that helper.
+        out.target_cap = stored_cap == 0 ? kSelectorNoCellCap : stored_cap;
         out.radius = (packed >> SOURCE_COUNT_RADIUS_SHIFT) &
             SOURCE_COUNT_RADIUS_MASK;
         out.cap = (packed >> SOURCE_COUNT_CAP_SHIFT) & SOURCE_COUNT_CAP_MASK;
         out.tag = params[1] & SOURCE_COUNT_TAG_MASK;
+        out.ownership_scope = decode_ownership_scope(params);
         return out;
     }
     static bool magnitude_scale_allowed_for_selector(
@@ -269,8 +310,70 @@ public:
     // Hard cap on cells a single selector may return. The cap is what keeps
     // "one instance per cell" bounded: 32 cells x a handful of cards stays well
     // inside the instance table, while an uncapped whole-map predicate would not.
-    static constexpr int32_t SELECTOR_MAX_CELLS = 32;
+    //
+    // M2-1: this single constant was being asked to mean two different things,
+    // and plan 22 exists because of that confusion:
+    //
+    //   * a GEOMETRIC bound -- how many cells a radial walk can physically reach.
+    //     R1 is the centre plus 6 neighbours (18 with both rings), R2 reaches 37,
+    //     radius 3/4 reach 61. Those numbers are properties of the hex geometry.
+    //   * a CONTENT POLICY bound -- how many of a country's OWN cells a permanent
+    //     card may cover. 32 was never a geometry fact; it was a budget for the
+    //     instance table, and it is exactly what plan 22 removes (the derived
+    //     backend has no per-cell instance to bound).
+    //
+    // Keeping one constant for both is why "remove the 32 cap" looked like a
+    // one-line change while actually needing three layers changed in order.
+    //
+    // `SELECTOR_MAX_CELLS` is kept as the geometric ceiling and as the
+    // compatibility value for code that has not been split yet. New code should
+    // call `selector_cell_ceiling()` with the selector kind.
+    // LEGACY INSTANCE PROTECTION (plan 22 §15.7).
+    //
+    // This bounds how many Effect INSTANCES one card level may create -- nothing else.
+    // It is NOT a bound on how many cells a card may reach: the derived path creates no
+    // instances and is bounded only by the map size (`selector_cell_cap.h`).
+    //
+    // The old name `SELECTOR_MAX_CELLS` read like a selector/geometry bound, which is
+    // exactly why "remove the 32 cap" looked like a one-line change. Kept because the
+    // instance path genuinely still uses it: a wide selector on a card that cannot be
+    // derived would otherwise flood the instance table.
+    static constexpr int32_t LEGACY_INSTANCE_MAX_CELLS = 32;
+    // Deprecated alias. New code must use `LEGACY_INSTANCE_MAX_CELLS` or, for a
+    // geometry question, `selector_cell_ceiling(kind)`.
+    static constexpr int32_t SELECTOR_MAX_CELLS = LEGACY_INSTANCE_MAX_CELLS;
     static constexpr int32_t SELECTOR_DEFAULT_CELLS = 8;
+
+    // Unbounded sentinel for kinds whose target set is a territory or source
+    // query rather than a geometric walk. Callers must still respect the map
+    // size; this is "no POLICY cap", not "no limit at all" (§1.1: unbounded is
+    // not infinite memory -- the reader side still meters and shards).
+    static constexpr int32_t SELECTOR_NO_CELL_CAP = kSelectorNoCellCap;
+
+    // The ceiling for one selector kind lives in `selector_cell_cap.h`, which
+    // has no Godot dependency so it can be unit-tested directly (M2-1). It is
+    // delegated here so every existing call site keeps working unchanged.
+    //
+    // Note this is the CEILING; the effective count is still
+    // `min(authored_param, ceiling)`, so a card that authors 32 keeps getting 32
+    // until its content is updated (M2-1 §3).
+    static constexpr int32_t selector_cell_ceiling(int32_t selector_kind) {
+        return pk::selector_cell_ceiling(selector_kind);
+    }
+
+    static constexpr bool selector_cell_cap_is_unbounded(int32_t selector_kind) {
+        return pk::selector_cell_cap_is_unbounded(selector_kind);
+    }
+
+    // Guards the duplicated kind ids: a divergence between this header and the
+    // pure one fails the build instead of mis-ceiling a kind at runtime.
+    static_assert(CAP_SELECTOR_NEIGHBORS_R1 == SELECTOR_NEIGHBORS_R1);
+    static_assert(CAP_SELECTOR_NEIGHBORS_R2 == SELECTOR_NEIGHBORS_R2);
+    static_assert(CAP_SELECTOR_OWN_TERRITORY == SELECTOR_OWN_TERRITORY);
+    static_assert(CAP_SELECTOR_TAG_SOURCE_R1 == SELECTOR_TAG_SOURCE_R1);
+    static_assert(CAP_SELECTOR_TAG_SOURCE_R2 == SELECTOR_TAG_SOURCE_R2);
+    static_assert(CAP_SELECTOR_TAG_SOURCE_COUNT == SELECTOR_TAG_SOURCE_COUNT);
+    static_assert(CAP_SELECTOR_FAMILY_OWNED == SELECTOR_FAMILY_OWNED);
 
     struct BehaviorCommand {
         int32_t action = CUSTOM_DOMAIN_COMMAND;
@@ -289,6 +392,18 @@ public:
     struct ExternalEffectCommandPod {
         int64_t effect_id = 0;
         int64_t source_id = 0;
+        // When true, the Modifier row this command produces is keyed by `source_id`
+        // instead of by the per-fire Effect instance id.
+        //
+        // Synergy rows need this: an activation and its later deactivation are separate
+        // fires (different days, and the removal additionally flips bit 63), so an
+        // instance-derived identity can never match and the REMOVE silently misses,
+        // leaving the row alive forever. A stable `source_id` makes the pair reconcile.
+        //
+        // Deliberately opt-in. Card tier rows and on-enter one-shots must NOT use it:
+        // their identity has to stay per-fire, or a repeated on-enter would be mistaken
+        // for "the row already exists" and be swallowed.
+        bool stable_source_identity = false;
         std::string program_key;
         uint64_t fire_sequence = 0;
         int32_t action = CUSTOM_DOMAIN_COMMAND;
@@ -585,10 +700,81 @@ public:
     bool apply_pod_snapshot(const struct RuntimeEffectPodSnapshot &snapshot,
                             std::string &error);
     uint64_t pod_snapshot_generation() const { return _pod_snapshot_generation; }
+    // Day the committed Effect state belongs to. The split-authority settle uses
+    // it as the submission watermark: a worker Modifier snapshot whose
+    // `committed_day` is not past it cannot prove anything about rows enqueued
+    // today.
+    int64_t committed_day() const { return _current_day; }
     // Native production bridge. It submits typed Modifier commands without
     // constructing a Godot Dictionary/Callable per effect transaction.
     godot::Dictionary dispatch_native_modifier(ModifierRuntime *modifier_runtime);
     godot::Dictionary ack_native_modifier(ModifierRuntime *modifier_runtime);
+    // ── Split authority: IDEOLOGY on the main thread, EFFECT + MODIFIER on the
+    //    worker (mask 0xFEF = 0xFFF with only the ideology bit 0x010 cleared) ──
+    //
+    // An ideology equip plans its batch HERE, on this main-thread runtime, even
+    // when the worker owns EFFECT. Nothing drained it: `run_effect_daily`,
+    // `dispatch_effect_native_modifier` and `ack_effect_native_modifier` all
+    // report `path=EFFECT_WORKER`, and the POD write-back rebuilt `_transactions`
+    // from the worker's table, which by construction never carries a transaction
+    // this thread created. The row was therefore erased one day after it was
+    // planned: `transaction_status_pod` answered 0 (MISSING) and
+    // `poll_pending_transition` reads 0 as failure -> rollback.
+    //
+    // `apply_pod_snapshot` now PRESERVES these batches and their source
+    // instances, and the three calls below finish them. Both sides go through
+    // `map_modifier_row`, the single Effect->Modifier mapping
+    // `dispatch_native_modifier` also uses, so one row can never be built two
+    // different ways.
+    static constexpr int32_t IDEOLOGY_SOURCE_TYPE = 0x4944454F; // 'IDEO'
+    // One Effect->Modifier row, flattened so it can outlive the transaction
+    // arena (no pointer into `_command_definitions`).
+    struct ModifierRow {
+        int32_t opcode = 0;
+        int32_t producer = 0;
+        int64_t sequence = 0;
+        int64_t effective_day = 0;
+        std::string definition_key;
+        int32_t domain = 0;
+        int32_t scope = 0;
+        uint64_t entity_handle = 0;
+        uint64_t group_handle = 0;
+        uint64_t source_type = 0;
+        uint64_t source_id = 0;
+        int32_t duration_days = -1;
+        int32_t stacks = 1;
+        int32_t magnitude_q16 = 65536;
+        uint32_t domain_bit = 0;
+        // A REMOVE row is confirmed by its ABSENCE from the committed store, an
+        // APPLY row by its presence. The distinction is the difference between
+        // "the settle worked" and "the settle is waiting".
+        bool expect_present = true;
+    };
+    struct ModifierBinding {
+        int64_t transaction_id = 0;
+        uint32_t domain_bit = 0;
+        int32_t row_begin = 0;
+        int32_t row_count = 0;
+        int64_t submitted_day = 0;
+    };
+    // Returns the rows that still need a worker commit, one binding per source
+    // transaction. Idempotent: a transaction already bound is not re-collected,
+    // which is what keeps a re-entrant settle from stacking the same row twice.
+    std::vector<ModifierRow> collect_worker_modifier_rows(int64_t day_index,
+                                                          std::vector<ModifierBinding> &out_bindings);
+    int32_t worker_modifier_binding_count() const {
+        return static_cast<int32_t>(_split_settle_bindings.size());
+    }
+    const ModifierBinding *worker_modifier_binding(int32_t index) const;
+    const ModifierRow *worker_modifier_row(int32_t index) const;
+    // Completes each transaction's MODIFIER ack bit. A transaction whose
+    // `required_ack_mask` covers more than MODIFIER stays COMMITTED, exactly as
+    // the main-thread adapter path leaves it for the other adapters.
+    int32_t acknowledge_worker_modifier_rows(const std::vector<int64_t> &transaction_ids);
+    // The enqueue failed, so nothing was submitted: forget the binding and put
+    // the transaction back to PLANNED so the next settle retries it. Without this
+    // a single rejected enqueue would stall the equip forever.
+    void discard_worker_modifier_rows(const std::vector<int64_t> &transaction_ids);
     godot::Dictionary dispatch_native_country(NativeCountryRuntime *country_runtime);
     godot::Dictionary ack_native_country(NativeCountryRuntime *country_runtime);
     // Soft-settle leftover PREFLIGHTED Country bindings after a real Host
@@ -627,7 +813,21 @@ public:
         int64_t value_q16 = 0;
         int32_t stacks = 1;
         int32_t duration_days = -1;
+        // How `value_q16` is produced. Plan 22 §4.4 condition 4 needs this: a
+        // command whose magnitude is `VALUE_CONSTANT` is expressible in the derived
+        // layer, while one that reads the stack top (or a metric) is not. Assuming
+        // "every city command is stack-top" only holds for today's content, which
+        // is why this used to be hard-coded in `cell_program_facts_for`.
+        int32_t value_mode = VALUE_STACK_TOP;
     };
+    // Evaluates one program against caller-supplied per-cell metric samples.
+    // `metric_values` is indexed by metric id. Returns false with `error` when the
+    // program is unknown or the stream fails, so the caller can fall back to the
+    // instance path rather than silently using 0.
+    bool evaluate_program_magnitude_for_metrics(
+        const std::string &program_key,
+        const int64_t *metric_values, int32_t metric_count,
+        int64_t &out_value, std::string &error) const;
     bool program_modifier_commands(const std::string &program_key,
                                    std::vector<ProgramModifierCommand> &out) const;
     godot::Dictionary report() const;
@@ -751,6 +951,21 @@ private:
         int32_t magnitude_by_prestige_q16[6] = {
             Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE};
     };
+    // The stack machine, parameterised on where metric reads come from.
+    //
+    // Declared AFTER `struct Definition` because it names that type; an earlier
+    // placement above the struct failed to compile (C4430/C2143).
+    //
+    // Extracted from `preview_family_effect_value` so a caller with its own
+    // per-cell samples can run the SAME bytecode without an `Instance`. A second
+    // evaluator for the derived layer would be one more place to keep in step with
+    // the instruction set, and plan §15.5 forbids the simplification that would
+    // follow (freezing a Ramp into a threshold bucket).
+    bool run_program_machine(
+        const Definition &definition,
+        const std::function<int64_t(int32_t)> &metric_accessor,
+        const std::function<int64_t(int32_t)> &state_accessor,
+        int64_t &value, std::string &error) const;
     struct Instance {
         int64_t id = 0;
         uint32_t generation = 1;
@@ -792,6 +1007,14 @@ private:
         // applied count without destroying this value, so a capped source can
         // become active when another source leaves the same stack group.
         int32_t stack_count = 1;
+        // How many of those stacks the owning domain has actually applied.
+        // PKEF carries BOTH this and `effect_applied`, and `restore()` requires them
+        // to agree ONLY for a managed definition (`uses_managed_lifecycle`), which is
+        // the only place both are advanced together. An unmanaged program's worker
+        // write-back legitimately carries `(0, N)`: the POD keeps this count as fire
+        // bookkeeping and never sets the latch, because nothing reads the latch for a
+        // one-shot program. Reading the two as an unconditional pair is what used to
+        // make an EFFECT-worker PKEF unloadable -- see `EffectRuntime::restore`.
         int32_t applied_stack_count = 0;
         int32_t priority = 0;
         // Per-instance magnitude multiplier (L3-9 second slice). The program's
@@ -839,6 +1062,10 @@ private:
         uint64_t idempotency_key = 0;
         int64_t external_effect_id = 0;
         int64_t external_source_id = 0;
+        // Mirrors `ExternalEffectCommandPod::stable_source_identity`: when set, the
+        // Modifier row this command produces is keyed by `external_source_id` rather than
+        // by the per-fire instance id. Only synergy rows opt in (see that field's comment).
+        bool external_source_is_stable = false;
     };
     struct Transaction {
         int64_t id = 0;
@@ -984,6 +1211,17 @@ private:
     // boundary, otherwise a Country modifier (domain 1) aliases a Country
     // command (also domain 1) in a mixed transaction.
     static uint32_t adapter_ack_bit_for(const Command &command);
+    // THE Effect->Modifier row mapping. `dispatch_native_modifier` and
+    // `collect_worker_modifier_rows` both call this: how strong a row is
+    // (`magnitude_scale_q16` from the source instance), which source identity it
+    // carries (adapter-specific, and the synergy `stable_source_identity` opt-in)
+    // and which Modifier scope/handles it targets are all decided HERE, once.
+    bool map_modifier_row(const Transaction &transaction,
+                          const Instance &source_instance,
+                          const Command &command,
+                          ModifierRow &out) const;
+    int32_t finish_worker_modifier_bindings(
+        const std::vector<int64_t> &transaction_ids, bool confirm);
     void append_command(Transaction &transaction, const Command &command);
     void index_transaction_commands(const Transaction &transaction);
     void unindex_transaction_commands(const Transaction &transaction);
@@ -1150,6 +1388,12 @@ private:
     std::vector<int64_t> _native_gameplay_request_ids;
     std::vector<NativeAckBinding> _native_gameplay_ack_bindings;
     std::unordered_set<int64_t> _native_gameplay_bound_transaction_ids;
+    // Split-authority settle ledger. Deliberately separate from
+    // `_native_*_request_ids`: `apply_pod_snapshot` clears those on every
+    // write-back, and losing "already submitted" there would re-enqueue the same
+    // row every frame and STACK it (the 1.03 -> 1.0609 defect).
+    std::vector<ModifierRow> _split_settle_rows;
+    std::vector<ModifierBinding> _split_settle_bindings;
     int32_t _max_native_modifier_commands = 4096;
     std::vector<EraRewardPool> _era_reward_pools;
     std::vector<EraRewardOption> _era_reward_options;

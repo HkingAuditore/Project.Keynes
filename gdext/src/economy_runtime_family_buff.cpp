@@ -1,4 +1,7 @@
 #include "economy_runtime.h"
+
+#include <cstdlib>
+#include "selector_cell_cap.h"
 #include "economy_effect_forward.h"
 #include "country_runtime.h"
 #include "effect_runtime.h"
@@ -56,6 +59,11 @@ constexpr int32_t kSelectorNeighborsR1 = 6;
 constexpr int32_t kSelectorNeighborsR2 = 7;
 constexpr int32_t kOneIndustryShareFloorQ16 = NativeEconomyRuntime::Q16_ONE * 70 / 100;
 constexpr int32_t kDefaultRainThresholdQ16 = NativeEconomyRuntime::Q16_ONE / 4;
+// Official family effects are a rare identity tag.  Small fixture catalogs
+// used by focused runtime tests keep the old deterministic behavior; the
+// shipped 48-effect catalog uses this gate before selecting a random-pool
+// effect, so most families are defined by their traits alone.
+constexpr uint64_t kOfficialRareEffectChancePercent = 20;
 
 int32_t clamp_factor_q16(int64_t value) {
     return static_cast<int32_t>(std::clamp<int64_t>(value, 0,
@@ -538,6 +546,10 @@ int32_t NativeEconomyRuntime::roll_random_pool_family_effect(
     rng = trace_hash_mix(rng, stable_id);
     rng = trace_hash_mix(rng, static_cast<uint32_t>(
         _family_effect_catalog_version));
+    if (_family_effect_keys.size() >= 20 &&
+            trace_hash_mix(rng, 0x524152455F454646ULL) % 100ULL >=
+                kOfficialRareEffectChancePercent)
+        return -1;
     std::vector<int32_t> candidates;
     int64_t total_weight = 0;
     for (int32_t effect_id = 0; effect_id < static_cast<int32_t>(
@@ -900,7 +912,33 @@ int32_t NativeEconomyRuntime::dominant_output_good_at(
     return best_good;
 }
 
-int32_t NativeEconomyRuntime::cell_country_slot(int32_t cell) const {    if (cell < 0) return -1;
+godot::Dictionary NativeEconomyRuntime::building_context_ready_for_test() const {
+    godot::Dictionary out;
+    const int32_t cells = _cell_count.get();
+    out["cells"] = static_cast<int64_t>(cells);
+    out["neighbors"] = static_cast<int64_t>(_building_neighbors.size());
+    out["neighbors_expected"] = static_cast<int64_t>(cells) * 6;
+    out["terrain"] = static_cast<int64_t>(_building_terrain.size());
+    out["is_water"] = static_cast<int64_t>(_building_is_water.size());
+    out["has_river"] = static_cast<int64_t>(_building_has_river.size());
+    // CONTENT, not just sizes. An all -1 neighbour table has the right length and would
+    // pass a size-only check, while every radial selector returns "no cells" -- which is
+    // exactly the ambiguity this probe exists to remove.
+    int64_t valid_neighbors = 0;
+    for (const int32_t neighbor : _building_neighbors)
+        if (neighbor >= 0 && neighbor < cells) ++valid_neighbors;
+    out["valid_neighbors"] = valid_neighbors;
+    out["has_any_neighbor"] = valid_neighbors > 0;
+    out["ready"] = _building_neighbors.size() == static_cast<size_t>(cells) * 6 &&
+        _building_terrain.size() == static_cast<size_t>(cells) &&
+        _building_is_water.size() == static_cast<size_t>(cells) &&
+        _building_has_river.size() == static_cast<size_t>(cells) &&
+        valid_neighbors > 0;
+    return out;
+}
+
+int32_t NativeEconomyRuntime::cell_country_slot(int32_t cell) const {
+    if (cell < 0) return -1;
     if (_epoch_cell_country.size() != static_cast<size_t>(_cell_count.get()))
         return -1;
     if (cell >= static_cast<int32_t>(_epoch_cell_country.size())) return -1;
@@ -1107,6 +1145,21 @@ constexpr int32_t kCountryTagCountSlotCount =
 } // namespace
 
 void NativeEconomyRuntime::rebuild_epoch_tag_snapshot() {
+    // M4: measure before deciding whether a per-tag incremental update is worth
+    // building (the "stamp / touched scratch" task). A ScopedTimer so every early
+    // return below is still counted.
+    struct BuildTimer {
+        std::atomic<double> &out_ms;
+        std::atomic<int64_t> &out_count;
+        std::chrono::steady_clock::time_point start =
+            std::chrono::steady_clock::now();
+        ~BuildTimer() {
+            const double ms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - start).count();
+            out_ms.store(ms, std::memory_order_relaxed);
+            out_count.fetch_add(1, std::memory_order_relaxed);
+        }
+    } build_timer{_last_tag_snapshot_build_ms, _tag_snapshot_build_count};
     // R-3: build ONE immutable snapshot and publish it with a single atomic store.
     //
     // History of this function, because the first "fix" was not one:
@@ -1186,6 +1239,50 @@ void NativeEconomyRuntime::rebuild_epoch_tag_snapshot() {
         _target_tags.collect_metric_mask(mask);
         const int32_t metric_count = static_cast<int32_t>(FAMILY_METRIC_COUNT);
         std::vector<int64_t> values(static_cast<size_t>(metric_count), 0);
+        // Tags with NO rows can never match: `matches()` returns false immediately
+        // (`target_tag.h:203`). Precomputing the active set turns a `cells x tags`
+        // sweep into `cells x active_tags`, and the shipped catalogue declares far
+        // more tags than any one world's table actually uses.
+        // Narrow to the CONSUMED tags (M4-22).
+        //
+        // `tags_needed` was a bare bool, so a world whose cards read ONE tag still paid
+        // `cells x 296` matches -- 35.66 ms at 6400 cells. The consumer set now carries
+        // the ids; an EMPTY set with `tags_needed` true means "the publisher could not
+        // name them" and is treated as all tags, so a conservative publisher can never
+        // silently narrow the target set.
+        const std::shared_ptr<const EffectInputConsumers> consumers =
+            std::atomic_load_explicit(&_effect_input_consumers,
+                std::memory_order_acquire);
+        // Test switch: force the "all tags" fallback so the narrowing can be A/B'd
+        // with ONE binary. Without a switch the two arms are different builds, and a
+        // build-to-build timing comparison confounds the change with the build.
+        static const bool force_all_tags = []() {
+            const char *value = std::getenv("PK_TAG_FORCE_ALL");
+            return value != nullptr && value[0] == '1';
+        }();
+        const std::vector<int32_t> *consumed =
+            (consumers == nullptr || force_all_tags)
+                ? nullptr : &consumers->tag_ids;
+        std::vector<int32_t> active_tags;
+        if (consumed != nullptr && !consumed->empty()) {
+            active_tags.reserve(consumed->size());
+            for (const int32_t tag : *consumed) {
+                if (tag < 0 || tag >= tags) continue;          // stale id
+                if (_target_tags.end(tag) <= _target_tags.begin(tag)) continue;
+                active_tags.push_back(tag);
+            }
+        } else {
+            active_tags.reserve(static_cast<size_t>(tags));
+            for (int32_t tag = 0; tag < tags; ++tag) {
+                if (_target_tags.end(tag) > _target_tags.begin(tag))
+                    active_tags.push_back(tag);
+            }
+        }
+        _tag_active_tag_count = static_cast<int64_t>(active_tags.size());
+        _tag_consumed_tag_count = consumed == nullptr
+            ? 0 : static_cast<int64_t>(consumed->size());
+        _tag_declared_tag_count = tags;
+        const int32_t active = static_cast<int32_t>(active_tags.size());
         for (int32_t cell = 0; cell < cells; ++cell) {
             sample_effect_metrics(cell, metric_count, values.data(), mask);
             const size_t word = static_cast<size_t>(cell / 64);
@@ -1196,7 +1293,8 @@ void NativeEconomyRuntime::rebuild_epoch_tag_snapshot() {
                 if (override_it != tag_overrides->cells.end())
                     cell_overrides = &override_it->second;
             }
-            for (int32_t tag = 0; tag < tags; ++tag) {
+            for (int32_t index = 0; index < active; ++index) {
+                const int32_t tag = active_tags[static_cast<size_t>(index)];
                 bool matches =
                     _target_tags.matches(tag, values.data(), metric_count);
                 if (cell_overrides != nullptr &&
@@ -2016,7 +2114,8 @@ inline uint64_t effect_input_mix(uint64_t hash, uint64_t value) {
 void NativeEconomyRuntime::set_effect_input_consumers(
         const MetricMask &cell_metrics, bool tags_needed, bool families_needed,
         const std::array<std::vector<int64_t>, FAMILY_METRIC_COUNT>
-            &metric_thresholds) {
+            &metric_thresholds,
+        const std::vector<int32_t> &tag_ids) {
     const std::shared_ptr<const EffectInputConsumers> previous =
         std::atomic_load_explicit(&_effect_input_consumers,
             std::memory_order_acquire);
@@ -2026,6 +2125,7 @@ void NativeEconomyRuntime::set_effect_input_consumers(
     if (previous != nullptr &&
             previous->metric_mask == cell_metrics &&
             previous->tags_needed == tags_needed &&
+            previous->tag_ids == tag_ids &&
             previous->families_needed == families_needed &&
             previous->thresholds == metric_thresholds) {
         return;
@@ -2033,6 +2133,7 @@ void NativeEconomyRuntime::set_effect_input_consumers(
     auto consumers = std::make_shared<EffectInputConsumers>();
     consumers->metric_mask = cell_metrics;
     consumers->tags_needed = tags_needed;
+    consumers->tag_ids = tag_ids;
     consumers->families_needed = families_needed;
     consumers->thresholds = metric_thresholds;
     consumers->generation = previous == nullptr ? 1 : previous->generation + 1;
@@ -2366,6 +2467,7 @@ void NativeEconomyRuntime::collect_effect_target_cells(
     // when the building snapshot has not been captured (for example between an
     // epoch capture and the first building refresh).
     if (selector_kind == EffectRuntime::SELECTOR_OWN_TERRITORY) {
+        ++_own_territory_branch;
         // param1 == 0 -> every owned cell. param1 >= 1 -> 1-based tag id into
         // the catalog's tag table (target_tag.h). The tag filter replaced the
         // three hard-coded river/water predicates this kind shipped with: those
@@ -2383,13 +2485,27 @@ void NativeEconomyRuntime::collect_effect_target_cells(
             out_cells.push_back(source_cell);
             return;
         }
-        // The whole point of this kind is "as many as the instance budget
-        // allows", so a missing param0 defaults to the hard ceiling rather than
-        // the 8-cell fan-out of the radial kinds.
-        const int32_t cap = param0 > 0
-            ? std::min(param0, EffectRuntime::SELECTOR_MAX_CELLS)
-            : EffectRuntime::SELECTOR_MAX_CELLS;
+        // Plan 22 M2-2/M2-5: the ceiling comes from `selector_cell_ceiling`,
+        // which reports "no policy cap" for territory queries, and only the map
+        // size bounds the result.
+        //
+        // `param0 == 0` means "the kind's own default", which for a territory
+        // query is now the whole territory: the map size is the only bound.
+        // Passing the legacy 32 here would have kept the cap alive no matter
+        // what the content said -- the cap has to be relinquished in BOTH
+        // places, which is why plan 22 M2-1 insists on the ordering.
+        //
+        // A card that EXPLICITLY authors 32 still gets 32, so the content
+        // update and this code change stay separate, reviewable steps.
+        const int32_t cap = resolve_selector_cell_cap(
+            EffectRuntime::SELECTOR_OWN_TERRITORY, param0, cells);
         const int32_t owned = country_cell_count(country);
+        _own_territory_owned += owned;
+        _own_last_source_cell = source_cell;
+        _own_last_country = country;
+        _own_last_cap = cap;
+        _own_last_tag = tag;
+        _own_first_cell_ok = owned > 0 ? country_cell_at(country, 0) : -999;
         out_cells.reserve(static_cast<size_t>(std::max(0, owned)));
         // R-3b: ONE atomic load for the whole scan. `cell_has_target_tag` per cell
         // would take the shared_ptr spin lock `owned` times; the local pointer also
@@ -2403,9 +2519,12 @@ void NativeEconomyRuntime::collect_effect_target_cells(
         // corner of every country.
         for (int32_t index = 0; index < owned; ++index) {
             const int32_t cell = country_cell_at(country, index);
-            if (cell < 0) continue;
-            if (tag >= 0 && !snapshot_has_tag(tags_ptr, cell, tag)) continue;
+            if (cell < 0) { ++_own_cell_neg; continue; }
+            if (tag >= 0 && !snapshot_has_tag(tags_ptr, cell, tag)) {
+                ++_own_tag_rejected; continue;
+            }
             out_cells.push_back(cell);
+            ++_own_pushed_raw;
         }
         // A country that owns nothing (or whose territory matches no tag)
         // yields nothing on purpose: falling back to the anchor would apply a
@@ -2414,6 +2533,7 @@ void NativeEconomyRuntime::collect_effect_target_cells(
         out_cells.erase(std::unique(out_cells.begin(), out_cells.end()), out_cells.end());
         effect_stable_cap(out_cells, cap, static_cast<uint64_t>(source_cell),
             selection_salt, stats);
+        _own_territory_emitted += static_cast<int64_t>(out_cells.size());
         return;
     }
     // Grid-wide tag selector: the ownership-free twin of the branch above.
@@ -2573,6 +2693,68 @@ void NativeEconomyRuntime::collect_effect_target_cells(
     if (static_cast<int32_t>(out_cells.size()) > cap) out_cells.resize(cap);
 }
 
+void NativeEconomyRuntime::dilate_cell_set(const std::vector<int32_t> &sources,
+                                          int32_t depth,
+                                          std::vector<int32_t> &out_cells) const {
+    out_cells.clear();
+    if (sources.empty() || depth <= 0) return;
+    const int32_t cells = _cell_count.get();
+    if (cells <= 0) return;
+    if (_building_neighbors.size() != static_cast<size_t>(cells) * 6) return;
+
+    // One buffer for the whole expansion, reused across calls via a stamp counter: an
+    // entry counts as visited only when it carries the CURRENT stamp, so reuse costs
+    // neither an allocation nor a `cells`-sized clear.
+    //
+    // THREAD_LOCAL, not a member. The loop this replaced allocated a LOCAL vector on
+    // every call, so it was safe to call from any thread. A shared member buffer would
+    // have introduced a data race between the ideology worker and the main thread, which
+    // is a regression the equivalence assertion could never catch (it runs on one
+    // thread). `thread_local` keeps the allocation-free reuse AND the thread safety.
+    static thread_local std::vector<int32_t> stamp_buffer;
+    static thread_local int32_t stamp_current = 0;
+    if (stamp_buffer.size() != static_cast<size_t>(cells))
+        stamp_buffer.assign(static_cast<size_t>(cells), 0);
+    ++stamp_current;
+    if (stamp_current <= 0) {
+        std::fill(stamp_buffer.begin(), stamp_buffer.end(), 0);
+        stamp_current = 1;
+    }
+    const int32_t stamp = stamp_current;
+
+    // SOURCES ARE NOT PRE-MARKED AS OUTPUT.
+    //
+    // The first version of this seeded every source into the visited buffer, which
+    // silently DROPPED any cell that is both a source and a neighbour of another source.
+    // The per-source loop never drops such a cell: it is a legitimately discovered
+    // neighbour. The equivalence assertion (`dilate_matches_per_source_union`) caught it.
+    //
+    // So sources only enter the frontier; a source becomes part of the OUTPUT when some
+    // other source's expansion reaches it, exactly as the loop would produce.
+    std::vector<int32_t> frontier = sources;
+    std::vector<int32_t> next;
+    out_cells.reserve(sources.size() * static_cast<size_t>(depth == 1 ? 6 : 18));
+    for (int32_t level = 0; level < depth && !frontier.empty(); ++level) {
+        next.clear();
+        for (const int32_t cell : frontier) {
+            if (cell < 0 || cell >= cells) continue;
+            const size_t base = static_cast<size_t>(cell) * 6;
+            for (int32_t dir = 0; dir < 6; ++dir) {
+                const int32_t neighbor = _building_neighbors[base + static_cast<size_t>(dir)];
+                if (neighbor < 0 || neighbor >= cells) continue;
+                if (stamp_buffer[static_cast<size_t>(neighbor)] == stamp) continue;
+                stamp_buffer[static_cast<size_t>(neighbor)] = stamp;
+                // Kinds 6/7 apply no terrain or predicate filter (`accepts()` is true for
+                // them), so bounds plus the stamp is the whole test.
+                out_cells.push_back(neighbor);
+                next.push_back(neighbor);
+            }
+        }
+        frontier.swap(next);
+    }
+    std::sort(out_cells.begin(), out_cells.end());
+    out_cells.erase(std::unique(out_cells.begin(), out_cells.end()), out_cells.end());
+}
 void NativeEconomyRuntime::fire_family_event_once_effect(int32_t family_index,
                                                          const std::string &program_key) {
     if (family_index < 0 || family_index >= static_cast<int32_t>(

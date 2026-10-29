@@ -1,4 +1,4 @@
-#include "economy_runtime.h"
+﻿#include "economy_runtime.h"
 #include "country_runtime.h"
 #include "economy_runtime_variant_helpers.h"
 
@@ -1394,6 +1394,16 @@ Dictionary NativeEconomyRuntime::report() const {
     // non-zero value means a reader is running before the first commit (or the
     // rebuild was skipped), which used to be invisible.
     out["tag_snapshot_miss_count"] = last_tag_snapshot_miss_count();
+    // M4: the number that decides whether "per-tag changed words" is worth
+    // building. A full rebuild that costs microseconds makes an incremental
+    // update pure overhead.
+    out["tag_snapshot_build_ms"] = last_tag_snapshot_build_ms();
+    out["tag_snapshot_build_count"] = tag_snapshot_build_count();
+    // `cells x tags` is the cost of this rebuild. Splitting declared from ACTIVE shows
+    // how much of the sweep was spent on tags that cannot match.
+    out["tag_declared_tags"] = tag_declared_tag_count();
+    out["tag_active_tags"] = tag_active_tag_count();
+    out["tag_consumed_tags"] = tag_consumed_tag_count();
     // R-3b (item 4): every `tag_snapshot()` load in the epoch. A tag selector that
     // loads once per SCAN keeps this proportional to the number of scans; the pre-fix
     // shape called it once per CELL, so a 6400-cell country cost 6400 loads per query.
@@ -1654,6 +1664,27 @@ Dictionary NativeEconomyRuntime::report() const {
     out["epoch_begin_reset_ms"] = _epoch_begin_reset_ms;
     out["epoch_begin_country_ms"] = _epoch_begin_country_ms;
     out["epoch_begin_city_factor_ms"] = _epoch_begin_city_factor_ms;
+    // Shard diagnostics (plan §14.3). `city_factor_shard_cursor` >= 0 means the
+    // reader yielded mid-work-set and another slice is required; a test that
+    // only sees a total millisecond figure cannot tell "finished in one slice"
+    // from "gave up after 64 cells".
+    out["city_factor_shard_cursor"] = _city_factor_shard_cursor;
+    out["city_factor_shard_cells"] = CITY_FACTOR_SHARD_CELLS;
+    out["city_factor_work_cells"] = _city_factor_work_cells;
+    // Cells ACTUALLY processed by the last pass. `city_factor_work_cells` above
+    // only moves when collect runs, so on a version-gate short-circuit it keeps
+    // reporting the previous pass's size -- which is how a "2000 cells in
+    // 0.003 ms" reading appeared (M2-10). Comparing the two distinguishes
+    // "finished the work set" from "skipped it".
+    out["city_factor_cells_processed"] = _city_factor_cells_processed;
+    out["city_factor_collected_cells"] = _city_factor_collected_cells;
+    // The number §14.3 needs: total time and total work for the WHOLE build,
+    // summed over every shard call. `epoch_begin_city_factor_ms` above measures a
+    // single call, which for a multi-shard build is the small remainder -- that is
+    // why a 2000-cell work set read as "16 cells, 0.002 ms" (M2-11).
+    out["city_factor_epoch_ms"] = _city_factor_epoch_ms;
+    out["city_factor_epoch_slices"] = _city_factor_epoch_slices;
+    out["city_factor_epoch_cells"] = _city_factor_epoch_cells;
     out["epoch_begin_building_factor_ms"] = _epoch_begin_building_factor_ms;
     static constexpr const char *SCAN_STAGE_NAMES[SCAN_STAGE_SLOTS] = {
         "idle", "epoch_begin", "ledger_apply", "household_market",

@@ -788,6 +788,17 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
         economy_production_writer_name(
             _runtime_host->economy_production_writer_effective()));
     out["state"] = runtime_state_name(_runtime_host->state());
+    // The two mask ledgers, at the moment this lifetime starts. A FRESH start
+    // reports requested != 0 with granted == 0 (deferred until the first commit);
+    // a RESTART additionally reports the per-host ledger it just re-published, so a
+    // caller can tell "the grant carried over" from "the grant is still pending"
+    // without waiting for a day to commit.
+    out["requested_authority_mask"] =
+        static_cast<int64_t>(_runtime_host->report().requested_authority_mask);
+    out["authoritative_domain_mask"] =
+        static_cast<int64_t>(_runtime_host->authoritative_domain_mask());
+    out["lifetime_granted_mask"] =
+        static_cast<int64_t>(_runtime_host->lifetime_granted_mask());
     out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report());
     return out;
 }

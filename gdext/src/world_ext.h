@@ -267,6 +267,29 @@ public:
     // full ideological snapshot per day, which production must not pay for.
     godot::Dictionary set_runtime_ideology_parity_enabled(bool enabled);
     godot::Dictionary capture_country_runtime_snapshot();
+    // Per-country owned-cell counts from the CURRENT epoch snapshot, plus the
+    // widest territory. Exists because the cell-layer migration's whole premise is
+    // "a country's territory can exceed 32 cells", and no bridge exposed that, so
+    // the premise could not be checked against a generated world. Read-only.
+    godot::Dictionary get_country_territory_counts() const;
+    // The ECONOMY-side territory plane, which is a different object from the
+    // country runtime's table: `country_cell_count` reads `_epoch_cell_country`,
+    // populated only by `capture_country_epoch`
+    // (economy_runtime.cpp:4986). When that plane's size does not equal the cell
+    // count the selector returns ZERO targets, which looks exactly like "the card
+    // matched nothing" -- so a probe needs to see this number directly.
+    godot::Dictionary get_economy_territory_plane() const;
+    // Diagnoses ONE `get_family_colonization_quotes` rejection (plan 22 M3-6/M3-7).
+    //
+    // The public quotes call collapses six distinct gates into
+    // `colonization_target_invalid` (`economy_runtime_colonization.cpp:448-490`), so
+    // a caller cannot tell "not visible" from "already owned" from
+    // "topology not ready". Two rounds were spent guessing between them.
+    //
+    // This reports each gate separately for one cell. Read-only; no runtime state
+    // is touched.
+    godot::Dictionary diagnose_colonization_target(
+        int64_t country_handle, int target_cell) const;
     godot::Dictionary capture_country_pod_catalog();
     godot::Dictionary get_country_worker_protocol_status() const;
     godot::Dictionary get_country_worker_read_view(
@@ -559,6 +582,27 @@ public:
     // turn "card -> definition" into a per-cell stat delta.
     godot::Dictionary resolve_modifier_definition_terms(
         const godot::String &definition_key) const;
+    // Evaluates one effect program against caller-supplied metric samples
+    // (plan §15.5, M3). Exposed so a test can prove a Ramp produces DIFFERENT
+    // magnitudes for different metric inputs -- the exit condition
+    // "same country, different cells, different ramp values".
+    //
+    // `metric_values` is indexed by metric id; ids past its end read 0.
+    godot::Dictionary evaluate_effect_program_magnitude(
+        const godot::String &program_key,
+        const godot::PackedInt64Array &metric_values) const;
+    // Builds a derived cell front from an explicit term list, with an optional
+    // synthetic ramp sampler (plan §15.5, M3).
+    //
+    // Exists because the production path needs a live economy epoch to produce
+    // metric samples, and that fixture gap has blocked end-to-end verification
+    // five times. This lets a test drive the MATERIALIZER's per-cell ramp branch
+    // directly, which is what M3's exit condition is actually about.
+    //
+    // `sampler_scale` < 0 means "supply no sampler", so the caller can assert the
+    // deferred-without-sampler behaviour.
+    godot::Dictionary build_derived_cell_front_for_test(
+        const godot::Dictionary &terms) const;
     godot::Dictionary poll_modifier_events(int64_t after_event_id,
                                            int limit = 128) const;
     double evaluate_modifier_stat(int domain, int64_t entity_handle,
@@ -580,6 +624,104 @@ public:
     godot::Dictionary clear_modifier_domain(int domain);
     godot::Dictionary get_runtime_modifier_snapshot(int64_t after_generation);
     godot::Dictionary apply_runtime_modifier_snapshot(int64_t after_generation);
+    // Derived cell layer (plan 22 ADR01/ADR02). These are the ONLY Godot-facing
+    // entry points for the layer, and they exist so a test can prove ADR02:
+    // that a `apply_runtime_modifier_snapshot` rebuild does not clear it.
+    //
+    // Production callers are the Economy freeze coordinator, not GDScript; see
+    // plan §4.2 ("the install entry is defined by Modifier and accepts only an
+    // already-frozen, identity-bearing immutable result").
+    godot::Dictionary install_derived_cell_layer_for_test(
+        const godot::Dictionary &front);
+    godot::Dictionary get_derived_cell_layer_report() const;
+    // Last materializer report (plan §12.4). Exposed so a test can assert
+    // `truncated == 0` directly instead of inferring it from row counts --
+    // "no truncation" is the whole point of the migration, so it deserves an
+    // observable rather than an assumption.
+    godot::Dictionary get_derived_materialize_report() const;
+    // Provenance report for the INSTALLED derived front: how many distinct source
+    // countries contributed to each (stat, cell), and how many cells were covered by
+    // more than one.
+    //
+    // Why this exists: a border cell can be covered by two countries' cards, and the
+    // RESOLVED VALUE cannot tell them apart -- two sources contributing 0.5 + 0.5
+    // resolve identically to one contributing 1.0. Plan §15.6/B10 asks for
+    // "multi-country sources affecting the same border target" and for source
+    // revocation, and neither is answerable without this count.
+    godot::Dictionary get_derived_multi_country_report() const;
+    // Drives the REAL fan-out ownership filter and returns the surviving cells.
+    //
+    // Why a bridge: proving "OWN and FOREIGN differ across a border" needs a card whose
+    // `target_selector_param[0]` carries the scope bits, and rewriting a compiled
+    // catalog card from GDScript is not possible. Rather than fabricate a card, this
+    // calls the same `apply_fan_out_ownership_filter` the production path calls, on a
+    // real two-country world.
+    //
+    // `dilate_depth > 0` additionally runs the BATCH dilation over the collected
+    // sources and returns those cells, so a fixture can time the fan-out path
+    // (one pass) rather than the per-source loop it replaced.
+    //
+    // Returns { ok, scope, sources, raw_cells, kept_cells, cells[, dilated_cells] }.
+    // The MERGED value of one modifier stat on one cell, plus the derived layer's own
+    // contribution to it.
+    //
+    // WHY THIS EXISTS
+    //
+    // The derived front is keyed by (stat, cell) but exposed only as COUNTS
+    // (`get_derived_cell_layer_report` -> cell_count / stat_count). That made the
+    // layer's actual numbers unobservable, which is why the old v1 plane could not be
+    // deleted: its test coverage (ADD vs MULTIPLY, and the SUBTRACT sign coming from the
+    // definition rather than the magnitude) had no derived-layer equivalent to move to.
+    //
+    // `value` comes from `ModifierRuntime::effective_value`, i.e. the same call the
+    // production hot path makes, so this reports what the game would really see rather
+    // than a re-derivation.
+    godot::Dictionary get_effective_stat_value(const godot::String &stat_key,
+                                               int64_t cell, int64_t entity_handle,
+                                               double base_value) const;
+    godot::Dictionary probe_fan_out_ownership(int64_t country_handle, int64_t source_cell,
+                                              int64_t selector_kind, int64_t param0,
+                                              int64_t param1,
+                                              int64_t dilate_depth = 0) const;
+    // Drains the sharded derived rebuild for `day`.
+    //
+    // The rebuild became a slice stage (plan §14.3: a 6400-cell materialise costs
+    // 1.28 ms against a 1 ms gate), so ONE `run_ideology_daily` call no longer
+    // publishes it. A caller that needs the layer immediately -- a fixture, or the UI
+    // right after a day -- has to drain. Without this every consumer had to guess a
+    // call count, and the guesses that existed silently read an empty front.
+    //
+    // Returns { ok, steps, complete }.
+    godot::Dictionary drain_derived_cell_layer(int64_t day_index);
+    // ── I01 probes (plan 22 §4.5 / §13.4 `catalog` row) ────────────────────
+    //
+    // NOTE: a `describe_cell_program_backends` bridge (walking the compiled catalog
+    // and counting DerivedCell vs EffectInstance) was designed but NOT built: it
+    // needs three EffectRuntime accessors that do not exist yet
+    // (`program_count_for_backend_report`, `program_key_at`,
+    // `program_describe_backend_probe`). The static coverage tool remains the
+    // authority on the catalogue-wide split; the two probes below cover the
+    // per-facts assertions. Both are read-only and touch no runtime state.
+    godot::Dictionary probe_cell_program_backend(
+        const godot::Dictionary &facts) const;
+    // The staged rollout state (plan §15). Separate from capability on purpose: a
+    // milestone flip must not change what the backend can express.
+    godot::Dictionary get_cell_program_rollout() const;
+    // Resolve a stat key to its dense id and clamp ceiling. Needed by the merge
+    // contract test: the ceiling depends on the catalog, so hardcoding it would
+    // make the test pass today and lie tomorrow.
+    godot::Dictionary resolve_modifier_stat(const godot::String &stat_key) const;
+    // Read-only scope enumeration, exposed so a test can prove the derived-layer
+    // union (plan §8.5). Pure read: no state, no versions, no side effects.
+    // Combined revision of a stat subset, INCLUDING the derived layer (plan
+    // §8.6). Exposed so a test can prove that a derived install invalidates the
+    // readers' caches while an idle day does not.
+    int64_t modifier_stat_bucket_version(int domain,
+                                         const godot::PackedInt32Array &stat_ids) const;
+    godot::Dictionary collect_modifier_scope_ids(int domain, int scope,
+                                                 const godot::PackedInt32Array &stat_ids) const;
+    godot::Dictionary collect_modifier_scope_stat_entries(
+        int domain, int scope, const godot::PackedInt32Array &stat_ids) const;
     godot::Dictionary apply_runtime_effect_snapshot(int64_t after_generation);
     godot::Dictionary runtime_modifier_pod_self_test() const;
 
@@ -655,6 +797,19 @@ public:
     godot::Dictionary run_effect_daily(int64_t day_index);
     godot::Dictionary dispatch_effect_native_modifier();
     godot::Dictionary ack_effect_native_modifier();
+    // SPLIT AUTHORITY settle (mask 0xFEF: IDEOLOGY on the main thread, EFFECT and
+    // MODIFIER on the worker). In that configuration the main thread has no
+    // Effect settler -- `run_effect_daily`, both Modifier adapter halves and
+    // `run_modifier_daily` all report `path=EFFECT_WORKER` -- so an ideology
+    // equip's batch is planned here and never drained. This submits those rows
+    // into the worker's Modifier lane and completes the Effect transaction once
+    // the worker has committed them.
+    //
+    // INERT unless the worker is authoritative for EFFECT *and* MODIFIER, tested
+    // with the same `domain_is_worker_authoritative` predicate `run_effect_daily`
+    // uses to decide it has nothing to do. Anything weaker double-applies rows
+    // the local adapter already applied (1.03 -> 1.0609).
+    godot::Dictionary settle_split_authority_effects(int64_t day_index);
     godot::Dictionary dispatch_effect_native_country();
     godot::Dictionary ack_effect_native_country();
     godot::Dictionary settle_orphaned_effect_native_country_acks();
@@ -718,23 +873,22 @@ public:
     godot::Dictionary run_ideology_daily(int64_t day_index);
     bool ideology_should_run(int64_t day_index) const;
     godot::Dictionary step_ideology_instance_refresh(int64_t day_index);
+    // Worker-authority pump for the DERIVED half, symmetric to the instance refresh.
+    // Needed because `run_ideology_daily` is suppressed when the worker owns IDEOLOGY.
+    // Throttling is the CALLER's job -- see the comment on the definition.
+    godot::Dictionary step_ideology_derived_rebuild(int64_t day_index);
     godot::Dictionary apply_runtime_ideology_snapshot(int64_t after_generation);
     godot::Dictionary get_ideology_snapshot(int64_t country_handle) const;
     // Diagnostic: reconciled Effect instances owned by each held idea, with a
     // `present` flag proving the EffectRuntime still holds them. Read-only.
     godot::Dictionary get_ideology_effect_instance_report(int64_t country_handle) const;
-    godot::Dictionary get_ideology_cell_program_summary();
     // Per-cell output factor after the Modifier rows AND the Ideology plane have
     // been folded in. Test/diagnostic seam for the coefficient plane.
     godot::Dictionary get_city_output_factor_q16(int32_t cell, int32_t good_id) const;
     // §2.0 of the round-1 review: the plane is OFF by default. Until generation,
     // double-application, selector semantics, coefficient semantics and thread
     // ownership are fixed, it must not touch shipped numbers. Tests turn it on
-    // explicitly (or call publish_ideology_cell_programs themselves).
-    void set_ideology_cell_plane_enabled(bool enabled) {
-        _ideology_cell_plane_enabled = enabled;
-    }
-    void publish_ideology_cell_programs();
+    // explicitly.
     // Inject a table directly. The generator has no DSL for columns yet, so the
     // only way to exercise `NEIGHBOR_COUNT` is to hand-build one.
     bool set_ideology_cell_program_entry_for_test(
@@ -3304,7 +3458,6 @@ private:
     // economy_runtime.{h,cpp}; opaque here so the existing world header does
     // not expose the large chunk/market implementation to every pass TU.
     void                                     *_economy_runtime        = nullptr;
-    bool                                      _ideology_cell_plane_enabled = false;
     // R-3: refresh ticks that could not take the economy input boundary lock.
     // `skips` is the lifetime total, `max_consecutive` the longest run of skipped
     // ticks, which is what tells "the worker is briefly busy" apart from "the refresh

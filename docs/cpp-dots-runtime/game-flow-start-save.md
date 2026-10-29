@@ -1,5 +1,37 @@
 # Formal Game Flow, Player Start, and PKSV
 
+## 2026-10-28 理念派生地块层不参与存档
+
+理念的永久地块效果在 `ModifierRuntime` 里维护一个派生 front。**它不写入任何存档。**
+
+| 项 | 状态 |
+|---|---|
+| 存档格式版本 | **未变**（modifier `SAVE_SCHEMA_VERSION` 仍是 3，未新增字段）|
+| 旧档读取 | **可读**——没有新字段，所以没有迁移步骤 |
+| 读档后派生层 | **为空，直到重建** |
+| `serialize_domain` / `restore_domain` | **完全不碰** `_derived_cell_front` |
+
+### 为什么可以这样
+
+front 的内容完全由「已恢复的输入」决定：装备状态、卡片 program、格子 metric、领土归属。
+把它存下来只会引入「存档里的派生值与被恢复的输入不一致」这一类问题，而它本来是可以重算的。
+
+### 读档后到重建之间的窗口
+
+派生层为空期间，读者看到的是**基础值**（没有理念地块贡献）。
+
+- 生产路径上重建由每日流程驱动（`step_derived_rebuild`）。
+- 要求「读档后立刻正确」的调用方必须显式 `drain_derived_cell_layer(day)`。
+
+**这是一个已知窗口，不是缺陷**；但它是「读档后效果短暂消失」这类报告的第一嫌疑。
+
+### 不要做的两件事
+
+1. **不要把 front 塞进存档**来「修复」这个窗口——那会把可重算的数据变成权威，
+   并引入「恢复的输入 vs 存档的派生值」不一致。
+2. **不要在读档路径里直接读派生层**当作已就绪——先检查
+   `get_derived_cell_layer_report()` 的 `cell_count` 或 `derived_rebuild_pending`。
+
 ## Large ECP2 checkpoint persistence (2026-10-19)
 
 PKSR v2 writes the complete ECP2 section using its uint32 length; it must never
@@ -253,6 +285,32 @@ PKID v1 is accepted only when every ideology is inactive. Save capture waits for
 `ideology_should_run(day)`, `effect_should_run(day)`, and every native
 Country/Economy/Gameplay Effect ingress to be idle, so no cross-section snapshot
 can span a preflight/commit/ACK boundary.
+
+The PKSV provider manifest also carries plan 11.5's cell-program
+execution-contract identity for `pkid`: the entry holds `execution_contract_hash`
+next to the four fixed keys, written as a DECIMAL STRING because the header is
+JSON and a 64-bit hash in a JSON number is rounded past 2^53 (measured:
+`1311768467294899695` comes back as `1311768467294899712.0`). Three gates use it.
+`list_slots()` greys out a slot whose stamped contract differs and puts the code
+in the tooltip; `prepare_load()` records the verdict on the prepared bundle;
+`restore_prepared_game()` re-decides with the live runtime and refuses with
+`cell_program_execution_contract_manifest_mismatch` BEFORE the first
+`provider.restore_sections` call. That code is deliberately distinct from the
+PKID payload's native `cell_program_execution_contract_mismatch`: a GDScript
+pre-flight before any provider restores and a native verdict reached after
+restore began are different events, and one shared string would let a
+whole-package assertion be satisfied by the payload reader. A legacy archive
+whose entry has no key is UNSTATED -- a third outcome, neither a match nor a
+mismatch: the gate defers (`detail=contract_unstated`), records it on the
+prepared bundle, and logs it on restore, while the PKID payload (which carries
+the same identity and compares it exactly) remains the authority. An archive with
+no ideology state is accepted outright (`contract_unstated_no_state`), and a
+runtime that cannot state its contract (a session request before a world exists)
+defers rather than refuses. `PK_SAVE_MIGRATE` is not an escape hatch: the contract
+is not a schema version, so migration cannot make a different execution contract
+safe. The three version spaces are never compared: the pkid provider-section
+schema is 2, the PKID payload schema is 14, and the contract is a third thing
+that can change with no schema bump (a catalog edit) and stay equal across one.
 
 The background worker ideology mirror is an additional PKSR `IDP2` section,
 restored transactionally only after the worker is stopped and its immutable

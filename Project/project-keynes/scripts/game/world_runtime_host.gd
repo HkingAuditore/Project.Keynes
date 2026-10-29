@@ -847,7 +847,16 @@ func _start_production_shadow_worker() -> void:
 	var config: Dictionary = {
 		"simulation_thread_mode": "SHADOW",
 		"graph_coverage_complete": false,
-		"day": 0,
+		# A worker lifetime resumes on the calendar the host is already on. This used
+		# to be a hardcoded 0, which is only right for a FRESH world: a policy flip
+		# stops the worker and calls straight back in here (`_restart_worker_with_
+		# current_policy`), so the restarted worker was told to replay from day 0 while
+		# every domain pod and every domain store was still at the day it stopped on.
+		# The first replayed day then either soft-skips forever (`plan.day <=
+		# committed`) or faults the Climate kernel (`climate_day_not_monotonic`), and
+		# because the authority grant is deferred until a day commits, the reported
+		# mask stayed 0x000 for the rest of the session.
+		"day": _world_clock.day_index() if _world_clock != null else 0,
 		"speed_days_per_second": 1.0,
 		"paused": true,
 		"events_probe_enabled": runtime_events_probe_enabled,
@@ -1375,6 +1384,23 @@ func _service_effect_worker_intents_if_authoritative() -> void:
 ## suppressed, so the sliced instance refresh -- whose instances still belong to
 ## this facade -- has to be pumped here. Bounded per call; `done == false` only
 ## means the pass has more countries left.
+## Last day the derived-layer pump reached completion.
+##
+## The throttle belongs to the PUMP, because the pump is the only caller invoked every
+## tick. Putting it inside `step_derived_rebuild` also throttled a new epoch that began
+## within the same calendar day -- see the comment at the pump.
+var _ideology_derived_pumped_day: int = -1
+## How many times this pump has actually reached the generator, and the last shapes it
+## got back. The pump is the only place the IDEOLOGY mask bit turns into work, so
+## without a counter "the gate opened" was not observable from outside the process --
+## which is exactly how a mask that read 0x000 while the writer followed the request
+## survived: the pump silently did nothing and nothing could say so. Read by
+## `ideology_worker_restart_mask_promotion_test.gd`.
+var _ideology_pump_calls: int = 0
+var _ideology_pump_last: Dictionary = {}
+var _ideology_instance_refresh_last: Dictionary = {}
+
+
 func _step_ideology_instance_refresh_if_authoritative(day_idx: int) -> void:
 	if not _runtime_ready_for_ticks or _generator == null:
 		return
@@ -1384,7 +1410,32 @@ func _step_ideology_instance_refresh_if_authoritative(day_idx: int) -> void:
 		if _generator.has_method("get_runtime_thread_report") else {}
 	if (int(report.get("authoritative_domain_mask", 0)) & 0x010) == 0:
 		return
-	_generator.step_ideology_instance_refresh(day_idx)
+	_ideology_pump_calls += 1
+	_ideology_instance_refresh_last = \
+		_generator.step_ideology_instance_refresh(day_idx).duplicate(false)
+	# Plan §9.3 in worker mode: the DERIVED half needs the same pump.
+	#
+	# `run_ideology_daily` is suppressed under IDEOLOGY worker authority and it is the only
+	# production caller of `step_derived_rebuild`, so without this the derived layer was
+	# never stepped and produced nothing (measured: visits delta 0 over 12 days with a live
+	# card, vs 4 with ideology on the main thread).
+	#
+	# THE THROTTLE LIVES HERE, NOT IN THE STEP, and that placement is the whole lesson.
+	# Only the pump is called every tick, so only the pump needs throttling; the normal day
+	# loop and `drain_derived_cell_layer` legitimately step the rebuild many times per day,
+	# and a NEW EPOCH can begin on the SAME calendar day. A once-per-day guard inside
+	# `step_derived_rebuild`, keyed on the day alone, skipped that epoch's rebuild entirely
+	# -- measured, and it cost two attempts and a broken save fixture before it was
+	# understood.
+	#
+	# A tick landing inside the worker's day transaction returns `economy_day_inflight` and
+	# is retried on the next tick. That is normal contention, not a failure.
+	if _generator.has_method("step_ideology_derived_rebuild"):
+		if _ideology_derived_pumped_day != day_idx:
+			var pumped: Dictionary = _generator.step_ideology_derived_rebuild(day_idx)
+			_ideology_pump_last = pumped.duplicate(false)
+			if bool(pumped.get("done", false)) and not bool(pumped.get("pending", true)):
+				_ideology_derived_pumped_day = day_idx
 
 
 ## G8 ACTIVE Ideology write-back. Non-blocking: drops intermediate generations.

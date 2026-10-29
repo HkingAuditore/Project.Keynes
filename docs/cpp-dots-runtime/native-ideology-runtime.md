@@ -1,5 +1,84 @@
 # Native Ideology Runtime
 
+## 2026-10-28 派生地块层（plan 22 M0–M5）
+
+永久、无状态的 cell 理念不再创建逐格 Effect 实例，而是贡献到 **ModifierRuntime 内的只读派生层**。
+本条记录运行时的实际形状与不变量。
+
+### 后端判定（I01：one program, one backend）
+
+`cell_program_eligibility.h` 是唯一的判定处，`decide_cell_program_backend()` 按固定次序给出
+`DerivedCell` 或具名理由（`not_cell_domain` / `unsupported_selector` / `not_permanent` /
+`non_constant_value_mode` / `stacked` / `unresolved_definition`）。
+
+**生产路径与旧平面都调用它**，不存在第二份规则。实测覆盖：265 个在范围内的 program
+（kind 12/14/15/16）全部 `DerivedCell`；23 个正确地留在实例路径（16 非 cell domain + 7 不支持的 selector）。
+
+阶段开关 `kCellProgramRollout` **已删除**（§15.7）：受支持的 selector 一律走派生，没有第二道门。
+
+### 分片重建（§14.3：单次 slice ≤ 1 ms）
+
+完整物化在 6400 格实测 1.28 ms，超过门槛，所以重建是**跨调用可续跑**的：
+
+```cpp
+bool step_derived_rebuild(int64_t day, std::string &error);   // false = 还需一片
+bool derived_rebuild_pending() const;
+```
+
+工作单元是 **contribution**（采集器每格产出一个）。状态由 `DerivedCellMaterializeJob` 持有：
+`folded` / `touched_stats` / 报告计数都跨 step 存活，`_index` 是续跑游标。
+
+**采集与折叠分成两步**：6400 格采集本身 0.68 ms，与折叠合在一步会把首步推到 1.03 ms。
+`done()` 用 `_started && _index >= _total`，不能用 `_index >= _total`（首调用前两者都是 0）。
+
+调用方若需要「当天立刻可读」，用 `drain_derived_cell_layer(day)` 排空。
+
+诊断：`cell_layer_rebuild_steps`、`cell_layer_rebuild_ms`（**单步最大值**，不是全天累积）、
+`cell_layer_collect_ms`、`cell_layer_materialize_ms`、`derived_rebuild_pending`。
+
+### 目标解析与归属
+
+`resolve_effect_targets` 依次判定 domain → selector 可表达性 → 永久性 → 命令。
+
+**kind 14/15/16 的扇出带归属筛选**（`selector_ownership.h`，存在 `param0` 的 bit 12..13）：
+
+| 值 | 含义 |
+|---|---|
+| `OWN`（0，默认）| 只本国领土 |
+| `FOREIGN`（1）| 只他国 |
+| `ANY`（2）| 不过滤（改动前行为）|
+
+默认 `OWN`：一张写成「周围地块」的卡不再跨过国界。未知值回退 `ANY` 而不是 `OWN`——
+静默收窄一张意图不明的卡会让它的目标集凭空消失，而空目标集与「没匹配到」无法区分。
+
+实测：6×5 网格上边境处一个 R2 环有 **51.7%** 的格属于外国（最坏单环 14/18）。
+
+过滤由 `apply_fan_out_ownership_filter()` 实现，生产路径与探针共用同一份。
+
+### 可观测面
+
+| 桥 | 内容 |
+|---|---|
+| `get_derived_cell_layer_report()`（含 `front_bytes` / `contribution_count` / `bytes_per_contribution`：**front 自身的结构化字节数，不是进程 RSS**） | `cell_count` / `stat_count` |
+| `get_derived_materialize_report()` | seen / derived / skipped_legacy / cells_visited / rows_emitted / truncated |
+| `get_derived_multi_country_report()` | `multi_country_cells` / `max_contributors` / `countries` |
+| **`get_effective_stat_value(stat_key, cell, entity, base)`** | **合并后的值 + 派生层自己那一份**（`derived_add` / `derived_factor` / `derived_contributors`）|
+
+`get_effective_stat_value` 走的是 `ModifierRuntime::effective_value`，即生产热路径的同一次调用。
+
+### 已修复的缺陷
+
+| 缺陷 | 后果 |
+|---|---|
+| `collect_effect_activations` 以 `out_derived != nullptr` 决定后端（I01 违反）| 派生卡同时创建实例，夹具读到存活实例而非派生行 |
+| `effective_value` 用 `group_handle != 0` 守卫派生合并 | **每张卡在其国家第一个格（cell 0）上失效** |
+| `SOURCE_COUNT_RADIUS_MASK`（位宽 7）被当作校验上限 | 内容可 author r=5、通过校验、运行时静默丢弃 |
+
+### 旧 v1 平面已删除
+
+`build_cell_program_table` / `CellProgramTable` / `set_ideology_cell_programs` / 合并段 / 三个桥
+全部移除（约 430 行）。它在生产中是死代码：唯一生产者只有一个测试调用，且开关注释自述
+「not yet safe to apply … double application with the per-cell instances」。
 ## 2026-10-26 理念纸片界面与稳定刷新
 
 ### 排版与纸边修复

@@ -638,6 +638,11 @@ struct RuntimeIdeologyPodPlan {
     uint32_t commands_consumed = 0;
     uint32_t active_visits = 0;
     uint8_t completed_day = 0;
+    // 1 when this plan completed a day that the IMPORTED state already settles, i.e.
+    // it republished the import unchanged instead of advancing it. `commit_day` keeps
+    // the calendar floor armed for those, because a superseded day must not unarm the
+    // rule that made it possible.
+    uint8_t superseded_day = 0;
     uint8_t preflight_ok = 0;
     uint8_t committed = 0;
     char error[64]{};
@@ -670,6 +675,30 @@ public:
     bool configured() const noexcept { return _configured; }
     uint64_t catalog_hash() const noexcept { return _catalog.catalog_hash; }
     void serialize(std::vector<uint8_t> &out) const;
+    // ── worker-side IMPORT: "your authoritative state is now this" ───────────
+    //
+    // `NativeIdeologyRuntime::capture` / `restore` are MAIN-THREAD facade calls. The
+    // POD has its own state machine and never learns it was restored from, so its next
+    // publish replaces the restored rows with its own state (measured: `idea_rows
+    // [82,1,0,0] -> []`, the mirrored §9.3 dates `7/8 -> 2/3`, then the pump clears the
+    // front). The two members below are the channel that fixes it, and they are the
+    // POD's own save format rather than a new transport: the host already exposes
+    // `restore_ideology_pod_save`, which configures a candidate from the LIVE catalog
+    // and calls `restore` on it, so a snapshot produced here can be installed by the
+    // worker without teaching the POD a second state format.
+    //
+    // `canonicalize_import` must run first: `active_idea_ids` is derived, it takes part
+    // in `compute_state_hash`, and `restore` recomputes that hash -- a snapshot that
+    // skipped this step is refused as `ideology_pod_save_state_hash_failed`.
+    static void canonicalize_import(RuntimeIdeologyPodSnapshot &state);
+    static void serialize_snapshot(const RuntimeIdeologyPodSnapshot &state,
+                                   std::vector<uint8_t> &out);
+    // True while the committed state came from a restore whose day is at or after the
+    // worker's own calendar. Such a day is already settled, so `plan_day` republishes
+    // the imported state instead of failing `ideology_day_not_monotonic`.
+    bool import_supersedes_calendar() const noexcept {
+        return _import_supersedes_calendar;
+    }
     bool restore(const uint8_t *data, size_t size, std::string &error);
     // Worker in-flight Modifier batches are not persisted; after a restore the
     // pending transitions re-emit (APPLY upserts / REMOVE-missing are idempotent).
@@ -763,6 +792,10 @@ private:
     RuntimeIdeologyPodSnapshot _planned;
     bool _configured = false;
     bool _plan_ready = false;
+    // Armed by `restore` (a save install, whether this POD's own bytes or the runtime
+    // save bundle's). It is what turns "the worker's calendar is behind the restored
+    // day" from a hard fault into a no-op day; see `plan_day`.
+    bool _import_supersedes_calendar = false;
 };
 
 // G8: immutable Ideology POD snapshot ring (mirrors RuntimeEffectSnapshotRing).

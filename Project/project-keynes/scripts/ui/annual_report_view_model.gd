@@ -73,7 +73,7 @@ const STOCKS := ["funds", "population", "employed", "satisfaction", "survival", 
 
 static func build(report: Dictionary, previous: Dictionary = {}, catalogs: Dictionary = {}) -> Dictionary:
 	if not bool(report.get("ok", false)):
-		return {"available": false, "title": "国家年度发展报告", "chapters": [], "full_text": "尚无年度报告。"}
+		return {"available": false, "title": "年度报告", "chapters": [], "full_text": "尚无年度报告。"}
 	var totals: Dictionary = report.get("totals", {})
 	var before: Dictionary = previous.get("totals", {})
 	var opening: Dictionary = report.get("opening", {})
@@ -206,7 +206,7 @@ static func build(report: Dictionary, previous: Dictionary = {}, catalogs: Dicti
 	_attach_visuals(chapters, report, tiers, old_tiers, dimensions, old_dimensions, industry_rows, resource_rows, parts, score_value)
 	_attach_notes(chapters, totals, has_previous)
 
-	var title: String = "第 %d 年 · 国家年度发展报告" % year
+	var title: String = "第 %d 年 · 年度报告" % year
 	var full_lines: Array[String] = [String(report.get("country_name", "本国")), title, "文明阶段：" + ERA_NAMES[era], ""]
 	for chapter in chapters:
 		full_lines.append("%s\n" % String(chapter.title))

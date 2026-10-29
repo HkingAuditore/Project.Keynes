@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cmath>
+#include <exception>
 #include <limits>
 #include <type_traits>
 #include <unordered_set>
@@ -720,8 +721,36 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         return false;
     }
     const bool restore_pending = _has_pending_restore;
+    // A RESTART resumes on THIS host's calendar, not on the caller's.
+    //
+    // `initial_day` is the caller's main-thread calendar. It is only meaningful for
+    // a fresh host, because a restarted worker's day must be contiguous with the
+    // committed day of every POD it drives: `RuntimeCountryPodAuthority::plan_day`
+    // refuses anything but `committed_day + 1` (`country_day_not_contiguous`), and
+    // Climate/Effect/Ideology/Modifier/Trigger are sequential for the same reason.
+    // Adopting the caller's day therefore made the first day after a restart
+    // unplannable in every domain: no day ever committed, so the deferred authority
+    // grant was never published and the reported mask read 0x000 for the rest of the
+    // session while the writer followed the request (measured with a runtime flip
+    // at main day 11: `country_day_not_contiguous` at day 12, `granted=0x000`).
+    //
+    // The previous lifetime's committed day is the last day for which the WHOLE
+    // requested mask completed, so every POD is at or after it: PODs at that day
+    // accept `+1`, and PODs one day ahead take their existing idempotent
+    // `plan.day <= committed` path. The environment FIFO agrees too -- it holds the
+    // oldest frame the old worker had not consumed, which is exactly the resumed
+    // day, so the restarted worker does not have to wait for a re-publish.
+    //
+    // `_has_started_once && lifetime_granted_mask() != 0` is the positive proof that
+    // this host ran this world's PODs to a committed day. Without it (a fresh host, a
+    // fresh world on a reused host) the caller's day is used, exactly as before.
+    const int64_t previous_committed = _committed_day.load(std::memory_order_acquire);
+    const bool resuming_previous_lifetime =
+        _has_started_once.load(std::memory_order_acquire) &&
+        _lifetime_granted_mask.load(std::memory_order_acquire) != 0u;
     const int64_t start_day = restore_pending
-        ? _pending_restore_bundle.committed_day : initial_day;
+        ? _pending_restore_bundle.committed_day
+        : (resuming_previous_lifetime ? previous_committed : initial_day);
     const double start_speed = restore_pending
         ? _pending_restore_bundle.speed_days_per_second : speed_days_per_second;
     const bool start_paused = restore_pending
@@ -1596,8 +1625,38 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     if (restore_pending && mode == RuntimeSimulationMode::ACTIVE && wanted != 0u &&
         ((wanted & runtime_domain_mask(RuntimeDomainId::COUNTRY)) == 0u ||
          country_candidate_ready)) {
-        _authoritative_domain_mask.store(wanted & implemented_domain_mask(),
-                                         std::memory_order_release);
+        publish_authority_grant(wanted & implemented_domain_mask());
+    }
+    // A RESTART re-publishes the grant a previous lifetime of THIS host earned.
+    //
+    // `request_stop()` and `set_fault()` both clear `_authoritative_domain_mask`, and
+    // that revocation is right: the schedule gate has to hand the domain back to the
+    // main thread while the old worker winds down, otherwise nobody computes it.
+    // What was missing is the other half of the handshake. Nothing re-published the
+    // grant when the next worker lifetime started, so a runtime authority flip
+    // (stop -> start with a new mask, no world regeneration) left the mask at 0
+    // while the REQUEST was already recorded two lines above. The restarted writer
+    // then followed the request (the main-thread day is suppressed per requested
+    // mask) while every consumer that gates on the reported mask stayed off for the
+    // rest of the session -- measured in `ideology_worker_authority_parity_test.gd`
+    // as `mask=0x000 state=PAUSED` next to `suppressed=false`, with the ideology
+    // instance-refresh pump, the derived-layer pump and the country read-view
+    // consumer all silently stopped.
+    //
+    // The deferred 0x000 is CORRECT for a fresh start and stays untouched: there no
+    // day has ever proven the handlers, which is exactly what the first-commit grant
+    // below waits for. On a restart the POD state and the handlers are the same ones
+    // that already earned the grant, and the domain stores are still aligned to this
+    // host's committed day, so the proof carries over. The restore path above grants
+    // on the same reasoning.
+    //
+    // Intersecting with the new `wanted` is deliberate: a domain the previous
+    // lifetime never owned (e.g. IDEOLOGY while the mask was 0xFEF) is NOT granted
+    // here and keeps the deferred path -- it has not been proven in this session.
+    if (!restore_pending && mode == RuntimeSimulationMode::ACTIVE && wanted != 0u) {
+        const uint32_t proven = lifetime_granted_mask() & wanted &
+            implemented_domain_mask();
+        if (proven != 0u) publish_authority_grant(proven);
     }
     _has_pending_restore = false;
     _pending_restore_bundle = RuntimeSaveBundle{};
@@ -1623,6 +1682,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
         return false;
     }
+    _has_started_once.store(true, std::memory_order_release);
     return true;
 }
 
@@ -16076,8 +16136,7 @@ void NativeSimulationHost::worker_main() {
                         _requested_authority_mask.load(std::memory_order_acquire);
                     if (wanted != 0u &&
                         (day_commit.completed_domain_mask & wanted) == wanted) {
-                        _authoritative_domain_mask.store(wanted,
-                            std::memory_order_release);
+                        publish_authority_grant(wanted);
                     }
                     // Publish the committed Climate state for main-thread
                     // write-back. Ordered before the authority grant becomes
@@ -16153,6 +16212,17 @@ void NativeSimulationHost::worker_main() {
         if (_state.load(std::memory_order_acquire) != RuntimeWorkerState::FAULTED) {
             _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
         }
+    } catch (const std::exception &error) {
+        // `unhandled_worker_exception` alone is a dead end: it names the symptom and
+        // throws away the only cheap evidence. Log what() before publishing the same
+        // fault code, so a worker that dies after a restart says why.
+        const std::string line = pk::log_format(
+            "[runtime-worker-exception] what=%s day=%d",
+            error.what() != nullptr ? error.what() : "unknown",
+            _committed_day.load(std::memory_order_relaxed));
+        pk::log_line(line);
+        pk::log_line(line, true);
+        set_fault("unhandled_worker_exception");
     } catch (...) {
         set_fault("unhandled_worker_exception");
     }

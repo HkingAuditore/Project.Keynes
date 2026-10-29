@@ -926,6 +926,103 @@ Dictionary DCWorldExt::get_country_economy_asset_transaction(
         economy_asset_transaction_snapshot(static_cast<uint64_t>(transaction_id));
 }
 
+Dictionary DCWorldExt::get_economy_territory_plane() const {
+    Dictionary out;
+    if (_economy_runtime == nullptr) {
+        out["ok"] = false;
+        out["reason"] = "economy_runtime_unavailable";
+        return out;
+    }
+    const auto *economy = static_cast<const NativeEconomyRuntime *>(_economy_runtime);
+    out["ok"] = true;
+    out["cell_count"] = static_cast<int64_t>(economy->cell_count());
+    out["plane_size"] = static_cast<int64_t>(economy->epoch_cell_country_size_for_test());
+    out["country_count"] = static_cast<int64_t>(economy->epoch_country_count_for_test());
+    // `country_territory_index_ready()` is private. What actually matters is
+    // whether a territory query returns cells, so ask the same accessor the
+    // selector uses.
+    out["slot0_cell_count"] =
+        static_cast<int64_t>(economy->country_cell_count(0));
+    // THE decision the own-territory selector makes first:
+    //   const int32_t country = cell_country_slot(source_cell);  // = the anchor
+    //   if (country < 0) { out.push_back(source_cell); return; }
+    // If the anchor cell reports no owner, the branch returns exactly ONE cell --
+    // and an empty result means `owned` was 0 for whatever slot it found.
+    out["cell0_country"] = static_cast<int64_t>(economy->cell_country_slot(0));
+    out["cell0_country_cell_count"] =
+        static_cast<int64_t>(economy->country_cell_count(
+            economy->cell_country_slot(0)));
+    out["anchor0"] = static_cast<int64_t>(economy->country_anchor_cell(0));
+    out["own_territory_branch"] =
+        static_cast<int64_t>(economy->own_territory_branch_count());
+    out["own_territory_owned"] =
+        static_cast<int64_t>(economy->own_territory_owned_total());
+    out["own_territory_emitted"] =
+        static_cast<int64_t>(economy->own_territory_emitted_total());
+    out["own_last_source_cell"] = economy->own_last_source_cell_debug();
+    out["own_last_country"] = economy->own_last_country_debug();
+    out["own_last_cap"] = economy->own_last_cap_debug();
+    out["own_first_cell_ok"] = economy->own_first_cell_ok_debug();
+    out["own_last_tag"] = economy->own_last_tag_debug();
+    out["own_pushed_raw"] = economy->own_pushed_raw_debug();
+    out["own_cell_neg"] = economy->own_cell_neg_debug();
+    out["own_tag_rejected"] = economy->own_tag_rejected_debug();
+    // The exact predicate `country_cell_count` uses (economy_runtime_family_buff
+    // .cpp:970); when false every territory query yields zero cells.
+    out["plane_matches_cell_count"] =
+        economy->epoch_cell_country_size_for_test() ==
+        static_cast<size_t>(economy->cell_count());
+    return out;
+}
+
+Dictionary DCWorldExt::get_country_territory_counts() const {
+    Dictionary out;
+    if (_economy_runtime == nullptr) {
+        out["ok"] = false;
+        out["code"] = "economy_runtime_unavailable";
+        return out;
+    }
+    // `runtime_from()` is not visible in this translation unit, so cast the stored
+    // void pointer directly.
+    const auto *economy = static_cast<const NativeEconomyRuntime *>(_economy_runtime);
+    // Country slots are dense in the epoch snapshot; walking them and asking the
+    // runtime for each count keeps the ownership question in one place instead of
+    // re-deriving it from a cell->country table here.
+    // `epoch_country_count_for_test()` is the only accessor for the epoch's
+    // country slot count. It is named "for_test" but is const and side-effect free,
+    // which is why it is usable here; there is no non-test twin.
+    const int32_t country_count = economy->epoch_country_count_for_test();
+    PackedInt64Array handles;
+    PackedInt32Array counts;
+    int32_t widest = 0;
+    int32_t widest_slot = -1;
+    int64_t total = 0;
+    for (int32_t slot = 0; slot < country_count; ++slot) {
+        const int32_t owned = economy->country_cell_count(slot);
+        handles.append(static_cast<int64_t>(slot));
+        counts.append(owned);
+        total += owned;
+        if (owned > widest) {
+            widest = owned;
+            widest_slot = slot;
+        }
+    }
+    out["ok"] = true;
+    out["country_count"] = country_count;
+    out["slots"] = handles;
+    out["counts"] = counts;
+    out["widest"] = widest;
+    out["widest_slot"] = widest_slot;
+    out["total_cells"] = total;
+    // Explicit count of territories above the OLD 32-cell cap: the migration's
+    // premise in one number.
+    int32_t above_cap = 0;
+    for (int32_t i = 0; i < counts.size(); ++i)
+        if (counts[i] > 32) ++above_cap;
+    out["above_old_cap"] = above_cap;
+    return out;
+}
+
 Dictionary DCWorldExt::capture_country_runtime_snapshot() {
     Dictionary out;
     if (_country_runtime == nullptr) {
@@ -1937,6 +2034,13 @@ Dictionary DCWorldExt::get_country_ui_snapshot(int64_t handle,
     if (!static_cast<bool>(summary.get("ok", false))) return summary;
 
     Dictionary out;
+    // Plan §18.2: the country checkpoint's ABI, exposed so a probe can cross-check it.
+    // `country_core` already refuses `country_checkpoint_abi_incompatible` on restore
+    // (`country_core.cpp:324-327`); this is the readable half of that contract.
+    out["country_checkpoint_abi_version"] =
+        static_cast<int64_t>(COUNTRY_CHECKPOINT_ABI_VERSION);
+    out["country_checkpoint_schema_version"] =
+        static_cast<int64_t>(COUNTRY_CHECKPOINT_SCHEMA_VERSION);
     out["ok"] = true;
     out["country_handle"] = handle;
     out["section"] = section_mask;

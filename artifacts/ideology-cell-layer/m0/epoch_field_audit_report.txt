@@ -1,0 +1,214 @@
+﻿==============================================================================
+M0-5 frozen-input reconstructability audit (plan ��11.3)
+==============================================================================
+declared _epoch_* members : 169
+  PERSISTED_RAW       5
+  DERIVED_FROZEN     90
+  DERIVED_PARTIAL    56
+  DIAGNOSTIC         18
+  UNKNOWN             0
+  SIMULATION TOTAL  151  (excludes diagnostics)
+
+-- PERSISTED_RAW --
+  _epoch_active                                        line  4867  bool
+  _epoch_begin_post_fiscal_pending                     line  4899  bool
+  _epoch_begin_pending_day                             line  4900  int64_t
+  _epoch_cell_development_q16                          line  7144  std::vector<int32_t>
+  _epoch_country_count                                 line  7182  int32_t
+
+-- DERIVED_PARTIAL (56) --
+  _epoch_business_demand_ema                           line  5991
+      why  : EMA over prior market days; reconstructable only from full price history
+      sites: economy_runtime_epoch.cpp
+  _epoch_derived_business_demand                       line  5994
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime_building_investment.cpp
+  _epoch_substitute_business_demand                    line  6022
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime_building_investment.cpp
+  _epoch_desired_business_demand                       line  6023
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime_building_construction.cpp
+  _epoch_funded_business_demand                        line  6024
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime_building_production.cpp
+  _epoch_offered_supply_ema                            line  6030
+      why  : EMA over prior market days; same as business_demand_ema
+      sites: economy_runtime_epoch.cpp
+  _epoch_producer_sellable_current                     line  6034
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime_building_production.cpp
+  _epoch_producer_merchant_sold_current                line  6035
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime_building_production.cpp
+  _epoch_previous_producer_sellable                    line  6036
+      why  : previous-day snapshot; the previous day is not persisted
+      sites: economy_runtime_epoch.cpp
+  _epoch_previous_producer_merchant_sold               line  6037
+      why  : previous-day snapshot; the previous day is not persisted
+      sites: economy_runtime_epoch.cpp
+  _epoch_producer_discarded_current                    line  6038
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime_epoch.cpp
+  _epoch_nonhousehold_withdrawals                      line  6039
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime.cpp
+  _epoch_cost_anchor_price                             line  6040
+      why  : anchor carried across epochs; a mid-epoch save loses the anchor origin
+      sites: economy_runtime_epoch.cpp
+  _epoch_colonization_demand_by_cell                   line  6050
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime_colonization_kit.cpp
+  _epoch_colonization_demand_by_market                 line  6051
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime_colonization_kit.cpp
+  _epoch_research_good_id                              line  6052
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime.cpp
+  _epoch_research_demand_by_cell                       line  6053
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime.cpp
+  _epoch_research_demand_by_market                     line  6054
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime.cpp
+  _epoch_bullion_quota_keys                            line  6058
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime.cpp
+  _epoch_bullion_quota_initial                         line  6059
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime.cpp
+  _epoch_bullion_quota_remaining                       line  6060
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime.cpp
+  _epoch_bullion_quota_initial_total                   line  6061
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime.cpp
+  _epoch_bullion_quota_remaining_total                 line  6062
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime.cpp
+  _epoch_bullion_quota_remainder_units                 line  6063
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime.cpp
+  _epoch_market_work_weights                           line  6096
+      why  : recomputed at open but the source is not obviously restored
+      sites: start_epoch
+  _epoch_cell_geo_flags                                line  6461
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime_family_buff.cpp
+  _epoch_cell_waterway_component_size                  line  6462
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime_family_buff.cpp
+  _epoch_cell_neighbor_distinct_goods                  line  6536
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime_family_buff.cpp
+  _epoch_cell_visible                                  line  6899
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime_trade.cpp
+  _epoch_trade_vision_gated                            line  6901
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime.cpp
+  _epoch_income_tax_rates                              line  6937
+      why  : recomputed at open but the source is not obviously restored
+      sites: capture_country_epoch
+  _epoch_consumption_tax_rates                         line  6938
+      why  : recomputed at open but the source is not obviously restored
+      sites: capture_country_epoch
+  _epoch_business_tax_rates                            line  6939
+      why  : recomputed at open but the source is not obviously restored
+      sites: capture_country_epoch
+  _epoch_import_tax_rates                              line  6940
+      why  : recomputed at open but the source is not obviously restored
+      sites: capture_country_epoch
+  _epoch_export_tax_rates                              line  6941
+      why  : recomputed at open but the source is not obviously restored
+      sites: capture_country_epoch
+  _epoch_income_tax_modes                              line  6942
+      why  : recomputed at open but the source is not obviously restored
+      sites: capture_country_epoch
+  _epoch_consumption_tax_modes                         line  6943
+      why  : recomputed at open but the source is not obviously restored
+      sites: capture_country_epoch
+  _epoch_business_tax_modes                            line  6944
+      why  : recomputed at open but the source is not obviously restored
+      sites: capture_country_epoch
+  _epoch_import_tax_modes                              line  6945
+      why  : recomputed at open but the source is not obviously restored
+      sites: capture_country_epoch
+  _epoch_export_tax_modes                              line  6946
+      why  : recomputed at open but the source is not obviously restored
+      sites: capture_country_epoch
+  _epoch_cell_compiled_tax_policy                      line  6972
+      why  : recomputed at open but the source is not obviously restored
+      sites: capture_country_epoch
+  _epoch_compiled_cell_tax_policies                    line  6981
+      why  : recomputed at open but the source is not obviously restored
+      sites: capture_country_epoch
+  _epoch_compiled_cell_tax_overrides                   line  6982
+      why  : recomputed at open but the source is not obviously restored
+      sites: capture_country_epoch
+  _epoch_compiled_cell_tax_default_rows                line  6983
+      why  : recomputed at open but the source is not obviously restored
+      sites: capture_country_epoch
+  _epoch_compiled_cell_tax_default_rates               line  6984
+      why  : recomputed at open but the source is not obviously restored
+      sites: capture_country_epoch
+  _epoch_compiled_cell_tax_default_modes               line  6985
+      why  : recomputed at open but the source is not obviously restored
+      sites: capture_country_epoch
+  _epoch_cell_tax_cache_bytes                          line  6986
+      why  : recomputed at open but the source is not obviously restored
+      sites: capture_country_epoch
+  _epoch_has_cell_tax_policies                         line  6988
+      why  : recomputed at open but the source is not obviously restored
+      sites: capture_country_epoch
+  _epoch_tax_policy_version                            line  6989
+      why  : recomputed at open but the source is not obviously restored
+      sites: capture_country_epoch
+  _epoch_city_output_ideology_generation               line  7121
+      why  : recomputed at open but the source is not obviously restored
+      sites: refresh_city_output_modifier_factors
+  _epoch_price_ceiling_observations                    line  8308
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime.cpp
+  _epoch_ceiling_business_requested                    line  8310
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime_building_production.cpp
+  _epoch_ceiling_business_unfilled                     line  8310
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime_building_production.cpp
+  _epoch_ceiling_research_requested                    line  8311
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime.cpp
+  _epoch_ceiling_research_delivered                    line  8311
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime.cpp
+  _epoch_ceiling_research_touched                      line  8312
+      why  : recomputed at open but the source is not obviously restored
+      sites: economy_runtime.cpp
+
+-- UNKNOWN (0) --
+
+-- fields the cell-layer migration reads (��8.5 readers) --
+  _epoch_cell_birth_factor_q16                         DERIVED_FROZEN
+      role : birth_factor reader (30 command refs)
+      sites: refresh_city_modifier_factors
+  _epoch_cell_need_consumption_factor_q16              DERIVED_FROZEN
+      role : need consumption reader (29 refs)
+      sites: refresh_city_modifier_factors
+  _epoch_cell_good_consumption_factor_q16              DERIVED_FROZEN
+      role : good consumption side of the same loop
+      sites: refresh_city_modifier_factors
+  _epoch_country_output_factor_q16                     DERIVED_FROZEN
+      role : country output term
+      sites: capture_country_epoch
+  _epoch_cell_country                                  DERIVED_FROZEN
+      role : owning country per cell (target resolution)
+      sites: capture_country_epoch
+  _epoch_country_cell_offsets                          DERIVED_FROZEN
+      role : territory CSR (OWN_TERRITORY)
+      sites: economy_runtime_family_buff.cpp
+  _epoch_country_cells                                 DERIVED_FROZEN
+      role : territory CSR (OWN_TERRITORY)
+      sites: economy_runtime_family_buff.cpp
+
+wrote artifacts\ideology-cell-layer\m0\epoch_field_audit.csv

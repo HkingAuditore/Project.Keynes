@@ -1,4 +1,4 @@
-// Synthetic-grid self check for the shared effect target selector.
+﻿// Synthetic-grid self check for the shared effect target selector.
 //
 // Why this exists: the selector reads _cell_count / _building_neighbors /
 // _building_terrain and friends, all of which are only populated when a real
@@ -17,8 +17,11 @@
 #include "economy_runtime.h"
 #include "effect_runtime.h"
 #include "effect_selector_cap.h"
+#include "selector_ownership.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -225,6 +228,240 @@ bool EconomyTargetSelectorTests::run(std::string &error) {
     rt->collect_effect_target_cells(0, ER::SELECTOR_NEIGHBORS_R2, 0, 0, out);
     if (!expect(out.size() <= 18, "selector_r2_cap", error)) return false;
 
+    // ── Ownership scope for a source fan-out (plan 22, M5-5/M5-6) ──────────────
+    //
+    // The fan-out used to be ownership-blind, so a "周围地块" card reached foreign
+    // cells across a border. This is where that can actually be MEASURED: the fixture
+    // owns the hex neighbour table and `_epoch_cell_country`, so a real ring can be
+    // produced and split by real ownership.
+    //
+    // What this pins:
+    //   1. the UNFILTERED ring really does straddle a country border (otherwise every
+    //      scope would agree and the feature would be untestable);
+    //   2. `pk::ownership_accepts` partitions that ring exactly, so OWN + FOREIGN == ANY;
+    //   3. the DEFAULT decodes to OWN, so a card that names no scope stays home.
+    {
+        // Two countries, split down the middle column of the fixture grid.
+        rt->_epoch_cell_country.assign(static_cast<size_t>(kCells), 0);
+        for (int32_t cell = 0; cell < kCells; ++cell)
+            if ((cell % kCols) >= kTerrainSplitCol)
+                rt->_epoch_cell_country[static_cast<size_t>(cell)] = 1;
+        rt->_epoch_country_count = 2;
+        const int32_t border_source = kInteriorRow * kCols + (kTerrainSplitCol - 1);
+
+        std::vector<int32_t> ring;
+        rt->collect_effect_target_cells(border_source, ER::SELECTOR_NEIGHBORS_R2, 0, 0,
+                                        ring);
+        if (!expect(!ring.empty(), "ownership_ring_non_empty", error)) return false;
+
+        // 1. The ring must contain BOTH countries, or the rest proves nothing.
+        int32_t raw_own = 0;
+        int32_t raw_foreign = 0;
+        for (const int32_t cell : ring) {
+            const bool is_own =
+                rt->_epoch_cell_country[static_cast<size_t>(cell)] == 0;
+            if (is_own) ++raw_own; else ++raw_foreign;
+        }
+        if (!expect(raw_own > 0 && raw_foreign > 0,
+                    "ownership_ring_straddles_the_border", error)) {
+            return false;
+        }
+
+        // 2. The predicate must partition the ring exactly.
+        int32_t own_kept = 0;
+        int32_t foreign_kept = 0;
+        int32_t any_kept = 0;
+        for (const int32_t cell : ring) {
+            const bool is_own =
+                rt->_epoch_cell_country[static_cast<size_t>(cell)] == 0;
+            if (pk::ownership_accepts(pk::OWNERSHIP_OWN, is_own)) ++own_kept;
+            if (pk::ownership_accepts(pk::OWNERSHIP_FOREIGN, is_own)) ++foreign_kept;
+            if (pk::ownership_accepts(pk::OWNERSHIP_ANY, is_own)) ++any_kept;
+        }
+        if (!expect(own_kept == raw_own && foreign_kept == raw_foreign,
+                    "ownership_predicate_matches_country_split", error)) {
+            return false;
+        }
+        if (!expect(own_kept + foreign_kept == any_kept &&
+                    any_kept == static_cast<int32_t>(ring.size()),
+                    "ownership_own_plus_foreign_partitions_any", error)) {
+            return false;
+        }
+        // 3. The whole change: OWN must actually DROP cells here.
+        if (!expect(own_kept < any_kept, "ownership_own_drops_foreign_cells", error))
+            return false;
+
+        // The DEFAULT must be OWN: a param that carries only a cap.
+        if (!expect(pk::decode_ownership_scope(32) == pk::OWNERSHIP_OWN,
+                    "ownership_default_is_own", error)) return false;
+
+        // ── Magnitude of the default-value change ────────────────────────────
+        //
+        // "The cards get smaller" is not a number a balance reviewer can use. This
+        // sweeps every interior cell as a source, splits its own ring by ownership, and
+        // reports the FOREIGN share -- i.e. how much of a fan-out the new OWN default
+        // removes at a border, which is the worst case for the change.
+        //
+        // Reported, not asserted: the exact share depends on the map and the source
+        // position, and pinning it here would turn a content question into a brittle
+        // constant.
+        int64_t total_ring = 0;
+        int64_t total_foreign = 0;
+        int32_t worst_foreign = 0;
+        for (int32_t row = 1; row < kRows - 1; ++row) {
+            for (int32_t col = 1; col < kCols - 1; ++col) {
+                std::vector<int32_t> sweep;
+                rt->collect_effect_target_cells(row * kCols + col,
+                                                ER::SELECTOR_NEIGHBORS_R2, 0, 0, sweep);
+                int32_t foreign_here = 0;
+                for (const int32_t cell : sweep) {
+                    ++total_ring;
+                    if (rt->_epoch_cell_country[static_cast<size_t>(cell)] != 0) {
+                        ++total_foreign;
+                        ++foreign_here;
+                    }
+                }
+                if (foreign_here > worst_foreign) worst_foreign = foreign_here;
+            }
+        }
+        if (!expect(total_ring > 0, "ownership_sweep_has_cells", error)) return false;
+        // Surface the number rather than hiding it in a local: a reviewer needs to see
+        // "the new default removes N% of a border fan-out".
+        std::printf(
+            "[ownership] R2 ring sweep: %lld of %lld cells foreign (%.1f%%), "
+            "worst single ring %d foreign\n",
+            static_cast<long long>(total_foreign),
+            static_cast<long long>(total_ring),
+            total_ring == 0 ? 0.0
+                            : 100.0 * static_cast<double>(total_foreign) /
+                                  static_cast<double>(total_ring),
+            worst_foreign);
+        // The change must MATTER: if no ring ever crossed the border, the new default
+        // would be a no-op and the whole item would have been unnecessary.
+        if (!expect(total_foreign > 0,
+                    "ownership_sweep_finds_foreign_cells", error)) return false;
+    }
+
+
+    // ── Ring-walk cost after the source cap was removed (2026-10-28) ──────────
+    //
+    // Removing the 32-source cap multiplies the number of RING WALKS by the country's
+    // tagged cell count (32 -> N). Measuring the source collection alone is not enough:
+    // that part actually got FASTER (the stable-hash truncation is skipped), so the
+    // entire cost of the change lives here, one walk per source.
+    //
+    // This fixture owns a real hex neighbour table, so the walks here are the same shape
+    // the production path performs. The number is REPORTED, not asserted: a wall-clock
+    // threshold would be a claim about the machine, not about correctness. The single
+    // assertion is a loose sanity bound that catches "a walk became catastrophically
+    // slow", which is the only failure mode worth failing on.
+    {
+        constexpr int32_t kWalkIterations = 2000;
+        std::vector<int32_t> walk_out;
+        // Warm up: the first calls pay branch-cache misses and were what made earlier
+        // single-shot measurements unusable.
+        for (int32_t i = 0; i < 200; ++i)
+            rt->collect_effect_target_cells(kInteriorCell, ER::SELECTOR_NEIGHBORS_R1, 0, 0,
+                                            walk_out);
+        const auto walk_start = std::chrono::steady_clock::now();
+        for (int32_t i = 0; i < kWalkIterations; ++i)
+            rt->collect_effect_target_cells(kInteriorCell, ER::SELECTOR_NEIGHBORS_R1, 0, 0,
+                                            walk_out);
+        const auto walk_end = std::chrono::steady_clock::now();
+        const double total_us =
+            std::chrono::duration<double, std::micro>(walk_end - walk_start).count();
+        const double per_walk_us = total_us / static_cast<double>(kWalkIterations);
+        // The two source counts that matter: the old cap, and a 1600-cell country.
+        const double capped_us = per_walk_us * 32.0;
+        const double uncapped_us = per_walk_us * 1600.0;
+        std::printf(
+            "[ringwalk] R1 walk: %.3f us/walk over %d iterations -> "
+            "32 sources %.1f us, 1600 sources %.1f us (%.0fx)\n",
+            per_walk_us, kWalkIterations, capped_us, uncapped_us,
+            32.0 > 0.0 ? uncapped_us / (capped_us == 0.0 ? 1.0 : capped_us) : 0.0);
+        if (!expect(!walk_out.empty(), "ringwalk_produces_cells", error)) return false;
+        // A single R1 walk over a 6-neighbour cell must be far under a millisecond on any
+        // machine this runs on; 100 us is loose by two orders of magnitude on purpose.
+        if (!expect(per_walk_us < 100.0, "ringwalk_per_call_is_not_absurd", error))
+            return false;
+    }
+
+    // ── per-source loop vs batch dilation (2026-10-28) ───────────────────────
+    //
+    // Removing the source cap turned a 32-iteration fan-out into one iteration per
+    // tagged cell. The old shape called `collect_effect_target_cells` once per source,
+    // and that call allocates AND ZEROES a `cells`-sized `seen` buffer every time
+    // (`economy_runtime_family_buff.cpp:2663`) -- so the cost was O(sources x cells), not
+    // O(sources x 6). `dilate_cell_set` replaces it with one pass and a stamp buffer.
+    //
+    // Both are measured HERE, on the SAME grid and neighbour table, so the ratio is a
+    // property of the implementations rather than of two different fixtures.
+    {
+        constexpr int32_t kIterations = 400;
+        std::vector<int32_t> all_cells;
+        all_cells.reserve(static_cast<size_t>(kCells));
+        for (int32_t c = 0; c < kCells; ++c) all_cells.push_back(c);
+
+        std::vector<int32_t> loop_out;
+        std::vector<int32_t> ring_scratch;
+        // Warm up both paths before timing either.
+        for (int32_t i = 0; i < 5; ++i) {
+            loop_out.clear();
+            for (const int32_t source : all_cells) {
+                ring_scratch.clear();
+                rt->collect_effect_target_cells(source, ER::SELECTOR_NEIGHBORS_R1, 0, 0,
+                                                ring_scratch);
+                loop_out.insert(loop_out.end(), ring_scratch.begin(), ring_scratch.end());
+            }
+            std::vector<int32_t> warm_dilated;
+            rt->dilate_cell_set(all_cells, 1, warm_dilated);
+        }
+
+        const auto loop_start = std::chrono::steady_clock::now();
+        for (int32_t i = 0; i < kIterations; ++i) {
+            loop_out.clear();
+            for (const int32_t source : all_cells) {
+                ring_scratch.clear();
+                rt->collect_effect_target_cells(source, ER::SELECTOR_NEIGHBORS_R1, 0, 0,
+                                                ring_scratch);
+                loop_out.insert(loop_out.end(), ring_scratch.begin(), ring_scratch.end());
+            }
+        }
+        const auto loop_end = std::chrono::steady_clock::now();
+
+        std::vector<int32_t> batch_out;
+        const auto batch_start = std::chrono::steady_clock::now();
+        for (int32_t i = 0; i < kIterations; ++i)
+            rt->dilate_cell_set(all_cells, 1, batch_out);
+        const auto batch_end = std::chrono::steady_clock::now();
+
+        const double loop_us = std::chrono::duration<double, std::micro>(
+            loop_end - loop_start).count() / static_cast<double>(kIterations);
+        const double batch_us = std::chrono::duration<double, std::micro>(
+            batch_end - batch_start).count() / static_cast<double>(kIterations);
+        std::printf(
+            "[dilate] %d sources on a %d-cell grid: per-source loop %.2f us, "
+            "batch %.2f us (%.2fx)\n",
+            kCells, kCells, loop_us, batch_us,
+            batch_us == 0.0 ? 0.0 : loop_us / batch_us);
+
+        // The batch path must produce the same UNION the loop does. Comparing sorted
+        // sets (not raw order) is the right check: the loop appends per source and the
+        // batch sorts once, so order genuinely differs while the set must not.
+        std::vector<int32_t> loop_sorted = loop_out;
+        std::sort(loop_sorted.begin(), loop_sorted.end());
+        loop_sorted.erase(std::unique(loop_sorted.begin(), loop_sorted.end()),
+                          loop_sorted.end());
+        if (!expect(loop_sorted == batch_out, "dilate_matches_per_source_union", error)) {
+            return false;
+        }
+        if (!expect(!batch_out.empty(), "dilate_produces_cells", error)) return false;
+        // Sanity only: a batch dilation of the whole small grid must not be slower than
+        // the loop it replaced on the same data.
+        if (!expect(batch_us <= loop_us * 1.5 + 1.0,
+                    "dilate_is_not_slower_than_the_loop", error)) return false;
+    }
+
     // T11: kind 16's two-int packed layout. The GDScript side has its own
     // implementation on purpose; this pins the C++ bit positions and the
     // documented boundary values so either side drifting fails by name.
@@ -242,9 +479,40 @@ bool EconomyTargetSelectorTests::run(std::string &error) {
                     error)) return false;
         if (!expect(decoded.tag == 65535, "source_count_pack_tag_65535",
                     error)) return false;
+        // An UNAUTHORED target cap means "no cell limit", not "32".
+        //
+        // This assertion used to require 32 (`source_count_pack_zero_is_default_32`),
+        // which documented the very defect that silently truncated all 66 kind-16 cards
+        // to 32 target cells. The expectation is inverted here, and the name says why.
         const int32_t default_cap[2] = {((2 & 0x07) << 5), 1};
-        if (!expect(ER::decode_source_count_selector(default_cap).target_cap == 32,
-                    "source_count_pack_zero_is_default_32", error)) return false;
+        const ER::SourceCountSelector zero_cap =
+            ER::decode_source_count_selector(default_cap);
+        if (!expect(zero_cap.target_cap == pk::kSelectorNoCellCap,
+                    "source_count_pack_zero_is_unbounded", error)) return false;
+        // The decoder and the declared ceiling must never disagree again: they are two
+        // representations of the same fact, and their disagreement is what produced the
+        // silent 32-cell cap. Pin them together.
+        if (!expect(pk::selector_cell_ceiling(ER::SELECTOR_TAG_SOURCE_COUNT) ==
+                        pk::kSelectorNoCellCap,
+                    "source_count_ceiling_is_unbounded", error)) return false;
+        // An AUTHORED cap must still be honoured -- the fix removes the default, not the
+        // feature.
+        // THE PRODUCTION VALUE. All 66 kind-16 cards author `param0 = 800`, whose low
+        // five bits are 0 -- so this exact input is what every shipped card decodes to.
+        // It must be UNBOUNDED; while it decoded to 32, `effect_stable_cap` truncated
+        // every one of those cards' target sets to 32 cells.
+        const int32_t production_16[2] = {800, 1};
+        const ER::SourceCountSelector production_decoded =
+            ER::decode_source_count_selector(production_16);
+        if (!expect(production_decoded.target_cap == pk::kSelectorNoCellCap,
+                    "source_count_production_800_is_unbounded", error)) return false;
+        if (!expect(production_decoded.radius == 1,
+                    "source_count_production_800_radius_1", error)) return false;
+        if (!expect(production_decoded.cap == 3,
+                    "source_count_production_800_source_cap_3", error)) return false;
+        const int32_t authored_cap[2] = {(7 & 0x1F), 1};
+        if (!expect(ER::decode_source_count_selector(authored_cap).target_cap == 7,
+                    "source_count_authored_cap_honoured", error)) return false;
     }
 
     // 6-7. Terrain component: stays inside terrain 0 and includes its anchor.
@@ -948,6 +1216,87 @@ bool EconomyTargetSelectorTests::run(std::string &error) {
         rt->collect_effect_target_cells(
             left_cell, ER::SELECTOR_OWN_TERRITORY, 32, 1, out);
         if (!expect(out.empty(), "tag_table_cleared_selector", error)) return false;
+    }
+
+    // ── Plan 22 §13.4 `unbounded`: 31 / 32 / 33 / 200 / 1000+ ──────────────
+    //
+    // The migration's central promise is that a territory card covers the WHOLE
+    // territory, not the first 32 cells. Everything up to here exercised the
+    // selector at or below the old cap, so this block is the only place the
+    // 33..N range is asserted against the REAL selector.
+    //
+    // It goes through `collect_effect_target_cells` rather than a synthetic cap
+    // helper because the promise is about the shipping path, and the old bug was
+    // precisely a cap applied inside that path.
+    {
+        // A country owning `n` cells, anchored so the walk has somewhere to start.
+        const auto territory_of = [&](int32_t n) -> std::unique_ptr<NativeEconomyRuntime> {
+            auto rt2 = std::make_unique<NativeEconomyRuntime>();
+            // NOT `kCells`: that fixture grid is 6x5 = 30 cells, which cannot
+            // express 200 or 1000. The unbounded block needs its own size.
+            constexpr int32_t kBigCells = 2400;
+            rt2->_cell_count = kBigCells;
+            rt2->_building_neighbors.assign(static_cast<size_t>(kBigCells) * 6, -1);
+            rt2->_epoch_cell_country.assign(static_cast<size_t>(kBigCells), -1);
+            // Ownership is contiguous from cell 0 so `country_cell_at` order is
+            // predictable; the selector sorts anyway, but a predictable fixture
+            // makes a failure readable.
+            for (int32_t cell = 0; cell < n && cell < kBigCells; ++cell)
+                rt2->_epoch_cell_country[static_cast<size_t>(cell)] = 0;
+            rt2->_epoch_country_count = 1;
+            rt2->rebuild_country_territory_index();
+            return rt2;
+        };
+
+        for (const int32_t n : {31, 32, 33, 200}) {
+            auto rt2 = territory_of(n);
+            std::vector<int32_t> got;
+            // param0 = 0 means "the kind's own default", which for a territory
+            // query is now the whole territory (M2-5).
+            rt2->collect_effect_target_cells(0, ER::SELECTOR_OWN_TERRITORY, 0, 0, got);
+            if (!expect(static_cast<int32_t>(got.size()) == n,
+                        "unbounded_territory_count", error)) return false;
+            // And an explicit oversized author is not clamped to 32 either.
+            std::vector<int32_t> explicit_cap;
+            rt2->collect_effect_target_cells(
+                0, ER::SELECTOR_OWN_TERRITORY, 1000, 0, explicit_cap);
+            if (!expect(static_cast<int32_t>(explicit_cap.size()) == n,
+                        "unbounded_explicit_cap", error)) return false;
+            // Sorted + unique is the contract every caller relies on.
+            if (!expect(std::is_sorted(explicit_cap.begin(), explicit_cap.end()),
+                        "unbounded_sorted", error)) return false;
+            if (!expect(std::adjacent_find(explicit_cap.begin(),
+                        explicit_cap.end()) == explicit_cap.end(),
+                        "unbounded_unique", error)) return false;
+        }
+
+        // 1000+ cells: the grid is 60x40 = 2400, so 1000 is a large but legal
+        // territory. This is the size §13.2 names as impossible to validate by
+        // diffing two worlds.
+        auto big = territory_of(1000);
+        std::vector<int32_t> many;
+        big->collect_effect_target_cells(0, ER::SELECTOR_OWN_TERRITORY, 0, 0, many);
+        if (!expect(static_cast<int32_t>(many.size()) == 1000,
+                    "unbounded_1000_count", error)) return false;
+        // The old cap must be gone, not merely raised: the 33rd cell specifically.
+        if (!expect(contains(many, 32), "unbounded_includes_old_cap_boundary",
+                    error)) return false;
+        if (!expect(contains(many, 999), "unbounded_includes_last_cell",
+                    error)) return false;
+        // An explicit author of 32 still gets 32: the migration removed the
+        // DEFAULT cap, not the ability to ask for one (M2-5 §4).
+        std::vector<int32_t> asked_32;
+        big->collect_effect_target_cells(
+            0, ER::SELECTOR_OWN_TERRITORY, 32, 0, asked_32);
+        if (!expect(static_cast<int32_t>(asked_32.size()) == 32,
+                    "unbounded_explicit_32_respected", error)) return false;
+        // A map smaller than the territory cannot yield more cells than it has;
+        // "no policy cap" must not become "no limit at all" (plan §1.1).
+        std::vector<int32_t> capped_by_map;
+        big->collect_effect_target_cells(
+            0, ER::SELECTOR_OWN_TERRITORY, 5000, 0, capped_by_map);
+        if (!expect(static_cast<int32_t>(capped_by_map.size()) == 1000,
+                    "unbounded_map_is_outer_limit", error)) return false;
     }
 
     return true;

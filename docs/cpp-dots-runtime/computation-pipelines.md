@@ -3491,6 +3491,62 @@ directly into the country observation batch.
 
 Modifier stage 使用双缓冲 state：capture 当日 command，先处理 expiry，再按 (effective_day, producer_id, sequence, request_id) 排序，执行 APPLY/REMOVE/REFRESH/SET_STACKS/SET_MAGNITUDE，重建受影响 bucket，计算 state hash 和 immutable snapshot。公式为 clamp((base + sum(add)) * product(factor), min, max)；Modifier 绝不写 Climate/Country/Economy/GamePlay base state。E8 已放行生产 ACTIVE（`0x846`）：Host 为唯一写者，snapshot 回灌 `ModifierRuntime`，主线程抑制 `modifier_daily`。
 
+### Split authority settle（mask 0xFEF，2026-10-29）
+
+**配置**：`0xFEF = 0xFFF` 只清掉 IDEOLOGY（`0x010`）——主线程跑意识形态日，worker 拥有
+EFFECT（`0x020`）、MODIFIER（`0x040`）及其余全部域。
+
+**曾经的洞**：`run_effect_daily`、`dispatch_effect_native_modifier`、
+`ack_effect_native_modifier` 在该配置下全部返回 `suppressed=true path=EFFECT_WORKER`，而 worker
+的意识形态 POD 只在它自己拥有 IDEOLOGY 时才产出等级行。于是主线程 EQUIP 产生的 Effect 事务**两边
+都没有结算者**：`apply_pod_snapshot` 用 worker 自己的事务表整体替换 `_transactions`，一天后就把它
+抹掉；`transaction_status_pod` 回 0；意识形态 ACK 侧把 0 当成失败并报
+`ideology_effect_transition_rejected`，事务回滚，卡永远装不上（实测 32 天 `locations=[0]`）。
+
+**现在的路径**：
+1. `EffectRuntime::apply_pod_snapshot` **保留** worker snapshot 永远不携带的事务：程序号 `-1/-2`
+   的内建之外，新增 `source_type == 0x4944454F`（IDEO）的意识形态批事务**及其 source instance**。
+   source instance 以 `active = 0` 重新挂回，**只**用于把事务映射成 Modifier 行，绝不参与本地求值。
+   没有这一步，`_transactions` 被整体替换后事务一天内就消失，`transaction_status_pod` 回 0。
+2. `EffectRuntime::collect_worker_modifier_rows` 用**同一个**映射
+   （`EffectRuntime::map_modifier_row`，主线程 Modifier adapter 的 `dispatch_native_modifier`
+   也用它，**两处不允许出现第二份**）把待结算事务的命令转换成 `ModifierRow`。
+   同一个事务只入账一次（`ModifierBinding` 账本），重复结算不会把同一行再入队一次 —— 那会被
+   `POLICY_INDEPENDENT` 当成第二份叠加，即 `1.03 → 1.0609` 的重复应用。
+3. `settle_split_authority_effects`（`world_ext_effect.cpp`）把这些行交给**拥有 MODIFIER 的那一侧**
+   ——E8 的 `submit_modifier_commands`（worker 拥有 MODIFIER 时由 Host 入队，`unbound_input_generation`）——
+   然后**只在 worker 的已提交 Modifier snapshot 证明这些行确实落地之后**才按 adapter 位 ACK：
+   APPLY 行要求存在（domain/definition/scope/entity/group/source_type/source_id 全等），
+   REMOVE 行要求不存在，且 `snapshot.committed_day > binding.submitted_day`
+   （水线之前"还没有"和"永远没有"是同一个观测）。入队失败**不 ACK**：账本丢弃、事务退回
+   `PLANNED`，下一天重试。
+   触发点：`apply_runtime_effect_snapshot`（生产每日 write-back 钩子）、`run_effect_daily`、
+   `dispatch_effect_native_modifier`，三处幂等。
+
+**守卫**：settle 只在 `domain_is_worker_authoritative(EFFECT)` **且**
+`domain_is_worker_authoritative(MODIFIER)` 时激活。这与 `run_effect_daily` 判定"主线程没有结算方"
+用的是**同一个**谓词，所以"适配器跑了"和"settle 跑了"不可能同时成立。上一轮修复缺的正是这一条：
+settle 在没有 worker 的配置里也执行，本地适配器已经应用的行又被应用一次（实测 `1.03² = 1.0609`，
+三个与本改动无关的夹具因此失败：`ideology_mechanism_synergy_spirit_test`、
+`ideology_pending_keeps_old_contribution_test`、`ideology_card_content_test`）。
+
+**不是我的域的相邻洞，明确未修**：守卫的两个方向都各自命名、各自静默失效，不做半修。
+- `EFFECT` 不归 worker（例如 `0xFDF = 0xFFF & ~0x020`：EFFECT 留在主线程而 MODIFIER 归 worker）→
+  `split_settle_effect_not_worker_authoritative`；这一侧本来就由主线程的 `dispatch_effect_native_modifier`
+  正常结算，settle 必须让位。
+- `EFFECT` 归 worker 而 `MODIFIER` 不归（`0xFBF = 0xFFF & ~0x040`）→
+  `split_settle_modifier_not_worker_authoritative`；那一支需要把行落到本地 store 并让它活过 Effect
+  write-back，是另一套设计。
+
+注意：`apply_pod_snapshot` 的**保留**是不带条件的（它只认 `source_type`，不知道 host 的域掩码）。这两个
+掩码下被保留的事务因此会**一直 pending**，而不是像以前那样被 write-back 抹掉并回滚；数量由
+`_max_transactions` 与事务压缩兜底。这是有意的取舍：保留的判据必须与 settle 的判据解耦，否则首次
+write-back 会先于 settle 触发，把待结算事务抹掉——那正是这次要修的那个 bug。
+
+**验证**：`tests/ideology/ideology_split_authority_effect_worker_probe.gd`（计量探针，非 gate）——
+同一探针跑 `PK_SPLIT_MASK=FEF` 与 `PK_SPLIT_MASK=FFF` 两条腿，逐格比较**整张地图的 192 格**上两个 stat
+的 presence 与 derived add（被拥有的非水域格数单独报出，便于判断一条"全 0 相等"是不是空集相等）。
+
 ## Climate canonical stage order（B8 P0/P1，2026-09-11）
 
 Climate 的日内 stage 顺序现在只有一处定义：

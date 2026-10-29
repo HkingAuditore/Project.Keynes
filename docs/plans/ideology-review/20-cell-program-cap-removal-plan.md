@@ -1,5 +1,7 @@
 # 理念地块效果移除“最多影响 32 个地块”限制
 
+> **已由 v3 取代（2026-10-26）**：统一实施依据为 [22-cell-program-cap-removal-plan-v3.md](22-cell-program-cap-removal-plan-v3.md)。本文保留历史分析；分桶、聚合公式、worker 交接、存档恢复及工期判断须以 v3 为准。
+
 > **2026-10-26 更新**：实现路径已由 [21-cell-program-cap-removal-plan-v2.md](21-cell-program-cap-removal-plan-v2.md) 细化并加速（Derived Cell Layer 内置于 ModifierRuntime、按实测 program 分层、删除 worker 交接线）。本文的问题分析、不变量、测试矩阵仍然有效；§5 架构、§8 发布时序、§13 阶段划分以 v2 为准。
 
 ## 完整设计、迁移与验收计划

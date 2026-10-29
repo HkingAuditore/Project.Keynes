@@ -1,0 +1,118 @@
+﻿==============================================================================
+M0-1 program inventory
+==============================================================================
+all programs            : 288
+cell-domain programs    : 272
+migration scope (A-F)   : 265
+
+-- ��2.2 category split --
+  A: 129
+  B: 12
+  C: 12
+  D: 41
+  E: 66
+  F: 5
+  G: 2
+  H: 5
+  A+B+C+D = 194
+  E+F     = 71
+  G+H     = 7
+
+-- selector distribution --
+   0 OWNER                    2
+   6 NEIGHBORS_R1             2
+   7 NEIGHBORS_R2             1
+   8 SAME_TERRAIN_COMPONENT   1
+  11 DISTANCE_N               1
+  12 OWN_TERRITORY            194
+  14 TAG_SOURCE_R1            5
+  16 TAG_SOURCE_COUNT         66
+
+-- OWN_TERRITORY shape (has_condition, has_read_metric, multi_command) --
+  (False, False, False) = 94
+  (False, False, True) = 35
+  (False, True, False) = 24
+  (True, False, False) = 34
+  (True, False, True) = 7
+
+-- ramp programs: per-cell (C) vs country scalar (B) --
+  per-cell continuous (C):
+    cell.unemployment_q16                        9 program
+    cell.manufacturing_building_count            3 program
+  country scalar (B):
+    country.extractive_cell_count                3 program
+    country.distinct_specialized_good_count      3 program
+    country.silver_cell_count                    3 program
+    country.chained_cell_count                   3 program
+
+-- TAG_SOURCE_COUNT decode (E) --
+  radius      : {1: 27, 2: 38, 3: 1}
+  source_cap  : {2: 3, 3: 60, 6: 3}
+  target_cap bit (0 == legacy default 32): {0: 66}
+
+-- stat family (command references over A-F) --
+   130  economy.city.building.*_factor
+    79  economy.city.output_factor
+    42  economy.city.good.*.output_factor
+    30  economy.city.birth_factor
+    29  economy.city.need.*.consumption_factor
+    15  economy.city.resource.*.regen_factor
+  TOTAL command references: 325
+  term resolution: tres=224 generated=101 unresolved=0
+
+-- reader manifest (A-F terms, by family) --
+   130  economy.city.building.<sector>_output_factor
+        scope=group  invalidation=building_output_stat_version
+    79  economy.city.output_factor
+        scope=group  invalidation=building_output_stat_version
+    42  economy.city.good.<good>.output_factor
+        scope=group  invalidation=collect_scope_stat_entries + stat_bucket_version
+    30  economy.city.birth_factor
+        scope=group  invalidation=collect_scope_ids + stat_bucket_version
+    29  economy.city.need.<need>.consumption_factor
+        scope=group  invalidation=collect_scope_ids + stat_bucket_version
+     9  economy.city.resource.<resource>.regen_factor
+        scope=group  invalidation=inline effective_value per cell
+     6  economy.city.resource.regen_factor
+        scope=group  invalidation=inline effective_value per cell
+  every A-F term resolved to a known reader family
+
+-- non-permanent programs inside the migration scope (plan ��4.4) --
+  maritime_insurance_l1              lifecycle=0 duration_days=30 stack_policy=1
+      -> effect_runtime.cpp:2504 only sets expires_day when lifecycle==1, so duration_days=30 is a DEAD field
+  maritime_insurance_l2              lifecycle=0 duration_days=30 stack_policy=1
+      -> effect_runtime.cpp:2504 only sets expires_day when lifecycle==1, so duration_days=30 is a DEAD field
+  maritime_insurance_l3              lifecycle=0 duration_days=30 stack_policy=1
+      -> effect_runtime.cpp:2504 only sets expires_day when lifecycle==1, so duration_days=30 is a DEAD field
+
+-- ��4.4 eligibility blockers over A-F --
+     3  stack_policy=1
+
+-- exceptions outside the migration scope --
+  [H] v2_forge_ring                      kind= 6(NEIGHBORS_R1) params=(8, 0) defs=['family.city.manufacturing_output_boost']
+  [H] v3_vein_dominance                  kind= 6(NEIGHBORS_R1) params=(8, 0) defs=['family.city.manufacturing_output_boost']
+  [H] v4_iron_throne                     kind= 7(NEIGHBORS_R2) params=(18, 0) defs=['family.city.production_boost']
+  [H] v5_stacked_workshop                kind= 8(SAME_TERRAIN_COMPONENT) params=(8, 0) defs=['family.city.manufacturing_output_boost']
+  [H] v6_guild_monopoly                  kind=11(DISTANCE_N) params=(8, 3) defs=['family.city.energy_output_boost']
+  [G] v9_class_gate                      kind= 0(OWNER) params=(1, 0) defs=['economy.city.building.agriculture_output_factor']
+  [G] v10_technology_gate                kind= 0(OWNER) params=(1, 0) defs=['economy.city.building.agriculture_output_factor']
+
+-- baseline assertions --
+  [ok  ] all programs == 288                actual=288
+  [ok  ] cell programs == 272               actual=272
+  [ok  ] migration scope == 265             actual=265
+  [ok  ] A == 129                           actual=129
+  [ok  ] B == 12                            actual=12
+  [ok  ] C == 12                            actual=12
+  [ok  ] D == 41                            actual=41
+  [ok  ] E == 66                            actual=66
+  [ok  ] F == 5                             actual=5
+  [ok  ] G == 2                             actual=2
+  [ok  ] H == 5                             actual=5
+  [ok  ] A+B+C+D == 194                     actual=194
+  [ok  ] command references == 325          actual=325
+  [ok  ] selector 12 == 194                 actual=194
+  [ok  ] selector 16 == 66                  actual=66
+  [ok  ] selector 14 == 5                   actual=5
+
+all baseline assertions hold

@@ -1110,6 +1110,33 @@ uint64_t ModifierRuntime::apply_command(const Command &command, int64_t day,
     return handle;
 }
 
+int32_t ModifierRuntime::remove_rows_for_source(uint64_t source_type,
+                                                 uint64_t source_id,
+                                                 int64_t day) {
+    if (!_configured) return 0;
+    int32_t removed = 0;
+    for (int32_t domain = 0; domain < DOMAIN_COUNT; ++domain) {
+        Store &store = _stores[domain];
+        // Collect handles FIRST: `remove_handle` recycles the slot index, so removing
+        // while scanning would skip the row that lands in the freed slot.
+        std::vector<uint64_t> handles;
+        for (size_t index = 0; index < store.active.size(); ++index) {
+            if (store.active[index] == 0) continue;
+            if (store.source_type[index] != source_type) continue;
+            if (store.source_id[index] != source_id) continue;
+            handles.push_back(make_handle(store, static_cast<uint32_t>(index)));
+        }
+        for (const uint64_t handle : handles) {
+            // EVENT_REJECT, not EVENT_REMOVE: these rows are being reversed because the
+            // originating batch was rejected, and the journal should say so.
+            if (remove_handle(domain, handle, day, EVENT_REJECT, 0,
+                              "batch_rejected", nullptr))
+                ++removed;
+        }
+    }
+    return removed;
+}
+
 bool ModifierRuntime::remove_handle(int32_t domain, uint64_t handle, int64_t day,
                                     int32_t event_kind, int64_t request_id,
                                     const std::string &reason, Result *result) {
@@ -1423,6 +1450,60 @@ double ModifierRuntime::effective_value(int32_t domain, int32_t sid,
         add += it->second.sum_add;
         factor *= bucket_factor(it->second);
     }
+    // ── Derived cell layer merge (plan 22 §5.1) ────────────────────────────
+    //
+    // The derived contribution joins the SAME sum/product as every other
+    // contribution, BEFORE the final clamp. §5.1 rejects the alternative
+    // (`clamp((legacy_effective + derived_add) * derived_factor)`) because the
+    // legacy value already multiplied its own factors and may already have been
+    // clamped, so no arithmetic can recover the correct combination.
+    //
+    // Which handle carries the cell: every shipped reader passes the settlement
+    // cell as `group_handle` with `entity_handle == 0`
+    // (`economy_runtime.cpp:7082-7083`, `modifier_runtime.cpp:1785-1786`). So a
+    // derived row is looked up by `group_handle` -- never by `entity_handle`,
+    // which is the building/entity identity and would silently never match.
+    //
+    // Fast bypass: `_derived_cell_front.rows.empty()` is the common case (no
+    // card equipped, or the migration off), and it keeps every existing reader
+    // bit-identical to the pre-layer behaviour.
+    // `group_handle != 0` used to guard this, and that was a REAL BUG: the group
+    // handle is the CELL (`:1434-1438` above says so), and cell 0 is a legitimate
+    // cell. Measured on a 1600-cell country with a card equipped:
+    //
+    //   cell 0: derived row present, derived_add 0.05, effective value 1.0
+    //   cell 1: derived row present, derived_add 0.05, effective value 1.05
+    //
+    // So every card silently did nothing on its country's first cell.
+    //
+    // Why removing the guard is safe:
+    //   * every ECONOMY-domain caller passes `entity 0, group = cell`
+    //     (`economy_runtime.cpp:4391,4394`, `economy_runtime_family_buff.cpp:7127`),
+    //     so group 0 means cell 0, not "no group";
+    //   * every COUNTRY-domain caller passes `group 0` meaning "no group"
+    //     (`country_runtime.cpp:2433`, `economy_runtime.cpp:5621,5631,...`), and this
+    //     branch is gated on `domain == ECONOMY`, so they never reach it;
+    //   * `effective_values` (the bulk reader, `:1480`) hardcodes group 0, but all
+    //     three of its callers use the COUNTRY domain (`economy_runtime.cpp:5579,
+    //     5932,5982`), so it is unaffected too.
+    if (domain == ECONOMY && !_derived_cell_front.rows.empty()) {
+        const DerivedCellStatRow *row = _derived_cell_front.row_for_stat(sid);
+        if (row != nullptr) {
+            const DerivedCellContribution *slot =
+                row->find(static_cast<int32_t>(group_handle));
+            if (slot != nullptr) {
+                add += slot->sum_add;
+                // Plan §5.5: a zero factor must annihilate the product, exactly
+                // like `bucket_factor`. Multiplying by `product_nonzero` alone
+                // would silently ignore a "-100%" card.
+                if (slot->zero_factor_count > 0) {
+                    factor = 0.0;
+                } else {
+                    factor *= slot->product_nonzero;
+                }
+            }
+        }
+    }
     double value = (base_value + add) * factor;
     if (!std::isfinite(value)) value = value < 0.0 ? _stats[sid].min_value : _stats[sid].max_value;
     return std::clamp(value, _stats[sid].min_value, _stats[sid].max_value);
@@ -1467,6 +1548,27 @@ void ModifierRuntime::collect_scope_ids(int32_t domain, int32_t scope,
             continue;
         out_scope_ids.push_back(entry.first.scope_id);
     }
+    // Union with the derived layer (plan §8.5 "scope enumeration returns the
+    // union of instances and derived GROUP(cell) rows").
+    //
+    // Without this, a cell that ONLY has a derived contribution is invisible to
+    // the caller: `refresh_city_modifier_factors` builds its work set from this
+    // function, so the merge in `effective_value` would compute the right value
+    // for a cell the reader never visits. The layer would look installed and
+    // change nothing.
+    //
+    // Only GROUP scope can carry a derived cell row; GLOBAL/ENTITY have no cell
+    // identity to look up.
+    if (domain == ECONOMY && scope == GROUP) {
+        for (const DerivedCellStatRow &row : _derived_cell_front.rows) {
+            if (!std::binary_search(wanted.begin(), wanted.end(), row.stat_id))
+                continue;
+            for (const int32_t cell : row.cells) {
+                if (cell < 0) continue;
+                out_scope_ids.push_back(static_cast<uint64_t>(cell));
+            }
+        }
+    }
     std::sort(out_scope_ids.begin(), out_scope_ids.end());
     out_scope_ids.erase(std::unique(out_scope_ids.begin(), out_scope_ids.end()),
                         out_scope_ids.end());
@@ -1493,6 +1595,20 @@ void ModifierRuntime::collect_scope_stat_entries(
             continue;
         entries.emplace_back(entry.first.scope_id, entry.first.stat_id);
     }
+    // Union with the derived layer (plan §8.5). `refresh_city_output_modifier_
+    // factors` builds its `(cell, good)` work list from THIS function, so a
+    // derived-only `(stat, cell)` pair must appear here or the reader silently
+    // skips it.
+    if (domain == ECONOMY && scope == GROUP) {
+        for (const DerivedCellStatRow &row : _derived_cell_front.rows) {
+            if (!std::binary_search(wanted.begin(), wanted.end(), row.stat_id))
+                continue;
+            for (const int32_t cell : row.cells) {
+                if (cell < 0) continue;
+                entries.emplace_back(static_cast<uint64_t>(cell), row.stat_id);
+            }
+        }
+    }
     std::sort(entries.begin(), entries.end());
     entries.erase(std::unique(entries.begin(), entries.end()), entries.end());
     out_scope_ids.reserve(entries.size());
@@ -1514,6 +1630,120 @@ uint64_t ModifierRuntime::stat_bucket_version(int32_t domain, const int32_t *sta
         const uint64_t version = sid >= 0 &&
                 static_cast<size_t>(sid) < store.stat_versions.size()
             ? store.stat_versions[static_cast<size_t>(sid)] : 0;
+        hash = (hash ^ version) * 1099511628211ULL;
+        hash = (hash ^ static_cast<uint64_t>(static_cast<uint32_t>(sid))) *
+            1099511628211ULL;
+    }
+    // ── Derived layer participation (plan §8.6) ────────────────────────────
+    //
+    // The derived layer keeps its OWN per-stat versions, deliberately separate
+    // from `Store::stat_versions` (which `apply_pod_snapshot` bumps
+    // unconditionally, `modifier_runtime.cpp:463-464`). But callers must not have
+    // to remember to combine two version namespaces -- forgetting that is
+    // exactly bug #1 this round: `refresh_city_modifier_factors` compares ONE
+    // version, saw no change, returned early, and never reached the union.
+    //
+    // So the combination happens HERE, in the function every existing cache
+    // already keys on. A derived change now invalidates those caches, and an
+    // idle day still does not (the layer generation only moves on a real
+    // content change, `install_derived_cell_layer`).
+    //
+    // Only the ECONOMY domain can carry a derived cell layer, and only for
+    // GROUP-scoped stats, so other domains keep their historical hash exactly.
+    if (domain == ECONOMY && !_derived_cell_front.rows.empty()) {
+        hash = (hash ^ _derived_cell_front.generation) * 1099511628211ULL;
+        for (size_t i = 0; i < stat_count; ++i) {
+            const int32_t sid = stat_ids[i];
+            const uint64_t layer_version = sid >= 0 &&
+                    static_cast<size_t>(sid) <
+                        _derived_cell_front.stat_versions.size()
+                ? _derived_cell_front.stat_versions[static_cast<size_t>(sid)] : 0;
+            hash = (hash ^ layer_version) * 1099511628211ULL;
+        }
+    }
+    return hash;
+}
+
+// ── Derived cell layer (plan 22 ADR01/ADR02, M1) ────────────────────────────
+//
+// ADR02 in code: this member lives OUTSIDE `_stores`, so the wholesale rebuild
+// in `apply_pod_snapshot` (`:459-557`) cannot clear it. That is the entire reason
+// the layer exists as a sibling of the instance Store rather than a bucket kind.
+bool ModifierRuntime::install_derived_cell_layer(DerivedCellFront front,
+                                                 uint64_t expected_generation,
+                                                 bool &skipped, std::string &error) {
+    skipped = false;
+    error.clear();
+    if (!_configured) {
+        error = "modifier_runtime_not_configured";
+        return false;
+    }
+    // Plan §9.6: a candidate built against an older front must never replace a
+    // newer one. Generation 0 means "accept any" and is used by the first
+    // install and by tests only.
+    if (expected_generation != 0 &&
+            expected_generation != _derived_cell_front.generation) {
+        error = "derived_cell_layer_stale_generation";
+        return false;
+    }
+    // Plan I13: the same input producing the same contributions is an
+    // idempotent no-op, and must NOT bump a version -- otherwise an idle day
+    // looks like work (plan §7.4).
+    if (front.rows.empty() && _derived_cell_front.rows.empty()) {
+        skipped = true;
+        ++_derived_layer_install_skips;
+        return true;
+    }
+    if (front.rows.empty() && !_derived_cell_front.rows.empty()) {
+        // An explicitly empty candidate CLEARS the layer. This is the plan §17
+        // "legal empty result" path: a card whose conditions are all false must
+        // retire its previous contribution, not silently keep it.
+        _derived_cell_front = DerivedCellFront{};
+        _derived_cell_front.generation = ++_derived_layer_generation;
+        ++_derived_layer_installs;
+        return true;
+    }
+    // Identity must match the installed front when one exists, so a candidate
+    // built against a different world/map/epoch cannot land (plan §9.6).
+    if (!_derived_cell_front.rows.empty()) {
+        if (front.world_identity != _derived_cell_front.world_identity ||
+                front.map_generation != _derived_cell_front.map_generation) {
+            error = "derived_cell_layer_identity_mismatch";
+            return false;
+        }
+    }
+    // Plan I13: identical content is an idempotent no-op. Comparing the content
+    // digest (not the identity fields, and not the generation) is what makes
+    // "same input, same contributions" recognisable -- otherwise a world that
+    // changes nothing still bumps `layer_stat_version` every day and every cache
+    // keyed on it rebuilds, which is exactly the §7.4 idle violation.
+    if (!_derived_cell_front.rows.empty() &&
+            front.content_digest() == _derived_cell_front.content_digest()) {
+        skipped = true;
+        ++_derived_layer_install_skips;
+        return true;
+    }
+    front.generation = ++_derived_layer_generation;
+    _derived_cell_front = std::move(front);
+    ++_derived_layer_installs;
+    return true;
+}
+
+uint64_t ModifierRuntime::derived_cell_stat_version(const int32_t *stat_ids,
+                                                    size_t stat_count) const {
+    if (stat_ids == nullptr) return 0;
+    // The layer generation participates unconditionally: a front replacement can
+    // remove a stat entirely, and a per-stat counter alone cannot express
+    // "there used to be rows here". `apply_pod_snapshot` clearing the LEGACY
+    // store must not move this value, which is why it is a separate function
+    // rather than another term in `stat_bucket_version`.
+    uint64_t hash = (1469598103934665603ULL ^ _derived_cell_front.generation) *
+        1099511628211ULL;
+    for (size_t i = 0; i < stat_count; ++i) {
+        const int32_t sid = stat_ids[i];
+        const uint64_t version = sid >= 0 &&
+                static_cast<size_t>(sid) < _derived_cell_front.stat_versions.size()
+            ? _derived_cell_front.stat_versions[static_cast<size_t>(sid)] : 0;
         hash = (hash ^ version) * 1099511628211ULL;
         hash = (hash ^ static_cast<uint64_t>(static_cast<uint32_t>(sid))) *
             1099511628211ULL;
@@ -1916,14 +2146,50 @@ Dictionary ModifierRuntime::explain(int32_t domain, uint64_t entity_handle,
             product_factor *= factor;
         }
     }
+    // ── Derived cell layer in the DECOMPOSITION, not just the total ─────────
+    //
+    // The walk above iterates `store.active` only, so `sum_add` / `product_factor`
+    // describe the LEGACY contributions. `effective_value` below also merges the derived
+    // cell layer (`:1462-1479`). Before this fix the same Dictionary therefore reported
+    // `effective_value = 1.05` beside `sum_add = 0`, `product_factor = 1` and
+    // `unclamped_value = 1.0` -- a decomposition that explained the total as "nothing".
+    // Measured by the reader-consistency fixture: the gap equalled the derived add to
+    // 1e-12.
+    //
+    // The term is merged with the SAME arithmetic and the SAME §5.5 zero-factor rule as
+    // `effective_value`, and it is reported separately as well, so a consumer can say
+    // "the cell layer added 0.05" instead of folding it into the legacy numbers.
+    double derived_add = 0.0;
+    double derived_factor = 1.0;
+    bool derived_present = false;
+    if (domain == ECONOMY && !_derived_cell_front.rows.empty()) {
+        const DerivedCellStatRow *derived_row = _derived_cell_front.row_for_stat(sid);
+        if (derived_row != nullptr) {
+            const DerivedCellContribution *slot =
+                derived_row->find(static_cast<int32_t>(group_handle));
+            if (slot != nullptr) {
+                derived_present = true;
+                derived_add = slot->sum_add;
+                derived_factor = slot->zero_factor_count > 0 ? 0.0 : slot->product_nonzero;
+            }
+        }
+    }
+    const double total_add = sum_add + derived_add;
+    const double total_factor = product_factor * derived_factor;
+
     Dictionary out;
     out["ok"] = true;
     out["stat_key"] = stat_key_value;
     out["base_value"] = base_value;
-    out["sum_add"] = sum_add;
-    out["product_factor"] = product_factor;
-    out["unclamped_value"] = (base_value + sum_add) * product_factor;
+    out["sum_add"] = total_add;
+    out["product_factor"] = total_factor;
+    out["unclamped_value"] = (base_value + total_add) * total_factor;
     out["effective_value"] = effective_value(domain, sid, entity_handle, group_handle, base_value);
+    // The derived slice, on its own. `derived_present` distinguishes "the layer has no
+    // row for this cell" from "the layer contributed zero", which a bare 0.0 cannot.
+    out["derived_present"] = derived_present ? 1 : 0;
+    out["derived_add"] = derived_add;
+    out["derived_factor"] = derived_factor;
     out["clamp_min"] = _stats[sid].min_value;
     out["clamp_max"] = _stats[sid].max_value;
     out["handles"] = handles;
@@ -1995,6 +2261,31 @@ Dictionary ModifierRuntime::report() const {
     out["commands_applied_total"] = static_cast<int64_t>(_commands_applied);
     out["commands_rejected_total"] = static_cast<int64_t>(_commands_rejected);
     out["expired_total"] = static_cast<int64_t>(_expired);
+    // ── Derived cell layer identity (plan 7.4) ──────────────────────────────
+    //
+    // These were missing entirely: `get_modifier_report()` could not witness the derived
+    // front at all, so a diagnostic reader had no way to tell "the layer is installed at
+    // generation N" from "there is no layer". The reader-consistency fixture measured that
+    // absence (M5-71, finding N3); the only proxy was
+    // `modifier_stat_bucket_version()`, which mixes the generation into a hash.
+    //
+    // `layer_installed` is reported as 0/1 rather than a bool because every other field in
+    // this Dictionary is an integer.
+    //
+    // `layer_stat_versions_bytes` reports the SIZE of the per-stat version vector, not the
+    // vector: it is sized by the stat-id space, which is not what a reader wants to see.
+    {
+        int64_t layer_contributions = 0;
+        for (const DerivedCellStatRow &row : _derived_cell_front.rows)
+            layer_contributions += static_cast<int64_t>(row.contributions.size());
+        out["layer_installed"] = _derived_cell_front.rows.empty() ? 0 : 1;
+        out["layer_generation"] = static_cast<int64_t>(_derived_layer_generation);
+        out["layer_stat_count"] = static_cast<int64_t>(_derived_cell_front.rows.size());
+        out["layer_contribution_count"] = layer_contributions;
+        out["layer_stat_versions_bytes"] = static_cast<int64_t>(
+            _derived_cell_front.stat_versions.size() *
+            static_cast<size_t>(sizeof(uint64_t)));
+    }
     out["journal_overflow"] = static_cast<int64_t>(_journal_overflow);
     out["journal_version"] = 2;
     out["command_merge_ms"] = _last_command_ms;

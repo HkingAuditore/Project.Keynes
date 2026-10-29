@@ -12,6 +12,14 @@
 
 ---
 
+## Adaptive situation pass
+
+Stone and Agrarian suite checks also cover the presentation-only situation
+adapter. `Tension` may be written while a suite is playing; the event must not
+restart and its timeline must continue. The adapter uses committed event data
+and bounded near-camera situation batches: far-camera cases must issue no local
+queries, while near-camera cases sample no more than 64 cells per refresh.
+
 ## 一、为什么 AoE4 这批确实最适合测 FMOD
 
 不是"好听"，是**结构**。这批素材自带一套完整的游戏状态机语义，是四个来源里唯一做到的：

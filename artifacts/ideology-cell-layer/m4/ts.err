@@ -1,0 +1,6 @@
+SCRIPT ERROR: Parse Error: Identifier "ext" not declared in the current scope.
+   at: GDScript::reload (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:314)
+SCRIPT ERROR: Parse Error: Identifier "ext" not declared in the current scope.
+   at: GDScript::reload (res://tests/ideology/ideology_tag_snapshot_stress_test.gd:313)
+ERROR: Failed to load script "res://tests/ideology/ideology_tag_snapshot_stress_test.gd" with error "Parse error".
+   at: load (modules/gdscript/gdscript.cpp:2907)

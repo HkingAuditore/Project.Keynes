@@ -260,6 +260,37 @@ func apply_snapshot(packet: Dictionary) -> void:
     queue_redraw()
 
 
+## Read-only projection for presentation systems. The audio aggregator uses this
+## cache when the HUD is active, avoiding a second native situation query.
+func music_situation_snapshot(player_country_slot: int) -> Dictionary:
+    if _map == null or _rows.is_empty():
+        return {}
+    var cells := PackedInt32Array()
+    var severity := PackedInt32Array()
+    for raw_cell in _rows.keys():
+        var cell := int(raw_cell)
+        if cell < 0 or cell >= _map.country_slot_arr.size():
+            continue
+        if int(_map.country_slot_arr[cell]) != player_country_slot:
+            continue
+        if not _can_show(cell):
+            continue
+        var row: Dictionary = _rows[cell]
+        var row_severity: PackedInt32Array = row.get("severity", PackedInt32Array())
+        if row_severity.size() != 8:
+            continue
+        cells.append(cell)
+        severity.append_array(row_severity)
+    return {
+        "ok": true,
+        "committed": true,
+        "cell_indices": cells,
+        "severity_q16": severity,
+        "cache_age_seconds": maxf(0.0, _time - (_query_due - UITokens.MAP_SITUATION_REFRESH_SECONDS)),
+        "source": "cell_situation_layer",
+    }
+
+
 func _update_weather(cell: int) -> void:
     if not _can_show(cell) or _adapter == null:
         _rows.erase(cell)

@@ -822,12 +822,52 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     }
     if (day_index <= _last_committed_day.get()) return true;
     // All failure-prone checks happen here, before any state mutation.
-    if (market_store().good_count.get() != static_cast<int32_t>(_good_ids.size()) ||
-        market_store().cell_to_market.size() != static_cast<size_t>(_cell_count.get()) ||
-        market_store().stock.size() != static_cast<size_t>(market_store().market_count.get()) * market_store().good_count.get() ||
-        _market_cell_offsets.size() != static_cast<size_t>(market_store().market_count.get() + 1)) {
-        error = "market_shape_invariant_broken";
-        return false;
+    {
+        // Each half is checked separately so the fault names the table, the
+        // value it holds and the value the stride demands. A single
+        // `market_shape_invariant_broken` with no sizes cannot distinguish a
+        // stale market CSR from a stale good count, and this exact check is
+        // what a restarted worker lifetime trips on.
+        const size_t cells = static_cast<size_t>(std::max(0, _cell_count.get()));
+        const size_t markets = static_cast<size_t>(
+            std::max(0, market_store().market_count.get()));
+        const size_t goods = static_cast<size_t>(
+            std::max(0, market_store().good_count.get()));
+        const char *shape = nullptr;
+        if (market_store().good_count.get() != static_cast<int32_t>(_good_ids.size()))
+            shape = "good_count_vs_catalog";
+        else if (market_store().cell_to_market.size() != cells)
+            shape = "cell_to_market_vs_cell_count";
+        else if (market_store().stock.size() != markets * goods)
+            shape = "stock_vs_market_x_good";
+        else if (_market_cell_offsets.size() != markets + 1)
+            shape = "market_cell_offsets_vs_market_count";
+        if (shape != nullptr) {
+            std::fprintf(stderr,
+                "[economy-epoch-shape] day=%lld shape=%s epoch_active=%d "
+                "last_committed=%lld current_day=%lld environment_day=%lld "
+                "building_context_day=%lld cell_count=%d "
+                "cell_to_market=%zu stock=%zu(expect=%zu) "
+                "market_cell_offsets=%zu(expect=%zu) "
+                "market_count=%d good_count=%d(expect=%zu) "
+                "market_cells=%zu\n",
+                static_cast<long long>(day_index), shape,
+                _epoch_active ? 1 : 0,
+                static_cast<long long>(_last_committed_day.get()),
+                static_cast<long long>(_current_day.get()),
+                static_cast<long long>(_environment_day.get()),
+                static_cast<long long>(_building_context_day),
+                _cell_count.get(),
+                market_store().cell_to_market.size(),
+                market_store().stock.size(), markets * goods,
+                _market_cell_offsets.size(), markets + 1,
+                market_store().market_count.get(),
+                market_store().good_count.get(), _good_ids.size(),
+                _market_cells.size());
+            std::fflush(stderr);
+            error = "market_shape_invariant_broken";
+            return false;
+        }
     }
     if (_environment_day.get() != day_index || _environment_temperature_q16.size() !=
             static_cast<size_t>(_cell_count.get())) {
@@ -903,7 +943,22 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     _epoch_begin_reset_ms = elapsed_ms(prepare_started);
     const auto country_started = Clock::now();
     if (!advance_climate_day_columns(error)) return false;
-    if (!capture_country_epoch(error)) return false;
+    // The city-factor reader may yield mid-work-set (plan §14.3 sharding). A
+    // yield is NOT a failure and NOT a completed epoch open: the caller must
+    // park and re-enter.
+    //
+    // Returning `true` would let `start_epoch` continue into the workset build
+    // and publish a half-painted factor matrix. Returning `false` with a plain
+    // error would be fatal. So a yield is reported through the SAME soft-barrier
+    // convention the function already uses for `same_day_environment_not_captured`
+    // (`economy_runtime.cpp:15277-15290`): `false` + an error string the caller
+    // recognises as "park, do not fail".
+    bool city_factors_pending = false;
+    if (!capture_country_epoch(error, &city_factors_pending)) return false;
+    if (city_factors_pending) {
+        error = "city_factor_shard_pending";
+        return false;
+    }
     _epoch_begin_country_ms = elapsed_ms(country_started);
     const auto workset_started = Clock::now();
     rebuild_economy_live_cells();
@@ -1424,6 +1479,34 @@ bool NativeEconomyRuntime::run_epoch_open_prelude_drain(
     }
     if (!_bootstrapped || _fatal) {
         return true;
+    }
+    // A day can only be opened against a shaped market matrix. If the store the
+    // graph stages are about to read is empty or mis-strided, say so with the
+    // day, the ownership and the sizes *before* a stage read throws an
+    // out-of-range that names only one lane. Silent while the store is healthy.
+    {
+        const size_t markets = static_cast<size_t>(
+            std::max(0, market_store().market_count.get()));
+        const size_t goods = static_cast<size_t>(
+            std::max(0, market_store().good_count.get()));
+        if (market_store().market_count.get() <= 0 || goods <= 0 ||
+            market_store().stock.size() != markets * goods ||
+            market_store().cell_to_market.size() !=
+                static_cast<size_t>(std::max(0, _cell_count.get()))) {
+            std::fprintf(stderr,
+                "[economy-day-store-shape] request_day=%lld epoch_active=%d "
+                "last_committed=%lld backing=%s cell_count=%d market_count=%d "
+                "good_count=%d stock=%zu(expect=%zu) cell_to_market=%zu "
+                "local_stock=%zu local_markets=%d\n",
+                static_cast<long long>(day_index), _epoch_active ? 1 : 0,
+                static_cast<long long>(_last_committed_day.get()),
+                formula_owned_bound() ? "owned_state" : "ner_local",
+                _cell_count.get(), market_store().market_count.get(),
+                market_store().good_count.get(), market_store().stock.size(),
+                markets * goods, market_store().cell_to_market.size(),
+                _market_local.stock.size(), _market_local.market_count.get());
+            std::fflush(stderr);
+        }
     }
     if (_epoch_active) {
         return true;

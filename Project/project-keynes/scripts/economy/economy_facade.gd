@@ -1611,6 +1611,14 @@ func demolish(cell_idx: int, building_id: StringName, count: int, owner_handle: 
 func report() -> Dictionary:
 	return _world_ext.get_economy_report() if _configured else {"configured": false}
 
+## Lightweight country/class satisfaction aggregate used by presentation systems.
+## This is a committed read and is intentionally separate from the full economy
+## diagnostic report, which can contain large transient counters.
+func country_class_opinion_snapshot() -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_country_class_opinion_snapshot"):
+		return {"ok": false, "reason": "country class opinion snapshot unavailable"}
+	return _world_ext.get_country_class_opinion_snapshot()
+
 func native_catalog() -> Dictionary:
 	return _catalog.duplicate(false)
 

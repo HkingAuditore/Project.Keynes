@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <algorithm>
 #include <array>
@@ -38,7 +38,6 @@
 #include "annual_development_ledger.h"
 #include "metric_mask.h"
 #include "effect_selector_cap.h"
-#include "ideology_cell_program.h"
 #include "target_tag.h"
 
 namespace pk {
@@ -1369,6 +1368,74 @@ public:
     void clear_epoch_country_technologies_for_test();
     int32_t epoch_country_count_for_test() const {
         return _epoch_country_count;
+    }
+    // Size of the ECONOMY-side territory plane. `country_cell_count` returns 0
+    // whenever this does not equal the cell count
+    // (economy_runtime_family_buff.cpp:970), which makes every territory selector
+    // produce zero targets -- indistinguishable from "the card matched nothing".
+    // M4 diagnosis for the own-territory selector: how many times its branch ran,
+    // what `owned` it saw, and how many cells it emitted. Without these, an empty
+    // result is indistinguishable from "the branch never ran".
+    mutable int64_t _own_territory_branch = 0;
+    // Last-seen inputs of the own-territory branch. `emitted` was 0 while
+    // `owned` was 1600, which can only be one of: source_cell out of range,
+    // country != the slot that owns everything, or every country_cell_at returning
+    // -1. These three record which.
+    mutable int64_t _own_last_source_cell = -999;
+    mutable int64_t _own_last_country = -999;
+    mutable int64_t _own_last_cap = -999;
+    mutable int64_t _own_first_cell_ok = -999;
+    mutable int64_t _own_last_tag = -999;
+    // Cells pushed inside the collect loop, BEFORE sort/unique/cap. If this is
+    // non-zero while `emitted` is 0, the loss is in sort/unique/cap; if it is 0,
+    // the loop itself never pushed.
+    mutable int64_t _own_pushed_raw = 0;
+    mutable int64_t _own_cell_neg = 0;
+    mutable int64_t _own_tag_rejected = 0;
+    int64_t own_last_source_cell_debug() const { return _own_last_source_cell; }
+    int64_t own_last_country_debug() const { return _own_last_country; }
+    int64_t own_last_cap_debug() const { return _own_last_cap; }
+    int64_t own_first_cell_ok_debug() const { return _own_first_cell_ok; }
+    int64_t own_last_tag_debug() const { return _own_last_tag; }
+    int64_t own_pushed_raw_debug() const { return _own_pushed_raw; }
+    int64_t own_cell_neg_debug() const { return _own_cell_neg; }
+    int64_t own_tag_rejected_debug() const { return _own_tag_rejected; }
+    mutable int64_t _own_territory_owned = 0;
+    mutable int64_t _own_territory_emitted = 0;
+    int64_t own_territory_branch_count() const { return _own_territory_branch; }
+    int64_t own_territory_owned_total() const { return _own_territory_owned; }
+    int64_t own_territory_emitted_total() const { return _own_territory_emitted; }
+
+    // Readiness of the building-context columns the RADIAL selectors depend on.
+    //
+    // `collect_effect_target_cells` returns "no cells" for kinds 6..11 unless all four
+    // columns are sized to the grid (`economy_runtime_family_buff.cpp:2554-2562`). That
+    // guard is invisible from outside, so a fixture whose ring comes back empty cannot
+    // tell "no neighbours" from "the snapshot was never captured".
+    godot::Dictionary building_context_ready_for_test() const;
+
+    size_t epoch_cell_country_size_for_test() const {
+        return _epoch_cell_country.size();
+    }
+    // Colonization gate probes (plan 22 M3-8). `family_colonization_quotes`
+    // rejects a cell with `passable == 0` unless an epoch is active
+    // (`economy_runtime_colonization.cpp:496`), and NEITHER input was observable --
+    // which is why a diagnostic that checked the other gates reported "all clear"
+    // while the call kept failing.
+    //
+    // Both are const and side-effect free; they exist so a probe can say WHICH of
+    // the two conditions is unmet instead of inferring it.
+    bool trade_passable_for_test(int32_t cell) const {
+        if (cell < 0 ||
+            static_cast<size_t>(cell) >= _trade_topology.passable.size())
+            return false;
+        return _trade_topology.passable[static_cast<size_t>(cell)] != 0;
+    }
+    bool epoch_active_for_test() const { return _epoch_active; }
+    bool trade_topology_ready_for_test() const {
+        return _trade_topology.ready &&
+            _trade_topology.passable.size() ==
+                static_cast<size_t>(_cell_count.get());
     }
     int32_t epoch_country_technology_words_for_test() const {
         return _epoch_country_technology_words;
@@ -6838,6 +6905,27 @@ private:
     // Readers that arrived before the first publish. Must be 0 after the first
     // commit; exported as `tag_snapshot_miss_count`.
     mutable std::atomic<int64_t> _last_tag_snapshot_miss_count{0};
+    // M4: see `last_tag_snapshot_build_ms`. Relaxed is enough -- these are
+    // diagnostics, never control flow.
+    mutable std::atomic<double> _last_tag_snapshot_build_ms{0.0};
+    mutable std::atomic<int64_t> _tag_snapshot_build_count{0};
+    // How many tags the table DECLARES versus how many have rows and can match. The
+    // gap is pure waste in the `cells x tags` sweep.
+    mutable std::atomic<int64_t> _tag_declared_tag_count{0};
+    mutable std::atomic<int64_t> _tag_active_tag_count{0};
+    // How many tag ids the CONSUMER set named. 0 means "all tags" (the conservative
+    // fallback), so this is the number that explains why the sweep did or did not
+    // narrow.
+    mutable std::atomic<int64_t> _tag_consumed_tag_count{0};
+    int64_t tag_declared_tag_count() const {
+        return _tag_declared_tag_count.load(std::memory_order_relaxed);
+    }
+    int64_t tag_active_tag_count() const {
+        return _tag_active_tag_count.load(std::memory_order_relaxed);
+    }
+    int64_t tag_consumed_tag_count() const {
+        return _tag_consumed_tag_count.load(std::memory_order_relaxed);
+    }
     // R-3b: how many `tag_snapshot()` loads happened, so "one load per scan" is a
     // measured property rather than a code-review claim.
     mutable std::atomic<int64_t> _tag_snapshot_loads{0};
@@ -6860,6 +6948,17 @@ private:
     struct EffectInputConsumers {
         MetricMask metric_mask;
         bool tags_needed = false;
+        // WHICH tags are consumed, as 0-based indices.
+        //
+        // `tags_needed` alone forces the rebuild to evaluate every declared tag: a
+        // world whose cards use one tag still paid `cells x 296` matches, measured at
+        // 35.66 ms for 6400 cells (M4-22). With the set, the sweep narrows to the tags
+        // that can actually be read.
+        //
+        // Empty + `tags_needed == false` means "no tags". Empty + true is a caller that
+        // declared the need but not the ids, and is treated as "all tags" so a
+        // conservative publisher cannot silently narrow the target set.
+        std::vector<int32_t> tag_ids;
         bool families_needed = false;
         // Bumped on every swap so the digest can tell "the consumer set changed"
         // without the writer touching the digest's own published state.
@@ -7139,14 +7238,74 @@ private:
     std::vector<int32_t> _city_factor_shared_goods_q16;
     std::vector<int32_t> _city_factor_dirty_cells;
     std::vector<uint64_t> _city_factor_group_cells_scratch;
+    // Resume cursor for `refresh_city_modifier_factors` (plan 14.3 sharding).
+    // < 0 means "no shard in flight": the next call repaints the shared row and
+    // re-collects the scope list. >= 0 is the next index into
+    // `_city_factor_group_cells_scratch`.
+    // Cells processed per `refresh_city_modifier_factors` slice. M1-6 measured
+    // ~6.0 us per covered cell at B7 scale, so 64 cells ~= 0.38 ms, leaving
+    // headroom inside the plan §14.3 1 ms slice budget for the surrounding
+    // epoch-open work. A fixed count beats a wall-clock check here because it is
+    // deterministic and therefore assertable in a test (plan §14.4).
+    static constexpr int32_t CITY_FACTOR_SHARD_CELLS = 64;
+    int32_t _city_factor_shard_cursor = -1;
+    // The stat version the in-flight shard was built against. A resume under a
+    // different version restarts instead of finishing a stale work set.
+    uint64_t _city_factor_shard_version = 0;
+    // Resume cursor for `refresh_city_output_modifier_factors`, independent of
+    // the city-factor cursor so neither reader blocks the other.
+    int32_t _city_output_shard_cursor = -1;
+    uint64_t _city_output_shard_version = 0;
+    // Intermediate collector for the sharded output reader. The per-cell query
+    // loop can stop between cells, but the sort + CSR rebuild that consumes its
+    // output cannot, so the partial result has to survive across slices. Empty
+    // when no shard is in flight.
+    struct CityOutputOverrideRow {
+        int32_t cell = -1;
+        int32_t good = -1;
+        int32_t factor_q16 = Q16_ONE;
+    };
+    std::vector<CityOutputOverrideRow> _city_output_shard_partial;
+    // Work-set size of the LAST pass that actually collected one. Kept separate
+    // from `_city_factor_group_cells_scratch.size()` because a pass that
+    // short-circuits on the version gate never re-collects, so reading the
+    // scratch afterwards reports a stale (or empty) number -- which is exactly
+    // what made a shard test read `work=0` while 255 cells had been painted.
+    int64_t _city_factor_work_cells = 0;
+    // Cells ACTUALLY processed by the most recent pass, incremented INSIDE the
+    // cell loop. `_city_factor_work_cells` above only records what the last
+    // collect produced, so on a day where the version gate short-circuits it
+    // still reports the previous pass's size -- and a reader that skipped the
+    // work set becomes indistinguishable from one that finished it in
+    // microseconds. That exact confusion produced a "2000 cells in 0.003 ms"
+    // reading (M2-10) which is physically impossible.
+    int64_t _city_factor_cells_processed = 0;
+    // Size of the work set collected by the CURRENT pass, distinct from
+    // `_city_factor_work_cells` which persists across passes. M2-11 reasoned that
+    // a `processed=16` reading implied `total=16`; this field makes that
+    // verifiable instead of inferred.
+    int64_t _city_factor_collected_cells = 0;
+    // Cumulative cost of the WHOLE city-factor build across every shard of the
+    // current epoch, plus how many shard calls it took.
+    //
+    // `_epoch_begin_city_factor_ms` only measures ONE call (`economy_runtime.cpp:
+    // 5542`), and a full build is spread over `work_cells / CITY_FACTOR_SHARD_CELLS`
+    // calls, so that field reports the LAST shard -- typically the small remainder.
+    // A 2000-cell work set therefore read as "16 cells, 0.002 ms" and looked
+    // thousands of times faster than it is (M2-11).
+    //
+    // These two fields are the number §14.3 actually needs: total time and total
+    // work for the whole materialisation, not the tail of it.
+    double _city_factor_epoch_ms = 0.0;
+    int64_t _city_factor_epoch_slices = 0;
+    int64_t _city_factor_epoch_cells = 0;
+    bool _city_factor_epoch_in_progress = false;
     std::vector<int32_t> _city_factor_stat_ids_scratch;
     // Exact city-good production factors use one shared global row plus sparse
     // per-cell overrides. The CSR scales with authored effects, not
     // `cell_count * good_count`, and is rebuilt only when one of those stats
     // changes. Transient; never saved or hashed.
     uint64_t _epoch_city_output_factor_stat_version = 0;
-    CellProgramTable _ideology_cell_programs;
-    uint64_t _epoch_city_output_ideology_generation = 0;
     bool _epoch_city_output_factor_valid = false;
     std::vector<int32_t> _city_output_shared_goods_q16;
     std::vector<int32_t> _city_output_cell_offsets;
@@ -7810,7 +7969,11 @@ private:
     int64_t satisfaction_ceiling(const int64_t *dims, uint8_t applicable_mask,
                                 int64_t &sat) const;
     int32_t consumption_living_standard_level(int32_t slot) const;
-    bool capture_country_epoch(std::string &error);
+    // `out_pending_city_factors` (optional) is set when the city-factor shard
+    // yielded and needs another call. It is NOT an error: `start_epoch` must
+    // park and resume rather than fail, because failing would abort the day.
+    bool capture_country_epoch(std::string &error,
+                               bool *out_pending_city_factors = nullptr);
     // Rebuilds _epoch_country_cell_offsets / _epoch_country_cells from
     // _epoch_cell_country. Counting sort in three linear passes, called once per
     // epoch capture rather than per selector query. Clears both columns when the
@@ -7934,6 +8097,17 @@ private:
     // Number of readers that found the tag snapshot unbuilt. Must be 0 on any world
     // that has completed one commit, so a caller that starts reading before commit
     // is visible instead of silently getting empty bits.
+    // M4 observability: how long a tag-snapshot rebuild costs, and how many of
+    // them happened. The M4 task list asks for "stamp / touched scratch, per-tag
+    // changed words" -- a per-change incremental update -- and that is only worth
+    // building if a FULL rebuild is actually expensive. These two numbers are what
+    // decides it; without them the optimisation would be speculation.
+    double last_tag_snapshot_build_ms() const {
+        return _last_tag_snapshot_build_ms.load(std::memory_order_relaxed);
+    }
+    int64_t tag_snapshot_build_count() const {
+        return _tag_snapshot_build_count.load(std::memory_order_relaxed);
+    }
     int64_t last_tag_snapshot_miss_count() const {
         return _last_tag_snapshot_miss_count.load(std::memory_order_relaxed);
     }
@@ -8208,8 +8382,28 @@ private:
         int32_t cell, int32_t good_id, int64_t base_quantity,
         int64_t &sat) const;
     void refresh_building_modifier_factors();
-    void refresh_city_modifier_factors();
-    void refresh_city_output_modifier_factors();
+    // Returns true when the whole refresh finished, false when it yielded with a
+    // resume cursor. Plan §14.3 requires "each derived native slice <= 1 ms";
+    // M1-6 measured this reader at 0.465 ms (2400 cells) and 1.264 ms (6400
+    // cells) while running to completion inside ONE
+    // `run_economy_slice` (it is reached from `capture_country_epoch`, itself
+    // inside `start_epoch`). With a derived layer adding work in the same
+    // indivisible window there is no budget left, so the loop must be able to
+    // stop between cells.
+    //
+    // The first call after `_city_factor_shard_cursor < 0` performs the
+    // whole-matrix paint and the scope collection, then advances a cell cursor.
+    // Subsequent calls resume at that cursor until the work set is exhausted.
+    bool refresh_city_modifier_factors();
+    // Returns true when the whole refresh finished, false when it yielded.
+    //
+    // Why the output reader needs its own cursor rather than waiting for the
+    // city reader to finish: chaining the two made the output factors update
+    // only on the LAST city shard, so on a multi-shard epoch the production
+    // factors were half-refreshed for the intermediate slices. Two independent
+    // cursors keep both readers' progress monotonic and keep the total work
+    // unchanged.
+    bool refresh_city_output_modifier_factors();
     int32_t city_good_output_factor_q16(int32_t cell, int32_t good_id) const;
     int64_t planned_owner_demand(BuildingGroupConstRef group,
                                  int64_t &sat) const;
@@ -8701,7 +8895,6 @@ public:
     // P3 step 3: the per-cell coefficient table published by the Ideology side.
     // Copied, because the table is an immutable snapshot by contract -- the
     // publisher builds a new one instead of mutating this.
-    void set_ideology_cell_programs(CellProgramTable table);
     // Public seam over city_good_output_factor_q16(), which lives in a private
     // section. Diagnostics and tests need to read the composed factor; the
     // production hot path keeps using the private one directly.
@@ -8718,6 +8911,27 @@ public:
         int32_t source_cell, int32_t selector_kind, int32_t param0, int32_t param1,
         std::vector<int32_t> &out_cells, uint64_t selection_salt = 0,
         EffectSelectorStats *stats = nullptr) const;
+
+    // Expand a SOURCE SET by `depth` neighbour hops, in ONE pass.
+    //
+    // WHY THIS EXISTS
+    //
+    // The kind 14/15 fan-out used to call `collect_effect_target_cells` once PER SOURCE.
+    // That function allocates and zeroes a `cells`-sized `seen` buffer on every call
+    // (`economy_runtime_family_buff.cpp:2663`), so a 6400-cell country with 6400 sources
+    // paid 6400 allocations of 6.4 KB -- about 41 MB of allocate-and-zero per resolve,
+    // on top of the walks themselves.
+    //
+    // With the source cap removed (2026-10-28) that pattern went from 32 sources to
+    // every tagged cell, which is what pushed one resolve past the 1 ms slice gate.
+    // Sharding would have spread that cost over several steps while leaving the total
+    // work O(sources x cells); this removes the per-source cost instead, so the step
+    // stays bounded without needing more steps at all.
+    //
+    // Semantics are identical to the per-source loop: the result is the UNION of the
+    // rings, deduplicated. The anchor cell is NOT included (kinds 6/7 contract).
+    void dilate_cell_set(const std::vector<int32_t> &sources, int32_t depth,
+                         std::vector<int32_t> &out_cells) const;
     // Resource id with the largest stock at `cell`, or -1 when the cell holds
     // no resource. Ties resolve to the lowest id so the answer is stable.
     int32_t dominant_resource_at(int32_t cell) const;
@@ -8863,7 +9077,8 @@ public:
     void set_effect_input_consumers(
         const MetricMask &cell_metrics, bool tags_needed, bool families_needed,
         const std::array<std::vector<int64_t>, FAMILY_METRIC_COUNT>
-            &metric_thresholds);
+            &metric_thresholds,
+        const std::vector<int32_t> &tag_ids = {});
     // Called once per committed economy day. Recomputes the digest and advances
     // `effect_input_revision()` only when it differs from the last published
     // one. A no-op when no managed card reads economy input.

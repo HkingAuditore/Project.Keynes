@@ -1,5 +1,33 @@
 # GDScript / C++ Data Bridge
 
+## 2026-10-28 理念派生地块层的桥
+
+理念的永久地块效果改为写入 `ModifierRuntime` 内的派生层（plan 22）。GDScript 侧通过下面
+几个桥观测它，**都不改变运行时状态**：
+
+| 桥 | 返回 | 用途 |
+|---|---|---|
+| `get_derived_cell_layer_report()` | `layer_generation` / `cell_count` / `stat_count` / `stat_ids` / `sample_day` / `epoch_id` / `installed` | 层的身份与规模 |
+| `get_effective_stat_value(stat_key, cell, entity_handle, base_value)` | `value` + `derived_add` / `derived_factor` / `derived_zero_factor_count` / `derived_contributors` / `derived_source_country` / `derived_present` | **读某一格某一 stat 的合并值与派生那一份** |
+| `get_derived_materialize_report()` | seen / derived / skipped_legacy / cells_visited / rows_emitted / truncated | 物化过程 |
+| `get_derived_multi_country_report()` | `multi_country_cells` / `max_contributors` / `countries` | 多国贡献 |
+| `install_derived_cell_layer_for_test(front)` | 安装结果 | **仅测试**；按列（`stat_ids` / `cells` / `source_countries` / `adds` / `factors`）构造 front |
+| `drain_derived_cell_layer(day)` | 排空的片数 | 需要「当天立刻可读」时用 |
+| `evaluate_effect_program_magnitude(program_key, metric_values)` | `magnitude`（Q16）| 直接问**栈机器**某个程序的幅度，用于与派生结果对照 |
+
+### 三个必须知道的参数细节
+
+1. **`get_effective_stat_value` 的 `entity_handle` 必须是 0，cell 放在 `cell` 参数里。**
+   生产读者用的是 `entity 0, group = cell`（`economy_runtime_family_buff.cpp:7127`）。
+   把国家 handle 传成 entity 会让派生分支被完全跳过，返回基准值——**看起来像「派生存不存在」**。
+
+2. **`install_derived_cell_layer_for_test` 的列名是 `source_countries`（Int64）和 `adds`。**
+   写错名字报 `derived_cell_layer_column_shape_invalid`，那个报错是准确的。
+
+3. **`evaluate_effect_program_magnitude` 的 metric 数组按 `metric_keys` 的索引填。**
+   索引与 `FamilyEffectMetricId` 目前是恒等的（`metric_keys[0] = "family.magnitude_q16"`），
+   但**不要假设它永远如此**——要用就先把 key 查出来。
+
 口粮快照（2026-10-20）：人口 summary/detail 的 `food_access_q16` 都读取本格最近完成结算的
 原生食物取得量；其他市场桶的 COMMIT 不再将其清零。内部已发布食物流量统一为每日当量，
 不新增字段、绑定或 DataCore slot；UI 只格式化，tooltip 明确观察时间与自产自用口径。

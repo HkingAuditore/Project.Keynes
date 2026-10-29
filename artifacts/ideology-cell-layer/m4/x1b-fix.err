@@ -1,0 +1,131 @@
+[economy-open-finish] day=0 country=0.154 workset=0.015 fiscal=0.014 csr=0.000 recovery=0.000 vectors=0.728 audit=0.025 commands=0.009
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+ERROR: [FAIL] T1 two sources bracket the middle cell (targets=[1, 3])
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_x1b_source_count_test.gd:798)
+       [1] _test_bracketed_sources (res://tests/ideology/ideology_x1b_source_count_test.gd:160)
+       [2] _run (res://tests/ideology/ideology_x1b_source_count_test.gd:111)
+       [3] _init (res://tests/ideology/ideology_x1b_source_count_test.gd:85)
+ERROR: [FAIL] T1 target cell reads two sources of magnitude (value=1.23999)
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_x1b_source_count_test.gd:798)
+       [1] _test_bracketed_sources (res://tests/ideology/ideology_x1b_source_count_test.gd:163)
+       [2] _run (res://tests/ideology/ideology_x1b_source_count_test.gd:111)
+       [3] _init (res://tests/ideology/ideology_x1b_source_count_test.gd:85)
+[economy-open-finish] day=0 country=0.173 workset=0.016 fiscal=0.005 csr=0.000 recovery=0.001 vectors=0.186 audit=0.022 commands=0.003
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+ERROR: [FAIL] T2 two sources produce the full stack (value=1.23999)
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_x1b_source_count_test.gd:798)
+       [1] _test_source_removal (res://tests/ideology/ideology_x1b_source_count_test.gd:180)
+       [2] _run (res://tests/ideology/ideology_x1b_source_count_test.gd:112)
+       [3] _init (res://tests/ideology/ideology_x1b_source_count_test.gd:85)
+[research-procure-diag] day=3 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+ERROR: [FAIL] T2 removing one source halves the stack (before=1.23999 after=1.12000)
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_x1b_source_count_test.gd:798)
+       [1] _test_source_removal (res://tests/ideology/ideology_x1b_source_count_test.gd:189)
+       [2] _run (res://tests/ideology/ideology_x1b_source_count_test.gd:112)
+       [3] _init (res://tests/ideology/ideology_x1b_source_count_test.gd:85)
+ERROR: [FAIL] T2 the centre target remains held with the halved scale ({ "ok": true, "country_handle": 4294967296, "count": 4, "idea_ids": [0, 0, 0, 0], "idea_levels": [0, 0, 0, 0], "instance_ids": [1031366033056590256, 5495996846991769074, 7434201844974940311, 7728312253959358483], "generations": [3, 3, 3, 3], "program_hashes": [2300405189844091437, 2300405189844091437, 2300405189844091437, 2300405189844091437], "target_handles": [3, 1, 4, 0], "target_generations": [1, 1, 1, 1], "target_domains": [2, 2, 2, 2], "magnitude_scales": [32768, 32768, 32768, 32768], "present": [1, 1, 1, 1] })
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_x1b_source_count_test.gd:798)
+       [1] _test_source_removal (res://tests/ideology/ideology_x1b_source_count_test.gd:194)
+       [2] _run (res://tests/ideology/ideology_x1b_source_count_test.gd:112)
+       [3] _init (res://tests/ideology/ideology_x1b_source_count_test.gd:85)
+[economy-open-finish] day=0 country=0.321 workset=0.022 fiscal=0.029 csr=0.001 recovery=0.001 vectors=0.150 audit=0.020 commands=0.003
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+ERROR: [FAIL] T3 radius 3 counts distance 3 (targets=[1, 2, 3])
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_x1b_source_count_test.gd:798)
+       [1] _test_radius_three_bfs (res://tests/ideology/ideology_x1b_source_count_test.gd:204)
+       [2] _run (res://tests/ideology/ideology_x1b_source_count_test.gd:113)
+       [3] _init (res://tests/ideology/ideology_x1b_source_count_test.gd:85)
+ERROR: [FAIL] T3 distance 3 reads the source magnitude (value=1.12000)
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_x1b_source_count_test.gd:798)
+       [1] _test_radius_three_bfs (res://tests/ideology/ideology_x1b_source_count_test.gd:211)
+       [2] _run (res://tests/ideology/ideology_x1b_source_count_test.gd:113)
+       [3] _init (res://tests/ideology/ideology_x1b_source_count_test.gd:85)
+[economy-open-finish] day=0 country=0.170 workset=0.014 fiscal=0.010 csr=0.000 recovery=0.000 vectors=0.163 audit=0.038 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+ERROR: [FAIL] T4 three neighbours saturate at cap 2 (targets=[2])
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_x1b_source_count_test.gd:798)
+       [1] _test_count_cap (res://tests/ideology/ideology_x1b_source_count_test.gd:225)
+       [2] _run (res://tests/ideology/ideology_x1b_source_count_test.gd:114)
+       [3] _init (res://tests/ideology/ideology_x1b_source_count_test.gd:85)
+ERROR: [FAIL] T4 cap keeps the per-source magnitude at twice the source value (value=1.23999)
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_x1b_source_count_test.gd:798)
+       [1] _test_count_cap (res://tests/ideology/ideology_x1b_source_count_test.gd:229)
+       [2] _run (res://tests/ideology/ideology_x1b_source_count_test.gd:114)
+       [3] _init (res://tests/ideology/ideology_x1b_source_count_test.gd:85)
+[economy-open-finish] day=0 country=0.159 workset=0.015 fiscal=0.006 csr=0.000 recovery=0.000 vectors=0.139 audit=0.020 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.168 workset=0.014 fiscal=0.004 csr=0.000 recovery=0.000 vectors=0.110 audit=0.019 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.140 workset=0.014 fiscal=0.003 csr=0.000 recovery=0.000 vectors=0.103 audit=0.017 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+ERROR: [FAIL] T6 the adjacent non-source cell is present ([1])
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_x1b_source_count_test.gd:798)
+       [1] _test_source_does_not_count_itself (res://tests/ideology/ideology_x1b_source_count_test.gd:264)
+       [2] _run (res://tests/ideology/ideology_x1b_source_count_test.gd:116)
+       [3] _init (res://tests/ideology/ideology_x1b_source_count_test.gd:85)
+[economy-open-finish] day=0 country=0.311 workset=0.026 fiscal=0.012 csr=0.000 recovery=0.001 vectors=0.144 audit=0.020 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=12 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+ERROR: [FAIL] T7 only the owned source contributes (targets=[1])
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_x1b_source_count_test.gd:798)
+       [1] _test_foreign_source_excluded (res://tests/ideology/ideology_x1b_source_count_test.gd:277)
+       [2] _run (res://tests/ideology/ideology_x1b_source_count_test.gd:117)
+       [3] _init (res://tests/ideology/ideology_x1b_source_count_test.gd:85)
+ERROR: [FAIL] T7 foreign source does not add a stack ([1])
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_x1b_source_count_test.gd:798)
+       [1] _test_foreign_source_excluded (res://tests/ideology/ideology_x1b_source_count_test.gd:280)
+       [2] _run (res://tests/ideology/ideology_x1b_source_count_test.gd:117)
+       [3] _init (res://tests/ideology/ideology_x1b_source_count_test.gd:85)
+ERROR: [FAIL] T7 cell stat shows exactly one owned source (value=1.12000)
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/ideology/ideology_x1b_source_count_test.gd:798)
+       [1] _test_foreign_source_excluded (res://tests/ideology/ideology_x1b_source_count_test.gd:282)
+       [2] _run (res://tests/ideology/ideology_x1b_source_count_test.gd:117)
+       [3] _init (res://tests/ideology/ideology_x1b_source_count_test.gd:85)
+[economy-open-finish] day=0 country=0.259 workset=0.043 fiscal=0.008 csr=0.000 recovery=0.001 vectors=0.439 audit=0.149 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=72 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=72 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=0 phase=1 done=0 cands=72 cursor=64 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=0 done=0 cands=72 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=1 done=0 cands=72 cursor=32 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=1 phase=1 done=0 cands=72 cursor=64 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[economy-open-finish] day=0 country=0.255 workset=0.059 fiscal=0.032 csr=0.001 recovery=0.002 vectors=0.591 audit=0.190 commands=0.002
+[research-procure-diag] day=0 phase=0 done=0 cands=72 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+ERROR: 19 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 635 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

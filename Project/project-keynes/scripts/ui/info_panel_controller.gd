@@ -163,16 +163,16 @@ func refresh_info_panel() -> void:
 	var fallback_season: int = _world_clock.season_index() if _world_clock != null else 1
 	var season: int = int(cs.get("season", fallback_season))
 	var temp: float = ad.get_temp(idx) if ad != null else float(cell.temperature)
-	_temp_label.text = "当前温度：%.2f（%s）" % [temp, _temperature_band(temp)]
+	_temp_label.text = "温度：%.2f（%s）" % [temp, _temperature_band(temp)]
 
 	var moist: float = ad.get_moisture(idx) if ad != null else float(cell.moisture)
 	var base_moist: float = ad.get_base_moisture(idx) if ad != null else float(cell.base_moisture)
-	_moist_label.text = "当前湿度：%.2f（%s）   年均基线：%.2f" % [
+	_moist_label.text = "湿度：%.2f（%s）   年均基线：%.2f" % [
 		moist, _moisture_band(moist), base_moist
 	]
 
 	var wf := _weather_field_snapshot(cell, idx, ad)
-	_precip_label.text = "当前降水：%.2f（水汽 %.2f / 云 %.2f）" % [
+	_precip_label.text = "降水：%.2f（水汽 %.2f / 云 %.2f）" % [
 		float(wf["precip"]), float(wf["vapor"]), float(wf["cloud"])
 	]
 
@@ -275,20 +275,20 @@ func refresh_climate_line() -> void:
 	# ── 当前温度
 	if _temp_label != null:
 		var temp: float = ad.get_temp(idx) if ad != null else float(cell.temperature)
-		_temp_label.text = "当前温度：%.2f（%s）" % [temp, _temperature_band(temp)]
+		_temp_label.text = "温度：%.2f（%s）" % [temp, _temperature_band(temp)]
 
 	# ── 当前湿度
 	if _moist_label != null:
 		var moist: float = ad.get_moisture(idx) if ad != null else float(cell.moisture)
 		var base_moist_2: float = ad.get_base_moisture(idx) if ad != null else float(cell.base_moisture)
-		_moist_label.text = "当前湿度：%.2f（%s）   年均基线：%.2f" % [
+		_moist_label.text = "湿度：%.2f（%s）   年均基线：%.2f" % [
 			moist, _moisture_band(moist), base_moist_2
 		]
 
 	# ── 当前降水：读取 weather pass 写出的实时场值，不再用季节表估算。
 	if _precip_label != null:
 		var wf := _weather_field_snapshot(cell, idx, ad)
-		_precip_label.text = "当前降水：%.2f（水汽 %.2f / 云 %.2f）" % [
+		_precip_label.text = "降水：%.2f（水汽 %.2f / 云 %.2f）" % [
 			float(wf["precip"]), float(wf["vapor"]), float(wf["cloud"])
 		]
 	refresh_physical_lines()

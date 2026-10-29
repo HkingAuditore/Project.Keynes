@@ -2671,7 +2671,7 @@ func _family_category(snapshot: Dictionary) -> Dictionary:
 		return _pending_category()
 	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
 		return {"insights": [{"id": "families_unavailable", "text":
-			"家族情报暂不可用。", "accent": UITokens.TEXT_MUTED,
+			"家族情报：无", "accent": UITokens.TEXT_MUTED,
 			"icon": "family.house"}]}
 	var handles: PackedInt64Array = snapshot.get("family_handles", PackedInt64Array())
 	var surnames: PackedStringArray = snapshot.get("surnames", PackedStringArray())
@@ -2716,10 +2716,10 @@ func _family_category(snapshot: Dictionary) -> Dictionary:
 		})
 	if rows.is_empty():
 		return {"insights": [{"id": "families_empty", "text":
-			"此地尚无显赫家族。",
+			"显赫家族：无",
 			"accent": UITokens.TEXT_MUTED, "icon": "family.house"}]}
 	if rows.is_empty():
-		return {"insights": [{"id": "families_empty", "text": "此地尚无显赫家族。",
+		return {"insights": [{"id": "families_empty", "text": "显赫家族：无",
 			"accent": UITokens.TEXT_MUTED, "icon": "family.house"}], "family_rows": rows}
 	return {"family_rows": rows, "list_header": {"lead": "家族 · 族人 · 产业",
 		"indent": 41.0, "columns": [{"text": "威望", "width": 64.0}]}}

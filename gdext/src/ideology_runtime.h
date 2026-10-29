@@ -5,6 +5,9 @@
 #include <limits>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
+#include <memory>
+#include <utility>
 #include <vector>
 
 #include <godot_cpp/variant/dictionary.hpp>
@@ -14,7 +17,8 @@
 #include "effect_runtime.h"
 #include "metric_mask.h"
 #include "effect_selector_cap.h"
-#include "ideology_cell_program.h"
+#include "derived_cell_materializer.h"
+#include "selector_ownership.h"
 #include "runtime_ideology_pod.h"
 
 namespace pk {
@@ -47,7 +51,28 @@ public:
     // baseline day, so the old numeric value is not reinterpretable either.
     // v10 adds per-country `free_draws` (X6-b). The row layout grows by one
     // uint16, so v9 payloads must be refused by VERSION before decoding.
-    static constexpr int32_t SAVE_SCHEMA_VERSION = 10;
+    // 11: PKID now carries the derived basis dates (plan §9.3 / p.719). The layout
+    // changed, so the version must change with it -- restore is fail-closed on this
+    // field, which is what makes an old payload a clean rejection rather than a
+    // misparse.
+    // 12: PKID now carries the execution-contract identity (plan §11.5). The layout
+    // changed, so the version changes with it; restore is fail-closed on this field, which
+    // makes an old payload a clean rejection rather than a misparse.
+    // 13: PKID now carries the FULL applied-program basis (plan §18.2), not only the two
+    // basis dates: one row per (country, program) with the program key, the effective
+    // target-selector identity and a digest of the fold inputs. The block is
+    // variable-length, so the layout changed again and the version changes with it;
+    // restore is fail-closed on this field too (`ideology_save_applied_basis_invalid` /
+    // `ideology_save_applied_basis_mismatch`), which is what makes a v12 payload a clean
+    // rejection rather than a misparse.
+    // 14: PKID now carries the LOCAL SCALAR BASIS (plan §18.2 / §18.5) -- one row per
+    // (country, scalar metric id) with the Q16 value the card effects read -- plus the
+    // projection's sample day. Another variable-length block and one more fixed field
+    // before the §9.3 dates, so the layout changed again and the version changes with
+    // it. Refusals: `ideology_save_scalar_basis_invalid` (shape/pair) and
+    // `ideology_save_scalar_basis_mismatch` (content), which is what makes a v13
+    // payload a clean rejection rather than a misparse.
+    static constexpr int32_t SAVE_SCHEMA_VERSION = 14;
     static constexpr int64_t Q16_ONE = 65536;
     static constexpr int32_t POINT_HISTORY = 32;
     static constexpr int32_t MAX_ERA_INDEX = 63;
@@ -127,6 +152,69 @@ public:
                                     int32_t choice_index, int32_t gate_id,
                                     std::string &error);
     godot::Dictionary poll_receipts(int64_t after_receipt_id, int32_t limit) const;
+    // Rebuilds the derived cell front for EVERY country and installs it.
+    //
+    // Why this is global rather than per-country: the front is a single shared
+    // object keyed by (stat, cell). Building it from one country's
+    // contributions and installing it would erase every other country's rows --
+    // which is exactly what the first wiring did, because
+    // `reconcile_effect_activations` runs once per (country, idea).
+    //
+    // Called once per day from `run_daily` (and on demand after a save restore),
+    // so the cost is one pass over the equipped cards, not one per card.
+    //
+    // Returns false and sets `error` when the install was rejected (identity
+    // mismatch or stale generation); a skipped install is success (plan I13).
+    // Sharded continuation of the derived rebuild (plan §14.3: "超出必须继续分片，
+    // 不能只报告平均值").
+    //
+    // A single-shot rebuild would cost 3.5 ms at 2400 cells and
+    // 10.3 ms at 6400 (measured, M4-16) against a 1 ms gate, so it cannot run
+    // inside one slice. This variant walks the country list across calls: each call
+    // collects contributions until the budget expires, then parks the country cursor
+    // and returns `false` meaning "not finished". The front is only built and
+    // installed on the pass that reaches the end, so a reader never observes a
+    // half-built layer.
+    //
+    // Returns true when the layer is complete (built + installed, or skipped as
+    // identical), false when another call is needed.
+    // Runs ONE bounded step of the sharded rebuild and reports whether the layer is
+    // complete. The unit of work is a CONTRIBUTION (the collector emits one per
+    // target cell, measured 2400 for a 2400-cell territory), so a step can stop
+    // between contributions without cutting a program's own fold in half.
+    //
+    // Returns true when there is nothing left to do for `day`.
+    bool step_derived_rebuild(int64_t day, std::string &error);
+    // Plan §11.5: the identity that says "this save was produced under these execution
+    // rules". Computed ON DEMAND from the version vector plus the compile identities, so
+    // it always reflects the configuration in force -- a configure-time stamp would depend
+    // on configure ORDER (see the capture site's comment).
+    uint64_t execution_contract_hash() const {
+        return compute_execution_contract_hash();
+    }
+    // Ownership filter for a SOURCE fan-out (kinds 14/15/16). Public so the probe
+    // bridge drives the SAME code the production path uses: two copies of this
+    // predicate is exactly how a default drifts.
+    void apply_fan_out_ownership_filter(int32_t source_cell, int32_t ownership_scope,
+                                        std::vector<int32_t> &cells) const;
+
+    // Same predicate, but for a UNION built from many sources of ONE country.
+    //
+    // The per-source variant reads the source's own country slot because a fan-out used
+    // to be assembled one source at a time. Every source comes from the same
+    // OWN_TERRITORY scan, so one slot covers the union -- which is what lets the batch
+    // dilation apply the filter once instead of N times.
+    void apply_union_ownership_filter(int32_t country_slot, int32_t ownership_scope,
+                                      std::vector<int32_t> &cells) const;
+    // True while a sharded rebuild is in flight; `should_run` uses it so the graph
+    // keeps scheduling this system instead of leaving the layer half-built.
+    bool derived_rebuild_pending() const {
+        return _derived_rebuild_day >= 0;
+    }
+    // Last materializer report, for §12.4 diagnostics. `truncated` must be 0.
+    const DerivedMaterializeReport &derived_materialize_report() const {
+        return _last_derived_materialize;
+    }
     godot::Dictionary run_daily(int64_t day_index);
     bool should_run(int64_t day_index) const;
     godot::Dictionary snapshot(int64_t country_handle) const;
@@ -164,6 +252,44 @@ public:
     // the same neutral structure on both sides: the worker hashes its own snapshot,
     // the main thread hashes this one.
     bool export_pod_business_snapshot(RuntimeIdeologyPodSnapshot &out) const;
+    // ── worker IMPORT: a save restored while the worker owns IDEOLOGY ────────
+    //
+    // `capture()` / `restore()` are MAIN-THREAD facade calls, and the POD never learns
+    // it was restored from, so its next publish replaces the restored rows with its own
+    // state and the load is undone (measured: `idea_rows [82,1,0,0] -> []`, the mirrored
+    // §9.3 dates `7/8 -> 2/3`, then a pump that clears the front). This export is the
+    // state the POD must ADOPT instead: the rows `restore()` installed, expressed in the
+    // POD's own vocabulary, plus the two things a business snapshot does not carry --
+    // the POD's catalog identity and the live per-slot Country generation the POD
+    // cross-checks on every plan (`validate_inputs`).
+    bool export_pod_import_state(RuntimeIdeologyPodSnapshot &out,
+                                 const RuntimeCountryPodSnapshot &country,
+                                 std::string &error) const;
+    // Set by `DCWorldExt::restore_ideology_state` when the worker owns IDEOLOGY. While it
+    // is set the write-back path pushes this state into the POD instead of applying a
+    // worker snapshot over the restore.
+    void mark_worker_import_pending() { _worker_import_pending = true; }
+    bool worker_import_pending() const { return _worker_import_pending; }
+    void clear_worker_import_pending() { _worker_import_pending = false; }
+    // Records one import attempt. `retryable` distinguishes "the worker day held the
+    // boundary" from a payload the POD REFUSED: a refusal must not turn into a silent
+    // infinite retry that also freezes the mirror.
+    void record_worker_import(const std::string &code, bool applied,
+                              bool retryable);
+    const std::string &worker_import_last_code() const {
+        return _worker_import_last_code;
+    }
+    int64_t worker_import_attempts() const { return _worker_import_attempts; }
+    // Adopt the generation of an imported state, so any snapshot the ring still holds
+    // from BEFORE the import is refused as a regression instead of overwriting it.
+    void adopt_pod_snapshot_generation(uint64_t generation) {
+        _pod_snapshot_generation = generation;
+    }
+    // The catalog identity the POD computes for the catalog exported from THIS runtime
+    // (`export_pod_catalog`). It is not `_catalog_hash`: the two sides hash their
+    // catalogs with different functions, so a POD save/import payload has to carry the
+    // POD's value.
+    uint64_t pod_catalog_hash() const { return _pod_catalog_hash; }
     // Last day this runtime fully settled. The parity publisher uses it to refuse
     // a reference for a day that is still mid-slice: a partial snapshot under a
     // finished day's key makes the very first comparison fail for a reason that
@@ -231,10 +357,117 @@ public:
     // generation regression and the facade would freeze on stale state.
     void reset_pod_snapshot_cursor() { _pod_snapshot_generation = 0; }
 
+    // ── plan §18.2: the FULL applied-program basis ──────────────────────────
+    //
+    // §18.2 asks for a save that restores "using the old basis + the pending new
+    // basis". The two basis DATES answer "which projection may be used on which
+    // day"; they do not say what the projection was built FROM. This record does:
+    // one row per (country, program) that the derived projection folds.
+    //
+    // WHY THE GAP WAS REAL. `compute_catalog_hash` covers the ideology catalog's
+    // definitions, level thresholds, synergies and overrides, but NOT the mapping
+    // from a card LEVEL to the Effect programs it carries (`Definition::level_begin`
+    // / `Level::persistent_begin` / `EffectTemplate::definition_key` are all
+    // unhashed), and the execution contract covers only the version vector plus the
+    // OTHER two catalogs' hashes. So two builds that disagree about which program a
+    // card level carries produce the SAME catalog hash and the SAME contract, and a
+    // save written by one would have been silently re-projected by the other. These
+    // rows are the missing identity: capture writes what the projection folds, and
+    // restore re-derives the same rows from the current catalogs and refuses when
+    // they do not match (`ideology_save_applied_basis_mismatch`).
+    //
+    // WHAT IS DELIBERATELY NOT IN IT. The resolved target CELLS. Resolving them
+    // needs the map, the economy and the country table, and restore can run before
+    // those are attached; a save that could only be re-validated on a fully live
+    // world would have to skip its own check. The row therefore records the
+    // SELECTOR IDENTITY (kind / id / parameters) the cells came from instead, which
+    // is target-free and still names the function that produced them. The terms
+    // digest is likewise taken BEFORE the per-target magnitude scale, so it is a
+    // function of the catalog alone and not of which cells happened to resolve.
+    struct AppliedProgramBasis {
+        uint64_t country_handle = 0;
+        std::string program_key;
+        // The EFFECTIVE selector (after per-country synergy rewrites), because that
+        // is what actually chose the cells.
+        int32_t selector_kind = 0;
+        std::string selector_id;
+        int32_t selector_param[2] = {0, 0};
+        // Digest over the resolved fold inputs: stat id, operation, add, factor and
+        // the ramp fields (metric, scale, floor/ceil, program key). Values are
+        // quantised to 1e-6 for the same reason `DerivedCellFront::content_digest`
+        // quantises: a digest over raw double bits would refuse a save for a last-bit
+        // difference that changes no fold.
+        uint64_t terms_digest = 0;
+
+        bool operator==(const AppliedProgramBasis &other) const {
+            return country_handle == other.country_handle &&
+                program_key == other.program_key &&
+                selector_kind == other.selector_kind &&
+                selector_id == other.selector_id &&
+                selector_param[0] == other.selector_param[0] &&
+                selector_param[1] == other.selector_param[1] &&
+                terms_digest == other.terms_digest;
+        }
+        bool operator!=(const AppliedProgramBasis &other) const {
+            return !(*this == other);
+        }
+    };
+    // Upper bounds for the variable-length parts. Generous on purpose: they exist to
+    // stop a corrupted count from allocating, not to constrain content. A world with
+    // 512 countries and 12 cards is 6144 rows; 1<<20 is two orders of magnitude above
+    // any authored catalog.
+    static constexpr uint32_t APPLIED_BASIS_ROW_LIMIT = 1U << 20U;
+    static constexpr uint32_t APPLIED_BASIS_KEY_LIMIT = 512;
+
+    // ── plan §18.2 / §18.5: the LOCAL SCALAR BASIS ──────────────────────────
+    //
+    // The §9.3 dates say WHEN a projection may be adopted and the rows above say
+    // WHICH programs it folds. Neither says what those programs READ. This record
+    // does: the ideology-local scalar values that `fill_ideology_scalars` publishes
+    // into the Effect metric slab and that a card's program consumes through
+    // `READ_METRIC` -- equipped-card count, per-route counts, the active-synergy
+    // count and the country's unlocked era, each quantised to Q16 exactly as the
+    // slab holds it.
+    //
+    // WHY THE GAP WAS REAL. Those values are derived from state that PKID already
+    // carries (the idea rows and `active_synergy_bits`) INTERSECTED with two things
+    // it did not: the Effect catalog's key -> metric-id table, and the Country
+    // domain's technology set (`unlocked_era_for`). A build that resolves the keys
+    // differently -- or a world whose era advanced while the ideology domain did not
+    // -- therefore produced the same catalog hash, the same execution contract and
+    // the same program rows, and the reload silently projected different numbers.
+    // These rows are the missing identity of the NUMBERS, not of the function.
+    //
+    // WHY METRIC IDS AND NOT KEY STRINGS. The id IS the address the program reads:
+    // `READ_METRIC n` names the slab index, not the key. Persisting the id means a
+    // catalog that renumbers the slab is caught by this comparison even when every
+    // key name survived, which is the failure mode a name-keyed record would miss.
+    //
+    // A metric with no row reads as 0, which is the slab's own initial value, so
+    // the record is complete without writing the zeros.
+    struct LocalScalarValue {
+        uint64_t country_handle = 0;
+        int32_t metric_id = -1;
+        int64_t value_q16 = 0;
+
+        bool operator==(const LocalScalarValue &other) const {
+            return country_handle == other.country_handle &&
+                metric_id == other.metric_id &&
+                value_q16 == other.value_q16;
+        }
+        bool operator!=(const LocalScalarValue &other) const {
+            return !(*this == other);
+        }
+    };
+    // Same argument as the applied-basis bounds: stop a corrupted count from
+    // allocating. The scalar key set is `3 + route_keys.size()` per country and
+    // `route_keys` is capped at 31 by `configure`, so a country contributes at most
+    // 34 rows; 1<<20 is three orders of magnitude above any authored world.
+    static constexpr uint32_t LOCAL_SCALAR_ROW_LIMIT = 1U << 20U;
+
     // P3 step 2: build the per-cell coefficient table for the current card set.
     // Pure function of (cards, levels, effect catalog, modifier catalog); the
     // caller decides when to publish it. v1 scope is documented in the header.
-    bool build_cell_program_table(CellProgramTable &out) const;
 private:
     struct Level {
         int64_t threshold_q16 = 0;
@@ -673,9 +906,108 @@ private:
         const EffectRuntime::FamilyEffectMetadataPod &metadata,
         uint64_t selection_salt,
         std::vector<EffectTarget> &out) const;
+    // `out_derived` (optional) receives the contributions of programs whose
+    // backend is DerivedCell (plan 22 §4.5). Those programs create NO instance
+    // and are NOT subject to `SELECTOR_MAX_CELLS`, because that cap exists only
+    // to bound the instance table.
+    //
+    // Kept as an out-param rather than a second pass so the eligibility column is
+    // consulted exactly once per program, in one place (I01).
     bool collect_effect_activations(
         const CountryState &country, const IdeaState &state,
-        std::vector<EffectActivation> &out) const;
+        std::vector<EffectActivation> &out,
+        std::vector<DerivedProgramContribution> *out_derived = nullptr) const;
+    // Builds the plain-data facts the backend decision needs from already
+    // resolved metadata. No runtime state beyond the catalog, so the decision
+    // stays reproducible (§4.5).
+    CellProgramFacts cell_program_facts_for(
+        const std::string &program,
+        const EffectRuntime::FamilyEffectMetadataPod &metadata,
+        const IdeaState &state) const;
+    // Which level does this card contribute at, and which program templates does
+    // that level carry? (plan §10.1: a pending transition serves the OLD level, and
+    // a pending equip serves nothing.) Returns false when it contributes nothing.
+    //
+    // Extracted from `collect_effect_activations` so the applied-program basis
+    // (plan §18.2) cannot disagree with the collector about which level is in
+    // force. Two copies of this rule is exactly the defect M5-69 was: the
+    // contribution half and the accrual half read different levels.
+    bool resolve_contribution_templates(
+        const CountryState &country, const IdeaState &state,
+        int32_t &contribution_level,
+        std::vector<const EffectTemplate *> &out) const;
+    // The fold inputs of one program, BEFORE the per-target magnitude scale is
+    // applied: one row per resolved modifier term, flattened across the program's
+    // modifier commands, exactly as the derived fold consumes them.
+    //
+    // `count_diagnostics` is false for callers that only need the digest (the
+    // applied-basis rebuild): the ramp counters are read by fixtures as exact
+    // numbers, so a save must not move them.
+    void resolve_program_fold_terms(
+        const EffectRuntime::FamilyEffectMetadataPod &metadata,
+        const std::string &program,
+        std::vector<DerivedProgramContribution::Term> &out,
+        bool count_diagnostics) const;
+    // One basis row for (country, program), or false when the program does not
+    // occupy the derived backend in this configuration.
+    bool build_applied_program_basis_row(
+        const CountryState &country, const IdeaState &state,
+        const std::string &program,
+        const EffectRuntime::FamilyEffectMetadataPod &metadata,
+        AppliedProgramBasis &out) const;
+    // Re-derives the whole basis from `countries` under the CURRENT catalogs.
+    //
+    // Pure: no runtime member is touched, so restore can validate a payload's basis
+    // before anything is installed and a failed check needs no rollback of its own.
+    // Ordered by (country handle, program key) and de-duplicated per key, which is
+    // what makes the payload's byte layout independent of iteration order.
+    void rebuild_applied_program_basis(
+        const std::vector<CountryState> &countries,
+        std::vector<AppliedProgramBasis> &out) const;
+    static uint64_t mix_applied_program_basis(
+        uint64_t hash, const std::vector<AppliedProgramBasis> &basis);
+    // ── plan §18.2 / §18.5: the local scalar basis ──────────────────────────
+    //
+    // The per-country scalar values, keyed by the slab metric id a card program
+    // actually reads. Built from ONE `collect_local_scalars` call and then resolved
+    // through the Effect catalog, so this record and the slab that
+    // `fill_ideology_scalars` publishes can never describe different numbers.
+    bool build_local_scalar_basis(const CountryState &country,
+        std::vector<LocalScalarValue> &out,
+        std::vector<LocalScalarValue> *cross_domain_rows = nullptr) const;
+    // Re-derives the whole block from `countries` under the CURRENT catalogs.
+    //
+    // Pure, for the same reason `rebuild_applied_program_basis` is: restore validates
+    // a payload's block BEFORE anything is installed, so a refusal needs no rollback
+    // of its own. Ordered by (country handle, metric id) and de-duplicated per pair,
+    // which is what makes the payload's byte layout independent of iteration order.
+    //
+    // A key the current Effect catalog cannot resolve contributes no row: the metric
+    // does not exist, so no value could ever be read from it. That is also how the
+    // content check fires -- a payload row whose id this catalog does not produce
+    // survives into `restored` but never into `rebuilt`, and the two vectors differ.
+    //
+    // `cross_domain_rows`, when supplied, receives the rows whose value is NOT a
+    // function of this payload plus the catalogs, so the caller can exclude exactly
+    // those rows from the content comparison. There is exactly one such key today:
+    // `ideology.scalar.unlocked_era`, whose input is the COUNTRY domain's technology
+    // set. PKCN owns and restores that domain, not PKID, so a world that has not
+    // restored it yet -- or whose era legitimately moved -- would otherwise refuse its
+    // own save. Those rows are still persisted, shape-checked and covered by the state
+    // hash, so a corrupted one is still caught, by the layer that can see it.
+    void rebuild_local_scalar_basis(
+        const std::vector<CountryState> &countries,
+        std::vector<LocalScalarValue> &out,
+        std::vector<LocalScalarValue> *cross_domain_rows = nullptr) const;
+    static uint64_t mix_local_scalar_basis(
+        uint64_t hash, const std::vector<LocalScalarValue> &rows);
+    // The scalar values themselves, as (Effect catalog key, Q16 value), in a
+    // deterministic key order. Split out of `fill_ideology_scalars` so the slab the
+    // cards read and the rows the save records are computed by ONE piece of code:
+    // two copies of "how many cards are equipped" is how a basis drifts from the
+    // thing it describes.
+    void collect_local_scalars(const CountryState &country,
+        std::vector<std::pair<std::string, int64_t>> &out) const;
     // X6-c: the copier owns fresh Effect instances but reads the persistent
     // program list of the card in the immediately-left slot. The callers branch
     // on `copy_left_programs` first: only a non-copier falls back to its own
@@ -718,6 +1050,12 @@ private:
         uint8_t has_managed = 0;
         uint8_t uses_economy_inputs = 0;
         uint8_t uses_tags = 0;
+        // The 0-based tag indices this level's programs actually read. Filled from
+        // `target_selector_param[1] - 1` (1-based in content). A synergy override can
+        // add tags, which is why the publisher marks the set "incomplete" instead of
+        // claiming it is exhaustive.
+        std::vector<int32_t> tag_ids;
+        uint8_t tag_ids_incomplete = 0;
         uint8_t uses_families = 0;
         uint8_t scale_capable = 0;
         MetricMask consumer_mask;
@@ -771,7 +1109,22 @@ private:
                             const std::vector<int64_t> &weights) const;
     void reset_runtime_state();
     uint64_t compute_catalog_hash() const;
+    // Plan §11.5: the execution-contract identity. Computed at configure time from the
+    // version vector plus the compile identities, persisted in PKID, validated on restore.
+    uint64_t compute_execution_contract_hash() const;
     uint64_t compute_state_hash() const;
+    // Same hash over an ALREADY-DERIVED basis. Capture and restore both need the
+    // rows for the payload anyway; recomputing them inside `compute_state_hash()`
+    // would resolve every program twice on a save.
+    //
+    // §18.5 extends it with the two pieces of the local scalar basis that are not a
+    // function of the country rows alone: the scalar value rows themselves and the
+    // sample day the projection was built from. Both are persisted, so both are
+    // hashed -- the same argument the two §9.3 dates already make.
+    uint64_t compute_state_hash_with(
+        const std::vector<AppliedProgramBasis> &basis,
+        const std::vector<LocalScalarValue> &scalars,
+        int64_t sample_day) const;
     uint64_t binding_id_for(uint64_t country_handle, int32_t ideology_id,
                             uint8_t location) const;
     uint64_t binding_signature_for(int32_t ideology_id, int32_t level) const;
@@ -934,6 +1287,17 @@ private:
     // G8 ACTIVE write-back：最近一次 apply_pod_snapshot 的代次。apply 侧用它拒绝
     // 回退代次，所以同一天重复回灌是幂等的。
     uint64_t _pod_snapshot_generation = 0;
+    // See `pod_catalog_hash()`: recorded by `export_pod_catalog`, which is where the POD
+    // computes it, so `export_pod_import_state` can stamp the POD's identity on a payload
+    // rather than this runtime's (`_catalog_hash`), which the POD would refuse. `mutable`
+    // because that exporter is const (it reads this runtime and writes the POD's catalog).
+    mutable uint64_t _pod_catalog_hash = 0;
+    // See `mark_worker_import_pending()`. Kept here rather than on `DCWorldExt` so the
+    // belief "the worker has not adopted the restore yet" lives with the restored state
+    // itself and dies with it (`clear_state` / `configure`).
+    bool _worker_import_pending = false;
+    std::string _worker_import_last_code;
+    int64_t _worker_import_attempts = 0;
     int64_t _last_day = -1;
     uint64_t _active_visits = 0;
     uint64_t _dormant_scan_count = 0;
@@ -972,6 +1336,215 @@ private:
     mutable uint64_t _source_count_evaluations = 0;
     // Bumped on every build; Economy keys its per-cell cache on (this, input revision).
     uint64_t _cell_program_generation = 0;
+    // Independent execution-contract identity (plan §11.5). Modifier's own
+    // catalog hash does NOT cover ideology wording or this layer's execution
+    // semantics, so a save must carry this separately or an old save would be
+    // silently accepted after a semantic change.
+
+    // Last materializer report, for §12.4 diagnostics. Carries `truncated`,
+    // which must stay 0: a non-zero value means the derived path silently
+    // dropped targets, which is the exact failure the migration exists to remove.
+    DerivedMaterializeReport _last_derived_materialize;
+    // Sharded rebuild state (plan §14.3: a slice must stay under 1 ms).
+    //
+    // `_derived_rebuild_day < 0` means "no build in flight". The accumulator lives
+    // here rather than on the stack because the build spans slices; the cursor is
+    // the NEXT country slot to visit so a resumed call continues where the last
+    // one stopped.
+    double _derived_collect_ms = 0.0;
+    double _derived_materialise_ms = 0.0;
+    int64_t _derived_rebuild_day = -1;
+    int32_t _derived_rebuild_cursor = 0;
+    // Index into `_derived_rebuild_accumulator` -- the next CONTRIBUTION to fold.
+    size_t _derived_rebuild_index = 0;
+    // Set once the accumulator is filled for this day. Distinct from the cursor
+    // because a step can park on budget AFTER collecting.
+    bool _derived_rebuild_collected = false;
+    // Per-step wall budget. Plan §14.3 targets 1 ms per slice; the margin keeps the
+    // whole slice (not just this stage) inside it.
+    static constexpr double DERIVED_REBUILD_STEP_BUDGET_MS = 0.45;
+    int32_t _derived_rebuild_slices = 0;
+    // ── plan §9.3: when the current basis became confirmable, and when it may be used ──
+    //
+    // `confirmed_day` is the business day on which every required ACK for the newest
+    // projection had been observed; `eligible_from_day` is the day AFTER it, which is the
+    // first day the derived layer is allowed to adopt that projection. Both are -1 until
+    // something settles.
+    int64_t _derived_basis_confirmed_day = -1;
+    int64_t _derived_basis_eligible_day = -1;
+    // ── plan §18.2: the FULL applied-program basis ──────────────────────────
+    //
+    // The basis the LAST projection was built from, kept for diagnostics and
+    // assigned at the same commit point as the two dates above (so a failed restore
+    // puts it back). The PAYLOAD's rows are re-derived at capture time rather than
+    // read from here on purpose: this member goes stale the moment a card is
+    // equipped, unequipped or levelled between two rebuilds, and a payload that
+    // recorded a stale basis would refuse to reload its own world. Re-deriving at
+    // capture makes the payload describe the state it was captured from, which is
+    // the only thing a reload can verify.
+    std::vector<AppliedProgramBasis> _applied_program_basis;
+    // §18.5: the local scalar basis the LAST RESTORE installed, kept for diagnostics
+    // and put back by `rollback` at the same commit point as the rows above. The
+    // PAYLOAD's rows are re-derived at capture from `_countries`, never read from
+    // here, for exactly the reason the applied basis is: this member describes the
+    // last completed restore, not the current state, and a payload built from it
+    // would refuse its own world after the first equip.
+    std::vector<LocalScalarValue> _local_scalar_basis;
+    // WHY the last restore refused with `ideology_save_scalar_basis_mismatch`, in one
+    // line: row counts on both sides and the first differing (country, metric, value).
+    // A named refusal that does not say WHAT disagreed costs a debugging round every
+    // time it fires -- this one fired first on a cross-domain input and the reason string
+    // alone could not tell the two possible causes apart. Empty when nothing refused.
+    std::string _last_scalar_basis_mismatch_detail;
+    // ── plan §18.5: the sample day the installed projection was built from ────
+    //
+    // Mirrors `DerivedCellFront::sample_day` of the front that is serving readers, read
+    // back right after `install_derived_cell_layer` -- not from the job argument, so a
+    // skipped install (§I13), a refused one, or a build still folding cannot make this
+    // disagree with the front. `-1` means "no projection is installed".
+    //
+    // Assigned at the restore commit point like the rows above, and put back by
+    // `rollback`, so a refused restore cannot leave an identity describing state that
+    // was itself rolled back.
+    //
+    // WHY CAPTURE READS THIS MEMBER INSTEAD OF THE LIVE FRONT, unlike the applied basis
+    // and the scalar rows: it is an identity, not a function of current state. Reading
+    // the live front looks equivalent and is not -- PKID does not restore the Modifier
+    // domain (PKCM owns it), so a world that rebuilt its front after the save would
+    // stamp its OWN day into a re-capture and the payload would stop round-tripping.
+    // The two §9.3 dates above are the same kind of value and are read the same way.
+    int64_t _derived_basis_sample_day = -1;
+    // How many rebuild attempts were refused because the basis was not eligible yet.
+    // Distinguishes "the gate held" from "nothing ever tried to rebuild".
+    int64_t _derived_rebuild_gated_by_eligibility = 0;
+    int64_t _derived_rebuild_steps = 0;
+    int64_t _derived_collect_count = 0;
+    int64_t _derived_collect_rows = 0;
+    int64_t _derived_collect_ideas = 0;
+    int64_t _derived_first_country_delta = 0;
+    int64_t _derived_second_country_delta = 0;
+    bool _derived_last_collect_ok = true;
+    int64_t _derived_contribs_passed = 0;
+    double _derived_rebuild_total_ms = 0.0;
+    std::vector<DerivedProgramContribution> _derived_rebuild_contributions;
+    // The resumable fold. Held across slice boundaries -- the state IS the job.
+    std::unique_ptr<DerivedCellMaterializeJob> _derived_rebuild_job;
+    // Ramp sampling state for the SHARDED rebuild.
+    //
+    // The single-shot path builds a lambda that captures these as LOCALS by
+    // reference, which cannot outlive the call. The job spans slice boundaries, so the
+    // state has to be a member: without it the job was constructed with an empty
+    // `DerivedMaterializeOptions` and every ramp term was DEFERRED instead of
+    // evaluated -- a silent behaviour regression for the 24 ramp programs.
+    std::unordered_map<uint64_t, double> _derived_ramp_country_cache;
+    std::vector<int64_t> _derived_ramp_metric_scratch;
+    int32_t _derived_ramp_samples_taken = 0;
+    // Why a ramp card may contribute nothing. `ramp_candidates` counts commands whose
+    // `value_mode` is not CONSTANT; `ramp_metric_ok` counts those that ALSO declare a
+    // metric. A gap between them means the program's metadata never saw its
+    // READ_METRIC instruction.
+    mutable int64_t _ramp_candidates = 0;
+    mutable int64_t _ramp_metric_ok = 0;
+    // Why the economy may see `consumed = 0`: no publisher ran, or it found no named
+    // tags. `_consumer_levels_with_tags` counts levels that declare tag use at all.
+    mutable int64_t _consumer_publish_calls = 0;
+    // Programs the old plane skipped because `decide_cell_program_backend` said the
+    // derived layer owns them (I01). Non-zero proves the gate fires.
+    mutable int64_t _cell_plane_derived_elsewhere = 0;
+    // How many source fan-outs ran, and under which ownership scope. Counts, not time:
+    // "the filter is applied" and "the filter drops nothing" look identical in the
+    // output otherwise.
+    mutable int64_t _ownership_filtered_resolves = 0;
+    mutable int64_t _ownership_own_resolves = 0;
+    mutable int64_t _ownership_foreign_resolves = 0;
+    mutable int64_t _consumer_tag_ids_last = 0;
+    mutable int64_t _consumer_levels_with_tags = 0;
+    int32_t _derived_ramp_samples_memoised = 0;
+    DerivedRampSampler _derived_ramp_sampler;
+    // Runs the program's own instruction stream per cell (M5-13).
+    //
+    // The metric sampler below returns a RAW metric; the cards' magnitudes are programs
+    // (`CONST -> READ_METRIC -> CONST -> MIN -> MUL -> EMIT`), so scaling the raw metric
+    // dropped both the clamp and the constant and saturated the stat.
+    // Stable storage for program keys, so `Term` can hold a pointer.
+    //
+    // `std::unordered_set` nodes do not move on insert, so a pointer to an element stays
+    // valid for the runtime's lifetime. Interning also collapses the per-cell key
+    // construction the collector would otherwise repeat.
+    mutable std::unordered_set<std::string> _program_key_pool;
+    const std::string *intern_program_key(const std::string &key) const;
+
+    DerivedProgramMagnitudeSampler _derived_program_sampler;
+    std::vector<int64_t> _derived_program_metric_scratch;
+    mutable int64_t _derived_program_evaluations = 0;
+    mutable int64_t _derived_program_failures = 0;
+    void ensure_derived_program_sampler();
+    // Builds `_derived_ramp_sampler` against the members above. Idempotent.
+    void ensure_derived_ramp_sampler();
+    // Identity of the world the derived front was built against. Passed to the
+    // materializer so `install_derived_cell_layer` can reject a candidate built
+    // against a different world/map (plan §9.6).
+    uint64_t _derived_world_identity = 0;
+    uint64_t _derived_map_generation = 0;
+    uint64_t _derived_epoch_id = 0;
+    // Diagnostics for the derived rebuild (plan §12.4). Named with the
+    // `_cell_layer_` prefix because `_derived_rebuild_visits` was ALREADY taken by
+    // an unrelated idea-iteration counter (`ideology_runtime.h:979`); reusing that
+    // name made both counters silently share one field.
+    // M3 ramp sampling observability. `memoised` > 0 proves the country-scope
+    // cache is doing work; a large `taken` with zero `memoised` on a country metric
+    // would mean the cache never hits, which is the failure this pair exists to
+    // make visible.
+    int64_t _ramp_samples_taken = 0;
+    int64_t _ramp_samples_memoised = 0;
+    int64_t _ramp_terms_evaluated = 0;
+    int64_t _ramp_terms_deferred = 0;
+    // M4 diagnosis: where `collect_effect_activations` gives up. `seen=0` with an
+    // ACTIVE idea and a valid territory plane can only mean one of the early exits
+    // fired, and they are indistinguishable from the outside. Each counter is one
+    // such exit; `collect_stage_*` names them in the report.
+    mutable int64_t _collect_entries = 0;          // ideas that passed location/level
+    mutable int64_t _collect_templates = 0;        // active_templates seen
+    mutable int64_t _collect_program_empty = 0;    // program key came back empty
+    mutable int64_t _collect_pod_fail = 0;
+    // The first few program keys whose POD lookup failed. Bounded so a broken catalog
+    // cannot grow this without limit; enough to identify the offending program.
+    mutable std::vector<std::string> _collect_pod_fail_keys;
+    // ... and the ones that RESOLVED. Without both halves a non-empty failure list cannot
+    // be interpreted: a cost entry is EXPECTED to fail, so "failures exist" says nothing
+    // about whether the card's real effect was found.
+    mutable std::vector<std::string> _collect_pod_ok_keys;         // family_effect_metadata_pod returned false
+    mutable int64_t _collect_targets_fail = 0;
+    // Where `resolve_effect_targets` bails. Each is a distinct early return and
+    // they all surface as the same `targets_fail`, which is why the empty front was
+    // not diagnosable from outside.
+    mutable int64_t _targets_country_zero = 0;
+    mutable int64_t _targets_domain_gate = 0;
+    mutable int64_t _targets_economy_null = 0;
+    mutable int64_t _targets_anchor_neg = 0;
+    mutable int64_t _targets_collected_empty = 0;
+    // kind 14/15 bail out when the card carries no tag id. Counted separately: without it
+    // "no targets" cannot be told apart from "the tag never made it into param[1]".
+    mutable int64_t _targets_fanout_no_tag = 0;
+    // The kind 14/15 branch also bails when the tag scan finds no source cell -- the one
+    // exit that had NO counter, which is why four rounds could not tell "the tag matched
+    // nothing" apart from "the branch never ran".
+    mutable int64_t _targets_fanout_no_source = 0;
+
+    // Peak memory across rebuilds (§18.3). "retained" is the front still serving readers
+    // while "candidate" is being built; they coexist during `finish()`, so the peak is
+    // their sum. Kept as MAX over rebuilds -- a per-rebuild value would miss the worst.
+    mutable int64_t _derived_peak_retained_bytes = 0;
+    mutable int64_t _derived_peak_candidate_bytes = 0;
+    mutable int64_t _derived_peak_total_bytes = 0;
+    // kine 14/15 have their OWN `sources.empty()` check (line ~2129), separate from
+    // kind 16's. The first patch landed on kind 16 because both lines had identical
+    // indentation and text -- so this one is named for the branch it belongs to.
+    mutable int64_t _targets_fanout_ring_empty = 0;     // resolve_effect_targets returned false
+    mutable int64_t _collect_derived_emitted = 0;  // derived contributions pushed
+    int64_t _cell_layer_rebuild_visits = 0;
+    int64_t _cell_layer_rebuild_skips = 0;
+    double _cell_layer_rebuild_ms = 0.0;
     // ── P1-A sliced instance refresh ────────────────────────────────────────
     // Budget in COUNTRIES, never milliseconds: a time-based slice would make
     // which cards get refreshed depend on machine speed and break replay.

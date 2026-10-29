@@ -251,7 +251,7 @@ size_flags_vertical = 4
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-text = "地图点选出发城市，或点击下方城市卡片："
+text = "选择出发城市："
 text_overrun_behavior = 3
 theme_type_variation = &"PKDossierKicker"
 

@@ -184,7 +184,7 @@ func set_day_night_enabled(enabled: bool) -> void:
 	if _day_night_button == null:
 		_ready()
 	var tooltip := "昼夜循环：%s" % (
-		"开启（点击切换为动态永昼）" if enabled else "关闭（动态永昼，光向随直射点移动）"
+		"开启（动态永昼）" if enabled else "关闭（动态永昼，光向随直射点移动）"
 	)
 	IconButton.apply(
 		_day_night_button,
