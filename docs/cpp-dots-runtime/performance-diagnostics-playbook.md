@@ -308,6 +308,11 @@ tools\runtime\Invoke-SaveReplay.ps1 -SavePath <玩家给的.pksv> -Days 20 -Spee
 worker FAULTED 后 `WorldRuntimeHost._observe_runtime_worker_fault()` 请求暂停时钟；
 日历或界面仍能变化不能证明 Economy 仍在提交，需核对 committed day 和 fault count。
 
+2026-10-30 的 day-4172 故障为 `money_error=273883`，阶段探针在财政结算首次观察到正差额。
+检查补贴预留分摊：国库不足或科研现金保留压低预留转账时，分摊分母仍须使用原始申请总额，
+所有国内与关税 lane 的预算合计只能等于实际预留现金。使用截断后的申请作分母会虚增预算，
+多余现金在补贴支付或退回未用预算时显现。异步请求等待终态期间也须保留首次请求金额。
+
 ## 补贴与日调度分段（2026-09-22）
 
 玩家性能 CSV 在整图 ACTIVE 下原先看不到财政阶段：SUS 经济 job 被 policy gate 掉，

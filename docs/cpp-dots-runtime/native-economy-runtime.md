@@ -99,7 +99,7 @@ offset, limit)`（`economy_runtime_queries_country.cpp`）是国民经济卷宗�
 | view | 内容 |
 | --- | --- |
 | `summary` | 人口/就业/资金、居民日收支（工资、补贴、实物、税）、综合与温饱满意度、建筑单位/停业/产值/成本/欠薪/产出/丢弃/气候损失、5 个经济部门数组、`state_day_min/max` |
-| `professions` | 每职业人口、就业、资金、日收支、8 维满意度（扁平 `satisfaction_dims_q16`）、按需求的最差需求人口 |
+| `professions` | 每职业人口、就业、资金、日收支、人口加权的生活档（`living_standard_level_q16`，与 `summary` 的 `living_standard_level_q16` 同口径）、8 维满意度（扁平 `satisfaction_dims_q16`）、按需求的最差需求人口 |
 | `buildings` | 每建筑类型的单位、停业、营收与各项成本、岗位、利用率、在建数和 19 种投资拒绝直方图；`filter_id` = 经济部门 |
 | `investment` | 全局与分部门拒绝直方图、在建项目（类型、组数、首个完工日） |
 | `goods` | 每物资需求/供给/实际提取 EMA、库存、短缺率、价格与成本锚、外贸 EMA、短缺格数 |
@@ -154,11 +154,17 @@ country_economy_asset_results_pending
 country_economy_asset_rejection_retry_pending
 country_economy_asset_completion_retry_pending
 country_economy_fiscal_terminal_retry_pending
+country_economy_asset_result_identity_retry_pending  ← stale poll during CREATED→COUNTRY_PREPARED
 country_economy_asset_country_plan_pending   ← 2026-09-22 新增
 ```
 
 共同语义：**请求要么还没分配、要么已被原样重新入队，没有任何 store 被改动**，调用方必须
 yield 并在后续 pulse 重试。把其中任何一个当成 fatal，都会留下半开 epoch。
+
+`country_economy_asset_result_identity_retry_pending` 只在 Host 已经用同一 request ID
+发布了新的 `COUNTRY_PREPARED` canonical row、而 Economy 仍提交旧的已 poll 副本时返回。
+Host 拒绝旧结果并重新入队当前 row；若 dispatch 仍指向同一 canonical row，身份不一致仍是
+真正的协议错误 `country_economy_asset_result_identity_mismatch`，继续 fatal。
 
 注意 `country_economy_fiscal_rejection_retry_pending` /
 `country_economy_fiscal_completion_retry_pending` 目前**不在**集合里（历史如此，未验证过

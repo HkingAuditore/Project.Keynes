@@ -410,7 +410,9 @@ AI 第一次让外国真正收税、开拓，因此暴露了几处原有的守�
 2. **结算格之外的税款丢失**（`economy_runtime_fiscal.cpp::commit_fiscal`）。
    税可能落在本周期滚动工作集之外的格子上，例如跨格贸易在目的地征收的交易税。所有税道在周期
    开启时清零，原来只汇总 `_epoch_settlement_cells`，这部分已扣付款方的钱就凭空消失。现在会把
-   非结算格的流量合计并入同国汇总和托管，但不改它们的请求历史。
+   非结算格的流量合计并入同国汇总和托管，但不改它们的请求历史。财政结算现在还从每条
+   domestic/tariff lane 直接重建 `collected + unused` 的 escrow 现金，而不是把展示汇总反过来
+   当作现金账本；这样跨格交易、补贴剩余额度和分片 continuation 都只会被结算一次。
 3. **资产背压原因被误判为 fatal**（`runtime_economy_pod.cpp::run_bound_stage`）。
    POD 手写的"对端暂停"列表漏了 `country_economy_asset_country_plan_pending` 和
    `country_economy_asset_territory_claim_pending`。Host 把这两个原因当作可重试暂停，POD 却置了

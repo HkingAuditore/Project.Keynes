@@ -439,6 +439,12 @@ worker 与依赖国家日的其它结算（例如开拓落地）。
 采购受每日预算、国库现金、市场库存与队列剩余成本限制，并计入需求 EMA、价格形成及现金/
 商品守恒。国家研究在下一日消费国库科技值，形成明确的一日经济边界延迟。v1 不允许跨国采购。
 
+这笔钱在支出侧可见：采购结算时按付款国累加进非税支出通道的第 0 槽
+（`non_tax_outflow` 的 `research_purchase`），由同一次 `commit_fiscal` 随五类税种一起
+发布（见 `tax-fiscal-runtime.md`），国库收支的支出构成、净额与日序列都包含它。采购按
+epoch 开冻结的市价成交，同时压低市场库存、抬高 `business_demand_ema` /
+`realized_withdrawal_ema`，所以涨价压力落在后续批次而不是本次成交价上。
+
 epoch 内重读实时采购策略（某国 `remaining` 归零或整轮结束时唤醒新需求）只在购买阶段
 （phase 0）或整轮结束后进行。phase 1 只把价格上限信号记到 `remaining` 上，不发生购买；
 2026-10-13 之前在 phase 1 也会重读，`remaining` 被信号扣到 0 就被当成“买完了”，实时需求未变
@@ -519,7 +525,9 @@ runtime 字段）。工作区高度低于 480 时 KPI 条切为单行 `dense` �
 是 `research_toast.tscn` 实例化的自绘卷宗便笺（最多两条，无运行时子节点），空闲时停止 `_process`。
 
 时代 HUD：顶部中央纸徽默认只露下半，hover 快速下探并略放大，点击才完整展开与打开国家概况。
-图标下方无重复时代名/晋升提示。国家概况显示本年累计 GDP、国库、人口和地块；
+图标下方无重复时代名/晋升提示。国家概况是七项指标格（年度 GDP、人均 GDP、CPI、PPI、地块、
+人民平均满意度、人民生活水平），指标下方隔一条笺线接续国家问题；问题条目是「纸贴图标 +
+短标签」，与指标格同列对齐、同用纸面排版，不再单独包长条卡片，图标也不叠加染色。
 奖励候选在概况下方用三张撕边纸片展示，移除全屏界面。`EraIndicatorViewModel` 依据
 目录里程碑索引读取已提交研究快照，state 5 才切换时代；state 3 的队列进度按原生定点成本
 计算，state 4 以 100% 等待 ACK。研究期间自顶向下覆盖 50% 不透明度金色，保持图标 alpha 轮廓。
@@ -581,7 +589,8 @@ KPI 卡各自按输入签名更新（时代标签按状态数组哈希缓存）�
 - PKEF v11 保存 Effect program hash、实例、事务/ACK 和时代奖励冻结计划；PKTR v6 保存突破
   与发展成就阈值累计、最后采样日、连续进度、来源游标和未派发效果。
 - PKEC v52 保存采购累计、科技值市场/在途状态、实践发布所需的经济权威、联合审计基线，
-  以及 D7 M1 的 Economy-owned fiscal peer escrow。
+  以及 D7 M1 的 Economy-owned fiscal peer escrow；PKEC v58 起财政段还为每国保存本批科研
+  采购现金（`research_purchase_cash`），用于国库支出侧与净额。
 - PKSV 恢复顺序保持 PKCN 在 PKEC 之前。
 - provider manifest 保存 `technology_industry_revision = 2`；缺失按 revision 1 预览，但禁止载入。
   PKCN/PKEF/PKTR 的旧 schema 或任何相关 catalog identity 变化统一返回

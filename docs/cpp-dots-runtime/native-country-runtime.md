@@ -182,7 +182,10 @@ GM 的“点击地块接管领土”不新增 opcode：`WorldRuntimeHost` 在会
 - `get_country_treasury_snapshot(handle)`：现金及非零物资 stable IDs/数量。
 - `get_country_tax_policy_snapshot(handle)`：默认率、稀疏覆盖、基础/Modifier 后有效率、
   政策版本和 economy catalog hash。
-- `get_country_fiscal_snapshot(handle)`：由 Economy Runtime 发布的五税种财政结果。
+- `get_country_fiscal_snapshot(handle)`：由 Economy Runtime 发布的五税种财政结果，另带
+  非税支出通道 `non_tax_outflow_kinds` / `non_tax_outflow`（科研采购、开拓采购、工程、
+  运河四槽，均为国库付给本地商人的现金），用于让国库收支的支出侧与净额同国库现金的
+  实际变化对齐。
 - `poll_country_events(after_event_id, limit)`：已提交国家事件并行列。
 
 热循环不得使用 Dictionary、Object、字符串查找或循环内分配；这些只出现在配置、命令边界、
