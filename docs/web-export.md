@@ -3,6 +3,11 @@
 本文记录 Web 导出的完整链路、两个必须对齐的编译约束，以及当前验证到什么程度。
 一键脚本是仓库根目录的 `Build-Web.cmd`，产物落在 `WebBuild/`。
 
+> `WebBuild/` **不进版本库**（pck 约 282 MB，超过 GitHub 单文件 100 MiB 硬限制），
+> 已加入 `.gitignore`；发布走 `.github/workflows/web-build.yml` 的 artifact / Release。
+> 新机器从零构建的完整前置条件与各平台工具链见
+> [`docs/build-from-source.md`](./build-from-source.md)。
+
 > 结论摘要：**可以导出，并且已经跑通到可玩状态**（threads 变体：主菜单 → 新游戏
 > → 世界生成 → 进入世界、HUD 与模拟正常）。`nothreads` 变体只能到"进入世界"98%
 > 就冻结，原因见 §6.1；所以预设固定 `variant/thread_support=true`。
@@ -30,12 +35,13 @@ Build-Web.cmd both            :: 两套都做
 Build-Web.cmd skip-native     :: 只重新导出（复用现有 .wasm）
 ```
 
-脚本做两件事：
+脚本做三件事：
 
 1. `gdext/` 里按下面的固定 flag 编 wasm side module；
-2. 用 Godot headless 导出 `Web` 预设到 `WebBuild/ProjectKeynes.html`。
+2. 在独立 headless 进程里预烘加载目录快照（见 §8，失败即中止导出）；
+3. 用 Godot headless 导出 `Web` 预设到 `WebBuild/ProjectKeynes.html`。
 
-日志：`tmp/web_native_<target>.log`、`tmp/web_export_release.log`。
+日志：`tmp/web_prebake.log`、`tmp/web_native_<target>.log`、`tmp/web_export_release.log`。
 
 本地起服务：
 
@@ -81,7 +87,8 @@ Godot 4.6 的 dlink 主模块自带 wasm exception tag，所以打开异常后�
 
 ## 4. 产物与体积
 
-`Build-Web.cmd` 导出后 `WebBuild/` 约 **345 MB**：
+`Build-Web.cmd` 导出后 `WebBuild/` 约 **345 MB**（本地产物，不提交；体积构成与瘦身方向见
+[`build-from-source.md` §7.1](./build-from-source.md#71-pck-现在-282-mb-花在哪实测目录明细)）：
 
 | 文件 | 体积 | 说明 |
 | --- | --- | --- |
@@ -202,4 +209,88 @@ python tools\verify_web_session.py --url http://127.0.0.1:8060/ProjectKeynes.htm
 - 启动检查：`artifacts/web_export_verify/web_boot.png`
 - 会话：`artifacts/web_export_threads/wait_final.png`（第 1 年 1 月 1 日，
   人口 40，满意度 100%，就业率 75%，详情面板「奈良 · 聚落」）
+
+## 8. 预烘加载目录（loading catalog prebake）
+
+新开游戏时要编译 effect / economy / technology / research / display 五套目录。
+实测（headless，win64）：`EffectDomainCatalog.build()` **4.47 s**，
+`EconomyCatalog.compile_native_catalog()` **1.71 s**，每次新游戏都付一次。
+
+`Project/project-keynes/data/loading_catalog_v1/*.res` 就是这些编译结果的快照，
+由 `scripts/game/loading_catalog_cache.gd`（`LoadingCatalogCache`）加载。
+命中与不命中的差距是数量级的：
+
+| 入口 | 未命中（现编译） | 命中（预烘快照） |
+| --- | --- | --- |
+| `LoadingCatalogCache.prepare()` | — | 0.24 s（含 860 条指纹校验 + 6 个 .res 反序列化） |
+| `EffectDomainCatalog.build()` | 4472.8 ms | **0.10 ms** |
+| `EconomyCatalog.compile_native_catalog()` | 1713.3 ms | **1.79 ms**（返回前仍 duplicate 一份 457 keys 字典） |
+
+也就是说**缓存不命中 = 每个新游戏多花 4–5 秒**（还伴随几百 MB 的 .tres 重新读取）；
+而且编辑器进程里编译会直接失败（见 §8.2），所以"快照过期"不是小事。
+
+### 8.1 预烘命令
+
+```bat
+:: 独立进程预烘，成功 exit 0 / 任何一步失败 exit 1
+"%GODOT%" --headless --path Project\project-keynes ^
+    --script res://tools/prebake_loading_catalogs.gd
+```
+
+输出示例（会打印每个 `.res` 的字节数、各阶段耗时、`sources.json` 条目数）：
+
+```
+[loading-catalog] economy     1921 ms  457 keys
+[loading-catalog] effect      5215 ms
+[loading-catalog] display      325 ms
+[loading-catalog] saved     economy.res              280342 bytes     18 ms
+...
+[loading-catalog] saved     sources.json             102713 bytes    143 ms  860 entries
+[loading-catalog] bake OK, 7 files, total 7982 ms
+[loading-catalog] PREBAKE OK: 860 entries, 8.0s
+```
+
+`Build-Web.cmd` 在导出前跑的就是这条命令（日志 `tmp/web_prebake.log`），
+`errorlevel 1` 直接 `exit /b 1` 中止，不导出——宁可构建失败，也不发一个
+"每次新开游戏慢 5 秒"的包。
+
+### 8.2 为什么必须独立进程、且必须早于导出
+
+`addons/loading_prebake/plugin.gd` 的 `_export_begin` 跑在编辑器进程里。
+这时 GDScript 的 scripting 是关闭的，非 `@tool` 脚本挂到 Resource 上只会得到
+占位脚本实例（`PlaceHolderScriptInstance`），`.tres` 里没有显式存储的属性
+（即脚本默认值）全部读成 `null`：
+
+- 表面现象：`economy_catalog.gd:91` 的 `need.use_tags as PackedStringArray`
+  在 `null` 上抛 `Invalid cast`，编译中断，`bake()` 返回 `ERR_INVALID_DATA`；
+  旧日志里就是 `ERROR: Loading catalog export bake failed: Invalid data`，
+  随后插件把 `sources.json` 写成 `{}`，让导出包 100% miss。
+- 更危险的是：即便绕开这处 cast，`satisfaction_weight_q16` 之类的默认值也会
+  静默变成 `0`，烘出一份"能加载但内容错"的快照。所以**编辑器进程内根本不允许
+  编译目录**，不是加个 try/catch 能解决的。
+
+现在的导出 hook 只做校验与打包：先比对 `sources.json` 与当前源文件 sha256；
+不一致就 `OS.execute` 拉起一个独立 headless 子进程重烘（同步阻塞，不需要
+await/线程）；仍然不一致就 `push_error` 给出可直接照抄的命令，并继续打包磁盘上
+已有的快照（**不再写 `{}`**），同时打印每个文件的字节数，便于在导出日志里确认。
+
+### 8.3 快照文件
+
+目录：`Project/project-keynes/data/loading_catalog_v1/`（7 个文件，均被 git 跟踪）
+
+| 文件 | 内容 | 当前大小 |
+| --- | --- | --- |
+| `economy.res` | `EconomyCatalog.compile_native_catalog()` | 280342 B（457 keys） |
+| `effect.res` | `EffectDomainCatalog.build()` 的 Effect IR | 237428 B |
+| `effect_extensions.res` | 上面 IR 的 `native_extensions`（family/era 扩展 IR） | 12276 B |
+| `display.res` | 经济面板显示名（profession/ethnicity/building/need/good/family） | 61165 B |
+| `technology.res` | `TechnologyCatalog.compile_native_catalog()` | 165209 B |
+| `research.res` | `ResearchSignalCatalog.compile_native_catalog()` | 6684 B |
+| `sources.json` | 860 条源文件 sha256 指纹（判定快照是否新鲜） | 102713 B |
+
+指纹覆盖 `res://scripts/{research,economy,family,effect,ideology,modifier,trigger,data,country}`
+与整个 `res://data/` 下的 `.gd/.tres/.json/.csv`。改过这些文件后必须重烘；
+否则 `LoadingCatalogCache.prepare()` 会打印
+`[loading-catalog] 预烘快照未命中：…（原因）` 并回退源编译器。
+
 
