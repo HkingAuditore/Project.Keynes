@@ -496,7 +496,16 @@ void fragment() {
 #else
 	bool far = elem_px < 3.0;
 #endif
-	VegSurf s = far ? vf_far(form, pe, ctx) : vf_eval(form, pe, ctx, false);
+	// GLSL ES 3.0 (the Compatibility/WebGL2 backend) rejects `?:` when the
+	// operands are structs, which the old one-liner `far ? vf_far(...) :
+	// vf_eval(...)` did. Branch instead so the desktop (SPIR-V) and web builds
+	// share one source.
+	VegSurf s = vf_empty();
+	if (far) {
+		s = vf_far(form, pe, ctx);
+	} else {
+		s = vf_eval(form, pe, ctx, false);
+	}
 
 	vec3 L = v_h.xyz;
 	vec4 daylight = v_i;

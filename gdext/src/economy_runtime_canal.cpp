@@ -528,6 +528,9 @@ bool NativeEconomyRuntime::apply_canal_build_command(
             ? "canal_treasury_preflight_drift" : error.c_str());
         return true;
     }
+    // 运河缺料同样由国库按市价付款给本地商人；这笔现金也要进非税支出。
+    note_non_tax_outflow(static_cast<uint64_t>(cmd.target_handle),
+        NON_TAX_CANAL, committed_cash);
     for (int i = 0; i < 2; ++i) {
         _construction_goods_consumed = saturating_add(_construction_goods_consumed,
             quote.material_quantities[i], _saturation_count);

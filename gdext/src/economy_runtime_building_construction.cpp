@@ -351,6 +351,10 @@ bool NativeEconomyRuntime::apply_treasury_sponsored_build_command(
             treasury_used, market_used, total_cash, committed_cash, error))
         return reject(error.empty() ? "construction_treasury_preflight_drift"
                                     : error.c_str());
+    // 国库按市价为缺料付款：现金付给本地商人，工程本身不提现，所以这笔钱只会
+    // 从国库消失而没有税种凭证。记进非税支出，避免「支出」漏账。
+    note_non_tax_outflow(static_cast<uint64_t>(cmd.target_handle),
+        NON_TAX_CONSTRUCTION, committed_cash);
 
     for (size_t i = 0; i < good_ids.size(); ++i) {
         const int64_t lane = market_store().index(market, good_ids[i]);

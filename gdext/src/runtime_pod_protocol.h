@@ -759,6 +759,7 @@ inline bool runtime_country_asset_pending_reason(const std::string &reason) {
            reason == "country_economy_asset_rejection_retry_pending" ||
            reason == "country_economy_asset_completion_retry_pending" ||
            reason == "country_economy_fiscal_terminal_retry_pending" ||
+           reason == "country_economy_asset_result_identity_retry_pending" ||
            reason == "country_economy_asset_country_plan_pending" ||
            reason == "country_economy_asset_territory_claim_pending";
 }

@@ -5046,9 +5046,21 @@ bool NativeSimulationHost::submit_country_economy_asset_result(
         result.continuation_index != expected.continuation_index ||
         result.day != expected.day ||
         result.country_slot != expected.country_slot ||
-        result.target_slot != expected.target_slot)
+        result.target_slot != expected.target_slot) {
+        // A Country PREPARED transition may replace the CREATED request after
+        // the peer has already polled its old copy. The old result is then
+        // stale, but no store has been mutated and the request can be safely
+        // requeued against the canonical prepared identity. Keep genuine
+        // mismatches on an in-flight dispatch fatal; only the transition race
+        // is backpressure.
+        const bool dispatch_is_current =
+            _country_economy_asset_dispatched.find(result.request_id) !=
+            _country_economy_asset_dispatched.end();
         return reject(RuntimeEconomyAssetProtocolError::RESULT_IDENTITY_MISMATCH,
-                      "country_economy_asset_result_identity_mismatch");
+                      dispatch_is_current
+                          ? "country_economy_asset_result_identity_mismatch"
+                          : "country_economy_asset_result_identity_retry_pending");
+    }
     if (result.country_generation != expected.country_generation ||
         result.peer_generation != expected.peer_generation ||
         result.committed_peer_generation < result.peer_generation)
@@ -5322,6 +5334,81 @@ bool NativeSimulationHost::country_economy_asset_protocol_self_test(
             mismatched_terminal, result_error) ||
         result_error != "country_economy_asset_result_duplicate_mismatch") {
         error = "country_economy_asset_self_test_terminal_guard_failed";
+        return false;
+    }
+
+    // A stale peer result after the CREATED->COUNTRY_PREPARED transition is
+    // retryable: the old polled copy is no longer the canonical request, and
+    // no asset was committed by the rejected message.
+    auto transition_probe_host = std::make_unique<NativeSimulationHost>();
+    transition_probe_host->_country_worker_session_epoch = request.session_epoch;
+    RuntimeEconomyAssetRequest transition_probe;
+    transition_probe.operation = RuntimeEconomyAssetOperation::RESEARCH_PURCHASE;
+    transition_probe.state = RuntimeEconomyAssetState::CREATED;
+    transition_probe.session_epoch = request.session_epoch;
+    transition_probe.transaction_id = 7202;
+    transition_probe.request_id = 7202;
+    transition_probe.origin_domain = static_cast<uint32_t>(RuntimeDomainId::ECONOMY);
+    transition_probe.origin_epoch = request.origin_epoch;
+    transition_probe.origin_stage = request.origin_stage;
+    transition_probe.day = request.day;
+    transition_probe.operation_sequence = 7202;
+    transition_probe.country_handle = request.country_handle;
+    transition_probe.country_slot = -1;
+    transition_probe.target_slot = request.target_slot;
+    transition_probe.requested_quantity = 1;
+    transition_probe.requested_cash = 1;
+    transition_probe.requested_goods_total = 1;
+    if (!transition_probe_host->publish_country_economy_asset_requests(
+            {transition_probe}, publish_error)) {
+        error = "country_economy_asset_self_test_transition_seed_failed";
+        return false;
+    }
+    RuntimeEconomyAssetRequest stale_transition;
+    if (!transition_probe_host->poll_country_economy_asset_request(stale_transition)) {
+        error = "country_economy_asset_self_test_transition_poll_failed";
+        return false;
+    }
+    RuntimeEconomyAssetRequest prepared_transition = stale_transition;
+    prepared_transition.state = RuntimeEconomyAssetState::COUNTRY_PREPARED;
+    prepared_transition.country_slot = request.country_slot;
+    prepared_transition.country_generation = request.country_generation;
+    prepared_transition.prepared_quantity = 1;
+    prepared_transition.reserved_cash = 1;
+    if (!transition_probe_host->publish_country_economy_asset_requests(
+            {prepared_transition}, publish_error)) {
+        error = "country_economy_asset_self_test_transition_publish_failed";
+        return false;
+    }
+    RuntimeEconomyAssetResult stale_transition_result;
+    stale_transition_result.code = RuntimeEconomyAssetResultCode::COMPLETED;
+    stale_transition_result.state = RuntimeEconomyAssetState::COMPLETED;
+    stale_transition_result.accepted = 1;
+    stale_transition_result.session_epoch = stale_transition.session_epoch;
+    stale_transition_result.transaction_id = stale_transition.transaction_id;
+    stale_transition_result.request_id = stale_transition.request_id;
+    stale_transition_result.operation = stale_transition.operation;
+    stale_transition_result.day = stale_transition.day;
+    stale_transition_result.country_slot = stale_transition.country_slot;
+    stale_transition_result.target_slot = stale_transition.target_slot;
+    stale_transition_result.country_generation = prepared_transition.country_generation;
+    stale_transition_result.peer_generation = prepared_transition.peer_generation;
+    stale_transition_result.committed_peer_generation = prepared_transition.peer_generation;
+    stale_transition_result.committed_quantity = 1;
+    stale_transition_result.committed_cash = 1;
+    if (transition_probe_host->submit_country_economy_asset_result(
+            stale_transition_result, result_error) ||
+        result_error != "country_economy_asset_result_identity_retry_pending") {
+        error = result_error.empty()
+            ? "country_economy_asset_self_test_transition_retry_missing"
+            : result_error;
+        return false;
+    }
+    if (!transition_probe_host->requeue_country_economy_asset_request(
+            stale_transition.request_id, publish_error)) {
+        error = publish_error.empty()
+            ? "country_economy_asset_self_test_transition_requeue_failed"
+            : publish_error;
         return false;
     }
     const RuntimeEconomyAssetProtocolStatus status =

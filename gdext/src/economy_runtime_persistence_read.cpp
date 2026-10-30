@@ -33,8 +33,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    // v55/v56 migrate to v57 by starting the X13a counters at zero.
-    if (schema != SCHEMA_VERSION && schema != 56 && schema != 55) {
+    // v55/v56 migrate to v57 by starting the X13a counters at zero; v57
+    // migrates to v58 by starting the research procurement outflow at zero.
+    if (schema != SCHEMA_VERSION && schema != 57 && schema != 56 && schema != 55) {
         error = "economy_save_price_v6_requires_new_game";
         return false;
     }
@@ -1640,6 +1641,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             _fiscal_cumulative_paid.resize(size, 0);
         };
         ensure_summary_size(summary_count);
+        _fiscal_last_non_tax_outflow.resize(
+            static_cast<size_t>(country_count) *
+                static_cast<size_t>(NON_TAX_KIND_COUNT), 0);
         const auto read_group = [&](auto &values,
                                     int32_t country) {
             for (int32_t kind = 0;
@@ -1678,7 +1682,29 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 error = "save_fiscal_record_invalid";
                 return false;
             }
+            // Schema 58 stores the batch's non-tax treasury outflows beside the
+            // escrow balance: research procurement, expedition cargo,
+            // construction and canal, one slot per kind. Older saves migrate to
+            // zero, which is exactly what they displayed before the field
+            // existed.
+            int64_t non_tax_outflow[NON_TAX_KIND_COUNT] = {0, 0, 0, 0};
+            if (_restore.schema_version >= 58) {
+                for (int32_t kind = 0; kind < NON_TAX_KIND_COUNT; ++kind) {
+                    if (!read_le(bytes, cursor, non_tax_outflow[kind]) ||
+                        non_tax_outflow[kind] < 0) {
+                        error = "save_fiscal_record_invalid";
+                        return false;
+                    }
+                }
+            }
             _fiscal_escrow_by_country.write_scalar(static_cast<size_t>(country), escrow, market_mutation_sink());
+            for (int32_t kind = 0; kind < NON_TAX_KIND_COUNT; ++kind) {
+                const size_t lane = static_cast<size_t>(country) *
+                    static_cast<size_t>(NON_TAX_KIND_COUNT) +
+                    static_cast<size_t>(kind);
+                _fiscal_last_non_tax_outflow.write_scalar(
+                    lane, non_tax_outflow[kind], market_mutation_sink());
+            }
             ++_restore.restored_fiscal;
         }
         _restore.fiscal_seen = true;

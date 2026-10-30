@@ -661,7 +661,8 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
     }
     if (_save.section == SAVE_SECTION_FISCAL) {
         constexpr int32_t record_bytes =
-            4 + NativeCountryRuntime::TAX_KIND_COUNT * 12 * 8 + 8;
+            4 + NativeCountryRuntime::TAX_KIND_COUNT * 12 * 8 + 8 +
+            NON_TAX_KIND_COUNT * 8;
         const int32_t country_count = _save.fiscal_country_count;
         const int32_t max_records = std::max(
             1, (budget - 16) / record_bytes);
@@ -697,6 +698,17 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                 static_cast<size_t>(country) < _fiscal_escrow_by_country.size()
                     ? _fiscal_escrow_by_country[static_cast<size_t>(country)]
                     : 0);
+            // Schema 58: the batch's non-tax treasury outflows (research
+            // procurement, expedition cargo, construction, canal), one slot per
+            // kind in NonTaxOutflow order.
+            for (int32_t kind = 0; kind < NON_TAX_KIND_COUNT; ++kind) {
+                const size_t lane = static_cast<size_t>(country) *
+                    static_cast<size_t>(NON_TAX_KIND_COUNT) +
+                    static_cast<size_t>(kind);
+                append_le<int64_t>(payload,
+                    lane < _fiscal_last_non_tax_outflow.size()
+                        ? _fiscal_last_non_tax_outflow[lane] : 0);
+            }
         }
         if (_save.fiscal_cursor >= country_count) ++_save.section;
         return make_save_chunk(SAVE_SECTION_FISCAL,

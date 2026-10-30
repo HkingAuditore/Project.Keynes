@@ -1209,6 +1209,11 @@ public:
     // Static, generation-only research evidence. Input/output are packed arrays;
     // no MapData/Object access or per-cell Variant allocation occurs in the loop.
     godot::Dictionary run_research_signal_generation_pass(const godot::Dictionary &knobs);
+    // 生成期自然资源矿藏储量（O(资源 × cell) 的适宜度扫描 + 排名分配）。
+    // 逐行复刻 map_generator.gd `_bootstrap_natural_resource_deposits()`：
+    // 输入是 cell SoA + 每种资源的参数表，输出每种资源一条 reserve Float32 列。
+    // 噪声用 GDScript 建好的 Ref<Noise> 传入，保证与旧路径同值。
+    godot::Dictionary run_resource_deposit_pass(const godot::Dictionary &knobs);
     // Landmass/province topology, origin-habitat fill + niche pack, and daily occupancy.
     // Knobs in / packed arrays out; occupancy is the persisted presence bitset.
     godot::Dictionary run_bio_province_pass(const godot::Dictionary &knobs);

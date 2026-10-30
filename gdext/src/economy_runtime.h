@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <algorithm>
 #include <array>
@@ -220,7 +220,10 @@ public:
     // preselected founding effects.
     // 56: player-reviewed branch splits and persistent split lineage.
     // 57: X13a climate derived columns and persistent dry/hazard counters.
-    static constexpr int32_t SCHEMA_VERSION = 57;
+    // 58: the fiscal section also stores the non-tax research procurement cash
+    //     outflow per country, so 国库支出 survives save/restore instead of
+    //     reading zero for the batch it was paid in.
+    static constexpr int32_t SCHEMA_VERSION = 58;
     static constexpr uint32_t BUILDING_KIT_ROLE_TRADE = 1u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CONSTRUCTION = 2u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CLOTHING_INPUT = 4u;
@@ -1742,6 +1745,9 @@ private:
         uint64_t pending_request_id = 0;
         bool host_peer = false;
         bool market_applied = false;
+        // Set once the treasury cash paid for this cargo is booked as a non-tax
+        // fiscal outflow: phase 4 can be retried on country backpressure.
+        bool cash_booked = false;
         size_t merchant_cursor = 0;
         int64_t merchant_population = 0;
         int64_t merchant_population_prefix = 0;
@@ -7155,6 +7161,28 @@ private:
     EconomyOwnedColumn<int64_t> _fiscal_cumulative_collected{{{16, 20}, "native_columns.fiscal_cumulative_collected", EconomyFieldEncoding::I64, 8}};
     EconomyOwnedColumn<int64_t> _fiscal_cumulative_requests{{{16, 22}, "native_columns.fiscal_cumulative_requests", EconomyFieldEncoding::I64, 8}};
     EconomyOwnedColumn<int64_t> _fiscal_cumulative_paid{{{16, 21}, "native_columns.fiscal_cumulative_paid", EconomyFieldEncoding::I64, 8}};
+    // Non-tax treasury outflows. Every one of these pays treasury cash OUT to a
+    // merchant (or into an expedition) without being a tax kind, so none of them
+    // could ever appear on the five-lane fiscal grid. They share one
+    // country x kind lane instead, published beside the tax lanes so 国库支出
+    // reconciles with the treasury the player actually owns.
+    enum NonTaxOutflow : int32_t {
+        NON_TAX_RESEARCH_PURCHASE = 0,
+        NON_TAX_EXPEDITION_PROCUREMENT = 1,
+        NON_TAX_CONSTRUCTION = 2,
+        NON_TAX_CANAL = 3,
+        NON_TAX_KIND_COUNT = 4,
+    };
+    EconomyOwnedColumn<int64_t> _fiscal_last_non_tax_outflow{{{16, 60}, "persisted_columns.fiscal_last_non_tax_outflow", EconomyFieldEncoding::I64, 8}};
+    // Outflows booked since the last published batch, keyed by generation-safe
+    // country handle rather than by epoch country index: family expedition
+    // procurement settles at the idle day boundary, when the country set may
+    // already have changed. commit_fiscal drains this buffer into the batch.
+    struct PendingNonTaxOutflow {
+        uint64_t country_handle = 0;
+        int64_t cash[NON_TAX_KIND_COUNT] = {0, 0, 0, 0};
+    };
+    std::vector<PendingNonTaxOutflow> _pending_non_tax_outflow;
     FiscalReservationContinuation _fiscal_reservation_continuation;
     FiscalSettlementContinuation _fiscal_settlement_continuation;
     // Tariffs stay on a sparse cell x {import, export} lane separate from the
@@ -8172,6 +8200,11 @@ private:
     void settle_absolute_daily_taxes_for_cell(int32_t cell,
                                               int64_t &saturation_count);
     bool commit_fiscal(std::string &error);
+    // Books one non-tax treasury outflow for the batch summary. `country_handle`
+    // is the generation-safe payer handle; 0 is a no-op so callers may pass an
+    // unresolved payer without inventing an attribution.
+    void note_non_tax_outflow(uint64_t country_handle, int32_t kind, int64_t cash);
+    int32_t epoch_country_index(uint64_t handle) const;
     bool advance_fiscal_reservation(std::string &error);
     bool advance_fiscal_settlement(std::string &error);
     int32_t frozen_tax_rate(int32_t cell, int32_t kind, int32_t item) const;
@@ -9416,6 +9449,7 @@ private:
                     case 57: return _cell_previous_hazard_mask.registry();
                     case 58: return _cell_weather_type.registry();
                     case 59: return _cell_cover.registry();
+                    case 60: return _fiscal_last_non_tax_outflow.registry();
                     default: throw std::logic_error("economy_worker_native_column_unregistered");
                 }
             case 15: return _metadata_changes;

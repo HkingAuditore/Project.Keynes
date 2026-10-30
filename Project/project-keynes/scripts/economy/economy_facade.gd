@@ -17,8 +17,9 @@ const FamilyBuffCopyScript = preload("res://scripts/family/family_buff_copy.gd")
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 const TriggerCatalogScript = preload("res://scripts/trigger/trigger_catalog.gd")
 ## 与原生 SAT_DIM_* 枚举同序，供 Inspector 与溯源面板直接展示。
+## 第 0 维是生存（口粮 + 御寒），不叫「温饱」——「温饱」是生活水平七档里的档位词。
 const SATISFACTION_DIMENSION_NAMES := [
-	"温饱", "基本生活", "舒适", "奢侈", "收入增长", "储蓄", "税负", "社会发展",
+	"生存", "基本生活", "舒适", "奢侈", "收入增长", "储蓄", "税负", "社会发展",
 ]
 
 enum Opcode {

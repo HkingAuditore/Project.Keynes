@@ -632,6 +632,26 @@ Dictionary NativeEconomyRuntime::fiscal_snapshot(int64_t country_handle) const {
     out["cumulative_subsidy_requested"] =
         pack(_fiscal_cumulative_requests);
     out["cumulative_subsidy_paid"] = pack(_fiscal_cumulative_paid);
+    // Non-tax treasury outflows for the same batch, in NonTaxOutflow order:
+    // research procurement, expedition cargo, construction materials, canal
+    // materials. All pay treasury cash to local merchants without being a tax
+    // kind, so the UI sums them into 支出 and the 国库收支 net stays equal to the
+    // treasury the player actually owns.
+    PackedStringArray non_tax_kinds;
+    for (const char *kind : {"research_purchase", "expedition_procurement",
+                             "construction", "canal"})
+        non_tax_kinds.push_back(kind);
+    PackedInt64Array non_tax_outflow;
+    non_tax_outflow.resize(NativeEconomyRuntime::NON_TAX_KIND_COUNT);
+    for (int32_t kind = 0; kind < NativeEconomyRuntime::NON_TAX_KIND_COUNT;
+         ++kind) {
+        const size_t index = static_cast<size_t>(country) *
+            NativeEconomyRuntime::NON_TAX_KIND_COUNT + static_cast<size_t>(kind);
+        non_tax_outflow[kind] = index < _fiscal_last_non_tax_outflow.size()
+            ? _fiscal_last_non_tax_outflow[index] : 0;
+    }
+    out["non_tax_outflow_kinds"] = non_tax_kinds;
+    out["non_tax_outflow"] = non_tax_outflow;
     const size_t import_summary = static_cast<size_t>(country) *
         NativeCountryRuntime::TAX_KIND_COUNT + NativeCountryRuntime::TAX_IMPORT;
     const size_t export_summary = static_cast<size_t>(country) *

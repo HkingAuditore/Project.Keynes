@@ -1557,6 +1557,29 @@ bool NativeEconomyRuntime::credit_family_expedition_procurement_merchants(
         error = "colonization_treasury_peer_distribution_drift";
         return false;
     }
+    // 开拓派遣的采购同样是国库支出：现金付给本地商人换取远征货物，货进国库后
+    // 再随商队带出（那一腿只有货物、没有现金）。它也不是税种，所以要单独记进
+    // 非税支出，否则国库现金在掉而「支出」里看不到它。
+    // 相位 4 可能因 country 转账背压被重试，用 cash_booked 保证只记一次。
+    if (c.cash > 0 && !c.cash_booked) {
+        // 付款方按 generation-safe handle 记：这次结账可能发生在两批之间的空闲
+        // 边界，那时 epoch 国家索引已经不可靠。
+        uint64_t payer = c.expedition >= 0 && c.expedition <
+                static_cast<int32_t>(family_expeditions_store().country_handle.size())
+            ? static_cast<uint64_t>(
+                  family_expeditions_store().country_handle[c.expedition]) : 0;
+        if (payer == 0 && c.source_cell >= 0 &&
+            c.source_cell < static_cast<int32_t>(_epoch_cell_country.size())) {
+            const int32_t source_country =
+                _epoch_cell_country[static_cast<size_t>(c.source_cell)];
+            if (source_country >= 0 && source_country <
+                    static_cast<int32_t>(_epoch_country_handles.size())) {
+                payer = _epoch_country_handles[static_cast<size_t>(source_country)];
+            }
+        }
+        note_non_tax_outflow(payer, NON_TAX_EXPEDITION_PROCUREMENT, c.cash);
+        c.cash_booked = true;
+    }
     return true;
 }
 

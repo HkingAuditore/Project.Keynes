@@ -646,6 +646,9 @@ func is_day_night_enabled() -> bool:
 
 func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void:
 	_runtime_ready_for_ticks = false
+	# 生成后阶段（渲染绑定 + 植被层 + 建筑外观）的进度游标复位：
+	# 0.0 表示"本次生成还没进入后期阶段"，_loading_visual_step 在复位前不会发进度。
+	_visual_progress = 0.0
 	_clear_climate_capacity_pending()
 	_runtime_commit_generation = 0
 	_runtime_commit_day = -1
@@ -746,7 +749,10 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 	if _world_clock != null:
 		_generator.set_world_clock_ref(_world_clock)
 	_rebuild_view_adapter()
-	generation_progress.emit("upload",0.97)
+	# 生成器已返回（bake_progress "done"=96%）：从这里开始的渲染绑定、植被层构建、
+	# 建筑外观目录刷新原先完全不发进度，进度条会钉在 98%。改由单调游标推进
+	# 0.96 → 0.99（+ 逐层回调），1.0 仍然只由 hide_completed() 负责。
+	_advance_visual_progress("bind", true)
 	await _bind_renderer_and_camera(safe_area)
 	if not is_inside_tree():
 		return
@@ -4550,7 +4556,18 @@ func _bind_renderer_and_camera(safe_area: Rect2) -> void:
 	if ext != null and _renderer.has_method("set_world_ext"):
 		_renderer.set_world_ext(ext)
 	_loading_visual_step("_renderer.set_map(_current_map, _world_data)")
+	# 植被层构建（set_map_cooperative → _rebuild_cooperative）在这里面跑 14+ 层，
+	# 逐层回调转成本次加载的进度（stage="visual"）。只在加载边界连接/断开，
+	# 运行期重建不会误发进度。
+	var layer_progress := Callable(self, "_on_renderer_loading_layer_progress")
+	var layer_signal_ok: bool = _renderer.has_signal("loading_layer_progress")
+	if layer_signal_ok and not _renderer.is_connected(
+			"loading_layer_progress", layer_progress):
+		_renderer.connect("loading_layer_progress", layer_progress)
 	await _renderer.set_map_cooperative(_current_map, _world_data)
+	if layer_signal_ok and _renderer.is_connected(
+			"loading_layer_progress", layer_progress):
+		_renderer.disconnect("loading_layer_progress", layer_progress)
 	if _map_overlay_layer != null:
 		_map_overlay_layer.set_bounds(_renderer.get_world_bounds())
 		_map_overlay_layer.set_horizontal_wrap(map_wrap_period_x())
@@ -5256,11 +5273,45 @@ func _exit_tree() -> void:
 var _loading_visual_usec := 0
 var _loading_visual_name := ""
 func _loading_visual_step(label: String) -> void:
+	# 这条日志行打印的是"上一步"的耗时；进度同理：每次调用时把上一步标记为完成，
+	# 把生成后阶段的游标向前推一格。label 本身只进日志，UI 文案用固定 stage key。
+	_advance_visual_progress("bind")
 	var now:=Time.get_ticks_usec()
 	if _loading_visual_usec>0:
 		print("[loading-visual-substep] %s %.1fms" % [_loading_visual_name,float(now-_loading_visual_usec)/1000.0])
 	_loading_visual_usec=now
 	_loading_visual_name=label
+
+
+# ─── 生成后阶段进度（绑渲染器 → 植被图层 → 建筑外观）─────────────────────────
+# 生成器返回后到 hide_completed() 之间没有任何 bake_progress，原先只有一次
+# "upload"=98% 就静默到 100%。这里用与生成器同款的单调几何游标：
+# 每推进一步向 VISUAL_PROGRESS_CEIL 逼近固定比例，严格单调、永不回退、
+# 也永远到不了 1.0（100% 只属于 WorldLoadingOverlay.hide_completed()）。
+# fraction 语义是"UI 完成度绝对值"，overlay 的 ABSOLUTE_STAGES 直接照搬。
+const VISUAL_PROGRESS_START := 0.96
+const VISUAL_PROGRESS_CEIL := 0.99
+const VISUAL_PROGRESS_GAIN := 0.09
+var _visual_progress := 0.0
+
+func _advance_visual_progress(stage: String, begin: bool = false) -> void:
+	if _visual_progress <= 0.0:
+		# 0.0 = 本次生成还没进入后期阶段（或已复位）：不打扰 overlay 的现有进度。
+		# 只有 generate_world 里"生成器已返回"那一次调用带 begin=true。
+		if not begin:
+			return
+		_visual_progress = VISUAL_PROGRESS_START
+	else:
+		_visual_progress = minf(VISUAL_PROGRESS_CEIL,
+			_visual_progress + (VISUAL_PROGRESS_CEIL - _visual_progress) * VISUAL_PROGRESS_GAIN)
+	generation_progress.emit(stage, _visual_progress)
+
+
+## HexRenderer._rebuild_cooperative() 每建完一个植被层回调一次。
+## 有些画质档位会构建 14+ 层，逐层推进才不会在 98% 处长时间停住。
+func _on_renderer_loading_layer_progress(_layer_index: int, _layer_count: int,
+		_layer_name: String) -> void:
+	_advance_visual_progress("visual")
 
 
 func _on_annual_report_ready(report_id: int) -> void:

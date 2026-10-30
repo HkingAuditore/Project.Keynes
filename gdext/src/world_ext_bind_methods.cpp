@@ -1068,6 +1068,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::restuff_generation_river_cache);
     ClassDB::bind_method(D_METHOD("run_research_signal_generation_pass", "knobs"),
                          &DCWorldExt::run_research_signal_generation_pass);
+    ClassDB::bind_method(D_METHOD("run_resource_deposit_pass", "knobs"),
+                         &DCWorldExt::run_resource_deposit_pass);
     ClassDB::bind_method(D_METHOD("run_bio_province_pass", "knobs"),
                          &DCWorldExt::run_bio_province_pass);
     ClassDB::bind_method(D_METHOD("run_bio_seed_pass", "knobs"),

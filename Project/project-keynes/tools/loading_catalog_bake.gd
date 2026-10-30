@@ -7,6 +7,39 @@ const Cache = preload("res://scripts/game/loading_catalog_cache.gd")
 const Facade = preload("res://scripts/economy/economy_facade.gd")
 const Technology = preload("res://scripts/economy/technology_catalog.gd")
 
+## 临时诊断入口（PK_PREBAKE_DIAG=1 时由插件在编辑器上下文调用）。
+static func diagnose() -> void:
+	print("[diag] editor_feature=%s editor_hint=%s" % [str(OS.has_feature("editor")), str(Engine.is_editor_hint())])
+	var script_path := "res://scripts/data/need_profile.gd"
+	var need_path := "res://data/economy/needs/clothing.tres"
+	var s1 = load(script_path)
+	print("[diag] load() script id=%d can_instantiate=%s" % [
+		s1.get_instance_id(), str(s1.can_instantiate())])
+	var fresh = s1.new()
+	print("[diag] new() use_tags_type=%d" % typeof(fresh.get("use_tags")))
+	var first = ResourceLoader.load(need_path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	var s2 = first.get_script()
+	print("[diag] res script id=%d same_as_load=%s can_instantiate=%s path=%s" % [
+		s2.get_instance_id(), str(s1 == s2), str(s2.can_instantiate()), s2.resource_path])
+	var reload_err = s2.reload()
+	print("[diag] reload err=%s can_instantiate=%s" % [
+		error_string(reload_err), str(s2.can_instantiate())])
+	var third = ResourceLoader.load(need_path, "", ResourceLoader.CACHE_MODE_REPLACE)
+	print("[diag] replace-mode use_tags_type=%d value=%s can_instantiate=%s" % [
+		typeof(third.get("use_tags")), str(third.get("use_tags")),
+		str((third.get_script() as GDScript).can_instantiate())])
+	var needs: Array = Economy._load_resources(Economy.NEED_DIR)
+	print("[diag] needs_loaded=%d first_type=%d" % [needs.size(), typeof(needs[0].get("use_tags"))])
+	var tree := Engine.get_main_loop() as SceneTree
+	for i in range(30):
+		await tree.process_frame
+	var needs_later: Array = Economy._load_resources(Economy.NEED_DIR)
+	print("[diag] after_30_frames first_type=%d" % typeof(needs_later[0].get("use_tags")))
+	var t := Time.get_ticks_usec()
+	var eco := Economy.compile_native_catalog()
+	print("[diag] compile ms=%.1f ok=%s keys=%d reason=%s" % [
+		(Time.get_ticks_usec() - t) / 1000.0, str(eco.get("ok", false)), eco.size(), str(eco.get("reason", ""))])
+
 static func bake() -> Error:
 	Cache.invalidate()
 	DirAccess.make_dir_recursive_absolute(Cache.DIRECTORY)

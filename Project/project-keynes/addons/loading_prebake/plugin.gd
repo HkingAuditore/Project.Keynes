@@ -22,6 +22,9 @@ var _catalog_export: CatalogExport
 func _enter_tree() -> void:
 	_catalog_export=CatalogExport.new()
 	add_export_plugin(_catalog_export)
+	if OS.get_environment("PK_PREBAKE_DIAG") == "1":
+		var baker = load("res://tools/loading_catalog_bake.gd")
+		baker.call_deferred("diagnose")
 
 func _exit_tree() -> void:
 	remove_export_plugin(_catalog_export)
