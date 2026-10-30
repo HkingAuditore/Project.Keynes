@@ -1,0 +1,130 @@
+name: Web Build
+
+# WebBuild/ 不再进版本库（pck 约 282 MB，超过 GitHub 单文件 100 MiB 硬限制），
+# 所以 Web 包在这里构建，产物走 artifact；推 v* tag 时再附加到 Release。
+#
+# 版本号集中在本文件顶部的 env: 里，升级 Godot / Emscripten 只改这里。
+# 这套流程与本地 `Build-Web.cmd` 一一对应（同一份脚本、同一组编译开关）。
+
+on:
+  workflow_dispatch:
+    inputs:
+      native:
+        description: "是否重编 wasm side module"
+        type: choice
+        options:
+          - rebuild
+          - skip-native
+        default: rebuild
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  GODOT_VERSION: "4.6.2"
+  GODOT_RELEASE: "4.6.2-stable"
+  EM_VERSION: "4.0.20"
+
+jobs:
+  web:
+    name: Godot Web export
+    runs-on: windows-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout（含 godot-cpp 子模块）
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+          lfs: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install SCons
+        run: python -m pip install --disable-pip-version-check scons
+
+      # emsdk 装到仓库根的 emsdk/，因为 Build-Web.cmd 就是从那里 source 的。
+      - name: Cache Emscripten SDK
+        uses: actions/cache@v4
+        with:
+          path: emsdk
+          key: emsdk-${{ env.EM_VERSION }}-v1
+
+      - name: Install Emscripten ${{ env.EM_VERSION }}
+        shell: cmd
+        run: |
+          if not exist emsdk\emsdk.bat git clone --depth 1 https://github.com/emscripten-core/emsdk.git emsdk
+          cd emsdk
+          call emsdk.bat install %EM_VERSION%
+          call emsdk.bat activate %EM_VERSION%
+          call emsdk_env.bat
+          emcc -dumpversion
+
+      - name: Download Godot ${{ env.GODOT_RELEASE }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $rel = $env:GODOT_RELEASE
+          $base = "https://github.com/godotengine/godot/releases/download/$rel"
+
+          Invoke-WebRequest -Uri "$base/Godot_v${rel}_win64.exe.zip" -OutFile godot.zip
+          Expand-Archive godot.zip -DestinationPath godot-bin -Force
+          $exe = (Get-ChildItem godot-bin -Filter *.exe -Recurse | Select-Object -First 1).FullName
+          "GODOT_BIN=$exe" >> $env:GITHUB_ENV
+          Write-Host "GODOT_BIN=$exe"
+
+      - name: Install export templates
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $rel = $env:GODOT_RELEASE
+          $base = "https://github.com/godotengine/godot/releases/download/$rel"
+
+          Invoke-WebRequest -Uri "$base/Godot_v${rel}_export_templates.tpz" -OutFile templates.zip
+          Expand-Archive templates.zip -DestinationPath templates-unpacked -Force
+
+          $dest = Join-Path $env:APPDATA "Godot\export_templates\$($env:GODOT_VERSION).stable"
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Copy-Item (Join-Path "templates-unpacked\templates" "*") $dest -Recurse -Force
+          Get-ChildItem $dest -Filter "web*" | Select-Object -ExpandProperty Name
+
+      - name: Build and export
+        shell: cmd
+        env:
+          MODE_ARG: ${{ github.event.inputs.native == 'skip-native' && 'skip-native' || '' }}
+        run: |
+          Build-Web.cmd %MODE_ARG%
+          if errorlevel 1 exit /b 1
+
+      - name: Report artifact sizes
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path WebBuild) {
+            Get-ChildItem WebBuild -File | Sort-Object Length -Descending |
+              ForEach-Object { "{0,10:N2} MB  {1}" -f ($_.Length / 1MB), $_.Name }
+          } else {
+            Write-Warning "WebBuild/ 不存在——构建在上一步就失败了，见日志。"
+          }
+
+      - name: Upload WebBuild artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProjectKeynes-Web-${{ github.sha }}
+          path: WebBuild/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: WebBuild/*
+          fail_on_unmatched_files: false
