@@ -102,16 +102,22 @@ func _draw() -> void:
 	elif not compact:
 		value_size = 30
 	var shown := _money(_displayed_value())
-	if _text_width(shown, value_size, "serif") > text_width:
+	# 宽度按「金币 + 数字」整段量：图标也是主数字的一部分，不能只算字宽。
+	if _money_width(shown, value_size, "serif") > text_width:
 		value_size = 22
-	_text(Vector2(PAD_LEFT, h - 28.0), _fit_text(shown, value_size, text_width, "serif"),
+	_money_text(Vector2(PAD_LEFT, h - 28.0),
+		_fit_text(shown, value_size, text_width - MoneyDisplay.slot_width(value_size), "serif"),
 		value_size, _value_color(), "serif")
 
-	# 人均 / 日均
-	var detail := _detail_text()
+	# 人均 / 日均：整句混排，金额处插金币，读起来和主数字同单位。
+	var detail := _detail_runs()
 	if not detail.is_empty():
-		_text(Vector2(PAD_LEFT, h - 9.0), _fit_text(detail, 12, text_width),
-			12, UITokens.DOSSIER_INK_SOFT)
+		if _mixed_width(detail, 12) > text_width:
+			# 窄版面放不下图标时退回纯数字，宁可少一枚金币也不裁字。
+			_text(Vector2(PAD_LEFT, h - 9.0), _fit_text(_detail_text(), 12, text_width),
+				12, UITokens.DOSSIER_INK_SOFT)
+		else:
+			_mixed_line(Vector2(PAD_LEFT, h - 9.0), detail, 12, UITokens.DOSSIER_INK_SOFT)
 
 	if show_progress:
 		_draw_progress(w, h, progress_width)
@@ -140,27 +146,44 @@ func _draw_progress(w: float, h: float, progress_width: float) -> void:
 		UITokens.DOSSIER_RULE, 1.0)
 
 
-func _detail_text() -> String:
+## 副行混排：文字段与金币标记交替，_mixed_line() 按顺序摆。
+func _detail_runs() -> Array:
 	if not _has_data:
-		return _reason if not _reason.is_empty() else "当日结算尚未提交"
-	var parts := PackedStringArray()
+		return [_reason if not _reason.is_empty() else "当日结算尚未提交"]
+	var runs: Array = []
 	if not is_nan(_per_capita):
-		parts.append("人均 %s" % _money(_per_capita))
+		# 写「人均累计」而不是「人均」：页面下方还有「人均 GDP / 日」，
+		# 两个数差十几倍，口径必须在词上就分开。
+		runs.append_array(["人均累计 ", MoneyDisplay.MONEY, _money(_per_capita)])
 	if _days_counted > 0:
-		parts.append("日均 %s" % _money(_value / float(_days_counted)))
+		if not runs.is_empty():
+			runs.append(" · ")
+		runs.append_array(["日均 ", MoneyDisplay.MONEY, _money(_value / float(_days_counted))])
 	if _days_counted <= 0:
-		parts.append("第 %d 天" % _days_counted)
-	return " · ".join(parts)
+		if not runs.is_empty():
+			runs.append(" · ")
+		runs.append("第 %d 天" % _days_counted)
+	return runs
+
+
+## 副行的纯文字版本：tooltip 与窄版面的退路，金额只剩数字。
+func _detail_text() -> String:
+	var parts := PackedStringArray()
+	for run in _detail_runs():
+		if typeof(run) != TYPE_STRING_NAME:
+			parts.append(String(run))
+	return "".join(parts)
 
 
 func _value_color() -> Color:
 	return UITokens.DOSSIER_OXBLOOD if _value < 0.0 else UITokens.DOSSIER_INK
 
 
+## 金额只出数字：单位由绘制时画在数字左边的金币图标承担（见 MoneyDisplay）。
 static func _money(value: float) -> String:
 	if is_nan(value):
 		return "—"
-	return "¥" + UITokens.format_compact_number_cn(value, 2)
+	return UITokens.format_compact_number_cn(value, 2)
 
 
 func _tooltip() -> String:

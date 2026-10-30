@@ -283,6 +283,51 @@ Do not:
 - Reimplement multiple competing icon systems in separate components.
 - Use `Label` with arbitrary Unicode for production iconography.
 
+### 货币读数与金币图标（MoneyDisplay）
+
+金额的单位**只用图标表示**，不写成字。玩家界面里不再出现 `¥` / `￥` / `$` / `货币` / `元`
+这类货币单位记号：数值只写数字本体，单位由
+`assets/ui/country_status/Gold.png`（手绘纸贴金币）画在数字左边。唯一入口是
+`scripts/ui/money_display.gd`（`class_name MoneyDisplay`）。扫描清单、逐处处理与完整事故
+记录见项目文档 `docs/ui/currency-unit-icon.md`。
+
+尺寸与观感：
+
+- 图标边长 = `1.05 ×` 字号，下限 12px（`MoneyDisplay.icon_size()`）。图标的可见金币只占
+  画布约七成（外圈是纸边），这个倍率下金币直径正好贴着数字的 cap height。
+- 图标**永远保持原色**（`modulate = Color.WHITE`），不要按语义色染色——染过的金币是污点。
+- `Gold.png` 已开 mipmap，11px 图例里也不抖。
+- 非金额读数一律不配金币：人口、座数、天数、百分比、指数、率。
+
+三种联排（对应三种渲染层）：
+
+1. **容器行**：`HBoxContainer + TextureRect + Label`，图标 `expand_mode=IGNORE_SIZE`、
+   `stretch_mode=KEEP_ASPECT_CENTERED`。原型是 `player_top_bar.tscn` 的国库纸签
+   （`CountryStatus/TreasuryButton/Row/{Icon, TreasuryValue}`）；现成节点见
+   `scenes/ui/money_icon.tscn`。玩家 UI 不允许脚本运行时 `new` 出 Control。
+2. **自绘**：`DossierChart._money_text()` / `_money_text_right()` / `_mixed_line()`
+   —— 最后一个用于整句混排，`runs` 里放 `MoneyDisplay.MONEY` 就在该处插一枚金币。
+3. **富文本**：`MoneyDisplay.bbcode(font_size)` / `bbcode_value(text, font_size)`
+   产出 `[img=WxH]res://…[/img]`，内联进 `RichTextLabel`。
+
+数据侧声明方式（不要把图标拼进每个字符串）：
+
+| 渲染层 | 声明 |
+| --- | --- |
+| `DossierLedgerTable` 列 | `"kind": "money"` |
+| `InspectorFactGrid` 事实 | `"money": true` |
+| `MetricCard` | `set_data(..., money := true)` |
+| `DossierStackedBar` | `set_segments(..., money_icon := true)` |
+| `DossierKpiCard` / `DossierSparkValue` | `"kind": "money"` |
+
+陷阱（真实事故，2026-10）：`OptionButton.add_icon_item()` 这类菜单控件的 item 图标按
+**原生像素**参与最小尺寸计算，而且**没有**缩放参数。把 1024×1024 的 `Gold.png` 喂进去后，
+下拉按钮最小尺寸变成 1100×1032，税额卡片从 284×191 被撑成 1284×3191，整页税收界面报废。
+菜单/下拉一律用 `MoneyDisplay.MENU_ICON`（`Gold_Menu24.png`）。
+
+反例：不要在整句散文（「营收 1.2万 + 扶持 800 · 亏损 300」）行首塞一枚金币，会被读成
+「金币 营收 1.2万」。这类行要么改成 `RichTextLabel` 逐段内联，要么保持纯文字。
+
 ### GaugeBar
 
 Use for scalar values and baseline comparisons.
@@ -659,6 +704,11 @@ Do not:
 - Let right-side UI overflow horizontally or hide content outside the viewport.
 - Rebuild inspector nodes every simulation tick.
 - Fix readability by only changing colors while leaving broken component structure intact.
+- Write the currency unit as text (`¥`, `￥`, `$`, `货币`, `元`) or concatenate it into strings
+  instead of using the gold icon declared through `MoneyDisplay`.
+- Feed a full-size texture into a menu/dropdown item icon; `OptionButton` measures item icons at
+  native pixel size and will blow the control's minimum size up.
+- Put a gold coin on a non-money reading (population, unit counts, days, percentages).
 
 ## 10. Iteration Reflection
 
@@ -689,4 +739,6 @@ A finished Project.Keynes player UI change should pass this standard:
 - High-speed simulation remains responsive.
 - Icons are consistent, licensed, and sourced from an approved library or asset workflow.
 - Buttons have clear material states and readable labels.
+- Every money reading carries the gold icon as its unit, and no player-facing text names the
+  currency unit (`¥` / `货币` / `元`) anymore.
 - Right-panel content fits without horizontal clipping at 1280x720.

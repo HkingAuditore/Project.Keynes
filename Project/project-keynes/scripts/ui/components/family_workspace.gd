@@ -507,9 +507,8 @@ func _build_overview_branch_meters(branches: Array) -> Array:
 		var primary: Dictionary = all_branches[0]
 		var score_pct := float(primary.get("prestige_percent",
 			float(int(primary.get("prestige_score_q16", 0))) * 100.0 / 65536.0))
-		var sat_pct := float(primary.get("satisfaction_percent", 85.0))
-		if sat_pct <= 0.0:
-			sat_pct = 85.0
+		var sat_known := primary.has("satisfaction_percent")
+		var sat_pct := float(primary.get("satisfaction_percent", 0.0)) if sat_known else 0.0
 		return [
 			{"id": "ov_br_score", "label": "威望总分",
 				"value": clampf(score_pct / 100.0, 0.0, 1.0),
@@ -518,11 +517,13 @@ func _build_overview_branch_meters(branches: Array) -> Array:
 					String(primary.get("target_label", "0")),
 					int(primary.get("review_streak", 0))],
 				"accent": UITokens.WARN},
+			# 分支满意度是成员 cohort 的「综合」口径；没有读数时留空并说明，
+			# 不要用 85% 之类的常量把它填满（编出来的数会被当成真实民生）。
 			{"id": "ov_br_sat", "label": "分支生计",
 				"value": clampf(sat_pct / 100.0, 0.0, 1.0),
-				"value_text": "%.1f%%" % sat_pct,
-				"status_label": "族人综合满足",
-				"accent": UITokens.ECO},
+				"value_text": "%.1f%%" % sat_pct if sat_known else "—",
+				"status_label": "族人综合满足" if sat_known else "暂无满意度读数",
+				"accent": UITokens.ECO if sat_known else UITokens.TEXT_MUTED},
 		]
 	var prestige_pct := float(header.get("prestige_percent", 0.0))
 	if prestige_pct <= 0.0:
@@ -814,9 +815,9 @@ func _people_ledger_columns() -> Array:
 		{"id": "name", "label": "姓名", "min_width": 96.0, "expand": true, "kind": "text", "sortable": true},
 		{"id": "role", "label": "职务 / 身份", "width": 116.0, "kind": "text", "sortable": true},
 		{"id": "building", "label": "执掌产业", "width": 98.0, "kind": "text", "optional": true, "sortable": true},
-		{"id": "worth", "label": "个人净资产", "width": 86.0, "kind": "number", "align": "right", "sortable": true},
-		{"id": "flow", "label": "周期净收支", "width": 84.0, "kind": "number", "align": "right", "sortable": true},
-		{"id": "sat", "label": "满足度", "width": 88.0, "kind": "bar", "optional": true, "sortable": true},
+		{"id": "worth", "label": "个人净资产", "width": 92.0, "kind": "money", "align": "right", "sortable": true},
+		{"id": "flow", "label": "周期净收支", "width": 90.0, "kind": "money", "align": "right", "sortable": true},
+		{"id": "sat", "label": "生存", "width": 88.0, "kind": "bar", "optional": true, "sortable": true},
 	]
 
 
@@ -839,8 +840,12 @@ func _people_ledger_rows(items: Array) -> Array:
 		var flow_str := String(person.get("net_cashflow_text", "稳健"))
 		var flow_val := float(person.get("net_cashflow_val",
 			CellInspectorViewModel._parse_leading_float(flow_str, 0.0)))
-		var sat_pct := float(person.get("satisfaction_percent", 88.0))
-		var sat_str := String(person.get("satisfaction_text", "%.0f%%" % sat_pct))
+		# 名人只有「生存」读数（成员 cohort 的 survival），没有综合满意度列；
+		# 读不到就写「—」，绝不拿常量顶上。
+		var sat_known := person.has("satisfaction_percent") \
+			and String(person.get("satisfaction_text", "—")) != "—"
+		var sat_pct := float(person.get("satisfaction_percent", -1.0))
+		var sat_str := String(person.get("satisfaction_text", "—")) if sat_known else "—"
 		rows.append({
 			"id": person.get("id", "person_%d" % index),
 			"tooltip": "%s（%s）\n执掌产业：%s" % [
@@ -853,8 +858,10 @@ func _people_ledger_rows(items: Array) -> Array:
 				"worth": {"text": worth_str, "sort": worth_val},
 				"flow": {"text": flow_str, "sort": flow_val,
 					"color": UITokens.DOSSIER_OXBLOOD if flow_str.begins_with("−") else UITokens.DOSSIER_VERDIGRIS},
-				"sat": {"text": sat_str, "value": clampf(sat_pct / 100.0, 0.0, 1.0),
-					"sort": sat_pct, "color": UITokens.DOSSIER_VERDIGRIS},
+				"sat": {"text": sat_str,
+					"value": clampf(maxf(sat_pct, 0.0) / 100.0, 0.0, 1.0),
+					"sort": sat_pct,
+					"color": UITokens.DOSSIER_VERDIGRIS if sat_known else UITokens.TEXT_MUTED},
 			},
 		})
 	return rows
@@ -881,7 +888,7 @@ func _person_overview_metrics_text(person: Dictionary) -> String:
 		parts.append("日收支 %s" % flow)
 	var sat := String(person.get("satisfaction_text", "")).strip_edges()
 	if not sat.is_empty():
-		parts.append("满足度 %s" % sat)
+		parts.append("生存 %s" % sat)
 	if parts.is_empty():
 		return "详情：无"
 	return " · ".join(parts)
@@ -1133,16 +1140,16 @@ func _person_fact_cells(row: Dictionary) -> Array:
 	var net_flow := String(row.get("net_cashflow_text", "—"))
 	var sat := String(row.get("satisfaction_text", "—"))
 	return [
-		{"id": "%s_worth" % person_id, "title": "个人净资产", "value": net_worth,
+		{"id": "%s_worth" % person_id, "title": "个人净资产", "money": true, "value": net_worth,
 			"subtitle": "现金 %s" % cash if not cash.is_empty() else "",
 			"icon": "metric.treasury", "accent": UITokens.RESOURCE},
 		{"id": "%s_equity" % person_id, "title": "家族股权占比", "value": equity,
 			"subtitle": "权益 %s" % attr_asset if not attr_asset.is_empty() else "",
 			"icon": "economy.building", "accent": UITokens.WARN},
-		{"id": "%s_flow" % person_id, "title": "周期净收支", "value": net_flow,
+		{"id": "%s_flow" % person_id, "title": "周期净收支", "money": true, "value": net_flow,
 			"icon": "country.economy",
 			"accent": UITokens.RISK if net_flow.begins_with("−") else UITokens.GOOD},
-		{"id": "%s_sat" % person_id, "title": "需求满足度", "value": sat,
+		{"id": "%s_sat" % person_id, "title": "生存满足", "value": sat,
 			"icon": "population.heart", "accent": UITokens.ECO},
 	]
 

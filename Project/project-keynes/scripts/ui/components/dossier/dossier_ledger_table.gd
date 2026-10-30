@@ -5,7 +5,8 @@ class_name DossierLedgerTable
 ## 只绘制落在外层 ScrollContainer 可视区内的行，表头在滚动时吸顶。
 ##
 ## columns: [{id, label, width, expand, kind, align, optional, sortable, tooltip}]
-##   kind: text | number | bar | diverging | stacked | actions
+##   kind: text | number | money | bar | diverging | stacked | actions
+##   money 列右对齐，并在数字前画一枚金币（单位不写成字，见 MoneyDisplay）。
 ## rows: [{id, tooltip, muted, cells: {col_id: {text, value, sort, color, segments, icon, sub}}}]
 
 signal row_selected(row_id: Variant)
@@ -346,7 +347,7 @@ func _align(column: Dictionary) -> HorizontalAlignment:
 		"left":
 			return HORIZONTAL_ALIGNMENT_LEFT
 	match String(column.get("kind", "text")):
-		"number", "bar", "diverging", "stacked":
+		"number", "money", "bar", "diverging", "stacked":
 			return HORIZONTAL_ALIGNMENT_RIGHT
 	return HORIZONTAL_ALIGNMENT_LEFT
 
@@ -419,7 +420,17 @@ func _draw_cell(entry: Dictionary, cell, row: Dictionary, top: float, muted: boo
 				tx += 13.0
 			var sub := String(data.get("sub", ""))
 			var align := _align(column)
-			var font_kind := "sans_strong" if kind == "number" or bool(data.get("strong", false)) else "sans"
+			var font_kind := "sans_strong" if kind == "number" or kind == "money" \
+				or bool(data.get("strong", false)) else "sans"
+			if kind == "money":
+				# 金额列：数字前画一枚金币，单位不再写成字（见 MoneyDisplay）。
+				var room := x + width - tx
+				var shown := _fit_text(text, 13, room - MoneyDisplay.slot_width(13), font_kind)
+				if align == HORIZONTAL_ALIGNMENT_RIGHT:
+					_money_text_right(x + width, baseline, shown, 13, color, font_kind)
+				else:
+					_money_text(Vector2(tx, baseline), shown, 13, color, font_kind)
+				return
 			if sub.is_empty():
 				_text(Vector2(tx, baseline), _fit_text(text, 13, x + width - tx, font_kind), 13, color,
 					font_kind, align, x + width - tx)

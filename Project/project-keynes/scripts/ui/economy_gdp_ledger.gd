@@ -21,6 +21,8 @@ const PAGE_LIMIT := 512
 ## 分页上限，防止极端局面下无限翻页；超出则全国值回退到 summary 口径。
 const MAX_PAGES := 4
 const COUNTRY_RESOLVE_MISS_LIMIT := 32
+## 人均日产值的会话内趋势长度。只活在内存里，不写存档。
+const TREND_CAPACITY := 60
 
 ## 墙钟合流阈值。测试可置 0 关掉节流，生产环境保持 MIN_SAMPLE_MSEC。
 var min_sample_msec := MIN_SAMPLE_MSEC
@@ -59,6 +61,10 @@ var _first_sample_span := 0
 var _days_counted := 0
 ## 至少成功累加过一笔；用于区分「还没结算」与「当年确实是 0」。
 var _has_sample := false
+## 人均日产值趋势：与账本同一套「每个已提交日一个点」的采样契约，
+## 单位与原生一致（1/10000 货币 / 人 / 日）。
+var _trend := PackedFloat32Array()
+var _trend_days := PackedInt32Array()
 
 
 func configure(generator, world_clock, map) -> void:
@@ -86,6 +92,8 @@ func configure(generator, world_clock, map) -> void:
 	_first_sample_span = 0
 	_days_counted = 0
 	_has_sample = false
+	_trend = PackedFloat32Array()
+	_trend_days = PackedInt32Array()
 
 
 # ── 采样 ────────────────────────────────────────────────────────────────
@@ -126,7 +134,20 @@ func sample(day_idx: int) -> bool:
 	_last_sample_msec = now
 	_days_counted = day_idx - year_start
 	_has_sample = true
+	_record_trend(day_idx)
 	return true
+
+
+## 人均日产值按已提交日入队；人口为零的样本记 NAN，画图时跳过而不是画成 0。
+func _record_trend(day_idx: int) -> void:
+	var per_capita := NAN
+	if _national_population > 0:
+		per_capita = _national_per_day / float(_national_population)
+	_trend.append(per_capita)
+	_trend_days.append(day_idx)
+	while _trend.size() > TREND_CAPACITY:
+		_trend.remove_at(0)
+		_trend_days.remove_at(0)
 
 
 ## 拉一次 settlements 并把逐格日产值积分到 delta 天上。
@@ -267,6 +288,22 @@ func national_per_capita() -> float:
 	if _national_population <= 0:
 		return NAN
 	return _national_ytd / float(_national_population)
+
+
+## 人均日产值：当日产值除以当日人口。与 national_per_capita() 的年度人均不同，
+## 这是一个会逐日波动的流量，适合画趋势而不是累计。
+func national_per_capita_per_day() -> float:
+	if _national_population <= 0:
+		return NAN
+	return _national_per_day / float(_national_population)
+
+
+func per_capita_trend() -> PackedFloat32Array:
+	return _trend
+
+
+func trend_days() -> PackedInt32Array:
+	return _trend_days
 
 
 func tracks_cell(cell: int) -> bool:

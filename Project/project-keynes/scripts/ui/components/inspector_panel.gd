@@ -22,6 +22,9 @@ const TAX_KIND_IDS := {"income": 0, "consumption": 1, "business": 2,
 const SPLIT_DETAIL_MIN_WIDTH := 800.0
 ## 档案列低于此高度时 KPI 条改为单行，给正文多留约 34px。
 const DENSE_KPI_MAX_HEIGHT := 500.0
+## 标题字号区间：地名越长越降，最低 18px；不靠省略号截断。
+const TITLE_FONT_BASE := 34
+const TITLE_FONT_MIN := 18
 const ROW_LIST_KEYS := ["family_rows", "cohort_rows", "resource_rows",
 	"market_rows", "building_rows"]
 
@@ -171,6 +174,7 @@ func _ready() -> void:
 	_chapter_nav.chapter_selected.connect(_on_tab_selected)
 	resized.connect(_on_inspector_resized)
 	_inspector_root.resized.connect(_sync_kpi_density)
+	_title_label.resized.connect(_fit_title_font)
 	_sync_split_layout()
 
 
@@ -298,9 +302,32 @@ func _apply_header(header: Dictionary, _live_patch: bool) -> void:
 	_kicker_label.text = String(header.get("kicker", ""))
 	_title_label.text = String(header.get("title", "地块"))
 	_title_label.tooltip_text = _title_label.text
+	_fit_title_font()
 	_subtitle_label.text = String(header.get("subtitle", ""))
 	_subtitle_label.tooltip_text = _subtitle_label.text
 	_subtitle_label.visible = not _subtitle_label.text.is_empty()
+
+
+## 长地名不截断：按可用宽度自动降字号（34 → 18），短名回到 34。
+## 只在标题栏宽度变化或换地块时重算；缩字号只改高度不改宽度，不会自激。
+func _fit_title_font() -> void:
+	if _title_label == null:
+		return
+	var available := _title_label.size.x
+	if available <= 1.0:
+		return
+	var font := _title_label.get_theme_font("font")
+	if font == null:
+		return
+	var text := _title_label.text
+	if text.is_empty():
+		_title_label.add_theme_font_size_override("font_size", TITLE_FONT_BASE)
+		return
+	var size := TITLE_FONT_BASE
+	while size > TITLE_FONT_MIN and font.get_string_size(
+			text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size).x > available:
+		size -= 2
+	_title_label.add_theme_font_size_override("font_size", size)
 
 
 ## KPI 卡片固定 4 张：多余的隐藏，补丁只改值（卡片自带数值补间）。
@@ -316,7 +343,8 @@ func _apply_kpis(kpis: Array, live_patch: bool) -> void:
 		if i >= visible_count:
 			continue
 		var data: Dictionary = kpis[i]
-		var signature := "%s|%s|%s|%s|%s" % [String(data.get("id", "")),
+		var signature := "%s|%s|%s|%s|%s|%s|%s" % [String(data.get("id", "")),
+			String(data.get("title", "")), String(data.get("kind", "")),
 			str(data.get("value", "")), String(data.get("text", "")),
 			String(data.get("caption", "")), String(data.get("tone", ""))]
 		var slot := "kpi_%d" % i

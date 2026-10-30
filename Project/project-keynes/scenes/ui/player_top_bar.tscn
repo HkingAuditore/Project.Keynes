@@ -29,13 +29,27 @@ theme_override_constants/separation = 8
 
 [node name="DateBlock" type="Button" parent="Margin/Row"]
 metadata/ui_sound = &"open"
-custom_minimum_size = Vector2(252, 48)
+custom_minimum_size = Vector2(180, 48)
 layout_mode = 2
+size_flags_vertical = 4
 mouse_filter = 0
 theme_type_variation = &"PKHUDButton"
 tooltip_text = "查阅历年发展报告"
 
-[node name="DateRow" type="HBoxContainer" parent="Margin/Row/DateBlock"]
+[node name="CountryStatus" type="HBoxContainer" parent="Margin/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_constants/separation = 4
+
+[node name="TreasuryButton" type="Button" parent="Margin/Row/CountryStatus"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(108, 50)
+layout_mode = 2
+mouse_filter = 0
+theme_type_variation = &"PKHUDButton"
+
+[node name="Row" type="HBoxContainer" parent="Margin/Row/CountryStatus/TreasuryButton"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -47,7 +61,79 @@ offset_bottom = -4.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 3
+
+[node name="Icon" type="TextureRect" parent="Margin/Row/CountryStatus/TreasuryButton/Row"]
+custom_minimum_size = Vector2(32, 32)
+layout_mode = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="TreasuryValue" type="Label" parent="Margin/Row/CountryStatus/TreasuryButton/Row"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+text = "—"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_type_variation = &"PKHUDLabel"
+
+[node name="PopulationButton" type="Button" parent="Margin/Row/CountryStatus"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(94, 50)
+layout_mode = 2
+mouse_filter = 0
+theme_type_variation = &"PKHUDButton"
+
+[node name="Row" type="HBoxContainer" parent="Margin/Row/CountryStatus/PopulationButton"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 10.0
+offset_top = 4.0
+offset_right = -10.0
+offset_bottom = -4.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 2
+
+[node name="Icon" type="TextureRect" parent="Margin/Row/CountryStatus/PopulationButton/Row"]
+custom_minimum_size = Vector2(32, 32)
+layout_mode = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="PopulationValue" type="Label" parent="Margin/Row/CountryStatus/PopulationButton/Row"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(44, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+text = "—"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_type_variation = &"PKHUDLabel"
+
+[node name="DateRow" type="HBoxContainer" parent="Margin/Row/DateBlock"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 4.0
+offset_right = -16.0
+offset_bottom = -4.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+clip_contents = true
+theme_override_constants/separation = 6
 
 [node name="CalendarIcon" type="TextureRect" parent="Margin/Row/DateBlock/DateRow"]
 unique_name_in_owner = true
@@ -61,16 +147,21 @@ stretch_mode = 5
 [node name="DateLabel" type="Label" parent="Margin/Row/DateBlock/DateRow"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 0
 mouse_filter = 2
-text = "第1年 · 第1日"
+text = "第1年 · 1月1日"
+vertical_alignment = 1
 theme_type_variation = &"PKHUDLabel"
+text_overrun_behavior = 3
 
 [node name="EraName" type="Label" parent="Margin/Row/DateBlock/DateRow"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
 mouse_filter = 2
 text = "石器时代"
 vertical_alignment = 1
+text_overrun_behavior = 3
 
 [node name="Spacer" type="Control" parent="Margin/Row"]
 layout_mode = 2

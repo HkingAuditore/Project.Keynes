@@ -52,18 +52,25 @@ func _draw() -> void:
 				UITokens.CHRONICLE_PENCIL_BLUE, UITokens.CHRONICLE_PENCIL_GREEN]
 			var bar_color: Color = colors[i % colors.size()]
 			var bar := Rect2(track_left, y - 7.0, length, 12.0)
-			draw_colored_polygon(PackedVector2Array([
-				bar.position + Vector2(3.0, 0.0),
-				Vector2(bar.end.x, bar.position.y + 1.0),
-				bar.end - Vector2(2.0, 1.0),
-				Vector2(bar.position.x + 1.0, bar.end.y),
-			]), bar_color)
-			var hatch_x := bar.position.x + 5.0
-			while hatch_x < bar.end.x - 2.0:
-				draw_line(Vector2(hatch_x, bar.position.y + 1.0),
-					Vector2(maxf(bar.position.x, hatch_x - 7.0), bar.end.y - 1.0),
-					Color(1.0, 0.96, 0.84, 0.24), 1.0, true)
-				hatch_x += 8.0
+			# 固定的 3px/2px 内缩在动画初期会让短条的顶点倒置，
+			# Godot 无法为这种退化四边形做三角剖分。
+			if length >= 4.0:
+				draw_colored_polygon(PackedVector2Array([
+					bar.position + Vector2(3.0, 0.0),
+					Vector2(bar.end.x, bar.position.y + 1.0),
+					bar.end - Vector2(2.0, 1.0),
+					Vector2(bar.position.x + 1.0, bar.end.y),
+				]), bar_color)
+				var hatch_x := bar.position.x + 5.0
+				while hatch_x < bar.end.x - 2.0:
+					draw_line(Vector2(hatch_x, bar.position.y + 1.0),
+						Vector2(maxf(bar.position.x, hatch_x - 7.0), bar.end.y - 1.0),
+						Color(1.0, 0.96, 0.84, 0.24), 1.0, true)
+					hatch_x += 8.0
+			else:
+				draw_line(Vector2(bar.position.x, bar.position.y + bar.size.y * 0.5),
+					Vector2(bar.end.x, bar.position.y + bar.size.y * 0.5), bar_color,
+					bar.size.y, true)
 			draw_line(bar.position, Vector2(bar.end.x, bar.position.y),
 				Color(_ink.r, _ink.g, _ink.b, 0.78), 2.0, true)
 			draw_line(Vector2(bar.end.x, bar.position.y + 2.0), bar.end,

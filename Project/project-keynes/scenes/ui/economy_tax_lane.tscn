@@ -20,6 +20,15 @@ min_value = -1000.0
 max_value = 100.0
 step = 0.01
 suffix = "%"
+[node name="MoneyIcon" type="TextureRect" parent="."]
+visible = false
+custom_minimum_size = Vector2(14, 14)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+tooltip_text = "定额税以金币计"
 [node name="Reset" type="Button" parent="."]
 visible = false
 custom_minimum_size = Vector2(24, 26)

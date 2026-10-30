@@ -1,0 +1,240 @@
+[gd_scene load_steps=12 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/hud_status_card.gd" id="1_script"]
+[ext_resource type="Theme" path="res://assets/themes/player_session_theme.tres" id="2_theme"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="3_icon"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_aux_v1/torn_note_v1.tres" id="4_note"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_stacked_bar.gd" id="5_stacked"]
+[ext_resource type="Script" path="res://scripts/ui/components/hud_share_bar.gd" id="6_share"]
+[ext_resource type="PackedScene" path="res://scenes/ui/hud_population_row.tscn" id="7_row"]
+[ext_resource type="Shader" path="res://shaders/ui/ideology_paper_shadow.gdshader" id="8_shadow"]
+
+[sub_resource type="StyleBoxTexture" id="CardPaper"]
+content_margin_left = 16.0
+content_margin_top = 10.0
+content_margin_right = 16.0
+content_margin_bottom = 12.0
+texture = ExtResource("4_note")
+texture_margin_left = 32.0
+texture_margin_top = 32.0
+texture_margin_right = 32.0
+texture_margin_bottom = 32.0
+expand_margin_left = 6.0
+expand_margin_top = 6.0
+expand_margin_right = 6.0
+expand_margin_bottom = 8.0
+
+[sub_resource type="ShaderMaterial" id="CardShadowMaterial"]
+shader = ExtResource("8_shadow")
+shader_parameter/canvas_size = Vector2(400, 256)
+shader_parameter/padding = 12.0
+shader_parameter/softness = 8.0
+shader_parameter/corner_radius = 6.0
+shader_parameter/drop_offset = Vector2(0, 3)
+shader_parameter/shadow_color = Color(0.09, 0.06, 0.035, 0.15)
+
+[node name="HudStatusCard" type="Control"]
+visible = false
+layout_mode = 3
+anchors_preset = 0
+offset_right = 400.0
+offset_bottom = 260.0
+mouse_filter = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_script")
+
+[node name="Shadow" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -12.0
+offset_top = -12.0
+offset_right = 12.0
+offset_bottom = 12.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+material = SubResource("CardShadowMaterial")
+
+[node name="Paper" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("CardPaper")
+
+[node name="Margin" type="MarginContainer" parent="Paper"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_top = 2
+theme_override_constants/margin_right = 4
+theme_override_constants/margin_bottom = 4
+
+[node name="Body" type="VBoxContainer" parent="Paper/Margin"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 7
+
+[node name="Header" type="HBoxContainer" parent="Paper/Margin/Body"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 6
+
+[node name="HeaderIcon" parent="Paper/Margin/Body/Header" instance=ExtResource("3_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(22, 24)
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="Paper/Margin/Body/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+text = "国库"
+
+[node name="ValueIcon" type="TextureRect" parent="Paper/Margin/Body/Header"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ValueLabel" type="Label" parent="Paper/Margin/Body/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+text = "—"
+
+[node name="Spacer" type="Control" parent="Paper/Margin/Body/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+
+[node name="MetaLabel" type="Label" parent="Paper/Margin/Body/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+text = ""
+
+[node name="Divider" type="ColorRect" parent="Paper/Margin/Body"]
+custom_minimum_size = Vector2(0, 1)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.42, 0.29, 0.16, 0.3)
+
+[node name="TreasuryBody" type="VBoxContainer" parent="Paper/Margin/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 6
+
+[node name="IncomeBar" type="Control" parent="Paper/Margin/Body/TreasuryBody"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("5_stacked")
+
+[node name="ExpenseBar" type="Control" parent="Paper/Margin/Body/TreasuryBody"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("5_stacked")
+
+[node name="NetRow" type="HBoxContainer" parent="Paper/Margin/Body/TreasuryBody"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 6
+
+[node name="NetCaption" type="Label" parent="Paper/Margin/Body/TreasuryBody/NetRow"]
+layout_mode = 2
+size_flags_vertical = 4
+text = "当日净收"
+theme_override_colors/font_color = Color(0.4, 0.31, 0.22, 0.92)
+theme_override_font_sizes/font_size = 12
+
+[node name="Spacer" type="Control" parent="Paper/Margin/Body/TreasuryBody/NetRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+
+[node name="NetIcon" type="TextureRect" parent="Paper/Margin/Body/TreasuryBody/NetRow"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(16, 16)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="NetValue" type="Label" parent="Paper/Margin/Body/TreasuryBody/NetRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+text = "0"
+
+[node name="TreasuryNote" type="Label" parent="Paper/Margin/Body/TreasuryBody"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = ""
+autowrap_mode = 2
+
+[node name="PopulationBody" type="VBoxContainer" parent="Paper/Margin/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 6
+
+[node name="ShareBar" type="Control" parent="Paper/Margin/Body/PopulationBody"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("6_share")
+
+[node name="StratumRows" type="VBoxContainer" parent="Paper/Margin/Body/PopulationBody"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 3
+
+[node name="Row1" parent="Paper/Margin/Body/PopulationBody/StratumRows" instance=ExtResource("7_row")]
+layout_mode = 2
+
+[node name="Row2" parent="Paper/Margin/Body/PopulationBody/StratumRows" instance=ExtResource("7_row")]
+layout_mode = 2
+
+[node name="Row3" parent="Paper/Margin/Body/PopulationBody/StratumRows" instance=ExtResource("7_row")]
+layout_mode = 2
+
+[node name="Row4" parent="Paper/Margin/Body/PopulationBody/StratumRows" instance=ExtResource("7_row")]
+layout_mode = 2
+
+[node name="Row5" parent="Paper/Margin/Body/PopulationBody/StratumRows" instance=ExtResource("7_row")]
+layout_mode = 2
+
+[node name="Row6" parent="Paper/Margin/Body/PopulationBody/StratumRows" instance=ExtResource("7_row")]
+layout_mode = 2
+
+[node name="PopulationNote" type="Label" parent="Paper/Margin/Body/PopulationBody"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = ""
+autowrap_mode = 2
+
+[node name="Divider2" type="ColorRect" parent="Paper/Margin/Body"]
+custom_minimum_size = Vector2(0, 1)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.42, 0.29, 0.16, 0.3)
+
+[node name="FooterLabel" type="Label" parent="Paper/Margin/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "点击查看国家经济 · 总览"

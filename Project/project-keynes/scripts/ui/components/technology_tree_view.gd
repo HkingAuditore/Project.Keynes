@@ -563,6 +563,7 @@ func _sync_effects() -> void:
 
 func _draw_bands() -> void:
 	var font := get_theme_default_font()
+	var paper_domain_id := _paper_domain_id()
 	for band_value in _focus_layout.get("bands", []) as Array:
 		var band: Dictionary = band_value
 		var rect: Rect2 = band.rect
@@ -595,17 +596,15 @@ func _draw_bands() -> void:
 			var lane_rect: Rect2 = lane.rect
 			var domain := int(lane.get("domain", 0))
 			var accent := _accent_for(domain)
-			if focus and String(lane.get("id", "")) == _domain_id:
+			var lane_is_paper := focus and String(lane.get("id", "")) == paper_domain_id
+			if lane_is_paper:
 				var wash := accent
 				wash.a = 0.07
 				draw_rect(lane_rect, wash, true)
-				# Torn paper strip pasted behind the focused domain column.
-				var strip := Art.texture(Art.LANE_STRIP)
-				if strip != null:
-					draw_texture_rect(strip, Rect2(lane_rect.position + Vector2(-4.0, 24.0),
-						Vector2(lane_rect.size.x + 8.0, maxf(0.0, rect.end.y
-						- lane_rect.position.y - 30.0))), false,
-						Color(1.0, 1.0, 1.0, 0.42))
+				# Keep torn edges at source scale and stretch only the paper centre.
+				Art.draw_lane_strip(self, Rect2(lane_rect.position + Vector2(-4.0, 24.0),
+					Vector2(lane_rect.size.x + 8.0, maxf(0.0, rect.end.y
+					- lane_rect.position.y - 30.0))), Color.WHITE)
 			if domain > 0:
 				var rule := Color(UITokens.ARCHIVE_RULE, 0.34 if focus else 0.18)
 				var rule_x := lane_rect.position.x - 7.0
@@ -902,6 +901,11 @@ func _state_colour(state: int) -> Color:
 func _accent_for(domain: int) -> Color:
 	return _accents[domain] if domain >= 0 and domain < _accents.size() else UITokens.ACCENT
 
+
+func _paper_domain_id() -> String:
+	if _selected >= 0 and _selected < _definitions.size():
+		return String((_definitions[_selected] as Dictionary).get("domain_id", _domain_id))
+	return _domain_id
 
 func _domain_index_of(definition: Dictionary) -> int:
 	var domain_id := String(definition.get("domain_id", ""))

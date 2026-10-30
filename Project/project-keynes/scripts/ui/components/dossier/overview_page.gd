@@ -1,29 +1,51 @@
 extends DossierPage
 
-## 总览：收支构成、八阶层满意度、当前卡点、产业部门与最缺物资。
+## 总览：同一页只看四件事——国库收支（结构与方向）、人均产出、生活水平、物价。
+## 居民收支、阶层满意度、卡点、产值与短缺都有各自的章节，这里不再重复。
+##
+## 每块图形按数据的形状选：收支的结构用堆叠占比、方向用折线；
+## 生活水平是有序台阶看档位；物价是相对成本锚的偏离看方向与裂口；
+## 人均产出是逐日波动的流量，用读数配迷你走势。
 
-@onready var _columns: GridContainer = %Columns
-@onready var _lower: GridContainer = %Lower
+const CASHFLOW_COLUMNS := [
+	{"id": "name", "label": "税种", "kind": "text", "expand": true, "min_width": 96.0},
+	{"id": "base", "label": "税基", "kind": "money", "width": 112.0},
+	{"id": "collected", "label": "实收", "kind": "money", "width": 112.0},
+	{"id": "requested", "label": "补贴申请", "kind": "money", "width": 112.0},
+	{"id": "paid", "label": "补贴实付", "kind": "money", "width": 112.0},
+]
+## 收支块左右并排需要约 760px；更窄时把折线折到堆叠条下面。
+const CASHFLOW_STACK_WIDTH := 760.0
+const FLOW_BARS_WIDTH := 430.0
+
+@onready var _header: HBoxContainer = %CashflowHeader
+@onready var _day: Label = %CashflowDay
+@onready var _toggle: Button = %CashflowToggle
+@onready var _body: BoxContainer = %CashflowBody
+@onready var _bars: VBoxContainer = %FlowBars
 @onready var _income_bar: DossierStackedBar = %IncomeBar
 @onready var _expense_bar: DossierStackedBar = %ExpenseBar
-@onready var _flow_note: Label = %FlowNote
-@onready var _strata_grid: GridContainer = %StrataGrid
-@onready var _bottlenecks: DossierBarList = %BottleneckList
-@onready var _bottleneck_empty: Label = %BottleneckEmpty
-@onready var _bottleneck_detail: Label = %BottleneckDetail
+@onready var _trend: DossierTrendLines = %TrendChart
+@onready var _detail: DossierLedgerTable = %CashflowDetail
+@onready var _columns: GridContainer = %Columns
+@onready var _lower: GridContainer = %Lower
+@onready var _per_capita: DossierSparkValue = %PerCapitaValue
+@onready var _living: DossierLevelLadder = %LivingLadder
+@onready var _prices: DossierDeviationAxis = %PriceAxis
 @onready var _sectors: DossierBarList = %SectorList
 @onready var _shortages: DossierBarList = %ShortageList
 @onready var _shortage_empty: Label = %ShortageEmpty
 
-var _bottleneck_rows: Array = []
+var _detail_open := false
+var _detail_rows: Array = []
+var _detail_signature := ""
 
 
 func _ready() -> void:
-	_bottlenecks.selectable = true
-	_bottlenecks.label_width = 128.0
-	_bottlenecks.value_width = 52.0
-	_bottlenecks.row_height = 30.0
-	_bottlenecks.row_selected.connect(_on_bottleneck_selected)
+	_toggle.pressed.connect(_toggle_detail)
+	_detail.set_columns(CASHFLOW_COLUMNS, "")
+	_detail.row_height = 26.0
+	_detail.selected_id = null
 	_sectors.selectable = true
 	_sectors.label_width = 76.0
 	_sectors.value_width = 150.0
@@ -33,92 +55,96 @@ func _ready() -> void:
 	_shortages.value_width = 64.0
 	_shortages.row_selected.connect(func(id): navigate_requested.emit("market",
 		{"focus": String(id)}))
-	for gauge in _strata_grid.get_children():
-		if gauge is DossierRingGauge:
-			gauge.custom_minimum_size = Vector2(72.0, 98.0)
-			gauge.pressed.connect(func(id): navigate_requested.emit("strata", {"focus": int(id)}))
-	%StrataLink.pressed.connect(func(): navigate_requested.emit("strata", {}))
 	%SectorLink.pressed.connect(func(): navigate_requested.emit("industry", {"sector": -1}))
 	%ShortageLink.pressed.connect(func(): navigate_requested.emit("market", {}))
+	_apply_detail_visibility()
 
 
 func refresh(vm: EconomyDossierViewModel, _filter = null) -> void:
 	var model := vm.overview_model()
 	if not bool(model.get("ok", false)):
 		return
-	_income_bar.set_segments("收入来源", model.income_segments,
-		money(float(model.income_total)))
-	_expense_bar.set_segments("支出去向", model.expense_segments,
-		money(float(model.expense_total)))
-	var net := float(model.income_total) - float(model.expense_total)
-	_flow_note.text = "每日%s %s · 按已提交结算日的居民账户合计" % [
-		"结余" if net >= 0.0 else "赤字", money(absf(net))]
-	_refresh_strata(model.strata)
-	_refresh_bottlenecks(model.bottlenecks)
+	_refresh_cashflow(model.get("cashflow", {}))
+	_refresh_per_capita(model.get("per_capita", {}))
+	_refresh_living(model.get("living", {}))
+	_refresh_prices(model.get("price", {}))
 	_refresh_sectors(model.sectors)
 	_refresh_shortages(model.shortages)
 
 
-func _refresh_strata(strata: Array) -> void:
-	var gauges := _strata_grid.get_children()
-	for i in range(gauges.size()):
-		var gauge := gauges[i] as DossierRingGauge
-		if gauge == null:
-			continue
-		if i >= strata.size():
-			gauge.visible = false
-			continue
-		var row: Dictionary = strata[i]
-		var people := float(row.population)
-		gauge.visible = true
-		gauge.modulate.a = 1.0 if people > 0.0 else 0.4
-		var tooltip := "%s\n人口 %s（%s）\n人均收入 %s / 日\n温饱满足 %s" % [
-			row.name, count(people), percent(float(row.get("share", 0.0))),
-			money(float(row.get("income_per_capita", 0.0))), percent(float(row.survival))]
-		gauge.set_gauge(int(row.index), String(row.name),
-			float(row.satisfaction) if people > 0.0 else 0.0,
-			percent(float(row.get("share", 0.0))) if people > 0.0 else "无人口",
-			satisfaction_color(float(row.satisfaction)) if people > 0.0 else UITokens.DOSSIER_INK_MUTED,
-			tooltip)
+# ── 国库收支 ────────────────────────────────────────────────────────────
 
-
-func _refresh_bottlenecks(bottlenecks: Array) -> void:
-	_bottleneck_rows = bottlenecks
-	var rows: Array = []
-	for entry in bottlenecks:
-		var details := PackedStringArray()
-		for line in entry.details:
-			details.append(String(line))
-		rows.append({"id": String(entry.id), "label": String(entry.label), "icon": entry.icon,
-			"value": float(entry.severity), "text": percent(float(entry.severity)),
-			"color": UITokens.DOSSIER_OXBLOOD if float(entry.severity) >= 0.25 else UITokens.DOSSIER_BRASS,
-			"tooltip": "%s\n%s\n%s" % [entry.label, "\n".join(details), entry.advice]})
-	_bottlenecks.set_rows(rows)
-	_show_empty(_bottleneck_empty, _bottlenecks,
-		"" if not rows.is_empty() else "暂未发现明显卡点：岗位、资金、原料与销路都在正常范围内")
-	if bottlenecks.is_empty():
-		_bottleneck_detail.visible = false
+## 收支块只读财政快照与国库日序列；快照缺席时整块（含标题与明细）收起。
+func _refresh_cashflow(cashflow: Dictionary) -> void:
+	var ok := bool(cashflow.get("ok", false))
+	_header.visible = ok
+	_body.visible = ok
+	if not ok:
+		_detail.visible = false
 		return
-	var top: Dictionary = bottlenecks[0]
-	var lines := PackedStringArray()
-	for line in top.details:
-		lines.append(String(line))
-	_bottleneck_detail.visible = true
-	_bottleneck_detail.text = "最突出：%s。%s" % ["；".join(lines), top.advice]
+	_day.text = String(cashflow.get("day_text", ""))
+	_income_bar.set_segments("收入", cashflow.get("income_segments", []),
+		String(cashflow.get("income_text", "")), true)
+	_expense_bar.set_segments("支出", cashflow.get("expense_segments", []),
+		String(cashflow.get("expense_text", "")), true)
+	_trend.set_series(cashflow.get("income_series", PackedFloat32Array()),
+		cashflow.get("expense_series", PackedFloat32Array()),
+		String(cashflow.get("net_text", "")), bool(cashflow.get("net_positive", true)))
+	# 明细只在结算日或金额变化时重灌：同一批数据每秒重设 5 行会让账簿反复起补间。
+	var signature := "%s|%s" % [String(cashflow.get("day_text", "")),
+		String(cashflow.get("net_text", ""))]
+	if signature != _detail_signature:
+		_detail_signature = signature
+		_detail_rows = cashflow.get("detail_rows", [])
+		_detail.set_rows(_detail_rows)
+	_detail.visible = _detail_open
 
 
-func _on_bottleneck_selected(id) -> void:
-	for entry in _bottleneck_rows:
-		if String(entry.id) == String(id):
-			# section 是合并篇章后的页内锚点（如「利润」落在产业章的投资风向一段），
-			# 由外壳负责把视口滚过去。
-			var payload := {"bottleneck": String(id)}
-			var section := String(entry.get("section", ""))
-			if not section.is_empty():
-				payload["section"] = section
-			navigate_requested.emit(String(entry.chapter), payload)
-			return
+func _toggle_detail() -> void:
+	_detail_open = not _detail_open
+	_apply_detail_visibility()
 
+
+func _apply_detail_visibility() -> void:
+	_detail.visible = _detail_open and not _detail_rows.is_empty()
+	_toggle.text = "明细 ▴" if _detail_open else "明细 ▾"
+
+
+# ── 人均 ────────────────────────────────────────────────────────────────
+
+func _refresh_per_capita(per_capita: Dictionary) -> void:
+	_per_capita.set_value({
+		"value": float(per_capita.get("value", 0.0)),
+		"delta": float(per_capita.get("delta", NAN)),
+		"spark": per_capita.get("trend", PackedFloat32Array()),
+		"kind": "money",
+		"caption": String(per_capita.get("caption", "")),
+	})
+	_per_capita.tooltip_text = "当日全国产值 ÷ 人口；年度累计人均见上方横幅。"
+
+
+func _refresh_living(living: Dictionary) -> void:
+	_living.set_level(float(living.get("level", NAN)), int(living.get("max", 6)),
+		String(living.get("name", "")))
+	_living.tooltip_text = "人口加权后的生活水平档位：0 赤贫 … 6 奢华"
+
+
+# ── 物价 ────────────────────────────────────────────────────────────────
+
+## CPI / PPI 是相对成本锚（100）的偏离，两根指针共用一根轴，
+## 指针间距就是消费端与出厂端的价格裂口。
+func _refresh_prices(price: Dictionary) -> void:
+	_prices.set_indices(price.get("rows", []))
+	var spread := float(price.get("spread", NAN))
+	var tips := PackedStringArray()
+	for row in price.get("rows", []):
+		tips.append(String(row.get("tooltip", "")))
+	if not is_nan(spread):
+		tips.insert(0, "CPI − PPI：%+.1f 点" % spread)
+	_prices.tooltip_text = "\n".join(tips)
+
+
+# ── 产业 / 物资 ─────────────────────────────────────────────────────────
 
 func _refresh_sectors(sectors: Array) -> void:
 	var peak := 0.0
@@ -150,14 +176,18 @@ func _refresh_shortages(shortages: Array) -> void:
 	_show_empty(_shortage_empty, _shortages, "" if not rows.is_empty() else "各类物资供应充足")
 
 
-## 三栏需要约 960px（八枚环形仪表一行四枚）；中等宽度先把卡点栏折到第二行。
+## 三栏需要约 900px；中等宽度先折成两栏，窄版面单列。
+## 收支块自己再收一档：太窄时折线落到堆叠条下面，而不是被挤成一条缝。
 func _apply_narrow() -> void:
 	var wanted := 3
-	if _layout_width > 0.0 and _layout_width < 600.0:
+	if _layout_width > 0.0 and _layout_width < 620.0:
 		wanted = 1
-	elif _layout_width > 0.0 and _layout_width < 960.0:
+	elif _layout_width > 0.0 and _layout_width < 900.0:
 		wanted = 2
 	elif _narrow:
 		wanted = 1
 	_columns.columns = wanted
 	_lower.columns = 1 if wanted == 1 else 2
+	var stacked := _layout_width > 0.0 and _layout_width < CASHFLOW_STACK_WIDTH
+	_body.vertical = stacked
+	_bars.custom_minimum_size.x = 0.0 if stacked else FLOW_BARS_WIDTH

@@ -139,12 +139,21 @@ func _draw() -> void:
 			UITokens.FONT_SMALL, Color(UITokens.DOSSIER_INK_MUTED, appear))
 		var value := String(fact.get("value", ""))
 		var value_color := tone_color(fact.get("accent", UITokens.ACCENT))
-		var value_text := _fit_text(value, 21, inner_right - x, "sans_strong")
 		var baseline := rect.position.y + 53.0 + lift
-		_text(Vector2(x, baseline), value_text, 21, Color(value_color, appear), "sans_strong")
+		var value_width := 0.0
+		if bool(fact.get("money", false)):
+			# 金额事实：数字前画金币，单位不写成字（见 MoneyDisplay）。
+			var shown := _fit_text(value, 21,
+				inner_right - x - MoneyDisplay.slot_width(21), "sans_strong")
+			value_width = _money_text(Vector2(x, baseline), shown, 21,
+				Color(value_color, appear), "sans_strong")
+		else:
+			var value_text := _fit_text(value, 21, inner_right - x, "sans_strong")
+			_text(Vector2(x, baseline), value_text, 21, Color(value_color, appear), "sans_strong")
+			value_width = _text_width(value_text, 21, "sans_strong")
 		var subtitle := String(fact.get("subtitle", ""))
 		if subtitle != "":
-			var sub_x := x + _text_width(value_text, 21, "sans_strong") + 6.0
+			var sub_x := x + value_width + 6.0
 			if inner_right - sub_x > 60.0:
 				_text(Vector2(sub_x, baseline - 1.0), _fit_text(subtitle, UITokens.FONT_SMALL, inner_right - sub_x),
 					UITokens.FONT_SMALL, Color(UITokens.DOSSIER_INK_MUTED, appear))

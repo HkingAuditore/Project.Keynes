@@ -5,6 +5,8 @@ const TEMPERATURE_HISTORY_CAPACITY := 32
 const TEMPERATURE_HISTORY_CACHE_LIMIT := 64
 const DETAIL_HISTORY_CAPACITY := 48
 const DETAIL_HISTORY_LOOKBACK := 7
+## 原生金额单位是 1/10000 货币；只有视图层才把它换算成金币读数。
+const MONEY_SCALE := 10000.0
 
 # 对象详情弹窗：行类型 → 页签 / 行列表键 / 中文类型名。
 const OBJECT_DETAIL_TAB := {
@@ -60,6 +62,8 @@ var _market_prev_stock: Dictionary = {}
 ## 经济线程日内忙时读数会返回 pending；页头沿用该格上次成功的摘要，
 ## 免得 KPI 在“有人定居 / 无人之地”两套布局间来回跳。
 var _population_summary_cache: Dictionary = {}
+## 格级综合满意度：忙时读不到就沿用上次成功值，避免页头在综合/生存口径间闪跳。
+var _cell_composite_cache: Dictionary = {}
 var _category_cache_cell := -1
 var _category_cache: Dictionary = {}
 var _temperature_histories: Dictionary = {}
@@ -99,6 +103,7 @@ func set_context(map: MapData, generator, view_adapter: DCViewAdapter, world_clo
 	_resource_prev_reserves.clear()
 	_market_prev_stock.clear()
 	_population_summary_cache.clear()
+	_cell_composite_cache.clear()
 	_category_cache.clear()
 	_category_cache_cell = -1
 	_temperature_histories.clear()
@@ -270,6 +275,8 @@ func live_patch_revision(cell: HexCell, current_tab: String) -> Dictionary:
 		int(population_summary.get("epoch_expense", 0)),
 		int(population_summary.get("state_day", -1)),
 		int(population_summary.get("satisfaction_q16", 0)),
+		# 页头「满意度」读的是格级综合值：它变了而生存没变时也必须打补丁。
+		int(roundf(_cell_composite_satisfaction(idx) * 1000.0)) if intel_visible else -1,
 		int(population_summary.get("job_capacity", 0)),
 		int(population_summary.get("jobs_filled", 0)),
 		int(population_summary.get("carrying_k_eff", 0)),
@@ -2069,7 +2076,7 @@ func _build_header(
 	country_summary: Dictionary,
 	population_summary: Dictionary = {},
 	intel_visible: bool = true,
-	has_river: bool = false
+	_has_river: bool = false
 ) -> Dictionary:
 	# terrain_v is the legacy-stable bioclimatic/biome axis. Keep its value in
 	# the compact header; the detailed climate-zone label lives in the geography tab.
@@ -2082,9 +2089,8 @@ func _build_header(
 		title = "%s · %s" % [
 			String(population_summary.get("settlement_name", "")),
 			String(population_summary.get("prosperity_name", ""))]
-		meta.append(land_title)
-	if has_river:
-		meta.append("临河")
+		# 地名已经交代“这是什么地方”，地形/地貌/临河都在默认打开的「地理」页里，
+		# 副标题只留归属，不再把地理栏抄一遍。
 	if not intel_visible:
 		meta.append("视野之外 · 仅存地理记忆")
 	return {
@@ -2105,7 +2111,7 @@ func _ownership_text(country_summary: Dictionary, intel_visible: bool) -> String
 	return country_name
 
 
-## 页头四格 KPI：有人定居看民生（人口/粮食/就业/满足），
+## 页头四格 KPI：有人定居看民生（人口/GDP/满意度/就业率），
 ## 无人之地看开拓价值（适宜度/潜在承载/气候/归属）。
 func _kpis(
 	intel_visible: bool,
@@ -2142,7 +2148,7 @@ func _kpis(
 				if bool(country_summary.get("owned", false)) else "无主",
 			"caption": ownership, "tooltip": ownership,
 		}, {
-			"id": "kpi_population", "title": "人口", "icon": &"ecology.growth", "kind": "text",
+			"id": "kpi_population", "title": "人口", "icon": &"family.metric.population", "kind": "text",
 			"text": "读取中", "caption": "下一日刷新",
 		}]
 	if population <= 0 or not bool(population_summary.get("ok", false)):
@@ -2160,40 +2166,90 @@ func _kpis(
 			"caption": "" if owned else "可开拓",
 			"tooltip": ownership,
 		}]
-	var food_access := float(population_summary.get("food_access_q16", 65536)) / 65536.0
 	var jobs_capacity := int(population_summary.get("job_capacity", 0))
 	var jobs_filled := int(population_summary.get("jobs_filled", 0))
 	var openings := int(population_summary.get("job_openings", 0))
-	var satisfaction := float(population_summary.get("satisfaction_q16", 0)) / 65536.0
+	# 页头与全国经济、阶层、城市、年度报告用同一个口径：人口加权「综合满意度」。
+	# 综合不可读时才退回 cell summary 的生存值，并在提示里说明口径。
+	var survival_q16 := int(population_summary.get("satisfaction_q16", 0))
+	var composite := _cell_composite_satisfaction(cell_idx)
+	var satisfaction := composite if composite >= 0.0 else float(survival_q16) / 65536.0
+	var satisfaction_tooltip := "综合满意度：生存、基本生活、舒适、奢侈、收入、储蓄、税负、社会发展八维按人口加权，并按生存与基本生活封顶（生存崩了就一定低）。当前生存 %s，分项见「人口」页。" % _q16_percent_text(survival_q16)
+	if composite < 0.0:
+		satisfaction_tooltip = "生存满意度（综合满意度暂不可读）：口粮与御寒衣着两项里较差的那一项，不含舒适与奢侈需求。"
 	var over_capacity := carrying > 0 and population > carrying
+	var carrying_text := UITokens.format_compact_number_cn(float(carrying), 1)
+	# 页头四格是玩家扫一眼就要读懂的四件事：人头、产值、满意度、就业率。
+	# 标签压到最短（2~3 字），口径全放进悬停提示，卡面只留大数字和一行副行。
 	return [{
-		"id": "kpi_population", "title": "人口", "icon": &"ecology.growth", "kind": "count",
-		"value": float(population),
-		"caption": "",
-	}, {
-		"id": "kpi_food", "title": "粮食", "icon": &"economy.crop", "kind": "percent",
-		"value": food_access, "positive_good": true,
-		"caption": "本地不产粮" if carrying <= 0 else (
-			"超出承载 %s" % UITokens.format_compact_number_cn(float(carrying), 1)
-			if over_capacity else ""),
-		"tone": "risk" if over_capacity or food_access < 0.8 else "",
-		"tooltip": "最近一次本地结算中，居民实际取得的食物当量占最低生存口粮的比例（含购买与自产自用）。两次本地结算之间保留上次结果；承载力为本地粮食可养活的人口。",
-	}, {
-		"id": "kpi_jobs", "title": "就业", "icon": &"economy.building",
-		"kind": "percent" if jobs_capacity > 0 else "text",
-		"value": float(jobs_filled) / float(jobs_capacity) if jobs_capacity > 0 else 0.0,
-		"text": "无岗位",
-		"caption": "空缺 %s 岗" % UITokens.format_compact_number_cn(float(openings), 1) \
-			if jobs_capacity > 0 and openings > 0 else "",
-		"tooltip": "已到岗 %d / 岗位 %d" % [jobs_filled, jobs_capacity],
-	}, {
-		"id": "kpi_satisfaction", "title": "需求满足", "icon": &"family.house",
+		"id": "kpi_population", "title": "人口", "icon": &"family.metric.population",
+		"kind": "count", "value": float(population),
+		"caption": "超承载 %s" % carrying_text if over_capacity else "",
+		"tooltip": "本格各阶层人口合计 %d 人。%s" % [population,
+			"已超出本地粮食承载 %s 人。" % carrying_text if over_capacity
+			else "本地粮食可承载 %s 人。" % carrying_text],
+	}, _gdp_kpi(cell_idx), {
+		"id": "kpi_satisfaction", "title": "满意度", "icon": &"population.heart",
 		"kind": "percent", "value": satisfaction,
 		"caption": "" if satisfaction >= 0.85 else (
 			"勉强维持" if satisfaction >= 0.6 else "生计困难"),
 		"tone": "risk" if satisfaction < 0.6 else "",
-		"tooltip": "居民基本需求（食物、衣着等）得到满足的程度。",
+		"tooltip": satisfaction_tooltip,
+	}, {
+		"id": "kpi_jobs", "title": "就业率", "icon": &"population.profession.worker",
+		"kind": "percent" if jobs_capacity > 0 else "text",
+		"value": float(jobs_filled) / float(jobs_capacity) if jobs_capacity > 0 else 0.0,
+		"text": "无岗位",
+		"caption": "缺 %s 岗" % UITokens.format_compact_number_cn(float(openings), 1) \
+			if jobs_capacity > 0 and openings > 0 else "",
+		"tooltip": "已到岗 %d / 岗位 %d。空岗招不满受职业门槛与工资吸引力限制。" % [jobs_filled, jobs_capacity],
 	}]
+
+
+## 页头 GDP：本地年内累计产值。年度产值账本未就绪、或这块地不在本国聚落表里
+## （他国城市、无产值聚落）时给「—」，不编 0——0 会被读成「本地确实没有产出」。
+## 金额只给数字，金币图标由卡面按 kind == "money" 画。
+func _gdp_kpi(cell_idx: int) -> Dictionary:
+	var gdp := _local_gdp(cell_idx)
+	if gdp.is_empty():
+		return {
+			"id": "kpi_gdp", "title": "GDP", "icon": &"metric.treasury",
+			"kind": "text", "text": "—", "caption": "统计中",
+			"tooltip": "本地年内累计产值，按已提交的经济周期累计；首个结算周期完成前显示「—」。",
+		}
+	var ytd := float(gdp.get("ytd", 0.0)) / MONEY_SCALE
+	var per_day := float(gdp.get("per_day", 0.0)) / MONEY_SCALE
+	var days := int(gdp.get("days_counted", 0))
+	var days_per_year := maxi(1, int(gdp.get("days_per_year", 365)))
+	var per_day_text := UITokens.format_compact_number_cn(per_day, 1)
+	return {
+		"id": "kpi_gdp", "title": "GDP", "icon": &"metric.treasury",
+		"kind": "money", "value": ytd, "decimals": 0,
+		"caption": "日均 %s" % per_day_text,
+		"tooltip": "本地年内累计产值（已计 %d/%d 天）。收入法：建筑营收 − 中间投入 − 维护 = 工资 + 营业盈余，不含营业税。日均 %s。" % [days, days_per_year, per_day_text],
+	}
+
+
+## 格级综合满意度（人口加权八维，已按生存/基本生活封顶）。走原生只读聚合接口，
+## 只遍历本格 cohort，且同一已提交状态内由 read view 缓存，页头每日刷新不额外开扫描。
+## 不可用时返回 -1.0，调用方退回生存口径并在提示里说明。
+func _cell_composite_satisfaction(cell_idx: int) -> float:
+	if cell_idx < 0:
+		return -1.0
+	var facade = _economy_facade()
+	if facade == null or not facade.has_method("cell_satisfaction_attractiveness"):
+		return -1.0
+	var attractiveness: Dictionary = facade.cell_satisfaction_attractiveness(cell_idx)
+	if bool(attractiveness.get("ok", false)):
+		var q16 := int(attractiveness.get("composite_q16", -1))
+		if q16 >= 0:
+			var value := clampf(float(q16) / 65536.0, 0.0, 1.0)
+			if _cell_composite_cache.size() > 256:
+				_cell_composite_cache.clear()
+			_cell_composite_cache[cell_idx] = value
+			return value
+	# 忙时/首次结算前沿用上次成功值；真的没有就退回生存口径。
+	return float(_cell_composite_cache.get(cell_idx, -1.0))
 
 
 func _primary_resource_kpi(cell_idx: int, is_water: bool) -> Dictionary:
@@ -2606,6 +2662,7 @@ func _population_summary(cell_idx: int) -> Dictionary:
 	if bool(summary.get("ok", false)):
 		if _population_summary_cache.size() > 256:
 			_population_summary_cache.clear()
+			_cell_composite_cache.clear()
 		_population_summary_cache[cell_idx] = summary
 		return summary
 	if bool(summary.get("busy", false)) or bool(summary.get("read_view_pending", false)):
@@ -3382,32 +3439,32 @@ func _gdp_metrics(cell_idx: int) -> Array:
 	var per_day := float(gdp.get("per_day", 0.0))
 	var days := int(gdp.get("days_counted", 0))
 	var days_per_year := maxi(1, int(gdp.get("days_per_year", 365)))
-	# 事实表单行只有 44px，副行留给「年度走到哪一天」——累计值最容易被误读成
-	# 全年完成额，日均产值挪进 tooltip，不占可见宽度。
+	# 卡面只放一个数；「已计走到哪一天」「日均」「与全国人均的差距」都进 tooltip，
+	# 否则窄面板里会被截成「已计 10/3…」「全国 11.62…」这类读不完的碎字。
 	var metrics := [{
-		"id": "population_gdp", "title": "本地年度产值",
+		"id": "population_gdp", "title": "本地年度产值", "money": true,
 		"value": _money_text(int(round(ytd))),
-		"subtitle": "已计 %d/%d 天" % [days, days_per_year],
+		"subtitle": "",
 		"accent": UITokens.ECO, "icon": "metric.treasury",
-		"tooltip": "收入法：建筑营收 − 中间投入 − 维护（= 工资 + 营业盈余，不含营业税）。本年度逐经济周期累计，与全国口径一致。\n日均产值 %s。" % _money_text(int(round(per_day))),
+		"tooltip": "收入法：建筑营收 − 中间投入 − 维护（= 工资 + 营业盈余，不含营业税）。本年度逐经济周期累计，与全国口径一致；已计 %d/%d 天，日均 %s。" % [
+			days, days_per_year, _money_text(int(round(per_day)))],
 	}]
 	var per_capita := float(gdp.get("per_capita", NAN))
 	var national_per_capita := float(gdp.get("national_per_capita", NAN))
 	if is_nan(per_capita):
 		return metrics
-	var subtitle := ""
-	# 标题已写明「人均」，副行不再重复这两个字，省下的宽度留给大额数字。
+	var comparison := ""
 	if not is_nan(national_per_capita) and national_per_capita > 0.0:
 		var gap := (per_capita - national_per_capita) / national_per_capita * 100.0
-		subtitle = "全国 %s（%s%.0f%%）" % [
+		comparison = "；全国人均 %s（本地%s%.0f%%）" % [
 			_money_text(int(round(national_per_capita))),
-			"+" if gap >= 0.0 else "", gap]
+			"高于" if gap >= 0.0 else "低于", absf(gap)]
 	metrics.append({
-		"id": "population_gdp_per_capita", "title": "人均年度产值",
+		"id": "population_gdp_per_capita", "title": "人均年度产值", "money": true,
 		"value": _money_text(int(round(per_capita))),
-		"subtitle": subtitle, "accent": UITokens.ACCENT,
+		"subtitle": "", "accent": UITokens.ACCENT,
 		"icon": "family.metric.wealth",
-		"tooltip": "本地产值 ÷ 本地人口。括号内是与全国人均的差距，正为高于全国。",
+		"tooltip": "本地产值 ÷ 本地人口%s。" % comparison,
 	})
 	return metrics
 
@@ -3723,39 +3780,36 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 	var jobs_filled := int(snapshot.get("jobs_filled", 0))
 	var job_openings := int(snapshot.get("job_openings", 0))
 	var carrying_k_eff := int(snapshot.get("carrying_k_eff", 0))
-	var local_food_daily := int(snapshot.get("local_food_output_eq_per_day", 0))
-	var effective_food_daily := int(snapshot.get("effective_food_supply_eq_per_day", 0))
 	var food_access := float(snapshot.get("food_access_q16", 65536)) / 65536.0
 	var population_total := int(snapshot.get("population", 0))
 	var gauges := []
 	if population_total > 0:
+		# 百分比和条色已经表达了“够不够”，不再另挂“充足/偏紧/不足”的形容词。
 		gauges.append({"id": "population_food_gauge", "label": "口粮保障",
 			"value": clampf(food_access, 0.0, 1.0),
 			"accent": UITokens.GOOD if food_access >= 0.95 else (
 				UITokens.WARN if food_access >= 0.8 else UITokens.RISK),
 			"value_text": "%.0f%%" % (food_access * 100.0),
-			"status_label": "充足" if food_access >= 0.95 else (
-				"偏紧" if food_access >= 0.8 else "不足"),
-			"tooltip": "最近一次本地结算中，居民实际取得的食物当量占最低生存口粮的比例（含购买与自产自用）。两次本地结算之间保留上次结果。"})
+			"tooltip": "居民实际取得的食物当量占最低生存口粮的比例（含购买与自产自用）。低于 95% 偏紧，低于 80% 不足。"})
 	if carrying_k_eff > 0:
 		var load := float(population_total) / float(carrying_k_eff)
-		gauges.append({"id": "population_carrying_gauge", "label": "承载占用",
+		# 承载力只给一个数：现居人口在页头「人口」格与阶层列表里已经写过了。
+		gauges.append({"id": "population_carrying_gauge", "label": "承载力",
 			"value": clampf(load, 0.0, 1.0),
 			"accent": UITokens.RISK if load > 1.0 else (UITokens.WARN if load > 0.85 else UITokens.ECO),
-			"value_text": "%s / %s 人" % [
+			"value_text": "%s 人" % UITokens.format_compact_number_cn(float(carrying_k_eff), 1),
+			"tooltip": "本地粮食与库存能养活的人口上限；现居 %s 人，占用 %d%%。超过上限后人口不再增长。" % [
 				UITokens.format_compact_number_cn(float(population_total), 1),
-				UITokens.format_compact_number_cn(float(carrying_k_eff), 1)],
-			"tooltip": "现有人口与本地粮食可养活人口之比；超过上限后人口不再增长。"})
+				roundi(load * 100.0)]})
 	if job_capacity > 0:
-		gauges.append({"id": "population_jobs_gauge", "label": "岗位到岗",
+		# 空缺数在页头「就业率」格已有；这里只留到岗 / 岗位。
+		gauges.append({"id": "population_jobs_gauge", "label": "岗位",
 			"value": clampf(float(jobs_filled) / float(job_capacity), 0.0, 1.0),
 			"accent": UITokens.ACCENT,
 			"value_text": "%s / %s" % [
 				UITokens.format_compact_number_cn(float(jobs_filled), 1),
 				UITokens.format_compact_number_cn(float(job_capacity), 1)],
-			"status_label": "空缺 %s" % UITokens.format_compact_number_cn(float(job_openings), 1) \
-				if job_openings > 0 else "满员",
-			"tooltip": "本地建筑提供的岗位中已有人到岗的数量。"})
+			"tooltip": "本地建筑提供的岗位与已到岗人数；空缺 %s。" % UITokens.format_compact_number_cn(float(job_openings), 1)})
 	var epoch_income := int(snapshot.get("epoch_income", 0))
 	var epoch_expense := int(snapshot.get("epoch_expense", 0))
 	var epoch_net := epoch_income - epoch_expense
@@ -3767,8 +3821,9 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 		for row in rows:
 			(row as Dictionary)["cohort_identity"] = ""
 	var local_metrics := [
-		{"id": "population_funds", "title": "居民存款", "value": _money_text(int(snapshot.get("funds", 0))), "subtitle": "本期%s %s" % ["结余" if epoch_net >= 0 else "亏空", _money_text(absi(epoch_net))], "accent": UITokens.ACCENT if epoch_net >= 0 else UITokens.RISK, "icon": "resource"},
-		_food_output_metric(snapshot, local_food_daily, effective_food_daily),
+		# 存款只给总额；本期结余挪进提示，不再在数值右边挂一串副行文字。
+		{"id": "population_funds", "title": "居民存款", "money": true, "value": _money_text(int(snapshot.get("funds", 0))), "subtitle": "", "accent": UITokens.ACCENT, "icon": "resource",
+			"tooltip": "本格各阶层存款合计。本期%s %s。" % ["结余" if epoch_net >= 0 else "亏空", _money_text(absi(epoch_net))]},
 	]
 	# 产值两格只在账本已跟踪该格时出现；他国 / 无主 / 无人聚落不加，指标行不会空转。
 	local_metrics.append_array(_gdp_metrics(cell_idx))
@@ -3777,9 +3832,9 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 		"gauges": gauges,
 		"metrics": local_metrics,
 		"cohort_rows": rows,
-		"list_header": {"lead": "阶层 · 族群 · 生活" if mixed_identity else "阶层 · 生活",
+		"list_header": {"lead": "阶层 · 族群 · 生活水平" if mixed_identity else "阶层 · 生活水平",
 			"indent": 41.0, "columns": [
-			{"text": "人口", "width": 54.0}, {"text": "人均存款/净收", "width": 72.0}]},
+			{"text": "人口", "width": 54.0}, {"text": "存款/净收", "width": 72.0}]},
 	}
 
 
@@ -3958,7 +4013,7 @@ const SATISFACTION_DIMENSION_EXPLANATIONS := [
 ]
 
 const SATISFACTION_DIMENSION_NAMES := [
-	"温饱", "基本生活", "舒适", "奢侈", "收入增长", "储蓄", "税负", "社会发展",
+	"生存", "基本生活", "舒适", "奢侈", "收入增长", "储蓄", "税负", "社会发展",
 ]
 
 
@@ -4165,6 +4220,8 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 		var price_series: PackedFloat32Array = good_hist.get("price", PackedFloat32Array())
 		var stock_series: PackedFloat32Array = good_hist.get("stock", PackedFloat32Array())
 		var stock_plain := _goods_unit_text(stock_raw)
+		# 列表副行只给数量：列头已写「库存」，每行再带一次「单位」只是噪音。
+		var stock_text := UITokens.format_compact_number_cn(stock_units, 2)
 		var anchor_text := _money_text(anchor_raw) if anchor_raw > 0 else "—"
 		var days_of_stock := stock_units / total_demand_units if total_demand_units > 0.001 \
 			else (999.0 if stock_units > 0.001 else 0.0)
@@ -4192,7 +4249,7 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 			"id": "market_%s" % stable_id,
 			"name": display_name,
 			"good_id": stable_id,
-			"stock": "%s · 在途" % stock_plain if in_transit else stock_plain,
+			"stock": "%s · 在途" % stock_text if in_transit else stock_text,
 			"stock_plain": stock_plain,
 			"stock_units_float": stock_units,
 			"days_of_stock_float": days_of_stock,
@@ -4243,8 +4300,8 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 	return {
 		"insights": market_insights,
 		"metrics": [
-			{"id": "merchant_cash", "title": "商家现金", "value": _money_text(int(snapshot.get("merchant_cash", 0))), "subtitle": "", "accent": UITokens.ACCENT, "icon": "resource"},
-			{"id": "merchant_trade_net", "title": "贸易净额", "value": _money_text(trade_net), "subtitle": "", "accent": UITokens.ACCENT if trade_net == 0 else (UITokens.GOOD if trade_net > 0 else UITokens.RISK), "icon": "resource"},
+			{"id": "merchant_cash", "title": "商家现金", "money": true, "value": _money_text(int(snapshot.get("merchant_cash", 0))), "subtitle": "", "accent": UITokens.ACCENT, "icon": "resource"},
+			{"id": "merchant_trade_net", "title": "贸易净额", "money": true, "value": _money_text(trade_net), "subtitle": "", "accent": UITokens.ACCENT if trade_net == 0 else (UITokens.GOOD if trade_net > 0 else UITokens.RISK), "icon": "resource"},
 		],
 		"sections": [{
 			"id": "merchant_accounts",
@@ -4253,10 +4310,10 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 			"accent": UITokens.RESOURCE,
 			"collapsed": true,
 			"metrics": [
-				{"id": "merchant_inventory_liquidation", "title": "库存估值", "value": _money_text(int(snapshot.get("merchant_inventory_liquidation_value", 0))), "subtitle": "", "tooltip": "按零售价估算的库存价值。", "accent": UITokens.RESOURCE, "icon": "resource"},
-				{"id": "merchant_assets", "title": "商业资产", "value": _money_text(int(snapshot.get("merchant_economic_assets", 0))), "subtitle": "", "tooltip": "现金加库存估值。", "accent": UITokens.GOOD, "icon": "resource"},
+				{"id": "merchant_inventory_liquidation", "title": "库存估值", "money": true, "value": _money_text(int(snapshot.get("merchant_inventory_liquidation_value", 0))), "subtitle": "", "tooltip": "按零售价估算的库存价值。", "accent": UITokens.RESOURCE, "icon": "resource"},
+				{"id": "merchant_assets", "title": "商业资产", "money": true, "value": _money_text(int(snapshot.get("merchant_economic_assets", 0))), "subtitle": "", "tooltip": "现金加库存估值。", "accent": UITokens.GOOD, "icon": "resource"},
 				{"id": "merchant_coverage", "title": "周转覆盖", "value": "%.1f 期" % (float(snapshot.get("merchant_liquidity_coverage_q16", 65536)) / 65536.0), "subtitle": "", "tooltip": "现金可支撑的经营期数。", "accent": UITokens.ACCENT, "icon": "resource"},
-				{"id": "merchant_margin", "title": "采购毛利", "value": _money_text(int(snapshot.get("merchant_procurement_margin_value", 0))), "subtitle": "", "accent": UITokens.GOOD, "icon": "resource"},
+				{"id": "merchant_margin", "title": "采购毛利", "money": true, "value": _money_text(int(snapshot.get("merchant_procurement_margin_value", 0))), "subtitle": "", "accent": UITokens.GOOD, "icon": "resource"},
 			],
 		}],
 		"market_rows": rows,
@@ -4902,7 +4959,7 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 			"id": "building_%d_%d" % [type_idx, i],
 			"name": String(type_names[type_idx]) if type_idx >= 0 and type_idx < type_names.size() else (String(type_ids[type_idx]) if type_idx >= 0 and type_idx < type_ids.size() else "建筑"),
 			"building_type_id": building_id,
-			"count": "%d 栋" % count,
+			"count": "%d" % count,
 			"count_raw": count,
 			"owner": "业主 · %s" % _owner_profession_name(snapshot, int(owner_signatures[i]) if i < owner_signatures.size() else -1),
 			"status": state_label,
@@ -4937,7 +4994,7 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 	var total_count := _sum_i64(snapshot.get("building_counts_by_type", PackedInt64Array()))
 	var metrics := [{"id": "building_total", "title": "建筑总数", "value": "%s 栋" % UITokens.format_compact_number_cn(float(total_count), 1), "subtitle": "%d 处停产" % halted_groups if halted_groups > 0 else "", "accent": UITokens.RISK if halted_groups > 0 else UITokens.ACCENT, "icon": "building"}]
 	if group_types.size() > 0:
-		metrics.append({"id": "building_profit_total", "title": "本期利润", "value": "%s%s" % ["+" if total_profit > 0 else "", _money_text(total_profit)], "subtitle": "", "tooltip": "本期各建筑利润合计，自用产出按市价折算。", "accent": UITokens.GOOD if total_profit >= 0 else UITokens.RISK, "icon": "resource"})
+		metrics.append({"id": "building_profit_total", "title": "本期利润", "money": true, "value": "%s%s" % ["+" if total_profit > 0 else "", _money_text(total_profit)], "subtitle": "", "tooltip": "本期各建筑利润合计，自用产出按市价折算。", "accent": UITokens.GOOD if total_profit >= 0 else UITokens.RISK, "icon": "resource"})
 	var category := {
 		"insights": [{"id": "buildings_empty", "text": "此地块当前没有建筑。", "accent": UITokens.TEXT_MUTED, "icon": "building"}] if rows.is_empty() else [],
 		"metrics": metrics,
@@ -5320,7 +5377,7 @@ func _append_construction_rows(rows: Array, snapshot: Dictionary, type_ids: Pack
 		var type_idx := int(types[i])
 		var building_id := String(type_ids[type_idx]) \
 			if type_idx >= 0 and type_idx < type_ids.size() else ""
-		rows.append({"id": "construction_%d_%d" % [type_idx, i], "name": String(type_names[type_idx]) if type_idx >= 0 and type_idx < type_names.size() else (building_id if not building_id.is_empty() else "建筑"), "building_type_id": building_id, "count": "%d 栋" % (int(counts[i]) if i < counts.size() else 0), "owner": "业主 · %s" % _owner_profession_name(snapshot, int(owners[i]) if i < owners.size() else -1), "status": "建造中 · 第 %d 日完工" % (int(ready_days[i]) if i < ready_days.size() else 0), "profit": "—", "profit_label": "未投产", "accent": UITokens.WARN, "icon": _building_icon(building_id, snapshot, type_idx), "job_rows": [], "production_rows": [], "finance": {}, "visible": true})
+		rows.append({"id": "construction_%d_%d" % [type_idx, i], "name": String(type_names[type_idx]) if type_idx >= 0 and type_idx < type_names.size() else (building_id if not building_id.is_empty() else "建筑"), "building_type_id": building_id, "count": "%d" % (int(counts[i]) if i < counts.size() else 0), "owner": "业主 · %s" % _owner_profession_name(snapshot, int(owners[i]) if i < owners.size() else -1), "status": "建造中 · 第 %d 日完工" % (int(ready_days[i]) if i < ready_days.size() else 0), "profit": "—", "profit_label": "未投产", "accent": UITokens.WARN, "icon": _building_icon(building_id, snapshot, type_idx), "job_rows": [], "production_rows": [], "finance": {}, "visible": true})
 
 
 func _building_icon(type_id: String, snapshot: Dictionary = {}, type_idx: int = -1) -> StringName:
@@ -5441,30 +5498,10 @@ func _sum_i64(values: PackedInt64Array) -> int:
 	return total
 
 
-func _food_output_metric(snapshot: Dictionary, local_daily: int, effective_daily: int) -> Dictionary:
-	var per_person := int(snapshot.get("carrying_survival_food_per_person", 0))
-	var metric := {"id": "population_food_output", "title": "本地口粮", "accent": UITokens.ACCENT,
-		"icon": "crop", "subtitle": "",
-		"tooltip": "本地每日产出的口粮按最低生存口粮折算的可养活人数。"}
-	var local_persons := float(snapshot.get("local_food_capacity_persons", -1))
-	var effective_persons := float(snapshot.get("effective_food_capacity_persons", -1))
-	if local_persons < 0.0 and per_person > 0:
-		local_persons = float(local_daily) / float(per_person)
-		effective_persons = float(effective_daily) / float(per_person)
-	if local_persons < 0.0:
-		metric["value"] = "有产出" if local_daily > 0 else "无产出"
-		return metric
-	metric["value"] = "够 %s 人" % UITokens.format_compact_number_cn(local_persons, 1)
-	if effective_persons > local_persons:
-		metric["tooltip"] = "%s\n计入输入粮食后可养活 %s 人。" % [metric["tooltip"],
-			UITokens.format_compact_number_cn(effective_persons, 1)]
-	return metric
-
-
 func _money_text(subunits: int) -> String:
 	if subunits != 0 and absi(subunits) < 100:
-		return "%.4f" % (float(subunits) / 10000.0)
-	return UITokens.format_compact_number_cn(float(subunits) / 10000.0, 2)
+		return "%.4f" % (float(subunits) / MONEY_SCALE)
+	return UITokens.format_compact_number_cn(float(subunits) / MONEY_SCALE, 2)
 
 
 func _goods_unit_text(subunits: int) -> String:

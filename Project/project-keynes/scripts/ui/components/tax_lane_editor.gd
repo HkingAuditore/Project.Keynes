@@ -13,6 +13,8 @@ const TAX_MODE_ABSOLUTE := 1
 const MONEY_SUBUNITS_PER_CURRENCY := 10000
 const TAX_ABSOLUTE_MIN := -1000000000
 const TAX_ABSOLUTE_MAX := 1000000000
+## 定额模式下数值左边那枚金币的尺寸基准（跟 SpinBox 的字号走）。
+const MONEY_ICON_FONT_SIZE := 13
 
 var _data: Dictionary = {}
 var _pending := false
@@ -21,6 +23,7 @@ var _pending_mode := TAX_MODE_PERCENT_BP
 var _dirty := false
 var _applying := false
 var _spin: SpinBox
+var _money_icon: TextureRect
 var _mode_button: OptionButton
 var _reset: Button
 var _clock: Control
@@ -35,13 +38,18 @@ func _ready() -> void:
 	_label = get_node("Box/Row/Label") as Label
 	_mode_button = get_node_or_null("Box/Row/Mode") as OptionButton
 	_spin = get_node("Box/Row/Spin") as SpinBox
+	_money_icon = get_node_or_null("Box/Row/MoneyIcon") as TextureRect
+	if _money_icon != null:
+		MoneyDisplay.apply_icon(_money_icon, MONEY_ICON_FONT_SIZE)
 	_reset = get_node("Box/Row/Reset") as Button
 	_clock = get_node("Box/Row/Clock") as Control
 	_note = get_node("Box/Note") as Label
 	if _mode_button != null:
 		_mode_button.clear()
 		_mode_button.add_item("%", TAX_MODE_PERCENT_BP)
-		_mode_button.add_item("定额（货币）", TAX_MODE_ABSOLUTE)
+		# 定额税的单位是货币：下拉项用金币图标顶着，不再写「（货币）」三个字。
+		# 必须用 24px 的 MENU_ICON —— item 图标按原生像素算最小尺寸。
+		_mode_button.add_icon_item(MoneyDisplay.MENU_ICON, "定额", TAX_MODE_ABSOLUTE)
 		_mode_button.item_selected.connect(_on_mode_selected)
 	_spin.get_line_edit().alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_spin.get_line_edit().text_changed.connect(_on_text_changed)
@@ -202,14 +210,24 @@ func _configure_spin_for_mode(mode: int) -> void:
 		_spin.min_value = absolute_amount_to_currency(TAX_ABSOLUTE_MIN)
 		_spin.max_value = absolute_amount_to_currency(TAX_ABSOLUTE_MAX)
 		_spin.step = 0.01
-		_spin.suffix = "货币"
-		_spin.tooltip_text = "定额税按货币计，单位：货币/人/天"
+		# 单位不写字：定额模式下 SpinBox 左边亮起一枚金币（MoneyIcon），
+		# 对话框里剩下的「货币」字样全部收进这枚图标。
+		_spin.suffix = ""
+		_spin.tooltip_text = "定额税：每人每天缴纳的金额"
+		_set_money_icon_visible(true)
 		return
 	_spin.min_value = -1000.0
 	_spin.max_value = 100.0
 	_spin.step = 0.01
 	_spin.suffix = "%"
 	_spin.tooltip_text = "按百分比计"
+	_set_money_icon_visible(false)
+
+
+## 定额模式亮金币、百分比模式收起来：一枚图标就说明了这一格读的是什么单位。
+func _set_money_icon_visible(shown: bool) -> void:
+	if _money_icon != null:
+		_money_icon.visible = shown
 
 
 func _set_spin_value(rate: int, mode: int) -> void:
@@ -326,7 +344,9 @@ static func parse_rate_text(text: String, fallback: int) -> int:
 
 
 static func parse_value_text(text: String, fallback: int, mode: int) -> int:
-	var cleaned := text.strip_edges().replace("%", "").replace("货币", "") \
+	# 玩家可能从别处复制带单位的数字（¥ / 货币 / 元）；单位现在由图标表示，
+	# 输入框里只该有数字，所以先把可能的单位记号摘掉再解析。
+	var cleaned := MoneyDisplay.strip_unit(text).replace("%", "") \
 		.replace("+", "").strip_edges()
 	cleaned = cleaned.replace(",", ".")
 	if cleaned.is_empty():
@@ -374,8 +394,9 @@ static func _format_rate(rate_basis_points: int, include_suffix: bool = true) ->
 
 static func _format_value(value: int, mode: int, include_suffix: bool = true) -> String:
 	if mode == TAX_MODE_ABSOLUTE:
-		var shown_currency := _format_currency(value)
-		return "%s 货币" % shown_currency if include_suffix else shown_currency
+		# 金额只出数字：单位由行首那枚金币图标承担（见 MoneyDisplay），
+		# 所以这里不再拼「货币」二字，无论要不要后缀都一样。
+		return _format_currency(value)
 	var percent := basis_points_to_percent(value)
 	var shown := "%d" % int(round(percent)) \
 		if is_equal_approx(percent, round(percent)) else "%.2f" % percent

@@ -88,6 +88,65 @@ func _text_width(text: String, size_px: int, kind: String = "sans") -> float:
 	return _font(kind).get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size_px).x
 
 
+## ── 货币读数 ────────────────────────────────────────────────────────────
+## 金额一律画成「金币图标 + 数字」，不再拼 ¥ 之类的单位记号（见 MoneyDisplay）。
+## 三件套：_money_text 从基线左端往右画，_money_text_right 让整段右边缘对齐，
+## _money_width 先量宽度用来排版（对齐、截断、算留白都靠它）。
+
+## 从 position_value（文字基线左端）开始画「金币 + 数值」，返回总宽度。
+func _money_text(position_value: Vector2, text: String, size_px: int, color: Color,
+		kind: String = "sans") -> float:
+	var shown := MoneyDisplay.strip_unit(text)
+	var offset := MoneyDisplay.draw_on_baseline(self, position_value, size_px, _font(kind))
+	draw_string(_font(kind), Vector2(position_value.x + offset, position_value.y), shown,
+		HORIZONTAL_ALIGNMENT_LEFT, -1.0, size_px, color)
+	return offset + _text_width(shown, size_px, kind)
+
+
+## 右对齐：整段（图标 + 数字）的右边缘落在 right_x 上。
+func _money_text_right(right_x: float, baseline_y: float, text: String, size_px: int,
+		color: Color, kind: String = "sans") -> float:
+	var width := _money_width(text, size_px, kind)
+	_money_text(Vector2(right_x - width, baseline_y), text, size_px, color, kind)
+	return width
+
+
+## 整段（图标 + 数字）的宽度，用来在排版前预留位置。
+func _money_width(text: String, size_px: int, kind: String = "sans") -> float:
+	return MoneyDisplay.slot_width(size_px) \
+		+ _text_width(MoneyDisplay.strip_unit(text), size_px, kind)
+
+
+## 一行混排：runs 里 String 是普通文字，MoneyDisplay.MONEY 标记处插一枚金币。
+## 「人均累计 [金币]12.3万 · 日均 [金币]4.5万」这种整句靠它拼，不用把单位写成字。
+func _mixed_line(position_value: Vector2, runs: Array, size_px: int, color: Color,
+		kind: String = "sans") -> float:
+	var x := position_value.x
+	for run in runs:
+		if typeof(run) == TYPE_STRING_NAME and String(run) == String(MoneyDisplay.MONEY):
+			x += MoneyDisplay.draw_on_baseline(self, Vector2(x, position_value.y),
+				size_px, _font(kind))
+			continue
+		var piece := String(run)
+		if piece.is_empty():
+			continue
+		draw_string(_font(kind), Vector2(x, position_value.y), piece,
+			HORIZONTAL_ALIGNMENT_LEFT, -1.0, size_px, color)
+		x += _text_width(piece, size_px, kind)
+	return x - position_value.x
+
+
+## 混排整行的宽度：排版前先量，决定要不要换行或降字号。
+func _mixed_width(runs: Array, size_px: int, kind: String = "sans") -> float:
+	var width := 0.0
+	for run in runs:
+		if typeof(run) == TYPE_STRING_NAME and String(run) == String(MoneyDisplay.MONEY):
+			width += MoneyDisplay.slot_width(size_px)
+		else:
+			width += _text_width(String(run), size_px, kind)
+	return width
+
+
 ## 把超宽文字截成“……”，用于固定列宽的账簿单元格。
 func _fit_text(text: String, size_px: int, max_width: float, kind: String = "sans") -> String:
 	if max_width <= 0.0 or _text_width(text, size_px, kind) <= max_width:

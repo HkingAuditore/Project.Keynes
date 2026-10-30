@@ -21,6 +21,8 @@ var _static_catalog_cache: Dictionary = {}
 var _ideology_catalog_cache: Dictionary = {}
 var _ideology_catalog_facade = null
 var _economy_history := EconomyHistoryBuffer.new()
+## 国库收支的逐日趋势。与产值账本一样按已提交日采样，面板关闭时也继续走。
+var _fiscal_history := EconomyFiscalHistory.new()
 var _gdp_ledger: EconomyGdpLedger = null
 var _strata_table: SocialStrataTable
 
@@ -32,6 +34,7 @@ func set_context(generator) -> void:
 	_ideology_catalog_cache.clear()
 	_ideology_catalog_facade = null
 	_economy_history.reset()
+	_fiscal_history.reset()
 
 
 ## 年度产值账本由 GameUIManager 持有并推进；这里只持有引用，供卷宗横幅读取。
@@ -45,6 +48,23 @@ func gdp_ledger() -> EconomyGdpLedger:
 
 func economy_history() -> EconomyHistoryBuffer:
 	return _economy_history
+
+
+func fiscal_history() -> EconomyFiscalHistory:
+	return _fiscal_history
+
+
+## 每个已提交日推进一次国库收支序列。只读一次财政快照，不做逐格聚合，
+## 与产值账本一样在面板关闭时也继续累加。
+func sample_fiscal_history() -> bool:
+	var context := _country_context()
+	if not bool(context.get("ok", false)):
+		return false
+	var facade = context.facade
+	if facade == null or not facade.has_method("fiscal_snapshot"):
+		return false
+	var handle := int(context.country_handle)
+	return _fiscal_history.sample(handle, facade.fiscal_snapshot(handle))
 
 
 func strata_table() -> SocialStrataTable:
@@ -523,6 +543,7 @@ func build(section_id: String = "technology") -> Dictionary:
 	model["economy_facade"] = economy_facade
 	if normalized_section == "economy":
 		model["economy_history"] = _economy_history
+		model["fiscal_history"] = _fiscal_history
 		model["gdp_ledger"] = _gdp_ledger
 		model["strata_table"] = strata_table()
 	model.merge(section_snapshot, true)

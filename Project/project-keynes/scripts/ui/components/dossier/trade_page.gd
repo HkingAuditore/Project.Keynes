@@ -7,10 +7,10 @@ extends DossierPage
 
 const GOODS_COLUMNS := [
 	{"id": "name", "label": "物资", "kind": "text", "expand": true, "min_width": 110.0},
-	{"id": "import", "label": "进口额", "kind": "number", "width": 78.0},
-	{"id": "export", "label": "出口额", "kind": "number", "width": 78.0},
+	{"id": "import", "label": "进口额", "kind": "money", "width": 78.0},
+	{"id": "export", "label": "出口额", "kind": "money", "width": 78.0},
 	{"id": "net", "label": "净出口", "kind": "diverging", "width": 116.0},
-	{"id": "tariff", "label": "关税", "kind": "number", "width": 66.0, "optional": true},
+	{"id": "tariff", "label": "关税", "kind": "money", "width": 66.0, "optional": true},
 	{"id": "cumulative", "label": "累计进 / 出", "kind": "text", "width": 128.0, "optional": true,
 		"sortable": false},
 ]

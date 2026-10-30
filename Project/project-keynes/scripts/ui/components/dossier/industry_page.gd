@@ -8,7 +8,7 @@ const COLUMNS := [
 	{"id": "units", "label": "数量", "kind": "number", "width": 56.0},
 	{"id": "utilization", "label": "利用率", "kind": "bar", "width": 100.0},
 	{"id": "margin", "label": "利润率", "kind": "diverging", "width": 108.0},
-	{"id": "revenue", "label": "营收 / 日", "kind": "number", "width": 82.0},
+	{"id": "revenue", "label": "营收 / 日", "kind": "money", "width": 82.0},
 	{"id": "mix", "label": "营收去向", "kind": "stacked", "width": 116.0, "optional": true,
 		"sortable": false, "tooltip": "原料 / 工资 / 维护与税 / 利润"},
 	{"id": "fill", "label": "岗位填充", "kind": "bar", "width": 92.0, "optional": true},

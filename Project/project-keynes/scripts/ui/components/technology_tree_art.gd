@@ -15,6 +15,8 @@ const ERA_SCROLL := ROOT + "era_scroll.png"
 const LANE_RIBBON := ROOT + "lane_ribbon.png"
 const LANE_STRIP := ROOT + "lane_strip.png"
 const CANVAS_PAPER := ROOT + "canvas_paper.png"
+const LANE_STRIP_SOURCE_HEIGHT := 384.0
+const LANE_STRIP_CAP_WIDTH := 18.0
 ## Horizontal cap widths in texture pixels [left, right]; caps keep their aspect
 ## when the plate is drawn at a different height, so notches/rollers never smear.
 const CAPS := {
@@ -107,6 +109,31 @@ static func draw_backdrop(canvas: CanvasItem, rect: Rect2, origin: Vector2,
 			canvas.draw_texture_rect(tex, Rect2(Vector2(x, y), tile), false, modulate)
 			x += tile.x
 		y += tile.y
+	return true
+
+
+## Draws the lane paper as a horizontal nine-slice. The torn side edges keep
+## their source proportions while only the quiet paper centre is stretched.
+static func draw_lane_strip(canvas: CanvasItem, rect: Rect2,
+		modulate: Color = Color.WHITE) -> bool:
+	var tex := texture(LANE_STRIP)
+	if tex == null or rect.size.x <= 0.0 or rect.size.y <= 0.0:
+		return false
+	var source_size := tex.get_size()
+	var cap := minf(rect.size.x * 0.5,
+		rect.size.y * LANE_STRIP_CAP_WIDTH / LANE_STRIP_SOURCE_HEIGHT)
+	var source_cap := minf(LANE_STRIP_CAP_WIDTH, source_size.x * 0.5)
+	var middle := maxf(0.0, rect.size.x - cap * 2.0)
+	canvas.draw_texture_rect_region(tex, Rect2(rect.position, Vector2(cap, rect.size.y)),
+		Rect2(Vector2.ZERO, Vector2(source_cap, source_size.y)), modulate)
+	canvas.draw_texture_rect_region(tex,
+		Rect2(rect.position + Vector2(cap, 0.0), Vector2(middle, rect.size.y)),
+		Rect2(Vector2(source_cap, 0.0),
+			Vector2(source_size.x - source_cap * 2.0, source_size.y)), modulate)
+	canvas.draw_texture_rect_region(tex,
+		Rect2(Vector2(rect.end.x - cap, rect.position.y), Vector2(cap, rect.size.y)),
+		Rect2(Vector2(source_size.x - source_cap, 0.0),
+			Vector2(source_cap, source_size.y)), modulate)
 	return true
 
 

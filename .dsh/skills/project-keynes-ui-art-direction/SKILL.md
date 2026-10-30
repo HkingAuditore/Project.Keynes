@@ -1,6 +1,6 @@
 ---
 name: project-keynes-ui-art-direction
-description: Guides Project.Keynes player-facing UI, art direction, visual design language, data visualization, iconography, button material, animation, HUD, inspector panels, and grand-strategy presentation. Use when designing or implementing UI/UX, visual polish, effects, motion, data dashboards, player HUDs, icon libraries, Font Awesome-style icons, or Civilization/Europa Universalis/Victoria/Crusader Kings inspired interface work for Project.Keynes.
+description: Guides Project.Keynes player-facing UI, art direction, visual design language, data visualization, iconography, currency-unit gold icons, button material, animation, HUD, inspector panels, and grand-strategy presentation. Use when designing or implementing UI/UX, visual polish, effects, motion, data dashboards, player HUDs, icon libraries, Font Awesome-style icons, money/currency readouts and unit glyphs, or Civilization/Europa Universalis/Victoria/Crusader Kings inspired interface work for Project.Keynes.
 ---
 
 # Project.Keynes UI Art Direction
@@ -38,6 +38,25 @@ Do not repeat these mistakes:
 - Performance: selection changes may rebuild the selected tile panel; daily ticks must update cached data or visible values only, not recreate the node tree.
 - Library selection: when the user asks about existing libraries or a new UI capability, research mature reusable options first and record why the chosen option is lighter or safer than alternatives.
 - Chinese numeric display: do not use English suffixes such as `k`, `M`, or `B` in player-facing Chinese UI. Use `UITokens.format_compact_number_cn()` for compact values, e.g. `1.25万`, `3.56亿`.
+
+## 货币单位：一律用金币图标
+
+玩家界面里不出现 `¥` / `￥` / `$` / `货币` / `元` 这类单位记号：金额只写数字本体，单位由
+`assets/ui/country_status/Gold.png` 画在数字左边。唯一入口是
+`scripts/ui/money_display.gd`（`class_name MoneyDisplay`）；完整规则、三种联排与事故记录见
+[UI_ART_DIRECTION.md](UI_ART_DIRECTION.md) 的「货币读数与金币图标（MoneyDisplay）」，
+扫描清单与逐处处理见项目文档 `docs/ui/currency-unit-icon.md`。
+
+- 声明而不是拼接：账簿列 `"kind": "money"`、事实 `"money": true`、
+  `MetricCard.set_data(..., money := true)`、`DossierStackedBar.set_segments(..., money_icon := true)`。
+  渲染层负责画金币，视图模型只给数字。
+- 图标边长 `1.05 ×` 字号、下限 12px，永远保持原色（不按语义色染色）；人口、座数、天数、
+  百分比这些非金额读数不配金币。
+- 菜单/下拉的 item 图标按**原生像素**算最小尺寸且没有缩放参数：一律用
+  `MoneyDisplay.MENU_ICON`（24px 变体）。直接塞 1024px 的 Gold.png 会让下拉控件最小尺寸变成
+  1100×1032，把整张卡片撑爆（税收页真实事故）。
+- 散文行（「营收 1.2万 + 扶持 800 · 亏损 300」）不要行首塞金币，会被读成「金币 营收 1.2万」；
+  要么改 `RichTextLabel` 逐段内联，要么保持纯文字。
 
 ## Mandatory Grounding
 
@@ -176,6 +195,7 @@ Before finishing a UI change:
 - [ ] Top-level wiring remains in `GameUIManager`; rendering remains in components.
 - [ ] New colors/spacing/motion use `UITokens` or `UIAnimation`.
 - [ ] Icons come from an approved library/asset workflow, with license files present, unless the user requested bespoke art.
+- [ ] Money readings carry the gold icon (`MoneyDisplay`) and no player-facing text names the currency unit (`¥` / `货币` / `元`); menu/dropdown item icons use the 24px `MENU_ICON`, and non-money readings (population, unit counts, percentages) have no coin.
 - [ ] Buttons have distinct states and readable text in normal, hover, pressed, disabled, and active/toggled states.
 - [ ] Right panel content fits without clipping at 1280x720 and remains usable at fast-forward speed.
 - [ ] High-speed tick behavior does not rebuild hidden categories unnecessarily.
