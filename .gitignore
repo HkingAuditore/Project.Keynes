@@ -65,3 +65,9 @@ __pycache__/
 
 # 原生构建日志（每次 SCons 构建的现场记录，不是源码）。
 /gdext/build_log_*.txt
+
+# 构建产物：WebBuild 的 pck 约 282 MB，超过 GitHub 单文件 100 MiB 硬限制，
+# 且每次构建内容全变。改由 CI 构建并通过 artifact / Release 分发，
+# 构建方法见 docs/build-from-source.md。
+/WebBuild/
+/Build/
