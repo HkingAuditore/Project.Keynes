@@ -57,6 +57,7 @@ func _ready() -> void:
 	for index in _cards.size():
 		_cards[index].selected.connect(_on_card_pressed.bind(index))
 		_cards[index].details_requested.connect(_on_details_requested.bind(index))
+		_cards[index].mouse_entered.connect(_retire_parked_dossiers.bind(index))
 	if _locate_button != null:
 		_locate_button.pressed.connect(_on_locate_pressed)
 	if _collapse_button != null:
@@ -98,6 +99,7 @@ func present_offer(offer: Dictionary) -> void:
 	_pending = false
 	_expanded_index = -1
 	_details_view_revision += 1
+	_hide_all_dossiers()
 	UIAnimation.cancel(_archive_surface)
 	_offer_id = int(offer.get("offer_id", 0))
 	_generation = int(offer.get("generation", 0))
@@ -155,6 +157,19 @@ func _animate_cards_staggered() -> void:
 		UIAnimation.cancel(card)
 	if not _collapsed:
 		UIAnimation.stagger_children_in(_grid, 0.025, 3, UITokens.ANIM_FAST)
+
+
+## 悬停换到另一户时，先前那户的卷宗收不到 mouse_exited（候选列表会在指针
+## 下滚走），所以按"同一时刻只留一张卷宗"的规则统一收回。
+func _retire_parked_dossiers(hovered: int) -> void:
+	for index in _cards.size():
+		if index != hovered:
+			_cards[index].hide_dossier_popup()
+
+
+func _hide_all_dossiers() -> void:
+	for card in _cards:
+		card.hide_dossier_popup()
 
 
 func _on_details_requested(index: int) -> void:
@@ -221,6 +236,9 @@ func is_collapsed() -> bool:
 
 func _apply_collapsed_visuals(animate: bool) -> void:
 	_archive_surface.visible = not _collapsed
+	if _collapsed:
+		# 卡片收起后不再可见，悬停详情不能继续压在放大的地图上。
+		_hide_all_dossiers()
 	_collapsed_entry.visible = _collapsed
 	if _body != null:
 		_body.visible = not _collapsed
@@ -329,6 +347,8 @@ func close_offer() -> void:
 	_offer_open = false
 	_pending = false
 	_close_revision += 1
+	# 面板淡出与隐藏都不会给卡片补发 mouse_exited；先收回详情再开始收场。
+	_hide_all_dossiers()
 	var revision := _close_revision
 	_offer_id = 0
 	_generation = 0

@@ -26,6 +26,9 @@ var dense := false:
 		queue_redraw()
 
 var text_value := ""
+## 货币口径的小数位（-1 = 交给统一格式化）。GDP 这类大额只要整数：
+## 「520.42」加金币在 100px 卡里会被截成「520.…」，整数才读得完。
+var decimals := -1
 ## "risk" 让数值与说明转为朱砂色，"warn" 转为黄铜色；空串为常规墨色。
 var tone := ""
 var _value := 0.0
@@ -54,6 +57,7 @@ func set_metric(data: Dictionary) -> void:
 	_delta = float(data.get("delta", NAN))
 	_spark = data.get("spark", PackedFloat32Array())
 	text_value = String(data.get("text", ""))
+	decimals = int(data.get("decimals", -1))
 	tone = String(data.get("tone", ""))
 	tooltip_text = String(data.get("tooltip",
 		("%s：%s\n%s" % [title, value_text(), caption]).strip_edges()))
@@ -61,9 +65,38 @@ func set_metric(data: Dictionary) -> void:
 
 
 func value_text() -> String:
+	return _reading_text(_value)
+
+
+## 读数字符串。货币口径允许用 decimals 指定小数位，其余口径沿用统一格式化。
+func _reading_text(shown: float) -> String:
 	if kind == "text":
 		return text_value
-	return EconomyDossierViewModel.format_value(_value, kind)
+	if decimals >= 0 and kind == "money":
+		return UITokens.format_compact_number_cn(shown, decimals)
+	return EconomyDossierViewModel.format_value(shown, kind)
+
+
+## 货币口径的读数要配金币图标，其它口径（人数、百分比、指数、纯文本）只画数字。
+func _reading_is_money() -> bool:
+	return kind == "money"
+
+
+## 读数（可能带金币）的实际宽度：排版前先量，决定要不要降字号。
+func _reading_width(text: String, size_px: int, kind_hint: String = "numeral") -> float:
+	if _reading_is_money():
+		return _money_width(text, size_px, kind_hint)
+	return _text_width(text, size_px, kind_hint)
+
+
+## 画一个读数：货币口径自动在数字左边补一枚金币，其余口径走原来的纯文字路径。
+func _draw_reading(origin: Vector2, text: String, size_px: int, color: Color,
+		max_width: float, kind_hint: String = "numeral") -> void:
+	if not _reading_is_money():
+		_text(origin, _fit_text(text, size_px, max_width, kind_hint), size_px, color, kind_hint)
+		return
+	_money_text(origin, _fit_text(text, size_px,
+		max_width - MoneyDisplay.slot_width(size_px), kind_hint), size_px, color, kind_hint)
 
 
 func _displayed_value() -> float:
@@ -83,25 +116,28 @@ func _draw() -> void:
 	var x := 10.0
 	var has_footer := not caption.is_empty() or (not is_nan(_delta) and absf(_delta) > 1e-6)
 	var dy := 0.0 if has_footer else 7.0
+	var compact_card := w < 135.0
 	if icon_key != &"":
 		_icon(icon_key, Rect2(Vector2(x, 7.0 + dy), Vector2(ICON_SIZE, ICON_SIZE)),
 			UITokens.DOSSIER_INK_SOFT)
 		x += ICON_SIZE + 5.0
-	if w >= 135.0 or icon_key == &"":
-		_text(Vector2(x, 25.0 + dy), _fit_text(title, 15, w - x - 8.0), 15,
+	# 标签永远画：地块档案四格并排只有 100px 左右，原先「窄卡不画标题」的结果是
+	# 玩家只看到图标和数字，根本不知道这四格在说什么。窄卡降一档字号，仍然够放 2~3 字。
+	if not title.is_empty():
+		var title_size := 13 if compact_card else 15
+		_text(Vector2(x, 25.0 + dy), _fit_text(title, title_size, w - x - 8.0), title_size,
 			UITokens.DOSSIER_INK_MUTED)
 	var shown := lerpf(_from_value, _value, _blend) if _has_grown else _value
-	var value_string := text_value if kind == "text" \
-		else EconomyDossierViewModel.format_value(shown, kind)
-	var compact_card := w < 135.0
+	var value_string := _reading_text(shown)
+	var foot_size := 13 if compact_card else 15
 	var spark_width := (clampf(w * 0.28, 0.0, 28.0) if compact_card else clampf(w * 0.34, 0.0, 86.0)) \
 		if _spark.size() >= 2 else 0.0
 	var value_size := 26 if w >= 170.0 else (22 if w >= 135.0 else 20)
 	var avail_value_w := w - spark_width - (14.0 if compact_card else 18.0)
-	if value_size > 20 and _text_width(value_string, value_size, "numeral") > avail_value_w:
+	if value_size > 20 and _reading_width(value_string, value_size) > avail_value_w:
 		value_size = 20
-	_text(Vector2(10.0, 57.0 + dy), _fit_text(value_string, value_size,
-		avail_value_w, "numeral"), value_size, _value_color(), "numeral")
+	_draw_reading(Vector2(10.0, 57.0 + dy), value_string, value_size, _value_color(),
+		avail_value_w)
 	var delta_line := caption
 	var delta_color := UITokens.DOSSIER_INK_MUTED if tone.is_empty() else _value_color()
 	if not is_nan(_delta) and absf(_delta) > 1e-6:
@@ -118,11 +154,24 @@ func _draw() -> void:
 		var delta_text := EconomyDossierViewModel.format_value(absf(_delta), kind)
 		if kind == "percent":
 			delta_text = "%.1f 点" % (absf(_delta) * 100.0)
-		_text(Vector2(arrow_x + 12.0, h - 8.0), _fit_text("%s · %s" % [delta_text, caption], 15,
-			w - spark_width - 34.0), 15, delta_color)
+		# 没有副行时不要留下「0.02 · 」这样的空分隔符。
+		var delta_line_text := delta_text if caption.is_empty() \
+			else "%s · %s" % [delta_text, caption]
+		# 差值也是同一个货币口径：箭头后面先补金币，再跟数字与说明。
+		var delta_x := arrow_x + 12.0
+		var delta_room := w - spark_width - 34.0
+		if _reading_is_money():
+			var money_offset := MoneyDisplay.draw_on_baseline(self,
+				Vector2(delta_x, h - 8.0), foot_size, _font("sans"))
+			_text(Vector2(delta_x + money_offset, h - 8.0),
+				_fit_text(delta_line_text, foot_size, delta_room - money_offset), foot_size,
+				delta_color)
+		else:
+			_text(Vector2(delta_x, h - 8.0), _fit_text(delta_line_text, foot_size, delta_room),
+				foot_size, delta_color)
 	else:
-		_text(Vector2(10.0, h - 8.0), _fit_text(delta_line, 15, w - spark_width - 18.0), 15,
-			delta_color)
+		_text(Vector2(10.0, h - 8.0), _fit_text(delta_line, foot_size, w - spark_width - 18.0),
+			foot_size, delta_color)
 	if spark_width > 0.0:
 		_draw_spark(Rect2(Vector2(w - spark_width - 10.0, 28.0), Vector2(spark_width, h - 40.0)))
 
@@ -138,13 +187,12 @@ func _draw_dense(w: float, h: float) -> void:
 			UITokens.DOSSIER_INK_SOFT)
 		x += ICON_SIZE + 5.0
 	var shown := lerpf(_from_value, _value, _blend) if _has_grown else _value
-	var value_string := text_value if kind == "text" \
-		else EconomyDossierViewModel.format_value(shown, kind)
-	var value_width := minf(_text_width(value_string, 22, "numeral"), (w - x) * 0.62)
+	var value_string := _reading_text(shown)
+	var value_width := minf(_reading_width(value_string, 22), (w - x) * 0.62)
 	_text(Vector2(x, mid + 6.0), _fit_text(title, 15, w - x - value_width - 18.0), 15,
 		UITokens.DOSSIER_INK_MUTED)
-	_text(Vector2(w - 10.0 - value_width, mid + 8.0), _fit_text(value_string, 22, value_width,
-		"numeral"), 22, _value_color(), "numeral")
+	_draw_reading(Vector2(w - 10.0 - value_width, mid + 8.0), value_string, 22,
+		_value_color(), value_width)
 
 
 ## 窄卡（地块档案四格并排约 100px）单行放不下“标题……数值”，改成上标题、下数值。
@@ -152,13 +200,14 @@ func _draw_dense_stacked(w: float) -> void:
 	var x := 8.0
 	if icon_key != &"":
 		_icon(icon_key, Rect2(Vector2(x, 3.0), Vector2(24.0, 24.0)), UITokens.DOSSIER_INK_SOFT)
-	else:
-		_text(Vector2(x, 20.0), _fit_text(title, 15, w - x - 6.0), 15, UITokens.DOSSIER_INK_MUTED)
+		x += 28.0
+	# 稠密单行档同样必须带标签，否则矮视口下又退回「只有图标和数字」。
+	if not title.is_empty():
+		_text(Vector2(x, 20.0), _fit_text(title, 13, w - x - 6.0), 13,
+			UITokens.DOSSIER_INK_MUTED)
 	var shown := lerpf(_from_value, _value, _blend) if _has_grown else _value
-	var value_string := text_value if kind == "text" \
-		else EconomyDossierViewModel.format_value(shown, kind)
-	_text(Vector2(8.0, 48.0), _fit_text(value_string, 20, w - 14.0, "numeral"), 20,
-		_value_color(), "numeral")
+	var value_string := _reading_text(shown)
+	_draw_reading(Vector2(8.0, 48.0), value_string, 20, _value_color(), w - 14.0)
 
 
 func _value_color() -> Color:

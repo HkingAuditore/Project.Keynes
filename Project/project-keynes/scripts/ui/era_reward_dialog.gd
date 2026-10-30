@@ -27,9 +27,20 @@ const CATEGORY_MAP := {
 @onready var _rewards: PanelContainer = %Rewards
 @onready var _close: Button = %Close
 @onready var _metrics: GridContainer = %Metrics
+@onready var _alert_icons: GridContainer = %AlertIcons
 
 var _offer_generation := 0
 var _choices: Array[EraRewardChoice] = []
+var _alert_key_to_node := {
+	"unemployment": "Unemployment",
+	"survival": "Survival",
+	"consumer_shortage": "ConsumerShortage",
+	"industrial_shortage": "IndustrialShortage",
+	"vacancies": "Vacancies",
+}
+var _last_alert_keys: Dictionary = {}
+var _alert_keys_ready := false
+var _alert_reveal: Tween
 var _offer_open := false
 var _pending := false
 var _opening: Tween
@@ -42,12 +53,27 @@ func _ready() -> void:
 	for index in _choices.size():
 		_choices[index].selected.connect(_on_choice_pressed.bind(index))
 	_close.pressed.connect(func() -> void: dismiss_requested.emit())
-	for metric: MetricCard in [%GDP, %Treasury, %Population, %Territory]:
+	for metric: MetricCard in [%GDP, %PerCapitaGDP, %CPI, %PPI, %Territory,
+			%Satisfaction, %LivingStandard]:
 		metric.set_compact(true)
-		metric.get_node("%TitleLabel").add_theme_font_size_override("font_size", 14)
-		metric.get_node("%ValueLabel").add_theme_font_size_override("font_size", 24)
-	refresh_overview({})
+		metric.set_compact_icon_label_presentation(true)
+		var metric_margin := metric.get_node("Margin") as MarginContainer
+		metric_margin.add_theme_constant_override("margin_top", 2)
+		metric_margin.add_theme_constant_override("margin_bottom", 2)
+		(metric.get_node("Margin/Row/IconBadge") as Control).custom_minimum_size = Vector2(22, 24)
+		metric.get_node("%TitleLabel").add_theme_font_size_override("font_size", 13)
+		metric.get_node("%ValueLabel").add_theme_font_size_override("font_size", 22)
+	# 指标与问题之间只留一条压淡的笺线，不再单独包一层卡片。
+	(%ProblemRule as ColorRect).color = Color(UITokens.DOSSIER_RULE, 0.30)
+	# 问题条目沿用指标卡的字阶：纸贴图标配一行墨字，纸贴保持原色不叠色。
+	for key in _alert_key_to_node:
+		var chip := _alert_icons.get_node(String(_alert_key_to_node[key])) as Control
+		(chip.get_node("Text") as Label).add_theme_color_override(
+			"font_color", UITokens.DOSSIER_OXBLOOD)
+	(%Clear.get_node("Text") as Label).add_theme_color_override(
+		"font_color", UITokens.DOSSIER_INK_MUTED)
 	get_viewport().size_changed.connect(_layout_popup)
+
 
 func open_overview(model: Dictionary) -> void:
 	refresh_overview(model)
@@ -55,11 +81,88 @@ func open_overview(model: Dictionary) -> void:
 
 func refresh_overview(model: Dictionary) -> void:
 	%CountryName.text = String(model.get("country_name", "国家概况"))
-	%GDP.set_data("GDP · 本年", String(model.get("gdp", "—")), "本年累计产值", UITokens.HUD_INK)
-	%Treasury.set_data("国库货币", String(model.get("cash", "—")), "", UITokens.HUD_INK)
-	%Population.set_data("人口", String(model.get("population", "—")), "", UITokens.HUD_INK)
-	%Territory.set_data("地块", String(model.get("territory", "—")), "", UITokens.HUD_INK)
+	%GDP.set_data("年度 GDP", String(model.get("gdp", "—")),
+		String(model.get("gdp_tooltip", "本年累计产值")), UITokens.HUD_INK, "", "hud.country.economy")
+	%PerCapitaGDP.set_data("人均 GDP", String(model.get("per_capita_gdp", "—")),
+		String(model.get("per_capita_gdp_tooltip", "年度 GDP ÷ 全国人口")),
+		UITokens.HUD_INK, "", "hud.country.economy")
+	%Territory.set_data("地块", String(model.get("territory", "—")),
+		String(model.get("territory_tooltip", "当前国家持有的有效地块数")),
+		UITokens.ARCHIVE_INK_MUTED, "", "country.world")
+	%CPI.set_data("CPI", String(model.get("cpi", "—")),
+		String(model.get("cpi_tooltip", "居民需求加权的消费价格指数")),
+		UITokens.ACCENT, "", "metric.goods")
+	%PPI.set_data("PPI", String(model.get("ppi", "—")),
+		String(model.get("ppi_tooltip", "生产供给加权的生产者价格指数")),
+		UITokens.ARCHIVE_INK_MUTED, "", "economy.building.factory")
+	%Satisfaction.set_data("人民平均满意度", String(model.get("satisfaction", "—")),
+		String(model.get("satisfaction_tooltip", "全国人口加权的满意度均值")),
+		UITokens.ECO, "", "population.heart")
+	%LivingStandard.set_data("人民生活水平", String(model.get("living_standard", "—")),
+		String(model.get("living_standard_tooltip", "按人口加权的生活水平等级均值")),
+		UITokens.ECO, "", "population.living.comfortable")
+	_update_alerts(model.get("alerts", []))
 	_layout_popup.call_deferred()
+
+
+func _update_alerts(alerts: Array) -> void:
+	if _alert_reveal != null and _alert_reveal.is_valid():
+		_alert_reveal.kill()
+	var visible_alerts: Dictionary = {}
+	var added: Array[String] = []
+	for alert: Dictionary in alerts:
+		var key := String(alert.get("key", ""))
+		if not _alert_key_to_node.has(key):
+			continue
+		visible_alerts[key] = true
+		var chip := _alert_icons.get_node(String(_alert_key_to_node[key])) as Control
+		var label_text := String(alert.get("label", key))
+		var icon := chip.get_node("Icon") as IconBadge
+		var icon_key := StringName(alert.get("icon", "situation.food_shortage"))
+		if icon.icon_key != icon_key:
+			icon.set_semantic(icon_key)
+		var text := chip.get_node("Text") as Label
+		if text.text != label_text:
+			text.text = label_text
+		chip.tooltip_text = String(alert.get("tooltip", label_text))
+		chip.modulate.a = 1.0
+		chip.visible = true
+		if _alert_keys_ready and visible and not _last_alert_keys.has(key):
+			added.append(key)
+	for key in _alert_key_to_node:
+		if visible_alerts.has(key):
+			continue
+		var chip := _alert_icons.get_node(String(_alert_key_to_node[key])) as Control
+		chip.visible = false
+		chip.tooltip_text = ""
+		chip.modulate.a = 1.0
+	var clear_chip := %Clear as Control
+	var clear_icon := clear_chip.get_node("Icon") as IconBadge
+	if clear_icon.icon_key != &"control.checkbox_checked":
+		clear_icon.set_semantic(&"control.checkbox_checked")
+	clear_chip.tooltip_text = "目前没有达到提示阈值的突出问题。"
+	clear_chip.visible = visible_alerts.is_empty()
+	clear_chip.modulate.a = 1.0
+	if not added.is_empty():
+		_reveal_alerts(added)
+	_last_alert_keys = visible_alerts
+	_alert_keys_ready = true
+
+
+## 新问题只用逐条淡入提示，不再给整块加边框，避免和卡片其余内容割裂。
+func _reveal_alerts(keys: Array[String]) -> void:
+	if UIAnimation.reduced_motion():
+		return
+	_alert_reveal = create_tween().set_parallel(true).set_trans(Tween.TRANS_SINE) \
+		.set_ease(Tween.EASE_OUT)
+	var index := 0
+	for key in keys:
+		var chip := _alert_icons.get_node_or_null(String(_alert_key_to_node[key])) as Control
+		if chip == null:
+			continue
+		chip.modulate.a = 0.0
+		_alert_reveal.tween_property(chip, "modulate:a", 1.0, 0.16).set_delay(0.04 * index)
+		index += 1
 
 func _show_popup() -> void:
 	var was_open := visible and not _closing
@@ -135,7 +238,25 @@ func _layout_popup() -> void:
 		return
 	var viewport_size := get_viewport_rect().size
 	var width := minf(UITokens.ERA_POPUP_WIDTH, maxf(280.0, viewport_size.x - 32.0))
-	_metrics.columns = 4 if width >= 520.0 else 2
+	_metrics.columns = 3 if width >= 480.0 else 2
+	_alert_icons.columns = _metrics.columns
+	# 指标与问题共用同一套等分列宽：问题行才会和上面的三列严格对齐。
+	# 扣掉纸面与内边距的固定开销，等分后列宽合起来正好等于弹窗宽度，不再把弹窗顶宽。
+	var inset := float(_metrics.get_theme_constant("h_separation")) \
+		* float(_metrics.columns - 1)
+	var surface := _popup.get_node("Overview") as Control
+	var style := surface.get_theme_stylebox("panel")
+	if style != null:
+		inset += style.get_content_margin(SIDE_LEFT) + style.get_content_margin(SIDE_RIGHT)
+	var sheet := _popup.get_node("Overview/Margin") as MarginContainer
+	inset += float(sheet.get_theme_constant("margin_left") + sheet.get_theme_constant("margin_right"))
+	var cell_width := (width - inset) / float(_metrics.columns)
+	for metric in _metrics.get_children():
+		(metric as Control).custom_minimum_size.x = cell_width
+	for key in _alert_key_to_node:
+		var chip := _alert_icons.get_node(String(_alert_key_to_node[key])) as Control
+		chip.custom_minimum_size.x = cell_width
+	(%Clear as Control).custom_minimum_size.x = cell_width
 	var top := UITokens.ERA_BADGE_OPEN_Y + UITokens.ERA_BADGE_SIZE + UITokens.ERA_POPUP_GAP
 	var available := maxf(150.0, viewport_size.y - top - 16.0)
 	var overview_height := (_popup.get_node("Overview") as Control).get_combined_minimum_size().y

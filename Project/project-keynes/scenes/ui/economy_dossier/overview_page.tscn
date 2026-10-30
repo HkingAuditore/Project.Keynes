@@ -2,14 +2,73 @@
 
 [ext_resource type="Script" uid="uid://d2vysvmeb6qi4" path="res://scripts/ui/components/dossier/overview_page.gd" id="1_script"]
 [ext_resource type="Script" uid="uid://d0g2n3dvxeevs" path="res://scripts/ui/components/dossier/dossier_stacked_bar.gd" id="2_stacked"]
-[ext_resource type="Script" uid="uid://mnebm40b7qlt" path="res://scripts/ui/components/dossier/dossier_ring_gauge.gd" id="3_ring"]
 [ext_resource type="Script" uid="uid://04tee67qohrt" path="res://scripts/ui/components/dossier/dossier_bar_list.gd" id="4_bars"]
+[ext_resource type="Script" uid="uid://bxx5ywbnw2x5g" path="res://scripts/ui/components/dossier/dossier_ledger_table.gd" id="6_ledger"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_trend_lines.gd" id="7_trend"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_spark_value.gd" id="8_spark"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_level_ladder.gd" id="9_ladder"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_deviation_axis.gd" id="10_axis"]
 
 [node name="OverviewPage" type="VBoxContainer" unique_id=1933794688]
 size_flags_horizontal = 3
 theme_override_constants/separation = 22
 script = ExtResource("1_script")
 chapter_id = "overview"
+
+[node name="CashflowHeader" type="HBoxContainer" parent="." unique_id=1933794690]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="CashflowKicker" type="Label" parent="CashflowHeader" unique_id=1933794691]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierKicker"
+text = "国库收支"
+
+[node name="CashflowDay" type="Label" parent="CashflowHeader" unique_id=1933794692]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+
+[node name="CashflowToggle" type="Button" parent="CashflowHeader" unique_id=1933794693]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_type_variation = &"PKDossierLink"
+text = "明细 ▾"
+
+[node name="CashflowBody" type="BoxContainer" parent="." unique_id=1933794689]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 30
+
+[node name="FlowBars" type="VBoxContainer" parent="CashflowBody" unique_id=1933794704]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(430, 0)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_override_constants/separation = 14
+
+[node name="IncomeBar" type="Control" parent="CashflowBody/FlowBars" unique_id=1933794705]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("2_stacked")
+
+[node name="ExpenseBar" type="Control" parent="CashflowBody/FlowBars" unique_id=1933794706]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("2_stacked")
+
+[node name="TrendChart" type="Control" parent="CashflowBody" unique_id=1933794707]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("7_trend")
+
+[node name="CashflowDetail" type="Control" parent="." unique_id=1933794694]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+script = ExtResource("6_ledger")
 
 [node name="Columns" type="GridContainer" parent="." unique_id=1583771366]
 unique_name_in_owner = true
@@ -18,128 +77,50 @@ theme_override_constants/h_separation = 28
 theme_override_constants/v_separation = 20
 columns = 3
 
-[node name="FlowColumn" type="VBoxContainer" parent="Columns" unique_id=1755613655]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 10
-
-[node name="FlowKicker" type="Label" parent="Columns/FlowColumn" unique_id=1107686293]
-layout_mode = 2
-theme_type_variation = &"PKDossierKicker"
-text = "居民收支"
-
-[node name="IncomeBar" type="Control" parent="Columns/FlowColumn" unique_id=176422811]
-unique_name_in_owner = true
-layout_mode = 2
-script = ExtResource("2_stacked")
-
-[node name="ExpenseBar" type="Control" parent="Columns/FlowColumn" unique_id=72578820]
-unique_name_in_owner = true
-layout_mode = 2
-script = ExtResource("2_stacked")
-
-[node name="FlowNote" type="Label" parent="Columns/FlowColumn" unique_id=1107094111]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"PKDossierCaption"
-autowrap_mode = 3
-
-[node name="StrataColumn" type="VBoxContainer" parent="Columns" unique_id=2118372761]
+[node name="PerCapitaColumn" type="VBoxContainer" parent="Columns" unique_id=1933794695]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 6
 
-[node name="StrataHeader" type="HBoxContainer" parent="Columns/StrataColumn" unique_id=1670434165]
-layout_mode = 2
-
-[node name="StrataKicker" type="Label" parent="Columns/StrataColumn/StrataHeader" unique_id=137334490]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_type_variation = &"PKDossierKicker"
-text = "阶层满意度"
-
-[node name="StrataLink" type="Button" parent="Columns/StrataColumn/StrataHeader" unique_id=238591812]
-unique_name_in_owner = true
-layout_mode = 2
-focus_mode = 0
-theme_type_variation = &"PKDossierLink"
-text = "阶层民生 ›"
-
-[node name="StrataGrid" type="GridContainer" parent="Columns/StrataColumn" unique_id=861025140]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/h_separation = 2
-theme_override_constants/v_separation = 2
-columns = 4
-
-[node name="Gauge0" type="Control" parent="Columns/StrataColumn/StrataGrid" unique_id=2134325330]
-layout_mode = 2
-size_flags_horizontal = 3
-script = ExtResource("3_ring")
-
-[node name="Gauge1" type="Control" parent="Columns/StrataColumn/StrataGrid" unique_id=412376769]
-layout_mode = 2
-size_flags_horizontal = 3
-script = ExtResource("3_ring")
-
-[node name="Gauge2" type="Control" parent="Columns/StrataColumn/StrataGrid" unique_id=1235009685]
-layout_mode = 2
-size_flags_horizontal = 3
-script = ExtResource("3_ring")
-
-[node name="Gauge3" type="Control" parent="Columns/StrataColumn/StrataGrid" unique_id=453401673]
-layout_mode = 2
-size_flags_horizontal = 3
-script = ExtResource("3_ring")
-
-[node name="Gauge4" type="Control" parent="Columns/StrataColumn/StrataGrid" unique_id=1226447054]
-layout_mode = 2
-size_flags_horizontal = 3
-script = ExtResource("3_ring")
-
-[node name="Gauge5" type="Control" parent="Columns/StrataColumn/StrataGrid" unique_id=1099777475]
-layout_mode = 2
-size_flags_horizontal = 3
-script = ExtResource("3_ring")
-
-[node name="Gauge6" type="Control" parent="Columns/StrataColumn/StrataGrid" unique_id=564296562]
-layout_mode = 2
-size_flags_horizontal = 3
-script = ExtResource("3_ring")
-
-[node name="Gauge7" type="Control" parent="Columns/StrataColumn/StrataGrid" unique_id=926942500]
-layout_mode = 2
-size_flags_horizontal = 3
-script = ExtResource("3_ring")
-
-[node name="BottleneckColumn" type="VBoxContainer" parent="Columns" unique_id=1540335695]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 8
-
-[node name="BottleneckKicker" type="Label" parent="Columns/BottleneckColumn" unique_id=1594412240]
+[node name="PerCapitaKicker" type="Label" parent="Columns/PerCapitaColumn" unique_id=1933794696]
 layout_mode = 2
 theme_type_variation = &"PKDossierKicker"
-text = "卡点"
+text = "人均GDP / 日"
 
-[node name="BottleneckList" type="Control" parent="Columns/BottleneckColumn" unique_id=1723497256]
+[node name="PerCapitaValue" type="Control" parent="Columns/PerCapitaColumn" unique_id=1933794697]
 unique_name_in_owner = true
 layout_mode = 2
-script = ExtResource("4_bars")
+script = ExtResource("8_spark")
 
-[node name="BottleneckEmpty" type="Label" parent="Columns/BottleneckColumn" unique_id=681069868]
-unique_name_in_owner = true
-visible = false
+[node name="LivingColumn" type="VBoxContainer" parent="Columns" unique_id=1933794698]
 layout_mode = 2
-theme_type_variation = &"PKDossierCaption"
-autowrap_mode = 3
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
 
-[node name="BottleneckDetail" type="Label" parent="Columns/BottleneckColumn" unique_id=1247833534]
-unique_name_in_owner = true
-visible = false
+[node name="LivingKicker" type="Label" parent="Columns/LivingColumn" unique_id=1933794699]
 layout_mode = 2
-theme_type_variation = &"PKDossierBody"
-autowrap_mode = 3
+theme_type_variation = &"PKDossierKicker"
+text = "生活水平"
+
+[node name="LivingLadder" type="Control" parent="Columns/LivingColumn" unique_id=1933794700]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("9_ladder")
+
+[node name="PriceColumn" type="VBoxContainer" parent="Columns" unique_id=1933794701]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="PriceKicker" type="Label" parent="Columns/PriceColumn" unique_id=1933794702]
+layout_mode = 2
+theme_type_variation = &"PKDossierKicker"
+text = "物价"
+
+[node name="PriceAxis" type="Control" parent="Columns/PriceColumn" unique_id=1933794703]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("10_axis")
 
 [node name="Lower" type="GridContainer" parent="." unique_id=1053856572]
 unique_name_in_owner = true

@@ -50,6 +50,10 @@ const RESEARCH_TOAST_POLL_INTERVAL_MSEC := 100
 # Open technology archive progress bars; keep this slower than a double-click.
 const RESEARCH_PANEL_PROGRESS_INTERVAL_MSEC := 750
 const TECH_ECONOMY_REFRESH_INTERVAL_MSEC := 500
+## 顶栏纸签悬浮卡：延迟出卡/收卡，以及悬停期间的读数节流。
+const STATUS_CARD_SHOW_DELAY := 0.14
+const STATUS_CARD_HIDE_DELAY := 0.12
+const STATUS_CARD_REFRESH_MSEC := 1000
 var _next_tech_economy_refresh_ms := 0
 var _top_bar: PlayerTopBar
 var _right_panel: InspectorPanel
@@ -96,6 +100,10 @@ var _map_overlay_toolbar: MapOverlayToolbar
 var _map_overlay_legend: OverlayLegend
 var _pause_menu
 var _era_reward_dialog: EraRewardDialog
+var _status_card: HudStatusCard
+var _status_card_kind := ""
+var _status_card_generation := 0
+var _status_card_next_refresh_ms := 0
 var _era_indicator: EraIndicator
 var _era_indicator_view_model: EraIndicatorViewModel
 var _era_offer: Dictionary = {}
@@ -295,6 +303,9 @@ func notify_committed_day() -> void:
 	# 年度产值账本必须在面板关闭时也继续累计，否则中途打开会缺少年初到此刻的流量。
 	# sample() 自带 sample_day 去重与墙钟合流，重复调用无额外开销。
 	_gdp_ledger.sample(int(_world_clock.day_index()) if _world_clock != null else -1)
+	# 国库收支序列与产值账本同一节拍：面板关闭时也要连续，否则中途打开只有一点。
+	if _country_view_model != null:
+		_country_view_model.sample_fiscal_history()
 	if _country_panel != null and _country_panel.is_panel_open() \
 			and _country_panel.current_section() == "economy":
 		_mark_country_panel_dirty(COUNTRY_DIRTY_ECONOMY, "economy_day")
@@ -749,13 +760,20 @@ func _on_country_committed(report: Dictionary) -> void:
 		_refresh_player_discovery_context()
 
 
-func open_country_section(section_id: String) -> void:
+## economy_chapter 非空时直接落到经济卷宗的指定章节（总览 / 阶层民生），
+## 顶栏纸签点击走这条路；其它调用方保持原来的「记住上次章节」行为。
+func open_country_section(section_id: String, economy_chapter: String = "") -> void:
 	if section_id == "annual":
 		close_country_panel()
 		annual_history_requested.emit()
 		return
 	if _country_panel == null or _country_view_model == null:
 		return
+	# 打开国家面板时纸签悬浮卡必须退场：它盖在面板边缘，也没必要再读旧值。
+	_status_card_generation += 1
+	_status_card_kind = ""
+	if _status_card != null:
+		_status_card.hide_card(true)
 	# Opening a section is an explicit player action and should never inherit a
 	# throttle window left by a previously visible section.
 	_country_refresh_queued = false
@@ -763,6 +781,9 @@ func open_country_section(section_id: String) -> void:
 	_country_refresh_timer_active = false
 	_hide_inspector_for_country()
 	_country_action_bar.set_active(section_id)
+	if section_id == "economy" and not economy_chapter.is_empty() \
+			and _country_panel.has_method("focus_economy_chapter"):
+		_country_panel.focus_economy_chapter(economy_chapter)
 	_country_open_generation += 1
 	var generation := _country_open_generation
 	if not _country_ui_event_refresh_enabled:
@@ -1390,7 +1411,10 @@ func _refresh_era_indicator() -> void:
 	var facade = _player_controller.get_country_facade()
 	var handle := int(_player_controller.get_player_country_handle())
 	if facade == null or handle == 0:
+		if _top_bar != null:
+			_top_bar.set_country_status(0.0, false, 0, false)
 		return
+	_refresh_player_country_status(facade, _player_controller.get_economy_facade(), handle)
 	if _era_indicator_view_model == null:
 		_era_indicator_view_model = EraIndicatorViewModel.new()
 	var model := _era_indicator_view_model.build(facade.research_snapshot(handle))
@@ -1399,6 +1423,90 @@ func _refresh_era_indicator() -> void:
 		_top_bar.set_era_name(String(model.era_name))
 	if _era_reward_dialog != null and _era_reward_dialog.visible:
 		_era_reward_dialog.refresh_overview(_build_era_overview())
+
+
+func _refresh_player_country_status(country_facade, economy_facade, handle: int) -> void:
+	if _top_bar == null:
+		return
+	var treasury: Dictionary = country_facade.treasury_snapshot(handle) \
+		if country_facade != null and country_facade.has_method("treasury_snapshot") else {}
+	var economy: Dictionary = economy_facade.country_economy_overview(handle, "summary") \
+		if economy_facade != null and economy_facade.has_method("country_economy_overview") else {}
+	var cash_valid := bool(treasury.get("ok", false)) and treasury.has("cash")
+	var population_valid := bool(economy.get("ok", false)) and economy.has("population")
+	_top_bar.set_country_status(
+		float(treasury.get("cash", 0)), cash_valid,
+		int(economy.get("population", 0)), population_valid)
+	_refresh_status_card()
+
+
+# ── 顶栏纸签悬浮卡：国库看当日收支，人口看阶层构成 ──────────────────────
+## hover 先延迟再查询：指针扫过顶栏时不会连发原生 professions 查询；
+## 移开时同样延迟收卡，避免纸签之间来回移动导致卡片闪烁。
+## 点击纸签直接进入对应章节，卡片立即收掉。
+func _on_top_bar_status_hovered(kind: String, entered: bool) -> void:
+	if _status_card == null or not is_inside_tree() or _top_bar == null:
+		return
+	_status_card_generation += 1
+	var generation := _status_card_generation
+	if not entered:
+		await get_tree().create_timer(STATUS_CARD_HIDE_DELAY).timeout
+		if generation == _status_card_generation and _status_card != null:
+			_status_card.hide_card()
+			_status_card_kind = ""
+		return
+	await get_tree().create_timer(STATUS_CARD_SHOW_DELAY).timeout
+	if generation != _status_card_generation or _status_card == null:
+		return
+	var model := _build_status_card_model(kind)
+	if model.is_empty():
+		return
+	_status_card_kind = kind
+	_status_card_next_refresh_ms = Time.get_ticks_msec() + STATUS_CARD_REFRESH_MSEC
+	_status_card.show_card(model, _top_bar.status_anchor(kind))
+
+
+func _on_top_bar_status_pressed(kind: String) -> void:
+	_status_card_generation += 1
+	_status_card_kind = ""
+	if _status_card != null:
+		_status_card.hide_card(true)
+	open_country_section("economy", "overview" if kind == "treasury" else "strata")
+
+
+## 悬浮期间读数会随日结算变化：只在卡还开着时按节流重填，不重播入场。
+func _refresh_status_card() -> void:
+	if _status_card == null or _status_card_kind.is_empty() or not _status_card.is_open():
+		return
+	var now := Time.get_ticks_msec()
+	if now < _status_card_next_refresh_ms:
+		return
+	_status_card_next_refresh_ms = now + STATUS_CARD_REFRESH_MSEC
+	_status_card.refresh_card(_build_status_card_model(_status_card_kind))
+
+
+func _build_status_card_model(kind: String) -> Dictionary:
+	if _player_controller == null:
+		return {}
+	var handle := int(_player_controller.get_player_country_handle())
+	if handle == 0:
+		return {}
+	var country_facade = _player_controller.get_country_facade()
+	var economy_facade = _player_controller.get_economy_facade()
+	if kind == "treasury":
+		var treasury: Dictionary = country_facade.treasury_snapshot(handle) \
+			if country_facade != null and country_facade.has_method("treasury_snapshot") else {}
+		var fiscal: Dictionary = country_facade.fiscal_snapshot(handle) \
+			if country_facade != null and country_facade.has_method("fiscal_snapshot") else {}
+		var cash_valid := bool(treasury.get("ok", false)) and treasury.has("cash")
+		return HudStatusViewModel.build_treasury(
+			cash_valid, int(treasury.get("cash", 0)), fiscal)
+	if economy_facade == null or not economy_facade.has_method("country_economy_overview"):
+		return HudStatusViewModel.build_population({}, {})
+	var professions: Dictionary = economy_facade.country_economy_overview(
+		handle, "professions")
+	var summary: Dictionary = economy_facade.country_economy_overview(handle, "summary")
+	return HudStatusViewModel.build_population(professions, summary)
 
 
 func _on_era_indicator_advanced(model: Dictionary) -> void:
@@ -1532,6 +1640,10 @@ func _bind_ui() -> void:
 	_top_bar.annual_history_requested.connect(func() -> void: annual_history_requested.emit())
 	_top_bar.set_gm_available(false)
 	_layout_top_bar()
+	_status_card = get_node_or_null("UIRoot/HUDLayer/HudStatusCard") as HudStatusCard
+	if _status_card != null:
+		_top_bar.status_hovered.connect(_on_top_bar_status_hovered)
+		_top_bar.status_pressed.connect(_on_top_bar_status_pressed)
 
 	_right_panel = get_node("UIRoot/PanelLayer/RightPanel") as InspectorPanel
 	_right_panel.set_player_controller(_player_controller)

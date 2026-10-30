@@ -6,7 +6,7 @@ extends DossierPage
 const COLUMNS := [
 	{"id": "name", "label": "城市", "kind": "text", "expand": true, "min_width": 120.0},
 	{"id": "population", "label": "人口", "kind": "number", "width": 70.0},
-	{"id": "income", "label": "人均收入", "kind": "number", "width": 78.0},
+	{"id": "income", "label": "人均收入", "kind": "money", "width": 78.0},
 	{"id": "satisfaction", "label": "满意度", "kind": "bar", "width": 108.0},
 	{"id": "fill", "label": "岗位填充", "kind": "bar", "width": 96.0, "optional": true},
 	{"id": "unemployment", "label": "失业率", "kind": "number", "width": 62.0, "optional": true},

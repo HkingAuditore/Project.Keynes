@@ -27,7 +27,7 @@ const SECTORS: Array[Dictionary] = [
 ]
 
 const SATISFACTION_DIMENSIONS: Array[String] = [
-	"温饱", "基本生活", "舒适", "奢侈", "收入增长", "储蓄", "税负", "社会发展"]
+	"生存", "基本生活", "舒适", "奢侈", "收入增长", "储蓄", "税负", "社会发展"]
 ## 前四维是实际生活消费，后四维是财务与社会感受。-1 表示不适用。
 const CONSUMPTION_TIER_COUNT := 4
 
@@ -61,6 +61,47 @@ const REJECTION_LABELS: Array[String] = [
 const REJECTION_SUFFICIENT := 4
 const MAX_BOTTLENECKS := 4
 const SHORTAGE_ALERT := 0.25
+
+## 五类税种在收支明细里的名字。收入侧是实收税额，支出侧是同一税种的负税率补贴，
+## 顺序与 NativeCountryRuntime::TaxKind 一致；快照自带 tax_kinds，按 id 对齐而不是按位置。
+const CASHFLOW_KINDS: Array[Dictionary] = [
+	{"id": "income", "name": "所得税", "subsidy": "收入补贴"},
+	{"id": "consumption", "name": "交易税", "subsidy": "交易补贴"},
+	{"id": "business", "name": "营业税", "subsidy": "营业补贴"},
+	{"id": "import", "name": "进口关税", "subsidy": "进口补贴"},
+	{"id": "export", "name": "出口关税", "subsidy": "出口补贴"},
+]
+## 非税国库支出：国库按市价付给本地商人、却不是税种的现金流出。顺序与原生
+## `NativeEconomyRuntime::NonTaxOutflow` 一致；快照自带 `non_tax_outflow_kinds`，
+## 按 id 对齐而不是按位置。每一项各自成段、各自成行，混在一起就没法回答
+## 「这笔钱是为科研、开拓还是工程付的」。
+const NON_TAX_OUTFLOW_KINDS: Array[Dictionary] = [
+	{"id": "research_purchase", "label": "科研采购", "icon": "metric.technology",
+		"note": "国库按市价向本地商人购入科技值。"},
+	{"id": "expedition_procurement", "label": "开拓采购", "icon": "family.house",
+		"note": "开拓商队向本地商人购入随行货物。"},
+	{"id": "construction", "label": "工程支出", "icon": "economy.building",
+		"note": "工程缺料由国库按市价从本地市场补足。"},
+	{"id": "canal", "label": "运河支出", "icon": "metric.territory",
+		"note": "运河缺料由国库按市价从本地市场补足。"},
+]
+## 原生新增项在旧 UI 上的兜底标签：宁可显示「其他支出」，也不要静默吞掉这笔钱。
+const NON_TAX_OUTFLOW_FALLBACK_LABEL := "其他支出"
+
+## 物价指数口径。原生按家庭需求（消费端）与供给（生产端）加权，100 = 成本锚。
+const PRICE_INDICES: Array[Dictionary] = [
+	{"id": "cpi", "label": "CPI", "name": "消费者物价",
+		"q16_key": "consumer_price_index_q16", "valid_key": "consumer_price_index_valid",
+		"basis": "按家庭需求量加权，100 = 消费品的成本锚。"},
+	{"id": "ppi", "label": "PPI", "name": "生产者物价",
+		"q16_key": "producer_price_index_q16", "valid_key": "producer_price_index_valid",
+		"basis": "按供给量加权，100 = 全部可售物资的成本锚。"},
+]
+
+## 与原生 consumption_living_standard_level() 的 0..6 台阶同序。
+const LIVING_STANDARD_NAMES: Array[String] = [
+	"赤贫", "挣扎", "贫困", "温饱", "小康", "富裕", "奢华",
+]
 
 ## 物资分组按 GoodProfile.technology_tags 中的 industry.* 标签。
 const GOOD_GROUPS: Array[Dictionary] = [
@@ -235,6 +276,9 @@ func kpis() -> Array:
 	var cash := int(treasury.get("cash", _model.get("cash", 0)))
 	var values := EconomyHistoryBuffer.kpi_values(summary, cash)
 	var national := scope_cell < 0
+	# 满意度与国库两张卡不留副行：主数字已经说完了，剩下的口径信息放进悬停提示。
+	var survival := _percent_text(float(summary.get("survival_satisfaction_q16", 0)) / Q16)
+	var tax_per_day := _money_text(values.tax_per_day)
 	return [
 		_kpi("population", "人口", values.population, "count", true,
 			"%d 个聚落" % int(summary.get("populated_cell_count", 0)), &"family.metric.population"),
@@ -244,21 +288,21 @@ func kpis() -> Array:
 		_kpi("employment_rate", "就业率", values.employment_rate, "percent", true,
 			"空缺岗位 %s" % UITokens.format_compact_number_cn(values.job_openings, 1),
 			&"population.profession.worker"),
-		_kpi("satisfaction", "综合满意度", values.satisfaction, "percent", true,
-			"温饱满足 %s" % _percent_text(float(summary.get("survival_satisfaction_q16", 0)) / Q16),
-			&"population.heart"),
+		_kpi("satisfaction", "综合满意度", values.satisfaction, "percent", true, "",
+			&"population.heart", "", "生存满足 %s" % survival),
 		_kpi("treasury", "国库" if national else "产值 / 日",
 			values.treasury / MONEY_SCALE if national else values.revenue_per_day / MONEY_SCALE,
 			"money", true,
-			"税收 %s / 日" % _money_text(values.tax_per_day) if national
-				else "利用率 %s" % _percent_text(values.utilization),
+			"" if national else "利用率 %s" % _percent_text(values.utilization),
 			&"metric.treasury" if national else &"family.metric.buildings",
-			"treasury" if national else "revenue_per_day"),
+			"treasury" if national else "revenue_per_day",
+			"税收 %s / 日" % tax_per_day if national else ""),
 	]
 
 
 func _kpi(id: String, title: String, value: float, kind: String, positive_good: bool,
-		caption: String, icon: StringName, history_key: String = "") -> Dictionary:
+		caption: String, icon: StringName, history_key: String = "",
+		tooltip_detail: String = "") -> Dictionary:
 	var key := id if history_key.is_empty() else history_key
 	var spark := PackedFloat32Array()
 	var delta := NAN
@@ -268,9 +312,13 @@ func _kpi(id: String, title: String, value: float, kind: String, positive_good: 
 		delta = _history.delta(key, mini(7, maxi(1, spark.size() - 1)))
 		if kind == "money":
 			delta /= MONEY_SCALE
-	return {"id": id, "title": title, "value": value, "kind": kind,
+	var out := {"id": id, "title": title, "value": value, "kind": kind,
 		"positive_good": positive_good, "caption": caption, "icon": icon,
 		"spark": spark, "delta": delta}
+	# 没有额外口径时交给卡片自己拼默认提示，避免把 tooltip 覆盖成空串。
+	if not tooltip_detail.is_empty():
+		out["tooltip"] = tooltip_detail
+	return out
 
 
 # ── 总览 ────────────────────────────────────────────────────────────────
@@ -279,35 +327,13 @@ func overview_model() -> Dictionary:
 	var summary := query("summary")
 	if not bool(summary.get("ok", false)):
 		return {"ok": false, "reason": _reason(summary)}
-	var professions := query("professions")
 	var goods := query("goods")
-	var investment := query("investment")
-	var income := float(summary.get("income_per_day", 0))
-	var wages := minf(float(summary.get("wages_paid_per_day", 0)), income)
-	var subsidy := float(summary.get("subsidy_per_day", 0))
-	var in_kind := float(summary.get("in_kind_income_per_day", 0))
-	var other_income := maxf(0.0, income - wages - subsidy)
-	var expense := float(summary.get("expense_per_day", 0))
-	var tax := float(summary.get("tax_per_day", 0))
-	var strata := aggregate_strata(professions, _strata) \
-		if bool(professions.get("ok", false)) else []
 	return {
 		"ok": true,
-		"income_segments": [
-			_segment("工资", wages, UITokens.FAMILY_GREEN),
-			_segment("经营与其他", other_income, UITokens.FAMILY_BRASS),
-			_segment("补贴", subsidy, UITokens.FAMILY_BLUE),
-			_segment("实物", in_kind, Color(0.55, 0.47, 0.36)),
-		],
-		"expense_segments": [
-			_segment("消费与其他", maxf(0.0, expense - tax), UITokens.FAMILY_BRASS),
-			_segment("税", tax, UITokens.FAMILY_OXBLOOD),
-			_segment("结余", maxf(0.0, income - expense), UITokens.FAMILY_GREEN),
-		],
-		"income_total": income / MONEY_SCALE,
-		"expense_total": expense / MONEY_SCALE,
-		"strata": strata,
-		"bottlenecks": classify_bottlenecks(summary, investment, goods),
+		"cashflow": cashflow_model(),
+		"price": price_model(summary),
+		"living": living_standard_model(summary),
+		"per_capita": per_capita_model(),
 		"sectors": sector_rows(summary),
 		"shortages": top_shortages(goods, 5),
 		"state_day_min": int(summary.get("state_day_min", -1)),
@@ -315,9 +341,212 @@ func overview_model() -> Dictionary:
 	}
 
 
-func _segment(label: String, value_raw: float, color: Color) -> Dictionary:
-	return {"label": label, "value": value_raw / MONEY_SCALE, "color": color,
-		"text": _money_text(value_raw)}
+## 物价指数：原生 summary 已按需求 / 供给加权算好，成本锚 = 100。
+## 消费者指数按家庭需求加权，生产者指数按供给加权，两者都是流量权重而不是简单平均。
+static func price_model(summary: Dictionary) -> Dictionary:
+	if not bool(summary.get("ok", false)):
+		return {"ok": false, "rows": []}
+	var rows: Array = []
+	var values: Array = []
+	for entry in PRICE_INDICES:
+		var valid := bool(summary.get(entry.valid_key, false))
+		var value := float(summary.get(entry.q16_key, 0)) / Q16 if valid else NAN
+		if valid:
+			values.append(value)
+		rows.append({"id": entry.id, "label": entry.label,
+			"index": value * 100.0 if valid else NAN, "valid": valid,
+			"text": "%.1f" % (value * 100.0) if valid else "—",
+			"tooltip": "%s\n%s" % [String(entry.name), String(entry.basis)]})
+	# CPI − PPI 就是两端的价格裂口：正值说明消费端比出厂端更贵。
+	# 任一端缺读数就不报裂口，缺一半的减法没有意义。
+	var spread := NAN
+	if values.size() == PRICE_INDICES.size():
+		spread = (float(values[0]) - float(values[1])) * 100.0
+	return {"ok": true, "rows": rows, "spread": spread}
+
+
+## 人均生活水平：原生按人口加权后给出 0..6 的连续读数（Q16）。
+## 这是有序台阶而不是连续量，所以展示成阶梯而不是刻度条。
+static func living_standard_model(summary: Dictionary) -> Dictionary:
+	if not bool(summary.get("ok", false)):
+		return {"ok": false, "level": NAN, "max": LIVING_STANDARD_NAMES.size() - 1}
+	var valid := bool(summary.get("living_standard_level_valid", false))
+	var level := float(summary.get("living_standard_level_q16", 0)) / Q16 if valid else NAN
+	return {
+		"ok": valid,
+		"level": level,
+		"max": LIVING_STANDARD_NAMES.size() - 1,
+		"name": LIVING_STANDARD_NAMES[clampi(int(floor(level)), 0,
+			LIVING_STANDARD_NAMES.size() - 1)] if valid else "",
+		"text": "%.1f" % level if valid else "—",
+	}
+
+
+## 人均日产值：GDP 账本的当日人均流量与最近的趋势。
+## 与页头横幅的「年度人均累计」是两个口径——这里跟着每天的产出波动，
+## 所以把年度累计写在 caption 里，避免读者把两个「人均」当成同一个数。
+func per_capita_model() -> Dictionary:
+	if _gdp_ledger == null or not _gdp_ledger.ready():
+		return {"ok": false, "value": 0.0, "trend": PackedFloat32Array(), "delta": NAN,
+			"caption": ""}
+	var value := _gdp_ledger.national_per_capita_per_day() / MONEY_SCALE
+	var trend := _gdp_ledger.per_capita_trend()
+	var spark := PackedFloat32Array()
+	for point in trend:
+		spark.append(point / MONEY_SCALE)
+	var delta := NAN
+	if spark.size() >= 2 and not is_nan(spark[-1]) and not is_nan(spark[-2]):
+		delta = spark[-1] - spark[-2]
+	var year_per_capita := _gdp_ledger.national_per_capita() / MONEY_SCALE
+	return {"ok": not is_nan(value), "value": value, "trend": spark, "delta": delta,
+		"ytd_per_capita": year_per_capita,
+		"caption": "年度人均 %s" % UITokens.format_compact_number_cn(year_per_capita, 2)
+			if not is_nan(year_per_capita) else "",
+		"population": _gdp_ledger.national_population()}
+
+
+## 当日国库收支：堆叠条看结构（谁交的、补给谁），折线看方向（总量怎么变）。
+## 数据只来自 shell 模型里的财政快照与国库日序列，不额外发起原生查询。
+func cashflow_model() -> Dictionary:
+	var flow := build_cashflow(_model.get("fiscal", {}))
+	var history = _model.get("fiscal_history", null)
+	if history is EconomyFiscalHistory:
+		flow["income_series"] = _series_money(history.income_series())
+		flow["expense_series"] = _series_money(history.expense_series())
+	return flow
+
+
+static func _series_money(values: PackedFloat32Array) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(values.size())
+	for index in range(values.size()):
+		out[index] = values[index] / MONEY_SCALE
+	return out
+
+
+## 财政快照 → 两侧堆叠段、逐税种明细行与当日合计。
+## 堆叠段只放非零项（零税率税种不该占一段），明细表则五个税种全列。
+## 支出一侧除五类税种的负税率补贴外，还有一条非税支出「科研采购」：国库把
+## 现金付给本地商人换取科技值，钱确实离开了国库，所以必须进支出侧与净额，
+## 否则国库现金在掉、账面净额却是零（`fiscal.research_purchase_cash`）。
+static func build_cashflow(fiscal: Dictionary) -> Dictionary:
+	var empty := {"ok": false, "income_total": 0.0, "expense_total": 0.0, "net": 0.0,
+		"income_text": "0", "expense_text": "0", "net_text": "0",
+		"net_positive": true, "day_text": "", "detail_rows": [],
+		"income_segments": [], "expense_segments": [],
+		"income_series": PackedFloat32Array(), "expense_series": PackedFloat32Array()}
+	if not bool(fiscal.get("ok", false)) or fiscal.is_empty():
+		empty["reason"] = _reason(fiscal)
+		return empty
+	var kind_ids = fiscal.get("tax_kinds", PackedStringArray())
+	var collected = fiscal.get("collected", PackedInt64Array())
+	var paid = fiscal.get("subsidy_paid", PackedInt64Array())
+	var bases = fiscal.get("tax_base", PackedInt64Array())
+	var requested = fiscal.get("subsidy_requested", PackedInt64Array())
+	var non_tax_ids = fiscal.get("non_tax_outflow_kinds", PackedStringArray())
+	var non_tax_values = fiscal.get("non_tax_outflow", PackedInt64Array())
+	var inflow_raw: Array = []
+	var outflow_raw: Array = []
+	var rows: Array = []
+	var income_total := 0.0
+	var expense_total := 0.0
+	for index in range(CASHFLOW_KINDS.size()):
+		var meta := _cashflow_meta(kind_ids, index)
+		var inflow := maxf(0.0, _at(collected, index))
+		var outflow := maxf(0.0, _at(paid, index))
+		income_total += inflow
+		expense_total += outflow
+		if inflow > 0.0:
+			inflow_raw.append({"label": String(meta.name), "value": inflow})
+		if outflow > 0.0:
+			outflow_raw.append({"label": String(meta.subsidy), "value": outflow})
+		rows.append({"id": String(meta.id), "cells": {
+			"name": {"text": String(meta.name)},
+			"base": _cashflow_cell(_at(bases, index)),
+			"collected": _cashflow_cell(inflow, UITokens.DOSSIER_VERDIGRIS),
+			"requested": _cashflow_cell(_at(requested, index)),
+			"paid": _cashflow_cell(outflow, UITokens.DOSSIER_OXBLOOD),
+		}})
+	# 非税支出与税种补贴并列进入支出侧：钱都是国库掏的，只是没有税种凭证。
+	# 非税行只在真的发生时才出现——五个税种即使为零也常列（行是账簿），
+	# 但这几项不是税种，零值写一行只会让人以为漏了一笔税。
+	for index in range(maxi(non_tax_ids.size(), non_tax_values.size())):
+		var amount := maxf(0.0, _at(non_tax_values, index))
+		if amount <= 0.0:
+			continue
+		var label := _non_tax_outflow_label(non_tax_ids, index)
+		expense_total += amount
+		outflow_raw.append({"label": label, "value": amount})
+		rows.append({"id": _non_tax_outflow_id(non_tax_ids, index), "cells": {
+			"name": {"text": label},
+			"base": _cashflow_cell(0.0),
+			"collected": _cashflow_cell(0.0),
+			"requested": _cashflow_cell(0.0),
+			"paid": _cashflow_cell(amount, UITokens.DOSSIER_OXBLOOD),
+		}})
+	var net := income_total - expense_total
+	var day := int(fiscal.get("sample_day", -1))
+	return {
+		"ok": true,
+		"income_total": income_total / MONEY_SCALE,
+		"expense_total": expense_total / MONEY_SCALE,
+		"net": net / MONEY_SCALE,
+		"income_text": _money_text(income_total),
+		"expense_text": _money_text(expense_total),
+		"net_text": ("+" if net >= 0.0 else "−") + _money_text(absf(net)),
+		"net_positive": net >= 0.0,
+		"day_text": "第 %d 日" % (day + 1) if day >= 0 else "",
+		"detail_rows": rows,
+		"income_segments": _flow_segments(inflow_raw, UITokens.DOSSIER_VERDIGRIS),
+		"expense_segments": _flow_segments(outflow_raw, UITokens.DOSSIER_OXBLOOD),
+	}
+
+
+## 占比堆叠段：按金额降序，越靠前颜色越深，所以段的顺序本身就是排名。
+static func _flow_segments(raw: Array, base: Color) -> Array:
+	raw.sort_custom(func(a, b): return float(a.value) > float(b.value))
+	var segments: Array = []
+	for index in range(raw.size()):
+		var value := float(raw[index].value)
+		segments.append({"label": String(raw[index].label), "value": value / MONEY_SCALE,
+			"text": _money_text(value),
+			"color": base.lerp(UITokens.DOSSIER_PAPER, minf(0.13 * float(index), 0.5))})
+	return segments
+
+
+## 明细表的零值写成短横线：一整列 0 会盖过真正有数的那一格。
+static func _cashflow_cell(raw: float, color: Color = UITokens.DOSSIER_INK) -> Dictionary:
+	if raw <= 0.0:
+		return {"text": "—", "value": 0.0, "color": UITokens.DOSSIER_INK_MUTED}
+	return {"text": _money_text(raw), "value": raw / MONEY_SCALE, "color": color,
+		"strong": color != UITokens.DOSSIER_INK}
+
+
+static func _cashflow_meta(kind_ids, index: int) -> Dictionary:
+	if index < kind_ids.size():
+		var kind := String(kind_ids[index])
+		for meta in CASHFLOW_KINDS:
+			if String(meta.id) == kind:
+				return meta
+	return CASHFLOW_KINDS[index] if index < CASHFLOW_KINDS.size() else CASHFLOW_KINDS[0]
+
+
+## 非税支出的稳定 id：快照自带 kinds 时按 id 对齐，缺失时用序号兜底，
+## 这样明细行的 id 在原生新增条目后仍然稳定。
+static func _non_tax_outflow_id(kind_ids, index: int) -> String:
+	if index >= 0 and index < kind_ids.size():
+		var kind := String(kind_ids[index])
+		if not kind.is_empty():
+			return kind
+	return "non_tax_%d" % index
+
+
+static func _non_tax_outflow_label(kind_ids, index: int) -> String:
+	var id := _non_tax_outflow_id(kind_ids, index)
+	for meta in NON_TAX_OUTFLOW_KINDS:
+		if String(meta.id) == id:
+			return String(meta.label)
+	return NON_TAX_OUTFLOW_FALLBACK_LABEL
 
 
 static func sector_rows(summary: Dictionary) -> Array:
@@ -899,7 +1128,8 @@ func cities_model() -> Dictionary:
 	var tiers: PackedStringArray = page.get("prosperity_names", PackedStringArray())
 	var rows: Array = []
 	var villages := {"id": -2, "cell": -1, "name": "其余村落", "village": true, "count": 0,
-		"population": 0.0, "income": 0.0, "satisfaction_weight": 0.0, "jobs_required": 0.0,
+		"population": 0.0, "income": 0.0, "satisfaction_weight": 0.0,
+		"survival_weight": 0.0, "jobs_required": 0.0,
 		"jobs_filled": 0.0, "units": 0.0, "suspended": 0.0, "profit": 0.0, "unemployed": 0.0}
 	for row in range(cells.size()):
 		var people := _at(page.get("population", []), row)
@@ -913,6 +1143,8 @@ func cities_model() -> Dictionary:
 			villages.population += people
 			villages.income += income
 			villages.satisfaction_weight += satisfaction * people
+			villages.survival_weight += _at(
+				page.get("survival_satisfaction_q16", []), row) / Q16 * people
 			villages.jobs_required += required
 			villages.jobs_filled += filled
 			villages.units += _at(page.get("building_units", []), row)
@@ -938,7 +1170,7 @@ func cities_model() -> Dictionary:
 		var people := float(villages.population)
 		villages["income_per_capita"] = float(villages.income) / people if people > 0.0 else 0.0
 		villages["satisfaction"] = float(villages.satisfaction_weight) / people if people > 0.0 else 0.0
-		villages["survival"] = villages.satisfaction
+		villages["survival"] = float(villages.survival_weight) / people if people > 0.0 else 0.0
 		villages["fill_rate"] = float(villages.jobs_filled) / float(villages.jobs_required) \
 			if float(villages.jobs_required) > 0.0 else 1.0
 		villages["unemployment"] = float(villages.unemployed) / people if people > 0.0 else 0.0
@@ -981,6 +1213,8 @@ static func format_value(value: float, kind: String) -> String:
 			return UITokens.format_compact_number_cn(value, 1)
 
 
+## 金额只出数字（含正负号与「万/亿」缩写），单位由渲染层的金币图标负责：
+## 图表走 DossierChart._money_text()，容器行走 MoneyDisplay.make_icon()。
 static func _money_text(raw: float) -> String:
 	return UITokens.format_compact_number_cn(raw / MONEY_SCALE, 2)
 

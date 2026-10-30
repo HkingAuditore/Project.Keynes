@@ -151,6 +151,14 @@ func current_section() -> String:
 	return _section_id
 
 
+## 直接落到经济卷宗的指定章节（"overview" / "strata" …）。
+## 顶栏国库/人口纸签点击时走这条路径，让「点进去看什么」和悬浮卡说的一致。
+func focus_economy_chapter(chapter_id: String) -> void:
+	if _economy_dossier == null or chapter_id.is_empty():
+		return
+	_economy_dossier.select_chapter(chapter_id)
+
+
 ## Dock the shell beside the map instead of over it.
 ##
 ## Only 「定位」 turns this on, and it exists for exactly one reason: a card's

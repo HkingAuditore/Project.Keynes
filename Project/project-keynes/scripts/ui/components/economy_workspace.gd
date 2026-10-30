@@ -257,13 +257,14 @@ func _apply_model(now_msec: int) -> void:
 	var fulfillment := 1.0 if requested <= 0 else float(subsidy) / float(requested)
 	_cash_card.set_data("国库现金",
 		String(treasury.get("cash_text", "—")) if available else "—",
-		String(_model.get("country_name", "玩家国家")), UITokens.RESOURCE, "", "metric.treasury")
+		String(_model.get("country_name", "玩家国家")), UITokens.RESOURCE, "", "metric.treasury",
+		true)
 	_tax_card.set_data("昨日税收", _money(collected), "所得税 / 交易税 / 营业税",
-		UITokens.BRASS_HIGHLIGHT, "", "tax.section")
+		UITokens.BRASS_HIGHLIGHT, "", "tax.section", true)
 	var subsidy_gap := maxi(0, requested - subsidy)
 	_subsidy_card.set_data("补贴缺口", _money(subsidy_gap),
 		"本批实付 %s · 累计实付 %s" % [_money(subsidy), _money(cumulative_subsidy)],
-		UITokens.CLIMATE if subsidy_gap <= 0 else UITokens.RISK, "", "tax.income")
+		UITokens.CLIMATE if subsidy_gap <= 0 else UITokens.RISK, "", "tax.income", true)
 	_fulfillment_card.set_data("补贴兑现率", "%.1f%%" % (fulfillment * 100.0),
 		("本批未预留，等待国库预算" if requested > 0 and subsidy == 0 and reserved == 0
 		 else "昨日申请 · 预留 %s" % _money(reserved)),
@@ -704,14 +705,14 @@ func _apply_trade_summary_cards() -> void:
 	var cumulative_exports := int(summary.get("cumulative_export_base", 0))
 	var cumulative_tariff := int(summary.get("cumulative_tariff_net_income", 0))
 	_tax_card.set_data("昨日进口额", _money(imports), "累计 %s" % _money(cumulative_imports),
-		UITokens.GOOD, "", "metric.trade")
+		UITokens.GOOD, "", "metric.trade", true)
 	_subsidy_card.set_data("昨日出口额", _money(exports), "累计 %s" % _money(cumulative_exports),
-		UITokens.RESOURCE, "", "metric.trade")
+		UITokens.RESOURCE, "", "metric.trade", true)
 	_fulfillment_card.set_data("昨日净出口", _money(net), "累计 %s" % _money(
 		cumulative_exports - cumulative_imports),
-		UITokens.ACCENT, "", "metric.trade")
+		UITokens.ACCENT, "", "metric.trade", true)
 	_cash_card.set_data("关税净收入", _money(tariff) if available else "—",
-		"累计 %s" % _money(cumulative_tariff), UITokens.BRASS_HIGHLIGHT, "", "tax.tariff")
+		"累计 %s" % _money(cumulative_tariff), UITokens.BRASS_HIGHLIGHT, "", "tax.tariff", true)
 
 
 func _apply_default_summary_cards() -> void:
@@ -727,13 +728,14 @@ func _apply_default_summary_cards() -> void:
 	var fulfillment := 1.0 if requested <= 0 else float(subsidy) / float(requested)
 	_cash_card.set_data("国库现金",
 		String(treasury.get("cash_text", "—")) if available else "—",
-		String(_model.get("country_name", "玩家国家")), UITokens.RESOURCE, "", "metric.treasury")
+		String(_model.get("country_name", "玩家国家")), UITokens.RESOURCE, "", "metric.treasury",
+		true)
 	_tax_card.set_data("昨日税收", _money(collected), "所得税 / 交易税 / 营业税",
-		UITokens.BRASS_HIGHLIGHT, "", "tax.section")
+		UITokens.BRASS_HIGHLIGHT, "", "tax.section", true)
 	var subsidy_gap := maxi(0, requested - subsidy)
 	_subsidy_card.set_data("补贴缺口", _money(subsidy_gap),
 		"本批实付 %s · 累计实付 %s" % [_money(subsidy), _money(cumulative_subsidy)],
-		UITokens.CLIMATE if subsidy_gap <= 0 else UITokens.RISK, "", "tax.income")
+		UITokens.CLIMATE if subsidy_gap <= 0 else UITokens.RISK, "", "tax.income", true)
 	_fulfillment_card.set_data("补贴兑现率", "%.1f%%" % (fulfillment * 100.0),
 		("本批未预留，等待国库预算" if requested > 0 and subsidy == 0 and reserved == 0
 		 else "昨日申请 · 预留 %s" % _money(reserved)),
@@ -836,14 +838,33 @@ func _configure_spin_for_mode(spin: SpinBox, mode: int) -> void:
 		spin.min_value = TaxLaneEditor.absolute_amount_to_currency(TAX_ABSOLUTE_MIN)
 		spin.max_value = TaxLaneEditor.absolute_amount_to_currency(TAX_ABSOLUTE_MAX)
 		spin.step = 0.01
-		spin.suffix = "货币"
-		spin.tooltip_text = "定额税按货币计，单位：货币/人/天"
+		# 单位不写字：定额模式下这一行的行尾亮起一枚金币（MoneyIcon 节点），
+		# 输入框里只剩数字，和顶栏国库纸签的读法一致。
+		spin.suffix = ""
+		spin.tooltip_text = "定额税：每人每天缴纳的金额"
+		_set_lane_money_icon(spin, true)
 	else:
 		spin.min_value = -1000.0
 		spin.max_value = 100.0
 		spin.step = 0.01
 		spin.suffix = "%"
 		spin.tooltip_text = "按百分比计"
+		_set_lane_money_icon(spin, false)
+
+
+## 税额行的货币图标与 SpinBox 同级（MoneyIcon），按计税模式开关。
+func _set_lane_money_icon(spin: SpinBox, shown: bool) -> void:
+	if spin == null:
+		return
+	var parent := spin.get_parent()
+	if parent == null:
+		return
+	var icon := parent.get_node_or_null("MoneyIcon") as TextureRect
+	if icon == null:
+		return
+	if icon.texture == null:
+		MoneyDisplay.apply_icon(icon, 13)
+	icon.visible = shown
 
 
 func _card_mode(card: Dictionary, kind: String, fallback: int = TAX_MODE_PERCENT_BP) -> int:
@@ -899,7 +920,9 @@ func _ensure_card(page: String, item_id: String, label: String,
 		if mode_button != null:
 			mode_button.clear()
 			mode_button.add_item("%", TAX_MODE_PERCENT_BP)
-			mode_button.add_item("定额（货币）", TAX_MODE_ABSOLUTE)
+			# 定额税的单位是货币：下拉项用金币图标顶着，不再写「（货币）」。
+			# 必须用 24px 的 MENU_ICON —— item 图标按原生像素算最小尺寸。
+			mode_button.add_icon_item(MoneyDisplay.MENU_ICON, "定额", TAX_MODE_ABSOLUTE)
 			mode_button.select(0)
 			mode_button.item_selected.connect(
 				_on_mode_selected.bind(key, kind))
@@ -1077,6 +1100,27 @@ func _refresh_treasury_insights() -> void:
 				if reserved <= 0 else "补贴缺口 %s，当前预留不足。" % _money(gap)),
 			"accent": UITokens.RISK,
 			"icon": "tax.income",
+		})
+	# 非税支出：国库现金付给本地商人，不在五类税种的补贴实付里，所以国库页要
+	# 逐项说明这笔钱是为科研、开拓还是工程付的。
+	var non_tax_ids = fiscal.get("non_tax_outflow_kinds", PackedStringArray())
+	var non_tax_values = fiscal.get("non_tax_outflow", PackedInt64Array())
+	for index in range(mini(non_tax_ids.size(), non_tax_values.size())):
+		var amount := maxi(0, int(non_tax_values[index]))
+		if amount <= 0:
+			continue
+		var meta := {}
+		for candidate in EconomyDossierViewModel.NON_TAX_OUTFLOW_KINDS:
+			if String(candidate.id) == String(non_tax_ids[index]):
+				meta = candidate
+				break
+		items.append({
+			"id": String(non_tax_ids[index]),
+			"text": "本批%s %s · %s" % [
+				String(meta.get("label", "非税支出")), _money(amount),
+				String(meta.get("note", "国库付给本地商人。"))],
+			"accent": UITokens.RISK,
+			"icon": String(meta.get("icon", "metric.treasury")),
 		})
 	# 贸易顺逆差与「去市场档案查看」属修饰性说明，改由贸易页数据本身表达。
 	_insights.set_items(items.slice(0, 4))

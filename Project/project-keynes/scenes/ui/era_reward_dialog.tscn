@@ -6,6 +6,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/metric_card.tscn" id="4_metric"]
 [ext_resource type="StyleBox" path="res://assets/ui/era/era_note_style.tres" id="5_paper"]
 [ext_resource type="Texture2D" path="res://assets/ui/paper_aux_v1/torn_note_v1.tres" id="6_paper_texture"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="7_icon_badge"]
 
 [sub_resource type="StyleBoxEmpty" id="Empty"]
 
@@ -64,13 +65,13 @@ axis_stretch_vertical = 1
 [node name="Margin" type="MarginContainer" parent="Popup/Overview"]
 layout_mode = 2
 theme_override_constants/margin_left = 22
-theme_override_constants/margin_top = 18
+theme_override_constants/margin_top = 12
 theme_override_constants/margin_right = 22
-theme_override_constants/margin_bottom = 18
+theme_override_constants/margin_bottom = 16
 
 [node name="Column" type="VBoxContainer" parent="Popup/Overview/Margin"]
 layout_mode = 2
-theme_override_constants/separation = 10
+theme_override_constants/separation = 6
 
 [node name="Header" type="HBoxContainer" parent="Popup/Overview/Margin/Column"]
 layout_mode = 2
@@ -97,7 +98,7 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/h_separation = 8
 theme_override_constants/v_separation = 6
-columns = 4
+columns = 3
 
 [node name="GDP" parent="Popup/Overview/Margin/Column/Metrics" instance=ExtResource("4_metric")]
 unique_name_in_owner = true
@@ -105,13 +106,19 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_styles/panel = SubResource("Empty")
 
-[node name="Treasury" parent="Popup/Overview/Margin/Column/Metrics" instance=ExtResource("4_metric")]
+[node name="PerCapitaGDP" parent="Popup/Overview/Margin/Column/Metrics" instance=ExtResource("4_metric")]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_styles/panel = SubResource("Empty")
 
-[node name="Population" parent="Popup/Overview/Margin/Column/Metrics" instance=ExtResource("4_metric")]
+[node name="CPI" parent="Popup/Overview/Margin/Column/Metrics" instance=ExtResource("4_metric")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("Empty")
+
+[node name="PPI" parent="Popup/Overview/Margin/Column/Metrics" instance=ExtResource("4_metric")]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -122,6 +129,158 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_styles/panel = SubResource("Empty")
+
+[node name="Satisfaction" parent="Popup/Overview/Margin/Column/Metrics" instance=ExtResource("4_metric")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("Empty")
+
+[node name="LivingStandard" parent="Popup/Overview/Margin/Column/Metrics" instance=ExtResource("4_metric")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("Empty")
+
+[node name="ProblemRule" type="ColorRect" parent="Popup/Overview/Margin/Column"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 1)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.42, 0.29, 0.16, 0.3)
+
+[node name="AlertIcons" type="GridContainer" parent="Popup/Overview/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 4
+columns = 3
+
+[node name="Unemployment" type="HBoxContainer" parent="Popup/Overview/Margin/Column/AlertIcons"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 1
+theme_override_constants/separation = 3
+
+[node name="Icon" parent="Popup/Overview/Margin/Column/AlertIcons/Unemployment" instance=ExtResource("7_icon_badge")]
+custom_minimum_size = Vector2(34, 30)
+layout_mode = 2
+
+[node name="Text" type="Label" parent="Popup/Overview/Margin/Column/AlertIcons/Unemployment"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+text = "失业率偏高"
+theme_type_variation = &"PKMutedLabel"
+theme_override_font_sizes/font_size = 14
+text_overrun_behavior = 3
+
+[node name="Survival" type="HBoxContainer" parent="Popup/Overview/Margin/Column/AlertIcons"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 1
+theme_override_constants/separation = 3
+
+[node name="Icon" parent="Popup/Overview/Margin/Column/AlertIcons/Survival" instance=ExtResource("7_icon_badge")]
+custom_minimum_size = Vector2(34, 30)
+layout_mode = 2
+
+[node name="Text" type="Label" parent="Popup/Overview/Margin/Column/AlertIcons/Survival"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+text = "温饱满意度不足"
+theme_type_variation = &"PKMutedLabel"
+theme_override_font_sizes/font_size = 14
+text_overrun_behavior = 3
+
+[node name="ConsumerShortage" type="HBoxContainer" parent="Popup/Overview/Margin/Column/AlertIcons"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 1
+theme_override_constants/separation = 3
+
+[node name="Icon" parent="Popup/Overview/Margin/Column/AlertIcons/ConsumerShortage" instance=ExtResource("7_icon_badge")]
+custom_minimum_size = Vector2(34, 30)
+layout_mode = 2
+
+[node name="Text" type="Label" parent="Popup/Overview/Margin/Column/AlertIcons/ConsumerShortage"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+text = "纺织与消费品短缺"
+theme_type_variation = &"PKMutedLabel"
+theme_override_font_sizes/font_size = 14
+text_overrun_behavior = 3
+
+[node name="IndustrialShortage" type="HBoxContainer" parent="Popup/Overview/Margin/Column/AlertIcons"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 1
+theme_override_constants/separation = 3
+
+[node name="Icon" parent="Popup/Overview/Margin/Column/AlertIcons/IndustrialShortage" instance=ExtResource("7_icon_badge")]
+custom_minimum_size = Vector2(34, 30)
+layout_mode = 2
+
+[node name="Text" type="Label" parent="Popup/Overview/Margin/Column/AlertIcons/IndustrialShortage"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+text = "工业物资短缺"
+theme_type_variation = &"PKMutedLabel"
+theme_override_font_sizes/font_size = 14
+text_overrun_behavior = 3
+
+[node name="Vacancies" type="HBoxContainer" parent="Popup/Overview/Margin/Column/AlertIcons"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 1
+theme_override_constants/separation = 3
+
+[node name="Icon" parent="Popup/Overview/Margin/Column/AlertIcons/Vacancies" instance=ExtResource("7_icon_badge")]
+custom_minimum_size = Vector2(34, 30)
+layout_mode = 2
+
+[node name="Text" type="Label" parent="Popup/Overview/Margin/Column/AlertIcons/Vacancies"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+text = "岗位空缺严重"
+theme_type_variation = &"PKMutedLabel"
+theme_override_font_sizes/font_size = 14
+text_overrun_behavior = 3
+
+[node name="Clear" type="HBoxContainer" parent="Popup/Overview/Margin/Column/AlertIcons"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 1
+theme_override_constants/separation = 3
+
+[node name="Icon" parent="Popup/Overview/Margin/Column/AlertIcons/Clear" instance=ExtResource("7_icon_badge")]
+custom_minimum_size = Vector2(34, 30)
+layout_mode = 2
+
+[node name="Text" type="Label" parent="Popup/Overview/Margin/Column/AlertIcons/Clear"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+text = "暂无突出问题"
+theme_type_variation = &"PKMutedLabel"
+theme_override_font_sizes/font_size = 14
+text_overrun_behavior = 3
 
 [node name="Rewards" type="PanelContainer" parent="Popup"]
 unique_name_in_owner = true

@@ -1,0 +1,82 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/hud_population_row.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
+
+[node name="HudPopulationRow" type="HBoxContainer"]
+custom_minimum_size = Vector2(0, 34)
+theme_override_constants/separation = 8
+script = ExtResource("1_script")
+
+[node name="Accent" type="ColorRect" parent="."]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(3, 0)
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+color = Color(0.69, 0.49, 0.24, 1)
+
+[node name="Text" type="VBoxContainer" parent="."]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+theme_override_constants/separation = 0
+
+[node name="NameRow" type="HBoxContainer" parent="Text"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Icon" parent="Text/NameRow" instance=ExtResource("2_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(17, 19)
+layout_mode = 2
+
+[node name="NameLabel" type="Label" parent="Text/NameRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "农户"
+text_overrun_behavior = 3
+
+[node name="Detail" type="HBoxContainer" parent="Text"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Satisfaction" type="Label" parent="Text/Detail"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "满意度 —"
+
+[node name="Gap" type="Label" parent="Text/Detail"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.4, 0.31, 0.22, 0.66)
+text = "·"
+
+[node name="LivingIcon" parent="Text/Detail" instance=ExtResource("2_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(16, 18)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="Living" type="Label" parent="Text/Detail"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+text = "—"
+
+[node name="Figures" type="VBoxContainer" parent="."]
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_constants/separation = 0
+
+[node name="People" type="Label" parent="Figures"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "0"
+horizontal_alignment = 2
+
+[node name="Share" type="Label" parent="Figures"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "0%"
+horizontal_alignment = 2

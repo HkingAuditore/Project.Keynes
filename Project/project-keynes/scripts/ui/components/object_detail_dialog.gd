@@ -719,7 +719,7 @@ func _trade_order_columns() -> Array:
 		{"id": "dir", "label": "方向", "width": 42.0},
 		{"id": "counterpart", "label": "对端", "expand": true, "min_width": 78.0},
 		{"id": "quantity", "label": "数量", "width": 52.0, "kind": "number"},
-		{"id": "price", "label": "单价", "width": 78.0, "optional": true},
+		{"id": "price", "label": "单价", "width": 92.0, "kind": "money", "optional": true},
 		{"id": "route", "label": "行程", "width": 82.0, "kind": "bar"},
 		{"id": "status", "label": "状态", "width": 44.0, "optional": true},
 	]
@@ -942,14 +942,14 @@ func _apply_cohort_dossier_data(row: Dictionary, live_patch: bool) -> void:
 		inc_stacked.visible = not inc_segs.is_empty()
 		if not inc_segs.is_empty():
 			inc_stacked.set_segments("收入构成", inc_segs,
-				"%s/人" % String(row.get("income", "—")))
+				"%s/人" % String(row.get("income", "—")), true)
 	var exp_stacked := _cohort_refs.get("expense_stacked") as DossierStackedBar
 	if exp_stacked != null:
 		var exp_segs: Array = dossier.get("expense_segments", [])
 		exp_stacked.visible = not exp_segs.is_empty()
 		if not exp_segs.is_empty():
 			exp_stacked.set_segments("支出构成", exp_segs,
-				"%s/人" % String(row.get("expense", "—")))
+				"%s/人" % String(row.get("expense", "—")), true)
 
 	var demand_summary: Dictionary = row.get("demand_summary", {})
 	var summary_label := _cohort_refs.get("summary_label") as Label
@@ -1129,14 +1129,14 @@ func _apply_building_dossier_data(row: Dictionary, live_patch: bool) -> void:
 		rev_stacked.visible = not rev_segs.is_empty()
 		if not rev_segs.is_empty():
 			rev_stacked.set_segments("收入构成（含自用折算）", rev_segs,
-				String(fd.get("right_text", "0")))
+				String(fd.get("right_text", "0")), true)
 	var cost_stacked := _building_refs.get("cost_stacked_bar") as DossierStackedBar
 	if cost_stacked != null:
 		var cost_segs: Array = dossier.get("cost_segments", [])
 		cost_stacked.visible = not cost_segs.is_empty()
 		if not cost_segs.is_empty():
 			cost_stacked.set_segments("成本构成", cost_segs,
-				String(fd.get("left_text", "0")))
+				String(fd.get("left_text", "0")), true)
 	var fnote := _building_refs.get("finance_note") as Label
 	if fnote != null:
 		var note_str := String(dossier.get("finance_note", ""))

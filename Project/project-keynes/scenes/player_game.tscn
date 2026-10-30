@@ -30,6 +30,7 @@
 [ext_resource type="Script" path="res://scripts/rendering/cell_situation_layer.gd" id="32_situations"]
 [ext_resource type="PackedScene" path="res://scenes/ui/era_indicator.tscn" id="33_era_indicator"]
 [ext_resource type="PackedScene" path="res://scenes/ui/era_transition_flight.tscn" id="34_era_flight"]
+[ext_resource type="PackedScene" path="res://scenes/ui/hud_status_card.tscn" id="35_status_card"]
 
 [node name="PlayerGame" type="Node2D" unique_id=198229795]
 script = ExtResource("1_player")
@@ -121,6 +122,10 @@ script = ExtResource("32_situations")
 unique_name_in_owner = true
 layout_mode = 0
 anchors_preset = 0
+
+[node name="HudStatusCard" parent="UI/UIRoot/HUDLayer" instance=ExtResource("35_status_card")]
+unique_name_in_owner = true
+layout_mode = 1
 
 [node name="PerfMiniHUD" parent="UI/UIRoot/HUDLayer" unique_id=1339658041 instance=ExtResource("16_perf")]
 unique_name_in_owner = true

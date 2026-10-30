@@ -22,9 +22,10 @@ static func make_sparkline(
 	return chart
 
 
-static func make_dossier_stacked_bar(title: String, segments: Array, total_text: String = "") -> DossierStackedBar:
+static func make_dossier_stacked_bar(title: String, segments: Array, total_text: String = "",
+		money_icon: bool = false) -> DossierStackedBar:
 	var chart := DossierStackedBar.new()
-	chart.set_segments(title, segments, total_text)
+	chart.set_segments(title, segments, total_text, money_icon)
 	return chart
 
 

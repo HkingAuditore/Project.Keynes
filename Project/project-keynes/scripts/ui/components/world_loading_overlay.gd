@@ -16,10 +16,23 @@ const STAGE_LABELS := {
 	"encode": "生成地貌和植被",
 	"ecology": "生成生态系统",
 	"simulation": "生成初始聚落",
+	# ── simulation(92%) 之后的装配引导链（map_generator._loading_profile_step）──
+	"world_bind": "绑定世界数据",
+	"resources": "勘测自然资源",
+	"ecology_bind": "播种生态分布",
+	"gameplay_bind": "初始化玩法系统",
+	"runtime_bind": "启动仿真运行时",
 	"done": "即将进入世界",
+	# ── 生成器返回后的渲染/视觉层装载（world_runtime_host）──
 	"bind": "绑定世界状态",
+	"visual": "构建地表植被",
 	"upload": "进入世界",
 }
+
+## 这些阶段的 fraction 由发射方直接给"UI 完成度绝对值"（0.96..0.99），不再乘以 0.96：
+## 生成器返回后的绑定/视觉层阶段要跨越多个发射点（host 步骤 + 逐层回调），
+## 只有绝对完成度才能保证跨发射点严格单调、不回退。
+const ABSOLUTE_STAGES := ["bind", "visual"]
 
 var _backdrop: Control
 var _card: PanelContainer
@@ -170,9 +183,17 @@ func set_progress(stage: String, fraction: float) -> void:
 		_ready()
 	if _failed:
 		return
-	var completed := clampf(fraction,0.0,1.0)*.96
+	var clamped := clampf(fraction,0.0,1.0)
+	# 默认：生成器内部 0..1 的进度线性映射到 0..96%。
+	var completed := clamped*.96
 	if stage == "upload":
-		completed = .96 + .025*clampf(fraction,0.0,1.0)
+		# 旧语义（保留兼容）：upload 阶段占最后 96%..98.5%。
+		completed = .96 + .025*clamped
+	elif stage in ABSOLUTE_STAGES:
+		# 生成器返回后的绑定/视觉层阶段：fraction 就是 UI 完成度绝对值，
+		# 由 world_runtime_host 的单调游标按 0.96→0.99 逐步骤/逐图层推进。
+		completed = clamped
+	# 单调闸门：任何阶段都只能前进不能后退（hide_completed 仍是唯一的 100%）。
 	_last_fraction = maxf(_last_fraction,minf(completed,.99))
 	_anim_fraction = maxf(_anim_fraction, _last_fraction)
 	var percent := clampi(int(round(_last_fraction * 100.0)), 0, 100)

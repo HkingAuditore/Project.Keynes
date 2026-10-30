@@ -84,14 +84,12 @@ func _apply_row(refs: Dictionary, data: Dictionary) -> void:
 		else "仅本国城市且当地家族至少两人时可以派遣"
 	(refs.get("icon") as IconBadge).set_semantic(&"family.workspace.crest", UITokens.DOSSIER_BRASS)
 	(refs.get("name") as Label).text = String(data.get("name", "家族"))
+	# 窄行只留「族人 / 产业 / 名人」：现金和「栋」在同一行的详情页里都有，挤进来只会被截断。
 	var meta := PackedStringArray(["族人 %s" % String(data.get("population", "0")),
-		"产业 %s 栋" % String(data.get("owned_buildings", "0"))])
+		"产业 %s" % String(data.get("owned_buildings", "0"))])
 	var notable := int(data.get("notable_people", 0))
 	if notable > 0:
 		meta.append("名人 %d" % notable)
-	var cash := String(data.get("cash_claim", ""))
-	if cash != "":
-		meta.append("现金 %s" % cash)
 	(refs.get("meta") as Label).text = " · ".join(meta)
 	var prestige := refs.get("prestige") as Label
 	var p_text := String(data.get("prestige", "0"))

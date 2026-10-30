@@ -6,12 +6,12 @@ extends DossierPage
 const COLUMNS := [
 	{"id": "name", "label": "阶层", "kind": "text", "expand": true, "min_width": 112.0},
 	{"id": "share", "label": "人口占比", "kind": "bar", "width": 118.0},
-	{"id": "income", "label": "人均收入", "kind": "number", "width": 78.0,
+	{"id": "income", "label": "人均收入", "kind": "money", "width": 78.0,
 		"tooltip": "人均每日收入"},
-	{"id": "expense", "label": "人均支出", "kind": "number", "width": 78.0, "optional": true,
+	{"id": "expense", "label": "人均支出", "kind": "money", "width": 78.0, "optional": true,
 		"tooltip": "人均每日支出"},
 	{"id": "satisfaction", "label": "满意度", "kind": "bar", "width": 112.0},
-	{"id": "survival", "label": "温饱", "kind": "bar", "width": 100.0, "optional": true,
+	{"id": "survival", "label": "生存", "kind": "bar", "width": 100.0, "optional": true,
 		"tooltip": "生存档需求的满足率"},
 ]
 
@@ -110,7 +110,7 @@ func _refresh_detail(selected: Dictionary, national: PackedFloat32Array) -> void
 	_tiers.set_rows(tier_rows)
 	_sat_trend.set_metric({"id": "stratum_satisfaction", "title": "满意度趋势",
 		"value": float(selected.satisfaction), "kind": "percent", "positive_good": true,
-		"caption": "温饱 %s" % percent(float(selected.survival)), "icon": &"population.heart",
+		"caption": "生存 %s" % percent(float(selected.survival)), "icon": &"population.heart",
 		"spark": selected.get("satisfaction_trend", PackedFloat32Array()),
 		"delta": _series_delta(selected.get("satisfaction_trend", PackedFloat32Array()))})
 	_income_trend.set_metric({"id": "stratum_income", "title": "人均收入 / 日",

@@ -1,0 +1,11 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Texture2D" path="res://assets/ui/country_status/Gold.png" id="1_gold"]
+
+[node name="MoneyIcon" type="TextureRect"]
+custom_minimum_size = Vector2(14, 14)
+size_flags_vertical = 4
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+texture = ExtResource("1_gold")

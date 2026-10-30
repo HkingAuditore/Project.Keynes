@@ -8,6 +8,9 @@ const LEGEND_ROW := 18.0
 
 var title := ""
 var total_text := ""
+## 合计与图例的数值是不是货币：是就在数字前画金币图标（见 MoneyDisplay）。
+## 人口、在建座数这类非货币读数保持 false，否则会被当成金额。
+var money_icon := false
 var _segments: Array = []
 var _values := PackedFloat32Array()
 var _from := PackedFloat32Array()
@@ -20,9 +23,11 @@ func _init() -> void:
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 
-func set_segments(p_title: String, segments: Array, p_total_text: String = "") -> void:
+func set_segments(p_title: String, segments: Array, p_total_text: String = "",
+		p_money_icon: bool = false) -> void:
 	title = p_title
-	total_text = p_total_text
+	total_text = MoneyDisplay.strip_unit(p_total_text) if p_money_icon else p_total_text
+	money_icon = p_money_icon
 	_from = _current_values()
 	_segments = segments
 	_values = PackedFloat32Array()
@@ -31,13 +36,25 @@ func set_segments(p_title: String, segments: Array, p_total_text: String = "") -
 	_update_min_height()
 	var tips := PackedStringArray([title])
 	for segment in segments:
-		tips.append("%s：%s" % [String(segment.get("label", "")), String(segment.get("text", ""))])
+		tips.append("%s：%s" % [String(segment.get("label", "")),
+			_segment_text(segment)])
 	tooltip_text = "\n".join(tips)
 	_start_animation()
 
 
+## 图例里的数值文本：货币读数摘掉单位记号，单位由左侧图标负责。
+func _segment_text(segment: Dictionary) -> String:
+	var text := String(segment.get("text", ""))
+	return MoneyDisplay.strip_unit(text) if money_icon else text
+
+
 func _current_values() -> PackedFloat32Array:
 	return _blend_arrays(_from, _values, _blend)
+
+
+## 段数，供结构与截图测试断言。
+func segment_count() -> int:
+	return _segments.size()
 
 
 func _notification(what: int) -> void:
@@ -63,16 +80,26 @@ func _update_min_height() -> void:
 
 
 func _legend_item_width(segment: Dictionary) -> float:
-	return 14.0 + _text_width("%s %s" % [String(segment.get("label", "")),
-		String(segment.get("text", ""))], 11) + 14.0
+	return 14.0 + _legend_text_width(segment) + 14.0
+
+
+## 图例一项（色块 + 名称 + 数值）的宽度，货币读数要把金币的占位算进去。
+func _legend_text_width(segment: Dictionary) -> float:
+	var body := "%s %s" % [String(segment.get("label", "")), _segment_text(segment)]
+	if money_icon:
+		return MoneyDisplay.slot_width(11) + _text_width(body, 11)
+	return _text_width(body, 11)
 
 
 func _draw() -> void:
 	var w := size.x
 	_text(Vector2(0.0, 13.0), title, 12, UITokens.DOSSIER_INK_SOFT, "sans_strong")
 	if not total_text.is_empty():
-		_text(Vector2(0.0, 13.0), total_text, 12, UITokens.DOSSIER_INK, "sans_strong",
-			HORIZONTAL_ALIGNMENT_RIGHT, w)
+		if money_icon:
+			_money_text_right(w, 13.0, total_text, 12, UITokens.DOSSIER_INK, "sans_strong")
+		else:
+			_text(Vector2(0.0, 13.0), total_text, 12, UITokens.DOSSIER_INK, "sans_strong",
+				HORIZONTAL_ALIGNMENT_RIGHT, w)
 	var bar := Rect2(Vector2(0.0, 20.0), Vector2(w, BAR_HEIGHT))
 	_rounded_bar(bar, UITokens.DOSSIER_TRACK, 3.0)
 	var values := _current_values()
@@ -104,6 +131,11 @@ func _draw() -> void:
 		_text(Vector2(lx + 14.0, ly + 13.0), String(segment.get("label", "")), 11,
 			UITokens.DOSSIER_INK_MUTED)
 		var label_width := _text_width(String(segment.get("label", "")) + " ", 11)
-		_text(Vector2(lx + 14.0 + label_width, ly + 13.0), String(segment.get("text", "")), 11,
-			UITokens.DOSSIER_INK, "sans_strong")
+		var value_x := lx + 14.0 + label_width
+		if money_icon:
+			_money_text(Vector2(value_x, ly + 13.0), _segment_text(segment), 11,
+				UITokens.DOSSIER_INK, "sans_strong")
+		else:
+			_text(Vector2(value_x, ly + 13.0), String(segment.get("text", "")), 11,
+				UITokens.DOSSIER_INK, "sans_strong")
 		lx += item_width

@@ -9,6 +9,8 @@ const DOSSIER_MAX_HEIGHT := 560.0
 const DOSSIER_BODY_WIDTH := 344.0
 const DOSSIER_SCREEN_MARGIN := 18.0
 const DOSSIER_SAFE_TOP := 52.0
+## 指针位移超过这个阈值才算"真的动了"，用来启用详情浮窗的逐帧复核。
+const HOVER_POLL_EPSILON_PX := 0.75
 
 signal selected()
 signal details_requested()
@@ -44,6 +46,8 @@ var _bold_font: FontVariation
 var _dossier_popup: PanelContainer
 var _dossier_popup_revision := 0
 var _dossier_hide_timer: Timer
+var _hover_poll_armed := false
+var _poll_mouse := Vector2(-1, -1)
 
 
 func _ready() -> void:
@@ -525,10 +529,16 @@ func _show_dossier_popup() -> void:
 		return
 	_cancel_dossier_hide()
 	_hide_dossier_popup()
+	# 合成 hover（自动化 QA 直接 emit mouse_entered）没有真实指针移动；逐帧
+	# 几何复核只在确实观察到指针移动后才启用，否则浮窗刚出现就会被收回。
+	_hover_poll_armed = false
+	_poll_mouse = get_viewport().get_mouse_position()
 	_dossier_popup_revision += 1
 	var revision := _dossier_popup_revision
 	_dossier_popup = PanelContainer.new()
 	_dossier_popup.name = "FamilyDossierPopup"
+	# 同名浮窗在同一帧里换新时引擎会把新节点改名，查找请认这个标记而不是名字。
+	_dossier_popup.set_meta("family_dossier_popup", true)
 	_dossier_popup.custom_minimum_size = Vector2(DOSSIER_WIDTH, 1.0)
 	_dossier_popup.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	_dossier_popup.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -624,6 +634,12 @@ func _show_dossier_popup() -> void:
 		_dossier_popup.modulate.a = 1.0
 
 
+## 折叠面板、关闭扶持或换悬停对象时由外部强制收回，不必等指针事件。
+func hide_dossier_popup() -> void:
+	_cancel_dossier_hide()
+	_hide_dossier_popup()
+
+
 func _hide_dossier_popup() -> void:
 	_dossier_popup_revision += 1
 	if _dossier_popup == null:
@@ -631,6 +647,18 @@ func _hide_dossier_popup() -> void:
 	if is_instance_valid(_dossier_popup):
 		_dossier_popup.queue_free()
 	_dossier_popup = null
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_VISIBILITY_CHANGED:
+		if not is_visible_in_tree():
+			hide_dossier_popup()
+	elif what == NOTIFICATION_WM_MOUSE_EXIT or what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		# 只回收"指针确实已经不在卡片上"的悬浮窗：这两条通知在部分窗口状态下会
+		# 早于指针真正离开触发，无条件收起会让详情刚出现就消失。
+		if not is_inside_tree() \
+				or not hover_point_hits(get_viewport().get_mouse_position()):
+			hide_dossier_popup()
 
 
 func _schedule_dossier_hide() -> void:
@@ -643,12 +671,53 @@ func _cancel_dossier_hide() -> void:
 		_dossier_hide_timer.stop()
 
 
+## 详情浮窗的存续只认三件事：卡片还在显示、浮窗还在显示、指针仍落在两者之上。
+## 折叠面板、关闭扶持、候选列表在指针下滚走，都不会补发 mouse_exited；只靠
+## 信号收窗，漏掉一次就把详情永久留在屏幕上。所以这里逐帧复核。
 func _process(_delta: float) -> void:
 	if _dossier_popup == null or not is_instance_valid(_dossier_popup):
 		return
-	if get_global_rect().has_point(get_global_mouse_position()) \
-			or _dossier_popup.get_global_rect().has_point(get_global_mouse_position()):
+	if not is_inside_tree() or not is_visible_in_tree() \
+			or not _dossier_popup.is_visible_in_tree():
+		_hide_dossier_popup()
+		return
+	var mouse := get_viewport().get_mouse_position()
+	if mouse.distance_to(_poll_mouse) > HOVER_POLL_EPSILON_PX:
+		_poll_mouse = mouse
+		_hover_poll_armed = true
+	if not _hover_poll_armed:
+		return
+	if hover_point_hits(mouse):
 		_cancel_dossier_hide()
+		return
+	if _dossier_hide_timer != null and _dossier_hide_timer.is_stopped():
+		_dossier_hide_timer.start()
+
+
+## 指针是否仍落在卡片本身或它的详情浮窗上，坐标统一按 viewport 空间比较。
+func hover_point_hits(mouse: Vector2) -> bool:
+	if _screen_rect(self).has_point(mouse):
+		return true
+	if _dossier_popup != null and is_instance_valid(_dossier_popup):
+		return _screen_rect(_dossier_popup).has_point(mouse)
+	return false
+
+
+## 控件在屏幕（viewport）空间的矩形。get_global_transform_with_canvas() 是
+## 「局部 → viewport」的完整变换，必须喂控件自己的局部矩形；拿已经带全局平移的
+## get_global_rect() 再过一遍，等于平移两次，矩形会被推到屏幕外。
+## 浮窗挂在 ModalLayer 上，和卡片不在同一画布，也不能用卡片自己的
+## get_global_mouse_position() 去比。
+static func _screen_rect(control: Control) -> Rect2:
+	if control == null:
+		return Rect2()
+	var xform := control.get_global_transform_with_canvas()
+	var rect := Rect2(Vector2.ZERO, control.size)
+	var first := xform * rect.position
+	var last := xform * rect.end
+	return Rect2(
+		Vector2(minf(first.x, last.x), minf(first.y, last.y)),
+		Vector2(absf(last.x - first.x), absf(last.y - first.y)))
 
 
 func _layout_dossier_popup() -> void:
