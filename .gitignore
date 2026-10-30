@@ -58,3 +58,10 @@ __pycache__/
 
 # agent scratch dir (probe scripts, logs, temp builds) -- never commit
 .codex-tmp/
+
+# 本地验证/抓图产物与 headless 测试输出：随时可重建，不进版本库。
+/artifacts/
+/Project/project-keynes/test_output/
+
+# 原生构建日志（每次 SCons 构建的现场记录，不是源码）。
+/gdext/build_log_*.txt
