@@ -63,3 +63,21 @@ scripts/
 ## 跑起来
 
 打开 `Project/project-keynes/` 作为 Godot 4.6 项目，主场景 `scenes/main.tscn`。
+
+## 构建
+
+**新机器、换设备、或者要出安装包，先看 [`docs/build-from-source.md`](./docs/build-from-source.md)**，
+里面有各平台工具链版本、原生扩展编译命令、Web/Android 导出步骤和新机器检查清单。
+
+最短路径：
+
+```bat
+git clone --recurse-submodules <repo>   :: 子模块必须初始化，否则编不过
+gdext\rebuild.bat                       :: Windows 原生扩展（关掉 Godot 再跑）
+Build-Web.cmd                           :: Web 导出（需要 emsdk 4.0.20）
+```
+
+`WebBuild/`、`Build/` 是构建产物，**不进版本库**（pck 约 282 MB，超过 GitHub 单文件上限），
+已加入 `.gitignore`；发布走 CI：`.github/workflows/web-build.yml` 构建后上传 artifact，
+推 `v*` tag 时自动附加到 Release。
+
