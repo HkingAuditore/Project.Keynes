@@ -165,8 +165,14 @@ Economy worker 消费财政终态后通过 `finish_worker_country_asset()` 提�
 每个五日滚动桶开始时，经济运行时读取同一 `(generation-safe country, tax kind, cell)`
 上一批的补贴申请。交易税和营业税使用上一批申请作为权重；所得税 lane 使用
 `max(previous_request, current_minimum_living_request)`，其中当前最低生活申请可由冻结人口和
-生存篮子在批次开始时确定。国家先预留 `min(cash, reservation_request)` 到 fiscal escrow，
-再执行科研采购。额度按国家内预留权重比例分配，整数余数通过“税种、cell”稳定前缀分配。
+生存篮子在批次开始时确定。国家先预留
+`min(max(0, cash - research_floor), reservation_request)` 到 fiscal escrow，
+再执行科研采购；开启自动采购时 `research_floor = daily_budget × epoch_days`。
+额度按国家内原始申请权重总额比例分配，整数余数通过“税种、cell、进口、出口”稳定前缀分配。
+分摊分母始终是未截断的申请总额，不能换成现金上限后的转账申请，否则各 lane 预算合计
+会超过真实托管现金。异步预留请求沿用首次送出的金额，等待终态时不根据已扣款的国库余额
+重算请求。`fiscal_reservation_cash_cap_regression_test.gd` 覆盖国库不足、科研现金保留与零可用额度，
+并检查预算合计、实付和货币守恒。
 
 工资、业主经营所得和商人家庭销售净所得先写入各自 slot 的临时应税收入列；全部 household
 market 完成后，`household_market/income_subsidy` 子阶段按 cohort 汇总申请。同一 cell 的负
@@ -177,6 +183,31 @@ market 完成后，`household_market/income_subsidy` 子阶段按 cohort 汇总�
 
 `fiscal_snapshot()` 按五类税种返回上批税基、应征、实收、补贴申请、预留、实付、未满足额、
 兑现率及累计值。进口/出口项当前固定为零。
+
+同一次返回还带一条非税支出通道：`non_tax_outflow_kinds` + `non_tax_outflow`，按
+`NativeEconomyRuntime::NonTaxOutflow` 顺序给出本批四种**不是税种、却真实减少国库现金**的支出：
+
+| slot | id | 含义 |
+|---|---|---|
+| 0 | `research_purchase` | 政府科研采购按市价付给本地商人的科技值货款 |
+| 1 | `expedition_procurement` | 开拓/殖民商队向本地商人购入随行货物的货款 |
+| 2 | `construction` | 工程缺料由国库按市价补足时付给商人的现金 |
+| 3 | `canal` | 运河缺料同样由国库按市价补足的现金 |
+
+这四项在支出口径里与补贴实付并列：国库收支的支出侧、净额和日序列都必须把它们算进去，
+否则国库现金在下降而账面净额不变。
+
+记账走一个**跨越批次边界的待发布缓冲** `_pending_non_tax_outflow`，按 generation-safe
+国家 handle 键控，在结算点累加（科研在 `GOVERNMENT_RESEARCH_PROCUREMENT`、开拓在采购
+终态、工程/运河在 `coordinate_country_treasury_spend` 成功之后），由下一次
+`commit_fiscal` 一次排空并与税种 lane 一起发布；未发生的项为 0。
+
+缓冲不能按 epoch 清零，原因是时序：`process_due_family_expeditions` 在**两批之间的空闲
+边界**（`!_epoch_active`）推进开拓采购，那时若用 epoch 作用域计数器，epoch 开头一清就把
+这笔真实扣款弄丢了。同理由 handle 而非 epoch 国家下标记账——空闲期国家集合可能已经变化，
+排空时才映射到当前批次的索引。无法映射的付款方留在缓冲里等下一批，绝不静默丢弃国库扣款。
+
+零值的非税项不出现在 UI 明细里——它们不是税种，列一行零值只会被读成漏税。
 
 经济 UI 同时显示本批实付、累计实付与预留；零预留只表示等待预算，不承诺下一批必定到账。
 消费/营业补贴首批无历史申请的延迟与国库不足都可能导致零实付，需要结合预留及累计值判断。
@@ -190,6 +221,9 @@ market 完成后，`household_market/income_subsidy` 子阶段按 cohort 汇总�
   stat 的 Modifier catalog 扩展仅在这条迁移中接受，并逐项验证旧 definition version、
   stat key 和 term payload；其他 catalog mismatch 仍拒绝。
 - 保存只允许在既有 committed safe boundary；PKCN 必须先于 PKEC 恢复。
+- PKEC v58 在财政段每国记录之后追加「本批非税支出」四个槽位（科研采购 / 开拓采购 /
+  工程 / 运河，各 8 字节）；v55/v56/v57 存档仍可恢复，该通道按零迁移（与字段存在前的
+  显示一致）。恢复时逐国读回，越界或负值按 `save_fiscal_record_invalid` 拒绝。
 
 ## UI 与验证
 
@@ -199,6 +233,28 @@ market 完成后，`household_market/income_subsidy` 子阶段按 cohort 汇总�
 `EconomyWorkspace`（嵌入模式隐藏其页头和贸易分页，贸易统一在“贸易”章），因此下述税务
 编辑逻辑与命令路径不变。章节节点全部来自 .tscn，每日刷新只更新当前可见章节，章节节点、
 滚动位置与选中项在快进中保持；城市章可切换范围或关闭面板并在地图上定位该格。
+
+总览页不再重复已经有专章的居民收支、阶层满意度与卡点，只留一块「国库收支」和三个
+读数仪表。收支块由两部分组成，各管一件事：左侧两条堆叠条是**占比**——五类税种的实收
+与同一批税种的实付补贴（外加非税支出：科研采购、开拓采购、工程、运河各自成段，只有本批
+真的付过才出现），各自按金额降序、颜色越深段越大；右侧折线是**方向**——国库进项
+与出项两条线共用一根纵轴，两线之间的带子按当日净额正负着色，右端压着当日净额。
+「明细 ▾」展开逐税种账簿（税基 / 实收 / 补贴申请 / 补贴实付），零值写作短横线；本批
+发生的非税支出各占一行，只在补贴实付列给金额——它们不是税种，把金额塞进
+税基或申请列会读成一种税。
+收支数据只来自 shell 模型里的 `fiscal` 快照（`EconomyDossierViewModel.build_cashflow`），
+日序列来自 `EconomyFiscalHistory`：与产值账本同一节拍，由 `GameUIManager.notify_committed_day`
+按已提交日采样一次，记五类税种的实收与实付合计**加上**本批全部非税支出，不写存档、不做逐格聚合。
+因此折线、堆叠条、净额与国库现金的实际变化同口径；国库页的说明条也会单独提示本批科研采购。
+快照缺席（`ok=false`）时整块隐藏。
+
+同排的三块读数按数据形状选形：人均 GDP 是可逐日波动的流量，用读数配迷你走势
+（`EconomyGdpLedger.per_capita_trend`，与产值账本共用采样点），标题写「人均 GDP / 日」、
+副行写「年度人均 X」，因为页头横幅的「人均累计」是年初至今累计除人口，两者差一个量级，
+口径必须在词上就分开；生活水平是原生的 0..6 有序台阶（`living_standard_level_q16`），
+画成六段格梯而不是进度条；物价是相对成本锚（=100）的偏离量，CPI / PPI 两根指针落在
+同一根轴上，指针间距就是消费端与出厂端的价格裂口，半轴宽度按当前偏离自动张开（下限 ±10%），
+物价真的跑远时不会两根针都顶在端点。
 
 税务页位于“财政”章的经济工作区内部，包含国库、所得税、物资税和营业税分页；物资税
 页按物资合并展示交易税、进口关税、出口关税三档独立税率，不可贸易物资只展示交易税。

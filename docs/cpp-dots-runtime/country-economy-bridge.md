@@ -59,6 +59,11 @@ fast path 的失败**不会**回落到路由 2（请求 id 与 cohort slot 不�
 - Country plan 窗口开着 → `country_economy_asset_country_plan_pending` → 调用方 park，
   同一条 ledger/structural 命令在下个 pulse 原样重放（游标未推进）。
 
+资产结果也保留同一 retry 边界：若 Country 的 `CREATED → COUNTRY_PREPARED` 过渡在
+Economy poll 之后替换了 Host canonical row，旧结果返回
+`country_economy_asset_result_identity_retry_pending`，请求原样 requeue，任何 Country 或
+Economy store 都没有被改动。仍绑定当前 dispatch 的身份不一致保持 fatal。
+
 详见 `native-economy-runtime.md` 的「2026-09-22 Country asset backpressure 与 fatal 取证」。
 
 ## 地块税务 epoch 缓存
