@@ -9524,6 +9524,10 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = fals
 							LandformType.LF.OCEAN, LandformType.LF.COAST]:
 						estuary_strength_arr[plume_cell] = maxf(
 							estuary_strength_arr[plume_cell], mouth_strength * 0.45)
+	# native-first：整段矿藏储量（O(资源 × cell) + 每资源排名分配）交给 C++ 一次算完。
+	# 失败（旧 DLL / 形状不符）时继续走下面的 GDScript 路径，行为与迁移前一致。
+	if _try_bootstrap_natural_resources_native(map_ref, cfg, habitat_arr, estuary_strength_arr):
+		return
 	var base_seed: int = 0
 	if cfg != null and cfg.get("seed") != null:
 		base_seed = int(cfg.get("seed"))
@@ -9729,8 +9733,222 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = fals
 		map_ref.set(field, arr)
 
 
-func _select_micro_deposit_cells(ranked_cells: Array, core_count: int,
-		micro_count: int, neighbor_indices: PackedInt32Array,
+## 把整段矿藏储量生成交给 C++（`DCWorldExt.run_resource_deposit_pass`）。
+##
+## 旧 GDScript 路径是 O(资源 × cell)：2400 cell 实测 1.2s，桌面允许的 200k cell
+## 会到分钟级；每格还要 append 一个 Dictionary，每资源一次 sort_custom(lambda)。
+##
+## 与旧路径同值的保证：噪声实例按旧路径同样的 seed（`base_seed ^ hash(id)`）
+## 与 frequency 构造后传进 C++，C++ 只调用 `Noise.get_noise_2d()`；排名、小微
+## 矿点、预算分配的规则逐行复刻（唯一差异是近似并列带的排序改成严格序）。
+##
+## 返回 true 表示已把每种资源的 reserve 列写回 MapData。
+const RESOURCE_SCALAR_STRIDE := 32
+func _try_bootstrap_natural_resources_native(map_ref, cfg,
+		habitat_arr: PackedByteArray, estuary_strength_arr: PackedFloat32Array) -> bool:
+	if map_ref == null or _data_core_world_ext == null:
+		return false
+	if not _data_core_world_ext.has_method("run_resource_deposit_pass"):
+		return false
+	var n_cells: int = map_ref.cell_count()
+	if n_cells <= 0 or habitat_arr.size() < n_cells:
+		return false
+	# 只保留有 reserve 字段的资源（旧路径对 field == "" 的资源直接 continue）。
+	var rows: Array = []
+	for p in ResourceProfileRegistry.ordered():
+		if ResourceProfileRegistry.reserve_map_field(p) != "":
+			rows.append(p)
+	var resource_count := rows.size()
+	if resource_count <= 0:
+		return false
+	if resource_count * RESOURCE_SCALAR_STRIDE > 8192:
+		return false
+
+	var base_seed: int = 0
+	if cfg != null and cfg.get("seed") != null:
+		base_seed = int(cfg.get("seed"))
+
+	var posx_arr: PackedFloat32Array = map_ref.cell_pos_x_arr
+	var posy_arr: PackedFloat32Array = map_ref.cell_pos_y_arr
+	var have_pos: bool = posx_arr.size() >= n_cells and posy_arr.size() >= n_cells
+
+	# 排除表摊平成 resource × width 的 byte 表：C++ 侧一次数组索引即可判定。
+	var excluded_terrain_width := 1
+	var excluded_veg_width := 1
+	for p in rows:
+		for terrain_id in p.init_excluded_terrain_ids:
+			excluded_terrain_width = maxi(excluded_terrain_width, int(terrain_id) + 1)
+		for vegetation_id in p.init_excluded_vegetation_ids:
+			excluded_veg_width = maxi(excluded_veg_width, int(vegetation_id) + 1)
+	var excluded_terrain := PackedByteArray()
+	excluded_terrain.resize(resource_count * excluded_terrain_width)
+	var excluded_vegetation := PackedByteArray()
+	excluded_vegetation.resize(resource_count * excluded_veg_width)
+
+	var scalars := PackedFloat32Array()
+	scalars.resize(resource_count * RESOURCE_SCALAR_STRIDE)
+	var field_names := PackedStringArray()
+	var habitat_codes := PackedInt32Array()
+	habitat_codes.resize(resource_count)
+	var lf_keys := PackedInt32Array()
+	var lf_vals := PackedFloat32Array()
+	var lf_offsets := PackedInt32Array()
+	lf_offsets.resize(resource_count + 1)
+	var veg_keys := PackedInt32Array()
+	var veg_vals := PackedFloat32Array()
+	var veg_offsets := PackedInt32Array()
+	veg_offsets.resize(resource_count + 1)
+	var noise_refs: Array = []
+	var province_refs: Array = []
+	var belt_refs: Array = []
+	var province_noises: Dictionary = {}
+	var belt_noises: Dictionary = {}
+
+	for r in range(resource_count):
+		var p = rows[r]
+		var base: int = r * RESOURCE_SCALAR_STRIDE
+		scalars[base + 0] = float(p.init_base)
+		scalars[base + 1] = float(p.init_temp)
+		scalars[base + 2] = float(p.init_moisture)
+		scalars[base + 3] = float(p.init_reserve_scale)
+		scalars[base + 4] = float(p.init_floor_reserve)
+		scalars[base + 5] = float(p.init_min_coverage)
+		scalars[base + 6] = float(p.init_min_reserve)
+		scalars[base + 7] = float(p.init_target_coverage)
+		scalars[base + 8] = float(p.init_target_reserve_density)
+		scalars[base + 9] = float(p.init_target_mean_reserve)
+		scalars[base + 10] = float(p.init_richness_exponent)
+		scalars[base + 11] = float(p.init_micro_coverage)
+		scalars[base + 12] = float(p.init_micro_reserve_share)
+		scalars[base + 13] = float(p.init_micro_min_reserve)
+		scalars[base + 14] = float(p.init_elevation)
+		scalars[base + 15] = float(p.init_river)
+		scalars[base + 16] = float(p.init_volcano)
+		scalars[base + 17] = float(p.init_ocean_current)
+		scalars[base + 18] = float(p.init_upwelling)
+		scalars[base + 19] = float(p.init_estuary)
+		scalars[base + 20] = float(p.init_noise)
+		scalars[base + 21] = float(p.init_province)
+		scalars[base + 22] = float(p.init_belt)
+		scalars[base + 23] = float(p.climate_temp_opt)
+		scalars[base + 24] = float(p.climate_temp_tol)
+		scalars[base + 25] = float(p.climate_moisture_opt)
+		scalars[base + 26] = float(p.climate_moisture_tol)
+		scalars[base + 27] = float(p.init_climate_fit)
+		scalars[base + 28] = float(p.temp_lo)
+		scalars[base + 29] = float(p.temp_hi)
+
+		field_names.append(ResourceProfileRegistry.reserve_map_field(p))
+		habitat_codes[r] = ResourceProfileRegistry.habitat_code(p)
+
+		var lf_w: Dictionary = p.init_landform_weights
+		for key in lf_w.keys():
+			lf_keys.append(int(key))
+			lf_vals.append(float(lf_w[key]))
+		lf_offsets[r + 1] = lf_keys.size()
+		var veg_w: Dictionary = p.init_vegetation_weights
+		for key in veg_w.keys():
+			veg_keys.append(int(key))
+			veg_vals.append(float(veg_w[key]))
+		veg_offsets[r + 1] = veg_keys.size()
+
+		for terrain_id in p.init_excluded_terrain_ids:
+			excluded_terrain[r * excluded_terrain_width + int(terrain_id)] = 1
+		for vegetation_id in p.init_excluded_vegetation_ids:
+			excluded_vegetation[r * excluded_veg_width + int(vegetation_id)] = 1
+
+		# 噪声实例：与旧路径完全同 seed / 同 frequency（C++ 只负责取值）。
+		if have_pos and absf(float(p.init_noise)) > 0.0:
+			var noise := FastNoiseLite.new()
+			noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+			noise.seed = base_seed ^ int(hash(p.id))
+			noise.frequency = maxf(0.0001, float(p.init_noise_scale))
+			noise_refs.append(noise)
+		else:
+			noise_refs.append(null)
+		var family_id := String(p.geology_family_id)
+		if have_pos and not family_id.is_empty() and absf(float(p.init_province)) > 0.0:
+			var province_key := "%s:%.6f" % [family_id, float(p.init_province_scale)]
+			var province_noise = province_noises.get(province_key)
+			if province_noise == null:
+				province_noise = FastNoiseLite.new()
+				province_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+				province_noise.seed = base_seed ^ int(hash("province:" + family_id))
+				province_noise.frequency = maxf(0.0001, float(p.init_province_scale))
+				province_noises[province_key] = province_noise
+			province_refs.append(province_noise)
+		else:
+			province_refs.append(null)
+		if have_pos and not family_id.is_empty() and absf(float(p.init_belt)) > 0.0:
+			var belt_key := "%s:%.6f" % [family_id, float(p.init_belt_scale)]
+			var belt_noise = belt_noises.get(belt_key)
+			if belt_noise == null:
+				belt_noise = FastNoiseLite.new()
+				belt_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+				belt_noise.seed = base_seed ^ int(hash("belt:" + family_id))
+				belt_noise.frequency = maxf(0.0001, float(p.init_belt_scale))
+				belt_noises[belt_key] = belt_noise
+			belt_refs.append(belt_noise)
+		else:
+			belt_refs.append(null)
+
+	var knobs := {
+		"cell_count": n_cells,
+		"temperature": map_ref.temp_arr,
+		"moisture": map_ref.moisture_arr,
+		"elevation": map_ref.elevation_arr,
+		"terrain": map_ref.terrain_arr,
+		"vegetation": map_ref.vegetation_arr,
+		"landform": map_ref.landform_arr,
+		"has_river": map_ref.has_river_arr,
+		"is_lake": map_ref.is_lake_seed_arr,
+		"has_volcano": map_ref.has_volcano_arr,
+		"ocean_x": map_ref.ocean_current_x_arr,
+		"ocean_y": map_ref.ocean_current_y_arr,
+		"upwelling": map_ref.upwelling_strength_arr,
+		"estuary": estuary_strength_arr,
+		"pos_x": posx_arr,
+		"pos_y": posy_arr,
+		"neighbor_indices": map_ref.neighbor_indices_packed(),
+		"habitat_mask": habitat_arr,
+		"field_names": field_names,
+		"habitat_codes": habitat_codes,
+		"scalars": scalars,
+		"lf_keys": lf_keys,
+		"lf_vals": lf_vals,
+		"lf_offsets": lf_offsets,
+		"veg_keys": veg_keys,
+		"veg_vals": veg_vals,
+		"veg_offsets": veg_offsets,
+		"excluded_terrain_width": excluded_terrain_width,
+		"excluded_terrain": excluded_terrain,
+		"excluded_vegetation_width": excluded_veg_width,
+		"excluded_vegetation": excluded_vegetation,
+		"noise": noise_refs,
+		"province_noise": province_refs,
+		"belt_noise": belt_refs,
+	}
+	var started := Time.get_ticks_usec()
+	var report: Dictionary = _data_core_world_ext.run_resource_deposit_pass(knobs)
+	if not bool(report.get("ok", false)):
+		push_warning("[resource-deposits] native pass unavailable (%s); falling back to GDScript"
+			% String(report.get("reason", "unknown")))
+		return false
+	var fields: PackedStringArray = report.get("fields", PackedStringArray())
+	var reserves: Array = report.get("reserves", [])
+	if fields.size() != resource_count or reserves.size() != resource_count:
+		push_warning("[resource-deposits] native pass shape mismatch (%d/%d vs %d); falling back"
+			% [fields.size(), reserves.size(), resource_count])
+		return false
+	for i in range(resource_count):
+		map_ref.set(fields[i], reserves[i])
+	var native_ms := float(Time.get_ticks_usec() - started) / 1000.0
+	print("[resource-deposits] path=gdext resources=%d cells=%d total_ms=%.1f native_ms=%.1f"
+		% [resource_count, n_cells, native_ms, float(report.get("elapsed_ms", 0.0))])
+	return true
+
+
+func _select_micro_deposit_cells(ranked_cells: Array, core_count: int,		micro_count: int, neighbor_indices: PackedInt32Array,
 		have_neighbors: bool) -> Array:
 	if micro_count <= 0 or core_count >= ranked_cells.size():
 		return []
@@ -20841,6 +21059,77 @@ func _loading_profile_step(label: String) -> void:
 	_loading_step_usec = now
 	_loading_step_name = label
 	Engine.set_meta("loading_step",label)
+	# 顺手把"simulation(0.96) 之后"的每一步变成真实进度（见下方 _emit_loading_tail_progress）。
+	_emit_loading_tail_progress(label)
+
+
+# ─── 生成收尾段的诚实进度：simulation(0.96) 之后的引导链 ────────────────────
+# 背景：generate() 只在 8 个点发 bake_progress，而 `_setup_sus` 整条引导链
+# （native bind → 资源勘测 → 生态播种 → 玩法/经济 bootstrap → 拓扑构建）一步都不发，
+# 于是进度条会在 92% 处长时间钉住。这里复用"每一步都会被调用"的
+# `_loading_profile_step()` 当推进点，用一个单调几何游标把这段推进到
+# LOADING_TAIL_CEIL：
+#   游标_{n+1} = 游标_n + (CEIL - 游标_n) * GAIN
+# 因此严格单调、绝不回退、也永远到不了 1.0（1.0 只属于 generate() 末尾的
+# bake_progress("done", 1.0)，100% 只属于 WorldLoadingOverlay.hide_completed()）。
+const LOADING_TAIL_START := 0.96
+const LOADING_TAIL_CEIL := 0.995
+const LOADING_TAIL_GAIN := 0.10
+# 步骤 label → UI 阶段 key（中文文案在 world_loading_overlay.gd 的 STAGE_LABELS）。
+# 顺序敏感：先命中更具体的关键词；未命中的归入 LOADING_TAIL_STAGE_DEFAULT。
+const LOADING_TAIL_STAGE_RULES := [
+	["resource", "resources"],
+	["bio", "ecology_bind"],
+	["economy", "gameplay_bind"],
+	["country", "gameplay_bind"],
+	["ideology", "gameplay_bind"],
+	["settlement", "gameplay_bind"],
+	["modifier", "gameplay_bind"],
+	["trigger", "gameplay_bind"],
+	["effect", "gameplay_bind"],
+	["native_daily", "runtime_bind"],
+	["sus", "runtime_bind"],
+	["topology", "runtime_bind"],
+]
+const LOADING_TAIL_STAGE_DEFAULT := "world_bind"
+
+var _loading_tail_progress := 0.0
+var _loading_tail_epoch := -1
+var _loading_tail_world_id := 0
+var _loading_tail_active := false
+
+
+func _loading_tail_stage_for(label: String) -> String:
+	var lowered := label.to_lower()
+	for rule in LOADING_TAIL_STAGE_RULES:
+		if lowered.contains(String(rule[0])):
+			return String(rule[1])
+	return LOADING_TAIL_STAGE_DEFAULT
+
+
+# 发出一次尾部进度。只有满足两个条件才发：
+#   1) bake_world 已经返回、_last_world 被换成新实例（否则烘焙段 44%~88% 会被压掉）；
+#   2) _setup_sus 已经把新世界写进 _sus_world（也就是确实进入了收尾引导链）。
+# 两个条件都用实例身份判断，regenerate 时旧世界不会被误认成新世界。
+func _emit_loading_tail_progress(label: String) -> void:
+	if _loading_epoch != _loading_tail_epoch:
+		_loading_tail_epoch = _loading_epoch
+		_loading_tail_progress = LOADING_TAIL_START
+		_loading_tail_world_id = _last_world.get_instance_id() if _last_world != null else 0
+		_loading_tail_active = false
+	if not _loading_tail_active:
+		if _last_world == null:
+			return
+		if _last_world.get_instance_id() == _loading_tail_world_id:
+			return
+		if _sus_world != _last_world:
+			return
+		_loading_tail_active = true
+	var step := (LOADING_TAIL_CEIL - _loading_tail_progress) * LOADING_TAIL_GAIN
+	if step <= 0.0:
+		return
+	_loading_tail_progress = minf(LOADING_TAIL_CEIL, _loading_tail_progress + step)
+	bake_progress.emit(_loading_tail_stage_for(label), _loading_tail_progress)
 
 
 var _generation_slice_start_usec := 0

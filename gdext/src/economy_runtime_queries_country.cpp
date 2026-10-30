@@ -65,6 +65,7 @@ struct PopulationBucket {
     int64_t in_kind_day = 0;
     int64_t composite_weighted = 0;
     int64_t survival_weighted = 0;
+    int64_t living_standard_weighted = 0;
     std::array<int64_t, NativeEconomyRuntime::SAT_DIM_COUNT> dims_weighted{};
     std::array<int64_t, NativeEconomyRuntime::SAT_DIM_COUNT> dims_population{};
 };
@@ -91,6 +92,12 @@ struct BuildingBucket {
     int64_t jobs_filled = 0;
     int64_t pending_units = 0;
     std::array<int64_t, OVERVIEW_REJECTION_COUNT> rejection_units{};
+};
+
+struct WeightedMetric {
+    int64_t weighted_value = 0;
+    int64_t weight = 0;
+    bool saturated = false;
 };
 
 } // namespace
@@ -191,6 +198,9 @@ Dictionary NativeEconomyRuntime::country_economy_overview(
               static_cast<int64_t>(store.composite_satisfaction[s]), people);
         weigh(bucket.survival_weighted,
               static_cast<int64_t>(store.needs_satisfaction[s]), people);
+        weigh(bucket.living_standard_weighted,
+              static_cast<int64_t>(consumption_living_standard_level(slot)) * Q16_ONE,
+              people);
         const size_t dims_base = s * static_cast<size_t>(SAT_DIM_COUNT);
         const uint8_t mask = satisfaction_applicable_mask(slot);
         for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim) {
@@ -263,6 +273,11 @@ Dictionary NativeEconomyRuntime::country_economy_overview(
             clamp_q16(bucket.composite_weighted, bucket.population);
         target["survival_satisfaction_q16"] =
             clamp_q16(bucket.survival_weighted, bucket.population);
+        target["living_standard_level_q16"] =
+            bucket.population > 0
+                ? static_cast<int32_t>(bucket.living_standard_weighted / bucket.population)
+                : 0;
+        target["living_standard_level_valid"] = bucket.population > 0;
         PackedInt32Array dims;
         PackedInt64Array dims_population;
         for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
@@ -292,12 +307,60 @@ Dictionary NativeEconomyRuntime::country_economy_overview(
         PopulationBucket population;
         PopulationBucket merchants;
         BuildingBucket buildings;
+        WeightedMetric consumer_price_index;
+        WeightedMetric producer_price_index;
+        WeightedMetric consumer_shortage;
+        WeightedMetric industrial_shortage;
         std::array<BuildingBucket, OVERVIEW_SECTOR_COUNT> sectors{};
         std::vector<int64_t> worst_need_population(
             static_cast<size_t>(std::max(0, need_count)), 0);
         int64_t merchant_inventory_value = 0;
         int64_t named_settlements = 0;
         int32_t max_tier = 0;
+        const auto good_has_tag = [&](int32_t good, const char *tag) {
+            if (good < 0 || good >= good_count ||
+                _good_technology_tag_offsets.size() !=
+                    static_cast<size_t>(good_count) + 1U) return false;
+            const int32_t begin = _good_technology_tag_offsets[static_cast<size_t>(good)];
+            const int32_t end = _good_technology_tag_offsets[static_cast<size_t>(good) + 1U];
+            for (int32_t i = begin; i < end; ++i)
+                if (_good_technology_tags[static_cast<size_t>(i)] == tag) return true;
+            return false;
+        };
+        const auto add_metric_sample = [&](WeightedMetric &metric, int64_t value,
+                                           int64_t weight) {
+            if (weight <= 0) return;
+            const int64_t sat_before = sat;
+            add(metric.weighted_value, saturating_mul(value, weight, sat));
+            add(metric.weight, weight);
+            if (sat != sat_before) metric.saturated = true;
+        };
+        const auto add_price_index_sample = [&](WeightedMetric &metric, int32_t price,
+                                                int32_t anchor, int64_t weight) {
+            if (weight <= 0 || anchor <= 0) return;
+            const int64_t sat_before = sat;
+            const int64_t ratio_q16 = mul_div_sat(
+                std::max<int32_t>(0, price), Q16_ONE, anchor, sat);
+            if (sat != sat_before) metric.saturated = true;
+            add_metric_sample(metric, ratio_q16, weight);
+        };
+        std::vector<uint8_t> consumer_goods(static_cast<size_t>(good_count), 0);
+        std::vector<uint8_t> consumer_shortage_goods(static_cast<size_t>(good_count), 0);
+        std::vector<uint8_t> industrial_goods(static_cast<size_t>(good_count), 0);
+        for (int32_t good = 0; good < good_count; ++good) {
+            const bool food = good_has_tag(good, "industry.food");
+            const bool textile = good_has_tag(good, "industry.textile");
+            const bool consumer = good_has_tag(good, "industry.consumer");
+            consumer_goods[static_cast<size_t>(good)] = food || textile || consumer;
+            consumer_shortage_goods[static_cast<size_t>(good)] = textile || consumer;
+            industrial_goods[static_cast<size_t>(good)] =
+                good_has_tag(good, "industry.primary") ||
+                good_has_tag(good, "industry.construction") ||
+                good_has_tag(good, "industry.metals") ||
+                good_has_tag(good, "industry.chemicals") ||
+                good_has_tag(good, "industry.energy") ||
+                good_has_tag(good, "industry.machinery");
+        }
         for (const int32_t cell : cells) {
             const int64_t days = cell_elapsed_days(cell);
             if (cell_population(cell) > 0) {
@@ -331,6 +394,33 @@ Dictionary NativeEconomyRuntime::country_economy_overview(
                         std::max<int64_t>(0, market_store().stock[index]),
                         std::max<int64_t>(0, market_store().price[index]),
                         GOODS_SCALE, sat));
+
+                    const int32_t signal = market_signal_index(cell, good);
+                    const int64_t household_demand = std::max<int64_t>(
+                        0, market_store().demand_ema[index]);
+                    const int64_t offered_supply = signal >= 0
+                        ? std::max<int64_t>(0,
+                            _market_signals.offered_supply_ema[signal]) : 0;
+                    const int64_t business_demand = signal >= 0
+                        ? std::max<int64_t>(0,
+                            _market_signals.business_demand_ema[signal]) : 0;
+                    const int32_t price = market_store().price[index];
+                    const int32_t anchor = signal >= 0
+                        ? _market_signals.cost_anchor_price[signal] : 0;
+                    const size_t good_index = static_cast<size_t>(good);
+                    if (consumer_goods[good_index])
+                        add_price_index_sample(consumer_price_index, price, anchor,
+                                               household_demand);
+                    add_price_index_sample(producer_price_index, price, anchor,
+                                           offered_supply);
+                    if (consumer_shortage_goods[good_index])
+                        add_metric_sample(consumer_shortage,
+                            std::clamp<int64_t>(market_store().last_shortage_q16[index],
+                                                0, Q16_ONE), household_demand);
+                    if (industrial_goods[good_index])
+                        add_metric_sample(industrial_shortage,
+                            std::clamp<int64_t>(market_store().last_shortage_q16[index],
+                                                0, Q16_ONE), business_demand);
                 }
             }
             if (cell < static_cast<int32_t>(_settlements.tier.size())) {
@@ -351,6 +441,20 @@ Dictionary NativeEconomyRuntime::country_economy_overview(
             }
         }
         pack_population(out, population);
+        const auto metric_valid = [](const WeightedMetric &metric) {
+            return metric.weight > 0 && !metric.saturated;
+        };
+        const auto metric_value = [&](const WeightedMetric &metric) {
+            return metric_valid(metric) ? metric.weighted_value / metric.weight : int64_t{0};
+        };
+        out["consumer_price_index_q16"] = metric_value(consumer_price_index);
+        out["consumer_price_index_valid"] = metric_valid(consumer_price_index);
+        out["producer_price_index_q16"] = metric_value(producer_price_index);
+        out["producer_price_index_valid"] = metric_valid(producer_price_index);
+        out["consumer_shortage_q16"] = metric_value(consumer_shortage);
+        out["consumer_shortage_valid"] = metric_valid(consumer_shortage);
+        out["industrial_shortage_q16"] = metric_value(industrial_shortage);
+        out["industrial_shortage_valid"] = metric_valid(industrial_shortage);
         out["merchant_population"] = merchants.population;
         out["merchant_funds"] = merchants.funds;
         out["merchant_inventory_value"] = merchant_inventory_value;
@@ -456,6 +560,7 @@ Dictionary NativeEconomyRuntime::country_economy_overview(
             unemployed, funds, epoch_income, epoch_expense, income, expense, tax,
             subsidy, in_kind, worst_need_population;
         PackedInt32Array satisfaction, survival, dims;
+        PackedInt32Array living;
         PackedInt64Array dims_population;
         for (int32_t profession = 0; profession < profession_count; ++profession) {
             const PopulationBucket &bucket = buckets[static_cast<size_t>(profession)];
@@ -478,6 +583,12 @@ Dictionary NativeEconomyRuntime::country_economy_overview(
             in_kind.push_back(bucket.in_kind_day);
             satisfaction.push_back(clamp_q16(bucket.composite_weighted, bucket.population));
             survival.push_back(clamp_q16(bucket.survival_weighted, bucket.population));
+            // Same population-weighted consumption tier the summary exposes, so a
+            // stratum card can name a living standard without re-deriving the
+            // native thresholds in GDScript.
+            living.push_back(bucket.population > 0
+                ? static_cast<int32_t>(bucket.living_standard_weighted / bucket.population)
+                : 0);
             for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
                 dims_population.push_back(bucket.dims_population[dim]);
             for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
@@ -508,6 +619,7 @@ Dictionary NativeEconomyRuntime::country_economy_overview(
         out["in_kind_income_per_day"] = in_kind;
         out["satisfaction_q16"] = satisfaction;
         out["survival_satisfaction_q16"] = survival;
+        out["living_standard_level_q16"] = living;
         out["satisfaction_dimension_count"] = SAT_DIM_COUNT;
         out["satisfaction_dims_q16"] = dims;
         out["satisfaction_dims_population"] = dims_population;

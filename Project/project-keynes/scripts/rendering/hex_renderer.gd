@@ -3,6 +3,11 @@
 class_name HexRenderer
 extends Node2D
 
+## 加载期逐层构建进度（只用于"正在生成世界"进度条，不改变图层构建逻辑/数量）。
+## layer_index 从 1 开始计"已完成层数"，layer_count 是本轮总层数。
+## 订阅方（world_runtime_host）在 set_map_cooperative() 前后连接/断开。
+signal loading_layer_progress(layer_index: int, layer_count: int, layer_name: String)
+
 const TERRAIN_MICRO_TEXTURE: Texture2D = preload("res://assets/textures/terrain_micro_data.png")
 const VisualTileHorizonBakerScript = preload(
 	"res://scripts/rendering/visual_tile_horizon_baker.gd")
@@ -766,6 +771,8 @@ func _process(delta: float) -> void:
 	_resource_visual_cpu_ms = float(Time.get_ticks_usec() - drain_started_usec) / 1000.0
 	_drain_detail_refresh_queue()
 	_last_detail_drain_ms = float(Time.get_ticks_usec() - drain_started_usec) / 1000.0
+	# 加载期把散布构建 defer 给这条运行期路径，所以这里必须有一个"永不出现"的兜底。
+	_poll_deferred_detail_fill_watchdog()
 	# 任务 1：性能采样（仅当 perf_sampler_enabled 为 true 时启用）
 	if _perf_sampler != null:
 		_perf_sampler.push_frame_ms(delta * 1000.0)
@@ -1931,21 +1938,150 @@ func _log_detail_scatter_rebuild_summary(reason: String) -> void:
 			print("  [detail_scatter/VIS] %s" % str(layer.detail_visibility_probe()))
 
 
+# ─── web / 移动端植被降档（2026-10-30，性能换密度，用户已确认） ──────────────
+# 受限平台（浏览器 WebGL2 / 移动 GPU）即使把散布构建改成"进世界分帧补齐"，运行期
+# 仍要维护全部散布层：每层的 chunk 节点 draw call、MultiMesh 上传、以及 succession
+# 触发 chunk 重建，成本都按层数线性增长，web 上这是帧时间的主项。所以在「层数」
+# 维度上再砍一半——受限平台只保留大约一半图层，桌面端完全不受影响。
+#
+# 调参入口只有这一个常量：0.5 = 约一半，0.34 = 三分之一，1.0 = 不砍。
+const WEB_MOBILE_DETAIL_LAYER_KEEP_RATIO: float = 0.5
+
+# 加载期让帧节流（取代旧的"每层一帧"）：每 4 层或累计 12ms 让一帧，保证进度条
+# 动画与 web 的主线程心跳。defer 之后单层只剩几毫秒的初始化，这个预算够用。
+const DETAIL_LOADING_LAYERS_PER_YIELD: int = 4
+const DETAIL_LOADING_YIELD_BUDGET_MS: float = 12.0
+
+# 兜底救援窗口：defer 之后若运行期补齐在这么久之内一株都没建出来（而且刷新管线
+# 已经空闲，说明不是"还在排队"），就退回老的"一次性全量构建"。宁可卡一下，
+# 也不能让地图永远光秃秃。
+const DEFERRED_DETAIL_FILL_RESCUE_SECONDS: float = 8.0
+
+# 受限平台判定覆盖：-1 = 跟随引擎特性；0 = 强制桌面；1 = 强制受限平台。
+# 只给临时验证脚本 / A-B 调试用，正常游戏流程不会改它。
+var _force_platform_limited_render: int = -1
+var _deferred_fill_watchdog_msec: int = 0
+var _deferred_fill_rescued: bool = false
+
+
+func set_force_platform_limited_render(value: int) -> void:
+	_force_platform_limited_render = clampi(value, -1, 1)
+
+
+# web 与 mobile 共用同一套"受限平台"降档（层数减半 + 每层密度降到 mobile 档）。
+func _platform_limited_vegetation_render() -> bool:
+	if _force_platform_limited_render >= 0:
+		return _force_platform_limited_render != 0
+	return OS.has_feature("web") or OS.has_feature("mobile")
+
+
+func _web_mobile_layer_keep_ratio() -> float:
+	return clampf(WEB_MOBILE_DETAIL_LAYER_KEEP_RATIO, 0.0, 1.0)
+
+
 # 默认散布层 profile 列表：优先 decoration_manifest.layers；留空时回退 grass/shrub/tree。
+# web / mobile 在这里按 WEB_MOBILE_DETAIL_LAYER_KEEP_RATIO 裁到约一半（桌面原样返回）。
 func _detail_profiles() -> Array:
 	var manifest := decoration_manifest
+	var base: Array = []
 	if manifest != null and manifest.has_method("valid_layers"):
-		var mls: Array = manifest.valid_layers()
-		if not mls.is_empty():
-			return mls
-	var defaults: Array = []
-	if grass_visual_profile != null:
-		defaults.append(grass_visual_profile)
-	if shrub_visual_profile != null:
-		defaults.append(shrub_visual_profile)
-	if tree_visual_profile != null:
-		defaults.append(tree_visual_profile)
-	return defaults
+		base = manifest.valid_layers()
+	if base.is_empty():
+		if grass_visual_profile != null:
+			base.append(grass_visual_profile)
+		if shrub_visual_profile != null:
+			base.append(shrub_visual_profile)
+		if tree_visual_profile != null:
+			base.append(tree_visual_profile)
+	if _platform_limited_vegetation_render():
+		return _select_platform_limited_detail_profiles(base)
+	return base
+
+
+# 按"保留价值"裁层，但保持原始绘制顺序（层序是 shader / 家族 mask 的稳定契约）。
+func _select_platform_limited_detail_profiles(layers: Array) -> Array:
+	var total := layers.size()
+	if total <= 1:
+		return layers
+	var keep := maxi(1, int(round(float(total) * _web_mobile_layer_keep_ratio())))
+	if keep >= total:
+		return layers
+	var ranked: Array = []
+	for i in range(total):
+		ranked.append({
+			"index": i,
+			"priority": _detail_profile_keep_priority(layers[i]),
+		})
+	ranked.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var pa := int(a.get("priority", 0))
+		var pb := int(b.get("priority", 0))
+		if pa != pb:
+			return pa > pb
+		return int(a.get("index", 0)) < int(b.get("index", 0))
+	)
+	var keep_indices: Array = []
+	for i in range(keep):
+		keep_indices.append(int(ranked[i].get("index", 0)))
+	keep_indices.sort()
+	var out: Array = []
+	for raw_index in keep_indices:
+		out.append(layers[int(raw_index)])
+	return out
+
+
+# 一层的"保留价值"分档（越大越先保留）。判据不是实例数，而是
+# "这一层是不是某个生物群系唯一的视觉代表"：
+#   阔叶树 / 灌木 / 草地是全球底色，各自代表森林、灌丛、地表覆盖；
+#   针叶（寒带、亚高山）、棕榈（热带海岸）、仙人掌（荒漠）、芦苇（湿地河岸）
+#   各自是所在群系唯一的植被代表，砍掉会把整片区域变成裸地；
+#   岩石 / 碎石是山地与荒原上唯一的硬质地物；
+#   高山花、苔原苔藓、沼泽草、红树根、枯木、藤木只是叠在底色上的点缀，
+#   砍掉只少一层细节，视觉损失最小。
+# 同分时按 manifest 顺序（越靠前越容易保留）。
+func _detail_profile_keep_priority(prof: Resource) -> int:
+	if prof == null:
+		return 0
+	var form := -1
+	if prof.has_method("resolved_visual_form"):
+		form = int(prof.call("resolved_visual_form"))
+	match form:
+		ShrubVisualProfile.FORM_BROADLEAF:
+			return 100
+		ShrubVisualProfile.FORM_SHRUB:
+			return 98
+		ShrubVisualProfile.FORM_GRASS:
+			return 96
+		ShrubVisualProfile.FORM_CONIFER:
+			return 92
+		ShrubVisualProfile.FORM_PALM:
+			return 88
+		ShrubVisualProfile.FORM_CACTUS:
+			return 84
+		ShrubVisualProfile.FORM_REED:
+			return 80
+		ShrubVisualProfile.FORM_ROCK:
+			return 70
+		ShrubVisualProfile.FORM_SCREE:
+			return 68
+		ShrubVisualProfile.FORM_FLOWER:
+			return 60
+		ShrubVisualProfile.FORM_LICHEN:
+			return 58
+		ShrubVisualProfile.FORM_PEAT_TUFT:
+			return 56
+		ShrubVisualProfile.FORM_MANGROVE:
+			return 54
+		ShrubVisualProfile.FORM_FALLEN_LOG:
+			return 52
+		ShrubVisualProfile.FORM_SNAG:
+			return 50
+		ShrubVisualProfile.FORM_SNOW_MOUND:
+			return 40
+		ShrubVisualProfile.FORM_KELP:
+			return 20
+		ShrubVisualProfile.FORM_CORAL:
+			return 18
+	return 1
 
 
 # 是否当前用的是默认三层（未配置 manifest）。
@@ -4220,6 +4356,18 @@ func _setup_loading_vegetation_layer(layer: ShrubLayer) -> void:
 	if _camera_view_initialized and layer.has_method("set_camera_view"):
 		layer.set_camera_view(_camera_world_rect, _camera_world_center, _camera_zoom)
 
+## 加载尾段（进度条 98% 之后）原先对每一层 `await setup_cooperative()`，单层 200–400ms
+## （第一个草地层还要额外吃 shader 首次编译），14+ 层叠加就是那段看不见尽头的卡顿。
+##
+## 现在改成"加载期只做最便宜的初始化 + 进世界后分帧补齐"：
+##   1) 每层只建资源：shader / 材质、MultiMesh、profile / 质量档 / 光照 / TOD 状态
+##      （ShrubLayer.setup() 的 defer 分支，纯同步，不清散点）；
+##   2) 把整张地图的 chunk 登记成"待补"，由 _reactivate_deferred_detail_chunks()
+##      放行 prefetch 视口内的块；
+##   3) 真正的散布构建交给已有的运行期预算路径逐帧完成：
+##      _drain_detail_refresh_queue() → ShrubLayer.refresh_chunk_for_succession()
+##      → 原生 encode_detail_scatter_delta + chunk MultiMesh 上传。
+## 玩家进世界后先看到地形，植被在 1–3 秒内按"离相机最近优先"逐块长出来。
 func _rebuild_cooperative() -> void:
 	if _world_quad == null:
 		return
@@ -4235,24 +4383,84 @@ func _rebuild_cooperative() -> void:
 	# 防御性：若 set_world_ext 尚未注入，尝试从已注入的 MapBaker 取 C++ ext。
 	if _world_ext == null and _map_baker != null and "_world_ext" in _map_baker:
 		set_world_ext(_map_baker._world_ext)
-	for layer in _detail_layers:
-		if layer != null:
-			await _setup_loading_vegetation_layer_cooperative(layer)
-			await get_tree().process_frame
+	var deferred_layers := await _setup_loading_vegetation_layers_for_deferred_fill()
 	if _detail_family_layer != null and is_instance_valid(_detail_family_layer):
 		_detail_family_layer.configure(_detail_layers, detail_scatter_family_renderer_enabled)
 		if _camera_view_initialized:
 			_detail_family_layer.set_camera_view(_camera_world_rect, _camera_world_center, _camera_zoom)
 	if detail_scatter_family_renderer_enabled and _camera_view_initialized:
 		_queue_missing_prefetch_detail_chunks()
+	if deferred_layers > 0:
+		_seed_deferred_detail_chunks_for_deferred_fill()
 		_reactivate_deferred_detail_chunks()
-	# 世界重建属于加载边界，可一次性完成预算同步；运行期 succession 则按层切片。
+		# 恢复"非加载期"的 defer 策略：之后再调 setup() / 切画质时按老语义走，
+		# 不会因为加载期的临时 defer 出现"清空了却没人补"。
+		for layer in _detail_layers:
+			if layer != null and layer.has_method("set_defer_initial_rebuild"):
+				layer.set_defer_initial_rebuild(detail_scatter_family_renderer_enabled)
+	# 此刻各层实例数还是 0：这里只把预算统计切到"已知容量"口径并下发一次可见比例
+	# （1.0 不裁剪）。运行期每补完一批 chunk，_drain_detail_refresh_queue() 都会
+	# _mark_detail_budget_total_dirty() + _apply_detail_global_budget() 重新结算。
+	_mark_detail_budget_total_dirty()
 	_apply_detail_global_budget(true)
 	_log_detail_scatter_rebuild_summary("renderer_rebuild")
+	if deferred_layers > 0:
+		_arm_deferred_detail_fill_watchdog()
 	if _shader_mat == null:
 		return
 	_apply_uniforms()
 
+
+## 逐层"最便宜的初始化"，返回真正走了 defer 的层数（0 = 全量同步构建，老行为）。
+## defer 的前提是分块 MultiMesh：chunk 是运行期补齐的最小单位。
+func _setup_loading_vegetation_layers_for_deferred_fill() -> int:
+	var deferred_layers := 0
+	var can_defer := detail_scatter_chunked_multimesh_enabled
+	var window_start_usec := Time.get_ticks_usec()
+	var layers_in_window := 0
+	var layer_built := 0
+	for layer in _detail_layers:
+		if layer == null:
+			continue
+		if can_defer:
+			_setup_loading_vegetation_layer_deferred(layer)
+			deferred_layers += 1
+		else:
+			await _setup_loading_vegetation_layer_cooperative(layer)
+		# 逐层发进度：这一段（14+ 层）原先在进度条上完全静默，是"卡在 98%"的
+		# 主要来源。defer 之后这一步只剩初始化（几毫秒/层），进度能匀速走完。
+		layer_built += 1
+		loading_layer_progress.emit(layer_built, _detail_layers.size(), String(layer.name))
+		layers_in_window += 1
+		# 不再"每层一帧"（那是给加载期 UI 让帧的老做法）：改成每 N 层或累计超预算
+		# 才让一帧，既保住进度条动画，也不再把让帧开销乘以层数。
+		var elapsed_ms := float(Time.get_ticks_usec() - window_start_usec) / 1000.0
+		if layers_in_window >= DETAIL_LOADING_LAYERS_PER_YIELD \
+				or elapsed_ms >= DETAIL_LOADING_YIELD_BUDGET_MS:
+			await get_tree().process_frame
+			window_start_usec = Time.get_ticks_usec()
+			layers_in_window = 0
+	return deferred_layers
+
+
+## 单层最便宜的初始化：world_ext / defer 标记 / 分块参数，然后只跑 setup() 的
+## defer 分支（建 MultiMesh 资源 + 推 profile / 质量档 / 光照 / TOD uniform）。
+func _setup_loading_vegetation_layer_deferred(layer: ShrubLayer) -> void:
+	layer.set_world_ext(_world_ext)
+	if layer.has_method("set_defer_initial_rebuild"):
+		layer.set_defer_initial_rebuild(true)
+	if layer.has_method("set_chunked_multimesh_enabled"):
+		layer.set_chunked_multimesh_enabled(detail_scatter_chunked_multimesh_enabled, detail_scatter_chunk_size_cells)
+	var layer_t0 := Time.get_ticks_usec()
+	layer.setup(_map, _world, _world.world_bounds, hex_size, visual_quality)
+	print("[loading-renderer-step] %s %.1fms (deferred)" % [
+		layer.name, float(Time.get_ticks_usec() - layer_t0) / 1000.0])
+	if _camera_view_initialized and layer.has_method("set_camera_view"):
+		layer.set_camera_view(_camera_world_rect, _camera_world_center, _camera_zoom)
+
+
+## 非分块（chunked=off）配置下的老路径：一次性协同构建整层。只有关掉分块
+## MultiMesh 时才会走到，属于兼容分支。
 func _setup_loading_vegetation_layer_cooperative(layer: ShrubLayer) -> void:
 	layer.set_world_ext(_world_ext)
 	if layer.has_method("set_defer_initial_rebuild"):
@@ -4264,3 +4472,77 @@ func _setup_loading_vegetation_layer_cooperative(layer: ShrubLayer) -> void:
 	print("[loading-renderer-step] %s %.1fms" % [layer.name,float(Time.get_ticks_usec()-layer_t0)/1000.0])
 	if _camera_view_initialized and layer.has_method("set_camera_view"):
 		layer.set_camera_view(_camera_world_rect, _camera_world_center, _camera_zoom)
+
+
+## 把整张地图的 chunk 登记为"待分帧补齐"。这里只登记、不入队：真正入队由
+## _reactivate_deferred_detail_chunks() 按 prefetch 视口筛选，保证进世界第一屏
+## 只补视野附近的块；视野外的块留在 _detail_deferred_chunks 里，等相机移动时
+## set_camera_view() 再触发一次放行。
+func _seed_deferred_detail_chunks_for_deferred_fill() -> void:
+	var probe := _detail_chunk_probe_layer()
+	if probe == null or _map == null:
+		return
+	var plan: Array = probe.detail_chunk_plan_for_view(
+		_world.world_bounds if _world != null else Rect2())
+	if plan.is_empty():
+		return
+	var family_mask := _detail_all_family_mask()
+	var profile_mask := (1 << _detail_layers.size()) - 1
+	var seeded := 0
+	for chunk in plan:
+		var chunk_id := int(chunk.get("chunk_id", -1))
+		if chunk_id < 0:
+			continue
+		_detail_deferred_chunks[chunk_id] = family_mask
+		_detail_deferred_profile_masks[chunk_id] = profile_mask
+		seeded += 1
+	print("[detail_scatter/DEFER_SEED] chunks=%d layers=%d" % [seeded, _detail_layers.size()])
+
+
+func _detail_chunk_probe_layer():
+	for layer in _detail_layers:
+		if layer != null and is_instance_valid(layer) \
+				and layer.has_method("detail_chunk_plan_for_view") \
+				and layer.has_method("detail_chunk_is_in_prefetch") \
+				and layer.has_method("detail_chunk_cells"):
+			return layer
+	return null
+
+
+func _arm_deferred_detail_fill_watchdog() -> void:
+	_deferred_fill_watchdog_msec = Time.get_ticks_msec()
+	_deferred_fill_rescued = false
+
+
+## 兜底：defer 之后若刷新管线已经空闲、却在救援窗口内一株都没建出来（原生
+## encode_detail_scatter_delta 缺失 / chunk 计划失败等），退回一次性全量构建。
+func _poll_deferred_detail_fill_watchdog() -> void:
+	if _deferred_fill_rescued or _deferred_fill_watchdog_msec <= 0:
+		return
+	if Time.get_ticks_msec() - _deferred_fill_watchdog_msec \
+			< int(DEFERRED_DETAIL_FILL_RESCUE_SECONDS * 1000.0):
+		return
+	if not _detail_refresh_queue.is_empty() or _detail_plan_phase != DETAIL_PLAN_IDLE \
+			or not _detail_refresh_batches.is_empty():
+		# 还在排队：只是慢，不是坏了，继续等。
+		return
+	_deferred_fill_watchdog_msec = 0
+	_deferred_fill_rescued = true
+	if _map == null or _world == null or _detail_layers.is_empty():
+		return
+	var built := 0
+	for layer in _detail_layers:
+		if layer != null and layer.has_method("instance_count"):
+			built += int(layer.instance_count())
+	if built > 0:
+		return
+	push_warning("[detail_scatter] 分帧补齐在救援窗口内没有任何植被实例，回退全量构建")
+	print("[detail_scatter/DEFER_RESCUE] fallback=full_rebuild layers=%d" % _detail_layers.size())
+	for layer in _detail_layers:
+		if layer == null or not is_instance_valid(layer):
+			continue
+		if layer.has_method("set_defer_initial_rebuild"):
+			layer.set_defer_initial_rebuild(false)
+		layer.setup(_map, _world, _world.world_bounds, hex_size, visual_quality)
+	_mark_detail_budget_total_dirty()
+	_apply_detail_global_budget(true)

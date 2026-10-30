@@ -686,7 +686,7 @@ bool NativeEconomyRuntime::advance_fiscal_reservation(std::string &error) {
     }
 
     const int32_t country = continuation.country_cursor;
-    int64_t requested = std::max<int64_t>(0,
+    const int64_t requested = std::max<int64_t>(0,
         continuation.requested_by_country[static_cast<size_t>(country)]);
     // Government research procurement spends post-fiscal treasury cash. If
     // subsidy/tariff reservation empties the purse, queued techs starve with
@@ -707,13 +707,18 @@ bool NativeEconomyRuntime::advance_fiscal_reservation(std::string &error) {
         0, _country_runtime->cash_for_slot(country));
     const int64_t reservable =
         std::max<int64_t>(0, spendable - research_floor);
-    if (requested > reservable) requested = reservable;
+    // Keep the original weight total as the allocation denominator. Capping
+    // it to treasury cash would allocate more subsidy than the real escrow.
+    // An in-flight request also keeps its admitted amount across peer retries.
+    const int64_t reserve_request = continuation.pending_request_id != 0
+        ? continuation.last_requested : std::min(requested, reservable);
+    continuation.last_requested = reserve_request;
     int64_t reserved = 0;
-    if (requested > 0) {
+    if (reserve_request > 0) {
         std::string fiscal_transaction_error;
         if (!coordinate_country_fiscal_transaction(
                 country, NativeCountryRuntime::ECONOMY_ASSET_FISCAL_RESERVE,
-                requested, reserved, fiscal_transaction_error,
+                reserve_request, reserved, fiscal_transaction_error,
                 &continuation.pending_request_id)) {
             if (fiscal_transaction_error == "country_economy_asset_host_pending")
                 return true;
@@ -722,11 +727,10 @@ bool NativeEconomyRuntime::advance_fiscal_reservation(std::string &error) {
                 : fiscal_transaction_error.c_str());
         }
         continuation.pending_request_id = 0;
-        if (reserved <= 0 || reserved > requested)
+        if (reserved <= 0 || reserved > reserve_request)
             return fail("fiscal_reserve_quantity_invalid");
     }
     _fiscal_escrow_by_country.write_scalar(static_cast<size_t>(country), reserved, market_mutation_sink());
-    continuation.last_requested = requested;
     continuation.last_reserved = reserved;
 
     const bool domestic_fiscal_active =
@@ -1311,6 +1315,30 @@ NativeEconomyRuntime::quote_transaction(
     return quote;
 }
 
+int32_t NativeEconomyRuntime::epoch_country_index(uint64_t handle) const {
+    if (handle == 0) return -1;
+    const auto found = std::find(_epoch_country_handles.begin(),
+                                 _epoch_country_handles.end(), handle);
+    return found == _epoch_country_handles.end()
+        ? -1 : static_cast<int32_t>(found - _epoch_country_handles.begin());
+}
+
+void NativeEconomyRuntime::note_non_tax_outflow(uint64_t country_handle,
+                                                int32_t kind, int64_t cash) {
+    if (country_handle == 0 || kind < 0 || kind >= NON_TAX_KIND_COUNT ||
+        cash <= 0) return;
+    for (PendingNonTaxOutflow &entry : _pending_non_tax_outflow) {
+        if (entry.country_handle != country_handle) continue;
+        entry.cash[static_cast<size_t>(kind)] = saturating_add(
+            entry.cash[static_cast<size_t>(kind)], cash, _saturation_count);
+        return;
+    }
+    PendingNonTaxOutflow entry;
+    entry.country_handle = country_handle;
+    entry.cash[static_cast<size_t>(kind)] = cash;
+    _pending_non_tax_outflow.push_back(entry);
+}
+
 bool NativeEconomyRuntime::commit_fiscal(std::string &error) {
     if (_country_runtime == nullptr) {
         error = "country_runtime_required";
@@ -1330,6 +1358,12 @@ bool NativeEconomyRuntime::commit_fiscal(std::string &error) {
     _fiscal_cumulative_collected.resize(summary_count, 0);
     _fiscal_cumulative_requests.resize(summary_count, 0);
     _fiscal_cumulative_paid.resize(summary_count, 0);
+    // Non-tax outflow lanes are country x kind, not country x tax kind.
+    const size_t country_lane_count = static_cast<size_t>(
+        std::max(0, _epoch_country_count));
+    const size_t non_tax_lane_count =
+        country_lane_count * static_cast<size_t>(NON_TAX_KIND_COUNT);
+    _fiscal_last_non_tax_outflow.assign(non_tax_lane_count, 0);
     _fiscal_settlement_continuation = {};
     _fiscal_settlement_continuation.country_count = _epoch_country_count;
     _fiscal_settlement_continuation.day_index = _current_day.get();
@@ -1389,20 +1423,37 @@ bool NativeEconomyRuntime::commit_fiscal(std::string &error) {
             _fiscal_last_events[summary], _tariff_epoch_events[lane],
             _saturation_count), market_mutation_sink());
     }
+    // Build the tariff cash flow totals from the sparse endpoint lanes.  The
+    // fiscal summary arrays below are presentation aggregates; using them as
+    // the settlement amount can accidentally omit a lane that was outside the
+    // rolling settlement workset or include a lane that was already folded.
+    std::vector<int64_t> tariff_collected_by_country(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
+    for (size_t lane = 0; lane < tariff_lane_count; ++lane) {
+        const int32_t cell = _tariff_epoch_cells[lane];
+        if (cell < 0 || cell >= static_cast<int32_t>(_epoch_cell_country.size()))
+            continue;
+        const int32_t country = _epoch_cell_country[static_cast<size_t>(cell)];
+        if (country < 0 || country >= _epoch_country_count) continue;
+        tariff_collected_by_country[static_cast<size_t>(country)] = saturating_add(
+            tariff_collected_by_country[static_cast<size_t>(country)],
+            std::max<int64_t>(0, _tariff_epoch_collected[lane]),
+            _saturation_count);
+    }
     // Tax can settle on a cell outside this epoch's rolling workset, e.g. an
     // inter-cell trade dispatch taxed at its destination. Every lane is reset
     // at epoch open, so a lane not folded here leaves the payer debited with
-    // no matching escrow. Such lanes never hold a subsidy budget, so only the
-    // flow totals are folded; their request history stays untouched.
+    // no matching escrow. Keep one membership mask for both report folding and
+    // cash reconciliation; outside lanes retain their request history.
+    const int32_t fiscal_cell_count = std::min<int32_t>(
+        _cell_count.get(), static_cast<int32_t>(_epoch_cell_country.size()));
+    std::vector<uint8_t> in_settlement(
+        static_cast<size_t>(std::max(0, fiscal_cell_count)), 0);
+    for (const int32_t cell : _epoch_settlement_cells)
+        if (cell >= 0 && cell < fiscal_cell_count)
+            in_settlement[static_cast<size_t>(cell)] = 1;
     if (domestic_fiscal_active) {
-        const int32_t cell_count = std::min<int32_t>(
-            _cell_count.get(), static_cast<int32_t>(_epoch_cell_country.size()));
-        std::vector<uint8_t> in_settlement(
-            static_cast<size_t>(std::max(0, cell_count)), 0);
-        for (const int32_t cell : _epoch_settlement_cells)
-            if (cell >= 0 && cell < cell_count)
-                in_settlement[static_cast<size_t>(cell)] = 1;
-        for (int32_t cell = 0; cell < cell_count; ++cell) {
+        for (int32_t cell = 0; cell < fiscal_cell_count; ++cell) {
             if (in_settlement[static_cast<size_t>(cell)] != 0) continue;
             const int32_t country = _epoch_cell_country[static_cast<size_t>(cell)];
             if (country < 0 || country >= _epoch_country_count) continue;
@@ -1441,32 +1492,50 @@ bool NativeEconomyRuntime::commit_fiscal(std::string &error) {
              kind < ACTIVE_TAX_KIND_COUNT; ++kind) {
             const size_t summary = static_cast<size_t>(country) *
                 NativeCountryRuntime::TAX_KIND_COUNT + kind;
-            for (const int32_t cell : _epoch_settlement_cells) {
-                if (cell < 0 || cell >= _cell_count.get() ||
+            for (int32_t cell = 0; cell < fiscal_cell_count; ++cell) {
+                if (cell < 0 || cell >= fiscal_cell_count ||
                     _epoch_cell_country[cell] != country) continue;
                 const size_t lane = static_cast<size_t>(cell) *
                     ACTIVE_TAX_KIND_COUNT + kind;
-                _fiscal_last_bases.write_scalar(summary, saturating_add(
-                    _fiscal_last_bases[summary], _fiscal_epoch_bases[lane],
-                    _saturation_count), market_mutation_sink());
-                _fiscal_last_assessed.write_scalar(summary, saturating_add(
-                    _fiscal_last_assessed[summary], _fiscal_epoch_assessed[lane],
-                    _saturation_count), market_mutation_sink());
-                _fiscal_last_collected.write_scalar(summary, saturating_add(
-                    _fiscal_last_collected[summary], _fiscal_epoch_collected[lane],
-                    _saturation_count), market_mutation_sink());
-                _fiscal_last_requests.write_scalar(summary, saturating_add(
-                    _fiscal_last_requests[summary], _fiscal_current_requests[lane],
-                    _saturation_count), market_mutation_sink());
-                _fiscal_last_reserved.write_scalar(summary, saturating_add(
-                    _fiscal_last_reserved[summary], _fiscal_budgets[lane],
-                    _saturation_count), market_mutation_sink());
-                _fiscal_last_paid.write_scalar(summary, saturating_add(
-                    _fiscal_last_paid[summary], _fiscal_epoch_paid[lane],
-                    _saturation_count), market_mutation_sink());
+                // Summary rows for non-settlement lanes were folded above.
+                // Only add the settlement lanes here so the report remains
+                // stable while the cash reconciliation below covers every
+                // lane exactly once.
+                if (in_settlement[static_cast<size_t>(cell)] != 0) {
+                    _fiscal_last_bases.write_scalar(summary, saturating_add(
+                        _fiscal_last_bases[summary], _fiscal_epoch_bases[lane],
+                        _saturation_count), market_mutation_sink());
+                    _fiscal_last_assessed.write_scalar(summary, saturating_add(
+                        _fiscal_last_assessed[summary], _fiscal_epoch_assessed[lane],
+                        _saturation_count), market_mutation_sink());
+                    _fiscal_last_collected.write_scalar(summary, saturating_add(
+                        _fiscal_last_collected[summary], _fiscal_epoch_collected[lane],
+                        _saturation_count), market_mutation_sink());
+                    _fiscal_last_requests.write_scalar(summary, saturating_add(
+                        _fiscal_last_requests[summary], _fiscal_current_requests[lane],
+                        _saturation_count), market_mutation_sink());
+                    _fiscal_last_reserved.write_scalar(summary, saturating_add(
+                        _fiscal_last_reserved[summary], _fiscal_budgets[lane],
+                        _saturation_count), market_mutation_sink());
+                    _fiscal_last_paid.write_scalar(summary, saturating_add(
+                        _fiscal_last_paid[summary], _fiscal_epoch_paid[lane],
+                        _saturation_count), market_mutation_sink());
+                }
+                // The escrow balance is a cash ledger, not a report aggregate:
+                // reconcile every lane, including cells outside this epoch's
+                // rolling workset.  The old settlement-cell-only sum could
+                // leave withheld tax or unused subsidy cash unpaired and make
+                // VERIFY stop the whole economy with money_conservation_failed.
+                collected_total = saturating_add(
+                    collected_total,
+                    std::max<int64_t>(0, _fiscal_epoch_collected[lane]),
+                    _saturation_count);
                 unused_total = saturating_add(
                     unused_total, _fiscal_remaining[lane], _saturation_count);
-                _fiscal_previous_requests.write_scalar(lane, _fiscal_current_requests[lane], market_mutation_sink());
+                if (in_settlement[static_cast<size_t>(cell)] != 0)
+                    _fiscal_previous_requests.write_scalar(
+                        lane, _fiscal_current_requests[lane],
+                        market_mutation_sink());
             }
             _fiscal_last_unmet.write_scalar(summary, std::max<int64_t>(
                 0, _fiscal_last_requests[summary] - _fiscal_last_paid[summary]), market_mutation_sink());
@@ -1482,9 +1551,6 @@ bool NativeEconomyRuntime::commit_fiscal(std::string &error) {
             _fiscal_cumulative_paid.write_scalar(summary, saturating_add(
                 _fiscal_cumulative_paid[summary], _fiscal_last_paid[summary],
                 _saturation_count), market_mutation_sink());
-            collected_total = saturating_add(
-                collected_total, _fiscal_last_collected[summary],
-                _saturation_count);
         }
         // Tariff lanes are sparse cell x {import, export} and are folded into
         // the country x 5 fiscal summary only after all dispatches settle.
@@ -1520,10 +1586,12 @@ bool NativeEconomyRuntime::commit_fiscal(std::string &error) {
             _fiscal_cumulative_paid.write_scalar(summary, saturating_add(
                 _fiscal_cumulative_paid[summary], _fiscal_last_paid[summary],
                 _saturation_count), market_mutation_sink());
-            collected_total = saturating_add(
-                collected_total, _fiscal_last_collected[summary],
-                _saturation_count);
         }
+        if (static_cast<size_t>(country) < tariff_collected_by_country.size())
+            collected_total = saturating_add(
+                collected_total,
+                tariff_collected_by_country[static_cast<size_t>(country)],
+                _saturation_count);
         _fiscal_settlement_continuation.unused_by_country[
             static_cast<size_t>(country)] = unused_total;
         _fiscal_settlement_continuation.collected_by_country[
@@ -1534,6 +1602,37 @@ bool NativeEconomyRuntime::commit_fiscal(std::string &error) {
         // current balance.
         _fiscal_escrow_by_country.write_scalar(static_cast<size_t>(country), saturating_add(unused_total, collected_total, _saturation_count), market_mutation_sink());
     }
+    // Non-tax outflow. Research procurement, expedition cargo, construction and
+    // canal materials all debit 国库 and pay the cash to local merchants, so the
+    // batch summary must carry them on the expense side or 国库收支 reports a
+    // net the treasury never saw. The buffer is drained here (not reset at epoch
+    // begin) so an outflow booked at the idle day boundary — family expedition
+    // procurement settles there — still reaches the batch it belongs to.
+    size_t pending_kept = 0;
+    for (size_t i = 0; i < _pending_non_tax_outflow.size(); ++i) {
+        PendingNonTaxOutflow &entry = _pending_non_tax_outflow[i];
+        const int32_t country = epoch_country_index(entry.country_handle);
+        if (country < 0 || country >= _epoch_country_count) {
+            // The payer is not in this batch's country set (founded or changed
+            // while the economy was idle). Keep the cash pending for a later
+            // batch instead of dropping a real treasury debit.
+            if (pending_kept != i)
+                _pending_non_tax_outflow[pending_kept] = entry;
+            ++pending_kept;
+            continue;
+        }
+        for (int32_t kind = 0; kind < NON_TAX_KIND_COUNT; ++kind) {
+            const int64_t cash = entry.cash[static_cast<size_t>(kind)];
+            if (cash <= 0) continue;
+            const size_t lane = static_cast<size_t>(country) *
+                static_cast<size_t>(NON_TAX_KIND_COUNT) +
+                static_cast<size_t>(kind);
+            _fiscal_last_non_tax_outflow.write_scalar(lane, saturating_add(
+                _fiscal_last_non_tax_outflow[lane], cash, _saturation_count),
+                market_mutation_sink());
+        }
+    }
+    _pending_non_tax_outflow.resize(pending_kept);
     _fiscal_settlement_continuation.active = true;
     _fiscal_settlement_continuation.phase = 1;
     return true;

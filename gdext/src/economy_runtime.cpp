@@ -4066,6 +4066,13 @@ bool NativeEconomyRuntime::run_government_research_procurement(std::string &erro
             }
             _country_research_procurement_budgets[country] -= continuation.cash;
             _country_research_procurement_remaining[country] -= continuation.quantity;
+            // The treasury debit landed in this same advance (sync peer or Host
+            // peer flush), so attribute the cash to the paying country here and
+            // let commit_fiscal publish it as a non-tax outflow.
+            if (country < _epoch_country_handles.size()) {
+                note_non_tax_outflow(_epoch_country_handles[country],
+                    NON_TAX_RESEARCH_PURCHASE, continuation.cash);
+            }
             _government_research_procured_points = saturating_add(
                 _government_research_procured_points.get(), continuation.quantity,
                 _saturation_count);
@@ -26032,6 +26039,8 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _fiscal_cumulative_collected.clear();
     _fiscal_cumulative_requests.clear();
     _fiscal_cumulative_paid.clear();
+    _fiscal_last_non_tax_outflow.clear();
+    _pending_non_tax_outflow.clear();
     _tariff_epoch_cells.clear();
     _tariff_epoch_kinds.clear();
     _tariff_epoch_bases.clear();

@@ -1,4 +1,4 @@
-﻿#include "economy_runtime.h"
+#include "economy_runtime.h"
 #include "country_runtime.h"
 #include "economy_runtime_variant_helpers.h"
 
@@ -369,6 +369,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_fiscal_last_unmet); cap(_fiscal_cumulative_bases);
     cap(_fiscal_cumulative_collected);
     cap(_fiscal_cumulative_requests); cap(_fiscal_cumulative_paid);
+    cap(_fiscal_last_non_tax_outflow); cap(_pending_non_tax_outflow);
     cap(_tariff_epoch_cells); cap(_tariff_epoch_kinds);
     cap(_tariff_epoch_bases); cap(_tariff_epoch_assessed);
     cap(_tariff_epoch_collected); cap(_tariff_epoch_requests);

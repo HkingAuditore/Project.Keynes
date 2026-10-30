@@ -287,6 +287,9 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _government_research_procured_points = 0;
     _government_research_procurement_cash = 0;
     _government_research_procurement_orders = 0;
+    // _pending_non_tax_outflow is deliberately NOT reset here: family expedition
+    // procurement settles at the idle boundary before an epoch opens, and that
+    // cash must reach the next commit_fiscal (which drains the buffer).
     _country_research_procurement_candidates.clear();
     _country_research_procurement_budgets.clear();
     _country_research_procurement_remaining.clear();

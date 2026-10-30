@@ -602,6 +602,9 @@ void NativeEconomyRuntime::prepare_restore_candidate_scratch() {
     family_expedition_missing_good_quantities().clear();
     _family_expedition_target_index.clear();
     _family_expedition_due_heap.clear();
+    // Outflows booked since the last published batch are transient; the restored
+    // batch lane comes from the save, so a restore must not carry a stale one.
+    _pending_non_tax_outflow.clear();
     _colonization_receipts.clear();
     {
         std::lock_guard<std::mutex> lock(_worker_command_inbox->mutex);
