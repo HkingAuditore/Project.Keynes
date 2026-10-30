@@ -1962,6 +1962,9 @@ const DEFERRED_DETAIL_FILL_RESCUE_SECONDS: float = 8.0
 var _force_platform_limited_render: int = -1
 var _deferred_fill_watchdog_msec: int = 0
 var _deferred_fill_rescued: bool = false
+# 保留比例运行期覆盖：<0 = 用常量 WEB_MOBILE_DETAIL_LAYER_KEEP_RATIO。
+# 只给临时验证脚本 / A-B 调试用，正常流程不会改它。
+var _web_mobile_layer_keep_ratio_override: float = -1.0
 
 
 func set_force_platform_limited_render(value: int) -> void:
@@ -1976,6 +1979,8 @@ func _platform_limited_vegetation_render() -> bool:
 
 
 func _web_mobile_layer_keep_ratio() -> float:
+	if _web_mobile_layer_keep_ratio_override >= 0.0:
+		return clampf(_web_mobile_layer_keep_ratio_override, 0.0, 1.0)
 	return clampf(WEB_MOBILE_DETAIL_LAYER_KEEP_RATIO, 0.0, 1.0)
 
 
@@ -2030,13 +2035,15 @@ func _select_platform_limited_detail_profiles(layers: Array) -> Array:
 
 
 # 一层的"保留价值"分档（越大越先保留）。判据不是实例数，而是
-# "这一层是不是某个生物群系唯一的视觉代表"：
-#   阔叶树 / 灌木 / 草地是全球底色，各自代表森林、灌丛、地表覆盖；
-#   针叶（寒带、亚高山）、棕榈（热带海岸）、仙人掌（荒漠）、芦苇（湿地河岸）
-#   各自是所在群系唯一的植被代表，砍掉会把整片区域变成裸地；
+# "这一层是不是某个可见角色的唯一代表"：
+#   阔叶树 / 灌木 / 草地是全球底色，分别代表森林冠层、灌丛、地表覆盖；
+#   针叶（寒带、亚高山）与棕榈（热带海岸）是形状完全不同、biome 唯一的冠层，
+#   砍掉会让针叶林/棕榈林被"阔叶树"顶替（形状对不上），所以紧跟三个底色层；
+#   仙人掌（荒漠）、芦苇（湿地河岸）是所在群系唯一的植被代表，砍掉整片变裸地；
 #   岩石 / 碎石是山地与荒原上唯一的硬质地物；
-#   高山花、苔原苔藓、沼泽草、红树根、枯木、藤木只是叠在底色上的点缀，
-#   砍掉只少一层细节，视觉损失最小。
+#   高山花、苔原苔藓、沼泽草、红树根、枯木只是叠在底色之上的点缀，砍掉只少一层细节；
+#   带专属底色的乔木（云雾林 / 季风林）与通用阔叶层同形同 biome，只是多一层配色，
+#   优先级最低——通用阔叶层已经在同一片林子里出树了。
 # 同分时按 manifest 顺序（越靠前越容易保留）。
 func _detail_profile_keep_priority(prof: Resource) -> int:
 	if prof == null:
@@ -2044,6 +2051,10 @@ func _detail_profile_keep_priority(prof: Resource) -> int:
 	var form := -1
 	if prof.has_method("resolved_visual_form"):
 		form = int(prof.call("resolved_visual_form"))
+	# "额外配色"的乔木变体：与通用阔叶层同形，降档到点缀级。
+	if form == ShrubVisualProfile.FORM_BROADLEAF \
+			and bool(prof.get("base_color_override_enabled")):
+		return 40
 	match form:
 		ShrubVisualProfile.FORM_BROADLEAF:
 			return 100
@@ -2062,21 +2073,21 @@ func _detail_profile_keep_priority(prof: Resource) -> int:
 		ShrubVisualProfile.FORM_ROCK:
 			return 70
 		ShrubVisualProfile.FORM_SCREE:
-			return 68
+			return 66
 		ShrubVisualProfile.FORM_FLOWER:
-			return 60
+			return 62
 		ShrubVisualProfile.FORM_LICHEN:
-			return 58
+			return 60
 		ShrubVisualProfile.FORM_PEAT_TUFT:
-			return 56
+			return 58
 		ShrubVisualProfile.FORM_MANGROVE:
-			return 54
+			return 56
 		ShrubVisualProfile.FORM_FALLEN_LOG:
-			return 52
+			return 54
 		ShrubVisualProfile.FORM_SNAG:
-			return 50
+			return 52
 		ShrubVisualProfile.FORM_SNOW_MOUND:
-			return 40
+			return 44
 		ShrubVisualProfile.FORM_KELP:
 			return 20
 		ShrubVisualProfile.FORM_CORAL:
@@ -4479,7 +4490,7 @@ func _setup_loading_vegetation_layer_cooperative(layer: ShrubLayer) -> void:
 ## 只补视野附近的块；视野外的块留在 _detail_deferred_chunks 里，等相机移动时
 ## set_camera_view() 再触发一次放行。
 func _seed_deferred_detail_chunks_for_deferred_fill() -> void:
-	var probe := _detail_chunk_probe_layer()
+	var probe = _detail_chunk_probe_layer()
 	if probe == null or _map == null:
 		return
 	var plan: Array = probe.detail_chunk_plan_for_view(

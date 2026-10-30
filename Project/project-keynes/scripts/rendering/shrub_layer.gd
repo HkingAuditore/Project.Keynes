@@ -4192,7 +4192,7 @@ func _cell_hash_key(cell, fallback: int) -> int:
 
 func _base_max_per_cell() -> int:
 	var cfg := _profile()
-	if OS.has_feature("mobile"):
+	if _limited_platform_density_tier():
 		match _active_quality_tier():
 			0:
 				return maxi(0, cfg.mobile_max_per_cell_quality0)
@@ -4216,7 +4216,7 @@ func _max_per_cell() -> int:
 
 func _base_instance_cap() -> int:
 	var cfg := _profile()
-	if OS.has_feature("mobile"):
+	if _limited_platform_density_tier():
 		match _active_quality_tier():
 			0:
 				return maxi(0, cfg.mobile_max_instances_quality0)
@@ -4259,7 +4259,7 @@ func _quality_lobe_count() -> int:
 
 func _quality_density_scale() -> float:
 	var cfg := _profile()
-	if OS.has_feature("mobile"):
+	if _limited_platform_density_tier():
 		match _active_quality_tier():
 			0:
 				return maxf(0.0, cfg.density_scale * cfg.mobile_density_multiplier_quality0)
@@ -4299,6 +4299,17 @@ func _active_quality_tier() -> int:
 	return clampi(
 		_mobile_quality_tier if DCFeatureFlags.uses_shader_quality_tier() else _visual_quality,
 		0, 2)
+
+
+# [web-mobile-density-halving 2026-10-30] 受限平台（浏览器 WebGL2 / 移动 GPU）共用
+# 同一套"性能换密度"档。web 之前走的是桌面档（density 1.0–1.35、每层上限
+# 14000–24000 实例），浏览器里根本跑不动；现在 web 自动拿到 Profile 上已有的
+# mobile_* 档（density 0.46–0.70、每层上限 1800–2600，约为桌面的 45%），
+# 移动端行为不变，桌面端仍然走 desktop_* 档、完全不受影响。
+# 只切"密度 / 每格上限 / 每层上限"这三项；尺寸档与 lobe 档仍按移动端原判定，
+# 避免在 web 上额外改变植株大小（那属于另一条视觉口径）。
+func _limited_platform_density_tier() -> bool:
+	return DCFeatureFlags.uses_shader_quality_tier()
 
 
 func _detail_kind() -> int:
