@@ -4560,14 +4560,11 @@ func _bind_renderer_and_camera(safe_area: Rect2) -> void:
 	# 逐层回调转成本次加载的进度（stage="visual"）。只在加载边界连接/断开，
 	# 运行期重建不会误发进度。
 	var layer_progress := Callable(self, "_on_renderer_loading_layer_progress")
-	var layer_signal_ok: bool = _renderer.has_signal("loading_layer_progress")
-	if layer_signal_ok and not _renderer.is_connected(
-			"loading_layer_progress", layer_progress):
-		_renderer.connect("loading_layer_progress", layer_progress)
+	if not _renderer.loading_layer_progress.is_connected(layer_progress):
+		_renderer.loading_layer_progress.connect(layer_progress)
 	await _renderer.set_map_cooperative(_current_map, _world_data)
-	if layer_signal_ok and _renderer.is_connected(
-			"loading_layer_progress", layer_progress):
-		_renderer.disconnect("loading_layer_progress", layer_progress)
+	if _renderer.loading_layer_progress.is_connected(layer_progress):
+		_renderer.loading_layer_progress.disconnect(layer_progress)
 	if _map_overlay_layer != null:
 		_map_overlay_layer.set_bounds(_renderer.get_world_bounds())
 		_map_overlay_layer.set_horizontal_wrap(map_wrap_period_x())
