@@ -25,11 +25,11 @@ func _run() -> void:
 	var text: String = model.get("full_text", "")
 	_expect("nine data chapters", model.get("chapters", []).size() == 9)
 	_expect("copy includes scoring and chapter titles", text.contains("发展考核") and text.contains("GDP 增长") and text.contains("资源与年度问题"))
-	_expect("every chapter carries a one-line data label",
-		model.chapters.all(func(chapter: Dictionary) -> bool: return not String(chapter.get("lead", "")).is_empty()))
+	_expect("chapter leads do not duplicate their charts and ledgers",
+		model.chapters.all(func(chapter: Dictionary) -> bool: return String(chapter.get("lead", "")).is_empty()))
 	_expect("copy drops method notes", not text.contains("口径") and not text.contains("满分目标"))
 	_expect("first year does not invent prior GDP", model.chapters[1].rows[0].previous == "无可比数据")
-	_expect("percentage changes use percentage points", text.contains("个百分点"))
+	_expect("percentage changes use percent signs", text.contains("%") and not text.contains("个百分点"))
 	_expect("title includes year and country", String(model.title).contains("第 1 年") and model.country_name == raw.country_name)
 	_expect("reward renders exact points", model.reward_text == "48")
 	_expect("cut-paper era artwork selected", String(model.art_path).ends_with("stone.png"))
@@ -49,10 +49,11 @@ func _run() -> void:
 	_expect("all 11 illustrations exist", _all_art_exists())
 	var compiled: Dictionary = ProfileScript.new().compile_native(TechnologyCatalog.compile_native_catalog(), {"offer_cost_q16": 393216, "offer_cost_growth_percent": 120, "offer_cost_max_q16": 1000000000000})
 	_expect("profile compiles dense technology equivalents", compiled.technology_equivalents_q16.size() > 0 and compiled.era_milestones.size() == 11)
-	_expect("annual profile v2 raises quality targets and grade gates",
-		int(compiled.version) == 2
+	_expect("annual profile v3 raises development targets and grade gates",
+		int(compiled.version) == 3
 		and compiled.grade_thresholds == PackedInt32Array([9800, 9300, 8400, 7200, 5200, 3200, 0])
 		and compiled.quality_targets == PackedInt32Array([64225, 64880, 64225, 62259])
+		and compiled.progress_targets == PackedInt32Array([16384, 9830, 6554, 16384, 9830, 131072])
 		and compiled.reward_draws == PackedInt32Array([4, 3, 2, 1, 1, 0, 0]))
 	# ── 纸本长卷所需的派生量（图表与账簿不能靠格式化字符串反解） ──────────────
 	var gdp_row: Dictionary = model.chapters[1].rows[0]
@@ -118,7 +119,7 @@ func _all_art_exists() -> bool:
 	return true
 
 static func fixture() -> Dictionary:
-	return {"ok": true, "id": 1, "year": 0, "scoring_version": 2, "country_name": "河湾共同体", "era": 0,
+	return {"ok": true, "id": 1, "year": 0, "scoring_version": 3, "country_name": "河湾共同体", "era": 0,
 		"complete": true, "grade": "A", "grade_index": 2, "score_bp": 9000,
 		"reward_q16": 48 * 65536, "reward_settled": true,
 		"quality_average": PackedInt64Array([60000, 64000, 62000, 60000]),

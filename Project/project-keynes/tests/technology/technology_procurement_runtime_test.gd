@@ -73,6 +73,7 @@ func _init() -> void:
 	}, {"stock": stock}).get("ok", false)))
 	var before := country.research_snapshot(handle)
 	var before_cash := int(country.snapshot(handle).cash)
+	var merchant_income_before := _merchant_epoch_income(ext)
 	var continuation_trace: Array[Dictionary] = []
 	var trace_report := {}
 	for slice in range(12):
@@ -129,6 +130,7 @@ func _init() -> void:
 	var report := _run_until_procurement(ext, 0)
 	var after_purchase := country.research_snapshot(handle)
 	var after_cash := int(country.snapshot(handle).cash)
+	var merchant_income_after := _merchant_epoch_income(ext)
 	if int(report.get("government_research_procured_points", 0)) <= 0:
 		print("  procurement diagnostic=", {
 			"done": report.get("done"), "fatal": report.get("fatal"),
@@ -174,6 +176,28 @@ func _init() -> void:
 		and not bool(closing.get("fatal", false))
 		and int(closing.get("goods_error", 1)) == 0
 		and int(closing.get("country_research_goods_consumed", 0)) == research_consumed_in_epoch)
+	# 现金去向：科研采购把国库现金付给本地商人，一分不差地记在商人 epoch_income 上。
+	var procurement_cash := int(report.get("government_research_procurement_cash", 0))
+	_expect("research procurement cash leaves the treasury one-for-one",
+		procurement_cash > 0 and before_cash - after_cash == procurement_cash)
+	_expect("research procurement cash reaches local merchants",
+		merchant_income_after - merchant_income_before >= procurement_cash)
+	# 支出侧：发布出来的财政批次必须把这笔非税支出公布出来，否则国库现金在掉、
+	# 国库收支的净额却还是零——这正是玩家看到的「买了科技值但支出是 0」。
+	var fiscal: Dictionary = country.fiscal_snapshot(handle)
+	var non_tax_values: PackedInt64Array = fiscal.get(
+		"non_tax_outflow", PackedInt64Array())
+	var non_tax_kinds: PackedStringArray = fiscal.get(
+		"non_tax_outflow_kinds", PackedStringArray())
+	var research_slot := non_tax_kinds.find("research_purchase")
+	_expect("fiscal snapshot names the non-tax outflow kinds",
+		non_tax_kinds.find("research_purchase") == 0
+		and non_tax_kinds.find("expedition_procurement") == 1)
+	_expect("fiscal batch books research procurement as a non-tax expense",
+		bool(fiscal.get("ok", false))
+		and research_slot >= 0
+		and research_slot < non_tax_values.size()
+		and int(non_tax_values[research_slot]) == procurement_cash)
 	_test_dead_merchant_skips_procurement_without_fatal(compiled)
 	print("technology procurement runtime: %s" % ("PASS" if _failures == 0 else "FAIL"))
 	quit(0 if _failures == 0 else 1)
@@ -266,6 +290,20 @@ func _test_dead_merchant_skips_procurement_without_fatal(compiled: Dictionary) -
 		and int(repaired.get("goods_error", 1)) == 0
 		and int(repaired.get("population_error", 1)) == 0)
 
+## 本 epoch 内商人累计的现金收入：科研采购的国库付款按商人人口等比记在这里，
+## 所以用它确认「钱确实到了商人手里」而不是凭空消失。
+func _merchant_epoch_income(ext: Object) -> int:
+	var snapshot: Dictionary = ext.get_population_cell_snapshot(0)
+	var flags: PackedByteArray = snapshot.get("merchant_flags", PackedByteArray())
+	var incomes: PackedInt64Array = snapshot.get(
+		"epoch_income_by_cohort", PackedInt64Array())
+	var total := 0
+	for index in range(mini(flags.size(), incomes.size())):
+		if int(flags[index]) != 0:
+			total += int(incomes[index])
+	return total
+
+
 func _run_day(ext: Object, day: int) -> Dictionary:
 	var report := {}
 	for slice in range(512):
@@ -284,13 +322,16 @@ func _run_until_procurement(ext: Object, day: int) -> Dictionary:
 	return report
 
 func _register_environment(ext: Object) -> void:
+	# Economy 的 environment snapshot 要求 X13a 之后的完整槽位：年度温度、天气类型与
+	# 地表覆盖也在必需清单里，缺一个就 fatal(required_environment_slot_missing)。
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
 			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
-			&"cell_weather_intensity", &"cell_elevation"]:
+			&"cell_weather_intensity", &"cell_elevation", &"cell_temp_365d"]:
 		var sid := int(ext.register_component(slot_name, 0, 1, false))
 		ext.write_f32_range(sid, 0, PackedFloat32Array([0.5]))
 	for slot_name in [&"cell_terrain", &"cell_landform", &"cell_vegetation",
-			&"cell_is_water", &"cell_has_river"]:
+			&"cell_is_water", &"cell_has_river", &"cell_weather_type",
+			&"cell_cover"]:
 		var sid := int(ext.register_component(slot_name, 2, 1, false))
 		ext.write_u8_range(sid, 0, PackedByteArray([0]))
 

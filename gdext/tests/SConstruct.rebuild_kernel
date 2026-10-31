@@ -1,0 +1,28 @@
+import os
+from pathlib import Path
+
+# The derived-layer kernel test (`derived_layer_rebuild_test.cpp`).
+#
+# WHY A SCONS FILE
+#
+# It used to be built by a one-off `cl` line that lived in a comment, so reproducing it
+# depended on somebody remembering the exact flags -- and when the binary under
+# `.codex-tmp` was the only copy, the *test* was unreproducible even though its source was
+# in the tree. `tools/ideology/verify_delivery.py` runs the binary at the path below, so
+# the build and the gate now share one definition.
+#
+# It needs no godot-cpp: `derived_cell_materializer.cpp` is Godot-free by design.
+root = Path(Dir('.').abspath).parent
+SConsignFile('../../tmp/rebuild_kernel/rebuild.sconsign.dblite')
+env = Environment()
+env.Append(CPPPATH=[str(root / 'src')])
+if env['PLATFORM'] == 'win32':
+    env.Append(CCFLAGS=['/std:c++17', '/EHsc', '/O2', '/W4'])
+else:
+    env.Append(CCFLAGS=['-std=c++17', '-O2'])
+objects = [
+    env.Object('../../tmp/rebuild_kernel/materializer',
+               '../src/derived_cell_materializer.cpp'),
+    env.Object('../../tmp/rebuild_kernel/test', 'derived_layer_rebuild_test.cpp'),
+]
+Default(env.Program('../../.codex-tmp/rebuild_test', objects))

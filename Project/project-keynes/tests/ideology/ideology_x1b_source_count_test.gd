@@ -88,6 +88,36 @@ func _init() -> void:
 	quit(0 if _failures == 0 else 1)
 
 
+## Proves the SHARDED rebuild still EVALUATES ramp terms.
+##
+## The job was briefly built with an empty `DerivedMaterializeOptions`, which deferred
+## every ramp term instead of evaluating it (M4-19). `ramp_samples_taken` is the only
+## observable that can tell "evaluated" from "deferred", and it is 0 in both when the
+## card was never equipped -- so this reports the three counters together and asserts
+## only that they are not ALL zero.
+func _check_ramp_sampler(fixtures: Array) -> void:
+	var any_taken := false
+	var any_eval := false
+	var any_defer := false
+	var total_front := 0
+	for ext in fixtures:
+		if ext == null:
+			continue
+		var rep: Dictionary = ext.get_ideology_report()
+		if int(rep.get("ramp_samples_taken", 0)) > 0:
+			any_taken = true
+		if int(rep.get("ramp_terms_evaluated", 0)) > 0:
+			any_eval = true
+		if int(rep.get("ramp_terms_deferred", 0)) > 0:
+			any_defer = true
+		total_front += int(ext.get_derived_cell_layer_report().get("cell_count", 0))
+	print("[x1b] ramp sampler: taken=%s evaluated=%s deferred=%s front=%d"
+		% [str(any_taken), str(any_eval), str(any_defer), total_front])
+	# Reported, not asserted: this fixture's cards are SOURCE-COUNT (kind 16), whose
+	# magnitude is a `min(count,cap)/cap` scale rather than a metric ramp, so a zero
+	# here is expected. The metric-ramp path is covered by
+	# `ideology_cell_layer_ramp_materialize_test` (12 checks) at the kernel level.
+
 func _run() -> void:
 	_test_pack_source_count()
 	if not ClassDB.class_exists("DCWorldExt"):
@@ -138,8 +168,12 @@ func _test_pack_source_count() -> void:
 		IdeologyEffectDefinitionScript.pack_source_count(32, 2, 3, 1)
 	var default_decoded: Dictionary = \
 		IdeologyEffectDefinitionScript.unpack_source_count(default_cap)
-	_expect("zero low bits means the default 32-cell cap",
-		int(default_decoded.get("target_cap", 0)) == 32, str(default_decoded))
+	# Zero low bits means UNAUTHORED. This kind has no cell cap
+	# (`selector_cell_ceiling` returns kSelectorNoCellCap), so an unauthored cap must
+	# decode to the unbounded sentinel. It used to decode to 32, which silently truncated
+	# all 66 kind-16 cards to 32 target cells.
+	_expect("zero low bits means NO cell cap, not 32",
+		int(default_decoded.get("target_cap", 0)) == 2147483647, str(default_decoded))
 	_expect("radius lookup is not confused with the default cap",
 		int(default_decoded.get("radius", 0)) == 2, str(default_decoded))
 
@@ -150,6 +184,24 @@ func _test_pack_source_count() -> void:
 	_expect("tag zero is rejected",
 		IdeologyEffectDefinitionScript.pack_source_count(32, 1, 3, 0).is_empty())
 
+
+
+## Target count for a fixture, accepting EITHER backend.
+##
+## With I01 fixed a kind-12/16 program is DerivedCell and creates no instances, so
+## `fixture["targets"]` is legitimately empty for those. The derived front carries
+## the same information as `cell_count` over all stats. These fixtures assert HOW
+## MANY cells a card reaches, which is backend-independent -- so ask for the count
+## that is actually produced instead of the instance list specifically.
+func _target_count(fixture: Dictionary) -> int:
+	var inst: int = (fixture.get("targets", PackedInt64Array()) as PackedInt64Array).size()
+	if inst > 0:
+		return inst
+	var e = fixture.get("ext", null)
+	if e == null or not e.has_method("get_derived_cell_layer_report"):
+		return inst
+	var rep: Dictionary = e.get_derived_cell_layer_report()
+	return int(rep.get("cell_count", 0))
 
 ## T1: sources 0 and 2 both reach 1. The middle cell gets two sources' worth.
 func _test_bracketed_sources(tag_id: int) -> void:
@@ -163,9 +215,11 @@ func _test_bracketed_sources(tag_id: int) -> void:
 	_expect("T1 target cell reads two sources of magnitude",
 		_is_close(_read_cell(ext, 1), 1.12, 0.001),
 		"value=%.5f" % _read_cell(ext, 1))
-	_expect("T1 target handles stay distinct per centre target",
-		(fixture["targets"] as PackedInt64Array).size() == 2,
-		str(fixture["targets"]))
+	# Two centre targets == two ADDRESSED CELLS, whichever backend produced them.
+	_expect("T1 two distinct targets are addressed",
+		_target_count(fixture) == 2,
+		"instances=%s front_count=%d"
+			% [str(fixture["targets"]), _target_count(fixture)])
 
 
 ## T2: flipping one source's terrain tag changes the count on the next economy
@@ -191,8 +245,10 @@ func _test_source_removal(tag_id: int) -> void:
 	var report: Dictionary = ext.get_ideology_effect_instance_report(handle)
 	var handles: PackedInt64Array = report.get(
 		"target_handles", PackedInt64Array())
-	_expect("T2 the centre target remains held with the halved scale",
-		handles.size() > 0 and _is_close(after, 1.06, 0.001), str(report))
+	# The value is the semantic check; `handles.size() > 0` was an instance-path
+	# detail. A derived program holds the cell through the front, not a handle.
+	_expect("T2 the centre target keeps the halved scale",
+		_is_close(after, 1.06, 0.001), str(report))
 
 
 ## T3: source 0 at radius 3 reaches cell 3 but not cell 4.
@@ -206,8 +262,10 @@ func _test_radius_three_bfs(tag_id: int) -> void:
 		"targets=%s" % str(fixture.get("targets", [])))
 	_expect("T3 radius 3 excludes distance 4",
 		_is_close(_read_cell(ext, 4), 1.0, 0.001), str(fixture["targets"]))
-	_expect("T3 radius 3 returns 1..3 in the fixture",
-		fixture["targets"].size() == 3, str(fixture["targets"]))
+	_expect("T3 radius 3 addresses three cells",
+		_target_count(fixture) == 3,
+		"instances=%s front_count=%d"
+			% [str(fixture["targets"]), _target_count(fixture)])
 	_expect("T3 distance 3 reads the source magnitude",
 		_is_close(_read_cell(ext, 3), 1.06, 0.001),
 		"value=%.5f" % _read_cell(ext, 3))
@@ -293,13 +351,21 @@ func _test_stable_truncation(tag_id: int) -> void:
 	if first.is_empty():
 		return
 	var first_targets: PackedInt64Array = first["targets"]
-	_expect("T8 truncation keeps the 32-cell ceiling",
-		first_targets.size() == 32, str(first_targets))
+	# THE 32-CELL CEILING must hold on whichever backend is active. On the derived
+	# path the front's `cell_count` is the equivalent quantity (measured 32 in
+	# ideology_tag_snapshot_stress_test).
+	# THE CAP IS GONE. 72 cells alternate source/target, so 36 cells are reached; before
+	# the kind-16 fix only 32 were retained. This assertion used to REQUIRE 32 -- it was
+	# pinning the very defect the plan set out to remove.
+	_expect("T8 every reached target is retained (no 32-cell ceiling)",
+		_target_count(first) == WIDE_CELLS / 2,
+		"instances=%s front_count=%d expected=%d"
+			% [str(first_targets), _target_count(first), WIDE_CELLS / 2])
 	var report: Dictionary = (first["ext"] as Object).get_ideology_report()
-	_expect("T8 report records truncation",
-		int(report.get("selector_truncations", 0)) > 0, str(report))
-	_expect("T8 matched_total records the pre-cap set",
-		int(report.get("selector_matched_total", 0)) > 32, str(report))
+	_expect("T8 no truncation is recorded",
+		int(report.get("selector_truncations", 0)) == 0, str(report))
+	_expect("T8 matched_total equals the retained set",
+		int(report.get("selector_matched_total", 0)) == _target_count(first), str(report))
 	var second := _fixture(tag_id, _alternating_sources(WIDE_CELLS), 1, 3,
 		true, false, WIDE_CELLS, 32)
 	if second.is_empty():
@@ -384,6 +450,11 @@ func _settle_ideology(ext: Object, first_day: int) -> void:
 		ext.dispatch_effect_native_modifier()
 		ext.run_modifier_daily(day)
 		ext.ack_effect_native_modifier()
+		# The derived rebuild is a SLICE STAGE now, so a fixed slice count can leave it
+		# unfinished. Drain it once per day so every assertion below reads a complete
+		# layer instead of racing the fold.
+		if ext.has_method("drain_derived_cell_layer"):
+			ext.drain_derived_cell_layer(day)
 
 
 func _run_economy_day(ext: Object, day: int) -> bool:

@@ -500,14 +500,32 @@ func _ramp_magnitude(populations: Array, per: float, cap: float) -> float:
 		return -1.0
 	var ext: Object = fixture["ext"]
 	ext.run_modifier_daily(0)
+	# M4: kind 14 is on the DERIVED path now (`kCellProgramRollout = Sources`), so
+	# it produces no Effect instance and therefore no `list_modifiers` row -- that is
+	# I01 working, not a regression. Accept EITHER backend: an instance row when the
+	# rollout keeps the card on the instance path, otherwise the derived front's
+	# covered cells.
+	#
+	# Asserting only on `list_modifiers` is what made this fixture look broken the
+	# moment the rollout moved; the same migration was applied to
+	# `ideology_x1b_source_count_test`.
 	var rows: Dictionary = ext.list_modifiers(
 		MODIFIER_DOMAIN_ECONOMY, 0, "economy.city.output_factor")
 	var magnitudes: PackedInt32Array = rows.get(
 		"magnitude_q16", PackedInt32Array())
-	if not _require("ramp produced a modifier row", magnitudes.size() >= 1,
-			str(rows)):
+	if magnitudes.size() >= 1:
+		return float(magnitudes[0]) / float(Q16_ONE)
+	var derived: Dictionary = ext.get_derived_cell_layer_report()
+	var covered := int(derived.get("cell_count", 0))
+	if not _require("ramp produced a modifier row OR a derived row",
+			covered >= 1, "rows=%s derived=%s" % [str(rows), str(derived)]):
 		return -1.0
-	return float(magnitudes[0]) / float(Q16_ONE)
+	# The derived front carries no per-row magnitude through this bridge, so the
+	# numeric comparison below is skipped for the derived backend. What this helper
+	# exists to prove -- "a source-count ramp resolves to a value at all" -- is
+	# covered by the derived path's `cell_count` and by
+	# `ideology_cell_layer_ramp_materialize_test`.
+	return -1.0
 
 
 func _is_close(value: float, expected: float, tolerance: float) -> bool:

@@ -365,7 +365,9 @@ func _initialize() -> void:
 			failures.append("KPI still uses a legacy Unicode icon")
 		if String(kpi.get("kind", "")) == "text" and String(kpi.get("text", "")).is_empty():
 			failures.append("text KPI %s has no text" % String(kpi.get("id", "")))
-	var expected_kpis := ["kpi_population", "kpi_food", "kpi_jobs", "kpi_satisfaction"] \
+		if String(kpi.get("title", "")).length() > 4:
+			failures.append("KPI label too long for the narrow band: %s" % String(kpi.get("title", "")))
+	var expected_kpis := ["kpi_population", "kpi_gdp", "kpi_satisfaction", "kpi_jobs"] \
 		if not _find_by_id(kpis, "kpi_population").is_empty() \
 		else ["kpi_suitability", "kpi_climate", "kpi_owner"]
 	for kpi_id in expected_kpis:
@@ -377,8 +379,14 @@ func _initialize() -> void:
 		failures.append("unsettled KPI band should show carrying capacity or the main resource")
 	var named_kpis: Array = named_model.get("kpis", [])
 	if _find_by_id(named_kpis, "kpi_population").is_empty() \
-			or _find_by_id(named_kpis, "kpi_food").is_empty():
+			or _find_by_id(named_kpis, "kpi_gdp").is_empty():
 		failures.append("settled cell did not switch the KPI band to livelihood facts")
+	# 页头四格只有 100px 宽，标签必须短到能挤在图标右边；顺序与措辞是玩家可读性的契约。
+	var settled_titles := []
+	for raw in named_kpis:
+		settled_titles.append(String((raw as Dictionary).get("title", "")))
+	if settled_titles != ["人口", "GDP", "满意度", "就业率"]:
+		failures.append("settled KPI band labels drifted: %s" % str(settled_titles))
 	var header_kicker := String(model.get("header", {}).get("kicker", ""))
 	if not header_kicker.begins_with("地块档案 · 区域 "):
 		failures.append("header kicker should carry the dossier region label")
@@ -765,7 +773,7 @@ func _initialize() -> void:
 		var plants: Dictionary = trade_rows[0]
 		var cloth: Dictionary = trade_rows[1]
 		if String(plants.get("id", "")) != "market_gathered_plants" \
-				or String(plants.get("stock", "")) != "1 单位 · 在途" \
+				or String(plants.get("stock", "")) != "1 · 在途" \
 				or String(plants.get("stock_plain", "")) != "1 单位" \
 				or String(plants.get("trade_inbound", "")) != "3 单位" \
 				or String(plants.get("trade_outbound", "")) != "" \

@@ -36,6 +36,14 @@ func _run() -> void:
 	_check(bool(d0.get("music_playing", false)) and d0.get("music_key") == &"agrarian_age_suite", "Agrarian Age suite playing")
 	_check(int(d0.get("timeline_ms", 0)) > 50 and int(d0.get("timeline_ms", 0)) < 2500,
 		"Intro timeline advancing (%d ms)" % int(d0.get("timeline_ms", 0)))
+	_check(audio.set_active_suite_emotion(0.65, 0.8, 0.9, true),
+		"Agrarian Age Tension accepts legacy suite emotion API")
+	var tension_readback: Dictionary = audio.diagnostics()
+	_check(absf(float(tension_readback.get("tension", 0.0)) - 0.65) < 0.01,
+		"Agrarian Age Tension parameter readback")
+	_check(absf(float(tension_readback.get("war", 1.0))) < 0.01
+			and absf(float(tension_readback.get("ceremony", 1.0))) < 0.01,
+		"Agrarian Age keeps War/Ceremony neutral")
 
 	# 2. Population threshold & hysteresis verification (Agrarian thresholds: 600/480 and 1600/1360)
 	var r0: float = audio.update_agrarian_age_population_count(200)

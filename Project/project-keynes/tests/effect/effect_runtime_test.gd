@@ -377,7 +377,10 @@ func _init() -> void:
 
 	var saved: PackedByteArray = ext.capture_effect_state()
 	assert(not saved.is_empty())
-	assert(saved.size() >= 8 and saved.decode_s32(4) == 11, "PKEF v11 header")
+	# Was 11. PKEF is at SAVE_SCHEMA_VERSION = 14 (effect_runtime.h) and this fixture had
+	# been DEAD since that bump: the assert aborted _init and the process then hung with no
+	# quit(), so it never reported anything and nobody noticed.
+	assert(saved.size() >= 8 and saved.decode_s32(4) == 14, "PKEF v14 header")
 	var truncated := saved.duplicate()
 	truncated.resize(max(0, truncated.size() - 1))
 	var bad_restore: Dictionary = ext.restore_effect_state(truncated)

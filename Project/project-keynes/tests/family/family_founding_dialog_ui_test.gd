@@ -135,19 +135,37 @@ func _run() -> void:
 	_expect("summary shows name, origin, founder count, trait keywords and first prestige effect",
 		String((first.get_node("%Title") as Label).text) == "长安张氏"
 		and String((first.get_node("%Origin") as Label).text).contains("采集营地")
-		and String((first.get_node("%Origin") as Label).text).contains("42")
+		and not String((first.get_node("%Origin") as Label).text).contains("42")
+		and String((first.get_node("%Population") as Label).text) == "42"
 		and String((first.get_node("%TraitSummary") as Label).text).contains("节俭")
 		and String((first.get_node("%EffectPreview") as RichTextLabel).get_parsed_text()).contains("专精产业"))
+	var first_card_copy := _visible_text(first)
+	_expect("family summaries avoid instructional and repeated population labels",
+		not first_card_copy.contains("悬停")
+		and not first_card_copy.contains("创始族人")
+		and not first_card_copy.contains("族人")
+		and not first_card_copy.contains(" 人"))
 	_expect("all details start collapsed, all three summaries remain in one column",
 		not first.is_details_expanded() and not third.is_details_expanded()
-		and (cards as GridContainer).columns == 1)
+		and (cards as GridContainer).columns == 1
+		and first.details_button().size.x <= 34.0
+		and first.choose_button().size.x > first.details_button().size.x * 2.5)
 	_expect("buff copy has no progress bars or duplicate numeric pills",
 		first.find_children("*", "ProgressBar", true, false).is_empty()
 		and (first.get_node("%TraitsList") as VBoxContainer).get_child_count() == 2)
 	var effect_preview := String((first.get_node("%EffectPreview") as RichTextLabel).get_parsed_text())
-	_expect("effect preview shows Prestige I statement instead of unreached-prestige placeholder",
-		effect_preview.contains("威望Ⅰ：本地块产出提高 2%")
+	_expect("effect preview shows the current effect without a prestige prefix",
+		effect_preview.contains("本地块产出提高 2%")
+		and not effect_preview.contains("威望Ⅰ")
 		and not effect_preview.contains("当前未达威望"))
+	first.mouse_entered.emit()
+	await process_frame
+	var dossier := root.find_child("FamilyDossierPopup", true, false) as PanelContainer
+	_expect("hover dossier lists the active prestige copy once",
+		dossier != null
+		and _count_text(_visible_text(dossier), "本地块产出提高 2%。") == 1)
+	first.mouse_exited.emit()
+	await create_timer(0.12).timeout
 	first.details_button().emit_signal("pressed")
 	await create_timer(0.22).timeout
 	_expect("details show complete trait copy and five prestige tiers without submitting",
@@ -187,6 +205,40 @@ func _run() -> void:
 		not dialog.is_collapsed()
 		and second.is_details_expanded()
 		and (dialog.get_node("ArchiveSurface/Frame/Margin/Column/Body") as Control).visible)
+	first.mouse_entered.emit()
+	await process_frame
+	_expect("hover dossier opens before the founding panel collapses",
+		_live_dossier(root) != null)
+	# 命中盒必须只变换一次：重复套用全局变换会把矩形推出屏幕，浮窗一出现就自收。
+	var card_origin := first.get_global_transform_with_canvas() * Vector2.ZERO
+	_expect("hover hit box covers the card's own top-left area",
+		first.hover_point_hits(card_origin + Vector2(2.0, 2.0)))
+	var card_center := first.get_global_transform_with_canvas() * (first.size * 0.5)
+	_expect("hover hit box keeps a pointer on the card itself",
+		first.hover_point_hits(card_center))
+	_expect("hover hit box rejects a pointer far from card and dossier",
+		not first.hover_point_hits(card_center - Vector2(4000.0, 4000.0)))
+	# 正式场景里浮窗挂在独立 CanvasLayer 上，命中盒必须跟着那一层自己的变换走。
+	var layer := CanvasLayer.new()
+	layer.offset = Vector2(37.0, 19.0)
+	root.add_child(layer)
+	var probe := PanelContainer.new()
+	probe.position = Vector2(200.0, 150.0)
+	probe.size = Vector2(120.0, 80.0)
+	layer.add_child(probe)
+	await process_frame
+	var probe_rect := FamilyFoundingCard._screen_rect(probe)
+	_expect("hover hit box follows the popup's own CanvasLayer transform",
+		probe_rect.position.distance_to(Vector2(237.0, 169.0)) <= 1.0
+		and probe_rect.size.distance_to(Vector2(120.0, 80.0)) <= 1.0)
+	layer.queue_free()
+	await process_frame
+	dialog.set_collapsed(true, false)
+	await process_frame
+	_expect("collapsing the founding panel retires the hover dossier",
+		_live_dossier(root) == null)
+	dialog.set_collapsed(false, false)
+	await process_frame
 	dialog.set_inspector_obscures(true)
 	_expect("large inspector temporarily collapses founding panel", dialog.is_collapsed())
 	dialog.set_inspector_obscures(false)
@@ -220,7 +272,16 @@ func _run() -> void:
 		not first.choose_button().disabled and third.choose_button().disabled
 		and String(dialog.get_node(
 			"ArchiveSurface/Frame/Margin/Column/Body/Status").text).find("候选已过期") >= 0)
+	first.mouse_entered.emit()
+	await process_frame
+	_expect("hover dossier opens before the founding panel closes",
+		_live_dossier(root) != null)
 	dialog.close_offer()
+	_expect("closing the founding panel retires the hover dossier at once",
+		_live_dossier(root) == null)
+	await create_timer(0.2).timeout
+	_expect("hover dossier stays retired after the close fade",
+		_live_dossier(root) == null)
 	_expect("close hides the dialog", not dialog.is_offer_open())
 	dialog.present_offer({"offer_id": 10, "generation": 1,
 		"candidates": [_card("新城王氏", "伐木场", "多子多福")]})
@@ -239,8 +300,9 @@ func _run() -> void:
 	_expect("split proposal explains surname, whole-branch transfer and the continuing parent",
 		split_prompt.contains("保留原姓氏") and split_prompt.contains("本地整支")
 		and split_prompt.contains("其他城市继续存在"))
-	_expect("split cards show branch people and a distinct confirmation action",
-		(first.get_node("%Origin") as Label).text.contains("分支族人")
+	_expect("split cards keep population iconography and a distinct confirmation action",
+		String((first.get_node("%Population") as Label).text) == "42"
+		and not (first.get_node("%Origin") as Label).text.contains("分支族人")
 		and first.choose_button().text == "确立此家风")
 	long_card["trait_display_names"] = PackedStringArray(["节俭持家", "采集产业专精", "勤勉从业", "开拓门风"])
 	long_card["trait_descriptions"] = PackedStringArray(["日常消费减少 10%。", "投资相关产业的可能性增加 50%。",
@@ -488,6 +550,11 @@ func _capture_visual_qa() -> void:
 		})
 		var dlg := (load("res://scenes/ui/family/family_founding_dialog.tscn") as PackedScene).instantiate() as FamilyFoundingDialog
 		host.add_child(dlg)
+		var modal_layer := Control.new()
+		modal_layer.name = "ModalLayer"
+		modal_layer.size = Vector2(viewport_size)
+		modal_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		host.add_child(modal_layer)
 		var safe := Rect2(Vector2(52.0, 56.0), Vector2(viewport_size.x - 52.0 - 460.0, viewport_size.y - 104.0))
 		dlg.set_safe_area(safe)
 		dlg.present_offer(sample_offer)
@@ -502,6 +569,58 @@ func _capture_visual_qa() -> void:
 			print("[founding-qa] %s" % ProjectSettings.globalize_path(out_path))
 		var card0 := dlg.get_node("ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid/Card0") as FamilyFoundingCard
 		if card0 != null:
+			card0.mouse_entered.emit()
+			var dossier := modal_dossier(vp)
+			for _wait in 30:
+				if dossier != null and dossier.modulate.a >= 0.99:
+					break
+				await create_timer(0.05).timeout
+				dossier = modal_dossier(vp)
+			await RenderingServer.frame_post_draw
+			_expect("hover dossier opens at %dx%d" % [viewport_size.x, viewport_size.y],
+				dossier != null and dossier.visible and dossier.modulate.a >= 0.95)
+			if dossier != null:
+				var body_scroll := dossier.find_child("DossierBodyScroll", true, false)
+				_expect("hover dossier exposes a readable scroll body at %dx%d" % [
+					viewport_size.x, viewport_size.y],
+					body_scroll is ScrollContainer
+					and (body_scroll as ScrollContainer).size.y > 200.0)
+				var dossier_rect := dossier.get_global_rect()
+				_expect("hover dossier uses a bounded paper layer at %dx%d" % [
+					viewport_size.x, viewport_size.y],
+					dossier_rect.position.x >= 0.0
+					and dossier_rect.end.x <= viewport_size.x + 1.0
+					and dossier_rect.position.y >= 0.0
+					and dossier_rect.end.y <= viewport_size.y + 1.0
+					and dossier.size.y <= viewport_size.y
+					and dossier.z_index > (dlg.get_node("ArchiveSurface") as CanvasItem).z_index)
+				var content_bottom := _visible_content_bottom(dossier)
+				_expect("hover dossier body is clipped inside the paper at %dx%d" % [
+					viewport_size.x, viewport_size.y],
+					content_bottom <= dossier_rect.end.y + 1.0)
+				var dossier_copy := _visible_text(dossier)
+				_expect("hover dossier removes redundant labels at %dx%d" % [
+					viewport_size.x, viewport_size.y],
+					not dossier_copy.contains("家族卷宗")
+					and not dossier_copy.contains("悬停")
+					and not dossier_copy.contains("创始族人"))
+				_expect("hover dossier presents each trait and effect name once at %dx%d" % [
+					viewport_size.x, viewport_size.y],
+					_count_text(dossier_copy, "暴食") == 1
+					and _count_text(dossier_copy, "菜食门风") == 1
+					and _count_text(dossier_copy, "扩张主义") == 1)
+				var dossier_path := "%s/founding_%dx%d_dossier_hover.png" % [
+					out_dir, viewport_size.x, viewport_size.y]
+				var hover_img := vp.get_texture().get_image()
+				if hover_img != null and not hover_img.is_empty():
+					hover_img.save_png(dossier_path)
+					print("[founding-qa] %s" % ProjectSettings.globalize_path(dossier_path))
+			card0.mouse_exited.emit()
+			await create_timer(0.12).timeout
+			var closed_dossier := modal_dossier(vp)
+			_expect("hover dossier closes after pointer leaves at %dx%d" % [
+				viewport_size.x, viewport_size.y],
+				closed_dossier == null or closed_dossier.is_queued_for_deletion())
 			card0.details_button().emit_signal("pressed")
 			await create_timer(0.25).timeout
 			var tiers := card0.get_node("%EffectTiersBox") as Control
@@ -532,3 +651,52 @@ func _capture_visual_qa() -> void:
 				print("[founding-qa] %s" % ProjectSettings.globalize_path(collapsed_path))
 		vp.queue_free()
 		await process_frame
+
+
+func modal_dossier(vp: SubViewport) -> PanelContainer:
+	return _live_dossier(vp)
+
+
+## 收回的浮窗要等一帧才真正消失（queue_free），断言必须把"已排队删除"当作没有。
+func _live_dossier(node: Node) -> PanelContainer:
+	# 认标记不认名字：同一帧内换新浮窗时引擎会把新节点改名。
+	for candidate in node.find_children("*", "PanelContainer", true, false):
+		if candidate.has_meta("family_dossier_popup") and not candidate.is_queued_for_deletion():
+			return candidate as PanelContainer
+	return null
+
+
+func _visible_text(node: Node) -> String:
+	var parts := PackedStringArray()
+	if node is Label:
+		parts.append((node as Label).text)
+	elif node is RichTextLabel:
+		parts.append((node as RichTextLabel).get_parsed_text())
+	for child in node.get_children():
+		if child is CanvasItem and not (child as CanvasItem).visible:
+			continue
+		parts.append(_visible_text(child))
+	return "\n".join(parts)
+
+
+func _count_text(haystack: String, needle: String) -> int:
+	var count := 0
+	var cursor := 0
+	while true:
+		var found := haystack.find(needle, cursor)
+		if found < 0:
+			break
+		count += 1
+		cursor = found + needle.length()
+	return count
+
+
+func _visible_content_bottom(node: Node) -> float:
+	var bottom := 0.0
+	for child in node.get_children():
+		if child is CanvasItem and not (child as CanvasItem).visible:
+			continue
+		bottom = maxf(bottom, _visible_content_bottom(child))
+		if child is Control:
+			bottom = maxf(bottom, (child as Control).get_global_rect().end.y)
+	return bottom

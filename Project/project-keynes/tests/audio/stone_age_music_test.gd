@@ -32,6 +32,14 @@ func _run() -> void:
 	_check(bool(d0.get("music_playing", false)) and d0.get("music_key") == &"stone_age_suite", "Stone Age suite playing")
 	_check(int(d0.get("timeline_ms", 0)) > 50 and int(d0.get("timeline_ms", 0)) < 2500,
 		"Intro timeline advancing (%d ms)" % int(d0.get("timeline_ms", 0)))
+	_check(audio.set_active_suite_emotion(0.65, 0.8, 0.9, true),
+		"Stone Age Tension accepts legacy suite emotion API")
+	var tension_readback: Dictionary = audio.diagnostics()
+	_check(absf(float(tension_readback.get("tension", 0.0)) - 0.65) < 0.01,
+		"Stone Age Tension parameter readback")
+	_check(absf(float(tension_readback.get("war", 1.0))) < 0.01
+			and absf(float(tension_readback.get("ceremony", 1.0))) < 0.01,
+		"Stone Age keeps War/Ceremony neutral")
 
 	# 2. Population threshold & hysteresis verification
 	var r0: float = audio.update_stone_age_population_count(80)

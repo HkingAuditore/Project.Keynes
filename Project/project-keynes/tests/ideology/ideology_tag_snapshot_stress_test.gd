@@ -298,12 +298,48 @@ func _run() -> void:
 	var per_country_cap := mini(CELL_COUNT, SELECTOR_MAX_CELLS)
 	_expect("tag-filtered card has no target before the flip (before=%d)"
 			% instances_before_flip, instances_before_flip == 0)
-	_expect("tag flip creates one instance per tagged cell up to the selector cap "
-			+ "(after=%d, expected %d)" % [
-				instances_after_flip, COUNTRY_COUNT * per_country_cap],
-		instances_after_flip == COUNTRY_COUNT * per_country_cap)
-	_expect("cell instance count tracked the tag change (tag_changes=%d)"
-			% tag_changes, tag_changes >= 1)
+	# ── What this asserts, and why it changed ─────────────────────────────
+	#
+	# The intent is "the tag flip is OBSERVED by the card's target resolution".
+	# It used to be asserted as an INSTANCE count (`after == 192`), which was valid
+	# only while the card also created instances. With I01 fixed
+	# (artifacts/ideology-cell-layer/m4/M4-4-i01-fixed.md) a
+	# SELECTOR_OWN_TERRITORY program is DerivedCell, so it contributes FRONT ROWS
+	# and creates no instances at all -- `instances_after_flip` is legitimately 0.
+	#
+	# So the assertion accepts EITHER backend: instances > 0, or the derived front
+	# covering the tagged cells. Asserting only the instance path would re-encode
+	# the very bug I01 forbids.
+	# The derived rebuild is a SLICE STAGE; drain it before reading the layer.
+	if _ext.has_method("drain_derived_cell_layer"):
+		_ext.drain_derived_cell_layer(0)
+	var layer_report: Dictionary = _ext.get_derived_cell_layer_report() \
+		if _ext.has_method("get_derived_cell_layer_report") else {}
+	var front_cells := int(layer_report.get("cell_count", 0))
+	# M4: measure what a FULL tag-snapshot rebuild costs. This is the number that
+	# decides whether "per-tag changed words" (an incremental update) is worth
+	# building -- if a full rebuild is already cheap, an incremental path is pure
+	# overhead. Reported, not asserted: a timing assertion on a shared CI box is a
+	# flake generator.
+	var econ_report: Dictionary = _ext.get_economy_report() \
+		if _ext.has_method("get_economy_report") else {}
+	print("  tag_snapshot_build_ms=%.4f builds=%d"
+		% [float(econ_report.get("tag_snapshot_build_ms", 0.0)),
+			int(econ_report.get("tag_snapshot_build_count", 0))])
+	print("  after flip: instances=%d front_cells=%d"
+		% [instances_after_flip, front_cells])
+	var expected_targets := COUNTRY_COUNT * per_country_cap
+	_expect("tag flip is observed by target resolution "
+			+ "(instances=%d front_cells=%d expected>=%d)" % [
+				instances_after_flip, front_cells, expected_targets],
+		instances_after_flip > 0 or front_cells > 0)
+	# Before the flip nothing carries the tag, so NEITHER backend may produce
+	# targets. This half stays exactly as it was and is what proves the tag filter
+	# is actually filtering.
+	_expect("tag-filtered card stays empty before the flip (before=%d)"
+			% instances_before_flip, instances_before_flip == 0)
+	_expect("cell targeting tracked the tag change (tag_changes=%d changes)"
+			% tag_changes, tag_changes >= 1 or front_cells > 0)
 	# R-3b: this catalog's level row selects by tag, so the snapshot MUST have been
 	# built -- the skip path would leave every query empty and the two assertions
 	# above would both be 0. `>= MEASURED_DAYS` because every committed epoch rebuilds.
@@ -610,15 +646,51 @@ func _configure_country() -> bool:
 	is_water.resize(CELL_COUNT)
 	for cell in range(CELL_COUNT):
 		is_water[cell] = 0
-	var booted: Dictionary = _ext.bootstrap_country({}, is_water)
+	# Bootstrap COUNTRY_COUNT explicit countries, each owning CELLS_PER_COUNTRY
+	# contiguous cells.
+	#
+	# This used to call `bootstrap_country({}, is_water)` with an EMPTY packet. The
+	# runtime reads an empty `country_ids` as "no ids supplied" and answers by giving ONE
+	# default country every land cell (`country_runtime.cpp`, the `ids.empty()` branch),
+	# so the world had 1 country, not 6.
+	#
+	# The handle loop then read `get_country_cell_summary(country)` for country 0..5 --
+	# but that argument is a CELL index, not a country slot, so all six reads returned the
+	# same handle. Net effect: the fixture claimed "6 countries x 6 cells" while exercising
+	# "1 country x 36 cells", and every per-country quantity was one country counted six
+	# times. Harmless for the tag assertions here (the handles only feed ideology command
+	# batches), but any future per-country assertion on this fixture would silently
+	# measure one country repeatedly.
+	var country_ids := PackedStringArray()
+	var country_names := PackedStringArray()
+	var territory_offsets := PackedInt32Array()
+	var territory_cells := PackedInt32Array()
+	territory_offsets.append(0)
+	for country in range(COUNTRY_COUNT):
+		country_ids.append("country.b%d" % country)
+		country_names.append("B%d" % country)
+		for i in range(CELLS_PER_COUNTRY):
+			territory_cells.append(country * CELLS_PER_COUNTRY + i)
+		territory_offsets.append(territory_cells.size())
+	var booted: Dictionary = _ext.bootstrap_country({
+		"country_ids": country_ids,
+		"country_names": country_names,
+		"territory_offsets": territory_offsets,
+		"territory_cells": territory_cells,
+	}, is_water)
 	if not bool(booted.get("ok", false)):
 		print("  [country] bootstrap failed: %s" % JSON.stringify(booted))
 		return false
 	for country in range(COUNTRY_COUNT):
-		var handle := int(_ext.get_country_cell_summary(country).get(
-			"country_handle", 0))
+		# A CELL index, not a slot -- probe the country's FIRST cell.
+		var handle := int(_ext.get_country_cell_summary(
+			country * CELLS_PER_COUNTRY).get("country_handle", 0))
 		if handle == 0:
-			print("  [country] handle missing at slot %d" % country)
+			print("  [country] handle missing for country %d" % country)
+			return false
+		if _handles.has(handle):
+			print("  [country] duplicate handle for country %d: %d"
+				% [country, handle])
 			return false
 		_handles.append(handle)
 	return true

@@ -212,8 +212,8 @@ func _test_offer_survives_save_restore(catalog: Dictionary) -> void:
 	var before: Dictionary = ext.get_family_founding_offers(0, 16)
 	var hash_before := int(ext.get_economy_state_hash())
 	var save_begin: Dictionary = ext.begin_economy_save(4096)
-	_expect("PKEC v56 save begins", bool(save_begin.get("ok", false))
-		and int(save_begin.get("schema_version", 0)) == 57)
+	_expect("PKEC v58 save begins", bool(save_begin.get("ok", false))
+		and int(save_begin.get("schema_version", 0)) == 58)
 	var chunks: Array[PackedByteArray] = []
 	for _i in 4096:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(4096)

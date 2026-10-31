@@ -50,6 +50,8 @@ func _init() -> void:
 func _run() -> void:
 	_check_strata_table()
 	_check_bottleneck_rules()
+	_check_cashflow()
+	_check_price_and_living()
 	_check_history_buffer()
 	_check_components()
 	_check_runtime_models()
@@ -148,6 +150,126 @@ func _check_history_buffer() -> void:
 	_expect("history reset clears", history.size() == 0 and is_nan(history.delta("population")))
 
 
+## 国库收支：合计只算非零项，明细表则五类税种全列，零值写成短横线。
+func _check_cashflow() -> void:
+	var missing: Dictionary = EconomyDossierViewModel.build_cashflow({})
+	_expect("cashflow degrades without a fiscal snapshot",
+		not bool(missing.get("ok", true)) and (missing.detail_rows as Array).is_empty())
+	var snapshot := {
+		"ok": true, "sample_day": 41,
+		"tax_kinds": PackedStringArray([
+			"income", "consumption", "business", "import", "export"]),
+		"collected": PackedInt64Array([500000, 120000, 30000, 0, 0]),
+		"subsidy_paid": PackedInt64Array([0, 0, 40000, 0, 0]),
+		"subsidy_requested": PackedInt64Array([0, 0, 50000, 0, 0]),
+		"tax_base": PackedInt64Array([5000000, 2400000, 900000, 0, 0]),
+	}
+	var flow: Dictionary = EconomyDossierViewModel.build_cashflow(snapshot)
+	_expect("cashflow ok", bool(flow.get("ok", false)))
+	var rows: Array = flow.detail_rows
+	_expect("cashflow details list all five tax kinds", rows.size() == 5)
+	_expect("cashflow details name the kinds in native order",
+		String(rows[0].cells.name.text) == "所得税"
+			and String(rows[3].cells.name.text) == "进口关税")
+	_expect("cashflow details blank out unused kinds",
+		String(rows[3].cells.collected.text) == "—"
+			and String(rows[3].cells.base.text) == "—")
+	_expect("cashflow details keep the levied kinds",
+		String(rows[0].cells.collected.text) == "50"
+			and String(rows[2].cells.paid.text) == "4")
+	_expect("cashflow totals and net reconcile",
+		is_equal_approx(float(flow.income_total), 65.0)
+			and is_equal_approx(float(flow.expense_total), 4.0)
+			and is_equal_approx(float(flow.net), 61.0))
+	_expect("cashflow formats the signed net", String(flow.net_text) == "+61"
+		and bool(flow.net_positive))
+	_expect("cashflow day text follows the settlement sample day",
+		String(flow.day_text) == "第 42 日")
+	var income_segments: Array = flow.income_segments
+	var expense_segments: Array = flow.expense_segments
+	_expect("cashflow stacks only the levied tax kinds, largest first",
+		income_segments.size() == 3 and String(income_segments[0].label) == "所得税"
+			and String(income_segments[2].label) == "营业税")
+	_expect("cashflow stacks only the paid subsidy kinds",
+		expense_segments.size() == 1
+			and String(expense_segments[0].label) == "营业补贴")
+	_expect("cashflow stack shares sum to the side total",
+		is_equal_approx(float(income_segments[0].value)
+			+ float(income_segments[1].value) + float(income_segments[2].value), 65.0))
+	var spent: Dictionary = EconomyDossierViewModel.build_cashflow({
+		"ok": true, "sample_day": 3,
+		"tax_kinds": PackedStringArray(["income"]),
+		"collected": PackedInt64Array([0]),
+		"subsidy_paid": PackedInt64Array([250000]),
+	})
+	_expect("cashflow reports a deficit when only subsidies are paid",
+		is_equal_approx(float(spent.net), -25.0) and not bool(spent.net_positive)
+			and String(spent.net_text) == "−25")
+	# 非税国库支出（科研采购、开拓采购、工程、运河）都不是税种，却真实减少国库
+	# 现金，必须进支出侧与净额；否则国库现金在掉，账面净额却还是零。
+	var buying: Dictionary = EconomyDossierViewModel.build_cashflow({
+		"ok": true, "sample_day": 5,
+		"tax_kinds": PackedStringArray([
+			"income", "consumption", "business", "import", "export"]),
+		"collected": PackedInt64Array([100000, 0, 0, 0, 0]),
+		"subsidy_paid": PackedInt64Array([0, 0, 0, 0, 0]),
+		"non_tax_outflow_kinds": PackedStringArray([
+			"research_purchase", "expedition_procurement", "construction", "canal"]),
+		"non_tax_outflow": PackedInt64Array([60000, 30000, 0, 10000]),
+	})
+	_expect("cashflow counts non-tax outflows as treasury expense",
+		is_equal_approx(float(buying.expense_total), 10.0)
+			and is_equal_approx(float(buying.net), 0.0))
+	_expect("cashflow stacks each non-tax outflow as its own segment",
+		(buying.expense_segments as Array).size() == 3
+			and String(buying.expense_segments[0].label) == "科研采购"
+			and String(buying.expense_segments[1].label) == "开拓采购"
+			and String(buying.expense_segments[2].label) == "运河支出")
+	_expect("cashflow details expose the non-tax rows after the tax ledger",
+		(buying.detail_rows as Array).size() == 8
+			and String(buying.detail_rows[5].cells.name.text) == "科研采购"
+			and String(buying.detail_rows[5].cells.paid.text) == "6"
+			and String(buying.detail_rows[6].cells.name.text) == "开拓采购"
+			and String(buying.detail_rows[7].cells.name.text) == "运河支出")
+	# 零额的非税项不占行：它们不是税种，写一行零值只会被读成漏税。
+	_expect("cashflow skips zero non-tax outflows",
+		not (buying.detail_rows as Array).any(func(row: Dictionary) -> bool:
+			return String(row.get("id", "")) == "construction"))
+	_expect("cashflow keeps the tax-only ledger when nothing was purchased",
+		rows.size() == 5)
+
+
+## 物价指数是相对成本锚的偏离：100 = 成本锚，裂口 = CPI − PPI。
+func _check_price_and_living() -> void:
+	var summary := {
+		"ok": true,
+		"consumer_price_index_q16": int(1.05 * 65536.0),
+		"consumer_price_index_valid": true,
+		"producer_price_index_q16": int(0.96 * 65536.0),
+		"producer_price_index_valid": true,
+		"living_standard_level_q16": int(2.5 * 65536.0),
+		"living_standard_level_valid": true,
+	}
+	var price: Dictionary = EconomyDossierViewModel.price_model(summary)
+	_expect("price model reads both indices", (price.rows as Array).size() == 2
+		and String(price.rows[0].label) == "CPI" and String(price.rows[1].label) == "PPI")
+	_expect("price model formats the index", absf(float(price.rows[0].index) - 105.0) < 0.01
+		and String(price.rows[0].text) == "105.0")
+	_expect("price model reports the CPI - PPI spread",
+		absf(float(price.spread) - 9.0) < 0.01)
+	summary["producer_price_index_valid"] = false
+	var partial: Dictionary = EconomyDossierViewModel.price_model(summary)
+	_expect("invalid index shows a dash instead of a zero",
+		not bool(partial.rows[1].valid) and String(partial.rows[1].text) == "—"
+			and is_nan(float(partial.spread)))
+	var living: Dictionary = EconomyDossierViewModel.living_standard_model(summary)
+	_expect("living standard maps the Q16 level onto a named rung",
+		bool(living.get("ok", false)) and is_equal_approx(float(living.level), 2.5)
+			and String(living.name) == "贫困" and String(living.text) == "2.5")
+	_expect("living standard reports invalid when the summary has none",
+		not bool(EconomyDossierViewModel.living_standard_model({"ok": true}).ok))
+
+
 func _check_components() -> void:
 	var kpi := DossierKpiCard.new()
 	kpi.set_metric({"id": "x", "title": "人口", "value": 1234.0, "kind": "count",
@@ -183,7 +305,23 @@ func _check_components() -> void:
 	ring.set_gauge("labor", "劳动力", 0.4, "空缺", UITokens.DOSSIER_OXBLOOD, "")
 	var diverging := DossierDivergingBar.new()
 	diverging.set_values("进口", 1.0, "1", "出口", 2.0, "2")
-	for control in [kpi, stacked, bars, radar, ledger, heat, nav, ring, diverging]:
+	var trend := DossierTrendLines.new()
+	trend.set_series(PackedFloat32Array([1.0, 2.0, 3.0]),
+		PackedFloat32Array([0.5, NAN, 1.0]), "+2", true)
+	var ladder := DossierLevelLadder.new()
+	ladder.set_level(2.5, 6, "贫困")
+	var axis := DossierDeviationAxis.new()
+	axis.set_indices([{"label": "CPI", "index": 105.0, "valid": true, "text": "105.0"},
+		{"label": "PPI", "index": 96.0, "valid": true, "text": "96.0"}])
+	var spark_value := DossierSparkValue.new()
+	spark_value.set_value({"value": 1.5, "delta": 0.2, "spark": PackedFloat32Array([1.0, 1.2, 1.5]),
+		"kind": "money"})
+	_expect("trend lines track the daily series", trend.day_count() == 3)
+	_expect("level ladder keeps its continuous level", is_equal_approx(ladder.level(), 2.5))
+	_expect("deviation axis keeps both indices", axis.row_count() == 2)
+	_expect("spark value formats the reading", spark_value.value_text() == "1.5")
+	for control in [kpi, stacked, bars, radar, ledger, heat, nav, ring, diverging,
+			trend, ladder, axis, spark_value]:
 		(control as Node).free()
 
 
@@ -202,6 +340,27 @@ func _check_dossier_scene(model: Dictionary, city_cell: int) -> void:
 	_expect("dossier opens on overview", dossier.current_chapter() == "overview")
 	_expect("dossier KPI strip filled", dossier.kpi_texts().size() == 5
 		and not dossier.kpi_texts()[0].is_empty())
+	var overview_page := dossier.page("overview")
+	var income_bar := overview_page.get_node("%IncomeBar") as DossierStackedBar
+	var expense_bar := overview_page.get_node("%ExpenseBar") as DossierStackedBar
+	var trend := overview_page.get_node("%TrendChart") as DossierTrendLines
+	_expect("overview shows the treasury cashflow block",
+		income_bar != null and income_bar.visible and expense_bar.visible
+			and trend != null and trend.visible)
+	_expect("cashflow stacks the levied kinds and the paid subsidies",
+		income_bar.segment_count() == 3 and expense_bar.segment_count() == 1)
+	var detail := overview_page.get_node("%CashflowDetail") as DossierLedgerTable
+	_expect("cashflow detail starts collapsed with all five tax lanes",
+		detail != null and not detail.visible and detail.row_count() == 5)
+	var toggle := overview_page.get_node("%CashflowToggle") as Button
+	toggle.pressed.emit()
+	_expect("cashflow detail expands on demand", detail.visible)
+	toggle.pressed.emit()
+	_expect("cashflow detail collapses again", not detail.visible)
+	_expect("overview shows the per-capita and price instruments",
+		overview_page.get_node("%PerCapitaValue").visible
+			and overview_page.get_node("%LivingLadder").visible
+			and overview_page.get_node("%PriceAxis").visible)
 	var nodes := {}
 	for chapter in EconomyDossierViewModel.CHAPTERS:
 		var chapter_id := String(chapter.id)
@@ -343,13 +502,14 @@ func _check_runtime_models() -> void:
 		_expect("KPI sparkline comes from history", (kpis[0].spark as PackedFloat32Array).size() == 1)
 	var overview := vm.overview_model()
 	_expect("overview ok", bool(overview.get("ok", false)))
-	var strata: Array = overview.get("strata", [])
-	_expect("overview has 8 strata", strata.size() == 8)
-	var strata_population := 0.0
-	for row in strata:
-		strata_population += float(row.population)
-	_expect("strata population partitions national population",
-		is_equal_approx(strata_population, float(summary.get("population", 0))))
+	_expect("overview carries cashflow, prices and living standard",
+		(overview.get("cashflow", {}) as Dictionary).has("net")
+			and (overview.get("price", {}) as Dictionary).has("rows")
+			and (overview.get("living", {}) as Dictionary).has("level"))
+	# 总览不再重复居民收支 / 阶层 / 卡点：这些都有独立章节。
+	_expect("overview no longer duplicates the strata chapters",
+		not overview.has("strata") and not overview.has("bottlenecks")
+			and not overview.has("income_segments"))
 	var strata_model := vm.strata_model(-1)
 	_expect("strata model selects a populated stratum",
 		bool(strata_model.get("ok", false)) and not (strata_model.get("selected", {}) as Dictionary).is_empty())
@@ -411,7 +571,14 @@ func _check_runtime_models() -> void:
 	_expect("scope label resolves", not vm.scope_label().is_empty())
 	vm.scope_cell = -1
 	_scene_args = [{"available": true, "economy_facade": facade, "country_handle": handle,
-		"treasury": {"cash": 50000}, "trade_summary": {"ok": false}, "economy_history": history},
+		"treasury": {"cash": 50000}, "trade_summary": {"ok": false}, "economy_history": history,
+		"fiscal": {"ok": true, "sample_day": 6,
+			"tax_kinds": PackedStringArray([
+				"income", "consumption", "business", "import", "export"]),
+			"collected": PackedInt64Array([420000, 90000, 20000, 0, 0]),
+			"subsidy_paid": PackedInt64Array([0, 0, 60000, 0, 0]),
+			"subsidy_requested": PackedInt64Array([0, 0, 80000, 0, 0]),
+			"tax_base": PackedInt64Array([4200000, 1800000, 600000, 0, 0])}},
 		first_cell]
 	vm.configure({"available": false, "reason": "测试不可用"})
 	_expect("unavailable reason surfaces", not vm.available()

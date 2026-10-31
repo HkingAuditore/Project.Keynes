@@ -61,7 +61,8 @@ func _run() -> void:
 	top.update_time_state(999,12,31,false,50)
 	date.pressed.emit()
 	_expect("date opens chronicle intent once", clicked[0] == 1)
-	_expect("date tooltip explains annual history", date.tooltip_text.contains("年度纪事"))
+	_expect("date tooltip explains annual history",
+		date.tooltip_text == "查阅历年发展报告")
 	var bar = load("res://scenes/ui/country_action_bar.tscn").instantiate()
 	root.add_child(bar)
 	_expect("bottom affairs has five original entries", bar.get("_buttons").size() == 5 and not bar.get("_buttons").has("annual"))
@@ -184,6 +185,19 @@ func _run() -> void:
 		label_sizes.size() > 3 and label_sizes[label_sizes.size() - 1] >= 80
 		and float(label_sizes[label_sizes.size() - 1]) / maxf(1.0, float(label_sizes[0])) >= 6.0)
 	_expect("footer stays compact", workspace.get("_footer").size.y <= 48)
+	var cover_reader = workspace.reader()
+	for section_index in cover_reader.sections().size():
+		var section: AnnualSection = cover_reader.sections()[section_index]
+		var emblem := section.find_child("ChapterEmblem", true, false)
+		_expect("chapter %d carries its generated emblem" % (section_index + 1),
+			emblem != null and emblem.atlas != null and emblem.index == section_index)
+	_expect("chapter emblems use a complete transparent 3x3 atlas",
+		cover_reader.sections()[0].find_child("ChapterEmblem", true, false).atlas
+			.get_image().detect_alpha() != Image.ALPHA_NONE)
+	var badge: TextureRect = cover_reader.cover().get("_seal_art")
+	_expect("cover keeps the generated rosette colours",
+		float(badge.material.get_shader_parameter("grit")) == 0.0
+		and float(badge.material.get_shader_parameter("density")) == 1.0)
 	workspace.call("_show_page", 6, false)
 	await process_frame
 	await process_frame

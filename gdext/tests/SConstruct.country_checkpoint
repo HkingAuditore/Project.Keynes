@@ -1,0 +1,24 @@
+import os
+from pathlib import Path
+
+# Country checkpoint ABI/schema refusal fixture (`country_checkpoint_refusal_test.cpp`).
+#
+# It links the PRODUCTION `country_core.cpp`, so the refusal it asserts is the same code a
+# restore runs -- not a re-implementation. `country_core.cpp` is Godot-free, so no
+# godot-cpp is needed here.
+root = Path(Dir('.').abspath).parent
+SConsignFile('../../tmp/country_checkpoint/refusal.sconsign.dblite')
+env = Environment()
+env.Append(CPPPATH=[str(root / 'src')])
+if env['PLATFORM'] == 'win32':
+    env.Append(CCFLAGS=['/std:c++17', '/EHsc', '/O2', '/W4'])
+else:
+    env.Append(CCFLAGS=['-std=c++17', '-O2'])
+objects = [
+    env.Object('../../tmp/country_checkpoint/core', '../src/country_core.cpp'),
+    env.Object('../../tmp/country_checkpoint/test',
+               'country_checkpoint_refusal_test.cpp'),
+]
+# Same output location convention as the derived-layer kernel: an untracked build output
+# next to `rebuild_test.exe`, so `tools/ideology/verify_delivery.py` can run both.
+Default(env.Program('../../.codex-tmp/country_checkpoint_refusal_test', objects))
