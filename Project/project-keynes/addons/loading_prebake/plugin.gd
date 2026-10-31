@@ -34,10 +34,13 @@ class CatalogExport extends EditorExportPlugin:
 		if not bool(status.get("fresh", false)):
 			push_warning("[loading-catalog] 导出前快照过期：%s；尝试拉起独立进程重烘……" % String(status.get("reason", "")))
 			var run: Dictionary = baker.run_prebake_subprocess()
-			print("[loading-catalog] 导出内预烘 exit=%d，耗时 %d ms" % [
-				int(run.get("exit_code", -1)), int(run.get("elapsed_ms", 0))])
+			for line in String(run.get("output", "")).split("\n"):
+				if line.contains("[loading-catalog]"):
+					print(line)
 			if not bool(run.get("ok", false)):
-				print(String(run.get("output", "")))
+				push_error("[loading-catalog] 导出内预烘失败（exit=%d，%d ms）：\n%s" % [
+					int(run.get("exit_code", -1)), int(run.get("elapsed_ms", 0)),
+					String(run.get("output", ""))])
 			status = baker.manifest_status()
 		if not bool(status.get("fresh", false)):
 			push_error("[loading-catalog] 预烘失败，导出继续使用磁盘上的旧快照（新开游戏会回退到源编译器，多花 4–5 秒）。请先手动运行：\n%s\n失败原因：%s" % [
